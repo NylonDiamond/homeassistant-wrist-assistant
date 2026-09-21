@@ -18,10 +18,13 @@ import {
 import { familiesFor, supportedFamilies } from "../src/layouts.js";
 import {
   type DeviceOwner,
-  type PlaceRecord,
+  type PlaceCopy,
+  designKind,
   devicePlaces,
   duplicateAs,
   duplicateTargets,
+  linkedCopy,
+  linkedDocumentFor,
   freeSlotForFamily,
   libraryComingSoon,
   libraryFamilies,
@@ -302,26 +305,19 @@ describe("duplicateTargets", () => {
   });
 });
 
-// The card's "Devices" menu: a box per device, ticked where the design is.
+// The card's "Devices" menu: a box per device, ticked where the design's
+// linked copies are.
 describe("devicePlaces", () => {
   const all = [WATCH, WATCH2, PHONE, OLD_PHONE, LIBRARY];
-  const rec = (id: string, name: string, families: FamilyKind[] = ["rectangular"], control = false): PlaceRecord =>
-    ({ id, name, families, control });
-  const lists: Record<string, PlaceRecord[]> = {
-    w1: [rec("a", "Kitchen"), rec("b", "Porch")],
-    w2: [rec("c", "kitchen "), rec("d", "Kitchen", ["circular"])],
-    p1: [rec("e", "Kitchen")],
-    [LIBRARY_OWNER_ID]: [],
-  };
-  const on = (id: string) => lists[id] ?? [];
-  const from = { ownerId: "w1", id: "a", name: "Kitchen" };
+  const kindOf = (id: string) => all.find((o) => o.ownerId === id)?.kind;
+  const copies: PlaceCopy[] = [{ ownerId: "w1", id: "a" }, { ownerId: "w2", id: "c" }];
 
-  it("lists the card's own device ticked, the same kind, and the library, in picker order", () => {
-    const places = devicePlaces(all, "rectangular", from, on, "watch");
-    expect(places.map((p) => [p.owner.ownerId, p.self, p.on])).toEqual([
-      ["w1", true, true],
-      ["w2", false, true],
-      [LIBRARY_OWNER_ID, false, false],
+  it("lists the design's kind of device and the library, ticked where a copy is", () => {
+    const places = devicePlaces(all, "rectangular", copies, "watch");
+    expect(places.map((p) => [p.owner.ownerId, p.on])).toEqual([
+      ["w1", true],
+      ["w2", true],
+      [LIBRARY_OWNER_ID, false],
     ]);
   });
 
@@ -329,7 +325,7 @@ describe("devicePlaces", () => {
   // every device it has rather than wondering where one went.
   it("lists a device of the kind that cannot draw the shape, marked as not drawing it", () => {
     const old = owner({ ownerId: "w3", label: "Chen's Watch", families: [], controls: false });
-    const places = devicePlaces([WATCH, old, LIBRARY], "rectangular", from, on, "watch");
+    const places = devicePlaces([WATCH, old, LIBRARY], "rectangular", copies, "watch");
     expect(places.map((p) => [p.owner.ownerId, p.draws])).toEqual([
       ["w1", true],
       ["w3", false],
@@ -337,41 +333,73 @@ describe("devicePlaces", () => {
     ]);
   });
 
-  it("ticks a device by name and shape, case and outer spaces aside", () => {
-    const places = devicePlaces(all, "rectangular", from, on, "watch");
-    // "kitchen " on w2 is this design; "Kitchen" as a circular is not.
-    expect(places[1]!.copies.map((r) => r.id)).toEqual(["c"]);
+  it("marks the device holding the design's last copy", () => {
+    const places = devicePlaces(all, "rectangular", [{ ownerId: "w2", id: "c" }], "watch");
+    expect(places.map((p) => [p.owner.ownerId, p.on, p.last])).toEqual([
+      ["w1", false, false],
+      ["w2", true, true],
+      [LIBRARY_OWNER_ID, false, false],
+    ]);
   });
 
-  it("never counts the card's own record as a copy of itself", () => {
-    const places = devicePlaces(all, "rectangular", from, on, "watch");
-    expect(places[0]!.copies).toEqual([]);
-  });
-
-  it("reads a device it has no list for as unticked", () => {
-    const places = devicePlaces(all, "rectangular", from, () => [], "watch");
-    expect(places.map((p) => p.on)).toEqual([true, false, false]);
-  });
-
-  it("offers every kind to a design on the shelf, and ticks the phone that has it", () => {
-    const shelved = { ownerId: LIBRARY_OWNER_ID, id: "z", name: "Kitchen" };
-    const places = devicePlaces(all, "rectangular", shelved, on, "library");
+  it("offers every kind to a design on the shelf alone", () => {
+    const shelved: PlaceCopy[] = [{ ownerId: LIBRARY_OWNER_ID, id: "z" }];
+    const places = devicePlaces(all, "rectangular", shelved, designKind(shelved, kindOf));
     expect(places.map((p) => [p.owner.ownerId, p.on])).toEqual([
-      ["w1", true],
-      ["w2", true],
-      ["p1", true],
+      ["w1", false],
+      ["w2", false],
+      ["p1", false],
       ["p2", false],
       [LIBRARY_OWNER_ID, true],
     ]);
-    expect(places.at(-1)!.self).toBe(true);
   });
 
-  it("matches a control-only design only against control-only records", () => {
-    const ctl = { ownerId: "w1", id: "k", name: "Lights" };
-    const withControls = (id: string) => id === "w2"
-      ? [rec("m", "Lights", [], true), rec("n", "Lights", ["circular"], true)]
-      : [];
-    const places = devicePlaces(all, undefined, ctl, withControls, "watch");
-    expect(places[1]!.copies.map((r) => r.id)).toEqual(["m"]);
+  it("reads a design's kind off its first device, the shelf aside", () => {
+    expect(designKind([{ ownerId: LIBRARY_OWNER_ID, id: "z" }, { ownerId: "p1", id: "e" }], kindOf)).toBe("iphone");
+    expect(designKind([{ ownerId: "w1", id: "a" }], kindOf)).toBe("watch");
+    expect(designKind([], kindOf)).toBe("library");
+  });
+
+  it("offers a control to the devices with Control Center", () => {
+    const plain = owner({ ownerId: "w3", label: "Old Watch", controls: false });
+    const places = devicePlaces([WATCH, plain, LIBRARY], undefined, [{ ownerId: "w1", id: "k" }], "watch");
+    expect(places.map((p) => [p.owner.ownerId, p.draws])).toEqual([["w1", true], ["w3", false], [LIBRARY_OWNER_ID, true]]);
+  });
+});
+
+// One design on several devices: the copies share a link and are kept alike.
+describe("linkedCopy and linkedDocumentFor", () => {
+  const LINK = "8B1C2D3E-0000-4000-8000-000000000001";
+
+  it("writes the same design under a new id and seat, carrying the link", () => {
+    const src = kitchen();
+    const copy = linkedCopy(src, LINK, { id: "NEW", slotIndex: 2 });
+    expect(copy.id).toBe("NEW");
+    expect(copy.slotIndex).toBe(2);
+    expect(copy.linkId).toBe(LINK);
+    expect(copy.hidden).toBeUndefined();
+    expect(copy.supportedFamilies).toEqual(src.supportedFamilies);
+    expect(copy.elements).toEqual(src.elements);
+    expect(src.linkId).toBeUndefined();
+  });
+
+  it("dresses a save in the sibling's own id, seat and hidden flag", () => {
+    const saved = kitchen();
+    saved.linkId = LINK;
+    saved.name = "Kitchen 2";
+    const doc = linkedDocumentFor(saved, { id: "SIB", slotIndex: 7, hidden: true });
+    expect(doc.id).toBe("SIB");
+    expect(doc.slotIndex).toBe(7);
+    expect(doc.hidden).toBe(true);
+    expect(doc.name).toBe("Kitchen 2");
+    expect(doc.linkId).toBe(LINK);
+    expect(linkedDocumentFor(saved, { id: "SIB", slotIndex: 7, hidden: false }).hidden).toBeUndefined();
+  });
+
+  it("never carries a link into a duplicate", () => {
+    const src = kitchen();
+    src.linkId = LINK;
+    expect(duplicateAs(src, "rectangular", { id: "D", slotIndex: 1 }).linkId).toBeUndefined();
+    expect(duplicateAs(src, "circular", { id: "D", slotIndex: 1 }).linkId).toBeUndefined();
   });
 });

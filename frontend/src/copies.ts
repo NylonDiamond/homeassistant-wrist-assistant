@@ -222,74 +222,71 @@ export function duplicateTargets(
 
 // ── where one design is, device by device ─────────────────────────────────
 
-/** One stored record as the place list reads it: enough to tell whether it
- * is the same design as the card's, and nothing about what it draws. */
-export interface PlaceRecord {
+/** One copy of a design as the place list reads it: which device, which
+ * record. */
+export interface PlaceCopy {
+  ownerId: string;
   id: string;
-  name: string;
-  /** The shapes its document lists; one, or none for a control-only document. */
-  families: readonly FamilyKind[];
-  control: boolean;
 }
 
 /** One device in a card's place list, with a box to tick. */
 export interface DevicePlace {
   owner: DeviceOwner;
-  /** Whether this is the device the card's own record sits on. */
-  self: boolean;
-  /** The other records on this device that are this design: same name, same
-   * shape. The card's own record is never in here. */
-  copies: PlaceRecord[];
-  /** Whether the box is ticked: the card's own device, or one with a copy. */
+  /** The copies of this design on this device. One, as a rule; a link never
+   * puts two on one device, but a list is what a reader walks. */
+  copies: PlaceCopy[];
+  /** Whether the box is ticked: the design has a copy here. */
   on: boolean;
   /** Whether this device's app draws the shape, so a copy could be written
    * there. A device of the right kind that cannot is still listed, greyed,
    * so the household sees every device rather than wondering where one went. */
   draws: boolean;
+  /** Whether unticking here would take the design's last copy off every
+   * device. That copy is moved to the library rather than deleted. */
+  last: boolean;
 }
 
-/** Whether two records are one design in two places: the same name, letter
- * case and outer spaces aside, drawing the same shape. Nothing links a copy to
- * what it was copied from, so the name and the shape are what there is. */
-export function sameDesign(a: PlaceRecord, name: string, family: FamilyKind | undefined): boolean {
-  if (a.name.trim().toLocaleLowerCase() !== name.trim().toLocaleLowerCase()) return false;
-  return family === undefined ? a.control && a.families.length === 0 : a.families.includes(family);
+/** The kind of device a design stands on, read off its copies: the first
+ * device that is not the library, or the library when it is on nothing. */
+export function designKind(copies: readonly PlaceCopy[], kindOf: (ownerId: string) => DeviceKind | undefined): DeviceKind {
+  for (const c of copies) {
+    const kind = kindOf(c.ownerId);
+    if (kind !== undefined && kind !== "library") return kind;
+  }
+  return "library";
 }
 
 /**
  * The card's place list: every device this design could be on, each saying
  * whether it is.
  *
- * The same devices `duplicateTargets` offers, plus the one the card is on, so
- * the list reads as a set of boxes rather than a set of destinations. A box
- * is ticked for the card's own device, and for any device holding a record
- * with this name and shape. Ticking writes a copy there; unticking removes
- * that device's copy, or unassigns the card's own record when it is the
- * card's device. The library is always in the list, since it is where an
- * unassigned design goes.
- *
- * `recordsOn` answers each device's live records. A device whose list the
- * panel has not read answers none, so it reads as unticked until it has.
+ * A design is its linked copies, one record per device, so a box is ticked
+ * exactly where the link has a copy. Ticking writes a linked copy there;
+ * unticking removes that device's copy, or moves the last one to the library.
+ * The devices listed are the ones of the design's own kind, drawing this
+ * shape or not, plus the library, which is where an unassigned design goes.
+ * A watch design goes to the home's other watches from here; crossing to a
+ * phone is "Duplicate as", where the shape is being chosen anyway. A design
+ * on the shelf alone is on no kind of device, so every device is listed.
  */
 export function devicePlaces(
   owners: readonly DeviceOwner[],
   family: FamilyKind | undefined,
-  from: { ownerId: string; id: string; name: string },
-  recordsOn: (ownerId: string) => readonly PlaceRecord[],
-  sameKind?: DeviceKind,
+  copies: readonly PlaceCopy[],
+  kind: DeviceKind,
 ): DevicePlace[] {
-  const writable = duplicateTargets(owners, family, from.ownerId, sameKind);
-  // Every device of the kind, drawing this shape or not, and the library.
-  const listed = owners.filter((o) =>
-    o.ownerId === from.ownerId
-    || o.kind === "library"
-    || sameKind === undefined || sameKind === "library" || o.kind === sameKind);
+  const listed = owners.filter((o) => o.kind === "library" || kind === "library" || o.kind === kind);
   return listed.map((owner) => {
-    const copies = recordsOn(owner.ownerId)
-      .filter((r) => r.id !== from.id || owner.ownerId !== from.ownerId)
-      .filter((r) => sameDesign(r, from.name, family));
-    const isSelf = owner.ownerId === from.ownerId;
-    return { owner, self: isSelf, copies, on: isSelf || copies.length > 0, draws: isSelf || writable.includes(owner) };
+    const here = copies.filter((c) => c.ownerId === owner.ownerId);
+    const draws = owner.kind === "library"
+      || (family === undefined ? owner.controls : owner.families.includes(family));
+    return {
+      owner,
+      copies: here,
+      on: here.length > 0,
+      draws,
+      last: here.length > 0 && here.length === copies.length,
+    };
   });
 }
 
@@ -328,6 +325,50 @@ export function copyForOwner(
   if (write.hidden) next.hidden = true;
   else delete next.hidden;
   next.schemaVersion = schemaVersionFor(next);
+  return next;
+}
+
+// ── linked copies: one design on several devices ──────────────────────────
+
+/**
+ * The same design on one more device, joined to the link.
+ *
+ * The whole document, the same shape, wearing the new record's id and seat
+ * and carrying the link's uuid. Not hidden: the author just asked for it.
+ * `link` is the design's link, or a fresh one when this is its first copy;
+ * the caller writes that fresh link onto the original too.
+ */
+export function linkedCopy(
+  cfg: CustomComplicationConfig,
+  link: string,
+  write: { id: string; slotIndex: number },
+): CustomComplicationConfig {
+  const next = copyForOwner(cfg, {
+    id: write.id,
+    slotIndex: write.slotIndex,
+    hidden: false,
+    families: [...cfg.supportedFamilies],
+  });
+  next.linkId = link;
+  return next;
+}
+
+/**
+ * A saved edit as one linked sibling should store it.
+ *
+ * Everything travels but what is that sibling's own: its record id, its seat
+ * on its device, and its hidden flag. The link stays. This is what a save
+ * of one copy writes to each of the others.
+ */
+export function linkedDocumentFor(
+  saved: CustomComplicationConfig,
+  sibling: { id: string; slotIndex: number; hidden: boolean },
+): CustomComplicationConfig {
+  const next = structuredClone(saved);
+  next.id = sibling.id;
+  next.slotIndex = sibling.slotIndex;
+  if (sibling.hidden) next.hidden = true;
+  else delete next.hidden;
   return next;
 }
 
@@ -372,6 +413,9 @@ export function duplicateAs(
   write: DuplicateWrite,
 ): CustomComplicationConfig {
   const next = structuredClone(cfg);
+  // A duplicate is a design of its own: it never joins the link its source
+  // is in. A linked copy is written by `linkedCopy`, not by this.
+  delete next.linkId;
   if (toFamily === undefined) {
     setControlShown(next, true);
   } else if (!next.supportedFamilies.includes(toFamily)) {

@@ -4008,6 +4008,12 @@ export interface CustomComplicationConfig {
    * moving on. Absent, and a spec of one page, are a document with no pages,
    * which is every document written before this key. See `PagesSpec`. */
   pages?: PagesSpec;
+  /** The uuid the copies of one design share across devices. Each copy is
+   * its own record with its own id, seat and hidden flag; the link is what
+   * the panel reads to show them as one card and to write an edit to all of
+   * them. Absent on a design that is on one device only. The apps decode it
+   * and never write it, so only the panel ever sets or clears it. */
+  linkId?: string;
   /** The document's Control Center control. Absent means the document has
    * none, which is every document written before this key. It never changes
    * what the document draws: the control is an extra, not a mode. */
@@ -5087,6 +5093,7 @@ export function parseConfig(raw: unknown): CustomComplicationConfig {
   if (typeof raw.showSuccessFlash === "boolean") cfg.showSuccessFlash = raw.showSuccessFlash;
   if (typeof raw.successFlashColorHex === "string") cfg.successFlashColorHex = raw.successFlashColorHex;
   if (raw.hidden === true) cfg.hidden = true;
+  if (typeof raw.linkId === "string" && raw.linkId !== "") cfg.linkId = raw.linkId.toUpperCase();
   // A spec of one page is a document with no pages, so it lands as absent and
   // is never written back. `parsePagesSpec` folds that in.
   const pages = parsePagesSpec(raw.pages);
@@ -6662,6 +6669,7 @@ export function encodeConfig(cfg: CustomComplicationConfig): J {
     o.groups = cfg.groups.map((g) => ({ id: g.id, name: g.name, locked: g.locked }));
   }
   if (cfg.hidden === true) o.hidden = true;
+  if (cfg.linkId !== undefined) o.linkId = cfg.linkId;
   // Only ever on the wire when there are really pages; a one-page spec carries
   // nothing an app that never heard of pages would miss. The mode is written
   // from the tap actions (`pageModeFor`), so the watch's tour gate and the
@@ -6831,11 +6839,9 @@ export function setGroup(cfg: CustomComplicationConfig, elementId: string, group
 // non-empty and tells the user which paths it does not understand.
 
 const K = {
-  // `linkId` is in the list but nowhere else: linked copies are gone, so the
-  // key is read by nothing and written by nothing. It stays here so a record
-  // an older panel wrote still opens for editing rather than reading as a
-  // document with a field this one does not understand. The key is dropped by
-  // the first save, since the encoder no longer writes it.
+  // `linkId` joins the copies of one design across devices: one record per
+  // device, the same uuid on each. The panel reads and writes it; the apps
+  // decode it and never write it back.
   config: ["schemaVersion", "id", "name", "values", "slotIndex", "elements", "supportedFamilies", "perFamily", "inline", "dataSources", "refreshMinutes", "tapAction", "openPageId", "openPageName", "showSuccessFlash", "successFlashColorHex", "groups", "hidden", "linkId", "control", "pages"],
   group: ["id", "name", "locked"],
   // The document's pages. Its own object at the top level, and the only place

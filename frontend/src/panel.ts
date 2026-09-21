@@ -138,13 +138,15 @@ import { ALL_FAMILIES, biggestFirst, blankInline, canRemoveControl, comingSoonFa
 import {
   type DeviceOwner,
   type DevicePlace,
-  type PlaceRecord,
+  type PlaceCopy,
   type SlotHolder,
   copyForOwner,
+  designKind,
   devicePlaces,
   duplicateAs,
   freeSlotForFamily,
-  sameDesign,
+  linkedCopy,
+  linkedDocumentFor,
   joinNames,
   newTargets,
   slotForDuplicate,
@@ -188,6 +190,7 @@ import {
   personColorVar,
   personIndex,
   pickerListRows,
+  rowKeyFor,
   pickerSections,
   pickerTabs,
   pickerView,
@@ -6533,6 +6536,9 @@ export class WristAssistantPanel extends LitElement {
     const config = kind === "control"
       ? newControlConfig(name, mine.slotIndex, family)
       : newConfig(name, mine.slotIndex, family ?? null);
+    // Ticked for several devices, it is one design on all of them: every
+    // record carries the same link, so an edit to one is written to the rest.
+    if (owners.length > 1) config.linkId = newId();
     if (!this.startNew(config)) return;
     // The author asked for a control, so its tab is the one up on arrival and
     // its card is the one open.
@@ -6584,7 +6590,7 @@ export class WristAssistantPanel extends LitElement {
     }
     await this.loadOtherLists();
     const lines: string[] = [];
-    if (made.length > 0) lines.push(`${config.name} is on ${joinNames(made)} too, as its own complication to edit there.`);
+    if (made.length > 0) lines.push(`${config.name} is on ${joinNames(made)} too. Saving it here saves it there.`);
     if (failed.length > 0) lines.push(`${joinNames(failed)}.`);
     this.copyStatus = lines.length > 0 ? lines.join(" ") : undefined;
   }
@@ -6627,6 +6633,8 @@ export class WristAssistantPanel extends LitElement {
         const cfg = structuredClone(draft.config);
         cfg.id = newId();
         cfg.slotIndex = slot;
+        // A copy is a design of its own, not one more device of this one.
+        delete cfg.linkId;
         draft = new Draft(cfg, null);
       }
       const result = await saveRecord(this.hass, this.ownerId, draft.encoded(), draft.baseRevision);
@@ -6649,6 +6657,8 @@ export class WristAssistantPanel extends LitElement {
       // next edit. The watch still caches the picker label, but that is a
       // one-time re-pick on the wrist, not a per-save nag.
       this.savedName = String(result.record.document?.name ?? "");
+      // The same edit on every other device this design is on.
+      await this.saveLinkedSiblings(draft.config, result.record.id);
       this.recompile();
       // The card for what was just saved goes back to the grid, and it should
       // not be drawing a frame from before the edit. Only this document's own
@@ -6685,6 +6695,8 @@ export class WristAssistantPanel extends LitElement {
   private async deleteSaved(id: string, revision: number, ownerId = this.ownerId) {
     if (!ownerId) return;
     const open = ownerId === this.ownerId && id === this.selectedId;
+    // Read before the delete: the record is gone from the lists after it.
+    const link = this.linkOf(ownerId, id);
     this.saving = true;
     try {
       const result = await deleteRecord(this.hass, ownerId, id, revision);
@@ -6697,10 +6709,16 @@ export class WristAssistantPanel extends LitElement {
         this.clearDraft();
         this.selectedId = undefined;
       }
+      // Delete is the whole design: every device it is on. Taking it off one
+      // device is the card's Devices menu.
+      const kept = await this.deleteLinkedSiblings(link, ownerId, id);
+      if (kept.length > 0) {
+        this.saveError = `Deleted here, but not on ${joinNames(kept)}: a copy changed on the server. Delete it from its own card.`;
+      }
       await this.loadRecords();
       // A row on another device is gone from that device's list, not this
       // one's, so the list the picker draws it from is the one to re-read.
-      if (ownerId !== this.ownerId) await this.loadOtherLists();
+      await this.loadOtherLists();
     } catch (err) {
       this.saveError = errText(err);
     } finally {
@@ -6708,6 +6726,98 @@ export class WristAssistantPanel extends LitElement {
       this.confirmDelete = false;
       this.pickerConfirmDelete = undefined;
     }
+  }
+
+  // ── linked copies ─────────────────────────────────────────────────────
+  //
+  // A design on several devices is one record per device, each carrying the
+  // same `linkId`. The pure rules are in copies.ts; what is here is the
+  // reading of the home's lists and the writes that keep the copies alike.
+
+  /** Every live record in the home, each with the device it sits on. The
+   * open device's come from the list this panel watches, the rest from the
+   * lists read for the other devices. */
+  private allRecords(): { ownerId: string; record: ComplicationRecord }[] {
+    const out: { ownerId: string; record: ComplicationRecord }[] = [];
+    if (this.ownerId) {
+      for (const record of this.records) if (!record.deleted) out.push({ ownerId: this.ownerId, record });
+    }
+    for (const [ownerId, list] of this.otherLists) {
+      if (ownerId === this.ownerId) continue;
+      for (const record of list.records) if (!record.deleted) out.push({ ownerId, record });
+    }
+    return out;
+  }
+
+  private linkOfRecord(record: ComplicationRecord): string | undefined {
+    const raw = record.document?.linkId;
+    return typeof raw === "string" && raw !== "" ? raw.toUpperCase() : undefined;
+  }
+
+  private linkOf(ownerId: string, id: string): string | undefined {
+    const hit = this.allRecords().find((e) => e.ownerId === ownerId && e.record.id === id);
+    return hit ? this.linkOfRecord(hit.record) : undefined;
+  }
+
+  /** The other copies of one link, the named record left out. */
+  private linkedSiblings(link: string | undefined, exceptOwnerId: string, exceptId: string) {
+    if (link === undefined) return [];
+    return this.allRecords().filter((e) =>
+      this.linkOfRecord(e.record) === link && !(e.ownerId === exceptOwnerId && e.record.id === exceptId));
+  }
+
+  /** How many devices the open complication is on, for the words Delete uses. */
+  private openLinkCount(): number {
+    if (!this.ownerId || !this.selectedId) return 1;
+    return 1 + this.linkedSiblings(this.draft?.config.linkId, this.ownerId, this.selectedId).length;
+  }
+
+  /**
+   * Write a save of one copy to every other copy of its link.
+   *
+   * Each sibling gets the saved document wearing its own id, seat and hidden
+   * flag, against the revision it was last read at, so a sibling somebody
+   * else changed meanwhile is reported rather than overwritten. The lists are
+   * read again first for those revisions.
+   */
+  private async saveLinkedSiblings(saved: CustomComplicationConfig, savedId: string) {
+    if (saved.linkId === undefined || !this.ownerId) return;
+    await this.loadOtherLists();
+    const siblings = this.linkedSiblings(saved.linkId, this.ownerId, savedId);
+    if (siblings.length === 0) return;
+    const failed: string[] = [];
+    for (const { ownerId, record } of siblings) {
+      const doc = linkedDocumentFor(saved, {
+        id: record.id,
+        slotIndex: Number(record.document?.slotIndex ?? 0),
+        hidden: record.document?.hidden === true,
+      });
+      try {
+        const out = await saveRecord(this.hass, ownerId, new Draft(doc, record.revision).encoded(), record.revision);
+        if (!out.ok) failed.push(this.ownerName(ownerId));
+      } catch {
+        failed.push(this.ownerName(ownerId));
+      }
+    }
+    await this.loadOtherLists();
+    if (failed.length > 0) {
+      this.saveError = `Saved here, but not on ${joinNames(failed)}: the copy there changed on the server. Save again.`;
+    }
+  }
+
+  /** Delete every other copy of one link. The devices whose copy would not
+   * go are returned by name. */
+  private async deleteLinkedSiblings(link: string | undefined, ownerId: string, id: string): Promise<string[]> {
+    const kept: string[] = [];
+    for (const s of this.linkedSiblings(link, ownerId, id)) {
+      try {
+        const gone = await deleteRecord(this.hass, s.ownerId, s.record.id, s.record.revision);
+        if (!gone.ok) kept.push(this.ownerName(s.ownerId));
+      } catch {
+        kept.push(this.ownerName(s.ownerId));
+      }
+    }
+    return kept;
   }
 
   /** What to call one device in a line the author reads. */
@@ -6722,6 +6832,7 @@ export class WristAssistantPanel extends LitElement {
     cfg.id = newId();
     cfg.name = `${cfg.name} copy`;
     cfg.slotIndex = this.freeSlot();
+    delete cfg.linkId;
     this.startNew(cfg);
   }
 
@@ -8369,11 +8480,13 @@ export class WristAssistantPanel extends LitElement {
         if (record.deleted) continue;
         const slot = Number(record.document?.slotIndex ?? 0);
         seats.push(slot);
+        const link = record.document?.linkId;
         out.push({
           ownerId,
           id: record.id,
           slot,
           name: String(record.document?.name ?? "Untitled"),
+          ...(typeof link === "string" && link !== "" ? { linkId: link.toUpperCase() } : {}),
           item: { kind: "record", record },
         });
       }
@@ -8410,7 +8523,7 @@ export class WristAssistantPanel extends LitElement {
   /** The rows the picker shows: every complication in the home, one row per
    * record, since a complication is one record on one device. */
   private pickerRows(): PickerRow[] {
-    return pickerListRows(this.pickerCopies(), this.pickerDevices());
+    return pickerListRows(this.pickerCopies(), this.pickerDevices(), this.ownerId);
   }
 
   /** The owner one row's copy sits on, for the words and the shapes that
@@ -9099,7 +9212,7 @@ export class WristAssistantPanel extends LitElement {
         <span class="pk-card-acts ${confirming ? "asking" : ""}">
           ${confirming
             ? html`<button type="button" class="ghost danger small" ?disabled=${this.saving}
-                @click=${(e: Event) => { stop(e); void (open ? this.deleteCurrent() : this.deleteSaved(record.id, record.revision, actOwnerId)); }}>Really delete</button>
+                @click=${(e: Event) => { stop(e); void (open ? this.deleteCurrent() : this.deleteSaved(record.id, record.revision, actOwnerId)); }}>${row.copies.length > 1 ? `Delete on ${row.copies.length} devices` : "Really delete"}</button>
               <button type="button" class="ghost small" @click=${(e: Event) => { stop(e); this.pickerConfirmDelete = undefined; }}>Cancel</button>`
             : html`${this.renderPickerDup(row, family, menu)}
               ${mayDelete ? html`<button type="button" class="icon" ?disabled=${!open && this.saving}
@@ -9160,7 +9273,7 @@ export class WristAssistantPanel extends LitElement {
 
   /** One device inside "Devices": a box, ticked when the design is there. A
    * device with no seat left for this shape says so rather than being quietly
-   * greyed, and the card's own device says why it cannot be unticked. */
+   * greyed, and a box that cannot be unticked says why. */
   private renderPickerPlace(row: PickerRow, place: DevicePlace, family: FamilyKind | undefined) {
     const target = place.owner;
     const label = target.kind === "library" ? UNASSIGNED_LABEL : target.label;
@@ -9169,29 +9282,29 @@ export class WristAssistantPanel extends LitElement {
     // A device whose app is too old for this shape, or that has not said
     // which version it runs. Named in the gate's own words.
     const owner = this.ownerOf(target.ownerId);
-    const tooOld = !place.self && !place.draws
+    const tooOld = !place.on && !place.draws
       ? (deviceSupportsShapes(owner) ? "This device's app does not draw this shape." : updateDeviceMessage(owner))
       : undefined;
-    // Unticking the card's own device moves its record to Unassigned. That
-    // has nowhere to go from Unassigned itself, and moving the record the
-    // editor has open out from under its draft is what Delete is for.
-    const stuck = place.self
-      ? target.kind === "library"
-        ? "It is unassigned already. Delete removes it."
-        : shelf === undefined
-          ? "This integration has no Unassigned list to move it to. Delete removes it."
-          : this.selectedCopyOf(row) !== undefined
-            ? "It is open in the editor. Use Delete there."
-            : undefined
-      : undefined;
-    const extra = place.copies.length > 1 ? `${place.copies.length} copies` : undefined;
+    // The copy the editor has open cannot be taken out from under its draft:
+    // Delete is what removes it. The last copy anywhere moves to Unassigned
+    // rather than being deleted, which has nowhere to go from Unassigned.
+    const open = place.on && place.copies.some((c) => this.isOpenCopy(c));
+    const stuck = !place.on
+      ? undefined
+      : open
+        ? "It is open in the editor. Use Delete there."
+        : place.last && target.kind === "library"
+          ? "It is unassigned already. Delete removes it."
+          : place.last && shelf === undefined
+            ? "This integration has no Unassigned list to move it to. Delete removes it."
+            : undefined;
     const title = tooOld ?? (full
       ? `${label} has no free seat for this shape (iPhone presets count too). Delete a complication on it first.`
       : stuck ?? (place.on
-        ? place.self
+        ? place.last
           ? "Take it off this device and keep it as unassigned"
-          : `Remove ${extra ?? "the copy"} of this design from ${label}`
-        : target.kind === "library" ? "Write a copy and leave it unassigned" : `Write a copy on ${label}`));
+          : `Take it off ${label}. A face or widget already using it keeps it.`
+        : target.kind === "library" ? "Keep an unassigned copy too" : `Put it on ${label}. Saving it saves it everywhere it is.`));
     const disabled = this.saving || full || stuck !== undefined || tooOld !== undefined;
     return html`<label class="pk-dup-row check ${disabled ? "off" : ""}" title=${title}>
       <input type="checkbox" .checked=${place.on} ?disabled=${disabled}
@@ -9201,13 +9314,17 @@ export class WristAssistantPanel extends LitElement {
           // The box follows the lists, not the click: it is drawn again from
           // them once the write has landed, or stays as it was if it fails.
           box.checked = place.on;
-          void (place.on ? this.removeRowFrom(row, place) : this.duplicateRowTo(row, target));
+          void (place.on ? this.removeRowFrom(row, place) : this.addRowTo(row, target));
         }}>
       ${uiIcon(target.kind === "iphone" ? "phone" : target.kind === "library" ? "layers" : "watch")}
       <span class="pk-dup-name">${label}</span>
-      ${full ? html`<span class="pk-dup-full">full, ${this.slotsTakenOn(target.ownerId)} of ${MAX_SLOTS}</span>`
-        : extra ? html`<span class="pk-dup-full">${extra}</span>` : nothing}
+      ${full ? html`<span class="pk-dup-full">full, ${this.slotsTakenOn(target.ownerId)} of ${MAX_SLOTS}</span>` : nothing}
     </label>`;
+  }
+
+  /** Whether one copy is the record the editor has open. */
+  private isOpenCopy(copy: PlaceCopy): boolean {
+    return copy.ownerId === this.ownerId && copy.id === this.selectedId;
   }
 
   /**
@@ -9221,8 +9338,6 @@ export class WristAssistantPanel extends LitElement {
    * that draws its shape is offered.
    */
   private rowPlaces(row: PickerRow, family: FamilyKind | undefined): DevicePlace[] {
-    const from = row.open;
-    if (from.item.kind !== "record") return [];
     // Every device in the home, not only the ones whose app draws shapes: a
     // watch that is too old is listed greyed with the reason, so nobody
     // wonders where it went.
@@ -9231,42 +9346,34 @@ export class WristAssistantPanel extends LitElement {
       .filter((o) => !isLibraryOwner(o) && !o.is_orphan)
       .map((o) => this.deviceOwnerOf(o));
     const candidates = shelf ? [...devices, shelf] : devices;
-    return devicePlaces(
-      candidates,
-      family,
-      { ownerId: from.ownerId, id: from.item.record.id, name: row.name },
-      (ownerId) => this.placeRecordsOn(ownerId),
-      deviceKindOf(this.ownerOf(from.ownerId)),
-    );
+    const copies = row.copies
+      .filter((c) => c.item.kind === "record")
+      .map((c): PlaceCopy => ({ ownerId: c.ownerId, id: c.id }));
+    return devicePlaces(candidates, family, copies, designKind(copies, (id) => deviceKindOf(this.ownerOf(id))));
   }
 
-  /** One device's live records as the place list reads them. The open
-   * device's come from the list this panel watches; every other device's from
-   * the lists the menu read as it opened. */
-  private placeRecordsOn(ownerId: string): PlaceRecord[] {
+  /** One stored record of the home by device and id, from whichever list
+   * holds it. The open device's list is the one this panel watches; every
+   * other device's is the one read as the menu opened. */
+  private recordAt(ownerId: string, id: string): ComplicationRecord | undefined {
     const list = ownerId === this.ownerId ? { records: this.records } : this.otherLists.get(ownerId);
-    if (!list) return [];
-    return list.records.filter((r) => !r.deleted).map((r) => ({
-      id: r.id,
-      name: typeof r.document?.name === "string" ? r.document.name : "",
-      families: shapesOf(r),
-      control: hasControlOf(r),
-    }));
+    return list?.records.find((r) => r.id === id && !r.deleted);
   }
 
   /**
    * Untick one device: take this design off it.
    *
-   * On the card's own device that is the unassign move, so the record is kept
-   * on the shelf rather than deleted. On any other device it is that device's
-   * copies with this name and shape that go, each its own record with its own
-   * revision, so a copy that changed under the menu is reported rather than
-   * silently kept or clobbered.
+   * The design's copy on that device is deleted; the design goes on living
+   * on every other device it is on. Its last copy anywhere is moved to
+   * Unassigned instead, since a design taken off everything is not a design
+   * deleted. Each copy is read again first, so one that changed under the
+   * menu is reported rather than silently clobbered.
    */
   private async removeRowFrom(row: PickerRow, place: DevicePlace) {
     if (!this.hass.user?.is_admin || this.saving) return;
-    if (place.self) {
-      await this.shelveRow(row);
+    if (place.copies.some((c) => this.isOpenCopy(c))) return;
+    if (place.last) {
+      await this.shelveCopy(row, place.copies[0]);
       return;
     }
     const ownerId = place.owner.ownerId;
@@ -9276,23 +9383,70 @@ export class WristAssistantPanel extends LitElement {
     this.saving = true;
     this.saveError = undefined;
     try {
-      // Fresh lists: the copies to remove are read again, since one may have
-      // been edited or removed since the menu drew them.
       await this.loadOtherLists();
-      const family = row.open.item.kind === "record" ? shapesOf(row.open.item.record)[0] : undefined;
-      const fresh = this.placeRecordsOn(ownerId).filter((r) => sameDesign(r, row.name, family));
-      const list = ownerId === this.ownerId ? { records: this.records } : this.otherLists.get(ownerId);
-      const targets = (list?.records ?? []).filter((r) => fresh.some((f) => f.id === r.id));
       let failed = 0;
-      for (const record of targets) {
+      for (const copy of place.copies) {
+        const record = this.recordAt(ownerId, copy.id);
+        if (!record) continue;
         const gone = await deleteRecord(this.hass, ownerId, record.id, record.revision);
         if (!gone.ok) failed += 1;
       }
-      const n = targets.length - failed;
       this.copyStatus = failed === 0
         ? `${row.name} is off ${label}. A face or widget already using it keeps it.`
-        : `${n === 0 ? "Nothing" : `${n} of ${targets.length}`} came off ${label}: a copy changed on the server. Open the menu again.`;
+        : `${row.name} is still on ${label}: the copy there changed on the server. Open the menu again.`;
       await this.reloadAfterRowWrite(ownerId);
+    } catch (err) {
+      this.saveError = errText(err);
+    } finally {
+      this.saving = false;
+    }
+  }
+
+  /**
+   * Move a design's last copy off its device and keep it as unassigned.
+   *
+   * The shelf's copy is written first and the device's record deleted after
+   * it: until the shelf has one, the device's is the only copy there is. The
+   * link travels with it, so the design can be ticked back onto devices from
+   * the shelf as the same design.
+   */
+  private async shelveCopy(row: PickerRow, copy: PlaceCopy | undefined) {
+    const shelf = this.libraryOwner();
+    if (!copy || !shelf || copy.ownerId === shelf.ownerId) return;
+    if (this.isOpenCopy(copy)) return;
+    const record = this.recordAt(copy.ownerId, copy.id);
+    if (!record?.document) return;
+    let cfg: CustomComplicationConfig;
+    try {
+      cfg = parseConfig(record.document);
+    } catch {
+      return;
+    }
+    // The menu follows the card: the record moves to Unassigned under a new
+    // id, so the menu is pointed at the card that will draw it there.
+    const followed = this.pickerDupFor === row.key;
+    this.saving = true;
+    this.saveError = undefined;
+    try {
+      await this.loadOtherLists();
+      const family = supportedFamilies(cfg)[0];
+      const slot = slotForDuplicate(family, this.slotHoldersOn(shelf.ownerId), this.blockedSlotsOn(shelf.ownerId));
+      if (slot < 0) {
+        this.saveError = `${UNASSIGNED_LABEL} has no free seat for this shape. Delete something in it first.`;
+        return;
+      }
+      const kept = copyForOwner(cfg, { id: newId(), slotIndex: slot, hidden: false, families: [...cfg.supportedFamilies] });
+      const out = await saveRecord(this.hass, shelf.ownerId, new Draft(kept, null).encoded(), null);
+      if (!out.ok) {
+        this.saveError = `${row.name} could not be unassigned, so it is still on ${this.ownerName(copy.ownerId)}: ${out.message ?? out.error ?? "the save failed"}`;
+        return;
+      }
+      const gone = await deleteRecord(this.hass, copy.ownerId, record.id, record.revision);
+      this.copyStatus = gone.ok
+        ? `${row.name} is off ${this.ownerName(copy.ownerId)} and unassigned. A face or widget already using it keeps it.`
+        : `${row.name} is unassigned, but the copy on ${this.ownerName(copy.ownerId)} could not be removed. Delete it from its own card.`;
+      if (followed) this.pickerDupFor = rowKeyFor({ ownerId: shelf.ownerId, id: kept.id, ...(kept.linkId !== undefined ? { linkId: kept.linkId } : {}) });
+      await this.reloadAfterRowWrite(copy.ownerId, shelf.ownerId);
     } catch (err) {
       this.saveError = errText(err);
     } finally {
@@ -9320,21 +9474,35 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * Write a copy of one card's design on another device, now.
+   * Tick one device: put this design on it.
    *
-   * The same shape it already is: this menu is about where a design sits, and
-   * the shape is what "Duplicate as" asks about. The copy takes the lowest
-   * seat free for that shape there, since a seat number on another device
-   * means nothing.
+   * A linked copy is written there: the same document under a new id and
+   * seat, carrying the design's link, so a save of any copy reaches it. A
+   * design on one device has no link yet, so one is made and written onto
+   * its record first, and only then the copy, so the two never exist without
+   * the link between them. The copy takes the lowest seat free for that
+   * shape there, since a seat number on another device means nothing.
+   *
+   * The menu stays open, as removeRowFrom's does: the next box is the usual
+   * next click.
    */
-  private async duplicateRowTo(row: PickerRow, target: DeviceOwner) {
+  private async addRowTo(row: PickerRow, target: DeviceOwner) {
     if (!this.hass.user?.is_admin || this.saving) return;
+    const from = row.open;
+    if (from.item.kind !== "record") return;
     const cfg = this.rowConfig(row);
     if (!cfg) return;
-    // The menu stays open, as removeRowFrom's does: the next box is the
-    // usual next click.
+    const mine = this.selectedCopyOf(row) !== undefined;
+    // The link is written to the record on the server, so an unsaved edit in
+    // the editor would either be written along with it or be left behind by
+    // it. Neither is what the author asked for.
+    if (mine && cfg.linkId === undefined && this.draft && (this.draft.dirty || this.draft.baseRevision === null)) {
+      this.saveError = `Save ${row.name} first, then put it on ${target.label}.`;
+      return;
+    }
     const family = supportedFamilies(cfg)[0];
     const label = target.kind === "library" ? UNASSIGNED_LABEL : target.label;
+    const followed = this.pickerDupFor === row.key;
     this.saving = true;
     this.saveError = undefined;
     try {
@@ -9346,66 +9514,37 @@ export class WristAssistantPanel extends LitElement {
         this.saveError = `${label} has no free seat for this shape (iPhone presets count too). Delete a complication there first.`;
         return;
       }
-      const copy = duplicateAs(cfg, family, { id: newId(), slotIndex: slot });
+      let link = cfg.linkId;
+      if (link === undefined) {
+        link = newId();
+        const record = this.recordAt(from.ownerId, from.id);
+        if (!record) {
+          this.saveError = `${row.name} changed on the server. Open the menu again.`;
+          return;
+        }
+        const linked = structuredClone(cfg);
+        linked.linkId = link;
+        const out = await saveRecord(this.hass, from.ownerId, new Draft(linked, record.revision).encoded(), record.revision);
+        if (!out.ok || !out.record) {
+          this.saveError = `${row.name} could not be linked, so nothing was written to ${label}: ${out.message ?? out.error ?? "the save failed"}`;
+          return;
+        }
+        // The editor's clean copy of it takes the link too, so its next save
+        // does not write the link away again.
+        if (mine && this.draft) {
+          this.draft.config.linkId = link;
+          this.draft = this.draft.commit(out.record.revision);
+        }
+      }
+      const copy = linkedCopy(cfg, link, { id: newId(), slotIndex: slot });
       const out = await saveRecord(this.hass, target.ownerId, new Draft(copy, null).encoded(), null);
       if (!out.ok) {
         this.saveError = out.message ?? out.error ?? "Save failed";
         return;
       }
-      this.copyStatus = target.kind === "library"
-        ? `${row.name} is in ${label} now, as its own complication to edit there.`
-        : `${row.name} is on ${label} now, as its own complication to edit there.`;
-      this.copyOpen = { ownerId: target.ownerId, recordId: copy.id };
-      await this.reloadAfterRowWrite(target.ownerId);
-    } catch (err) {
-      this.saveError = errText(err);
-    } finally {
-      this.saving = false;
-    }
-  }
-
-  /**
-   * Take one complication off its device and keep it as unassigned.
-   *
-   * A design taken off everything is not a design deleted, it is one back on
-   * the home's shelf, waiting for a device. The shelf's copy is written first
-   * and the device's record deleted after it: until the shelf has one, the
-   * device's is the only copy there is.
-   */
-  private async shelveRow(row: PickerRow) {
-    if (!this.hass.user?.is_admin || this.saving) return;
-    const shelf = this.libraryOwner();
-    const copy = row.open;
-    if (!shelf || copy.item.kind !== "record" || copy.ownerId === shelf.ownerId) return;
-    if (this.selectedCopyOf(row)) return;
-    const cfg = this.rowConfig(row);
-    if (!cfg) return;
-    const record = copy.item.record;
-    // The menu follows the card: the record moves to Unassigned under a new
-    // id, so the menu is pointed at the card that will draw it there.
-    const followed = this.pickerDupFor === row.key;
-    this.saving = true;
-    this.saveError = undefined;
-    try {
-      await this.loadOtherLists();
-      const family = supportedFamilies(cfg)[0];
-      const slot = slotForDuplicate(family, this.slotHoldersOn(shelf.ownerId), this.blockedSlotsOn(shelf.ownerId));
-      if (slot < 0) {
-        this.saveError = `${UNASSIGNED_LABEL} has no free seat for this shape. Delete something in it first.`;
-        return;
-      }
-      const kept = duplicateAs(cfg, family, { id: newId(), slotIndex: slot });
-      const out = await saveRecord(this.hass, shelf.ownerId, new Draft(kept, null).encoded(), null);
-      if (!out.ok) {
-        this.saveError = `${row.name} could not be unassigned, so it is still on ${this.ownerName(copy.ownerId)}: ${out.message ?? out.error ?? "the save failed"}`;
-        return;
-      }
-      const gone = await deleteRecord(this.hass, copy.ownerId, record.id, record.revision);
-      this.copyStatus = gone.ok
-        ? `${row.name} is off ${this.ownerName(copy.ownerId)} and unassigned. A face or widget already using it keeps it.`
-        : `${row.name} is unassigned, but the copy on ${this.ownerName(copy.ownerId)} could not be removed. Delete it from its own card.`;
-      if (followed) this.pickerDupFor = `rec:${shelf.ownerId}\u0000${kept.id}`;
-      await this.reloadAfterRowWrite(copy.ownerId, shelf.ownerId);
+      this.copyStatus = `${row.name} is on ${label} too. Saving it saves it everywhere it is.`;
+      if (followed) this.pickerDupFor = rowKeyFor({ ownerId: target.ownerId, id: copy.id, linkId: link });
+      await this.reloadAfterRowWrite(from.ownerId, target.ownerId);
     } catch (err) {
       this.saveError = errText(err);
     } finally {
@@ -13900,7 +14039,7 @@ export class WristAssistantPanel extends LitElement {
             title="Make this design again as another shape, or on another device"
             @click=${() => this.openDuplicateAs(cfg, this.ownerId ?? "")}>Duplicate as…</button>
           ${this.confirmDelete
-            ? html`<button class="ghost danger" @click=${() => void this.deleteCurrent()}>Really delete</button><button class="ghost" @click=${() => { this.confirmDelete = false; }}>Cancel</button>`
+            ? html`<button class="ghost danger" @click=${() => void this.deleteCurrent()}>${this.openLinkCount() > 1 ? `Delete on ${this.openLinkCount()} devices` : "Really delete"}</button><button class="ghost" @click=${() => { this.confirmDelete = false; }}>Cancel</button>`
             : html`<button class="ghost danger" @click=${() => { this.confirmDelete = true; }}>Delete</button>`}` : nothing}
       </span>
     </div>`;

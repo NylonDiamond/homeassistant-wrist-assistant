@@ -38,6 +38,9 @@ export interface PickerCopy<T> {
   /** Its seat on that device, which is the order that device's own list is in. */
   slot: number;
   name: string;
+  /** The uuid this copy shares with the same design on other devices, when
+   * it is on more than one. Absent on a copy that is on its own. */
+  linkId?: string;
   item: T;
 }
 
@@ -69,24 +72,48 @@ function byName(a: string, b: string): number {
   return x < y ? -1 : x > y ? 1 : 0;
 }
 
+/** The key a row of one link has, and a lone copy's, so a menu held open by
+ * key can follow a design as it gains its first link. */
+export function rowKeyFor(copy: { ownerId: string; id: string; linkId?: string }): string {
+  return copy.linkId !== undefined && copy.linkId !== ""
+    ? `link:${copy.linkId}`
+    : `rec:${copy.ownerId}\u0000${copy.id}`;
+}
+
 /**
- * The copies as rows, one each.
+ * The copies as rows: one per design.
  *
- * A complication is one record on one device, so nothing is grouped: two
- * people's watches showing "Kitchen" are two complications and read as two
- * cards. The list used to join the copies of a link into one row, which is
- * what one shape per complication did away with.
+ * A design on several devices is one record per device, each carrying the
+ * same `linkId`, and reads as one card: the list groups by that link, never
+ * by record id, since the copies keep different ids on purpose so placed
+ * faces and widgets go on pointing at the right one. A copy with no link is
+ * its own row. Two people's watches each holding their own "Kitchen", made
+ * separately, are two rows.
  *
- * `copies` stays a list because every reader of a row walks it, and because a
- * card still draws the devices its one copy sits on.
+ * The row draws and opens the copy on `preferOwnerId` when the link has one,
+ * which is the device the panel has up: opening it needs no device switch.
+ * Otherwise the first copy in device order.
  */
 export function pickerListRows<T>(
   copies: readonly PickerCopy<T>[],
   devices: readonly PickerDevice[],
+  preferOwnerId?: string,
 ): PickerListRow<T>[] {
-  const rows: PickerListRow<T>[] = [];
+  const groups = new Map<string, PickerCopy<T>[]>();
   for (const copy of copies) {
-    rows.push({ key: `rec:${copy.ownerId}\u0000${copy.id}`, name: copy.name, copies: [copy], open: copy });
+    const key = rowKeyFor(copy);
+    const hit = groups.get(key);
+    if (hit) hit.push(copy);
+    else groups.set(key, [copy]);
+  }
+  const rows: PickerListRow<T>[] = [];
+  for (const [key, group] of groups) {
+    const ordered = [...group].sort((a, b) =>
+      deviceIndex(devices, a.ownerId) - deviceIndex(devices, b.ownerId) || a.slot - b.slot);
+    const first = ordered[0];
+    if (!first) continue;
+    const open = ordered.find((c) => c.ownerId === preferOwnerId) ?? first;
+    rows.push({ key, name: open.name, copies: ordered, open });
   }
   return rows;
 }

@@ -127,15 +127,14 @@ export function needsSplit(
   return documentParts(cfg) > 1;
 }
 
-/** What this run would do to one record: cut it up, drop the `linkId` it
- * carries, or leave it alone. */
-export type SplitPlan = "split" | "unlink" | "none";
+/** What this run would do to one record: cut it up, or leave it alone. A
+ * one-shape record is left alone whatever else it carries: its `linkId`, if
+ * it has one, is the link to the same design on another device, which is
+ * what the panel writes now and nothing this run should touch. */
+export type SplitPlan = "split" | "none";
 
-/** `raw` is the record's document as stored. `parseConfig` no longer reads
- * `linkId`, so the stored form is the only place the key can still be seen. */
-export function planFor(cfg: CustomComplicationConfig, raw?: Record<string, unknown>): SplitPlan {
-  if (needsSplit(cfg)) return "split";
-  return raw?.linkId === undefined ? "none" : "unlink";
+export function planFor(cfg: CustomComplicationConfig): SplitPlan {
+  return needsSplit(cfg) ? "split" : "none";
 }
 
 // ── the cut ───────────────────────────────────────────────────────────────
@@ -175,6 +174,9 @@ export function splitDocument(
 
   for (const family of families) {
     const child = pruneLayouts(keepFamilies(source, [family]), family);
+    // A link on a many-shape document joined shared shapes across devices,
+    // which the children cannot honour: each is a design of its own now.
+    delete child.linkId;
     // The control is one per document and becomes its own document below, so
     // no shape child carries a copy of it.
     delete child.control;
@@ -185,6 +187,7 @@ export function splitDocument(
 
   if (source.control !== undefined) {
     const control = structuredClone(source);
+    delete control.linkId;
     // No guards: this copy draws nothing and is meant to, so the refusal that
     // keeps an author from emptying a document they are editing is not the
     // rule here.
@@ -263,12 +266,6 @@ export interface SplitNotice {
 export function splitLine(names: readonly string[]): string {
   const n = names.length;
   return `Split ${n} complication${n === 1 ? "" : "s"} into one per shape: ${names.join(", ")}.`;
-}
-
-export function unlinkedLine(names: readonly string[]): string {
-  const n = names.length;
-  const what = n === 1 ? "1 complication that was a copy" : `${n} complications that were copies`;
-  return `Unlinked ${what} of one design: ${names.join(", ")}.`;
 }
 
 export function refusedLine(what: string, reason: string): string {
@@ -354,10 +351,8 @@ function encodeForSave(cfg: CustomComplicationConfig, revision: number | null): 
  * so it is skipped whole. */
 export function targetsIn(records: readonly ComplicationRecord[]): {
   split: { record: ComplicationRecord; config: CustomComplicationConfig }[];
-  unlink: { record: ComplicationRecord; config: CustomComplicationConfig }[];
 } {
   const split: { record: ComplicationRecord; config: CustomComplicationConfig }[] = [];
-  const unlink: { record: ComplicationRecord; config: CustomComplicationConfig }[] = [];
   for (const record of records) {
     if (record.deleted || !record.document) continue;
     let config: CustomComplicationConfig;
@@ -366,11 +361,9 @@ export function targetsIn(records: readonly ComplicationRecord[]): {
     } catch {
       continue;
     }
-    const plan = planFor(config, record.document as Record<string, unknown>);
-    if (plan === "split") split.push({ record, config });
-    else if (plan === "unlink") unlink.push({ record, config });
+    if (planFor(config) === "split") split.push({ record, config });
   }
-  return { split, unlink };
+  return { split };
 }
 
 /**
@@ -385,14 +378,10 @@ export async function splitOwner(
   owner: OwnerSummary,
   records: readonly ComplicationRecord[],
   nextId: () => string = newId,
-): Promise<{ writes: SplitWrite[]; split: string[]; unlinked: string[]; problem?: string }> {
+): Promise<{ writes: SplitWrite[]; split: string[]; problem?: string }> {
   const ownerId = owner.owner_watch_id;
-  const found = targetsIn(records);
-  const targets: Target[] = [
-    ...found.split.map((t): Target => ({ ...t, plan: "split" })),
-    ...found.unlink.map((t): Target => ({ ...t, plan: "unlink" })),
-  ];
-  if (targets.length === 0) return { writes: [], split: [], unlinked: [] };
+  const targets: Target[] = targetsIn(records).split.map((t): Target => ({ ...t, plan: "split" }));
+  if (targets.length === 0) return { writes: [], split: [] };
 
   const device = owner.device_name ?? ownerId;
   for (const target of targets) {
@@ -401,7 +390,6 @@ export async function splitOwner(
       return {
         writes: [],
         split: [],
-        unlinked: [],
         problem: refusedLine(`${target.config.name} on ${device}`, reason),
       };
     }
@@ -409,7 +397,6 @@ export async function splitOwner(
 
   const writes: SplitWrite[] = [];
   const split: string[] = [];
-  const unlinked: string[] = [];
   for (const target of targets) {
     const children = splitDocument(target.config, nextId);
     const name = target.config.name;
@@ -443,12 +430,11 @@ export async function splitOwner(
       }
     }
     if (failed !== undefined) {
-      return { writes, split, unlinked, problem: refusedLine(`${name} on ${device}`, failed) };
+      return { writes, split, problem: refusedLine(`${name} on ${device}`, failed) };
     }
-    if (target.plan === "split") split.push(name);
-    else unlinked.push(name);
+    split.push(name);
   }
-  return { writes, split, unlinked };
+  return { writes, split };
 }
 
 /** Put one written record back the way it was: a child this run made is
@@ -530,7 +516,6 @@ export async function autoSplitShapes(
 
   let writes: SplitWrite[] = [];
   const split: string[] = [];
-  const unlinked: string[] = [];
   const problems: string[] = [];
   for (const owner of owners) {
     if (!ownerCanSplit(owner)) continue;
@@ -544,10 +529,9 @@ export async function autoSplitShapes(
     const result = await splitOwner(hass, owner, records);
     writes = [...writes, ...result.writes];
     split.push(...result.split);
-    unlinked.push(...result.unlinked);
     if (result.problem !== undefined) problems.push(result.problem);
   }
-  if (split.length === 0 && unlinked.length === 0 && problems.length === 0) return;
+  if (split.length === 0 && problems.length === 0) return;
 
   /** The lines the notice carries, with `lead` standing where the "Split N"
    * line stands: it is replaced, not added to, once an Undo has put the
@@ -555,7 +539,6 @@ export async function autoSplitShapes(
   const lines = (lead: string[]) => [...lead, ...problems];
   const done: string[] = [];
   if (split.length > 0) done.push(splitLine(split));
-  if (unlinked.length > 0) done.push(unlinkedLine(unlinked));
 
   const undo = () => {
     onNotice({ lines: lines(done), undo, busy: true });

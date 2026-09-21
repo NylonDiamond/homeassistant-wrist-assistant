@@ -238,9 +238,10 @@ export function exportText(
   // Hiding is about the author's own watch picker. A backup keeps it, since it
   // is a record of this copy; a share does not.
   if (mode === "share") delete encoded.hidden;
-  // A record an older panel wrote carries a `linkId`, which named the other
-  // records it was joined to on that home's own devices. Linked copies are
-  // gone and the key means nothing anywhere, least of all in another house.
+  // `linkId` joins this record to the same design on this home's other
+  // devices. It means nothing in another house, and a backup restored here
+  // comes back as a design of its own: joining a link is asked for from the
+  // card's Devices menu, never smuggled in by a paste.
   delete encoded.linkId;
   // Derived on save. Exporting it would ship a stale answer to a question the
   // reader's own save re-answers correctly.
@@ -328,6 +329,9 @@ export function parseImportText(text: string, maxSchemaVersion: number): ImportP
   // An imported complication starts shown, even from a backup of a hidden one:
   // nobody expects a design they just brought in to be missing from the watch.
   delete config.hidden;
+  // And it is a design of its own, whatever link the text names: a pasted
+  // key must never quietly join a design on somebody's watch.
+  delete config.linkId;
 
   const unknown = auditUnknownKeys(object);
   if (unknown.length > 0) {

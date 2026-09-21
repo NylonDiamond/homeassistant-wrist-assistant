@@ -486,7 +486,10 @@ describe("backup round trip", () => {
       const parsed = parseImportText(exportText(cfg, "backup"), MAX_SCHEMA);
       expect(parsed.ok, parsed.ok ? "" : parsed.error).toBe(true);
       if (!parsed.ok) return;
-      expect(withoutIdentity(parsed.config)).toEqual(withoutIdentity(cfg));
+      // The link to the same design on this home's other devices is the one
+      // thing a backup leaves behind: it comes back as a design of its own.
+      const { linkId: _link, ...want } = withoutIdentity(cfg);
+      expect(withoutIdentity(parsed.config)).toEqual(want);
     });
   }
 });
@@ -502,6 +505,8 @@ describe("share round trip", () => {
 
       const restored = remapEntities(parsed.config, originalRefs(cfg, slots));
       const want = withoutPages(cfg);
+      // The link to this home's other devices never travels in a share.
+      delete want.linkId;
       // The icon a reference carried belonged to the sender's entity.
       const stripIcons = (o: unknown): unknown => {
         if (Array.isArray(o)) return o.map(stripIcons);
@@ -976,10 +981,10 @@ describe("a merged timeline's entity list", () => {
   });
 });
 
-// `linkId` joined the copies of one complication on this home's devices. It
-// is gone: a copy is its own complication now. A document an older panel
-// wrote still carries the key, and nothing anywhere reads it.
-describe("the link key an older panel wrote", () => {
+// `linkId` joins the copies of one design on this home's devices. It never
+// travels: a share means nothing in another house, and a backup comes back
+// as a design of its own rather than quietly joining a link.
+describe("the link key", () => {
   const LINK = "8B1C2D3E-0000-4000-8000-000000000001";
 
   /** A document with every shape both devices drew, as an older panel left

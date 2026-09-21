@@ -58,6 +58,30 @@ describe("pickerListRows", () => {
     expect(rows.map((r) => r.open.ownerId)).toEqual(["w1", "p1"]);
   });
 
+  // The copies of one link are one design on several devices, and read as
+  // one card. Their ids differ on purpose, so the link is the key.
+  it("joins the copies of one link into one row, in device order", () => {
+    const rows = pickerListRows([
+      copy({ ownerId: "w2", id: "b", name: "Porch", linkId: "L1" }),
+      copy({ ownerId: "w1", id: "a", name: "Porch", linkId: "L1" }),
+      copy({ ownerId: "w1", id: "c", name: "Kitchen" }),
+    ], devices);
+    expect(rows.map((r) => [r.key, r.copies.map((c) => c.id)])).toEqual([
+      ["link:L1", ["a", "b"]],
+      ["rec:w1\u0000c", ["c"]],
+    ]);
+  });
+
+  it("opens a linked row on the device the panel has up, else its first", () => {
+    const linked = [
+      copy({ ownerId: "w1", id: "a", name: "Porch", linkId: "L1" }),
+      copy({ ownerId: "w2", id: "b", name: "Porch", linkId: "L1" }),
+    ];
+    expect(pickerListRows(linked, devices, "w2")[0]!.open.id).toBe("b");
+    expect(pickerListRows(linked, devices, "p1")[0]!.open.id).toBe("a");
+    expect(pickerListRows(linked, devices)[0]!.open.id).toBe("a");
+  });
+
   it("opens and names each row from its own copy", () => {
     const rows = pickerListRows([copy({ ownerId: "w1", id: "a", name: "Porch (watch)" })], devices);
     expect(rows[0]!.open.id).toBe("a");

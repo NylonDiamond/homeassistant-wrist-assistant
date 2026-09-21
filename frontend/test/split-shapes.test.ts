@@ -33,7 +33,6 @@ import {
   splitLine,
   splitOwner,
   targetsIn,
-  unlinkedLine,
 } from "../src/splitShapes.js";
 
 // ── the fixtures ──────────────────────────────────────────────────────────
@@ -90,11 +89,11 @@ describe("documentParts", () => {
     expect(planFor(fixture("control_only.json"))).toBe("none");
   });
 
-  it("calls a one-shape document with a linkId an unlink", () => {
-    const cfg = fixture("control_only.json");
-    const raw = { ...rawFixture("control_only.json"), linkId: "AAAAAAAA-0000-4000-8000-00000000000A" };
-    expect(planFor(cfg, raw)).toBe("unlink");
-    expect(planFor(cfg, rawFixture("control_only.json"))).toBe("none");
+  // A one-shape record's `linkId` is the link to the same design on another
+  // device, which the panel writes on purpose. This run leaves it alone.
+  it("leaves a one-shape document with a linkId alone", () => {
+    const cfg = { ...fixture("control_only.json"), linkId: "AAAAAAAA-0000-4000-8000-00000000000A" };
+    expect(planFor(cfg)).toBe("none");
   });
 });
 
@@ -524,7 +523,6 @@ describe("targetsIn", () => {
     ];
     const found = targetsIn(records);
     expect(found.split.map((t) => t.record.id)).toEqual([String(rawFixture("living_room.json").id)]);
-    expect(found.unlink).toEqual([]);
   });
 });
 
@@ -581,14 +579,14 @@ describe("splitOwner", () => {
     expect(result.problem).toContain("Not split, Living Room on Jesse's Watch");
   });
 
-  it("drops a linkId from a record it does not have to split", async () => {
+  it("keeps the linkId on a record it does not have to split", async () => {
     const raw = { ...rawFixture("control_only.json"), linkId: "AAAAAAAA-0000-4000-8000-00000000000A" };
     const fake = fakeHass({ documents: { "watch-1": [raw] } });
     const result = await splitOwner(fake.hass, ownerRow(), fake.rows["watch-1"]!.map((r) => r.record), counter());
     expect(result.split).toEqual([]);
-    expect(result.unlinked).toEqual(["Evening"]);
+    expect(result.writes).toEqual([]);
     expect(fake.live("watch-1")).toHaveLength(1);
-    expect(fake.live("watch-1")[0]!.linkId).toBeUndefined();
+    expect(fake.live("watch-1")[0]!.linkId).toBe("AAAAAAAA-0000-4000-8000-00000000000A");
   });
 });
 
@@ -715,14 +713,6 @@ describe("autoSplitShapes", () => {
     expect(fake.sent.filter((m) => m.type === `${D}/save`)).toEqual([]);
   });
 
-  it("names the records it only unlinked", async () => {
-    freshSessionStorage();
-    const raw = { ...rawFixture("control_only.json"), linkId: "AAAAAAAA-0000-4000-8000-00000000000A" };
-    const fake = fakeHass({ documents: { "watch-1": [rawFixture("living_room.json"), raw] } });
-    const notices = await run(fake, [ownerRow()]);
-    expect(notices[0]!.lines).toEqual([splitLine(["Living Room"]), unlinkedLine(["Evening"])]);
-  });
-
   it("skips a device whose list will not load and splits the rest", async () => {
     freshSessionStorage();
     const fake = fakeHass({ documents: { "watch-1": [rawFixture("living_room.json")] } });
@@ -751,9 +741,5 @@ describe("the lines the panel shows", () => {
     expect(splitLine(["Kitchen"])).toBe("Split 1 complication into one per shape: Kitchen.");
     expect(splitLine(["Kitchen", "Porch", "Zoo", "Attic"]))
       .toBe("Split 4 complications into one per shape: Kitchen, Porch, Zoo, Attic.");
-    expect(unlinkedLine(["Kitchen"]))
-      .toBe("Unlinked 1 complication that was a copy of one design: Kitchen.");
-    expect(unlinkedLine(["Kitchen", "Porch"]))
-      .toBe("Unlinked 2 complications that were copies of one design: Kitchen, Porch.");
   });
 });
