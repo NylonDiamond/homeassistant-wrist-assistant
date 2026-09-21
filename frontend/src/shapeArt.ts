@@ -396,6 +396,16 @@ function phoneBody(families: readonly FamilyKind[], live: LiveShapes, shelved: b
     ${large ?? svg`<rect x="7" y="80" width="36" height="9" rx="3" fill=${lit(has("large") || has("xlarge"))} />`}`;
 }
 
+/** How much room is left round the drawn control tile, as a share of its
+ * longer side. The tile is the whole picture rather than a window onto one,
+ * so it has to sit inside the well with air round it: filled edge to edge,
+ * its rounded ends are the first thing the card cuts off. */
+const CTL_PAD = 0.22;
+
+/** The tile a card falls back to when it has no real one to draw: a lit pill,
+ * in the proportions the watch gives a control. */
+const CTL_STANDIN = { width: 30, height: 18 };
+
 /**
  * The Control Center tile, on its own.
  *
@@ -404,14 +414,27 @@ function phoneBody(families: readonly FamilyKind[], live: LiveShapes, shelved: b
  * picture. The real one where the card has one, drawn as its own device draws
  * it (the watch's pill, the phone's circle), and a lit pill standing in for it
  * otherwise.
+ *
+ * A device crop fills its well and lets the edges be trimmed, because a window
+ * onto a screen is only ever a piece of one anyway. A tile is the whole
+ * object, so the drawn one does the opposite: its window is the pill plus a
+ * margin on every side, and `meet` fits all of it in rather than trimming its
+ * ends off against the sides of the card.
+ *
+ * The real tile is a laid-out box rather than a drawing, since that is the one
+ * picture of a control this panel has and it is shared with the editor. It
+ * keeps its own size and is centred in the well, which leaves the same margin
+ * round it without a second copy of the tile to keep in step.
  */
 function controlBeside(live: LiveShape | undefined): TemplateResult {
   if (live && live.art !== nothing) {
-    return html`<span class="pk-card-ctl" title="Control Center">${live.art}</span>`;
+    return html`<span class="pk-card-ctl">${live.art}</span>`;
   }
-  return html`<span class="pk-card-ctl" title="Control Center"><svg width="30" height="18" viewBox="0 0 30 18" aria-hidden="true">
-    <rect x="0" y="0" width="30" height="18" rx="9" fill=${ON} />
-  </svg></span>`;
+  const { width, height } = CTL_STANDIN;
+  const pad = Math.max(width, height) * CTL_PAD;
+  return html`<svg class="pk-crop ctl" viewBox=${`0 0 ${width + pad * 2} ${height + pad * 2}`}
+    preserveAspectRatio="xMidYMid meet" aria-hidden="true"><rect x=${pad} y=${pad}
+    width=${width} height=${height} rx=${height / 2} fill=${ON} /></svg>`;
 }
 
 /** A window onto one device's drawing, in that drawing's own units. */

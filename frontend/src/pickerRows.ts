@@ -156,6 +156,11 @@ export function pickerView<T>(
   return sortPickerRows(rowsOnDevice(rows, filter), devices, filter);
 }
 
+/** What the home's shelf is called wherever anyone reads it. The owner kind
+ * stays `library` everywhere in the code; this is the one word for it on
+ * screen, and a design kept there is on no device rather than filed away. */
+export const UNASSIGNED_LABEL = "Unassigned";
+
 /** Whether a device is the home's shelf rather than somebody's watch. */
 function isShelf(device: PickerDevice): boolean {
   return device.kind === "library" || device.ownerId === LIBRARY_OWNER_ID;
@@ -200,7 +205,7 @@ export function pickerTabs<T>(
   for (const device of inTabOrder(devices)) {
     tabs.push({
       key: device.ownerId,
-      label: isShelf(device) ? "Library" : device.label,
+      label: isShelf(device) ? UNASSIGNED_LABEL : device.label,
       kind: device.kind,
       count: rowsOnDevice(rows, device.ownerId).length,
     });
@@ -232,7 +237,7 @@ export function pickerSections<T>(
 ): PickerSection<T>[] {
   return inTabOrder(devices).map((device) => ({
     ownerId: device.ownerId,
-    label: isShelf(device) ? "Library" : device.label,
+    label: isShelf(device) ? UNASSIGNED_LABEL : device.label,
     kind: device.kind,
     rows: sortPickerRows(rowsOnDevice(rows, device.ownerId), devices, device.ownerId),
   }));
@@ -283,5 +288,37 @@ export function rowWhoText(ownerIds: readonly string[], people: readonly PickerP
     parts.push(`${person.label} (${mine.map((d) => deviceWord(d.kind)).join(", ")})`);
   }
   if (parts.length > 0) return parts.join(" · ");
-  return on.has(LIBRARY_OWNER_ID) ? "In the library, on no device" : "On no device yet";
+  return on.has(LIBRARY_OWNER_ID) ? "Unassigned, on no device" : "On no device yet";
+}
+
+/**
+ * Which person a device belongs to, by their place in the household list.
+ *
+ * The picker gives every person a color of their own, and both of that
+ * person's tabs wear it: a household reads its own row of tabs by hue before
+ * it reads the names. The index is the person's place in the list the panel
+ * already draws them in, so the color a person has is the same on every visit
+ * and does not move when somebody else's watch is added.
+ *
+ * -1 for a device nobody owns, which is the shelf and an orphan: those keep
+ * the accent rather than borrowing a person's color.
+ */
+export function personIndex(people: readonly PickerPerson[], ownerId: string): number {
+  return people.findIndex((person) => person.devices.some((d) => d.ownerId === ownerId));
+}
+
+/** How many colors the palette holds. A seventh person starts the six again
+ * rather than going uncolored. */
+export const PERSON_COLORS = 6;
+
+/**
+ * The custom property holding one person's color, ready to be set on a tab.
+ *
+ * Undefined for a device that is nobody's, which is what leaves the tab on
+ * the accent: the CSS reads `var(--pk-person, var(--wa-accent))`, so a tab
+ * with nothing set is the accent without a rule of its own.
+ */
+export function personColorVar(index: number): string | undefined {
+  if (index < 0) return undefined;
+  return `var(--wa-person-${(index % PERSON_COLORS) + 1})`;
 }

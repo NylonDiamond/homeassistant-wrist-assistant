@@ -211,9 +211,9 @@ export function describeSend(
       };
     case "library":
       return {
-        label: "Saved to the library.",
+        label: "Saved, and unassigned.",
         title:
-          "The library is where a design waits until it is put on something. Nothing is sent anywhere until you tick a device under Appears on.",
+          "Unassigned is where a design waits until it is put on something. Nothing is sent anywhere until you tick a device under Appears on.",
         resend: false,
         refresh: false,
       };

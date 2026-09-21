@@ -7,10 +7,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   ALL_DEVICES,
+  PERSON_COLORS,
   type PickerCopy,
   type PickerDevice,
   type PickerPerson,
   isShelvedRow,
+  personColorVar,
+  personIndex,
   pickerListRows,
   pickerSections,
   pickerTabs,
@@ -24,7 +27,7 @@ import { LIBRARY_OWNER_ID } from "../src/version.js";
 const watch: PickerDevice = { ownerId: "w1", label: "Chen", kind: "watch" };
 const watch2: PickerDevice = { ownerId: "w2", label: "Jesse Apple Watch", kind: "watch" };
 const phone: PickerDevice = { ownerId: "p1", label: "iPhone 15 Pro", kind: "iphone" };
-const shelf: PickerDevice = { ownerId: LIBRARY_OWNER_ID, label: "Library", kind: "library" };
+const shelf: PickerDevice = { ownerId: LIBRARY_OWNER_ID, label: "Unassigned", kind: "library" };
 const devices = [watch, watch2, phone];
 
 const copy = (over: Partial<PickerCopy<string>> & { ownerId: string; id: string }): PickerCopy<string> => ({
@@ -177,15 +180,15 @@ describe("pickerTabs", () => {
     expect(counts.get(LIBRARY_OWNER_ID)).toBe(1);
   });
 
-  it("names each tab after its device, and the shelf Library", () => {
+  it("names each tab after its device, and the shelf Unassigned", () => {
     const tabs = pickerTabs(rows, [...devices, shelf]);
-    expect(tabs.map((t) => t.label)).toEqual(["All", "Chen", "Jesse Apple Watch", "iPhone 15 Pro", "Library"]);
+    expect(tabs.map((t) => t.label)).toEqual(["All", "Chen", "Jesse Apple Watch", "iPhone 15 Pro", "Unassigned"]);
     expect(tabs.map((t) => t.kind)).toEqual(["all", "watch", "watch", "iphone", "library"]);
   });
 
   // A home whose integration is older than the library has no shelf at all,
   // and gets no tab for one rather than an empty tab that can never fill.
-  it("offers no Library tab in a home with no shelf", () => {
+  it("offers no Unassigned tab in a home with no shelf", () => {
     expect(pickerTabs(rows, devices).map((t) => t.key)).toEqual([ALL_DEVICES, "w1", "w2", "p1"]);
   });
 });
@@ -217,7 +220,7 @@ describe("pickerSections", () => {
 
   it("carries the heading each section wears", () => {
     const shelved = pickerSections(rows, [...devices, shelf]).at(-1);
-    expect(shelved?.label).toBe("Library");
+    expect(shelved?.label).toBe("Unassigned");
     expect(shelved?.kind).toBe("library");
     expect(shelved?.rows.map((r) => r.name)).toEqual(["Draft"]);
   });
@@ -284,16 +287,60 @@ describe("rowWhoText", () => {
     expect(rowWhoText(["w1", "gone"], people)).toBe("Chen (watch)");
   });
 
-  // On nothing and in the library are both "on no device", and they are not
-  // the same news: one is a design waiting on the shelf.
+  // On nothing and unassigned are both "on no device", and they are not the
+  // same news: one is a design waiting on the shelf.
   it("names the library when that is the only place a design is", () => {
-    expect(rowWhoText([LIBRARY_OWNER_ID], people)).toBe("In the library, on no device");
+    expect(rowWhoText([LIBRARY_OWNER_ID], people)).toBe("Unassigned, on no device");
   });
 
   // The library is not somebody's, so it is never printed beside a person. A
   // design that somehow has both reads as being on the device.
   it("says nothing about the library beside a person who has a copy", () => {
     expect(rowWhoText([LIBRARY_OWNER_ID, "w1"], people)).toBe("Chen (watch)");
+  });
+});
+
+// The picker colors its tabs by person, so both of one person's devices read
+// as a pair before either name has been read.
+describe("personIndex", () => {
+  const jesse: PickerPerson = {
+    label: "Jesse",
+    devices: [{ ownerId: "w2", kind: "watch" }, { ownerId: "p1", kind: "iphone" }],
+  };
+  const chen: PickerPerson = {
+    label: "Chen",
+    devices: [{ ownerId: "w1", kind: "watch" }, { ownerId: "p2", kind: "iphone" }],
+  };
+  const people = [jesse, chen];
+
+  it("gives a person's own devices the same place in the list", () => {
+    expect(personIndex(people, "w2")).toBe(0);
+    expect(personIndex(people, "p1")).toBe(0);
+    expect(personIndex(people, "w1")).toBe(1);
+    expect(personIndex(people, "p2")).toBe(1);
+  });
+
+  // The shelf is nobody's, and so is a device that has left the home. Both
+  // keep the accent rather than borrowing the first person's color.
+  it("gives a device nobody owns no person at all", () => {
+    expect(personIndex(people, LIBRARY_OWNER_ID)).toBe(-1);
+    expect(personIndex(people, ALL_DEVICES)).toBe(-1);
+    expect(personIndex(people, "gone")).toBe(-1);
+    expect(personIndex([], "w1")).toBe(-1);
+  });
+
+  it("hands out one custom property per person, and none to nobody", () => {
+    expect(personColorVar(personIndex(people, "w2"))).toBe("var(--wa-person-1)");
+    expect(personColorVar(personIndex(people, "p1"))).toBe("var(--wa-person-1)");
+    expect(personColorVar(personIndex(people, "w1"))).toBe("var(--wa-person-2)");
+    expect(personColorVar(personIndex(people, LIBRARY_OWNER_ID))).toBeUndefined();
+  });
+
+  // A household bigger than the palette starts it again rather than leaving
+  // the seventh person uncolored.
+  it("wraps round the palette rather than running out", () => {
+    expect(personColorVar(PERSON_COLORS)).toBe("var(--wa-person-1)");
+    expect(personColorVar(PERSON_COLORS - 1)).toBe(`var(--wa-person-${PERSON_COLORS})`);
   });
 });
 

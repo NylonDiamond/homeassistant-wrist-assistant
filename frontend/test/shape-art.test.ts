@@ -362,16 +362,53 @@ describe("deviceCropArt", () => {
   // A control sits on neither screen, so there is no device to crop: the tile
   // is the whole picture.
   describe("a design that is only a control", () => {
+    /** Where the tile itself is in the drawing, which is the standin's own
+     * size at the corner the padding puts it on. */
+    const standin = (art: string) => {
+      const found = /<rect\s+x=([\d.]+)\s+y=([\d.]+)\s+width=([\d.]+)\s+height=([\d.]+)/.exec(art);
+      expect(found, art.slice(0, 120)).not.toBeNull();
+      const [x, y, width, height] = found!.slice(1).map(Number) as [number, number, number, number];
+      return { x, y, width, height };
+    };
+
     it("draws the tile alone in place of a device", () => {
       const art = crop(undefined, "watch");
-      expect(art).toContain(`class="pk-card-ctl"`);
-      expect(art).not.toContain("viewBox=0");
+      expect(art).toContain(`class="pk-crop ctl"`);
+      expect(art).toContain(`fill=var(--wa-accent)`);
     });
 
+    // The whole tile, not a window onto one. A device crop fills its well and
+    // lets the edges be trimmed; a tile trimmed that way loses its rounded
+    // ends against the sides of the card, so this one is fitted instead.
+    it("fits the whole tile in the well rather than trimming it", () => {
+      expect(crop(undefined, "watch")).toContain(`preserveAspectRatio="xMidYMid meet"`);
+      expect(crop(undefined, "watch")).not.toContain("slice");
+    });
+
+    it("keeps the whole tile inside the window, with room on every side", () => {
+      const art = crop(undefined, "watch");
+      const box = viewBox(art);
+      const tile = standin(art);
+      expect(box.x).toBe(0);
+      expect(box.y).toBe(0);
+      // Every edge of the tile is inside the window, with the same margin on
+      // all four sides.
+      expect(tile.x).toBeGreaterThan(0);
+      expect(tile.y).toBeGreaterThan(0);
+      expect(tile.x + tile.width).toBeLessThan(box.width);
+      expect(tile.y + tile.height).toBeLessThan(box.height);
+      expect(box.width - (tile.x + tile.width)).toBeCloseTo(tile.x, 6);
+      expect(box.height - (tile.y + tile.height)).toBeCloseTo(tile.y, 6);
+    });
+
+    // The real tile is the editor's own laid-out box rather than a drawing,
+    // so it is handed over as it is and the well centres it. Nothing wraps it
+    // in a window: a box of HTML inside an svg viewBox is not a thing.
     it("draws the real tile where the card has one", () => {
       const tile = { art: svg`<div data-tag="tile"></div>`, width: 48, height: 30 };
       const art = crop(undefined, "iphone", { control: tile });
       expect(art).toContain(`data-tag="tile"`);
+      expect(art).toContain(`class="pk-card-ctl"`);
       expect(art).not.toContain(`width="30" height="18" rx="9"`);
     });
   });

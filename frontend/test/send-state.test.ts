@@ -223,7 +223,7 @@ describe("the library", () => {
 
   it("says where it went and offers neither Resend nor Refresh", () => {
     const d = describeSend({ kind: "library" });
-    expect(d.label).toBe("Saved to the library.");
+    expect(d.label).toBe("Saved, and unassigned.");
     expect(d.note).toBeUndefined();
     expect(d.resend).toBe(false);
     expect(d.refresh).toBe(false);

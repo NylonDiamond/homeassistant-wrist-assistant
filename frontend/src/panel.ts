@@ -180,7 +180,10 @@ import {
   type PickerSection,
   type PickerTab,
   ALL_DEVICES,
+  UNASSIGNED_LABEL,
   isShelvedRow,
+  personColorVar,
+  personIndex,
   pickerListRows,
   pickerSections,
   pickerTabs,
@@ -495,14 +498,20 @@ function tabIcon(kind: DeviceKind | "all"): UiIconName {
   return kind === "all" ? "grid" : kind === "iphone" ? "phone" : kind === "library" ? "layers" : "watch";
 }
 
-/** What the library is for, said where the shelf is rather than in a tooltip:
- * nobody puts a design on a shelf without being told what the shelf is. */
-const LIBRARY_NOTE = "Designs kept here are on no device. Duplicate one to a device to use it.";
+/** What Unassigned is for, said where it is rather than in a tooltip: nobody
+ * leaves a design there without being told what it means. */
+const LIBRARY_NOTE = "Not on any device yet. Duplicate one to a device to use it.";
+
+/** A phrase at the head of a sentence. "this watch" and "Unassigned" both go
+ * in the same slot, and only one of them starts with a capital already. */
+function capFirst(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
 
 /** What an empty device says, in its own words. A watch with nothing on it and
  * a shelf with nothing on it are different news. */
 function nothingOnText(kind: DeviceKind | "all"): string {
-  if (kind === "library") return "The library is empty.";
+  if (kind === "library") return "Nothing is unassigned.";
   if (kind === "iphone") return "Nothing on this iPhone yet.";
   if (kind === "watch") return "Nothing on this watch yet.";
   return "No complications yet.";
@@ -1557,6 +1566,17 @@ export class WristAssistantPanel extends LitElement {
          than the screen and darker than the furniture, so an unlit slot is a
          place that is empty rather than a shape nobody can see. */
       --wa-art-off: #3a372f;
+      /* One color per person in the picker, handed out by their place in the
+         household list. Six hues far enough apart to be told apart at the
+         size of a tab glyph, each dark enough here to clear 4.5:1 on a white
+         card; the dark skin sets its own lighter six, since no single value
+         can clear that bar against white and against near-black at once. */
+      --wa-person-1: #6d28d9;
+      --wa-person-2: #0f766e;
+      --wa-person-3: #9a5b00;
+      --wa-person-4: #be123c;
+      --wa-person-5: #0369a1;
+      --wa-person-6: #4d7c0f;
       --wa-r-sm: 8px;
       --wa-r-md: 12px;
       --wa-r-lg: 16px;
@@ -1596,6 +1616,13 @@ export class WristAssistantPanel extends LitElement {
       --wa-art-dock: #14161f;
       --wa-art-blur: #0f1119;
       --wa-art-off: #1b1f2b;
+      /* The same six hues, lifted for the dark ground. */
+      --wa-person-1: #a78bfa;
+      --wa-person-2: #5eead4;
+      --wa-person-3: #fbbf24;
+      --wa-person-4: #fb7185;
+      --wa-person-5: #38bdf8;
+      --wa-person-6: #a3e635;
       --wa-shadow-pop: 0 16px 48px rgba(0,0,0,.6);
       color-scheme: dark;
       scrollbar-color: rgba(255,255,255,.14) transparent;
@@ -1775,13 +1802,21 @@ export class WristAssistantPanel extends LitElement {
     .pk-chip:disabled { opacity: .35; cursor: default; }
     .pk-chip.on { border-color: var(--wa-accent); color: var(--wa-ink); background: color-mix(in srgb, var(--wa-accent) 18%, transparent); }
 
-    /* The device tabs under the head: All, a tab per device, the library
+    /* The device tabs under the head: All, a tab per device, Unassigned
        last. Each one carries its own count, so an empty device says so
-       before it is opened. */
+       before it is opened.
+
+       They wrap onto a second row rather than scrolling sideways. A household
+       of four people has eight device tabs, and a sideways scroller hides
+       half of them behind a bar nobody thinks to drag: the whole point of the
+       row is that the home is visible at a glance. */
     .pk-tabs {
-      display: flex; align-items: stretch; gap: 2px; flex: none; overflow-x: auto;
+      display: flex; align-items: stretch; flex-wrap: wrap; gap: 2px; flex: none;
       padding: 0 12px; border-bottom: 1px solid var(--wa-line);
     }
+    /* The --pk-person property is that person's color, set on the tab itself,
+       so the six colors need no class each. A tab that is nobody's leaves it
+       unset and falls back to the accent. */
     .pk-tab {
       display: inline-flex; align-items: center; gap: 7px; flex: none; cursor: pointer;
       font: inherit; font-size: 12.5px; font-weight: 500; color: var(--wa-muted); white-space: nowrap;
@@ -1790,11 +1825,14 @@ export class WristAssistantPanel extends LitElement {
     }
     .pk-tab:hover { color: var(--wa-ink); }
     .pk-tab:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 7px 7px 0 0; }
-    .pk-tab.on { color: var(--wa-ink); font-weight: 700; border-bottom-color: var(--wa-accent); }
+    .pk-tab.on { color: var(--wa-ink); font-weight: 700; border-bottom-color: var(--pk-person, var(--wa-accent)); }
     .pk-tab svg { width: 15px; height: 15px; }
-    .pk-tab.on .pk-tab-glyph { color: var(--wa-accent); }
-    .pk-tab-glyph { display: inline-flex; flex: none; }
-    .pk-tab-count { font-size: 11.5px; font-weight: 400; opacity: .7; }
+    /* The glyph and the count wear the color; the name stays ink, so a row of
+       eight tabs is not eight colors of text. One person's watch and one
+       person's iPhone are the same color, which is what makes the row read as
+       people rather than as devices. */
+    .pk-tab-glyph { display: inline-flex; flex: none; color: var(--pk-person, var(--wa-accent)); }
+    .pk-tab-count { font-size: 11.5px; font-weight: 400; opacity: .8; color: var(--pk-person, var(--wa-accent)); }
     /* One shape at a time, in the head beside the search. A menu rather than
        a chip each: eight pills for a question most visits never ask. */
     .pk-shape { display: inline-flex; align-items: center; gap: 6px; flex: none; }
@@ -1828,7 +1866,7 @@ export class WristAssistantPanel extends LitElement {
        strip and drop it to the middle of the screen. A short list leaves
        the grid's floor empty instead; the eye stays where the tabs are. */
     dialog.pk-dialog {
-      width: min(880px, 100vw - 32px); height: min(860px, 85vh); padding: 0;
+      width: min(1040px, 100vw - 32px); height: min(960px, 92vh); padding: 0;
       border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg);
       background: var(--wa-card); color: var(--wa-ink); box-shadow: var(--wa-shadow-pop);
       display: flex; flex-direction: column; overflow: hidden;
@@ -1866,13 +1904,14 @@ export class WristAssistantPanel extends LitElement {
     .pk-sec + .pk-sec { margin-top: 20px; }
     .pk-sec-top { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
     .pk-sec-head { display: flex; align-items: center; gap: 9px; margin: 0; font-size: 13px; font-weight: 700; flex: none; }
-    .pk-sec-glyph { display: inline-flex; flex: none; color: var(--wa-accent); }
+    /* The person's own color, the same one their tabs wear, so the All tab's
+       headings and the row of tabs agree about whose is whose. */
+    .pk-sec-glyph { display: inline-flex; flex: none; color: var(--pk-person, var(--wa-accent)); }
     .pk-sec-glyph svg { width: 16px; height: 16px; }
     .pk-sec-name { color: var(--wa-ink); }
-    .pk-sec-count { font-size: 12px; font-weight: 400; color: var(--wa-muted); }
-    /* What the library is, said where the shelf is rather than in a tooltip:
-       nobody duplicates a design onto a shelf without being told what the
-       shelf is for. */
+    .pk-sec-count { font-size: 12px; font-weight: 400; color: var(--pk-person, var(--wa-accent)); opacity: .8; }
+    /* What Unassigned is, said where it is rather than in a tooltip: nobody
+       duplicates a design into it without being told what it is for. */
     .pk-sec-note {
       margin: 0; font-size: 12px; font-weight: 400; color: var(--wa-muted); min-width: 0;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -1921,14 +1960,30 @@ export class WristAssistantPanel extends LitElement {
       height: 88px; border-radius: 10px; background: #000; box-shadow: inset 0 0 0 1px rgba(255,255,255,.1);
     }
     .pk-card-crop > svg.pk-crop { display: block; width: 100%; height: 100%; }
-    /* A design that is only a Control Center control has its tile as the
-       whole picture: it sits on neither screen, so there is no device to crop. */
-    .pk-card-crop .pk-card-ctl { display: inline-flex; align-items: center; }
-    .pk-card-crop .pk-card-ctl svg { display: block; height: 44px; width: auto; }
+    /* A design that is only a Control Center control has its tile as the whole
+       picture: it sits on neither screen, so there is no device to crop. The
+       real tile is the editor's own laid-out box, so it keeps the size it was
+       drawn at and is centred with the well's own room round it. Nothing here
+       may size the glyph inside it: a rule that set every svg in the tile to
+       the tile's height blew the symbol up to fill the pill, and the pill,
+       which clips, cut its own rounded ends off. */
+    .pk-card-crop .pk-card-ctl {
+      display: flex; align-items: center; justify-content: center;
+      max-width: 100%; max-height: 100%; padding: 8px;
+    }
     .pk-card-crop.none { font-size: 11.5px; color: var(--wa-muted); }
-    /* The name and the shape, on one line under the picture. One line, cut
-       with an ellipsis rather than wrapped, so every card is the same height. */
-    .pk-card-foot { display: flex; align-items: center; gap: 7px; margin-top: 9px; min-width: 0; }
+    /* The name over the picture, the shape under it. The name is what a card
+       is looked up by, so it reads first, on the line the eye starts on
+       rather than under a picture it has to be found beneath. Both rows are
+       one line, cut with an ellipsis rather than wrapped, so every card in
+       the grid is the same height. */
+    .pk-card-top { display: flex; align-items: center; gap: 7px; min-height: 18px; margin-bottom: 9px; min-width: 0; }
+    /* The picture and the buttons that sit over it. Its own box, so the
+       actions are in the picture's corner rather than over the name. */
+    .pk-card-pic { position: relative; min-width: 0; }
+    .pk-card-foot { display: flex; align-items: center; gap: 7px; margin-top: 9px; min-height: 16px; min-width: 0; }
+    /* Whatever is on the left of the foot, the shape keeps the right end. */
+    .pk-card-foot .pk-card-shape { margin-left: auto; }
     .pk-card-name {
       flex: 1; min-width: 0; text-align: left; font: inherit; font-size: 13px; font-weight: 700;
       color: inherit; background: transparent; border: 0; padding: 0; cursor: pointer;
@@ -1972,12 +2027,13 @@ export class WristAssistantPanel extends LitElement {
     .pk-dup-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .pk-dup-full { flex: none; font-size: 10px; color: var(--wa-muted); }
     .pk-dup-note { font-size: 10px; line-height: 1.4; color: var(--wa-muted); border-top: 1px solid var(--wa-line); padding-top: 6px; }
-    /* Duplicate, hide and delete, in the card's own top corner over the
-       picture. Only on hover, or while the keyboard is in the card, or while
-       a menu or a confirm is open: a wall of cards with three buttons on
-       every one of them is a wall of buttons. */
+    /* Duplicate, hide and delete, in the picture's own top corner. Only on
+       hover, or while the keyboard is in the card, or while a menu or a
+       confirm is open: a wall of cards with three buttons on every one of
+       them is a wall of buttons. Over the picture rather than over the card,
+       so they never sit on top of the name. */
     .pk-card-acts {
-      position: absolute; right: 10px; top: 10px; display: flex; align-items: center; gap: 3px;
+      position: absolute; right: 8px; top: 8px; display: flex; align-items: center; gap: 3px;
       opacity: 0; transition: opacity .12s ease-out;
     }
     .pk-card:hover .pk-card-acts, .pk-card:focus-within .pk-card-acts,
@@ -6276,6 +6332,14 @@ export class WristAssistantPanel extends LitElement {
     return deviceNoun(this.selectedOwner);
   }
 
+  /** The place being edited, as a sentence names it. A device is "this
+   * watch"; Unassigned is not a device, so it is named rather than pointed
+   * at: "this unassigned" is not English and "this library" was the word
+   * nobody reading the picker sees any more. */
+  private get placePhrase(): string {
+    return isLibraryOwner(this.selectedOwner) ? UNASSIGNED_LABEL : `this ${this.deviceWord}`;
+  }
+
 
   /** The canvas shape the layer controls work on. Inline has no canvas, so
    * while it is active the placement fields and drags target the document's
@@ -7489,7 +7553,7 @@ export class WristAssistantPanel extends LitElement {
     ];
     const saving: [string, string][] = [
       ["Save", `Writes the complication to Home Assistant (${m}S). A new one says Save new until then. Only an administrator can save.`],
-      ["Library", "A design made with no device ticked is kept in the library. Nothing shows it until a copy of it goes on a device."],
+      ["Unassigned", "A design made with no device ticked is kept as unassigned. Nothing shows it until a copy of it goes on a device."],
       ["The dot", "Beside Save: unsaved changes, saved, or not saved yet. The footer says the same in words."],
       ["Reaching the watch", "The watch pulls saved changes by itself while Wrist Assistant is open on this home. There is no separate send step."],
       ["Hide", "The eye beside a complication in the list. It stops the watch offering that complication when you edit a face, and faces already using it keep it. Hidden ones fold into Hidden at the bottom of the list. For the open complication it saves with Save; for any other it saves at once."],
@@ -8503,16 +8567,26 @@ export class WristAssistantPanel extends LitElement {
    * is first and is where the picker opens, because the whole home in one
    * scroll is what this surface is for; the tab that was last used comes back
    * on the next visit.
+   *
+   * Each person's devices wear that person's color, on the glyph, the count
+   * and the underline of the selected one. A household of four has eight
+   * device tabs over two rows, and hue is what makes "Jesse's two" read as a
+   * pair before any of the names have been read. All and Unassigned belong to
+   * nobody and keep the accent.
    */
-  private renderPickerTabs(tabs: readonly PickerTab[], current: string) {
+  private renderPickerTabs(tabs: readonly PickerTab[], current: string, people: readonly PickerPerson[]) {
     return html`<div class="pk-tabs" role="tablist" aria-label="Devices">
-      ${tabs.map((tab) => html`<button type="button" role="tab" class="pk-tab ${tab.key === current ? "on" : ""}"
-        id=${`pk-tab-${tab.key}`} aria-selected=${tab.key === current ? "true" : "false"}
-        aria-controls="pk-tabpanel" @click=${() => this.pickPickerTab(tab.key)}>
-        <span class="pk-tab-glyph" aria-hidden="true">${uiIcon(tabIcon(tab.kind))}</span>
-        <span class="pk-tab-name">${tab.label}</span>
-        <span class="pk-tab-count">${tab.count}</span>
-      </button>`)}
+      ${tabs.map((tab) => {
+        const color = personColorVar(personIndex(people, tab.key));
+        return html`<button type="button" role="tab" class="pk-tab ${tab.key === current ? "on" : ""}"
+          id=${`pk-tab-${tab.key}`} aria-selected=${tab.key === current ? "true" : "false"}
+          style=${color ? `--pk-person: ${color}` : nothing}
+          aria-controls="pk-tabpanel" @click=${() => this.pickPickerTab(tab.key)}>
+          <span class="pk-tab-glyph" aria-hidden="true">${uiIcon(tabIcon(tab.kind))}</span>
+          <span class="pk-tab-name">${tab.label}</span>
+          <span class="pk-tab-count">${tab.count}</span>
+        </button>`;
+      })}
     </div>`;
   }
 
@@ -8677,7 +8751,7 @@ export class WristAssistantPanel extends LitElement {
             ${d && d.baseRevision === null ? html`<span class="pk-rev">unsaved</span>` : nothing}
           </span>
           ${shelved
-            ? html`<span class="pk-open-who">in the library</span>`
+            ? html`<span class="pk-open-who">unassigned</span>`
             : who === "" ? nothing : html`<span class="pk-open-who">on ${who}</span>`}
         </span>
         ${this.shapeDots(families, d?.config.control !== undefined)}
@@ -8756,12 +8830,12 @@ export class WristAssistantPanel extends LitElement {
         </label>
         <button class="icon" title="Close" aria-label="Close" @click=${() => this.closePicker()}>${uiIcon("close")}</button>
       </div>
-      ${this.ownerBusy ? nothing : this.renderPickerTabs(tabs, tab)}
+      ${this.ownerBusy ? nothing : this.renderPickerTabs(tabs, tab, this.pickerPeople(people))}
       <div class="pk-body" id="pk-tabpanel" role="tabpanel" aria-labelledby=${`pk-tab-${tab}`}>
         ${this.ownerBusy
           ? html`<div class="empty">Loading…</div>`
           : tab === ALL_DEVICES
-            ? this.renderPickerSections(rows, devices, query !== "" || filter !== "all", unsaved, emptyOf)
+            ? this.renderPickerSections(rows, devices, query !== "" || filter !== "all", unsaved, emptyOf, this.pickerPeople(people))
             : this.renderPickerTabBody(rows, devices, tab, unsaved, emptyOf)}
       </div>
       ${this.renderPickerFoot()}
@@ -8786,6 +8860,7 @@ export class WristAssistantPanel extends LitElement {
     narrowed: boolean,
     unsaved: Draft | undefined,
     emptyOf: string,
+    people: readonly PickerPerson[],
   ) {
     // A home holding nothing at all says that once, rather than once per
     // device: four headings over four apologies is a wall of nothing.
@@ -8795,7 +8870,7 @@ export class WristAssistantPanel extends LitElement {
       || this.unsavedBelongsTo(unsaved, section.ownerId)
       || (!narrowed && section.kind !== "library"));
     if (sections.length === 0) return html`<div class="empty">${emptyOf}</div>`;
-    return html`${sections.map((section) => this.renderPickerSection(section, unsaved))}`;
+    return html`${sections.map((section) => this.renderPickerSection(section, unsaved, people))}`;
   }
 
   /** One device tab: that device's cards on their own, with no heading over
@@ -8817,11 +8892,13 @@ export class WristAssistantPanel extends LitElement {
     </div>`;
   }
 
-  /** One device's block of the All tab: its heading, then its cards. */
-  private renderPickerSection(section: PickerSection<PickerItem>, unsaved: Draft | undefined) {
+  /** One device's block of the All tab: its heading, then its cards. The
+   * heading wears its owner's color, the same one that person's tabs wear. */
+  private renderPickerSection(section: PickerSection<PickerItem>, unsaved: Draft | undefined, people: readonly PickerPerson[]) {
     const mine = this.unsavedBelongsTo(unsaved, section.ownerId) ? unsaved : undefined;
     const count = section.rows.length + (mine ? 1 : 0);
-    return html`<section class="pk-sec">
+    const color = personColorVar(personIndex(people, section.ownerId));
+    return html`<section class="pk-sec" style=${color ? `--pk-person: ${color}` : nothing}>
       <div class="pk-sec-top">
         <h3 class="pk-sec-head">
           <span class="pk-sec-glyph" aria-hidden="true">${uiIcon(tabIcon(section.kind))}</span>
@@ -8856,10 +8933,14 @@ export class WristAssistantPanel extends LitElement {
     const device = this.cardDevice(kind, family);
     const live = this.cardLive(cfg, this.historyEntities(cfg));
     return html`<div class="pk-card ${kind === "library" ? "shelved" : ""}" aria-current="true">
-      <span class="pk-card-crop">${deviceCropArt(family, device, device === "iphone" ? live.phone : live.watch, { shelved: kind === "library" })}</span>
-      <div class="pk-card-foot">
+      <div class="pk-card-top">
         <span class="pk-card-name">${cfg.name.trim() || "Untitled"}</span>
         <span class="pk-badge">unsaved</span>
+      </div>
+      <div class="pk-card-pic">
+        <span class="pk-card-crop">${deviceCropArt(family, device, device === "iphone" ? live.phone : live.watch, { shelved: kind === "library" })}</span>
+      </div>
+      <div class="pk-card-foot">
         <span class="pk-card-shape">${cardShapeTitle(family, cfg.control !== undefined)}</span>
       </div>
     </div>`;
@@ -8882,7 +8963,7 @@ export class WristAssistantPanel extends LitElement {
     const said = this.saveError ?? this.copyStatus;
     return html`<div class="pk-foot">
       ${said === undefined
-        ? html`<span class="pk-foot-hint">Click a card to open it. Hover a card for Duplicate, Shelve and Delete.</span>`
+        ? html`<span class="pk-foot-hint">Click a card to open it. Hover a card for Duplicate, Unassign and Delete.</span>`
         : html`<span class="pk-foot-said ${this.saveError ? "err" : ""}">${said}</span>
           <button type="button" class="ghost small"
             @click=${() => { this.saveError = undefined; this.copyStatus = undefined; this.copyOpen = undefined; }}>Dismiss</button>`}
@@ -8913,16 +8994,20 @@ export class WristAssistantPanel extends LitElement {
       const family = families[0];
       const kind = deviceKindOf(this.ownerOf(copy.ownerId));
       return html`<div class="pk-card locked ${shelved ? "shelved" : ""}">
-        <button type="button" class="pk-card-open" title=${item.title}
-          @click=${() => { this.pickerNote = this.pickerNote === row.key ? undefined : row.key; }}>
-          ${family === undefined
-            ? html`<span class="pk-card-crop none">No preview</span>`
-            : html`<span class="pk-card-crop">${deviceCropArt(family, this.cardDevice(kind, family), {}, { shelved })}</span>`}
-        </button>
-        <div class="pk-card-foot">
+        <div class="pk-card-top">
           <button type="button" class="pk-card-name" title=${item.title}
             @click=${() => { this.pickerNote = this.pickerNote === row.key ? undefined : row.key; }}>${row.name}</button>
           <span class="pk-badge">${item.badge}</span>
+        </div>
+        <div class="pk-card-pic">
+          <button type="button" class="pk-card-open" title=${item.title}
+            @click=${() => { this.pickerNote = this.pickerNote === row.key ? undefined : row.key; }}>
+            ${family === undefined
+              ? html`<span class="pk-card-crop none">No preview</span>`
+              : html`<span class="pk-card-crop">${deviceCropArt(family, this.cardDevice(kind, family), {}, { shelved })}</span>`}
+          </button>
+        </div>
+        <div class="pk-card-foot">
           ${families.length === 0 ? nothing : html`<span class="pk-card-shape">${shapeListText(families, false)}</span>`}
         </div>
         ${this.pickerNote === row.key ? html`<div class="pk-note">${item.title}</div>` : nothing}
@@ -8943,7 +9028,13 @@ export class WristAssistantPanel extends LitElement {
     const families = ALL_FAMILIES.filter((f) => familiesOf(drawn).includes(f));
     const family = families[0];
     const control = hasControlOf(drawn);
-    const word = deviceNoun(this.ownerOf(actOwnerId));
+    // Which list Hide takes it out of. A device has its own list of
+    // complications; Unassigned is a place rather than a device, so it is
+    // named instead of being called "the Unassigned's complication list".
+    const actOwner = this.ownerOf(actOwnerId);
+    const listOf = isLibraryOwner(actOwner)
+      ? "the Unassigned list"
+      : `the ${deviceNoun(actOwner)}'s complication list`;
     const kind = deviceKindOf(this.ownerOf(copy.ownerId));
     const device = this.cardDevice(kind, family);
     // The open complication goes through the inspector's own Delete, so an
@@ -8959,32 +9050,34 @@ export class WristAssistantPanel extends LitElement {
     const menu = this.pickerDupFor === row.key;
     return html`<div class="pk-card ${hidden ? "dim" : ""} ${menu ? "over" : ""} ${shelved ? "shelved" : ""}"
       aria-current=${open ? "true" : "false"}>
-      <button type="button" class="pk-card-open" title="Open this complication"
-        aria-label=${`Open ${recName}`} @click=${() => void this.openFromPicker(row)}>
-        <span class="pk-card-crop">${deviceCropArt(family, device,
-          live ? (device === "iphone" ? live.phone : live.watch) : {}, { shelved })}</span>
-      </button>
-      <div class="pk-card-foot">
+      <div class="pk-card-top">
         <button type="button" class="pk-card-name" title="Open this complication"
           @click=${() => void this.openFromPicker(row)}>${recName}</button>
+      </div>
+      <div class="pk-card-pic">
+        <button type="button" class="pk-card-open" title="Open this complication"
+          aria-label=${`Open ${recName}`} @click=${() => void this.openFromPicker(row)}>
+          <span class="pk-card-crop">${deviceCropArt(family, device,
+            live ? (device === "iphone" ? live.phone : live.watch) : {}, { shelved })}</span>
+        </button>
+        <span class="pk-card-acts ${confirming ? "asking" : ""}">
+          ${confirming
+            ? html`<button type="button" class="ghost danger small" ?disabled=${this.saving}
+                @click=${(e: Event) => { stop(e); void (open ? this.deleteCurrent() : this.deleteSaved(record.id, record.revision, actOwnerId)); }}>Really delete</button>
+              <button type="button" class="ghost small" @click=${(e: Event) => { stop(e); this.pickerConfirmDelete = undefined; }}>Cancel</button>`
+            : html`${this.renderPickerDup(row, family, menu)}
+              ${mayDelete ? html`<button type="button" class="icon" ?disabled=${!open && this.saving}
+                title=${hidden ? `Hidden from ${listOf}. Show it there again.` : `Hide from ${listOf}. Faces already using it keep it.`}
+                aria-label=${hidden ? `Show ${recName} in ${listOf}` : `Hide ${recName} from ${listOf}`}
+                @click=${(e: Event) => { stop(e); void this.setPickerHidden(record, !hidden, actOwnerId); }}>${uiIcon(hidden ? "hide" : "show")}</button>
+              <button type="button" class="icon danger" title="Delete this complication" aria-label=${`Delete ${recName}`}
+                ?disabled=${this.saving} @click=${(e: Event) => { stop(e); this.pickerConfirmDelete = record.id; }}>${uiIcon("delete")}</button>` : nothing}`}
+        </span>
+      </div>
+      <div class="pk-card-foot">
         ${hidden ? html`<span class="pk-tag" title="These do not show in their device's own list of complications. A face or widget that already has one keeps it.">hidden</span>` : nothing}
         <span class="pk-card-shape">${cardShapeTitle(family, control)}</span>
       </div>
-      <span class="pk-card-acts ${confirming ? "asking" : ""}">
-        ${confirming
-          ? html`<button type="button" class="ghost danger small" ?disabled=${this.saving}
-              @click=${(e: Event) => { stop(e); void (open ? this.deleteCurrent() : this.deleteSaved(record.id, record.revision, actOwnerId)); }}>Really delete</button>
-            <button type="button" class="ghost small" @click=${(e: Event) => { stop(e); this.pickerConfirmDelete = undefined; }}>Cancel</button>`
-          : html`${this.renderPickerDup(row, family, menu)}
-            ${mayDelete ? html`<button type="button" class="icon" ?disabled=${!open && this.saving}
-              title=${hidden
-                ? `Hidden from the ${word}'s complication list. Show it there again.`
-                : `Hide from the ${word}'s complication list. Faces already using it keep it.`}
-              aria-label=${hidden ? `Show ${recName} in the ${word}'s complication list` : `Hide ${recName} from the ${word}'s complication list`}
-              @click=${(e: Event) => { stop(e); void this.setPickerHidden(record, !hidden, actOwnerId); }}>${uiIcon(hidden ? "hide" : "show")}</button>
-            <button type="button" class="icon danger" title="Delete this complication" aria-label=${`Delete ${recName}`}
-              ?disabled=${this.saving} @click=${(e: Event) => { stop(e); this.pickerConfirmDelete = record.id; }}>${uiIcon("delete")}</button>` : nothing}`}
-      </span>
     </div>`;
   }
 
@@ -9012,7 +9105,7 @@ export class WristAssistantPanel extends LitElement {
     const mayShelve = shelf !== undefined && from.ownerId !== shelf.ownerId && this.selectedCopyOf(row) === undefined;
     return html`<span class="pk-dup" data-dup=${row.key}>
       <button type="button" class="pk-dup-open ${open ? "on" : ""}" aria-expanded=${open ? "true" : "false"}
-        title="Make this design again on another device, or put it back in the library" ?disabled=${this.saving}
+        title="Make this design again on another device, or take it off the one it is on" ?disabled=${this.saving}
         @click=${() => { if (open) this.closePickerDup(); else this.openPickerDup(row.key); }}>Duplicate to${uiIcon("chevron")}</button>
       ${open ? html`<div class="pk-dup-menu" role="group" aria-label=${`Duplicate ${row.name}`}>
         <div class="pk-dup-head">A ${shape} copy on</div>
@@ -9024,10 +9117,10 @@ export class WristAssistantPanel extends LitElement {
           @click=${() => this.duplicateAsFromCard(row)}>${uiIcon("shape")}
           <span class="pk-dup-name">Duplicate as another shape…</span></button>
         ${mayShelve ? html`<button type="button" class="pk-dup-row move" ?disabled=${this.saving}
-          title="Take it off this device and keep it in the library. A face or widget already using it keeps it."
+          title="Take it off this device and keep it as unassigned. A face or widget already using it keeps it."
           @click=${() => void this.shelveRow(row)}>${uiIcon("layers")}
-          <span class="pk-dup-name">Shelve to library</span></button>` : nothing}
-        <div class="pk-dup-note">A copy is written now and is a complication of its own from then on. Shelving moves this one instead.</div>
+          <span class="pk-dup-name">Unassign from device</span></button>` : nothing}
+        <div class="pk-dup-note">A copy is written now and is a complication of its own from then on. Unassigning moves this one instead.</div>
       </div>` : nothing}
     </span>`;
   }
@@ -9036,11 +9129,11 @@ export class WristAssistantPanel extends LitElement {
    * says so rather than being quietly greyed. */
   private renderPickerDupTarget(row: PickerRow, target: DeviceOwner, family: FamilyKind | undefined) {
     const full = this.freeSlotOn(target.ownerId, family) < 0;
-    const label = target.kind === "library" ? "Library" : target.label;
+    const label = target.kind === "library" ? UNASSIGNED_LABEL : target.label;
     return html`<button type="button" class="pk-dup-row" ?disabled=${this.saving || full}
       title=${full
         ? `${label} has no free seat for this shape (iPhone presets count too). Delete a complication on it first.`
-        : `Write a copy on ${label}`}
+        : target.kind === "library" ? "Write a copy and leave it unassigned" : `Write a copy on ${label}`}
       @click=${() => void this.duplicateRowTo(row, target)}>
       ${uiIcon(target.kind === "iphone" ? "phone" : target.kind === "library" ? "layers" : "watch")}
       <span class="pk-dup-name">${label}</span>
@@ -9097,7 +9190,7 @@ export class WristAssistantPanel extends LitElement {
     if (!cfg) return;
     this.closePickerDup();
     const family = supportedFamilies(cfg)[0];
-    const label = target.kind === "library" ? "the library" : target.label;
+    const label = target.kind === "library" ? UNASSIGNED_LABEL : target.label;
     this.saving = true;
     this.saveError = undefined;
     try {
@@ -9115,7 +9208,9 @@ export class WristAssistantPanel extends LitElement {
         this.saveError = out.message ?? out.error ?? "Save failed";
         return;
       }
-      this.copyStatus = `${row.name} is on ${label} now, as its own complication to edit there.`;
+      this.copyStatus = target.kind === "library"
+        ? `${row.name} is in ${label} now, as its own complication to edit there.`
+        : `${row.name} is on ${label} now, as its own complication to edit there.`;
       this.copyOpen = { ownerId: target.ownerId, recordId: copy.id };
       await this.reloadAfterRowWrite(target.ownerId);
     } catch (err) {
@@ -9126,7 +9221,7 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * Take one complication off its device and keep it in the library.
+   * Take one complication off its device and keep it as unassigned.
    *
    * A design taken off everything is not a design deleted, it is one back on
    * the home's shelf, waiting for a device. The shelf's copy is written first
@@ -9150,19 +9245,19 @@ export class WristAssistantPanel extends LitElement {
       const family = supportedFamilies(cfg)[0];
       const slot = slotForDuplicate(family, this.slotHoldersOn(shelf.ownerId), this.blockedSlotsOn(shelf.ownerId));
       if (slot < 0) {
-        this.saveError = "The library has no free seat for this shape. Delete something in it first.";
+        this.saveError = `${UNASSIGNED_LABEL} has no free seat for this shape. Delete something in it first.`;
         return;
       }
       const kept = duplicateAs(cfg, family, { id: newId(), slotIndex: slot });
       const out = await saveRecord(this.hass, shelf.ownerId, new Draft(kept, null).encoded(), null);
       if (!out.ok) {
-        this.saveError = `${row.name} could not be put in the library, so it is still on ${this.ownerName(copy.ownerId)}: ${out.message ?? out.error ?? "the save failed"}`;
+        this.saveError = `${row.name} could not be unassigned, so it is still on ${this.ownerName(copy.ownerId)}: ${out.message ?? out.error ?? "the save failed"}`;
         return;
       }
       const gone = await deleteRecord(this.hass, copy.ownerId, record.id, record.revision);
       this.copyStatus = gone.ok
-        ? `${row.name} is off ${this.ownerName(copy.ownerId)} and in the library. A face or widget already using it keeps it.`
-        : `${row.name} is in the library, but the copy on ${this.ownerName(copy.ownerId)} could not be removed. Delete it from its own card.`;
+        ? `${row.name} is off ${this.ownerName(copy.ownerId)} and unassigned. A face or widget already using it keeps it.`
+        : `${row.name} is unassigned, but the copy on ${this.ownerName(copy.ownerId)} could not be removed. Delete it from its own card.`;
       await this.reloadAfterRowWrite(copy.ownerId, shelf.ownerId);
     } catch (err) {
       this.saveError = errText(err);
@@ -9370,9 +9465,9 @@ export class WristAssistantPanel extends LitElement {
     const full = this.freeSlot() < 0;
     return html`<div class="newc">
       <button class="new-btn" ?disabled=${full} aria-haspopup="dialog" aria-expanded=${this.importOpen ? "true" : "false"}
-        title=${full ? `This ${this.deviceWord} has no free slot. Delete a complication first.` : "Paste a complication somebody shared"}
+        title=${full ? `${capFirst(this.placePhrase)} has no free slot. Delete a complication first.` : "Paste a complication somebody shared"}
         @click=${() => this.openImportDialog()}><span>Import</span></button>
-      ${full ? html`<span class="newc-full">${this.deviceWord} is full</span>` : nothing}
+      ${full ? html`<span class="newc-full">${isLibraryOwner(this.selectedOwner) ? UNASSIGNED_LABEL : this.deviceWord} is full</span>` : nothing}
     </div>`;
   }
 
@@ -9407,10 +9502,10 @@ export class WristAssistantPanel extends LitElement {
     // one a watch uses does.
     const targets = newTargets([...this.newOwners]);
     const clash = (ownerId: string) => ownerId === LIBRARY_OWNER_ID
-      ? "A complication in the library already has that name."
+      ? `A complication in ${UNASSIGNED_LABEL} already has that name.`
       : undefined;
     if (this.ownerId !== undefined && targets.includes(this.ownerId) && this.takenNames().has(lower)) {
-      return clash(this.ownerId) ?? `A complication on this ${this.deviceWord} already has that name.`;
+      return clash(this.ownerId) ?? `A complication on ${this.placePhrase} already has that name.`;
     }
     for (const owner of this.deviceOwnersFor(targets)) {
       if (owner.ownerId === this.ownerId) continue;
@@ -9577,7 +9672,7 @@ export class WristAssistantPanel extends LitElement {
         ${people.length === 0 ? nothing : html`<section class="new-step step-people ${wait(ready)}"
           aria-disabled=${ready ? "false" : "true"}>
           ${this.renderStepHead(shapeStep ? 4 : 3, "Choose whose devices get it",
-            "Optional. Each tick is a complication of its own on that device, to edit there. Nothing ticked keeps it in the library.")}
+            "Optional. Each tick is a complication of its own on that device, to edit there. Nothing ticked keeps it unassigned.")}
           <div class="people-grid" role="group" aria-label="Devices">${people.map((row) =>
             this.renderPersonBox(row, this.newOwners, this.newFamily, (id) => this.toggleNewOwner(id)))}</div>
         </section>`}
@@ -9935,7 +10030,7 @@ export class WristAssistantPanel extends LitElement {
     </dialog>`;
   }
 
-  /** The Library's own tick, beside the people. It is not somebody's device,
+  /** Unassigned's own tick, beside the people. It is not somebody's device,
    * so it stands in a box of its own rather than under a name. */
   private renderLibraryBox(library: DeviceOwner, family: FamilyKind | undefined) {
     const on = this.dupOwners.has(library.ownerId);
@@ -9944,11 +10039,11 @@ export class WristAssistantPanel extends LitElement {
       <span class="person-name">This home</span>
       <button type="button" role="checkbox" class="dev-tick ${on ? "on" : ""}"
         aria-checked=${on ? "true" : "false"} ?disabled=${full && !on}
-        title=${full ? "The library is full. Delete something in it first." : "Keep a copy in the library, on no device"}
+        title=${full ? `${UNASSIGNED_LABEL} is full. Delete something in it first.` : "Keep a copy unassigned, on no device"}
         @click=${() => this.toggleDupOwner(library.ownerId)}>
         ${on ? pickTick() : html`<span class="pick-tick off" aria-hidden="true"></span>`}
         <span class="dev-card-ico">${uiIcon("layers")}</span>
-        <span class="dev-card-name">Library</span>
+        <span class="dev-card-name">${UNASSIGNED_LABEL}</span>
         <span class="dev-row-note">on no device</span>
       </button>
     </div>`;
@@ -11043,7 +11138,7 @@ export class WristAssistantPanel extends LitElement {
           <label class="xf-f"><span class="xf-label">Name</span>
             <input type="text" maxlength="60" aria-invalid=${taken ? "true" : "false"} .value=${this.importName}
               @input=${(e: Event) => { this.importName = (e.target as HTMLInputElement).value; }} /></label>
-          ${taken ? html`<div class="hint err">A complication on this ${this.deviceWord} already has that name.</div>` : nothing}
+          ${taken ? html`<div class="hint err">A complication on ${this.placePhrase} already has that name.</div>` : nothing}
           ${have.length < 2 ? nothing : html`<div class="hint">This was shared with ${have.length} shapes. A complication is one shape, so ${familyTitle(have[0]!)} is what comes in. Share the others from the panel they were made on.</div>`}
           <div class="xf-sub">${have.length === 0 && cfg.control !== undefined
             ? "A Control Center control, and no shape"
@@ -13413,7 +13508,7 @@ export class WristAssistantPanel extends LitElement {
     const shared = testableSharedValues(cfg).filter((n) => named.has(n.id));
     const testing = this.testValues.size > 0;
     return html`<div class="card tint-states" style=${`--c:${SECTION_COLOR.states}`}>
-      <h2 class="panel-title"><span class="swatch">${uiIcon("states")}</span>Values on the ${this.deviceWord}
+      <h2 class="panel-title"><span class="swatch">${uiIcon("states")}</span>${isLibraryOwner(this.selectedOwner) ? "Values it reads" : `Values on the ${this.deviceWord}`}
         <span class="mini">live · slide, pick or type one to try another</span><span class="spacer"></span>
         ${testing ? html`<span class="testing-pill">Testing with your values <button @click=${() => { this.editingValue = undefined; this.applyTestValues(new Map()); }}>Back to live</button></span>` : nothing}
       </h2>
@@ -13618,7 +13713,7 @@ export class WristAssistantPanel extends LitElement {
     const shelved = isLibraryOwner(this.selectedOwner);
     const device = deviceKindOf(this.selectedOwner) === "iphone" ? "iPhone" : "Watch";
     const shape = family === undefined ? "Control Center" : familyTitle(family).toLowerCase();
-    const what = shelved ? `${shape}, in the library` : `${device}, ${shape}`;
+    const what = shelved ? `${shape}, unassigned` : `${device}, ${shape}`;
     const also = cfg.control !== undefined && family !== undefined ? ", with a Control Center control" : "";
     return html`<div class="what-field">
       <span class="what-line">${what}${also}</span>
@@ -13834,7 +13929,9 @@ export class WristAssistantPanel extends LitElement {
           <dt>Templates</dt><dd class=${this.templateError ? "err" : "ok"}>${this.templateError ?? (this.compiled?.document ? "rendered" : "none")}</dd>
           <dt>Entities</dt><dd>${this.compiled?.entities.size ?? 0}</dd>
         </dl>
-        <p class="hint">Save writes to Home Assistant. Open Wrist Assistant on the ${this.deviceWord} to pull it down.</p>
+        <p class="hint">Save writes to Home Assistant. ${isLibraryOwner(this.selectedOwner)
+          ? "Nothing shows it until a copy of it goes on a device."
+          : `Open Wrist Assistant on the ${this.deviceWord} to pull it down.`}</p>
         <button class="link" @click=${() => (this.showRaw = !this.showRaw)}>${this.showRaw ? "Hide the raw configuration" : "Show the raw configuration"}</button>
         ${this.showRaw ? html`<pre>${JSON.stringify(d.encoded(), null, 2)}</pre>` : nothing}
       </div>
@@ -13884,6 +13981,10 @@ function parseDurationSeconds(v: unknown): number | undefined {
  * told twice.
  */
 export function ownerLabel(o: OwnerSummary): string {
+  // The home's shelf is named here rather than by the server, which still
+  // calls it Library: it is one word on screen and the integration's own
+  // rows are not worth a migration for it.
+  if (isLibraryOwner(o)) return UNASSIGNED_LABEL;
   const name = o.device_name ?? o.owner_watch_id;
   if (deviceKindOf(o) === "iphone") return /iphone/i.test(name) ? name : `${name} (iPhone)`;
   return o.paired_iphone_name ? `${name} (${o.paired_iphone_name})` : name;
@@ -13936,7 +14037,7 @@ export function ownerGroups(owners: readonly OwnerSummary[]): { label: string; o
   const groups: { label: string; owners: OwnerSummary[] }[] = [];
   if (watches.length > 0) groups.push({ label: watches.length === 1 ? "Watch" : "Watches", owners: watches });
   if (phones.length > 0) groups.push({ label: phones.length === 1 ? "iPhone" : "iPhones", owners: phones });
-  if (library.length > 0) groups.push({ label: "Library", owners: library });
+  if (library.length > 0) groups.push({ label: UNASSIGNED_LABEL, owners: library });
   return groups;
 }
 
