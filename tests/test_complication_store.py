@@ -1175,6 +1175,33 @@ def test_move_owner_refuses_a_slot_the_target_already_uses(mod):
     assert len(store.list(OTHER)) == 1
 
 
+def test_move_owner_allows_a_slot_the_target_draws_in_another_shape(mod):
+    """A slot holds one document per shape, so a circular may move onto a
+    slot where the target already has a rectangular."""
+    store = _new(mod)
+    rect = _doc(slotIndex=2)
+    rect["supportedFamilies"] = ["rectangular"]
+    rect["schemaVersion"] = 6
+    circ = _doc(slotIndex=2)
+    circ["supportedFamilies"] = ["circular"]
+    circ["schemaVersion"] = 6
+    store.save(OWNER, circ, base_revision=None, updated_by="t")
+    store.save(OTHER, rect, base_revision=None, updated_by="t")
+    [moved] = store.move_owner(OWNER, OTHER, updated_by="panel")
+    assert moved.owner_watch_id == OTHER
+    assert len(store.list(OTHER)) == 2
+
+
+def test_shapes_of_reads_families_and_control(mod):
+    assert mod.shapes_of({"supportedFamilies": ["rectangular", "inline"]}) == {
+        "rectangular",
+        "inline",
+    }
+    assert mod.shapes_of({"supportedFamilies": [], "control": {}}) == {"control"}
+    assert mod.shapes_of({"supportedFamilies": []}) == frozenset()
+    assert mod.shapes_of(None) == frozenset()
+
+
 def test_move_owner_ignores_a_slot_held_by_the_record_it_overwrites(mod):
     """The target's copy of a moving id is replaced, so it is not in the way."""
     store = _new(mod)
