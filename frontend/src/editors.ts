@@ -4791,16 +4791,6 @@ export function seedHintText(source: FamilyKind, target: FamilyKind): string {
     : `Copied from your ${familyTitle(source)} design.`;
 }
 
-/** That line, drawn under the canvas: one sentence and a way to be rid of it.
- * It sits where the shape's own caption sits, since it is a note about the
- * shape being looked at rather than about the document. */
-export function seedHintNote(text: string, dismiss: () => void): TemplateResult {
-  return html`<div class="seed-hint" role="status">
-    <span>${text}</span>
-    <button class="link" @click=${dismiss}>Got it</button>
-  </div>`;
-}
-
 /** How many layers a shape actually draws: what the Layers card counts to
  * decide whether the shape is still blank. */
 export function shownCount(cfg: CustomComplicationConfig, family: FamilyKind): number {

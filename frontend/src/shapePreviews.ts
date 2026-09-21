@@ -1,11 +1,10 @@
-// The live picture on a shape tab: every shape of the complication, drawn by
-// the same renderer the big one uses, off the same resolved values.
+// The live picture on the shape tab: the complication's shape, drawn by the
+// same renderer the big one uses, off the same resolved values.
 //
-// The tabs used to carry a glyph and a row of larger previews sat under the
-// canvas saying the same thing twice. One row of live tabs is the whole answer
-// to "what does this design look like everywhere", and a click on one takes
-// that shape into the canvas rather than editing it where it stands, which
-// keeps one set of drag handles on screen and one shape being edited at a time.
+// The bar used to carry one tab per shape, because a document held up to eight
+// of them and the row of tabs was the answer to "what does this design look
+// like everywhere". A complication is one shape now, so the tab is a picture
+// of the thing being edited rather than a way to move between shapes.
 
 import { type TemplateResult, nothing } from "lit";
 
@@ -109,33 +108,6 @@ export function previewWarnings(layout: ResolvedLayout): string[] {
 
 // ── the selected layer, on the other shapes ───────────────────────────────
 
-/**
- * The layer on `family` that stands where the selected one stands on the shape
- * being edited, so selecting a layer shows where it sits on every shape.
- *
- * Every layer belongs to one shape, so a shape seeded from another holds
- * copies under ids of their own and there is nothing to look the selection up
- * by. What the two shapes do share, until somebody adds or removes a layer, is
- * the stack: the copies arrived in order and kept it. So the twin is the layer
- * at the same place in the stack, and only while the two shapes still hold the
- * same kinds of layer in the same order. A shape that has since gone its own
- * way highlights nothing, which is honest: there is no twin any more.
- */
-export function twinLayerId(
-  cfg: CustomComplicationConfig,
-  editing: FamilyKind,
-  family: FamilyKind,
-  id: string | undefined,
-): string | undefined {
-  if (id === undefined || family === editing) return id;
-  const here = ownedElements(cfg, editing).filter((el) => !isAttachedTap(cfg, el));
-  const there = ownedElements(cfg, family).filter((el) => !isAttachedTap(cfg, el));
-  if (here.length === 0 || here.length !== there.length) return undefined;
-  if (here.some((el, i) => el.kind !== there[i]!.kind)) return undefined;
-  const at = here.findIndex((el) => el.payload.id === id);
-  return at < 0 ? undefined : there[at]!.payload.id;
-}
-
 // ── how a preview is tinted ───────────────────────────────────────────────
 
 /**
@@ -158,13 +130,11 @@ export function previewTintFor(family: DrawableFamily, phone: boolean, override:
 
 export interface ShapeArtState {
   config: CustomComplicationConfig;
-  /** The shape in the big canvas, so its selected layer can find its twin. */
-  editing: FamilyKind;
   /** The same layouts the canvas draws: one resolve per render, shared. */
   layouts: ResolvedAll;
   icons: IconProvider;
   imageSizes?: ImageSizeProvider;
-  /** The selected layer on the shape being edited, so its twin outlines here. */
+  /** The selected layer, so it outlines in the tab's picture too. */
   highlightId?: string;
   /** The device being previewed as, for the Lock Screen's white. */
   phone: boolean;
@@ -175,8 +145,8 @@ export interface ShapeArtState {
 }
 
 /**
- * One shape, drawn small for its tab: the same layout the stage would draw,
- * under the same tint, with the selected layer's twin outlined.
+ * The complication's shape, drawn small for its tab: the same layout the stage
+ * would draw, under the same tint, with the selected layer outlined.
  *
  * Inline has no canvas of its own, so the panel draws that one: this is the
  * shapes that resolve to a layout.
@@ -185,7 +155,7 @@ export function renderShapeArt(state: ShapeArtState, family: FamilyKind): Templa
   if (!hasCanvas(family)) return nothing;
   const layout = state.layouts[family];
   if (layout === undefined) return nothing;
-  const highlight = twinLayerId(state.config, state.editing, family, state.highlightId);
+  const highlight = state.highlightId;
   const slot = state.slotFor?.(family);
   return renderLayout(layout, {
     icons: state.icons,

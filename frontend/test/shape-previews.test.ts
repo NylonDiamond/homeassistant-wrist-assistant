@@ -21,7 +21,6 @@ import {
   previewBox,
   previewTintFor,
   previewWarnings,
-  twinLayerId,
 } from "../src/shapePreviews.js";
 
 describe("how big a preview is drawn", () => {
@@ -126,45 +125,6 @@ describe("the warning badge", () => {
       text({ frame: frame(1.5, 1.5, 0.8, 0.3), isHidden: true }),
       layer({ kind: "tap", frame: frame(1.5, 1.5, 0.8, 0.3) }),
     ]))).toEqual([]);
-  });
-});
-
-describe("the selected layer on another shape", () => {
-  /** Two layers on Rectangular, then a Small shape seeded from it. */
-  function pair(): CustomComplicationConfig {
-    const cfg = newConfig("X", 0, "rectangular");
-    cfg.elements = [newElement("text"), newElement("icon")];
-    normalizeOwnership(cfg, "rectangular");
-    addFamily(cfg, "small");
-    seedFamilyFromSibling(cfg, "small");
-    return cfg;
-  }
-
-  it("is the copy in the same place in the stack", () => {
-    const cfg = pair();
-    const here = ownedElements(cfg, "rectangular");
-    const there = ownedElements(cfg, "small");
-    expect(twinLayerId(cfg, "rectangular", "small", here[1]!.payload.id)).toBe(there[1]!.payload.id);
-  });
-
-  it("is the layer itself on the shape being edited", () => {
-    const cfg = pair();
-    const id = ownedElements(cfg, "rectangular")[0]!.payload.id;
-    expect(twinLayerId(cfg, "rectangular", "rectangular", id)).toBe(id);
-  });
-
-  it("is nothing when the two shapes have gone their own ways", () => {
-    const cfg = pair();
-    const id = ownedElements(cfg, "rectangular")[0]!.payload.id;
-    const extra = newElement("shape");
-    cfg.elements.push(extra);
-    normalizeOwnership(cfg, "small");
-    expect(twinLayerId(cfg, "rectangular", "small", id)).toBeUndefined();
-  });
-
-  it("is nothing when nothing is selected", () => {
-    const cfg = pair();
-    expect(twinLayerId(cfg, "rectangular", "small", undefined)).toBeUndefined();
   });
 });
 

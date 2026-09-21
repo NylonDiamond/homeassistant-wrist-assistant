@@ -10,7 +10,6 @@ import {
   type ComplicationRecord,
   type HassLike,
   type OwnerSummary,
-  type SaveResult,
   deletePart,
   deleteRecord,
   fetchGalleryKey,
@@ -62,7 +61,6 @@ import {
   pasteElements,
   pasteElementsOnto,
   type LayerClip,
-  freeSlotFrom,
   lockedOccupied,
   isAttachedTap,
   layerEntityUses,
@@ -89,7 +87,6 @@ import {
   newId,
   parseConfig,
   schemaVersionFor,
-  seedFamilyFromSibling,
   setControlShown,
   ownedElements,
   listOwningRowLayer,
@@ -137,7 +134,7 @@ import {
 } from "./resolver.js";
 import { CANVAS, CASES, FACE_TINTS, PHONE_CASES, REFERENCE_CASE, REFERENCE_PHONE, caseForScreenSize, cornerContext, cornerTileSide, familyTitle, fitBox, handleResize, iconDrawnSide, phoneCaseForScreenSize, renderLayerThumb, renderLayout, slotFor, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type PreviewCase } from "./renderer.js";
 import { actionAt, demoTapLabel, runTapAction, tapRefetches, type DemoOutcome } from "./demo.js";
-import { ALL_FAMILIES, biggestFirst, blankInline, canRemoveControl, canRemoveFamily, comingSoonFamilies, controlNoteLines, familiesFor, familyAllowsKind, familyContentSummary, familyNote, firstDrawable, importableFamilies, isDrawable, isHomeFamily, keepFamilies, opensInControlView, removeFamily, supportedFamilies } from "./layouts.js";
+import { ALL_FAMILIES, biggestFirst, blankInline, canRemoveControl, comingSoonFamilies, controlNoteLines, familiesFor, familyAllowsKind, familyNote, firstDrawable, importableFamilies, isDrawable, isHomeFamily, keepFamilies, opensInControlView, supportedFamilies } from "./layouts.js";
 import {
   type DeviceOwner,
   type SlotHolder,
@@ -159,7 +156,7 @@ import {
   shapeOffered,
 } from "./newComplication.js";
 import { type Person, deviceShortName, peopleNames, peopleOf, personOf } from "./people.js";
-import { type DevicesOn, type LiveDesign, type LiveShape, type LiveShapes, controlDeviceArt, designDeviceArt, deviceShapeArt, shapeArtKinds } from "./shapeArt.js";
+import { type DevicesOn, type LiveDesign, type LiveShape, type LiveShapes, controlDeviceArt, designDeviceArt, deviceShapeArt } from "./shapeArt.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { type DeviceKind, type DeviceOwnerLike, LIBRARY_OWNER_ID, deviceKindOf, deviceNoun, deviceSupportsShapes, isLibraryOwner, ownerSupportsControls, updateDeviceMessage } from "./version.js";
 import { makeIconProvider } from "./icons.js";
@@ -184,7 +181,6 @@ import {
   pickerView,
   rowWhoText,
   rowsOfPeople,
-  isShelvedRow,
 } from "./pickerRows.js";
 
 /** Where an older panel kept hidden picker rows, per watch, in this browser.
@@ -228,13 +224,10 @@ import {
   namedValueEditor,
   newNamedValue,
   pagesCardFields,
-  copyShapeLayout,
   type DescribeContext,
   pickedCommon,
   rowKindIcon,
   rowStageConfig,
-  seedHintNote,
-  seedHintText,
   setPlacement,
   syncListAttributes,
   shownCount,
@@ -1228,8 +1221,6 @@ export class WristAssistantPanel extends LitElement {
   @state() private shareOpen = false;
   @state() private shareMode: "share" | "backup" = "share";
   @state() private shareLabels: ReadonlyMap<string, string> = new Map();
-  /** The shapes picked in Share. Empty when it opens, so the author chooses. */
-  @state() private shareFamilies: ReadonlySet<FamilyKind> = new Set();
   /** Layers a Share or gallery name row points at, lit in the Layers list. */
   @state() private dialogLitIds: readonly string[] = [];
   /** Group and shared value names changed for shared copies only, by id: the
@@ -1895,42 +1886,6 @@ export class WristAssistantPanel extends LitElement {
     .pk-card-acts button.small { min-height: 24px; padding: 0 7px; background: var(--wa-card); }
     .pk-card .pk-note { font-size: 11.5px; line-height: 1.4; color: var(--wa-muted); margin-top: 8px; }
     .pk-card .pk-badge { flex: none; font-size: 11px; color: var(--wa-muted); white-space: nowrap; }
-    /* Add to: the one control on this surface that writes anything. */
-    .pk-add { position: relative; flex: none; }
-    .pk-add-open {
-      display: inline-flex; align-items: center; gap: 4px; font: inherit; font-size: 11px; font-weight: 600;
-      padding: 3px 7px; border-radius: 7px; cursor: pointer; color: var(--wa-ink);
-      border: 1px solid var(--wa-line); background: var(--wa-card);
-    }
-    .pk-add-open:hover:not(:disabled) { border-color: var(--wa-line-strong); }
-    .pk-add-open:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    .pk-add-open:disabled { opacity: .45; cursor: not-allowed; }
-    .pk-add-open.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); color: var(--wa-accent); }
-    .pk-add-open svg { width: 10px; height: 10px; }
-    .pk-add-menu {
-      position: absolute; top: calc(100% + 6px); right: 0; z-index: 5; width: 218px;
-      display: flex; flex-direction: column; gap: 6px; padding: 8px;
-      border: 1px solid var(--wa-line-strong); border-radius: 10px;
-      background: var(--wa-card); box-shadow: var(--wa-shadow-pop);
-    }
-    .pk-add-group { display: flex; flex-direction: column; gap: 3px; }
-    .pk-add-head {
-      font-size: 11.5px; font-weight: 700; color: var(--wa-muted); margin: 2px 0 2px;
-    }
-    .pk-add-tick {
-      display: flex; align-items: center; gap: 7px; width: 100%; text-align: left; cursor: pointer;
-      font: inherit; font-size: 12px; color: var(--wa-ink);
-      padding: 5px 7px; border: 1px solid var(--wa-line); border-radius: 7px; background: var(--wa-card);
-    }
-    .pk-add-tick:hover:not([disabled]) { border-color: var(--wa-line-strong); }
-    .pk-add-tick:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    .pk-add-tick.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); }
-    .pk-add-tick[disabled] { opacity: .5; cursor: default; }
-    .pk-add-tick .pick-tick { position: static; flex: none; width: 15px; height: 15px; border-radius: 4px; }
-    .pk-add-tick .pick-tick svg { width: 10px; height: 10px; }
-    .pk-add-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .pk-add-note-full { flex: none; font-size: 10px; color: var(--wa-muted); }
-    .pk-add-note { font-size: 10px; line-height: 1.4; color: var(--wa-muted); border-top: 1px solid var(--wa-line); padding-top: 6px; }
     .pk-foot {
       display: flex; align-items: center; gap: 10px; flex: none; padding: 12px 18px;
       border-top: 1px solid var(--wa-line); background: var(--wa-card);
@@ -2011,6 +1966,7 @@ export class WristAssistantPanel extends LitElement {
       display: inline-flex; align-items: center; justify-content: center;
       font-size: 11.5px; font-weight: 700; color: var(--wa-accent-ink); background: var(--wa-accent);
     }
+    .step-kind .new-step-num { background: var(--info-color, #39a9db); }
     .step-shapes .new-step-num { background: var(--success-color, #3dd68c); }
     .step-people .new-step-num { background: var(--warning-color, #e0a100); }
     .new-step-title { font-size: 13px; font-weight: 700; color: var(--wa-ink); }
@@ -2024,7 +1980,7 @@ export class WristAssistantPanel extends LitElement {
     .new-step .shape-row { flex: 0 1 auto; }
     /* A white card per section on the step's tint, so the sections are the
        shapes and the tint is the step. */
-    .new-step .shape-row, .add-dialog .shape-row {
+    .new-step .shape-row {
       padding: 10px; border-radius: 10px; border: 1px solid var(--wa-line); background: var(--wa-card);
     }
     /* The running line sits opposite the buttons, so what is still missing, or
@@ -2037,10 +1993,9 @@ export class WristAssistantPanel extends LitElement {
        one shape in it draws one card rather than one card stretched across the
        row. */
     .shape-cards { display: flex; flex-wrap: wrap; gap: 8px; }
-    /* The four shape sections, stacked. One heading per section for the whole
-       home, where the dialog used to draw a card per place per device: a home
-       with two watches and two phones drew seven of those to offer eight
-       shapes. */
+    /* The shape groups, stacked: one for a watch face, two for an iPhone
+       because its Lock Screen and its Home Screen are different places to put
+       a thing. */
     .shape-rows { display: flex; flex-direction: column; gap: 12px; }
     .shape-row { display: flex; flex-direction: column; gap: 7px; }
     .shape-row-head { display: flex; align-items: center; gap: 6px; }
@@ -2049,10 +2004,24 @@ export class WristAssistantPanel extends LitElement {
     .shape-row-kinds { display: flex; align-items: center; gap: 3px; color: var(--wa-muted); }
     .shape-row-kinds svg { width: 14px; height: 14px; }
     .shape-row-title { font-size: 11.5px; font-weight: 600; color: var(--wa-ink); }
-    /* One device outline per kind a shape lands on, side by side: a shared
-       shape is a watch beside a phone, which is the whole of what makes one
-       design on two screens readable at a glance. */
+    /* The device outline a shape is drawn in, which is the kind picked in
+       step 2: a watch face for a watch, a phone screen for an iPhone. */
     .shape-arts { display: flex; align-items: center; justify-content: center; gap: 4px; }
+    /* Step 2's three choices, drawn as the shape cards are so the dialog
+       reads as one row of pictures after another. Wider, because each one
+       carries a line saying what that device is. */
+    .kind-cards { display: flex; flex-wrap: wrap; gap: 8px; }
+    .kind-card {
+      position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer;
+      width: 132px; box-sizing: border-box; text-align: center;
+      font: inherit; font-size: 12px; padding: 10px 8px 8px; color: var(--wa-muted);
+      border: 1px solid var(--wa-line); border-radius: 10px; background: var(--wa-raised);
+      transition: border-color .12s ease-out, background-color .12s ease-out, color .12s ease-out;
+    }
+    .kind-card:hover { border-color: var(--wa-line-strong); color: var(--wa-ink); }
+    .kind-card:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .kind-card.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); box-shadow: 0 0 0 2px var(--wa-sel-ring); color: var(--wa-ink); }
+    .kind-card.on .shape-arts { color: var(--wa-accent); }
     /* Who shows it: a box per person, their devices as checkboxes inside. A
        flat list of four devices reads "Apple Watch, Apple Watch, iPhone,
        iPhone", which answers nothing. */
@@ -2091,10 +2060,6 @@ export class WristAssistantPanel extends LitElement {
     .shape-card:hover:not([disabled]) { border-color: var(--wa-line-strong); color: var(--wa-ink); }
     .shape-card:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .shape-card.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); box-shadow: 0 0 0 2px var(--wa-sel-ring); color: var(--wa-ink); }
-    /* A shape the design already carries, in Add a shape: still in its row,
-       still drawn, and dashed so it reads as a place that is taken rather than
-       as a choice that failed. */
-    .shape-card.had { border-style: dashed; border-color: var(--wa-line-strong); background: var(--wa-panel); opacity: .7; cursor: default; }
     /* A drawing big enough to be read at a glance, two of them side by side on
        a card this wide. The box is narrower than the 32 by 28 viewBox because
        the art crops its empty margins (preserveAspectRatio, in shapeArt.ts)
@@ -2103,10 +2068,8 @@ export class WristAssistantPanel extends LitElement {
     /* The drawing's two colors: the shape takes the button's own, the device
        around it stays furniture whatever the button is doing. */
     .shape-arts { height: 40px; --wa-shape-outline: var(--wa-muted); }
-    /* Lit means the accent, in both dialogs: ticked in the New dialog, and
-       still yours to take in Add a shape. A shape already on the design keeps
-       the muted color it is drawn in. */
-    .shape-card.on .shape-arts, .add-dialog .shape-card:not(.had):not(.soon) .shape-arts { color: var(--wa-accent); }
+    /* Lit means the accent: this is the shape that was picked. */
+    .shape-card.on .shape-arts { color: var(--wa-accent); }
     /* The tick on a picked card, and the empty ring that holds its place so
        nothing shifts when one is ticked. */
     .pick-tick {
@@ -2124,79 +2087,16 @@ export class WristAssistantPanel extends LitElement {
        hover lift, so it reads as a place in the row rather than a choice. */
     .shape-card.soon { opacity: .45; cursor: default; }
     .shape-card.soon:hover { border-color: var(--wa-line); color: var(--wa-muted); }
-    /* Appears on: one checkbox per device, in the inspector as a column under a
-       heading per person, and over the canvas as a row of pills. One set of
-       rules, since the two are the same control in two shapes. Both wear the
-       panel's amber over the card they sit on, so the one control that changes
-       another device is the one thing on either surface with a color. */
-    .shows-field {
-      display: flex; flex-direction: column; gap: 6px; margin: 8px 0 2px; padding: 10px;
-      border: 1px solid color-mix(in srgb, var(--wa-val) 40%, var(--wa-line));
-      border-radius: var(--wa-r-md);
-      background: color-mix(in srgb, var(--wa-val) 9%, var(--wa-card));
+    /* What the open complication is, under its name in the inspector: one
+       shape on one kind of device, said in words. It replaced the Appears on
+       checkbox list, so it keeps that box's quiet frame rather than reading
+       as another unmarked row of fields. */
+    .what-field {
+      display: flex; flex-direction: column; gap: 3px; margin: 8px 0 2px; padding: 9px 10px;
+      border: 1px solid var(--wa-line); border-radius: var(--wa-r-md); background: var(--wa-raised);
     }
-    .shows-title { display: flex; align-items: baseline; gap: 8px; font-size: 13px; font-weight: 700; color: var(--wa-ink); }
-    .shows-count { font-size: 11px; font-weight: 500; color: var(--wa-muted); }
-    .shows-field .hint { margin: 0; }
-    .shows-list { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
-    .shows-head {
-      font-size: 12.5px; font-weight: 600; color: var(--wa-muted); margin-top: 6px;
-    }
-    .shows-head:first-child { margin-top: 0; }
-    .shows-box {
-      position: relative; display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
-      font: inherit; font-size: 12.5px; text-align: left; color: var(--wa-muted);
-      padding: 6px 9px; border: 1px solid var(--wa-line); border-radius: 9px; background: var(--wa-raised);
-      transition: border-color .12s ease-out, background-color .12s ease-out, color .12s ease-out;
-    }
-    .shows-box:hover:not([disabled]) { border-color: var(--wa-line-strong); color: var(--wa-ink); }
-    .shows-box:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    .shows-box.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); color: var(--wa-ink); }
-    .shows-box[disabled] { opacity: .5; cursor: default; }
-    /* The tick sits in the row rather than in a card's corner, which is where
-       the shape cards put it. */
-    .shows-box .pick-tick { position: static; flex: none; }
-    .shows-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .shows-note { font-size: 11px; color: var(--wa-muted); }
-    /* Where a design with nothing ticked actually is. Drawn under the boxes in
-       both places, in the quiet ink the counts use: it is a fact about the
-       answer, not a warning about it. */
-    .shows-shelf { font-size: 11.5px; color: var(--wa-muted); }
-    .merge-with { display: inline-flex; margin-top: 2px; }
-    /* Across the top of the canvas card: the same boxes as pills, grouped by
-       person on the card's own white, wrapping on a narrow window so a
-       household of four never pushes the bar wider than the stage. */
-    .shows-on-strip {
-      display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px;
-      padding: 8px 12px; border-bottom: 1px solid color-mix(in srgb, var(--wa-val) 35%, var(--wa-line));
-      background: color-mix(in srgb, var(--wa-val) 9%, var(--wa-card));
-    }
-    .shows-lead {
-      display: flex; flex-direction: column; width: 92px; flex: none; line-height: 1.3;
-      font-size: 11px; color: var(--wa-muted);
-    }
-    .shows-lead b { font-size: 12px; color: var(--wa-ink); }
-    .shows-group {
-      display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px;
-      padding: 4px 6px; border-radius: var(--wa-r-sm);
-      border: 1px solid color-mix(in srgb, var(--wa-val) 35%, var(--wa-line));
-      background: var(--wa-card);
-    }
-    .shows-who { font-size: 11px; font-weight: 700; color: var(--wa-muted); padding-left: 2px; }
-    .shows-when { font-size: 11px; color: var(--wa-muted); }
-    .shows-on-strip .shows-box { padding: 3px 8px 3px 5px; border-radius: 999px; font-size: 11.5px; gap: 5px; }
-    .shows-on-strip .pick-tick { width: 14px; height: 14px; border-radius: 4px; }
-    .shows-on-strip .pick-tick svg { width: 9px; height: 9px; }
-    /* The complications on another device that could be merged with this one. */
-    .merge-menu {
-      position: fixed; inset: auto; margin: 0; width: min(320px, calc(100vw - 24px)); padding: 10px;
-      border: 1px solid var(--wa-line-strong); border-radius: var(--wa-r-md);
-      background: var(--wa-panel); color: var(--wa-ink); box-shadow: var(--wa-shadow-pop);
-    }
-    .merge-menu:popover-open { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; overscroll-behavior: contain; }
-    .merge-menu .row { display: flex; align-items: baseline; gap: 7px; width: 100%; }
-    .merge-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .merge-where { font-size: 11.5px; color: var(--wa-muted); }
+    .what-line { font-size: 13px; font-weight: 700; color: var(--wa-ink); }
+    .what-field .hint { margin: 0; }
     .shape-dots { display: inline-flex; gap: 3px; align-items: center; flex: none; }
     .shape-dot { width: 14px; height: 10px; border-radius: 2px; background: currentColor; opacity: .3; display: inline-block; }
     .shape-dot.circular { width: 10px; border-radius: 50%; }
@@ -3215,7 +3115,7 @@ export class WristAssistantPanel extends LitElement {
     .shape-adds button.tab svg { width: 12px; height: 12px; }
     /* Add a shape is an offer, not a tab: it keeps the dashed edge so it never
        reads as a shape you own, but wears the accent so it is not the faintest
-       thing on the bar now that the tabs carry plates. */
+       thing on the bar now that the tab carries a plate. */
     .shape-adds button.tab.add-shape {
       height: 30px; padding: 0 11px; font-weight: 600;
       color: var(--wa-accent); border-color: color-mix(in srgb, var(--wa-accent) 50%, var(--wa-line-strong));
@@ -3223,36 +3123,6 @@ export class WristAssistantPanel extends LitElement {
     .shape-adds button.tab.add-shape:hover:not(:disabled) {
       color: var(--wa-accent); background: color-mix(in srgb, var(--wa-accent) 13%, transparent);
     }
-    .shape-spare { font-size: 11.5px; color: var(--wa-muted); }
-    /* Every shape this complication could carry, under the same four place
-       headings the New dialog uses, with the ones it already has among them.
-       Centred rather than hung off the button: the panel used to drop a card
-       the moment its shape was added, so the row rearranged itself under the
-       pointer, and it closed on every click, so three shapes meant opening it
-       three times. */
-    dialog.add-dialog {
-      width: min(500px, calc(100vw - 32px)); padding: 0;
-      border: 1px solid var(--wa-line); border-radius: 12px;
-      background: var(--wa-card); color: var(--wa-ink);
-      box-shadow: 0 12px 40px rgba(0,0,0,.4);
-    }
-    dialog.add-dialog::backdrop { background: rgba(0,0,0,.45); }
-    /* The title and its line stack, where the New dialog's sit side by side:
-       the title carries the complication's name, which is as long as the
-       author made it. */
-    .add-head-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-    .add-body {
-      display: flex; flex-direction: column; gap: 10px; padding: 12px 16px;
-      max-height: min(66vh, 620px); overflow-y: auto; overscroll-behavior: contain;
-      background: var(--wa-panel);
-    }
-    .add-body .shape-rows { gap: 10px; }
-    .add-foot {
-      display: flex; align-items: center; gap: 10px; padding: 10px 16px;
-      border-top: 1px solid var(--wa-line); font-size: 11.5px;
-    }
-    .add-note { flex: 1; line-height: 1.35; color: var(--wa-muted); }
-    .add-left { font-weight: 700; color: var(--wa-ink); white-space: nowrap; }
     .canvas-bar .hint { margin: 0; }
     /* Shape tabs: one per family, drawn with a real picture of what that shape
        holds. A family the complication does not have is a dashed invitation. */
@@ -3615,14 +3485,6 @@ export class WristAssistantPanel extends LitElement {
     .under .size { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
     .under .dot { color: var(--wa-line-strong); }
     .under .tail b { font-weight: 700; }
-    /* The one line a shape added as a copy of another one carries, under its
-       own caption: said once, dismissed with the button beside it. */
-    .seed-hint {
-      display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px 10px;
-      margin-top: -12px; max-width: 520px; text-align: center;
-      font-size: 12.5px; font-weight: 500; color: var(--wa-ink);
-    }
-    .seed-hint button.link { font-weight: 600; }
     ${unsafeCSS(shapeTabCss())}
     /* The two lists under the face: what the complication defines for itself,
        and what the house is telling it right now. Stacked, so each title and
@@ -3760,17 +3622,6 @@ export class WristAssistantPanel extends LitElement {
     .testing-pill { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; text-transform: none; letter-spacing: 0; color: color-mix(in srgb, var(--wa-states) 70%, var(--wa-ink)); }
     .testing-pill button { font: inherit; font-size: 12px; font-weight: 500; background: var(--wa-states); color: #1a1600; border: 0; border-radius: 999px; padding: 2px 9px; cursor: pointer; }
     .empty { opacity: .6; padding: 24px; text-align: center; }
-    /* A shape that draws nothing yet. Tinted in the placement color rather
-       than the accent: it is a statement about where you are, not a thing to
-       press, and the buttons inside it carry the press. */
-    .blank-shape {
-      margin: 10px 0; padding: 10px 12px; border-radius: var(--wa-r-md);
-      border: 1px solid color-mix(in srgb, var(--wa-place) 40%, var(--wa-line));
-      background: color-mix(in srgb, var(--wa-place) 10%, transparent);
-    }
-    .blank-shape b { font-size: 13px; }
-    .blank-shape .hint { margin: 5px 0 0; }
-    .blank-shape .adders { margin-top: 9px; }
 
     /* The inspector: crumbs on top, then one card per section of the thing
        selected, tinted by what it is. */
@@ -8431,9 +8282,7 @@ export class WristAssistantPanel extends LitElement {
     const reference = phone ? REFERENCE_PHONE : REFERENCE_CASE;
     const art = renderShapeArt({
       config: cfg,
-      // Nothing is being edited from here, so the shape stands in for itself
-      // and no layer is highlighted.
-      editing: family,
+      // Nothing is being edited from here, so no layer is highlighted.
       layouts: this.configLayouts(cfg, entities),
       icons: this.icons,
       imageSizes: this.imageSizes,
@@ -8463,7 +8312,7 @@ export class WristAssistantPanel extends LitElement {
       if (!cfg.supportedFamilies.includes(family)) return undefined;
       const slot = slotFor(phone ? REFERENCE_PHONE : REFERENCE_CASE, family);
       const art = renderShapeArt({
-        config: cfg, editing: family, layouts, icons: this.icons, imageSizes: this.imageSizes, phone, slotFor: () => slot,
+        config: cfg, layouts, icons: this.icons, imageSizes: this.imageSizes, phone, slotFor: () => slot,
       }, family);
       if (art === nothing) return undefined;
       // The corner is rendered as its whole screen quadrant, with the content
@@ -9528,12 +9377,12 @@ export class WristAssistantPanel extends LitElement {
     const whole = this.draft?.config;
     const cfg = this.shareConfig();
     if (!whole || !cfg) return nothing;
-    const have = supportedFamilies(whole);
-    const picked = this.sharePicked();
-    // A document with no shape has nothing to pick: its control is the whole
-    // design, so there is no shape step and Share is ready as it opens. The
-    // gallery still turns it away, since the gallery is browsed by shape.
-    const ready = picked.length > 0 || have.length === 0;
+    const shared = this.sharePicked();
+    // A complication is one shape, so there is nothing to pick and Share is
+    // ready as it opens. A document with no shape at all is its control, which
+    // shares as text and which the gallery turns away, since the gallery is
+    // browsed by shape.
+    const ready = true;
     const slots = this.currentShareSlots();
     const share = this.shareMode === "share";
     const text = share
@@ -9557,11 +9406,6 @@ export class WristAssistantPanel extends LitElement {
       </div>
       <div class="xf-lead ${share ? "" : "warn"}">${uiIcon(share ? "info" : "lock")}
         <span>${share ? "Your entities are removed. The other person picks their own." : "Exact copy with your entities. Keep it for yourself or this home."}</span></div>`);
-    const all = picked.length === have.length;
-    const shapes = have.length < 2 ? nothing : this.shareSection(++n, "s-shapes", "Pick the shapes", html`
-      ${this.familyChips(have, (f) => this.shareFamilies.has(f), (next) => this.setShareFamilies(next), false)}
-      ${ready ? nothing : html`<div class="xf-lead">${uiIcon("info")}<span>Only the shapes you pick go in the copy. Pick at least one.</span></div>`}`,
-      html`${picked.length} of ${have.length}<button class="link" @click=${() => this.setShareFamilies(new Set(all ? [] : have))}>${all ? "None" : "All"}</button>`);
     const names = !share ? nothing : this.shareSection(++n, "s-names", "Public names",
       ready
         ? this.renderPublicRows(rows, this.shareFocus, (key) => this.pointAtRow(rows, key, (k) => { this.shareFocus = k; }))
@@ -9595,15 +9439,15 @@ export class WristAssistantPanel extends LitElement {
       </details>`, nothing, !ready);
     return html`<dialog class="share-dialog xf ${this.galleryOpen ? "under" : ""}" @close=${() => { this.shareOpen = false; this.pointAtRow([], undefined, () => undefined); }}>
       ${this.dialogHead(`Share “${cfg.name.trim() || "Untitled"}”`,
-        have.length === 0
+        shared.length === 0
           ? "A Control Center control, and no shape"
-          : `${ready ? familyWords(picked) : "No shapes picked yet"} · ${layerCountWords(cfg)}`,
+          : `${familyWords(shared)} · ${layerCountWords(cfg)}`,
         () => this.closeShareDialog())}
       <div class="xfer-body">
         ${this.dialogPreview(layouts, family, spot,
           focused && spot.length > 0 ? html`Where <b>${focused.name}</b> is` : family ? familyTitle(family) : "",
           rows.some((row) => row.ids.length > 0) ? "Point at a name to see where it is" : "")}
-        ${who}${shapes}${names}${send}
+        ${who}${names}${send}
       </div>
     </dialog>`;
   }
@@ -9705,23 +9549,16 @@ export class WristAssistantPanel extends LitElement {
     clear();
   }
 
-  /** The open document with only the shapes chosen in Share. Everything the
-   * Share and gallery dialogs send or show is read from this copy. */
+  /** What Share and the gallery send, which is the open document: one shape,
+   * so there is nothing to narrow it to. */
   private shareConfig(): CustomComplicationConfig | undefined {
-    const cfg = this.draft?.config;
-    if (!cfg) return cfg;
-    const picked = this.sharePicked();
-    // Nothing picked yet still draws the whole design; every way out waits.
-    if (picked.length === 0 || picked.length === supportedFamilies(cfg).length) return cfg;
-    return keepFamilies(cfg, picked);
+    return this.draft?.config;
   }
 
-  /** The shapes Share will send. A document with one shape needs no pick. */
+  /** The shapes Share will send, which is whatever the document has. */
   private sharePicked(): FamilyKind[] {
     const cfg = this.draft?.config;
-    if (!cfg) return [];
-    const have = supportedFamilies(cfg);
-    return have.length < 2 ? have : have.filter((f) => this.shareFamilies.has(f));
+    return cfg ? supportedFamilies(cfg) : [];
   }
 
   /** The names changed for shared copies: the complication, groups, shared
@@ -9736,34 +9573,6 @@ export class WristAssistantPanel extends LitElement {
       }
     }
     return { name: this.shareName, groupNames: this.shareGroupNames, valueNames: this.shareValueNames, layerNames };
-  }
-
-  private setShareFamilies(next: ReadonlySet<FamilyKind>) {
-    this.shareFamilies = next;
-    this.pointAtRow([], undefined, (k) => { this.shareFocus = k; });
-    this.shareNote = "";
-    this.shareLinkShown = false;
-  }
-
-  /**
-   * Chips for the shapes a document has, so Share can send and Import can
-   * take only some of them. With `keepOne`, the last shape on cannot be
-   * turned off.
-   */
-  private familyChips(have: readonly FamilyKind[], isOn: (f: FamilyKind) => boolean, set: (next: ReadonlySet<FamilyKind>) => void, keepOne: boolean) {
-    const count = have.filter(isOn).length;
-    return html`<div class="gal-tags xf-shapes" role="group" aria-label="Shapes">${have.map((f) => {
-      const lit = isOn(f);
-      const last = keepOne && lit && count === 1;
-      return html`<button class="pk-chip ${lit ? "on" : ""}" aria-pressed=${lit ? "true" : "false"} ?disabled=${last}
-        title=${last ? "At least one shape stays on" : lit ? `Leave ${familyTitle(f)} out` : `Put ${familyTitle(f)} in`}
-        @click=${() => {
-          const next = new Set(have.filter(isOn));
-          if (lit) next.delete(f);
-          else next.add(f);
-          set(next);
-        }}>${lit ? uiIcon("check") : nothing}${familyTitle(f)}</button>`;
-    })}</div>`;
   }
 
   /**
@@ -9864,7 +9673,6 @@ export class WristAssistantPanel extends LitElement {
     this.shareOpen = true;
     this.shareMode = "share";
     this.shareLabels = new Map();
-    this.shareFamilies = new Set();
     this.shareGroupNames = new Map();
     this.shareValueNames = new Map();
     this.shareName = "";
@@ -10377,23 +10185,22 @@ export class WristAssistantPanel extends LitElement {
    * waits for a button. Nothing is created until Import, and Import saves it
    * straight away, so leaving the page afterwards does not lose it.
    */
-  /** The pasted document with only the shapes chosen in Import, and only the
-   * shapes this device draws: a watch document taken on a phone arrives
-   * without its Corner layout, and a Home Screen one taken on a watch arrives
-   * without its tiles. The preview and the saved copy read the same list. */
+  /**
+   * The pasted document as one complication: one shape, and a shape this
+   * device draws.
+   *
+   * A shared text can carry several shapes, since anyone can be pasting a
+   * design an older panel made. A complication is one shape, so the import
+   * takes the first the device can draw and the dialog says which. Nothing is
+   * lost that the sender cannot share again: the text still holds the whole
+   * design. The preview and the saved copy read the same shape.
+   */
   private importConfig(): CustomComplicationConfig | undefined {
     const parse = this.importParse;
     if (!parse?.ok) return undefined;
-    const offered = importableFamilies(parse.config, this.ownerFamilies);
-    const keep = this.importFamilies === undefined ? offered : offered.filter((f) => this.importFamilies!.has(f));
+    const keep = importableFamilies(parse.config, this.ownerFamilies).slice(0, 1);
     if (keep.length === supportedFamilies(parse.config).length) return parse.config;
     return keepFamilies(parse.config, keep);
-  }
-
-  private setImportFamilies(next: ReadonlySet<FamilyKind>) {
-    this.importFamilies = next;
-    this.importFocus = undefined;
-    this.scheduleImportHistory();
   }
 
   private renderImportDialog() {
@@ -10453,8 +10260,8 @@ export class WristAssistantPanel extends LitElement {
     const rows = unresolvedEntities(cfg, this.hass.states);
     const known = this.knownDomains();
     const parse = this.importParse;
-    // The chips list what this device can draw, so a shape it has no tab for
-    // is never offered as something to bring in.
+    // What this device can draw, so a shape it has no tab for is never
+    // counted as something that came in.
     const have = importableFamilies(parse?.ok ? parse.config : cfg, this.ownerFamilies);
     const preview = this.importPreview();
     const layouts: ResolvedAll = preview ? this.configLayouts(preview.config, preview.entities, this.importHistory) : {};
@@ -10477,8 +10284,7 @@ export class WristAssistantPanel extends LitElement {
             <input type="text" maxlength="60" aria-invalid=${taken ? "true" : "false"} .value=${this.importName}
               @input=${(e: Event) => { this.importName = (e.target as HTMLInputElement).value; }} /></label>
           ${taken ? html`<div class="hint err">A complication on this ${this.deviceWord} already has that name.</div>` : nothing}
-          ${have.length < 2 ? nothing : html`<div class="xf-f"><span class="xf-label">Shapes to import<span class="r">${supportedFamilies(cfg).length} of ${have.length}</span></span>
-            ${this.familyChips(have, (f) => this.importFamilies === undefined || this.importFamilies.has(f), (next) => this.setImportFamilies(next), true)}</div>`}
+          ${have.length < 2 ? nothing : html`<div class="hint">This was shared with ${have.length} shapes. A complication is one shape, so ${familyTitle(have[0]!)} is what comes in. Share the others from the panel they were made on.</div>`}
           <div class="xf-sub">${have.length === 0 && cfg.control !== undefined
             ? "A Control Center control, and no shape"
             : html`${have.length < 2 ? `${familyWords(have)} · ` : ""}${layerCountWords(cfg)}`}</div>
@@ -12461,7 +12267,6 @@ export class WristAssistantPanel extends LitElement {
   private shapeTabArt(cfg: CustomComplicationConfig, layouts: ResolvedAll, family: FamilyKind) {
     return renderShapeArt({
       config: cfg,
-      editing: this.activeFamily,
       layouts,
       icons: this.icons,
       imageSizes: this.imageSizes,
