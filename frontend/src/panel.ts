@@ -6363,6 +6363,11 @@ export class WristAssistantPanel extends LitElement {
   private get watchSupported(): boolean {
     const owner = this.selectedOwner;
     if (!owner) return true;
+    // With nothing open there is nothing the device would be asked to draw,
+    // so the stage's "pick one" card stands, not the update message. The
+    // device the panel loaded with is a place to read lists from, not a
+    // choice anyone made; the gate comes up once a complication on it opens.
+    if (this.selectedId === undefined && this.draft === undefined) return true;
     return owner.is_orphan || deviceSupportsShapes(owner);
   }
 
@@ -8905,11 +8910,13 @@ export class WristAssistantPanel extends LitElement {
     // device names, which in a two-device home said "Jesse Apple Watch (iPhone
     // 15 Pro), Jesse's iPhone" about one design.
     const people = peopleOf(this.owners);
-    const onIds = this.ownerId ? [this.ownerId] : [];
+    // With nothing open there is no device to name: the one the panel reads
+    // lists from is not a choice anyone made.
+    const onIds = d && this.ownerId ? [this.ownerId] : [];
     const who = people.length > 1 ? joinNames(peopleNames(people, onIds)) : "";
     // A design on the shelf belongs to nobody, so it is named by its place
     // instead, in every home however many people are in it.
-    const shelved = isLibraryOwner(this.selectedOwner);
+    const shelved = d !== undefined && isLibraryOwner(this.selectedOwner);
     // The revision is not shown here: it meant nothing to anyone reading the
     // list. The inspector's summary still carries it.
     return html`<div class="picker">
