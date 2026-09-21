@@ -472,6 +472,21 @@ function shapeListText(families: readonly FamilyKind[], control: boolean): strin
   return names.length === 0 ? "No shapes yet" : names.join(" · ");
 }
 
+/**
+ * What one card says it is, under its drawings: one shape and where it sits.
+ *
+ * A complication is one shape on one kind of device, so this is a sentence
+ * rather than the list of shapes a card used to carry. The same words the
+ * inspector's Complication card uses, so a design reads the same in the grid
+ * and in the editor.
+ */
+function cardShapeText(family: FamilyKind | undefined, kind: DeviceKind, control: boolean): string {
+  const shape = family === undefined ? "Control Center" : familyTitle(family);
+  const where = kind === "library" ? "in the library" : kind === "iphone" ? "on an iPhone" : "on a watch";
+  const also = control && family !== undefined ? ", with a control" : "";
+  return `${shape} ${where}${also}`;
+}
+
 /** The step from one header question to the next. Drawn rather than typed so
  * it can carry a stroke thick enough to read as a route, which a text chevron
  * at 12 px never did. */
@@ -984,6 +999,9 @@ export class WristAssistantPanel extends LitElement {
   @state() private pickerLook: PickerLook = "devices";
   /** The picker card asking "Really delete", by record id. */
   @state() private pickerConfirmDelete?: string;
+  /** Which card has its "Duplicate to" menu open, by row key. One at a time:
+   * the menu is absolute inside its own card. */
+  @state() private pickerDupFor?: string;
   /** A device has been picked and its complications are still on the way. The
    * picker stays open across the switch, so without this the list would show
    * the previous device's rows until the reply landed. */
@@ -1819,9 +1837,9 @@ export class WristAssistantPanel extends LitElement {
       position: relative; z-index: 1; display: flex; flex-direction: column; min-width: 0;
       padding: 12px; border-radius: 12px; border: 1px solid var(--wa-line); background: var(--wa-card);
     }
-    /* The card with the "Add to" menu open climbs over its neighbours, since
-       the menu is absolute inside it and the grid would otherwise clip it
-       under the next card along. */
+    /* The card with the "Duplicate to" menu open climbs over its neighbours,
+       since the menu is absolute inside it and the grid would otherwise clip
+       it under the next card along. */
     .pk-card.over { z-index: 3; }
     .pk-card[aria-current="true"] { border-color: var(--wa-accent); box-shadow: 0 0 0 3px var(--wa-sel-ring); }
     /* Hidden designs stay in the grid, quieter. They used to fold away under a
@@ -1889,12 +1907,50 @@ export class WristAssistantPanel extends LitElement {
     /* The Control Center tile stands at the end of the row, off both devices:
        it is neither a face nor a Home Screen. */
     .pk-card-art .pk-card-ctl { display: inline-flex; align-items: center; align-self: center; flex: none; margin-left: 4px; }
-    /* The right end is kept clear for the hide and delete buttons, which sit
-       in that corner: reserved always, so nothing reflows on hover. */
+    /* What the card is, in one drawing and one line: the device with its one
+       shape lit, then the same sentence the inspector carries. The right end
+       is kept clear for the hide and delete buttons, which sit in that
+       corner: reserved always, so nothing reflows on hover. */
     .pk-card-shapes {
+      display: flex; align-items: center; gap: 6px;
       font-size: 11px; color: var(--wa-muted); margin-top: 8px; padding-right: 62px;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
+    .pk-card-glyph { flex: none; display: inline-flex; color: var(--wa-accent); --wa-shape-outline: var(--wa-muted); }
+    .pk-card-glyph svg { display: block; height: 22px; width: auto; }
+    .pk-card-says { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* Duplicate to: the one control on this surface that writes anything. */
+    .pk-dup { position: relative; flex: none; }
+    .pk-dup-open {
+      display: inline-flex; align-items: center; gap: 4px; font: inherit; font-size: 11px; font-weight: 600;
+      padding: 3px 7px; border-radius: 7px; cursor: pointer; color: var(--wa-ink);
+      border: 1px solid var(--wa-line); background: var(--wa-card);
+    }
+    .pk-dup-open:hover:not(:disabled) { border-color: var(--wa-line-strong); }
+    .pk-dup-open:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .pk-dup-open:disabled { opacity: .45; cursor: not-allowed; }
+    .pk-dup-open.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); color: var(--wa-accent); }
+    .pk-dup-open svg { width: 10px; height: 10px; }
+    .pk-dup-menu {
+      position: absolute; top: calc(100% + 6px); right: 0; z-index: 5; width: 224px;
+      display: flex; flex-direction: column; gap: 4px; padding: 8px;
+      border: 1px solid var(--wa-line-strong); border-radius: 10px;
+      background: var(--wa-card); box-shadow: var(--wa-shadow-pop);
+    }
+    .pk-dup-row {
+      display: flex; align-items: center; gap: 7px; width: 100%; text-align: left; cursor: pointer;
+      font: inherit; font-size: 12px; color: var(--wa-ink);
+      padding: 5px 7px; border: 1px solid var(--wa-line); border-radius: 7px; background: var(--wa-card);
+    }
+    .pk-dup-row:hover:not([disabled]) { border-color: var(--wa-line-strong); }
+    .pk-dup-row:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .pk-dup-row[disabled] { opacity: .5; cursor: default; }
+    .pk-dup-row svg { flex: none; width: 14px; height: 14px; }
+    /* The move sits under the copies, with a line between: it is the one row
+       here that takes the design off the device it is on. */
+    .pk-dup-row.move { margin-top: 4px; border-top-color: var(--wa-line-strong); }
+    .pk-dup-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pk-dup-full { flex: none; font-size: 10px; color: var(--wa-muted); }
+    .pk-dup-note { font-size: 10px; line-height: 1.4; color: var(--wa-muted); border-top: 1px solid var(--wa-line); padding-top: 6px; }
     /* Hide and delete, in the card's own corner. Only on hover, or while the
        keyboard is in the card, or while one of them is asking: a wall of cards
        with six icon buttons on every one of them is a wall of icon buttons. */
@@ -8657,6 +8713,7 @@ export class WristAssistantPanel extends LitElement {
             : `Nothing here has a ${familyTitle(filter)} shape.`;
     return html`<dialog class="pk-dialog" aria-label="Your complications" data-look=${this.pickerLook}
       @close=${() => this.pickerClosed()}
+      @cancel=${this.pickerCancel}
       @click=${this.pickerBackdrop}>
       <div class="pk-head">
         <h2>Your complications</h2>
@@ -8698,8 +8755,13 @@ export class WristAssistantPanel extends LitElement {
   private renderUnsavedCard(d: Draft) {
     const cfg = d.config;
     const families = ALL_FAMILIES.filter((f) => cfg.supportedFamilies.includes(f));
+    const family = families[0];
     // Where it will land: the device being edited.
     const unsavedOn = this.devicesOn(this.ownerId ? [this.ownerId] : []);
+    const kind = deviceKindOf(this.selectedOwner);
+    const outline: DeviceKind = kind === "library"
+      ? (family !== undefined && isHomeFamily(family) ? "iphone" : "watch")
+      : kind;
     return html`<div class="pk-card" aria-current="true">
       <div class="pk-card-head">
         <span class="pk-card-text">
@@ -8708,9 +8770,14 @@ export class WristAssistantPanel extends LitElement {
         </span>
         <span class="pk-badge">unsaved</span>
       </div>
-      ${this.renderCardPreview(cfg, this.historyEntities(cfg), deviceKindOf(this.selectedOwner) === "iphone")}
+      ${this.renderCardPreview(cfg, this.historyEntities(cfg), kind === "iphone")}
       <div class=${this.artClass(unsavedOn)}>${designDeviceArt(families, cfg.control !== undefined, this.cardLive(cfg, this.historyEntities(cfg)), unsavedOn)}</div>
-      <div class="pk-card-shapes">${shapeListText(families, cfg.control !== undefined)}</div>
+      <div class="pk-card-shapes">
+        <span class="pk-card-glyph" aria-hidden="true">${family === undefined
+          ? controlDeviceArt(outline, true)
+          : deviceShapeArt(family, outline, true)}</span>
+        <span class="pk-card-says">${cardShapeText(family, kind, cfg.control !== undefined)}</span>
+      </div>
     </div>`;
   }
 
@@ -8771,15 +8838,14 @@ export class WristAssistantPanel extends LitElement {
         </div>
         <span class="pk-card-live none">No preview</span>
         <div class=${this.artClass(this.devicesOn([copy.ownerId]))}>${designDeviceArt(families, false, undefined, this.devicesOn([copy.ownerId]))}</div>
-        <div class="pk-card-shapes">${shapeListText(families, false)}</div>
+        <div class="pk-card-shapes"><span class="pk-card-says">${shapeListText(families, false)}</span></div>
         ${this.pickerNote === row.key ? html`<div class="pk-note">${item.title}</div>` : nothing}
       </div>`;
     }
     const drawn = copy.item.record;
-    // Which copy the buttons act on. Normally the one the card draws, but when
-    // this panel already has one of a link's other copies open it is that one:
-    // the hide then goes through its draft, and the card has to light up as the
-    // open complication even though the drawing beside it is the phone's.
+    // A row is one record on one device, so the copy the card draws is the one
+    // its buttons act on. The one exception is the record this panel has open,
+    // whose hide goes through its draft rather than behind it.
     const mine = this.selectedCopyOf(row);
     const actOn = mine ?? copy;
     const actOwnerId = actOn.ownerId;
@@ -8787,13 +8853,17 @@ export class WristAssistantPanel extends LitElement {
     const open = mine !== undefined;
     const hidden = this.rowHidden(record);
     const recName = row.name;
-    // Every shape any copy carries, not only the one the card opens: a phone
-    // copy has no corner, and a card that left corner dark would be saying the
-    // design does not reach the watch face slot it is sitting in.
-    const families = ALL_FAMILIES.filter((f) => row.copies.some((c) =>
-      c.item.kind === "record" && familiesOf(c.item.record).includes(f)));
-    const control = row.copies.some((c) => c.item.kind === "record" && hasControlOf(c.item.record));
+    // The one shape this record draws, and its control if it has one.
+    const families = ALL_FAMILIES.filter((f) => familiesOf(drawn).includes(f));
+    const family = families[0];
+    const control = hasControlOf(drawn);
     const word = deviceNoun(this.ownerOf(actOwnerId));
+    const kind = deviceKindOf(this.ownerOf(copy.ownerId));
+    // A design on the shelf has no device of its own, so its glyph is the one
+    // its shape belongs to: a Home Screen tile is a phone wherever it is kept.
+    const outline: DeviceKind = kind === "library"
+      ? (family !== undefined && isHomeFamily(family) ? "iphone" : "watch")
+      : kind;
     // The open complication goes through the inspector's own Delete, so an
     // unsaved draft and a conflict behave the same from either place. Hide
     // follows the same split: the open one through its draft, others at once.
@@ -8804,7 +8874,8 @@ export class WristAssistantPanel extends LitElement {
     // called for the cards the chips and the search left in.
     const preview = this.recordPreview(drawn);
     const on = this.devicesOn(row.copies.map((c) => c.ownerId));
-    return html`<div class="pk-card ${hidden ? "dim" : ""}" aria-current=${open ? "true" : "false"}>
+    const menu = this.pickerDupFor === row.key;
+    return html`<div class="pk-card ${hidden ? "dim" : ""} ${menu ? "over" : ""}" aria-current=${open ? "true" : "false"}>
       <div class="pk-card-head">
         <button type="button" class="pk-card-text" title="Open this complication"
           @click=${() => void this.openFromPicker(row)}>
@@ -8812,15 +8883,21 @@ export class WristAssistantPanel extends LitElement {
           <span class="pk-card-who">${who}</span>
         </button>
         ${hidden ? html`<span class="pk-tag" title="These do not show in their device's own list of complications. A face or widget that already has one keeps it.">hidden</span>` : nothing}
+        ${this.renderPickerDup(row, family, menu)}
       </div>
       <button type="button" class="pk-card-open" title="Open this complication"
         @click=${() => void this.openFromPicker(row)}>
         ${preview
-          ? this.renderCardPreview(preview.config, preview.entities, deviceKindOf(this.ownerOf(copy.ownerId)) === "iphone")
+          ? this.renderCardPreview(preview.config, preview.entities, kind === "iphone")
           : html`<span class="pk-card-live none">No preview</span>`}
         <span class=${this.artClass(on)}>${designDeviceArt(families, control, preview ? this.cardLive(preview.config, preview.entities) : undefined, on)}</span>
       </button>
-      <div class="pk-card-shapes">${shapeListText(families, control)}</div>
+      <div class="pk-card-shapes">
+        <span class="pk-card-glyph" aria-hidden="true">${family === undefined
+          ? controlDeviceArt(outline, true)
+          : deviceShapeArt(family, outline, true)}</span>
+        <span class="pk-card-says">${cardShapeText(family, kind, control)}</span>
+      </div>
       <span class="pk-card-acts ${confirming ? "asking" : ""}">
         ${confirming
           ? html`<button type="button" class="ghost danger small" ?disabled=${this.saving}
@@ -8837,6 +8914,214 @@ export class WristAssistantPanel extends LitElement {
       </span>
     </div>`;
   }
+
+  /**
+   * "Duplicate to": the places this design can be made again, as a row each,
+   * and the way back to the library under them.
+   *
+   * The one control on this surface that writes anything. Everything else here
+   * opens a complication or takes one away; this puts the design on somebody
+   * else's watch without the author having to open it first, and shelves it
+   * without having to delete it.
+   *
+   * One menu at a time, held absolutely inside its own card, so a grid three
+   * cards wide never has two of them overlapping each other.
+   */
+  private renderPickerDup(row: PickerRow, family: FamilyKind | undefined, open: boolean) {
+    if (!this.hass.user?.is_admin) return nothing;
+    const from = row.open;
+    if (from.item.kind !== "record") return nothing;
+    const targets = this.rowDupTargets(from.ownerId, family);
+    const shelf = this.libraryOwner();
+    // Moving the record the editor has open out from under its draft is what
+    // Delete is for, so the move is offered on every other card.
+    const mayShelve = shelf !== undefined && from.ownerId !== shelf.ownerId && this.selectedCopyOf(row) === undefined;
+    if (targets.length === 0 && !mayShelve) return nothing;
+    return html`<span class="pk-dup" data-dup=${row.key}>
+      <button type="button" class="pk-dup-open ${open ? "on" : ""}" aria-expanded=${open ? "true" : "false"}
+        title="Make this design again on another device, or put it back in the library" ?disabled=${this.saving}
+        @click=${() => { if (open) this.closePickerDup(); else this.openPickerDup(row.key); }}>Duplicate to${uiIcon("chevron")}</button>
+      ${open ? html`<div class="pk-dup-menu" role="group" aria-label=${`Duplicate ${row.name}`}>
+        ${targets.length === 0
+          ? html`<div class="pk-dup-note">Nothing else in this home draws this shape.</div>`
+          : targets.map((target) => this.renderPickerDupTarget(row, target, family))}
+        ${mayShelve ? html`<button type="button" class="pk-dup-row move" ?disabled=${this.saving}
+          title="Take it off this device and keep it in the library. A face or widget already using it keeps it."
+          @click=${() => void this.shelveRow(row)}>${uiIcon("layers")}
+          <span class="pk-dup-name">Shelve to library</span></button>` : nothing}
+        <div class="pk-dup-note">A copy is written now and is a complication of its own from then on. Shelving moves this one instead.</div>
+      </div>` : nothing}
+    </span>`;
+  }
+
+  /** One place inside "Duplicate to". A place with no seat left for this shape
+   * says so rather than being quietly greyed. */
+  private renderPickerDupTarget(row: PickerRow, target: DeviceOwner, family: FamilyKind | undefined) {
+    const full = this.freeSlotOn(target.ownerId, family) < 0;
+    const label = target.kind === "library" ? "Library" : target.label;
+    return html`<button type="button" class="pk-dup-row" ?disabled=${this.saving || full}
+      title=${full
+        ? `${label} has no free seat for this shape (iPhone presets count too). Delete a complication on it first.`
+        : `Write a copy on ${label}`}
+      @click=${() => void this.duplicateRowTo(row, target)}>
+      ${uiIcon(target.kind === "iphone" ? "phone" : target.kind === "library" ? "layers" : "watch")}
+      <span class="pk-dup-name">${label}</span>
+      ${full ? html`<span class="pk-dup-full">full, ${this.slotsTakenOn(target.ownerId)} of ${MAX_SLOTS}</span>` : nothing}
+    </button>`;
+  }
+
+  /**
+   * The places one card offers: the devices of its own kind that draw its
+   * shape, and the library.
+   *
+   * The same kind, because a watch design and a phone design are different
+   * places to stand even when they draw the same shape, and the editor's
+   * "Duplicate as" is where crossing between them is asked for. A design on
+   * the shelf is the exception: it is on no device at all, so every device
+   * that draws its shape is offered.
+   */
+  private rowDupTargets(fromOwnerId: string, family: FamilyKind | undefined): DeviceOwner[] {
+    const shelf = this.libraryOwner();
+    const candidates = shelf ? [...this.deviceOwners(), shelf] : this.deviceOwners();
+    return duplicateTargets(candidates, family, fromOwnerId, deviceKindOf(this.ownerOf(fromOwnerId)));
+  }
+
+  /**
+   * The document a card's buttons act on.
+   *
+   * The open complication answers from its draft, so a copy is of what is on
+   * screen rather than of the last save. Every other card answers from its
+   * stored record. Undefined for a document this panel cannot parse, whose
+   * card draws an empty well and has nothing to copy.
+   */
+  private rowConfig(row: PickerRow): CustomComplicationConfig | undefined {
+    if (this.selectedCopyOf(row) && this.draft) return this.draft.config;
+    const copy = row.open;
+    if (copy.item.kind !== "record" || !copy.item.record.document) return undefined;
+    try {
+      return parseConfig(copy.item.record.document);
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Write a copy of one card's design on another device, now.
+   *
+   * The same shape it already is: this menu is about where a design sits, and
+   * the shape is what "Duplicate as" asks about. The copy takes the lowest
+   * seat free for that shape there, since a seat number on another device
+   * means nothing.
+   */
+  private async duplicateRowTo(row: PickerRow, target: DeviceOwner) {
+    if (!this.hass.user?.is_admin || this.saving) return;
+    const cfg = this.rowConfig(row);
+    if (!cfg) return;
+    this.closePickerDup();
+    const family = supportedFamilies(cfg)[0];
+    const label = target.kind === "library" ? "the library" : target.label;
+    this.saving = true;
+    this.saveError = undefined;
+    try {
+      // Fresh lists: a seat taken since the menu opened is the whole reason to
+      // look before writing.
+      await this.loadOtherLists();
+      const slot = slotForDuplicate(family, this.slotHoldersOn(target.ownerId), this.blockedSlotsOn(target.ownerId));
+      if (slot < 0) {
+        this.saveError = `${label} has no free seat for this shape (iPhone presets count too). Delete a complication there first.`;
+        return;
+      }
+      const copy = duplicateAs(cfg, family, { id: newId(), slotIndex: slot });
+      const out = await saveRecord(this.hass, target.ownerId, new Draft(copy, null).encoded(), null);
+      if (!out.ok) {
+        this.saveError = out.message ?? out.error ?? "Save failed";
+        return;
+      }
+      this.copyStatus = `${row.name} is on ${label} now, as its own complication to edit there.`;
+      this.copyOpen = { ownerId: target.ownerId, recordId: copy.id };
+      await this.reloadAfterRowWrite(target.ownerId);
+    } catch (err) {
+      this.saveError = errText(err);
+    } finally {
+      this.saving = false;
+    }
+  }
+
+  /**
+   * Take one complication off its device and keep it in the library.
+   *
+   * A design taken off everything is not a design deleted, it is one back on
+   * the home's shelf, waiting for a device. The shelf's copy is written first
+   * and the device's record deleted after it: until the shelf has one, the
+   * device's is the only copy there is.
+   */
+  private async shelveRow(row: PickerRow) {
+    if (!this.hass.user?.is_admin || this.saving) return;
+    const shelf = this.libraryOwner();
+    const copy = row.open;
+    if (!shelf || copy.item.kind !== "record" || copy.ownerId === shelf.ownerId) return;
+    if (this.selectedCopyOf(row)) return;
+    const cfg = this.rowConfig(row);
+    if (!cfg) return;
+    const record = copy.item.record;
+    this.closePickerDup();
+    this.saving = true;
+    this.saveError = undefined;
+    try {
+      await this.loadOtherLists();
+      const family = supportedFamilies(cfg)[0];
+      const slot = slotForDuplicate(family, this.slotHoldersOn(shelf.ownerId), this.blockedSlotsOn(shelf.ownerId));
+      if (slot < 0) {
+        this.saveError = "The library has no free seat for this shape. Delete something in it first.";
+        return;
+      }
+      const kept = duplicateAs(cfg, family, { id: newId(), slotIndex: slot });
+      const out = await saveRecord(this.hass, shelf.ownerId, new Draft(kept, null).encoded(), null);
+      if (!out.ok) {
+        this.saveError = `${row.name} could not be put in the library, so it is still on ${this.ownerName(copy.ownerId)}: ${out.message ?? out.error ?? "the save failed"}`;
+        return;
+      }
+      const gone = await deleteRecord(this.hass, copy.ownerId, record.id, record.revision);
+      this.copyStatus = gone.ok
+        ? `${row.name} is off ${this.ownerName(copy.ownerId)} and in the library. A face or widget already using it keeps it.`
+        : `${row.name} is in the library, but the copy on ${this.ownerName(copy.ownerId)} could not be removed. Delete it from its own card.`;
+      await this.reloadAfterRowWrite(copy.ownerId, shelf.ownerId);
+    } catch (err) {
+      this.saveError = errText(err);
+    } finally {
+      this.saving = false;
+    }
+  }
+
+  private openPickerDup(key: string) {
+    this.pickerDupFor = key;
+    // How full each place is comes off lists this menu is about to draw rows
+    // from, so they are read as it opens.
+    void this.loadOtherLists();
+    window.addEventListener("pointerdown", this.pickerDupOutside, { capture: true });
+  }
+
+  private closePickerDup() {
+    this.pickerDupFor = undefined;
+    window.removeEventListener("pointerdown", this.pickerDupOutside, { capture: true });
+  }
+
+  private pickerDupOutside = (e: PointerEvent) => {
+    const open = this.pickerDupFor;
+    if (open === undefined) return;
+    const inside = e.composedPath().some((n) => n instanceof HTMLElement && n.dataset.dup === open);
+    if (!inside) this.closePickerDup();
+  };
+
+  /** Escape shuts the open menu before it shuts the dialog, so the key undoes
+   * the last thing that was opened rather than the first. A dialog's close
+   * request is cancelable, which is the only hook that stops the browser
+   * shutting the whole thing on the first press. */
+  private pickerCancel = (e: Event) => {
+    if (this.pickerDupFor === undefined) return;
+    e.preventDefault();
+    this.closePickerDup();
+  };
 
   /** Whether a picker row is hidden from its device's complication list. The
    * open one answers from its draft, so an unsaved hide shows at once. */
@@ -8961,6 +9246,7 @@ export class WristAssistantPanel extends LitElement {
     this.pickerOpen = false;
     this.pickerNote = undefined;
     this.pickerConfirmDelete = undefined;
+    this.closePickerDup();
   }
 
   /** A press on the backdrop shuts the dialog. A modal dialog's backdrop is

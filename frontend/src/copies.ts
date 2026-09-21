@@ -199,15 +199,23 @@ export function slotForDuplicate(
  * Center. The Library draws nothing and holds everything, so it is always
  * offered: shelving a design is how it comes off a device without being
  * deleted.
+ *
+ * `sameKind` narrows the devices to one kind, which is what the picker card's
+ * menu asks for: a watch design goes to the home's other watches from there,
+ * and crossing to a phone is "Duplicate as", where the shape is being chosen
+ * anyway. A design on the shelf is on no kind of device at all, so passing
+ * `"library"` narrows nothing.
  */
 export function duplicateTargets(
   owners: readonly DeviceOwner[],
   family: FamilyKind | undefined,
   fromOwnerId: string,
+  sameKind?: DeviceKind,
 ): DeviceOwner[] {
   return owners.filter((o) => {
     if (o.ownerId === fromOwnerId) return false;
     if (o.kind === "library") return true;
+    if (sameKind !== undefined && sameKind !== "library" && o.kind !== sameKind) return false;
     return family === undefined ? o.controls : o.families.includes(family);
   });
 }

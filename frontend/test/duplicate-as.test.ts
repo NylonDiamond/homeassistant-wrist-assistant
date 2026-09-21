@@ -282,4 +282,20 @@ describe("duplicateTargets", () => {
   it("always offers the library, and never offers it to itself", () => {
     expect(duplicateTargets(all, "corner", LIBRARY_OWNER_ID).map((o) => o.ownerId)).toEqual(["w1", "w2"]);
   });
+
+  // What the picker card's menu asks for: the home's other watches, and the
+  // shelf. Crossing to a phone is "Duplicate as", where a shape is picked.
+  it("narrows to one kind of device when asked, the library aside", () => {
+    expect(duplicateTargets(all, "rectangular", "w1", "watch").map((o) => o.ownerId))
+      .toEqual(["w2", LIBRARY_OWNER_ID]);
+    expect(duplicateTargets(all, "rectangular", "p1", "iphone").map((o) => o.ownerId))
+      .toEqual(["p2", LIBRARY_OWNER_ID]);
+  });
+
+  // A design on the shelf is on no kind of device, so every device that draws
+  // its shape is a place it could go.
+  it("narrows nothing for a design in the library", () => {
+    expect(duplicateTargets(all, "rectangular", LIBRARY_OWNER_ID, "library").map((o) => o.ownerId))
+      .toEqual(["w1", "w2", "p1", "p2"]);
+  });
 });

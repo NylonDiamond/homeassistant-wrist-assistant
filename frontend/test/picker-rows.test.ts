@@ -61,6 +61,21 @@ describe("pickerListRows", () => {
     expect(rows[0]!.name).toBe("Porch (watch)");
   });
 
+  // What the card draws now: one device glyph and one shape glyph, both read
+  // off the row's single copy. A row with two copies in it would have to
+  // choose which device it was about.
+  it("gives every row exactly one copy to draw", () => {
+    const rows = pickerListRows([
+      copy({ ownerId: "w1", id: "a", name: "Porch" }),
+      copy({ ownerId: "p1", id: "b", name: "Porch" }),
+      copy({ ownerId: LIBRARY_OWNER_ID, id: "c", name: "Porch" }),
+    ], devices);
+    for (const row of rows) {
+      expect(row.copies).toHaveLength(1);
+      expect(row.copies[0]).toBe(row.open);
+    }
+  });
+
   it("gives every row a key that stays the same across a reload", () => {
     const input = [
       copy({ ownerId: "w1", id: "a" }),
