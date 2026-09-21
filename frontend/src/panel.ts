@@ -1866,7 +1866,7 @@ export class WristAssistantPanel extends LitElement {
        strip and drop it to the middle of the screen. A short list leaves
        the grid's floor empty instead; the eye stays where the tabs are. */
     dialog.pk-dialog {
-      width: min(1040px, 100vw - 32px); height: min(960px, 92vh); padding: 0;
+      width: min(1400px, 100vw - 48px); height: calc(100vh - 48px); padding: 0;
       border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg);
       background: var(--wa-card); color: var(--wa-ink); box-shadow: var(--wa-shadow-pop);
       display: flex; flex-direction: column; overflow: hidden;
@@ -1921,6 +1921,9 @@ export class WristAssistantPanel extends LitElement {
     .pk-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; align-items: stretch; }
     /* Fewer columns on a narrow window: a crop of a device stops being
        readable well before the dialog runs out of width. */
+    /* The dialog grows with the window, so a wide one takes a fifth column
+       rather than stretching four cards past the point where a crop reads. */
+    @media (min-width: 1300px) { .pk-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
     @media (max-width: 900px) { .pk-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
     @media (max-width: 640px) { .pk-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     .pk-card {
@@ -8322,7 +8325,7 @@ export class WristAssistantPanel extends LitElement {
   private pickerDevices(): PickerDevice[] {
     return ownersByKind(this.owners).map((o) => ({
       ownerId: o.owner_watch_id,
-      label: ownerLabel(o),
+      label: ownerShortLabel(o),
       kind: deviceKindOf(o),
     }));
   }
@@ -13988,6 +13991,18 @@ export function ownerLabel(o: OwnerSummary): string {
   const name = o.device_name ?? o.owner_watch_id;
   if (deviceKindOf(o) === "iphone") return /iphone/i.test(name) ? name : `${name} (iPhone)`;
   return o.paired_iphone_name ? `${name} (${o.paired_iphone_name})` : name;
+}
+
+/**
+ * One owner's name where the list already says what kind of device it is.
+ *
+ * The picker's tabs and section headings carry a watch or phone glyph and
+ * the person's color, so the paired phone in parentheses and the "(iPhone)"
+ * badge only repeat what the glyph says. The bare name is what those read.
+ */
+export function ownerShortLabel(o: OwnerSummary): string {
+  if (isLibraryOwner(o)) return UNASSIGNED_LABEL;
+  return o.device_name ?? o.owner_watch_id;
 }
 
 /** Owners in the order the picker lists them: watches first, then phones,

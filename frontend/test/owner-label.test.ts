@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { OwnerSummary } from "../src/ha-api.js";
-import { ownerLabel, ownersByKind } from "../src/panel.js";
+import { ownerLabel, ownerShortLabel, ownersByKind } from "../src/panel.js";
 
 const owner = (over: Partial<OwnerSummary> = {}): OwnerSummary => ({
   owner_watch_id: "w1",
@@ -16,6 +16,14 @@ const owner = (over: Partial<OwnerSummary> = {}): OwnerSummary => ({
   token: 1,
   is_orphan: false,
   ...over,
+});
+
+describe("ownerShortLabel", () => {
+  it("is the bare device name, with no paired phone and no kind badge", () => {
+    expect(ownerShortLabel(owner({ paired_iphone_name: "Jesse's iPhone" }))).toBe("Apple Watch");
+    expect(ownerShortLabel(owner({ device_kind: "iphone", device_name: "Kitchen display" }))).toBe("Kitchen display");
+    expect(ownerShortLabel(owner({ device_name: null }))).toBe("w1");
+  });
 });
 
 describe("ownerLabel", () => {
