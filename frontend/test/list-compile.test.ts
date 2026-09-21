@@ -16,6 +16,7 @@ import {
   documentEntityUses,
   literal,
   mapEntityRefs,
+  legacyConfig,
   newConfig,
   newElement,
   schemaVersionFor,
@@ -87,7 +88,7 @@ function listLayer(source: ListSource, edit: (l: ListElement) => void = () => {}
 }
 
 function configWith(...elements: Element[]): CustomComplicationConfig {
-  const cfg = newConfig("Lists", 0);
+  const cfg = legacyConfig("Lists", 0);
   cfg.elements = elements;
   for (const el of elements) cfg.perFamily.rectangular!.placements[el.payload.id] = { frame: el.payload.frame, isHidden: false };
   return cfg;

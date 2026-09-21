@@ -1,14 +1,13 @@
 // The picker's one list: every complication this home holds, on whichever
-// device draws it, with the copies of a linked complication collapsed into one
-// row.
+// device draws it, one card each. A complication is one record on one device,
+// so a row is a record.
 //
 // The device used to be a folder. The picker opened on a pane of devices down
-// the left and one device's complications down the right, so a complication
-// linked across a watch and a phone appeared twice, was counted twice, and read
-// as two things to keep in step. It is one thing. So the device is a property
-// of a row here (the icons it carries, and the chip that narrows the list to
-// it) rather than the question that has to be answered before anything can be
-// seen at all.
+// the left and one device's complications down the right, so seeing what the
+// home had at all meant walking the devices one by one. So the device is a
+// property of a row here (the icons it carries, and the chip that narrows the
+// list to it) rather than the question that has to be answered before anything
+// can be seen.
 //
 // Everything in this module is pure: it takes the copies the panel has already
 // read off the devices and says which rows they make, in what order, and what
@@ -38,9 +37,6 @@ export interface PickerCopy<T> {
   /** Its seat on that device, which is the order that device's own list is in. */
   slot: number;
   name: string;
-  /** The link this copy belongs to, upper-cased as `linkIdOf` gives it.
-   * Undefined for a complication that lives on one device, which is most. */
-  linkId?: string;
   item: T;
 }
 
@@ -73,45 +69,28 @@ function byName(a: string, b: string): number {
 }
 
 /**
- * The copies grouped into rows.
+ * The copies as rows, one each.
  *
- * Grouped by `linkId` and never by record id: the copies of a link keep
- * different ids on purpose, so placed faces and widgets go on pointing at the
- * right record. A copy with no link is its own row.
+ * A complication is one record on one device, so nothing is grouped: two
+ * people's watches showing "Kitchen" are two complications and read as two
+ * cards. The list used to join the copies of a link into one row, which is
+ * what one shape per complication did away with.
  *
- * The row draws and opens the phone's copy when the link has one, for the same
- * reason `openCopyOf` does: a watch copy can be without the Home Screen sizes
- * (an older watch app cannot decode them), and opening that one would show a
- * design with its tiles missing and then save them away.
+ * `copies` stays a list because every reader of a row walks it, and because a
+ * card still draws the devices its one copy sits on.
  */
 export function pickerListRows<T>(
   copies: readonly PickerCopy<T>[],
   devices: readonly PickerDevice[],
 ): PickerListRow<T>[] {
-  const kinds = new Map(devices.map((d) => [d.ownerId, d.kind]));
-  const groups = new Map<string, PickerCopy<T>[]>();
-  for (const copy of copies) {
-    const key = copy.linkId !== undefined && copy.linkId !== ""
-      ? `link:${copy.linkId}`
-      : `rec:${copy.ownerId}\u0000${copy.id}`;
-    const hit = groups.get(key);
-    if (hit) hit.push(copy);
-    else groups.set(key, [copy]);
-  }
   const rows: PickerListRow<T>[] = [];
-  for (const [key, group] of groups) {
-    const ordered = [...group].sort((a, b) =>
-      deviceIndex(devices, a.ownerId) - deviceIndex(devices, b.ownerId) || a.slot - b.slot);
-    const first = ordered[0];
-    if (!first) continue;
-    const open = ordered.find((c) => kinds.get(c.ownerId) === "iphone") ?? first;
-    rows.push({ key, name: open.name, copies: ordered, open });
+  for (const copy of copies) {
+    rows.push({ key: `rec:${copy.ownerId}\u0000${copy.id}`, name: copy.name, copies: [copy], open: copy });
   }
   return rows;
 }
 
-/** The rows one device draws. A linked row belongs to every device it lives
- * on, so it answers to either chip. */
+/** The rows one device draws. */
 export function rowsOnDevice<T>(rows: readonly PickerListRow<T>[], ownerId: string): PickerListRow<T>[] {
   return rows.filter((row) => row.copies.some((c) => c.ownerId === ownerId));
 }
@@ -130,10 +109,7 @@ export function isShelvedRow<T>(row: PickerListRow<T>): boolean {
 /**
  * The rows one person has, over the devices that are theirs.
  *
- * What the person chips above the list narrow to. A complication on somebody's
- * watch and somebody's phone is one row and answers to that one person once,
- * which is the reading a per-device chip could never give: a linked row would
- * have answered to two chips and looked like two complications again.
+ * What the person chips above the list narrow to.
  *
  * A design in the library answers to every chip, because it belongs to nobody:
  * filing it under one person would be a guess, and filing it under none would
@@ -214,8 +190,7 @@ export function pickerView<T>(
  *
  * "6 of 9" rather than "6 complications": with a search field and a row of
  * chips over the grid, how many were left out is the part worth saying. The
- * whole number counts each linked complication once, because that is how many
- * there are to keep in step.
+ * whole number is every complication this home holds, on every device.
  */
 export function pickerCountText(shown: number, total: number): string {
   return `${shown} of ${total}`;
@@ -243,8 +218,7 @@ function deviceWord(kind: DeviceKind): string {
  * "Jesse (watch, iPhone) · Chen (watch)": people first, their devices in
  * brackets, in the order the household list draws them. The old picker row
  * said only whose it was, because a row had one line to spare; a card has
- * room for the answer in full, and which of somebody's devices draw it is the
- * question "Add to" is about.
+ * room for the answer in full.
  *
  * A person with none of the copies is left out rather than printed empty, and
  * a complication on nothing at all says so in words: an empty line would read

@@ -10,6 +10,7 @@ import { addFamily } from "../src/layouts.js";
 import {
   type CustomComplicationConfig,
   type FamilyKind,
+  legacyConfig,
   newConfig,
   newElement,
   normalizeOwnership,
@@ -21,7 +22,7 @@ import {
 /** A document with one text layer on `home`, plus every other shape in
  * `families` left blank. */
 function drawnOn(home: FamilyKind, ...families: FamilyKind[]): CustomComplicationConfig {
-  const cfg = newConfig("X", 0, [home]);
+  const cfg = newConfig("X", 0, home);
   const el = newElement("text");
   el.payload.frame = { x: 0.1, y: 0.2, width: 0.5, height: 0.4, rotationDegrees: 0 };
   cfg.elements = [el];
@@ -100,13 +101,13 @@ describe("which shape a new one starts from", () => {
 
 describe("when nothing is copied", () => {
   it("leaves a shape alone when the document has no other shape", () => {
-    const cfg = newConfig("X", 0, ["small"]);
+    const cfg = newConfig("X", 0, "small");
     expect(seedFamilyFromSibling(cfg, "small")).toBeUndefined();
     expect(cfg.elements).toEqual([]);
   });
 
   it("leaves a shape alone when every other shape is blank", () => {
-    const cfg = newConfig("X", 0, ["rectangular", "circular", "small"]);
+    const cfg = legacyConfig("X", 0, ["rectangular", "circular", "small"]);
     expect(seedFamilyFromSibling(cfg, "small")).toBeUndefined();
   });
 

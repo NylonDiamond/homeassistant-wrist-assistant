@@ -16,6 +16,7 @@ import {
   type ListSource,
   type NormalizedFrame,
   type Value,
+  legacyConfig,
   newConfig,
   newElement,
 } from "../src/model.js";
@@ -92,7 +93,7 @@ function layoutOf(cfg: CustomComplicationConfig, ctx: ResolveContext, family: "r
 }
 
 function documentWith(...template: Element[]): CustomComplicationConfig {
-  const cfg = newConfig("Rooms", 0, ["rectangular", "large"]);
+  const cfg = legacyConfig("Rooms", 0, ["rectangular", "large"]);
   cfg.supportedFamilies = ["rectangular", "large"];
   cfg.elements = [listLayer((l) => { l.template = template; })];
   return cfg;

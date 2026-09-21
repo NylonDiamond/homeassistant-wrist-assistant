@@ -18,8 +18,7 @@
 import { type TemplateResult, html, nothing, svg } from "lit";
 
 import type { FamilyKind } from "./model.js";
-import { isHomeFamily } from "./layouts.js";
-import { isSharedFamily } from "./linking.js";
+import { isHomeFamily, isSharedFamily } from "./layouts.js";
 import type { DeviceKind } from "./version.js";
 
 /** Tall enough for a phone and wide enough for a watch's bands, with the two
@@ -407,7 +406,7 @@ function controlBeside(live: LiveShape | undefined): TemplateResult {
  * phone saying "not on your phone yet", and a design on one device then spent
  * half its card on a blank drawing while the one that mattered was too small
  * to read. A card with one device draws it larger (`.pk-card-art.one`), and
- * the who line and Add to still say what the blank drawing said.
+ * the who line still says what the blank drawing said.
  *
  * With `live`, each slot the design fills shows the complication itself, drawn
  * small, instead of a lit fill: the card then says what it is and where it

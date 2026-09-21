@@ -510,6 +510,32 @@ def _slot_of(record: ComplicationRecord) -> int:
     return slot
 
 
+def shapes_of(document: Any) -> frozenset[str]:
+    """The shapes a document draws, as the key a slot is shared by.
+
+    A slot holds at most one document per shape (one shape per complication,
+    2026-09-20), so two documents may sit at one slot as long as these sets
+    are disjoint. A control-only document (no families, a ``control`` block)
+    takes the pseudo shape ``control`` so two controls cannot share a slot
+    either. Anything unreadable reads as no shapes, which never clashes.
+    """
+    if not isinstance(document, dict):
+        return frozenset()
+    families = document.get("supportedFamilies")
+    shapes = {f for f in families if isinstance(f, str)} if isinstance(families, list) else set()
+    if not shapes and isinstance(document.get("control"), dict):
+        shapes.add("control")
+    return frozenset(shapes)
+
+
+def _slot_shapes(record: ComplicationRecord) -> set[tuple[int, str]]:
+    """Every (slot, shape) pair a record occupies."""
+    slot = _slot_of(record)
+    if slot < 0:
+        return set()
+    return {(slot, shape) for shape in shapes_of(record.document)}
+
+
 def _validate_uuid(value: Any, what: str) -> str:
     if not isinstance(value, str):
         raise ComplicationValidationError(f"{what} must be a string UUID")
@@ -1510,8 +1536,14 @@ class ComplicationStore:
                 f"the limit is {COMPLICATION_MAX_PER_OWNER}"
             )
 
-        taken = {s for record in kept if (s := _slot_of(record)) >= 0}
-        clashes = sorted({s for record in moving if (s := _slot_of(record)) in taken})
+        # A slot is only in the way when the target draws the same shape
+        # there; a rectangular and a circular may share one slot number.
+        taken: set[tuple[int, str]] = set()
+        for record in kept:
+            taken |= _slot_shapes(record)
+        clashes = sorted(
+            {slot for record in moving for (slot, _) in _slot_shapes(record) & taken}
+        )
         if clashes:
             # Slots are numbered from 1 for a human, as they are in the panel
             # and on the watch face.

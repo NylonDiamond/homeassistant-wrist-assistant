@@ -438,8 +438,8 @@ export interface EditorHost {
   /** The shape being edited; the Layouts row and the layout tab follow it. */
   activeFamily: FamilyKind;
   setActiveFamily(family: FamilyKind): void;
-  /** Add a shape and seed its layout. Also makes it the active shape. */
-  addFamily(family: FamilyKind): void;
+  /** Give a document that lists Inline but carries no Inline text one. */
+  addInlineText(): void;
   /** The complication's name when this edit session opened, for the rename
    * note. Undefined for a brand-new complication (nothing on the watch yet). */
   savedName?: string;
@@ -4791,16 +4791,6 @@ export function seedHintText(source: FamilyKind, target: FamilyKind): string {
     : `Copied from your ${familyTitle(source)} design.`;
 }
 
-/** That line, drawn under the canvas: one sentence and a way to be rid of it.
- * It sits where the shape's own caption sits, since it is a note about the
- * shape being looked at rather than about the document. */
-export function seedHintNote(text: string, dismiss: () => void): TemplateResult {
-  return html`<div class="seed-hint" role="status">
-    <span>${text}</span>
-    <button class="link" @click=${dismiss}>Got it</button>
-  </div>`;
-}
-
 /** How many layers a shape actually draws: what the Layers card counts to
  * decide whether the shape is still blank. */
 export function shownCount(cfg: CustomComplicationConfig, family: FamilyKind): number {
@@ -8570,7 +8560,7 @@ function inlineEditor(host: EditorHost): TemplateResult {
   const inline = host.config.inline;
   if (!inline) {
     return html`<div class="hint">This complication lists Inline but has no Inline text yet (it was saved by an older integration). The watch shows "No inline layout" until one is added.</div>
-      <button class="small" @click=${() => host.addFamily("inline")}>Add Inline text</button>`;
+      <button class="small" @click=${() => host.addInlineText()}>Add Inline text</button>`;
   }
   const upd = (mutate: (i: NonNullable<CustomComplicationConfig["inline"]>) => void, k?: string) => host.update((c) => { if (c.inline) mutate(c.inline); }, k ? `inline-${k}` : undefined);
   const ctx = describeContext(host);

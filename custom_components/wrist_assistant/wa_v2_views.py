@@ -113,6 +113,7 @@ from .complication_store import (
     ComplicationConflictError,
     ComplicationStoreError,
     ComplicationValidationError,
+    shapes_of,
     validate_document,
 )
 from .const import (
@@ -2952,7 +2953,10 @@ async def _op_complications_create(ctx: _OpContext) -> Response:
 
     validated: list[tuple[str, dict[str, Any]]] = []
     batch_ids: set[str] = set()
-    batch_slots: set[int] = set()
+    # A slot holds at most one document per shape, so two documents in one
+    # batch may share a slot number when they draw different shapes (the
+    # preset move wizard writes one document per shape at the preset's slot).
+    batch_shapes: set[tuple[int, str]] = set()
     try:
         for document in documents:
             cleaned = validate_document(document)
@@ -2960,12 +2964,13 @@ async def _op_complications_create(ctx: _OpContext) -> Response:
             if doc_id in batch_ids:
                 raise ComplicationValidationError(f"duplicate document id {doc_id}")
             slot = cleaned["slotIndex"]
-            if slot in batch_slots:
+            shapes = {(slot, shape) for shape in shapes_of(cleaned)}
+            if shapes & batch_shapes:
                 raise ComplicationValidationError(
                     f"duplicate slotIndex {slot} in the batch"
                 )
             batch_ids.add(doc_id)
-            batch_slots.add(slot)
+            batch_shapes |= shapes
             validated.append((doc_id, cleaned))
     except ComplicationStoreError as err:
         return ctx.signed_json(
@@ -2998,8 +3003,14 @@ async def _op_complications_create(ctx: _OpContext) -> Response:
             outcome["status"] = "error"
             outcome["message"] = "id was deleted on the server"
         else:
+            shapes = shapes_of(document)
             slot_holder = next(
-                (r for r in live if (r.document or {}).get("slotIndex") == slot),
+                (
+                    r
+                    for r in live
+                    if (r.document or {}).get("slotIndex") == slot
+                    and shapes_of(r.document) & shapes
+                ),
                 None,
             )
             if slot_holder is not None:

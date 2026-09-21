@@ -11,6 +11,7 @@ import {
   createGroup,
   groupMembers,
   groupOf,
+  legacyConfig,
   newConfig,
   newElement,
   pasteElements,
@@ -21,7 +22,7 @@ import {
 import { setPlacement } from "../src/editors.js";
 
 function withIconAndTap() {
-  const cfg = newConfig("Test", 0);
+  const cfg = legacyConfig("Test", 0);
   const icon = newElement("icon");
   const tap = newElement("tap");
   (tap.payload as TapElement).attachedTo = icon.payload.id;
@@ -47,7 +48,7 @@ describe("copyElements", () => {
   });
 
   it("takes a chart's numbers with the chart", () => {
-    const cfg = newConfig("Test", 0);
+    const cfg = legacyConfig("Test", 0);
     const chart = newElement("chart");
     const label = newElement("text");
     (label.payload as TextElement).value = { kind: { kind: "chartStat", layer: chart.payload.id, stat: "latest" } };
@@ -79,7 +80,7 @@ describe("pasteElements", () => {
     const { cfg, icon } = withIconAndTap();
     setPlacement(cfg, "circular", icon.payload.id, { frame: { x: 0.2, y: 0.3, width: 0.4, height: 0.4, rotationDegrees: 0 } });
     const clip = copyElements(cfg, [icon.payload.id]);
-    const other = newConfig("Other", 0);
+    const other = legacyConfig("Other", 0);
     const [copyId] = pasteElements(other, clip);
     const copy = other.elements.find((e) => e.payload.id === copyId)!;
     expect(copy.payload.frame).toEqual(icon.payload.frame);
@@ -88,7 +89,7 @@ describe("pasteElements", () => {
   });
 
   it("recreates a group when two of its members paste together", () => {
-    const cfg = newConfig("Test", 0);
+    const cfg = legacyConfig("Test", 0);
     const a = newElement("text");
     const b = newElement("icon");
     const c = newElement("shape");
@@ -105,19 +106,19 @@ describe("pasteElements", () => {
   });
 
   it("points a pasted number at the pasted chart, and drops one with no chart", () => {
-    const cfg = newConfig("Test", 0);
+    const cfg = legacyConfig("Test", 0);
     const chart = newElement("chart");
     const label = newElement("text");
     (label.payload as TextElement).value = { kind: { kind: "chartStat", layer: chart.payload.id, stat: "latest" } };
     cfg.elements = [chart, label];
     const clip = copyElements(cfg, [chart.payload.id]);
-    const other = newConfig("Other", 0);
+    const other = legacyConfig("Other", 0);
     const pasted = pasteElements(other, clip);
     const newChart = pasted.find((id) => other.elements.find((e) => e.payload.id === id)?.kind === "chart")!;
     expect(chartLabelsOf(other, newChart)).toHaveLength(1);
     // The number alone, somewhere its chart does not exist: nothing to print.
     const loneClip = copyElements(cfg, [label.payload.id]);
-    expect(pasteElements(newConfig("Empty", 0), loneClip)).toEqual([]);
+    expect(pasteElements(legacyConfig("Empty", 0), loneClip)).toEqual([]);
     // In its own document it still reads the chart it always did.
     expect(pasteElements(cfg, loneClip)).toHaveLength(1);
   });

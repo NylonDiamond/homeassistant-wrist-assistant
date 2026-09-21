@@ -1,7 +1,7 @@
 // Adding and removing shapes, as pure functions over the config.
 
 import { describe, expect, it } from "vitest";
-import { type FamilyKind, type Value, encodeConfig, literal, newConfig, newElement, newRule, parseConfig, schemaVersionFor } from "../src/model.js";
+import { type FamilyKind, type Value, encodeConfig, literal, legacyConfig, newConfig, newElement, newRule, parseConfig, schemaVersionFor } from "../src/model.js";
 import {
   ALL_FAMILIES,
   XLARGE_OFFERED,
@@ -105,16 +105,29 @@ describe("familiesFor", () => {
 });
 
 describe("newConfig", () => {
-  it("keeps the three canvas shapes by default, which is what an old watch needs", () => {
+  it("makes one rectangular shape by default", () => {
     const cfg = newConfig("X", 0);
+    expect(cfg.supportedFamilies).toEqual(["rectangular"]);
+    expect(Object.keys(cfg.perFamily)).toEqual(["rectangular"]);
+    expect(cfg.inline).toBeUndefined();
+    expect(cfg.schemaVersion).toBe(6);
+  });
+
+  it("makes a document with no shape at all for a control", () => {
+    const cfg = newConfig("X", 0, null);
+    expect(cfg.supportedFamilies).toEqual([]);
+    expect(cfg.perFamily).toEqual({});
+  });
+
+  it("keeps the three canvas shapes for a document an older panel wrote", () => {
+    const cfg = legacyConfig("X", 0);
     expect(cfg.supportedFamilies).toEqual(["rectangular", "circular", "corner"]);
     expect(Object.keys(cfg.perFamily).sort()).toEqual(["circular", "corner", "rectangular"]);
-    expect(cfg.inline).toBeUndefined();
     expect(cfg.schemaVersion).toBe(4);
   });
 
   it("creates one shape with its layout and nothing else", () => {
-    const cfg = newConfig("X", 0, ["circular"]);
+    const cfg = newConfig("X", 0, "circular");
     expect(cfg.supportedFamilies).toEqual(["circular"]);
     expect(Object.keys(cfg.perFamily)).toEqual(["circular"]);
     expect(cfg.inline).toBeUndefined();
@@ -122,7 +135,7 @@ describe("newConfig", () => {
   });
 
   it("creates an Inline-only document with a literal and no canvas layout", () => {
-    const cfg = newConfig("X", 0, ["inline"]);
+    const cfg = newConfig("X", 0, "inline");
     expect(cfg.supportedFamilies).toEqual(["inline"]);
     expect(cfg.perFamily).toEqual({});
     expect(cfg.inline).toEqual({ value: literal("Text") });
@@ -130,13 +143,13 @@ describe("newConfig", () => {
   });
 
   it("orders the set canonically whatever order it was asked for", () => {
-    expect(newConfig("X", 0, ["inline", "corner", "rectangular"]).supportedFamilies).toEqual(["rectangular", "corner", "inline"]);
+    expect(legacyConfig("X", 0, ["inline", "corner", "rectangular"]).supportedFamilies).toEqual(["rectangular", "corner", "inline"]);
   });
 });
 
 describe("addFamily", () => {
   it("seeds a default layout for a canvas shape and stamps schema 6 stays until all three are back", () => {
-    const cfg = newConfig("X", 0, ["rectangular"]);
+    const cfg = newConfig("X", 0, "rectangular");
     addFamily(cfg, "circular");
     expect(cfg.supportedFamilies).toEqual(["rectangular", "circular"]);
     expect(cfg.perFamily.circular).toEqual({ placements: {}, cornerBodyShape: "circle", borderWidth: 2, rules: [] });
@@ -149,7 +162,7 @@ describe("addFamily", () => {
   // nothing on it now, and a shape that helps itself to a layer's content is
   // the same surprise a canvas shape used to spring by arriving full.
   it("starts Inline empty, whatever the document already draws", () => {
-    const cfg = newConfig("X", 0, ["rectangular"]);
+    const cfg = newConfig("X", 0, "rectangular");
     const icon = newElement("icon");
     const text = newElement("text");
     if (text.kind !== "text") throw new Error("expected a text layer");
@@ -161,7 +174,7 @@ describe("addFamily", () => {
   });
 
   it("counts an untouched Inline as empty, so dropping it asks nothing", () => {
-    const cfg = newConfig("X", 0, ["rectangular"]);
+    const cfg = newConfig("X", 0, "rectangular");
     cfg.elements = [newElement("text")];
     addFamily(cfg, "inline");
     expect(familyContentSummary(cfg, "inline")).toEqual([]);
@@ -172,7 +185,7 @@ describe("addFamily", () => {
   });
 
   it("is a no-op for a shape already there and never duplicates it", () => {
-    const cfg = newConfig("X", 0, ["rectangular"]);
+    const cfg = newConfig("X", 0, "rectangular");
     cfg.perFamily.rectangular!.borderWidth = 9;
     addFamily(cfg, "rectangular");
     expect(cfg.supportedFamilies).toEqual(["rectangular"]);
@@ -180,7 +193,7 @@ describe("addFamily", () => {
   });
 
   it("keeps canonical order when adding out of order", () => {
-    const cfg = newConfig("X", 0, ["corner"]);
+    const cfg = newConfig("X", 0, "corner");
     addFamily(cfg, "inline");
     addFamily(cfg, "rectangular");
     expect(cfg.supportedFamilies).toEqual(["rectangular", "corner", "inline"]);
@@ -189,7 +202,7 @@ describe("addFamily", () => {
 
 describe("keepFamilies", () => {
   it("returns a copy with only the chosen shapes and leaves the document alone", () => {
-    const cfg = newConfig("X", 0, ["rectangular", "circular", "corner", "inline"]);
+    const cfg = legacyConfig("X", 0, ["rectangular", "circular", "corner", "inline"]);
     const kept = keepFamilies(cfg, ["circular", "inline"]);
     expect(kept.supportedFamilies).toEqual(["circular", "inline"]);
     expect(Object.keys(kept.perFamily)).toEqual(["circular"]);
@@ -198,13 +211,13 @@ describe("keepFamilies", () => {
   });
 
   it("drops Inline when it is not kept", () => {
-    const kept = keepFamilies(newConfig("X", 0, ["rectangular", "inline"]), ["rectangular"]);
+    const kept = keepFamilies(legacyConfig("X", 0, ["rectangular", "inline"]), ["rectangular"]);
     expect(kept.supportedFamilies).toEqual(["rectangular"]);
     expect(kept.inline).toBeUndefined();
   });
 
   it("keeps the whole document rather than empty the set", () => {
-    const cfg = newConfig("X", 0, ["rectangular", "circular"]);
+    const cfg = legacyConfig("X", 0, ["rectangular", "circular"]);
     expect(keepFamilies(cfg, []).supportedFamilies).toEqual(["rectangular", "circular"]);
     expect(keepFamilies(cfg, ["corner"]).supportedFamilies).toEqual(["rectangular", "circular"]);
   });
@@ -212,7 +225,7 @@ describe("keepFamilies", () => {
 
 describe("removeFamily", () => {
   it("drops the shape and its layout together", () => {
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     removeFamily(cfg, "corner");
     expect(cfg.supportedFamilies).toEqual(["rectangular", "circular"]);
     expect(cfg.perFamily.corner).toBeUndefined();
@@ -220,14 +233,14 @@ describe("removeFamily", () => {
   });
 
   it("drops Inline and its text together", () => {
-    const cfg = newConfig("X", 0, ["rectangular", "inline"]);
+    const cfg = legacyConfig("X", 0, ["rectangular", "inline"]);
     removeFamily(cfg, "inline");
     expect(cfg.supportedFamilies).toEqual(["rectangular"]);
     expect(cfg.inline).toBeUndefined();
   });
 
   it("refuses to empty the set", () => {
-    const cfg = newConfig("X", 0, ["inline"]);
+    const cfg = newConfig("X", 0, "inline");
     expect(canRemoveFamily(cfg, "inline")).toBe(false);
     removeFamily(cfg, "inline");
     expect(cfg.supportedFamilies).toEqual(["inline"]);
@@ -235,14 +248,14 @@ describe("removeFamily", () => {
   });
 
   it("ignores a shape the document does not have", () => {
-    const cfg = newConfig("X", 0, ["rectangular", "circular"]);
+    const cfg = legacyConfig("X", 0, ["rectangular", "circular"]);
     expect(canRemoveFamily(cfg, "corner")).toBe(false);
     removeFamily(cfg, "corner");
     expect(cfg.supportedFamilies).toEqual(["rectangular", "circular"]);
   });
 
   it("round-trips through the encoder after a removal so the set and the document agree", () => {
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     removeFamily(cfg, "circular");
     addFamily(cfg, "inline");
     const back = parseConfig(encodeConfig(cfg));
@@ -256,13 +269,13 @@ describe("removeFamily", () => {
 
 describe("familyContentSummary", () => {
   it("is empty for a fresh layout, so no confirmation is asked", () => {
-    const cfg = newConfig("X", 0, ["rectangular", "inline"]);
+    const cfg = legacyConfig("X", 0, ["rectangular", "inline"]);
     expect(familyContentSummary(cfg, "rectangular")).toEqual([]);
     expect(familyContentSummary(cfg, "inline")).toEqual([]);
   });
 
   it("names placements, rules, the bezel and the chrome", () => {
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     const el = newElement("text");
     cfg.elements = [el];
     const corner = cfg.perFamily.corner!;
@@ -276,7 +289,7 @@ describe("familyContentSummary", () => {
   // A shape starts with nothing on it, so removing one the author has not laid
   // out yet must not stop to ask.
   it("counts nothing on a shape that has no layers", () => {
-    const cfg = newConfig("X", 0, ["rectangular"]);
+    const cfg = newConfig("X", 0, "rectangular");
     cfg.elements = [newElement("text"), newElement("icon")];
     addFamily(cfg, "circular");
     expect(Object.keys(cfg.perFamily.circular!.placements)).toHaveLength(0);
@@ -284,7 +297,7 @@ describe("familyContentSummary", () => {
   });
 
   it("counts an edited Inline as content", () => {
-    const cfg = newConfig("X", 0, ["inline"]);
+    const cfg = newConfig("X", 0, "inline");
     cfg.inline!.label = "Temp";
     expect(familyContentSummary(cfg, "inline")).toEqual(["the Inline text"]);
   });

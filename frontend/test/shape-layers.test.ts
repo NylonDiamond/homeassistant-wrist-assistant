@@ -30,7 +30,7 @@ function centre(f: { x: number; y: number; width: number; height: number }) {
 
 /** Two layers on the rectangular shape, then a circular shape added after. */
 function twoShapes() {
-  const cfg = newConfig("X", 0, ["rectangular"]);
+  const cfg = newConfig("X", 0, "rectangular");
   const a = newElement("text");
   const b = newElement("icon");
   a.payload.frame = { x: 0.1, y: 0.2, width: 0.3, height: 0.4, rotationDegrees: 0 };

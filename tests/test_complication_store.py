@@ -653,6 +653,54 @@ def test_single_shape_and_inline_documents_save_at_schema_six(mod, overrides):
 @pytest.mark.parametrize(
     "families",
     [
+        ["rectangular", "circular"],
+        ["rectangular", "circular", "corner"],
+        ["rectangular", "inline"],
+        ["rectangular", "circular", "corner", "small"],
+    ],
+)
+def test_a_multi_shape_document_still_saves_after_one_shape_per_document(mod, families):
+    """N shapes in one document stay valid, even though nothing writes them.
+
+    From 2.8.0 a complication is one shape on one device and the panel writes
+    a single-entry list, but every record written before that is still on
+    disk, and an owner whose app is too old to be migrated keeps its
+    multi-shape documents indefinitely. Refusing them here would make those
+    records unloadable rather than merely old.
+    """
+    store = _new(mod)
+    doc = _doc(schemaVersion=7, supportedFamilies=families)
+    if "inline" in families:
+        doc["inline"] = {"value": {"kind": {"kind": "literal", "value": "72°"}}}
+    rec = store.save(OWNER, doc, base_revision=None, updated_by="t")
+    assert rec.document["supportedFamilies"] == families
+
+
+def test_a_history_summary_keeps_every_family_of_a_multi_shape_document(mod):
+    """`families` is what the panel's history list tells two entries apart by.
+
+    A multi-shape revision from before the split has to keep reporting all of
+    its shapes, or the entry the split replaced reads as if it had only one.
+    """
+    store = _new(mod)
+    doc = _doc(supportedFamilies=["rectangular", "circular", "corner"])
+    store.save(OWNER, doc, base_revision=None, updated_by="kim")
+    store.save(
+        OWNER,
+        dict(doc, schemaVersion=6, supportedFamilies=["rectangular"]),
+        base_revision=1,
+        updated_by="kim",
+    )
+    assert store.history(OWNER, doc["id"])[0].summary()["families"] == [
+        "rectangular",
+        "circular",
+        "corner",
+    ]
+
+
+@pytest.mark.parametrize(
+    "families",
+    [
         ["small"],
         ["medium"],
         ["large"],
@@ -1125,6 +1173,33 @@ def test_move_owner_refuses_a_slot_the_target_already_uses(mod):
     assert store.token == 2
     assert len(store.list(OWNER)) == 1
     assert len(store.list(OTHER)) == 1
+
+
+def test_move_owner_allows_a_slot_the_target_draws_in_another_shape(mod):
+    """A slot holds one document per shape, so a circular may move onto a
+    slot where the target already has a rectangular."""
+    store = _new(mod)
+    rect = _doc(slotIndex=2)
+    rect["supportedFamilies"] = ["rectangular"]
+    rect["schemaVersion"] = 6
+    circ = _doc(slotIndex=2)
+    circ["supportedFamilies"] = ["circular"]
+    circ["schemaVersion"] = 6
+    store.save(OWNER, circ, base_revision=None, updated_by="t")
+    store.save(OTHER, rect, base_revision=None, updated_by="t")
+    [moved] = store.move_owner(OWNER, OTHER, updated_by="panel")
+    assert moved.owner_watch_id == OTHER
+    assert len(store.list(OTHER)) == 2
+
+
+def test_shapes_of_reads_families_and_control(mod):
+    assert mod.shapes_of({"supportedFamilies": ["rectangular", "inline"]}) == {
+        "rectangular",
+        "inline",
+    }
+    assert mod.shapes_of({"supportedFamilies": [], "control": {}}) == {"control"}
+    assert mod.shapes_of({"supportedFamilies": []}) == frozenset()
+    assert mod.shapes_of(None) == frozenset()
 
 
 def test_move_owner_ignores_a_slot_held_by_the_record_it_overwrites(mod):

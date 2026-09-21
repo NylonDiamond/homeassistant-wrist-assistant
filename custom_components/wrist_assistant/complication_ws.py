@@ -407,6 +407,11 @@ def ws_owners(
                 "paired_iphone_name": paired_name,
                 "paired_iphone_id": paired_id or None,
                 "app_version": entry.app_version,
+                # Build number beside the version. Build numbers restart at 1
+                # on every new version, so it only means anything read with
+                # `app_version`; the panel's split migration needs it because
+                # the per-shape slot resolver landed part-way through a beta.
+                "app_build": entry.app_build,
                 "screen_size": entry.screen_size,
                 "complication_count": len(store.list(device_id)),
                 "token": store.owner_token(device_id),
@@ -435,6 +440,7 @@ def ws_owners(
                 "paired_iphone_name": None,
                 "paired_iphone_id": None,
                 "app_version": None,
+                "app_build": None,
                 "screen_size": None,
                 "complication_count": len(store.list(owner)),
                 "token": store.owner_token(owner),
@@ -467,6 +473,7 @@ def ws_owners(
             "paired_iphone_name": None,
             "paired_iphone_id": None,
             "app_version": None,
+            "app_build": None,
             "screen_size": None,
             "complication_count": len(store.list(LIBRARY_OWNER_ID)),
             "token": store.owner_token(LIBRARY_OWNER_ID),

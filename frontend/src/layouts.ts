@@ -118,6 +118,14 @@ export function isHomeFamily(family: FamilyKind): family is HomeFamily {
   return (HOME_FAMILIES as FamilyKind[]).includes(family);
 }
 
+/** The shapes a watch face and an iPhone Lock Screen both draw, which are the
+ * ones drawn as two device outlines rather than one. */
+export const SHARED_FAMILIES: readonly FamilyKind[] = ["rectangular", "circular", "inline"];
+
+export function isSharedFamily(family: FamilyKind): boolean {
+  return SHARED_FAMILIES.includes(family);
+}
+
 /** The one short line a shape carries beside its name, or undefined for a
  * shape that needs none. The full-page tile is the only one with a condition
  * on it: iOS 27 added the family, and no OS version travels on the wire, so
@@ -132,9 +140,7 @@ export function familyNote(family: FamilyKind): string | undefined {
  * Where a shape lives on the device.
  *
  * The New dialog asks this before it asks for a shape, because "Home Screen"
- * is somewhere the owner has stood and "Small" is not. The same grouping is
- * what the editor's Add a shape panel lists under, so a shape is found the
- * same way whether it is picked at the start or added afterwards.
+ * is somewhere the owner has stood and "Small" is not.
  */
 export type ShapePlace = "home" | "lock" | "watch";
 
@@ -323,7 +329,7 @@ export function removeFamily(cfg: CustomComplicationConfig, family: FamilyKind):
  * The same removal with none of the guards: the shape, its layout and its
  * layers go whatever is left behind.
  *
- * Only for a copy nobody is editing. Trimming a linked copy for the device it
+ * Only for a copy nobody is editing. Trimming a copy for the device it
  * is going to (`linking.copyForOwner`) is the one caller: a phone copy loses
  * corner even when corner is the only shape the watch copy has, because there
  * is nothing on a phone for it to land on. Everything the author can press

@@ -58,6 +58,13 @@ export interface OwnerSummary {
       nobody's paired phone, and on an orphan, which has no entry left to ask. */
   paired_iphone_id?: string | null;
   app_version: string | null;
+  /** Build number (CFBundleVersion, "11" style) reported beside the version.
+      Null when the app has not reported one and on an orphan, absent from an
+      integration older than the field. Build numbers restart at 1 on every new
+      version, so this only ever means anything read together with
+      `app_version`: the one gate that needs it is the split migration, whose
+      resolver landed part-way through a beta (see `SPLIT_GATE`). */
+  app_build?: string | null;
   /** Screen size in points ("208x248"), reported by the watch app. Matches a
       renderer `WatchCase` so the preview dropdown defaults to this watch. */
   screen_size: string | null;

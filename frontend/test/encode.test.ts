@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { COMPARISON_KINDS, auditUnknownKeys, encodeConfig, newCase, newConfig, newElement, newRule, newStyleChange, newTest, parseConfig, switchComparison, type StyleChangeKind } from "../src/model.js";
+import { COMPARISON_KINDS, auditUnknownKeys, encodeConfig, newCase, legacyConfig, newConfig, newElement, newRule, newStyleChange, newTest, parseConfig, switchComparison, type StyleChangeKind } from "../src/model.js";
 import { deriveDataSources } from "../src/compiler.js";
 import { addFamily, removeFamily } from "../src/layouts.js";
 import { Draft } from "../src/draft.js";
@@ -29,7 +29,14 @@ describe("encodeConfig", () => {
 
   it.each(fixtureFiles)("round-trips fixture %s, so the file is in canonical Swift form", (file) => {
     const fx = JSON.parse(readFileSync(join(fixtureDir, file), "utf8")) as { config: Record<string, unknown> };
-    expect(canon(encodeConfig(parseConfig(fx.config)))).toEqual(canon(fx.config));
+    // `linkId` joined the copies of one complication across devices. The panel
+    // neither reads it nor writes it any more, so a fixture that still carries
+    // one comes back without it: the key is what the round trip drops, and
+    // nothing else about the document changes. The fixture keeps the key until
+    // the app repo's own set is rebuilt per shape, since these files are
+    // byte-identical copies of that set.
+    const { linkId: _link, ...want } = fx.config;
+    expect(canon(encodeConfig(parseConfig(fx.config)))).toEqual(canon(want));
     expect(auditUnknownKeys(fx.config)).toEqual([]);
   });
 
@@ -39,7 +46,7 @@ describe("encodeConfig", () => {
     // chart or a timeline used to read as carrying unknown keys and open
     // read-only. It cannot lose them either way: `Draft.encoded()` recomputes
     // the whole array on every save.
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     const enc = encodeConfig(cfg) as Record<string, unknown>;
     enc.dataSources = [
       { kind: "entity", entityId: "sensor.a", displayName: "A", domain: "sensor" },
@@ -58,7 +65,7 @@ describe("encodeConfig", () => {
   });
 
   it("round-trips the openPage fields", () => {
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     cfg.tapAction = { type: "openPage" };
     cfg.openPageId = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE";
     cfg.openPageName = "Upstairs";
@@ -75,7 +82,7 @@ describe("encodeConfig", () => {
   });
 
   it("round-trips the countdown flags, and absent stays absent", () => {
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     const el = newElement("text");
     if (el.kind === "text") el.payload.countdown = true;
     cfg.elements = [el];
@@ -102,7 +109,7 @@ describe("encodeConfig", () => {
   });
 
   it("round-trips the text look fields, and defaults stay off the wire", () => {
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     const el = newElement("text");
     if (el.kind === "text") {
       el.payload.monospacedDigits = true;
@@ -126,7 +133,7 @@ describe("encodeConfig", () => {
   });
 
   it("falls back to the defaults when the text look keys are junk or missing", () => {
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     cfg.elements = [newElement("text")];
     const enc = encodeConfig(cfg) as Record<string, unknown>;
     const payload = (enc.elements as Record<string, unknown>[])[0]!.payload as Record<string, unknown>;
@@ -140,7 +147,7 @@ describe("encodeConfig", () => {
   });
 
   it("round-trips an icon path, and the key stays absent for an SF Symbol", () => {
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     const el = newElement("icon");
     if (el.kind === "icon") {
       el.payload.symbol = { kind: { kind: "literal", value: "mdi:flash" } };
@@ -160,7 +167,7 @@ describe("encodeConfig", () => {
   });
 
   it("round-trips a line shape, and thickness stays absent at its default", () => {
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     const el = newElement("shape");
     if (el.kind === "shape") {
       el.payload.kind = "line";
@@ -181,7 +188,7 @@ describe("encodeConfig", () => {
   });
 
   it("round-trips a duration format, and the key stays absent when off", () => {
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     const el = newElement("text");
     if (el.kind === "text") el.payload.value = { kind: { kind: "literal", value: "5015" }, format: { duration: true } };
     cfg.elements = [el];
@@ -197,7 +204,7 @@ describe("encodeConfig", () => {
   });
 
   it("round-trips the image element, and the timestamp key stays absent when off", () => {
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     const el = newElement("image");
     if (el.kind === "image") {
       el.payload.entity = { entityId: "camera.front_door", displayName: "Front Door", domain: "camera" };
@@ -224,7 +231,7 @@ describe("encodeConfig", () => {
   });
 
   it("round-trips an entity picture, and the source key is an audited one", () => {
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     const el = newElement("image");
     if (el.kind === "image") {
       el.payload.entity = { entityId: "person.jesse", displayName: "Jesse", domain: "person" };
@@ -242,7 +249,7 @@ describe("encodeConfig", () => {
   });
 
   it("round-trips the tap element, and the page pair stays absent when unset", () => {
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     const el = newElement("tap");
     if (el.kind === "tap") {
       el.payload.action = { type: "toggleEntity", entityId: "light.kitchen", displayName: "Kitchen", domain: "light" };
@@ -281,7 +288,7 @@ describe("encodeConfig", () => {
   });
 
   it("round-trips a call-service tap, flattening its optional target onto the wire", () => {
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     cfg.tapAction = {
       type: "callService",
       serviceDomain: "cover",
@@ -307,7 +314,7 @@ describe("encodeConfig", () => {
   });
 
   it("leaves a call service's target and data off the wire when it has neither", () => {
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     const el = newElement("tap");
     if (el.kind === "tap") {
       el.payload.action = { type: "callService", serviceDomain: "script", serviceName: "turn_on", serviceDataJSON: "  " };
@@ -325,7 +332,7 @@ describe("encodeConfig", () => {
   });
 
   it("reads a half-written call service rather than refusing the document", () => {
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     cfg.tapAction = { type: "callService", serviceDomain: "", serviceName: "" };
     const enc = encodeConfig(cfg) as Record<string, unknown>;
     enc.tapAction = { type: "callService" };
@@ -334,7 +341,7 @@ describe("encodeConfig", () => {
   });
 
   it("round-trips every comparison kind and style change kind", () => {
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     const el = newElement("text");
     const rule = newRule();
     const c = newCase();
@@ -366,7 +373,7 @@ describe("encodeConfig", () => {
   // app repo): a document with the three canvas shapes and no Inline keeps 4
   // or 5; one shape, or Inline, is 6. Mirrors CustomComplicationConfig.schemaVersion(for:).
   it("stamps schema 6 for one shape or Inline, and 4/5 otherwise", () => {
-    const cfg = newConfig("X", 3);
+    const cfg = legacyConfig("X", 3);
     expect(encodeConfig(cfg).schemaVersion).toBe(4);
     cfg.slotIndex = 9;
     expect(encodeConfig(cfg).schemaVersion).toBe(5);
@@ -388,20 +395,20 @@ describe("encodeConfig", () => {
   // draw the document at all, so it must skip it with "needs app update".
   it("stamps schema 7 for any Home Screen shape, whatever else the document has", () => {
     for (const family of ["small", "medium", "large", "xlarge"] as const) {
-      const cfg = newConfig("X", 0, [family]);
+      const cfg = newConfig("X", 0, family);
       expect(cfg.supportedFamilies).toEqual([family]);
       expect(encodeConfig(cfg).schemaVersion).toBe(7);
       expect(cfg.schemaVersion).toBe(7);
     }
 
     // Beside the three watch shapes, which on their own would be 4.
-    const mixed = newConfig("X", 0);
+    const mixed = legacyConfig("X", 0);
     expect(encodeConfig(mixed).schemaVersion).toBe(4);
     addFamily(mixed, "medium");
     expect(encodeConfig(mixed).schemaVersion).toBe(7);
 
     // And beside Inline, which on its own would be 6.
-    const phone = newConfig("X", 0, ["rectangular", "circular", "inline"]);
+    const phone = legacyConfig("X", 0, ["rectangular", "circular", "inline"]);
     expect(encodeConfig(phone).schemaVersion).toBe(6);
     addFamily(phone, "large");
     expect(encodeConfig(phone).schemaVersion).toBe(7);
@@ -412,7 +419,7 @@ describe("encodeConfig", () => {
   });
 
   it("writes every Home Screen layout into perFamily and reads it back", () => {
-    const cfg = newConfig("X", 0, ["rectangular", "small", "medium", "large", "xlarge"]);
+    const cfg = legacyConfig("X", 0, ["rectangular", "small", "medium", "large", "xlarge"]);
     cfg.elements.push(newElement("text"));
     const enc = encodeConfig(cfg) as Record<string, unknown>;
     expect(enc.supportedFamilies).toEqual(["rectangular", "small", "medium", "large", "xlarge"]);
@@ -431,7 +438,7 @@ describe("encodeConfig", () => {
     const plain = encodeConfig(newConfig("X", 0));
     expect("inline" in plain).toBe(false);
 
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     cfg.supportedFamilies = ["inline"];
     cfg.perFamily = {};
     cfg.inline = { label: "Tea", value: { kind: { kind: "literal", value: "3 min" } }, countdown: true };
@@ -446,14 +453,14 @@ describe("encodeConfig", () => {
   });
 
   it("never writes Inline into perFamily", () => {
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     (cfg.perFamily as Record<string, unknown>).inline = { placements: {}, cornerBodyShape: "circle", borderWidth: 2, rules: [] };
     const enc = encodeConfig(cfg) as { perFamily: unknown[] };
     expect(enc.perFamily.filter((v) => typeof v === "string")).toEqual(["rectangular", "circular", "corner"]);
   });
 
   it("writes the phone's shape rules", () => {
-    const cfg = newConfig("X", 3);
+    const cfg = legacyConfig("X", 3);
     cfg.elements.push(newElement("text"));
     const enc = encodeConfig(cfg) as Record<string, unknown>;
     expect(enc.schemaVersion).toBe(4);
@@ -469,7 +476,7 @@ describe("encodeConfig", () => {
   });
 
   it("omits placement isHidden when false and size when unset", () => {
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     const el = newElement("icon");
     cfg.elements.push(el);
     setPlacement(cfg, "circular", el.payload.id, { frame: { x: 0.1, y: 0.1, width: 0.5, height: 0.5, rotationDegrees: 0 } });
@@ -480,7 +487,7 @@ describe("encodeConfig", () => {
   });
 
   it("leaves a plain gauge's color table, threshold, total and range sources off the wire", () => {
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     cfg.elements.push(newElement("gauge"));
     const enc = encodeConfig(cfg) as { elements: Record<string, unknown>[] };
     const payload = enc.elements[0]!.payload as Record<string, unknown>;
@@ -490,7 +497,7 @@ describe("encodeConfig", () => {
   });
 
   it("round-trips a banded gauge with a threshold and a dot total", () => {
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     const el = newElement("gauge");
     if (el.kind !== "gauge") throw new Error("expected a gauge");
     el.payload.style = "dots";
@@ -516,7 +523,7 @@ describe("encodeConfig", () => {
   });
 
   it("round-trips a gauge whose range follows entities, writing the sources after total", () => {
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     const el = newElement("gauge");
     if (el.kind !== "gauge") throw new Error("expected a gauge");
     el.payload.style = "dots";
@@ -537,7 +544,7 @@ describe("encodeConfig", () => {
   });
 
   it("writes only the range source that is set", () => {
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     const el = newElement("gauge");
     if (el.kind !== "gauge") throw new Error("expected a gauge");
     el.payload.maxSource = { kind: { kind: "entityState", entityId: "number.limit", displayName: "Limit", domain: "number" } };
@@ -548,7 +555,7 @@ describe("encodeConfig", () => {
   });
 
   it("round-trips the corner curved text and bezel gauge", () => {
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     const corner = cfg.perFamily.corner!;
     corner.curvedText = { kind: { kind: "literal", value: "86°" } };
     corner.curvedColorHex = "#FF9500";
@@ -570,7 +577,7 @@ describe("encodeConfig", () => {
   });
 
   it("writes non-finite numbers the way the Swift coder does", () => {
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     const el = newElement("gauge");
     if (el.kind === "gauge") el.payload.maxValue = Infinity;
     cfg.elements.push(el);
@@ -583,7 +590,7 @@ describe("encodeConfig", () => {
 
 describe("auditUnknownKeys", () => {
   it("knows a gauge's range sources and audits inside them like any other value", () => {
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     const el = newElement("gauge");
     if (el.kind !== "gauge") throw new Error("expected a gauge");
     el.payload.minSource = { kind: { kind: "entityState", entityId: "sensor.low", displayName: "Low", domain: "sensor" } };
@@ -667,7 +674,7 @@ describe("setPlacement", () => {
   // A placement is what says a layer belongs to a shape, so writing one for a
   // layer the caller did not name would hand that layer a second owner.
   it("writes a placement for the layer it names and for no other", () => {
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     const a = newElement("text");
     const b = newElement("shape");
     cfg.elements.push(a, b);
