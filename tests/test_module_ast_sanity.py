@@ -12,6 +12,7 @@ the Supervisor's container log ever sees.
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 import pytest
@@ -86,6 +87,62 @@ def test_the_iphone_complication_capability_is_advertised() -> None:
     """
     source = (_PKG / "__init__.py").read_text()
     assert 'register_capability("custom_complications_iphone")' in source
+
+
+def test_the_slot_per_shape_capability_is_advertised() -> None:
+    """The iPhone app checks this before moving presets as per-shape documents.
+
+    A slot holds one document per shape from this version on, which the create
+    batch enforces as a (slot, shape) pair rather than a slot. An app that sent
+    the second document to a server without the fix would get a slot conflict
+    on it and leave the move half done, so the app asks first. Registered
+    unconditionally at setup, like the other complication capabilities.
+    """
+    source = (_PKG / "__init__.py").read_text()
+    assert 'register_capability("custom_complications_slot_per_shape")' in source
+
+
+def _ts_constant(relative: str, name: str) -> int:
+    """One `export const NAME = <int>;` out of a panel source file."""
+    path = Path(__file__).resolve().parents[1] / relative
+    match = re.search(rf"^export const {re.escape(name)} = (\d+);", path.read_text(), re.M)
+    assert match is not None, f"{relative}: no `export const {name} = <number>;`"
+    return int(match.group(1))
+
+
+def _py_constant(module: str, name: str) -> int:
+    """One module-level `NAME = <int>` out of the integration, read without
+    importing it: const.py pulls in nothing, but neither does ast."""
+    source = (_PKG / module).read_text()
+    tree = ast.parse(source, filename=module)
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id == name for t in node.targets
+        ):
+            assert isinstance(node.value, ast.Constant) and isinstance(node.value.value, int)
+            return node.value.value
+        if (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == name
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, int)
+        ):
+            return node.value.value
+    raise AssertionError(f"{module}: no int constant named {name}")
+
+
+def test_the_panel_mirrors_the_per_owner_complication_cap() -> None:
+    """The panel refuses a split that would pass the cap, so it holds the number.
+
+    The store is the one that decides it, and it refuses the save that would
+    pass it. The panel counts first, because a split writes several records per
+    complication and a refusal part way through leaves a device half cut. Two
+    copies of a number is the price of that, and this is what keeps them equal.
+    """
+    assert _ts_constant(
+        "frontend/src/splitShapes.ts", "COMPLICATION_MAX_PER_OWNER"
+    ) == _py_constant("const.py", "COMPLICATION_MAX_PER_OWNER")
 
 
 def test_uninstall_removes_every_store_the_integration_writes() -> None:

@@ -723,6 +723,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # The iPhone is a complication owner in its own right: the app checks this
     # before pulling its own records for the lock screen widgets.
     coordinator.register_capability("custom_complications_iphone")
+    # A slot holds one document per shape: the create batch and the store both
+    # take several records at one slot as long as they draw different shapes
+    # (the (slot, shape) check in wa_v2_views.py, _op_complications_create).
+    # The iPhone app checks this before moving its presets across as one
+    # document per shape, since an older server would refuse the second one as
+    # a slot conflict.
+    coordinator.register_capability("custom_complications_slot_per_shape")
     coordinator.register_capability("gzip")
     coordinator.register_capability("slim_payloads")
     coordinator.register_capability("camera_batch")
