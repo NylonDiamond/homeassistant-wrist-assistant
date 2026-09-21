@@ -164,7 +164,10 @@ describe("transferred preset documents", () => {
       expect(config.id).toBe(raw.id);
       expect(config.slotIndex).toBe(raw.slotIndex);
       expect(config.name).toBe(raw.name);
-      expect(config.elements.length).toBeGreaterThan(0);
+      // An inline document is text only, so it is the one shape with no layers.
+      const inlineOnly = config.supportedFamilies.every((f) => f === "inline");
+      if (inlineOnly) expect(config.inline).toBeDefined();
+      else expect(config.elements.length).toBeGreaterThan(0);
       expect(config.tapAction.type).toBe(
         typeof raw.tapAction === "string" ? raw.tapAction : raw.tapAction.type,
       );
