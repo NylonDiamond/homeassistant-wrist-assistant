@@ -5836,7 +5836,7 @@ ${zL(c)}`}}delete s.hidden,delete s.linkId;let l=Gl(a);if(l.length>0){let d=l.sl
         @change=${l=>{this.pickerFilter=l.target.value}}>
         ${s.map(l=>h`<option value=${l.key} ?selected=${l.key===a}>${l.label} (${l.count})</option>`)}
       </select>
-    </label>`}pickPickerTab(t){this.pickerDevice=t,this.saveListView();let i=this.pickerFilter;i==="all"||i==="control"||this.tabFamilies(t).includes(i)||(this.pickerFilter="all")}pickerTabKey(t){return t.some(i=>i.key===this.pickerDevice)?this.pickerDevice:Qn}tabFamilies(t){if(t===Qn)return this.pickerFamilies;let i=this.ownerOf(t);return i===void 0||Pe(i)?this.pickerFamilies:Jn(i)}pickerMatches(t,i,a){return i===""||t.name.toLocaleLowerCase().includes(i)?!0:Gx(t.copies.map(r=>r.ownerId),this.pickerPeople(a)).toLocaleLowerCase().includes(i)}pickerPeople(t){return t.map(i=>({label:i.label,devices:i.owners.map(a=>({ownerId:a.owner_watch_id,kind:ce(a)}))}))}get pickerFamilies(){let t=[],i=a=>{for(let r of a)t.includes(r)||t.push(r)};for(let a of Ds(this.owners))Pe(a)||i(Jn(a));return t.length===0&&i(Jn(this.selectedOwner)),t}async openFromPicker(t){let i=this.selectedCopyOf(t)??t.open;if(i.item.kind!=="record")return;let a=i.item.record,r=i.ownerId;if(this.togglePicker(!1),r===this.ownerId){this.selectRecord(this.records.find(o=>o.id===a.id)??a);return}await this.selectOwner(r),this.ownerId===r&&this.selectRecord(this.records.find(o=>o.id===a.id)??a)}newFromPicker(){this.togglePicker(!1),this.openNewDialog()}renderPicker(){let t=this.draft,i=t?t.config.name.trim()||"Untitled":"No complication",a=t?t.config.supportedFamilies:[],r=jo(this.owners),o=t&&this.ownerId?[this.ownerId]:[],s=r.length>1?Zn(Qw(r,o)):"",l=t!==void 0&&Pe(this.selectedOwner);return h`<div class="picker">
+    </label>`}pickPickerTab(t){this.pickerDevice=t,this.saveListView();let i=this.pickerFilter;i==="all"||i==="control"||this.tabFamilies(t).includes(i)||(this.pickerFilter="all")}pickerTabKey(t){return t.some(i=>i.key===this.pickerDevice)?this.pickerDevice:Qn}tabFamilies(t){if(t===Qn)return this.pickerFamilies;let i=this.ownerOf(t);return i===void 0||Pe(i)?this.pickerFamilies:Jn(i)}pickerMatches(t,i,a){return i===""||t.name.toLocaleLowerCase().includes(i)?!0:Gx(t.copies.map(r=>r.ownerId),this.pickerPeople(a)).toLocaleLowerCase().includes(i)}pickerPeople(t){return t.map(i=>({label:i.label,devices:i.owners.map(a=>({ownerId:a.owner_watch_id,kind:ce(a)}))}))}get pickerFamilies(){let t=[],i=a=>{for(let r of a)t.includes(r)||t.push(r)};for(let a of Ds(this.owners))Pe(a)||i(Jn(a));return t.length===0&&i(Jn(this.selectedOwner)),t}async openFromPicker(t,i=this.selectedCopyOf(t)??t.open){if(i.item.kind!=="record")return;let a=i.item.record,r=i.ownerId;if(this.togglePicker(!1),r===this.ownerId){this.selectRecord(this.records.find(o=>o.id===a.id)??a);return}await this.selectOwner(r),this.ownerId===r&&this.selectRecord(this.records.find(o=>o.id===a.id)??a)}newFromPicker(){this.togglePicker(!1),this.openNewDialog()}renderPicker(){let t=this.draft,i=t?t.config.name.trim()||"Untitled":"No complication",a=t?t.config.supportedFamilies:[],r=jo(this.owners),o=t&&this.ownerId?[this.ownerId]:[],s=r.length>1?Zn(Qw(r,o)):"",l=t!==void 0&&Pe(this.selectedOwner);return h`<div class="picker">
       <button id="wa-picker" class="pk-open" aria-haspopup="dialog" aria-expanded=${this.pickerOpen?"true":"false"}
         title="Choose a complication" @click=${()=>this.togglePicker()}>
         <span class="pk-open-lines">
@@ -5928,11 +5928,11 @@ ${zL(c)}`}}delete s.hidden,delete s.linkId;let l=Gl(a);if(l.length>0){let d=l.sl
       aria-current=${u?"true":"false"}>
       <div class="pk-card-top">
         <button type="button" class="pk-card-name" title="Open this complication"
-          @click=${()=>{this.openFromPicker(t)}}>${g}</button>
+          @click=${()=>{this.openFromPicker(t,d)}}>${g}</button>
       </div>
       <div class="pk-card-pic">
         <button type="button" class="pk-card-open" title="Open this complication"
-          aria-label=${`Open ${g}`} @click=${()=>{this.openFromPicker(t)}}>
+          aria-label=${`Open ${g}`} @click=${()=>{this.openFromPicker(t,d)}}>
           <span class="pk-card-crop">${Gd(y,M,K?M==="iphone"?K.phone:K.watch:{},{shelved:o})}</span>
         </button>
         <span class="pk-card-acts ${z?"asking":""}">

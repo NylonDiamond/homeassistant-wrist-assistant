@@ -8885,8 +8885,11 @@ export class WristAssistantPanel extends LitElement {
    * device to open it on. Clicking the card of the complication this panel
    * already has open leaves the editor where it is.
    */
-  private async openFromPicker(row: PickerRow) {
-    const copy = this.selectedCopyOf(row) ?? row.open;
+  private async openFromPicker(row: PickerRow, copy: PickerCopy<PickerItem> = this.selectedCopyOf(row) ?? row.open) {
+    // The card says which device's copy it is: a design on two watches is
+    // two cards, and each opens its own. The row's default copy is the panel's
+    // current device or the first in device order, which for a card in
+    // another device's block is the wrong one.
     if (copy.item.kind !== "record") return;
     const record = copy.item.record;
     const target = copy.ownerId;
@@ -9250,11 +9253,11 @@ export class WristAssistantPanel extends LitElement {
       aria-current=${open ? "true" : "false"}>
       <div class="pk-card-top">
         <button type="button" class="pk-card-name" title="Open this complication"
-          @click=${() => void this.openFromPicker(row)}>${recName}</button>
+          @click=${() => void this.openFromPicker(row, actOn)}>${recName}</button>
       </div>
       <div class="pk-card-pic">
         <button type="button" class="pk-card-open" title="Open this complication"
-          aria-label=${`Open ${recName}`} @click=${() => void this.openFromPicker(row)}>
+          aria-label=${`Open ${recName}`} @click=${() => void this.openFromPicker(row, actOn)}>
           <span class="pk-card-crop">${deviceCropArt(family, device,
             live ? (device === "iphone" ? live.phone : live.watch) : {}, { shelved })}</span>
         </button>
