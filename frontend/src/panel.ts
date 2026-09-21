@@ -8787,7 +8787,7 @@ export class WristAssistantPanel extends LitElement {
         ? html`<span class="pk-foot-hint">Blue marks where each design sits. Click a card to open it.</span>`
         : html`<span class="pk-foot-said ${this.saveError ? "err" : ""}">${said}</span>
           <button type="button" class="ghost small"
-            @click=${() => { this.saveError = undefined; this.copyStatus = undefined; }}>Dismiss</button>`}
+            @click=${() => { this.saveError = undefined; this.copyStatus = undefined; this.copyOpen = undefined; }}>Dismiss</button>`}
       <button type="button" class="new-btn" ?disabled=${full || this.ownerBusy}
         title=${full ? `${where} has no free slot. Delete a complication first.` : "Paste a complication somebody shared"}
         @click=${() => this.importFromPicker()}><span>Import</span></button>
