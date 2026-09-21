@@ -553,6 +553,13 @@ const CONTROL_TAB_TILE_SIDE = 52;
  * drawn at the size of the crop beside it rather than as a glyph. */
 const CARD_ART_TILE_SIDE = 44;
 
+/** The box a picker card lays its inline line out in, CSS px, before the
+ * drawing scales it into the band over the clock. Wide enough for a label,
+ * a symbol and a value at the small preview's 11px, and the band's own
+ * proportions, so the whole box lands in the band with nothing to trim. */
+const CARD_INLINE_WIDTH = 116;
+const CARD_INLINE_HEIGHT = 16;
+
 const COL_LEFT_DEFAULT = 300;
 const COL_RIGHT_DEFAULT = 360;
 /** Layer-row thumbnail box, CSS px. Wide, because most layers are wider than tall. */
@@ -1960,9 +1967,19 @@ export class WristAssistantPanel extends LitElement {
        what keeps it from disappearing into the dark skin. */
     .pk-card-crop {
       display: flex; align-items: center; justify-content: center; overflow: hidden;
-      height: 88px; border-radius: 10px; background: #000; box-shadow: inset 0 0 0 1px rgba(255,255,255,.1);
+      aspect-ratio: 86 / 48; border-radius: 10px; background: #000; box-shadow: inset 0 0 0 1px rgba(255,255,255,.1);
     }
     .pk-card-crop > svg.pk-crop { display: block; width: 100%; height: 100%; }
+    /* The inline line inside the watch drawing: the editor's own small line,
+       laid out at its box's size and scaled down by the drawing round it. */
+    .pk-card-crop .inline-line {
+      display: flex; align-items: center; justify-content: center; gap: 3px;
+      width: 100%; height: 100%; padding: 0 4px; box-sizing: border-box;
+      font-size: 11px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden;
+    }
+    .pk-card-crop .inline-line > span { overflow: hidden; text-overflow: ellipsis; }
+    .pk-card-crop .inline-line svg { display: inline-block; flex: none; width: 11px; height: 11px; margin: 0; background: transparent; border-radius: 0; }
+    .pk-card-crop .inline-line.missing { color: var(--wa-muted); font-weight: 400; }
     /* A design that is only a Control Center control has its tile as the whole
        picture: it sits on neither screen, so there is no device to crop. The
        real tile is the editor's own laid-out box, so it keeps the size it was
@@ -8496,8 +8513,15 @@ export class WristAssistantPanel extends LitElement {
       if (control) out.control = control;
       return out;
     };
+    const watch = pick(["rectangular", "circular", "corner"], false);
+    // Inline is the panel's own laid out line rather than a render: the same
+    // line the editor's preview shows, at the size it lays out at, for the
+    // drawing to scale into the band over the clock.
+    if (cfg.supportedFamilies.includes("inline")) {
+      watch.inline = { art: this.renderInlinePreview(layouts.inline, true), width: CARD_INLINE_WIDTH, height: CARD_INLINE_HEIGHT };
+    }
     return {
-      watch: pick(["rectangular", "circular", "corner"], false),
+      watch,
       phone: pick(["rectangular", "circular", "small", "medium", "large", "xlarge"], true),
     };
   }
@@ -9419,7 +9443,10 @@ export class WristAssistantPanel extends LitElement {
       const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.pk-dialog");
       if (!dialog) return;
       if (!dialog.open) dialog.showModal();
-      dialog.querySelector<HTMLInputElement>("input.pk-search-input")?.focus();
+      // Focus lands on the tab that is on, not in the search field: a
+      // dialog that opens typing-ready reads as a search box, and this one
+      // is a grid to look at. Typing is one Tab away.
+      dialog.querySelector<HTMLButtonElement>("[role=tab][aria-selected=true]")?.focus();
     });
   }
 

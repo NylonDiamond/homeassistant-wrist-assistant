@@ -6,7 +6,7 @@
 // assertions are about what the SVG says rather than about a rendered box.
 
 import { describe, expect, it } from "vitest";
-import { nothing, svg } from "lit";
+import { html, nothing, svg } from "lit";
 
 import { ALL_FAMILIES } from "../src/layouts.js";
 import type { FamilyKind } from "../src/model.js";
@@ -222,10 +222,10 @@ describe("deviceCropArt", () => {
   /** Where each shape's slot sits on its device, so a window can be asked
    * whether the thing it is a window onto is in it. */
   const SLOTS: [FamilyKind, "watch" | "iphone", { x: number; y: number; width: number; height: number }][] = [
-    ["rectangular", "watch", { x: 14, y: 38, width: 58, height: 21 }],
-    ["circular", "watch", { x: 13, y: 63, width: 16, height: 16 }],
+    ["rectangular", "watch", { x: 14, y: 48, width: 58, height: 19 }],
+    ["circular", "watch", { x: 14, y: 68, width: 14, height: 14 }],
     ["corner", "watch", { x: 14, y: 17, width: 13, height: 13 }],
-    ["inline", "watch", { x: 36, y: 15, width: 30, height: 3 }],
+    ["inline", "watch", { x: 28, y: 15, width: 30, height: 3 }],
     ["rectangular", "iphone", { x: 9, y: 22, width: 32, height: 13 }],
     ["circular", "iphone", { x: 9, y: 22, width: 32, height: 13 }],
     ["inline", "iphone", { x: 9, y: 22, width: 32, height: 13 }],
@@ -258,24 +258,31 @@ describe("deviceCropArt", () => {
     }
   });
 
-  // Each window is about twice as wide as it is tall, which is the shape of
-  // the well a card gives it: a window of another shape would have its edges
-  // trimmed to fit, and what was trimmed is the part that matters.
+  // Each window is close to the well's own proportions (86 by 48, the half
+  // of a watch): a window of another shape would have its edges trimmed to
+  // fit, and what was trimmed is the part that matters.
   it("cuts every window to the card's own proportions", () => {
     for (const [family, device] of SLOTS) {
       const box = viewBox(crop(family, device));
-      expect(box.width / box.height, `${family} on ${device}`).toBeCloseTo(2, 1);
+      expect(box.width / box.height, `${family} on ${device}`).toBeGreaterThan(1.7);
+      expect(box.width / box.height, `${family} on ${device}`).toBeLessThan(2.1);
     }
     expect(crop("rectangular", "watch")).toContain(`preserveAspectRatio="xMidYMid slice"`);
   });
 
-  it("shows different parts of the device for different shapes", () => {
-    const boxes = new Set([
-      JSON.stringify(viewBox(crop("rectangular", "watch"))),
-      JSON.stringify(viewBox(crop("circular", "watch"))),
-      JSON.stringify(viewBox(crop("corner", "watch"))),
-    ]);
-    expect(boxes.size).toBe(3);
+  // The watch has two windows, its two halves: the lower one for rectangular
+  // and circular, the upper one for corner and inline, each reaching past the
+  // case to a slice of the band so the piece of watch reads as a watch.
+  it("shows the lower half of the watch for rectangular and circular and the upper half for corner and inline", () => {
+    const lower = { x: 0, y: 48, width: 86, height: 48 };
+    const upper = { x: 0, y: 0, width: 86, height: 48 };
+    expect(viewBox(crop("rectangular", "watch"))).toEqual(lower);
+    expect(viewBox(crop("circular", "watch"))).toEqual(lower);
+    expect(viewBox(crop("corner", "watch"))).toEqual(upper);
+    expect(viewBox(crop("inline", "watch"))).toEqual(upper);
+    // The band stubs sit at the top and bottom edges of the drawing.
+    expect(crop("rectangular", "watch")).toContain(`x="27" y="86" width="32" height="10"`);
+    expect(crop("corner", "watch")).toContain(`x="27" y="0" width="32" height="10"`);
     expect(new Set([
       JSON.stringify(viewBox(crop("small", "iphone"))),
       JSON.stringify(viewBox(crop("medium", "iphone"))),
@@ -292,8 +299,8 @@ describe("deviceCropArt", () => {
 
   it("lights the shape's own slot and leaves its neighbours off", () => {
     const art = crop("rectangular", "watch");
-    expect(art).toContain(`x="14" y="38" width="58" height="21" rx="5" fill=var(--wa-accent)`);
-    expect(art).toContain(`cx="21" cy="71" r="8" fill=var(--wa-art-off)`);
+    expect(art).toContain(`x="14" y="48" width="58" height="19" rx="5" fill=var(--wa-accent)`);
+    expect(art).toContain(`cx="21" cy="75" r="7" fill=var(--wa-art-off)`);
   });
 
   it("hides the drawing from a screen reader, the card's text saying it instead", () => {
@@ -321,16 +328,27 @@ describe("deviceCropArt", () => {
     it("sets the picture into the slot in place of the lit fill", () => {
       const art = crop("rectangular", "watch", { rectangular: picture("w") });
       expect(art).toContain("data-tag=w");
-      expect(art).not.toContain(`x="14" y="38" width="58" height="21"`);
+      expect(art).not.toContain(`x="14" y="48" width="58" height="19"`);
     });
 
     it("scales the picture to fit the slot and centres it", () => {
       const art = crop("rectangular", "watch", { rectangular: picture("w") });
-      // The full 58 wide slot for a 181 wide picture, so 58/181; 65.5 tall
-      // becomes 20.99, sat in the middle of the 21 tall slot.
-      const scale = 58 / 181;
-      const y = 38 + (21 - 65.5 * scale) / 2;
-      expect(art).toContain(`translate(14 ${y}) scale(${scale})`);
+      // The slot is 19 tall for a 65.5 tall picture, so 19/65.5, which is
+      // the tighter side; the 181 wide picture becomes 52.5 wide, sat in the
+      // middle of the 58 wide slot.
+      const scale = 19 / 65.5;
+      const x = 14 + (58 - 181 * scale) / 2;
+      expect(art).toContain(`translate(${x} 48) scale(${scale})`);
+    });
+
+    it("sets the inline line into the band over the clock through a foreignObject", () => {
+      const line = { art: html`<div class="inline-line"><span>Kitchen: 21</span></div>`, width: 116, height: 16 };
+      const art = crop("inline", "watch", { inline: line });
+      expect(art).toContain("<foreignObject");
+      expect(art).toContain("Kitchen: 21");
+      // 58 by 8 band for a 116 by 16 line: half size, filling the band.
+      expect(art).toContain(`translate(14 13) scale(0.5)`);
+      expect(art).not.toContain(`x="28" y="15" width="30" height="3"`);
     });
 
     it("draws the Large tile from the top and clips it, rather than squeezing it flat", () => {

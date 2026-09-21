@@ -332,10 +332,15 @@ const faceClock = (x: number, y: number, size: number, text: string) =>
 function watchBody(families: readonly FamilyKind[], live: LiveShapes, shelved: boolean): unknown {
   const has = (f: FamilyKind) => families.includes(f);
   // The real shape in its slot where there is one, the lit fill otherwise.
-  // Inline is a line of text rather than a canvas and has no picture to set.
-  const rect = placed(live.rectangular, { x: 14, y: 38, width: 58, height: 21 }, "fit", "", { rx: 3 });
-  const circ = placed(live.circular, { x: 13, y: 63, width: 16, height: 16 }, "fit", "", "circle");
+  // Rectangular and circular sit in the lower half of the face and corner and
+  // inline in the upper one, so a window onto either half holds two shapes
+  // and a slice of the band beyond the case: the crops are the two halves.
+  const rect = placed(live.rectangular, { x: 14, y: 48, width: 58, height: 19 }, "fit", "", { rx: 3 });
+  const circ = placed(live.circular, { x: 14, y: 68, width: 14, height: 14 }, "fit", "", "circle");
   const corner = placed(live.corner, { x: 14, y: 17, width: 13, height: 13 }, "fit", clipKey(), "circle");
+  // Inline is a line of text rather than a canvas: the panel's own laid out
+  // line, set into the band over the clock.
+  const inline = placedInline(live.inline, { x: 14, y: 13, width: 58, height: 8 });
   // A shelved design has no watch: the case is drawn as a dashed outline, and
   // the bands and crown, which are the parts that make it a real object, are
   // left off.
@@ -349,10 +354,31 @@ function watchBody(families: readonly FamilyKind[], live: LiveShapes, shelved: b
       <rect x="11" y="13" width="64" height="70" rx="14" fill=${SCREEN} />`;
   return svg`${shell}
     ${faceClock(56, 33, 13, "10:09")}
-    <rect x="36" y="15" width="30" height="3" rx="1.5" fill=${lit(has("inline"))} />
+    ${inline ?? svg`<rect x="28" y="15" width="30" height="3" rx="1.5" fill=${lit(has("inline"))} />`}
     ${corner ?? svg`<path d="M16 30 A 26 26 0 0 1 28 19" stroke=${lit(has("corner"))} stroke-width="4" fill="none" stroke-linecap="round" />`}
-    ${rect ?? svg`<rect x="14" y="38" width="58" height="21" rx="5" fill=${lit(has("rectangular"))} />`}
-    ${circ ?? svg`<circle cx="21" cy="71" r="8" fill=${lit(has("circular"))} />`}`;
+    ${rect ?? svg`<rect x="14" y="48" width="58" height="19" rx="5" fill=${lit(has("rectangular"))} />`}
+    ${circ ?? svg`<circle cx="21" cy="75" r="7" fill=${lit(has("circular"))} />`}`;
+}
+
+/**
+ * The inline line set into its band on the watch.
+ *
+ * Inline is not drawn by the renderer: it is the panel's own line of HTML, a
+ * symbol and some text, the same one the editor's preview shows. It goes into
+ * the drawing through a foreignObject, laid out at its own size and scaled
+ * down as a whole to fit the band, so the text wraps and clips exactly as the
+ * bigger preview does. `width` and `height` are the size the line is laid
+ * out at, in CSS px.
+ */
+function placedInline(live: LiveShape | undefined, slot: { x: number; y: number; width: number; height: number }): unknown {
+  if (live === undefined || live.art === nothing || live.width <= 0 || live.height <= 0) return undefined;
+  const scale = Math.min(slot.width / live.width, slot.height / live.height);
+  const width = live.width * scale;
+  const height = live.height * scale;
+  const x = slot.x + (slot.width - width) / 2;
+  const y = slot.y + (slot.height - height) / 2;
+  return svg`<g class="pk-live" transform=${`translate(${x} ${y}) scale(${scale})`}>
+    <foreignObject x="0" y="0" width=${live.width} height=${live.height}>${live.art}</foreignObject></g>`;
 }
 
 /**
@@ -452,20 +478,21 @@ interface Crop {
  * well a card gives it: the window is filled and its edges trimmed, so a crop
  * of another shape would lose the part that matters.
  *
- * Rectangular takes the lower half of the face, with the clock peeking in
- * over it; circular the row its slot sits in; corner and inline the top of
- * the face, where the arc curls and the clock stands beside it. A shape no
- * watch draws falls back to the whole case rather than an invented window.
+ * Two windows, the two halves of the watch. Rectangular and circular take the
+ * lower half, corner and inline the upper one, each half running from the
+ * middle of the face out past the case to a slice of the band, so every card
+ * of one half shows the same piece of watch and the eye has one thing to
+ * learn. A shape no watch draws falls back to the whole case rather than an
+ * invented window.
  */
 function watchCrop(family: FamilyKind): Crop {
   switch (family) {
     case "rectangular":
-      return { x: 2, y: 24, width: 82, height: 41 };
     case "circular":
-      return { x: 2, y: 52, width: 82, height: 41 };
+      return { x: 0, y: 48, width: 86, height: 48 };
     case "corner":
     case "inline":
-      return { x: 2, y: 2, width: 82, height: 41 };
+      return { x: 0, y: 0, width: 86, height: 48 };
     default:
       return { x: 0, y: 0, width: 86, height: 96 };
   }
