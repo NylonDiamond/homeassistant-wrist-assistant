@@ -480,10 +480,13 @@ function shapeListText(families: readonly FamilyKind[], control: boolean): strin
  * inspector's Complication card uses, so a design reads the same in the grid
  * and in the editor.
  */
-function cardShapeText(family: FamilyKind | undefined, kind: DeviceKind, control: boolean): string {
-  const shape = family === undefined ? "Control Center" : familyTitle(family);
+function cardShapeText(families: readonly FamilyKind[], kind: DeviceKind, control: boolean): string {
+  // More than one shape is a document an older panel wrote, which this one
+  // opens but never makes. It says so rather than naming the first shape and
+  // quietly dropping the rest.
+  const shape = families.length === 0 ? "Control Center" : families.map(familyTitle).join(" · ");
   const where = kind === "library" ? "in the library" : kind === "iphone" ? "on an iPhone" : "on a watch";
-  const also = control && family !== undefined ? ", with a control" : "";
+  const also = control && families.length > 0 ? ", with a control" : "";
   return `${shape} ${where}${also}`;
 }
 
@@ -8762,7 +8765,7 @@ export class WristAssistantPanel extends LitElement {
         <span class="pk-card-glyph" aria-hidden="true">${family === undefined
           ? controlDeviceArt(outline, true)
           : deviceShapeArt(family, outline, true)}</span>
-        <span class="pk-card-says">${cardShapeText(family, kind, cfg.control !== undefined)}</span>
+        <span class="pk-card-says">${cardShapeText(families, kind, cfg.control !== undefined)}</span>
       </div>
     </div>`;
   }
@@ -8882,7 +8885,7 @@ export class WristAssistantPanel extends LitElement {
         <span class="pk-card-glyph" aria-hidden="true">${family === undefined
           ? controlDeviceArt(outline, true)
           : deviceShapeArt(family, outline, true)}</span>
-        <span class="pk-card-says">${cardShapeText(family, kind, control)}</span>
+        <span class="pk-card-says">${cardShapeText(families, kind, control)}</span>
       </div>
       <span class="pk-card-acts ${confirming ? "asking" : ""}">
         ${confirming
