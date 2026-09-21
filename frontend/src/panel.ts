@@ -160,7 +160,7 @@ import {
   shapeOffered,
 } from "./newComplication.js";
 import { type Person, deviceShortName, peopleNames, peopleOf, personOf } from "./people.js";
-import { type DevicesOn, type LiveDesign, type LiveShape, type LiveShapes, controlDeviceArt, designDeviceArt, deviceShapeArt } from "./shapeArt.js";
+import { type LiveDesign, type LiveShape, type LiveShapes, controlDeviceArt, deviceCropArt, deviceShapeArt } from "./shapeArt.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { type DeviceKind, type DeviceOwnerLike, LIBRARY_OWNER_ID, deviceKindOf, deviceNoun, deviceSupportsShapes, isLibraryOwner, ownerSupportsControls, updateDeviceMessage } from "./version.js";
 import { type SplitNotice, autoSplitShapes, editBlockedBySplitGate } from "./splitShapes.js";
@@ -177,15 +177,17 @@ import {
   type PickerDevice,
   type PickerListRow,
   type PickerPerson,
-  type PersonFilter,
+  type PickerSection,
+  type PickerTab,
   ALL_DEVICES,
-  isPersonFilter,
-  personFilter,
-  pickerCountText,
+  isShelvedRow,
   pickerListRows,
+  pickerSections,
+  pickerTabs,
   pickerView,
   rowWhoText,
-  rowsOfPeople,
+  rowsOnDevice,
+  sortPickerRows,
 } from "./pickerRows.js";
 
 /** Where an older panel kept hidden picker rows, per watch, in this browser.
@@ -475,21 +477,35 @@ function shapeListText(families: readonly FamilyKind[], control: boolean): strin
 }
 
 /**
- * What one card says it is, under its drawings: one shape and where it sits.
+ * What one card says it is, at the end of its name line: the shape, and
+ * nothing else.
  *
- * A complication is one shape on one kind of device, so this is a sentence
- * rather than the list of shapes a card used to carry. The same words the
- * inspector's Complication card uses, so a design reads the same in the grid
- * and in the editor.
+ * Where it sits used to be in these words too, and is now the section or tab
+ * the card is under. A design with no shape at all is a Control Center
+ * control and says so.
  */
-function cardShapeText(families: readonly FamilyKind[], kind: DeviceKind, control: boolean): string {
-  // More than one shape is a document an older panel wrote, which this one
-  // opens but never makes. It says so rather than naming the first shape and
-  // quietly dropping the rest.
-  const shape = families.length === 0 ? "Control Center" : families.map(familyTitle).join(" · ");
-  const where = kind === "library" ? "in the library" : kind === "iphone" ? "on an iPhone" : "on a watch";
-  const also = control && families.length > 0 ? ", with a control" : "";
-  return `${shape} ${where}${also}`;
+function cardShapeTitle(family: FamilyKind | undefined, control: boolean): string {
+  if (family !== undefined) return familyTitle(family);
+  return control ? "Control Center" : "No shape yet";
+}
+
+/** The glyph a picker tab or section heading wears: the device itself, the
+ * shelf for the library, and the grid for the All tab, which is no device. */
+function tabIcon(kind: DeviceKind | "all"): UiIconName {
+  return kind === "all" ? "grid" : kind === "iphone" ? "phone" : kind === "library" ? "layers" : "watch";
+}
+
+/** What the library is for, said where the shelf is rather than in a tooltip:
+ * nobody puts a design on a shelf without being told what the shelf is. */
+const LIBRARY_NOTE = "Designs kept here are on no device. Duplicate one to a device to use it.";
+
+/** What an empty device says, in its own words. A watch with nothing on it and
+ * a shelf with nothing on it are different news. */
+function nothingOnText(kind: DeviceKind | "all"): string {
+  if (kind === "library") return "The library is empty.";
+  if (kind === "iphone") return "Nothing on this iPhone yet.";
+  if (kind === "watch") return "Nothing on this watch yet.";
+  return "No complications yet.";
 }
 
 /** The step from one header question to the next. Drawn rather than typed so
@@ -523,17 +539,10 @@ function pickTick(): TemplateResult {
  * one more thing this design draws rather than a glyph among faces. */
 const CONTROL_TAB_TILE_SIDE = 52;
 
-/** The well a picker card draws the complication itself in, CSS px. About a
- * card's inner width by a height every card shares, so a grid of them sits on
- * one baseline whatever mix of shapes the home holds. */
-const CARD_PREVIEW_ROOM = { width: 240, height: 64 };
-/** The Control Center tile on a card whose design is only a control, sized to
- * the well that holds it. */
-const CARD_TILE_SIDE = 48;
-/** The side of the Control Center tile drawn beside a picker card's device
- * drawings: small enough to sit at the end of the row, big enough for its
- * glyph to be one. */
-const CARD_ART_TILE_SIDE = 22;
+/** The side of the Control Center tile a picker card draws, CSS px. A card
+ * whose design is only a control has the tile as its whole picture, so it is
+ * drawn at the size of the crop beside it rather than as a glyph. */
+const CARD_ART_TILE_SIDE = 44;
 
 const COL_LEFT_DEFAULT = 300;
 const COL_RIGHT_DEFAULT = 360;
@@ -667,9 +676,6 @@ const CARD_TINT = {
 
 const LIST_STORE_KEY = "wrist-assistant-panel.layers.v1";
 
-/** What a picker card draws: the complication alone, or the complication over
- * the watch and the iPhone it sits on. */
-type PickerLook = "preview" | "devices";
 const GRID_STORE_KEY = "wrist-assistant-panel.grid.v1";/** How tall the slot a dragged row opens is, CSS px. */
 const DROP_GAP = 34;
 const COL_MIN = 200;
@@ -988,20 +994,21 @@ export class WristAssistantPanel extends LitElement {
   private readonly scrubEnd = () => this.draft?.endGesture();
   /** The header's complication dialog is open. */
   @state() private pickerOpen = false;
-  /** What the picker is narrowed to: a shape, a person (`person:` and their
-   * key), the control, or "all". The chips are always drawn now, so this is
-   * the one piece of state a short list still has. Per session, never saved. */
-  @state() private pickerFilter: FamilyKind | "all" | "control" | PersonFilter = "all";
+  /** Which device tab the picker is on: "all", an owner id, or the library.
+   * Kept in this browser with the Layers list's other view choices, because a
+   * household that works on one watch opens this dialog on that watch every
+   * time. */
+  @state() private pickerDevice: string = ALL_DEVICES;
+  /** What the Shape menu is narrowed to: a shape, the control, or "all". Per
+   * session, never saved: the tab is the choice worth remembering, and a
+   * shape left on from last week is a dialog that opens half empty. */
+  @state() private pickerFilter: FamilyKind | "all" | "control" = "all";
   /** What has been typed into the picker's search field. It narrows on the
    * name and on the people who have it, and combines with the chip. */
   @state() private pickerQuery = "";
   /** The key of the locked picker card whose explanation is unfolded. A tap
    * shows it inline because a hover title never appears on a touch screen. */
   @state() private pickerNote?: string;
-  /** How much each picker card draws: the complication alone, or the
-   * complication over the two devices it sits on. Kept in this browser with
-   * the Layers list's other view choices. */
-  @state() private pickerLook: PickerLook = "devices";
   /** The picker card asking "Really delete", by record id. */
   @state() private pickerConfirmDelete?: string;
   /** Which card has its "Duplicate to" menu open, by row key. One at a time:
@@ -1755,12 +1762,9 @@ export class WristAssistantPanel extends LitElement {
     .picker .pk-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
     .picker .pk-rev { color: var(--wa-muted); font-weight: 500; font-size: 12px; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     .picker > button svg { width: 16px; height: 16px; opacity: .7; }
-    /* The chip row over the grid: everything, the people, the shapes, the
-       control, and how many cards are showing. Always drawn. */
-    .pk-filter {
-      display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: none;
-      padding: 10px 18px; border-bottom: 1px solid var(--wa-line);
-    }
+    /* A pill that is on or off. It was the picker's own filter row, which the
+       device tabs and the Shape menu replaced (2026-09-20); the gallery
+       dialog's tags are what wear it now. */
     .pk-chip {
       display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 12.5px; font-weight: 500;
       padding: 5px 9px; border-radius: 999px; cursor: pointer; color: var(--wa-muted);
@@ -1770,7 +1774,32 @@ export class WristAssistantPanel extends LitElement {
     .pk-chip:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .pk-chip:disabled { opacity: .35; cursor: default; }
     .pk-chip.on { border-color: var(--wa-accent); color: var(--wa-ink); background: color-mix(in srgb, var(--wa-accent) 18%, transparent); }
-    .pk-count { font-size: 11.5px; opacity: .65; font-weight: 400; }
+
+    /* The device tabs under the head: All, a tab per device, the library
+       last. Each one carries its own count, so an empty device says so
+       before it is opened. */
+    .pk-tabs {
+      display: flex; align-items: stretch; gap: 2px; flex: none; overflow-x: auto;
+      padding: 0 12px; border-bottom: 1px solid var(--wa-line);
+    }
+    .pk-tab {
+      display: inline-flex; align-items: center; gap: 7px; flex: none; cursor: pointer;
+      font: inherit; font-size: 12.5px; font-weight: 500; color: var(--wa-muted); white-space: nowrap;
+      padding: 9px 12px; border: 0; background: transparent;
+      border-bottom: 2px solid transparent; margin-bottom: -1px;
+    }
+    .pk-tab:hover { color: var(--wa-ink); }
+    .pk-tab:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 7px 7px 0 0; }
+    .pk-tab.on { color: var(--wa-ink); font-weight: 700; border-bottom-color: var(--wa-accent); }
+    .pk-tab svg { width: 15px; height: 15px; }
+    .pk-tab.on .pk-tab-glyph { color: var(--wa-accent); }
+    .pk-tab-glyph { display: inline-flex; flex: none; }
+    .pk-tab-count { font-size: 11.5px; font-weight: 400; opacity: .7; }
+    /* One shape at a time, in the head beside the search. A menu rather than
+       a chip each: eight pills for a question most visits never ask. */
+    .pk-shape { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+    .pk-shape-lead { font-size: 12px; color: var(--wa-muted); }
+    .pk-shape select { max-width: 180px; }
 
     /* The picker's button: the complication's name, and under it the people who
        have it. The second line is only there in a household with more than one
@@ -1787,12 +1816,12 @@ export class WristAssistantPanel extends LitElement {
        promised a short menu of names; this one opens the whole household. */
     .pk-open-all { flex: none; font-size: 11.5px; font-weight: 600; color: var(--wa-accent); white-space: nowrap; }
 
-    /* One surface, one grid: every complication this home holds, under a
-       search field and the chips that narrow it. A centred dialog rather than
-       a dropdown off the button, because a card carrying two device drawings
-       and the card's own buttons need the width, and because this is the one place
-       the whole household is read at once. Only the grid scrolls, so the
-       chips and the foot stay put while a long list moves under them. */
+    /* One surface, one grid: every complication this home holds, under the
+       device tabs, a search field and the Shape menu. A centred dialog rather
+       than a dropdown off the button, because a grid four cards wide needs
+       the width, and because this is the one place the whole household is
+       read at once. Only the grid scrolls, so the tabs and the foot stay put
+       while a long list moves under them. */
     dialog.pk-dialog {
       width: min(880px, 100vw - 32px); max-height: 85vh; padding: 0;
       border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg);
@@ -1802,19 +1831,14 @@ export class WristAssistantPanel extends LitElement {
     dialog.pk-dialog::backdrop { background: rgba(0,0,0,.45); }
     .pk-head { display: flex; align-items: center; gap: 12px; flex: none; padding: 12px 12px 12px 18px; border-bottom: 1px solid var(--wa-line); }
     .pk-head h2 { margin: 0; flex: 1; min-width: 0; font-size: 17px; font-weight: 700; }
+    /* How many the home holds, beside the title: the tabs say how they are
+       split up, and this says how many there are to split. */
+    .pk-head-count { font-size: 14px; font-weight: 400; color: var(--wa-muted); margin-left: 6px; }
     .pk-head > button.icon { width: 32px; height: 32px; flex: none; }
-    /* Preview or Devices: how much each card draws. Word buttons rather than
-       glyphs, since there is no picture that says "with the devices". */
-    .pk-head .seg.pk-look { height: 28px; }
-    .pk-head .seg.pk-look button { padding: 0 10px; }
-    /* The complication alone: the devices under it go, and the text of where
-       it sits stays, so the card is still an answer to "where". */
-    dialog.pk-dialog[data-look="preview"] .pk-card-art { display: none; }
-    dialog.pk-dialog[data-look="preview"] .pk-card-shapes { margin-top: 10px; }
     /* The real complication set into a slot on the drawing: its own picture,
        nested, sized by the transform around it rather than by any rule that
        sizes the card's other svgs. */
-    .pk-card-art svg svg.complication { width: auto; height: auto; max-width: none; max-height: none; border-radius: 0; overflow: visible; }
+    .pk-card-crop svg svg.complication { width: auto; height: auto; max-width: none; max-height: none; border-radius: 0; overflow: visible; }
     .pk-search {
       display: flex; align-items: center; gap: 8px; flex: none; width: 260px; max-width: 45vw;
       padding: 6px 10px; border-radius: var(--wa-r-md); border: 1px solid var(--wa-line); background: var(--wa-panel);
@@ -1827,17 +1851,34 @@ export class WristAssistantPanel extends LitElement {
       flex: 1; min-width: 0; font: inherit; font-size: 13px; color: var(--wa-ink);
       border: 0; background: transparent; outline: 0; padding: 0;
     }
-    .pk-filter-lead { font-size: 12px; color: var(--wa-muted); margin-right: 2px; }
-    .pk-filter-gap { flex: 1; }
-    .pk-count-of { font-size: 12px; color: var(--wa-muted); white-space: nowrap; }
     /* The grid sits on the panel color rather than the card color, so a
        white card reads as a card and not as a rule drawn round some text. */
     .pk-body { flex: 1; min-height: 0; overflow: auto; padding: 14px 18px; background: var(--wa-panel); }
-    .pk-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: stretch; }
-    /* Two columns on a narrow window: three cards each holding a watch and a
-       phone side by side stop being readable well before the dialog runs out
-       of width. */
-    @media (max-width: 700px) { .pk-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    /* One device per block on the All tab, with room between them: the gap is
+       what makes the headings read as headings rather than as captions under
+       the grid above. */
+    .pk-sec { display: flex; flex-direction: column; gap: 10px; }
+    .pk-sec + .pk-sec { margin-top: 20px; }
+    .pk-sec-top { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+    .pk-sec-head { display: flex; align-items: center; gap: 9px; margin: 0; font-size: 13px; font-weight: 700; flex: none; }
+    .pk-sec-glyph { display: inline-flex; flex: none; color: var(--wa-accent); }
+    .pk-sec-glyph svg { width: 16px; height: 16px; }
+    .pk-sec-name { color: var(--wa-ink); }
+    .pk-sec-count { font-size: 12px; font-weight: 400; color: var(--wa-muted); }
+    /* What the library is, said where the shelf is rather than in a tooltip:
+       nobody duplicates a design onto a shelf without being told what the
+       shelf is for. */
+    .pk-sec-note {
+      margin: 0; font-size: 12px; font-weight: 400; color: var(--wa-muted); min-width: 0;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .pk-sec-note.lone { margin: 0 0 12px; white-space: normal; }
+    .pk-sec-empty { font-size: 12px; color: var(--wa-muted); }
+    .pk-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; align-items: stretch; }
+    /* Fewer columns on a narrow window: a crop of a device stops being
+       readable well before the dialog runs out of width. */
+    @media (max-width: 900px) { .pk-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+    @media (max-width: 640px) { .pk-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     .pk-card {
       position: relative; z-index: 1; display: flex; flex-direction: column; min-width: 0;
       padding: 12px; border-radius: 12px; border: 1px solid var(--wa-line); background: var(--wa-card);
@@ -1851,78 +1892,45 @@ export class WristAssistantPanel extends LitElement {
        "Hidden (3)" heading, which is a second list to remember in a surface
        whose whole point is that there is one. */
     .pk-card.dim { opacity: .72; }
-    .pk-card-head { display: flex; align-items: flex-start; gap: 6px; }
-    .pk-card-text {
-      flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; text-align: left;
-      font: inherit; color: inherit; background: transparent; border: 0; padding: 0; cursor: pointer;
-    }
-    .pk-card-text:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 6px; }
-    .pk-card-name { font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .pk-card-who { font-size: 12px; color: var(--wa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* A design on the shelf is on no device, and its card says so twice: a
+       dashed border here and a dashed case in the drawing. */
+    .pk-card.shelved { border-style: dashed; border-color: var(--wa-line-strong); }
     .pk-tag {
       flex: none; font-size: 10px; color: var(--wa-muted); cursor: help;
       border: 1px solid var(--wa-line); border-radius: 6px; padding: 1px 6px;
     }
-    /* Both pictures open the complication, so they are one button: the design
-       itself on top, the two devices it sits on under it. */
+    /* The picture is the card's button: one click on what you are looking at
+       opens it. */
     .pk-card-open {
-      display: flex; flex-direction: column; align-items: stretch; gap: 0;
-      font: inherit; color: inherit; background: transparent; border: 0; padding: 0; cursor: pointer;
+      display: block; width: 100%; font: inherit; color: inherit;
+      background: transparent; border: 0; padding: 0; cursor: pointer;
     }
     .pk-card-open:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 10px; }
-    /* The complication drawn the way its device draws it, in a well every card
-       shares so a grid of them sits on one baseline. Black, because a watch
-       face is black and a white plate reads as a piece of paper; the hairline
-       ring is what keeps it from disappearing into the dark skin. */
-    .pk-card-live {
-      display: flex; align-items: center; justify-content: center; flex: none;
-      height: ${CARD_PREVIEW_ROOM.height}px; margin-top: 10px; padding: 4px 8px; overflow: hidden;
-      border-radius: 10px; background: #000; box-shadow: inset 0 0 0 1px rgba(255,255,255,.1);
+    /* The complication where it sits on its device, cropped to the slot. One
+       fixed height on every card, so a grid of them sits on one baseline
+       whatever mix of shapes the home holds. Black, because a watch face is
+       black and a white plate reads as a piece of paper; the hairline ring is
+       what keeps it from disappearing into the dark skin. */
+    .pk-card-crop {
+      display: flex; align-items: center; justify-content: center; overflow: hidden;
+      height: 88px; border-radius: 10px; background: #000; box-shadow: inset 0 0 0 1px rgba(255,255,255,.1);
     }
-    .pk-card-live svg {
-      display: block; width: var(--pw, auto); max-width: 100%;
-      height: auto; max-height: ${CARD_PREVIEW_ROOM.height - 8}px; border-radius: 4px;
+    .pk-card-crop > svg.pk-crop { display: block; width: 100%; height: 100%; }
+    /* A design that is only a Control Center control has its tile as the
+       whole picture: it sits on neither screen, so there is no device to crop. */
+    .pk-card-crop .pk-card-ctl { display: inline-flex; align-items: center; }
+    .pk-card-crop .pk-card-ctl svg { display: block; height: 44px; width: auto; }
+    .pk-card-crop.none { font-size: 11.5px; color: var(--wa-muted); }
+    /* The name and the shape, on one line under the picture. One line, cut
+       with an ellipsis rather than wrapped, so every card is the same height. */
+    .pk-card-foot { display: flex; align-items: center; gap: 7px; margin-top: 9px; min-width: 0; }
+    .pk-card-name {
+      flex: 1; min-width: 0; text-align: left; font: inherit; font-size: 13px; font-weight: 700;
+      color: inherit; background: transparent; border: 0; padding: 0; cursor: pointer;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
-    .pk-card-live.circular svg, .pk-card-live.corner svg { border-radius: 50%; }
-    /* A Home Screen tile is rounded far harder than a Lock Screen slot, at the
-       share of its own box iOS uses. */
-    .pk-card-live.small svg { border-radius: 16.3%; }
-    .pk-card-live.medium svg { border-radius: 7.7% / 16.3%; }
-    .pk-card-live.large svg { border-radius: 7.7% / 7.4%; }
-    .pk-card-live.xlarge svg { border-radius: 7.7% / 4.8%; }
-    /* An inline line and a Control Center tile are not faces, so the plate
-       rules above must not reach inside either of them. */
-    .pk-card-live .inline-line {
-      font-size: 11px; padding: 3px 8px; max-width: 100%; min-width: 0; display: inline-flex; align-items: center; gap: 4px;
-      border-radius: 999px; background: #000; color: #fff; overflow: hidden; white-space: nowrap;
-    }
-    .pk-card-live .inline-line svg { background: transparent; border-radius: 0; width: auto; }
-    .pk-card-live.control-tile svg { background: transparent; border-radius: 0; width: auto; max-height: none; }
-    .pk-card-live.none { font-size: 11.5px; color: var(--wa-muted); }
-    /* The two device drawings, on their own quiet mat so the dark screens read
-       as screens rather than as holes in the card. */
-    .pk-card-art {
-      display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 8px;
-      height: 140px; box-sizing: border-box; padding: 10px 8px; border: 0; border-radius: 10px; background: var(--wa-panel);
-    }
-    /* Every device at one size, whether it stands alone or beside the other,
-       and the mat one height whatever it holds: a grid of cards is only a
-       grid while its rows line up. */
-    .pk-card-art > svg { display: block; flex: none; height: 118px; width: auto; }
-    /* The Control Center tile stands at the end of the row, off both devices:
-       it is neither a face nor a Home Screen. */
-    .pk-card-art .pk-card-ctl { display: inline-flex; align-items: center; align-self: center; flex: none; margin-left: 4px; }
-    /* What the card is, in one drawing and one line: the device with its one
-       shape lit, then the same sentence the inspector carries. The right end
-       is kept clear for the hide and delete buttons, which sit in that
-       corner: reserved always, so nothing reflows on hover. */
-    .pk-card-shapes {
-      display: flex; align-items: center; gap: 6px;
-      font-size: 11px; color: var(--wa-muted); margin-top: 8px; padding-right: 62px;
-    }
-    .pk-card-glyph { flex: none; display: inline-flex; color: var(--wa-accent); --wa-shape-outline: var(--wa-muted); }
-    .pk-card-glyph svg { display: block; height: 22px; width: auto; }
-    .pk-card-says { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pk-card-name:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 6px; }
+    .pk-card-shape { flex: none; font-size: 11px; color: var(--wa-muted); white-space: nowrap; }
     /* Duplicate to: the one control on this surface that writes anything. */
     .pk-dup { position: relative; flex: none; }
     .pk-dup-open {
@@ -1959,14 +1967,19 @@ export class WristAssistantPanel extends LitElement {
     .pk-dup-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .pk-dup-full { flex: none; font-size: 10px; color: var(--wa-muted); }
     .pk-dup-note { font-size: 10px; line-height: 1.4; color: var(--wa-muted); border-top: 1px solid var(--wa-line); padding-top: 6px; }
-    /* Hide and delete, in the card's own corner. Only on hover, or while the
-       keyboard is in the card, or while one of them is asking: a wall of cards
-       with six icon buttons on every one of them is a wall of icon buttons. */
+    /* Duplicate, hide and delete, in the card's own top corner over the
+       picture. Only on hover, or while the keyboard is in the card, or while
+       a menu or a confirm is open: a wall of cards with three buttons on
+       every one of them is a wall of buttons. */
     .pk-card-acts {
-      position: absolute; right: 8px; bottom: 6px; display: flex; align-items: center; gap: 2px;
+      position: absolute; right: 10px; top: 10px; display: flex; align-items: center; gap: 3px;
       opacity: 0; transition: opacity .12s ease-out;
     }
-    .pk-card:hover .pk-card-acts, .pk-card:focus-within .pk-card-acts, .pk-card-acts.asking { opacity: 1; }
+    .pk-card:hover .pk-card-acts, .pk-card:focus-within .pk-card-acts,
+    .pk-card.over .pk-card-acts, .pk-card-acts.asking { opacity: 1; }
+    /* A touch screen has no hover, so there is no way to bring these out:
+       they stay. */
+    @media (hover: none) { .pk-card-acts { opacity: 1; } }
     .pk-card-acts button.icon { width: 26px; height: 26px; background: var(--wa-card); }
     .pk-card-acts button.small { min-height: 24px; padding: 0 7px; background: var(--wa-card); }
     .pk-card .pk-note { font-size: 11.5px; line-height: 1.4; color: var(--wa-muted); margin-top: 8px; }
@@ -4940,13 +4953,18 @@ export class WristAssistantPanel extends LitElement {
     try {
       const raw = window.localStorage.getItem(LIST_STORE_KEY);
       if (!raw) return;
-      const saved = JSON.parse(raw) as { thumbStep?: unknown; detail?: unknown; addOpen?: unknown; addDetail?: unknown; pickerLook?: unknown };
+      const saved = JSON.parse(raw) as { thumbStep?: unknown; detail?: unknown; addOpen?: unknown; addDetail?: unknown; pickerDevice?: unknown };
       if (saved.thumbStep === 0 || saved.thumbStep === 1 || saved.thumbStep === 2) this.thumbStep = saved.thumbStep;
       if (saved.detail === "compact" || saved.detail === "expanded") this.layerDetail = saved.detail;
       if (typeof saved.addOpen === "boolean") this.addOpen = saved.addOpen;
       const addDetail = addDetailFrom(saved.addDetail);
       if (addDetail) this.addDetail = addDetail;
-      if (saved.pickerLook === "preview" || saved.pickerLook === "devices") this.pickerLook = saved.pickerLook;
+      // The owner it names is checked when the tabs are drawn, not here: the
+      // devices are not read yet, and a watch that has gone falls back to All
+      // rather than to nothing. `pickerLook` was the Preview or Devices
+      // choice, which went when a card became one picture (2026-09-20); an
+      // older browser's copy of it is read past.
+      if (typeof saved.pickerDevice === "string") this.pickerDevice = saved.pickerDevice;
     } catch {
       /* A browser with storage off keeps the defaults. */
     }
@@ -4956,7 +4974,7 @@ export class WristAssistantPanel extends LitElement {
     try {
       window.localStorage.setItem(LIST_STORE_KEY, JSON.stringify({
         thumbStep: this.thumbStep, detail: this.layerDetail,
-        addOpen: this.addOpen, addDetail: this.addDetail, pickerLook: this.pickerLook,
+        addOpen: this.addOpen, addDetail: this.addDetail, pickerDevice: this.pickerDevice,
       }));
     } catch {
       /* Storage off: the choice still holds for this visit. */
@@ -8353,68 +8371,13 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * The complication itself, drawn small at the top of its card.
+   * The complication drawn into the slot it fills, on each kind of device.
    *
-   * The device art below says where a design sits; this says what it is. Both
-   * are worth a card's height: "Kitchen at a glance" on a watch face and a
-   * Lock Screen tells you nothing about which of three kitchen complications
-   * this one is, and the drawing does it at a glance.
-   *
-   * The biggest shape the design draws, in `biggestFirst` order, because that
-   * is the one with the most of the design in it. Read off this document's own
-   * shapes rather than the card's union of every copy, so the layout being
-   * asked for is one this config certainly resolved. A design that is only an
-   * inline line draws that line, and one that is only a control draws the
-   * Control Center tile, from the same `controlTile` the canvas tab uses.
-   *
-   * Only the open complication has its templates rendered and its history
-   * fetched, so a Jinja layer or a chart on another card draws what the watch
-   * draws before its first sync: the fallback, or nothing. That is the price
-   * of a recognisable grid, and it is worth it.
-   */
-  private renderCardPreview(cfg: CustomComplicationConfig, entities: readonly EntityRef[], phone: boolean) {
-    // `biggestFirst` widens its answer back to `FamilyKind`, so the guard runs
-    // again on the way out to say what the filter going in already made true.
-    const family = biggestFirst(cfg.supportedFamilies.filter(isDrawable)).find(isDrawable);
-    if (family === undefined) {
-      if (cfg.supportedFamilies.includes("inline")) {
-        const layouts = this.configLayouts(cfg, entities);
-        return html`<span class="pk-card-live inline">${this.renderInlinePreview(layouts.inline, true)}</span>`;
-      }
-      if (cfg.control) {
-        const shape = controlTileShapes(phone ? "iphone" : "watch")[0]!;
-        return html`<span class="pk-card-live control-tile">${controlTile(this.tileHost(cfg, entities), cfg.control, shape, CARD_TILE_SIDE)}</span>`;
-      }
-      return html`<span class="pk-card-live none">No shapes yet</span>`;
-    }
-    // The shape is drawn in its own device's slot, not in whichever case the
-    // header happens to be showing: a phone's copy still belongs in a phone.
-    const reference = phone ? REFERENCE_PHONE : REFERENCE_CASE;
-    const art = renderShapeArt({
-      config: cfg,
-      // Nothing is being edited from here, so no layer is highlighted.
-      layouts: this.configLayouts(cfg, entities),
-      icons: this.icons,
-      imageSizes: this.imageSizes,
-      phone,
-      slotFor: (f) => slotFor(reference, f),
-    }, family);
-    // Its own shape's width inside a fixed-height well, so a row of cards
-    // holding a circle, a tile and a rectangle sits on one baseline.
-    const width = Math.round(previewBox(family, CARD_PREVIEW_ROOM).width);
-    return html`<span class="pk-card-live ${family}" style=${`--pw:${width}px`}>${art}</span>`;
-  }
-
-  /**
-   * The complication drawn into every slot it fills on the card's two devices.
-   *
-   * The lit fills said where a design sits; these say what sits there. Each
-   * shape is drawn in the real slot of its device, the watch's on the watch and
-   * the phone's on the phone, so a Lock Screen shape is white the way the
-   * phone draws it. Read off this document's own shapes: a slot another copy
-   * of the link fills stays lit, since this document has nothing to draw
-   * there. The devices are only drawn in the Devices view, and this is only
-   * called from there, so the Preview view pays nothing for it.
+   * The lit fill said where a design sits; this says what sits there. The
+   * shape is drawn in the real slot of its device, the watch's on the watch
+   * and the phone's on the phone, so a Lock Screen shape is white the way the
+   * phone draws it. A card takes the half its own device answers for, and the
+   * crop around it shows that slot at a size worth reading.
    */
   private cardLive(cfg: CustomComplicationConfig, entities: readonly EntityRef[]): LiveDesign {
     const layouts = this.configLayouts(cfg, entities);
@@ -8467,16 +8430,16 @@ export class WristAssistantPanel extends LitElement {
     };
   }
 
-  /** Which of the two devices a card's design is on, by the copies it holds.
-   * The drawing shows those and no other. */
-  private devicesOn(ownerIds: readonly string[]): DevicesOn {
-    const kinds = new Set(ownerIds.map((id) => deviceKindOf(this.ownerOf(id))));
-    return { watch: kinds.has("watch"), phone: kinds.has("iphone") };
-  }
-
-  /** The class that sizes a card's device mat: one device is drawn larger. */
-  private artClass(on: DevicesOn): string {
-    return on.watch !== on.phone ? "pk-card-art one" : "pk-card-art";
+  /**
+   * Which device a card draws: the one its copy sits on.
+   *
+   * A design on the shelf has no device of its own, so it takes the one its
+   * shape belongs to. A Home Screen tile is a phone wherever it is kept, and
+   * everything else is a watch.
+   */
+  private cardDevice(kind: DeviceKind, family: FamilyKind | undefined): "watch" | "iphone" {
+    if (kind !== "library") return kind === "iphone" ? "iphone" : "watch";
+    return family !== undefined && isHomeFamily(family) ? "iphone" : "watch";
   }
 
   /** A host for a Control Center tile of a complication that has no draft
@@ -8522,36 +8485,99 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * The chips over the grid: everything, then the people, then the shapes, then
-   * the control, with how many cards are showing at the end.
+   * The device tabs over the grid: All, then a tab per device, then the
+   * library.
    *
-   * People before shapes because whose it is is the coarser question, and it is
-   * the one a household asks first. A home with one person is shown no person
-   * chips: every card would be in every one of them. Each chip carries its own
-   * count, so a chip with nothing behind it says so instead of opening an empty
-   * grid.
+   * Whose a complication is is the coarser question and the one a household
+   * asks first, and it is answered by the device rather than by the person:
+   * the tab already carries the person's name, since that is how this panel
+   * labels a device. The row of person chips and shape chips this replaced
+   * asked both questions at once in fourteen pills.
    *
-   * Always drawn, however short the list. They used to appear only past eight
-   * rows, which meant the one control that says what this surface can do was
-   * missing from exactly the homes still learning it; in a dialog this size
-   * there is no space being saved by hiding them.
+   * A count on every tab, so an empty device says so before it is opened. All
+   * is first and is where the picker opens, because the whole home in one
+   * scroll is what this surface is for; the tab that was last used comes back
+   * on the next visit.
    */
-  private renderPickerFilter(rows: readonly PickerRow[], people: readonly Person[], shown: number) {
-    const chip = (key: FamilyKind | "all" | "control" | PersonFilter, label: string, count: number) => html`<button
-      class="pk-chip ${this.pickerFilter === key ? "on" : ""}" ?disabled=${count === 0}
-      aria-pressed=${this.pickerFilter === key ? "true" : "false"}
-      @click=${() => { this.pickerFilter = key; }}>${label}<span class="pk-count">${count}</span></button>`;
-    const controls = rows.filter((r) => r.open.item.kind === "record" && hasControlOf(r.open.item.record)).length;
-    return html`<div class="pk-filter">
-      <span class="pk-filter-lead">Show</span>
-      ${chip("all", "All", rows.length)}
-      ${people.length < 2 ? nothing : people.map((p) =>
-        chip(personFilter(p.key), p.label, rowsOfPeople(rows, p.owners.map((o) => o.owner_watch_id)).length))}
-      ${this.pickerFamilies.map((f) => chip(f, familyTitle(f), rows.filter((r) => familiesOfItem(r.open.item).includes(f)).length))}
-      ${controls === 0 ? nothing : chip("control", "Control", controls)}
-      <span class="pk-filter-gap"></span>
-      <span class="pk-count-of">${pickerCountText(shown, rows.length)}</span>
+  private renderPickerTabs(tabs: readonly PickerTab[], current: string) {
+    return html`<div class="pk-tabs" role="tablist" aria-label="Devices">
+      ${tabs.map((tab) => html`<button type="button" role="tab" class="pk-tab ${tab.key === current ? "on" : ""}"
+        id=${`pk-tab-${tab.key}`} aria-selected=${tab.key === current ? "true" : "false"}
+        aria-controls="pk-tabpanel" @click=${() => this.pickPickerTab(tab.key)}>
+        <span class="pk-tab-glyph" aria-hidden="true">${uiIcon(tabIcon(tab.kind))}</span>
+        <span class="pk-tab-name">${tab.label}</span>
+        <span class="pk-tab-count">${tab.count}</span>
+      </button>`)}
     </div>`;
+  }
+
+  /**
+   * The Shape menu in the dialog's head: All, the shapes this tab's devices
+   * draw, and the control.
+   *
+   * One menu rather than a shape chip each. The chips were a row of up to
+   * eight pills for a question most visits never ask, above a grid that
+   * already draws every shape at the size it really is.
+   *
+   * Only the shapes the tab can show, so a watch tab is never offered a Home
+   * Screen size, and only the ones with something behind them, so an option
+   * never opens an empty grid. The one already chosen stays on the list
+   * whatever its count, or picking it would be a choice that vanishes.
+   */
+  private renderPickerShapes(rows: readonly PickerRow[], offered: readonly FamilyKind[]) {
+    const filter = this.pickerFilter;
+    const controls = rows.filter((r) => r.open.item.kind === "record" && hasControlOf(r.open.item.record)).length;
+    const shapes = offered
+      .map((f) => ({ key: f, label: familyTitle(f), count: rows.filter((r) => familiesOfItem(r.open.item).includes(f)).length }))
+      .filter((o) => o.count > 0 || o.key === filter);
+    const options = [
+      { key: "all" as const, label: "All", count: rows.length },
+      ...shapes,
+      ...(controls > 0 || filter === "control" ? [{ key: "control" as const, label: "Control", count: controls }] : []),
+    ];
+    return html`<label class="pk-shape">
+      <span class="pk-shape-lead">Shape</span>
+      <select aria-label="Show one shape" .value=${filter}
+        @change=${(e: Event) => { this.pickerFilter = (e.target as HTMLSelectElement).value as FamilyKind | "all" | "control"; }}>
+        ${options.map((o) => html`<option value=${o.key} ?selected=${o.key === filter}>${o.label} (${o.count})</option>`)}
+      </select>
+    </label>`;
+  }
+
+  /**
+   * Move to another device tab.
+   *
+   * The shape goes back to All when the new tab's devices do not draw it: a
+   * watch tab holding a Home Screen filter is a grid that can only be empty,
+   * and the reason for it would be off screen in a closed menu.
+   */
+  private pickPickerTab(key: string) {
+    this.pickerDevice = key;
+    this.saveListView();
+    const filter = this.pickerFilter;
+    if (filter === "all" || filter === "control") return;
+    if (!this.tabFamilies(key).includes(filter)) this.pickerFilter = "all";
+  }
+
+  /** The tab the picker is on, checked against the tabs there are: a device
+   * that has left the home falls back to All rather than to an empty grid. */
+  private pickerTabKey(tabs: readonly PickerTab[]): string {
+    return tabs.some((t) => t.key === this.pickerDevice) ? this.pickerDevice : ALL_DEVICES;
+  }
+
+  /**
+   * The shapes one tab can show.
+   *
+   * A device tab offers what that device draws. All and the library offer
+   * every shape any device in this home draws: the library holds every shape
+   * there is, so asking it what it draws would offer a watch-only home the
+   * Home Screen sizes it can never use.
+   */
+  private tabFamilies(tab: string): FamilyKind[] {
+    if (tab === ALL_DEVICES) return this.pickerFamilies;
+    const owner = this.ownerOf(tab);
+    if (owner === undefined || isLibraryOwner(owner)) return this.pickerFamilies;
+    return familiesFor(owner);
   }
 
   /** Whether one card answers what has been typed into the search field. The
@@ -8573,11 +8599,11 @@ export class WristAssistantPanel extends LitElement {
     }));
   }
 
-  /** The shapes the chips offer: every shape any device in this home draws, so
-   * one list holding a watch and a phone can still be narrowed to either
-   * one's. The Library is left out, because it holds every shape there is: a
-   * watch-only home would be offered Home Screen chips that can only ever
-   * come up empty. */
+  /** The shapes the Shape menu offers on the All tab: every shape any device
+   * in this home draws, so one grid holding a watch and a phone can still be
+   * narrowed to either one's. The Library is left out, because it holds every
+   * shape there is: a watch-only home would be offered Home Screen sizes that
+   * can only ever come up empty. */
   private get pickerFamilies(): FamilyKind[] {
     const out: FamilyKind[] = [];
     const add = (families: readonly FamilyKind[]) => {
@@ -8659,14 +8685,19 @@ export class WristAssistantPanel extends LitElement {
 
   /**
    * The picker's surface: every complication in the home as a card, under a
-   * search field and the chips that narrow it.
+   * row of device tabs, a search field and the Shape menu.
    *
    * A centred dialog, not the 400 px dropdown this hung off the button for a
    * year. A dropdown that narrow holds a list and nothing else, so the
    * question a household actually asks here, "which of my devices has this",
    * was answered in one line of small grey text and nothing could be done
-   * about it from the list at all. A card has room for the device drawn full
-   * size and for a Duplicate to button that writes a copy from here.
+   * about it from the list at all. A card has room for the complication drawn
+   * where it sits and for a Duplicate to button that writes a copy from here.
+   *
+   * All is one grid per device, each under its device's own heading, so the
+   * whole home is one scroll and nothing has to be opened to be seen. A
+   * device tab is that device's block on its own, for the household that
+   * already knows which watch it means.
    *
    * One card per complication, whatever the household holds: a complication is
    * one shape on one device, so two people's watches showing "Kitchen" are two
@@ -8676,45 +8707,42 @@ export class WristAssistantPanel extends LitElement {
     const d = this.draft;
     const devices = this.pickerDevices();
     const people = peopleOf(this.owners);
-    // Every device in one grid, always. The card says whose complication it
-    // is, and the search field and the chips narrow it; a device chip row was
-    // the old sidebar in a new coat (dropped 2026-09-19).
     const all = pickerView(this.pickerRows(), devices, ALL_DEVICES);
+    const tabs = pickerTabs(all, devices);
+    const tab = this.pickerTabKey(tabs);
     const query = this.pickerQuery.trim().toLocaleLowerCase();
+    // The tab first, then the search, then the shape: the Shape menu counts
+    // what this tab and this search have left, so an option says what picking
+    // it would show.
+    const onTab = tab === ALL_DEVICES ? all : rowsOnDevice(all, tab);
+    const searched = onTab.filter((row) => this.pickerMatches(row, query, people));
     const filter = this.pickerFilter;
-    const person = people.find((p) => personFilter(p.key) === filter);
-    const chipped = filter === "all"
-      ? all
-      : isPersonFilter(filter)
-        ? rowsOfPeople(all, (person?.owners ?? []).map((o) => o.owner_watch_id))
-        : filter === "control"
-          ? all.filter((row) => row.open.item.kind === "record" && hasControlOf(row.open.item.record))
-          : all.filter((row) => familiesOfItem(row.open.item).includes(filter));
-    const rows = chipped.filter((row) => this.pickerMatches(row, query, people));
+    const rows = filter === "all"
+      ? searched
+      : filter === "control"
+        ? searched.filter((row) => row.open.item.kind === "record" && hasControlOf(row.open.item.record))
+        : searched.filter((row) => familiesOfItem(row.open.item).includes(filter));
+    // The draft nobody has saved yet belongs to the device it is being made
+    // on, whatever the search and the shape say: it is the one thing on this
+    // surface that would be lost by being filtered away.
+    const unsaved = d && d.baseRevision === null ? d : undefined;
     // What an empty grid is empty of. The search wins when something has been
-    // typed, because that is the last thing the author did.
+    // typed, because that is the last thing the author did; then the shape;
+    // then the tab says what it is a tab of.
     const emptyOf = query !== ""
       ? `Nothing here matches "${this.pickerQuery.trim()}".`
-      : filter === "all"
-        ? ""
-        : isPersonFilter(filter)
-          ? `Nothing here is ${person?.label ?? "theirs"}.`
-          : filter === "control"
-            ? "Nothing here has a control."
-            : `Nothing here has a ${familyTitle(filter)} shape.`;
-    return html`<dialog class="pk-dialog" aria-label="Your complications" data-look=${this.pickerLook}
+      : filter === "control"
+        ? "Nothing here has a control."
+        : filter !== "all"
+          ? `Nothing here has a ${familyTitle(filter)} shape.`
+          : nothingOnText(tabs.find((t) => t.key === tab)?.kind ?? "all");
+    return html`<dialog class="pk-dialog" aria-label="Your complications"
       @close=${() => this.pickerClosed()}
       @cancel=${this.pickerCancel}
       @click=${this.pickerBackdrop}>
       <div class="pk-head">
-        <h2>Your complications</h2>
-        <span class="seg pk-look" role="group" aria-label="Card view">
-          ${([["preview", "Preview", "The complication alone"],
-              ["devices", "Devices", "The complication over the watch and iPhone it sits on"]] as const).map(([look, label, tip]) => html`
-            <button type="button" class=${this.pickerLook === look ? "on" : ""} title=${tip}
-              aria-pressed=${this.pickerLook === look ? "true" : "false"}
-              @click=${() => { this.pickerLook = look; this.saveListView(); }}>${label}</button>`)}
-        </span>
+        <h2>Your complications <span class="pk-head-count">${all.length}</span></h2>
+        ${this.ownerBusy ? nothing : this.renderPickerShapes(searched, this.tabFamilies(tab))}
         <label class="pk-search">
           ${uiIcon("search")}
           <input type="search" class="pk-search-input" .value=${this.pickerQuery}
@@ -8723,58 +8751,118 @@ export class WristAssistantPanel extends LitElement {
         </label>
         <button class="icon" title="Close" aria-label="Close" @click=${() => this.closePicker()}>${uiIcon("close")}</button>
       </div>
-      ${this.ownerBusy ? nothing : this.renderPickerFilter(all, people, rows.length)}
-      <div class="pk-body">
+      ${this.ownerBusy ? nothing : this.renderPickerTabs(tabs, tab)}
+      <div class="pk-body" id="pk-tabpanel" role="tabpanel" aria-labelledby=${`pk-tab-${tab}`}>
         ${this.ownerBusy
           ? html`<div class="empty">Loading…</div>`
-          : html`${all.length === 0 && !(d && d.baseRevision === null)
-            ? html`<div class="empty">No complications yet.</div>`
-            : nothing}
-            ${all.length > 0 && rows.length === 0 ? html`<div class="empty">${emptyOf}</div>` : nothing}
-            <div class="pk-grid">
-              ${rows.map((row) => this.renderPickerCard(row, people))}
-              ${d && d.baseRevision === null ? this.renderUnsavedCard(d) : nothing}
-            </div>`}
+          : tab === ALL_DEVICES
+            ? this.renderPickerSections(rows, devices, query !== "" || filter !== "all", unsaved, emptyOf)
+            : this.renderPickerTabBody(rows, devices, tab, unsaved, emptyOf)}
       </div>
       ${this.renderPickerFoot()}
     </dialog>`;
   }
 
+  /**
+   * The All tab: one block per device, in the tabs' own order.
+   *
+   * A device with nothing on it still gets its heading and a line saying so,
+   * because an empty watch is part of the answer to "what has this home got".
+   * That only holds while nothing is being narrowed: under a search or a
+   * shape an empty device is not news, so the block goes and the devices that
+   * did match stay together.
+   *
+   * The library comes last and only when something is on the shelf: a shelf
+   * nobody has used is not a fact worth a heading.
+   */
+  private renderPickerSections(
+    rows: readonly PickerRow[],
+    devices: readonly PickerDevice[],
+    narrowed: boolean,
+    unsaved: Draft | undefined,
+    emptyOf: string,
+  ) {
+    // A home holding nothing at all says that once, rather than once per
+    // device: four headings over four apologies is a wall of nothing.
+    if (rows.length === 0 && unsaved === undefined) return html`<div class="empty">${emptyOf}</div>`;
+    const sections = pickerSections(rows, devices).filter((section) =>
+      section.rows.length > 0
+      || this.unsavedBelongsTo(unsaved, section.ownerId)
+      || (!narrowed && section.kind !== "library"));
+    if (sections.length === 0) return html`<div class="empty">${emptyOf}</div>`;
+    return html`${sections.map((section) => this.renderPickerSection(section, unsaved))}`;
+  }
+
+  /** One device tab: that device's cards on their own, with no heading over
+   * them. The tab is the heading. */
+  private renderPickerTabBody(
+    rows: readonly PickerRow[],
+    devices: readonly PickerDevice[],
+    tab: string,
+    unsaved: Draft | undefined,
+    emptyOf: string,
+  ) {
+    const mine = this.unsavedBelongsTo(unsaved, tab) ? unsaved : undefined;
+    const kind = deviceKindOf(this.ownerOf(tab));
+    const note = kind === "library" ? html`<p class="pk-sec-note lone">${LIBRARY_NOTE}</p>` : nothing;
+    if (rows.length === 0 && mine === undefined) return html`${note}<div class="empty">${emptyOf}</div>`;
+    return html`${note}<div class="pk-grid">
+      ${sortPickerRows(rows, devices, tab).map((row) => this.renderPickerCard(row))}
+      ${mine ? this.renderUnsavedCard(mine) : nothing}
+    </div>`;
+  }
+
+  /** One device's block of the All tab: its heading, then its cards. */
+  private renderPickerSection(section: PickerSection<PickerItem>, unsaved: Draft | undefined) {
+    const mine = this.unsavedBelongsTo(unsaved, section.ownerId) ? unsaved : undefined;
+    const count = section.rows.length + (mine ? 1 : 0);
+    return html`<section class="pk-sec">
+      <div class="pk-sec-top">
+        <h3 class="pk-sec-head">
+          <span class="pk-sec-glyph" aria-hidden="true">${uiIcon(tabIcon(section.kind))}</span>
+          <span class="pk-sec-name">${section.label}</span>
+          <span class="pk-sec-count">${count}</span>
+        </h3>
+        ${section.kind === "library" ? html`<p class="pk-sec-note">${LIBRARY_NOTE}</p>` : nothing}
+      </div>
+      ${count === 0
+        ? html`<div class="pk-sec-empty">${nothingOnText(section.kind)}</div>`
+        : html`<div class="pk-grid">
+          ${section.rows.map((row) => this.renderPickerCard(row))}
+          ${mine ? this.renderUnsavedCard(mine) : nothing}
+        </div>`}
+    </section>`;
+  }
+
+  /** Whether the unsaved draft is being made on this device, which is the
+   * section its card goes in. */
+  private unsavedBelongsTo(unsaved: Draft | undefined, ownerId: string): boolean {
+    return unsaved !== undefined && this.ownerId === ownerId;
+  }
+
   /** The complication being made, which has no record behind it yet. A card
-   * of its own rather than a row at the bottom, so it sits where it will sit
-   * once it is saved. */
+   * of its own in its device's own block, so it sits where it will sit once
+   * it is saved. */
   private renderUnsavedCard(d: Draft) {
     const cfg = d.config;
     const families = ALL_FAMILIES.filter((f) => cfg.supportedFamilies.includes(f));
     const family = families[0];
-    // Where it will land: the device being edited.
-    const unsavedOn = this.devicesOn(this.ownerId ? [this.ownerId] : []);
     const kind = deviceKindOf(this.selectedOwner);
-    const outline: DeviceKind = kind === "library"
-      ? (family !== undefined && isHomeFamily(family) ? "iphone" : "watch")
-      : kind;
-    return html`<div class="pk-card" aria-current="true">
-      <div class="pk-card-head">
-        <span class="pk-card-text">
-          <span class="pk-card-name">${cfg.name.trim() || "Untitled"}</span>
-          <span class="pk-card-who">Not saved yet</span>
-        </span>
+    const device = this.cardDevice(kind, family);
+    const live = this.cardLive(cfg, this.historyEntities(cfg));
+    return html`<div class="pk-card ${kind === "library" ? "shelved" : ""}" aria-current="true">
+      <span class="pk-card-crop">${deviceCropArt(family, device, device === "iphone" ? live.phone : live.watch, { shelved: kind === "library" })}</span>
+      <div class="pk-card-foot">
+        <span class="pk-card-name">${cfg.name.trim() || "Untitled"}</span>
         <span class="pk-badge">unsaved</span>
-      </div>
-      ${this.renderCardPreview(cfg, this.historyEntities(cfg), kind === "iphone")}
-      <div class=${this.artClass(unsavedOn)}>${designDeviceArt(families, cfg.control !== undefined, this.cardLive(cfg, this.historyEntities(cfg)), unsavedOn)}</div>
-      <div class="pk-card-shapes">
-        <span class="pk-card-glyph" aria-hidden="true">${family === undefined
-          ? controlDeviceArt(outline, true)
-          : deviceShapeArt(family, outline, true)}</span>
-        <span class="pk-card-says">${cardShapeText(families, kind, cfg.control !== undefined)}</span>
+        <span class="pk-card-shape">${cardShapeTitle(family, cfg.control !== undefined)}</span>
       </div>
     </div>`;
   }
 
   /**
-   * The line under the grid: what the blue on the drawings means, then the two
-   * buttons that bring a complication in from outside.
+   * The line under the grid: what a card does, then the two buttons that
+   * bring a complication in from outside.
    *
    * It carries what a write said, too. The panel's own banner for that sits in
    * the editor behind a modal backdrop, so a write started from a card would
@@ -8789,7 +8877,7 @@ export class WristAssistantPanel extends LitElement {
     const said = this.saveError ?? this.copyStatus;
     return html`<div class="pk-foot">
       ${said === undefined
-        ? html`<span class="pk-foot-hint">Blue marks where each design sits. Click a card to open it.</span>`
+        ? html`<span class="pk-foot-hint">Click a card to open it. Hover a card for Duplicate, Shelve and Delete.</span>`
         : html`<span class="pk-foot-said ${this.saveError ? "err" : ""}">${said}</span>
           <button type="button" class="ghost small"
             @click=${() => { this.saveError = undefined; this.copyStatus = undefined; this.copyOpen = undefined; }}>Dismiss</button>`}
@@ -8803,33 +8891,35 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * One card: the name, who has it, the complication itself, the two devices
-   * with its shapes lit, and the shapes named underneath.
+   * One card: the complication where it sits, and its name under it.
    *
-   * Two pictures, answering the two questions a wall of cards raises. The
-   * drawing on top is what this design looks like, which is the only way to
-   * tell three kitchen complications apart; the devices under it are where it
-   * sits, which a list of rows could never say at all. The row this replaced
-   * had space for one of them and text for the other.
+   * One picture, cropped to the slot the complication fills on its own
+   * device. A card used to carry two, the design alone and then a whole watch
+   * and phone with its slots lit, which said where it sat twice and drew a
+   * Home Screen tile nine pixels tall doing it. The section or the tab says
+   * which device, so the picture only has to say where on it.
    */
-  private renderPickerCard(row: PickerRow, people: readonly Person[]) {
+  private renderPickerCard(row: PickerRow) {
     const copy = row.open;
-    const who = rowWhoText(row.copies.map((c) => c.ownerId), this.pickerPeople(people));
+    const shelved = isShelvedRow(row);
     if (copy.item.kind !== "record") {
       const item = copy.item;
       const families = ALL_FAMILIES.filter((f) => item.families.includes(f));
-      return html`<div class="pk-card locked">
-        <div class="pk-card-head">
-          <button type="button" class="pk-card-text" title=${item.title}
-            @click=${() => { this.pickerNote = this.pickerNote === row.key ? undefined : row.key; }}>
-            <span class="pk-card-name">${row.name}</span>
-            <span class="pk-card-who">${who}</span>
-          </button>
+      const family = families[0];
+      const kind = deviceKindOf(this.ownerOf(copy.ownerId));
+      return html`<div class="pk-card locked ${shelved ? "shelved" : ""}">
+        <button type="button" class="pk-card-open" title=${item.title}
+          @click=${() => { this.pickerNote = this.pickerNote === row.key ? undefined : row.key; }}>
+          ${family === undefined
+            ? html`<span class="pk-card-crop none">No preview</span>`
+            : html`<span class="pk-card-crop">${deviceCropArt(family, this.cardDevice(kind, family), {}, { shelved })}</span>`}
+        </button>
+        <div class="pk-card-foot">
+          <button type="button" class="pk-card-name" title=${item.title}
+            @click=${() => { this.pickerNote = this.pickerNote === row.key ? undefined : row.key; }}>${row.name}</button>
           <span class="pk-badge">${item.badge}</span>
+          ${families.length === 0 ? nothing : html`<span class="pk-card-shape">${shapeListText(families, false)}</span>`}
         </div>
-        <span class="pk-card-live none">No preview</span>
-        <div class=${this.artClass(this.devicesOn([copy.ownerId]))}>${designDeviceArt(families, false, undefined, this.devicesOn([copy.ownerId]))}</div>
-        <div class="pk-card-shapes"><span class="pk-card-says">${shapeListText(families, false)}</span></div>
         ${this.pickerNote === row.key ? html`<div class="pk-note">${item.title}</div>` : nothing}
       </div>`;
     }
@@ -8850,11 +8940,7 @@ export class WristAssistantPanel extends LitElement {
     const control = hasControlOf(drawn);
     const word = deviceNoun(this.ownerOf(actOwnerId));
     const kind = deviceKindOf(this.ownerOf(copy.ownerId));
-    // A design on the shelf has no device of its own, so its glyph is the one
-    // its shape belongs to: a Home Screen tile is a phone wherever it is kept.
-    const outline: DeviceKind = kind === "library"
-      ? (family !== undefined && isHomeFamily(family) ? "iphone" : "watch")
-      : kind;
+    const device = this.cardDevice(kind, family);
     // The open complication goes through the inspector's own Delete, so an
     // unsaved draft and a conflict behave the same from either place. Hide
     // follows the same split: the open one through its draft, others at once.
@@ -8862,39 +8948,30 @@ export class WristAssistantPanel extends LitElement {
     const confirming = this.pickerConfirmDelete === record.id;
     const stop = (e: Event) => e.stopPropagation();
     // Parsed once per record and resolved once per card: this method is only
-    // called for the cards the chips and the search left in.
+    // called for the cards the tab, the shape and the search left in.
     const preview = this.recordPreview(drawn);
-    const on = this.devicesOn(row.copies.map((c) => c.ownerId));
+    const live = preview ? this.cardLive(preview.config, preview.entities) : undefined;
     const menu = this.pickerDupFor === row.key;
-    return html`<div class="pk-card ${hidden ? "dim" : ""} ${menu ? "over" : ""}" aria-current=${open ? "true" : "false"}>
-      <div class="pk-card-head">
-        <button type="button" class="pk-card-text" title="Open this complication"
-          @click=${() => void this.openFromPicker(row)}>
-          <span class="pk-card-name">${recName}</span>
-          <span class="pk-card-who">${who}</span>
-        </button>
-        ${hidden ? html`<span class="pk-tag" title="These do not show in their device's own list of complications. A face or widget that already has one keeps it.">hidden</span>` : nothing}
-        ${this.renderPickerDup(row, family, menu)}
-      </div>
+    return html`<div class="pk-card ${hidden ? "dim" : ""} ${menu ? "over" : ""} ${shelved ? "shelved" : ""}"
+      aria-current=${open ? "true" : "false"}>
       <button type="button" class="pk-card-open" title="Open this complication"
-        @click=${() => void this.openFromPicker(row)}>
-        ${preview
-          ? this.renderCardPreview(preview.config, preview.entities, kind === "iphone")
-          : html`<span class="pk-card-live none">No preview</span>`}
-        <span class=${this.artClass(on)}>${designDeviceArt(families, control, preview ? this.cardLive(preview.config, preview.entities) : undefined, on)}</span>
+        aria-label=${`Open ${recName}`} @click=${() => void this.openFromPicker(row)}>
+        <span class="pk-card-crop">${deviceCropArt(family, device,
+          live ? (device === "iphone" ? live.phone : live.watch) : {}, { shelved })}</span>
       </button>
-      <div class="pk-card-shapes">
-        <span class="pk-card-glyph" aria-hidden="true">${family === undefined
-          ? controlDeviceArt(outline, true)
-          : deviceShapeArt(family, outline, true)}</span>
-        <span class="pk-card-says">${cardShapeText(families, kind, control)}</span>
+      <div class="pk-card-foot">
+        <button type="button" class="pk-card-name" title="Open this complication"
+          @click=${() => void this.openFromPicker(row)}>${recName}</button>
+        ${hidden ? html`<span class="pk-tag" title="These do not show in their device's own list of complications. A face or widget that already has one keeps it.">hidden</span>` : nothing}
+        <span class="pk-card-shape">${cardShapeTitle(family, control)}</span>
       </div>
       <span class="pk-card-acts ${confirming ? "asking" : ""}">
         ${confirming
           ? html`<button type="button" class="ghost danger small" ?disabled=${this.saving}
               @click=${(e: Event) => { stop(e); void (open ? this.deleteCurrent() : this.deleteSaved(record.id, record.revision, actOwnerId)); }}>Really delete</button>
             <button type="button" class="ghost small" @click=${(e: Event) => { stop(e); this.pickerConfirmDelete = undefined; }}>Cancel</button>`
-          : html`${mayDelete ? html`<button type="button" class="icon" ?disabled=${!open && this.saving}
+          : html`${this.renderPickerDup(row, family, menu)}
+            ${mayDelete ? html`<button type="button" class="icon" ?disabled=${!open && this.saving}
               title=${hidden
                 ? `Hidden from the ${word}'s complication list. Show it there again.`
                 : `Hide from the ${word}'s complication list. Faces already using it keep it.`}
@@ -8915,7 +8992,7 @@ export class WristAssistantPanel extends LitElement {
    * else's watch without the author having to open it first, and shelves it
    * without having to delete it.
    *
-   * One menu at a time, held absolutely inside its own card, so a grid three
+   * One menu at a time, held absolutely inside its own card, so a grid four
    * cards wide never has two of them overlapping each other.
    */
   private renderPickerDup(row: PickerRow, family: FamilyKind | undefined, open: boolean) {

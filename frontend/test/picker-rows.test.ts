@@ -1,6 +1,7 @@
-// The picker lists every complication this home holds in one list, one card
-// each. These are the pure parts of that: what the rows are, what order they
-// come in, and what the line under them says.
+// The picker lists every complication this home holds, one card each, under a
+// row of device tabs. These are the pure parts of that: what the rows are,
+// what order they come in, which tab and section each one falls under, and
+// what the search reads.
 
 import { describe, expect, it } from "vitest";
 
@@ -9,14 +10,12 @@ import {
   type PickerCopy,
   type PickerDevice,
   type PickerPerson,
-  isPersonFilter,
   isShelvedRow,
-  personFilter,
-  pickerCountText,
   pickerListRows,
+  pickerSections,
+  pickerTabs,
   pickerView,
   rowWhoText,
-  rowsOfPeople,
   rowsOnDevice,
   sortPickerRows,
 } from "../src/pickerRows.js";
@@ -25,6 +24,7 @@ import { LIBRARY_OWNER_ID } from "../src/version.js";
 const watch: PickerDevice = { ownerId: "w1", label: "Chen", kind: "watch" };
 const watch2: PickerDevice = { ownerId: "w2", label: "Jesse Apple Watch", kind: "watch" };
 const phone: PickerDevice = { ownerId: "p1", label: "iPhone 15 Pro", kind: "iphone" };
+const shelf: PickerDevice = { ownerId: LIBRARY_OWNER_ID, label: "Library", kind: "library" };
 const devices = [watch, watch2, phone];
 
 const copy = (over: Partial<PickerCopy<string>> & { ownerId: string; id: string }): PickerCopy<string> => ({
@@ -148,33 +148,82 @@ describe("rowsOnDevice", () => {
   });
 });
 
-describe("rowsOfPeople", () => {
+describe("pickerTabs", () => {
   const rows = pickerListRows([
     copy({ ownerId: "w1", id: "a", name: "Porch" }),
-    copy({ ownerId: "w2", id: "b", name: "Kitchen" }),
-    copy({ ownerId: "p1", id: "c", name: "Kitchen" }),
-  ], devices);
+    copy({ ownerId: "p1", id: "b", name: "Kitchen" }),
+    copy({ ownerId: "p1", id: "c", name: "Alarm" }),
+    copy({ ownerId: LIBRARY_OWNER_ID, id: "d", name: "Draft" }),
+  ], [...devices, shelf]);
 
-  it("keeps the rows on any of that person's devices", () => {
-    expect(rowsOfPeople(rows, ["w2", "p1"]).map((r) => r.name)).toEqual(["Kitchen", "Kitchen"]);
-    expect(rowsOfPeople(rows, ["w1"]).map((r) => r.name)).toEqual(["Porch"]);
+  it("puts All first, then the devices, then the library", () => {
+    expect(pickerTabs(rows, [...devices, shelf]).map((t) => t.key))
+      .toEqual([ALL_DEVICES, "w1", "w2", "p1", LIBRARY_OWNER_ID]);
   });
 
-  it("gives nothing for a person holding nothing", () => {
-    expect(rowsOfPeople(rows, [])).toEqual([]);
-    expect(rowsOfPeople(rows, ["nobody"])).toEqual([]);
+  // However the home's device list arrives, the shelf reads after every
+  // device: it is where a design waits rather than a place it is.
+  it("keeps the library last whatever order the devices come in", () => {
+    expect(pickerTabs(rows, [shelf, phone, watch]).map((t) => t.key))
+      .toEqual([ALL_DEVICES, "p1", "w1", LIBRARY_OWNER_ID]);
+  });
+
+  it("counts every card on All and each device's own on its tab", () => {
+    const counts = new Map(pickerTabs(rows, [...devices, shelf]).map((t) => [t.key, t.count]));
+    expect(counts.get(ALL_DEVICES)).toBe(4);
+    expect(counts.get("w1")).toBe(1);
+    expect(counts.get("w2")).toBe(0);
+    expect(counts.get("p1")).toBe(2);
+    expect(counts.get(LIBRARY_OWNER_ID)).toBe(1);
+  });
+
+  it("names each tab after its device, and the shelf Library", () => {
+    const tabs = pickerTabs(rows, [...devices, shelf]);
+    expect(tabs.map((t) => t.label)).toEqual(["All", "Chen", "Jesse Apple Watch", "iPhone 15 Pro", "Library"]);
+    expect(tabs.map((t) => t.kind)).toEqual(["all", "watch", "watch", "iphone", "library"]);
+  });
+
+  // A home whose integration is older than the library has no shelf at all,
+  // and gets no tab for one rather than an empty tab that can never fill.
+  it("offers no Library tab in a home with no shelf", () => {
+    expect(pickerTabs(rows, devices).map((t) => t.key)).toEqual([ALL_DEVICES, "w1", "w2", "p1"]);
   });
 });
 
-describe("person filter keys", () => {
-  it("tells a person's key apart from a shape's", () => {
-    expect(isPersonFilter(personFilter("p1"))).toBe(true);
-    expect(isPersonFilter("all")).toBe(false);
-    expect(isPersonFilter("rectangular")).toBe(false);
+describe("pickerSections", () => {
+  const rows = pickerListRows([
+    copy({ ownerId: "w1", id: "a", name: "Porch", slot: 2 }),
+    copy({ ownerId: "w1", id: "b", name: "Alarm", slot: 0 }),
+    copy({ ownerId: "p1", id: "c", name: "Kitchen" }),
+    copy({ ownerId: LIBRARY_OWNER_ID, id: "d", name: "Draft" }),
+  ], [...devices, shelf]);
+
+  it("cuts the rows into one section per device, in the tabs' own order", () => {
+    expect(pickerSections(rows, [...devices, shelf]).map((s) => s.ownerId))
+      .toEqual(["w1", "w2", "p1", LIBRARY_OWNER_ID]);
   });
 
-  it("keys a chip by the person's own key, so two people never collide", () => {
-    expect(personFilter("p1")).not.toBe(personFilter("p2"));
+  it("keeps each device's own seat order inside its section", () => {
+    const [first] = pickerSections(rows, [...devices, shelf]);
+    expect(first!.rows.map((r) => r.name)).toEqual(["Alarm", "Porch"]);
+  });
+
+  // An empty watch is part of the answer to what this home has got, so its
+  // section is still made; whether it is drawn is the caller's to decide.
+  it("gives a device with nothing on it a section of its own", () => {
+    const empty = pickerSections(rows, [...devices, shelf]).find((s) => s.ownerId === "w2");
+    expect(empty?.rows).toEqual([]);
+  });
+
+  it("carries the heading each section wears", () => {
+    const shelved = pickerSections(rows, [...devices, shelf]).at(-1);
+    expect(shelved?.label).toBe("Library");
+    expect(shelved?.kind).toBe("library");
+    expect(shelved?.rows.map((r) => r.name)).toEqual(["Draft"]);
+  });
+
+  it("leaves out a device this home does not list", () => {
+    expect(pickerSections(rows, [watch]).map((s) => s.ownerId)).toEqual(["w1"]);
   });
 });
 
@@ -197,14 +246,6 @@ describe("pickerView", () => {
 
   it("gives an empty list for a device holding nothing", () => {
     expect(pickerView(rows, devices, "w2")).toEqual([]);
-  });
-});
-
-describe("pickerCountText", () => {
-  it("says how many cards are showing out of the whole home", () => {
-    expect(pickerCountText(6, 9)).toBe("6 of 9");
-    expect(pickerCountText(9, 9)).toBe("9 of 9");
-    expect(pickerCountText(0, 0)).toBe("0 of 0");
   });
 });
 
@@ -257,24 +298,25 @@ describe("rowWhoText", () => {
 });
 
 describe("the library in the picker's rows", () => {
-  const shelf = (over: Partial<PickerCopy<string>> = {}) =>
+  const shelved = (over: Partial<PickerCopy<string>> = {}) =>
     copy({ ownerId: LIBRARY_OWNER_ID, id: "lib", ...over });
 
   it("calls a row shelved when its copy is on the shelf", () => {
-    const [only] = pickerListRows([shelf()], devices);
+    const [only] = pickerListRows([shelved()], devices);
     expect(isShelvedRow(only!)).toBe(true);
     const [device] = pickerListRows([copy({ ownerId: "w1", id: "a" })], devices);
     expect(isShelvedRow(device!)).toBe(false);
   });
 
-  // A design nobody has yet belongs to nobody, so hiding it behind a person's
-  // chip would mean the only way to see the shelf is to clear the filter.
-  it("shows a shelved row under whichever person's chip is on", () => {
+  // The shelf is a tab and a section of its own, so a design waiting on it is
+  // never mixed in with a device's cards.
+  it("keeps a shelved row out of every device's section", () => {
     const rows = pickerListRows([
-      shelf({ name: "Draft" }),
+      shelved({ name: "Draft" }),
       copy({ ownerId: "w1", id: "a", name: "Porch" }),
-    ], devices);
-    expect(rowsOfPeople(rows, ["w1"]).map((r) => r.name)).toEqual(["Draft", "Porch"]);
-    expect(rowsOfPeople(rows, ["p1"]).map((r) => r.name)).toEqual(["Draft"]);
+    ], [...devices, shelf]);
+    const sections = pickerSections(rows, [...devices, shelf]);
+    expect(sections.find((s) => s.ownerId === "w1")?.rows.map((r) => r.name)).toEqual(["Porch"]);
+    expect(sections.at(-1)?.rows.map((r) => r.name)).toEqual(["Draft"]);
   });
 });

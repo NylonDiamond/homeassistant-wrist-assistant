@@ -10,7 +10,7 @@ import { nothing, svg } from "lit";
 
 import { ALL_FAMILIES } from "../src/layouts.js";
 import type { FamilyKind } from "../src/model.js";
-import { controlDeviceArt, designDeviceArt, deviceShapeArt, shapeArtKinds } from "../src/shapeArt.js";
+import { controlDeviceArt, deviceCropArt, deviceShapeArt, shapeArtKinds } from "../src/shapeArt.js";
 import type { DeviceKind } from "../src/version.js";
 
 function flatten(node: unknown): string {
@@ -207,115 +207,125 @@ describe("controlDeviceArt", () => {
   });
 });
 
-describe("designDeviceArt", () => {
-  const card = (families: FamilyKind[], control = false) => flatten(designDeviceArt(families, control));
-  /** Whether a slot is lit: the accent, rather than the unlit token. */
-  const litCount = (art: string) => art.split("var(--wa-accent)").length - 1;
+describe("deviceCropArt", () => {
+  const crop = (family: FamilyKind | undefined, device: "watch" | "iphone", live = {}, opts = {}) =>
+    flatten(deviceCropArt(family, device, live, opts));
+  /** The four numbers of the drawing's window, in the device's own units. */
+  const viewBox = (art: string) => {
+    const found = /viewBox=([\d.]+ [\d.]+ [\d.]+ [\d.]+)/.exec(art);
+    expect(found, art.slice(0, 120)).not.toBeNull();
+    const [x, y, width, height] = found![1]!.split(" ").map(Number) as [number, number, number, number];
+    return { x, y, width, height };
+  };
+  /** The devices at the size they are laid out in. */
+  const FRAME = { watch: { width: 86, height: 96 }, iphone: { width: 50, height: 96 } };
+  /** Where each shape's slot sits on its device, so a window can be asked
+   * whether the thing it is a window onto is in it. */
+  const SLOTS: [FamilyKind, "watch" | "iphone", { x: number; y: number; width: number; height: number }][] = [
+    ["rectangular", "watch", { x: 14, y: 38, width: 58, height: 21 }],
+    ["circular", "watch", { x: 13, y: 63, width: 16, height: 16 }],
+    ["corner", "watch", { x: 14, y: 17, width: 13, height: 13 }],
+    ["inline", "watch", { x: 36, y: 15, width: 30, height: 3 }],
+    ["rectangular", "iphone", { x: 9, y: 22, width: 32, height: 13 }],
+    ["circular", "iphone", { x: 9, y: 22, width: 32, height: 13 }],
+    ["inline", "iphone", { x: 9, y: 22, width: 32, height: 13 }],
+    ["small", "iphone", { x: 7, y: 42, width: 16, height: 16 }],
+    ["medium", "iphone", { x: 7, y: 62, width: 36, height: 14 }],
+    ["large", "iphone", { x: 7, y: 80, width: 36, height: 9 }],
+    ["xlarge", "iphone", { x: 7, y: 80, width: 36, height: 9 }],
+  ];
 
-  it("draws both devices whatever the design has, at the card's own size", () => {
-    const art = card(["corner"]);
-    expect(art).toContain("0 0 86 96");
-    expect(art).toContain("0 0 50 96");
-    // Both screens, so a phone with nothing on it says "not on your phone".
-    expect(art.split("var(--wa-art-screen)").length - 1).toBe(2);
-  });
-
-  it("lights only the slots the design fills", () => {
-    const art = card(["rectangular", "circular"]);
-    // The two watch slots, and the phone's one Lock Screen slot.
-    expect(litCount(art)).toBe(3);
-    expect(card([])).not.toContain("var(--wa-accent)");
-  });
-
-  it("lights the phone's Lock Screen slot for any shape a Lock Screen draws", () => {
-    for (const family of ["rectangular", "circular", "inline"] as FamilyKind[]) {
-      expect(card([family])).toContain(`x="9" y="24" width="32" height="8" rx="2" fill=var(--wa-accent)`);
+  // The window is a window: a crop that reached outside the drawing would
+  // show empty space where the card expects a device.
+  it("keeps every shape's window inside its device's frame", () => {
+    for (const [family, device] of SLOTS) {
+      const box = viewBox(crop(family, device));
+      const frame = FRAME[device];
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(frame.width);
+      expect(box.y + box.height).toBeLessThanOrEqual(frame.height);
     }
-    // Corner is a watch face slot and reaches no Lock Screen.
-    expect(card(["corner"])).toContain(`x="9" y="24" width="32" height="8" rx="2" fill=var(--wa-art-off)`);
   });
 
-  it("lights the Home Screen tile each size lands on", () => {
-    expect(card(["small"])).toContain(`x="7" y="42" width="16" height="16" rx="3" fill=var(--wa-accent)`);
-    expect(card(["medium"])).toContain(`x="7" y="62" width="36" height="14" rx="3" fill=var(--wa-accent)`);
-    expect(card(["large"])).toContain(`x="7" y="80" width="36" height="9" rx="3" fill=var(--wa-accent)`);
-  });
-
-  // The drawing has three tiles and the Home Screen has four sizes, so the
-  // tallest one answers for both. What a card is asked is whether the design
-  // reaches the Home Screen at all.
-  it("lets Extra Large light the tallest tile with Large", () => {
-    expect(card(["xlarge"])).toContain(`x="7" y="80" width="36" height="9" rx="3" fill=var(--wa-accent)`);
-  });
-
-  it("draws the control beside the devices, not on one, and only when there is a control", () => {
-    const art = card(["circular"], true);
-    expect(art).toContain(`class="pk-card-ctl"`);
-    // The stand-in pill sits after both device drawings.
-    expect(art.indexOf("pk-card-ctl")).toBeGreaterThan(art.indexOf("0 0 50 96"));
-    expect(card(["circular"], false)).not.toContain("pk-card-ctl");
-  });
-
-  it("draws only the devices the design is on, and both when it is on neither", () => {
-    const watchOnly = flatten(designDeviceArt(["rectangular"], false, undefined, { watch: true, phone: false }));
-    expect(watchOnly).toContain("0 0 86 96");
-    expect(watchOnly).not.toContain("0 0 50 96");
-    const phoneOnly = flatten(designDeviceArt(["rectangular"], false, undefined, { watch: false, phone: true }));
-    expect(phoneOnly).not.toContain("0 0 86 96");
-    expect(phoneOnly).toContain("0 0 50 96");
-    const nowhere = flatten(designDeviceArt(["rectangular"], false, undefined, { watch: false, phone: false }));
-    expect(nowhere).toContain("0 0 86 96");
-    expect(nowhere).toContain("0 0 50 96");
-  });
-
-  it("puts the real control tile beside the devices in place of the stand-in", () => {
-    const tile = { art: svg`<div data-tag="tile"></div>`, width: 48, height: 30 };
-    const art = flatten(designDeviceArt([], true, { watch: { control: tile }, phone: {} }));
-    expect(art).toContain(`data-tag="tile"`);
-    expect(art).not.toContain(`width="30" height="18" rx="9"`);
-  });
-
-  it("shows the corner's content disc alone, centred in the slot and masked round", () => {
-    // A 104 by 124 quadrant whose disc of 34 sits at (70, 29.5): the slot is
-    // 13 across at (14, 17), so the disc scales by 13/34 and its centre
-    // lands on the slot's centre.
-    const corner = { art: svg`<svg class="complication corner" data-tag="c"></svg>`, width: 104, height: 124, focus: { cx: 70, cy: 29.5, diameter: 34 } };
-    const art = flatten(designDeviceArt(["corner"], false, { watch: { corner }, phone: {} }));
-    const scale = 13 / 34;
-    expect(art).toContain(`translate(${20.5 - 70 * scale} ${23.5 - 29.5 * scale}) scale(${scale})`);
-    expect(art).toContain(`<circle cx=20.5 cy=23.5 r=6.5 />`);
-    expect(art).not.toContain("M16 30 A 26 26 0 0 1 28 19");
-  });
-
-  it("hides both drawings from a screen reader, the card's text saying it instead", () => {
-    expect(card(["rectangular"]).split(`aria-hidden="true"`).length - 1).toBe(2);
-  });
-
-  it("never throws, whatever the design holds", () => {
-    for (const family of ALL_FAMILIES) {
-      for (const control of [true, false]) {
-        expect(() => designDeviceArt([family], control)).not.toThrow();
-      }
+  it("puts each shape's own slot inside its window", () => {
+    for (const [family, device, slot] of SLOTS) {
+      const box = viewBox(crop(family, device));
+      expect(box.x, `${family} on ${device}`).toBeLessThanOrEqual(slot.x);
+      expect(box.y, `${family} on ${device}`).toBeLessThanOrEqual(slot.y);
+      expect(box.x + box.width).toBeGreaterThanOrEqual(slot.x + slot.width);
+      expect(box.y + box.height).toBeGreaterThanOrEqual(slot.y + slot.height);
     }
-    expect(() => designDeviceArt(ALL_FAMILIES, true)).not.toThrow();
+  });
+
+  // Each window is about twice as wide as it is tall, which is the shape of
+  // the well a card gives it: a window of another shape would have its edges
+  // trimmed to fit, and what was trimmed is the part that matters.
+  it("cuts every window to the card's own proportions", () => {
+    for (const [family, device] of SLOTS) {
+      const box = viewBox(crop(family, device));
+      expect(box.width / box.height, `${family} on ${device}`).toBeCloseTo(2, 1);
+    }
+    expect(crop("rectangular", "watch")).toContain(`preserveAspectRatio="xMidYMid slice"`);
+  });
+
+  it("shows different parts of the device for different shapes", () => {
+    const boxes = new Set([
+      JSON.stringify(viewBox(crop("rectangular", "watch"))),
+      JSON.stringify(viewBox(crop("circular", "watch"))),
+      JSON.stringify(viewBox(crop("corner", "watch"))),
+    ]);
+    expect(boxes.size).toBe(3);
+    expect(new Set([
+      JSON.stringify(viewBox(crop("small", "iphone"))),
+      JSON.stringify(viewBox(crop("medium", "iphone"))),
+      JSON.stringify(viewBox(crop("large", "iphone"))),
+    ]).size).toBe(3);
+  });
+
+  // A shape the device has no slot for has no window worth inventing, so the
+  // whole device is drawn rather than a piece of it chosen at random.
+  it("falls back to the whole device for a shape it does not draw", () => {
+    expect(viewBox(crop("corner", "iphone"))).toEqual({ x: 0, y: 0, width: 50, height: 96 });
+    expect(viewBox(crop("small", "watch"))).toEqual({ x: 0, y: 0, width: 86, height: 96 });
+  });
+
+  it("lights the shape's own slot and leaves its neighbours off", () => {
+    const art = crop("rectangular", "watch");
+    expect(art).toContain(`x="14" y="38" width="58" height="21" rx="5" fill=var(--wa-accent)`);
+    expect(art).toContain(`cx="21" cy="71" r="8" fill=var(--wa-art-off)`);
+  });
+
+  it("hides the drawing from a screen reader, the card's text saying it instead", () => {
+    expect(crop("circular", "watch")).toContain(`aria-hidden="true"`);
+  });
+
+  // A design in the library is on no device, so the case under it is an
+  // outline of one: dashed, and without the bands and the crown that make a
+  // watch an object.
+  it("draws a shelved design's case with dashes", () => {
+    const shelved = crop("rectangular", "watch", {}, { shelved: true });
+    expect(shelved).toContain(`stroke-dasharray=4 3`);
+    expect(shelved).not.toContain(`x="27" y="0" width="32" height="10"`);
+    expect(crop("rectangular", "watch")).not.toContain(`stroke-dasharray=4 3`);
+    const phone = crop("small", "iphone", {}, { shelved: true });
+    expect(phone).toContain(`stroke-dasharray=4 3`);
+    expect(crop("small", "iphone")).not.toContain(`stroke-dasharray=4 3`);
   });
 
   // The real complication in its slot. The renderer's own svg stands in for
-  // itself here: what matters is where it lands and how big it is drawn.
+  // itself here: what matters is that it lands in the slot the window is on.
   describe("with the complication drawn in", () => {
     const picture = (tag: string) => ({ art: svg`<svg class="complication" data-tag=${tag}></svg>`, width: 181, height: 65.5 });
 
     it("sets the picture into the slot in place of the lit fill", () => {
-      const art = flatten(designDeviceArt(["rectangular"], false, { watch: { rectangular: picture("w") }, phone: {} }));
+      const art = crop("rectangular", "watch", { rectangular: picture("w") });
       expect(art).toContain("data-tag=w");
-      // The watch's rectangular fill is gone; the phone's Lock Screen slot is
-      // still the lit fill, since no phone picture was given.
       expect(art).not.toContain(`x="14" y="38" width="58" height="21"`);
-      expect(art).toContain(`x="9" y="24" width="32" height="8" rx="2" fill=var(--wa-accent)`);
     });
 
     it("scales the picture to fit the slot and centres it", () => {
-      const art = flatten(designDeviceArt(["rectangular"], false, { watch: { rectangular: picture("w") }, phone: {} }));
+      const art = crop("rectangular", "watch", { rectangular: picture("w") });
       // The full 58 wide slot for a 181 wide picture, so 58/181; 65.5 tall
       // becomes 20.99, sat in the middle of the 21 tall slot.
       const scale = 58 / 181;
@@ -325,7 +335,7 @@ describe("designDeviceArt", () => {
 
     it("draws the Large tile from the top and clips it, rather than squeezing it flat", () => {
       const tall = { art: svg`<svg class="complication" data-tag=L></svg>`, width: 344.67, height: 360 };
-      const art = flatten(designDeviceArt(["large"], false, { watch: {}, phone: { large: tall } }));
+      const art = crop("large", "iphone", { large: tall });
       expect(art).toContain("data-tag=L");
       expect(art).toContain(`scale(${36 / 344.67})`);
       expect(art).toContain("clip-path=url(#pk-clip-");
@@ -333,14 +343,47 @@ describe("designDeviceArt", () => {
 
     it("quiets the second Small tile once the first holds the picture", () => {
       const small = { art: svg`<svg class="complication"></svg>`, width: 162.67, height: 162.67 };
-      const art = flatten(designDeviceArt(["small"], false, { watch: {}, phone: { small } }));
-      expect(art).toContain(`x="27" y="42" width="16" height="16" rx="3" fill=var(--wa-art-off)`);
+      expect(crop("small", "iphone", { small })).toContain(`x="27" y="42" width="16" height="16" rx="3" fill=var(--wa-art-off)`);
     });
 
-    it("keeps the lit fill for a slot with no picture", () => {
-      const art = flatten(designDeviceArt(["rectangular", "circular"], false, { watch: { rectangular: picture("w") }, phone: {} }));
-      expect(art).toContain(`cx="21" cy="71" r="8" fill=var(--wa-accent)`);
+    it("shows the corner's content disc alone, centred in the slot and masked round", () => {
+      // A 104 by 124 quadrant whose disc of 34 sits at (70, 29.5): the slot is
+      // 13 across at (14, 17), so the disc scales by 13/34 and its centre
+      // lands on the slot's centre.
+      const corner = { art: svg`<svg class="complication corner" data-tag="c"></svg>`, width: 104, height: 124, focus: { cx: 70, cy: 29.5, diameter: 34 } };
+      const art = crop("corner", "watch", { corner });
+      const scale = 13 / 34;
+      expect(art).toContain(`translate(${20.5 - 70 * scale} ${23.5 - 29.5 * scale}) scale(${scale})`);
+      expect(art).toContain(`<circle cx=20.5 cy=23.5 r=6.5 />`);
+      expect(art).not.toContain("M16 30 A 26 26 0 0 1 28 19");
     });
+  });
+
+  // A control sits on neither screen, so there is no device to crop: the tile
+  // is the whole picture.
+  describe("a design that is only a control", () => {
+    it("draws the tile alone in place of a device", () => {
+      const art = crop(undefined, "watch");
+      expect(art).toContain(`class="pk-card-ctl"`);
+      expect(art).not.toContain("viewBox=0");
+    });
+
+    it("draws the real tile where the card has one", () => {
+      const tile = { art: svg`<div data-tag="tile"></div>`, width: 48, height: 30 };
+      const art = crop(undefined, "iphone", { control: tile });
+      expect(art).toContain(`data-tag="tile"`);
+      expect(art).not.toContain(`width="30" height="18" rx="9"`);
+    });
+  });
+
+  it("never throws, whatever it is asked for", () => {
+    for (const family of [...ALL_FAMILIES, undefined]) {
+      for (const device of ["watch", "iphone"] as const) {
+        for (const shelved of [true, false]) {
+          expect(() => deviceCropArt(family, device, {}, { shelved })).not.toThrow();
+        }
+      }
+    }
   });
 });
 

@@ -169,14 +169,19 @@ export function shapeArtKinds(family: FamilyKind): DeviceKind[] {
   return isSharedFamily(family) ? ["watch", "iphone"] : ["watch"];
 }
 
-// ── the picker card's pair of devices ─────────────────────────────────────
+// ── the picker card's device crop ─────────────────────────────────────────
 //
 // The drawings above answer "where does this one shape sit". A picker card
-// asks the other question: here is a whole design, show me every slot it
-// fills, on both devices at once. So this is its own pair of pictures rather
-// than a row of the buttons above, drawn eight times the size, with a real
-// dark screen under them and a clock and an app grid for furniture. At 32x28
-// a watch face with four slots lit is a smudge.
+// asks the other question: here is one complication, show me it where it
+// sits. So this is its own picture rather than a row of the buttons above,
+// drawn eight times the size, with a real dark screen under it and a clock
+// and an app grid for furniture. At 32x28 a watch face with a slot lit is a
+// smudge.
+//
+// A card shows one shape on one device, so the whole device is more than it
+// needs: a phone drawn to 96 units tall leaves a Home Screen tile nine units
+// high. The device is laid out in full and the card is given a window onto
+// the part that holds the slot, which is what `deviceCropArt` is.
 //
 // The colors are the panel's own tokens, so the lit shapes follow the accent
 // and both skins work. The screen stays dark in either one, the way every
@@ -221,18 +226,18 @@ export interface LiveShape {
  * that is missing keeps the plain lit fill. */
 export type LiveShapes = Partial<Record<FamilyKind | "control", LiveShape>>;
 
-/** Which devices a card draws: the ones the design is on. A design on one
- * device draws that device alone, and bigger. */
-export interface DevicesOn {
-  watch: boolean;
-  phone: boolean;
-}
-
-/** The real complication on both devices, when a card has one to show. */
+/** The real complication as each kind of device draws it. One card uses one
+ * half of this, since a complication is one shape on one device; both are
+ * resolved together because the panel reads the document once. */
 export interface LiveDesign {
   watch: LiveShapes;
   phone: LiveShapes;
 }
+
+/** The dashes a shelved design's case is drawn with: the library holds a
+ * design that is on no device, so the device under it is an outline of one
+ * rather than a device. */
+const DASH = "4 3";
 
 /**
  * A shape's picture set into its slot on the drawing.
@@ -320,26 +325,34 @@ const faceClock = (x: number, y: number, size: number, text: string) =>
  * right, rectangular the full width of the screen under them, and circular
  * bottom left. Inline, which that face does not carry, sits as a line over
  * the clock.
+ *
+ * The parts rather than a finished drawing, so one layout serves both the
+ * whole device and every window onto it.
  */
-function watchCard(families: readonly FamilyKind[], live: LiveShapes = {}): TemplateResult {
+function watchBody(families: readonly FamilyKind[], live: LiveShapes, shelved: boolean): unknown {
   const has = (f: FamilyKind) => families.includes(f);
   // The real shape in its slot where there is one, the lit fill otherwise.
   // Inline is a line of text rather than a canvas and has no picture to set.
   const rect = placed(live.rectangular, { x: 14, y: 38, width: 58, height: 21 }, "fit", "", { rx: 3 });
   const circ = placed(live.circular, { x: 13, y: 63, width: 16, height: 16 }, "fit", "", "circle");
   const corner = placed(live.corner, { x: 14, y: 17, width: 13, height: 13 }, "fit", clipKey(), "circle");
-  return html`<svg class="pk-card-watch" width="86" height="96" viewBox="0 0 86 96" aria-hidden="true">
-    <rect x="27" y="0" width="32" height="10" rx="3" fill=${CASE} />
-    <rect x="27" y="86" width="32" height="10" rx="3" fill=${CASE} />
-    <rect x="6" y="8" width="74" height="80" rx="18" fill=${CASE} />
-    <rect x="82" y="30" width="4" height="12" rx="2" fill=${CASE} />
-    <rect x="11" y="13" width="64" height="70" rx="14" fill=${SCREEN} />
+  // A shelved design has no watch: the case is drawn as a dashed outline, and
+  // the bands and crown, which are the parts that make it a real object, are
+  // left off.
+  const shell = shelved
+    ? svg`<rect x="11" y="13" width="64" height="70" rx="14" fill=${SCREEN} />
+      <rect x="6" y="8" width="74" height="80" rx="18" fill="none" stroke=${CASE} stroke-width="3" stroke-dasharray=${DASH} />`
+    : svg`<rect x="27" y="0" width="32" height="10" rx="3" fill=${CASE} />
+      <rect x="27" y="86" width="32" height="10" rx="3" fill=${CASE} />
+      <rect x="6" y="8" width="74" height="80" rx="18" fill=${CASE} />
+      <rect x="82" y="30" width="4" height="12" rx="2" fill=${CASE} />
+      <rect x="11" y="13" width="64" height="70" rx="14" fill=${SCREEN} />`;
+  return svg`${shell}
     ${faceClock(56, 33, 13, "10:09")}
     <rect x="36" y="15" width="30" height="3" rx="1.5" fill=${lit(has("inline"))} />
     ${corner ?? svg`<path d="M16 30 A 26 26 0 0 1 28 19" stroke=${lit(has("corner"))} stroke-width="4" fill="none" stroke-linecap="round" />`}
     ${rect ?? svg`<rect x="14" y="38" width="58" height="21" rx="5" fill=${lit(has("rectangular"))} />`}
-    ${circ ?? svg`<circle cx="21" cy="71" r="8" fill=${lit(has("circular"))} />`}
-  </svg>`;
+    ${circ ?? svg`<circle cx="21" cy="71" r="8" fill=${lit(has("circular"))} />`}`;
 }
 
 /**
@@ -349,13 +362,13 @@ function watchCard(families: readonly FamilyKind[], live: LiveShapes = {}): Temp
  * One Lock Screen slot for all three shared shapes rather than three of them.
  * iOS gives the Lock Screen one widget area, and a card that drew rectangular,
  * circular and inline separately down a 50 px phone would be three smudges
- * saying what the watch beside it already said in full.
+ * saying what the crop above them already said in full.
  *
  * Extra Large lights the tallest tile with Large. The Home Screen has four
- * sizes and this drawing has room for three, and the tile a card is asking
- * about is "does this reach the Home Screen", which either of them answers.
+ * sizes and this drawing has room for three, and what a card is asking about
+ * is where on the page the tile lands, which either of them answers.
  */
-function phoneCard(families: readonly FamilyKind[], live: LiveShapes = {}): TemplateResult {
+function phoneBody(families: readonly FamilyKind[], live: LiveShapes, shelved: boolean): unknown {
   const has = (f: FamilyKind) => families.includes(f);
   const lockOn = families.some((f) => isSharedFamily(f));
   const small = lit(has("small"));
@@ -367,28 +380,30 @@ function phoneCard(families: readonly FamilyKind[], live: LiveShapes = {}): Temp
   const tile = placed(live.small, { x: 7, y: 42, width: 16, height: 16 }, "fit", "", { rx: 3 });
   const medium = placed(live.medium, { x: 7, y: 62, width: 36, height: 14 }, "fit", "", { rx: 3 });
   const large = placed(live.large ?? live.xlarge, { x: 7, y: 80, width: 36, height: 9 }, "cover", clipKey(), { rx: 3 });
-  return html`<svg class="pk-card-phone" width="50" height="96" viewBox="0 0 50 96" aria-hidden="true">
-    <rect x="0" y="0" width="50" height="96" rx="9" fill=${CASE} />
-    <rect x="3" y="3" width="44" height="90" rx="7" fill=${SCREEN} />
-    <rect x="17" y="6" width="16" height="3" rx="1.5" fill=${DIM} />
+  const shell = shelved
+    ? svg`<rect x="3" y="3" width="44" height="90" rx="7" fill=${SCREEN} />
+      <rect x="1" y="1" width="48" height="94" rx="9" fill="none" stroke=${CASE} stroke-width="2" stroke-dasharray=${DASH} />`
+    : svg`<rect x="0" y="0" width="50" height="96" rx="9" fill=${CASE} />
+      <rect x="3" y="3" width="44" height="90" rx="7" fill=${SCREEN} />
+      <rect x="17" y="6" width="16" height="3" rx="1.5" fill=${DIM} />`;
+  return svg`${shell}
     ${faceClock(25, 20, 9, "9:41")}
     ${lock ?? svg`<rect x="9" y="24" width="32" height="8" rx="2" fill=${lit(lockOn)} />`}
     <line x1="6" y1="38" x2="44" y2="38" stroke=${DIM} stroke-dasharray="2 2" />
     ${tile ?? svg`<rect x="7" y="42" width="16" height="16" rx="3" fill=${small} />`}
     <rect x="27" y="42" width="16" height="16" rx="3" fill=${tile ? OFF : small} />
     ${medium ?? svg`<rect x="7" y="62" width="36" height="14" rx="3" fill=${lit(has("medium"))} />`}
-    ${large ?? svg`<rect x="7" y="80" width="36" height="9" rx="3" fill=${lit(has("large") || has("xlarge"))} />`}
-  </svg>`;
+    ${large ?? svg`<rect x="7" y="80" width="36" height="9" rx="3" fill=${lit(has("large") || has("xlarge"))} />`}`;
 }
 
 /**
- * The Control Center tile, beside the devices rather than on one.
+ * The Control Center tile, on its own.
  *
  * Control Center is not a face or a Home Screen, so a tile drawn onto either
- * device said it sat somewhere it does not. It stands on its own at the right
- * end of the row: the real tile where the card has one, drawn as the first
- * device shown draws it (the watch's pill, the phone's circle), and a lit
- * pill standing in for it otherwise.
+ * device would say it sat somewhere it does not: the tile is the whole
+ * picture. The real one where the card has one, drawn as its own device draws
+ * it (the watch's pill, the phone's circle), and a lit pill standing in for it
+ * otherwise.
  */
 function controlBeside(live: LiveShape | undefined): TemplateResult {
   if (live && live.art !== nothing) {
@@ -399,29 +414,94 @@ function controlBeside(live: LiveShape | undefined): TemplateResult {
   </svg></span>`;
 }
 
+/** A window onto one device's drawing, in that drawing's own units. */
+interface Crop {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 /**
- * One design on the devices it is on, side by side, for a picker card.
+ * Where on the watch each shape's window sits.
  *
- * Only the devices that hold a copy. Both used to be drawn always, a blank
- * phone saying "not on your phone yet", and a design on one device then spent
- * half its card on a blank drawing while the one that mattered was too small
- * to read. A card with one device draws it larger (`.pk-card-art.one`), and
- * the who line still says what the blank drawing said.
+ * Wide rather than square, at about two to one, which is the shape of the
+ * well a card gives it: the window is filled and its edges trimmed, so a crop
+ * of another shape would lose the part that matters.
  *
- * With `live`, each slot the design fills shows the complication itself, drawn
- * small, instead of a lit fill: the card then says what it is and where it
- * sits in one picture. Without it the slots are lit, which is what a card
- * whose document this panel cannot draw still gets.
+ * Rectangular takes the lower half of the face, with the clock peeking in
+ * over it; circular the row its slot sits in; corner and inline the top of
+ * the face, where the arc curls and the clock stands beside it. A shape no
+ * watch draws falls back to the whole case rather than an invented window.
  */
-export function designDeviceArt(
-  families: readonly FamilyKind[],
-  control: boolean,
-  live?: LiveDesign,
-  on: DevicesOn = { watch: true, phone: true },
+function watchCrop(family: FamilyKind): Crop {
+  switch (family) {
+    case "rectangular":
+      return { x: 2, y: 24, width: 82, height: 41 };
+    case "circular":
+      return { x: 2, y: 52, width: 82, height: 41 };
+    case "corner":
+    case "inline":
+      return { x: 2, y: 2, width: 82, height: 41 };
+    default:
+      return { x: 0, y: 0, width: 86, height: 96 };
+  }
+}
+
+/**
+ * Where on the phone each shape's window sits.
+ *
+ * The three Lock Screen shapes share the band under the clock, which is the
+ * one widget area iOS gives that screen. Each Home Screen size takes the row
+ * of the page its tile lands on, its neighbouring icons included: which row a
+ * tile sits on is most of what its size means. The window runs the full width
+ * of the case, so the dashes of a shelved design are in it wherever the slot
+ * is.
+ */
+function phoneCrop(family: FamilyKind): Crop {
+  switch (family) {
+    case "rectangular":
+    case "circular":
+    case "inline":
+      return { x: 0, y: 10, width: 50, height: 25 };
+    case "small":
+      return { x: 0, y: 36, width: 50, height: 25 };
+    case "medium":
+      return { x: 0, y: 56, width: 50, height: 25 };
+    case "large":
+    case "xlarge":
+      return { x: 0, y: 71, width: 50, height: 25 };
+    default:
+      return { x: 0, y: 0, width: 50, height: 96 };
+  }
+}
+
+/**
+ * One complication where it sits on its device, for a picker card.
+ *
+ * A card is about one shape on one device, so this draws that device and
+ * shows the part of it holding the slot: a Home Screen tile at the size iOS
+ * gives it, rather than a ninth of a phone. The slot carries the complication
+ * itself where `live` has it, and the lit fill where it does not, which is
+ * what a document this panel cannot draw still gets.
+ *
+ * No family at all is a design that is only a Control Center control, and its
+ * tile is the whole picture: a control sits on neither screen.
+ *
+ * `shelved` is the library's, where a design is on no device: the case is
+ * drawn as a dashed outline of one.
+ */
+export function deviceCropArt(
+  family: FamilyKind | undefined,
+  device: "watch" | "iphone",
+  live: LiveShapes = {},
+  opts: { shelved?: boolean } = {},
 ): TemplateResult {
-  // Nowhere at all draws both, so a card never shows an empty mat.
-  const both = on.watch === on.phone;
-  const watch = both || on.watch;
-  const phone = both || on.phone;
-  return html`${watch ? watchCard(families, live?.watch) : nothing}${phone ? phoneCard(families, live?.phone) : nothing}${control ? controlBeside(watch ? live?.watch.control : live?.phone.control) : nothing}`;
+  if (family === undefined) return controlBeside(live.control);
+  const shelved = opts.shelved === true;
+  const phone = device === "iphone";
+  const box = phone ? phoneCrop(family) : watchCrop(family);
+  const body = phone ? phoneBody([family], live, shelved) : watchBody([family], live, shelved);
+  return html`<svg class="pk-crop" viewBox=${`${box.x} ${box.y} ${box.width} ${box.height}`}
+    preserveAspectRatio="xMidYMid slice" aria-hidden="true">${body}</svg>`;
 }

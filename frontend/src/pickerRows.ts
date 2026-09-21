@@ -2,16 +2,17 @@
 // device draws it, one card each. A complication is one record on one device,
 // so a row is a record.
 //
-// The device used to be a folder. The picker opened on a pane of devices down
-// the left and one device's complications down the right, so seeing what the
-// home had at all meant walking the devices one by one. So the device is a
-// property of a row here (the icons it carries, and the chip that narrows the
-// list to it) rather than the question that has to be answered before anything
-// can be seen.
+// The device is a tab over the grid rather than a folder to be opened first.
+// The picker used to open on a pane of devices down the left and one device's
+// complications down the right, so seeing what the home had at all meant
+// walking the devices one by one. "All" is the first tab and shows every
+// device at once, each under its own heading; the other tabs are that same
+// grid narrowed to one device, for the household that knows which watch it
+// means.
 //
 // Everything in this module is pure: it takes the copies the panel has already
-// read off the devices and says which rows they make, in what order, and what
-// the line under them says.
+// read off the devices and says which rows they make, in what order, which
+// section or tab each one belongs to, and what the line under them says.
 
 import { LIBRARY_OWNER_ID, type DeviceKind } from "./version.js";
 
@@ -51,7 +52,7 @@ export interface PickerListRow<T> {
   open: PickerCopy<T>;
 }
 
-/** The filter key that means every device, which is the only view now. */
+/** The tab key that means every device, which is the tab the picker opens on. */
 export const ALL_DEVICES = "all";
 
 function deviceIndex(devices: readonly PickerDevice[], ownerId: string): number {
@@ -99,41 +100,11 @@ export function rowsOnDevice<T>(rows: readonly PickerListRow<T>[], ownerId: stri
  * Whether every copy of this row sits in the home's library.
  *
  * That is a design on no device at all: the library is the home's shelf, not
- * somebody's watch. It reads differently in two places, the line under a card's
- * name and the person chips, so the question is asked once here.
+ * somebody's watch. It reads in two places, the section a card falls under and
+ * the dashed device its card is drawn on, so the question is asked once here.
  */
 export function isShelvedRow<T>(row: PickerListRow<T>): boolean {
   return row.copies.length > 0 && row.copies.every((c) => c.ownerId === LIBRARY_OWNER_ID);
-}
-
-/**
- * The rows one person has, over the devices that are theirs.
- *
- * What the person chips above the list narrow to.
- *
- * A design in the library answers to every chip, because it belongs to nobody:
- * filing it under one person would be a guess, and filing it under none would
- * mean the shelf can only be seen with the chips cleared.
- */
-export function rowsOfPeople<T>(rows: readonly PickerListRow<T>[], ownerIds: readonly string[]): PickerListRow<T>[] {
-  const want = new Set(ownerIds);
-  return rows.filter((row) => isShelvedRow(row) || row.copies.some((c) => want.has(c.ownerId)));
-}
-
-/** What a person chip's filter key looks like, so the shape chips and the
- * people chips can share one piece of state without either reading as the
- * other. */
-export type PersonFilter = `person:${string}`;
-
-export function personFilter(key: string): PersonFilter {
-  return `person:${key}`;
-}
-
-/** Whether a filter key names a person rather than a shape. A guard rather
- * than a bare `startsWith`, so the shape branch is a `FamilyKind` to the
- * compiler and never needs a cast. */
-export function isPersonFilter(filter: string): filter is PersonFilter {
-  return filter.startsWith("person:");
 }
 
 /** The one device every row in a list sits on, when there is one. That is a
@@ -174,7 +145,7 @@ export function sortPickerRows<T>(
     || a.open.slot - b.open.slot);
 }
 
-/** The list a chip asks for: every row, or one device's, in that view's own
+/** The list a tab asks for: every row, or one device's, in that view's own
  * order. */
 export function pickerView<T>(
   rows: readonly PickerListRow<T>[],
@@ -185,15 +156,86 @@ export function pickerView<T>(
   return sortPickerRows(rowsOnDevice(rows, filter), devices, filter);
 }
 
+/** Whether a device is the home's shelf rather than somebody's watch. */
+function isShelf(device: PickerDevice): boolean {
+  return device.kind === "library" || device.ownerId === LIBRARY_OWNER_ID;
+}
+
 /**
- * The count at the end of the chip row.
+ * The devices in the order the tabs and the sections take them.
  *
- * "6 of 9" rather than "6 complications": with a search field and a row of
- * chips over the grid, how many were left out is the part worth saying. The
- * whole number is every complication this home holds, on every device.
+ * Whatever order the home's device list arrives in, the shelf goes last: it
+ * is where a design waits rather than a place it is, so it reads after every
+ * device that has one.
  */
-export function pickerCountText(shown: number, total: number): string {
-  return `${shown} of ${total}`;
+function inTabOrder(devices: readonly PickerDevice[]): PickerDevice[] {
+  return [...devices.filter((d) => !isShelf(d)), ...devices.filter(isShelf)];
+}
+
+/** One tab over the grid: every device, one device, or the library. `kind` is
+ * what glyph it wears, and "all" is the tab that is no device. */
+export interface PickerTab {
+  key: string;
+  label: string;
+  kind: DeviceKind | "all";
+  count: number;
+}
+
+/**
+ * The tabs over the grid, with how many cards each one holds.
+ *
+ * "All" first, because the whole home is the question this surface exists to
+ * answer; then a tab per device in the home's own order; then the library,
+ * which is where a design with no device waits. A count on every tab so an
+ * empty one says so before it is opened.
+ *
+ * A home whose integration is older than the library has no shelf, and gets
+ * no Library tab rather than an empty one that can never fill.
+ */
+export function pickerTabs<T>(
+  rows: readonly PickerListRow<T>[],
+  devices: readonly PickerDevice[],
+): PickerTab[] {
+  const tabs: PickerTab[] = [{ key: ALL_DEVICES, label: "All", kind: "all", count: rows.length }];
+  for (const device of inTabOrder(devices)) {
+    tabs.push({
+      key: device.ownerId,
+      label: isShelf(device) ? "Library" : device.label,
+      kind: device.kind,
+      count: rowsOnDevice(rows, device.ownerId).length,
+    });
+  }
+  return tabs;
+}
+
+/** One device's block of the All tab: the heading it wears and the cards
+ * under it, in that device's own seat order. */
+export interface PickerSection<T> {
+  ownerId: string;
+  label: string;
+  kind: DeviceKind;
+  rows: PickerListRow<T>[];
+}
+
+/**
+ * The All tab, cut into one section per device.
+ *
+ * The same order the tabs are in, so the two views of this grid read as one
+ * surface: a device is in the same place whichever way the picker is being
+ * used. Every device gets a section whether or not it holds anything, since
+ * an empty watch is a fact worth printing; the library's is dropped by the
+ * caller when the shelf is bare, because a shelf nobody has used yet is not.
+ */
+export function pickerSections<T>(
+  rows: readonly PickerListRow<T>[],
+  devices: readonly PickerDevice[],
+): PickerSection<T>[] {
+  return inTabOrder(devices).map((device) => ({
+    ownerId: device.ownerId,
+    label: isShelf(device) ? "Library" : device.label,
+    kind: device.kind,
+    rows: sortPickerRows(rowsOnDevice(rows, device.ownerId), devices, device.ownerId),
+  }));
 }
 
 /** One person as a card's who-line reads them: the name to print, and the
@@ -213,12 +255,15 @@ function deviceWord(kind: DeviceKind): string {
 }
 
 /**
- * Where one complication sits, as the line under its name on a card.
+ * Where one complication sits, in words.
  *
  * "Jesse (watch, iPhone) · Chen (watch)": people first, their devices in
- * brackets, in the order the household list draws them. The old picker row
- * said only whose it was, because a row had one line to spare; a card has
- * room for the answer in full.
+ * brackets, in the order the household list draws them.
+ *
+ * The cards no longer print it, since the section or tab a card is under
+ * already says whose device it is. It is what the search field reads: "chen"
+ * is as reasonable a thing to type as "porch", and neither is the other's
+ * field.
  *
  * A person with none of the copies is left out rather than printed empty, and
  * a complication on nothing at all says so in words: an empty line would read
