@@ -372,8 +372,12 @@ describe("deviceCropArt", () => {
       expect(art).toContain("<text");
       expect(art).toContain(">Kitchen: 21</text>");
       expect(art).toContain("data-tag=sym");
-      // The symbol is scaled to the band's height, 6 of its 11.
-      expect(art).toContain(`scale(${6 / 11})`);
+      // The symbol is scaled to the text's height, 4.2 of its 11.
+      expect(art).toContain(`scale(${4.2 / 11})`);
+      expect(art).toContain(`text-anchor="middle"`);
+      // The corner's arc is not drawn on an inline card: the top of the face
+      // shows the card's own shape and the clock, nothing else.
+      expect(art).not.toContain("M16 30 A 26 26");
       expect(art).not.toContain("<foreignObject");
       expect(art).not.toContain(`x="28" y="15" width="30" height="3"`);
     });

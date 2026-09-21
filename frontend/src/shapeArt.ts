@@ -379,8 +379,8 @@ function watchBody(families: readonly FamilyKind[], live: LiveShapes, shelved: b
       <rect x="11" y="13" width="64" height="70" rx="14" fill=${SCREEN} />`;
   return svg`${shell}
     ${faceClock(56, 33, 13, "10:09")}
-    ${inline ?? svg`<rect x="28" y="15" width="30" height="3" rx="1.5" fill=${lit(has("inline"))} />`}
-    ${corner ?? svg`<path d="M16 30 A 26 26 0 0 1 28 19" stroke=${lit(has("corner"))} stroke-width="4" fill="none" stroke-linecap="round" />`}
+    ${has("inline") ? inline ?? svg`<rect x="28" y="15" width="30" height="3" rx="1.5" fill=${ON} />` : nothing}
+    ${has("corner") ? corner ?? svg`<path d="M16 30 A 26 26 0 0 1 28 19" stroke=${ON} stroke-width="4" fill="none" stroke-linecap="round" />` : nothing}
     ${has("rectangular")
       ? rect ?? svg`<rect x="14" y="56" width="58" height="21" rx="5" fill=${ON} />`
       : svg`${circ ?? svg`<circle cx="21" cy="72" r="7" fill=${lit(has("circular"))} />`}
@@ -402,8 +402,8 @@ export function inlineShown(text: string): string {
 
 /** The band's text size, in the drawing's units, and about how wide one
  * character of it is: enough to centre the line without measuring it. */
-const INLINE_FONT = 6;
-const INLINE_CHAR = INLINE_FONT * 0.58;
+const INLINE_FONT = 4.2;
+const INLINE_CHAR = INLINE_FONT * 0.56;
 
 /**
  * The inline line set into its band on the watch.
@@ -420,15 +420,19 @@ function placedInline(live: LiveShape | undefined, slot: { x: number; y: number;
   const text = inlineShown(live.text);
   if (text === "") return undefined;
   const symbol = live.art !== nothing && live.width > 0 && live.height > 0;
-  const side = slot.height - 2;
-  const gap = 1.5;
+  const side = INLINE_FONT;
+  const gap = 1;
   const textWidth = Math.min(text.length * INLINE_CHAR, slot.width);
   const total = textWidth + (symbol ? side + gap : 0);
   const start = slot.x + (slot.width - total) / 2;
-  const baseline = slot.y + slot.height / 2 + INLINE_FONT * 0.36;
+  const middle = slot.y + slot.height / 2;
+  const baseline = middle + INLINE_FONT * 0.36;
+  // The text is anchored at its middle, so a guess at its width only moves
+  // the symbol beside it and never pushes the words off centre.
+  const textMiddle = start + (symbol ? side + gap : 0) + textWidth / 2;
   return svg`<g class="pk-live">
-    ${symbol ? svg`<g transform=${`translate(${start} ${slot.y + 1}) scale(${side / live.width})`}>${live.art}</g>` : nothing}
-    <text x=${symbol ? start + side + gap : start} y=${baseline} font-size=${INLINE_FONT} font-weight="600"
+    ${symbol ? svg`<g transform=${`translate(${start} ${middle - side / 2}) scale(${side / live.width})`}>${live.art}</g>` : nothing}
+    <text x=${textMiddle} y=${baseline} text-anchor="middle" font-size=${INLINE_FONT} font-weight="600"
       fill="#fff" font-family="system-ui, sans-serif">${text}</text></g>`;
 }
 
