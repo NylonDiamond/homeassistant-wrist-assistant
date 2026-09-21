@@ -132,13 +132,27 @@ COMPLICATION_MAX_LAYERS = 64
 # them only when a higher slot is occupied; 64 is the hard ceiling both sides
 # enforce.
 COMPLICATION_MAX_SLOTS = 64
-# One complication per slot at most, so the slot ceiling is also the per-watch
-# record ceiling. The Library (below) counts under the same ceiling and its
-# records carry a slotIndex like any other: no device ever reads it, but a
-# design moved onto a watch keeps the slot it was made with, and one shared
-# rule is easier to trust than a second set of storage rules that applies to
-# one owner. The panel picks a free slot among the Library's own records.
-COMPLICATION_MAX_PER_OWNER = COMPLICATION_MAX_SLOTS
+# The per-owner record ceiling, which is no longer the slot ceiling.
+#
+# It used to be: one complication held one slot, so 64 slots and 64 records
+# were the same sentence. One shape per document ended that. A slot now holds
+# one record per shape (``_slot_shapes`` in complication_store), so a watch
+# preset that moves over as rectangular, circular, corner and inline is four
+# records in one slot, and the old 64 refused the seventeenth moved preset
+# while 48 slots stood empty.
+#
+# 256 is the watch's real ceiling: 64 slots times its four shapes. A phone has
+# more shapes than that and so cannot fill every slot, which is fine. Nobody
+# builds 256 designs; the number is a storage guard, not a budget, and at
+# COMPLICATION_MAX_DOCUMENT_BYTES apiece the worst case an owner can reach is
+# 64 MiB.
+#
+# The Library (below) counts under the same ceiling and its records carry a
+# slotIndex like any other: no device ever reads it, but a design moved onto a
+# watch keeps the slot it was made with, and one shared rule is easier to
+# trust than a second set of storage rules that applies to one owner. The
+# panel picks a free slot among the Library's own records.
+COMPLICATION_MAX_PER_OWNER = 256
 
 # The one owner that is not a device: the home's design Library.
 #
