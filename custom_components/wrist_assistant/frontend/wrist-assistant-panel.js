@@ -2513,9 +2513,14 @@ ${SI(d)}`}}delete s.hidden;let l=_l(a);if(l.length>0){let c=l.slice(0,3).join(",
        than a dropdown off the button, because a grid four cards wide needs
        the width, and because this is the one place the whole household is
        read at once. Only the grid scrolls, so the tabs and the foot stay put
-       while a long list moves under them. */
+       while a long list moves under them.
+
+       A fixed height, not a maximum: the dialog is the same size and in the
+       same place on every tab, so an empty device does not shrink it to a
+       strip and drop it to the middle of the screen. A short list leaves
+       the grid's floor empty instead; the eye stays where the tabs are. */
     dialog.pk-dialog {
-      width: min(880px, 100vw - 32px); max-height: 85vh; padding: 0;
+      width: min(880px, 100vw - 32px); height: min(860px, 85vh); padding: 0;
       border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg);
       background: var(--wa-card); color: var(--wa-ink); box-shadow: var(--wa-shadow-pop);
       display: flex; flex-direction: column; overflow: hidden;
