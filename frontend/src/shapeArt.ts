@@ -471,6 +471,17 @@ const PHONE_SCREEN = { x: 3, y: 3, width: 44, height: 96 };
  * more room. */
 export const PHONE_WINDOW = 49;
 
+/** How much of the phone a Lock Screen card's window shows: the top of it,
+ * cut off just under the row of widget slots. The Home Screen window has to
+ * be tall enough for a Large tile, and a Lock Screen shape sits in the top
+ * third of the screen, so sharing that height left the bottom third of every
+ * Lock Screen card as empty screen. A window of its own ends the picture a
+ * little under the slot row, which draws the phone half again as wide in the
+ * same well. The two windows are different heights, so a Lock Screen phone is
+ * wider than a Home Screen one; nothing compares a slot with a tile, and the
+ * tiles still share one scale with each other. */
+export const PHONE_LOCK_WINDOW = 37;
+
 /** The Home Screen grid: four columns of icons across the widget band, the
  * lowest row ending at the bottom of the screen. Rows are a little tighter
  * than the phone's, so a tile spans the rows it spans on the phone. */
@@ -682,17 +693,20 @@ function watchCrop(family: FamilyKind): Crop {
 /**
  * Where on the phone each shape's window sits.
  *
- * Two windows of one height: the top of the phone for the Lock Screen shapes,
- * with the clock and the slot row under it, and the bottom of it for the
- * Home Screen sizes, with the tile at the bottom of the screen and the case's
- * edge under it. One height, so the phone is the same width on every card and
- * a Large tile is visibly twice a Medium one. The window is taller than the
- * card's well is, so it is fitted in whole with the well's black either side,
- * rather than trimmed. A shape no phone draws falls back to the whole case.
+ * Two windows: the top of the phone for the Lock Screen shapes, with the
+ * clock and the slot row under it, and the bottom of it for the Home Screen
+ * sizes, with the tile at the bottom of the screen and the case's edge under
+ * it. Every Home Screen window is the same height, so the phone is the same
+ * width on each of those cards and a Large tile is visibly twice a Medium
+ * one. The Lock Screen window is shorter, since its shapes all sit in the top
+ * third of the screen and the rest of that height was empty. Both are taller
+ * than the card's well is, so each is fitted in whole with the well's black
+ * either side, rather than trimmed. A shape no phone draws falls back to the
+ * whole case.
  */
 function phoneCrop(family: FamilyKind): Crop {
   if (isHomeFamily(family)) return { x: 0, y: PHONE_FRAME.height - PHONE_WINDOW, width: PHONE_FRAME.width, height: PHONE_WINDOW };
-  if (isSharedFamily(family)) return { x: 0, y: 0, width: PHONE_FRAME.width, height: PHONE_WINDOW };
+  if (isSharedFamily(family)) return { x: 0, y: 0, width: PHONE_FRAME.width, height: PHONE_LOCK_WINDOW };
   return { x: 0, y: 0, width: PHONE_FRAME.width, height: PHONE_FRAME.height };
 }
 

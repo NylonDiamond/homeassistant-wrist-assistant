@@ -8,9 +8,9 @@
 import { describe, expect, it } from "vitest";
 import { nothing, svg } from "lit";
 
-import { ALL_FAMILIES } from "../src/layouts.js";
+import { ALL_FAMILIES, isHomeFamily } from "../src/layouts.js";
 import type { FamilyKind } from "../src/model.js";
-import { PHONE_FRAME, PHONE_WINDOW, controlDeviceArt, deviceCropArt, deviceShapeArt, inlineShown, phoneSlot, shapeArtKinds } from "../src/shapeArt.js";
+import { PHONE_FRAME, PHONE_LOCK_WINDOW, PHONE_WINDOW, controlDeviceArt, deviceCropArt, deviceShapeArt, inlineShown, phoneSlot, shapeArtKinds } from "../src/shapeArt.js";
 import type { DeviceKind } from "../src/version.js";
 
 function flatten(node: unknown): string {
@@ -289,7 +289,7 @@ describe("deviceCropArt", () => {
       if (device !== "iphone") continue;
       const box = viewBox(crop(family, device));
       expect(box.width, family).toBe(PHONE_FRAME.width);
-      expect(box.height, family).toBe(PHONE_WINDOW);
+      expect(box.height, family).toBe(isHomeFamily(family) ? PHONE_WINDOW : PHONE_LOCK_WINDOW);
       expect(crop(family, device)).toMatch(/preserveAspectRatio="?xMidYMid meet"?/);
     }
   });
@@ -331,7 +331,7 @@ describe("deviceCropArt", () => {
   // the Lock Screen for the three shapes that sit under its clock.
   it("shows the bottom of the phone for the Home Screen sizes and the top for the Lock Screen shapes", () => {
     const bottom = { x: 0, y: PHONE_FRAME.height - PHONE_WINDOW, width: PHONE_FRAME.width, height: PHONE_WINDOW };
-    const top = { x: 0, y: 0, width: PHONE_FRAME.width, height: PHONE_WINDOW };
+    const top = { x: 0, y: 0, width: PHONE_FRAME.width, height: PHONE_LOCK_WINDOW };
     for (const family of ["small", "medium", "large", "xlarge"] as FamilyKind[]) {
       expect(viewBox(crop(family, "iphone")), family).toEqual(bottom);
     }
@@ -344,6 +344,13 @@ describe("deviceCropArt", () => {
     expect(crop("rectangular", "iphone")).toContain(`x="17" y="6" width="16" height="3"`);
     expect(crop("rectangular", "iphone")).toContain(">9:41</text>");
     expect(crop("large", "iphone")).not.toContain(">9:41</text>");
+    // The Lock Screen window ends a little under the slot row rather than at
+    // the bottom of the screen, so the card is not a third empty black.
+    const slot = phoneSlot("rectangular");
+    if (slot === undefined) throw new Error("rectangular has no phone slot");
+    const below = PHONE_LOCK_WINDOW - (slot.y + slot.height);
+    expect(below).toBeGreaterThan(0);
+    expect(below).toBeLessThan(slot.height / 2);
   });
 
   // A shape the device has no slot for has no window worth inventing, so the
