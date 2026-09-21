@@ -12,8 +12,10 @@ import {
   type FamilyKind,
   MAX_SLOTS,
   schemaVersionFor,
+  seedFamilyFromSibling,
+  setControlShown,
 } from "./model.js";
-import { ALL_FAMILIES, dropFamily, isHomeFamily, supportedFamilies } from "./layouts.js";
+import { ALL_FAMILIES, addFamily, dropFamily, isHomeFamily, supportedFamilies } from "./layouts.js";
 import { type DeviceKind, LIBRARY_OWNER_ID, MIN_IPHONE_VERSION_FOR_HOME_SCREEN, watchSupportsShapes } from "./version.js";
 import { familiesFor, comingSoonFamilies } from "./layouts.js";
 
@@ -143,13 +145,71 @@ export function freeSlotForFamily(
   held: readonly SlotHolder[],
   blocked: Iterable<{ slot: number }> = [],
 ): number {
+  const taken = seatsTaken(family, held, blocked);
+  for (let i = 0; i < MAX_SLOTS; i++) if (!taken.has(i)) return i;
+  return -1;
+}
+
+/** The seats this shape cannot go in on one device. The rule `freeSlotForFamily`
+ * and `slotForDuplicate` both read, written once so the two can never disagree
+ * about what a free seat is. */
+function seatsTaken(
+  family: FamilyKind | undefined,
+  held: readonly SlotHolder[],
+  blocked: Iterable<{ slot: number }>,
+): Set<number> {
   const taken = new Set<number>();
   for (const o of blocked) taken.add(o.slot);
   for (const h of held) {
     if (family === undefined || h.families.length === 0 || h.families.includes(family)) taken.add(h.slotIndex);
   }
-  for (let i = 0; i < MAX_SLOTS; i++) if (!taken.has(i)) return i;
-  return -1;
+  return taken;
+}
+
+/**
+ * The seat a duplicate takes, which is the source's own when it can have it.
+ *
+ * A "Duplicate as" to another shape on the same device offers `preferred`, the
+ * seat the original sits in: a slot holds one document per shape, so a
+ * rectangular "Kitchen" at seat 5 and the circular copy made from it can both
+ * live there, and a face that later places both shows one name in the same
+ * position group. A seat that shape already holds, or one something unreadable
+ * holds, falls through to the lowest free one, and so does every cross-device
+ * copy, where the source's seat number means nothing.
+ */
+export function slotForDuplicate(
+  family: FamilyKind | undefined,
+  held: readonly SlotHolder[],
+  blocked: Iterable<{ slot: number }> = [],
+  preferred?: number,
+): number {
+  if (preferred !== undefined && preferred >= 0 && preferred < MAX_SLOTS) {
+    if (!seatsTaken(family, held, blocked).has(preferred)) return preferred;
+  }
+  return freeSlotForFamily(family, held, blocked);
+}
+
+/**
+ * The devices one design can be duplicated onto.
+ *
+ * Every device whose app draws this shape, bar the one the design is already
+ * on: a second copy of "Kitchen" on the watch it is already on is two of the
+ * same name in one picker, and the editor's own Duplicate is where that is
+ * asked for. A control has no shape, so what it needs is a device with Control
+ * Center. The Library draws nothing and holds everything, so it is always
+ * offered: shelving a design is how it comes off a device without being
+ * deleted.
+ */
+export function duplicateTargets(
+  owners: readonly DeviceOwner[],
+  family: FamilyKind | undefined,
+  fromOwnerId: string,
+): DeviceOwner[] {
+  return owners.filter((o) => {
+    if (o.ownerId === fromOwnerId) return false;
+    if (o.kind === "library") return true;
+    return family === undefined ? o.controls : o.families.includes(family);
+  });
 }
 
 // ── the document one device gets ──────────────────────────────────────────
@@ -188,4 +248,62 @@ export function copyForOwner(
   else delete next.hidden;
   next.schemaVersion = schemaVersionFor(next);
   return next;
+}
+
+// ── duplicate as another shape, or onto another device ────────────────────
+
+/** Where one duplicate lands: the record it becomes on the device it is going
+ * to. The shape it takes is `duplicateAs`'s own argument, since that is the
+ * question the dialog asks first. */
+export interface DuplicateWrite {
+  /** The id the new record takes. Fresh: a duplicate is its own complication
+   * from the moment it is written. */
+  id: string;
+  /** Its seat on the target device, from `slotForDuplicate`. */
+  slotIndex: number;
+  /** Whether it arrives hidden from that device's own list. A duplicate is
+   * something the author just asked for, so it does not by default. */
+  hidden?: boolean;
+}
+
+/**
+ * One complication as another shape, or on another device, or both.
+ *
+ * The whole design travels: the layers, the data sources, the rules, the tap
+ * action, the pages and the Control Center control. Only the shape is new, and
+ * a new shape is filled the way the editor used to fill one that was added,
+ * from the shape in the document worth copying: Small from Circular, Medium
+ * from Rectangular, anything else from the widest shape there is, every frame
+ * refitted for the canvas it lands on.
+ *
+ * The result has exactly one shape, or none with a control, because that is
+ * what a complication is. `toFamily` undefined asks for the control-only form,
+ * and a design that had no control gets the default one rather than a document
+ * that shows nowhere.
+ *
+ * Nothing links the copy to the original. They are two complications from here
+ * on, and editing one never touches the other. The document passed in is never
+ * touched. Plan: app repo docs/complication_one_shape_per_document.md.
+ */
+export function duplicateAs(
+  cfg: CustomComplicationConfig,
+  toFamily: FamilyKind | undefined,
+  write: DuplicateWrite,
+): CustomComplicationConfig {
+  const next = structuredClone(cfg);
+  if (toFamily === undefined) {
+    setControlShown(next, true);
+  } else if (!next.supportedFamilies.includes(toFamily)) {
+    addFamily(next, toFamily);
+    seedFamilyFromSibling(next, toFamily);
+  }
+  // Every other shape goes the way the editor's own remove goes, layers and
+  // all, which is what makes this a document of one shape rather than the
+  // original with one more shape on it.
+  return copyForOwner(next, {
+    id: write.id,
+    slotIndex: write.slotIndex,
+    hidden: write.hidden === true,
+    families: toFamily === undefined ? [] : [toFamily],
+  });
 }
