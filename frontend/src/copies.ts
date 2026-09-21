@@ -123,6 +123,28 @@ export interface SlotHolder {
 }
 
 /**
+ * The holders one device shows the seat rule, given whether that device's app
+ * can share a seat at all.
+ *
+ * Seat sharing is a promise about the app on the other end, not about the
+ * store. A face placed on 2.8.0 build 11 or later resolves a slot by shape, so
+ * two documents can sit in seat 5 and each draws where it belongs. Every older
+ * app resolves the first document at the slot whatever shape it draws, so a
+ * shared seat there is a face that quietly draws the wrong design, or prints
+ * "No circular layout" where it used to draw fine.
+ *
+ * So `canShare` is `ownerCanSplit(owner)` from splitShapes.ts, the same gate
+ * the one-time split runs behind. When it is false every held seat is reported
+ * as holding the whole seat, which is what a holder with no shapes means, and
+ * nothing of ours ever joins one. The Library passes: nothing draws the shelf,
+ * so there is no resolver to get it wrong.
+ */
+export function seatHoldersFor(held: readonly SlotHolder[], canShare: boolean): SlotHolder[] {
+  if (canShare) return [...held];
+  return held.map((h) => ({ slotIndex: h.slotIndex, families: [] }));
+}
+
+/**
  * The seat a new complication of this shape takes on one device.
  *
  * A slot holds at most one document per shape. Placed faces and widgets
@@ -130,6 +152,10 @@ export interface SlotHolder {
  * and "Kitchen" circular can share seat 5 and both keep drawing. The rule that
  * follows is this one: a seat is free for a shape when nothing of that shape
  * is in it.
+ *
+ * That only holds on an app that resolves by shape. `held` must already have
+ * been through `seatHoldersFor`, which collapses every holder to a whole seat
+ * on a device below the gate, so nothing here has to know the app version.
  *
  * `blocked` is the seats nothing of ours can share at all: an iPhone preset,
  * or a custom belonging to another home. Those hold the whole seat, since the
@@ -152,7 +178,9 @@ export function freeSlotForFamily(
 
 /** The seats this shape cannot go in on one device. The rule `freeSlotForFamily`
  * and `slotForDuplicate` both read, written once so the two can never disagree
- * about what a free seat is. */
+ * about what a free seat is. A holder that names no shape holds the whole
+ * seat, which is both how a control is held and how `seatHoldersFor` reports
+ * every holder on a device whose app cannot resolve by shape. */
 function seatsTaken(
   family: FamilyKind | undefined,
   held: readonly SlotHolder[],
@@ -176,6 +204,10 @@ function seatsTaken(
  * position group. A seat that shape already holds, or one something unreadable
  * holds, falls through to the lowest free one, and so does every cross-device
  * copy, where the source's seat number means nothing.
+ *
+ * Same rule about `held` as `freeSlotForFamily`: it comes from
+ * `seatHoldersFor`, so on a device whose app cannot resolve by shape every
+ * held seat is a whole seat and the preferred one is never shared into.
  */
 export function slotForDuplicate(
   family: FamilyKind | undefined,

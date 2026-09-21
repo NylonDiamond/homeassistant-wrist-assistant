@@ -16,7 +16,10 @@ import {
   libraryFamilies,
   newTargets,
   ownersDrawing,
+  seatHoldersFor,
+  slotForDuplicate,
 } from "../src/copies.js";
+import { type SplitOwnerLike, SPLIT_GATE, ownerCanSplit } from "../src/splitShapes.js";
 import { LIBRARY_OWNER_ID } from "../src/version.js";
 
 const owner = (over: Partial<DeviceOwner> = {}): DeviceOwner => ({
@@ -147,6 +150,63 @@ describe("freeSlotForFamily", () => {
   it("says -1 when every seat is taken", () => {
     const held = Array.from({ length: MAX_SLOTS }, (_, i) => ({ slotIndex: i, families: [] as FamilyKind[] }));
     expect(freeSlotForFamily("rectangular", held)).toBe(-1);
+  });
+});
+
+// Seat sharing is a promise about the app on the device, not about the store:
+// only an app that resolves a placed slot by shape can be given two documents
+// in one seat. This is the panel's own composition, `seatHoldersFor` over
+// `ownerCanSplit`, which is what `slotHoldersOn` does before either seat
+// function ever sees a holder.
+describe("seatHoldersFor", () => {
+  /** One device as the gate reads it. */
+  const device = (over: Partial<SplitOwnerLike> = {}): SplitOwnerLike => ({
+    device_kind: "watch",
+    app_version: SPLIT_GATE.version,
+    app_build: String(SPLIT_GATE.build),
+    ...over,
+  });
+
+  /** A rectangular "Kitchen" at seat 0, the seat a circular copy would want. */
+  const held = [{ slotIndex: 0, families: ["rectangular" as FamilyKind] }];
+
+  /** Where a circular document lands on a device in this state, both by the
+   * lowest free seat and by asking for seat 0 outright. */
+  function lands(owner: Parameters<typeof ownerCanSplit>[0]): [number, number] {
+    const seats = seatHoldersFor(held, ownerCanSplit(owner));
+    return [freeSlotForFamily("circular", seats), slotForDuplicate("circular", seats, [], 0)];
+  }
+
+  it("never shares a seat on an app below the gate", () => {
+    // 2.8.0 build 10: the last build that resolves a placed slot with the
+    // first document at it, whatever shape that document draws.
+    expect(lands(device({ app_build: "10" }))).toEqual([1, 1]);
+  });
+
+  it("shares a seat on the first app that resolves by shape", () => {
+    expect(lands(device())).toEqual([0, 0]);
+  });
+
+  it("shares a seat on the shelf, which no app resolves", () => {
+    expect(lands(device({ device_kind: "library", app_version: null, app_build: null }))).toEqual([0, 0]);
+  });
+
+  it("never shares a seat on a device that reported no version", () => {
+    // An orphan, or a device whose entry the panel has lost. Too old until it
+    // says otherwise: a hidden setting costs less than a face drawing the
+    // wrong design.
+    expect(lands(device({ app_version: null, app_build: null }))).toEqual([1, 1]);
+    expect(lands(undefined)).toEqual([1, 1]);
+  });
+
+  it("leaves the seat numbers alone whichever way it answers", () => {
+    const many = [
+      { slotIndex: 4, families: ["rectangular" as FamilyKind] },
+      { slotIndex: 7, families: [] as FamilyKind[] },
+    ];
+    expect(seatHoldersFor(many, false).map((h) => h.slotIndex)).toEqual([4, 7]);
+    expect(seatHoldersFor(many, false).every((h) => h.families.length === 0)).toBe(true);
+    expect(seatHoldersFor(many, true)).toEqual(many);
   });
 });
 

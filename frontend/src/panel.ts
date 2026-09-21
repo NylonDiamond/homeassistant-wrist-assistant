@@ -149,6 +149,7 @@ import {
   linkedDocumentFor,
   joinNames,
   newTargets,
+  seatHoldersFor,
   slotForDuplicate,
 } from "./copies.js";
 import {
@@ -168,7 +169,7 @@ import { type Person, deviceShortName, peopleNames, peopleOf, personOf } from ".
 import { type LiveDesign, type LiveShape, type LiveShapes, controlDeviceArt, deviceCropArt, deviceShapeArt } from "./shapeArt.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { type DeviceKind, type DeviceOwnerLike, LIBRARY_OWNER_ID, deviceKindOf, deviceNoun, deviceSupportsShapes, isLibraryOwner, ownerSupportsControls, updateDeviceMessage } from "./version.js";
-import { type SplitNotice, autoSplitShapes, editBlockedBySplitGate } from "./splitShapes.js";
+import { type SplitNotice, autoSplitShapes, editBlockedBySplitGate, ownerCanSplit } from "./splitShapes.js";
 import { makeIconProvider } from "./icons.js";
 import { makeImageSizeProvider } from "./image-sizes.js";
 import { SymbolBrowser } from "./symbols.js";
@@ -5868,16 +5869,24 @@ export class WristAssistantPanel extends LitElement {
    * know both to find a seat. Occupied entries (an iPhone preset, a custom on
    * another home) are not in here: the panel cannot read their shapes, so they
    * hold a whole seat and go to `freeSlotForFamily` as blocked.
+   *
+   * Two shapes only share a seat where the device's app resolves a placed slot
+   * by shape, which is the `ownerCanSplit` gate. Below it, every holder is
+   * reported as holding the whole seat: an older app picks the first document
+   * at the slot whatever shape it draws, so a shared seat there is a face that
+   * draws the wrong design. A device this panel has no entry for reads as too
+   * old, the same way the split gate reads it.
    */
   private slotHoldersOn(ownerId: string): SlotHolder[] {
     const list = ownerId === this.ownerId
       ? { records: this.records }
       : this.otherLists.get(ownerId);
     if (!list) return [];
-    return list.records.filter((r) => !r.deleted).map((r) => ({
+    const held = list.records.filter((r) => !r.deleted).map((r) => ({
       slotIndex: Number(r.document?.slotIndex ?? -1),
       families: shapesOf(r),
     }));
+    return seatHoldersFor(held, ownerCanSplit(this.ownerOf(ownerId)));
   }
 
   /** The seats nothing of ours can share on one device. */
