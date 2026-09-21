@@ -2042,6 +2042,15 @@ export class WristAssistantPanel extends LitElement {
     .pk-dup-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .pk-dup-full { flex: none; font-size: 10px; color: var(--wa-muted); }
     .pk-dup-note { font-size: 10px; line-height: 1.4; color: var(--wa-muted); border-top: 1px solid var(--wa-line); padding-top: 6px; }
+    /* The menu stays open across several boxes, so it has its own way out.
+       Clicking anywhere else, or Escape, shuts it too. */
+    .pk-dup-done {
+      align-self: flex-end; margin-top: 2px; font: inherit; font-size: 11px; font-weight: 600;
+      padding: 4px 12px; border-radius: 7px; cursor: pointer;
+      border: 1px solid var(--wa-accent); background: var(--wa-sel-bg); color: var(--wa-accent);
+    }
+    .pk-dup-done:hover { filter: brightness(1.1); }
+    .pk-dup-done:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     /* Duplicate, hide and delete, in the picture's own top corner. Only on
        hover, or while the keyboard is in the card, or while a menu or a
        confirm is open: a wall of cards with three buttons on every one of
@@ -9144,6 +9153,7 @@ export class WristAssistantPanel extends LitElement {
           @click=${() => this.duplicateAsFromCard(row)}>${uiIcon("shape")}
           <span class="pk-dup-name">Duplicate as another shape…</span></button>
         <div class="pk-dup-note">Ticking writes a copy there, a complication of its own from then on. Unticking removes that device's copy with this name and shape. A face or widget already using it keeps it.</div>
+        <button type="button" class="pk-dup-done" @click=${() => this.closePickerDup()}>Done</button>
       </div>` : nothing}
     </span>`;
   }
@@ -9261,7 +9271,8 @@ export class WristAssistantPanel extends LitElement {
     }
     const ownerId = place.owner.ownerId;
     const label = place.owner.kind === "library" ? UNASSIGNED_LABEL : place.owner.label;
-    this.closePickerDup();
+    // The menu stays open: one design often goes on or off several devices in
+    // one sitting, and the boxes redraw from the lists once the write lands.
     this.saving = true;
     this.saveError = undefined;
     try {
@@ -9320,7 +9331,8 @@ export class WristAssistantPanel extends LitElement {
     if (!this.hass.user?.is_admin || this.saving) return;
     const cfg = this.rowConfig(row);
     if (!cfg) return;
-    this.closePickerDup();
+    // The menu stays open, as removeRowFrom's does: the next box is the
+    // usual next click.
     const family = supportedFamilies(cfg)[0];
     const label = target.kind === "library" ? UNASSIGNED_LABEL : target.label;
     this.saving = true;
@@ -9369,7 +9381,9 @@ export class WristAssistantPanel extends LitElement {
     const cfg = this.rowConfig(row);
     if (!cfg) return;
     const record = copy.item.record;
-    this.closePickerDup();
+    // The menu follows the card: the record moves to Unassigned under a new
+    // id, so the menu is pointed at the card that will draw it there.
+    const followed = this.pickerDupFor === row.key;
     this.saving = true;
     this.saveError = undefined;
     try {
@@ -9390,6 +9404,7 @@ export class WristAssistantPanel extends LitElement {
       this.copyStatus = gone.ok
         ? `${row.name} is off ${this.ownerName(copy.ownerId)} and unassigned. A face or widget already using it keeps it.`
         : `${row.name} is unassigned, but the copy on ${this.ownerName(copy.ownerId)} could not be removed. Delete it from its own card.`;
+      if (followed) this.pickerDupFor = `rec:${shelf.ownerId}\u0000${kept.id}`;
       await this.reloadAfterRowWrite(copy.ownerId, shelf.ownerId);
     } catch (err) {
       this.saveError = errText(err);
