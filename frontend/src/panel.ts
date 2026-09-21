@@ -2018,7 +2018,7 @@ export class WristAssistantPanel extends LitElement {
     .pk-dup-open.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); color: var(--wa-accent); }
     .pk-dup-open svg { width: 10px; height: 10px; }
     .pk-dup-menu {
-      position: absolute; top: calc(100% + 6px); right: 0; z-index: 5; width: 248px;
+      position: absolute; top: 40px; left: 0; right: 0; z-index: 5;
       display: flex; flex-direction: column; gap: 4px; padding: 8px;
       border: 1px solid var(--wa-line-strong); border-radius: 10px;
       background: var(--wa-card); box-shadow: var(--wa-shadow-pop);
@@ -2034,10 +2034,25 @@ export class WristAssistantPanel extends LitElement {
     .pk-dup-row svg { flex: none; width: 14px; height: 14px; }
     /* A device row is a box to tick: the whole row is its label, so the name
        and the glyph are as clickable as the box. */
-    /* The box is the panel's switch, at the size the switch already is. */
+    /* A device row: the switch, glyph and name are one label, so the name is
+       as clickable as the switch; the eye beside them is that device's own
+       Hide and never flips the switch. The switch is the panel's, at the size
+       the switch already is. */
+    .pk-dup-row.check { padding: 0; gap: 0; cursor: default; }
+    .pk-dup-pick { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; padding: 5px 7px; cursor: pointer; }
+    .pk-dup-pick svg { flex: none; width: 14px; height: 14px; }
     .pk-dup-row.check input { margin: 0; cursor: inherit; }
-    .pk-dup-row.check.off { opacity: .5; cursor: default; }
+    .pk-dup-row.check.off .pk-dup-pick { opacity: .5; cursor: default; }
     .pk-dup-row.check:hover:not(.off) { border-color: var(--wa-line-strong); }
+    .pk-dup-eye {
+      flex: none; width: 24px; height: 24px; margin-right: 3px; display: inline-flex; align-items: center; justify-content: center;
+      border: 0; border-radius: 6px; background: transparent; color: var(--wa-muted); cursor: pointer;
+    }
+    .pk-dup-eye:hover:not(:disabled) { background: var(--wa-sel-bg); color: var(--wa-ink); }
+    .pk-dup-eye:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .pk-dup-eye:disabled { opacity: .45; cursor: default; }
+    .pk-dup-eye.hid { color: var(--wa-accent); }
+    .pk-dup-eye svg { width: 14px; height: 14px; }
     /* The row that is not a device sits under the ones that are: it opens the
        dialog where a shape is picked. */
     .pk-dup-row.other { margin-top: 4px; }
@@ -6675,7 +6690,7 @@ export class WristAssistantPanel extends LitElement {
     }
   }
 
-  private async deleteCurrent() {
+  private async deleteCurrent(everywhere = true) {
     if (!this.draft || !this.ownerId || !this.selectedId || !this.canEdit) return;
     if (this.draft.baseRevision === null) {
       // Never saved: just drop it.
@@ -6684,7 +6699,7 @@ export class WristAssistantPanel extends LitElement {
       this.selectFirst();
       return;
     }
-    await this.deleteSaved(this.selectedId, this.draft.baseRevision);
+    await this.deleteSaved(this.selectedId, this.draft.baseRevision, this.ownerId, everywhere);
   }
 
   /** Delete one saved complication on the server: the open one from the
@@ -6692,11 +6707,12 @@ export class WristAssistantPanel extends LitElement {
    * row's copy sits. A conflict on the open one opens the conflict banner, as a
    * save's would; on another row it is a plain error, since there is no draft
    * of it to reconcile. */
-  private async deleteSaved(id: string, revision: number, ownerId = this.ownerId) {
+  private async deleteSaved(id: string, revision: number, ownerId = this.ownerId, everywhere = true) {
     if (!ownerId) return;
     const open = ownerId === this.ownerId && id === this.selectedId;
     // Read before the delete: the record is gone from the lists after it.
-    const link = this.linkOf(ownerId, id);
+    // `everywhere` false keeps the design's copies on the other devices.
+    const link = everywhere ? this.linkOf(ownerId, id) : undefined;
     this.saving = true;
     try {
       const result = await deleteRecord(this.hass, ownerId, id, revision);
@@ -9036,7 +9052,7 @@ export class WristAssistantPanel extends LitElement {
     const note = kind === "library" ? html`<p class="pk-sec-note lone">${LIBRARY_NOTE}</p>` : nothing;
     if (rows.length === 0 && mine === undefined) return html`${note}<div class="empty">${emptyOf}</div>`;
     return html`${note}<div class="pk-grid">
-      ${sortPickerRows(rows, devices, tab).map((row) => this.renderPickerCard(row))}
+      ${sortPickerRows(rows, devices, tab).map((row) => this.renderPickerCard(row, tab))}
       ${mine ? this.renderUnsavedCard(mine) : nothing}
     </div>`;
   }
@@ -9059,7 +9075,7 @@ export class WristAssistantPanel extends LitElement {
       ${count === 0
         ? html`<div class="pk-sec-empty">${nothingOnText(section.kind)}</div>`
         : html`<div class="pk-grid">
-          ${section.rows.map((row) => this.renderPickerCard(row))}
+          ${section.rows.map((row) => this.renderPickerCard(row, section.ownerId))}
           ${mine ? this.renderUnsavedCard(mine) : nothing}
         </div>`}
     </section>`;
@@ -9134,8 +9150,16 @@ export class WristAssistantPanel extends LitElement {
    * Home Screen tile nine pixels tall doing it. The section or the tab says
    * which device, so the picture only has to say where on it.
    */
-  private renderPickerCard(row: PickerRow) {
-    const copy = row.open;
+  private renderPickerCard(row: PickerRow, at: string) {
+    // The card stands in one device's block, so it draws and acts on that
+    // device's copy of the design: its Hide is that device's, its preview is
+    // what that device shows. The All tab's sections and a device tab both
+    // say which device that is; a row with no copy there draws its own.
+    const copy = row.copies.find((c) => c.ownerId === at) ?? row.open;
+    // One card per device per design, so a design on two devices is two
+    // cards on the All tab, and the menu and the confirm belong to one of
+    // them, not to the row.
+    const cardKey = `${at}|${row.key}`;
     const shelved = isShelvedRow(row);
     if (copy.item.kind !== "record") {
       const item = copy.item;
@@ -9167,10 +9191,10 @@ export class WristAssistantPanel extends LitElement {
     // its buttons act on. The one exception is the record this panel has open,
     // whose hide goes through its draft rather than behind it.
     const mine = this.selectedCopyOf(row);
-    const actOn = mine ?? copy;
+    const actOn = mine !== undefined && mine.ownerId === copy.ownerId ? mine : copy;
     const actOwnerId = actOn.ownerId;
     const record = actOn.item.kind === "record" ? actOn.item.record : drawn;
-    const open = mine !== undefined;
+    const open = actOn === mine;
     const hidden = this.rowHidden(record);
     const recName = row.name;
     // The one shape this record draws, and its control if it has one.
@@ -9196,7 +9220,11 @@ export class WristAssistantPanel extends LitElement {
     // called for the cards the tab, the shape and the search left in.
     const preview = this.recordPreview(drawn);
     const live = preview ? this.cardLive(preview.config, preview.entities) : undefined;
-    const menu = this.pickerDupFor === row.key;
+    const menu = this.pickerDupFor === cardKey;
+    const linked = row.copies.length > 1;
+    const del = (everywhere: boolean) => void (open
+      ? this.deleteCurrent(everywhere)
+      : this.deleteSaved(record.id, record.revision, actOwnerId, everywhere));
     return html`<div class="pk-card ${hidden ? "dim" : ""} ${menu ? "over" : ""} ${shelved ? "shelved" : ""}"
       aria-current=${open ? "true" : "false"}>
       <div class="pk-card-top">
@@ -9211,10 +9239,18 @@ export class WristAssistantPanel extends LitElement {
         </button>
         <span class="pk-card-acts ${confirming ? "asking" : ""}">
           ${confirming
-            ? html`<button type="button" class="ghost danger small" ?disabled=${this.saving}
-                @click=${(e: Event) => { stop(e); void (open ? this.deleteCurrent() : this.deleteSaved(record.id, record.revision, actOwnerId)); }}>${row.copies.length > 1 ? `Delete on ${row.copies.length} devices` : "Really delete"}</button>
-              <button type="button" class="ghost small" @click=${(e: Event) => { stop(e); this.pickerConfirmDelete = undefined; }}>Cancel</button>`
-            : html`${this.renderPickerDup(row, family, menu)}
+            ? linked
+              ? html`<button type="button" class="ghost danger small" ?disabled=${this.saving}
+                  title=${`Delete only the copy on ${this.ownerName(actOwnerId)}`}
+                  @click=${(e: Event) => { stop(e); del(false); }}>This device</button>
+                <button type="button" class="ghost danger small" ?disabled=${this.saving}
+                  title="Delete it on every device it is on"
+                  @click=${(e: Event) => { stop(e); del(true); }}>All ${row.copies.length} devices</button>
+                <button type="button" class="ghost small" @click=${(e: Event) => { stop(e); this.pickerConfirmDelete = undefined; }}>Cancel</button>`
+              : html`<button type="button" class="ghost danger small" ?disabled=${this.saving}
+                  @click=${(e: Event) => { stop(e); del(true); }}>Really delete</button>
+                <button type="button" class="ghost small" @click=${(e: Event) => { stop(e); this.pickerConfirmDelete = undefined; }}>Cancel</button>`
+            : html`${this.renderPickerDup(row, menu, cardKey)}
               ${mayDelete ? html`<button type="button" class="icon" ?disabled=${!open && this.saving}
                 title=${hidden ? `Hidden from ${listOf}. Show it there again.` : `Hide from ${listOf}. Faces already using it keep it.`}
                 aria-label=${hidden ? `Show ${recName} in ${listOf}` : `Hide ${recName} from ${listOf}`}
@@ -9222,6 +9258,7 @@ export class WristAssistantPanel extends LitElement {
               <button type="button" class="icon danger" title="Delete this complication" aria-label=${`Delete ${recName}`}
                 ?disabled=${this.saving} @click=${(e: Event) => { stop(e); this.pickerConfirmDelete = record.id; }}>${uiIcon("delete")}</button>` : nothing}`}
         </span>
+        ${menu ? this.renderPickerDupMenu(row, family, cardKey) : nothing}
       </div>
       <div class="pk-card-foot">
         ${hidden ? html`<span class="pk-tag" title="These do not show in their device's own list of complications. A face or widget that already has one keeps it.">hidden</span>` : nothing}
@@ -9248,27 +9285,32 @@ export class WristAssistantPanel extends LitElement {
    * One menu at a time, held absolutely inside its own card, so a grid four
    * cards wide never has two of them overlapping each other.
    */
-  private renderPickerDup(row: PickerRow, family: FamilyKind | undefined, open: boolean) {
+  private renderPickerDup(row: PickerRow, open: boolean, cardKey: string) {
     if (!this.hass.user?.is_admin) return nothing;
-    const from = row.open;
-    if (from.item.kind !== "record") return nothing;
-    const places = this.rowPlaces(row, family);
-    const shape = family === undefined ? "Control Center control" : familyTitle(family).toLowerCase();
-    return html`<span class="pk-dup" data-dup=${row.key}>
+    if (row.open.item.kind !== "record") return nothing;
+    return html`<span class="pk-dup" data-dup=${cardKey}>
       <button type="button" class="pk-dup-open ${open ? "on" : ""}" aria-expanded=${open ? "true" : "false"}
         title="Pick the devices this design is on" ?disabled=${this.saving}
-        @click=${() => { if (open) this.closePickerDup(); else this.openPickerDup(row.key); }}>Devices${uiIcon("chevron")}</button>
-      ${open ? html`<div class="pk-dup-menu" role="group" aria-label=${`Devices for ${row.name}`}>
-        <div class="pk-dup-head">This ${shape} is on</div>
-        ${places.map((place) => this.renderPickerPlace(row, place, family))}
-        <button type="button" class="pk-dup-row other" ?disabled=${this.saving}
-          title="Make this design again as another shape, or on the other kind of device"
-          @click=${() => this.duplicateAsFromCard(row)}>${uiIcon("shape")}
-          <span class="pk-dup-name">Duplicate as another shape…</span></button>
-        <div class="pk-dup-note">Ticking writes a copy there, a complication of its own from then on. Unticking removes that device's copy with this name and shape. A face or widget already using it keeps it.</div>
-        <button type="button" class="pk-dup-done" @click=${() => this.closePickerDup()}>Done</button>
-      </div>` : nothing}
+        @click=${() => { if (open) this.closePickerDup(); else this.openPickerDup(cardKey); }}>Devices${uiIcon("chevron")}</button>
     </span>`;
+  }
+
+  /** The menu itself, drawn over the card's picture rather than hung off the
+   * button: as wide as the picture, so it never runs out past the dialog's
+   * edge on a card in the first column. */
+  private renderPickerDupMenu(row: PickerRow, family: FamilyKind | undefined, cardKey: string) {
+    const places = this.rowPlaces(row, family);
+    const shape = family === undefined ? "Control Center control" : familyTitle(family).toLowerCase();
+    return html`<div class="pk-dup-menu" role="group" aria-label=${`Devices for ${row.name}`} data-dup=${cardKey}>
+      <div class="pk-dup-head">This ${shape} is on</div>
+      ${places.map((place) => this.renderPickerPlace(row, place, family))}
+      <button type="button" class="pk-dup-row other" ?disabled=${this.saving}
+        title="Make this design again as another shape, or on the other kind of device"
+        @click=${() => this.duplicateAsFromCard(row)}>${uiIcon("shape")}
+        <span class="pk-dup-name">Duplicate as another shape…</span></button>
+      <div class="pk-dup-note">On means the design is on that device, and saving it saves it there too. The eye hides it from that device's own list; a face or widget already using it keeps it.</div>
+      <button type="button" class="pk-dup-done" @click=${() => this.closePickerDup()}>Done</button>
+    </div>`;
   }
 
   /** One device inside "Devices": a box, ticked when the design is there. A
@@ -9306,20 +9348,30 @@ export class WristAssistantPanel extends LitElement {
           : `Take it off ${label}. A face or widget already using it keeps it.`
         : target.kind === "library" ? "Keep an unassigned copy too" : `Put it on ${label}. Saving it saves it everywhere it is.`));
     const disabled = this.saving || full || stuck !== undefined || tooOld !== undefined;
-    return html`<label class="pk-dup-row check ${disabled ? "off" : ""}" title=${title}>
-      <input type="checkbox" .checked=${place.on} ?disabled=${disabled}
-        aria-label=${`${row.name} on ${label}`}
-        @change=${(e: Event) => {
-          const box = e.currentTarget as HTMLInputElement;
-          // The box follows the lists, not the click: it is drawn again from
-          // them once the write has landed, or stays as it was if it fails.
-          box.checked = place.on;
-          void (place.on ? this.removeRowFrom(row, place) : this.addRowTo(row, target));
-        }}>
-      ${uiIcon(target.kind === "iphone" ? "phone" : target.kind === "library" ? "layers" : "watch")}
-      <span class="pk-dup-name">${label}</span>
-      ${full ? html`<span class="pk-dup-full">full, ${this.slotsTakenOn(target.ownerId)} of ${MAX_SLOTS}</span>` : nothing}
-    </label>`;
+    // Hidden is per device: each copy keeps its own flag, and the eye on a
+    // ticked row flips that device's. The open copy's goes through its draft.
+    const here = place.on ? this.recordAt(target.ownerId, place.copies[0]!.id) : undefined;
+    const hid = here !== undefined && this.rowHidden(here);
+    return html`<div class="pk-dup-row check ${disabled ? "off" : ""}">
+      <label class="pk-dup-pick" title=${title}>
+        <input type="checkbox" .checked=${place.on} ?disabled=${disabled}
+          aria-label=${`${row.name} on ${label}`}
+          @change=${(e: Event) => {
+            const box = e.currentTarget as HTMLInputElement;
+            // The box follows the lists, not the click: it is drawn again from
+            // them once the write has landed, or stays as it was if it fails.
+            box.checked = place.on;
+            void (place.on ? this.removeRowFrom(row, place) : this.addRowTo(row, target));
+          }}>
+        ${uiIcon(target.kind === "iphone" ? "phone" : target.kind === "library" ? "layers" : "watch")}
+        <span class="pk-dup-name">${label}</span>
+        ${full ? html`<span class="pk-dup-full">full, ${this.slotsTakenOn(target.ownerId)} of ${MAX_SLOTS}</span>` : nothing}
+      </label>
+      ${here ? html`<button type="button" class="pk-dup-eye ${hid ? "hid" : ""}" ?disabled=${this.saving && !this.isOpenCopy(place.copies[0]!)}
+        title=${hid ? `Hidden from ${label}'s own list. Show it there again.` : `Hide from ${label}'s own list. A face or widget already using it keeps it.`}
+        aria-label=${hid ? `Show ${row.name} on ${label}` : `Hide ${row.name} on ${label}`}
+        @click=${() => void this.setPickerHidden(here, !hid, target.ownerId)}>${uiIcon(hid ? "hide" : "show")}</button>` : nothing}
+    </div>`;
   }
 
   /** Whether one copy is the record the editor has open. */
@@ -9424,7 +9476,7 @@ export class WristAssistantPanel extends LitElement {
     }
     // The menu follows the card: the record moves to Unassigned under a new
     // id, so the menu is pointed at the card that will draw it there.
-    const followed = this.pickerDupFor === row.key;
+    const followed = this.pickerDupFor?.endsWith(`|${row.key}`) === true;
     this.saving = true;
     this.saveError = undefined;
     try {
@@ -9445,7 +9497,7 @@ export class WristAssistantPanel extends LitElement {
       this.copyStatus = gone.ok
         ? `${row.name} is off ${this.ownerName(copy.ownerId)} and unassigned. A face or widget already using it keeps it.`
         : `${row.name} is unassigned, but the copy on ${this.ownerName(copy.ownerId)} could not be removed. Delete it from its own card.`;
-      if (followed) this.pickerDupFor = rowKeyFor({ ownerId: shelf.ownerId, id: kept.id, ...(kept.linkId !== undefined ? { linkId: kept.linkId } : {}) });
+      if (followed) this.pickerDupFor = `${shelf.ownerId}|${rowKeyFor({ ownerId: shelf.ownerId, id: kept.id, ...(kept.linkId !== undefined ? { linkId: kept.linkId } : {}) })}`;
       await this.reloadAfterRowWrite(copy.ownerId, shelf.ownerId);
     } catch (err) {
       this.saveError = errText(err);
@@ -9502,7 +9554,10 @@ export class WristAssistantPanel extends LitElement {
     }
     const family = supportedFamilies(cfg)[0];
     const label = target.kind === "library" ? UNASSIGNED_LABEL : target.label;
-    const followed = this.pickerDupFor === row.key;
+    // The menu is open on one card of this row; a design gaining its first
+    // link changes the row's key, so the menu is pointed at the new key on
+    // the same card.
+    const at = this.pickerDupFor?.endsWith(`|${row.key}`) ? this.pickerDupFor.split("|")[0] : undefined;
     this.saving = true;
     this.saveError = undefined;
     try {
@@ -9543,7 +9598,7 @@ export class WristAssistantPanel extends LitElement {
         return;
       }
       this.copyStatus = `${row.name} is on ${label} too. Saving it saves it everywhere it is.`;
-      if (followed) this.pickerDupFor = rowKeyFor({ ownerId: target.ownerId, id: copy.id, linkId: link });
+      if (at !== undefined) this.pickerDupFor = `${at}|${rowKeyFor({ ownerId: target.ownerId, id: copy.id, linkId: link })}`;
       await this.reloadAfterRowWrite(from.ownerId, target.ownerId);
     } catch (err) {
       this.saveError = errText(err);
@@ -14039,7 +14094,9 @@ export class WristAssistantPanel extends LitElement {
             title="Make this design again as another shape, or on another device"
             @click=${() => this.openDuplicateAs(cfg, this.ownerId ?? "")}>Duplicate as…</button>
           ${this.confirmDelete
-            ? html`<button class="ghost danger" @click=${() => void this.deleteCurrent()}>${this.openLinkCount() > 1 ? `Delete on ${this.openLinkCount()} devices` : "Really delete"}</button><button class="ghost" @click=${() => { this.confirmDelete = false; }}>Cancel</button>`
+            ? this.openLinkCount() > 1
+              ? html`<button class="ghost danger" title=${`Delete only the copy on ${this.ownerName(this.ownerId ?? "")}`} @click=${() => void this.deleteCurrent(false)}>This device</button><button class="ghost danger" title="Delete it on every device it is on" @click=${() => void this.deleteCurrent(true)}>All ${this.openLinkCount()} devices</button><button class="ghost" @click=${() => { this.confirmDelete = false; }}>Cancel</button>`
+              : html`<button class="ghost danger" @click=${() => void this.deleteCurrent()}>Really delete</button><button class="ghost" @click=${() => { this.confirmDelete = false; }}>Cancel</button>`
             : html`<button class="ghost danger" @click=${() => { this.confirmDelete = true; }}>Delete</button>`}` : nothing}
       </span>
     </div>`;
