@@ -124,11 +124,19 @@ export const REFERENCE_CASE = CASES.find((c) => c.measured)!;
 
 /** The iPhone 15 Pro's own Home Screen tiles, measured 2026-09-14 on iOS 26.6
  * with margins disabled, and the lock screen circular slot measured at the
- * same time. `xlarge` is the placeholder box (see `DESIGN_BOX`), and the lock
- * screen rectangular and inline slots were never placed, so those two are
- * estimated from the watch's shapes. */
+ * same time. `xlarge` is the placeholder box (see `DESIGN_BOX`).
+ *
+ * The lock screen rectangular slot was estimated from the watch's shapes at
+ * 160 × 72 until 2026-09-21, which made the stage a good deal taller than the
+ * real widget and cut the preview short of what the phone really crops. It is
+ * now the app's own reading, 147.67 × 58, taken off Jesse's iPhone 15 Pro from
+ * the widget's `GeometryReader` (`CustomComplicationSlotProbe`, Debug builds,
+ * in the App Group defaults). Note the height equals the circular slot exactly:
+ * both shapes sit in one Lock Screen row, so they share it.
+ *
+ * Inline is still estimated. It has no canvas, so the probe never sees it. */
 const IPHONE_15_PRO_SLOTS: Record<PhoneSlotFamily, CanvasSize> = {
-  rectangular: { width: 160, height: 72 },
+  rectangular: { width: 147.67, height: 58 },
   circular: { width: 58, height: 58 },
   inline: { width: 240, height: 20 },
   small: CANVAS.small,
@@ -142,13 +150,20 @@ const IPHONE_15_PRO_SLOTS: Record<PhoneSlotFamily, CanvasSize> = {
  * for that screen and is labelled "(estimated)", exactly like the watch cases.
  *
  * Apple's published table runs 5 to 7 points small against the real iOS 26
- * tile, so an estimated row is a guide to proportion, not a measurement. */
+ * tile, so an estimated row is a guide to proportion, not a measurement.
+ *
+ * The estimated lock screen rectangles are the one exception to "scaled from
+ * Apple's table": they are built from this file's own two measurements. The
+ * height is that phone's circular slot, because the real phone reads the two
+ * as one number, and the width is that height times the measured 147.67 / 58.
+ * Apple publishes no lock screen sizes to scale from, and the table's Home
+ * Screen numbers say nothing about a row the phone lays out on its own. */
 export const PHONE_CASES: PhoneCase[] = [
-  { label: "iPhone SE", screen: { width: 375, height: 667 }, slots: { rectangular: { width: 153, height: 69 }, circular: { width: 56, height: 56 }, inline: { width: 230, height: 19 }, small: { width: 148.33, height: 148.33 }, medium: { width: 321.67, height: 148.33 }, large: { width: 321.67, height: 324 }, xlarge: { width: 321.67, height: 499.67 } }, measured: false },
-  { label: "iPhone 13 mini", screen: { width: 375, height: 812 }, slots: { rectangular: { width: 153, height: 69 }, circular: { width: 56, height: 56 }, inline: { width: 230, height: 19 }, small: { width: 155.33, height: 155.33 }, medium: { width: 329, height: 155.33 }, large: { width: 329, height: 345 }, xlarge: { width: 329, height: 534.67 } }, measured: false },
+  { label: "iPhone SE", screen: { width: 375, height: 667 }, slots: { rectangular: { width: 142.58, height: 56 }, circular: { width: 56, height: 56 }, inline: { width: 230, height: 19 }, small: { width: 148.33, height: 148.33 }, medium: { width: 321.67, height: 148.33 }, large: { width: 321.67, height: 324 }, xlarge: { width: 321.67, height: 499.67 } }, measured: false },
+  { label: "iPhone 13 mini", screen: { width: 375, height: 812 }, slots: { rectangular: { width: 142.58, height: 56 }, circular: { width: 56, height: 56 }, inline: { width: 230, height: 19 }, small: { width: 155.33, height: 155.33 }, medium: { width: 329, height: 155.33 }, large: { width: 329, height: 345 }, xlarge: { width: 329, height: 534.67 } }, measured: false },
   { label: "iPhone 15 Pro", screen: { width: 393, height: 852 }, slots: IPHONE_15_PRO_SLOTS, measured: true },
-  { label: "iPhone 15 Pro Max", screen: { width: 430, height: 932 }, slots: { rectangular: { width: 172, height: 77 }, circular: { width: 62, height: 62 }, inline: { width: 258, height: 21 }, small: { width: 170, height: 170 }, medium: { width: 364.33, height: 170 }, large: { width: 364.33, height: 382 }, xlarge: { width: 364.33, height: 592 } }, measured: false },
-  { label: "iPhone 17 Pro Max", screen: { width: 440, height: 956 }, slots: { rectangular: { width: 176, height: 79 }, circular: { width: 63, height: 63 }, inline: { width: 264, height: 21 }, small: { width: 174, height: 174 }, medium: { width: 373, height: 174 }, large: { width: 373, height: 391 }, xlarge: { width: 373, height: 606 } }, measured: false },
+  { label: "iPhone 15 Pro Max", screen: { width: 430, height: 932 }, slots: { rectangular: { width: 157.85, height: 62 }, circular: { width: 62, height: 62 }, inline: { width: 258, height: 21 }, small: { width: 170, height: 170 }, medium: { width: 364.33, height: 170 }, large: { width: 364.33, height: 382 }, xlarge: { width: 364.33, height: 592 } }, measured: false },
+  { label: "iPhone 17 Pro Max", screen: { width: 440, height: 956 }, slots: { rectangular: { width: 160.4, height: 63 }, circular: { width: 63, height: 63 }, inline: { width: 264, height: 21 }, small: { width: 174, height: 174 }, medium: { width: 373, height: 174 }, large: { width: 373, height: 391 }, xlarge: { width: 373, height: 606 } }, measured: false },
 ];
 
 export const REFERENCE_PHONE = PHONE_CASES.find((c) => c.measured)!;

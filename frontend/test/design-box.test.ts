@@ -149,6 +149,32 @@ describe("phone cases", () => {
     expect(REFERENCE_PHONE.slots.circular).toEqual({ width: 58, height: 58 });
   });
 
+  // Both Lock Screen slots are readings off Jesse's iPhone 15 Pro, not guesses
+  // from the watch's shapes: the rectangle was estimated at 160 x 72 until
+  // 2026-09-21 and previewed a good deal taller than the phone really draws.
+  // Pinned so a future tidy-up cannot quietly round it back to a guess.
+  it("the reference phone's Lock Screen rectangle is the measured slot", () => {
+    expect(REFERENCE_PHONE.slots.rectangular).toEqual({ width: 147.67, height: 58 });
+  });
+
+  // One Lock Screen row holds both shapes, so the phone reads their height as
+  // one number. Every estimated row is built that way from its own circular.
+  it("every phone's Lock Screen rectangle is as tall as its circle", () => {
+    for (const c of PHONE_CASES) {
+      expect(c.slots.rectangular.height).toBe(c.slots.circular.height);
+    }
+  });
+
+  // The estimated rows carry the measured phone's proportion, not a fresh
+  // guess: a row that drifts off it is a row somebody re-estimated by hand.
+  it("every phone's Lock Screen rectangle keeps the measured proportion", () => {
+    const measured = REFERENCE_PHONE.slots.rectangular;
+    const ratio = measured.width / measured.height;
+    for (const c of PHONE_CASES) {
+      expect(c.slots.rectangular.width / c.slots.rectangular.height).toBeCloseTo(ratio, 2);
+    }
+  });
+
   it("round-trips every phone's own screen size and refuses anything else", () => {
     for (const c of PHONE_CASES) {
       expect(phoneCaseForScreenSize(`${c.screen.width}x${c.screen.height}`)).toBe(c);
