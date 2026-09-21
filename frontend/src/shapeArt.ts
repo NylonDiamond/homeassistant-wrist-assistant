@@ -219,6 +219,10 @@ export interface LiveShape {
    * content disc somewhere in it, and this is that disc. The drawing shows
    * this part alone, masked to a circle. */
   focus?: { cx: number; cy: number; diameter: number };
+  /** The inline line's words. Inline is not a picture: `art` is its symbol
+   * when it has one (an svg `width` by `height` across) and this is the text
+   * beside it, drawn by the watch drawing itself in the band over the clock. */
+  text?: string;
 }
 
 /** The shapes drawn for one device's picture, by family, plus the Control
@@ -264,6 +268,9 @@ function placed(
 ): unknown {
   if (live === undefined || live.art === nothing || live.width <= 0 || live.height <= 0) return undefined;
   if (live.focus) return disc(live, live.focus, slot, clipId);
+  // Every picture is masked to its own outline: the renderer's picture is a
+  // square with the shape painted in it, and on a face its corners showed.
+  const id = clipId === "" ? clipKey() : clipId;
   const scale = mode === "fit"
     ? Math.min(slot.width / live.width, slot.height / live.height)
     : slot.width / live.width;
@@ -280,14 +287,17 @@ function placed(
     const cx = x + width / 2;
     const cy = y + height / 2;
     const r = Math.min(width, height) / 2;
-    return svg`<clipPath id=${clipId}><circle cx=${cx} cy=${cy} r=${r} /></clipPath>
-      <g clip-path=${`url(#${clipId})`}>${inner}</g>
+    return svg`<clipPath id=${id}><circle cx=${cx} cy=${cy} r=${r} /></clipPath>
+      <g clip-path=${`url(#${id})`}>${inner}</g>
       <circle cx=${cx} cy=${cy} r=${r} fill="none" stroke=${RING} stroke-width="0.75" />`;
   }
   const ringed = svg`<rect x=${x} y=${y} width=${width} height=${mode === "fit" ? height : slot.height} rx=${ring.rx} fill="none" stroke=${RING} stroke-width="0.75" />`;
-  if (mode === "fit") return svg`${inner}${ringed}`;
-  return svg`<clipPath id=${clipId}><rect x=${slot.x} y=${slot.y} width=${slot.width} height=${slot.height} rx="3" /></clipPath>
-    <g clip-path=${`url(#${clipId})`}>${inner}</g>${ringed}`;
+  if (mode === "fit") {
+    return svg`<clipPath id=${id}><rect x=${x} y=${y} width=${width} height=${height} rx=${ring.rx} /></clipPath>
+      <g clip-path=${`url(#${id})`}>${inner}</g>${ringed}`;
+  }
+  return svg`<clipPath id=${id}><rect x=${slot.x} y=${slot.y} width=${slot.width} height=${slot.height} rx="3" /></clipPath>
+    <g clip-path=${`url(#${id})`}>${inner}</g>${ringed}`;
 }
 
 /**
@@ -350,8 +360,8 @@ function watchBody(families: readonly FamilyKind[], live: LiveShapes, shelved: b
   // card's rectangle sits right at the bottom, and a circular card's circle
   // sits in the bottom row with its two neighbours, the way the Modular face
   // draws whichever of them it has there.
-  const rect = placed(live.rectangular, { x: 14, y: 60, width: 58, height: 21 }, "fit", "", { rx: 3 });
-  const circ = placed(live.circular, { x: 14, y: 68, width: 14, height: 14 }, "fit", clipKey(), "circle");
+  const rect = placed(live.rectangular, { x: 14, y: 56, width: 58, height: 21 }, "fit", "", { rx: 3 });
+  const circ = placed(live.circular, { x: 14, y: 65, width: 14, height: 14 }, "fit", clipKey(), "circle");
   const corner = placed(live.corner, { x: 14, y: 17, width: 13, height: 13 }, "fit", clipKey(), "circle");
   // Inline is a line of text rather than a canvas: the panel's own laid out
   // line, set into the band over the clock.
@@ -372,31 +382,54 @@ function watchBody(families: readonly FamilyKind[], live: LiveShapes, shelved: b
     ${inline ?? svg`<rect x="28" y="15" width="30" height="3" rx="1.5" fill=${lit(has("inline"))} />`}
     ${corner ?? svg`<path d="M16 30 A 26 26 0 0 1 28 19" stroke=${lit(has("corner"))} stroke-width="4" fill="none" stroke-linecap="round" />`}
     ${has("rectangular")
-      ? rect ?? svg`<rect x="14" y="60" width="58" height="21" rx="5" fill=${ON} />`
-      : svg`${circ ?? svg`<circle cx="21" cy="75" r="7" fill=${lit(has("circular"))} />`}
-        <circle cx="43" cy="75" r="7" fill=${OFF} />
-        <circle cx="65" cy="75" r="7" fill=${OFF} />`}`;
+      ? rect ?? svg`<rect x="14" y="56" width="58" height="21" rx="5" fill=${ON} />`
+      : svg`${circ ?? svg`<circle cx="21" cy="72" r="7" fill=${lit(has("circular"))} />`}
+        <circle cx="43" cy="72" r="7" fill=${OFF} />
+        <circle cx="65" cy="72" r="7" fill=${OFF} />`}`;
 }
+
+/** How many characters of an inline line the watch shows before it cuts the
+ * rest and draws an ellipsis. Watched on a 45 mm face: "Front Yard test test"
+ * came out as "FRONT YARD TEST…". */
+export const INLINE_MAX_CHARS = 16;
+
+/** The inline line as the watch would show it: whole when it fits, cut to
+ * the first characters with an ellipsis when it does not. */
+export function inlineShown(text: string): string {
+  const trimmed = text.trim();
+  return trimmed.length <= INLINE_MAX_CHARS ? trimmed : `${trimmed.slice(0, INLINE_MAX_CHARS - 1).trimEnd()}…`;
+}
+
+/** The band's text size, in the drawing's units, and about how wide one
+ * character of it is: enough to centre the line without measuring it. */
+const INLINE_FONT = 6;
+const INLINE_CHAR = INLINE_FONT * 0.58;
 
 /**
  * The inline line set into its band on the watch.
  *
- * Inline is not drawn by the renderer: it is the panel's own line of HTML, a
- * symbol and some text, the same one the editor's preview shows. It goes into
- * the drawing through a foreignObject, laid out at its own size and scaled
- * down as a whole to fit the band, so the text wraps and clips exactly as the
- * bigger preview does. `width` and `height` are the size the line is laid
- * out at, in CSS px.
+ * Inline is not a picture the renderer drew: it is a symbol and a line of
+ * text, and both are drawn here as the watch draws them, the symbol scaled
+ * into the band's height and the text beside it, centred as a pair. Plain
+ * svg rather than the panel's HTML line in a foreignObject, which WebKit
+ * lays out at its own size whatever the drawing round it is scaled to. The
+ * text is cut where the watch cuts it.
  */
 function placedInline(live: LiveShape | undefined, slot: { x: number; y: number; width: number; height: number }): unknown {
-  if (live === undefined || live.art === nothing || live.width <= 0 || live.height <= 0) return undefined;
-  const scale = Math.min(slot.width / live.width, slot.height / live.height);
-  const width = live.width * scale;
-  const height = live.height * scale;
-  const x = slot.x + (slot.width - width) / 2;
-  const y = slot.y + (slot.height - height) / 2;
-  return svg`<g class="pk-live" transform=${`translate(${x} ${y}) scale(${scale})`}>
-    <foreignObject x="0" y="0" width=${live.width} height=${live.height} style="overflow: hidden">${live.art}</foreignObject></g>`;
+  if (live === undefined || live.text === undefined) return undefined;
+  const text = inlineShown(live.text);
+  if (text === "") return undefined;
+  const symbol = live.art !== nothing && live.width > 0 && live.height > 0;
+  const side = slot.height - 2;
+  const gap = 1.5;
+  const textWidth = Math.min(text.length * INLINE_CHAR, slot.width);
+  const total = textWidth + (symbol ? side + gap : 0);
+  const start = slot.x + (slot.width - total) / 2;
+  const baseline = slot.y + slot.height / 2 + INLINE_FONT * 0.36;
+  return svg`<g class="pk-live">
+    ${symbol ? svg`<g transform=${`translate(${start} ${slot.y + 1}) scale(${side / live.width})`}>${live.art}</g>` : nothing}
+    <text x=${symbol ? start + side + gap : start} y=${baseline} font-size=${INLINE_FONT} font-weight="600"
+      fill="#fff" font-family="system-ui, sans-serif">${text}</text></g>`;
 }
 
 /**

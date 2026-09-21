@@ -553,12 +553,10 @@ const CONTROL_TAB_TILE_SIDE = 52;
  * drawn at the size of the crop beside it rather than as a glyph. */
 const CARD_ART_TILE_SIDE = 44;
 
-/** The box a picker card lays its inline line out in, CSS px, before the
- * drawing scales it into the band over the clock. Wide enough for a label,
- * a symbol and a value at the small preview's 11px, and the band's own
- * proportions, so the whole box lands in the band with nothing to trim. */
-const CARD_INLINE_WIDTH = 116;
-const CARD_INLINE_HEIGHT = 16;
+/** The side the inline line's symbol is rendered at for a picker card, CSS
+ * px. The watch drawing scales it into the band over the clock, so this is
+ * only the size the icon's own svg is asked for. */
+const CARD_INLINE_SYMBOL = 11;
 
 const COL_LEFT_DEFAULT = 300;
 const COL_RIGHT_DEFAULT = 360;
@@ -1970,16 +1968,6 @@ export class WristAssistantPanel extends LitElement {
       aspect-ratio: 86 / 48; border-radius: 10px; background: #000; box-shadow: inset 0 0 0 1px rgba(255,255,255,.1);
     }
     .pk-card-crop > svg.pk-crop { display: block; width: 100%; height: 100%; }
-    /* The inline line inside the watch drawing: the editor's own small line,
-       laid out at its box's size and scaled down by the drawing round it. */
-    .pk-card-crop .inline-line {
-      display: flex; align-items: center; justify-content: center; gap: 3px;
-      width: 100%; height: 100%; padding: 0 4px; box-sizing: border-box;
-      font-size: 11px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden;
-    }
-    .pk-card-crop .inline-line > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-    .pk-card-crop .inline-line svg { display: inline-block; flex: none; width: 11px; height: 11px; margin: 0; background: transparent; border-radius: 0; }
-    .pk-card-crop .inline-line.missing { color: var(--wa-muted); font-weight: 400; }
     /* A design that is only a Control Center control has its tile as the whole
        picture: it sits on neither screen, so there is no device to crop. The
        real tile is the editor's own laid-out box, so it keeps the size it was
@@ -8514,11 +8502,16 @@ export class WristAssistantPanel extends LitElement {
       return out;
     };
     const watch = pick(["rectangular", "circular", "corner"], false);
-    // Inline is the panel's own laid out line rather than a render: the same
-    // line the editor's preview shows, at the size it lays out at, for the
-    // drawing to scale into the band over the clock.
-    if (cfg.supportedFamilies.includes("inline")) {
-      watch.inline = { art: this.renderInlinePreview(layouts.inline, true), width: CARD_INLINE_WIDTH, height: CARD_INLINE_HEIGHT };
+    // Inline is words rather than a render: its symbol and its text, for the
+    // watch drawing to write into the band over the clock the way the watch
+    // does, cut where the watch cuts it.
+    const inline = layouts.inline;
+    if (cfg.supportedFamilies.includes("inline") && inline) {
+      const symbol = inline.symbol ? this.icons.render(inline.symbol, CARD_INLINE_SYMBOL, "#FFFFFF") : undefined;
+      watch.inline = {
+        art: symbol ?? nothing, width: symbol ? CARD_INLINE_SYMBOL : 0, height: symbol ? CARD_INLINE_SYMBOL : 0,
+        text: this.inlineLineText(inline),
+      };
     }
     return {
       watch,
@@ -13299,17 +13292,23 @@ export class WristAssistantPanel extends LitElement {
   /** The Inline shape as one line: symbol, then `label: value`, the way the
    * watch draws it on a wide face. A live countdown ticks with the same timer
    * the canvas previews use. */
+  /** The words of the inline line, label and all, with a running countdown
+   * shown as the time left. Shared by the preview and the picker's cards. */
+  private inlineLineText(inline: ResolvedInline): string {
+    const now = Date.now();
+    const value = inline.countdownEnd !== undefined && inline.countdownEnd > now
+      ? countdownRemainingString((inline.countdownEnd - now) / 1000)
+      : inline.text;
+    return `${inline.label ? `${inline.label}: ` : ""}${value}`;
+  }
+
   private renderInlinePreview(inline: ResolvedInline | undefined, small: boolean) {
     let line: TemplateResult;
     if (!inline) {
       line = html`<div class="inline-line missing">No inline text</div>`;
     } else {
-      const now = Date.now();
-      const value = inline.countdownEnd !== undefined && inline.countdownEnd > now
-        ? countdownRemainingString((inline.countdownEnd - now) / 1000)
-        : inline.text;
       const symbol = inline.symbol ? this.icons.render(inline.symbol, small ? 11 : 15, "#FFFFFF") : undefined;
-      line = html`<div class="inline-line">${symbol ?? nothing}<span>${inline.label ? `${inline.label}: ` : ""}${value}</span></div>`;
+      line = html`<div class="inline-line">${symbol ?? nothing}<span>${this.inlineLineText(inline)}</span></div>`;
     }
     if (small) return line;
     return html`<div class="preview inline active" @click=${() => { this.inspect = { kind: "family" }; }}>${line}</div>`;

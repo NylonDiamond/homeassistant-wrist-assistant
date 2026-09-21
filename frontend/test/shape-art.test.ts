@@ -6,11 +6,11 @@
 // assertions are about what the SVG says rather than about a rendered box.
 
 import { describe, expect, it } from "vitest";
-import { html, nothing, svg } from "lit";
+import { nothing, svg } from "lit";
 
 import { ALL_FAMILIES } from "../src/layouts.js";
 import type { FamilyKind } from "../src/model.js";
-import { controlDeviceArt, deviceCropArt, deviceShapeArt, shapeArtKinds } from "../src/shapeArt.js";
+import { controlDeviceArt, deviceCropArt, deviceShapeArt, inlineShown, shapeArtKinds } from "../src/shapeArt.js";
 import type { DeviceKind } from "../src/version.js";
 
 function flatten(node: unknown): string {
@@ -222,8 +222,8 @@ describe("deviceCropArt", () => {
   /** Where each shape's slot sits on its device, so a window can be asked
    * whether the thing it is a window onto is in it. */
   const SLOTS: [FamilyKind, "watch" | "iphone", { x: number; y: number; width: number; height: number }][] = [
-    ["rectangular", "watch", { x: 14, y: 60, width: 58, height: 21 }],
-    ["circular", "watch", { x: 14, y: 68, width: 14, height: 14 }],
+    ["rectangular", "watch", { x: 14, y: 56, width: 58, height: 21 }],
+    ["circular", "watch", { x: 14, y: 65, width: 14, height: 14 }],
     ["corner", "watch", { x: 14, y: 17, width: 13, height: 13 }],
     ["inline", "watch", { x: 28, y: 15, width: 30, height: 3 }],
     ["rectangular", "iphone", { x: 9, y: 22, width: 32, height: 13 }],
@@ -302,13 +302,13 @@ describe("deviceCropArt", () => {
   // other's slot under or over its own.
   it("lights the shape's own slot and leaves its neighbours off", () => {
     const art = crop("rectangular", "watch");
-    expect(art).toContain(`x="14" y="60" width="58" height="21" rx="5" fill=var(--wa-accent)`);
-    expect(art).not.toContain(`cy="75"`);
+    expect(art).toContain(`x="14" y="56" width="58" height="21" rx="5" fill=var(--wa-accent)`);
+    expect(art).not.toContain(`cy="72"`);
     const circ = crop("circular", "watch");
-    expect(circ).toContain(`cx="21" cy="75" r="7" fill=var(--wa-accent)`);
-    expect(circ).toContain(`cx="43" cy="75" r="7" fill=var(--wa-art-off)`);
-    expect(circ).toContain(`cx="65" cy="75" r="7" fill=var(--wa-art-off)`);
-    expect(circ).not.toContain(`y="60" width="58"`);
+    expect(circ).toContain(`cx="21" cy="72" r="7" fill=var(--wa-accent)`);
+    expect(circ).toContain(`cx="43" cy="72" r="7" fill=var(--wa-art-off)`);
+    expect(circ).toContain(`cx="65" cy="72" r="7" fill=var(--wa-art-off)`);
+    expect(circ).not.toContain(`y="56" width="58"`);
   });
 
   it("hides the drawing from a screen reader, the card's text saying it instead", () => {
@@ -336,7 +336,7 @@ describe("deviceCropArt", () => {
     it("sets the picture into the slot in place of the lit fill", () => {
       const art = crop("rectangular", "watch", { rectangular: picture("w") });
       expect(art).toContain("data-tag=w");
-      expect(art).not.toContain(`x="14" y="60" width="58" height="21"`);
+      expect(art).not.toContain(`x="14" y="56" width="58" height="21"`);
     });
 
     it("scales the picture to fit the slot and centres it", () => {
@@ -344,8 +344,16 @@ describe("deviceCropArt", () => {
       // The full 58 wide slot for a 181 wide picture, so 58/181; 65.5 tall
       // becomes 20.99, sat in the middle of the 21 tall slot at the bottom.
       const scale = 58 / 181;
-      const y = 60 + (21 - 65.5 * scale) / 2;
+      const y = 56 + (21 - 65.5 * scale) / 2;
       expect(art).toContain(`translate(14 ${y}) scale(${scale})`);
+    });
+
+    // A rectangular picture is masked to a rounded rectangle, so the square
+    // corners of the renderer's box never show past the slot's own.
+    it("masks a rectangular picture to rounded corners", () => {
+      const art = crop("rectangular", "watch", { rectangular: picture("r") });
+      expect(art).toMatch(/<clipPath id=pk-clip-\w+><rect x=14 y=[\d.]+ width=58 height=[\d.]+ rx=3 \/><\/clipPath>/);
+      expect(art).toContain("clip-path=url(#pk-clip-");
     });
 
     // The renderer's circular picture is a square with the circle painted in
@@ -355,17 +363,35 @@ describe("deviceCropArt", () => {
       const art = crop("circular", "watch", { circular: round });
       expect(art).toContain("data-tag=c");
       expect(art).toContain("clip-path=url(#pk-clip-");
-      expect(art).toMatch(/<clipPath id=pk-clip-\w+><circle cx=21 cy=75 r=7(\.0+\d)? \/><\/clipPath>/);
+      expect(art).toMatch(/<clipPath id=pk-clip-\w+><circle cx=21 cy=72 r=7(\.0+\d)? \/><\/clipPath>/);
     });
 
-    it("sets the inline line into the band over the clock through a foreignObject", () => {
-      const line = { art: html`<div class="inline-line"><span>Kitchen: 21</span></div>`, width: 116, height: 16 };
+    it("writes the inline line into the band over the clock, symbol first", () => {
+      const line = { art: svg`<svg data-tag=sym></svg>`, width: 11, height: 11, text: "Kitchen: 21" };
       const art = crop("inline", "watch", { inline: line });
-      expect(art).toContain("<foreignObject");
-      expect(art).toContain("Kitchen: 21");
-      // 58 by 8 band for a 116 by 16 line: half size, filling the band.
-      expect(art).toContain(`translate(14 13) scale(0.5)`);
+      expect(art).toContain("<text");
+      expect(art).toContain(">Kitchen: 21</text>");
+      expect(art).toContain("data-tag=sym");
+      // The symbol is scaled to the band's height, 6 of its 11.
+      expect(art).toContain(`scale(${6 / 11})`);
+      expect(art).not.toContain("<foreignObject");
       expect(art).not.toContain(`x="28" y="15" width="30" height="3"`);
+    });
+
+    it("writes the inline line with no symbol when it has none", () => {
+      const art = crop("inline", "watch", { inline: { art: nothing, width: 0, height: 0, text: "Kitchen: 21" } });
+      expect(art).toContain(">Kitchen: 21</text>");
+      expect(art).not.toContain("scale(");
+    });
+
+    // The watch cuts a long inline line and draws an ellipsis; the card does
+    // the same rather than letting the words run past the band.
+    it("cuts a long inline line where the watch cuts it", () => {
+      expect(inlineShown("Front Yard test test")).toBe("Front Yard test…");
+      expect(inlineShown("Kitchen: 21")).toBe("Kitchen: 21");
+      expect(inlineShown("Sixteen chars!!!")).toBe("Sixteen chars!!!");
+      const art = crop("inline", "watch", { inline: { art: nothing, width: 0, height: 0, text: "Front Yard test test" } });
+      expect(art).toContain(">Front Yard test…</text>");
     });
 
     it("draws the Large tile from the top and clips it, rather than squeezing it flat", () => {
