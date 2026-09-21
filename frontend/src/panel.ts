@@ -1945,9 +1945,12 @@ export class WristAssistantPanel extends LitElement {
     .pk-dup-row:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .pk-dup-row[disabled] { opacity: .5; cursor: default; }
     .pk-dup-row svg { flex: none; width: 14px; height: 14px; }
-    /* The move sits under the copies, with a line between: it is the one row
-       here that takes the design off the device it is on. */
-    .pk-dup-row.move { margin-top: 4px; border-top-color: var(--wa-line-strong); }
+    /* The two rows that are not a copy of this shape sit under the ones that
+       are: one opens the dialog where a shape is picked, the other takes the
+       design off the device it is on. */
+    .pk-dup-row.other { margin-top: 4px; }
+    .pk-dup-row.move { border-color: var(--wa-line-strong); }
+    .pk-dup-head { font-size: 11.5px; font-weight: 700; color: var(--wa-muted); margin: 2px 0; }
     .pk-dup-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .pk-dup-full { flex: none; font-size: 10px; color: var(--wa-muted); }
     .pk-dup-note { font-size: 10px; line-height: 1.4; color: var(--wa-muted); border-top: 1px solid var(--wa-line); padding-top: 6px; }
@@ -8933,18 +8936,23 @@ export class WristAssistantPanel extends LitElement {
     if (from.item.kind !== "record") return nothing;
     const targets = this.rowDupTargets(from.ownerId, family);
     const shelf = this.libraryOwner();
+    const shape = family === undefined ? "Control Center" : familyTitle(family).toLowerCase();
     // Moving the record the editor has open out from under its draft is what
     // Delete is for, so the move is offered on every other card.
     const mayShelve = shelf !== undefined && from.ownerId !== shelf.ownerId && this.selectedCopyOf(row) === undefined;
-    if (targets.length === 0 && !mayShelve) return nothing;
     return html`<span class="pk-dup" data-dup=${row.key}>
       <button type="button" class="pk-dup-open ${open ? "on" : ""}" aria-expanded=${open ? "true" : "false"}
         title="Make this design again on another device, or put it back in the library" ?disabled=${this.saving}
         @click=${() => { if (open) this.closePickerDup(); else this.openPickerDup(row.key); }}>Duplicate to${uiIcon("chevron")}</button>
       ${open ? html`<div class="pk-dup-menu" role="group" aria-label=${`Duplicate ${row.name}`}>
+        <div class="pk-dup-head">A ${shape} copy on</div>
         ${targets.length === 0
           ? html`<div class="pk-dup-note">Nothing else in this home draws this shape.</div>`
           : targets.map((target) => this.renderPickerDupTarget(row, target, family))}
+        <button type="button" class="pk-dup-row other" ?disabled=${this.saving}
+          title="Make this design again as another shape, or on the other kind of device"
+          @click=${() => this.duplicateAsFromCard(row)}>${uiIcon("shape")}
+          <span class="pk-dup-name">Duplicate as another shape…</span></button>
         ${mayShelve ? html`<button type="button" class="pk-dup-row move" ?disabled=${this.saving}
           title="Take it off this device and keep it in the library. A face or widget already using it keeps it."
           @click=${() => void this.shelveRow(row)}>${uiIcon("layers")}
@@ -9091,6 +9099,19 @@ export class WristAssistantPanel extends LitElement {
     } finally {
       this.saving = false;
     }
+  }
+
+  /** "Duplicate as" from a card, which is the same dialog the editor's own
+   * button opens, over whichever complication the card is about. The picker
+   * shuts first: two modal dialogs stacked is two backdrops and one of them
+   * unreachable. */
+  private duplicateAsFromCard(row: PickerRow) {
+    const from = row.open;
+    const cfg = this.rowConfig(row);
+    if (!cfg || from.item.kind !== "record") return;
+    this.closePickerDup();
+    this.closePicker();
+    this.openDuplicateAs(cfg, from.ownerId);
   }
 
   private openPickerDup(key: string) {
