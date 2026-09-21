@@ -21,7 +21,8 @@ import {
   schemaVersionFor,
 } from "./model.js";
 import { type ShareSlot, exportText, hasInstanceFilters, isPlaceholderId, scrubForShare } from "./transfer.js";
-import { supportedFamilies } from "./layouts.js";
+import { isHomeFamily, isSharedFamily, supportedFamilies } from "./layouts.js";
+import type { DeviceKind } from "./version.js";
 
 /** Where the gallery lives. The one place to change for testing on staging. */
 export const GALLERY_API_BASE = "https://wrist-assistant.com/api/gallery";
@@ -32,6 +33,37 @@ export const GALLERY_API_BASE = "https://wrist-assistant.com/api/gallery";
 export const GALLERY_FAMILIES: readonly FamilyKind[] = [
   "rectangular", "circular", "corner", "inline", "small", "medium", "large", "xlarge",
 ];
+
+/** The two words the gallery files an upload's device under. Nothing at all
+ * is the third answer, and the page reads it as "Watch or iPhone". */
+export type GalleryDevice = "watch" | "iphone";
+
+/**
+ * The one shape an upload is filed under.
+ *
+ * A complication is one shape, so this is that shape. A document an older
+ * panel wrote can still carry several and still be shared; it is filed under
+ * the first, which is the shape its one picture draws.
+ */
+export function galleryFamily(cfg: Pick<CustomComplicationConfig, "supportedFamilies">): FamilyKind | undefined {
+  return supportedFamilies(cfg).find((f) => GALLERY_FAMILIES.includes(f));
+}
+
+/**
+ * The device tag an upload carries, so the gallery card says "Watch" or
+ * "iPhone" from a field rather than guessing from the shape list.
+ *
+ * The owner the document is stored under is the answer: a watch owner is a
+ * watch, a phone owner an iPhone. The Library is not a device, so there the
+ * shape answers instead. Corner is a watch face slot and the four Home Screen
+ * tiles are a phone's, but rectangular, circular and inline are drawn by both,
+ * and a guess there would be wrong half the time, so those send nothing.
+ */
+export function galleryDevice(kind: DeviceKind, family: FamilyKind | undefined): GalleryDevice | undefined {
+  if (kind !== "library") return kind;
+  if (family === undefined || isSharedFamily(family)) return undefined;
+  return isHomeFamily(family) ? "iphone" : "watch";
+}
 
 export const GALLERY_TAGS = [
   "weather", "energy", "climate", "security", "media", "health",
@@ -64,9 +96,10 @@ export const GALLERY_LIMITS = {
   tags: 5,
   slots: 40,
   slotLabel: 60,
-  // One picture per canvas shape. Seven shapes have a canvas (the three watch
-  // shapes and the four Home Screen tiles), so eight is the cap the gallery
-  // contract states, one clear of the most a document can produce.
+  // The panel sends one picture, of the document's one shape. Eight is what
+  // the gallery contract states, from when a document held every shape at
+  // once, and it stays here as the cap an older panel's upload is measured
+  // against.
   previews: 8,
   shareTextBytes: 64 * 1024,
   pngBytes: 150 * 1024,
@@ -95,6 +128,10 @@ export interface GalleryMeta {
   tags: readonly string[];
   /** The integration version the panel was served with. */
   panelVersion: string;
+  /** Which device this design is for, from the owner it is stored under.
+   * Undefined leaves the field off the wire, which the gallery reads as
+   * "either". Not typed by the author: `galleryDevice` works it out. */
+  device?: GalleryDevice;
 }
 
 export interface GallerySlot {
@@ -114,10 +151,15 @@ export interface GallerySubmission {
   description: string;
   authorName: string;
   tags: GalleryTag[];
+  /** The one shape, as a one-entry array: the gallery's field is still a
+   * list, and an older panel still uploads several. */
   families: FamilyKind[];
   slots: GallerySlot[];
   previews: GalleryPreview[];
   panelVersion: string;
+  /** Watch or iPhone. Left off when neither is known, which the gallery takes
+   * as unknown rather than refusing the upload. */
+  device?: GalleryDevice;
   /** The approved upload this one is a new version of. The link and votes
    * stay with it; the old version stays up until this one is approved. */
   replaces?: string;
@@ -170,6 +212,10 @@ function byteLength(text: string): number {
  *
  * The copy is named by the title, and takes the group and shared value names
  * the author changed for the gallery.
+ *
+ * `families` is the document's one shape and `device` the owner's kind, which
+ * the meta carries: the gallery card then says "Watch" or "iPhone" from a
+ * field rather than reading it off the shape list.
  */
 export function buildGallerySubmission(
   cfg: CustomComplicationConfig,
@@ -179,15 +225,17 @@ export function buildGallerySubmission(
 ): Omit<GallerySubmission, "previews"> {
   const tags: GalleryTag[] = [];
   for (const tag of meta.tags) if (isGalleryTag(tag) && !tags.includes(tag)) tags.push(tag);
+  const family = galleryFamily(cfg);
   return {
     shareText: exportText(applyGalleryOverrides(cfg, { ...overrides, name: meta.title }), "share", slots),
     title: meta.title.trim(),
     description: meta.description.trim(),
     authorName: meta.authorName.trim(),
     tags,
-    families: supportedFamilies(cfg).filter((f) => GALLERY_FAMILIES.includes(f)),
+    families: family === undefined ? [] : [family],
     slots: slots.map((slot) => ({ id: slot.placeholderId, label: slot.label.trim() })),
     panelVersion: meta.panelVersion,
+    ...(meta.device === undefined ? {} : { device: meta.device }),
   };
 }
 
@@ -538,6 +586,7 @@ const FIELD_WORDS: Record<string, string> = {
   authorName: "nickname",
   tags: "tags",
   families: "shapes",
+  device: "device",
   slots: "slot labels",
   previews: "preview pictures",
   panelVersion: "panel version",
