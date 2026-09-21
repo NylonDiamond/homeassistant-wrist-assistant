@@ -20,9 +20,11 @@ import { supportedFamilies } from "../src/layouts.js";
 import type { ComplicationRecord, HassLike, OwnerSummary } from "../src/ha-api.js";
 import {
   type SplitNotice,
+  COMPLICATION_MAX_PER_OWNER,
   SPLIT_GATE,
   autoSplitShapes,
   childFamily,
+  childLinkId,
   documentParts,
   editBlockedBySplitGate,
   needsSplit,
@@ -232,9 +234,48 @@ describe("splitDocument", () => {
     for (const child of splitDocument(parent, counter())) expect(child.hidden).toBe(true);
   });
 
-  it("writes no linkId on any child", () => {
+  // A linked design is one design on two devices: the same document on the
+  // watch and on the phone, carrying the same uuid, each save written to the
+  // other. Both copies are cut the same way, so each part keeps a link of its
+  // own and the two devices' rectangular children stay one design.
+  it("gives every child a link derived from its parent's", () => {
     expect(rawFixture("linked_complication.json").linkId).toBeDefined();
     const parent = fixture("linked_complication.json");
+    const children = splitDocument(parent, counter());
+    const links = children.map((c) => c.linkId);
+    for (const link of links) expect(link).toMatch(/^[0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/);
+    // One link per part, and never the parent's own: two records sharing that
+    // would read as two copies of one design on one device.
+    expect(new Set(links).size).toBe(children.length);
+    expect(links).not.toContain(parent.linkId);
+    expect(links).toEqual(supportedFamilies(parent).map((f) => childLinkId(parent.linkId!, f)));
+  });
+
+  it("gives the same design on two devices the same link per shape", () => {
+    const parent = fixture("linked_complication.json");
+    // The phone's copy of a linked design: the same document, its own record
+    // id, its own seat, the same link.
+    const other: CustomComplicationConfig = { ...structuredClone(parent), id: "PHONE-RECORD" };
+    const mine = splitDocument(parent, counter("W"));
+    const theirs = splitDocument(other, counter("P"));
+    expect(mine.map((c) => c.id)).not.toEqual(theirs.map((c) => c.id));
+    expect(mine.map((c) => c.linkId)).toEqual(theirs.map((c) => c.linkId));
+    expect(mine.map((c) => supportedFamilies(c))).toEqual(theirs.map((c) => supportedFamilies(c)));
+  });
+
+  it("gives the control child its own link, apart from every shape", () => {
+    const parent = { ...fixture("control.json"), linkId: "BBBBBBBB-0000-4000-8000-00000000000B" };
+    expect(parent.control).toBeDefined();
+    const children = splitDocument(parent, counter());
+    const control = children[children.length - 1]!;
+    expect(supportedFamilies(control)).toEqual([]);
+    expect(control.linkId).toBe(childLinkId(parent.linkId!, "control"));
+    expect(new Set(children.map((c) => c.linkId)).size).toBe(children.length);
+  });
+
+  it("writes no link on the children of a parent that had none", () => {
+    const parent = fixture("living_room.json");
+    expect(parent.linkId).toBeUndefined();
     for (const child of splitDocument(parent, counter())) {
       expect("linkId" in encodeConfig(child)).toBe(false);
     }
@@ -254,6 +295,36 @@ describe("splitDocument", () => {
     expect(children[0]!.id).toBe(parent.id);
     expect("linkId" in encodeConfig(children[0]!)).toBe(false);
     expect(children[0]!.control).toEqual(parent.control);
+  });
+
+  // Nothing is being cut, so there is no part to derive a link for: the record
+  // stays the one record it was, still joined to its copy on the other device.
+  it("leaves the link on a one-shape document alone", () => {
+    const link = "AAAAAAAA-0000-4000-8000-00000000000A";
+    const children = splitDocument({ ...fixture("control_only.json"), linkId: link }, counter());
+    expect(children).toHaveLength(1);
+    expect(children[0]!.linkId).toBe(link);
+  });
+});
+
+describe("childLinkId", () => {
+  const link = "AAAAAAAA-0000-4000-8000-00000000000A";
+
+  it("is the same answer every time it is asked", () => {
+    expect(childLinkId(link, "rectangular")).toBe(childLinkId(link, "rectangular"));
+  });
+
+  it("is a different answer per part and per parent", () => {
+    const parts = ["rectangular", "circular", "corner", "small", "control"] as const;
+    expect(new Set(parts.map((p) => childLinkId(link, p))).size).toBe(parts.length);
+    expect(childLinkId("BBBBBBBB-0000-4000-8000-00000000000B", "rectangular"))
+      .not.toBe(childLinkId(link, "rectangular"));
+  });
+
+  it("reads as an uppercase v4 uuid, the way newId writes one", () => {
+    for (const part of ["rectangular", "control"] as const) {
+      expect(childLinkId(link, part)).toMatch(/^[0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/);
+    }
   });
 });
 
@@ -587,6 +658,60 @@ describe("splitOwner", () => {
     expect(result.writes).toEqual([]);
     expect(fake.live("watch-1")).toHaveLength(1);
     expect(fake.live("watch-1")[0]!.linkId).toBe("AAAAAAAA-0000-4000-8000-00000000000A");
+  });
+
+  // The store refuses the save that would pass the cap, one record at a time.
+  // A split writes several records per complication, so a device close to the
+  // cap would take some children and be refused the rest, leaving a document
+  // half cut with no way to say which half. Counted first instead.
+  describe("the per-owner cap", () => {
+    /** `count` single-shape records, each its own id, none of them splittable. */
+    const filler = (count: number) =>
+      Array.from({ length: count }, (_, i) => ({
+        ...rawFixture("control_only.json"),
+        id: `FFFFFFFF-0000-4000-8000-${String(i).padStart(12, "0")}`,
+      }));
+
+    /** A device holding `count` records, one of them the 3-shape Living Room. */
+    const atEdge = (count: number) => {
+      const documents = [rawFixture("living_room.json"), ...filler(count - 1)];
+      return fakeHass({ documents: { "watch-1": documents } });
+    };
+
+    it("writes nothing and names the device when the split would pass it", async () => {
+      // 255 records, one of which becomes three: 257, one past the cap.
+      const fake = atEdge(COMPLICATION_MAX_PER_OWNER - 1);
+      const result = await splitOwner(fake.hass, ownerRow(), fake.rows["watch-1"]!.map((r) => r.record), counter());
+      expect(result.writes).toEqual([]);
+      expect(result.split).toEqual([]);
+      expect(result.problem).toBe(
+        `Not split, Jesse's Watch: it would end up with ${COMPLICATION_MAX_PER_OWNER + 1} complications, `
+        + `past the ${COMPLICATION_MAX_PER_OWNER} one device can hold`,
+      );
+      // Not one round trip, let alone one write: the count comes first.
+      expect(fake.sent).toEqual([]);
+      expect(fake.live("watch-1")).toHaveLength(COMPLICATION_MAX_PER_OWNER - 1);
+    });
+
+    it("splits the device that lands exactly on the cap", async () => {
+      // 254 records, one of which becomes three: 256, which is allowed.
+      const fake = atEdge(COMPLICATION_MAX_PER_OWNER - 2);
+      const result = await splitOwner(fake.hass, ownerRow(), fake.rows["watch-1"]!.map((r) => r.record), counter());
+      expect(result.problem).toBeUndefined();
+      expect(result.split).toEqual(["Living Room"]);
+      expect(fake.live("watch-1")).toHaveLength(COMPLICATION_MAX_PER_OWNER);
+    });
+
+    it("does not count a tombstoned record against the cap", async () => {
+      const fake = atEdge(COMPLICATION_MAX_PER_OWNER - 1);
+      const records = fake.rows["watch-1"]!.map((r) => r.record);
+      // The same list with two deleted, which the store does not count either.
+      const withGraves = records.map((r, i) =>
+        i === 1 || i === 2 ? { ...r, deleted: true, document: null } : r);
+      const result = await splitOwner(fake.hass, ownerRow(), withGraves, counter());
+      expect(result.problem).toBeUndefined();
+      expect(result.split).toEqual(["Living Room"]);
+    });
   });
 });
 

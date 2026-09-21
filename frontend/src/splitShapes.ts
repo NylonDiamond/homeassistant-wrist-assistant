@@ -39,7 +39,23 @@ import {
   saveRecord,
 } from "./ha-api.js";
 import { type DeviceOwnerLike, compareVersions, deviceKindOf, parseVersion } from "./version.js";
+import { fnv1a64Hex } from "./compiler.js";
 import { Draft } from "./draft.js";
+
+// ── the limits ────────────────────────────────────────────────────────────
+
+/**
+ * The most live records one owner may hold.
+ *
+ * Mirrored from `COMPLICATION_MAX_PER_OWNER` in
+ * custom_components/wrist_assistant/const.py, which is where the number is
+ * decided. The store refuses the save that would pass it ("owner already has
+ * 256 complications"), and a split is the one thing in the panel that can walk
+ * a device into the limit several records at a time, so it counts first rather
+ * than discovering it half way through. A Python test asserts the two numbers
+ * are still the same.
+ */
+export const COMPLICATION_MAX_PER_OWNER = 256;
 
 // ── the gate ──────────────────────────────────────────────────────────────
 
@@ -127,10 +143,50 @@ export function needsSplit(
   return documentParts(cfg) > 1;
 }
 
+// ── the link each child inherits ──────────────────────────────────────────
+
+/**
+ * The link one child of a split carries, worked out from its parent's.
+ *
+ * A `linkId` joins the copies of one design across this home's devices: the
+ * watch and the phone hold two records that carry the same uuid, and a save of
+ * one is written to the other. Both copies carry the same shapes, so both are
+ * cut the same way, and the answer that keeps the link alive is a link per
+ * part rather than no link at all: the rectangular child on the watch and the
+ * rectangular child on the phone must end up with the same one, without the
+ * two runs ever talking to each other.
+ *
+ * So it is derived, not invented. The same parent link and the same part give
+ * the same answer on every device, in every browser, on a second run. Two
+ * different parents give different answers, which is what keeps two designs
+ * from being merged into one.
+ *
+ * The result is shaped like a v4 uuid and uppercased, the same as `newId`
+ * writes: nothing that reads a link today needs more than a string, but the
+ * store's document schema calls it a uuid, and a link that does not look like
+ * one would be the sort of thing a later validator refuses.
+ */
+export function childLinkId(parentLink: string, part: FamilyKind | "control"): string {
+  // FNV-1a is 64 bits and a uuid is 128, so two passes over two different
+  // strings. The salt keeps this out of the way of any other use of the hash.
+  const seed = `wa-split-link:${parentLink}|${part}`;
+  const hex = fnv1a64Hex(seed).padStart(16, "0") + fnv1a64Hex(`${seed}#2`).padStart(16, "0");
+  // Version nibble 4, variant nibble 8..b, so it reads as a v4.
+  const variant = (8 + (Number.parseInt(hex[16]!, 16) & 3)).toString(16);
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    `4${hex.slice(13, 16)}`,
+    `${variant}${hex.slice(17, 20)}`,
+    hex.slice(20, 32),
+  ].join("-").toUpperCase();
+}
+
 /** What this run would do to one record: cut it up, or leave it alone. A
  * one-shape record is left alone whatever else it carries: its `linkId`, if
  * it has one, is the link to the same design on another device, which is
- * what the panel writes now and nothing this run should touch. */
+ * what the panel writes now and nothing this run should touch. A record that
+ * is cut keeps that link too, one derived link per part (`childLinkId`). */
 export type SplitPlan = "split" | "none";
 
 export function planFor(cfg: CustomComplicationConfig): SplitPlan {
@@ -157,8 +213,12 @@ export function planFor(cfg: CustomComplicationConfig): SplitPlan {
  * per-shape ownership is full of, reaches every shape that was drawing it:
  * `normalizedForSplit` settles those first, so each of them gets a copy.
  *
- * `linkId` goes from every child. Linked copies on two devices were already
- * two records, so they simply stop being linked.
+ * `linkId` is carried across the cut rather than dropped: each child gets the
+ * link `childLinkId` derives for its own part, so the rectangular child on the
+ * watch and the rectangular child on the phone stay one design and a save of
+ * one still reaches the other. A parent with no link gives children with none.
+ * Only a document that is really being cut is touched this way; a single-part
+ * document keeps its own link, since it is still the one record it always was.
  *
  * The document passed in is never touched. A document with nothing to split
  * comes back as a single child, so a caller can treat every record the same
@@ -171,12 +231,22 @@ export function splitDocument(
   const source = normalizedForSplit(cfg);
   const families = supportedFamilies(source);
   const children: CustomComplicationConfig[] = [];
+  const cut = needsSplit(source);
+  /** The link this part of a cut document carries. Undefined leaves the
+   * child's own key alone, which is only ever the uncut case. */
+  const linkFor = (part: FamilyKind | "control"): string | undefined =>
+    cut && source.linkId !== undefined ? childLinkId(source.linkId, part) : undefined;
+  const setLink = (child: CustomComplicationConfig, part: FamilyKind | "control") => {
+    const link = linkFor(part);
+    if (link !== undefined) child.linkId = link;
+    else if (cut) delete child.linkId;
+  };
 
   for (const family of families) {
     const child = pruneLayouts(keepFamilies(source, [family]), family);
-    // A link on a many-shape document joined shared shapes across devices,
-    // which the children cannot honour: each is a design of its own now.
-    delete child.linkId;
+    // The link joins this shape to the same shape of the same design on the
+    // home's other devices, which is a link the children can still honour.
+    setLink(child, family);
     // The control is one per document and becomes its own document below, so
     // no shape child carries a copy of it.
     delete child.control;
@@ -187,7 +257,7 @@ export function splitDocument(
 
   if (source.control !== undefined) {
     const control = structuredClone(source);
-    delete control.linkId;
+    setLink(control, "control");
     // No guards: this copy draws nothing and is meant to, so the refusal that
     // keeps an author from emptying a document they are editing is not the
     // rule here.
@@ -204,8 +274,8 @@ export function splitDocument(
 
   if (children.length === 0) {
     // A document with no shape and no control: nothing to cut, and nothing
-    // this run should invent. It comes back as itself; the parse already
-    // left the link key behind, and the write never puts it back.
+    // this run should invent. It comes back as itself, link and all, because
+    // it is still the one record it was.
     const only = structuredClone(source);
     only.schemaVersion = schemaVersionFor(only);
     children.push(only);
@@ -371,7 +441,10 @@ export function targetsIn(records: readonly ComplicationRecord[]): {
  *
  * Every record the run means to touch is proved recoverable before any of them
  * is written, so one record whose history the server will not serve leaves the
- * whole device alone rather than half done.
+ * whole device alone rather than half done. The per-owner cap is counted the
+ * same way and for the same reason: a device close to `COMPLICATION_MAX_PER_OWNER`
+ * would take some of its children and then be refused the rest, and the panel
+ * has no way of knowing which half it left behind.
  */
 export async function splitOwner(
   hass: HassLike,
@@ -384,6 +457,24 @@ export async function splitOwner(
   if (targets.length === 0) return { writes: [], split: [] };
 
   const device = owner.device_name ?? ownerId;
+
+  // Every cut adds one record per extra part: the parent is rewritten in
+  // place, the rest are new. Counted before the history checks because it
+  // needs no round trip and it is the cheapest way to find out the run cannot
+  // finish.
+  const live = records.filter((r) => !r.deleted).length;
+  const after = live + targets.reduce((n, t) => n + (documentParts(t.config) - 1), 0);
+  if (after > COMPLICATION_MAX_PER_OWNER) {
+    return {
+      writes: [],
+      split: [],
+      problem: refusedLine(
+        device,
+        `it would end up with ${after} complications, past the ${COMPLICATION_MAX_PER_OWNER} one device can hold`,
+      ),
+    };
+  }
+
   for (const target of targets) {
     const reason = await backupReady(hass, ownerId, target.record);
     if (reason !== undefined) {
