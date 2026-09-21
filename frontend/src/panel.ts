@@ -3091,8 +3091,9 @@ export class WristAssistantPanel extends LitElement {
     .banner { padding: 10px 14px; border-radius: 8px; font-size: 13px; background: var(--wa-panel); flex: none; }
     .banner.warn { border-left: 4px solid var(--warning-color, #ffa600); }
     .banner.err { border-left: 4px solid var(--error-color, #db4437); }
-    /* Where a linked save landed. Not a warning: every copy it names is in the
-       store, and a device that has not synced yet is on its way. */
+    /* Where a copy that was not the open document landed. Not a warning: every
+       record it names is in the store, and a device that has not synced yet is
+       on its way. */
     .banner.note { border-left: 4px solid var(--wa-accent); }
     .banner .acts { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 
@@ -5483,9 +5484,9 @@ export class WristAssistantPanel extends LitElement {
     try {
       await this.unsubscribe?.();
       this.unsubscribe = await subscribeChanges(this.hass, ownerId, () => void this.loadRecords());
-      // The other devices first: `loadRecords` opens a complication, and a
-      // linked one needs its copies known before it can say what it is linked
-      // to. A device that answers slowly only delays that reading.
+      // The other devices first: the picker's grid and every Duplicate to
+      // menu are read off those lists, and a seat count taken from a list
+      // that has not landed would offer a seat something already holds.
       await this.loadOtherLists();
       await this.loadRecords();
     } finally {
@@ -8290,8 +8291,8 @@ export class WristAssistantPanel extends LitElement {
     return out;
   }
 
-  /** The rows the picker shows: every complication in the home, the copies of
-   * a linked one collapsed into a single row. */
+  /** The rows the picker shows: every complication in the home, one row per
+   * record, since a complication is one record on one device. */
   private pickerRows(): PickerRow[] {
     return pickerListRows(this.pickerCopies(), this.pickerDevices());
   }
@@ -8302,9 +8303,8 @@ export class WristAssistantPanel extends LitElement {
     return this.owners.find((o) => o.owner_watch_id === ownerId);
   }
 
-  /** The copy of a row this panel already has open, if any. For a linked row
-   * that is not always the copy the row draws: the editor can be sitting on
-   * the watch's while the row shows the phone's. */
+  /** The row's copy when it is the one this panel has open, which is what
+   * makes a card light up and what sends its hide through the draft. */
   private selectedCopyOf(row: PickerRow): PickerCopy<PickerItem> | undefined {
     if (this.selectedId === undefined) return undefined;
     return row.copies.find((c) =>
@@ -8568,18 +8568,6 @@ export class WristAssistantPanel extends LitElement {
     }));
   }
 
-  /**
-   * The device chips above the list.
-   *
-   * The devices used to be a pane down the left and the list showed one of them
-   * at a time, which made a linked complication two rows with two counts and a
-   * household two lists to keep in step. A complication lives on devices; it is
-   * not filed under one. So the list holds everything and these narrow it, and
-   * a home with one device is shown no chips at all.
-   *
-   * No count on a chip: a per-device count is what said a linked complication
-   * was two complications, which is the reading this list exists to end.
-   */
   /** The shapes the chips offer: every shape any device in this home draws, so
    * one list holding a watch and a phone can still be narrowed to either
    * one's. The Library is left out, because it holds every shape there is: a
@@ -8599,15 +8587,11 @@ export class WristAssistantPanel extends LitElement {
    * Open a complication from the picker. This is the click that moves the
    * editor onto another device, and the only one.
    *
-   * A row of a linked complication opens the copy that was never trimmed, which
-   * is the one the row already draws: the phone's, because a watch copy can be
-   * without the Home Screen sizes (an older watch app cannot decode them), and
-   * opening that one would show the design with its tiles missing and then save
-   * them away.
+   * A row is one record on one device, so there is one thing to open and one
+   * device to open it on. Clicking the card of the complication this panel
+   * already has open leaves the editor where it is.
    */
   private async openFromPicker(row: PickerRow) {
-    // A row this panel already has open stays where it is: clicking the open
-    // complication must not walk the editor over to another of its copies.
     const copy = this.selectedCopyOf(row) ?? row.open;
     if (copy.item.kind !== "record") return;
     const record = copy.item.record;
@@ -8675,14 +8659,13 @@ export class WristAssistantPanel extends LitElement {
    * A centred dialog, not the 400 px dropdown this hung off the button for a
    * year. A dropdown that narrow holds a list and nothing else, so the
    * question a household actually asks here, "which of my devices has this",
-   * was answered in one line of small grey text and could not be changed from
-   * the list at all: the author had to open the complication, find "Appears on"
-   * in the inspector, tick a box and save. A card has room for both devices
-   * drawn full size and for an Add to button that writes the copy from here.
+   * was answered in one line of small grey text and nothing could be done
+   * about it from the list at all. A card has room for the device drawn full
+   * size and for a Duplicate to button that writes a copy from here.
    *
-   * One card per complication, whatever the household holds. A complication
-   * linked across a watch and a phone is one card with both devices lit,
-   * because it is one design edited in one place.
+   * One card per complication, whatever the household holds: a complication is
+   * one shape on one device, so two people's watches showing "Kitchen" are two
+   * cards and each is edited on its own.
    */
   private renderPickerDialog() {
     const d = this.draft;
@@ -9155,9 +9138,9 @@ export class WristAssistantPanel extends LitElement {
    * Hide one complication from its device's complication list, or show it
    * again.
    *
-   * Hiding is a decision about one device's own list, so it acts on the copy
-   * the row draws and on no other: a linked complication can be on the watch
-   * face list and off the iPhone's.
+   * Hiding is a decision about one device's own list, so it acts on the record
+   * the row draws and on no other: one shape of a design can be off a device's
+   * list while another shape of it stays on.
    *
    * The open one changes through its draft, so the flag saves with Save and
    * undoes like any other edit: saving it behind the draft's back would move
@@ -12932,7 +12915,7 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /** The words at the left of the shapes row, in the same 92px block the
-   * Appears on band leads with, so the two rows line up. */
+   * rows beside it lead with, so they all line up. */
   private renderShapesLead() {
     return html`<span class="bar-lead"><b>Shapes</b><span>Click one to edit it.</span></span>`;
   }
