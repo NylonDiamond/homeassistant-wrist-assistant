@@ -139,9 +139,12 @@ import {
   type DeviceOwner,
   type SlotHolder,
   copyForOwner,
+  duplicateAs,
+  duplicateTargets,
   freeSlotForFamily,
   joinNames,
   newTargets,
+  slotForDuplicate,
 } from "./copies.js";
 import {
   type NewKind,
@@ -1209,6 +1212,16 @@ export class WristAssistantPanel extends LitElement {
   /** Step 4's answer: the devices ticked, each of which gets a record of its
    * own. None ticked keeps the design in the home's library. */
   @state() private newOwners: ReadonlySet<string> = new Set();
+  /** "Duplicate as": the design being copied and where it sits today, then the
+   * same three questions the New dialog asks about the copy. A complication is
+   * one shape on one device, so this is how a finished look reaches a second
+   * shape or a second device; the copy is its own complication from the moment
+   * it is written. */
+  @state() private dupOpen = false;
+  @state() private dupFrom?: { cfg: CustomComplicationConfig; ownerId: string };
+  @state() private dupKind?: NewKind;
+  @state() private dupFamily?: FamilyKind;
+  @state() private dupOwners: ReadonlySet<string> = new Set();
   /** Every other device's records and taken slots, so the panel knows which
    * names are taken elsewhere and whether a device has a seat free. Refreshed
    * when the device list changes and after every save, not on every change
@@ -1217,6 +1230,9 @@ export class WristAssistantPanel extends LitElement {
   /** Where a write that was not the open document landed, in words. Not an
    * error: a device that has not synced yet is named as waiting. */
   @state() private copyStatus?: string;
+  /** The first record a duplicate just wrote, so the note about it can offer
+   * to open it. Cleared with the note. */
+  @state() private copyOpen?: { ownerId: string; recordId: string };
   /** The Share dialog is open, which mode it is in, and the labels the author
    * has renamed. Labels are keyed by placeholder id and only hold the edited
    * ones, so the defaults follow the document as it is edited underneath. */
@@ -5531,6 +5547,7 @@ export class WristAssistantPanel extends LitElement {
     this.confirmDelete = false;
     // Where the last write landed was about the complication that is going.
     this.copyStatus = undefined;
+    this.copyOpen = undefined;
   }
 
   private confirmDiscard(): boolean {
@@ -8071,6 +8088,7 @@ export class WristAssistantPanel extends LitElement {
         <button class="link" @click=${() => { this.splitNotice = undefined; }}>Dismiss</button></div>` : nothing}
       ${this.helpOpen ? this.renderHelpDialog() : nothing}
       ${this.newOpen ? this.renderNewDialog() : nothing}
+      ${this.dupOpen ? this.renderDuplicateDialog() : nothing}
       ${this.shareOpen ? this.renderShareDialog() : nothing}
       ${this.galleryOpen ? this.renderGalleryDialog() : nothing}
       ${this.importOpen ? this.renderImportDialog() : nothing}
@@ -9169,20 +9187,22 @@ export class WristAssistantPanel extends LitElement {
             ? "A complication is one shape on one kind of device."
             : "Waits for a name.")}
           <div class="kind-cards" role="radiogroup" aria-label="Device">
-            ${kinds.map((k) => this.renderKindCard(k))}
+            ${kinds.map((k) => this.renderKindCard(k, this.newKind === k, (picked) => this.pickKind(picked)))}
           </div>
         </section>
         ${!shapeStep ? nothing : html`<section class="new-step step-shapes" aria-disabled="false">
           ${this.renderStepHead(3, "Pick one shape", "Blue shows where it sits. One shape per complication.")}
           <div class="shape-rows" role="radiogroup" aria-label="Shape">
-            ${groups.map((group) => this.renderShapeGroup(kind!, group))}
+            ${groups.map((group) => this.renderShapeGroup(kind!, group, this.newFamily,
+              (family) => { this.newFamily = family; this.keepTickedOwners(); }))}
           </div>
         </section>`}
         ${people.length === 0 ? nothing : html`<section class="new-step step-people ${wait(ready)}"
           aria-disabled=${ready ? "false" : "true"}>
           ${this.renderStepHead(shapeStep ? 4 : 3, "Choose whose devices get it",
             "Optional. Each tick is a complication of its own on that device, to edit there. Nothing ticked keeps it in the library.")}
-          <div class="people-grid" role="group" aria-label="Devices">${people.map((row) => this.renderPersonBox(row))}</div>
+          <div class="people-grid" role="group" aria-label="Devices">${people.map((row) =>
+            this.renderPersonBox(row, this.newOwners, this.newFamily, (id) => this.toggleNewOwner(id)))}</div>
         </section>`}
       </div>
       <div class="new-foot">
@@ -9203,13 +9223,14 @@ export class WristAssistantPanel extends LitElement {
     </div>`;
   }
 
-  /** One device choice in step 2, drawn as the outline of the thing it is. */
-  private renderKindCard(kind: NewKind) {
-    const on = this.newKind === kind;
+  /** One device choice in step 2, drawn as the outline of the thing it is.
+   * The New dialog and "Duplicate as" ask the same question, so they draw the
+   * same card and each passes its own answer and its own handler. */
+  private renderKindCard(kind: NewKind, on: boolean, pick: (kind: NewKind) => void) {
     const device: DeviceKind = kind === "iphone" ? "iphone" : "watch";
     return html`<button type="button" class="kind-card ${on ? "on" : ""}" role="radio"
       aria-checked=${on ? "true" : "false"} title=${kindNote(kind)}
-      @click=${() => this.pickKind(kind)}>
+      @click=${() => pick(kind)}>
       <span class="shape-arts">${kind === "control"
         ? controlDeviceArt(device, on)
         : deviceShapeArt("rectangular", device, on)}</span>
@@ -9225,7 +9246,12 @@ export class WristAssistantPanel extends LitElement {
    * 2, so the grid answers "where does this sit" without a word: a watch face
    * for a watch, a phone screen for an iPhone.
    */
-  private renderShapeGroup(kind: NewKind, group: ShapeGroup) {
+  private renderShapeGroup(
+    kind: NewKind,
+    group: ShapeGroup,
+    picked: FamilyKind | undefined,
+    pick: (family: FamilyKind) => void,
+  ) {
     const device: DeviceKind = kind === "iphone" ? "iphone" : "watch";
     const where = kind === "iphone" ? "an iPhone" : "a watch";
     return html`<div class="shape-row">
@@ -9235,10 +9261,10 @@ export class WristAssistantPanel extends LitElement {
       </div>
       <div class="shape-cards">
         ${group.families.map((family) => {
-          const on = this.newFamily === family;
+          const on = picked === family;
           return html`<button type="button" class="shape-card ${on ? "on" : ""}" role="radio"
             aria-checked=${on ? "true" : "false"} title=${`${familyTitle(family)} on ${where}`}
-            @click=${() => { this.newFamily = family; this.keepTickedOwners(); }}>
+            @click=${() => pick(family)}>
             <span class="shape-arts">${deviceShapeArt(family, device, on)}</span>
             <span class="shape-card-name">${familyTitle(family)}</span>
             ${on ? pickTick() : html`<span class="pick-tick off" aria-hidden="true"></span>`}
@@ -9262,18 +9288,23 @@ export class WristAssistantPanel extends LitElement {
    * worth answering where it is asked. It stays clickable while it is ticked,
    * so a device that filled up after the dialog opened can still be unticked.
    */
-  private renderPersonBox(row: { person: Person; devices: readonly OwnerSummary[] }) {
+  private renderPersonBox(
+    row: { person: Person; devices: readonly OwnerSummary[] },
+    ticked: ReadonlySet<string>,
+    family: FamilyKind | undefined,
+    toggle: (ownerId: string) => void,
+  ) {
     return html`<div class="person-box">
       <span class="person-name">${row.person.label}</span>
       ${row.devices.map((owner) => {
         const id = owner.owner_watch_id;
-        const on = this.newOwners.has(id);
-        const full = this.freeSlotOn(id, this.newFamily) < 0;
+        const on = ticked.has(id);
+        const full = this.freeSlotOn(id, family) < 0;
         const label = deviceShortName(owner, row.person);
         return html`<button type="button" role="checkbox" class="dev-tick ${on ? "on" : ""}"
           aria-checked=${on ? "true" : "false"} ?disabled=${full && !on}
           title=${full ? `${label} has no free slot for this shape (iPhone presets count too). Delete a complication on it first.` : `Put one on ${label}`}
-          @click=${() => this.toggleNewOwner(id)}>
+          @click=${() => toggle(id)}>
           ${on ? pickTick() : html`<span class="pick-tick off" aria-hidden="true"></span>`}
           <span class="dev-card-ico">${uiIcon(deviceKindOf(owner) === "iphone" ? "phone" : "watch")}</span>
           <span class="dev-card-name">${label}</span>
@@ -9335,7 +9366,7 @@ export class WristAssistantPanel extends LitElement {
     // drawn, so a list that lands late simply redraws it.
     void this.loadOtherLists();
     void this.updateComplete.then(() => {
-      const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.new-dialog");
+      const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.new-dialog:not(.dup-dialog)");
       if (!dialog) return;
       if (!dialog.open) dialog.showModal();
       dialog.querySelector<HTMLInputElement>("input[type=text]")?.focus();
@@ -9343,7 +9374,7 @@ export class WristAssistantPanel extends LitElement {
   }
 
   private closeNewDialog() {
-    const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.new-dialog");
+    const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.new-dialog:not(.dup-dialog)");
     if (dialog?.open) dialog.close();
     else this.newOpen = false;
   }
@@ -9362,6 +9393,320 @@ export class WristAssistantPanel extends LitElement {
     e.preventDefault();
     void this.createNew();
   };
+
+  // ── duplicate as ──────────────────────────────────────────────────────
+  //
+  // A complication is one shape on one kind of device, so a design that should
+  // also be a circle, or should also be on somebody else's watch, is copied
+  // rather than extended. The dialog asks the New dialog's own questions about
+  // the copy and draws them with the New dialog's own cards; the copy itself is
+  // `duplicateAs` in copies.ts, which is where the layers are refitted for the
+  // canvas they land on.
+
+  /**
+   * Open "Duplicate as" over one complication.
+   *
+   * The document is taken as it stands, which for the open one means the draft
+   * rather than the saved record: copying what is on screen is what the button
+   * appears to do. The shape and the device it is on today are the answers the
+   * dialog starts with, so a copy onto a second watch is two clicks and the
+   * shape only has to be touched when it is the thing being changed.
+   */
+  private openDuplicateAs(cfg: CustomComplicationConfig, ownerId: string) {
+    if (!this.hass.user?.is_admin) return;
+    this.dupFrom = { cfg: structuredClone(cfg), ownerId };
+    const family = supportedFamilies(cfg)[0];
+    const owner = this.ownerOf(ownerId);
+    this.dupKind = family === undefined
+      ? "control"
+      : isLibraryOwner(owner) ? (isHomeFamily(family) ? "iphone" : "watch") : deviceKindOf(owner) === "iphone" ? "iphone" : "watch";
+    this.dupFamily = family;
+    this.dupOwners = new Set();
+    this.dupOpen = true;
+    // The other devices' seats, for the rows that say a device is full.
+    void this.loadOtherLists();
+    void this.updateComplete.then(() => {
+      const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.dup-dialog");
+      if (dialog && !dialog.open) dialog.showModal();
+    });
+  }
+
+  private closeDuplicateDialog() {
+    const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.dup-dialog");
+    if (dialog?.open) dialog.close();
+    else this.dupOpen = false;
+  }
+
+  /** The shape the copy is being made as, which a Control Center copy has
+   * none of. */
+  private get dupTargetFamily(): FamilyKind | undefined {
+    return this.dupKind === "control" ? undefined : this.dupFamily;
+  }
+
+  /** Whether the dialog has an answer for every question it asked. */
+  private dupReady(): boolean {
+    if (!this.dupFrom || this.dupKind === undefined) return false;
+    if (this.dupKind !== "control" && this.dupFamily === undefined) return false;
+    return this.dupTicked().length > 0;
+  }
+
+  /**
+   * The places this copy can go: the devices of the picked kind that draw the
+   * picked shape, and the home's Library.
+   *
+   * The device the design is already on is offered only when the copy is of
+   * another shape. The same shape on the same device would be two of one name
+   * in one picker, and the inspector's own Duplicate is where that is asked
+   * for. The Library is always here: a design on the shelf is off every device
+   * without being deleted.
+   */
+  private dupOffered(): DeviceOwner[] {
+    const from = this.dupFrom;
+    const kind = this.dupKind;
+    if (!from || kind === undefined) return [];
+    const family = this.dupTargetFamily;
+    if (kind !== "control" && family === undefined) return [];
+    const source = supportedFamilies(from.cfg)[0];
+    const library = this.libraryOwner();
+    const devices = kindOwners(this.deviceOwners(), kind)
+      .filter((o) => family === undefined || o.families.includes(family))
+      .filter((o) => o.ownerId !== from.ownerId || family !== source);
+    return library && library.ownerId !== from.ownerId ? [...devices, library] : devices;
+  }
+
+  /** The offered places that are ticked, in the order they are drawn. */
+  private dupTicked(): DeviceOwner[] {
+    return this.dupOffered().filter((o) => this.dupOwners.has(o.ownerId));
+  }
+
+  /** The home's shelf as the dialogs read a device. Absent on a home whose
+   * integration is older than the library. */
+  private libraryOwner(): DeviceOwner | undefined {
+    const owner = this.owners.find((o) => isLibraryOwner(o));
+    return owner ? this.deviceOwnerOf(owner) : undefined;
+  }
+
+  /**
+   * The "Duplicate as" dialog: a device kind, one shape, and where the copies
+   * go.
+   *
+   * The New dialog's own steps, minus the name: a copy keeps the name it was
+   * made from, so the pickers read the same word on every shape of one design
+   * and the card's shape glyph is what tells them apart.
+   */
+  private renderDuplicateDialog() {
+    const from = this.dupFrom;
+    if (!from) return nothing;
+    const owners = this.deviceOwners();
+    const kinds = kindChoices(owners);
+    const kind = this.dupKind;
+    const family = this.dupTargetFamily;
+    const groups = kind === undefined ? [] : shapeGroups(kind, owners);
+    const offered = this.dupOffered();
+    const people = this.newPeople(offered);
+    const library = offered.find((o) => o.kind === "library");
+    const name = from.cfg.name.trim() || "Untitled";
+    const ready = this.dupReady();
+    const shapeStep = kind !== undefined && kind !== "control";
+    const what = kind === "control"
+      ? "A Control Center control"
+      : family === undefined ? "" : `${familyTitle(family)} on ${kind === "watch" ? "a watch" : "an iPhone"}`;
+    const ticked = this.dupTicked();
+    const summary = what === ""
+      ? "Pick one shape."
+      : ticked.length === 0
+        ? `${what}. Tick where it goes.`
+        : `${what}, on ${joinNames(ticked.map((o) => o.label))}`;
+    return html`<dialog class="new-dialog dup-dialog" @close=${() => { this.dupOpen = false; }}>
+      <div class="new-head">
+        <h2>Duplicate “${name}”</h2>
+        <span class="new-head-note">The copy is a complication of its own. Editing it never changes this one.</span>
+        <span class="spacer"></span>
+        <button class="icon" title="Cancel" aria-label="Cancel" @click=${() => this.closeDuplicateDialog()}>${uiIcon("close")}</button>
+      </div>
+      <div class="new-body">
+        <section class="new-step step-kind">
+          ${this.renderStepHead(1, "Pick the device", "A complication is one shape on one kind of device.")}
+          <div class="kind-cards" role="radiogroup" aria-label="Device">
+            ${kinds.map((k) => this.renderKindCard(k, kind === k, (picked) => this.pickDupKind(picked)))}
+          </div>
+        </section>
+        ${!shapeStep ? nothing : html`<section class="new-step step-shapes">
+          ${this.renderStepHead(2, "Pick one shape", "The layers come over and are refitted for the shape you pick.")}
+          <div class="shape-rows" role="radiogroup" aria-label="Shape">
+            ${groups.map((group) => this.renderShapeGroup(kind!, group, this.dupFamily,
+              (picked) => this.pickDupFamily(picked)))}
+          </div>
+        </section>`}
+        <section class="new-step step-people">
+          ${this.renderStepHead(shapeStep ? 3 : 2, "Choose where the copy goes",
+            "Each tick is a complication of its own, written now.")}
+          ${people.length === 0 && library === undefined
+            ? html`<div class="hint">Nothing in this home can take this shape yet.</div>`
+            : html`<div class="people-grid" role="group" aria-label="Devices">
+                ${people.map((row) => this.renderPersonBox(row, this.dupOwners, family, (id) => this.toggleDupOwner(id)))}
+                ${library === undefined ? nothing : this.renderLibraryBox(library, family)}
+              </div>`}
+        </section>
+      </div>
+      <div class="new-foot">
+        <span class="new-count">${summary}</span>
+        <button class="small" @click=${() => this.closeDuplicateDialog()}>Cancel</button>
+        <button class="primary" ?disabled=${!ready || this.saving} title=${ready ? "Make the copy" : summary}
+          @click=${() => void this.duplicateNow()}>Duplicate</button>
+      </div>
+    </dialog>`;
+  }
+
+  /** The Library's own tick, beside the people. It is not somebody's device,
+   * so it stands in a box of its own rather than under a name. */
+  private renderLibraryBox(library: DeviceOwner, family: FamilyKind | undefined) {
+    const on = this.dupOwners.has(library.ownerId);
+    const full = this.freeSlotOn(library.ownerId, family) < 0;
+    return html`<div class="person-box">
+      <span class="person-name">This home</span>
+      <button type="button" role="checkbox" class="dev-tick ${on ? "on" : ""}"
+        aria-checked=${on ? "true" : "false"} ?disabled=${full && !on}
+        title=${full ? "The library is full. Delete something in it first." : "Keep a copy in the library, on no device"}
+        @click=${() => this.toggleDupOwner(library.ownerId)}>
+        ${on ? pickTick() : html`<span class="pick-tick off" aria-hidden="true"></span>`}
+        <span class="dev-card-ico">${uiIcon("layers")}</span>
+        <span class="dev-card-name">Library</span>
+        <span class="dev-row-note">on no device</span>
+      </button>
+    </div>`;
+  }
+
+  /** The device kind, answered. The shape goes with it unless the new kind
+   * still offers it, and the ticks go with the shape. */
+  private pickDupKind(kind: NewKind) {
+    this.dupKind = kind;
+    if (kind === "control" || !shapeOffered(kind, this.deviceOwners(), this.dupFamily)) {
+      this.dupFamily = undefined;
+    }
+    this.keepDupTicks();
+  }
+
+  /**
+   * The shape, answered.
+   *
+   * A copy of another shape onto the device the design is already on is the
+   * common case, so that device is ticked as the shape is picked. A copy of
+   * the same shape has nowhere obvious to go, so nothing is ticked and the
+   * question stands.
+   */
+  private pickDupFamily(family: FamilyKind) {
+    this.dupFamily = family;
+    const from = this.dupFrom;
+    const here = from && family !== supportedFamilies(from.cfg)[0]
+      && this.dupOffered().some((o) => o.ownerId === from.ownerId)
+      ? [from.ownerId]
+      : [];
+    this.dupOwners = new Set(here);
+  }
+
+  private toggleDupOwner(ownerId: string) {
+    const next = new Set(this.dupOwners);
+    if (!next.delete(ownerId)) next.add(ownerId);
+    this.dupOwners = next;
+  }
+
+  /** Drop a tick on a place the new shape leaves behind. */
+  private keepDupTicks() {
+    const offered = new Set(this.dupOffered().map((o) => o.ownerId));
+    this.dupOwners = new Set([...this.dupOwners].filter((id) => offered.has(id)));
+  }
+
+  /**
+   * Write one copy per ticked place, now.
+   *
+   * There is no Save to hold these for: each is its own record with its own id
+   * and its own seat from the moment it lands. A place with no seat left for
+   * this shape is named and the rest still go, and the first copy that landed
+   * is offered as something to open, since a copy of another shape is usually
+   * a copy about to be laid out by hand.
+   */
+  private async duplicateNow() {
+    const from = this.dupFrom;
+    if (!from || this.saving || !this.dupReady()) return;
+    const family = this.dupTargetFamily;
+    const targets = this.dupTicked();
+    this.closeDuplicateDialog();
+    const made: string[] = [];
+    const failed: string[] = [];
+    let first: { ownerId: string; recordId: string } | undefined;
+    this.saving = true;
+    this.saveError = undefined;
+    try {
+      // Fresh lists: a seat taken since the dialog opened is the whole reason
+      // to look before writing.
+      await this.loadOtherLists();
+      for (const target of targets) {
+        // On the device the design is already on, the copy takes the original's
+        // own seat when that shape is free there, so a face that later places
+        // both shows one name in one position group.
+        const slot = slotForDuplicate(
+          family,
+          this.slotHoldersOn(target.ownerId),
+          this.blockedSlotsOn(target.ownerId),
+          target.ownerId === from.ownerId ? from.cfg.slotIndex : undefined,
+        );
+        if (slot < 0) {
+          failed.push(`${target.label} has no free seat for this shape (iPhone presets count too)`);
+          continue;
+        }
+        const copy = duplicateAs(from.cfg, family, { id: newId(), slotIndex: slot });
+        try {
+          const out = await saveRecord(this.hass, target.ownerId, new Draft(copy, null).encoded(), null);
+          if (out.ok) {
+            made.push(target.label);
+            first ??= { ownerId: target.ownerId, recordId: copy.id };
+          } else {
+            failed.push(`${target.label}: ${out.message ?? out.error ?? "the save failed"}`);
+          }
+        } catch (err) {
+          failed.push(`${target.label}: ${errText(err)}`);
+        }
+      }
+    } finally {
+      this.saving = false;
+    }
+    await this.reloadAfterRowWrite(...targets.map((t) => t.ownerId));
+    const name = from.cfg.name.trim() || "That complication";
+    const shape = family === undefined ? "a Control Center control" : `${familyTitle(family).toLowerCase()}`;
+    const lines: string[] = [];
+    if (made.length > 0) lines.push(`${name} is on ${joinNames(made)} as ${shape}, to edit there.`);
+    if (failed.length > 0) lines.push(`${joinNames(failed)}.`);
+    this.copyStatus = lines.length > 0 ? lines.join(" ") : undefined;
+    this.copyOpen = first;
+  }
+
+  /** Open the copy a write just made, wherever it landed. */
+  private async openMadeCopy() {
+    const made = this.copyOpen;
+    if (!made) return;
+    this.copyOpen = undefined;
+    this.copyStatus = undefined;
+    if (made.ownerId !== this.ownerId) {
+      await this.selectOwner(made.ownerId);
+      // A dirty draft the owner switch asked about and was told to keep leaves
+      // the editor where it was, so there is nothing to open.
+      if (this.ownerId !== made.ownerId) return;
+    }
+    const record = this.records.find((r) => r.id === made.recordId);
+    if (record) this.selectRecord(record);
+  }
+
+  /** Read back whichever lists a write outside the open document touched. The
+   * edited device's own list is the one the panel watches, so it also waits on
+   * the sync; another device's is simply re-read. */
+  private async reloadAfterRowWrite(...ownerIds: readonly string[]) {
+    if (ownerIds.includes(this.ownerId ?? "")) {
+      this.beginSendWait();
+      await this.loadRecords();
+    }
+    await this.loadOtherLists();
+  }
 
   // ── share and import ──────────────────────────────────────────────────
   //
@@ -11257,7 +11602,8 @@ export class WristAssistantPanel extends LitElement {
     // the author can put it away.
     if (this.copyStatus) {
       out.push(html`<div class="banner note link-note"><span>${this.copyStatus}</span>
-        <button class="link" @click=${() => { this.copyStatus = undefined; }}>Dismiss</button></div>`);
+        ${this.copyOpen ? html`<button class="link" @click=${() => void this.openMadeCopy()}>Open it</button>` : nothing}
+        <button class="link" @click=${() => { this.copyStatus = undefined; this.copyOpen = undefined; }}>Dismiss</button></div>`);
     }
     return out;
   }
@@ -12912,6 +13258,9 @@ export class WristAssistantPanel extends LitElement {
             <button class="ghost" aria-haspopup="dialog" aria-expanded=${this.historyOpen ? "true" : "false"}
               title="Earlier saves of this complication" @click=${() => void this.openHistoryDialog()}>History</button>`}
           <button class="ghost" @click=${() => this.duplicate()}>Duplicate</button>
+          <button class="ghost" aria-haspopup="dialog" aria-expanded=${this.dupOpen ? "true" : "false"}
+            title="Make this design again as another shape, or on another device"
+            @click=${() => this.openDuplicateAs(cfg, this.ownerId ?? "")}>Duplicate as…</button>
           ${this.confirmDelete
             ? html`<button class="ghost danger" @click=${() => void this.deleteCurrent()}>Really delete</button><button class="ghost" @click=${() => { this.confirmDelete = false; }}>Cancel</button>`
             : html`<button class="ghost danger" @click=${() => { this.confirmDelete = true; }}>Delete</button>`}` : nothing}
