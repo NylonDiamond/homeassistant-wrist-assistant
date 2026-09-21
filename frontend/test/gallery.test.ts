@@ -29,7 +29,9 @@ import {
   GALLERY_MAX_SCHEMA,
   galleryBlockers,
   galleryBlockersByStep,
+  galleryDevice,
   galleryErrorMessage,
+  galleryFamily,
   galleryPublicFields,
   galleryStatusLabel,
   galleryUploadRows,
@@ -46,6 +48,15 @@ function livingRoom(): CustomComplicationConfig {
   const parsed = parseImportText(readFileSync(join(__dirname, "fixtures-share", "living-room-backup.json"), "utf8"), 6);
   if (!parsed.ok) throw new Error(parsed.error);
   return parsed.config;
+}
+
+/** The same fixture as the one shape a complication is now. The file predates
+ * the split and still carries three, which is what the older-panel cases
+ * below want; everything else wants one. */
+function oneShape(family: CustomComplicationConfig["supportedFamilies"][number]): CustomComplicationConfig {
+  const cfg = livingRoom();
+  cfg.supportedFamilies = [family];
+  return cfg;
 }
 
 function fixtureConfig(name: string): CustomComplicationConfig {
@@ -67,7 +78,7 @@ const META: GalleryMeta = {
 
 describe("buildGallerySubmission", () => {
   it("sends the Share text, with the same slots the Share dialog uses", () => {
-    const cfg = livingRoom();
+    const cfg = oneShape("rectangular");
     const slots = shareSlots(cfg, domainsOf(cfg)).map((s, i) => ({ ...s, label: `Thing ${i + 1}` }));
     expect(slots.length).toBeGreaterThan(0);
     const body = buildGallerySubmission(cfg, slots, META);
@@ -76,7 +87,7 @@ describe("buildGallerySubmission", () => {
     expect(body.shareText).toBe(exportText(named, "share", slots));
     for (const slot of slots) expect(body.shareText).not.toContain(slot.originalId);
     expect(body.slots).toEqual(slots.map((s) => ({ id: s.placeholderId, label: s.label })));
-    expect(body.families).toEqual(supportedFamilies(cfg));
+    expect(body.families).toEqual(["rectangular"]);
     expect(body.panelVersion).toBe("2.1.0-beta.5");
     expect(body).not.toHaveProperty("previews");
   });
@@ -84,10 +95,26 @@ describe("buildGallerySubmission", () => {
   // The Worker, the gallery page and this file carry the same eight names, so
   // a Home Screen tile is filed under its own shape rather than dropped.
   it("files a Home Screen tile under its own shape", () => {
-    const cfg = livingRoom();
-    cfg.supportedFamilies = ["rectangular", "small", "medium", "large", "xlarge"];
-    const body = buildGallerySubmission(cfg, [], META);
-    expect(body.families).toEqual(["rectangular", "small", "medium", "large", "xlarge"]);
+    expect(buildGallerySubmission(oneShape("medium"), [], META).families).toEqual(["medium"]);
+    expect(buildGallerySubmission(oneShape("xlarge"), [], META).families).toEqual(["xlarge"]);
+    expect(buildGallerySubmission(oneShape("inline"), [], META).families).toEqual(["inline"]);
+  });
+
+  // A complication is one shape, so one entry is all the field ever carries
+  // from this panel. A document an older panel wrote can still be shared, and
+  // is filed under its first shape, which is the one its picture draws.
+  it("sends one shape, and files an older document under its first", () => {
+    const old = livingRoom();
+    expect(supportedFamilies(old).length).toBeGreaterThan(1);
+    expect(galleryFamily(old)).toBe("rectangular");
+    expect(buildGallerySubmission(old, [], META).families).toEqual(["rectangular"]);
+  });
+
+  it("carries the device, and leaves the field off when neither device is meant", () => {
+    const cfg = oneShape("rectangular");
+    expect(buildGallerySubmission(cfg, [], { ...META, device: "iphone" }).device).toBe("iphone");
+    expect(buildGallerySubmission(cfg, [], { ...META, device: "watch" }).device).toBe("watch");
+    expect(buildGallerySubmission(cfg, [], META)).not.toHaveProperty("device");
   });
 
   it("trims the fields and keeps only gallery tags, once each", () => {
@@ -134,6 +161,31 @@ describe("buildGallerySubmission", () => {
     expect(names).toContain("Clock");
     expect(body.shareText).not.toContain("Jane");
     expect(cfg).toEqual(before);
+  });
+});
+
+describe("galleryDevice", () => {
+  it("is the owner's own kind, whatever the shape is", () => {
+    expect(galleryDevice("watch", "rectangular")).toBe("watch");
+    expect(galleryDevice("watch", "inline")).toBe("watch");
+    expect(galleryDevice("iphone", "circular")).toBe("iphone");
+    expect(galleryDevice("iphone", "large")).toBe("iphone");
+    expect(galleryDevice("watch", undefined)).toBe("watch");
+  });
+
+  // The Library is a shelf, not a device, so the shape is the only evidence.
+  it("reads the shape for a design in the library", () => {
+    expect(galleryDevice("library", "corner")).toBe("watch");
+    for (const tile of ["small", "medium", "large", "xlarge"] as const) {
+      expect(galleryDevice("library", tile)).toBe("iphone");
+    }
+  });
+
+  it("says nothing for a library shape both devices draw", () => {
+    for (const shared of ["rectangular", "circular", "inline"] as const) {
+      expect(galleryDevice("library", shared)).toBeUndefined();
+    }
+    expect(galleryDevice("library", undefined)).toBeUndefined();
   });
 });
 
@@ -339,6 +391,15 @@ describe("galleryBlockers", () => {
     expect(out).not.toContain("It has no shape the gallery can show.");
   });
 
+  // Only a control-only document is turned away. One shape and a control is
+  // an ordinary complication that also appears in Control Center.
+  it("lets a document with a shape and a control through", () => {
+    const cfg = oneShape("rectangular");
+    cfg.control = defaultControlSpec(cfg);
+    const domains = domainsOf(cfg);
+    expect(galleryBlockers(cfg, shareSlots(cfg, domains), META, domains)).toEqual([]);
+  });
+
   it("still says the plain sentence for a shapeless document that is not a control", () => {
     const cfg = livingRoom();
     cfg.supportedFamilies = [];
@@ -515,8 +576,8 @@ describe("gallery calls", () => {
     return { fetch, calls };
   }
 
-  const submission = () => ({
-    ...buildGallerySubmission(livingRoom(), [], META),
+  const submission = (meta: GalleryMeta = META) => ({
+    ...buildGallerySubmission(oneShape("rectangular"), [], meta),
     previews: [{ family: "rectangular" as const, png: "iVBORw0KGgo=" }],
   });
 
@@ -532,6 +593,19 @@ describe("gallery calls", () => {
     expect(calls[0]!.init.headers["content-type"]).toBe("application/json");
     expect(calls[0]!.init.credentials).toBe("omit");
     expect(JSON.parse(calls[0]!.init.body!)).toEqual(body);
+  });
+
+  it("sends one shape and one picture, with the device beside them", async () => {
+    const { fetch, calls } = stub(201, { id: "a", status: "pending" });
+    await submitToGallery(fetch, "key", submission({ ...META, device: "watch" }));
+    const sent = JSON.parse(calls[0]!.init.body!) as { families: string[]; previews: unknown[]; device?: string };
+    expect(sent.families).toEqual(["rectangular"]);
+    expect(sent.previews).toHaveLength(1);
+    expect(sent.device).toBe("watch");
+
+    const unknown = stub(201, { id: "b", status: "pending" });
+    await submitToGallery(unknown.fetch, "key", submission());
+    expect(JSON.parse(unknown.calls[0]!.init.body!)).not.toHaveProperty("device");
   });
 
   it("lists and deletes the uploader's own items", async () => {
@@ -575,6 +649,7 @@ describe("gallery calls", () => {
     const err = await failed(submitToGallery(fetch, "key", submission()));
     expect(err.code).toBe("invalid_field");
     expect(galleryErrorMessage(err)).toBe("The gallery did not accept the nickname.");
+    expect(galleryErrorMessage(new GalleryError("invalid_field", 400, "device"))).toBe("The gallery did not accept the device.");
   });
 
   it("reads every contract code, and a page that is not JSON as a server error", async () => {

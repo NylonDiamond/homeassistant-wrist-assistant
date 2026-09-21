@@ -27,7 +27,7 @@ import {
 } from "./model.js";
 import { keyFor, listExpressionKey, listKey } from "./compiler.js";
 import { type EntityState, type ResolveContext, resolveAll } from "./resolver.js";
-import { type DrawableFamily, type IconProvider, renderLayout } from "./renderer.js";
+import { type IconProvider, renderLayout } from "./renderer.js";
 import { type ShareSlot, scrubForShare } from "./transfer.js";
 import { GALLERY_LIMITS, type GalleryPreview } from "./gallery.js";
 
@@ -132,10 +132,15 @@ export function galleryPreviewContext(
 }
 
 /**
- * One PNG per canvas shape the document has, at most the gallery's limit.
- * Each is drawn at its own design box, so a Home Screen tile comes out at the
- * tile's proportions and a watch shape at the watch's. Inline has no canvas,
- * so it has no picture. Browser only.
+ * The document's one picture, drawn at its shape's own design box, so a Home
+ * Screen tile comes out at the tile's proportions and a watch shape at the
+ * watch's.
+ *
+ * A complication is one shape, so there is one picture. A document an older
+ * panel wrote can still carry several shapes and still be shared: it is drawn
+ * in the first, which is the shape the upload is filed under. Inline has no
+ * canvas, so an inline complication has no picture at all and the list comes
+ * back empty. Browser only.
  */
 export async function renderGalleryPreviews(
   cfg: CustomComplicationConfig,
@@ -146,16 +151,10 @@ export async function renderGalleryPreviews(
   const scrubbed = scrubForShare(cfg, slots);
   const ctx = galleryPreviewContext(cfg, scrubbed, slots, source);
   const layouts = resolveAll(withPicturePlaceholders(scrubbed), ctx);
-  const out: GalleryPreview[] = [];
-  for (const family of DRAWABLE_FAMILIES) {
-    const drawable = family as DrawableFamily;
-    const layout = layouts[drawable];
-    if (!layout) continue;
-    const png = await templateToPng(renderLayout(layout, { icons, slot: DESIGN_BOX[drawable], pictureScene: true }));
-    out.push({ family, png });
-    if (out.length === GALLERY_LIMITS.previews) break;
-  }
-  return out;
+  const family = DRAWABLE_FAMILIES.find((f) => layouts[f]);
+  if (family === undefined) return [];
+  const png = await templateToPng(renderLayout(layouts[family]!, { icons, slot: DESIGN_BOX[family], pictureScene: true }));
+  return [{ family, png }];
 }
 
 /**

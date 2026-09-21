@@ -279,7 +279,9 @@ import {
   deleteMyUpload,
   galleryBlockers,
   galleryBlockersByStep,
+  galleryDevice,
   galleryErrorMessage,
+  galleryFamily,
   galleryPublicFields,
   galleryStatusLabel,
   galleryUploadRows,
@@ -9731,13 +9733,23 @@ export class WristAssistantPanel extends LitElement {
   // and the pictures in preview-png.ts; this is markup and the network.
 
   private galleryMeta(): GalleryMeta {
+    const device = this.galleryUploadDevice();
     return {
       title: this.galleryTitle,
       description: this.galleryDescription,
       authorName: this.galleryNickname,
       tags: [...this.galleryTags],
       panelVersion: this.panel?.config?.version ?? "",
+      ...(device === undefined ? {} : { device }),
     };
+  }
+
+  /** The device the upload is filed under: the kind of the owner the document
+   * is stored on. A design on the shelf belongs to no device, so there the
+   * shape decides, and a shape both devices draw leaves the field off. */
+  private galleryUploadDevice() {
+    const cfg = this.shareConfig();
+    return galleryDevice(deviceKindOf(this.selectedOwner), cfg ? galleryFamily(cfg) : undefined);
   }
 
   private openGalleryDialog() {
@@ -9821,7 +9833,7 @@ export class WristAssistantPanel extends LitElement {
     } catch {
       if (run !== this.galleryPreviewRun) return;
       this.galleryPreviews = [];
-      this.galleryPreviewNote = "The preview pictures could not be made. It can still be sent without them.";
+      this.galleryPreviewNote = "The preview picture could not be made. It can still be sent without it.";
     }
   }
 
@@ -9977,7 +9989,7 @@ export class WristAssistantPanel extends LitElement {
     const all = [...blockers.details, ...blockers.send];
     const ready = all.length === 0 && this.galleryPreviews !== undefined && !this.gallerySending;
     const why = all.length > 0 ? all[0]!
-      : this.galleryPreviews === undefined ? "Drawing the preview pictures"
+      : this.galleryPreviews === undefined ? "Drawing the preview picture"
       : "Send it for review";
     const names = ["Details", "Send"];
     const steps = html`<nav class="xf-steps" aria-label="Steps">${names.map((label, i) => {
@@ -10034,8 +10046,8 @@ export class WristAssistantPanel extends LitElement {
     </div>`;
   }
 
-  /** The gallery's card for this upload: its first preview picture, the
-   * title, the name and the tags, as they are now. */
+  /** The gallery's card for this upload: the one preview picture, the title,
+   * the name and the tags, as they are now. */
   private galleryCard() {
     const previews = this.galleryPreviews;
     const nick = this.galleryNickname.trim();
