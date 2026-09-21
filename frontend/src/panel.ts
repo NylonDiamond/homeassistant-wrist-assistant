@@ -1014,6 +1014,8 @@ export class WristAssistantPanel extends LitElement {
   private readonly scrubEnd = () => this.draft?.endGesture();
   /** The header's complication dialog is open. */
   @state() private pickerOpen = false;
+  /** Whether the picker has opened on its own this page load. Once. */
+  private pickerAutoOpened = false;
   /** Which device tab the picker is on: "all", an owner id, or the library.
    * Kept in this browser with the Layers list's other view choices, because a
    * household that works on one watch opens this dialog on that watch every
@@ -5663,6 +5665,13 @@ export class WristAssistantPanel extends LitElement {
         else this.selectNone();
       } else if (!this.draft) {
         this.selectNone();
+        // The first time the panel is up with nothing open, the list of every
+        // complication is what to look at: it opens on its own, once. Closing
+        // it leaves the stage's pick-one card, and never reopens it unasked.
+        if (!this.pickerAutoOpened && !this.pickerOpen) {
+          this.pickerAutoOpened = true;
+          this.openPicker();
+        }
       }
     } catch (err) {
       this.loadError = `Could not load complications: ${errText(err)}`;
