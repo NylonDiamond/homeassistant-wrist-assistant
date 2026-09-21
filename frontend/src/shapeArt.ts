@@ -18,8 +18,7 @@
 import { type TemplateResult, html, nothing, svg } from "lit";
 
 import type { FamilyKind } from "./model.js";
-import { isHomeFamily } from "./layouts.js";
-import { isSharedFamily } from "./linking.js";
+import { isHomeFamily, isSharedFamily } from "./layouts.js";
 import type { DeviceKind } from "./version.js";
 
 /** Tall enough for a phone and wide enough for a watch's bands, with the two

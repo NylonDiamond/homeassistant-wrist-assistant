@@ -438,8 +438,8 @@ export interface EditorHost {
   /** The shape being edited; the Layouts row and the layout tab follow it. */
   activeFamily: FamilyKind;
   setActiveFamily(family: FamilyKind): void;
-  /** Add a shape and seed its layout. Also makes it the active shape. */
-  addFamily(family: FamilyKind): void;
+  /** Give a document that lists Inline but carries no Inline text one. */
+  addInlineText(): void;
   /** The complication's name when this edit session opened, for the rename
    * note. Undefined for a brand-new complication (nothing on the watch yet). */
   savedName?: string;
@@ -8570,7 +8570,7 @@ function inlineEditor(host: EditorHost): TemplateResult {
   const inline = host.config.inline;
   if (!inline) {
     return html`<div class="hint">This complication lists Inline but has no Inline text yet (it was saved by an older integration). The watch shows "No inline layout" until one is added.</div>
-      <button class="small" @click=${() => host.addFamily("inline")}>Add Inline text</button>`;
+      <button class="small" @click=${() => host.addInlineText()}>Add Inline text</button>`;
   }
   const upd = (mutate: (i: NonNullable<CustomComplicationConfig["inline"]>) => void, k?: string) => host.update((c) => { if (c.inline) mutate(c.inline); }, k ? `inline-${k}` : undefined);
   const ctx = describeContext(host);

@@ -38,9 +38,6 @@ export interface PickerCopy<T> {
   /** Its seat on that device, which is the order that device's own list is in. */
   slot: number;
   name: string;
-  /** The link this copy belongs to, upper-cased as `linkIdOf` gives it.
-   * Undefined for a complication that lives on one device, which is most. */
-  linkId?: string;
   item: T;
 }
 
@@ -73,45 +70,28 @@ function byName(a: string, b: string): number {
 }
 
 /**
- * The copies grouped into rows.
+ * The copies as rows, one each.
  *
- * Grouped by `linkId` and never by record id: the copies of a link keep
- * different ids on purpose, so placed faces and widgets go on pointing at the
- * right record. A copy with no link is its own row.
+ * A complication is one record on one device, so nothing is grouped: two
+ * people's watches showing "Kitchen" are two complications and read as two
+ * cards. The list used to join the copies of a link into one row, which is
+ * what one shape per complication did away with.
  *
- * The row draws and opens the phone's copy when the link has one, for the same
- * reason `openCopyOf` does: a watch copy can be without the Home Screen sizes
- * (an older watch app cannot decode them), and opening that one would show a
- * design with its tiles missing and then save them away.
+ * `copies` stays a list because every reader of a row walks it, and because a
+ * card still draws the devices its one copy sits on.
  */
 export function pickerListRows<T>(
   copies: readonly PickerCopy<T>[],
   devices: readonly PickerDevice[],
 ): PickerListRow<T>[] {
-  const kinds = new Map(devices.map((d) => [d.ownerId, d.kind]));
-  const groups = new Map<string, PickerCopy<T>[]>();
-  for (const copy of copies) {
-    const key = copy.linkId !== undefined && copy.linkId !== ""
-      ? `link:${copy.linkId}`
-      : `rec:${copy.ownerId}\u0000${copy.id}`;
-    const hit = groups.get(key);
-    if (hit) hit.push(copy);
-    else groups.set(key, [copy]);
-  }
   const rows: PickerListRow<T>[] = [];
-  for (const [key, group] of groups) {
-    const ordered = [...group].sort((a, b) =>
-      deviceIndex(devices, a.ownerId) - deviceIndex(devices, b.ownerId) || a.slot - b.slot);
-    const first = ordered[0];
-    if (!first) continue;
-    const open = ordered.find((c) => kinds.get(c.ownerId) === "iphone") ?? first;
-    rows.push({ key, name: open.name, copies: ordered, open });
+  for (const copy of copies) {
+    rows.push({ key: `rec:${copy.ownerId}\u0000${copy.id}`, name: copy.name, copies: [copy], open: copy });
   }
   return rows;
 }
 
-/** The rows one device draws. A linked row belongs to every device it lives
- * on, so it answers to either chip. */
+/** The rows one device draws. */
 export function rowsOnDevice<T>(rows: readonly PickerListRow<T>[], ownerId: string): PickerListRow<T>[] {
   return rows.filter((row) => row.copies.some((c) => c.ownerId === ownerId));
 }
@@ -130,10 +110,7 @@ export function isShelvedRow<T>(row: PickerListRow<T>): boolean {
 /**
  * The rows one person has, over the devices that are theirs.
  *
- * What the person chips above the list narrow to. A complication on somebody's
- * watch and somebody's phone is one row and answers to that one person once,
- * which is the reading a per-device chip could never give: a linked row would
- * have answered to two chips and looked like two complications again.
+ * What the person chips above the list narrow to.
  *
  * A design in the library answers to every chip, because it belongs to nobody:
  * filing it under one person would be a guess, and filing it under none would

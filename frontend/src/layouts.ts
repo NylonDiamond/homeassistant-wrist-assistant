@@ -118,6 +118,14 @@ export function isHomeFamily(family: FamilyKind): family is HomeFamily {
   return (HOME_FAMILIES as FamilyKind[]).includes(family);
 }
 
+/** The shapes a watch face and an iPhone Lock Screen both draw, which are the
+ * ones drawn as two device outlines rather than one. */
+export const SHARED_FAMILIES: readonly FamilyKind[] = ["rectangular", "circular", "inline"];
+
+export function isSharedFamily(family: FamilyKind): boolean {
+  return SHARED_FAMILIES.includes(family);
+}
+
 /** The one short line a shape carries beside its name, or undefined for a
  * shape that needs none. The full-page tile is the only one with a condition
  * on it: iOS 27 added the family, and no OS version travels on the wire, so

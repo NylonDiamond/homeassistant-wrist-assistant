@@ -29,7 +29,14 @@ describe("encodeConfig", () => {
 
   it.each(fixtureFiles)("round-trips fixture %s, so the file is in canonical Swift form", (file) => {
     const fx = JSON.parse(readFileSync(join(fixtureDir, file), "utf8")) as { config: Record<string, unknown> };
-    expect(canon(encodeConfig(parseConfig(fx.config)))).toEqual(canon(fx.config));
+    // `linkId` joined the copies of one complication across devices. The panel
+    // neither reads it nor writes it any more, so a fixture that still carries
+    // one comes back without it: the key is what the round trip drops, and
+    // nothing else about the document changes. The fixture keeps the key until
+    // the app repo's own set is rebuilt per shape, since these files are
+    // byte-identical copies of that set.
+    const { linkId: _link, ...want } = fx.config;
+    expect(canon(encodeConfig(parseConfig(fx.config)))).toEqual(canon(want));
     expect(auditUnknownKeys(fx.config)).toEqual([]);
   });
 

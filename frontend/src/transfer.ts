@@ -238,12 +238,9 @@ export function exportText(
   // Hiding is about the author's own watch picker. A backup keeps it, since it
   // is a record of this copy; a share does not.
   if (mode === "share") delete encoded.hidden;
-  // The link goes from both. It names the other records this complication is
-  // joined to on this home's own devices, which is identity rather than
-  // design: in another house it points at nothing, and in a restore it would
-  // claim a link to records that may no longer exist. The text carries the
-  // whole complication, every shape of every device, and the reader ticks
-  // their own devices on the way in.
+  // A record an older panel wrote carries a `linkId`, which named the other
+  // records it was joined to on that home's own devices. Linked copies are
+  // gone and the key means nothing anywhere, least of all in another house.
   delete encoded.linkId;
   // Derived on save. Exporting it would ship a stale answer to a question the
   // reader's own save re-answers correctly.
@@ -331,10 +328,6 @@ export function parseImportText(text: string, maxSchemaVersion: number): ImportP
   // An imported complication starts shown, even from a backup of a hidden one:
   // nobody expects a design they just brought in to be missing from the watch.
   delete config.hidden;
-  // And it starts on one device. A link is between records, and a pasted
-  // document is a record of nothing yet; the reader links it themselves once
-  // it is theirs.
-  delete config.linkId;
 
   const unknown = auditUnknownKeys(object);
   if (unknown.length > 0) {

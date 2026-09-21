@@ -64,9 +64,8 @@ const documents = everyDocument();
 /** The parts of a document that are deliberately not shared: identity, the
  * derived sources, and the schema stamp that follows the slot. */
 function withoutIdentity(cfg: CustomComplicationConfig): Record<string, unknown> {
-  // An import always starts shown and unlinked, so `hidden` and `linkId` never
-  // come back either.
-  const { id: _id, slotIndex: _slot, dataSources: _sources, schemaVersion: _schema, hidden: _hidden, linkId: _link, ...rest } = cfg;
+  // An import always starts shown, so `hidden` never comes back either.
+  const { id: _id, slotIndex: _slot, dataSources: _sources, schemaVersion: _schema, hidden: _hidden, ...rest } = cfg;
   return rest as unknown as Record<string, unknown>;
 }
 
@@ -977,44 +976,43 @@ describe("a merged timeline's entity list", () => {
   });
 });
 
-// The link between the copies of one complication is identity, not design: it
-// names records on this home's devices. So it never travels, and nothing
-// arrives linked.
-describe("the link key on the way out and back", () => {
+// `linkId` joined the copies of one complication on this home's devices. It
+// is gone: a copy is its own complication now. A document an older panel
+// wrote still carries the key, and nothing anywhere reads it.
+describe("the link key an older panel wrote", () => {
   const LINK = "8B1C2D3E-0000-4000-8000-000000000001";
 
-  /** A linked complication with every shape both devices draw. */
+  /** A document with every shape both devices drew, as an older panel left
+   * it. */
   function linked(): CustomComplicationConfig {
     const cfg = legacyConfig("Kitchen", 2, ["rectangular", "circular", "corner", "inline"]);
     addFamily(cfg, "small");
     addFamily(cfg, "medium");
-    cfg.linkId = LINK;
     return cfg;
   }
 
-  it("leaves the link out of a share and out of a backup", () => {
+  it("leaves the key out of a share and out of a backup", () => {
     const cfg = linked();
     for (const mode of ["share", "backup"] as const) {
       const text = exportText(cfg, mode, mode === "share" ? shareSlots(cfg, KNOWN_DOMAINS) : []);
       expect(text).not.toContain("linkId");
-      expect(JSON.parse(text).linkId).toBeUndefined();
     }
   });
 
-  it("carries every shape of every device, once", () => {
+  it("carries every shape of a document an older panel wrote, once", () => {
     const text = exportText(linked(), "backup");
     expect(JSON.parse(text).supportedFamilies)
       .toEqual(["rectangular", "circular", "corner", "inline", "small", "medium"]);
   });
 
-  it("never starts an import linked, whatever the text says", () => {
+  it("drops the key on the way in, whatever the text says", () => {
     const cfg = linked();
     const raw = JSON.parse(exportText(cfg, "backup")) as Record<string, unknown>;
     // Even a hand-edited paste that puts the key back.
     raw.linkId = LINK;
     const parse = parseImportText(JSON.stringify(raw), 9);
     if (!parse.ok) throw new Error(parse.error);
-    expect(parse.config.linkId).toBeUndefined();
+    expect(JSON.stringify(parse.config)).not.toContain("linkId");
     expect(parse.config.supportedFamilies)
       .toEqual(["rectangular", "circular", "corner", "inline", "small", "medium"]);
   });
