@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { type CustomComplicationConfig, type FamilyKind, defaultControlSpec, encodeConfig, literal, newConfig, newElement } from "../src/model.js";
+import { type CustomComplicationConfig, type FamilyKind, defaultControlSpec, encodeConfig, literal, legacyConfig, newConfig, newElement } from "../src/model.js";
 import { addFamily } from "../src/layouts.js";
 import {
   type LinkOwner,
@@ -52,7 +52,7 @@ const LIBRARY = owner({
 
 /** A document with every shape on it, which is what a linked pair edits. */
 function everything(): CustomComplicationConfig {
-  const cfg = newConfig("Kitchen", 0, ["rectangular", "circular", "corner", "inline"]);
+  const cfg = legacyConfig("Kitchen", 0, ["rectangular", "circular", "corner", "inline"]);
   addFamily(cfg, "small");
   addFamily(cfg, "medium");
   cfg.linkId = LINK;
@@ -254,7 +254,7 @@ describe("planLinkedSave", () => {
   });
 
   it("refuses a device that could draw none of these shapes", () => {
-    const cfg = newConfig("Corner only", 0, ["corner"]);
+    const cfg = newConfig("Corner only", 0, "corner");
     cfg.linkId = LINK;
     const plan = planLinkedSave(cfg, targets(), new Map(), { ownerId: "w1", baseRevision: 1 });
     expect(plan.ok).toBe(false);
@@ -263,7 +263,7 @@ describe("planLinkedSave", () => {
   });
 
   it("lets a control-only complication through, shapes or no shapes", () => {
-    const cfg = newConfig("Just a control", 0, ["corner"]);
+    const cfg = newConfig("Just a control", 0, "corner");
     cfg.linkId = LINK;
     cfg.control = defaultControlSpec(cfg);
     const plan = planLinkedSave(cfg, targets(), new Map(), { ownerId: "w1", baseRevision: 1 });
@@ -358,11 +358,11 @@ describe("linkedSaveStatus", () => {
 describe("mergeLinkedContent", () => {
   /** A watch design and a phone design of the same idea, built apart. */
   function pair() {
-    const watch = newConfig("Kitchen", 0, ["rectangular", "circular", "corner"]);
+    const watch = legacyConfig("Kitchen", 0, ["rectangular", "circular", "corner"]);
     const wtext = newElement("text");
     watch.elements = [wtext];
     place(watch, "rectangular", wtext.payload.id);
-    const phone = newConfig("Kitchen tiles", 3, ["rectangular"]);
+    const phone = newConfig("Kitchen tiles", 3, "rectangular");
     addFamily(phone, "medium");
     const ptext = newElement("text");
     phone.elements = [ptext];
@@ -428,7 +428,7 @@ describe("mergeLinkedContent", () => {
 
   it("changes nothing when the other copy has no shape the primary lacks", () => {
     const { watch } = pair();
-    const phone = newConfig("Kitchen", 1, ["rectangular"]);
+    const phone = newConfig("Kitchen", 1, "rectangular");
     expect(mergeLinkedContent(watch, phone).supportedFamilies).toEqual(watch.supportedFamilies);
   });
 });

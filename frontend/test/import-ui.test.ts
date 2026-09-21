@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 import { seriesRequests } from "../src/ha-api.js";
 import { familiesFor, importableFamilies, keepFamilies } from "../src/layouts.js";
-import { type CustomComplicationConfig, type Element, newConfig, newElement } from "../src/model.js";
+import { type CustomComplicationConfig, type Element, legacyConfig, newConfig, newElement } from "../src/model.js";
 import { importProblem, importSummary, importTextFolded, remapEntities, suggestImportName } from "../src/transfer.js";
 import { MIN_IPHONE_VERSION_FOR_HOME_SCREEN } from "../src/version.js";
 
@@ -41,17 +41,17 @@ describe("importSummary", () => {
   };
 
   it("counts one layer in the singular", () => {
-    const cfg = withElements(newConfig("One", 0, ["rectangular"]), 1);
+    const cfg = withElements(newConfig("One", 0, "rectangular"), 1);
     expect(importSummary(cfg)).toBe("1 layer, rectangular");
   });
 
   it("names every shape the document has, in schema order", () => {
-    const cfg = withElements(newConfig("Two", 0, ["circular", "rectangular"]), 4);
+    const cfg = withElements(legacyConfig("Two", 0, ["circular", "rectangular"]), 4);
     expect(importSummary(cfg)).toBe("4 layers, rectangular and circular");
   });
 
   it("joins three shapes with a comma and an and", () => {
-    const cfg = newConfig("Three", 0, ["rectangular", "circular", "corner"]);
+    const cfg = legacyConfig("Three", 0, ["rectangular", "circular", "corner"]);
     expect(importSummary(cfg)).toBe("0 layers, rectangular, circular and corner");
   });
 });
@@ -63,17 +63,17 @@ describe("importableFamilies", () => {
   const phone = familiesFor({ device_kind: "iphone", app_version: MIN_IPHONE_VERSION_FOR_HOME_SCREEN });
 
   it("drops Corner from a watch document taken on a phone", () => {
-    const cfg = newConfig("Weather", 0, ["rectangular", "circular", "corner", "inline"]);
+    const cfg = legacyConfig("Weather", 0, ["rectangular", "circular", "corner", "inline"]);
     expect(importableFamilies(cfg, phone)).toEqual(["rectangular", "circular", "inline"]);
   });
 
   it("drops the Home Screen tiles from a phone document taken on a watch", () => {
-    const cfg = newConfig("Energy", 0, ["rectangular", "small", "medium"]);
+    const cfg = legacyConfig("Energy", 0, ["rectangular", "small", "medium"]);
     expect(importableFamilies(cfg, watch)).toEqual(["rectangular"]);
   });
 
   it("keeps a document every shape of which this device draws", () => {
-    const cfg = newConfig("Plain", 0, ["rectangular", "circular"]);
+    const cfg = legacyConfig("Plain", 0, ["rectangular", "circular"]);
     expect(importableFamilies(cfg, watch)).toEqual(["rectangular", "circular"]);
     expect(importableFamilies(cfg, phone)).toEqual(["rectangular", "circular"]);
   });
@@ -81,12 +81,12 @@ describe("importableFamilies", () => {
   // Dropping every shape would leave no complication at all, so a document
   // with nothing this device draws arrives whole and the editor copes.
   it("keeps the document rather than empty its shapes", () => {
-    const cfg = newConfig("Tiles", 0, ["small", "large"]);
+    const cfg = legacyConfig("Tiles", 0, ["small", "large"]);
     expect(importableFamilies(cfg, watch)).toEqual(["small", "large"]);
   });
 
   it("is what the saved copy is cut down to, layouts and all", () => {
-    const cfg = newConfig("Weather", 0, ["rectangular", "circular", "corner"]);
+    const cfg = legacyConfig("Weather", 0, ["rectangular", "circular", "corner"]);
     const saved = keepFamilies(cfg, importableFamilies(cfg, phone));
     expect(saved.supportedFamilies).toEqual(["rectangular", "circular"]);
     expect(saved.perFamily.corner).toBeUndefined();

@@ -7208,12 +7208,34 @@ export function defaultLayout(): FamilyLayout {
   return { placements: {}, cornerBodyShape: "circle", borderWidth: 2, rules: [] };
 }
 
-/** A fresh document with the given shapes. The default is the three watch
- * canvas shapes, which is what a watch that predates per-shape support needs
- * and what every document had before schema 6; the panel's create dialog
- * passes one shape. Inline starts with a literal since there is no text layer
- * yet. */
-export function newConfig(name: string, slotIndex: number, families: FamilyKind[] = [...WATCH_CANVAS_FAMILIES]): CustomComplicationConfig {
+/**
+ * A fresh document, of one shape.
+ *
+ * A complication is one shape on one kind of device, so this takes one family
+ * and never a list. `null` is the other answer: a document with no shape at
+ * all, which is the Control Center form, and `newControlConfig` is how that is
+ * asked for. Inline starts with a literal since there is no text layer yet.
+ *
+ * See docs/complication_one_shape_per_document.md in the app repo.
+ */
+export function newConfig(name: string, slotIndex: number, family: FamilyKind | null = "rectangular"): CustomComplicationConfig {
+  return buildConfig(name, slotIndex, family === null ? [] : [family]);
+}
+
+/**
+ * A document with several shapes, which is what panels before the one-shape
+ * rule wrote.
+ *
+ * Nothing the panel makes today has more than one shape. This is here so the
+ * tests of the helpers that still read those documents (`dropFamily`,
+ * `keepFamilies`, the transfer text, the encoder) can build one, and so the
+ * migration that splits them has an input to work from.
+ */
+export function legacyConfig(name: string, slotIndex: number, families: FamilyKind[] = [...WATCH_CANVAS_FAMILIES]): CustomComplicationConfig {
+  return buildConfig(name, slotIndex, families);
+}
+
+function buildConfig(name: string, slotIndex: number, families: readonly FamilyKind[]): CustomComplicationConfig {
   const perFamily: Partial<Record<FamilyKind, FamilyLayout>> = {};
   for (const f of DRAWABLE_FAMILIES) if (families.includes(f)) perFamily[f] = defaultLayout();
   const cfg: CustomComplicationConfig = {
@@ -7306,7 +7328,7 @@ export function setControlShown(cfg: CustomComplicationConfig, shown: boolean): 
  * The tile alone makes a control and no shape, which is a complication in
  * Control Center and nowhere else. */
 export function newControlConfig(name: string, slotIndex: number, family?: FamilyKind): CustomComplicationConfig {
-  const cfg = newConfig(name, slotIndex, family === undefined ? [] : [family]);
+  const cfg = newConfig(name, slotIndex, family ?? null);
   setControlShown(cfg, true);
   return cfg;
 }

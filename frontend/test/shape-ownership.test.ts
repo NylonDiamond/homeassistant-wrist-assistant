@@ -16,6 +16,7 @@ import {
   attachTap,
   elementsFor,
   encodeConfig,
+  legacyConfig,
   newConfig,
   newElement,
   normalizeOwnership,
@@ -34,7 +35,7 @@ function drawn(cfg: CustomComplicationConfig, family: "rectangular" | "circular"
 /** A document the way an older panel wrote one: layers with no placement of
  * their own, so every shape draws every one of them. */
 function shared(): CustomComplicationConfig {
-  const cfg = newConfig("Old", 0, ["rectangular", "circular", "corner"]);
+  const cfg = legacyConfig("Old", 0, ["rectangular", "circular", "corner"]);
   const a = newElement("text");
   const b = newElement("icon");
   a.payload.frame = { x: 0.1, y: 0.2, width: 0.3, height: 0.4, rotationDegrees: 0 };
@@ -182,7 +183,7 @@ describe("the draft that opens one", () => {
 
 describe("a shape a document does not have", () => {
   it("gets nothing, and adding it later still gets nothing", () => {
-    const cfg = newConfig("X", 0, ["rectangular"]);
+    const cfg = newConfig("X", 0, "rectangular");
     cfg.elements = [newElement("text")];
     normalizeOwnership(cfg);
     expect(ownedElements(cfg, "rectangular")).toHaveLength(1);

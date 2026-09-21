@@ -16,6 +16,7 @@ import {
   type TapElement,
   type Value,
   documentEntityUses,
+  legacyConfig,
   newConfig,
   newElement,
   newId,
@@ -184,7 +185,7 @@ function documentWithEveryEntitySite(): Leak {
   leakCounter = 0;
   // Only the rectangular shape is supported; the other two layouts are left
   // behind, which is the case `compile()` skips and a share must not.
-  const cfg = newConfig("Everything", 3, ["rectangular", "circular", "corner", "inline"]);
+  const cfg = legacyConfig("Everything", 3, ["rectangular", "circular", "corner", "inline"]);
   cfg.supportedFamilies = ["rectangular"];
   const leak: Leak = { ids: [], names: [], config: cfg };
 
@@ -333,7 +334,7 @@ describe("scrubbing a document that names an entity everywhere", () => {
 
 describe("a gauge's range sources", () => {
   it("are named as their own sites on the gauge", () => {
-    const cfg = newConfig("Range", 0, ["rectangular"]);
+    const cfg = newConfig("Range", 0, "rectangular");
     const gauge = newElement("gauge");
     const p = gauge.payload as { value: Value; minSource?: Value; maxSource?: Value };
     p.value = { kind: { kind: "entityState", entityId: "sensor.car_battery", displayName: "Car battery", domain: "sensor" } };
@@ -351,7 +352,7 @@ describe("a gauge's range sources", () => {
 // ── slots and numbering ───────────────────────────────────────────────────
 
 function documentWithOneEntityTwice(): CustomComplicationConfig {
-  const cfg = newConfig("Twice", 0, ["rectangular"]);
+  const cfg = newConfig("Twice", 0, "rectangular");
   const ref: EntityRef = { entityId: "sensor.energy", displayName: "Energy today", domain: "sensor" };
   const other: EntityRef = { entityId: "light.porch", displayName: "Porch light", domain: "light" };
   const text = newElement("text");
@@ -390,7 +391,7 @@ describe("share slots", () => {
   });
 
   it("ignores a free-text hit whose domain is nowhere in this house", () => {
-    const cfg = newConfig("Free text", 0, ["rectangular"]);
+    const cfg = newConfig("Free text", 0, "rectangular");
     cfg.values = [
       { id: newId(), name: "T", value: { kind: { kind: "jinja", value: "{{ 'made_up.thing' }}" } } },
     ];
@@ -400,7 +401,7 @@ describe("share slots", () => {
 
 describe("free text", () => {
   function templateDocument(template: string, serviceData: string): CustomComplicationConfig {
-    const cfg = newConfig("Templates", 0, ["rectangular"]);
+    const cfg = newConfig("Templates", 0, "rectangular");
     cfg.values = [{ id: newId(), name: "T", value: { kind: { kind: "jinja", value: template } } }];
     cfg.tapAction = {
       type: "callService",
@@ -644,7 +645,7 @@ describe("import refusals", () => {
 
 describe("aggregate filters", () => {
   it("spots a scope named by area, label or floor", () => {
-    const cfg = newConfig("Filtered", 0, ["rectangular"]);
+    const cfg = newConfig("Filtered", 0, "rectangular");
     const text = newElement("text");
     (text.payload as { value: Value }).value = {
       kind: {
@@ -660,7 +661,7 @@ describe("aggregate filters", () => {
   });
 
   it("says nothing about a plain domain scope", () => {
-    const cfg = newConfig("Filtered", 0, ["rectangular"]);
+    const cfg = newConfig("Filtered", 0, "rectangular");
     const text = newElement("text");
     (text.payload as { value: Value }).value = {
       kind: {
@@ -686,7 +687,7 @@ describe("aggregate filters", () => {
 
 describe("a list's source and rows", () => {
   function listDocument(source: ListSource, template: Element[] = []): CustomComplicationConfig {
-    const cfg = newConfig("Lists", 0, ["rectangular"]);
+    const cfg = newConfig("Lists", 0, "rectangular");
     const el = newElement("list") as Extract<Element, { kind: "list" }>;
     el.payload.source = source;
     el.payload.template = template;
@@ -984,7 +985,7 @@ describe("the link key on the way out and back", () => {
 
   /** A linked complication with every shape both devices draw. */
   function linked(): CustomComplicationConfig {
-    const cfg = newConfig("Kitchen", 2, ["rectangular", "circular", "corner", "inline"]);
+    const cfg = legacyConfig("Kitchen", 2, ["rectangular", "circular", "corner", "inline"]);
     addFamily(cfg, "small");
     addFamily(cfg, "medium");
     cfg.linkId = LINK;

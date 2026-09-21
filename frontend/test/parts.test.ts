@@ -47,7 +47,7 @@ function textLayer(cfg: CustomComplicationConfig, value: Value): Extract<CElemen
  * part takes only the values its own layers reach.
  */
 function document() {
-  const cfg = newConfig("Test", 0, ["rectangular"]);
+  const cfg = newConfig("Test", 0, "rectangular");
   const kitchen = shareValue(cfg, entityState("light.kitchen", "Kitchen light"), "Kitchen");
   cfg.values.push(kitchen.named);
   const spare = shareValue(cfg, entityState("light.hall", "Hall light"), "Hall");
@@ -137,7 +137,7 @@ describe("insertPart", () => {
     const part = remapEntities(savedPart(), new Map([
       ["light.shared_1", { entityId: "light.office", displayName: "Office light", domain: "light" }],
     ]));
-    const target = newConfig("Target", 0, ["rectangular"]);
+    const target = newConfig("Target", 0, "rectangular");
     const landed = insertPart(target, part, "rectangular");
 
     expect(landed).toHaveLength(1);
@@ -149,7 +149,7 @@ describe("insertPart", () => {
 
   it("gives the copies fresh ids, so the same part can be added twice", () => {
     const part = savedPart();
-    const target = newConfig("Target", 0, ["rectangular"]);
+    const target = newConfig("Target", 0, "rectangular");
     const first = insertPart(target, structuredClone(part), "rectangular");
     const second = insertPart(target, structuredClone(part), "rectangular");
 
@@ -165,14 +165,14 @@ describe("insertPart", () => {
   });
 
   it("leaves a placeholder in place when nothing was picked for it", () => {
-    const target = newConfig("Target", 0, ["rectangular"]);
+    const target = newConfig("Target", 0, "rectangular");
     insertPart(target, savedPart(), "rectangular");
     expect(readsEntity(target, target.elements[0]!)).toBe("light.shared_1");
   });
 
   it("refits onto another shape", () => {
     const part = savedPart();
-    const target = newConfig("Target", 0, ["circular"]);
+    const target = newConfig("Target", 0, "circular");
     const landed = insertPart(target, part, "circular");
     expect(target.perFamily.circular!.placements[landed[0]!]).toBeDefined();
     expect(target.perFamily.rectangular?.placements[landed[0]!]).toBeUndefined();

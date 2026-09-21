@@ -43,6 +43,23 @@ export function draftStatus(i: DraftStatusInput): DraftStatus {
   return { tone: "ok", text: `Saved, revision ${i.revision}` };
 }
 
+/**
+ * Why this document cannot be saved, or undefined when it can.
+ *
+ * A complication is one shape on one kind of device, so a document with two
+ * or more shapes is one an older panel wrote. Those still open, and every app
+ * still draws them, but saving one back would write the old form again and
+ * undo whatever the split did. So the editor reads it and refuses the write,
+ * in the same words wherever the save was pressed.
+ *
+ * See docs/complication_one_shape_per_document.md in the app repo.
+ */
+export function saveRefusal(cfg: CustomComplicationConfig): string | undefined {
+  const shapes = cfg.supportedFamilies.length;
+  if (shapes < 2) return undefined;
+  return `This complication has ${shapes} shapes, and a complication is one shape now. Split it into one complication per shape to edit it.`;
+}
+
 /** One undo step: the document, and the values typed in to test it. */
 interface Step {
   config: CustomComplicationConfig;

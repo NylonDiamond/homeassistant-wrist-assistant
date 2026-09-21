@@ -25,6 +25,7 @@ import {
   encodeConfig,
   literal,
   controlOnly,
+  legacyConfig,
   newConfig,
   newControlConfig,
   newElement,
@@ -360,7 +361,7 @@ describe("adding and removing the control", () => {
   });
 
   it("leaves every shape and layer where it was, so the control is an extra", () => {
-    const cfg = newConfig("Kitchen lamp", 0, ["circular", "rectangular"]);
+    const cfg = legacyConfig("Kitchen lamp", 0, ["circular", "rectangular"]);
     cfg.elements.push(newElement("text"));
     const before = structuredClone(cfg);
     setControlShown(cfg, true);
@@ -375,7 +376,7 @@ describe("adding and removing the control", () => {
     // the x is disabled and says to add a shape first.
     expect(canRemoveControl(newControlConfig("Lamp", 0))).toBe(false);
     // No control, nothing to remove. The bar draws the adder instead.
-    expect(canRemoveControl(newConfig("Lamp", 0, ["circular"]))).toBe(false);
+    expect(canRemoveControl(newConfig("Lamp", 0, "circular"))).toBe(false);
   });
 
   it("keeps the x usable once a shape is added back to a control-only document", () => {
@@ -830,7 +831,7 @@ describe("the New dialog's Control Center tile", () => {
   });
 
   it("is otherwise the same document the plain path makes", () => {
-    const plain = newConfig("Kitchen lamp", 4, ["circular"]);
+    const plain = newConfig("Kitchen lamp", 4, "circular");
     const withControl = newControlConfig("Kitchen lamp", 4, "circular");
     const { control: _control, id: _a, ...rest } = withControl;
     const { id: _b, ...plainRest } = plain;
@@ -854,11 +855,11 @@ describe("the empty shape set", () => {
     expect(controlOnly(newControlConfig("Lamp", 0))).toBe(true);
     // A control beside a shape is an extra, not a mode.
     expect(controlOnly(newControlConfig("Lamp", 0, "circular"))).toBe(false);
-    expect(controlOnly(newConfig("Lamp", 0, []))).toBe(false);
+    expect(controlOnly(newConfig("Lamp", 0, null))).toBe(false);
   });
 
   it("lets the last shape go when there is a control, and not otherwise", () => {
-    const plain = newConfig("Lamp", 0, ["circular"]);
+    const plain = newConfig("Lamp", 0, "circular");
     expect(canRemoveFamily(plain, "circular")).toBe(false);
     const withControl = newControlConfig("Lamp", 0, "circular");
     expect(canRemoveFamily(withControl, "circular")).toBe(true);

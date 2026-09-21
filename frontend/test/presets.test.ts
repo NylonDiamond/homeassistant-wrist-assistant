@@ -14,6 +14,7 @@ import {
   chartHistoryEntity,
   chartHistoryRequests,
   encodeConfig,
+  legacyConfig,
   newConfig,
   parseConfig,
 } from "../src/model.js";
@@ -46,7 +47,7 @@ import type { HassEntityState } from "../src/ha-api.js";
 const KITCHEN = { entityId: "light.kitchen", displayName: "Kitchen light", domain: "light" };
 
 function config(): CustomComplicationConfig {
-  return newConfig("Test", 0);
+  return legacyConfig("Test", 0);
 }
 
 function layer(cfg: CustomComplicationConfig, id: string): CElement {

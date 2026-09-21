@@ -35,6 +35,7 @@ import {
   layerDrawsOnPage,
   literal,
   addPageTurnTap,
+  legacyConfig,
   newConfig,
   newElement,
   nextPageAfter,
@@ -68,7 +69,7 @@ import { exportText, parseImportText } from "../src/transfer.js";
  * page 2. `pages` is set only when `spec` is given, so the same builder makes
  * both halves of the `usesPages` rule. */
 function pagedConfig(spec?: PagesSpec): CustomComplicationConfig {
-  const cfg = newConfig("Pages", 0, ["rectangular", "inline"]);
+  const cfg = legacyConfig("Pages", 0, ["rectangular", "inline"]);
   cfg.inline = { value: literal("Inline") };
   const text = (words: string, page?: number): Element => {
     const el = newElement("text") as Extract<Element, { kind: "text" }>;
@@ -183,7 +184,7 @@ describe("a layer's page on the wire", () => {
   });
 
   it("is not read on a row layer inside a list", () => {
-    const cfg = newConfig("List", 0, ["rectangular"]);
+    const cfg = newConfig("List", 0, "rectangular");
     const list = newElement("list");
     const row = newElement("text");
     (list.payload as { template: Element[] }).template = [row];
@@ -372,7 +373,7 @@ describe("the schema a paged document carries", () => {
   });
 
   it("is unchanged for a document with no pages", () => {
-    expect(schemaVersionFor(newConfig("Plain", 0))).toBe(4);
+    expect(schemaVersionFor(legacyConfig("Plain", 0))).toBe(4);
   });
 });
 
@@ -395,7 +396,7 @@ describe("resolving one page", () => {
   });
 
   it("leaves a document with no pages alone whatever the page says", () => {
-    const plain = newConfig("Plain", 0, ["rectangular"]);
+    const plain = newConfig("Plain", 0, "rectangular");
     plain.elements = [newElement("text"), newElement("text")];
     expect(resolveAll(plain, emptyContext(3)).rectangular!.elements).toHaveLength(2);
   });
@@ -414,7 +415,7 @@ describe("resolving one page", () => {
 // promises a number the wrist cannot draw.
 describe("a text that reads a chart on another page", () => {
   function splitConfig(): CustomComplicationConfig {
-    const cfg = newConfig("Split", 0, ["rectangular"]);
+    const cfg = newConfig("Split", 0, "rectangular");
     const chart = newElement("chart") as Extract<Element, { kind: "chart" }>;
     // A new chart asks the recorder; this one draws the sensor's own numbers.
     chart.payload.historyMinutes = 0;
@@ -739,7 +740,7 @@ describe("the page a layer gets when it arrives", () => {
   });
 
   it("strips the page off a newcomer in a document without pages", () => {
-    const cfg = newConfig("Plain", 0, ["rectangular"]);
+    const cfg = newConfig("Plain", 0, "rectangular");
     const arrived = newElement("text");
     arrived.payload.page = 2;
     cfg.elements.push(arrived);
@@ -760,7 +761,7 @@ describe("the layers one page lists", () => {
    * every page when the entry is undefined. The ids come back in the order
    * they were made, so a row can be named by its place in that list. */
   function built(pages: (number | undefined)[]): { cfg: CustomComplicationConfig; ids: string[] } {
-    const cfg = newConfig("Pages", 0, ["rectangular"]);
+    const cfg = newConfig("Pages", 0, "rectangular");
     cfg.elements = pages.map((page) => {
       const el = newElement("text");
       if (page !== undefined) el.payload.page = page;
@@ -835,7 +836,7 @@ describe("adding and removing pages from the Layers card", () => {
   });
 
   it("starts pages by pinning what is there to page 1 and opening page 2", () => {
-    const cfg = newConfig("Plain", 0, ["rectangular"]);
+    const cfg = newConfig("Plain", 0, "rectangular");
     cfg.elements = [newElement("text"), newElement("icon")];
     expect(startPages(cfg)).toBe(2);
     expect(cfg.pages).toEqual({ count: 2, mode: "tap", dwell: [] });

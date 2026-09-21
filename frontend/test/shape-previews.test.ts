@@ -132,7 +132,7 @@ describe("the warning badge", () => {
 describe("the selected layer on another shape", () => {
   /** Two layers on Rectangular, then a Small shape seeded from it. */
   function pair(): CustomComplicationConfig {
-    const cfg = newConfig("X", 0, ["rectangular"]);
+    const cfg = newConfig("X", 0, "rectangular");
     cfg.elements = [newElement("text"), newElement("icon")];
     normalizeOwnership(cfg, "rectangular");
     addFamily(cfg, "small");

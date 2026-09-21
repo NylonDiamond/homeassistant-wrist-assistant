@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   type CustomComplicationConfig,
   type Value,
+  legacyConfig,
   newConfig,
   newElement,
   newId,
@@ -21,7 +22,7 @@ function reads(id: string): Value {
 
 /** A rectangular document: one text layer on a sensor, one control on a light. */
 function document(): CustomComplicationConfig {
-  const cfg = newConfig("Chart", 0, ["rectangular"]);
+  const cfg = newConfig("Chart", 0, "rectangular");
   const text = newElement("text");
   if (text.kind === "text") text.payload.value = reads("sensor.voltage");
   cfg.elements.push(text);
@@ -69,7 +70,7 @@ describe("what one view reads", () => {
   });
 
   it("leaves out a layer the shape hides, and lists it for one that draws it", () => {
-    const cfg = newConfig("Two", 0, ["rectangular", "circular"]);
+    const cfg = legacyConfig("Two", 0, ["rectangular", "circular"]);
     const text = newElement("text");
     if (text.kind === "text") text.payload.value = reads("sensor.a");
     cfg.elements.push(text);

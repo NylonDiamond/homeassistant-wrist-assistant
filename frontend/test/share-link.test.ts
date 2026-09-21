@@ -3,7 +3,7 @@
 // one browser opens in another.
 
 import { describe, expect, it } from "vitest";
-import { newConfig, newElement } from "../src/model.js";
+import { legacyConfig, newConfig, newElement } from "../src/model.js";
 import {
   base64UrlToBytes,
   bytesToBase64Url,
@@ -19,7 +19,7 @@ import {
 } from "../src/transfer.js";
 
 function sampleText(): string {
-  const cfg = newConfig("Energy today", 0, ["rectangular", "circular"]);
+  const cfg = legacyConfig("Energy today", 0, ["rectangular", "circular"]);
   for (let i = 0; i < 4; i += 1) cfg.elements.push(newElement("text"));
   return exportText(cfg, "backup");
 }
@@ -121,7 +121,7 @@ describe("importFacts", () => {
     ({ entityId, domain: "light", label: entityId, where: [], required });
 
   it("counts layers, shapes, slots to pick and ids that are only missing", () => {
-    const cfg = newConfig("Two", 0, ["circular", "rectangular"]);
+    const cfg = legacyConfig("Two", 0, ["circular", "rectangular"]);
     cfg.elements.push(newElement("text"), newElement("icon"));
     const facts = importFacts(cfg, [row("light.shared_1", true), row("light.shared_2", true), row("light.porch", false)]);
     expect(facts).toEqual({ layers: 2, families: ["Rectangular", "Circular"], slots: 2, missing: 1 });

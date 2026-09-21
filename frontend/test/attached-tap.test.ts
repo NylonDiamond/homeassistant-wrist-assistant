@@ -23,6 +23,7 @@ import {
   elementEntity,
   encodeConfig,
   isAttachedTap,
+  legacyConfig,
   newConfig,
   newElement,
   normalizeOwnership,
@@ -41,7 +42,7 @@ import { resolveAll } from "../src/resolver.js";
 
 /** A config with one icon layer bound to `entityId`, and its id. */
 function withIcon(entityId = "light.kitchen"): { cfg: CustomComplicationConfig; icon: CElement } {
-  const cfg = newConfig("Test", 0);
+  const cfg = legacyConfig("Test", 0);
   const icon = newElement("icon");
   if (icon.kind === "icon" && entityId !== "") {
     icon.payload.symbol = { kind: { kind: "entityState", entityId, displayName: "Kitchen", domain: entityId.split(".")[0]! } };
@@ -171,7 +172,7 @@ describe("syncAttachedTaps", () => {
   });
 
   it("frees a tap that points at another tap, or at itself", () => {
-    const cfg = newConfig("Test", 0);
+    const cfg = legacyConfig("Test", 0);
     const a = newElement("tap");
     const b = newElement("tap");
     (b.payload as TapElement).attachedTo = a.payload.id;
@@ -194,7 +195,7 @@ describe("syncAttachedTaps", () => {
   });
 
   it("leaves free-standing taps exactly where they are", () => {
-    const cfg = newConfig("Test", 0);
+    const cfg = legacyConfig("Test", 0);
     const free = newElement("tap");
     const text = newElement("text");
     cfg.elements.push(free, text);
@@ -417,7 +418,7 @@ describe("attachedTo on the wire", () => {
 
     // A free-standing tap never mentions the key, so an old watch build sees a
     // byte-identical document.
-    const plain = newConfig("Y", 1);
+    const plain = legacyConfig("Y", 1);
     plain.elements = [newElement("tap")];
     expect(JSON.stringify(encodeConfig(plain))).not.toContain("attachedTo");
   });
@@ -495,14 +496,14 @@ describe("selectableLayerId", () => {
   });
 
   it("keeps a free-standing tap as itself", () => {
-    const cfg = newConfig("Test", 0);
+    const cfg = legacyConfig("Test", 0);
     const tap = newElement("tap");
     cfg.elements.push(tap);
     expect(selectableLayerId(cfg, tap.payload.id)).toBe(tap.payload.id);
   });
 
   it("answers undefined for an id the document does not have", () => {
-    expect(selectableLayerId(newConfig("Test", 0), "gone")).toBeUndefined();
+    expect(selectableLayerId(legacyConfig("Test", 0), "gone")).toBeUndefined();
   });
 });
 
@@ -578,7 +579,7 @@ describe("tap review mode", () => {
   });
 
   it("still draws a free-standing tap in both modes", () => {
-    const cfg = newConfig("Test", 0);
+    const cfg = legacyConfig("Test", 0);
     const tap = newElement("tap");
     cfg.elements.push(tap);
     expect(draw(cfg)).toContain(tap.payload.id);
@@ -586,7 +587,7 @@ describe("tap review mode", () => {
   });
 
   it("shows taps even when the caller did not ask for tap areas", () => {
-    const cfg = newConfig("Test", 0);
+    const cfg = legacyConfig("Test", 0);
     const tap = newElement("tap");
     cfg.elements.push(tap);
     expect(draw(cfg, { tapAreas: false })).not.toContain(tap.payload.id);
@@ -782,7 +783,7 @@ describe("refresh complications", () => {
 
   it("reads all three shapes off the wire", () => {
     const read = (action: unknown): TapAction => {
-      const cfg = newConfig("X", 0);
+      const cfg = legacyConfig("X", 0);
       const enc = encodeConfig(cfg) as Record<string, unknown>;
       enc.tapAction = action;
       return parseConfig(enc).tapAction;
@@ -808,7 +809,7 @@ describe("refresh complications", () => {
   });
 
   it("writes neither key unless it says something", () => {
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     cfg.tapAction = { type: "refreshAll", targets: ["A1", "B2"] };
     const enc = encodeConfig(cfg) as Record<string, unknown>;
     expect(auditUnknownKeys(enc)).toEqual([]);
@@ -827,7 +828,7 @@ describe("refresh complications", () => {
   });
 
   it("round-trips on the wire, on the document and on a layer", () => {
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     cfg.tapAction = { type: "refreshAll" };
     const el = newElement("tap");
     if (el.kind === "tap") el.payload.action = { type: "refreshAll" };
@@ -844,7 +845,7 @@ describe("refresh complications", () => {
   });
 
   it("leaves a type neither side knows reading as nothing", () => {
-    const cfg = newConfig("X", 0);
+    const cfg = legacyConfig("X", 0);
     const enc = encodeConfig(cfg) as Record<string, unknown>;
     enc.tapAction = { type: "refreshEverythingEverywhere" };
     expect(parseConfig(enc).tapAction).toEqual({ type: "none" });
@@ -853,7 +854,7 @@ describe("refresh complications", () => {
 
 describe("timestamp chip", () => {
   function withChip(): { cfg: CustomComplicationConfig; id: string } {
-    const cfg = newConfig("Test", 0);
+    const cfg = legacyConfig("Test", 0);
     const img = newElement("image");
     if (img.kind === "image") {
       img.payload.entity = { entityId: "camera.door", displayName: "Door", domain: "camera" };

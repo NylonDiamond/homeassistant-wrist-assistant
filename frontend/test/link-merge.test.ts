@@ -9,6 +9,7 @@ import {
   type FamilyKind,
   encodeConfig,
   literal,
+  legacyConfig,
   newConfig,
   newElement,
 } from "../src/model.js";
@@ -45,7 +46,7 @@ function owner(id: string, kind: "watch" | "iphone", version = "2.8.0"): OwnerSu
 
 /** A document with the given shapes, and one named text layer on each. */
 function doc(name: string, families: FamilyKind[], text = "watch"): CustomComplicationConfig {
-  const cfg = newConfig(name, 0, families);
+  const cfg = legacyConfig(name, 0, families);
   for (const family of families) {
     if (family === "inline") continue;
     const el = newElement("text");

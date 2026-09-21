@@ -173,7 +173,7 @@ import { type LinkMergeNotice, autoLinkMerge } from "./linkMerge.js";
 import { makeIconProvider } from "./icons.js";
 import { makeImageSizeProvider } from "./image-sizes.js";
 import { SymbolBrowser } from "./symbols.js";
-import { Draft, draftStatus } from "./draft.js";
+import { Draft, draftStatus, saveRefusal } from "./draft.js";
 import { ScrollFades } from "./scroll-fade.js";
 import { statesSummary } from "./states.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
@@ -6723,7 +6723,8 @@ export class WristAssistantPanel extends LitElement {
       if (this.ownerId !== owners[0]) return;
     }
     const slot = this.freeSlot();
-    const config = newConfig(name, slot, families);
+    const config = newConfig(name, slot, families[0] ?? null);
+    for (const family of families.slice(1)) addFamily(config, family);
     // A complication on more than one device is linked from the start, and its
     // own id is the link: nothing else is guaranteed unique and already made.
     if (owners.length > 1) config.linkId = config.id;
@@ -6765,6 +6766,13 @@ export class WristAssistantPanel extends LitElement {
       // Slots are auto-assigned and there is no picker; this only trips when
       // the draft was created with every slot taken.
       this.saveError = "The watch is full. Delete a complication first.";
+      return;
+    }
+    // A document an older panel wrote, with several shapes in it. It opens and
+    // it draws; writing it back would put the old form in the store again.
+    const refusal = saveRefusal(this.draft.config);
+    if (refusal !== undefined) {
+      this.saveError = refusal;
       return;
     }
     this.saving = true;

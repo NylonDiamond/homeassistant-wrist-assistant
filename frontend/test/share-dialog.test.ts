@@ -98,7 +98,7 @@ describe("entityLayerIds", () => {
 
 describe("spotlight", () => {
   function twoLayers() {
-    const cfg = newConfig("Test", 0, ["rectangular"]);
+    const cfg = newConfig("Test", 0, "rectangular");
     const left = newElement("text");
     left.payload.frame = { x: 0, y: 0.5, width: 0.3, height: 0.3, rotationDegrees: 0 };
     const right = newElement("shape");
