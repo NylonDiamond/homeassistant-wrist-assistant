@@ -222,7 +222,7 @@ describe("deviceCropArt", () => {
   /** Where each shape's slot sits on its device, so a window can be asked
    * whether the thing it is a window onto is in it. */
   const SLOTS: [FamilyKind, "watch" | "iphone", { x: number; y: number; width: number; height: number }][] = [
-    ["rectangular", "watch", { x: 14, y: 48, width: 58, height: 19 }],
+    ["rectangular", "watch", { x: 14, y: 60, width: 58, height: 21 }],
     ["circular", "watch", { x: 14, y: 68, width: 14, height: 14 }],
     ["corner", "watch", { x: 14, y: 17, width: 13, height: 13 }],
     ["inline", "watch", { x: 28, y: 15, width: 30, height: 3 }],
@@ -297,10 +297,18 @@ describe("deviceCropArt", () => {
     expect(viewBox(crop("small", "watch"))).toEqual({ x: 0, y: 0, width: 86, height: 96 });
   });
 
+  // The bottom of the face holds one thing: a rectangular card's rectangle
+  // sits where a circular card's row of circles would, so neither draws the
+  // other's slot under or over its own.
   it("lights the shape's own slot and leaves its neighbours off", () => {
     const art = crop("rectangular", "watch");
-    expect(art).toContain(`x="14" y="48" width="58" height="19" rx="5" fill=var(--wa-accent)`);
-    expect(art).toContain(`cx="21" cy="75" r="7" fill=var(--wa-art-off)`);
+    expect(art).toContain(`x="14" y="60" width="58" height="21" rx="5" fill=var(--wa-accent)`);
+    expect(art).not.toContain(`cy="75"`);
+    const circ = crop("circular", "watch");
+    expect(circ).toContain(`cx="21" cy="75" r="7" fill=var(--wa-accent)`);
+    expect(circ).toContain(`cx="43" cy="75" r="7" fill=var(--wa-art-off)`);
+    expect(circ).toContain(`cx="65" cy="75" r="7" fill=var(--wa-art-off)`);
+    expect(circ).not.toContain(`y="60" width="58"`);
   });
 
   it("hides the drawing from a screen reader, the card's text saying it instead", () => {
@@ -328,17 +336,26 @@ describe("deviceCropArt", () => {
     it("sets the picture into the slot in place of the lit fill", () => {
       const art = crop("rectangular", "watch", { rectangular: picture("w") });
       expect(art).toContain("data-tag=w");
-      expect(art).not.toContain(`x="14" y="48" width="58" height="19"`);
+      expect(art).not.toContain(`x="14" y="60" width="58" height="21"`);
     });
 
     it("scales the picture to fit the slot and centres it", () => {
       const art = crop("rectangular", "watch", { rectangular: picture("w") });
-      // The slot is 19 tall for a 65.5 tall picture, so 19/65.5, which is
-      // the tighter side; the 181 wide picture becomes 52.5 wide, sat in the
-      // middle of the 58 wide slot.
-      const scale = 19 / 65.5;
-      const x = 14 + (58 - 181 * scale) / 2;
-      expect(art).toContain(`translate(${x} 48) scale(${scale})`);
+      // The full 58 wide slot for a 181 wide picture, so 58/181; 65.5 tall
+      // becomes 20.99, sat in the middle of the 21 tall slot at the bottom.
+      const scale = 58 / 181;
+      const y = 60 + (21 - 65.5 * scale) / 2;
+      expect(art).toContain(`translate(14 ${y}) scale(${scale})`);
+    });
+
+    // The renderer's circular picture is a square with the circle painted in
+    // it; the slot masks it round so the square's corners never show.
+    it("masks a circular picture round", () => {
+      const round = { art: svg`<svg class="complication" data-tag=c></svg>`, width: 100, height: 100 };
+      const art = crop("circular", "watch", { circular: round });
+      expect(art).toContain("data-tag=c");
+      expect(art).toContain("clip-path=url(#pk-clip-");
+      expect(art).toMatch(/<clipPath id=pk-clip-\w+><circle cx=21 cy=75 r=7(\.0+\d)? \/><\/clipPath>/);
     });
 
     it("sets the inline line into the band over the clock through a foreignObject", () => {

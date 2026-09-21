@@ -272,9 +272,19 @@ function placed(
   const x = slot.x + (slot.width - width) / 2;
   const y = mode === "fit" ? slot.y + (slot.height - height) / 2 : slot.y;
   const inner = svg`<g class="pk-live" transform=${`translate(${x} ${y}) scale(${scale})`}>${live.art}</g>`;
-  const ringed = ring === "circle"
-    ? svg`<circle cx=${x + width / 2} cy=${y + height / 2} r=${Math.min(width, height) / 2} fill="none" stroke=${RING} stroke-width="0.75" />`
-    : svg`<rect x=${x} y=${y} width=${width} height=${mode === "fit" ? height : slot.height} rx=${ring.rx} fill="none" stroke=${RING} stroke-width="0.75" />`;
+  // A round slot masks its picture round. The renderer's circular picture is
+  // a square with the circle painted in it, and the corners of that square,
+  // black on a black face, still showed past the ring when the card sat on
+  // a lighter well.
+  if (ring === "circle") {
+    const cx = x + width / 2;
+    const cy = y + height / 2;
+    const r = Math.min(width, height) / 2;
+    return svg`<clipPath id=${clipId}><circle cx=${cx} cy=${cy} r=${r} /></clipPath>
+      <g clip-path=${`url(#${clipId})`}>${inner}</g>
+      <circle cx=${cx} cy=${cy} r=${r} fill="none" stroke=${RING} stroke-width="0.75" />`;
+  }
+  const ringed = svg`<rect x=${x} y=${y} width=${width} height=${mode === "fit" ? height : slot.height} rx=${ring.rx} fill="none" stroke=${RING} stroke-width="0.75" />`;
   if (mode === "fit") return svg`${inner}${ringed}`;
   return svg`<clipPath id=${clipId}><rect x=${slot.x} y=${slot.y} width=${slot.width} height=${slot.height} rx="3" /></clipPath>
     <g clip-path=${`url(#${clipId})`}>${inner}</g>${ringed}`;
@@ -335,8 +345,13 @@ function watchBody(families: readonly FamilyKind[], live: LiveShapes, shelved: b
   // Rectangular and circular sit in the lower half of the face and corner and
   // inline in the upper one, so a window onto either half holds two shapes
   // and a slice of the band beyond the case: the crops are the two halves.
-  const rect = placed(live.rectangular, { x: 14, y: 48, width: 58, height: 19 }, "fit", "", { rx: 3 });
-  const circ = placed(live.circular, { x: 14, y: 68, width: 14, height: 14 }, "fit", "", "circle");
+  //
+  // The bottom of the face holds one of two things, never both: a rectangular
+  // card's rectangle sits right at the bottom, and a circular card's circle
+  // sits in the bottom row with its two neighbours, the way the Modular face
+  // draws whichever of them it has there.
+  const rect = placed(live.rectangular, { x: 14, y: 60, width: 58, height: 21 }, "fit", "", { rx: 3 });
+  const circ = placed(live.circular, { x: 14, y: 68, width: 14, height: 14 }, "fit", clipKey(), "circle");
   const corner = placed(live.corner, { x: 14, y: 17, width: 13, height: 13 }, "fit", clipKey(), "circle");
   // Inline is a line of text rather than a canvas: the panel's own laid out
   // line, set into the band over the clock.
@@ -356,8 +371,11 @@ function watchBody(families: readonly FamilyKind[], live: LiveShapes, shelved: b
     ${faceClock(56, 33, 13, "10:09")}
     ${inline ?? svg`<rect x="28" y="15" width="30" height="3" rx="1.5" fill=${lit(has("inline"))} />`}
     ${corner ?? svg`<path d="M16 30 A 26 26 0 0 1 28 19" stroke=${lit(has("corner"))} stroke-width="4" fill="none" stroke-linecap="round" />`}
-    ${rect ?? svg`<rect x="14" y="48" width="58" height="19" rx="5" fill=${lit(has("rectangular"))} />`}
-    ${circ ?? svg`<circle cx="21" cy="75" r="7" fill=${lit(has("circular"))} />`}`;
+    ${has("rectangular")
+      ? rect ?? svg`<rect x="14" y="60" width="58" height="21" rx="5" fill=${ON} />`
+      : svg`${circ ?? svg`<circle cx="21" cy="75" r="7" fill=${lit(has("circular"))} />`}
+        <circle cx="43" cy="75" r="7" fill=${OFF} />
+        <circle cx="65" cy="75" r="7" fill=${OFF} />`}`;
 }
 
 /**
@@ -378,7 +396,7 @@ function placedInline(live: LiveShape | undefined, slot: { x: number; y: number;
   const x = slot.x + (slot.width - width) / 2;
   const y = slot.y + (slot.height - height) / 2;
   return svg`<g class="pk-live" transform=${`translate(${x} ${y}) scale(${scale})`}>
-    <foreignObject x="0" y="0" width=${live.width} height=${live.height}>${live.art}</foreignObject></g>`;
+    <foreignObject x="0" y="0" width=${live.width} height=${live.height} style="overflow: hidden">${live.art}</foreignObject></g>`;
 }
 
 /**
@@ -402,7 +420,7 @@ function phoneBody(families: readonly FamilyKind[], live: LiveShapes, shelved: b
   // is one slot for all three. A live small tile takes the left tile and the
   // right one goes quiet, so the picture reads as the widget beside a
   // neighbour rather than as the same widget twice.
-  const lock = placed(live.rectangular ?? live.circular, { x: 9, y: 22, width: 32, height: 13 }, "fit", "", live.rectangular ? { rx: 2 } : "circle");
+  const lock = placed(live.rectangular ?? live.circular, { x: 9, y: 22, width: 32, height: 13 }, "fit", clipKey(), live.rectangular ? { rx: 2 } : "circle");
   const tile = placed(live.small, { x: 7, y: 42, width: 16, height: 16 }, "fit", "", { rx: 3 });
   const medium = placed(live.medium, { x: 7, y: 62, width: 36, height: 14 }, "fit", "", { rx: 3 });
   const large = placed(live.large ?? live.xlarge, { x: 7, y: 80, width: 36, height: 9 }, "cover", clipKey(), { rx: 3 });

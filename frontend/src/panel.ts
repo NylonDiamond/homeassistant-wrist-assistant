@@ -1977,7 +1977,7 @@ export class WristAssistantPanel extends LitElement {
       width: 100%; height: 100%; padding: 0 4px; box-sizing: border-box;
       font-size: 11px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden;
     }
-    .pk-card-crop .inline-line > span { overflow: hidden; text-overflow: ellipsis; }
+    .pk-card-crop .inline-line > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     .pk-card-crop .inline-line svg { display: inline-block; flex: none; width: 11px; height: 11px; margin: 0; background: transparent; border-radius: 0; }
     .pk-card-crop .inline-line.missing { color: var(--wa-muted); font-weight: 400; }
     /* A design that is only a Control Center control has its tile as the whole
