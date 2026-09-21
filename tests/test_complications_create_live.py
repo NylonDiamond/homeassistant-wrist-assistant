@@ -316,6 +316,35 @@ def test_duplicate_slot_in_batch_rejects_whole_batch(
     assert _sync_records(base_url, owner) == []
 
 
+def test_one_slot_takes_one_document_per_shape(
+    base_url: str, owner: tuple[str, bytes]
+) -> None:
+    """The move wizard writes one document per shape at the preset's slot."""
+
+    def one_shape(name: str, family: str) -> dict[str, Any]:
+        doc = _document(_cid(), name, 2)
+        doc["supportedFamilies"] = [family]
+        doc["schemaVersion"] = 6
+        return doc
+
+    rect = one_shape("Kitchen", "rectangular")
+    circ = one_shape("Kitchen", "circular")
+    r = _create(base_url, owner, [rect, circ])
+    assert r.status_code == 200, r.text
+    assert [row["status"] for row in r.json()["results"]] == ["created", "created"]
+
+    # A live rectangular at the slot blocks another rectangular there, but
+    # not a corner.
+    again = one_shape("Kitchen again", "rectangular")
+    corner = one_shape("Kitchen corner", "corner")
+    r = _create(base_url, owner, [again, corner])
+    assert r.status_code == 200, r.text
+    statuses = {row["id"]: row["status"] for row in r.json()["results"]}
+    assert statuses[again["id"]] == "slot_conflict"
+    assert statuses[corner["id"]] == "created"
+    assert len(_sync_records(base_url, owner)) == 3
+
+
 def test_tombstoned_id_is_not_revived(
     base_url: str, token: str, owner: tuple[str, bytes]
 ) -> None:

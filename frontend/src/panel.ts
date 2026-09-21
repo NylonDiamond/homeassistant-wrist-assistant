@@ -160,6 +160,7 @@ import { type Person, deviceShortName, peopleNames, peopleOf, personOf } from ".
 import { type DevicesOn, type LiveDesign, type LiveShape, type LiveShapes, controlDeviceArt, designDeviceArt, deviceShapeArt } from "./shapeArt.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { type DeviceKind, type DeviceOwnerLike, LIBRARY_OWNER_ID, deviceKindOf, deviceNoun, deviceSupportsShapes, isLibraryOwner, ownerSupportsControls, updateDeviceMessage } from "./version.js";
+import { type SplitNotice, autoSplitShapes, editBlockedBySplitGate } from "./splitShapes.js";
 import { makeIconProvider } from "./icons.js";
 import { makeImageSizeProvider } from "./image-sizes.js";
 import { SymbolBrowser } from "./symbols.js";
@@ -1345,6 +1346,9 @@ export class WristAssistantPanel extends LitElement {
   private linkReady = false;
   /** Why a share link could not open the Import dialog. */
   @state() private linkNote?: string;
+  /** What the one-shape-per-document split did on this first open, with its
+   * own Undo. See `splitShapes.ts`. */
+  @state() private splitNotice?: SplitNotice;
   /** Parsed config per saved record, keyed by id and invalidated by revision.
    * Every picker card draws the real complication, and parsing and compiling
    * every document in the home on every render of the grid is the one part of
@@ -5353,6 +5357,15 @@ export class WristAssistantPanel extends LitElement {
     }
     this.linkReady = true;
     void this.openPendingLink();
+    // Cut the complications that draw several shapes into one document per
+    // shape, on this first open. It reads every owner's records itself, does
+    // nothing unless there is something to cut, skips a device whose app is
+    // too old to resolve a shared slot by shape, and never writes without
+    // proving first that the records can be put back.
+    void autoSplitShapes(this.hass, this.owners, (notice) => {
+      this.splitNotice = notice;
+      void this.loadRecords();
+    });
   }
 
   private async selectOwner(ownerId: string) {
@@ -5546,6 +5559,11 @@ export class WristAssistantPanel extends LitElement {
         this.readOnlyReason = `This document is schema v${schema}; this integration understands up to v${this.maxSchemaVersion}. Update the Wrist Assistant integration to edit it.`;
       } else if (unknown.length > 0) {
         this.readOnlyReason = `This document has fields the panel does not understand, so saving would drop them: ${unknown.slice(0, 5).join(", ")}${unknown.length > 5 ? ` and ${unknown.length - 5} more` : ""}. Update the integration to edit it.`;
+      } else {
+        // A document that still draws several shapes on a device whose app
+        // cannot resolve a shared slot by shape. Saving it would mean cutting
+        // it up, and this device could not follow. See `splitShapes.ts`.
+        this.readOnlyReason = editBlockedBySplitGate(this.draft.config, this.selectedOwner);
       }
       this.recompile();
       this.ensureActiveFamily();
@@ -8045,6 +8063,12 @@ export class WristAssistantPanel extends LitElement {
       ${this.loadError ? html`<div class="card error">${this.loadError}</div>` : nothing}
       ${this.linkNote ? html`<div class="banner warn link-note"><span>${this.linkNote}</span>
         <button class="link" @click=${() => { this.linkNote = undefined; }}>Dismiss</button></div>` : nothing}
+      ${this.splitNotice ? html`<div class="banner warn link-note"><span>${this.splitNotice.lines.map(
+          (line, i) => html`${i > 0 ? html`<br>` : nothing}${line}`)}</span>
+        ${this.splitNotice.undo
+          ? html`<button class="link" ?disabled=${this.splitNotice.busy} @click=${this.splitNotice.undo}>Undo</button>`
+          : nothing}
+        <button class="link" @click=${() => { this.splitNotice = undefined; }}>Dismiss</button></div>` : nothing}
       ${this.helpOpen ? this.renderHelpDialog() : nothing}
       ${this.newOpen ? this.renderNewDialog() : nothing}
       ${this.shareOpen ? this.renderShareDialog() : nothing}

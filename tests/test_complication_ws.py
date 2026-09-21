@@ -52,6 +52,7 @@ def _library_row(count: int = 0, token: int = 0) -> dict:
         "paired_iphone_name": None,
         "paired_iphone_id": None,
         "app_version": None,
+        "app_build": None,
         "screen_size": None,
         "complication_count": count,
         "token": token,
@@ -413,6 +414,7 @@ def test_a_watch_row_gains_the_device_kind_field_and_nothing_else(env) -> None:
     env.add_watch(
         "watch-A",
         app_version="2.7.0",
+        app_build="4",
         device_name="Apple Watch",
         screen_size="208x248",
         owner_iphone_id="phone-1",
@@ -432,6 +434,9 @@ def test_a_watch_row_gains_the_device_kind_field_and_nothing_else(env) -> None:
         # phones they are paired to.
         "paired_iphone_id": "phone-1",
         "app_version": "2.7.0",
+        # The build beside the version. Build numbers restart on every new
+        # version, so the panel's split gate reads the two together.
+        "app_build": "4",
         "screen_size": "208x248",
         "complication_count": 1,
         "token": 1,
@@ -446,7 +451,9 @@ def test_a_phone_is_an_owner_in_its_own_right(env) -> None:
     Its records are keyed by caller id like any other owner's, so the counts
     and tokens come from the same store path the watch uses.
     """
-    env.add_phone("phone-1", app_version="2.8.0", device_name="Jesse's iPhone")
+    env.add_phone(
+        "phone-1", app_version="2.8.0", app_build="11", device_name="Jesse's iPhone"
+    )
     env.save_document("phone-1")
     env.save_document("phone-1")
     env.store.set_applied_token("phone-1", 2)
@@ -462,6 +469,7 @@ def test_a_phone_is_an_owner_in_its_own_right(env) -> None:
             "paired_iphone_id": None,
             "screen_size": None,
             "app_version": "2.8.0",
+            "app_build": "11",
             "complication_count": 2,
             "token": 2,
             "applied_token": 2,
@@ -508,6 +516,32 @@ def test_owners_lists_every_watch_before_every_phone_by_name(env) -> None:
         # Not a device, so it sorts under all of them rather than among them.
         "Library",
     ]
+
+
+def test_every_row_carries_the_app_build_or_none(env) -> None:
+    """The build number, which the panel's split migration gates on.
+
+    The per-shape slot resolver landed part-way through the 2.8.0 beta, so the
+    version alone cannot say whether a device understands a slot that holds one
+    document per shape. Build numbers restart at 1 on every new version, which
+    is why this is only ever read together with `app_version`.
+
+    Every row carries the field: a device that reported no build, an orphan
+    with no entry left to ask, and the Library, which has no app at all, all
+    say None rather than leaving the key out.
+    """
+    env.add_watch("watch-A", app_version="2.8.0", app_build="11")
+    env.add_watch("watch-B", app_version="2.8.0")
+    env.add_phone("phone-1", app_version="2.8.0", app_build="9")
+    env.save_document("gone-watch")
+
+    assert {r["owner_watch_id"]: r["app_build"] for r in env.owners()} == {
+        "watch-A": "11",
+        "watch-B": None,
+        "phone-1": "9",
+        "gone-watch": None,
+        LIBRARY: None,
+    }
 
 
 def test_a_phone_renamed_in_ha_shows_the_new_name(env) -> None:
