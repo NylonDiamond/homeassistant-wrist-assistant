@@ -12858,21 +12858,16 @@ export class WristAssistantPanel extends LitElement {
    */
   private renderWhatItIs(cfg: CustomComplicationConfig) {
     const family = supportedFamilies(cfg)[0];
-    const kind = deviceKindOf(this.selectedOwner);
-    const device = isLibraryOwner(this.selectedOwner)
-      ? "In the library"
-      : kind === "iphone" ? "iPhone" : "Watch";
-    const what = family === undefined
-      ? `${device}, Control Center`
-      : `${device}, ${familyTitle(family).toLowerCase()}`;
-    const where = this.selectedOwner && !isLibraryOwner(this.selectedOwner)
-      ? ownerLabel(this.selectedOwner)
-      : undefined;
+    const shelved = isLibraryOwner(this.selectedOwner);
+    const device = deviceKindOf(this.selectedOwner) === "iphone" ? "iPhone" : "Watch";
+    const shape = family === undefined ? "Control Center" : familyTitle(family).toLowerCase();
+    const what = shelved ? `${shape}, in the library` : `${device}, ${shape}`;
+    const also = cfg.control !== undefined && family !== undefined ? ", with a Control Center control" : "";
     return html`<div class="what-field">
-      <span class="what-line">${what}${cfg.control !== undefined && family !== undefined ? ", with a Control Center control" : ""}</span>
-      ${where === undefined
-        ? html`<span class="hint">No device shows it until it is copied onto one.</span>`
-        : html`<span class="hint">On ${where}. A copy on another device is a complication of its own.</span>`}
+      <span class="what-line">${what}${also}</span>
+      ${shelved || !this.selectedOwner
+        ? html`<span class="hint">No device shows it until a copy of it goes on one.</span>`
+        : html`<span class="hint">On ${ownerLabel(this.selectedOwner)}. A copy on another device is a complication of its own.</span>`}
     </div>`;
   }
 
