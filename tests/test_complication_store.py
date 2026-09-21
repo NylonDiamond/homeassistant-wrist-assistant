@@ -653,6 +653,54 @@ def test_single_shape_and_inline_documents_save_at_schema_six(mod, overrides):
 @pytest.mark.parametrize(
     "families",
     [
+        ["rectangular", "circular"],
+        ["rectangular", "circular", "corner"],
+        ["rectangular", "inline"],
+        ["rectangular", "circular", "corner", "small"],
+    ],
+)
+def test_a_multi_shape_document_still_saves_after_one_shape_per_document(mod, families):
+    """N shapes in one document stay valid, even though nothing writes them.
+
+    From 2.8.0 a complication is one shape on one device and the panel writes
+    a single-entry list, but every record written before that is still on
+    disk, and an owner whose app is too old to be migrated keeps its
+    multi-shape documents indefinitely. Refusing them here would make those
+    records unloadable rather than merely old.
+    """
+    store = _new(mod)
+    doc = _doc(schemaVersion=7, supportedFamilies=families)
+    if "inline" in families:
+        doc["inline"] = {"value": {"kind": {"kind": "literal", "value": "72°"}}}
+    rec = store.save(OWNER, doc, base_revision=None, updated_by="t")
+    assert rec.document["supportedFamilies"] == families
+
+
+def test_a_history_summary_keeps_every_family_of_a_multi_shape_document(mod):
+    """`families` is what the panel's history list tells two entries apart by.
+
+    A multi-shape revision from before the split has to keep reporting all of
+    its shapes, or the entry the split replaced reads as if it had only one.
+    """
+    store = _new(mod)
+    doc = _doc(supportedFamilies=["rectangular", "circular", "corner"])
+    store.save(OWNER, doc, base_revision=None, updated_by="kim")
+    store.save(
+        OWNER,
+        dict(doc, schemaVersion=6, supportedFamilies=["rectangular"]),
+        base_revision=1,
+        updated_by="kim",
+    )
+    assert store.history(OWNER, doc["id"])[0].summary()["families"] == [
+        "rectangular",
+        "circular",
+        "corner",
+    ]
+
+
+@pytest.mark.parametrize(
+    "families",
+    [
         ["small"],
         ["medium"],
         ["large"],
