@@ -248,7 +248,7 @@ import {
   syncListAttributes,
   shownCount,
 } from "./editors.js";
-import { PREVIEW_ROOM, previewBox, previewWarnings, renderShapeArt, shapeTabCss } from "./shapePreviews.js";
+import { PREVIEW_ROOM, previewBox, previewTintFor, previewWarnings, renderShapeArt, shapeTabCss } from "./shapePreviews.js";
 import { sampleListItem, withListSeeds } from "./list-seeds.js";
 import { type PresetEnv, type PresetKind, type PresetSpec, LAYER_PRESETS, applyPreset, presetSpec } from "./presets.js";
 import { type AddVariant, addPreview } from "./add-previews.js";
@@ -7170,27 +7170,35 @@ export class WristAssistantPanel extends LitElement {
    * Home Screen does the opposite: the tile's ground goes and every layer is
    * painted in the tint at the brightness it was drawn in. Which one the menu
    * previews follows the shape, since a Home Screen tile is never on a watch.
+   *
+   * On a phone owner's Lock Screen shape the untinted row is not full color at
+   * all: iOS draws every Lock Screen widget desaturated and there is no way to
+   * ask it not to, so the preview stands in white and the row says so.
    */
   private renderTintTool() {
     const on = this.previewTint;
     const current = FACE_TINTS.find((t) => t.hex === on);
     const off = !this.draft || this.parseError !== undefined;
     const phone = isHomeFamily(this.activeFamily);
+    const lockWhite = this.previewAsPhone && !phone && isDrawable(this.activeFamily);
+    const plain = lockWhite ? "Lock Screen white" : "Full color";
     const word = phone ? "iPhone tinted" : "tint";
     const pick = (hex: string | undefined) => { this.toggleMenu("tint", false); this.previewTint = hex; };
     return html`<span class="inbox tint-box ${on !== undefined ? "on" : ""}"
       title=${phone
         ? "A tinted Home Screen drops the tile's background and paints every layer in one color, keeping only how bright each part was. Layers in the accent group take the lighter of the two colors."
-        : "Many watch faces draw complications in one color. Colors become the face's tint, text and background turn white, and only how see-through each part is survives."}>
+        : lockWhite
+          ? "An iPhone always draws Lock Screen complications in white, whatever colors you pick, so the preview does the same. Your colors still set how bright each part comes out. Pick a tint here to see the design in another color."
+          : "Many watch faces draw complications in one color. Colors become the face's tint, text and background turn white, and only how see-through each part is survives."}>
       <span class="pre">Color</span>
       <span class="case-tool" data-menu="tint">
         <button class="case-pick" ?disabled=${off} aria-haspopup="listbox" aria-expanded=${this.openMenu === "tint" ? "true" : "false"}
-          aria-label=${`Preview color, ${current ? `${current.label} ${phone ? "tinted Home Screen" : "tinted face"}` : "full color"}`} @click=${() => this.toggleMenu("tint")}>
-          ${current ? html`<i class="tint-dot" style=${`--sw:${current.hex}`}></i>${current.label} ${word}` : "Full color"}${uiIcon("chevron")}
+          aria-label=${`Preview color, ${current ? `${current.label} ${phone ? "tinted Home Screen" : "tinted face"}` : plain.toLowerCase()}`} @click=${() => this.toggleMenu("tint")}>
+          ${current ? html`<i class="tint-dot" style=${`--sw:${current.hex}`}></i>${current.label} ${word}` : plain}${uiIcon("chevron")}
         </button>
         ${this.openMenu === "tint" ? html`<div class="pop-menu" role="listbox" aria-label="Preview color">
           <button class="row" role="option" aria-selected=${on === undefined ? "true" : "false"} @click=${() => pick(undefined)}>
-            <i class="tint-dot full"></i>Full color</button>
+            <i class="tint-dot ${lockWhite ? "" : "full"}" style=${lockWhite ? "--sw:#FFFFFF" : nothing}></i>${plain}</button>
           ${FACE_TINTS.map((t) => html`<button class="row" role="option" aria-selected=${t.hex === on ? "true" : "false"}
             @click=${() => pick(t.hex)}><i class="tint-dot" style=${`--sw:${t.hex}`}></i>${t.label} ${word}</button>`)}
         </div>` : nothing}
@@ -7516,9 +7524,7 @@ export class WristAssistantPanel extends LitElement {
       icons: this.icons,
       imageSizes: this.imageSizes,
       slot,
-      ...(this.previewTint !== undefined
-        ? { tint: this.previewTint, ...(isHomeFamily(family) ? { tintSurface: "phone" as const } : {}) }
-        : {}),
+      ...previewTintFor(family, this.previewAsPhone, this.previewTint),
       ...(flashOn
         ? {
           flash: {
@@ -13508,7 +13514,7 @@ export class WristAssistantPanel extends LitElement {
       layouts,
       icons: this.icons,
       imageSizes: this.imageSizes,
-      phone: deviceKindOf(this.selectedOwner) === "iphone",
+      phone: this.previewAsPhone,
       slotFor: (f) => slotFor(this.currentCase(), f),
       ...(this.inspect.kind === "layer" ? { highlightId: this.inspect.id } : {}),
       ...(this.previewTint !== undefined ? { tint: this.previewTint } : {}),
@@ -13547,11 +13553,12 @@ export class WristAssistantPanel extends LitElement {
       ...(this.showGridLines || (!this.snapGrid && this.altHeld && this.canEdit) ? { grid: this.gridStep } : {}),
       ...(this.guides.length > 0 && family === this.activeFamily ? { guides: this.guides } : {}),
       tapReview: this.showTaps,
-      // A Home Screen tile is tinted the iPhone way: no ground of its own, and
-      // every layer painted in the tint at the brightness it was drawn in.
-      ...(this.previewTint !== undefined
-        ? { tint: this.previewTint, ...(isHomeFamily(family) ? { tintSurface: "phone" as const } : {}) }
-        : {}),
+      // The same rule the shape tabs draw under, so the stage and its tabs
+      // never disagree: a phone owner's Lock Screen shapes stand in white,
+      // because that is all a Lock Screen widget can be. A Home Screen tile is
+      // tinted the iPhone way instead: no ground of its own, and every layer
+      // painted in the tint at the brightness it was drawn in.
+      ...previewTintFor(family, this.previewAsPhone, this.previewTint),
       ...(focus !== undefined ? { tapFocusId: focus } : {}),
       handles: this.canEdit && !this.picking && (!this.showTaps || focus !== undefined),
       // Pick mode owns the tint while it is on; otherwise the Layers list
@@ -14038,6 +14045,17 @@ export class WristAssistantPanel extends LitElement {
 
   private currentCase(): PreviewCase {
     return this.previewCases.find((c) => c.label === this.previewCase) ?? this.referenceCase;
+  }
+
+  /** Whether previews stand for an iPhone, which decides the Lock Screen's
+   * white. One getter rather than the test written out at each picture, so the
+   * stage, its shape tabs and the demo can never disagree about it.
+   *
+   * The Library answers false: a design on the shelf has no device yet, so
+   * there is nothing to say its Lock Screen shapes are a phone's rather than a
+   * watch's, and it previews in full color the way it always has. */
+  private get previewAsPhone(): boolean {
+    return deviceKindOf(this.selectedOwner) === "iphone";
   }
 
   private previewSlot(family: DrawableFamily) {
