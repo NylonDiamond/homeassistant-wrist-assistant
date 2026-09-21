@@ -151,6 +151,7 @@ import {
   kindOwners,
   kindTitle,
   newReady,
+  newRecords,
   newSummary,
   shapeGroups,
   shapeOffered,
@@ -6314,10 +6315,13 @@ export class WristAssistantPanel extends LitElement {
       await this.selectOwner(here.ownerId);
       if (this.ownerId !== here.ownerId) return;
     }
-    const slot = this.freeSlot(family);
+    // One record per ticked device, each with its own seat. The first is the
+    // one that opens; the rest are written as they are made.
+    const plan = newRecords(owners, family, (ownerId, f) => this.freeSlotOn(ownerId, f));
+    const mine = plan[0]!;
     const config = kind === "control"
-      ? newControlConfig(name, slot, family)
-      : newConfig(name, slot, family ?? null);
+      ? newControlConfig(name, mine.slotIndex, family)
+      : newConfig(name, mine.slotIndex, family ?? null);
     if (!this.startNew(config)) return;
     // The author asked for a control, so its tab is the one up on arrival and
     // its card is the one open.
@@ -6344,24 +6348,24 @@ export class WristAssistantPanel extends LitElement {
     this.saving = true;
     try {
       await this.loadOtherLists();
-      for (const owner of owners) {
-        const slot = this.freeSlotOn(owner.ownerId, supportedFamilies(config)[0]);
-        if (slot < 0) {
-          failed.push(`${owner.label} has no free seat (iPhone presets count too)`);
+      const plan = newRecords(owners, supportedFamilies(config)[0], (ownerId, f) => this.freeSlotOn(ownerId, f));
+      for (const row of plan) {
+        if (row.slotIndex < 0) {
+          failed.push(`${row.label} has no free seat (iPhone presets count too)`);
           continue;
         }
         const copy = copyForOwner(config, {
           id: newId(),
-          slotIndex: slot,
+          slotIndex: row.slotIndex,
           hidden: false,
           families: [...config.supportedFamilies],
         });
         try {
-          const out = await saveRecord(this.hass, owner.ownerId, new Draft(copy, null).encoded(), null);
-          if (out.ok) made.push(owner.label);
-          else failed.push(`${owner.label}: ${out.message ?? out.error ?? "the save failed"}`);
+          const out = await saveRecord(this.hass, row.ownerId, new Draft(copy, null).encoded(), null);
+          if (out.ok) made.push(row.label);
+          else failed.push(`${row.label}: ${out.message ?? out.error ?? "the save failed"}`);
         } catch (err) {
-          failed.push(`${owner.label}: ${errText(err)}`);
+          failed.push(`${row.label}: ${errText(err)}`);
         }
       }
     } finally {

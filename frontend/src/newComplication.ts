@@ -145,3 +145,34 @@ export function newReady(o: NewChoice): boolean {
   if (!o.named || o.nameProblem !== undefined || o.kind === undefined) return false;
   return o.kind === "control" || o.family !== undefined;
 }
+
+/** One record Create is about to make: which device it goes on, and the seat
+ * it takes there. `slotIndex` is -1 on a device with no seat left for this
+ * shape, which is named rather than silently skipped. */
+export interface NewRecord {
+  ownerId: string;
+  label: string;
+  slotIndex: number;
+}
+
+/**
+ * One record per ticked device, in the order the devices were given.
+ *
+ * Each is its own complication from the moment it is written, so each finds
+ * its own seat: the lowest one free for this shape on that device. Nothing is
+ * shared between them and nothing joins them afterwards.
+ *
+ * `freeSlot` is the panel's reading of a device's seats, passed in so this
+ * stays a function over the answer rather than over the websocket.
+ */
+export function newRecords(
+  owners: readonly DeviceOwner[],
+  family: FamilyKind | undefined,
+  freeSlot: (ownerId: string, family: FamilyKind | undefined) => number,
+): NewRecord[] {
+  return owners.map((owner) => ({
+    ownerId: owner.ownerId,
+    label: owner.label,
+    slotIndex: freeSlot(owner.ownerId, family),
+  }));
+}
