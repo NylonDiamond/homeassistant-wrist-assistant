@@ -3252,6 +3252,11 @@ export class WristAssistantPanel extends LitElement {
       letter-spacing: -.015em; color: var(--wa-ink); text-wrap: balance;
     }
     .gate-lead { position: relative; margin: 0 0 26px; font-size: 14.5px; line-height: 1.55; color: var(--wa-muted); max-width: 52ch; }
+    /* The "nothing open" card's two ways forward. */
+    .gate-acts { position: relative; display: flex; gap: 8px; flex-wrap: wrap; }
+    .gate-acts button { display: inline-flex; align-items: center; gap: 6px; }
+    .gate-acts button svg { width: 14px; height: 14px; }
+    .gate.start .gate-lead { margin-bottom: 18px; }
     .gate-steps { position: relative; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0; width: 100%; }
     .gate-steps li {
       display: grid; grid-template-columns: 30px 1fr; gap: 14px; align-items: start;
@@ -5655,9 +5660,9 @@ export class WristAssistantPanel extends LitElement {
       } else if (this.draft && this.selectedId && this.draft.baseRevision !== null) {
         // Deleted under us. Keep an unsaved draft; drop a clean one.
         if (this.draft.dirty) this.remoteRevision = -1;
-        else this.selectFirst();
+        else this.selectNone();
       } else if (!this.draft) {
-        this.selectFirst();
+        this.selectNone();
       }
     } catch (err) {
       this.loadError = `Could not load complications: ${errText(err)}`;
@@ -5708,12 +5713,12 @@ export class WristAssistantPanel extends LitElement {
     else window.setTimeout(run, 2_000);
   }
 
-  private selectFirst() {
-    if (this.records[0]) this.openRecord(this.records[0]);
-    else {
-      this.selectedId = undefined;
-      this.clearDraft();
-    }
+  /** Nothing open. The panel used to open the first record in the list here,
+   * on load and after a delete, so a reload silently put a complication on
+   * screen nobody had asked for. Now the stage says how to pick one. */
+  private selectNone() {
+    this.selectedId = undefined;
+    this.clearDraft();
   }
 
   private clearDraft() {
@@ -6696,7 +6701,7 @@ export class WristAssistantPanel extends LitElement {
       // Never saved: just drop it.
       this.clearDraft();
       this.selectedId = undefined;
-      this.selectFirst();
+      this.selectNone();
       return;
     }
     await this.deleteSaved(this.selectedId, this.draft.baseRevision, this.ownerId, everywhere);
@@ -13393,7 +13398,21 @@ export class WristAssistantPanel extends LitElement {
   private renderCanvas() {
     if (this.parseError) return html`<div class="card error">This document cannot be read: ${this.parseError}</div>`;
     const cfg = this.canvasConfig();
-    if (!cfg) return html`<div class="card"><div class="empty">Choose a complication in the picker above, or make a new one.</div></div>`;
+    if (!cfg) {
+      // Nothing opens on its own: the stage says where to go instead.
+      return html`<div class="gate start">
+        <div class="gate-card">
+          <div class="gate-glyph">${uiIcon("layers")}</div>
+          <div class="gate-eyebrow">Nothing open</div>
+          <h2 class="gate-title">Pick a complication to edit.</h2>
+          <p class="gate-lead">Browse all, at the top left, lists every complication in this home. Or make a new one.</p>
+          <div class="gate-acts">
+            <button class="primary" @click=${() => this.togglePicker(true)}>Browse all</button>
+            <button class="ghost" @click=${() => this.openNewDialog()}>${uiIcon("plus")}<span>New complication</span></button>
+          </div>
+        </div>
+      </div>`;
+    }
     const layouts = resolveAll(cfg, this.buildContext(), this.forced);
     this.syncCountdownTicker(layouts);
     const deviceCase = this.currentCase();
