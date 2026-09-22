@@ -1070,13 +1070,6 @@ export class WristAssistantPanel extends LitElement {
    * Folded rather than open is the list, so a device added later opens
    * unfolded: the other way round, a new watch would arrive already shut. */
   @state() private pickerShut: readonly string[] = [];
-  /** Whether the All tab drops the box around each device and leaves its
-   * heading over the cards. The boxes say where one device ends and the next
-   * begins, which is worth its border and its padding on a home of two
-   * devices and is a lot of chrome on a home of six. Kept in this browser,
-   * because it is how somebody likes to read the list rather than a thing
-   * they are doing right now. */
-  @state() private pickerFlat = false;
   /** Whether the picker is picking several cards at once rather than opening
    * one. Per session: it is a thing being done, not a way of working. */
   @state() private pickerSelecting = false;
@@ -2076,18 +2069,6 @@ export class WristAssistantPanel extends LitElement {
     }
     .pk-sec.shut .pk-sec-top { border-bottom: 0; }
     .pk-sec-body { padding: 10px; min-width: 0; }
-    /* The same block with its box taken off: the heading stays, because the
-       cards still have to say which device they are on, and everything the
-       box was drawing goes. The shape boxes inside keep their own tints, so
-       the list is still read by colour, with one frame less around it.
-       A rule under the heading replaces the box's own edge: without it two
-       devices in a row run into each other. */
-    .pk-sec.flat {
-      border: 0; border-radius: 0; overflow: visible; background: none;
-    }
-    .pk-sec.flat .pk-sec-top { padding: 0 2px 6px; }
-    .pk-sec.flat .pk-sec-body { padding: 0; }
-    .pk-sec.flat + .pk-sec.flat { margin-top: 14px; }
     .pk-sec-head { display: flex; align-items: center; gap: 9px; margin: 0; font-size: 13px; font-weight: 700; flex: none; }
     /* One shape per box inside a device's box, named on a line of its own over
        the cards. The name was stood on its end in a gutter for a while, which
@@ -5354,7 +5335,7 @@ export class WristAssistantPanel extends LitElement {
     try {
       const raw = window.localStorage.getItem(LIST_STORE_KEY);
       if (!raw) return;
-      const saved = JSON.parse(raw) as { thumbStep?: unknown; detail?: unknown; addOpen?: unknown; addDetail?: unknown; pickerDevice?: unknown; pickerShut?: unknown; pickerFlat?: unknown };
+      const saved = JSON.parse(raw) as { thumbStep?: unknown; detail?: unknown; addOpen?: unknown; addDetail?: unknown; pickerDevice?: unknown; pickerShut?: unknown };
       if (saved.thumbStep === 0 || saved.thumbStep === 1 || saved.thumbStep === 2) this.thumbStep = saved.thumbStep;
       if (saved.detail === "compact" || saved.detail === "expanded") this.layerDetail = saved.detail;
       if (typeof saved.addOpen === "boolean") this.addOpen = saved.addOpen;
@@ -5367,7 +5348,6 @@ export class WristAssistantPanel extends LitElement {
       // older browser's copy of it is read past.
       if (typeof saved.pickerDevice === "string") this.pickerDevice = saved.pickerDevice;
       if (Array.isArray(saved.pickerShut)) this.pickerShut = saved.pickerShut.filter((k): k is string => typeof k === "string");
-      if (typeof saved.pickerFlat === "boolean") this.pickerFlat = saved.pickerFlat;
     } catch {
       /* A browser with storage off keeps the defaults. */
     }
@@ -5378,7 +5358,7 @@ export class WristAssistantPanel extends LitElement {
       window.localStorage.setItem(LIST_STORE_KEY, JSON.stringify({
         thumbStep: this.thumbStep, detail: this.layerDetail,
         addOpen: this.addOpen, addDetail: this.addDetail, pickerDevice: this.pickerDevice,
-        pickerShut: this.pickerShut, pickerFlat: this.pickerFlat,
+        pickerShut: this.pickerShut,
       }));
     } catch {
       /* Storage off: the choice still holds for this visit. */
@@ -9320,7 +9300,6 @@ export class WristAssistantPanel extends LitElement {
       @click=${this.pickerBackdrop}>
       <div class="pk-head">
         <h2>Your complications <span class="pk-head-count">${all.length}</span></h2>
-        ${this.ownerBusy || tab !== ALL_DEVICES ? nothing : this.renderPickerBoxed()}
         ${this.ownerBusy ? nothing : this.renderPickerSelect()}
         ${this.ownerBusy ? nothing : this.renderPickerShapes(searched, this.tabFamilies(tab))}
         <label class="pk-search">
@@ -9412,27 +9391,6 @@ export class WristAssistantPanel extends LitElement {
     </section>`;
   }
 
-  /**
-   * The head's Boxes toggle: whether a device is a box or a heading.
-   *
-   * It is offered on the All tab only, because that is the only tab with more
-   * than one device on it. A single device's tab never drew a box in the
-   * first place, so the button there would promise a change it cannot make.
-   */
-  private renderPickerBoxed() {
-    const on = !this.pickerFlat;
-    return html`<button type="button" class="pk-pick-btn ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
-      title=${on ? "Drop the box around each device and keep its heading" : "Put a box around each device again"}
-      @click=${() => this.setPickerFlat(on)}>
-      ${uiIcon(on ? "expanded" : "compact")}<span>Boxes</span></button>`;
-  }
-
-  /** Turn the device boxes off, or on again, and remember which. */
-  private setPickerFlat(flat: boolean) {
-    this.pickerFlat = flat;
-    this.saveListView();
-  }
-
   /** Whether one of the picker's blocks is folded away. */
   private pickerIsShut(key: string): boolean {
     return this.pickerShut.includes(key);
@@ -9469,8 +9427,7 @@ export class WristAssistantPanel extends LitElement {
     const count = section.rows.length + (mine ? 1 : 0);
     const color = personColorVar(personIndex(people, section.ownerId));
     const shut = this.pickerIsShut(section.ownerId);
-    return html`<section class="pk-sec ${shut ? "shut" : ""} ${this.pickerFlat ? "flat" : ""}"
-      style=${color ? `--pk-person: ${color}` : nothing}>
+    return html`<section class="pk-sec ${shut ? "shut" : ""}" style=${color ? `--pk-person: ${color}` : nothing}>
       <div class="pk-sec-top">
         <h4 class="pk-sec-head">
           <button type="button" class="pk-fold-btn" aria-expanded=${shut ? "false" : "true"}
