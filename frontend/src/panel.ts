@@ -165,7 +165,7 @@ import {
   shapeGroups,
   shapeOffered,
 } from "./newComplication.js";
-import { type Person, deviceShortName, peopleNames, peopleOf, personOf } from "./people.js";
+import { type Person, deviceShortName, peopleNames, peopleOf } from "./people.js";
 import { type LiveDesign, type LiveShape, type LiveShapes, controlDeviceArt, deviceCropArt, deviceShapeArt } from "./shapeArt.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { type DeviceKind, type DeviceOwnerLike, LIBRARY_OWNER_ID, deviceKindOf, deviceNoun, deviceSupportsShapes, isLibraryOwner, ownerSupportsControls, updateDeviceMessage } from "./version.js";
@@ -2230,6 +2230,13 @@ export class WristAssistantPanel extends LitElement {
        flat list of four devices reads "Apple Watch, Apple Watch, iPhone,
        iPhone", which answers nothing. */
     .people-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; }
+    /* Unassigned stands above the people rather than inside one of their
+       boxes: it belongs to nobody, and it is the answer the step opens on. */
+    .unassigned-row {
+      display: flex; padding: 8px; margin-bottom: 8px;
+      border-radius: 11px; background: var(--wa-panel); box-shadow: inset 0 0 0 1px var(--wa-line);
+    }
+    .unassigned-row .dev-tick { flex: 1; }
     .person-box {
       display: flex; flex-direction: column; gap: 4px; padding: 8px;
       border-radius: 11px; background: var(--wa-panel); box-shadow: inset 0 0 0 1px var(--wa-line);
@@ -10031,7 +10038,8 @@ export class WristAssistantPanel extends LitElement {
         ${people.length === 0 ? nothing : html`<section class="new-step step-people ${wait(ready)}"
           aria-disabled=${ready ? "false" : "true"}>
           ${this.renderStepHead(shapeStep ? 4 : 3, "Choose whose devices get it",
-            "Optional. Each tick is a complication of its own on that device, to edit there. Nothing ticked keeps it unassigned.")}
+            "Each tick is a complication of its own on that device, to edit there. Unassigned keeps it off every device until you pick one.")}
+          ${this.renderUnassignedTick()}
           <div class="people-grid" role="group" aria-label="Devices">${people.map((row) =>
             this.renderPersonBox(row, this.newOwners, this.newFamily, (id) => this.toggleNewOwner(id)))}</div>
         </section>`}
@@ -10112,6 +10120,35 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
+   * The Unassigned row above the people, and the step's resting answer.
+   *
+   * Ticking no device is a real choice: the complication is made and waits on
+   * the home's shelf until it is put somewhere. Before this row that choice was
+   * drawn as the absence of every other choice, which reads as a step nobody
+   * answered, and it is why the dialog used to tick the author's own devices
+   * for them. Drawn as a tick rather than a note so the step always has exactly
+   * one thing lit when it opens.
+   *
+   * It is on when nothing else is, and clicking it clears every device tick.
+   * Clicking it while it is already on does nothing, because there is nothing
+   * below it to fall back to.
+   */
+  private renderUnassignedTick() {
+    const on = this.newOwners.size === 0;
+    return html`<div class="unassigned-row" role="group" aria-label="Unassigned">
+      <button type="button" role="checkbox" class="dev-tick ${on ? "on" : ""}"
+        aria-checked=${on ? "true" : "false"}
+        title="Make it and leave it on no device. Put it on one any time."
+        @click=${() => { this.newOwners = new Set(); }}>
+        ${on ? pickTick() : html`<span class="pick-tick off" aria-hidden="true"></span>`}
+        <span class="dev-card-ico">${uiIcon("layers")}</span>
+        <span class="dev-card-name">${UNASSIGNED_LABEL}</span>
+        <span class="dev-row-note">on no device</span>
+      </button>
+    </div>`;
+  }
+
+  /**
    * One person's box in step 4: their name, then a checkbox per device.
    *
    * A device with no seat left is drawn with the seats it has taken rather
@@ -10149,26 +10186,21 @@ export class WristAssistantPanel extends LitElement {
    * Step 2, answered.
    *
    * The shape goes with it unless the new kind still offers it, because a
-   * corner picked for a watch means nothing on an iPhone. The author's own
-   * devices of the new kind are ticked, which is the one default worth having:
-   * "mine" is the answer nearly every time, and it is one click to clear.
+   * corner picked for a watch means nothing on an iPhone.
+   *
+   * No device is ticked. This used to tick the author's own devices of the new
+   * kind, on the theory that "mine" is the answer nearly every time. It reads
+   * as the dialog answering its own question: a tick here writes a record on a
+   * real device, and picking a kind is not consent to that. Unassigned is the
+   * resting answer, drawn as its own ticked row so the step never looks
+   * unanswered, and a device is one click away.
    */
   private pickKind(kind: NewKind) {
     this.newKind = kind;
     if (kind === "control" || !shapeOffered(kind, this.deviceOwners(), this.newFamily)) {
       this.newFamily = undefined;
     }
-    this.newOwners = new Set(this.myOwnersOfKind(kind).map((o) => o.ownerId));
-  }
-
-  /** The devices of one kind that belong to whoever is using the panel. */
-  private myOwnersOfKind(kind: NewKind): DeviceOwner[] {
-    const people = peopleOf(this.owners);
-    const mine = this.ownerId === undefined ? undefined : personOf(people, this.ownerId);
-    const offered = kindOwners(this.deviceOwners(), kind);
-    if (!mine) return offered;
-    const ids = new Set(mine.owners.map((o) => o.owner_watch_id));
-    return offered.filter((o) => ids.has(o.ownerId));
+    this.newOwners = new Set();
   }
 
   /** Drop a tick on a device the new shape leaves behind, so Create never

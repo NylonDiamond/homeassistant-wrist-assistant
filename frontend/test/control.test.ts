@@ -790,8 +790,8 @@ describe("the Control Center card", () => {
 
   it("says nothing about switching a control-only document's control off", () => {
     // That sentence went with the switch. What is left is the tab's disabled
-    // x, whose own title says to add a shape first, and the mutation behind it
-    // still refuses the change.
+    // x, whose own title says to delete the whole complication instead, and
+    // the mutation behind it still refuses the change.
     const cfg = newControlConfig("Lamp", 0);
     const markup = flatten(controlCard(host(cfg)));
     expect(markup).not.toContain("Add a shape first");
