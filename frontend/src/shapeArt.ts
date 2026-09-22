@@ -815,6 +815,33 @@ export function shapeOnlyArt(
     drawn ?? bareStandin(family, middle, bareRx(family, phone))}</svg>`;
 }
 
+/** The widest a card's well is let get in the Shape view. An inline line is
+ * over seven times as wide as it is tall, and a well of that shape is a
+ * hairline with unreadable words in it. Nothing needs a limit the other way:
+ * the tallest shape there is, an Extra Large tile, is still wider than half
+ * its own height. */
+const WELL_WIDEST = 4;
+
+/**
+ * The shape of the well a card gives one shape in the Shape view, as its
+ * width over its height.
+ *
+ * The device view gives every card the same wide well, because the picture in
+ * it is a window onto a device and every window is the same shape. With the
+ * device gone the well is the shape itself, so a circular card is a small
+ * square instead of a dot in the middle of a letterbox. That is most of what
+ * makes the view denser.
+ *
+ * Nothing here for a control, or for a shape this device has no slot for:
+ * both keep the device view's own well, because both keep its picture.
+ */
+export function shapeWell(family: FamilyKind | undefined, device: "watch" | "iphone"): number | undefined {
+  if (family === undefined) return undefined;
+  const slot = device === "iphone" ? phoneSlot(family) : watchSlot(family);
+  if (slot === undefined) return undefined;
+  return Math.min(slot.width / slot.height, WELL_WIDEST);
+}
+
 /** The corner the device picture rounds this slot by, so a shape drawn on its
  * own is rounded exactly as it is on its device. */
 function bareRx(family: FamilyKind, phone: boolean): number {

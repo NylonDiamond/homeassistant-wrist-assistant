@@ -166,7 +166,7 @@ import {
   shapeOffered,
 } from "./newComplication.js";
 import { type Person, deviceShortName, peopleNames, peopleOf } from "./people.js";
-import { type LiveDesign, type LiveShape, type LiveShapes, controlDeviceArt, deviceCropArt, deviceShapeArt, shapeOnlyArt } from "./shapeArt.js";
+import { type LiveDesign, type LiveShape, type LiveShapes, controlDeviceArt, deviceCropArt, deviceShapeArt, shapeOnlyArt, shapeWell } from "./shapeArt.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { type DeviceKind, type DeviceOwnerLike, LIBRARY_OWNER_ID, deviceKindOf, deviceNoun, deviceSupportsShapes, isLibraryOwner, ownerSupportsControls, updateDeviceMessage } from "./version.js";
 import { type SplitNotice, autoSplitShapes, editBlockedBySplitGate, ownerCanSplit } from "./splitShapes.js";
@@ -2124,6 +2124,19 @@ export class WristAssistantPanel extends LitElement {
     @media (min-width: 1300px) { .pk-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
     @media (max-width: 900px) { .pk-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
     @media (max-width: 640px) { .pk-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    /* The Shape view is for somebody with a lot of them. A device window has
+       to stay wide enough to read a watch in; a shape on its own does not, so
+       the columns are as many as fit rather than four, and every box round
+       them gives back the room it was holding for the device pictures.
+       Two classes deep, so the column counts above do not win it back. */
+    .pk-dialog.bare .pk-grid { grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 9px; }
+    .pk-dialog.bare .pk-card { padding: 8px; border-radius: 10px; }
+    .pk-dialog.bare .pk-card-top { margin-bottom: 6px; min-height: 16px; gap: 6px; }
+    .pk-dialog.bare .pk-card-name { font-size: 12px; }
+    .pk-dialog.bare .pk-boxes { gap: 6px; }
+    .pk-dialog.bare .pk-box { padding: 6px 8px 8px; }
+    .pk-dialog.bare .pk-sec-body { padding: 8px; }
+    .pk-dialog.bare .pk-band-body { gap: 8px; }
     .pk-card {
       position: relative; z-index: 1; display: flex; flex-direction: column; min-width: 0;
       padding: 12px; border-radius: 12px; border: 1px solid var(--wa-line); background: var(--wa-card);
@@ -2215,6 +2228,11 @@ export class WristAssistantPanel extends LitElement {
       display: flex; align-items: center; justify-content: center; overflow: hidden;
       aspect-ratio: 86 / 48; border-radius: 10px; background: #000; box-shadow: inset 0 0 0 1px rgba(255,255,255,.1);
     }
+    /* In the Shape view the well is the shape rather than a window onto a
+       device, so each card sets its own aspect ratio inline. The one here
+       is only the fallback for a control and for a shape whose device has no
+       slot for it, both of which keep their device picture. */
+    .pk-card-crop.bare { border-radius: 8px; }
     .pk-card-crop > svg.pk-crop { display: block; width: 100%; height: 100%; }
     /* A design that is only a Control Center control has its tile as the whole
        picture: it sits on neither screen, so there is no device to crop. The
@@ -9319,7 +9337,7 @@ export class WristAssistantPanel extends LitElement {
         : filter !== "all"
           ? `Nothing here has a ${familyTitle(filter)} shape.`
           : nothingOnText(tabs.find((t) => t.key === tab)?.kind ?? "all");
-    return html`<dialog class="pk-dialog" aria-label="Your complications"
+    return html`<dialog class="pk-dialog ${this.pickerBare ? "bare" : ""}" aria-label="Your complications"
       @close=${() => this.pickerClosed()}
       @cancel=${this.pickerCancel}
       @click=${this.pickerBackdrop}>
@@ -9450,9 +9468,15 @@ export class WristAssistantPanel extends LitElement {
     live: LiveShapes,
     shelved: boolean,
   ) {
-    return this.pickerBare
-      ? shapeOnlyArt(family, device, live)
-      : deviceCropArt(family, device, live, { shelved });
+    if (!this.pickerBare) {
+      return html`<span class="pk-card-crop">${deviceCropArt(family, device, live, { shelved })}</span>`;
+    }
+    // The well takes the shape's own proportions, so nothing is a small
+    // picture in a large black box. A shape with no well of its own kept its
+    // device picture, so it keeps the device view's well too.
+    const well = shapeWell(family, device);
+    return html`<span class="pk-card-crop bare" style=${well === undefined ? nothing : `aspect-ratio: ${well}`}
+      >${shapeOnlyArt(family, device, live)}</span>`;
   }
 
   /** Whether one of the picker's blocks is folded away. */
@@ -9617,7 +9641,7 @@ export class WristAssistantPanel extends LitElement {
         <span class="pk-badge">unsaved</span>
       </div>
       <div class="pk-card-pic">
-        <span class="pk-card-crop">${this.cardArt(family, device, device === "iphone" ? live.phone : live.watch, kind === "library")}</span>
+        ${this.cardArt(family, device, device === "iphone" ? live.phone : live.watch, kind === "library")}
       </div>
     </div>`;
   }
@@ -9936,7 +9960,7 @@ export class WristAssistantPanel extends LitElement {
             @click=${() => { this.pickerNote = this.pickerNote === row.key ? undefined : row.key; }}>
             ${family === undefined
               ? html`<span class="pk-card-crop none">No preview</span>`
-              : html`<span class="pk-card-crop">${this.cardArt(family, this.cardDevice(kind, family), {}, shelved)}</span>`}
+              : html`${this.cardArt(family, this.cardDevice(kind, family), {}, shelved)}`}
           </button>
         </div>
         ${this.pickerNote === row.key ? html`<div class="pk-note">${item.title}</div>` : nothing}
@@ -10004,8 +10028,8 @@ export class WristAssistantPanel extends LitElement {
       <div class="pk-card-pic">
         <button type="button" class="pk-card-open" title=${doing}
           aria-label=${doing} @click=${hit}>
-          <span class="pk-card-crop">${this.cardArt(family, device,
-            live ? (device === "iphone" ? live.phone : live.watch) : {}, shelved)}</span>
+          ${this.cardArt(family, device,
+            live ? (device === "iphone" ? live.phone : live.watch) : {}, shelved)}
         </button>
         <span class="pk-card-acts ${confirming ? "asking" : ""} ${picking ? "away" : ""}">
           ${confirming

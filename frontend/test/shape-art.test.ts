@@ -10,7 +10,7 @@ import { nothing, svg } from "lit";
 
 import { ALL_FAMILIES, isHomeFamily } from "../src/layouts.js";
 import type { FamilyKind } from "../src/model.js";
-import { PHONE_FRAME, PHONE_LOCK_WINDOW, PHONE_WINDOW, controlDeviceArt, deviceCropArt, deviceShapeArt, inlineShown, phoneSlot, shapeArtKinds, shapeOnlyArt } from "../src/shapeArt.js";
+import { PHONE_FRAME, PHONE_LOCK_WINDOW, PHONE_WINDOW, controlDeviceArt, deviceCropArt, deviceShapeArt, inlineShown, phoneSlot, shapeArtKinds, shapeOnlyArt, shapeWell } from "../src/shapeArt.js";
 import type { LiveShapes } from "../src/shapeArt.js";
 import type { DeviceKind } from "../src/version.js";
 
@@ -706,5 +706,39 @@ describe("shapeOnlyArt", () => {
         expect(() => shapeOnlyArt(family, device, {})).not.toThrow();
       }
     }
+  });
+});
+
+// The well a card gives a shape once the device is off it. Wide wells for
+// every card is what made the Shape view no denser than the device one.
+describe("shapeWell", () => {
+  it("gives a round shape a square well and a rectangular one its own", () => {
+    expect(shapeWell("circular", "watch")).toBeCloseTo(1, 6);
+    expect(shapeWell("corner", "watch")).toBeCloseTo(1, 6);
+    expect(shapeWell("rectangular", "watch")).toBeCloseTo(58 / 21, 6);
+    const medium = phoneSlot("medium")!;
+    expect(shapeWell("medium", "iphone")).toBeCloseTo(medium.width / medium.height, 6);
+  });
+
+  it("stops a line getting so wide its words cannot be read", () => {
+    // The watch's inline slot is 58 by 8, which is over seven to one.
+    expect(shapeWell("inline", "watch")).toBe(4);
+    expect(shapeWell("inline", "iphone")).toBe(4);
+  });
+
+  it("leaves a tall tile its own shape, since no shape is narrow enough to need a floor", () => {
+    const xl = phoneSlot("xlarge")!;
+    expect(shapeWell("xlarge", "iphone")).toBeCloseTo(xl.width / xl.height, 6);
+    for (const family of ALL_FAMILIES) {
+      for (const device of ["watch", "iphone"] as const) {
+        expect(shapeWell(family, device) ?? 1, family).toBeGreaterThan(0.5);
+      }
+    }
+  });
+
+  it("leaves the device view's own well to a control and to a shape with no slot", () => {
+    expect(shapeWell(undefined, "watch")).toBeUndefined();
+    expect(shapeWell("corner", "iphone")).toBeUndefined();
+    expect(shapeWell("small", "watch")).toBeUndefined();
   });
 });
