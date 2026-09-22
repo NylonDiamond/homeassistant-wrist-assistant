@@ -9525,16 +9525,32 @@ export class WristAssistantPanel extends LitElement {
    * device goes the moment the write lands, in the row the trash was pressed
    * in, so the banner said it again a few inches away and had to be put away
    * by hand.
+   *
+   * `follow` allows the one device this normally refuses: the one the editor
+   * has open. Deleting the record a draft was built on leaves the editor
+   * holding a document the server no longer has, so the picker simply will
+   * not do it. The way round is to land somewhere first, and `follow` says
+   * to: the editor moves to another copy of the same link, or to the
+   * Unassigned copy the shelving makes. Every copy of a link is the same
+   * document, so nothing on screen changes but the chips.
    */
-  private async removeRowFrom(row: PickerRow, place: DevicePlace, quiet = false) {
+  private async removeRowFrom(row: PickerRow, place: DevicePlace, quiet = false, follow = false) {
     if (!this.hass.user?.is_admin || this.saving) return;
-    if (place.copies.some((c) => this.isOpenCopy(c))) return;
+    const openHere = place.copies.some((c) => this.isOpenCopy(c));
+    if (openHere && !follow) return;
+    // The copy this lands on is the one the server holds, not the one on
+    // screen, so unsaved work goes with the record being deleted.
+    if (openHere && this.draft?.dirty && !this.confirmDiscard()) return;
     if (place.last) {
-      await this.shelveCopy(row, place.copies[0], quiet);
+      await this.shelveCopy(row, place.copies[0], quiet, openHere && follow);
       return;
     }
     const ownerId = place.owner.ownerId;
     const label = place.owner.kind === "library" ? UNASSIGNED_LABEL : place.owner.label;
+    // Read before the delete, and only when the editor's own copy is the one
+    // going: this is how the editor finds where to land afterwards.
+    const wasOpen = openHere ? this.selectedId : undefined;
+    const link = openHere ? this.draft?.config.linkId : undefined;
     // The menu stays open: one design often goes on or off several devices in
     // one sitting, and the boxes redraw from the lists once the write lands.
     this.saving = true;
@@ -9552,12 +9568,50 @@ export class WristAssistantPanel extends LitElement {
       // the write that did what it was asked.
       if (failed > 0) this.copyStatus = `${row.name} is still on ${label}: the copy there changed on the server. Open the menu again.`;
       else if (!quiet) this.copyStatus = `${row.name} is off ${label}. A face or widget already using it keeps it.`;
+      // The draft goes before the lists are read again: it is built on a
+      // record that is not there any more, and a render in between would
+      // draw the editor over a document the server has lost.
+      if (wasOpen !== undefined && failed === 0) {
+        this.clearDraft();
+        this.selectedId = undefined;
+      }
       await this.reloadAfterRowWrite(ownerId);
+      if (wasOpen !== undefined && failed === 0) await this.openAnotherCopy(link, ownerId, wasOpen);
     } catch (err) {
       this.saveError = errText(err);
     } finally {
       this.saving = false;
     }
+  }
+
+  /**
+   * Open another copy of one link, after the device the editor was on lost
+   * its copy.
+   *
+   * Every copy of a link is the same document, so the editor carries on
+   * drawing what it was drawing; only the chips change. A design that turns
+   * out to have no other copy leaves the editor empty, which is the honest
+   * answer: there is nothing left of it to edit here.
+   */
+  private async openAnotherCopy(link: string | undefined, goneOwnerId: string, goneId: string) {
+    const next = this.linkedSiblings(link, goneOwnerId, goneId)[0];
+    if (!next) {
+      this.selectNone();
+      return;
+    }
+    await this.openCopyAt(next.ownerId, next.record.id);
+  }
+
+  /** Point the editor at one copy on one device. Whatever draft it had is
+   * already gone, so the device switch asks nothing. */
+  private async openCopyAt(ownerId: string, id: string) {
+    if (ownerId !== this.ownerId) {
+      await this.selectOwner(ownerId);
+      if (this.ownerId !== ownerId) return;
+    }
+    const record = this.recordAt(ownerId, id);
+    if (record) this.openRecord(record);
+    else this.selectNone();
   }
 
   /**
@@ -9570,11 +9624,16 @@ export class WristAssistantPanel extends LitElement {
    *
    * `quiet` drops the banner, the way `removeRowFrom`'s does; the move to
    * Unassigned still shows on the editor's devices row as the chip changing.
+   *
+   * `follow` allows the copy the editor has open, which is otherwise refused
+   * for the same reason a delete of it is: the draft would be built on a
+   * record that has moved. The editor lands on the shelf's new copy, which
+   * is this same document, so only the chip changes.
    */
-  private async shelveCopy(row: PickerRow, copy: PlaceCopy | undefined, quiet = false) {
+  private async shelveCopy(row: PickerRow, copy: PlaceCopy | undefined, quiet = false, follow = false) {
     const shelf = this.libraryOwner();
     if (!copy || !shelf || copy.ownerId === shelf.ownerId) return;
-    if (this.isOpenCopy(copy)) return;
+    if (this.isOpenCopy(copy) && !follow) return;
     const record = this.recordAt(copy.ownerId, copy.id);
     if (!record?.document) return;
     let cfg: CustomComplicationConfig;
@@ -9608,7 +9667,16 @@ export class WristAssistantPanel extends LitElement {
       if (!gone.ok) this.copyStatus = `${row.name} is unassigned, but the copy on ${this.ownerName(copy.ownerId)} could not be removed. Delete it from its own card.`;
       else if (!quiet) this.copyStatus = `${row.name} is off ${this.ownerName(copy.ownerId)} and unassigned. A face or widget already using it keeps it.`;
       if (followed) this.pickerDupFor = `${shelf.ownerId}|${rowKeyFor({ ownerId: shelf.ownerId, id: kept.id, ...(kept.linkId !== undefined ? { linkId: kept.linkId } : {}) })}`;
+      // The draft goes before the lists are read again: the record it was
+      // built on is on its way out, and a render in between would draw the
+      // editor over a document that has moved.
+      const land = follow && gone.ok;
+      if (land) {
+        this.clearDraft();
+        this.selectedId = undefined;
+      }
       await this.reloadAfterRowWrite(copy.ownerId, shelf.ownerId);
+      if (land) await this.openCopyAt(shelf.ownerId, kept.id);
     } catch (err) {
       this.saveError = errText(err);
     } finally {
@@ -13995,21 +14063,26 @@ export class WristAssistantPanel extends LitElement {
    * The trash arms before it writes, the way a page's does: one press asks,
    * the next one does it, and it forgets after a few seconds. It is the
    * picker's own untick underneath, so the design's last copy anywhere is
-   * moved to Unassigned rather than deleted. The copy the editor has open
-   * cannot be pulled out from under its draft, so its trash says to use
-   * Delete instead of quietly doing nothing.
+   * moved to Unassigned rather than deleted.
+   *
+   * Every chip's trash works, the open copy's included. Its record cannot be
+   * deleted out from under the draft built on it, so that one lands the
+   * editor somewhere first: on another copy of the link, or on the
+   * Unassigned copy the shelving makes. Both are this same document, so the
+   * screen does not change. The only trash that cannot act is the last copy
+   * of a design that is already unassigned, which has nowhere left to go.
    */
   private renderPlaceChip(row: PickerRow, place: DevicePlace) {
     const target = place.owner;
     const label = target.kind === "library" ? UNASSIGNED_LABEL : target.label;
     const icon = target.kind === "library" ? "layers" : target.kind === "iphone" ? "phone" : "watch";
     const here = place.copies.some((c) => this.isOpenCopy(c));
-    const stuck = here
-      ? "This is the copy you have open. Delete removes it."
-      : place.last && target.kind === "library"
-        ? "It is unassigned already. Delete removes it."
-        : place.last && this.libraryOwner() === undefined
-          ? "This integration has no Unassigned list to move it to. Delete removes it."
+    const stuck = place.last && target.kind === "library"
+      ? "It is unassigned already. Delete removes it."
+      : place.last && this.libraryOwner() === undefined
+        ? "This integration has no Unassigned list to move it to. Delete removes it."
+        : here && this.draft?.baseRevision === null
+          ? "This complication has never been saved. Save it first."
           : undefined;
     const off = place.last
       ? `Take it off ${label} and keep it as unassigned`
@@ -14025,7 +14098,7 @@ export class WristAssistantPanel extends LitElement {
         @click=${() => {
           if (!armed) { this.armPlaceTrash(target.ownerId); return; }
           this.disarmPlaceTrash();
-          void this.removeRowFrom(row, place, true);
+          void this.removeRowFrom(row, place, true, true);
         }}>${armed ? html`<span class="sure">sure?</span>` : uiIcon("delete")}</button>` : nothing}
     </span>`;
   }
