@@ -3287,13 +3287,37 @@ export class WristAssistantPanel extends LitElement {
       .gate-card { padding: 26px 22px 24px; }
       .gate-title { font-size: 21px; }
     }
-    /* Two rows: where this design goes on top, in the amber band, then the
-       shapes it draws and how they are looked at. */
+    /* Three rows: the document itself on top (name, devices, actions), then
+       the shape it draws and how it is looked at, then the stage help. */
     .canvas-bar {
       display: flex; flex-direction: column; font-size: 13px; flex: none;
       border-bottom: 1px solid var(--wa-line); background: var(--wa-raised);
     }
     .bar-row { display: flex; align-items: center; gap: 6px; padding: 8px 12px; flex-wrap: wrap; }
+    /* The document row: what this complication is called, where it is, and
+       what can be done to the whole of it. Its own line above the shapes,
+       ruled off, because none of it is a drawing tool. */
+    .doc-row { gap: 4px 10px; padding-bottom: 6px; border-bottom: 1px solid var(--wa-line); }
+    .doc-name {
+      font-size: 15px; font-weight: 700; color: var(--wa-ink); flex: 0 1 auto;
+      min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .doc-on { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; min-width: 0; }
+    /* A chip per device the design is on. The open one is filled and inert;
+       the rest are buttons that open that device's copy. */
+    .doc-chip {
+      display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px;
+      border-radius: 999px; font: inherit; font-size: 11.5px; font-weight: 600;
+      background: var(--wa-input); border: 1px solid var(--wa-line); color: var(--wa-muted);
+      white-space: nowrap; cursor: pointer;
+    }
+    .doc-chip svg { width: 13px; height: 13px; }
+    button.doc-chip:hover:not(:disabled) { border-color: var(--wa-line-strong); color: var(--wa-ink); }
+    button.doc-chip:disabled { opacity: .5; cursor: default; }
+    .doc-chip.here {
+      cursor: default; color: var(--wa-ink);
+      background: color-mix(in srgb, var(--wa-accent) 20%, var(--wa-card)); border-color: transparent;
+    }
     /* The shape's name at the left of the shapes row, where its tab used to
        be. A note rides after it, so "nothing shown" and the warning still have
        somewhere to sit now that the tab picture is gone. */
@@ -3856,10 +3880,7 @@ export class WristAssistantPanel extends LitElement {
     }
     .insp-head .expand:hover { background: var(--wa-panel); color: var(--wa-ink); }
     .insp-body { padding: 0 0 24px; }
-    /* With no layer selected the inspector is the complication: its name, then
-       its four actions, which wrap under the name when the column is narrow. */
-    .insp-head.comp-head { height: auto; min-height: 34px; flex-wrap: wrap; row-gap: 0; }
-    .comp-head .crumbs { flex: 1 1 100px; }
+    /* The whole-complication actions, at the right of the document row. */
     .comp-acts { display: flex; align-items: center; gap: 0; margin-left: auto; flex: none; }
     .comp-acts button.ghost { font-size: 12px; padding: 0 6px; min-height: 24px; border-radius: 6px; }
     .insp-note { margin: 12px 0 0; font-size: 12px; line-height: 1.45; color: var(--wa-muted); }
@@ -6852,16 +6873,6 @@ export class WristAssistantPanel extends LitElement {
   private ownerName(ownerId: string): string {
     const owner = this.owners.find((o) => o.owner_watch_id === ownerId);
     return owner ? ownerLabel(owner) : "another device";
-  }
-
-  private duplicate() {
-    if (!this.draft) return;
-    const cfg = structuredClone(this.draft.config);
-    cfg.id = newId();
-    cfg.name = `${cfg.name} copy`;
-    cfg.slotIndex = this.freeSlot();
-    delete cfg.linkId;
-    this.startNew(cfg);
   }
 
   private reloadFromServer() {
@@ -13478,6 +13489,7 @@ export class WristAssistantPanel extends LitElement {
       return html`
         <div class="card canvas-card">
           <div class="canvas-bar">
+            ${this.renderDocRow(cfg)}
             <div class="bar-row shapes">${this.renderShapeSwitch(cfg, layouts)}</div>
           </div>
           <div class="stage">${this.renderControlStage(cfg)}</div>
@@ -13489,6 +13501,7 @@ export class WristAssistantPanel extends LitElement {
     return html`
       <div class="card canvas-card">
         <div class="canvas-bar">
+          ${this.renderDocRow(cfg)}
           <div class="bar-row shapes">
             ${this.renderShapeSwitch(cfg, layouts)}
             <span class="spacer"></span>
@@ -13801,12 +13814,101 @@ export class WristAssistantPanel extends LitElement {
     });
   }
 
-  /** Open the footer on its raw document, which is where the JSON lives. */
-  private openRaw() {
-    this.showRaw = true;
-    const foot = this.renderRoot.querySelector<HTMLDetailsElement>("details.foot");
-    if (foot) foot.open = true;
-    void this.updateComplete.then(() => this.renderRoot.querySelector("pre")?.scrollIntoView({ block: "nearest" }));
+  /**
+   * The document row: the top line of the canvas card.
+   *
+   * The complication's name, the devices it is on, and the things done to the
+   * whole of it. All three used to sit in the inspector's header, which draws
+   * only while nothing is selected: clicking one layer took the name, Delete
+   * and Duplicate as off the screen, and the way back to them was to click off
+   * the layer again. None of them is about the selection, so they belong over
+   * the picture, where they are always readable.
+   */
+  private renderDocRow(cfg: CustomComplicationConfig) {
+    const name = cfg.name.trim() || "Complication";
+    return html`<div class="bar-row doc-row">
+      <span class="doc-name" title=${name}>${name}</span>
+      ${this.renderDocPlaces()}
+      <span class="spacer"></span>
+      ${this.renderDocActs(cfg)}
+    </div>`;
+  }
+
+  /**
+   * Which devices have this complication, one chip each.
+   *
+   * A design on several devices is one record per device wearing the same
+   * `linkId`, and the only place that ever said so out loud was the wording of
+   * the Delete button, "All 3 devices". A chip for another device opens that
+   * device's copy, the same move the picker's card makes.
+   *
+   * A complication nobody has saved yet is on no device, so it gets no chips.
+   */
+  private renderDocPlaces() {
+    const places = this.openPlaces();
+    if (places.length === 0) return nothing;
+    return html`<span class="doc-on" role="group" aria-label="On these devices">
+      ${places.map((place) => {
+        const owner = this.ownerOf(place.ownerId);
+        const label = isLibraryOwner(owner) ? UNASSIGNED_LABEL : this.ownerName(place.ownerId);
+        const icon = isLibraryOwner(owner) ? "layers" : deviceKindOf(owner) === "iphone" ? "phone" : "watch";
+        return place.here
+          ? html`<span class="doc-chip here" aria-current="true"
+              title=${`This is the copy on ${label}`}>${uiIcon(icon)}<span>${label}</span></span>`
+          : html`<button type="button" class="doc-chip" ?disabled=${this.saving}
+              title=${`Open the copy on ${label}`}
+              @click=${() => void this.openCopyOn(place.ownerId, place.id)}>${uiIcon(icon)}<span>${label}</span></button>`;
+      })}
+    </span>`;
+  }
+
+  /** Every device this design is on: the open copy's device first, then the
+   * other copies of its link. */
+  private openPlaces(): { ownerId: string; id: string; here: boolean }[] {
+    if (!this.ownerId || !this.selectedId) return [];
+    const rest = this.linkedSiblings(this.draft?.config.linkId, this.ownerId, this.selectedId)
+      .map((s) => ({ ownerId: s.ownerId, id: s.record.id, here: false }));
+    return [{ ownerId: this.ownerId, id: this.selectedId, here: true }, ...rest];
+  }
+
+  /** Open another device's copy of this design. `selectOwner` asks about an
+   * unsaved draft itself and stays where it is when the answer is no, so a
+   * switch that did not happen opens nothing. */
+  private async openCopyOn(ownerId: string, id: string) {
+    if (ownerId === this.ownerId) return;
+    await this.selectOwner(ownerId);
+    if (this.ownerId !== ownerId) return;
+    const record = this.records.find((r) => r.id === id);
+    if (record) this.selectRecord(record);
+  }
+
+  /**
+   * The things done to the whole complication.
+   *
+   * Raw JSON is not one of them any more. The footer at the foot of the panel
+   * already holds the raw document behind "Show the raw configuration", and
+   * the button up here only opened that same footer.
+   *
+   * Plain Duplicate is gone too. It made one copy: same shape, same device,
+   * " copy" on the end of the name, no question asked. "Duplicate as" makes
+   * that copy and every other one, so the two buttons answered one question
+   * and only one of them asked it.
+   */
+  private renderDocActs(cfg: CustomComplicationConfig) {
+    if (!this.canEdit) return nothing;
+    return html`<span class="comp-acts">
+      ${this.draft?.baseRevision === null ? nothing : html`
+        <button class="ghost" aria-haspopup="dialog" aria-expanded=${this.historyOpen ? "true" : "false"}
+          title="Earlier saves of this complication" @click=${() => void this.openHistoryDialog()}>History</button>`}
+      <button class="ghost" aria-haspopup="dialog" aria-expanded=${this.dupOpen ? "true" : "false"}
+        title="Make this design again as another shape, or on another device"
+        @click=${() => this.openDuplicateAs(cfg, this.ownerId ?? "")}>Duplicate as…</button>
+      ${this.confirmDelete
+        ? this.openLinkCount() > 1
+          ? html`<button class="ghost danger" title=${`Delete only the copy on ${this.ownerName(this.ownerId ?? "")}`} @click=${() => void this.deleteCurrent(false)}>This device</button><button class="ghost danger" title="Delete it on every device it is on" @click=${() => void this.deleteCurrent(true)}>All ${this.openLinkCount()} devices</button><button class="ghost" @click=${() => { this.confirmDelete = false; }}>Cancel</button>`
+          : html`<button class="ghost danger" @click=${() => void this.deleteCurrent()}>Really delete</button><button class="ghost" @click=${() => { this.confirmDelete = false; }}>Cancel</button>`
+        : html`<button class="ghost danger" @click=${() => { this.confirmDelete = true; }}>Delete</button>`}
+    </span>`;
   }
 
   /**
@@ -14145,35 +14247,6 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * The inspector's header with no layer selected: the complication's name and
-   * the things done to the whole complication. Raw JSON only reads, so it
-   * stays usable when the document cannot be edited. Share is in the top bar,
-   * where it can be found whatever is selected.
-   */
-  private complicationHead(cfg: CustomComplicationConfig) {
-    const name = cfg.name.trim() || "Complication";
-    return html`<div class="insp-head comp-head">
-      <div class="crumbs"><span class="here" style=${`--k:${SECTION_COLOR.complication}`}>${name}</span></div>
-      <span class="comp-acts">
-        <button class="ghost" @click=${() => this.openRaw()}>Raw JSON</button>
-        ${this.canEdit ? html`
-          ${this.draft?.baseRevision === null ? nothing : html`
-            <button class="ghost" aria-haspopup="dialog" aria-expanded=${this.historyOpen ? "true" : "false"}
-              title="Earlier saves of this complication" @click=${() => void this.openHistoryDialog()}>History</button>`}
-          <button class="ghost" @click=${() => this.duplicate()}>Duplicate</button>
-          <button class="ghost" aria-haspopup="dialog" aria-expanded=${this.dupOpen ? "true" : "false"}
-            title="Make this design again as another shape, or on another device"
-            @click=${() => this.openDuplicateAs(cfg, this.ownerId ?? "")}>Duplicate as…</button>
-          ${this.confirmDelete
-            ? this.openLinkCount() > 1
-              ? html`<button class="ghost danger" title=${`Delete only the copy on ${this.ownerName(this.ownerId ?? "")}`} @click=${() => void this.deleteCurrent(false)}>This device</button><button class="ghost danger" title="Delete it on every device it is on" @click=${() => void this.deleteCurrent(true)}>All ${this.openLinkCount()} devices</button><button class="ghost" @click=${() => { this.confirmDelete = false; }}>Cancel</button>`
-              : html`<button class="ghost danger" @click=${() => void this.deleteCurrent()}>Really delete</button><button class="ghost" @click=${() => { this.confirmDelete = false; }}>Cancel</button>`
-            : html`<button class="ghost danger" @click=${() => { this.confirmDelete = true; }}>Delete</button>`}` : nothing}
-      </span>
-    </div>`;
-  }
-
-  /**
    * The inspector: the thing that was clicked, as a column of cards. With
    * nothing selected that thing is the complication: its settings, and the
    * actions on the whole of it in the header.
@@ -14214,8 +14287,9 @@ export class WristAssistantPanel extends LitElement {
       const complication = card(host, "complication", "Complication",
         html`${generalEditor(host, { nameOnly: control })}${this.renderWhatItIs(cfg)}`,
         { color: SECTION_COLOR.complication, icon: "watch", alwaysOpen: true });
+      // No header: the name and the whole-complication actions moved to the
+      // document row over the picture, where they stay whatever is selected.
       return html`
-        ${this.complicationHead(cfg)}
         <div class="insp-body" style=${editable} @change=${() => this.draft?.endGesture()}>
           ${control
             ? html`${complication}${controlCard(host, { alwaysOpen: true })}`
