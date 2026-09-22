@@ -8636,6 +8636,13 @@ function inlinePartsEditor(
     upd((i) => { (i.parts ??= []).push({ id, value }); });
     openPopoverSoon(node, popoverId(`inline-part-${id}`), true);
   };
+  // A gap between two parts, most often an icon and the words after it. It
+  // is a text part holding one space, so it needs no editor opened.
+  const addSpace = () => {
+    const id = newId();
+    selectedParts.set(INLINE_PARTS_KEY, id);
+    upd((i) => { (i.parts ??= []).push({ id, value: literal(" ") }); });
+  };
   // An icon part opens on a symbol, so the line shows something at once; the
   // picker under it is open to change it.
   const addIcon = () => {
@@ -8682,12 +8689,14 @@ function inlinePartsEditor(
           @click=${(e: Event) => add({ kind: { kind: "entityState", entityId: "", displayName: "", domain: "" } }, e.currentTarget)}>${uiIcon("braces")}<span>Add value</span></button>
         <button type="button" class="small" title="Add an SF Symbol inside the line"
           @click=${addIcon}>${uiIcon("icon")}<span>Add icon</span></button>
+        <button type="button" class="small" title="Add one space, a gap between two parts"
+          @click=${addSpace}>${uiIcon("plus")}<span>Add space</span></button>
       </div>
     </div>
     ${blocked.length === 0 ? nothing : html`<div class="hint warn">${blockedReasons(blocked)} The watch leaves ${blocked.length === 1 ? "that part" : "those parts"} out of the line.</div>`}
     <div class="part-editor">
       <div class="part-head">
-        <span class="part-title"><b>Part ${index + 1}</b> of ${count} · ${iconPart ? "Icon" : literalPart ? "Text" : "Value"}</span>
+        <span class="part-title"><b>Part ${index + 1}</b> of ${count} · ${iconPart ? "Icon" : literalPart && literalPartText(part.value)?.trim() === "" && literalPartText(part.value) !== "" ? "Space" : literalPart ? "Text" : "Value"}</span>
         <span class="spacer"></span>
         <button type="button" class="icon" title="Move left" aria-label="Move left" ?disabled=${index === 0} @click=${() => move(index - 1)}>${uiIcon("left")}</button>
         <button type="button" class="icon" title="Move right" aria-label="Move right" ?disabled=${index === count - 1} @click=${() => move(index + 1)}>${uiIcon("right")}</button>
