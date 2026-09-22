@@ -739,7 +739,11 @@ const CARD_TINT = {
 
 const LIST_STORE_KEY = "wrist-assistant-panel.layers.v1";
 
-const GRID_STORE_KEY = "wrist-assistant-panel.grid.v1";/** How tall the slot a dragged row opens is, CSS px. */
+const GRID_STORE_KEY = "wrist-assistant-panel.grid.v1";
+
+/** The complication open in this tab, so a reload opens it again. Session
+ * storage, because it is about this tab: a second tab opens on its own. */
+const OPEN_STORE_KEY = "wrist-assistant-panel.open.v1";/** How tall the slot a dragged row opens is, CSS px. */
 const DROP_GAP = 34;
 const COL_MIN = 200;
 const COL_MAX = 720;
@@ -1057,8 +1061,10 @@ export class WristAssistantPanel extends LitElement {
   private readonly scrubEnd = () => this.draft?.endGesture();
   /** The header's complication dialog is open. */
   @state() private pickerOpen = false;
-  /** Whether the picker has opened on its own this page load. Once. */
-  private pickerAutoOpened = false;
+  /** The device and complication this tab had open before a reload, read once
+   * on connect and spent on the first list that lands. Until then nothing is
+   * written back, so the panel's own empty start cannot overwrite it. */
+  private restoreOpen?: { owner: string; id: string };
   /** Which device tab the picker is on: "all", an owner id, or the library.
    * Kept in this browser with the Layers list's other view choices, because a
    * household that works on one watch opens this dialog on that watch every
@@ -2596,7 +2602,7 @@ export class WristAssistantPanel extends LitElement {
        a card this wide. The box is narrower than the 32 by 28 viewBox because
        the art crops its empty margins (preserveAspectRatio, in shapeArt.ts)
        rather than letterboxing itself to fit. */
-    .shape-card .shape-art { width: 30px; height: 40px; display: block; flex: none; }
+    .shape-card .shape-art, .kind-card .shape-art { width: 30px; height: 40px; display: block; flex: none; }
     /* The drawing's two colors: the shape takes the button's own, the device
        around it stays furniture whatever the button is doing. */
     .shape-arts { height: 40px; --wa-shape-outline: var(--wa-muted); }
@@ -5370,6 +5376,7 @@ export class WristAssistantPanel extends LitElement {
     this.loadColumnWidths();
     this.loadListView();
     this.loadGrid();
+    this.loadOpen();
     this.sizeObserver.observe(this);
     window.addEventListener("keydown", this.keyHandler);
     window.addEventListener("keyup", this.keyUpHandler);
@@ -5421,6 +5428,31 @@ export class WristAssistantPanel extends LitElement {
   }
 
   // ── snap to grid ──────────────────────────────────────────────────────
+
+  private loadOpen() {
+    try {
+      const raw = window.sessionStorage.getItem(OPEN_STORE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as { owner?: unknown; id?: unknown };
+      if (typeof saved.owner === "string" && typeof saved.id === "string") {
+        this.restoreOpen = { owner: saved.owner, id: saved.id };
+      }
+    } catch {
+      /* A browser with storage off opens on nothing, as before. */
+    }
+  }
+
+  private saveOpen() {
+    try {
+      if (this.ownerId && this.selectedId) {
+        window.sessionStorage.setItem(OPEN_STORE_KEY, JSON.stringify({ owner: this.ownerId, id: this.selectedId }));
+      } else {
+        window.sessionStorage.removeItem(OPEN_STORE_KEY);
+      }
+    } catch {
+      /* Nothing to do: a reload opens on nothing. */
+    }
+  }
 
   private loadGrid() {
     try {
@@ -5596,8 +5628,13 @@ export class WristAssistantPanel extends LitElement {
     this.pictures.clear();
   }
 
+  /** The browser's own "Leave site?" question, when there is work to lose.
+   * It cannot offer a Save button; no page can add one to that dialog. The
+   * `returnValue` is for Safari, which ignores `preventDefault` here. */
   private beforeUnload = (e: BeforeUnloadEvent) => {
-    if (this.draft?.dirty) e.preventDefault();
+    if (!this.draft?.dirty) return;
+    e.preventDefault();
+    e.returnValue = "";
   };
 
   /** One-second re-render while any preview shows a live countdown, so the
@@ -5655,6 +5692,9 @@ export class WristAssistantPanel extends LitElement {
       this.renderRoot.querySelector<HTMLElement>(".layers"),
       this.renderRoot.querySelector<HTMLElement>(".column.canvas"),
     ]);
+    if ((changed.has("ownerId") || changed.has("selectedId")) && this.restoreOpen === undefined) {
+      this.saveOpen();
+    }
     const key = inspectKey(this.inspect);
     if (key !== this.lastInspectKey) {
       this.lastInspectKey = key;
@@ -5981,9 +6021,12 @@ export class WristAssistantPanel extends LitElement {
       this.maxSchemaVersion = reply.max_schema_version;
       this.loadError = undefined;
       if (!this.ownerId && this.owners.length > 0) {
-        const withData = this.owners.find((o) => o.complication_count > 0) ?? this.owners[0]!;
+        const restored = this.owners.find((o) => o.owner_watch_id === this.restoreOpen?.owner);
+        const withData = restored ?? this.owners.find((o) => o.complication_count > 0) ?? this.owners[0]!;
         await this.selectOwner(withData.owner_watch_id);
       }
+      // No device came back with it, so no list will spend it.
+      if (this.owners.length === 0) this.restoreOpen = undefined;
     } catch (err) {
       this.loadError = `Could not load devices: ${errText(err)}`;
     }
@@ -6112,14 +6155,15 @@ export class WristAssistantPanel extends LitElement {
         if (this.draft.dirty) this.remoteRevision = -1;
         else this.selectNone();
       } else if (!this.draft) {
-        this.selectNone();
-        // The first time the panel is up with nothing open, the list of every
-        // complication is what to look at: it opens on its own, once. Closing
-        // it leaves the stage's pick-one card, and never reopens it unasked.
-        if (!this.pickerAutoOpened && !this.pickerOpen) {
-          this.pickerAutoOpened = true;
-          this.openPicker();
-        }
+        // A reload opens what was open before it. Nothing open leaves the
+        // stage's pick-one card: the picker never opens unasked.
+        const restore = this.restoreOpen;
+        this.restoreOpen = undefined;
+        const record = restore?.owner === this.ownerId
+          ? this.records.find((r) => r.id === restore.id)
+          : undefined;
+        if (record) this.openRecord(record);
+        else this.selectNone();
       }
     } catch (err) {
       this.loadError = `Could not load complications: ${errText(err)}`;
