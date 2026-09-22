@@ -8606,7 +8606,7 @@ function inlineEditor(host: EditorHost): TemplateResult {
       { color: SECTION_COLOR.content, icon: "text", summary: truncate(`${inline.label ? `${inline.label}: ` : ""}${summary}`, 48) })}
     ${card(host, "symbol", "Symbol", html`
       ${symbolField(host, inline.symbol ?? "", (v) => upd((i) => { if (v) i.symbol = v; else delete i.symbol; }, "symbol"), "inline-symbol")}
-      <div class="hint">Drawn before the text. Leave it blank for text only.</div>
+      <div class="hint">Drawn before the text. Leave it blank for text only. Some faces, such as Modular, show the text only and leave the symbol out.</div>
       <div class="field readout"><span>On the face</span><span class="readout-v">${inline.symbol ? `${inline.symbol} ` : ""}${inline.label ? `${inline.label}: ` : ""}${host.resolve(inline.value) ?? "--"}</span></div>`,
       { color: SECTION_COLOR.look, icon: "icon", summary: inline.symbol || "None" })}`;
 }
