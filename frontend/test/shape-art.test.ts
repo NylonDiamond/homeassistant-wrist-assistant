@@ -597,11 +597,20 @@ describe("shapeArtKinds", () => {
 describe("shapeOnlyArt", () => {
   const bare = (family: FamilyKind | undefined, device: "watch" | "iphone", live: LiveShapes = {}) =>
     flatten(shapeOnlyArt(family, device, live));
-  const box = (art: string) => {
+  const crop = (family: FamilyKind | undefined, device: "watch" | "iphone", live: LiveShapes = {}) =>
+    flatten(deviceCropArt(family, device, live));
+  const window = (art: string) => {
     const found = /viewBox=([\d.]+ [\d.]+ [\d.]+ [\d.]+)/.exec(art);
     expect(found, art.slice(0, 120)).not.toBeNull();
     const [x, y, width, height] = found![1]!.split(" ").map(Number) as [number, number, number, number];
     return { x, y, width, height };
+  };
+  /** What the picture was scaled by, which is what says the shape is the same
+   * size as it is on the device. */
+  const scale = (art: string) => {
+    const found = /scale\(([\d.]+)\)/.exec(art);
+    expect(found, art.slice(0, 200)).not.toBeNull();
+    return Number(found![1]);
   };
   const picture = (width: number, height: number) =>
     ({ art: svg`<svg class="complication" data-tag=p></svg>`, width, height });
@@ -609,7 +618,6 @@ describe("shapeOnlyArt", () => {
   it("draws no device at all", () => {
     for (const family of ["rectangular", "circular", "corner", "inline"] as FamilyKind[]) {
       const art = bare(family, "watch");
-      // The case, the bands and the crown of the watch drawing, and its clock.
       expect(art).not.toContain("var(--wa-art-case)");
       expect(art).not.toContain("10:09");
     }
@@ -618,44 +626,40 @@ describe("shapeOnlyArt", () => {
     expect(phone).not.toContain("9:41");
   });
 
-  it("fits the whole shape in rather than trimming its edges", () => {
-    expect(bare("rectangular", "watch")).toContain(`preserveAspectRatio="xMidYMid meet"`);
-    expect(bare("rectangular", "watch")).not.toContain("slice");
+  // The whole point of the view: the same card, minus the device. A shape
+  // that grew when the watch came off would be a second drawing, not the
+  // same one with less in it.
+  it("keeps the window and the scale the device view uses", () => {
+    for (const [family, device] of [
+      ["rectangular", "watch"], ["circular", "watch"], ["inline", "watch"],
+      ["small", "iphone"], ["large", "iphone"], ["rectangular", "iphone"],
+    ] as [FamilyKind, "watch" | "iphone"][]) {
+      const live = { [family]: picture(181, 65.5) } as LiveShapes;
+      expect(window(bare(family, device, live)), family).toEqual(window(crop(family, device, live)));
+      if (family !== "inline") expect(scale(bare(family, device, live)), family).toBeCloseTo(scale(crop(family, device, live)), 6);
+    }
   });
 
-  it("takes the window from the real render, so the shape keeps its own proportions", () => {
-    const art = bare("rectangular", "watch", { rectangular: picture(181, 65.5) });
-    const window = box(art);
-    const pad = 181 * 0.05;
-    expect(window.width).toBeCloseTo(181 + pad * 2, 6);
-    expect(window.height).toBeCloseTo(65.5 + pad * 2, 6);
-    // The picture lands at its own size, so nothing is scaled away.
-    expect(art).toContain(`translate(${pad} ${pad}) scale(1)`);
-    expect(art).toContain("data-tag=p");
+  it("fits a phone in whole and fills a watch window, the way the device view does", () => {
+    expect(bare("rectangular", "watch")).toContain("preserveAspectRatio=xMidYMid slice");
+    expect(bare("small", "iphone")).toContain("preserveAspectRatio=xMidYMid meet");
   });
 
-  it("leaves the same room on every side, so the ring is never cut", () => {
-    const window = box(bare("rectangular", "watch", { rectangular: picture(100, 50) }));
-    // The padding is a share of the longer side, added twice.
-    expect(window.width).toBeCloseTo(100 * 1.1, 6);
-    expect(window.height).toBeCloseTo(50 + 100 * 0.1, 6);
+  // The shape sat low on the face because that is where the face puts it.
+  // With the face gone there is nothing to sit low on.
+  it("moves the shape to the middle of the window", () => {
+    const art = bare("rectangular", "watch", { rectangular: picture(58, 21) });
+    const box = window(art);
+    expect(art).toContain(`translate(${box.x + (box.width - 58) / 2} ${box.y + (box.height - 21) / 2}) scale(1)`);
   });
 
-  it("falls back to the slot's own shape when there is no render", () => {
-    expect(box(bare("rectangular", "watch")).width / box(bare("rectangular", "watch")).height)
-      .toBeCloseTo((58 + 58 * 0.1) / (21 + 58 * 0.1), 6);
-    const round = box(bare("circular", "watch"));
-    expect(round.width).toBeCloseTo(round.height, 6);
-    expect(bare("circular", "watch")).toContain("<circle");
+  it("falls back to the slot's own shape and size when there is no render", () => {
     expect(bare("rectangular", "watch")).toContain("<rect");
-  });
-
-  it("takes a phone shape's fallback from the phone's own slot", () => {
+    expect(bare("rectangular", "watch")).toContain("width=58 height=21");
+    expect(bare("circular", "watch")).toContain("<circle");
+    expect(bare("circular", "watch")).toContain("r=7");
     const slot = phoneSlot("medium")!;
-    const window = box(bare("medium", "iphone"));
-    const pad = Math.max(slot.width, slot.height) * 0.05;
-    expect(window.width).toBeCloseTo(slot.width + pad * 2, 6);
-    expect(window.height).toBeCloseTo(slot.height + pad * 2, 6);
+    expect(bare("medium", "iphone")).toContain(`width=${slot.width} height=${slot.height}`);
   });
 
   it("masks a round shape round and a rectangular one to its corners", () => {
@@ -669,25 +673,31 @@ describe("shapeOnlyArt", () => {
     const art = bare("corner", "watch", {
       corner: { ...picture(100, 100), focus: { cx: 20, cy: 20, diameter: 40 } },
     });
-    const window = box(art);
-    expect(window.width).toBeCloseTo(40 * 1.1, 6);
     expect(art).toMatch(/<clipPath id=pk-clip-\w+><circle/);
+    // The 13 unit slot for a 40 unit disc, which is what the watch scales it by.
+    expect(scale(art)).toBeCloseTo(13 / 40, 6);
   });
 
-  // Inline is a symbol and a line of words rather than a canvas, so its render
-  // never says how wide the line is: the slot does.
-  it("draws inline as its line, at the slot's own width", () => {
+  // Inline is a symbol and a line of words rather than a canvas.
+  it("draws inline as its line, in the middle of the window", () => {
     const art = bare("inline", "watch", {
       inline: { art: nothing, width: 0, height: 0, text: "Front Yard" },
     });
     expect(art).toContain("Front Yard");
-    expect(box(art).width / box(art).height).toBeCloseTo((58 + 5.8) / (8 + 5.8), 6);
+    expect(art).not.toContain("var(--wa-art-case)");
   });
 
   it("draws a control as its tile, the same picture the device view draws", () => {
     expect(bare(undefined, "watch")).toContain(`class="pk-crop ctl"`);
     const tile = { art: svg`<div data-tag="tile"></div>`, width: 48, height: 30 };
     expect(bare(undefined, "iphone", { control: tile })).toContain(`class="pk-card-ctl"`);
+  });
+
+  // A watch has no Home Screen tile and a phone has no corner, so there is
+  // no slot to draw on its own: the device picture says more than a blank.
+  it("keeps the device picture for a shape that device has no slot for", () => {
+    expect(bare("corner", "iphone")).toContain("var(--wa-art-case)");
+    expect(bare("small", "watch")).toContain("var(--wa-art-case)");
   });
 
   it("never throws, whatever it is asked for", () => {
