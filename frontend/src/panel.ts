@@ -475,21 +475,6 @@ function hasControlOf(record: ComplicationRecord): boolean {
 }
 
 /**
- * The shapes a picker card lists under its drawings, in words.
- *
- * `ALL_FAMILIES` order rather than biggest canvas first, because this line is
- * read against the two pictures above it and those go watch face, then Lock
- * Screen, then Home Screen: "Rectangular · Circular · Inline · Small · Medium"
- * walks down the same page the drawings do. The control comes last, being the
- * one entry that is not a shape at all.
- */
-function shapeListText(families: readonly FamilyKind[], control: boolean): string {
-  const names = ALL_FAMILIES.filter((f) => families.includes(f)).map(familyTitle);
-  if (control) names.push("Control");
-  return names.length === 0 ? "No shapes yet" : names.join(" · ");
-}
-
-/**
  * What one card says it is, at the end of its name line: the shape, and
  * nothing else.
  *
@@ -503,18 +488,35 @@ function cardShapeTitle(family: FamilyKind | undefined, control: boolean): strin
 }
 
 /**
- * The order the shape boxes come in inside one device's block.
+ * The order the shape boxes come in inside one device's block, which is not
+ * the same question on a watch as on a phone.
  *
- * `ALL_FAMILIES` first, the same order the cards' own shape line reads in, so
- * a watch's boxes walk down the page the way the drawings do. The control is
- * not a shape and comes after every one of them; a document with neither is
- * last, being a thing half made rather than a kind of complication.
+ * A watch is its face: the rectangular corner of it, the circular one, the
+ * corner, the inline strip along the top. A phone is its Home Screen first,
+ * biggest tile down to smallest, and only then the small shapes it lends to
+ * the Lock Screen. Listing a phone's boxes in the watch's order put two Lock
+ * Screen slivers above the Home Screen tiles that are most of what a phone
+ * holds.
+ *
+ * The control is not a shape and comes after every one of them on both; a
+ * document with neither is last, being a thing half made rather than a kind
+ * of complication.
+ *
+ * Unassigned is no device and holds every shape there is, so it takes the
+ * watch's order with the Home Screen tiles after it.
  */
-const SHAPE_GROUP_ORDER: readonly string[] = [...ALL_FAMILIES, "control", "none"];
+const WATCH_SHAPE_ORDER: readonly string[] = ["rectangular", "circular", "corner", "inline"];
+const PHONE_SHAPE_ORDER: readonly string[] = ["small", "medium", "large", "xlarge", "rectangular", "circular", "inline"];
+const SHELF_SHAPE_ORDER: readonly string[] = [...WATCH_SHAPE_ORDER, "small", "medium", "large", "xlarge"];
 
-function shapeGroupRank(key: string): number {
-  const i = SHAPE_GROUP_ORDER.indexOf(key);
-  return i < 0 ? SHAPE_GROUP_ORDER.length : i;
+function shapeGroupOrder(kind: DeviceKind): readonly string[] {
+  const shapes = kind === "iphone" ? PHONE_SHAPE_ORDER : kind === "library" ? SHELF_SHAPE_ORDER : WATCH_SHAPE_ORDER;
+  return [...shapes, "control", "none"];
+}
+
+function shapeGroupRank(order: readonly string[], key: string): number {
+  const i = order.indexOf(key);
+  return i < 0 ? order.length : i;
 }
 
 /** The glyph a picker tab or section heading wears: the device itself, the
@@ -1995,9 +1997,12 @@ export class WristAssistantPanel extends LitElement {
     }
     .pk-fold-btn:hover .pk-sec-name, .pk-fold-btn:hover .pk-band-name { color: var(--wa-accent); }
     .pk-fold-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 6px; }
-    .pk-fold { display: inline-flex; flex: none; color: var(--wa-muted); transform: rotate(90deg); transition: transform .12s ease; }
+    /* Down while the block is open, pointing at what it holds; round to the
+       right while it is folded, pointing at what opening it would show. The
+       glyph itself is drawn as a chevron pointing down. */
+    .pk-fold { display: inline-flex; flex: none; color: var(--wa-muted); transform: rotate(0deg); transition: transform .12s ease; }
     .pk-fold svg { width: 13px; height: 13px; }
-    .pk-band.shut .pk-fold, .pk-sec.shut .pk-fold { transform: rotate(0deg); }
+    .pk-band.shut .pk-fold, .pk-sec.shut .pk-fold { transform: rotate(-90deg); }
     /* One device's box. Clipping its overflow is what lets the heading's wash
        of the owner's colour run to the rounded corners without a second radius
        of its own, and what makes a folded box just its heading strip. */
@@ -2155,16 +2160,12 @@ export class WristAssistantPanel extends LitElement {
     /* The picture and the buttons that sit over it. Its own box, so the
        actions are in the picture's corner rather than over the name. */
     .pk-card-pic { position: relative; min-width: 0; }
-    .pk-card-foot { display: flex; align-items: center; gap: 7px; margin-top: 9px; min-height: 16px; min-width: 0; }
-    /* Whatever is on the left of the foot, the shape keeps the right end. */
-    .pk-card-foot .pk-card-shape { margin-left: auto; }
     .pk-card-name {
       flex: 1; min-width: 0; text-align: left; font: inherit; font-size: 13px; font-weight: 700;
       color: inherit; background: transparent; border: 0; padding: 0; cursor: pointer;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     .pk-card-name:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 6px; }
-    .pk-card-shape { flex: none; font-size: 11px; color: var(--wa-muted); white-space: nowrap; }
     /* Devices: the one control on this surface that writes anything. */
     .pk-dup { position: relative; flex: none; }
     .pk-dup-open {
@@ -9413,7 +9414,8 @@ export class WristAssistantPanel extends LitElement {
    * has none of them yet.
    */
   private renderPickerGroups(rows: readonly PickerRow[], at: string, unsaved: Draft | undefined) {
-    const groups = pickerShapeGroups(rows, (row) => this.pickerShapeOf(row, at), SHAPE_GROUP_ORDER)
+    const order = shapeGroupOrder(deviceKindOf(this.ownerOf(at)));
+    const groups = pickerShapeGroups(rows, (row) => this.pickerShapeOf(row, at), order)
       .map((g) => ({ key: g.key, label: g.label, rows: g.rows, unsaved: false }));
     if (unsaved) {
       const spare = this.draftShapeOf(unsaved);
@@ -9421,7 +9423,7 @@ export class WristAssistantPanel extends LitElement {
       if (hit) hit.unsaved = true;
       else {
         groups.push({ key: spare.key, label: spare.label, rows: [], unsaved: true });
-        groups.sort((a, b) => shapeGroupRank(a.key) - shapeGroupRank(b.key));
+        groups.sort((a, b) => shapeGroupRank(order, a.key) - shapeGroupRank(order, b.key));
       }
     }
     return html`<div class="pk-boxes">
@@ -9498,9 +9500,6 @@ export class WristAssistantPanel extends LitElement {
       </div>
       <div class="pk-card-pic">
         <span class="pk-card-crop">${deviceCropArt(family, device, device === "iphone" ? live.phone : live.watch, { shelved: kind === "library" })}</span>
-      </div>
-      <div class="pk-card-foot">
-        <span class="pk-card-shape">${cardShapeTitle(family, cfg.control !== undefined)}</span>
       </div>
     </div>`;
   }
@@ -9822,9 +9821,6 @@ export class WristAssistantPanel extends LitElement {
               : html`<span class="pk-card-crop">${deviceCropArt(family, this.cardDevice(kind, family), {}, { shelved })}</span>`}
           </button>
         </div>
-        <div class="pk-card-foot">
-          ${families.length === 0 ? nothing : html`<span class="pk-card-shape">${shapeListText(families, false)}</span>`}
-        </div>
         ${this.pickerNote === row.key ? html`<div class="pk-note">${item.title}</div>` : nothing}
       </div>`;
     }
@@ -9885,6 +9881,7 @@ export class WristAssistantPanel extends LitElement {
               ?disabled=${this.saving} @change=${() => this.togglePickedCard(pickKey)}>`
           : nothing}
         <button type="button" class="pk-card-name" title=${doing} @click=${hit}>${recName}</button>
+        ${hidden ? html`<span class="pk-tag" title="These do not show in their device's own list of complications. A face or widget that already has one keeps it.">hidden</span>` : nothing}
       </div>
       <div class="pk-card-pic">
         <button type="button" class="pk-card-open" title=${doing}
@@ -9914,10 +9911,6 @@ export class WristAssistantPanel extends LitElement {
                 ?disabled=${this.saving} @click=${(e: Event) => { stop(e); this.pickerConfirmDelete = record.id; }}>${uiIcon("delete")}</button>` : nothing}`}
         </span>
         ${menu ? this.renderPickerDupMenu(row, family, cardKey) : nothing}
-      </div>
-      <div class="pk-card-foot">
-        ${hidden ? html`<span class="pk-tag" title="These do not show in their device's own list of complications. A face or widget that already has one keeps it.">hidden</span>` : nothing}
-        <span class="pk-card-shape">${cardShapeTitle(family, control)}</span>
       </div>
     </div>`;
   }
