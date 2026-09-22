@@ -130,6 +130,7 @@ import {
   timelineSamples,
   countdownRemainingString,
   resolveAll,
+  resolveInline,
   resolveControl,
 } from "./resolver.js";
 import { CANVAS, CASES, FACE_TINTS, PHONE_CASES, REFERENCE_CASE, REFERENCE_PHONE, caseForScreenSize, cornerContext, cornerTileSide, familyTitle, fitBox, handleResize, iconDrawnSide, phoneCaseForScreenSize, renderLayerThumb, renderLayout, slotFor, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type PreviewCase } from "./renderer.js";
@@ -2960,6 +2961,7 @@ export class WristAssistantPanel extends LitElement {
     }
     .layout.cols-2 > .column.inspector { grid-column: 1 / -1; }
     .layout.cols-2 > .gutter.right { display: none; }
+    .layout.bare { grid-template-columns: minmax(0, 1fr); overflow: auto; }
     .layout.cols-1 { grid-template-columns: minmax(0, 1fr); overflow: auto; }
     .layout.cols-1 > .column { grid-column: auto; }
     .layout.cols-1 > .gutter { display: none; }
@@ -7296,7 +7298,6 @@ export class WristAssistantPanel extends LitElement {
     }
     await this.loadOtherLists();
     const lines: string[] = [];
-    if (made.length > 0) lines.push(`${config.name} is on ${joinNames(made)} too. Saving it here saves it there.`);
     if (failed.length > 0) lines.push(`${joinNames(failed)}.`);
     this.copyStatus = lines.length > 0 ? lines.join(" ") : undefined;
   }
@@ -9087,7 +9088,12 @@ export class WristAssistantPanel extends LitElement {
       ${this.historyOpen ? this.renderHistoryDialog() : nothing}
       ${this.savePartOpen ? this.renderSavePartDialog() : nothing}
       ${this.partsOpen ? this.renderPartsDialog() : nothing}
-      ${this.watchSupported
+      ${this.watchSupported && !this.draft
+        // Nothing open: the side columns have nothing to hold, so the stage
+        // takes the whole width rather than sitting between two blank panels.
+        ? html`<div class="layout bare"><div class="column canvas">${this.renderBanners()}${this.renderCanvas()}</div></div>
+          ${this.renderFooter()}`
+        : this.watchSupported
         ? html`<div class="layout cols-${fit.columns}"
               style="--wa-left:${fit.left}px;--wa-right:${fit.right}px">
             <div class=${`column left ${this.inControlView ? "control" : ""}`}>${this.inControlView
@@ -9603,7 +9609,7 @@ export class WristAssistantPanel extends LitElement {
     // list. The inspector's summary still carries it.
     return html`<div class="picker">
       <button id="wa-picker" class="pk-open" aria-haspopup="dialog" aria-expanded=${this.pickerOpen ? "true" : "false"}
-        title="Choose a complication" @click=${() => this.togglePicker()}>
+        title="Choose a complication" @click=${() => this.pickerOpen ? this.togglePicker(false) : this.browseAll()}>
         <span class="pk-open-lines">
           <span class="pk-open-row">
             <span class="pk-name">${name}</span>
@@ -10609,8 +10615,9 @@ export class WristAssistantPanel extends LitElement {
       }
       // A failure is news wherever it is pressed, so `quiet` only silences
       // the write that did what it was asked.
+      // Only a failure says anything: the switch going off is the news that
+      // it worked.
       if (failed > 0) this.copyStatus = `${row.name} is still on ${label}: the copy there changed on the server. Open the menu again.`;
-      else if (!quiet) this.copyStatus = `${row.name} is off ${label}. A face or widget already using it keeps it.`;
       // The draft goes before the lists are read again: it is built on a
       // record that is not there any more, and a render in between would
       // draw the editor over a document the server has lost.
@@ -10713,7 +10720,6 @@ export class WristAssistantPanel extends LitElement {
       // A half-done move is news wherever it is pressed: the design is now in
       // two places and one of them was not asked for.
       if (!gone.ok) this.copyStatus = `${row.name} is unassigned, but the copy on ${this.ownerName(copy.ownerId)} could not be removed. Delete it from its own card.`;
-      else if (!quiet) this.copyStatus = `${row.name} is off ${this.ownerName(copy.ownerId)} and unassigned. A face or widget already using it keeps it.`;
       if (followed) this.pickerDupFor = `${shelf.ownerId}|${rowKeyFor({ ownerId: shelf.ownerId, id: kept.id, ...(kept.linkId !== undefined ? { linkId: kept.linkId } : {}) })}`;
       // The draft goes before the lists are read again: the record it was
       // built on is on its way out, and a render in between would draw the
@@ -10848,11 +10854,6 @@ export class WristAssistantPanel extends LitElement {
       // the device has one, the shelf's is the only copy there is.
       const drop = fromShelf && shelf ? await this.dropShelfCopies(row, shelf, moved) : undefined;
       const followed = drop?.landed === true;
-      if (!quiet && !drop?.failed) {
-        this.copyStatus = fromShelf
-          ? `${row.name} is on ${label}. It is not unassigned any more.`
-          : `${row.name} is on ${label} too. Saving it saves it everywhere it is.`;
-      }
       if (at !== undefined) this.pickerDupFor = `${at}|${rowKeyFor({ ownerId: target.ownerId, id: copy.id, linkId: link })}`;
       // The draft goes before the lists are read again: the record it was
       // built on has just been taken off the shelf.
@@ -11030,6 +11031,15 @@ export class WristAssistantPanel extends LitElement {
     const inside = e.composedPath().some((n) => n instanceof HTMLElement && n.dataset.menu === open);
     if (!inside) this.toggleMenu(open, false);
   };
+
+  /** Both buttons named Browse all open the picker on every device and every
+   * shape. Opening it on a filter left from last time showed a part of the
+   * list under a button that promised all of it. */
+  private browseAll() {
+    this.pickPickerTab(ALL_DEVICES);
+    this.pickerFilter = "all";
+    this.openPicker();
+  }
 
   private togglePicker(next = !this.pickerOpen) {
     if (next) this.openPicker();
@@ -14156,11 +14166,10 @@ export class WristAssistantPanel extends LitElement {
   private renderLayers() {
     const cfg = this.draft?.config;
     if (!cfg) return nothing;
-    // Inline is one line of text with no canvas, so it has no layers to list.
-    // The card used to fall back to the first canvas shape and show that
-    // shape's rows under a line of small print, which reads as "here are the
-    // Inline layers" however the print is worded.
-    if (!isDrawable(this.activeFamily)) return this.renderInlineHasNoLayers();
+    // Inline is one line of text with no canvas, so its card lists that line
+    // alone. The card used to fall back to the first canvas shape and show
+    // that shape's rows, which read as "here are the Inline layers".
+    if (!isDrawable(this.activeFamily)) return this.renderInlineHasNoLayers(cfg);
     const edit = this.canEdit;
     const family = this.canvasFamily;
     const move = (id: string, dir: -1 | 1) => this.moveLayer(id, dir);
@@ -14568,13 +14577,36 @@ export class WristAssistantPanel extends LitElement {
     </div>`;
   }
 
-  /** The Layers card while Inline is the shape being edited: there is nothing
-   * to list, and saying so beats listing another shape's rows. */
-  private renderInlineHasNoLayers() {
-    return html`<div class="card">
+  /** The Layers card while Inline is the shape being edited.
+   *
+   * Inline has no canvas, but an empty card read as "this complication has
+   * lost its layers". So the card lists the one thing Inline draws, its line
+   * of text, as a fixed row that opens the text on the right, and the tap row
+   * under it the way a canvas shape shows it. The row has no grip, no delete
+   * and no add: the line is always there, and there is nothing to stack. */
+  private renderInlineHasNoLayers(cfg: CustomComplicationConfig) {
+    const line = cfg.inline ? resolveInline(cfg.inline, this.buildContext(), cfg) : undefined;
+    const words = line ? this.inlineLineText(line) : "No text yet";
+    const picked = this.inspect.kind === "family";
+    const open = () => { this.inspect = { kind: "family" }; };
+    return html`<div class="card layers-card tinted banded s${this.thumbStep}" style=${`--c:${CARD_TINT.layers}`}>
       <h2 class="panel-title"><span class="swatch">${uiIcon("layers")}</span>Layers</h2>
-      <div class="empty">Inline is one line of text and draws no layers.
-        Its text is on the right. Pick a canvas shape above to work on layers.</div>
+      <div class="pinned-set">
+      <div class="layer pinned ${picked ? "hl" : ""}" style=${`--k:${KIND_COLOR.text}`} tabindex="0"
+        title="The one line Inline draws. Click to edit it."
+        @click=${open}
+        @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") open(); }}>
+        <span class="grip">${uiIcon("text")}</span>
+        <span class="bar"></span>
+        <span class="thumb blank"></span>
+        <span class="name">
+          <b>Inline text</b>
+          <small><span class="kind">Text</span> · ${words}</small>
+        </span>
+        <span class="right"><span class="badges"><span class="badge">always here</span></span></span>
+      </div>
+      ${this.renderDocumentTapRow(cfg)}
+      </div>
     </div>`;
   }
 
@@ -14739,7 +14771,7 @@ export class WristAssistantPanel extends LitElement {
           <h2 class="gate-title">Pick a complication to edit.</h2>
           <p class="gate-lead">Browse all, at the top left, lists every complication in this home. Or make a new one.</p>
           <div class="gate-acts">
-            <button class="primary" @click=${() => this.togglePicker(true)}>Browse all</button>
+            <button class="primary" @click=${() => this.browseAll()}>Browse all</button>
             <button class="ghost" @click=${() => this.openNewDialog()}>${uiIcon("plus")}<span>New complication</span></button>
           </div>
         </div>
