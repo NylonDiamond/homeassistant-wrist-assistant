@@ -16,7 +16,7 @@ import {
   type Value,
 } from "../src/model.js";
 import { Draft } from "../src/draft.js";
-import { syncInlineParts } from "../src/rich-text.js";
+import { inlineToParts, syncInlineParts } from "../src/rich-text.js";
 
 const PART_A = "A0000000-0000-4000-8000-000000000001";
 const PART_B = "A0000000-0000-4000-8000-000000000002";
@@ -62,16 +62,37 @@ describe("syncInlineParts", () => {
     expect(cfg.inline!.value).toEqual(literal("In  now"));
   });
 
-  it("leaves the value alone without parts or under a countdown", () => {
+  it("leaves the value alone without parts", () => {
     const plain = newConfig("Line", 0, "inline");
     plain.inline = { value: state("sensor.temp") };
     syncInlineParts(plain);
     expect(plain.inline!.value).toEqual(state("sensor.temp"));
+  });
 
+  it("counts down to the one live part", () => {
     const counting = inlineConfig();
     counting.inline!.countdown = true;
     syncInlineParts(counting);
-    expect(counting.inline!.value).toEqual(literal("old"));
+    expect(counting.inline!.value).toEqual(state("sensor.temp"));
+  });
+
+  it("writes a lone part as it is, keeping its kind and format", () => {
+    const cfg = newConfig("Line", 0, "inline");
+    const temp = state("sensor.temp", { relativeTime: true });
+    cfg.inline = { value: literal("old"), parts: [{ id: PART_A, value: temp }] };
+    expect(syncInlineParts(cfg)).toEqual([]);
+    expect(cfg.inline.value).toEqual(temp);
+  });
+
+  it("makes a first icon the line's symbol and joins the rest", () => {
+    const cfg = inlineConfig();
+    cfg.inline!.parts!.unshift({ id: "A0000000-0000-4000-8000-000000000008", value: literal(""), symbol: "bolt.fill" });
+    syncInlineParts(cfg);
+    expect(cfg.inline!.symbol).toBe("bolt.fill");
+    expect(cfg.inline!.value).toEqual({ kind: { kind: "jinja", value: "In {{ states('sensor.temp') }} now" } });
+    cfg.inline!.parts!.shift();
+    syncInlineParts(cfg);
+    expect(cfg.inline!.symbol).toBeUndefined();
   });
 });
 
@@ -129,5 +150,29 @@ describe("Inline icon parts", () => {
     expect(inlineRuns("plain")).toEqual([{ text: "plain" }]);
     expect(inlineRuns("a\uE000bolt")).toEqual([{ text: "a\uE000bolt" }]);
     expect(inlineRuns("a\uE000\uE001b")).toEqual([{ text: "a\uE000\uE001b" }]);
+  });
+});
+
+describe("An Inline line saved without parts", () => {
+  it("opens as parts that draw exactly what it drew", () => {
+    const cfg = newConfig("Line", 0, "inline");
+    cfg.inline = { label: "Temp", value: state("sensor.temp", { decimals: 1 }), symbol: "thermometer" };
+    const before = structuredClone(cfg.inline);
+    const draft = new Draft(cfg, 3);
+    const inline = draft.config.inline!;
+    expect(inline.parts!.map((p) => p.symbol ?? p.value)).toEqual(["thermometer", before.value]);
+    expect(inline.value).toEqual(before.value);
+    expect(inline.symbol).toBe("thermometer");
+    expect(inline.label).toBe("Temp");
+    expect(draft.dirty).toBe(false);
+  });
+
+  it("keeps a countdown counting", () => {
+    const cfg = newConfig("Line", 0, "inline");
+    cfg.inline = { value: state("timer.oven"), countdown: true };
+    inlineToParts(cfg);
+    syncInlineParts(cfg);
+    expect(cfg.inline.value).toEqual(state("timer.oven"));
+    expect(cfg.inline.countdown).toBe(true);
   });
 });

@@ -3436,12 +3436,12 @@ export interface InlineLayout {
   symbol?: string;
   /** Live countdown mode, same semantics as TextElement.countdown. */
   countdown?: boolean;
-  /** The line built from parts: typed words and live values in a row. Absent
-   * or empty means `value` is the line, as it always was. With parts, `value`
-   * is the parts joined into one template (`syncInlineParts`), which is all
-   * the watch reads: it ignores this key, so Inline parts need no app update.
-   * Parts carry no looks, because the face draws Inline in its own font and
-   * tint. A countdown drops them. */
+  /** The line built from parts: typed words, live values and icons in a row.
+   * Absent or empty means `value` and `symbol` are the line, as they always
+   * were; the panel turns such a line into parts when it opens it. With parts,
+   * `symbol` and `value` are written from them (`syncInlineParts`), and those
+   * two are all the watch reads: it ignores this key. Parts carry no looks,
+   * because the face draws Inline in its own font and tint. */
   parts?: InlinePart[];
 }
 
@@ -3495,9 +3495,10 @@ export function inlineRuns(line: string): ({ text: string } | { symbol: string }
   return out;
 }
 
-/** True when the Inline line is built from parts. */
-export function inlineUsesParts(inline: Pick<InlineLayout, "parts" | "countdown">): boolean {
-  return inline.countdown !== true && (inline.parts?.length ?? 0) > 0;
+/** True when the Inline line is built from parts, which every line the panel
+ * has opened is (`inlineToParts`). */
+export function inlineUsesParts(inline: Pick<InlineLayout, "parts">): boolean {
+  return (inline.parts?.length ?? 0) > 0;
 }
 
 // ── Control Center ────────────────────────────────────────────────────────

@@ -339,6 +339,7 @@ import {
   type RichTextBlocked,
   type RichTextMoved,
   dropPartIds,
+  inlineCountdownPart,
   joinTextParts,
   turnOffRichText,
   turnOnRichText,
@@ -8567,49 +8568,35 @@ export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResu
 }
 
 /** The Inline shape: one line of text, no canvas. The watch draws
- * `symbol label: value` and drops the label when the face is narrow. The
- * value is the same control a text layer uses, so an entity, an attribute or
- * a template all work; the symbol is the same picker an icon layer uses. */
+ * `symbol label: value` and drops the label when the face is narrow. The line
+ * is always a row of parts (`inlineToParts` converts an older one on open):
+ * words, live values and icons, the value parts using the same control a text
+ * layer uses. An icon as the first part is the line's symbol. */
 function inlineEditor(host: EditorHost): TemplateResult {
   const inline = host.config.inline;
-  if (!inline) {
+  if (!inline || !inlineUsesParts(inline)) {
     return html`<div class="hint">This complication lists Inline but has no Inline text yet (it was saved by an older integration). The watch shows "No inline layout" until one is added.</div>
       <button class="small" @click=${() => host.addInlineText()}>Add Inline text</button>`;
   }
   const upd = (mutate: (i: InlineLayoutDraft) => void, k?: string) => host.update((c) => { if (c.inline) mutate(c.inline); }, k ? `inline-${k}` : undefined);
   const ctx = describeContext(host);
-  const withParts = inlineUsesParts(inline);
-  const setType = (to: "plain" | "parts") => upd((i) => {
-    if (to === "parts") {
-      if (inlineUsesParts(i)) return;
-      // The line so far becomes the first part, so nothing on the face moves.
-      const id = newId();
-      selectedParts.set(INLINE_PARTS_KEY, id);
-      delete i.countdown;
-      i.parts = [{ id, value: structuredClone(i.value) }];
-      return;
-    }
-    // The value already holds the parts joined, so dropping them keeps the line.
-    delete i.parts;
-  });
-  const summary = withParts
-    ? inline.parts!.map((p) => (p.symbol !== undefined ? `(${p.symbol})` : literalPartText(p.value) ?? `[${describeValueBody(p.value, ctx)}]`)).join("")
-    : describeValue(inline.value, ctx);
+  const parts = inline.parts!;
+  const summary = parts.map((p) => (p.symbol !== undefined ? `(${p.symbol})` : literalPartText(p.value) ?? `[${describeValueBody(p.value, ctx)}]`)).join("");
+  // Count down needs one live value to count to. Offered only when the line
+  // has exactly one and it holds a time; kept while on, with a warning, so a
+  // countdown that stopped working can be turned off.
+  const timer = inlineCountdownPart(parts);
+  const counting = inline.countdown === true;
   return html`
     ${card(host, "content", "Inline text", html`
       ${textField("Label (blank = value only)", inline.label ?? "", (v) => upd((i) => { if (v) i.label = v; else delete i.label; }, "label"))}
-      ${segField("Type", withParts ? "parts" : "plain", INLINE_TYPES, setType, { titles: INLINE_TYPE_TITLES })}
-      ${withParts
-        ? inlinePartsEditor(host, inline, upd)
-        : html`
-          ${valueEditor(host, inline.value, (v) => upd((i) => { i.value = v; }, "value"), { showResolved: true, label: "Text", key: "inline-value" })}
-          ${countdownFields(host, inline.countdown === true, inline.value, (v) => upd((i) => { if (v) i.countdown = true; else delete i.countdown; }))}`}`,
-      { color: SECTION_COLOR.content, icon: "text", summary: truncate(`${inline.label ? `${inline.label}: ` : ""}${summary}`, 48) })}
-    ${card(host, "symbol", "Symbol", html`
-      ${symbolField(host, inline.symbol ?? "", (v) => upd((i) => { if (v) i.symbol = v; else delete i.symbol; }, "symbol"), "inline-symbol")}
-      <div class="hint">Drawn before the text. Leave it blank for text only. Some faces, such as Modular, show the text only and leave the symbol out.</div>
-      <div class="field readout"><span>On the face</span><span class="readout-v">${inline.symbol ? `${inline.symbol} ` : ""}${inline.label ? `${inline.label}: ` : ""}${inlineRuns(host.resolve(inline.value) ?? "--").map((r) => ("symbol" in r ? host.icons.render(r.symbol, 12, "#FFFFFF") : r.text))}</span></div>`,
-      { color: SECTION_COLOR.look, icon: "icon", summary: inline.symbol || "None" })}`;
+      ${inlinePartsEditor(host, inline, upd)}
+      ${timer || counting ? html`
+        ${countdownFields(host, counting, timer?.value, (v) => upd((i) => { if (v) i.countdown = true; else delete i.countdown; }))}
+        ${counting ? html`<div class="hint">While it counts down, the line is the first icon, the label and the time left. The other parts are not drawn.</div>` : nothing}` : nothing}
+      <div class="field readout"><span>On the face</span><span class="readout-v">${inline.symbol ? html`${host.icons.render(inline.symbol, 12, "#FFFFFF")} ` : ""}${inline.label ? `${inline.label}: ` : ""}${inlineRuns(host.resolve(inline.value) ?? "--").map((r) => ("symbol" in r ? host.icons.render(r.symbol, 12, "#FFFFFF") : r.text))}</span></div>
+      <div class="hint">Some faces, such as Modular, show the words only and leave the icons out.</div>`,
+      { color: SECTION_COLOR.content, icon: "text", summary: truncate(`${inline.label ? `${inline.label}: ` : ""}${summary}`, 48) })}`;
 }
 
 type InlineLayoutDraft = NonNullable<CustomComplicationConfig["inline"]>;
@@ -8617,12 +8604,6 @@ type InlineLayoutDraft = NonNullable<CustomComplicationConfig["inline"]>;
 /** Where `selectedParts` keeps the Inline part picked. Not a layer id, so it
  * never meets one. */
 const INLINE_PARTS_KEY = "inline";
-
-const INLINE_TYPES: [("plain" | "parts"), string][] = [["plain", "Plain"], ["parts", "Parts"]];
-const INLINE_TYPE_TITLES: Partial<Record<"plain" | "parts", string>> = {
-  plain: "One value: typed words, a live value or a template",
-  parts: "Typed words and live values in a row, joined into one line",
-};
 
 /**
  * The Inline line as a row of parts: the chips and the two add buttons, then
@@ -8709,12 +8690,12 @@ function inlinePartsEditor(
         <button type="button" class="icon" title="Move left" aria-label="Move left" ?disabled=${index === 0} @click=${() => move(index - 1)}>${uiIcon("left")}</button>
         <button type="button" class="icon" title="Move right" aria-label="Move right" ?disabled=${index === count - 1} @click=${() => move(index + 1)}>${uiIcon("right")}</button>
         <button type="button" class="icon danger" aria-label="Remove this part" ?disabled=${count === 1}
-          title=${count === 1 ? "The line keeps at least one part. Switch to Plain to stop using parts." : "Remove this part"}
+          title=${count === 1 ? "The line keeps at least one part" : "Remove this part"}
           @click=${remove}>${uiIcon("delete")}</button>
       </div>
       ${iconPart
         ? html`${symbolField(host, part.symbol ?? "", (v) => updPart((x) => { x.symbol = v.trim(); }, "symbol"), `inline-part-${part.id}-symbol`, undefined, "Icon")}
-          <div class="hint">Drawn inside the line, where the part sits. Needs the watch app from 2.8.0. Faces that leave the symbol out, such as Modular, leave these out too.</div>`
+          <div class="hint">${index === 0 ? "First in the line, so it draws ahead of the words with a gap, and stays while the line counts down." : "Drawn inside the line, where the part sits. Needs the watch app from 2.8.0."}</div>`
         : html`${valueEditor(host, part.value, (v) => updPart((x) => { x.value = v; }, "value"), { showResolved: true, label: literalPart ? "Text" : "Shows", key: `inline-part-${part.id}` })}
           ${literalPart ? html`<div class="hint">Spaces count, and show as dots in the parts list. Type one at the start or end when this part needs a gap.</div>` : nothing}`}
     </div>

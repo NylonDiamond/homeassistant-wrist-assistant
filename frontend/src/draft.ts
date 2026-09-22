@@ -6,7 +6,7 @@
 
 import { type CustomComplicationConfig, type FamilyKind, encodeConfig, liftChartOwnMarks, normalizeOwnership, parseConfig, syncAttachedTaps } from "./model.js";
 import { deriveDataSources } from "./compiler.js";
-import { syncInlineParts } from "./rich-text.js";
+import { inlineToParts, syncInlineParts } from "./rich-text.js";
 
 const HISTORY_LIMIT = 100;
 
@@ -102,6 +102,10 @@ export class Draft {
     // A chart's highlight, lines and times are always layers now; one saved
     // while the chart drew its own opens converted.
     liftChartOwnMarks(config);
+    // An Inline line is always parts in the editor; one saved without them
+    // opens converted, drawing exactly what it drew.
+    inlineToParts(config);
+    syncInlineParts(config);
     this.baseline = JSON.stringify(encodeConfig(config));
   }
 
@@ -134,7 +138,8 @@ export class Draft {
     normalizeOwnership(next, home);
     syncAttachedTaps(next);
     // The Inline line is its parts joined, and a part may read a shared value
-    // this edit changed.
+    // this edit changed. A line this edit added arrives with no parts.
+    inlineToParts(next);
     syncInlineParts(next);
     this.config = next;
   }

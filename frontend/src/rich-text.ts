@@ -11,6 +11,7 @@ import {
   inlineSymbolMarker,
   inlineUsesParts,
   literal,
+  type InlinePart,
   type CustomComplicationConfig,
   literalPartText,
   newId,
@@ -270,9 +271,40 @@ export function joinTextParts(parts: readonly TextPart[], namedValues: readonly 
 }
 
 /**
- * Write the Inline line's parts into its `value`, the one thing the watch
- * reads. A part with no template form (see `RichTextBlocked`) is left out of
- * the line rather than stopping it, and comes back so the editor can say so.
+ * Turn an Inline line that has no parts into parts, so the editor has one
+ * shape to show: the old symbol as a first icon part, then the old value as
+ * one part. What the watch draws does not change (`syncInlineParts` writes the
+ * same symbol and value back). Run when a draft opens.
+ */
+export function inlineToParts(cfg: CustomComplicationConfig): void {
+  const inline = cfg.inline;
+  if (!inline || (inline.parts?.length ?? 0) > 0) return;
+  const parts: InlinePart[] = [];
+  if (inline.symbol) parts.push({ id: newId(), value: literal(""), symbol: inline.symbol });
+  parts.push({ id: newId(), value: structuredClone(inline.value) });
+  inline.parts = parts;
+}
+
+/** The one live value in an Inline line, the one a countdown counts to, or
+ * undefined when there is none or more than one. The first part is skipped
+ * when it is the lead icon. */
+export function inlineCountdownPart(parts: readonly InlinePart[]): InlinePart | undefined {
+  const live = parts.filter((p) => p.symbol === undefined && p.value.kind.kind !== "literal");
+  return live.length === 1 ? live[0] : undefined;
+}
+
+/**
+ * Write the Inline line's parts into `symbol` and `value`, the two things the
+ * watch reads. Returns the parts left out of the line (see below).
+ *
+ * An icon as the first part becomes `symbol`, which the watch draws ahead of
+ * the text with its own gap, keeps while counting down, and which every app
+ * version draws. Any other icon joins as a marker (`inlineSymbolMarker`).
+ *
+ * One part left over is written as it is, so a lone value keeps its kind and
+ * format. Several join into one template; a part with no template form (see
+ * `RichTextBlocked`) is left out of the line rather than stopping it. With
+ * Count down on, `value` is the one live part, which the watch counts to.
  *
  * Run on every edit (`Draft.update`), not only on a parts edit: a part can read
  * a shared value, and the join copies what that value says today.
@@ -280,15 +312,33 @@ export function joinTextParts(parts: readonly TextPart[], namedValues: readonly 
 export function syncInlineParts(cfg: CustomComplicationConfig): RichTextBlocked[] {
   const inline = cfg.inline;
   if (!inline || !inlineUsesParts(inline)) return [];
-  // An icon part joins as its marker, typed words the watch draws as the symbol.
-  const parts = inline.parts!.map((p) => (p.symbol === undefined ? p : { id: p.id, value: literal(inlineSymbolMarker(p.symbol)) }));
+  const all = inline.parts!;
+  const leadIcon = all[0]?.symbol !== undefined;
+  if (leadIcon && all[0]!.symbol !== "") inline.symbol = all[0]!.symbol;
+  else delete inline.symbol;
+  const rest = leadIcon ? all.slice(1) : all;
+  if (inline.countdown === true) {
+    const live = inlineCountdownPart(rest);
+    if (live) inline.value = structuredClone(live.value);
+    return [];
+  }
+  if (rest.length === 0) {
+    inline.value = literal("");
+    return [];
+  }
+  if (rest.length === 1 && rest[0]!.symbol === undefined) {
+    inline.value = structuredClone(rest[0]!.value);
+    return [];
+  }
+  const parts = rest.map((p) => (p.symbol === undefined ? p : { id: p.id, value: literal(inlineSymbolMarker(p.symbol)) }));
   const joined = joinTextParts(parts, cfg.values);
   if (joined.ok) {
     inline.value = joined.value;
     return [];
   }
   const skip = new Set(joined.blocked.map((b) => b.partId));
-  const rest = joinTextParts(parts.filter((p) => !skip.has(p.id)), cfg.values);
-  inline.value = rest.ok ? rest.value : literal("");
-  return joined.blocked;
+  const kept = joinTextParts(parts.filter((p) => !skip.has(p.id)), cfg.values);
+  inline.value = kept.ok ? kept.value : literal("");
+  // The index the editor names is the part's place in the whole list.
+  return joined.blocked.map((b) => ({ ...b, index: b.index + (leadIcon ? 1 : 0) }));
 }

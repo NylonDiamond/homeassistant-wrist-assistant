@@ -81,7 +81,6 @@ import {
   timelineHistoryKey,
   timelineHistoryMinutes,
   newConfig,
-  inlineUsesParts,
   inlineRuns,
   newControlConfig,
   newElement,
@@ -7248,11 +7247,6 @@ export class WristAssistantPanel extends LitElement {
     // Ticked for several devices, it is one design on all of them: every
     // record carries the same link, so an edit to one is written to the rest.
     if (owners.length > 1) config.linkId = newId();
-    // A new Inline line starts as Parts: the way to put words and values in a
-    // row, and Plain is one click back.
-    if (config.inline && !inlineUsesParts(config.inline)) {
-      config.inline.parts = [{ id: newId(), value: structuredClone(config.inline.value) }];
-    }
     if (!this.startNew(config)) return;
     // The author asked for a control, so its tab is the one up on arrival and
     // its card is the one open.
@@ -8355,7 +8349,7 @@ export class WristAssistantPanel extends LitElement {
       ["The bar over the face", "It names the shape this complication is. Beside it: which watch case the preview is drawn at, and which tint."],
       ["Canvas shapes", "Rectangular, Circular and Corner each hold their own layers. A layer belongs to one shape, so editing it never changes another. An empty shape can take a copy of another shape's layers."],
       ["Corner", "Its Corner content card picks big curved text or a canvas of layers."],
-      ["Inline", "One line of text with an optional symbol before it. It has no layers."],
+      ["Inline", "One line built from parts: words, live values and icons. Its one layer is that line."],
       ["Home Screen", "On an iPhone only: Small, Medium, Large and Extra Large are the Home Screen tile sizes. Each is a canvas shape with its own layers, drawn edge to edge in the tile."],
       ["Small · Medium · Large", "A square, a wide band about twice as wide as it is tall, and a tall tile a little taller than it is wide. Add the ones you want; a size the complication does not have is not offered when you add a widget."],
       ["Extra Large", "The full-page tile, iOS 27 and later. An iPhone on iOS 26 is not offered it when adding a widget, and everything else still draws."],
