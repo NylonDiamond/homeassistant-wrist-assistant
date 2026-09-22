@@ -683,9 +683,9 @@ describe("the list presets", () => {
   const listPresets = LAYER_PRESETS.filter((p) => p.group === "list");
   const CALENDAR = { entityId: "calendar.home", displayName: "Home", domain: "calendar" };
 
-  it("is the nine the plan named", () => {
+  it("is the nine the plan named, plus the iPhone's Multi-Entity", () => {
     expect(listPresets.map((p) => p.title)).toEqual([
-      "Next events", "To-do", "Hourly forecast", "Daily forecast",
+      "Entity rows", "Next events", "To-do", "Hourly forecast", "Daily forecast",
       "Lights on", "Low batteries", "Recent activity", "Scenes grid", "Who is home",
     ]);
   });
@@ -748,7 +748,7 @@ describe("the list presets", () => {
   it("asks for an entity only where one is needed", () => {
     const needs = Object.fromEntries(listPresets.map((p) => [p.kind, p.needsEntity !== false]));
     expect(needs).toEqual({
-      listEvents: true, listTodo: true, listHourly: true, listDaily: true,
+      listEntities: true, listEvents: true, listTodo: true, listHourly: true, listDaily: true,
       listLightsOn: false, listBatteries: false, listRecent: false, listScenes: false,
       listWhoHome: false,
     });

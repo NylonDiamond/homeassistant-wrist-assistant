@@ -14,6 +14,9 @@
 import { CANVAS, type DrawableFamily } from "./renderer.js";
 import type { HassEntityState } from "./ha-api.js";
 import { buildStatesRule, type StatesRowInput } from "./states.js";
+// states-seeds imports toggleSymbols back from here. Safe: neither module
+// calls into the other while it loads.
+import { seedStates, seedStatesRows } from "./states-seeds.js";
 import {
   type CallServiceAction,
   type Comparison,
@@ -48,7 +51,8 @@ export type PresetKind =
   | "toggle" | "status" | "gauge" | "camera" | "chart" | "history" | "doorHistory"
   | "battery" | "sparkline" | "lastChanged" | "person" | "timer" | "alarm"
   | "weatherNow" | "sunTimes" | "openCount"
-  | "listEvents" | "listTodo" | "listHourly" | "listDaily"
+  | "stateIcon" | "runButton" | "thermostat" | "nowPlaying" | "summary"
+  | "listEntities" | "listEvents" | "listTodo" | "listHourly" | "listDaily"
   | "listLightsOn" | "listBatteries" | "listRecent" | "listScenes" | "listWhoHome";
 
 export interface PresetSpec {
@@ -185,6 +189,49 @@ export const LAYER_PRESETS: readonly PresetSpec[] = [
     blurb: "How many of your binary sensors are on right now, big. Narrow it to your doors and windows by area or label in the Source card.",
     layerCount: 2,
     needsEntity: false,
+  },
+  {
+    kind: "stateIcon",
+    title: "State icon",
+    blurb: "An icon and a color for each state the entity reports, with its name under it. A tap does nothing.",
+    layerCount: 2,
+  },
+  {
+    kind: "runButton",
+    title: "Run button",
+    blurb: "A button that runs one scene or script when tapped, with its name under it.",
+    domains: ["scene", "script"],
+    layerCount: 3,
+  },
+  {
+    kind: "thermostat",
+    title: "Thermostat",
+    blurb: "The temperature now, big, and the target under it. Orange while it heats and blue while it cools.",
+    domains: ["climate"],
+    layerCount: 3,
+  },
+  {
+    kind: "nowPlaying",
+    title: "Now playing",
+    blurb: "The song and the artist, with a button that plays or pauses. Dimmed while the player is off.",
+    domains: ["media_player"],
+    layerCount: 4,
+  },
+  {
+    kind: "summary",
+    title: "Home summary",
+    blurb: "Three lines: how many lights are on, who is home and how many doors and windows are open.",
+    layerCount: 6,
+    needsEntity: false,
+    families: LIST_FAMILIES,
+  },
+  {
+    kind: "listEntities",
+    title: "Entity rows",
+    blurb: "Entities one per row, each with its icon, name and state. Starts with the one you pick. Add more in the Source card.",
+    layerCount: 1,
+    group: "list",
+    families: LIST_FAMILIES,
   },
   {
     kind: "listEvents",
@@ -1214,6 +1261,260 @@ export function addOpenCount(cfg: CustomComplicationConfig, env: PresetEnv): str
   return el.payload.id;
 }
 
+// ── presets carried over from the iPhone editor ───────────────────────────
+// The iPhone app had its own preset styles before the panel existed. Most of
+// them already have a preset here; these are the ones that did not, plus two
+// domains (climate, media) that had no good look at all.
+
+/**
+ * An icon that shows which state the entity is in, with its name under it.
+ *
+ * The rows come from the same table the states editor's fill button uses, so a
+ * cover gets open, closed, opening and closing rather than a bare on and off.
+ * A domain that table does not know falls back to the toggle button's on/off
+ * rule, which is right for anything that is on or off and harmless otherwise.
+ * No tap: the Toggle button is the one that acts.
+ */
+export function addStateIcon(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
+  const full = withDomain(ref);
+  const deviceClass = env.state?.attributes?.device_class;
+  const seeds = seedStates(full.domain, typeof deviceClass === "string" ? deviceClass : undefined);
+  const icon = layerOf("icon");
+  if (seeds.length > 0) {
+    icon.payload.symbol = literal(seeds[0]!.symbol);
+    icon.payload.colorSlot.baseColorHex = MUTED_HEX;
+    icon.payload.rules = [buildStatesRule(entityStateValue(full), seedStatesRows(seeds, { icon: true, color: true }))];
+  } else {
+    const symbols = toggleSymbols(full);
+    icon.payload.symbol = literal(symbols.off);
+    icon.payload.colorSlot.baseColorHex = MUTED_HEX;
+    icon.payload.rules = [toggleRule(full, symbols)];
+  }
+  placeLayer(cfg, icon, env.family, mainBandGeometry);
+  cfg.elements.push(icon);
+  addQuietLine(cfg, refLabel(full), env, captionBandGeometry);
+  return icon.payload.id;
+}
+
+/** A button that runs one scene or script, with its name under it. */
+export function addRunButton(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
+  const full = withDomain(ref);
+  const script = full.domain === "script";
+  const icon = layerOf("icon");
+  icon.payload.symbol = literal(script ? "play.fill" : "sparkles");
+  icon.payload.colorSlot.baseColorHex = ACCENT_HEX;
+  placeLayer(cfg, icon, env.family, mainBandGeometry);
+  cfg.elements.push(icon);
+  addQuietLine(cfg, refLabel(full), env, captionBandGeometry);
+  attachTap(cfg, icon.payload.id, { type: script ? "runScript" : "runScene", ...full });
+  return icon.payload.id;
+}
+
+const COOL_HEX = NEUTRAL_RAMP[0];
+
+/**
+ * The room temperature, the target under it, and a symbol for what the
+ * thermostat is doing.
+ *
+ * Every value is an attribute: a climate entity's state is its mode (`heat`,
+ * `cool`, `off`), which says what it is set to and not what it is doing. What
+ * it is doing is `hvac_action`, so the color reads that. The target's decimals
+ * follow the entity's own step, so a half-degree target is not rounded away.
+ */
+export function addThermostat(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
+  const full = withDomain(ref);
+  const action: Value = { kind: { kind: "entityAttribute", ...full, attribute: "hvac_action" } };
+
+  const icon = layerOf("icon");
+  icon.payload.symbol = literal("thermometer.medium");
+  icon.payload.colorSlot.baseColorHex = MUTED_HEX;
+  icon.payload.rules = [buildStatesRule(action, [
+    { comparison: { kind: "equals", value: literal("heating") }, changes: [setIconTo("flame.fill"), setColorTo(ACCENT_HEX)] },
+    { comparison: { kind: "equals", value: literal("cooling") }, changes: [setIconTo("snowflake"), setColorTo(COOL_HEX)] },
+    { comparison: { kind: "equals", value: literal("fan") }, changes: [setIconTo("fan.fill"), setColorTo(COOL_HEX)] },
+  ], [setIconTo("thermometer.medium"), setColorTo(MUTED_HEX)])];
+  placeLayer(cfg, icon, env.family, labelBandGeometry);
+  cfg.elements.push(icon);
+
+  const now = layerOf("text");
+  now.payload.value = {
+    kind: { kind: "entityAttribute", ...full, attribute: "current_temperature" },
+    format: { decimals: 0, suffix: "°" },
+  };
+  now.payload.fontWeight = "semibold";
+  now.payload.rules = [buildStatesRule(action, [
+    { comparison: { kind: "equals", value: literal("heating") }, changes: [setColorTo(ACCENT_HEX)] },
+    { comparison: { kind: "equals", value: literal("cooling") }, changes: [setColorTo(COOL_HEX)] },
+  ])];
+  placeLayer(cfg, now, env.family, mainBandGeometry);
+  cfg.elements.push(now);
+
+  const step = env.state?.attributes?.target_temp_step;
+  const target = layerOf("text");
+  target.payload.value = {
+    kind: { kind: "entityAttribute", ...full, attribute: "temperature" },
+    format: { decimals: typeof step === "number" && step < 1 ? 1 : 0, prefix: "Set ", suffix: "°" },
+  };
+  target.payload.colorSlot.baseColorHex = MUTED_HEX;
+  // Off has no target, and "Set --°" is worse than saying so.
+  target.payload.rules = [buildStatesRule(entityStateValue(full), [
+    { comparison: { kind: "equals", value: literal("off") }, changes: [setTextTo("Off")] },
+  ])];
+  placeLayer(cfg, target, env.family, captionBandGeometry);
+  cfg.elements.push(target);
+  return now.payload.id;
+}
+
+/**
+ * The song, the artist, and a button that plays or pauses.
+ *
+ * The title and artist are attributes that only exist while something is
+ * loaded, so a player that is off would print dashes. The title says the state
+ * in words instead, dimmed, and the artist line goes away. The button shows
+ * what a tap will do: pause while playing, play otherwise.
+ */
+export function addNowPlaying(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
+  const full = withDomain(ref);
+  const state = (): Value => entityStateValue(full);
+  const quiet: readonly (readonly [string, string])[] = [["off", "Off"], ["idle", "Idle"], ["standby", "Standby"]];
+
+  const icon = layerOf("icon");
+  icon.payload.symbol = literal("play.fill");
+  icon.payload.colorSlot.baseColorHex = ACCENT_HEX;
+  icon.payload.rules = [buildStatesRule(state(), [
+    { comparison: { kind: "equals", value: literal("playing") }, changes: [setIconTo("pause.fill")] },
+  ], [setIconTo("play.fill")])];
+  placeLayer(cfg, icon, env.family, (family) => bandGeometry(family, 0.08, 0.28, 0.85, 22));
+  cfg.elements.push(icon);
+
+  const title = layerOf("text");
+  title.payload.value = { kind: { kind: "entityAttribute", ...full, attribute: "media_title" } };
+  title.payload.fontWeight = "semibold";
+  title.payload.rules = [buildStatesRule(state(), [
+    ...quiet.map(([word, text]) => ({
+      comparison: { kind: "equals" as const, value: literal(word) },
+      changes: [setTextTo(text), setOpacityTo(0.45)],
+    })),
+    { comparison: { kind: "isUnavailable" }, changes: [setTextTo("Unavailable"), setOpacityTo(0.45)] },
+  ])];
+  placeLayer(cfg, title, env.family, (family) => bandGeometry(family, 0.4, 0.28, 0.8, 18));
+  cfg.elements.push(title);
+
+  const artist = layerOf("text");
+  artist.payload.value = { kind: { kind: "entityAttribute", ...full, attribute: "media_artist" } };
+  artist.payload.colorSlot.baseColorHex = MUTED_HEX;
+  artist.payload.rules = [buildStatesRule(state(), [
+    ...quiet.map(([word]) => ({ comparison: { kind: "equals" as const, value: literal(word) }, changes: [setOpacityTo(0)] })),
+    { comparison: { kind: "isUnavailable" }, changes: [setOpacityTo(0)] },
+  ])];
+  placeLayer(cfg, artist, env.family, captionBandGeometry);
+  cfg.elements.push(artist);
+
+  attachTap(cfg, icon.payload.id, {
+    type: "callService",
+    serviceDomain: "media_player",
+    serviceName: "media_play_pause",
+    target: full,
+  });
+  return title.payload.id;
+}
+
+/** Every door and window sensor that is open, counted on the server. An
+ * aggregate cannot filter by device class, so this is a template, the same one
+ * the iPhone's Status Summary converts to. */
+export const DOORS_OPEN_TEMPLATE =
+  "{{ states.binary_sensor"
+  + " | selectattr('attributes.device_class', 'defined')"
+  + " | selectattr('attributes.device_class', 'in', ['door', 'window', 'opening', 'garage_door'])"
+  + " | selectattr('state', 'eq', 'on')"
+  + " | list | count }}";
+
+/** One of the summary's three rows: a symbol on the left, a line beside it. */
+function summaryRowGeometry(family: DrawableFamily, row: number, icon: boolean): PresetGeometry {
+  const canvas = CANVAS[family];
+  const y = 0.06 + row * 0.31;
+  const height = 0.26;
+  const size = clamp(Math.round(canvas.height * height * (icon ? 0.8 : 0.72)), 8, 20);
+  return {
+    frame: icon
+      ? { x: 0.04, y, width: 0.14, height, rotationDegrees: 0 }
+      : { x: 0.22, y, width: 0.74, height, rotationDegrees: 0 },
+    size,
+  };
+}
+
+/**
+ * Lights on, people home, doors open: the iPhone's Status Summary.
+ *
+ * Each line is a count with its words as a suffix, and a rule that rewrites
+ * the counts that read badly ("0 lights on" is "All off"). The icon beside it
+ * lights up while there is something to report. Like Open now, it asks for
+ * nothing: every light and every person counts, and the scope is narrowed in
+ * the Source card afterwards.
+ */
+export function addHomeSummary(cfg: CustomComplicationConfig, env: PresetEnv): string {
+  const count = (domain: string, stateFilter: { kind: "isOn" } | { kind: "equals"; value: string }): Value["kind"] => ({
+    kind: "aggregate",
+    aggregate: {
+      function: "count",
+      scope: { kind: "filter", domains: [domain], areaIds: [], labelIds: [], floorIds: [] },
+      stateFilter,
+    },
+  });
+  const rows: {
+    value: Value["kind"];
+    suffix: string;
+    rewrites: readonly (readonly [string, string])[];
+    idle: string;
+    busy: string;
+    busyHex: string;
+    goodWhenZero: boolean;
+  }[] = [
+    {
+      value: count("light", { kind: "isOn" }), suffix: " lights on",
+      rewrites: [["0", "All off"], ["1", "1 light on"]],
+      idle: "lightbulb", busy: "lightbulb.fill", busyHex: ACCENT_HEX, goodWhenZero: false,
+    },
+    {
+      value: count("person", { kind: "equals", value: "home" }), suffix: " home",
+      rewrites: [["0", "Nobody home"]],
+      idle: "house.fill", busy: "house.fill", busyHex: GOOD_HEX, goodWhenZero: false,
+    },
+    {
+      value: { kind: "jinja", value: DOORS_OPEN_TEMPLATE }, suffix: " open",
+      rewrites: [["0", "All closed"]],
+      idle: "door.left.hand.closed", busy: "door.left.hand.open", busyHex: WARN_HEX, goodWhenZero: true,
+    },
+  ];
+
+  let first = "";
+  rows.forEach((row, i) => {
+    const reading = (): Value => ({ kind: row.value });
+    const zero = { kind: "equals" as const, value: literal("0") };
+
+    const icon = layerOf("icon");
+    icon.payload.symbol = literal(row.busy);
+    icon.payload.colorSlot.baseColorHex = row.busyHex;
+    icon.payload.rules = [buildStatesRule(reading(), [
+      { comparison: zero, changes: [setIconTo(row.idle), setColorTo(row.goodWhenZero ? GOOD_HEX : MUTED_HEX)] },
+    ], [setIconTo(row.busy), setColorTo(row.busyHex)])];
+    placeLayer(cfg, icon, env.family, (family) => summaryRowGeometry(family, i, true));
+    cfg.elements.push(icon);
+
+    const text = layerOf("text");
+    text.payload.value = { kind: row.value, format: { suffix: row.suffix } };
+    text.payload.alignment = "leading";
+    text.payload.rules = [buildStatesRule(reading(), row.rewrites.map(([equals, words]) => ({
+      comparison: { kind: "equals" as const, value: literal(equals) },
+      changes: [setTextTo(words)],
+    })))];
+    placeLayer(cfg, text, env.family, (family) => summaryRowGeometry(family, i, false));
+    cfg.elements.push(text);
+    if (i === 0) first = text.payload.id;
+  });
+  return first;
+}
+
 // ── list presets ──────────────────────────────────────────────────────────
 // A list is one layer with a row inside it, so each of these builds a source,
 // a layout and a working row template in one go. Row frames are fractions of
@@ -1302,6 +1603,30 @@ function addList(
   placeLayer(cfg, el, env.family, () => ({ frame: listGeometry() }));
   cfg.elements.push(el);
   return el.payload.id;
+}
+
+/**
+ * A few chosen entities, one per row: icon, name, state. The iPhone's
+ * Multi-Entity.
+ *
+ * The scope is an explicit list starting with the one entity the dialog asks
+ * for, because the preset dialog picks one. The Source card adds the rest.
+ * Rows sort by name: a list has no "as added" order to keep.
+ */
+export function addEntitiesList(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
+  const source: ListSource = {
+    kind: "entities",
+    scope: { kind: "entities", entities: [withDomain(ref)] },
+    sort: "name",
+    descending: false,
+    attributes: [],
+  };
+  return addList(cfg, env, source, { rows: 4 }, [
+    rowIcon({ x: 0, y: 0.1, width: 0.14, height: 0.8 }, 10),
+    rowText(itemValue("name"), { x: 0.18, y: 0, width: 0.5, height: 1 }, { align: "leading" }),
+    rowText(itemValue("state", { useEntityUnit: true }), { x: 0.7, y: 0, width: 0.3, height: 1 },
+      { align: "trailing", colorHex: MUTED_HEX }),
+  ]);
 }
 
 /** The next few events, each with the time it starts. */
@@ -1516,6 +1841,12 @@ export function applyPreset(
     case "weatherNow": return addWeatherNow(cfg, ref, env);
     case "sunTimes": return addSunTimes(cfg, ref, env);
     case "openCount": return addOpenCount(cfg, env);
+    case "stateIcon": return addStateIcon(cfg, ref, env);
+    case "runButton": return addRunButton(cfg, ref, env);
+    case "thermostat": return addThermostat(cfg, ref, env);
+    case "nowPlaying": return addNowPlaying(cfg, ref, env);
+    case "summary": return addHomeSummary(cfg, env);
+    case "listEntities": return addEntitiesList(cfg, ref, env);
     case "listEvents": return addEventsList(cfg, ref, env);
     case "listTodo": return addTodoList(cfg, ref, env);
     case "listHourly": return addHourlyForecastList(cfg, ref, env);

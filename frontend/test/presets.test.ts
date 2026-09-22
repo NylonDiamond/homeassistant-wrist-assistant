@@ -557,3 +557,112 @@ describe("the stacked presets", () => {
     }
   });
 });
+
+// ── presets carried over from the iPhone editor ───────────────────────────
+
+describe("the iPhone-era presets", () => {
+  function build(kind: Parameters<typeof applyPreset>[1], ref: { entityId: string; displayName: string; domain: string },
+    st?: HassEntityState): CustomComplicationConfig {
+    const cfg = config();
+    applyPreset(cfg, kind, ref, st ? { family: "rectangular", state: st } : { family: "rectangular" });
+    return cfg;
+  }
+
+  function tableOf(rules: readonly Rule[]): StatesTable {
+    const shape = tableShape([...rules]);
+    if (!shape.ok) throw new Error(shape.reason);
+    return shape.table;
+  }
+
+  /** Every symbol a document can put on the face: layer symbols and rule icons. */
+  function symbolsOf(cfg: CustomComplicationConfig): string[] {
+    const out: string[] = [];
+    for (const el of cfg.elements) {
+      if (el.kind === "icon" && el.payload.symbol.kind.kind === "literal") out.push(el.payload.symbol.kind.value);
+      for (const rule of el.payload.rules) {
+        const changes = [...rule.cases.flatMap((c) => c.then), ...(rule.otherwise ?? [])];
+        for (const ch of changes) {
+          if (ch.kind === "setIcon" && ch.value?.kind.kind === "literal") out.push(ch.value.kind.value);
+        }
+      }
+    }
+    return out;
+  }
+
+  const CLIMATE = { entityId: "climate.hall", displayName: "Hall", domain: "climate" };
+  const PLAYER = { entityId: "media_player.lounge", displayName: "Lounge", domain: "media_player" };
+  const COVER = { entityId: "cover.garage", displayName: "Garage", domain: "cover" };
+
+  it("uses only symbols the watch and the panel can both draw", () => {
+    const cases: [Parameters<typeof applyPreset>[1], typeof KITCHEN][] = [
+      ["stateIcon", COVER], ["stateIcon", KITCHEN], ["runButton", { entityId: "script.go", displayName: "Go", domain: "script" }],
+      ["runButton", { entityId: "scene.movie", displayName: "Movie", domain: "scene" }],
+      ["thermostat", CLIMATE], ["nowPlaying", PLAYER], ["summary", KITCHEN], ["listEntities", KITCHEN],
+    ];
+    for (const [kind, ref] of cases) {
+      for (const s of symbolsOf(build(kind, ref))) expect(CURATED_SYMBOLS, `${kind}: ${s}`).toContain(s);
+    }
+  });
+
+  it("seeds a state icon with every state the domain knows, and stays inside the states table", () => {
+    const cfg = build("stateIcon", COVER);
+    const icon = cfg.elements.find((e) => e.kind === "icon")!;
+    const words = tableOf(icon.payload.rules).rows.map((r) => r.comparison.kind === "equals" && r.comparison.value?.kind.kind === "literal"
+      ? r.comparison.value.kind.value : r.comparison.kind);
+    expect(words).toEqual(expect.arrayContaining(["open", "closed", "isUnavailable"]));
+    expect(cfg.elements.some((e) => e.kind === "tap")).toBe(false);
+  });
+
+  it("runs a script as a script and a scene as a scene", () => {
+    const script = build("runButton", { entityId: "script.go", displayName: "Go", domain: "script" });
+    const scene = build("runButton", { entityId: "scene.movie", displayName: "Movie", domain: "scene" });
+    const tapOf = (cfg: CustomComplicationConfig) => (cfg.elements.find((e) => e.kind === "tap")!.payload as TapElement).action;
+    expect(tapOf(script)).toMatchObject({ type: "runScript", entityId: "script.go" });
+    expect(tapOf(scene)).toMatchObject({ type: "runScene", entityId: "scene.movie" });
+  });
+
+  it("reads a thermostat's attributes and colors it by what it is doing", () => {
+    const cfg = build("thermostat", CLIMATE, state({ target_temp_step: 0.5 }, "heat"));
+    const texts = cfg.elements.filter((e) => e.kind === "text");
+    expect(texts.map((t) => (t.payload.value.kind as { attribute?: string }).attribute))
+      .toEqual(["current_temperature", "temperature"]);
+    // A half-degree step keeps its decimal.
+    expect(texts[1]!.payload.value.format).toMatchObject({ decimals: 1, prefix: "Set " });
+    const icon = cfg.elements.find((e) => e.kind === "icon")!;
+    expect(tableOf(icon.payload.rules).value?.kind).toMatchObject({ kind: "entityAttribute", attribute: "hvac_action" });
+  });
+
+  it("plays and pauses the player it shows", () => {
+    const cfg = build("nowPlaying", PLAYER);
+    const tap = cfg.elements.find((e) => e.kind === "tap")!.payload as TapElement;
+    expect(tap.action).toEqual({
+      type: "callService", serviceDomain: "media_player", serviceName: "media_play_pause",
+      target: { ...PLAYER },
+    });
+    const title = cfg.elements.find((e) => e.kind === "text")!;
+    expect(title.payload.value.kind).toMatchObject({ kind: "entityAttribute", attribute: "media_title" });
+  });
+
+  it("counts lights, people and doors, and rewrites the counts that read badly", () => {
+    const cfg = config();
+    const id = applyPreset(cfg, "summary", { entityId: "", displayName: "", domain: "" }, { family: "rectangular" });
+    expect(layer(cfg, id).kind).toBe("text");
+    const texts = cfg.elements.filter((e) => e.kind === "text");
+    expect(texts.map((t) => t.payload.value.format?.suffix)).toEqual([" lights on", " home", " open"]);
+    expect(texts[2]!.payload.value.kind).toMatchObject({ kind: "jinja" });
+    const firstWords = texts.map((t) => {
+      const change = tableOf(t.payload.rules).rows[0]!.changes[0]!;
+      return change.value?.kind.kind === "literal" ? change.value.kind.value : "";
+    });
+    expect(firstWords).toEqual(["All off", "Nobody home", "All closed"]);
+    expect(presetSpec("summary").needsEntity).toBe(false);
+  });
+
+  it("starts an entity list on the one entity picked", () => {
+    const cfg = config();
+    const id = applyPreset(cfg, "listEntities", CLIMATE, { family: "rectangular" });
+    const list = layer(cfg, id);
+    if (list.kind !== "list") throw new Error("wrong kind");
+    expect(list.payload.source).toMatchObject({ kind: "entities", scope: { kind: "entities", entities: [CLIMATE] } });
+  });
+});

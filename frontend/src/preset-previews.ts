@@ -54,6 +54,12 @@ const PRESET_KIND: Record<PresetKind, LayerKind> = {
   weatherNow: "icon",
   sunTimes: "text",
   openCount: "text",
+  stateIcon: "icon",
+  runButton: "icon",
+  thermostat: "text",
+  nowPlaying: "text",
+  summary: "text",
+  listEntities: "list",
   listEvents: "list",
   listTodo: "list",
   listHourly: "list",
@@ -251,6 +257,55 @@ function sample(kind: PresetKind): TemplateResult {
         ${label(60, 29, "3", 22, "var(--k)", "600")}
         ${label(60, 40, "open", 8, DIM)}
       </g>`;
+    // Three states side by side, the middle one current, so the card says
+    // "the icon follows the state" rather than "on or off".
+    case "stateIcon":
+      return svg`<g>
+        <g transform="translate(30 12)" opacity=".4">
+          <rect x="0" y="0" width="12" height="12" rx="2" fill="none" stroke=${DIM} stroke-width="1.3" /></g>
+        <g transform="translate(53 8) scale(1.4)">
+          <rect x="0" y="0" width="10" height="10" rx="2" fill="none" stroke=${AMBER} stroke-width="1.3" />
+          <path d="M0 5h10" stroke=${AMBER} stroke-width="1.3" /></g>
+        <g transform="translate(78 12)" opacity=".4">
+          <path d="M0 0h12v12H0z" fill=${DIM} opacity=".6" /></g>
+        ${label(60, 40, "Garage", 8, DIM)}
+      </g>`;
+    // A play glyph in a lit circle, the name under it.
+    case "runButton":
+      return svg`<g>
+        <circle cx="60" cy="18" r="10" fill="var(--k)" opacity=".2" />
+        <path d="M56.5 12.5v11l9-5.5z" fill="var(--k)" />
+        ${label(60, 40, "Movie night", 8, DIM)}
+      </g>`;
+    // Flame over the room temperature, the target under it.
+    case "thermostat":
+      return svg`<g>
+        <path d="M60 4c2.5 2.6 4 4.6 4 6.7a4 4 0 0 1-8 0c0-1.2.5-2.2 1.3-3 .1 1.2.8 1.9 1.6 1.9 0-2 .3-3.7 1.1-5.6z"
+          fill="var(--k)" />
+        ${label(60, 31, "21°", 15, "var(--k)", "600")}
+        ${label(60, 42, "Set 22°", 7, DIM)}
+      </g>`;
+    // A pause button over the song and the artist.
+    case "nowPlaying":
+      return svg`<g>
+        <rect x="56" y="4" width="3" height="10" rx="1" fill="var(--k)" />
+        <rect x="61" y="4" width="3" height="10" rx="1" fill="var(--k)" />
+        ${label(60, 29, "Clair de lune", 11, "var(--k)", "600")}
+        ${label(60, 40, "Debussy", 8, DIM)}
+      </g>`;
+    // Three rows of a dot and a count, the way the old iPhone summary read.
+    case "summary":
+      return svg`${listRows(3, (y, h, i) => svg`<g>
+        <circle cx="12" cy=${y + h / 2} r="3.2" fill=${[AMBER, GREEN, GREEN][i]!} />
+        ${label(22, y + h * 0.75, ["3 lights on", "2 home", "All closed"][i]!, 9, "var(--k)", "500", "start")}
+      </g>`)}`;
+    // A dot, a name and a reading per row.
+    case "listEntities":
+      return svg`${listRows(3, (y, h, i) => svg`<g>
+        <circle cx="12" cy=${y + h / 2} r="3" fill="var(--k)" opacity=".8" />
+        ${label(22, y + h * 0.75, ["Kitchen", "Office", "Garage"][i]!, 9, "var(--k)", "500", "start")}
+        ${label(112, y + h * 0.75, ["21.5°", "On", "Closed"][i]!, 8, DIM, "500", "end")}
+      </g>`)}`;
     // A title and the time it starts, twice.
     case "listEvents":
       return svg`${listRows(3, (y, h, i) => svg`<g>
