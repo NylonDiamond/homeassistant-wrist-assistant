@@ -3436,6 +3436,26 @@ export interface InlineLayout {
   symbol?: string;
   /** Live countdown mode, same semantics as TextElement.countdown. */
   countdown?: boolean;
+  /** The line built from parts: typed words and live values in a row. Absent
+   * or empty means `value` is the line, as it always was. With parts, `value`
+   * is the parts joined into one template (`syncInlineParts`), which is all
+   * the watch reads: it ignores this key, so Inline parts need no app update.
+   * Parts carry no looks, because the face draws Inline in its own font and
+   * tint. A countdown drops them. */
+  parts?: InlinePart[];
+}
+
+/** One piece of an Inline line. A `TextPart` with no looks, so the rich text
+ * join takes it as it is. */
+export interface InlinePart {
+  /** Uppercase, like every id here. */
+  id: string;
+  value: Value;
+}
+
+/** True when the Inline line is built from parts. */
+export function inlineUsesParts(inline: Pick<InlineLayout, "parts" | "countdown">): boolean {
+  return inline.countdown !== true && (inline.parts?.length ?? 0) > 0;
 }
 
 // ── Control Center ────────────────────────────────────────────────────────
@@ -4928,6 +4948,13 @@ function parseInline(raw: J): InlineLayout {
   if (typeof raw.label === "string") out.label = raw.label;
   if (typeof raw.symbol === "string") out.symbol = raw.symbol;
   if (raw.countdown === true) out.countdown = true;
+  if (Array.isArray(raw.parts)) {
+    const parts = raw.parts.filter(isObject).map((p): InlinePart => ({
+      id: typeof p.id === "string" && p.id !== "" ? p.id.toUpperCase() : newId(),
+      value: isObject(p.value) ? parseValue(p.value) : literal(""),
+    }));
+    if (parts.length > 0) out.parts = parts;
+  }
   return out;
 }
 
@@ -6616,6 +6643,7 @@ function encodeInline(i: InlineLayout): J {
   o.value = encodeValue(i.value);
   if (i.symbol !== undefined) o.symbol = i.symbol;
   if (i.countdown) o.countdown = true;
+  if (i.parts !== undefined && i.parts.length > 0) o.parts = i.parts.map((p) => ({ id: p.id, value: encodeValue(p.value) }));
   return o;
 }
 
@@ -6847,7 +6875,8 @@ const K = {
   // The document's pages. Its own object at the top level, and the only place
   // these three keys appear.
   pages: ["count", "mode", "dwell"],
-  inline: ["label", "value", "symbol", "countdown"],
+  inline: ["label", "value", "symbol", "countdown", "parts"],
+  inlinePart: ["id", "value"],
   // The document's Control Center control. Its own object at the top level,
   // and the only place these keys appear.
   control: ["kind", "title", "valueLabel", "state", "symbol", "symbolOff", "tintColorHex",
@@ -7172,6 +7201,12 @@ export function auditUnknownKeys(raw: unknown): string[] {
   if (isObject(raw.inline)) {
     check(raw.inline, K.inline, "$.inline");
     value(raw.inline.value, "$.inline.value");
+    if (Array.isArray(raw.inline.parts)) {
+      raw.inline.parts.forEach((part, j) => {
+        check(part, K.inlinePart, `$.inline.parts[${j}]`);
+        if (isObject(part)) value(part.value, `$.inline.parts[${j}].value`);
+      });
+    }
   }
   if (isObject(raw.pages)) check(raw.pages, K.pages, "$.pages");
   if (isObject(raw.control)) {
@@ -9138,7 +9173,14 @@ function walkDocument(cfg: CustomComplicationConfig, visit: DocumentVisitor): vo
     for (const v of ruleValues(layout.rules)) onValue(v, ruleSite);
   }
 
-  if (cfg.inline) onValue(cfg.inline.value, { kind: "inline" });
+  if (cfg.inline) {
+    onValue(cfg.inline.value, { kind: "inline" });
+    // The parts after the joined line, as a text layer's follow its value. The
+    // line is a template the walker reads as text; the parts are what the
+    // editor opens, so an import that remapped only the line would leave them
+    // pointing at a house nobody has.
+    for (const part of cfg.inline.parts ?? []) onValue(part.value, { kind: "inline", part: "textPart" });
+  }
   // The Control Center control. Not a shape and not a layer, so it is walked
   // on its own: its four values and its action name the author's entities
   // exactly as a layer's do, and a share that skipped them would post them in

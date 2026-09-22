@@ -6,6 +6,7 @@
 
 import { type CustomComplicationConfig, type FamilyKind, encodeConfig, liftChartOwnMarks, normalizeOwnership, parseConfig, syncAttachedTaps } from "./model.js";
 import { deriveDataSources } from "./compiler.js";
+import { syncInlineParts } from "./rich-text.js";
 
 const HISTORY_LIMIT = 100;
 
@@ -125,13 +126,16 @@ export class Draft {
     this.takeStep(coalesce);
     const next = structuredClone(this.config);
     mutate(next);
-    // Two invariants are kept in one place, so no call site has to know about
-    // either. A layer the change added belongs to the shape being edited and
+    // The invariants are kept in one place, so no call site has to know about
+    // any of them. A layer the change added belongs to the shape being edited and
     // to no other; and whatever the edit was, an attached tap follows its
     // owner. Ownership settles first, because the tap follows its owner onto
     // the owner's shape.
     normalizeOwnership(next, home);
     syncAttachedTaps(next);
+    // The Inline line is its parts joined, and a part may read a shared value
+    // this edit changed.
+    syncInlineParts(next);
     this.config = next;
   }
 

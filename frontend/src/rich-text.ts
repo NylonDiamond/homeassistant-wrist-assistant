@@ -8,6 +8,9 @@
 import {
   CHART_DEFAULT_BAND_HIGH_HEX,
   formatIsEmpty,
+  inlineUsesParts,
+  literal,
+  type CustomComplicationConfig,
   literalPartText,
   newId,
   richTextFallback,
@@ -263,4 +266,27 @@ export function joinTextParts(parts: readonly TextPart[], namedValues: readonly 
   });
   if (blocked.length > 0) return { ok: false, blocked };
   return { ok: true, value: { kind: { kind: "jinja", value: pieces.join("") } } };
+}
+
+/**
+ * Write the Inline line's parts into its `value`, the one thing the watch
+ * reads. A part with no template form (see `RichTextBlocked`) is left out of
+ * the line rather than stopping it, and comes back so the editor can say so.
+ *
+ * Run on every edit (`Draft.update`), not only on a parts edit: a part can read
+ * a shared value, and the join copies what that value says today.
+ */
+export function syncInlineParts(cfg: CustomComplicationConfig): RichTextBlocked[] {
+  const inline = cfg.inline;
+  if (!inline || !inlineUsesParts(inline)) return [];
+  const parts = inline.parts!;
+  const joined = joinTextParts(parts, cfg.values);
+  if (joined.ok) {
+    inline.value = joined.value;
+    return [];
+  }
+  const skip = new Set(joined.blocked.map((b) => b.partId));
+  const rest = joinTextParts(parts.filter((p) => !skip.has(p.id)), cfg.values);
+  inline.value = rest.ok ? rest.value : literal("");
+  return joined.blocked;
 }

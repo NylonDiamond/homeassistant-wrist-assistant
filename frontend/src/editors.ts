@@ -158,6 +158,8 @@ import {
   ungroup,
   setGroup,
   literal,
+  inlineUsesParts,
+  type InlinePart,
   literalPartText,
   syncRichTextFallback,
   textUsesParts,
@@ -6251,6 +6253,11 @@ export function partDotBackground(part: TextPart, layerHex: string): string {
 
 /** Why rich text cannot turn off yet, naming every part in the way. */
 export function richTextBlockedHint(blocked: readonly RichTextBlocked[]): string {
+  return `Rich text stays on, because the parts cannot join into one line. ${blockedReasons(blocked)} Change or remove ${blocked.length === 1 ? "that part" : "those parts"} first.`;
+}
+
+/** Which parts cannot go in a template, and why, in a sentence per reason. */
+function blockedReasons(blocked: readonly RichTextBlocked[]): string {
   const named = (list: readonly RichTextBlocked[]) => (list.length === 1
     ? `Part ${list[0]!.index + 1}`
     : `Parts ${joinWords(list.map((b) => String(b.index + 1)))}`);
@@ -6259,7 +6266,7 @@ export function richTextBlockedHint(blocked: readonly RichTextBlocked[]): string
   const said: string[] = [];
   if (kinds.length > 0) said.push(`${named(kinds)} ${kinds.length === 1 ? "shows" : "show"} a value a template cannot read, such as data age or a chart's number.`);
   if (formats.length > 0) said.push(`${named(formats)} ${formats.length === 1 ? "uses" : "use"} a relative time or duration format, which a template cannot print.`);
-  return `Rich text stays on, because the parts cannot join into one line. ${said.join(" ")} Change or remove ${blocked.length === 1 ? "that part" : "those parts"} first.`;
+  return said.join(" ");
 }
 
 const MOVED_WORDS: Record<RichTextMoved, string> = { fontSize: "font size", fontWeight: "weight", color: "color", bands: "color bands" };
@@ -8568,19 +8575,130 @@ function inlineEditor(host: EditorHost): TemplateResult {
     return html`<div class="hint">This complication lists Inline but has no Inline text yet (it was saved by an older integration). The watch shows "No inline layout" until one is added.</div>
       <button class="small" @click=${() => host.addInlineText()}>Add Inline text</button>`;
   }
-  const upd = (mutate: (i: NonNullable<CustomComplicationConfig["inline"]>) => void, k?: string) => host.update((c) => { if (c.inline) mutate(c.inline); }, k ? `inline-${k}` : undefined);
+  const upd = (mutate: (i: InlineLayoutDraft) => void, k?: string) => host.update((c) => { if (c.inline) mutate(c.inline); }, k ? `inline-${k}` : undefined);
   const ctx = describeContext(host);
+  const withParts = inlineUsesParts(inline);
+  const setType = (to: "plain" | "parts") => upd((i) => {
+    if (to === "parts") {
+      if (inlineUsesParts(i)) return;
+      // The line so far becomes the first part, so nothing on the face moves.
+      const id = newId();
+      selectedParts.set(INLINE_PARTS_KEY, id);
+      delete i.countdown;
+      i.parts = [{ id, value: structuredClone(i.value) }];
+      return;
+    }
+    // The value already holds the parts joined, so dropping them keeps the line.
+    delete i.parts;
+  });
+  const summary = withParts
+    ? inline.parts!.map((p) => literalPartText(p.value) ?? `[${describeValueBody(p.value, ctx)}]`).join("")
+    : describeValue(inline.value, ctx);
   return html`
     ${card(host, "content", "Inline text", html`
       ${textField("Label (blank = value only)", inline.label ?? "", (v) => upd((i) => { if (v) i.label = v; else delete i.label; }, "label"))}
-      ${valueEditor(host, inline.value, (v) => upd((i) => { i.value = v; }, "value"), { showResolved: true, label: "Text", key: "inline-value" })}
-      ${countdownFields(host, inline.countdown === true, inline.value, (v) => upd((i) => { if (v) i.countdown = true; else delete i.countdown; }))}`,
-      { color: SECTION_COLOR.content, icon: "text", summary: truncate(`${inline.label ? `${inline.label}: ` : ""}${describeValue(inline.value, ctx)}`, 48) })}
+      ${segField("Type", withParts ? "parts" : "plain", INLINE_TYPES, setType, { titles: INLINE_TYPE_TITLES })}
+      ${withParts
+        ? inlinePartsEditor(host, inline, upd)
+        : html`
+          ${valueEditor(host, inline.value, (v) => upd((i) => { i.value = v; }, "value"), { showResolved: true, label: "Text", key: "inline-value" })}
+          ${countdownFields(host, inline.countdown === true, inline.value, (v) => upd((i) => { if (v) i.countdown = true; else delete i.countdown; }))}`}`,
+      { color: SECTION_COLOR.content, icon: "text", summary: truncate(`${inline.label ? `${inline.label}: ` : ""}${summary}`, 48) })}
     ${card(host, "symbol", "Symbol", html`
       ${symbolField(host, inline.symbol ?? "", (v) => upd((i) => { if (v) i.symbol = v; else delete i.symbol; }, "symbol"), "inline-symbol")}
       <div class="hint">Drawn before the text. Leave it blank for text only.</div>
       <div class="field readout"><span>On the face</span><span class="readout-v">${inline.symbol ? `${inline.symbol} ` : ""}${inline.label ? `${inline.label}: ` : ""}${host.resolve(inline.value) ?? "--"}</span></div>`,
       { color: SECTION_COLOR.look, icon: "icon", summary: inline.symbol || "None" })}`;
+}
+
+type InlineLayoutDraft = NonNullable<CustomComplicationConfig["inline"]>;
+
+/** Where `selectedParts` keeps the Inline part picked. Not a layer id, so it
+ * never meets one. */
+const INLINE_PARTS_KEY = "inline";
+
+const INLINE_TYPES: [("plain" | "parts"), string][] = [["plain", "Plain"], ["parts", "Parts"]];
+const INLINE_TYPE_TITLES: Partial<Record<"plain" | "parts", string>> = {
+  plain: "One value: typed words, a live value or a template",
+  parts: "Typed words and live values in a row, joined into one line",
+};
+
+/**
+ * The Inline line as a row of parts: the chips and the two add buttons, then
+ * the one picked. A text layer's parts editor without the looks, because the
+ * face draws Inline in its own font and tint and would ignore them.
+ */
+function inlinePartsEditor(
+  host: EditorHost,
+  inline: InlineLayoutDraft,
+  upd: (mutate: (i: InlineLayoutDraft) => void, k?: string) => void,
+): TemplateResult {
+  const parts = inline.parts ?? [];
+  const ctx = describeContext(host);
+  const index = Math.max(0, parts.findIndex((p) => p.id === selectedParts.get(INLINE_PARTS_KEY)));
+  const part = parts[index]!;
+  const count = parts.length;
+  const literalPart = part.value.kind.kind === "literal";
+  const updPart = (mutate: (x: InlinePart) => void, k?: string) => upd((i) => {
+    const x = i.parts?.find((y) => y.id === part.id);
+    if (x) mutate(x);
+  }, k ? `part-${part.id}-${k}` : undefined);
+  const select = (id: string, node: EventTarget | null) => {
+    selectedParts.set(INLINE_PARTS_KEY, id);
+    requestRerender(node);
+  };
+  const add = (value: Value, node: EventTarget | null) => {
+    const id = newId();
+    selectedParts.set(INLINE_PARTS_KEY, id);
+    upd((i) => { (i.parts ??= []).push({ id, value }); });
+    openPopoverSoon(node, popoverId(`inline-part-${id}`), true);
+  };
+  const move = (to: number) => upd((i) => { if (i.parts) moveItem(i.parts, index, to); });
+  const remove = () => {
+    const next = parts[index + 1] ?? parts[index - 1];
+    if (next) selectedParts.set(INLINE_PARTS_KEY, next.id);
+    upd((i) => { i.parts = (i.parts ?? []).filter((x) => x.id !== part.id); });
+  };
+  const join = joinTextParts(parts, host.config.values);
+  const chips = parts.map((p) => {
+    const chip = partChip(p.value, ctx);
+    const on = p.id === part.id;
+    const now = chip.kind === "value" ? host.resolve(p.value) : undefined;
+    return html`<button type="button" role="option" aria-selected=${on ? "true" : "false"} class="part-chip ${chip.kind} ${on ? "on" : ""}"
+      aria-label=${rulePartLabel(p, parts.indexOf(p), ctx)} @click=${(e: Event) => select(p.id, e.currentTarget)}>
+      ${chip.kind === "text"
+        ? html`<span class="part-txt">${chip.label === ""
+          ? html`<span class="part-empty">empty</span>`
+          : chipRuns(chip.label).map((r) => (r.space ? html`<span class="part-sp">${"·".repeat(r.text.length)}</span>` : r.text))}</span>`
+        : html`<span class="part-txt">${chip.label}</span>`}
+      ${now === undefined ? nothing : html`<span class="part-now">${now}</span>`}
+    </button>`;
+  });
+  return html`<div class="rich-parts">
+    <div class="field parts-field"><span>Parts</span>
+      <div class="part-chips" role="listbox" aria-label="Parts">${chips}</div>
+      <div class="part-adds">
+        <button type="button" class="small" title="Add a part of typed words"
+          @click=${(e: Event) => add(literal(""), e.currentTarget)}>${uiIcon("text")}<span>Add text</span></button>
+        <button type="button" class="small" title="Add a part that shows a live value"
+          @click=${(e: Event) => add({ kind: { kind: "entityState", entityId: "", displayName: "", domain: "" } }, e.currentTarget)}>${uiIcon("braces")}<span>Add value</span></button>
+      </div>
+    </div>
+    ${join.ok ? nothing : html`<div class="hint warn">${blockedReasons(join.blocked)} The watch leaves ${join.blocked.length === 1 ? "that part" : "those parts"} out of the line.</div>`}
+    <div class="part-editor">
+      <div class="part-head">
+        <span class="part-title"><b>Part ${index + 1}</b> of ${count} · ${literalPart ? "Text" : "Value"}</span>
+        <span class="spacer"></span>
+        <button type="button" class="icon" title="Move left" aria-label="Move left" ?disabled=${index === 0} @click=${() => move(index - 1)}>${uiIcon("left")}</button>
+        <button type="button" class="icon" title="Move right" aria-label="Move right" ?disabled=${index === count - 1} @click=${() => move(index + 1)}>${uiIcon("right")}</button>
+        <button type="button" class="icon danger" aria-label="Remove this part" ?disabled=${count === 1}
+          title=${count === 1 ? "The line keeps at least one part. Switch to Plain to stop using parts." : "Remove this part"}
+          @click=${remove}>${uiIcon("delete")}</button>
+      </div>
+      ${valueEditor(host, part.value, (v) => updPart((x) => { x.value = v; }, "value"), { showResolved: true, label: literalPart ? "Text" : "Shows", key: `inline-part-${part.id}` })}
+      ${literalPart ? html`<div class="hint">Spaces count, and show as dots in the parts list. Type one at the start or end when this part needs a gap.</div>` : nothing}
+    </div>
+  </div>`;
 }
 
 /** Corner-only controls: main content mode (canvas vs big curved text) and the
