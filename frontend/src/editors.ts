@@ -341,6 +341,7 @@ import {
   dropPartIds,
   inlineCountdownPart,
   joinTextParts,
+  syncInlineParts,
   turnOffRichText,
   turnOnRichText,
 } from "./rich-text.js";
@@ -8589,14 +8590,13 @@ function inlineEditor(host: EditorHost): TemplateResult {
   const counting = inline.countdown === true;
   return html`
     ${card(host, "content", "Inline text", html`
-      ${textField("Label (blank = value only)", inline.label ?? "", (v) => upd((i) => { if (v) i.label = v; else delete i.label; }, "label"))}
       ${inlinePartsEditor(host, inline, upd)}
       ${timer || counting ? html`
         ${countdownFields(host, counting, timer?.value, (v) => upd((i) => { if (v) i.countdown = true; else delete i.countdown; }))}
-        ${counting ? html`<div class="hint">While it counts down, the line is the first icon, the label and the time left. The other parts are not drawn.</div>` : nothing}` : nothing}
+        ${counting ? html`<div class="hint">While it counts down, the line is the first icon, the words before the time, and the time left. Parts after the time are not drawn.</div>` : nothing}` : nothing}
       <div class="field readout"><span>On the face</span><span class="readout-v">${inline.symbol ? html`${host.icons.render(inline.symbol, 12, "#FFFFFF")} ` : ""}${inline.label ? `${inline.label}: ` : ""}${inlineRuns(host.resolve(inline.value) ?? "--").map((r) => ("symbol" in r ? host.icons.render(r.symbol, 12, "#FFFFFF") : r.text))}</span></div>
       <div class="hint">Some faces, such as Modular, show the words only and leave the icons out.</div>`,
-      { color: SECTION_COLOR.content, icon: "text", summary: truncate(`${inline.label ? `${inline.label}: ` : ""}${summary}`, 48) })}`;
+      { color: SECTION_COLOR.content, icon: "text", summary: truncate(summary, 48) })}`;
 }
 
 type InlineLayoutDraft = NonNullable<CustomComplicationConfig["inline"]>;
@@ -8649,7 +8649,9 @@ function inlinePartsEditor(
     if (next) selectedParts.set(INLINE_PARTS_KEY, next.id);
     upd((i) => { i.parts = (i.parts ?? []).filter((x) => x.id !== part.id); });
   };
-  const join = joinTextParts(parts, host.config.values);
+  // The same rule the save uses: only a line with two or more live values is
+  // a template, and only a template can leave a part out.
+  const blocked = syncInlineParts(structuredClone(host.config));
   const chips = parts.map((p) => {
     const on = p.id === part.id;
     if (p.symbol !== undefined) {
@@ -8682,7 +8684,7 @@ function inlinePartsEditor(
           @click=${addIcon}>${uiIcon("icon")}<span>Add icon</span></button>
       </div>
     </div>
-    ${join.ok ? nothing : html`<div class="hint warn">${blockedReasons(join.blocked)} The watch leaves ${join.blocked.length === 1 ? "that part" : "those parts"} out of the line.</div>`}
+    ${blocked.length === 0 ? nothing : html`<div class="hint warn">${blockedReasons(blocked)} The watch leaves ${blocked.length === 1 ? "that part" : "those parts"} out of the line.</div>`}
     <div class="part-editor">
       <div class="part-head">
         <span class="part-title"><b>Part ${index + 1}</b> of ${count} · ${iconPart ? "Icon" : literalPart ? "Text" : "Value"}</span>

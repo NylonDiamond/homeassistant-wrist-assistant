@@ -271,40 +271,70 @@ export function joinTextParts(parts: readonly TextPart[], namedValues: readonly 
 }
 
 /**
- * Turn an Inline line that has no parts into parts, so the editor has one
- * shape to show: the old symbol as a first icon part, then the old value as
- * one part. What the watch draws does not change (`syncInlineParts` writes the
- * same symbol and value back). Run when a draft opens.
+ * Bring an Inline line into the one shape the editor shows: parts, and no
+ * label of its own.
+ *
+ * A line with no parts gets the old symbol as a first icon part, then the old
+ * value as one part. A label becomes typed words, `Label: `, right after the
+ * first icon, unless the line already starts with exactly those words (a
+ * countdown keeps its label, see `syncInlineParts`, and must not gain the
+ * words twice). What the watch draws does not change, except that the label no
+ * longer drops away on a narrow face. Run when a draft opens and on every edit.
  */
 export function inlineToParts(cfg: CustomComplicationConfig): void {
   const inline = cfg.inline;
-  if (!inline || (inline.parts?.length ?? 0) > 0) return;
-  const parts: InlinePart[] = [];
-  if (inline.symbol) parts.push({ id: newId(), value: literal(""), symbol: inline.symbol });
-  parts.push({ id: newId(), value: structuredClone(inline.value) });
-  inline.parts = parts;
+  if (!inline) return;
+  if ((inline.parts?.length ?? 0) === 0) {
+    const parts: InlinePart[] = [];
+    if (inline.symbol) parts.push({ id: newId(), value: literal(""), symbol: inline.symbol });
+    parts.push({ id: newId(), value: structuredClone(inline.value) });
+    inline.parts = parts;
+  }
+  const label = inline.label;
+  if (label === undefined) return;
+  const parts = inline.parts!;
+  const lead = parts[0]?.symbol !== undefined ? 1 : 0;
+  const words = `${label}: `;
+  if (leadingWords(parts.slice(lead)) !== words) parts.splice(lead, 0, { id: newId(), value: literal(words) });
+  if (inline.countdown !== true) delete inline.label;
+}
+
+/** The typed words a row of parts opens with, up to the first value or icon. */
+function leadingWords(parts: readonly InlinePart[]): string {
+  let out = "";
+  for (const p of parts) {
+    const words = p.symbol === undefined ? literalPartText(p.value) : undefined;
+    if (words === undefined) break;
+    out += words;
+  }
+  return out;
 }
 
 /** The one live value in an Inline line, the one a countdown counts to, or
- * undefined when there is none or more than one. The first part is skipped
- * when it is the lead icon. */
+ * undefined when there is none or more than one. */
 export function inlineCountdownPart(parts: readonly InlinePart[]): InlinePart | undefined {
   const live = parts.filter((p) => p.symbol === undefined && p.value.kind.kind !== "literal");
   return live.length === 1 ? live[0] : undefined;
 }
 
 /**
- * Write the Inline line's parts into `symbol` and `value`, the two things the
- * watch reads. Returns the parts left out of the line (see below).
+ * Write the Inline line's parts into `symbol`, `label` and `value`, the three
+ * things the watch reads. Returns the parts left out of the line (see below).
  *
  * An icon as the first part becomes `symbol`, which the watch draws ahead of
  * the text with its own gap, keeps while counting down, and which every app
- * version draws. Any other icon joins as a marker (`inlineSymbolMarker`).
+ * version draws. Any other icon becomes a marker (`inlineSymbolMarker`) in
+ * the words.
  *
- * One part left over is written as it is, so a lone value keeps its kind and
- * format. Several join into one template; a part with no template form (see
- * `RichTextBlocked`) is left out of the line rather than stopping it. With
- * Count down on, `value` is the one live part, which the watch counts to.
+ * With at most one live value, the words around it go into that value's own
+ * prefix and suffix (`richTextFallback`), so it keeps its kind and format: a
+ * relative time still reads "2 min ago". With more, the parts join into one
+ * template, and a part with no template form (see `RichTextBlocked`) is left
+ * out of the line rather than stopping it.
+ *
+ * With Count down on, `value` is the one live part, which the watch counts
+ * to, and the words before it become `label`, which the watch draws ahead of
+ * the time. Otherwise there is no label: words are parts.
  *
  * Run on every edit (`Draft.update`), not only on a parts edit: a part can read
  * a shared value, and the join copies what that value says today.
@@ -320,25 +350,30 @@ export function syncInlineParts(cfg: CustomComplicationConfig): RichTextBlocked[
   if (inline.countdown === true) {
     const live = inlineCountdownPart(rest);
     if (live) inline.value = structuredClone(live.value);
+    const label = leadingWords(rest).replace(/[\s:]+$/, "");
+    if (label !== "") inline.label = label;
+    else delete inline.label;
     return [];
   }
-  if (rest.length === 0) {
-    inline.value = literal("");
-    return [];
-  }
-  if (rest.length === 1 && rest[0]!.symbol === undefined) {
-    inline.value = structuredClone(rest[0]!.value);
-    return [];
-  }
+  delete inline.label;
   const parts = rest.map((p) => (p.symbol === undefined ? p : { id: p.id, value: literal(inlineSymbolMarker(p.symbol)) }));
-  const joined = joinTextParts(parts, cfg.values);
-  if (joined.ok) {
-    inline.value = joined.value;
+  const line = lineValue(parts, cfg.values);
+  if (line.ok) {
+    inline.value = line.value;
     return [];
   }
-  const skip = new Set(joined.blocked.map((b) => b.partId));
-  const kept = joinTextParts(parts.filter((p) => !skip.has(p.id)), cfg.values);
+  const skip = new Set(line.blocked.map((b) => b.partId));
+  const kept = lineValue(parts.filter((p) => !skip.has(p.id)), cfg.values);
   inline.value = kept.ok ? kept.value : literal("");
   // The index the editor names is the part's place in the whole list.
-  return joined.blocked.map((b) => ({ ...b, index: b.index + (leadIcon ? 1 : 0) }));
+  return line.blocked.map((b) => ({ ...b, index: b.index + (leadIcon ? 1 : 0) }));
+}
+
+/** A row of words and values as the one value the watch reads: the words
+ * around a lone live value go into its prefix and suffix, and two or more
+ * join into a template. */
+function lineValue(parts: readonly TextPart[], namedValues: readonly NamedValue[]): RichTextJoin {
+  if (parts.length === 0) return { ok: true, value: literal("") };
+  if (parts.filter((p) => p.value.kind.kind !== "literal").length <= 1) return { ok: true, value: richTextFallback(parts) };
+  return joinTextParts(parts, namedValues);
 }
