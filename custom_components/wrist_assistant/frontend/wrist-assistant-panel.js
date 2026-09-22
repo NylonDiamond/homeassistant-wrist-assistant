@@ -2573,47 +2573,42 @@ ${uM(c)}`}}delete s.hidden,delete s.linkId;let l=Vl(a);if(l.length>0){let d=l.sl
     /* One device's box. Clipping its overflow is what lets the heading's wash
        of the owner's colour run to the rounded corners without a second radius
        of its own, and what makes a folded box just its heading strip. */
+    /* The whole box is washed with whoever's device it is, heading and cards
+       alike, so a device reads as one coloured surface rather than as a
+       coloured strip with a grey tray hanging off it. A device that is
+       nobody's keeps the accent, so the shelf is still a surface of its own. */
     .pk-sec {
       display: flex; flex-direction: column; min-width: 0; overflow: hidden;
       border: 1px solid var(--wa-line); border-radius: 12px;
-      background: color-mix(in srgb, var(--wa-card) 30%, var(--wa-panel));
+      background: color-mix(in srgb, var(--pk-person, var(--wa-accent)) 9%, var(--wa-panel));
     }
     .pk-sec + .pk-sec { margin-top: 10px; }
-    /* The heading strip, washed with whoever's device it is. A device that is
-       nobody's keeps the accent, so the shelf still reads as a heading. */
+    /* A hairline under the heading and nothing else: the fill is already
+       shared, so the line is all that has to say where the cards start. */
     .pk-sec-top {
       display: flex; align-items: baseline; gap: 10px; min-width: 0; padding: 7px 12px;
-      background: color-mix(in srgb, var(--pk-person, var(--wa-accent)) 9%, transparent);
       border-bottom: 1px solid var(--wa-line);
     }
     .pk-sec.shut .pk-sec-top { border-bottom: 0; }
     .pk-sec-body { padding: 10px; min-width: 0; }
     .pk-sec-head { display: flex; align-items: center; gap: 9px; margin: 0; font-size: 13px; font-weight: 700; flex: none; }
-    /* One shape per box inside a device's box, the name stood on its end in a
-       gutter of fixed width down the left.
-       Fixed, because the label used to sit above the grid and every box then
-       started its cards at a different height; and stood on end, because a
-       caption on its own line over each of five boxes costs a whole screen of
-       scrolling in a home with forty complications. The gutter being the same
-       width in every box is what lines the grids up with each other. */
+    /* One shape per box inside a device's box, named on a line of its own over
+       the cards. The name was stood on its end in a gutter for a while, which
+       saved the line but read as a spine bolted to the side of the grid. The
+       caption is set small and spaced instead, so it reads as a label on the
+       box rather than as one more thing competing with the cards' own names. */
     .pk-boxes { display: flex; flex-direction: column; gap: 8px; }
     .pk-box {
-      display: flex; align-items: stretch; gap: 10px; min-width: 0; padding: 8px;
+      display: flex; flex-direction: column; min-width: 0; padding: 8px 10px 10px;
       border: 1px solid var(--wa-line); border-radius: 10px;
       background: color-mix(in srgb, var(--wa-card) 45%, var(--wa-panel));
     }
-    .pk-box-side {
-      flex: none; width: 20px; min-height: 0; overflow: hidden;
-      display: flex; flex-direction: column; align-items: center; gap: 6px;
-    }
-    /* Bottom to top, the way a label down the side of anything is read. */
+    .pk-box-top { display: flex; align-items: center; gap: 7px; min-width: 0; margin: 0 0 8px 2px; }
     .pk-box-name {
-      writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap;
-      font-size: 10px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase;
-      color: var(--wa-muted);
+      font-size: 10.5px; font-weight: 700; letter-spacing: .11em; text-transform: uppercase;
+      color: var(--wa-muted); white-space: nowrap;
     }
-    .pk-box-count { font-size: 10px; font-weight: 600; color: var(--wa-muted); opacity: .7; }
-    .pk-box .pk-grid { flex: 1; min-width: 0; }
+    .pk-box-count { font-size: 10.5px; font-weight: 600; color: var(--wa-muted); opacity: .65; }
     .pk-box-pick { flex: none; margin: 0; accent-color: var(--wa-accent); }
     /* The person's own color, the same one their tabs wear, so the All tab's
        headings and the row of tabs agree about whose is whose. */
@@ -6021,10 +6016,10 @@ ${uM(c)}`}}delete s.hidden,delete s.linkId;let l=Vl(a);if(l.length>0){let d=l.sl
       ${l?m:h`<div class="pk-sec-body">${o===0?h`<div class="pk-sec-empty">${e0(t.kind)}</div>`:this.renderPickerGroups(t.rows,t.ownerId,r)}</div>`}
     </section>`}renderPickerGroups(t,i,a){let r=rv(t,o=>this.pickerShapeOf(o,i),Tm).map(o=>({key:o.key,label:o.label,rows:o.rows,unsaved:!1}));if(a){let o=this.draftShapeOf(a),s=r.find(l=>l.key===o.key);s?s.unsaved=!0:(r.push({key:o.key,label:o.label,rows:[],unsaved:!0}),r.sort((l,d)=>J$(l.key)-J$(d.key)))}return h`<div class="pk-boxes">
       ${r.map(o=>h`<section class="pk-box" aria-label=${o.label}>
-        <div class="pk-box-side">
+        <div class="pk-box-top">
           ${this.renderShapePick(o.rows,i)}
-          <span class="pk-box-count">${o.rows.length+(o.unsaved?1:0)}</span>
           <span class="pk-box-name">${o.label}</span>
+          <span class="pk-box-count">(${o.rows.length+(o.unsaved?1:0)})</span>
         </div>
         <div class="pk-grid">
           ${o.rows.map(s=>this.renderPickerCard(s,i))}
