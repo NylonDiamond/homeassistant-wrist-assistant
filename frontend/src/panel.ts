@@ -5386,6 +5386,7 @@ export class WristAssistantPanel extends LitElement {
     window.addEventListener("pointerup", this.pressEnd, { capture: true });
     window.addEventListener("pointercancel", this.pressEnd, { capture: true });
     window.addEventListener("click", this.sharedValueOutside, { capture: true });
+    window.addEventListener("click", this.leaveGuard, { capture: true });
     window.addEventListener("focusin", this.sharedValueFocus);
     this.addEventListener(SCRUB_START, this.scrubStart);
     this.addEventListener(SCRUB_END, this.scrubEnd);
@@ -5610,6 +5611,7 @@ export class WristAssistantPanel extends LitElement {
     window.removeEventListener("pointerup", this.pressEnd, { capture: true });
     window.removeEventListener("pointercancel", this.pressEnd, { capture: true });
     window.removeEventListener("click", this.sharedValueOutside, { capture: true });
+    window.removeEventListener("click", this.leaveGuard, { capture: true });
     window.removeEventListener("focusin", this.sharedValueFocus);
     this.removeEventListener(SCRUB_START, this.scrubStart);
     this.removeEventListener(SCRUB_END, this.scrubEnd);
@@ -5635,6 +5637,30 @@ export class WristAssistantPanel extends LitElement {
     if (!this.draft?.dirty) return;
     e.preventDefault();
     e.returnValue = "";
+  };
+
+  /**
+   * Ask before a Home Assistant link takes the page somewhere else.
+   *
+   * Moving to another sidebar page is not an unload: Home Assistant swaps the
+   * route in place and tears this panel down, so `beforeUnload` never runs and
+   * the draft is gone without a word. Window capture runs before any of Home
+   * Assistant's own click handling, so a "no" here stops the link outright.
+   * Links inside the panel, and clicks that open a new tab, leave this page
+   * where it is and go through.
+   */
+  private leaveGuard = (e: MouseEvent) => {
+    if (!this.draft?.dirty) return;
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const path = e.composedPath();
+    if (path.includes(this)) return;
+    const link = path.find((n): n is HTMLAnchorElement => n instanceof HTMLAnchorElement && n.href !== "");
+    if (!link || (link.target !== "" && link.target !== "_self")) return;
+    const to = new URL(link.href, window.location.href);
+    if (to.origin !== window.location.origin || to.pathname === window.location.pathname) return;
+    if (this.confirmDiscard()) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
   };
 
   /** One-second re-render while any preview shows a live countdown, so the
