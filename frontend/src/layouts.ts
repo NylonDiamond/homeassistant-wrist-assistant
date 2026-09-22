@@ -40,11 +40,13 @@ export const ALL_FAMILIES: FamilyKind[] = ["rectangular", "circular", "corner", 
 /** Whether the panel offers the Extra Large Home Screen shape at all.
  *
  * Its design box is measured (2026-09-14, iPhone 15 Pro simulator on iOS 27).
- * What still holds it back is the app: the family exists only in the iOS 27
- * SDK, and the release toolchain is Xcode 26, so the App Store build has no
- * Extra Large widget for a layout to land on. Flip this to true once a release
- * built with Xcode 27 is out; nothing else needs to change. */
-export const XLARGE_OFFERED = false;
+ * The family exists only in the iOS 27 SDK. The app's release toolchain moved
+ * to Xcode 27 on 2026-09-18, so every 2.8.0 build from then on (TestFlight
+ * build 11 and later, and the App Store release) carries the Extra Large
+ * widget. An iPhone still on iOS 26 simply has no Extra Large slot to place
+ * it in; the card says "iOS 27 and later". Setting this back to false brings
+ * the "coming soon" card back, nothing else. */
+export const XLARGE_OFFERED = true;
 
 /** The shapes the panel offers for one owner.
  *
