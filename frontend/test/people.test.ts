@@ -108,6 +108,11 @@ describe("peopleOf", () => {
         ["Chen", "Chen"],
         ["Chen Apple Watch Ultra", "Chen"],
         ["Chen Apple Watch 2", "Chen"],
+        ["Watch Roel", "Roel"],
+        ["Apple Watch van Roel", "Roel"],
+        ["Apple Watch de Marie", "Marie"],
+        ["Apple Watch von Jesse", "Jesse"],
+        ["Apple Watch Ultra van Roel", "Roel"],
       ];
       for (const [given, want] of cases) {
         expect(peopleOf([watch("w1", given, { paired_iphone_id: "p1" }), phone("p1", "iPhone 15 Pro")])[0]?.label,

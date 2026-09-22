@@ -74,7 +74,15 @@ function personNameFrom(watch: OwnerSummary | undefined, phone: OwnerSummary | u
   if (raw === "") return undefined;
   // "Jesse's Apple Watch" and "Jesse Apple Watch" and "Jesse Watch" all end in
   // words about the watch; "Chen" ends in none and is already the answer.
-  const cut = raw.replace(/\s*(?:apple\s+)?watch(?:\s+(?:ultra|se))?\s*\d*$/i, "").replace(/['\u2019]s$/i, "").trim();
+  // Other languages put the watch first: "Apple Watch van Roel" is the Dutch
+  // default, "Apple Watch de", "di" and "von" the French, Spanish, Italian and
+  // German ones, and "Watch Roel" is the same thing shortened. Left in, the
+  // person was called "Watch Roel" and the header read as a device.
+  const cut = raw
+    .replace(/\s*(?:apple\s+)?watch(?:\s+(?:ultra|se))?\s*\d*$/i, "")
+    .replace(/^(?:apple\s+)?watch(?:\s+(?:ultra|se))?(?:\s+\d+)?(?:\s+(?:van|von|de|di|du|del|da))?\s+/i, "")
+    .replace(/['\u2019]s$/i, "")
+    .trim();
   if (cut === "") return undefined;
   // A watch named after the phone it is paired to names nobody either.
   if (phone && cut.toLocaleLowerCase() === nameOf(phone).trim().toLocaleLowerCase()) return undefined;
