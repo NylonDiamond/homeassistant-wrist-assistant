@@ -10715,6 +10715,10 @@ export class WristAssistantPanel extends LitElement {
         return;
       }
       let link = cfg.linkId;
+      // Revisions this write moved on, by record id. The lists were read
+      // before the link went onto the shelf's record, so dropping that record
+      // with the revision they hold is refused as a conflict with ourselves.
+      const moved = new Map<string, number>();
       if (link === undefined) {
         link = newId();
         const record = this.recordAt(from.ownerId, from.id);
@@ -10729,6 +10733,7 @@ export class WristAssistantPanel extends LitElement {
           this.saveError = `${row.name} could not be linked, so nothing was written to ${label}: ${out.message ?? out.error ?? "the save failed"}`;
           return;
         }
+        moved.set(from.id, out.record.revision);
         // The editor's clean copy of it takes the link too, so its next save
         // does not write the link away again.
         if (mine && this.draft) {
@@ -10745,7 +10750,7 @@ export class WristAssistantPanel extends LitElement {
       // A design on a device is not unassigned any more, so the shelf's copy
       // goes. It goes after the device's is written, never before: until
       // the device has one, the shelf's is the only copy there is.
-      const drop = fromShelf && shelf ? await this.dropShelfCopies(row, shelf) : undefined;
+      const drop = fromShelf && shelf ? await this.dropShelfCopies(row, shelf, moved) : undefined;
       const followed = drop?.landed === true;
       if (!quiet && !drop?.failed) {
         this.copyStatus = fromShelf
@@ -10781,18 +10786,21 @@ export class WristAssistantPanel extends LitElement {
    * whether anything refused to go, which is news wherever it is pressed and
    * so takes the banner over from the caller's own.
    */
-  private async dropShelfCopies(row: PickerRow, shelf: DeviceOwner): Promise<{ landed: boolean; failed: number }> {
+  private async dropShelfCopies(row: PickerRow, shelf: DeviceOwner, moved: ReadonlyMap<string, number>): Promise<{ landed: boolean; failed: number }> {
     let wasOpen = false;
     let failed = 0;
     for (const copy of row.copies) {
       if (copy.ownerId !== shelf.ownerId || copy.item.kind !== "record") continue;
       const record = this.recordAt(shelf.ownerId, copy.id);
       if (!record) continue;
-      const gone = await deleteRecord(this.hass, shelf.ownerId, record.id, record.revision);
+      const gone = await deleteRecord(this.hass, shelf.ownerId, record.id, moved.get(record.id) ?? record.revision);
       if (gone.ok) wasOpen = wasOpen || this.isOpenCopy({ ownerId: copy.ownerId, id: copy.id });
       else failed += 1;
     }
-    if (failed > 0) this.copyStatus = `${row.name} is still unassigned as well: the copy there changed on the server. Take it off ${UNASSIGNED_LABEL} from its own card.`;
+    // Both copies share one card, so "its own card" does not exist, and the
+    // editor's Delete takes every copy. The Devices menu's Unassigned box is
+    // the one control that drops the shelf's copy alone.
+    if (failed > 0) this.copyStatus = `${row.name} is on the device, and still unassigned as well. To tidy it, open Devices on its card and untick ${UNASSIGNED_LABEL}. Do not use Delete: that removes it everywhere.`;
     return { landed: wasOpen, failed };
   }
 
