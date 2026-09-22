@@ -349,3 +349,92 @@ export function personColorVar(index: number): string | undefined {
   if (index < 0) return undefined;
   return `var(--wa-person-${(index % PERSON_COLORS) + 1})`;
 }
+
+// ── shape groups and person bands ─────────────────────────────────────────
+//
+// One device's block used to be one flat grid of every shape that device
+// draws, which in a watch holding twenty-three complications means rectangular
+// cards, circular cards and inline cards shuffled together in name order. The
+// two layers below cut that block up: the cards by the shape they draw, and
+// the blocks themselves by whose devices they are.
+
+/** One shape's box inside a device's block: what the box is called, and the
+ * cards in it. `key` is the shape itself, so a box keeps its identity while
+ * the list reloads. */
+export interface PickerShapeGroup<T> {
+  key: string;
+  label: string;
+  rows: PickerListRow<T>[];
+}
+
+/**
+ * One device's rows cut into a box per shape.
+ *
+ * `shapeOf` is what reads a row's shape, which lives with the panel: this
+ * module keeps knowing nothing about what a complication is made of. It
+ * answers the key to group by and the words over the box.
+ *
+ * `order` is the order the boxes come in, by key. A shape the caller did not
+ * list sorts last, in the order it was first met, so a shape added to the app
+ * before it is added to that list still gets a box rather than disappearing.
+ * Inside a box the rows keep the order they arrived in, which is the order the
+ * list was already sorted into.
+ */
+export function pickerShapeGroups<T>(
+  rows: readonly PickerListRow<T>[],
+  shapeOf: (row: PickerListRow<T>) => { key: string; label: string },
+  order: readonly string[],
+): PickerShapeGroup<T>[] {
+  const groups = new Map<string, PickerShapeGroup<T>>();
+  for (const row of rows) {
+    const { key, label } = shapeOf(row);
+    const hit = groups.get(key);
+    if (hit) hit.rows.push(row);
+    else groups.set(key, { key, label, rows: [row] });
+  }
+  const rank = (key: string) => {
+    const i = order.indexOf(key);
+    return i < 0 ? order.length : i;
+  };
+  return [...groups.values()].sort((a, b) => rank(a.key) - rank(b.key));
+}
+
+/**
+ * One person's band of the All tab: their name, and their devices' blocks.
+ *
+ * A band with `personIndex` of -1 is the devices that are nobody's, which is
+ * Unassigned and any orphan. Those keep no name over them: "Unassigned" is
+ * already the heading of the only block in it, and a band labelled for nobody
+ * would read as a person called nothing.
+ */
+export interface PickerBand<T> {
+  key: string;
+  label: string;
+  personIndex: number;
+  sections: PickerSection<T>[];
+}
+
+/**
+ * The sections grouped under the person who owns them.
+ *
+ * The sections keep the order they came in, and a band takes the place of its
+ * first section, so the bands read down the page in the same order the device
+ * tabs read across it. A person's second device follows their first however
+ * far apart the home's own device list put them: that grouping is the whole
+ * point of the band.
+ */
+export function pickerBands<T>(
+  sections: readonly PickerSection<T>[],
+  people: readonly PickerPerson[],
+  labelOf: (index: number) => string,
+): PickerBand<T>[] {
+  const bands: PickerBand<T>[] = [];
+  for (const section of sections) {
+    const index = personIndex(people, section.ownerId);
+    const key = index < 0 ? "none" : `who:${index}`;
+    const hit = bands.find((b) => b.key === key);
+    if (hit) hit.sections.push(section);
+    else bands.push({ key, label: index < 0 ? "" : labelOf(index), personIndex: index, sections: [section] });
+  }
+  return bands;
+}

@@ -15,7 +15,9 @@ import {
   personColorVar,
   personIndex,
   pickerListRows,
+  pickerBands,
   pickerSections,
+  pickerShapeGroups,
   pickerTabs,
   pickerView,
   rowWhoText,
@@ -389,5 +391,91 @@ describe("the library in the picker's rows", () => {
     const sections = pickerSections(rows, [...devices, shelf]);
     expect(sections.find((s) => s.ownerId === "w1")?.rows.map((r) => r.name)).toEqual(["Porch"]);
     expect(sections.at(-1)?.rows.map((r) => r.name)).toEqual(["Draft"]);
+  });
+});
+
+// A device's block is cut again by shape: the shape is the first thing anybody
+// looking for one of their own knows about it.
+describe("pickerShapeGroups", () => {
+  const shapes: Record<string, string> = {
+    a: "rectangular", b: "circular", c: "rectangular", d: "inline", e: "control",
+  };
+  const label = (key: string) => key.charAt(0).toUpperCase() + key.slice(1);
+  const shapeOf = (row: { open: PickerCopy<string> }) => {
+    const key = shapes[row.open.id] ?? "none";
+    return { key, label: label(key) };
+  };
+  const order = ["rectangular", "circular", "inline", "control", "none"];
+  const rows = pickerListRows([
+    copy({ ownerId: "w1", id: "a", name: "Porch", slot: 0 }),
+    copy({ ownerId: "w1", id: "b", name: "Alarm", slot: 1 }),
+    copy({ ownerId: "w1", id: "c", name: "Kitchen", slot: 2 }),
+    copy({ ownerId: "w1", id: "d", name: "Clock", slot: 3 }),
+  ], devices);
+
+  it("puts one box round each shape, in the order given", () => {
+    expect(pickerShapeGroups(rows, shapeOf, order).map((g) => [g.key, g.rows.map((r) => r.open.id)]))
+      .toEqual([["rectangular", ["a", "c"]], ["circular", ["b"]], ["inline", ["d"]]]);
+  });
+
+  it("keeps the order the rows arrived in inside a box", () => {
+    const back = pickerListRows([
+      copy({ ownerId: "w1", id: "c", name: "Kitchen", slot: 2 }),
+      copy({ ownerId: "w1", id: "a", name: "Porch", slot: 0 }),
+    ], devices);
+    expect(pickerShapeGroups(back, shapeOf, order)[0]?.rows.map((r) => r.open.id)).toEqual(["c", "a"]);
+  });
+
+  // A shape the panel has not listed still gets a box, at the end, rather than
+  // vanishing from a device that draws it.
+  it("puts a shape it was not told about last", () => {
+    const odd = pickerListRows([
+      copy({ ownerId: "w1", id: "e", name: "Tile", slot: 0 }),
+      copy({ ownerId: "w1", id: "a", name: "Porch", slot: 1 }),
+    ], devices);
+    expect(pickerShapeGroups(odd, shapeOf, ["rectangular"]).map((g) => g.key))
+      .toEqual(["rectangular", "control"]);
+  });
+
+  it("names the box with the words it was given", () => {
+    expect(pickerShapeGroups(rows, shapeOf, order).map((g) => g.label))
+      .toEqual(["Rectangular", "Circular", "Inline"]);
+  });
+});
+
+// The blocks are grouped again by whose devices they are, so a person's watch
+// and their iPhone stand together however far apart the device list put them.
+describe("pickerBands", () => {
+  const people: PickerPerson[] = [
+    { label: "Jesse", devices: [{ ownerId: "w2", kind: "watch" }, { ownerId: "p1", kind: "iphone" }] },
+    { label: "Chen", devices: [{ ownerId: "w1", kind: "watch" }] },
+  ];
+  const rows = pickerListRows([
+    copy({ ownerId: "w1", id: "a", name: "Porch" }),
+    copy({ ownerId: "w2", id: "b", name: "Alarm" }),
+    copy({ ownerId: "p1", id: "c", name: "Kitchen" }),
+    copy({ ownerId: LIBRARY_OWNER_ID, id: "d", name: "Draft" }),
+  ], [...devices, shelf]);
+  const sections = pickerSections(rows, [...devices, shelf]);
+  const bands = pickerBands(sections, people, (i) => people[i]?.label ?? "");
+
+  it("puts one person's devices in one band", () => {
+    expect(bands.map((b) => [b.label, b.sections.map((s) => s.ownerId)])).toEqual([
+      ["Chen", ["w1"]],
+      ["Jesse", ["w2", "p1"]],
+      ["", [LIBRARY_OWNER_ID]],
+    ]);
+  });
+
+  // A band takes the place of its first section, so the bands read down the
+  // page in the same order the device tabs read across it.
+  it("takes each band's place from its first device", () => {
+    expect(bands.map((b) => b.personIndex)).toEqual([1, 0, -1]);
+  });
+
+  // Unassigned belongs to nobody, and a band named for nobody would read as a
+  // person called nothing.
+  it("leaves the devices that are nobody's unnamed", () => {
+    expect(bands.at(-1)).toMatchObject({ personIndex: -1, label: "" });
   });
 });
