@@ -81,6 +81,7 @@ import {
   timelineHistoryKey,
   timelineHistoryMinutes,
   newConfig,
+  inlineUsesParts,
   newControlConfig,
   newElement,
   convertChartTimes,
@@ -3429,6 +3430,9 @@ export class WristAssistantPanel extends LitElement {
     /* The tray's rows keep the tray's own ground and its hairlines. An outline
        each would box in two rows that are not part of the stack above. */
     .pinned-set .layer.pinned { margin: 0; border-top: 0; }
+    /* Inline has no stack above its rows, so they sit at the foot of the card,
+       where a canvas shape's own rows end up. */
+    .inline-layers .pinned-set { margin-top: auto; }
     .pinned-set .layer.pinned:not(.hl):not(.lit):not(.pick) { background: transparent; box-shadow: none; }
     .pinned-set .layer.pinned:not(.hl):not(.lit):not(.pick):hover {
       background: color-mix(in srgb, var(--wa-ink) 5%, transparent); box-shadow: none;
@@ -7146,6 +7150,9 @@ export class WristAssistantPanel extends LitElement {
    * starts on its control; everything else starts on a shape. */
   private startView(cfg: CustomComplicationConfig) {
     this.controlView = opensInControlView(cfg);
+    // Inline has one thing to edit, its line, so it opens picked rather than
+    // on the Complication card with the line a click away.
+    if (!this.controlView && this.activeFamily === "inline" && cfg.inline) this.inspect = { kind: "family" };
   }
 
   /**
@@ -7240,6 +7247,11 @@ export class WristAssistantPanel extends LitElement {
     // Ticked for several devices, it is one design on all of them: every
     // record carries the same link, so an edit to one is written to the rest.
     if (owners.length > 1) config.linkId = newId();
+    // A new Inline line starts as Parts: the way to put words and values in a
+    // row, and Plain is one click back.
+    if (config.inline && !inlineUsesParts(config.inline)) {
+      config.inline.parts = [{ id: newId(), value: structuredClone(config.inline.value) }];
+    }
     if (!this.startNew(config)) return;
     // The author asked for a control, so its tab is the one up on arrival and
     // its card is the one open.
@@ -11835,13 +11847,9 @@ export class WristAssistantPanel extends LitElement {
       this.saving = false;
     }
     await this.reloadAfterRowWrite(...targets.map((t) => t.ownerId));
-    const name = from.cfg.name.trim() || "That complication";
-    const shape = family === undefined ? "a Control Center control" : `${familyTitle(family).toLowerCase()}`;
-    const lines: string[] = [];
-    if (made.length > 0) lines.push(`${name} is on ${joinNames(made)} as ${shape}, to edit there.`);
-    if (failed.length > 0) lines.push(`${joinNames(failed)}.`);
-    this.copyStatus = lines.length > 0 ? lines.join(" ") : undefined;
-    this.copyOpen = first;
+    // Only a failure speaks: the new copies show in the list and on the card.
+    this.copyStatus = failed.length > 0 ? `${joinNames(failed)}.` : undefined;
+    this.copyOpen = failed.length > 0 ? first : undefined;
   }
 
   /** Open the copy a write just made, wherever it landed. */
@@ -14589,7 +14597,7 @@ export class WristAssistantPanel extends LitElement {
     const words = line ? this.inlineLineText(line) : "No text yet";
     const picked = this.inspect.kind === "family";
     const open = () => { this.inspect = { kind: "family" }; };
-    return html`<div class="card layers-card tinted banded s${this.thumbStep}" style=${`--c:${CARD_TINT.layers}`}>
+    return html`<div class="card layers-card inline-layers tinted banded s${this.thumbStep}" style=${`--c:${CARD_TINT.layers}`}>
       <h2 class="panel-title"><span class="swatch">${uiIcon("layers")}</span>Layers</h2>
       <div class="pinned-set">
       <div class="layer pinned ${picked ? "hl" : ""}" style=${`--k:${KIND_COLOR.text}`} tabindex="0"
