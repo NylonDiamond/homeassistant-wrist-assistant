@@ -3307,21 +3307,32 @@ export class WristAssistantPanel extends LitElement {
     .doc-places { gap: 4px 8px; padding-top: 0; padding-bottom: 7px; border-bottom: 1px solid var(--wa-line); }
     .doc-on-pre { font-size: 11.5px; font-weight: 600; color: var(--wa-muted); flex: none; }
     .doc-on { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; min-width: 0; }
-    /* A chip per device the design is on. The open one is filled and inert;
-       the rest are buttons that open that device's copy. */
+    /* A chip per device the design is on: a label, not a control. The copy
+       the editor has open wears the accent. The x inside it takes the design
+       off that device. */
     .doc-chip {
-      display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px;
-      border-radius: 999px; font: inherit; font-size: 11.5px; font-weight: 600;
+      display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 4px 0 8px;
+      border-radius: 999px; font-size: 11.5px; font-weight: 600;
       background: var(--wa-input); border: 1px solid var(--wa-line); color: var(--wa-muted);
-      white-space: nowrap; cursor: pointer;
+      white-space: nowrap;
     }
-    .doc-chip svg { width: 13px; height: 13px; }
-    button.doc-chip:hover:not(:disabled) { border-color: var(--wa-line-strong); color: var(--wa-ink); }
-    button.doc-chip:disabled { opacity: .5; cursor: default; }
+    .doc-chip > svg { width: 13px; height: 13px; }
     .doc-chip.here {
-      cursor: default; color: var(--wa-ink);
+      color: var(--wa-ink);
       background: color-mix(in srgb, var(--wa-accent) 20%, var(--wa-card)); border-color: transparent;
     }
+    button.doc-chip-x {
+      display: inline-flex; align-items: center; justify-content: center; flex: none;
+      width: 16px; height: 16px; padding: 0; border: 0; border-radius: 50%;
+      background: transparent; color: inherit; opacity: .55; cursor: pointer;
+    }
+    button.doc-chip-x svg { width: 11px; height: 11px; }
+    button.doc-chip-x:hover:not(:disabled) {
+      opacity: 1; color: #fff;
+      background: color-mix(in srgb, var(--error-color, #e5484d) 85%, #000);
+    }
+    button.doc-chip-x:disabled { opacity: .25; cursor: default; }
+    button.doc-chip-x:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     /* "Add to a device" and its menu. A dashed edge so it reads as the empty
        place after the chips rather than as one more device. */
     .place-tool { position: relative; display: inline-flex; }
@@ -9598,8 +9609,13 @@ export class WristAssistantPanel extends LitElement {
    *
    * The menu stays open, as removeRowFrom's does: the next box is the usual
    * next click.
+   *
+   * `quiet` drops the banner that says where the copy landed. The editor's
+   * own devices row calls it that way: the row it is drawn in grows a chip
+   * for that device the moment the write lands, so the banner said the same
+   * thing again, a few inches higher up, and had to be dismissed.
    */
-  private async addRowTo(row: PickerRow, target: DeviceOwner) {
+  private async addRowTo(row: PickerRow, target: DeviceOwner, quiet = false) {
     if (!this.hass.user?.is_admin || this.saving) return;
     const from = row.open;
     if (from.item.kind !== "record") return;
@@ -9658,7 +9674,7 @@ export class WristAssistantPanel extends LitElement {
         this.saveError = out.message ?? out.error ?? "Save failed";
         return;
       }
-      this.copyStatus = `${row.name} is on ${label} too. Saving it saves it everywhere it is.`;
+      if (!quiet) this.copyStatus = `${row.name} is on ${label} too. Saving it saves it everywhere it is.`;
       if (at !== undefined) this.pickerDupFor = `${at}|${rowKeyFor({ ownerId: target.ownerId, id: copy.id, linkId: link })}`;
       await this.reloadAfterRowWrite(from.ownerId, target.ownerId);
     } catch (err) {
@@ -13884,27 +13900,49 @@ export class WristAssistantPanel extends LitElement {
     return html`<div class="bar-row doc-places">
       <span class="doc-on-pre">On</span>
       <span class="doc-on" role="group" aria-label="Devices this complication is on">
-        ${on.map((place) => this.renderPlaceChip(place))}
+        ${on.map((place) => this.renderPlaceChip(row, place))}
       </span>
       ${this.renderAddPlace(row, places, family)}
     </div>`;
   }
 
-  /** One device this design is on. The copy the editor has open says so and
-   * does nothing; every other chip opens that device's copy. */
-  private renderPlaceChip(place: DevicePlace) {
+  /**
+   * One device this design is on, and an x that takes it off again.
+   *
+   * The chip itself does nothing when it is clicked. Every copy of a link is
+   * the same document, so there is no other version of this design to go and
+   * look at: opening another device's copy would reload the editor onto a
+   * record that draws exactly what is already on the screen.
+   *
+   * The x is the picker's own untick: the copy there is deleted, and the
+   * design's last copy anywhere is moved to Unassigned rather than deleted,
+   * since a design taken off everything is not a design thrown away. The copy
+   * the editor has open cannot be pulled out from under its draft, so its x
+   * says to use Delete instead of quietly doing nothing.
+   */
+  private renderPlaceChip(row: PickerRow, place: DevicePlace) {
     const target = place.owner;
     const label = target.kind === "library" ? UNASSIGNED_LABEL : target.label;
     const icon = target.kind === "library" ? "layers" : target.kind === "iphone" ? "phone" : "watch";
-    if (place.copies.some((c) => this.isOpenCopy(c))) {
-      return html`<span class="doc-chip here" aria-current="true"
-        title=${`This is the copy on ${label}`}>${uiIcon(icon)}<span>${label}</span></span>`;
-    }
-    const copy = place.copies[0];
-    if (!copy) return nothing;
-    return html`<button type="button" class="doc-chip" ?disabled=${this.saving}
-      title=${`Open the copy on ${label}`}
-      @click=${() => void this.openCopyOn(copy.ownerId, copy.id)}>${uiIcon(icon)}<span>${label}</span></button>`;
+    const here = place.copies.some((c) => this.isOpenCopy(c));
+    const stuck = here
+      ? "This is the copy you have open. Delete removes it."
+      : place.last && target.kind === "library"
+        ? "It is unassigned already. Delete removes it."
+        : place.last && this.libraryOwner() === undefined
+          ? "This integration has no Unassigned list to move it to. Delete removes it."
+          : undefined;
+    const off = place.last
+      ? `Take it off ${label} and keep it as unassigned`
+      : `Take it off ${label}. A face or widget already using it keeps it.`;
+    const mayEdit = this.canEdit && this.hass.user?.is_admin === true;
+    return html`<span class="doc-chip ${here ? "here" : ""}"
+      aria-current=${here ? "true" : nothing}>
+      ${uiIcon(icon)}<span class="doc-chip-name">${label}</span>
+      ${mayEdit ? html`<button type="button" class="doc-chip-x" ?disabled=${this.saving || stuck !== undefined}
+        title=${stuck ?? off} aria-label=${`Take ${row.name} off ${label}`}
+        @click=${() => void this.removeRowFrom(row, place)}>${uiIcon("close")}</button>` : nothing}
+    </span>`;
   }
 
   /**
@@ -13948,7 +13986,7 @@ export class WristAssistantPanel extends LitElement {
       : `Put it on ${label}. Saving it saves it everywhere it is.`);
     return html`<button type="button" class="row place-row" role="option" aria-selected="false"
       ?disabled=${this.saving || block !== undefined} title=${title}
-      @click=${() => { this.toggleMenu("place", false); void this.addRowTo(row, target); }}>
+      @click=${() => { this.toggleMenu("place", false); void this.addRowTo(row, target, true); }}>
       ${uiIcon(icon)}<span class="place-name">${label}</span>
       ${block ? html`<small class="place-no">${block.tag}</small>` : nothing}
     </button>`;
@@ -13975,17 +14013,6 @@ export class WristAssistantPanel extends LitElement {
   private openRow(): PickerRow | undefined {
     if (!this.ownerId || !this.selectedId) return undefined;
     return this.pickerRows().find((r) => this.selectedCopyOf(r) !== undefined);
-  }
-
-  /** Open another device's copy of this design. `selectOwner` asks about an
-   * unsaved draft itself and stays where it is when the answer is no, so a
-   * switch that did not happen opens nothing. */
-  private async openCopyOn(ownerId: string, id: string) {
-    if (ownerId === this.ownerId) return;
-    await this.selectOwner(ownerId);
-    if (this.ownerId !== ownerId) return;
-    const record = this.records.find((r) => r.id === id);
-    if (record) this.selectRecord(record);
   }
 
   /**
