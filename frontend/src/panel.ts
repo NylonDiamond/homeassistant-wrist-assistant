@@ -3677,12 +3677,16 @@ export class WristAssistantPanel extends LitElement {
       max-width: 300px; text-align: center; color: #fff; font-size: 22px; font-weight: 500; line-height: 1.2;
       display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere;
     }
-    /* The line under the face: which shape, how big, and what a drag does. The
-       size is set in mono, because it is a measurement rather than prose. */
+    /* The one line of stage help: what a drag does right now. It rides in the
+       bar over the face, and in the zoom bar. */
     .under {
       display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 10px;
       text-align: center; font-size: 12.5px; font-weight: 500; color: var(--wa-muted);
     }
+    /* Its own row under the shape's name, tight against it: the same words,
+       where the tools they talk about are. */
+    .bar-row.stage-help { padding-top: 0; }
+    .bar-row.stage-help .under { justify-content: flex-start; text-align: left; }
     .under b { color: var(--wa-ink); font-weight: 700; }
     .under .size { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
     .under .dot { color: var(--wa-line-strong); }
@@ -7426,7 +7430,7 @@ export class WristAssistantPanel extends LitElement {
     const ratio = family === "corner" ? 104 / 124 : slot.width / slot.height;
     return html`<dialog class="zoom-dialog" @close=${() => { this.zoomed = false; }}>
       <div class="zoom-bar">
-        ${this.renderUnder(cfg, family)}
+        ${this.renderStageHint(cfg, family)}
         <span class="spacer"></span>
         ${this.renderTintTool()}
         ${this.renderPickButton()}
@@ -13492,12 +13496,12 @@ export class WristAssistantPanel extends LitElement {
             </span>
             ${isDrawable(family) ? this.renderTintTool() : nothing}
           </div>
+          <div class="bar-row stage-help">${this.renderStageHint(cfg, family)}</div>
         </div>
         <div class="stage">
           ${this.renderRowStrip()}
           ${isDrawable(family) ? this.renderOver() : nothing}
           ${isDrawable(family) ? this.renderBigPreview(family, layouts, deviceCase) : this.renderInlinePreview(layouts.inline, false)}
-          ${this.renderUnder(cfg, family)}
         </div>
         ${this.zoomed && isDrawable(family) ? this.renderZoomDialog(family, layouts, deviceCase) : nothing}
         ${this.demoing && isDrawable(family) ? this.renderDemoDialog(family, layouts, deviceCase) : nothing}
@@ -13601,8 +13605,16 @@ export class WristAssistantPanel extends LitElement {
         : html`<div class="under"><span class="tail">A press flashes <b>${status}</b> over the tile.</span></div>`}`;
   }
 
-  /** The line under the preview: which shape, its size, and what a drag does now. */
-  private renderUnder(cfg: CustomComplicationConfig, family: FamilyKind) {
+  /**
+   * What a drag does right now: one line of stage help.
+   *
+   * It used to sit under the face, led by the shape's name and its size in
+   * points, and to name the layer being edited. The bar over the face says
+   * which shape this is, the inspector beside it says which layer is open,
+   * and nobody was reading the size. What is left is the part that changes
+   * with what you are doing, so it rides in the bar where the eye already is.
+   */
+  private renderStageHint(cfg: CustomComplicationConfig, family: FamilyKind) {
     const ctx = describeContext(this.host());
     const ins = this.inspect;
     const sel = ins.kind === "layer" ? cfg.elements.find((e) => e.payload.id === ins.id) : undefined;
@@ -13620,25 +13632,16 @@ export class WristAssistantPanel extends LitElement {
     } else if (ins.kind === "group") {
       const g = cfg.groups?.find((x) => x.id === ins.id);
       const n = g ? groupMembers(cfg, g.id).length : 0;
-      tail = g ? html`editing group <b>${g.name}</b>. Drag to move all ${n} layers.${g.locked ? "" : " Click one layer to move it alone."}` : "";
+      tail = g ? html`A drag moves all ${n} layers of <b>${g.name}</b>.${g.locked ? "" : " Click one layer to move it alone."}` : "";
     } else if (sel) {
       const g = groupOf(cfg, sel.payload.id);
       tail = g?.locked
-        ? html`editing <b>${layerTitle(sel, ctx)}</b> in <b>${g.name}</b>. A drag moves the whole group; pull a corner to resize this layer. Arrow keys nudge the group.`
-        : html`editing <b>${layerTitle(sel, ctx)}</b>. Drag it, or pull a corner. Arrow keys nudge it.${this.snapGrid && this.snapLayers ? " It snaps to the grid and to the other layers. Hold Alt to drag freely." : this.snapGrid ? " It snaps to the grid. Hold Alt to drag freely." : this.snapLayers ? " It snaps to the other layers. Hold Alt to drag freely." : " Hold Alt while dragging to snap to the grid."}`;
+        ? html`A drag moves the whole group <b>${g.name}</b>; pull a corner to resize this layer. Arrow keys nudge the group.`
+        : html`Drag it, or pull a corner. Arrow keys nudge it.${this.snapGrid && this.snapLayers ? " It snaps to the grid and to the other layers. Hold Alt to drag freely." : this.snapGrid ? " It snaps to the grid. Hold Alt to drag freely." : this.snapLayers ? " It snaps to the other layers. Hold Alt to drag freely." : " Hold Alt while dragging to snap to the grid."}`;
     } else {
-      tail = "click a layer to edit it";
+      tail = "Click a layer to edit it.";
     }
-    if (!isDrawable(family)) return html`<div class="under"><b>Inline</b><span class="dot">·</span><span class="tail">${tail}</span></div>`;
-    const slot = slotFor(this.currentCase(), family);
-    const fit = fitBox(slot, family);
-    const pct = Math.round(fit.scale * 100);
-    return html`<div class="under">
-      <b>${familyTitle(family)}</b>
-      <span class="size">${slot.width} × ${slot.height} pt${pct !== 100 ? ` · ${pct}%` : ""}</span>
-      <span class="dot">·</span>
-      <span class="tail">${tail}</span>
-    </div>`;
+    return html`<div class="under"><span class="tail">${tail}</span></div>`;
   }
 
   /** The Inline shape as one line: symbol, then `label: value`, the way the
