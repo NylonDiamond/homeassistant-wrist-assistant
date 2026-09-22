@@ -1662,8 +1662,12 @@ export class WristAssistantPanel extends LitElement {
          hue wherever that shape appears, on every device and in every list:
          the colour is the shape's, not the box's, so a household learns
          "circular is teal" once and reads it everywhere after that.
-         Ordered the way the boxes are, and far enough apart that the two
-         Lock Screen slivers never read as the Home Screen tile above them.
+         Ordered the way a watch's boxes are, because a watch is where the
+         hues sit closest together: five boxes, and each one's neighbour has
+         to be plainly another colour. Control used to be a fuchsia a third
+         of a turn from inline's violet, which on a watch put purple next to
+         purple; it is the rose at the far side of the wheel now, and the
+         three Home Screen tiles took the hues it left.
          These are washed into the ground at a tenth, so they only have to be
          told apart as a tint, but they name the box's label at full strength
          too and so are dark enough here to read on a white card. */
@@ -1671,11 +1675,11 @@ export class WristAssistantPanel extends LitElement {
       --wa-shape-circular: #0f766e;
       --wa-shape-corner: #9a5b00;
       --wa-shape-inline: #6d28d9;
-      --wa-shape-small: #be123c;
-      --wa-shape-medium: #b45309;
-      --wa-shape-large: #4d7c0f;
-      --wa-shape-xlarge: #1d4ed8;
-      --wa-shape-control: #86198f;
+      --wa-shape-control: #be123c;
+      --wa-shape-small: #4d7c0f;
+      --wa-shape-medium: #c2410c;
+      --wa-shape-large: #a21caf;
+      --wa-shape-xlarge: #4338ca;
       --wa-r-sm: 8px;
       --wa-r-md: 12px;
       --wa-r-lg: 16px;
@@ -1727,11 +1731,11 @@ export class WristAssistantPanel extends LitElement {
       --wa-shape-circular: #5eead4;
       --wa-shape-corner: #fbbf24;
       --wa-shape-inline: #a78bfa;
-      --wa-shape-small: #fb7185;
-      --wa-shape-medium: #fdba74;
-      --wa-shape-large: #a3e635;
+      --wa-shape-control: #fb7185;
+      --wa-shape-small: #a3e635;
+      --wa-shape-medium: #fb923c;
+      --wa-shape-large: #e879f9;
       --wa-shape-xlarge: #818cf8;
-      --wa-shape-control: #f0abfc;
       --wa-shadow-pop: 0 16px 48px rgba(0,0,0,.6);
       color-scheme: dark;
       scrollbar-color: rgba(255,255,255,.14) transparent;
