@@ -1455,6 +1455,11 @@ export class WristAssistantPanel extends LitElement {
    * cannot delete a page minutes later. */
   @state() private pageTrashArm?: number;
   private pageTrashTimer?: number;
+  /** The device whose chip in the devices row has its trash armed, by owner
+   * id. Same rule as the page trash: one press asks, the next takes the
+   * design off that device, and it forgets after a few seconds. */
+  @state() private placeTrashArm?: string;
+  private placeTrashTimer?: number;
   @state() private moveTarget?: string;
   @state() private moving = false;
   @state() private moveError?: string;
@@ -3307,32 +3312,38 @@ export class WristAssistantPanel extends LitElement {
     .doc-places { gap: 4px 8px; padding-top: 0; padding-bottom: 7px; border-bottom: 1px solid var(--wa-line); }
     .doc-on-pre { font-size: 11.5px; font-weight: 600; color: var(--wa-muted); flex: none; }
     .doc-on { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; min-width: 0; }
-    /* A chip per device the design is on: a label, not a control. The copy
-       the editor has open wears the accent. The x inside it takes the design
-       off that device. */
+    /* A chip per device the design is on: a label, not a control. Every one
+       is lit, the copy the editor has open included, because they are all the
+       same design and all equally on. Split into the name and the trash for
+       that device, the way a page tab is. */
     .doc-chip {
-      display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 4px 0 8px;
-      border-radius: 999px; font-size: 11.5px; font-weight: 600;
-      background: var(--wa-input); border: 1px solid var(--wa-line); color: var(--wa-muted);
-      white-space: nowrap;
+      display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 0 0 9px;
+      border-radius: 999px; font-size: 11.5px; font-weight: 600; overflow: hidden;
+      background: color-mix(in srgb, var(--wa-accent) 22%, var(--wa-card));
+      border: 1px solid transparent; color: var(--wa-ink); white-space: nowrap;
     }
-    .doc-chip > svg { width: 13px; height: 13px; }
-    .doc-chip.here {
-      color: var(--wa-ink);
-      background: color-mix(in srgb, var(--wa-accent) 20%, var(--wa-card)); border-color: transparent;
-    }
-    button.doc-chip-x {
+    .doc-chip > svg { width: 13px; height: 13px; opacity: .85; }
+    /* Red on the plain input ground, not on the accent: it is the one control
+       on the chip that takes something away, and it should not look like part
+       of the device it removes. */
+    button.doc-trash {
       display: inline-flex; align-items: center; justify-content: center; flex: none;
-      width: 16px; height: 16px; padding: 0; border: 0; border-radius: 50%;
-      background: transparent; color: inherit; opacity: .55; cursor: pointer;
+      width: 24px; align-self: stretch; padding: 0; margin-left: 4px;
+      border: 0; border-left: 1px solid color-mix(in srgb, var(--wa-accent-ink) 25%, transparent);
+      font: inherit; background: var(--wa-input); color: #FF453A; cursor: pointer;
     }
-    button.doc-chip-x svg { width: 11px; height: 11px; }
-    button.doc-chip-x:hover:not(:disabled) {
-      opacity: 1; color: #fff;
-      background: color-mix(in srgb, var(--error-color, #e5484d) 85%, #000);
+    button.doc-trash svg.ui-icon { width: 13px; height: 13px; }
+    button.doc-trash:hover:not(:disabled) { background: color-mix(in srgb, #FF453A 22%, var(--wa-input)); }
+    button.doc-trash:disabled { color: var(--wa-muted); opacity: .6; cursor: default; }
+    button.doc-trash:focus-visible { outline: none; box-shadow: inset var(--wa-ring); }
+    /* Armed: the trash becomes the question, filled red and wide enough for
+       the word, so the second press is plainly a different button. */
+    button.doc-trash.armed {
+      width: auto; padding: 0 8px; background: #FF453A; color: #fff;
+      border-left-color: color-mix(in srgb, #fff 35%, transparent);
     }
-    button.doc-chip-x:disabled { opacity: .25; cursor: default; }
-    button.doc-chip-x:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    button.doc-trash.armed:hover { background: color-mix(in srgb, #fff 12%, #FF453A); }
+    button.doc-trash .sure { font-size: 11px; font-weight: 700; letter-spacing: .01em; }
     /* "Add to a device" and its menu. A dashed edge so it reads as the empty
        place after the chips rather than as one more device. */
     .place-tool { position: relative; display: inline-flex; }
@@ -3356,16 +3367,17 @@ export class WristAssistantPanel extends LitElement {
       margin: 4px 4px 2px; max-width: 240px; font-size: 11px; line-height: 1.4; color: var(--wa-muted);
       white-space: normal;
     }
-    /* The shape's name at the left of the shapes row, where its tab used to
-       be. A note rides after it, so "nothing shown" and the warning still have
-       somewhere to sit now that the tab picture is gone. */
-    .shape-name {
-      display: inline-flex; align-items: baseline; gap: 7px; flex: none;
-      font-size: 13px; font-weight: 700; color: var(--wa-ink);
+    /* The shape in brackets after the complication's name. Lighter than the
+       name and the same size, so the pair reads as one line rather than as a
+       heading with a subtitle. A note rides after it, so "nothing shown" and
+       the warning still have somewhere to sit. */
+    .doc-shape {
+      display: inline-flex; align-items: baseline; gap: 6px; flex: none;
+      font-size: 14px; font-weight: 500; color: var(--wa-muted);
     }
-    .shape-name small { font-size: 11px; font-weight: 500; color: var(--wa-muted); }
-    .shape-name .warn { align-self: center; display: inline-flex; color: var(--wa-val); }
-    .shape-name .warn svg { width: 14px; height: 14px; }
+    .doc-shape small { font-size: 11px; font-weight: 500; color: var(--wa-muted); }
+    .doc-shape .warn { align-self: center; display: inline-flex; color: var(--wa-val); }
+    .doc-shape .warn svg { width: 14px; height: 14px; }
     .bar-sep { width: 1px; height: 18px; background: var(--wa-line-strong); margin: 0 2px; flex: none; }
     .canvas-bar .spacer { flex: 1; min-width: 0; }
     /* The shape and the Control Center control, as one segmented control.
@@ -3745,8 +3757,11 @@ export class WristAssistantPanel extends LitElement {
       display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 10px;
       text-align: center; font-size: 12.5px; font-weight: 500; color: var(--wa-muted);
     }
-    /* Its own row under the shape's name, tight against it: the same words,
-       where the tools they talk about are. */
+    /* In the tool row, at its left end, where the shape tab used to be: the
+       words about dragging, beside the tools they talk about. A document that
+       still has a shape/control switch keeps them on a row of their own,
+       because the switch has that space. */
+    .bar-row.shapes > .under { flex: 1 1 auto; min-width: 0; justify-content: flex-start; text-align: left; }
     .bar-row.stage-help { padding-top: 0; }
     .bar-row.stage-help .under { justify-content: flex-start; text-align: left; }
     .under b { color: var(--wa-ink); font-weight: 700; }
@@ -5803,6 +5818,8 @@ export class WristAssistantPanel extends LitElement {
     // Where the last write landed was about the complication that is going.
     this.copyStatus = undefined;
     this.copyOpen = undefined;
+    // An armed trash belongs to the devices row of the complication leaving.
+    this.disarmPlaceTrash();
   }
 
   private confirmDiscard(): boolean {
@@ -6341,6 +6358,20 @@ export class WristAssistantPanel extends LitElement {
   private disarmPageTrash() {
     window.clearTimeout(this.pageTrashTimer);
     this.pageTrashArm = undefined;
+  }
+
+  /** Ask before taking a design off a device, the way a page's trash asks:
+   * the trash reads "sure?" until it is pressed again, or until this runs
+   * out. The write deletes that device's record, so it earns the question. */
+  private armPlaceTrash(ownerId: string) {
+    window.clearTimeout(this.placeTrashTimer);
+    this.placeTrashArm = ownerId;
+    this.placeTrashTimer = window.setTimeout(() => { this.placeTrashArm = undefined; }, PAGE_TRASH_ARM_MS);
+  }
+
+  private disarmPlaceTrash() {
+    window.clearTimeout(this.placeTrashTimer);
+    this.placeTrashArm = undefined;
   }
 
   /** Drop anything selected that the showing page does not draw. Layers of the
@@ -13532,7 +13563,7 @@ export class WristAssistantPanel extends LitElement {
       return html`
         <div class="card canvas-card">
           <div class="canvas-bar">
-            ${this.renderDocRow(cfg)}
+            ${this.renderDocRow(cfg, layouts)}
             ${this.renderPlacesRow(cfg)}
             <div class="bar-row shapes">${this.renderShapeSwitch(cfg, layouts)}</div>
           </div>
@@ -13542,13 +13573,19 @@ export class WristAssistantPanel extends LitElement {
           ${this.renderValuesRow()}
         </div>`;
     }
+    // The segmented control is a real switch and takes the tool row's left
+    // side, with the stage help on a row under it. A document with one shape
+    // and no control has nothing to switch, so its shape reads in brackets
+    // after the name instead and the help moves up into the space the tabs
+    // would have taken: one row fewer over every ordinary complication.
+    const seg = this.hasControlTab(cfg);
     return html`
       <div class="card canvas-card">
         <div class="canvas-bar">
-          ${this.renderDocRow(cfg)}
+          ${this.renderDocRow(cfg, layouts)}
           ${this.renderPlacesRow(cfg)}
           <div class="bar-row shapes">
-            ${this.renderShapeSwitch(cfg, layouts)}
+            ${seg ? this.renderShapeSwitch(cfg, layouts) : this.renderStageHint(cfg, family)}
             <span class="spacer"></span>
             <span class="inbox" title=${`Layouts are made in the ${this.referenceCase.label} box. Every other size draws a scaled copy of it.`}>
               <span class="pre">Preview as</span>
@@ -13565,7 +13602,7 @@ export class WristAssistantPanel extends LitElement {
             </span>
             ${isDrawable(family) ? this.renderTintTool() : nothing}
           </div>
-          <div class="bar-row stage-help">${this.renderStageHint(cfg, family)}</div>
+          ${seg ? html`<div class="bar-row stage-help">${this.renderStageHint(cfg, family)}</div>` : nothing}
         </div>
         <div class="stage">
           ${this.renderRowStrip()}
@@ -13869,13 +13906,43 @@ export class WristAssistantPanel extends LitElement {
    * the layer again. None of them is about the selection, so they belong over
    * the picture, where they are always readable.
    */
-  private renderDocRow(cfg: CustomComplicationConfig) {
+  private renderDocRow(cfg: CustomComplicationConfig, layouts: ResolvedAll) {
     const name = cfg.name.trim() || "Complication";
     return html`<div class="bar-row doc-row">
       <span class="doc-name" title=${name}>${name}</span>
+      ${this.renderDocShape(cfg, layouts)}
       <span class="spacer"></span>
       ${this.renderDocActs(cfg)}
     </div>`;
+  }
+
+  /**
+   * The shape this document draws, in brackets after its name.
+   *
+   * A tab used to carry it, on a bar of its own over the picture. With one
+   * shape per document there is nothing to switch to, so the tab was a label
+   * taking a whole row, and the row under it held one line of stage help. The
+   * shape reads as part of what the complication is now, and the help moved up
+   * into the row the tab left.
+   *
+   * The warning and the "nothing shown" note ride with it: they are about this
+   * shape rather than about the document.
+   *
+   * A document that still holds a shape and a control keeps its segmented
+   * control on the tool row, because there a tab really does switch views. It
+   * gets no brackets: the pressed tab already says which view is up.
+   */
+  private renderDocShape(cfg: CustomComplicationConfig, layouts: ResolvedAll) {
+    if (this.hasControlTab(cfg)) return nothing;
+    const f = supportedFamilies(cfg)[0];
+    if (f === undefined) return nothing;
+    return html`<span class="doc-shape">(${familyTitle(f)})${this.shapeNotes(cfg, layouts, f)}</span>`;
+  }
+
+  /** Whether the bar draws the shape/Control Center segmented control, which
+   * is the one case where this document has two views to switch between. */
+  private hasControlTab(cfg: CustomComplicationConfig): boolean {
+    return cfg.control !== undefined && ownerSupportsControls(this.selectedOwner);
   }
 
   /**
@@ -13907,18 +13974,20 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * One device this design is on, and an x that takes it off again.
+   * One device this design is on, and a trash that takes it off again.
    *
-   * The chip itself does nothing when it is clicked. Every copy of a link is
-   * the same document, so there is no other version of this design to go and
-   * look at: opening another device's copy would reload the editor onto a
-   * record that draws exactly what is already on the screen.
+   * Every chip is lit, the open copy's included: they are all the same design
+   * and all equally on. The chip itself does nothing when it is clicked, since
+   * every copy of a link is the same document. Opening another device's copy
+   * would reload the editor onto a record that draws exactly what is already
+   * on the screen.
    *
-   * The x is the picker's own untick: the copy there is deleted, and the
-   * design's last copy anywhere is moved to Unassigned rather than deleted,
-   * since a design taken off everything is not a design thrown away. The copy
-   * the editor has open cannot be pulled out from under its draft, so its x
-   * says to use Delete instead of quietly doing nothing.
+   * The trash arms before it writes, the way a page's does: one press asks,
+   * the next one does it, and it forgets after a few seconds. It is the
+   * picker's own untick underneath, so the design's last copy anywhere is
+   * moved to Unassigned rather than deleted. The copy the editor has open
+   * cannot be pulled out from under its draft, so its trash says to use
+   * Delete instead of quietly doing nothing.
    */
   private renderPlaceChip(row: PickerRow, place: DevicePlace) {
     const target = place.owner;
@@ -13935,13 +14004,19 @@ export class WristAssistantPanel extends LitElement {
     const off = place.last
       ? `Take it off ${label} and keep it as unassigned`
       : `Take it off ${label}. A face or widget already using it keeps it.`;
+    const armed = this.placeTrashArm === target.ownerId;
+    const ask = `Press again to take it off ${label}.`;
     const mayEdit = this.canEdit && this.hass.user?.is_admin === true;
-    return html`<span class="doc-chip ${here ? "here" : ""}"
-      aria-current=${here ? "true" : nothing}>
+    return html`<span class="doc-chip" aria-current=${here ? "true" : nothing}>
       ${uiIcon(icon)}<span class="doc-chip-name">${label}</span>
-      ${mayEdit ? html`<button type="button" class="doc-chip-x" ?disabled=${this.saving || stuck !== undefined}
-        title=${stuck ?? off} aria-label=${`Take ${row.name} off ${label}`}
-        @click=${() => void this.removeRowFrom(row, place)}>${uiIcon("close")}</button>` : nothing}
+      ${mayEdit ? html`<button type="button" class="doc-trash ${armed ? "armed" : ""}"
+        ?disabled=${this.saving || stuck !== undefined}
+        title=${stuck ?? (armed ? ask : off)} aria-label=${stuck ?? (armed ? ask : `Take ${row.name} off ${label}`)}
+        @click=${() => {
+          if (!armed) { this.armPlaceTrash(target.ownerId); return; }
+          this.disarmPlaceTrash();
+          void this.removeRowFrom(row, place);
+        }}>${armed ? html`<span class="sure">sure?</span>` : uiIcon("delete")}</button>` : nothing}
     </span>`;
   }
 
@@ -14064,13 +14139,13 @@ export class WristAssistantPanel extends LitElement {
    * Each tab used to carry a live picture of its shape, drawn again at tab
    * size. With one shape in the document that picture was the stage picture,
    * smaller: the same face twice on one screen, and a tall bar for it. The
-   * tabs are words now, and a document with nothing to switch to gets no tab
-   * at all, only the shape's name.
+   * tabs are words now, and a document with nothing to switch to gets no bar
+   * at all: `renderDocShape` puts its shape in brackets after the name and
+   * the tool row carries the stage help instead. So this only ever draws for
+   * a document that still holds a shape and a control.
    */
   private renderShapeSwitch(cfg: CustomComplicationConfig, layouts: ResolvedAll) {
-    const control = this.renderControlTab(cfg);
-    if (control === nothing) return this.renderShapeName(cfg, layouts);
-    return html`<div class="shape-seg" role="group" aria-label="Shapes">${this.renderShapeTab(cfg, layouts)}${control}</div>`;
+    return html`<div class="shape-seg" role="group" aria-label="Shapes">${this.renderShapeTab(cfg, layouts)}${this.renderControlTab(cfg)}</div>`;
   }
 
   /** What the shape warns about and whether it draws nothing, for the name or
@@ -14082,14 +14157,6 @@ export class WristAssistantPanel extends LitElement {
     return html`${empty ? html`<small>nothing shown</small>` : nothing}${warnings.length === 0 ? nothing : html`<span class="warn" role="img"
       aria-label=${`Worth a look: ${warnings.join(" ")}`}
       title=${warnings.join("\n")}>${uiIcon("info")}</span>`}`;
-  }
-
-  /** The shape this complication is, named rather than tabbed: there is one,
-   * and the stage under it is already its picture. */
-  private renderShapeName(cfg: CustomComplicationConfig, layouts: ResolvedAll) {
-    const f = supportedFamilies(cfg)[0];
-    if (f === undefined) return nothing;
-    return html`<span class="shape-name"><b>${familyTitle(f)}</b>${this.shapeNotes(cfg, layouts, f)}</span>`;
   }
 
   /** The shape tab, drawn only beside a control tab: the view the canvas is
