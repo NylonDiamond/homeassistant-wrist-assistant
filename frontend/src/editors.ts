@@ -3755,9 +3755,15 @@ function tapNote(action: TapAction, pages = false): TemplateResult | typeof noth
  *
  * The document being edited heads the list, marked "(current)", ticked and
  * disabled: it always refreshes itself whatever is picked, so the row is there
- * to say so rather than to be changed. A picked id the watch no longer has
- * stays in the list under a plain name so it can be unticked; dropping it
+ * to say so rather than to be changed. A picked id this watch does not have
+ * stays in the list as "Not on this watch" so it can be unticked; dropping it
  * silently would edit the author's choice on their behalf.
+ *
+ * That row is worded for arrival, not for deletion, because arrival is the
+ * common way to get one. A tap carries its picks as raw document ids and a
+ * share copies them across untouched, so every imported complication whose tap
+ * reached its neighbours lands here with picks that name nothing on this watch.
+ * Saying "deleted" sent the reader looking for something they had removed.
  *
  * A ticked complication carries its own "All layers" box, so one tap can fetch
  * two cameras from the kitchen face and everything from the hall one. The
@@ -3804,7 +3810,7 @@ function refreshTargetsField(
     ...others.map((d) => html`
       ${checkField(d.name || "Unnamed", picked.includes(d.id), (on) => pick(d.id, on))}
       ${picked.includes(d.id) ? nested(d.id, d.layers, false) : nothing}`),
-    ...missing.map((id) => checkField("Unknown complication (deleted)", true, (on) => pick(id, on))),
+    ...missing.map((id) => checkField("Not on this watch", true, (on) => pick(id, on))),
   ];
   return html`
     ${checkField("All placed complications", false, pickAll)}

@@ -144,9 +144,12 @@ describe("the picker under the tap", () => {
     expect(text).not.toContain("kitchen");
   });
 
-  it("keeps a picked id the watch no longer has, so it can be unticked", () => {
+  it("keeps a picked id this watch does not have, so it can be unticked", () => {
     const text = picker({ type: "refreshAll", targets: ["GONE"] }, OTHERS);
-    expect(text).toContain("Unknown complication (deleted)");
+    // Worded for arrival rather than deletion: an imported complication brings
+    // its picks across as raw ids, so this row is what a shared tap looks like.
+    expect(text).toContain("Not on this watch");
+    expect(text).not.toContain("deleted");
   });
 
   it("says so when there is nothing else on the watch", () => {

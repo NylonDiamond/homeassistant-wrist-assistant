@@ -663,7 +663,7 @@ Click to change`} @click=${S}>
       ${fe(`${p===""?"Unnamed":p} (current)`,!0,()=>{},void 0,{disabled:!0})}
       ${c(r,()=>e.config.elements,!0)}`,...o.map(f=>h`
       ${fe(f.name||"Unnamed",a.includes(f.id),g=>l(f.id,g))}
-      ${a.includes(f.id)?c(f.id,f.layers,!1):m}`),...s.map(f=>fe("Unknown complication (deleted)",!0,g=>l(f,g)))];return h`
+      ${a.includes(f.id)?c(f.id,f.layers,!1):m}`),...s.map(f=>fe("Not on this watch",!0,g=>l(f,g)))];return h`
     ${fe("All placed complications",!1,d)}
     ${u}
     ${o.length===0&&s.length===0?h`<div class="hint keep">No other complications on this watch yet.</div>`:m}
