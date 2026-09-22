@@ -289,6 +289,10 @@ export function inlineToParts(cfg: CustomComplicationConfig): void {
     if (inline.symbol) parts.push({ id: newId(), value: literal(""), symbol: inline.symbol });
     parts.push({ id: newId(), value: structuredClone(inline.value) });
     inline.parts = parts;
+  } else if (inline.symbol && inline.parts![0]!.symbol === undefined) {
+    // Parts saved while the Symbol card still set the symbol on its own. The
+    // symbol is the first icon part now, or the next write would drop it.
+    inline.parts!.unshift({ id: newId(), value: literal(""), symbol: inline.symbol });
   }
   const label = inline.label;
   if (label === undefined) return;

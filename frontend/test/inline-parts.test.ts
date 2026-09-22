@@ -220,6 +220,15 @@ describe("An Inline line saved without parts", () => {
     expect(draft.dirty).toBe(false);
   });
 
+  it("keeps a symbol set beside parts, as the first icon part", () => {
+    const cfg = inlineConfig(oneValue());
+    cfg.inline!.symbol = "lightbulb.fill";
+    const draft = new Draft(cfg, 4);
+    expect(draft.config.inline!.parts![0]!.symbol).toBe("lightbulb.fill");
+    expect(draft.config.inline!.symbol).toBe("lightbulb.fill");
+    expect(draft.dirty).toBe(false);
+  });
+
   it("keeps a countdown counting, label and all", () => {
     const cfg = newConfig("Line", 0, "inline");
     cfg.inline = { label: "Oven", value: state("timer.oven"), countdown: true };
