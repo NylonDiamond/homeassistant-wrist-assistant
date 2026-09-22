@@ -249,7 +249,7 @@ import {
   syncListAttributes,
   shownCount,
 } from "./editors.js";
-import { PREVIEW_ROOM, previewBox, previewTintFor, previewWarnings, renderShapeArt, shapeTabCss } from "./shapePreviews.js";
+import { previewTintFor, previewWarnings, renderShapeArt } from "./shapePreviews.js";
 import { sampleListItem, withListSeeds } from "./list-seeds.js";
 import { type PresetEnv, type PresetKind, type PresetSpec, LAYER_PRESETS, applyPreset, presetSpec } from "./presets.js";
 import { type AddVariant, addPreview } from "./add-previews.js";
@@ -3294,21 +3294,23 @@ export class WristAssistantPanel extends LitElement {
       border-bottom: 1px solid var(--wa-line); background: var(--wa-raised);
     }
     .bar-row { display: flex; align-items: center; gap: 6px; padding: 8px 12px; flex-wrap: wrap; }
-    .bar-row.shapes { align-items: flex-end; }
-    /* The words at the left of a bar row, in the same block the band leads
-       with, so the two rows start on one line. */
-    .bar-lead {
-      display: flex; flex-direction: column; width: 92px; flex: none; line-height: 1.3;
-      align-self: center; font-size: 11px; color: var(--wa-muted);
+    /* The shape's name at the left of the shapes row, where its tab used to
+       be. A note rides after it, so "nothing shown" and the warning still have
+       somewhere to sit now that the tab picture is gone. */
+    .shape-name {
+      display: inline-flex; align-items: baseline; gap: 7px; flex: none;
+      font-size: 13px; font-weight: 700; color: var(--wa-ink);
     }
-    .bar-lead b { font-size: 12px; color: var(--wa-ink); }
-    .bar-row.shapes .inbox { align-self: center; }
+    .shape-name small { font-size: 11px; font-weight: 500; color: var(--wa-muted); }
+    .shape-name .warn { align-self: center; display: inline-flex; color: var(--wa-val); }
+    .shape-name .warn svg { width: 14px; height: 14px; }
     .bar-sep { width: 1px; height: 18px; background: var(--wa-line-strong); margin: 0 2px; flex: none; }
     .canvas-bar .spacer { flex: 1; min-width: 0; }
-    /* The shapes the complication has, as one segmented control, each tab
-       carrying a live picture of what that shape draws. */
+    /* The shape and the Control Center control, as one segmented control.
+       Drawn only by a document that still holds both; one shape alone is
+       named instead. */
     .shape-seg {
-      display: inline-flex; flex-wrap: wrap; align-items: flex-end; gap: 5px; padding: 4px; border-radius: 11px;
+      display: inline-flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 4px; border-radius: 11px;
       background: var(--wa-input); box-shadow: inset 0 0 0 1px var(--wa-line);
     }
     /* Every tab used to be transparent until it was pressed, and the pressed
@@ -3328,8 +3330,6 @@ export class WristAssistantPanel extends LitElement {
       box-shadow: 0 0 0 2px var(--wa-accent), 0 1px 4px rgba(0,0,0,.22);
     }
     .canvas-bar .hint { margin: 0; }
-    /* Shape tabs: one per family, drawn with a real picture of what that shape
-       holds. A family the complication does not have is a dashed invitation. */
     .tab-wrap { position: relative; display: inline-flex; align-items: center; }
     button.tab {
       display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border-radius: 9px;
@@ -3342,13 +3342,11 @@ export class WristAssistantPanel extends LitElement {
     button.tab:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     button.tab.off { border: 1px dashed var(--wa-line-strong); color: color-mix(in srgb, var(--wa-muted) 80%, var(--wa-card)); }
     button.tab small { font-weight: 500; opacity: .75; }
-    /* A shape's own render, drawn on the black a watch face and a Lock Screen
-       are, is sized and rounded by shapeTabCss further down the sheet, beside
-       the box that fits it. */
+    button.tab .warn { display: inline-flex; color: var(--wa-val); }
+    button.tab .warn svg { width: 13px; height: 13px; }
     /* The remove button rides beside the open tab, and only while the pointer
        is on it: it is drawn for that tab alone, so it never asks to remove a
        shape nobody is looking at. */
-    .tab-wrap { align-items: flex-end; }
     .tab-wrap .tab-x { opacity: .35; margin-left: -4px; align-self: center; }
     .tab-wrap:hover .tab-x, .tab-wrap .tab-x:focus-visible { opacity: .7; }
     .tab-wrap .tab-x:hover:not(:disabled) { opacity: 1; }
@@ -3689,7 +3687,6 @@ export class WristAssistantPanel extends LitElement {
     .under .size { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
     .under .dot { color: var(--wa-line-strong); }
     .under .tail b { font-weight: 700; }
-    ${unsafeCSS(shapeTabCss())}
     /* The two lists under the face: what the complication defines for itself,
        and what the house is telling it right now. Stacked, so each title and
        each value line gets the whole width instead of wrapping into a column
@@ -7668,7 +7665,7 @@ export class WristAssistantPanel extends LitElement {
     ];
     const shapes: [string, string][] = [
       ["Shapes", "Rectangular, Circular, Corner and Inline are the kinds of slot on a watch face. The watch offers a complication only in slots whose shape it has."],
-      ["Shape tabs", "Above the preview. Click one to edit that shape, or a dashed one to add it."],
+      ["The bar over the face", "It names the shape this complication is. Beside it: which watch case the preview is drawn at, and which tint."],
       ["Canvas shapes", "Rectangular, Circular and Corner each hold their own layers. A layer belongs to one shape, so editing it never changes another. An empty shape can take a copy of another shape's layers."],
       ["Corner", "Its Corner content card picks big curved text or a canvas of layers."],
       ["Inline", "One line of text with an optional symbol before it. It has no layers."],
@@ -13428,14 +13425,14 @@ export class WristAssistantPanel extends LitElement {
 
   /**
    * The middle column is the whole complication, read top to bottom: where the
-   * design goes, then the shapes it draws, then the one being edited, big,
-   * then the values the complication defines and the live values it reads.
-   * Its own settings are in the inspector while no layer is selected.
+   * design goes, then the shape it draws, big, then the values the
+   * complication defines and the live values it reads. Its own settings are in
+   * the inspector while no layer is selected.
    *
-   * Where it goes leads because it is the fact that changes other devices, and
-   * the shapes follow because each tab is a picture of this design on one of
-   * them. The stage used to carry a second, larger row of those pictures under
-   * the face; the tabs say it once now, where the switching happens.
+   * The bar over the stage used to be a row of shape tabs, each a small copy
+   * of the face under it. A document is one shape now, so the bar names the
+   * shape and keeps the two tools that change how the face is looked at:
+   * which case it is previewed in, and which tint.
    */
   private renderCanvas() {
     if (this.parseError) return html`<div class="card error">This document cannot be read: ${this.parseError}</div>`;
@@ -13466,7 +13463,7 @@ export class WristAssistantPanel extends LitElement {
       return html`
         <div class="card canvas-card">
           <div class="canvas-bar">
-            <div class="bar-row shapes">${this.renderShapesLead()}${this.renderShapeTabs(cfg, layouts)}</div>
+            <div class="bar-row shapes">${this.renderShapeSwitch(cfg, layouts)}</div>
           </div>
           <div class="stage">${this.renderControlStage(cfg)}</div>
         </div>
@@ -13478,8 +13475,7 @@ export class WristAssistantPanel extends LitElement {
       <div class="card canvas-card">
         <div class="canvas-bar">
           <div class="bar-row shapes">
-            ${this.renderShapesLead()}
-            ${this.renderShapeTabs(cfg, layouts)}
+            ${this.renderShapeSwitch(cfg, layouts)}
             <span class="spacer"></span>
             <span class="inbox" title=${`Layouts are made in the ${this.referenceCase.label} box. Every other size draws a scaled copy of it.`}>
               <span class="pre">Preview as</span>
@@ -13509,33 +13505,6 @@ export class WristAssistantPanel extends LitElement {
       <div class="under-grid">
         ${this.renderValuesRow()}
       </div>`;
-  }
-
-  /** The words at the left of the shapes row, in the same 92px block the
-   * rows beside it lead with, so they all line up. */
-  private renderShapesLead() {
-    return html`<span class="bar-lead"><b>Shapes</b><span>Click one to edit it.</span></span>`;
-  }
-
-  /**
-   * One shape's live picture for its tab.
-   *
-   * Everything a picture needs is worked out once per render and handed over:
-   * the same resolved layouts the big preview drew from, the same device case,
-   * and the selected layer, so a tab is the same picture at another size
-   * rather than a second resolve that might disagree with the first.
-   */
-  private shapeTabArt(cfg: CustomComplicationConfig, layouts: ResolvedAll, family: FamilyKind) {
-    return renderShapeArt({
-      config: cfg,
-      layouts,
-      icons: this.icons,
-      imageSizes: this.imageSizes,
-      phone: this.previewAsPhone,
-      slotFor: (f) => slotFor(this.currentCase(), f),
-      ...(this.inspect.kind === "layer" ? { highlightId: this.inspect.id } : {}),
-      ...(this.previewTint !== undefined ? { tint: this.previewTint } : {}),
-    }, family);
   }
 
   private renderBigPreview(family: DrawableFamily, layouts: ResolvedAll, deviceCase: PreviewCase) {
@@ -13842,34 +13811,51 @@ export class WristAssistantPanel extends LitElement {
    *
    * The control tab still renders, because a document written before the button
    * went can still hold both until the splitter reaches it.
+   *
+   * Each tab used to carry a live picture of its shape, drawn again at tab
+   * size. With one shape in the document that picture was the stage picture,
+   * smaller: the same face twice on one screen, and a tall bar for it. The
+   * tabs are words now, and a document with nothing to switch to gets no tab
+   * at all, only the shape's name.
    */
-  private renderShapeTabs(cfg: CustomComplicationConfig, layouts: ResolvedAll) {
-    return html`<div class="shape-seg" role="group" aria-label="Shapes">${this.renderShapeTab(cfg, layouts)}${this.renderControlTab(cfg)}</div>`;
+  private renderShapeSwitch(cfg: CustomComplicationConfig, layouts: ResolvedAll) {
+    const control = this.renderControlTab(cfg);
+    if (control === nothing) return this.renderShapeName(cfg, layouts);
+    return html`<div class="shape-seg" role="group" aria-label="Shapes">${this.renderShapeTab(cfg, layouts)}${control}</div>`;
   }
 
-  /** The one shape tab: a real picture of the shape this complication is,
-   * which is the view the canvas is showing unless the control is up. */
+  /** What the shape warns about and whether it draws nothing, for the name or
+   * the tab to carry. */
+  private shapeNotes(cfg: CustomComplicationConfig, layouts: ResolvedAll, f: FamilyKind) {
+    const layout = f === "inline" ? undefined : layouts[f];
+    const warnings = layout === undefined ? [] : previewWarnings(layout);
+    const empty = f !== "inline" && shownCount(cfg, f) === 0 && cfg.elements.length > 0;
+    return html`${empty ? html`<small>nothing shown</small>` : nothing}${warnings.length === 0 ? nothing : html`<span class="warn" role="img"
+      aria-label=${`Worth a look: ${warnings.join(" ")}`}
+      title=${warnings.join("\n")}>${uiIcon("info")}</span>`}`;
+  }
+
+  /** The shape this complication is, named rather than tabbed: there is one,
+   * and the stage under it is already its picture. */
+  private renderShapeName(cfg: CustomComplicationConfig, layouts: ResolvedAll) {
+    const f = supportedFamilies(cfg)[0];
+    if (f === undefined) return nothing;
+    return html`<span class="shape-name"><b>${familyTitle(f)}</b>${this.shapeNotes(cfg, layouts, f)}</span>`;
+  }
+
+  /** The shape tab, drawn only beside a control tab: the view the canvas is
+   * showing unless the control is up. */
   private renderShapeTab(cfg: CustomComplicationConfig, layouts: ResolvedAll) {
     const f = supportedFamilies(cfg)[0];
     if (f === undefined) return nothing;
     // While the Control Center tab is up no shape is being edited, so the
     // shape tab is not pressed either.
     const active = !this.inControlView;
-    const art: TemplateResult | typeof nothing = f === "inline"
-      ? this.renderInlinePreview(layouts.inline, true)
-      : this.shapeTabArt(cfg, layouts, f);
-    const width = isDrawable(f) ? Math.round(previewBox(f, PREVIEW_ROOM).width) : PREVIEW_ROOM.width;
-    const layout = f === "inline" ? undefined : layouts[f];
-    const warnings = layout === undefined ? [] : previewWarnings(layout);
-    const empty = f !== "inline" && shownCount(cfg, f) === 0 && cfg.elements.length > 0;
     return html`<span class="tab-wrap">
-      <button class="tab art-tab ${f}" aria-pressed=${active ? "true" : "false"} style=${`--pw:${width}px`}
+      <button class="tab" aria-pressed=${active ? "true" : "false"}
         title=${`Edit the ${familyTitle(f)} shape`}
         @click=${() => { this.controlView = false; if (f === "inline" && this.inspect.kind === "layer") this.inspect = { kind: "family" }; }}>
-        <span class="art">${art}</span>
-        <span class="cap"><span class="lbl">${familyTitle(f)}</span>${warnings.length === 0 ? nothing : html`<span class="warn" role="img"
-          aria-label=${`Worth a look: ${warnings.join(" ")}`}
-          title=${warnings.join("\n")}>${uiIcon("info")}</span>`}</span>${empty ? html`<small>nothing shown</small>` : nothing}
+        ${familyTitle(f)}${this.shapeNotes(cfg, layouts, f)}
       </button>
     </span>`;
   }
@@ -13889,11 +13875,8 @@ export class WristAssistantPanel extends LitElement {
     const active = this.inControlView;
     const removable = this.canEdit && canRemoveControl(cfg);
     return html`<span class="tab-wrap">
-      <button class="tab art-tab control" aria-pressed=${active ? "true" : "false"} title="Edit the Control Center control"
-        @click=${() => this.openControlView()}>
-        <span class="art">${controlTile(this.host(), spec, controlTileShapes(deviceKindOf(this.selectedOwner))[0]!, CONTROL_TAB_TILE_SIDE)}</span>
-        <span class="cap"><span class="lbl">Control Center</span></span>
-      </button>
+      <button class="tab control" aria-pressed=${active ? "true" : "false"} title="Edit the Control Center control"
+        @click=${() => this.openControlView()}>Control Center</button>
       ${this.canEdit && active ? html`<button class="icon danger tab-x" ?disabled=${!removable}
         title=${removable ? "Remove the Control Center control" : "This complication is only its control. Delete the whole complication instead."}
         aria-label="Remove the Control Center control"
