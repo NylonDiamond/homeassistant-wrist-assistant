@@ -1136,7 +1136,7 @@ export class WristAssistantPanel extends LitElement {
    * held the next click on the face for most of a second after a native menu
    * closed, so a drag right after a change lagged (measured 2026-09-12: the
    * press was 650 to 900 ms old on arrival, with no long task on the page). */
-  @state() private openMenu?: "grid" | "case" | "tint" | "list";
+  @state() private openMenu?: "grid" | "case" | "tint" | "list" | "place";
   /** Alt is down. It flips snapping for a drag, so the grid lines show while
    * it is held even with Snap to grid off. */
   @state() private altHeld = false;
@@ -3297,11 +3297,15 @@ export class WristAssistantPanel extends LitElement {
     /* The document row: what this complication is called, where it is, and
        what can be done to the whole of it. Its own line above the shapes,
        ruled off, because none of it is a drawing tool. */
-    .doc-row { gap: 4px 10px; padding-bottom: 6px; border-bottom: 1px solid var(--wa-line); }
+    .doc-row { gap: 4px 10px; padding-bottom: 6px; }
     .doc-name {
       font-size: 15px; font-weight: 700; color: var(--wa-ink); flex: 0 1 auto;
       min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
+    /* The devices row, under the name: where this design is, and one button
+       to put it somewhere else. Ruled off from the drawing tools below it. */
+    .doc-places { gap: 4px 8px; padding-top: 0; padding-bottom: 7px; border-bottom: 1px solid var(--wa-line); }
+    .doc-on-pre { font-size: 11.5px; font-weight: 600; color: var(--wa-muted); flex: none; }
     .doc-on { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; min-width: 0; }
     /* A chip per device the design is on. The open one is filled and inert;
        the rest are buttons that open that device's copy. */
@@ -3317,6 +3321,29 @@ export class WristAssistantPanel extends LitElement {
     .doc-chip.here {
       cursor: default; color: var(--wa-ink);
       background: color-mix(in srgb, var(--wa-accent) 20%, var(--wa-card)); border-color: transparent;
+    }
+    /* "Add to a device" and its menu. A dashed edge so it reads as the empty
+       place after the chips rather than as one more device. */
+    .place-tool { position: relative; display: inline-flex; }
+    .place-tool .pop-menu { left: 0; right: auto; min-width: 200px; }
+    button.doc-add {
+      display: inline-flex; align-items: center; gap: 3px; height: 22px; padding: 0 8px;
+      border-radius: 999px; font: inherit; font-size: 11.5px; font-weight: 600;
+      background: transparent; border: 1px dashed var(--wa-line-strong); color: var(--wa-muted);
+      white-space: nowrap; cursor: pointer;
+    }
+    button.doc-add:hover:not(:disabled) { border-style: solid; border-color: var(--wa-accent); color: var(--wa-ink); }
+    button.doc-add:disabled { opacity: .5; cursor: default; }
+    button.doc-add svg { width: 12px; height: 12px; }
+    .pop-menu .row.place-row { display: flex; align-items: center; gap: 7px; }
+    .place-row svg { width: 14px; height: 14px; flex: none; opacity: .8; }
+    .place-row .place-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .place-row .place-no { flex: none; font-size: 10.5px; font-weight: 600; color: var(--wa-muted); }
+    .place-row:disabled { opacity: .55; cursor: default; }
+    .place-row:disabled:hover { background: transparent; }
+    .place-note {
+      margin: 4px 4px 2px; max-width: 240px; font-size: 11px; line-height: 1.4; color: var(--wa-muted);
+      white-space: normal;
     }
     /* The shape's name at the left of the shapes row, where its tab used to
        be. A note rides after it, so "nothing shown" and the warning still have
@@ -9759,7 +9786,7 @@ export class WristAssistantPanel extends LitElement {
   /** Open or shut one of the preview bar's menus; opening one shuts the other.
    * A press anywhere outside the open menu's control shuts it, the same way
    * the complication picker closes. */
-  private toggleMenu(menu: "grid" | "case" | "tint" | "list", next = this.openMenu !== menu) {
+  private toggleMenu(menu: "grid" | "case" | "tint" | "list" | "place", next = this.openMenu !== menu) {
     this.openMenu = next ? menu : this.openMenu === menu ? undefined : this.openMenu;
     if (this.openMenu !== undefined) window.addEventListener("pointerdown", this.menuOutside, { capture: true });
     else window.removeEventListener("pointerdown", this.menuOutside, { capture: true });
@@ -13490,6 +13517,7 @@ export class WristAssistantPanel extends LitElement {
         <div class="card canvas-card">
           <div class="canvas-bar">
             ${this.renderDocRow(cfg)}
+            ${this.renderPlacesRow(cfg)}
             <div class="bar-row shapes">${this.renderShapeSwitch(cfg, layouts)}</div>
           </div>
           <div class="stage">${this.renderControlStage(cfg)}</div>
@@ -13502,6 +13530,7 @@ export class WristAssistantPanel extends LitElement {
       <div class="card canvas-card">
         <div class="canvas-bar">
           ${this.renderDocRow(cfg)}
+          ${this.renderPlacesRow(cfg)}
           <div class="bar-row shapes">
             ${this.renderShapeSwitch(cfg, layouts)}
             <span class="spacer"></span>
@@ -13828,47 +13857,124 @@ export class WristAssistantPanel extends LitElement {
     const name = cfg.name.trim() || "Complication";
     return html`<div class="bar-row doc-row">
       <span class="doc-name" title=${name}>${name}</span>
-      ${this.renderDocPlaces()}
       <span class="spacer"></span>
       ${this.renderDocActs(cfg)}
     </div>`;
   }
 
   /**
-   * Which devices have this complication, one chip each.
+   * The devices row: which devices have this complication, and how to put it
+   * on one more.
    *
    * A design on several devices is one record per device wearing the same
-   * `linkId`, and the only place that ever said so out loud was the wording of
+   * `linkId`, and the only thing that ever said so out loud was the wording of
    * the Delete button, "All 3 devices". A chip for another device opens that
    * device's copy, the same move the picker's card makes.
    *
-   * A complication nobody has saved yet is on no device, so it gets no chips.
+   * A complication nobody has saved yet is on no device, so the row does not
+   * draw at all: there is nothing to be on and nothing to copy.
    */
-  private renderDocPlaces() {
-    const places = this.openPlaces();
-    if (places.length === 0) return nothing;
-    return html`<span class="doc-on" role="group" aria-label="On these devices">
-      ${places.map((place) => {
-        const owner = this.ownerOf(place.ownerId);
-        const label = isLibraryOwner(owner) ? UNASSIGNED_LABEL : this.ownerName(place.ownerId);
-        const icon = isLibraryOwner(owner) ? "layers" : deviceKindOf(owner) === "iphone" ? "phone" : "watch";
-        return place.here
-          ? html`<span class="doc-chip here" aria-current="true"
-              title=${`This is the copy on ${label}`}>${uiIcon(icon)}<span>${label}</span></span>`
-          : html`<button type="button" class="doc-chip" ?disabled=${this.saving}
-              title=${`Open the copy on ${label}`}
-              @click=${() => void this.openCopyOn(place.ownerId, place.id)}>${uiIcon(icon)}<span>${label}</span></button>`;
-      })}
+  private renderPlacesRow(cfg: CustomComplicationConfig) {
+    const row = this.openRow();
+    if (!row) return nothing;
+    const family = supportedFamilies(cfg)[0];
+    const places = this.rowPlaces(row, family);
+    const on = places.filter((p) => p.on);
+    if (on.length === 0) return nothing;
+    return html`<div class="bar-row doc-places">
+      <span class="doc-on-pre">On</span>
+      <span class="doc-on" role="group" aria-label="Devices this complication is on">
+        ${on.map((place) => this.renderPlaceChip(place))}
+      </span>
+      ${this.renderAddPlace(row, places, family)}
+    </div>`;
+  }
+
+  /** One device this design is on. The copy the editor has open says so and
+   * does nothing; every other chip opens that device's copy. */
+  private renderPlaceChip(place: DevicePlace) {
+    const target = place.owner;
+    const label = target.kind === "library" ? UNASSIGNED_LABEL : target.label;
+    const icon = target.kind === "library" ? "layers" : target.kind === "iphone" ? "phone" : "watch";
+    if (place.copies.some((c) => this.isOpenCopy(c))) {
+      return html`<span class="doc-chip here" aria-current="true"
+        title=${`This is the copy on ${label}`}>${uiIcon(icon)}<span>${label}</span></span>`;
+    }
+    const copy = place.copies[0];
+    if (!copy) return nothing;
+    return html`<button type="button" class="doc-chip" ?disabled=${this.saving}
+      title=${`Open the copy on ${label}`}
+      @click=${() => void this.openCopyOn(copy.ownerId, copy.id)}>${uiIcon(icon)}<span>${label}</span></button>`;
+  }
+
+  /**
+   * "Add to a device": the picker's own Devices menu, on the complication the
+   * editor has open.
+   *
+   * It calls the same write, so the seat check, the making of the design's
+   * first link and the wording of what happened are all the one set of rules.
+   * A device already holding this design is a chip beside the button, so it is
+   * never offered twice, and a device that cannot take it is listed with the
+   * reason rather than left out: somebody looking for their watch should find
+   * it and read why, not wonder where it went.
+   *
+   * Only the devices of this design's kind are here, plus Unassigned. Crossing
+   * from a watch to an iPhone is "Duplicate as", where the shape is being
+   * picked anyway.
+   */
+  private renderAddPlace(row: PickerRow, places: DevicePlace[], family: FamilyKind | undefined) {
+    if (!this.canEdit || this.hass.user?.is_admin !== true) return nothing;
+    const rest = places.filter((p) => !p.on);
+    if (rest.length === 0) return nothing;
+    const open = this.openMenu === "place";
+    return html`<span class="place-tool" data-menu="place">
+      <button type="button" class="doc-add" aria-haspopup="listbox" aria-expanded=${open ? "true" : "false"}
+        ?disabled=${this.saving} title="Put this complication on another device too"
+        @click=${() => this.toggleMenu("place")}>${uiIcon("plus")}<span>Add to a device</span>${uiIcon("chevron")}</button>
+      ${open ? html`<div class="pop-menu place-menu" role="listbox" aria-label="Add to a device">
+        ${rest.map((place) => this.renderAddPlaceRow(row, place, family))}
+        <div class="place-note">A linked copy is written there. Saving this one saves it there too.</div>
+      </div>` : nothing}
     </span>`;
   }
 
-  /** Every device this design is on: the open copy's device first, then the
-   * other copies of its link. */
-  private openPlaces(): { ownerId: string; id: string; here: boolean }[] {
-    if (!this.ownerId || !this.selectedId) return [];
-    const rest = this.linkedSiblings(this.draft?.config.linkId, this.ownerId, this.selectedId)
-      .map((s) => ({ ownerId: s.ownerId, id: s.record.id, here: false }));
-    return [{ ownerId: this.ownerId, id: this.selectedId, here: true }, ...rest];
+  private renderAddPlaceRow(row: PickerRow, place: DevicePlace, family: FamilyKind | undefined) {
+    const target = place.owner;
+    const label = target.kind === "library" ? UNASSIGNED_LABEL : target.label;
+    const icon = target.kind === "library" ? "layers" : target.kind === "iphone" ? "phone" : "watch";
+    const block = this.placeBlock(place, family, label);
+    const title = block?.why ?? (target.kind === "library"
+      ? "Keep an unassigned copy too"
+      : `Put it on ${label}. Saving it saves it everywhere it is.`);
+    return html`<button type="button" class="row place-row" role="option" aria-selected="false"
+      ?disabled=${this.saving || block !== undefined} title=${title}
+      @click=${() => { this.toggleMenu("place", false); void this.addRowTo(row, target); }}>
+      ${uiIcon(icon)}<span class="place-name">${label}</span>
+      ${block ? html`<small class="place-no">${block.tag}</small>` : nothing}
+    </button>`;
+  }
+
+  /** Why one device cannot take this design, in a word for the row and a
+   * sentence for its tooltip. The same two reasons the picker's menu gives. */
+  private placeBlock(place: DevicePlace, family: FamilyKind | undefined, label: string) {
+    const owner = this.ownerOf(place.owner.ownerId);
+    if (!place.draws) {
+      return deviceSupportsShapes(owner)
+        ? { tag: "not this shape", why: "This device's app does not draw this shape." }
+        : { tag: "app too old", why: updateDeviceMessage(owner) };
+    }
+    if (this.freeSlotOn(place.owner.ownerId, family) < 0) {
+      return { tag: "full", why: `${label} has no free seat for this shape (iPhone presets count too). Delete a complication there first.` };
+    }
+    return undefined;
+  }
+
+  /** The picker row of the complication the editor has open: its copy and
+   * every other copy of its link, the way the picker groups them. A draft
+   * nobody has saved is in no row. */
+  private openRow(): PickerRow | undefined {
+    if (!this.ownerId || !this.selectedId) return undefined;
+    return this.pickerRows().find((r) => this.selectedCopyOf(r) !== undefined);
   }
 
   /** Open another device's copy of this design. `selectOwner` asks about an
