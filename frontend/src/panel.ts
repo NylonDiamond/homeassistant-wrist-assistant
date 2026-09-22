@@ -9396,13 +9396,17 @@ export class WristAssistantPanel extends LitElement {
 
   /** The menu itself, drawn over the card's picture rather than hung off the
    * button: as wide as the picture, so it never runs out past the dialog's
-   * edge on a card in the first column. */
+   * edge on a card in the first column.
+   *
+   * Unassigned is listed only while the design is there, which it is only
+   * while it is on no device at all. It is where a design waits, not a place
+   * to be picked, so there is never a box to tick it on. */
   private renderPickerDupMenu(row: PickerRow, family: FamilyKind | undefined, cardKey: string) {
     const places = this.rowPlaces(row, family);
     const shape = family === undefined ? "Control Center control" : familyTitle(family).toLowerCase();
     return html`<div class="pk-dup-menu" role="group" aria-label=${`Devices for ${row.name}`} data-dup=${cardKey}>
       <div class="pk-dup-head">This ${shape} is on</div>
-      ${places.map((place) => this.renderPickerPlace(row, place, family))}
+      ${places.filter((p) => p.owner.kind !== "library" || p.on).map((place) => this.renderPickerPlace(row, place, family))}
       <button type="button" class="pk-dup-row other" ?disabled=${this.saving}
         title="Make this design again as another shape, or on the other kind of device"
         @click=${() => this.duplicateAsFromCard(row)}>${uiIcon("shape")}
@@ -9445,7 +9449,7 @@ export class WristAssistantPanel extends LitElement {
         ? place.last
           ? "Take it off this device and keep it as unassigned"
           : `Take it off ${label}. A face or widget already using it keeps it.`
-        : target.kind === "library" ? "Keep an unassigned copy too" : `Put it on ${label}. Saving it saves it everywhere it is.`));
+        : `Put it on ${label}. Saving it saves it everywhere it is.`));
     const disabled = this.saving || full || stuck !== undefined || tooOld !== undefined;
     // Hidden is per device: each copy keeps its own flag, and the eye on a
     // ticked row flips that device's. The open copy's goes through its draft.
@@ -9731,7 +9735,12 @@ export class WristAssistantPanel extends LitElement {
     // The link is written to the record on the server, so an unsaved edit in
     // the editor would either be written along with it or be left behind by
     // it. Neither is what the author asked for.
-    if (mine && cfg.linkId === undefined && this.draft && (this.draft.dirty || this.draft.baseRevision === null)) {
+    // Same for a design sitting on the shelf: its record is the one this
+    // write takes away, so an unsaved edit in the editor would go with it.
+    const shelf = this.libraryOwner();
+    const fromShelf = target.kind !== "library" && shelf !== undefined
+      && row.copies.some((c) => c.ownerId === shelf.ownerId && c.item.kind === "record");
+    if (mine && (cfg.linkId === undefined || fromShelf) && this.draft && (this.draft.dirty || this.draft.baseRevision === null)) {
       this.saveError = `Save ${row.name} first, then put it on ${target.label}.`;
       return;
     }
@@ -9780,14 +9789,58 @@ export class WristAssistantPanel extends LitElement {
         this.saveError = out.message ?? out.error ?? "Save failed";
         return;
       }
-      if (!quiet) this.copyStatus = `${row.name} is on ${label} too. Saving it saves it everywhere it is.`;
+      // A design on a device is not unassigned any more, so the shelf's copy
+      // goes. It goes after the device's is written, never before: until
+      // the device has one, the shelf's is the only copy there is.
+      const drop = fromShelf && shelf ? await this.dropShelfCopies(row, shelf) : undefined;
+      const followed = drop?.landed === true;
+      if (!quiet && !drop?.failed) {
+        this.copyStatus = fromShelf
+          ? `${row.name} is on ${label}. It is not unassigned any more.`
+          : `${row.name} is on ${label} too. Saving it saves it everywhere it is.`;
+      }
       if (at !== undefined) this.pickerDupFor = `${at}|${rowKeyFor({ ownerId: target.ownerId, id: copy.id, linkId: link })}`;
-      await this.reloadAfterRowWrite(from.ownerId, target.ownerId);
+      // The draft goes before the lists are read again: the record it was
+      // built on has just been taken off the shelf.
+      if (followed) {
+        this.clearDraft();
+        this.selectedId = undefined;
+      }
+      await this.reloadAfterRowWrite(from.ownerId, target.ownerId, shelf?.ownerId ?? "");
+      if (followed) await this.openCopyAt(target.ownerId, copy.id);
     } catch (err) {
       this.saveError = errText(err);
     } finally {
       this.saving = false;
     }
+  }
+
+  /**
+   * Take a design off the Unassigned shelf, once it has landed on a device.
+   *
+   * Unassigned is where a design waits while it is on nothing, not a place
+   * it lives beside devices, so the shelf's copy is dropped the moment the
+   * design gains its first device. A drop that fails is reported and leaves
+   * the shelf's copy where it is: two copies is untidy, none is lost work.
+   *
+   * Answers whether the copy the editor has open was one of the dropped
+   * ones, which is the caller's cue to land the editor on the new copy, and
+   * whether anything refused to go, which is news wherever it is pressed and
+   * so takes the banner over from the caller's own.
+   */
+  private async dropShelfCopies(row: PickerRow, shelf: DeviceOwner): Promise<{ landed: boolean; failed: number }> {
+    let wasOpen = false;
+    let failed = 0;
+    for (const copy of row.copies) {
+      if (copy.ownerId !== shelf.ownerId || copy.item.kind !== "record") continue;
+      const record = this.recordAt(shelf.ownerId, copy.id);
+      if (!record) continue;
+      const gone = await deleteRecord(this.hass, shelf.ownerId, record.id, record.revision);
+      if (gone.ok) wasOpen = wasOpen || this.isOpenCopy({ ownerId: copy.ownerId, id: copy.id });
+      else failed += 1;
+    }
+    if (failed > 0) this.copyStatus = `${row.name} is still unassigned as well: the copy there changed on the server. Take it off ${UNASSIGNED_LABEL} from its own card.`;
+    return { landed: wasOpen, failed };
   }
 
   /** "Duplicate as" from a card, which is the same dialog the editor's own
