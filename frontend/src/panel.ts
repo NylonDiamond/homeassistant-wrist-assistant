@@ -3757,13 +3757,9 @@ export class WristAssistantPanel extends LitElement {
       display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 10px;
       text-align: center; font-size: 12.5px; font-weight: 500; color: var(--wa-muted);
     }
-    /* In the tool row, at its left end, where the shape tab used to be: the
-       words about dragging, beside the tools they talk about. A document that
-       still has a shape/control switch keeps them on a row of their own,
-       because the switch has that space. */
-    .bar-row.shapes > .under { flex: 1 1 auto; min-width: 0; justify-content: flex-start; text-align: left; }
-    .bar-row.stage-help { padding-top: 0; }
-    .bar-row.stage-help .under { justify-content: flex-start; text-align: left; }
+    /* Under the face on the stage, centred with it: the words are about
+       dragging the thing directly above them. */
+    .stage > .under { max-width: 460px; }
     .under b { color: var(--wa-ink); font-weight: 700; }
     .under .size { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
     .under .dot { color: var(--wa-line-strong); }
@@ -9523,12 +9519,18 @@ export class WristAssistantPanel extends LitElement {
    * Unassigned instead, since a design taken off everything is not a design
    * deleted. Each copy is read again first, so one that changed under the
    * menu is reported rather than silently clobbered.
+   *
+   * `quiet` drops the banner that says what happened, the way `addRowTo`'s
+   * does. The editor's devices row calls it that way: the chip for that
+   * device goes the moment the write lands, in the row the trash was pressed
+   * in, so the banner said it again a few inches away and had to be put away
+   * by hand.
    */
-  private async removeRowFrom(row: PickerRow, place: DevicePlace) {
+  private async removeRowFrom(row: PickerRow, place: DevicePlace, quiet = false) {
     if (!this.hass.user?.is_admin || this.saving) return;
     if (place.copies.some((c) => this.isOpenCopy(c))) return;
     if (place.last) {
-      await this.shelveCopy(row, place.copies[0]);
+      await this.shelveCopy(row, place.copies[0], quiet);
       return;
     }
     const ownerId = place.owner.ownerId;
@@ -9546,9 +9548,10 @@ export class WristAssistantPanel extends LitElement {
         const gone = await deleteRecord(this.hass, ownerId, record.id, record.revision);
         if (!gone.ok) failed += 1;
       }
-      this.copyStatus = failed === 0
-        ? `${row.name} is off ${label}. A face or widget already using it keeps it.`
-        : `${row.name} is still on ${label}: the copy there changed on the server. Open the menu again.`;
+      // A failure is news wherever it is pressed, so `quiet` only silences
+      // the write that did what it was asked.
+      if (failed > 0) this.copyStatus = `${row.name} is still on ${label}: the copy there changed on the server. Open the menu again.`;
+      else if (!quiet) this.copyStatus = `${row.name} is off ${label}. A face or widget already using it keeps it.`;
       await this.reloadAfterRowWrite(ownerId);
     } catch (err) {
       this.saveError = errText(err);
@@ -9564,8 +9567,11 @@ export class WristAssistantPanel extends LitElement {
    * it: until the shelf has one, the device's is the only copy there is. The
    * link travels with it, so the design can be ticked back onto devices from
    * the shelf as the same design.
+   *
+   * `quiet` drops the banner, the way `removeRowFrom`'s does; the move to
+   * Unassigned still shows on the editor's devices row as the chip changing.
    */
-  private async shelveCopy(row: PickerRow, copy: PlaceCopy | undefined) {
+  private async shelveCopy(row: PickerRow, copy: PlaceCopy | undefined, quiet = false) {
     const shelf = this.libraryOwner();
     if (!copy || !shelf || copy.ownerId === shelf.ownerId) return;
     if (this.isOpenCopy(copy)) return;
@@ -9597,9 +9603,10 @@ export class WristAssistantPanel extends LitElement {
         return;
       }
       const gone = await deleteRecord(this.hass, copy.ownerId, record.id, record.revision);
-      this.copyStatus = gone.ok
-        ? `${row.name} is off ${this.ownerName(copy.ownerId)} and unassigned. A face or widget already using it keeps it.`
-        : `${row.name} is unassigned, but the copy on ${this.ownerName(copy.ownerId)} could not be removed. Delete it from its own card.`;
+      // A half-done move is news wherever it is pressed: the design is now in
+      // two places and one of them was not asked for.
+      if (!gone.ok) this.copyStatus = `${row.name} is unassigned, but the copy on ${this.ownerName(copy.ownerId)} could not be removed. Delete it from its own card.`;
+      else if (!quiet) this.copyStatus = `${row.name} is off ${this.ownerName(copy.ownerId)} and unassigned. A face or widget already using it keeps it.`;
       if (followed) this.pickerDupFor = `${shelf.ownerId}|${rowKeyFor({ ownerId: shelf.ownerId, id: kept.id, ...(kept.linkId !== undefined ? { linkId: kept.linkId } : {}) })}`;
       await this.reloadAfterRowWrite(copy.ownerId, shelf.ownerId);
     } catch (err) {
@@ -13574,10 +13581,11 @@ export class WristAssistantPanel extends LitElement {
         </div>`;
     }
     // The segmented control is a real switch and takes the tool row's left
-    // side, with the stage help on a row under it. A document with one shape
-    // and no control has nothing to switch, so its shape reads in brackets
-    // after the name instead and the help moves up into the space the tabs
-    // would have taken: one row fewer over every ordinary complication.
+    // side. A document with one shape and no control has nothing to switch,
+    // so its shape reads in brackets after the name instead and the tool row
+    // starts with "Preview as": one row fewer over every ordinary
+    // complication. The stage help sits under the face, where the thing it
+    // talks about is.
     const seg = this.hasControlTab(cfg);
     return html`
       <div class="card canvas-card">
@@ -13585,8 +13593,7 @@ export class WristAssistantPanel extends LitElement {
           ${this.renderDocRow(cfg, layouts)}
           ${this.renderPlacesRow(cfg)}
           <div class="bar-row shapes">
-            ${seg ? this.renderShapeSwitch(cfg, layouts) : this.renderStageHint(cfg, family)}
-            <span class="spacer"></span>
+            ${seg ? this.renderShapeSwitch(cfg, layouts) : nothing}
             <span class="inbox" title=${`Layouts are made in the ${this.referenceCase.label} box. Every other size draws a scaled copy of it.`}>
               <span class="pre">Preview as</span>
               <span class="case-tool" data-menu="case">
@@ -13602,12 +13609,12 @@ export class WristAssistantPanel extends LitElement {
             </span>
             ${isDrawable(family) ? this.renderTintTool() : nothing}
           </div>
-          ${seg ? html`<div class="bar-row stage-help">${this.renderStageHint(cfg, family)}</div>` : nothing}
         </div>
         <div class="stage">
           ${this.renderRowStrip()}
           ${isDrawable(family) ? this.renderOver() : nothing}
           ${isDrawable(family) ? this.renderBigPreview(family, layouts, deviceCase) : this.renderInlinePreview(layouts.inline, false)}
+          ${this.renderStageHint(cfg, family)}
         </div>
         ${this.zoomed && isDrawable(family) ? this.renderZoomDialog(family, layouts, deviceCase) : nothing}
         ${this.demoing && isDrawable(family) ? this.renderDemoDialog(family, layouts, deviceCase) : nothing}
@@ -13714,11 +13721,14 @@ export class WristAssistantPanel extends LitElement {
   /**
    * What a drag does right now: one line of stage help.
    *
-   * It used to sit under the face, led by the shape's name and its size in
-   * points, and to name the layer being edited. The bar over the face says
-   * which shape this is, the inspector beside it says which layer is open,
-   * and nobody was reading the size. What is left is the part that changes
-   * with what you are doing, so it rides in the bar where the eye already is.
+   * It used to be led by the shape's name and its size in points, and to name
+   * the layer being edited. The bar over the face says which shape this is,
+   * the inspector beside it says which layer is open, and nobody was reading
+   * the size. What is left is the part that changes with what you are doing.
+   *
+   * It rides under the face, centred with it: it is about dragging the thing
+   * directly above it. It spent a while up in the bar instead, which put a
+   * sentence about dragging two rows away from anything draggable.
    */
   private renderStageHint(cfg: CustomComplicationConfig, family: FamilyKind) {
     const ctx = describeContext(this.host());
@@ -14015,7 +14025,7 @@ export class WristAssistantPanel extends LitElement {
         @click=${() => {
           if (!armed) { this.armPlaceTrash(target.ownerId); return; }
           this.disarmPlaceTrash();
-          void this.removeRowFrom(row, place);
+          void this.removeRowFrom(row, place, true);
         }}>${armed ? html`<span class="sure">sure?</span>` : uiIcon("delete")}</button>` : nothing}
     </span>`;
   }
@@ -14031,13 +14041,19 @@ export class WristAssistantPanel extends LitElement {
    * reason rather than left out: somebody looking for their watch should find
    * it and read why, not wonder where it went.
    *
-   * Only the devices of this design's kind are here, plus Unassigned. Crossing
-   * from a watch to an iPhone is "Duplicate as", where the shape is being
-   * picked anyway.
+   * Only the devices of this design's kind are here. Crossing from a watch to
+   * an iPhone is "Duplicate as", where the shape is being picked anyway.
+   *
+   * Unassigned is not offered, though a design that is there wears its chip.
+   * Unassigned is where a design waits when it is on nothing, not one more
+   * place to be at the same time, and taking the last device off already puts
+   * it there by itself. Offered as a tick it read as a device you could add,
+   * and a design "on" a watch and the shelf at once is two records where the
+   * author asked for one.
    */
   private renderAddPlace(row: PickerRow, places: DevicePlace[], family: FamilyKind | undefined) {
     if (!this.canEdit || this.hass.user?.is_admin !== true) return nothing;
-    const rest = places.filter((p) => !p.on);
+    const rest = places.filter((p) => !p.on && p.owner.kind !== "library");
     if (rest.length === 0) return nothing;
     const open = this.openMenu === "place";
     return html`<span class="place-tool" data-menu="place">
@@ -14051,14 +14067,14 @@ export class WristAssistantPanel extends LitElement {
     </span>`;
   }
 
+  /** One device offered in "Add to a device". Never the library: see
+   * `renderAddPlace`. */
   private renderAddPlaceRow(row: PickerRow, place: DevicePlace, family: FamilyKind | undefined) {
     const target = place.owner;
-    const label = target.kind === "library" ? UNASSIGNED_LABEL : target.label;
-    const icon = target.kind === "library" ? "layers" : target.kind === "iphone" ? "phone" : "watch";
+    const label = target.label;
+    const icon = target.kind === "iphone" ? "phone" : "watch";
     const block = this.placeBlock(place, family, label);
-    const title = block?.why ?? (target.kind === "library"
-      ? "Keep an unassigned copy too"
-      : `Put it on ${label}. Saving it saves it everywhere it is.`);
+    const title = block?.why ?? `Put it on ${label}. Saving it saves it everywhere it is.`;
     return html`<button type="button" class="row place-row" role="option" aria-selected="false"
       ?disabled=${this.saving || block !== undefined} title=${title}
       @click=${() => { this.toggleMenu("place", false); void this.addRowTo(row, target, true); }}>
