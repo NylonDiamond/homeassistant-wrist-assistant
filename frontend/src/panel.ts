@@ -10272,9 +10272,10 @@ export class WristAssistantPanel extends LitElement {
    *
    * The document is taken as it stands, which for the open one means the draft
    * rather than the saved record: copying what is on screen is what the button
-   * appears to do. The shape and the device it is on today are the answers the
-   * dialog starts with, so a copy onto a second watch is two clicks and the
-   * shape only has to be touched when it is the thing being changed.
+   * appears to do. The kind and the shape it is today are the answers the
+   * dialog starts with, so the shape only has to be touched when it is the
+   * thing being changed. Where the copy goes starts at Unassigned, never at a
+   * device: see `defaultDupTicks`.
    */
   private openDuplicateAs(cfg: CustomComplicationConfig, ownerId: string) {
     if (!this.hass.user?.is_admin) return;
@@ -10285,7 +10286,7 @@ export class WristAssistantPanel extends LitElement {
       ? "control"
       : isLibraryOwner(owner) ? (isHomeFamily(family) ? "iphone" : "watch") : deviceKindOf(owner) === "iphone" ? "iphone" : "watch";
     this.dupFamily = family;
-    this.dupOwners = new Set();
+    this.dupOwners = this.defaultDupTicks();
     this.dupOpen = true;
     // The other devices' seats, for the rows that say a device is full.
     void this.loadOtherLists();
@@ -10407,9 +10408,9 @@ export class WristAssistantPanel extends LitElement {
             "Each tick is a complication of its own, written now.")}
           ${people.length === 0 && library === undefined
             ? html`<div class="hint">Nothing in this home can take this shape yet.</div>`
-            : html`<div class="people-grid" role="group" aria-label="Devices">
+            : html`${library === undefined ? nothing : this.renderLibraryBox(library, family)}
+              <div class="people-grid" role="group" aria-label="Devices">
                 ${people.map((row) => this.renderPersonBox(row, this.dupOwners, family, (id) => this.toggleDupOwner(id)))}
-                ${library === undefined ? nothing : this.renderLibraryBox(library, family)}
               </div>`}
         </section>
       </div>
@@ -10422,13 +10423,14 @@ export class WristAssistantPanel extends LitElement {
     </dialog>`;
   }
 
-  /** Unassigned's own tick, beside the people. It is not somebody's device,
-   * so it stands in a box of its own rather than under a name. */
+  /** Unassigned's own tick, above the people. It is not somebody's device, so
+   * it stands in a row of its own rather than under a name, and it is where
+   * the step rests until a device is picked (`defaultDupTicks`). The New
+   * dialog draws the same row for the same answer. */
   private renderLibraryBox(library: DeviceOwner, family: FamilyKind | undefined) {
     const on = this.dupOwners.has(library.ownerId);
     const full = this.freeSlotOn(library.ownerId, family) < 0;
-    return html`<div class="person-box">
-      <span class="person-name">This home</span>
+    return html`<div class="unassigned-row" role="group" aria-label="Unassigned">
       <button type="button" role="checkbox" class="dev-tick ${on ? "on" : ""}"
         aria-checked=${on ? "true" : "false"} ?disabled=${full && !on}
         title=${full ? `${UNASSIGNED_LABEL} is full. Delete something in it first.` : "Keep a copy unassigned, on no device"}
@@ -10441,44 +10443,53 @@ export class WristAssistantPanel extends LitElement {
     </div>`;
   }
 
+  /**
+   * Where a copy goes before anybody says: Unassigned, and nowhere else.
+   *
+   * This dialog needs at least one tick to enable Create, and unlike the New
+   * dialog it says "unassigned" by ticking the Library, which is a real owner
+   * that holds a real record. So the resting answer is that tick rather than
+   * an empty set, and the step still opens with exactly one thing lit.
+   *
+   * Empty on a home whose integration predates the Library, on a copy made
+   * from the Library itself, and on a shelf with no free seat, since a tick
+   * Create could not honour is worse than no tick at all. Create stays
+   * disabled there until a device is picked, which is the honest state.
+   */
+  private defaultDupTicks(): Set<string> {
+    const library = this.dupOffered().find((o) => isLibraryOwner(this.ownerOf(o.ownerId)));
+    if (!library || this.freeSlotOn(library.ownerId, this.dupTargetFamily) < 0) return new Set();
+    return new Set([library.ownerId]);
+  }
+
   /** The device kind, answered. The shape goes with it unless the new kind
-   * still offers it, and the ticks go with the shape. */
+   * still offers it, and the ticks go back to Unassigned. */
   private pickDupKind(kind: NewKind) {
     this.dupKind = kind;
     if (kind === "control" || !shapeOffered(kind, this.deviceOwners(), this.dupFamily)) {
       this.dupFamily = undefined;
     }
-    this.keepDupTicks();
+    this.dupOwners = this.defaultDupTicks();
   }
 
   /**
    * The shape, answered.
    *
-   * A copy of another shape onto the device the design is already on is the
-   * common case, so that device is ticked as the shape is picked. A copy of
-   * the same shape has nowhere obvious to go, so nothing is ticked and the
-   * question stands.
+   * This used to tick the device the design is already on whenever the copy
+   * was of another shape, on the theory that it is the common case. It is the
+   * same objection the New dialog's own auto-tick earned: a tick writes a
+   * record on a real device, and picking a shape is not consent to that. The
+   * answer goes back to Unassigned instead, and the device is one click away.
    */
   private pickDupFamily(family: FamilyKind) {
     this.dupFamily = family;
-    const from = this.dupFrom;
-    const here = from && family !== supportedFamilies(from.cfg)[0]
-      && this.dupOffered().some((o) => o.ownerId === from.ownerId)
-      ? [from.ownerId]
-      : [];
-    this.dupOwners = new Set(here);
+    this.dupOwners = this.defaultDupTicks();
   }
 
   private toggleDupOwner(ownerId: string) {
     const next = new Set(this.dupOwners);
     if (!next.delete(ownerId)) next.add(ownerId);
     this.dupOwners = next;
-  }
-
-  /** Drop a tick on a place the new shape leaves behind. */
-  private keepDupTicks() {
-    const offered = new Set(this.dupOffered().map((o) => o.ownerId));
-    this.dupOwners = new Set([...this.dupOwners].filter((id) => offered.has(id)));
   }
 
   /**
