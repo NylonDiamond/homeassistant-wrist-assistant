@@ -1966,18 +1966,26 @@ export class WristAssistantPanel extends LitElement {
     /* One device per block on the All tab, with room between them: the gap is
        what makes the headings read as headings rather than as captions under
        the grid above. */
-    /* One person's band: a rule with their name on it, holding their
-       devices' blocks. The rule is what makes a household of four read as
-       four groups rather than as eight headings. */
+    /* Three surfaces, nested: the dialog's body, one device's box on it, and
+       one shape's box inside that. Each step goes toward the card colour, so
+       the nesting reads as going inwards in the light theme and the dark one
+       alike without a single hard-coded colour.
+
+       Nothing here is a coloured rail. A person's hue is a dot on their band
+       and a wash across their devices' headings: enough to pair "Jesse's two"
+       at a glance, with no line down the left edge cutting the grid off from
+       the page. */
+    /* One person's band: a quiet caption with a rule running off it, holding
+       their devices' boxes. It is deliberately lighter than a device heading:
+       a person is the group a device is in, not a louder heading above it. */
     .pk-band { display: block; }
-    .pk-band + .pk-band, .pk-band + .pk-sec, .pk-sec + .pk-band { margin-top: 22px; }
-    .pk-band-top { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; font-size: 13px; }
-    .pk-band-name { color: var(--wa-ink); font-weight: 700; letter-spacing: .01em; }
-    .pk-band-count { font-size: 12px; font-weight: 400; color: var(--pk-person, var(--wa-accent)); opacity: .8; }
-    /* The rule runs from the name to the far edge, so the band reads as one
-       horizontal thing rather than as a title floating over a grid. */
+    .pk-band + .pk-band, .pk-band + .pk-sec, .pk-sec + .pk-band { margin-top: 18px; }
+    .pk-band-top { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; }
+    .pk-band-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--pk-person, var(--wa-accent)); }
+    .pk-band-name { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .09em; color: var(--wa-muted); }
+    .pk-band-count { font-size: 11px; font-weight: 600; color: var(--pk-person, var(--wa-accent)); opacity: .9; }
     .pk-band-rule { flex: 1; height: 1px; min-width: 12px; background: var(--wa-line); }
-    .pk-band-body { display: flex; flex-direction: column; gap: 14px; padding-left: 10px; border-left: 2px solid var(--pk-person, var(--wa-accent)); }
+    .pk-band-body { display: flex; flex-direction: column; gap: 10px; }
     .pk-band.shut .pk-band-top { margin-bottom: 0; }
     /* The fold control on a band and on a device: the whole heading is the
        button, so the target is the words rather than a chevron. */
@@ -1988,28 +1996,53 @@ export class WristAssistantPanel extends LitElement {
     .pk-fold-btn:hover .pk-sec-name, .pk-fold-btn:hover .pk-band-name { color: var(--wa-accent); }
     .pk-fold-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 6px; }
     .pk-fold { display: inline-flex; flex: none; color: var(--wa-muted); transform: rotate(90deg); transition: transform .12s ease; }
-    .pk-fold svg { width: 14px; height: 14px; }
+    .pk-fold svg { width: 13px; height: 13px; }
     .pk-band.shut .pk-fold, .pk-sec.shut .pk-fold { transform: rotate(0deg); }
-    /* One device per block on the All tab, in a box of its own: the border is
-       what keeps a watch's shape boxes from reading as the next device's. */
+    /* One device's box. Clipping its overflow is what lets the heading's wash
+       of the owner's colour run to the rounded corners without a second radius
+       of its own, and what makes a folded box just its heading strip. */
     .pk-sec {
-      display: flex; flex-direction: column; gap: 10px;
-      padding: 10px 12px 12px; border: 1px solid var(--wa-line); border-radius: 12px; background: var(--wa-panel-2, transparent);
+      display: flex; flex-direction: column; min-width: 0; overflow: hidden;
+      border: 1px solid var(--wa-line); border-radius: 12px;
+      background: color-mix(in srgb, var(--wa-card) 30%, var(--wa-panel));
     }
-    .pk-sec + .pk-sec { margin-top: 14px; }
-    .pk-band-body .pk-sec + .pk-sec { margin-top: 0; }
-    .pk-sec.shut { gap: 0; padding-bottom: 10px; }
-    .pk-sec-top { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+    .pk-sec + .pk-sec { margin-top: 10px; }
+    /* The heading strip, washed with whoever's device it is. A device that is
+       nobody's keeps the accent, so the shelf still reads as a heading. */
+    .pk-sec-top {
+      display: flex; align-items: baseline; gap: 10px; min-width: 0; padding: 7px 12px;
+      background: color-mix(in srgb, var(--pk-person, var(--wa-accent)) 9%, transparent);
+      border-bottom: 1px solid var(--wa-line);
+    }
+    .pk-sec.shut .pk-sec-top { border-bottom: 0; }
+    .pk-sec-body { padding: 10px; min-width: 0; }
     .pk-sec-head { display: flex; align-items: center; gap: 9px; margin: 0; font-size: 13px; font-weight: 700; flex: none; }
-    /* One shape per box inside a device's block. The label is a caption on
-       the box's own line rather than a heading over the grid: it is saying
-       which shape these are, not starting a new section of the page. */
-    .pk-shapes { display: flex; flex-direction: column; gap: 10px; }
-    .pk-shape { border: 1px solid var(--wa-line); border-radius: 10px; padding: 8px 10px 10px; background: var(--wa-panel); }
-    .pk-shape-top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; min-width: 0; }
-    .pk-shape-name { font-size: 11.5px; font-weight: 600; color: var(--wa-muted); text-transform: uppercase; letter-spacing: .05em; }
-    .pk-shape-count { font-size: 11.5px; color: var(--wa-muted); opacity: .75; }
-    .pk-shape-pick { flex: none; margin: 0; accent-color: var(--wa-accent); }
+    /* One shape per box inside a device's box, the name stood on its end in a
+       gutter of fixed width down the left.
+       Fixed, because the label used to sit above the grid and every box then
+       started its cards at a different height; and stood on end, because a
+       caption on its own line over each of five boxes costs a whole screen of
+       scrolling in a home with forty complications. The gutter being the same
+       width in every box is what lines the grids up with each other. */
+    .pk-boxes { display: flex; flex-direction: column; gap: 8px; }
+    .pk-box {
+      display: flex; align-items: stretch; gap: 10px; min-width: 0; padding: 8px;
+      border: 1px solid var(--wa-line); border-radius: 10px;
+      background: color-mix(in srgb, var(--wa-card) 45%, var(--wa-panel));
+    }
+    .pk-box-side {
+      flex: none; width: 20px; min-height: 0; overflow: hidden;
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
+    }
+    /* Bottom to top, the way a label down the side of anything is read. */
+    .pk-box-name {
+      writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap;
+      font-size: 10px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase;
+      color: var(--wa-muted);
+    }
+    .pk-box-count { font-size: 10px; font-weight: 600; color: var(--wa-muted); opacity: .7; }
+    .pk-box .pk-grid { flex: 1; min-width: 0; }
+    .pk-box-pick { flex: none; margin: 0; accent-color: var(--wa-accent); }
     /* The person's own color, the same one their tabs wear, so the All tab's
        headings and the row of tabs agree about whose is whose. */
     .pk-sec-glyph { display: inline-flex; flex: none; color: var(--pk-person, var(--wa-accent)); }
@@ -2070,13 +2103,13 @@ export class WristAssistantPanel extends LitElement {
     .pk-bar-list {
       position: absolute; bottom: calc(100% + 6px); right: 0; z-index: 6; min-width: 190px;
       display: flex; flex-direction: column; gap: 2px; padding: 6px;
-      border: 1px solid var(--wa-line); border-radius: 10px; background: var(--wa-card); box-shadow: var(--wa-shadow-lg, 0 10px 30px rgba(0,0,0,.35));
+      border: 1px solid var(--wa-line); border-radius: 10px; background: var(--wa-card); box-shadow: 0 10px 30px rgba(0,0,0,.35);
     }
     .pk-bar-row {
       display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border: 0; border-radius: 7px;
       font: inherit; font-size: 12.5px; color: var(--wa-ink); background: transparent; cursor: pointer; text-align: left;
     }
-    .pk-bar-row:hover { background: var(--wa-hover); }
+    .pk-bar-row:hover { background: color-mix(in srgb, var(--wa-ink) 9%, transparent); }
     .pk-bar-row svg { width: 15px; height: 15px; flex: none; color: var(--wa-muted); }
     .pk-pick-btn {
       display: inline-flex; align-items: center; gap: 6px; flex: none; font: inherit; font-size: 12.5px;
@@ -9299,6 +9332,7 @@ export class WristAssistantPanel extends LitElement {
           title=${shut ? `Show ${band.label}'s devices` : `Fold ${band.label}'s devices away`}
           @click=${() => this.togglePickerShut(band.key)}>
           <span class="pk-fold" aria-hidden="true">${uiIcon("chevron")}</span>
+          <span class="pk-band-dot" aria-hidden="true"></span>
           <span class="pk-band-name">${band.label}</span>
           <span class="pk-band-count">${count}</span>
         </button>
@@ -9360,9 +9394,9 @@ export class WristAssistantPanel extends LitElement {
       </div>
       ${shut
         ? nothing
-        : count === 0
+        : html`<div class="pk-sec-body">${count === 0
           ? html`<div class="pk-sec-empty">${nothingOnText(section.kind)}</div>`
-          : this.renderPickerGroups(section.rows, section.ownerId, mine)}
+          : this.renderPickerGroups(section.rows, section.ownerId, mine)}</div>`}
     </section>`;
   }
 
@@ -9395,12 +9429,12 @@ export class WristAssistantPanel extends LitElement {
         groups.sort((a, b) => shapeGroupRank(a.key) - shapeGroupRank(b.key));
       }
     }
-    return html`<div class="pk-shapes">
-      ${groups.map((group) => html`<section class="pk-shape" aria-label=${group.label}>
-        <div class="pk-shape-top">
+    return html`<div class="pk-boxes">
+      ${groups.map((group) => html`<section class="pk-box" aria-label=${group.label}>
+        <div class="pk-box-side">
           ${this.renderShapePick(group.rows, at)}
-          <span class="pk-shape-name">${group.label}</span>
-          <span class="pk-shape-count">${group.rows.length + (group.unsaved ? 1 : 0)}</span>
+          <span class="pk-box-count">${group.rows.length + (group.unsaved ? 1 : 0)}</span>
+          <span class="pk-box-name">${group.label}</span>
         </div>
         <div class="pk-grid">
           ${group.rows.map((row) => this.renderPickerCard(row, at))}
@@ -9418,7 +9452,7 @@ export class WristAssistantPanel extends LitElement {
     const keys = rows.map((row) => this.pickKeyOf(row, at)).filter((k): k is string => k !== undefined);
     if (keys.length === 0) return nothing;
     const all = keys.every((k) => this.pickerPicked.includes(k));
-    return html`<input type="checkbox" class="pk-shape-pick" .checked=${all}
+    return html`<input type="checkbox" class="pk-box-pick" .checked=${all}
       title=${all ? "Let these go" : "Pick every card in this box"}
       aria-label=${all ? "Let this shape's cards go" : "Pick this shape's cards"}
       ?disabled=${this.saving}
