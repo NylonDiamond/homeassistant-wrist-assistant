@@ -1774,6 +1774,10 @@ export class WristAssistantPanel extends LitElement {
     header .hstep { color: var(--wa-muted); display: grid; place-items: center; flex: none; margin: 0 2px; }
     header .hstep svg { width: 20px; height: 20px; display: block; }
     header .hor { font-size: 12px; color: var(--wa-muted); flex: none; margin: 0 2px; }
+    /* Stacked, the bar wraps and the route it describes is broken anyway: the
+       word and the arrow join nothing, and the 32px they take is 32px the
+       buttons on that line need. */
+    header.stacked .hor, header.stacked .hstep { display: none; }
     header .spacer { flex: 1; }
     .toolbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
     /* Two boxes, one shape: a white pill with a hairline ring, holding a run of
@@ -2975,6 +2979,37 @@ export class WristAssistantPanel extends LitElement {
     .layout.cols-2 .column.inspector { overflow: visible; min-height: auto; }
     .layout.cols-1 .column.left .card.layers-card { flex: none; }
     .layout.cols-1 .layers { overflow: visible; }
+    /* Stacked, the three columns become one page, and the page is read top to
+       bottom rather than left to right. In column order that page opened with
+       Add a layer, and the face the whole editor is about came 1730px down,
+       past Pages, past every layer row: two and a half phone screens of
+       scrolling before you could see what you were drawing. Reported by a
+       user on Discord, "Layout on mobile", 2026-09-20.
+       The order here is the order of the question being asked: what am I
+       drawing and where does it land, what does the thing I just picked do,
+       and only then the lists that feed it. */
+    .layout.cols-1 > .column.canvas { order: 1; }
+    .layout.cols-1 > .column.inspector { order: 2; }
+    .layout.cols-1 > .column.left { order: 3; }
+    /* And inside the lists, the rows before the button that makes one. Add a
+       layer is a palette 760px tall while it is open, so above the list it
+       pushed the list itself off the screen. */
+    .layout.cols-1 .column.left > .pages-card { order: 1; }
+    .layout.cols-1 .column.left > .layers-card { order: 2; }
+    .layout.cols-1 .column.left > .add-card { order: 3; }
+    .layout.cols-1 .column.left > .values-list { order: 4; }
+    /* The two rows between the header and the face each wrapped to a second
+       line on a phone, for 47px of nothing. The name goes because the header
+       already carries it, in bigger type, 120px above; the device chip keeps
+       its line and ellipses instead. */
+    .layout.cols-1 .bar-row.doc-row { flex-wrap: nowrap; }
+    .layout.cols-1 .doc-row .doc-name { display: none; }
+    .layout.cols-1 .doc-row .doc-shape { flex: 0 1 auto; min-width: 0; }
+    .layout.cols-1 .doc-row .doc-shape .paren { display: none; }
+    .layout.cols-1 .bar-row.doc-places { flex-wrap: nowrap; }
+    .layout.cols-1 .doc-places .doc-on { flex: 0 1 auto; min-width: 0; flex-wrap: nowrap; }
+    .layout.cols-1 .doc-places .doc-chip { min-width: 0; }
+    .layout.cols-1 .doc-places .doc-chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     /* One card shape everywhere: white paper, a 12px corner, and a hairline
        drawn as a ring rather than a border, so nothing inside has to account
        for a border box. */
@@ -3674,6 +3709,7 @@ export class WristAssistantPanel extends LitElement {
       display: inline-flex; align-items: baseline; gap: 6px; flex: none;
       font-size: 14px; font-weight: 500; color: var(--wa-muted);
     }
+    .doc-shape .fam { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .doc-shape small { font-size: 11px; font-weight: 500; color: var(--wa-muted); }
     .doc-shape .warn { align-self: center; display: inline-flex; color: var(--wa-val); }
     .doc-shape .warn svg { width: 14px; height: 14px; }
@@ -4006,7 +4042,12 @@ export class WristAssistantPanel extends LitElement {
     /* The stage: a faint dot grid under a soft accent glow, so the watch face
        sits on a work surface rather than on the card. */
     .stage {
-      display: grid; justify-items: center; align-content: center; gap: 20px; padding: 20px; flex: 1 1 auto; min-height: 0; overflow: auto;
+      /* One column that can be narrower than its widest child. Left to size
+         itself, the column took the tool row's max-content width, and on a
+         phone that was wider than the stage: the face, drawn at 100% of that
+         column, hung 22px off the right edge behind a scrollbar. */
+      display: grid; grid-template-columns: minmax(0, 1fr);
+      justify-items: center; align-content: center; gap: 20px; padding: 20px; flex: 1 1 auto; min-height: 0; overflow: auto;
       container-type: inline-size;
       background:
         radial-gradient(ellipse at 50% 35%, color-mix(in srgb, var(--wa-accent) 10%, transparent) 0, transparent 65%),
@@ -8756,7 +8797,7 @@ export class WristAssistantPanel extends LitElement {
     // dot: color for the glance, the same words in its tooltip.
     const rec = this.records.find((r) => r.id === this.selectedId);
     return html`
-      <header>
+      <header class=${fit.columns === 1 ? "stacked" : nothing}>
         ${this.renderPicker()}
         ${this.hass.user?.is_admin ? html`<span class="hor" aria-hidden="true">or</span>${headerArrow()}` : nothing}
         ${this.renderNewButton()}
@@ -14813,7 +14854,12 @@ export class WristAssistantPanel extends LitElement {
     if (this.hasControlTab(cfg)) return nothing;
     const f = supportedFamilies(cfg)[0];
     if (f === undefined) return nothing;
-    return html`<span class="doc-shape">(${familyTitle(f)})${this.shapeNotes(cfg, layouts, f)}</span>`;
+    // The brackets live in their own spans so the stacked layout can drop
+    // them: there the name is hidden and "(Rectangular)" would open the row
+    // with a bracket closing nothing. One flex item, so the row's gap still
+    // falls between the shape and the notes after it and not inside the word.
+    return html`<span class="doc-shape"><span class="fam"><span
+      class="paren">(</span>${familyTitle(f)}<span class="paren">)</span></span>${this.shapeNotes(cfg, layouts, f)}</span>`;
   }
 
   /** Whether the bar draws the shape/Control Center segmented control, which

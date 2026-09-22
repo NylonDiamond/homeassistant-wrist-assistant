@@ -2329,6 +2329,10 @@ ${w2(c)}`}}delete s.hidden,delete s.linkId;let l=Ul(a);if(l.length>0){let d=l.sl
     header .hstep { color: var(--wa-muted); display: grid; place-items: center; flex: none; margin: 0 2px; }
     header .hstep svg { width: 20px; height: 20px; display: block; }
     header .hor { font-size: 12px; color: var(--wa-muted); flex: none; margin: 0 2px; }
+    /* Stacked, the bar wraps and the route it describes is broken anyway: the
+       word and the arrow join nothing, and the 32px they take is 32px the
+       buttons on that line need. */
+    header.stacked .hor, header.stacked .hstep { display: none; }
     header .spacer { flex: 1; }
     .toolbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
     /* Two boxes, one shape: a white pill with a hairline ring, holding a run of
@@ -3530,6 +3534,37 @@ ${w2(c)}`}}delete s.hidden,delete s.linkId;let l=Ul(a);if(l.length>0){let d=l.sl
     .layout.cols-2 .column.inspector { overflow: visible; min-height: auto; }
     .layout.cols-1 .column.left .card.layers-card { flex: none; }
     .layout.cols-1 .layers { overflow: visible; }
+    /* Stacked, the three columns become one page, and the page is read top to
+       bottom rather than left to right. In column order that page opened with
+       Add a layer, and the face the whole editor is about came 1730px down,
+       past Pages, past every layer row: two and a half phone screens of
+       scrolling before you could see what you were drawing. Reported by a
+       user on Discord, "Layout on mobile", 2026-09-20.
+       The order here is the order of the question being asked: what am I
+       drawing and where does it land, what does the thing I just picked do,
+       and only then the lists that feed it. */
+    .layout.cols-1 > .column.canvas { order: 1; }
+    .layout.cols-1 > .column.inspector { order: 2; }
+    .layout.cols-1 > .column.left { order: 3; }
+    /* And inside the lists, the rows before the button that makes one. Add a
+       layer is a palette 760px tall while it is open, so above the list it
+       pushed the list itself off the screen. */
+    .layout.cols-1 .column.left > .pages-card { order: 1; }
+    .layout.cols-1 .column.left > .layers-card { order: 2; }
+    .layout.cols-1 .column.left > .add-card { order: 3; }
+    .layout.cols-1 .column.left > .values-list { order: 4; }
+    /* The two rows between the header and the face each wrapped to a second
+       line on a phone, for 47px of nothing. The name goes because the header
+       already carries it, in bigger type, 120px above; the device chip keeps
+       its line and ellipses instead. */
+    .layout.cols-1 .bar-row.doc-row { flex-wrap: nowrap; }
+    .layout.cols-1 .doc-row .doc-name { display: none; }
+    .layout.cols-1 .doc-row .doc-shape { flex: 0 1 auto; min-width: 0; }
+    .layout.cols-1 .doc-row .doc-shape .paren { display: none; }
+    .layout.cols-1 .bar-row.doc-places { flex-wrap: nowrap; }
+    .layout.cols-1 .doc-places .doc-on { flex: 0 1 auto; min-width: 0; flex-wrap: nowrap; }
+    .layout.cols-1 .doc-places .doc-chip { min-width: 0; }
+    .layout.cols-1 .doc-places .doc-chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     /* One card shape everywhere: white paper, a 12px corner, and a hairline
        drawn as a ring rather than a border, so nothing inside has to account
        for a border box. */
@@ -4229,6 +4264,7 @@ ${w2(c)}`}}delete s.hidden,delete s.linkId;let l=Ul(a);if(l.length>0){let d=l.sl
       display: inline-flex; align-items: baseline; gap: 6px; flex: none;
       font-size: 14px; font-weight: 500; color: var(--wa-muted);
     }
+    .doc-shape .fam { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .doc-shape small { font-size: 11px; font-weight: 500; color: var(--wa-muted); }
     .doc-shape .warn { align-self: center; display: inline-flex; color: var(--wa-val); }
     .doc-shape .warn svg { width: 14px; height: 14px; }
@@ -4561,7 +4597,12 @@ ${w2(c)}`}}delete s.hidden,delete s.linkId;let l=Ul(a);if(l.length>0){let d=l.sl
     /* The stage: a faint dot grid under a soft accent glow, so the watch face
        sits on a work surface rather than on the card. */
     .stage {
-      display: grid; justify-items: center; align-content: center; gap: 20px; padding: 20px; flex: 1 1 auto; min-height: 0; overflow: auto;
+      /* One column that can be narrower than its widest child. Left to size
+         itself, the column took the tool row's max-content width, and on a
+         phone that was wider than the stage: the face, drawn at 100% of that
+         column, hung 22px off the right edge behind a scrollbar. */
+      display: grid; grid-template-columns: minmax(0, 1fr);
+      justify-items: center; align-content: center; gap: 20px; padding: 20px; flex: 1 1 auto; min-height: 0; overflow: auto;
       container-type: inline-size;
       background:
         radial-gradient(ellipse at 50% 35%, color-mix(in srgb, var(--wa-accent) 10%, transparent) 0, transparent 65%),
@@ -5988,7 +6029,7 @@ ${w2(c)}`}}delete s.hidden,delete s.linkId;let l=Ul(a);if(l.length>0){let d=l.sl
       </div>
       <div class="help-body" role="tabpanel" aria-labelledby=${`wa-help-${this.helpTab}`}>${x}</div>
     </dialog>`}setShowTaps(t){this.showTaps=t,t&&this.togglePicking(!1)}togglePicking(t=!this.picking){this.picking=t,this.pickHoverId=void 0,t&&(this.showTaps=!1,this.cancelGesture?.())}hitLayerId(t){let i=this.canvasConfig();if(!i)return;let a=this.rawHitId(t);return a?ql(i,a):void 0}rawHitId(t){return t.target?.closest?.("[data-element-id]")?.getAttribute("data-element-id")??void 0}rowLayerHitId(t){let i=this.draft?.config;if(!i||this.rowEditList())return;let a=this.rawHitId(t);return a!==void 0&&pr(i,a)?a:void 0}leaveRow(t){this.listHoverIds.length===t.length&&this.listHoverIds.every((a,r)=>t[r]===a)&&(this.listHoverIds=[])}onPickMove(t){this.picking&&(this.pickHoverId=this.hitLayerId(t))}pickAt(t,i){let a=this.hitLayerId(i);this.togglePicking(!1),a&&(t!==this.activeFamily&&(this.activeFamily=t),this.inspect={kind:"layer",id:a})}onPreviewDoubleClick(t){if(!this.canEdit||this.picking||this.showTaps||this.rowEditList())return;let i=this.draft?.config;if(!i)return;let a=this.rawHitId(t)??this.lastPressHitId;if(a===void 0)return;let r=pr(i,a);if(r){this.cancelGesture?.(),this.setRowEdit(r.payload.id),this.inspect={kind:"layer",id:a};return}let o=i.elements.find(l=>l.payload.id===a);if(o?.kind!=="list")return;this.cancelGesture?.(),this.setRowEdit(o.payload.id);let s=o.payload.template[0];this.inspect={kind:"layer",id:s?s.payload.id:o.payload.id}}onPreviewPointerDown(t,i){let a=this.renderRoot,r="activeElement"in a?a.activeElement:null;if(r&&typeof r.blur=="function"&&!i.currentTarget?.contains(r)&&r.blur(),this.picking){i.preventDefault(),this.pickAt(t,i);return}let o=i.target,s=o.closest("[data-handle]")?.getAttribute("data-handle")??null,l=o.closest("[data-element-id]")?.getAttribute("data-element-id")??void 0;this.lastPressHitId=l;let d=o.closest("svg.complication");if(this.showTaps){let $=this.focusTapId();if($!==void 0&&l===$&&d&&this.draft&&this.canEdit){if(t!==this.activeFamily){this.activeFamily=t;return}i.preventDefault(),this.beginTapBoxGesture(t,i,d,$,s??void 0);return}let D=this.rowLayerHitId(i)??this.hitLayerId(i);D?this.inspect={kind:"layer",id:D}:l===void 0&&(this.inspect={kind:"general"});return}if(!this.draft||!this.canEdit)return;let c=this.canvasConfig();if(!c)return;if(t!==this.activeFamily){this.activeFamily=t;return}let p=y0(i),u=l!==void 0?ql(c,l):void 0;if(!p&&!s&&d&&this.multi.size>=2&&u!==void 0&&this.multi.has(u)){let $=Hy(c,this.multi);if(i.preventDefault(),$.length===0)return;this.beginMoveGesture(t,i,d,$,`drag-pick-${t}`,()=>{this.multi=new Set,this.inspect={kind:"layer",id:u}});return}if(!p&&this.multi.size>0&&(this.multi=new Set),!l||!d)return;let f=ql(c,l),g=c.elements.find($=>$.payload.id===f);if(!f||!g)return;if(p){i.preventDefault(),this.togglePick(f);return}let b,y=this.inspect.kind==="layer"?this.inspect.id:void 0;if(y!==void 0&&y!==f&&!s){let $=c.elements.find(_=>_.payload.id===y);$!==void 0&&$.kind!=="chartDots"&&$.kind!=="chartGrid"&&$.payload.chartAnchor?.place!=="through"&&qt(c,y)?.locked!==!0&&gM(d,y,i)&&(b=f,f=y,g=$)}let x=qt(c,f),v=x!==void 0&&this.inspect.kind==="group"&&this.inspect.id===x.id;if(x&&(x.locked||v)&&!s){let $=v||this.inspect.kind==="layer"&&qt(c,this.inspect.id)?.id===x.id;this.beginGroupGesture(t,i,d,x,$?f:void 0);return}if((this.inspect.kind!=="layer"||this.inspect.id!==f)&&(this.inspect={kind:"layer",id:f},s)||g.payload.chartAnchor?.place==="through")return;i.preventDefault();let S=qe(c,t,g).frame,H=this.gestureCanvas(t),L=g.payload.chartAnchor,I=L!==void 0&&!Gn(L.at)&&L.place!=="through",z=L!==void 0&&Gn(L.at)&&L.place==="through",C=me[t],P={dx:L?.dx??0,dy:L?.dy??0},U=L!==void 0&&!s?ln(c,this.buildContext(),this.forced)[t]?.elements.find($=>$.id===f)?.frame:void 0,Y=U??S,J=$=>Math.round($*10)/10;this.cancelGesture?.();let F=!1,q=$=>{$.pointerId===i.pointerId&&Math.hypot($.clientX-i.clientX,$.clientY-i.clientY)>w0&&(F=!0)};d.addEventListener("pointermove",q);let te=()=>d.removeEventListener("pointermove",q),N=s!==null?ln(c,this.buildContext(),this.forced)[t]?.elements.find($=>$.id===f):void 0;if(s!==null&&N?.kind==="icon"){let $=wh(N)/2,D=N.size,_=aw(d,i,s,{w:$,h:$},(K,W)=>{if(W&&te(),!F){W&&(this.cancelGesture=void 0);return}this.mutate(X=>{Ve(X,t,f,{size:Math.max(1,Math.round(D*K))})},`drag-${f}-${t}`),W&&(this.draft?.endGesture(),this.cancelGesture=void 0)});this.cancelGesture=()=>{te(),_()};return}let j=N!==void 0?Dw(N,Y,H):{},k=fd(d,H,i,{elementId:f,frame:Y,handle:s??void 0,...j,...L===void 0?{...this.snapTarget(t),...this.guideTarget(t,[f])}:{}},{...this.guideSink(),onFrame:($,D,_)=>{if(_&&te(),!F){_&&(b!==void 0&&(this.inspect={kind:"layer",id:b}),this.cancelGesture=void 0);return}this.mutate(K=>{if(L===void 0){Ve(K,t,$,{frame:D});return}let W=U?{width:S.width,height:S.height}:{width:D.width,height:D.height};Ve(K,t,$,{frame:{...D,...W,x:I?D.x:S.x,y:S.y}});let X=K.elements.find(de=>de.payload.id===$)?.payload.chartAnchor;if(X===void 0)return;let ne=P.dx,B=z?P.dy:J(P.dy+(D.y-Y.y)*C.height);ne?X.dx=ne:delete X.dx,B?X.dy=B:delete X.dy},`drag-${$}-${t}`),_&&(this.draft?.endGesture(),this.cancelGesture=void 0)}});this.cancelGesture=()=>{te(),k()}}beginGroupGesture(t,i,a,r,o){let s=this.draft?.config;if(!s)return;let l=Yt(s,r.id);if(l.length===0)return;o===void 0&&(this.inspect.kind!=="group"||this.inspect.id!==r.id)&&(this.inspect={kind:"group",id:r.id}),i.preventDefault();let d=o===void 0?void 0:()=>{this.inspect={kind:"layer",id:o}};this.beginMoveGesture(t,i,a,l.map(c=>c.payload.id),`drag-group-${r.id}-${t}`,d)}beginMoveGesture(t,i,a,r,o,s){let l=this.canvasConfig();if(!l)return;let d=l.elements.filter(I=>r.includes(I.payload.id));if(d.length===0)return;let c=new Map(d.map(I=>[I.payload.id,qe(l,t,I).frame])),p=[...c.values()],u=Math.min(...p.map(I=>I.x)),f=Math.min(...p.map(I=>I.y)),g=Math.max(...p.map(I=>I.x+I.width)),b=Math.max(...p.map(I=>I.y+I.height)),y={x:u,y:f,width:g-u,height:b-f,rotationDegrees:0},x=I=>Math.round(I*1e3)/1e3;this.cancelGesture?.();let v=!1,S=I=>{I.pointerId===i.pointerId&&Math.hypot(I.clientX-i.clientX,I.clientY-i.clientY)>w0&&(v=!0)};a.addEventListener("pointermove",S);let H=()=>a.removeEventListener("pointermove",S),L=fd(a,this.gestureCanvas(t),i,{elementId:o,frame:y,...this.snapTarget(t),...this.guideTarget(t,r)},{...this.guideSink(),onFrame:(I,z,C)=>{if(C&&H(),!C&&!v)return;if(C&&!v&&s!==void 0){s(),this.cancelGesture=void 0;return}let P=z.x-y.x,U=z.y-y.y;this.mutate(Y=>{for(let[J,F]of c)Ve(Y,t,J,{frame:{...F,x:x(F.x+P),y:x(F.y+U)}})},o),C&&(this.draft?.endGesture(),this.cancelGesture=void 0)}});this.cancelGesture=()=>{H(),L()}}nudge(t,i,a){let r=this.canvasConfig();if(!r||!this.canEdit||this.showTaps||this.picking)return!1;let o=a?iw:1,s=t*o,l=i*o,d=this.canvasFamily,c=me[d];if(this.multi.size>=2)return this.nudgeMany([...this.multi],d,c,`nudge-multi-${d}`,s,l);if(this.inspect.kind==="group"){let x=this.inspect.id;return this.nudgeMany(Yt(r,x).map(v=>v.payload.id),d,c,`nudge-group-${x}-${d}`,s,l)}if(this.inspect.kind!=="layer")return!1;let p=this.inspect.id,u=r.elements.find(x=>x.payload.id===p);if(!u||u.payload.chartAnchor?.place==="through")return!1;let f=qt(r,p);if(f?.locked)return this.nudgeMany(Yt(r,f.id).map(x=>x.payload.id),d,c,`nudge-group-${f.id}-${d}`,s,l);let g=qe(r,d,u).frame,b=u.payload.chartAnchor;if(b!==void 0){let x=!Gn(b.at);return l===0&&!(x&&s!==0)||this.mutate(v=>{x&&s!==0&&Ve(v,d,p,{frame:hd(g,s,0,c)});let S=v.elements.find(L=>L.payload.id===p)?.payload.chartAnchor;if(S===void 0||l===0)return;let H=Math.round(((S.dy??0)+l)*10)/10;H?S.dy=H:delete S.dy},`nudge-${p}-${d}`),!0}let y=this.snapGrid?ah(g,s,l,wr(this.gridStep,c)):hd(g,s,l,c);return(y.x!==g.x||y.y!==g.y)&&this.mutate(x=>Ve(x,d,p,{frame:y}),`nudge-${p}-${d}`),!0}nudgeMany(t,i,a,r,o,s){let l=this.canvasConfig();if(!l)return!1;let d=H=>Math.round(H*1e3)/1e3,c=new Map;for(let H of t){let L=l.elements.find(I=>I.payload.id===H);L&&c.set(H,qe(l,i,L).frame)}if(c.size===0)return!1;let p=[...c.values()],u=Math.min(...p.map(H=>H.x)),f=Math.min(...p.map(H=>H.y)),g=Math.max(...p.map(H=>H.x+H.width)),b=Math.max(...p.map(H=>H.y+H.height)),y={x:u,y:f,width:g-u,height:b-f,rotationDegrees:0},x=this.snapGrid?ah(y,o,s,wr(this.gridStep,a)):hd(y,o,s,a),v=x.x-y.x,S=x.y-y.y;return(v!==0||S!==0)&&this.mutate(H=>{for(let[L,I]of c)Ve(H,i,L,{frame:{...I,x:d(I.x+v),y:d(I.y+S)}})},r),!0}gestureCanvas(t){let i=fh(this.previewSlot(t),t);if(t!=="corner")return{width:i.width,height:i.height};let a=this.draft?.config.perFamily.corner,r=!!a?.bezelText||!!a?.bezelGauge,o=Ed(i.scale,r);return{width:o,height:o}}focusTapId(){let t=this.draft?.config;if(!t||!this.showTaps||this.inspect.kind!=="layer")return;let i=this.inspect.id,a=t.elements.find(r=>r.payload.id===i);if(a)return a.kind==="tap"?a.payload.id:Ht(t,i)[0]?.payload.id}beginTapBoxGesture(t,i,a,r,o){let s=this.draft?.config,l=s?.elements.find(p=>p.payload.id===r);if(!s||!l)return;let d=Fe(s,l),c=qe(s,t,l).frame;this.cancelGesture?.(),this.cancelGesture=fd(a,this.gestureCanvas(t),i,{elementId:r,frame:c,handle:o,...this.snapTarget(t)},{onFrame:(p,u,f)=>{this.mutate(g=>{d?Ny(g,p,t,u):Ve(g,t,p,{frame:u})},`tap-box-${p}-${t}`),f&&(this.draft?.endGesture(),this.cancelGesture=void 0)}})}render(){let t=this.draft,i=!!t?.dirty||t?.baseRevision===null,a=this.narrow?{columns:1,left:this.colLeft,right:this.colRight}:x0(this.panelWidth,this.colLeft,this.colRight),r=this.records.find(o=>o.id===this.selectedId);return h`
-      <header>
+      <header class=${a.columns===1?"stacked":m}>
         ${this.renderPicker()}
         ${this.hass.user?.is_admin?h`<span class="hor" aria-hidden="true">or</span>${lM()}`:m}
         ${this.renderNewButton()}
@@ -7116,7 +7157,8 @@ ${w2(c)}`}}delete s.hidden,delete s.linkId;let l=Ul(a);if(l.length>0){let d=l.sl
       ${this.renderDocShape(t,i)}
       <span class="spacer"></span>
       ${this.renderDocActs(t)}
-    </div>`}renderDocShape(t,i){if(this.hasControlTab(t))return m;let a=_e(t)[0];return a===void 0?m:h`<span class="doc-shape">(${le(a)})${this.shapeNotes(t,i,a)}</span>`}hasControlTab(t){return t.control!==void 0&&Xo(this.selectedOwner)}renderPlacesRow(t){let i=this.openRow();if(!i)return m;let a=_e(t)[0],r=this.rowPlaces(i,a),o=r.filter(s=>s.on);return o.length===0?m:h`<div class="bar-row doc-places">
+    </div>`}renderDocShape(t,i){if(this.hasControlTab(t))return m;let a=_e(t)[0];return a===void 0?m:h`<span class="doc-shape"><span class="fam"><span
+      class="paren">(</span>${le(a)}<span class="paren">)</span></span>${this.shapeNotes(t,i,a)}</span>`}hasControlTab(t){return t.control!==void 0&&Xo(this.selectedOwner)}renderPlacesRow(t){let i=this.openRow();if(!i)return m;let a=_e(t)[0],r=this.rowPlaces(i,a),o=r.filter(s=>s.on);return o.length===0?m:h`<div class="bar-row doc-places">
       <span class="doc-on-pre">On</span>
       <span class="doc-on" role="group" aria-label="Devices this complication is on">
         ${o.map(s=>this.renderPlaceChip(i,s))}
