@@ -2177,6 +2177,24 @@ export class WristAssistantPanel extends LitElement {
     }
     .pk-pick-btn svg { width: 14px; height: 14px; }
     .pk-pick-btn.on { border-color: var(--wa-accent); color: var(--wa-accent); }
+    /* Two ways of drawing a card, both on the head with the one in use lit.
+       A single button that swapped its own label made the reader work out
+       whether the word on it was the state or the offer; a pair says which
+       it is on and what the other one would be, and is one press either way. */
+    .pk-seg {
+      display: inline-flex; flex: none; gap: 2px; padding: 2px;
+      border: 1px solid var(--wa-line); border-radius: var(--wa-r-md); background: var(--wa-panel);
+    }
+    .pk-seg-btn {
+      display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 12.5px;
+      padding: 4px 9px; border: 0; border-radius: calc(var(--wa-r-md) - 3px);
+      background: transparent; color: var(--wa-muted); cursor: pointer;
+      transition: background .12s ease, color .12s ease;
+    }
+    .pk-seg-btn svg { width: 14px; height: 14px; }
+    .pk-seg-btn:hover { color: var(--wa-ink); }
+    .pk-seg-btn.on { background: color-mix(in srgb, var(--wa-accent) 18%, var(--wa-card)); color: var(--wa-ink); }
+    .pk-seg-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .pk-tag {
       flex: none; font-size: 10px; color: var(--wa-muted); cursor: help;
       border: 1px solid var(--wa-line); border-radius: 6px; padding: 1px 6px;
@@ -9406,11 +9424,15 @@ export class WristAssistantPanel extends LitElement {
    * writes nothing.
    */
   private renderPickerLook() {
-    const on = !this.pickerBare;
-    return html`<button type="button" class="pk-pick-btn ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
-      title=${on ? "Show the complication on its own, with no device round it" : "Show the complication on its device"}
-      @click=${() => this.setPickerBare(on)}>
-      ${uiIcon(on ? "watch" : "shape")}<span>Device</span></button>`;
+    const bare = this.pickerBare;
+    return html`<div class="pk-seg" role="group" aria-label="How a card draws its complication">
+      <button type="button" class="pk-seg-btn ${bare ? "" : "on"}" aria-pressed=${bare ? "false" : "true"}
+        title="Draw each complication on the device it sits on"
+        @click=${() => this.setPickerBare(false)}>${uiIcon("watch")}<span>Device</span></button>
+      <button type="button" class="pk-seg-btn ${bare ? "on" : ""}" aria-pressed=${bare ? "true" : "false"}
+        title="Draw the complication on its own, with no device round it"
+        @click=${() => this.setPickerBare(true)}>${uiIcon("shape")}<span>Shape</span></button>
+    </div>`;
   }
 
   /** Turn the device round a card's picture off, or on again, and remember it. */
@@ -9651,7 +9673,7 @@ export class WristAssistantPanel extends LitElement {
     return html`<button type="button" class="pk-pick-btn ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
       title=${on ? "Back to opening one card at a time" : "Pick several cards and act on them together"}
       ?disabled=${this.saving} @click=${() => this.setPickerSelecting(!on)}>
-      ${uiIcon("check")}<span>Select</span></button>`;
+      ${uiIcon("checklist")}<span>Multi select</span></button>`;
   }
 
   /** Turn picking on or off. Turning it off lets every pick go: a pick that

@@ -15,7 +15,8 @@ export type UiIconName =
   | "grip" | "chevron" | "content" | "look" | "clock" | "states" | "place" | "layers" | "pages" | "plus"
   | "lock" | "unlock" | "folder" | "ungroup" | "watch" | "phone"
   | "compact" | "expanded" | "grid" | "search" | "undo" | "redo" | "expand" | "left" | "right"
-  | "braces" | "link" | "info" | "globe" | "download" | "check" | "arrow" | "paste" | "guides";
+  | "braces" | "link" | "info" | "globe" | "download" | "check" | "arrow" | "paste" | "guides"
+  | "checklist";
 
 function shape(name: UiIconName) {
   switch (name) {
@@ -166,6 +167,13 @@ function shape(name: UiIconName) {
       return svg`<path d="M15 14L20 9L15 4" /><path d="M20 9H9A5 5 0 0 0 9 19H12" />`;
     case "expand":
       return svg`<path d="M15 3H21V9M9 21H3V15M21 3L14 10M3 21L10 14" />`;
+    // Picking several at once: two rows, each a ticked box with its line
+    // beside it. A lone tick says "done"; the rows are what say "these ones,
+    // out of a list".
+    case "checklist":
+      return svg`<rect x="3" y="4" width="7" height="7" rx="1.8" /><path d="M4.9 7.4L6.3 8.8L8.4 6.4" />
+        <rect x="3" y="13" width="7" height="7" rx="1.8" /><path d="M4.9 16.4L6.3 17.8L8.4 15.4" />
+        <path d="M13.5 7.5H21M13.5 16.5H21" />`;
   }
 }
 
