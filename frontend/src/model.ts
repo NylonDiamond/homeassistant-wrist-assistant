@@ -3451,6 +3451,48 @@ export interface InlinePart {
   /** Uppercase, like every id here. */
   id: string;
   value: Value;
+  /** An icon part: this SF Symbol, drawn inside the line. The value is unused.
+   * The join writes it as a marker (`inlineSymbolMarker`) that app 2.8.0 and
+   * later draws as the symbol. */
+  symbol?: string;
+}
+
+/** The marker an icon part becomes in the joined Inline line: the symbol name
+ * between two Private Use Area characters, so no typed word or entity state
+ * can open one by accident. Mirrors `CustomComplication.inlineSymbolStart` and
+ * `inlineSymbolEnd` in the app. */
+export const INLINE_SYMBOL_START = "\uE000";
+export const INLINE_SYMBOL_END = "\uE001";
+
+export function inlineSymbolMarker(symbol: string): string {
+  return `${INLINE_SYMBOL_START}${symbol}${INLINE_SYMBOL_END}`;
+}
+
+/** An Inline line as words and symbols, the way the watch splits it. A start
+ * with no end, or an empty name, stays as words. Mirrors
+ * `CustomComplication.inlineSegments`. */
+export function inlineRuns(line: string): ({ text: string } | { symbol: string })[] {
+  const out: ({ text: string } | { symbol: string })[] = [];
+  let words = "";
+  let rest = line;
+  for (;;) {
+    const open = rest.indexOf(INLINE_SYMBOL_START);
+    if (open < 0) break;
+    const close = rest.indexOf(INLINE_SYMBOL_END, open + 1);
+    words += rest.slice(0, open);
+    if (close < 0 || close === open + 1) {
+      words += rest.slice(open);
+      rest = "";
+      break;
+    }
+    if (words !== "") out.push({ text: words });
+    words = "";
+    out.push({ symbol: rest.slice(open + 1, close) });
+    rest = rest.slice(close + 1);
+  }
+  words += rest;
+  if (words !== "") out.push({ text: words });
+  return out;
 }
 
 /** True when the Inline line is built from parts. */
@@ -4949,10 +4991,14 @@ function parseInline(raw: J): InlineLayout {
   if (typeof raw.symbol === "string") out.symbol = raw.symbol;
   if (raw.countdown === true) out.countdown = true;
   if (Array.isArray(raw.parts)) {
-    const parts = raw.parts.filter(isObject).map((p): InlinePart => ({
-      id: typeof p.id === "string" && p.id !== "" ? p.id.toUpperCase() : newId(),
-      value: isObject(p.value) ? parseValue(p.value) : literal(""),
-    }));
+    const parts = raw.parts.filter(isObject).map((p): InlinePart => {
+      const part: InlinePart = {
+        id: typeof p.id === "string" && p.id !== "" ? p.id.toUpperCase() : newId(),
+        value: isObject(p.value) ? parseValue(p.value) : literal(""),
+      };
+      if (typeof p.symbol === "string" && p.symbol !== "") part.symbol = p.symbol;
+      return part;
+    });
     if (parts.length > 0) out.parts = parts;
   }
   return out;
@@ -6643,7 +6689,13 @@ function encodeInline(i: InlineLayout): J {
   o.value = encodeValue(i.value);
   if (i.symbol !== undefined) o.symbol = i.symbol;
   if (i.countdown) o.countdown = true;
-  if (i.parts !== undefined && i.parts.length > 0) o.parts = i.parts.map((p) => ({ id: p.id, value: encodeValue(p.value) }));
+  if (i.parts !== undefined && i.parts.length > 0) {
+    o.parts = i.parts.map((p) => {
+      const part: J = { id: p.id, value: encodeValue(p.value) };
+      if (p.symbol !== undefined) part.symbol = p.symbol;
+      return part;
+    });
+  }
   return o;
 }
 
@@ -6876,7 +6928,7 @@ const K = {
   // these three keys appear.
   pages: ["count", "mode", "dwell"],
   inline: ["label", "value", "symbol", "countdown", "parts"],
-  inlinePart: ["id", "value"],
+  inlinePart: ["id", "value", "symbol"],
   // The document's Control Center control. Its own object at the top level,
   // and the only place these keys appear.
   control: ["kind", "title", "valueLabel", "state", "symbol", "symbolOff", "tintColorHex",

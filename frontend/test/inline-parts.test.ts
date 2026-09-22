@@ -7,6 +7,8 @@ import {
   auditUnknownKeys,
   encodeConfig,
   forEachValue,
+  inlineRuns,
+  inlineSymbolMarker,
   literal,
   newConfig,
   parseConfig,
@@ -102,5 +104,30 @@ describe("Inline parts in a document", () => {
     const draft = new Draft(inlineConfig(), null);
     draft.update((c) => { c.inline!.parts![0]!.value = literal("At "); });
     expect(draft.config.inline!.value).toEqual({ kind: { kind: "jinja", value: "At {{ states('sensor.temp') }} now" } });
+  });
+});
+
+describe("Inline icon parts", () => {
+  it("join as a symbol marker where the part sits", () => {
+    const cfg = inlineConfig();
+    cfg.inline!.parts!.splice(1, 0, { id: "A0000000-0000-4000-8000-000000000009", value: literal(""), symbol: "bolt.fill" });
+    syncInlineParts(cfg);
+    expect(cfg.inline!.value).toEqual({ kind: { kind: "jinja", value: `In ${inlineSymbolMarker("bolt.fill")}{{ states('sensor.temp') }} now` } });
+  });
+
+  it("keep their symbol through encode and parse", () => {
+    const cfg = inlineConfig();
+    cfg.inline!.parts![0] = { id: PART_A, value: literal(""), symbol: "drop.fill" };
+    const raw = encodeConfig(cfg);
+    expect(auditUnknownKeys(raw)).toEqual([]);
+    expect(parseConfig(raw).inline!.parts![0]).toEqual({ id: PART_A, value: literal(""), symbol: "drop.fill" });
+  });
+
+  it("split back into words and symbols the way the watch splits them", () => {
+    const line = `${inlineSymbolMarker("bolt.fill")} 72° ${inlineSymbolMarker("drop.fill")}40%`;
+    expect(inlineRuns(line)).toEqual([{ symbol: "bolt.fill" }, { text: " 72° " }, { symbol: "drop.fill" }, { text: "40%" }]);
+    expect(inlineRuns("plain")).toEqual([{ text: "plain" }]);
+    expect(inlineRuns("a\uE000bolt")).toEqual([{ text: "a\uE000bolt" }]);
+    expect(inlineRuns("a\uE000\uE001b")).toEqual([{ text: "a\uE000\uE001b" }]);
   });
 });

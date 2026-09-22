@@ -82,6 +82,7 @@ import {
   timelineHistoryMinutes,
   newConfig,
   inlineUsesParts,
+  inlineRuns,
   newControlConfig,
   newElement,
   convertChartTimes,
@@ -14594,7 +14595,7 @@ export class WristAssistantPanel extends LitElement {
    * and no add: the line is always there, and there is nothing to stack. */
   private renderInlineHasNoLayers(cfg: CustomComplicationConfig) {
     const line = cfg.inline ? resolveInline(cfg.inline, this.buildContext(), cfg) : undefined;
-    const words = line ? this.inlineLineText(line) : "No text yet";
+    const words = line ? this.inlineLineHtml(line, 11) : "No text yet";
     const picked = this.inspect.kind === "family";
     const open = () => { this.inspect = { kind: "family" }; };
     return html`<div class="card layers-card inline-layers tinted banded s${this.thumbStep}" style=${`--c:${CARD_TINT.layers}`}>
@@ -14992,11 +14993,22 @@ export class WristAssistantPanel extends LitElement {
   /** The words of the inline line, label and all, with a running countdown
    * shown as the time left. Shared by the preview and the picker's cards. */
   private inlineLineText(inline: ResolvedInline): string {
+    return this.inlineLineRuns(inline).map((r) => ("text" in r ? r.text : "")).join("");
+  }
+
+  /** The same line as words and icon parts, so a preview can draw each icon
+   * where it sits, the way the watch does. */
+  private inlineLineRuns(inline: ResolvedInline): ReturnType<typeof inlineRuns> {
     const now = Date.now();
     const value = inline.countdownEnd !== undefined && inline.countdownEnd > now
       ? countdownRemainingString((inline.countdownEnd - now) / 1000)
       : inline.text;
-    return `${inline.label ? `${inline.label}: ` : ""}${value}`;
+    return inlineRuns(`${inline.label ? `${inline.label}: ` : ""}${value}`);
+  }
+
+  /** The line drawn: words as text, each icon part as its symbol. */
+  private inlineLineHtml(inline: ResolvedInline, size: number) {
+    return this.inlineLineRuns(inline).map((r) => ("text" in r ? r.text : this.icons.render(r.symbol, size, "#FFFFFF")));
   }
 
   private renderInlinePreview(inline: ResolvedInline | undefined, small: boolean) {
@@ -15005,7 +15017,7 @@ export class WristAssistantPanel extends LitElement {
       line = html`<div class="inline-line missing">No inline text</div>`;
     } else {
       const symbol = inline.symbol ? this.icons.render(inline.symbol, small ? 11 : 15, "#FFFFFF") : undefined;
-      line = html`<div class="inline-line">${symbol ?? nothing}<span>${this.inlineLineText(inline)}</span></div>`;
+      line = html`<div class="inline-line">${symbol ?? nothing}<span>${this.inlineLineHtml(inline, small ? 11 : 15)}</span></div>`;
     }
     if (small) return line;
     return html`<div class="preview inline active" @click=${() => { this.inspect = { kind: "family" }; }}>${line}</div>`;

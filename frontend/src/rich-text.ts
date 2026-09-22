@@ -8,6 +8,7 @@
 import {
   CHART_DEFAULT_BAND_HIGH_HEX,
   formatIsEmpty,
+  inlineSymbolMarker,
   inlineUsesParts,
   literal,
   type CustomComplicationConfig,
@@ -279,7 +280,8 @@ export function joinTextParts(parts: readonly TextPart[], namedValues: readonly 
 export function syncInlineParts(cfg: CustomComplicationConfig): RichTextBlocked[] {
   const inline = cfg.inline;
   if (!inline || !inlineUsesParts(inline)) return [];
-  const parts = inline.parts!;
+  // An icon part joins as its marker, typed words the watch draws as the symbol.
+  const parts = inline.parts!.map((p) => (p.symbol === undefined ? p : { id: p.id, value: literal(inlineSymbolMarker(p.symbol)) }));
   const joined = joinTextParts(parts, cfg.values);
   if (joined.ok) {
     inline.value = joined.value;

@@ -161,6 +161,7 @@ import {
   inlineUsesParts,
   type InlinePart,
   literalPartText,
+  inlineRuns,
   syncRichTextFallback,
   textUsesParts,
   ARC_RADIUS_DEFAULT,
@@ -8592,7 +8593,7 @@ function inlineEditor(host: EditorHost): TemplateResult {
     delete i.parts;
   });
   const summary = withParts
-    ? inline.parts!.map((p) => literalPartText(p.value) ?? `[${describeValueBody(p.value, ctx)}]`).join("")
+    ? inline.parts!.map((p) => (p.symbol !== undefined ? `(${p.symbol})` : literalPartText(p.value) ?? `[${describeValueBody(p.value, ctx)}]`)).join("")
     : describeValue(inline.value, ctx);
   return html`
     ${card(host, "content", "Inline text", html`
@@ -8607,7 +8608,7 @@ function inlineEditor(host: EditorHost): TemplateResult {
     ${card(host, "symbol", "Symbol", html`
       ${symbolField(host, inline.symbol ?? "", (v) => upd((i) => { if (v) i.symbol = v; else delete i.symbol; }, "symbol"), "inline-symbol")}
       <div class="hint">Drawn before the text. Leave it blank for text only. Some faces, such as Modular, show the text only and leave the symbol out.</div>
-      <div class="field readout"><span>On the face</span><span class="readout-v">${inline.symbol ? `${inline.symbol} ` : ""}${inline.label ? `${inline.label}: ` : ""}${host.resolve(inline.value) ?? "--"}</span></div>`,
+      <div class="field readout"><span>On the face</span><span class="readout-v">${inline.symbol ? `${inline.symbol} ` : ""}${inline.label ? `${inline.label}: ` : ""}${inlineRuns(host.resolve(inline.value) ?? "--").map((r) => ("symbol" in r ? host.icons.render(r.symbol, 12, "#FFFFFF") : r.text))}</span></div>`,
       { color: SECTION_COLOR.look, icon: "icon", summary: inline.symbol || "None" })}`;
 }
 
@@ -8638,6 +8639,7 @@ function inlinePartsEditor(
   const index = Math.max(0, parts.findIndex((p) => p.id === selectedParts.get(INLINE_PARTS_KEY)));
   const part = parts[index]!;
   const count = parts.length;
+  const iconPart = part.symbol !== undefined;
   const literalPart = part.value.kind.kind === "literal";
   const updPart = (mutate: (x: InlinePart) => void, k?: string) => upd((i) => {
     const x = i.parts?.find((y) => y.id === part.id);
@@ -8653,6 +8655,13 @@ function inlinePartsEditor(
     upd((i) => { (i.parts ??= []).push({ id, value }); });
     openPopoverSoon(node, popoverId(`inline-part-${id}`), true);
   };
+  // An icon part opens on a symbol, so the line shows something at once; the
+  // picker under it is open to change it.
+  const addIcon = () => {
+    const id = newId();
+    selectedParts.set(INLINE_PARTS_KEY, id);
+    upd((i) => { (i.parts ??= []).push({ id, value: literal(""), symbol: "star.fill" }); });
+  };
   const move = (to: number) => upd((i) => { if (i.parts) moveItem(i.parts, index, to); });
   const remove = () => {
     const next = parts[index + 1] ?? parts[index - 1];
@@ -8661,8 +8670,14 @@ function inlinePartsEditor(
   };
   const join = joinTextParts(parts, host.config.values);
   const chips = parts.map((p) => {
-    const chip = partChip(p.value, ctx);
     const on = p.id === part.id;
+    if (p.symbol !== undefined) {
+      return html`<button type="button" role="option" aria-selected=${on ? "true" : "false"} class="part-chip value ${on ? "on" : ""}"
+        aria-label=${`Part ${parts.indexOf(p) + 1}: icon ${p.symbol}`} title=${p.symbol} @click=${(e: Event) => select(p.id, e.currentTarget)}>
+        <span class="part-txt">${host.icons.render(p.symbol, 13, "#FFFFFF")}</span>
+      </button>`;
+    }
+    const chip = partChip(p.value, ctx);
     const now = chip.kind === "value" ? host.resolve(p.value) : undefined;
     return html`<button type="button" role="option" aria-selected=${on ? "true" : "false"} class="part-chip ${chip.kind} ${on ? "on" : ""}"
       aria-label=${rulePartLabel(p, parts.indexOf(p), ctx)} @click=${(e: Event) => select(p.id, e.currentTarget)}>
@@ -8682,12 +8697,14 @@ function inlinePartsEditor(
           @click=${(e: Event) => add(literal(""), e.currentTarget)}>${uiIcon("text")}<span>Add text</span></button>
         <button type="button" class="small" title="Add a part that shows a live value"
           @click=${(e: Event) => add({ kind: { kind: "entityState", entityId: "", displayName: "", domain: "" } }, e.currentTarget)}>${uiIcon("braces")}<span>Add value</span></button>
+        <button type="button" class="small" title="Add an SF Symbol inside the line"
+          @click=${addIcon}>${uiIcon("icon")}<span>Add icon</span></button>
       </div>
     </div>
     ${join.ok ? nothing : html`<div class="hint warn">${blockedReasons(join.blocked)} The watch leaves ${join.blocked.length === 1 ? "that part" : "those parts"} out of the line.</div>`}
     <div class="part-editor">
       <div class="part-head">
-        <span class="part-title"><b>Part ${index + 1}</b> of ${count} · ${literalPart ? "Text" : "Value"}</span>
+        <span class="part-title"><b>Part ${index + 1}</b> of ${count} · ${iconPart ? "Icon" : literalPart ? "Text" : "Value"}</span>
         <span class="spacer"></span>
         <button type="button" class="icon" title="Move left" aria-label="Move left" ?disabled=${index === 0} @click=${() => move(index - 1)}>${uiIcon("left")}</button>
         <button type="button" class="icon" title="Move right" aria-label="Move right" ?disabled=${index === count - 1} @click=${() => move(index + 1)}>${uiIcon("right")}</button>
@@ -8695,8 +8712,11 @@ function inlinePartsEditor(
           title=${count === 1 ? "The line keeps at least one part. Switch to Plain to stop using parts." : "Remove this part"}
           @click=${remove}>${uiIcon("delete")}</button>
       </div>
-      ${valueEditor(host, part.value, (v) => updPart((x) => { x.value = v; }, "value"), { showResolved: true, label: literalPart ? "Text" : "Shows", key: `inline-part-${part.id}` })}
-      ${literalPart ? html`<div class="hint">Spaces count, and show as dots in the parts list. Type one at the start or end when this part needs a gap.</div>` : nothing}
+      ${iconPart
+        ? html`${symbolField(host, part.symbol ?? "", (v) => updPart((x) => { x.symbol = v.trim(); }, "symbol"), `inline-part-${part.id}-symbol`, undefined, "Icon")}
+          <div class="hint">Drawn inside the line, where the part sits. Needs the watch app from 2.8.0. Faces that leave the symbol out, such as Modular, leave these out too.</div>`
+        : html`${valueEditor(host, part.value, (v) => updPart((x) => { x.value = v; }, "value"), { showResolved: true, label: literalPart ? "Text" : "Shows", key: `inline-part-${part.id}` })}
+          ${literalPart ? html`<div class="hint">Spaces count, and show as dots in the parts list. Type one at the start or end when this part needs a gap.</div>` : nothing}`}
     </div>
   </div>`;
 }
