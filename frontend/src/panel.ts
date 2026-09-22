@@ -5582,7 +5582,8 @@ export class WristAssistantPanel extends LitElement {
     this.removeEventListener(SCRUB_START, this.scrubStart);
     this.removeEventListener(SCRUB_END, this.scrubEnd);
     window.removeEventListener("hashchange", this.takeShareLink);
-    void this.unsubscribe?.();
+    void this.unsubscribe?.().catch(() => undefined);
+    this.unsubscribe = undefined;
     if (this.templateTimer) window.clearInterval(this.templateTimer);
     if (this.debounceTimer) window.clearTimeout(this.debounceTimer);
     if (this.countdownTimer !== undefined) window.clearInterval(this.countdownTimer);
@@ -6037,8 +6038,7 @@ export class WristAssistantPanel extends LitElement {
     this.records = [];
     this.ownerBusy = true;
     try {
-      await this.unsubscribe?.();
-      this.unsubscribe = await subscribeChanges(this.hass, ownerId, () => void this.loadRecords());
+      await this.listenTo(ownerId);
       // The other devices first: the picker's grid and every Devices
       // menu are read off those lists, and a seat count taken from a list
       // that has not landed would offer a seat something already holds.
@@ -6046,6 +6046,32 @@ export class WristAssistantPanel extends LitElement {
       await this.loadRecords();
     } finally {
       this.ownerBusy = false;
+    }
+  }
+
+  /**
+   * Follow one device's commits, dropping the previous device's feed.
+   *
+   * Neither half may stop the device from loading. The old feed can be gone
+   * on the server already: after a restart the socket resubscribes, and a
+   * resubscribe sent before the integration is ready fails and keeps the old
+   * id, whose unsubscribe then answers "Subscription not found". Thrown from
+   * here, that left every list empty behind a "Could not load devices" line,
+   * which reads as every complication gone. The lists are the truth either
+   * way; the feed only says when to read them again.
+   */
+  private async listenTo(ownerId: string) {
+    const off = this.unsubscribe;
+    this.unsubscribe = undefined;
+    try {
+      await off?.();
+    } catch {
+      // Already gone on the server, which is what was asked.
+    }
+    try {
+      this.unsubscribe = await subscribeChanges(this.hass, ownerId, () => void this.loadRecords());
+    } catch {
+      // No live feed: the lists still load, and every write reads them again.
     }
   }
 
