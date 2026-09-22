@@ -2159,21 +2159,23 @@ export class WristAssistantPanel extends LitElement {
     .pk-card.picking { cursor: pointer; }
     .pk-card.picked { border-color: var(--wa-accent); box-shadow: 0 0 0 3px var(--wa-sel-ring); }
     .pk-card-pick { flex: none; margin: 0; accent-color: var(--wa-accent); }
-    /* The bar under the grid while cards are picked. Its own strip above the
-       foot, so Import and New never move when picking is turned on. */
+    /* The bar over the grid while cards are picked, under the tabs. It was
+       under the grid, which on a long list is a screen and a half from the
+       card being ticked: the acts belong where the eye already is. Its own
+       strip, so Import and New never move when picking is turned on. */
     .pk-bar {
       display: flex; align-items: center; flex-wrap: wrap; gap: 8px; flex: none;
-      padding: 8px 18px; border-top: 1px solid var(--wa-line); background: var(--wa-card);
+      padding: 8px 18px; border-bottom: 1px solid var(--wa-line); background: var(--wa-card);
     }
     .pk-bar-count { font-size: 12px; color: var(--wa-muted); min-width: 90px; }
     .pk-bar-ask { font-size: 12px; color: var(--wa-ink); }
     .pk-bar-gap { flex: 1; min-width: 0; }
     .pk-bar .ghost svg { width: 14px; height: 14px; }
-    /* "Put on…" opens upwards: the bar sits at the bottom of the dialog, so a
-       menu hung below it would be off the end of the surface. */
+    /* "Put on…" opens downwards, over the grid: the bar is at the top of the
+       dialog, so a menu hung above it would be off the end of the surface. */
     .pk-bar-menu { position: relative; display: inline-flex; }
     .pk-bar-list {
-      position: absolute; bottom: calc(100% + 6px); right: 0; z-index: 6; min-width: 190px;
+      position: absolute; top: calc(100% + 6px); right: 0; z-index: 6; min-width: 190px;
       display: flex; flex-direction: column; gap: 2px; padding: 6px;
       border: 1px solid var(--wa-line); border-radius: 10px; background: var(--wa-card); box-shadow: 0 10px 30px rgba(0,0,0,.35);
     }
@@ -2183,6 +2185,10 @@ export class WristAssistantPanel extends LitElement {
     }
     .pk-bar-row:hover { background: color-mix(in srgb, var(--wa-ink) 9%, transparent); }
     .pk-bar-row svg { width: 15px; height: 15px; flex: none; color: var(--wa-muted); }
+    /* The one filled button on the bar: every other act is one of several
+       things to do to a pick, and this is the way back out of the mode. */
+    .pk-bar-done { display: inline-flex; align-items: center; gap: 6px; flex: none; margin-left: 4px; }
+    .pk-bar-done svg { width: 14px; height: 14px; }
     .pk-pick-btn {
       display: inline-flex; align-items: center; gap: 6px; flex: none; font: inherit; font-size: 12.5px;
       padding: 6px 10px; border-radius: var(--wa-r-md); border: 1px solid var(--wa-line);
@@ -9355,6 +9361,7 @@ export class WristAssistantPanel extends LitElement {
         <button class="icon" title="Close" aria-label="Close" @click=${() => this.closePicker()}>${uiIcon("close")}</button>
       </div>
       ${this.ownerBusy ? nothing : this.renderPickerTabs(tabs, tab, this.pickerPeople(people))}
+      ${this.pickerSelecting ? this.renderPickerBar() : nothing}
       <div class="pk-body" id="pk-tabpanel" role="tabpanel" aria-labelledby=${`pk-tab-${tab}`}>
         ${this.ownerBusy
           ? html`<div class="empty">Loading…</div>`
@@ -9362,7 +9369,6 @@ export class WristAssistantPanel extends LitElement {
             ? this.renderPickerSections(rows, devices, query !== "" || filter !== "all", unsaved, emptyOf, this.pickerPeople(people))
             : this.renderPickerTabBody(rows, devices, tab, unsaved, emptyOf)}
       </div>
-      ${this.pickerSelecting ? this.renderPickerBar() : nothing}
       ${this.renderPickerFoot()}
     </dialog>`;
   }
@@ -9791,8 +9797,9 @@ export class WristAssistantPanel extends LitElement {
           <button type="button" class="ghost danger small" ?disabled=${busy || none}
             title="Delete these complications"
             @click=${() => { this.pickerBatchAsk = "delete"; }}>${uiIcon("delete")}<span>Delete</span></button>`}
-      <button type="button" class="ghost small" ?disabled=${this.pickerBatchNote !== undefined}
-        @click=${() => this.setPickerSelecting(false)}>Done</button>
+      <button type="button" class="primary small pk-bar-done" ?disabled=${this.pickerBatchNote !== undefined}
+        title="Stop picking and go back to opening one card at a time"
+        @click=${() => this.setPickerSelecting(false)}>${uiIcon("check")}<span>Done</span></button>
     </div>`;
   }
 

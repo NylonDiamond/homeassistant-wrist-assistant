@@ -2714,21 +2714,23 @@ ${wM(c)}`}}delete s.hidden,delete s.linkId;let l=Ul(a);if(l.length>0){let d=l.sl
     .pk-card.picking { cursor: pointer; }
     .pk-card.picked { border-color: var(--wa-accent); box-shadow: 0 0 0 3px var(--wa-sel-ring); }
     .pk-card-pick { flex: none; margin: 0; accent-color: var(--wa-accent); }
-    /* The bar under the grid while cards are picked. Its own strip above the
-       foot, so Import and New never move when picking is turned on. */
+    /* The bar over the grid while cards are picked, under the tabs. It was
+       under the grid, which on a long list is a screen and a half from the
+       card being ticked: the acts belong where the eye already is. Its own
+       strip, so Import and New never move when picking is turned on. */
     .pk-bar {
       display: flex; align-items: center; flex-wrap: wrap; gap: 8px; flex: none;
-      padding: 8px 18px; border-top: 1px solid var(--wa-line); background: var(--wa-card);
+      padding: 8px 18px; border-bottom: 1px solid var(--wa-line); background: var(--wa-card);
     }
     .pk-bar-count { font-size: 12px; color: var(--wa-muted); min-width: 90px; }
     .pk-bar-ask { font-size: 12px; color: var(--wa-ink); }
     .pk-bar-gap { flex: 1; min-width: 0; }
     .pk-bar .ghost svg { width: 14px; height: 14px; }
-    /* "Put on…" opens upwards: the bar sits at the bottom of the dialog, so a
-       menu hung below it would be off the end of the surface. */
+    /* "Put on…" opens downwards, over the grid: the bar is at the top of the
+       dialog, so a menu hung above it would be off the end of the surface. */
     .pk-bar-menu { position: relative; display: inline-flex; }
     .pk-bar-list {
-      position: absolute; bottom: calc(100% + 6px); right: 0; z-index: 6; min-width: 190px;
+      position: absolute; top: calc(100% + 6px); right: 0; z-index: 6; min-width: 190px;
       display: flex; flex-direction: column; gap: 2px; padding: 6px;
       border: 1px solid var(--wa-line); border-radius: 10px; background: var(--wa-card); box-shadow: 0 10px 30px rgba(0,0,0,.35);
     }
@@ -2738,6 +2740,10 @@ ${wM(c)}`}}delete s.hidden,delete s.linkId;let l=Ul(a);if(l.length>0){let d=l.sl
     }
     .pk-bar-row:hover { background: color-mix(in srgb, var(--wa-ink) 9%, transparent); }
     .pk-bar-row svg { width: 15px; height: 15px; flex: none; color: var(--wa-muted); }
+    /* The one filled button on the bar: every other act is one of several
+       things to do to a pick, and this is the way back out of the mode. */
+    .pk-bar-done { display: inline-flex; align-items: center; gap: 6px; flex: none; margin-left: 4px; }
+    .pk-bar-done svg { width: 14px; height: 14px; }
     .pk-pick-btn {
       display: inline-flex; align-items: center; gap: 6px; flex: none; font: inherit; font-size: 12.5px;
       padding: 6px 10px; border-radius: var(--wa-r-md); border: 1px solid var(--wa-line);
@@ -6061,10 +6067,10 @@ ${wM(c)}`}}delete s.hidden,delete s.linkId;let l=Ul(a);if(l.length>0){let d=l.sl
         <button class="icon" title="Close" aria-label="Close" @click=${()=>this.closePicker()}>${R("close")}</button>
       </div>
       ${this.ownerBusy?m:this.renderPickerTabs(o,s,this.pickerPeople(a))}
+      ${this.pickerSelecting?this.renderPickerBar():m}
       <div class="pk-body" id="pk-tabpanel" role="tabpanel" aria-labelledby=${`pk-tab-${s}`}>
         ${this.ownerBusy?h`<div class="empty">Loading…</div>`:s===In?this.renderPickerSections(u,i,l!==""||p!=="all",f,g,this.pickerPeople(a)):this.renderPickerTabBody(u,i,s,f,g)}
       </div>
-      ${this.pickerSelecting?this.renderPickerBar():m}
       ${this.renderPickerFoot()}
     </dialog>`}renderPickerSections(t,i,a,r,o,s){if(t.length===0&&r===void 0)return h`<div class="empty">${o}</div>`;let l=af(t,i).filter(c=>c.rows.length>0||this.unsavedBelongsTo(r,c.ownerId)||!a&&c.kind!=="library");if(l.length===0)return h`<div class="empty">${o}</div>`;let d=uv(l,s,c=>s[c]?.label??"");return h`${d.map(c=>this.renderPickerBand(c,r,s))}`}renderPickerBand(t,i,a){let r=t.sections.map(d=>this.renderPickerSection(d,i,a));if(t.personIndex<0)return h`${r}`;let o=nc(t.personIndex),s=this.pickerIsShut(t.key),l=t.sections.reduce((d,c)=>d+c.rows.length+(this.unsavedBelongsTo(i,c.ownerId)?1:0),0);return h`<section class="pk-band ${s?"shut":""}" style=${o?`--pk-person: ${o}`:m}>
       <h3 class="pk-band-top">
@@ -6162,8 +6168,9 @@ ${wM(c)}`}}delete s.hidden,delete s.linkId;let l=Ul(a);if(l.length>0){let d=l.sl
           <button type="button" class="ghost danger small" ?disabled=${r||o}
             title="Delete these complications"
             @click=${()=>{this.pickerBatchAsk="delete"}}>${R("delete")}<span>Delete</span></button>`}
-      <button type="button" class="ghost small" ?disabled=${this.pickerBatchNote!==void 0}
-        @click=${()=>this.setPickerSelecting(!1)}>Done</button>
+      <button type="button" class="primary small pk-bar-done" ?disabled=${this.pickerBatchNote!==void 0}
+        title="Stop picking and go back to opening one card at a time"
+        @click=${()=>this.setPickerSelecting(!1)}>${R("check")}<span>Done</span></button>
     </div>`}renderBatchAdd(t){let i=this.pickerBatchAdd,a=this.batchTargets();return h`<span class="pk-bar-menu" data-dup="pk-bar-add">
       <button type="button" class="ghost small" aria-expanded=${i?"true":"false"}
         ?disabled=${t||a.length===0} title="Put a copy of each of these on another device"
