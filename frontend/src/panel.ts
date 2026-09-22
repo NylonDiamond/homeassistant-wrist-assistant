@@ -2159,6 +2159,33 @@ export class WristAssistantPanel extends LitElement {
     .pk-card.picking { cursor: pointer; }
     .pk-card.picked { border-color: var(--wa-accent); box-shadow: 0 0 0 3px var(--wa-sel-ring); }
     .pk-card-pick { flex: none; margin: 0; accent-color: var(--wa-accent); }
+    /* Every other checkbox in the panel is a switch, because every other one
+       turns a setting on. These do not: they say which of thirty cards this
+       act is about, and a row of sliding pills reads as thirty settings. A
+       tick box is what "this one, and this one" looks like, so the picker's
+       own boxes take their switch back off. */
+    input.pk-card-pick, input.pk-box-pick {
+      width: 17px; height: 17px; border-radius: 5px;
+      background: color-mix(in srgb, var(--wa-ink) 8%, transparent);
+      box-shadow: inset 0 0 0 1.5px var(--wa-line-strong);
+    }
+    input.pk-card-pick::after, input.pk-box-pick::after {
+      top: 2px; left: 6px; width: 4px; height: 8.5px; border-radius: 0;
+      background: none; box-shadow: none; opacity: 0;
+      border: solid var(--wa-primary-ink, #fff); border-width: 0 2px 2px 0;
+      transform: rotate(45deg); transition: opacity .1s ease-out;
+    }
+    input.pk-card-pick:checked, input.pk-box-pick:checked {
+      background: var(--wa-accent); box-shadow: inset 0 0 0 1.5px var(--wa-accent);
+    }
+    input.pk-card-pick:checked::after, input.pk-box-pick:checked::after { opacity: 1; transform: rotate(45deg); }
+    input.pk-card-pick:indeterminate, input.pk-box-pick:indeterminate {
+      background: color-mix(in srgb, var(--wa-accent) 35%, transparent);
+      box-shadow: inset 0 0 0 1.5px var(--wa-accent);
+    }
+    input.pk-card-pick:hover:not(:disabled), input.pk-box-pick:hover:not(:disabled) {
+      box-shadow: inset 0 0 0 1.5px var(--wa-accent);
+    }
     /* The bar over the grid while cards are picked, under the tabs. It was
        under the grid, which on a long list is a screen and a half from the
        card being ticked: the acts belong where the eye already is. Its own
@@ -2170,7 +2197,25 @@ export class WristAssistantPanel extends LitElement {
     .pk-bar-count { font-size: 12px; color: var(--wa-muted); min-width: 90px; }
     .pk-bar-ask { font-size: 12px; color: var(--wa-ink); }
     .pk-bar-gap { flex: 1; min-width: 0; }
-    .pk-bar .ghost svg { width: 14px; height: 14px; }
+    /* The acts wear a border and a fill here rather than the quiet ghost
+       they wear over a card. The bar is a row of six words on a strip of its
+       own: without an edge each one read as a label, and the row as a
+       sentence. */
+    .pk-bar .ghost {
+      min-height: 28px; padding: 0 10px;
+      border-color: var(--wa-line); background: var(--wa-panel); color: var(--wa-ink);
+    }
+    .pk-bar .ghost:hover:not(:disabled) { border-color: var(--wa-line-strong); background: var(--wa-card); }
+    .pk-bar .ghost.danger {
+      color: var(--error-color, #b42318);
+      border-color: color-mix(in srgb, var(--error-color, #b42318) 45%, var(--wa-line));
+      background: color-mix(in srgb, var(--error-color, #b42318) 10%, var(--wa-panel));
+    }
+    .pk-bar .ghost.danger:hover:not(:disabled) {
+      background: color-mix(in srgb, var(--error-color, #b42318) 18%, var(--wa-panel));
+    }
+    .pk-bar .ghost svg { width: 14px; height: 14px; color: var(--wa-muted); }
+    .pk-bar .ghost.danger svg { color: inherit; }
     /* "Put on…" opens downwards, over the grid: the bar is at the top of the
        dialog, so a menu hung above it would be off the end of the surface. */
     .pk-bar-menu { position: relative; display: inline-flex; }
@@ -9597,7 +9642,10 @@ export class WristAssistantPanel extends LitElement {
     const keys = rows.map((row) => this.pickKeyOf(row, at)).filter((k): k is string => k !== undefined);
     if (keys.length === 0) return nothing;
     const all = keys.every((k) => this.pickerPicked.includes(k));
-    return html`<input type="checkbox" class="pk-box-pick" .checked=${all}
+    // Half the box picked is worth saying now that the control is a tick box:
+    // as a switch it could only be on or off, and "some" read as none.
+    const some = !all && keys.some((k) => this.pickerPicked.includes(k));
+    return html`<input type="checkbox" class="pk-box-pick" .checked=${all} .indeterminate=${some}
       title=${all ? "Let these go" : "Pick every card in this box"}
       aria-label=${all ? "Let this shape's cards go" : "Pick this shape's cards"}
       ?disabled=${this.saving}
