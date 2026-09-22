@@ -24,9 +24,10 @@ export interface Person {
   /** The phone's owner id, or a lone watch's own. Stable across re-renders and
    * unique in the home, so it keys a checkbox row. */
   key: string;
-  /** What to call this person in a list: the phone's name, because "Jesse's
-   * iPhone" is how the phone names its owner. No "(iPhone)" suffix; the group
-   * is a person, and the devices under it say what they are. */
+  /** What to call this person in a list: their watch's name with the words
+   * about the watch taken off it, or the phone's name when that leaves
+   * nothing. See `personNameFrom`. No "(iPhone)" suffix; the group is a
+   * person, and the devices under it say what they are. */
   label: string;
   owners: OwnerSummary[];
 }
@@ -46,6 +47,38 @@ function byKind(owners: readonly OwnerSummary[]): OwnerSummary[] {
 
 function nameOf(owner: OwnerSummary): string {
   return owner.device_name ?? owner.owner_watch_id;
+}
+
+/**
+ * A person's name, taken out of the name they gave one of their devices.
+ *
+ * There is no person in the data at all: an owner is an id and the name the
+ * device reported, and nothing anywhere says whose device it is. So the name
+ * of the group has to be read out of one of the device names, and the watch is
+ * the one worth reading. A watch is named by the person who wears it, "Jesse
+ * Apple Watch" or "Chen" or "Jesse's Apple Watch"; a phone very often keeps
+ * the model it shipped as, and a household headed "iPhone 15 Pro" is a
+ * household whose groups are named after nobody.
+ *
+ * So: the watch's name with the words that are about the watch taken off the
+ * end, and what is left is the person. Nothing is left when the watch kept its
+ * own default name, and the phone's name is the answer then, which is what
+ * this always used to be.
+ *
+ * It is a reading, not a fact, and it can read a watch named for a room as a
+ * person of that name. That is the cost of a household having no people in it.
+ */
+function personNameFrom(watch: OwnerSummary | undefined, phone: OwnerSummary | undefined): string | undefined {
+  if (!watch) return undefined;
+  const raw = (watch.device_name ?? "").trim();
+  if (raw === "") return undefined;
+  // "Jesse's Apple Watch" and "Jesse Apple Watch" and "Jesse Watch" all end in
+  // words about the watch; "Chen" ends in none and is already the answer.
+  const cut = raw.replace(/\s*(?:apple\s+)?watch(?:\s+(?:ultra|se))?\s*\d*$/i, "").replace(/['\u2019]s$/i, "").trim();
+  if (cut === "") return undefined;
+  // A watch named after the phone it is paired to names nobody either.
+  if (phone && cut.toLocaleLowerCase() === nameOf(phone).trim().toLocaleLowerCase()) return undefined;
+  return cut;
 }
 
 /**
@@ -104,7 +137,11 @@ export function peopleOf(owners: readonly OwnerSummary[]): Person[] {
     const phone = group.find((o) => deviceKindOf(o) === "iphone");
     const watches = group.filter((o) => deviceKindOf(o) !== "iphone");
     const head = phone ?? watches[0]!;
-    return { key, label: nameOf(head), owners: phone ? [phone, ...watches] : watches };
+    return {
+      key,
+      label: personNameFrom(watches[0], phone) ?? nameOf(head),
+      owners: phone ? [phone, ...watches] : watches,
+    };
   });
 }
 

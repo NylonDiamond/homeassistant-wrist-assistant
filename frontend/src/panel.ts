@@ -514,6 +514,19 @@ function shapeGroupOrder(kind: DeviceKind): readonly string[] {
   return [...shapes, "control", "none"];
 }
 
+/**
+ * The custom property holding one shape's hue, ready to be set on its box.
+ *
+ * Undefined for a shape with no hue, which is the box of documents that have
+ * no shape at all: the CSS reads `var(--pk-shape, ...)`, so a box with
+ * nothing set falls back to the plain ground and the muted label without a
+ * rule of its own. The control has one; it is not a shape, but it is a box
+ * like any other and a box is what the colour is for.
+ */
+function shapeColorVar(key: string): string | undefined {
+  return key === "none" ? undefined : `--pk-shape: var(--wa-shape-${key})`;
+}
+
 function shapeGroupRank(order: readonly string[], key: string): number {
   const i = order.indexOf(key);
   return i < 0 ? order.length : i;
@@ -1645,6 +1658,24 @@ export class WristAssistantPanel extends LitElement {
       --wa-person-4: #be123c;
       --wa-person-5: #0369a1;
       --wa-person-6: #4d7c0f;
+      /* One hue per shape, for the box each shape's cards sit in. The same
+         hue wherever that shape appears, on every device and in every list:
+         the colour is the shape's, not the box's, so a household learns
+         "circular is teal" once and reads it everywhere after that.
+         Ordered the way the boxes are, and far enough apart that the two
+         Lock Screen slivers never read as the Home Screen tile above them.
+         These are washed into the ground at a tenth, so they only have to be
+         told apart as a tint, but they name the box's label at full strength
+         too and so are dark enough here to read on a white card. */
+      --wa-shape-rectangular: #0369a1;
+      --wa-shape-circular: #0f766e;
+      --wa-shape-corner: #9a5b00;
+      --wa-shape-inline: #6d28d9;
+      --wa-shape-small: #be123c;
+      --wa-shape-medium: #b45309;
+      --wa-shape-large: #4d7c0f;
+      --wa-shape-xlarge: #1d4ed8;
+      --wa-shape-control: #86198f;
       --wa-r-sm: 8px;
       --wa-r-md: 12px;
       --wa-r-lg: 16px;
@@ -1691,6 +1722,16 @@ export class WristAssistantPanel extends LitElement {
       --wa-person-4: #fb7185;
       --wa-person-5: #38bdf8;
       --wa-person-6: #a3e635;
+      /* The same shape hues, lifted for the dark ground. */
+      --wa-shape-rectangular: #38bdf8;
+      --wa-shape-circular: #5eead4;
+      --wa-shape-corner: #fbbf24;
+      --wa-shape-inline: #a78bfa;
+      --wa-shape-small: #fb7185;
+      --wa-shape-medium: #fdba74;
+      --wa-shape-large: #a3e635;
+      --wa-shape-xlarge: #818cf8;
+      --wa-shape-control: #f0abfc;
       --wa-shadow-pop: 0 16px 48px rgba(0,0,0,.6);
       color-scheme: dark;
       scrollbar-color: rgba(255,255,255,.14) transparent;
@@ -2031,15 +2072,23 @@ export class WristAssistantPanel extends LitElement {
        caption is set small and spaced instead, so it reads as a label on the
        box rather than as one more thing competing with the cards' own names. */
     .pk-boxes { display: flex; flex-direction: column; gap: 8px; }
+    /* Washed with its own shape's hue, over the same ground every box sits
+       on, so the tint is the only thing telling two boxes apart and every
+       rectangular box in the dialog is the same colour. A shape with no hue
+       of its own, which is a document with no shape at all, falls back to the
+       plain ground rather than borrowing somebody else's. */
     .pk-box {
       display: flex; flex-direction: column; min-width: 0; padding: 8px 10px 10px;
       border: 1px solid var(--wa-line); border-radius: 10px;
-      background: color-mix(in srgb, var(--wa-card) 45%, var(--wa-panel));
+      background: color-mix(in srgb, var(--pk-shape, transparent) 10%,
+        color-mix(in srgb, var(--wa-card) 45%, var(--wa-panel)));
     }
     .pk-box-top { display: flex; align-items: center; gap: 7px; min-width: 0; margin: 0 0 8px 2px; }
+    /* The label takes the hue at full strength: the wash alone is too faint to
+       learn a shape's colour from, and the two together teach it in one look. */
     .pk-box-name {
       font-size: 10.5px; font-weight: 700; letter-spacing: .11em; text-transform: uppercase;
-      color: var(--wa-muted); white-space: nowrap;
+      color: var(--pk-shape, var(--wa-muted)); white-space: nowrap;
     }
     .pk-box-count { font-size: 10.5px; font-weight: 600; color: var(--wa-muted); opacity: .65; }
     .pk-box-pick { flex: none; margin: 0; accent-color: var(--wa-accent); }
@@ -9427,7 +9476,8 @@ export class WristAssistantPanel extends LitElement {
       }
     }
     return html`<div class="pk-boxes">
-      ${groups.map((group) => html`<section class="pk-box" aria-label=${group.label}>
+      ${groups.map((group) => html`<section class="pk-box" aria-label=${group.label}
+        style=${shapeColorVar(group.key) ?? nothing}>
         <div class="pk-box-top">
           ${this.renderShapePick(group.rows, at)}
           <span class="pk-box-name">${group.label}</span>

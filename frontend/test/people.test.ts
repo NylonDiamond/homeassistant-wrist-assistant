@@ -91,9 +91,49 @@ describe("peopleOf", () => {
   it("makes a watch with no phone at all its own person", () => {
     const people = peopleOf([watch("w1", "Jesse's Watch"), phone("p1", "Chen's iPhone")]);
     expect(people.map((p) => [p.key, p.label])).toEqual([
-      ["w1", "Jesse's Watch"],
+      ["w1", "Jesse"],
       ["p1", "Chen's iPhone"],
     ]);
+  });
+
+  // There is no person in the data: an owner is an id and the name the device
+  // reported. A watch is named by whoever wears it, so the name of the group
+  // is read out of the watch, with the words about the watch taken off.
+  describe("naming a person", () => {
+    it("takes the person out of the watch's name", () => {
+      const cases: [string, string][] = [
+        ["Jesse Apple Watch", "Jesse"],
+        ["Jesse's Apple Watch", "Jesse"],
+        ["Jesse\u2019s Watch", "Jesse"],
+        ["Chen", "Chen"],
+        ["Chen Apple Watch Ultra", "Chen"],
+        ["Chen Apple Watch 2", "Chen"],
+      ];
+      for (const [given, want] of cases) {
+        expect(peopleOf([watch("w1", given, { paired_iphone_id: "p1" }), phone("p1", "iPhone 15 Pro")])[0]?.label,
+          `${given} should read as ${want}`).toBe(want);
+      }
+    });
+
+    // A watch that kept the name it shipped with names nobody, and the phone's
+    // name is the answer then, which is what this always used to be.
+    it("falls back to the phone when the watch kept its own name", () => {
+      for (const given of ["Apple Watch", "Watch", "  "]) {
+        expect(peopleOf([watch("w1", given, { paired_iphone_id: "p1" }), phone("p1", "Jesse's iPhone")])[0]?.label,
+          `${given} should fall back`).toBe("Jesse's iPhone");
+      }
+    });
+
+    // A watch named after the phone it is paired to names nobody either.
+    it("falls back when the watch is named after the phone", () => {
+      expect(peopleOf([watch("w1", "iPhone 15 Pro", { paired_iphone_id: "p1" }), phone("p1", "iPhone 15 Pro")])[0]?.label)
+        .toBe("iPhone 15 Pro");
+    });
+
+    // A person with a phone and no watch has nothing to read.
+    it("keeps the phone's name for a person with no watch", () => {
+      expect(peopleOf([phone("p1", "iPhone 15 Pro")])[0]?.label).toBe("iPhone 15 Pro");
+    });
   });
 
   // Nothing can be saved to an orphan, so an "Appears on" list holding one would
