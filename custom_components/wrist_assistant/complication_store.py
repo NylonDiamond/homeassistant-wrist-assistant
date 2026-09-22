@@ -1368,6 +1368,7 @@ class ComplicationStore:
                 raise ComplicationValidationError(
                     f"owner already has {COMPLICATION_MAX_PER_OWNER} complications"
                 )
+            self._refuse_held_seat(by_id, record_id, document, None)
             record = ComplicationRecord(
                 id=record_id,
                 owner_watch_id=owner_watch_id,
@@ -1386,6 +1387,7 @@ class ComplicationStore:
                 f"{base_revision}",
                 existing,
             )
+        self._refuse_held_seat(by_id, record_id, document, existing)
         # The document about to be replaced becomes a past revision, before
         # anything on the record moves.
         self._remember(existing)
@@ -1394,6 +1396,48 @@ class ComplicationStore:
         existing.deleted = False
         existing.document = document
         return self._commit(existing)
+
+    @staticmethod
+    def _refuse_held_seat(
+        by_id: dict[str, ComplicationRecord],
+        record_id: str,
+        document: dict[str, Any],
+        existing: ComplicationRecord | None,
+    ) -> None:
+        """Refuse a save that puts a second document of one shape in a slot.
+
+        A slot holds at most one document per shape, and the devices enforce
+        that by collapsing: the picker shows one row per slot, so two circular
+        documents in slot 3 are one row on the phone and the other can never
+        be placed. The panel picks a free slot before it writes, but from a
+        list it read a moment earlier, and a device whose list it could not
+        read looks empty to it. This check does not depend on what the panel
+        saw. The batch import in ``wa_v2_views`` makes the same check.
+
+        Only a seat that is new to this record is refused: a create, a move to
+        another slot, or a shape the record did not draw there before. A
+        record already in the slot with these shapes keeps saving, or a user
+        whose store already holds a clash could not edit either record to fix
+        it. A tombstone holds no seat, so reviving one is a new seat and is
+        checked like a create.
+        """
+        wanted = {(document["slotIndex"], shape) for shape in shapes_of(document)}
+        if existing is not None:
+            wanted -= _slot_shapes(existing)
+        if not wanted:
+            return
+        for other in by_id.values():
+            if other.id == record_id or other.deleted:
+                continue
+            clash = _slot_shapes(other) & wanted
+            if not clash:
+                continue
+            name = (other.document or {}).get("name") or other.id
+            shapes = ", ".join(sorted(shape for _slot, shape in clash))
+            raise ComplicationValidationError(
+                f'slot {document["slotIndex"]} already holds "{name}" for the '
+                f"{shapes} shape on this device; pick another slot"
+            )
 
     def delete(
         self,

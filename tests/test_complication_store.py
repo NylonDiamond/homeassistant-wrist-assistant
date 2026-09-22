@@ -203,6 +203,133 @@ def test_per_owner_cap(mod):
     store.save(OWNER, _doc(), base_revision=None, updated_by="t")
 
 
+# ── one document per shape per slot ────────────────────────────────────────
+
+
+def _seat_doc(**overrides) -> dict:
+    """A document at the newest schema, so it may draw one shape or none."""
+    return _doc(schemaVersion=MAX_SCHEMA, **overrides)
+
+
+def test_second_document_of_a_shape_in_a_slot_is_refused(mod):
+    store = _new(mod)
+    first = _seat_doc(name="Kitchen", slotIndex=3, supportedFamilies=["circular"])
+    store.save(OWNER, first, base_revision=None, updated_by="t")
+    with pytest.raises(mod.ComplicationValidationError) as exc:
+        store.save(
+            OWNER,
+            _seat_doc(name="Hallway", slotIndex=3, supportedFamilies=["circular"]),
+            base_revision=None,
+            updated_by="t",
+        )
+    assert "Kitchen" in exc.value.message
+    assert "slot 3" in exc.value.message
+    assert len(store.list(OWNER)) == 1
+
+
+def test_different_shapes_share_a_slot(mod):
+    store = _new(mod)
+    store.save(OWNER, _seat_doc(slotIndex=3, supportedFamilies=["circular"]), base_revision=None, updated_by="t")
+    rec = store.save(
+        OWNER, _seat_doc(slotIndex=3, supportedFamilies=["rectangular"]), base_revision=None, updated_by="t"
+    )
+    assert rec.revision == 1
+    assert len(store.list(OWNER)) == 2
+
+
+def test_one_shared_shape_is_enough_to_refuse(mod):
+    store = _new(mod)
+    store.save(OWNER, _seat_doc(slotIndex=3, supportedFamilies=["circular", "corner"]), base_revision=None, updated_by="t")
+    with pytest.raises(mod.ComplicationValidationError) as exc:
+        store.save(
+            OWNER,
+            _seat_doc(slotIndex=3, supportedFamilies=["rectangular", "corner"]),
+            base_revision=None,
+            updated_by="t",
+        )
+    assert "corner" in exc.value.message
+
+
+def test_a_record_keeps_saving_in_its_own_seat(mod):
+    store = _new(mod)
+    doc = _seat_doc(slotIndex=3, supportedFamilies=["circular"])
+    rec = store.save(OWNER, doc, base_revision=None, updated_by="t")
+    rec2 = store.save(OWNER, dict(doc, name="renamed"), base_revision=rec.revision, updated_by="t")
+    assert rec2.revision == 2
+
+
+def test_a_record_already_in_a_clash_still_saves_in_place(mod):
+    # A store written before this check may hold two circular documents in
+    # one slot. Editing either must still work, or nobody could fix it.
+    store = _new(mod)
+    a = _seat_doc(name="A", slotIndex=3, supportedFamilies=["circular"])
+    b = _seat_doc(name="B", slotIndex=4, supportedFamilies=["circular"])
+    store.save(OWNER, a, base_revision=None, updated_by="t")
+    rec_b = store.save(OWNER, b, base_revision=None, updated_by="t")
+    # Force the clash by writing under the check's nose.
+    store._records[OWNER][rec_b.id].document["slotIndex"] = 3
+    rec_b2 = store.save(
+        OWNER, dict(b, name="B2", slotIndex=3), base_revision=rec_b.revision, updated_by="t"
+    )
+    assert rec_b2.revision == 2
+
+
+def test_moving_into_a_held_slot_is_refused(mod):
+    store = _new(mod)
+    store.save(OWNER, _seat_doc(name="Kitchen", slotIndex=3, supportedFamilies=["circular"]), base_revision=None, updated_by="t")
+    doc = _seat_doc(name="Hallway", slotIndex=4, supportedFamilies=["circular"])
+    rec = store.save(OWNER, doc, base_revision=None, updated_by="t")
+    with pytest.raises(mod.ComplicationValidationError):
+        store.save(OWNER, dict(doc, slotIndex=3), base_revision=rec.revision, updated_by="t")
+    assert store.get(OWNER, doc["id"]).document["slotIndex"] == 4
+
+
+def test_growing_into_a_held_shape_is_refused(mod):
+    store = _new(mod)
+    store.save(OWNER, _seat_doc(name="Kitchen", slotIndex=3, supportedFamilies=["rectangular"]), base_revision=None, updated_by="t")
+    doc = _seat_doc(name="Hallway", slotIndex=3, supportedFamilies=["circular"])
+    rec = store.save(OWNER, doc, base_revision=None, updated_by="t")
+    with pytest.raises(mod.ComplicationValidationError):
+        store.save(
+            OWNER,
+            dict(doc, supportedFamilies=["circular", "rectangular"]),
+            base_revision=rec.revision,
+            updated_by="t",
+        )
+
+
+def test_a_tombstone_frees_its_seat(mod):
+    store = _new(mod)
+    doc = _seat_doc(slotIndex=3, supportedFamilies=["circular"])
+    rec = store.save(OWNER, doc, base_revision=None, updated_by="t")
+    store.delete(OWNER, doc["id"], base_revision=rec.revision, updated_by="t")
+    store.save(OWNER, _seat_doc(slotIndex=3, supportedFamilies=["circular"]), base_revision=None, updated_by="t")
+
+
+def test_seats_are_per_owner(mod):
+    store = _new(mod)
+    store.save(OWNER, _seat_doc(slotIndex=3, supportedFamilies=["circular"]), base_revision=None, updated_by="t")
+    store.save(OTHER, _seat_doc(slotIndex=3, supportedFamilies=["circular"]), base_revision=None, updated_by="t")
+
+
+def test_two_controls_cannot_share_a_slot(mod):
+    store = _new(mod)
+    control = {"kind": "toggle", "entityId": "switch.a"}
+    store.save(
+        OWNER,
+        _seat_doc(slotIndex=3, supportedFamilies=[], control=control),
+        base_revision=None,
+        updated_by="t",
+    )
+    with pytest.raises(mod.ComplicationValidationError):
+        store.save(
+            OWNER,
+            _seat_doc(slotIndex=3, supportedFamilies=[], control=control),
+            base_revision=None,
+            updated_by="t",
+        )
+
+
 # ── delete / tombstones ────────────────────────────────────────────────────
 
 

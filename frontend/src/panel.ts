@@ -151,7 +151,16 @@ import {
   newTargets,
   seatHoldersFor,
   slotForDuplicate,
+  unreadableRefusal,
 } from "./copies.js";
+import {
+  type SeatDevice,
+  type SeatRecord,
+  findSeatClashes,
+  planSeatRepair,
+  seatClashMessage,
+  seatRepairSummary,
+} from "./seatRepair.js";
 import {
   type NewKind,
   type ShapeGroup,
@@ -1486,6 +1495,10 @@ export class WristAssistantPanel extends LitElement {
   /** What the one-shape-per-document split did on this first open, with its
    * own Undo. See `splitShapes.ts`. */
   @state() private splitNotice?: SplitNotice;
+  /** Which documents in the home sit two to a seat, in the banner's words, or
+   * undefined when none do. Worked out whenever a list lands; the move behind
+   * the Fix button is planned again from fresh lists. See `seatRepair.ts`. */
+  @state() private seatClash?: string;
   /** Parsed config per saved record, keyed by id and invalidated by revision.
    * Every picker card draws the real complication, and parsing and compiling
    * every document in the home on every render of the grid is the one part of
@@ -6085,6 +6098,7 @@ export class WristAssistantPanel extends LitElement {
     } catch (err) {
       this.loadError = `Could not load complications: ${errText(err)}`;
     }
+    this.refreshSeatClash();
     this.warmPictures();
   }
 
@@ -6270,6 +6284,7 @@ export class WristAssistantPanel extends LitElement {
       }
     }
     this.otherLists = next;
+    this.refreshSeatClash();
   }
 
   /**
@@ -6307,6 +6322,33 @@ export class WristAssistantPanel extends LitElement {
     return list ? list.occupied.map((o) => ({ slot: o.slot })) : [];
   }
 
+  /**
+   * What one device's seats hold, or undefined when its list never came back.
+   *
+   * `loadOtherLists` drops a device that would not answer, so the panel has no
+   * entry for it at all. Reading that as an empty device is what let four
+   * copies pile into seat 0: with nothing held, every seat looks free, so
+   * every copy takes the first one and the device's picker draws one row for
+   * the lot. Every write that picks a seat on another device asks this first
+   * and refuses on undefined, and takes its holders from the answer, so there
+   * is no way to pick a seat without having asked.
+   *
+   * The badges that only say "full" go on reading an absent list as empty
+   * (`freeSlotOn` over `slotHoldersOn`). A badge writes nothing, and a device
+   * drawn as having room is a better guess than one drawn as full while its
+   * list is still on the way; the write behind it refuses anyway.
+   */
+  private seatsOn(ownerId: string): { held: SlotHolder[]; blocked: { slot: number }[] } | undefined {
+    if (ownerId !== this.ownerId && !this.otherLists.has(ownerId)) return undefined;
+    return { held: this.slotHoldersOn(ownerId), blocked: this.blockedSlotsOn(ownerId) };
+  }
+
+  /** Which of these devices could not be read, by the name the author knows
+   * them by. Empty is the only answer a write may carry on from. */
+  private unreadableAmong(targets: readonly { ownerId: string; label: string }[]): string[] {
+    return targets.filter((t) => this.seatsOn(t.ownerId) === undefined).map((t) => t.label);
+  }
+
   /** Slots something already holds on one device, its own copies included. */
   private usedSlotsOn(ownerId: string): number[] {
     const list = ownerId === this.ownerId
@@ -6317,6 +6359,111 @@ export class WristAssistantPanel extends LitElement {
       ...list.records.filter((r) => !r.deleted).map((r) => Number(r.document?.slotIndex ?? -1)),
       ...list.occupied.map((o) => o.slot),
     ];
+  }
+
+  // ── two documents in one seat ─────────────────────────────────────────
+  //
+  // A seat holds at most one document per shape, and a device's picker draws
+  // one row per seat, so a second document of the same shape in the same seat
+  // is a row nobody ever sees. The rules that write a seat have been taught
+  // not to make one; these three find the ones already written, say so, and
+  // move them on the author's word. The finding and the plan are pure and
+  // live in `seatRepair.ts`.
+
+  /** Every device in the home as the clash rule reads it. The Library is not
+   * one: nothing draws the shelf, so two documents in one of its seats are
+   * two documents waiting, not a row that went missing. */
+  private seatDevices(): SeatDevice[] {
+    const out: SeatDevice[] = [];
+    const add = (ownerId: string, records: readonly ComplicationRecord[], occupied: readonly OccupiedSlot[]) => {
+      if (isLibraryOwner(this.ownerOf(ownerId))) return;
+      out.push({
+        ownerId,
+        label: this.ownerName(ownerId),
+        records: records.filter((r) => !r.deleted).map((r): SeatRecord => ({
+          id: r.id,
+          name: String(r.document?.name ?? "").trim() || "Untitled",
+          slotIndex: Number(r.document?.slotIndex ?? -1),
+          families: shapesOf(r),
+          control: hasControlOf(r),
+          token: r.token,
+        })),
+        blocked: occupied.map((o) => ({ slot: o.slot })),
+        canShare: ownerCanSplit(this.ownerOf(ownerId)),
+      });
+    };
+    if (this.ownerId) add(this.ownerId, this.records, this.occupied);
+    for (const [ownerId, list] of this.otherLists) {
+      if (ownerId === this.ownerId) continue;
+      add(ownerId, list.records, list.occupied);
+    }
+    return out;
+  }
+
+  /** Read the lists that have landed and put the banner up, or take it down.
+   * Called wherever a list lands, since a clash can as easily be made on
+   * another device as found on this one. */
+  private refreshSeatClash() {
+    const words = seatClashMessage(findSeatClashes(this.seatDevices()));
+    this.seatClash = words === "" ? undefined : words;
+  }
+
+  /**
+   * Move the clashing documents apart, now.
+   *
+   * Never on its own: a move changes where a complication sits on somebody's
+   * watch, and a panel that quietly rearranged a home on load would be worse
+   * than the row it fixed. The lists are read again first, because the plan is
+   * about seats and a seat freed since the banner went up is the whole reason
+   * to look. The oldest write in each seat stays where it is, so whatever a
+   * face is already drawing goes on drawing.
+   */
+  private async fixSeatClashes() {
+    if (!this.hass.user?.is_admin || this.saving) return;
+    this.saving = true;
+    this.saveError = undefined;
+    this.copyStatus = undefined;
+    const failed: string[] = [];
+    let said: string | undefined;
+    try {
+      await this.loadOtherLists();
+      await this.loadRecords();
+      const plan = planSeatRepair(this.seatDevices());
+      const done: typeof plan.moves = [];
+      for (const move of plan.moves) {
+        const record = this.recordAt(move.ownerId, move.recordId);
+        if (!record?.document) {
+          failed.push(`${move.name} is no longer on ${move.label}`);
+          continue;
+        }
+        // The open document moves through its own draft or not at all: saving
+        // it from here would move the revision under unsaved work.
+        if (move.ownerId === this.ownerId && move.recordId === this.selectedId && this.draft?.dirty) {
+          failed.push(`${move.name} has unsaved changes, so save it here first`);
+          continue;
+        }
+        try {
+          const doc = { ...record.document, slotIndex: move.to };
+          const out = await saveRecord(this.hass, move.ownerId, doc, record.revision);
+          if (out.ok) done.push(move);
+          else failed.push(`${move.name}: ${out.message ?? out.error ?? "the save failed"}`);
+        } catch (err) {
+          failed.push(`${move.name}: ${errText(err)}`);
+        }
+      }
+      const lines = [seatRepairSummary({ moves: done, stuck: plan.stuck })];
+      if (failed.length > 0) lines.push(`${joinNames(failed)}.`);
+      said = lines.join(" ");
+    } catch (err) {
+      this.saveError = errText(err);
+    } finally {
+      this.saving = false;
+    }
+    // The banner goes up after the lists are read back, the way every other
+    // cross-device write puts its own up: a reload with nothing open clears
+    // the draft, and that takes this line with it.
+    await this.reloadAfterRowWrite(...this.seatDevices().map((d) => d.ownerId));
+    if (said !== undefined) this.copyStatus = said;
   }
 
   // ── send to watch ─────────────────────────────────────────────────────
@@ -7021,6 +7168,13 @@ export class WristAssistantPanel extends LitElement {
     this.saving = true;
     try {
       await this.loadOtherLists();
+      // A device whose list did not come back shows no seats at all, so every
+      // seat would look free and the copy would land on whatever holds seat 0.
+      const unread = this.unreadableAmong(owners);
+      if (unread.length > 0) {
+        this.saveError = unreadableRefusal(unread);
+        return;
+      }
       const plan = newRecords(owners, supportedFamilies(config)[0], (ownerId, f) => this.freeSlotOn(ownerId, f));
       for (const row of plan) {
         if (row.slotIndex < 0) {
@@ -8826,6 +8980,8 @@ export class WristAssistantPanel extends LitElement {
           ? html`<button class="link" ?disabled=${this.splitNotice.busy} @click=${this.splitNotice.undo}>Undo</button>`
           : nothing}
         <button class="link" @click=${() => { this.splitNotice = undefined; }}>Dismiss</button></div>` : nothing}
+      ${this.seatClash && this.hass.user?.is_admin ? html`<div class="banner warn link-note"><span>${this.seatClash}</span>
+        <button class="link" ?disabled=${this.saving} @click=${() => void this.fixSeatClashes()}>Fix</button></div>` : nothing}
       ${this.helpOpen ? this.renderHelpDialog() : nothing}
       ${this.newOpen ? this.renderNewDialog() : nothing}
       ${this.dupOpen ? this.renderDuplicateDialog() : nothing}
@@ -10440,8 +10596,13 @@ export class WristAssistantPanel extends LitElement {
     this.saveError = undefined;
     try {
       await this.loadOtherLists();
+      const seats = this.seatsOn(shelf.ownerId);
+      if (!seats) {
+        this.saveError = unreadableRefusal([UNASSIGNED_LABEL]);
+        return;
+      }
       const family = supportedFamilies(cfg)[0];
-      const slot = slotForDuplicate(family, this.slotHoldersOn(shelf.ownerId), this.blockedSlotsOn(shelf.ownerId));
+      const slot = slotForDuplicate(family, seats.held, seats.blocked);
       if (slot < 0) {
         this.saveError = `${UNASSIGNED_LABEL} has no free seat for this shape. Delete something in it first.`;
         return;
@@ -10543,7 +10704,12 @@ export class WristAssistantPanel extends LitElement {
       // Fresh lists: a seat taken since the menu opened is the whole reason to
       // look before writing.
       await this.loadOtherLists();
-      const slot = slotForDuplicate(family, this.slotHoldersOn(target.ownerId), this.blockedSlotsOn(target.ownerId));
+      const seats = this.seatsOn(target.ownerId);
+      if (!seats) {
+        this.saveError = unreadableRefusal([label]);
+        return;
+      }
+      const slot = slotForDuplicate(family, seats.held, seats.blocked);
       if (slot < 0) {
         this.saveError = `${label} has no free seat for this shape (iPhone presets count too). Delete a complication there first.`;
         return;
@@ -11516,14 +11682,22 @@ export class WristAssistantPanel extends LitElement {
       // Fresh lists: a seat taken since the dialog opened is the whole reason
       // to look before writing.
       await this.loadOtherLists();
+      // A device whose list did not come back shows no seats at all, so every
+      // seat would look free and the copy would land on whatever holds seat 0.
+      const unread = this.unreadableAmong(targets);
+      if (unread.length > 0) {
+        this.saveError = unreadableRefusal(unread);
+        return;
+      }
       for (const target of targets) {
+        const seats = this.seatsOn(target.ownerId)!;
         // On the device the design is already on, the copy takes the original's
         // own seat when that shape is free there, so a face that later places
         // both shows one name in one position group.
         const slot = slotForDuplicate(
           family,
-          this.slotHoldersOn(target.ownerId),
-          this.blockedSlotsOn(target.ownerId),
+          seats.held,
+          seats.blocked,
           target.ownerId === from.ownerId ? from.cfg.slotIndex : undefined,
         );
         if (slot < 0) {

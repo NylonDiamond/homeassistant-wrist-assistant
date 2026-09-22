@@ -18,6 +18,7 @@ import {
   ownersDrawing,
   seatHoldersFor,
   slotForDuplicate,
+  unreadableRefusal,
 } from "../src/copies.js";
 import { type SplitOwnerLike, SPLIT_GATE, ownerCanSplit } from "../src/splitShapes.js";
 import { LIBRARY_OWNER_ID } from "../src/version.js";
@@ -107,6 +108,15 @@ describe("joinNames", () => {
     expect(joinNames(["one"])).toBe("one");
     expect(joinNames(["one", "two"])).toBe("one and two");
     expect(joinNames(["one", "two", "three"])).toBe("one, two and three");
+  });
+});
+
+describe("unreadableRefusal", () => {
+  it("names the devices and says nothing was written", () => {
+    expect(unreadableRefusal(["Jesse's Watch"]))
+      .toBe("Jesse's Watch could not be read just now, so nothing was saved. Try again in a moment.");
+    expect(unreadableRefusal(["Jesse's Watch", "Roel's iPhone"]))
+      .toBe("Jesse's Watch and Roel's iPhone could not be read just now, so nothing was saved. Try again in a moment.");
   });
 });
 

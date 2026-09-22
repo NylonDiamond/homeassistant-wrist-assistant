@@ -87,6 +87,19 @@ export function joinNames(names: readonly string[]): string {
 }
 
 /**
+ * What a write says when it cannot see what a device already holds.
+ *
+ * A device whose list did not come back has no seats the panel can read, so
+ * every seat looks free and a copy lands in seat 0 on top of whatever is
+ * already there. That is how a tester ended up with four phone copies showing
+ * as one row. The write refuses instead of guessing, and says to try again,
+ * because the next fetch usually answers.
+ */
+export function unreadableRefusal(names: readonly string[]): string {
+  return `${joinNames(names)} could not be read just now, so nothing was saved. Try again in a moment.`;
+}
+
+/**
  * The shapes a device's record may carry.
  *
  * Not `familiesFor`, which answers what the panel offers this device to build.
