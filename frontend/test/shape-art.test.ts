@@ -10,7 +10,8 @@ import { nothing, svg } from "lit";
 
 import { ALL_FAMILIES, isHomeFamily } from "../src/layouts.js";
 import type { FamilyKind } from "../src/model.js";
-import { PHONE_FRAME, PHONE_LOCK_WINDOW, PHONE_WINDOW, controlDeviceArt, deviceCropArt, deviceShapeArt, inlineShown, phoneSlot, shapeArtKinds } from "../src/shapeArt.js";
+import { PHONE_FRAME, PHONE_LOCK_WINDOW, PHONE_WINDOW, controlDeviceArt, deviceCropArt, deviceShapeArt, inlineShown, phoneSlot, shapeArtKinds, shapeOnlyArt } from "../src/shapeArt.js";
+import type { LiveShapes } from "../src/shapeArt.js";
 import type { DeviceKind } from "../src/version.js";
 
 function flatten(node: unknown): string {
@@ -586,6 +587,114 @@ describe("shapeArtKinds", () => {
     expect(shapeArtKinds("corner")).toEqual(["watch"]);
     for (const family of ["small", "medium", "large", "xlarge"] as FamilyKind[]) {
       expect(shapeArtKinds(family)).toEqual(["iphone"]);
+    }
+  });
+});
+
+// The same complication with the device taken off: the shape fills the well,
+// and the case, the bands, the icons and the clock are all gone. This is the
+// list's own way of looking at thirty of them at once.
+describe("shapeOnlyArt", () => {
+  const bare = (family: FamilyKind | undefined, device: "watch" | "iphone", live: LiveShapes = {}) =>
+    flatten(shapeOnlyArt(family, device, live));
+  const box = (art: string) => {
+    const found = /viewBox=([\d.]+ [\d.]+ [\d.]+ [\d.]+)/.exec(art);
+    expect(found, art.slice(0, 120)).not.toBeNull();
+    const [x, y, width, height] = found![1]!.split(" ").map(Number) as [number, number, number, number];
+    return { x, y, width, height };
+  };
+  const picture = (width: number, height: number) =>
+    ({ art: svg`<svg class="complication" data-tag=p></svg>`, width, height });
+
+  it("draws no device at all", () => {
+    for (const family of ["rectangular", "circular", "corner", "inline"] as FamilyKind[]) {
+      const art = bare(family, "watch");
+      // The case, the bands and the crown of the watch drawing, and its clock.
+      expect(art).not.toContain("var(--wa-art-case)");
+      expect(art).not.toContain("10:09");
+    }
+    const phone = bare("small", "iphone");
+    expect(phone).not.toContain("var(--wa-art-case)");
+    expect(phone).not.toContain("9:41");
+  });
+
+  it("fits the whole shape in rather than trimming its edges", () => {
+    expect(bare("rectangular", "watch")).toContain(`preserveAspectRatio="xMidYMid meet"`);
+    expect(bare("rectangular", "watch")).not.toContain("slice");
+  });
+
+  it("takes the window from the real render, so the shape keeps its own proportions", () => {
+    const art = bare("rectangular", "watch", { rectangular: picture(181, 65.5) });
+    const window = box(art);
+    const pad = 181 * 0.05;
+    expect(window.width).toBeCloseTo(181 + pad * 2, 6);
+    expect(window.height).toBeCloseTo(65.5 + pad * 2, 6);
+    // The picture lands at its own size, so nothing is scaled away.
+    expect(art).toContain(`translate(${pad} ${pad}) scale(1)`);
+    expect(art).toContain("data-tag=p");
+  });
+
+  it("leaves the same room on every side, so the ring is never cut", () => {
+    const window = box(bare("rectangular", "watch", { rectangular: picture(100, 50) }));
+    // The padding is a share of the longer side, added twice.
+    expect(window.width).toBeCloseTo(100 * 1.1, 6);
+    expect(window.height).toBeCloseTo(50 + 100 * 0.1, 6);
+  });
+
+  it("falls back to the slot's own shape when there is no render", () => {
+    expect(box(bare("rectangular", "watch")).width / box(bare("rectangular", "watch")).height)
+      .toBeCloseTo((58 + 58 * 0.1) / (21 + 58 * 0.1), 6);
+    const round = box(bare("circular", "watch"));
+    expect(round.width).toBeCloseTo(round.height, 6);
+    expect(bare("circular", "watch")).toContain("<circle");
+    expect(bare("rectangular", "watch")).toContain("<rect");
+  });
+
+  it("takes a phone shape's fallback from the phone's own slot", () => {
+    const slot = phoneSlot("medium")!;
+    const window = box(bare("medium", "iphone"));
+    const pad = Math.max(slot.width, slot.height) * 0.05;
+    expect(window.width).toBeCloseTo(slot.width + pad * 2, 6);
+    expect(window.height).toBeCloseTo(slot.height + pad * 2, 6);
+  });
+
+  it("masks a round shape round and a rectangular one to its corners", () => {
+    expect(bare("circular", "watch", { circular: picture(100, 100) })).toMatch(/<clipPath id=pk-clip-\w+><circle/);
+    expect(bare("rectangular", "watch", { rectangular: picture(181, 65.5) })).toMatch(/<clipPath id=pk-clip-\w+><rect/);
+  });
+
+  // The corner's render is a whole screen quadrant with the content disc in
+  // it, so the drawing is of the disc alone, as it is on the device.
+  it("shows a corner's disc rather than the quadrant it was drawn in", () => {
+    const art = bare("corner", "watch", {
+      corner: { ...picture(100, 100), focus: { cx: 20, cy: 20, diameter: 40 } },
+    });
+    const window = box(art);
+    expect(window.width).toBeCloseTo(40 * 1.1, 6);
+    expect(art).toMatch(/<clipPath id=pk-clip-\w+><circle/);
+  });
+
+  // Inline is a symbol and a line of words rather than a canvas, so its render
+  // never says how wide the line is: the slot does.
+  it("draws inline as its line, at the slot's own width", () => {
+    const art = bare("inline", "watch", {
+      inline: { art: nothing, width: 0, height: 0, text: "Front Yard" },
+    });
+    expect(art).toContain("Front Yard");
+    expect(box(art).width / box(art).height).toBeCloseTo((58 + 5.8) / (8 + 5.8), 6);
+  });
+
+  it("draws a control as its tile, the same picture the device view draws", () => {
+    expect(bare(undefined, "watch")).toContain(`class="pk-crop ctl"`);
+    const tile = { art: svg`<div data-tag="tile"></div>`, width: 48, height: 30 };
+    expect(bare(undefined, "iphone", { control: tile })).toContain(`class="pk-card-ctl"`);
+  });
+
+  it("never throws, whatever it is asked for", () => {
+    for (const family of [...ALL_FAMILIES, undefined]) {
+      for (const device of ["watch", "iphone"] as const) {
+        expect(() => shapeOnlyArt(family, device, {})).not.toThrow();
+      }
     }
   });
 });

@@ -747,3 +747,96 @@ export function deviceCropArt(
   return html`<svg class="pk-crop" viewBox=${`${box.x} ${box.y} ${box.width} ${box.height}`}
     preserveAspectRatio=${phone ? "xMidYMid meet" : "xMidYMid slice"} aria-hidden="true">${body}</svg>`;
 }
+
+/** How much room is left round a shape drawn on its own, as a share of its
+ * longer side. Without it the hairline ring sits on the edge of the drawing
+ * and the well cuts half of it off. */
+const BARE_PAD = 0.05;
+
+/** The corner a shape drawn on its own is rounded by, as a share of its
+ * shorter side. The real radius is the device's and is in the device's units,
+ * which a picture drawn in the render's own units cannot borrow. */
+const BARE_RX = 0.12;
+
+/** The shape of one slot on the watch, which is the shape the drawing falls
+ * back to for a document this panel cannot render. The numbers are the slots
+ * `watchBody` lays out, so a stand-in is the same shape as the real thing. */
+function watchSlotBox(family: FamilyKind): { width: number; height: number } {
+  switch (family) {
+    case "circular":
+    case "corner":
+      return { width: 14, height: 14 };
+    case "inline":
+      return { width: 58, height: 8 };
+    default:
+      return { width: 58, height: 21 };
+  }
+}
+
+/**
+ * The picture the shape is drawn in, in whatever units it is drawn in.
+ *
+ * A real render is its own answer: it was made at the device's real slot size,
+ * so its width and height are the shape's true proportions. A corner's render
+ * is a whole screen quadrant, so its answer is the disc inside it instead.
+ * With no render at all the device's own slot says what shape to draw, and
+ * inline always asks the slot, because an inline render is the symbol beside
+ * the words rather than the line itself.
+ */
+function bareBox(
+  family: FamilyKind,
+  device: "watch" | "iphone",
+  shape: LiveShape | undefined,
+): { width: number; height: number } {
+  if (family !== "inline" && shape) {
+    if (shape.focus) return { width: shape.focus.diameter, height: shape.focus.diameter };
+    if (shape.art !== nothing && shape.width > 0 && shape.height > 0) return { width: shape.width, height: shape.height };
+  }
+  const slot = device === "iphone" ? phoneSlot(family) : undefined;
+  return slot ? { width: slot.width, height: slot.height } : watchSlotBox(family);
+}
+
+/** The lit fill a shape drawn on its own falls back to: the slot's own shape,
+ * so a document this panel cannot draw still says which shape it is. */
+function bareStandin(family: FamilyKind, slot: Slot, rx: number): unknown {
+  if (family === "circular" || family === "corner") {
+    return svg`<circle cx=${slot.x + slot.width / 2} cy=${slot.y + slot.height / 2}
+      r=${Math.min(slot.width, slot.height) / 2} fill=${ON} />`;
+  }
+  return svg`<rect x=${slot.x} y=${slot.y} width=${slot.width} height=${slot.height} rx=${rx} fill=${ON} />`;
+}
+
+/**
+ * The complication on its own, with no device round it.
+ *
+ * `deviceCropArt` answers "where does this sit", which is what somebody
+ * placing a complication wants and is a lot of watch case for somebody
+ * reading a list of thirty of them. This answers "what does it look like":
+ * the shape fills the well, and the crown, the bands, the case, the home
+ * screen icons and the clock are all left off.
+ *
+ * The whole shape is fitted in rather than trimmed. A window onto a screen
+ * can lose its edges, because a window is a piece of something anyway; the
+ * shape itself cannot, because its edges are part of what it is.
+ *
+ * A control is already drawn on its own, so it is the same picture either
+ * way: Control Center is not a place on a device.
+ */
+export function shapeOnlyArt(
+  family: FamilyKind | undefined,
+  device: "watch" | "iphone",
+  live: LiveShapes = {},
+): TemplateResult {
+  if (family === undefined) return controlBeside(live.control);
+  const shape = live[family];
+  const box = bareBox(family, device, shape);
+  const pad = Math.max(box.width, box.height) * BARE_PAD;
+  const slot = { x: pad, y: pad, width: box.width, height: box.height };
+  const rx = Math.min(box.width, box.height) * BARE_RX;
+  const round = family === "circular" || family === "corner";
+  const drawn = family === "inline"
+    ? placedInline(shape, slot, box.height * 0.55)
+    : placed(shape, slot, "fit", clipKey(), round ? "circle" : { rx });
+  return html`<svg class="pk-crop bare" viewBox=${`0 0 ${box.width + pad * 2} ${box.height + pad * 2}`}
+    preserveAspectRatio="xMidYMid meet" aria-hidden="true">${drawn ?? bareStandin(family, slot, rx)}</svg>`;
+}

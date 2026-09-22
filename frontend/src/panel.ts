@@ -166,7 +166,7 @@ import {
   shapeOffered,
 } from "./newComplication.js";
 import { type Person, deviceShortName, peopleNames, peopleOf } from "./people.js";
-import { type LiveDesign, type LiveShape, type LiveShapes, controlDeviceArt, deviceCropArt, deviceShapeArt } from "./shapeArt.js";
+import { type LiveDesign, type LiveShape, type LiveShapes, controlDeviceArt, deviceCropArt, deviceShapeArt, shapeOnlyArt } from "./shapeArt.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { type DeviceKind, type DeviceOwnerLike, LIBRARY_OWNER_ID, deviceKindOf, deviceNoun, deviceSupportsShapes, isLibraryOwner, ownerSupportsControls, updateDeviceMessage } from "./version.js";
 import { type SplitNotice, autoSplitShapes, editBlockedBySplitGate, ownerCanSplit } from "./splitShapes.js";
@@ -1070,6 +1070,12 @@ export class WristAssistantPanel extends LitElement {
    * Folded rather than open is the list, so a device added later opens
    * unfolded: the other way round, a new watch would arrive already shut. */
   @state() private pickerShut: readonly string[] = [];
+  /** Whether a card draws the complication on its own rather than on its
+   * device. The device says where a shape sits, which is what somebody
+   * placing one asks; the shape on its own is bigger and is what somebody
+   * reading a list of thirty asks. Kept in this browser, because it is how
+   * somebody likes to read the list. */
+  @state() private pickerBare = false;
   /** Whether the picker is picking several cards at once rather than opening
    * one. Per session: it is a thing being done, not a way of working. */
   @state() private pickerSelecting = false;
@@ -5335,7 +5341,7 @@ export class WristAssistantPanel extends LitElement {
     try {
       const raw = window.localStorage.getItem(LIST_STORE_KEY);
       if (!raw) return;
-      const saved = JSON.parse(raw) as { thumbStep?: unknown; detail?: unknown; addOpen?: unknown; addDetail?: unknown; pickerDevice?: unknown; pickerShut?: unknown };
+      const saved = JSON.parse(raw) as { thumbStep?: unknown; detail?: unknown; addOpen?: unknown; addDetail?: unknown; pickerDevice?: unknown; pickerShut?: unknown; pickerBare?: unknown };
       if (saved.thumbStep === 0 || saved.thumbStep === 1 || saved.thumbStep === 2) this.thumbStep = saved.thumbStep;
       if (saved.detail === "compact" || saved.detail === "expanded") this.layerDetail = saved.detail;
       if (typeof saved.addOpen === "boolean") this.addOpen = saved.addOpen;
@@ -5348,6 +5354,7 @@ export class WristAssistantPanel extends LitElement {
       // older browser's copy of it is read past.
       if (typeof saved.pickerDevice === "string") this.pickerDevice = saved.pickerDevice;
       if (Array.isArray(saved.pickerShut)) this.pickerShut = saved.pickerShut.filter((k): k is string => typeof k === "string");
+      if (typeof saved.pickerBare === "boolean") this.pickerBare = saved.pickerBare;
     } catch {
       /* A browser with storage off keeps the defaults. */
     }
@@ -5358,7 +5365,7 @@ export class WristAssistantPanel extends LitElement {
       window.localStorage.setItem(LIST_STORE_KEY, JSON.stringify({
         thumbStep: this.thumbStep, detail: this.layerDetail,
         addOpen: this.addOpen, addDetail: this.addDetail, pickerDevice: this.pickerDevice,
-        pickerShut: this.pickerShut,
+        pickerShut: this.pickerShut, pickerBare: this.pickerBare,
       }));
     } catch {
       /* Storage off: the choice still holds for this visit. */
@@ -9300,6 +9307,7 @@ export class WristAssistantPanel extends LitElement {
       @click=${this.pickerBackdrop}>
       <div class="pk-head">
         <h2>Your complications <span class="pk-head-count">${all.length}</span></h2>
+        ${this.ownerBusy ? nothing : this.renderPickerLook()}
         ${this.ownerBusy ? nothing : this.renderPickerSelect()}
         ${this.ownerBusy ? nothing : this.renderPickerShapes(searched, this.tabFamilies(tab))}
         <label class="pk-search">
@@ -9389,6 +9397,40 @@ export class WristAssistantPanel extends LitElement {
       </h3>
       ${shut ? nothing : html`<div class="pk-band-body">${blocks}</div>`}
     </section>`;
+  }
+
+  /**
+   * The head's Device toggle: whether a card draws the device round the shape.
+   *
+   * Offered to everybody, admin or not: it changes what a card looks like and
+   * writes nothing.
+   */
+  private renderPickerLook() {
+    const on = !this.pickerBare;
+    return html`<button type="button" class="pk-pick-btn ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"}
+      title=${on ? "Show the complication on its own, with no device round it" : "Show the complication on its device"}
+      @click=${() => this.setPickerBare(on)}>
+      ${uiIcon(on ? "watch" : "shape")}<span>Device</span></button>`;
+  }
+
+  /** Turn the device round a card's picture off, or on again, and remember it. */
+  private setPickerBare(bare: boolean) {
+    this.pickerBare = bare;
+    this.saveListView();
+  }
+
+  /** One card's picture, drawn whichever way the head's Device toggle asks
+   * for. Every card in the dialog goes through here, so the locked slots, the
+   * saved cards and the one being made all answer the toggle together. */
+  private cardArt(
+    family: FamilyKind | undefined,
+    device: "watch" | "iphone",
+    live: LiveShapes,
+    shelved: boolean,
+  ) {
+    return this.pickerBare
+      ? shapeOnlyArt(family, device, live)
+      : deviceCropArt(family, device, live, { shelved });
   }
 
   /** Whether one of the picker's blocks is folded away. */
@@ -9553,7 +9595,7 @@ export class WristAssistantPanel extends LitElement {
         <span class="pk-badge">unsaved</span>
       </div>
       <div class="pk-card-pic">
-        <span class="pk-card-crop">${deviceCropArt(family, device, device === "iphone" ? live.phone : live.watch, { shelved: kind === "library" })}</span>
+        <span class="pk-card-crop">${this.cardArt(family, device, device === "iphone" ? live.phone : live.watch, kind === "library")}</span>
       </div>
     </div>`;
   }
@@ -9872,7 +9914,7 @@ export class WristAssistantPanel extends LitElement {
             @click=${() => { this.pickerNote = this.pickerNote === row.key ? undefined : row.key; }}>
             ${family === undefined
               ? html`<span class="pk-card-crop none">No preview</span>`
-              : html`<span class="pk-card-crop">${deviceCropArt(family, this.cardDevice(kind, family), {}, { shelved })}</span>`}
+              : html`<span class="pk-card-crop">${this.cardArt(family, this.cardDevice(kind, family), {}, shelved)}</span>`}
           </button>
         </div>
         ${this.pickerNote === row.key ? html`<div class="pk-note">${item.title}</div>` : nothing}
@@ -9940,8 +9982,8 @@ export class WristAssistantPanel extends LitElement {
       <div class="pk-card-pic">
         <button type="button" class="pk-card-open" title=${doing}
           aria-label=${doing} @click=${hit}>
-          <span class="pk-card-crop">${deviceCropArt(family, device,
-            live ? (device === "iphone" ? live.phone : live.watch) : {}, { shelved })}</span>
+          <span class="pk-card-crop">${this.cardArt(family, device,
+            live ? (device === "iphone" ? live.phone : live.watch) : {}, shelved)}</span>
         </button>
         <span class="pk-card-acts ${confirming ? "asking" : ""} ${picking ? "away" : ""}">
           ${confirming
