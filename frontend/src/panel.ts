@@ -4256,7 +4256,8 @@ export class WristAssistantPanel extends LitElement {
     /* Hairlines part the head's groups: the devices, the actions, Delete,
        and the ··· menu. */
     .cv-div { width: 1px; height: 20px; flex: none; background: var(--wa-line); }
-    .case-tool.add-tool .pop-menu { left: auto; right: 0; min-width: 230px; }
+    .cv-devices { display: inline-flex; align-items: center; gap: 6px; flex: 0 8 auto; min-width: 0; }
+    .case-tool.add-tool .pop-menu { left: 0; right: auto; min-width: 230px; }
     .case-tool.add-tool .place-note { padding: 6px 10px 4px; font-size: 11px; color: var(--wa-muted); }
     .cv-shape {
       display: inline-flex; align-items: center; gap: 6px; flex: 0 4 auto; min-width: 0;
@@ -15433,6 +15434,13 @@ export class WristAssistantPanel extends LitElement {
     const on = row ? this.rowPlaces(row, f).filter((p) => p.on) : [];
     return html`<div class="cv-head">
       ${this.renderNameField(cfg)}
+      ${row && on.length > 0 || this.canEdit ? html`<span class="cv-slash" aria-hidden="true">/</span>
+        <span class="cv-devices">
+          ${row && on.length > 0 ? html`<span class="doc-on" role="group" aria-label="Devices this complication is on">
+            ${on.map((place) => this.renderPlaceChip(row, place))}
+          </span>` : nothing}
+          ${this.canEdit ? this.renderAddToDevice(cfg) : nothing}
+        </span>` : nothing}
       <span class="cv-slash" aria-hidden="true">/</span>
       ${seg
         ? html`${this.renderShapeSwitch(cfg, layouts)}${pagePart ? html`<span class="cv-shape">${pagePart}</span>` : nothing}`
@@ -15440,26 +15448,23 @@ export class WristAssistantPanel extends LitElement {
           ? nothing
           : html`<span class="cv-shape"><span class="fam">${familyTitle(f)}${pagePart ? ` · ${pagePart}` : ""}</span>${this.shapeNotes(cfg, layouts, f)}</span>`}
       <span class="spacer"></span>
-      ${row && on.length > 0 ? html`<span class="doc-on" role="group" aria-label="Devices this complication is on">
-        ${on.map((place) => this.renderPlaceChip(row, place))}
-      </span>` : nothing}
       ${this.renderDocActions(cfg)}
       ${this.renderDocMenu()}
     </div>`;
   }
 
   /**
-   * What is done to the whole complication, as buttons on the canvas head:
-   * Add to a device, Duplicate, and Delete. Delete arms the way it always
-   * did: one press asks in place, and a design on several devices asks which.
+   * What is done to the whole complication, as icon buttons at the right of
+   * the canvas head: Duplicate and Delete, parted by hairlines. Delete arms
+   * the way it always did: one press asks in place, and a design on several
+   * devices asks which. Add to a device stands with the device chips instead.
    */
   private renderDocActions(cfg: CustomComplicationConfig) {
     if (!this.canEdit) return nothing;
     const n = this.openLinkCount();
-    return html`<span class="cv-div" aria-hidden="true"></span>
-      ${this.renderAddToDevice(cfg)}
-      <button class="cv-act" aria-haspopup="dialog" title="Make this design again as another shape, or on another device"
-        @click=${() => this.openDuplicateAs(cfg, this.ownerId ?? "")}>Duplicate</button>
+    return html`<button class="cv-act icon" aria-haspopup="dialog" aria-label="Duplicate as another shape or device"
+        title="Duplicate: make this design again as another shape, or on another device"
+        @click=${() => this.openDuplicateAs(cfg, this.ownerId ?? "")}>${uiIcon("duplicate")}</button>
       <span class="cv-div" aria-hidden="true"></span>
       ${this.confirmDelete
         ? html`<span class="cv-del" role="group" aria-label="Delete this complication?">
