@@ -327,6 +327,9 @@ export interface PresetEnv {
   /** The chosen entity's live state, when Home Assistant has one. Seeds the
    * gauge range and decides whether the text carries a unit. */
   state?: HassEntityState;
+  /** Every entity Home Assistant knows, for a preset that fills in more than
+   * the one it was given (Entity rows). */
+  states?: Record<string, HassEntityState>;
 }
 
 /** Amber reads as "live" on a black face; the grey is the system's secondary
@@ -1313,13 +1316,33 @@ export function addRunButton(cfg: CustomComplicationConfig, ref: EntityRef, env:
 const COOL_HEX = NEUTRAL_RAMP[0];
 
 /**
+ * The target line of the Thermostat preset: "Set 21°" for one target, or
+ * "68-77°" for a thermostat in heat/cool mode, which has no `temperature` at
+ * all and keeps its two targets in `target_temp_low` and `target_temp_high`.
+ * Reading `temperature` alone printed dashes for every such thermostat.
+ *
+ * `%g` prints 21 as "21" and 20.5 as "20.5", so a half-degree target keeps
+ * its decimal and a whole one gets none. A mode with no target at all prints
+ * the mode instead ("Fan only").
+ */
+export function thermostatTargetTemplate(entityId: string): string {
+  const attr = (name: string) => `state_attr('${entityId}', '${name}')`;
+  return `{% set t = ${attr("temperature")} %}`
+    + `{% set lo = ${attr("target_temp_low")} %}{% set hi = ${attr("target_temp_high")} %}`
+    + `{% if t is number %}Set {{ '%g' | format(t) }}°`
+    + `{% elif lo is number and hi is number %}{{ '%g' | format(lo) }}-{{ '%g' | format(hi) }}°`
+    + `{% else %}{{ states('${entityId}') | replace('_', ' ') | capitalize }}{% endif %}`;
+}
+
+/**
  * The room temperature, the target under it, and a symbol for what the
  * thermostat is doing.
  *
  * Every value is an attribute: a climate entity's state is its mode (`heat`,
  * `cool`, `off`), which says what it is set to and not what it is doing. What
- * it is doing is `hvac_action`, so the color reads that. The target's decimals
- * follow the entity's own step, so a half-degree target is not rounded away.
+ * it is doing is `hvac_action`, so the color reads that. The target line is a
+ * template, because the target lives in different attributes by mode: see
+ * `thermostatTargetTemplate`.
  */
 export function addThermostat(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
   const full = withDomain(ref);
@@ -1349,12 +1372,8 @@ export function addThermostat(cfg: CustomComplicationConfig, ref: EntityRef, env
   placeLayer(cfg, now, env.family, mainBandGeometry);
   cfg.elements.push(now);
 
-  const step = env.state?.attributes?.target_temp_step;
   const target = layerOf("text");
-  target.payload.value = {
-    kind: { kind: "entityAttribute", ...full, attribute: "temperature" },
-    format: { decimals: typeof step === "number" && step < 1 ? 1 : 0, prefix: "Set ", suffix: "°" },
-  };
+  target.payload.value = { kind: { kind: "jinja", value: thermostatTargetTemplate(full.entityId) } };
   target.payload.colorSlot.baseColorHex = MUTED_HEX;
   // Off has no target, and "Set --°" is worse than saying so.
   target.payload.rules = [buildStatesRule(entityStateValue(full), [
@@ -1610,13 +1629,14 @@ function addList(
  * Multi-Entity.
  *
  * The scope is an explicit list starting with the one entity the dialog asks
- * for, because the preset dialog picks one. The Source card adds the rest.
- * Rows sort by name: a list has no "as added" order to keep.
+ * for, because the preset dialog picks one. Three more are filled in beside it
+ * (`companionEntities`) so all four rows draw on creation; the Source card
+ * swaps them. Rows sort by name: a list has no "as added" order to keep.
  */
 export function addEntitiesList(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
   const source: ListSource = {
     kind: "entities",
-    scope: { kind: "entities", entities: [withDomain(ref)] },
+    scope: { kind: "entities", entities: [withDomain(ref), ...companionEntities(ref, env.states, 3)] },
     sort: "name",
     descending: false,
     attributes: [],
@@ -1627,6 +1647,49 @@ export function addEntitiesList(cfg: CustomComplicationConfig, ref: EntityRef, e
     rowText(itemValue("state", { useEntityUnit: true }), { x: 0.7, y: 0, width: 0.3, height: 1 },
       { align: "trailing", colorHex: MUTED_HEX }),
   ]);
+}
+
+/** Domains worth a row when the picked entity's own domain runs out: things
+ * people check at a glance, in the order they are most often checked. */
+const COMPANION_DOMAINS: readonly string[] = ["light", "climate", "lock", "cover", "switch", "fan", "sensor", "binary_sensor"];
+
+/**
+ * Up to `count` more entities to sit beside the picked one.
+ *
+ * Nearest first: the same domain and device class (another temperature beside
+ * a temperature), then the same domain, then the glance domains above. Nothing
+ * unavailable or unknown, since a row of dashes looks broken, no groups, and
+ * nothing without a name. Sorted by name inside each tier, so the same home always
+ * gets the same rows.
+ */
+export function companionEntities(
+  ref: EntityRef,
+  states: Record<string, HassEntityState> | undefined,
+  count: number,
+): EntityRef[] {
+  if (!states) return [];
+  const domain = domainOf(ref);
+  const deviceClass = states[ref.entityId]?.attributes?.device_class;
+  const candidates = Object.values(states).filter((s) =>
+    s.entity_id !== ref.entityId
+    && s.state !== "unavailable" && s.state !== "unknown"
+    // A group lists its members in `entity_id`. "All lights" sorts before
+    // every real light and says less than any of them.
+    && !Array.isArray(s.attributes?.entity_id)
+    && typeof s.attributes?.friendly_name === "string" && s.attributes.friendly_name.trim() !== "");
+  const tier = (s: HassEntityState): number => {
+    const d = s.entity_id.split(".")[0] ?? "";
+    if (d === domain) return deviceClass !== undefined && s.attributes?.device_class === deviceClass ? 0 : 1;
+    const i = COMPANION_DOMAINS.indexOf(d);
+    return i < 0 ? Infinity : 2 + i;
+  };
+  const name = (s: HassEntityState): string => String(s.attributes.friendly_name).trim();
+  return candidates
+    .map((s) => ({ s, t: tier(s) }))
+    .filter((c) => c.t !== Infinity)
+    .sort((a, b) => a.t - b.t || name(a.s).localeCompare(name(b.s)))
+    .slice(0, count)
+    .map(({ s }) => ({ entityId: s.entity_id, displayName: name(s), domain: s.entity_id.split(".")[0] ?? "" }));
 }
 
 /** The next few events, each with the time it starts. */

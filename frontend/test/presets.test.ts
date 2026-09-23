@@ -30,10 +30,12 @@ import {
   bandColors,
   bandThreshold,
   centredFrame,
+  companionEntities,
   gaugeBandRule,
   gaugeRange,
   onComparison,
   presetSpec,
+  thermostatTargetTemplate,
   toggleSymbols,
 } from "../src/presets.js";
 import { presetColor, presetPreview } from "../src/preset-previews.js";
@@ -622,12 +624,14 @@ describe("the iPhone-era presets", () => {
   });
 
   it("reads a thermostat's attributes and colors it by what it is doing", () => {
-    const cfg = build("thermostat", CLIMATE, state({ target_temp_step: 0.5 }, "heat"));
+    const cfg = build("thermostat", CLIMATE, state({}, "heat_cool"));
     const texts = cfg.elements.filter((e) => e.kind === "text");
-    expect(texts.map((t) => (t.payload.value.kind as { attribute?: string }).attribute))
-      .toEqual(["current_temperature", "temperature"]);
-    // A half-degree step keeps its decimal.
-    expect(texts[1]!.payload.value.format).toMatchObject({ decimals: 1, prefix: "Set " });
+    expect(texts[0]!.payload.value.kind).toMatchObject({ kind: "entityAttribute", attribute: "current_temperature" });
+    // The target is a template: heat/cool mode keeps its targets in low and high.
+    const target = texts[1]!.payload.value.kind as { kind: string; value: string };
+    expect(target.kind).toBe("jinja");
+    expect(target.value).toBe(thermostatTargetTemplate("climate.hall"));
+    for (const attr of ["'temperature'", "'target_temp_low'", "'target_temp_high'"]) expect(target.value).toContain(attr);
     const icon = cfg.elements.find((e) => e.kind === "icon")!;
     expect(tableOf(icon.payload.rules).value?.kind).toMatchObject({ kind: "entityAttribute", attribute: "hvac_action" });
   });
@@ -664,5 +668,35 @@ describe("the iPhone-era presets", () => {
     const list = layer(cfg, id);
     if (list.kind !== "list") throw new Error("wrong kind");
     expect(list.payload.source).toMatchObject({ kind: "entities", scope: { kind: "entities", entities: [CLIMATE] } });
+  });
+
+  it("fills three more rows, nearest kind first, skipping the dead and the nameless", () => {
+    const st = (id: string, name: string | undefined, value = "on", deviceClass?: string): HassEntityState => ({
+      entity_id: id, state: value, last_changed: "", last_updated: "",
+      attributes: { ...(name !== undefined ? { friendly_name: name } : {}), ...(deviceClass ? { device_class: deviceClass } : {}) },
+    });
+    const states: Record<string, HassEntityState> = {};
+    for (const s of [
+      st("sensor.hall_temp", "Hall temp", "21", "temperature"),
+      st("sensor.bed_temp", "Bed temp", "19", "temperature"),
+      st("sensor.power", "Power", "300", "power"),
+      st("sensor.gone", "Gone", "unavailable", "temperature"),
+      st("sensor.noname", undefined, "20", "temperature"),
+      st("light.kitchen", "Kitchen"),
+      st("update.core", "Core update"),
+      { ...st("light.all", "All"), attributes: { friendly_name: "All", entity_id: ["light.kitchen"] } },
+    ]) states[s.entity_id] = s;
+    const picked = { entityId: "sensor.hall_temp", displayName: "Hall temp", domain: "sensor" };
+    expect(companionEntities(picked, states, 3).map((r) => r.entityId))
+      .toEqual(["sensor.bed_temp", "sensor.power", "light.kitchen"]);
+
+    const cfg = config();
+    const id = applyPreset(cfg, "listEntities", picked, { family: "rectangular", states, state: states["sensor.hall_temp"]! });
+    const list = layer(cfg, id);
+    if (list.kind !== "list" || list.payload.source.kind !== "entities" || list.payload.source.scope.kind !== "entities") {
+      throw new Error("wrong kind");
+    }
+    expect(list.payload.source.scope.entities.map((r) => r.entityId))
+      .toEqual(["sensor.hall_temp", "sensor.bed_temp", "sensor.power", "light.kitchen"]);
   });
 });

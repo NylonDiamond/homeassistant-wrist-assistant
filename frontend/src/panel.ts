@@ -14740,7 +14740,7 @@ export class WristAssistantPanel extends LitElement {
     const kind = this.presetKind;
     const ref = this.presetEntity;
     if (!kind || !ref) return;
-    const env: PresetEnv = { family: this.canvasFamily };
+    const env: PresetEnv = { family: this.canvasFamily, states: this.hass.states };
     const state = this.hass.states[ref.entityId];
     if (state) env.state = state;
     let created: string | undefined;
