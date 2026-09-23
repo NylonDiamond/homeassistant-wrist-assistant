@@ -3472,7 +3472,13 @@ export class WristAssistantPanel extends LitElement {
     .page-tile .page-trash:hover, .page-tile .page-trash:focus-visible { opacity: 1; color: #FF453A; background: color-mix(in srgb, #FF453A 14%, transparent); outline: none; }
     .page-tile .page-trash.armed { width: auto; padding: 0 8px; opacity: 1; font-size: 10.5px; font-weight: 700; background: #FF453A; color: #fff; }
     .page-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; padding: 4px 8px 8px; }
-    .page-tools .spacer { flex: 1; }
+    /* The ? beside a card's title: the help for that card. */
+    button.lc-help {
+      width: 18px; height: 18px; margin-left: -2px; padding: 0; border: 1px solid var(--wa-line); border-radius: 50%; cursor: pointer; flex: none;
+      font: inherit; font-size: 10.5px; font-weight: 700; line-height: 1; background: transparent; color: var(--wa-muted);
+    }
+    button.lc-help:hover { color: var(--wa-ink); border-color: var(--wa-line-strong); background: var(--wa-panel); }
+    button.lc-help:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     /* The one line under the Pages header while nothing can turn a page. */
     .lc-note { display: flex; align-items: center; gap: 6px; margin: 0 10px 8px; padding: 5px 10px; border-radius: 7px; font-size: 11.5px; }
     .lc-note.warn { color: var(--wa-amber); background: var(--wa-amber-bg); box-shadow: inset 0 0 0 1px var(--wa-amber-line); }
@@ -8400,11 +8406,12 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * The quiet row under the tiles: the two ready-made page-turning tap zones
-   * and the help. They used to sit in a ··· menu; in view, the way to make
-   * pages turn is never a hunt.
+   * The quiet row under the tiles: the three ready-made page-turning tap
+   * zones. They used to sit in a ··· menu; in view, the way to make pages
+   * turn is never a hunt. The help is the ? beside the card's title.
    */
   private renderPageTools(edit: boolean) {
+    if (!edit) return nothing;
     const page = this.page;
     const zone = (type: "previousPage" | "nextPage") => {
       const back = type === "previousPage";
@@ -8433,11 +8440,9 @@ export class WristAssistantPanel extends LitElement {
       this.lightSection("content");
     };
     return html`<div class="page-tools">
-      ${edit ? html`${zone("previousPage")}${zone("nextPage")}
-        <button class="lc-ghost sm" title=${`A tap zone over the middle of page ${page} that shows one page of your choice. Pick which page on the right, under Tap.`}
-          @click=${pick}>${uiIcon("plus")}<span>One page tap</span></button>` : nothing}
-      <span class="spacer"></span>
-      <button class="lc-ghost sm" title="How pages work" @click=${() => { this.helpTab = "pages"; this.helpOpen = true; }}>How pages work</button>
+      ${zone("previousPage")}${zone("nextPage")}
+      <button class="lc-ghost sm" title=${`A tap zone over the middle of page ${page} that shows one page of your choice. Pick which page on the right, under Tap.`}
+        @click=${pick}>${uiIcon("plus")}<span>One page tap</span></button>
     </div>`;
   }
 
@@ -8479,7 +8484,9 @@ export class WristAssistantPanel extends LitElement {
     const stuck = edit && !pageMoverExists(cfg);
     return html`<div class="card pages-card lc">
       <div class="lc-head">
-        <span class="swatch">${uiIcon("pages")}</span><span class="lc-title">Pages</span><span class="lc-sub">${spec.count} · shown one at a time</span>
+        <span class="swatch">${uiIcon("pages")}</span><span class="lc-title">Pages</span>
+        <button class="lc-help" title="How pages work" aria-label="How pages work" @click=${() => { this.helpTab = "pages"; this.helpOpen = true; }}>?</button>
+        <span class="lc-sub">${spec.count} · shown one at a time</span>
         <span class="spacer"></span>
         ${edit ? html`<button class="lc-btn" ?disabled=${full} aria-label="Add a page"
           title=${full ? "Four pages is the most a complication can have." : "Add an empty page after the last one."}
