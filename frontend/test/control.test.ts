@@ -37,7 +37,7 @@ import { compile } from "../src/compiler.js";
 import { addFamily, canRemoveControl, canRemoveFamily, removeFamily } from "../src/layouts.js";
 import { scrubForShare, shareSlots } from "../src/transfer.js";
 import { type ResolveContext, resolveControl } from "../src/resolver.js";
-import { type EditorHost, controlCard, controlTapEdit, generalEditor } from "../src/editors.js";
+import { type EditorHost, controlCard, controlTapEdit, generalEditor, tapActionEditor } from "../src/editors.js";
 import { ACCENT_HEX, seedControlFromEntity } from "../src/presets.js";
 import { MIN_VERSION_FOR_CONTROL_CENTER, deviceSupportsControls } from "../src/version.js";
 import type { HassLike } from "../src/ha-api.js";
@@ -937,35 +937,64 @@ describe("the redraw budget hint under a refresh tap", () => {
   const target = "0A0A0A0A-0000-4000-8000-000000000001";
   const doc = (refreshMinutes: number) => ({ id: target, name: "Hall", layers: () => [], refreshMinutes });
 
-  it("turns amber on a multiple refresh only once a timer spends the budget", () => {
+  const timerLine = "spends the\n        same budget";
+
+  it("is always amber on a multiple refresh, and names a timer that drains it", () => {
     const cfg = newControlConfig("Kitchen lamp", 0, "circular");
     cfg.tapAction = { type: "refreshAll", targets: [target] };
     const quiet = flatten(generalEditor(host(cfg, { documents: [doc(0)] })));
-    expect(quiet).toContain("40 to 70 redraws a day");
-    expect(quiet).not.toContain("budget\"");
+    expect(quiet).toContain("hint keep budget\">watchOS gives each complication");
+    expect(quiet).not.toContain(timerLine);
 
     const picked = flatten(generalEditor(host(cfg, { documents: [doc(15)] })));
-    expect(picked, "a timer on a picked complication").toContain("hint keep budget");
+    expect(picked, "a timer on a picked complication").toContain(timerLine);
 
     cfg.refreshMinutes = 30;
     const own = flatten(generalEditor(host(cfg, { documents: [doc(0)] })));
-    expect(own, "a timer on the tapped complication").toContain("hint keep budget");
+    expect(own, "a timer on the tapped complication").toContain(timerLine);
   });
 
   it("ignores a timer on a complication the tap does not reach", () => {
     const cfg = newControlConfig("Kitchen lamp", 0, "circular");
     cfg.tapAction = { type: "refreshAll" };
     const markup = flatten(generalEditor(host(cfg, { documents: [doc(15)] })));
+    expect(markup).not.toContain(timerLine);
+  });
+
+  it("says a plain refresh tap is free, in plain ink", () => {
+    const cfg = newControlConfig("Kitchen lamp", 0, "circular");
+    cfg.tapAction = { type: "refresh" };
+    const markup = flatten(generalEditor(host(cfg)));
+    expect(markup).toContain("hint keep\">A tap always redraws this");
     expect(markup).not.toContain("hint keep budget");
   });
 
-  it("says a plain refresh tap is free, and turns amber for its own timer", () => {
+  it("warns under the Refresh row once a timer is picked, with this timer's count", () => {
     const cfg = newControlConfig("Kitchen lamp", 0, "circular");
     cfg.tapAction = { type: "refresh" };
-    const quiet = flatten(generalEditor(host(cfg)));
-    expect(quiet).toContain("A tap always redraws this");
-    expect(quiet).not.toContain("hint keep budget");
-    cfg.refreshMinutes = 15;
-    expect(flatten(generalEditor(host(cfg)))).toContain("hint keep budget");
+    expect(flatten(generalEditor(host(cfg)))).not.toContain("every timed refresh spends one");
+    const cases: [number, string][] = [
+      [15, "Every 15 minutes is 96 a day, more than the whole budget"],
+      [30, "Every 30 minutes is 48 a day, which can use up the whole budget"],
+      [60, "Every hour is 24 a day, which fits"],
+    ];
+    for (const [minutes, line] of cases) {
+      cfg.refreshMinutes = minutes;
+      const markup = flatten(generalEditor(host(cfg)));
+      expect(markup, String(minutes)).toContain(line);
+      expect(markup, String(minutes)).toContain("Refresh this complication\" instead");
+    }
+  });
+
+  it("shows the same amber hint under a tap layer's multiple refresh", () => {
+    const cfg = newControlConfig("Kitchen lamp", 0, "circular");
+    const holder = { action: { type: "refreshAll" as const, targets: [target] } };
+    const markup = flatten(tapActionEditor(host(cfg, { documents: [doc(0)] }), holder, () => {}, "layer"));
+    expect(markup).toContain("hint keep budget\">watchOS gives each complication");
+  });
+
+  it("marks the multiple refresh row as beta in the picker only", () => {
+    const cfg = newControlConfig("Kitchen lamp", 0, "circular");
+    expect(flatten(generalEditor(host(cfg)))).toContain("Refresh multiple complications (beta)");
   });
 });

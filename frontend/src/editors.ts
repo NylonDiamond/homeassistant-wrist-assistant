@@ -3673,7 +3673,12 @@ export function addEmptyState(cfg: CustomComplicationConfig, listId: string, fam
 
 // ── General ───────────────────────────────────────────────────────────────
 
-const TAP_TYPES = TAP_ACTION_LABELS;
+/** The picker rows. "(beta)" rides on the refreshAll row here only, not in
+ * `TAP_ACTION_LABELS`, because the badges and the review labels share those
+ * words and have no room for it. Beta because watchOS's redraw budget decides
+ * whether the other tiles redraw (see `refreshAllBudgetHint`). */
+const TAP_TYPES: [TapAction["type"], string][] = TAP_ACTION_LABELS.map(([t, label]) =>
+  [t, t === "refreshAll" ? `${label} (beta)` : label]);
 
 /** A tap layer offers everything but "Nothing": a layer that does nothing would
  * just let the tap fall through to the whole-complication action, which is what
@@ -3772,8 +3777,9 @@ const REDRAW_BUDGET = "40 to 70";
  * from support logs WA-425074 and WA-3002B8: the data landed for every target
  * in under a second, and only the tapped tile redrew.
  *
- * Amber while a timed refresh is spending that same budget, on this
- * complication or on any it reaches, because that is when the others run dry.
+ * Always amber: this is the one thing a reader must know before trusting the
+ * tap (Jesse, 2026-09-23). A timed refresh on this complication or on any it
+ * reaches adds a sentence, because that is when the others run dry.
  */
 function refreshAllBudgetHint(host: EditorHost, action: RefreshAllAction): TemplateResult {
   const docs = host.documents ?? [];
@@ -3783,7 +3789,7 @@ function refreshAllBudgetHint(host: EditorHost, action: RefreshAllAction): Templ
     : docs.filter((d) => (action.targets ?? []).includes(d.id.toUpperCase()));
   const timed = (host.config.refreshMinutes ?? 0) > 0
     || reached.some((d) => d.id.toUpperCase() !== selfId && (d.refreshMinutes ?? 0) > 0);
-  return html`<div class="hint keep ${timed ? "budget" : ""}">watchOS gives each complication
+  return html`<div class="hint keep budget">watchOS gives each complication
     ${REDRAW_BUDGET} redraws a day. The one you tap always redraws, because a tap is free. Every
     other complication this tap refreshes spends one of its own. When one has none left, it gets
     the new data but keeps showing the old until watchOS allows another redraw, or until you open
@@ -3795,16 +3801,33 @@ function refreshAllBudgetHint(host: EditorHost, action: RefreshAllAction): Templ
 
 /**
  * The redraw budget under a plain Refresh tap. The tap itself never spends it,
- * so the hint is mostly reassurance, turning amber only to say what the timed
- * Refresh above does to it.
+ * so this is reassurance, never amber. What a timed Refresh does to the budget
+ * is said once, under the Refresh row, not again here.
  */
-function refreshBudgetHint(timed: boolean): TemplateResult {
-  return html`<div class="hint keep ${timed ? "budget" : ""}">A tap always redraws this
-    complication. watchOS does not count it against the ${REDRAW_BUDGET} redraws a day each
-    complication gets.${timed
-      ? html` The timed Refresh above does count. When it has used the budget up, timed refreshes
-        stop until watchOS allows more, but a tap still works.`
-      : nothing}</div>`;
+function refreshBudgetHint(): TemplateResult {
+  return html`<div class="hint keep">A tap always redraws this complication. watchOS does not
+    count it against the ${REDRAW_BUDGET} redraws a day each complication gets.</div>`;
+}
+
+/**
+ * The warning under the Refresh row once a timer is picked. Every timed
+ * refresh spends one of the complication's daily redraws, so it says how many
+ * this choice spends and points at the free alternative: a tap, for the reader
+ * who wants the value at one moment rather than all day.
+ */
+function timedRefreshBudgetHint(minutes: number): TemplateResult {
+  const perDay = Math.round((24 * 60) / minutes);
+  const every = refreshLabel(minutes);
+  const verdict = perDay > 70
+    ? `${every} is ${perDay} a day, more than the whole budget, so refreshes stop later in the day.`
+    : perDay >= 40
+      ? `${every} is ${perDay} a day, which can use up the whole budget.`
+      : `${every} is ${perDay} a day, which fits, but leaves fewer for a Refresh multiple complications tap.`;
+  return html`<div class="hint keep budget">watchOS gives each complication ${REDRAW_BUDGET}
+    redraws a day, and every timed refresh spends one. ${verdict} When the budget runs out, the
+    complication keeps showing old data until watchOS allows more. If you want the value at one
+    moment rather than all day, set Tap action to "Refresh this complication" instead: a tap is
+    free and always redraws.</div>`;
 }
 
 /**
@@ -4165,6 +4188,7 @@ export function generalEditor(host: EditorHost, opts: { nameOnly?: boolean } = {
     <div class="gen-row">
       ${textField("Name", cfg.name, (v) => host.update((c) => { c.name = v; }, "name"))}
       ${selectField("Refresh", String(refresh), refreshOptions, (v) => host.update((c) => { c.refreshMinutes = Number(v) || 0; }, "refresh"))}
+      ${refresh > 0 ? timedRefreshBudgetHint(refresh) : nothing}
       ${selectField("Tap action", tap.type, tapTypesFor(tap), (v) => host.update((c) => {
         c.tapAction = tapActionForType(v, c.tapAction);
         // Mirrors the iPhone preset editor: the chosen page belongs to the
@@ -4191,7 +4215,7 @@ export function generalEditor(host: EditorHost, opts: { nameOnly?: boolean } = {
     ${tap.type === "refresh"
       ? refreshLayersField(host, tap, (next) => host.update((c) => { c.tapAction = next; }))
       : nothing}
-    ${tap.type === "refresh" ? refreshBudgetHint(refresh > 0) : nothing}
+    ${tap.type === "refresh" ? refreshBudgetHint() : nothing}
     ${"entityId" in tap ? entityField(host, "Target", tap, (ref) => host.update((c) => { c.tapAction = { type: tap.type, ...ref }; }, "tap-entity"), "general-tap") : nothing}
     ${tap.type === "callService"
       ? callServiceFields(host, tap, (next, k) => host.update((c) => { c.tapAction = next; }, k), "general-tap")
@@ -7932,6 +7956,7 @@ export function tapActionEditor(
     ${action.type === "refreshAll"
       ? refreshTargetsField(host, action, (next) => upd((p) => { p.action = next; }))
       : nothing}
+    ${action.type === "refreshAll" ? refreshAllBudgetHint(host, action) : nothing}
     ${action.type === "refresh"
       ? refreshLayersField(host, action, (next) => upd((p) => { p.action = next; }))
       : nothing}
