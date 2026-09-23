@@ -8385,6 +8385,7 @@ export class WristAssistantPanel extends LitElement {
       [`${m}] · ${m}[`, "Bring the layer forward · Send it back"],
       [`${s}${m}H`, "Hide or show the selection in the shape being edited"],
       ["[ · ]", "The page before · after, on a complication that has pages"],
+      ["/", "Open Add in the Layers card and search the elements and presets"],
       ["Escape", "Leave the row designer, then drop the pick, then the selection. Also stops Pick layer and closes a dialog"],
     ];
     const mouse: [string, string][] = [
@@ -8393,7 +8394,7 @@ export class WristAssistantPanel extends LitElement {
       ["Rest on a row", "Tints that layer on the face without selecting it. A group row tints every member"],
       ["Drag a row", "Reorder the list. Drop it on a group to put it inside"],
       ["Pick layer", "Point at the face to find a layer. Click it to select it"],
-      ["Show taps", "Every tap area, labelled. With a layer selected, only its tap shows and its corners drag"],
+      ["Show taps", "Every tap zone, labelled. With a layer selected, only its tap shows and its corners drag"],
       ["Demo", "The face alone, drawn the way the watch draws it, with no grid, no handles and no tap boxes. Press it and the tap really runs: pages turn, data refreshes, a toggle really toggles, and the success flash rings what was pressed exactly as it does on the wrist. The actions that live on the watch (opening the app, the timers) say what they would do instead. Escape closes"],
       ["Snapping", "The three switches over the face. Snap to grid: layers land on a grid when you drag them, 1% by default, and arrows move one grid step; the size sits beside it. Grid lines draws the grid. Snap to layers: edges and middles land on the other layers' and on the middle of the face, with a pink line while they meet. Both snaps start on"],
       ["Alt-drag", "Flips snapping for that drag: a drag that would snap moves freely, and one that would not snaps to the grid"],
@@ -8411,16 +8412,16 @@ export class WristAssistantPanel extends LitElement {
       ["Small · Medium · Large", "A square, a wide band about twice as wide as it is tall, and a tall tile a little taller than it is wide. Add the ones you want; a size the complication does not have is not offered when you add a widget."],
       ["Extra Large", "The full-page tile, iOS 27 and later. An iPhone on iOS 26 is not offered it when adding a widget, and everything else still draws."],
       ["A tinted Home Screen", "iOS 18 lets a user tint the whole Home Screen. The system then drops the tile background and draws the design in two tones, so a design that relies on color alone reads differently there."],
-      ["The shape itself", "The bottom row of the Layers list: its background, border and Shape states."],
+      ["Background", "The bottom row of the Layers list: the shape's background, border and Shape states, and what a tap anywhere else does."],
       ["Pages", "One complication, several pages, one showing at a time. The Pages tab of this help explains them."],
     ];
     const pagesWhat: [string, string][] = [
       ["What a page is", "One slot on the watch face can hold several pages of the same complication, one showing at a time. A house battery on page 1 and the car on page 2 is the usual reason: one slot, two readings."],
-      ["Turning pages on", "Add a page in the Pages card, between Add a layer and Layers. What you have now becomes page 1 and an empty page 2 opens. To turn pages off again, delete pages with the trash until one is left."],
-      ["One page at a time", "The canvas and the Layers card show one page. The Pages card above the list says which, and clicking a number switches both. [ and ] do the same from the keyboard."],
+      ["Turning pages on", "Add a page in the Pages card, above Layers. What you have now becomes page 1 and an empty page 2 opens. To turn pages off again, delete pages until one is left."],
+      ["One page at a time", "The canvas and the Layers card show one page. The numbers in the Pages card say which, and clicking one switches both. [ and ] do the same from the keyboard. Show all, in the Layers card, lists the layers of every page at once."],
       ["Which page a layer is on", "Each layer sits on one page or on every page. Set it on the layer, in its Position card. A layer you add lands on the page you are looking at. A background, a border or a label that belongs everywhere goes on Every page."],
-      ["+ and the trash", "In the Pages card. + adds an empty page at the end, up to four. The trash on the pressed page deletes that page and the layers on it; it asks first, so press it once for \"sure?\" and again to delete. Later pages move down one, layers on every page stay, and undo puts it back."],
-      ["Moving between pages on the watch", "A tap has to say so. Set the complication's tap action, or a tap layer's, to Show next page or Show previous page. A tap with any other action does its own job and leaves the page alone, so a page can still hold buttons. The page stays where it was left."],
+      ["+ and Delete this page", "In the Pages card. + adds an empty page at the end, up to four. Delete this page, in the card's ··· menu, deletes the page showing and the layers on it; it asks first, so press it once for \"sure?\" and again to delete. Later pages move down one, layers on every page stay, and undo puts it back."],
+      ["Moving between pages on the watch", "A tap has to say so. Set the complication's tap action, or a tap zone's, to Show next page or Show previous page. The Pages card's ··· menu adds a ready-made tap zone for either one. A tap with any other action does its own job and leaves the page alone, so a page can still hold buttons. The page stays where it was left."],
       ["The tour", "Set a tap action to Play all pages and one tap plays every page once, then returns to page 1. Under that tap action you set how long each page shows, or one time for every page; a tour lasts the sum of them. Every Play all pages tap shares these times. Test on canvas, under the tap action, plays it here with the same timing. A tap during a tour on the watch stops it."],
       ["What the watch needs", "A complication with pages needs the Wrist Assistant app that understands them. An older app refuses the whole complication and asks for an update rather than drawing every page on top of each other."],
     ];
@@ -8432,7 +8433,7 @@ export class WristAssistantPanel extends LitElement {
       ["Timeline", "Which state an entity was in over time, as a colored strip."],
       ["Shape", "A rectangle, rounded rectangle, capsule, circle or line."],
       ["Picture", "A camera snapshot, or an entity's picture such as a person's avatar or album art."],
-      ["Tap area", "Invisible. A tap inside it runs its own action. Outside it, the complication's tap action applies."],
+      ["Tap zone", "Invisible. A tap inside it runs its own action. Outside it, the complication's tap action applies. Any layer can be tapped too: tick Tap on the layer. A tap zone is for an empty area."],
       ["Extras", "Clock times, chart dots, a chart grid and a picture's timestamp are added from their layer's Extras card."],
       ["Order", "The top of the Layers list draws on top. Drag a row to reorder."],
       ["Groups", `A set of layers kept together in the list. Pick some and press ${m}G. Locked, the group moves as one on the face. Unlocked, each layer moves alone. The watch never sees groups.`],
@@ -8451,30 +8452,30 @@ export class WristAssistantPanel extends LitElement {
       ["Timeline colors", "A timeline colors each state from its own table."],
       ["States", "Rows that test a value, like is on or is greater than, each with the changes it makes: icon, text, color, visibility and more. Rows are checked top to bottom and the first match wins. Otherwise applies when none match."],
       ["Shape states", "The same table, on the shape itself."],
-      ["Shared values", "Like a variable: set it once under the Layers card, and every layer that reads it follows. On a layer, set Source to Shared value, or click Make shared."],
+      ["Shared values", "Like a variable: set it once in Shared values, at the foot of the Layers card, and every layer that reads it follows. On a layer, set Source to Shared value, or click Make shared."],
       ["Values on the watch", "Every entity and shared value the complication reads, with its live reading. Slide, pick or type another value to watch the preview and the states react. Nothing is saved, and Live or Back to live returns to the real reading."],
     ];
     const saving: [string, string][] = [
-      ["Save", `Writes the complication to Home Assistant (${m}S). A new one says Save new until then. Only an administrator can save.`],
+      ["Save", `Writes the complication to Home Assistant (${m}S). It is dimmed while there is nothing to save. Only an administrator can save. Nothing saves by itself.`],
       ["Unassigned", "A design made with no device ticked is kept as unassigned. Nothing shows it until a copy of it goes on a device."],
-      ["The dot", "Beside Save: unsaved changes, saved, or not saved yet. The footer says the same in words."],
+      ["Saved", "Beside Save: when this complication was last saved, or Not saved yet. The footer says whether there are unsaved changes."],
       ["Reaching the watch", "The watch pulls saved changes by itself while Wrist Assistant is open on this home. There is no separate send step."],
       ["Hide", "The eye beside a complication in the list. It stops the watch offering that complication when you edit a face, and faces already using it keep it. Hidden ones fold into Hidden at the bottom of the list. For the open complication it saves with Save; for any other it saves at once."],
     ];
     const status: [string, string][] = [
       ["On watch", "The watch has applied every change. With last seen beside it, the watch is not listening now, so a later save waits until the app is open again."],
       ["Sending…", "Waiting for the watch to pull and confirm."],
-      ["Not on watch yet", "The watch is connected but has not confirmed the latest change. Resend wakes it again."],
-      ["Open the watch app to sync", "The watch is not listening. Open Wrist Assistant on the watch, or switch it to this home, and it pulls at once. Resend tries to wake it."],
+      ["Not on watch yet", "The watch is connected but has not confirmed the latest change. Resend, in the top bar's ··· menu, wakes it again."],
+      ["Open the watch app to sync", "The watch is not listening. Open Wrist Assistant on the watch, or switch it to this home, and it pulls at once. Resend, in the ··· menu, tries to wake it."],
       ["Update the watch app", "This watch has never reported a change. Its app is older than custom complications, or it has not opened this home yet."],
     ];
     const sharing: [string, string][] = [
       ["Share", "In the top bar. Turns the open complication into text anyone can import. Your entity ids and names become numbered slots, and you can label each one."],
       ["Backup", "The other choice in Share: an exact copy, entity ids and names included. For your records, or another watch in this home."],
       ["Copy link", "A link to this panel with the text inside it. Opening it here fills in the Import dialog. On another home, paste the link into Import."],
-      ["Import", "In the top bar, beside Share. Paste text or a link, choose a file, or drop one on the dialog. Check the preview, choose your own entity for each slot, then Import. It opens as unsaved work and reaches the watch at the first Save."],
+      ["Import", "In the top bar's ··· menu, beside Share. Paste text or a link, choose a file, or drop one on the dialog. Check the preview, choose your own entity for each slot, then Import. It opens as unsaved work and reaches the watch at the first Save."],
       ["History", "In the complication's header, beside Duplicate. The last 20 saves of this complication, newest first, with a picture of the one you pick. Restore writes it back as a new revision, so the design you restored over becomes the newest entry and you can come straight back and undo it."],
-      ["Parts", "A few layers kept under a name, for this home. Pick layers in the Layers list and press Save to parts; Add from parts, under the add buttons, drops them into the complication you have open. A part is stored the way a share is, so it asks which of your entities each slot is on the way in."],
+      ["Parts", "A few layers kept under a name, for this home. Pick layers in the Layers list and press Save to parts; the Saved parts tab of + Add, in the Layers card, drops them into the complication you have open. A part is stored the way a share is, so it asks which of your entities each slot is on the way in."],
     ];
     const rows = (list: [string, string][]) => list.map(([k, what]) => html`<tr><th scope="row"><kbd>${k}</kbd></th><td>${what}</td></tr>`);
     const section = (title: string, list: [string, string][]) => html`<section>

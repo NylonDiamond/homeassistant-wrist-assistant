@@ -35,7 +35,7 @@ export const KIND_LABEL: Record<LayerKind, string> = {
   list: "List",
   shape: "Shape",
   image: "Picture",
-  tap: "Tap area",
+  tap: "Tap zone",
   chartTimes: "Clock times",
   chartDots: "Chart dots",
   chartGrid: "Chart grid",
