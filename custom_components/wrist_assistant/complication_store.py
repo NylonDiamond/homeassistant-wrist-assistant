@@ -839,6 +839,17 @@ class ComplicationStore:
         # for the same reason the applied token is: a restart must not turn
         # "synced ten minutes ago" into "never".
         self._last_sync: dict[str, str] = {}
+        # Owners a forget path erased and that hold nothing since. A device
+        # keeps its local copies when this server answers empty, because an
+        # empty answer usually means a wiped or fresh Home Assistant that the
+        # device's Restore can refill. A forgotten device is the one case
+        # where empty is deliberate: the user unlinked it, its designs went to
+        # the Library, and copies left on the wrist would draw a list the
+        # panel no longer shows. ``complications_sync`` tells such a device
+        # so, and it drops its copies. The mark clears the moment the owner
+        # holds a record again (a save, a move, a restore), so a device that
+        # is re-linked syncs normally.
+        self._forgotten: set[str] = set()
         self._token = 0
         self._listeners: list[ChangeListener] = []
         self._wake: WakeCallback | None = None
@@ -906,6 +917,11 @@ class ComplicationStore:
             for owner, value in raw_last_sync.items():
                 if isinstance(owner, str) and isinstance(value, str) and value:
                     self._last_sync[owner] = value
+        raw_forgotten = data.get("forgotten", [])
+        if isinstance(raw_forgotten, list):
+            self._forgotten = {
+                owner for owner in raw_forgotten if isinstance(owner, str) and owner
+            }
         raw_records = data.get("records", [])
         if not isinstance(raw_records, list):
             return
@@ -944,6 +960,7 @@ class ComplicationStore:
             },
             "applied": dict(self._applied),
             "last_sync": dict(self._last_sync),
+            "forgotten": sorted(self._forgotten),
             "records": [
                 record.as_storage_dict()
                 for by_id in self._records.values()
@@ -970,7 +987,14 @@ class ComplicationStore:
 
         Listeners hear a record-less change so an open panel reloads rather
         than keeping rows for a watch that no longer exists.
+
+        The owner is also marked forgotten (see :meth:`is_forgotten`), whether
+        or not anything was stored: a device can hold copies this server
+        never saw, and the mark is what tells it to drop them.
         """
+        if owner_watch_id != LIBRARY_OWNER_ID and owner_watch_id not in self._forgotten:
+            self._forgotten.add(owner_watch_id)
+            self._schedule_save()
         touched = any(
             owner_watch_id in bucket
             for bucket in (
@@ -994,6 +1018,21 @@ class ComplicationStore:
         _LOGGER.info("Purged complication records for owner %s", owner_watch_id)
         self._notify(ComplicationChange(owner_watch_id=owner_watch_id, token=0))
         return True
+
+    def is_forgotten(self, owner_watch_id: str) -> bool:
+        """Whether a device was forgotten and has been given nothing since.
+
+        What ``complications_sync`` reports as ``owner_forgotten``. True from
+        the forget until the owner's next commit, so a device the user
+        re-links (a move, a save, a restore onto it) reads as a normal owner
+        again. Never true for the Library.
+        """
+        if owner_watch_id not in self._forgotten:
+            return False
+        return not any(
+            not record.deleted
+            for record in self._records.get(owner_watch_id, {}).values()
+        )
 
     def release_owner(self, owner_watch_id: str, *, updated_by: str) -> int:
         """Unlink a device: its designs move to the Library, then every trace
@@ -1435,6 +1474,8 @@ class ComplicationStore:
         record.token = self._token
         record.updated_at = _now_iso()
         self._records.setdefault(record.owner_watch_id, {})[record.id] = record
+        # A record under a forgotten owner means someone linked it again.
+        self._forgotten.discard(record.owner_watch_id)
         self._schedule_save()
         self._notify(
             ComplicationChange(
@@ -1570,7 +1611,13 @@ class ComplicationStore:
         base_revision: int | None,
         updated_by: str,
     ) -> ComplicationRecord:
-        """Tombstone one complication. Idempotent on an already-deleted id."""
+        """Tombstone one complication. Idempotent on an already-deleted id.
+
+        The document goes into the record's history first, so a delete is
+        undoable through ``history_restore`` (a revive with the tombstone's
+        revision). Before 2026-09-22 a delete dropped the document outright,
+        and a wrong delete of a design with no edits left nothing to recover.
+        """
         record_id = _validate_uuid(record_id, "id")
         existing = self._records.get(owner_watch_id, {}).get(record_id)
         if existing is None:
@@ -1583,6 +1630,7 @@ class ComplicationStore:
                 f"{base_revision}",
                 existing,
             )
+        self._remember(existing)
         existing.revision += 1
         existing.updated_by = updated_by
         existing.deleted = True

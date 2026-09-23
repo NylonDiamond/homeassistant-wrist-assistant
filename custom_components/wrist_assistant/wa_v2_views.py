@@ -2878,6 +2878,11 @@ async def _op_complications_sync(ctx: _OpContext) -> Response:
             "since_token": raw_since,
             "max_schema_version": COMPLICATION_MAX_SCHEMA_VERSION,
             "records": [r.as_dict() for r in records],
+            # True when the user forgot this device and nothing has been put
+            # on it since. An empty reply on its own means "keep your copies,
+            # Restore may want them"; this says the empty is deliberate, and
+            # the device drops its copies. Older apps ignore the key.
+            "owner_forgotten": store.is_forgotten(ctx.watch_id),
         }
     )
 

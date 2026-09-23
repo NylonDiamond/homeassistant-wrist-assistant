@@ -1755,6 +1755,49 @@ def test_release_orphans_releases_only_owners_the_secret_store_forgot(mod):
     assert store.release_orphans({OTHER}, updated_by="sweep") == []
 
 
+def test_forget_owner_marks_the_device_forgotten_until_it_holds_a_design_again(mod):
+    store = _new(mod)
+    store.save(OWNER, _doc(), base_revision=None, updated_by="t")
+    assert store.is_forgotten(OWNER) is False
+
+    store.release_owner(OWNER, updated_by="forget")
+    # Deliberately empty: the sync reply says so and the watch drops its copies.
+    assert store.is_forgotten(OWNER) is True
+    # The Library is never "forgotten", however empty it gets.
+    assert store.is_forgotten(mod.LIBRARY_OWNER_ID) is False
+    # Survives a restart, or a watch that comes back tomorrow would keep stale copies.
+    assert _new(mod).is_forgotten(OWNER) is True
+
+    # Re-linking a design onto the device ends it: a normal owner again.
+    store.move_owner(mod.LIBRARY_OWNER_ID, OWNER, updated_by="relink")
+    assert store.is_forgotten(OWNER) is False
+    assert _new(mod).is_forgotten(OWNER) is False
+
+
+def test_forgetting_a_device_with_nothing_stored_still_marks_it(mod):
+    """A device can hold copies this server never saw (a wiped store); the
+    mark is what tells it to drop them."""
+    store = _new(mod)
+    assert store.forget_owner(OWNER) is False
+    assert store.is_forgotten(OWNER) is True
+
+
+def test_delete_files_the_document_as_history_so_it_can_be_revived(mod):
+    store = _new(mod)
+    doc = _doc(name="Garage")
+    store.save(OWNER, doc, base_revision=None, updated_by="kim")
+    store.delete(OWNER, doc["id"], base_revision=1, updated_by="sam")
+
+    entries = store.history(OWNER, doc["id"])
+    assert [(e.revision, e.updated_by, e.document["name"]) for e in entries] == [(1, "kim", "Garage")]
+    # And the revive path works from it: save the remembered document against
+    # the tombstone's revision.
+    revived = store.save(OWNER, entries[0].document, base_revision=2, updated_by="kim")
+    assert revived.deleted is False
+    assert revived.document["name"] == "Garage"
+    assert [r.document["name"] for r in store.list(OWNER)] == ["Garage"]
+
+
 def test_forget_owner_on_a_watch_with_nothing_stored_is_a_no_op(mod):
     store = _new(mod)
     seen = []
@@ -1937,12 +1980,14 @@ def test_a_tombstone_keeps_its_history_and_a_revive_does_not_add_one(mod):
     doc = _doc(name="v1")
     store.save(OWNER, doc, base_revision=None, updated_by="t")
     store.save(OWNER, dict(doc, name="v2"), base_revision=1, updated_by="t")
+    # The delete files the document it removes (revision 2) as history too, so
+    # a wrong delete can be undone.
     store.delete(OWNER, doc["id"], base_revision=2, updated_by="t")
-    assert [e.revision for e in store.history(OWNER, doc["id"])] == [1]
+    assert [e.revision for e in store.history(OWNER, doc["id"])] == [2, 1]
 
     # Reviving the id has no document to remember, so nothing is added.
     store.save(OWNER, dict(doc, name="v4"), base_revision=3, updated_by="t")
-    assert [e.revision for e in store.history(OWNER, doc["id"])] == [1]
+    assert [e.revision for e in store.history(OWNER, doc["id"])] == [2, 1]
 
 
 def test_restore_of_an_empty_owner_keeps_a_tombstones_history(mod):
@@ -1953,7 +1998,7 @@ def test_restore_of_an_empty_owner_keeps_a_tombstones_history(mod):
     store.delete(OWNER, doc["id"], base_revision=2, updated_by="t")
 
     store.restore(OWNER, [dict(doc, name="from watch")], updated_by="t")
-    assert [e.revision for e in store.history(OWNER, doc["id"])] == [1]
+    assert [e.revision for e in store.history(OWNER, doc["id"])] == [2, 1]
 
 
 def test_moving_a_watch_takes_the_history_with_it(mod):
