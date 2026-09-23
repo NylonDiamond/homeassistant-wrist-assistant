@@ -9240,7 +9240,7 @@ export class WristAssistantPanel extends LitElement {
             : {
               kind: "locked",
               badge: "iPhone",
-              title: "Built on the iPhone before Wrist Assistant 2.8. It keeps working and cannot be edited. Delete it in the Widgets tab of the iPhone app to free this seat.",
+              title: "Built on the iPhone before Wrist Assistant 2.8. It keeps working and cannot be edited here. To free this seat, open the Widgets tab in the iPhone app and tap Switch to the new editor.",
               families: [],
             },
         });
