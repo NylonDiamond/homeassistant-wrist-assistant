@@ -1397,7 +1397,7 @@ export class WristAssistantPanel extends LitElement {
    * held the next click on the face for most of a second after a native menu
    * closed, so a drag right after a change lagged (measured 2026-09-12: the
    * press was 650 to 900 ms old on arrival, with no long task on the page). */
-  @state() private openMenu?: "grid" | "case" | "tint" | "list" | "place" | "doc" | "snap";
+  @state() private openMenu?: "grid" | "case" | "tint" | "list" | "place" | "doc" | "snap" | "add";
   /** Alt is down. It flips snapping for a drag, so the grid lines show while
    * it is held even with Snap to grid off. */
   @state() private altHeld = false;
@@ -1439,12 +1439,6 @@ export class WristAssistantPanel extends LitElement {
     show: (page) => this.showPage(page, true),
     done: () => { this.touring = false; this.dropOffPageSelection(); },
   });
-  /** Pick mode: the pointer names the layer under it instead of dragging it,
-   * the way a browser inspector picks a node. One click selects and ends it. */
-  @state() private picking = false;
-  /** The layer the pick-mode pointer is over. Shaded in every preview and
-   * marked in the Layers card, so the two lists answer each other. */
-  @state() private pickHoverId?: string;
   /** The layers under the pointer in the Layers list: one for a layer row,
    * every member for a group row. Tinted on the preview, so a row can be
    * found on the face without selecting it. Selection stays where it was. */
@@ -1461,8 +1455,6 @@ export class WristAssistantPanel extends LitElement {
    * (see canvas-tools.ts). 1 is Fit, the default. Not saved: every open
    * starts with the whole face in view. */
   @state() private canvasZoom = ZOOM_FIT;
-  /** The "···" menu over the canvas has its Add to a device list unfolded. */
-  @state() private docPlaceOpen = false;
   /**
    * Demo mode: the face alone in a dialog, drawn the way the watch draws it and
    * tapped the way the watch is tapped. Nothing of the editor comes along, no
@@ -1998,14 +1990,14 @@ export class WristAssistantPanel extends LitElement {
     }
     .tb-name:hover { border-color: var(--wa-line); }
     .tb-name:focus-within { border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
-    header .tb-name > input.tb-name-input[type=text],
-    header .tb-name > input.tb-name-input[type=text]:hover,
-    header .tb-name > input.tb-name-input[type=text]:focus-visible {
-      font: inherit; font-size: 13.5px; font-weight: 700; color: var(--wa-ink); min-height: 0; padding: 0;
+    .tb-name > input.tb-name-input[type=text],
+    .tb-name > input.tb-name-input[type=text]:hover,
+    .tb-name > input.tb-name-input[type=text]:focus-visible {
+      font: inherit; font-size: 14px; font-weight: 600; letter-spacing: -.01em; color: var(--wa-ink); min-height: 0; padding: 0;
       border: 0; background: transparent; box-shadow: none; outline: none;
-      field-sizing: content; min-width: 7ch; max-width: 260px;
+      field-sizing: content; min-width: 7ch; max-width: 280px;
     }
-    header .tb-name > input.tb-name-input:disabled { opacity: 1; cursor: default; }
+    .tb-name > input.tb-name-input:disabled { opacity: 1; cursor: default; }
     .tb-pen { font-size: 11px; color: var(--wa-muted); opacity: .6; }
     .tb-pill {
       display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: 999px; min-width: 0; max-width: 300px;
@@ -3294,7 +3286,6 @@ export class WristAssistantPanel extends LitElement {
        is selected, so eight kind colors never fight the selection. */
     .layer.hl { background: var(--wa-sel-bg); box-shadow: inset 0 0 0 1px var(--wa-sel-ring); }
     .layer:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    .layer.pick { box-shadow: inset 0 0 0 2px var(--wa-accent); }
     .layer.lit { background: var(--wa-sel-bg); box-shadow: inset 0 0 0 2px var(--wa-accent); }
     /* A member of the selected group: lit in the folder's color, without
        the selected row's ring, so the group reads as one block. */
@@ -3383,8 +3374,8 @@ export class WristAssistantPanel extends LitElement {
     /* Inline has no stack above its rows, so they sit at the foot of the card,
        where a canvas shape's own rows end up. */
     .inline-layers .pinned-set { margin-top: auto; }
-    .pinned-set .layer.pinned:not(.hl):not(.lit):not(.pick) { background: transparent; box-shadow: none; }
-    .pinned-set .layer.pinned:not(.hl):not(.lit):not(.pick):hover {
+    .pinned-set .layer.pinned:not(.hl):not(.lit) { background: transparent; box-shadow: none; }
+    .pinned-set .layer.pinned:not(.hl):not(.lit):hover {
       background: color-mix(in srgb, var(--wa-ink) 5%, transparent); box-shadow: none;
     }
     .pinned-set .layer.pinned + .layer.pinned {
@@ -4042,7 +4033,6 @@ export class WristAssistantPanel extends LitElement {
     .preview.medium svg { width: min(100%, 880px); border-radius: 7.7% / 16.3%; }
     .preview.large svg { width: min(100%, 520px); border-radius: 7.7% / 7.4%; }
     .preview.xlarge svg { width: min(100%, 380px); border-radius: 7.7% / 4.8%; }
-    .preview.picking svg, .preview.picking svg * { cursor: crosshair; }
     .preview.inline .inline-line {
       display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 220px;
       padding: 8px 18px; border-radius: 999px; background: #000; color: #fff; font-size: 15px;
@@ -4243,11 +4233,26 @@ export class WristAssistantPanel extends LitElement {
       display: flex; align-items: center; gap: 12px; height: 48px; padding: 0 16px; flex: none; min-width: 0;
       border-bottom: 1px solid var(--wa-line);
     }
-    .cv-name {
-      flex: 0 1 auto; min-width: 4em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-      font-size: 14px; font-weight: 600; letter-spacing: -.01em; color: var(--wa-ink);
-    }
+    .cv-head .tb-name { flex: 0 1 auto; margin-left: -8px; }
     .cv-slash { flex: none; color: var(--wa-line-strong); }
+    /* The whole-complication actions: quiet outlined buttons that read as one
+       set with the device chips beside them. Delete goes red, and while it is
+       armed the choices stand in its place. */
+    button.cv-act {
+      display: inline-flex; align-items: center; gap: 4px; flex: none; height: 28px; padding: 0 10px; border-radius: 7px; cursor: pointer;
+      font: inherit; font-size: 12px; font-weight: 600; white-space: nowrap;
+      border: 1px solid var(--wa-line); background: transparent; color: var(--wa-ink);
+    }
+    button.cv-act:hover:not(:disabled), button.cv-act[aria-expanded="true"] { background: color-mix(in srgb, var(--wa-ink) 8%, transparent); border-color: var(--wa-line-strong); }
+    button.cv-act:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    button.cv-act:disabled { opacity: .45; cursor: default; }
+    button.cv-act.danger { color: #FF453A; }
+    button.cv-act.danger:hover:not(:disabled) { background: color-mix(in srgb, #FF453A 14%, transparent); border-color: color-mix(in srgb, #FF453A 40%, transparent); }
+    button.cv-act .caret { display: inline-flex; margin-right: -3px; color: var(--wa-hint); }
+    button.cv-act .caret svg { width: 11px; height: 11px; }
+    .cv-del { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+    .case-tool.add-tool .pop-menu { left: auto; right: 0; min-width: 230px; }
+    .case-tool.add-tool .place-note { padding: 6px 10px 4px; font-size: 11px; color: var(--wa-muted); }
     .cv-shape {
       display: inline-flex; align-items: center; gap: 6px; flex: 0 4 auto; min-width: 0;
       font-size: 12px; color: var(--wa-muted); white-space: nowrap;
@@ -4342,6 +4347,12 @@ export class WristAssistantPanel extends LitElement {
     button.tb > svg.ui-icon { width: 14px; height: 14px; flex: none; }
     button.tb .caret { display: inline-flex; margin-left: -3px; color: var(--wa-hint); }
     button.tb .caret svg { width: 11px; height: 11px; }
+    /* The Preview menu joins the case and the color on one button: "46 mm ·
+       Full color". The menu under it has the two lists under small headings. */
+    button.tb .tb-mid { color: var(--wa-hint); margin: 0 -1px; }
+    .pop-menu.preview-menu { min-width: 190px; }
+    .pop-menu .pop-head { padding: 6px 10px 3px; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--wa-muted); }
+    .preview-menu .row[aria-checked="true"] { background: color-mix(in srgb, var(--wa-accent) 18%, transparent); }
     button.tb .tint-dot { margin-right: 0; }
     .tb-dot { width: 5px; height: 5px; margin-left: -4px; border-radius: 50%; background: currentColor; flex: none; }
     button.tb.icon { padding: 0 7px; font-size: 14px; }
@@ -6004,11 +6015,6 @@ export class WristAssistantPanel extends LitElement {
       const column = this.renderRoot.querySelector<HTMLElement>(".column.inspector");
       if (column) column.scrollTop = 0;
     }
-    // Bring the pointed row into view, or a long Layers card can answer off
-    // screen. `nearest` means a row already visible never moves.
-    if (changed.has("pickHoverId") && this.pickHoverId !== undefined) {
-      this.renderRoot.querySelector<HTMLElement>(".layer.pick")?.scrollIntoView({ block: "nearest" });
-    }
     // The zoom dialog is only in the tree while open, and a native dialog
     // needs showModal() for the backdrop and the Escape key.
     if (changed.has("zoomed") && this.zoomed) {
@@ -6048,14 +6054,6 @@ export class WristAssistantPanel extends LitElement {
     if (e.key === "Escape" && this.addSheet) {
       e.preventDefault();
       this.closeAddSheet();
-      return;
-    }
-    // Escape leaves pick mode. It runs before the modifier gate, and only when
-    // picking, so nothing else that uses Escape (the preset dialog, the entity
-    // search) loses its key.
-    if (e.key === "Escape" && this.picking) {
-      e.preventDefault();
-      this.togglePicking(false);
       return;
     }
     const focused = e.composedPath()[0] as HTMLElement | undefined;
@@ -7402,7 +7400,6 @@ export class WristAssistantPanel extends LitElement {
   /** The Control Center tab, clicked. */
   private openControlView() {
     this.setRowEdit(undefined);
-    this.picking = false;
     this.controlView = true;
     this.inspect = { kind: "general" };
   }
@@ -8071,20 +8068,7 @@ export class WristAssistantPanel extends LitElement {
 
   // ── preview gestures ──────────────────────────────────────────────────
 
-  /**
-   * The pick toggle, drawn over the preview beside Show taps: picking happens
-   * on the face, so the switch sits with the face.
-   */
-  private renderPickButton() {
-    const on = this.picking;
-    const off = !this.draft || this.parseError !== undefined;
-    return html`<button class="pick ${on ? "on" : ""}" ?disabled=${off}
-      aria-pressed=${on ? "true" : "false"}
-      title=${on ? "Point at the face to name a layer. Click one to select it. Escape stops." : "Point at a layer on the face to find it (Escape stops)"}
-      @click=${() => this.togglePicking()}><span class="glyph">⌖</span><span class="word">${on ? "Picking…" : "Pick layer"}</span></button>`;
-  }
-
-  /** The review-mode toggle. Sits beside Pick layer because both answer a
+  /** The review-mode toggle, drawn over the zoom dialog's face: it answers a
    * question about the face rather than changing it. */
   private renderShowTapsButton() {
     const on = this.showTaps;
@@ -8154,13 +8138,13 @@ export class WristAssistantPanel extends LitElement {
 
   /**
    * The one floating toolbar over the stage, top centre. Four groups: the
-   * questions asked of the face (Pick, Taps, Demo), how it is looked at (the
-   * case and the tint), snapping, and the zoom.
+   * questions asked of the face (Taps, Demo), how it is looked at (one
+   * Preview menu: the case, then the tint), snapping, and the zoom.
    *
    * It replaces the three rows that used to sit over the face (the shape and
    * Preview as row, then the pill of face toggles and snapping switches), so
    * the face gets the height. Every one of those controls is here or one menu
-   * down. Inline has no face, so it keeps only Preview as.
+   * down. Inline has no face, so it keeps only the case.
    */
   private renderStageTools(family: FamilyKind, deviceCase: PreviewCase) {
     const drawable = isDrawable(family);
@@ -8170,12 +8154,13 @@ export class WristAssistantPanel extends LitElement {
       stroke=${fill ? "none" : "currentColor"} stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">${body}</svg>`;
     const caseOpen = this.openMenu === "case";
     const tint = this.tintState();
-    const tintOpen = this.openMenu === "tint";
+    const tintWord = tint.current ? `${tint.current.label} ${tint.word}` : tint.plain;
+    const tintDot = tint.current
+      ? html`<i class="tint-dot" style=${`--sw:${tint.current.hex}`}></i>`
+      : html`<i class="tint-dot ${tint.lockWhite ? "" : "full"}" style=${tint.lockWhite ? "--sw:#FFFFFF" : nothing}></i>`;
+    const pickTint = (hex: string | undefined) => { this.toggleMenu("case", false); this.previewTint = hex; };
     return html`<div class="stage-tools" role="toolbar" aria-label="Canvas tools">
       ${drawable ? html`
-        <button class="tb ${this.picking ? "on" : ""}" ?disabled=${off} aria-pressed=${this.picking ? "true" : "false"}
-          title=${this.picking ? "Point at the face to name a layer. Click one to select it. Escape stops." : "Point at a layer on the face to find it (Escape stops)"}
-          @click=${() => this.togglePicking()}>${glyph(svg`<path d="M2 1.5L11 6L7 7.2L5.5 11.5Z" />`)}<span class="word">${this.picking ? "Picking…" : "Pick"}</span></button>
         <button class="tb ${this.showTaps ? "on" : ""}" ?disabled=${off} aria-pressed=${this.showTaps ? "true" : "false"}
           title="Show every tap zone, labelled with what it does, over a dimmed face. With a layer selected, only its tap zone shows, and you can drag its corners to size it."
           @click=${() => this.setShowTaps(!this.showTaps)}>${glyph(svg`<circle cx="6.5" cy="6.5" r="5" /><circle cx="6.5" cy="6.5" r="1.8" fill="currentColor" />`)}<span class="word">Taps</span></button>
@@ -8183,24 +8168,27 @@ export class WristAssistantPanel extends LitElement {
           title="Try the complication the way the watch draws it: no grid, no handles, no tap boxes. Taps really run, so a toggle really toggles. Escape closes."
           @click=${() => this.openDemo()}>${glyph(svg`<path d="M3 1.8L11 6.5L3 11.2Z" />`, true)}<span class="word">Demo</span></button>
         ${sep}` : nothing}
-      <span class="case-tool" data-menu="case">
-        <button class="tb" aria-haspopup="listbox" aria-expanded=${caseOpen ? "true" : "false"}
-          aria-label=${`Preview as ${deviceCase.label}`}
-          title=${`Preview as. Layouts are made in the ${this.referenceCase.label} box. Every other size draws a scaled copy of it.`}
-          @click=${() => this.toggleMenu("case")}>${uiIcon(this.previewAsPhone ? "phone" : "watch")}<span class="word keep">${deviceCase.label}</span><span class="caret">${uiIcon("chevron")}</span></button>
-        ${caseOpen ? html`<div class="pop-menu" role="listbox" aria-label="Preview as">
-          ${this.previewCases.map((c) => html`<button class="row" role="option" aria-selected=${c.label === deviceCase.label ? "true" : "false"}
+      <span class="case-tool preview-tool" data-menu="case">
+        <button class="tb ${tint.on !== undefined ? "lit" : ""}" aria-haspopup="menu" aria-expanded=${caseOpen ? "true" : "false"}
+          aria-label=${drawable ? `Preview as ${deviceCase.label}, ${tintWord.toLowerCase()}` : `Preview as ${deviceCase.label}`}
+          title=${drawable
+            ? `Preview as: the case size and the color. Layouts are made in the ${this.referenceCase.label} box; every other size draws a scaled copy of it. ${tint.title}`
+            : `Preview as. Layouts are made in the ${this.referenceCase.label} box. Every other size draws a scaled copy of it.`}
+          @click=${() => this.toggleMenu("case")}>${uiIcon(this.previewAsPhone ? "phone" : "watch")}<span class="word keep">${deviceCase.label}</span>${drawable
+            ? html`<span class="tb-mid" aria-hidden="true">·</span>${tintDot}<span class="word">${tintWord}</span>` : nothing}<span class="caret">${uiIcon("chevron")}</span></button>
+        ${caseOpen ? html`<div class="pop-menu preview-menu" role="menu" aria-label="Preview as">
+          <div class="pop-head">Size</div>
+          ${this.previewCases.map((c) => html`<button class="row" role="menuitemradio" aria-checked=${c.label === deviceCase.label ? "true" : "false"}
             @click=${() => { this.toggleMenu("case", false); this.previewCase = c.label; }}>${c.label}${c.measured ? "" : " (estimated)"}</button>`)}
+          ${drawable ? html`<div class="pop-sep" role="separator"></div>
+            <div class="pop-head">Color</div>
+            <button class="row" role="menuitemradio" aria-checked=${tint.on === undefined ? "true" : "false"} @click=${() => pickTint(undefined)}>
+              <i class="tint-dot ${tint.lockWhite ? "" : "full"}" style=${tint.lockWhite ? "--sw:#FFFFFF" : nothing}></i>${tint.plain}</button>
+            ${FACE_TINTS.map((c) => html`<button class="row" role="menuitemradio" aria-checked=${c.hex === tint.on ? "true" : "false"}
+              @click=${() => pickTint(c.hex)}><i class="tint-dot" style=${`--sw:${c.hex}`}></i>${c.label} ${tint.word}</button>`)}` : nothing}
         </div>` : nothing}
       </span>
-      ${drawable ? html`<span class="case-tool" data-menu="tint">
-        <button class="tb ${tint.on !== undefined ? "lit" : ""}" ?disabled=${off} aria-haspopup="listbox" aria-expanded=${tintOpen ? "true" : "false"}
-          aria-label=${tint.aria} title=${tint.title} @click=${() => this.toggleMenu("tint")}>
-          ${tint.current ? html`<i class="tint-dot" style=${`--sw:${tint.current.hex}`}></i>` : html`<i class="tint-dot ${tint.lockWhite ? "" : "full"}" style=${tint.lockWhite ? "--sw:#FFFFFF" : nothing}></i>`}<span class="word">${tint.current ? `${tint.current.label} ${tint.word}` : tint.plain}</span><span class="caret">${uiIcon("chevron")}</span>
-        </button>
-        ${this.renderTintMenu()}
-      </span>
-      ${sep}${this.renderSnapMenu()}
+      ${drawable ? html`${sep}${this.renderSnapMenu()}
       ${sep}${this.renderZoomTools()}` : nothing}
     </div>`;
   }
@@ -8483,7 +8471,6 @@ export class WristAssistantPanel extends LitElement {
         ${this.renderStageHint(cfg, family)}
         <span class="spacer"></span>
         ${this.renderTintTool()}
-        ${this.renderPickButton()}
         ${this.renderShowTapsButton()}
         ${this.renderSnapTools()}
         <button class="pick" title="Back to the editor (Escape)" @click=${() => { this.zoomed = false; }}><span class="glyph">⤡</span>Close</button>
@@ -8494,10 +8481,9 @@ export class WristAssistantPanel extends LitElement {
     </dialog>`;
   }
 
-  /** Open demo mode. Any editor mode that would fight it is dropped first:
-   * picking and review both draw marks the watch never draws. */
+  /** Open demo mode. Review mode is dropped first: it draws marks the watch
+   * never draws. */
   private openDemo() {
-    this.togglePicking(false);
     if (this.showTaps) this.setShowTaps(false);
     this.demoNote = undefined;
     this.freezeDemoStates();
@@ -8708,14 +8694,13 @@ export class WristAssistantPanel extends LitElement {
       [`${s}${m}H`, "Hide or show the selection in the shape being edited"],
       ["[ · ]", "The page before · after, on a complication that has pages"],
       ["/", "Open Add in the Layers card and search the elements and presets"],
-      ["Escape", "Leave the row designer, then drop the pick, then the selection. Also stops Pick layer and closes a dialog"],
+      ["Escape", "Leave the row designer, then drop the pick, then the selection. Also closes a dialog"],
     ];
     const mouse: [string, string][] = [
       ["Click", "A layer on the face or in the list: edit it. Drag it to move, pull a corner to resize"],
       [`${MULTI_KEY}-click · ⇧-click`, "Add a layer to the pick · Pick a range of rows. Then Group them so a finished part moves as one"],
       ["Rest on a row", "Tints that layer on the face without selecting it. A group row tints every member"],
       ["Drag a row", "Reorder the list. Drop it on a group to put it inside"],
-      ["Pick layer", "Point at the face to find a layer. Click it to select it"],
       ["Show taps", "Every tap zone, labelled. With a layer selected, only its tap shows and its corners drag"],
       ["Demo", "The face alone, drawn the way the watch draws it, with no grid, no handles and no tap boxes. Press it and the tap really runs: pages turn, data refreshes, a toggle really toggles, and the success flash rings what was pressed exactly as it does on the wrist. The actions that live on the watch (opening the app, the timers) say what they would do instead. Escape closes"],
       ["Snapping", "The three switches over the face. Snap to grid: layers land on a grid when you drag them, 1% by default, and arrows move one grid step; the size sits beside it. Grid lines draws the grid. Snap to layers: edges and middles land on the other layers' and on the middle of the face, with a pink line while they meet. Both snaps start on"],
@@ -8841,17 +8826,6 @@ export class WristAssistantPanel extends LitElement {
 
   private setShowTaps(on: boolean) {
     this.showTaps = on;
-    // Both modes take over the pointer, so only one can be on.
-    if (on) this.togglePicking(false);
-  }
-
-  private togglePicking(next = !this.picking) {
-    this.picking = next;
-    this.pickHoverId = undefined;
-    if (next) {
-      this.showTaps = false;
-      this.cancelGesture?.();
-    }
   }
 
   /** The layer a preview event points at, with an attached tap sent to the
@@ -8887,22 +8861,6 @@ export class WristAssistantPanel extends LitElement {
     if (same) this.listHoverIds = [];
   }
 
-  private onPickMove(e: PointerEvent) {
-    if (!this.picking) return;
-    this.pickHoverId = this.hitLayerId(e);
-  }
-
-  /** Take the layer under the pointer and leave pick mode, so the next click is
-   * an ordinary one. A click on bare background picks nothing and still ends
-   * the mode, which is how it is cancelled without the keyboard. */
-  private pickAt(family: FamilyKind, e: PointerEvent) {
-    const id = this.hitLayerId(e);
-    this.togglePicking(false);
-    if (!id) return;
-    if (family !== this.activeFamily) this.activeFamily = family;
-    this.inspect = { kind: "layer", id };
-  }
-
   /**
    * A double click on a list opens its row designer.
    *
@@ -8916,7 +8874,7 @@ export class WristAssistantPanel extends LitElement {
    * begun a move, so the gesture is dropped: a double click is not a drag.
    */
   private onPreviewDoubleClick(e: MouseEvent) {
-    if (!this.canEdit || this.picking || this.showTaps || this.rowEditList()) return;
+    if (!this.canEdit || this.showTaps || this.rowEditList()) return;
     const cfg = this.draft?.config;
     if (!cfg) return;
     const hitId = this.rawHitId(e) ?? this.lastPressHitId;
@@ -8943,13 +8901,6 @@ export class WristAssistantPanel extends LitElement {
     const root = this.renderRoot as ShadowRoot | HTMLElement;
     const active = ("activeElement" in root ? root.activeElement : null) as HTMLElement | null;
     if (active && typeof active.blur === "function" && !(e.currentTarget as HTMLElement | null)?.contains(active)) active.blur();
-    // Pick mode outranks dragging, and selecting is not an edit, so it works on
-    // a read-only complication too.
-    if (this.picking) {
-      e.preventDefault();
-      this.pickAt(family, e);
-      return;
-    }
     const target = e.target as SVGElement;
     // Null, never undefined, off a handle: the checks below test `!== null`, and
     // an undefined handle sent a plain drag on an icon down the corner path,
@@ -9278,7 +9229,7 @@ export class WristAssistantPanel extends LitElement {
     // Review mode reads the face rather than moving it, and pick mode is
     // choosing a layer rather than editing one. Neither drags, so neither
     // nudges.
-    if (!cfg || !this.canEdit || this.showTaps || this.picking) return false;
+    if (!cfg || !this.canEdit || this.showTaps) return false;
     const step = coarse ? NUDGE_COARSE : 1;
     const px = dx * step;
     const py = dy * step;
@@ -9487,8 +9438,6 @@ export class WristAssistantPanel extends LitElement {
     const caption = d ? savedCaption(d.baseRevision === null, rec?.updatedAt, Date.now()) : undefined;
     return html`<header class=${stacked ? "stacked" : nothing}>
       ${this.renderPicker()}
-      ${d ? this.renderNameField(d.config) : nothing}
-      ${d ? this.renderPlacePill(d.config) : nothing}
       <span class="spacer"></span>
       <button class="icon tb-icon" @click=${() => this.undo()} ?disabled=${!d?.canUndo} title="Undo (⌘Z)" aria-label="Undo">${uiIcon("undo")}</button>
       <button class="icon tb-icon" @click=${() => this.redo()} ?disabled=${!d?.canRedo} title="Redo (⇧⌘Z)" aria-label="Redo">${uiIcon("redo")}</button>
@@ -9507,10 +9456,10 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * The complication's name, typed over where it stands. It commits on Enter
-   * or on leaving the box, through the same write the Complication card's Name
-   * field makes, so the two stay one setting and one undo step. Escape puts the
-   * name back.
+   * The complication's name, typed over where it stands at the head of the
+   * canvas. It commits on Enter or on leaving the box, through the same write
+   * the Complication card's Name field makes, so the two stay one setting and
+   * one undo step. Escape puts the name back.
    */
   private renderNameField(cfg: CustomComplicationConfig) {
     const commit = (input: HTMLInputElement) => {
@@ -9529,17 +9478,6 @@ export class WristAssistantPanel extends LitElement {
         }} />
       ${this.canEdit ? html`<span class="tb-pen" aria-hidden="true">✎</span>` : nothing}
     </label>`;
-  }
-
-  /** "Rectangular · Jesse's Apple Watch": the shape this complication is and
-   * the device it is on, as one quiet pill. A design on the shelf is on no
-   * device, so it says unassigned. */
-  private renderPlacePill(cfg: CustomComplicationConfig) {
-    const families = supportedFamilies(cfg);
-    const shape = families[0] !== undefined ? familyTitle(families[0]) : cfg.control !== undefined ? "Control" : "No shape";
-    const owner = this.selectedOwner;
-    const device = !owner || isLibraryOwner(owner) ? "unassigned" : ownerShortLabel(owner);
-    return html`<span class="tb-pill" title=${`${shape}, ${device === "unassigned" ? "on no device yet" : `on ${device}`}`}>${shape} · ${device}</span>`;
   }
 
   /** The sync state as the header shows it, or undefined while there is
@@ -11513,10 +11451,8 @@ export class WristAssistantPanel extends LitElement {
   /** Open or shut one of the preview bar's menus; opening one shuts the other.
    * A press anywhere outside the open menu's control shuts it, the same way
    * the complication picker closes. */
-  private toggleMenu(menu: "grid" | "case" | "tint" | "list" | "place" | "doc" | "snap", next = this.openMenu !== menu) {
+  private toggleMenu(menu: "grid" | "case" | "tint" | "list" | "place" | "doc" | "snap" | "add", next = this.openMenu !== menu) {
     this.openMenu = next ? menu : this.openMenu === menu ? undefined : this.openMenu;
-    // The "···" menu opens folded, and forgets an armed Delete when it shuts.
-    if (menu === "doc" && this.openMenu !== "doc") { this.docPlaceOpen = false; this.confirmDelete = false; }
     if (this.openMenu !== undefined) window.addEventListener("pointerdown", this.menuOutside, { capture: true });
     else window.removeEventListener("pointerdown", this.menuOutside, { capture: true });
   }
@@ -11654,7 +11590,7 @@ export class WristAssistantPanel extends LitElement {
   private deviceOwnerOf(owner: OwnerSummary): DeviceOwner {
     return {
       ownerId: owner.owner_watch_id,
-      label: ownerLabel(owner),
+      label: ownerShortLabel(owner),
       kind: deviceKindOf(owner),
       families: familiesFor(owner),
       comingSoon: comingSoonFamilies(owner),
@@ -14880,9 +14816,8 @@ export class WristAssistantPanel extends LitElement {
         ? `Tappable · ${describeTapAction(el.payload.action)}`
         : tap ? `Tappable · ${layerTitle(tap, ctx)} · ${tapAct ? describeTapAction(tapAct) : ""}` : undefined;
       const states = statesSummary(el.payload.rules);
-      const pointed = this.picking && this.pickHoverId === id;
       const d = this.rowDrag(id, edit);
-      return html`<div class="layer ${hl ? "hl" : ""} ${held ? "held" : ""} ${pointed ? "pick" : ""} ${this.dialogLitIds.includes(id) ? "lit" : ""} ${hidden ? "dim" : ""} ${this.multi.has(id) ? "multi" : ""} ${inGroup ? "kid" : ""} ${rich ? "rich" : ""}"
+      return html`<div class="layer ${hl ? "hl" : ""} ${held ? "held" : ""} ${this.dialogLitIds.includes(id) ? "lit" : ""} ${hidden ? "dim" : ""} ${this.multi.has(id) ? "multi" : ""} ${inGroup ? "kid" : ""} ${rich ? "rich" : ""}"
         style=${`--k:${KIND_COLOR[el.kind]}`} tabindex="0" draggable=${d.draggable}
         @pointerenter=${() => { this.listHoverIds = [id]; }}
         @pointerleave=${() => this.leaveRow([id])}
@@ -15470,18 +15405,18 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * The quiet header over the canvas, one 48px row: what this is (name, then
-   * shape and page, muted), where it lives (one chip per device), and one
-   * "···" menu for what is done to the whole of it.
+   * The header over the canvas, one 48px row: what this is (the name, typed
+   * over in place, then shape and page, muted), where it lives (one chip per
+   * device), what is done to the whole of it (Add to a device, Duplicate,
+   * Delete), and a "···" menu for History.
    *
    * It folds the three rows that used to sit here: the name with its actions,
-   * the devices with "Add to a device", and the tool row. The actions and the
-   * device menu went into "···"; the tools went onto the floating toolbar.
-   * A document that still holds a shape and a Control Center control keeps
-   * its segmented switch, here, in place of the shape's name.
+   * the devices with "Add to a device", and the tool row. The tools went onto
+   * the floating toolbar. A document that still holds a shape and a Control
+   * Center control keeps its segmented switch, here, in place of the shape's
+   * name.
    */
   private renderCanvasHead(cfg: CustomComplicationConfig, layouts: ResolvedAll) {
-    const name = cfg.name.trim() || "Complication";
     const f = supportedFamilies(cfg)[0];
     const seg = this.hasControlTab(cfg);
     const paged = usesPages(cfg) && !this.inControlView;
@@ -15489,7 +15424,7 @@ export class WristAssistantPanel extends LitElement {
     const row = this.openRow();
     const on = row ? this.rowPlaces(row, f).filter((p) => p.on) : [];
     return html`<div class="cv-head">
-      <span class="cv-name" title=${name}>${name}</span>
+      ${this.renderNameField(cfg)}
       <span class="cv-slash" aria-hidden="true">/</span>
       ${seg
         ? html`${this.renderShapeSwitch(cfg, layouts)}${pagePart ? html`<span class="cv-shape">${pagePart}</span>` : nothing}`
@@ -15500,59 +15435,67 @@ export class WristAssistantPanel extends LitElement {
       ${row && on.length > 0 ? html`<span class="doc-on" role="group" aria-label="Devices this complication is on">
         ${on.map((place) => this.renderPlaceChip(row, place))}
       </span>` : nothing}
-      ${this.renderDocMenu(cfg)}
+      ${this.renderDocActions(cfg)}
+      ${this.renderDocMenu()}
     </div>`;
   }
 
   /**
-   * The "···" menu: History, Duplicate as…, Add to a device, and Delete
-   * under a rule. The same four things the document row used to carry as
-   * buttons, in that order.
-   *
-   * History used to be hidden until the first save. It stays in the list now,
-   * disabled with the reason, so the menu reads the same every time. Add to a
-   * device unfolds its devices in place, each with the reason it cannot take
-   * this design when it cannot. Delete arms the way it always did: one press
-   * asks, and a design on several devices asks which.
+   * What is done to the whole complication, as buttons on the canvas head:
+   * Add to a device, Duplicate, and Delete. Delete arms the way it always
+   * did: one press asks in place, and a design on several devices asks which.
    */
-  private renderDocMenu(cfg: CustomComplicationConfig) {
+  private renderDocActions(cfg: CustomComplicationConfig) {
+    if (!this.canEdit) return nothing;
+    const n = this.openLinkCount();
+    return html`${this.renderAddToDevice(cfg)}
+      <button class="cv-act" aria-haspopup="dialog" title="Make this design again as another shape, or on another device"
+        @click=${() => this.openDuplicateAs(cfg, this.ownerId ?? "")}>Duplicate</button>
+      ${this.confirmDelete
+        ? html`<span class="cv-del" role="group" aria-label="Delete this complication?">
+            ${n > 1
+              ? html`<button class="cv-act danger" title=${`Delete only the copy on ${this.ownerName(this.ownerId ?? "")}`}
+                  @click=${() => { this.confirmDelete = false; void this.deleteCurrent(false); }}>This device</button>
+                <button class="cv-act danger" title="Delete it on every device it is on"
+                  @click=${() => { this.confirmDelete = false; void this.deleteCurrent(true); }}>All ${n} devices</button>`
+              : html`<button class="cv-act danger" @click=${() => { this.confirmDelete = false; void this.deleteCurrent(); }}>Really delete</button>`}
+            <button class="cv-act" @click=${() => { this.confirmDelete = false; }}>Cancel</button>
+          </span>`
+        : html`<button class="cv-act danger" title="Delete this complication. It asks once more first."
+            @click=${() => { this.confirmDelete = true; }}>Delete</button>`}`;
+  }
+
+  /**
+   * The "···" menu on the canvas head. History is what is left in it now that
+   * the actions stand beside it. History used to be hidden until the first
+   * save. It stays in the list, disabled with the reason, so the menu reads
+   * the same every time.
+   */
+  private renderDocMenu() {
     if (!this.canEdit) return nothing;
     const open = this.openMenu === "doc";
     const unsaved = this.draft?.baseRevision === null;
     const close = () => this.toggleMenu("doc", false);
     return html`<span class="case-tool doc-menu" data-menu="doc">
       <button class="cv-more" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"}
-        aria-label="More: history, duplicate, add to a device, delete" title="More"
+        aria-label="More: history" title="More"
         @click=${() => this.toggleMenu("doc")}>···</button>
       ${open ? html`<div class="pop-menu doc-pop" role="menu" aria-label="Complication">
         <button class="row" role="menuitem" ?disabled=${unsaved} aria-haspopup="dialog"
           title=${unsaved ? "Nothing to go back to until it has been saved once" : "Earlier saves of this complication"}
           @click=${() => { close(); void this.openHistoryDialog(); }}>History${unsaved ? html`<small class="why">No earlier saves yet</small>` : nothing}</button>
-        <button class="row" role="menuitem" aria-haspopup="dialog"
-          title="Make this design again as another shape, or on another device"
-          @click=${() => { close(); this.openDuplicateAs(cfg, this.ownerId ?? ""); }}>Duplicate as…</button>
-        ${this.renderDocPlaces(cfg)}
-        <div class="pop-sep" role="separator"></div>
-        ${this.confirmDelete
-          ? html`<div class="doc-del">${this.openLinkCount() > 1
-            ? html`<button class="row danger" role="menuitem" title=${`Delete only the copy on ${this.ownerName(this.ownerId ?? "")}`}
-                @click=${() => { close(); void this.deleteCurrent(false); }}>This device</button>
-              <button class="row danger" role="menuitem" title="Delete it on every device it is on"
-                @click=${() => { close(); void this.deleteCurrent(true); }}>All ${this.openLinkCount()} devices</button>`
-            : html`<button class="row danger" role="menuitem" @click=${() => { close(); void this.deleteCurrent(); }}>Really delete</button>`}
-            <button class="row" role="menuitem" @click=${() => { this.confirmDelete = false; }}>Cancel</button></div>`
-          : html`<button class="row danger" role="menuitem" @click=${() => { this.confirmDelete = true; }}>Delete</button>`}
       </div>` : nothing}
     </span>`;
   }
 
   /**
-   * "Add to a device", inside the "···" menu: the picker's own Devices menu,
-   * on the complication the editor has open. See `renderAddPlaceRow` for what
-   * a row does. It is there even when it cannot act, disabled with the
-   * reason, so the way to put a design on a second watch is always findable.
+   * "Add to a device", a button with its own menu on the canvas head: the
+   * picker's own Devices menu, on the complication the editor has open. See
+   * `renderAddPlaceRow` for what a row does. It is there even when it cannot
+   * act, disabled with the reason, so the way to put a design on a second
+   * watch is always findable.
    */
-  private renderDocPlaces(cfg: CustomComplicationConfig) {
+  private renderAddToDevice(cfg: CustomComplicationConfig) {
     const row = this.openRow();
     const family = supportedFamilies(cfg)[0];
     const admin = this.hass.user?.is_admin === true;
@@ -15565,14 +15508,16 @@ export class WristAssistantPanel extends LitElement {
         : rest.length === 0
           ? "There is no other device of this kind to put it on."
           : undefined;
-    const open = this.docPlaceOpen && why === undefined;
-    return html`<button class="row doc-place-row" role="menuitem" aria-haspopup="true" aria-expanded=${open ? "true" : "false"}
+    const open = this.openMenu === "add" && why === undefined;
+    return html`<span class="case-tool add-tool" data-menu="add">
+      <button class="cv-act" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"}
         ?disabled=${this.saving || why !== undefined} title=${why ?? "Put this complication on another device too"}
-        @click=${() => { this.docPlaceOpen = !this.docPlaceOpen; }}>Add to a device<span class="spacer"></span>${uiIcon(open ? "down" : "right")}</button>
-      ${open && row ? html`<div class="doc-places-list" role="group" aria-label="Add to a device">
+        @click=${() => this.toggleMenu("add")}>Add to a device<span class="caret">${uiIcon("chevron")}</span></button>
+      ${open && row ? html`<div class="pop-menu doc-pop" role="menu" aria-label="Add to a device">
         ${rest.map((place) => this.renderAddPlaceRow(row, place, family))}
         <div class="place-note">A linked copy is written there. Saving this one saves it there too.</div>
-      </div>` : nothing}`;
+      </div>` : nothing}
+    </span>`;
   }
 
   private renderBigPreview(family: DrawableFamily, layouts: ResolvedAll, deviceCase: PreviewCase, overlay?: TemplateResult) {
@@ -15591,13 +15536,12 @@ export class WristAssistantPanel extends LitElement {
     // so the pick reads the same in both places.
     const outlineIds = [...new Set([...groupIds, ...this.multi])];
     const slot = slotFor(deviceCase, family);
-    // Pick mode drops the resize handles: they are drag affordances, and
-    // while picking nothing on the face is dragged. Review mode drops them
-    // too, except on the one tap box it is narrowed to.
+    // Review mode drops the resize handles, except on the one tap box it is
+    // narrowed to.
     const focus = this.focusTapId();
     // A row under the pointer in the inspector draws its layer as the one
     // selection, group outlines and all dropped, until the pointer leaves.
-    const peek = !this.picking && !this.showTaps && this.rowHoverId !== undefined
+    const peek = !this.showTaps && this.rowHoverId !== undefined
       && cfg?.elements.some((e) => e.payload.id === this.rowHoverId) ? this.rowHoverId : undefined;
     const hoverIds = peek !== undefined ? [] : this.listHoverIds;
     const opts = {
@@ -15614,18 +15558,14 @@ export class WristAssistantPanel extends LitElement {
       // painted in the tint at the brightness it was drawn in.
       ...previewTintFor(family, this.previewAsPhone, this.previewTint),
       ...(focus !== undefined ? { tapFocusId: focus } : {}),
-      handles: this.canEdit && !this.picking && (!this.showTaps || focus !== undefined),
-      // Pick mode owns the tint while it is on; otherwise the Layers list
-      // does, so resting on a row shows where that layer sits on the face.
-      ...(this.picking
-        ? (this.pickHoverId !== undefined ? { hoverId: this.pickHoverId } : {})
-        : (hoverIds.length > 0 ? { hoverIds } : {})),
+      handles: this.canEdit && (!this.showTaps || focus !== undefined),
+      // The Layers list owns the tint: resting on a row shows where that
+      // layer sits on the face.
+      ...(hoverIds.length > 0 ? { hoverIds } : {}),
     };
-    return html`<div class="preview ${family} active ${this.picking ? "picking" : ""}"
+    return html`<div class="preview ${family} active"
       @pointerdown=${(e: PointerEvent) => this.onPreviewPointerDown(family, e)}
-      @dblclick=${(e: MouseEvent) => this.onPreviewDoubleClick(e)}
-      @pointermove=${(e: PointerEvent) => this.onPickMove(e)}
-      @pointerleave=${() => { if (this.picking) this.pickHoverId = undefined; }}>
+      @dblclick=${(e: MouseEvent) => this.onPreviewDoubleClick(e)}>
       ${renderLayout(layout, opts)}${overlay ?? nothing}
     </div>`;
   }
@@ -15744,8 +15684,6 @@ export class WristAssistantPanel extends LitElement {
         <button class="link" @click=${() => this.setRowEdit(undefined)}>Done designing</button>`;
     } else if (this.showTaps) {
       tail = html`Every tap zone is outlined. Where two overlap, the one higher in Layers wins. Anywhere else does <b>${describeTapAction(cfg.tapAction)}</b>.`;
-    } else if (this.picking) {
-      tail = "Point at a layer and click it. Escape stops.";
     } else if (family === "inline") {
       tail = "One line of text. Edit it on the right.";
     } else if (ins.kind === "group") {
@@ -16028,7 +15966,7 @@ export class WristAssistantPanel extends LitElement {
     const title = block?.why ?? `Put it on ${label}. Saving it saves it everywhere it is.`;
     return html`<button type="button" class="row place-row" role="menuitem"
       ?disabled=${this.saving || block !== undefined} title=${title}
-      @click=${() => { this.toggleMenu("doc", false); void this.addRowTo(row, target, true); }}>
+      @click=${() => { this.toggleMenu("add", false); void this.addRowTo(row, target, true); }}>
       ${uiIcon(icon)}<span class="place-name">${label}</span>
       ${block ? html`<small class="place-no">${block.tag}</small>` : nothing}
     </button>`;
