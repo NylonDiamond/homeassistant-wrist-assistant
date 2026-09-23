@@ -4794,9 +4794,10 @@ ${yH(c)}`}}delete s.hidden,delete s.linkId;let l=cd(a);if(l.length>0){let d=l.sl
     button.tb > svg.ui-icon { width: 14px; height: 14px; flex: none; }
     button.tb .caret { display: inline-flex; margin-left: -3px; color: var(--wa-hint); }
     button.tb .caret svg { width: 11px; height: 11px; }
-    /* The Preview menu joins the case and the color on one button: "46 mm ·
-       Full color". The menu under it has the two lists under small headings. */
-    button.tb .tb-mid { color: var(--wa-hint); margin: 0 -1px; }
+    /* The Preview menu joins the case and the color on one button: the case
+       size, then the color as a dot. The menu under it has the two lists
+       under small headings. */
+    button.tb .tint-dot { margin: 0 1px; }
     .pop-menu.preview-menu { min-width: 190px; }
     .pop-menu .pop-head { padding: 6px 10px 3px; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--wa-muted); }
     .preview-menu .row[aria-checked="true"] { background: color-mix(in srgb, var(--wa-accent) 18%, transparent); }
@@ -6122,7 +6123,7 @@ ${yH(c)}`}}delete s.hidden,delete s.linkId;let l=cd(a);if(l.length>0){let d=l.sl
         <button class="tb ${d.on!==void 0?"lit":""}" aria-haspopup="menu" aria-expanded=${l?"true":"false"}
           aria-label=${a?`Preview as ${i.label}, ${c.toLowerCase()}`:`Preview as ${i.label}`}
           title=${a?`Preview as: the case size and the color. Layouts are made in the ${this.referenceCase.label} box; every other size draws a scaled copy of it. ${d.title}`:`Preview as. Layouts are made in the ${this.referenceCase.label} box. Every other size draws a scaled copy of it.`}
-          @click=${()=>this.toggleMenu("case")}>${L(this.previewAsPhone?"phone":"watch")}<span class="word keep">${i.label}</span>${a?u`<span class="tb-mid" aria-hidden="true">·</span>${p}<span class="word">${c}</span>`:m}<span class="caret">${L("chevron")}</span></button>
+          @click=${()=>this.toggleMenu("case")}>${L(this.previewAsPhone?"phone":"watch")}<span class="word keep">${i.label}</span>${a?p:m}<span class="caret">${L("chevron")}</span></button>
         ${l?u`<div class="pop-menu preview-menu" role="menu" aria-label="Preview as">
           <div class="pop-head">Size</div>
           ${this.previewCases.map(f=>u`<button class="row" role="menuitemradio" aria-checked=${f.label===i.label?"true":"false"}
@@ -6160,6 +6161,7 @@ ${yH(c)}`}}delete s.hidden,delete s.linkId;let l=cd(a);if(l.length>0){let d=l.sl
         @click=${()=>{this.canvasZoom=vp}}>${dg(t)}</button>
       <button class="tb icon" ?disabled=${i||t>=lg} aria-label="Zoom in" title="Zoom in"
         @click=${()=>{this.canvasZoom=$1(this.canvasZoom)}}>+</button>
+      <span class="tb-sep" aria-hidden="true"></span>
       <button class="tb icon" ?disabled=${i} aria-label="Full screen"
         title="Full screen: the face as large as the window allows, for small moves. Drag and arrow keys work there too. Escape closes."
         @click=${()=>{this.zoomed=!0}}>${L("expand")}</button>
