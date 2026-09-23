@@ -4447,61 +4447,6 @@ function dwellSeconds(seconds: number): string {
   return `${Math.round(seconds * 10) / 10} s`;
 }
 
-/**
- * The settings under the Pages card's row, in the left column: the two
- * buttons that make the tap areas a page needs to be turned. How long a tour
- * holds each page is not here but under the Play all pages tap
- * (`tourHoldFields`), the one action that reads it.
- *
- * Everything about pages lives in that card. There used to be a Pages count
- * select here in the Complication card as well, and the two disagreed: the
- * select took a page away by moving its layers onto the new last page, while
- * the trash on a page tab took the page and its layers together. Two controls
- * for one number, with different answers to "where did my layers go". The
- * select is gone, and the count has one story:
- *
- * - `+` adds an empty page and moves nothing.
- * - The trash on a page takes that page and the layers on it, one undo away.
- *   Taking the second-to-last page turns pages off, which is the one way off.
- *
- * There is no Mode switch. Whether the document is a tour follows its tap
- * actions (`pageModeFor`): a Play tour action anywhere makes it one. A
- * switch of its own allowed two dead mixes, a
- * tour nothing could start and a Play tour the watch refused to play.
- *
- * Which page a layer sits on is set on the layer, in its Position card, not
- * here: the document says how many pages there are, and each layer says which
- * one it belongs to.
- */
-export function pagesCardFields(host: EditorHost, page: number): TemplateResult {
-  const cfg = host.config;
-  // Nothing under Add a page until there are pages: the button says what it
-  // does, and a line of print explaining it says the same thing twice.
-  if (!usesPages(cfg)) return html``;
-  // One zone per press, and each lands on the page the author is looking at,
-  // because page 1 usually wants Next alone and the last page wants Back
-  // alone. A pair on every page would put a dead Back on page 1.
-  const zone = (type: "previousPage" | "nextPage") => {
-    const back = type === "previousPage";
-    return html`<button class="page-add" title=${back
-      ? `A tap area over the left half of page ${page}. Tapping it shows the page before.`
-      : `A tap area over the right half of page ${page}. Tapping it shows the next page.`}
-      @click=${() => host.update((c) => { addPageTurnTap(c, type, page); }, `pages-zone-${type}`)}>
-      <span class="page-add-i">${uiIcon("tap")}${back ? uiIcon("left") : uiIcon("right")}</span>
-      <span>Add ${back ? "prev" : "next"} page tap action</span></button>`;
-  };
-  // One line above the buttons, doing the job a separate warning used to: it
-  // says what the buttons make and that a document without one is stuck on
-  // page 1. It goes amber while that is actually true.
-  const stuck = !pageMoverExists(cfg);
-  return html`
-    <div class="page-fix">
-      <span class="page-fix-l ${stuck ? "warn" : ""}">Add a tap action to go to prev/next page.
-        Required for changing pages.</span>
-      <div class="page-fix-pair">${zone("previousPage")}${zone("nextPage")}</div>
-    </div>`;
-}
-
 /** What the swatch shows while no color is stored: the watch's own fallback
  * for a custom complication. Nothing is written until the user picks a
  * color. */
@@ -8405,7 +8350,7 @@ function tapSizeHint(host: EditorHost, tapId: string): TemplateResult | typeof n
   if (parts.length === 0) return nothing;
   const small = smallest < SMALL_TAP_POINTS;
   return html`<div class="field readout"><span>Tap size</span><span class="readout-v">${parts.join(" · ")}</span></div>
-    ${small ? html`<div class="hint warn">That is small for a wrist. Show the tap area and drag its corners out.</div>` : nothing}`;
+    ${small ? html`<div class="hint warn">That is small for a wrist. Show the tap zone and drag its corners out.</div>` : nothing}`;
 }
 
 /**
@@ -8870,20 +8815,20 @@ function tappableSection(host: EditorHost, el: CElement, key: string): TemplateR
     ${attached
       ? html`<div class="value-editor">
           ${tapActionEditor(host, attached.payload as TapElement, updTap, `${key}-attached`)}
-          <div class="field"><span>Tap area</span>
+          <div class="field"><span>Tap zone</span>
             <div class="chips">
               <button class="pick ${host.tapAreaShown ? "on" : ""}" aria-pressed=${host.tapAreaShown ? "true" : "false"}
-                title=${host.tapAreaShown ? "Back to the normal face" : "Dim the face and show only this layer's tap area, with corners to drag"}
+                title=${host.tapAreaShown ? "Back to the normal face" : "Dim the face and show only this layer's tap zone, with corners to drag"}
                 @click=${() => host.showTapArea(!host.tapAreaShown)}><span class="glyph">☞</span>${host.tapAreaShown ? "Hide" : "Show"}</button>
               ${!isZeroOutset((attached.payload as TapElement).outset)
-                ? html`<button class="icon" title="Fit the tap area to the layer again" aria-label="Fit the tap area to the layer again"
+                ? html`<button class="icon" title="Fit the tap zone to the layer again" aria-label="Fit the tap zone to the layer again"
                     @click=${() => updTap((p) => { p.outset = { ...ZERO_OUTSET }; })}>${uiIcon("reset")}</button>`
                 : nothing}
             </div>
           </div>
         </div>
         ${tapSizeHint(host, attached.payload.id)}
-        <div class="hint">The tap area follows this layer in every shape, so there is nothing to line up. Show it to drag its corners past the layer, so a small layer is still an easy target. Where two tap areas overlap, the one higher in Layers wins.</div>`
+        <div class="hint">The tap zone follows this layer in every shape, so there is nothing to line up. Show it to drag its corners past the layer, so a small layer is still an easy target. Where two tap zones overlap, the one higher in Layers wins.</div>`
       : html`<div class="hint">Tapping this layer runs an action of its own, instead of the complication's tap action. It starts as <b>${describeTapAction(preview)}</b>.</div>`}`;
 }
 

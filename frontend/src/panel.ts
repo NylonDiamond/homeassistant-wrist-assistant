@@ -3925,41 +3925,6 @@ export class WristAssistantPanel extends LitElement {
     .row-strip button:hover { filter: brightness(1.06); }
     .row-strip button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .panel-title button.help { flex: none; }
-    /* The ready-made page-turn taps: a label saying which page they land on,
-       then the pair side by side, left one on the left. */
-    .page-fix {
-      display: flex; flex-direction: column; align-items: stretch; gap: 6px; margin-top: 10px;
-      padding-top: 10px; border-top: 1px solid var(--wa-line);
-    }
-    .page-fix .page-fix-l { font-size: 12px; line-height: 1.35; color: var(--wa-muted); margin-bottom: 2px; }
-    /* Brighter, not colored: the same way .hint.warn marks a line that is
-       actually a problem right now. */
-    .page-fix .page-fix-l.warn { color: var(--wa-ink); }
-    /* Prev and next share one row and split it evenly, the way they split the
-       face. The label inside wraps rather than trails off, so a narrow panel
-       costs a second line, never the end of the sentence. */
-    .page-fix .page-fix-pair { display: flex; gap: 6px; }
-    .page-fix .page-fix-pair .page-add { flex: 1 1 0; min-width: 0; }
-    /* Centred, not left-aligned: the two sit side by side and split the row,
-       so ragged text inside them made one look longer than the other. */
-    .page-fix .page-add {
-      font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; text-align: center;
-      display: flex; align-items: center; justify-content: center; gap: 8px;
-      min-height: 32px; padding: 5px 10px; border-radius: 8px;
-      border: 1px solid var(--wa-line); background: var(--wa-input); color: inherit;
-      transition: background-color .12s ease-out, border-color .12s ease-out;
-    }
-    /* The finger and the direction travel together in one block, so the eye
-       reads "a tap, going this way" before it reads the words. */
-    .page-fix .page-add .page-add-i { flex: none; display: inline-flex; align-items: center; gap: 1px; color: var(--wa-page); }
-    :host([dark]) .page-fix .page-add .page-add-i { color: color-mix(in srgb, var(--c) 45%, #fff); }
-    .page-fix .page-add svg.ui-icon { width: 15px; height: 15px; }
-    .page-fix .page-add:hover:not(:disabled) {
-      background: color-mix(in srgb, var(--wa-page) 12%, var(--wa-input));
-      border-color: color-mix(in srgb, var(--wa-page) 45%, var(--wa-line));
-    }
-    .page-fix .page-add:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    .page-fix .page-add:disabled { opacity: .45; cursor: default; }
     /* The tour's progress, under the Pages row: one thin bar, filled by a CSS
        animation over the tour's own length, so nothing has to tick at 60 fps
        to draw it. */
@@ -8124,7 +8089,7 @@ export class WristAssistantPanel extends LitElement {
     const on = this.showTaps;
     return html`<button class="pick ${on ? "on" : ""}" ?disabled=${!this.draft || this.parseError !== undefined}
       aria-pressed=${on ? "true" : "false"}
-      title="Show every tap area, labelled with what it does, over a dimmed face. With a layer selected, only its tap area shows, and you can drag its corners to size it."
+      title="Show every tap zone, labelled with what it does, over a dimmed face. With a layer selected, only its tap zone shows, and you can drag its corners to size it."
       @click=${() => this.setShowTaps(!this.showTaps)}><span class="glyph">☞</span><span class="word">Show taps</span></button>`;
   }
 
@@ -8211,7 +8176,7 @@ export class WristAssistantPanel extends LitElement {
           title=${this.picking ? "Point at the face to name a layer. Click one to select it. Escape stops." : "Point at a layer on the face to find it (Escape stops)"}
           @click=${() => this.togglePicking()}>${glyph(svg`<path d="M2 1.5L11 6L7 7.2L5.5 11.5Z" />`)}<span class="word">${this.picking ? "Picking…" : "Pick"}</span></button>
         <button class="tb ${this.showTaps ? "on" : ""}" ?disabled=${off} aria-pressed=${this.showTaps ? "true" : "false"}
-          title="Show every tap area, labelled with what it does, over a dimmed face. With a layer selected, only its tap area shows, and you can drag its corners to size it."
+          title="Show every tap zone, labelled with what it does, over a dimmed face. With a layer selected, only its tap zone shows, and you can drag its corners to size it."
           @click=${() => this.setShowTaps(!this.showTaps)}>${glyph(svg`<circle cx="6.5" cy="6.5" r="5" /><circle cx="6.5" cy="6.5" r="1.8" fill="currentColor" />`)}<span class="word">Taps</span></button>
         <button class="tb" ?disabled=${off}
           title="Try the complication the way the watch draws it: no grid, no handles, no tap boxes. Taps really run, so a toggle really toggles. Escape closes."
@@ -15693,7 +15658,7 @@ export class WristAssistantPanel extends LitElement {
     const offered = FIRST_RUN_TILES.filter((t) => !("element" in t.action) || familyAllowsKind(family, t.action.element));
     const hooks = {
       addElement: (kind: CElement["kind"]) => this.addElement(kind),
-      openAddSheet: (tab: "presets") => this.openAddSheet(tab),
+      openAddSheet: (tab: "presets") => this.openAddSheet(null, tab),
     };
     return html`<div class="first-run">
       <div class="fr-head">Start with one of these</div>
@@ -15708,32 +15673,12 @@ export class WristAssistantPanel extends LitElement {
     </div>`;
   }
 
-  /**
-   * Hooks shared with the Layers column: add one blank layer of a kind, and
-   * open the Add sheet on one of its tabs. The first-run tiles call them. The
-   * Layers column's redesign owns the real ones; these are the working
-   * minimum over today's Add card, so the tiles work on their own.
-   */
+  /** One blank layer of a kind, for the first-run tiles: the same add the
+   * Add sheet's element tiles make. */
   private addElement(kind: CElement["kind"]) {
     const cfg = this.draft?.config;
     if (!cfg || !this.canEdit || cfg.elements.length >= 64) return;
-    const el = newElement(kind);
-    this.addHere((c) => {
-      c.elements.push(el);
-      if (el.kind === "timeline") convertChartTimes(c, el.payload.id);
-    });
-    this.inspect = { kind: "layer", id: el.payload.id };
-  }
-
-  private openAddSheet(tab?: "elements" | "presets" | "parts") {
-    if (!this.addOpen) {
-      this.addOpen = true;
-      this.saveListView();
-    }
-    void this.updateComplete.then(() => {
-      const target = this.renderRoot.querySelector<HTMLElement>(tab === "presets" ? ".add-card .g-presets" : ".add-card");
-      target?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    });
+    this.addBlankLayer({ kind, title: "", blurb: "" });
   }
 
   /**
@@ -15797,7 +15742,7 @@ export class WristAssistantPanel extends LitElement {
       tail = html`one cell of <b>${layerTitle(designing, ctx)}</b>, scaled up. Drag and size the row's layers here.
         <button class="link" @click=${() => this.setRowEdit(undefined)}>Done designing</button>`;
     } else if (this.showTaps) {
-      tail = html`Every tap area is outlined. Where two overlap, the one higher in Layers wins. Anywhere else does <b>${describeTapAction(cfg.tapAction)}</b>.`;
+      tail = html`Every tap zone is outlined. Where two overlap, the one higher in Layers wins. Anywhere else does <b>${describeTapAction(cfg.tapAction)}</b>.`;
     } else if (this.picking) {
       tail = "Point at a layer and click it. Escape stops.";
     } else if (family === "inline") {
@@ -16614,7 +16559,7 @@ export class WristAssistantPanel extends LitElement {
           ${common.colorable
             ? html`${colorField("Color", common.color, (v) => { if (v !== undefined) setColor(v); })}
               ${common.color === undefined ? html`<div class="hint keep">These layers are different colors. Pick one to give them all the same.</div>` : nothing}`
-            : html`<div class="hint keep">No shared color: a picture and a tap area have none.</div>`}
+            : html`<div class="hint keep">No shared color: a picture and a tap zone have none.</div>`}
           <div class="hint">These layers are on the ${familyTitle(family)} shape and on no other, so nothing here reaches another shape.</div>
           <div class="hint">Size, content and states belong to one layer at a time. Click a layer on its own to reach them.</div>`,
         { color: SECTION_COLOR.place, icon: "place", summary: "The settings every picked layer has", alwaysOpen: true })}`;

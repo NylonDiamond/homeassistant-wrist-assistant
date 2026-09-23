@@ -16,7 +16,7 @@ import {
   sharedDwell,
   startPages,
 } from "../src/model.js";
-import { type EditorHost, generalEditor, pagesCardFields, tapActionEditor } from "../src/editors.js";
+import { type EditorHost, generalEditor, tapActionEditor } from "../src/editors.js";
 import type { HassLike } from "../src/ha-api.js";
 import type { IconProvider } from "../src/renderer.js";
 import { SymbolBrowser } from "../src/symbols.js";
@@ -122,7 +122,6 @@ describe("where the page holds are edited", () => {
     expect(general).toContain("Page 2 hold");
     expect(general).toContain("Tour lasts");
     expect(general).not.toContain("shared by every");
-    expect(flatten(pagesCardFields(host(cfg), 1))).not.toContain("hold");
   });
 
   it("is not under any other tap", () => {
