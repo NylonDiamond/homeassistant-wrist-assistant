@@ -44,6 +44,7 @@ import {
   type FamilyKind,
   type NormalizedFrame,
   type OccupiedSlot,
+  type TapAction,
   type Value,
   CUSTOM_FLASH_DEFAULT,
   CUSTOM_SVG_SYMBOL,
@@ -54,7 +55,6 @@ import {
   controlEffectiveKind,
   controlOnly,
   describeTapAction,
-  tapActionLabel,
   duplicateElement,
   copyElements,
   DRAWABLE_FAMILIES,
@@ -112,12 +112,14 @@ import {
   addPage,
   removePage,
   startPages,
+  addPageTurnTap,
+  pageMoverExists,
   PAGES_MAX_COUNT,
 } from "./model.js";
 import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues } from "./test-controls.js";
-import { agoWords, describeSend, sendState, sendWaitMs } from "./send-state.js";
+import { type SendState, agoWords, describeSend, sendState, sendWaitMs } from "./send-state.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
 import {
   type EntityState,
@@ -176,7 +178,7 @@ import {
   shapeGroups,
   shapeOffered,
 } from "./newComplication.js";
-import { type Person, deviceShortName, peopleNames, peopleOf } from "./people.js";
+import { type Person, deviceShortName, peopleOf } from "./people.js";
 import { type LiveDesign, type LiveShape, type LiveShapes, controlDeviceArt, deviceCropArt, deviceShapeArt, shapeOnlyArt, shapeWell } from "./shapeArt.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { type DeviceKind, type DeviceOwnerLike, LIBRARY_OWNER_ID, deviceKindOf, deviceNoun, deviceSupportsShapes, isLibraryOwner, ownerSupportsControls, updateDeviceMessage } from "./version.js";
@@ -254,7 +256,6 @@ import {
   lookSummary,
   namedValueEditor,
   newNamedValue,
-  pagesCardFields,
   type DescribeContext,
   pickedCommon,
   rowKindIcon,
@@ -574,14 +575,6 @@ function nothingOnText(kind: DeviceKind | "all"): string {
   return "No complications yet.";
 }
 
-/** The step from one header question to the next. Drawn rather than typed so
- * it can carry a stroke thick enough to read as a route, which a text chevron
- * at 12 px never did. */
-function headerArrow(): TemplateResult {
-  return html`<span class="hstep" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-    stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h13" /><path d="M12 6l6 6-6 6" /></svg></span>`;
-}
-
 /**
  * The shapes are drawn by `shapeArt.ts` now.
  *
@@ -642,7 +635,6 @@ const DEMO_FLASH_MS = 700;
  * already shut out again. */
 const DEMO_REFETCH_MS = 2000;
 
-const THUMB_STEP_LABEL = ["S", "M", "L"] as const;
 const THUMB_STEP_TITLE = ["Small", "Medium", "Large"] as const;
 
 /**
@@ -680,7 +672,7 @@ function layerRowFolds(): string {
       ${p} .layer:not(.group) .badge, ${p} .layer:not(.group) .acts { margin-top: 4px; }
       ${p} .layer:not(.group):hover .badges, ${p} .layer.hl .badges, ${p} .layer:focus-within .badges { display: inline-flex; }
       ${p} .layer:not(.group):not(.rich):not(.hl):not(:focus-within):hover .acts { display: none; }
-      ${p} .layer.pinned .badges { display: none; }
+      ${p} .layer.pinned .badges, ${p} .layer.pinned .ground-cap { display: none; }
       ${p} .layer.group { grid-template-areas: "grip bar thumb name" "grip bar thumb right"; }
       ${p} .layer.group > .right { justify-content: flex-end; gap: 2px; }
       ${p} .group-kids { margin-left: 6px; padding-left: 6px; }
@@ -707,44 +699,10 @@ type ThumbStep = 0 | 1 | 2;
 /** The help dialog's tabs. */
 type HelpTab = "basics" | "pages" | "keys" | "sync";
 type LayerDetail = "compact" | "expanded";
-/**
- * How big the Add a layer cards are drawn: names alone, a small sample, or a
- * large one. It started as the Layers list's two densities, which is why the
- * stored value can still read "compact" or "expanded"; `addDetailFrom` maps
- * those onto the three.
- */
-type AddDetail = "names" | "small" | "large";
-
-/** The stored card size, including the two words the setting used to hold.
- * Anything else, including nothing stored at all, leaves the default. */
-export function addDetailFrom(saved: unknown): AddDetail | undefined {
-  switch (saved) {
-    case "names": case "small": case "large":
-      return saved;
-    // The two densities this setting had before Small existed. Samples were
-    // the big cards, names were the list.
-    case "expanded": return "large";
-    case "compact": return "names";
-    default: return undefined;
-  }
-}
 /** How the Layers list is shown: picture size and row detail. Per browser,
- * like the column widths, and never part of the document. */
-/**
- * The left column's three cards each wear one color: in the band across their
- * head, in the wash behind the card, and in the controls inside it.
- *
- * Add a layer keeps the accent, because it is the one card that makes
- * something out of nothing. Layers and Pages were both drawn in the Place
- * section's blue grey, which left the column reading as one bright card over
- * two grey ones; they now have a color each, far enough apart in hue that
- * the eye finds the card it wants before it reads the title.
- */
-const CARD_TINT = {
-  layers: "#3aa8c1",
-  pages: "#e08a4f",
-} as const;
-
+ * like the column widths, and never part of the document. The Add a layer
+ * card's own open and size settings went with the card (2026-09-23); an older
+ * browser's copy of them is read past. */
 const LIST_STORE_KEY = "wrist-assistant-panel.layers.v1";
 
 const GRID_STORE_KEY = "wrist-assistant-panel.grid.v1";
@@ -906,6 +864,187 @@ export function layerListRows(
   return out;
 }
 
+/** The top bar's and the left column's own menus: the bar's ···, the Pages
+ * card's ··· and the Layers card's ···. Kept apart from the preview bar's
+ * menus, which have a close rule of their own. */
+type SideMenu = "top" | "pages" | "layers";
+
+/** The Add sheet's three tabs. */
+type AddTab = "elements" | "presets" | "parts";
+
+/** How wide the Add sheet is, CSS px. */
+export const ADD_SHEET_WIDTH = 560;
+/** The tallest the Add sheet grows, and the least room under its button that
+ * is still worth hanging it there rather than in the middle of the window. */
+const ADD_SHEET_MAX_HEIGHT = 700;
+const ADD_SHEET_MIN_HEIGHT = 420;
+/** How far the sheet keeps from the window's edges. */
+const ADD_SHEET_MARGIN = 12;
+
+/** Where the Add sheet opens: hung under its button, or centred in the
+ * window when there is not the room for that. */
+export type AddSheetPlace =
+  | { mode: "anchored"; left: number; top: number; height: number }
+  | { mode: "centered" };
+
+/**
+ * Where the Add sheet goes. Under the + Add button, its left edge on the
+ * button's, when the whole 560px width fits to the right and there is a
+ * useful height below; otherwise in the middle of the window, which is what a
+ * narrow panel or a phone gets.
+ */
+export function addSheetPlace(
+  anchor: { left: number; bottom: number },
+  viewport: { width: number; height: number },
+): AddSheetPlace {
+  const top = anchor.bottom + 6;
+  const room = viewport.height - top - ADD_SHEET_MARGIN;
+  const left = Math.max(ADD_SHEET_MARGIN, anchor.left);
+  if (left + ADD_SHEET_WIDTH > viewport.width - ADD_SHEET_MARGIN || room < ADD_SHEET_MIN_HEIGHT) return { mode: "centered" };
+  return { mode: "anchored", left, top, height: Math.min(ADD_SHEET_MAX_HEIGHT, room) };
+}
+
+/**
+ * Whether a press of the / key opens the Add sheet's search. A bare slash
+ * only, never while a text field has the keyboard, since that is where a
+ * slash is a character, and never over a dialog, which owns its own keys.
+ */
+export function slashOpensAddSearch(
+  e: { key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean },
+  inTextField: boolean,
+  dialogOpen: boolean,
+): boolean {
+  return e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey && !inTextField && !dialogOpen;
+}
+
+/** Whether one offer's name answers the Add sheet's search: every word typed
+ * is somewhere in the name, in any order and either case. Nothing typed
+ * matches everything. */
+export function matchesAddSearch(title: string, query: string): boolean {
+  const words = query.trim().toLocaleLowerCase().split(/\s+/).filter((w) => w !== "");
+  if (words.length === 0) return true;
+  const name = title.toLocaleLowerCase();
+  return words.every((w) => name.includes(w));
+}
+
+/** The elements and presets the Add sheet shows for one search. */
+export function filterAddOffers<E extends { title: string }, P extends { title: string }>(
+  query: string,
+  elements: readonly E[],
+  presets: readonly P[],
+): { elements: E[]; presets: P[] } {
+  return {
+    elements: elements.filter((e) => matchesAddSearch(e.title, query)),
+    presets: presets.filter((p) => matchesAddSearch(p.title, query)),
+  };
+}
+
+/** The sync pill's color: green once the device has everything, amber while
+ * it does not yet, quiet for the shelf, which waits for nothing. Never bare
+ * orange words. */
+export function sendTone(kind: SendState["kind"]): "ok" | "warn" | "quiet" {
+  if (kind === "sent") return "ok";
+  if (kind === "library") return "quiet";
+  return "warn";
+}
+
+/** The caption beside Save: when this complication was last saved, or that
+ * it never has been. */
+export function savedCaption(neverSaved: boolean, updatedAt: string | undefined, nowMs: number): string {
+  if (neverSaved) return "Not saved yet";
+  const at = updatedAt === undefined ? Number.NaN : Date.parse(updatedAt);
+  if (Number.isNaN(at)) return "Saved";
+  return `Saved ${agoWords(Math.max(0, (nowMs - at) / 1000))}`;
+}
+
+/**
+ * The badge a tapped row wears in the Layers list. A tap that turns the page
+ * says which page it lands on, counted from the page the row is on and
+ * wrapping the way the watch does; anything else is just "tap", and the
+ * tooltip carries the whole action.
+ */
+export function tapBadge(action: TapAction, fromPage: number, pageCount: number): string {
+  const count = Math.max(1, pageCount);
+  switch (action.type) {
+    case "nextPage": return count > 1 ? `→ page ${(fromPage % count) + 1}` : "→ next page";
+    case "previousPage": return count > 1 ? `→ page ${((fromPage - 2 + count) % count) + 1}` : "→ previous page";
+    case "showPage": return `→ page ${action.page}`;
+    case "playTour": return "→ every page";
+    default: return "tap";
+  }
+}
+
+/** What a tap does, as the foot of the Layers list says it: "tap: refresh". */
+function tapWords(action: TapAction): string {
+  const words = describeTapAction(action);
+  return `tap: ${words.charAt(0).toLowerCase()}${words.slice(1)}`;
+}
+
+/**
+ * The one row at the foot of the Layers list: the shape's own ground and
+ * border, and what a tap anywhere else does. It used to be two rows, the
+ * shape and "Whole complication", which read as two things under the stack
+ * when they are one: the complication itself. A click on it selects the
+ * shape.
+ */
+export function backgroundRow(
+  cfg: CustomComplicationConfig,
+  family: FamilyKind,
+): { name: string; meta: string; caption: string; inspect: { kind: "family" } } {
+  const layout = cfg.perFamily[family];
+  const fill = layout?.backgroundColorHex ? colorWords(layout.backgroundColorHex) : "Transparent";
+  const border = layout?.borderColorHex ? `${layout.borderWidth} pt border` : "no border";
+  return {
+    name: "Background",
+    meta: `${fill} · ${border} · ${tapWords(cfg.tapAction)}`,
+    caption: "always at the bottom",
+    inspect: { kind: "family" },
+  };
+}
+
+/**
+ * The one line under the Layers header: what the list is showing. A paged
+ * document names the page and counts the layers on it apart from the ones
+ * on every page, since those are rows too and would otherwise read as ones
+ * that crept onto this page.
+ */
+export function layersFilterLine(
+  shapeRows: readonly CElement[],
+  paged: boolean,
+  page: number,
+  all: boolean,
+): { lead: string; count: string } {
+  const words = (n: number) => `${n} layer${n === 1 ? "" : "s"}`;
+  if (!paged) return { lead: "", count: words(shapeRows.length) };
+  if (all) return { lead: "Every page", count: words(shapeRows.length) };
+  const here = shapeRows.filter((el) => el.payload.page === page).length;
+  const everywhere = shapeRows.filter((el) => el.payload.page === undefined).length;
+  return {
+    lead: `On page ${page}`,
+    count: everywhere > 0 ? `${words(here)}, plus ${everywhere} on every page` : words(here),
+  };
+}
+
+/**
+ * The Layers list with Show all on: one block per page, then the layers on
+ * every page, each block top of the stack first. A page with nothing pinned
+ * to it is left out, since a heading over nothing is not a fact worth a line.
+ */
+export function layerListSections(
+  cfg: CustomComplicationConfig,
+  shapeRows: readonly CElement[],
+  pageCount: number,
+): { label: string; page: number | undefined; rows: LayerListRow[] }[] {
+  const out: { label: string; page: number | undefined; rows: LayerListRow[] }[] = [];
+  for (let page = 1; page <= pageCount; page++) {
+    const rows = layerListRows(cfg, shapeRows.filter((el) => el.payload.page === page), page);
+    if (rows.length > 0) out.push({ label: `Page ${page}`, page, rows });
+  }
+  const every = layerListRows(cfg, shapeRows.filter((el) => el.payload.page === undefined), 1);
+  if (every.length > 0) out.push({ label: "Every page", page: undefined, rows: every });
+  return out;
+}
+
 /**
  * One button in the Elements grid.
  *
@@ -973,7 +1112,33 @@ const ADD_VARIANTS: Partial<Record<CElement["kind"], readonly AddCard[]>> = {
       },
     },
   ],
+  // Named for what it is on the face, since it draws nothing there: any layer
+  // can take a tap, and this one is for the empty part of the face.
+  tap: [{ kind: "tap", title: "Invisible tap zone", blurb: "Add an invisible tap zone. A tap inside it runs its own action." }],
 };
+
+/** The Add sheet's three groups of elements. */
+type AddGroup = "value" | "pictures" | "decorate";
+
+/** The kinds that show a value, in the order the Add sheet lists them. The
+ * catalogue icon is here too: it shows a state as much as a text does. */
+const ADD_VALUE_ORDER: readonly CElement["kind"][] = ["text", "gauge", "chart", "timeline", "list", "icon"];
+
+/**
+ * One of the Add sheet's groups, in the sheet's order. A pasted SVG is a
+ * drawing, so it sits with the pictures rather than with the catalogue icon;
+ * a shape and a tap zone draw nothing from the house, so they decorate.
+ */
+export function addGroupCards<C extends { kind: CElement["kind"]; variant?: AddVariant }>(cards: readonly C[], group: AddGroup): C[] {
+  const picture = (c: C) => c.kind === "image" || c.variant === "iconSvg";
+  if (group === "pictures") return [...cards.filter((c) => c.kind === "image"), ...cards.filter((c) => c.variant === "iconSvg")];
+  if (group === "decorate") return [...cards.filter((c) => c.kind === "shape"), ...cards.filter((c) => c.kind === "tap")];
+  return ADD_VALUE_ORDER.flatMap((kind) => cards.filter((c) => c.kind === kind && !picture(c)));
+}
+
+/** The presets most faces start from, offered on the Elements tab under the
+ * empty layers, with the way to the rest beside them. */
+const POPULAR_PRESETS: readonly PresetKind[] = ["gauge", "status", "timer"];
 
 export class WristAssistantPanel extends LitElement {
   @property({ attribute: false }) hass!: HassLike;
@@ -1155,16 +1320,19 @@ export class WristAssistantPanel extends LitElement {
   /** How much each Layers row says. Expanded adds a third line with the
    * layer's place on the face and keeps the badges next to the buttons. */
   @state() private layerDetail: LayerDetail = "compact";
-  /** Whether the Add a layer card is open. Shut, its title bar is one line and
-   * the Layers list rises to the top of the column, which is where anyone
-   * past their first face wants it. */
-  @state() private addOpen = true;
-  /** How the preset cards are drawn. Small and Large both carry a sample of
-   * what each preset builds, four across or two; Names drops the samples for a
-   * list of tinted names. Small is the default: the whole offer fits without
-   * scrolling, and the sample is still big enough to tell a gauge from a
-   * chart. */
-  @state() private addDetail: AddDetail = "small";
+  /** Which of the top bar's and the left column's own menus is open. */
+  @state() private sideMenu?: SideMenu;
+  /** The Add sheet, and where it opened. Undefined while it is shut. */
+  @state() private addSheet?: AddSheetPlace;
+  /** What has been typed into the Add sheet's search. */
+  @state() private addQuery = "";
+  /** The Add sheet's tab. */
+  @state() private addTab: AddTab = "elements";
+  /** Whether the Shared values footer of the Layers card is open. */
+  @state() private sharedOpen = false;
+  /** Show all in the Layers card: every page's layers, grouped by page,
+   * rather than the page showing. */
+  @state() private allPages = false;
   /** Layers picked with Cmd/Ctrl-click, in the list or on the preview, waiting to be grouped. */
   @state() private multi: ReadonlySet<string> = new Set();
   /** The row a shift-click measures its range from: the last row clicked. */
@@ -1190,8 +1358,7 @@ export class WristAssistantPanel extends LitElement {
   @state() private savePartIds: readonly string[] = [];
   @state() private savePartError?: string;
   @state() private savePartBusy = false;
-  /** The Add from parts dialog. */
-  @state() private partsOpen = false;
+  /** The library of saved parts, read the first time the Add sheet opens. */
   @state() private parts?: SavedPart[];
   @state() private partsError?: string;
   @state() private partsBusy = false;
@@ -1723,6 +1890,14 @@ export class WristAssistantPanel extends LitElement {
       --wa-r-sm: 8px;
       --wa-r-md: 12px;
       --wa-r-lg: 16px;
+      /* The left column's cards and the Add sheet. */
+      --wa-lc-r: 10px;
+      /* Two states the top bar's sync pill and the Pages card's note say in
+         color: on the device, and not there yet. */
+      --wa-green: #1f8a4c;
+      --wa-amber: #9a5b00;
+      --wa-amber-bg: color-mix(in srgb, var(--wa-amber) 12%, transparent);
+      --wa-amber-line: color-mix(in srgb, var(--wa-amber) 35%, transparent);
       --wa-shadow-pop: 0 12px 36px rgba(0,0,0,.28);
       --wa-ring: 0 0 0 3px color-mix(in srgb, var(--wa-accent) 28%, transparent);
       color: var(--wa-ink);
@@ -1776,6 +1951,8 @@ export class WristAssistantPanel extends LitElement {
       --wa-shape-medium: #fb923c;
       --wa-shape-large: #e879f9;
       --wa-shape-xlarge: #818cf8;
+      --wa-green: #3fbf7f;
+      --wa-amber: #f2c063;
       --wa-shadow-pop: 0 16px 48px rgba(0,0,0,.6);
       color-scheme: dark;
       scrollbar-color: rgba(255,255,255,.14) transparent;
@@ -1783,9 +1960,8 @@ export class WristAssistantPanel extends LitElement {
     * { box-sizing: border-box; }
     svg { display: block; }
     :host([dark]) ::selection { background: color-mix(in srgb, var(--wa-accent) 45%, transparent); }
-    /* The header sits on the page rather than on a bar of its own: no rule
-       under it, no card behind it. What reads as chrome are the two white
-       boxes in it, which is where the controls actually are. */
+    /* The header sits on the page rather than on a card of its own, with one
+       hairline under it to part it from the columns. */
     header {
       display: flex;
       align-items: center;
@@ -1799,31 +1975,59 @@ export class WristAssistantPanel extends LitElement {
       flex: none;
       z-index: 20;
     }
-    /* The step from one header question to the next. The header reads left to
-       right as a route: open the one you are on, or make one. Choosing the
-       device used to be its own step here; it is inside the picker now, beside
-       the list it decides. The arrow carries what is left of the route, so it
-       is drawn in ink rather than in the hairline grey it used to wear, where
-       it was all but invisible against the bar. */
-    header .hstep { color: var(--wa-muted); display: grid; place-items: center; flex: none; margin: 0 2px; }
-    header .hstep svg { width: 20px; height: 20px; display: block; }
-    header .hor { font-size: 12px; color: var(--wa-muted); flex: none; margin: 0 2px; }
-    /* Stacked, the bar wraps and the route it describes is broken anyway: the
-       word and the arrow join nothing, and the 32px they take is 32px the
-       buttons on that line need. */
-    header.stacked .hor, header.stacked .hstep { display: none; }
     header .spacer { flex: 1; }
     .toolbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-    /* Two boxes, one shape: a white pill with a hairline ring, holding a run of
-       quiet controls with 1px dividers between the groups inside it. */
-    .hbox {
-      display: inline-flex; align-items: center; gap: 8px; height: 34px; flex: none;
-      border-radius: 9px; background: var(--wa-card); box-shadow: 0 0 0 1px var(--wa-line);
+    /* Top bar: Browse, the name, the place pill, then history, sync, Share,
+       ···, Save and its caption, and the help. */
+    header { gap: 10px; min-height: 50px; border-bottom: 1px solid var(--wa-line); }
+    .picker > button.tb-browse { min-width: 0; max-width: none; height: 30px; gap: 7px; padding: 0 8px 0 10px; font-size: 12.5px; font-weight: 600; }
+    .picker > button.tb-browse svg { width: 14px; height: 14px; }
+    .tb-browse .tb-browse-l { color: var(--wa-ink); }
+    .tb-name {
+      display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 8px; min-width: 0;
+      border-radius: 7px; border: 1px solid transparent; cursor: text;
     }
-    .hbox.hist { gap: 2px; padding: 0 3px; }
-    .hbox.status { padding: 0 3px 0 10px; gap: 10px; max-width: 100%; }
-    .hbox .hdiv { width: 1px; height: 18px; background: var(--wa-line); flex: none; }
-    .hbox button.icon { width: 28px; height: 28px; }
+    .tb-name:hover { border-color: var(--wa-line); }
+    .tb-name:focus-within { border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
+    header .tb-name > input.tb-name-input[type=text],
+    header .tb-name > input.tb-name-input[type=text]:hover,
+    header .tb-name > input.tb-name-input[type=text]:focus-visible {
+      font: inherit; font-size: 13.5px; font-weight: 700; color: var(--wa-ink); min-height: 0; padding: 0;
+      border: 0; background: transparent; box-shadow: none; outline: none;
+      field-sizing: content; min-width: 7ch; max-width: 260px;
+    }
+    header .tb-name > input.tb-name-input:disabled { opacity: 1; cursor: default; }
+    .tb-pen { font-size: 11px; color: var(--wa-muted); opacity: .6; }
+    .tb-pill {
+      display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: 999px; min-width: 0; max-width: 300px;
+      font-size: 11.5px; font-weight: 500; color: var(--wa-muted); background: var(--wa-panel);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    header button.icon.tb-icon { width: 30px; height: 30px; }
+    header button.icon.tb-icon svg.ui-icon { width: 16px; height: 16px; }
+    .tb-div { width: 1px; height: 20px; flex: none; background: var(--wa-line); }
+    .tb-sync {
+      display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px 0 8px; min-width: 0; max-width: 380px;
+      border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; overflow: hidden; border: 1px solid transparent;
+    }
+    .tb-sync .tb-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: currentColor; }
+    .tb-sync-l { overflow: hidden; text-overflow: ellipsis; }
+    .tb-sync-n { flex: none; font-weight: 500; color: var(--wa-muted); }
+    .tb-sync.ok { color: var(--wa-green); background: color-mix(in srgb, var(--wa-green) 12%, transparent); border-color: color-mix(in srgb, var(--wa-green) 35%, transparent); }
+    .tb-sync.warn { color: var(--wa-amber); background: var(--wa-amber-bg); border-color: var(--wa-amber-line); }
+    .tb-sync.quiet { color: var(--wa-muted); background: var(--wa-panel); }
+    .tb-sync.sending .tb-dot { animation: wa-pulse 1.2s ease-in-out infinite; }
+    @keyframes wa-pulse { 50% { opacity: .3; } }
+    @media (prefers-reduced-motion: reduce) { .tb-sync.sending .tb-dot { animation: none; } }
+    button.tb-btn {
+      font: inherit; font-size: 12.5px; font-weight: 600; height: 30px; padding: 0 11px; border-radius: 8px; cursor: pointer; flex: none;
+      border: 1px solid var(--wa-line); background: var(--wa-card); color: var(--wa-ink); white-space: nowrap;
+    }
+    button.tb-btn:hover:not(:disabled) { border-color: var(--wa-line-strong); background: var(--wa-panel); }
+    button.tb-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    button.tb-btn.tb-more { padding: 0 9px; letter-spacing: .08em; }
+    .tb-saved { font-size: 11.5px; color: var(--wa-muted); white-space: nowrap; }
+    header.stacked .tb-saved, header.stacked .tb-pen { display: none; }
     /* Buttons: one quiet shape everywhere, the accent fill kept for the single
        action that matters, and a soft ring on focus instead of a hard outline. */
     .toolbar button, button.primary, button.small, button.danger {
@@ -1874,9 +2078,6 @@ export class WristAssistantPanel extends LitElement {
     button.icon:focus-visible { opacity: 1; outline: none; box-shadow: var(--wa-ring); }
     button.icon.danger:hover:not(:disabled) { color: var(--error-color, #e5484d); background: color-mix(in srgb, var(--error-color, #e5484d) 14%, transparent); }
     svg.ui-icon { width: 15px; height: 15px; display: block; }
-    .dirty-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--warning-color, #e0a100); vertical-align: middle; box-shadow: 0 0 6px var(--warning-color, #e0a100); }
-    .dirty-dot.clean { background: var(--success-color, #3dd68c); box-shadow: none; }
-    .dirty-dot.none { background: var(--wa-line-strong); box-shadow: none; }
 
     /* Native controls: the same dark well, hairline and focus ring as the
        buttons, so a select in the header and a number field in the inspector
@@ -1943,8 +2144,6 @@ export class WristAssistantPanel extends LitElement {
     }
     .picker > button:hover { box-shadow: 0 0 0 1px var(--wa-ink); }
     .picker > button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    .picker .pk-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
-    .picker .pk-rev { color: var(--wa-muted); font-weight: 500; font-size: 12px; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     .picker > button svg { width: 16px; height: 16px; opacity: .7; }
     /* A pill that is on or off. It was the picker's own filter row, which the
        device tabs and the Shape menu replaced (2026-09-20); the gallery
@@ -1996,20 +2195,6 @@ export class WristAssistantPanel extends LitElement {
     .pk-shape-lead { font-size: 12px; color: var(--wa-muted); }
     .pk-shape select { max-width: 180px; }
 
-    /* The picker's button: the complication's name, and under it the people who
-       have it. The second line is only there in a household with more than one
-       person, so the button sizes itself rather than holding a line's worth of
-       empty space open for a home that never fills it. */
-    .picker > button.pk-open { min-height: 38px; min-width: 292px; max-width: 400px; padding: 5px 10px; gap: 9px; font-size: 14px; }
-    .pk-open-lines { display: flex; flex-direction: column; align-items: stretch; flex: 1; min-width: 0; line-height: 1.25; }
-    .pk-open-who {
-      font-size: 11.5px; font-weight: 500; color: var(--wa-muted); text-align: left;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    .pk-open-row { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
-    /* What the button is for, said once in the accent color. A chevron alone
-       promised a short menu of names; this one opens the whole household. */
-    .pk-open-all { flex: none; font-size: 11.5px; font-weight: 600; color: var(--wa-accent); white-space: nowrap; }
 
     /* One surface, one grid: every complication this home holds, under the
        device tabs, a search field and the Shape menu. A centred dialog rather
@@ -2444,7 +2629,6 @@ export class WristAssistantPanel extends LitElement {
 
     /* New complication: its own button beside the list, because making one was
        a row buried under every complication that already existed. */
-    .newc { position: relative; display: inline-flex; align-items: center; gap: 6px; }
     .new-btn {
       display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 12.5px; font-weight: 600;
       height: 30px; padding: 0 11px; border-radius: 8px; cursor: pointer;
@@ -2460,7 +2644,6 @@ export class WristAssistantPanel extends LitElement {
     .new-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .new-btn:disabled { opacity: .45; cursor: not-allowed; }
     .new-btn svg { width: 16px; height: 16px; }
-    .newc-full { font-size: 11px; color: var(--wa-muted); white-space: nowrap; }
     .restore-list { margin: 0; padding: 0 0 0 18px; max-height: 280px; overflow: auto; font-size: 13px; line-height: 1.6; }
     .restore-list .restore-from { color: var(--wa-muted); font-size: 12px; }
     .restore-list li.err .restore-from { color: var(--error-color, #db4437); }
@@ -3029,13 +3212,8 @@ export class WristAssistantPanel extends LitElement {
     .layout.cols-1 > .column.canvas { order: 1; }
     .layout.cols-1 > .column.inspector { order: 2; }
     .layout.cols-1 > .column.left { order: 3; }
-    /* And inside the lists, the rows before the button that makes one. Add a
-       layer is a palette 760px tall while it is open, so above the list it
-       pushed the list itself off the screen. */
     .layout.cols-1 .column.left > .pages-card { order: 1; }
     .layout.cols-1 .column.left > .layers-card { order: 2; }
-    .layout.cols-1 .column.left > .add-card { order: 3; }
-    .layout.cols-1 .column.left > .values-list { order: 4; }
     /* The two rows between the header and the face each wrapped to a second
        line on a phone, for 47px of nothing. The name goes because the header
        already carries it, in bigger type, 120px above; the device chip keeps
@@ -3058,17 +3236,15 @@ export class WristAssistantPanel extends LitElement {
       box-shadow: 0 0 0 1px var(--wa-line);
       padding: 10px 12px 12px;
     }
-    /* The left column does not scroll: the Add card keeps its natural height
-       and the Layers card takes the rest, scrolling its own rows. The shape
+    /* The left column does not scroll: the Pages card keeps its one line and
+       the Layers card takes the rest, scrolling its own rows. The Background
        row follows the last layer, and stays in sight once the rows scroll. */
-    .column.left { display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
+    .column.left { display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
     .column.left .card { flex: none; }
     /* A basis of 0 rather than auto: with auto the rows of a long design
-       count as the card's size and squeeze the add card above it to nothing.
-       The third is a floor, not a share: a short design leaves the rest to
-       the add card, a long one scrolls its rows inside the card. */
+       count as the card's size. The third is a floor, not a share. */
     .column.left .card.layers-card {
-      flex: 1 1 0; min-height: 33%; display: flex; flex-direction: column; padding: 10px 8px 8px;
+      flex: 1 1 0; min-height: 33%; display: flex; flex-direction: column; padding: 0;
       --thumb-w: ${THUMB_W}px; --thumb-h: ${THUMB_H}px;
       container: layers / inline-size;
     }
@@ -3100,228 +3276,6 @@ export class WristAssistantPanel extends LitElement {
     details.foot[open] .foot-more { opacity: .4; }
     details.foot .foot-body { padding: 0 16px 12px; max-height: 40vh; overflow: auto; }
     details.foot .foot-body .hint { margin: 8px 0; }
-
-    /* Add a layer: one tinted card per kind, each carrying a sample of what
-       that kind draws, then the presets. It sits above the list so adding a
-       layer never moves the button just pressed.
-
-       The sample sits on the same black well the Layers list uses for its
-       thumbnails, so "what a gauge looks like" is answered by the same picture
-       in both places and the button reads as a watch face rather than a
-       swatch. */
-    /* A card whose whole title bar is the fold handle. Shut, the title keeps
-       its own margin off the body it no longer has, so the card is one line. */
-    .card.fold .fold-h { cursor: pointer; border-radius: var(--wa-r-sm); margin: -4px -6px 8px; padding: 4px 6px; user-select: none; }
-    .card.fold[data-open="false"] .fold-h { margin-bottom: -4px; }
-    .card.fold .fold-h:hover { background: var(--wa-panel); }
-    .card.fold .fold-h:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    .card.fold .fold-h .chev { color: var(--wa-muted); flex: none; display: grid; place-items: center; transition: transform .15s ease-out; }
-    .card.fold .fold-h .chev svg { width: 16px; height: 16px; }
-    .card.fold[data-open="true"] .fold-h .chev { transform: rotate(180deg); }
-    /* The left column's card titles were the quietest lines on the panel:
-       13.5px over a card the same color, so Add a layer read as the label
-       over the list below it rather than as the card that makes one. Each of
-       the three now wears its own color as a band across the head of the
-       card, so the eye finds the card before it reads the title.
-
-       The color is the card's own --c, the same one the wash and the title
-       swatch already take, so a card is tinted in exactly one place. */
-    .card.banded > .panel-title {
-      margin: -10px -12px 8px; padding: 9px 12px; border-radius: var(--wa-r-md) var(--wa-r-md) 0 0;
-      font-size: 14.5px;
-      background: linear-gradient(180deg,
-        color-mix(in srgb, var(--c, var(--wa-accent)) 22%, var(--wa-card)),
-        color-mix(in srgb, var(--c, var(--wa-accent)) 10%, var(--wa-card)));
-      box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--c, var(--wa-accent)) 30%, transparent);
-    }
-    .card.banded > .panel-title .swatch {
-      width: 24px; height: 24px; border-radius: 7px;
-      box-shadow: 0 1px 3px color-mix(in srgb, var(--c, var(--wa-accent)) 55%, transparent);
-    }
-    .card.banded > .panel-title .swatch svg { width: 15px; height: 15px; }
-    /* The Layers card is padded 8px at the sides, not 12px, so its band needs
-       its own reach to the edge. */
-    .card.banded.layers-card > .panel-title { margin: -10px -8px 8px; padding: 9px 10px; }
-    /* Only the folding card's head is a button, so only it lights on hover. */
-    .card.banded.fold > .panel-title:hover {
-      background: linear-gradient(180deg,
-        color-mix(in srgb, var(--c, var(--wa-accent)) 32%, var(--wa-card)),
-        color-mix(in srgb, var(--c, var(--wa-accent)) 17%, var(--wa-card)));
-    }
-    .card.banded.fold[data-open="false"] > .panel-title { margin-bottom: -12px; border-radius: var(--wa-r-md); }
-    .card.banded.fold > .panel-title .chev { color: var(--wa-ink); opacity: .7; }
-
-    /* As many across as fit, at about half the width the cards started at.
-       The samples are drawn from a 120 unit viewBox, so a 140px card shows
-       them near their own size instead of blown up to fill half the column. */
-    .add-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; }
-    /* Twenty-five cards with pictures are taller than the column, so the grid
-       gets its own scroller and the rows under it stay put. The padding is
-       what keeps a focus ring, drawn as a box-shadow outside the button, from
-       being clipped by the overflow. */
-    .add-scroll {
-      max-height: 30vh; overflow-y: auto; overscroll-behavior: contain;
-      padding: 3px; margin: 3px -3px 0; scrollbar-width: thin;
-    }
-    /* In three columns the Layers card is the star: the add card is a fixed
-       small helping and Layers takes everything else. Both boxes get one
-       cap, a share of the window so they scale with it, and a box whose
-       content is shorter than the cap is only as tall as its content. The
-       same cap for both keeps the two boxes level in Names, Small and Large.
-       A basis of zero with grow, a max-content cap, and a card-level
-       max-height with per-box shrinking were all tried on 2026-09-19 and
-       either folded the card to its labels or starved one box; a plain cap
-       per box is the one that measured right. The card and its groups can
-       still shrink as a last resort when the Layers floor and the cards
-       below leave no room. */
-    .column.left .card.add-card[data-open="true"] {
-      flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column;
-    }
-    .column.left .card.add-card[data-open="true"] > * { flex: none; }
-    .column.left .card.add-card[data-open="true"] > .add-group:has(.add-scroll) {
-      flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column;
-    }
-    .column.left .card.add-card[data-open="true"] > .add-group:has(.add-scroll) > .presets-head { flex: none; }
-    .column.left .card.add-card[data-open="true"] .add-scroll { flex: 0 1 auto; min-height: 0; max-height: 12vh; }
-    .layout.cols-1 .column.left .card.add-card[data-open="true"] { display: block; }
-    .layout.cols-1 .column.left .card.add-card[data-open="true"] .add-scroll { max-height: 30vh; }
-    /* Stacked, the elements are twelve, not twenty-five: their scroller is
-       capped at about two rows so the presets under it are not pushed off
-       the screen. */
-    .add-scroll.short { max-height: 18vh; }
-    .layout.cols-1 .column.left .card.add-card[data-open="true"] .add-scroll.short { max-height: 18vh; }
-    .add-scroll::-webkit-scrollbar { width: 8px; }
-    .add-scroll::-webkit-scrollbar-thumb { background: var(--wa-line-strong); border-radius: 999px; }
-    .add-scroll::-webkit-scrollbar-track { background: transparent; }
-    /* Compact: the samples go and every card becomes one 34px line, a color
-       chip and a name, so two dozen presets scan in a column. */
-    /* Names mode: two across. One name per row made the list of twenty-five
-       presets as tall as the samples it was meant to be shorter than; two
-       across halves it, and a long name ellipsises rather than wrapping. */
-    .add-grid.lean { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .add-grid.lean button.add .add-name { min-width: 0; }
-    .add-grid.lean button.add .add-name > :last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    /* Small: a fixed four across rather than as many as fit, so the sample is
-       always the same size and the card reads as a sheet of them. Auto-fill
-       would have given one column a different well size from the next. Under
-       about 280px four wells are postage stamps, so it drops to three. The
-       240 is that card width measured where the query can see it: the group's
-       own box, which is the card less its 12px sides and the group's 8px. */
-    .add-grid.small { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
-    @container add-cards (max-width: 240px) {
-      .add-grid.small { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    }
-    .add-grid.small button.add { gap: 3px; padding: 4px 4px 5px; border-radius: 8px; font-size: 10px; font-weight: 500; }
-    .add-grid.small button.add .well { border-radius: 5px; }
-    /* The color chip goes: at four across the name has a couple of words of
-       room, and the sample already says which kind this is. */
-    .add-grid.small button.add .k { display: none; }
-    .add-grid.lean button.add {
-      flex-direction: row; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border-radius: 8px;
-      background: var(--wa-card); border-color: var(--wa-line);
-    }
-    .add-grid.lean button.add .add-name { justify-content: flex-start; gap: 8px; }
-    /* The color chip: the same square that marks the kind in the Layers rows
-       and the inspector, at the size a button can spare. */
-    button.add .k { width: 8px; height: 8px; border-radius: 2px; background: var(--k); flex: none; }
-    /* The cards are plain. Twenty-five of them, each washed in its own kind
-       color, made the card a paint chart and drowned the samples, which are
-       the thing worth looking at. The color is down to the name's square and
-       what the hover does. */
-    button.add {
-      display: flex; flex-direction: column; align-items: stretch; gap: 5px; padding: 5px 5px 6px; border-radius: 9px;
-      font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; color: var(--wa-ink); white-space: nowrap;
-      background: var(--wa-card); border: 1px solid var(--wa-line);
-      transition: background-color .12s ease-out, border-color .12s ease-out, transform .12s ease-out, box-shadow .12s ease-out;
-    }
-    button.add:hover:not(:disabled) {
-      background: color-mix(in srgb, var(--k) 9%, var(--wa-card)); border-color: color-mix(in srgb, var(--k) 45%, var(--wa-line));
-    }
-    button.add:active:not(:disabled) { transform: translateY(1px); }
-    button.add:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--k) 30%, transparent); }
-    button.add:disabled { opacity: .45; cursor: default; }
-    /* The well is a fixed shape, not a fixed height: the column is whatever a
-       third of the panel happens to be, and the samples are drawn to scale
-       with it. */
-    button.add .well {
-      display: block; width: 100%; aspect-ratio: 120 / 46; border-radius: 7px; overflow: hidden;
-      background: #000; border: 1px solid var(--wa-line); box-sizing: border-box;
-    }
-    button.add svg.shot { display: block; width: 100%; height: 100%; }
-    button.add .add-name { display: flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; }
-    /* A name too long for a half-width card is cut rather than pushing the
-       card wider. The whole name is in the button's own tooltip. */
-    button.add .add-name > span { overflow: hidden; text-overflow: ellipsis; }
-    .add-grid.lean button.add { font-size: 12.5px; }
-    button.add svg.ui-icon { color: var(--k); width: 14px; height: 14px; flex: none; }
-    /* The blank kinds and the saved parts: wrapped rows under the preset
-       cards, each opened by a label rather than a sentence. They are the way
-       out of the presets, not a second offer. */
-    .presets { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
-    /* Each half of the add card is its own sunken box with its own label, so
-       an empty layer and a ready-made one are plainly two different offers
-       and not one grid of forty. */
-    .add-group {
-      margin-top: 8px; padding: 8px; border-radius: 10px;
-      background: color-mix(in srgb, var(--g, var(--wa-accent)) 9%, var(--wa-panel));
-      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--g, var(--wa-accent)) 26%, var(--wa-line));
-      /* What "four across, or three when it is tight" is measured against.
-         The column is dragged to any width, so the grid answers the group it
-         is in rather than the window. */
-      container: add-cards / inline-size;
-    }
-    /* Three boxes of small dark cards read as one long grid when they share a
-       color. Each group wears its own instead: blue for the empty elements,
-       green for the ready-made presets, violet for the parts you kept. The
-       wash is faint, the edge and the label carry most of it, so the cards
-       inside still sit on a quiet ground. */
-    .add-group.g-elements { --g: #5aa9f0; }
-    .add-group.g-presets { --g: #45c08a; }
-    .add-group.g-parts { --g: #a98cf5; }
-    .add-group .presets-head .presets-l { color: color-mix(in srgb, var(--g, var(--wa-accent)) 62%, var(--wa-muted)); }
-    :host([dark]) .add-group .presets-head .presets-l { color: color-mix(in srgb, var(--g, var(--wa-accent)) 70%, var(--wa-muted)); }
-    .add-group:first-of-type { margin-top: 4px; }
-    .presets.presets-head { margin: 0 0 6px; }
-    /* A row of pills inside a group sits right under the group's label, the
-       same way a grid of cards does. */
-    .presets.presets-row { margin-top: 0; }
-    /* The line beside a group's label: what pressing one of these does, in
-       four words, so the two groups tell themselves apart. */
-    .presets-n { margin-left: auto; font-size: 11.5px; color: var(--wa-muted); }
-    .presets-l {
-      margin-right: 4px; font-size: 12.5px; font-weight: 700; color: var(--wa-muted);
-    }
-    button.preset {
-      font: inherit; font-size: 12px; font-weight: 600; height: 26px; padding: 0 10px; border-radius: 999px; cursor: pointer;
-      border: 0; background: var(--wa-panel); color: color-mix(in srgb, var(--wa-ink) 78%, var(--wa-muted));
-      transition: color .12s ease-out, background-color .12s ease-out;
-    }
-    button.preset:hover:not(:disabled) { color: var(--wa-ink); background: color-mix(in srgb, var(--wa-ink) 10%, var(--wa-panel)); }
-    button.preset:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    button.preset:disabled { opacity: .45; cursor: default; }
-    /* Add from parts is the one press in this card that opens a library rather
-       than dropping a layer, so it is not a preset pill. It sits on the group's
-       own label line, to the right of it: one button under a heading of its own
-       spent two rows saying what one row says. No plus sign, since nothing is
-       made until the dialog is answered. */
-    .add-group.saved-group { padding: 5px 8px; }
-    /* Three columns, not a flex row: the button is centred on the group rather
-       than on whatever space the label and the note leave over, so it lines up
-       with the buttons above it however long the words get. */
-    .add-group.saved-group .presets.presets-head {
-      display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; margin: 0;
-    }
-    .add-group.saved-group .presets-n { margin-left: 0; text-align: right; }
-    button.part-add {
-      font: inherit; font-size: 12px; font-weight: 600; line-height: 1; cursor: pointer;
-      height: 26px; padding: 0 10px; border-radius: 7px;
-      border: 1px solid var(--wa-line); background: var(--wa-input); color: inherit;
-      transition: background-color .12s ease-out, border-color .12s ease-out;
-    }
-    .add-group.g-parts button.part-add { border-color: color-mix(in srgb, var(--g) 38%, var(--wa-line)); }
-    button.part-add:hover:not(:disabled) { background: var(--wa-raised); border-color: var(--wa-line-strong); }
-    button.part-add:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    button.part-add:disabled { opacity: .45; cursor: default; }
 
     /* Layers: one row per layer, colored by kind, the shape pinned last.
        The picture size is a variable on the list, set by the S/M/L control in
@@ -3430,17 +3384,16 @@ export class WristAssistantPanel extends LitElement {
        width of the card: it is the ground everything else is drawn on, not
        another layer in the stack, so nothing can be dropped below it. */
     .layer.pinned {
-      flex: none; margin: 0 -8px; padding: 0 14px 0 12px; min-height: 40px; border-radius: 0;
+      flex: none; margin: 0; padding: 0 12px 0 10px; min-height: 46px; border-radius: 0;
       border-top: 1px solid var(--wa-line);
     }
-    /* The two rows that are not layers: what a tap does anywhere, and the
-       shape under everything. Neither can be dragged, grouped or deleted, so
-       they sit in a tray of their own below one hairline. The tray is the
-       card's own floor, full-bleed to its edges, a shade darker than the rows
-       above so the list reads as the part you can actually reorder. */
+    /* The row that is not a layer: Background, the shape under everything and
+       what a tap anywhere else does. It cannot be dragged, grouped or
+       deleted, so it sits in a tray of its own below one hairline, full-bleed
+       to the card's edges, a shade darker than the rows above so the list
+       reads as the part you can actually reorder. */
     .pinned-set {
-      flex: none; margin: 4px -8px -8px; border-top: 1px solid var(--wa-line-strong);
-      border-radius: 0 0 var(--wa-r-md) var(--wa-r-md);
+      flex: none; margin: 6px 0 0; border-top: 1px solid var(--wa-line-strong);
       background: color-mix(in srgb, var(--wa-ink) 5%, transparent);
     }
     /* The tray's rows keep the tray's own ground and its hairlines. An outline
@@ -3467,6 +3420,146 @@ export class WristAssistantPanel extends LitElement {
     /* A lone selection offers only Save to parts: a quiet row, no box. */
     .part-cta { display: flex; align-items: center; font-size: 12px; margin-bottom: 4px; }
     .part-cta .spacer { flex: 1; }
+    /* Left column cards: Pages and Layers. One 40px header line each, plain
+       card color, no band and no tint of their own; the one filled button is
+       + Add. */
+    .card.lc { padding: 0; border-radius: var(--wa-lc-r); }
+    .lc-head {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; min-height: 40px; padding: 6px 8px 6px 12px;
+    }
+    .layers-card .lc-head { border-bottom: 1px solid var(--wa-line); }
+    .lc-head .spacer { flex: 1; }
+    .lc-title { font-size: 13px; font-weight: 600; color: var(--wa-ink); }
+    .lc-sub { font-size: 11px; font-weight: 400; color: var(--wa-muted); white-space: nowrap; }
+    .lc-sub b { color: var(--wa-ink); font-weight: 600; }
+    /* The Pages line never wraps: the page buttons, + and ··· keep their row
+       and the note beside the title gives way first. */
+    .pages-card .lc-head { flex-wrap: nowrap; }
+    .pages-card .lc-title { flex: none; }
+    .pages-card .lc-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .pages-card .lc-head .spacer { min-width: 0; }
+    button.lc-btn, button.lc-ghost {
+      font: inherit; font-size: 11.5px; font-weight: 600; line-height: 1; cursor: pointer; flex: none; white-space: nowrap;
+      display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px; border-radius: 7px;
+      border: 1px solid var(--wa-line); background: var(--wa-panel); color: var(--wa-ink);
+    }
+    button.lc-btn svg.ui-icon, button.lc-ghost svg.ui-icon { width: 13px; height: 13px; }
+    button.lc-btn.pri { background: var(--wa-accent); border-color: transparent; color: var(--wa-accent-ink); }
+    button.lc-btn.pri:hover:not(:disabled) { filter: brightness(1.08); }
+    button.lc-ghost { background: transparent; border-color: transparent; color: var(--wa-muted); padding: 0 7px; letter-spacing: .04em; }
+    button.lc-ghost.sm { height: 24px; font-size: 11px; }
+    button.lc-btn:hover:not(:disabled):not(.pri), button.lc-ghost:hover:not(:disabled) { background: var(--wa-panel); color: var(--wa-ink); border-color: var(--wa-line); }
+    button.lc-ghost[aria-pressed="true"], button.lc-ghost[aria-expanded="true"] { color: var(--wa-ink); background: var(--wa-panel); }
+    button.lc-btn:focus-visible, button.lc-ghost:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    button.lc-btn:disabled, button.lc-ghost:disabled { opacity: .45; cursor: default; }
+    /* The page picker: one segmented control, the showing page raised. */
+    .page-seg {
+      display: inline-flex; flex: none; height: 26px; padding: 2px; gap: 2px; border-radius: 7px;
+      background: var(--wa-input); box-shadow: inset 0 0 0 1px var(--wa-line);
+    }
+    .page-seg button {
+      font: inherit; font-size: 11.5px; font-weight: 600; min-width: 24px; padding: 0 6px; border: 0; border-radius: 5px;
+      background: transparent; color: var(--wa-muted); cursor: pointer;
+    }
+    .page-seg button:hover:not(.on) { color: var(--wa-ink); }
+    .page-seg button.on { background: var(--wa-seg-on); color: var(--wa-ink); box-shadow: 0 1px 2px rgba(0,0,0,.18); }
+    .page-seg button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    /* The one line under the Pages header while nothing can turn a page. */
+    .lc-note { display: flex; align-items: center; gap: 6px; margin: 0 10px 8px; padding: 5px 10px; border-radius: 7px; font-size: 11.5px; }
+    .lc-note.warn { color: var(--wa-amber); background: var(--wa-amber-bg); box-shadow: inset 0 0 0 1px var(--wa-amber-line); }
+    .lc-note button.link { margin-left: auto; font-weight: 700; color: inherit; text-decoration: underline; }
+    .pages-card .page-tour-bar { margin: 0 12px 10px; }
+    /* The Layers card's filter line, and the rows under it. */
+    .lc-filter { display: flex; align-items: center; gap: 6px; min-height: 32px; padding: 3px 8px 3px 12px; border-bottom: 1px solid var(--wa-line); }
+    .lc-filter .lc-sub { white-space: normal; }
+    .lc-filter button.lc-ghost { margin-left: auto; }
+    .layers-card > .group-cta { margin: 6px 8px 0; }
+    .layers-card > .part-cta, .layers-card > .hint { margin: 6px 10px 0; }
+    .layers-card > .lc-empty { margin: 0; padding: 24px 16px; text-align: center; font-size: 12px; line-height: 1.5; color: var(--wa-muted); }
+    .layers-card > .layers { padding: 6px 8px 0; }
+    .layers-sec {
+      flex: none; margin: 6px 2px 0; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--wa-muted);
+    }
+    .layers-sec:first-child { margin-top: 0; }
+    /* Background: its caption where a layer's badges sit. */
+    .layer.pinned .ground-cap { font-size: 11px; color: var(--wa-muted); white-space: nowrap; }
+    .layer.pinned.ground .grip { visibility: hidden; }
+    /* The left column's and the top bar's own menus. */
+    .side-menu { position: relative; display: inline-flex; flex: none; }
+    .pop-menu.side-pop { min-width: 220px; }
+    .side-pop .row { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
+    .side-pop .row[role="menuitemradio"] { flex-direction: row; align-items: center; gap: 6px; }
+    .side-pop .row small { font-size: 11px; font-weight: 500; color: var(--wa-muted); }
+    .side-pop .row:disabled { opacity: .45; cursor: default; }
+    .side-pop .row.danger { color: var(--error-color, #e5484d); }
+    .side-pop .row.danger.armed { background: var(--error-color, #e5484d); color: #fff; }
+    .pop-sep { display: block; height: 1px; margin: 4px 2px; background: var(--wa-line); }
+    .pop-label { padding: 6px 10px 2px; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--wa-muted); }
+    .pop-tick { display: inline-grid; place-items: center; width: 14px; height: 14px; flex: none; color: var(--wa-accent); }
+    .pop-tick svg.ui-icon { width: 13px; height: 13px; }
+    /* The Add sheet: over the canvas, hung under + Add, or centred in the
+       window when that does not fit. Drawn at the top level of the panel, so
+       no column's clipping reaches it. */
+    .add-sheet {
+      position: fixed; z-index: 60; width: ${ADD_SHEET_WIDTH}px; max-width: calc(100vw - 24px);
+      display: flex; flex-direction: column; overflow: hidden;
+      background: var(--wa-card); color: var(--wa-ink); border-radius: var(--wa-lc-r);
+      box-shadow: 0 0 0 1px var(--wa-line-strong), var(--wa-shadow-pop);
+    }
+    .add-sheet.centered { left: 50%; top: 50%; transform: translate(-50%, -50%); height: min(700px, calc(100vh - 24px)); }
+    .as-head { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 10px; border-bottom: 1px solid var(--wa-line); flex: none; }
+    .as-search {
+      flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px 0 10px;
+      border-radius: 7px; background: var(--wa-input); box-shadow: inset 0 0 0 1px var(--wa-line); color: var(--wa-muted);
+    }
+    .as-search:focus-within { box-shadow: inset 0 0 0 1px var(--wa-accent), var(--wa-ring); }
+    .as-search svg.ui-icon { width: 14px; height: 14px; flex: none; }
+    .as-search input[type=search], .as-search input[type=search]:focus-visible {
+      flex: 1; min-width: 0; min-height: 0; padding: 0; border: 0; background: transparent; box-shadow: none; outline: none;
+      font-size: 12.5px; color: var(--wa-ink);
+    }
+    .as-search kbd { font: inherit; font-size: 10px; padding: 1px 5px; border-radius: 4px; border: 1px solid var(--wa-line); flex: none; }
+    .as-head > button.icon { width: 28px; height: 28px; }
+    .as-tabs { display: flex; align-items: center; gap: 4px; padding: 8px 10px; border-bottom: 1px solid var(--wa-line); flex: none; }
+    .as-tabs .spacer { flex: 1; }
+    button.as-tab {
+      font: inherit; font-size: 12px; font-weight: 600; height: 28px; padding: 0 11px; border-radius: 7px; cursor: pointer;
+      border: 1px solid transparent; background: transparent; color: var(--wa-muted);
+    }
+    button.as-tab:hover { color: var(--wa-ink); }
+    button.as-tab.on { color: var(--wa-ink); background: var(--wa-sel-bg); border-color: var(--wa-sel-ring); }
+    button.as-tab:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .as-count { font-weight: 400; font-size: 11px; color: var(--wa-muted); }
+    button.as-tab.on .as-count { color: var(--wa-accent); }
+    .as-full { flex: none; margin: 8px 10px 0; font-size: 12px; color: var(--wa-amber); }
+    .as-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; scrollbar-width: thin; }
+    .as-sect { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--wa-muted); padding: 2px 2px 0; }
+    .as-sect:not(:first-child) { margin-top: 4px; }
+    .as-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+    @media (max-width: 520px) { .as-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+    button.as-tile {
+      font: inherit; font-size: 11px; font-weight: 500; color: var(--wa-ink); cursor: pointer; min-width: 0;
+      display: flex; flex-direction: column; align-items: stretch; gap: 6px; padding: 8px 6px 7px; border-radius: 9px;
+      background: var(--wa-input); border: 1px solid var(--wa-line);
+      transition: border-color .12s ease-out, background-color .12s ease-out;
+    }
+    button.as-tile.dashed { border-style: dashed; }
+    button.as-tile:hover:not(:disabled) { border-color: color-mix(in srgb, var(--k, var(--wa-accent)) 55%, var(--wa-line)); background: color-mix(in srgb, var(--k, var(--wa-accent)) 8%, var(--wa-input)); }
+    button.as-tile:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    button.as-tile:disabled { opacity: .45; cursor: default; }
+    .as-pic { display: block; width: 100%; aspect-ratio: 120 / 46; border-radius: 6px; overflow: hidden; background: #000; }
+    .as-pic svg.shot { display: block; width: 100%; height: 100%; }
+    .as-name { text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    button.as-tile.as-all .as-pic { display: grid; place-items: center; background: var(--wa-panel); }
+    .as-more { font-size: 11px; font-weight: 600; color: var(--wa-accent); }
+    .as-note { padding: 8px 10px; border-radius: 8px; font-size: 11.5px; color: var(--wa-muted); background: var(--wa-panel); box-shadow: inset 0 0 0 1px var(--wa-line); }
+    .as-note b { color: var(--wa-ink); }
+    .as-empty { padding: 28px 12px; text-align: center; font-size: 12.5px; color: var(--wa-muted); }
+    /* Saved parts: the grid and the entity table the Parts dialog had, in the
+       sheet's body. Its own head and foot sit inside the scroller. */
+    .as-parts { display: flex; flex-direction: column; min-height: 0; margin: -10px; }
+    .as-parts > .xfer-body { padding: 12px; }
+    .as-parts > .xfer-foot { position: sticky; bottom: 0; background: var(--wa-card); }
     /* Picked for grouping: an accent ring, since the kind color is taken. */
     .layer.multi { box-shadow: inset 0 0 0 1px var(--wa-accent); }
     /* A folder row: the chevron folds it, the lock says whether it moves as
@@ -3851,116 +3944,6 @@ export class WristAssistantPanel extends LitElement {
     }
     .row-strip button:hover { filter: brightness(1.06); }
     .row-strip button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    /* The Pages card sits between Add a layer and Layers, and holds nothing
-       but its one row, so it keeps no bottom padding of its own.
-
-       Pages have a color of their own (CARD_TINT.pages), the one its band,
-       its wash and its title swatch are drawn in. The purple accent belongs to
-       the selection, and a pressed page tab is not a selected layer. The fill
-       is mixed darker than the swatch so white digits on it stay readable. */
-    .pages-card {
-      padding-bottom: 10px;
-      --wa-page: color-mix(in srgb, var(--c) 72%, #0b1620);
-      --wa-page-ink: #fff;
-    }
-    :host([dark]) .pages-card { --wa-page: color-mix(in srgb, var(--c) 82%, #0b1620); }
-    .pages-card .panel-title { margin-bottom: 8px; }
-    /* The page row: the tabs share the whole width, so two pages get two wide
-       buttons and four get four narrower ones, and the row is a control in its
-       own right rather than digits squeezed between a header's tools. */
-    .page-row {
-      display: flex; align-items: center; gap: 8px; margin: 0;
-    }
-    /* One sunken track holding every tab, the way a segmented control reads:
-       the pressed page is a raised pill inside it rather than one loose button
-       among others, so which page you are on is read from the shape as well as
-       the color. */
-    .page-row .page-tabs {
-      display: flex; flex: 1 1 auto; gap: 3px; min-width: 0;
-      padding: 3px; border-radius: 10px;
-      background: var(--wa-panel); border: 1px solid var(--wa-line);
-    }
-    .page-row .page-tabs > button, .page-row .page-tab {
-      font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; flex: 1 1 0; min-width: 0;
-      height: 26px; padding: 0 6px; border-radius: 7px;
-      border: 1px solid transparent; background: transparent; color: var(--wa-muted);
-      transition: background-color .12s ease-out, color .12s ease-out;
-    }
-    .page-row .page-tabs > button.on { background: var(--wa-page); color: var(--wa-page-ink); border-color: transparent; }
-    .page-row .page-tabs > button:hover:not(.on) { background: var(--wa-input); color: var(--wa-ink); }
-    .page-row .page-tabs > button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    /* The pressed page: the same width as the rest, filled in the card's
-       color, and split into its number and the trash for that page. Every tab
-       is one width because two pages should read as two halves of the row, not
-       as a big one and a small one. The number keeps the whole left of the pill
-       so a click anywhere on it stays a page click; only the icon at the right
-       end deletes. */
-    .page-row .page-tab {
-      flex: 1 1 0; display: flex; align-items: stretch; padding: 0; overflow: hidden;
-      background: var(--wa-page); color: var(--wa-page-ink); border-color: transparent; cursor: default;
-    }
-    .page-row .page-tab button {
-      font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; color: inherit;
-      border: 0; background: transparent; padding: 0; margin: 0;
-    }
-    .page-row .page-tab button:first-child { flex: 1 1 auto; min-width: 0; }
-    .page-row .page-tab .page-trash {
-      flex: none; width: 28px; display: inline-flex; align-items: center; justify-content: center;
-      border-left: 1px solid color-mix(in srgb, var(--wa-accent-ink) 25%, transparent);
-    }
-    .page-row .page-tab .page-trash svg.ui-icon { width: 13px; height: 13px; }
-    /* Red on the plain input ground, not on the accent: it is the one control
-       on the row that takes something away, and it should not look like part
-       of the page it deletes. */
-    .page-row .page-tab .page-trash { color: #FF453A; background: var(--wa-input); }
-    .page-row .page-tab .page-trash:hover { background: color-mix(in srgb, #FF453A 22%, var(--wa-input)); }
-    .page-row .page-tab .page-trash:focus-visible { outline: none; box-shadow: inset var(--wa-ring); }
-    /* Armed: the trash becomes the question. Filled red and wide enough for the
-       word, so the second press is plainly a different button from the first. */
-    .page-row .page-tab .page-trash.armed {
-      width: auto; padding: 0 8px; background: #FF453A; color: #fff;
-      border-left-color: color-mix(in srgb, #fff 35%, transparent);
-    }
-    .page-row .page-tab .page-trash.armed:hover { background: color-mix(in srgb, #fff 12%, #FF453A); }
-    .page-row .page-tab .page-trash .sure { font-size: 11px; font-weight: 700; letter-spacing: .01em; }
-    .page-row .page-tab button:focus-visible { outline: none; box-shadow: inset var(--wa-ring); }
-    /* + and Play beside the tabs, and Add a page in their place before there
-       are any: fixed width, so the tabs alone take the slack. */
-    .page-row .page-act {
-      font: inherit; font-size: 14px; font-weight: 700; line-height: 1; cursor: pointer; flex: none;
-      height: 34px; min-width: 26px; padding: 0 7px; border-radius: 7px;
-      border: 1px solid var(--wa-line); background: var(--wa-input); color: inherit;
-    }
-    /* Add a page is the one press on this row that makes something, and it was
-       a grey square the same size as a page tab, so it read as a third page.
-       It now wears the card's color, and fills with it on hover. */
-    .page-row .page-act.page-more {
-      width: 34px; padding: 0; display: grid; place-items: center;
-      background: color-mix(in srgb, var(--wa-page) 16%, var(--wa-input));
-      border-color: color-mix(in srgb, var(--wa-page) 45%, var(--wa-line));
-      color: var(--wa-page);
-    }
-    :host([dark]) .page-row .page-act.page-more { color: color-mix(in srgb, var(--c) 55%, #fff); }
-    .page-row .page-act.page-more svg.ui-icon { width: 15px; height: 15px; display: block; }
-    .page-row .page-act.page-more:hover:not(:disabled) {
-      background: var(--wa-page); border-color: transparent; color: var(--wa-page-ink);
-    }
-    /* Before there are any pages the card holds one button, and it rides in
-       the title band beside the help mark. A whole row under the band for one
-       press was the tallest empty card on the column. */
-    .pages-card.bare > .panel-title { margin-bottom: -12px; border-radius: var(--wa-r-md); }
-    .pages-card > .panel-title .page-act.page-start {
-      font: inherit; font-size: 12px; font-weight: 600; line-height: 1; cursor: pointer; flex: none;
-      display: inline-flex; align-items: center; gap: 5px;
-      height: 26px; padding: 0 10px; border-radius: 7px;
-      border: 1px solid var(--wa-line); background: var(--wa-input); color: inherit;
-    }
-    .pages-card > .panel-title .page-act.page-start svg.ui-icon { width: 13px; height: 13px; color: var(--wa-accent); }
-    .pages-card > .panel-title .page-act.page-start:hover { background: var(--wa-raised); }
-    .pages-card > .panel-title .page-act.page-start:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    .page-row .page-act:hover:not(:disabled) { background: var(--wa-raised); }
-    .page-row .page-act:disabled { opacity: .45; cursor: default; }
-    .page-row .page-act:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .panel-title button.help { flex: none; }
     /* The ready-made page-turn taps: a label saying which page they land on,
        then the pair side by side, left one on the left. */
@@ -4208,10 +4191,6 @@ export class WristAssistantPanel extends LitElement {
       border-radius: 7px; background: color-mix(in srgb, var(--c) 5%, var(--wa-card));
     }
     .values-list .value-open .value-editor { display: flex; flex-direction: column; gap: 4px; }
-    .values-list.empty-list .panel-title { margin-bottom: 0; }
-    /* The card's "?" always shows: unlike an inspector card, this one has
-       no header to hover first. */
-    .values-list .panel-title button.sec-help { opacity: 1; }
     .values-list .shared-help {
       margin: 0 0 8px; padding: 8px 10px; border-radius: 7px; background: var(--wa-card);
       font-size: 12.5px; line-height: 1.45; color: var(--wa-ink);
@@ -4228,14 +4207,6 @@ export class WristAssistantPanel extends LitElement {
     }
     .now-v.none { font-style: italic; }
     details.sub.format summary .sum-note { margin-left: 6px; color: var(--wa-muted); font-weight: 400; }
-    /* Under Layers, the list takes at most part of the column and scrolls, so
-       an open value never pushes the layer rows out of sight. */
-    .column.left .card.values-list { max-height: 45%; overflow-y: auto; scrollbar-width: thin; }
-    /* On the Control Center tab the layer tools are one note, so Shared
-       values sits at the foot of the column rather than right under it. */
-    .column.left.control .card.values-list { margin-top: auto; }
-    .layout.cols-1 .column.left.control .card.values-list { margin-top: 0; }
-    .layout.cols-1 .column.left .card.values-list { max-height: none; overflow: visible; }
     .values-list .datum {
       padding: 0 8px; border-radius: 7px; gap: 8px;
       transition: box-shadow .12s ease-out, background-color .12s ease-out;
@@ -4253,6 +4224,23 @@ export class WristAssistantPanel extends LitElement {
     .values-list .datum button.icon { opacity: 0; pointer-events: none; flex: none; }
     .values-list .datum:hover button.icon, .values-list .datum:focus-within button.icon { opacity: .7; pointer-events: auto; }
     .values-list .datum button.icon:hover:not(:disabled), .values-list .datum button.icon:focus-visible { opacity: 1; }
+    /* Shared values footer: one line at the foot of the Layers card, the list
+       unfolding under it. The open list takes at most part of the column and
+       scrolls, so an open value never pushes the layer rows out of sight. */
+    .sv-foot { flex: none; border-top: 1px solid var(--wa-line); }
+    .layers-card > .sv-foot { margin-top: auto; }
+    .sv-bar { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 0 8px 0 12px; }
+    .sv-title { font-size: 12.5px; font-weight: 600; }
+    .sv-bar .spacer, .sv-tools .spacer { flex: 1; }
+    .sv-body { max-height: 40vh; overflow-y: auto; scrollbar-width: thin; padding: 0 10px 10px; display: flex; flex-direction: column; gap: 6px; }
+    .sv-tools { display: flex; align-items: center; gap: 6px; }
+    .sv-tools button.sec-help { opacity: 1; }
+    .sv-none { font-size: 12px; color: var(--wa-muted); }
+    /* On the Control Center tab there is no Layers card to sit at the foot
+       of, so it is a card of its own at the foot of the column. */
+    .sv-foot.standalone { border-top: 0; padding: 0; margin-top: auto; }
+    .layout.cols-1 .sv-foot.standalone { margin-top: 0; }
+    .layout.cols-1 .sv-body { max-height: none; overflow: visible; }
     .chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
     .chips .muted { color: var(--wa-muted); font-size: 12px; }
     /* Every entity the face reads, one white line each. The whole line is the
@@ -4676,21 +4664,6 @@ export class WristAssistantPanel extends LitElement {
     .kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 13px; }
     .kv dt { opacity: .7; }
     .kv dd { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .send { font-size: 12.5px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-    .send.sent { color: var(--wa-ent); }
-    .send.sending { opacity: .7; }
-    .send.offline { color: var(--warning-color, #ffa600); }
-    .send.unsupported { color: var(--warning-color, #ffa600); }
-    /* A phone that has not pulled yet reads the same as a watch that is not
-       listening: something to do, not something wrong. */
-    .send.openApp { color: var(--warning-color, #ffa600); }
-    /* Nothing is on its way anywhere, and nothing is wrong: a plain fact in
-       the quiet ink, neither the green of an ack nor the amber of a warning. */
-    .send.library { color: var(--wa-muted); }
-    /* "last seen 2 h ago" beside a green tick. Muted, because the tick is
-       still true: the change is on the watch, and this only says the watch
-       stopped listening afterwards. */
-    .send-note { font-size: 12px; color: var(--wa-muted); white-space: nowrap; flex: none; }
     ul { list-style: none; margin: 0; padding: 0; }
     .datum { padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 6px; }
     .datum + .datum { box-shadow: inset 0 1px 0 var(--wa-line); }
@@ -5576,12 +5549,9 @@ export class WristAssistantPanel extends LitElement {
     try {
       const raw = window.localStorage.getItem(LIST_STORE_KEY);
       if (!raw) return;
-      const saved = JSON.parse(raw) as { thumbStep?: unknown; detail?: unknown; addOpen?: unknown; addDetail?: unknown; pickerDevice?: unknown; pickerShut?: unknown; pickerBare?: unknown };
+      const saved = JSON.parse(raw) as { thumbStep?: unknown; detail?: unknown; pickerDevice?: unknown; pickerShut?: unknown; pickerBare?: unknown };
       if (saved.thumbStep === 0 || saved.thumbStep === 1 || saved.thumbStep === 2) this.thumbStep = saved.thumbStep;
       if (saved.detail === "compact" || saved.detail === "expanded") this.layerDetail = saved.detail;
-      if (typeof saved.addOpen === "boolean") this.addOpen = saved.addOpen;
-      const addDetail = addDetailFrom(saved.addDetail);
-      if (addDetail) this.addDetail = addDetail;
       // The owner it names is checked when the tabs are drawn, not here: the
       // devices are not read yet, and a watch that has gone falls back to All
       // rather than to nothing. `pickerLook` was the Preview or Devices
@@ -5598,8 +5568,7 @@ export class WristAssistantPanel extends LitElement {
   private saveListView() {
     try {
       window.localStorage.setItem(LIST_STORE_KEY, JSON.stringify({
-        thumbStep: this.thumbStep, detail: this.layerDetail,
-        addOpen: this.addOpen, addDetail: this.addDetail, pickerDevice: this.pickerDevice,
+        thumbStep: this.thumbStep, detail: this.layerDetail, pickerDevice: this.pickerDevice,
         pickerShut: this.pickerShut, pickerBare: this.pickerBare,
       }));
     } catch {
@@ -5674,6 +5643,8 @@ export class WristAssistantPanel extends LitElement {
     window.removeEventListener("click", this.sharedValueOutside, { capture: true });
     window.removeEventListener("click", this.leaveGuard, { capture: true });
     window.removeEventListener("focusin", this.sharedValueFocus);
+    window.removeEventListener("pointerdown", this.addSheetOutside, { capture: true });
+    window.removeEventListener("pointerdown", this.sideMenuOutside, { capture: true });
     this.removeEventListener(SCRUB_START, this.scrubStart);
     this.removeEventListener(SCRUB_END, this.scrubEnd);
     window.removeEventListener("hashchange", this.takeShareLink);
@@ -5827,6 +5798,13 @@ export class WristAssistantPanel extends LitElement {
   }
 
   private onKey(e: KeyboardEvent) {
+    // Escape shuts the Add sheet first, wherever the keyboard is in it: the
+    // sheet is the thing on top.
+    if (e.key === "Escape" && this.addSheet) {
+      e.preventDefault();
+      this.closeAddSheet();
+      return;
+    }
     // Escape leaves pick mode. It runs before the modifier gate, and only when
     // picking, so nothing else that uses Escape (the preset dialog, the entity
     // search) loses its key.
@@ -5846,6 +5824,15 @@ export class WristAssistantPanel extends LitElement {
       focused?.tagName !== "SELECT" &&
       !NON_TEXT_INPUTS.test((focused as HTMLInputElement | undefined)?.type ?? "");
     const dialogOpen = this.renderRoot.querySelector("dialog[open]") !== null;
+    // / opens the Add sheet with the keyboard in its search, or puts the
+    // keyboard back there when the sheet is already open. Never while text is
+    // being typed, where a slash is a slash.
+    if (slashOpensAddSearch(e, inTextField, dialogOpen) && this.canAddHere) {
+      e.preventDefault();
+      if (this.addSheet) this.focusAddSearch();
+      else this.openAddSheet();
+      return;
+    }
     // With nothing typed into, Escape clears the selection, the way it does in
     // a drawing app: the pick first, then the selected layer. A dialog keeps
     // its Escape (the zoomed preview closes on it).
@@ -6710,36 +6697,6 @@ export class WristAssistantPanel extends LitElement {
     } catch (err) {
       this.saveError = errText(err);
     }
-  }
-
-  private renderSendButton() {
-    const s = sendState({
-      token: this.serverToken,
-      appliedToken: this.appliedToken,
-      polling: this.polling,
-      pending: this.sendPending,
-      lastPollSeconds: this.lastPollSeconds,
-      deviceKind: this.selectedOwner?.device_kind,
-      lastSyncSeconds: this.lastSyncSeconds,
-      pushAvailable: this.pushAvailable,
-    });
-    // Before the first reply nothing is known about this device, and the chip
-    // would otherwise report the never-acked state as if it were an answer.
-    if ((s.kind === "unsupported" || s.kind === "openApp") && !this.sendStatusKnown) return nothing;
-    // A design that has not been saved yet is not in the library, whatever
-    // the library's own list says, so the chip waits for the first save.
-    if (s.kind === "library" && this.draft?.baseRevision === null) return nothing;
-    const d = describeSend(s);
-    const resend = d.resend && this.hass.user?.is_admin
-      ? html`<button class="ghost" title="Wake the watch again" @click=${() => void this.sendToWatch()}>Resend</button>`
-      : nothing;
-    // The phone's half of the same button: the nudge sends it another push.
-    const refresh = d.refresh && this.hass.user?.is_admin
-      ? html`<button class="ghost" title="Send the phone a push so it pulls this now. iOS decides when the widget redraws; opening the app or tapping the widget redraws it at once." @click=${() =>
-          void this.sendToWatch()}>Refresh now</button>`
-      : nothing;
-    return html`<span class="send ${s.kind}" title=${d.title}>${s.kind === "sent" ? "✓ " : ""}${d.label}</span>${
-      d.note ? html`<span class="send-note" title=${d.title}>${d.note}</span>` : nothing}${resend}${refresh}`;
   }
 
   /** The store refuses a document whose slot is outside 0..MAX_SLOTS-1. */
@@ -8005,59 +7962,42 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * One button per page, the showing one pressed.
+   * One button per page, the showing one pressed, as one segmented control.
    *
    * The canvas shows one page at a time because the watch does. There is no
-   * "All" tab: a face that drew every page at once would be the one picture the
-   * wrist can never produce, and the whole reason pages are a version gate is
-   * that stacking them is what a broken paged face looks like. Layers on every
-   * page simply draw on every tab.
+   * "All" button here: a face that drew every page at once would be the one
+   * picture the wrist can never produce. Layers on every page simply draw on
+   * every page; the Layers card's Show all is where every page's list is read
+   * at once.
    */
-  private renderPageTabs(cfg: CustomComplicationConfig, opts: { trash?: boolean } = {}) {
+  private renderPageTabs(cfg: CustomComplicationConfig) {
     const spec = pagesSpecOf(cfg);
     const pinned = (page: number) =>
       cfg.elements.filter((el) => el.payload.page === page && !isAttachedTap(cfg, el)).length;
     return pageNumbers(spec).map((page) => {
       const on = page === this.page;
       const count = pinned(page);
-      const label = `Page ${page}: ${count} layer${count === 1 ? "" : "s"}`;
-      const tab = html`<button class=${on ? "on" : ""} aria-pressed=${on ? "true" : "false"} title=${label}
+      return html`<button class=${on ? "on" : ""} aria-pressed=${on ? "true" : "false"}
+        title=${`Page ${page}: ${count} layer${count === 1 ? "" : "s"}`}
         @click=${() => this.setPage(page)}>${page}</button>`;
-      // In the Layers row the pressed tab grows and carries the trash for its
-      // own page, so the one control that changes the document sits on the
-      // page it changes, and never beside a tab you are about to click.
-      if (!on || !opts.trash) return tab;
-      const gone = spec.count > 2
-        ? `Delete page ${page} and the ${count === 1 ? "layer" : `${count} layers`} on it. Later pages move down one. Layers on every page stay.`
-        : `Delete page ${page} and the ${count === 1 ? "layer" : `${count} layers`} on it, which turns pages off. Layers on every page stay.`;
-      const armed = this.pageTrashArm === page;
-      const ask = `Press again to delete page ${page}.`;
-      return html`<span class="page-tab on">${tab}<button class="page-trash ${armed ? "armed" : ""}"
-        title=${armed ? ask : gone} aria-label=${armed ? ask : gone}
-        @click=${() => {
-          if (!armed) { this.armPageTrash(page); return; }
-          this.disarmPageTrash();
-          this.mutate((c) => { removePage(c, page); });
-          this.showPage(Math.max(1, page - 1));
-        }}>${armed ? html`<span class="sure">sure?</span>` : uiIcon("delete")}</button></span>`;
     });
   }
 
   /**
-   * The Pages card, its own card between Add a layer and Layers: the one place
-   * pages are switched, added and deleted. It sits above the list it changes,
-   * so the order on screen reads the way the work does: pick a page here, and
-   * the layers of that page are in the card below.
+   * The Pages card, above Layers: the one place pages are switched and added.
+   * It sits over the list it changes, so the order on screen reads the way the
+   * work does: pick a page here, and its layers are in the card below.
    *
-   * It carries the tabs, the trash on the pressed one, Play for a tour, + and
-   * ? for the help, because this is where pages are confusing: the list just
-   * changed under you.
+   * One header line. Without pages it says so and offers Add a page, which
+   * pins what is there to page 1 and opens an empty page 2 (`startPages`). With
+   * pages it carries the page buttons, + for one more, and a ··· menu for the
+   * things done now and then: deleting the page showing, the two ready-made
+   * page-turning tap zones, and the help. Neutral, with no color of its own:
+   * a pressed page is not a selection, and the orange it used to wear made
+   * the one quiet card on the column the loudest.
    *
-   * Without pages it is one button, Add a page, which pins what is there to
-   * page 1 and opens an empty page 2 (`startPages`). That button sits in the
-   * title band rather than under it, so a card offering one press is one row
-   * tall. The moment there is a page to switch, the tabs take their own row
-   * under the title and the card reads the way it always did.
+   * The one line under the header appears only while it is true: a paged
+   * complication that nothing can turn is stuck on page 1 on the wrist.
    */
   private renderPages() {
     const cfg = this.draft?.config;
@@ -8067,43 +8007,92 @@ export class WristAssistantPanel extends LitElement {
     const on = usesPages(cfg);
     // No pages and no edit rights: nothing to switch and nothing to press.
     if (!on && !edit) return nothing;
-    const count = on ? pagesSpecOf(cfg).count : 1;
-    return html`<div class="card pages-card tinted banded ${on ? "" : "bare"}" style=${`--c:${CARD_TINT.pages}`}>
-      <h2 class="panel-title"><span class="swatch">${uiIcon("pages")}</span>Pages
-        <span class="mini">${on ? `${count} pages · one at a time` : "one complication, several pages"}</span>
+    if (!on) {
+      return html`<div class="card pages-card lc">
+        <div class="lc-head">
+          <span class="lc-title">Pages</span><span class="lc-sub">just one</span>
+          <span class="spacer"></span>
+          <button class="lc-btn" title="Start a second page. What is here now becomes page 1, and a new empty page 2 opens for you to draw on."
+            @click=${() => { let page = 1; this.mutate((c) => { page = startPages(c); }); this.showPage(page); }}>${uiIcon("plus")}<span>Add a page</span></button>
+        </div>
+      </div>`;
+    }
+    const spec = pagesSpecOf(cfg);
+    const full = spec.count >= PAGES_MAX_COUNT;
+    const stuck = edit && !pageMoverExists(cfg);
+    return html`<div class="card pages-card lc">
+      <div class="lc-head">
+        <span class="lc-title">Pages</span><span class="lc-sub">${spec.count} · shown one at a time</span>
         <span class="spacer"></span>
-        ${on ? nothing : html`
-          <button class="page-act page-start" title="Start a second page. What is here now becomes page 1, and a new empty page 2 opens for you to draw on."
-            @click=${() => { let page = 1; this.mutate((c) => { page = startPages(c); }); this.showPage(page); }}>${uiIcon("plus")}<span>Add a page</span></button>`}
-        <button class="help" title="How pages work" aria-label="How pages work"
-          @click=${() => { this.helpTab = "pages"; this.helpOpen = true; }}>?</button>
-      </h2>
-      ${on ? this.renderPageBody(cfg, edit) : nothing}
-      ${edit ? pagesCardFields(this.host(), this.page) : nothing}
+        <span class="page-seg" role="group" aria-label="Page the canvas and the list are showing"
+          title="Which page the canvas and the Layers card show">${this.renderPageTabs(cfg)}</span>
+        ${edit ? html`<button class="lc-ghost" ?disabled=${full} aria-label="Add a page"
+          title=${full ? "Four pages is the most a complication can have." : "Add an empty page after the last one."}
+          @click=${() => { let page: number | undefined; this.mutate((c) => { page = addPage(c); }); if (page !== undefined) this.showPage(page); }}>${uiIcon("plus")}</button>` : nothing}
+        ${this.renderPagesMenu(cfg, edit)}
+      </div>
+      ${stuck ? html`<div class="lc-note warn">
+        <span>Add a tap zone to turn pages</span>
+        <button class="link" title=${`A tap zone over the right half of page ${this.page}. Tapping it shows the next page.`}
+          @click=${() => this.mutate((c) => { addPageTurnTap(c, "nextPage", this.page); }, "pages-zone-nextPage")}>Add</button>
+      </div>` : nothing}
+      ${this.touring
+        // A tour started by a Play all pages tap in the demo preview. Keyed on
+        // the run so a second press starts the bar over: a CSS animation on
+        // the same element would otherwise carry on from where the first tour
+        // left it.
+        ? keyed(this.tourRun, html`<span class="page-tour-bar" aria-hidden="true"><i
+            style=${`animation-duration:${Math.max(1, Math.round(tourDuration(spec) * 1000))}ms`}></i></span>`)
+        : nothing}
     </div>`;
   }
 
-  /** The controls inside the Pages card: the row of tabs. Only called once
-   * there are pages; before that the card is its title band alone, with Add a
-   * page in it. */
-  private renderPageBody(cfg: CustomComplicationConfig, edit: boolean) {
+  /**
+   * The Pages card's ··· menu. Delete this page asks first, in place: the
+   * first press turns the row into the question and the second deletes, the
+   * way the trash on the pressed tab used to. The two tap zones land on the
+   * page showing, because page 1 usually wants Next alone and the last page
+   * Back alone.
+   */
+  private renderPagesMenu(cfg: CustomComplicationConfig, edit: boolean) {
+    const open = this.sideMenu === "pages";
+    const page = this.page;
     const spec = pagesSpecOf(cfg);
-    const full = spec.count >= PAGES_MAX_COUNT;
-    return html`<div class="page-row" title="Which page the canvas and the Layers card show. That card holds this page's layers and the ones on every page.">
-      <span class="page-tabs" role="group" aria-label="Page the list is showing">${this.renderPageTabs(cfg, { trash: edit })}</span>
-      ${edit ? html`
-        <button class="page-act page-more" ?disabled=${full} aria-label="Add a page"
-          title=${full ? "Four pages is the most a complication can have." : "Add an empty page after the last one."}
-          @click=${() => { let page: number | undefined; this.mutate((c) => { page = addPage(c); }); if (page !== undefined) this.showPage(page); }}>${uiIcon("plus")}</button>` : nothing}
-    </div>
-    ${this.touring
-      // A tour started by a Play all pages tap in the demo preview. Keyed on
-      // the run so a second press starts the bar over: a CSS
-      // animation on the same element would otherwise carry on from where
-      // the first tour left it.
-      ? keyed(this.tourRun, html`<span class="page-tour-bar" aria-hidden="true"><i
-          style=${`animation-duration:${Math.max(1, Math.round(tourDuration(spec) * 1000))}ms`}></i></span>`)
-      : nothing}`;
+    const count = cfg.elements.filter((el) => el.payload.page === page && !isAttachedTap(cfg, el)).length;
+    const armed = this.pageTrashArm === page;
+    const gone = spec.count > 2
+      ? `Delete page ${page} and the ${count === 1 ? "layer" : `${count} layers`} on it. Later pages move down one. Layers on every page stay.`
+      : `Delete page ${page} and the ${count === 1 ? "layer" : `${count} layers`} on it, which turns pages off. Layers on every page stay.`;
+    const zone = (type: "previousPage" | "nextPage") => {
+      const back = type === "previousPage";
+      return html`<button class="row" role="menuitem"
+        title=${back
+          ? `A tap zone over the left half of page ${page}. Tapping it shows the page before.`
+          : `A tap zone over the right half of page ${page}. Tapping it shows the next page.`}
+        @click=${() => {
+          this.toggleSideMenu("pages", false);
+          this.mutate((c) => { addPageTurnTap(c, type, page); }, `pages-zone-${type}`);
+        }}>Add ${back ? "previous" : "next"} page tap zone</button>`;
+    };
+    return html`<span class="side-menu" data-side-menu="pages">
+      <button class="lc-ghost" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"} aria-label="Page options" title="Page options"
+        @click=${() => { this.disarmPageTrash(); this.toggleSideMenu("pages"); }}>···</button>
+      ${open ? html`<div class="pop-menu side-pop" role="menu" aria-label="Page options">
+        ${edit ? html`
+          <button class="row danger ${armed ? "armed" : ""}" role="menuitem" title=${armed ? `Press again to delete page ${page}.` : gone}
+            @click=${() => {
+              if (!armed) { this.armPageTrash(page); return; }
+              this.disarmPageTrash();
+              this.toggleSideMenu("pages", false);
+              this.mutate((c) => { removePage(c, page); });
+              this.showPage(Math.max(1, page - 1));
+            }}>${armed ? `Sure? Delete page ${page}` : "Delete this page"}</button>
+          ${zone("previousPage")}${zone("nextPage")}
+          <span class="pop-sep" aria-hidden="true"></span>` : nothing}
+        <button class="row" role="menuitem"
+          @click=${() => { this.toggleSideMenu("pages", false); this.helpTab = "pages"; this.helpOpen = true; }}>How pages work</button>
+      </div>` : nothing}
+    </span>`;
   }
 
   /**
@@ -9108,31 +9097,8 @@ export class WristAssistantPanel extends LitElement {
     const fit = this.narrow
       ? { columns: 1 as const, left: this.colLeft, right: this.colRight }
       : columnFit(this.panelWidth, this.colLeft, this.colRight);
-    // The header used to spell the revision and whether it was saved. The
-    // footer already says exactly that, at length, so the bar keeps only the
-    // dot: color for the glance, the same words in its tooltip.
-    const rec = this.records.find((r) => r.id === this.selectedId);
     return html`
-      <header class=${fit.columns === 1 ? "stacked" : nothing}>
-        ${this.renderPicker()}
-        ${this.hass.user?.is_admin ? html`<span class="hor" aria-hidden="true">or</span>${headerArrow()}` : nothing}
-        ${this.renderNewButton()}
-        ${d ? html`<button class="new-btn" aria-haspopup="dialog" aria-expanded=${this.shareOpen ? "true" : "false"}
-          title="Share or back up this complication as text, a file or a link"
-          @click=${() => this.openShareDialog()}><span>Share</span></button>` : nothing}
-        <span class="spacer"></span>
-        <button class="help" title="Help" aria-label="Help" @click=${() => { this.helpOpen = true; }}>?</button>
-        <div class="toolbar hbox hist">
-          <button class="icon" @click=${() => this.undo()} ?disabled=${!d?.canUndo} title="Undo (⌘Z)" aria-label="Undo">${uiIcon("undo")}</button>
-          <span class="hdiv"></span>
-          <button class="icon" @click=${() => this.redo()} ?disabled=${!d?.canRedo} title="Redo (⇧⌘Z)" aria-label="Redo">${uiIcon("redo")}</button>
-        </div>
-        <div class="hbox status">
-          <span class="dirty-dot ${dirty ? "" : rec ? "clean" : "none"}" title=${dirty ? "Unsaved changes" : rec ? "Saved" : "Not saved yet"}></span>
-          ${this.renderSendButton()}
-          <button class="primary save ${dirty ? "dirty" : ""}" @click=${() => void this.save()} ?disabled=${!this.canEdit || !dirty || this.saving || !this.slotChosen} title="Save (⌘S)">${this.saving ? "Saving…" : d?.baseRevision === null ? "Save new" : dirty ? "Save" : "Saved"}</button>
-        </div>
-      </header>
+      ${this.renderTopBar(fit.columns === 1, dirty)}
       ${this.loadError ? html`<div class="card error">${this.loadError}</div>` : nothing}
       ${this.linkNote ? html`<div class="banner warn link-note"><span>${this.linkNote}</span>
         <button class="link" @click=${() => { this.linkNote = undefined; }}>Dismiss</button></div>` : nothing}
@@ -9152,7 +9118,7 @@ export class WristAssistantPanel extends LitElement {
       ${this.importOpen ? this.renderImportDialog() : nothing}
       ${this.historyOpen ? this.renderHistoryDialog() : nothing}
       ${this.savePartOpen ? this.renderSavePartDialog() : nothing}
-      ${this.partsOpen ? this.renderPartsDialog() : nothing}
+      ${this.renderAddSheet()}
       ${this.watchSupported && !this.draft
         // Nothing open: the side columns have nothing to hold, so the stage
         // takes the whole width rather than sitting between two blank panels.
@@ -9162,8 +9128,8 @@ export class WristAssistantPanel extends LitElement {
         ? html`<div class="layout cols-${fit.columns}"
               style="--wa-left:${fit.left}px;--wa-right:${fit.right}px">
             <div class=${`column left ${this.inControlView ? "control" : ""}`}>${this.inControlView
-              ? this.renderControlHasNoLayers()
-              : html`${this.renderAddLayer()}${this.renderPages()}${this.renderLayers()}`}${this.renderSharedValues()}</div>
+              ? html`${this.renderControlHasNoLayers()}${this.renderSharedValues(true)}`
+              : html`${this.renderPages()}${this.renderLayers()}${this.renderPresetDialog()}`}</div>
             ${this.renderGutter("left")}
             <div class="column canvas">${this.renderBanners()}${this.renderCanvas()}</div>
             ${this.renderGutter("right")}
@@ -9172,6 +9138,155 @@ export class WristAssistantPanel extends LitElement {
           ${this.renderFooter()}`
         : this.renderWatchGate()}`;
   }
+
+  /**
+   * The top bar, left to right: Browse, the name you can type over, one quiet
+   * pill saying which shape on which device, then the history, where the
+   * complication has got to, Share, the ··· menu, Save and the help.
+   *
+   * Save is always there. It used to turn into the word "Saved", which read as
+   * a label rather than a button and moved everything to its right each time it
+   * changed. It is dimmed now while there is nothing to save, and the caption
+   * beside it says when the last save was.
+   */
+  private renderTopBar(stacked: boolean, dirty: boolean) {
+    const d = this.draft;
+    const rec = this.records.find((r) => r.id === this.selectedId);
+    const caption = d ? savedCaption(d.baseRevision === null, rec?.updatedAt, Date.now()) : undefined;
+    return html`<header class=${stacked ? "stacked" : nothing}>
+      ${this.renderPicker()}
+      ${d ? this.renderNameField(d.config) : nothing}
+      ${d ? this.renderPlacePill(d.config) : nothing}
+      <span class="spacer"></span>
+      <button class="icon tb-icon" @click=${() => this.undo()} ?disabled=${!d?.canUndo} title="Undo (⌘Z)" aria-label="Undo">${uiIcon("undo")}</button>
+      <button class="icon tb-icon" @click=${() => this.redo()} ?disabled=${!d?.canRedo} title="Redo (⇧⌘Z)" aria-label="Redo">${uiIcon("redo")}</button>
+      <span class="tb-div" aria-hidden="true"></span>
+      ${this.renderSendPill()}
+      ${d ? html`<button class="tb-btn" aria-haspopup="dialog" aria-expanded=${this.shareOpen ? "true" : "false"}
+        title="Share or back up this complication as text, a file or a link"
+        @click=${() => this.openShareDialog()}>Share</button>` : nothing}
+      ${this.renderTopMenu()}
+      ${d ? html`<button class="primary save ${dirty ? "dirty" : ""}" @click=${() => void this.save()}
+          ?disabled=${!this.canEdit || !dirty || this.saving || !this.slotChosen}
+          title=${dirty ? "Save (⌘S)" : "Nothing to save (⌘S)"}>${this.saving ? "Saving…" : "Save"}</button>
+        <span class="tb-saved" title=${dirty && rec ? "Unsaved changes" : caption ?? ""}>${caption}</span>` : nothing}
+      <button class="help" title="Help" aria-label="Help" @click=${() => { this.helpOpen = true; }}>?</button>
+    </header>`;
+  }
+
+  /**
+   * The complication's name, typed over where it stands. It commits on Enter
+   * or on leaving the box, through the same write the Complication card's Name
+   * field makes, so the two stay one setting and one undo step. Escape puts the
+   * name back.
+   */
+  private renderNameField(cfg: CustomComplicationConfig) {
+    const commit = (input: HTMLInputElement) => {
+      const v = input.value;
+      if (v === cfg.name) return;
+      this.mutate((c) => { c.name = v; }, "name");
+    };
+    return html`<label class="tb-name" title=${this.canEdit ? "Click the name to rename it" : cfg.name}>
+      <input type="text" class="tb-name-input" aria-label="Complication name" placeholder="Untitled"
+        .value=${cfg.name} ?disabled=${!this.canEdit} maxlength="60"
+        @change=${(e: Event) => commit(e.target as HTMLInputElement)}
+        @keydown=${(e: KeyboardEvent) => {
+          const input = e.target as HTMLInputElement;
+          if (e.key === "Enter") { e.preventDefault(); input.blur(); }
+          if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); input.value = cfg.name; input.blur(); }
+        }} />
+      ${this.canEdit ? html`<span class="tb-pen" aria-hidden="true">✎</span>` : nothing}
+    </label>`;
+  }
+
+  /** "Rectangular · Jesse's Apple Watch": the shape this complication is and
+   * the device it is on, as one quiet pill. A design on the shelf is on no
+   * device, so it says unassigned. */
+  private renderPlacePill(cfg: CustomComplicationConfig) {
+    const families = supportedFamilies(cfg);
+    const shape = families[0] !== undefined ? familyTitle(families[0]) : cfg.control !== undefined ? "Control" : "No shape";
+    const owner = this.selectedOwner;
+    const device = !owner || isLibraryOwner(owner) ? "unassigned" : ownerShortLabel(owner);
+    return html`<span class="tb-pill" title=${`${shape}, ${device === "unassigned" ? "on no device yet" : `on ${device}`}`}>${shape} · ${device}</span>`;
+  }
+
+  /** The sync state as the header shows it, or undefined while there is
+   * nothing true to say yet. */
+  private sendInfo() {
+    const s = sendState({
+      token: this.serverToken,
+      appliedToken: this.appliedToken,
+      polling: this.polling,
+      pending: this.sendPending,
+      lastPollSeconds: this.lastPollSeconds,
+      deviceKind: this.selectedOwner?.device_kind,
+      lastSyncSeconds: this.lastSyncSeconds,
+      pushAvailable: this.pushAvailable,
+    });
+    // Before the first reply nothing is known about this device, and the pill
+    // would otherwise report the never-acked state as if it were an answer.
+    if ((s.kind === "unsupported" || s.kind === "openApp") && !this.sendStatusKnown) return undefined;
+    // A design that has not been saved yet is not in the library, whatever
+    // the library's own list says, so the pill waits for the first save.
+    if (s.kind === "library" && this.draft?.baseRevision === null) return undefined;
+    return { s, d: describeSend(s) };
+  }
+
+  /** Where the saved complication has got to, as a pill: a dot and the words
+   * from `send-state.ts`. Green once it is on the device, amber while it is
+   * not there yet, and quiet for the shelf, which waits for nothing. Resend and
+   * Refresh now live in the ··· menu beside it. */
+  private renderSendPill() {
+    const info = this.sendInfo();
+    if (!info) return nothing;
+    const { s, d } = info;
+    return html`<span class="tb-sync ${sendTone(s.kind)} ${s.kind}" title=${d.title}>
+      <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${d.label}</span>${d.note ? html`<span class="tb-sync-n">· ${d.note}</span>` : nothing}
+    </span>`;
+  }
+
+  /**
+   * The ··· menu: the things the bar does now and then. Import, and the two
+   * nudges that ask a device to pull again. All three are for an administrator;
+   * anyone else gets no menu at all rather than an empty one.
+   */
+  private renderTopMenu() {
+    if (!this.hass.user?.is_admin) return nothing;
+    const info = this.sendInfo();
+    const full = this.freeSlot() < 0;
+    const open = this.sideMenu === "top";
+    const run = (fn: () => void) => () => { this.toggleSideMenu("top", false); fn(); };
+    return html`<span class="side-menu" data-side-menu="top">
+      <button class="tb-btn tb-more" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"} aria-label="More actions" title="More"
+        @click=${() => this.toggleSideMenu("top")}>···</button>
+      ${open ? html`<div class="pop-menu side-pop" role="menu" aria-label="More actions">
+        <button class="row" role="menuitem" ?disabled=${full}
+          title=${full ? `${capFirst(this.placePhrase)} has no free slot. Delete a complication first.` : "Paste a complication somebody shared"}
+          @click=${run(() => this.openImportDialog())}>Import…${full
+            ? html`<small>${isLibraryOwner(this.selectedOwner) ? UNASSIGNED_LABEL : this.deviceWord} is full</small>` : nothing}</button>
+        ${info?.d.resend ? html`<button class="row" role="menuitem" title="Wake the watch again"
+          @click=${run(() => void this.sendToWatch())}>Resend to the watch</button>` : nothing}
+        ${info?.d.refresh ? html`<button class="row" role="menuitem"
+          title="Send the phone a push so it pulls this now. iOS decides when the widget redraws; opening the app or tapping the widget redraws it at once."
+          @click=${run(() => void this.sendToWatch())}>Refresh now</button>` : nothing}
+      </div>` : nothing}
+    </span>`;
+  }
+
+  /** Open or shut one of the top bar's and the left column's own menus; opening
+   * one shuts the other. A press outside the open one shuts it. */
+  private toggleSideMenu(menu: SideMenu, next = this.sideMenu !== menu) {
+    this.sideMenu = next ? menu : this.sideMenu === menu ? undefined : this.sideMenu;
+    if (this.sideMenu !== undefined) window.addEventListener("pointerdown", this.sideMenuOutside, { capture: true });
+    else window.removeEventListener("pointerdown", this.sideMenuOutside, { capture: true });
+  }
+
+  private sideMenuOutside = (e: PointerEvent) => {
+    const open = this.sideMenu;
+    if (open === undefined) return;
+    const inside = e.composedPath().some((n) => n instanceof HTMLElement && n.dataset.sideMenu === open);
+    if (!inside) this.toggleSideMenu(open, false);
+  };
 
   /** The whole-panel screen for a device whose app predates the editor: a
    * watch below the per-shape release, or an iPhone below the lock screen one.
@@ -9654,39 +9769,18 @@ export class WristAssistantPanel extends LitElement {
     this.openNewDialog();
   }
 
+  /**
+   * Browse: the way to every complication in the home. The name it used to
+   * carry is the field beside it now, where it can be typed over, and the
+   * shape and the device are the pill after that, so the button is only the
+   * way out to the list.
+   */
   private renderPicker() {
-    const d = this.draft;
-    const name = d ? (d.config.name.trim() || "Untitled") : "No complication";
-    const families = d ? d.config.supportedFamilies : [];
-    // Who has the open complication: whoever the device being edited belongs
-    // to. The header used to carry a glyph per device kind and a line of
-    // device names, which in a two-device home said "Jesse Apple Watch (iPhone
-    // 15 Pro), Jesse's iPhone" about one design.
-    const people = peopleOf(this.owners);
-    // With nothing open there is no device to name: the one the panel reads
-    // lists from is not a choice anyone made.
-    const onIds = d && this.ownerId ? [this.ownerId] : [];
-    const who = people.length > 1 ? joinNames(peopleNames(people, onIds)) : "";
-    // A design on the shelf belongs to nobody, so it is named by its place
-    // instead, in every home however many people are in it.
-    const shelved = d !== undefined && isLibraryOwner(this.selectedOwner);
-    // The revision is not shown here: it meant nothing to anyone reading the
-    // list. The inspector's summary still carries it.
     return html`<div class="picker">
-      <button id="wa-picker" class="pk-open" aria-haspopup="dialog" aria-expanded=${this.pickerOpen ? "true" : "false"}
-        title="Choose a complication" @click=${() => this.pickerOpen ? this.togglePicker(false) : this.browseAll()}>
-        <span class="pk-open-lines">
-          <span class="pk-open-row">
-            <span class="pk-name">${name}</span>
-            ${d && d.baseRevision === null ? html`<span class="pk-rev">unsaved</span>` : nothing}
-          </span>
-          ${shelved
-            ? html`<span class="pk-open-who">unassigned</span>`
-            : who === "" ? nothing : html`<span class="pk-open-who">on ${who}</span>`}
-        </span>
-        ${this.shapeDots(families, d?.config.control !== undefined)}
-        <span class="pk-open-all">Browse all</span>
-        ${uiIcon("chevron")}
+      <button id="wa-picker" class="pk-open tb-browse" aria-haspopup="dialog" aria-expanded=${this.pickerOpen ? "true" : "false"}
+        title="Browse all complications" aria-label="Browse all complications"
+        @click=${() => this.pickerOpen ? this.togglePicker(false) : this.browseAll()}>
+        ${uiIcon("compact")}<span class="tb-browse-l">Browse</span>${uiIcon("chevron")}
       </button>
       ${this.pickerOpen ? this.renderPickerDialog() : nothing}
     </div>`;
@@ -11162,28 +11256,6 @@ export class WristAssistantPanel extends LitElement {
   private importFromPicker() {
     this.closePicker();
     this.openImportDialog();
-  }
-
-  /**
-   * Import, beside the picker. It answers the same question New does from the
-   * other end: this is the second way a complication appears on a watch, and it
-   * needs the same free slot.
-   *
-   * New itself is not here. It used to sit in this row as well, which put two
-   * buttons on the bar for one decision and asked the author to choose a device
-   * in the picker first, then press a New two inches away that landed on
-   * whichever device the header happened to be on. The picker's own New makes
-   * the device and the making one press, so the bar keeps only Import.
-   */
-  private renderNewButton() {
-    if (!this.hass.user?.is_admin) return nothing;
-    const full = this.freeSlot() < 0;
-    return html`<div class="newc">
-      <button class="new-btn" ?disabled=${full} aria-haspopup="dialog" aria-expanded=${this.importOpen ? "true" : "false"}
-        title=${full ? `${capFirst(this.placePhrase)} has no free slot. Delete a complication first.` : "Paste a complication somebody shared"}
-        @click=${() => this.openImportDialog()}><span>Import</span></button>
-      ${full ? html`<span class="newc-full">${isLibraryOwner(this.selectedOwner) ? UNASSIGNED_LABEL : this.deviceWord} is full</span>` : nothing}
-    </div>`;
   }
 
   /** Names already on this watch, lower-cased, so the dialog can refuse one
@@ -13742,26 +13814,10 @@ export class WristAssistantPanel extends LitElement {
     </dialog>`;
   }
 
-  /** Add from parts. Opens on the grid; the library is fetched the first
-   * time and re-read on every open, since another tab may have added one. */
-  private async openPartsDialog() {
-    if (!this.canEdit || !this.draft) return;
-    this.partsOpen = true;
-    this.partPick = undefined;
-    this.partMap = new Map();
-    this.partRename = undefined;
-    this.partConfirmDelete = undefined;
-    this.partsError = undefined;
-    await this.updateComplete;
-    const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.parts-dialog");
-    if (dialog && !dialog.open) dialog.showModal();
-    await this.loadParts();
-  }
-
+  /** The saved parts are a tab of the Add sheet now, so shutting "the parts
+   * dialog" (its Close, or a part going in) shuts the sheet. */
   private closePartsDialog() {
-    const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.parts-dialog");
-    if (dialog?.open) dialog.close();
-    this.partsOpen = false;
+    this.closeAddSheet();
   }
 
   private choosePart(part: SavedPart) {
@@ -13837,14 +13893,7 @@ export class WristAssistantPanel extends LitElement {
       : nothing}</span>`;
   }
 
-  private renderPartsDialog() {
-    return html`<dialog class="parts-dialog xf" @close=${() => { this.partsOpen = false; }}>
-      ${this.dialogHead("Parts", "Layers you kept, ready to drop into this complication", () => this.closePartsDialog())}
-      ${this.partPick ? this.renderPartPicked(this.partPick.config) : this.renderPartsGrid()}
-    </dialog>`;
-  }
-
-  /** The library as a grid of pictures. Rename and delete live on the card, so
+  /** The library as a grid of pictures, in the Add sheet's Saved parts tab. Rename and delete live on the card, so
    * tidying up never needs a second dialog; the delete asks once, on the card
    * itself, and the question goes away on its own when anything else is
    * clicked. */
@@ -13857,10 +13906,6 @@ export class WristAssistantPanel extends LitElement {
         : rows.length === 0
           ? html`<div class="xf-lead">${uiIcon("info")}<span>No parts yet. Pick a layer or a few in the Layers list, then <b>Save to parts</b>.</span></div>`
           : html`<div class="pt-grid">${rows.map((part) => this.renderPartCard(part))}</div>`}
-    </div>
-    <div class="xfer-foot">
-      <span class="spacer"></span>
-      <button class="small" @click=${() => this.closePartsDialog()}>Close</button>
     </div>`;
   }
 
@@ -14018,148 +14063,184 @@ export class WristAssistantPanel extends LitElement {
 
   // ── left column ───────────────────────────────────────────────────────
 
-  /** One tinted card per preset, and the blank kinds as chips under them.
-   * Above the list on purpose: adding a layer never moves the button just
-   * pressed.
+  /**
+   * Whether anything can be added here right now: an open complication this
+   * user may edit, on a shape with a canvas. Inline and the Control Center tab
+   * have nowhere to put a layer, and left up, the sheet would quietly put one
+   * on whichever canvas shape happens to be first.
+   */
+  private get canAddHere(): boolean {
+    return !!this.draft && this.canEdit && isDrawable(this.activeFamily) && !this.inControlView;
+  }
+
+  /** + Add, pressed: open the sheet under the button, or shut it again. */
+  private toggleAddSheet(anchor?: HTMLElement) {
+    if (this.addSheet) this.closeAddSheet();
+    else this.openAddSheet(anchor);
+  }
+
+  /**
+   * Open the Add sheet, hung under the + Add button when there is room and in
+   * the middle of the window when there is not. The search has the keyboard
+   * the moment it opens, so the / key and a click on + Add both land ready to
+   * type. The library of saved parts is read the first time, so its tab can
+   * say how many there are.
+   */
+  private openAddSheet(anchor?: HTMLElement | null, tab?: AddTab) {
+    if (!this.canAddHere) return;
+    const button = anchor ?? this.renderRoot.querySelector<HTMLElement>(".add-open");
+    const r = button?.getBoundingClientRect();
+    this.addSheet = r
+      ? addSheetPlace({ left: r.left, bottom: r.bottom }, { width: window.innerWidth, height: window.innerHeight })
+      : { mode: "centered" };
+    this.addQuery = "";
+    if (tab) this.addTab = tab;
+    this.partPick = undefined;
+    this.partMap = new Map();
+    this.partRename = undefined;
+    this.partConfirmDelete = undefined;
+    this.partsError = undefined;
+    this.toggleSideMenu(this.sideMenu ?? "top", false);
+    window.addEventListener("pointerdown", this.addSheetOutside, { capture: true });
+    if (this.parts === undefined || tab === "parts") void this.loadParts();
+    this.focusAddSearch();
+  }
+
+  private closeAddSheet() {
+    this.addSheet = undefined;
+    this.partPick = undefined;
+    window.removeEventListener("pointerdown", this.addSheetOutside, { capture: true });
+  }
+
+  private focusAddSearch() {
+    void this.updateComplete.then(() => {
+      const input = this.renderRoot.querySelector<HTMLInputElement>(".add-sheet .as-search input");
+      input?.focus();
+      input?.select();
+    });
+  }
+
+  /** A press outside the sheet, and outside the button that opens it, shuts
+   * it. The button is left to its own click, which toggles. */
+  private addSheetOutside = (e: PointerEvent) => {
+    if (!this.addSheet) return;
+    const inside = e.composedPath().some((n) => n instanceof HTMLElement
+      && (n.classList.contains("add-sheet") || n.classList.contains("add-open")));
+    if (!inside) this.closeAddSheet();
+  };
+
+  /** One empty layer of the card's kind, set to the card's source, on the
+   * page showing. The sheet shuts and the new layer is selected. */
+  private addBlankLayer(card: AddCard) {
+    const el = newElement(card.kind);
+    card.setup?.(el);
+    this.addHere((c) => {
+      // A timeline's clock times are always a layer of their own.
+      c.elements.push(el);
+      if (el.kind === "timeline") convertChartTimes(c, el.payload.id);
+    });
+    this.closeAddSheet();
+    this.multi = new Set();
+    this.inspect = { kind: "layer", id: el.payload.id };
+  }
+
+  /**
+   * The Add sheet: everything a layer can start from, in one place over the
+   * canvas, in place of the Add a layer card that took the top of the column.
    *
-   * Presets first, because a preset is the finished thing and a blank kind is
-   * the expert path. It used to be the other way round: eight kind buttons
-   * with pictures, and the presets as a row of pill-shaped words underneath.
-   * That asked the author to know the schema's vocabulary before they could
-   * start, and it described "Door history" and "Recent activity" with nothing
-   * but their names, which read alike and draw nothing alike. The cards carry
-   * a sample each (`preset-previews.ts`), so the choice is made by eye.
+   * A search at the top narrows the elements and the presets by name, and the
+   * / key opens the sheet straight into it. Three tabs under that. Elements
+   * is the empty layers, grouped by what they are for: showing a value,
+   * showing a picture, and decorating, with a line under the last saying a
+   * tap zone is only for an empty area, since any layer can take a tap.
+   * Under those, three presets most faces start from and the way to the rest.
+   * Presets is every preset. Saved parts is the library of kept layers, the
+   * grid that used to be its own dialog.
    *
-   * The list presets sit in the grid with the rest rather than inside the
-   * List button's menu. A menu was where they went when they had no picture
-   * to show; now they have one, and the List chip below makes a blank one.
-   *
-   * The card folds, and the cards come in three sizes: Names, a list of tinted
-   * names; Small, four across with the sample at half size; Large, the sample
-   * at the size it was drawn for. Small is the default, because it is the only
-   * one that puts the whole offer in front of the author at once, and a
-   * 60px wide sample is still enough to tell a gauge from a chart. Both the
-   * size and whether the card is open are remembered per browser, because the
-   * person who has built five faces already knows what a gauge looks like and
-   * wants the room, and the person on their first one does not.
-   *
-   * A search box narrows the elements and the presets by name. Thirty-seven
-   * offers is past the point where reading them all beats typing four letters,
-   * and it is the answer to a card that would otherwise keep growing a group.
-   * Saved is not filtered: it is one button, not a list of names. */
-  private renderAddLayer() {
+   * Adding anything shuts the sheet and selects what it made. Past 64 layers
+   * the tiles are dimmed and one line says why.
+   */
+  private renderAddSheet() {
+    const place = this.addSheet;
     const cfg = this.draft?.config;
-    if (!cfg || !this.canEdit) return nothing;
-    // Nothing to add to a shape with no canvas. Left up, the buttons would
-    // quietly put the layer on whichever canvas shape happens to be first.
-    if (!isDrawable(this.activeFamily)) return nothing;
+    if (!place || !cfg || !this.canAddHere) return nothing;
     const full = cfg.elements.length >= 64;
-    const open = this.addOpen;
-    const detail = this.addDetail;
-    const rich = detail !== "names";
     // A list is offered on the wide face and the four Home Screen tiles only:
     // a cell on a round face is not a row. The same rule picks which presets
-    // are shown, so the button and the preset can never disagree.
+    // are shown, so the tile and the preset can never disagree.
     const kinds = KIND_ORDER.filter((k) => familyAllowsKind(this.activeFamily, k));
-    // One card per offer, not one per kind. Two kinds read their content from
-    // somewhere the card cannot draw: a picture is a camera, an entity's own
-    // picture or a file, and an icon is a catalogue glyph or a drawing the
-    // author pastes. One button each said "Picture" and "Icon" and hid the
-    // rest, so the choice only appeared once the layer already existed. Each
-    // source is its own card now, with its own sample and its own name, and
-    // pressing it lands on a layer already set to that source. Looks (a
-    // gauge's five styles, a chart's three) stay in the inspector: those
-    // change how a layer draws, not where it reads from.
     const cards: readonly AddCard[] = kinds.flatMap((k) =>
       ADD_VARIANTS[k] ?? [{ kind: k, title: KIND_LABEL[k], blurb: `Add a blank ${KIND_LABEL[k].toLowerCase()} layer` }]);
     const offered = LAYER_PRESETS.filter((p) => p.families === undefined || p.families.includes(this.activeFamily));
-    // No search box over these two grids. A dozen elements and two dozen
-    // presets are read faster than they are typed, and the box cost a whole
-    // row at the head of the card to save nobody a scroll.
-    const toggle = () => {
-      this.addOpen = !this.addOpen;
-      this.saveListView();
-    };
-    const addBlank = (card: AddCard) => {
-      const el = newElement(card.kind);
-      card.setup?.(el);
-      this.addHere((c) => {
-        // A timeline's clock times are always a layer of their own.
-        c.elements.push(el);
-        if (el.kind === "timeline") convertChartTimes(c, el.payload.id);
-      });
-      this.inspect = { kind: "layer", id: el.payload.id };
-    };
-    // Four across, a name is a few characters before it is cut, so in Small the
-    // name carries its own tooltip. In the other two it does not: the card's
-    // own tooltip is the blurb, which says more, and a title on the name would
-    // cover most of the card with the shorter of the two.
-    const nameTitle = (title: string) => (detail === "small" ? title : nothing);
-    // One card per preset: the sample, then the name. The same markup the kind
-    // buttons used to carry, so the three sizes and every hover, focus and
-    // disabled rule are shared rather than written twice.
-    const presetCard = (p: PresetSpec) => html`
-      <button class="add" style=${`--k:${presetColor(p.kind)}`} title=${p.blurb}
-        ?disabled=${cfg.elements.length + p.layerCount > 64}
-        @click=${() => this.openPreset(p.kind)}
-        >${rich ? html`<span class="well">${presetPreview(p.kind)}</span>` : nothing}<span class="add-name"><span class="k"></span><span title=${nameTitle(p.title)}>${p.title}</span></span></button>`;
-    // The blank kinds, in the same card as the presets: one press, one empty
-    // layer, and a sample of what that kind draws so the choice is made by eye
-    // rather than by knowing the word.
-    const kindCard = (card: AddCard) => html`
-      <button class="add" style=${`--k:${KIND_COLOR[card.kind]}`} ?disabled=${full}
-        title=${card.blurb}
-        @click=${() => addBlank(card)}
-        >${rich ? html`<span class="well">${addPreview(card.kind, card.variant)}</span>` : nothing}<span class="add-name"><span class="k"></span><span title=${nameTitle(card.title)}>${card.title}</span></span></button>`;
-    // Names keeps its own grid (a name needs a width a name fits in), Small and
-    // Large share the sample cards and differ only in how many go across.
-    const gridClass = detail === "names" ? "lean" : detail === "small" ? "small" : "";
-    return html`<div class="card fold tinted banded add-card" data-open=${open ? "true" : "false"}>
-      <h2 class="panel-title tools fold-h" role="button" tabindex="0" aria-expanded=${open ? "true" : "false"}
-        title=${open ? "Hide the add buttons" : "Show the add buttons"}
-        @click=${toggle}
-        @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } }}>
-        <span class="swatch">${uiIcon("plus")}</span>Add a layer<span class="spacer"></span>
-        ${open ? nothing : html`<span class="mini">${offered.length} presets · ${cards.length} elements</span>`}
-        ${open
-          ? html`<span class="tool-set" @click=${(e: Event) => e.stopPropagation()}>
-              <span class="seg" role="group" aria-label="Card size">
-                ${([["names", "Names", "compact"],
-                    ["small", "Small", "grid"],
-                    ["large", "Large", "expanded"]] as const).map(([mode, tip, icon]) => html`
-                  <button class=${detail === mode ? "on" : ""} title=${tip} aria-label=${tip} aria-pressed=${detail === mode ? "true" : "false"}
-                    @click=${() => { this.addDetail = mode; this.saveListView(); }}>${uiIcon(icon)}</button>`)}
-              </span>
-            </span>`
-          : nothing}
-        <span class="chev">${uiIcon("chevron")}</span>
-      </h2>
-      ${open
-        ? html`
-          ${cards.length > 0
-            ? html`<div class="add-group g-elements">
-                <div class="presets presets-head"><span class="presets-l">Elements</span>
-                  <span class="presets-n">one empty layer</span></div>
-                <div class="add-scroll short ${detail}"><div class="add-grid ${gridClass}">${cards.map(kindCard)}</div></div>
-              </div>`
+    const query = this.addQuery.trim();
+    const searching = query !== "";
+    const found = filterAddOffers(query, cards, offered);
+    const tab = this.addTab;
+    const tile = (card: AddCard) => html`<button class="as-tile ${card.kind === "tap" ? "dashed" : ""}" style=${`--k:${KIND_COLOR[card.kind]}`}
+      ?disabled=${full} title=${card.blurb} @click=${() => this.addBlankLayer(card)}>
+      <span class="as-pic">${addPreview(card.kind, card.variant)}</span><span class="as-name">${card.title}</span></button>`;
+    const presetTile = (p: PresetSpec) => html`<button class="as-tile" style=${`--k:${presetColor(p.kind)}`}
+      ?disabled=${cfg.elements.length + p.layerCount > 64} title=${p.blurb}
+      @click=${() => { this.closeAddSheet(); this.openPreset(p.kind); }}>
+      <span class="as-pic">${presetPreview(p.kind)}</span><span class="as-name">${p.title}</span></button>`;
+    const group = (label: string, list: readonly AddCard[]) => list.length === 0 ? nothing
+      : html`<div class="as-sect">${label}</div><div class="as-grid">${list.map(tile)}</div>`;
+    const tabButton = (id: AddTab, label: string, count: number | undefined) => html`<button role="tab" class="as-tab ${tab === id ? "on" : ""}"
+      aria-selected=${tab === id ? "true" : "false"} @click=${() => {
+        this.addTab = id;
+        if (id === "parts" && this.parts === undefined) void this.loadParts();
+      }}>${label}${count === undefined ? nothing : html` <span class="as-count">${count}</span>`}</button>`;
+    const nothingFound = (what: string) => html`<div class="as-empty">No ${what} match "${query}".</div>`;
+    let body: TemplateResult;
+    if (tab === "parts") {
+      body = html`<div class="as-parts">${this.partPick ? this.renderPartPicked(this.partPick.config) : this.renderPartsGrid()}</div>`;
+    } else if (tab === "presets") {
+      body = found.presets.length === 0
+        ? nothingFound("presets")
+        : html`<div class="as-grid">${found.presets.map(presetTile)}</div>`;
+    } else {
+      const value = addGroupCards(found.elements, "value");
+      const pictures = addGroupCards(found.elements, "pictures");
+      const decorate = addGroupCards(found.elements, "decorate");
+      const popular = POPULAR_PRESETS
+        .map((kind) => offered.find((p) => p.kind === kind))
+        .filter((p): p is PresetSpec => p !== undefined);
+      body = found.elements.length === 0
+        ? nothingFound("elements")
+        : html`
+          ${group("Show a value", value)}
+          ${group("Pictures", pictures)}
+          ${group("Decorate", decorate)}
+          ${decorate.some((c) => c.kind === "tap")
+            ? html`<div class="as-note">Any layer can be tapped. Tick <b>Tap</b> on the layer. A tap zone is only for an empty area.</div>`
             : nothing}
-          ${offered.length > 0
-            ? html`<div class="add-group g-presets">
-                <div class="presets presets-head"><span class="presets-l">Presets</span>
-                  <span class="presets-n">a layer or three, already set up</span></div>
-                <div class="add-scroll ${detail}"><div class="add-grid ${gridClass}">${offered.map(presetCard)}</div></div>
-              </div>`
-            : nothing}
-          <div class="add-group saved-group g-parts">
-            <div class="presets presets-head"><span class="presets-l">Parts</span>
-              <button class="part-add" ?disabled=${full}
-                title="Layers you kept earlier, ready to drop onto this shape"
-                @click=${() => void this.openPartsDialog()}>Add from parts</button>
-              <span class="presets-n">layers you kept earlier</span>
-            </div>
-          </div>`
-        : nothing}
-      ${this.renderPresetDialog()}
+          ${searching || popular.length === 0 ? nothing : html`
+            <div class="as-sect">Popular presets</div>
+            <div class="as-grid">
+              ${popular.map(presetTile)}
+              <button class="as-tile as-all" title="Every preset" @click=${() => { this.addTab = "presets"; }}>
+                <span class="as-pic"><span class="as-more">All ${offered.length} →</span></span><span class="as-name">More presets</span></button>
+            </div>`}`;
+    }
+    const style = place.mode === "anchored" ? `left:${place.left}px;top:${place.top}px;height:${place.height}px` : nothing;
+    return html`<div class="add-sheet ${place.mode}" role="dialog" aria-label="Add to this complication" style=${style}>
+      <div class="as-head">
+        <label class="as-search">${uiIcon("search")}
+          <input type="search" placeholder="Search elements and presets…" aria-label="Search elements and presets"
+            .value=${this.addQuery} @input=${(e: Event) => { this.addQuery = (e.target as HTMLInputElement).value; }} />
+          <kbd aria-hidden="true">/</kbd>
+        </label>
+        <button class="icon" title="Close (Escape)" aria-label="Close" @click=${() => this.closeAddSheet()}>${uiIcon("close")}</button>
+      </div>
+      <div class="as-tabs" role="tablist" aria-label="What to add">
+        ${tabButton("elements", "Elements", found.elements.length)}
+        ${tabButton("presets", "Presets", found.presets.length)}
+        ${tabButton("parts", "Saved parts", this.parts?.length)}
+        <span class="spacer"></span>
+        ${usesPages(cfg) ? html`<span class="lc-sub">Goes on page ${this.page}</span>` : nothing}
+      </div>
+      ${full ? html`<div class="as-full">This complication has 64 layers, the most it can hold. Delete one to add another.</div>` : nothing}
+      <div class="as-body">${body}</div>
     </div>`;
   }
 
@@ -14416,9 +14497,8 @@ export class WristAssistantPanel extends LitElement {
     const ordered = elementsOnPage(cfg, shapeRows, this.page).reverse();
     const ctx = describeContext(this.host());
     const resolver = new Resolver(this.buildContext(), this.draft?.config);
-    const layout = cfg.perFamily[this.activeFamily];
     const shapeHl = this.inspect.kind === "family";
-    const shapeMeta = `${layout?.backgroundColorHex ? colorWords(layout.backgroundColorHex) : "transparent"} · ${layout?.borderColorHex ? `${layout.borderWidth} pt border` : "no border"}`;
+    const ground = backgroundRow(cfg, this.activeFamily);
     const pickedCount = [...this.multi].filter((id) => cfg.elements.some((e) => e.payload.id === id)).length;
     // A lone selection (one layer, or the members of a selected group) has no
     // bar of its own, and Save to parts is the one thing offered for it, so
@@ -14434,10 +14514,15 @@ export class WristAssistantPanel extends LitElement {
     const thumbH = Math.round(THUMB_H * scale);
     // One resolve for the whole list: every row it draws is on the showing
     // page, so every thumb comes out of the same face the big preview does.
+    // Show all draws each page's block from that page's own face, so `face`
+    // is moved on as the blocks are built.
+    let face = resolved;
     const thumb = (ids: readonly string[]) =>
-      resolved
-        ? html`<span class="thumb">${renderLayerThumb(resolved, ids, { icons: this.icons, imageSizes: this.imageSizes, width: thumbW, height: thumbH })}</span>`
+      face
+        ? html`<span class="thumb">${renderLayerThumb(face, ids, { icons: this.icons, imageSizes: this.imageSizes, width: thumbW, height: thumbH })}</span>`
         : html`<span class="thumb"></span>`;
+    const paged = usesPages(cfg);
+    const pageCount = paged ? pagesSpecOf(cfg).count : 1;
     const rich = this.layerDetail === "expanded";
 
     // `held` marks a member of the selected group: the row lights up with
@@ -14452,11 +14537,9 @@ export class WristAssistantPanel extends LitElement {
       // A tap layer is a tap, so it wears the same badge as a layer with one
       // attached. Without it the list marked the layers that answer a press and
       // said nothing about the rows that are nothing but a press.
-      // The badge names the action as well as the fact of one: a list where
-      // four rows all said "tap" and nothing else made you click each of them
-      // to find out which was the toggle. The badge takes the action's name
-      // alone and the tooltip carries what it acts on, because an entity id in
-      // a pill stretches the row.
+      // The badge is short: "tap", or where a page-turning tap lands. The
+      // action's full name made the badge the widest thing in a 300px row, so
+      // it is the tooltip that says what the tap does and what it acts on.
       const tapEl = el.kind === "tap" ? el : tap;
       const tapAct = tapEl?.kind === "tap" ? tapEl.payload.action : undefined;
       const tapTitle = el.kind === "tap"
@@ -14482,7 +14565,7 @@ export class WristAssistantPanel extends LitElement {
         </span>
         <span class="right">
           <span class="badges">
-            ${tapTitle ? html`<span class="badge tap" title=${tapTitle}>${tapAct ? `tap (${tapActionLabel(tapAct).toLowerCase()})` : "tap"}</span>` : nothing}
+            ${tapTitle ? html`<span class="badge tap" title=${tapTitle}>${tapAct ? tapBadge(tapAct, el.payload.page ?? this.page, pageCount) : "tap"}</span>` : nothing}
             ${el.payload.rules.length === 0 ? nothing : html`<span class="badge states" title=${states}>${states.replace(/\.$/, "").toLowerCase()}</span>`}
             ${hidden ? html`<span class="badge">hidden</span>` : nothing}
           </span>
@@ -14664,64 +14747,81 @@ export class WristAssistantPanel extends LitElement {
     // Walk the stack from the top. A group's members sit together, so the
     // folder row goes in where its first member is met and the members
     // follow it, indented. A list's row layers follow the list the same way.
-    const rows: TemplateResult[] = [];
-    for (const row of layerListRows(cfg, shapeRows, this.page)) {
-      if (row.kind === "layer") {
-        rows.push(html`${layerRow(row.el, false, false, listChevron(row.el))}${listKids(row.el)}`);
-        continue;
+    const buildRows = (list: readonly LayerListRow[]) => {
+      const rows: TemplateResult[] = [];
+      for (const row of list) {
+        if (row.kind === "layer") {
+          rows.push(html`${layerRow(row.el, false, false, listChevron(row.el))}${listKids(row.el)}`);
+          continue;
+        }
+        const g = row.group;
+        rows.push(groupRow(g, row.members, row.total));
+        const groupHl = this.inspect.kind === "group" && this.inspect.id === g.id;
+        if (!this.collapsed.has(g.id)) rows.push(html`<div class="group-kids">${row.members.map((m) => html`${layerRow(m, true, groupHl, listChevron(m))}${listKids(m)}`)}</div>`);
       }
-      const g = row.group;
-      rows.push(groupRow(g, row.members, row.total));
-      const groupHl = this.inspect.kind === "group" && this.inspect.id === g.id;
-      if (!this.collapsed.has(g.id)) rows.push(html`<div class="group-kids">${row.members.map((m) => html`${layerRow(m, true, groupHl, listChevron(m))}${listKids(m)}`)}</div>`);
+      return rows;
+    };
+    // Show all: every page's layers at once, under a line naming the page.
+    // Each block's pictures come from its own page, since the showing page's
+    // face does not draw a layer pinned to another one.
+    const all = this.allPages && paged;
+    let body: TemplateResult[];
+    if (all) {
+      const base = this.buildContext();
+      body = layerListSections(cfg, shapeRows, pageCount).map((sec) => {
+        face = resolveAll(cfg, { ...base, page: sec.page ?? this.page }, this.forced)[family];
+        return html`<div class="layers-sec">${sec.label}</div>${buildRows(sec.rows)}`;
+      });
+      face = resolved;
+    } else {
+      body = buildRows(layerListRows(cfg, shapeRows, this.page));
     }
+    const filter = layersFilterLine(shapeRows, paged, this.page, all);
 
-    return html`<div class="card layers-card tinted banded s${this.thumbStep}" style=${`--thumb-w:${thumbW}px;--thumb-h:${thumbH}px;--c:${CARD_TINT.layers}`}>
-      <h2 class="panel-title tools"><span class="swatch">${uiIcon("layers")}</span>Layers
-        <span class="mini">top draws last</span><span class="spacer"></span>
-        <span class="tool-set">
-          <span class="seg" role="group" aria-label="Row detail">
-            ${([["compact", "Compact rows: the name and one line about the layer"],
-                ["expanded", "Expanded rows: what the layer is made of and where it sits"]] as const).map(([mode, tip]) => html`
-              <button class=${this.layerDetail === mode ? "on" : ""} title=${tip} aria-label=${tip} aria-pressed=${this.layerDetail === mode ? "true" : "false"}
-                @click=${() => { this.layerDetail = mode; this.saveListView(); }}>${uiIcon(mode)}</button>`)}
-          </span>
-          <span class="seg" role="group" aria-label="Preview size">
-            ${THUMB_STEP_LABEL.map((label, i) => html`
-              <button class=${this.thumbStep === i ? "on" : ""} title=${`${THUMB_STEP_TITLE[i]} row pictures`}
-                aria-label=${`${THUMB_STEP_TITLE[i]} row pictures`} aria-pressed=${this.thumbStep === i ? "true" : "false"}
-                @click=${() => { this.thumbStep = i as ThumbStep; this.saveListView(); }}>${label}</button>`)}
-          </span>
-        </span>
-      </h2>
+    return html`<div class="card layers-card lc s${this.thumbStep}" style=${`--thumb-w:${thumbW}px;--thumb-h:${thumbH}px`}>
+      <div class="lc-head">
+        <span class="lc-title">Layers</span><span class="lc-sub">top is in front</span>
+        <span class="spacer"></span>
+        ${edit ? html`<button class="lc-btn pri add-open" aria-haspopup="dialog" aria-expanded=${this.addSheet ? "true" : "false"}
+          title="Add a layer, a preset or a saved part (/)"
+          @click=${(e: Event) => this.toggleAddSheet(e.currentTarget as HTMLElement)}>${uiIcon("plus")}<span>Add</span></button>` : nothing}
+        ${this.renderLayersMenu()}
+      </div>
       ${pickedCount >= 2 && edit
         ? html`<div class="group-cta"><span>${pickedCount} layers picked</span><span class="spacer"></span>
             <button class="small primary" title=${`Group (${KEY_MOD}G)`} @click=${() => this.groupPicked()}>Group them</button>
             <button class="small" title="Keep these layers under a name, to use in another complication"
               @click=${() => void this.openSavePartDialog()}>Save to parts</button>
             <button class="small" @click=${() => { this.multi = new Set(); }}>Clear</button></div>`
-        : selectedCount >= 1 && edit
-          ? html`<div class="part-cta"><span class="spacer"></span>
-              <button class="ghost" title=${selectedCount === 1 ? "Keep this layer under a name, to use in another complication" : "Keep these layers under a name, to use in another complication"}
-                @click=${() => void this.openSavePartDialog()}>Save to parts</button></div>`
-        : cfg.elements.length >= 2 && edit && !cfg.groups?.length
+        : shapeRows.length > 0
+          ? html`<div class="lc-filter">
+              <span class="lc-sub">${filter.lead === "" ? nothing : all ? html`${filter.lead} · ` : html`On <b>page ${this.page}</b> · `}${filter.count}</span>
+              ${paged ? html`<button class="lc-ghost sm" aria-pressed=${all ? "true" : "false"}
+                title=${all ? "List the page showing, and the layers on every page" : "List the layers of every page, page by page"}
+                @click=${() => { this.allPages = !all; }}>${all ? "This page" : "Show all"}</button>` : nothing}
+            </div>`
+          : nothing}
+      ${pickedCount < 2 && selectedCount >= 1 && edit
+        ? html`<div class="part-cta"><span class="spacer"></span>
+            <button class="ghost" title=${selectedCount === 1 ? "Keep this layer under a name, to use in another complication" : "Keep these layers under a name, to use in another complication"}
+              @click=${() => void this.openSavePartDialog()}>Save to parts</button></div>`
+        : pickedCount < 2 && cfg.elements.length >= 2 && edit && !cfg.groups?.length
           ? html`<div class="hint">${MULTI_KEY}-click layers here or on the preview, or shift-click a range of rows, then group them so a finished part moves as one. The <b>?</b> button in the header lists every key and mouse trick.</div>`
           : nothing}
-      ${cfg.elements.length === 0 ? html`<div class="empty">No layers yet. Add one above.</div>` : nothing}
-      ${rows.length === 0 && shapeRows.length > 0 && usesPages(cfg)
-        // The shape has layers, they are all on other pages. The blank-shape
-        // card above is for a shape with nothing at all and would be a lie
-        // here, so this is one line and no card.
+      ${shapeRows.length === 0 ? html`<div class="empty lc-empty">Nothing here yet.<br>Layers you add show in this list, top first.</div>` : nothing}
+      ${!all && body.length === 0 && shapeRows.length > 0 && paged
+        // The shape has layers, they are all on other pages. The empty line
+        // above is for a shape with nothing at all and would be a lie here.
         ? html`<div class="hint">Nothing is on page ${this.page} yet. Layers you add now go on it.</div>`
         : nothing}
       <div class="layers">
-      ${rows}
+      ${body}
       </div>
       <div class="pinned-set">
-      ${this.renderDocumentTapRow(cfg)}
-      <div class="layer pinned ${shapeHl ? "hl" : ""}" style=${`--k:${SECTION_COLOR.place}`} tabindex="0" title="The shape is always the bottom layer"
-        @click=${() => { this.inspect = { kind: "family" }; }}
-        @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = { kind: "family" }; }}
+      <div class="layer pinned ground ${shapeHl ? "hl" : ""}" style=${`--k:${SECTION_COLOR.place}`} tabindex="0"
+        title="The shape's background and border, and what a tap anywhere else does. Always the bottom layer. Click to edit it."
+        @click=${() => { this.multi = new Set(); this.inspect = ground.inspect; }}
+        @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = ground.inspect; }}
         @dragover=${(e: DragEvent) => { if (!this.dragId) return; e.preventDefault(); this.markDrop(e.currentTarget as HTMLElement, "drop-before"); }}
         @drop=${(e: DragEvent) => {
           e.preventDefault();
@@ -14733,74 +14833,62 @@ export class WristAssistantPanel extends LitElement {
           if (id && last) this.reorderLayer(id, last.payload.id, false, true);
           this.dragId = undefined;
         }}>
-        <span class="grip">${uiIcon("shape")}</span>
+        <span class="grip" aria-hidden="true"></span>
         <span class="bar"></span>
         ${thumb([])}
         <span class="name">
-          <b>${familyTitle(this.activeFamily)} shape</b>
-          <small><span class="kind">Background</span> · ${shapeMeta}</small>
+          <b>${ground.name}</b>
+          <small title=${ground.meta}>${ground.meta}</small>
         </span>
-        <span class="right"><span class="badges"><span class="badge">always bottom</span></span></span>
+        <span class="right"><span class="ground-cap">${ground.caption}</span></span>
       </div>
       </div>
+      ${this.renderSharedValues()}
     </div>`;
   }
 
   /**
-   * What a tap does anywhere no tap area covers, as a row of the list.
-   *
-   * It sits above the shape rather than below it, because the shape's badge
-   * says "always bottom" and a row under that would call it a liar. The shape
-   * is the floor of what the document draws; this row is not a layer at all.
-   *
-   * It draws nothing, so it has no thumb picture, no grip and no drag.
-   *
-   * It is here because the list was silent about it: a document is born with
-   * `tapAction: refresh`, the setting lives two cards away on the Complication
-   * card, and a user who had ticked Tappable on nothing at all still had a
-   * complication that answered a tap. The row says where that comes from, and
-   * clicking it opens the card that owns it.
-   *
-   * It carries no buttons, not even a delete. A tap on a complication always
-   * reaches something, so there is no state this row can be deleted into: a
-   * trash can here would have meant "set it to Open the app", which is a
-   * change of setting wearing a delete's clothes. Changing it is the picker's
-   * job, one click away.
+   * The Layers card's ··· menu: how the rows are drawn. Two small radio
+   * groups, the row detail and the picture size, which used to be two
+   * segmented controls in the card's header and took the room the Add button
+   * needs. The menu stays open while they are changed, so the list can be
+   * watched changing under it.
    */
-  private renderDocumentTapRow(cfg: CustomComplicationConfig) {
-    const open = () => { this.inspect = { kind: "general" }; };
-    return html`<div class="layer pinned" style=${`--k:${KIND_COLOR.tap}`} tabindex="0"
-      title="What a tap does anywhere no tap area covers. Click to change it."
-      @click=${open}
-      @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") open(); }}>
-      <span class="grip">${uiIcon("tap")}</span>
-      <span class="bar"></span>
-      <span class="thumb blank"></span>
-      <span class="name">
-        <b>Whole complication</b>
-        <small><span class="kind">Tap</span> · ${describeTapAction(cfg.tapAction)}</small>
-      </span>
-      <span class="right">
-        <span class="badges"><span class="badge tap"
-          title=${`Tappable · ${describeTapAction(cfg.tapAction)}`}>tap (${tapActionLabel(cfg.tapAction).toLowerCase()})</span></span>
-      </span>
-    </div>`;
+  private renderLayersMenu() {
+    const open = this.sideMenu === "layers";
+    const radio = (on: boolean, label: string, title: string, pick: () => void) => html`<button class="row" role="menuitemradio"
+      aria-checked=${on ? "true" : "false"} title=${title} @click=${pick}><span class="pop-tick" aria-hidden="true">${on ? uiIcon("check") : nothing}</span>${label}</button>`;
+    return html`<span class="side-menu" data-side-menu="layers">
+      <button class="lc-ghost" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"} aria-label="List options" title="List options"
+        @click=${() => this.toggleSideMenu("layers")}>···</button>
+      ${open ? html`<div class="pop-menu side-pop" role="menu" aria-label="List options">
+        <div class="pop-label" role="presentation">Rows</div>
+        ${radio(this.layerDetail === "compact", "Compact", "The name and one line about the layer",
+          () => { this.layerDetail = "compact"; this.saveListView(); })}
+        ${radio(this.layerDetail === "expanded", "Expanded", "What the layer is made of and where it sits",
+          () => { this.layerDetail = "expanded"; this.saveListView(); })}
+        <span class="pop-sep" aria-hidden="true"></span>
+        <div class="pop-label" role="presentation">Pictures</div>
+        ${THUMB_STEP_TITLE.map((label, i) => radio(this.thumbStep === i, label, `${label} row pictures`,
+          () => { this.thumbStep = i as ThumbStep; this.saveListView(); }))}
+      </div>` : nothing}
+    </span>`;
   }
 
   /** The Layers card while Inline is the shape being edited.
    *
    * Inline has no canvas, but an empty card read as "this complication has
    * lost its layers". So the card lists the one thing Inline draws, its line
-   * of text, as a fixed row that opens the text on the right, and the tap row
-   * under it the way a canvas shape shows it. The row has no grip, no delete
-   * and no add: the line is always there, and there is nothing to stack. */
+   * of text, as a fixed row that opens the text on the right. The row has no
+   * grip, no delete and no add: the line is always there, and there is nothing
+   * to stack. */
   private renderInlineHasNoLayers(cfg: CustomComplicationConfig) {
     const line = cfg.inline ? resolveInline(cfg.inline, this.buildContext(), cfg) : undefined;
     const words = line ? this.inlineLineHtml(line, 11) : "No text yet";
     const picked = this.inspect.kind === "family";
     const open = () => { this.inspect = { kind: "family" }; };
-    return html`<div class="card layers-card inline-layers tinted banded s${this.thumbStep}" style=${`--c:${CARD_TINT.layers}`}>
-      <h2 class="panel-title"><span class="swatch">${uiIcon("layers")}</span>Layers</h2>
+    return html`<div class="card layers-card lc inline-layers s${this.thumbStep}">
+      <div class="lc-head"><span class="lc-title">Layers</span><span class="lc-sub">one line of text</span></div>
       <div class="pinned-set">
       <div class="layer pinned ${picked ? "hl" : ""}" style=${`--k:${KIND_COLOR.text}`} tabindex="0"
         title="The one line Inline draws. Click to edit it."
@@ -14811,12 +14899,12 @@ export class WristAssistantPanel extends LitElement {
         <span class="thumb blank"></span>
         <span class="name">
           <b>Inline text</b>
-          <small><span class="kind">Text</span> · ${words}</small>
+          <small><span class="kind">Text</span> · ${words} · ${tapWords(cfg.tapAction)}</small>
         </span>
-        <span class="right"><span class="badges"><span class="badge">always here</span></span></span>
+        <span class="right"><span class="ground-cap">always here</span></span>
       </div>
-      ${this.renderDocumentTapRow(cfg)}
       </div>
+      ${this.renderSharedValues()}
     </div>`;
   }
 
@@ -15225,26 +15313,51 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * Values the complication defines once and several layers read, under the
-   * Layers card because layers are what read them. Always there, so the idea
-   * is findable: a single title row with a line of explanation and Add until
-   * the first one exists, then the list.
+   * Values the complication defines once and several layers read, as the foot
+   * of the Layers card, because layers are what read them. At rest it is one
+   * line: the title, how many there are, and Open, or Add while there are
+   * none. Open unfolds the list and its editor in place, under the line, with
+   * the "?" that says how shared values work.
+   *
+   * `standalone` is the Control Center tab, which has no Layers card to sit
+   * at the foot of, so the same thing stands as a card of its own.
    */
-  private renderSharedValues() {
+  private renderSharedValues(standalone = false) {
     const cfg = this.draft?.config;
     if (!cfg) return nothing;
     const values = cfg.values;
-    const add = this.canEdit
-      ? html`<button class="small" @click=${() => { const nv = newNamedValue(); this.mutate((c) => { c.values.push(nv); }); this.openSharedValue(nv.id); }}>Add</button>`
-      : nothing;
+    const expanded = this.sharedOpen || this.openValue !== undefined;
+    const addValue = () => {
+      const nv = newNamedValue();
+      this.mutate((c) => { c.values.push(nv); });
+      this.sharedOpen = true;
+      this.openSharedValue(nv.id);
+    };
+    const toggle = () => {
+      if (expanded) {
+        this.sharedOpen = false;
+        this.setOpenValue(undefined);
+      } else {
+        this.sharedOpen = true;
+      }
+    };
+    const barButton = values.length === 0 && this.canEdit && !expanded
+      ? html`<button class="lc-ghost sm" title="Add a shared value" @click=${addValue}>Add</button>`
+      : html`<button class="lc-ghost sm" aria-expanded=${expanded ? "true" : "false"}
+          title=${expanded ? "Fold the shared values away" : "Show the shared values"} @click=${toggle}>${expanded ? "Close" : "Open"}</button>`;
     const explain = "Like a variable: set it once, and every layer that reads it follows.";
-    const title = html`<h2 class="panel-title"><span class="swatch">${uiIcon("content")}</span>Shared values
-        <span class="mini" title=${explain}>set once, used by many layers</span>
+    const host = this.host();
+    const resolver = new Resolver(this.buildContext(), this.draft?.config);
+    const ctx = describeContext(host);
+    const body = html`<div class="sv-body">
+      <div class="sv-tools">
+        <span class="lc-sub" title=${explain}>set once, used by many layers</span>
         <button type="button" class="sec-help ${this.sharedHelp ? "on" : ""}" title=${this.sharedHelp ? "Hide how shared values work" : "How shared values work"}
           aria-label="How shared values work" aria-expanded=${this.sharedHelp ? "true" : "false"}
           @click=${() => { this.sharedHelp = !this.sharedHelp; }}>?</button>
-        <span class="spacer"></span>${add}
-      </h2>
+        <span class="spacer"></span>
+        ${this.canEdit ? html`<button class="small" @click=${addValue}>Add</button>` : nothing}
+      </div>
       ${this.sharedHelp ? html`<div class="shared-help">
         <p>${explain} Use one when several layers show the same thing, so a change is made in one place.</p>
         <ol>
@@ -15253,26 +15366,16 @@ export class WristAssistantPanel extends LitElement {
           <li>Change the shared value here. Every layer that reads it changes too.</li>
           <li>Each layer can still add its own <b>Format</b>, like a unit or fewer decimals.</li>
         </ol>
-      </div>` : nothing}`;
-    if (values.length === 0) {
-      return html`<div class="card tint-values values-list ${this.sharedHelp ? "" : "empty-list"}" style=${`--c:${SECTION_COLOR.complication}`}>
-        ${title}
-      </div>`;
-    }
-    const host = this.host();
-    const resolver = new Resolver(this.buildContext(), this.draft?.config);
-    const ctx = describeContext(host);
-    return html`<div class="card tint-values values-list" style=${`--c:${SECTION_COLOR.complication}`}>
-      ${title}
-      <div class="data">
+      </div>` : nothing}
+      ${values.length === 0 ? html`<div class="sv-none">None yet.</div>` : html`<div class="data">
       ${values.map((v) => {
         const r = resolver.resolve({ kind: { kind: "named", id: v.id } });
         const open = this.openValue === v.id;
-        const toggle = () => { this.setOpenValue(open ? undefined : v.id); };
+        const toggleOne = () => { this.setOpenValue(open ? undefined : v.id); };
         return html`<div class="vitem ${open ? "open" : ""}"><div class="datum vrow ${open ? "hl" : ""}" role="button" tabindex="0" aria-expanded=${open ? "true" : "false"}
             title=${open ? "Close" : "Edit this shared value"}
-            @click=${toggle}
-            @keydown=${(e: KeyboardEvent) => { if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) { e.preventDefault(); toggle(); } }}>
+            @click=${toggleOne}
+            @keydown=${(e: KeyboardEvent) => { if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) { e.preventDefault(); toggleOne(); } }}>
           <span class="nm">${v.name || "(unnamed)"}</span>
           <span class="spacer"></span>
           <span class="meta ${r === undefined ? "none" : ""}" title=${describeValue(v.value, ctx)}>${r ?? "unresolved"}</span>
@@ -15280,7 +15383,15 @@ export class WristAssistantPanel extends LitElement {
         </div>
         ${open ? html`<div class="value-open">${namedValueEditor(host, v)}</div>` : nothing}</div>`;
       })}
+      </div>`}
+    </div>`;
+    return html`<div class="values-list sv-foot ${standalone ? "card standalone" : ""} ${expanded ? "open" : ""}" style=${`--c:${SECTION_COLOR.complication}`}>
+      <div class="sv-bar">
+        <span class="sv-title">Shared values</span><span class="lc-sub">${values.length}</span>
+        <span class="spacer"></span>
+        ${barButton}
       </div>
+      ${expanded ? body : nothing}
     </div>`;
   }
 
@@ -15312,7 +15423,7 @@ export class WristAssistantPanel extends LitElement {
     if (this.openValue === undefined) return;
     const path = e.composedPath();
     const first = path[0];
-    if (first instanceof HTMLElement && first.classList.contains("values-list")) return;
+    if (first instanceof HTMLElement && (first.classList.contains("values-list") || first.classList.contains("sv-body"))) return;
     const inside = path.some((n) => n instanceof HTMLElement && n.classList.contains("vitem") && n.classList.contains("open"));
     if (!inside) this.setOpenValue(undefined);
   };
@@ -15337,6 +15448,9 @@ export class WristAssistantPanel extends LitElement {
    * caret in its Name box, since naming it is the first thing to do. */
   private openSharedValue(id: string) {
     this.renderRoot.querySelectorAll<HTMLElement>(":popover-open").forEach((p) => p.hidePopover());
+    // The foot of the Layers card unfolds with it, and stays open once the
+    // value closes again, so the list it came from is still in front of you.
+    this.sharedOpen = true;
     this.setOpenValue(id);
     const unnamed = this.draft?.config.values.find((v) => v.id === id)?.name.trim() === "";
     void this.updateComplete.then(() => {
