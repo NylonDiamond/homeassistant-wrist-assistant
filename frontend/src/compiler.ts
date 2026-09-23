@@ -329,8 +329,10 @@ export function compile(config: CustomComplicationConfig): Compiled {
       case "chartStat":
       case "item":
       case "listStat":
+      case "imageTime":
         // A chart stat reads a chart layer that registers its own sources, and
-        // both list kinds read a list that registers its own the same way.
+        // both list kinds read a list that registers its own the same way. A
+        // picture's time is when the watch fetched it: nothing to ask for.
         return;
       case "entityState":
         entities.set(kind.entityId, kind);

@@ -125,6 +125,10 @@ _LIST_SCHEMA_VERSION = 8
 # page stacked on every other page. So a document with pages is refused whole by
 # an older app, and must say 9 for that to happen.
 _PAGES_SCHEMA_VERSION = 9
+# First schema that knows the `imageTime` value kind, a picture's fetched-at
+# time read by a text layer. An app that predates it fails the whole document
+# on the unknown value kind, the list reason again, so the version must say so.
+_IMAGE_TIME_SCHEMA_VERSION = 10
 # The list layer's own limits. Cells are the frame divided evenly, so the row
 # count is what decides how many items are drawn and how small each one is; a
 # template past eight layers is 96 leaves at twelve rows, which is where a
@@ -659,6 +663,39 @@ def _mentions_list_values(document: dict[str, Any]) -> bool:
     validator must answer "invalid" rather than blow up with a 500 the panel
     cannot render.
     """
+    # A `Value` holds its kind object under the same key, so most of what the
+    # walk sees is a dict rather than a name. `in` on a frozenset raises
+    # TypeError for one of those, and a validator must answer "invalid", never
+    # blow up with a 500 the panel cannot render.
+    return _walk_values(
+        document,
+        lambda node: isinstance(node.get("kind"), str)
+        and node["kind"] in _LIST_VALUE_KINDS,
+    )
+
+
+def _mentions_image_time_value(document: dict[str, Any]) -> bool:
+    """Whether anything in the document is an ``imageTime`` value.
+
+    ``imageTime`` is also an older layer kind, written ``{"kind": "imageTime",
+    "payload": {...}}``, which needs nothing. The value is the flat kind object
+    ``{"kind": "imageTime", "layer": "<uuid>"}``: it names a layer and has no
+    payload, and that is what tells the two apart.
+    """
+    return _walk_values(
+        document,
+        lambda node: node.get("kind") == "imageTime"
+        and "layer" in node
+        and "payload" not in node,
+    )
+
+
+def _walk_values(document: dict[str, Any], hit: Any) -> bool:
+    """Whether any dict under the value-bearing subtrees satisfies ``hit``.
+
+    The shared walk behind the value-kind checks above, iterative and budgeted
+    for the reasons given on ``_mentions_list_values``.
+    """
     stack: list[Any] = [
         document.get("elements"),
         document.get("values"),
@@ -670,12 +707,7 @@ def _mentions_list_values(document: dict[str, Any]) -> bool:
         node = stack.pop()
         budget -= 1
         if isinstance(node, dict):
-            kind = node.get("kind")
-            # A `Value` holds its kind object under the same key, so most of
-            # what this sees is a dict rather than a name. `in` on a frozenset
-            # raises TypeError for one of those, and a validator must answer
-            # "invalid", never blow up with a 500 the panel cannot render.
-            if isinstance(kind, str) and kind in _LIST_VALUE_KINDS:
+            if hit(node):
                 return True
             stack.extend(node.values())
         elif isinstance(node, list):
@@ -797,6 +829,15 @@ def validate_document(document: Any) -> dict[str, Any]:
         raise ComplicationValidationError(
             "document with pages, or with a layer pinned to a page, "
             f"requires schemaVersion {_PAGES_SCHEMA_VERSION} or newer"
+        )
+
+    if (
+        schema_version < _IMAGE_TIME_SCHEMA_VERSION
+        and _mentions_image_time_value(document)
+    ):
+        raise ComplicationValidationError(
+            "document with an imageTime value "
+            f"requires schemaVersion {_IMAGE_TIME_SCHEMA_VERSION} or newer"
         )
 
     try:

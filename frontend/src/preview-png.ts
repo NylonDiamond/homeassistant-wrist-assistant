@@ -23,6 +23,7 @@ import {
   chartHistoryKey,
   chartStatisticsKey,
   forEachValue,
+  imageTimestampLayersOf,
   timelineHistoryKey,
 } from "./model.js";
 import { keyFor, listExpressionKey, listKey } from "./compiler.js";
@@ -49,10 +50,16 @@ export interface PreviewSource {
 
 /** The scrubbed document ready for a public picture: picture layers stay, to
  * be drawn as stand-ins, but the timestamps on them go, since a stand-in has
- * no time to show. */
+ * no time to show. A timestamp is an old `imageTime` layer, or a text reading
+ * a picture's time with the capsule grouped behind it. */
 export function withPicturePlaceholders(cfg: CustomComplicationConfig): CustomComplicationConfig {
   const next = structuredClone(cfg);
-  next.elements = next.elements.filter((el) => el.kind !== "imageTime");
+  const gone = new Set<string>();
+  for (const el of next.elements) {
+    if (el.kind === "imageTime") gone.add(el.payload.id);
+    if (el.kind === "image") for (const t of imageTimestampLayersOf(next, el.payload.id)) gone.add(t.payload.id);
+  }
+  next.elements = next.elements.filter((el) => !gone.has(el.payload.id));
   return next;
 }
 

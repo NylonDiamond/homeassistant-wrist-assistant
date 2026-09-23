@@ -64,7 +64,15 @@ describe("image element wire format", () => {
   const payloadOf = (doc: Doc) => doc.elements[0]!.payload;
 
   it("writes none of the settings while they are at their defaults", () => {
-    expect(Object.keys(payloadOf(imageDoc())).sort()).toEqual(["entity", "frame", "id", "isHidden", "rules"]);
+    expect(Object.keys(payloadOf(imageDoc((p) => { p.cornerRadius = 6; }))).sort()).toEqual(["entity", "frame", "id", "isHidden", "rules"]);
+  });
+
+  it("starts a new picture square, and writes that, since it is not the decode default", () => {
+    const written = payloadOf(imageDoc());
+    expect(Object.keys(written).sort()).toEqual(["cornerRadius", "entity", "frame", "id", "isHidden", "rules"]);
+    expect(written.cornerRadius).toBe(0);
+    const p = parseConfig(imageDoc()).elements[0]!.payload as unknown as Record<string, unknown>;
+    expect(p.cornerRadius).toBe(0);
   });
 
   it("writes the source only when the picture is not a camera", () => {
@@ -118,8 +126,10 @@ describe("image element wire format", () => {
 
   it("reads a document written before the settings existed as the old look", () => {
     // Exactly what an older panel or watch wrote: the payload with none of the
-    // new keys on it at all.
+    // new keys on it at all. A new picture writes its square corners, so the
+    // key is taken off to stand for one saved before that.
     const doc = imageDoc();
+    delete doc.elements[0]!.payload.cornerRadius;
     const p = parseConfig(doc).elements[0]!.payload as unknown as Record<string, unknown>;
     expect(p.contentMode).toBe("fill");
     expect(p.zoom).toBe(1);

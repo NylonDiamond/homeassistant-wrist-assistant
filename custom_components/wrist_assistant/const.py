@@ -124,7 +124,12 @@ PARTS_STORAGE_VERSION = 1
 # degrade to "not drawn": an app that ignored it would stack every page on top
 # of every other one, which is a broken face rather than a plainer one. So a
 # document with pages, or with any layer pinned to a page, must say 9.
-COMPLICATION_MAX_SCHEMA_VERSION = 9
+# v10 adds the `imageTime` value kind: when a picture layer was fetched, read
+# by an ordinary text layer (a picture's "Timestamp" is that text over a
+# capsule, in a group). An app on 9 fails the whole document on the unknown
+# value kind, the v8 reason again, so a document with one must say 10. The
+# older `imageTime` layer kind needs nothing.
+COMPLICATION_MAX_SCHEMA_VERSION = 10
 COMPLICATION_MAX_DOCUMENT_BYTES = 256 * 1024
 COMPLICATION_MAX_LAYERS = 64
 # Slot indices 0..COMPLICATION_MAX_SLOTS-1 map onto ComplicationStableSlot on

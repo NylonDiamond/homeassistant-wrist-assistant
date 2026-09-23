@@ -282,7 +282,7 @@ const INFO: Record<ExtraKey, string> = {
   "marker:threshold": "An icon at the threshold's height.",
   "marker:zero": "An icon at zero's height.",
   "timeline:times": "The clock times of the timeline's span, spread under the strip.",
-  "image:time": "The time the picture was fetched, so a picture that stops updating reads as stale.",
+  "image:time": "The time the picture was fetched, as a text over a capsule, so a picture that stops updating reads as stale.",
 };
 
 /** One sentence on what the control adds. */

@@ -126,7 +126,7 @@ import {
   DRAWABLE_FAMILIES,
   elementSize,
   refitPlacement,
-  IMAGE_DEFAULT_CORNER_RADIUS,
+  IMAGE_NEW_CORNER_RADIUS,
   ZERO_OUTSET,
   hasFreeTimestamp,
   isZeroOutset,
@@ -207,7 +207,9 @@ import {
   chartTimesOf,
   type ChartTimesElement,
   addImageTime,
-  imageTimesOf,
+  imageTimeTextsOf,
+  imageTimestampLayersOf,
+  removeImageTimestamp,
   addChartDots,
   addChartGrid,
   addChartZeroLine,
@@ -2513,6 +2515,7 @@ function switchKind(current: ValueKind, kind: ValueKind["kind"]): ValueKind {
     case "chartStat": return { kind, layer: "", stat: "latest" };
     case "item": return { kind, field: current.kind === "item" ? current.field : "" };
     case "listStat": return { kind, layer: "", stat: "count" };
+    case "imageTime": return { kind, layer: "" };
   }
 }
 
@@ -2770,7 +2773,15 @@ export function valueKindsFor(host: EditorHost, kind: ValueKind, opts: ValueEdit
   if (host.rowEditListId !== undefined || kind.kind === "item") out.push(["item", "Item field"]);
   const lists = host.config.elements.some((e) => e.kind === "list");
   if (lists || kind.kind === "listStat") out.push(["listStat", "List count"]);
+  if (timedPictures(host.config.elements).length > 0 || kind.kind === "imageTime") out.push(["imageTime", "Picture time"]);
   return out;
+}
+
+/** The pictures a Picture time value can read: every camera or entity picture
+ * layer, which the watch fetches and so has a time for. An uploaded picture
+ * never is. */
+export function timedPictures(elements: readonly CElement[]): Extract<CElement, { kind: "image" }>[] {
+  return elements.filter((e): e is Extract<CElement, { kind: "image" }> => e.kind === "image" && e.payload.source !== "inline");
 }
 
 function valueForm(host: EditorHost, value: Value, set: (v: Value) => void, opts: ValueEditorOptions): TemplateResult {
@@ -2852,6 +2863,16 @@ function valueForm(host: EditorHost, value: Value, set: (v: Value) => void, opts
             : "How many rows the list actually drew. Use it for a header above the list, or a rule that shows an empty state when it is 0."}</div>`;
       break;
     }
+    case "imageTime": {
+      const ctx = describeContext(host);
+      const pictures = timedPictures(host.config.elements);
+      body = pictures.length === 0
+        ? html`<div class="hint warn">There is no camera or entity picture layer yet. Add one first, then this can print when it was fetched.</div>`
+        : html`
+          ${selectField("Picture", k.layer, [["", "(choose)"], ...pictures.map((p): [string, string] => [p.payload.id, layerTitle(p, ctx)])], (v) => setKind({ ...k, layer: v }))}
+          <div class="hint">When the watch last fetched the picture, as unix seconds. Set Timestamp, under Format, to print it as a time. The watch draws nothing until the picture has been fetched.</div>`;
+      break;
+    }
   }
   const kindHint = VALUE_KIND_HINTS[k.kind];
   return html`
@@ -2927,6 +2948,11 @@ export function formatFits(kind: ValueKind | undefined): FormatFits {
     // nothing to say about it.
     case "listStat":
       return { numbers: true, textCase: false, unit: false, seconds: false };
+    // A moment in unix seconds, printed by the Timestamp formats only. Not
+    // "Seconds as": the watch reads that as an age in seconds, and a unix time
+    // read as an age prints 9999d.
+    case "imageTime":
+      return { numbers: false, textCase: false, unit: false, seconds: false };
   }
 }
 
@@ -2958,6 +2984,8 @@ export function whyUnresolved(host: EditorHost, value: Value): string {
       return k.field === "" ? "Pick a field" : "Only while a row is drawn";
     case "listStat":
       return k.layer === "" ? "Pick a list" : "That list has drawn nothing yet";
+    case "imageTime":
+      return k.layer === "" ? "Pick a picture" : "That picture is gone or uploaded";
     case "named": {
       if (k.id === "") return "Pick a shared value";
       const id = k.id.toUpperCase();
@@ -2979,7 +3007,7 @@ function canShare(value: Value, opts: ValueEditorOptions): boolean {
   if (k.kind === "named") return false;
   if (k.kind === "literal" || k.kind === "jinja") return k.value.trim() !== "";
   if ("entityId" in k) return k.entityId !== "";
-  if (k.kind === "chartStat") return k.layer !== "";
+  if (k.kind === "chartStat" || k.kind === "imageTime") return k.layer !== "";
   return true;
 }
 
@@ -3051,8 +3079,9 @@ function formatEditor(format: ValueFormat | undefined, set: (f: ValueFormat) => 
       ? html`<div class="grid2">
           ${checkField("Minutes", !f.hideMinutes, (v) => upd({ hideMinutes: !v }))}
           ${checkField("AM/PM", !f.hideDayPeriod, (v) => upd({ hideDayPeriod: !v }))}
+          ${checkField("Seconds", !!f.showSeconds, (v) => upd({ showSeconds: v }))}
         </div>
-        <div class="hint">Turn both off and 5:30 PM reads 5. AM/PM does nothing on a watch set to a 24-hour clock, which never shows one.</div>`
+        <div class="hint">Turn both off and 5:30 PM reads 5. AM/PM does nothing on a watch set to a 24-hour clock, which never shows one. Seconds reads 5:30:12 PM, and does nothing while Minutes is off.</div>`
       : nothing}
     ${f.timestamp === undefined
       ? nothing
@@ -5259,6 +5288,8 @@ export function layerEntityNote(el: CElement, uses: readonly LayerEntityUse[]): 
       ? " Its content comes through a shared value, so change that shared value to point it somewhere else."
       : contentKind === "chartStat"
         ? " Its number comes from a chart, so point the chart somewhere else to change it."
+      : contentKind === "imageTime"
+        ? " It prints when a picture was fetched, so point the picture somewhere else to change it."
       : el.kind === "icon" && contentKind === "literal"
         ? " The symbol above is a fixed name and stays as it is."
         : " The value above was written by hand and stays as it is.";
@@ -7744,10 +7775,10 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             const target = c.elements.find((e) => e.payload.id === img.id);
             if (target?.kind !== "image") return;
             setImageSource(target.payload, v);
-            // A timestamp layer over an uploaded picture has no fetched-at time
-            // to print, so it would sit there drawing nothing. It goes with the
-            // switch, in the same undo step.
-            if (v === "inline") for (const t of imageTimesOf(c, img.id)) removeElement(c, t.payload.id);
+            // A timestamp over an uploaded picture has no fetched-at time to
+            // print, so it would sit there drawing nothing. Its text and the
+            // capsule behind it go with the switch, in the same undo step.
+            if (v === "inline") for (const t of imageTimestampLayersOf(c, img.id)) removeElement(c, t.payload.id);
           }, "img-source"),
           { titles: {
               camera: "A snapshot from a camera entity",
@@ -7782,7 +7813,9 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             { min: -1, max: 1, step: 0.02, def: 0 })}
           <div class=${img.contentMode === "fit" && img.zoom === 1 ? "hint keep" : "hint"}>${imagePanHint(img)}</div>
           </div>`],
-        ["corner radius", numberField("Corner radius", img.cornerRadius, (v) => setImage((p) => { p.cornerRadius = Math.max(0, v ?? IMAGE_DEFAULT_CORNER_RADIUS); }, "imgradius"), { step: 1, min: 0, def: IMAGE_DEFAULT_CORNER_RADIUS, unit: "pt" })],
+        // Reset goes to what a new picture starts with, square. A picture
+        // saved without the key still draws the decode default's 6.
+        ["corner radius", numberField("Corner radius", img.cornerRadius, (v) => setImage((p) => { p.cornerRadius = Math.max(0, v ?? IMAGE_NEW_CORNER_RADIUS); }, "imgradius"), { step: 1, min: 0, def: IMAGE_NEW_CORNER_RADIUS, unit: "pt" })],
       ];
       break;
     }
@@ -8050,7 +8083,13 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
 function ownedExtrasCard(host: EditorHost, el: Extract<CElement, { kind: "timeline" | "image" }>): TemplateResult {
   const id = el.payload.id;
   const timeline = el.kind === "timeline";
-  const layers: CElement[] = timeline ? chartTimesOf(host.config, id) : imageTimesOf(host.config, id);
+  // A picture's timestamp is a text over a capsule; the text is its row, and
+  // deleting the row takes the capsule grouped with it too.
+  const layers: CElement[] = timeline ? chartTimesOf(host.config, id) : imageTimeTextsOf(host.config, id);
+  const drop = (c: CustomComplicationConfig, lid: string) => {
+    if (timeline) removeElement(c, lid);
+    else removeImageTimestamp(c, lid);
+  };
   const label = timeline ? "Clock times" : "Timestamp";
   const family = host.activeFamily;
   const add = () => host.update((c) => {
@@ -8078,18 +8117,18 @@ function ownedExtrasCard(host: EditorHost, el: Extract<CElement, { kind: "timeli
     </div>
     <div class="hint">${timeline
       ? "Adds the clock times of this timeline's span as their own layer in its group, so you can drag them anywhere and give them any size or color."
-      : "Adds the time the picture was fetched as its own layer in its group, so you can drag it anywhere, inside the picture or beside it."}</div>
+      : "Adds the time the picture was fetched as a text over a capsule, grouped as Timestamp, so you can drag it anywhere and give it any text or shape style."}</div>
     ${on ? html`
       ${layerRowList(host, rows, {
         icon: "close", danger: true,
         label: (what) => `Delete this ${what}`,
-        run: (lid) => host.update((c) => removeElement(c, lid)),
+        run: (lid) => host.update((c) => drop(c, lid)),
       })}
       <div class="hint">Click the row to open its main settings here. More settings selects that layer. The ×
         deletes it, and Undo brings it back.</div>` : nothing}`;
   return card(host, "numbers", "Extras", body, {
     color: SECTION_COLOR.numbers, icon: "clock", summary: on ? label : "none",
-    ...(on ? { reset: () => host.update((c) => { for (const l of layers) removeElement(c, l.payload.id); }) } : {}),
+    ...(on ? { reset: () => host.update((c) => { for (const l of layers) drop(c, l.payload.id); }) } : {}),
   });
 }
 
@@ -9325,6 +9364,7 @@ export function describeFormat(format: ValueFormat | undefined): string {
   if (format.timestamp) bits.push(`as ${(TIMESTAMP_STYLES.find(([s]) => s === format.timestamp)?.[1] ?? format.timestamp).toLowerCase()}`);
   if (timestampHasClock(format.timestamp) && format.hideMinutes) bits.push("no minutes");
   if (timestampHasClock(format.timestamp) && format.hideDayPeriod) bits.push("no AM/PM");
+  if (timestampHasClock(format.timestamp) && format.showSeconds && !format.hideMinutes) bits.push("with seconds");
   if (format.textCase) bits.push(format.textCase === "capitalized" ? "Capitalized" : format.textCase === "upper" ? "UPPER" : "lower");
   return bits.length === 0 ? "" : ` (${bits.join(", ")})`;
 }
@@ -9346,6 +9386,11 @@ function describeValueBody(v: Value, ctx?: DescribeContext): string {
     case "dataAge": return "data age";
     case "item": return k.field ? `item ${k.field}` : "item field";
     case "listStat": return k.stat === "total" ? "items in total" : "items shown";
+    case "imageTime": {
+      if (k.layer === "") return "picture time (no picture chosen)";
+      const picture = ctx?.elements?.find((e) => e.kind === "image" && e.payload.id === k.layer);
+      return picture?.kind === "image" ? `time of ${entityWords(picture.payload.entity, ctx)}` : "time of a missing picture";
+    }
     case "jinja": return k.value ? `template ${truncate(k.value, 32)}` : "template (empty)";
     case "named": {
       if (k.id === "") return "(no value chosen)";

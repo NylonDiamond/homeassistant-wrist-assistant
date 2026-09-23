@@ -8809,7 +8809,7 @@ export class WristAssistantPanel extends LitElement {
       ["Alt-drag", "Flips snapping for that drag: a drag that would snap moves freely, and one that would not snaps to the grid"],
       ["Expand", "The button over the face. The face full-window, for small moves. Everything above works there too"],
       ["Locked group", "Drags as one. Unlock it in its row to move layers alone"],
-      ["Timestamp chip", "On a picture layer: click it to move it, pull a corner for its size"],
+      ["Timestamp", "A picture's time is a text over a capsule, grouped as Timestamp: drag it as one, or pick either layer in the list for every text or shape setting"],
     ];
     const shapes: [string, string][] = [
       ["Shapes", "Rectangular, Circular, Corner and Inline are the kinds of slot on a watch face. The watch offers a complication only in slots whose shape it has."],

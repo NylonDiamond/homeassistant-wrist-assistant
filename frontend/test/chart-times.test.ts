@@ -10,6 +10,7 @@ import {
   convertChartTimes,
   DESIGN_BOX,
   imageTimesOf,
+  imageTimeTextsOf,
   imageTimeTextSize,
   liftChartOwnMarks,
   encodeConfig,
@@ -267,14 +268,25 @@ function camera(tweak: (p: Image["payload"]) => void = () => {}): { cfg: CustomC
   return { cfg, image };
 }
 
-describe("a picture's timestamp as a layer", () => {
+/** An old `imageTime` layer on a picture, as a panel before 2026-09-23 made
+ * one. The editor converts these on open; the kind still has to read, write and
+ * draw for a document that is never opened here. */
+function withOldLayer(cfg: CustomComplicationConfig, image: Image): string {
+  const t = newElement("imageTime") as ImageTime;
+  t.payload.image = image.payload.id;
+  t.payload.frame = { x: 0.3, y: 0.8, width: 0.25, height: 0.15, rotationDegrees: 0 };
+  cfg.elements.push(t);
+  return t.payload.id;
+}
+
+describe("a picture's timestamp as a layer (the old kind)", () => {
   it("is the chip the picture drew: same size, same corner, and the picture's keys cleared", () => {
     const { cfg, image } = camera((p) => { p.timestamp = true; p.timestampCorner = "bottomTrailing"; p.timestampSize = 12; });
     const id = addImageTime(cfg, image.payload.id)!;
-    const t = cfg.elements.find((e) => e.payload.id === id) as ImageTime;
-    expect(t.kind).toBe("imageTime");
-    expect(t.payload.image).toBe(image.payload.id);
-    // The frame is the chip at 12 pt, so filling it draws 12 pt text again.
+    // A text over a capsule now, both on the chip's frame.
+    const t = cfg.elements.find((e) => e.payload.id === id)!;
+    expect(t.kind).toBe("text");
+    expect(t.kind === "text" && t.payload.fontSize).toBeCloseTo(12, 1);
     const box = DESIGN_BOX.rectangular;
     expect(imageTimeTextSize(t.payload.frame.width * box.width, t.payload.frame.height * box.height)).toBeCloseTo(12, 1);
     // Bottom right of the picture's box, inside its 4 pt pad.
@@ -285,13 +297,13 @@ describe("a picture's timestamp as a layer", () => {
     expect(image.payload.timestamp).toBeUndefined();
     const written = payloadOf(cfg, image.payload.id);
     expect(Object.keys(written).some((k) => k.startsWith("timestamp"))).toBe(false);
-    expect(payloadOf(cfg, id)).toMatchObject({ image: image.payload.id });
-    expect(groupOf(cfg, id)?.id).toBe(groupOf(cfg, image.payload.id)?.id);
+    expect(groupOf(cfg, id)?.name).toBe("Timestamp");
+    expect(groupOf(cfg, image.payload.id)).toBeUndefined();
   });
 
   it("round-trips with no unknown keys, and drops the retired size key", () => {
     const { cfg, image } = camera();
-    const id = addImageTime(cfg, image.payload.id)!;
+    const id = withOldLayer(cfg, image);
     const raw = JSON.parse(JSON.stringify(encodeConfig(cfg)));
     expect(auditUnknownKeys(raw)).toEqual([]);
     expect("colorSlot" in payloadOf(cfg, id)).toBe(false);
@@ -315,17 +327,18 @@ describe("a picture's timestamp as a layer", () => {
   it("is made when a document with a picture drawing its own chip is opened, and only then", () => {
     const { cfg, image } = camera((p) => { p.timestamp = true; });
     liftChartOwnMarks(cfg);
-    expect(imageTimesOf(cfg, image.payload.id)).toHaveLength(1);
+    expect(imageTimeTextsOf(cfg, image.payload.id)).toHaveLength(1);
+    expect(imageTimesOf(cfg, image.payload.id)).toHaveLength(0);
     liftChartOwnMarks(cfg);
-    expect(imageTimesOf(cfg, image.payload.id)).toHaveLength(1);
+    expect(imageTimeTextsOf(cfg, image.payload.id)).toHaveLength(1);
     const plain = camera();
     liftChartOwnMarks(plain.cfg);
-    expect(imageTimesOf(plain.cfg, plain.image.payload.id)).toHaveLength(0);
+    expect(imageTimeTextsOf(plain.cfg, plain.image.payload.id)).toHaveLength(0);
   });
 
   it("resolves its picture whatever order the two sit in, and goes with it", () => {
     const { cfg, image } = camera();
-    const id = addImageTime(cfg, image.payload.id)!;
+    const id = withOldLayer(cfg, image);
     cfg.elements.reverse();
     const entityStates = new Map<string, EntityState>([
       ["camera.door", { entityId: "camera.door", state: "idle", domain: "camera", iconName: "", entityPicture: "/pic" }],

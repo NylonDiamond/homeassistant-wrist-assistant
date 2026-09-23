@@ -1,0 +1,159 @@
+{
+  "name": "Image time value",
+  "description": "A picture's fetched-at time built from ordinary layers rather than the `imageTime` layer kind: a camera image, a capsule shape as the backing, and a text layer whose value is `{\"kind\":\"imageTime\",\"layer\":<the image id>}` formatted as a clock with seconds and no day period. The capsule and the text share an editor-only group, which the watch carries without reading. The value is local: it compiles to no expression and asks for no picture of its own, so the fetch list is the image's own camera once. A fixture carries no picture bytes, so the value has no time and the text draws nothing at all (an empty string, not the `--` placeholder), the way the old chip stayed away until the picture arrived. What the printed time reads like is pinned in each side's unit tests. The value kind is what makes this schema 10: an app that predates it would fail the whole document.",
+  "config": {
+    "schemaVersion": 10,
+    "id": "AAAAAAAA-0000-4000-8000-000000000A00",
+    "name": "Image time value",
+    "slotIndex": 3,
+    "supportedFamilies": [
+      "rectangular"
+    ],
+    "values": [],
+    "elements": [
+      {
+        "kind": "image",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000A01",
+          "entity": {
+            "entityId": "camera.front_door",
+            "displayName": "Front door",
+            "domain": "camera"
+          },
+          "cornerRadius": 0,
+          "rules": [],
+          "frame": {
+            "x": 0,
+            "y": 0,
+            "width": 1,
+            "height": 1,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "name": "Picture"
+        }
+      },
+      {
+        "kind": "shape",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000A02",
+          "kind": "capsule",
+          "cornerRadius": 6,
+          "colorSlot": {
+            "baseColorHex": "#000000B3"
+          },
+          "borderWidth": 0,
+          "rules": [],
+          "frame": {
+            "x": 0.6,
+            "y": 0.78,
+            "width": 0.38,
+            "height": 0.18,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "groupId": "99999999-0000-4000-8000-000000000A00",
+          "name": "Backing"
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000A03",
+          "value": {
+            "kind": {
+              "kind": "imageTime",
+              "layer": "EEEEEEEE-0000-4000-8000-000000000A01"
+            },
+            "format": {
+              "timestamp": "clock",
+              "showSeconds": true,
+              "hideDayPeriod": true
+            }
+          },
+          "fontSize": 9,
+          "fontWeight": "semibold",
+          "colorSlot": {
+            "baseColorHex": "#FFFFFF"
+          },
+          "rules": [],
+          "frame": {
+            "x": 0.6,
+            "y": 0.78,
+            "width": 0.38,
+            "height": 0.18,
+            "rotationDegrees": 0
+          },
+          "isHidden": false,
+          "groupId": "99999999-0000-4000-8000-000000000A00",
+          "name": "Time"
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      {
+        "cornerBodyShape": "circle",
+        "borderWidth": 2
+      }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {
+      "type": "refresh"
+    },
+    "groups": [
+      {
+        "id": "99999999-0000-4000-8000-000000000A00",
+        "name": "Timestamp",
+        "locked": true
+      }
+    ]
+  },
+  "inputs": {
+    "entityStates": {
+      "camera.front_door": {
+        "state": "recording",
+        "domain": "camera"
+      }
+    },
+    "templateResults": {},
+    "locale": "en-US",
+    "timeZone": "UTC"
+  },
+  "expectedCompiled": {
+    "entities": [
+      "camera.front_door"
+    ],
+    "expressionKeys": []
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000A01",
+          "kind": "image",
+          "entityId": "camera.front_door",
+          "source": "camera",
+          "showTimestamp": false
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000A02",
+          "kind": "shape",
+          "shapeKind": "capsule",
+          "borderWidth": 0,
+          "isHidden": false
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000A03",
+          "kind": "text",
+          "text": "",
+          "fontSize": 9,
+          "fontWeight": "semibold",
+          "colorHex": "#FFFFFF",
+          "isHidden": false
+        }
+      ]
+    }
+  }
+}

@@ -363,14 +363,17 @@ export interface FlashSpec {
 const FLASH = {
   /** Circular and corner: a ring on the system's own circular mask. */
   circleStroke: 2.5,
-  /** Rectangular: the watch slot's rounded corner. */
-  rectRadius: 10,
+  /** Rectangular: square since 2026-09-23, as the app draws it. The system's
+   * own slot mask still rounds what the wrist sees. */
+  rectRadius: 0,
   rectStroke: 1.5,
-  /** The iPhone Home Screen tiles, where a hairline is lost across the tile. */
+  /** The iPhone Home Screen tiles, where a hairline is lost across the tile.
+   * Still rounded: the tile's own corner. */
   tileRadius: 22,
   tileStroke: 3,
-  /** One tap area's box. */
-  tapRadius: 3,
+  /** One tap area's box, square like the tap area itself (since 2026-09-23),
+   * for both the tint and the ring. */
+  tapRadius: 0,
   tapStroke: 1.5,
   /** Under this on its shorter side, a tap area is tinted as well as ringed,
    * because a hairline round a fingertip-sized box is easy to miss. */
@@ -2290,8 +2293,9 @@ function renderImage(el: Extract<ResolvedElement, { kind: "image" }>, box: Box, 
   const clipId = `imgclip-${nextSvgIdPrefix()}-${el.id}`;
   const r = Math.max(0, el.cornerRadius);
   // A document opened in the editor never gets here with a chip: the timestamp
-  // is converted to an `imageTime` layer first. The chip is still drawn for a
-  // document rendered straight from the wire, as the watch still draws it.
+  // is converted to a "Timestamp" group (a capsule and a text reading the
+  // picture's time) first. The chip is still drawn for a document rendered
+  // straight from the wire, as the watch still draws it.
   const c = el.showTimestamp && el.url ? timestampChipRect(el, box, timestampLabel(new Date())) : undefined;
   const chip = c ? renderTimestampChip(c) : nothing;
   // The crop needs the picture's own pixel size. Until the browser reports it,

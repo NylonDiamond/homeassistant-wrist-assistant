@@ -36,7 +36,7 @@ MAX_PER_OWNER = 8
 MAX_SLOTS = 64
 MAX_LAYERS = 64
 MAX_BYTES = 4096
-MAX_SCHEMA = 9
+MAX_SCHEMA = 10
 
 
 class _FakeStore:
@@ -1052,10 +1052,11 @@ def test_an_ordinary_document_still_saves_below_schema_eight(mod):
     assert rec.document["schemaVersion"] == 7
 
 
-def test_the_shipped_schema_ceiling_is_nine():
+def test_the_shipped_schema_ceiling_is_ten():
     """The store test stubs the constant, so read the real one too. Both the
     websocket listing and the v2 delta reply hand this number to their client,
-    and a panel will not save a paged document until it reads 9."""
+    and a panel will not save a document with a picture's time until it reads
+    10."""
     const = (
         Path(__file__).resolve().parents[1]
         / "custom_components"
@@ -1070,7 +1071,7 @@ def test_the_shipped_schema_ceiling_is_nine():
         for target in node.targets
         if isinstance(target, ast.Name)
     }
-    assert values["COMPLICATION_MAX_SCHEMA_VERSION"] == MAX_SCHEMA == 9
+    assert values["COMPLICATION_MAX_SCHEMA_VERSION"] == MAX_SCHEMA == 10
 
     for name in ("complication_ws.py", "wa_v2_views.py"):
         source = (const.parent / name).read_text()
@@ -1131,6 +1132,83 @@ def test_a_document_that_only_looks_paged_still_saves_below_nine(mod, overrides)
     written before this change keeps saving at the version it carries."""
     store = _new(mod)
     rec = store.save(OWNER, _doc(schemaVersion=4, **overrides), base_revision=None, updated_by="t")
+    assert rec.document["schemaVersion"] == 4
+
+
+# ── a picture's time ───────────────────────────────────────────────────────
+
+
+def _image_time_value(layer: str = "I1") -> dict:
+    """A value that reads when a picture layer was fetched."""
+    return {"kind": {"kind": "imageTime", "layer": layer}}
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        # A text layer's own value, which is what a picture's Timestamp is.
+        dict(elements=[{"kind": "text", "payload": {"id": "T1", "value": _image_time_value()}}]),
+        # One part of a rich text.
+        dict(elements=[{"kind": "text", "payload": {"parts": [{"value": _image_time_value()}]}}]),
+        # A rule that tests it.
+        dict(elements=[{"kind": "text", "payload": {
+            "rules": [{"test": {"left": _image_time_value(), "op": "gt", "right": "0"}}],
+        }}]),
+        # The top-level value pool.
+        dict(values=[{"id": "V1", "value": _image_time_value()}]),
+        # The Inline shape's text.
+        dict(schemaVersion=6, supportedFamilies=["inline"], inline={"value": _image_time_value()}),
+        # A list row, where every other rung is also met.
+        dict(schemaVersion=9, elements=[_list_element(template=[
+            {"kind": "text", "payload": {"id": "R1", "value": _image_time_value()}},
+        ])]),
+    ],
+)
+def test_a_document_that_reads_a_pictures_time_needs_schema_ten(mod, overrides):
+    """An app on 9 fails the document whole on the unknown value kind and shows
+    "update the app", the v8 reason again, so the version has to say 10."""
+    store = _new(mod)
+    doc = _doc(**overrides)
+    assert doc["schemaVersion"] < 10
+    with pytest.raises(mod.ComplicationValidationError) as err:
+        store.save(OWNER, doc, base_revision=None, updated_by="t")
+    assert "10" in str(err.value)
+    assert "imageTime" in str(err.value)
+    assert store.token == 0
+
+
+def test_a_pictures_time_saves_at_schema_ten(mod):
+    store = _new(mod)
+    doc = _doc(
+        schemaVersion=10,
+        elements=[
+            {"kind": "image", "payload": {"id": "I1"}},
+            {"kind": "shape", "payload": {"id": "S1", "kind": "capsule"}},
+            {"kind": "text", "payload": {"id": "T1", "value": {
+                "kind": {"kind": "imageTime", "layer": "I1"},
+                "format": {"timestamp": "clock", "showSeconds": True, "hideDayPeriod": True},
+            }}},
+        ],
+    )
+    rec = store.save(OWNER, doc, base_revision=None, updated_by="t")
+    assert rec.document["schemaVersion"] == 10
+    assert rec.document["elements"][2]["payload"]["value"]["format"]["showSeconds"] is True
+
+
+@pytest.mark.parametrize(
+    "element",
+    [
+        # The older LAYER kind of the same name: an entry with a payload, not a
+        # value. It has always saved at the version its document carries.
+        {"kind": "imageTime", "payload": {"id": "T1", "image": "I1"}},
+        # Even one whose payload happens to carry a `layer` key.
+        {"kind": "imageTime", "payload": {"id": "T1", "image": "I1", "layer": "x"}},
+    ],
+)
+def test_an_old_imagetime_layer_still_saves_below_ten(mod, element):
+    store = _new(mod)
+    doc = _doc(schemaVersion=4, elements=[{"kind": "image", "payload": {"id": "I1"}}, element])
+    rec = store.save(OWNER, doc, base_revision=None, updated_by="t")
     assert rec.document["schemaVersion"] == 4
 
 

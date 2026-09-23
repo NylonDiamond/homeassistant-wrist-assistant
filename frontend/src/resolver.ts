@@ -907,11 +907,14 @@ function capitalized(s: string): string {
   return s.replace(/\S+/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
 }
 
-/** What a clock-bearing timestamp leaves out. Both default to false, which is
- * the whole clock. Mirrors `hideMinutes` and `hideDayPeriod` on `ValueFormat`. */
+/** What a clock-bearing timestamp leaves out, and whether it adds seconds. All
+ * default to false, which is the clock to the minute. Mirrors `hideMinutes`,
+ * `hideDayPeriod` and `showSeconds` on `ValueFormat`. */
 export interface TimestampTrim {
   minutes?: boolean;
   dayPeriod?: boolean;
+  /** Add the seconds (`2:46:29 PM`). Ignored when `minutes` is set. */
+  seconds?: boolean;
 }
 
 /** Unix seconds printed as a time, in one of the four styles.
@@ -935,13 +938,15 @@ export function timestampString(
   if (style === "date") return new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", ...zone }).format(date);
   if (style === "weekday") return new Intl.DateTimeFormat(locale, { weekday: "short", ...zone }).format(date);
   const day = style === "dateTime" ? { weekday: "short" as const } : {};
-  const numeric = new Intl.DateTimeFormat(locale, { ...day, hour: "numeric", minute: "2-digit", ...zone });
+  // Seconds only with minutes: `5 PM` with seconds and no minutes means nothing.
+  const second = trim?.seconds && !trim.minutes ? { second: "2-digit" as const } : {};
+  const numeric = new Intl.DateTimeFormat(locale, { ...day, hour: "numeric", minute: "2-digit", ...second, ...zone });
   // A 24-hour locale pads the hour ("09:30"), a 12-hour one does not ("9:30 AM").
   // `Intl` leaves both unpadded under `numeric`, where `Date.FormatStyle` pads
   // the 24-hour one, so the padding is asked for explicitly on that side.
   const fmt = numeric.resolvedOptions().hour12 !== false
     ? numeric
-    : new Intl.DateTimeFormat(locale, { ...day, hour: "2-digit", minute: "2-digit", ...zone });
+    : new Intl.DateTimeFormat(locale, { ...day, hour: "2-digit", minute: "2-digit", ...second, ...zone });
   if (!trim?.minutes && !trim?.dayPeriod) return fmt.format(date);
   return trimClockParts(fmt.formatToParts(date), trim);
 }
@@ -995,6 +1000,7 @@ export function formatValue(
     text = timestampString(trimmedNumber, f.timestamp, locale, timeZone, {
       minutes: f.hideMinutes,
       dayPeriod: f.hideDayPeriod,
+      seconds: f.showSeconds,
     });
   } else {
     const n = leadingNumber(raw);
@@ -1903,6 +1909,19 @@ export class Resolver {
         // The list has already parsed its reply; this reads the number back.
         const l = this.lists.get(deref.kind.layer.toUpperCase());
         if (l) raw = String(deref.kind.stat === "total" ? l.total : l.items.length);
+        break;
+      }
+      case "imageTime": {
+        // The preview picture is always live, so once it has a URL its time is
+        // now. A picture with no URL yet stands for one the watch has not
+        // fetched, and a picture that is gone, or inline and so never fetched,
+        // has no time at all: the text draws nothing, as the watch does. The
+        // capsule behind it still shows, so the timestamp stays visible to
+        // edit. Empty, not undefined, so it is never "--".
+        const image = this.imageElements.get(deref.kind.layer.toUpperCase());
+        if (image === undefined || image.source === "inline"
+          || this.ctx.entityStates.get(image.entity.entityId)?.entityPicture === undefined) return "";
+        raw = String(Math.floor(this.nowMs() / 1000));
         break;
       }
       default: {

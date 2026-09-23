@@ -44,10 +44,11 @@ describe("the success flash", () => {
     expect(draw(layout("rectangular"))).not.toContain("wa-flash");
   });
 
-  it("rings a rectangular face on the slot's own corner", () => {
+  it("rings a rectangular face with square corners", () => {
     const out = draw(layout("rectangular"), { color: "#30D158" });
     expect(out).toContain("wa-flash");
-    expect(out).toContain("rx=10");
+    expect(out).toContain("rx=0");
+    expect(out).not.toContain("rx=10");
     expect(out).toContain("stroke-width=1.5");
     expect(out).toContain("stroke=#30D158");
   });
@@ -80,16 +81,18 @@ describe("the success flash", () => {
     // A quarter of the face, well over the size that also gets tinted.
     const out = draw(layout("rectangular"), { color: "#30D158", frame: frame(0.25, 0.25, 0.5, 0.5) });
     expect(out).toContain("stroke-width=1.5");
-    // The 3 pt radius, inset by half the stroke so the line sits inside the box.
-    expect(out).toContain("rx=2.25");
+    // Square, like the tap area itself.
+    expect(out).toContain("rx=0");
     // The ring only, no tint, and nothing shaped like the whole face.
     expect(out).not.toContain('fill-opacity="0.3"');
-    expect(out).not.toContain("rx=10");
+    expect(out.match(/class="wa-flash"/g)).toHaveLength(1);
   });
 
   it("tints a small tap area as well, because a hairline round it is easy to miss", () => {
     const out = draw(layout("rectangular"), { color: "#30D158", frame: frame(0.1, 0.1, 0.05, 0.05) });
     expect(out).toContain('fill-opacity="0.3"');
+    // The tint is square too.
+    expect(out).toMatch(/rx=0 fill=#30D158 fill-opacity="0.3"/);
   });
 
   it("turns the ring with the tap area it rings", () => {

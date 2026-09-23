@@ -105,6 +105,9 @@ export function lockedOccupied(recordSlots: Iterable<number>, occupied: readonly
  * refuse the record whole and show "update the app" rather than draw a face
  * with holes in it.
  *
+ * 10 when any value reads a picture's fetched-at time (`imageTime`). The
+ * reason 8 exists again: an unknown value kind fails a whole document.
+ *
  * 9 is the one rung that cannot degrade to "not drawn". Every other new key an
  * older app ignores leaves a plainer complication; `pages` ignored leaves every
  * page stacked on top of every other one, which is a broken face. So a document
@@ -121,6 +124,7 @@ export function lockedOccupied(recordSlots: Iterable<number>, occupied: readonly
  * slot 7 (an old app's slot-id parser rejects ids past 8) and 4 below, so an
  * unchanged document stays byte-stable for old apps. */
 export function schemaVersionFor(cfg: CustomComplicationConfig): number {
+  if (documentReadsImageTime(cfg)) return 10;
   if (usesPages(cfg)) return 9;
   if (documentNeedsLists(cfg)) return 8;
   if (HOME_FAMILIES.some((f) => cfg.supportedFamilies.includes(f))) return 7;
@@ -138,6 +142,18 @@ function documentNeedsLists(cfg: CustomComplicationConfig): boolean {
   let found = false;
   forEachValue(cfg, (v) => {
     if (v.kind.kind === "item" || v.kind.kind === "listStat") found = true;
+  });
+  return found;
+}
+
+/** Whether any `Value` in the document reads a picture's fetched-at time,
+ * which needs schema 10: an app on 9 fails the whole document on the unknown
+ * value kind, so it must refuse the record and say "update the app". The
+ * `imageTime` LAYER kind is older and needs nothing. */
+function documentReadsImageTime(cfg: CustomComplicationConfig): boolean {
+  let found = false;
+  forEachValue(cfg, (v) => {
+    if (v.kind.kind === "imageTime") found = true;
   });
   return found;
 }
@@ -419,6 +435,10 @@ export interface ValueFormat {
    * `5:30`. Does nothing on a device set to a 24-hour clock, which never had
    * one. Ignored by every other style. */
   hideDayPeriod?: boolean;
+  /** Add the seconds to a `clock` or `dateTime` timestamp, so `2:46 PM` reads
+   * `2:46:29 PM`. What a picture's timestamp shows. Ignored when `hideMinutes`
+   * is on, and by every other style. Written only when true. */
+  showSeconds?: boolean;
   textCase?: TextCase;
 }
 
@@ -483,7 +503,15 @@ export type ValueKind =
    * how many items it drew (`count`) or how many there were before the slice
    * (`total`). The `chartStat` pattern again, so a header outside the list can
    * say "4 left" and a rule can show an empty-state text at zero. */
-  | { kind: "listStat"; layer: string; stat: ListStat };
+  | { kind: "listStat"; layer: string; stat: ListStat }
+  /** When a picture layer in the same document was fetched, by the picture's
+   * id, as whole unix seconds, so the `timestamp` format and `relativeTime`
+   * print it. Local, like `chartStat`. Only a camera or entity picture has a
+   * time; a missing layer, a layer that is not a picture, or an inline picture
+   * reads as nothing, and the text draws empty (the watch draws nothing until
+   * the picture has been fetched). This is what a picture's "Timestamp" is
+   * made of: an ordinary text layer over an ordinary capsule, in a group. */
+  | { kind: "imageTime"; layer: string };
 
 /** What a `listStat` reads. An unknown spelling reads as `count`. */
 export type ListStat = "count" | "total";
@@ -2561,7 +2589,12 @@ export type ImageTimestampCorner = "topLeading" | "topTrailing" | "bottomLeading
  * `CustomComplication.ImageElement.maximumInlineBytes` in the app. */
 export const IMAGE_INLINE_MAX_BYTES = 48 * 1024;
 
+/** What a picture that does not write `cornerRadius` draws with. The decode
+ * default, and so fixed: every picture saved before 2026-09-23 relies on it. */
 export const IMAGE_DEFAULT_CORNER_RADIUS = 6;
+/** What a picture added in the editor starts with: square corners. Written to
+ * the wire, since it is not the decode default. */
+export const IMAGE_NEW_CORNER_RADIUS = 0;
 export const IMAGE_DEFAULT_TIMESTAMP_SIZE = 9;
 export const IMAGE_TIMESTAMP_CORNERS: ImageTimestampCorner[] = ["topLeading", "topTrailing", "bottomLeading", "bottomTrailing"];
 
@@ -4274,6 +4307,7 @@ function parseFormat(o: unknown): ValueFormat | undefined {
   if (TIMESTAMP_STYLES.some(([s]) => s === o.timestamp)) f.timestamp = o.timestamp as TimestampStyle;
   if (o.hideMinutes === true) f.hideMinutes = true;
   if (o.hideDayPeriod === true) f.hideDayPeriod = true;
+  if (o.showSeconds === true) f.showSeconds = true;
   if (o.textCase === "upper" || o.textCase === "lower" || o.textCase === "capitalized") f.textCase = o.textCase;
   return formatIsEmpty(f) ? undefined : f;
 }
@@ -4292,6 +4326,7 @@ export function formatIsEmpty(f: ValueFormat | undefined): boolean {
     f.timestamp === undefined &&
     !f.hideMinutes &&
     !f.hideDayPeriod &&
+    !f.showSeconds &&
     f.textCase === undefined
   );
 }
@@ -4357,6 +4392,8 @@ function parseValueKind(o: J): ValueKind {
         layer: str(o.layer).toUpperCase(),
         stat: o.stat === "total" ? "total" : "count",
       };
+    case "imageTime":
+      return { kind: "imageTime", layer: str(o.layer).toUpperCase() };
     default:
       throw new ConfigParseError(`unknown value kind ${String(o.kind)}`);
   }
@@ -5336,8 +5373,9 @@ export function chartLabelsOf(cfg: CustomComplicationConfig, chartId: string): E
  * place, and a locked group would drag the chart along with it. Selecting
  * the group row moves everything as one whenever that is wanted.
  *
- * Every extra arrives through here, a picture's timestamp as much as a chart's
- * line, so this is also where the extra takes its owner's page. */
+ * Every chart and timeline extra arrives through here, so this is also where
+ * the extra takes its owner's page. A picture's timestamp is its own group
+ * beside the picture (`addImageTime`), and takes the page there. */
 function joinChartGroup(cfg: CustomComplicationConfig, chart: Element, memberId: string): void {
   inheritPage(cfg, chart, memberId);
   const existing = groupOf(cfg, chart.payload.id);
@@ -5742,13 +5780,123 @@ export function imageTimeTextSize(w: number, h: number): number {
   return Math.max(0, Math.min(w / (8 * 0.578 + 0.89), h / 1.25));
 }
 
-/** Give a picture's timestamp a layer of its own, and return its id.
+// ── a picture's timestamp ─────────────────────────────────────────────────
+// Decided 2026-09-23: a picture's timestamp is building blocks, not a layer
+// kind with one setting. It is an ordinary capsule shape with an ordinary text
+// layer over it, the text reading `{kind: "imageTime", layer: <picture>}`, the
+// two in a group named "Timestamp". So it takes every text and shape setting.
+// The `imageTime` LAYER kind still parses, encodes and draws for a document
+// that is never opened here; the editor converts every one it opens.
+
+/** What a picture's timestamp group is called when it is made. */
+export const IMAGE_TIMESTAMP_GROUP_NAME = "Timestamp";
+/** The capsule behind a picture's timestamp: black at 55%, the old chip's. */
+export const IMAGE_TIMESTAMP_CAPSULE_HEX = "#0000008C";
+
+/** Whether a value reads a picture's fetched-at time, that picture's when an
+ * id is given. */
+export function readsImageTime(v: Value | undefined, imageId?: string): boolean {
+  const k = v?.kind;
+  return k?.kind === "imageTime" && (imageId === undefined || k.layer.toUpperCase() === imageId.toUpperCase());
+}
+
+/** The text layers printing one picture's fetched-at time, by their value or
+ * by any part, in document order. */
+export function imageTimeTextsOf(cfg: CustomComplicationConfig, imageId: string): Extract<Element, { kind: "text" }>[] {
+  return cfg.elements.filter((el): el is Extract<Element, { kind: "text" }> =>
+    el.kind === "text"
+    && (readsImageTime(el.payload.value, imageId) || (el.payload.parts ?? []).some((p) => readsImageTime(p.value, imageId))));
+}
+
+/**
+ * Every layer that makes up one picture's timestamps: each text printing its
+ * time, and, when that text sits in a group of nothing but such texts and
+ * shapes (the capsule behind it), the rest of that group. A text the author
+ * grouped with anything else goes alone, and the group keeps what it had.
+ * Includes any old `imageTime` layer on the picture. Document order.
+ */
+export function imageTimestampLayersOf(cfg: CustomComplicationConfig, imageId: string): Element[] {
+  const want = new Set<string>();
+  for (const el of imageTimesOf(cfg, imageId)) want.add(el.payload.id);
+  for (const text of imageTimeTextsOf(cfg, imageId)) for (const id of timestampBlock(cfg, text)) want.add(id);
+  return cfg.elements.filter((el) => want.has(el.payload.id));
+}
+
+/** A text reading a picture's time, and the rest of its group when that group
+ * holds nothing but shapes and texts reading a picture's time. */
+function timestampBlock(cfg: CustomComplicationConfig, text: Element): string[] {
+  const gid = text.payload.groupId;
+  if (gid === undefined) return [text.payload.id];
+  const members = groupMembers(cfg, gid);
+  const own = members.every((m) => m.kind === "shape"
+    || (m.kind === "text" && (readsImageTime(m.payload.value) || (m.payload.parts ?? []).some((p) => readsImageTime(p.value)))));
+  return own ? members.map((m) => m.payload.id) : [text.payload.id];
+}
+
+/** Delete one timestamp by its text: the text, and the capsule grouped with it
+ * (see `imageTimestampLayersOf`). Any other layer id is deleted on its own. */
+export function removeImageTimestamp(cfg: CustomComplicationConfig, textId: string): void {
+  const text = cfg.elements.find((el) => el.payload.id === textId);
+  if (!text) return;
+  const ids = text.kind === "text" ? timestampBlock(cfg, text) : [textId];
+  for (const id of ids) removeElement(cfg, id);
+}
+
+/** The two layers of a picture's timestamp at one frame: the capsule, then the
+ * text over it. `size` is the text size in design points. Neither is in the
+ * document yet. */
+export function imageTimestampLayers(
+  imageId: string,
+  frame: NormalizedFrame,
+  size: number,
+): [Extract<Element, { kind: "shape" }>, Extract<Element, { kind: "text" }>] {
+  const capsule = newElement("shape") as Extract<Element, { kind: "shape" }>;
+  capsule.payload.kind = "capsule";
+  capsule.payload.colorSlot = { baseColorHex: IMAGE_TIMESTAMP_CAPSULE_HEX };
+  capsule.payload.borderWidth = 0;
+  capsule.payload.frame = { ...frame };
+  const text = newElement("text") as Extract<Element, { kind: "text" }>;
+  text.payload.value = {
+    kind: { kind: "imageTime", layer: imageId },
+    format: { timestamp: "clock", showSeconds: true, hideDayPeriod: true },
+  };
+  text.payload.colorSlot = { baseColorHex: "#FFFFFF" };
+  text.payload.fontWeight = "semibold";
+  text.payload.fontDesign = "rounded";
+  text.payload.fontSize = Math.round(Math.max(4, size) * 10) / 10;
+  text.payload.frame = { ...frame };
+  return [capsule, text];
+}
+
+/** Where a layer goes so it sits directly above `owner` without splitting the
+ * owner's group: after the owner, or after the last member of its group. */
+function indexAbove(cfg: CustomComplicationConfig, owner: Element): number {
+  const gid = owner.payload.groupId;
+  let at = cfg.elements.indexOf(owner);
+  if (gid !== undefined) cfg.elements.forEach((el, i) => { if (el.payload.groupId === gid && i > at) at = i; });
+  return at + 1;
+}
+
+/** Put a timestamp's capsule and text in at `index`, grouped, and return the
+ * group's id. The group is locked, so the two move as one. */
+function insertTimestampGroup(
+  cfg: CustomComplicationConfig,
+  layers: readonly Element[],
+  index: number,
+  name = IMAGE_TIMESTAMP_GROUP_NAME,
+): string | undefined {
+  cfg.elements.splice(index, 0, ...layers);
+  return createGroup(cfg, layers.map((l) => l.payload.id), name);
+}
+
+/** Give a picture a timestamp, and return the text layer's id.
  *
- * The layer is exactly the chip the picture drew: a frame the chip's own size
- * at the spot the picture put it (its corner, or its free point), so it draws
- * at the same text size and the face reads the same. It sits directly above the picture in
- * its group. The picture's own timestamp keys are cleared, so it draws no chip
- * of its own. `box` is the design box the picture's frame is a fraction of.
+ * The capsule and the text sit exactly where the chip the picture drew would
+ * be: a frame the chip's own size at the spot the picture put it (its corner,
+ * or its free point), with the text at the chip's size, so the face reads the
+ * same. They are grouped as "Timestamp" directly above the picture, on its
+ * page. The picture's own timestamp keys are cleared, so it draws no chip of
+ * its own. `box` is the design box the picture's frame is a fraction of.
  * Undefined when `imageId` is not a picture. */
 export function addImageTime(
   cfg: CustomComplicationConfig,
@@ -5758,8 +5906,6 @@ export function addImageTime(
   const image = cfg.elements.find((el) => el.payload.id === imageId);
   if (!image || image.kind !== "image") return undefined;
   const p = image.payload;
-  const el = newElement("imageTime") as Extract<Element, { kind: "imageTime" }>;
-  el.payload.image = imageId;
   const chip = imageTimeChipSize(p.timestampSize);
   const lx = p.frame.x * box.width;
   const ly = p.frame.y * box.height;
@@ -5779,22 +5925,77 @@ export function addImageTime(
     y = p.timestampCorner.startsWith("top") ? ly + pad : ly + lh - pad - chip.h;
   }
   const round3 = (n: number) => Math.round(n * 1000) / 1000;
-  el.payload.frame = {
+  const frame: NormalizedFrame = {
     x: round3(x / box.width),
     y: round3(y / box.height),
     width: round3(chip.w / box.width),
     height: round3(chip.h / box.height),
     rotationDegrees: 0,
   };
-  const index = cfg.elements.findIndex((e) => e.payload.id === imageId);
-  cfg.elements.splice(index + 1, 0, el);
-  joinChartGroup(cfg, image, el.payload.id);
+  const layers = imageTimestampLayers(imageId, frame, imageTimeTextSize(chip.w, chip.h));
+  insertTimestampGroup(cfg, layers, indexAbove(cfg, image));
+  for (const l of layers) inheritPage(cfg, image, l.payload.id);
   delete p.timestamp;
   delete p.timestampX;
   delete p.timestampY;
   p.timestampCorner = "topLeading";
   p.timestampSize = IMAGE_DEFAULT_TIMESTAMP_SIZE;
-  return el.payload.id;
+  return layers[1].payload.id;
+}
+
+/**
+ * Turn one old `imageTime` layer into a timestamp group, in its place, and
+ * return the text layer's id.
+ *
+ * Both new layers take the old one's frame, every per-shape placement (not a
+ * size: the text's size is worked out from the frame, as the chip's was),
+ * hidden flag, page, opacity and rules, which on this kind can only show,
+ * hide, fade or turn it, and mean the same on each half. The shadow goes on
+ * the capsule alone, which is the silhouette the chip cast. A tap attached to
+ * the old layer is attached to the text. The group takes the old layer's name
+ * when it had one. The old layer leaves whatever group it was in, the
+ * picture's usually, and that group goes if the picture is all it has left.
+ */
+export function convertImageTimeLayer(cfg: CustomComplicationConfig, id: string): string | undefined {
+  const old = cfg.elements.find((el) => el.payload.id === id);
+  if (!old || old.kind !== "imageTime") return undefined;
+  const o = old.payload;
+  // The seat is the shape that owns the layer in canonical form; the chip's
+  // text size is read off the frame there, in that shape's design points.
+  const seat = DRAWABLE_FAMILIES.find((f) => cfg.perFamily[f]?.placements[id] !== undefined);
+  const placed = seat === undefined ? undefined : cfg.perFamily[seat]!.placements[id]!;
+  const sized = placed?.frame ?? o.frame;
+  const box = DESIGN_BOX[seat ?? "rectangular"];
+  const size = imageTimeTextSize(sized.width * box.width, sized.height * box.height);
+  const [capsule, text] = imageTimestampLayers(o.image, o.frame, size);
+  for (const l of [capsule, text]) {
+    l.payload.isHidden = o.isHidden;
+    if (o.opacity !== undefined) l.payload.opacity = o.opacity;
+    if (o.page !== undefined) l.payload.page = o.page;
+    if (o.accentGroup === "accent") l.payload.accentGroup = "accent";
+  }
+  capsule.payload.rules = structuredClone(o.rules);
+  text.payload.rules = structuredClone(o.rules);
+  if (o.shadow !== undefined) capsule.payload.shadow = structuredClone(o.shadow);
+  for (const family of DRAWABLE_FAMILIES) {
+    const p = cfg.perFamily[family]?.placements[id];
+    if (!p) continue;
+    const layout = cfg.perFamily[family]!;
+    for (const l of [capsule, text]) layout.placements[l.payload.id] = { frame: { ...p.frame }, isHidden: p.isHidden };
+    delete layout.placements[id];
+  }
+  for (const el of cfg.elements) {
+    if (el.kind === "tap" && el.payload.attachedTo === id) el.payload.attachedTo = text.payload.id;
+  }
+  const oldGroup = o.groupId;
+  const index = cfg.elements.indexOf(old);
+  cfg.elements.splice(index, 1);
+  const name = o.name !== undefined && o.name.trim() !== "" ? o.name : IMAGE_TIMESTAMP_GROUP_NAME;
+  insertTimestampGroup(cfg, [capsule, text], index, name);
+  pruneGroups(cfg);
+  unwrapLoneOwnerGroup(cfg, oldGroup, o.image);
+  syncAttachedTaps(cfg);
+  return text.payload.id;
 }
 
 /** The `chartDots` layers on one chart, in document order. */
@@ -5951,6 +6152,10 @@ export function liftChartOwnMarks(cfg: CustomComplicationConfig): void {
       el.payload.isHidden = true;
     }
   }
+  // Decided 2026-09-23: a picture's timestamp is a capsule and a text in a
+  // group, not a layer kind. Every `imageTime` layer, one made above from a
+  // chip included, becomes one, so the editor never saves the kind again.
+  for (const el of cfg.elements.filter((e) => e.kind === "imageTime")) convertImageTimeLayer(cfg, el.payload.id);
 }
 
 function liftOneChart(cfg: CustomComplicationConfig, c: ChartElement): void {
@@ -6120,6 +6325,7 @@ function encodeFormat(f: ValueFormat): J {
   if (f.timestamp !== undefined) o.timestamp = f.timestamp;
   if (f.hideMinutes) o.hideMinutes = true;
   if (f.hideDayPeriod) o.hideDayPeriod = true;
+  if (f.showSeconds) o.showSeconds = true;
   if (f.textCase !== undefined) o.textCase = f.textCase;
   return o;
 }
@@ -6153,6 +6359,7 @@ function encodeValueKind(k: ValueKind): J {
     case "chartStat": return { kind: "chartStat", layer: k.layer, stat: k.stat };
     case "item": return { kind: "item", field: k.field };
     case "listStat": return { kind: "listStat", layer: k.layer, stat: k.stat };
+    case "imageTime": return { kind: "imageTime", layer: k.layer };
   }
 }
 
@@ -7063,7 +7270,7 @@ const K = {
     "coloring", "bands", "bandAboveColorHex", "status", "action"],
   named: ["id", "name", "value"],
   value: ["kind", "format"],
-  format: ["decimals", "multiply", "offset", "prefix", "suffix", "useEntityUnit", "relativeTime", "duration", "timestamp", "hideMinutes", "hideDayPeriod", "textCase"],
+  format: ["decimals", "multiply", "offset", "prefix", "suffix", "useEntityUnit", "relativeTime", "duration", "timestamp", "hideMinutes", "hideDayPeriod", "showSeconds", "textCase"],
   entityRef: ["entityId", "displayName", "domain", "iconName"],
   aggregate: ["function", "scope", "stateFilter", "attribute"],
   scope: ["kind", "entities", "domains", "areaIds", "labelIds", "floorIds"],
@@ -7184,6 +7391,7 @@ const VALUE_KIND_KEYS: Record<string, string[]> = {
   chartStat: ["kind", "layer", "stat"],
   item: ["kind", "field"],
   listStat: ["kind", "layer", "stat"],
+  imageTime: ["kind", "layer"],
 };
 
 /** One key list per `source.kind`, the way `VALUE_KIND_KEYS` reads a value.
@@ -7606,7 +7814,7 @@ export function newElement(kind: Element["kind"]): Element {
           zoom: 1,
           panX: 0,
           panY: 0,
-          cornerRadius: IMAGE_DEFAULT_CORNER_RADIUS,
+          cornerRadius: IMAGE_NEW_CORNER_RADIUS,
           timestampCorner: "topLeading",
           timestampSize: IMAGE_DEFAULT_TIMESTAMP_SIZE,
         },
@@ -8180,8 +8388,9 @@ export function removeElement(cfg: CustomComplicationConfig, id: string): void {
   // nothing at all.
   for (const dots of chartDotsOf(cfg, id)) removeElement(cfg, dots.payload.id);
   for (const grid of chartGridsOf(cfg, id)) removeElement(cfg, grid.payload.id);
-  // A timestamp has no time to show without its picture.
-  for (const time of imageTimesOf(cfg, id)) removeElement(cfg, time.payload.id);
+  // A timestamp has no time to show without its picture: its text, and the
+  // capsule grouped with it, go too.
+  for (const layer of imageTimestampLayersOf(cfg, id)) removeElement(cfg, layer.payload.id);
   // A marker names its chart by id too. Unlike a number it still has something
   // to show, so it stays and goes back to sitting where its frame puts it,
   // rather than disappearing along with a chart the author may be replacing.
@@ -8497,6 +8706,15 @@ export function pasteElements(cfg: CustomComplicationConfig, clip: LayerClip, op
       if (image) copy.payload.image = image;
       else if (!here.has(copy.payload.image)) continue;
     }
+    // A picture's time follows a copied picture onto the copy, wherever the
+    // value sits (a text, a part, a rule). One reading a picture that is not
+    // coming along is left pointed where it was: the text draws nothing until
+    // it is pointed at a picture here, and the author can see it to do that.
+    forEachElementValue(copy, (v) => {
+      if (v.kind.kind !== "imageTime") return;
+      const image = idMap.get(v.kind.layer);
+      if (image) v.kind.layer = image;
+    });
     // A marker follows a copied chart onto the copy, stays on the original when
     // that original is still here, and stops being a marker when it is neither:
     // the layer is kept, because a glyph the author styled is worth keeping, but
@@ -9380,6 +9598,15 @@ function walkDocument(cfg: CustomComplicationConfig, visit: DocumentVisitor): vo
 /** Every `Value` in the document, in walk order. */
 export function forEachValue(cfg: CustomComplicationConfig, fn: (v: Value, site: ValueSite) => void): void {
   walkDocument(cfg, { value: fn });
+}
+
+/** Every `Value` one layer holds (its own, its parts, its rules, a list's
+ * rows), in walk order. The layer is walked on its own in an empty document,
+ * so nothing else is visited. */
+export function forEachElementValue(el: Element, fn: (v: Value, site: ValueSite) => void): void {
+  const shell = newConfig("", 0);
+  shell.elements = [el];
+  walkDocument(shell, { value: fn });
 }
 
 /** Whether a value reads the shared value with this id. */
