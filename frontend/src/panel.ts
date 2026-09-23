@@ -3566,6 +3566,9 @@ export class WristAssistantPanel extends LitElement {
     button.lc-btn.pri:hover:not(:disabled) { filter: brightness(1.08); }
     button.lc-ghost { background: transparent; border-color: transparent; color: var(--wa-muted); padding: 0 7px; letter-spacing: .04em; }
     button.lc-ghost.sm { height: 24px; font-size: 11px; }
+    /* A ghost that still reads as a button: Save to parts sits on a line of
+       plain text, where a bare label was easy to miss. */
+    button.lc-ghost.outline { border-color: var(--wa-line-strong); color: var(--wa-ink); }
     button.lc-btn:hover:not(:disabled):not(.pri), button.lc-ghost:hover:not(:disabled) { background: var(--wa-panel); color: var(--wa-ink); border-color: var(--wa-line); }
     button.lc-ghost[aria-pressed="true"], button.lc-ghost[aria-expanded="true"] { color: var(--wa-ink); background: var(--wa-panel); }
     button.lc-btn:focus-visible, button.lc-ghost:focus-visible { outline: none; box-shadow: var(--wa-ring); }
@@ -15492,7 +15495,7 @@ export class WristAssistantPanel extends LitElement {
               ${selectedCount >= 1 && edit
                 // On the count line rather than a row of its own, so a
                 // selection does not push the list down.
-                ? html`<button class="lc-ghost sm" title=${selectedCount === 1 ? "Keep this layer under a name, to use in another complication" : "Keep these layers under a name, to use in another complication"}
+                ? html`<button class="lc-ghost sm outline" title=${selectedCount === 1 ? "Keep this layer under a name, to use in another complication" : "Keep these layers under a name, to use in another complication"}
                     @click=${() => void this.openSavePartDialog()}>Save to parts</button>`
                 : nothing}
             </div>`
