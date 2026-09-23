@@ -670,7 +670,7 @@ function layerRowFolds(): string {
     return `
     @container layers (max-width: ${w + 299}px) {
       ${p} .layer {
-        grid-template-columns: 16px 3px var(--thumb-w) minmax(0, 1fr);
+        grid-template-columns: 0 3px var(--thumb-w) minmax(0, 1fr);
         grid-template-areas: "grip bar thumb name" "grip bar right right";
         row-gap: 0; padding-top: 5px; padding-bottom: 5px;
       }
@@ -692,13 +692,13 @@ function layerRowFolds(): string {
     }
     @container layers (max-width: ${w + 149}px) {
       ${p} .layer {
-        grid-template-columns: 16px 3px minmax(0, 1fr);
+        grid-template-columns: 0 3px minmax(0, 1fr);
         grid-template-areas: "grip bar thumb" "grip bar name" "grip bar right";
       }
       ${p} .layer > .thumb { justify-self: start; width: min(var(--thumb-w), 100%); height: auto; aspect-ratio: ${w} / ${h}; }
       ${p} .layer > .name { padding-top: 4px; }
       ${p} .layer.group {
-        grid-template-columns: 16px 3px minmax(0, 1fr) auto;
+        grid-template-columns: 0 3px minmax(0, 1fr) auto;
         grid-template-areas: "grip bar thumb right" "grip bar name name";
       }
       ${p} .layer.group > .folder { justify-self: start; width: auto; }
@@ -727,9 +727,6 @@ const GRID_STORE_KEY = "wrist-assistant-panel.grid.v1";
  * storage, because it is about this tab: a second tab opens on its own. */
 const OPEN_STORE_KEY = "wrist-assistant-panel.open.v1";/** How tall the slot a dragged row opens is, CSS px. */
 const DROP_GAP = 34;
-/** How long a Layers row keeps its layer lit after the pointer leaves it:
- * long enough to cross the gap to the next row at a slow drag. */
-const ROW_LEAVE_MS = 250;
 /** `tapHover` for the Background row's strip, which has no layer id. */
 const GROUND_TAP = "\u0000ground";
 const COL_MIN = 200;
@@ -1483,7 +1480,6 @@ export class WristAssistantPanel extends LitElement {
    * every member for a group row. Tinted on the preview, so a row can be
    * found on the face without selecting it. Selection stays where it was. */
   @state() private listHoverIds: readonly string[] = [];
-  private rowLeaveTimer?: number;
   /** The Layers row under the pointer, as the selection it would make. The
    * list and the preview draw it as though it were selected (its row lit,
    * its handles on the face) and forget it when the pointer leaves, so the
@@ -3330,7 +3326,7 @@ export class WristAssistantPanel extends LitElement {
        The selection still speaks louder, because its wash and its ring both
        land on top of these. */
     .layer {
-      display: grid; grid-template-columns: 16px 3px var(--thumb-w) minmax(0, 1fr) auto; align-items: center; gap: 8px;
+      display: grid; grid-template-columns: 0 3px var(--thumb-w) minmax(0, 1fr) auto; align-items: center; gap: 8px;
       min-height: 46px; padding: 0 6px 0 4px; border-radius: var(--wa-r-sm);
       /* The list is a scrolling flex column: without this, expanded rows
          shrink to their minimum and their lines pile on top of each other. */
@@ -3339,8 +3335,8 @@ export class WristAssistantPanel extends LitElement {
       background: color-mix(in srgb, var(--wa-panel) 60%, var(--wa-card));
       box-shadow: inset 0 0 0 1px var(--wa-line);
       cursor: pointer; user-select: none; position: relative; font-size: 13px;
-      transition: background-color .12s ease-out, box-shadow .12s ease-out,
-        border-top-width .1s ease-out, border-bottom-width .1s ease-out;
+      /* Hover and selection change at once; only the drop slot animates. */
+      transition: border-top-width .1s ease-out, border-bottom-width .1s ease-out;
     }
     /* A group's members sit a shade quieter than the rows above them, so they
        read as nested rather than as another run of top-level rows. */
@@ -3358,9 +3354,10 @@ export class WristAssistantPanel extends LitElement {
     /* A member of the selected group: lit in the folder's color, without
        the selected row's ring, so the group reads as one block. */
     .layer.held { background: color-mix(in srgb, ${unsafeCSS(SECTION_COLOR.group)} 12%, var(--wa-panel)); }
-    .layer .grip { color: var(--wa-line-strong); display: grid; place-items: center; cursor: grab; }
-    .layer:hover .grip { color: var(--wa-muted); }
-    .layer .grip svg { width: 15px; height: 15px; }
+    /* The drag grips are gone: the whole row drags, and one line under the
+       Layers header says so. The grip keeps a zero-width column so the rest
+       of the row's grid stays as it was. */
+    .layer .grip { visibility: hidden; overflow: hidden; width: 0; }
     .layer .bar { width: 3px; height: 26px; border-radius: 2px; background: var(--k); }
     /* The layer's own picture, cropped to it, on the black face. The rounded
        black well is the picture's frame, so an empty thumb still reads as a
@@ -3404,12 +3401,11 @@ export class WristAssistantPanel extends LitElement {
     .tap-strip {
       --tp: #c2185b;
       grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; min-width: 0;
-      height: 22px; margin: 0 -4px 2px -2px; padding: 0 4px 0 37px;
+      height: 22px; margin: 0 -4px 2px -2px; padding: 0 4px 0 21px;
       border-top: 1px solid var(--wa-line);
       border-radius: 0 0 calc(var(--wa-r-sm) - 2px) calc(var(--wa-r-sm) - 2px);
       font-size: 11.5px; font-weight: 600; color: var(--tp);
       background: color-mix(in srgb, var(--tp) 9%, transparent);
-      transition: background-color .12s ease-out, box-shadow .12s ease-out;
     }
     :host([dark]) .tap-strip { --tp: var(--wa-tap); background: color-mix(in srgb, var(--tp) 13%, transparent); }
     .tap-strip:hover { background: color-mix(in srgb, var(--tp) 20%, transparent); }
@@ -3423,7 +3419,7 @@ export class WristAssistantPanel extends LitElement {
       box-shadow: inset 0 0 0 2px var(--tp); border-top-color: transparent;
     }
     .layer.dim .tap-strip { opacity: .55; }
-    .layer.pinned .tap-strip { margin: 0 -10px 2px -8px; padding-left: 43px; border-radius: 0; }
+    .layer.pinned .tap-strip { margin: 0 -10px 2px -8px; padding-left: 27px; border-radius: 0; }
     /* The layer selected, not its tap: only the top part wears the selection.
        The row itself goes back to rest and a layer behind the content (the
        isolation keeps it above the row's own ground) draws the wash and ring
@@ -3498,7 +3494,7 @@ export class WristAssistantPanel extends LitElement {
        to the card's edges, a shade darker than the rows above so the list
        reads as the part you can actually reorder. */
     .pinned-set {
-      flex: none; margin: 6px 0 0; border-top: 1px solid var(--wa-line-strong);
+      flex: none; margin: 0; border-top: 1px solid var(--wa-line-strong);
       background: color-mix(in srgb, var(--wa-ink) 5%, transparent);
     }
     /* The tray's rows keep the tray's own ground and its hairlines. An outline
@@ -3613,6 +3609,8 @@ export class WristAssistantPanel extends LitElement {
     .lc-filter { display: flex; align-items: center; gap: 6px; min-height: 32px; padding: 3px 8px 3px 12px; border-bottom: 1px solid var(--wa-line); }
     .lc-filter .lc-sub { white-space: normal; }
     .lc-filter button.lc-ghost { margin-left: auto; }
+    .lc-filter .lc-drag { font-size: 11px; color: var(--wa-muted); opacity: .8; white-space: nowrap; }
+    .lc-filter .lc-sub + .lc-drag::before { content: "·"; margin-right: 6px; }
     .layers-card > .group-cta { margin: 6px 8px 0; }
     .layers-card > .part-cta, .layers-card > .hint { margin: 6px 10px 0; }
     .layers-card > .lc-empty { margin: 0; padding: 24px 16px; text-align: center; font-size: 12px; line-height: 1.5; color: var(--wa-muted); }
@@ -3767,7 +3765,7 @@ export class WristAssistantPanel extends LitElement {
        expanded layout keeps its full row. The card's own class raises these
        over the per-width folds further up. */
     .layers-card .group-box > .layer.group:not(.rich) {
-      grid-template-columns: 16px 3px 18px minmax(0, 1fr) auto;
+      grid-template-columns: 0 3px 18px minmax(0, 1fr) auto;
       grid-template-areas: "grip bar thumb name right";
       min-height: 32px; padding-top: 0; padding-bottom: 0; row-gap: 0;
     }
@@ -9125,12 +9123,9 @@ export class WristAssistantPanel extends LitElement {
     return id !== undefined && listOwningRowLayer(cfg, id) ? id : undefined;
   }
 
-  /** Drop the list tint, but only the one this row put up: the pointer can
-   * enter the next row before this row's leave arrives. */
-  /** The pointer came onto a row of the Layers list. It cancels a clear the
-   * row it came from left pending, so the lit layer hands straight over. */
+  /** The pointer came onto a row of the Layers list: its layers are tinted
+   * and the row is drawn as the selection, at once. */
   private enterRow(ids: readonly string[], peek?: Inspect) {
-    window.clearTimeout(this.rowLeaveTimer);
     this.listHoverIds = ids;
     // A row dragged over others is not a row being looked at.
     this.rowPeek = this.dragId === undefined ? peek : undefined;
@@ -9142,18 +9137,17 @@ export class WristAssistantPanel extends LitElement {
     return this.rowPeek ?? this.inspect;
   }
 
-  /** The pointer left a row. The rows sit a few pixels apart, and clearing at
-   * once blinked every highlight off while the pointer crossed that gap, so
-   * the clear waits a moment for the next row's enter to cancel it. */
-  private leaveRow(ids: readonly string[]) {
-    window.clearTimeout(this.rowLeaveTimer);
-    this.rowLeaveTimer = window.setTimeout(() => {
-      const same = this.listHoverIds.length === ids.length && this.listHoverIds.every((id, i) => ids[i] === id);
-      if (same) {
-        this.listHoverIds = [];
-        this.rowPeek = undefined;
-      }
-    }, ROW_LEAVE_MS);
+  /** The pointer left the Layers list: the rows and the preview show the
+   * real selection again, at once. A row's own leave clears nothing, since
+   * the rows sit a few pixels apart and a clear there blinked every
+   * highlight off while the pointer crossed the gap; the next row's enter
+   * takes over instead. The stack and the Background tray are two boxes, so
+   * a move from one into the other is not a leave. */
+  private leaveList(e: PointerEvent) {
+    const to = e.relatedTarget as Element | null;
+    if (to?.closest?.(".layers, .pinned-set")) return;
+    this.listHoverIds = [];
+    this.rowPeek = undefined;
   }
 
   /**
@@ -15229,7 +15223,6 @@ export class WristAssistantPanel extends LitElement {
       return html`<div class="layer ${attached ? "with-tap" : ""} ${tapSel ? "tapsel" : ""} ${hl ? "hl" : ""} ${held ? "held" : ""} ${this.dialogLitIds.includes(id) ? "lit" : ""} ${hidden ? "dim" : ""} ${this.multi.has(id) ? "multi" : ""} ${inGroup ? "kid" : ""} ${rich ? "rich" : ""}"
         style=${`--k:${KIND_COLOR[el.kind]}`} tabindex="0" draggable=${d.draggable}
         @pointerenter=${() => this.enterRow([id], { kind: "layer", id })}
-        @pointerleave=${() => this.leaveRow([id])}
         @click=${(e: MouseEvent) => this.clickRow(id, e)}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = { kind: "layer", id }; }}
         @dragstart=${d.onStart} @dragend=${d.onEnd} @dragover=${d.onOver} @drop=${d.onDrop}>
@@ -15293,7 +15286,6 @@ export class WristAssistantPanel extends LitElement {
       const subCount = kids.filter((k) => k.kind === "group").length;
       return html`<div class="layer group ${hl ? "hl" : ""} ${held ? "held" : ""} ${this.dialogLitIds.includes(g.id) ? "lit" : ""} ${rich ? "rich" : ""}" style=${`--k:${SECTION_COLOR.group}`} tabindex="0" draggable=${d.draggable}
         @pointerenter=${() => this.enterRow(memberIds, { kind: "group", id: g.id })}
-        @pointerleave=${() => this.leaveRow(memberIds)}
         @click=${() => { this.multi = new Set(); this.inspect = { kind: "group", id: g.id }; }}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = { kind: "group", id: g.id }; }}
         @dragstart=${d.onStart} @dragend=${d.onEnd}
@@ -15372,7 +15364,6 @@ export class WristAssistantPanel extends LitElement {
       return html`<div class="layer kid rowkid ${hl ? "hl" : ""} ${hidden ? "dim" : ""}"
         style=${`--k:${KIND_COLOR[row.kind]}`} tabindex="0"
         @pointerenter=${() => this.enterRow([id], { kind: "layer", id })}
-        @pointerleave=${() => this.leaveRow([id])}
         @click=${() => open()}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") open(); }}>
         <span class="grip" aria-hidden="true"></span>
@@ -15487,6 +15478,7 @@ export class WristAssistantPanel extends LitElement {
         : shapeRows.length > 0
           ? html`<div class="lc-filter">
               <span class="lc-sub">${filter.lead === "" ? nothing : all ? html`${filter.lead} · ` : html`On <b>page ${this.page}</b> · `}${filter.count}</span>
+              ${edit ? html`<span class="lc-drag">Drag to rearrange layers</span>` : nothing}
               ${paged ? html`<button class="lc-ghost sm" aria-pressed=${all ? "true" : "false"}
                 title=${all ? "List the page showing, and the layers on every page" : "List the layers of every page, page by page"}
                 @click=${() => { this.allPages = !all; }}>${all ? "This page" : "Show all"}</button>` : nothing}
@@ -15505,14 +15497,13 @@ export class WristAssistantPanel extends LitElement {
         // above is for a shape with nothing at all and would be a lie here.
         ? html`<div class="hint">Nothing is on page ${this.page} yet. Layers you add now go on it.</div>`
         : nothing}
-      <div class="layers">
+      <div class="layers" @pointerleave=${(e: PointerEvent) => this.leaveList(e)}>
       ${body}
       </div>
-      <div class="pinned-set">
+      <div class="pinned-set" @pointerleave=${(e: PointerEvent) => this.leaveList(e)}>
       <div class="layer pinned ground with-tap ${shapeHl && tapShown(GROUND_TAP) ? "tapsel" : ""} ${shapeHl ? "hl" : ""}" style=${`--k:${SECTION_COLOR.place}`} tabindex="0"
         title="The shape's background and border, and what a tap anywhere else does. Always the bottom layer. Click to edit it."
         @pointerenter=${() => this.enterRow([], { kind: "family" })}
-        @pointerleave=${() => this.leaveRow([])}
         @click=${() => { this.multi = new Set(); if (this.tapFocus && this.inspect.kind === "family") this.leaveTapFocus(); this.inspect = ground.inspect; }}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = ground.inspect; }}
         @dragover=${(e: DragEvent) => { if (!this.dragId) return; e.preventDefault(); this.markDrop(e.currentTarget as HTMLElement, "drop-before"); }}
