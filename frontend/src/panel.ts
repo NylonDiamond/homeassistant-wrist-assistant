@@ -4347,9 +4347,10 @@ export class WristAssistantPanel extends LitElement {
     button.tb > svg.ui-icon { width: 14px; height: 14px; flex: none; }
     button.tb .caret { display: inline-flex; margin-left: -3px; color: var(--wa-hint); }
     button.tb .caret svg { width: 11px; height: 11px; }
-    /* The Preview menu joins the case and the color on one button: "46 mm ·
-       Full color". The menu under it has the two lists under small headings. */
-    button.tb .tb-mid { color: var(--wa-hint); margin: 0 -1px; }
+    /* The Preview menu joins the case and the color on one button: the case
+       size, then the color as a dot. The menu under it has the two lists
+       under small headings. */
+    button.tb .tint-dot { margin: 0 1px; }
     .pop-menu.preview-menu { min-width: 190px; }
     .pop-menu .pop-head { padding: 6px 10px 3px; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--wa-muted); }
     .preview-menu .row[aria-checked="true"] { background: color-mix(in srgb, var(--wa-accent) 18%, transparent); }
@@ -8174,8 +8175,7 @@ export class WristAssistantPanel extends LitElement {
           title=${drawable
             ? `Preview as: the case size and the color. Layouts are made in the ${this.referenceCase.label} box; every other size draws a scaled copy of it. ${tint.title}`
             : `Preview as. Layouts are made in the ${this.referenceCase.label} box. Every other size draws a scaled copy of it.`}
-          @click=${() => this.toggleMenu("case")}>${uiIcon(this.previewAsPhone ? "phone" : "watch")}<span class="word keep">${deviceCase.label}</span>${drawable
-            ? html`<span class="tb-mid" aria-hidden="true">·</span>${tintDot}<span class="word">${tintWord}</span>` : nothing}<span class="caret">${uiIcon("chevron")}</span></button>
+          @click=${() => this.toggleMenu("case")}>${uiIcon(this.previewAsPhone ? "phone" : "watch")}<span class="word keep">${deviceCase.label}</span>${drawable ? tintDot : nothing}<span class="caret">${uiIcon("chevron")}</span></button>
         ${caseOpen ? html`<div class="pop-menu preview-menu" role="menu" aria-label="Preview as">
           <div class="pop-head">Size</div>
           ${this.previewCases.map((c) => html`<button class="row" role="menuitemradio" aria-checked=${c.label === deviceCase.label ? "true" : "false"}
@@ -8251,6 +8251,7 @@ export class WristAssistantPanel extends LitElement {
         @click=${() => { this.canvasZoom = ZOOM_FIT; }}>${zoomLabel(z)}</button>
       <button class="tb icon" ?disabled=${off || z >= ZOOM_MAX} aria-label="Zoom in" title="Zoom in"
         @click=${() => { this.canvasZoom = zoomIn(this.canvasZoom); }}>+</button>
+      <span class="tb-sep" aria-hidden="true"></span>
       <button class="tb icon" ?disabled=${off} aria-label="Full screen"
         title="Full screen: the face as large as the window allows, for small moves. Drag and arrow keys work there too. Escape closes."
         @click=${() => { this.zoomed = true; }}>${uiIcon("expand")}</button>
