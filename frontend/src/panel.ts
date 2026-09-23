@@ -4250,6 +4250,9 @@ export class WristAssistantPanel extends LitElement {
     button.cv-act.danger:hover:not(:disabled) { background: color-mix(in srgb, #FF453A 14%, transparent); border-color: color-mix(in srgb, #FF453A 40%, transparent); }
     button.cv-act .caret { display: inline-flex; margin-right: -3px; color: var(--wa-hint); }
     button.cv-act .caret svg { width: 11px; height: 11px; }
+    dialog.del-dialog { width: min(460px, calc(100vw - 32px)); }
+    .del-acts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; padding-top: 4px; }
+    .del-acts button { height: 32px; padding: 0 14px; }
     button.cv-act.icon { width: 30px; padding: 0; justify-content: center; }
     button.cv-act.icon svg.ui-icon { width: 15px; height: 15px; }
     .cv-del { display: inline-flex; align-items: center; gap: 6px; flex: none; }
@@ -6037,6 +6040,10 @@ export class WristAssistantPanel extends LitElement {
       const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.help-dialog");
       if (dialog && !dialog.open) dialog.showModal();
     }
+    if (changed.has("confirmDelete") && this.confirmDelete) {
+      const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.del-dialog");
+      if (dialog && !dialog.open) dialog.showModal();
+    }
     // A push that lands inside the demo's refetch window is the fetch the tap
     // asked for, so the frozen picture is retaken. Outside the window nothing
     // is taken, and the comparison below still re-renders the same face.
@@ -7804,7 +7811,7 @@ export class WristAssistantPanel extends LitElement {
   /** What to call one device in a line the author reads. */
   private ownerName(ownerId: string): string {
     const owner = this.owners.find((o) => o.owner_watch_id === ownerId);
-    return owner ? ownerLabel(owner) : "another device";
+    return owner ? ownerShortLabel(owner) : "another device";
   }
 
   private reloadFromServer() {
@@ -9406,6 +9413,7 @@ export class WristAssistantPanel extends LitElement {
       ${this.helpOpen ? this.renderHelpDialog() : nothing}
       ${this.newOpen ? this.renderNewDialog() : nothing}
       ${this.dupOpen ? this.renderDuplicateDialog() : nothing}
+      ${this.confirmDelete ? this.renderDeleteDialog() : nothing}
       ${this.shareOpen ? this.renderShareDialog() : nothing}
       ${this.galleryOpen ? this.renderGalleryDialog() : nothing}
       ${this.importOpen ? this.renderImportDialog() : nothing}
@@ -15461,24 +15469,60 @@ export class WristAssistantPanel extends LitElement {
    */
   private renderDocActions(cfg: CustomComplicationConfig) {
     if (!this.canEdit) return nothing;
-    const n = this.openLinkCount();
     return html`<button class="cv-act icon" aria-haspopup="dialog" aria-label="Duplicate as another shape or device"
         title="Duplicate: make this design again as another shape, or on another device"
         @click=${() => this.openDuplicateAs(cfg, this.ownerId ?? "")}>${uiIcon("duplicate")}</button>
       <span class="cv-div" aria-hidden="true"></span>
-      ${this.confirmDelete
-        ? html`<span class="cv-del" role="group" aria-label="Delete this complication?">
-            ${n > 1
-              ? html`<button class="cv-act danger" title=${`Delete only the copy on ${this.ownerName(this.ownerId ?? "")}`}
-                  @click=${() => { this.confirmDelete = false; void this.deleteCurrent(false); }}>This device</button>
-                <button class="cv-act danger" title="Delete it on every device it is on"
-                  @click=${() => { this.confirmDelete = false; void this.deleteCurrent(true); }}>All ${n} devices</button>`
-              : html`<button class="cv-act danger" @click=${() => { this.confirmDelete = false; void this.deleteCurrent(); }}>Really delete</button>`}
-            <button class="cv-act" @click=${() => { this.confirmDelete = false; }}>Cancel</button>
-          </span>`
-        : html`<button class="cv-act danger icon" title="Delete this complication. It asks once more first." aria-label="Delete this complication"
-            @click=${() => { this.confirmDelete = true; }}>${uiIcon("delete")}</button>`}
+      <button class="cv-act danger icon" aria-haspopup="dialog" aria-expanded=${this.confirmDelete ? "true" : "false"}
+        title="Delete this complication. It asks first." aria-label="Delete this complication"
+        @click=${() => { this.confirmDelete = true; }}>${uiIcon("delete")}</button>
       <span class="cv-div" aria-hidden="true"></span>`;
+  }
+
+  /**
+   * The Delete dialog: what is about to go, where it is, and what that means,
+   * then the choice. A design on several devices offers this device alone or
+   * all of them. A draft that was never saved has nothing on the server, so
+   * deleting it just closes it, and the dialog says so.
+   *
+   * The server keeps a tombstone with the document in its history, but the
+   * panel has no list of deleted complications to bring one back from, so
+   * the dialog says it cannot be undone: that is what is true for the person
+   * reading it.
+   */
+  private renderDeleteDialog() {
+    const cfg = this.draft?.config;
+    if (!cfg) return nothing;
+    const name = cfg.name.trim() || "this complication";
+    const unsaved = this.draft?.baseRevision === null;
+    const here = this.ownerId ?? "";
+    const hereName = this.ownerName(here);
+    const shelved = isLibraryOwner(this.selectedOwner);
+    const others = this.linkedSiblings(cfg.linkId, here, this.selectedId ?? "").map((e) => this.ownerName(e.ownerId));
+    const n = 1 + others.length;
+    const close = () => { this.confirmDelete = false; };
+    const go = (everywhere: boolean) => { close(); void this.deleteCurrent(everywhere); };
+    const where = unsaved
+      ? html`<b>${name}</b> has never been saved. Deleting it closes it, and nothing is left on the server.`
+      : shelved && n === 1
+        ? html`<b>${name}</b> is ${UNASSIGNED_LABEL.toLowerCase()}: on no device. Deleting it removes the design itself.`
+        : n === 1
+          ? html`<b>${name}</b> is on <b>${hereName}</b>. A face or widget using it loses it.`
+          : html`<b>${name}</b> is on ${n} devices: <b>${[hereName, ...others].join(", ")}</b>. A face or widget using it loses it.`;
+    return html`<dialog class="xf del-dialog" @close=${close}>
+      ${this.dialogHead(`Delete ${name}?`, "", close)}
+      <div class="xfer-body">
+        <div class="xf-lead warn">${uiIcon("info")}<span>${where}</span></div>
+        ${unsaved ? nothing : html`<div class="xf-lead">${uiIcon("info")}<span>This cannot be undone. To keep a copy first, close this and use Share.</span></div>`}
+        <div class="del-acts">
+          <button class="ghost" @click=${close}>Cancel</button>
+          ${!unsaved && n > 1
+            ? html`<button class="danger" @click=${() => go(false)}>Delete on ${hereName} only</button>
+              <button class="danger" @click=${() => go(true)}>Delete on all ${n} devices</button>`
+            : html`<button class="danger" @click=${() => go(true)}>Delete</button>`}
+        </div>
+      </div>
+    </dialog>`;
   }
 
   /**
