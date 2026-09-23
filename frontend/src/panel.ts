@@ -3224,7 +3224,10 @@ export class WristAssistantPanel extends LitElement {
        resize; in the stacked modes the boxes never scroll, so they never
        arrive and the fades never draw. */
     .column.inspector { --wa-fade: var(--wa-card); --wa-fade-gap: 0px; }
-    .layers { --wa-fade: var(--wa-card); --wa-fade-gap: 2px; }
+    /* The fade gap is the list's own row gap, so the two zero-height fade
+       pieces take up no room at either end. At 2px against a 4px gap they
+       left a 2px strip over the Background tray. */
+    .layers { --wa-fade: var(--wa-card); --wa-fade-gap: 4px; }
     .column.canvas { --wa-fade: var(--wa-bg); --wa-fade-gap: 8px; }
     .column.inspector::before, .column.inspector::after,
     .layers::before, .layers::after,
