@@ -9,7 +9,8 @@ import { describe, expect, it } from "vitest";
 import type { NormalizedFrame, TapAction } from "../src/model.js";
 import { newConfig } from "../src/model.js";
 import type { ResolvedElement, ResolvedLayout, ResolvedTap } from "../src/resolver.js";
-import { actionAt, hitAt, runTapAction, tapAt, tapRefetches, type DemoHooks } from "../src/demo.js";
+import { actionAt, groundTapReach, hitAt, runTapAction, tapAt, tapRefetches, type DemoHooks } from "../src/demo.js";
+import { CANVAS, tapZones } from "../src/renderer.js";
 import type { HassLike } from "../src/ha-api.js";
 
 function frame(x: number, y: number, width: number, height: number): NormalizedFrame {
@@ -114,6 +115,44 @@ describe("the tap under a press", () => {
     });
     // Nothing to ring: the watch flashes the whole complication instead.
     expect(actionAt(cfg, l, { x: 0.9, y: 0.9 })).toEqual({ action: { type: "openApp" } });
+  });
+});
+
+describe("where the complication's own tap still runs", () => {
+  const refresh: TapAction = { type: "refresh" };
+
+  it("is the whole face with no layer taps, and none of it under a full-face tap", () => {
+    expect(groundTapReach(layout([]))).toBe(1);
+    expect(groundTapReach(layout([tap("all", frame(0, 0, 1, 1), refresh)]))).toBe(0);
+  });
+
+  it("is what a partial tap leaves, and a hidden tap takes nothing", () => {
+    expect(groundTapReach(layout([tap("left", frame(0, 0, 0.5, 1), refresh)]))).toBeCloseTo(0.5, 2);
+    expect(groundTapReach(layout([tap("all", frame(0, 0, 1, 1), refresh, true)]))).toBe(1);
+  });
+
+  it("draws its holes exactly where a press finds a layer tap", () => {
+    const rowTap = (id: string) => tap(id, frame(0.2, 0, 1, 1), refresh);
+    const list: ResolvedElement = {
+      kind: "list", id: "list", isHidden: false, opacity: 1,
+      frame: frame(0, 0.5, 1, 0.5),
+      cells: [
+        { frame: frame(0, 0, 1, 0.5), elements: [rowTap("one")] },
+        { frame: frame(0, 0.5, 1, 0.5), elements: [rowTap("two")] },
+      ],
+    };
+    const l = layout([tap("corner", frame(0.6, 0, 0.5, 0.3), refresh), list]);
+    const design = CANVAS.rectangular;
+    const zones = tapZones(l.elements, design);
+    for (let i = 0; i < 40; i += 1) {
+      for (let j = 0; j < 40; j += 1) {
+        const p = { x: (i + 0.5) / 40, y: (j + 0.5) / 40 };
+        const px = p.x * design.width;
+        const py = p.y * design.height;
+        const inZone = zones.some((z) => px >= z.x && px <= z.x + z.w && py >= z.y && py <= z.y + z.h);
+        expect(inZone).toBe(hitAt(l, p) !== undefined);
+      }
+    }
   });
 });
 

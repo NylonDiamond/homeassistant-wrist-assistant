@@ -61,6 +61,22 @@ export function hitAt(layout: ResolvedLayout, p: FacePoint): DemoHit | undefined
   return tapIn(layout.elements, p);
 }
 
+/**
+ * How much of the face a press still reaches the complication's own tap at,
+ * 0 to 1: the share of a fine grid of points no layer's tap catches, by the
+ * same hit test as a press. 0 means the layers' taps cover the whole face and
+ * the complication's tap never runs.
+ */
+export function groundTapReach(layout: ResolvedLayout, steps = 60): number {
+  let open = 0;
+  for (let i = 0; i < steps; i += 1) {
+    for (let j = 0; j < steps; j += 1) {
+      if (!hitAt(layout, { x: (i + 0.5) / steps, y: (j + 0.5) / steps })) open += 1;
+    }
+  }
+  return open / (steps * steps);
+}
+
 function tapIn(elements: readonly ResolvedElement[], p: FacePoint): DemoHit | undefined {
   for (let i = elements.length - 1; i >= 0; i--) {
     const el = elements[i];

@@ -281,6 +281,15 @@ export interface RenderOptions {
    * hit box use, turned the way the layer is, so they match what is drawn.
    */
   spotlightIds?: readonly string[];
+  /**
+   * Review mode for the whole complication's own tap: the parts of the face
+   * where a tap runs it (everything outside every layer's tap zone) are washed
+   * pink, and the tap zones are left as holes. Only read with `tapReview`.
+   */
+  groundTap?: boolean;
+  /** Ring the whole face in the selection color: the Background row is
+   * selected (or under the pointer), and the background is the whole face. */
+  highlightSlot?: boolean;
   /** Draw resize handles on the highlighted element (active family only). */
   handles?: boolean;
   /** Editor affordance: outline tap layers, which the watch never draws. */
@@ -2362,20 +2371,26 @@ function renderTap(
   const glyph = Math.min(10, box.w * 0.5, box.h * 0.5);
   const text = label !== undefined ? tapLabelText(label, box) : undefined;
   return svg`
-    <rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} rx="2" fill="#FFD60A" fill-opacity="0.08"
-      stroke="#FFD60A" stroke-opacity="0.8" stroke-width="0.6" stroke-dasharray="1.5 1" vector-effect="non-scaling-stroke" />
+    <rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} rx="2" fill="#FF5C9A" fill-opacity="0.12"
+      stroke="#FF5C9A" stroke-opacity="0.9" stroke-width="0.6" stroke-dasharray="1.5 1" vector-effect="non-scaling-stroke" />
     ${text !== undefined
       ? svg`<text x=${box.cx} y=${box.cy} text-anchor="middle" dominant-baseline="central"
           font-family="-apple-system, 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif"
-          font-size=${TAP_LABEL_SIZE} font-weight="600" fill="#FFD60A" fill-opacity="0.95">${text}</text>`
+          font-size=${TAP_LABEL_SIZE} font-weight="600" fill="#FF5C9A" fill-opacity="0.95">${text}</text>`
       : glyph >= 5
-        ? svg`<g transform="translate(${box.cx - glyph / 2} ${box.cy - glyph / 2})" opacity="0.8">${icons.render("hand.tap.fill", glyph, "#FFD60A") ?? nothing}</g>`
+        ? svg`<g transform="translate(${box.cx - glyph / 2} ${box.cy - glyph / 2})" opacity="0.8">${icons.render("hand.tap.fill", glyph, TAP_COLOR) ?? nothing}</g>`
         : nothing}`;
 }
 
 /** Design-box points. Small enough that a 24 pt target still fits a word or
  * two, large enough to read at the preview's own scale. */
 const TAP_LABEL_SIZE = 5;
+
+/** Tap boxes and the complication's own tap area wear the Layers list's tap
+ * pink, so a tap strip in the list and its box on the face read as one thing.
+ * A shade lighter than the list's #EC407A, to hold up on the dimmed face.
+ * `renderTap` spells it out in its template, where tests read the markup. */
+const TAP_COLOR = "#FF5C9A";
 
 /**
  * The action label trimmed to the tap's box, or `undefined` when the box is too
@@ -2847,7 +2862,14 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
             ${gridLines(design, options.grid)}
             ${guideOverlay(design, options.guides)}
           </g>
+          ${options.tapReview === true && options.groundTap === true
+            ? groundTapWash(elements, design, `${uid}-ground`, tile, tile, `scale(${fit.scale * tileScale})`)
+            : nothing}
         </g>
+        ${options.highlightSlot === true
+          ? svg`<circle cx=${tile / 2} cy=${tile / 2} r=${Math.max(0, tile / 2 - 1)} fill="none" stroke="#0A84FF" stroke-width="2"
+              vector-effect="non-scaling-stroke" pointer-events="none" />`
+          : nothing}
         <circle cx=${tile / 2} cy=${tile / 2} r=${tile / 2} fill="none"
           stroke="rgba(255,255,255,0.22)" stroke-width=${0.75 * s} stroke-dasharray=${`${2 * s} ${2 * s}`} />
         ${tinted(chrome, chromeGroup, tint)}
@@ -2897,7 +2919,14 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
             ${gridLines(design, options.grid)}
             ${guideOverlay(design, options.guides)}
       </g>
+      ${options.tapReview === true && options.groundTap === true
+        ? groundTapWash(elements, design, `${uid}-ground`, canvas.width, canvas.height, `translate(${fit.x} ${fit.y}) scale(${fit.scale})`)
+        : nothing}
     </g>
+    ${options.highlightSlot === true
+      ? svg`<rect x="1" y="1" width=${Math.max(0, canvas.width - 2)} height=${Math.max(0, canvas.height - 2)} rx=${Math.max(0, rx - 1)}
+          fill="none" stroke="#0A84FF" stroke-width="2" vector-effect="non-scaling-stroke" pointer-events="none" />`
+      : nothing}
     ${tinted(chrome, chromeGroup, tint)}
     <g transform="translate(${fit.x} ${fit.y}) scale(${fit.scale})">${handleLayer(elements, design, options, charts)}</g>
     ${spotlight(elements, design, options.spotlightIds, `${uid}-spot`, canvas.width, canvas.height, `translate(${fit.x} ${fit.y}) scale(${fit.scale})`)}
@@ -2945,6 +2974,72 @@ function spotlight(elements: readonly ResolvedElement[], design: CanvasSize, ids
     </mask></defs>
     <rect width=${width} height=${height} fill="#000000" fill-opacity="0.62" mask=${`url(#${maskId})`} />
     <g transform=${transform}>${boxes.map((b) => shape(b, "ring"))}</g>
+  </g>`;
+}
+
+/** A tap zone in design-box points. Upright: the watch tests a press against
+ * a tap's frame as it is, without its turn (see `demo.ts`, which mirrors it). */
+export interface TapZone { x: number; y: number; w: number; h: number }
+
+function clipZone(a: TapZone, b: TapZone): TapZone | undefined {
+  const x = Math.max(a.x, b.x);
+  const y = Math.max(a.y, b.y);
+  const w = Math.min(a.x + a.w, b.x + b.w) - x;
+  const h = Math.min(a.y + a.h, b.y + b.h) - y;
+  return w > 0 && h > 0 ? { x, y, w, h } : undefined;
+}
+
+/**
+ * Where a press runs a layer's tap rather than the complication's own, in
+ * design-box points, by the same rules as the watch's hit test (`hitAt` in
+ * demo.ts): every tap layer the face draws, attached ones at their pushed-out
+ * size, and every row tap of a list, once per row and only inside its row and
+ * its list. Hidden layers take no presses.
+ */
+export function tapZones(elements: readonly ResolvedElement[], design: CanvasSize): TapZone[] {
+  const out: TapZone[] = [];
+  const rect = (f: { x: number; y: number; width: number; height: number }, into: TapZone): TapZone =>
+    ({ x: into.x + f.x * into.w, y: into.y + f.y * into.h, w: f.width * into.w, h: f.height * into.h });
+  const walk = (els: readonly ResolvedElement[], into: TapZone, clip: TapZone | undefined) => {
+    for (const el of els) {
+      if (el.isHidden) continue;
+      const box = rect(el.frame, into);
+      if (el.kind === "tap") {
+        const zone = clip ? clipZone(box, clip) : box.w > 0 && box.h > 0 ? box : undefined;
+        if (zone) out.push(zone);
+        continue;
+      }
+      if (el.kind !== "list") continue;
+      const listClip = clip ? clipZone(box, clip) : box;
+      if (!listClip) continue;
+      for (const cell of el.cells) {
+        const cellBox = rect(cell.frame, box);
+        const cellClip = clipZone(cellBox, listClip);
+        if (cellClip) walk(cell.elements, cellBox, cellClip);
+      }
+    }
+  };
+  walk(elements, { x: 0, y: 0, w: design.width, h: design.height }, undefined);
+  return out;
+}
+
+/** Pink stripes over where the complication's own tap runs, with a hole for
+ * every tap zone. Stripes rather than a flat wash, so the area reads apart
+ * from the tap boxes, which are pink too. `transform` maps design points into
+ * the SVG. */
+function groundTapWash(elements: readonly ResolvedElement[], design: CanvasSize, maskId: string,
+  width: number, height: number, transform: string) {
+  const zones = tapZones(elements, design);
+  return svg`<g class="ground-tap" pointer-events="none">
+    <defs><mask id=${maskId} maskUnits="userSpaceOnUse" x="0" y="0" width=${width} height=${height}>
+      <rect width=${width} height=${height} fill="#ffffff" />
+      <g transform=${transform}>${zones.map((z) => svg`<rect x=${z.x} y=${z.y} width=${z.w} height=${z.h} fill="#000000" />`)}</g>
+    </mask>
+    <pattern id=${`${maskId}-hatch`} width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="5" height="5" fill=${TAP_COLOR} fill-opacity="0.12" />
+      <line x1="0" y1="0" x2="0" y2="5" stroke=${TAP_COLOR} stroke-opacity="0.5" stroke-width="1.6" />
+    </pattern></defs>
+    <rect width=${width} height=${height} fill=${`url(#${maskId}-hatch)`} mask=${`url(#${maskId})`} />
   </g>`;
 }
 

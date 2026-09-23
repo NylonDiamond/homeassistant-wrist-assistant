@@ -198,7 +198,7 @@ describe("a row tap", () => {
   it("is outlined once per row in review mode, and the cells then take clicks", () => {
     const svg = draw(documentWith(rowText(2, "name"), rowTap(3)), context(), { tapReview: true });
     expect([...svg.matchAll(new RegExp(`data-element-id=${uuid(3)}`, "g"))]).toHaveLength(2);
-    expect([...svg.matchAll(/stroke="#FFD60A"/g)]).toHaveLength(2);
+    expect([...svg.matchAll(/stroke="#FF5C9A"/g)]).toHaveLength(2);
     // Review reads the face rather than moving it, so the cells drop the move
     // cursor: a tap box here is clicked to see what it does.
     expect(svg).not.toContain("cursor:move");
@@ -209,13 +209,13 @@ describe("a row tap", () => {
     // A row tap is repeated per cell, and the Row card already names it.
     const svg = draw(documentWith(rowText(2, "name"), rowTap(3)), context(), { tapAreas: true });
     expect(svg).not.toContain(`data-element-id=${uuid(3)}`);
-    expect(svg).not.toContain("#FFD60A");
+    expect(svg).not.toContain("#FF5C9A");
   });
 
   it("draws nothing at all without them, exactly as the watch does", () => {
     const svg = draw(documentWith(rowText(2, "name"), rowTap(3)), context());
     expect(svg).not.toContain(`data-element-id=${uuid(3)}`);
-    expect(svg).not.toContain("#FFD60A");
+    expect(svg).not.toContain("#FF5C9A");
   });
 
   it("marks every cell with the move cursor outside review mode", () => {

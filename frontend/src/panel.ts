@@ -145,7 +145,7 @@ import {
   resolveControl,
 } from "./resolver.js";
 import { CANVAS, CASES, FACE_TINTS, PHONE_CASES, REFERENCE_CASE, REFERENCE_PHONE, caseForScreenSize, cornerContext, cornerTileSide, familyTitle, fitBox, handleResize, iconDrawnSide, phoneCaseForScreenSize, renderLayerThumb, renderLayout, slotFor, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type PreviewCase } from "./renderer.js";
-import { actionAt, demoTapLabel, runTapAction, tapRefetches, type DemoOutcome } from "./demo.js";
+import { actionAt, demoTapLabel, groundTapReach, runTapAction, tapRefetches, type DemoOutcome } from "./demo.js";
 import { ALL_FAMILIES, biggestFirst, blankInline, canRemoveControl, comingSoonFamilies, controlNoteLines, familiesFor, familyAllowsKind, familyNote, firstDrawable, importableFamilies, isDrawable, isHomeFamily, keepFamilies, opensInControlView, supportedFamilies } from "./layouts.js";
 import {
   type DeviceOwner,
@@ -16044,6 +16044,11 @@ export class WristAssistantPanel extends LitElement {
       // painted in the tint at the brightness it was drawn in.
       ...previewTintFor(family, this.previewAsPhone, this.previewTint),
       ...(focus !== undefined ? { tapFocusId: focus } : {}),
+      // No one tap in focus: the view is about the complication's own tap, so
+      // wash where it runs.
+      ...(review && focus === undefined ? { groundTap: true } : {}),
+      // The Background row is the whole face: ring the face itself.
+      ...(!review && shown.kind === "family" ? { highlightSlot: true } : {}),
       handles: this.canEdit && !hoverTap && (!review || focus !== undefined),
       // The Layers list owns the tint: resting on a row shows where that
       // layer sits on the face.
@@ -16168,6 +16173,15 @@ export class WristAssistantPanel extends LitElement {
     if (designing) {
       tail = html`one cell of <b>${layerTitle(designing, ctx)}</b>, scaled up. Drag and size the row's layers here.
         <button class="link" @click=${() => this.setRowEdit(undefined)}>Done designing</button>`;
+    } else if (this.showTaps && this.focusTapId() === undefined && isDrawable(family)) {
+      // The whole complication's tap: pink is where it runs. When the layers'
+      // tap zones leave no room at all, say so, since the pink is then gone
+      // and nothing else on the face would tell you the tap is dead.
+      const face = resolveAll(cfg, this.buildContext(), this.forced)[family];
+      const reach = face ? groundTapReach(face) : 1;
+      tail = reach === 0
+        ? html`Layer taps cover the whole face, so <b>${describeTapAction(cfg.tapAction)}</b> never runs.`
+        : html`The pink stripes are where a tap does <b>${describeTapAction(cfg.tapAction)}</b>. The outlined boxes are layer taps; where two overlap, the one higher in Layers wins.`;
     } else if (this.showTaps) {
       tail = html`Every tap zone is outlined. Where two overlap, the one higher in Layers wins. Anywhere else does <b>${describeTapAction(cfg.tapAction)}</b>.`;
     } else if (family === "inline") {
