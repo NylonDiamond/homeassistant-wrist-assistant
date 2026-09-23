@@ -8314,6 +8314,12 @@ export class WristAssistantPanel extends LitElement {
       hass: this.hass,
       refresh: () => { void this.refreshTemplates(); },
       stepPage: (by) => this.demoStepPage(by),
+      showPage: (page) => {
+        const count = this.pageCount();
+        if (count <= 1) return false;
+        this.showPage(Math.min(Math.max(page, 1), count), true);
+        return true;
+      },
       playTour: () => {
         if (!usesPages(cfg) || pagesSpecOf(cfg).mode !== "tour") return false;
         this.playTour();

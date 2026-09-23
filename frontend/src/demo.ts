@@ -145,6 +145,9 @@ export interface DemoHooks {
   refresh: () => void;
   /** One page on or back, wrapping. False when the document has one page. */
   stepPage: (by: 1 | -1) => boolean;
+  /** Straight to one page, pulled into range the way the watch does. False
+   * when the document has one page. */
+  showPage: (page: number) => boolean;
   /** Play every page once. False when the document has no tour to play. */
   playTour: () => boolean;
 }
@@ -189,6 +192,10 @@ export async function runTapAction(action: TapAction, hooks: DemoHooks): Promise
       return hooks.stepPage(-1)
         ? { kind: "did", text: "Previous page." }
         : { kind: "none", text: "No previous page: this complication has one page." };
+    case "showPage":
+      return hooks.showPage(action.page)
+        ? { kind: "did", text: `Page ${action.page}.` }
+        : { kind: "none", text: "No page to show: this complication has one page." };
     case "playTour":
       return hooks.playTour()
         ? { kind: "did", text: "Playing the page tour." }
@@ -199,6 +206,8 @@ export async function runTapAction(action: TapAction, hooks: DemoHooks): Promise
       return { kind: "would", text: "The watch would open its page." };
     case "openRoomPage":
       return { kind: "would", text: "The watch would open the room page." };
+    case "openEntity":
+      return { kind: "would", text: `The watch would open the controls for ${action.displayName || action.entityId}.` };
     case "timerStartPause":
       return { kind: "would", text: "The watch would start or pause its timer. The timer lives on the watch." };
     case "timerCancel":
@@ -262,8 +271,10 @@ export function tapRefetches(action: TapAction): boolean {
     case "none":
     case "nextPage":
     case "previousPage":
+    case "showPage":
     case "playTour":
     case "openApp":
+    case "openEntity":
     case "openPage":
     case "openRoomPage":
     case "timerStartPause":

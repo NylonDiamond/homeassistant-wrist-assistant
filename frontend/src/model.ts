@@ -3137,6 +3137,18 @@ export interface RefreshAction {
   layerIds?: string[];
 }
 
+/**
+ * The tap that puts this complication on one chosen page.
+ *
+ * `page` counts from 1, like the Pages card. The watch pulls it into range at
+ * tap time, so a document that later loses pages lands on its last one rather
+ * than on nothing. Like the other page taps it ends a tour that is playing.
+ */
+export interface ShowPageAction {
+  type: "showPage";
+  page: number;
+}
+
 export type TapAction =
   // `nextPage` moves this complication on one page, `previousPage` back one,
   // and `playTour` plays every page once and comes back to page 1. None of
@@ -3145,7 +3157,9 @@ export type TapAction =
   | { type: "none" | "openApp" | "openPage" | "openRoomPage" | "timerStartPause" | "timerCancel" | "nextPage" | "previousPage" | "playTour" }
   | RefreshAction
   | RefreshAllAction
-  | ({ type: "toggleEntity" | "runScene" | "runScript" | "addTodo" | "runHTTPAction" } & EntityRef)
+  | ShowPageAction
+  // `openEntity` opens the watch app on the controls of the entity's tile.
+  | ({ type: "toggleEntity" | "runScene" | "runScript" | "addTodo" | "runHTTPAction" | "openEntity" } & EntityRef)
   | CallServiceAction;
 
 /** The actions that cannot be finished without an entity, so the editor shows a
@@ -3153,7 +3167,7 @@ export type TapAction =
  * target is optional, because a service can address an area, a device or
  * nothing at all. Shared by the document's tap picker and every layer's. */
 const ENTITY_TAP_TYPES: readonly string[] =
-  ["toggleEntity", "runScene", "runScript", "addTodo", "runHTTPAction"];
+  ["toggleEntity", "runScene", "runScript", "addTodo", "runHTTPAction", "openEntity"];
 
 export function tapNeedsEntity(t: TapAction["type"]): boolean {
   return ENTITY_TAP_TYPES.includes(t);
@@ -3184,10 +3198,12 @@ export function serviceDataIsValid(json: string | undefined): boolean {
 export const TAP_ACTION_LABELS: [TapAction["type"], string][] = [
   ["refresh", "Refresh this complication"],
   ["refreshAll", "Refresh multiple complications"],
-  ["nextPage", "Show next page"], ["previousPage", "Show previous page"], ["playTour", "Play all pages"],
+  ["nextPage", "Show next page"], ["previousPage", "Show previous page"], ["showPage", "Show one page"],
+  ["playTour", "Play all pages"],
   ["toggleEntity", "Toggle an entity"], ["runScene", "Run a scene"], ["runScript", "Run a script"],
   ["callService", "Call a service"], ["runHTTPAction", "Run an HTTP action"], ["addTodo", "Add a to-do"],
-  ["openApp", "Open the app"], ["openPage", "Open a watch app page"], ["openRoomPage", "Open the room I'm in"],
+  ["openApp", "Open the app"], ["openPage", "Open a watch app page"], ["openEntity", "Open an entity"],
+  ["openRoomPage", "Open the room I'm in"],
   ["timerStartPause", "Start or pause a timer"],
   // Offered nowhere, kept so a document that stores one still has a name for
   // it. "Cancel" ran the very same intent as start / pause (three quick taps
@@ -3201,9 +3217,9 @@ export const TAP_ACTION_LABELS: [TapAction["type"], string][] = [
  * no heading. */
 export const TAP_ACTION_GROUPS: [string, TapAction["type"][]][] = [
   ["Refresh", ["refresh", "refreshAll"]],
-  ["Pages", ["nextPage", "previousPage", "playTour"]],
+  ["Pages", ["nextPage", "previousPage", "showPage", "playTour"]],
   ["Home Assistant", ["toggleEntity", "runScene", "runScript", "callService", "runHTTPAction", "addTodo"]],
-  ["Open the app", ["openApp", "openPage", "openRoomPage"]],
+  ["Open the app", ["openApp", "openPage", "openEntity", "openRoomPage"]],
   ["Timer", ["timerStartPause", "timerCancel"]],
 ];
 
@@ -3211,7 +3227,7 @@ export const TAP_ACTION_GROUPS: [string, TapAction["type"][]][] = [
  * into the watch app, and on iOS every such link just opens the iPhone app
  * (`complicationTapLinkURL` in the app). An HTTP action that asks for input
  * does the same, but one that asks for nothing fires, so it is not listed. */
-const WATCH_ONLY_TAP_TYPES: readonly TapAction["type"][] = ["openPage", "openRoomPage", "addTodo"];
+const WATCH_ONLY_TAP_TYPES: readonly TapAction["type"][] = ["openPage", "openEntity", "openRoomPage", "addTodo"];
 
 /** One line per tap action saying what a tap does, for the rows of the tap
  * menu. `onPhone` adds the iPhone caveat to the actions that need the watch. */
@@ -3221,6 +3237,7 @@ export function tapActionInfo(type: TapAction["type"], onPhone = false): string 
     refreshAll: "Fetches new data for this complication and the others you pick. The other tiles redraw only when watchOS allows it.",
     nextPage: "Shows the next page of this complication. Needs two or more pages.",
     previousPage: "Shows the page before this one. Needs two or more pages.",
+    showPage: "Shows the page you pick, such as page 1. Needs two or more pages.",
     playTour: "Shows every page once, then goes back to page 1. Needs two or more pages.",
     toggleEntity: "Turns an entity on or off, such as a light or a switch.",
     runScene: "Turns on a Home Assistant scene.",
@@ -3230,6 +3247,7 @@ export function tapActionInfo(type: TapAction["type"], onPhone = false): string 
     addTodo: "Opens the watch app to add an item to a to-do list.",
     openApp: "Opens Wrist Assistant.",
     openPage: "Opens one page of your Wrist Assistant grid. You pick the page.",
+    openEntity: "Opens the watch app on the controls of the entity you pick. The entity needs a tile on a watch app page.",
     openRoomPage: "Opens the app on the page for the room it finds you in.",
     timerStartPause: "Starts or pauses the first timer this complication shows. Three quick taps cancel it.",
     timerCancel: "Works the same as Start or pause a timer: three quick taps cancel it.",
@@ -3269,6 +3287,7 @@ export function describeTapAction(action: TapAction): string {
     const picks = count > 0 ? `${label}: ${count} picked` : `${label}: none picked`;
     return narrowed > 0 ? `${picks}, ${narrowed} narrowed` : picks;
   }
+  if (action.type === "showPage") return `${label}: ${action.page}`;
   if (action.type === "refresh" && action.layerIds !== undefined) {
     // Same reason: how much of the complication the tap fetches is the point.
     // An absent list is every layer, which the plain label already says.
@@ -3394,13 +3413,16 @@ export function refreshLayersWith(action: RefreshAction, id: string, on: boolean
  * one that does not names the card the setting lives on rather than a
  * direction, since the same note is drawn in the layer inspector too. */
 export function tapActionNote(action: TapAction, pages = false): string | undefined {
-  if (action.type === "nextPage" || action.type === "previousPage" || action.type === "playTour") {
+  if (movesPage(action.type)) {
     if (!pages) {
       return "This complication has one page, so this does nothing yet."
         + " Add a page in the Pages card, on the left.";
     }
     if (action.type === "nextPage") return "Each tap shows the next page. The page stays where it was left.";
     if (action.type === "previousPage") return "Each tap shows the page before. The page stays where it was left.";
+    if (action.type === "showPage") {
+      return `Each tap shows page ${action.page}. A complication with fewer pages shows its last page.`;
+    }
     return "Plays every page once from one tap, then returns to page 1.";
   }
   // Both timer types run one intent on the watch, aimed at the first timer
@@ -3413,6 +3435,10 @@ export function tapActionNote(action: TapAction, pages = false): string | undefi
   if (action.type === "timerCancel") {
     return "This works the same as Start or pause a timer: one tap starts or pauses,"
       + " three quick taps cancel. Pick Start or pause a timer to say so.";
+  }
+  if (action.type === "openEntity") {
+    return "The watch opens the page that has this entity's tile, then opens its controls."
+      + " With no tile for it, the watch says Not on a page.";
   }
   if (action.type === "none") {
     return "The watch cannot do nothing on a tap: a complication with no action"
@@ -3857,7 +3883,7 @@ export function elementsOnPage(
 /**
  * Whether anything in this document can move the page.
  *
- * Only a `nextPage`, a `previousPage` or a `playTour` action moves one,
+ * Only a `nextPage`, `previousPage`, `showPage` or `playTour` action moves one,
  * wherever it sits: the whole-complication tap, or one tap layer. A document
  * with pages and no mover is a face that shows page 1 for ever, which is worth
  * a warning in the editor rather than a puzzle on the wrist.
@@ -3866,10 +3892,14 @@ export function elementsOnPage(
  * list row belongs to the row it was drawn for.
  */
 export function pageMoverExists(cfg: CustomComplicationConfig): boolean {
-  const moves = (type: TapAction["type"]) =>
-    type === "nextPage" || type === "previousPage" || type === "playTour";
-  if (moves(cfg.tapAction.type)) return true;
-  return cfg.elements.some((el) => el.kind === "tap" && moves(el.payload.action.type));
+  if (movesPage(cfg.tapAction.type)) return true;
+  return cfg.elements.some((el) => el.kind === "tap" && movesPage(el.payload.action.type));
+}
+
+/** The tap types that move this complication's page: the three that step or
+ * play, and the one that picks a page outright. */
+export function movesPage(type: TapAction["type"]): boolean {
+  return type === "nextPage" || type === "previousPage" || type === "showPage" || type === "playTour";
 }
 
 /**
@@ -5162,7 +5192,14 @@ function parseTapAction(raw: unknown): TapAction {
       if (layers !== undefined) out.targetLayers = layers;
       return out;
     }
+    case "showPage": {
+      // Counted from 1. Anything that is not a whole number of at least 1 reads
+      // as page 1, the same as the watch reads it.
+      const page = typeof raw.page === "number" && Number.isInteger(raw.page) && raw.page >= 1 ? raw.page : 1;
+      return { type: "showPage", page };
+    }
     case "toggleEntity": case "runScene": case "runScript": case "addTodo": case "runHTTPAction":
+    case "openEntity":
       return { type: raw.type, ...parseEntityRef(raw) };
     case "callService": {
       // Every field is optional, so a document saved while the form was half
@@ -6722,6 +6759,7 @@ function encodeTapAction(t: TapAction): J {
     if (t.layerIds !== undefined) o.layerIds = [...t.layerIds];
     return o;
   }
+  if (t.type === "showPage") return { type: t.type, page: t.page };
   if ("entityId" in t) return { type: t.type, ...encodeEntityRef(t) };
   return { type: t.type };
 }
@@ -7096,9 +7134,9 @@ const K = {
   // optional target, the same keys every entity action uses. Three belong to
   // `refreshAll` alone: what else that tap refreshes, and how much of each.
   // `layerIds` belongs to `refresh` alone: how much of the tapped complication
-  // it fetches.
+  // it fetches. `page` belongs to `showPage` alone.
   tapAction: ["type", "entityId", "displayName", "domain", "iconName",
-    "serviceDomain", "serviceName", "serviceDataJSON", "targets", "allPlaced", "layerIds", "targetLayers"],
+    "serviceDomain", "serviceName", "serviceDataJSON", "targets", "allPlaced", "layerIds", "targetLayers", "page"],
   // No `dataSource` list: `auditUnknownKeys` deliberately does not look at
   // `dataSources` at all. See the note at the end of that function.
 };

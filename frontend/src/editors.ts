@@ -54,6 +54,7 @@ import {
   type StyleChangeKind,
   type StyleProperty,
   type RefreshAllAction,
+  type ShowPageAction,
   type TapAction,
   type RefreshAction,
   type TapElement,
@@ -3754,6 +3755,10 @@ export function tapActionForType(type: TapAction["type"], current: TapAction): T
     if (current.targetLayers !== undefined) out.targetLayers = { ...current.targetLayers };
     return out;
   }
+  if (type === "showPage") {
+    // The picked page is the author's work, so switching away and back keeps it.
+    return { type: "showPage", page: current.type === "showPage" ? current.page : 1 };
+  }
   if (tapNeedsEntity(type)) return { type: type as "toggleEntity", ...ref };
   // Everything left carries nothing at all.
   return { type: type as "openApp" };
@@ -3815,6 +3820,21 @@ function tapActionMenu(
         </div>`)}
     </div>
   </div>`;
+}
+
+/**
+ * The page a "Show one page" tap lands on, one row per page the document has.
+ *
+ * Nothing on a document without pages: the note under the tap already says to
+ * add one. A stored page past the last one stays in the list, so opening the
+ * editor never changes it; the watch shows the last page for it meanwhile.
+ */
+function showPageField(host: EditorHost, action: ShowPageAction, set: (next: ShowPageAction) => void): TemplateResult | typeof nothing {
+  if (!usesPages(host.config)) return nothing;
+  const count = pagesSpecOf(host.config).count;
+  const options: [string, string][] = Array.from({ length: count }, (_, i) => [String(i + 1), `Page ${i + 1}`]);
+  if (action.page > count) options.push([String(action.page), `Page ${action.page} (not there yet)`]);
+  return selectField("Page", String(action.page), options, (v) => set({ type: "showPage", page: Number(v) || 1 }));
 }
 
 /** The line under a tap picker for an action that needs one, or nothing. Every
@@ -4283,6 +4303,7 @@ export function generalEditor(host: EditorHost, opts: { nameOnly?: boolean } = {
     ${tap.type === "callService"
       ? callServiceFields(host, tap, (next, k) => host.update((c) => { c.tapAction = next; }, k), "general-tap")
       : nothing}
+    ${tap.type === "showPage" ? showPageField(host, tap, (next) => host.update((c) => { c.tapAction = next; }, "tap-page")) : nothing}
     ${tap.type === "openPage" ? openPageField(host) : nothing}`;
 }
 
@@ -8032,6 +8053,7 @@ export function tapActionEditor(
     ${action.type === "callService"
       ? callServiceFields(host, action, (next, k) => upd((p) => { p.action = next; }, k), `${key}-tap`)
       : nothing}
+    ${action.type === "showPage" ? showPageField(host, action, (next) => upd((p) => { p.action = next; }, "tap-page")) : nothing}
     ${action.type === "openPage" ? pageChoiceField(host, tap.openPageId, tap.openPageName, (pid, name) => upd((p) => {
       if (pid === undefined) { delete p.openPageId; delete p.openPageName; return; }
       p.openPageId = pid;

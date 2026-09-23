@@ -736,8 +736,10 @@ describe("refresh complications", () => {
     // "none" is explained too, and only a document saved before 2026-09-16 can
     // still hold it: the watch opens the app on any tap, so the picker stopped
     // offering it and the note tells a document that kept it what to pick.
-    // The timer pair say which timer they reach, which nothing else shows.
-    const explained = ["refresh", "refreshAll", "nextPage", "previousPage", "playTour", "none", "timerStartPause", "timerCancel"];
+    // The timer pair say which timer they reach, which nothing else shows, and
+    // Open an entity says the entity needs a tile on a watch page.
+    const explained = ["refresh", "refreshAll", "nextPage", "previousPage", "showPage", "playTour", "none",
+      "timerStartPause", "timerCancel", "openEntity"];
     for (const [type] of TAP_ACTION_LABELS) {
       if (explained.includes(type)) continue;
       expect(tapActionNote({ type } as TapAction), type).toBeUndefined();

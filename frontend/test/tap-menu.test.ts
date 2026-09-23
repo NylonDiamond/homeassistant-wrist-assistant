@@ -19,7 +19,7 @@ describe("the tap action menu", () => {
   });
 
   it("warns on iPhone only for the actions that need the watch", () => {
-    for (const type of ["openPage", "openRoomPage", "addTodo"] as const) {
+    for (const type of ["openPage", "openEntity", "openRoomPage", "addTodo"] as const) {
       expect(tapActionInfo(type, true)).toContain("On iPhone this only opens the app.");
       expect(tapActionInfo(type)).not.toContain("iPhone");
     }

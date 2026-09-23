@@ -46,6 +46,7 @@ function hooks(hass: HassLike, over: Partial<DemoHooks> = {}): DemoHooks {
     hass,
     refresh: () => undefined,
     stepPage: () => true,
+    showPage: () => true,
     playTour: () => true,
     ...over,
   };
@@ -207,6 +208,18 @@ describe("running a tap", () => {
     expect(moved).toEqual([1]);
     const stuck = await runTapAction({ type: "previousPage" }, hooks(hass, { stepPage: () => false }));
     expect(stuck.kind).toBe("none");
+  });
+
+  it("shows the picked page, and opens nothing it cannot open", async () => {
+    const { hass, sent } = fakeHass();
+    const shown: number[] = [];
+    const out = await runTapAction({ type: "showPage", page: 2 }, hooks(hass, { showPage: (p) => { shown.push(p); return true; } }));
+    expect(out.kind).toBe("did");
+    expect(shown).toEqual([2]);
+    const entity = await runTapAction({ type: "openEntity", entityId: "light.hall", displayName: "Hall", domain: "light" }, hooks(hass));
+    expect(entity.kind).toBe("would");
+    expect(entity.text).toContain("Hall");
+    expect(sent).toEqual([]);
   });
 
   it("refreshes rather than calling a service", async () => {

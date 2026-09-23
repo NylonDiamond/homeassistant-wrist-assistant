@@ -687,6 +687,54 @@ describe("the Previous page tap", () => {
   });
 });
 
+// One page, picked by number. On the wire as `showPage` with a `page` key,
+// spelled the same in the app, which pulls the number into range at tap time.
+describe("the Show one page tap", () => {
+  it("is offered, named, and read back from the wire with its page", () => {
+    expect(TAP_ACTION_LABELS.find(([t]) => t === "showPage")?.[1]).toBe("Show one page");
+    const cfg = pagedConfig({ count: 3, mode: "tap", dwell: [] });
+    cfg.tapAction = { type: "showPage", page: 2 };
+    const encoded = encodeConfig(cfg);
+    expect((encoded as { tapAction: unknown }).tapAction).toEqual({ type: "showPage", page: 2 });
+    expect(parseConfig(encoded).tapAction).toEqual({ type: "showPage", page: 2 });
+    expect(auditUnknownKeys(encoded)).toEqual([]);
+  });
+
+  it("reads a missing or bad page as page 1, as the watch does", () => {
+    const cfg = pagedConfig({ count: 3, mode: "tap", dwell: [] });
+    for (const page of [undefined, 0, -2, 1.5, "2"]) {
+      const encoded = encodeConfig(cfg) as Record<string, unknown>;
+      encoded.tapAction = page === undefined ? { type: "showPage" } : { type: "showPage", page };
+      expect(parseConfig(encoded).tapAction, String(page)).toEqual({ type: "showPage", page: 1 });
+    }
+  });
+
+  it("moves the page, names its page, and is not a Control Center action", () => {
+    const cfg = pagedConfig({ count: 2, mode: "tap", dwell: [] });
+    cfg.tapAction = { type: "showPage", page: 1 };
+    expect(pageMoverExists(cfg)).toBe(true);
+    expect(pageModeFor(cfg)).toBe("tap");
+    expect(describeTapAction({ type: "showPage", page: 2 })).toBe("Show one page: 2");
+    expect(tapActionNote({ type: "showPage", page: 2 }, true)).toContain("Each tap shows page 2.");
+    expect(tapActionNote({ type: "showPage", page: 2 }, false)).toContain("has one page");
+    expect(controlActionAllowed("showPage")).toBe(false);
+  });
+});
+
+describe("the Open an entity tap", () => {
+  it("carries its entity flat, the way the other entity taps do", () => {
+    const cfg = pagedConfig();
+    cfg.tapAction = { type: "openEntity", entityId: "light.hall", displayName: "Hall", domain: "light" };
+    const encoded = encodeConfig(cfg);
+    expect((encoded as { tapAction: unknown }).tapAction)
+      .toEqual({ type: "openEntity", entityId: "light.hall", displayName: "Hall", domain: "light" });
+    expect(parseConfig(encoded).tapAction).toEqual(cfg.tapAction);
+    expect(auditUnknownKeys(encoded)).toEqual([]);
+    expect(describeTapAction(cfg.tapAction)).toBe("Open an entity: Hall");
+    expect(controlActionAllowed("openEntity")).toBe(false);
+  });
+});
+
 describe("the version gate a paged document meets", () => {
   // The panel has one gate, not two: a document's schema against the
   // integration's handshake ceiling. `schemaVersionFor` puts a paged document
