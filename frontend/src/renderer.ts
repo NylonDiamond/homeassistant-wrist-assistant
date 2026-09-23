@@ -2867,7 +2867,8 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
             : nothing}
         </g>
         ${options.highlightSlot === true
-          ? svg`<circle cx=${tile / 2} cy=${tile / 2} r=${Math.max(0, tile / 2 - 1)} fill="none" stroke="#0A84FF" stroke-width="2"
+          // On the disc's own edge, as on the other shapes.
+          ? svg`<circle cx=${tile / 2} cy=${tile / 2} r=${tile / 2} fill="none" stroke="#0A84FF" stroke-width="2"
               vector-effect="non-scaling-stroke" pointer-events="none" />`
           : nothing}
         <circle cx=${tile / 2} cy=${tile / 2} r=${tile / 2} fill="none"
@@ -2924,8 +2925,12 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
         : nothing}
     </g>
     ${options.highlightSlot === true
-      ? svg`<rect x="1" y="1" width=${Math.max(0, canvas.width - 2)} height=${Math.max(0, canvas.height - 2)} rx=${Math.max(0, rx - 1)}
-          fill="none" stroke="#0A84FF" stroke-width="2" vector-effect="non-scaling-stroke" pointer-events="none" />`
+      // On the slot's own edge. The stroke is centred on it, and the svg cuts
+      // off the outer half, so what shows is a 2px ring just inside the face.
+      // An inset in design points moved with the zoom: at 6px a point it left
+      // a band of face outside the ring that read as not part of it.
+      ? svg`<rect width=${canvas.width} height=${canvas.height} rx=${rx}
+          fill="none" stroke="#0A84FF" stroke-width="4" vector-effect="non-scaling-stroke" pointer-events="none" />`
       : nothing}
     ${tinted(chrome, chromeGroup, tint)}
     <g transform="translate(${fit.x} ${fit.y}) scale(${fit.scale})">${handleLayer(elements, design, options, charts)}</g>
