@@ -339,6 +339,10 @@ import {
   suggestPartName,
 } from "./parts.js";
 import { domainIcon } from "./domain-icons.js";
+import {
+  FIRST_RUN_TILES, ZOOM_FIT, ZOOM_MAX, ZOOM_MIN, anySnap, pickGridStep, runFirstRunTile, slotWord, snapSwitchOn,
+  stageReserve, toggleSnap, zoomIn, zoomLabel, zoomOut, type FirstRunTile, type SnapFlags, type SnapSwitch,
+} from "./canvas-tools.js";
 
 /** The gallery calls go through the browser's own fetch. */
 const galleryFetch: GalleryFetch = (url, init) => window.fetch(url, init);
@@ -1392,7 +1396,7 @@ export class WristAssistantPanel extends LitElement {
    * held the next click on the face for most of a second after a native menu
    * closed, so a drag right after a change lagged (measured 2026-09-12: the
    * press was 650 to 900 ms old on arrival, with no long task on the page). */
-  @state() private openMenu?: "grid" | "case" | "tint" | "list" | "place";
+  @state() private openMenu?: "grid" | "case" | "tint" | "list" | "place" | "doc" | "snap";
   /** Alt is down. It flips snapping for a drag, so the grid lines show while
    * it is held even with Snap to grid off. */
   @state() private altHeld = false;
@@ -1452,6 +1456,12 @@ export class WristAssistantPanel extends LitElement {
    * face. Only the face and its gestures come along; the columns stay under
    * the backdrop. */
   @state() private zoomed = false;
+  /** How big the stage draws the face, as a share of the size that fits it
+   * (see canvas-tools.ts). 1 is Fit, the default. Not saved: every open
+   * starts with the whole face in view. */
+  @state() private canvasZoom = ZOOM_FIT;
+  /** The "···" menu over the canvas has its Add to a device list unfolded. */
+  @state() private docPlaceOpen = false;
   /**
    * Demo mode: the face alone in a dialog, drawn the way the watch draws it and
    * tapped the way the watch is tapped. Nothing of the editor comes along, no
@@ -4237,6 +4247,242 @@ export class WristAssistantPanel extends LitElement {
     .vchip button.live-reset { flex: none; }
     .testing-pill { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; text-transform: none; letter-spacing: 0; color: color-mix(in srgb, var(--wa-states) 70%, var(--wa-ink)); }
     .testing-pill button { font: inherit; font-size: 12px; font-weight: 500; background: var(--wa-states); color: #1a1600; border: 0; border-radius: 999px; padding: 2px 9px; cursor: pointer; }
+    /* Canvas column: quiet header, floating toolbar, zoomable stage, values bar, first run. */
+    .canvas-card {
+      --wa-float-bg: color-mix(in srgb, var(--wa-raised) 94%, transparent);
+      --wa-float-line: var(--wa-line-strong);
+      --wa-float-shadow: 0 6px 18px rgba(0,0,0,.14);
+      --wa-float-sep: var(--wa-line-strong);
+      --wa-hint: var(--wa-muted);
+      --wa-chip-bg: var(--wa-panel);
+      --wa-chip-line: var(--wa-line);
+      --wa-live: #2f9e6a;
+      --wa-testing: #b7791f;
+      /* On the black face, in either skin. */
+      --wa-face-muted: #8b91ad;
+    }
+    :host([dark]) .canvas-card {
+      --wa-float-bg: rgba(21,26,46,.92);
+      --wa-float-line: #262c4a;
+      --wa-float-shadow: 0 8px 24px rgba(0,0,0,.45);
+      --wa-float-sep: #2a3154;
+      --wa-hint: #6b7190;
+      --wa-chip-bg: #151a2e;
+      --wa-chip-line: #232946;
+      --wa-live: #3fbf7f;
+      --wa-testing: #f2c063;
+    }
+    .column.canvas > .card.canvas-card { min-height: 440px; }
+    .cv-head {
+      display: flex; align-items: center; gap: 12px; height: 48px; padding: 0 16px; flex: none; min-width: 0;
+      border-bottom: 1px solid var(--wa-line);
+    }
+    .cv-name {
+      flex: 0 1 auto; min-width: 4em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      font-size: 14px; font-weight: 600; letter-spacing: -.01em; color: var(--wa-ink);
+    }
+    .cv-slash { flex: none; color: var(--wa-line-strong); }
+    .cv-shape {
+      display: inline-flex; align-items: center; gap: 6px; flex: 0 4 auto; min-width: 0;
+      font-size: 12px; color: var(--wa-muted); white-space: nowrap;
+    }
+    .cv-shape .fam { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .cv-shape small { font-size: 11px; }
+    .cv-shape .warn { display: inline-flex; color: var(--wa-val); }
+    .cv-shape .warn svg { width: 14px; height: 14px; }
+    .cv-head .spacer { flex: 1; min-width: 0; }
+    .cv-head .shape-seg { padding: 2px; gap: 2px; border-radius: 9px; flex-wrap: nowrap; }
+    .cv-head .shape-seg button.tab { height: 26px; padding: 0 10px; font-size: 12px; }
+    .cv-head .doc-on { display: inline-flex; align-items: center; gap: 6px; flex: 0 12 auto; min-width: 0; overflow: hidden; }
+    .cv-head .doc-chip {
+      height: 26px; gap: 7px; padding: 0 10px 0 8px; border-radius: 13px; min-width: 0; flex: 0 1 auto;
+      background: var(--wa-chip-bg); border: 1px solid var(--wa-chip-line);
+      font-size: 11.5px; font-weight: 500; color: var(--wa-ink);
+    }
+    .cv-head .doc-chip > svg { width: 13px; height: 13px; flex: none; }
+    .cv-head .doc-chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    /* The x that takes the design off a device shows on hover or focus, and
+       while it is armed. */
+    .cv-head .doc-chip button.doc-trash {
+      width: 0; height: 18px; margin: 0 -7px 0 0; align-self: center; border: 0; border-radius: 9px;
+      background: transparent; color: var(--wa-muted); opacity: 0; overflow: hidden;
+      transition: opacity .12s ease-out;
+    }
+    .cv-head .doc-chip:hover button.doc-trash, .cv-head .doc-chip:focus-within button.doc-trash,
+    .cv-head .doc-chip button.doc-trash.armed { width: 18px; margin: 0 -4px 0 0; opacity: 1; }
+    .cv-head .doc-chip button.doc-trash:hover:not(:disabled) { color: #FF453A; background: color-mix(in srgb, #FF453A 16%, transparent); }
+    .cv-head .doc-chip button.doc-trash.armed { width: auto; padding: 0 7px; background: #FF453A; color: #fff; }
+    button.cv-more {
+      flex: none; height: 26px; min-width: 32px; padding: 0 8px; border: 0; border-radius: 7px; cursor: pointer;
+      font: inherit; font-size: 16px; letter-spacing: 1px; line-height: 1; background: transparent; color: var(--wa-muted);
+    }
+    button.cv-more:hover, button.cv-more[aria-expanded="true"] { background: color-mix(in srgb, var(--wa-ink) 8%, transparent); color: var(--wa-ink); }
+    button.cv-more:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .case-tool.doc-menu .pop-menu { left: auto; right: 0; min-width: 230px; }
+    .doc-pop .row { display: flex; align-items: center; gap: 8px; }
+    .doc-pop .row .why { margin-left: auto; font-size: 11px; font-weight: 500; color: var(--wa-muted); }
+    .doc-pop .row .spacer { flex: 1; }
+    .doc-pop .row svg.ui-icon { width: 13px; height: 13px; opacity: .7; }
+    .doc-pop .row.danger { color: #FF453A; }
+    .doc-pop .doc-places-list, .doc-pop .doc-del { display: flex; flex-direction: column; gap: 1px; }
+    .doc-pop .doc-places-list { padding-left: 10px; }
+    .pop-menu .row:disabled { opacity: .5; cursor: default; }
+    .pop-menu .row:disabled:hover { background: transparent; }
+    .pop-sep { height: 1px; margin: 4px 2px; background: var(--wa-line); }
+    /* The stage: the dotted surface, the zoomable face on it, and the values
+       bar at its foot. The face's Fit size comes from the stage-wrap's own
+       box, through container units, so no script measures anything. */
+    .stage-area {
+      flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
+      background:
+        radial-gradient(ellipse at 50% 35%, color-mix(in srgb, var(--wa-accent) 10%, transparent) 0, transparent 65%),
+        radial-gradient(color-mix(in srgb, var(--wa-ink) 9%, transparent) 1px, transparent 1px) 0 0 / 18px 18px;
+    }
+    .stage-wrap { position: relative; flex: 1 1 auto; min-height: 300px; container-type: size; }
+    .stage-wrap.first-run { min-height: 540px; }
+    .stage-wrap > .stage {
+      position: absolute; inset: 0; display: flex; flex-direction: column; align-items: stretch; gap: 12px;
+      padding: 64px 24px 16px; overflow: auto; background: none; container-type: normal;
+    }
+    .stage-wrap > .stage.control-stage { align-items: center; justify-content: center; padding-top: 24px; }
+    .stage-wrap .row-strip { align-self: center; flex: none; }
+    /* Auto margins centre the face both ways and never push it past the
+       stage's top or left edge, so a face zoomed past the stage scrolls from
+       its own corner. */
+    .stage-face { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+    .stage-face > .preview { width: auto; }
+    .stage-wrap .stage-face > .preview > svg {
+      width: calc(max(120px, min(100cqw - 48px, (100cqh - var(--wa-reserve, 124px)) * var(--wa-ratio, 1))) * var(--wa-zoom, 1));
+      max-width: none;
+    }
+    .stage-face > .under { max-width: 460px; font-size: 11px; font-weight: 400; color: var(--wa-hint); }
+    .stage-page { position: absolute; top: 25px; left: 16px; z-index: 3; font-size: 11px; color: var(--wa-hint); pointer-events: none; }
+    .stage-tools {
+      position: absolute; top: 14px; left: 50%; transform: translateX(-50%); z-index: 5;
+      display: flex; align-items: center; gap: 2px; height: 36px; padding: 0 6px; max-width: calc(100% - 24px);
+      border-radius: 10px; background: var(--wa-float-bg); border: 1px solid var(--wa-float-line); box-shadow: var(--wa-float-shadow);
+    }
+    button.tb {
+      display: inline-flex; align-items: center; gap: 7px; flex: none; height: 26px; padding: 0 8px; border-radius: 7px;
+      border: 1px solid transparent; background: transparent; color: var(--wa-ink); cursor: pointer;
+      font: inherit; font-size: 11.5px; font-weight: 500; white-space: nowrap;
+    }
+    button.tb:hover:not(:disabled) { background: color-mix(in srgb, var(--wa-ink) 8%, transparent); }
+    button.tb:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    button.tb:disabled { opacity: .4; cursor: default; }
+    button.tb.on { background: color-mix(in srgb, var(--wa-accent) 26%, transparent); border-color: color-mix(in srgb, var(--wa-accent) 60%, transparent); }
+    button.tb.lit { color: color-mix(in srgb, var(--wa-accent) 55%, var(--wa-ink)); }
+    button.tb .tb-glyph { width: 13px; height: 13px; flex: none; }
+    button.tb > svg.ui-icon { width: 14px; height: 14px; flex: none; }
+    button.tb .caret { display: inline-flex; margin-left: -3px; color: var(--wa-hint); }
+    button.tb .caret svg { width: 11px; height: 11px; }
+    button.tb .tint-dot { margin-right: 0; }
+    .tb-dot { width: 5px; height: 5px; margin-left: -4px; border-radius: 50%; background: currentColor; flex: none; }
+    button.tb.icon { padding: 0 7px; font-size: 14px; }
+    button.tb.pct { min-width: 42px; padding: 0 4px; justify-content: center; color: var(--wa-muted); font-variant-numeric: tabular-nums; }
+    .tb-sep { width: 1px; height: 18px; margin: 0 6px; background: var(--wa-float-sep); flex: none; }
+    .tb-zoom { display: inline-flex; align-items: center; }
+    .stage-tools .case-tool .pop-menu { left: 0; }
+    @container (max-width: 680px) {
+      .stage-tools .word:not(.keep) { display: none; }
+      .stage-tools button.tb { gap: 4px; padding: 0 6px; }
+      .stage-tools .tb-sep { margin: 0 3px; }
+    }
+    /* A phone-width stage: the toolbar takes two rows rather than losing the
+       zoom off its end, and the face starts under both. */
+    @container (max-width: 460px) {
+      .stage-tools { flex-wrap: wrap; justify-content: center; height: auto; padding: 4px; row-gap: 2px; width: max-content; }
+      .stage-tools .tb-sep { display: none; }
+      .stage-wrap > .stage { padding-top: 92px; }
+      .stage-page { top: auto; bottom: 8px; }
+    }
+    .snap-menu { min-width: 220px; }
+    .pop-menu .row.snap-row { display: flex; align-items: center; gap: 10px; }
+    .snap-row .tog {
+      position: relative; display: inline-block; flex: none; width: 26px; height: 14px; border-radius: 7px; background: var(--wa-line-strong);
+    }
+    .snap-row .tog.on { background: var(--wa-accent); }
+    .snap-row .tog i { position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 5px; background: #fff; transition: left .12s ease-out; }
+    .snap-row .tog.on i { left: 14px; }
+    .snap-steps { display: flex; gap: 2px; margin: 0 6px 4px 46px; padding: 2px; border-radius: 7px; background: var(--wa-panel); }
+    .snap-steps button {
+      flex: 1; padding: 3px 6px; border: 0; border-radius: 5px; background: transparent; color: var(--wa-muted); cursor: pointer;
+      font: inherit; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
+    }
+    .snap-steps button.on { background: var(--wa-seg-on); color: var(--wa-ink); }
+    .snap-steps button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    /* The values bar, the same floating family as the toolbar. */
+    .values-foot { display: flex; justify-content: center; flex: none; min-width: 0; padding: 0 16px 14px; }
+    .values-bar {
+      display: flex; align-items: center; gap: 10px; min-width: 0; max-width: 100%; min-height: 40px; padding: 4px 8px 4px 14px;
+      border-radius: 12px; background: var(--wa-float-bg); border: 1px solid var(--wa-float-line); box-shadow: var(--wa-float-shadow);
+    }
+    .values-bar .tb-sep { margin: 0; }
+    .vb-state {
+      display: inline-flex; align-items: center; gap: 6px; flex: none;
+      font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--wa-muted);
+    }
+    .vb-dot { width: 6px; height: 6px; border-radius: 3px; background: var(--wa-live); box-shadow: 0 0 6px var(--wa-live); }
+    .values-bar.testing .vb-state { color: var(--wa-testing); }
+    .values-bar.testing .vb-dot { background: var(--wa-testing); box-shadow: 0 0 6px var(--wa-testing); }
+    .vb-empty { min-width: 0; font-size: 11.5px; color: var(--wa-muted); }
+    .vb-pills { display: flex; gap: 6px; min-width: 0; padding: 2px 0; overflow-x: auto; scrollbar-width: thin; }
+    .vchip.vpill {
+      display: inline-flex; align-items: center; gap: 8px; flex: none; width: auto; height: 28px; padding: 0 10px; border-radius: 8px;
+      background: var(--wa-chip-bg); border: 1px solid var(--wa-chip-line); font-size: 11.5px; color: var(--wa-ink); cursor: default;
+    }
+    .vpill .vp-icon { display: inline-flex; flex: none; color: var(--k); }
+    .vpill .vp-icon svg { width: 13px; height: 13px; }
+    .vpill b { max-width: 160px; font-weight: 500; }
+    .vchip.vpill .test-ctl { flex: none; gap: 8px; }
+    .vchip.vpill .test-ctl input[type=range] { flex: none; width: 64px; min-width: 64px; height: 14px; }
+    .vpill .test-ctl .val, .vpill .test-ctl input[type=text] { order: -1; }
+    .vchip.vpill button.val {
+      min-width: 0; text-align: left; color: var(--wa-ink); font-family: inherit; font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums;
+    }
+    .vchip.vpill.testing { box-shadow: none; border-color: var(--wa-testing); }
+    .vchip.vpill.testing button.val { color: var(--wa-testing); }
+    .vchip.vpill .test-ctl select { min-height: 22px; padding: 1px 4px; font-size: 11.5px; }
+    .vchip.vpill input[type=text] { width: 80px; min-height: 22px; font-size: 11.5px; }
+    .vchip.vpill .vtag { background: transparent; border: 1px solid var(--wa-float-sep); font-size: 9.5px; line-height: 14px; padding: 0 4px; }
+    .vpill button.live-reset { display: inline-flex; flex: none; padding: 0; border: 0; background: transparent; color: var(--wa-muted); cursor: pointer; }
+    .vpill button.live-reset:hover { color: var(--wa-ink); }
+    .vpill button.live-reset svg { width: 13px; height: 13px; }
+    button.vb-live {
+      flex: none; height: 24px; padding: 0 8px; border: 1px solid transparent; border-radius: 7px; cursor: pointer;
+      font: inherit; font-size: 11px; font-weight: 600; white-space: nowrap; background: transparent; color: var(--wa-muted);
+    }
+    button.vb-live:hover:not(:disabled) { color: var(--wa-ink); background: color-mix(in srgb, var(--wa-ink) 8%, transparent); }
+    button.vb-live:disabled { opacity: .45; cursor: default; }
+    button.vb-live:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    /* An empty complication: what the black box is, and four ways to start. */
+    .first-run-note {
+      position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+      padding: 12px; text-align: center; color: #fff; pointer-events: none;
+    }
+    .first-run-note .fr-title { max-width: 90%; font-size: 22px; font-weight: 600; line-height: 1.2; }
+    .first-run-note .fr-sub { max-width: 90%; font-size: 13px; color: var(--wa-face-muted); }
+    .first-run { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-top: 10px; }
+    .fr-head { font-size: 13px; font-weight: 600; color: var(--wa-ink); }
+    .fr-tiles { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
+    button.fr-tile {
+      display: flex; flex-direction: column; align-items: center; gap: 10px; width: 150px; padding: 18px 10px 14px;
+      border-radius: 12px; background: var(--wa-card); border: 1px solid var(--wa-float-sep); color: var(--wa-ink); cursor: pointer;
+      font: inherit; font-size: 13px; font-weight: 600;
+    }
+    button.fr-tile:hover { border-color: var(--wa-accent); }
+    button.fr-tile:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    button.fr-tile.fr-preset { border-style: dashed; }
+    button.fr-tile small { font-size: 11px; font-weight: 400; color: var(--wa-muted); }
+    .fr-pic { display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border-radius: 8px; background: #000; color: #fff; }
+    .fr-tile.fr-preset .fr-pic { background: color-mix(in srgb, var(--wa-accent) 8%, var(--wa-card)); }
+    .fr-big { font-size: 22px; font-weight: 700; }
+    .fr-count { font-size: 12px; color: var(--wa-accent); }
+    .fr-foot { font-size: 11px; color: var(--wa-muted); }
+    .fr-foot b { color: var(--wa-ink); }
+    .fr-foot button.link { font-size: inherit; }
+    .layout.cols-1 .stage-wrap { flex: none; height: clamp(320px, 50vh, 480px); }
+    .layout.cols-1 .stage-wrap.first-run { height: 600px; }
     .empty { opacity: .6; padding: 24px; text-align: center; }
 
     /* The inspector: crumbs on top, then one card per section of the thing
@@ -7895,77 +8141,166 @@ export class WristAssistantPanel extends LitElement {
    * ask it not to, so the preview stands in white and the row says so.
    */
   private renderTintTool() {
-    const on = this.previewTint;
-    const current = FACE_TINTS.find((t) => t.hex === on);
+    const t = this.tintState();
     const off = !this.draft || this.parseError !== undefined;
-    const phone = isHomeFamily(this.activeFamily);
-    const lockWhite = this.previewAsPhone && !phone && isDrawable(this.activeFamily);
-    const plain = lockWhite ? "Lock Screen white" : "Full color";
-    const word = phone ? "iPhone tinted" : "tint";
-    const pick = (hex: string | undefined) => { this.toggleMenu("tint", false); this.previewTint = hex; };
-    return html`<span class="inbox tint-box ${on !== undefined ? "on" : ""}"
-      title=${phone
-        ? "A tinted Home Screen drops the tile's background and paints every layer in one color, keeping only how bright each part was. Layers in the accent group take the lighter of the two colors."
-        : lockWhite
-          ? "An iPhone always draws Lock Screen complications in white, whatever colors you pick, so the preview does the same. Your colors still set how bright each part comes out. Pick a tint here to see the design in another color."
-          : "Many watch faces draw complications in one color. Colors become the face's tint, text and background turn white, and only how see-through each part is survives."}>
+    return html`<span class="inbox tint-box ${t.on !== undefined ? "on" : ""}" title=${t.title}>
       <span class="pre">Color</span>
       <span class="case-tool" data-menu="tint">
         <button class="case-pick" ?disabled=${off} aria-haspopup="listbox" aria-expanded=${this.openMenu === "tint" ? "true" : "false"}
-          aria-label=${`Preview color, ${current ? `${current.label} ${phone ? "tinted Home Screen" : "tinted face"}` : plain.toLowerCase()}`} @click=${() => this.toggleMenu("tint")}>
-          ${current ? html`<i class="tint-dot" style=${`--sw:${current.hex}`}></i>${current.label} ${word}` : plain}${uiIcon("chevron")}
+          aria-label=${t.aria} @click=${() => this.toggleMenu("tint")}>
+          ${t.current ? html`<i class="tint-dot" style=${`--sw:${t.current.hex}`}></i>${t.current.label} ${t.word}` : t.plain}${uiIcon("chevron")}
         </button>
-        ${this.openMenu === "tint" ? html`<div class="pop-menu" role="listbox" aria-label="Preview color">
-          <button class="row" role="option" aria-selected=${on === undefined ? "true" : "false"} @click=${() => pick(undefined)}>
-            <i class="tint-dot ${lockWhite ? "" : "full"}" style=${lockWhite ? "--sw:#FFFFFF" : nothing}></i>${plain}</button>
-          ${FACE_TINTS.map((t) => html`<button class="row" role="option" aria-selected=${t.hex === on ? "true" : "false"}
-            @click=${() => pick(t.hex)}><i class="tint-dot" style=${`--sw:${t.hex}`}></i>${t.label} ${word}</button>`)}
-        </div>` : nothing}
+        ${this.renderTintMenu()}
       </span>
     </span>`;
   }
 
-  /**
-   * The demo button. Sits with Pick layer and Show taps because all three ask
-   * a question about the face, but this one asks the last question: is the
-   * thing any good to use? Inline has no face to demo, so it has no button.
-   */
-  private renderDemoButton() {
-    const off = !this.draft || this.parseError !== undefined || !isDrawable(this.activeFamily);
-    return html`<button class="pick" ?disabled=${off}
-      title="Try the complication the way the watch draws it: no grid, no handles, no tap boxes. Taps really run, so a toggle really toggles. Escape closes."
-      @click=${() => this.openDemo()}><span class="glyph">▶</span><span class="word">Demo</span></button>`;
+  /** What the Color tool reads right now, shared by the tool in the zoom and
+   * demo bars and the one on the canvas toolbar. */
+  private tintState() {
+    const on = this.previewTint;
+    const current = FACE_TINTS.find((t) => t.hex === on);
+    const phone = isHomeFamily(this.activeFamily);
+    const lockWhite = this.previewAsPhone && !phone && isDrawable(this.activeFamily);
+    const plain = lockWhite ? "Lock Screen white" : "Full color";
+    const word = phone ? "iPhone tinted" : "tint";
+    const title = phone
+      ? "A tinted Home Screen drops the tile's background and paints every layer in one color, keeping only how bright each part was. Layers in the accent group take the lighter of the two colors."
+      : lockWhite
+        ? "An iPhone always draws Lock Screen complications in white, whatever colors you pick, so the preview does the same. Your colors still set how bright each part comes out. Pick a tint here to see the design in another color."
+        : "Many watch faces draw complications in one color. Colors become the face's tint, text and background turn white, and only how see-through each part is survives.";
+    const aria = `Preview color, ${current ? `${current.label} ${phone ? "tinted Home Screen" : "tinted face"}` : plain.toLowerCase()}`;
+    return { on, current, phone, lockWhite, plain, word, title, aria };
   }
 
-  /** The zoom toggle: open the face full-width in a modal for fine moves.
-   * Inline has no face to zoom, so it has no button. */
-  private renderZoomButton() {
-    const off = !this.draft || this.parseError !== undefined || !isDrawable(this.activeFamily);
-    return html`<button class="pick only-icon" ?disabled=${off} aria-label="Expand the preview"
-      title="Open the preview as large as the window allows, for small moves. Drag and arrow keys work there too. Escape closes."
-      @click=${() => { this.zoomed = true; }}>${uiIcon("expand")}</button>`;
-  }
-
-  /**
-   * Line up and even out, as one strip of glyph buttons. Aligning needs
-   * something selected: one layer lines up against the face, two or more
-   * against the box around themselves. Evening out the gaps needs three, since
-   * two layers have a single gap and nothing to even it against.
-   */
-  /**
-   * The strip right over the face: the three face toggles and the line-up
-   * buttons. They sit here rather than in the bar above because the face can
-   * be a long way down a tall canvas, and a tool that acts on the selection
-   * wants to be next to it.
-   */
-  private renderOver() {
-    return html`<div class="over">
-      <span class="face-tools">${this.renderPickButton()}${this.renderShowTapsButton()}${this.renderDemoButton()}</span>
-      <span class="bar-sep" aria-hidden="true"></span>
-      <span class="face-tools">${this.renderSnapTools()}</span>
-      <span class="bar-sep" aria-hidden="true"></span>
-      ${this.renderZoomButton()}
+  /** The Color tool's list, while it is open. */
+  private renderTintMenu() {
+    if (this.openMenu !== "tint") return nothing;
+    const t = this.tintState();
+    const pick = (hex: string | undefined) => { this.toggleMenu("tint", false); this.previewTint = hex; };
+    return html`<div class="pop-menu" role="listbox" aria-label="Preview color">
+      <button class="row" role="option" aria-selected=${t.on === undefined ? "true" : "false"} @click=${() => pick(undefined)}>
+        <i class="tint-dot ${t.lockWhite ? "" : "full"}" style=${t.lockWhite ? "--sw:#FFFFFF" : nothing}></i>${t.plain}</button>
+      ${FACE_TINTS.map((c) => html`<button class="row" role="option" aria-selected=${c.hex === t.on ? "true" : "false"}
+        @click=${() => pick(c.hex)}><i class="tint-dot" style=${`--sw:${c.hex}`}></i>${c.label} ${t.word}</button>`)}
     </div>`;
+  }
+
+  /**
+   * The one floating toolbar over the stage, top centre. Four groups: the
+   * questions asked of the face (Pick, Taps, Demo), how it is looked at (the
+   * case and the tint), snapping, and the zoom.
+   *
+   * It replaces the three rows that used to sit over the face (the shape and
+   * Preview as row, then the pill of face toggles and snapping switches), so
+   * the face gets the height. Every one of those controls is here or one menu
+   * down. Inline has no face, so it keeps only Preview as.
+   */
+  private renderStageTools(family: FamilyKind, deviceCase: PreviewCase) {
+    const drawable = isDrawable(family);
+    const off = !this.draft || this.parseError !== undefined;
+    const sep = html`<span class="tb-sep" aria-hidden="true"></span>`;
+    const glyph = (body: ReturnType<typeof svg>, fill = false) => html`<svg class="tb-glyph" viewBox="0 0 13 13" fill=${fill ? "currentColor" : "none"}
+      stroke=${fill ? "none" : "currentColor"} stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">${body}</svg>`;
+    const caseOpen = this.openMenu === "case";
+    const tint = this.tintState();
+    const tintOpen = this.openMenu === "tint";
+    return html`<div class="stage-tools" role="toolbar" aria-label="Canvas tools">
+      ${drawable ? html`
+        <button class="tb ${this.picking ? "on" : ""}" ?disabled=${off} aria-pressed=${this.picking ? "true" : "false"}
+          title=${this.picking ? "Point at the face to name a layer. Click one to select it. Escape stops." : "Point at a layer on the face to find it (Escape stops)"}
+          @click=${() => this.togglePicking()}>${glyph(svg`<path d="M2 1.5L11 6L7 7.2L5.5 11.5Z" />`)}<span class="word">${this.picking ? "Picking…" : "Pick"}</span></button>
+        <button class="tb ${this.showTaps ? "on" : ""}" ?disabled=${off} aria-pressed=${this.showTaps ? "true" : "false"}
+          title="Show every tap area, labelled with what it does, over a dimmed face. With a layer selected, only its tap area shows, and you can drag its corners to size it."
+          @click=${() => this.setShowTaps(!this.showTaps)}>${glyph(svg`<circle cx="6.5" cy="6.5" r="5" /><circle cx="6.5" cy="6.5" r="1.8" fill="currentColor" />`)}<span class="word">Taps</span></button>
+        <button class="tb" ?disabled=${off}
+          title="Try the complication the way the watch draws it: no grid, no handles, no tap boxes. Taps really run, so a toggle really toggles. Escape closes."
+          @click=${() => this.openDemo()}>${glyph(svg`<path d="M3 1.8L11 6.5L3 11.2Z" />`, true)}<span class="word">Demo</span></button>
+        ${sep}` : nothing}
+      <span class="case-tool" data-menu="case">
+        <button class="tb" aria-haspopup="listbox" aria-expanded=${caseOpen ? "true" : "false"}
+          aria-label=${`Preview as ${deviceCase.label}`}
+          title=${`Preview as. Layouts are made in the ${this.referenceCase.label} box. Every other size draws a scaled copy of it.`}
+          @click=${() => this.toggleMenu("case")}>${uiIcon(this.previewAsPhone ? "phone" : "watch")}<span class="word keep">${deviceCase.label}</span><span class="caret">${uiIcon("chevron")}</span></button>
+        ${caseOpen ? html`<div class="pop-menu" role="listbox" aria-label="Preview as">
+          ${this.previewCases.map((c) => html`<button class="row" role="option" aria-selected=${c.label === deviceCase.label ? "true" : "false"}
+            @click=${() => { this.toggleMenu("case", false); this.previewCase = c.label; }}>${c.label}${c.measured ? "" : " (estimated)"}</button>`)}
+        </div>` : nothing}
+      </span>
+      ${drawable ? html`<span class="case-tool" data-menu="tint">
+        <button class="tb ${tint.on !== undefined ? "lit" : ""}" ?disabled=${off} aria-haspopup="listbox" aria-expanded=${tintOpen ? "true" : "false"}
+          aria-label=${tint.aria} title=${tint.title} @click=${() => this.toggleMenu("tint")}>
+          ${tint.current ? html`<i class="tint-dot" style=${`--sw:${tint.current.hex}`}></i>` : html`<i class="tint-dot ${tint.lockWhite ? "" : "full"}" style=${tint.lockWhite ? "--sw:#FFFFFF" : nothing}></i>`}<span class="word">${tint.current ? `${tint.current.label} ${tint.word}` : tint.plain}</span><span class="caret">${uiIcon("chevron")}</span>
+        </button>
+        ${this.renderTintMenu()}
+      </span>
+      ${sep}${this.renderSnapMenu()}
+      ${sep}${this.renderZoomTools()}` : nothing}
+    </div>`;
+  }
+
+  /** The four snapping settings as one value, for the Snap menu. */
+  private snapFlags(): SnapFlags {
+    return { snapGrid: this.snapGrid, gridStep: this.gridStep, showGridLines: this.showGridLines, snapLayers: this.snapLayers };
+  }
+
+  private applySnap(next: SnapFlags) {
+    this.setGrid(next.snapGrid, next.gridStep, next.showGridLines, next.snapLayers);
+  }
+
+  /**
+   * Snap, one button and one small menu: Snap to grid with its size, Grid
+   * lines, Snap to layers. The same three switches the pill over the face
+   * used to show side by side, folded so the toolbar stays one short row. The
+   * button is lit while anything snaps, so a drag that lands on a line is
+   * never a surprise.
+   */
+  private renderSnapMenu() {
+    const flags = this.snapFlags();
+    const lit = anySnap(flags);
+    const open = this.openMenu === "snap";
+    const off = !this.draft || this.parseError !== undefined;
+    const row = (which: SnapSwitch, label: string, title: string) => {
+      const on = snapSwitchOn(flags, which);
+      return html`<button class="row snap-row" role="menuitemcheckbox" aria-checked=${on ? "true" : "false"} title=${title}
+        @click=${() => this.applySnap(toggleSnap(this.snapFlags(), which))}><span class="tog ${on ? "on" : ""}" aria-hidden="true"><i></i></span>${label}</button>`;
+    };
+    return html`<span class="case-tool snap-tool" data-menu="snap">
+      <button class="tb ${lit ? "lit" : ""}" ?disabled=${off} aria-haspopup="menu" aria-expanded=${open ? "true" : "false"}
+        title="Snapping: to a grid, to the other layers, and the grid's lines" @click=${() => this.toggleMenu("snap")}>
+        <svg class="tb-glyph" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 2V8A4.5 4.5 0 0 0 11 8V2" /><path d="M2 2H5M8 2H11" /></svg><span class="word">Snap</span>${lit ? html`<i class="tb-dot" aria-hidden="true"></i>` : nothing}<span class="caret">${uiIcon("chevron")}</span>
+      </button>
+      ${open ? html`<div class="pop-menu snap-menu" role="menu" aria-label="Snapping">
+        ${row("grid", "Snap to grid", flags.snapGrid
+          ? "Layers land on the grid when you drag them, and arrow keys move one grid step. Hold Alt to drag freely."
+          : "Snap layers to a grid when you drag them. Without it, hold Alt while dragging to snap.")}
+        <div class="snap-steps" role="group" aria-label="Grid size" title="Grid size, a share of the face's shorter side">
+          ${GRID_STEPS.map((step) => html`<button class=${step === flags.gridStep ? "on" : ""} aria-pressed=${step === flags.gridStep ? "true" : "false"}
+            @click=${() => this.applySnap(pickGridStep(this.snapFlags(), step))}>${step * 100}%</button>`)}
+        </div>
+        ${row("lines", "Grid lines", "Draw the grid on the face. Snapping is not changed.")}
+        ${row("layers", "Snap to layers", "Edges and middles land on the other layers' edges and middles, and on the middle of the face, with a pink line while they meet.")}
+      </div>` : nothing}
+    </span>`;
+  }
+
+  /** The zoom: step down, back to Fit, step up, and Full screen, which is the
+   * zoom dialog the expand button always opened. */
+  private renderZoomTools() {
+    const z = this.canvasZoom;
+    const off = !this.draft || this.parseError !== undefined;
+    return html`<span class="tb-zoom" role="group" aria-label="Zoom">
+      <button class="tb icon" ?disabled=${off || z <= ZOOM_MIN} aria-label="Zoom out" title="Zoom out"
+        @click=${() => { this.canvasZoom = zoomOut(this.canvasZoom); }}>−</button>
+      <button class="tb pct" ?disabled=${off} aria-label=${`Zoom ${zoomLabel(z)}. Back to Fit`}
+        title="The face as a share of the size that fits. Click to fit it again."
+        @click=${() => { this.canvasZoom = ZOOM_FIT; }}>${zoomLabel(z)}</button>
+      <button class="tb icon" ?disabled=${off || z >= ZOOM_MAX} aria-label="Zoom in" title="Zoom in"
+        @click=${() => { this.canvasZoom = zoomIn(this.canvasZoom); }}>+</button>
+      <button class="tb icon" ?disabled=${off} aria-label="Full screen"
+        title="Full screen: the face as large as the window allows, for small moves. Drag and arrow keys work there too. Escape closes."
+        @click=${() => { this.zoomed = true; }}>${uiIcon("expand")}</button>
+    </span>`;
   }
 
   /**
@@ -11212,8 +11547,10 @@ export class WristAssistantPanel extends LitElement {
   /** Open or shut one of the preview bar's menus; opening one shuts the other.
    * A press anywhere outside the open menu's control shuts it, the same way
    * the complication picker closes. */
-  private toggleMenu(menu: "grid" | "case" | "tint" | "list" | "place", next = this.openMenu !== menu) {
+  private toggleMenu(menu: "grid" | "case" | "tint" | "list" | "place" | "doc" | "snap", next = this.openMenu !== menu) {
     this.openMenu = next ? menu : this.openMenu === menu ? undefined : this.openMenu;
+    // The "···" menu opens folded, and forgets an armed Delete when it shuts.
+    if (menu === "doc" && this.openMenu !== "doc") { this.docPlaceOpen = false; this.confirmDelete = false; }
     if (this.openMenu !== undefined) window.addEventListener("pointerdown", this.menuOutside, { capture: true });
     else window.removeEventListener("pointerdown", this.menuOutside, { capture: true });
   }
@@ -15110,68 +15447,169 @@ export class WristAssistantPanel extends LitElement {
     this.syncCountdownTicker(layouts);
     const deviceCase = this.currentCase();
     const family = this.activeFamily;
-    // The Control Center tab: the shape tabs stay, since they are how anyone
-    // gets back to a face, and everything else on the bar and the stage is a
-    // layer tool with no layers to act on.
+    // The Control Center tab: the header stays, since its switch is how
+    // anyone gets back to the face, and the toolbar goes: every tool on it is
+    // a layer tool with no layers to act on.
     if (this.inControlView) {
       return html`
         <div class="card canvas-card">
-          <div class="canvas-bar">
-            ${this.renderDocRow(cfg, layouts)}
-            ${this.renderPlacesRow(cfg)}
-            <div class="bar-row shapes">${this.renderShapeSwitch(cfg, layouts)}</div>
+          ${this.renderCanvasHead(cfg, layouts)}
+          <div class="stage-area">
+            <div class="stage-wrap"><div class="stage control-stage">${this.renderControlStage(cfg)}</div></div>
+            ${this.renderValuesRow()}
           </div>
-          <div class="stage">${this.renderControlStage(cfg)}</div>
-        </div>
-        <div class="under-grid">
-          ${this.renderValuesRow()}
         </div>`;
     }
-    // The segmented control is a real switch and takes the tool row's left
-    // side. A document with one shape and no control has nothing to switch,
-    // so its shape reads in brackets after the name instead and the tool row
-    // starts with "Preview as": one row fewer over every ordinary
-    // complication. The stage help sits under the face, where the thing it
-    // talks about is.
-    const seg = this.hasControlTab(cfg);
+    const drawable = isDrawable(family);
+    const designing = this.rowEditList() !== undefined;
+    // An empty complication shows what it is and four ways to start, until
+    // its first layer exists.
+    const firstRun = drawable && !designing && cfg.elements.length === 0;
+    const tiles = firstRun && this.canEdit;
+    const ratio = drawable ? this.faceRatio(family, deviceCase) : 1;
+    const paged = usesPages(cfg);
+    const reserve = stageReserve({ rowStrip: designing, firstRun: tiles });
     return html`
       <div class="card canvas-card">
-        <div class="canvas-bar">
-          ${this.renderDocRow(cfg, layouts)}
-          ${this.renderPlacesRow(cfg)}
-          <div class="bar-row shapes">
-            ${seg ? this.renderShapeSwitch(cfg, layouts) : nothing}
-            <span class="inbox" title=${`Layouts are made in the ${this.referenceCase.label} box. Every other size draws a scaled copy of it.`}>
-              <span class="pre">Preview as</span>
-              <span class="case-tool" data-menu="case">
-                <button class="case-pick" aria-haspopup="listbox" aria-expanded=${this.openMenu === "case" ? "true" : "false"}
-                  aria-label=${`Preview as ${deviceCase.label}`} @click=${() => this.toggleMenu("case")}>
-                  ${deviceCase.label}${deviceCase.measured ? "" : " (estimated)"}${uiIcon("chevron")}
-                </button>
-                ${this.openMenu === "case" ? html`<div class="pop-menu" role="listbox" aria-label="Preview as">
-                  ${this.previewCases.map((c) => html`<button class="row" role="option" aria-selected=${c.label === deviceCase.label ? "true" : "false"}
-                    @click=${() => { this.toggleMenu("case", false); this.previewCase = c.label; }}>${c.label}${c.measured ? "" : " (estimated)"}</button>`)}
-                </div>` : nothing}
-              </span>
-            </span>
-            ${isDrawable(family) ? this.renderTintTool() : nothing}
+        ${this.renderCanvasHead(cfg, layouts)}
+        <div class="stage-area">
+          <div class="stage-wrap ${tiles ? "first-run" : ""}"
+            style=${`--wa-ratio:${ratio};--wa-reserve:${reserve}px;--wa-zoom:${this.canvasZoom}`}>
+            ${this.renderStageTools(family, deviceCase)}
+            ${paged ? html`<span class="stage-page">Page ${this.page} of ${pagesSpecOf(cfg).count}</span>` : nothing}
+            <div class="stage">
+              ${this.renderRowStrip()}
+              <div class="stage-face">
+                ${drawable
+                  ? this.renderBigPreview(family, layouts, deviceCase, firstRun ? this.renderFirstRunNote(family) : undefined)
+                  : this.renderInlinePreview(layouts.inline, false)}
+                ${this.renderStageHint(cfg, family)}
+                ${tiles ? this.renderFirstRunTiles() : nothing}
+              </div>
+            </div>
           </div>
+          ${this.renderValuesRow()}
         </div>
-        <div class="stage">
-          ${this.renderRowStrip()}
-          ${isDrawable(family) ? this.renderOver() : nothing}
-          ${isDrawable(family) ? this.renderBigPreview(family, layouts, deviceCase) : this.renderInlinePreview(layouts.inline, false)}
-          ${this.renderStageHint(cfg, family)}
-        </div>
-        ${this.zoomed && isDrawable(family) ? this.renderZoomDialog(family, layouts, deviceCase) : nothing}
-        ${this.demoing && isDrawable(family) ? this.renderDemoDialog(family, layouts, deviceCase) : nothing}
-      </div>
-      <div class="under-grid">
-        ${this.renderValuesRow()}
+        ${this.zoomed && drawable ? this.renderZoomDialog(family, layouts, deviceCase) : nothing}
+        ${this.demoing && drawable ? this.renderDemoDialog(family, layouts, deviceCase) : nothing}
       </div>`;
   }
 
-  private renderBigPreview(family: DrawableFamily, layouts: ResolvedAll, deviceCase: PreviewCase) {
+  /** The face's own width over height: the slot for most shapes, and the
+   * 104 × 124 screen quadrant the corner preview draws (renderer.ts). The
+   * zoom and demo dialogs size their face from the same number. */
+  private faceRatio(family: DrawableFamily, deviceCase: PreviewCase): number {
+    const slot = slotFor(deviceCase, family);
+    return family === "corner" ? 104 / 124 : slot.width / slot.height;
+  }
+
+  /**
+   * The quiet header over the canvas, one 48px row: what this is (name, then
+   * shape and page, muted), where it lives (one chip per device), and one
+   * "···" menu for what is done to the whole of it.
+   *
+   * It folds the three rows that used to sit here: the name with its actions,
+   * the devices with "Add to a device", and the tool row. The actions and the
+   * device menu went into "···"; the tools went onto the floating toolbar.
+   * A document that still holds a shape and a Control Center control keeps
+   * its segmented switch, here, in place of the shape's name.
+   */
+  private renderCanvasHead(cfg: CustomComplicationConfig, layouts: ResolvedAll) {
+    const name = cfg.name.trim() || "Complication";
+    const f = supportedFamilies(cfg)[0];
+    const seg = this.hasControlTab(cfg);
+    const paged = usesPages(cfg) && !this.inControlView;
+    const pagePart = paged ? `page ${this.page} of ${pagesSpecOf(cfg).count}` : "";
+    const row = this.openRow();
+    const on = row ? this.rowPlaces(row, f).filter((p) => p.on) : [];
+    return html`<div class="cv-head">
+      <span class="cv-name" title=${name}>${name}</span>
+      <span class="cv-slash" aria-hidden="true">/</span>
+      ${seg
+        ? html`${this.renderShapeSwitch(cfg, layouts)}${pagePart ? html`<span class="cv-shape">${pagePart}</span>` : nothing}`
+        : f === undefined
+          ? nothing
+          : html`<span class="cv-shape"><span class="fam">${familyTitle(f)}${pagePart ? ` · ${pagePart}` : ""}</span>${this.shapeNotes(cfg, layouts, f)}</span>`}
+      <span class="spacer"></span>
+      ${row && on.length > 0 ? html`<span class="doc-on" role="group" aria-label="Devices this complication is on">
+        ${on.map((place) => this.renderPlaceChip(row, place))}
+      </span>` : nothing}
+      ${this.renderDocMenu(cfg)}
+    </div>`;
+  }
+
+  /**
+   * The "···" menu: History, Duplicate as…, Add to a device, and Delete
+   * under a rule. The same four things the document row used to carry as
+   * buttons, in that order.
+   *
+   * History used to be hidden until the first save. It stays in the list now,
+   * disabled with the reason, so the menu reads the same every time. Add to a
+   * device unfolds its devices in place, each with the reason it cannot take
+   * this design when it cannot. Delete arms the way it always did: one press
+   * asks, and a design on several devices asks which.
+   */
+  private renderDocMenu(cfg: CustomComplicationConfig) {
+    if (!this.canEdit) return nothing;
+    const open = this.openMenu === "doc";
+    const unsaved = this.draft?.baseRevision === null;
+    const close = () => this.toggleMenu("doc", false);
+    return html`<span class="case-tool doc-menu" data-menu="doc">
+      <button class="cv-more" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"}
+        aria-label="More: history, duplicate, add to a device, delete" title="More"
+        @click=${() => this.toggleMenu("doc")}>···</button>
+      ${open ? html`<div class="pop-menu doc-pop" role="menu" aria-label="Complication">
+        <button class="row" role="menuitem" ?disabled=${unsaved} aria-haspopup="dialog"
+          title=${unsaved ? "Nothing to go back to until it has been saved once" : "Earlier saves of this complication"}
+          @click=${() => { close(); void this.openHistoryDialog(); }}>History${unsaved ? html`<small class="why">No earlier saves yet</small>` : nothing}</button>
+        <button class="row" role="menuitem" aria-haspopup="dialog"
+          title="Make this design again as another shape, or on another device"
+          @click=${() => { close(); this.openDuplicateAs(cfg, this.ownerId ?? ""); }}>Duplicate as…</button>
+        ${this.renderDocPlaces(cfg)}
+        <div class="pop-sep" role="separator"></div>
+        ${this.confirmDelete
+          ? html`<div class="doc-del">${this.openLinkCount() > 1
+            ? html`<button class="row danger" role="menuitem" title=${`Delete only the copy on ${this.ownerName(this.ownerId ?? "")}`}
+                @click=${() => { close(); void this.deleteCurrent(false); }}>This device</button>
+              <button class="row danger" role="menuitem" title="Delete it on every device it is on"
+                @click=${() => { close(); void this.deleteCurrent(true); }}>All ${this.openLinkCount()} devices</button>`
+            : html`<button class="row danger" role="menuitem" @click=${() => { close(); void this.deleteCurrent(); }}>Really delete</button>`}
+            <button class="row" role="menuitem" @click=${() => { this.confirmDelete = false; }}>Cancel</button></div>`
+          : html`<button class="row danger" role="menuitem" @click=${() => { this.confirmDelete = true; }}>Delete</button>`}
+      </div>` : nothing}
+    </span>`;
+  }
+
+  /**
+   * "Add to a device", inside the "···" menu: the picker's own Devices menu,
+   * on the complication the editor has open. See `renderAddPlaceRow` for what
+   * a row does. It is there even when it cannot act, disabled with the
+   * reason, so the way to put a design on a second watch is always findable.
+   */
+  private renderDocPlaces(cfg: CustomComplicationConfig) {
+    const row = this.openRow();
+    const family = supportedFamilies(cfg)[0];
+    const admin = this.hass.user?.is_admin === true;
+    const places = row ? this.rowPlaces(row, family) : [];
+    const rest = places.filter((p) => !p.on && p.owner.kind !== "library");
+    const why = !admin
+      ? "Only an administrator can put it on another device."
+      : !row
+        ? "Save it first. Then it can go on another device too."
+        : rest.length === 0
+          ? "There is no other device of this kind to put it on."
+          : undefined;
+    const open = this.docPlaceOpen && why === undefined;
+    return html`<button class="row doc-place-row" role="menuitem" aria-haspopup="true" aria-expanded=${open ? "true" : "false"}
+        ?disabled=${this.saving || why !== undefined} title=${why ?? "Put this complication on another device too"}
+        @click=${() => { this.docPlaceOpen = !this.docPlaceOpen; }}>Add to a device<span class="spacer"></span>${uiIcon(open ? "down" : "right")}</button>
+      ${open && row ? html`<div class="doc-places-list" role="group" aria-label="Add to a device">
+        ${rest.map((place) => this.renderAddPlaceRow(row, place, family))}
+        <div class="place-note">A linked copy is written there. Saving this one saves it there too.</div>
+      </div>` : nothing}`;
+  }
+
+  private renderBigPreview(family: DrawableFamily, layouts: ResolvedAll, deviceCase: PreviewCase, overlay?: TemplateResult) {
     const layout = layouts[family];
     if (!layout) return nothing;
     const highlightId = this.inspect.kind === "layer" ? this.inspect.id : undefined;
@@ -15222,8 +15660,80 @@ export class WristAssistantPanel extends LitElement {
       @dblclick=${(e: MouseEvent) => this.onPreviewDoubleClick(e)}
       @pointermove=${(e: PointerEvent) => this.onPickMove(e)}
       @pointerleave=${() => { if (this.picking) this.pickHoverId = undefined; }}>
-      ${renderLayout(layout, opts)}
+      ${renderLayout(layout, opts)}${overlay ?? nothing}
     </div>`;
+  }
+
+  /** The words on an empty face: what the black box is, and that it is
+   * empty. Drawn over the face, not into it, and never saved. */
+  private renderFirstRunNote(family: FamilyKind) {
+    return html`<div class="first-run-note">
+      <div class="fr-title">This is your ${slotWord(family, this.previewAsPhone)}.</div>
+      <div class="fr-sub">It is empty. Add a layer to draw something on it.</div>
+    </div>`;
+  }
+
+  /**
+   * Four big ways to start an empty complication, under its face: a value, a
+   * gauge, a chart, or a preset. The first three add one blank layer and
+   * select it; the fourth opens the Add sheet on its presets. Gone once the
+   * first layer exists.
+   */
+  private renderFirstRunTiles() {
+    const family = this.activeFamily;
+    const presets = LAYER_PRESETS.filter((p) => p.families === undefined || p.families.includes(family)).length;
+    const pic = (tile: FirstRunTile) => {
+      switch (tile.id) {
+        case "value": return html`<span class="fr-big">72°</span>`;
+        case "gauge": return html`<svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true"><path d="M8 32A16 16 0 1 1 32 32" fill="none" stroke="#3a3a3a" stroke-width="4" /><path d="M8 32A16 16 0 0 1 9 14" fill="none" stroke=${KIND_COLOR.gauge} stroke-width="4" /></svg>`;
+        case "chart": return html`<svg width="60" height="30" viewBox="0 0 60 30" aria-hidden="true"><polyline points="2,26 12,16 22,20 32,8 42,14 58,4" fill="none" stroke=${KIND_COLOR.chart} stroke-width="2.5" /></svg>`;
+        case "preset": return html`<span class="fr-count">${presets} presets →</span>`;
+      }
+    };
+    const offered = FIRST_RUN_TILES.filter((t) => !("element" in t.action) || familyAllowsKind(family, t.action.element));
+    const hooks = {
+      addElement: (kind: CElement["kind"]) => this.addElement(kind),
+      openAddSheet: (tab: "presets") => this.openAddSheet(tab),
+    };
+    return html`<div class="first-run">
+      <div class="fr-head">Start with one of these</div>
+      <div class="fr-tiles">
+        ${offered.map((t) => html`<button class="fr-tile fr-${t.id}" @click=${() => runFirstRunTile(t, hooks)}>
+          <span class="fr-pic">${pic(t)}</span><span class="fr-name">${t.title}</span><small>${t.blurb}</small>
+        </button>`)}
+      </div>
+      <div class="fr-foot">Or press <b>+ Add</b> in Layers for everything${this.hass.user?.is_admin
+        ? html`, or <button class="link" @click=${() => this.openImportDialog()}>import a shared one</button>.`
+        : "."}</div>
+    </div>`;
+  }
+
+  /**
+   * Hooks shared with the Layers column: add one blank layer of a kind, and
+   * open the Add sheet on one of its tabs. The first-run tiles call them. The
+   * Layers column's redesign owns the real ones; these are the working
+   * minimum over today's Add card, so the tiles work on their own.
+   */
+  private addElement(kind: CElement["kind"]) {
+    const cfg = this.draft?.config;
+    if (!cfg || !this.canEdit || cfg.elements.length >= 64) return;
+    const el = newElement(kind);
+    this.addHere((c) => {
+      c.elements.push(el);
+      if (el.kind === "timeline") convertChartTimes(c, el.payload.id);
+    });
+    this.inspect = { kind: "layer", id: el.payload.id };
+  }
+
+  private openAddSheet(tab?: "elements" | "presets" | "parts") {
+    if (!this.addOpen) {
+      this.addOpen = true;
+      this.saveListView();
+    }
+    void this.updateComplete.then(() => {
+      const target = this.renderRoot.querySelector<HTMLElement>(tab === "presets" ? ".add-card .g-presets" : ".add-card");
+      target?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
   }
 
   /**
@@ -15301,6 +15811,11 @@ export class WristAssistantPanel extends LitElement {
       tail = g?.locked
         ? html`A drag moves the whole group <b>${g.name}</b>; pull a corner to resize this layer. Arrow keys nudge the group.`
         : html`Drag it, or pull a corner. Arrow keys nudge it.${this.snapGrid && this.snapLayers ? " It snaps to the grid and to the other layers. Hold Alt to drag freely." : this.snapGrid ? " It snaps to the grid. Hold Alt to drag freely." : this.snapLayers ? " It snaps to the other layers. Hold Alt to drag freely." : " Hold Alt while dragging to snap to the grid."}`;
+    } else if (cfg.elements.length === 0) {
+      // Nothing to click yet. With edit rights the first-run tiles under the
+      // face say what to do instead, so the hint stays out of their way.
+      if (this.canEdit) return nothing;
+      tail = "Nothing on it yet.";
     } else {
       tail = "Click a layer to edit it.";
     }
@@ -15490,86 +16005,10 @@ export class WristAssistantPanel extends LitElement {
     });
   }
 
-  /**
-   * The document row: the top line of the canvas card.
-   *
-   * The complication's name, the devices it is on, and the things done to the
-   * whole of it. All three used to sit in the inspector's header, which draws
-   * only while nothing is selected: clicking one layer took the name, Delete
-   * and Duplicate as off the screen, and the way back to them was to click off
-   * the layer again. None of them is about the selection, so they belong over
-   * the picture, where they are always readable.
-   */
-  private renderDocRow(cfg: CustomComplicationConfig, layouts: ResolvedAll) {
-    const name = cfg.name.trim() || "Complication";
-    return html`<div class="bar-row doc-row">
-      <span class="doc-name" title=${name}>${name}</span>
-      ${this.renderDocShape(cfg, layouts)}
-      <span class="spacer"></span>
-      ${this.renderDocActs(cfg)}
-    </div>`;
-  }
-
-  /**
-   * The shape this document draws, in brackets after its name.
-   *
-   * A tab used to carry it, on a bar of its own over the picture. With one
-   * shape per document there is nothing to switch to, so the tab was a label
-   * taking a whole row, and the row under it held one line of stage help. The
-   * shape reads as part of what the complication is now, and the help moved up
-   * into the row the tab left.
-   *
-   * The warning and the "nothing shown" note ride with it: they are about this
-   * shape rather than about the document.
-   *
-   * A document that still holds a shape and a control keeps its segmented
-   * control on the tool row, because there a tab really does switch views. It
-   * gets no brackets: the pressed tab already says which view is up.
-   */
-  private renderDocShape(cfg: CustomComplicationConfig, layouts: ResolvedAll) {
-    if (this.hasControlTab(cfg)) return nothing;
-    const f = supportedFamilies(cfg)[0];
-    if (f === undefined) return nothing;
-    // The brackets live in their own spans so the stacked layout can drop
-    // them: there the name is hidden and "(Rectangular)" would open the row
-    // with a bracket closing nothing. One flex item, so the row's gap still
-    // falls between the shape and the notes after it and not inside the word.
-    return html`<span class="doc-shape"><span class="fam"><span
-      class="paren">(</span>${familyTitle(f)}<span class="paren">)</span></span>${this.shapeNotes(cfg, layouts, f)}</span>`;
-  }
-
   /** Whether the bar draws the shape/Control Center segmented control, which
    * is the one case where this document has two views to switch between. */
   private hasControlTab(cfg: CustomComplicationConfig): boolean {
     return cfg.control !== undefined && ownerSupportsControls(this.selectedOwner);
-  }
-
-  /**
-   * The devices row: which devices have this complication, and how to put it
-   * on one more.
-   *
-   * A design on several devices is one record per device wearing the same
-   * `linkId`, and the only thing that ever said so out loud was the wording of
-   * the Delete button, "All 3 devices". A chip for another device opens that
-   * device's copy, the same move the picker's card makes.
-   *
-   * A complication nobody has saved yet is on no device, so the row does not
-   * draw at all: there is nothing to be on and nothing to copy.
-   */
-  private renderPlacesRow(cfg: CustomComplicationConfig) {
-    const row = this.openRow();
-    if (!row) return nothing;
-    const family = supportedFamilies(cfg)[0];
-    const places = this.rowPlaces(row, family);
-    const on = places.filter((p) => p.on);
-    if (on.length === 0) return nothing;
-    return html`<div class="bar-row doc-places">
-      <span class="doc-on-pre">On</span>
-      <span class="doc-on" role="group" aria-label="Devices this complication is on">
-        ${on.map((place) => this.renderPlaceChip(row, place))}
-      </span>
-      ${this.renderAddPlace(row, places, family)}
-    </div>`;
   }
 
   /**
@@ -15620,58 +16059,30 @@ export class WristAssistantPanel extends LitElement {
           if (!armed) { this.armPlaceTrash(target.ownerId); return; }
           this.disarmPlaceTrash();
           void this.removeRowFrom(row, place, true, true);
-        }}>${armed ? html`<span class="sure">sure?</span>` : uiIcon("delete")}</button>` : nothing}
+        }}>${armed ? html`<span class="sure">sure?</span>` : uiIcon("close")}</button>` : nothing}
     </span>`;
   }
 
   /**
-   * "Add to a device": the picker's own Devices menu, on the complication the
-   * editor has open.
+   * One device offered in "Add to a device". It calls the picker's own write,
+   * so the seat check, the making of the design's first link and the wording
+   * of what happened are one set of rules. A device that cannot take it is
+   * listed with the reason rather than left out.
    *
-   * It calls the same write, so the seat check, the making of the design's
-   * first link and the wording of what happened are all the one set of rules.
-   * A device already holding this design is a chip beside the button, so it is
-   * never offered twice, and a device that cannot take it is listed with the
-   * reason rather than left out: somebody looking for their watch should find
-   * it and read why, not wonder where it went.
-   *
-   * Only the devices of this design's kind are here. Crossing from a watch to
-   * an iPhone is "Duplicate as", where the shape is being picked anyway.
-   *
-   * Unassigned is not offered, though a design that is there wears its chip.
-   * Unassigned is where a design waits when it is on nothing, not one more
-   * place to be at the same time, and taking the last device off already puts
-   * it there by itself. Offered as a tick it read as a device you could add,
-   * and a design "on" a watch and the shelf at once is two records where the
-   * author asked for one.
+   * Never the library. Unassigned is where a design waits when it is on
+   * nothing, not one more place to be at the same time, and taking the last
+   * device off already puts it there. Only devices of this design's kind are
+   * offered; crossing from a watch to an iPhone is "Duplicate as".
    */
-  private renderAddPlace(row: PickerRow, places: DevicePlace[], family: FamilyKind | undefined) {
-    if (!this.canEdit || this.hass.user?.is_admin !== true) return nothing;
-    const rest = places.filter((p) => !p.on && p.owner.kind !== "library");
-    if (rest.length === 0) return nothing;
-    const open = this.openMenu === "place";
-    return html`<span class="place-tool" data-menu="place">
-      <button type="button" class="doc-add" aria-haspopup="listbox" aria-expanded=${open ? "true" : "false"}
-        ?disabled=${this.saving} title="Put this complication on another device too"
-        @click=${() => this.toggleMenu("place")}>${uiIcon("plus")}<span>Add to a device</span>${uiIcon("chevron")}</button>
-      ${open ? html`<div class="pop-menu place-menu" role="listbox" aria-label="Add to a device">
-        ${rest.map((place) => this.renderAddPlaceRow(row, place, family))}
-        <div class="place-note">A linked copy is written there. Saving this one saves it there too.</div>
-      </div>` : nothing}
-    </span>`;
-  }
-
-  /** One device offered in "Add to a device". Never the library: see
-   * `renderAddPlace`. */
   private renderAddPlaceRow(row: PickerRow, place: DevicePlace, family: FamilyKind | undefined) {
     const target = place.owner;
     const label = target.label;
     const icon = target.kind === "iphone" ? "phone" : "watch";
     const block = this.placeBlock(place, family, label);
     const title = block?.why ?? `Put it on ${label}. Saving it saves it everywhere it is.`;
-    return html`<button type="button" class="row place-row" role="option" aria-selected="false"
+    return html`<button type="button" class="row place-row" role="menuitem"
       ?disabled=${this.saving || block !== undefined} title=${title}
-      @click=${() => { this.toggleMenu("place", false); void this.addRowTo(row, target, true); }}>
+      @click=${() => { this.toggleMenu("doc", false); void this.addRowTo(row, target, true); }}>
       ${uiIcon(icon)}<span class="place-name">${label}</span>
       ${block ? html`<small class="place-no">${block.tag}</small>` : nothing}
     </button>`;
@@ -15698,35 +16109,6 @@ export class WristAssistantPanel extends LitElement {
   private openRow(): PickerRow | undefined {
     if (!this.ownerId || !this.selectedId) return undefined;
     return this.pickerRows().find((r) => this.selectedCopyOf(r) !== undefined);
-  }
-
-  /**
-   * The things done to the whole complication.
-   *
-   * Raw JSON is not one of them any more. The footer at the foot of the panel
-   * already holds the raw document behind "Show the raw configuration", and
-   * the button up here only opened that same footer.
-   *
-   * Plain Duplicate is gone too. It made one copy: same shape, same device,
-   * " copy" on the end of the name, no question asked. "Duplicate as" makes
-   * that copy and every other one, so the two buttons answered one question
-   * and only one of them asked it.
-   */
-  private renderDocActs(cfg: CustomComplicationConfig) {
-    if (!this.canEdit) return nothing;
-    return html`<span class="comp-acts">
-      ${this.draft?.baseRevision === null ? nothing : html`
-        <button class="ghost" aria-haspopup="dialog" aria-expanded=${this.historyOpen ? "true" : "false"}
-          title="Earlier saves of this complication" @click=${() => void this.openHistoryDialog()}>History</button>`}
-      <button class="ghost" aria-haspopup="dialog" aria-expanded=${this.dupOpen ? "true" : "false"}
-        title="Make this design again as another shape, or on another device"
-        @click=${() => this.openDuplicateAs(cfg, this.ownerId ?? "")}>Duplicate as…</button>
-      ${this.confirmDelete
-        ? this.openLinkCount() > 1
-          ? html`<button class="ghost danger" title=${`Delete only the copy on ${this.ownerName(this.ownerId ?? "")}`} @click=${() => void this.deleteCurrent(false)}>This device</button><button class="ghost danger" title="Delete it on every device it is on" @click=${() => void this.deleteCurrent(true)}>All ${this.openLinkCount()} devices</button><button class="ghost" @click=${() => { this.confirmDelete = false; }}>Cancel</button>`
-          : html`<button class="ghost danger" @click=${() => void this.deleteCurrent()}>Really delete</button><button class="ghost" @click=${() => { this.confirmDelete = false; }}>Cancel</button>`
-        : html`<button class="ghost danger" @click=${() => { this.confirmDelete = true; }}>Delete</button>`}
-    </span>`;
   }
 
   /**
@@ -15829,14 +16211,20 @@ export class WristAssistantPanel extends LitElement {
     const named = new Set(reads.namedIds);
     const shared = testableSharedValues(cfg).filter((n) => named.has(n.id));
     const testing = this.testValues.size > 0;
-    return html`<div class="card tint-states" style=${`--c:${SECTION_COLOR.states}`}>
-      <h2 class="panel-title"><span class="swatch">${uiIcon("states")}</span>${isLibraryOwner(this.selectedOwner) ? "Values it reads" : `Values on the ${this.deviceWord}`}
-        <span class="mini">live · slide, pick or type one to try another</span><span class="spacer"></span>
-        ${testing ? html`<span class="testing-pill">Testing with your values <button @click=${() => { this.editingValue = undefined; this.applyTestValues(new Map()); }}>Back to live</button></span>` : nothing}
-      </h2>
-      ${ids.length === 0 && shared.length === 0 ? html`<div class="hint">${this.inControlView
-        ? "The control reads no entity yet. Point its target, title or value line at one and its live value shows here."
-        : "No entities on this shape yet. Give one of its layers an entity and its live value shows here."}</div>` : html`<div class="chips values">
+    const title = isLibraryOwner(this.selectedOwner) ? "Values it reads" : `Values on the ${this.deviceWord}`;
+    // One floating bar at the foot of the stage, the same family as the
+    // toolbar over it. It reads Live until any value is overridden, then
+    // Testing, with Back to live beside it. Each value is a pill that keeps its
+    // own slider, picker or box; a row too long for the bar scrolls sideways.
+    return html`<div class="values-foot"><div class="values-bar ${testing ? "testing" : ""}" role="group" aria-label=${title}>
+      <span class="vb-state" title=${testing
+        ? "Testing: the face is drawn with the values you set here. Nothing is saved."
+        : "Live: the face is drawn with what the house says right now. Slide, pick or type a value to try another."}>
+        <i class="vb-dot" aria-hidden="true"></i>${testing ? "Testing" : "Live"}</span>
+      <span class="tb-sep" aria-hidden="true"></span>
+      ${ids.length === 0 && shared.length === 0 ? html`<span class="vb-empty">${this.inControlView
+        ? "The control reads no entity yet. Point its target, title or value line at one."
+        : "No entities yet. Each layer you add brings its entity here."}</span>` : html`<div class="vb-pills">
         ${ids.map((id) => {
           const s = this.hass.states[id];
           const name = typeof s?.attributes.friendly_name === "string" ? s.attributes.friendly_name : id;
@@ -15845,12 +16233,13 @@ export class WristAssistantPanel extends LitElement {
           const override = this.testValues.get(id);
           const user = cfg.elements.find((e) => layerEntityUses(cfg, e.payload.id).some((u) => u.ref.entityId === id));
           const kind = user?.kind ?? "text";
-          return html`<div class="vchip vrow ctl ${override !== undefined ? "testing" : ""}" style=${`--k:${KIND_COLOR[kind]}`}
-            title=${override !== undefined ? `Live value: ${live}` : ""}>
-            <span class="kbar"></span><b>${name}</b><span class="spacer"></span>
+          return html`<div class="vchip vpill ctl ${override !== undefined ? "testing" : ""}" style=${`--k:${KIND_COLOR[kind]}`}
+            title=${override !== undefined ? `Live value: ${live}` : id}>
+            <span class="vp-icon">${domainIcon(id.split(".")[0] ?? "")}</span><b>${name}</b>
             ${this.renderTestControl(id, name, s, override, unit, live)}
             ${override !== undefined
-              ? html`<button type="button" class="small live-reset" title=${`Back to the live value: ${live}`} @click=${() => this.setTestValue(id, undefined)}>Live</button>`
+              ? html`<button type="button" class="live-reset" title=${`Back to the live value: ${live}`} aria-label=${`Back to the live value of ${name}`}
+                  @click=${() => this.setTestValue(id, undefined)}>${uiIcon("reset")}</button>`
               : nothing}
           </div>`;
         })}
@@ -15863,17 +16252,23 @@ export class WristAssistantPanel extends LitElement {
           const name = n.name || "(unnamed)";
           const override = this.testValues.get(key);
           const s = { entity_id: key, state: raw, attributes: {}, last_changed: "", last_updated: "" };
-          return html`<div class="vchip vrow ctl ${override !== undefined ? "testing" : ""}" style=${`--k:${SECTION_COLOR.complication}`}
+          return html`<div class="vchip vpill ctl ${override !== undefined ? "testing" : ""}" style=${`--k:${SECTION_COLOR.complication}`}
             title=${override !== undefined ? `Saved value: ${live}` : ""}>
-            <span class="kbar"></span><b>${name}</b><span class="vtag" title="A shared value. Trying one here is not saved; change it in Shared values to keep it.">shared</span><span class="spacer"></span>
+            <span class="vp-icon">${uiIcon("content")}</span><b>${name}</b>
             ${this.renderTestControl(key, name, s, override, "", live)}
+            <span class="vtag" title="A shared value. Trying one here is not saved; change it in Shared values to keep it.">shared</span>
             ${override !== undefined
-              ? html`<button type="button" class="small live-reset" title=${`Back to the saved value: ${live}`} @click=${() => this.setTestValue(key, undefined)}>Live</button>`
+              ? html`<button type="button" class="live-reset" title=${`Back to the saved value: ${live}`} aria-label=${`Back to the saved value of ${name}`}
+                  @click=${() => this.setTestValue(key, undefined)}>${uiIcon("reset")}</button>`
               : nothing}
           </div>`;
         })}
       </div>`}
-    </div>`;
+      <span class="tb-sep" aria-hidden="true"></span>
+      <button type="button" class="vb-live" ?disabled=${!testing}
+        title=${testing ? "Drop every value you set here and draw the face from the house again" : "Already live"}
+        @click=${() => { this.editingValue = undefined; this.applyTestValues(new Map()); }}>Back to live</button>
+    </div></div>`;
   }
 
   /**
