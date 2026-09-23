@@ -4253,6 +4253,7 @@ export class WristAssistantPanel extends LitElement {
     dialog.del-dialog { width: min(460px, calc(100vw - 32px)); }
     .del-acts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; padding-top: 4px; }
     .del-acts button { height: 32px; padding: 0 14px; }
+    .xf-lead b.del-name { color: var(--wa-accent); }
     button.cv-act.icon { width: 30px; padding: 0; justify-content: center; }
     button.cv-act.icon svg.ui-icon { width: 15px; height: 15px; }
     .cv-del { display: inline-flex; align-items: center; gap: 6px; flex: none; }
@@ -15502,18 +15503,23 @@ export class WristAssistantPanel extends LitElement {
     const n = 1 + others.length;
     const close = () => { this.confirmDelete = false; };
     const go = (everywhere: boolean) => { close(); void this.deleteCurrent(everywhere); };
+    const quoted = html`<b class="del-name">“${name}”</b>`;
     const where = unsaved
-      ? html`<b>${name}</b> has never been saved. Deleting it closes it, and nothing is left on the server.`
+      ? html`${quoted} has never been saved. Deleting it closes it, and nothing is left on the server.`
       : shelved && n === 1
-        ? html`<b>${name}</b> is ${UNASSIGNED_LABEL.toLowerCase()}: on no device. Deleting it removes the design itself.`
+        ? html`${quoted} is ${UNASSIGNED_LABEL.toLowerCase()}: on no device. Deleting it removes the design itself.`
         : n === 1
-          ? html`<b>${name}</b> is on <b>${hereName}</b>. A face or widget using it loses it.`
-          : html`<b>${name}</b> is on ${n} devices: <b>${[hereName, ...others].join(", ")}</b>. A face or widget using it loses it.`;
+          ? html`${quoted} is on <b>${hereName}</b>. A face or widget using it loses it.`
+          : html`${quoted} is on ${n} devices: <b>${[hereName, ...others].join(", ")}</b>. A face or widget using it loses it.`;
+    // The way to keep the design while freeing the device: the × on its chip
+    // in the canvas head. Only said where an Unassigned list exists to hold it.
+    const keep = !unsaved && !shelved && this.libraryOwner() !== undefined;
     return html`<dialog class="xf del-dialog" @close=${close}>
-      ${this.dialogHead(`Delete ${name}?`, "", close)}
+      ${this.dialogHead(`Delete “${name}”?`, "", close)}
       <div class="xfer-body">
         <div class="xf-lead warn">${uiIcon("info")}<span>${where}</span></div>
-        ${unsaved ? nothing : html`<div class="xf-lead">${uiIcon("info")}<span>This cannot be undone. To keep a copy first, close this and use Share.</span></div>`}
+        ${unsaved ? nothing : html`<div class="xf-lead">${uiIcon("info")}<span>This cannot be undone.${keep
+          ? html` To take it off a device and keep the design, close this and press the × on the device chip instead. The last copy goes to ${UNASSIGNED_LABEL}.` : nothing}</span></div>`}
         <div class="del-acts">
           <button class="ghost" @click=${close}>Cancel</button>
           ${!unsaved && n > 1
