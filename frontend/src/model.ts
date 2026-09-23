@@ -3184,12 +3184,60 @@ export function serviceDataIsValid(json: string | undefined): boolean {
 export const TAP_ACTION_LABELS: [TapAction["type"], string][] = [
   ["refresh", "Refresh this complication"],
   ["refreshAll", "Refresh multiple complications"],
-  ["none", "Nothing"], ["openApp", "Open the app"], ["openPage", "Open the page"], ["openRoomPage", "Open the room page"],
-  ["timerStartPause", "Timer start / pause"], ["timerCancel", "Timer cancel"],
-  ["toggleEntity", "Toggle an entity"], ["runScene", "Run a scene"], ["runScript", "Run a script"], ["addTodo", "Add a to-do"], ["runHTTPAction", "Run an HTTP action"],
-  ["callService", "Call a service"],
-  ["nextPage", "Next page"], ["previousPage", "Previous page"], ["playTour", "Play the page tour"],
+  ["nextPage", "Show next page"], ["previousPage", "Show previous page"], ["playTour", "Play all pages"],
+  ["toggleEntity", "Toggle an entity"], ["runScene", "Run a scene"], ["runScript", "Run a script"],
+  ["callService", "Call a service"], ["runHTTPAction", "Run an HTTP action"], ["addTodo", "Add a to-do"],
+  ["openApp", "Open the app"], ["openPage", "Open a watch app page"], ["openRoomPage", "Open the room I'm in"],
+  ["timerStartPause", "Start or pause a timer"],
+  // Offered nowhere, kept so a document that stores one still has a name for
+  // it. "Cancel" ran the very same intent as start / pause (three quick taps
+  // cancel either way), so it was a second name for one action.
+  ["timerCancel", "Cancel a timer"],
+  ["none", "Nothing"],
 ];
+
+/** The headings the tap menu files its rows under, in menu order. A type the
+ * surface offers that no group names (a stored legacy value) goes last, under
+ * no heading. */
+export const TAP_ACTION_GROUPS: [string, TapAction["type"][]][] = [
+  ["Refresh", ["refresh", "refreshAll"]],
+  ["Pages", ["nextPage", "previousPage", "playTour"]],
+  ["Home Assistant", ["toggleEntity", "runScene", "runScript", "callService", "runHTTPAction", "addTodo"]],
+  ["Open the app", ["openApp", "openPage", "openRoomPage"]],
+  ["Timer", ["timerStartPause", "timerCancel"]],
+];
+
+/** The actions an iPhone widget cannot carry out itself: each one is a link
+ * into the watch app, and on iOS every such link just opens the iPhone app
+ * (`complicationTapLinkURL` in the app). An HTTP action that asks for input
+ * does the same, but one that asks for nothing fires, so it is not listed. */
+const WATCH_ONLY_TAP_TYPES: readonly TapAction["type"][] = ["openPage", "openRoomPage", "addTodo"];
+
+/** One line per tap action saying what a tap does, for the rows of the tap
+ * menu. `onPhone` adds the iPhone caveat to the actions that need the watch. */
+export function tapActionInfo(type: TapAction["type"], onPhone = false): string {
+  const info: Record<TapAction["type"], string> = {
+    refresh: "Fetches new data and redraws this complication.",
+    refreshAll: "Fetches new data for this complication and the others you pick. The other tiles redraw only when watchOS allows it.",
+    nextPage: "Shows the next page of this complication. Needs two or more pages.",
+    previousPage: "Shows the page before this one. Needs two or more pages.",
+    playTour: "Shows every page once, then goes back to page 1. Needs two or more pages.",
+    toggleEntity: "Turns an entity on or off, such as a light or a switch.",
+    runScene: "Turns on a Home Assistant scene.",
+    runScript: "Runs a Home Assistant script.",
+    callService: "Calls any Home Assistant service, with your own data.",
+    runHTTPAction: "Runs an HTTP action you made in the Wrist Assistant app.",
+    addTodo: "Opens the watch app to add an item to a to-do list.",
+    openApp: "Opens Wrist Assistant.",
+    openPage: "Opens one page of your Wrist Assistant grid. You pick the page.",
+    openRoomPage: "Opens the app on the page for the room it finds you in.",
+    timerStartPause: "Starts or pauses the first timer this complication shows. Three quick taps cancel it.",
+    timerCancel: "Works the same as Start or pause a timer: three quick taps cancel it.",
+    none: "Does nothing. On the whole complication the watch still opens the app.",
+  };
+  const line = info[type];
+  return onPhone && WATCH_ONLY_TAP_TYPES.includes(type) ? `${line} On iPhone this only opens the app.` : line;
+}
 
 /** The action's own name, with no target on the end: "Refresh", "Toggle an
  * entity". For the places that have room for a word and not a sentence, such as
@@ -3354,6 +3402,17 @@ export function tapActionNote(action: TapAction, pages = false): string | undefi
     if (action.type === "nextPage") return "Each tap shows the next page. The page stays where it was left.";
     if (action.type === "previousPage") return "Each tap shows the page before. The page stays where it was left.";
     return "Plays every page once from one tap, then returns to page 1.";
+  }
+  // Both timer types run one intent on the watch, aimed at the first timer
+  // entity the document reads, with no picker of its own. Said here because
+  // nothing else in the editor shows which timer that is.
+  if (action.type === "timerStartPause") {
+    return "Uses the first timer entity this complication shows. One tap starts or pauses it,"
+      + " three quick taps cancel it. With no timer entity, a tap only refreshes.";
+  }
+  if (action.type === "timerCancel") {
+    return "This works the same as Start or pause a timer: one tap starts or pauses,"
+      + " three quick taps cancel. Pick Start or pause a timer to say so.";
   }
   if (action.type === "none") {
     return "The watch cannot do nothing on a tap: a complication with no action"

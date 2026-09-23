@@ -732,11 +732,12 @@ describe("refresh complications", () => {
     for (const note of [all, some, none]) expect(note).toContain("older app");
   });
 
-  it("shares the note under the picker with the three page actions and nothing else", () => {
+  it("shares the note under the picker with the page and timer actions and nothing else", () => {
     // "none" is explained too, and only a document saved before 2026-09-16 can
     // still hold it: the watch opens the app on any tap, so the picker stopped
     // offering it and the note tells a document that kept it what to pick.
-    const explained = ["refresh", "refreshAll", "nextPage", "previousPage", "playTour", "none"];
+    // The timer pair say which timer they reach, which nothing else shows.
+    const explained = ["refresh", "refreshAll", "nextPage", "previousPage", "playTour", "none", "timerStartPause", "timerCancel"];
     for (const [type] of TAP_ACTION_LABELS) {
       if (explained.includes(type)) continue;
       expect(tapActionNote({ type } as TapAction), type).toBeUndefined();

@@ -660,7 +660,7 @@ describe("whether anything can move the page", () => {
 // about it is the mirror of what it says about Next page.
 describe("the Previous page tap", () => {
   it("is offered, named, and read back from the wire", () => {
-    expect(TAP_ACTION_LABELS.find(([t]) => t === "previousPage")?.[1]).toBe("Previous page");
+    expect(TAP_ACTION_LABELS.find(([t]) => t === "previousPage")?.[1]).toBe("Show previous page");
     const cfg = pagedConfig({ count: 2, mode: "tap", dwell: [] });
     cfg.tapAction = { type: "previousPage" };
     const encoded = encodeConfig(cfg);
@@ -670,7 +670,7 @@ describe("the Previous page tap", () => {
   });
 
   it("is named in words by the Show taps overlay", () => {
-    expect(describeTapAction({ type: "previousPage" })).toBe("Previous page");
+    expect(describeTapAction({ type: "previousPage" })).toBe("Show previous page");
   });
 
   it("says what it does, and what it does not do without pages", () => {
@@ -713,8 +713,8 @@ describe("what the review overlay calls the two page taps", () => {
   // "Show taps" labels every tap area with `describeTapAction`, so a page
   // action that fell out of the table would draw its raw type name on the face.
   it("names them in words", () => {
-    expect(describeTapAction({ type: "nextPage" })).toBe("Next page");
-    expect(describeTapAction({ type: "playTour" })).toBe("Play the page tour");
+    expect(describeTapAction({ type: "nextPage" })).toBe("Show next page");
+    expect(describeTapAction({ type: "playTour" })).toBe("Play all pages");
   });
 });
 

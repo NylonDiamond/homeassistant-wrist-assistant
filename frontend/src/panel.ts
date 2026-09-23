@@ -1038,7 +1038,7 @@ export class WristAssistantPanel extends LitElement {
   @state() private sendPending = false;
   private sendTimer?: number;
   /** Watch-app pages (id + name) from the watch's last sync report; feeds the
-   * "Open the page" tap-action picker. */
+   * "Open a watch app page" tap-action picker. */
   @state() private pages: { id: string; name: string }[] = [];
   @state() private templateResults = new Map<string, string>();
   @state() private historySeries = new Map<string, string>();
@@ -5139,6 +5139,31 @@ export class WristAssistantPanel extends LitElement {
       border: none; background: transparent; color: inherit; cursor: pointer;
     }
     .col-menu button:hover, .col-menu button:focus-visible { background: var(--wa-panel); outline: none; }
+    /* The tap action menu: every action under its heading, each with one line
+       saying what it does, so the choice is readable without a tooltip. */
+    .tap-menu {
+      position: fixed; inset: auto; margin: 0; padding: 4px; border-radius: 10px; border: 1px solid var(--wa-line-strong);
+      background: var(--wa-card); color: var(--wa-ink); box-shadow: 0 8px 24px rgba(0, 0, 0, .28);
+      width: min(340px, calc(100vw - 16px)); max-height: 70vh; overflow: auto;
+    }
+    .tap-menu:popover-open { display: flex; flex-direction: column; }
+    .tap-menu::backdrop { background: transparent; }
+    .tap-menu-head {
+      font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+      opacity: .55; padding: 8px 10px 2px;
+    }
+    .tap-menu-head:first-child { padding-top: 4px; }
+    .tap-menu-sep { height: 1px; margin: 4px 6px; background: var(--wa-line); }
+    .tap-menu button {
+      display: flex; flex-direction: column; align-items: stretch; gap: 1px;
+      font: inherit; text-align: left; padding: 5px 10px; border-radius: 6px;
+      border: none; background: transparent; color: inherit; cursor: pointer;
+    }
+    .tap-menu button:hover, .tap-menu button:focus-visible { background: var(--wa-panel); outline: none; }
+    .tap-menu button.on { background: color-mix(in srgb, var(--wa-accent) 16%, transparent); }
+    .tap-menu-name { font-size: 13px; }
+    .tap-menu button.on .tap-menu-name { font-weight: 600; }
+    .tap-menu-info { font-size: 11.5px; line-height: 1.35; opacity: .65; }
     .confirm-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .value-chip-field.compact { margin: 0; }
     .value-chip-field.compact button.value-chip { padding: 3px 8px; font-size: 13px; max-width: 190px; }
@@ -8386,8 +8411,8 @@ export class WristAssistantPanel extends LitElement {
       ["One page at a time", "The canvas and the Layers card show one page. The Pages card above the list says which, and clicking a number switches both. [ and ] do the same from the keyboard."],
       ["Which page a layer is on", "Each layer sits on one page or on every page. Set it on the layer, in its Position card. A layer you add lands on the page you are looking at. A background, a border or a label that belongs everywhere goes on Every page."],
       ["+ and the trash", "In the Pages card. + adds an empty page at the end, up to four. The trash on the pressed page deletes that page and the layers on it; it asks first, so press it once for \"sure?\" and again to delete. Later pages move down one, layers on every page stay, and undo puts it back."],
-      ["Moving between pages on the watch", "A tap has to say so. Set the complication's tap action, or a tap layer's, to Next page or Previous page. A tap with any other action does its own job and leaves the page alone, so a page can still hold buttons. The page stays where it was left."],
-      ["The tour", "Set a tap action to Play the page tour and one tap plays every page once, then returns to page 1. The Pages card then shows a hold time per page; a tour lasts the sum of them. The Play button in the Pages card plays it on the canvas with the same timing. A tap during a tour on the watch stops it."],
+      ["Moving between pages on the watch", "A tap has to say so. Set the complication's tap action, or a tap layer's, to Show next page or Show previous page. A tap with any other action does its own job and leaves the page alone, so a page can still hold buttons. The page stays where it was left."],
+      ["The tour", "Set a tap action to Play all pages and one tap plays every page once, then returns to page 1. The Pages card then shows a hold time per page; a tour lasts the sum of them. The Play button in the Pages card plays it on the canvas with the same timing. A tap during a tour on the watch stops it."],
       ["What the watch needs", "A complication with pages needs the Wrist Assistant app that understands them. An older app refuses the whole complication and asks for an update rather than drawing every page on top of each other."],
     ];
     const layers: [string, string][] = [

@@ -134,6 +134,8 @@ import {
   RULE_TARGET_PROPERTIES,
   STYLE_PROPERTY,
   TAP_ACTION_LABELS,
+  TAP_ACTION_GROUPS,
+  tapActionInfo,
   tapActionLabel,
   describeTapAction,
   refreshTargetsWith,
@@ -397,7 +399,7 @@ export interface EditorHost {
   /** Search text, category and recents for the symbol picker. */
   symbols: SymbolBrowser;
   /** Watch-app pages (id + name, watch order) from the watch's last sync
-   * report; feeds the "Open the page" tap-action picker. */
+   * report; feeds the "Open a watch app page" tap-action picker. */
   pages: { id: string; name: string }[];
   /** Every complication this watch has on this server, id and name, for the
    * "Refresh multiple complications" tap's picker. Ids are uppercase, the way a document
@@ -3682,8 +3684,11 @@ const TAP_TYPES: [TapAction["type"], string][] = TAP_ACTION_LABELS.map(([t, labe
 
 /** A tap layer offers everything but "Nothing": a layer that does nothing would
  * just let the tap fall through to the whole-complication action, which is what
- * deleting the layer does. */
-const LAYER_TAP_TYPES: [TapAction["type"], string][] = TAP_TYPES.filter(([t]) => t !== "none");
+ * deleting the layer does. "Cancel a timer" is gone from every picker because
+ * the watch runs the start / pause intent for it; a stored one stays
+ * selectable through `tapActionMenu`. */
+const LAYER_TAP_TYPES: [TapAction["type"], string][] =
+  TAP_TYPES.filter(([t]) => t !== "none" && t !== "timerCancel");
 
 /** The whole complication does not offer "Nothing" either, for a different
  * reason: the watch cannot deliver it. A widget with no button and no
@@ -3752,6 +3757,61 @@ export function tapActionForType(type: TapAction["type"], current: TapAction): T
   if (tapNeedsEntity(type)) return { type: type as "toggleEntity", ...ref };
   // Everything left carries nothing at all.
   return { type: type as "openApp" };
+}
+
+/**
+ * The tap action picker: a button naming the current action, and a menu that
+ * files every action under a heading with one line saying what it does.
+ *
+ * Not a `<select>`: a native menu on a Mac shows no text but the names, and a
+ * hover tooltip would be lost on a phone anyway, so the line is drawn under
+ * each name where a touch screen can read it too. The rows are always built,
+ * not only while the menu is open: seventeen buttons cost nothing, and it keeps
+ * every name in the markup for the tests that read it.
+ *
+ * A type the surface no longer offers but the action already stores stays in
+ * the list, last, so opening the editor never changes what the watch does.
+ */
+function tapActionMenu(
+  label: string,
+  value: TapAction["type"],
+  options: [TapAction["type"], string][],
+  set: (v: TapAction["type"]) => void,
+  key: string,
+  onPhone = false,
+): TemplateResult {
+  const offered: [TapAction["type"], string][] = options.some(([t]) => t === value)
+    ? options
+    : [...options, [value, tapActionLabel({ type: value } as TapAction)]];
+  const name = (t: TapAction["type"]) => offered.find(([o]) => o === t)?.[1] ?? t;
+  const grouped = new Set(TAP_ACTION_GROUPS.flatMap(([, types]) => types));
+  const sections: [string | undefined, TapAction["type"][]][] = [
+    ...TAP_ACTION_GROUPS.map(([title, types]): [string, TapAction["type"][]] =>
+      [title, types.filter((t) => offered.some(([o]) => o === t))]),
+    [undefined, offered.map(([t]) => t).filter((t) => !grouped.has(t))],
+  ];
+  // Without popovers (an old browser) the plain select still works; it only
+  // loses the lines.
+  if (!popoverSupported()) return selectField(label, value, offered, set);
+  const id = popoverId(`${key}-tapmenu`);
+  return html`<div class="field value-chip-field tap-menu-field">
+    <span>${label}</span>
+    <button type="button" class="value-chip" popovertarget=${id} aria-haspopup="menu"
+      title=${`${label}: ${name(value)}. ${tapActionInfo(value, onPhone)}`}>
+      <span class="chip-text">${name(value)}</span>
+      <span class="chip-caret" aria-hidden="true">▾</span>
+    </button>
+    <div class="tap-menu" id=${id} popover role="menu" aria-label=${label} @toggle=${onValuePopoverToggle}>
+      ${sections.filter(([, types]) => types.length > 0).map(([title, types]) => html`
+        ${title === undefined ? html`<div class="tap-menu-sep" role="separator"></div>` : html`<div class="tap-menu-head" role="presentation">${title}</div>`}
+        ${types.map((t) => html`<button type="button" role="menuitemradio" aria-checked=${t === value ? "true" : "false"}
+          class=${t === value ? "on" : ""} popovertarget=${id} popovertargetaction="hide"
+          @click=${() => { if (t !== value) set(t); }}>
+          <span class="tap-menu-name">${name(t)}</span>
+          <span class="tap-menu-info">${tapActionInfo(t, onPhone)}</span>
+        </button>`)}`)}
+    </div>
+  </div>`;
 }
 
 /** The line under a tap picker for an action that needs one, or nothing. Every
@@ -4189,12 +4249,12 @@ export function generalEditor(host: EditorHost, opts: { nameOnly?: boolean } = {
       ${textField("Name", cfg.name, (v) => host.update((c) => { c.name = v; }, "name"))}
       ${selectField("Refresh", String(refresh), refreshOptions, (v) => host.update((c) => { c.refreshMinutes = Number(v) || 0; }, "refresh"))}
       ${refresh > 0 ? timedRefreshBudgetHint(refresh) : nothing}
-      ${selectField("Tap action", tap.type, tapTypesFor(tap), (v) => host.update((c) => {
+      ${tapActionMenu("Tap action", tap.type, tapTypesFor(tap), (v) => host.update((c) => {
         c.tapAction = tapActionForType(v, c.tapAction);
         // Mirrors the iPhone preset editor: the chosen page belongs to the
         // openPage type; leaving it clears the choice.
         if (v !== "openPage") { delete c.openPageId; delete c.openPageName; }
-      }))}
+      }), "doc-tap", host.deviceKind === "iphone")}
       <div class="field flash-cell"><span title="Flash when a tap works">Flash</span>
         <div class="flash-row">
           <input type="checkbox" .checked=${flashOn} title="Flash when a tap works"
@@ -7928,7 +7988,7 @@ export type TapActionHolder = Pick<TapElement, "action" | "openPageId" | "openPa
 
 /**
  * The action form behind a tap: what it does, the entity it does it to, and
- * the page picker for Open the page. Shared by a free-standing tap layer's own
+ * the page picker for Open a watch app page. Shared by a free-standing tap layer's own
  * editor, by the Tappable section below and by the Control Center card, so
  * they can never drift apart.
  *
@@ -7948,10 +8008,10 @@ export function tapActionEditor(
 ): TemplateResult {
   const action = tap.action;
   return html`
-    ${selectField(label, action.type, types, (v) => upd((p) => {
+    ${tapActionMenu(label, action.type, types, (v) => upd((p) => {
       p.action = tapActionForType(v, p.action);
       if (v !== "openPage") { delete p.openPageId; delete p.openPageName; }
-    }))}
+    }), key, host.deviceKind === "iphone")}
     ${tapNote(action, usesPages(host.config))}
     ${action.type === "refreshAll"
       ? refreshTargetsField(host, action, (next) => upd((p) => { p.action = next; }))
