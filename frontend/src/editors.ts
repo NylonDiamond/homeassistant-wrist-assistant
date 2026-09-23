@@ -470,6 +470,9 @@ export interface EditorHost {
    * warnings, errors, empty states and hints marked `keep` always show. */
   helpSections: ReadonlySet<string>;
   toggleHelp(id: string): void;
+  /** Plays the tour on the canvas, for the button under a Play all pages tap.
+   * Absent where there is no canvas to play it on. */
+  tour?: { playing: boolean; toggle(): void };
   /** Make a layer the selection, the way a click on its Layers row does. */
   selectLayer(id: string): void;
   /** Draw a layer on the preview as the one selection while the pointer is on
@@ -3870,7 +3873,12 @@ function tourHoldFields(host: EditorHost): TemplateResult | typeof nothing {
         (v) => host.update((c) => { setPageDwell(c, n, v); }, `pages-dwell-${n}`), range))}
     </div>
     <div class="hint">Tour lasts ${dwellSeconds(tourDuration(spec))}.${taps > 1
-      ? " These times are shared by every Play all pages tap." : ""}</div>`;
+      ? " These times are shared by every Play all pages tap." : ""}</div>
+    ${host.tour ? html`<button class="small" aria-pressed=${host.tour.playing ? "true" : "false"}
+      title=${host.tour.playing
+        ? "Stop the tour. The page stays where it got to, the way a tap on the watch takes over from a tour."
+        : "Play every page once on the canvas with these times, then back to page 1, the way the watch plays it."}
+      @click=${() => host.tour?.toggle()}>${host.tour.playing ? "Stop" : "Test on canvas"}</button>` : nothing}`;
 }
 
 /** The line under a tap picker for an action that needs one, or nothing. Every

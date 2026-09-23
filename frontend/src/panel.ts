@@ -6852,6 +6852,7 @@ export class WristAssistantPanel extends LitElement {
       toggleSection: (id) => this.toggleSection(id),
       helpSections: this.helpSections,
       toggleHelp: (id) => this.toggleHelp(id),
+      tour: { playing: this.touring, toggle: () => { if (this.touring) this.stopTour(); else this.playTour(); } },
       // The inspector's cross-links ("Select the chart", a group's members) go
       // to the layer's own page first, the same as a click in the Layers list.
       selectLayer:(id) => { this.multi = new Set(); this.showPageOf(id); this.inspect = { kind: "layer", id }; },
@@ -8420,7 +8421,7 @@ export class WristAssistantPanel extends LitElement {
       ["Which page a layer is on", "Each layer sits on one page or on every page. Set it on the layer, in its Position card. A layer you add lands on the page you are looking at. A background, a border or a label that belongs everywhere goes on Every page."],
       ["+ and the trash", "In the Pages card. + adds an empty page at the end, up to four. The trash on the pressed page deletes that page and the layers on it; it asks first, so press it once for \"sure?\" and again to delete. Later pages move down one, layers on every page stay, and undo puts it back."],
       ["Moving between pages on the watch", "A tap has to say so. Set the complication's tap action, or a tap layer's, to Show next page or Show previous page. A tap with any other action does its own job and leaves the page alone, so a page can still hold buttons. The page stays where it was left."],
-      ["The tour", "Set a tap action to Play all pages and one tap plays every page once, then returns to page 1. Under that tap action you set how long each page shows, or one time for every page; a tour lasts the sum of them. Every Play all pages tap shares these times. A tap during a tour on the watch stops it."],
+      ["The tour", "Set a tap action to Play all pages and one tap plays every page once, then returns to page 1. Under that tap action you set how long each page shows, or one time for every page; a tour lasts the sum of them. Every Play all pages tap shares these times. Test on canvas, under the tap action, plays it here with the same timing. A tap during a tour on the watch stops it."],
       ["What the watch needs", "A complication with pages needs the Wrist Assistant app that understands them. An older app refuses the whole complication and asks for an update rather than drawing every page on top of each other."],
     ];
     const layers: [string, string][] = [

@@ -141,3 +141,21 @@ describe("where the page holds are edited", () => {
     expect(layer).toContain("These times are shared by every Play all pages tap.");
   });
 });
+
+describe("the Test on canvas button", () => {
+  it("sits under a Play all pages tap, and plays or stops the tour", () => {
+    const cfg = paged({ type: "playTour" });
+    let presses = 0;
+    const idle = flatten(generalEditor(host(cfg, { tour: { playing: false, toggle: () => { presses++; } } })));
+    expect(idle).toContain("Test on canvas");
+    const playing = flatten(generalEditor(host(cfg, { tour: { playing: true, toggle: () => {} } })));
+    expect(playing).toContain(">Stop<");
+    expect(playing).not.toContain("Test on canvas");
+  });
+
+  it("is missing where there is no canvas, and under any other tap", () => {
+    expect(flatten(generalEditor(host(paged({ type: "playTour" }))))).not.toContain("Test on canvas");
+    const tour = { playing: false, toggle: () => {} };
+    expect(flatten(generalEditor(host(paged({ type: "nextPage" }), { tour })))).not.toContain("Test on canvas");
+  });
+});
