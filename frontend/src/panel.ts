@@ -51,6 +51,7 @@ import {
   MAX_SLOTS,
   literal,
   attachedTapsOf,
+  detachTaps,
   auditUnknownKeys,
   controlEffectiveKind,
   controlOnly,
@@ -262,6 +263,7 @@ import {
   generalEditor,
   groupEditor,
   layerEditor,
+  tapCard,
   layerTitle,
   lookSummary,
   namedValueEditor,
@@ -1519,6 +1521,10 @@ export class WristAssistantPanel extends LitElement {
    * An attached tap is invisible during normal editing on purpose, which is
    * exactly why "what happens if I tap here?" needed a mode of its own. */
   @state() private showTaps = false;
+  /** The selected layer's tap strip was clicked, not the layer itself: the
+   * inspector shows the Tap card alone and the strip wears the selection.
+   * Any other pick clears it (willUpdate). */
+  @state() private tapFocus = false;
   /** The name the open complication had when its edit session started, so the
    * General tab can warn that a rename does not reach the watch face picker.
    * Undefined for a brand-new complication (nothing is on the watch yet). */
@@ -3364,29 +3370,44 @@ export class WristAssistantPanel extends LitElement {
     .badge.states { color: #8a5a00; background: rgba(249,168,37,.18); }
     :host([dark]) .badge.tap { color: var(--wa-tap); background: color-mix(in srgb, var(--wa-tap) 22%, transparent); }
     :host([dark]) .badge.states { color: var(--wa-states); background: color-mix(in srgb, var(--wa-states) 22%, transparent); }
-    /* A layer's attached tap: a half-height pink row tucked under the layer,
-       indented to the layer's color bar so it reads as part of that layer. */
-    .tap-row {
-      display: flex; align-items: center; gap: 6px; flex: none;
-      min-height: 22px; margin: -2px 0 0 27px; padding: 0 8px; border-radius: var(--wa-r-sm);
-      font-size: 11.5px; font-weight: 600; cursor: pointer; user-select: none; min-width: 0;
-      color: #c2185b; background: rgba(236,64,122,.10); box-shadow: inset 0 0 0 1px rgba(236,64,122,.28);
+    /* A layer's attached tap: the bottom part of the layer's own row, under
+       a hairline. The row grows a little so the strip fits; the strip sits
+       2px inside the row's edge so the row's ring (1px, 2px when selected)
+       still shows around it. With the tap selected (tapsel) the strip wears
+       the selection in pink and the top part goes back to rest. */
+    .layer.with-tap {
+      grid-template-rows: minmax(48px, auto) auto; row-gap: 0; padding-bottom: 0;
+    }
+    .tap-strip {
+      --tp: #c2185b;
+      grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; min-width: 0;
+      height: 22px; margin: 0 -4px 2px -2px; padding: 0 4px 0 37px;
+      border-top: 1px solid var(--wa-line);
+      border-radius: 0 0 calc(var(--wa-r-sm) - 2px) calc(var(--wa-r-sm) - 2px);
+      font-size: 11.5px; font-weight: 600; color: var(--tp);
+      background: color-mix(in srgb, var(--tp) 9%, transparent);
       transition: background-color .12s ease-out, box-shadow .12s ease-out;
     }
-    .tap-row:hover { background: rgba(236,64,122,.18); }
-    .tap-row.on { background: rgba(236,64,122,.24); box-shadow: inset 0 0 0 2px #ec407a; }
-    .tap-row:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    .tap-row.dim { opacity: .55; }
-    .tap-row .tap-glyph { display: grid; place-items: center; flex: none; }
-    .tap-row .tap-glyph svg { width: 13px; height: 13px; }
-    .tap-row .tap-words { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .tap-row .tap-where { margin-left: auto; flex: none; white-space: nowrap; opacity: .85; }
-    :host([dark]) .tap-row {
-      color: var(--wa-tap); background: color-mix(in srgb, var(--wa-tap) 12%, transparent);
-      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-tap) 32%, transparent);
+    :host([dark]) .tap-strip { --tp: var(--wa-tap); background: color-mix(in srgb, var(--tp) 13%, transparent); }
+    .tap-strip:hover { background: color-mix(in srgb, var(--tp) 20%, transparent); }
+    .tap-strip:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .layer.tapsel {
+      background: color-mix(in srgb, var(--wa-panel) 60%, var(--wa-card));
+      box-shadow: inset 0 0 0 1px var(--wa-line-strong);
     }
-    :host([dark]) .tap-row:hover { background: color-mix(in srgb, var(--wa-tap) 20%, transparent); }
-    :host([dark]) .tap-row.on { background: color-mix(in srgb, var(--wa-tap) 26%, transparent); box-shadow: inset 0 0 0 2px var(--wa-tap); }
+    .layer.tapsel .tap-strip {
+      background: color-mix(in srgb, var(--tp) 26%, transparent);
+      box-shadow: inset 0 0 0 2px var(--tp); border-top-color: transparent;
+    }
+    .layer.dim .tap-strip { opacity: .55; }
+    .tap-strip .tap-glyph { display: grid; place-items: center; flex: none; }
+    .tap-strip .tap-glyph svg { width: 13px; height: 13px; }
+    .tap-strip .tap-words { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tap-strip .tap-where { margin-left: auto; flex: none; white-space: nowrap; opacity: .85; }
+    .tap-strip .tap-del { margin-left: auto; width: 22px; height: 20px; flex: none; color: var(--tp); opacity: .7; }
+    .tap-strip .tap-where + .tap-del { margin-left: 4px; }
+    .tap-strip .tap-del:hover { opacity: 1; }
+    .tap-strip .tap-del svg.ui-icon { width: 14px; height: 14px; }
     /* The right end of a row holds one thing at a time: the badges at rest,
        the buttons under the pointer or on the selected row. They trade places
        rather than stand side by side, so the badges keep the right edge and
@@ -6161,6 +6182,7 @@ export class WristAssistantPanel extends LitElement {
           const el = ins.kind === "layer" ? this.draft?.config.elements.find((e) => e.payload.id === ins.id) : undefined;
           this.showTaps = el?.kind === "tap";
         }
+        if (before !== undefined && !changed.has("tapFocus")) this.tapFocus = false;
       }
       // Selecting anything at all is a move off the Control Center tab: that
       // tab draws no layers, so whatever was clicked belongs to a shape. Done
@@ -6173,6 +6195,9 @@ export class WristAssistantPanel extends LitElement {
     if (changed.has("showTaps") && this.showTaps && !this.openSections.has("tappable")) {
       this.openSections = new Set([...this.openSections, "tappable"]);
     }
+    // The tap-only inspector is about the tap box on the face, so it never
+    // outlives the tap view.
+    if (changed.has("showTaps") && !this.showTaps) this.tapFocus = false;
   }
 
   protected override updated(changed: PropertyValues) {    // Every render can change what is in a scroll box, so the edge fades are
@@ -6273,6 +6298,13 @@ export class WristAssistantPanel extends LitElement {
     // Delete and Backspace remove what is selected. Only outside a field, so
     // a Backspace in the name box stays a Backspace.
     if ((e.key === "Delete" || e.key === "Backspace") && !inField && !dialogOpen) {
+      // With a layer's tap selected, the key takes the tap and keeps the layer.
+      if (this.tapFocus && this.inspect.kind === "layer" && this.canEdit) {
+        const id = this.inspect.id;
+        this.removeTap(id);
+        e.preventDefault();
+        return;
+      }
       if (this.deleteSelection()) e.preventDefault();
       return;
     }
@@ -14890,8 +14922,34 @@ export class WristAssistantPanel extends LitElement {
     // layer the canvas does not draw cannot be dragged, sized or seen react to
     // anything typed in the inspector.
     this.showPageOf(id);
+    // From its own tap strip back to the whole layer: the selection does not
+    // change, so the tap view is dropped here rather than in willUpdate.
+    if (this.tapFocus && this.inspect.kind === "layer" && this.inspect.id === id) this.leaveTapFocus();
     this.inspect = { kind: "layer", id };
     this.pickAnchor = id;
+  }
+
+  /** Select a layer's attached tap: the layer, the tap view narrowed to its
+   * box, and the inspector down to the Tap card. */
+  private selectTap(id: string) {
+    this.multi = new Set();
+    this.showPageOf(id);
+    this.inspect = { kind: "layer", id };
+    this.pickAnchor = id;
+    this.tapFocus = true;
+    this.setShowTaps(true);
+    this.lightSection("tappable");
+  }
+
+  private leaveTapFocus() {
+    this.tapFocus = false;
+    this.setShowTaps(false);
+  }
+
+  /** Take a layer's attached tap off, keeping the layer. */
+  private removeTap(id: string) {
+    this.mutate((c) => detachTaps(c, id));
+    if (this.tapFocus && this.inspect.kind === "layer" && this.inspect.id === id) this.leaveTapFocus();
   }
 
   /** Pick every row between the anchor and `id`, in list order, groups and all. */
@@ -15020,7 +15078,7 @@ export class WristAssistantPanel extends LitElement {
       const eff = effectivePlacement(cfg, family, el);
       const hidden = eff.isHidden;
       // A tap layer is a tap, so it wears a badge saying so. A layer with a tap
-      // attached shows it as a row of its own under this one (tapRow), which
+      // attached shows it as a strip along the bottom of this row, which
       // says what the tap does without a hover.
       // The badge is short: "tap", or where a page-turning tap lands. The
       // action's full name made the badge the widest thing in a 300px row, so
@@ -15029,7 +15087,30 @@ export class WristAssistantPanel extends LitElement {
       const tapTitle = el.kind === "tap" ? `Tappable · ${describeTapAction(el.payload.action)}` : undefined;
       const states = statesSummary(el.payload.rules);
       const d = this.rowDrag(id, edit);
-      return html`<div class="layer ${hl ? "hl" : ""} ${held ? "held" : ""} ${this.dialogLitIds.includes(id) ? "lit" : ""} ${hidden ? "dim" : ""} ${this.multi.has(id) ? "multi" : ""} ${inGroup ? "kid" : ""} ${rich ? "rich" : ""}"
+      // A layer's attached tap is the bottom part of the layer's own row, under
+      // a hairline. Taps are one of the most used things on a complication,
+      // and a small "tap" badge that hid under the buttons on hover made it
+      // hard to see which layers answer a press and what they do. A click on
+      // the strip selects the tap: the face shows its box and the inspector
+      // shows the Tap card alone. A click on the top part is the whole layer.
+      const attached = el.kind === "tap" ? undefined : attachedTapsOf(cfg, id)[0];
+      const tapSel = hl && this.tapFocus;
+      let strip: TemplateResult | typeof nothing = nothing;
+      if (attached?.kind === "tap") {
+        const act = attached.payload.action;
+        const where = tapBadge(act, el.payload.page ?? this.page, pageCount);
+        strip = html`<div class="tap-strip" role="button" tabindex="0"
+          title="Select this tap: show its box on the preview and only its settings"
+          @click=${(e: Event) => { e.stopPropagation(); this.selectTap(id); }}
+          @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); this.selectTap(id); } }}>
+          <span class="tap-glyph">${uiIcon("tap")}</span>
+          <span class="tap-words">${describeTapAction(act)}</span>
+          ${where === "tap" ? nothing : html`<span class="tap-where">${where}</span>`}
+          ${edit ? html`<button class="icon danger tap-del" title="Remove the tap, keep the layer" aria-label="Remove the tap"
+            @click=${(e: Event) => { e.stopPropagation(); this.removeTap(id); }}>${uiIcon("delete")}</button>` : nothing}
+        </div>`;
+      }
+      return html`<div class="layer ${attached ? "with-tap" : ""} ${tapSel ? "tapsel" : ""} ${hl ? "hl" : ""} ${held ? "held" : ""} ${this.dialogLitIds.includes(id) ? "lit" : ""} ${hidden ? "dim" : ""} ${this.multi.has(id) ? "multi" : ""} ${inGroup ? "kid" : ""} ${rich ? "rich" : ""}"
         style=${`--k:${KIND_COLOR[el.kind]}`} tabindex="0" draggable=${d.draggable}
         @pointerenter=${() => { this.listHoverIds = [id]; }}
         @pointerleave=${() => this.leaveRow([id])}
@@ -15059,43 +15140,7 @@ export class WristAssistantPanel extends LitElement {
           </span>` : nothing}
           ${chevron}
         </span>
-      </div>`;
-    };
-
-    // A layer's attached tap, as a short pink row hung under the layer's own.
-    // Taps are one of the most used things on a complication, and a small
-    // "tap" badge that hid under the row's buttons on hover made it hard to
-    // see which layers answer a press and what they do. A click selects the
-    // layer, turns on Show taps (narrowed to this tap, so the preview draws
-    // its box), and opens the layer's Tap card.
-    const tapRow = (el: CElement) => {
-      if (el.kind === "tap") return nothing;
-      const tap = attachedTapsOf(cfg, el.payload.id)[0];
-      if (tap?.kind !== "tap") return nothing;
-      const id = el.payload.id;
-      const act = tap.payload.action;
-      const on = this.showTaps && this.inspect.kind === "layer" && this.inspect.id === id;
-      const dim = effectivePlacement(cfg, family, el).isHidden;
-      const where = tapBadge(act, el.payload.page ?? this.page, pageCount);
-      const open = () => {
-        this.multi = new Set();
-        this.inspect = { kind: "layer", id };
-        this.setShowTaps(true);
-        if (!this.openSections.has("tappable")) this.toggleSection("tappable");
-        this.lightSection("tappable");
-        void this.updateComplete.then(() => {
-          this.renderRoot.querySelector("section.sec.lit")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-        });
-      };
-      return html`<div class="tap-row ${on ? "on" : ""} ${dim ? "dim" : ""}" role="button" tabindex="0"
-        title="Show this tap on the preview and open its settings"
-        @pointerenter=${() => { this.listHoverIds = [id]; }}
-        @pointerleave=${() => this.leaveRow([id])}
-        @click=${open}
-        @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } }}>
-        <span class="tap-glyph">${uiIcon("tap")}</span>
-        <span class="tap-words">${describeTapAction(act)}</span>
-        ${where === "tap" ? nothing : html`<span class="tap-where">${where}</span>`}
+        ${strip}
       </div>`;
     };
 
@@ -15275,7 +15320,7 @@ export class WristAssistantPanel extends LitElement {
       const rows: TemplateResult[] = [];
       for (const row of list) {
         if (row.kind === "layer") {
-          rows.push(html`${layerRow(row.el, inGroup, held, listChevron(row.el))}${tapRow(row.el)}${listKids(row.el)}`);
+          rows.push(html`${layerRow(row.el, inGroup, held, listChevron(row.el))}${listKids(row.el)}`);
           continue;
         }
         const g = row.group;
@@ -16613,7 +16658,13 @@ export class WristAssistantPanel extends LitElement {
       if (el) {
         // Every group around the layer, outermost first, each a way back up.
         const chain = groupChain(cfg, el.payload.groupId).reverse();
-        tail = html`${chain.map((g) => html`<button @click=${() => { this.inspect = { kind: "group", id: g.id }; }} title="Edit the group">${g.name}</button><span class="sep">›</span>`)}${here(KIND_COLOR[el.kind], KIND_LABEL[el.kind], layerTitle(el, describeContext(this.host())))}`;
+        const title = layerTitle(el, describeContext(this.host()));
+        // With the tap selected, the layer is one step up and a way back to
+        // every setting of the layer.
+        const leaf = this.tapFocus && el.kind !== "tap"
+          ? html`<button @click=${() => this.leaveTapFocus()} title="Edit the whole layer">${title}</button><span class="sep">›</span>${here(SECTION_COLOR.tap, "Tap", "Tap")}`
+          : here(KIND_COLOR[el.kind], KIND_LABEL[el.kind], title);
+        tail = html`${chain.map((g) => html`<button @click=${() => { this.inspect = { kind: "group", id: g.id }; }} title="Edit the group">${g.name}</button><span class="sep">›</span>`)}${leaf}`;
       }
     } else if (ins.kind === "group") {
       const chain = groupChain(cfg, ins.id).reverse();
@@ -16731,7 +16782,13 @@ export class WristAssistantPanel extends LitElement {
         this.inspect = { kind: "general" };
         return nothing;
       }
-      body = layerEditor(host, el, this.canvasFamily, { placement: true, tap: true });
+      // A click on the layer's tap strip edits the tap alone.
+      if (this.tapFocus && el.kind !== "tap") {
+        cards = false;
+        body = tapCard(host, el);
+      } else {
+        body = layerEditor(host, el, this.canvasFamily, { placement: true, tap: true });
+      }
     } else if (ins.kind === "group") {
       const g = cfg.groups?.find((x) => x.id === ins.id);
       if (!g) {
