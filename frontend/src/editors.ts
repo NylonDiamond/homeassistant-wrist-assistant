@@ -297,7 +297,10 @@ import {
   pageMoverExists,
   pageNumbers,
   pagesSpecOf,
+  setAllPageDwells,
   setPageDwell,
+  sharedDwell,
+  playTourTapCount,
   tourDuration,
   usesPages,
   writtenDwell,
@@ -3842,6 +3845,34 @@ function showPageField(host: EditorHost, action: ShowPageAction, set: (next: Sho
   return selectField("Page", String(action.page), options, (v) => set({ type: "showPage", page: Number(v) || 1 }));
 }
 
+/**
+ * How long each page shows while Play all pages plays, under that tap.
+ *
+ * Here and not in the Pages card, because nothing else reads these times:
+ * stepping taps and Show one page ignore them. One "Same for every page" field
+ * sets them all at once, and each page can still differ below it. The times
+ * belong to the document, so every Play all pages tap shares them; with more
+ * than one, a line says so, because editing them under one tap changes the
+ * others too.
+ */
+function tourHoldFields(host: EditorHost): TemplateResult | typeof nothing {
+  const cfg = host.config;
+  if (!usesPages(cfg)) return nothing;
+  const spec = pagesSpecOf(cfg);
+  const range = { step: 0.5, min: PAGE_DWELL_RANGE.min, max: PAGE_DWELL_RANGE.max, optional: true, unit: "s",
+    placeholder: String(PAGE_DEFAULT_DWELL), def: null };
+  const taps = playTourTapCount(cfg);
+  return html`
+    ${numberField("Same for every page", sharedDwell(spec),
+      (v) => host.update((c) => { setAllPageDwells(c, v); }, "pages-dwell-all"), range)}
+    <div class="grid2">
+      ${pageNumbers(spec).map((n) => numberField(`Page ${n} hold`, writtenDwell(spec, n),
+        (v) => host.update((c) => { setPageDwell(c, n, v); }, `pages-dwell-${n}`), range))}
+    </div>
+    <div class="hint">Tour lasts ${dwellSeconds(tourDuration(spec))}.${taps > 1
+      ? " These times are shared by every Play all pages tap." : ""}</div>`;
+}
+
 /** The line under a tap picker for an action that needs one, or nothing. Every
  * picker renders this, so the sentence is written once, in the model, beside
  * the labels themselves. */
@@ -4309,6 +4340,7 @@ export function generalEditor(host: EditorHost, opts: { nameOnly?: boolean } = {
       ? callServiceFields(host, tap, (next, k) => host.update((c) => { c.tapAction = next; }, k), "general-tap")
       : nothing}
     ${tap.type === "showPage" ? showPageField(host, tap, (next) => host.update((c) => { c.tapAction = next; }, "tap-page")) : nothing}
+    ${tap.type === "playTour" ? tourHoldFields(host) : nothing}
     ${tap.type === "openPage" ? openPageField(host) : nothing}`;
 }
 
@@ -4319,9 +4351,10 @@ function dwellSeconds(seconds: number): string {
 }
 
 /**
- * The settings under the Pages card's row, in the left column: how long a
- * tour holds each page, and the two buttons that make the tap areas a page
- * needs to be turned.
+ * The settings under the Pages card's row, in the left column: the two
+ * buttons that make the tap areas a page needs to be turned. How long a tour
+ * holds each page is not here but under the Play all pages tap
+ * (`tourHoldFields`), the one action that reads it.
  *
  * Everything about pages lives in that card. There used to be a Pages count
  * select here in the Complication card as well, and the two disagreed: the
@@ -4335,8 +4368,8 @@ function dwellSeconds(seconds: number): string {
  *   Taking the second-to-last page turns pages off, which is the one way off.
  *
  * There is no Mode switch. Whether the document is a tour follows its tap
- * actions (`pageModeFor`): a Play tour action anywhere makes it one, and the
- * hold fields appear with it. A switch of its own allowed two dead mixes, a
+ * actions (`pageModeFor`): a Play tour action anywhere makes it one. A
+ * switch of its own allowed two dead mixes, a
  * tour nothing could start and a Play tour the watch refused to play.
  *
  * Which page a layer sits on is set on the layer, in its Position card, not
@@ -4348,8 +4381,6 @@ export function pagesCardFields(host: EditorHost, page: number): TemplateResult 
   // Nothing under Add a page until there are pages: the button says what it
   // does, and a line of print explaining it says the same thing twice.
   if (!usesPages(cfg)) return html``;
-  const spec = pagesSpecOf(cfg);
-  const tour = spec.mode === "tour";
   // One zone per press, and each lands on the page the author is looking at,
   // because page 1 usually wants Next alone and the last page wants Back
   // alone. A pair on every page would put a dead Back on page 1.
@@ -4367,15 +4398,6 @@ export function pagesCardFields(host: EditorHost, page: number): TemplateResult 
   // page 1. It goes amber while that is actually true.
   const stuck = !pageMoverExists(cfg);
   return html`
-    ${tour ? html`
-      <div class="grid2">
-        ${pageNumbers(spec).map((n) => numberField(`Page ${n} hold`, writtenDwell(spec, n),
-          (v) => host.update((c) => { setPageDwell(c, n, v); }, `pages-dwell-${n}`),
-          { step: 0.5, min: PAGE_DWELL_RANGE.min, max: PAGE_DWELL_RANGE.max, optional: true, unit: "s",
-            placeholder: String(PAGE_DEFAULT_DWELL), def: null }))}
-      </div>
-      <div class="hint">Tour lasts ${dwellSeconds(tourDuration(spec))}.</div>`
-      : nothing}
     <div class="page-fix">
       <span class="page-fix-l ${stuck ? "warn" : ""}">Add a tap action to go to prev/next page.
         Required for changing pages.</span>
@@ -8059,6 +8081,7 @@ export function tapActionEditor(
       ? callServiceFields(host, action, (next, k) => upd((p) => { p.action = next; }, k), `${key}-tap`)
       : nothing}
     ${action.type === "showPage" ? showPageField(host, action, (next) => upd((p) => { p.action = next; }, "tap-page")) : nothing}
+    ${action.type === "playTour" ? tourHoldFields(host) : nothing}
     ${action.type === "openPage" ? pageChoiceField(host, tap.openPageId, tap.openPageName, (pid, name) => upd((p) => {
       if (pid === undefined) { delete p.openPageId; delete p.openPageName; return; }
       p.openPageId = pid;

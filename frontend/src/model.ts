@@ -4100,6 +4100,36 @@ export function writtenDwell(spec: PagesSpec, page: number): number | undefined 
 }
 
 /**
+ * Every page held for the same time, or every hold cleared back to the
+ * default when `seconds` is undefined. The "Same for every page" field under a
+ * Play all pages tap; the per-page fields below it still change one at a time.
+ */
+export function setAllPageDwells(cfg: CustomComplicationConfig, seconds: number | undefined): void {
+  const spec = cfg.pages;
+  if (!hasPages(spec)) return;
+  spec!.dwell = seconds === undefined
+    ? []
+    : pageNumbers(spec!).map(() => clampPageDwell(seconds));
+}
+
+/** The hold every page shares, or undefined when the pages differ or none is
+ * written. What the "Same for every page" field shows: a number there must be
+ * true of every page, so a mix leaves it blank rather than showing page 1's. */
+export function sharedDwell(spec: PagesSpec): number | undefined {
+  const holds = pageNumbers(spec).map((n) => writtenDwell(spec, n));
+  const first = holds[0];
+  return first !== undefined && holds.every((d) => d === first) ? first : undefined;
+}
+
+/** How many taps in this document play the tour: the whole-complication tap
+ * and every tap layer, attached ones included. They all share one set of page
+ * holds, which is worth saying once there is more than one. */
+export function playTourTapCount(cfg: CustomComplicationConfig): number {
+  const own = cfg.tapAction.type === "playTour" ? 1 : 0;
+  return own + cfg.elements.filter((el) => el.kind === "tap" && el.payload.action.type === "playTour").length;
+}
+
+/**
  * The page of every layer that just arrived in a document, settled by where
  * it landed rather than where it came from.
  *
