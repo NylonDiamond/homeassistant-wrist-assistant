@@ -169,7 +169,7 @@ var WC=Object.defineProperty;var jC=Object.getOwnPropertyDescriptor;var I=(e,n,t
           </g>
           ${n.tapReview===!0&&n.groundTap===!0?ev(h,a,`${o}-ground`,te,te,`scale(${r.scale*ke})`):m}
         </g>
-        ${n.highlightSlot===!0?x`<circle cx=${te/2} cy=${te/2} r=${Math.max(0,te/2-1)} fill="none" stroke="#0A84FF" stroke-width="2"
+        ${n.highlightSlot===!0?x`<circle cx=${te/2} cy=${te/2} r=${te/2} fill="none" stroke="#0A84FF" stroke-width="2"
               vector-effect="non-scaling-stroke" pointer-events="none" />`:m}
         <circle cx=${te/2} cy=${te/2} r=${te/2} fill="none"
           stroke="rgba(255,255,255,0.22)" stroke-width=${.75*M} stroke-dasharray=${`${2*M} ${2*M}`} />
@@ -197,8 +197,8 @@ var WC=Object.defineProperty;var jC=Object.getOwnPropertyDescriptor;var I=(e,n,t
       </g>
       ${n.tapReview===!0&&n.groundTap===!0?ev(h,a,`${o}-ground`,i.width,i.height,`translate(${r.x} ${r.y}) scale(${r.scale})`):m}
     </g>
-    ${n.highlightSlot===!0?x`<rect x="1" y="1" width=${Math.max(0,i.width-2)} height=${Math.max(0,i.height-2)} rx=${Math.max(0,T-1)}
-          fill="none" stroke="#0A84FF" stroke-width="2" vector-effect="non-scaling-stroke" pointer-events="none" />`:m}
+    ${n.highlightSlot===!0?x`<rect width=${i.width} height=${i.height} rx=${T}
+          fill="none" stroke="#0A84FF" stroke-width="4" vector-effect="non-scaling-stroke" pointer-events="none" />`:m}
     ${_a(R,$,g)}
     <g transform="translate(${r.x} ${r.y}) scale(${r.scale})">${tv(h,a,n,f)}</g>
     ${Qx(h,a,n.spotlightIds,`${o}-spot`,i.width,i.height,`translate(${r.x} ${r.y}) scale(${r.scale})`)}
