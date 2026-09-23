@@ -6236,14 +6236,14 @@ ${yH(c)}`}}delete s.hidden,delete s.linkId;let l=cd(a);if(l.length>0){let d=l.sl
         ${i?u`<button class="page-trash ${p?"armed":""}" title=${p?`Press again to delete page ${s}.`:h}
           aria-label=${p?`Press again to delete page ${s}`:`Delete page ${s}`}
           @click=${()=>{p?o(s):this.armPageTrash(s)}}>${p?"sure?":E("delete")}</button>`:m}
-      </div>`})}renderPageTools(t){if(!t)return m;let i=this.page,a=o=>{let s=o==="previousPage";return u`<button class="lc-ghost sm"
-        title=${s?`A tap zone over the left half of page ${i}. Tapping it shows the page before.`:`A tap zone over the right half of page ${i}. Tapping it shows the next page.`}
-        @click=${()=>this.mutate(l=>{lb(l,o,i)},`pages-zone-${o}`)}>${E("plus")}<span>${s?"Previous":"Next"} page</span></button>`},r=(o,s,l)=>()=>{let d="";this.mutate(c=>{let p=qe("tap"),h=p.payload;h.name=o,h.frame={x:.25,y:0,width:.5,height:1,rotationDegrees:0},h.action=s,h.page=i,c.elements.unshift(p),d=h.id},`pages-zone-${s.type}`),l&&(this.inspect={kind:"layer",id:d},this.lightSection("content"))};return u`<div class="page-tools">
+      </div>`})}renderPageTools(t){if(!t)return m;let i=this.page,a=s=>{let l=s==="previousPage";return u`<button class="lc-ghost sm"
+        title=${l?`A tap zone over the left half of page ${i}. Tapping it shows the page before.`:`A tap zone over the right half of page ${i}. Tapping it shows the next page.`}
+        @click=${()=>{let d="";this.mutate(c=>{d=lb(c,s,i)},`pages-zone-${s}`),r(d)}}>${E("plus")}<span>${l?"Previous":"Next"} page</span></button>`},r=s=>{this.inspect={kind:"layer",id:s},this.lightSection("content")},o=(s,l)=>()=>{let d="";this.mutate(c=>{let p=qe("tap"),h=p.payload;h.name=s,h.frame={x:.25,y:0,width:.5,height:1,rotationDegrees:0},h.action=l,h.page=i,c.elements.unshift(p),d=h.id},`pages-zone-${l.type}`),r(d)};return u`<div class="page-tools">
       ${a("previousPage")}${a("nextPage")}
       <button class="lc-ghost sm" title=${`A tap zone over the middle of page ${i} that shows one page of your choice. Pick which page on the right, under Tap.`}
-        @click=${r("Page tap zone",{type:"showPage",page:i===1?2:1},!0)}>${E("plus")}<span>One page</span></button>
-      <button class="lc-ghost sm" title=${`A tap zone over the middle of page ${i}. Tapping it plays every page in turn, then comes back.`}
-        @click=${r("Play all pages tap zone",{type:"playTour"},!1)}>${E("plus")}<span>Play all pages</span></button>
+        @click=${o("Page tap zone",{type:"showPage",page:i===1?2:1})}>${E("plus")}<span>One page</span></button>
+      <button class="lc-ghost sm" title=${`A tap zone over the middle of page ${i}. Tapping it plays every page in turn, then comes back. Set how long each page holds on the right, under Tap.`}
+        @click=${o("Play all pages tap zone",{type:"playTour"})}>${E("plus")}<span>Play all pages</span></button>
     </div>`}renderPages(){let t=this.draft?.config;if(!t)return m;if(!Pt(this.activeFamily))return m;let i=this.canEdit,a=ze(t);if(!a&&!i)return m;if(!a)return u`<div class="card pages-card lc">
         <div class="lc-head">
           <span class="swatch">${E("pages")}</span><span class="lc-title">Pages</span><span class="lc-sub">just one</span>
