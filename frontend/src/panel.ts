@@ -3428,18 +3428,21 @@ export class WristAssistantPanel extends LitElement {
     .tap-strip .tap-del:hover { opacity: 1; }
     .tap-strip .tap-del svg.ui-icon { width: 14px; height: 14px; }
     /* The right end of a row holds one thing at a time: the badges at rest,
-       the buttons under the pointer or on the selected row. They trade places
-       rather than stand side by side, so the badges keep the right edge and
-       the row keeps its width.
+       the buttons under the pointer. They trade places rather than stand side
+       by side, so the badges keep the right edge and the row keeps its width.
+       The selected row used to keep its buttons out too, which put five icons
+       over a long name for as long as the row was selected; now only the
+       pointer brings them, and keyboard focus (focus-visible, so a click that
+       focuses the row does not count).
 
        The :has(.acts) guard is what keeps the swap honest. A pinned row and a
        read-only document carry badges and no buttons, and without it hovering
        one hid the badge and put nothing in its place. */
     .layer .acts { display: none; gap: 0; }
-    .layer:hover .acts, .layer.hl .acts, .layer:focus-within .acts { display: inline-flex; }
+    .layer:hover .acts, .layer:focus-visible .acts, .layer:has(.acts :focus-visible) .acts { display: inline-flex; }
     .layer:hover:has(.acts) .badges,
-    .layer.hl:has(.acts) .badges,
-    .layer:focus-within:has(.acts) .badges { display: none; }
+    .layer:focus-visible:has(.acts) .badges,
+    .layer:has(.acts :focus-visible) .badges { display: none; }
     .layer .acts button.icon { width: 24px; height: 24px; }
     .layer .acts svg.ui-icon { width: 15px; height: 15px; }
     /* The row being dragged leaves the list. The slot opening under the
