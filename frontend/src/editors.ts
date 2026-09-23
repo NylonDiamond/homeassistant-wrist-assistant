@@ -324,7 +324,6 @@ import {
   setTestedValue,
   shownColumns,
   statesEmptyText,
-  statesSummary,
   tableShape,
   whenText,
 } from "./states.js";
@@ -462,8 +461,9 @@ export interface EditorHost {
   tapAreaShown: boolean;
   /** Turn that view on or off. */
   showTapArea(on: boolean): void;
-  /** The inspector cards that are open. With one entry the inspector is in
-   * its one-at-a-time mode and a click on another card swaps to it. */
+  /** The inspector cards that are open, by card id, plus the state of each
+   * card's More line (`<id>:more`, `<id>:less`). A new selection starts from
+   * `DEFAULT_SECTIONS`. */
   openSections: ReadonlySet<string>;
   toggleSection(id: string): void;
   /** The cards whose "?" is on. A card's plain hints are hidden until then;
@@ -522,7 +522,28 @@ export function pastedFrame(copied: CopiedPosition, to: FamilyKind, kind: CEleme
 }
 
 /** Every card id the inspector can show, for "Open all". */
-export const ALL_SECTIONS = ["content", "look", "numbers", "row", "level", "timestamp", "tappable", "states", "placement", "corner", "placements", "shape", "symbol"] as const;
+export const ALL_SECTIONS = ["content", "look", "numbers", "row", "level", "timestamp", "tappable", "states", "placement", "corner", "home", "placements", "shape", "symbol"] as const;
+
+/**
+ * The cards a new selection opens with: what a layer shows and how it looks.
+ * A picture's Look card is its Picture card, and a shape's own card is its
+ * Look, so the same two ids serve every selection. Every other card starts
+ * folded, with its one-line summary in the header.
+ */
+export const DEFAULT_SECTIONS: readonly string[] = ["content", "look"];
+
+/** The open set a new selection starts from, and the one Collapse all goes back to. */
+export function defaultOpenSections(): Set<string> {
+  return new Set(DEFAULT_SECTIONS);
+}
+
+/** Whether any card beyond the default two is open, which is when the
+ * inspector's header offers Collapse all rather than Open all. The More lines
+ * inside a card keep their own entries in the same set (see `moreFold`); those
+ * are not cards and do not count. */
+export function moreThanDefaultOpen(open: ReadonlySet<string>): boolean {
+  return [...open].some((id) => !id.includes(":") && !DEFAULT_SECTIONS.includes(id));
+}
 
 // ── small controls ────────────────────────────────────────────────────────
 
@@ -846,6 +867,45 @@ function segPairField<A extends string, B extends string>(a: SegChoice<A>, b: Se
       ${segButtons(a.label, a.value, a.options, a.set, a)}
       ${fieldLabel(b.label, back(b))}
       ${segButtons(b.label, b.value, b.options, b.set, b)}
+    </div></div>`;
+}
+
+/**
+ * One reset dot for a row that holds two settings, such as a color and its
+ * One color / By value choice. It shows while either is away from its default
+ * and puts back only the ones that are. Undefined when neither setting has a
+ * default to go back to.
+ */
+function bothBack(...backs: (ResetTo | undefined)[]): ResetTo | undefined {
+  const known = backs.filter((b): b is ResetTo => b !== undefined);
+  if (known.length === 0) return undefined;
+  const away = known.filter((b) => !b.atDefault);
+  const what = away.map((b) => b.title.replace(/^Back to /, "").replace(/\.$/, ""));
+  return {
+    atDefault: away.length === 0,
+    title: `Back to ${what.join(" and ")}`,
+    reset: () => { for (const b of away) b.reset(); },
+  };
+}
+
+/**
+ * A layer's color and how it is chosen, on one row: the swatch and hex on the
+ * left, the One color / By value choice on the right. They are one question
+ * ("what color is this"), so two rows made the answer look like two settings.
+ */
+function colorModeField<T extends string>(
+  label: string,
+  value: string | undefined,
+  set: (v: string | undefined) => void,
+  def: string,
+  mode: SegChoice<T>,
+): TemplateResult {
+  const colorBack: ResetTo = { atDefault: sameColor(value, def), title: `Back to ${def}`, reset: () => set(def) };
+  const modeBack = backTo(mode.value, mode.def, mode.set, (v) => (mode.options.find(([o]) => o === v)?.[1] ?? v).toLowerCase());
+  return html`<div class="field color color-mode">${fieldLabel(label, bothBack(colorBack, modeBack))}
+    <div class="color-mode-row">
+      <div class="color-row">${colorBox(label, value, set)}</div>
+      ${segButtons(mode.label, mode.value, mode.options, mode.set, mode)}
     </div></div>`;
 }
 
@@ -4286,9 +4346,8 @@ export function nameChangedFromWatch(savedName: string | undefined, name: string
  * is drawn from the last sync whatever Refresh says. The name is shared, and it
  * is the title a new control borrows, so it stays.
  */
-export function generalEditor(host: EditorHost, opts: { nameOnly?: boolean } = {}): TemplateResult {
+export function generalEditor(host: EditorHost, opts: { nameOnly?: boolean; shape?: { line: string; note?: string } } = {}): TemplateResult {
   const cfg = host.config;
-  const tap = cfg.tapAction;
   // The watch face picker caches each complication's name per widget kind and
   // does not refresh it after a rename. Warn once the name actually differs
   // from what the watch last had, so the user knows to re-pick it there.
@@ -4302,26 +4361,32 @@ export function generalEditor(host: EditorHost, opts: { nameOnly?: boolean } = {
   const renamedNote = renamed
     ? html`<div class="hint warn">After you change a complication name, let the change sync to the watch, then re-select the complication in the watch's complication picker. Otherwise the list starts to look wrong.</div>`
     : nothing;
+  // What this complication is and where it lives, as a line to read rather
+  // than a setting: one shape on one device is fixed once it is made.
+  const shapeLine = opts.shape === undefined ? nothing
+    : html`<div class="field readout shape-line" title=${opts.shape.note ?? nothing}><span>Shape</span>
+        <span class="readout-v">${opts.shape.line}</span></div>`;
   if (opts.nameOnly === true) {
     return html`
       <div class="gen-row">
         ${textField("Name", cfg.name, (v) => host.update((c) => { c.name = v; }, "name"))}
+        ${shapeLine}
       </div>
       ${renamedNote}`;
   }
-  // One row each: name, refresh, tap action, flash. Anything a tap action
-  // needs beyond its type (an entity, a page, a service) follows the tap row.
+  // One row each: name, shape, tap action, refresh, flash. Anything a tap
+  // action needs beyond its type (an entity, a page, a service) follows the
+  // tap row.
   return html`
     <div class="gen-row">
       ${textField("Name", cfg.name, (v) => host.update((c) => { c.name = v; }, "name"))}
-      ${selectField("Auto refresh timer", String(refresh), refreshOptions, (v) => host.update((c) => { c.refreshMinutes = Number(v) || 0; }, "refresh"))}
+      ${shapeLine}
+    </div>
+    ${renamedNote}
+    ${docTapFields(host)}
+    <div class="gen-row">
+      ${selectField("Auto refresh", String(refresh), refreshOptions, (v) => host.update((c) => { c.refreshMinutes = Number(v) || 0; }, "refresh"))}
       ${refresh > 0 ? timedRefreshBudgetHint(refresh) : nothing}
-      ${tapActionMenu("Tap action", tap.type, tapTypesFor(tap), (v) => host.update((c) => {
-        c.tapAction = tapActionForType(v, c.tapAction);
-        // Mirrors the iPhone preset editor: the chosen page belongs to the
-        // openPage type; leaving it clears the choice.
-        if (v !== "openPage") { delete c.openPageId; delete c.openPageName; }
-      }), "doc-tap", host.deviceKind === "iphone")}
       <div class="field flash-cell"><span title="Flash when a tap works">Flash</span>
         <div class="flash-row">
           <input type="checkbox" .checked=${flashOn} title="Flash when a tap works"
@@ -4332,8 +4397,25 @@ export function generalEditor(host: EditorHost, opts: { nameOnly?: boolean } = {
             : html`<span class="muted">Off</span>`}
         </div>
       </div>
-    </div>
-    ${renamedNote}
+    </div>`;
+}
+
+/**
+ * The whole complication's tap: the picker and whatever the action needs
+ * beyond its type. The Complication card shows it, and so does the Tap card of
+ * the shape's own Background, since a tap on the background and a tap on the
+ * complication are the same tap.
+ */
+function docTapFields(host: EditorHost): TemplateResult {
+  const cfg = host.config;
+  const tap = cfg.tapAction;
+  return html`
+    ${tapActionMenu("Tap action", tap.type, tapTypesFor(tap), (v) => host.update((c) => {
+      c.tapAction = tapActionForType(v, c.tapAction);
+      // Mirrors the iPhone preset editor: the chosen page belongs to the
+      // openPage type; leaving it clears the choice.
+      if (v !== "openPage") { delete c.openPageId; delete c.openPageName; }
+    }), "doc-tap", host.deviceKind === "iphone")}
     ${tapNote(tap, usesPages(cfg))}
     ${tap.type === "refreshAll"
       ? refreshTargetsField(host, tap, (next) => host.update((c) => { c.tapAction = next; }))
@@ -4350,6 +4432,13 @@ export function generalEditor(host: EditorHost, opts: { nameOnly?: boolean } = {
     ${tap.type === "showPage" ? showPageField(host, tap, (next) => host.update((c) => { c.tapAction = next; }, "tap-page")) : nothing}
     ${tap.type === "playTour" ? tourHoldFields(host) : nothing}
     ${tap.type === "openPage" ? openPageField(host) : nothing}`;
+}
+
+/** The Tap card at the top of the shape's cards: the whole complication's
+ * tap, folded to its summary like a layer's Tap card. */
+export function docTapCard(host: EditorHost): TemplateResult {
+  return card(host, "tappable", "Tap", docTapFields(host),
+    { color: SECTION_COLOR.tap, icon: "tap", summary: tapSummary(host.config, host.config.tapAction) });
 }
 
 /** Seconds as the tour line prints them: whole where it can be, one decimal
@@ -4958,15 +5047,48 @@ export function shapeSizeField(
   label: string,
   opts: { step: number; min: number; def?: number },
 ): TemplateResult {
+  const { value, set } = shapeSize(host, el, family, opts.min);
+  return numberField(label, value, set,
+    { step: opts.step, min: opts.min, unit: "pt", ...(opts.def === undefined ? {} : { def: opts.def }) });
+}
+
+/** The size `shapeSizeField` shows and the setter it writes through. */
+function shapeSize(host: EditorHost, el: CElement, family: FamilyKind, min: number): { value: number; set: (v: number | undefined) => void } {
   const id = el.payload.id;
-  const shared = elementSize(el) ?? opts.min;
+  const shared = elementSize(el) ?? min;
   const value = effectivePlacement(host.config, family, el).size ?? shared;
-  return numberField(label, value,
-    (v) => host.update(
-      (c) => setPlacement(c, family, id, { size: Math.max(opts.min, v ?? shared) }),
+  return {
+    value,
+    set: (v) => host.update(
+      (c) => setPlacement(c, family, id, { size: Math.max(min, v ?? shared) }),
       `el-${id}-size-${family}`,
     ),
-    { step: opts.step, min: opts.min, unit: "pt", ...(opts.def === undefined ? {} : { def: opts.def }) });
+  };
+}
+
+/**
+ * A text layer's size and alignment on one row: the size box, then Left,
+ * Center and Right. The two are read together (how big, and where in the box),
+ * and a row each cost the Look card a line for three buttons. The one reset dot
+ * takes back whichever of the two is changed.
+ */
+function sizeAlignField<T extends string>(
+  host: EditorHost,
+  el: CElement,
+  family: FamilyKind,
+  label: string,
+  opts: { step: number; min: number; def?: number },
+  align: SegChoice<T>,
+): TemplateResult {
+  const { value, set } = shapeSize(host, el, family, opts.min);
+  const sizeBack = backTo<number | undefined>(value, opts.def, set, (v) => `${v} pt`);
+  const alignBack = backTo(align.value, align.def, align.set, (v) => (align.options.find(([o]) => o === v)?.[1] ?? v).toLowerCase());
+  const numOpts = { step: opts.step, min: opts.min, unit: "pt", ariaLabel: label };
+  return html`<div class="field size-align">${fieldLabel(label, bothBack(sizeBack, alignBack), scrubber(value, set, numOpts))}
+    <div class="size-align-row">
+      ${numberInput(value, set, numOpts)}
+      ${segButtons(align.label, align.value, align.options, align.set, align)}
+    </div></div>`;
 }
 
 /** `elementSize` lives beside the design boxes now, because the refit that
@@ -5242,6 +5364,61 @@ interface CardOptions {
    * For a card that is the inspector's only one, such as the complication's or
    * a shared value's, which has no business reading (or writing) openSections. */
   alwaysOpen?: boolean;
+  /** The card's less used rows, folded behind a "More" line at its foot. */
+  more?: MoreOptions;
+  /** A small button in the header of a shut card, such as States' "Add": a
+   * click opens the card and runs it, so the common first step needs no
+   * unfolding first. */
+  action?: { label: string; title: string; run: () => void };
+}
+
+/** One group of rows behind a card's More line, and its name in that line.
+ * A group whose rows are `nothing` is left out of both. */
+export type MoreRow = readonly [name: string, rows: unknown];
+
+export interface MoreOptions {
+  rows: readonly MoreRow[];
+  /** Something behind the line is away from its default. The line then starts
+   * open, so a changed setting is never folded out of sight. */
+  changed: boolean;
+}
+
+/** Whether a card's More line is open. The reader's own choice wins, held in
+ * openSections as `<id>:more` or `<id>:less`; without one it is open exactly
+ * when something behind it is changed. */
+export function moreIsOpen(open: ReadonlySet<string>, id: string, changed: boolean): boolean {
+  if (open.has(`${id}:more`)) return true;
+  if (open.has(`${id}:less`)) return false;
+  return changed;
+}
+
+/**
+ * The More line at the foot of a card: "More ▸" and the names of what it
+ * holds, in muted text, and those rows under it once opened. Every card with a
+ * long tail of settings folds it here the same way, so the rows most people
+ * reach for stay at the top and nothing is hidden without a name on the line.
+ */
+function moreFold(host: EditorHost, id: string, more: MoreOptions): TemplateResult | typeof nothing {
+  const rows = more.rows.filter(([, r]) => r !== nothing && r !== undefined && r !== "");
+  if (rows.length === 0) return nothing;
+  const open = moreIsOpen(host.openSections, id, more.changed);
+  const names = rows.map(([n]) => n).join(", ");
+  // Two entries so the choice outlives a change: a reader who shuts a line
+  // that opened for a changed row keeps it shut. Both go when the selection
+  // changes or Collapse all puts the cards back.
+  const flip = () => {
+    const want = open ? `${id}:less` : `${id}:more`;
+    const drop = open ? `${id}:more` : `${id}:less`;
+    if (host.openSections.has(drop)) host.toggleSection(drop);
+    if (!host.openSections.has(want)) host.toggleSection(want);
+  };
+  return html`<div class="more-fold" data-open=${open ? "true" : "false"}>
+    <button type="button" class="more-line" aria-expanded=${open ? "true" : "false"}
+      title=${open ? "Hide these settings again" : `Show ${names}`} @click=${flip}>${open
+      ? html`<span class="more-word">Less</span><span class="more-arrow" aria-hidden="true">▾</span>`
+      : html`<span class="more-word">More</span><span class="more-arrow" aria-hidden="true">▸</span><span class="more-names">${names}</span>`}</button>
+    ${open ? html`<div class="more-body">${rows.map(([, r]) => r)}</div>` : nothing}
+  </div>`;
 }
 
 /** Structural equality for the plain data the config is made of: objects,
@@ -5303,6 +5480,8 @@ export function card(host: EditorHost, id: string, title: string, body: unknown,
   const head = html`<span class="swatch">${uiIcon(opts.icon ?? "content")}</span>
       <span class="tt"><h4>${title}${resetButton(opts.reset === undefined ? undefined
         : { atDefault: false, title: opts.resetTitle ?? `Put ${title} back to its defaults`, reset: opts.reset })}</h4>${opts.summary ? html`<span class="sum">${opts.summary}</span>` : nothing}</span>
+      ${opts.action === undefined || open ? nothing : html`<button type="button" class="small sec-act" title=${opts.action.title}
+        @click=${(e: Event) => { e.stopPropagation(); if (!open) host.toggleSection(id); opts.action?.run(); }}>${uiIcon("plus")}<span>${opts.action.label}</span></button>`}
       <button type="button" class="sec-help ${help ? "on" : ""}" aria-pressed=${help ? "true" : "false"} title=${helpLabel} aria-label=${helpLabel}
         @click=${(e: Event) => { e.stopPropagation(); toggleHelp(); }}>?</button>`;
   return html`<section class="sec" data-open=${open ? "true" : "false"} data-help=${help ? "on" : "off"} style=${opts.color ? `--c:${opts.color}` : ""}>
@@ -5317,7 +5496,7 @@ export function card(host: EditorHost, id: string, title: string, body: unknown,
           ${head}
           <span class="chev">${uiIcon("chevron")}</span>
         </div>`}
-    ${open ? html`<div class="sec-b">${body}</div>` : nothing}
+    ${open ? html`<div class="sec-b">${body}${opts.more === undefined ? nothing : moreFold(host, id, opts.more)}</div>` : nothing}
   </section>`;
 }
 
@@ -5685,6 +5864,64 @@ function layerPageField(host: EditorHost, el: CElement): TemplateResult | typeof
       shared label wants. The page is the same on every shape.</div>`;
 }
 
+/** A percent of the face as the Position card's letter boxes print it. */
+function framePercent(n: number): number {
+  return Math.round(n * 1000) / 10;
+}
+
+/**
+ * The Position card's line while it is folded: the page, where the layer sits,
+ * its size and its turn, as the boxes inside print them. "Page 1 · X 25% Y 25%
+ * · 50 × 50". The page is left out on a document without pages, and the turn
+ * while there is none.
+ */
+export function positionSummary(cfg: CustomComplicationConfig, el: CElement, family: FamilyKind): string {
+  const eff = effectivePlacement(cfg, family, el);
+  const f = eff.frame;
+  const parts: string[] = [];
+  // A row layer belongs to its list, which carries the page.
+  if (usesPages(cfg) && cfg.elements.some((e) => e.payload.id === el.payload.id)) {
+    parts.push(el.payload.page === undefined ? "Every page" : `Page ${el.payload.page}`);
+  }
+  parts.push(`X ${framePercent(f.x)}% Y ${framePercent(f.y)}%`);
+  parts.push(`${framePercent(f.width)} × ${framePercent(f.height)}`);
+  const turn = Math.round(f.rotationDegrees);
+  if (turn !== 0) parts.push(`${turn}°`);
+  if (eff.isHidden) parts.push("hidden");
+  return parts.join(" · ");
+}
+
+/**
+ * The Tap card's line while it is folded: "off", or "on" and what a tap does.
+ * A Play all pages tap adds how long each page is held, when every page holds
+ * for the same time, since that is the number the reader tunes it by.
+ */
+export function tapSummary(cfg: CustomComplicationConfig, action: TapAction | undefined): string {
+  if (action === undefined || action.type === "none") return "off";
+  const on = `on · ${tapActionLabel(action)}`;
+  if (action.type !== "playTour" || !usesPages(cfg)) return on;
+  const spec = pagesSpecOf(cfg);
+  const holds = pageNumbers(spec).map((n) => writtenDwell(spec, n) ?? PAGE_DEFAULT_DWELL);
+  const first = holds[0];
+  return first !== undefined && holds.every((h) => h === first) ? `${on} · ${dwellSeconds(first)} each` : on;
+}
+
+/**
+ * The States card's line while it is folded: "none" and what that means, or
+ * how many states there are and whether an Otherwise row catches the rest.
+ */
+export function statesCardSummary(rules: Rule[]): string {
+  const none = "none · looks the same for every value";
+  if (rules.length === 0) return none;
+  const shape = tableShape(rules);
+  if (!shape.ok) return "advanced rules";
+  const n = shape.table.rows.length;
+  const otherwise = shape.table.otherwise !== undefined;
+  if (n === 0 && !otherwise) return none;
+  const count = n === 1 ? "1 state" : `${n} states`;
+  return otherwise ? `${count} · otherwise` : count;
+}
+
 /**
  * Where one layer sits on one shape: the frame, the turn, and whether it is
  * drawn at all. The four numbers are there so the card shows what its header
@@ -5768,7 +6005,7 @@ export function placementCard(host: EditorHost, el: CElement, family: FamilyKind
       { min: -180, max: 180, step: 1, def: 0, format: (v) => `${Math.round(v)}°`, unit: "°", range: false })}
     ${checkField("Hidden", eff.isHidden, (v) => host.update((c) => setPlacement(c, family, id, { isHidden: v })), false)}
     <div class="hint">${anchor === undefined ? "X, Y, W and H are" : "W and H are"} a percent of the face, on the ${familyTitle(family)} shape only. Drag a letter left or right to change its number. Arrow keys nudge 1 pt, shift for 10.${anchor === undefined ? " Copy position and Paste position repeat a spot on another layer, on any shape." : ""}</div>`,
-    { color: SECTION_COLOR.position, icon: "place", summary: `${Math.round(f.width * 100)}% wide · ${familyTitle(family)}`,
+    { color: SECTION_COLOR.position, icon: "place", summary: positionSummary(host.config, el, family),
       ...(placeChanged ? {
         resetTitle: `Put this layer back to the middle of the ${familyTitle(family)} face at half size, unrotated and shown`,
         reset: () => host.update((c) => setPlacement(c, family, id, { frame: { ...CENTERED_FRAME }, isHidden: false })),
@@ -5966,7 +6203,7 @@ export function tapCard(host: EditorHost, el: CElement): TemplateResult | typeof
   const id = el.payload.id;
   const attached = attachedTapsOf(host.config, id)[0];
   return card(host, "tappable", "Tap", tappableSection(host, el, `el-${id}`),
-    { color: SECTION_COLOR.tap, icon: "tap", summary: attached ? describeTapAction((attached.payload as TapElement).action) : "Not tappable",
+    { color: SECTION_COLOR.tap, icon: "tap", summary: tapSummary(host.config, attached ? (attached.payload as TapElement).action : undefined),
       ...(attached ? { reset: () => host.update((c) => detachTaps(c, id)) } : {}) });
 }
 
@@ -6123,13 +6360,10 @@ function gaugeRangeFields(
 /** The payload field the Fill by value card owns. */
 const LEVEL_KEYS = ["level"] as const;
 
-/** The Fill by value card's one-line summary: which way it fills and across
- * what, or Off when the layer draws once. */
-function levelSummary(el: Extract<CElement, { kind: "icon" | "shape" }>): string {
-  const level = el.payload.level;
-  if (level === undefined) return "Off";
-  const direction = LEVEL_DIRECTIONS.find(([d]) => d === level.direction)?.[1] ?? "Up";
-  return `${direction}, ${level.minValue} to ${level.maxValue}`;
+/** The Fill by value card's one-line summary: on or off. Which way it fills
+ * and across what is the card's first two rows once it is open. */
+export function levelSummary(el: Extract<CElement, { kind: "icon" | "shape" }>): string {
+  return el.payload.level === undefined ? "off" : "on";
 }
 
 /** The layer kinds that can fill by value. A line is a shape with no body to
@@ -6285,10 +6519,9 @@ function textValueColorFields(
   host: EditorHost,
   t: TextElement,
   set: (mutate: (p: TextElement) => void, k?: string) => void,
-  colorRow: unknown,
+  colorRow: (mode: SegChoice<ChartColoring>) => unknown,
 ): TemplateResult {
   const coloring = t.coloring ?? "uniform";
-  const highlight = t.highlight ?? "none";
   // The shared table editor wants a table that is always there; this one holds
   // the text layer's optional keys for the length of one edit.
   const setBands = (mutate: (p: BandedLayer) => void, k?: string) => set((p) => {
@@ -6298,30 +6531,40 @@ function textValueColorFields(
     if (table.bandAboveColorHex !== CHART_DEFAULT_BAND_HIGH_HEX) p.bandAboveColorHex = table.bandAboveColorHex;
     else delete p.bandAboveColorHex;
   }, k);
+  // The table marks the number the text reads, when it reads exactly one.
+  const numbers = coloring === "bands" ? chartNumbers(host.resolve(t.value) ?? "") : [];
+  const row = colorRow({ label: "Color", value: coloring, options: CHART_COLORINGS, def: "uniform", set: (v) => set((p) => {
+    if (v === "uniform") { delete p.coloring; return; }
+    p.coloring = v;
+    // Seeded from the numbers the text shows right now, as a chart seeds from
+    // its readings, so the switch paints something the moment it is flipped.
+    if ((p.bands?.length ?? 0) === 0) p.bands = seedBands(chartNumbers(host.resolve(p.value) ?? ""));
+  }) });
+  if (coloring !== "bands") return html`${row}`;
+  return html`
+    <div class="fgroup">
+    ${row}
+    <div class="hint">Each number in the text takes the color of the band it falls in, and other text keeps the layer color.</div>
+    ${bandTableFields({ bands: t.bands ?? [], bandAboveColorHex: t.bandAboveColorHex ?? CHART_DEFAULT_BAND_HIGH_HEX }, t.colorSlot.baseColorHex, setBands,
+      numbers.length === 1 ? numbers[0] : undefined)}
+    </div>`;
+}
+
+/** A text layer's Highlight row: the highest or lowest number in the text in a
+ * color of its own. It sits behind the Look card's More line. */
+function textHighlightFields(
+  t: TextElement,
+  set: (mutate: (p: TextElement) => void, k?: string) => void,
+): TemplateResult {
+  const coloring = t.coloring ?? "uniform";
+  const highlight = t.highlight ?? "none";
   const setHex = (key: "highColorHex" | "lowColorHex", def: string, v: string | undefined) => set((p) => {
     if (v === undefined || v === def) delete p[key]; else p[key] = v;
   }, key);
   const highlightHint = highlight === "highest" ? "The highest number takes its own color"
     : highlight === "lowest" ? "The lowest number takes its own color"
     : "The highest and lowest numbers take their own colors";
-  // The table marks the number the text reads, when it reads exactly one.
-  const numbers = coloring === "bands" ? chartNumbers(host.resolve(t.value) ?? "") : [];
   return html`
-    <div class="fgroup">
-    ${segField("Color", coloring, CHART_COLORINGS, (v) => set((p) => {
-      if (v === "uniform") { delete p.coloring; return; }
-      p.coloring = v;
-      // Seeded from the numbers the text shows right now, as a chart seeds from
-      // its readings, so the switch paints something the moment it is flipped.
-      if ((p.bands?.length ?? 0) === 0) p.bands = seedBands(chartNumbers(host.resolve(p.value) ?? ""));
-    }), { def: "uniform" })}
-    ${colorRow}
-    ${coloring === "bands" ? html`
-      <div class="hint">Each number in the text takes the color of the band it falls in, and other text keeps the layer color.</div>
-      ${bandTableFields({ bands: t.bands ?? [], bandAboveColorHex: t.bandAboveColorHex ?? CHART_DEFAULT_BAND_HIGH_HEX }, t.colorSlot.baseColorHex, setBands,
-        numbers.length === 1 ? numbers[0] : undefined)}`
-      : nothing}
-    </div>
     <div class="fgroup">
     ${segField("Highlight", highlight, CHART_HIGHLIGHTS, (v) => set((p) => {
       if (v === "none") delete p.highlight; else p.highlight = v;
@@ -6804,11 +7047,19 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
   // closes the Look card.
   let colorPlaced = false;
   // Only the kinds with a colorSlot have a color of their own (`elementColor`).
+  const setColor = (v: string | undefined) => upd((e) => {
+    if (elementColor(e) !== undefined) (e.payload as { colorSlot: { baseColorHex: string } }).colorSlot.baseColorHex = v ?? "#FFFFFF";
+  }, "color");
   const colorRow = (label: string) => elementColor(el) === undefined
     ? nothing
-    : colorField(label, elementColor(el), (v) => upd((e) => {
-        if (elementColor(e) !== undefined) (e.payload as { colorSlot: { baseColorHex: string } }).colorSlot.baseColorHex = v ?? "#FFFFFF";
-      }, "color"), false, baseColor);
+    : colorField(label, elementColor(el), setColor, false, baseColor);
+  // The same color with its One color / By value choice on the row beside it.
+  const colorModeRow = (label: string, mode: SegChoice<ChartColoring>) => elementColor(el) === undefined
+    ? segField(mode.label, mode.value, mode.options, (v) => mode.set(v), mode.def === undefined ? {} : { def: mode.def })
+    : colorModeField(label, elementColor(el), setColor, baseColor, mode);
+  // The Look card's less used rows, per kind, for its More line. Opacity and
+  // the shadow join them below for every drawing layer.
+  let lookMore: MoreRow[] = [];
   // A chart's marks on the plot (highlight, threshold, now, clock times). Built in
   // the chart case, where its setters live, and shown in the Extras card.
   let chartMarks: TemplateResult | undefined;
@@ -6828,48 +7079,48 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
       content = textContentFields(host, el, family, setText, key);
       colorPlaced = !el.payload.countdown && !textUsesParts(el.payload);
       look = html`
-        <div class="fgroup">
-        ${shapeSizeField(host, el, family, "Font size", { step: 1, min: 4, def: baseSize("fontSize") })}
-        ${segField("Weight", el.payload.fontWeight, FONT_WEIGHTS, (v) => upd((e) => { (e as typeof el).payload.fontWeight = v; }),
-          { def: base.fontWeight as typeof el.payload.fontWeight })}
-        ${segPairField(
+        ${sizeAlignField(host, el, family, "Font size", { step: 1, min: 4, def: baseSize("fontSize") },
           { label: "Align", value: el.payload.alignment ?? "center", options: TEXT_ALIGNMENTS, def: "center", set: (v) => upd((e) => {
             const p = (e as typeof el).payload;
             if (v === "center") delete p.alignment; else p.alignment = v;
-          }) },
-          { label: "Lines", value: String(el.payload.lineLimit ?? 1) as "1" | "2" | "3" | "4", options: TEXT_LINE_LIMITS, def: "1", set: (v) => upd((e) => {
-            const p = (e as typeof el).payload;
-            if (v === "1") delete p.lineLimit; else p.lineLimit = Number(v);
           }) })}
+        ${segField("Weight", el.payload.fontWeight, FONT_WEIGHTS, (v) => upd((e) => { (e as typeof el).payload.fontWeight = v; }),
+          { def: base.fontWeight as typeof el.payload.fontWeight })}
         ${segField("Typeface", el.payload.fontDesign ?? "default", FONT_DESIGNS, (v) => upd((e) => {
           const p = (e as typeof el).payload;
           if (v === "default") delete p.fontDesign; else p.fontDesign = v;
         }), { def: "default" })}
         ${el.payload.fontDesign === "rounded" || el.payload.fontDesign === "serif" ? FONT_DESIGN_HINT : nothing}
-        ${segField("Width", el.payload.fontWidth ?? "standard", FONT_WIDTHS, (v) => upd((e) => {
+        ${colorPlaced ? textValueColorFields(host, el.payload, setText, (mode) => colorModeRow("Color", mode)) : nothing}
+        ${segField("Lines", String(el.payload.lineLimit ?? 1) as "1" | "2" | "3" | "4", TEXT_LINE_LIMITS, (v) => upd((e) => {
           const p = (e as typeof el).payload;
-          if (v === "standard") delete p.fontWidth; else p.fontWidth = v;
-        }), { def: "standard" })}
-        ${el.payload.fontWidth !== undefined && el.payload.fontWidth !== "standard" ? FONT_WIDTH_HINT : nothing}
-        ${checkField("Italic", el.payload.italic === true, (v) => upd((e) => {
-          const p = (e as typeof el).payload;
-          if (v) p.italic = true; else delete p.italic;
-        }), base.italic === true)}
-        ${checkField("Mono digits", el.payload.monospacedDigits === true, (v) => upd((e) => {
-          const p = (e as typeof el).payload;
-          if (v) p.monospacedDigits = true; else delete p.monospacedDigits;
-        }), base.monospacedDigits === true)}
-        ${el.payload.monospacedDigits ? html`<div class="hint">Digits take the same width, so a number that ticks does not shuffle what sits beside it.</div>` : nothing}
+          if (v === "1") delete p.lineLimit; else p.lineLimit = Number(v);
+        }), { def: "1" })}
         ${sliderField("Shrink to fit", el.payload.minimumScale ?? TEXT_MIN_SCALE, (v) => upd((e) => {
           const p = (e as typeof el).payload;
           const n = clampMinimumScale(v);
           if (n === TEXT_MIN_SCALE) delete p.minimumScale; else p.minimumScale = n;
         }, "minscale"), { min: TEXT_MIN_SCALE, max: 1, step: 0.05, def: TEXT_MIN_SCALE, format: (v) => `${Math.round(v * 100)}%` })}
         <div class="hint">How small the text may go to fit its box before it is cut off with an ellipsis.
-          100% never shrinks.</div>
-        </div>
-        ${textArcFields(el.payload, family, setText)}
-        ${colorPlaced ? textValueColorFields(host, el.payload, setText, colorRow("Main color")) : nothing}`;
+          100% never shrinks.</div>`;
+      lookMore = [
+        ["width", html`${segField("Width", el.payload.fontWidth ?? "standard", FONT_WIDTHS, (v) => upd((e) => {
+          const p = (e as typeof el).payload;
+          if (v === "standard") delete p.fontWidth; else p.fontWidth = v;
+        }), { def: "standard" })}
+        ${el.payload.fontWidth !== undefined && el.payload.fontWidth !== "standard" ? FONT_WIDTH_HINT : nothing}`],
+        ["italic", checkField("Italic", el.payload.italic === true, (v) => upd((e) => {
+          const p = (e as typeof el).payload;
+          if (v) p.italic = true; else delete p.italic;
+        }), base.italic === true)],
+        ["mono digits", html`${checkField("Mono digits", el.payload.monospacedDigits === true, (v) => upd((e) => {
+          const p = (e as typeof el).payload;
+          if (v) p.monospacedDigits = true; else delete p.monospacedDigits;
+        }), base.monospacedDigits === true)}
+        ${el.payload.monospacedDigits ? html`<div class="hint">Digits take the same width, so a number that ticks does not shuffle what sits beside it.</div>` : nothing}`],
+        ["curve", textArcFields(el.payload, family, setText)],
+        ["highlight", colorPlaced ? textHighlightFields(el.payload, setText) : nothing],
+      ];
       break;
     }
     case "icon": {
@@ -6928,29 +7179,29 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           }), { titles: GAUGE_STYLE_TITLES, def: base.style as typeof g.style })}
           ${dots ? nothing : shapeSizeField(host, el, family, "Line width", { step: 0.5, min: 0.5, def: baseSize("lineWidth") })}
         </div>
-        <div class="fgroup">
         ${colorField(dots ? "Empty dot color" : "Track color", g.trackColorHex, (v) => setGauge((p) => { p.trackColorHex = v ?? "#FFFFFF40"; }, "track"), false, base.trackColorHex as string)}
-        ${segField("Color", g.coloring, CHART_COLORINGS, (v) => setGauge((p) => {
+        ${colorModeRow("Main color", { label: "Color", value: g.coloring, options: CHART_COLORINGS, def: base.coloring as typeof g.coloring, set: (v) => setGauge((p) => {
           p.coloring = v;
           if (v === "bands" && p.bands.length === 0) p.bands = seedBands([p.minValue, p.maxValue]);
-        }), { def: base.coloring as typeof g.coloring })}
-        ${colorRow("Main color")}
-        ${g.coloring === "bands" ? nothing : fillField("Gradient", g.fill, (v) => setGauge((p) => {
+        }) })}
+        ${g.coloring === "bands" ? html`
+          <div class="fgroup">
+          <div class="hint">Checked lowest first, so each row only says where it ends. The
+            gauge takes the color of the row its reading falls in, and a reading past the
+            last row takes the color underneath.</div>
+          ${bandTableFields(g, g.colorSlot.baseColorHex, setGauge, chartNumbers(host.resolve(g.value) ?? "")[0])}
+          </div>`
+          : nothing}`;
+      lookMore = [
+        ["gradient", g.coloring === "bands" ? nothing : fillField("Gradient", g.fill, (v) => setGauge((p) => {
           if (v === undefined) { delete p.fill; return; }
           p.fill = v;
           // The flat color keeps the gradient's first stop, so a watch app that
           // predates fills draws where the gradient starts rather than nothing.
           p.colorSlot.baseColorHex = fillColorAt(v, 0);
-        }, "fill"), () => ({ kind: "linear", stops: [{ at: 0, colorHex: g.colorSlot.baseColorHex }, { at: 1, colorHex: g.colorSlot.baseColorHex }] }))}
-        ${g.coloring === "bands" ? html`
-          <div class="hint">Checked lowest first, so each row only says where it ends. The
-            gauge takes the color of the row its reading falls in, and a reading past the
-            last row takes the color underneath.</div>
-          ${bandTableFields(g, g.colorSlot.baseColorHex, setGauge, chartNumbers(host.resolve(g.value) ?? "")[0])}`
-          : nothing}
-        </div>
-        ${gaugeDialFields(g, setGauge)}
-        ${dots ? nothing : html`
+        }, "fill"), () => ({ kind: "linear", stops: [{ at: 0, colorHex: g.colorSlot.baseColorHex }, { at: 1, colorHex: g.colorSlot.baseColorHex }] }))],
+        ["marks, end numbers", gaugeDialFields(g, setGauge)],
+        ["threshold", dots ? nothing : html`
           <div class="fgroup">
           <div class="grid2">
             ${numberField("Threshold", g.thresholdValue, (v) => setGauge((p) => {
@@ -6962,7 +7213,8 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           <div class="hint">A short tick on the scale at that value, so the fill reads
             against a target instead of on its own. A value outside Min to Max draws
             nothing. Leave it empty for no mark.</div>
-          </div>`}`;
+          </div>`],
+      ];
       break;
     }
     case "chart": {
@@ -7203,6 +7455,16 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
       // for what they paint (see chart-colors.ts).
       const colorRows = chartColorRows(c);
       chartShown = shown;
+      const chartColoring: SegChoice<ChartColoring> = { label: "Color", value: c.coloring, options: CHART_COLORINGS,
+        def: base.coloring as typeof c.coloring, set: (v) => setChart((p) => {
+          p.coloring = v;
+          if (v === "bands" && p.bands.length === 0) p.bands = seedBands(shown);
+        }) };
+      // A chart whose own color paints nothing (see chart-colors.ts) keeps the
+      // choice alone, with no swatch beside it.
+      const chartColorRow = colorRows.main === undefined
+        ? segField(chartColoring.label, chartColoring.value, chartColoring.options, (v) => chartColoring.set(v), { def: base.coloring as typeof c.coloring })
+        : colorModeRow(colorRows.main, chartColoring);
       look = html`
         <div class="grid2">
           ${segField("Style", c.style, CHART_STYLES, (v) => setChart((p) => { p.style = v; }), { def: base.style as typeof c.style })}
@@ -7211,48 +7473,8 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             : shapeSizeField(host, el, family, "Line width", { step: 0.5, min: 0.5, def: baseSize("lineWidth") })}
         </div>
         ${c.style === "bars" ? html`
-          <div class="fgroup">
-          <div class="grid2">
-            ${numberField("Corner radius", chartBarRadius(c.barRadius),
-              (v) => setChart((p) => {
-                const r = Math.max(0, v ?? CHART_DEFAULT_BAR_RADIUS);
-                if (r === CHART_DEFAULT_BAR_RADIUS) delete p.barRadius; else p.barRadius = r;
-              }, "barradius"),
-              { step: 0.5, min: 0, def: chartBarRadius(base.barRadius), unit: "pt" })}
-          </div>
-          ${checkField("Round top only", chartBarCorners(c.barCorners) === "top",
-            (v) => setChart((p) => { if (v) p.barCorners = "top"; else delete p.barCorners; }),
-            chartBarCorners(base.barCorners) === "top")}
-          ${watchNote(host)}
-          <div class="hint">Round top only rounds the end away from the baseline, so a bar hanging
-            below zero rounds its bottom.</div>
-          </div>
-          <div class="fgroup">
           ${colorRows.fill === undefined ? nothing : chartColorField(colorRows.fill, c.fillColorHex,
-            (v) => setChart((p) => { if (v === undefined) delete p.fillColorHex; else p.fillColorHex = v; }, "fillcol"))}
-          ${c.style === "bars" ? nothing : fillField("Area gradient", c.areaFill, (v) => setChart((p) => {
-            if (v === undefined) { delete p.areaFill; return; }
-            p.areaFill = v;
-            p.fillColorHex = fillColorAt(v, 0);
-          }, "areafill"), () => ({ kind: "linear", stops: [
-            { at: 0, colorHex: c.fillColorHex ?? c.colorSlot.baseColorHex },
-            { at: 1, colorHex: c.fillColorHex ?? c.colorSlot.baseColorHex }] }))}
-          ${checkField("Border", c.barBorderWidth !== undefined,
-            (v) => setChart((p) => { if (v) p.barBorderWidth = 1; else delete p.barBorderWidth; }), false)}
-          ${c.barBorderWidth === undefined ? nothing : html`
-            ${numberField("Border width", c.barBorderWidth,
-              (v) => setChart((p) => { p.barBorderWidth = Math.min(Math.max(v ?? 1, 0), CHART_MAX_BAR_BORDER_WIDTH); }, "barborderw"),
-              { step: 0.5, min: 0, max: CHART_MAX_BAR_BORDER_WIDTH, def: 1, unit: "pt" })}
-            ${colorRows.border === undefined ? nothing : chartColorField(colorRows.border, c.barBorderColorHex,
-              (v) => setChart((p) => { if (v === undefined) delete p.barBorderColorHex; else p.barBorderColorHex = v; }, "barbordercol"))}
-            ${checkField("Open at base", c.barBorderOpenBase === true,
-              (v) => setChart((p) => { if (v) p.barBorderOpenBase = true; else delete p.barBorderOpenBase; }), false)}`}
-          ${watchNote(host)}
-          <div class="hint">The border is drawn inside each bar, so bars keep their size. A highlighted
-            bar fills and borders in its highlight color.${c.barBorderOpenBase === true
-              ? " Open at base leaves the border off the edge on the baseline, so a bar hanging below zero leaves its top open." : " Open at base leaves the border off the edge on the baseline."}${c.coloring === "bands"
-              ? " Each band can set its own fill and border below." : ""}</div>
-          </div>` : html`
+            (v) => setChart((p) => { if (v === undefined) delete p.fillColorHex; else p.fillColorHex = v; }, "fillcol"))}` : html`
           <div class="fgroup">
           ${segField("Curve", c.curve ?? "straight", CHART_CURVE_OPTIONS,
             (v) => setChart((p) => { if (v === "straight") delete p.curve; else p.curve = v; }),
@@ -7278,19 +7500,10 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
             ${watchNote(host)}
             </div>`
             : nothing}`}
-        <div class="fgroup">
-        <div class="grid2">
-          ${segField("Scale", c.scale, CHART_SCALES, (v) => setChart((p) => { p.scale = v; }),
-            { titles: { auto: "The plot stretches to fit the readings it has", fixed: "The plot always runs from Min to Max" }, def: base.scale as typeof c.scale })}
-          ${segField("Baseline", c.baseline, CHART_BASELINES, (v) => setChart((p) => { p.baseline = v; }), { def: base.baseline as typeof c.baseline })}
-        </div>
-        ${otherCharts.length === 0 ? nothing : selectField("Same scale as", borrowed ? c.scaleFrom! : "",
-          [["", "Its own"] as [string, string], ...otherCharts.map((e): [string, string] => [e.payload.id, layerTitle(e, chartCtx)])],
-          (v) => setChart((p) => { if (v) p.scaleFrom = v; else delete p.scaleFrom; }), { def: "" })}
+        ${segField("Scale", c.scale, CHART_SCALES, (v) => setChart((p) => { p.scale = v; }),
+          { titles: { auto: "The plot stretches to fit the readings it has", fixed: "The plot always runs from Min to Max" }, def: base.scale as typeof c.scale })}
         ${borrowed
-          ? html`<div class="hint keep">This chart is drawn against that one's range, so the two read as one
-              plot. Give them the same frame and each keeps its own readings, color, style and
-              numbers. Scale, Min and Max above are ignored while a chart is picked here.</div>`
+          ? html`<div class="hint keep">Scale, Min and Max are ignored while Same scale as picks another chart.</div>`
           : nothing}
         ${!borrowed && c.scale === "fixed"
           ? html`<div class="grid2">
@@ -7298,10 +7511,6 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
               ${numberField("Max", c.maxValue, (v) => setChart((p) => { p.maxValue = v ?? 100; }, "cmax"), { def: base.maxValue as number })}
             </div>`
           : nothing}
-        <div class="hint">${c.baseline === "zero"
-          ? "Bars grow from where zero falls, so a negative reading hangs below the line."
-          : "Bars grow from the bottom, and the smallest reading keeps a visible stub. Switch to Zero when the readings can go negative."}</div>
-        </div>
         <div class="field"><span>Series</span>
           <div class="row-acts">
             <button class="small" title="Add a second chart layer on this frame, drawn against this chart's range"
@@ -7312,13 +7521,9 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
               }}>${uiIcon("plus")}<span>Add a second series</span></button>
           </div>
         </div>
-        <div class="fgroup">
-        ${segField("Color", c.coloring, CHART_COLORINGS, (v) => setChart((p) => {
-          p.coloring = v;
-          if (v === "bands" && p.bands.length === 0) p.bands = seedBands(shown);
-        }), { def: base.coloring as typeof c.coloring })}
-        ${colorRows.main === undefined ? nothing : colorRow(colorRows.main)}
-        ${c.coloring === "bands" ? html`
+        ${c.coloring !== "bands" ? chartColorRow : html`
+          <div class="fgroup">
+          ${chartColorRow}
           <div class="hint">Checked lowest first, so each row only says where it ends. A reading past
             the last row takes the color underneath.
             ${c.style === "bars"
@@ -7335,9 +7540,59 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
               <div class="hint">Off, the wash under the line stays one color. On, each stretch of
                 fill takes its own band, which reads well on a chart that spends real time in more
                 than one band and as noise on one that flickers between them.</div>`
-            : nothing}`
-          : nothing}
-        </div>`;
+            : nothing}
+          </div>`}`;
+      lookMore = [
+        ["corner radius, round top only", c.style !== "bars" ? nothing : html`
+          <div class="fgroup">
+          <div class="grid2">
+            ${numberField("Corner radius", chartBarRadius(c.barRadius),
+              (v) => setChart((p) => {
+                const r = Math.max(0, v ?? CHART_DEFAULT_BAR_RADIUS);
+                if (r === CHART_DEFAULT_BAR_RADIUS) delete p.barRadius; else p.barRadius = r;
+              }, "barradius"),
+              { step: 0.5, min: 0, def: chartBarRadius(base.barRadius), unit: "pt" })}
+          </div>
+          ${checkField("Round top only", chartBarCorners(c.barCorners) === "top",
+            (v) => setChart((p) => { if (v) p.barCorners = "top"; else delete p.barCorners; }),
+            chartBarCorners(base.barCorners) === "top")}
+          ${watchNote(host)}
+          <div class="hint">Round top only rounds the end away from the baseline, so a bar hanging
+            below zero rounds its bottom.</div>
+          </div>`],
+        ["border", c.style !== "bars" ? nothing : html`
+          <div class="fgroup">
+          ${checkField("Border", c.barBorderWidth !== undefined,
+            (v) => setChart((p) => { if (v) p.barBorderWidth = 1; else delete p.barBorderWidth; }), false)}
+          ${c.barBorderWidth === undefined ? nothing : html`
+            ${numberField("Border width", c.barBorderWidth,
+              (v) => setChart((p) => { p.barBorderWidth = Math.min(Math.max(v ?? 1, 0), CHART_MAX_BAR_BORDER_WIDTH); }, "barborderw"),
+              { step: 0.5, min: 0, max: CHART_MAX_BAR_BORDER_WIDTH, def: 1, unit: "pt" })}
+            ${colorRows.border === undefined ? nothing : chartColorField(colorRows.border, c.barBorderColorHex,
+              (v) => setChart((p) => { if (v === undefined) delete p.barBorderColorHex; else p.barBorderColorHex = v; }, "barbordercol"))}
+            ${checkField("Open at base", c.barBorderOpenBase === true,
+              (v) => setChart((p) => { if (v) p.barBorderOpenBase = true; else delete p.barBorderOpenBase; }), false)}`}
+          ${watchNote(host)}
+          <div class="hint">The border is drawn inside each bar, so bars keep their size. A highlighted
+            bar fills and borders in its highlight color.${c.barBorderOpenBase === true
+              ? " Open at base leaves the border off the edge on the baseline, so a bar hanging below zero leaves its top open." : " Open at base leaves the border off the edge on the baseline."}${c.coloring === "bands"
+              ? " Each band can set its own fill and border in the color table." : ""}</div>
+          </div>`],
+        ["baseline", html`
+          ${segField("Baseline", c.baseline, CHART_BASELINES, (v) => setChart((p) => { p.baseline = v; }), { def: base.baseline as typeof c.baseline })}
+          <div class="hint">${c.baseline === "zero"
+            ? "Bars grow from where zero falls, so a negative reading hangs below the line."
+            : "Bars grow from the bottom, and the smallest reading keeps a visible stub. Switch to Zero when the readings can go negative."}</div>`],
+        ["same scale as", otherCharts.length === 0 ? nothing : html`
+          ${selectField("Same scale as", borrowed ? c.scaleFrom! : "",
+            [["", "Its own"] as [string, string], ...otherCharts.map((e): [string, string] => [e.payload.id, layerTitle(e, chartCtx)])],
+            (v) => setChart((p) => { if (v) p.scaleFrom = v; else delete p.scaleFrom; }), { def: "" })}
+          ${borrowed
+            ? html`<div class="hint keep">This chart is drawn against that one's range, so the two read as one
+                plot. Give them the same frame and each keeps its own readings, color, style and
+                numbers. Scale, Min and Max are ignored while a chart is picked here.</div>`
+            : nothing}`],
+      ];
       // Every plot extra is a switch. On adds the layer the old button added;
       // off deletes it again, the same as its × in the list at the bottom. A line
       // counts only when it runs through the plot, so an icon marker at now or
@@ -7478,19 +7733,21 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
         ${timelineBandFields(t, setTimeline, knownStates, `wa-tl-states-${key.replace(/[^a-z0-9]/gi, "")}`)}
         ${knownStates.length > 2
           ? html`<div class="hint keep">Seen in this span: <span class="nums">${knownStates.filter((s) => s !== "unavailable" && s !== "unknown").join(", ")}</span>. Click into a State box to pick one.</div>`
-          : nothing}
-        <div class="grid2">
-          ${numberField("Gap", t.gap, (v) => setTimeline((p) => {
-            p.gap = Math.min(TIMELINE_MAX_GAP, Math.max(0, v ?? 0));
-          }, "tgap"), { step: 0.5, min: 0, max: TIMELINE_MAX_GAP, def: base.gap as number, unit: "pt" })}
-          ${numberField("Corner radius", t.cornerRadius, (v) => setTimeline((p) => {
-            p.cornerRadius = Math.max(0, v ?? 0);
-          }, "tradius"), { step: 0.5, min: 0, def: base.cornerRadius as number, unit: "pt" })}
-        </div>
-        <div class="hint">A gap is taken off the right of each run, so the strip still ends flush with
-          the frame and the newest state keeps the edge. 0 draws one continuous bar, which is what a
-          door or a light usually wants.</div>
-`;
+          : nothing}`;
+      lookMore = [
+        ["gap, corner radius", html`
+          <div class="grid2">
+            ${numberField("Gap", t.gap, (v) => setTimeline((p) => {
+              p.gap = Math.min(TIMELINE_MAX_GAP, Math.max(0, v ?? 0));
+            }, "tgap"), { step: 0.5, min: 0, max: TIMELINE_MAX_GAP, def: base.gap as number, unit: "pt" })}
+            ${numberField("Corner radius", t.cornerRadius, (v) => setTimeline((p) => {
+              p.cornerRadius = Math.max(0, v ?? 0);
+            }, "tradius"), { step: 0.5, min: 0, def: base.cornerRadius as number, unit: "pt" })}
+          </div>
+          <div class="hint">A gap is taken off the right of each run, so the strip still ends flush with
+            the frame and the newest state keeps the edge. 0 draws one continuous bar, which is what a
+            door or a light usually wants.</div>`],
+      ];
       break;
     }
     case "shape":
@@ -7505,16 +7762,16 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
       look = el.payload.kind === "line"
         ? numberField("Thickness", el.payload.thickness, (v) => upd((e) => { (e as typeof el).payload.thickness = v ?? 1; }, "thick"), { step: 0.5, min: 0.5, def: base.thickness as number, unit: "pt" })
         : html`
-        <div class="fgroup">
-        ${fillField("Gradient", el.payload.fill, (v) => upd((e) => {
+        ${colorField("Border color", el.payload.borderColorHex, (v) => upd((e) => { if (v === undefined) delete (e as typeof el).payload.borderColorHex; else (e as typeof el).payload.borderColorHex = v; }, "border"), true, null)}
+        ${el.payload.borderColorHex !== undefined ? numberField("Border width", el.payload.borderWidth, (v) => upd((e) => { (e as typeof el).payload.borderWidth = v ?? 1; }, "bw"), { step: 0.5, min: 0, def: base.borderWidth as number, unit: "pt" }) : nothing}`;
+      lookMore = [
+        ["gradient", el.payload.kind === "line" ? nothing : fillField("Gradient", el.payload.fill, (v) => upd((e) => {
           const p = (e as typeof el).payload;
           if (v === undefined) { delete p.fill; return; }
           p.fill = v;
           p.colorSlot.baseColorHex = fillColorAt(v, 0);
-        }, "fill"), () => ({ kind: "linear", stops: [{ at: 0, colorHex: el.payload.colorSlot.baseColorHex }, { at: 1, colorHex: el.payload.colorSlot.baseColorHex }] }))}
-        ${colorField("Border color", el.payload.borderColorHex, (v) => upd((e) => { if (v === undefined) delete (e as typeof el).payload.borderColorHex; else (e as typeof el).payload.borderColorHex = v; }, "border"), true, null)}
-        ${el.payload.borderColorHex !== undefined ? numberField("Border width", el.payload.borderWidth, (v) => upd((e) => { (e as typeof el).payload.borderWidth = v ?? 1; }, "bw"), { step: 0.5, min: 0, def: base.borderWidth as number, unit: "pt" }) : nothing}
-        </div>`;
+        }, "fill"), () => ({ kind: "linear", stops: [{ at: 0, colorHex: el.payload.colorSlot.baseColorHex }, { at: 1, colorHex: el.payload.colorSlot.baseColorHex }] }))],
+      ];
       break;
     case "image": {
       const img = el.payload;
@@ -7557,19 +7814,22 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
       // frame has to be aimed, and every control here is about where the
       // picture sits rather than what it is.
       look = html`
-        <div class="fgroup">
         ${segField("Picture", img.contentMode, [["fill", "Fill the frame"], ["fit", "Fit inside"]],
           (v) => setImage((p) => { p.contentMode = v; }),
-          { titles: { fill: "Cover the frame, cropping what does not fit", fit: "Show the whole picture, with space around it" }, def: base.contentMode as typeof img.contentMode })}
-        ${sliderField("Zoom", img.zoom, (v) => setImage((p) => { p.zoom = v; }, "zoom"),
-          { min: MIN_ZOOM, max: 4, step: 0.05, def: 1, format: (v) => `${v.toFixed(2)}x`, unit: "x" })}
-        ${sliderField("Pan left/right", img.panX, (v) => setImage((p) => { p.panX = v; }, "panx"),
-          { min: -1, max: 1, step: 0.02, def: 0 })}
-        ${sliderField("Pan up/down", img.panY, (v) => setImage((p) => { p.panY = v; }, "pany"),
-          { min: -1, max: 1, step: 0.02, def: 0 })}
-        <div class=${img.contentMode === "fit" && img.zoom === 1 ? "hint keep" : "hint"}>${imagePanHint(img)}</div>
-        </div>
-        ${numberField("Corner radius", img.cornerRadius, (v) => setImage((p) => { p.cornerRadius = Math.max(0, v ?? IMAGE_DEFAULT_CORNER_RADIUS); }, "imgradius"), { step: 1, min: 0, def: IMAGE_DEFAULT_CORNER_RADIUS, unit: "pt" })}`;
+          { titles: { fill: "Cover the frame, cropping what does not fit", fit: "Show the whole picture, with space around it" }, def: base.contentMode as typeof img.contentMode })}`;
+      lookMore = [
+        ["zoom, pan", html`
+          <div class="fgroup">
+          ${sliderField("Zoom", img.zoom, (v) => setImage((p) => { p.zoom = v; }, "zoom"),
+            { min: MIN_ZOOM, max: 4, step: 0.05, def: 1, format: (v) => `${v.toFixed(2)}x`, unit: "x" })}
+          ${sliderField("Pan left/right", img.panX, (v) => setImage((p) => { p.panX = v; }, "panx"),
+            { min: -1, max: 1, step: 0.02, def: 0 })}
+          ${sliderField("Pan up/down", img.panY, (v) => setImage((p) => { p.panY = v; }, "pany"),
+            { min: -1, max: 1, step: 0.02, def: 0 })}
+          <div class=${img.contentMode === "fit" && img.zoom === 1 ? "hint keep" : "hint"}>${imagePanHint(img)}</div>
+          </div>`],
+        ["corner radius", numberField("Corner radius", img.cornerRadius, (v) => setImage((p) => { p.cornerRadius = Math.max(0, v ?? IMAGE_DEFAULT_CORNER_RADIUS); }, "imgradius"), { step: 1, min: 0, def: IMAGE_DEFAULT_CORNER_RADIUS, unit: "pt" })],
+      ];
       break;
     }
     case "tap": {
@@ -7772,8 +8032,16 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
         }, "reset-content") } : {}) })}
     ${look === undefined && color === undefined && accent === undefined && el.kind === "tap" ? nothing
       : card(host, "look", el.kind === "image" ? "Picture" : "Look",
-        html`${look ?? nothing}${color ?? nothing}${accent ?? nothing}${el.kind === "tap" ? nothing : layerLookFields(el, upd)}`,
+        // A shape's fill is what it is, so it leads; everywhere else the color
+        // follows the rows it belongs with.
+        el.kind === "shape"
+          ? html`${color ?? nothing}${look ?? nothing}${accent ?? nothing}`
+          : html`${look ?? nothing}${color ?? nothing}${accent ?? nothing}`,
         { color: SECTION_COLOR.look, icon: el.kind === "image" ? "image" : "look", ...(lookSummary(el) ? { summary: lookSummary(el)! } : {}),
+          more: {
+            rows: [...lookMore, ["opacity, shadow", el.kind === "tap" ? nothing : layerLookFields(el, upd)]],
+            changed: anyDiffers(el.payload, base, [...(LOOK_MORE_KEYS[el.kind] ?? []), ...(el.kind === "tap" ? [] : LAYER_LOOK_KEYS)]),
+          },
           ...(lookChanged ? { reset: () => host.update((c) => {
             const target = elementIn(c, id);
             if (target) restoreKeys(target.payload, base, lookKeys);
@@ -7808,7 +8076,10 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
     ${card(host, "states", "States", statesEditor(host, el.payload.rules, el.kind,
       (c) => c.elements.find((e) => e.payload.id === id)?.payload.rules, `rules-${id}`, tested, textParts,
       { colorByValue: colorsByValue(el) }),
-      { color: SECTION_COLOR.states, icon: "states", summary: statesSummary(el.payload.rules).replace(/\.$/, ""),
+      { color: SECTION_COLOR.states, icon: "states", summary: statesCardSummary(el.payload.rules),
+        ...statesAddAction(host, el.payload.rules, el.kind,
+          (c) => c.elements.find((e) => e.payload.id === id)?.payload.rules, `rules-${id}`, tested, textParts,
+          { colorByValue: colorsByValue(el) }),
         ...(el.payload.rules.length > 0 ? { reset: () => upd((e) => { e.payload.rules = []; }) } : {}) })}
     ${opts.placement === false ? nothing : placementCard(host, el, family)}
     ${opts.tap === false ? nothing : tapCard(host, el)}`;
@@ -7863,7 +8134,7 @@ function ownedExtrasCard(host: EditorHost, el: Extract<CElement, { kind: "timeli
       <div class="hint">Click the row to open its main settings here. More settings selects that layer. The ×
         deletes it, and Undo brings it back.</div>` : nothing}`;
   return card(host, "numbers", "Extras", body, {
-    color: SECTION_COLOR.numbers, icon: "clock", summary: on ? `${label} layer` : "None yet",
+    color: SECTION_COLOR.numbers, icon: "clock", summary: on ? label : "none",
     ...(on ? { reset: () => host.update((c) => { for (const l of layers) removeElement(c, l.payload.id); }) } : {}),
   });
 }
@@ -7969,6 +8240,19 @@ const LOOK_KEYS: Record<CElement["kind"], readonly string[]> = {
   chartGrid: ["lines", "colorHex", "thickness"],
   imageTime: [],
   list: ["rows", "direction", "columns", "gap"],
+};
+
+/** The payload fields behind each kind's More line in its Look card. Any of
+ * them away from a fresh layer's value opens the line, so a changed setting is
+ * never folded away. Opacity and the shadow (`LAYER_LOOK_KEYS`) join every
+ * drawing layer's list. */
+export const LOOK_MORE_KEYS: Partial<Record<CElement["kind"], readonly string[]>> = {
+  text: ["fontWidth", "italic", "monospacedDigits", "arc", "highlight", "highColorHex", "lowColorHex"],
+  gauge: ["fill", "ticks", "labels", "thresholdValue", "thresholdColorHex"],
+  chart: ["barRadius", "barCorners", "barBorderWidth", "barBorderColorHex", "barBorderOpenBase", "baseline", "scaleFrom"],
+  timeline: ["gap", "cornerRadius"],
+  shape: ["fill"],
+  image: ["zoom", "panX", "panY", "cornerRadius"],
 };
 
 /**
@@ -8139,7 +8423,7 @@ function chartNumbersSummary(host: EditorHost, el: Extract<CElement, { kind: "ch
   const times = chartTimesOf(host.config, c.id);
   const dots = chartDotsOf(host.config, c.id);
   const grids = chartGridsOf(host.config, c.id);
-  if (labels.length === 0 && markers.length === 0 && times.length === 0 && dots.length === 0 && grids.length === 0) return "None yet";
+  if (labels.length === 0 && markers.length === 0 && times.length === 0 && dots.length === 0 && grids.length === 0) return "none";
   const parts = [...labels.map((l) => {
     const k = l.payload.value.kind;
     return k.kind === "chartStat" ? (CHART_STATS.find(([s]) => s === k.stat)?.[1] ?? "number").toLowerCase() : "number";
@@ -8708,7 +8992,17 @@ export function groupEditor(host: EditorHost, group: LayerGroup): TemplateResult
 
 // ── Family layout ─────────────────────────────────────────────────────────
 
+/**
+ * The shape's own cards, what the Background row of the Layers list selects.
+ * The whole complication's tap comes first: a tap that lands on the
+ * background is the complication's tap, so the two are one card rather than
+ * a setting on the shape and another on the Complication card.
+ */
 export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResult {
+  return html`${docTapCard(host)}${familyCards(host, family)}`;
+}
+
+function familyCards(host: EditorHost, family: FamilyKind): TemplateResult {
   if (family === "inline") return inlineEditor(host);
   const layout = host.config.perFamily[family];
   if (!layout) {
@@ -8738,12 +9032,11 @@ export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResu
     { at: 1, colorHex: layout.backgroundColorHex ?? "#000000" }] }));
   return html`
     ${card(host, "look", `${familyTitle(family)} shape`, html`
-      ${home ? nothing : html`${background}${backgroundGradient}`}
-      <div class="fgroup">
+      ${home ? nothing : background}
       ${colorField("Border color", layout.borderColorHex, (v) => upd((l) => { if (v === undefined) delete l.borderColorHex; else l.borderColorHex = v; }, "border"), true, null)}
-      ${numberField("Border width", layout.borderWidth, (v) => upd((l) => { l.borderWidth = v ?? 2; }, "bw"), { step: 0.5, min: 0, def: 2, unit: "pt" })}
-      </div>`,
+      ${numberField("Border width", layout.borderWidth, (v) => upd((l) => { l.borderWidth = v ?? 2; }, "bw"), { step: 0.5, min: 0, def: 2, unit: "pt" })}`,
       { color: SECTION_COLOR.look, icon: "shape", summary: `${bg} · ${border}`,
+        more: { rows: [["gradient", home ? nothing : backgroundGradient]], changed: layout.backgroundFill !== undefined },
         ...(layout.backgroundColorHex !== undefined || layout.backgroundFill !== undefined || layout.borderColorHex !== undefined || layout.borderWidth !== 2
           ? { reset: () => upd((l) => { delete l.backgroundColorHex; delete l.backgroundFill; delete l.borderColorHex; l.borderWidth = 2; }, "reset-look") } : {}) })}
     ${home ? card(host, "home", "Home Screen", html`
@@ -8760,7 +9053,8 @@ export function familyEditor(host: EditorHost, family: FamilyKind): TemplateResu
         ...(layout.curvedText !== undefined || layout.bezelText !== undefined || layout.bezelGauge !== undefined
           ? { reset: () => upd((l) => { delete l.curvedText; delete l.bezelText; delete l.bezelGauge; }, "reset-corner") } : {}) }) : nothing}
     ${card(host, "states", "Shape states", statesEditor(host, layout.rules, "layout", (c) => c.perFamily[family]?.rules, `rules-${family}`),
-      { color: SECTION_COLOR.states, icon: "states", summary: statesSummary(layout.rules).replace(/\.$/, ""),
+      { color: SECTION_COLOR.states, icon: "states", summary: statesCardSummary(layout.rules),
+        ...statesAddAction(host, layout.rules, "layout", (c) => c.perFamily[family]?.rules, `rules-${family}`),
         ...(layout.rules.length > 0 ? { reset: () => upd((l) => { l.rules = []; }, "reset-states") } : {}) })}
     ${card(host, "placements", "Layers", html`
       <div class="hint keep">${placed === 0
@@ -9448,20 +9742,31 @@ export function statesEditor(
   return statesTable(host, shape.table, rules[0], target, locate, key, defaultValue, parts, options);
 }
 
-function statesTable(
+/** What a states table works out before it draws, and what a new row is made
+ * from. Shared by the table's own Add a state and the States card's header
+ * button, so the two add the same row. */
+interface StatesPlan {
+  tested: Value | undefined;
+  numberMode: boolean;
+  colorByValue: boolean;
+  allowed: readonly StyleProperty[];
+  columns: StyleProperty[];
+  colorIgnored: boolean;
+  partId: string | undefined;
+  forPart: boolean;
+  seedColor: boolean;
+}
+
+function statesPlan(
   host: EditorHost,
   table: StatesTable,
   rule: Rule | undefined,
   target: RuleTarget,
-  locate: (cfg: CustomComplicationConfig) => Rule[] | undefined,
   key: string,
   defaultValue?: Value,
   parts?: readonly TextPart[],
   options: StatesEditorOptions = {},
-): TemplateResult {
-  const upd = (mutate: (rules: Rule[]) => void, k?: string) =>
-    host.update((c) => { const r = locate(c); if (r) mutate(r); }, k ? `${key}-${k}` : undefined);
-
+): StatesPlan {
   // What a new row tests: whatever the rows already test, else the header
   // chip's pending choice, else the layer's own entity.
   const tested = table.value ?? pendingTestValues.get(key) ?? defaultValue;
@@ -9488,12 +9793,68 @@ function statesTable(
   const pendingPart = pendingPartTargets.get(key);
   const partId = rule ? rule.partId : parts?.some((p) => p.id === pendingPart) ? pendingPart : undefined;
   const forPart = parts !== undefined && partId !== undefined;
-  const offered = (forPart ? allowed.filter((p) => PART_RULE_PROPERTIES.includes(p)) : allowed)
-    .filter((p) => !(colorByValue && p === "color"));
-  const partIgnores = forPart ? columns.filter((p) => !PART_RULE_PROPERTIES.includes(p)) : [];
   // A new row or Otherwise starts with a color when the table shows Color,
   // so the first thing on screen is a working rule rather than empty cells.
   const seedColor = columns.includes("color") && !colorIgnored;
+  return { tested, numberMode, colorByValue, allowed, columns, colorIgnored, partId, forPart, seedColor };
+}
+
+/** One new state row, the way the table's Add a state writes it. */
+function addPlannedRow(rs: Rule[], plan: Pick<StatesPlan, "tested" | "numberMode" | "seedColor" | "partId">): void {
+  addStateRow(rs, plan.tested ?? literal(""), plan.numberMode, plan.seedColor);
+  if (plan.partId !== undefined && rs[0] && rs[0].partId === undefined) rs[0].partId = plan.partId;
+}
+
+/**
+ * The "Add" in a folded States card's header: it opens the card and adds a
+ * state, the same row the table's own Add a state makes. Nothing when the
+ * rules are past what a table can show, since there is no table to add a row
+ * to; the card then opens on its Advanced editor as it did before.
+ */
+export function statesAddAction(
+  host: EditorHost,
+  rules: Rule[],
+  target: RuleTarget,
+  locate: (cfg: CustomComplicationConfig) => Rule[] | undefined,
+  key: string,
+  defaultValue?: Value,
+  parts?: readonly TextPart[],
+  options: StatesEditorOptions = {},
+): { action?: NonNullable<CardOptions["action"]> } {
+  const shape = tableShape(rules);
+  if (!shape.ok || advancedRules.has(key)) return {};
+  const plan = statesPlan(host, shape.table, rules[0], target, key, defaultValue, parts, options);
+  return {
+    action: {
+      label: "Add",
+      title: `Add a state: when the value matches, this ${target === "layout" ? "shape" : "layer"} changes how it looks`,
+      run: () => {
+        pendingPartTargets.delete(key);
+        host.update((c) => { const rs = locate(c); if (rs) addPlannedRow(rs, plan); });
+      },
+    },
+  };
+}
+
+function statesTable(
+  host: EditorHost,
+  table: StatesTable,
+  rule: Rule | undefined,
+  target: RuleTarget,
+  locate: (cfg: CustomComplicationConfig) => Rule[] | undefined,
+  key: string,
+  defaultValue?: Value,
+  parts?: readonly TextPart[],
+  options: StatesEditorOptions = {},
+): TemplateResult {
+  const upd = (mutate: (rules: Rule[]) => void, k?: string) =>
+    host.update((c) => { const r = locate(c); if (r) mutate(r); }, k ? `${key}-${k}` : undefined);
+
+  const { tested, numberMode, colorByValue, allowed, columns, colorIgnored, partId, forPart, seedColor } =
+    statesPlan(host, table, rule, target, key, defaultValue, parts, options);
+  const offered = (forPart ? allowed.filter((p) => PART_RULE_PROPERTIES.includes(p)) : allowed)
+    .filter((p) => !(colorByValue && p === "color"));
+  const partIgnores = forPart ? columns.filter((p) => !PART_RULE_PROPERTIES.includes(p)) : [];
   const setPart = (id: string, node: EventTarget | null) => {
     if (!rule) {
       if (id) pendingPartTargets.set(key, id); else pendingPartTargets.delete(key);
@@ -9523,10 +9884,7 @@ function statesTable(
 
   const addRow = () => {
     pendingPartTargets.delete(key);
-    upd((rs) => {
-      addStateRow(rs, tested ?? literal(""), numberMode, seedColor);
-      if (partId !== undefined && rs[0] && rs[0].partId === undefined) rs[0].partId = partId;
-    });
+    upd((rs) => addPlannedRow(rs, { tested, numberMode, seedColor, partId }));
   };
 
   const rows = table.rows.map((row, i) => statesRow(host, {
