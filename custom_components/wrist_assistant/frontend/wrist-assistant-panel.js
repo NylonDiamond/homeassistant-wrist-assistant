@@ -3908,7 +3908,13 @@ ${yH(c)}`}}delete s.hidden,delete s.linkId;let l=cd(a);if(l.length>0){let d=l.sl
     .page-tile .page-trash:hover, .page-tile .page-trash:focus-visible { opacity: 1; color: #FF453A; background: color-mix(in srgb, #FF453A 14%, transparent); outline: none; }
     .page-tile .page-trash.armed { width: auto; padding: 0 8px; opacity: 1; font-size: 10.5px; font-weight: 700; background: #FF453A; color: #fff; }
     .page-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; padding: 4px 8px 8px; }
-    .page-tools .spacer { flex: 1; }
+    /* The ? beside a card's title: the help for that card. */
+    button.lc-help {
+      width: 18px; height: 18px; margin-left: -2px; padding: 0; border: 1px solid var(--wa-line); border-radius: 50%; cursor: pointer; flex: none;
+      font: inherit; font-size: 10.5px; font-weight: 700; line-height: 1; background: transparent; color: var(--wa-muted);
+    }
+    button.lc-help:hover { color: var(--wa-ink); border-color: var(--wa-line-strong); background: var(--wa-panel); }
+    button.lc-help:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     /* The one line under the Pages header while nothing can turn a page. */
     .lc-note { display: flex; align-items: center; gap: 6px; margin: 0 10px 8px; padding: 5px 10px; border-radius: 7px; font-size: 11.5px; }
     .lc-note.warn { color: var(--wa-amber); background: var(--wa-amber-bg); box-shadow: inset 0 0 0 1px var(--wa-amber-line); }
@@ -6230,14 +6236,12 @@ ${yH(c)}`}}delete s.hidden,delete s.linkId;let l=cd(a);if(l.length>0){let d=l.sl
         ${i?u`<button class="page-trash ${p?"armed":""}" title=${p?`Press again to delete page ${s}.`:h}
           aria-label=${p?`Press again to delete page ${s}`:`Delete page ${s}`}
           @click=${()=>{p?o(s):this.armPageTrash(s)}}>${p?"sure?":E("delete")}</button>`:m}
-      </div>`})}renderPageTools(t){let i=this.page,a=o=>{let s=o==="previousPage";return u`<button class="lc-ghost sm"
+      </div>`})}renderPageTools(t){if(!t)return m;let i=this.page,a=o=>{let s=o==="previousPage";return u`<button class="lc-ghost sm"
         title=${s?`A tap zone over the left half of page ${i}. Tapping it shows the page before.`:`A tap zone over the right half of page ${i}. Tapping it shows the next page.`}
         @click=${()=>this.mutate(l=>{lb(l,o,i)},`pages-zone-${o}`)}>${E("plus")}<span>${s?"Previous":"Next"} page tap</span></button>`},r=()=>{let o="";this.mutate(s=>{let l=qe("tap"),d=l.payload;d.name="Page tap zone",d.frame={x:.25,y:0,width:.5,height:1,rotationDegrees:0},d.action={type:"showPage",page:i===1?2:1},d.page=i,s.elements.unshift(l),o=d.id},"pages-zone-showPage"),this.inspect={kind:"layer",id:o},this.lightSection("content")};return u`<div class="page-tools">
-      ${t?u`${a("previousPage")}${a("nextPage")}
-        <button class="lc-ghost sm" title=${`A tap zone over the middle of page ${i} that shows one page of your choice. Pick which page on the right, under Tap.`}
-          @click=${r}>${E("plus")}<span>One page tap</span></button>`:m}
-      <span class="spacer"></span>
-      <button class="lc-ghost sm" title="How pages work" @click=${()=>{this.helpTab="pages",this.helpOpen=!0}}>How pages work</button>
+      ${a("previousPage")}${a("nextPage")}
+      <button class="lc-ghost sm" title=${`A tap zone over the middle of page ${i} that shows one page of your choice. Pick which page on the right, under Tap.`}
+        @click=${r}>${E("plus")}<span>One page tap</span></button>
     </div>`}renderPages(){let t=this.draft?.config;if(!t)return m;if(!Pt(this.activeFamily))return m;let i=this.canEdit,a=ze(t);if(!a&&!i)return m;if(!a)return u`<div class="card pages-card lc">
         <div class="lc-head">
           <span class="swatch">${E("pages")}</span><span class="lc-title">Pages</span><span class="lc-sub">just one</span>
@@ -6247,7 +6251,9 @@ ${yH(c)}`}}delete s.hidden,delete s.linkId;let l=cd(a);if(l.length>0){let d=l.sl
         </div>
       </div>`;let r=bt(t),o=r.count>=od,s=i&&!sb(t);return u`<div class="card pages-card lc">
       <div class="lc-head">
-        <span class="swatch">${E("pages")}</span><span class="lc-title">Pages</span><span class="lc-sub">${r.count} · shown one at a time</span>
+        <span class="swatch">${E("pages")}</span><span class="lc-title">Pages</span>
+        <button class="lc-help" title="How pages work" aria-label="How pages work" @click=${()=>{this.helpTab="pages",this.helpOpen=!0}}>?</button>
+        <span class="lc-sub">${r.count} · shown one at a time</span>
         <span class="spacer"></span>
         ${i?u`<button class="lc-btn" ?disabled=${o} aria-label="Add a page"
           title=${o?"Four pages is the most a complication can have.":"Add an empty page after the last one."}
