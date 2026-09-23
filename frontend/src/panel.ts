@@ -3923,7 +3923,6 @@ export class WristAssistantPanel extends LitElement {
     }
     .page-row .page-tab .page-trash.armed:hover { background: color-mix(in srgb, #fff 12%, #FF453A); }
     .page-row .page-tab .page-trash .sure { font-size: 11px; font-weight: 700; letter-spacing: .01em; }
-    .page-row .page-act.page-play.on { background: var(--wa-page); color: var(--wa-page-ink); border-color: transparent; }
     .page-row .page-tab button:focus-visible { outline: none; box-shadow: inset var(--wa-ring); }
     /* + and Play beside the tabs, and Add a page in their place before there
        are any: fixed width, so the tabs alone take the slack. */
@@ -8089,25 +8088,16 @@ export class WristAssistantPanel extends LitElement {
   private renderPageBody(cfg: CustomComplicationConfig, edit: boolean) {
     const spec = pagesSpecOf(cfg);
     const full = spec.count >= PAGES_MAX_COUNT;
-    const playing = this.touring;
-    // The tour plays here, on the canvas, with the same boundaries the watch
-    // uses, so the author can judge the hold times. Tour mode only: in tap
-    // mode the tabs already are the taps.
-    const tourButton = spec.mode !== "tour" ? nothing : html`<button class="page-act page-play ${playing ? "on" : ""}" aria-pressed=${playing ? "true" : "false"}
-      title=${playing
-        ? "Stop the tour. The page stays where it got to, the way a tap on the watch takes over from a tour."
-        : `Play every page once on the canvas, ${Math.round(tourDuration(spec) * 10) / 10} s in all, then back to page 1. The watch plays the same boundaries from one tap.`}
-      @click=${() => { if (playing) this.stopTour(); else this.playTour(); }}>${playing ? "Stop" : "Play"}</button>`;
     return html`<div class="page-row" title="Which page the canvas and the Layers card show. That card holds this page's layers and the ones on every page.">
       <span class="page-tabs" role="group" aria-label="Page the list is showing">${this.renderPageTabs(cfg, { trash: edit })}</span>
-      ${tourButton}
       ${edit ? html`
         <button class="page-act page-more" ?disabled=${full} aria-label="Add a page"
           title=${full ? "Four pages is the most a complication can have." : "Add an empty page after the last one."}
           @click=${() => { let page: number | undefined; this.mutate((c) => { page = addPage(c); }); if (page !== undefined) this.showPage(page); }}>${uiIcon("plus")}</button>` : nothing}
     </div>
-    ${playing
-      // Keyed on the run so a second press starts the bar over: a CSS
+    ${this.touring
+      // A tour started by a Play all pages tap in the demo preview. Keyed on
+      // the run so a second press starts the bar over: a CSS
       // animation on the same element would otherwise carry on from where
       // the first tour left it.
       ? keyed(this.tourRun, html`<span class="page-tour-bar" aria-hidden="true"><i
@@ -8430,7 +8420,7 @@ export class WristAssistantPanel extends LitElement {
       ["Which page a layer is on", "Each layer sits on one page or on every page. Set it on the layer, in its Position card. A layer you add lands on the page you are looking at. A background, a border or a label that belongs everywhere goes on Every page."],
       ["+ and the trash", "In the Pages card. + adds an empty page at the end, up to four. The trash on the pressed page deletes that page and the layers on it; it asks first, so press it once for \"sure?\" and again to delete. Later pages move down one, layers on every page stay, and undo puts it back."],
       ["Moving between pages on the watch", "A tap has to say so. Set the complication's tap action, or a tap layer's, to Show next page or Show previous page. A tap with any other action does its own job and leaves the page alone, so a page can still hold buttons. The page stays where it was left."],
-      ["The tour", "Set a tap action to Play all pages and one tap plays every page once, then returns to page 1. Under that tap action you set how long each page shows, or one time for every page; a tour lasts the sum of them. Every Play all pages tap shares these times. The Play button in the Pages card plays it on the canvas with the same timing. A tap during a tour on the watch stops it."],
+      ["The tour", "Set a tap action to Play all pages and one tap plays every page once, then returns to page 1. Under that tap action you set how long each page shows, or one time for every page; a tour lasts the sum of them. Every Play all pages tap shares these times. A tap during a tour on the watch stops it."],
       ["What the watch needs", "A complication with pages needs the Wrist Assistant app that understands them. An older app refuses the whole complication and asks for an update rather than drawing every page on top of each other."],
     ];
     const layers: [string, string][] = [

@@ -3681,9 +3681,9 @@ export type PageMode = "tap" | "tour";
 export const PAGES_MAX_COUNT = 4;
 /** Seconds a page is held when the document does not say. */
 export const PAGE_DEFAULT_DWELL = 2;
-/** Half a second is the shortest hold that reads as a page rather than a
- * flicker; ten is the longest anyone waits with a wrist up. */
-export const PAGE_DWELL_RANGE: { readonly min: number; readonly max: number } = { min: 0.5, max: 10 };
+/** One second is the shortest hold that can be read on a wrist; ten is the
+ * longest anyone waits with a wrist up. Matches `PagesSpec.dwellRange`. */
+export const PAGE_DWELL_RANGE: { readonly min: number; readonly max: number } = { min: 1, max: 10 };
 
 /** How many pages a document has, and how a page moves on. */
 export interface PagesSpec {
