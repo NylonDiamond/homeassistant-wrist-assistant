@@ -727,6 +727,9 @@ const GRID_STORE_KEY = "wrist-assistant-panel.grid.v1";
  * storage, because it is about this tab: a second tab opens on its own. */
 const OPEN_STORE_KEY = "wrist-assistant-panel.open.v1";/** How tall the slot a dragged row opens is, CSS px. */
 const DROP_GAP = 34;
+/** How long a Layers row keeps its layer lit after the pointer leaves it:
+ * long enough to cross the gap to the next row at a slow drag. */
+const ROW_LEAVE_MS = 250;
 const COL_MIN = 200;
 const COL_MAX = 720;
 /** The canvas column never goes below this while three columns are shown. */
@@ -1001,6 +1004,12 @@ export function tapBadge(action: TapAction, fromPage: number, pageCount: number)
     case "playTour": return "→ every page";
     default: return "tap";
   }
+}
+
+/** Whether the complication's tap is the one a new complication starts with:
+ * a plain refresh of every layer. */
+export function isDefaultTap(action: TapAction): boolean {
+  return action.type === "refresh" && action.layerIds === undefined;
 }
 
 /** What a tap does, as the foot of the Layers list says it: "tap: refresh". */
@@ -1472,6 +1481,7 @@ export class WristAssistantPanel extends LitElement {
    * every member for a group row. Tinted on the preview, so a row can be
    * found on the face without selecting it. Selection stays where it was. */
   @state() private listHoverIds: readonly string[] = [];
+  private rowLeaveTimer?: number;
   /** The layer whose row inside the inspector (a group's members, a chart's
    * extras) is under the pointer. While it is set the preview draws that layer
    * as if it alone were selected, without changing the selection. */
@@ -9080,9 +9090,22 @@ export class WristAssistantPanel extends LitElement {
 
   /** Drop the list tint, but only the one this row put up: the pointer can
    * enter the next row before this row's leave arrives. */
+  /** The pointer came onto a row of the Layers list. It cancels a clear the
+   * row it came from left pending, so the lit layer hands straight over. */
+  private enterRow(ids: readonly string[]) {
+    window.clearTimeout(this.rowLeaveTimer);
+    this.listHoverIds = ids;
+  }
+
+  /** The pointer left a row. The rows sit a few pixels apart, and clearing at
+   * once blinked every highlight off while the pointer crossed that gap, so
+   * the clear waits a moment for the next row's enter to cancel it. */
   private leaveRow(ids: readonly string[]) {
-    const same = this.listHoverIds.length === ids.length && this.listHoverIds.every((id, i) => ids[i] === id);
-    if (same) this.listHoverIds = [];
+    window.clearTimeout(this.rowLeaveTimer);
+    this.rowLeaveTimer = window.setTimeout(() => {
+      const same = this.listHoverIds.length === ids.length && this.listHoverIds.every((id, i) => ids[i] === id);
+      if (same) this.listHoverIds = [];
+    }, ROW_LEAVE_MS);
   }
 
   /**
@@ -14956,8 +14979,10 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /** The Background row's tap strip: what a tap anywhere outside the layers'
-   * taps does. Its trash sets that to Do nothing, since the complication
-   * always has a tap action. */
+   * taps does. The complication always has a tap action, so its trash puts
+   * back the default a new complication starts with, Refresh, and hides when
+   * the tap is already that. "Do nothing" is not offered: the menu has no
+   * such row, and on the whole complication the watch opens the app anyway. */
   private groundTapStrip(cfg: CustomComplicationConfig, edit: boolean) {
     const act = cfg.tapAction;
     return html`<div class="tap-strip" role="button" tabindex="0"
@@ -14966,8 +14991,8 @@ export class WristAssistantPanel extends LitElement {
       @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); this.selectGroundTap(); } }}>
       <span class="tap-glyph">${uiIcon("tap")}</span>
       <span class="tap-words">${describeTapAction(act)}</span>
-      ${edit && act.type !== "none" ? html`<button class="icon danger tap-del" title="Make a tap on the background do nothing" aria-label="Remove the background's tap"
-        @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => { c.tapAction = { type: "none" }; }); }}>${uiIcon("delete")}</button>` : nothing}
+      ${edit && !isDefaultTap(act) ? html`<button class="icon danger tap-del" title="Put the default back: refresh this complication" aria-label="Reset the background's tap to refresh"
+        @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => { c.tapAction = { type: "refresh" }; }); }}>${uiIcon("delete")}</button>` : nothing}
     </div>`;
   }
 
@@ -15142,7 +15167,7 @@ export class WristAssistantPanel extends LitElement {
       }
       return html`<div class="layer ${attached ? "with-tap" : ""} ${tapSel ? "tapsel" : ""} ${hl ? "hl" : ""} ${held ? "held" : ""} ${this.dialogLitIds.includes(id) ? "lit" : ""} ${hidden ? "dim" : ""} ${this.multi.has(id) ? "multi" : ""} ${inGroup ? "kid" : ""} ${rich ? "rich" : ""}"
         style=${`--k:${KIND_COLOR[el.kind]}`} tabindex="0" draggable=${d.draggable}
-        @pointerenter=${() => { this.listHoverIds = [id]; }}
+        @pointerenter=${() => this.enterRow([id])}
         @pointerleave=${() => this.leaveRow([id])}
         @click=${(e: MouseEvent) => this.clickRow(id, e)}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = { kind: "layer", id }; }}
@@ -15206,7 +15231,7 @@ export class WristAssistantPanel extends LitElement {
       const memberIds = members.map((m) => m.payload.id);
       const subCount = kids.filter((k) => k.kind === "group").length;
       return html`<div class="layer group ${hl ? "hl" : ""} ${held ? "held" : ""} ${this.dialogLitIds.includes(g.id) ? "lit" : ""} ${rich ? "rich" : ""}" style=${`--k:${SECTION_COLOR.group}`} tabindex="0" draggable=${d.draggable}
-        @pointerenter=${() => { this.listHoverIds = memberIds; }}
+        @pointerenter=${() => this.enterRow(memberIds)}
         @pointerleave=${() => this.leaveRow(memberIds)}
         @click=${() => { this.multi = new Set(); this.inspect = { kind: "group", id: g.id }; }}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = { kind: "group", id: g.id }; }}
@@ -15285,7 +15310,7 @@ export class WristAssistantPanel extends LitElement {
       });
       return html`<div class="layer kid rowkid ${hl ? "hl" : ""} ${hidden ? "dim" : ""}"
         style=${`--k:${KIND_COLOR[row.kind]}`} tabindex="0"
-        @pointerenter=${() => { this.listHoverIds = [id]; }}
+        @pointerenter=${() => this.enterRow([id])}
         @pointerleave=${() => this.leaveRow([id])}
         @click=${() => open()}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") open(); }}>

@@ -10,6 +10,7 @@ import {
   addGroupCards,
   addSheetPlace,
   backgroundRow,
+  isDefaultTap,
   filterAddOffers,
   layerListSections,
   layersFilterLine,
@@ -150,6 +151,15 @@ describe("the Background row", () => {
     const row = backgroundRow(filled, "rectangular");
     expect(row.meta).toContain("2 pt border");
     expect(row.meta.startsWith("Transparent")).toBe(false);
+  });
+});
+
+describe("the background tap's default", () => {
+  it("is a plain refresh of every layer", () => {
+    expect(isDefaultTap({ type: "refresh" })).toBe(true);
+    expect(isDefaultTap({ type: "refresh", layerIds: [] })).toBe(false);
+    expect(isDefaultTap({ type: "none" })).toBe(false);
+    expect(isDefaultTap({ type: "openApp" })).toBe(false);
   });
 });
 
