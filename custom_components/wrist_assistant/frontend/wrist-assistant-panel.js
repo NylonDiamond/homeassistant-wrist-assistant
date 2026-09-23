@@ -3979,6 +3979,9 @@ ${oP(c)}`}}delete s.hidden,delete s.linkId;let l=Sd(a);if(l.length>0){let d=l.sl
     button.lc-btn.pri:hover:not(:disabled) { filter: brightness(1.08); }
     button.lc-ghost { background: transparent; border-color: transparent; color: var(--wa-muted); padding: 0 7px; letter-spacing: .04em; }
     button.lc-ghost.sm { height: 24px; font-size: 11px; }
+    /* A ghost that still reads as a button: Save to parts sits on a line of
+       plain text, where a bare label was easy to miss. */
+    button.lc-ghost.outline { border-color: var(--wa-line-strong); color: var(--wa-ink); }
     button.lc-btn:hover:not(:disabled):not(.pri), button.lc-ghost:hover:not(:disabled) { background: var(--wa-panel); color: var(--wa-ink); border-color: var(--wa-line); }
     button.lc-ghost[aria-pressed="true"], button.lc-ghost[aria-expanded="true"] { color: var(--wa-ink); background: var(--wa-panel); }
     button.lc-btn:focus-visible, button.lc-ghost:focus-visible { outline: none; box-shadow: var(--wa-ring); }
@@ -7478,7 +7481,7 @@ ${oP(c)}`}}delete s.hidden,delete s.linkId;let l=Sd(a);if(l.length>0){let d=l.sl
               ${S?u`<button class="lc-ghost sm" aria-pressed=${j?"true":"false"}
                 title=${j?"List the page showing, and the layers on every page":"List the layers of every page, page by page"}
                 @click=${()=>{this.allPages=!j}}>${j?"This page":"Show all"}</button>`:m}
-              ${v>=1&&i?u`<button class="lc-ghost sm" title=${v===1?"Keep this layer under a name, to use in another complication":"Keep these layers under a name, to use in another complication"}
+              ${v>=1&&i?u`<button class="lc-ghost sm outline" title=${v===1?"Keep this layer under a name, to use in another complication":"Keep these layers under a name, to use in another complication"}
                     @click=${()=>{this.openSavePartDialog()}}>Save to parts</button>`:m}
             </div>`:m}
       ${b<2&&v===0&&t.elements.length>=2&&i&&!t.groups?.length?u`<div class="hint">${bo}-click layers here or on the preview, or shift-click a range of rows, then group them so a finished part moves as one. The <b>?</b> button in the header lists every key and mouse trick.</div>`:m}
