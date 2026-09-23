@@ -2653,22 +2653,26 @@ export interface PopoverPlacement { left: number; top: number; maxHeight: number
 const POPOVER_MARGIN = 8;
 /** Gap between the chip and its popover. */
 const POPOVER_GAP = 6;
-/** Below this a popover is squeezed enough that flipping is worth it. */
+/** The least height a popover is given, even where the window leaves less. */
 const POPOVER_MIN_HEIGHT = 140;
 
 /**
  * Where a popover goes under its chip.
  *
- * Under the chip by default, above it when there is not enough room below and
- * more room above, and always inside the window: a chip near the right edge of
- * a narrow inspector would otherwise open a form half off screen. The popover
+ * Under the chip by default, above it whenever it does not fit below and there
+ * is more room above, and always inside the window: a chip near the right edge
+ * of a narrow inspector would otherwise open a form half off screen.
+ *
+ * It used to flip only once the room below fell under `POPOVER_MIN_HEIGHT`, so
+ * a tall menu under a chip near the bottom opened as a sliver two rows high
+ * with a page of empty window above it (the tap menu, 2026-09-23). The popover
  * itself sits in the top layer, so nothing an ancestor does with `overflow`
  * can clip it, which is the reason these are window coordinates.
  */
 export function placePopover(anchor: AnchorBox, size: { width: number; height: number }, viewport: { width: number; height: number }): PopoverPlacement {
   const below = viewport.height - anchor.bottom - POPOVER_GAP - POPOVER_MARGIN;
   const above = anchor.top - POPOVER_GAP - POPOVER_MARGIN;
-  const flip = size.height > below && above > below && below < POPOVER_MIN_HEIGHT;
+  const flip = size.height > below && above > below;
   const room = Math.max(POPOVER_MIN_HEIGHT, flip ? above : below);
   const height = Math.min(size.height, room);
   const left = Math.max(POPOVER_MARGIN, Math.min(anchor.left, viewport.width - size.width - POPOVER_MARGIN));

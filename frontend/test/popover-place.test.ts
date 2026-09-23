@@ -24,6 +24,14 @@ describe("placePopover", () => {
     expect(at.top + Math.min(SIZE.height, at.maxHeight)).toBeLessThanOrEqual(840);
   });
 
+  it("flips above a tall menu that would be squeezed below, however much room below is left", () => {
+    // The tap menu under a chip near the bottom: 224 points below, a page above.
+    const at = placePopover(chip(1000, 600), { width: 340, height: 1000 }, VIEW);
+    expect(at.above).toBe(true);
+    expect(at.maxHeight).toBeGreaterThan(560);
+    expect(at.top).toBeGreaterThanOrEqual(8);
+  });
+
   it("stays below when below is tight but above is tighter", () => {
     const at = placePopover(chip(1000, 100), { width: 380, height: 900 }, { width: 1400, height: 260 });
     expect(at.above).toBe(false);
