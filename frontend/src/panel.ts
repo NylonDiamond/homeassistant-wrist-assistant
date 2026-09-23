@@ -3364,6 +3364,29 @@ export class WristAssistantPanel extends LitElement {
     .badge.states { color: #8a5a00; background: rgba(249,168,37,.18); }
     :host([dark]) .badge.tap { color: var(--wa-tap); background: color-mix(in srgb, var(--wa-tap) 22%, transparent); }
     :host([dark]) .badge.states { color: var(--wa-states); background: color-mix(in srgb, var(--wa-states) 22%, transparent); }
+    /* A layer's attached tap: a half-height pink row tucked under the layer,
+       indented to the layer's color bar so it reads as part of that layer. */
+    .tap-row {
+      display: flex; align-items: center; gap: 6px; flex: none;
+      min-height: 22px; margin: -2px 0 0 27px; padding: 0 8px; border-radius: var(--wa-r-sm);
+      font-size: 11.5px; font-weight: 600; cursor: pointer; user-select: none; min-width: 0;
+      color: #c2185b; background: rgba(236,64,122,.10); box-shadow: inset 0 0 0 1px rgba(236,64,122,.28);
+      transition: background-color .12s ease-out, box-shadow .12s ease-out;
+    }
+    .tap-row:hover { background: rgba(236,64,122,.18); }
+    .tap-row.on { background: rgba(236,64,122,.24); box-shadow: inset 0 0 0 2px #ec407a; }
+    .tap-row:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .tap-row.dim { opacity: .55; }
+    .tap-row .tap-glyph { display: grid; place-items: center; flex: none; }
+    .tap-row .tap-glyph svg { width: 13px; height: 13px; }
+    .tap-row .tap-words { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tap-row .tap-where { margin-left: auto; flex: none; white-space: nowrap; opacity: .85; }
+    :host([dark]) .tap-row {
+      color: var(--wa-tap); background: color-mix(in srgb, var(--wa-tap) 12%, transparent);
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-tap) 32%, transparent);
+    }
+    :host([dark]) .tap-row:hover { background: color-mix(in srgb, var(--wa-tap) 20%, transparent); }
+    :host([dark]) .tap-row.on { background: color-mix(in srgb, var(--wa-tap) 26%, transparent); box-shadow: inset 0 0 0 2px var(--wa-tap); }
     /* The right end of a row holds one thing at a time: the badges at rest,
        the buttons under the pointer or on the selected row. They trade places
        rather than stand side by side, so the badges keep the right edge and
@@ -14985,18 +15008,14 @@ export class WristAssistantPanel extends LitElement {
       const hl = this.inspect.kind === "layer" && this.inspect.id === id;
       const eff = effectivePlacement(cfg, family, el);
       const hidden = eff.isHidden;
-      const tap = attachedTapsOf(cfg, id)[0];
-      // A tap layer is a tap, so it wears the same badge as a layer with one
-      // attached. Without it the list marked the layers that answer a press and
-      // said nothing about the rows that are nothing but a press.
+      // A tap layer is a tap, so it wears a badge saying so. A layer with a tap
+      // attached shows it as a row of its own under this one (tapRow), which
+      // says what the tap does without a hover.
       // The badge is short: "tap", or where a page-turning tap lands. The
       // action's full name made the badge the widest thing in a 300px row, so
-      // it is the tooltip that says what the tap does and what it acts on.
-      const tapEl = el.kind === "tap" ? el : tap;
-      const tapAct = tapEl?.kind === "tap" ? tapEl.payload.action : undefined;
-      const tapTitle = el.kind === "tap"
-        ? `Tappable · ${describeTapAction(el.payload.action)}`
-        : tap ? `Tappable · ${layerTitle(tap, ctx)} · ${tapAct ? describeTapAction(tapAct) : ""}` : undefined;
+      // it is the tooltip that says what the tap does.
+      const tapAct = el.kind === "tap" ? el.payload.action : undefined;
+      const tapTitle = el.kind === "tap" ? `Tappable · ${describeTapAction(el.payload.action)}` : undefined;
       const states = statesSummary(el.payload.rules);
       const d = this.rowDrag(id, edit);
       return html`<div class="layer ${hl ? "hl" : ""} ${held ? "held" : ""} ${this.dialogLitIds.includes(id) ? "lit" : ""} ${hidden ? "dim" : ""} ${this.multi.has(id) ? "multi" : ""} ${inGroup ? "kid" : ""} ${rich ? "rich" : ""}"
@@ -15029,6 +15048,43 @@ export class WristAssistantPanel extends LitElement {
           </span>` : nothing}
           ${chevron}
         </span>
+      </div>`;
+    };
+
+    // A layer's attached tap, as a short pink row hung under the layer's own.
+    // Taps are one of the most used things on a complication, and a small
+    // "tap" badge that hid under the row's buttons on hover made it hard to
+    // see which layers answer a press and what they do. A click selects the
+    // layer, turns on Show taps (narrowed to this tap, so the preview draws
+    // its box), and opens the layer's Tap card.
+    const tapRow = (el: CElement) => {
+      if (el.kind === "tap") return nothing;
+      const tap = attachedTapsOf(cfg, el.payload.id)[0];
+      if (tap?.kind !== "tap") return nothing;
+      const id = el.payload.id;
+      const act = tap.payload.action;
+      const on = this.showTaps && this.inspect.kind === "layer" && this.inspect.id === id;
+      const dim = effectivePlacement(cfg, family, el).isHidden;
+      const where = tapBadge(act, el.payload.page ?? this.page, pageCount);
+      const open = () => {
+        this.multi = new Set();
+        this.inspect = { kind: "layer", id };
+        this.setShowTaps(true);
+        if (!this.openSections.has("tappable")) this.toggleSection("tappable");
+        this.lightSection("tappable");
+        void this.updateComplete.then(() => {
+          this.renderRoot.querySelector("section.sec.lit")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        });
+      };
+      return html`<div class="tap-row ${on ? "on" : ""} ${dim ? "dim" : ""}" role="button" tabindex="0"
+        title="Show this tap on the preview and open its settings"
+        @pointerenter=${() => { this.listHoverIds = [id]; }}
+        @pointerleave=${() => this.leaveRow([id])}
+        @click=${open}
+        @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } }}>
+        <span class="tap-glyph">${uiIcon("tap")}</span>
+        <span class="tap-words">${describeTapAction(act)}</span>
+        ${where === "tap" ? nothing : html`<span class="tap-where">${where}</span>`}
       </div>`;
     };
 
@@ -15208,7 +15264,7 @@ export class WristAssistantPanel extends LitElement {
       const rows: TemplateResult[] = [];
       for (const row of list) {
         if (row.kind === "layer") {
-          rows.push(html`${layerRow(row.el, inGroup, held, listChevron(row.el))}${listKids(row.el)}`);
+          rows.push(html`${layerRow(row.el, inGroup, held, listChevron(row.el))}${tapRow(row.el)}${listKids(row.el)}`);
           continue;
         }
         const g = row.group;
