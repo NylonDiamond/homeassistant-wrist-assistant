@@ -502,12 +502,29 @@ export function tintMatrix(group: TintGroup, tintHex: string): string {
   return `0 0 0 0 ${r} 0 0 0 0 ${g} 0 0 0 0 ${b} ${alpha}`;
 }
 
-/** One filter per group the surface uses. The region is fixed and huge, in user
- * space, because the default bounding-box region is empty for a flat line and
- * would hide it. A brightness group is composited back through what it came
+/**
+ * A filter's region, in user space: a square the size of the largest side the
+ * drawing has, with an eighth of that spare on every edge.
+ *
+ * It is set in user space because the default bounding-box region is empty for
+ * a flat line and would hide it. It is kept this small because WebKit renders a
+ * filter into a buffer of limited size and shrinks the resolution to make a big
+ * region fit. The old region of 20000 points came out at a few pixels across on
+ * an iPhone, so every tinted preview, which is every Lock Screen preview, was a
+ * blur. Nothing is drawn past the region anyway: the body is clipped to the slot.
+ */
+function filterRegion(extent: number): { x: number; y: number; size: number } {
+  const side = Math.max(1, extent);
+  const pad = side / 8;
+  return { x: -pad, y: -pad, size: side + 2 * pad };
+}
+
+/** One filter per group the surface uses, over `extent` points (see
+ * `filterRegion`). A brightness group is composited back through what it came
  * from, so a layer that was already see-through stays see-through. */
-function tintDefs(prefix: string, tintHex: string, surface: TintSurface): TemplateResult {
-  return svg`${TINT_GROUPS[surface].map((g) => svg`<filter id=${`${prefix}-${g}`} filterUnits="userSpaceOnUse" x="-10000" y="-10000" width="20000" height="20000"
+function tintDefs(prefix: string, tintHex: string, surface: TintSurface, extent: number): TemplateResult {
+  const r = filterRegion(extent);
+  return svg`${TINT_GROUPS[surface].map((g) => svg`<filter id=${`${prefix}-${g}`} filterUnits="userSpaceOnUse" x=${r.x} y=${r.y} width=${r.size} height=${r.size}
     color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values=${tintMatrix(g, tintHex)} />${
       surface === "phone" ? svg`<feComposite in2="SourceGraphic" operator="in" />` : nothing}</filter>`)}`;
 }
@@ -527,18 +544,18 @@ function tinted<T>(body: T, group: TintGroup, prefix: string | undefined): T | T
  * face the way the watch flattens it: watchOS keeps only alpha, and a blurred
  * alpha is a soft edge in the face's tint.
  *
- * The region is fixed and huge in user space for the reason `tintDefs` gives:
- * the default bounding-box region is empty for a flat line and would hide it.
+ * The region covers the design box, for the reasons `filterRegion` gives.
  */
 let shadowSeq = 0;
 
-function shadowed<T>(body: T, id: string, shadow: LayerShadow | undefined): T | TemplateResult {
+function shadowed<T>(body: T, id: string, shadow: LayerShadow | undefined, extent: number): T | TemplateResult {
   if (shadow === undefined) return body;
   const c = parseColor(shadow.colorHex) ?? { color: "#000000", opacity: 1 };
   // SVG blurs by standard deviation; SwiftUI's radius is roughly twice that, so
   // halving it is what makes the preview read like the watch.
   const deviation = Math.max(0, shadow.radius) / 2;
-  return svg`<filter id=${id} filterUnits="userSpaceOnUse" x="-10000" y="-10000" width="20000" height="20000"
+  const r = filterRegion(extent);
+  return svg`<filter id=${id} filterUnits="userSpaceOnUse" x=${r.x} y=${r.y} width=${r.size} height=${r.size}
       color-interpolation-filters="sRGB">
       <feDropShadow dx=${shadow.dx} dy=${shadow.dy} stdDeviation=${deviation}
         flood-color=${c.color} flood-opacity=${c.opacity} /></filter>
@@ -2473,7 +2490,7 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
     // One id per drawing rather than per layer: the same layer is drawn more
     // than once on a page (every shape's preview), and two filters sharing an
     // id in one document is one filter.
-    body = shadowed(body, `sh-${(shadowSeq += 1).toString(36)}`, el.shadow);
+    body = shadowed(body, `sh-${(shadowSeq += 1).toString(36)}`, el.shadow, Math.max(canvas.width, canvas.height));
     // A list draws nothing of its own, and its row layers have each already
     // joined their own group. One filter around the whole list would repaint
     // white row text in the accent color, so the list adds none.
@@ -2755,7 +2772,11 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
   // A Home Screen tile is only ever tinted the iPhone way, and a watch shape
   // only ever the watch way, so the shape settles the surface on its own.
   const surface: TintSurface = options.tintSurface ?? "watch";
-  const defsTint = tint === undefined ? nothing : tintDefs(tint, options.tint!, surface);
+  // The tint filters serve the slot, the design box and, on a corner, the
+  // screen quadrant around it, so the region spans the largest of the three.
+  const extent = Math.max(canvas.width, canvas.height, design.width, design.height,
+    family === "corner" ? cornerContext(fit.scale, false).quad.height : 0);
+  const defsTint = tint === undefined ? nothing : tintDefs(tint, options.tint!, surface, extent);
   // The group the tile's own chrome joins: its background, its border, and the
   // corner's bezel ring. It is the default group on both surfaces.
   const chromeGroup: TintGroup = surface === "phone" ? "phonePrimary" : "plain";

@@ -271,6 +271,18 @@ describe("a tinted face", () => {
     const between = svg.slice(svg.indexOf(`data-element-id=${uuid(1)}`), svg.indexOf("data-list-cell"));
     expect(between).not.toContain("filter=");
   });
+
+  it("keeps every filter region close to the slot, so WebKit draws it sharp", () => {
+    // WebKit shrinks a filter's resolution to fit a big region into its buffer.
+    // A region of 20000 points drew the whole tinted face a few pixels across.
+    const text = rowText(2, "name");
+    (text.payload as { shadow?: unknown }).shadow = { colorHex: "#000000", radius: 2, dx: 0, dy: 1 };
+    const svg = draw(documentWith(text), context(), { tint: "#FFFFFF" });
+    const widths = [...svg.matchAll(/<filter[^>]*?width="?(-?[\d.]+)/g)].map((m) => Number(m[1]));
+    expect(widths.length).toBeGreaterThan(1);
+    const side = Math.max(CANVAS.rectangular.width, CANVAS.rectangular.height);
+    for (const w of widths) expect(w).toBeLessThanOrEqual(side * 1.5);
+  });
 });
 
 describe("a spotlight on a list", () => {
