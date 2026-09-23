@@ -927,7 +927,7 @@ describe("the Complication card on the control's tab", () => {
   it("is every row again on a shape's tab", () => {
     const cfg = newControlConfig("Kitchen lamp", 0, "circular");
     const markup = flatten(generalEditor(host(cfg)));
-    for (const label of ["Name", "Auto refresh timer", "Tap action", "Flash"]) {
+    for (const label of ["Name", "Auto refresh", "Tap action", "Flash"]) {
       expect(markup, label).toContain(label);
     }
   });
@@ -969,7 +969,7 @@ describe("the redraw budget hint under a refresh tap", () => {
     expect(markup).not.toContain("hint keep budget");
   });
 
-  it("warns under the Auto refresh timer row once a timer is picked, with this timer's count", () => {
+  it("warns under the Auto refresh row once a timer is picked, with this timer's count", () => {
     const cfg = newControlConfig("Kitchen lamp", 0, "circular");
     cfg.tapAction = { type: "refresh" };
     expect(flatten(generalEditor(host(cfg)))).not.toContain("every timed refresh spends one");
