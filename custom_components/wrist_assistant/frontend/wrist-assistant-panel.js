@@ -664,13 +664,16 @@ Click to change`} @click=${C}>
     </button>
     <div class="tap-menu" id=${c} popover role="menu" aria-label=${e} @toggle=${Xc}>
       ${d.filter(([,p])=>p.length>0).map(([p,u])=>h`
-        ${p===void 0?h`<div class="tap-menu-sep" role="separator"></div>`:h`<div class="tap-menu-head" role="presentation">${p}</div>`}
-        ${u.map(f=>h`<button type="button" role="menuitemradio" aria-checked=${f===n?"true":"false"}
-          class=${f===n?"on":""} popovertarget=${c} popovertargetaction="hide"
-          @click=${()=>{f!==n&&i(f)}}>
-          <span class="tap-menu-name">${s(f)}</span>
-          <span class="tap-menu-info">${Fu(f,r)}</span>
-        </button>`)}`)}
+        <div class="tap-menu-group" role="group" aria-label=${p??"Other"}
+          data-group=${(p??"other").toLowerCase().replace(/[^a-z]+/g,"-")}>
+          ${p===void 0?m:h`<div class="tap-menu-head" role="presentation">${p}</div>`}
+          ${u.map(f=>h`<button type="button" role="menuitemradio" aria-checked=${f===n?"true":"false"}
+            class=${f===n?"on":""} popovertarget=${c} popovertargetaction="hide"
+            @click=${()=>{f!==n&&i(f)}}>
+            <span class="tap-menu-name">${s(f)}</span>
+            <span class="tap-menu-info">${Fu(f,r)}</span>
+          </button>`)}
+        </div>`)}
     </div>
   </div>`}function x$(e,n=!1){let t=_y(e,n);return t===void 0?m:h`<div class="hint">${t}</div>`}var xm="40 to 70";function v$(e,n){let t=e.documents??[],i=e.config.id.toUpperCase(),a=n.allPlaced===!0?t:t.filter(o=>(n.targets??[]).includes(o.id.toUpperCase())),r=(e.config.refreshMinutes??0)>0||a.some(o=>o.id.toUpperCase()!==i&&(o.refreshMinutes??0)>0);return h`<div class="hint keep budget">watchOS gives each complication
     ${xm} redraws a day. The one you tap always redraws, because a tap is free. Every
@@ -5764,21 +5767,33 @@ ${wM(c)}`}}delete s.hidden,delete s.linkId;let l=id(a);if(l.length>0){let d=l.sl
       background: var(--wa-card); color: var(--wa-ink); box-shadow: 0 8px 24px rgba(0, 0, 0, .28);
       width: min(340px, calc(100vw - 16px)); max-height: 70vh; overflow: auto;
     }
-    .tap-menu:popover-open { display: flex; flex-direction: column; }
+    .tap-menu:popover-open { display: flex; flex-direction: column; gap: 6px; }
     .tap-menu::backdrop { background: transparent; }
-    .tap-menu-head {
-      font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
-      opacity: .55; padding: 8px 10px 2px;
+    /* One tinted box per heading, each in its own hue, so the groups read
+       apart at a glance. The hue is mixed thin into the card, so it works on
+       the light theme and the dark one alike. */
+    .tap-menu-group {
+      --g: var(--wa-muted);
+      display: flex; flex-direction: column; padding: 2px; border-radius: 8px;
+      background: color-mix(in srgb, var(--g) 9%, var(--wa-card));
+      border: 1px solid color-mix(in srgb, var(--g) 28%, transparent);
     }
-    .tap-menu-head:first-child { padding-top: 4px; }
-    .tap-menu-sep { height: 1px; margin: 4px 6px; background: var(--wa-line); }
+    .tap-menu-group[data-group="refresh"] { --g: #3b82f6; }
+    .tap-menu-group[data-group="pages"] { --g: #f59e0b; }
+    .tap-menu-group[data-group="home-assistant"] { --g: #14b8a6; }
+    .tap-menu-group[data-group="open-the-app"] { --g: #8b5cf6; }
+    .tap-menu-group[data-group="timer"] { --g: #f43f5e; }
+    .tap-menu-head {
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+      color: color-mix(in srgb, var(--g) 70%, var(--wa-ink)); padding: 6px 8px 2px;
+    }
     .tap-menu button {
       display: flex; flex-direction: column; align-items: stretch; gap: 1px;
-      font: inherit; text-align: left; padding: 5px 10px; border-radius: 6px;
+      font: inherit; text-align: left; padding: 5px 8px; border-radius: 6px;
       border: none; background: transparent; color: inherit; cursor: pointer;
     }
-    .tap-menu button:hover, .tap-menu button:focus-visible { background: var(--wa-panel); outline: none; }
-    .tap-menu button.on { background: color-mix(in srgb, var(--wa-accent) 16%, transparent); }
+    .tap-menu button:hover, .tap-menu button:focus-visible { background: color-mix(in srgb, var(--g) 16%, transparent); outline: none; }
+    .tap-menu button.on { background: color-mix(in srgb, var(--g) 26%, transparent); }
     .tap-menu-name { font-size: 13px; }
     .tap-menu button.on .tap-menu-name { font-weight: 600; }
     .tap-menu-info { font-size: 11.5px; line-height: 1.35; opacity: .65; }

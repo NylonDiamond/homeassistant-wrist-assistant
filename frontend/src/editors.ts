@@ -3803,13 +3803,16 @@ function tapActionMenu(
     </button>
     <div class="tap-menu" id=${id} popover role="menu" aria-label=${label} @toggle=${onValuePopoverToggle}>
       ${sections.filter(([, types]) => types.length > 0).map(([title, types]) => html`
-        ${title === undefined ? html`<div class="tap-menu-sep" role="separator"></div>` : html`<div class="tap-menu-head" role="presentation">${title}</div>`}
-        ${types.map((t) => html`<button type="button" role="menuitemradio" aria-checked=${t === value ? "true" : "false"}
-          class=${t === value ? "on" : ""} popovertarget=${id} popovertargetaction="hide"
-          @click=${() => { if (t !== value) set(t); }}>
-          <span class="tap-menu-name">${name(t)}</span>
-          <span class="tap-menu-info">${tapActionInfo(t, onPhone)}</span>
-        </button>`)}`)}
+        <div class="tap-menu-group" role="group" aria-label=${title ?? "Other"}
+          data-group=${(title ?? "other").toLowerCase().replace(/[^a-z]+/g, "-")}>
+          ${title === undefined ? nothing : html`<div class="tap-menu-head" role="presentation">${title}</div>`}
+          ${types.map((t) => html`<button type="button" role="menuitemradio" aria-checked=${t === value ? "true" : "false"}
+            class=${t === value ? "on" : ""} popovertarget=${id} popovertargetaction="hide"
+            @click=${() => { if (t !== value) set(t); }}>
+            <span class="tap-menu-name">${name(t)}</span>
+            <span class="tap-menu-info">${tapActionInfo(t, onPhone)}</span>
+          </button>`)}
+        </div>`)}
     </div>
   </div>`;
 }

@@ -5146,21 +5146,33 @@ export class WristAssistantPanel extends LitElement {
       background: var(--wa-card); color: var(--wa-ink); box-shadow: 0 8px 24px rgba(0, 0, 0, .28);
       width: min(340px, calc(100vw - 16px)); max-height: 70vh; overflow: auto;
     }
-    .tap-menu:popover-open { display: flex; flex-direction: column; }
+    .tap-menu:popover-open { display: flex; flex-direction: column; gap: 6px; }
     .tap-menu::backdrop { background: transparent; }
-    .tap-menu-head {
-      font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
-      opacity: .55; padding: 8px 10px 2px;
+    /* One tinted box per heading, each in its own hue, so the groups read
+       apart at a glance. The hue is mixed thin into the card, so it works on
+       the light theme and the dark one alike. */
+    .tap-menu-group {
+      --g: var(--wa-muted);
+      display: flex; flex-direction: column; padding: 2px; border-radius: 8px;
+      background: color-mix(in srgb, var(--g) 9%, var(--wa-card));
+      border: 1px solid color-mix(in srgb, var(--g) 28%, transparent);
     }
-    .tap-menu-head:first-child { padding-top: 4px; }
-    .tap-menu-sep { height: 1px; margin: 4px 6px; background: var(--wa-line); }
+    .tap-menu-group[data-group="refresh"] { --g: #3b82f6; }
+    .tap-menu-group[data-group="pages"] { --g: #f59e0b; }
+    .tap-menu-group[data-group="home-assistant"] { --g: #14b8a6; }
+    .tap-menu-group[data-group="open-the-app"] { --g: #8b5cf6; }
+    .tap-menu-group[data-group="timer"] { --g: #f43f5e; }
+    .tap-menu-head {
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+      color: color-mix(in srgb, var(--g) 70%, var(--wa-ink)); padding: 6px 8px 2px;
+    }
     .tap-menu button {
       display: flex; flex-direction: column; align-items: stretch; gap: 1px;
-      font: inherit; text-align: left; padding: 5px 10px; border-radius: 6px;
+      font: inherit; text-align: left; padding: 5px 8px; border-radius: 6px;
       border: none; background: transparent; color: inherit; cursor: pointer;
     }
-    .tap-menu button:hover, .tap-menu button:focus-visible { background: var(--wa-panel); outline: none; }
-    .tap-menu button.on { background: color-mix(in srgb, var(--wa-accent) 16%, transparent); }
+    .tap-menu button:hover, .tap-menu button:focus-visible { background: color-mix(in srgb, var(--g) 16%, transparent); outline: none; }
+    .tap-menu button.on { background: color-mix(in srgb, var(--g) 26%, transparent); }
     .tap-menu-name { font-size: 13px; }
     .tap-menu button.on .tap-menu-name { font-weight: 600; }
     .tap-menu-info { font-size: 11.5px; line-height: 1.35; opacity: .65; }
