@@ -3823,6 +3823,11 @@ ${oP(c)}`}}delete s.hidden,delete s.linkId;let l=Sd(a);if(l.length>0){let d=l.sl
       background: color-mix(in srgb, var(--tp) 9%, transparent);
     }
     :host([dark]) .tap-strip { --tp: var(--wa-tap); background: color-mix(in srgb, var(--tp) 13%, transparent); }
+    /* The strip sits 2px inside the row's edges so the row's ring shows round
+       it, but a pointer coming up from below met those 2px first and lit the
+       layer before its tap. The strip's hit area reaches the edges. */
+    .tap-strip { position: relative; }
+    .tap-strip::after { content: ""; position: absolute; inset: 0 -2px -2px -2px; }
     .tap-strip:hover { background: color-mix(in srgb, var(--tp) 20%, transparent); }
     .tap-strip:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .layer.tapsel {
