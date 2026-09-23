@@ -640,16 +640,15 @@ def test_the_preview_renders_what_the_wrist_renders(
         assert panel[key]["value"] == _watch_text(r.json()["result"]), key
 
 
-def test_forgetting_a_watch_purges_everything_it_owned(
+def test_forgetting_a_watch_leaves_only_tombstones(
     base_url: str, token: str, register_secret: Callable[..., bytes]
 ) -> None:
     """Forget the device, and its complications go with it.
 
-    Every other delete path writes a tombstone so a stale replica cannot
-    resurrect the record. That reasoning ends at the device: it will never
-    poll under this id again. Leaving the rows behind is what made a forgotten
-    watch come straight back in the panel's picker as an orphan owner holding
-    complications nothing could deliver, with no way in the UI to clear them.
+    They are tombstoned like any other delete, so a device that pulls again
+    under this id (re-linked from the panel before its next pull) learns the
+    old copies are gone. The tombstones must not bring the id back into the
+    panel's owner list as an orphan.
     """
     watch_id = f"iphone:test-{secrets.token_hex(8)}"
     secret = register_secret(watch_id, label="pytest forget purge")
@@ -672,7 +671,7 @@ def test_forgetting_a_watch_purges_everything_it_owned(
     assert reply["success"], reply
     assert reply["result"]["complications_removed"] is True
 
-    # Not a tombstone either: `include_deleted` shows nothing.
+    # Tombstones only: nothing live is left.
     after = _ws_admin_commands(
         base_url,
         token,
@@ -684,7 +683,8 @@ def test_forgetting_a_watch_purges_everything_it_owned(
             }
         ],
     )[0]["result"]
-    assert after["records"] == []
+    assert len(after["records"]) == 1
+    assert all(r["deleted"] for r in after["records"])
     assert after["applied_token"] is None
 
     owners = _ws_admin_commands(

@@ -34,6 +34,7 @@ from __future__ import annotations
 import copy
 import json
 import logging
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -57,6 +58,11 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 _SAVE_DEBOUNCE_SECONDS = 1
+# A pull that changed nothing still moves the owner's last-sync stamp. Every
+# watch pulls often, so saving the whole file for each stamp is a disk write
+# per pull. The stamp only feeds "synced N minutes ago", so writing it at most
+# once a minute per owner loses nothing anyone reads.
+_LAST_SYNC_SAVE_INTERVAL_SECONDS = 60.0
 
 # Keys the Swift decoder (`CustomComplicationConfig.init(from:)`) requires. A
 # document missing any of these would throw on the watch, so refuse it here
@@ -850,6 +856,13 @@ class ComplicationStore:
         # holds a record again (a save, a move, a restore), so a device that
         # is re-linked syncs normally.
         self._forgotten: set[str] = set()
+        # owner_watch_id → monotonic time the last-sync stamp last asked for a
+        # save. Stamps inside the throttle window stay in memory and ride the
+        # next save of anything else.
+        self._last_sync_saved: dict[str, float] = {}
+        # Set when the storage file could not be read; every save is then
+        # refused so the file on disk survives (see async_load).
+        self._load_failed = False
         self._token = 0
         self._listeners: list[ChangeListener] = []
         self._wake: WakeCallback | None = None
@@ -867,14 +880,30 @@ class ComplicationStore:
             # A corrupt or unreadable storage file must not fail
             # `async_setup_entry`: that takes the whole integration down, so
             # the watch loses notifications and cameras over a complication
-            # file. Start empty and say so; the panel shows nothing, which is
-            # visible, and the next save rewrites the file.
+            # file. Start empty, but read-only: the next watch pull would
+            # otherwise save this empty store over a file that may be fine
+            # (a permissions slip, a disk hiccup) or worth recovering by hand.
+            self._load_failed = True
             _LOGGER.exception(
-                "Could not read %s; starting with no complications",
+                "Could not read .storage/%s; starting with no complications "
+                "and saving nothing until Home Assistant restarts with a "
+                "readable file",
                 COMPLICATION_STORAGE_KEY,
             )
             return
-        if not data or not isinstance(data, dict):
+        if not data:
+            return
+        if not isinstance(data, dict):
+            # Parsed, but not the shape this store writes: corrupt. Same
+            # treatment as a read error, so the file survives for inspection.
+            self._load_failed = True
+            _LOGGER.error(
+                "Could not read .storage/%s: expected an object, found %s; "
+                "starting with no complications and saving nothing until "
+                "Home Assistant restarts with a readable file",
+                COMPLICATION_STORAGE_KEY,
+                type(data).__name__,
+            )
             return
         try:
             self._token = max(0, int(data.get("token", 0)))
@@ -969,32 +998,53 @@ class ComplicationStore:
         }
 
     def _schedule_save(self) -> None:
+        if self._load_failed:
+            # The file on disk could not be read; this empty (or partly
+            # edited) store must never replace it. Changes live in memory
+            # until a restart finds a readable file.
+            _LOGGER.warning(
+                "Not saving .storage/%s: it could not be read at startup",
+                COMPLICATION_STORAGE_KEY,
+            )
+            return
         self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
 
     @callback
-    def forget_owner(self, owner_watch_id: str) -> bool:
-        """Erase everything this store holds for one watch. Returns whether
+    def forget_owner(
+        self,
+        owner_watch_id: str,
+        *,
+        updated_by: str | None = None,
+        mark_forgotten: bool = True,
+    ) -> bool:
+        """Clear what this store holds for one watch. Returns whether
         anything was there.
 
-        The purge half of :meth:`release_owner`, which is what the two forget
-        paths call: designs go to the Library first, then this. Every other delete path
-        writes a tombstone, because a replica that has not yet seen the delete
-        must never be able to resurrect the record. That reasoning ends here:
-        the device is gone, it will not poll again under this id, and there is
-        no replica left to tell. Tombstones kept for a watch nobody can reach
-        are a file that only grows, and they keep the id showing up in
-        ``owners()`` as an orphan the user cannot get rid of.
+        The second half of :meth:`release_owner`, which is what the two forget
+        paths call: designs go to the Library first, then this. Every live
+        record left is tombstoned, like any other delete, rather than purged:
+        the device may still pull under this id (re-linked from the panel
+        before its next pull, or simply back under the same id), and a delta
+        that never carries the deletion leaves it drawing the old copy beside
+        whatever it is given next. Existing tombstones stay for the same
+        reason. The reports it sent (presets, pages, occupied slots, the
+        applied token, the last-sync stamp) are dropped outright; they are
+        the device's to send again.
 
-        Listeners hear a record-less change so an open panel reloads rather
-        than keeping rows for a watch that no longer exists.
+        A tombstone-only owner is not listed by the panel's owners command
+        (it skips :meth:`is_empty` owners) and is not an orphan to
+        :meth:`release_orphans`, so nothing brings the id back into view.
 
-        The owner is also marked forgotten (see :meth:`is_forgotten`), whether
-        or not anything was stored: a device can hold copies this server
-        never saw, and the mark is what tells it to drop them.
+        Listeners hear a change per tombstone and then a record-less change,
+        so an open panel reloads rather than keeping rows for the watch.
+
+        With ``mark_forgotten`` (the default) the owner is also marked
+        forgotten (see :meth:`is_forgotten`), whether or not anything was
+        stored: a device can hold copies this server never saw, and the mark
+        is what tells it to drop them. Only an explicit forget or an HA device
+        removal marks; the orphan sweep passes ``False``, because a sweep that
+        misfires must never tell a device to wipe itself.
         """
-        if owner_watch_id != LIBRARY_OWNER_ID and owner_watch_id not in self._forgotten:
-            self._forgotten.add(owner_watch_id)
-            self._schedule_save()
         touched = any(
             owner_watch_id in bucket
             for bucket in (
@@ -1006,16 +1056,41 @@ class ComplicationStore:
                 self._last_sync,
             )
         )
+        tombstoned = 0
+        for record in list(self._records.get(owner_watch_id, {}).values()):
+            if record.deleted:
+                continue
+            # Exactly what delete() does: history first, a new revision, and
+            # a fresh token from _commit so the next delta carries it.
+            self._remember(record)
+            record.revision += 1
+            record.updated_by = updated_by or f"forget:{owner_watch_id}"
+            record.deleted = True
+            record.document = None
+            self._commit(record)
+            tombstoned += 1
+        # After the tombstones: _commit clears the mark on every commit.
+        if (
+            mark_forgotten
+            and owner_watch_id != LIBRARY_OWNER_ID
+            and owner_watch_id not in self._forgotten
+        ):
+            self._forgotten.add(owner_watch_id)
+            self._schedule_save()
         if not touched:
             return False
-        self._records.pop(owner_watch_id, None)
         self._presets.pop(owner_watch_id, None)
         self._pages.pop(owner_watch_id, None)
         self._occupied.pop(owner_watch_id, None)
         self._applied.pop(owner_watch_id, None)
         self._last_sync.pop(owner_watch_id, None)
+        self._last_sync_saved.pop(owner_watch_id, None)
         self._schedule_save()
-        _LOGGER.info("Purged complication records for owner %s", owner_watch_id)
+        _LOGGER.info(
+            "Forgot complication owner %s (%d record(s) tombstoned)",
+            owner_watch_id,
+            tombstoned,
+        )
         self._notify(ComplicationChange(owner_watch_id=owner_watch_id, token=0))
         return True
 
@@ -1034,7 +1109,9 @@ class ComplicationStore:
             for record in self._records.get(owner_watch_id, {}).values()
         )
 
-    def release_owner(self, owner_watch_id: str, *, updated_by: str) -> int:
+    def release_owner(
+        self, owner_watch_id: str, *, updated_by: str, mark_forgotten: bool = True
+    ) -> int:
         """Unlink a device: its designs move to the Library, then every trace
         of the device is erased. Returns how many designs moved.
 
@@ -1057,8 +1134,9 @@ class ComplicationStore:
           Library's slot is only where the design lands when it is next put on
           a device, so a bump costs nothing visible.
 
-        Then the device is purged as :meth:`forget_owner` does: tombstones are
-        pointless for an owner that will never poll again.
+        Then :meth:`forget_owner` tombstones what the device held and drops
+        its reports. ``mark_forgotten`` is passed through: the two forget
+        paths leave it on, the orphan sweep turns it off.
 
         The Library itself is never released: it is not a device.
         """
@@ -1120,7 +1198,9 @@ class ComplicationStore:
             )
         else:
             moved = 0
-        self.forget_owner(owner_watch_id)
+        self.forget_owner(
+            owner_watch_id, updated_by=updated_by, mark_forgotten=mark_forgotten
+        )
         return moved
 
     def release_orphans(self, registered: set[str], *, updated_by: str) -> list[str]:
@@ -1131,14 +1211,24 @@ class ComplicationStore:
         existed, or a watch that came back under a new id. Its designs belong
         in the Library, not under an id nothing signs with. Returns the owners
         released, so the caller can log them. The Library is never an orphan.
+
+        An empty ``registered`` set does nothing. No devices at all is far
+        more likely a missing or unreadable secrets file than a home where
+        every device was removed, and releasing on it would strip every
+        device's designs at once. A released owner is not marked forgotten
+        either: only an explicit forget may tell a device to drop its copies.
+        An owner holding only tombstones has nothing to release and is left
+        alone.
         """
         released: list[str] = []
+        if not registered:
+            return released
         for owner in self.owners():
             if owner == LIBRARY_OWNER_ID or owner in registered:
                 continue
-            if not self._records.get(owner):
+            if self.is_empty(owner):
                 continue
-            self.release_owner(owner, updated_by=updated_by)
+            self.release_owner(owner, updated_by=updated_by, mark_forgotten=False)
             released.append(owner)
         return released
 
@@ -1369,9 +1459,16 @@ class ComplicationStore:
 
         Not a notification: nothing in the panel redraws on a pull that
         changed nothing, and the ack that does redraw travels as its own
-        change. The save is the debounced one every other report uses.
+        change. The in-memory stamp is always current; the save is throttled
+        to once per ``_LAST_SYNC_SAVE_INTERVAL_SECONDS`` per owner, and a
+        stamp skipped here is written with the next save of anything else.
         """
         self._last_sync[owner_watch_id] = _now_iso()
+        now = time.monotonic()
+        last = self._last_sync_saved.get(owner_watch_id)
+        if last is not None and now - last < _LAST_SYNC_SAVE_INTERVAL_SECONDS:
+            return
+        self._last_sync_saved[owner_watch_id] = now
         self._schedule_save()
 
     def set_pages(self, owner_watch_id: str, entries: list[Any]) -> bool:

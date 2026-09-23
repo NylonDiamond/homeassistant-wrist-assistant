@@ -484,9 +484,9 @@ def test_every_row_carries_the_paired_phone_id_or_none(env) -> None:
 
     Both real watches report themselves as "Apple Watch" and a household can
     easily hold two phones called "iPhone", so grouping devices by person off
-    `paired_iphone_name` guesses. A watch that names no phone, and an orphan
-    that has no entry left to ask, both report None rather than being left out
-    of the field.
+    `paired_iphone_name` guesses. A watch that names no phone reports None
+    rather than being left out of the field. An owner nothing signs with is
+    released to the Library before the listing, so it has no row at all.
     """
     env.add_watch("watch-A", device_name="Apple Watch", owner_iphone_id="phone-1")
     env.add_watch("watch-B", device_name="Apple Watch")
@@ -497,7 +497,6 @@ def test_every_row_carries_the_paired_phone_id_or_none(env) -> None:
         "watch-A": "phone-1",
         "watch-B": None,
         "phone-1": None,
-        "gone-watch": None,
         LIBRARY: None,
     }
 
@@ -526,9 +525,10 @@ def test_every_row_carries_the_app_build_or_none(env) -> None:
     document per shape. Build numbers restart at 1 on every new version, which
     is why this is only ever read together with `app_version`.
 
-    Every row carries the field: a device that reported no build, an orphan
-    with no entry left to ask, and the Library, which has no app at all, all
-    say None rather than leaving the key out.
+    Every row carries the field: a device that reported no build and the
+    Library, which has no app at all, both say None rather than leaving the
+    key out. An owner nothing signs with is released to the Library before the
+    listing, so it has no row.
     """
     env.add_watch("watch-A", app_version="2.8.0", app_build="11")
     env.add_watch("watch-B", app_version="2.8.0")
@@ -539,7 +539,6 @@ def test_every_row_carries_the_app_build_or_none(env) -> None:
         "watch-A": "11",
         "watch-B": None,
         "phone-1": "9",
-        "gone-watch": None,
         LIBRARY: None,
     }
 
@@ -557,18 +556,24 @@ def test_a_phone_renamed_in_ha_shows_the_new_name(env) -> None:
     assert env.owners()[0]["device_name"] == "Kitchen iPhone"
 
 
-def test_an_orphan_row_reports_no_device_kind_and_sorts_with_the_watches(env) -> None:
+def test_an_orphan_is_released_to_the_library_before_the_listing(env) -> None:
+    """The sweep runs first, so the "Move all to" banner never has a row to draw.
+
+    A design under an id nothing signs with lands in the Library, where the
+    user can put it on a device from the card, and the id itself is gone from
+    the list rather than shown as an orphan the user cannot get rid of.
+    """
     env.add_phone("phone-1", device_name="Jesse's iPhone")
     env.save_document("phone-1")
     env.save_document("gone-watch")
 
     rows = env.owners()
     assert [(r["owner_watch_id"], r["device_kind"]) for r in rows] == [
-        ("gone-watch", None),
         ("phone-1", "iphone"),
         (LIBRARY, "library"),
     ]
-    assert rows[0]["is_orphan"] is True
+    assert all(r["is_orphan"] is False for r in rows)
+    assert rows[-1]["complication_count"] == 1
 
 
 # ── the Library ──────────────────────────────────────────────────────────

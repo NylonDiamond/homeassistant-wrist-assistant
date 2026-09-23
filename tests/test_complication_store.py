@@ -1545,6 +1545,33 @@ def test_last_sync_is_stamped_notifies_nobody_and_survives_restart(mod):
     assert reloaded.seconds_since_sync(OTHER) is None
 
 
+def test_last_sync_saves_at_most_once_a_minute_per_owner(mod, monkeypatch):
+    """Every pull stamps; saving the whole file for each one is a disk write
+    per pull for nothing anyone reads to the second. Memory stays current."""
+    clock = [1000.0]
+    monkeypatch.setattr(mod.time, "monotonic", lambda: clock[0])
+    store = _new(mod)
+    saves = []
+    real = store._store.async_delay_save
+    store._store.async_delay_save = lambda *a, **k: (saves.append(1), real(*a, **k))
+
+    store.set_last_sync(OWNER)
+    assert len(saves) == 1
+
+    clock[0] += 30
+    store._last_sync[OWNER] = "2000-01-01T00:00:00Z"  # prove memory moves
+    store.set_last_sync(OWNER)
+    assert len(saves) == 1
+    assert store.last_sync_at(OWNER) != "2000-01-01T00:00:00Z"
+    # Another owner has its own window.
+    store.set_last_sync(OTHER)
+    assert len(saves) == 2
+
+    clock[0] += 31
+    store.set_last_sync(OWNER)
+    assert len(saves) == 3
+
+
 def test_an_unparseable_last_sync_reads_as_never(mod):
     """A hand-edited storage file must not raise inside a status reply."""
     store = _new(mod)
@@ -1587,8 +1614,8 @@ def test_an_unreadable_storage_file_starts_empty_instead_of_raising(mod):
 
     Raising out of `async_load` takes the whole integration down with it, so
     the watch loses notifications, cameras and the delta poll over one
-    complication file. Starting empty is visible in the panel and the next
-    save rewrites the file.
+    complication file. Starting empty is visible in the panel; the file itself
+    is left alone (see the read-only test below).
     """
     store = mod.ComplicationStore(object())
 
@@ -1600,6 +1627,43 @@ def test_an_unreadable_storage_file_starts_empty_instead_of_raising(mod):
     asyncio.run(store.async_load())
     assert store.owners() == []
     assert store.token == 0
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [OSError("permission denied"), ValueError("not JSON"), ["not", "an", "object"]],
+    ids=["read-error", "bad-json", "wrong-shape"],
+)
+def test_a_store_that_could_not_be_read_never_saves_over_the_file(mod, failure):
+    """Starting empty after a read failure must not become the file.
+
+    The next watch pull stamps its last sync and saves; before this, that
+    save wrote the empty store over a file that was merely unreadable for a
+    moment (or corrupt and worth recovering by hand), and every device's
+    designs were gone for good.
+    """
+    good = _new(mod)
+    good.save(OWNER, _doc(name="Keep me"), base_revision=None, updated_by="t")
+    on_disk = copy.deepcopy(_FakeStore.saved)
+
+    class _Failing(_FakeStore):
+        async def async_load(self):
+            if isinstance(failure, Exception):
+                raise failure
+            return failure
+
+    store = mod.ComplicationStore(object())
+    store._store = _Failing()
+    asyncio.run(store.async_load())
+    assert store.owners() == []
+
+    # Every save path is refused: a pull's stamp, reports, even a real edit.
+    store.set_last_sync(OWNER)
+    store.set_applied_token(OWNER, 3)
+    store.save(OTHER, _doc(name="New"), base_revision=None, updated_by="t")
+    assert _FakeStore.saved == on_disk
+    # A restart with a readable file gets the designs back.
+    assert [r.document["name"] for r in _new(mod).list(OWNER)] == ["Keep me"]
 
 
 def test_an_occupied_report_with_an_unhashable_kind_is_cleaned_not_fatal(mod):
@@ -1619,12 +1683,13 @@ def test_an_occupied_report_with_an_unhashable_kind_is_cleaned_not_fatal(mod):
 # ── forgetting a watch ───────────────────────────────────────────────────
 
 
-def test_forget_owner_erases_every_trace_of_one_watch(mod):
+def test_forget_owner_tombstones_the_designs_and_drops_the_reports(mod):
     store = _new(mod)
     doc = _doc()
     store.save(OWNER, doc, base_revision=None, updated_by="t")
     store.delete(OWNER, doc["id"], base_revision=1, updated_by="t")  # a tombstone too
-    store.save(OWNER, _doc(slotIndex=2), base_revision=None, updated_by="t")
+    live = _doc(slotIndex=2, name="Live")
+    store.save(OWNER, live, base_revision=None, updated_by="t")
     store.set_occupied(OWNER, [{"slot": 5, "name": "P", "kind": "preset", "home": "H"}])
     store.set_pages(OWNER, [{"id": str(uuid.uuid4()), "name": "Home"}])
     store.set_applied_token(OWNER, 1)
@@ -1635,33 +1700,82 @@ def test_forget_owner_erases_every_trace_of_one_watch(mod):
     store.async_add_listener(seen.append)
     assert store.forget_owner(OWNER) is True
 
-    assert store.owners() == [OTHER]
-    assert store.list(OWNER, include_deleted=True) == []
+    # Both records are tombstones now: the old one kept, the live one deleted
+    # with a fresh token and its document filed as history, as delete() does.
+    assert store.list(OWNER) == []
+    tombstones = {r.id: r for r in store.list(OWNER, include_deleted=True)}
+    assert set(tombstones) == {doc["id"], live["id"]}
+    assert all(r.deleted and r.document is None for r in tombstones.values())
+    assert tombstones[live["id"]].token == 5
+    assert tombstones[live["id"]].revision == 2
+    assert [e.document["name"] for e in store.history(OWNER, live["id"])] == ["Live"]
     assert store.presets(OWNER) == []
     assert store.pages(OWNER) == []
     assert store.occupied(OWNER) == []
     assert store.applied_token(OWNER) is None
     assert store.last_sync_at(OWNER) is None
     assert store.is_empty(OWNER) is True
-    # The panel hears about it, so an open tab reloads instead of showing rows
-    # for a watch that no longer exists.
-    assert [c.owner_watch_id for c in seen] == [OWNER]
-    assert seen[0].record is None
-    # The other watch is untouched, and so is the collection token.
+    assert store.is_forgotten(OWNER) is True
+    # The panel hears the tombstone and then a record-less change, so an open
+    # tab reloads instead of showing rows for the watch.
+    assert [(c.owner_watch_id, c.record is None) for c in seen] == [
+        (OWNER, False),
+        (OWNER, True),
+    ]
+    # The other watch is untouched.
     assert len(store.list(OTHER)) == 1
-    assert store.token == 4
+    assert store.token == 5
 
-    # It survives a restart: the purge was written, not just forgotten in RAM.
+    # It survives a restart.
     reloaded = _new(mod)
-    assert reloaded.owners() == [OTHER]
+    assert reloaded.list(OWNER) == []
+    assert len(reloaded.list(OWNER, include_deleted=True)) == 2
     assert reloaded.applied_token(OWNER) is None
     assert reloaded.last_sync_at(OWNER) is None
+    assert reloaded.is_forgotten(OWNER) is True
+
+
+def test_forget_then_relink_sends_the_old_copy_a_tombstone(mod):
+    """A watch forgotten and then given a design again before it pulls must
+    learn that the old copy is gone, or it keeps drawing it beside the new one.
+    The panel re-links under a fresh id, so only a tombstone can say so."""
+    store = _new(mod)
+    old = _doc(slotIndex=0, name="Old")
+    store.save(OWNER, old, base_revision=None, updated_by="t")
+    watch_token = store.owner_token(OWNER)  # what the watch last pulled
+
+    store.release_owner(OWNER, updated_by=f"forget:{OWNER}")
+    assert store.is_forgotten(OWNER) is True
+    # The design went to the Library under its own id.
+    [shelved] = store.list(mod.LIBRARY_OWNER_ID)
+    assert shelved.id == old["id"]
+
+    new = _doc(slotIndex=0, name="New")
+    store.save(OWNER, new, base_revision=None, updated_by="panel")
+    assert store.is_forgotten(OWNER) is False
+
+    delta = store.changes_since(OWNER, watch_token)
+    assert [(r.id, r.deleted) for r in delta] == [(old["id"], True), (new["id"], False)]
+
+
+def test_a_forgotten_owner_with_only_tombstones_stays_out_of_view(mod):
+    """Tombstones kept for a forgotten device must not bring it back as an
+    orphan: the sweep leaves it alone and it lists as empty."""
+    store = _new(mod)
+    store.save(OWNER, _doc(), base_revision=None, updated_by="t")
+    store.release_owner(OWNER, updated_by="forget")
+    token = store.token
+
+    assert store.is_empty(OWNER) is True
+    assert store.release_orphans({OTHER}, updated_by="sweep") == []
+    assert store.token == token
+    assert store.is_forgotten(OWNER) is True
 
 
 # ── releasing a device: its designs go to the Library ────────────────────
 
 
-def test_release_owner_moves_live_designs_to_the_library_and_purges_the_device(mod):
+def test_release_owner_moves_live_designs_to_the_library_and_clears_the_device(mod):
     store = _new(mod)
     a, b = _doc(slotIndex=0, name="Garage"), _doc(slotIndex=1, name="Lights")
     store.save(OWNER, a, base_revision=None, updated_by="t")
@@ -1677,9 +1791,9 @@ def test_release_owner_moves_live_designs_to_the_library_and_purges_the_device(m
         ("Lights", 1, 1, "device-removed"),
     ]
     assert {r.id for r in library} == {a["id"], b["id"]}
-    # The device is gone without a trace, tombstones included.
-    assert store.owners() == [mod.LIBRARY_OWNER_ID]
-    assert store.list(OWNER, include_deleted=True) == []
+    # The device keeps only tombstones, so its next pull learns they are gone.
+    assert store.list(OWNER) == []
+    assert {r.id for r in store.list(OWNER, include_deleted=True)} == {a["id"], b["id"]}
     assert store.occupied(OWNER) == []
     assert store.applied_token(OWNER) is None
 
@@ -1730,7 +1844,7 @@ def test_release_owner_skips_a_design_the_library_already_has(mod):
 
     [kept] = store.list(mod.LIBRARY_OWNER_ID)
     assert kept.document["name"] == "Twice"
-    assert store.owners() == [mod.LIBRARY_OWNER_ID]
+    assert store.is_empty(OWNER) is True
 
 
 def test_release_owner_never_releases_the_library(mod):
@@ -1748,11 +1862,33 @@ def test_release_orphans_releases_only_owners_the_secret_store_forgot(mod):
 
     assert store.release_orphans({OTHER}, updated_by="sweep") == [OWNER]
 
-    assert store.owners() == [mod.LIBRARY_OWNER_ID, OTHER]
+    assert store.is_empty(OWNER) is True
     assert sorted(r.document["name"] for r in store.list(mod.LIBRARY_OWNER_ID)) == ["Gone watch", "Shelf"]
     assert [r.document["name"] for r in store.list(OTHER)] == ["Live watch"]
+    # A sweep is not a forget: the device is never told to drop its copies.
+    assert store.is_forgotten(OWNER) is False
     # Nothing to do the second time.
     assert store.release_orphans({OTHER}, updated_by="sweep") == []
+
+
+def test_release_orphans_does_nothing_when_no_device_is_registered(mod):
+    """An empty secret store is a missing or unreadable secrets file far more
+    often than a home with no devices. Sweeping on it moved every design to
+    the Library and marked every device forgotten, so each one wiped itself
+    on its next pull after re-pairing under the same id."""
+    store = _new(mod)
+    store.save(OWNER, _doc(slotIndex=0, name="A"), base_revision=None, updated_by="t")
+    store.save(OTHER, _doc(slotIndex=0, name="B"), base_revision=None, updated_by="t")
+    token = store.token
+
+    assert store.release_orphans(set(), updated_by="sweep") == []
+
+    assert store.token == token
+    assert [r.document["name"] for r in store.list(OWNER)] == ["A"]
+    assert [r.document["name"] for r in store.list(OTHER)] == ["B"]
+    assert store.list(mod.LIBRARY_OWNER_ID) == []
+    assert store.is_forgotten(OWNER) is False
+    assert store.is_forgotten(OTHER) is False
 
 
 def test_forget_owner_marks_the_device_forgotten_until_it_holds_a_design_again(mod):

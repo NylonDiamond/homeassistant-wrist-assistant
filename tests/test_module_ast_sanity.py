@@ -78,6 +78,37 @@ def test_the_sync_op_records_the_caller_s_ack_and_stamps_the_pull() -> None:
         assert expected in body, f"_op_complications_sync no longer calls {expected}"
 
 
+def test_the_setup_orphan_sweep_cannot_fail_setup() -> None:
+    """The sweep is housekeeping. An exception out of it used to fail
+    ``async_setup_entry``, taking notifications and cameras down over a
+    complication tidy-up, so the call must sit inside a try with a handler."""
+    source = (_PKG / "__init__.py").read_text()
+    tree = ast.parse(source, filename="__init__.py")
+    [setup] = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "async_setup_entry"
+    ]
+
+    def calls_sweep(node: ast.AST) -> bool:
+        return any(
+            isinstance(n, ast.Call)
+            and isinstance(n.func, ast.Attribute)
+            and n.func.attr == "release_orphans"
+            for n in ast.walk(node)
+        )
+
+    assert calls_sweep(setup), "async_setup_entry no longer sweeps orphans"
+    guarded = [
+        node
+        for node in ast.walk(setup)
+        if isinstance(node, ast.Try)
+        and node.handlers
+        and any(calls_sweep(stmt) for stmt in node.body)
+    ]
+    assert guarded, "release_orphans in async_setup_entry is not inside try/except"
+
+
 def test_the_iphone_complication_capability_is_advertised() -> None:
     """The app pulls its lock screen records only when it sees this.
 

@@ -710,10 +710,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # Designs whose device went away before this build released them (or
     # whose watch came back under a new id) belong in the Library, not under
     # an id nothing signs with. The owners listing sweeps too; this catches
-    # them before any panel opens.
-    released = complication_store.release_orphans(
-        set(widget_secret_store.all_watch_ids), updated_by="orphan-sweep"
-    )
+    # them before any panel opens. Housekeeping only: a failure here must not
+    # fail setup and take notifications and cameras down with it.
+    try:
+        released = complication_store.release_orphans(
+            set(widget_secret_store.all_watch_ids), updated_by="orphan-sweep"
+        )
+    except Exception:
+        _LOGGER.exception("Orphaned complication sweep failed; continuing setup")
+        released = []
     if released:
         _LOGGER.info("Released orphaned complication owner(s) into the Library: %s", released)
     # Parts: the panel's library of saved layer sets. Nothing else reads it,
