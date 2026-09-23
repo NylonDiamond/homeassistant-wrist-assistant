@@ -2807,6 +2807,10 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
   // iOS drops the widget's container background in `accented` mode, so a tinted
   // Home Screen preview draws no background fill at all.
   const bgDrawn = bgPaint !== undefined && !(tint !== undefined && surface === "phone");
+  // Review mode fades the shape's own background and border with the layers.
+  // Left at full strength, a colored background showed through the faded
+  // layers and tinted the whole face, so a red one read as one big pink tap.
+  const chromeFade = options.tapReview === true ? 0.35 : 1;
 
   if (family === "corner") {
     // Watch-corner context preview: black screen quadrant, the content disc
@@ -2861,7 +2865,7 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
         : nothing;
       main = svg`<g transform="translate(${slotX} ${slotY})">
         <g clip-path=${`url(#${uid})`}>
-          ${bgDrawn ? tinted(svg`${bgFill === undefined ? nothing : svg`<defs>${bgFill.defs}</defs>`}<rect width=${tile} height=${tile} fill=${bgPaint!.fill} fill-opacity=${bgPaint!.opacity} />`, chromeGroup, tint) : nothing}
+          ${bgDrawn ? svg`<g opacity=${chromeFade}>${tinted(svg`${bgFill === undefined ? nothing : svg`<defs>${bgFill.defs}</defs>`}<rect width=${tile} height=${tile} fill=${bgPaint!.fill} fill-opacity=${bgPaint!.opacity} />`, chromeGroup, tint)}</g>` : nothing}
           <g data-design-box transform="scale(${fit.scale * tileScale})">
             ${elements.map((el) => renderElement(el, design, options, charts, tint))}
             ${gridLines(design, options.grid)}
@@ -2878,7 +2882,7 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
           : nothing}
         <circle cx=${tile / 2} cy=${tile / 2} r=${tile / 2} fill="none"
           stroke="rgba(255,255,255,0.22)" stroke-width=${0.75 * s} stroke-dasharray=${`${2 * s} ${2 * s}`} />
-        ${tinted(chrome, chromeGroup, tint)}
+        <g opacity=${chromeFade}>${tinted(chrome, chromeGroup, tint)}</g>
         <g transform="scale(${fit.scale * tileScale})">${handleLayer(elements, design, options, charts)}</g>
       </g>`;
     }
@@ -2919,7 +2923,7 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
     <defs><clipPath id=${uid}>${clip}</clipPath>${defsTint}</defs>
     <g clip-path=${`url(#${uid})`}>
       ${well}
-      ${bgDrawn ? tinted(svg`${bgFill === undefined ? nothing : svg`<defs>${bgFill.defs}</defs>`}<rect width=${canvas.width} height=${canvas.height} rx=${rx} fill=${bgPaint!.fill} fill-opacity=${bgPaint!.opacity} />`, chromeGroup, tint) : nothing}
+      ${bgDrawn ? svg`<g opacity=${chromeFade}>${tinted(svg`${bgFill === undefined ? nothing : svg`<defs>${bgFill.defs}</defs>`}<rect width=${canvas.width} height=${canvas.height} rx=${rx} fill=${bgPaint!.fill} fill-opacity=${bgPaint!.opacity} />`, chromeGroup, tint)}</g>` : nothing}
       <g data-design-box transform="translate(${fit.x} ${fit.y}) scale(${fit.scale})">
         ${elements.map((el) => renderElement(el, design, options, charts, tint))}
             ${gridLines(design, options.grid)}
@@ -2937,7 +2941,7 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
       ? svg`<rect width=${canvas.width} height=${canvas.height} rx=${rx}
           fill="none" stroke="#0A84FF" stroke-width="4" vector-effect="non-scaling-stroke" pointer-events="none" />`
       : nothing}
-    ${tinted(chrome, chromeGroup, tint)}
+    <g opacity=${chromeFade}>${tinted(chrome, chromeGroup, tint)}</g>
     <g transform="translate(${fit.x} ${fit.y}) scale(${fit.scale})">${handleLayer(elements, design, options, charts)}</g>
     ${spotlight(elements, design, options.spotlightIds, `${uid}-spot`, canvas.width, canvas.height, `translate(${fit.x} ${fit.y}) scale(${fit.scale})`)}
     ${options.flash === undefined
