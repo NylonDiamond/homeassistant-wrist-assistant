@@ -730,6 +730,8 @@ const DROP_GAP = 34;
 /** How long a Layers row keeps its layer lit after the pointer leaves it:
  * long enough to cross the gap to the next row at a slow drag. */
 const ROW_LEAVE_MS = 250;
+/** `tapHover` for the Background row's strip, which has no layer id. */
+const GROUND_TAP = "\u0000ground";
 const COL_MIN = 200;
 const COL_MAX = 720;
 /** The canvas column never goes below this while three columns are shown. */
@@ -1537,6 +1539,10 @@ export class WristAssistantPanel extends LitElement {
    * inspector shows the Tap card alone and the strip wears the selection.
    * Any other pick clears it (willUpdate). */
   @state() private tapFocus = false;
+  /** The tap strip under the pointer in the Layers list: the owning layer's
+   * id, or GROUND_TAP for the Background row's. The preview shows that tap
+   * the way a click on the strip would, without changing the selection. */
+  @state() private tapHover?: string;
   /** The name the open complication had when its edit session started, so the
    * General tab can warn that a rename does not reach the watch face picker.
    * Undefined for a brand-new complication (nothing is on the watch yet). */
@@ -14987,12 +14993,14 @@ export class WristAssistantPanel extends LitElement {
     const act = cfg.tapAction;
     return html`<div class="tap-strip" role="button" tabindex="0"
       title="Select the background's tap: show every tap zone on the preview and only its settings"
+      @pointerenter=${() => { this.tapHover = GROUND_TAP; }}
+      @pointerleave=${() => { if (this.tapHover === GROUND_TAP) this.tapHover = undefined; }}
       @click=${(e: Event) => { e.stopPropagation(); this.selectGroundTap(); }}
       @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); this.selectGroundTap(); } }}>
       <span class="tap-glyph">${uiIcon("tap")}</span>
       <span class="tap-words">${describeTapAction(act)}</span>
       ${edit && !isDefaultTap(act) ? html`<button class="icon danger tap-del" title="Put the default back: refresh this complication" aria-label="Reset the background's tap to refresh"
-        @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => { c.tapAction = { type: "refresh" }; }); }}>${uiIcon("delete")}</button>` : nothing}
+        @click=${(e: Event) => { e.stopPropagation(); this.tapHover = undefined; this.mutate((c) => { c.tapAction = { type: "refresh" }; }); }}>${uiIcon("delete")}</button>` : nothing}
     </div>`;
   }
 
@@ -15003,6 +15011,7 @@ export class WristAssistantPanel extends LitElement {
 
   /** Take a layer's attached tap off, keeping the layer. */
   private removeTap(id: string) {
+    this.tapHover = undefined;
     this.mutate((c) => detachTaps(c, id));
     if (this.tapFocus && this.inspect.kind === "layer" && this.inspect.id === id) this.leaveTapFocus();
   }
@@ -15156,6 +15165,8 @@ export class WristAssistantPanel extends LitElement {
         const where = tapBadge(act, el.payload.page ?? this.page, pageCount);
         strip = html`<div class="tap-strip" role="button" tabindex="0"
           title="Select this tap: show its box on the preview and only its settings"
+          @pointerenter=${() => { this.tapHover = id; }}
+          @pointerleave=${() => { if (this.tapHover === id) this.tapHover = undefined; }}
           @click=${(e: Event) => { e.stopPropagation(); this.selectTap(id); }}
           @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); this.selectTap(id); } }}>
           <span class="tap-glyph">${uiIcon("tap")}</span>
@@ -15951,21 +15962,29 @@ export class WristAssistantPanel extends LitElement {
     // so the pick reads the same in both places.
     const outlineIds = [...new Set([...groupIds, ...this.multi])];
     const slot = slotFor(deviceCase, family);
+    // A tap strip under the pointer in the Layers list shows its tap the way
+    // a click on it would: review mode, narrowed to that tap's box (every box
+    // for the Background row's strip). Nothing is selected by it, so no
+    // handles.
+    const hoverTap = this.tapHover === undefined ? undefined
+      : this.tapHover === GROUND_TAP ? { focus: undefined }
+      : cfg ? { focus: attachedTapsOf(cfg, this.tapHover)[0]?.payload.id } : undefined;
+    const review = this.showTaps || hoverTap !== undefined;
     // Review mode drops the resize handles, except on the one tap box it is
     // narrowed to.
-    const focus = this.focusTapId();
+    const focus = hoverTap ? hoverTap.focus : this.focusTapId();
     // A row under the pointer in the inspector draws its layer as the one
     // selection, group outlines and all dropped, until the pointer leaves.
-    const peek = !this.showTaps && this.rowHoverId !== undefined
+    const peek = !review && this.rowHoverId !== undefined
       && cfg?.elements.some((e) => e.payload.id === this.rowHoverId) ? this.rowHoverId : undefined;
-    const hoverIds = peek !== undefined ? [] : this.listHoverIds;
+    const hoverIds = peek !== undefined || hoverTap ? [] : this.listHoverIds;
     const opts = {
       icons: this.icons, imageSizes: this.imageSizes, tapAreas: true, slot,
       highlightId: focus ?? peek ?? highlightId,
-      ...(outlineIds.length > 0 && !this.showTaps && peek === undefined ? { highlightIds: outlineIds } : {}),
+      ...(outlineIds.length > 0 && !review && peek === undefined ? { highlightIds: outlineIds } : {}),
       ...(this.showGridLines || (!this.snapGrid && this.altHeld && this.canEdit) ? { grid: this.gridStep } : {}),
       ...(this.guides.length > 0 && family === this.activeFamily ? { guides: this.guides } : {}),
-      tapReview: this.showTaps,
+      tapReview: review,
       // The same rule the shape tabs draw under, so the stage and its tabs
       // never disagree: a phone owner's Lock Screen shapes stand in white,
       // because that is all a Lock Screen widget can be. A Home Screen tile is
@@ -15973,7 +15992,7 @@ export class WristAssistantPanel extends LitElement {
       // painted in the tint at the brightness it was drawn in.
       ...previewTintFor(family, this.previewAsPhone, this.previewTint),
       ...(focus !== undefined ? { tapFocusId: focus } : {}),
-      handles: this.canEdit && (!this.showTaps || focus !== undefined),
+      handles: this.canEdit && !hoverTap && (!this.showTaps || focus !== undefined),
       // The Layers list owns the tint: resting on a row shows where that
       // layer sits on the face.
       ...(hoverIds.length > 0 ? { hoverIds } : {}),
