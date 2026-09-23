@@ -684,6 +684,7 @@ function layerRowFolds(): string {
       ${p} .layer.group { grid-template-areas: "grip bar thumb name" "grip bar thumb right"; }
       ${p} .layer.group > .right { justify-content: flex-end; gap: 2px; }
       ${p} .group-kids { margin-left: 6px; padding-left: 6px; }
+      ${p} .group-box > .group-kids { margin-left: 0; padding-left: 4px; }
       ${p} .group-cta { flex-wrap: wrap; }
     }
     @container layers (max-width: ${w + 149}px) {
@@ -700,6 +701,7 @@ function layerRowFolds(): string {
       ${p} .layer.group > .folder { justify-self: start; width: auto; }
       ${p} .layer.group > .name { padding-top: 2px; }
       ${p} .group-kids { margin-left: 2px; padding-left: 4px; }
+      ${p} .group-box > .group-kids { margin-left: 0; padding-left: 2px; }
     }`;
   }).join("\n");
 }
@@ -3377,7 +3379,7 @@ export class WristAssistantPanel extends LitElement {
        Collapsed, not removed: taking the drag source out of the document
        cancels the drag. The negative margin eats the second of the two 6px
        gaps a zero-height row would otherwise sit between. */
-    .layer.dragging, .group-kids.dragging {
+    .layer.dragging, .group-kids.dragging, .group-box.dragging {
       height: 0; min-height: 0; margin-top: -1px; margin-bottom: -1px;
       padding-top: 0; padding-bottom: 0; border-top-width: 0; border-bottom-width: 0;
       opacity: 0; overflow: hidden;
@@ -3639,6 +3641,24 @@ export class WristAssistantPanel extends LitElement {
     /* A sub-group steps in by less, so a few levels still leave the rows room
        in a narrow column. */
     .group-kids .group-kids { margin-left: 8px; padding-left: 8px; }
+    /* A group is one box: its folder row is the box's top and everything in
+       it sits inside. Each box washes the folder color over whatever it sits
+       on, so a sub-group's box reads a step deeper than its parent's, and a
+       layer beside a sub-group plainly sits outside it. */
+    .group-box {
+      flex: none; display: flex; flex-direction: column; gap: 4px;
+      padding: 3px 3px 4px; border-radius: calc(var(--wa-r-sm) + 3px);
+      border: 1px solid color-mix(in srgb, ${unsafeCSS(SECTION_COLOR.group)} 30%, var(--wa-line));
+      background: color-mix(in srgb, ${unsafeCSS(SECTION_COLOR.group)} 7%, transparent);
+    }
+    .group-box:has(> .layer.group.hl) { border-color: var(--wa-sel-ring); }
+    /* The folder row is the box's header, not a card of its own, until it is
+       hovered, selected, lit or a drop target. */
+    .group-box > .layer.group:not(.hl):not(.lit):not(.held):not(.drop-into):not(:hover) {
+      background: transparent; box-shadow: none;
+    }
+    .group-box > .group-kids { margin: 0; padding-left: 8px; border-left: 0; }
+    .group-box > .group-kids .group-kids:not(.rowkids) { margin-left: 0; }
     /* Drop targets last, so the slot beats whatever the row already had on its
        own border.
 
@@ -14722,7 +14742,7 @@ export class WristAssistantPanel extends LitElement {
   /** The end of a drag: the slot goes, and every collapsed row comes back. */
   private clearDragMarks() {
     this.clearDropMarks();
-    for (const row of this.renderRoot.querySelectorAll(".layer, .group-kids")) {
+    for (const row of this.renderRoot.querySelectorAll(".layer, .group-kids, .group-box")) {
       row.classList.remove("dragging");
     }
   }
@@ -14748,6 +14768,10 @@ export class WristAssistantPanel extends LitElement {
           if (this.dragId !== id) return;
           row.classList.add("dragging");
           if (kids?.classList.contains("group-kids")) kids.classList.add("dragging");
+          // A folder's box goes with it, or an empty frame stays behind.
+          if (row.classList.contains("group") && row.parentElement?.classList.contains("group-box")) {
+            row.parentElement.classList.add("dragging");
+          }
         }, 0);
       },
       onEnd: () => {
@@ -15162,9 +15186,13 @@ export class WristAssistantPanel extends LitElement {
           continue;
         }
         const g = row.group;
-        rows.push(groupRow(g, row.members, row.total, row.rows, held));
+        // One box holds the folder row and everything inside it, so a group's
+        // edge is drawn rather than inferred from indentation, and a
+        // sub-group's box sits visibly inside its parent's.
         const groupHl = held || (this.inspect.kind === "group" && this.inspect.id === g.id);
-        if (!this.collapsed.has(g.id)) rows.push(html`<div class="group-kids">${buildRows(row.rows, true, groupHl)}</div>`);
+        rows.push(html`<div class="group-box">${groupRow(g, row.members, row.total, row.rows, held)}${this.collapsed.has(g.id)
+          ? nothing
+          : html`<div class="group-kids">${buildRows(row.rows, true, groupHl)}</div>`}</div>`);
       }
       return rows;
     };
