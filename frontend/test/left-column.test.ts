@@ -137,11 +137,11 @@ describe("the Background row", () => {
     expect(backgroundRow(cfg, "rectangular").inspect).toEqual({ kind: "family" });
   });
 
-  it("is one row: the shape's ground and border, and the complication's tap", () => {
+  it("is one row: the shape's ground and border, with the tap as its own strip", () => {
     const row = backgroundRow(cfg, "rectangular");
     expect(row.name).toBe("Background");
     expect(row.caption).toBe("always at the bottom");
-    expect(row.meta).toMatch(/^Transparent · no border · tap: /);
+    expect(row.meta).toBe("Transparent · no border");
   });
 
   it("names a ground and a border once there are some", () => {

@@ -264,6 +264,7 @@ import {
   groupEditor,
   layerEditor,
   tapCard,
+  docTapCard,
   layerTitle,
   lookSummary,
   namedValueEditor,
@@ -1010,7 +1011,7 @@ function tapWords(action: TapAction): string {
 
 /**
  * The one row at the foot of the Layers list: the shape's own ground and
- * border, and what a tap anywhere else does. It used to be two rows, the
+ * border, with what a tap anywhere else does as a strip along its bottom. It used to be two rows, the
  * shape and "Whole complication", which read as two things under the stack
  * when they are one: the complication itself. A click on it selects the
  * shape.
@@ -1024,7 +1025,8 @@ export function backgroundRow(
   const border = layout?.borderColorHex ? `${layout.borderWidth} pt border` : "no border";
   return {
     name: "Background",
-    meta: `${fill} · ${border} · ${tapWords(cfg.tapAction)}`,
+    // The tap is not in this line: the row shows it as a strip of its own.
+    meta: `${fill} · ${border}`,
     caption: "always at the bottom",
     inspect: { kind: "family" },
   };
@@ -3400,6 +3402,7 @@ export class WristAssistantPanel extends LitElement {
       box-shadow: inset 0 0 0 2px var(--tp); border-top-color: transparent;
     }
     .layer.dim .tap-strip { opacity: .55; }
+    .layer.pinned .tap-strip { margin: 0 -10px 2px -8px; padding-left: 43px; border-radius: 0; }
     .tap-strip .tap-glyph { display: grid; place-items: center; flex: none; }
     .tap-strip .tap-glyph svg { width: 13px; height: 13px; }
     .tap-strip .tap-words { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -14941,6 +14944,33 @@ export class WristAssistantPanel extends LitElement {
     this.lightSection("tappable");
   }
 
+  /** Select the whole complication's tap, from the Background row's strip:
+   * the shape, every tap zone on the face (the background is what lies
+   * outside them all), and the inspector down to the Tap card. */
+  private selectGroundTap() {
+    this.multi = new Set();
+    this.inspect = { kind: "family" };
+    this.tapFocus = true;
+    this.setShowTaps(true);
+    this.lightSection("tappable");
+  }
+
+  /** The Background row's tap strip: what a tap anywhere outside the layers'
+   * taps does. Its trash sets that to Do nothing, since the complication
+   * always has a tap action. */
+  private groundTapStrip(cfg: CustomComplicationConfig, edit: boolean) {
+    const act = cfg.tapAction;
+    return html`<div class="tap-strip" role="button" tabindex="0"
+      title="Select the background's tap: show every tap zone on the preview and only its settings"
+      @click=${(e: Event) => { e.stopPropagation(); this.selectGroundTap(); }}
+      @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); this.selectGroundTap(); } }}>
+      <span class="tap-glyph">${uiIcon("tap")}</span>
+      <span class="tap-words">${describeTapAction(act)}</span>
+      ${edit && act.type !== "none" ? html`<button class="icon danger tap-del" title="Make a tap on the background do nothing" aria-label="Remove the background's tap"
+        @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => { c.tapAction = { type: "none" }; }); }}>${uiIcon("delete")}</button>` : nothing}
+    </div>`;
+  }
+
   private leaveTapFocus() {
     this.tapFocus = false;
     this.setShowTaps(false);
@@ -15393,9 +15423,9 @@ export class WristAssistantPanel extends LitElement {
       ${body}
       </div>
       <div class="pinned-set">
-      <div class="layer pinned ground ${shapeHl ? "hl" : ""}" style=${`--k:${SECTION_COLOR.place}`} tabindex="0"
+      <div class="layer pinned ground with-tap ${shapeHl && this.tapFocus ? "tapsel" : ""} ${shapeHl ? "hl" : ""}" style=${`--k:${SECTION_COLOR.place}`} tabindex="0"
         title="The shape's background and border, and what a tap anywhere else does. Always the bottom layer. Click to edit it."
-        @click=${() => { this.multi = new Set(); this.inspect = ground.inspect; }}
+        @click=${() => { this.multi = new Set(); if (this.tapFocus && shapeHl) this.leaveTapFocus(); this.inspect = ground.inspect; }}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = ground.inspect; }}
         @dragover=${(e: DragEvent) => { if (!this.dragId) return; e.preventDefault(); this.markDrop(e.currentTarget as HTMLElement, "drop-before"); }}
         @drop=${(e: DragEvent) => {
@@ -15419,6 +15449,7 @@ export class WristAssistantPanel extends LitElement {
           <small title=${ground.meta}>${ground.meta}</small>
         </span>
         <span class="right"><span class="ground-cap">${ground.caption}</span></span>
+        ${this.groundTapStrip(cfg, edit)}
       </div>
       </div>
       ${this.renderSharedValues()}
@@ -16672,6 +16703,8 @@ export class WristAssistantPanel extends LitElement {
       if (g) {
         tail = html`${chain.slice(0, -1).map((p) => html`<button @click=${() => { this.inspect = { kind: "group", id: p.id }; }} title="Edit the group">${p.name}</button><span class="sep">›</span>`)}${here(SECTION_COLOR.group, "Group", g.name)}`;
       }
+    } else if (this.tapFocus) {
+      tail = html`<button @click=${() => this.leaveTapFocus()} title="Edit the whole background">Background</button><span class="sep">›</span>${here(SECTION_COLOR.tap, "Tap", "Tap")}`;
     } else {
       tail = here(SECTION_COLOR.place, "Shape", "Background");
     }
@@ -16797,6 +16830,9 @@ export class WristAssistantPanel extends LitElement {
       }
       cards = false;
       body = groupEditor(host, g);
+    } else if (this.tapFocus) {
+      cards = false;
+      body = docTapCard(host);
     } else {
       body = familyEditor(host, this.activeFamily);
     }
