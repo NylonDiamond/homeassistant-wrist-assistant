@@ -6152,12 +6152,26 @@ export class WristAssistantPanel extends LitElement {
         this.openSections = defaultOpenSections();
         // The row under the pointer belonged to the old selection's inspector.
         this.rowHoverId = undefined;
+        // The tap view follows the selection. A tap row sets both at once,
+        // which is how it keeps the view on. A free-standing tap layer draws
+        // nothing but its tap box, so selecting one turns the view on. Any
+        // other pick shows that layer, not taps.
+        if (before !== undefined && !changed.has("showTaps")) {
+          const ins = this.inspect;
+          const el = ins.kind === "layer" ? this.draft?.config.elements.find((e) => e.payload.id === ins.id) : undefined;
+          this.showTaps = el?.kind === "tap";
+        }
       }
       // Selecting anything at all is a move off the Control Center tab: that
       // tab draws no layers, so whatever was clicked belongs to a shape. Done
       // here rather than at each call site, since a layer is selected from the
       // list, the face, the keyboard, a paste and a preset.
       if (this.inspect.kind !== "general") this.controlView = false;
+    }
+    // Turning taps on opens the Tap card, after the reset above, so a tap row
+    // on a layer that was not selected still lands on its settings.
+    if (changed.has("showTaps") && this.showTaps && !this.openSections.has("tappable")) {
+      this.openSections = new Set([...this.openSections, "tappable"]);
     }
   }
 
@@ -8313,9 +8327,6 @@ export class WristAssistantPanel extends LitElement {
     const pickTint = (hex: string | undefined) => { this.toggleMenu("case", false); this.previewTint = hex; };
     return html`<div class="stage-tools" role="toolbar" aria-label="Canvas tools">
       ${drawable ? html`
-        <button class="tb ${this.showTaps ? "on" : ""}" ?disabled=${off} aria-pressed=${this.showTaps ? "true" : "false"}
-          title="Show every tap zone, labelled with what it does, over a dimmed face. With a layer selected, only its tap zone shows, and you can drag its corners to size it."
-          @click=${() => this.setShowTaps(!this.showTaps)}>${glyph(svg`<circle cx="6.5" cy="6.5" r="5" /><circle cx="6.5" cy="6.5" r="1.8" fill="currentColor" />`)}<span class="word">Taps</span></button>
         <button class="tb" ?disabled=${off}
           title="Try the complication the way the watch draws it: no grid, no handles, no tap boxes. Taps really run, so a toggle really toggles. Escape closes."
           @click=${() => this.openDemo()}>${glyph(svg`<path d="M3 1.8L11 6.5L3 11.2Z" />`, true)}<span class="word">Demo</span></button>
