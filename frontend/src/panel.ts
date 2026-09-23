@@ -871,7 +871,7 @@ export function layerListRows(
 type SideMenu = "top" | "pages" | "layers";
 
 /** The Add sheet's three tabs. */
-type AddTab = "elements" | "presets" | "parts";
+type AddTab = "all" | "elements" | "presets" | "parts";
 
 /** How wide the Add sheet is, CSS px. */
 export const ADD_SHEET_WIDTH = 560;
@@ -1330,7 +1330,7 @@ export class WristAssistantPanel extends LitElement {
   /** What has been typed into the Add sheet's search. */
   @state() private addQuery = "";
   /** The Add sheet's tab. */
-  @state() private addTab: AddTab = "elements";
+  @state() private addTab: AddTab = "all";
   /** Whether the Shared values footer of the Layers card is open. */
   @state() private sharedOpen = false;
   /** Show all in the Layers card: every page's layers, grouped by page,
@@ -3550,8 +3550,15 @@ export class WristAssistantPanel extends LitElement {
     .as-name { text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     button.as-tile.as-all .as-pic { display: grid; place-items: center; background: var(--wa-panel); }
     .as-more { font-size: 11px; font-weight: 600; color: var(--wa-accent); }
-    .as-note { padding: 8px 10px; border-radius: 8px; font-size: 11.5px; color: var(--wa-muted); background: var(--wa-panel); box-shadow: inset 0 0 0 1px var(--wa-line); }
-    .as-note b { color: var(--wa-ink); }
+    /* The tap zone tile spans two columns: its picture, then its name and
+       the one thing to know about it. */
+    button.as-tile.wide { grid-column: span 2; flex-direction: row; align-items: center; gap: 10px; padding-right: 10px; }
+    button.as-tile.wide .as-pic { width: 46%; flex: none; }
+    button.as-tile.wide .as-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+    button.as-tile.wide .as-name { text-align: left; }
+    .as-blurb { font-size: 10.5px; font-weight: 400; line-height: 1.35; color: var(--wa-muted); text-align: left; }
+    .as-blurb b { color: var(--wa-ink); font-weight: 600; }
+    .as-body .pt-grid { margin-top: 0; }
     .as-empty { padding: 28px 12px; text-align: center; font-size: 12.5px; color: var(--wa-muted); }
     /* Saved parts: the grid and the entity table the Parts dialog had, in the
        sheet's body. Its own head and foot sit inside the scroller. */
@@ -14404,6 +14411,8 @@ export class WristAssistantPanel extends LitElement {
       : { mode: "centered" };
     this.addQuery = "";
     if (tab) this.addTab = tab;
+    // All and Saved parts both draw the parts, so they are read on the way in.
+    if ((this.addTab === "all" || this.addTab === "parts") && this.parts === undefined) void this.loadParts();
     this.partPick = undefined;
     this.partMap = new Map();
     this.partRename = undefined;
@@ -14485,9 +14494,17 @@ export class WristAssistantPanel extends LitElement {
     const searching = query !== "";
     const found = filterAddOffers(query, cards, offered);
     const tab = this.addTab;
-    const tile = (card: AddCard) => html`<button class="as-tile ${card.kind === "tap" ? "dashed" : ""}" style=${`--k:${KIND_COLOR[card.kind]}`}
-      ?disabled=${full} title=${card.blurb} @click=${() => this.addBlankLayer(card)}>
-      <span class="as-pic">${addPreview(card.kind, card.variant)}</span><span class="as-name">${card.title}</span></button>`;
+    // The tap zone tile is twice as wide, and carries its own words: a tap
+    // zone is only for an empty area, since any layer can be tapped itself.
+    const tile = (card: AddCard) => card.kind === "tap"
+      ? html`<button class="as-tile dashed wide" style=${`--k:${KIND_COLOR[card.kind]}`}
+          ?disabled=${full} title=${card.blurb} @click=${() => this.addBlankLayer(card)}>
+          <span class="as-pic">${addPreview(card.kind, card.variant)}</span>
+          <span class="as-text"><span class="as-name">${card.title}</span>
+            <span class="as-blurb">Only for an empty area. Any layer can be tapped itself: tick <b>Tap</b> on the layer.</span></span></button>`
+      : html`<button class="as-tile" style=${`--k:${KIND_COLOR[card.kind]}`}
+          ?disabled=${full} title=${card.blurb} @click=${() => this.addBlankLayer(card)}>
+          <span class="as-pic">${addPreview(card.kind, card.variant)}</span><span class="as-name">${card.title}</span></button>`;
     const presetTile = (p: PresetSpec) => html`<button class="as-tile" style=${`--k:${presetColor(p.kind)}`}
       ?disabled=${cfg.elements.length + p.layerCount > 64} title=${p.blurb}
       @click=${() => { this.closeAddSheet(); this.openPreset(p.kind); }}>
@@ -14497,7 +14514,7 @@ export class WristAssistantPanel extends LitElement {
     const tabButton = (id: AddTab, label: string, count: number | undefined) => html`<button role="tab" class="as-tab ${tab === id ? "on" : ""}"
       aria-selected=${tab === id ? "true" : "false"} @click=${() => {
         this.addTab = id;
-        if (id === "parts" && this.parts === undefined) void this.loadParts();
+        if ((id === "parts" || id === "all") && this.parts === undefined) void this.loadParts();
       }}>${label}${count === undefined ? nothing : html` <span class="as-count">${count}</span>`}</button>`;
     const nothingFound = (what: string) => html`<div class="as-empty">No ${what} match "${query}".</div>`;
     let body: TemplateResult;
@@ -14514,16 +14531,23 @@ export class WristAssistantPanel extends LitElement {
       const popular = POPULAR_PRESETS
         .map((kind) => offered.find((p) => p.kind === kind))
         .filter((p): p is PresetSpec => p !== undefined);
-      body = found.elements.length === 0
-        ? nothingFound("elements")
+      const parts = this.parts ?? [];
+      const elements = found.elements.length === 0
+        ? (tab === "all" ? nothing : nothingFound("elements"))
         : html`
           ${group("Show a value", value)}
           ${group("Pictures", pictures)}
-          ${group("Decorate", decorate)}
-          ${decorate.some((c) => c.kind === "tap")
-            ? html`<div class="as-note">Any layer can be tapped. Tick <b>Tap</b> on the layer. A tap zone is only for an empty area.</div>`
-            : nothing}
-          ${searching || popular.length === 0 ? nothing : html`
+          ${group("Decorate", decorate)}`;
+      // All: every element, then every preset, then the saved parts. Elements:
+      // the same elements with a taste of the presets and a way to the rest.
+      body = tab === "all"
+        ? (found.elements.length === 0 && found.presets.length === 0
+          ? nothingFound("elements or presets")
+          : html`${elements}
+            ${found.presets.length === 0 ? nothing : html`<div class="as-sect">Presets</div><div class="as-grid">${found.presets.map(presetTile)}</div>`}
+            ${searching || parts.length === 0 ? nothing : html`<div class="as-sect">Saved parts</div><div class="pt-grid">${parts.map((part) => this.renderPartCard(part))}</div>`}`)
+        : html`${elements}
+          ${searching || popular.length === 0 || found.elements.length === 0 ? nothing : html`
             <div class="as-sect">Popular presets</div>
             <div class="as-grid">
               ${popular.map(presetTile)}
@@ -14542,6 +14566,7 @@ export class WristAssistantPanel extends LitElement {
         <button class="icon" title="Close (Escape)" aria-label="Close" @click=${() => this.closeAddSheet()}>${uiIcon("close")}</button>
       </div>
       <div class="as-tabs" role="tablist" aria-label="What to add">
+        ${tabButton("all", "All", undefined)}
         ${tabButton("elements", "Elements", found.elements.length)}
         ${tabButton("presets", "Presets", found.presets.length)}
         ${tabButton("parts", "Saved parts", this.parts?.length)}
