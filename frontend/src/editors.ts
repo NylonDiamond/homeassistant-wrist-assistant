@@ -324,7 +324,6 @@ import {
   setTestedValue,
   shownColumns,
   statesEmptyText,
-  statesSummary,
   tableShape,
   whenText,
 } from "./states.js";

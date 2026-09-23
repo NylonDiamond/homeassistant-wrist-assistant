@@ -184,7 +184,7 @@ import { type SplitNotice, autoSplitShapes, editBlockedBySplitGate, ownerCanSpli
 import { makeIconProvider } from "./icons.js";
 import { makeImageSizeProvider } from "./image-sizes.js";
 import { SymbolBrowser } from "./symbols.js";
-import { Draft, draftStatus, saveRefusal } from "./draft.js";
+import { Draft, saveRefusal } from "./draft.js";
 import { ScrollFades } from "./scroll-fade.js";
 import { statesSummary } from "./states.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
@@ -224,6 +224,8 @@ import {
   type EffectivePlacement,
   type PickedFlag,
   ALL_SECTIONS,
+  defaultOpenSections,
+  moreThanDefaultOpen,
   SCRUB_END,
   SCRUB_START,
   CONTROL_TILE_SIDE,
@@ -446,12 +448,6 @@ type Inspect =
  * from "something else is selected now". */
 function inspectKey(i: Inspect): string {
   return "id" in i ? `${i.kind}:${i.id}` : i.kind;
-}
-
-/** The card that opens first when something is selected: what it shows for a
- * layer, how it looks for a shape. */
-function defaultSection(i: Inspect): string {
-  return i.kind === "family" ? "look" : "content";
 }
 
 type Conflict = { current: ComplicationRecord | null; message: string };
@@ -1055,10 +1051,12 @@ export class WristAssistantPanel extends LitElement {
   @state() private templateFetchedAt?: number;
   @state() private forced: ForcedBranches = new Map();
   @state() private showRaw = false;
+  /** Whether the footer's Raw configuration view is open. */
+  @state() private rawOpen = false;
   @state() private inspect: Inspect = { kind: "general" };
-  /** The inspector cards that are open. One entry means one at a time. Reset
-   * to the first card whenever something else is selected (willUpdate). */
-  @state() private openSections: ReadonlySet<string> = new Set(["content"]);
+  /** The inspector cards that are open. Reset to the default two (Content and
+   * Look) whenever something else is selected (willUpdate). */
+  @state() private openSections: ReadonlySet<string> = defaultOpenSections();
   /** The inspector cards showing their help text, by card id. Not stored:
    * help is something asked for now, not a setting. The Control Center card
    * starts with its help on, because its rows are new and each one needs a
@@ -2643,16 +2641,6 @@ export class WristAssistantPanel extends LitElement {
        hover lift, so it reads as a place in the row rather than a choice. */
     .shape-card.soon { opacity: .45; cursor: default; }
     .shape-card.soon:hover { border-color: var(--wa-line); color: var(--wa-muted); }
-    /* What the open complication is, under its name in the inspector: one
-       shape on one kind of device, said in words. It replaced the Appears on
-       checkbox list, so it keeps that box's quiet frame rather than reading
-       as another unmarked row of fields. */
-    .what-field {
-      display: flex; flex-direction: column; gap: 3px; margin: 8px 0 2px; padding: 9px 10px;
-      border: 1px solid var(--wa-line); border-radius: var(--wa-r-md); background: var(--wa-raised);
-    }
-    .what-line { font-size: 13px; font-weight: 700; color: var(--wa-ink); }
-    .what-field .hint { margin: 0; }
     .shape-dots { display: inline-flex; gap: 3px; align-items: center; flex: none; }
     .shape-dot { width: 14px; height: 10px; border-radius: 2px; background: currentColor; opacity: .3; display: inline-block; }
     .shape-dot.circular { width: 10px; border-radius: 50%; }
@@ -3081,25 +3069,6 @@ export class WristAssistantPanel extends LitElement {
     .panel-title .spacer { flex: 1; }
     .panel-title .mini { font-weight: 500; font-size: 12px; color: var(--wa-muted); letter-spacing: 0; }
     .panel-title button.small { font-weight: 600; letter-spacing: 0; }
-
-    /* Status and the raw document: one line at the foot of the panel, shut by
-       default, saying only whether the work is saved. */
-    details.foot { flex: none; border-top: 1px solid var(--wa-line); background: var(--wa-raised); }
-    details.foot > summary { display: flex; align-items: center; gap: 10px; min-height: 34px; padding: 0 24px; font-size: 12.5px; cursor: pointer; list-style: none; color: var(--wa-muted); }
-    details.foot > summary::-webkit-details-marker { display: none; }
-    details.foot > summary:hover { background: var(--wa-panel); }
-    details.foot .foot-dot { font-size: 10px; }
-    details.foot .foot-dot.ok { color: var(--success-color, #3dd68c); text-shadow: 0 0 8px var(--success-color, #3dd68c); }
-    details.foot .foot-dot.warn { color: var(--warning-color, #ffa600); }
-    /* Same color on the words as on the dot, so the footer agrees with the
-       header's Save button about there being work to save. */
-    details.foot .foot-dot.warn + .foot-text { color: var(--warning-color, #ffa600); }
-    details.foot .foot-dot.err { color: var(--error-color, #db4437); }
-    details.foot .foot-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    details.foot .foot-more { font-size: 12px; opacity: .6; }
-    details.foot[open] .foot-more { opacity: .4; }
-    details.foot .foot-body { padding: 0 16px 12px; max-height: 40vh; overflow: auto; }
-    details.foot .foot-body .hint { margin: 8px 0; }
 
     /* Add a layer: one tinted card per kind, each carrying a sample of what
        that kind draws, then the presets. It sits above the list so adding a
@@ -4283,29 +4252,32 @@ export class WristAssistantPanel extends LitElement {
 
     /* The inspector: crumbs on top, then one card per section of the thing
        selected, tinted by what it is. */
-    .column.inspector { padding: 10px 12px 12px; container: insp / inline-size; }
-    /* The head grows when a long layer name wraps its crumbs onto a second
-       line, rather than spilling over the first card. */
-    .insp-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; min-height: 34px; padding: 0; position: sticky; top: 0; background: var(--wa-card); z-index: 5; }
-    /* The crumbs keep at least 180px; with less beside it, the One at a time
-       button drops under them rather than squeezing every crumb onto its
-       own line. */
-    .crumbs { flex: 1 1 180px; min-width: 0; display: flex; align-items: center; gap: 2px 6px; flex-wrap: wrap; padding: 4px 0; font-size: 12.5px; font-weight: 600; color: var(--wa-muted); }
-    .crumbs button { font: inherit; font-size: 12.5px; font-weight: 600; background: transparent; border: 0; padding: 3px 6px; border-radius: 5px; color: var(--wa-muted); cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .insp-head .expand { margin-left: auto; }
-    .crumbs button:hover { background: var(--wa-panel); color: var(--wa-ink); }
-    .crumbs .sep { opacity: .5; }
-    .here {
-      display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px 3px 6px; border-radius: 6px;
-      background: color-mix(in srgb, var(--k) 14%, transparent); border: 1px solid color-mix(in srgb, var(--k) 40%, transparent);
-      color: var(--wa-ink); font-weight: 500; min-width: 0; max-width: 100%;
+    /* The column is a flex column so the footer row can sit at its foot on a
+       short inspector and stick there on a long one. No top or bottom
+       padding: the head and the footer are edge to edge bars, and a sticky
+       bar in a padded scroll box leaves a strip for the rows to show through. */
+    .column.inspector { padding: 0 12px; container: insp / inline-size; display: flex; flex-direction: column; }
+    .column.inspector > .insp-body { flex: 1 0 auto; }
+    /* The head: one 40px bar with the breadcrumb and one ghost button. */
+    .insp-head {
+      display: flex; align-items: center; gap: 8px; min-height: 40px; margin: 0 -12px 4px; padding: 0 8px 0 12px;
+      position: sticky; top: 0; background: var(--wa-card); z-index: 5; border-bottom: 1px solid var(--wa-line);
     }
-    .here .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .here .kchip { flex: none; }
-    .kchip { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #fff; background: var(--k); padding: 1px 5px; border-radius: 3px; }
+    /* The breadcrumb stays one line: the complication's name gives way first,
+       then the layer's name, and the kind chip never does. */
+    .crumbs { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--wa-muted); white-space: nowrap; }
+    .crumbs button { font: inherit; font-size: 12px; font-weight: 400; background: transparent; border: 0; padding: 3px 4px; margin: 0 -2px; border-radius: 5px; color: var(--wa-muted); cursor: pointer; min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .crumbs button:hover { background: var(--wa-panel); color: var(--wa-ink); }
+    .crumbs .sep { opacity: .6; flex: none; }
+    .crumbs .nm { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; font-weight: 600; color: var(--wa-ink); }
+    .crumbs .kchip {
+      flex: none; display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px;
+      font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+      background: color-mix(in srgb, var(--k) 26%, transparent); color: color-mix(in srgb, var(--k) 45%, var(--wa-ink));
+    }
     .insp-head .expand {
-      flex: none; font: inherit; font-size: 12px; font-weight: 600; color: var(--wa-muted); cursor: pointer;
-      background: transparent; border: 0; padding: 0 9px; min-height: 26px; border-radius: 8px;
+      flex: none; margin-left: auto; font: inherit; font-size: 11.5px; font-weight: 500; color: var(--wa-muted); cursor: pointer;
+      background: transparent; border: 0; padding: 0 8px; min-height: 24px; border-radius: 7px;
     }
     .insp-head .expand:hover { background: var(--wa-panel); color: var(--wa-ink); }
     .insp-body { padding: 0 0 24px; }
@@ -4430,6 +4402,65 @@ export class WristAssistantPanel extends LitElement {
     }
     /* An open card with no help text in it has nothing for its "?" to show. */
     .sec[data-open="true"][data-help="off"]:not(:has(> .sec-b .hint:not(.warn):not(.err):not(.keep):not(.value-pop .hint))) button.sec-help { display: none; }
+    /* Inspector: header Add, More line, paired rows, how-to card, footer. */
+    .sec-h button.sec-act { flex: none; min-height: 22px; padding: 0 8px 0 6px; font-size: 11px; gap: 3px; }
+    .sec-h button.sec-act svg.ui-icon { width: 11px; height: 11px; }
+    .more-fold { margin: 6px -12px 0; padding: 0 12px; border-top: 1px solid color-mix(in srgb, var(--c, var(--wa-accent)) 18%, transparent); }
+    .more-line {
+      display: flex; align-items: baseline; gap: 5px; width: 100%; min-width: 0; padding: 7px 0 1px; margin: 0;
+      font: inherit; font-size: 11.5px; font-weight: 600; color: var(--wa-ink); background: transparent; border: 0; cursor: pointer; text-align: left;
+    }
+    .more-line:hover .more-word { color: var(--c, var(--wa-accent)); }
+    .more-line:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 4px; }
+    .more-line .more-arrow { color: var(--wa-muted); font-size: 10px; }
+    .more-line .more-names { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; color: var(--wa-muted); }
+    .more-body { padding-top: 4px; }
+    .more-body > .hint { margin: 2px 0 6px var(--wa-col); }
+    /* Size and alignment on one row: the number box, then Left, Center, Right. */
+    .size-align-row { display: grid; grid-template-columns: minmax(64px, 1fr) minmax(0, 2fr); gap: 6px; align-items: center; min-width: 0; }
+    /* A color and its One color / By value choice on one row. The hex box
+       gives way first, so the choice keeps its words. */
+    .color-mode-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .color-mode-row > .color-row { flex: 1 1 auto; min-width: 0; }
+    .color-mode-row > .seg.wide { flex: 0 1 auto; width: auto; }
+    .color-mode-row > .seg.wide button { padding: 0 8px; white-space: nowrap; }
+    /* The Complication card's Shape row reads like a field that cannot be typed into. */
+    .field.shape-line > .readout-v {
+      padding: 4px 8px; border-radius: 6px; background: var(--wa-field); color: var(--wa-muted);
+      font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .how-card {
+      margin: 8px 0 0; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--wa-line);
+      background: var(--wa-raised); color: var(--wa-muted); font-size: 12px; line-height: 1.5;
+    }
+    .how-card b { color: var(--wa-ink); }
+    .how-card ol { margin: 2px 0 4px; padding-left: 18px; }
+    .how-card a { color: var(--wa-accent); }
+    /* Status and the raw document: one 36px row at the foot of the column,
+       with Raw configuration opening the rest above it. */
+    .foot {
+      flex: none; position: sticky; bottom: 0; z-index: 6; margin: auto -12px 0;
+      background: var(--wa-card); border-top: 1px solid var(--wa-line);
+    }
+    .foot-row { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 8px 0 12px; font-size: 11.5px; color: var(--wa-muted); }
+    .foot-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--wa-muted); opacity: .7; }
+    .foot-dot.ok { background: var(--success-color, #3dd68c); opacity: 1; }
+    .foot-dot.warn { background: var(--warning-color, #ffa600); opacity: 1; }
+    .foot-dot.err { background: var(--error-color, #db4437); opacity: 1; }
+    /* Same color on the words as on the dot, so the footer agrees with the
+       header's Save button about there being work to save. */
+    .foot-dot.warn + .foot-text { color: var(--warning-color, #ffa600); }
+    .foot-dot.err + .foot-text { color: var(--error-color, #db4437); }
+    .foot-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .foot-raw {
+      flex: none; font: inherit; font-size: 11.5px; font-weight: 500; color: var(--wa-muted); cursor: pointer;
+      background: transparent; border: 0; padding: 0 8px; min-height: 24px; border-radius: 7px;
+    }
+    .foot-raw:hover, .foot[data-open="true"] .foot-raw { background: var(--wa-panel); color: var(--wa-ink); }
+    .foot-raw:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .foot-body { padding: 10px 12px 4px; max-height: 40vh; overflow: auto; border-bottom: 1px solid var(--wa-line); }
+    .foot-body .hint { margin: 8px 0; }
+    .foot-body pre { font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
     /* The picked layers, read only: the Layers list's color coding without
        its controls, so the eye can check the pick without leaving the form. */
     .picked { display: flex; flex-direction: column; gap: 5px; margin-bottom: 4px; }
@@ -5755,12 +5786,13 @@ export class WristAssistantPanel extends LitElement {
       const dark = this.hass?.themes?.darkMode ?? window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
       this.toggleAttribute("dark", dark);
     }
-    // A different selection starts with every card open, whatever the last
-    // one had folded; One at a time is a choice made per selection.
+    // A different selection starts with Content and Look open and every other
+    // card folded to its summary, whatever the last one had open; what is
+    // open is a choice made per selection.
     if (changed.has("inspect")) {
       const before = changed.get("inspect") as Inspect | undefined;
       if (before === undefined || inspectKey(before) !== inspectKey(this.inspect)) {
-        this.openSections = new Set(ALL_SECTIONS);
+        this.openSections = defaultOpenSections();
         // The row under the pointer belonged to the old selection's inspector.
         this.rowHoverId = undefined;
       }
@@ -7086,12 +7118,11 @@ export class WristAssistantPanel extends LitElement {
     this.dropOffPageSelection();
   }
 
-  /** Open or shut one inspector card. With one card open (the default), a
-   * click on another swaps to it; after Open all, each card shuts alone. */
+  /** Open or shut one inspector card (or a card's More line); every other
+   * card stays as it is. */
   private toggleSection(id: string) {
     const next = new Set(this.openSections);
     if (next.has(id)) next.delete(id);
-    else if (next.size <= 1) { next.clear(); next.add(id); }
     else next.add(id);
     this.openSections = next;
   }
@@ -9166,9 +9197,8 @@ export class WristAssistantPanel extends LitElement {
             ${this.renderGutter("left")}
             <div class="column canvas">${this.renderBanners()}${this.renderCanvas()}</div>
             ${this.renderGutter("right")}
-            <div class="column inspector card">${this.renderInspector()}</div>
-          </div>
-          ${this.renderFooter()}`
+            <div class="column inspector card">${this.renderInspector()}${this.renderFooter()}</div>
+          </div>`
         : this.renderWatchGate()}`;
   }
 
@@ -15845,39 +15875,40 @@ export class WristAssistantPanel extends LitElement {
 
   // ── inspector ─────────────────────────────────────────────────────────
 
+  /**
+   * The inspector's breadcrumb: the complication's name, muted, then what is
+   * selected as a kind chip and its name. A layer in a group has the group
+   * between them; a pick of several says how many. With nothing selected the
+   * complication itself is the subject, so it takes the chip.
+   */
   private crumbs(cfg: CustomComplicationConfig, picked?: number) {
     const ins = this.inspect;
     const name = cfg.name.trim() || "Complication";
-    const shape = familyTitle(this.activeFamily);
-    const shapeCrumb = ins.kind === "family" && picked === undefined
-      ? html`<span class="here" style=${`--k:${SECTION_COLOR.place}`}>${shape} shape</span>`
-      : html`<button @click=${() => { this.inspect = { kind: "family" }; }} title="Edit the shape">${shape}</button>`;
-    let here: TemplateResult | typeof nothing = nothing;
-    let parent: TemplateResult | typeof nothing = nothing;
-    // A pick of several layers is what the inspector is about, whatever the
-    // one selected layer under it happens to be.
-    if (picked !== undefined) {
-      here = html`<span class="here" style="--k:var(--wa-accent)"><span class="kchip">Picked</span><span class="nm">${picked} layers</span></span>`;
-    } else if (ins.kind === "layer") {
-      const el = elementIn(cfg, ins.id);
-      if (el) {
-        // Only the kind: the name is the Name row directly under the crumbs,
-        // so spelling it here too said it twice. It stays in the tooltip.
-        here = html`<span class="here" style=${`--k:${KIND_COLOR[el.kind]}`} title=${layerTitle(el, describeContext(this.host()))}><span class="kchip">${KIND_LABEL[el.kind]}</span></span>`;
-        const g = groupOf(cfg, el.payload.id);
-        if (g) parent = html`<span class="sep">›</span><button @click=${() => { this.inspect = { kind: "group", id: g.id }; }} title="Edit the group">${g.name}</button>`;
-      }
-    } else if (ins.kind === "group") {
-      const g = cfg.groups?.find((x) => x.id === ins.id);
-      // The group's card opens with its Name field, so the crumb is the kind alone.
-      if (g) here = html`<span class="here" style=${`--k:${SECTION_COLOR.group}`} title=${g.name}><span class="kchip">Group</span></span>`;
+    const here = (color: string, kind: string, label: string) => html`<span class="kchip" style=${`--k:${color}`}>${kind}</span><span class="nm" title=${label}>${label}</span>`;
+    if (picked === undefined && ins.kind === "general") {
+      return html`<div class="crumbs">${here(SECTION_COLOR.complication, "Complication", name)}</div>`;
     }
     // The root deselects, and with nothing selected the inspector is the
     // complication itself.
-    return html`<div class="crumbs">
-      <button title="Edit the complication" @click=${() => { this.multi = new Set(); this.inspect = { kind: "general" }; }}>${name}</button><span class="sep">›</span>${shapeCrumb}${parent}
-      ${here === nothing ? nothing : html`<span class="sep">›</span>${here}`}
-    </div>`;
+    const root = html`<button class="root" title="Edit the complication" @click=${() => { this.multi = new Set(); this.inspect = { kind: "general" }; }}>${name}</button><span class="sep">›</span>`;
+    let tail: TemplateResult | typeof nothing = nothing;
+    // A pick of several layers is what the inspector is about, whatever the
+    // one selected layer under it happens to be.
+    if (picked !== undefined) {
+      tail = html`<span class="nm">Picked ${picked} layers</span>`;
+    } else if (ins.kind === "layer") {
+      const el = elementIn(cfg, ins.id);
+      if (el) {
+        const g = groupOf(cfg, el.payload.id);
+        tail = html`${g ? html`<button @click=${() => { this.inspect = { kind: "group", id: g.id }; }} title="Edit the group">${g.name}</button><span class="sep">›</span>` : nothing}${here(KIND_COLOR[el.kind], KIND_LABEL[el.kind], layerTitle(el, describeContext(this.host())))}`;
+      }
+    } else if (ins.kind === "group") {
+      const g = cfg.groups?.find((x) => x.id === ins.id);
+      if (g) tail = here(SECTION_COLOR.group, "Group", g.name);
+    } else {
+      tail = here(SECTION_COLOR.place, "Shape", "Background");
+    }
+    return html`<div class="crumbs">${root}${tail}</div>`;
   }
 
   /** The picked layers that still exist, in the document's draw order. */
@@ -15887,27 +15918,28 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * What this complication is, in words, under its name.
+   * What this complication is, in words, for the read-only Shape row of the
+   * Complication card: "Rectangular, on Jesse's Apple Watch".
    *
    * One shape on one kind of device, so there is nothing to tick and nothing
-   * to choose: "Watch, rectangular" says all of it. It used to be the "Appears
-   * on" list, a column of devices with a copy behind each tick, which is the
-   * whole of what one shape per complication did away with. A shape travels by
-   * being copied now, and a copy is its own complication from that moment.
+   * to choose. It used to be the "Appears on" list, a column of devices with a
+   * copy behind each tick, which is the whole of what one shape per
+   * complication did away with. A shape travels by being copied now, and a
+   * copy is its own complication from that moment, which the row's tooltip
+   * says.
    */
-  private renderWhatItIs(cfg: CustomComplicationConfig) {
+  private whatItIs(cfg: CustomComplicationConfig): { line: string; note: string } {
     const family = supportedFamilies(cfg)[0];
-    const shelved = isLibraryOwner(this.selectedOwner);
-    const device = deviceKindOf(this.selectedOwner) === "iphone" ? "iPhone" : "Watch";
-    const shape = family === undefined ? "Control Center" : familyTitle(family).toLowerCase();
-    const what = shelved ? `${shape}, unassigned` : `${device}, ${shape}`;
+    const shelved = isLibraryOwner(this.selectedOwner) || !this.selectedOwner;
+    const shape = family === undefined ? "Control Center" : familyTitle(family);
+    const where = shelved || !this.selectedOwner ? "not on a device yet" : `on ${ownerLabel(this.selectedOwner)}`;
     const also = cfg.control !== undefined && family !== undefined ? ", with a Control Center control" : "";
-    return html`<div class="what-field">
-      <span class="what-line">${what}${also}</span>
-      ${shelved || !this.selectedOwner
-        ? html`<span class="hint">No device shows it until a copy of it goes on one.</span>`
-        : html`<span class="hint">On ${ownerLabel(this.selectedOwner)}. A copy on another device is a complication of its own.</span>`}
-    </div>`;
+    return {
+      line: `${shape}, ${where}${also}`,
+      note: shelved
+        ? "No device shows it until a copy of it goes on one."
+        : "A copy on another device is a complication of its own.",
+    };
   }
 
   /**
@@ -15946,19 +15978,31 @@ export class WristAssistantPanel extends LitElement {
     if (ins.kind === "general" || control) {
       // Refresh, the tap action and the flash belong to the shapes, so on the
       // control's tab the card is the name alone. What this complication is,
-      // in words, sits under the name on both tabs: one shape on one kind of
-      // device is the fact everything else on the card hangs off.
+      // in words, is the read-only Shape row under the name on both tabs: one
+      // shape on one kind of device is the fact everything else on the card
+      // hangs off.
       const complication = card(host, "complication", "Complication",
-        html`${generalEditor(host, { nameOnly: control })}${this.renderWhatItIs(cfg)}`,
+        generalEditor(host, { nameOnly: control, shape: this.whatItIs(cfg) }),
         { color: SECTION_COLOR.complication, icon: "watch", alwaysOpen: true });
-      // No header: the name and the whole-complication actions moved to the
-      // document row over the picture, where they stay whatever is selected.
+      // A document with no layers yet gets the three steps instead of the line
+      // about clicking one, since there is nothing to click.
+      const next = cfg.elements.length === 0
+        ? html`<div class="how-card">
+            <b>How this works</b>
+            <ol>
+              <li>Add layers. Each one shows an entity.</li>
+              <li>Drag them on the face.</li>
+              <li>Save. The ${this.deviceWord} picks it up.</li>
+            </ol>
+            <a href="https://docs.wrist-assistant.com/" target="_blank" rel="noopener">Read the two-minute guide</a>
+          </div>`
+        : html`<p class="insp-note">Click a layer ${deviceKindOf(this.selectedOwner) === "iphone" ? "on the preview" : "on the watch"} or in the list to edit it. The shape's own background and border are the Background row at the bottom of the list.</p>`;
       return html`
+        <div class="insp-head">${this.crumbs(cfg)}</div>
         <div class="insp-body" style=${editable} @change=${() => this.draft?.endGesture()}>
           ${control
             ? html`${complication}${controlCard(host, { alwaysOpen: true })}`
-            : html`${complication}
-              <p class="insp-note">Click a layer ${deviceKindOf(this.selectedOwner) === "iphone" ? "on the preview" : "on the watch"} or in the list to edit it. The shape's own background and border are the bottom row of the list.</p>`}
+            : html`${complication}${next}`}
         </div>`;
     }
     let body: TemplateResult | typeof nothing = nothing;
@@ -15983,11 +16027,16 @@ export class WristAssistantPanel extends LitElement {
     } else {
       body = familyEditor(host, this.activeFamily);
     }
-    const all = this.openSections.size > 1;
+    // Collapse all folds back to Content and Look; Open all opens every card.
+    // A card's own More line keeps its state either way.
+    const extra = moreThanDefaultOpen(this.openSections);
+    const moreLines = [...this.openSections].filter((id) => id.includes(":"));
     return html`
       <div class="insp-head">
         ${this.crumbs(cfg)}
-        ${cards ? html`<button class="expand" @click=${() => { this.openSections = all ? new Set([defaultSection(ins)]) : new Set(ALL_SECTIONS); }}>${all ? "One at a time" : "Open all"}</button>` : nothing}
+        ${cards ? html`<button class="expand" @click=${() => {
+          this.openSections = new Set([...(extra ? defaultOpenSections() : ALL_SECTIONS), ...moreLines]);
+        }}>${extra ? "Collapse all" : "Open all"}</button>` : nothing}
       </div>
       <div class="insp-body" style=${editable} @change=${() => this.draft?.endGesture()}>${body}</div>`;
   }
@@ -16061,32 +16110,42 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * Status and the raw document, folded into one line at the foot of the panel.
+   * Status and the raw document, as one row at the foot of the inspector.
    *
-   * Neither is part of authoring, so neither earns a card in the column beside
-   * the previews. The summary still says the one thing that is worth a glance
-   * while it is shut, which is whether the work is saved.
+   * Neither is part of authoring, so neither earns a card. The row says the
+   * one thing worth a glance, which is whether the work is saved, and Raw
+   * configuration opens the rest above it.
    */
   private renderFooter() {
     const d = this.draft;
     if (!d) return nothing;
     const rec = this.records.find((r) => r.id === this.selectedId);
-    const status = draftStatus({
+    const status = footerStatus({
       revision: rec?.revision ?? null,
       dirty: d.dirty,
+      updatedBy: rec?.updatedBy ?? "",
       ...(this.saveError !== undefined ? { error: this.saveError } : {}),
       ...(this.templateError !== undefined ? { templateError: this.templateError } : {}),
     });
-    return html`<details class="foot">
-      <summary>
-        <span class="foot-dot ${status.tone}">●</span>
-        <span class="foot-text">${status.text}</span>
-        <span class="foot-more">Details and raw configuration</span>
-      </summary>
+    return html`<div class="foot" data-open=${this.rawOpen ? "true" : "false"}>
+      ${this.rawOpen ? this.renderRawDetails(d, rec) : nothing}
+      <div class="foot-row">
+        <span class="foot-dot ${status.tone}" aria-hidden="true"></span>
+        <span class="foot-text" title=${status.text}>${status.text}</span>
+        <button class="foot-raw" aria-expanded=${this.rawOpen ? "true" : "false"}
+          @click=${() => { this.rawOpen = !this.rawOpen; }}>Raw configuration</button>
+      </div>
+    </div>`;
+  }
+
+  /** What Raw configuration opens: the saved details, the templates and
+   * entities the document reads, and the document itself. */
+  private renderRawDetails(d: Draft, rec: ComplicationRecord | undefined) {
+    return html`
       <div class="foot-body">
         <dl class="kv">
           <dt>Revision</dt><dd>${rec ? rec.revision : "unsaved"}${d.dirty ? html` <span class="warn">· unsaved changes</span>` : ""}</dd>
-          ${rec ? html`<dt>Saved</dt><dd>${rec.updatedAt || "—"} by ${rec.updatedBy || "—"}</dd>` : nothing}
+          ${rec ? html`<dt>Saved</dt><dd>${rec.updatedAt || "at an unknown time"} ${savedByWords(rec.updatedBy) || "by an unknown user"}</dd>` : nothing}
           <dt>Templates</dt><dd class=${this.templateError ? "err" : "ok"}>${this.templateError ?? (this.compiled?.document ? "rendered" : "none")}</dd>
           <dt>Entities</dt><dd>${this.compiled?.entities.size ?? 0}</dd>
         </dl>
@@ -16095,9 +16154,26 @@ export class WristAssistantPanel extends LitElement {
           : `Open Wrist Assistant on the ${this.deviceWord} to pull it down.`}</p>
         <button class="link" @click=${() => (this.showRaw = !this.showRaw)}>${this.showRaw ? "Hide the raw configuration" : "Show the raw configuration"}</button>
         ${this.showRaw ? html`<pre>${JSON.stringify(d.encoded(), null, 2)}</pre>` : nothing}
-      </div>
-    </details>`;
+      </div>`;
   }
+}
+
+/** What the inspector's footer row says, and the color of its dot: green
+ * once saved, amber with unsaved changes, grey before the first save, red for
+ * an error. */
+export function footerStatus(i: {
+  revision: number | null;
+  dirty: boolean;
+  updatedBy: string;
+  error?: string;
+  templateError?: string;
+}): { tone: "ok" | "warn" | "none" | "err"; text: string } {
+  if (i.error !== undefined && i.error !== "") return { tone: "err", text: `Not saved: ${i.error}` };
+  if (i.templateError !== undefined && i.templateError !== "") return { tone: "err", text: `Template error: ${i.templateError}` };
+  if (i.revision === null) return { tone: "none", text: "Not saved yet" };
+  if (i.dirty) return { tone: "warn", text: `Revision ${i.revision} · unsaved changes` };
+  const by = savedByWords(i.updatedBy);
+  return { tone: "ok", text: `Revision ${i.revision} · ${by === "" ? "saved" : `saved ${by}`}` };
 }
 
 /** Save text as a file: a Blob and one click on a link nobody sees. The panel
