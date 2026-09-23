@@ -705,6 +705,9 @@ function layerRowFolds(): string {
     }`;
   }).join("\n");
 }
+/** The Layers list's group boxes, one hue per level of nesting: teal, amber,
+ * sky, rose. None is the accent violet, so a box never reads as selected. */
+const GROUP_BOX_HUES = ["#2bb3a3", "#e0a43a", "#4aa3df", "#d9678a"] as const;
 type ThumbStep = 0 | 1 | 2;
 /** The help dialog's tabs. */
 type HelpTab = "basics" | "pages" | "keys" | "sync";
@@ -3314,9 +3317,13 @@ export class WristAssistantPanel extends LitElement {
        read as nested rather than as another run of top-level rows. */
     .layer.kid { background: color-mix(in srgb, var(--wa-panel) 30%, var(--wa-card)); }
     .layer:hover { background: var(--wa-panel); box-shadow: inset 0 0 0 1px var(--wa-line-strong); }
-    /* The selected row: one cool wash and a ring, the same one wherever a row
-       is selected, so eight kind colors never fight the selection. */
-    .layer.hl { background: var(--wa-sel-bg); box-shadow: inset 0 0 0 1px var(--wa-sel-ring); }
+    /* The selected row: a strong accent wash and a full-weight accent ring,
+       the same wherever a row is selected, so eight kind colors and the group
+       boxes' hues never fight the selection. */
+    .layer.hl {
+      background: color-mix(in srgb, var(--wa-accent) 30%, var(--wa-card));
+      box-shadow: inset 0 0 0 2px var(--wa-accent);
+    }
     .layer:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .layer.lit { background: var(--wa-sel-bg); box-shadow: inset 0 0 0 2px var(--wa-accent); }
     /* A member of the selected group: lit in the folder's color, without
@@ -3642,22 +3649,41 @@ export class WristAssistantPanel extends LitElement {
        in a narrow column. */
     .group-kids .group-kids { margin-left: 8px; padding-left: 8px; }
     /* A group is one box: its folder row is the box's top and everything in
-       it sits inside. Each box washes the folder color over whatever it sits
-       on, so a sub-group's box reads a step deeper than its parent's, and a
-       layer beside a sub-group plainly sits outside it. */
+       it sits inside. Each level of nesting has its own hue (--gc, set per
+       box), so a sub-group's box never matches the box around it, and a layer
+       beside a sub-group plainly sits outside it. */
     .group-box {
-      flex: none; display: flex; flex-direction: column; gap: 4px;
-      padding: 3px 3px 4px; border-radius: calc(var(--wa-r-sm) + 3px);
-      border: 1px solid color-mix(in srgb, ${unsafeCSS(SECTION_COLOR.group)} 30%, var(--wa-line));
-      background: color-mix(in srgb, ${unsafeCSS(SECTION_COLOR.group)} 7%, transparent);
+      flex: none; display: flex; flex-direction: column; gap: 3px;
+      padding: 1px 2px 2px; border-radius: calc(var(--wa-r-sm) + 2px);
+      border: 1px solid color-mix(in srgb, var(--gc) 50%, var(--wa-line));
+      background: color-mix(in srgb, var(--gc) 10%, transparent);
     }
-    .group-box:has(> .layer.group.hl) { border-color: var(--wa-sel-ring); }
+    .group-box:has(> .layer.group.hl) { outline: 2px solid var(--wa-accent); outline-offset: -1px; }
     /* The folder row is the box's header, not a card of its own, until it is
        hovered, selected, lit or a drop target. */
     .group-box > .layer.group:not(.hl):not(.lit):not(.held):not(.drop-into):not(:hover) {
       background: transparent; box-shadow: none;
     }
-    .group-box > .group-kids { margin: 0; padding-left: 8px; border-left: 0; }
+    .group-box > .layer.group:not(.hl):not(.lit):not(.drop-into):hover {
+      background: color-mix(in srgb, var(--gc) 16%, transparent); box-shadow: none;
+    }
+    .group-box > .layer.group .bar { background: repeating-linear-gradient(180deg, var(--gc) 0 5px, transparent 5px 8px); }
+    /* The header is one short line: a small folder in the box's hue where a
+       layer shows its picture, and the name with its summary beside it. The
+       expanded layout keeps its full row. The card's own class raises these
+       over the per-width folds further up. */
+    .layers-card .group-box > .layer.group:not(.rich) {
+      grid-template-columns: 16px 3px 18px minmax(0, 1fr) auto;
+      grid-template-areas: "grip bar thumb name right";
+      min-height: 32px; padding-top: 0; padding-bottom: 0; row-gap: 0;
+    }
+    .layers-card .group-box > .layer.group:not(.rich) > .folder { width: 18px; justify-self: center; color: var(--gc); }
+    .layers-card .group-box > .layer.group:not(.rich) > .bar { height: 18px; }
+    .layers-card .group-box > .layer.group:not(.rich) > .name { flex-direction: row; align-items: baseline; gap: 8px; padding-top: 0; }
+    .layers-card .group-box > .layer.group:not(.rich) > .name b { flex: 0 1 auto; min-width: 0; }
+    .layers-card .group-box > .layer.group:not(.rich) > .name small { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .layers-card .group-box > .layer.group:not(.rich) > .right { justify-content: flex-end; }
+    .group-box > .group-kids { margin: 0; padding-left: 4px; border-left: 0; gap: 3px; }
     .group-box > .group-kids .group-kids:not(.rowkids) { margin-left: 0; }
     /* Drop targets last, so the slot beats whatever the row already had on its
        own border.
@@ -15178,7 +15204,7 @@ export class WristAssistantPanel extends LitElement {
     // its parent's the same way, one step further in. A list's row layers
     // follow the list the same way. `held` carries a selected group's light
     // down through everything inside it.
-    const buildRows = (list: readonly LayerListRow[], inGroup = false, held = false) => {
+    const buildRows = (list: readonly LayerListRow[], inGroup = false, held = false, depth = 0) => {
       const rows: TemplateResult[] = [];
       for (const row of list) {
         if (row.kind === "layer") {
@@ -15187,12 +15213,14 @@ export class WristAssistantPanel extends LitElement {
         }
         const g = row.group;
         // One box holds the folder row and everything inside it, so a group's
-        // edge is drawn rather than inferred from indentation, and a
-        // sub-group's box sits visibly inside its parent's.
+        // edge is drawn rather than inferred from indentation. Each level of
+        // nesting takes the next hue, so a sub-group's box never matches the
+        // box it sits in.
         const groupHl = held || (this.inspect.kind === "group" && this.inspect.id === g.id);
-        rows.push(html`<div class="group-box">${groupRow(g, row.members, row.total, row.rows, held)}${this.collapsed.has(g.id)
+        const hue = GROUP_BOX_HUES[depth % GROUP_BOX_HUES.length];
+        rows.push(html`<div class="group-box" style=${`--gc:${hue}`}>${groupRow(g, row.members, row.total, row.rows, held)}${this.collapsed.has(g.id)
           ? nothing
-          : html`<div class="group-kids">${buildRows(row.rows, true, groupHl)}</div>`}</div>`);
+          : html`<div class="group-kids">${buildRows(row.rows, true, groupHl, depth + 1)}</div>`}</div>`);
       }
       return rows;
     };
