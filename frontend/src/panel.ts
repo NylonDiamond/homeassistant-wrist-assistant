@@ -4282,16 +4282,15 @@ export class WristAssistantPanel extends LitElement {
     }
     .cv-head .doc-chip > svg { width: 13px; height: 13px; flex: none; }
     .cv-head .doc-chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-    /* The x that takes the design off a device shows on hover or focus, and
-       while it is armed. */
+    /* The x that takes the design off a device is always there, quiet, and
+       goes red only under the pointer or while it is armed. */
     .cv-head .doc-chip button.doc-trash {
-      width: 0; height: 18px; margin: 0 -7px 0 0; align-self: center; border: 0; border-radius: 9px;
-      background: transparent; color: var(--wa-muted); opacity: 0; overflow: hidden;
+      width: 18px; height: 18px; margin: 0 -4px 0 0; align-self: center; border: 0; border-radius: 9px;
+      background: transparent; color: var(--wa-muted); opacity: .7; overflow: hidden; cursor: pointer;
       transition: opacity .12s ease-out;
     }
-    .cv-head .doc-chip:hover button.doc-trash, .cv-head .doc-chip:focus-within button.doc-trash,
-    .cv-head .doc-chip button.doc-trash.armed { width: 18px; margin: 0 -4px 0 0; opacity: 1; }
-    .cv-head .doc-chip button.doc-trash:hover:not(:disabled) { color: #FF453A; background: color-mix(in srgb, #FF453A 16%, transparent); }
+    .cv-head .doc-chip button.doc-trash:hover:not(:disabled), .cv-head .doc-chip button.doc-trash:focus-visible { opacity: 1; color: #FF453A; background: color-mix(in srgb, #FF453A 16%, transparent); }
+    .cv-head .doc-chip button.doc-trash:disabled { opacity: .3; cursor: default; }
     .cv-head .doc-chip button.doc-trash.armed { width: auto; padding: 0 7px; background: #FF453A; color: #fff; }
     button.cv-more {
       flex: none; height: 26px; min-width: 32px; padding: 0 8px; border: 0; border-radius: 7px; cursor: pointer;
