@@ -251,11 +251,13 @@ describe("opening a document in the editor", () => {
     expect(cfg.perFamily.rectangular!.placements[old.payload.id]).toBeUndefined();
     // The chip's size, read off the frame on its own shape.
     expect(text.payload.fontSize).toBeGreaterThan(9);
-    // The tap follows the text; the picture's group had only the chip besides
-    // the picture, so it goes.
+    // The tap follows the text. The picture's group stays, now holding the
+    // picture and the Timestamp group inside it, in the old layer's place.
     const tap = cfg.elements.find((e) => e.kind === "tap")!;
     expect(tap.kind === "tap" && tap.payload.attachedTo).toBe(id);
-    expect(groupOf(cfg, image.payload.id)).toBeUndefined();
+    expect(groupOf(cfg, image.payload.id)?.id).toBe("G1");
+    expect(group.parentId).toBe("G1");
+    expect(cfg.elements.filter((e) => e.kind !== "tap").map((e) => e.payload.id)).toEqual([image.payload.id, capsule.payload.id, id]);
   });
 
   it("converts both kinds of old timestamp on open, and saves no imageTime layer", () => {

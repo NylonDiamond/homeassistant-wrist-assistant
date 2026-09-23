@@ -68,12 +68,18 @@ import {
   viewReads,
   type LayerGroup,
   createGroup,
-  groupMembers,
+  groupById,
+  groupChain,
+  groupLayers,
+  groupMoveUnit,
+  isInGroup,
+  lockedUnitOf,
+  moveRowBeside,
   pickedMoveIds,
   groupOf,
-  packGroups,
-  pruneGroups,
-  setGroup,
+  stepGroup,
+  stepLayer,
+  subtreeGroupIds,
   ungroup,
   chartHistoryKey,
   chartStatisticsKey,
@@ -818,11 +824,13 @@ export function columnFit(
   return { columns: 1, left: wantLeft, right: wantRight };
 }
 
-/** One row of the Layers list: a layer, or a group's folder with the members
- * that go under it. */
+/** One row of the Layers list: a layer, or a group's folder with the rows
+ * that go under it. `members` is every layer of the group's subtree the list
+ * shows, sub-groups included, and `rows` is what hangs directly under the
+ * folder: its own layers and its sub-groups' folders, in list order. */
 export type LayerListRow =
   | { kind: "layer"; el: CElement }
-  | { kind: "group"; group: LayerGroup; members: CElement[]; total: number };
+  | { kind: "group"; group: LayerGroup; members: CElement[]; total: number; rows: LayerListRow[] };
 
 /**
  * What the Layers list shows for one page of one shape, top of the stack first.
@@ -838,6 +846,10 @@ export type LayerListRow =
  * holds on the shape either way, so the folder can say when it is showing part
  * of itself rather than count its own rows and read as a group that lost
  * layers.
+ *
+ * Sub-groups nest the same way inside their parent's folder: each container
+ * (the top level, or a group) lists its own layers and, where the topmost
+ * listed layer of a sub-group is met, that sub-group's folder.
  */
 export function layerListRows(
   cfg: CustomComplicationConfig,
@@ -845,25 +857,32 @@ export function layerListRows(
   page: number,
 ): LayerListRow[] {
   const ordered = elementsOnPage(cfg, shapeRows, page).reverse();
-  const out: LayerListRow[] = [];
-  const seen = new Set<string>();
-  for (const el of ordered) {
-    const gid = el.payload.groupId;
-    const group = gid === undefined ? undefined : cfg.groups?.find((x) => x.id === gid);
-    if (!group) {
-      out.push({ kind: "layer", el });
-      continue;
+  const build = (items: readonly CElement[], container: LayerGroup | undefined): LayerListRow[] => {
+    const out: LayerListRow[] = [];
+    const seen = new Set<string>();
+    for (const el of items) {
+      const chain = groupChain(cfg, el.payload.groupId);
+      // The group directly inside this container on the way to the layer.
+      const at = container === undefined ? chain.length : chain.indexOf(container);
+      const group = at > 0 ? chain[at - 1] : undefined;
+      if (!group) {
+        out.push({ kind: "layer", el });
+        continue;
+      }
+      if (seen.has(group.id)) continue;
+      seen.add(group.id);
+      const members = items.filter((e) => isInGroup(cfg, e, group.id));
+      out.push({
+        kind: "group",
+        group,
+        members,
+        total: shapeRows.filter((e) => isInGroup(cfg, e, group.id)).length,
+        rows: build(members, group),
+      });
     }
-    if (seen.has(group.id)) continue;
-    seen.add(group.id);
-    out.push({
-      kind: "group",
-      group,
-      members: ordered.filter((e) => e.payload.groupId === group.id),
-      total: shapeRows.filter((e) => e.payload.groupId === group.id).length,
-    });
-  }
-  return out;
+    return out;
+  };
+  return build(ordered, undefined);
 }
 
 /** The top bar's and the left column's own menus: the bar's ···, the Pages
@@ -3617,6 +3636,9 @@ export class WristAssistantPanel extends LitElement {
       margin: 0 0 0 12px; padding-left: 10px; display: flex; flex-direction: column; gap: 4px;
       border-left: 2px solid color-mix(in srgb, var(--wa-line) 60%, transparent);
     }
+    /* A sub-group steps in by less, so a few levels still leave the rows room
+       in a narrow column. */
+    .group-kids .group-kids { margin-left: 8px; padding-left: 8px; }
     /* Drop targets last, so the slot beats whatever the row already had on its
        own border.
 
@@ -6227,15 +6249,15 @@ export class WristAssistantPanel extends LitElement {
   // ── keyboard actions on the selection ─────────────────────────────────
 
   /** The layers a keyboard action works on: the pick when there is one, else
-   * the selected layer, else the selected group's members. Rows only; an
-   * attached tap goes with its owner. */
+   * the selected layer, else every layer of the selected group, sub-groups
+   * included. Rows only; an attached tap goes with its owner. */
   private selectedIds(): string[] {
     const cfg = this.canvasConfig();
     if (!cfg) return [];
     if (this.multi.size > 0) return [...this.multi].filter((id) => cfg.elements.some((el) => el.payload.id === id));
     const ins = this.inspect;
     if (ins.kind === "layer") return cfg.elements.some((el) => el.payload.id === ins.id) ? [ins.id] : [];
-    if (ins.kind === "group") return groupMembers(cfg, ins.id).map((m) => m.payload.id);
+    if (ins.kind === "group") return groupLayers(cfg, ins.id).map((m) => m.payload.id);
     return [];
   }
 
@@ -6335,7 +6357,8 @@ export class WristAssistantPanel extends LitElement {
     else this.multi = new Set(ids);
   }
 
-  /** ⇧⌘G: dissolve the selected group, or the group the selected layer is in. */
+  /** ⇧⌘G: dissolve the selected group, or the group the selected layer is in.
+   * What it held moves up one level, into the group around it. */
   private ungroupSelection() {
     const cfg = this.draft?.config;
     if (!cfg || !this.canEdit) return;
@@ -6358,46 +6381,30 @@ export class WristAssistantPanel extends LitElement {
     this.mutate((c) => { for (const id of ids) setPlacement(c, family, id, { isHidden: hide }); });
   }
 
-  /** ⌘] and ⌘[: one step forward or back for the selected layer. */
+  /** ⌘] and ⌘[: one step forward or back for the selected layer, or for the
+   * selected group as a whole. */
   private moveSelection(dir: -1 | 1) {
-    if (!this.canEdit || this.inspect.kind !== "layer" || this.multi.size > 0) return;
-    this.moveLayer(this.inspect.id, dir);
+    if (!this.canEdit || this.multi.size > 0) return;
+    if (this.inspect.kind === "layer") this.moveLayer(this.inspect.id, dir);
+    else if (this.inspect.kind === "group") {
+      const gid = this.inspect.id;
+      const page = this.page;
+      this.mutate((c) => stepGroup(c, gid, dir, (el) => !usesPages(c) || layerDrawsOnPage(el, page)));
+    }
   }
 
   /**
-   * Swap a row with its neighbour in the Layers list. Stepping past the edge
-   * of a group's block leaves the group; stepping onto a member of another
-   * group joins it.
+   * One step in the Layers list (`stepLayer`): a swap with the next row of
+   * the layer's own group, or, at the edge of a group or beside a sub-group,
+   * one level out or in, staying put.
    */
   private moveLayer(id: string, dir: -1 | 1) {
     const page = this.page;
-    this.mutate((c) => {
-      const rows = c.elements.filter((e) => !isAttachedTap(c, e));
-      const taps = c.elements.filter((e) => isAttachedTap(c, e));
-      const i = rows.findIndex((e) => e.payload.id === id);
-      if (i < 0) return;
-      // The step is to the next row the list is showing, not the next row in
-      // the document. On a paged document the layers in between are on another
-      // page: swapping with one of those would reorder the layer past nothing
-      // the author can see and leave the list looking unchanged.
-      const paged = usesPages(c);
-      let j = i + dir;
-      while (j >= 0 && j < rows.length && paged && !layerDrawsOnPage(rows[j]!, page)) j += dir;
-      if (j < 0 || j >= rows.length) return;
-      const el = rows[i]!;
-      const neighbour = rows[j]!;
-      // Taken out and put back rather than swapped, so a step that passed over
-      // a layer on another page lands beside the row it really stepped to.
-      rows.splice(i, 1);
-      rows.splice(j, 0, el);
-      if (el.payload.groupId !== neighbour.payload.groupId) {
-        if (neighbour.payload.groupId === undefined) delete el.payload.groupId;
-        else el.payload.groupId = neighbour.payload.groupId;
-      }
-      c.elements = [...rows, ...taps];
-      pruneGroups(c);
-      packGroups(c);
-    });
+    // The step is to the next row the list is showing, not the next row in
+    // the document. On a paged document the layers in between are on another
+    // page: swapping with one of those would reorder the layer past nothing
+    // the author can see and leave the list looking unchanged.
+    this.mutate((c) => stepLayer(c, id, dir, (el) => !usesPages(c) || layerDrawsOnPage(el, page)));
   }
 
   // ── data loading ──────────────────────────────────────────────────────
@@ -9093,7 +9100,7 @@ export class WristAssistantPanel extends LitElement {
     if (selectedId !== undefined && selectedId !== id && !handle) {
       const selected = canvasCfg.elements.find((x) => x.payload.id === selectedId);
       const movable = selected !== undefined && selected.kind !== "chartDots" && selected.kind !== "chartGrid"
-        && selected.payload.chartAnchor?.place !== "through" && groupOf(canvasCfg, selectedId)?.locked !== true;
+        && selected.payload.chartAnchor?.place !== "through" && lockedUnitOf(canvasCfg, selectedId) === undefined;
       if (movable && pressInsideLayer(svg, selectedId, e)) {
         pickOnClick = id;
         id = selectedId;
@@ -9110,11 +9117,30 @@ export class WristAssistantPanel extends LitElement {
     // its members is selected, a click that never moves goes one level in and
     // selects the member under the pointer, while a drag from the same press
     // still moves the whole group.
-    const group = groupOf(canvasCfg, id);
-    const groupSelected = group !== undefined && this.inspect.kind === "group" && this.inspect.id === group.id;
-    if (group && (group.locked || groupSelected) && !handle) {
-      const inside = groupSelected || (this.inspect.kind === "layer" && groupOf(canvasCfg, this.inspect.id)?.id === group.id);
-      this.beginGroupGesture(family as DrawableFamily, e, svg, group, inside ? id : undefined);
+    //
+    // Nested groups follow the same rules one level at a time. Unlocked
+    // groups are see-through to a press. A locked group is one unit for its
+    // whole subtree, so the unit a press grabs is the outermost locked group
+    // the layer sits in. A group selected in the list (at any depth around
+    // the layer) is what a drag moves, widened to the locked unit around it
+    // if it sits inside one, and a click goes one level in from it: to the
+    // next group on the way to the layer, then to the layer.
+    const chain = groupChain(canvasCfg, canvasCfg.elements.find((x) => x.payload.id === id)?.payload.groupId);
+    const unit = lockedUnitOf(canvasCfg, id);
+    const ins = this.inspect;
+    const selectedAt = ins.kind === "group" ? chain.findIndex((g) => g.id === ins.id) : -1;
+    if (!handle && selectedAt >= 0) {
+      const selectedGroup = chain[selectedAt]!;
+      const dragged = groupMoveUnit(canvasCfg, selectedGroup.id) ?? selectedGroup;
+      const inner = selectedAt > 0 ? chain[selectedAt - 1]! : undefined;
+      this.beginGroupGesture(family as DrawableFamily, e, svg, dragged, inner ? { kind: "group", id: inner.id } : { kind: "layer", id });
+      return;
+    }
+    if (!handle && unit) {
+      // A layer of the same locked unit already selected: the press still
+      // grabs the whole unit, and a click selects the layer under the pointer.
+      const inside = ins.kind === "layer" && canvasCfg.elements.some((x) => x.payload.id === ins.id && isInGroup(canvasCfg, x, unit.id));
+      this.beginGroupGesture(family as DrawableFamily, e, svg, unit, inside ? { kind: "layer", id } : undefined);
       return;
     }
     if (this.inspect.kind !== "layer" || this.inspect.id !== id) {
@@ -9236,21 +9262,23 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * Drag every member of a group by the same amount. The gesture runs on the
-   * members' bounding box, which is what keeps the whole group on the face,
-   * and each member's placement is set from where it started plus the move.
+   * Drag every layer of a group, sub-groups included, by the same amount. The
+   * gesture runs on the layers' bounding box, which is what keeps the whole
+   * group on the face, and each layer's placement is set from where it started
+   * plus the move.
    *
-   * With `pickOnClick`, a release that never moved selects that member instead
-   * of moving anything, and the press leaves the selection as it was.
+   * With `pickOnClick`, a release that never moved selects that (a member, or
+   * a group one level in) instead of moving anything, and the press leaves the
+   * selection as it was. Without it, the press selects the group.
    */
-  private beginGroupGesture(family: DrawableFamily, e: PointerEvent, svg: SVGSVGElement, group: LayerGroup, pickOnClick?: string) {
+  private beginGroupGesture(family: DrawableFamily, e: PointerEvent, svg: SVGSVGElement, group: LayerGroup, pickOnClick?: { kind: "layer" | "group"; id: string }) {
     const cfg = this.draft?.config;
     if (!cfg) return;
-    const members = groupMembers(cfg, group.id);
+    const members = groupLayers(cfg, group.id);
     if (members.length === 0) return;
     if (pickOnClick === undefined && (this.inspect.kind !== "group" || this.inspect.id !== group.id)) this.inspect = { kind: "group", id: group.id };
     e.preventDefault();
-    const onClick = pickOnClick === undefined ? undefined : () => { this.inspect = { kind: "layer", id: pickOnClick }; };
+    const onClick = pickOnClick === undefined ? undefined : () => { this.inspect = { ...pickOnClick }; };
     this.beginMoveGesture(family, e, svg, members.map((m) => m.payload.id), `drag-group-${group.id}-${family}`, onClick);
   }
 
@@ -9339,8 +9367,9 @@ export class WristAssistantPanel extends LitElement {
     const box = DESIGN_BOX[family];
     if (this.multi.size >= 2) return this.nudgeMany([...this.multi], family, box, `nudge-multi-${family}`, px, py);
     if (this.inspect.kind === "group") {
-      const gid = this.inspect.id;
-      return this.nudgeMany(groupMembers(cfg, gid).map((m) => m.payload.id), family, box, `nudge-group-${gid}-${family}`, px, py);
+      // The same unit a drag moves: the group, or the locked group around it.
+      const gid = groupMoveUnit(cfg, this.inspect.id)?.id ?? this.inspect.id;
+      return this.nudgeMany(groupLayers(cfg, gid).map((m) => m.payload.id), family, box, `nudge-group-${gid}-${family}`, px, py);
     }
     if (this.inspect.kind !== "layer") return false;
     const id = this.inspect.id;
@@ -9352,9 +9381,9 @@ export class WristAssistantPanel extends LitElement {
     // A locked group moves as one under the pointer, so it moves as one under
     // the keyboard too: otherwise a layer could leave its group by arrow and
     // not by drag.
-    const group = groupOf(cfg, id);
-    if (group?.locked) {
-      return this.nudgeMany(groupMembers(cfg, group.id).map((m) => m.payload.id), family, box, `nudge-group-${group.id}-${family}`, px, py);
+    const group = lockedUnitOf(cfg, id);
+    if (group) {
+      return this.nudgeMany(groupLayers(cfg, group.id).map((m) => m.payload.id), family, box, `nudge-group-${group.id}-${family}`, px, py);
     }
     const frame = effectivePlacement(cfg, family, el).frame;
     // A chart marker is drawn where its anchor says, whatever its frame says, so
@@ -12643,7 +12672,7 @@ export class WristAssistantPanel extends LitElement {
       if (group.rows) {
         for (const row of group.rows) {
           if (row.kind === "group") {
-            rows.push({ key: `g:${row.id}`, label: "Group name", name: row.value, ids: groupMembers(cfg, row.id).map((el) => el.payload.id),
+            rows.push({ key: `g:${row.id}`, label: "Group name", name: row.value, ids: groupLayers(cfg, row.id).map((el) => el.payload.id),
               control: nameInput(row, "Group name", this.shareGroupNames.get(row.id)) });
           } else if (row.kind === "shared") {
             rows.push({ key: `v:${row.id}`, label: "Shared value name", name: row.value, ids: sharedValueLayerIds(cfg, row.id),
@@ -14635,58 +14664,34 @@ export class WristAssistantPanel extends LitElement {
     </div>`;
   }
 
-  /** Is this id a group's, rather than a layer's. */
-  private isGroupId(id: string): boolean {
-    return this.draft?.config.groups?.some((g) => g.id === id) === true;
+  /**
+   * Reorder by drag. `id` (a layer or a whole group, sub-groups and all) lands
+   * before or after `targetId` in the list as shown (top drawn last), inside
+   * `container`: the group the drop puts it in, or the top level. The target
+   * is a layer or a whole group's block. A layer or a group dropped beside a
+   * group member goes into that member's group, which is how a group becomes
+   * a sub-group; a folder's top and bottom edges put it beside the whole
+   * group, in the group around that one, which is how a row gets out to the
+   * parent or past a group at the very top or bottom of the list. A group
+   * never goes inside itself. Attached taps stay out of the rows and follow
+   * their owner, the same as the arrow buttons.
+   */
+  private reorderLayer(id: string, targetId: string, before: boolean, container: string | undefined) {
+    if (id === targetId) return;
+    const cfg = this.draft?.config;
+    if (!cfg) return;
+    // Refused drops (a group into itself) record nothing.
+    const probe = structuredClone(cfg);
+    if (!moveRowBeside(probe, id, targetId, before, container)) return;
+    this.mutate((c) => { moveRowBeside(c, id, targetId, before, container); });
   }
 
-  /**
-   * Reorder by drag. `id` (a layer or a whole group) lands before or after
-   * `targetId` in the list as shown (top drawn last). A layer dropped among a
-   * group's members joins that group; dropped anywhere else it leaves its
-   * group. A group dropped onto another group's member lands beside that
-   * whole group, so blocks never nest. Attached taps stay out of the rows and
-   * follow their owner, the same as the arrow buttons.
-   */
-  /**
-   * Move a layer (or a whole group) next to another row. A layer dropped
-   * beside a group member joins that group, unless `outside` is set: then it
-   * lands beside the whole block instead, which is how a layer gets past a
-   * group that sits at the very top or bottom of the list.
-   */
-  private reorderLayer(id: string, targetId: string, before: boolean, outside = false) {
-    if (id === targetId) return;
-    this.mutate((c) => {
-      const rows = c.elements.filter((e) => !isAttachedTap(c, e));
-      const taps = c.elements.filter((e) => isAttachedTap(c, e));
-      let shown = [...rows].reverse();
-      const target = shown.find((e) => e.payload.id === targetId);
-      if (!target) return;
-      const movingGroup = c.groups?.find((g) => g.id === id);
-      const moving = movingGroup
-        ? shown.filter((e) => e.payload.groupId === movingGroup.id)
-        : shown.filter((e) => e.payload.id === id);
-      if (moving.length === 0 || moving.includes(target)) return;
-      shown = shown.filter((e) => !moving.includes(e));
-      let at: number;
-      if ((movingGroup || outside) && target.payload.groupId !== undefined) {
-        // Beside the target's whole block, not inside it.
-        const block = shown.filter((e) => e.payload.groupId === target.payload.groupId);
-        at = before ? shown.indexOf(block[0]!) : shown.indexOf(block[block.length - 1]!) + 1;
-      } else {
-        at = shown.indexOf(target) + (before ? 0 : 1);
-      }
-      shown.splice(at, 0, ...moving);
-      if (!movingGroup) {
-        const el = moving[0]!;
-        const gid = outside ? undefined : target.payload.groupId;
-        if (gid === undefined) delete el.payload.groupId;
-        else el.payload.groupId = gid;
-      }
-      c.elements = [...shown.reverse(), ...taps];
-      pruneGroups(c);
-      packGroups(c);
-    });
+  /** Whether a dragged row may go into this group: anything but the group
+   * itself or a group around it. */
+  private canDropInto(dragId: string, groupId: string): boolean {
+    const cfg = this.draft?.config;
+    if (!cfg) return false;
+    return !(groupById(cfg, dragId) && subtreeGroupIds(cfg, dragId).has(groupId));
   }
 
   /**
@@ -14753,6 +14758,10 @@ export class WristAssistantPanel extends LitElement {
       },
       onOver: (e: DragEvent) => {
         if (!this.dragId || this.dragId === id) return;
+        // A group's own rows are no place to drop the group.
+        const cfg = this.draft?.config;
+        const el = cfg?.elements.find((x) => x.payload.id === id);
+        if (cfg && el && groupById(cfg, this.dragId) && isInGroup(cfg, el, this.dragId)) return;
         e.preventDefault();
         const row = e.currentTarget as HTMLElement;
         const r = row.getBoundingClientRect();
@@ -14768,7 +14777,9 @@ export class WristAssistantPanel extends LitElement {
         const row = e.currentTarget as HTMLElement;
         const before = row.classList.contains("drop-before");
         this.clearDragMarks();
-        if (this.dragId) this.reorderLayer(this.dragId, id, before);
+        // Beside a layer is inside that layer's own group.
+        const into = this.draft?.config.elements.find((x) => x.payload.id === id)?.payload.groupId;
+        if (this.dragId) this.reorderLayer(this.dragId, id, before, into);
         this.dragId = undefined;
       },
     };
@@ -14975,17 +14986,19 @@ export class WristAssistantPanel extends LitElement {
     // this shape. They differ only on a paged document whose group straddles
     // two pages: the folder then says so rather than counting its own rows and
     // reading as a group that lost layers.
-    const groupRow = (g: LayerGroup, members: CElement[], total: number) => {
+    //
+    // A sub-group's folder is the same row, one level in; `held` lights it
+    // with its parent's selection, as a member layer is.
+    const groupRow = (g: LayerGroup, members: CElement[], total: number, kids: readonly LayerListRow[], held = false) => {
       const hl = this.inspect.kind === "group" && this.inspect.id === g.id;
       const open = !this.collapsed.has(g.id);
       const d = this.rowDrag(g.id, edit);
       // The folder row has three drop zones. Its top edge puts the dragged row
-      // above the whole group, outside it. The middle puts it inside, at the
-      // top. When the group is folded, its bottom edge puts the row below the
-      // whole group. That is what lets a row get past a group that sits at
-      // the very top of the list.
-      const first = members[0];
-      const last = members[members.length - 1];
+      // above the whole group, outside it (in the group around it, if any).
+      // The middle puts it inside, at the top: a layer as a member, a group as
+      // a sub-group. When the group is folded, its bottom edge puts the row
+      // below the whole group. That is what lets a row get past a group that
+      // sits at the very top of the list, or out of a group to its parent.
       const zoneAt = (e: DragEvent): string => {
         const row = e.currentTarget as HTMLElement;
         const r = row.getBoundingClientRect();
@@ -14999,7 +15012,8 @@ export class WristAssistantPanel extends LitElement {
         return "drop-into";
       };
       const memberIds = members.map((m) => m.payload.id);
-      return html`<div class="layer group ${hl ? "hl" : ""} ${this.dialogLitIds.includes(g.id) ? "lit" : ""} ${rich ? "rich" : ""}" style=${`--k:${SECTION_COLOR.group}`} tabindex="0" draggable=${d.draggable}
+      const subCount = kids.filter((k) => k.kind === "group").length;
+      return html`<div class="layer group ${hl ? "hl" : ""} ${held ? "held" : ""} ${this.dialogLitIds.includes(g.id) ? "lit" : ""} ${rich ? "rich" : ""}" style=${`--k:${SECTION_COLOR.group}`} tabindex="0" draggable=${d.draggable}
         @pointerenter=${() => { this.listHoverIds = memberIds; }}
         @pointerleave=${() => this.leaveRow(memberIds)}
         @click=${() => { this.multi = new Set(); this.inspect = { kind: "group", id: g.id }; }}
@@ -15007,6 +15021,8 @@ export class WristAssistantPanel extends LitElement {
         @dragstart=${d.onStart} @dragend=${d.onEnd}
         @dragover=${(e: DragEvent) => {
           if (!this.dragId || this.dragId === g.id) return;
+          // A group cannot be dropped anywhere on its own sub-groups.
+          if (!this.canDropInto(this.dragId, g.id)) return;
           e.preventDefault();
           this.markDrop(e.currentTarget as HTMLElement, zoneAt(e));
         }}
@@ -15016,12 +15032,10 @@ export class WristAssistantPanel extends LitElement {
           this.clearDragMarks();
           const id = this.dragId;
           this.dragId = undefined;
-          if (!id || !first || !last) return;
-          if (zone === "drop-before") { this.reorderLayer(id, first.payload.id, true, true); return; }
-          if (zone === "drop-after") { this.reorderLayer(id, last.payload.id, false, true); return; }
-          if (this.isGroupId(id)) return;
-          this.reorderLayer(id, first.payload.id, true);
-          this.mutate((c) => setGroup(c, id, g.id));
+          if (!id || members.length === 0) return;
+          if (zone === "drop-before") { this.reorderLayer(id, g.id, true, g.parentId); return; }
+          if (zone === "drop-after") { this.reorderLayer(id, g.id, false, g.parentId); return; }
+          this.reorderLayer(id, g.id, true, g.id);
         }}>
         <span class="grip" title="Drag to reorder the whole group.">${uiIcon("grip")}</span>
         <span class="bar"></span>
@@ -15030,12 +15044,12 @@ export class WristAssistantPanel extends LitElement {
           <b>${g.name}</b>
           <small><span class="kind">Group</span> · ${members.length === total
             ? `${total} layer${total === 1 ? "" : "s"}`
-            : `${members.length} of ${total} layers on this page`} · ${g.locked ? "locked" : "unlocked"}</small>
-          ${rich ? html`<span class="facts"><span class="fact"><b>Holds</b> ${members.map((m) => layerTitle(m, ctx)).join(", ")}</span></span>` : nothing}
+            : `${members.length} of ${total} layers on this page`}${subCount > 0 ? ` · ${subCount} sub-group${subCount === 1 ? "" : "s"}` : ""} · ${g.locked ? "locked" : "unlocked"}</small>
+          ${rich ? html`<span class="facts"><span class="fact"><b>Holds</b> ${kids.map((k) => k.kind === "layer" ? layerTitle(k.el, ctx) : k.group.name).join(", ")}</span></span>` : nothing}
         </span>
         <span class="right">
           ${edit ? html`<span class="acts">
-            <button class="icon" title=${`Ungroup: keep the layers, drop the folder (${KEY_SHIFT}${KEY_MOD}G)`} aria-label="Ungroup" @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => ungroup(c, g.id)); if (hl) this.inspect = { kind: "general" }; }}>${uiIcon("ungroup")}</button>
+            <button class="icon" title=${`Ungroup: keep the layers, drop the folder (${KEY_SHIFT}${KEY_MOD}G). What it holds moves up one level.`} aria-label="Ungroup" @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => ungroup(c, g.id)); if (hl) this.inspect = { kind: "general" }; }}>${uiIcon("ungroup")}</button>
           </span>` : nothing}
           <button class="icon lockbtn ${g.locked ? "on" : ""}" ?disabled=${!edit}
             title=${g.locked ? "Locked: drags on the watch move the whole group. Click to unlock." : "Unlocked: each layer moves alone, unless the group row is selected. Click to lock."}
@@ -15136,18 +15150,21 @@ export class WristAssistantPanel extends LitElement {
 
     // Walk the stack from the top. A group's members sit together, so the
     // folder row goes in where its first member is met and the members
-    // follow it, indented. A list's row layers follow the list the same way.
-    const buildRows = (list: readonly LayerListRow[]) => {
+    // follow it, indented. A sub-group's folder and its members hang inside
+    // its parent's the same way, one step further in. A list's row layers
+    // follow the list the same way. `held` carries a selected group's light
+    // down through everything inside it.
+    const buildRows = (list: readonly LayerListRow[], inGroup = false, held = false) => {
       const rows: TemplateResult[] = [];
       for (const row of list) {
         if (row.kind === "layer") {
-          rows.push(html`${layerRow(row.el, false, false, listChevron(row.el))}${listKids(row.el)}`);
+          rows.push(html`${layerRow(row.el, inGroup, held, listChevron(row.el))}${listKids(row.el)}`);
           continue;
         }
         const g = row.group;
-        rows.push(groupRow(g, row.members, row.total));
-        const groupHl = this.inspect.kind === "group" && this.inspect.id === g.id;
-        if (!this.collapsed.has(g.id)) rows.push(html`<div class="group-kids">${row.members.map((m) => html`${layerRow(m, true, groupHl, listChevron(m))}${listKids(m)}`)}</div>`);
+        rows.push(groupRow(g, row.members, row.total, row.rows, held));
+        const groupHl = held || (this.inspect.kind === "group" && this.inspect.id === g.id);
+        if (!this.collapsed.has(g.id)) rows.push(html`<div class="group-kids">${buildRows(row.rows, true, groupHl)}</div>`);
       }
       return rows;
     };
@@ -15217,10 +15234,13 @@ export class WristAssistantPanel extends LitElement {
           e.preventDefault();
           this.clearDragMarks();
           // The very bottom, outside any group. The anchor is the lowest row
-          // that is not part of what is being dragged.
+          // that is not part of what is being dragged, taken with the whole
+          // top-level group it sits in, if any.
           const id = this.dragId;
-          const last = [...ordered].reverse().find((e) => e.payload.id !== id && e.payload.groupId !== id);
-          if (id && last) this.reorderLayer(id, last.payload.id, false, true);
+          const last = id === undefined ? undefined
+            : [...ordered].reverse().find((e) => e.payload.id !== id && !isInGroup(cfg, e, id));
+          const outer = last === undefined ? undefined : groupChain(cfg, last.payload.groupId).at(-1);
+          if (id && last) this.reorderLayer(id, outer?.id ?? last.payload.id, false, undefined);
           this.dragId = undefined;
         }}>
         <span class="grip" aria-hidden="true"></span>
@@ -15698,9 +15718,11 @@ export class WristAssistantPanel extends LitElement {
     const cfg = this.canvasConfig();
     // A selected group outlines every member; a selected member of a locked
     // group outlines the rest of its group too, since a drag moves them all.
-    const gid = this.inspect.kind === "group" ? this.inspect.id : highlightId !== undefined && cfg ? groupOf(cfg, highlightId)?.id : undefined;
-    const groupIds = cfg && gid !== undefined && (this.inspect.kind === "group" || groupOf(cfg, highlightId!)?.locked)
-      ? groupMembers(cfg, gid).map((m) => m.payload.id) : [];
+    // Nested, the selected group outlines its whole subtree, and a selected
+    // layer outlines the locked unit it moves with: the outermost locked
+    // group around it.
+    const gid = this.inspect.kind === "group" ? this.inspect.id : highlightId !== undefined && cfg ? lockedUnitOf(cfg, highlightId)?.id : undefined;
+    const groupIds = cfg && gid !== undefined ? groupLayers(cfg, gid).map((m) => m.payload.id) : [];
     // Layers picked for grouping, in the list or on the face, outline as well,
     // so the pick reads the same in both places.
     const outlineIds = [...new Set([...groupIds, ...this.multi])];
@@ -15856,12 +15878,14 @@ export class WristAssistantPanel extends LitElement {
     } else if (family === "inline") {
       tail = "One line of text. Edit it on the right.";
     } else if (ins.kind === "group") {
-      const g = cfg.groups?.find((x) => x.id === ins.id);
-      const n = g ? groupMembers(cfg, g.id).length : 0;
-      tail = g ? html`A drag moves all ${n} layers of <b>${g.name}</b>.${g.locked ? "" : " Click one layer to move it alone."}` : "";
+      const g = groupById(cfg, ins.id);
+      // Inside a locked group, the drag moves that whole locked group.
+      const unit = g ? groupMoveUnit(cfg, g.id) ?? g : undefined;
+      const n = unit ? groupLayers(cfg, unit.id).length : 0;
+      tail = g && unit ? html`A drag moves all ${n} layers of <b>${unit.name}</b>.${g.locked || unit !== g ? "" : " Click one layer to move it alone."}` : "";
     } else if (sel) {
-      const g = groupOf(cfg, sel.payload.id);
-      tail = g?.locked
+      const g = lockedUnitOf(cfg, sel.payload.id);
+      tail = g
         ? html`A drag moves the whole group <b>${g.name}</b>; pull a corner to resize this layer. Arrow keys nudge the group.`
         : html`Drag it, or pull a corner. Arrow keys nudge it.${this.snapGrid && this.snapLayers ? " It snaps to the grid and to the other layers. Hold Alt to drag freely." : this.snapGrid ? " It snaps to the grid. Hold Alt to drag freely." : this.snapLayers ? " It snaps to the other layers. Hold Alt to drag freely." : " Hold Alt while dragging to snap to the grid."}`;
     } else if (cfg.elements.length === 0) {
@@ -16464,12 +16488,16 @@ export class WristAssistantPanel extends LitElement {
     } else if (ins.kind === "layer") {
       const el = elementIn(cfg, ins.id);
       if (el) {
-        const g = groupOf(cfg, el.payload.id);
-        tail = html`${g ? html`<button @click=${() => { this.inspect = { kind: "group", id: g.id }; }} title="Edit the group">${g.name}</button><span class="sep">›</span>` : nothing}${here(KIND_COLOR[el.kind], KIND_LABEL[el.kind], layerTitle(el, describeContext(this.host())))}`;
+        // Every group around the layer, outermost first, each a way back up.
+        const chain = groupChain(cfg, el.payload.groupId).reverse();
+        tail = html`${chain.map((g) => html`<button @click=${() => { this.inspect = { kind: "group", id: g.id }; }} title="Edit the group">${g.name}</button><span class="sep">›</span>`)}${here(KIND_COLOR[el.kind], KIND_LABEL[el.kind], layerTitle(el, describeContext(this.host())))}`;
       }
     } else if (ins.kind === "group") {
-      const g = cfg.groups?.find((x) => x.id === ins.id);
-      if (g) tail = here(SECTION_COLOR.group, "Group", g.name);
+      const chain = groupChain(cfg, ins.id).reverse();
+      const g = chain[chain.length - 1];
+      if (g) {
+        tail = html`${chain.slice(0, -1).map((p) => html`<button @click=${() => { this.inspect = { kind: "group", id: p.id }; }} title="Edit the group">${p.name}</button><span class="sep">›</span>`)}${here(SECTION_COLOR.group, "Group", g.name)}`;
+      }
     } else {
       tail = here(SECTION_COLOR.place, "Shape", "Background");
     }

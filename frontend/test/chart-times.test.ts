@@ -298,7 +298,11 @@ describe("a picture's timestamp as a layer (the old kind)", () => {
     const written = payloadOf(cfg, image.payload.id);
     expect(Object.keys(written).some((k) => k.startsWith("timestamp"))).toBe(false);
     expect(groupOf(cfg, id)?.name).toBe("Timestamp");
-    expect(groupOf(cfg, image.payload.id)).toBeUndefined();
+    // The Timestamp group sits inside a group made for the picture, named
+    // after it (decided 2026-09-23).
+    const pictureGroup = groupOf(cfg, image.payload.id)!;
+    expect(pictureGroup.name).toBe("Door");
+    expect(groupOf(cfg, id)?.parentId).toBe(pictureGroup.id);
   });
 
   it("round-trips with no unknown keys, and drops the retired size key", () => {

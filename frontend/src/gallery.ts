@@ -276,7 +276,7 @@ const STRUCTURAL_KEYS = new Set([
   // so they do not belong under "Other text"; they get a line of their own in
   // the list below, which says how big each one is.
   "data", "format",
-  "scaleFrom", "groupId", "partId", "areaIds", "labelIds", "floorIds",
+  "scaleFrom", "groupId", "parentId", "partId", "areaIds", "labelIds", "floorIds",
 ]);
 
 const UUID_RE = /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/;

@@ -156,10 +156,14 @@ import {
   removeElement,
   elementEntity,
   formatIsEmpty,
+  childGroups,
+  groupAncestors,
+  groupLayers,
   groupMembers,
   layerEntityUses,
   ungroup,
   setGroup,
+  setGroupParent,
   literal,
   inlineUsesParts,
   type InlinePart,
@@ -8961,26 +8965,37 @@ export function autoLayerTitle(el: CElement, ctx?: DescribeContext): string {
  */
 export function groupEditor(host: EditorHost, group: LayerGroup): TemplateResult {
   const members = groupMembers(host.config, group.id);
+  const subs = childGroups(host.config, group.id);
+  const all = groupLayers(host.config, group.id).length;
+  const lockedAround = groupAncestors(host.config, group.id).find((g) => g.locked);
   const ctx = describeContext(host);
   const upd = (m: (g: LayerGroup) => void, k?: string) => host.update((c) => { const g = c.groups?.find((x) => x.id === group.id); if (g) m(g); }, k ? `group-${group.id}-${k}` : undefined);
+  // Taking something out moves it up one level: into the group around this
+  // one, or to the top level.
+  const up = group.parentId;
   return card(host, "content", "Group", html`
     ${textField("Name", group.name, (v) => upd((g) => { g.name = v; }, "name"))}
     ${checkField("Move as one",group.locked, (v) => upd((g) => { g.locked = v; }))}
     <div class="hint">${group.locked
-      ? "Locked: a drag on any of these layers moves all of them. Unlock to move one at a time."
-      : "Unlocked: each layer moves on its own. With the group selected, a drag still moves all of them. Lock it when the part is the way you want it."}</div>
+      ? "Locked: a drag on any of these layers moves all of them, the groups inside included. Unlock to move one at a time."
+      : "Unlocked: each layer moves on its own. With the group selected, a drag still moves all of them. Lock it when the part is the way you want it."}${lockedAround
+      ? ` It sits inside the locked group ${lockedAround.name}, which moves as one whatever this group is set to.` : ""}</div>
     <div class="shown-head">Layers <span class="shown-count">${members.length}</span></div>
     ${layerRowList(host, members.map((m): LayerRow => ({ el: m, lead: uiIcon(m.kind), title: layerTitle(m, ctx), kind: KIND_LABEL[m.kind] })), {
       icon: "ungroup",
       label: (what) => `Take this ${what} out of the group`,
-      run: (id) => host.update((c) => setGroup(c, id, undefined)),
+      run: (id) => host.update((c) => setGroup(c, id, up)),
     })}
+    ${subs.length === 0 ? nothing : html`
+      <div class="shown-head">Groups inside <span class="shown-count">${subs.length}</span></div>
+      <div class="chips">${subs.map((s) => html`<button class="small" title=${`Take ${s.name} out of this group, with everything in it`}
+        @click=${() => host.update((c) => { setGroupParent(c, s.id, up); })}>${uiIcon("ungroup")}<span>${s.name}</span></button>`)}</div>`}
     <div class="row-acts">
-      <button class="small" title="Keep the layers where they are and drop the folder" @click=${() => host.update((c) => ungroup(c, group.id))}>Ungroup</button>
+      <button class="small" title="Keep the layers where they are and drop the folder. What it holds moves up one level." @click=${() => host.update((c) => ungroup(c, group.id))}>Ungroup</button>
     </div>
     <div class="hint">Click a row to open its main settings here. More settings selects that layer for the rest.
-      The button beside a row takes that layer out of the group and keeps it on the face.</div>`,
-    { color: SECTION_COLOR.group, icon: "folder", summary: `${members.length} layers · ${group.locked ? "moves as one" : "unlocked"}` });
+      The button beside a row takes that layer out of the group, one level up, and keeps it on the face.</div>`,
+    { color: SECTION_COLOR.group, icon: "folder", summary: `${all} layers${subs.length > 0 ? ` · ${subs.length} sub-group${subs.length === 1 ? "" : "s"}` : ""} · ${group.locked ? "moves as one" : "unlocked"}` });
 }
 
 // ── Family layout ─────────────────────────────────────────────────────────

@@ -1146,11 +1146,18 @@ export type AccentGroup = "accent" | "primary";
  * group is one block in the draw order) and carry its id. Locked, the group
  * moves as one on the preview; unlocked, each member moves alone. The watch
  * never reads this: it is how the editor keeps a finished part together.
+ *
+ * A group can sit inside another one (`parentId`). A layer's `groupId` is
+ * always its innermost group, and a group's whole subtree (its own layers and
+ * every sub-group's) is one block, with each sub-group a block inside it.
  */
 export interface LayerGroup {
   id: string;
   name: string;
   locked: boolean;
+  /** The group this one sits in. Absent means the top level, and is never
+   * written, so a document without nesting encodes exactly as before. */
+  parentId?: string;
 }
 
 export interface TextElement extends ElementBase {
@@ -5340,6 +5347,7 @@ export function parseConfig(raw: unknown): CustomComplicationConfig {
       id: str(g.id).toUpperCase(),
       name: str(g.name, "Group"),
       locked: g.locked !== false,
+      ...(typeof g.parentId === "string" && g.parentId !== "" ? { parentId: g.parentId.toUpperCase() } : {}),
     }));
     if (groups.length > 0) cfg.groups = groups;
   }
@@ -5374,8 +5382,8 @@ export function chartLabelsOf(cfg: CustomComplicationConfig, chartId: string): E
  * the group row moves everything as one whenever that is wanted.
  *
  * Every chart and timeline extra arrives through here, so this is also where
- * the extra takes its owner's page. A picture's timestamp is its own group
- * beside the picture (`addImageTime`), and takes the page there. */
+ * the extra takes its owner's page. A picture's timestamp is its own group,
+ * a sub-group of the picture's (`addImageTime`), and takes the page there. */
 function joinChartGroup(cfg: CustomComplicationConfig, chart: Element, memberId: string): void {
   inheritPage(cfg, chart, memberId);
   const existing = groupOf(cfg, chart.payload.id);
@@ -5868,25 +5876,105 @@ export function imageTimestampLayers(
   return [capsule, text];
 }
 
-/** Where a layer goes so it sits directly above `owner` without splitting the
- * owner's group: after the owner, or after the last member of its group. */
-function indexAbove(cfg: CustomComplicationConfig, owner: Element): number {
-  const gid = owner.payload.groupId;
-  let at = cfg.elements.indexOf(owner);
-  if (gid !== undefined) cfg.elements.forEach((el, i) => { if (el.payload.groupId === gid && i > at) at = i; });
-  return at + 1;
+/** What a group made around a picture is called: the picture layer's own
+ * name, else its entity's display name (or id), else what it is. */
+function pictureGroupName(image: Element): string {
+  const own = image.payload.name?.trim();
+  if (own) return own;
+  if (image.kind !== "image") return "Picture";
+  const e = image.payload.entity;
+  const named = e.displayName.trim() || e.entityId.trim();
+  if (named !== "" && image.payload.source !== "inline") return named;
+  return image.payload.source === "camera" ? "Camera" : "Picture";
+}
+
+/** The group a picture's timestamp goes into: the picture's own innermost
+ * group, or, when it has none, a new unlocked group around the picture alone,
+ * named after it (`pictureGroupName`). Unlocked, so the picture and its
+ * timestamp can each still be dragged on their own; the timestamp's own
+ * group is locked. Returns the group's id. */
+function pictureGroupFor(cfg: CustomComplicationConfig, image: Element): string {
+  const own = groupById(cfg, image.payload.groupId);
+  if (own) return own.id;
+  const group: LayerGroup = { id: newId(), name: pictureGroupName(image), locked: false };
+  cfg.groups = [...(cfg.groups ?? []), group];
+  image.payload.groupId = group.id;
+  return group.id;
 }
 
 /** Put a timestamp's capsule and text in at `index`, grouped, and return the
- * group's id. The group is locked, so the two move as one. */
+ * group's id. The group is locked, so the two move as one. With `parentId`
+ * the group is a sub-group of that one; `index` must then be inside (or at
+ * the edge of) that group's block. */
 function insertTimestampGroup(
   cfg: CustomComplicationConfig,
   layers: readonly Element[],
   index: number,
   name = IMAGE_TIMESTAMP_GROUP_NAME,
+  parentId?: string,
 ): string | undefined {
   cfg.elements.splice(index, 0, ...layers);
+  // Members of the parent first, so the new group is made inside it.
+  if (parentId !== undefined) for (const l of layers) l.payload.groupId = parentId;
   return createGroup(cfg, layers.map((l) => l.payload.id), name);
+}
+
+/** Put a picture's timestamp group directly above the picture, as a sub-group
+ * of the picture's group (`pictureGroupFor`). */
+function insertTimestampAbove(cfg: CustomComplicationConfig, image: Element, layers: readonly Element[], name?: string): string | undefined {
+  const parent = pictureGroupFor(cfg, image);
+  return insertTimestampGroup(cfg, layers, cfg.elements.indexOf(image) + 1, name, parent);
+}
+
+/**
+ * Put a loose timestamp group back under its picture: one made before
+ * timestamps nested, which sits at the top level right beside the picture.
+ *
+ * A group qualifies when it is at the top level, named "Timestamp", locked,
+ * holds no sub-group, and its layers are exactly one capsule and one text
+ * reading a picture's time, and when its block sits directly next to the
+ * picture's block (the picture's outermost group, or the picture alone) in the
+ * draw order. It then moves directly above the picture, as a sub-group of the
+ * picture's group, made for it when the picture has none, exactly where
+ * `addImageTime` puts a new one.
+ *
+ * A timestamp the author has dragged away from its picture is no longer
+ * beside it, and stays where it was put. One already nested is not at the top
+ * level, so running this again changes nothing. Runs on open with the rest of
+ * `liftChartOwnMarks`, before the draft's baseline, so it is not an edit.
+ */
+export function nestLooseTimestampGroups(cfg: CustomComplicationConfig): void {
+  for (const g of [...(cfg.groups ?? [])]) {
+    if (g.parentId !== undefined || g.name !== IMAGE_TIMESTAMP_GROUP_NAME || !g.locked) continue;
+    if (childGroups(cfg, g.id).length > 0) continue;
+    const members = groupMembers(cfg, g.id);
+    if (members.length !== 2) continue;
+    const capsule = members.find((m) => m.kind === "shape" && m.payload.kind === "capsule");
+    const text = members.find((m) => m.kind === "text" && m.payload.value.kind.kind === "imageTime");
+    if (!capsule || !text || text.kind !== "text" || text.payload.value.kind.kind !== "imageTime") continue;
+    const pictureId = text.payload.value.kind.layer.toUpperCase();
+    const image = cfg.elements.find((e) => e.kind === "image" && e.payload.id.toUpperCase() === pictureId);
+    if (!image) continue;
+    const rows = cfg.elements.filter((e) => !isAttachedTap(cfg, e));
+    const span = (ids: ReadonlySet<string>): [number, number] | undefined => {
+      const at = rows.map((e, i) => (ids.has(e.payload.id) ? i : -1)).filter((i) => i >= 0);
+      if (at.length === 0 || at[at.length - 1]! - at[0]! + 1 !== at.length) return undefined;
+      return [at[0]!, at[at.length - 1]!];
+    };
+    const chain = groupChain(cfg, image.payload.groupId);
+    const outer = chain[chain.length - 1];
+    const pictureBlock = span(outer ? new Set(groupLayers(cfg, outer.id).map((e) => e.payload.id)) : new Set([image.payload.id]));
+    const stampBlock = span(new Set(members.map((m) => m.payload.id)));
+    if (!pictureBlock || !stampBlock) continue;
+    if (stampBlock[0] !== pictureBlock[1] + 1 && pictureBlock[0] !== stampBlock[1] + 1) continue;
+    const parent = pictureGroupFor(cfg, image);
+    const rest = cfg.elements.filter((e) => !members.includes(e));
+    rest.splice(rest.indexOf(image) + 1, 0, ...members);
+    cfg.elements = rest;
+    g.parentId = parent;
+    pruneGroups(cfg);
+    packGroups(cfg);
+  }
 }
 
 /** Give a picture a timestamp, and return the text layer's id.
@@ -5895,7 +5983,9 @@ function insertTimestampGroup(
  * be: a frame the chip's own size at the spot the picture put it (its corner,
  * or its free point), with the text at the chip's size, so the face reads the
  * same. They are grouped as "Timestamp" directly above the picture, on its
- * page. The picture's own timestamp keys are cleared, so it draws no chip of
+ * page, and that group is a sub-group of the picture's group; a picture in no
+ * group first gets one of its own, named after it, holding the picture and
+ * then the timestamp. The picture's own timestamp keys are cleared, so it draws no chip of
  * its own. `box` is the design box the picture's frame is a fraction of.
  * Undefined when `imageId` is not a picture. */
 export function addImageTime(
@@ -5933,7 +6023,7 @@ export function addImageTime(
     rotationDegrees: 0,
   };
   const layers = imageTimestampLayers(imageId, frame, imageTimeTextSize(chip.w, chip.h));
-  insertTimestampGroup(cfg, layers, indexAbove(cfg, image));
+  insertTimestampAbove(cfg, image, layers);
   for (const l of layers) inheritPage(cfg, image, l.payload.id);
   delete p.timestamp;
   delete p.timestampX;
@@ -5953,8 +6043,11 @@ export function addImageTime(
  * hide, fade or turn it, and mean the same on each half. The shadow goes on
  * the capsule alone, which is the silhouette the chip cast. A tap attached to
  * the old layer is attached to the text. The group takes the old layer's name
- * when it had one. The old layer leaves whatever group it was in, the
- * picture's usually, and that group goes if the picture is all it has left.
+ * when it had one. It is a sub-group of the picture's group, as a new
+ * timestamp's is (`addImageTime`): in the old layer's place when the old layer
+ * sat in the picture's group, which is how the old Extras button left it, and
+ * directly above the picture otherwise. A layer whose picture is gone keeps
+ * its place, as a group of its own.
  */
 export function convertImageTimeLayer(cfg: CustomComplicationConfig, id: string): string | undefined {
   const old = cfg.elements.find((el) => el.payload.id === id);
@@ -5991,9 +6084,11 @@ export function convertImageTimeLayer(cfg: CustomComplicationConfig, id: string)
   const index = cfg.elements.indexOf(old);
   cfg.elements.splice(index, 1);
   const name = o.name !== undefined && o.name.trim() !== "" ? o.name : IMAGE_TIMESTAMP_GROUP_NAME;
-  insertTimestampGroup(cfg, [capsule, text], index, name);
+  const image = cfg.elements.find((el) => el.kind === "image" && el.payload.id === o.image);
+  if (!image) insertTimestampGroup(cfg, [capsule, text], index, name);
+  else if (oldGroup !== undefined && image.payload.groupId === oldGroup) insertTimestampGroup(cfg, [capsule, text], index, name, oldGroup);
+  else insertTimestampAbove(cfg, image, [capsule, text], name);
   pruneGroups(cfg);
-  unwrapLoneOwnerGroup(cfg, oldGroup, o.image);
   syncAttachedTaps(cfg);
   return text.payload.id;
 }
@@ -6156,6 +6251,9 @@ export function liftChartOwnMarks(cfg: CustomComplicationConfig): void {
   // group, not a layer kind. Every `imageTime` layer, one made above from a
   // chip included, becomes one, so the editor never saves the kind again.
   for (const el of cfg.elements.filter((e) => e.kind === "imageTime")) convertImageTimeLayer(cfg, el.payload.id);
+  // Decided 2026-09-23 too: a timestamp group is a sub-group of its picture's
+  // group. One converted before that, still beside its picture, moves in.
+  nestLooseTimestampGroups(cfg);
 }
 
 function liftOneChart(cfg: CustomComplicationConfig, c: ChartElement): void {
@@ -7081,7 +7179,7 @@ export function encodeConfig(cfg: CustomComplicationConfig): J {
   if (cfg.showSuccessFlash !== undefined) o.showSuccessFlash = cfg.showSuccessFlash;
   if (cfg.successFlashColorHex !== undefined) o.successFlashColorHex = cfg.successFlashColorHex;
   if (cfg.groups !== undefined && cfg.groups.length > 0) {
-    o.groups = cfg.groups.map((g) => ({ id: g.id, name: g.name, locked: g.locked }));
+    o.groups = cfg.groups.map((g) => ({ id: g.id, name: g.name, locked: g.locked, ...(g.parentId !== undefined ? { parentId: g.parentId } : {}) }));
   }
   if (cfg.hidden === true) o.hidden = true;
   if (cfg.linkId !== undefined) o.linkId = cfg.linkId;
@@ -7134,29 +7232,129 @@ export function splitHidden<T>(
 // `elements`, so "move the group" is "move the block" and the picture keeps
 // the stacking the author built. Attached taps are not members; they follow
 // their owner as they always have.
+//
+// Groups nest: a group's `parentId` names the group it sits in. A group's
+// whole subtree (its own layers, and every layer of every group inside it) is
+// one block, and each sub-group is a block inside that. "The group" means the
+// whole subtree wherever something is done to it: selecting, moving, hiding,
+// copying, deleting.
 
-export function groupOf(cfg: CustomComplicationConfig, elementId: string): LayerGroup | undefined {
-  const el = cfg.elements.find((e) => e.payload.id === elementId);
-  const gid = el?.payload.groupId;
-  return gid === undefined ? undefined : cfg.groups?.find((g) => g.id === gid);
+/** The group with this id, if the document has one. */
+export function groupById(cfg: Pick<CustomComplicationConfig, "groups">, id: string | undefined): LayerGroup | undefined {
+  return id === undefined ? undefined : cfg.groups?.find((g) => g.id === id);
 }
 
-/** Members in draw order (first drawn first). Attached taps are never members. */
+/** The innermost group a layer is in. */
+export function groupOf(cfg: CustomComplicationConfig, elementId: string): LayerGroup | undefined {
+  const el = cfg.elements.find((e) => e.payload.id === elementId);
+  return groupById(cfg, el?.payload.groupId);
+}
+
+/** A group and every group around it, innermost first. Empty for no group.
+ * Stops at a loop, which a parsed document never has. */
+export function groupChain(cfg: Pick<CustomComplicationConfig, "groups">, groupId: string | undefined): LayerGroup[] {
+  const out: LayerGroup[] = [];
+  const seen = new Set<string>();
+  let g = groupById(cfg, groupId);
+  while (g && !seen.has(g.id)) {
+    out.push(g);
+    seen.add(g.id);
+    g = groupById(cfg, g.parentId);
+  }
+  return out;
+}
+
+/** The groups around a group, innermost first, the group itself left out. */
+export function groupAncestors(cfg: Pick<CustomComplicationConfig, "groups">, groupId: string): LayerGroup[] {
+  return groupChain(cfg, groupId).slice(1);
+}
+
+/** How deep a group sits: 0 for one at the top level. */
+export function groupDepth(cfg: Pick<CustomComplicationConfig, "groups">, groupId: string): number {
+  return Math.max(0, groupChain(cfg, groupId).length - 1);
+}
+
+/** A group's id and the id of every group inside it, at any depth. */
+export function subtreeGroupIds(cfg: Pick<CustomComplicationConfig, "groups">, groupId: string): Set<string> {
+  const out = new Set<string>([groupId]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const g of cfg.groups ?? []) {
+      if (g.parentId !== undefined && out.has(g.parentId) && !out.has(g.id)) {
+        out.add(g.id);
+        grew = true;
+      }
+    }
+  }
+  return out;
+}
+
+/** Every group inside this one, at any depth, in `groups` order. */
+export function groupDescendants(cfg: Pick<CustomComplicationConfig, "groups">, groupId: string): LayerGroup[] {
+  const ids = subtreeGroupIds(cfg, groupId);
+  ids.delete(groupId);
+  return (cfg.groups ?? []).filter((g) => ids.has(g.id));
+}
+
+/** The groups directly inside one group, or at the top level for `undefined`. */
+export function childGroups(cfg: Pick<CustomComplicationConfig, "groups">, parentId: string | undefined): LayerGroup[] {
+  return (cfg.groups ?? []).filter((g) => g.parentId === parentId);
+}
+
+/** Whether a layer sits anywhere inside a group, sub-groups included. */
+export function isInGroup(cfg: CustomComplicationConfig, el: Element, groupId: string): boolean {
+  return groupChain(cfg, el.payload.groupId).some((g) => g.id === groupId);
+}
+
+/** The layers directly in a group, in draw order (first drawn first). Attached
+ * taps are never members. A sub-group's layers are not in this list; see
+ * `groupLayers` for the whole subtree. */
 export function groupMembers(cfg: CustomComplicationConfig, groupId: string): Element[] {
   return cfg.elements.filter((e) => e.payload.groupId === groupId && !isAttachedTap(cfg, e));
 }
 
+/** Every layer in a group and in every group inside it, in draw order. This is
+ * what selecting, moving, hiding, copying or deleting the group acts on. */
+export function groupLayers(cfg: CustomComplicationConfig, groupId: string): Element[] {
+  const ids = subtreeGroupIds(cfg, groupId);
+  return cfg.elements.filter((e) => e.payload.groupId !== undefined && ids.has(e.payload.groupId) && !isAttachedTap(cfg, e));
+}
+
+/** The outermost locked group from `groupId` outwards, itself included. A
+ * locked group is one unit for its whole subtree, so this is the group a
+ * press anywhere inside it grabs. */
+export function outermostLockedGroup(cfg: Pick<CustomComplicationConfig, "groups">, groupId: string | undefined): LayerGroup | undefined {
+  const chain = groupChain(cfg, groupId);
+  for (let i = chain.length - 1; i >= 0; i--) if (chain[i]!.locked) return chain[i];
+  return undefined;
+}
+
+/** The locked unit a layer belongs to: the outermost locked group it sits in. */
+export function lockedUnitOf(cfg: CustomComplicationConfig, elementId: string): LayerGroup | undefined {
+  return outermostLockedGroup(cfg, groupOf(cfg, elementId)?.id);
+}
+
+/** What a drag of a selected group moves: the outermost locked group around
+ * it when there is one, since that one moves as a unit, else the group. */
+export function groupMoveUnit(cfg: Pick<CustomComplicationConfig, "groups">, groupId: string): LayerGroup | undefined {
+  return outermostLockedGroup(cfg, groupId) ?? groupById(cfg, groupId);
+}
+
 /**
  * The layers a drag on a pick of several moves, in draw order. A picked member
- * brings its whole group, the way a press on a locked group does. A layer a
- * chart places (its dots, its grid, anything anchored to a reading) stays put,
- * the way it stays put under a drag of its own: its place comes from the chart.
+ * brings its whole group, the way a press on a locked group does: its
+ * innermost group, or the outermost locked group around it when there is one,
+ * which is the unit a press on it would grab. A layer a chart places (its
+ * dots, its grid, anything anchored to a reading) stays put, the way it stays
+ * put under a drag of its own: its place comes from the chart.
  */
 export function pickedMoveIds(cfg: CustomComplicationConfig, picked: Iterable<string>): string[] {
   const want = new Set<string>();
   for (const id of picked) {
     const group = groupOf(cfg, id);
-    if (group) for (const m of groupMembers(cfg, group.id)) want.add(m.payload.id);
+    const unit = group === undefined ? undefined : outermostLockedGroup(cfg, group.id) ?? group;
+    if (unit) for (const m of groupLayers(cfg, unit.id)) want.add(m.payload.id);
     else want.add(id);
   }
   return cfg.elements
@@ -7164,47 +7362,105 @@ export function pickedMoveIds(cfg: CustomComplicationConfig, picked: Iterable<st
     .map((e) => e.payload.id);
 }
 
-/** Drop a group nothing belongs to any more, and a membership that names no
- * group, so the two lists never disagree after a delete or an old document. */
+/**
+ * Drop every `parentId` that cannot stand: one naming a group the document
+ * does not have, one naming the group itself, and one that closes a loop.
+ * Such a group goes back to the top level. In a loop only the group whose
+ * walk comes back to itself is cut, so a group that merely points into a
+ * loop keeps its parent once the loop is broken.
+ */
+function settleGroupParents(cfg: CustomComplicationConfig): void {
+  const groups = cfg.groups ?? [];
+  const byId = new Map(groups.map((g) => [g.id, g] as const));
+  for (const g of groups) {
+    if (g.parentId === undefined) continue;
+    if (g.parentId === g.id || !byId.has(g.parentId)) {
+      delete g.parentId;
+      continue;
+    }
+    const seen = new Set<string>();
+    let p = byId.get(g.parentId);
+    while (p !== undefined) {
+      if (p.id === g.id) {
+        delete g.parentId;
+        break;
+      }
+      if (seen.has(p.id)) break;
+      seen.add(p.id);
+      p = p.parentId === undefined ? undefined : byId.get(p.parentId);
+    }
+  }
+}
+
+/** Drop a group nothing sits in any more, a membership that names no group,
+ * and a parent that cannot stand, so the lists never disagree after a delete
+ * or an old document. A group is in use while any layer sits anywhere inside
+ * it; one that holds only a sub-group is still a group. */
 export function pruneGroups(cfg: CustomComplicationConfig): void {
   const ids = new Set((cfg.groups ?? []).map((g) => g.id));
   for (const el of cfg.elements) {
     if (el.payload.groupId !== undefined && !ids.has(el.payload.groupId)) delete el.payload.groupId;
   }
-  const used = new Set(cfg.elements.map((e) => e.payload.groupId).filter((g): g is string => g !== undefined));
+  settleGroupParents(cfg);
+  const used = new Set<string>();
+  for (const el of cfg.elements) for (const g of groupChain(cfg, el.payload.groupId)) used.add(g.id);
+  // A kept group's parent is kept too (it holds the same layers), so no
+  // `parentId` is left naming a dropped group.
   const kept = (cfg.groups ?? []).filter((g) => used.has(g.id));
   if (kept.length === 0) delete cfg.groups;
   else cfg.groups = kept;
 }
 
 /**
- * Put the members of every group next to each other, keeping each block where
- * its topmost member was. Called after any reorder, so a block can never be
- * split by a layer that is not in it.
+ * Put every group's subtree next to itself, with each sub-group a block
+ * inside its parent's, keeping each block where its topmost layer was.
+ * Called after any reorder, so a block can never be split by a layer that is
+ * not in it.
+ *
+ * Every container (the top level, or a group) lists its children, its own
+ * layers and the groups directly inside it, by where the topmost layer of each
+ * sits, and the list is written out depth first. With no nesting this is the
+ * same as moving each group's members to where its topmost member was.
  */
 export function packGroups(cfg: CustomComplicationConfig): void {
   if (!cfg.groups?.length) return;
+  settleGroupParents(cfg);
   const rows = cfg.elements.filter((e) => !isAttachedTap(cfg, e));
   const taps = cfg.elements.filter((e) => isAttachedTap(cfg, e));
-  const out: Element[] = [];
-  const placed = new Set<string>();
-  // Walk from the top of the stack (the end of the array) so a block lands
-  // where its topmost member was.
-  for (let i = rows.length - 1; i >= 0; i--) {
-    const el = rows[i]!;
-    if (placed.has(el.payload.id)) continue;
-    const gid = el.payload.groupId;
-    if (gid === undefined) {
-      out.unshift(el);
-      placed.add(el.payload.id);
-      continue;
-    }
-    const block = rows.filter((e) => e.payload.groupId === gid);
-    for (let j = block.length - 1; j >= 0; j--) {
-      out.unshift(block[j]!);
-      placed.add(block[j]!.payload.id);
-    }
+  const top = new Map<string, number>();
+  rows.forEach((el, i) => {
+    for (const g of groupChain(cfg, el.payload.groupId)) top.set(g.id, Math.max(top.get(g.id) ?? -1, i));
+  });
+  type Item = { at: number; el: Element } | { at: number; group: LayerGroup };
+  const kids = new Map<string | undefined, Item[]>();
+  const add = (parent: string | undefined, item: Item) => {
+    const list = kids.get(parent);
+    if (list) list.push(item);
+    else kids.set(parent, [item]);
+  };
+  rows.forEach((el, i) => add(groupById(cfg, el.payload.groupId)?.id, { at: i, el }));
+  for (const g of cfg.groups) {
+    const at = top.get(g.id);
+    if (at !== undefined) add(groupById(cfg, g.parentId)?.id, { at, group: g });
   }
+  const out: Element[] = [];
+  const placed = new Set<Element>();
+  const visited = new Set<string>();
+  const emit = (parent: string | undefined) => {
+    const list = (kids.get(parent) ?? []).sort((a, b) => a.at - b.at);
+    for (const item of list) {
+      if ("el" in item) {
+        out.push(item.el);
+        placed.add(item.el);
+      } else if (!visited.has(item.group.id)) {
+        visited.add(item.group.id);
+        emit(item.group.id);
+      }
+    }
+  };
+  emit(undefined);
+  // Unreachable in a settled document; kept so a layer can never be lost.
+  for (const el of rows) if (!placed.has(el)) out.push(el);
   cfg.elements = [...out, ...taps];
   syncAttachedTaps(cfg);
 }
@@ -7219,22 +7475,65 @@ export function nextGroupName(cfg: Pick<CustomComplicationConfig, "groups">): st
   return `Group ${n}`;
 }
 
-/** Make a group of these layers. Members already in another group leave it.
- * Returns the new group's id, or undefined when fewer than two layers qualify. */
+/**
+ * Make a group of these layers, and return its id, or undefined when fewer
+ * than two layers qualify.
+ *
+ * The new group goes inside the deepest group every member already shares,
+ * so grouping layers of one group makes a sub-group of it. Below that, a
+ * group whose every layer is picked comes along whole, as a sub-group of the
+ * new one; any other member leaves the group it was in for the new one.
+ */
 export function createGroup(cfg: CustomComplicationConfig, ids: readonly string[], name = nextGroupName(cfg)): string | undefined {
   const members = cfg.elements.filter((e) => ids.includes(e.payload.id) && !isAttachedTap(cfg, e));
   if (members.length < 2) return undefined;
-  const group: LayerGroup = { id: newId(), name, locked: true };
+  const chains = members.map((m) => groupChain(cfg, m.payload.groupId));
+  const parent = chains[0]!.find((g) => chains.every((c) => c.includes(g)));
+  const picked = new Set(members.map((m) => m.payload.id));
+  // Decided on the document as it is, then applied, so an early move cannot
+  // change what a later member's chain looks like.
+  const wholeGroups = new Set<LayerGroup>();
+  const loose: Element[] = [];
+  members.forEach((m, i) => {
+    const chain = chains[i]!;
+    const below = parent === undefined ? chain : chain.slice(0, chain.indexOf(parent));
+    // The outermost group under the shared one that is picked whole.
+    let whole: LayerGroup | undefined;
+    for (let k = below.length - 1; k >= 0; k--) {
+      if (groupLayers(cfg, below[k]!.id).every((l) => picked.has(l.payload.id))) {
+        whole = below[k];
+        break;
+      }
+    }
+    if (whole) wholeGroups.add(whole);
+    else loose.push(m);
+  });
+  const group: LayerGroup = { id: newId(), name, locked: true, ...(parent !== undefined ? { parentId: parent.id } : {}) };
   cfg.groups = [...(cfg.groups ?? []), group];
-  for (const el of members) el.payload.groupId = group.id;
+  for (const g of wholeGroups) g.parentId = group.id;
+  for (const el of loose) el.payload.groupId = group.id;
   pruneGroups(cfg);
   packGroups(cfg);
   return group.id;
 }
 
-/** Dissolve a group. Its layers keep their places and their order. */
+/** Dissolve a group. Its layers and its sub-groups move up one level, into
+ * the group it sat in (or to the top level), and keep their places and their
+ * order. */
 export function ungroup(cfg: CustomComplicationConfig, groupId: string): void {
-  for (const el of cfg.elements) if (el.payload.groupId === groupId) delete el.payload.groupId;
+  const group = groupById(cfg, groupId);
+  const up = group?.parentId;
+  for (const el of cfg.elements) {
+    if (el.payload.groupId !== groupId) continue;
+    if (up === undefined) delete el.payload.groupId;
+    else el.payload.groupId = up;
+  }
+  for (const g of cfg.groups ?? []) {
+    if (g.parentId !== groupId) continue;
+    if (up === undefined) delete g.parentId;
+    else g.parentId = up;
+  }
+  if (cfg.groups) cfg.groups = cfg.groups.filter((g) => g.id !== groupId);
   pruneGroups(cfg);
 }
 
@@ -7244,6 +7543,174 @@ export function setGroup(cfg: CustomComplicationConfig, elementId: string, group
   if (!el || isAttachedTap(cfg, el)) return;
   if (groupId === undefined) delete el.payload.groupId;
   else el.payload.groupId = groupId;
+  pruneGroups(cfg);
+  packGroups(cfg);
+}
+
+/** Put a whole group inside another one (or at the top level with
+ * `undefined`). Refused, returning false, when the new parent is missing or
+ * sits inside the group itself, which would make a loop. */
+export function setGroupParent(cfg: CustomComplicationConfig, groupId: string, parentId: string | undefined): boolean {
+  const group = groupById(cfg, groupId);
+  if (!group) return false;
+  if (parentId !== undefined && (!groupById(cfg, parentId) || subtreeGroupIds(cfg, groupId).has(parentId))) return false;
+  if (parentId === undefined) delete group.parentId;
+  else group.parentId = parentId;
+  pruneGroups(cfg);
+  packGroups(cfg);
+  return true;
+}
+
+/** The layer ids a row of the Layers list stands for: a group's whole
+ * subtree, or the one layer. */
+function rowLayerIds(cfg: CustomComplicationConfig, id: string): Set<string> {
+  return groupById(cfg, id)
+    ? new Set(groupLayers(cfg, id).map((e) => e.payload.id))
+    : new Set([id]);
+}
+
+/** Take `moving` out of `rows` (draw order) and put it back as one block
+ * beside the block `anchor` makes: after its last row (drawn above it) or
+ * before its first. Nothing happens when either set is not in `rows`. */
+function placeBlock(rows: Element[], moving: ReadonlySet<string>, anchor: ReadonlySet<string>, above: boolean): Element[] {
+  const block = rows.filter((e) => moving.has(e.payload.id));
+  const rest = rows.filter((e) => !moving.has(e.payload.id));
+  const at = rest.map((e, i) => (anchor.has(e.payload.id) ? i : -1)).filter((i) => i >= 0);
+  if (block.length === 0 || at.length === 0) return rows;
+  rest.splice(above ? at[at.length - 1]! + 1 : at[0]!, 0, ...block);
+  return rest;
+}
+
+/**
+ * Move a row of the Layers list, a layer or a whole group, beside another
+ * row, into `container` (a group id, or the top level with `undefined`).
+ * `above` puts it above the target in the list (drawn after it), otherwise
+ * below. The target is a layer or a group, whose whole block counts. A group
+ * cannot go inside itself, so a drop that would do that is refused and false
+ * comes back. The blocks are packed again afterwards.
+ */
+export function moveRowBeside(
+  cfg: CustomComplicationConfig,
+  movingId: string,
+  targetId: string,
+  above: boolean,
+  container: string | undefined,
+): boolean {
+  if (movingId === targetId) return false;
+  const movingGroup = groupById(cfg, movingId);
+  if (container !== undefined && !groupById(cfg, container)) return false;
+  if (movingGroup) {
+    const inside = subtreeGroupIds(cfg, movingId);
+    if (container !== undefined && inside.has(container)) return false;
+    if (groupById(cfg, targetId) && inside.has(targetId)) return false;
+  }
+  const moving = rowLayerIds(cfg, movingId);
+  // A row can go beside the group it is in: the block is what is left of it.
+  const target = rowLayerIds(cfg, targetId);
+  for (const id of moving) target.delete(id);
+  const rows = cfg.elements.filter((e) => !isAttachedTap(cfg, e));
+  const taps = cfg.elements.filter((e) => isAttachedTap(cfg, e));
+  if (!rows.some((e) => moving.has(e.payload.id)) || !rows.some((e) => target.has(e.payload.id))) return false;
+  cfg.elements = [...placeBlock(rows, moving, target, above), ...taps];
+  if (movingGroup) {
+    if (container === undefined) delete movingGroup.parentId;
+    else movingGroup.parentId = container;
+  } else {
+    const el = cfg.elements.find((e) => e.payload.id === movingId)!;
+    if (container === undefined) delete el.payload.groupId;
+    else el.payload.groupId = container;
+  }
+  pruneGroups(cfg);
+  packGroups(cfg);
+  return true;
+}
+
+/**
+ * One step forward (`dir` 1, towards the top of the list) or back for a layer,
+ * the way the arrow buttons and ⌘] ⌘[ move it. Each step does one thing:
+ *
+ * - at the edge of its group's block, the layer steps out of that group into
+ *   the one around it (or to the top level), and stays put in the list;
+ * - next to a sub-group of its own group, it steps into that sub-group, one
+ *   level, and stays put;
+ * - next to a layer of its own group, it swaps places with it.
+ *
+ * `shown` says which rows the list is showing; a paged document skips the
+ * rows on other pages, which the author cannot see.
+ */
+export function stepLayer(cfg: CustomComplicationConfig, id: string, dir: -1 | 1, shown: (el: Element) => boolean = () => true): void {
+  const rows = cfg.elements.filter((e) => !isAttachedTap(cfg, e));
+  const taps = cfg.elements.filter((e) => isAttachedTap(cfg, e));
+  const i = rows.findIndex((e) => e.payload.id === id);
+  if (i < 0) return;
+  let j = i + dir;
+  while (j >= 0 && j < rows.length && !shown(rows[j]!)) j += dir;
+  if (j < 0 || j >= rows.length) return;
+  const el = rows[i]!;
+  const neighbour = rows[j]!;
+  const cur = groupById(cfg, el.payload.groupId);
+  const neighbourChain = groupChain(cfg, neighbour.payload.groupId);
+  let next = rows;
+  if (cur !== undefined && !neighbourChain.includes(cur)) {
+    // Past the edge of its group: out one level, just past the block.
+    const block = new Set(groupLayers(cfg, cur.id).map((e) => e.payload.id));
+    block.delete(id);
+    if (block.size > 0) next = placeBlock(rows, new Set([id]), block, dir === 1);
+    if (cur.parentId === undefined) delete el.payload.groupId;
+    else el.payload.groupId = cur.parentId;
+  } else if (neighbourChain[0] !== cur) {
+    // Beside a sub-group of its own group: into it, one level.
+    const at = cur === undefined ? neighbourChain.length : neighbourChain.indexOf(cur);
+    el.payload.groupId = neighbourChain[at - 1]!.id;
+  } else {
+    // Taken out and put back rather than swapped, so a step that passed over
+    // a layer on another page lands beside the row it really stepped to.
+    next = [...rows];
+    next.splice(i, 1);
+    next.splice(j, 0, el);
+  }
+  cfg.elements = [...next, ...taps];
+  pruneGroups(cfg);
+  packGroups(cfg);
+}
+
+/**
+ * One step forward or back for a whole group. It swaps places with the next
+ * row of its own container, a layer or a whole sibling group, and never goes
+ * into a sibling group (a drag does that). At the edge of the group it sits
+ * in, it steps out into the one around that (or to the top level), just past
+ * the block it left.
+ */
+export function stepGroup(cfg: CustomComplicationConfig, groupId: string, dir: -1 | 1, shown: (el: Element) => boolean = () => true): void {
+  const group = groupById(cfg, groupId);
+  if (!group) return;
+  const rows = cfg.elements.filter((e) => !isAttachedTap(cfg, e));
+  const taps = cfg.elements.filter((e) => isAttachedTap(cfg, e));
+  const mine = new Set(groupLayers(cfg, groupId).map((e) => e.payload.id));
+  const at = rows.map((e, i) => (mine.has(e.payload.id) ? i : -1)).filter((i) => i >= 0);
+  if (at.length === 0) return;
+  let j = dir === 1 ? at[at.length - 1]! + 1 : at[0]! - 1;
+  while (j >= 0 && j < rows.length && !shown(rows[j]!)) j += dir;
+  if (j < 0 || j >= rows.length) return;
+  const neighbour = rows[j]!;
+  const container = groupById(cfg, group.parentId);
+  const chain = groupChain(cfg, neighbour.payload.groupId);
+  let next: Element[];
+  if (container !== undefined && !chain.includes(container)) {
+    const block = new Set(groupLayers(cfg, container.id).map((e) => e.payload.id));
+    for (const id of mine) block.delete(id);
+    next = placeBlock(rows, mine, block, dir === 1);
+    if (container.parentId === undefined) delete group.parentId;
+    else group.parentId = container.parentId;
+  } else {
+    // The neighbour's row in this container: itself, or the sibling group it
+    // sits in.
+    const k = container === undefined ? chain.length : chain.indexOf(container);
+    const sibling = k > 0 ? chain[k - 1] : undefined;
+    const anchor = sibling ? new Set(groupLayers(cfg, sibling.id).map((e) => e.payload.id)) : new Set([neighbour.payload.id]);
+    next = placeBlock(rows, mine, anchor, dir === 1);
+  }
+  cfg.elements = [...next, ...taps];
   pruneGroups(cfg);
   packGroups(cfg);
 }
@@ -7258,7 +7725,7 @@ const K = {
   // device, the same uuid on each. The panel reads and writes it; the apps
   // decode it and never write it back.
   config: ["schemaVersion", "id", "name", "values", "slotIndex", "elements", "supportedFamilies", "perFamily", "inline", "dataSources", "refreshMinutes", "tapAction", "openPageId", "openPageName", "showSuccessFlash", "successFlashColorHex", "groups", "hidden", "linkId", "control", "pages"],
-  group: ["id", "name", "locked"],
+  group: ["id", "name", "locked", "parentId"],
   // The document's pages. Its own object at the top level, and the only place
   // these three keys appear.
   pages: ["count", "mode", "dwell"],
@@ -8396,6 +8863,9 @@ export function removeElement(cfg: CustomComplicationConfig, id: string): void {
   // rather than disappearing along with a chart the author may be replacing.
   for (const marker of chartMarkersOf(cfg, id)) delete marker.payload.chartAnchor;
   const gone = cfg.elements.find((el) => el.payload.id === id);
+  // The groups the layer sat in, innermost first, read before it goes: its own
+  // group can go with it, and the owner's group is then the next one out.
+  const wasIn = gone ? groupChain(cfg, gone.payload.groupId).map((g) => g.id) : [];
   detachTaps(cfg, id);
   cfg.elements = cfg.elements.filter((el) => el.payload.id !== id);
   // A chart's threshold and "now" exist for the layers that follow them, and a
@@ -8428,17 +8898,24 @@ export function removeElement(cfg: CustomComplicationConfig, id: string): void {
   syncAttachedTaps(cfg);
   pruneGroups(cfg);
   // The chart's group was made when its first extra joined, so the last extra
-  // leaving takes the group with it rather than leaving a folder of one.
-  if (gone) unwrapLoneOwnerGroup(cfg, gone.payload.groupId, extraOwnerOf(gone));
+  // leaving takes the group with it rather than leaving a folder of one. A
+  // picture's timestamp sits in a sub-group of the picture's group, which is
+  // gone by now once its last layer went, so the group asked is the innermost
+  // one still here.
+  if (gone) unwrapLoneOwnerGroup(cfg, wasIn.find((gid) => groupById(cfg, gid) !== undefined), extraOwnerOf(gone));
 }
 
 /** The layer an extra was made for: the chart a number, marker, line, dots,
- * grid or times layer reads, or the picture a timestamp belongs to. Undefined
- * for any other layer. */
+ * grid or times layer reads, or the picture a timestamp belongs to (an old
+ * timestamp layer, or a text reading the picture's time). Undefined for any
+ * other layer. */
 export function extraOwnerOf(el: Element): string | undefined {
   if (el.payload.chartAnchor) return el.payload.chartAnchor.layer;
   switch (el.kind) {
-    case "text": return el.payload.value.kind.kind === "chartStat" ? el.payload.value.kind.layer : undefined;
+    case "text": {
+      const k = el.payload.value.kind;
+      return k.kind === "chartStat" || k.kind === "imageTime" ? k.layer : undefined;
+    }
     case "chartTimes": return el.payload.chart;
     case "chartDots": return el.payload.chart;
     case "chartGrid": return el.payload.chart;
@@ -8450,11 +8927,12 @@ export function extraOwnerOf(el: Element): string | undefined {
 /** Dissolve a group left holding only `ownerId`, the layer whose extra just
  * left it. A group is only made once a second layer joins a chart, so one that
  * drops back to the chart alone goes too. A group of one the author built some
- * other way, or one saved like that, is left alone. */
+ * other way, or one saved like that, is left alone. The whole subtree counts,
+ * so a group still holding a sub-group of anything stays. */
 export function unwrapLoneOwnerGroup(cfg: CustomComplicationConfig, groupId: string | undefined, ownerId: string | undefined): void {
   if (groupId === undefined || ownerId === undefined) return;
   if (!cfg.groups?.some((g) => g.id === groupId)) return;
-  const members = groupMembers(cfg, groupId);
+  const members = groupLayers(cfg, groupId);
   if (members.length === 1 && members[0]!.payload.id === ownerId) ungroup(cfg, groupId);
 }
 
@@ -8585,7 +9063,10 @@ export function copyElements(cfg: CustomComplicationConfig, ids: readonly string
     }
     if (Object.keys(out).length > 0) placements[family] = out;
   }
-  const groupIds = new Set(elements.map((el) => el.payload.groupId).filter((g): g is string => g !== undefined));
+  // Every group a copied layer sits in, and every group around those, so a
+  // sub-group pastes inside its parent when enough of the parent came along.
+  const groupIds = new Set<string>();
+  for (const el of elements) for (const g of groupChain(cfg, el.payload.groupId)) groupIds.add(g.id);
   const groups = (cfg.groups ?? []).filter((g) => groupIds.has(g.id)).map((g) => structuredClone(g));
   return { elements, placements, groups, ...(from !== undefined ? { family: from } : {}) };
 }
@@ -8649,6 +9130,31 @@ export function pasteElementsOnto(cfg: CustomComplicationConfig, clip: LayerClip
  * on the exact same spot: giving a second shape its own set of layers, where
  * the point is that the picture does not move.
  */
+/**
+ * Which of a clip's groups paste as groups, each mapped to a fresh id. Worked
+ * from the innermost out: a group counts its own copied layers, one for each
+ * sub-group that pastes, and whatever a sub-group that does not paste hands
+ * up. Two or more, and it pastes (and counts as one to its parent).
+ */
+function pasteGroupIds(groups: readonly LayerGroup[], rows: readonly Element[]): Map<string, string> {
+  const out = new Map<string, string>();
+  const ids = new Set(groups.map((g) => g.id));
+  const visited = new Set<string>();
+  const visit = (g: LayerGroup): number => {
+    if (visited.has(g.id)) return 0;
+    visited.add(g.id);
+    let n = rows.filter((el) => el.payload.groupId === g.id).length;
+    for (const child of groups) if (child.parentId === g.id) n += visit(child);
+    if (n >= 2) {
+      out.set(g.id, newId());
+      return 1;
+    }
+    return n;
+  };
+  for (const g of groups) if (g.parentId === undefined || !ids.has(g.parentId)) visit(g);
+  return out;
+}
+
 export function pasteElements(cfg: CustomComplicationConfig, clip: LayerClip, opts: { nudge?: boolean } = {}): string[] {
   const idMap = new Map<string, string>();
   for (const el of clip.elements) {
@@ -8735,19 +9241,37 @@ export function pasteElements(cfg: CustomComplicationConfig, clip: LayerClip, op
     copy.payload.frame = shift(copy.payload.frame);
     clones.push(copy);
   }
-  // A group pastes as a group when at least two of its members came along;
-  // a lone member is just a layer again.
-  const groupMap = new Map<string, string>();
+  // A group pastes as a group when it holds at least two things among the
+  // copies: layers, or sub-groups that paste as groups themselves. A lone
+  // member is just a layer again, and a group left holding one thing hands it
+  // to the nearest group around it that pastes. Groups land under fresh ids,
+  // their parents pointing at the fresh ids too.
+  const groupMap = pasteGroupIds(clip.groups, clones.filter((el) => !(el.kind === "tap" && el.payload.attachedTo !== undefined)));
+  const byClipId = new Map(clip.groups.map((g) => [g.id, g] as const));
+  /** The fresh id of the nearest pasted group from `id` outwards. */
+  const landing = (id: string | undefined): string | undefined => {
+    const seen = new Set<string>();
+    let g = id === undefined ? undefined : byClipId.get(id);
+    while (g && !seen.has(g.id)) {
+      const fresh = groupMap.get(g.id);
+      if (fresh) return fresh;
+      seen.add(g.id);
+      g = g.parentId === undefined ? undefined : byClipId.get(g.parentId);
+    }
+    return undefined;
+  };
   for (const g of clip.groups) {
-    const members = clones.filter((el) => el.payload.groupId === g.id && !(el.kind === "tap" && el.payload.attachedTo !== undefined));
-    if (members.length < 2) continue;
-    const gid = newId();
-    groupMap.set(g.id, gid);
-    (cfg.groups ??= []).push({ ...structuredClone(g), id: gid });
+    const gid = groupMap.get(g.id);
+    if (!gid) continue;
+    const copy: LayerGroup = { ...structuredClone(g), id: gid };
+    const parent = landing(g.parentId);
+    if (parent) copy.parentId = parent;
+    else delete copy.parentId;
+    (cfg.groups ??= []).push(copy);
   }
   for (const el of clones) {
     if (el.payload.groupId === undefined) continue;
-    const gid = groupMap.get(el.payload.groupId);
+    const gid = landing(el.payload.groupId);
     if (gid) el.payload.groupId = gid;
     else delete el.payload.groupId;
   }
