@@ -3816,11 +3816,34 @@ ${tP(c)}`}}delete s.hidden,delete s.linkId;let l=$d(a);if(l.length>0){let d=l.sl
     }
     .layer.dim .tap-strip { opacity: .55; }
     .layer.pinned .tap-strip { margin: 0 -10px 2px -8px; padding-left: 43px; border-radius: 0; }
+    /* The layer selected, not its tap: only the top part wears the selection.
+       The row itself goes back to rest and a layer behind the content (the
+       isolation keeps it above the row's own ground) draws the wash and ring
+       down to the strip's hairline, which sits 24px up from the bottom (the
+       strip's 22px and its 2px margin). */
+    .layer.with-tap { isolation: isolate; }
+    .layer.with-tap.hl:not(.tapsel) {
+      background: color-mix(in srgb, var(--wa-panel) 60%, var(--wa-card));
+      box-shadow: inset 0 0 0 1px var(--wa-line);
+    }
+    .layer.with-tap.kid.hl:not(.tapsel) { background: color-mix(in srgb, var(--wa-panel) 30%, var(--wa-card)); }
+    .layer.with-tap.hl:not(.tapsel)::before {
+      content: ""; position: absolute; left: 0; right: 0; top: 0; bottom: 24px; z-index: -1; pointer-events: none;
+      border-radius: var(--wa-r-sm) var(--wa-r-sm) 0 0;
+      background: color-mix(in srgb, var(--wa-accent) 30%, var(--wa-card));
+      box-shadow: inset 0 0 0 2px var(--wa-accent);
+    }
+    .pinned-set .layer.pinned.with-tap.hl,
+    .pinned-set .layer.pinned.with-tap.tapsel { background: transparent; box-shadow: none; }
+    .layer.pinned.with-tap.hl:not(.tapsel)::before { border-radius: 0; }
     .tap-strip .tap-glyph { display: grid; place-items: center; flex: none; }
     .tap-strip .tap-glyph svg { width: 13px; height: 13px; }
     .tap-strip .tap-words { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .tap-strip .tap-where { margin-left: auto; flex: none; white-space: nowrap; opacity: .85; }
-    .tap-strip .tap-del { margin-left: auto; width: 22px; height: 20px; flex: none; color: var(--tp); opacity: .7; }
+    /* The strip's trash waits for the pointer, like the row's own buttons.
+       Hidden rather than taken out, so the strip keeps its width. */
+    .tap-strip .tap-del { margin-left: auto; width: 22px; height: 20px; flex: none; color: var(--tp); opacity: .7; visibility: hidden; }
+    .tap-strip:hover .tap-del, .tap-strip:focus-visible .tap-del, .tap-strip .tap-del:focus-visible { visibility: visible; }
     .tap-strip .tap-where + .tap-del { margin-left: 4px; }
     .tap-strip .tap-del:hover { opacity: 1; }
     .tap-strip .tap-del svg.ui-icon { width: 14px; height: 14px; }
