@@ -525,19 +525,25 @@ export function pastedFrame(copied: CopiedPosition, to: FamilyKind, kind: CEleme
 export const ALL_SECTIONS = ["content", "look", "numbers", "row", "level", "timestamp", "tappable", "states", "placement", "corner", "home", "placements", "shape", "symbol"] as const;
 
 /**
- * The cards a new selection opens with: what a layer shows and how it looks.
+ * The cards Collapse all leaves open: what a layer shows and how it looks.
  * A picture's Look card is its Picture card, and a shape's own card is its
- * Look, so the same two ids serve every selection. Every other card starts
- * folded, with its one-line summary in the header.
+ * Look, so the same two ids serve every selection. Every other card folds to
+ * its one-line summary in the header.
  */
 export const DEFAULT_SECTIONS: readonly string[] = ["content", "look"];
 
-/** The open set a new selection starts from, and the one Collapse all goes back to. */
+/** The open set a new selection starts from: every card, so nothing is hidden
+ * until the reader folds it. */
 export function defaultOpenSections(): Set<string> {
+  return new Set(ALL_SECTIONS);
+}
+
+/** The open set Collapse all goes back to. */
+export function collapsedSections(): Set<string> {
   return new Set(DEFAULT_SECTIONS);
 }
 
-/** Whether any card beyond the default two is open, which is when the
+/** Whether any card beyond Content and Look is open, which is when the
  * inspector's header offers Collapse all rather than Open all. The More lines
  * inside a card keep their own entries in the same set (see `moreFold`); those
  * are not cards and do not count. */

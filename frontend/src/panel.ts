@@ -226,6 +226,7 @@ import {
   type EffectivePlacement,
   type PickedFlag,
   ALL_SECTIONS,
+  collapsedSections,
   defaultOpenSections,
   moreThanDefaultOpen,
   SCRUB_END,
@@ -16491,7 +16492,7 @@ export class WristAssistantPanel extends LitElement {
       <div class="insp-head">
         ${this.crumbs(cfg)}
         ${cards ? html`<button class="expand" @click=${() => {
-          this.openSections = new Set([...(extra ? defaultOpenSections() : ALL_SECTIONS), ...moreLines]);
+          this.openSections = new Set([...(extra ? collapsedSections() : ALL_SECTIONS), ...moreLines]);
         }}>${extra ? "Collapse all" : "Open all"}</button>` : nothing}
       </div>
       <div class="insp-body" style=${editable} @change=${() => this.draft?.endGesture()}>${body}</div>`;

@@ -17,6 +17,7 @@ import {
   type EditorHost,
   ALL_SECTIONS,
   DEFAULT_SECTIONS,
+  collapsedSections,
   defaultOpenSections,
   familyEditor,
   layerEditor,
@@ -96,14 +97,24 @@ function withLayer<K extends CElement["kind"]>(kind: K, tweak: (el: Extract<CEle
 }
 
 describe("the cards a new selection opens", () => {
-  it("is Content and Look, and nothing else", () => {
-    expect([...defaultOpenSections()].sort()).toEqual(["content", "look"]);
+  it("is every card, and Collapse all keeps only Content and Look", () => {
+    expect([...defaultOpenSections()].sort()).toEqual([...ALL_SECTIONS].sort());
+    expect([...collapsedSections()].sort()).toEqual(["content", "look"]);
     expect(DEFAULT_SECTIONS.every((id) => (ALL_SECTIONS as readonly string[]).includes(id))).toBe(true);
   });
 
-  it("draws Content and Look open and every other card folded to its summary", () => {
+  it("draws every card open on a new selection", () => {
     const { cfg, el } = withLayer("text");
     const markup = flatten(layerEditor(host(cfg), el, "rectangular"));
+    expect(markup).toContain("Font size");
+    expect(markup).toContain("Typeface");
+    expect(markup).toContain("Rotation");
+    expect(markup).toContain("states-add");
+  });
+
+  it("draws Content and Look open and every other card folded to its summary after Collapse all", () => {
+    const { cfg, el } = withLayer("text");
+    const markup = flatten(layerEditor({ ...host(cfg), openSections: collapsedSections() }, el, "rectangular"));
     // Look is open: its first row is there.
     expect(markup).toContain("Font size");
     expect(markup).toContain("Typeface");
@@ -117,7 +128,8 @@ describe("the cards a new selection opens", () => {
   });
 
   it("offers Collapse all only while a card past the default two is open", () => {
-    expect(moreThanDefaultOpen(defaultOpenSections())).toBe(false);
+    expect(moreThanDefaultOpen(defaultOpenSections())).toBe(true);
+    expect(moreThanDefaultOpen(collapsedSections())).toBe(false);
     expect(moreThanDefaultOpen(new Set(["content"]))).toBe(false);
     expect(moreThanDefaultOpen(new Set(["content", "look", "states"]))).toBe(true);
     // A More line is not a card.
@@ -136,7 +148,8 @@ describe("the cards a new selection opens", () => {
     expect(el.payload.rules).toHaveLength(1);
     expect(statesCardSummary(el.payload.rules)).toBe("1 state");
     // The header button is drawn only while the card is shut.
-    expect(flatten(layerEditor(host(cfg), el, "rectangular"))).toContain("sec-act");
+    expect(flatten(layerEditor(host(cfg, { openSections: collapsedSections() }), el, "rectangular"))).toContain("sec-act");
+    expect(flatten(layerEditor(host(cfg), el, "rectangular"))).not.toContain("sec-act");
     expect(flatten(layerEditor(host(cfg, { openSections: new Set(["content", "look", "states"]) }), el, "rectangular")))
       .not.toContain("sec-act");
   });
@@ -181,9 +194,11 @@ describe("a folded card's summary", () => {
 });
 
 describe("the More line in a Look card", () => {
+  // These read the Look card alone: with only Content and Look open, no other
+  // card can put a stray Opacity row in the markup.
   it("folds a text layer's less used rows and names them", () => {
     const { cfg, el } = withLayer("text");
-    const markup = flatten(layerEditor(host(cfg), el, "rectangular"));
+    const markup = flatten(layerEditor(host(cfg, { openSections: collapsedSections() }), el, "rectangular"));
     expect(markup).toContain("width, italic, mono digits, curve, highlight, opacity, shadow");
     expect(markup).not.toContain("Mono digits");
     expect(markup).not.toContain(">Opacity<");
@@ -202,9 +217,9 @@ describe("the More line in a Look card", () => {
 
   it("starts open for a changed opacity on any kind", () => {
     const { cfg, el } = withLayer("icon", (i) => { i.payload.opacity = 0.5; });
-    expect(flatten(layerEditor(host(cfg), el, "rectangular"))).toContain(">Opacity<");
+    expect(flatten(layerEditor(host(cfg, { openSections: collapsedSections() }), el, "rectangular"))).toContain(">Opacity<");
     const plain = withLayer("icon");
-    expect(flatten(layerEditor(host(plain.cfg), plain.el, "rectangular"))).not.toContain(">Opacity<");
+    expect(flatten(layerEditor(host(plain.cfg, { openSections: collapsedSections() }), plain.el, "rectangular"))).not.toContain(">Opacity<");
   });
 
   it("keeps the reader's own choice over the changed default", () => {
