@@ -3466,6 +3466,9 @@ export class WristAssistantPanel extends LitElement {
     .lc-note { display: flex; align-items: center; gap: 6px; margin: 0 10px 8px; padding: 5px 10px; border-radius: 7px; font-size: 11.5px; }
     .lc-note.warn { color: var(--wa-amber); background: var(--wa-amber-bg); box-shadow: inset 0 0 0 1px var(--wa-amber-line); }
     .lc-note button.link { margin-left: auto; font-weight: 700; color: inherit; text-decoration: underline; }
+    .lc-note span { line-height: 1.4; }
+    .lc-note b { font-weight: 700; }
+    .pages-card .lc-note { margin: 8px 12px 0; }
     .pages-card .page-tour-bar { margin: 0 12px 10px; }
     /* The Layers card's filter line, and the rows under it. */
     .lc-filter { display: flex; align-items: center; gap: 6px; min-height: 32px; padding: 3px 8px 3px 12px; border-bottom: 1px solid var(--wa-line); }
@@ -8444,12 +8447,10 @@ export class WristAssistantPanel extends LitElement {
           @click=${() => { let page: number | undefined; this.mutate((c) => { page = addPage(c); }); if (page !== undefined) this.showPage(page); }}>${uiIcon("plus")}<span>Add</span></button>` : nothing}
       </div>
       <div class="page-tiles" role="group" aria-label="Page the canvas and the list are showing">${this.renderPageTiles(cfg, edit)}</div>
-      ${this.renderPageTools(edit)}
       ${stuck ? html`<div class="lc-note warn">
-        <span>Add a tap zone to turn pages</span>
-        <button class="link" title=${`A tap zone over the right half of page ${this.page}. Tapping it shows the next page.`}
-          @click=${() => this.mutate((c) => { addPageTurnTap(c, "nextPage", this.page); }, "pages-zone-nextPage")}>Add</button>
+        <span>Nothing turns the pages yet. Add a tap zone with a button below, or give any layer a <b>Tap</b> of Next page.</span>
       </div>` : nothing}
+      ${this.renderPageTools(edit)}
       ${this.touring
         // A tour started by a Play all pages tap in the demo preview. Keyed on
         // the run so a second press starts the bar over: a CSS animation on
