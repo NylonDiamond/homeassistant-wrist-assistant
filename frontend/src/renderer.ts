@@ -3035,9 +3035,9 @@ function groundTapWash(elements: readonly ResolvedElement[], design: CanvasSize,
       <rect width=${width} height=${height} fill="#ffffff" />
       <g transform=${transform}>${zones.map((z) => svg`<rect x=${z.x} y=${z.y} width=${z.w} height=${z.h} fill="#000000" />`)}</g>
     </mask>
-    <pattern id=${`${maskId}-hatch`} width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-      <rect width="5" height="5" fill=${TAP_COLOR} fill-opacity="0.12" />
-      <line x1="0" y1="0" x2="0" y2="5" stroke=${TAP_COLOR} stroke-opacity="0.5" stroke-width="1.6" />
+    <pattern id=${`${maskId}-hatch`} width="3" height="3" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="3" height="3" fill=${TAP_COLOR} fill-opacity="0.1" />
+      <line x1="0" y1="0" x2="0" y2="3" stroke=${TAP_COLOR} stroke-opacity="0.45" stroke-width="0.5" />
     </pattern></defs>
     <rect width=${width} height=${height} fill=${`url(#${maskId}-hatch)`} mask=${`url(#${maskId})`} />
   </g>`;
