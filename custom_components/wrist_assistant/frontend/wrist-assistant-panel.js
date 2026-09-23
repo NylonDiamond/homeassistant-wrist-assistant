@@ -4703,7 +4703,8 @@ ${yH(c)}`}}delete s.hidden,delete s.linkId;let l=cd(a);if(l.length>0){let d=l.sl
     /* Hairlines part the head's groups: the devices, the actions, Delete,
        and the ··· menu. */
     .cv-div { width: 1px; height: 20px; flex: none; background: var(--wa-line); }
-    .case-tool.add-tool .pop-menu { left: auto; right: 0; min-width: 230px; }
+    .cv-devices { display: inline-flex; align-items: center; gap: 6px; flex: 0 8 auto; min-width: 0; }
+    .case-tool.add-tool .pop-menu { left: 0; right: auto; min-width: 230px; }
     .case-tool.add-tool .place-note { padding: 6px 10px 4px; font-size: 11px; color: var(--wa-muted); }
     .cv-shape {
       display: inline-flex; align-items: center; gap: 6px; flex: 0 4 auto; min-width: 0;
@@ -7374,18 +7375,21 @@ ${yH(c)}`}}delete s.hidden,delete s.linkId;let l=cd(a);if(l.length>0){let d=l.sl
         ${this.demoing&&o?this.renderDemoDialog(r,i,a):m}
       </div>`}faceRatio(t,i){let a=ui(i,t);return t==="corner"?104/124:a.width/a.height}renderCanvasHead(t,i){let a=ze(t)[0],r=this.hasControlTab(t),s=Ne(t)&&!this.inControlView?`page ${this.page} of ${ft(t).count}`:"",l=this.openRow(),d=l?this.rowPlaces(l,a).filter(c=>c.on):[];return u`<div class="cv-head">
       ${this.renderNameField(t)}
+      ${l&&d.length>0||this.canEdit?u`<span class="cv-slash" aria-hidden="true">/</span>
+        <span class="cv-devices">
+          ${l&&d.length>0?u`<span class="doc-on" role="group" aria-label="Devices this complication is on">
+            ${d.map(c=>this.renderPlaceChip(l,c))}
+          </span>`:m}
+          ${this.canEdit?this.renderAddToDevice(t):m}
+        </span>`:m}
       <span class="cv-slash" aria-hidden="true">/</span>
       ${r?u`${this.renderShapeSwitch(t,i)}${s?u`<span class="cv-shape">${s}</span>`:m}`:a===void 0?m:u`<span class="cv-shape"><span class="fam">${de(a)}${s?` \xB7 ${s}`:""}</span>${this.shapeNotes(t,i,a)}</span>`}
       <span class="spacer"></span>
-      ${l&&d.length>0?u`<span class="doc-on" role="group" aria-label="Devices this complication is on">
-        ${d.map(c=>this.renderPlaceChip(l,c))}
-      </span>`:m}
       ${this.renderDocActions(t)}
       ${this.renderDocMenu()}
-    </div>`}renderDocActions(t){if(!this.canEdit)return m;let i=this.openLinkCount();return u`<span class="cv-div" aria-hidden="true"></span>
-      ${this.renderAddToDevice(t)}
-      <button class="cv-act" aria-haspopup="dialog" title="Make this design again as another shape, or on another device"
-        @click=${()=>this.openDuplicateAs(t,this.ownerId??"")}>Duplicate</button>
+    </div>`}renderDocActions(t){if(!this.canEdit)return m;let i=this.openLinkCount();return u`<button class="cv-act icon" aria-haspopup="dialog" aria-label="Duplicate as another shape or device"
+        title="Duplicate: make this design again as another shape, or on another device"
+        @click=${()=>this.openDuplicateAs(t,this.ownerId??"")}>${L("duplicate")}</button>
       <span class="cv-div" aria-hidden="true"></span>
       ${this.confirmDelete?u`<span class="cv-del" role="group" aria-label="Delete this complication?">
             ${i>1?u`<button class="cv-act danger" title=${`Delete only the copy on ${this.ownerName(this.ownerId??"")}`}
