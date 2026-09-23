@@ -3436,17 +3436,32 @@ export class WristAssistantPanel extends LitElement {
     button.lc-btn:focus-visible, button.lc-ghost:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     button.lc-btn:disabled, button.lc-ghost:disabled { opacity: .45; cursor: default; }
     /* The page picker: one segmented control, the showing page raised. */
-    .page-seg {
-      display: inline-flex; flex: none; height: 26px; padding: 2px; gap: 2px; border-radius: 7px;
-      background: var(--wa-input); box-shadow: inset 0 0 0 1px var(--wa-line);
+    /* The page tiles under the Pages header: one per page, the one showing
+       lit in the card's color, each with its own trash can. */
+    .pages-card .lc-head { border-bottom: 1px solid color-mix(in srgb, var(--c) 24%, var(--wa-card)); }
+    .page-tiles { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 12px 2px; }
+    .page-tile {
+      display: inline-flex; align-items: stretch; height: 40px; flex: 1 1 96px; min-width: 96px; max-width: 170px;
+      border-radius: 9px; overflow: hidden; background: var(--wa-input); box-shadow: inset 0 0 0 1px var(--wa-line);
     }
-    .page-seg button {
-      font: inherit; font-size: 11.5px; font-weight: 600; min-width: 24px; padding: 0 6px; border: 0; border-radius: 5px;
-      background: transparent; color: var(--wa-muted); cursor: pointer;
+    .page-tile.on { background: color-mix(in srgb, var(--c) 16%, var(--wa-card)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 55%, transparent); }
+    .page-tile .page-pick {
+      flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px;
+      padding: 0 10px; border: 0; background: transparent; color: var(--wa-muted); font: inherit; cursor: pointer; text-align: left;
     }
-    .page-seg button:hover:not(.on) { color: var(--wa-ink); }
-    .page-seg button.on { background: var(--wa-seg-on); color: var(--wa-ink); box-shadow: 0 1px 2px rgba(0,0,0,.18); }
-    .page-seg button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .page-tile .page-pick b { font-size: 12px; font-weight: 650; color: var(--wa-ink); white-space: nowrap; }
+    .page-tile .page-pick span { font-size: 10.5px; white-space: nowrap; }
+    .page-tile .page-pick:hover { background: color-mix(in srgb, var(--wa-ink) 5%, transparent); }
+    .page-tile .page-pick:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--c); }
+    .page-tile .page-trash {
+      flex: none; width: 26px; border: 0; border-left: 1px solid color-mix(in srgb, var(--wa-line) 70%, transparent);
+      background: transparent; color: var(--wa-muted); opacity: .7; cursor: pointer; display: grid; place-items: center; font: inherit;
+    }
+    .page-tile .page-trash svg.ui-icon { width: 13px; height: 13px; }
+    .page-tile .page-trash:hover, .page-tile .page-trash:focus-visible { opacity: 1; color: #FF453A; background: color-mix(in srgb, #FF453A 14%, transparent); outline: none; }
+    .page-tile .page-trash.armed { width: auto; padding: 0 8px; opacity: 1; font-size: 10.5px; font-weight: 700; background: #FF453A; color: #fff; }
+    .page-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; padding: 4px 8px 8px; }
+    .page-tools .spacer { flex: 1; }
     /* The one line under the Pages header while nothing can turn a page. */
     .lc-note { display: flex; align-items: center; gap: 6px; margin: 0 10px 8px; padding: 5px 10px; border-radius: 7px; font-size: 11.5px; }
     .lc-note.warn { color: var(--wa-amber); background: var(--wa-amber-bg); box-shadow: inset 0 0 0 1px var(--wa-amber-line); }
@@ -8318,17 +8333,63 @@ export class WristAssistantPanel extends LitElement {
    * every page; the Layers card's Show all is where every page's list is read
    * at once.
    */
-  private renderPageTabs(cfg: CustomComplicationConfig) {
+  /**
+   * One tile per page: its number and how many layers are on it, pressed for
+   * the page showing, and its own trash can. The trash arms in place: one
+   * press turns it into "sure?", the second deletes the page and the layers
+   * pinned to it. Later pages move down one, and layers on every page stay.
+   * Deleting the second of two pages turns pages off.
+   */
+  private renderPageTiles(cfg: CustomComplicationConfig, edit: boolean) {
     const spec = pagesSpecOf(cfg);
     const pinned = (page: number) =>
       cfg.elements.filter((el) => el.payload.page === page && !isAttachedTap(cfg, el)).length;
+    const remove = (page: number) => {
+      this.disarmPageTrash();
+      const showing = this.page;
+      this.mutate((c) => { removePage(c, page); });
+      if (page < showing) this.showPage(showing - 1);
+      else if (page === showing) this.showPage(Math.max(1, page - 1));
+    };
     return pageNumbers(spec).map((page) => {
       const on = page === this.page;
       const count = pinned(page);
-      return html`<button class=${on ? "on" : ""} aria-pressed=${on ? "true" : "false"}
-        title=${`Page ${page}: ${count} layer${count === 1 ? "" : "s"}`}
-        @click=${() => this.setPage(page)}>${page}</button>`;
+      const layers = `${count} layer${count === 1 ? "" : "s"}`;
+      const armed = this.pageTrashArm === page;
+      const gone = spec.count > 2
+        ? `Delete page ${page} and the ${layers} on it. Later pages move down one. Layers on every page stay.`
+        : `Delete page ${page} and the ${layers} on it, which turns pages off. Layers on every page stay.`;
+      return html`<div class="page-tile ${on ? "on" : ""}">
+        <button class="page-pick" aria-pressed=${on ? "true" : "false"}
+          title=${on ? `Page ${page} is showing` : `Show page ${page} on the canvas and in Layers`}
+          @click=${() => this.setPage(page)}><b>Page ${page}</b><span>${layers}</span></button>
+        ${edit ? html`<button class="page-trash ${armed ? "armed" : ""}" title=${armed ? `Press again to delete page ${page}.` : gone}
+          aria-label=${armed ? `Press again to delete page ${page}` : `Delete page ${page}`}
+          @click=${() => { if (armed) remove(page); else this.armPageTrash(page); }}>${armed ? "sure?" : uiIcon("delete")}</button>` : nothing}
+      </div>`;
     });
+  }
+
+  /**
+   * The quiet row under the tiles: the two ready-made page-turning tap zones
+   * and the help. They used to sit in a ··· menu; in view, the way to make
+   * pages turn is never a hunt.
+   */
+  private renderPageTools(edit: boolean) {
+    const page = this.page;
+    const zone = (type: "previousPage" | "nextPage") => {
+      const back = type === "previousPage";
+      return html`<button class="lc-ghost sm"
+        title=${back
+          ? `A tap zone over the left half of page ${page}. Tapping it shows the page before.`
+          : `A tap zone over the right half of page ${page}. Tapping it shows the next page.`}
+        @click=${() => this.mutate((c) => { addPageTurnTap(c, type, page); }, `pages-zone-${type}`)}>${uiIcon("plus")}<span>${back ? "Previous" : "Next"} page tap</span></button>`;
+    };
+    return html`<div class="page-tools">
+      ${edit ? html`${zone("previousPage")}${zone("nextPage")}` : nothing}
+      <span class="spacer"></span>
+      <button class="lc-ghost sm" title="How pages work" @click=${() => { this.helpTab = "pages"; this.helpOpen = true; }}>How pages work</button>
+    </div>`;
   }
 
   /**
@@ -8336,13 +8397,12 @@ export class WristAssistantPanel extends LitElement {
    * It sits over the list it changes, so the order on screen reads the way the
    * work does: pick a page here, and its layers are in the card below.
    *
-   * One header line. Without pages it says so and offers Add a page, which
-   * pins what is there to page 1 and opens an empty page 2 (`startPages`). With
-   * pages it carries the page buttons, + for one more, and a ··· menu for the
-   * things done now and then: deleting the page showing, the two ready-made
-   * page-turning tap zones, and the help. Neutral, with no color of its own:
-   * a pressed page is not a selection, and the orange it used to wear made
-   * the one quiet card on the column the loudest.
+   * Without pages it is one header line: it says so and offers Add a page,
+   * which pins what is there to page 1 and opens an empty page 2
+   * (`startPages`). With pages the header carries + Add, a row of page tiles
+   * follows, each with its layer count and its own trash can, and a quiet
+   * row under them holds the two ready-made page-turning tap zones and the
+   * help. Nothing is behind a menu.
    *
    * The one line under the header appears only while it is true: a paged
    * complication that nothing can turn is stuck on page 1 on the wrist.
@@ -8372,13 +8432,12 @@ export class WristAssistantPanel extends LitElement {
       <div class="lc-head">
         <span class="swatch">${uiIcon("pages")}</span><span class="lc-title">Pages</span><span class="lc-sub">${spec.count} · shown one at a time</span>
         <span class="spacer"></span>
-        <span class="page-seg" role="group" aria-label="Page the canvas and the list are showing"
-          title="Which page the canvas and the Layers card show">${this.renderPageTabs(cfg)}</span>
-        ${edit ? html`<button class="lc-ghost" ?disabled=${full} aria-label="Add a page"
+        ${edit ? html`<button class="lc-btn" ?disabled=${full} aria-label="Add a page"
           title=${full ? "Four pages is the most a complication can have." : "Add an empty page after the last one."}
-          @click=${() => { let page: number | undefined; this.mutate((c) => { page = addPage(c); }); if (page !== undefined) this.showPage(page); }}>${uiIcon("plus")}</button>` : nothing}
-        ${this.renderPagesMenu(cfg, edit)}
+          @click=${() => { let page: number | undefined; this.mutate((c) => { page = addPage(c); }); if (page !== undefined) this.showPage(page); }}>${uiIcon("plus")}<span>Add</span></button>` : nothing}
       </div>
+      <div class="page-tiles" role="group" aria-label="Page the canvas and the list are showing">${this.renderPageTiles(cfg, edit)}</div>
+      ${this.renderPageTools(edit)}
       ${stuck ? html`<div class="lc-note warn">
         <span>Add a tap zone to turn pages</span>
         <button class="link" title=${`A tap zone over the right half of page ${this.page}. Tapping it shows the next page.`}
@@ -8393,54 +8452,6 @@ export class WristAssistantPanel extends LitElement {
             style=${`animation-duration:${Math.max(1, Math.round(tourDuration(spec) * 1000))}ms`}></i></span>`)
         : nothing}
     </div>`;
-  }
-
-  /**
-   * The Pages card's ··· menu. Delete this page asks first, in place: the
-   * first press turns the row into the question and the second deletes, the
-   * way the trash on the pressed tab used to. The two tap zones land on the
-   * page showing, because page 1 usually wants Next alone and the last page
-   * Back alone.
-   */
-  private renderPagesMenu(cfg: CustomComplicationConfig, edit: boolean) {
-    const open = this.sideMenu === "pages";
-    const page = this.page;
-    const spec = pagesSpecOf(cfg);
-    const count = cfg.elements.filter((el) => el.payload.page === page && !isAttachedTap(cfg, el)).length;
-    const armed = this.pageTrashArm === page;
-    const gone = spec.count > 2
-      ? `Delete page ${page} and the ${count === 1 ? "layer" : `${count} layers`} on it. Later pages move down one. Layers on every page stay.`
-      : `Delete page ${page} and the ${count === 1 ? "layer" : `${count} layers`} on it, which turns pages off. Layers on every page stay.`;
-    const zone = (type: "previousPage" | "nextPage") => {
-      const back = type === "previousPage";
-      return html`<button class="row" role="menuitem"
-        title=${back
-          ? `A tap zone over the left half of page ${page}. Tapping it shows the page before.`
-          : `A tap zone over the right half of page ${page}. Tapping it shows the next page.`}
-        @click=${() => {
-          this.toggleSideMenu("pages", false);
-          this.mutate((c) => { addPageTurnTap(c, type, page); }, `pages-zone-${type}`);
-        }}>Add ${back ? "previous" : "next"} page tap zone</button>`;
-    };
-    return html`<span class="side-menu" data-side-menu="pages">
-      <button class="lc-ghost" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"} aria-label="Page options" title="Page options"
-        @click=${() => { this.disarmPageTrash(); this.toggleSideMenu("pages"); }}>···</button>
-      ${open ? html`<div class="pop-menu side-pop" role="menu" aria-label="Page options">
-        ${edit ? html`
-          <button class="row danger ${armed ? "armed" : ""}" role="menuitem" title=${armed ? `Press again to delete page ${page}.` : gone}
-            @click=${() => {
-              if (!armed) { this.armPageTrash(page); return; }
-              this.disarmPageTrash();
-              this.toggleSideMenu("pages", false);
-              this.mutate((c) => { removePage(c, page); });
-              this.showPage(Math.max(1, page - 1));
-            }}>${armed ? `Sure? Delete page ${page}` : "Delete this page"}</button>
-          ${zone("previousPage")}${zone("nextPage")}
-          <span class="pop-sep" aria-hidden="true"></span>` : nothing}
-        <button class="row" role="menuitem"
-          @click=${() => { this.toggleSideMenu("pages", false); this.helpTab = "pages"; this.helpOpen = true; }}>How pages work</button>
-      </div>` : nothing}
-    </span>`;
   }
 
   /**
