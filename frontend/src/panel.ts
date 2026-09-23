@@ -1484,6 +1484,11 @@ export class WristAssistantPanel extends LitElement {
    * found on the face without selecting it. Selection stays where it was. */
   @state() private listHoverIds: readonly string[] = [];
   private rowLeaveTimer?: number;
+  /** The Layers row under the pointer, as the selection it would make. The
+   * list and the preview draw it as though it were selected (its row lit,
+   * its handles on the face) and forget it when the pointer leaves, so the
+   * real selection comes back as it was. Nothing is selected by it. */
+  @state() private rowPeek?: Inspect;
   /** The layer whose row inside the inspector (a group's members, a chart's
    * extras) is under the pointer. While it is set the preview draws that layer
    * as if it alone were selected, without changing the selection. */
@@ -9124,9 +9129,17 @@ export class WristAssistantPanel extends LitElement {
    * enter the next row before this row's leave arrives. */
   /** The pointer came onto a row of the Layers list. It cancels a clear the
    * row it came from left pending, so the lit layer hands straight over. */
-  private enterRow(ids: readonly string[]) {
+  private enterRow(ids: readonly string[], peek?: Inspect) {
     window.clearTimeout(this.rowLeaveTimer);
     this.listHoverIds = ids;
+    // A row dragged over others is not a row being looked at.
+    this.rowPeek = this.dragId === undefined ? peek : undefined;
+  }
+
+  /** What the list and the preview draw as selected: the row under the
+   * pointer, else the real selection. */
+  private shownInspect(): Inspect {
+    return this.rowPeek ?? this.inspect;
   }
 
   /** The pointer left a row. The rows sit a few pixels apart, and clearing at
@@ -9136,7 +9149,10 @@ export class WristAssistantPanel extends LitElement {
     window.clearTimeout(this.rowLeaveTimer);
     this.rowLeaveTimer = window.setTimeout(() => {
       const same = this.listHoverIds.length === ids.length && this.listHoverIds.every((id, i) => ids[i] === id);
-      if (same) this.listHoverIds = [];
+      if (same) {
+        this.listHoverIds = [];
+        this.rowPeek = undefined;
+      }
     }, ROW_LEAVE_MS);
   }
 
@@ -15104,6 +15120,8 @@ export class WristAssistantPanel extends LitElement {
       if (copyId) this.inspect = { kind: "layer", id: copyId };
     };
     const del = (id: string) => {
+      // The row goes from under the pointer without a leave to clear this.
+      this.rowPeek = undefined;
       this.mutate((c) => removeElement(c, id));
       if (this.inspect.kind === "layer" && this.inspect.id === id) this.inspect = { kind: "general" };
     };
@@ -15131,7 +15149,13 @@ export class WristAssistantPanel extends LitElement {
     const ordered = elementsOnPage(cfg, shapeRows, this.page).reverse();
     const ctx = describeContext(this.host());
     const resolver = new Resolver(this.buildContext(), this.draft?.config);
-    const shapeHl = this.inspect.kind === "family";
+    // Rows light for the row under the pointer, if any, as though it were
+    // selected; the real selection shows again when the pointer leaves.
+    const shown = this.shownInspect();
+    const shapeHl = shown.kind === "family";
+    // The tap look follows the same pretend: a strip under the pointer, or,
+    // with no row under the pointer, a tap that is really selected.
+    const tapShown = (id: string) => this.rowPeek ? this.tapHover === id : this.tapFocus;
     const ground = backgroundRow(cfg, this.activeFamily);
     const pickedCount = [...this.multi].filter((id) => cfg.elements.some((e) => e.payload.id === id)).length;
     // A lone selection (one layer, or the members of a selected group) has no
@@ -15164,7 +15188,7 @@ export class WristAssistantPanel extends LitElement {
     // on the face moves all of them and the list should say so.
     const layerRow = (el: CElement, inGroup: boolean, held = false, chevron: TemplateResult | typeof nothing = nothing) => {
       const id = el.payload.id;
-      const hl = this.inspect.kind === "layer" && this.inspect.id === id;
+      const hl = shown.kind === "layer" && shown.id === id;
       const eff = effectivePlacement(cfg, family, el);
       const hidden = eff.isHidden;
       // A tap layer is a tap, so it wears a badge saying so. A layer with a tap
@@ -15184,7 +15208,7 @@ export class WristAssistantPanel extends LitElement {
       // the strip selects the tap: the face shows its box and the inspector
       // shows the Tap card alone. A click on the top part is the whole layer.
       const attached = el.kind === "tap" ? undefined : attachedTapsOf(cfg, id)[0];
-      const tapSel = hl && this.tapFocus;
+      const tapSel = hl && tapShown(id);
       let strip: TemplateResult | typeof nothing = nothing;
       if (attached?.kind === "tap") {
         const act = attached.payload.action;
@@ -15204,7 +15228,7 @@ export class WristAssistantPanel extends LitElement {
       }
       return html`<div class="layer ${attached ? "with-tap" : ""} ${tapSel ? "tapsel" : ""} ${hl ? "hl" : ""} ${held ? "held" : ""} ${this.dialogLitIds.includes(id) ? "lit" : ""} ${hidden ? "dim" : ""} ${this.multi.has(id) ? "multi" : ""} ${inGroup ? "kid" : ""} ${rich ? "rich" : ""}"
         style=${`--k:${KIND_COLOR[el.kind]}`} tabindex="0" draggable=${d.draggable}
-        @pointerenter=${() => this.enterRow([id])}
+        @pointerenter=${() => this.enterRow([id], { kind: "layer", id })}
         @pointerleave=${() => this.leaveRow([id])}
         @click=${(e: MouseEvent) => this.clickRow(id, e)}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = { kind: "layer", id }; }}
@@ -15244,7 +15268,7 @@ export class WristAssistantPanel extends LitElement {
     // A sub-group's folder is the same row, one level in; `held` lights it
     // with its parent's selection, as a member layer is.
     const groupRow = (g: LayerGroup, members: CElement[], total: number, kids: readonly LayerListRow[], held = false) => {
-      const hl = this.inspect.kind === "group" && this.inspect.id === g.id;
+      const hl = shown.kind === "group" && shown.id === g.id;
       const open = !this.collapsed.has(g.id);
       const d = this.rowDrag(g.id, edit);
       // The folder row has three drop zones. Its top edge puts the dragged row
@@ -15268,7 +15292,7 @@ export class WristAssistantPanel extends LitElement {
       const memberIds = members.map((m) => m.payload.id);
       const subCount = kids.filter((k) => k.kind === "group").length;
       return html`<div class="layer group ${hl ? "hl" : ""} ${held ? "held" : ""} ${this.dialogLitIds.includes(g.id) ? "lit" : ""} ${rich ? "rich" : ""}" style=${`--k:${SECTION_COLOR.group}`} tabindex="0" draggable=${d.draggable}
-        @pointerenter=${() => this.enterRow(memberIds)}
+        @pointerenter=${() => this.enterRow(memberIds, { kind: "group", id: g.id })}
         @pointerleave=${() => this.leaveRow(memberIds)}
         @click=${() => { this.multi = new Set(); this.inspect = { kind: "group", id: g.id }; }}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = { kind: "group", id: g.id }; }}
@@ -15327,7 +15351,7 @@ export class WristAssistantPanel extends LitElement {
     const rowKidRow = (list: Extract<CElement, { kind: "list" }>, row: CElement, i: number) => {
       const listId = list.payload.id;
       const id = row.payload.id;
-      const hl = this.inspect.kind === "layer" && this.inspect.id === id;
+      const hl = shown.kind === "layer" && shown.id === id;
       const hidden = row.payload.isHidden;
       const count = list.payload.template.length;
       const open = () => { this.setRowEdit(listId); this.inspect = { kind: "layer", id }; };
@@ -15347,7 +15371,7 @@ export class WristAssistantPanel extends LitElement {
       });
       return html`<div class="layer kid rowkid ${hl ? "hl" : ""} ${hidden ? "dim" : ""}"
         style=${`--k:${KIND_COLOR[row.kind]}`} tabindex="0"
-        @pointerenter=${() => this.enterRow([id])}
+        @pointerenter=${() => this.enterRow([id], { kind: "layer", id })}
         @pointerleave=${() => this.leaveRow([id])}
         @click=${() => open()}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") open(); }}>
@@ -15420,7 +15444,7 @@ export class WristAssistantPanel extends LitElement {
         // edge is drawn rather than inferred from indentation. Each level of
         // nesting takes the next hue, so a sub-group's box never matches the
         // box it sits in.
-        const groupHl = held || (this.inspect.kind === "group" && this.inspect.id === g.id);
+        const groupHl = held || (shown.kind === "group" && shown.id === g.id);
         const hue = GROUP_BOX_HUES[depth % GROUP_BOX_HUES.length];
         rows.push(html`<div class="group-box" style=${`--gc:${hue}`}>${groupRow(g, row.members, row.total, row.rows, held)}${this.collapsed.has(g.id)
           ? nothing
@@ -15485,9 +15509,11 @@ export class WristAssistantPanel extends LitElement {
       ${body}
       </div>
       <div class="pinned-set">
-      <div class="layer pinned ground with-tap ${shapeHl && this.tapFocus ? "tapsel" : ""} ${shapeHl ? "hl" : ""}" style=${`--k:${SECTION_COLOR.place}`} tabindex="0"
+      <div class="layer pinned ground with-tap ${shapeHl && tapShown(GROUND_TAP) ? "tapsel" : ""} ${shapeHl ? "hl" : ""}" style=${`--k:${SECTION_COLOR.place}`} tabindex="0"
         title="The shape's background and border, and what a tap anywhere else does. Always the bottom layer. Click to edit it."
-        @click=${() => { this.multi = new Set(); if (this.tapFocus && shapeHl) this.leaveTapFocus(); this.inspect = ground.inspect; }}
+        @pointerenter=${() => this.enterRow([], { kind: "family" })}
+        @pointerleave=${() => this.leaveRow([])}
+        @click=${() => { this.multi = new Set(); if (this.tapFocus && this.inspect.kind === "family") this.leaveTapFocus(); this.inspect = ground.inspect; }}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = ground.inspect; }}
         @dragover=${(e: DragEvent) => { if (!this.dragId) return; e.preventDefault(); this.markDrop(e.currentTarget as HTMLElement, "drop-before"); }}
         @drop=${(e: DragEvent) => {
@@ -15973,7 +15999,9 @@ export class WristAssistantPanel extends LitElement {
   private renderBigPreview(family: DrawableFamily, layouts: ResolvedAll, deviceCase: PreviewCase, overlay?: TemplateResult) {
     const layout = layouts[family];
     if (!layout) return nothing;
-    const highlightId = this.inspect.kind === "layer" ? this.inspect.id : undefined;
+    // A row under the pointer in the Layers list draws as the selection.
+    const shown = this.shownInspect();
+    const highlightId = shown.kind === "layer" ? shown.id : undefined;
     // The stage while a row is being designed, so a row layer outlines and a
     // group of the document does not reach into a canvas it is not on.
     const cfg = this.canvasConfig();
@@ -15982,7 +16010,7 @@ export class WristAssistantPanel extends LitElement {
     // Nested, the selected group outlines its whole subtree, and a selected
     // layer outlines the locked unit it moves with: the outermost locked
     // group around it.
-    const gid = this.inspect.kind === "group" ? this.inspect.id : highlightId !== undefined && cfg ? lockedUnitOf(cfg, highlightId)?.id : undefined;
+    const gid = shown.kind === "group" ? shown.id : highlightId !== undefined && cfg ? lockedUnitOf(cfg, highlightId)?.id : undefined;
     const groupIds = cfg && gid !== undefined ? groupLayers(cfg, gid).map((m) => m.payload.id) : [];
     // Layers picked for grouping, in the list or on the face, outline as well,
     // so the pick reads the same in both places.
@@ -15995,15 +16023,18 @@ export class WristAssistantPanel extends LitElement {
     const hoverTap = this.tapHover === undefined ? undefined
       : this.tapHover === GROUND_TAP ? { focus: undefined }
       : cfg ? { focus: attachedTapsOf(cfg, this.tapHover)[0]?.payload.id } : undefined;
-    const review = this.showTaps || hoverTap !== undefined;
+    // A row under the pointer pretends to be a fresh selection, which drops a
+    // selected tap's view, unless the pointer is on the row's tap strip.
+    const review = hoverTap !== undefined || (this.showTaps && this.rowPeek === undefined);
     // Review mode drops the resize handles, except on the one tap box it is
     // narrowed to.
-    const focus = hoverTap ? hoverTap.focus : this.focusTapId();
+    const focus = hoverTap ? hoverTap.focus : this.rowPeek ? undefined : this.focusTapId();
     // A row under the pointer in the inspector draws its layer as the one
     // selection, group outlines and all dropped, until the pointer leaves.
     const peek = !review && this.rowHoverId !== undefined
       && cfg?.elements.some((e) => e.payload.id === this.rowHoverId) ? this.rowHoverId : undefined;
-    const hoverIds = peek !== undefined || hoverTap ? [] : this.listHoverIds;
+    // A row drawn as the selection needs no hover tint on top.
+    const hoverIds = peek !== undefined || hoverTap || this.rowPeek ? [] : this.listHoverIds;
     const opts = {
       icons: this.icons, imageSizes: this.imageSizes, tapAreas: true, slot,
       highlightId: focus ?? peek ?? highlightId,
@@ -16018,7 +16049,7 @@ export class WristAssistantPanel extends LitElement {
       // painted in the tint at the brightness it was drawn in.
       ...previewTintFor(family, this.previewAsPhone, this.previewTint),
       ...(focus !== undefined ? { tapFocusId: focus } : {}),
-      handles: this.canEdit && !hoverTap && (!this.showTaps || focus !== undefined),
+      handles: this.canEdit && !hoverTap && (!review || focus !== undefined),
       // The Layers list owns the tint: resting on a row shows where that
       // layer sits on the face.
       ...(hoverIds.length > 0 ? { hoverIds } : {}),
