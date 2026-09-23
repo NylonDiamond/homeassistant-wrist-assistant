@@ -707,6 +707,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     await batch_snapshot_settings_store.async_load()
     complication_store = ComplicationStore(hass)
     await complication_store.async_load()
+    # Designs whose device went away before this build released them (or
+    # whose watch came back under a new id) belong in the Library, not under
+    # an id nothing signs with. The owners listing sweeps too; this catches
+    # them before any panel opens.
+    released = complication_store.release_orphans(
+        set(widget_secret_store.all_watch_ids), updated_by="orphan-sweep"
+    )
+    if released:
+        _LOGGER.info("Released orphaned complication owner(s) into the Library: %s", released)
     # Parts: the panel's library of saved layer sets. Nothing else reads it,
     # so it is loaded here and handed straight to the WebSocket commands.
     parts_store = PartsStore(hass)
@@ -1054,11 +1063,13 @@ async def async_remove_config_entry_device(
             continue
         domain_data.widget_secret_store.remove(watch_id)
         domain_data.notification_store.remove(watch_id)
-        # Same teardown the panel's Forget action performs. Without it a
-        # watch removed from the UI keeps its complications forever: it
-        # reappears in the panel's owner list as an orphan, and no path in
-        # the UI can reach the rows to delete them.
-        domain_data.complication_store.forget_owner(watch_id)
+        # Same teardown the panel's Forget action performs. The device's
+        # designs move to the Library (Unassigned in the panel) rather than
+        # dying with it: a complication is its own thing, linked to devices,
+        # and removing the device only breaks the link.
+        domain_data.complication_store.release_owner(
+            watch_id, updated_by=f"device-removed:{watch_id}"
+        )
 
     return True
 

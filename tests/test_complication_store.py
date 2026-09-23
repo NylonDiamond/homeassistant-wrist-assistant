@@ -91,6 +91,7 @@ def _loaded_module():
             COMPLICATION_MAX_LAYERS=MAX_LAYERS,
             COMPLICATION_MAX_PER_OWNER=MAX_PER_OWNER,
             COMPLICATION_MAX_SLOTS=MAX_SLOTS,
+            LIBRARY_OWNER_ID="library",
         )
 
         spec = importlib.util.spec_from_file_location(
@@ -1655,6 +1656,103 @@ def test_forget_owner_erases_every_trace_of_one_watch(mod):
     assert reloaded.owners() == [OTHER]
     assert reloaded.applied_token(OWNER) is None
     assert reloaded.last_sync_at(OWNER) is None
+
+
+# ── releasing a device: its designs go to the Library ────────────────────
+
+
+def test_release_owner_moves_live_designs_to_the_library_and_purges_the_device(mod):
+    store = _new(mod)
+    a, b = _doc(slotIndex=0, name="Garage"), _doc(slotIndex=1, name="Lights")
+    store.save(OWNER, a, base_revision=None, updated_by="t")
+    store.save(OWNER, b, base_revision=None, updated_by="t")
+    store.set_occupied(OWNER, [{"slot": 5, "name": "P", "kind": "preset", "home": "H"}])
+    store.set_applied_token(OWNER, 1)
+
+    assert store.release_owner(OWNER, updated_by="device-removed") == 2
+
+    library = store.list(mod.LIBRARY_OWNER_ID)
+    assert [(r.document["name"], r.document["slotIndex"], r.revision, r.updated_by) for r in library] == [
+        ("Garage", 0, 1, "device-removed"),
+        ("Lights", 1, 1, "device-removed"),
+    ]
+    assert {r.id for r in library} == {a["id"], b["id"]}
+    # The device is gone without a trace, tombstones included.
+    assert store.owners() == [mod.LIBRARY_OWNER_ID]
+    assert store.list(OWNER, include_deleted=True) == []
+    assert store.occupied(OWNER) == []
+    assert store.applied_token(OWNER) is None
+
+    reloaded = _new(mod)
+    assert [r.document["name"] for r in reloaded.list(mod.LIBRARY_OWNER_ID)] == ["Garage", "Lights"]
+
+
+def test_release_owner_drops_a_design_another_device_still_holds(mod):
+    store = _new(mod)
+    link = str(uuid.uuid4()).upper()
+    on_a = _doc(slotIndex=0, name="Shared", linkId=link)
+    on_b = _doc(slotIndex=0, name="Shared", linkId=link)
+    alone = _doc(slotIndex=1, name="Only here")
+    store.save(OWNER, on_a, base_revision=None, updated_by="t")
+    store.save(OTHER, on_b, base_revision=None, updated_by="t")
+    store.save(OWNER, alone, base_revision=None, updated_by="t")
+
+    assert store.release_owner(OWNER, updated_by="x") == 1
+
+    assert [r.id for r in store.list(mod.LIBRARY_OWNER_ID)] == [alone["id"]]
+    # The other device keeps the linked copy, untouched.
+    assert [r.id for r in store.list(OTHER)] == [on_b["id"]]
+
+
+def test_release_owner_bumps_a_slot_the_library_already_draws(mod):
+    store = _new(mod)
+    shelved = _doc(slotIndex=0, name="Shelved", supportedFamilies=["circular"], schemaVersion=6)
+    store.save(mod.LIBRARY_OWNER_ID, shelved, base_revision=None, updated_by="t")
+    clash = _doc(slotIndex=0, name="Clash", supportedFamilies=["circular"], schemaVersion=6)
+    other_shape = _doc(slotIndex=0, name="Rect", supportedFamilies=["rectangular"], schemaVersion=6)
+    store.save(OWNER, clash, base_revision=None, updated_by="t")
+    store.save(OWNER, other_shape, base_revision=None, updated_by="t")
+
+    assert store.release_owner(OWNER, updated_by="x") == 2
+
+    by_name = {r.document["name"]: r.document["slotIndex"] for r in store.list(mod.LIBRARY_OWNER_ID)}
+    # A different shape may share slot 0; the same shape moves to the next free one.
+    assert by_name == {"Shelved": 0, "Rect": 0, "Clash": 1}
+
+
+def test_release_owner_skips_a_design_the_library_already_has(mod):
+    store = _new(mod)
+    doc = _doc(slotIndex=0, name="Twice")
+    store.save(mod.LIBRARY_OWNER_ID, doc, base_revision=None, updated_by="t")
+    store.save(OWNER, dict(doc, name="Twice, on the watch"), base_revision=None, updated_by="t")
+
+    assert store.release_owner(OWNER, updated_by="x") == 0
+
+    [kept] = store.list(mod.LIBRARY_OWNER_ID)
+    assert kept.document["name"] == "Twice"
+    assert store.owners() == [mod.LIBRARY_OWNER_ID]
+
+
+def test_release_owner_never_releases_the_library(mod):
+    store = _new(mod)
+    store.save(mod.LIBRARY_OWNER_ID, _doc(), base_revision=None, updated_by="t")
+    assert store.release_owner(mod.LIBRARY_OWNER_ID, updated_by="x") == 0
+    assert len(store.list(mod.LIBRARY_OWNER_ID)) == 1
+
+
+def test_release_orphans_releases_only_owners_the_secret_store_forgot(mod):
+    store = _new(mod)
+    store.save(OWNER, _doc(slotIndex=0, name="Gone watch"), base_revision=None, updated_by="t")
+    store.save(OTHER, _doc(slotIndex=0, name="Live watch"), base_revision=None, updated_by="t")
+    store.save(mod.LIBRARY_OWNER_ID, _doc(slotIndex=3, name="Shelf"), base_revision=None, updated_by="t")
+
+    assert store.release_orphans({OTHER}, updated_by="sweep") == [OWNER]
+
+    assert store.owners() == [mod.LIBRARY_OWNER_ID, OTHER]
+    assert sorted(r.document["name"] for r in store.list(mod.LIBRARY_OWNER_ID)) == ["Gone watch", "Shelf"]
+    assert [r.document["name"] for r in store.list(OTHER)] == ["Live watch"]
+    # Nothing to do the second time.
+    assert store.release_orphans({OTHER}, updated_by="sweep") == []
 
 
 def test_forget_owner_on_a_watch_with_nothing_stored_is_a_no_op(mod):

@@ -51,6 +51,7 @@ from .const import (
     COMPLICATION_MAX_SLOTS,
     COMPLICATION_STORAGE_KEY,
     COMPLICATION_STORAGE_VERSION,
+    LIBRARY_OWNER_ID,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -958,8 +959,8 @@ class ComplicationStore:
         """Erase everything this store holds for one watch. Returns whether
         anything was there.
 
-        Called when the device itself is forgotten, from the panel's Forget
-        action or from removing the device in HA's UI. Every other delete path
+        The purge half of :meth:`release_owner`, which is what the two forget
+        paths call: designs go to the Library first, then this. Every other delete path
         writes a tombstone, because a replica that has not yet seen the delete
         must never be able to resurrect the record. That reasoning ends here:
         the device is gone, it will not poll again under this id, and there is
@@ -993,6 +994,128 @@ class ComplicationStore:
         _LOGGER.info("Purged complication records for owner %s", owner_watch_id)
         self._notify(ComplicationChange(owner_watch_id=owner_watch_id, token=0))
         return True
+
+    def release_owner(self, owner_watch_id: str, *, updated_by: str) -> int:
+        """Unlink a device: its designs move to the Library, then every trace
+        of the device is erased. Returns how many designs moved.
+
+        A complication is its own thing in Home Assistant, linked to devices.
+        When a device goes away, the design stays and loses that link, which
+        is what the Library is for. Called from the two places a device is
+        forgotten (the panel's ``devices/forget`` and removing the device in
+        HA's UI) and from :meth:`release_orphans`.
+
+        Per live design, in order:
+
+        - It is linked (``linkId``) to a design another owner still holds:
+          dropped. The other copy is the design now; the Library gets no
+          duplicate.
+        - The Library already holds a live record with this id: dropped, for
+          the same reason.
+        - Otherwise it is committed under the Library as a fresh revision, at
+          its own slot when the Library draws nothing of that shape there,
+          else at the lowest slot that is free for every shape it draws. The
+          Library's slot is only where the design lands when it is next put on
+          a device, so a bump costs nothing visible.
+
+        Then the device is purged as :meth:`forget_owner` does: tombstones are
+        pointless for an owner that will never poll again.
+
+        The Library itself is never released: it is not a device.
+        """
+        if not owner_watch_id or owner_watch_id == LIBRARY_OWNER_ID:
+            return 0
+        moving = self.list(owner_watch_id)
+        if moving:
+            library_live = {
+                record.id: record
+                for record in self._records.get(LIBRARY_OWNER_ID, {}).values()
+                if not record.deleted
+            }
+            taken: set[tuple[int, str]] = set()
+            for record in library_live.values():
+                taken |= _slot_shapes(record)
+            linked_elsewhere = self._live_link_ids(excluding=owner_watch_id)
+            moved = 0
+            for source in moving:
+                link_id = (source.document or {}).get("linkId")
+                if isinstance(link_id, str) and link_id in linked_elsewhere:
+                    continue
+                if source.id in library_live:
+                    continue
+                document = copy.deepcopy(source.document)
+                shapes = shapes_of(document)
+                slot = _slot_of(source)
+                if slot < 0 or any((slot, shape) in taken for shape in shapes):
+                    slot = next(
+                        (
+                            candidate
+                            for candidate in _SLOT_RANGE
+                            if not any((candidate, shape) in taken for shape in shapes)
+                        ),
+                        slot if slot >= 0 else 0,
+                    )
+                    if isinstance(document, dict):
+                        document["slotIndex"] = slot
+                taken |= {(slot, shape) for shape in shapes}
+                existing = self._records.get(LIBRARY_OWNER_ID, {}).get(source.id)
+                self._commit(
+                    ComplicationRecord(
+                        id=source.id,
+                        owner_watch_id=LIBRARY_OWNER_ID,
+                        revision=existing.revision + 1 if existing is not None else 1,
+                        token=0,
+                        updated_at="",
+                        updated_by=updated_by,
+                        document=document,
+                        deleted=False,
+                        history=copy.deepcopy(source.history),
+                    )
+                )
+                moved += 1
+            _LOGGER.info(
+                "Released %d of %d complication(s) from %s into the Library",
+                moved,
+                len(moving),
+                owner_watch_id,
+            )
+        else:
+            moved = 0
+        self.forget_owner(owner_watch_id)
+        return moved
+
+    def release_orphans(self, registered: set[str], *, updated_by: str) -> list[str]:
+        """Release every owner the secret store no longer knows.
+
+        An owner with records and no device entry is a device that went away
+        without the release above running: forgotten on a build before it
+        existed, or a watch that came back under a new id. Its designs belong
+        in the Library, not under an id nothing signs with. Returns the owners
+        released, so the caller can log them. The Library is never an orphan.
+        """
+        released: list[str] = []
+        for owner in self.owners():
+            if owner == LIBRARY_OWNER_ID or owner in registered:
+                continue
+            if not self._records.get(owner):
+                continue
+            self.release_owner(owner, updated_by=updated_by)
+            released.append(owner)
+        return released
+
+    def _live_link_ids(self, *, excluding: str) -> set[str]:
+        """Every ``linkId`` a live record of any other owner carries."""
+        found: set[str] = set()
+        for owner, by_id in self._records.items():
+            if owner == excluding:
+                continue
+            for record in by_id.values():
+                if record.deleted:
+                    continue
+                link_id = (record.document or {}).get("linkId")
+                if isinstance(link_id, str) and link_id:
+                    found.add(link_id)
+        return found
 
     async def async_remove(self) -> None:
         self._records.clear()

@@ -374,6 +374,15 @@ def ws_owners(
         return
     store: ComplicationStore = domain_data.complication_store
     secret_store = domain_data.widget_secret_store
+    # An owner the secret store no longer knows is a device that went away
+    # (forgotten on an older build, or back under a new id). Its designs move
+    # to the Library here, so the list below never shows an orphan and nobody
+    # has to press Move.
+    released = store.release_orphans(
+        set(secret_store.all_watch_ids), updated_by="orphan-sweep"
+    )
+    if released:
+        _LOGGER.info("Released orphaned complication owner(s) into the Library: %s", released)
     device_registry = dr.async_get(hass)
 
     def registry_name(device_id: str) -> str | None:
@@ -516,8 +525,8 @@ def ws_forget_device(
     with ``in_use`` unless ``force`` is set, so a mistyped id cannot silently
     unregister somebody's watch. Removal is not reversible: the device has to
     re-provision, which the app does on its next foreground identity check,
-    and everything the complication store held for it is erased rather than
-    tombstoned (see ``ComplicationStore.forget_owner``).
+    and its designs move to the Library (Unassigned in the panel) rather than
+    being erased with it (see ``ComplicationStore.release_owner``).
 
     The Library is refused by the same check every other id goes through: it
     has no entry in the secret store, so it answers ``not_found``, which is
@@ -553,11 +562,13 @@ def ws_forget_device(
 
     domain_data.widget_secret_store.remove(watch_id)
     domain_data.notification_store.remove(watch_id)
-    # Its complications go too: records, presets, pages, occupied slots and
-    # the applied token. Leaving them behind is what made a forgotten watch
-    # come back as an orphan owner on the next `owners` call, holding rows
-    # nothing could ever deliver.
-    purged = domain_data.complication_store.forget_owner(watch_id)
+    # Its designs move to the Library and everything else it held (presets,
+    # pages, occupied slots, the applied token) goes. A complication is its
+    # own thing, linked to devices; the device leaving only breaks the link.
+    had_records = bool(domain_data.complication_store.list(watch_id, include_deleted=True))
+    moved = domain_data.complication_store.release_owner(
+        watch_id, updated_by=f"forget:{watch_id}"
+    )
 
     # Removing the store entry strips the device's entities on the next
     # listener pass, but the device registry record itself would linger as an
@@ -577,7 +588,8 @@ def ws_forget_device(
             "ok": True,
             "watch_id": watch_id,
             "device_removed": device is not None,
-            "complications_removed": purged,
+            "complications_removed": had_records,
+            "complications_moved_to_library": moved,
         },
     )
 
