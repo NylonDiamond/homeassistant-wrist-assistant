@@ -3702,8 +3702,9 @@ const LAYER_TAP_TYPES: [TapAction["type"], string][] =
 const DOC_TAP_TYPES: [TapAction["type"], string][] = LAYER_TAP_TYPES;
 
 /** The document's tap choices, with whatever it already stores kept selectable.
- * Same rule the Refresh row follows: a value the list no longer offers stays in
- * it, so opening the editor never silently changes what the watch is doing. */
+ * Same rule the Auto refresh timer row follows: a value the list no longer
+ * offers stays in it, so opening the editor never silently changes what the
+ * watch is doing. */
 function tapTypesFor(tap: TapAction): [TapAction["type"], string][] {
   if (DOC_TAP_TYPES.some(([t]) => t === tap.type)) return DOC_TAP_TYPES;
   return [...DOC_TAP_TYPES, [tap.type, tapActionLabel(tap)]];
@@ -3877,15 +3878,15 @@ function refreshAllBudgetHint(host: EditorHost, action: RefreshAllAction): Templ
     other complication this tap refreshes spends one of its own. When one has none left, it gets
     the new data but keeps showing the old until watchOS allows another redraw, or until you open
     Wrist Assistant on the watch.${timed
-      ? html` A timed Refresh is on here or on a complication this tap reaches, and it spends the
+      ? html` An Auto refresh timer is on here or on a complication this tap reaches, and it spends the
         same budget. Every 15 minutes is 96 a day, more than the whole budget.`
       : nothing}</div>`;
 }
 
 /**
  * The redraw budget under a plain Refresh tap. The tap itself never spends it,
- * so this is reassurance, never amber. What a timed Refresh does to the budget
- * is said once, under the Refresh row, not again here.
+ * so this is reassurance, never amber. What an Auto refresh timer does to the
+ * budget is said once, under the Auto refresh timer row, not again here.
  */
 function refreshBudgetHint(): TemplateResult {
   return html`<div class="hint keep">A tap always redraws this complication. watchOS does not
@@ -3893,7 +3894,7 @@ function refreshBudgetHint(): TemplateResult {
 }
 
 /**
- * The warning under the Refresh row once a timer is picked. Every timed
+ * The warning under the Auto refresh timer row once a timer is picked. Every timed
  * refresh spends one of the complication's daily redraws, so it says how many
  * this choice spends and points at the free alternative: a tap, for the reader
  * who wants the value at one moment rather than all day.
@@ -4270,7 +4271,7 @@ export function generalEditor(host: EditorHost, opts: { nameOnly?: boolean } = {
   return html`
     <div class="gen-row">
       ${textField("Name", cfg.name, (v) => host.update((c) => { c.name = v; }, "name"))}
-      ${selectField("Refresh", String(refresh), refreshOptions, (v) => host.update((c) => { c.refreshMinutes = Number(v) || 0; }, "refresh"))}
+      ${selectField("Auto refresh timer", String(refresh), refreshOptions, (v) => host.update((c) => { c.refreshMinutes = Number(v) || 0; }, "refresh"))}
       ${refresh > 0 ? timedRefreshBudgetHint(refresh) : nothing}
       ${tapActionMenu("Tap action", tap.type, tapTypesFor(tap), (v) => host.update((c) => {
         c.tapAction = tapActionForType(v, c.tapAction);
