@@ -932,3 +932,40 @@ describe("the Complication card on the control's tab", () => {
     }
   });
 });
+
+describe("the redraw budget hint under a refresh tap", () => {
+  const target = "0A0A0A0A-0000-4000-8000-000000000001";
+  const doc = (refreshMinutes: number) => ({ id: target, name: "Hall", layers: () => [], refreshMinutes });
+
+  it("turns amber on a multiple refresh only once a timer spends the budget", () => {
+    const cfg = newControlConfig("Kitchen lamp", 0, "circular");
+    cfg.tapAction = { type: "refreshAll", targets: [target] };
+    const quiet = flatten(generalEditor(host(cfg, { documents: [doc(0)] })));
+    expect(quiet).toContain("40 to 70 redraws a day");
+    expect(quiet).not.toContain("budget\"");
+
+    const picked = flatten(generalEditor(host(cfg, { documents: [doc(15)] })));
+    expect(picked, "a timer on a picked complication").toContain("hint keep budget");
+
+    cfg.refreshMinutes = 30;
+    const own = flatten(generalEditor(host(cfg, { documents: [doc(0)] })));
+    expect(own, "a timer on the tapped complication").toContain("hint keep budget");
+  });
+
+  it("ignores a timer on a complication the tap does not reach", () => {
+    const cfg = newControlConfig("Kitchen lamp", 0, "circular");
+    cfg.tapAction = { type: "refreshAll" };
+    const markup = flatten(generalEditor(host(cfg, { documents: [doc(15)] })));
+    expect(markup).not.toContain("hint keep budget");
+  });
+
+  it("says a plain refresh tap is free, and turns amber for its own timer", () => {
+    const cfg = newControlConfig("Kitchen lamp", 0, "circular");
+    cfg.tapAction = { type: "refresh" };
+    const quiet = flatten(generalEditor(host(cfg)));
+    expect(quiet).toContain("A tap always redraws this");
+    expect(quiet).not.toContain("hint keep budget");
+    cfg.refreshMinutes = 15;
+    expect(flatten(generalEditor(host(cfg)))).toContain("hint keep budget");
+  });
+});

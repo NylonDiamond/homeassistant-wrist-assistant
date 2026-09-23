@@ -406,8 +406,11 @@ export interface EditorHost {
    * `layers` is that complication's own layers, for the per-complication layer
    * boxes inside the picker. It is a thunk because this list is rebuilt on every
    * host build and parsing every document each time would be waste: the layers
-   * are only read for a row that is ticked and narrowed. */
-  documents?: { id: string; name: string; layers: () => readonly CElement[] }[];
+   * are only read for a row that is ticked and narrowed.
+   *
+   * `refreshMinutes` is that complication's timed refresh, 0 when it has none,
+   * for the redraw budget hint under the tap. Absent reads as 0. */
+  documents?: { id: string; name: string; layers: () => readonly CElement[]; refreshMinutes?: number }[];
   /** The Wrist Assistant version the edited watch last reported, for the
    * "Needs Wrist Assistant X.Y" notes under newer controls. Absent or null when
    * it has not reported, which shows no note. */
@@ -3755,6 +3758,56 @@ function tapNote(action: TapAction, pages = false): TemplateResult | typeof noth
 }
 
 /**
+ * WidgetKit's daily redraw budget, per placed complication, as Apple's
+ * "Keeping a widget up to date" states it. The two hints below quote it.
+ */
+const REDRAW_BUDGET = "40 to 70";
+
+/**
+ * The redraw budget under a "Refresh multiple complications" tap.
+ *
+ * A tap is free only for the tile that was tapped. Every other tile it
+ * refreshes spends one of its own redraws, and a tile that has none left gets
+ * the new data but keeps drawing the old until watchOS allows another. Found
+ * from support logs WA-425074 and WA-3002B8: the data landed for every target
+ * in under a second, and only the tapped tile redrew.
+ *
+ * Amber while a timed refresh is spending that same budget, on this
+ * complication or on any it reaches, because that is when the others run dry.
+ */
+function refreshAllBudgetHint(host: EditorHost, action: RefreshAllAction): TemplateResult {
+  const docs = host.documents ?? [];
+  const selfId = host.config.id.toUpperCase();
+  const reached = action.allPlaced === true
+    ? docs
+    : docs.filter((d) => (action.targets ?? []).includes(d.id.toUpperCase()));
+  const timed = (host.config.refreshMinutes ?? 0) > 0
+    || reached.some((d) => d.id.toUpperCase() !== selfId && (d.refreshMinutes ?? 0) > 0);
+  return html`<div class="hint keep ${timed ? "budget" : ""}">watchOS gives each complication
+    ${REDRAW_BUDGET} redraws a day. The one you tap always redraws, because a tap is free. Every
+    other complication this tap refreshes spends one of its own. When one has none left, it gets
+    the new data but keeps showing the old until watchOS allows another redraw, or until you open
+    Wrist Assistant on the watch.${timed
+      ? html` A timed Refresh is on here or on a complication this tap reaches, and it spends the
+        same budget. Every 15 minutes is 96 a day, more than the whole budget.`
+      : nothing}</div>`;
+}
+
+/**
+ * The redraw budget under a plain Refresh tap. The tap itself never spends it,
+ * so the hint is mostly reassurance, turning amber only to say what the timed
+ * Refresh above does to it.
+ */
+function refreshBudgetHint(timed: boolean): TemplateResult {
+  return html`<div class="hint keep ${timed ? "budget" : ""}">A tap always redraws this
+    complication. watchOS does not count it against the ${REDRAW_BUDGET} redraws a day each
+    complication gets.${timed
+      ? html` The timed Refresh above does count. When it has used the budget up, timed refreshes
+        stop until watchOS allows more, but a tap still works.`
+      : nothing}</div>`;
+}
+
+/**
  * Which complications a "Refresh multiple complications" tap reaches: all the
  * ones placed on the watch, or the ones ticked below.
  *
@@ -4134,9 +4187,11 @@ export function generalEditor(host: EditorHost, opts: { nameOnly?: boolean } = {
     ${tap.type === "refreshAll"
       ? refreshTargetsField(host, tap, (next) => host.update((c) => { c.tapAction = next; }))
       : nothing}
+    ${tap.type === "refreshAll" ? refreshAllBudgetHint(host, tap) : nothing}
     ${tap.type === "refresh"
       ? refreshLayersField(host, tap, (next) => host.update((c) => { c.tapAction = next; }))
       : nothing}
+    ${tap.type === "refresh" ? refreshBudgetHint(refresh > 0) : nothing}
     ${"entityId" in tap ? entityField(host, "Target", tap, (ref) => host.update((c) => { c.tapAction = { type: tap.type, ...ref }; }, "tap-entity"), "general-tap") : nothing}
     ${tap.type === "callService"
       ? callServiceFields(host, tap, (next, k) => host.update((c) => { c.tapAction = next; }, k), "general-tap")

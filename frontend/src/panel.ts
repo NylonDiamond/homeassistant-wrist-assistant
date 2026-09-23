@@ -4984,6 +4984,9 @@ export class WristAssistantPanel extends LitElement {
     }
     .hint { font-size: 11.5px; line-height: 1.45; color: var(--wa-muted); margin: 4px 0; }
     .hint.warn { color: var(--wa-ink); }
+    /* The one hint that is colored: a timed refresh is spending the redraw
+       budget a tap on the face also needs, which is worth noticing. */
+    .hint.budget { color: var(--warning-color, #ffa600); }
     /* The bare .err rule sits above .hint in this sheet, so a hint that is an
        error needs both class names to win the color. */
     .hint.err { color: var(--error-color, #db4437); }
@@ -6844,7 +6847,7 @@ export class WristAssistantPanel extends LitElement {
    * ticked and narrowed. A document that no longer parses lists no layers rather
    * than taking the picker down with it.
    */
-  private documentList(): { id: string; name: string; layers: () => CElement[] }[] {
+  private documentList(): { id: string; name: string; layers: () => CElement[]; refreshMinutes: number }[] {
     return this.records
       .filter((r) => !r.deleted && r.document !== null)
       .filter((r) => r.ownerWatchId === "" || r.ownerWatchId === this.ownerId)
@@ -6862,7 +6865,11 @@ export class WristAssistantPanel extends LitElement {
           }
           return parsed;
         };
-        return { id: r.id.toUpperCase(), name: name === "" ? "Unnamed" : name, layers };
+        // Read raw rather than parsed: the budget hint needs only this number,
+        // and parsing is what `layers` defers.
+        const minutes = raw?.refreshMinutes;
+        const refreshMinutes = typeof minutes === "number" && minutes > 0 ? minutes : 0;
+        return { id: r.id.toUpperCase(), name: name === "" ? "Unnamed" : name, layers, refreshMinutes };
       });
   }
 
