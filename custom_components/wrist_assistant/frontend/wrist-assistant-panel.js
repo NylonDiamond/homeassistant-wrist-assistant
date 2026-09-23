@@ -3918,8 +3918,6 @@ ${tP(c)}`}}delete s.hidden,delete s.linkId;let l=Sd(a);if(l.length>0){let d=l.sl
     }
     .group-cta .spacer { flex: 1; }
     /* A lone selection offers only Save to parts: a quiet row, no box. */
-    .part-cta { display: flex; align-items: center; font-size: 12px; margin-bottom: 4px; }
-    .part-cta .spacer { flex: 1; }
     /* Left column cards: Pages and Layers. One 40px header line each, each
        tinted with its own color and marked with a small swatch icon, the way
        the inspector's sections are; the one filled button is + Add. */
@@ -4008,10 +4006,11 @@ ${tP(c)}`}}delete s.hidden,delete s.linkId;let l=Sd(a);if(l.length>0){let d=l.sl
     .lc-filter { display: flex; align-items: center; gap: 6px; min-height: 32px; padding: 3px 8px 3px 12px; border-bottom: 1px solid var(--wa-line); }
     .lc-filter .lc-sub { white-space: normal; }
     .lc-filter button.lc-ghost { margin-left: auto; }
+    .lc-filter button.lc-ghost + button.lc-ghost { margin-left: 0; }
     .lc-filter .lc-drag { font-size: 11px; color: var(--wa-muted); opacity: .8; white-space: nowrap; }
     .lc-filter .lc-sub + .lc-drag::before { content: "·"; margin-right: 6px; }
     .layers-card > .group-cta { margin: 6px 8px 0; }
-    .layers-card > .part-cta, .layers-card > .hint { margin: 6px 10px 0; }
+    .layers-card > .hint { margin: 6px 10px 0; }
     .layers-card > .lc-empty { margin: 0; padding: 24px 16px; text-align: center; font-size: 12px; line-height: 1.5; color: var(--wa-muted); }
     .layers-card > .layers { padding: 6px 8px 0; }
     .layers-sec {
@@ -7457,10 +7456,10 @@ ${tP(c)}`}}delete s.hidden,delete s.linkId;let l=Sd(a);if(l.length>0){let d=l.sl
               ${S?u`<button class="lc-ghost sm" aria-pressed=${q?"true":"false"}
                 title=${q?"List the page showing, and the layers on every page":"List the layers of every page, page by page"}
                 @click=${()=>{this.allPages=!q}}>${q?"This page":"Show all"}</button>`:m}
+              ${v>=1&&i?u`<button class="lc-ghost sm" title=${v===1?"Keep this layer under a name, to use in another complication":"Keep these layers under a name, to use in another complication"}
+                    @click=${()=>{this.openSavePartDialog()}}>Save to parts</button>`:m}
             </div>`:m}
-      ${b<2&&v>=1&&i?u`<div class="part-cta"><span class="spacer"></span>
-            <button class="ghost" title=${v===1?"Keep this layer under a name, to use in another complication":"Keep these layers under a name, to use in another complication"}
-              @click=${()=>{this.openSavePartDialog()}}>Save to parts</button></div>`:b<2&&t.elements.length>=2&&i&&!t.groups?.length?u`<div class="hint">${bo}-click layers here or on the preview, or shift-click a range of rows, then group them so a finished part moves as one. The <b>?</b> button in the header lists every key and mouse trick.</div>`:m}
+      ${b<2&&v===0&&t.elements.length>=2&&i&&!t.groups?.length?u`<div class="hint">${bo}-click layers here or on the preview, or shift-click a range of rows, then group them so a finished part moves as one. The <b>?</b> button in the header lists every key and mouse trick.</div>`:m}
       ${l.length===0?u`<div class="empty lc-empty">Nothing here yet.<br>Layers you add show in this list, top first.</div>`:m}
       ${!q&&se.length===0&&l.length>0&&S?u`<div class="hint">Nothing is on page ${this.page} yet. Layers you add now go on it.</div>`:m}
       <div class="layers" @pointerleave=${B=>this.leaveList(B)}>
