@@ -4250,7 +4250,12 @@ export class WristAssistantPanel extends LitElement {
     button.cv-act.danger:hover:not(:disabled) { background: color-mix(in srgb, #FF453A 14%, transparent); border-color: color-mix(in srgb, #FF453A 40%, transparent); }
     button.cv-act .caret { display: inline-flex; margin-right: -3px; color: var(--wa-hint); }
     button.cv-act .caret svg { width: 11px; height: 11px; }
+    button.cv-act.icon { width: 30px; padding: 0; justify-content: center; }
+    button.cv-act.icon svg.ui-icon { width: 15px; height: 15px; }
     .cv-del { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+    /* Hairlines part the head's groups: the devices, the actions, Delete,
+       and the ··· menu. */
+    .cv-div { width: 1px; height: 20px; flex: none; background: var(--wa-line); }
     .case-tool.add-tool .pop-menu { left: auto; right: 0; min-width: 230px; }
     .case-tool.add-tool .place-note { padding: 6px 10px 4px; font-size: 11px; color: var(--wa-muted); }
     .cv-shape {
@@ -4352,6 +4357,7 @@ export class WristAssistantPanel extends LitElement {
        under small headings. */
     button.tb .tint-dot { margin: 0 1px; }
     .pop-menu.preview-menu { min-width: 190px; }
+    .pop-menu .pop-title { padding: 7px 10px 6px; margin-bottom: 3px; font-size: 12.5px; font-weight: 700; color: var(--wa-ink); border-bottom: 1px solid var(--wa-line); }
     .pop-menu .pop-head { padding: 6px 10px 3px; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--wa-muted); }
     .preview-menu .row[aria-checked="true"] { background: color-mix(in srgb, var(--wa-accent) 18%, transparent); }
     button.tb .tint-dot { margin-right: 0; }
@@ -8177,6 +8183,7 @@ export class WristAssistantPanel extends LitElement {
             : `Preview as. Layouts are made in the ${this.referenceCase.label} box. Every other size draws a scaled copy of it.`}
           @click=${() => this.toggleMenu("case")}>${uiIcon(this.previewAsPhone ? "phone" : "watch")}<span class="word keep">${deviceCase.label}</span>${drawable ? tintDot : nothing}<span class="caret">${uiIcon("chevron")}</span></button>
         ${caseOpen ? html`<div class="pop-menu preview-menu" role="menu" aria-label="Preview as">
+          <div class="pop-title">Preview as</div>
           <div class="pop-head">Size</div>
           ${this.previewCases.map((c) => html`<button class="row" role="menuitemradio" aria-checked=${c.label === deviceCase.label ? "true" : "false"}
             @click=${() => { this.toggleMenu("case", false); this.previewCase = c.label; }}>${c.label}${c.measured ? "" : " (estimated)"}</button>`)}
@@ -15449,9 +15456,11 @@ export class WristAssistantPanel extends LitElement {
   private renderDocActions(cfg: CustomComplicationConfig) {
     if (!this.canEdit) return nothing;
     const n = this.openLinkCount();
-    return html`${this.renderAddToDevice(cfg)}
+    return html`<span class="cv-div" aria-hidden="true"></span>
+      ${this.renderAddToDevice(cfg)}
       <button class="cv-act" aria-haspopup="dialog" title="Make this design again as another shape, or on another device"
         @click=${() => this.openDuplicateAs(cfg, this.ownerId ?? "")}>Duplicate</button>
+      <span class="cv-div" aria-hidden="true"></span>
       ${this.confirmDelete
         ? html`<span class="cv-del" role="group" aria-label="Delete this complication?">
             ${n > 1
@@ -15462,8 +15471,9 @@ export class WristAssistantPanel extends LitElement {
               : html`<button class="cv-act danger" @click=${() => { this.confirmDelete = false; void this.deleteCurrent(); }}>Really delete</button>`}
             <button class="cv-act" @click=${() => { this.confirmDelete = false; }}>Cancel</button>
           </span>`
-        : html`<button class="cv-act danger" title="Delete this complication. It asks once more first."
-            @click=${() => { this.confirmDelete = true; }}>Delete</button>`}`;
+        : html`<button class="cv-act danger icon" title="Delete this complication. It asks once more first." aria-label="Delete this complication"
+            @click=${() => { this.confirmDelete = true; }}>${uiIcon("delete")}</button>`}
+      <span class="cv-div" aria-hidden="true"></span>`;
   }
 
   /**
