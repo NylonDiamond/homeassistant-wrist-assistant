@@ -269,10 +269,14 @@ import { type PresetEnv, type PresetKind, type PresetSpec, LAYER_PRESETS, applyP
 import { type AddVariant, addPreview } from "./add-previews.js";
 import { presetColor, presetPreview } from "./preset-previews.js";
 import {
+  type BackupParse,
+  type BackupSource,
   type ImportParse,
   type ShareSlot,
   type UnresolvedEntity,
   SHARE_LINK_DAMAGED,
+  backupFileName,
+  backupText,
   decodeShareLink,
   encodeShareLink,
   exportFileName,
@@ -280,7 +284,9 @@ import {
   hasInstanceFilters,
   importProblem,
   isPlaceholderId,
+  parseBackupText,
   parseImportText,
+  planRestore,
   remapEntities,
   shareLinkInText,
   shareLinkPayload,
@@ -1442,6 +1448,13 @@ export class WristAssistantPanel extends LitElement {
   @state() private importOpen = false;
   @state() private importText = "";
   @state() private importParse?: ImportParse;
+  /** Set when the text is a whole-home backup rather than one complication. */
+  @state() private importBackup?: Extract<BackupParse, { ok: true }>;
+  /** What the last restore did, in words. Set once it has run. */
+  @state() private restoreResult?: { text: string; error: boolean };
+  @state() private restoring = false;
+  /** "Back up all" is reading every device's list. */
+  @state() private backingUp = false;
   @state() private importName = "";
   @state() private importMap: ReadonlyMap<string, EntityRef> = new Map();
   /** The shapes Import takes. Undefined takes every shape the text has. */
@@ -2448,6 +2461,9 @@ export class WristAssistantPanel extends LitElement {
     .new-btn:disabled { opacity: .45; cursor: not-allowed; }
     .new-btn svg { width: 16px; height: 16px; }
     .newc-full { font-size: 11px; color: var(--wa-muted); white-space: nowrap; }
+    .restore-list { margin: 0; padding: 0 0 0 18px; max-height: 280px; overflow: auto; font-size: 13px; line-height: 1.6; }
+    .restore-list .restore-from { color: var(--wa-muted); font-size: 12px; }
+    .restore-list li.err .restore-from { color: var(--error-color, #db4437); }
 
     /* The New complication dialog: three numbered steps and Create. In the
        middle of the window rather than hanging off the button, because it asks
@@ -10027,6 +10043,9 @@ export class WristAssistantPanel extends LitElement {
         : html`<span class="pk-foot-said ${this.saveError ? "err" : ""}">${said}</span>
           <button type="button" class="ghost small"
             @click=${() => { this.saveError = undefined; this.copyStatus = undefined; this.copyOpen = undefined; }}>Dismiss</button>`}
+      <button type="button" class="new-btn" ?disabled=${this.backingUp}
+        title="Save every complication in this home to one file"
+        @click=${() => void this.backupAll()}>${uiIcon("download")}<span>${this.backingUp ? "Backing up…" : "Back up all"}</span></button>
       <button type="button" class="new-btn" ?disabled=${full || this.ownerBusy}
         title=${full ? `${where} has no free slot. Delete a complication first.` : "Paste a complication somebody shared"}
         @click=${() => this.importFromPicker()}><span>Import</span></button>
@@ -12709,21 +12728,117 @@ export class WristAssistantPanel extends LitElement {
     await this.copyShareText(url, "link");
   }
 
-  /** Save the text as a file: a Blob and one click on a link nobody sees. The
-   * panel has no download route on the server and needs none. */
+  /** Save the text as a file. */
   private downloadShareText(text: string) {
     const cfg = this.draft?.config;
     if (!cfg) return;
-    const name = exportFileName(cfg);
-    const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = name;
-    link.click();
-    // Freed on the next turn: revoking in this one can beat the download to it.
-    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    saveTextFile(exportFileName(cfg), text);
     this.shareNote = "";
     this.flashShare("file");
+  }
+
+  /**
+   * Save every complication in this home to one file: every device and
+   * Unassigned, read fresh from the server rather than from what the panel
+   * happens to hold. Unsaved edits in the open editor are not in it, since
+   * the file is a copy of what the server keeps.
+   *
+   * A record that does not parse is left out and counted, rather than
+   * stopping the whole backup over one design.
+   */
+  private async backupAll() {
+    this.backingUp = true;
+    this.saveError = undefined;
+    this.copyStatus = undefined;
+    try {
+      const { owners } = await fetchOwners(this.hass);
+      const sources: BackupSource[] = [];
+      let unreadable = 0;
+      for (const owner of owners) {
+        const reply = await fetchList(this.hass, owner.owner_watch_id);
+        const device = isLibraryOwner(owner) ? UNASSIGNED_LABEL : ownerLabel(owner);
+        for (const record of reply.records) {
+          if (record.deleted || !record.document) continue;
+          try {
+            sources.push({ device, config: parseConfig(record.document) });
+          } catch {
+            unreadable += 1;
+          }
+        }
+      }
+      if (sources.length === 0) {
+        this.copyStatus = "There are no complications to back up yet.";
+        return;
+      }
+      const now = new Date();
+      saveTextFile(backupFileName(now), backupText(sources, now));
+      const count = sources.length === 1 ? "1 complication" : `${sources.length} complications`;
+      const left = unreadable === 0 ? "" : ` ${unreadable} could not be read and ${unreadable === 1 ? "is" : "are"} not in it.`;
+      this.copyStatus = `Saved ${count} to ${backupFileName(now)}. To restore, choose the file in Import.${left}`;
+    } catch (err) {
+      this.saveError = `The backup could not be made: ${errText(err)}`;
+    } finally {
+      this.backingUp = false;
+    }
+  }
+
+  /**
+   * Put every design of a backup in Unassigned.
+   *
+   * Never on a device: device ids change when the integration is removed and
+   * added again, which is the usual reason to restore. Each design gets a new
+   * id, a free seat and a name nothing in Unassigned uses. One failed save
+   * does not stop the rest; the result names what did not land.
+   */
+  private async restoreBackup() {
+    const backup = this.importBackup;
+    const shelf = this.libraryOwner();
+    if (!backup || this.restoring) return;
+    if (!shelf) {
+      this.restoreResult = { text: `${UNASSIGNED_LABEL} is not available. Update the Wrist Assistant integration.`, error: true };
+      return;
+    }
+    this.restoring = true;
+    this.restoreResult = undefined;
+    try {
+      await this.loadOtherLists();
+      const seats = this.seatsOn(shelf.ownerId);
+      if (!seats) {
+        this.restoreResult = { text: unreadableRefusal([UNASSIGNED_LABEL]), error: true };
+        return;
+      }
+      const records = shelf.ownerId === this.ownerId ? this.records : this.otherLists.get(shelf.ownerId)?.records ?? [];
+      const taken = new Set(records
+        .filter((r) => !r.deleted)
+        .map((r) => String(r.document?.name ?? "").trim().toLowerCase())
+        .filter((n) => n !== ""));
+      const plan = planRestore(backup.entries, seats.held, seats.blocked, taken, newId);
+      let saved = 0;
+      const failed: string[] = [];
+      for (const cfg of plan.writes) {
+        try {
+          const out = await saveRecord(this.hass, shelf.ownerId, new Draft(cfg, null).encoded(), null);
+          if (out.ok) saved += 1;
+          else failed.push(cfg.name);
+        } catch {
+          failed.push(cfg.name);
+        }
+      }
+      await this.reloadAfterRowWrite(shelf.ownerId);
+      await this.loadOwners();
+      const lines = [
+        saved === 0
+          ? "Nothing was restored."
+          : `Restored ${saved === 1 ? "1 complication" : `${saved} complications`} to ${UNASSIGNED_LABEL}. Open the list and put each one on a device from its card.`,
+      ];
+      if (plan.full.length > 0) lines.push(`${UNASSIGNED_LABEL} had no free seat for: ${plan.full.join(", ")}.`);
+      if (failed.length > 0) lines.push(`These could not be saved: ${failed.join(", ")}.`);
+      this.restoreResult = { text: lines.join(" "), error: saved === 0 || plan.full.length + failed.length > 0 };
+    } catch (err) {
+      this.restoreResult = { text: `The restore stopped: ${errText(err)}`, error: true };
+    } finally {
+      this.restoring = false;
+    }
   }
 
   /**
@@ -12757,10 +12872,46 @@ export class WristAssistantPanel extends LitElement {
     return html`<dialog class="import-dialog xf ${this.importDrop ? "dropping" : ""}" @keydown=${this.importKeys} @close=${() => this.importClosed()}
       @dragenter=${this.importDragEnter} @dragover=${this.importDragOver} @dragleave=${this.importDragLeave} @drop=${this.importDropped}
       @paste=${this.importPasted}>
-      ${this.dialogHead("Import", "", () => this.closeImportDialog())}
-      ${cfg ? this.renderImportLoaded(cfg) : this.renderImportEmpty()}
+      ${this.dialogHead(this.importBackup ? "Restore a backup" : "Import", "", () => this.closeImportDialog())}
+      ${this.importBackup
+        ? this.renderRestoreBackup(this.importBackup)
+        : cfg ? this.renderImportLoaded(cfg) : this.renderImportEmpty()}
       ${cfg && this.importDrop ? html`<div class="xfer-drop" aria-hidden="true"><span>Drop to read the file</span></div>` : nothing}
     </dialog>`;
+  }
+
+  /**
+   * A whole-home backup, read: what is in it, where it goes, and one button.
+   * After the restore the same view says what landed, and the button closes.
+   */
+  private renderRestoreBackup(backup: Extract<BackupParse, { ok: true }>) {
+    const count = backup.entries.length;
+    const when = backup.createdAt === "" ? undefined : new Date(backup.createdAt);
+    const made = when && !Number.isNaN(when.getTime()) ? ` from ${when.toLocaleString()}` : "";
+    const done = this.restoreResult !== undefined && !this.restoring;
+    return html`<div class="xfer-body">
+      <div class="xf-lead">${uiIcon("info")}
+        <span>A backup${made} with ${count === 1 ? "1 complication" : `${count} complications`}.
+          Restore puts them all in ${UNASSIGNED_LABEL}, with the entities they had.
+          Nothing already here is changed.</span></div>
+      <ul class="restore-list">
+        ${backup.entries.map((entry) => html`<li><b>${entry.config.name.trim() || "Untitled"}</b>${entry.devices.length > 0
+          ? html` <span class="restore-from">${entry.devices.join(", ")}</span>` : nothing}</li>`)}
+        ${backup.problems.map((p) => html`<li class="err"><b>${p.name}</b> <span class="restore-from">cannot be restored: ${p.error}</span></li>`)}
+      </ul>
+      ${this.restoreResult
+        ? html`<div class="hint ${this.restoreResult.error ? "err" : ""}" role="status">${this.restoreResult.text}</div>`
+        : nothing}
+    </div>
+    <div class="xfer-foot">
+      ${done ? nothing : html`<button class="small" ?disabled=${this.restoring} @click=${() => this.startImportOver()}>Start over</button>`}
+      <span class="spacer"></span>
+      ${done
+        ? html`<button class="primary" @click=${() => this.closeImportDialog()}>Done</button>`
+        : html`<button class="small" ?disabled=${this.restoring} @click=${() => this.closeImportDialog()}>Cancel</button>
+          <button class="primary" ?disabled=${this.restoring || count === 0} @click=${() => void this.restoreBackup()}>
+            ${this.restoring ? "Restoring…" : `Restore ${count}`}</button>`}
+    </div>`;
   }
 
   /** Nothing loaded yet: one place to paste or drop, a way to type the text,
@@ -13021,6 +13172,18 @@ export class WristAssistantPanel extends LitElement {
       });
       return;
     }
+    // A whole-home backup has its own view. One that does not read says why
+    // in the ordinary error line, the same place a single paste's would.
+    const backup = text.trim() === "" ? undefined : parseBackupText(text, this.maxSchemaVersion);
+    this.importBackup = backup?.ok ? backup : undefined;
+    this.restoreResult = undefined;
+    if (backup) {
+      this.importParse = backup.ok ? undefined : backup;
+      this.importMap = new Map();
+      this.importFamilies = undefined;
+      this.importName = "";
+      return;
+    }
     const before = this.importParse?.ok ? JSON.stringify(this.importParse.config) : undefined;
     const parse = text.trim() === "" ? undefined : parseImportText(text, this.maxSchemaVersion);
     this.importParse = parse;
@@ -13177,6 +13340,8 @@ export class WristAssistantPanel extends LitElement {
   private resetImportState() {
     this.importText = "";
     this.importParse = undefined;
+    this.importBackup = undefined;
+    this.restoreResult = undefined;
     this.importName = "";
     this.importMap = new Map();
     this.importFamilies = undefined;
@@ -15892,6 +16057,18 @@ export class WristAssistantPanel extends LitElement {
       </div>
     </details>`;
   }
+}
+
+/** Save text as a file: a Blob and one click on a link nobody sees. The panel
+ * has no download route on the server and needs none. */
+function saveTextFile(name: string, text: string) {
+  const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.click();
+  // Freed on the next turn: revoking in this one can beat the download to it.
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function errText(err: unknown): string {

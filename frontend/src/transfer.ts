@@ -33,7 +33,9 @@ import {
   mapFreeText,
   parseConfig,
   replaceQuotedEntityIds,
+  schemaVersionFor,
 } from "./model.js";
+import { type SlotHolder, freeSlotForFamily } from "./copies.js";
 import { supportedFamilies } from "./layouts.js";
 import { familyTitle } from "./renderer.js";
 
@@ -231,6 +233,15 @@ export function exportText(
   mode: "share" | "backup",
   slots: readonly ShareSlot[] = [],
 ): string {
+  return `${stableStringify(exportObject(cfg, mode, slots))}\n`;
+}
+
+/** The object `exportText` prints, for a caller that nests it in a bigger file. */
+export function exportObject(
+  cfg: CustomComplicationConfig,
+  mode: "share" | "backup",
+  slots: readonly ShareSlot[] = [],
+): Record<string, unknown> {
   const doc = mode === "share" ? scrubForShare(cfg, slots) : cfg;
   const encoded = encodeConfig(doc);
   delete encoded.id;
@@ -246,7 +257,7 @@ export function exportText(
   // Derived on save. Exporting it would ship a stale answer to a question the
   // reader's own save re-answers correctly.
   encoded.dataSources = [];
-  return `${stableStringify(encoded)}\n`;
+  return encoded;
 }
 
 /** A filename somebody will recognise a week later in their downloads. Mirrors
@@ -635,4 +646,179 @@ export function importProblem(state: ImportReadiness): string | undefined {
  * having asked to see it anyway. */
 export function importTextFolded(parse: ImportParse | undefined, shown: boolean): boolean {
   return parse?.ok === true && !shown;
+}
+
+// ── backup of every complication ──────────────────────────────────────────
+//
+// One file holding every design in this home, for the day the integration is
+// removed. Removing it deletes the complication store with it, and the only
+// other way back is restoring a whole Home Assistant backup, which also rolls
+// back everything else in the house.
+//
+// Each design in the file is the same object a single "Backup for me" export
+// prints, so every rule about identity above holds here too. A restore puts
+// them all in Unassigned (the Library), never on a device: device ids do not
+// survive a remove and re-add, and the author places each one from its card.
+
+/** What marks a file as a whole-home backup rather than one complication. */
+export const BACKUP_KIND = "wrist-assistant-complications";
+/** The newest backup layout this panel reads. */
+export const BACKUP_VERSION = 1;
+
+/** One design on its way into a backup, with the device it came from. */
+export interface BackupSource {
+  device: string;
+  config: CustomComplicationConfig;
+}
+
+/**
+ * The text of a whole-home backup.
+ *
+ * Linked copies of one design on several devices are the same document once
+ * identity is gone, so each design is written once, with every device it was
+ * on. Different shapes of one design differ, and each is kept.
+ */
+export function backupText(sources: readonly BackupSource[], createdAt: Date): string {
+  const byText = new Map<string, { devices: string[]; document: Record<string, unknown> }>();
+  for (const source of sources) {
+    const document = exportObject(source.config, "backup");
+    const key = stableStringify(document);
+    const seen = byText.get(key);
+    if (seen) {
+      if (!seen.devices.includes(source.device)) seen.devices.push(source.device);
+    } else {
+      byText.set(key, { devices: [source.device], document });
+    }
+  }
+  const complications = [...byText.values()].map((entry) => ({
+    devices: entry.devices,
+    document: entry.document,
+  }));
+  return `${stableStringify({
+    kind: BACKUP_KIND,
+    version: BACKUP_VERSION,
+    createdAt: createdAt.toISOString(),
+    complications,
+  })}\n`;
+}
+
+/** A filename that sorts by date in a downloads folder. */
+export function backupFileName(createdAt: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const day = `${createdAt.getFullYear()}-${pad(createdAt.getMonth() + 1)}-${pad(createdAt.getDate())}`;
+  return `Wrist-Assistant-complications-${day}.json`;
+}
+
+/** One design read back out of a backup. */
+export interface BackupEntry {
+  devices: string[];
+  config: CustomComplicationConfig;
+}
+
+export type BackupParse =
+  | {
+      ok: true;
+      createdAt: string;
+      entries: BackupEntry[];
+      /** Designs in the file that did not read, by name, with the reason. */
+      problems: { name: string; error: string }[];
+    }
+  | { ok: false; error: string };
+
+/**
+ * Read a whole-home backup, or undefined when the text is not one.
+ *
+ * Undefined rather than an error, so the caller can go on to read the text as
+ * one complication and say what is wrong with it in those words. Each design
+ * goes through `parseImportText`, so a backup is held to exactly the rules a
+ * single paste is, and one damaged design does not stop the rest.
+ */
+export function parseBackupText(text: string, maxSchemaVersion: number): BackupParse | undefined {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text.trim());
+  } catch {
+    return undefined;
+  }
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return undefined;
+  const object = raw as Record<string, unknown>;
+  if (object.kind !== BACKUP_KIND) return undefined;
+
+  const version = object.version;
+  if (typeof version === "number" && version > BACKUP_VERSION) {
+    return { ok: false, error: `This backup was made by a newer panel. ${UPDATE_INTEGRATION}` };
+  }
+  if (!Array.isArray(object.complications)) {
+    return { ok: false, error: "This backup is damaged: it has no list of complications." };
+  }
+
+  const entries: BackupEntry[] = [];
+  const problems: { name: string; error: string }[] = [];
+  object.complications.forEach((item, index) => {
+    const entry = typeof item === "object" && item !== null ? (item as Record<string, unknown>) : {};
+    const document = entry.document;
+    const named = typeof document === "object" && document !== null
+      ? (document as Record<string, unknown>).name
+      : undefined;
+    const name = typeof named === "string" && named.trim() !== "" ? named.trim() : `Complication ${index + 1}`;
+    const parse = parseImportText(JSON.stringify(document ?? null), maxSchemaVersion);
+    if (!parse.ok) {
+      problems.push({ name, error: parse.error });
+      return;
+    }
+    const devices = Array.isArray(entry.devices)
+      ? entry.devices.filter((d): d is string => typeof d === "string" && d !== "")
+      : [];
+    entries.push({ devices, config: parse.config });
+  });
+  const createdAt = typeof object.createdAt === "string" ? object.createdAt : "";
+  return { ok: true, createdAt, entries, problems };
+}
+
+/** What a restore writes, and what it had no room for. */
+export interface RestorePlan {
+  /** Complete documents, each with its own id, seat and name. */
+  writes: CustomComplicationConfig[];
+  /** Names of the designs no seat was left for. */
+  full: string[];
+}
+
+/**
+ * Where each design of a backup lands in Unassigned.
+ *
+ * `held` and `blocked` are what Unassigned already holds, and `taken` its
+ * names, lower-cased. Each design takes the first seat free for its shape and
+ * a name nothing there uses yet, and then counts as held for the next one, so
+ * two designs of one backup never claim the same seat or the same name.
+ */
+export function planRestore(
+  entries: readonly BackupEntry[],
+  held: readonly SlotHolder[],
+  blocked: readonly { slot: number }[],
+  taken: ReadonlySet<string>,
+  makeId: () => string,
+): RestorePlan {
+  const seats: SlotHolder[] = [...held];
+  const names = new Set(taken);
+  const writes: CustomComplicationConfig[] = [];
+  const full: string[] = [];
+  for (const entry of entries) {
+    const cfg = structuredClone(entry.config);
+    const families = supportedFamilies(cfg);
+    const slot = freeSlotForFamily(families[0], seats, blocked);
+    const name = suggestImportName(cfg.name, names) || "Restored complication";
+    if (slot < 0) {
+      full.push(name);
+      continue;
+    }
+    cfg.id = makeId();
+    cfg.slotIndex = slot;
+    cfg.name = name;
+    cfg.dataSources = [];
+    cfg.schemaVersion = schemaVersionFor(cfg);
+    seats.push({ slotIndex: slot, families });
+    names.add(name.toLowerCase());
+    writes.push(cfg);
+  }
+  return { writes, full };
 }
