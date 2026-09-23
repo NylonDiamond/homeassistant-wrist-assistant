@@ -84,6 +84,7 @@ import {
   inlineRuns,
   newControlConfig,
   newElement,
+  type TapElement,
   convertChartTimes,
   newId,
   parseConfig,
@@ -1725,6 +1726,16 @@ export class WristAssistantPanel extends LitElement {
    * cannot delete a page minutes later. */
   @state() private pageTrashArm?: number;
   private pageTrashTimer?: number;
+  /** The inspector card lit for a moment, to show where a setting went. */
+  @state() private litSection?: string;
+  private litSectionTimer?: number;
+
+  /** Light one inspector card for a few seconds, by id. */
+  private lightSection(id: string) {
+    window.clearTimeout(this.litSectionTimer);
+    this.litSection = id;
+    this.litSectionTimer = window.setTimeout(() => { this.litSection = undefined; }, 3200);
+  }
   /** The device whose chip in the devices row has its trash armed, by owner
    * id. Same rule as the page trash: one press asks, the next takes the
    * design off that device, and it forgets after a few seconds. */
@@ -4555,6 +4566,13 @@ export class WristAssistantPanel extends LitElement {
       box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 24%, var(--wa-card));
     }
     .sec[data-open="true"] { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 40%, var(--wa-card)); }
+    /* A card lit for a moment: where the panel has just sent the eye. */
+    .sec.lit { animation: wa-sec-lit 1.6s ease-out 2; }
+    @keyframes wa-sec-lit {
+      0%, 100% { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 40%, var(--wa-card)); }
+      30% { box-shadow: inset 0 0 0 2px var(--c), 0 0 0 3px color-mix(in srgb, var(--c) 30%, transparent); }
+    }
+    @media (prefers-reduced-motion: reduce) { .sec.lit { animation: none; box-shadow: inset 0 0 0 2px var(--c); } }
     .sec-h {
       display: flex; align-items: center; gap: 8px; height: 36px; margin: 0 -12px; padding: 0 6px 0 12px;
       cursor: pointer; user-select: none; transition: background-color .12s ease-out;
@@ -7100,6 +7118,7 @@ export class WristAssistantPanel extends LitElement {
       tapAreaShown: this.showTaps,
       showTapArea: (on) => this.setShowTaps(on),
       openSections: this.openSections,
+      litSection: this.litSection,
       toggleSection: (id) => this.toggleSection(id),
       helpSections: this.helpSections,
       toggleHelp: (id) => this.toggleHelp(id),
@@ -8395,8 +8414,28 @@ export class WristAssistantPanel extends LitElement {
           : `A tap zone over the right half of page ${page}. Tapping it shows the next page.`}
         @click=${() => this.mutate((c) => { addPageTurnTap(c, type, page); }, `pages-zone-${type}`)}>${uiIcon("plus")}<span>${back ? "Previous" : "Next"} page tap</span></button>`;
     };
+    // A tap zone that shows one page. Which page is a setting of the layer,
+    // so the new layer is selected and its Tap card lit: that is where to
+    // pick it, and where every other tap action is set too.
+    const pick = () => {
+      let id = "";
+      this.mutate((c) => {
+        const el = newElement("tap");
+        const tap = el.payload as TapElement;
+        tap.name = "Page tap zone";
+        tap.frame = { x: 0.25, y: 0, width: 0.5, height: 1, rotationDegrees: 0 };
+        tap.action = { type: "showPage", page: page === 1 ? 2 : 1 };
+        tap.page = page;
+        c.elements.unshift(el);
+        id = tap.id;
+      }, "pages-zone-showPage");
+      this.inspect = { kind: "layer", id };
+      this.lightSection("content");
+    };
     return html`<div class="page-tools">
-      ${edit ? html`${zone("previousPage")}${zone("nextPage")}` : nothing}
+      ${edit ? html`${zone("previousPage")}${zone("nextPage")}
+        <button class="lc-ghost sm" title=${`A tap zone over the middle of page ${page} that shows one page of your choice. Pick which page on the right, under Tap.`}
+          @click=${pick}>${uiIcon("plus")}<span>One page tap</span></button>` : nothing}
       <span class="spacer"></span>
       <button class="lc-ghost sm" title="How pages work" @click=${() => { this.helpTab = "pages"; this.helpOpen = true; }}>How pages work</button>
     </div>`;

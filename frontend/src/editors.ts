@@ -465,6 +465,9 @@ export interface EditorHost {
    * card's More line (`<id>:more`, `<id>:less`). A new selection starts from
    * `DEFAULT_SECTIONS`. */
   openSections: ReadonlySet<string>;
+  /** A card to light for a moment, by id: where the panel has just sent the
+   * eye, such as the tap action of a tap zone it made from the Pages card. */
+  litSection?: string;
   toggleSection(id: string): void;
   /** The cards whose "?" is on. A card's plain hints are hidden until then;
    * warnings, errors, empty states and hints marked `keep` always show. */
@@ -5435,7 +5438,7 @@ export function card(host: EditorHost, id: string, title: string, body: unknown,
         @click=${(e: Event) => { e.stopPropagation(); if (!open) host.toggleSection(id); opts.action?.run(); }}>${uiIcon("plus")}<span>${opts.action.label}</span></button>`}
       <button type="button" class="sec-help ${help ? "on" : ""}" aria-pressed=${help ? "true" : "false"} title=${helpLabel} aria-label=${helpLabel}
         @click=${(e: Event) => { e.stopPropagation(); toggleHelp(); }}>?</button>`;
-  return html`<section class="sec" data-open=${open ? "true" : "false"} data-help=${help ? "on" : "off"} style=${opts.color ? `--c:${opts.color}` : ""}>
+  return html`<section class="sec ${host.litSection === id ? "lit" : ""}" data-open=${open ? "true" : "false"} data-help=${help ? "on" : "off"} style=${opts.color ? `--c:${opts.color}` : ""}>
     ${pinned
       ? html`<div class="sec-h pinned">${head}</div>`
       : html`<div class="sec-h" role="button" tabindex="0" aria-expanded=${open ? "true" : "false"} @click=${toggle}
