@@ -5062,7 +5062,7 @@ ${gH(c)}`}}delete s.hidden,delete s.linkId;let l=pd(a);if(l.length>0){let d=l.sl
        gives way first, so the choice keeps its words. */
     .color-mode-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
     .color-mode-row > .color-row { flex: 1 1 auto; min-width: 0; }
-    .color-mode-row > .seg.wide { flex: 0 1 auto; width: auto; }
+    .color-mode-row > .seg.wide { flex: 0 0 auto; width: auto; }
     .color-mode-row > .seg.wide button { padding: 0 8px; white-space: nowrap; }
     /* The Complication card's Shape row reads like a field that cannot be typed into. */
     .field.shape-line > .readout-v {
