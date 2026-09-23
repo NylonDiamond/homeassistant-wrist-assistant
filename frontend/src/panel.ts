@@ -8419,30 +8419,34 @@ export class WristAssistantPanel extends LitElement {
         title=${back
           ? `A tap zone over the left half of page ${page}. Tapping it shows the page before.`
           : `A tap zone over the right half of page ${page}. Tapping it shows the next page.`}
-        @click=${() => this.mutate((c) => { addPageTurnTap(c, type, page); }, `pages-zone-${type}`)}>${uiIcon("plus")}<span>${back ? "Previous" : "Next"} page tap</span></button>`;
+        @click=${() => this.mutate((c) => { addPageTurnTap(c, type, page); }, `pages-zone-${type}`)}>${uiIcon("plus")}<span>${back ? "Previous" : "Next"} page</span></button>`;
     };
-    // A tap zone that shows one page. Which page is a setting of the layer,
-    // so the new layer is selected and its Tap card lit: that is where to
-    // pick it, and where every other tap action is set too.
-    const pick = () => {
+    // A tap zone over the middle of the page with the given action. Show one
+    // page has a setting of its own, which page, so that layer is selected
+    // and its Tap card lit: that is where to pick it, and where every other
+    // tap action is set too.
+    const middle = (name: string, action: TapElement["action"], light: boolean) => () => {
       let id = "";
       this.mutate((c) => {
         const el = newElement("tap");
         const tap = el.payload as TapElement;
-        tap.name = "Page tap zone";
+        tap.name = name;
         tap.frame = { x: 0.25, y: 0, width: 0.5, height: 1, rotationDegrees: 0 };
-        tap.action = { type: "showPage", page: page === 1 ? 2 : 1 };
+        tap.action = action;
         tap.page = page;
         c.elements.unshift(el);
         id = tap.id;
-      }, "pages-zone-showPage");
+      }, `pages-zone-${action.type}`);
+      if (!light) return;
       this.inspect = { kind: "layer", id };
       this.lightSection("content");
     };
     return html`<div class="page-tools">
       ${zone("previousPage")}${zone("nextPage")}
       <button class="lc-ghost sm" title=${`A tap zone over the middle of page ${page} that shows one page of your choice. Pick which page on the right, under Tap.`}
-        @click=${pick}>${uiIcon("plus")}<span>One page tap</span></button>
+        @click=${middle("Page tap zone", { type: "showPage", page: page === 1 ? 2 : 1 }, true)}>${uiIcon("plus")}<span>One page</span></button>
+      <button class="lc-ghost sm" title=${`A tap zone over the middle of page ${page}. Tapping it plays every page in turn, then comes back.`}
+        @click=${middle("Play all pages tap zone", { type: "playTour" }, false)}>${uiIcon("plus")}<span>Play all pages</span></button>
     </div>`;
   }
 
