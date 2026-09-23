@@ -9153,12 +9153,12 @@ export class WristAssistantPanel extends LitElement {
           </li>
           <li>
             <span class="gate-n">3</span>
-            <div><b>Reload this page</b><span>The editor opens. Complications still on your iPhone move here by themselves once the watch app is updated.</span></div>
+            <div><b>Reload this page</b><span>The editor opens. Complications built on the iPhone before the update keep working on the watch; build new ones here.</span></div>
           </li>`;
     return html`<div class="gate">
       <div class="gate-card">
         <div class="gate-glyph">${uiIcon("watch")}</div>
-        <div class="gate-eyebrow">${phone ? "iPhone app update coming soon" : "Watch app update coming soon"}</div>
+        <div class="gate-eyebrow">${phone ? "iPhone app update needed" : "Watch app update needed"}</div>
         <h2 class="gate-title">${phone ? "This iPhone needs the new app." : "This watch needs the new app."}</h2>
         <p class="gate-lead">${updateDeviceMessage(owner)}</p>
         <ol class="gate-steps">
@@ -9224,7 +9224,7 @@ export class WristAssistantPanel extends LitElement {
             : {
               kind: "locked",
               badge: "iPhone",
-              title: "Still on the iPhone. Open the Wrist Assistant app on the iPhone to move it here.",
+              title: "Built on the iPhone before Wrist Assistant 2.8. It keeps working and cannot be edited. Delete it in the Widgets tab of the iPhone app to free this seat.",
               families: [],
             },
         });

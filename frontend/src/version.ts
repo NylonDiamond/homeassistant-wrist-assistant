@@ -193,7 +193,7 @@ export function updateWatchMessage(appVersion: string | null | undefined, minimu
   const reported = have
     ? `This watch runs Wrist Assistant ${appVersion}.`
     : "This watch has not reported its Wrist Assistant version yet.";
-  return `${reported} The editor needs ${minimum}, coming soon to the App Store.`;
+  return `${reported} The editor needs ${minimum} or later. Update Wrist Assistant on your iPhone; the watch app updates with it.`;
 }
 
 /** The same lead line for a phone owner. Its own sentence rather than a
@@ -205,7 +205,7 @@ export function updateIPhoneMessage(appVersion: string | null | undefined, minim
   const reported = have
     ? `This iPhone runs Wrist Assistant ${appVersion}.`
     : "This iPhone has not reported its Wrist Assistant version yet.";
-  return `${reported} Lock Screen and Home Screen complications need ${minimum}, coming soon to the App Store.`;
+  return `${reported} Lock Screen and Home Screen complications need ${minimum} or later. Update Wrist Assistant on your iPhone.`;
 }
 
 /** Whether the panel opens for this owner, whichever device it is. A watch

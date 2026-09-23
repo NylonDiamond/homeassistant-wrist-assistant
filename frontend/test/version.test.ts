@@ -47,7 +47,7 @@ describe("watchVersionNote", () => {
 describe("updateWatchMessage", () => {
   it("names the reported version and the minimum", () => {
     expect(updateWatchMessage("2.7.2", "2.8.0")).toBe(
-      "This watch runs Wrist Assistant 2.7.2. The editor needs 2.8.0, coming soon to the App Store.",
+      "This watch runs Wrist Assistant 2.7.2. The editor needs 2.8.0 or later. Update Wrist Assistant on your iPhone; the watch app updates with it.",
     );
   });
 
@@ -200,7 +200,7 @@ describe("updateIPhoneMessage", () => {
   // screens it draws on are named: one release brings the two.
   it("names the reported version and the minimum", () => {
     expect(updateIPhoneMessage("2.7.2", "2.8.0")).toBe(
-      "This iPhone runs Wrist Assistant 2.7.2. Lock Screen and Home Screen complications need 2.8.0, coming soon to the App Store.",
+      "This iPhone runs Wrist Assistant 2.7.2. Lock Screen and Home Screen complications need 2.8.0 or later. Update Wrist Assistant on your iPhone.",
     );
   });
 
