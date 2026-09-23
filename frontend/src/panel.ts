@@ -13140,7 +13140,7 @@ export class WristAssistantPanel extends LitElement {
       let unreadable = 0;
       for (const owner of owners) {
         const reply = await fetchList(this.hass, owner.owner_watch_id);
-        const device = isLibraryOwner(owner) ? UNASSIGNED_LABEL : ownerLabel(owner);
+        const device = isLibraryOwner(owner) ? UNASSIGNED_LABEL : ownerShortLabel(owner);
         for (const record of reply.records) {
           if (record.deleted || !record.document) continue;
           try {
