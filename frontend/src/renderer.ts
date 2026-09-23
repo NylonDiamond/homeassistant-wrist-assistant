@@ -2538,8 +2538,10 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
   // what is drawn, not on the whole frame: boxed to the frame they floated far
   // outside a circle or ring in a wide frame, or a thin line or bar in a tall one.
   const outline = layerOutline(el, box);
+  // 1.5px on screen: at 0.75 the outline around a group's members read as a
+  // faint hairline against a busy picture.
   const highlight = selected && !onChart
-    ? svg`<rect x=${outline.x} y=${outline.y} width=${outline.w} height=${outline.h} fill="none" stroke="#0A84FF" stroke-width="0.75" stroke-dasharray="2 1" vector-effect="non-scaling-stroke" />`
+    ? svg`<rect x=${outline.x} y=${outline.y} width=${outline.w} height=${outline.h} fill="none" stroke="#0A84FF" stroke-width="1.5" stroke-dasharray="2 1" vector-effect="non-scaling-stroke" />`
     : nothing;
   // Solid tint rather than the selection's dashes, so the two never read as the
   // same state when the pointer happens to rest on the selected layer.
