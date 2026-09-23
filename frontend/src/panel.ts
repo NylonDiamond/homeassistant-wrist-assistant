@@ -3392,14 +3392,25 @@ export class WristAssistantPanel extends LitElement {
     /* A lone selection offers only Save to parts: a quiet row, no box. */
     .part-cta { display: flex; align-items: center; font-size: 12px; margin-bottom: 4px; }
     .part-cta .spacer { flex: 1; }
-    /* Left column cards: Pages and Layers. One 40px header line each, plain
-       card color, no band and no tint of their own; the one filled button is
-       + Add. */
-    .card.lc { padding: 0; border-radius: var(--wa-lc-r); }
+    /* Left column cards: Pages and Layers. One 40px header line each, each
+       tinted with its own color and marked with a small swatch icon, the way
+       the inspector's sections are; the one filled button is + Add. */
+    .card.lc {
+      --c: var(--wa-accent); padding: 0; border-radius: var(--wa-lc-r);
+      background: color-mix(in srgb, var(--c) 7%, var(--wa-card));
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 30%, var(--wa-card));
+    }
+    .card.pages-card { --c: #26a69a; }
+    .card.layers-card { --c: #4a7fe8; }
+    .lc-head .swatch {
+      width: 18px; height: 18px; border-radius: 5px; border: 0; flex: none; display: grid; place-items: center;
+      background: color-mix(in srgb, var(--c) 22%, transparent); color: var(--c);
+    }
+    .lc-head .swatch svg.ui-icon { width: 11px; height: 11px; }
     .lc-head {
       display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; min-height: 40px; padding: 6px 8px 6px 12px;
     }
-    .layers-card .lc-head { border-bottom: 1px solid var(--wa-line); }
+    .layers-card .lc-head { border-bottom: 1px solid color-mix(in srgb, var(--c) 24%, var(--wa-card)); }
     .lc-head .spacer { flex: 1; }
     .lc-title { font-size: 13px; font-weight: 600; color: var(--wa-ink); }
     .lc-sub { font-size: 11px; font-weight: 400; color: var(--wa-muted); white-space: nowrap; }
@@ -8347,7 +8358,7 @@ export class WristAssistantPanel extends LitElement {
     if (!on) {
       return html`<div class="card pages-card lc">
         <div class="lc-head">
-          <span class="lc-title">Pages</span><span class="lc-sub">just one</span>
+          <span class="swatch">${uiIcon("pages")}</span><span class="lc-title">Pages</span><span class="lc-sub">just one</span>
           <span class="spacer"></span>
           <button class="lc-btn" title="Start a second page. What is here now becomes page 1, and a new empty page 2 opens for you to draw on."
             @click=${() => { let page = 1; this.mutate((c) => { page = startPages(c); }); this.showPage(page); }}>${uiIcon("plus")}<span>Add a page</span></button>
@@ -8359,7 +8370,7 @@ export class WristAssistantPanel extends LitElement {
     const stuck = edit && !pageMoverExists(cfg);
     return html`<div class="card pages-card lc">
       <div class="lc-head">
-        <span class="lc-title">Pages</span><span class="lc-sub">${spec.count} · shown one at a time</span>
+        <span class="swatch">${uiIcon("pages")}</span><span class="lc-title">Pages</span><span class="lc-sub">${spec.count} · shown one at a time</span>
         <span class="spacer"></span>
         <span class="page-seg" role="group" aria-label="Page the canvas and the list are showing"
           title="Which page the canvas and the Layers card show">${this.renderPageTabs(cfg)}</span>
@@ -15066,7 +15077,7 @@ export class WristAssistantPanel extends LitElement {
 
     return html`<div class="card layers-card lc s${this.thumbStep}" style=${`--thumb-w:${thumbW}px;--thumb-h:${thumbH}px`}>
       <div class="lc-head">
-        <span class="lc-title">Layers</span><span class="lc-sub">top is in front</span>
+        <span class="swatch">${uiIcon("layers")}</span><span class="lc-title">Layers</span><span class="lc-sub">top is in front</span>
         <span class="spacer"></span>
         ${edit ? html`<button class="lc-btn pri add-open" aria-haspopup="dialog" aria-expanded=${this.addSheet ? "true" : "false"}
           title="Add a layer, a preset or a saved part (/)"
@@ -15174,7 +15185,7 @@ export class WristAssistantPanel extends LitElement {
     const picked = this.inspect.kind === "family";
     const open = () => { this.inspect = { kind: "family" }; };
     return html`<div class="card layers-card lc inline-layers s${this.thumbStep}">
-      <div class="lc-head"><span class="lc-title">Layers</span><span class="lc-sub">one line of text</span></div>
+      <div class="lc-head"><span class="swatch">${uiIcon("layers")}</span><span class="lc-title">Layers</span><span class="lc-sub">one line of text</span></div>
       <div class="pinned-set">
       <div class="layer pinned ${picked ? "hl" : ""}" style=${`--k:${KIND_COLOR.text}`} tabindex="0"
         title="The one line Inline draws. Click to edit it."
