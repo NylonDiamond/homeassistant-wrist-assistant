@@ -15998,7 +15998,8 @@ export class WristAssistantPanel extends LitElement {
       : `Take it off ${label}. A face or widget already using it keeps it.`;
     const armed = this.placeTrashArm === target.ownerId;
     const ask = `Press again to take it off ${label}.`;
-    const mayEdit = this.canEdit && this.hass.user?.is_admin === true;
+    // The Unassigned chip has no x: there is nowhere further to take it off to.
+    const mayEdit = this.canEdit && this.hass.user?.is_admin === true && target.kind !== "library";
     return html`<span class="doc-chip" aria-current=${here ? "true" : nothing}>
       ${uiIcon(icon)}<span class="doc-chip-name">${label}</span>
       ${mayEdit ? html`<button type="button" class="doc-trash ${armed ? "armed" : ""}"
