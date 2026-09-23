@@ -4697,7 +4697,12 @@ ${yH(c)}`}}delete s.hidden,delete s.linkId;let l=cd(a);if(l.length>0){let d=l.sl
     button.cv-act.danger:hover:not(:disabled) { background: color-mix(in srgb, #FF453A 14%, transparent); border-color: color-mix(in srgb, #FF453A 40%, transparent); }
     button.cv-act .caret { display: inline-flex; margin-right: -3px; color: var(--wa-hint); }
     button.cv-act .caret svg { width: 11px; height: 11px; }
+    button.cv-act.icon { width: 30px; padding: 0; justify-content: center; }
+    button.cv-act.icon svg.ui-icon { width: 15px; height: 15px; }
     .cv-del { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+    /* Hairlines part the head's groups: the devices, the actions, Delete,
+       and the ··· menu. */
+    .cv-div { width: 1px; height: 20px; flex: none; background: var(--wa-line); }
     .case-tool.add-tool .pop-menu { left: auto; right: 0; min-width: 230px; }
     .case-tool.add-tool .place-note { padding: 6px 10px 4px; font-size: 11px; color: var(--wa-muted); }
     .cv-shape {
@@ -4799,6 +4804,7 @@ ${yH(c)}`}}delete s.hidden,delete s.linkId;let l=cd(a);if(l.length>0){let d=l.sl
        under small headings. */
     button.tb .tint-dot { margin: 0 1px; }
     .pop-menu.preview-menu { min-width: 190px; }
+    .pop-menu .pop-title { padding: 7px 10px 6px; margin-bottom: 3px; font-size: 12.5px; font-weight: 700; color: var(--wa-ink); border-bottom: 1px solid var(--wa-line); }
     .pop-menu .pop-head { padding: 6px 10px 3px; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--wa-muted); }
     .preview-menu .row[aria-checked="true"] { background: color-mix(in srgb, var(--wa-accent) 18%, transparent); }
     button.tb .tint-dot { margin-right: 0; }
@@ -6125,6 +6131,7 @@ ${yH(c)}`}}delete s.hidden,delete s.linkId;let l=cd(a);if(l.length>0){let d=l.sl
           title=${a?`Preview as: the case size and the color. Layouts are made in the ${this.referenceCase.label} box; every other size draws a scaled copy of it. ${d.title}`:`Preview as. Layouts are made in the ${this.referenceCase.label} box. Every other size draws a scaled copy of it.`}
           @click=${()=>this.toggleMenu("case")}>${L(this.previewAsPhone?"phone":"watch")}<span class="word keep">${i.label}</span>${a?p:m}<span class="caret">${L("chevron")}</span></button>
         ${l?u`<div class="pop-menu preview-menu" role="menu" aria-label="Preview as">
+          <div class="pop-title">Preview as</div>
           <div class="pop-head">Size</div>
           ${this.previewCases.map(f=>u`<button class="row" role="menuitemradio" aria-checked=${f.label===i.label?"true":"false"}
             @click=${()=>{this.toggleMenu("case",!1),this.previewCase=f.label}}>${f.label}${f.measured?"":" (estimated)"}</button>`)}
@@ -7375,17 +7382,20 @@ ${yH(c)}`}}delete s.hidden,delete s.linkId;let l=cd(a);if(l.length>0){let d=l.sl
       </span>`:m}
       ${this.renderDocActions(t)}
       ${this.renderDocMenu()}
-    </div>`}renderDocActions(t){if(!this.canEdit)return m;let i=this.openLinkCount();return u`${this.renderAddToDevice(t)}
+    </div>`}renderDocActions(t){if(!this.canEdit)return m;let i=this.openLinkCount();return u`<span class="cv-div" aria-hidden="true"></span>
+      ${this.renderAddToDevice(t)}
       <button class="cv-act" aria-haspopup="dialog" title="Make this design again as another shape, or on another device"
         @click=${()=>this.openDuplicateAs(t,this.ownerId??"")}>Duplicate</button>
+      <span class="cv-div" aria-hidden="true"></span>
       ${this.confirmDelete?u`<span class="cv-del" role="group" aria-label="Delete this complication?">
             ${i>1?u`<button class="cv-act danger" title=${`Delete only the copy on ${this.ownerName(this.ownerId??"")}`}
                   @click=${()=>{this.confirmDelete=!1,this.deleteCurrent(!1)}}>This device</button>
                 <button class="cv-act danger" title="Delete it on every device it is on"
                   @click=${()=>{this.confirmDelete=!1,this.deleteCurrent(!0)}}>All ${i} devices</button>`:u`<button class="cv-act danger" @click=${()=>{this.confirmDelete=!1,this.deleteCurrent()}}>Really delete</button>`}
             <button class="cv-act" @click=${()=>{this.confirmDelete=!1}}>Cancel</button>
-          </span>`:u`<button class="cv-act danger" title="Delete this complication. It asks once more first."
-            @click=${()=>{this.confirmDelete=!0}}>Delete</button>`}`}renderDocMenu(){if(!this.canEdit)return m;let t=this.openMenu==="doc",i=this.draft?.baseRevision===null,a=()=>this.toggleMenu("doc",!1);return u`<span class="case-tool doc-menu" data-menu="doc">
+          </span>`:u`<button class="cv-act danger icon" title="Delete this complication. It asks once more first." aria-label="Delete this complication"
+            @click=${()=>{this.confirmDelete=!0}}>${L("delete")}</button>`}
+      <span class="cv-div" aria-hidden="true"></span>`}renderDocMenu(){if(!this.canEdit)return m;let t=this.openMenu==="doc",i=this.draft?.baseRevision===null,a=()=>this.toggleMenu("doc",!1);return u`<span class="case-tool doc-menu" data-menu="doc">
       <button class="cv-more" aria-haspopup="menu" aria-expanded=${t?"true":"false"}
         aria-label="More: history" title="More"
         @click=${()=>this.toggleMenu("doc")}>···</button>
