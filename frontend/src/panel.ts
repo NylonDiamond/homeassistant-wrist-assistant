@@ -16468,8 +16468,10 @@ export class WristAssistantPanel extends LitElement {
     const drawable = isDrawable(family);
     const designing = this.rowEditList() !== undefined;
     // An empty complication shows what it is and four ways to start, until
-    // its first layer exists.
-    const firstRun = drawable && !designing && cfg.elements.length === 0;
+    // its first layer exists. A corner drawing big curved text is not empty,
+    // and it ignores the layer canvas, so it gets neither.
+    const curved = family === "corner" && cfg.perFamily.corner?.curvedText !== undefined;
+    const firstRun = drawable && !designing && !curved && cfg.elements.length === 0;
     const tiles = firstRun && this.canEdit;
     const ratio = drawable ? this.faceRatio(family, deviceCase) : 1;
     const paged = usesPages(cfg);
@@ -16910,6 +16912,8 @@ export class WristAssistantPanel extends LitElement {
       tail = g
         ? html`A drag moves the whole group <b>${g.name}</b>; pull a corner to resize this layer. Arrow keys nudge the group.`
         : html`Drag it, or pull a corner. Arrow keys nudge it.${this.snapGrid && this.snapLayers ? " It snaps to the grid and to the other layers. Hold Alt to drag freely." : this.snapGrid ? " It snaps to the grid. Hold Alt to drag freely." : this.snapLayers ? " It snaps to the other layers. Hold Alt to drag freely." : " Hold Alt while dragging to snap to the grid."}`;
+    } else if (family === "corner" && cfg.perFamily.corner?.curvedText !== undefined) {
+      tail = `Big curved text draws in place of layers. Edit it in Corner content ${this.stackedLayout() ? "below" : "on the right"}.`;
     } else if (cfg.elements.length === 0) {
       // Nothing to click yet. With edit rights the first-run tiles under the
       // face say what to do instead, so the hint stays out of their way.
