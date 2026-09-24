@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { nothing } from "lit";
 import { type CustomComplicationConfig, type Value, literal, newConfig } from "../src/model.js";
-import { type EditorHost, sourceEditor, sourceTab, starterTemplate } from "../src/editors.js";
+import { type EditorHost, sourceEditor, sourceTab, starterTemplate, STARTER_TEMPLATE } from "../src/editors.js";
 import type { HassLike } from "../src/ha-api.js";
 
 function flatten(node: unknown): string {
@@ -112,27 +112,16 @@ describe("sourceEditor", () => {
 });
 
 describe("starterTemplate", () => {
-  const states = {
-    "sun.sun": { entity_id: "sun.sun", state: "above_horizon", attributes: {} },
-    "sensor.power": { entity_id: "sensor.power", state: "42", attributes: {} },
-    "sensor.attic": { entity_id: "sensor.attic", state: "18", attributes: {} },
-  } as unknown as HassLike["states"];
-
   it("reads the entity the value already names", () => {
-    expect(starterTemplate(states, { kind: "entityState", ...lamp })).toBe("{{ states('light.lamp') }}");
+    expect(starterTemplate({ kind: "entityState", ...lamp })).toBe("{{ states('light.lamp') }}");
   });
 
   it("then the entity it is told to prefer", () => {
-    expect(starterTemplate(states, { kind: "literal", value: "" }, lamp)).toBe("{{ states('light.lamp') }}");
+    expect(starterTemplate({ kind: "literal", value: "" }, lamp)).toBe("{{ states('light.lamp') }}");
   });
 
-  it("then the first sensor in the house", () => {
-    expect(starterTemplate(states, { kind: "literal", value: "" })).toBe("{{ states('sensor.attic') }}");
-  });
-
-  it("then the sun, and only a house with nothing at all gets the placeholder", () => {
-    const sunOnly = { "sun.sun": states["sun.sun"] } as HassLike["states"];
-    expect(starterTemplate(sunOnly, { kind: "literal", value: "" })).toBe("{{ states('sun.sun') }}");
-    expect(starterTemplate({}, { kind: "literal", value: "" })).toBe("{{ states('sensor.example') }}");
+  it("otherwise counts the lights that are on, which every house can render", () => {
+    expect(starterTemplate({ kind: "literal", value: "" })).toBe(STARTER_TEMPLATE);
+    expect(STARTER_TEMPLATE).toBe("{{ states.light | selectattr('state', 'eq', 'on') | list | count }}");
   });
 });

@@ -2505,23 +2505,26 @@ const TIME_FIELDS: [TimeField, string][] = [
   ["now", "Time (14:05)"], ["hour", "Hour"], ["minute", "Minute"], ["weekday", "Day of the week (0 is Monday)"], ["day", "Day of the month"], ["month", "Month number"], ["timestamp", "Unix timestamp (seconds)"],
 ];
 
+/** A template every house can render: how many lights are on. With no lights
+ * at all it prints 0 rather than failing. */
+export const STARTER_TEMPLATE = "{{ states.light | selectattr('state', 'eq', 'on') | list | count }}";
+
 /**
- * A template to start from that renders on this Home Assistant as it stands,
- * so a new Template reads something on its first draw instead of the
- * `unknown` a made-up `sensor.example` gives.
+ * A template to start from that renders on any Home Assistant, so a new
+ * Template reads something on its first draw instead of the `unknown` a
+ * made-up `sensor.example` gives.
  *
- * It reads the entity the value already names, then `prefer` (the layer's
- * tap), then the first sensor in the house, then `sun.sun`, which every
- * default install has.
+ * It reads the entity the value already names, then `prefer` (an entity
+ * picked earlier, or the layer's tap), and otherwise counts the lights that
+ * are on (Jesse, 2026-09-23).
  */
-export function starterTemplate(states: HassLike["states"], current: ValueKind, prefer?: EntityRef): string {
+export function starterTemplate(current: ValueKind, prefer?: EntityRef): string {
   const own = "entityId" in current && current.entityId !== "" ? current.entityId : undefined;
-  const sensor = Object.keys(states).filter((id) => id.startsWith("sensor.")).sort()[0];
-  const id = own ?? (prefer?.entityId || undefined) ?? sensor ?? (states["sun.sun"] ? "sun.sun" : "sensor.example");
-  return `{{ states('${id}') }}`;
+  const id = own ?? (prefer?.entityId || undefined);
+  return id === undefined ? STARTER_TEMPLATE : `{{ states('${id}') }}`;
 }
 
-function switchKind(current: ValueKind, kind: ValueKind["kind"], states: HassLike["states"] = {}): ValueKind {
+function switchKind(current: ValueKind, kind: ValueKind["kind"]): ValueKind {
   const ref: EntityRef = "entityId" in current ? { entityId: current.entityId, displayName: current.displayName, domain: current.domain } : { entityId: "", displayName: "", domain: "" };
   switch (kind) {
     case "literal": return { kind, value: current.kind === "literal" ? current.value : "" };
@@ -2531,7 +2534,7 @@ function switchKind(current: ValueKind, kind: ValueKind["kind"], states: HassLik
     case "aggregate": return { kind, aggregate: { function: "count", scope: { kind: "filter", domains: [], areaIds: [], labelIds: [], floorIds: [] }, stateFilter: { kind: "isOn" } } };
     case "time": return { kind, timeField: "now" };
     case "dataAge": return { kind };
-    case "jinja": return { kind, value: current.kind === "jinja" ? current.value : starterTemplate(states, current) };
+    case "jinja": return { kind, value: current.kind === "jinja" ? current.value : starterTemplate(current) };
     case "named": return { kind, id: "" };
     case "chartStat": return { kind, layer: "", stat: "latest" };
     case "item": return { kind, field: current.kind === "item" ? current.field : "" };
@@ -2816,7 +2819,7 @@ function valueForm(host: EditorHost, value: Value, set: (v: Value) => void, opts
   const body = valueBody(host, value, set, opts);
   const kindHint = VALUE_KIND_HINTS[k.kind];
   return html`
-    ${selectField("Source", k.kind, kinds, (kind) => setKind(switchKind(k, kind, host.hass.states)))}
+    ${selectField("Source", k.kind, kinds, (kind) => setKind(switchKind(k, kind)))}
     ${kindHint ? html`<div class="hint">${kindHint}</div>` : nothing}
     ${body}
     ${canShare(value, opts) ? html`<div class="hint keep">
@@ -3043,12 +3046,12 @@ export function sourceEditor(host: EditorHost, value: Value, set: (v: Value) => 
       // An entity picked earlier under Entity is the one this value is about.
       const earlier = sourceMemory.get(key)?.entity;
       const prefer = earlier && "entityId" in earlier && earlier.entityId !== "" ? earlier : opts.defaultEntity;
-      go({ kind: "jinja", value: starterTemplate(host.hass.states, k, prefer) }, node);
+      go({ kind: "jinja", value: starterTemplate(k, prefer) }, node);
     }
   };
   const pickMore = (kind: ValueKind["kind"], node: EventTarget | null) => {
     if (kind === k.kind) return;
-    go(sourceMemory.get(key)?.[kind] ?? switchKind(k, kind, host.hass.states), node);
+    go(sourceMemory.get(key)?.[kind] ?? switchKind(k, kind), node);
   };
 
   const moreId = popoverId(`${key}-more`);
