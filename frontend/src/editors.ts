@@ -9752,23 +9752,29 @@ export function rulesEditor(host: EditorHost, rules: Rule[], target: RuleTarget,
   return html`
     ${rules.length === 0 ? html`<div class="hint keep">No rules yet. A rule checks values and changes how this ${target === "layout" ? "family" : "layer"} looks.</div>` : nothing}
     ${rules.map((rule, ri) => ruleEditor(host, rule, ri, rules.length, target, upd, `${key}-${rule.id}`, parts))}
-    <div class="adders"><button class="small" @click=${() => upd((r) => { r.push(newRule()); })}>+ rule</button></div>
-    <div class="hint">Inside a rule the first matching case wins. Across rules the later rule wins for the same property. Different properties add up.</div>`;
+    <div class="adders"><button class="small" title="Add a rule. A later rule wins over an earlier one for the same setting." @click=${() => upd((r) => { r.push(newRule()); })}>${uiIcon("plus")}<span>Add a rule</span></button></div>
+    <div class="hint">Inside a rule the first matching case wins. Across rules the later rule wins for the same setting. Different settings add up.</div>`;
 }
 
+/**
+ * One rule: its cases in order, then Otherwise. The header carries the rule's
+ * number and its move and delete buttons, quiet until the pointer is near,
+ * the way a states row hides its own.
+ */
 function ruleEditor(host: EditorHost, rule: Rule, ri: number, count: number, target: RuleTarget, upd: (m: (rules: Rule[]) => void, k?: string) => void, key: string, parts?: readonly TextPart[]): TemplateResult {
   const live = host.liveBranch(rule);
   const current = host.forced.get(rule.id) ?? "live";
   const isActive = (v: string) => (current === "live" ? v === "live" : current === "otherwise" ? v === "otherwise" : current.caseId === v);
   const updRule = (m: (r: Rule) => void, k?: string) => upd((rs) => { const r = rs.find((x) => x.id === rule.id); if (r) m(r); }, k);
   const forPart = parts !== undefined && rule.partId !== undefined;
+  const otherwiseLive = live === "otherwise";
   return html`<div class="rule-box">
     <div class="rule-head">
       <b>Rule ${ri + 1}</b>
       <span class="spacer"></span>
       <button class="icon" title="Move up" ?disabled=${ri === 0} @click=${() => upd((rs) => moveItem(rs, ri, ri - 1))}>${uiIcon("up")}</button>
       <button class="icon" title="Move down" ?disabled=${ri === count - 1} @click=${() => upd((rs) => moveItem(rs, ri, ri + 1))}>${uiIcon("down")}</button>
-      <button class="icon danger" title="Delete rule" @click=${() => upd((rs) => { const i = rs.findIndex((x) => x.id === rule.id); if (i >= 0) rs.splice(i, 1); })}>${uiIcon("delete")}</button>
+      <button class="icon danger" title="Delete this rule" @click=${() => upd((rs) => { const i = rs.findIndex((x) => x.id === rule.id); if (i >= 0) rs.splice(i, 1); })}>${uiIcon("delete")}</button>
     </div>
     ${parts === undefined ? nothing : partTargetField(parts, rule.partId, describeContext(host), (id) => updRule((r) => {
       if (id) r.partId = id; else delete r.partId;
@@ -9777,100 +9783,142 @@ function ruleEditor(host: EditorHost, rule: Rule, ri: number, count: number, tar
       <div class="branches">
         <button class=${isActive("live") ? "active" : ""} @click=${() => host.setForced(rule.id, "live")}>Live</button>
         ${rule.cases.map((c, i) => html`<button class="${isActive(c.id) ? "active" : ""} ${live === c.id ? "live-match" : ""}" @click=${() => host.setForced(rule.id, { caseId: c.id })}>Case ${i + 1}</button>`)}
-        ${rule.otherwise ? html`<button class="${isActive("otherwise") ? "active" : ""} ${live === "otherwise" ? "live-match" : ""}" @click=${() => host.setForced(rule.id, "otherwise")}>Otherwise</button>` : nothing}
+        ${rule.otherwise ? html`<button class="${isActive("otherwise") ? "active" : ""} ${otherwiseLive ? "live-match" : ""}" @click=${() => host.setForced(rule.id, "otherwise")}>Otherwise</button>` : nothing}
       </div>
     </div>
     ${rule.cases.map((c, ci) => caseEditor(host, c, ci, rule, target, updRule, `${key}-${c.id}`, forPart))}
-    <div class="adders"><button class="small" @click=${() => updRule((r) => { r.cases.push(newCase()); })}>+ case</button></div>
-    ${checkField("Otherwise",rule.otherwise !== undefined, (v) => updRule((r) => { if (v) r.otherwise = r.otherwise ?? []; else delete r.otherwise; }))}
-    ${rule.otherwise
-      ? html`<div class="case-box otherwise">
-          <div class="hint keep">${live === "otherwise" ? html`<b>Active now.</b> ` : nothing}Changes when no case matches:</div>
-          ${changesEditor(host, rule.otherwise, target, (m) => updRule((r) => { if (r.otherwise) m(r.otherwise); }), `${key}-otherwise`, forPart)}
-        </div>`
-      : nothing}
+    ${rule.otherwise === undefined ? nothing : html`<div class="case-box otherwise ${otherwiseLive ? "match" : ""}">
+      <div class="rule-head">
+        <span class="row-flag" title=${otherwiseLive ? "No case matches right now, so this applies" : ""}>${otherwiseLive ? "●" : ""}</span>
+        <span>Otherwise${otherwiseLive ? html` <span class="ok">· active now</span>` : nothing}</span>
+        <span class="spacer"></span>
+        <button class="icon" title="Remove the Otherwise row" @click=${() => updRule((r) => { delete r.otherwise; })}>${uiIcon("close")}</button>
+      </div>
+      <div class="case-part"><span class="case-label">Then</span>
+        ${changeChips(host, rule.otherwise, target, (m, k) => updRule((r) => { if (r.otherwise) m(r.otherwise); }, k), `${key}-otherwise`, forPart)}
+      </div>
+    </div>`}
+    <div class="adders">
+      <button class="small" title="Add a case: when its tests hold, this rule makes these changes" @click=${() => updRule((r) => { r.cases.push(newCase()); })}>${uiIcon("plus")}<span>Add a case</span></button>
+      ${rule.otherwise === undefined
+        ? html`<button class="small" title="Add an Otherwise row at the bottom: the changes when no case matches" @click=${() => updRule((r) => { r.otherwise = []; })}>${uiIcon("plus")}<span>Add otherwise</span></button>`
+        : nothing}
+    </div>
   </div>`;
 }
 
+/**
+ * One case: its tests, one line each, then the changes as chips. The All or
+ * Any choice is only shown once there are two tests to join, because with
+ * one it changes nothing.
+ */
 function caseEditor(host: EditorHost, c: RuleCase, ci: number, rule: Rule, target: RuleTarget, updRule: (m: (r: Rule) => void, k?: string) => void, key: string, forPart = false): TemplateResult {
   const updCase = (m: (c: RuleCase) => void, k?: string) => updRule((r) => { const x = r.cases.find((y) => y.id === c.id); if (x) m(x); }, k);
   const matches = host.liveBranch(rule) === c.id;
+  const presetsId = popoverId(`${key}-presets`);
   return html`<div class="case-box ${matches ? "match" : ""}">
     <div class="rule-head">
+      <span class="row-flag" title=${matches ? "This case matches right now" : ""}>${matches ? "●" : ""}</span>
       <span>Case ${ci + 1}${matches ? html` <span class="ok">· active now</span>` : nothing}</span>
       <span class="spacer"></span>
       <button class="icon" title="Move up" ?disabled=${ci === 0} @click=${() => updRule((r) => moveItem(r.cases, ci, ci - 1))}>${uiIcon("up")}</button>
       <button class="icon" title="Move down" ?disabled=${ci === rule.cases.length - 1} @click=${() => updRule((r) => moveItem(r.cases, ci, ci + 1))}>${uiIcon("down")}</button>
-      <button class="icon danger" title="Delete case" @click=${() => updRule((r) => { const i = r.cases.findIndex((y) => y.id === c.id); if (i >= 0) r.cases.splice(i, 1); })}>${uiIcon("delete")}</button>
+      <button class="icon danger" title="Delete this case" @click=${() => updRule((r) => { const i = r.cases.findIndex((y) => y.id === c.id); if (i >= 0) r.cases.splice(i, 1); })}>${uiIcon("delete")}</button>
     </div>
-    <div class="row-inline">
-      ${segField("When", c.when.join, [["all", "All of these are true"], ["any", "Any of these is true"]], (v) => updCase((x) => { x.when.join = v; }))}
+    <div class="case-part">
+      <span class="case-label">When</span>
+      ${c.when.tests.length < 2 ? nothing : html`<div class="seg join" role="radiogroup" aria-label="How the tests combine">
+        ${([["all", "All of these"], ["any", "Any of these"]] as const).map(([v, label]) => html`<button type="button" role="radio" aria-checked=${c.when.join === v ? "true" : "false"}
+          class=${c.when.join === v ? "on" : ""} @click=${() => updCase((x) => { x.when.join = v; })}>${label}</button>`)}
+      </div>`}
+      ${c.when.tests.length === 0 ? html`<div class="hint keep">No tests yet, so this case always matches.</div>` : nothing}
+      ${c.when.tests.map((t) => testEditor(host, t, (m) => updCase((x) => { const y = x.when.tests.find((z) => z.id === t.id); if (y) m(y); }), () => updCase((x) => { x.when.tests = x.when.tests.filter((z) => z.id !== t.id); }), `${key}-${t.id}`))}
+      <div class="adders">
+        <button class="small" title="Add a test: one more thing this case checks" @click=${() => updCase((x) => { x.when.tests.push(newTest()); })}>${uiIcon("plus")}<span>Add a test</span></button>
+        <button type="button" class="small" popovertarget=${presetsId} aria-haspopup="menu" title="Add a ready-made test: the sun, the weekday or a clock window">${uiIcon("plus")}<span>Add a preset</span></button>
+        <div class="tap-menu" id=${presetsId} popover role="menu" aria-label="Add a preset" @toggle=${onValuePopoverToggle}>
+          <div class="tap-menu-group" role="group" aria-label="Presets" data-group="presets">
+            ${RULE_PRESETS.map((p) => html`<button type="button" role="menuitem" popovertarget=${presetsId} popovertargetaction="hide"
+              @click=${() => { const tests = rulePresetTests(p.kind, sunRef(host.hass?.states)); updCase((x) => { x.when.tests.push(...tests); }); }}>
+              <span class="tap-menu-name">${p.label}</span>
+              <span class="tap-menu-info">${p.hint}</span>
+            </button>`)}
+          </div>
+        </div>
+      </div>
     </div>
-    ${c.when.tests.length === 0 ? html`<div class="hint keep">No tests: this case always matches.</div>` : nothing}
-    ${c.when.tests.map((t, ti) => testEditor(host, t, ti, (m) => updCase((x) => { const y = x.when.tests.find((z) => z.id === t.id); if (y) m(y); }), () => updCase((x) => { x.when.tests = x.when.tests.filter((z) => z.id !== t.id); }), `${key}-${t.id}`))}
-    <div class="adders">
-      <button class="small" @click=${() => updCase((x) => { x.when.tests.push(newTest()); })}>+ test</button>
-      <select class="adder" @change=${(e: Event) => {
-        const sel = e.target as HTMLSelectElement;
-        const kind = sel.value as RulePresetKind | "";
-        sel.value = "";
-        if (!kind) return;
-        const tests = rulePresetTests(kind, sunRef(host.hass?.states));
-        updCase((x) => { x.when.tests.push(...tests); });
-      }}>
-        <option value="">+ preset…</option>
-        ${RULE_PRESETS.map((p) => html`<option value=${p.kind} title=${p.hint}>${p.label}</option>`)}
-      </select>
+    <div class="case-part">
+      <span class="case-label">Then</span>
+      ${changeChips(host, c.then, target, (m, k) => updCase((x) => m(x.then), k), `${key}-then`, forPart)}
     </div>
-    <div class="hint keep" style="margin-top:8px">Then:</div>
-    ${changesEditor(host, c.then, target, (m) => updCase((x) => m(x.then)), `${key}-then`, forPart)}
   </div>`;
 }
 
-function testEditor(host: EditorHost, t: import("./model.js").Test, ti: number, updTest: (m: (t: import("./model.js").Test) => void, k?: string) => void, remove: () => void, key: string): TemplateResult {
+/** The comparison menu of the Advanced editor: the table's groups, then the
+ * three a table row cannot show. */
+const MORE_COMPARISONS: ComparisonKind[] = ["timeBetween", "matchesRegex", "isOneOf"];
+
+/**
+ * One test as one line: a dot while it holds, the value, the comparison, and
+ * what it is compared with. A comparison that needs more than one box (a
+ * clock window, a pattern, a list of options) puts those on a line under.
+ */
+function testEditor(host: EditorHost, t: import("./model.js").Test, updTest: (m: (t: import("./model.js").Test) => void, k?: string) => void, remove: () => void, key: string): TemplateResult {
   const upd = (m: (t: import("./model.js").Test) => void, k?: string) => updTest(m, k ? `${key}-${k}` : undefined);
   const c = t.comparison;
   const operand = comparisonOperand(c.kind);
+  const numeric = isNumericComparison(c.kind);
   const result = host.evaluateTest(t);
-  let extra: TemplateResult | typeof nothing = nothing;
+  const rhs = (v: Value, set: (v: Value) => void, k: string, placeholder: string, label: string) =>
+    compactValue(host, v, set, `${key}-${k}`, numeric, placeholder, label);
+  let inline: TemplateResult | typeof nothing = nothing;
+  let under: TemplateResult | typeof nothing = nothing;
   switch (operand) {
     case "value":
-      extra = valueEditor(host, c.value ?? literal(""), (v) => upd((x) => { x.comparison.value = v; }, "rhs"), { showResolved: true, label: "Compare with", key: `${key}-rhs` });
+      inline = rhs(c.value ?? literal(""), (v) => upd((x) => { x.comparison.value = v; }, "rhs"), "rhs", numeric ? "0" : "value", "Compare with");
       break;
     case "between":
-      extra = html`${valueEditor(host, c.value ?? literal(""), (v) => upd((x) => { x.comparison.value = v; }, "rhs"), { showResolved: true, label: "Lower bound", key: `${key}-rhs` })}
-        ${valueEditor(host, c.upper ?? literal(""), (v) => upd((x) => { x.comparison.upper = v; }, "upper"), { showResolved: true, label: "Upper bound", key: `${key}-upper` })}`;
+      inline = html`${rhs(c.value ?? literal(""), (v) => upd((x) => { x.comparison.value = v; }, "rhs"), "rhs", "0", "Lower bound")}
+        <span class="when-and">to</span>
+        ${rhs(c.upper ?? literal(""), (v) => upd((x) => { x.comparison.upper = v; }, "upper"), "upper", "100", "Upper bound")}`;
       break;
     case "pattern":
-      extra = html`${textField("Pattern", c.pattern ?? "", (v) => upd((x) => { x.comparison.pattern = v; }, "pattern"), { mono: true, placeholder: "^on$" })}
+      under = html`${textField("Pattern", c.pattern ?? "", (v) => upd((x) => { x.comparison.pattern = v; }, "pattern"), { mono: true, placeholder: "^on$" })}
         ${c.pattern && !regexOk(c.pattern) ? html`<div class="hint warn">This pattern does not compile. The test fails until it does.</div>` : nothing}`;
       break;
     case "times":
-      extra = html`<div class="row-inline">
+      under = html`<div class="row-inline">
           ${clockOperand(host, "From", c.value ?? literal("22:00"), (v) => upd((x) => { x.comparison.value = v; }, "rhs"), `${key}-rhs`)}
           ${clockOperand(host, "To", c.upper ?? literal("06:00"), (v) => upd((x) => { x.comparison.upper = v; }, "upper"), `${key}-upper`)}
         </div>
         <div class="hint">The start is included and the end is not. An end earlier than the start wraps midnight, so 22:00 to 06:00 is the night. Equal times match nothing.</div>`;
       break;
     case "options":
-      extra = isWeekdayValue(t.value)
+      under = isWeekdayValue(t.value)
         ? weekdayRow(c.options ?? [], (days) => upd((x) => { x.comparison.options = weekdayOptions(days); }, "options"))
         : textField("Options (comma separated)", (c.options ?? []).join(", "), (v) => upd((x) => { x.comparison.options = v.split(",").map((s) => s.trim()).filter(Boolean); }, "options"));
       break;
     case "none":
+      if (c.kind === "isStale") under = html`<div class="hint">True when the watch's cached values are older than the staleness limit. The value is not read.</div>`;
       break;
   }
+  const groups = [...comparisonGroups(numeric), { label: "More", kinds: MORE_COMPARISONS }];
   return html`<div class="test-box">
-    <div class="rule-head">
-      <span>Test ${ti + 1} <span class=${result ? "ok" : "no"}>${result ? "✓ true now" : "✗ false now"}</span></span>
+    <div class="test-row">
+      <span class="row-flag ${result ? "" : "off"}" title=${result ? "True right now" : "False right now"}>${result ? "●" : "○"}</span>
+      ${valueEditor(host, t.value, (v) => upd((x) => { x.value = v; }, "lhs"), { showResolved: true, label: "Value", key: `${key}-lhs`, compact: true })}
+      <span class="when-cell">
+        <select class="when-op" title="How this test is decided" @change=${onInput((v) => upd((x) => { x.comparison = switchComparison(x.comparison, v as ComparisonKind); }))}>
+          ${groups.map((g) => html`<optgroup label=${g.label}>
+            ${g.kinds.map((k) => html`<option value=${k} ?selected=${k === c.kind}>${tableComparisonLabel(k)}</option>`)}
+          </optgroup>`)}
+        </select>
+        ${inline}
+      </span>
       <span class="spacer"></span>
-      <button class="icon danger" title="Delete test" @click=${remove}>${uiIcon("delete")}</button>
+      <button class="icon danger" title="Delete this test" @click=${remove}>${uiIcon("delete")}</button>
     </div>
-    ${c.kind === "isStale"
-      ? html`<div class="hint keep">True when the watch's cached values are older than the staleness limit. The value below is not read.</div>`
-      : valueEditor(host, t.value, (v) => upd((x) => { x.value = v; }, "lhs"), { showResolved: true, label: "Value", key: `${key}-lhs` })}
-    ${selectField("Comparison", c.kind, COMPARISON_KINDS.map((k): [ComparisonKind, string] => [k, COMPARISON_LABELS[k]]), (v) => upd((x) => { x.comparison = switchComparison(x.comparison, v); }))}
-    ${extra}
+    ${under === nothing ? nothing : html`<div class="test-under">${under}</div>`}
   </div>`;
 }
 
@@ -9916,34 +9964,33 @@ function weekdayRow(options: string[], set: (days: number[]) => void): TemplateR
     </div></div>`;
 }
 
-function changesEditor(host: EditorHost, changes: StyleChange[], target: RuleTarget, updList: (m: (list: StyleChange[]) => void, k?: string) => void, key: string, forPart = false): TemplateResult {
+/**
+ * A case's changes as the chips a states row shows, one per change and a
+ * "+ Change" for one more, so the two editors read the same. A change the
+ * layer will not draw (aimed at a part that ignores it, or a kind this layer
+ * has no use for) keeps its chip, struck through, rather than vanishing with
+ * its value.
+ */
+function changeChips(host: EditorHost, changes: StyleChange[], target: RuleTarget, updList: (m: (list: StyleChange[]) => void, k?: string) => void, key: string, forPart = false): TemplateResult {
   const allowed = changeKindsFor(target, forPart);
-  return html`
-    ${changes.length === 0 ? html`<div class="hint keep">No changes.</div>` : nothing}
-    ${changes.map((ch, i) => changeEditor(host, ch, i, target, (m, k) => updList((list) => { if (list[i]) m(list[i]!); }, k ? `${key}-${i}-${k}` : undefined), () => updList((list) => { list.splice(i, 1); }), `${key}-${i}`, forPart))}
-    <select class="adder" @change=${(e: Event) => { const sel = e.target as HTMLSelectElement; const kind = sel.value as StyleChangeKind; sel.value = ""; if (kind) updList((list) => { list.push(newStyleChange(kind)); }); }}>
-      <option value="">+ change…</option>
-      ${allowed.map((k) => html`<option value=${k}>${CHANGE_LABELS[k]}</option>`)}
-    </select>`;
+  const set = changes.map((ch) => STYLE_PROPERTY[ch.kind]);
+  const spare = COLUMN_ORDER.filter((p) => !set.includes(p) && allowed.includes(PROPERTY_CHANGE_KIND[p]));
+  const add = (p: StyleProperty, node: EventTarget | null) => {
+    const at = changes.length;
+    updList((list) => { list.push(newStyleChange(PROPERTY_CHANGE_KIND[p])); });
+    openPopoverSoon(node, popoverId(`${key}-${at}`));
+  };
+  return html`<span class="then-chips">
+    ${changes.length === 0 ? html`<span class="no-change">No change</span>` : nothing}
+    ${changes.map((ch, i) => changeChip(host, ch, STYLE_PROPERTY[ch.kind], popoverId(`${key}-${i}`),
+      (m, k) => updList((list) => { if (list[i]) m(list[i]!); }, k ? `${i}-${k}` : undefined),
+      () => updList((list) => { list.splice(i, 1); }),
+      { ignored: !RULE_TARGET_PROPERTIES[target].includes(STYLE_PROPERTY[ch.kind]) || (forPart && !PART_RULE_PROPERTIES.includes(STYLE_PROPERTY[ch.kind])) }))}
+    ${spare.length === 0 ? nothing : changeMenu(key, spare, add)}
+  </span>`;
 }
 
 const COLOR_KINDS: StyleChangeKind[] = ["setColor", "setBorderColor", "setBackgroundColor"];
-
-function changeEditor(host: EditorHost, ch: StyleChange, i: number, target: RuleTarget, upd: (m: (c: StyleChange) => void, k?: string) => void, remove: () => void, key: string, forPart = false): TemplateResult {
-  const ignored = !RULE_TARGET_PROPERTIES[target].includes(STYLE_PROPERTY[ch.kind]);
-  // Aiming a rule at a part keeps the changes it already had, marked, rather
-  // than deleting the ones a part does not read.
-  const partIgnores = forPart && !ignored && !PART_RULE_PROPERTIES.includes(STYLE_PROPERTY[ch.kind]);
-  return html`<div class="change-box">
-    <div class="rule-head">
-      <span>${CHANGE_LABELS[ch.kind]}${ignored ? html` <span class="no">(ignored by ${target === "layout" ? "layouts" : `${target} layers`})</span>` : partIgnores ? html` <span class="no">(ignored by a part)</span>` : nothing}</span>
-      <span class="spacer"></span>
-      <button class="icon danger" title="Delete change" @click=${remove}>${uiIcon("delete")}</button>
-    </div>
-    ${partIgnores ? html`<div class="hint keep">A part only takes color, text, size, weight, hide and show. Pick Whole text to use this change.</div>` : nothing}
-    ${changeBody(host, ch, upd, key)}
-  </div>`;
-}
 
 /** The controls behind one style change: a color, a symbol, a value, a number
  * or a weight. Shared by the Advanced editor's change box and by a states
@@ -10450,11 +10497,28 @@ function statesChip(
 ): TemplateResult | typeof nothing {
   const ch = cellChange(changes, property);
   if (!ch) return nothing;
-  const id = popoverId(key);
   const upd = (m: (c: StyleChange) => void, k?: string) => updChanges((list) => {
     const target = list.find((x) => STYLE_PROPERTY[x.kind] === property);
     if (target) m(target);
   }, k && `${property}-${k}`);
+  const remove = () => updChanges((list) => {
+    const i = list.findIndex((x) => STYLE_PROPERTY[x.kind] === property);
+    if (i >= 0) list.splice(i, 1);
+  });
+  return changeChip(host, ch, property, popoverId(key), upd, remove, o);
+}
+
+/** The chip itself: the setting and its value, with its form in a popover
+ * and a link there to remove it. Shared by a states row and a case. */
+function changeChip(
+  host: EditorHost,
+  ch: StyleChange,
+  property: StyleProperty,
+  id: string,
+  upd: (m: (c: StyleChange) => void, k?: string) => void,
+  remove: () => void,
+  o: { ignored: boolean },
+): TemplateResult {
   const label = PROPERTY_LABELS[property];
   return html`
     <button type="button" class="cell filled ${o.ignored ? "ignored" : ""}" popovertarget=${id} aria-haspopup="dialog"
@@ -10466,18 +10530,16 @@ function statesChip(
         <button type="button" class="small" popovertarget=${id} popovertargetaction="hide">Done</button>
       </div>
       ${openedPopovers.has(id)
-        ? html`${property === "visibility"
+        ? html`${o.ignored ? html`<div class="hint warn">This layer does not draw this setting here, so the change does nothing.</div>` : nothing}
+          ${property === "visibility"
             ? segField("This state", ch.kind === "hide" ? "hide" : "show", [["show", "Shown"], ["hide", "Hidden"]], (v) => upd((c) => { c.kind = v as StyleChangeKind; }))
-            : changeBody(host, ch, upd, key)}
+            : changeBody(host, ch, upd, id)}
           <button class="link" @click=${(e: Event) => {
             // Closed first: removing the change takes this popover's own chip
             // out of the document, and a popover removed while open never
             // fires the toggle that tidies up after it.
             (e.target as HTMLElement).closest<HTMLElement>("[popover]")?.hidePopover();
-            updChanges((list) => {
-              const i = list.findIndex((x) => STYLE_PROPERTY[x.kind] === property);
-              if (i >= 0) list.splice(i, 1);
-            });
+            remove();
           }}>Remove this change</button>`
         : nothing}
     </div>`;

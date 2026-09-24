@@ -4801,9 +4801,10 @@ export class WristAssistantPanel extends LitElement {
     .sec-b > :is(button.small, button.link) { margin: 4px 0; }
     /* Anything in a card that is not a row (help, a note, a strip of buttons)
        starts where the controls start, so the titles keep one clean edge down
-       the left. Boxes that hold rows of their own keep the full width. */
-    :is(.sec-b, .sec-b :is(.fgroup, .grid2, .grid4, .value-editor, .src-editor, .states, .rich-parts, .part-editor, .rule-box, .case-box, .test-box, .change-box))
-      > :is(.hint, .rich-note, .rich-confirm, .adders, .chips, .states-foot, .states-switch, .span-parts, button.small, button.link, select.adder, details.sub):not(.value-pop *) {
+       the left. Boxes that hold rows of their own keep the full width, and
+       the Advanced editor's rule and case boxes keep their own left edge. */
+    :is(.sec-b, .sec-b :is(.fgroup, .grid2, .grid4, .value-editor, .src-editor, .states, .rich-parts, .part-editor))
+      > :is(.hint, .rich-note, .rich-confirm, .adders, .chips, .states-foot, .states-switch, .span-parts, button.small, button.link, details.sub):not(.value-pop *) {
       margin-left: var(--wa-col);
     }
     /* A row whose control is a list or a strip of buttons that can wrap: the
@@ -5187,18 +5188,39 @@ export class WristAssistantPanel extends LitElement {
     .branches button.live-match { border-color: var(--success-color, #43a047); }
     pre { font-size: 11px; white-space: pre-wrap; word-break: break-all; max-height: 400px; overflow: auto; background: var(--wa-panel); padding: 8px; border-radius: 6px; }
     button.link { font: inherit; background: none; border: none; color: var(--wa-accent); cursor: pointer; padding: 0; }
-    .rule-box { border: 1px solid var(--wa-line); border-radius: 8px; padding: 8px; margin: 8px 0; }
-    .case-box { border-left: 3px solid var(--wa-line); padding: 4px 8px; margin: 8px 0; }
+    /* The Advanced editor: a rule is a box, a case a bar down its left side
+       (green while it matches), a test one line, and the changes the same
+       chips a states row shows. Move and delete buttons stay quiet until the
+       pointer is over their row, as they do in the table. */
+    .rule-box { border: 1px solid var(--wa-line); border-radius: 8px; padding: 8px 10px; margin: 8px 0; }
+    .case-box { border-left: 3px solid var(--wa-line); padding: 2px 0 6px 10px; margin: 10px 0; }
     .case-box.match { border-left-color: var(--success-color, #43a047); }
     .case-box.otherwise { border-left-style: dashed; }
-    .test-box, .change-box { background: var(--wa-panel); border-radius: 6px; padding: 4px 8px; margin: 6px 0; }
-    .rule-head { display: flex; align-items: center; gap: 4px; font-size: 13px; }
+    .rule-head { display: flex; align-items: center; gap: 4px; font-size: 13px; min-height: 26px; }
+    .rule-head .row-flag { width: 14px; }
+    .rule-head button.icon { opacity: 0; }
+    :is(.rule-box > .rule-head, .case-box):hover > .rule-head button.icon,
+    .rule-box > .rule-head:hover button.icon, .rule-head button.icon:focus-visible { opacity: .8; }
+    /* When and Then inside a case, each with its small heading, the way the
+       table heads its columns. */
+    .case-part { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+    .case-label { font-size: 12px; font-weight: 500; opacity: .6; }
+    .case-part > .adders { margin-top: 0; }
+    .case-part > .then-chips { min-height: 26px; }
+    .seg.join { align-self: flex-start; }
+    .test-box { background: var(--wa-panel); border-radius: 8px; padding: 4px 6px 4px 8px; }
+    .test-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .test-row .row-flag { width: 12px; flex: none; }
+    .test-row .row-flag.off { color: var(--wa-muted); opacity: .6; }
+    .test-row .value-chip-field { margin: 0; flex: 0 1 auto; min-width: 0; }
+    .test-row .spacer { flex: 1; }
+    .test-row > button.icon { opacity: 0; }
+    .test-box:hover .test-row > button.icon, .test-row > button.icon:focus-visible { opacity: .8; }
+    .test-under { margin: 4px 0 2px 18px; }
+    .test-under .hint { margin-top: 4px; }
+    .tap-menu-group[data-group="presets"] { --g: #f59e0b; }
     .ok { color: var(--success-color, #43a047); font-size: 12px; }
     .no { color: var(--error-color, #db4437); font-size: 12px; }
-    select.adder { font: inherit; font-size: 12px; padding: 3px 6px; margin-top: 4px; }
-    /* Inside a row of adders the top margin would push it off the buttons'
-       baseline; the row already spaces itself. */
-    .adders select.adder { margin-top: 0; }
 
     /* Form rows, the way a property sheet reads: the title in a fixed column
        on the left, the control on the right, one row per setting and every
