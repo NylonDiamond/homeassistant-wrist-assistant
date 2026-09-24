@@ -136,7 +136,7 @@ describe("the cards a new selection opens", () => {
     expect(moreThanDefaultOpen(new Set(["content", "look", "look:more"]))).toBe(false);
   });
 
-  it("gives a folded States card an Add that opens it and adds a state", () => {
+  it("gives a folded Rules card an Add that opens it and adds a state", () => {
     const { cfg, el } = withLayer("text");
     const toggled: string[] = [];
     const h = host(cfg, { toggleSection: (id) => { toggled.push(id); } });

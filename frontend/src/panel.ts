@@ -2,7 +2,7 @@
 // Pick a watch, pick a complication, edit a browser-side draft with live
 // previews for all three families, then Save with the record's revision so
 // a concurrent edit is caught instead of overwritten (plan §"Save and
-// conflict rules"). Rules are edited in the inspector's States section.
+// conflict rules"). Rules are edited in the inspector's Rules section.
 
 import { LitElement, html, svg, css, nothing, unsafeCSS, type PropertyValues, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
@@ -9149,7 +9149,7 @@ export class WristAssistantPanel extends LitElement {
       ["Content", "What the layer shows, starting with its entity or value."],
       ["Look", "How it is drawn: size, color and style. On a picture the card is called Picture."],
       ["Extras", "Charts, timelines and pictures only: labels, markers, clock times, dots, grid lines or a timestamp."],
-      ["States", "Changes that apply while a value matches, described below."],
+      ["Rules", "Changes that apply while a value matches, described below."],
       ["Position", "Where the layer sits on the shape being edited, and its size."],
       ["Tap", "What a tap on the layer does."],
       ["?", "In a card's header: shows that card's help text."],
@@ -9157,8 +9157,8 @@ export class WristAssistantPanel extends LitElement {
     const values: [string, string][] = [
       ["By value", "Gauges, charts and text can color by value instead of one color. Each band colors readings up to its number, lowest band first. Readings above every band take the Above the last band color."],
       ["Timeline colors", "A timeline colors each state from its own table."],
-      ["States", "Rows that test a value, like is on or is greater than, each with the changes it makes: icon, text, color, visibility and more. Rows are checked top to bottom and the first match wins. Otherwise applies when none match."],
-      ["Shape states", "The same table, on the shape itself."],
+      ["Rules", "Rows that test a value, like is on or is greater than, each with the changes it makes: icon, text, color, visibility and more. Rows are checked top to bottom and the first match wins. Otherwise applies when none match. Advanced lets a rule check several things at once."],
+      ["Shape rules", "The same card, on the shape itself."],
       ["Shared values", "Like a variable: set it once in Shared values, at the foot of the Layers card, and every layer that reads it follows. On a layer, set Source to Shared value, or click Make shared."],
       ["Values on the watch", "Every entity and shared value the complication reads, with its live reading. Slide, pick or type another value to watch the preview and the states react. Nothing is saved, and Live or Back to live returns to the real reading."],
     ];

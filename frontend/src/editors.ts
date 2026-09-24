@@ -8403,7 +8403,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           { color: SECTION_COLOR.numbers, icon: "gauge", summary: levelSummary(el),
             ...(anyDiffers(el.payload, base, LEVEL_KEYS) ? { reset: resetKeys(LEVEL_KEYS, "reset-level") } : {}) })
       : nothing}
-    ${card(host, "states", "States", statesEditor(host, el.payload.rules, el.kind,
+    ${card(host, "states", "Rules", statesEditor(host, el.payload.rules, el.kind,
       (c) => c.elements.find((e) => e.payload.id === id)?.payload.rules, `rules-${id}`, tested, textParts,
       { colorByValue: colorsByValue(el) }),
       { color: SECTION_COLOR.states, icon: "states", summary: statesCardSummary(el.payload.rules),
@@ -9404,7 +9404,7 @@ function familyCards(host: EditorHost, family: FamilyKind): TemplateResult {
       { color: SECTION_COLOR.content, icon: "content", summary: layout.curvedText ? "Big curved text" : "Layer canvas",
         ...(layout.curvedText !== undefined || layout.bezelText !== undefined || layout.bezelGauge !== undefined
           ? { reset: () => upd((l) => { delete l.curvedText; delete l.bezelText; delete l.bezelGauge; }, "reset-corner") } : {}) }) : nothing}
-    ${card(host, "states", "Shape states", statesEditor(host, layout.rules, "layout", (c) => c.perFamily[family]?.rules, `rules-${family}`),
+    ${card(host, "states", "Shape rules", statesEditor(host, layout.rules, "layout", (c) => c.perFamily[family]?.rules, `rules-${family}`),
       { color: SECTION_COLOR.states, icon: "states", summary: statesCardSummary(layout.rules),
         ...statesAddAction(host, layout.rules, "layout", (c) => c.perFamily[family]?.rules, `rules-${family}`),
         ...(layout.rules.length > 0 ? { reset: () => upd((l) => { l.rules = []; }, "reset-states") } : {}) })}
