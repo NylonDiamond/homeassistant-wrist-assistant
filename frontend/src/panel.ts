@@ -3569,9 +3569,12 @@ export class WristAssistantPanel extends LitElement {
     button.lc-btn.pri:hover:not(:disabled) { filter: brightness(1.08); }
     button.lc-ghost { background: transparent; border-color: transparent; color: var(--wa-muted); padding: 0 7px; letter-spacing: .04em; }
     button.lc-ghost.sm { height: 24px; font-size: 11px; }
-    /* The Rows and Pictures buttons: one glyph each, showing the view on. */
-    button.lc-ghost.lc-view { display: inline-flex; align-items: center; padding: 0 6px; }
-    button.lc-ghost.lc-view svg.ui-icon { width: 15px; height: 15px; }
+    /* The Rows and Pictures buttons: a glyph showing the view on, and the
+       setting's name in small type under it. The word never changes, so the
+       buttons keep their width as the views step round. */
+    button.lc-ghost.lc-view { flex-direction: column; justify-content: center; gap: 2px; height: 32px; padding: 0 5px; }
+    button.lc-ghost.lc-view svg.ui-icon { width: 14px; height: 14px; }
+    button.lc-ghost.lc-view .lc-view-word { font-size: 9px; font-weight: 600; letter-spacing: .02em; line-height: 1; }
     /* A ghost that still reads as a button: Save to parts sits on a line of
        plain text, where a bare label was easy to miss. */
     button.lc-ghost.outline { border-color: var(--wa-line-strong); color: var(--wa-ink); }
@@ -15594,10 +15597,10 @@ export class WristAssistantPanel extends LitElement {
     return html`
       <button class="lc-ghost lc-view" aria-label=${`Rows: ${expanded ? "Expanded" : "Compact"}`}
         title=${`Rows: ${expanded ? "Expanded" : "Compact"}. Click for ${expanded ? "Compact" : "Expanded"}.`}
-        @click=${() => { this.layerDetail = expanded ? "compact" : "expanded"; this.saveListView(); }}>${uiIcon(expanded ? "expanded" : "compact")}</button>
+        @click=${() => { this.layerDetail = expanded ? "compact" : "expanded"; this.saveListView(); }}>${uiIcon(expanded ? "expanded" : "compact")}<span class="lc-view-word">Rows</span></button>
       <button class="lc-ghost lc-view" aria-label=${`Pictures: ${THUMB_STEP_TITLE[step]}`}
         title=${`Pictures: ${THUMB_STEP_TITLE[step]}. Click for ${THUMB_STEP_TITLE[next]}.`}
-        @click=${() => { this.thumbStep = next; this.saveListView(); }}>${uiIcon(THUMB_STEP_ICON[step])}</button>`;
+        @click=${() => { this.thumbStep = next; this.saveListView(); }}>${uiIcon(THUMB_STEP_ICON[step])}<span class="lc-view-word">Pictures</span></button>`;
   }
 
   /** The Layers card while Inline is the shape being edited.
