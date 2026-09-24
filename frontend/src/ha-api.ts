@@ -26,7 +26,7 @@ export interface HassLike {
   entities?: Record<string, { area_id?: string | null; device_id?: string | null }>;
   devices?: Record<string, { area_id?: string | null; name?: string | null }>;
   areas?: Record<string, { name?: string | null }>;
-  user?: { is_admin?: boolean; name?: string };
+  user?: { id?: string; is_admin?: boolean; name?: string };
   language?: string;
   /** The frontend's theme state; `darkMode` is what the panel's dark skin keys off. */
   themes?: { darkMode?: boolean };

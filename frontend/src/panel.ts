@@ -341,6 +341,7 @@ import {
 } from "./gallery.js";
 import { renderGalleryPreviews } from "./preview-png.js";
 import { PictureCache } from "./picture-cache.js";
+import { BrowserPictureStore } from "./picture-store.js";
 import {
   type SavedPart,
   insertPart,
@@ -1772,15 +1773,18 @@ export class WristAssistantPanel extends LitElement {
    * every document in the home on every render of the grid is the one part of
    * that worth keeping. */
   private readonly recordPreviews = new Map<string, { revision: number; config: CustomComplicationConfig; entities: EntityRef[] }>();
-  /** The pixels behind the picture layers a card draws, fetched once each and
-   * kept for the life of the page. The complication being edited is not read
-   * through this: see `picture-cache.ts` for why the two differ. */
+  /** Browse keeps one frame per image across visits. Opening a complication
+   * refreshes its frames once and updates these same cached pictures. */
+  private readonly pictureStore = new BrowserPictureStore();
   private readonly pictures = new PictureCache({
     fetch: (url) => fetch(url),
     objectUrl: (blob) => URL.createObjectURL(blob),
     revoke: (url) => URL.revokeObjectURL(url),
     changed: () => this.requestUpdate(),
     now: () => Date.now(),
+    scope: () => this.hass?.user?.id,
+    read: (id, scope) => this.pictureStore.read(id, scope),
+    write: (id, picture, scope) => this.pictureStore.write(id, picture, scope),
   });
   /** Whether a warm-up of `pictures` is already waiting for an idle moment.
    * Every list reply asks for one, and they would otherwise stack up. */
@@ -6425,6 +6429,8 @@ export class WristAssistantPanel extends LitElement {
     if (changed.has("hass")) {
       const dark = this.hass?.themes?.darkMode ?? window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
       this.toggleAttribute("dark", dark);
+      const previousUser = (changed.get("hass") as HassLike | undefined)?.user?.id;
+      if (previousUser !== undefined && previousUser !== this.hass?.user?.id) this.pictures.clear();
     }
     // A different selection starts with Content and Look open and every other
     // card folded to its summary, whatever the last one had open; what is
@@ -6959,12 +6965,9 @@ export class WristAssistantPanel extends LitElement {
   /**
    * Fetch the pictures the picker's cards will want, before anybody opens it.
    *
-   * Holding a picture only pays off from the second open onwards, and the open
-   * that hurts is the first one: a camera proxy takes four seconds to answer
-   * here, and a grid that asks seven of them at once is a grid that fades in
-   * for four seconds every time the page is fresh. The panel is sat in front of
-   * for a while before that dialog is ever opened, so the waiting is done then
-   * instead, out of the way and off the critical path.
+   * The first visit has to fetch a camera frame; later visits can read the
+   * stored copy. Begin those reads before Browse opens so even a cold cache
+   * has time to fill while the panel is idle.
    *
    * On idle, because this parses and compiles every document in the home to
    * find out which entities are pictures at all. That fills the parse cache
@@ -7066,6 +7069,7 @@ export class WristAssistantPanel extends LitElement {
         this.readOnlyReason = editBlockedBySplitGate(this.draft.config, this.selectedOwner);
       }
       this.recompile();
+      this.refreshOpenPictures();
       this.ensureActiveFamily();
       this.startView(this.draft.config);
     } catch (err) {
@@ -7090,6 +7094,7 @@ export class WristAssistantPanel extends LitElement {
     // The new document exists only in this tab, even before its first edit.
     this.draft.markDirty();
     this.recompile();
+    this.refreshOpenPictures();
     this.ensureActiveFamily();
     this.startView(config);
     this.scheduleTemplates(0);
@@ -7454,11 +7459,13 @@ export class WristAssistantPanel extends LitElement {
     this.ensureActiveFamily();
   }
 
-  /** Let the open complication's picture entities go, so the next card that
-   * draws one fetches a new frame. Called after a save: everything else in the
-   * grid keeps the copy it already has. */
-  private dropCachedPictures() {
-    for (const id of this.compiled?.entities.keys() ?? []) this.pictures.drop(id);
+  /** One fresh frame on opening the document, while the stored frame remains
+   * visible until it arrives. Saving or redrawing does not fetch again. */
+  private refreshOpenPictures() {
+    for (const id of this.compiled?.entities.keys() ?? []) {
+      const url = this.hass.states[id]?.attributes?.entity_picture;
+      if (typeof url === "string") this.pictures.refresh(id, url);
+    }
   }
 
   private recompile() {
@@ -8132,7 +8139,6 @@ export class WristAssistantPanel extends LitElement {
         this.draft = draft.commit(result.record.revision, submittedDocument);
         this.savedName = String(result.record.document?.name ?? "");
         this.recompile();
-        this.dropCachedPictures();
         this.beginSendWait();
       }
       // The same edit on every other device this design is on.
@@ -8494,7 +8500,7 @@ export class WristAssistantPanel extends LitElement {
    * off for the picker: a value typed in to test the open complication must
    * not change what another one's thumbnail says.
    */
-  private entityStateFor(id: string, iconName: string, useTestValues: boolean, cachedPicture = false): EntityState | undefined {
+  private entityStateFor(id: string, iconName: string, useTestValues: boolean): EntityState | undefined {
     // Demo mode reads the frozen house instead, so the face holds still the way
     // a watch does between fetches. One read point, so templates, history and
     // lists (which already only refetch on a refresh tap) and plain entity
@@ -8525,15 +8531,10 @@ export class WristAssistantPanel extends LitElement {
       // a camera's tokenized proxy for a camera and the avatar or cover art for
       // everything else. Any domain can carry one, so nothing is filtered here.
       //
-      // A card in the picker reads the cached copy instead. A camera proxy
-      // answers no-store and takes a new frame per request, so a grid of cards
-      // refetched every camera in the house on every open; one held copy per
-      // entity is what makes the dialog open at once. The complication being
-      // edited keeps the live address, since a crop is adjusted against a
-      // current frame. Undefined means the bytes have not landed yet, and the
-      // layer draws the same placeholder the watch does before its own first
-      // fetch.
-      const cached = cachedPicture ? this.pictures.urlFor(id, attrs.entity_picture) : attrs.entity_picture;
+      // Both previews use the same stored frame. Opening the complication
+      // refreshes it once; Browse alone never asks for another one. A first
+      // visit draws the usual placeholder until the bytes arrive.
+      const cached = this.pictures.urlFor(id, attrs.entity_picture);
       if (cached !== undefined) entry.entityPicture = cached;
     }
     return entry;
@@ -10448,13 +10449,12 @@ export class WristAssistantPanel extends LitElement {
    * No `page`, so a paged document draws its page 1 in every picker row and in
    * the import preview: page 1 is what the complication shows first.
    *
-   * Picture layers are the one thing read from a cache rather than live. This
-   * is the path every card in the grid takes, and a camera proxy is a fresh
-   * frame off the camera every time it is asked. */
+   * Picture layers use the same cache as the open editor. This is the path
+   * every card in the grid takes, without asking the camera for another frame. */
   private configContext(cfg: CustomComplicationConfig, entities: readonly EntityRef[], historySeries?: Map<string, string>): ResolveContext {
     const entityStates = new Map<string, EntityState>();
     for (const ref of entities) {
-      const state = this.entityStateFor(ref.entityId, ref.iconName ?? "", false, true);
+      const state = this.entityStateFor(ref.entityId, ref.iconName ?? "", false);
       if (state) entityStates.set(ref.entityId, state);
     }
     return {

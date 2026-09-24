@@ -1,18 +1,14 @@
-// The bytes behind an entity's picture, held for as long as the panel is open.
+// The bytes behind an entity's picture, held in memory while the panel is open
+// and optionally restored from browser storage on the next visit.
 //
 // An image layer draws Home Assistant's own `entity_picture`: a proxy address
 // with an access token in it. For a camera that proxy takes a fresh frame off
 // the camera on every request and answers with no-store, so nothing the
-// browser holds is ever reused. That is the right answer for the complication
-// being edited, whose crop has to be adjusted against a current frame, and the
-// wrong one for the picker, where twenty-odd cards ask for every camera in the
-// house at once. SVG `<image>` has no `loading="lazy"` either, so the cards
-// below the fold do not wait their turn: they all fire together and the grid
-// fades in over several seconds, every single time the dialog opens.
+// browser holds is ever reused. Browse cards read the stored frame. Opening a
+// complication asks for one fresh frame and replaces that stored copy, so the
+// main preview and Browse agree without refetching on every redraw.
 //
-// So the cards read through here. One fetch per entity for the life of the
-// page, handed to every card that wants it as an object URL, and the second
-// open of the dialog costs nothing at all. Only the pixels are cached: the
+// All editor previews read through here. Only the pixels are cached: the
 // card is drawn from the document every time, so an edit to a layer's crop,
 // zoom or frame shows up at once.
 //
@@ -46,6 +42,50 @@ export interface PictureCacheHost {
    * so a stamp written when a fetch failed and the check that reads it later
    * can never come from two different ones. */
   now: () => number;
+  /** Captured when a request starts, so a later account switch cannot file
+   * the old account's frame under the new account's storage key. */
+  scope?: () => string | undefined;
+  /** Optional durable storage. A failed read falls back to the live address;
+   * a failed write leaves the in-memory frame usable for this visit. */
+  read?: (entityId: string, scope?: string) => Promise<StoredPicture | undefined>;
+  write?: (entityId: string, picture: StoredPicture, scope?: string) => Promise<void>;
+}
+
+/** A frame as browser storage keeps it, with the address it came from. */
+export interface StoredPicture {
+  blob: Blob;
+  /** `pictureSource` of the address the frame came from. Missing on a frame
+   * stored before this was recorded, which counts as out of date. */
+  source?: string;
+}
+
+/**
+ * The part of an `entity_picture` address that says which picture it is.
+ *
+ * Only the access token is left out: Home Assistant rotates it every few
+ * minutes, and a camera with a new token is still the same camera. Everything
+ * else stays. A media player's address carries a hash of its cover art, so a
+ * new song is a new source and the held frame is replaced.
+ */
+export function pictureSource(url: string): string {
+  const q = url.indexOf("?");
+  if (q < 0) return url;
+  const params = new URLSearchParams(url.slice(q + 1));
+  params.delete("token");
+  const rest = params.toString();
+  return rest === "" ? url.slice(0, q) : `${url.slice(0, q)}?${rest}`;
+}
+
+interface Held {
+  url: string;
+  source?: string;
+}
+
+interface Flight {
+  epoch: number;
+  kind: "read" | "fetch";
+  refresh: boolean;
+  scope?: string;
 }
 
 /**
@@ -55,14 +95,16 @@ export interface PictureCacheHost {
  * Assistant rotates the access token inside `entity_picture`, so the same
  * camera is a different address every few minutes; keying on the address would
  * throw the whole cache away each time the token moved, which is exactly the
- * refetch this exists to stop.
+ * refetch this exists to stop. Each frame remembers its `pictureSource`, so an
+ * address that changed for any other reason (new cover art) fetches again.
  */
 export class PictureCache {
   /** Entity id to object URL, in least-recently-wanted order: `Map` keeps
    * insertion order, and a hit is re-inserted, so the first key is the oldest. */
-  private readonly held = new Map<string, string>();
-  private readonly inFlight = new Set<string>();
+  private readonly held = new Map<string, Held>();
+  private readonly inFlight = new Map<string, Flight>();
   private readonly failedAt = new Map<string, number>();
+  private readonly writes = new Map<string, Promise<void>>();
   /** A cleared panel must not accept bytes from its previous visit. */
   private epoch = 0;
 
@@ -78,22 +120,48 @@ export class PictureCache {
     if (held !== undefined) {
       this.held.delete(entityId);
       this.held.set(entityId, held);
-      return held;
+      // A different picture behind the same entity: the old one stays up
+      // until the new one lands, the same as an opening refresh.
+      if (held.source !== pictureSource(liveUrl) && this.mayStart(entityId)) this.refresh(entityId, liveUrl);
+      return held.url;
     }
-    if (this.inFlight.has(entityId)) return undefined;
-    const failed = this.failedAt.get(entityId);
-    if (failed !== undefined && this.host.now() - failed < PICTURE_RETRY_MS) return undefined;
-    this.inFlight.add(entityId);
-    void this.load(entityId, liveUrl);
+    if (!this.mayStart(entityId)) return undefined;
+    const flight: Flight = {
+      epoch: this.epoch, kind: this.host.read ? "read" : "fetch", refresh: false,
+      scope: this.host.scope?.(),
+    };
+    this.inFlight.set(entityId, flight);
+    if (this.host.read) void this.restoreOrFetch(entityId, liveUrl, flight);
+    else void this.fetchFresh(entityId, liveUrl, flight);
     return undefined;
+  }
+
+  /** Opening a complication takes one fresh frame. Keep the old picture on
+   * screen until the new bytes arrive, then replace it in both previews. */
+  refresh(entityId: string, liveUrl: string): void {
+    const active = this.inFlight.get(entityId);
+    if (active?.kind === "fetch") return;
+    if (active?.kind === "read") {
+      active.refresh = true;
+      return;
+    }
+    const restoreFirst = !this.held.has(entityId) && this.host.read !== undefined;
+    const flight: Flight = {
+      epoch: this.epoch, kind: restoreFirst ? "read" : "fetch", refresh: true,
+      scope: this.host.scope?.(),
+    };
+    this.inFlight.set(entityId, flight);
+    if (restoreFirst) void this.restoreOrFetch(entityId, liveUrl, flight);
+    else void this.fetchFresh(entityId, liveUrl, flight);
   }
 
   /** Forget one entity's picture, so the next card that wants it fetches a new
    * frame. */
   drop(entityId: string) {
-    const url = this.held.get(entityId);
-    if (url !== undefined) this.host.revoke(url);
+    const held = this.held.get(entityId);
+    if (held !== undefined) this.host.revoke(held.url);
     this.held.delete(entityId);
+    this.inFlight.delete(entityId);
     this.failedAt.delete(entityId);
   }
 
@@ -101,7 +169,7 @@ export class PictureCache {
    * the document never revokes holds its bytes until the tab is closed. */
   clear() {
     this.epoch++;
-    for (const url of this.held.values()) this.host.revoke(url);
+    for (const held of this.held.values()) this.host.revoke(held.url);
     this.held.clear();
     this.inFlight.clear();
     this.failedAt.clear();
@@ -112,32 +180,81 @@ export class PictureCache {
     return this.held.size;
   }
 
-  private async load(entityId: string, liveUrl: string) {
-    const epoch = this.epoch;
+  /** Nothing already on the way, and no recent failure to wait out. */
+  private mayStart(entityId: string): boolean {
+    if (this.inFlight.has(entityId)) return false;
+    const failed = this.failedAt.get(entityId);
+    return failed === undefined || this.host.now() - failed >= PICTURE_RETRY_MS;
+  }
+
+  private current(entityId: string, flight: Flight): boolean {
+    return flight.epoch === this.epoch && this.inFlight.get(entityId) === flight;
+  }
+
+  private finish(entityId: string, flight: Flight): void {
+    if (!this.current(entityId, flight)) return;
+    this.inFlight.delete(entityId);
+    this.host.changed();
+  }
+
+  private async restoreOrFetch(entityId: string, liveUrl: string, flight: Flight): Promise<void> {
+    try {
+      const stored = await this.host.read?.(entityId, flight.scope);
+      if (!this.current(entityId, flight)) return;
+      if (stored && stored.blob.size > 0) {
+        this.put(entityId, this.host.objectUrl(stored.blob), stored.source);
+        // A stored frame of another picture is shown, then replaced.
+        if (!flight.refresh && stored.source === pictureSource(liveUrl)) {
+          this.finish(entityId, flight);
+          return;
+        }
+        this.host.changed();
+      }
+    } catch {
+      // Storage is optional: the live address remains the fallback.
+    }
+    if (!this.current(entityId, flight)) return;
+    flight.kind = "fetch";
+    await this.fetchFresh(entityId, liveUrl, flight);
+  }
+
+  private async fetchFresh(entityId: string, liveUrl: string, flight: Flight): Promise<void> {
     try {
       const reply = await this.host.fetch(liveUrl);
       if (!reply.ok) throw new Error(`HTTP ${reply.status}`);
       const blob = await reply.blob();
-      if (epoch !== this.epoch) return;
+      if (!this.current(entityId, flight)) return;
       // A zero-byte answer is a camera that is up but has no frame yet. Holding
       // it would pin an empty picture on that card for the rest of the session.
       if (blob.size === 0) throw new Error("empty");
-      this.put(entityId, this.host.objectUrl(blob));
+      const source = pictureSource(liveUrl);
+      this.put(entityId, this.host.objectUrl(blob), source);
       this.failedAt.delete(entityId);
+      this.persist(entityId, { blob, source }, flight.scope);
     } catch {
-      if (epoch === this.epoch) this.failedAt.set(entityId, this.host.now());
+      if (this.current(entityId, flight)) this.failedAt.set(entityId, this.host.now());
     } finally {
-      if (epoch === this.epoch) {
-        this.inFlight.delete(entityId);
-        this.host.changed();
-      }
+      this.finish(entityId, flight);
     }
   }
 
-  private put(entityId: string, url: string) {
+  private persist(entityId: string, picture: StoredPicture, scope: string | undefined): void {
+    if (!this.host.write) return;
+    // Two refreshes can finish before storage has completed the first write.
+    // Serialize each entity's writes so the newest frame remains on disk.
+    const prior = this.writes.get(entityId) ?? Promise.resolve();
+    const next = prior.catch(() => undefined).then(() => this.host.write!(entityId, picture, scope));
+    this.writes.set(entityId, next);
+    void next.catch(() => undefined).finally(() => {
+      if (this.writes.get(entityId) === next) this.writes.delete(entityId);
+    });
+  }
+
+  private put(entityId: string, url: string, source: string | undefined) {
     const old = this.held.get(entityId);
-    if (old !== undefined) this.host.revoke(old);
-    this.held.set(entityId, url);
+    if (old !== undefined) this.host.revoke(old.url);
+    this.held.delete(entityId);
+    this.held.set(entityId, { url, source });
     while (this.held.size > PICTURE_CACHE_MAX) {
       const oldest = this.held.keys().next();
       if (oldest.done) break;
