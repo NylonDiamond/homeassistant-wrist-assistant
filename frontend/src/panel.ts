@@ -15585,8 +15585,9 @@ export class WristAssistantPanel extends LitElement {
 
   /**
    * How the Layers card draws its rows, as two small buttons in its header,
-   * each one tap per step: Rows swaps Compact and Expanded, Pictures steps
-   * Small, Medium, Large and round again. Each shows the view it is on, and
+   * each one tap per step: Rows swaps Compact and Expanded, Preview steps the
+   * row pictures through Small, Medium, Large and round again. Each shows the
+   * view it is on, and
    * its tooltip names the next one. They replaced a ··· menu that hid two
    * settings behind a click (Jesse, 2026-09-23).
    */
@@ -15598,9 +15599,9 @@ export class WristAssistantPanel extends LitElement {
       <button class="lc-ghost lc-view" aria-label=${`Rows: ${expanded ? "Expanded" : "Compact"}`}
         title=${`Rows: ${expanded ? "Expanded" : "Compact"}. Click for ${expanded ? "Compact" : "Expanded"}.`}
         @click=${() => { this.layerDetail = expanded ? "compact" : "expanded"; this.saveListView(); }}>${uiIcon(expanded ? "expanded" : "compact")}<span class="lc-view-word">Rows</span></button>
-      <button class="lc-ghost lc-view" aria-label=${`Pictures: ${THUMB_STEP_TITLE[step]}`}
-        title=${`Pictures: ${THUMB_STEP_TITLE[step]}. Click for ${THUMB_STEP_TITLE[next]}.`}
-        @click=${() => { this.thumbStep = next; this.saveListView(); }}>${uiIcon(THUMB_STEP_ICON[step])}<span class="lc-view-word">Pictures</span></button>`;
+      <button class="lc-ghost lc-view" aria-label=${`Preview size: ${THUMB_STEP_TITLE[step]}`}
+        title=${`Preview size: ${THUMB_STEP_TITLE[step]}. Click for ${THUMB_STEP_TITLE[next]}.`}
+        @click=${() => { this.thumbStep = next; this.saveListView(); }}>${uiIcon(THUMB_STEP_ICON[step])}<span class="lc-view-word">Preview</span></button>`;
   }
 
   /** The Layers card while Inline is the shape being edited.
