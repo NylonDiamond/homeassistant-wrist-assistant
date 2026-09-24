@@ -4019,9 +4019,12 @@ ${$P(c)}`}}delete s.hidden,delete s.linkId;let l=Md(a);if(l.length>0){let d=l.sl
     button.lc-btn.pri:hover:not(:disabled) { filter: brightness(1.08); }
     button.lc-ghost { background: transparent; border-color: transparent; color: var(--wa-muted); padding: 0 7px; letter-spacing: .04em; }
     button.lc-ghost.sm { height: 24px; font-size: 11px; }
-    /* The Rows and Pictures buttons: one glyph each, showing the view on. */
-    button.lc-ghost.lc-view { display: inline-flex; align-items: center; padding: 0 6px; }
-    button.lc-ghost.lc-view svg.ui-icon { width: 15px; height: 15px; }
+    /* The Rows and Pictures buttons: a glyph showing the view on, and the
+       setting's name in small type under it. The word never changes, so the
+       buttons keep their width as the views step round. */
+    button.lc-ghost.lc-view { flex-direction: column; justify-content: center; gap: 2px; height: 32px; padding: 0 5px; }
+    button.lc-ghost.lc-view svg.ui-icon { width: 14px; height: 14px; }
+    button.lc-ghost.lc-view .lc-view-word { font-size: 9px; font-weight: 600; letter-spacing: .02em; line-height: 1; }
     /* A ghost that still reads as a button: Save to parts sits on a line of
        plain text, where a bare label was easy to miss. */
     button.lc-ghost.outline { border-color: var(--wa-line-strong); color: var(--wa-ink); }
@@ -7583,10 +7586,10 @@ ${$P(c)}`}}delete s.hidden,delete s.linkId;let l=Md(a);if(l.length>0){let d=l.sl
     </div>`}renderLayersViewButtons(){let t=this.layerDetail==="expanded",i=this.thumbStep,a=(i+1)%Kp.length;return u`
       <button class="lc-ghost lc-view" aria-label=${`Rows: ${t?"Expanded":"Compact"}`}
         title=${`Rows: ${t?"Expanded":"Compact"}. Click for ${t?"Compact":"Expanded"}.`}
-        @click=${()=>{this.layerDetail=t?"compact":"expanded",this.saveListView()}}>${A(t?"expanded":"compact")}</button>
+        @click=${()=>{this.layerDetail=t?"compact":"expanded",this.saveListView()}}>${A(t?"expanded":"compact")}<span class="lc-view-word">Rows</span></button>
       <button class="lc-ghost lc-view" aria-label=${`Pictures: ${Kp[i]}`}
         title=${`Pictures: ${Kp[i]}. Click for ${Kp[a]}.`}
-        @click=${()=>{this.thumbStep=a,this.saveListView()}}>${A(p_[i])}</button>`}renderInlineHasNoLayers(t){let i=t.inline?rf(t.inline,this.buildContext(),t):void 0,a=i?this.inlineLineHtml(i,11):"No text yet",r=this.inspect.kind==="family",o=()=>{this.inspect={kind:"family"}};return u`<div class="card layers-card lc inline-layers s${this.thumbStep}">
+        @click=${()=>{this.thumbStep=a,this.saveListView()}}>${A(p_[i])}<span class="lc-view-word">Pictures</span></button>`}renderInlineHasNoLayers(t){let i=t.inline?rf(t.inline,this.buildContext(),t):void 0,a=i?this.inlineLineHtml(i,11):"No text yet",r=this.inspect.kind==="family",o=()=>{this.inspect={kind:"family"}};return u`<div class="card layers-card lc inline-layers s${this.thumbStep}">
       <div class="lc-head"><span class="swatch">${A("layers")}</span><span class="lc-title">Layers</span><span class="lc-sub">one line of text</span></div>
       <div class="pinned-set">
       <div class="layer pinned ${r?"hl":""}" style=${`--k:${it.text}`} tabindex="0"
