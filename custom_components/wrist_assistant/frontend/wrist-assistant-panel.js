@@ -7587,9 +7587,9 @@ ${$P(c)}`}}delete s.hidden,delete s.linkId;let l=Md(a);if(l.length>0){let d=l.sl
       <button class="lc-ghost lc-view" aria-label=${`Rows: ${t?"Expanded":"Compact"}`}
         title=${`Rows: ${t?"Expanded":"Compact"}. Click for ${t?"Compact":"Expanded"}.`}
         @click=${()=>{this.layerDetail=t?"compact":"expanded",this.saveListView()}}>${A(t?"expanded":"compact")}<span class="lc-view-word">Rows</span></button>
-      <button class="lc-ghost lc-view" aria-label=${`Pictures: ${Kp[i]}`}
-        title=${`Pictures: ${Kp[i]}. Click for ${Kp[a]}.`}
-        @click=${()=>{this.thumbStep=a,this.saveListView()}}>${A(p_[i])}<span class="lc-view-word">Pictures</span></button>`}renderInlineHasNoLayers(t){let i=t.inline?rf(t.inline,this.buildContext(),t):void 0,a=i?this.inlineLineHtml(i,11):"No text yet",r=this.inspect.kind==="family",o=()=>{this.inspect={kind:"family"}};return u`<div class="card layers-card lc inline-layers s${this.thumbStep}">
+      <button class="lc-ghost lc-view" aria-label=${`Preview size: ${Kp[i]}`}
+        title=${`Preview size: ${Kp[i]}. Click for ${Kp[a]}.`}
+        @click=${()=>{this.thumbStep=a,this.saveListView()}}>${A(p_[i])}<span class="lc-view-word">Preview</span></button>`}renderInlineHasNoLayers(t){let i=t.inline?rf(t.inline,this.buildContext(),t):void 0,a=i?this.inlineLineHtml(i,11):"No text yet",r=this.inspect.kind==="family",o=()=>{this.inspect={kind:"family"}};return u`<div class="card layers-card lc inline-layers s${this.thumbStep}">
       <div class="lc-head"><span class="swatch">${A("layers")}</span><span class="lc-title">Layers</span><span class="lc-sub">one line of text</span></div>
       <div class="pinned-set">
       <div class="layer pinned ${r?"hl":""}" style=${`--k:${it.text}`} tabindex="0"
