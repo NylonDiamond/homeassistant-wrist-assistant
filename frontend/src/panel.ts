@@ -898,7 +898,7 @@ export function layerListRows(
 /** The top bar's and the left column's own menus: the bar's ···, the Pages
  * card's ··· and the Layers card's ···. Kept apart from the preview bar's
  * menus, which have a close rule of their own. */
-type SideMenu = "top" | "pages" | "layers";
+type SideMenu = "top" | "pages";
 
 /** The Add sheet's three tabs. */
 type AddTab = "all" | "elements" | "presets" | "parts";
@@ -3566,6 +3566,10 @@ export class WristAssistantPanel extends LitElement {
     button.lc-btn.pri:hover:not(:disabled) { filter: brightness(1.08); }
     button.lc-ghost { background: transparent; border-color: transparent; color: var(--wa-muted); padding: 0 7px; letter-spacing: .04em; }
     button.lc-ghost.sm { height: 24px; font-size: 11px; }
+    /* The Rows and Pictures buttons: a glyph, and for Pictures the size's
+       letter beside it. */
+    button.lc-ghost.lc-view { display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; }
+    button.lc-ghost.lc-view .lc-size { font-size: 10.5px; font-weight: 700; letter-spacing: 0; }
     /* A ghost that still reads as a button: Save to parts sits on a line of
        plain text, where a bare label was easy to miss. */
     button.lc-ghost.outline { border-color: var(--wa-line-strong); color: var(--wa-ink); }
@@ -15501,7 +15505,7 @@ export class WristAssistantPanel extends LitElement {
       <div class="lc-head">
         <span class="swatch">${uiIcon("layers")}</span><span class="lc-title">Layers</span><span class="lc-sub">top is in front</span>
         <span class="spacer"></span>
-        ${this.renderLayersMenu()}
+        ${this.renderLayersViewButtons()}
         ${edit ? html`<button class="lc-btn pri add-open" aria-haspopup="dialog" aria-expanded=${this.addSheet ? "true" : "false"}
           title="Add a layer, a preset or a saved part (/)"
           @click=${(e: Event) => this.toggleAddSheet(e.currentTarget as HTMLElement)}>${uiIcon("plus")}<span>Add</span></button>` : nothing}
@@ -15575,31 +15579,23 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * The Layers card's ··· menu: how the rows are drawn. Two small radio
-   * groups, the row detail and the picture size, which used to be two
-   * segmented controls in the card's header and took the room the Add button
-   * needs. The menu stays open while they are changed, so the list can be
-   * watched changing under it.
+   * How the Layers card draws its rows, as two small buttons in its header,
+   * each one tap per step: Rows swaps Compact and Expanded, Pictures steps
+   * Small, Medium, Large and round again. Each shows the view it is on, and
+   * its tooltip names the next one. They replaced a ··· menu that hid two
+   * settings behind a click (Jesse, 2026-09-23).
    */
-  private renderLayersMenu() {
-    const open = this.sideMenu === "layers";
-    const radio = (on: boolean, label: string, title: string, pick: () => void) => html`<button class="row" role="menuitemradio"
-      aria-checked=${on ? "true" : "false"} title=${title} @click=${pick}><span class="pop-tick" aria-hidden="true">${on ? uiIcon("check") : nothing}</span>${label}</button>`;
-    return html`<span class="side-menu" data-side-menu="layers">
-      <button class="lc-ghost" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"} aria-label="List options" title="List options"
-        @click=${() => this.toggleSideMenu("layers")}>···</button>
-      ${open ? html`<div class="pop-menu side-pop" role="menu" aria-label="List options">
-        <div class="pop-label" role="presentation">Rows</div>
-        ${radio(this.layerDetail === "compact", "Compact", "The name and one line about the layer",
-          () => { this.layerDetail = "compact"; this.saveListView(); })}
-        ${radio(this.layerDetail === "expanded", "Expanded", "What the layer is made of and where it sits",
-          () => { this.layerDetail = "expanded"; this.saveListView(); })}
-        <span class="pop-sep" aria-hidden="true"></span>
-        <div class="pop-label" role="presentation">Pictures</div>
-        ${THUMB_STEP_TITLE.map((label, i) => radio(this.thumbStep === i, label, `${label} row pictures`,
-          () => { this.thumbStep = i as ThumbStep; this.saveListView(); }))}
-      </div>` : nothing}
-    </span>`;
+  private renderLayersViewButtons() {
+    const expanded = this.layerDetail === "expanded";
+    const step = this.thumbStep;
+    const next = ((step + 1) % THUMB_STEP_TITLE.length) as ThumbStep;
+    return html`
+      <button class="lc-ghost lc-view" aria-label=${`Rows: ${expanded ? "Expanded" : "Compact"}`}
+        title=${`Rows: ${expanded ? "Expanded" : "Compact"}. Click for ${expanded ? "Compact" : "Expanded"}.`}
+        @click=${() => { this.layerDetail = expanded ? "compact" : "expanded"; this.saveListView(); }}>${uiIcon(expanded ? "expanded" : "compact")}</button>
+      <button class="lc-ghost lc-view" aria-label=${`Pictures: ${THUMB_STEP_TITLE[step]}`}
+        title=${`Pictures: ${THUMB_STEP_TITLE[step]}. Click for ${THUMB_STEP_TITLE[next]}.`}
+        @click=${() => { this.thumbStep = next; this.saveListView(); }}>${uiIcon("image")}<span class="lc-size">${THUMB_STEP_TITLE[step][0]}</span></button>`;
   }
 
   /** The Layers card while Inline is the shape being edited.
