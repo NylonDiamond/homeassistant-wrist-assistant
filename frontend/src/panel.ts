@@ -647,6 +647,9 @@ const DEMO_FLASH_MS = 700;
 const DEMO_REFETCH_MS = 2000;
 
 const THUMB_STEP_TITLE = ["Small", "Medium", "Large"] as const;
+/** The Pictures button's glyph for each step: the row's picture drawn at
+ * that size. */
+const THUMB_STEP_ICON = ["thumbSmall", "thumbMedium", "thumbLarge"] as const;
 
 /**
  * How the Layers rows fold as the card gets narrow, one pair of container
@@ -3566,10 +3569,9 @@ export class WristAssistantPanel extends LitElement {
     button.lc-btn.pri:hover:not(:disabled) { filter: brightness(1.08); }
     button.lc-ghost { background: transparent; border-color: transparent; color: var(--wa-muted); padding: 0 7px; letter-spacing: .04em; }
     button.lc-ghost.sm { height: 24px; font-size: 11px; }
-    /* The Rows and Pictures buttons: a glyph, and for Pictures the size's
-       letter beside it. */
-    button.lc-ghost.lc-view { display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; }
-    button.lc-ghost.lc-view .lc-size { font-size: 10.5px; font-weight: 700; letter-spacing: 0; }
+    /* The Rows and Pictures buttons: one glyph each, showing the view on. */
+    button.lc-ghost.lc-view { display: inline-flex; align-items: center; padding: 0 6px; }
+    button.lc-ghost.lc-view svg.ui-icon { width: 15px; height: 15px; }
     /* A ghost that still reads as a button: Save to parts sits on a line of
        plain text, where a bare label was easy to miss. */
     button.lc-ghost.outline { border-color: var(--wa-line-strong); color: var(--wa-ink); }
@@ -15595,7 +15597,7 @@ export class WristAssistantPanel extends LitElement {
         @click=${() => { this.layerDetail = expanded ? "compact" : "expanded"; this.saveListView(); }}>${uiIcon(expanded ? "expanded" : "compact")}</button>
       <button class="lc-ghost lc-view" aria-label=${`Pictures: ${THUMB_STEP_TITLE[step]}`}
         title=${`Pictures: ${THUMB_STEP_TITLE[step]}. Click for ${THUMB_STEP_TITLE[next]}.`}
-        @click=${() => { this.thumbStep = next; this.saveListView(); }}>${uiIcon("image")}<span class="lc-size">${THUMB_STEP_TITLE[step][0]}</span></button>`;
+        @click=${() => { this.thumbStep = next; this.saveListView(); }}>${uiIcon(THUMB_STEP_ICON[step])}</button>`;
   }
 
   /** The Layers card while Inline is the shape being edited.
