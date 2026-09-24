@@ -5663,6 +5663,7 @@ ${jP(c)}`}}delete s.hidden,delete s.linkId;let l=_d(a);if(l.length>0){let d=l.sl
       border: 1px solid var(--wa-line); background: transparent; color: inherit; cursor: pointer;
     }
     .branches button.active { background: var(--wa-accent); color: var(--wa-accent-ink); border-color: transparent; }
+    .rules .branches button.active { background: var(--wa-states); color: #fff; }
     .branches button.live-match { border-color: var(--success-color, #43a047); }
     pre { font-size: 11px; white-space: pre-wrap; word-break: break-all; max-height: 400px; overflow: auto; background: var(--wa-panel); padding: 8px; border-radius: 6px; }
     button.link { font: inherit; background: none; border: none; color: var(--wa-accent); cursor: pointer; padding: 0; }
