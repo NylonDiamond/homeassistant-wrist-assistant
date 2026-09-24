@@ -4789,7 +4789,23 @@ export class WristAssistantPanel extends LitElement {
     button.tb:disabled { opacity: .4; cursor: default; }
     button.tb.on { background: color-mix(in srgb, var(--wa-accent) 26%, transparent); border-color: color-mix(in srgb, var(--wa-accent) 60%, transparent); }
     button.tb.lit { color: color-mix(in srgb, var(--wa-accent) 55%, var(--wa-ink)); }
-    .corner-mode { display: inline-flex; align-items: center; gap: 2px; flex: none; }
+    /* The corner's Curved text or Layers switch, a row of its own over the
+       face. Two big halves so the mode reads at a glance. */
+    .corner-mode { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: center; }
+    .corner-mode .cm-label { font-size: 13px; font-weight: 600; color: var(--wa-ink); }
+    .cm-seg { display: flex; gap: 4px; padding: 4px; border-radius: 12px; background: var(--wa-card); border: 1px solid var(--wa-line-strong); }
+    .cm-seg button {
+      display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 170px; padding: 7px 14px;
+      border-radius: 9px; border: 1px solid transparent; background: transparent; color: var(--wa-muted);
+      font: inherit; text-align: left; cursor: pointer;
+    }
+    .cm-seg button b { font-size: 14px; font-weight: 600; }
+    .cm-seg button small { font-size: 11px; font-weight: 400; }
+    .cm-seg button:hover:not(:disabled):not(.on) { background: color-mix(in srgb, var(--wa-ink) 8%, transparent); color: var(--wa-ink); }
+    .cm-seg button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .cm-seg button:disabled { opacity: .5; cursor: default; }
+    .cm-seg button.on { background: var(--wa-accent); border-color: var(--wa-accent); color: var(--wa-accent-ink); }
+    .cm-seg button.on small { opacity: .85; }
     button.tb .tb-glyph { width: 13px; height: 13px; flex: none; }
     button.tb > svg.ui-icon { width: 14px; height: 14px; flex: none; }
     button.tb .caret { display: inline-flex; margin-left: -3px; color: var(--wa-hint); }
@@ -8850,7 +8866,6 @@ export class WristAssistantPanel extends LitElement {
       : html`<i class="tint-dot ${tint.lockWhite ? "" : "full"}" style=${tint.lockWhite ? "--sw:#FFFFFF" : nothing}></i>`;
     const pickTint = (hex: string | undefined) => { this.toggleMenu("case", false); this.previewTint = hex; };
     return html`<div class="stage-tools" role="toolbar" aria-label="Canvas tools">
-      ${family === "corner" ? html`${this.renderCornerModeSwitch(off)}${sep}` : nothing}
       ${drawable ? html`
         <button class="tb" ?disabled=${off}
           title="Try the complication the way the watch draws it: no grid, no handles, no tap boxes. Taps really run, so a toggle really toggles. Escape closes."
@@ -8882,12 +8897,14 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * A corner's one big choice, first in the canvas toolbar: big curved text
-   * or layers. The watch draws one or the other, so it is a switch over the
-   * preview rather than a layer, and the Corner content card holds only what
-   * the picked mode needs.
+   * A corner's one big choice, in its own row right over the face: big curved
+   * text or layers. The watch draws one or the other, so it is a switch over
+   * the preview rather than a layer, and the Corner content card holds only
+   * what the picked mode needs. Big on purpose: it decides what every other
+   * control on the page does.
    */
-  private renderCornerModeSwitch(off: boolean) {
+  private renderCornerModeSwitch() {
+    const off = !this.draft || this.parseError !== undefined;
     const mode = cornerMode(this.draft?.config.perFamily.corner);
     const pick = (next: CornerMode) => {
       if (next === mode) return;
@@ -8900,13 +8917,16 @@ export class WristAssistantPanel extends LitElement {
         this.lightSection("corner");
       }
     };
-    const button = (value: CornerMode, word: string, title: string) => html`<button class="tb ${mode === value ? "on" : ""}"
+    const button = (value: CornerMode, word: string, sub: string, title: string) => html`<button type="button" class=${mode === value ? "on" : ""}
       role="radio" aria-checked=${mode === value ? "true" : "false"} ?disabled=${off || !this.canEdit}
-      title=${title} @click=${() => pick(value)}><span class="word keep">${word}</span></button>`;
-    return html`<span class="corner-mode" role="radiogroup" aria-label="Corner draws">
-      ${button("curved", "Curved text", "Big text curved along the corner, like the stock Calendar and Weather corners. The watch then draws no layers.")}
-      ${button("canvas", "Layers", "Draw the corner from layers, like every other shape.")}
-    </span>`;
+      title=${title} @click=${() => pick(value)}><b>${word}</b><small>${sub}</small></button>`;
+    return html`<div class="corner-mode">
+      <span class="cm-label">This corner draws</span>
+      <div class="cm-seg" role="radiogroup" aria-label="This corner draws">
+        ${button("curved", "Curved text", "Big text along the edge", "Big text curved along the corner, like the stock Calendar and Weather corners. The watch then draws no layers.")}
+        ${button("canvas", "Layers", "Anything, like other shapes", "Draw the corner from layers, like every other shape.")}
+      </div>
+    </div>`;
   }
 
   /** The four snapping settings as one value, for the Snap menu. */
@@ -16513,9 +16533,11 @@ export class WristAssistantPanel extends LitElement {
     const curved = family === "corner" && cfg.perFamily.corner?.curvedText !== undefined;
     const firstRun = drawable && !designing && !curved && cfg.elements.length === 0;
     const tiles = firstRun && this.canEdit;
+    // A corner's biggest choice sits right over its face, in a row of its own.
+    const modeRow = family === "corner" && !designing;
     const ratio = drawable ? this.faceRatio(family, deviceCase) : 1;
     const paged = usesPages(cfg);
-    const reserve = stageReserve({ rowStrip: designing, firstRun: tiles });
+    const reserve = stageReserve({ rowStrip: designing, firstRun: tiles, modeRow });
     return html`
       <div class="card canvas-card">
         ${this.renderCanvasHead(cfg, layouts)}
@@ -16527,6 +16549,7 @@ export class WristAssistantPanel extends LitElement {
             <div class="stage">
               ${this.renderRowStrip()}
               <div class="stage-face">
+                ${modeRow ? this.renderCornerModeSwitch() : nothing}
                 ${drawable
                   ? this.renderBigPreview(family, layouts, deviceCase, firstRun ? this.renderFirstRunNote(family) : undefined)
                   : this.renderInlinePreview(layouts.inline, false)}

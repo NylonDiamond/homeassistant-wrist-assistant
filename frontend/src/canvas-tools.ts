@@ -75,11 +75,11 @@ export function zoomLabel(zoom: number): string {
 /**
  * The height the stage keeps for things other than the face, in CSS px: the
  * floating toolbar over it, the hint under it, and, when they are there, the
- * row designer's banner and the first-run tiles. The face's Fit size is what
- * is left.
+ * row designer's banner, the corner's Curved text or Layers switch and the
+ * first-run tiles. The face's Fit size is what is left.
  */
-export function stageReserve(opts: { rowStrip?: boolean; firstRun?: boolean } = {}): number {
-  return 64 + 44 + 16 + (opts.rowStrip ? 60 : 0) + (opts.firstRun ? 230 : 0);
+export function stageReserve(opts: { rowStrip?: boolean; firstRun?: boolean; modeRow?: boolean } = {}): number {
+  return 64 + 44 + 16 + (opts.rowStrip ? 60 : 0) + (opts.modeRow ? 64 : 0) + (opts.firstRun ? 230 : 0);
 }
 
 /** What one first-run tile does: add one blank layer, or open the Add sheet on
