@@ -1964,10 +1964,10 @@ Click to change`} @click=${C}>
         <button class="small" @click=${$=>{fp.delete(r),Ze($.target)}}>Cancel</button>
       </div>`:m}
       <div class="states-add">
-        <button class="small" title=${h?`Start the states: ${ym(g,f).replace(/^Add a state starts with /,"").replace(/\.$/,"")}`:`Add a row: when the value matches, this ${i==="layout"?"shape":"layer"} changes how it looks`} @click=${te}>${A("plus")}<span>Add a state</span></button>
-        ${ie.length===0?m:u`<button class="small" title=${`Write one row per state a ${j.domain.replace(/_/g," ")} reports, each with an icon and a color, ready to edit`}
+        <button class="small pill" title=${h?`Start the states: ${ym(g,f).replace(/^Add a state starts with /,"").replace(/\.$/,"")}`:`Add a row: when the value matches, this ${i==="layout"?"shape":"layer"} changes how it looks`} @click=${te}>${A("plus")}<span>Add a state</span></button>
+        ${ie.length===0?m:u`<button class="small pill" title=${`Write one row per state a ${j.domain.replace(/_/g," ")} reports, each with an icon and a color, ready to edit`}
           @click=${$=>{if(G){fp.add(r),Ze($.target);return}v()}}>${A("plus")}<span>Fill from the entity</span></button>`}
-        ${n.otherwise===void 0?u`<button class="small" title="Add an Otherwise row at the bottom: the look when no state above matches" @click=${()=>d($=>wm($,!0,S))}>${A("plus")}<span>Add otherwise</span></button>`:m}
+        ${n.otherwise===void 0?u`<button class="small pill" title="Add an Otherwise row at the bottom: the look when no state above matches" @click=${()=>d($=>wm($,!0,S))}>${A("plus")}<span>Add otherwise</span></button>`:m}
       </div>
       ${T==="live"?m:u`<div class="field"><span>Preview</span>
         <div class="row-acts"><button class="small" @click=${()=>t&&e.setForced(t.id,"live")}>Back to live</button></div>
@@ -5674,10 +5674,13 @@ ${jP(c)}`}}delete s.hidden,delete s.linkId;let l=_d(a);if(l.length>0){let d=l.sl
        holds its cases, a case holds an If part and a Then part, and each
        part holds rows. The rails on the left of the parts are what say "these
        belong together". */
-    .rule { border: 1px solid var(--wa-line-strong); border-radius: 12px; padding: 8px 12px 12px; }
+    .rule {
+      border: 1px solid color-mix(in srgb, var(--wa-states) 45%, var(--wa-line)); border-radius: 12px; padding: 8px 12px 12px;
+      background: color-mix(in srgb, var(--wa-states) 4%, transparent);
+    }
     .case {
       border: 1px solid var(--wa-line); border-radius: 10px; padding: 6px 12px 10px; margin-top: 10px;
-      background: color-mix(in srgb, var(--wa-ink) 2.5%, transparent);
+      background: var(--wa-panel);
     }
     .case.match { border-color: color-mix(in srgb, var(--success-color, #43a047) 60%, var(--wa-line)); }
     .rule > .rsect, .case > .rsect { margin: 0; }
@@ -6154,7 +6157,7 @@ ${jP(c)}`}}delete s.hidden,delete s.linkId;let l=_d(a);if(l.length>0){let d=l.sl
     }
     /* The add controls under a states table: one strip of buttons, each with
        its explanation in its tooltip, so the table is the loudest thing here. */
-    .states > .states-add { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0 2px var(--wa-col); }
+    .states > .states-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 2px; }
     /* The change menu: the settings a state can still change, one per line. */
     .chip-menu {
       position: fixed; inset: auto; margin: 0; padding: 4px; border-radius: 10px; border: 1px solid var(--wa-line-strong);
