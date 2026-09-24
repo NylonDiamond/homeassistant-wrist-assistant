@@ -8850,16 +8850,14 @@ function chartExtrasSection(host: EditorHost, el: Extract<CElement, { kind: "cha
  * not flash the bare chart in between. */
 let extraPointed: ExtraKey | undefined;
 
-const EXTRA_PREVIEW_STORE_KEY = "wrist-assistant-extras-preview";
-
-/** Whether the Extras preview is shown. Remembered per browser. */
-let extraPreviewOn = (() => {
-  try { return window.localStorage.getItem(EXTRA_PREVIEW_STORE_KEY) !== "off"; } catch { return true; }
-})();
+/** Whether the Extras preview is shown. Every page load starts with it shown:
+ * remembering a hide per browser left people who hid it once never seeing it
+ * again. The old remembered choice is cleared so it cannot come back. */
+let extraPreviewOn = true;
+try { window.localStorage.removeItem("wrist-assistant-extras-preview"); } catch { /* private window */ }
 
 function setExtraPreviewOn(on: boolean, node: EventTarget | null): void {
   extraPreviewOn = on;
-  try { window.localStorage.setItem(EXTRA_PREVIEW_STORE_KEY, on ? "on" : "off"); } catch { /* private window */ }
   requestRerender(node);
 }
 
