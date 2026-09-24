@@ -331,6 +331,7 @@ import {
   isNumericComparison,
   moveStateRow,
   removeStateRow,
+  seedThresholds,
   setOtherwise,
   setTestedValue,
   startStates,
@@ -9748,13 +9749,13 @@ function moveItem<T>(list: T[], from: number, to: number): void {
  * Rule list editor for one layer or one family layout. `locate` finds the
  * live rule array inside a config so every edit goes through the undo history.
  */
-export function rulesEditor(host: EditorHost, rules: Rule[], target: RuleTarget, locate: (cfg: CustomComplicationConfig) => Rule[] | undefined, key: string, parts?: readonly TextPart[]): TemplateResult {
+export function rulesEditor(host: EditorHost, rules: Rule[], target: RuleTarget, locate: (cfg: CustomComplicationConfig) => Rule[] | undefined, key: string, parts?: readonly TextPart[], seed?: Value): TemplateResult {
   const upd = (mutate: (rules: Rule[]) => void, k?: string) => host.update((c) => { const r = locate(c); if (r) mutate(r); }, k ? `${key}-${k}` : undefined);
   return html`<div class="rules">
     ${rules.length === 0 ? html`<div class="rempty">No rules yet. A rule checks values and changes how this ${target === "layout" ? "family" : "layer"} looks.</div>` : nothing}
-    ${rules.map((rule, ri) => ruleEditor(host, rule, ri, rules.length, target, upd, `${key}-${rule.id}`, parts))}
+    ${rules.map((rule, ri) => ruleEditor(host, rule, ri, rules.length, target, upd, `${key}-${rule.id}`, parts, seed))}
     <div class="radd">
-      <button class="small pill" title="Add a rule. A later rule wins over an earlier one for the same setting." @click=${() => upd((r) => { r.push(newRule()); })}>${uiIcon("plus")}<span>Add a rule</span></button>
+      <button class="small pill" title="Add a rule. A later rule wins over an earlier one for the same setting." @click=${() => upd((r) => { r.push(seededRule(host, seed)); })}>${uiIcon("plus")}<span>Add a rule</span></button>
     </div>
     <div class="hint">Inside a rule the first matching case wins. Across rules the later rule wins for the same setting. Different settings add up.</div>
   </div>`;
@@ -9770,8 +9771,30 @@ export function rulesEditor(host: EditorHost, rules: Rule[], target: RuleTarget,
  * of editor: what is open is not part of the document. */
 const openRows = new Set<string>();
 
+/** A new test that already reads what the layer is about, the way the
+ * table's first row does, and checks it the way its reading suggests: on for
+ * a light, a threshold for a number, equals the reading for words. */
+function seededTest(host: EditorHost, seed: Value | undefined): import("./model.js").Test {
+  if (seed === undefined) return newTest();
+  const resolved = host.resolve(seed);
+  const shape = freshShape(seed, resolved);
+  const comparison: Comparison = shape === "onOff" ? { kind: "isOn" }
+    : shape === "bands" ? { kind: "lessThan", value: literal(String(seedThresholds(Number(resolved))[0])) }
+    : { kind: "equals", value: literal((resolved ?? "").trim() === "unknown" || (resolved ?? "").trim() === "unavailable" ? "" : (resolved ?? "").trim()) };
+  return { id: newId(), value: structuredClone(seed), comparison };
+}
+
+function seededCase(host: EditorHost, seed: Value | undefined): RuleCase {
+  return { id: newId(), when: { join: "all", tests: [seededTest(host, seed)] }, then: [] };
+}
+
+function seededRule(host: EditorHost, seed: Value | undefined): Rule {
+  return { id: newId(), cases: [seededCase(host, seed)] };
+}
+
 /** One item of the Advanced editor: an icon, a sentence, a dot while it is
- * live, and a menu; the form under it while the row is open. */
+ * live, and its move and delete buttons; the form under it while the row is
+ * open. */
 function ruleRow(o: {
   key: string;
   icon: UiIconName;
@@ -9779,11 +9802,10 @@ function ruleRow(o: {
   title: string;
   flag?: { on: boolean; title: string };
   ignored?: boolean;
-  menu: (id: string) => TemplateResult;
+  acts: TemplateResult;
   body: () => TemplateResult;
 }): TemplateResult {
   const open = openRows.has(o.key);
-  const menuId = popoverId(`${o.key}-menu`);
   const toggle = (node: EventTarget | null) => {
     if (open) openRows.delete(o.key); else openRows.add(o.key);
     requestRerender(node);
@@ -9796,20 +9818,19 @@ function ruleRow(o: {
       <span class="rsum ${o.ignored ? "ignored" : ""}">${o.summary}</span>
       ${o.flag === undefined ? nothing : html`<span class="row-flag ${o.flag.on ? "" : "off"}" title=${o.flag.title}>${o.flag.on ? "●" : "○"}</span>`}
       <span class="rchev">${uiIcon("chevron")}</span>
-      <button type="button" class="icon" popovertarget=${menuId} aria-haspopup="menu" title="More">${uiIcon("more")}</button>
-      <div class="chip-menu" id=${menuId} popover role="menu" aria-label=${o.title} @toggle=${onValuePopoverToggle}>${o.menu(menuId)}</div>
+      <span class="racts">${o.acts}</span>
     </div>
     ${open ? html`<div class="rbody">${o.body()}</div>` : nothing}
   </div>`;
 }
 
-/** The Move up, Move down and Delete items of a row's menu. */
-function orderMenu(id: string, i: number, count: number, move: (to: number) => void, remove: () => void, what: string): TemplateResult {
-  const item = (label: string, disabled: boolean, run: () => void, danger = false) => html`<button type="button" role="menuitem" class=${danger ? "danger" : ""}
-    popovertarget=${id} popovertargetaction="hide" ?disabled=${disabled} @click=${run}>${label}</button>`;
-  return html`${item("Move up", i === 0, () => move(i - 1))}
-    ${item("Move down", i === count - 1, () => move(i + 1))}
-    ${item(`Delete ${what}`, false, remove, true)}`;
+/** The Move up, Move down and Delete buttons of a row or a heading, always
+ * in view. */
+function orderButtons(i: number, count: number, move: (to: number) => void, remove: () => void, what: string): TemplateResult {
+  return html`
+    <button type="button" class="icon" title="Move up" ?disabled=${i === 0} @click=${() => move(i - 1)}>${uiIcon("up")}</button>
+    <button type="button" class="icon" title="Move down" ?disabled=${i === count - 1} @click=${() => move(i + 1)}>${uiIcon("down")}</button>
+    <button type="button" class="icon danger" title=${`Delete ${what}`} @click=${remove}>${uiIcon("delete")}</button>`;
 }
 
 /** A section heading of the Advanced editor: "Case 1", "Then", "Otherwise". */
@@ -9825,20 +9846,17 @@ function ruleHeading(text: string, o: { sub?: boolean; note?: TemplateResult | t
  * One rule: Preview, then each case, then Otherwise. A rule is only titled
  * when there is more than one.
  */
-function ruleEditor(host: EditorHost, rule: Rule, ri: number, count: number, target: RuleTarget, upd: (m: (rules: Rule[]) => void, k?: string) => void, key: string, parts?: readonly TextPart[]): TemplateResult {
+function ruleEditor(host: EditorHost, rule: Rule, ri: number, count: number, target: RuleTarget, upd: (m: (rules: Rule[]) => void, k?: string) => void, key: string, parts?: readonly TextPart[], seed?: Value): TemplateResult {
   const live = host.liveBranch(rule);
   const current = host.forced.get(rule.id) ?? "live";
   const isActive = (v: string) => (current === "live" ? v === "live" : current === "otherwise" ? v === "otherwise" : current.caseId === v);
   const updRule = (m: (r: Rule) => void, k?: string) => upd((rs) => { const r = rs.find((x) => x.id === rule.id); if (r) m(r); }, k);
   const forPart = parts !== undefined && rule.partId !== undefined;
   const otherwiseLive = live === "otherwise";
-  const ruleMenuId = popoverId(`${key}-rule-menu`);
   return html`<div class="rule ${ri > 0 ? "later" : ""}">
-    ${count < 2 ? nothing : ruleHeading(`Rule ${ri + 1}`, { right: html`
-      <button type="button" class="icon" popovertarget=${ruleMenuId} aria-haspopup="menu" title="More">${uiIcon("more")}</button>
-      <div class="chip-menu" id=${ruleMenuId} popover role="menu" aria-label=${`Rule ${ri + 1}`} @toggle=${onValuePopoverToggle}>
-        ${orderMenu(ruleMenuId, ri, count, (to) => upd((rs) => moveItem(rs, ri, to)), () => upd((rs) => { const i = rs.findIndex((x) => x.id === rule.id); if (i >= 0) rs.splice(i, 1); }), "this rule")}
-      </div>` })}
+    ${count < 2 ? nothing : ruleHeading(`Rule ${ri + 1}`, { right: html`<span class="racts">
+      ${orderButtons(ri, count, (to) => upd((rs) => moveItem(rs, ri, to)), () => upd((rs) => { const i = rs.findIndex((x) => x.id === rule.id); if (i >= 0) rs.splice(i, 1); }), "this rule")}
+    </span>` })}
     ${parts === undefined ? nothing : partTargetField(parts, rule.partId, describeContext(host), (id) => updRule((r) => {
       if (id) r.partId = id; else delete r.partId;
     }))}
@@ -9849,7 +9867,7 @@ function ruleEditor(host: EditorHost, rule: Rule, ri: number, count: number, tar
         ${rule.otherwise ? html`<button class="${isActive("otherwise") ? "active" : ""} ${otherwiseLive ? "live-match" : ""}" @click=${() => host.setForced(rule.id, "otherwise")}>Otherwise</button>` : nothing}
       </div>
     </div>
-    ${rule.cases.map((c, ci) => caseEditor(host, c, ci, rule, target, updRule, `${key}-${c.id}`, forPart))}
+    ${rule.cases.map((c, ci) => caseEditor(host, c, ci, rule, target, updRule, `${key}-${c.id}`, forPart, seed))}
     ${rule.otherwise === undefined ? nothing : html`
       ${ruleHeading("Otherwise", {
         note: otherwiseLive ? html` <span class="rnote">· active now</span>` : nothing,
@@ -9857,7 +9875,7 @@ function ruleEditor(host: EditorHost, rule: Rule, ri: number, count: number, tar
       })}
       ${changeRows(host, rule.otherwise, target, (m, k) => updRule((r) => { if (r.otherwise) m(r.otherwise); }, k), `${key}-otherwise`, forPart)}`}
     <div class="radd">
-      <button class="small pill" title="Add a case: when its tests hold, this rule makes these changes" @click=${() => updRule((r) => { r.cases.push(newCase()); })}>${uiIcon("plus")}<span>Add a case</span></button>
+      <button class="small pill" title="Add a case: when its tests hold, this rule makes these changes" @click=${() => updRule((r) => { r.cases.push(seededCase(host, seed)); })}>${uiIcon("plus")}<span>Add a case</span></button>
       ${rule.otherwise === undefined
         ? html`<button class="small pill" title="Add Otherwise at the bottom: the changes when no case matches" @click=${() => updRule((r) => { r.otherwise = []; })}>${uiIcon("plus")}<span>Add otherwise</span></button>`
         : nothing}
@@ -9870,11 +9888,10 @@ function ruleEditor(host: EditorHost, rule: Rule, ri: number, count: number, tar
  * as rows. The All or Any choice sits in the heading and is only shown once
  * there are two tests to join, because with one it changes nothing.
  */
-function caseEditor(host: EditorHost, c: RuleCase, ci: number, rule: Rule, target: RuleTarget, updRule: (m: (r: Rule) => void, k?: string) => void, key: string, forPart = false): TemplateResult {
+function caseEditor(host: EditorHost, c: RuleCase, ci: number, rule: Rule, target: RuleTarget, updRule: (m: (r: Rule) => void, k?: string) => void, key: string, forPart = false, seed?: Value): TemplateResult {
   const updCase = (m: (c: RuleCase) => void, k?: string) => updRule((r) => { const x = r.cases.find((y) => y.id === c.id); if (x) m(x); }, k);
   const matches = host.liveBranch(rule) === c.id;
   const presetsId = popoverId(`${key}-presets`);
-  const caseMenuId = popoverId(`${key}-case-menu`);
   const tests = c.when.tests;
   return html`<div class="case ${matches ? "match" : ""}">
     ${ruleHeading(`Case ${ci + 1}`, {
@@ -9884,10 +9901,9 @@ function caseEditor(host: EditorHost, c: RuleCase, ci: number, rule: Rule, targe
           ${([["all", "All of these"], ["any", "Any of these"]] as const).map(([v, label]) => html`<button type="button" role="radio" aria-checked=${c.when.join === v ? "true" : "false"}
             class=${c.when.join === v ? "on" : ""} @click=${() => updCase((x) => { x.when.join = v; })}>${label}</button>`)}
         </div>`}
-        <button type="button" class="icon" popovertarget=${caseMenuId} aria-haspopup="menu" title="More">${uiIcon("more")}</button>
-        <div class="chip-menu" id=${caseMenuId} popover role="menu" aria-label=${`Case ${ci + 1}`} @toggle=${onValuePopoverToggle}>
-          ${orderMenu(caseMenuId, ci, rule.cases.length, (to) => updRule((r) => moveItem(r.cases, ci, to)), () => updRule((r) => { const i = r.cases.findIndex((y) => y.id === c.id); if (i >= 0) r.cases.splice(i, 1); }), "this case")}
-        </div>`,
+        <span class="racts">
+          ${orderButtons(ci, rule.cases.length, (to) => updRule((r) => moveItem(r.cases, ci, to)), () => updRule((r) => { const i = r.cases.findIndex((y) => y.id === c.id); if (i >= 0) r.cases.splice(i, 1); }), "this case")}
+        </span>`,
     })}
     ${tests.length === 0 ? html`<div class="rempty">No tests yet, so this case always matches.</div>` : nothing}
     ${tests.map((t, ti) => testEditor(host, t, ti, tests.length,
@@ -9897,7 +9913,7 @@ function caseEditor(host: EditorHost, c: RuleCase, ci: number, rule: Rule, targe
       `${key}-${t.id}`))}
     <div class="radd">
       <button class="small pill" title="Add a test: one more thing this case checks" @click=${(e: Event) => {
-        const t = newTest();
+        const t = seededTest(host, seed);
         openRows.add(`${key}-${t.id}`);
         requestRerender(e.target);
         updCase((x) => { x.when.tests.push(t); });
@@ -10002,7 +10018,7 @@ function testEditor(
     summary: testSentence(host, t),
     title: "Test",
     flag: { on: result, title: result ? "True right now" : "False right now" },
-    menu: (id) => orderMenu(id, ti, count, move, remove, "this test"),
+    acts: orderButtons(ti, count, move, remove, "this test"),
     body,
   });
 }
@@ -10077,7 +10093,7 @@ function changeRows(host: EditorHost, changes: StyleChange[], target: RuleTarget
         summary: cellSummary(host, ch, property),
         title: PROPERTY_LABELS[property],
         ignored,
-        menu: (id) => orderMenu(id, i, changes.length, (to) => updList((list) => moveItem(list, i, to)), () => updList((list) => { list.splice(i, 1); }), "this change"),
+        acts: orderButtons(i, changes.length, (to) => updList((list) => moveItem(list, i, to)), () => updList((list) => { list.splice(i, 1); }), "this change"),
         body: () => html`
           ${ignored ? html`<div class="hint warn">This layer does not draw this setting here, so the change does nothing.</div>` : nothing}
           ${property === "visibility"
@@ -10195,8 +10211,11 @@ export function statesEditor(
   const shape = tableShape(rules);
   const advanced = !shape.ok || advancedRules.has(key);
   if (advanced) {
+    // What a new test reads: whatever the first test reads, else the header
+    // chip's pending choice, else the layer's own entity.
+    const seed = rules[0]?.cases[0]?.when.tests[0]?.value ?? pendingTestValues.get(key) ?? defaultValue;
     return html`
-      ${rulesEditor(host, rules, target, locate, key, parts)}
+      ${rulesEditor(host, rules, target, locate, key, parts, seed)}
       ${editorSwitch(key, "advanced", shape)}`;
   }
   return statesTable(host, shape.table, rules[0], target, locate, key, defaultValue, parts, options);

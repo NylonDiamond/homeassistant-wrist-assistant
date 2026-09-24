@@ -5226,8 +5226,10 @@ export class WristAssistantPanel extends LitElement {
     .rchev { display: inline-flex; flex: none; color: var(--wa-muted); opacity: .6; transition: transform .15s; }
     .rchev svg { width: 14px; height: 14px; }
     .rcard.open .rchev { transform: rotate(180deg); }
-    .rrow > button.icon { flex: none; opacity: .6; }
-    .rrow > button.icon:hover, .rrow > button.icon:focus-visible { opacity: 1; }
+    .racts { display: inline-flex; align-items: center; flex: none; }
+    .racts button.icon { opacity: .6; }
+    .racts button.icon:hover:not(:disabled), .racts button.icon:focus-visible { opacity: 1; }
+    .racts button.icon:disabled { opacity: .2; }
     .rbody { padding: 6px 12px 10px; border-top: 1px solid var(--wa-line); }
     .rbody > .hint { margin-left: var(--wa-col); }
     .rempty { color: var(--wa-muted); font-size: 12.5px; font-style: italic; padding: 4px 2px; }
