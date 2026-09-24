@@ -82,12 +82,12 @@ export function stageReserve(opts: { rowStrip?: boolean; firstRun?: boolean } = 
   return 64 + 44 + 16 + (opts.rowStrip ? 60 : 0) + (opts.firstRun ? 230 : 0);
 }
 
-/** What one first-run tile does: add one blank layer, open the Add sheet on
- * its presets, or switch a corner to big curved text. */
-export type FirstRunAction = { element: LayerKind } | { sheet: "presets" } | { curved: true };
+/** What one first-run tile does: add one blank layer, or open the Add sheet on
+ * its presets. */
+export type FirstRunAction = { element: LayerKind } | { sheet: "presets" };
 
 export interface FirstRunTile {
-  id: "value" | "gauge" | "chart" | "preset" | "curved";
+  id: "value" | "gauge" | "chart" | "preset";
   title: string;
   blurb: string;
   action: FirstRunAction;
@@ -101,26 +101,13 @@ export const FIRST_RUN_TILES: readonly FirstRunTile[] = [
   { id: "preset", title: "A preset", blurb: "Set up, just pick an entity", action: { sheet: "presets" } },
 ];
 
-/** The corner's extra way to start: the stock corner look, which is not a
- * layer. The watch draws big curved text or the layer canvas, never both. */
-export const CURVED_TILE: FirstRunTile = {
-  id: "curved", title: "Curved text", blurb: "Big text along the edge", action: { curved: true },
-};
-
-/** The tiles one shape offers. A corner leads with curved text, since that is
- * what the stock corners draw. */
-export function firstRunTiles(family: FamilyKind): readonly FirstRunTile[] {
-  return family === "corner" ? [CURVED_TILE, ...FIRST_RUN_TILES] : FIRST_RUN_TILES;
-}
-
-/** Run one tile through the hooks the Layers column provides. */
+/** Run one tile through the two hooks the Layers column provides. */
 export function runFirstRunTile(
   tile: FirstRunTile,
-  hooks: { addElement: (kind: LayerKind) => void; openAddSheet: (tab: "presets") => void; useCurvedText: () => void },
+  hooks: { addElement: (kind: LayerKind) => void; openAddSheet: (tab: "presets") => void },
 ): void {
   if ("element" in tile.action) hooks.addElement(tile.action.element);
-  else if ("sheet" in tile.action) hooks.openAddSheet(tile.action.sheet);
-  else hooks.useCurvedText();
+  else hooks.openAddSheet(tile.action.sheet);
 }
 
 /** What the empty face is called: a watch face slot, or on an iPhone a Home

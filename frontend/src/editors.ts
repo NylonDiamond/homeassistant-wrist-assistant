@@ -165,7 +165,6 @@ import {
   setGroup,
   setGroupParent,
   literal,
-  defaultCurvedText,
   defaultBezelGauge,
   inlineUsesParts,
   type InlinePart,
@@ -9390,7 +9389,7 @@ function familyCards(host: EditorHost, family: FamilyKind): TemplateResult {
         ...(layout.backgroundColorHex !== undefined || layout.backgroundFill !== undefined
           ? { reset: () => upd((l) => { delete l.backgroundColorHex; delete l.backgroundFill; }, "reset-home") } : {}) }) : nothing}
     ${family === "corner" ? card(host, "corner", "Corner content", cornerEditor(host, layout, upd),
-      { color: SECTION_COLOR.content, icon: "content", summary: layout.curvedText ? "Big curved text" : "Layer canvas",
+      { color: SECTION_COLOR.content, icon: "content", summary: layout.curvedText ? "Curved text" : "Layers",
         ...(layout.curvedText !== undefined || layout.bezelText !== undefined || layout.bezelGauge !== undefined
           ? { reset: () => upd((l) => { delete l.curvedText; delete l.bezelText; delete l.bezelGauge; }, "reset-corner") } : {}) }) : nothing}
     ${card(host, "states", "Shape rules", statesEditor(host, layout.rules, "layout", (c) => c.perFamily[family]?.rules, `rules-${family}`),
@@ -9549,27 +9548,22 @@ function inlinePartsEditor(
   </div>`;
 }
 
-/** Corner-only controls: main content mode (canvas vs big curved text) and the
- * bezel (none / text label / gauge arc), matching what the watch can draw. */
+/** Corner-only controls: the curved text when that mode is on (the mode itself
+ * is the switch over the preview) and the bezel (none / text label / gauge
+ * arc), matching what the watch can draw. */
 function cornerEditor(
   host: EditorHost,
   layout: FamilyLayout,
   upd: (mutate: (l: FamilyLayout) => void, k?: string) => void,
 ): TemplateResult {
-  const mode: "canvas" | "curved" = layout.curvedText ? "curved" : "canvas";
   const bezelKind: "none" | "text" | "gauge" = layout.bezelGauge ? "gauge" : layout.bezelText ? "text" : "none";
+  // Curved text or layers is picked by the switch over the preview; this card
+  // holds only what the picked mode needs.
   return html`
-    <div class="fgroup">
-    ${segField("Main content", mode, [["canvas", "Layer canvas"], ["curved", "Big curved text"]], (v) => upd((l) => {
-      if (v === "curved") { if (!l.curvedText) l.curvedText = defaultCurvedText(); }
-      else { delete l.curvedText; delete l.curvedColorHex; }
-    }))}
-    ${mode === "curved" && layout.curvedText ? html`
+    ${layout.curvedText ? html`<div class="fgroup">
       ${valueEditor(host, layout.curvedText, (val) => upd((l) => { l.curvedText = val; }, "curved"), { showResolved: true, label: "Curved text", key: "fam-corner-curved" })}
       ${colorField("Curved text color", layout.curvedColorHex ?? "#FFFFFF", (v) => upd((l) => { if (v === undefined) delete l.curvedColorHex; else l.curvedColorHex = v; }, "curvedcolor"))}
-      <div class="hint">Curved text replaces the layer canvas in the corner. The watch draws it big along the corner curve, like the stock Calendar and Weather corners.</div>
-    ` : nothing}
-    </div>
+    </div>` : nothing}
     <div class="fgroup">
     ${segField("Bezel", bezelKind, [["none", "None"], ["text", "Text label"], ["gauge", "Gauge arc"]], (v) => upd((l) => {
       if (v === "text") { delete l.bezelGauge; if (!l.bezelText) l.bezelText = literal("Label"); }

@@ -8143,6 +8143,27 @@ export function defaultCurvedText(): Value {
   return literal("Text");
 }
 
+/** What a corner draws as its main content: big curved text or the layer
+ * canvas. The watch draws one or the other, never both, because the system
+ * curves only plain text that is the whole corner. */
+export type CornerMode = "curved" | "canvas";
+
+export function cornerMode(layout: FamilyLayout | undefined): CornerMode {
+  return layout?.curvedText !== undefined ? "curved" : "canvas";
+}
+
+/** Switch a corner's main content. Curved starts from the default text and
+ * keeps any text already there; canvas drops the curved text and its color.
+ * The bezel and the layers are left as they are in both directions. */
+export function setCornerMode(layout: FamilyLayout, mode: CornerMode): void {
+  if (mode === "curved") {
+    if (layout.curvedText === undefined) layout.curvedText = defaultCurvedText();
+  } else {
+    delete layout.curvedText;
+    delete layout.curvedColorHex;
+  }
+}
+
 /** The bezel gauge a corner starts with, from New or from the Bezel switch. */
 export function defaultBezelGauge(): BezelGauge {
   return { value: literal("50"), minValue: 0, maxValue: 100, colorHexes: ["#34C759", "#FFCC00", "#FF3B30"] };

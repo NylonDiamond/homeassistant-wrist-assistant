@@ -1,7 +1,7 @@
 // Adding and removing shapes, as pure functions over the config.
 
 import { describe, expect, it } from "vitest";
-import { type FamilyKind, type Value, encodeConfig, literal, legacyConfig, newConfig, newElement, newRule, parseConfig, schemaVersionFor } from "../src/model.js";
+import { type FamilyKind, type Value, cornerMode, encodeConfig, literal, setCornerMode, legacyConfig, newConfig, newElement, newRule, parseConfig, schemaVersionFor } from "../src/model.js";
 import {
   ALL_FAMILIES,
   XLARGE_OFFERED,
@@ -147,6 +147,24 @@ describe("newConfig", () => {
     const back = parseConfig(encodeConfig(cfg))!;
     expect(back.perFamily.corner!.curvedText).toEqual(corner.curvedText);
     expect(back.perFamily.corner!.bezelGauge).toEqual(corner.bezelGauge);
+  });
+
+  it("switches a corner between curved text and layers, keeping the bezel", () => {
+    const cfg = newConfig("X", 0, "corner");
+    const corner = cfg.perFamily.corner!;
+    expect(cornerMode(corner)).toBe("curved");
+    corner.curvedColorHex = "#FF0000";
+    setCornerMode(corner, "canvas");
+    expect(cornerMode(corner)).toBe("canvas");
+    expect(corner.curvedText).toBeUndefined();
+    expect(corner.curvedColorHex).toBeUndefined();
+    expect(corner.bezelGauge).toBeDefined();
+    setCornerMode(corner, "curved");
+    expect(corner.curvedText).toEqual(literal("Text"));
+    corner.curvedText = literal("Mine");
+    setCornerMode(corner, "curved");
+    expect(corner.curvedText).toEqual(literal("Mine"));
+    expect(cornerMode(undefined)).toBe("canvas");
   });
 
   it("leaves the other shapes' layouts empty", () => {
