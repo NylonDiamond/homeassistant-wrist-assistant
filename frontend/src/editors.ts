@@ -9222,7 +9222,13 @@ export function autoLayerTitle(el: CElement, ctx?: DescribeContext): string {
     return anchor.place === "through" ? `${name} line` : `${name} marker`;
   }
   switch (el.kind) {
-    case "text": return unquote(describeValue(el.payload.value, ctx));
+    case "text": {
+      // A chart's number sits in the chart's group, so the stat alone says
+      // which one it is. Adding the chart's name made titles too long to read.
+      const k = el.payload.value.kind;
+      if (k.kind === "chartStat") return CHART_STATS.find(([s]) => s === k.stat)?.[1] ?? "Chart number";
+      return unquote(describeValue(el.payload.value, ctx));
+    }
     // The marker is not a name anyone typed, so a pasted drawing is titled for
     // what it is rather than for `svg:custom`.
     case "icon": return isCustomSvgIcon(el.payload) ? "Custom SVG" : unquote(describeValue(el.payload.symbol, ctx));

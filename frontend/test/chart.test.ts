@@ -1854,6 +1854,7 @@ describe("chart lines as layers", () => {
     expect(title(addChartMarker(cfg, chart.payload.id, "highest"))).toBe("Highest reading marker");
     expect(title(addChartMarker(cfg, chart.payload.id, "now"))).toBe("Now marker");
     expect(title(addChartLine(cfg, chart.payload.id, "threshold"))).toBe("Threshold line");
+    expect(title(addChartLabel(cfg, chart.payload.id, "first"))).toBe("First reading");
   });
 
   it("gives the chart a now reading when a now marker or line is added first", () => {
