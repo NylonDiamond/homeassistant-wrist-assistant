@@ -10,6 +10,7 @@
 import { describe, expect, it } from "vitest";
 import { nothing } from "lit";
 import {
+  auditUnknownKeys,
   encodeConfig,
   literal,
   newConfig,
@@ -85,6 +86,30 @@ describe("icon path on the wire", () => {
     expect(second.payload.path).toBeUndefined();
   });
 
+  it("round-trips a rule's icon path, and writes none for an SF Symbol", () => {
+    const cfg = newConfig("Icon", 0);
+    const el = newElement("icon") as Extract<Element, { kind: "icon" }>;
+    const rule = newRule();
+    rule.cases = [];
+    rule.otherwise = [
+      { kind: "setIcon", value: literal("mdi:flash"), path: FLASH },
+      { kind: "setColor", value: literal("#FF453A") },
+    ];
+    el.payload.rules = [rule];
+    cfg.elements.push(el);
+
+    const encoded = encodeConfig(cfg) as unknown as { elements: { payload: { rules: { otherwise: Record<string, unknown>[] }[] } }[] };
+    const changes = encoded.elements[0]!.payload.rules[0]!.otherwise;
+    expect(changes[0]!.path).toBe(FLASH);
+    expect("path" in changes[1]!).toBe(false);
+    expect(auditUnknownKeys(encoded)).toEqual([]);
+
+    const back = parseConfig(encoded as unknown as Record<string, unknown>);
+    const first = back.elements[0]!;
+    if (first.kind !== "icon") throw new Error("expected an icon layer");
+    expect(first.payload.rules[0]!.otherwise?.[0]?.path).toBe(FLASH);
+  });
+
   it("treats an empty path in a file as no path at all", () => {
     const cfg = newConfig("Icon", 0);
     cfg.elements.push(newElement("icon") as Extract<Element, { kind: "icon" }>);
@@ -119,6 +144,31 @@ describe("resolveIcon and the path rule", () => {
     });
     // The rule names an SF Symbol; the layer's path draws a different glyph.
     expect(icon.symbol).toBe("bolt.slash");
+    expect(icon.path).toBeUndefined();
+  });
+
+  it("draws a rule's own Material Design icon", () => {
+    const icon = iconOf((p) => {
+      p.symbol = literal("bolt.slash");
+      p.viewBox = "0 0 100 100";
+      const rule = newRule();
+      rule.cases = [];
+      rule.otherwise = [{ kind: "setIcon", value: literal("mdi:flash"), path: FLASH }];
+      p.rules = [rule];
+    });
+    expect(icon.symbol).toBe("mdi:flash");
+    expect(icon.path).toBe(FLASH);
+    // The layer's own drawing box is not the Material Design one.
+    expect(icon.viewBox).toBeUndefined();
+  });
+
+  it("ignores a rule's path once its symbol comes from somewhere else", () => {
+    const icon = iconOf((p) => {
+      const rule = newRule();
+      rule.cases = [];
+      rule.otherwise = [{ kind: "setIcon", value: chargerRef, path: FLASH }];
+      p.rules = [rule];
+    });
     expect(icon.path).toBeUndefined();
   });
 

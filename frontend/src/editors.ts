@@ -1646,8 +1646,8 @@ function symbolTile(host: EditorHost, name: string, selected: boolean, pick: (n:
  * With `setPath` given, the field also offers Material Design icons. Those are
  * stored as the literal name `mdi:flash` in the symbol, and the glyph's own SVG
  * path alongside it, because the watch has no MDI catalogue to look a name up
- * in. Only the icon layer takes one: a rule's `setIcon` and the inline symbol
- * have nowhere to keep a path, so they stay SF Symbols.
+ * in. The icon layer keeps it on the layer and a rule's `setIcon` on the
+ * change; the inline symbol has nowhere to keep one, so it stays SF Symbols.
  *
  * `defaultOpen` is whether the grid shows before anyone has touched this
  * field. A layer's symbol is most of what the layer is, so its grid starts
@@ -7436,7 +7436,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
                 delete p.viewBox;
               }, "symbol"),
             })}
-            <div class="hint">An entity source draws that entity's own icon instead. A Material Design icon travels with the document, so a rule that swaps the icon goes back to SF Symbols.</div>`}`;
+            <div class="hint">An entity source draws that entity's own icon instead.</div>`}`;
       look = shapeSizeField(host, el, family, "Icon size", { step: 1, min: 4, def: baseSize("size") });
       break;
     }
@@ -10177,7 +10177,15 @@ function changeBody(host: EditorHost, ch: StyleChange, upd: (m: (c: StyleChange)
         <button class="link" @click=${() => upd((c) => { c.value = fixed ? { kind: { kind: "entityAttribute", entityId: "", displayName: "", domain: "", attribute: "rgb_color" } } : literal("#FFFFFF"); })}>${fixed ? "Read the color from a value instead" : "Use a fixed color instead"}</button>
         ${fixed ? nothing : html`<div class="hint">The value must resolve to a hex color such as <code>#FF9F0A</code>. Empty or invalid results leave the color unchanged.</div>`}`;
     } else {
-      body = valueEditor(host, v, (nv) => upd((c) => { c.value = nv; }, "value"), { noFormat: ch.kind === "setIcon", symbol: ch.kind === "setIcon", showResolved: true, label: ch.kind === "setIcon" ? "Symbol" : "To", key: `${key}-value` });
+      body = valueEditor(host, v, (nv) => upd((c) => { c.value = nv; }, "value"), {
+        noFormat: ch.kind === "setIcon", symbol: ch.kind === "setIcon", showResolved: true,
+        label: ch.kind === "setIcon" ? "Symbol" : "To", key: `${key}-value`,
+        // A swapped-in Material Design icon carries its drawing on the change,
+        // as the icon layer's own does on the layer.
+        setSymbolPath: ch.kind === "setIcon"
+          ? (d) => upd((c) => { if (d) c.path = d; else delete c.path; }, "value")
+          : undefined,
+      });
     }
   } else if (payload === "number") {
     const opts = ch.kind === "setOpacity" ? { step: 0.05, min: 0, max: 1 }

@@ -1005,6 +1005,11 @@ export interface StyleChange {
   width?: FontWidth;
   /** `setItalic` only. */
   italic?: boolean;
+  /** `setIcon` only: the SVG path of a Material Design icon the change swaps
+   * in, for the same reason the icon layer carries one (the watch has no MDI
+   * catalogue). Drawn only while `value` is the literal `mdi:` name it was
+   * picked with. */
+  path?: string;
 }
 
 export const STYLE_PROPERTY: Record<StyleChangeKind, StyleProperty> = {
@@ -4500,6 +4505,7 @@ function parseStyleChange(o: unknown): StyleChange {
     case "setColor": case "setText": case "setIcon": case "setGaugeValue":
     case "setBorderColor": case "setBackgroundColor":
       c.value = isObject(o.value) ? parseValue(o.value) : literal("");
+      if (kind === "setIcon" && optStr(o.path)) c.path = optStr(o.path);
       break;
     case "setOpacity": case "setFontSize": case "setRotation": case "setGaugeMin":
     case "setGaugeMax": case "setBorderWidth":
@@ -6537,6 +6543,7 @@ function encodeStyleChange(c: StyleChange): J {
     case "setColor": case "setText": case "setIcon": case "setGaugeValue":
     case "setBorderColor": case "setBackgroundColor":
       o.value = encodeValue(c.value ?? literal(""));
+      if (c.kind === "setIcon" && c.path) o.path = c.path;
       break;
     case "setOpacity": case "setFontSize": case "setRotation": case "setGaugeMin":
     case "setGaugeMax": case "setBorderWidth":
@@ -7882,7 +7889,7 @@ const K = {
   condition: ["join", "tests"],
   test: ["id", "value", "comparison"],
   comparison: ["kind", "value", "upper", "pattern", "options"],
-  styleChange: ["kind", "value", "number", "weight", "design", "width", "italic"],
+  styleChange: ["kind", "value", "number", "weight", "design", "width", "italic", "path"],
   layout: ["placements", "bezelText", "bezelCountdown", "curvedText", "curvedColorHex", "bezelGauge", "backgroundColorHex", "backgroundFill", "cornerBodyShape", "borderColorHex", "borderWidth", "rules"],
   bezelGauge: ["value", "minValue", "maxValue", "colorHexes", "minLabel", "maxLabel"],
   placement: ["frame", "isHidden", "size"],

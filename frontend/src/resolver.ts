@@ -2284,12 +2284,14 @@ export class Resolver {
       case "icon": {
         const baseSymbol = this.entityIcon(el.payload.symbol) ?? this.resolve(el.payload.symbol) ?? "questionmark.circle";
         const override = this.styleText(style, "icon");
-        // The stored path belongs to the symbol the author picked, so it
-        // survives only while that symbol is what gets drawn.
+        // A stored path belongs to the symbol it was picked with, so it
+        // survives only while that symbol is what gets drawn: the layer's own
+        // with no rule swapping it, or a rule's own swapped in.
+        const swap = style.get("icon");
         const literalSymbol = el.payload.symbol.kind.kind === "literal";
-        const path = override === undefined && literalSymbol && el.payload.path !== ""
-          ? el.payload.path
-          : undefined;
+        const path = override === undefined
+          ? (literalSymbol && el.payload.path !== "" ? el.payload.path : undefined)
+          : (swap?.value?.kind.kind === "literal" && swap.path ? swap.path : undefined);
         let symbol = override ?? baseSymbol;
         // A hand-typed `mdi:` name with no path is a name nothing can draw, and
         // the custom-drawing marker is not a symbol name at all. The
@@ -2305,9 +2307,10 @@ export class Resolver {
           colorHex: this.styleColor(style, "color") ?? el.payload.colorSlot.baseColorHex,
         };
         if (path !== undefined) out.path = path;
-        // The box goes with the path: a layer drawing an SF Symbol has no path
-        // for it to mean anything about.
-        if (path !== undefined && el.payload.viewBox !== undefined) out.viewBox = el.payload.viewBox;
+        // The box goes with the layer's own path: a layer drawing an SF Symbol
+        // has no path for it to mean anything about, and a rule's Material
+        // Design icon is drawn in that set's own box.
+        if (path !== undefined && override === undefined && el.payload.viewBox !== undefined) out.viewBox = el.payload.viewBox;
         // The track follows the color the layer ended up in, so a rule that
         // recolors the icon recolors both halves of it.
         const level = this.resolveLevel(el.payload.level, out.colorHex);
