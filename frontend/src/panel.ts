@@ -1479,7 +1479,7 @@ export class WristAssistantPanel extends LitElement {
    * held the next click on the face for most of a second after a native menu
    * closed, so a drag right after a change lagged (measured 2026-09-12: the
    * press was 650 to 900 ms old on arrival, with no long task on the page). */
-  @state() private openMenu?: "grid" | "case" | "tint" | "list" | "place" | "doc" | "snap" | "add";
+  @state() private openMenu?: "grid" | "case" | "tint" | "list" | "place" | "snap" | "add";
   /** Alt is down. It flips snapping for a drag, so the grid lines show while
    * it is held even with Snap to grid off. */
   @state() private altHeld = false;
@@ -4719,12 +4719,6 @@ export class WristAssistantPanel extends LitElement {
     .cv-head .doc-chip button.doc-trash:hover:not(:disabled), .cv-head .doc-chip button.doc-trash:focus-visible { opacity: 1; color: #FF453A; background: color-mix(in srgb, #FF453A 16%, transparent); }
     .cv-head .doc-chip button.doc-trash:disabled { opacity: .3; cursor: default; }
     .cv-head .doc-chip button.doc-trash.armed { width: auto; padding: 0 7px; background: #FF453A; color: #fff; }
-    button.cv-more {
-      flex: none; height: 26px; min-width: 32px; padding: 0 8px; border: 0; border-radius: 7px; cursor: pointer;
-      font: inherit; font-size: 16px; letter-spacing: 1px; line-height: 1; background: transparent; color: var(--wa-muted);
-    }
-    button.cv-more:hover, button.cv-more[aria-expanded="true"] { background: color-mix(in srgb, var(--wa-ink) 8%, transparent); color: var(--wa-ink); }
-    button.cv-more:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     /* A narrow canvas (a phone, or a column dragged in) cannot hold the head
        on one line: "Add to a device" was drawn over the shape's name and the
        Duplicate button. It folds to two rows instead: the name and its shape
@@ -4736,10 +4730,9 @@ export class WristAssistantPanel extends LitElement {
       .cv-head .cv-slash, .cv-head .spacer { display: none; }
       .cv-head .tb-name { order: 0; flex: 1 1 0; }
       .cv-head .cv-shape, .cv-head .shape-seg { order: 1; }
-      .cv-head .cv-act, .cv-head .cv-div, .cv-head .doc-menu { order: 2; }
+      .cv-head .cv-act, .cv-head .cv-div { order: 2; }
       .cv-head .cv-devices { order: 4; flex: 0 1 auto; margin-top: 4px; }
     }
-    .case-tool.doc-menu .pop-menu { left: auto; right: 0; min-width: 230px; }
     .doc-pop .row { display: flex; align-items: center; gap: 8px; }
     .doc-pop .row .why { margin-left: auto; font-size: 11px; font-weight: 500; color: var(--wa-muted); }
     .doc-pop .row .spacer { flex: 1; }
@@ -5159,6 +5152,7 @@ export class WristAssistantPanel extends LitElement {
     }
     .foot-raw:hover, .foot[data-open="true"] .foot-raw { background: var(--wa-panel); color: var(--wa-ink); }
     .foot-raw:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .foot-raw:disabled { opacity: .4; cursor: default; background: transparent; color: var(--wa-muted); }
     .foot-body { padding: 10px 12px 4px; max-height: 40vh; overflow: auto; border-bottom: 1px solid var(--wa-line); }
     .foot-body .hint { margin: 8px 0; }
     .foot-body pre { font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -12393,7 +12387,7 @@ export class WristAssistantPanel extends LitElement {
   /** Open or shut one of the preview bar's menus; opening one shuts the other.
    * A press anywhere outside the open menu's control shuts it, the same way
    * the complication picker closes. */
-  private toggleMenu(menu: "grid" | "case" | "tint" | "list" | "place" | "doc" | "snap" | "add", next = this.openMenu !== menu) {
+  private toggleMenu(menu: "grid" | "case" | "tint" | "list" | "place" | "snap" | "add", next = this.openMenu !== menu) {
     this.openMenu = next ? menu : this.openMenu === menu ? undefined : this.openMenu;
     if (this.openMenu !== undefined) window.addEventListener("pointerdown", this.menuOutside, { capture: true });
     else window.removeEventListener("pointerdown", this.menuOutside, { capture: true });
@@ -16491,13 +16485,12 @@ export class WristAssistantPanel extends LitElement {
           : html`<span class="cv-shape"><span class="fam">${familyTitle(f)}${pagePart ? ` · ${pagePart}` : ""}</span>${this.shapeNotes(cfg, layouts, f)}</span>`}
       <span class="spacer"></span>
       ${this.renderDocActions(cfg)}
-      ${this.renderDocMenu()}
     </div>`;
   }
 
   /**
    * What is done to the whole complication, as icon buttons at the right of
-   * the canvas head: Duplicate and Delete, parted by hairlines. Delete arms
+   * the canvas head: Duplicate and Delete, parted by a hairline. Delete arms
    * the way it always did: one press asks in place, and a design on several
    * devices asks which. Add to a device stands with the device chips instead.
    */
@@ -16509,8 +16502,7 @@ export class WristAssistantPanel extends LitElement {
       <span class="cv-div" aria-hidden="true"></span>
       <button class="cv-act danger icon" aria-haspopup="dialog" aria-expanded=${this.confirmDelete ? "true" : "false"}
         title="Delete this complication. It asks first." aria-label="Delete this complication"
-        @click=${() => { this.confirmDelete = true; }}>${uiIcon("delete")}</button>
-      <span class="cv-div" aria-hidden="true"></span>`;
+        @click=${() => { this.confirmDelete = true; }}>${uiIcon("delete")}</button>`;
   }
 
   /**
@@ -16562,29 +16554,6 @@ export class WristAssistantPanel extends LitElement {
         </div>
       </div>
     </dialog>`;
-  }
-
-  /**
-   * The "···" menu on the canvas head. History is what is left in it now that
-   * the actions stand beside it. History used to be hidden until the first
-   * save. It stays in the list, disabled with the reason, so the menu reads
-   * the same every time.
-   */
-  private renderDocMenu() {
-    if (!this.canEdit) return nothing;
-    const open = this.openMenu === "doc";
-    const unsaved = this.draft?.baseRevision === null;
-    const close = () => this.toggleMenu("doc", false);
-    return html`<span class="case-tool doc-menu" data-menu="doc">
-      <button class="cv-more" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"}
-        aria-label="More: history" title="More"
-        @click=${() => this.toggleMenu("doc")}>···</button>
-      ${open ? html`<div class="pop-menu doc-pop" role="menu" aria-label="Complication">
-        <button class="row" role="menuitem" ?disabled=${unsaved} aria-haspopup="dialog"
-          title=${unsaved ? "Nothing to go back to until it has been saved once" : "Earlier saves of this complication"}
-          @click=${() => { close(); void this.openHistoryDialog(); }}>History${unsaved ? html`<small class="why">No earlier saves yet</small>` : nothing}</button>
-      </div>` : nothing}
-    </span>`;
   }
 
   /**
@@ -17705,8 +17674,8 @@ export class WristAssistantPanel extends LitElement {
    * Status and the raw document, as one row at the foot of the inspector.
    *
    * Neither is part of authoring, so neither earns a card. The row says the
-   * one thing worth a glance, which is whether the work is saved, and Raw
-   * configuration opens the rest above it.
+   * one thing worth a glance, which is whether the work is saved. History
+   * opens the earlier saves, and Raw configuration opens the rest above it.
    */
   private renderFooter() {
     const d = this.draft;
@@ -17724,6 +17693,9 @@ export class WristAssistantPanel extends LitElement {
       <div class="foot-row">
         <span class="foot-dot ${status.tone}" aria-hidden="true"></span>
         <span class="foot-text" title=${status.text}>${status.text}</span>
+        ${this.canEdit ? html`<button class="foot-raw" aria-haspopup="dialog" ?disabled=${d.baseRevision === null}
+          title=${d.baseRevision === null ? "Nothing to go back to until it has been saved once" : "Earlier saves of this complication"}
+          @click=${() => void this.openHistoryDialog()}>History</button>` : nothing}
         <button class="foot-raw" aria-expanded=${this.rawOpen ? "true" : "false"}
           @click=${() => { this.rawOpen = !this.rawOpen; }}>Raw configuration</button>
       </div>

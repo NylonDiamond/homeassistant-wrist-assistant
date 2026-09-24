@@ -5101,12 +5101,6 @@ ${r_(c)}`}}delete s.hidden,delete s.linkId;let l=zd(a);if(l.length>0){let d=l.sl
     .cv-head .doc-chip button.doc-trash:hover:not(:disabled), .cv-head .doc-chip button.doc-trash:focus-visible { opacity: 1; color: #FF453A; background: color-mix(in srgb, #FF453A 16%, transparent); }
     .cv-head .doc-chip button.doc-trash:disabled { opacity: .3; cursor: default; }
     .cv-head .doc-chip button.doc-trash.armed { width: auto; padding: 0 7px; background: #FF453A; color: #fff; }
-    button.cv-more {
-      flex: none; height: 26px; min-width: 32px; padding: 0 8px; border: 0; border-radius: 7px; cursor: pointer;
-      font: inherit; font-size: 16px; letter-spacing: 1px; line-height: 1; background: transparent; color: var(--wa-muted);
-    }
-    button.cv-more:hover, button.cv-more[aria-expanded="true"] { background: color-mix(in srgb, var(--wa-ink) 8%, transparent); color: var(--wa-ink); }
-    button.cv-more:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     /* A narrow canvas (a phone, or a column dragged in) cannot hold the head
        on one line: "Add to a device" was drawn over the shape's name and the
        Duplicate button. It folds to two rows instead: the name and its shape
@@ -5118,10 +5112,9 @@ ${r_(c)}`}}delete s.hidden,delete s.linkId;let l=zd(a);if(l.length>0){let d=l.sl
       .cv-head .cv-slash, .cv-head .spacer { display: none; }
       .cv-head .tb-name { order: 0; flex: 1 1 0; }
       .cv-head .cv-shape, .cv-head .shape-seg { order: 1; }
-      .cv-head .cv-act, .cv-head .cv-div, .cv-head .doc-menu { order: 2; }
+      .cv-head .cv-act, .cv-head .cv-div { order: 2; }
       .cv-head .cv-devices { order: 4; flex: 0 1 auto; margin-top: 4px; }
     }
-    .case-tool.doc-menu .pop-menu { left: auto; right: 0; min-width: 230px; }
     .doc-pop .row { display: flex; align-items: center; gap: 8px; }
     .doc-pop .row .why { margin-left: auto; font-size: 11px; font-weight: 500; color: var(--wa-muted); }
     .doc-pop .row .spacer { flex: 1; }
@@ -5541,6 +5534,7 @@ ${r_(c)}`}}delete s.hidden,delete s.linkId;let l=zd(a);if(l.length>0){let d=l.sl
     }
     .foot-raw:hover, .foot[data-open="true"] .foot-raw { background: var(--wa-panel); color: var(--wa-ink); }
     .foot-raw:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .foot-raw:disabled { opacity: .4; cursor: default; background: transparent; color: var(--wa-muted); }
     .foot-body { padding: 10px 12px 4px; max-height: 40vh; overflow: auto; border-bottom: 1px solid var(--wa-line); }
     .foot-body .hint { margin: 8px 0; }
     .foot-body pre { font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -7942,15 +7936,13 @@ ${r_(c)}`}}delete s.hidden,delete s.linkId;let l=zd(a);if(l.length>0){let d=l.sl
       ${r?u`${this.renderShapeSwitch(t,i)}${s?u`<span class="cv-shape">${s}</span>`:m}`:a===void 0?m:u`<span class="cv-shape"><span class="fam">${pe(a)}${s?` \xB7 ${s}`:""}</span>${this.shapeNotes(t,i,a)}</span>`}
       <span class="spacer"></span>
       ${this.renderDocActions(t)}
-      ${this.renderDocMenu()}
     </div>`}renderDocActions(t){return this.canEdit?u`<button class="cv-act icon" aria-haspopup="dialog" aria-label="Duplicate as another shape or device"
         title="Duplicate: make this design again as another shape, or on another device"
         @click=${()=>this.openDuplicateAs(t,this.ownerId??"")}>${E("duplicate")}</button>
       <span class="cv-div" aria-hidden="true"></span>
       <button class="cv-act danger icon" aria-haspopup="dialog" aria-expanded=${this.confirmDelete?"true":"false"}
         title="Delete this complication. It asks first." aria-label="Delete this complication"
-        @click=${()=>{this.confirmDelete=!0}}>${E("delete")}</button>
-      <span class="cv-div" aria-hidden="true"></span>`:m}renderDeleteDialog(){let t=this.draft?.config;if(!t)return m;let i=t.name.trim()||"this complication",a=this.draft?.baseRevision===null,r=this.ownerId??"",o=this.ownerName(r),s=Le(this.selectedOwner),l=this.linkedSiblings(t.linkId,r,this.selectedId??"").map(y=>this.ownerName(y.ownerId)),d=1+l.length,c=()=>{this.confirmDelete=!1},p=y=>{c(),this.deleteCurrent(y)},f=u`<b class="del-name">“${i}”</b>`,h=a?u`${f} has never been saved. Deleting it closes it, and nothing is left on the server.`:s&&d===1?u`${f} is ${_e.toLowerCase()}: on no device. Deleting it removes the design itself.`:d===1?u`${f} is on <b>${o}</b>. A face or widget using it loses it.`:u`${f} is on ${d} devices: <b>${[o,...l].join(", ")}</b>. A face or widget using it loses it.`,g=!a&&!s&&this.libraryOwner()!==void 0;return u`<dialog class="xf del-dialog" @close=${c}>
+        @click=${()=>{this.confirmDelete=!0}}>${E("delete")}</button>`:m}renderDeleteDialog(){let t=this.draft?.config;if(!t)return m;let i=t.name.trim()||"this complication",a=this.draft?.baseRevision===null,r=this.ownerId??"",o=this.ownerName(r),s=Le(this.selectedOwner),l=this.linkedSiblings(t.linkId,r,this.selectedId??"").map(y=>this.ownerName(y.ownerId)),d=1+l.length,c=()=>{this.confirmDelete=!1},p=y=>{c(),this.deleteCurrent(y)},f=u`<b class="del-name">“${i}”</b>`,h=a?u`${f} has never been saved. Deleting it closes it, and nothing is left on the server.`:s&&d===1?u`${f} is ${_e.toLowerCase()}: on no device. Deleting it removes the design itself.`:d===1?u`${f} is on <b>${o}</b>. A face or widget using it loses it.`:u`${f} is on ${d} devices: <b>${[o,...l].join(", ")}</b>. A face or widget using it loses it.`,g=!a&&!s&&this.libraryOwner()!==void 0;return u`<dialog class="xf del-dialog" @close=${c}>
       ${this.dialogHead(`Delete \u201C${i}\u201D?`,"",c)}
       <div class="xfer-body">
         <div class="xf-lead warn">${E("info")}<span>${h}</span></div>
@@ -7961,16 +7953,7 @@ ${r_(c)}`}}delete s.hidden,delete s.linkId;let l=zd(a);if(l.length>0){let d=l.sl
               <button class="danger" @click=${()=>p(!0)}>Delete on all ${d} devices</button>`:u`<button class="danger" @click=${()=>p(!0)}>Delete</button>`}
         </div>
       </div>
-    </dialog>`}renderDocMenu(){if(!this.canEdit)return m;let t=this.openMenu==="doc",i=this.draft?.baseRevision===null,a=()=>this.toggleMenu("doc",!1);return u`<span class="case-tool doc-menu" data-menu="doc">
-      <button class="cv-more" aria-haspopup="menu" aria-expanded=${t?"true":"false"}
-        aria-label="More: history" title="More"
-        @click=${()=>this.toggleMenu("doc")}>···</button>
-      ${t?u`<div class="pop-menu doc-pop" role="menu" aria-label="Complication">
-        <button class="row" role="menuitem" ?disabled=${i} aria-haspopup="dialog"
-          title=${i?"Nothing to go back to until it has been saved once":"Earlier saves of this complication"}
-          @click=${()=>{a(),this.openHistoryDialog()}}>History${i?u`<small class="why">No earlier saves yet</small>`:m}</button>
-      </div>`:m}
-    </span>`}renderAddToDevice(t){let i=this.openRow(),a=Ge(t)[0],r=this.hass.user?.is_admin===!0,s=(i?this.rowPlaces(i,a):[]).filter(c=>!c.on&&c.owner.kind!=="library"),l=r?i?s.length===0?"There is no other device of this kind to put it on.":void 0:"Save it first. Then it can go on another device too.":"Only an administrator can put it on another device.",d=this.openMenu==="add"&&l===void 0;return u`<span class="case-tool add-tool" data-menu="add">
+    </dialog>`}renderAddToDevice(t){let i=this.openRow(),a=Ge(t)[0],r=this.hass.user?.is_admin===!0,s=(i?this.rowPlaces(i,a):[]).filter(c=>!c.on&&c.owner.kind!=="library"),l=r?i?s.length===0?"There is no other device of this kind to put it on.":void 0:"Save it first. Then it can go on another device too.":"Only an administrator can put it on another device.",d=this.openMenu==="add"&&l===void 0;return u`<span class="case-tool add-tool" data-menu="add">
       <button class="cv-act" aria-haspopup="menu" aria-expanded=${d?"true":"false"}
         ?disabled=${this.saving||l!==void 0} title=${l??"Put this complication on another device too"}
         @click=${()=>this.toggleMenu("add")}>Add to a device<span class="caret">${E("chevron")}</span></button>
@@ -8162,6 +8145,9 @@ ${r_(c)}`}}delete s.hidden,delete s.linkId;let l=zd(a);if(l.length>0){let d=l.sl
       <div class="foot-row">
         <span class="foot-dot ${a.tone}" aria-hidden="true"></span>
         <span class="foot-text" title=${a.text}>${a.text}</span>
+        ${this.canEdit?u`<button class="foot-raw" aria-haspopup="dialog" ?disabled=${t.baseRevision===null}
+          title=${t.baseRevision===null?"Nothing to go back to until it has been saved once":"Earlier saves of this complication"}
+          @click=${()=>{this.openHistoryDialog()}}>History</button>`:m}
         <button class="foot-raw" aria-expanded=${this.rawOpen?"true":"false"}
           @click=${()=>{this.rawOpen=!this.rawOpen}}>Raw configuration</button>
       </div>
