@@ -21,7 +21,6 @@ import {
   defaultOpenSections,
   familyEditor,
   layerEditor,
-  moreIsOpen,
   moreThanDefaultOpen,
   positionSummary,
   statesAddAction,
@@ -194,50 +193,40 @@ describe("a folded card's summary", () => {
   });
 });
 
-describe("the More line in a Look card", () => {
+describe("the less used rows in a Look card", () => {
   // These read the Look card alone: with only Content and Look open, no other
   // card can put a stray Opacity row in the markup.
-  it("folds a text layer's less used rows and names them", () => {
+  it("shows every row of a text layer, with no More line to open", () => {
     const { cfg, el } = withLayer("text");
     const markup = flatten(layerEditor(host(cfg, { openSections: collapsedSections() }), el, "rectangular"));
-    expect(markup).toContain("width, italic, mono digits, curve, highlight, opacity, shadow");
-    expect(markup).not.toContain("Mono digits");
-    expect(markup).not.toContain(">Opacity<");
-    // The common rows stay in sight.
+    expect(markup).not.toContain("more-line");
+    expect(markup).toContain("Mono digits");
+    expect(markup).toContain(">Opacity<");
     expect(markup).toContain("Weight");
     expect(markup).toContain("Shrink to fit");
   });
 
-  it("starts open when a row behind it is changed", () => {
-    const { cfg, el } = withLayer("text", (t) => { t.payload.italic = true; });
-    const markup = flatten(layerEditor(host(cfg), el, "rectangular"));
-    expect(markup).toContain("Less");
-    expect(markup).toContain("Italic");
+  it("shows a shape's gradient and opacity", () => {
+    const { cfg, el } = withLayer("shape");
+    const markup = flatten(layerEditor(host(cfg, { openSections: collapsedSections() }), el, "rectangular"));
+    expect(markup).toContain("Gradient");
     expect(markup).toContain(">Opacity<");
   });
 
-  it("starts open for a changed opacity on any kind", () => {
-    const { cfg, el } = withLayer("icon", (i) => { i.payload.opacity = 0.5; });
-    expect(flatten(layerEditor(host(cfg, { openSections: collapsedSections() }), el, "rectangular"))).toContain(">Opacity<");
-    const plain = withLayer("icon");
-    expect(flatten(layerEditor(host(plain.cfg, { openSections: collapsedSections() }), plain.el, "rectangular"))).not.toContain(">Opacity<");
+  it("offers one Rectangle with a corner radius, for both rectangle kinds", () => {
+    for (const kind of ["rectangle", "roundedRectangle"] as const) {
+      const { cfg, el } = withLayer("shape", (s) => { s.payload.kind = kind; });
+      const markup = flatten(layerEditor(host(cfg, { openSections: collapsedSections() }), el, "rectangular"));
+      expect(markup).toContain(">Rectangle<");
+      expect(markup).not.toContain(">Rounded<");
+      expect(markup).toContain("Corner radius");
+    }
   });
 
-  it("keeps the reader's own choice over the changed default", () => {
-    expect(moreIsOpen(new Set(), "look", false)).toBe(false);
-    expect(moreIsOpen(new Set(), "look", true)).toBe(true);
-    expect(moreIsOpen(new Set(["look:less"]), "look", true)).toBe(false);
-    expect(moreIsOpen(new Set(["look:more"]), "look", false)).toBe(true);
-    const { cfg, el } = withLayer("text", (t) => { t.payload.italic = true; });
-    const shut = flatten(layerEditor(host(cfg, { openSections: new Set(["content", "look", "look:less"]) }), el, "rectangular"));
-    expect(shut).not.toContain("Mono digits");
-  });
-
-  it("puts a picture's zoom, pan and corners behind it", () => {
+  it("shows a picture's zoom, pan and corners", () => {
     const { cfg, el } = withLayer("image");
     const markup = flatten(layerEditor(host(cfg), el, "rectangular"));
-    expect(markup).toContain("zoom, pan, corner radius, opacity, shadow");
-    expect(markup).not.toContain("Pan left/right");
+    expect(markup).toContain("Pan left/right");
     expect(markup).toContain("Fill the frame");
   });
 });

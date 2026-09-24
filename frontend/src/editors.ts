@@ -311,6 +311,7 @@ import {
   tourDuration,
   usesPages,
   writtenDwell,
+  type ShapeKind,
 } from "./model.js";
 import {
   type FreshShape,
@@ -475,9 +476,8 @@ export interface EditorHost {
   tapAreaShown: boolean;
   /** Turn that view on or off. */
   showTapArea(on: boolean): void;
-  /** The inspector cards that are open, by card id, plus the state of each
-   * card's More line (`<id>:more`, `<id>:less`). A new selection starts from
-   * `DEFAULT_SECTIONS`. */
+  /** The inspector cards that are open, by card id. A new selection starts
+   * from `DEFAULT_SECTIONS`. */
   openSections: ReadonlySet<string>;
   /** A card to light for a moment, by id: where the panel has just sent the
    * eye, such as the tap action of a tap zone it made from the Pages card. */
@@ -561,9 +561,8 @@ export function collapsedSections(): Set<string> {
 }
 
 /** Whether any card beyond Content and Look is open, which is when the
- * inspector's header offers Collapse all rather than Open all. The More lines
- * inside a card keep their own entries in the same set (see `moreFold`); those
- * are not cards and do not count. */
+ * inspector's header offers Collapse all rather than Open all. An id with a
+ * colon is not a card (an old More line's entry) and does not count. */
 export function moreThanDefaultOpen(open: ReadonlySet<string>): boolean {
   return [...open].some((id) => !id.includes(":") && !DEFAULT_SECTIONS.includes(id));
 }
@@ -5680,47 +5679,17 @@ export type MoreRow = readonly [name: string, rows: unknown];
 
 export interface MoreOptions {
   rows: readonly MoreRow[];
-  /** Something behind the line is away from its default. The line then starts
-   * open, so a changed setting is never folded out of sight. */
-  changed: boolean;
-}
-
-/** Whether a card's More line is open. The reader's own choice wins, held in
- * openSections as `<id>:more` or `<id>:less`; without one it is open exactly
- * when something behind it is changed. */
-export function moreIsOpen(open: ReadonlySet<string>, id: string, changed: boolean): boolean {
-  if (open.has(`${id}:more`)) return true;
-  if (open.has(`${id}:less`)) return false;
-  return changed;
 }
 
 /**
- * The More line at the foot of a card: "More ▸" and the names of what it
- * holds, in muted text, and those rows under it once opened. Every card with a
- * long tail of settings folds it here the same way, so the rows most people
- * reach for stay at the top and nothing is hidden without a name on the line.
+ * The less used rows at the foot of a card, under a thin rule. They used to
+ * fold behind a "More" line, but people missed settings they needed (a
+ * shape's gradient, any layer's opacity), so they are always shown now.
  */
-function moreFold(host: EditorHost, id: string, more: MoreOptions): TemplateResult | typeof nothing {
+function moreFold(more: MoreOptions): TemplateResult | typeof nothing {
   const rows = more.rows.filter(([, r]) => r !== nothing && r !== undefined && r !== "");
   if (rows.length === 0) return nothing;
-  const open = moreIsOpen(host.openSections, id, more.changed);
-  const names = rows.map(([n]) => n).join(", ");
-  // Two entries so the choice outlives a change: a reader who shuts a line
-  // that opened for a changed row keeps it shut. Both go when the selection
-  // changes or Collapse all puts the cards back.
-  const flip = () => {
-    const want = open ? `${id}:less` : `${id}:more`;
-    const drop = open ? `${id}:more` : `${id}:less`;
-    if (host.openSections.has(drop)) host.toggleSection(drop);
-    if (!host.openSections.has(want)) host.toggleSection(want);
-  };
-  return html`<div class="more-fold" data-open=${open ? "true" : "false"}>
-    <button type="button" class="more-line" aria-expanded=${open ? "true" : "false"}
-      title=${open ? "Hide these settings again" : `Show ${names}`} @click=${flip}>${open
-      ? html`<span class="more-word">Less</span><span class="more-arrow" aria-hidden="true">▾</span>`
-      : html`<span class="more-word">More</span><span class="more-arrow" aria-hidden="true">▸</span><span class="more-names">${names}</span>`}</button>
-    ${open ? html`<div class="more-body">${rows.map(([, r]) => r)}</div>` : nothing}
-  </div>`;
+  return html`<div class="more-fold"><div class="more-body">${rows.map(([, r]) => r)}</div></div>`;
 }
 
 /** Structural equality for the plain data the config is made of: objects,
@@ -5798,7 +5767,7 @@ export function card(host: EditorHost, id: string, title: string, body: unknown,
           ${head}
           <span class="chev">${uiIcon("chevron")}</span>
         </div>`}
-    ${open ? html`<div class="sec-b">${body}${opts.more === undefined ? nothing : moreFold(host, id, opts.more)}</div>` : nothing}
+    ${open ? html`<div class="sec-b">${body}${opts.more === undefined ? nothing : moreFold(opts.more)}</div>` : nothing}
   </section>`;
 }
 
@@ -8060,9 +8029,9 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
     }
     case "shape":
       content = html`<div class="grid2">
-          ${segField("Shape", el.payload.kind, [["roundedRectangle", "Rounded"], ["rectangle", "Rectangle"], ["capsule", "Capsule"], ["circle", "Circle"], ["line", "Line"]], (v) => upd((e) => { (e as typeof el).payload.kind = v; }),
-            { titles: { roundedRectangle: "Rounded rectangle", line: "A rule along the frame's long side" }, def: base.kind as typeof el.payload.kind })}
-          ${el.payload.kind === "roundedRectangle" ? numberField("Corner radius", el.payload.cornerRadius, (v) => upd((e) => { (e as typeof el).payload.cornerRadius = v ?? 6; }, "radius"), { step: 0.5, min: 0, def: base.cornerRadius as number, unit: "pt" }) : nothing}
+          ${segField("Shape", shapePickerKind(el.payload.kind), SHAPE_PICKER, (v) => upd((e) => { (e as typeof el).payload.kind = v; }),
+            { titles: SHAPE_PICKER_TITLES, def: shapePickerKind(base.kind as ShapeKind) })}
+          ${shapeCornerField(el, base, upd)}
         </div>
         ${el.payload.kind === "line" ? lineOrientationField(family, f, setFrame) : nothing}`;
       // A line has no border and no corners: its color is the whole drawing, so
@@ -8370,7 +8339,6 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
         { color: SECTION_COLOR.look, icon: el.kind === "image" ? "image" : "look", ...(lookSummary(el) ? { summary: lookSummary(el)! } : {}),
           more: {
             rows: [...lookMore, ["opacity, shadow", el.kind === "tap" ? nothing : layerLookFields(el, upd)]],
-            changed: anyDiffers(el.payload, base, [...(LOOK_MORE_KEYS[el.kind] ?? []), ...(el.kind === "tap" ? [] : LAYER_LOOK_KEYS)]),
           },
           ...(lookChanged ? { reset: () => host.update((c) => {
             const target = elementIn(c, id);
@@ -8497,6 +8465,42 @@ const CONTENT_KEYS: Record<CElement["kind"], readonly string[]> = {
 const LAYER_LOOK_KEYS = ["opacity", "shadow"] as const;
 
 /**
+ * The Shape picker. "rectangle" and "roundedRectangle" are one choice here: a
+ * rectangle is a rounded one with a corner radius of 0, and two buttons for it
+ * read as two different shapes. Both kinds stay in the document format, so old
+ * layers and the watch are unchanged. Capsule keeps its own button because its
+ * ends stay fully round at any size, which no fixed corner radius does.
+ */
+const SHAPE_PICKER: [ShapeKind, string][] = [
+  ["roundedRectangle", "Rectangle"], ["capsule", "Capsule"], ["circle", "Circle"], ["line", "Line"],
+];
+const SHAPE_PICKER_TITLES: Partial<Record<ShapeKind, string>> = {
+  roundedRectangle: "Set its corner radius to round the corners",
+  capsule: "Fully round ends that stay round at any size",
+  line: "A rule along the frame's long side",
+};
+
+function shapePickerKind(kind: ShapeKind): ShapeKind {
+  return kind === "rectangle" ? "roundedRectangle" : kind;
+}
+
+/** A rectangle's corner radius. A plain "rectangle" reads as 0, and any value
+ * typed turns it into a "roundedRectangle", which draws the same at 0. */
+function shapeCornerField(
+  el: Extract<CElement, { kind: "shape" }>,
+  base: Record<string, unknown>,
+  upd: (mutate: (e: CElement) => void, k: string) => void,
+): TemplateResult | typeof nothing {
+  const k = el.payload.kind;
+  if (k !== "rectangle" && k !== "roundedRectangle") return nothing;
+  return numberField("Corner radius", k === "rectangle" ? 0 : el.payload.cornerRadius, (v) => upd((e) => {
+    if (e.kind !== "shape") return;
+    e.payload.kind = "roundedRectangle";
+    e.payload.cornerRadius = v ?? (base.cornerRadius as number);
+  }, "radius"), { step: 0.5, min: 0, def: base.cornerRadius as number, unit: "pt" });
+}
+
+/**
  * Opacity and the shadow, the two rows every drawing layer shows at the foot of
  * its Look card.
  *
@@ -8577,19 +8581,6 @@ const LOOK_KEYS: Record<CElement["kind"], readonly string[]> = {
   chartGrid: ["lines", "colorHex", "thickness"],
   imageTime: [],
   list: ["rows", "direction", "columns", "gap"],
-};
-
-/** The payload fields behind each kind's More line in its Look card. Any of
- * them away from a fresh layer's value opens the line, so a changed setting is
- * never folded away. Opacity and the shadow (`LAYER_LOOK_KEYS`) join every
- * drawing layer's list. */
-export const LOOK_MORE_KEYS: Partial<Record<CElement["kind"], readonly string[]>> = {
-  text: ["fontWidth", "italic", "monospacedDigits", "arc", "highlight", "highColorHex", "lowColorHex"],
-  gauge: ["fill", "ticks", "labels", "thresholdValue", "thresholdColorHex"],
-  chart: ["barRadius", "barCorners", "barBorderWidth", "barBorderColorHex", "barBorderOpenBase", "baseline", "scaleFrom"],
-  timeline: ["gap", "cornerRadius"],
-  shape: ["fill"],
-  image: ["zoom", "panX", "panY", "cornerRadius"],
 };
 
 /**
@@ -9059,11 +9050,7 @@ function layerQuickFields(host: EditorHost, el: CElement): TemplateResult {
       if (el.payload.kind !== "line") {
         return html`
           <div class="grid2">
-            ${el.payload.kind === "roundedRectangle"
-              ? numberField("Corner radius", el.payload.cornerRadius, (v) => upd((e) => {
-                  if (e.kind === "shape") e.payload.cornerRadius = v ?? 6;
-                }, "radius"), { step: 0.5, min: 0, def: base.cornerRadius as number, unit: "pt" })
-              : nothing}
+            ${shapeCornerField(el, base, upd)}
             ${color}
           </div>`;
       }
@@ -9388,7 +9375,7 @@ function familyCards(host: EditorHost, family: FamilyKind): TemplateResult {
       ${colorField("Border color", layout.borderColorHex, (v) => upd((l) => { if (v === undefined) delete l.borderColorHex; else l.borderColorHex = v; }, "border"), true, null)}
       ${numberField("Border width", layout.borderWidth, (v) => upd((l) => { l.borderWidth = v ?? 2; }, "bw"), { step: 0.5, min: 0, def: 2, unit: "pt" })}`,
       { color: SECTION_COLOR.look, icon: "shape", summary: `${bg} · ${border}`,
-        more: { rows: [["gradient", home ? nothing : backgroundGradient]], changed: layout.backgroundFill !== undefined },
+        more: { rows: [["gradient", home ? nothing : backgroundGradient]] },
         ...(layout.backgroundColorHex !== undefined || layout.backgroundFill !== undefined || layout.borderColorHex !== undefined || layout.borderWidth !== 2
           ? { reset: () => upd((l) => { delete l.backgroundColorHex; delete l.backgroundFill; delete l.borderColorHex; l.borderWidth = 2; }, "reset-look") } : {}) })}
     ${home ? card(host, "home", "Home Screen", html`

@@ -4866,19 +4866,11 @@ export class WristAssistantPanel extends LitElement {
     }
     /* An open card with no help text in it has nothing for its "?" to show. */
     .sec[data-open="true"][data-help="off"]:not(:has(> .sec-b .hint:not(.warn):not(.err):not(.keep):not(.value-pop .hint))) button.sec-help { display: none; }
-    /* Inspector: header Add, More line, paired rows, how-to card, footer. */
+    /* Inspector: header Add, a card's less used rows, paired rows, how-to card, footer. */
     .sec-h button.sec-act { flex: none; min-height: 22px; padding: 0 8px 0 6px; font-size: 11px; gap: 3px; }
     .sec-h button.sec-act svg.ui-icon { width: 11px; height: 11px; }
     .more-fold { margin: 6px -12px 0; padding: 0 12px; border-top: 1px solid color-mix(in srgb, var(--c, var(--wa-accent)) 18%, transparent); }
-    .more-line {
-      display: flex; align-items: baseline; gap: 5px; width: 100%; min-width: 0; padding: 7px 0 1px; margin: 0;
-      font: inherit; font-size: 11.5px; font-weight: 600; color: var(--wa-ink); background: transparent; border: 0; cursor: pointer; text-align: left;
-    }
-    .more-line:hover .more-word { color: var(--c, var(--wa-accent)); }
-    .more-line:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 4px; }
-    .more-line .more-arrow { color: var(--wa-muted); font-size: 10px; }
-    .more-line .more-names { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; color: var(--wa-muted); }
-    .more-body { padding-top: 4px; }
+    .more-body { padding-top: 6px; }
     .more-body > .hint { margin: 2px 0 6px var(--wa-col); }
     /* Size and alignment on one row: the number box, then Left, Center, Right. */
     .size-align-row { display: grid; grid-template-columns: minmax(64px, 1fr) minmax(0, 2fr); gap: 6px; align-items: center; min-width: 0; }
