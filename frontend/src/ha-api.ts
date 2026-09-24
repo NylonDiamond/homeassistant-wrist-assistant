@@ -92,6 +92,18 @@ export interface ComplicationRecord {
   document: Record<string, unknown> | null;
 }
 
+/** A Browse card's picture of one record, as the list names it: which shape
+ * on which device, and the size it was drawn at. The PNG itself comes from
+ * `fetchCardPreview`. `focus` is a corner's disc within its quadrant. */
+export interface CardPreview {
+  revision: number;
+  family: "rectangular" | "circular" | "corner" | "small" | "medium" | "large" | "xlarge";
+  device: "watch" | "iphone";
+  width: number;
+  height: number;
+  focus?: { cx: number; cy: number; diameter: number };
+}
+
 export interface ChangeEvent {
   owner_watch_id: string;
   token: number;
@@ -210,7 +222,33 @@ export async function fetchList(hass: HassLike, owner: string) {
     /** Watch-app pages (id + name, watch order), per its last sync report. */
     pages?: { id: string; name: string }[];
     records: ComplicationRecord[];
+    /** The current card picture of each record that has one, by record id.
+     * Absent from integrations older than the field. */
+    previews?: Record<string, CardPreview>;
   }>({ type: `${D}/list`, owner_watch_id: owner });
+}
+
+/** Keep the card picture of one revision of one record. `stale` means the
+ * record moved on while the picture was being drawn. */
+export async function saveCardPreview(
+  hass: HassLike,
+  owner: string,
+  id: string,
+  revision: number,
+  png: string,
+  meta: Omit<CardPreview, "revision">,
+) {
+  return hass.connection.sendMessagePromise<
+    { ok: true; preview: CardPreview } | { ok: false; error: "stale"; revision: number }
+  >({ type: `${D}/preview_save`, owner_watch_id: owner, complication_id: id, revision, png, meta });
+}
+
+/** The PNG of one record's card picture, as base64. Fails when the preview
+ * held is of another revision. */
+export async function fetchCardPreview(hass: HassLike, owner: string, id: string, revision: number) {
+  return hass.connection.sendMessagePromise<{ revision: number; png: string }>({
+    type: `${D}/preview_get`, owner_watch_id: owner, complication_id: id, revision,
+  });
 }
 
 /** "Send to watch", and "Refresh now" on a phone: wake the watch's parked

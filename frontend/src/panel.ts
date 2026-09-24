@@ -7,11 +7,13 @@
 import { LitElement, html, svg, css, nothing, unsafeCSS, type PropertyValues, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
 import {
+  type CardPreview,
   type ComplicationRecord,
   type HassLike,
   type OwnerSummary,
   deletePart,
   deleteRecord,
+  fetchCardPreview,
   fetchGalleryKey,
   fetchList,
   fetchOwners,
@@ -34,6 +36,7 @@ import {
   fetchListItems,
   listItemsRequests,
   renderTemplates,
+  saveCardPreview,
   saveRecord,
   subscribeChanges,
 } from "./ha-api.js";
@@ -342,6 +345,7 @@ import {
 import { renderGalleryPreviews } from "./preview-png.js";
 import { PictureCache } from "./picture-cache.js";
 import { BrowserPictureStore } from "./picture-store.js";
+import { base64ToPng, blobToBase64, cardPreviewAddress, parseCardPreviewAddress, shapeToPng } from "./card-snapshot.js";
 import {
   type SavedPart,
   insertPart,
@@ -1786,6 +1790,38 @@ export class WristAssistantPanel extends LitElement {
     read: (id, scope) => this.pictureStore.read(id, scope),
     write: (id, picture, scope) => this.pictureStore.write(id, picture, scope),
   });
+  /** Each Browse card's picture of its complication, by `owner|record`, as the
+   * list replies name them. Only one of the record's current revision counts;
+   * see `cardFromPreview`. */
+  private readonly cardPreviews = new Map<string, CardPreview>();
+  /** The PNG bytes behind `cardPreviews`, kept in this browser under the
+   * revision so each is fetched from Home Assistant once. */
+  private readonly cardPreviewStore = new BrowserPictureStore("wrist-assistant-card-previews");
+  private readonly cardPictures = new PictureCache({
+    fetch: async (address) => {
+      const at = parseCardPreviewAddress(address);
+      if (!at) return { ok: false, status: 400, blob: async () => new Blob() };
+      try {
+        const reply = await fetchCardPreview(this.hass, at.ownerId, at.recordId, at.revision);
+        const png = base64ToPng(reply.png);
+        return { ok: true, status: 200, blob: async () => png };
+      } catch {
+        return { ok: false, status: 404, blob: async () => new Blob() };
+      }
+    },
+    objectUrl: (blob) => URL.createObjectURL(blob),
+    revoke: (url) => URL.revokeObjectURL(url),
+    changed: () => this.requestUpdate(),
+    now: () => Date.now(),
+    scope: () => this.hass?.user?.id,
+    read: (id, scope) => this.cardPreviewStore.read(id, scope),
+    write: (id, picture, scope) => this.cardPreviewStore.write(id, picture, scope),
+  }, 2000);
+  /** Card pictures to take for records that have none, one at a time, and the
+   * `owner|record|revision` of every one already tried this visit, so a card
+   * whose picture cannot be taken is not tried on every render. */
+  private cardPreviewQueue: Promise<void> = Promise.resolve();
+  private readonly cardPreviewTried = new Set<string>();
   /** Whether a warm-up of `pictures` is already waiting for an idle moment.
    * Every list reply asks for one, and they would otherwise stack up. */
   private pictureWarmQueued = false;
@@ -6364,6 +6400,7 @@ export class WristAssistantPanel extends LitElement {
     // An object URL the document never revokes holds its bytes until the tab
     // closes, and the panel is torn down and rebuilt on every sidebar visit.
     this.pictures.clear();
+    this.cardPictures.clear();
   }
 
   /** The browser's own "Leave site?" question, when there is work to lose.
@@ -6430,7 +6467,10 @@ export class WristAssistantPanel extends LitElement {
       const dark = this.hass?.themes?.darkMode ?? window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
       this.toggleAttribute("dark", dark);
       const previousUser = (changed.get("hass") as HassLike | undefined)?.user?.id;
-      if (previousUser !== undefined && previousUser !== this.hass?.user?.id) this.pictures.clear();
+      if (previousUser !== undefined && previousUser !== this.hass?.user?.id) {
+        this.pictures.clear();
+        this.cardPictures.clear();
+      }
     }
     // A different selection starts with Content and Look open and every other
     // card folded to its summary, whatever the last one had open; what is
@@ -6910,6 +6950,7 @@ export class WristAssistantPanel extends LitElement {
     try {
       const reply = await fetchList(this.hass, ownerId);
       if (this.ownerId !== ownerId || run !== this.recordsLoadRun) return;
+      this.notePreviews(ownerId, reply.previews);
       this.records = reply.records;
       this.maxSchemaVersion = reply.max_schema_version;
       this.presets = reply.presets ?? [];
@@ -6978,13 +7019,17 @@ export class WristAssistantPanel extends LitElement {
     this.pictureWarmQueued = true;
     const run = () => {
       this.pictureWarmQueued = false;
-      const lists = [this.records, ...[...this.otherLists.values()].map((l) => l.records)];
+      const lists: [string, ComplicationRecord[]][] = [
+        [this.ownerId ?? "", this.records],
+        ...[...this.otherLists].map(([id, l]): [string, ComplicationRecord[]] => [id, l.records]),
+      ];
       // One card per link, but a link's copies are separate records and the
       // cache is keyed by entity, so asking twice for the same camera costs
-      // one fetch. No need to dedupe the records themselves.
-      for (const records of lists) {
+      // one fetch. No need to dedupe the records themselves. A card with a
+      // picture of its own draws none of its entities, so it asks for nothing.
+      for (const [ownerId, records] of lists) {
         for (const record of records) {
-          if (record.deleted) continue;
+          if (record.deleted || this.hasCardPreview(ownerId, record)) continue;
           for (const id of this.recordPreview(record)?.entities.map((e) => e.entityId) ?? []) {
             const url = this.hass.states[id]?.attributes?.entity_picture;
             if (typeof url === "string") this.pictures.urlFor(id, url);
@@ -7140,6 +7185,7 @@ export class WristAssistantPanel extends LitElement {
     for (const id of ids) {
       try {
         const reply = await fetchList(this.hass, id);
+        this.notePreviews(id, reply.previews);
         next.set(id, {
           records: reply.records,
           occupied: reply.occupied
@@ -8140,9 +8186,12 @@ export class WristAssistantPanel extends LitElement {
         this.savedName = String(result.record.document?.name ?? "");
         this.recompile();
         this.beginSendWait();
+        // Browse shows this picture of it until the next save.
+        const saved = this.draft.config;
+        void this.captureCardPreview(ownerId, result.record.id, result.record.revision, saved, saved).catch(() => undefined);
       }
       // The same edit on every other device this design is on.
-      await this.saveLinkedSiblings(submittedConfig, result.record.id, ownerId);
+      await this.saveLinkedSiblings(submittedConfig, result.record.id, ownerId, stillOpen ? this.draft?.config : undefined);
       if (this.ownerId === ownerId) await this.loadRecords();
     } catch (err) {
       this.saveError = errText(err);
@@ -8257,7 +8306,7 @@ export class WristAssistantPanel extends LitElement {
    * else changed meanwhile is reported rather than overwritten. The lists are
    * read again first for those revisions.
    */
-  private async saveLinkedSiblings(saved: CustomComplicationConfig, savedId: string, sourceOwnerId: string) {
+  private async saveLinkedSiblings(saved: CustomComplicationConfig, savedId: string, sourceOwnerId: string, stage?: CustomComplicationConfig) {
     if (saved.linkId === undefined) return;
     await this.loadOtherLists();
     const siblings = this.linkedSiblings(saved.linkId, sourceOwnerId, savedId);
@@ -8272,6 +8321,7 @@ export class WristAssistantPanel extends LitElement {
       try {
         const out = await saveRecord(this.hass, ownerId, new Draft(doc, record.revision).encoded(), record.revision);
         if (!out.ok) failed.push(this.ownerName(ownerId));
+        else if (out.record) void this.captureCardPreview(ownerId, out.record.id, out.record.revision, doc, stage).catch(() => undefined);
       } catch {
         failed.push(this.ownerName(ownerId));
       }
@@ -10352,28 +10402,7 @@ export class WristAssistantPanel extends LitElement {
    */
   private cardLive(cfg: CustomComplicationConfig, entities: readonly EntityRef[]): LiveDesign {
     const layouts = this.configLayouts(cfg, entities);
-    const draw = (family: DrawableFamily, phone: boolean): LiveShape | undefined => {
-      if (!cfg.supportedFamilies.includes(family)) return undefined;
-      const slot = slotFor(phone ? REFERENCE_PHONE : REFERENCE_CASE, family);
-      const art = renderShapeArt({
-        config: cfg, layouts, icons: this.icons, imageSizes: this.imageSizes, phone, slotFor: () => slot,
-      }, family);
-      if (art === nothing) return undefined;
-      // The corner is rendered as its whole screen quadrant, with the content
-      // disc where the face puts it. The drawing wants the disc alone, so it
-      // is told where the disc is, in the quadrant's own units: the reference
-      // case's slot is the design box, so its scale is one.
-      if (family === "corner") {
-        const layout = layouts.corner;
-        const bezel = !!layout?.bezelText || !!layout?.bezelGauge;
-        const ctx = cornerContext(1, bezel);
-        return {
-          art, width: ctx.quad.width, height: ctx.quad.height,
-          focus: { cx: ctx.tile.cx, cy: ctx.tile.cy, diameter: cornerTileSide(1, bezel) },
-        };
-      }
-      return { art, width: slot.width, height: slot.height };
-    };
+    const draw = (family: DrawableFamily, phone: boolean) => this.cardShape(cfg, layouts, family, phone);
     // The Control Center tile as the device draws it: the watch's pill and
     // the phone's circle, off the same host the card's own preview uses. It
     // is drawn beside the devices, so its size is its own.
@@ -10411,6 +10440,151 @@ export class WristAssistantPanel extends LitElement {
       watch,
       phone: pick(["rectangular", "circular", "small", "medium", "large", "xlarge"], true),
     };
+  }
+
+  /** One shape of a complication drawn into its slot for a card: the card's
+   * live drawing and the picture a save takes of it are this same drawing. */
+  private cardShape(cfg: CustomComplicationConfig, layouts: ResolvedAll, family: DrawableFamily, phone: boolean): LiveShape | undefined {
+    if (!cfg.supportedFamilies.includes(family)) return undefined;
+    const slot = slotFor(phone ? REFERENCE_PHONE : REFERENCE_CASE, family);
+    const art = renderShapeArt({
+      config: cfg, layouts, icons: this.icons, imageSizes: this.imageSizes, phone, slotFor: () => slot,
+    }, family);
+    if (art === nothing) return undefined;
+    // The corner is rendered as its whole screen quadrant, with the content
+    // disc where the face puts it. The drawing wants the disc alone, so it
+    // is told where the disc is, in the quadrant's own units: the reference
+    // case's slot is the design box, so its scale is one.
+    if (family === "corner") {
+      const layout = layouts.corner;
+      const bezel = !!layout?.bezelText || !!layout?.bezelGauge;
+      const ctx = cornerContext(1, bezel);
+      return {
+        art, width: ctx.quad.width, height: ctx.quad.height,
+        focus: { cx: ctx.tile.cx, cy: ctx.tile.cy, diameter: cornerTileSide(1, bezel) },
+      };
+    }
+    return { art, width: slot.width, height: slot.height };
+  }
+
+  // ── card pictures ─────────────────────────────────────────────────────
+
+  /** Take in what one list reply says about its device's card pictures. */
+  private notePreviews(ownerId: string, previews: Record<string, CardPreview> | undefined) {
+    for (const key of [...this.cardPreviews.keys()]) {
+      if (key.startsWith(`${ownerId}|`)) this.cardPreviews.delete(key);
+    }
+    for (const [id, preview] of Object.entries(previews ?? {})) this.cardPreviews.set(`${ownerId}|${id}`, preview);
+  }
+
+  /** Whether this record has a picture of its current revision. */
+  private hasCardPreview(ownerId: string, record: ComplicationRecord): boolean {
+    return this.cardPreviews.get(`${ownerId}|${record.id}`)?.revision === record.revision;
+  }
+
+  /**
+   * A card's shape from its saved picture, or undefined to draw it live.
+   *
+   * Live is the answer when there is no picture of this revision, when the
+   * picture is of another shape or device than the card now draws, and when
+   * its bytes would not load. While the bytes are on their way, from this
+   * browser's storage or from Home Assistant, the slot shows its plain fill:
+   * drawing it live for that moment would ask for the very pictures this is
+   * here to spare.
+   */
+  private cardFromPreview(ownerId: string, record: ComplicationRecord, family: FamilyKind | undefined, device: "watch" | "iphone"): LiveShapes | undefined {
+    if (family === undefined) return undefined;
+    const key = `${ownerId}|${record.id}`;
+    const preview = this.cardPreviews.get(key);
+    if (!preview || preview.revision !== record.revision || preview.family !== family || preview.device !== device) return undefined;
+    if (this.cardPictures.failing(key)) return undefined;
+    const url = this.cardPictures.urlFor(key, cardPreviewAddress(ownerId, record.id, record.revision));
+    if (url === undefined) return {};
+    const shape: LiveShape = {
+      art: svg`<image href=${url} width=${preview.width} height=${preview.height} preserveAspectRatio="none"></image>`,
+      width: preview.width,
+      height: preview.height,
+      ...(preview.focus ? { focus: preview.focus } : {}),
+    };
+    return { [family]: shape };
+  }
+
+  /** Take a card picture for a record the grid had to draw live, once per
+   * revision per visit, behind any other such picture still being taken. */
+  private queueCardPreview(ownerId: string, record: ComplicationRecord, cfg: CustomComplicationConfig) {
+    if (!this.hass.user?.is_admin) return;
+    const key = `${ownerId}|${record.id}|${record.revision}`;
+    if (this.cardPreviewTried.has(key)) return;
+    this.cardPreviewTried.add(key);
+    this.cardPreviewQueue = this.cardPreviewQueue
+      .then(() => this.captureCardPreview(ownerId, record.id, record.revision, cfg))
+      .catch(() => undefined);
+  }
+
+  /**
+   * Draw one record's card and keep the picture in Home Assistant.
+   *
+   * `stage` is the open draft's config when the record was just saved from it:
+   * the stage then lends its rendered templates, history and list items, so
+   * the picture shows what the editor showed. Only while the draft still is
+   * that config and has nothing unsaved; otherwise the card is drawn the way
+   * the grid draws any other, from the record alone.
+   *
+   * Waits for the pictures its layers show, and gives up rather than keep a
+   * card with an empty frame in it: the grid then draws it live and tries
+   * again on a later visit.
+   */
+  private async captureCardPreview(ownerId: string, recordId: string, revision: number, cfg: CustomComplicationConfig, stage?: CustomComplicationConfig) {
+    const family = ALL_FAMILIES.find((f) => cfg.supportedFamilies.includes(f));
+    if (family === undefined || !(DRAWABLE_FAMILIES as readonly FamilyKind[]).includes(family)) return;
+    const device = this.cardDevice(deviceKindOf(this.ownerOf(ownerId)), family);
+    let entities: EntityRef[];
+    try {
+      entities = [...compile(cfg).entities.values()];
+    } catch {
+      return;
+    }
+    if (!(await this.picturesReady(entities))) return;
+    const onStage = stage !== undefined && this.draft?.config === stage && !this.draft.dirty;
+    const layouts = onStage ? resolveAll(cfg, this.cardStageContext()) : resolveAll(cfg, this.configContext(cfg, entities));
+    const shape = this.cardShape(cfg, layouts, family as DrawableFamily, device === "iphone");
+    if (!shape || shape.art === nothing) return;
+    const png = await shapeToPng(shape.art, shape.width, shape.height);
+    const reply = await saveCardPreview(this.hass, ownerId, recordId, revision, await blobToBase64(png), {
+      family: family as CardPreview["family"], device, width: shape.width, height: shape.height,
+      ...(shape.focus ? { focus: shape.focus } : {}),
+    });
+    if (!reply.ok) return;
+    const key = `${ownerId}|${recordId}`;
+    this.cardPreviews.set(key, reply.preview);
+    // The bytes are here already; fetching them straight back would be silly.
+    this.cardPictures.seed(key, png, cardPreviewAddress(ownerId, recordId, revision));
+  }
+
+  /** The stage's context for a card picture: real values rather than test
+   * ones, and the first page, since a card always shows page one. */
+  private cardStageContext(): ResolveContext {
+    const ctx = this.buildContext(false);
+    delete ctx.page;
+    return ctx;
+  }
+
+  /** Wait until every picture these entities show is held and measured, for
+   * up to twelve seconds. False when one never arrived. */
+  private async picturesReady(entities: readonly EntityRef[]): Promise<boolean> {
+    const deadline = Date.now() + 12_000;
+    for (;;) {
+      let ready = true;
+      for (const ref of entities) {
+        const live = this.hass.states[ref.entityId]?.attributes?.entity_picture;
+        if (typeof live !== "string") continue;
+        const held = this.pictures.urlFor(ref.entityId, live);
+        if (held === undefined || this.imageSizes.size(held) === undefined) ready = false;
+      }
+      if (ready) return true;
+      if (Date.now() > deadline) return false;
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
+    }
   }
 
   /**
@@ -11389,8 +11563,12 @@ export class WristAssistantPanel extends LitElement {
     const stop = (e: Event) => e.stopPropagation();
     // Parsed once per record and resolved once per card: this method is only
     // called for the cards the tab, the shape and the search left in.
-    const preview = this.recordPreview(drawn);
+    // A card with a picture of this revision shows it and resolves nothing.
+    // The open one draws live, since the stage is showing the same thing.
+    const pictured = open ? undefined : this.cardFromPreview(copy.ownerId, drawn, family, device);
+    const preview = pictured ? undefined : this.recordPreview(drawn);
     const live = preview ? this.cardLive(preview.config, preview.entities) : undefined;
+    if (!open && preview && !pictured) this.queueCardPreview(copy.ownerId, drawn, preview.config);
     const menu = this.pickerDupFor === cardKey;
     const linked = row.copies.length > 1;
     const del = (everywhere: boolean) => void (open
@@ -11420,7 +11598,7 @@ export class WristAssistantPanel extends LitElement {
         <button type="button" class="pk-card-open" title=${doing}
           aria-label=${doing} @click=${hit}>
           ${this.cardArt(family, device,
-            live ? (device === "iphone" ? live.phone : live.watch) : {}, shelved)}
+            pictured ?? (live ? (device === "iphone" ? live.phone : live.watch) : {}), shelved)}
         </button>
         <span class="pk-card-acts ${confirming ? "asking" : ""} ${picking ? "away" : ""}">
           ${confirming

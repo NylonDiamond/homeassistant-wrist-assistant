@@ -53,6 +53,10 @@ Commands:
     wrist_assistant/complications/parts_list
     wrist_assistant/complications/parts_save   {name, text, part_id?}
     wrist_assistant/complications/parts_delete {part_id}
+    wrist_assistant/complications/preview_save {owner_watch_id, complication_id,
+                                                revision, png, meta}
+    wrist_assistant/complications/preview_get  {owner_watch_id, complication_id,
+                                                revision}
 
 ``save`` is all-or-nothing: the browser submits the whole document plus the
 revision it loaded. A mismatch returns error code ``conflict`` with the
@@ -79,10 +83,18 @@ The three ``parts_*`` commands are Parts, the home's library of saved layer
 sets (see ``parts_store.py``). A part is share text, so nothing about the house
 is in one, but they are admin-only like every other command here: writing to
 this library is editing what the panel offers everybody.
+
+The two ``preview_*`` commands are the Browse grid's card pictures (see
+``card_preview_store.py``). The panel draws a card once on save and sends it
+here as a PNG; ``list`` names each record's current preview, and
+``preview_get`` hands the bytes back over this authenticated socket, since a
+preview can hold a camera frame and has no business at a public address.
 """
 
 from __future__ import annotations
 
+import base64
+import binascii
 import logging
 from copy import deepcopy
 from typing import Any
@@ -128,6 +140,7 @@ from .statistics_series import (
     StatisticsSeriesError,
     async_statistics_series,
 )
+from .card_preview_store import CardPreviewError, CardPreviewStore
 from .gallery_key_store import gallery_key_store
 from .parts_store import PartsStore, PartsStoreError
 from .widget_secret_store import DEVICE_KIND_IPHONE, DEVICE_KIND_LIBRARY
@@ -158,6 +171,8 @@ _CMD_GALLERY_KEY = f"{DOMAIN}/gallery_key"
 _CMD_PARTS_LIST = f"{DOMAIN}/complications/parts_list"
 _CMD_PARTS_SAVE = f"{DOMAIN}/complications/parts_save"
 _CMD_PARTS_DELETE = f"{DOMAIN}/complications/parts_delete"
+_CMD_PREVIEW_SAVE = f"{DOMAIN}/complications/preview_save"
+_CMD_PREVIEW_GET = f"{DOMAIN}/complications/preview_get"
 
 
 def _store(hass: HomeAssistant) -> ComplicationStore | None:
@@ -165,6 +180,14 @@ def _store(hass: HomeAssistant) -> ComplicationStore | None:
     if domain_data is None:
         return None
     return domain_data.complication_store
+
+
+def _previews(hass: HomeAssistant) -> CardPreviewStore | None:
+    """The Browse grid's card pictures, or None before the integration is ready."""
+    domain_data = hass.data.get(DOMAIN)
+    if domain_data is None:
+        return None
+    return getattr(domain_data, "card_preview_store", None)
 
 
 def _parts(hass: HomeAssistant) -> PartsStore | None:
@@ -245,6 +268,8 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_parts_list)
     websocket_api.async_register_command(hass, ws_parts_save)
     websocket_api.async_register_command(hass, ws_parts_delete)
+    websocket_api.async_register_command(hass, ws_preview_save)
+    websocket_api.async_register_command(hass, ws_preview_get)
 
 
 @websocket_api.require_admin
@@ -621,6 +646,8 @@ def ws_list(
     owner = msg["owner_watch_id"]
     domain_data = hass.data.get(DOMAIN)
     coordinator = domain_data.coordinator if domain_data is not None else None
+    records = store.list(owner, include_deleted=msg["include_deleted"])
+    previews = _previews(hass)
     connection.send_result(
         msg["id"],
         {
@@ -657,10 +684,13 @@ def ws_list(
             # Watch-app pages (id + name, watch order), for the "Open the
             # page" tap-action picker.
             "pages": store.pages(owner),
-            "records": [
-                r.as_dict()
-                for r in store.list(owner, include_deleted=msg["include_deleted"])
-            ],
+            "records": [r.as_dict() for r in records],
+            # The Browse card picture of each record that has a current one,
+            # by record id: which shape on which device, and the size it was
+            # drawn at. The bytes come from preview_get. Beside the records
+            # rather than inside them, since a record is the sync shape every
+            # replica reads.
+            "previews": previews.previews_for(owner, records) if previews else {},
         },
     )
 
@@ -749,6 +779,9 @@ def ws_delete(
     except ComplicationStoreError as err:
         _send_store_error(connection, msg["id"], err)
         return
+    previews = _previews(hass)
+    if previews is not None:
+        hass.async_create_task(previews.async_remove(record.owner_watch_id, record.id))
     connection.send_result(msg["id"], {"ok": True, "record": record.as_dict()})
 
 
@@ -1355,3 +1388,90 @@ async def ws_list_items(
             continue
         results[key] = {"ok": True, "items": fetched.items, "total": fetched.total}
     connection.send_result(msg["id"], {"results": results})
+
+
+# ── Card previews ──────────────────────────────────────────────────────
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_PREVIEW_SAVE,
+        vol.Required("owner_watch_id"): str,
+        vol.Required("complication_id"): str,
+        vol.Required("revision"): int,
+        # Base64 of the PNG. The socket carries JSON, and a card is small.
+        vol.Required("png"): str,
+        vol.Required("meta"): dict,
+    }
+)
+@websocket_api.async_response
+async def ws_preview_save(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Keep the picture of one revision of one record.
+
+    Refused as ``stale`` when the record has moved on since the picture was
+    drawn: a picture of revision 4 filed under revision 5 would show the old
+    design with nothing to say so. The panel draws again from the newer one.
+    """
+    store = _store(hass)
+    previews = _previews(hass)
+    if store is None or previews is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    record = store.get(msg["owner_watch_id"], msg["complication_id"].upper())
+    if record is None or record.deleted:
+        connection.send_error(msg["id"], "not_found", "no such complication")
+        return
+    if record.revision != msg["revision"]:
+        connection.send_result(
+            msg["id"], {"ok": False, "error": "stale", "revision": record.revision}
+        )
+        return
+    try:
+        data = base64.b64decode(msg["png"], validate=True)
+    except (binascii.Error, ValueError):
+        connection.send_error(msg["id"], "invalid", "png is not base64")
+        return
+    try:
+        preview = await previews.async_put(
+            record.owner_watch_id, record.id, record.revision, data, msg["meta"]
+        )
+    except CardPreviewError as err:
+        connection.send_error(msg["id"], err.code, err.message)
+        return
+    connection.send_result(msg["id"], {"ok": True, "preview": preview})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_PREVIEW_GET,
+        vol.Required("owner_watch_id"): str,
+        vol.Required("complication_id"): str,
+        vol.Required("revision"): int,
+    }
+)
+@websocket_api.async_response
+async def ws_preview_get(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """The PNG of one record's preview, as base64, if it is of that revision."""
+    previews = _previews(hass)
+    if previews is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    owner = msg["owner_watch_id"]
+    record_id = msg["complication_id"].upper()
+    if previews.revision_of(owner, record_id) != msg["revision"]:
+        connection.send_error(msg["id"], "not_found", "no preview of that revision")
+        return
+    data = await previews.async_read(owner, record_id)
+    if data is None:
+        connection.send_error(msg["id"], "not_found", "no preview of that revision")
+        return
+    connection.send_result(
+        msg["id"],
+        {"revision": msg["revision"], "png": base64.b64encode(data).decode("ascii")},
+    )

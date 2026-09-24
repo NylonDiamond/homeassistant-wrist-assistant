@@ -108,7 +108,10 @@ export class PictureCache {
   /** A cleared panel must not accept bytes from its previous visit. */
   private epoch = 0;
 
-  constructor(private readonly host: PictureCacheHost) {}
+  /** `max` is how many are held at once. Browse's card pictures take a much
+   * larger one than the pictures: every card on screen asks at every render,
+   * and a limit below that would evict and restore them in a loop. */
+  constructor(private readonly host: PictureCacheHost, private readonly max = PICTURE_CACHE_MAX) {}
 
   /**
    * The address to draw for this entity, or undefined while its bytes are on
@@ -153,6 +156,25 @@ export class PictureCache {
     this.inFlight.set(entityId, flight);
     if (restoreFirst) void this.restoreOrFetch(entityId, liveUrl, flight);
     else void this.fetchFresh(entityId, liveUrl, flight);
+  }
+
+  /** Hold bytes the caller already has, as if they had just been fetched from
+   * `liveUrl`, and keep them in storage. Whatever was on the way for this key
+   * is dropped: these are newer. */
+  seed(entityId: string, blob: Blob, liveUrl: string): void {
+    this.inFlight.delete(entityId);
+    this.failedAt.delete(entityId);
+    const source = pictureSource(liveUrl);
+    this.put(entityId, this.host.objectUrl(blob), source);
+    this.persist(entityId, { blob, source }, this.host.scope?.());
+    this.host.changed();
+  }
+
+  /** Whether the last try for this key failed recently, so a caller can draw
+   * something else instead of waiting on it. */
+  failing(entityId: string): boolean {
+    const failed = this.failedAt.get(entityId);
+    return failed !== undefined && this.host.now() - failed < PICTURE_RETRY_MS;
   }
 
   /** Forget one entity's picture, so the next card that wants it fetches a new
@@ -255,7 +277,7 @@ export class PictureCache {
     if (old !== undefined) this.host.revoke(old.url);
     this.held.delete(entityId);
     this.held.set(entityId, { url, source });
-    while (this.held.size > PICTURE_CACHE_MAX) {
+    while (this.held.size > this.max) {
       const oldest = this.held.keys().next();
       if (oldest.done) break;
       this.drop(oldest.value);

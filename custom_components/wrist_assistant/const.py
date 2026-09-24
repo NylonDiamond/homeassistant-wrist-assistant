@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from .apns_client import APNsClient
     from .batch_snapshot_settings_store import BatchSnapshotSettingsStore
     from .camera_stream import CameraStreamCoordinator
+    from .card_preview_store import CardPreviewStore
     from .complication_push import ComplicationPhonePush
     from .complication_store import ComplicationStore
     from .notification_snapshot import NotificationSnapshotStore
@@ -55,6 +56,9 @@ class WristAssistantData:
     # Parts: the home's saved pieces of a complication, as share text. Panel
     # only; nothing on a watch or a phone ever reads it.
     parts_store: PartsStore
+    # The picture each Browse card shows, taken by the panel on save. Panel
+    # only, like the parts.
+    card_preview_store: CardPreviewStore
     apns_client: APNsClient | None = field(default=None)
     # Sends a phone owner the background push a watch owner gets as a long-poll
     # wake. Built after the relay client is resolved, so it is None for the
@@ -100,6 +104,10 @@ GALLERY_KEY_STORAGE_VERSION = 1
 # install that has never saved a part has no file here at all.
 PARTS_STORAGE_KEY = "wrist_assistant.parts"
 PARTS_STORAGE_VERSION = 1
+# Card previews: the index of the PNG each Browse card shows, one per record,
+# with the pictures themselves in a folder of their own beside it.
+CARD_PREVIEW_STORAGE_KEY = "wrist_assistant.card_previews"
+CARD_PREVIEW_STORAGE_VERSION = 1
 # Highest CustomComplicationConfig schemaVersion this integration can edit.
 # Must track `CustomComplicationConfig.currentSchemaVersion` in the app repo.
 # A newer document is displayed read-only and never re-saved.

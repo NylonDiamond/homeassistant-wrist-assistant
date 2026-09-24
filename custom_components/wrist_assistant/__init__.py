@@ -55,6 +55,7 @@ from .const import (
     WristAssistantData,
 )
 from .notification_snapshot import NotificationSnapshotStore
+from .card_preview_store import CardPreviewStore
 from .parts_store import PartsStore
 from .snapshot_aspect_store import SnapshotAspectStore
 from .snapshot_crop_store import SnapshotCropStore
@@ -725,6 +726,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # so it is loaded here and handed straight to the WebSocket commands.
     parts_store = PartsStore(hass)
     await parts_store.async_load()
+    # Card previews: one PNG per record for the panel's Browse grid. Records
+    # deleted while the integration was down leave a preview behind, so the
+    # sweep runs here, once, against what the store still holds.
+    card_preview_store = CardPreviewStore(hass)
+    await card_preview_store.async_load()
+    try:
+        await card_preview_store.async_prune(
+            {
+                (owner, record.id)
+                for owner in complication_store.owners()
+                for record in complication_store.list(owner)
+            }
+        )
+    except Exception:
+        _LOGGER.exception("Card preview sweep failed; continuing setup")
     # Custom complications ride the watch's long-poll: the owner's store
     # token on every reply, the watch's ack on every request, and a panel
     # save wakes the parked poll so the watch pulls at once.
@@ -776,6 +792,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         batch_snapshot_settings_store=batch_snapshot_settings_store,
         complication_store=complication_store,
         parts_store=parts_store,
+        card_preview_store=card_preview_store,
     )
     entry.runtime_data = runtime_data
     hass.data[DOMAIN] = runtime_data

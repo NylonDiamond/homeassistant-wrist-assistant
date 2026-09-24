@@ -51,6 +51,8 @@ _ADMIN_ONLY = {
     "ws_parts_list",
     "ws_parts_save",
     "ws_parts_delete",
+    "ws_preview_save",
+    "ws_preview_get",
 }
 
 # The commands a non-admin may call, each one a decision made on purpose.

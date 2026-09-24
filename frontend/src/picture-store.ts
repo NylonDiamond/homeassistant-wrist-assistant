@@ -11,6 +11,10 @@ const STORE = "frames";
 export class BrowserPictureStore {
   private database?: Promise<IDBDatabase>;
 
+  /** `name` is the IndexedDB database. The Browse card pictures keep their own,
+   * so clearing one kind never costs the other. */
+  constructor(private readonly name = DATABASE) {}
+
   /** Home Assistant user ids keep one account's private camera frames out of
    * another account's Browse cards in the same browser profile. */
   async read(entityId: string, userId?: string): Promise<StoredPicture | undefined> {
@@ -42,7 +46,7 @@ export class BrowserPictureStore {
         reject(new Error("IndexedDB is unavailable"));
         return;
       }
-      const request = indexedDB.open(DATABASE, 1);
+      const request = indexedDB.open(this.name, 1);
       request.onupgradeneeded = () => request.result.createObjectStore(STORE);
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
