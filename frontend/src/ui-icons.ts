@@ -16,7 +16,7 @@ export type UiIconName =
   | "lock" | "unlock" | "folder" | "ungroup" | "watch" | "phone"
   | "compact" | "expanded" | "grid" | "search" | "undo" | "redo" | "expand" | "left" | "right"
   | "braces" | "link" | "info" | "globe" | "download" | "check" | "arrow" | "paste" | "guides"
-  | "checklist" | "home" | "more" | "thumbSmall" | "thumbMedium" | "thumbLarge";
+  | "checklist" | "home" | "more" | "thumbSmall" | "thumbMedium" | "thumbLarge" | "menu";
 
 function shape(name: UiIconName) {
   switch (name) {
@@ -52,7 +52,9 @@ function shape(name: UiIconName) {
     case "chartDots":
       return svg`<path d="M4 16L10 10L14 13L20 7" /><circle cx="4" cy="16" r="1.8" /><circle cx="10" cy="10" r="1.8" /><circle cx="14" cy="13" r="1.8" /><circle cx="20" cy="7" r="1.8" />`;
     // A chart's grid lines as a layer: three even rules.
+    // Home Assistant's own menu: the same three rules.
     case "chartGrid":
+    case "menu":
       return svg`<path d="M4 7H20M4 12H20M4 17H20" />`;
     // Clock times, and a picture's timestamp, as layers: the clock is the whole
     // of what either draws.

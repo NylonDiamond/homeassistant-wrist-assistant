@@ -30,6 +30,9 @@ export interface HassLike {
   language?: string;
   /** The frontend's theme state; `darkMode` is what the panel's dark skin keys off. */
   themes?: { darkMode?: boolean };
+  /** "always_hidden" when the user has hidden Home Assistant's sidebar for
+      good, which leaves a panel to offer the menu button, as on a phone. */
+  dockedSidebar?: string;
 }
 
 import { type CustomComplicationConfig, type ListRequestSpec, type OccupiedSlot, chartHistoryRequests, chartStatisticsRequests } from "./model.js";

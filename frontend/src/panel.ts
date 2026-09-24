@@ -914,6 +914,18 @@ const ADD_SHEET_MIN_HEIGHT = 420;
 /** How far the sheet keeps from the window's edges. */
 const ADD_SHEET_MARGIN = 12;
 
+/**
+ * How far to slide a menu, CSS px, so it sits inside a window `width` wide
+ * with `margin` to spare each side. A menu too wide for the window keeps its
+ * left edge in, since that is where its words start.
+ */
+export function menuShift(left: number, right: number, width: number, margin = 8): number {
+  let dx = 0;
+  if (right > width - margin) dx = width - margin - right;
+  if (left + dx < margin) dx = margin - left;
+  return Math.round(dx);
+}
+
 /** Where the Add sheet opens: hung under its button, or centred in the
  * window when there is not the room for that. */
 export type AddSheetPlace =
@@ -1365,6 +1377,13 @@ export class WristAssistantPanel extends LitElement {
   /** How much each Layers row says. Expanded adds a third line with the
    * layer's place on the face and keeps the badges next to the buttons. */
   @state() private layerDetail: LayerDetail = "compact";
+  /** A finger rather than a mouse: no hover, a coarse pointer. The hints
+   * say tap rather than click and drop the keys, and the resize handles get
+   * a grab area a fingertip can find. */
+  @state() private touch = false;
+  private touchQuery = typeof window !== "undefined" && typeof window.matchMedia === "function"
+    ? window.matchMedia("(hover: none) and (pointer: coarse)") : undefined;
+  private touchChanged = () => { this.touch = this.touchQuery?.matches ?? false; };
   /** Which of the top bar's and the left column's own menus is open. */
   @state() private sideMenu?: SideMenu;
   /** The Add sheet, and where it opened. Undefined while it is shut. */
@@ -2099,6 +2118,23 @@ export class WristAssistantPanel extends LitElement {
     button.tb-btn.tb-more { padding: 0 9px; letter-spacing: .08em; }
     .tb-saved { font-size: 11.5px; color: var(--wa-muted); white-space: nowrap; }
     header.stacked .tb-saved, header.stacked .tb-pen { display: none; }
+    /* Stacked (a phone, or a narrow window), the bar is two tidy rows rather
+       than three ragged ones: what is done to the draft on top (Browse, undo,
+       redo, Save, help), and where it has got to underneath (the sync pill,
+       Share, ···). The pill takes what the row leaves and cuts its note
+       short, never its label. The empty ::after is the line break: a full
+       width item of no height, so the rows carry their own margins instead
+       of a row gap that would count it twice. */
+    header.stacked { row-gap: 0; padding-block: 4px; }
+    header.stacked > * { margin-block: 4px; }
+    header.stacked::after { content: ""; order: 1; flex: 0 0 100%; height: 0; margin: 0; }
+    header.stacked .tb-div { display: none; }
+    header.stacked > .tb-sync, header.stacked > button.tb-btn:not(.tb-more), header.stacked > .side-menu { order: 2; }
+    header.stacked > .tb-sync { flex: 1 1 0; max-width: none; }
+    header.stacked .tb-sync-l { flex: none; }
+    header.stacked .tb-sync-n { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    /* Home Assistant's own menu, which a phone hides behind this button. */
+    header button.icon.tb-menu { margin-left: -6px; }
     /* Buttons: one quiet shape everywhere, the accent fill kept for the single
        action that matters, and a soft ring on focus instead of a hard outline. */
     .toolbar button, button.primary, button.small, button.danger {
@@ -2697,6 +2733,23 @@ export class WristAssistantPanel extends LitElement {
        is behind the backdrop while this dialog is up. */
     .pk-foot-said { flex: 1; min-width: 0; font-size: 12px; font-weight: 500; color: var(--wa-ink); }
     .pk-foot-said.err { color: var(--error-color, #db4437); }
+    /* A phone. The head's controls ran off the right edge under the title,
+       the hint in the foot wrapped one word to a line, and a card's buttons,
+       which stay out on a touch screen, were wider than the card itself.
+       The dialog takes the screen, the head folds to the title and its close,
+       then the controls, then the search; the foot puts the hint on a line of
+       its own; and a card's buttons sit under its picture. */
+    @media (max-width: 640px) {
+      dialog.pk-dialog { width: calc(100vw - 16px); height: calc(100dvh - 16px); max-width: none; max-height: none; }
+      .pk-head { flex-wrap: wrap; row-gap: 8px; column-gap: 8px; padding: 10px 10px 10px 14px; }
+      .pk-head h2 { flex: 1 0 calc(100% - 48px); order: 0; }
+      .pk-head > button.icon { order: 1; }
+      .pk-head > :not(h2):not(button.icon) { order: 2; }
+      .pk-head > .pk-search { flex: 1 1 100%; width: auto; max-width: none; }
+      .pk-foot { flex-wrap: wrap; row-gap: 8px; padding: 10px 14px; justify-content: flex-end; }
+      .pk-foot-hint, .pk-foot-said { flex: 1 1 100%; }
+      .pk-card-acts { position: static; opacity: 1; flex-wrap: wrap; justify-content: flex-end; margin-top: 6px; }
+    }
 
     /* New complication: its own button beside the list, because making one was
        a row buried under every complication that already existed. */
@@ -3263,6 +3316,10 @@ export class WristAssistantPanel extends LitElement {
     .layout.cols-1 .column.left, .layout.cols-1 .column.canvas, .layout.cols-1 .column.inspector,
     .layout.cols-2 .column.inspector { overflow: visible; min-height: auto; }
     .layout.cols-1 .column.left .card.layers-card { flex: none; }
+    /* The status line sits at the end of the inspector, not pinned over the
+       page: stacked, the column is not a scroll box of its own, so a sticky
+       foot floated over the face and the cards on every screen of a phone. */
+    .layout.cols-1 .column.inspector > .foot { position: static; }
     .layout.cols-1 .layers { overflow: visible; }
     /* Stacked, the three columns become one page, and the page is read top to
        bottom rather than left to right. In column order that page opened with
@@ -4189,7 +4246,7 @@ export class WristAssistantPanel extends LitElement {
     /* The preview bar's own menus (grid size, Preview as), in place of native
        selects, whose closing menu made Chrome on macOS hold the next click. */
     .pop-menu {
-      position: absolute; top: calc(100% + 6px); right: 0; z-index: 50; min-width: 84px;
+      position: absolute; top: calc(100% + 6px); right: 0; z-index: 50; min-width: 84px; max-width: calc(100vw - 16px);
       background: var(--wa-card); color: var(--wa-ink); border: 1px solid var(--wa-line-strong);
       border-radius: var(--wa-r-md); box-shadow: var(--wa-shadow-pop); padding: 4px;
       display: flex; flex-direction: column; gap: 1px;
@@ -4461,7 +4518,7 @@ export class WristAssistantPanel extends LitElement {
       --wa-live: #3fbf7f;
       --wa-testing: #f2c063;
     }
-    .column.canvas > .card.canvas-card { min-height: 440px; }
+    .column.canvas > .card.canvas-card { min-height: 440px; container: cvcard / inline-size; }
     .cv-head {
       display: flex; align-items: center; gap: 12px; height: 48px; padding: 0 16px; flex: none; min-width: 0;
       border-bottom: 1px solid var(--wa-line);
@@ -4531,6 +4588,20 @@ export class WristAssistantPanel extends LitElement {
     }
     button.cv-more:hover, button.cv-more[aria-expanded="true"] { background: color-mix(in srgb, var(--wa-ink) 8%, transparent); color: var(--wa-ink); }
     button.cv-more:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    /* A narrow canvas (a phone, or a column dragged in) cannot hold the head
+       on one line: "Add to a device" was drawn over the shape's name and the
+       Duplicate button. It folds to two rows instead: the name and its shape
+       with the whole-document actions, then the devices. The ::after is the
+       line break, a full width item of no height. */
+    @container cvcard (max-width: 560px) {
+      .cv-head { flex-wrap: wrap; height: auto; min-height: 48px; padding: 6px 12px 8px; row-gap: 0; column-gap: 8px; }
+      .cv-head::after { content: ""; order: 3; flex: 0 0 100%; height: 0; }
+      .cv-head .cv-slash, .cv-head .spacer { display: none; }
+      .cv-head .tb-name { order: 0; flex: 1 1 0; }
+      .cv-head .cv-shape, .cv-head .shape-seg { order: 1; }
+      .cv-head .cv-act, .cv-head .cv-div, .cv-head .doc-menu { order: 2; }
+      .cv-head .cv-devices { order: 4; flex: 0 1 auto; margin-top: 4px; }
+    }
     .case-tool.doc-menu .pop-menu { left: auto; right: 0; min-width: 230px; }
     .doc-pop .row { display: flex; align-items: center; gap: 8px; }
     .doc-pop .row .why { margin-left: auto; font-size: 11px; font-weight: 500; color: var(--wa-muted); }
@@ -4594,6 +4665,11 @@ export class WristAssistantPanel extends LitElement {
        under small headings. */
     button.tb .tint-dot { margin: 0 1px; }
     .pop-menu.preview-menu { min-width: 190px; }
+    /* The canvas card clips, so a menu off the toolbar must fit the stage it
+       hangs in (the stage wrap is a size container). On a phone the stage is
+       half the screen and Preview as ran past it with its last tints cut
+       off; it scrolls instead. */
+    .stage-tools .pop-menu { max-height: calc(100cqh - 64px); overflow-y: auto; overscroll-behavior: contain; }
     .pop-menu .pop-title { padding: 7px 10px 6px; margin-bottom: 3px; font-size: 12.5px; font-weight: 700; color: var(--wa-ink); border-bottom: 1px solid var(--wa-line); }
     .pop-menu .pop-head { padding: 6px 10px 3px; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--wa-muted); }
     .preview-menu .row[aria-checked="true"] { background: color-mix(in srgb, var(--wa-accent) 18%, transparent); }
@@ -6032,6 +6108,8 @@ export class WristAssistantPanel extends LitElement {
     window.addEventListener("click", this.sharedValueOutside, { capture: true });
     window.addEventListener("click", this.leaveGuard, { capture: true });
     window.addEventListener("focusin", this.sharedValueFocus);
+    this.touchChanged();
+    this.touchQuery?.addEventListener("change", this.touchChanged);
     this.addEventListener(SCRUB_START, this.scrubStart);
     this.addEventListener(SCRUB_END, this.scrubEnd);
     window.addEventListener("hashchange", this.takeShareLink);
@@ -6246,6 +6324,7 @@ export class WristAssistantPanel extends LitElement {
     window.removeEventListener("keydown", this.keyHandler);
     window.removeEventListener("keyup", this.keyUpHandler);
     window.removeEventListener("blur", this.blurHandler);
+    this.touchQuery?.removeEventListener("change", this.touchChanged);
     window.removeEventListener("beforeunload", this.beforeUnload);
     window.removeEventListener("pointerdown", this.pressStart, { capture: true });
     window.removeEventListener("pointerup", this.pressEnd, { capture: true });
@@ -6372,7 +6451,8 @@ export class WristAssistantPanel extends LitElement {
     if (changed.has("showTaps") && !this.showTaps) this.tapFocus = false;
   }
 
-  protected override updated(changed: PropertyValues) {    // Every render can change what is in a scroll box, so the edge fades are
+  protected override updated(changed: PropertyValues) {    this.keepMenusOnScreen();
+    // Every render can change what is in a scroll box, so the edge fades are
     // re-measured here rather than only on the first one.
     this.fades.refresh([
       this.renderRoot.querySelector<HTMLElement>(".column.inspector"),
@@ -9885,7 +9965,12 @@ export class WristAssistantPanel extends LitElement {
     const d = this.draft;
     const rec = this.records.find((r) => r.id === this.selectedId);
     const caption = d ? savedCaption(d.baseRevision === null, rec?.updatedAt, Date.now()) : undefined;
+    // A phone hides Home Assistant's sidebar, and a panel of its own has no
+    // way back to it unless it offers the menu button itself.
+    const menu = this.narrow || this.hass.dockedSidebar === "always_hidden";
     return html`<header class=${stacked ? "stacked" : nothing}>
+      ${menu ? html`<button class="icon tb-icon tb-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
+        @click=${() => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true }))}>${uiIcon("menu")}</button>` : nothing}
       ${this.renderPicker()}
       <span class="spacer"></span>
       <button class="icon tb-icon" @click=${() => this.undo()} ?disabled=${!d?.canUndo} title="Undo (⌘Z)" aria-label="Undo">${uiIcon("undo")}</button>
@@ -9991,6 +10076,22 @@ export class WristAssistantPanel extends LitElement {
           @click=${run(() => void this.sendToWatch())}>Refresh now</button>` : nothing}
       </div>` : nothing}
     </span>`;
+  }
+
+  /**
+   * Slide any open menu back inside the window. Each one hangs off its button
+   * by a fixed edge, which is right on a wide screen and wrong on a phone:
+   * the top bar's ··· wraps to the left of a stacked bar, and its menu, hung
+   * by its right edge, opened 170px off the left of the screen.
+   */
+  private keepMenusOnScreen() {
+    const width = window.innerWidth;
+    for (const menu of this.renderRoot.querySelectorAll<HTMLElement>(".pop-menu")) {
+      menu.style.translate = "";
+      const r = menu.getBoundingClientRect();
+      const dx = menuShift(r.left, r.right, width);
+      if (dx !== 0) menu.style.translate = `${dx}px 0`;
+    }
   }
 
   /** Open or shut one of the top bar's and the left column's own menus; opening
@@ -10895,7 +10996,9 @@ export class WristAssistantPanel extends LitElement {
     const said = this.saveError ?? this.copyStatus;
     return html`<div class="pk-foot">
       ${said === undefined
-        ? html`<span class="pk-foot-hint">Click a card to open it. Hover a card for Duplicate, Unassign and Delete.</span>`
+        ? html`<span class="pk-foot-hint">${this.touch
+          ? "Tap a card to open it. The buttons under its picture duplicate, unassign and delete it."
+          : "Click a card to open it. Hover a card for Duplicate, Unassign and Delete."}</span>`
         : html`<span class="pk-foot-said ${this.saveError ? "err" : ""}">${said}</span>
           <button type="button" class="ghost small"
             @click=${() => { this.saveError = undefined; this.copyStatus = undefined; this.copyOpen = undefined; }}>Dismiss</button>`}
@@ -16183,6 +16286,8 @@ export class WristAssistantPanel extends LitElement {
       // The Background row is the whole face: ring the face itself.
       ...(!review && shown.kind === "family" ? { highlightSlot: true } : {}),
       handles: this.canEdit && !hoverTap && (!review || focus !== undefined),
+      // A fingertip needs more than the 3pt corner to land on.
+      ...(this.touch ? { handleHit: 14 } : {}),
       // The Layers list owns the tint: resting on a row shows where that
       // layer sits on the face.
       ...(hoverIds.length > 0 ? { hoverIds } : {}),
@@ -16324,7 +16429,13 @@ export class WristAssistantPanel extends LitElement {
       // Inside a locked group, the drag moves that whole locked group.
       const unit = g ? groupMoveUnit(cfg, g.id) ?? g : undefined;
       const n = unit ? groupLayers(cfg, unit.id).length : 0;
-      tail = g && unit ? html`A drag moves all ${n} layers of <b>${unit.name}</b>.${g.locked || unit !== g ? "" : " Click one layer to move it alone."}` : "";
+      tail = g && unit ? html`A drag moves all ${n} layers of <b>${unit.name}</b>.${g.locked || unit !== g ? "" : ` ${this.touch ? "Tap" : "Click"} one layer to move it alone.`}` : "";
+    } else if (sel && this.touch) {
+      // No keys and no Alt under a finger: say what a finger can do.
+      const g = lockedUnitOf(cfg, sel.payload.id);
+      tail = g
+        ? html`A drag moves the whole group <b>${g.name}</b>; pull a corner to resize this layer.`
+        : `Drag it, or pull a corner.${this.snapGrid && this.snapLayers ? " It snaps to the grid and to the other layers." : this.snapGrid ? " It snaps to the grid." : this.snapLayers ? " It snaps to the other layers." : ""}`;
     } else if (sel) {
       const g = lockedUnitOf(cfg, sel.payload.id);
       tail = g
@@ -16336,7 +16447,7 @@ export class WristAssistantPanel extends LitElement {
       if (this.canEdit) return nothing;
       tail = "Nothing on it yet.";
     } else {
-      tail = "Click a layer to edit it.";
+      tail = this.touch ? "Tap a layer to edit it." : "Click a layer to edit it.";
     }
     return html`<div class="under"><span class="tail">${tail}</span></div>`;
   }

@@ -292,6 +292,9 @@ export interface RenderOptions {
   highlightSlot?: boolean;
   /** Draw resize handles on the highlighted element (active family only). */
   handles?: boolean;
+  /** A square, canvas units, of invisible grab area centred on each handle,
+   * for a finger. Without it only the drawn 3pt handle can be grabbed. */
+  handleHit?: number;
   /** Editor affordance: outline tap layers, which the watch never draws. */
   tapAreas?: boolean;
   /**
@@ -2570,9 +2573,13 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
   // never buried under its own four handles.
   const hs = 3;
   const o = outline;
+  const grab = options.handleHit ?? 0;
   const handles = primary && draggable
     ? [["nw", o.x - hs, o.y - hs], ["ne", o.x + o.w, o.y - hs], ["sw", o.x - hs, o.y + o.h], ["se", o.x + o.w, o.y + o.h]].map(
-        ([corner, x, y]) => svg`<rect data-handle=${corner} x=${x} y=${y} width=${hs} height=${hs}
+        ([corner, x, y]) => svg`${grab > hs
+          ? svg`<rect data-handle=${corner} x=${(x as number) + hs / 2 - grab / 2} y=${(y as number) + hs / 2 - grab / 2} width=${grab} height=${grab}
+            fill="transparent" stroke="none" />`
+          : nothing}<rect data-handle=${corner} x=${x} y=${y} width=${hs} height=${hs}
           fill="#FFFFFF" stroke="#0A84FF" stroke-width="0.5" style="cursor:${corner}-resize" />`,
       )
     : nothing;
