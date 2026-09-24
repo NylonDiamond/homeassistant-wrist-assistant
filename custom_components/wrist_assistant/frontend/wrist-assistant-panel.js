@@ -2544,11 +2544,6 @@ ${r_(c)}`}}delete s.hidden,delete s.linkId;let l=zd(a);if(l.length>0){let d=l.sl
     }
     header button.icon.tb-icon { width: 30px; height: 30px; }
     header button.icon.tb-icon svg.ui-icon { width: 16px; height: 16px; }
-    /* Undo and redo light up amber while there is a step to take. */
-    header button.icon.tb-undo:not(:disabled) { color: var(--wa-amber); opacity: 1; }
-    header button.icon.tb-undo:hover:not(:disabled) { background: var(--wa-amber-bg); }
-    header button.icon.tb-undo:disabled { opacity: .35; cursor: default; }
-    .tb-div { width: 1px; height: 20px; flex: none; background: var(--wa-line); }
     .tb-sync {
       display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px 0 8px; min-width: 0; max-width: 380px;
       border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; overflow: hidden; border: 1px solid transparent;
@@ -2581,7 +2576,6 @@ ${r_(c)}`}}delete s.hidden,delete s.linkId;let l=zd(a);if(l.length>0){let d=l.sl
     header.stacked { row-gap: 0; padding-block: 4px; }
     header.stacked > * { margin-block: 4px; }
     header.stacked::after { content: ""; order: 1; flex: 0 0 100%; height: 0; margin: 0; }
-    header.stacked .tb-div { display: none; }
     header.stacked > .tb-sync, header.stacked > button.tb-btn:not(.tb-more), header.stacked > .side-menu { order: 2; }
     header.stacked > .tb-sync { flex: 1 1 0; max-width: none; }
     header.stacked .tb-sync-l { flex: none; }
@@ -5065,6 +5059,10 @@ ${r_(c)}`}}delete s.hidden,delete s.linkId;let l=zd(a);if(l.length>0){let d=l.sl
     .xf-lead b.del-name { color: var(--wa-accent); }
     button.cv-act.icon { width: 30px; padding: 0; justify-content: center; }
     button.cv-act.icon svg.ui-icon { width: 15px; height: 15px; }
+    /* Undo and redo light up amber while there is a step to take. */
+    button.cv-act.undo:not(:disabled) { color: var(--wa-amber); border-color: var(--wa-amber-line); }
+    button.cv-act.undo:hover:not(:disabled) { background: var(--wa-amber-bg); border-color: var(--wa-amber-line); }
+    button.cv-act.undo:disabled { opacity: .35; }
     .cv-del { display: inline-flex; align-items: center; gap: 6px; flex: none; }
     /* Hairlines part the head's groups: the devices, the actions, Delete,
        and the ··· menu. */
@@ -6856,9 +6854,6 @@ ${r_(c)}`}}delete s.hidden,delete s.linkId;let l=zd(a);if(l.length>0){let d=l.sl
         @click=${()=>this.dispatchEvent(new Event("hass-toggle-menu",{bubbles:!0,composed:!0}))}>${E("menu")}</button>`:m}
       ${this.renderPicker()}
       <span class="spacer"></span>
-      <button class="icon tb-icon tb-undo" @click=${()=>this.undo()} ?disabled=${!a?.canUndo} title="Undo (⌘Z)" aria-label="Undo">${E("undo")}</button>
-      <button class="icon tb-icon tb-undo" @click=${()=>this.redo()} ?disabled=${!a?.canRedo} title="Redo (⇧⌘Z)" aria-label="Redo">${E("redo")}</button>
-      <span class="tb-div" aria-hidden="true"></span>
       ${this.renderSendPill()}
       ${this.renderImportButton()}
       ${a?u`<button class="tb-btn" aria-haspopup="dialog" aria-expanded=${this.shareOpen?"true":"false"}
@@ -7936,13 +7931,16 @@ ${r_(c)}`}}delete s.hidden,delete s.linkId;let l=zd(a);if(l.length>0){let d=l.sl
       ${r?u`${this.renderShapeSwitch(t,i)}${s?u`<span class="cv-shape">${s}</span>`:m}`:a===void 0?m:u`<span class="cv-shape"><span class="fam">${pe(a)}${s?` \xB7 ${s}`:""}</span>${this.shapeNotes(t,i,a)}</span>`}
       <span class="spacer"></span>
       ${this.renderDocActions(t)}
-    </div>`}renderDocActions(t){return this.canEdit?u`<button class="cv-act icon" aria-haspopup="dialog" aria-label="Duplicate as another shape or device"
+    </div>`}renderDocActions(t){if(!this.canEdit)return m;let i=this.draft;return u`<button class="cv-act icon undo" @click=${()=>this.undo()} ?disabled=${!i?.canUndo} title="Undo (⌘Z)" aria-label="Undo">${E("undo")}</button>
+      <button class="cv-act icon undo" @click=${()=>this.redo()} ?disabled=${!i?.canRedo} title="Redo (⇧⌘Z)" aria-label="Redo">${E("redo")}</button>
+      <span class="cv-div" aria-hidden="true"></span>
+      <button class="cv-act icon" aria-haspopup="dialog" aria-label="Duplicate as another shape or device"
         title="Duplicate: make this design again as another shape, or on another device"
         @click=${()=>this.openDuplicateAs(t,this.ownerId??"")}>${E("duplicate")}</button>
       <span class="cv-div" aria-hidden="true"></span>
       <button class="cv-act danger icon" aria-haspopup="dialog" aria-expanded=${this.confirmDelete?"true":"false"}
         title="Delete this complication. It asks first." aria-label="Delete this complication"
-        @click=${()=>{this.confirmDelete=!0}}>${E("delete")}</button>`:m}renderDeleteDialog(){let t=this.draft?.config;if(!t)return m;let i=t.name.trim()||"this complication",a=this.draft?.baseRevision===null,r=this.ownerId??"",o=this.ownerName(r),s=Le(this.selectedOwner),l=this.linkedSiblings(t.linkId,r,this.selectedId??"").map(y=>this.ownerName(y.ownerId)),d=1+l.length,c=()=>{this.confirmDelete=!1},p=y=>{c(),this.deleteCurrent(y)},f=u`<b class="del-name">“${i}”</b>`,h=a?u`${f} has never been saved. Deleting it closes it, and nothing is left on the server.`:s&&d===1?u`${f} is ${_e.toLowerCase()}: on no device. Deleting it removes the design itself.`:d===1?u`${f} is on <b>${o}</b>. A face or widget using it loses it.`:u`${f} is on ${d} devices: <b>${[o,...l].join(", ")}</b>. A face or widget using it loses it.`,g=!a&&!s&&this.libraryOwner()!==void 0;return u`<dialog class="xf del-dialog" @close=${c}>
+        @click=${()=>{this.confirmDelete=!0}}>${E("delete")}</button>`}renderDeleteDialog(){let t=this.draft?.config;if(!t)return m;let i=t.name.trim()||"this complication",a=this.draft?.baseRevision===null,r=this.ownerId??"",o=this.ownerName(r),s=Le(this.selectedOwner),l=this.linkedSiblings(t.linkId,r,this.selectedId??"").map(y=>this.ownerName(y.ownerId)),d=1+l.length,c=()=>{this.confirmDelete=!1},p=y=>{c(),this.deleteCurrent(y)},f=u`<b class="del-name">“${i}”</b>`,h=a?u`${f} has never been saved. Deleting it closes it, and nothing is left on the server.`:s&&d===1?u`${f} is ${_e.toLowerCase()}: on no device. Deleting it removes the design itself.`:d===1?u`${f} is on <b>${o}</b>. A face or widget using it loses it.`:u`${f} is on ${d} devices: <b>${[o,...l].join(", ")}</b>. A face or widget using it loses it.`,g=!a&&!s&&this.libraryOwner()!==void 0;return u`<dialog class="xf del-dialog" @close=${c}>
       ${this.dialogHead(`Delete \u201C${i}\u201D?`,"",c)}
       <div class="xfer-body">
         <div class="xf-lead warn">${E("info")}<span>${h}</span></div>
