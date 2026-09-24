@@ -27,18 +27,23 @@ import {
   type StatesRowInput,
   DEFAULT_COLUMN,
   addStateRow,
+  bandOwners,
   buildStatesRule,
   cellChange,
+  comparisonGroups,
   compileTable,
+  freshShape,
   looksBinary,
   moveStateRow,
   nextComparison,
-  removeColumn,
   removeStateRow,
+  seedThresholds,
   setOtherwise,
   setTestedValue,
-  shownColumns,
+  startStates,
+  startText,
   statesSummary,
+  tableEdges,
   tableShape,
   usedColumns,
   valuesEqual,
@@ -260,11 +265,6 @@ describe("columns", () => {
     expect(usedColumns(rows)).toEqual(["icon", "color"]);
   });
 
-  it("adds picked columns and drops anything this layer ignores", () => {
-    const allowed = ["color", "opacity", "icon", "fontSize", "rotation", "visibility"] as const;
-    expect(shownColumns(["color"], ["fontSize", "gaugeMin"], allowed)).toEqual(["color", "fontSize"]);
-  });
-
   it("finds the change a cell shows", () => {
     const changes = [icon("bolt"), color("#fff")];
     expect(cellChange(changes, "color")).toBe(changes[1]);
@@ -277,14 +277,130 @@ describe("new row defaults", () => {
     expect(nextComparison({ kind: "isOn" }, false)).toEqual({ kind: "isOff" });
   });
 
-  it("starts the next band where the last one stopped", () => {
-    expect(nextComparison({ kind: "lessThan", value: literal("20") }, true)).toEqual({ kind: "greaterOrEqual", value: literal("20") });
-    expect(nextComparison({ kind: "between", value: literal("20"), upper: literal("50") }, true)).toEqual({ kind: "greaterOrEqual", value: literal("50") });
+  it("ends the next band one step past the last one", () => {
+    expect(nextComparison({ kind: "lessThan", value: literal("20") }, true)).toEqual({ kind: "lessThan", value: literal("30") });
+    expect(nextComparison({ kind: "lessThan", value: literal("20") }, true, 25)).toEqual({ kind: "lessThan", value: literal("45") });
+    expect(nextComparison({ kind: "lessOrEqual", value: literal("1.5") }, true, 0.25)).toEqual({ kind: "lessOrEqual", value: literal("1.75") });
+    expect(nextComparison({ kind: "between", value: literal("20"), upper: literal("50") }, true)).toEqual({ kind: "lessThan", value: literal("60") });
+    expect(nextComparison({ kind: "greaterOrEqual", value: literal("50") }, true)).toEqual({ kind: "greaterOrEqual", value: literal("60") });
+  });
+
+  it("follows a band that ends at an entity with at least that entity", () => {
+    expect(nextComparison({ kind: "lessThan", value: temp() }, true)).toEqual({ kind: "greaterOrEqual", value: temp() });
+  });
+
+  it("keeps new bands as wide as the last two", () => {
+    const rules: Rule[] = [];
+    addStateRow(rules, temp(), true);
+    rules[0]!.cases[0]!.when.tests[0]!.comparison.value = literal("100");
+    addStateRow(rules, temp(), true);
+    rules[0]!.cases[1]!.when.tests[0]!.comparison.value = literal("150");
+    addStateRow(rules, temp(), true);
+    expect(rules[0]!.cases[2]!.when.tests[0]!.comparison).toEqual({ kind: "lessThan", value: literal("200") });
   });
 
   it("starts a first row from the kind of table it is", () => {
     expect(nextComparison(undefined, false)).toEqual({ kind: "isOn" });
     expect(nextComparison(undefined, true).kind).toBe("lessThan");
+  });
+
+  it("groups the comparison menu, numbers first for a number table", () => {
+    expect(comparisonGroups(false).map((g) => g.label)).toEqual(["On or off", "Number", "Words", "Problems"]);
+    expect(comparisonGroups(true).map((g) => g.label)).toEqual(["Number", "On or off", "Words", "Problems"]);
+    const all = comparisonGroups(false).flatMap((g) => g.kinds);
+    expect(new Set(all).size).toBe(all.length);
+    expect(all).toHaveLength(15);
+  });
+});
+
+describe("a fresh table", () => {
+  it("reads its shape from what it tests", () => {
+    expect(freshShape(kitchen(), "on")).toBe("onOff");
+    expect(freshShape(temp(), "21.5")).toBe("bands");
+    expect(freshShape(temp(), "heat")).toBe("words");
+    expect(freshShape(undefined, undefined)).toBe("words");
+  });
+
+  it("puts the reading in the middle band", () => {
+    expect(seedThresholds(210)).toEqual([140, 280]);
+    expect(seedThresholds(3)).toEqual([2, 4]);
+    expect(seedThresholds(-12)).toEqual([-16, -8]);
+    expect(seedThresholds(0)).toEqual([20, 50]);
+    expect(seedThresholds(undefined)).toEqual([20, 50]);
+  });
+
+  it("starts a light with on and off", () => {
+    const rules: Rule[] = [];
+    startStates(rules, kitchen(), "onOff", "on", true);
+    const shape = tableShape(rules);
+    expect(shape.ok).toBe(true);
+    if (!shape.ok) return;
+    expect(shape.table.rows.map((r) => r.comparison.kind)).toEqual(["isOn", "isOff"]);
+    expect(shape.table.otherwise).toBeUndefined();
+    expect(shape.table.columns).toEqual(["color"]);
+  });
+
+  it("starts a number with two bands and a last row", () => {
+    const rules: Rule[] = [];
+    startStates(rules, temp(), "bands", "210", false);
+    const shape = tableShape(rules);
+    expect(shape.ok).toBe(true);
+    if (!shape.ok) return;
+    expect(shape.table.numberMode).toBe(true);
+    expect(shape.table.rows.map((r) => whenText(r.comparison))).toEqual(["less than 140", "less than 280"]);
+    expect(shape.table.otherwise).toEqual([]);
+    expect(shape.table.rows.every((r) => r.changes.length === 0)).toBe(true);
+  });
+
+  it("starts words with one state equal to the reading, or empty when it is unknown", () => {
+    const rules: Rule[] = [];
+    startStates(rules, temp(), "words", "heat");
+    expect(rules[0]!.cases[0]!.when.tests[0]!.comparison).toEqual({ kind: "equals", value: literal("heat") });
+    const unknown: Rule[] = [];
+    startStates(unknown, temp(), "words", "unavailable");
+    expect(unknown[0]!.cases[0]!.when.tests[0]!.comparison).toEqual({ kind: "equals", value: literal("") });
+  });
+
+  it("says what the first click does", () => {
+    expect(startText("onOff", "on")).toBe("Add a state starts with Is on and Is off.");
+    expect(startText("bands", "210")).toBe("Add a state starts with three bands around 210.");
+    expect(startText("words", "heat")).toBe("Add a state starts with Equals heat.");
+    expect(startText("words", "unknown")).toBe("Add a state starts with one state.");
+  });
+});
+
+describe("the band bar", () => {
+  const num = (v: Value | undefined) => {
+    if (!v || v.kind.kind !== "literal") return undefined;
+    const n = Number(v.kind.value);
+    return Number.isFinite(n) ? n : undefined;
+  };
+
+  it("takes one edge per typed number, sorted and without repeats", () => {
+    const rows = tableShape([bandRule()]);
+    if (!rows.ok) throw new Error("not a table");
+    expect(tableEdges(rows.table.rows, num)).toEqual([20, 50]);
+    expect(tableEdges([{ comparison: { kind: "lessThan", value: temp() } }], num)).toEqual([]);
+  });
+
+  it("paints each stretch in the first row that matches inside it", () => {
+    const rows = tableShape([bandRule()]);
+    if (!rows.ok) throw new Error("not a table");
+    expect(bandOwners(rows.table.rows, [20, 50], 0, 100, false, num)).toEqual([0, 1, 2]);
+  });
+
+  it("gives an uncovered stretch to the last row, or to nobody", () => {
+    const rows = [{ comparison: { kind: "lessThan", value: literal("20") } as Comparison }];
+    expect(bandOwners(rows, [20], 0, 40, true, num)).toEqual([0, "otherwise"]);
+    expect(bandOwners(rows, [20], 0, 40, false, num)).toEqual([0, undefined]);
+  });
+
+  it("lets the first matching row win over a later one", () => {
+    const rows = [
+      { comparison: { kind: "lessThan", value: literal("50") } as Comparison },
+      { comparison: { kind: "lessThan", value: literal("20") } as Comparison },
+    ];
+    expect(bandOwners(rows, [20, 50], 0, 100, false, num)).toEqual([0, 0, undefined]);
   });
 
   it("knows which entities read as on or off", () => {
@@ -341,16 +457,6 @@ describe("editing", () => {
     expect(shape.ok).toBe(true);
     if (!shape.ok) return;
     expect(valuesEqual(shape.table.value!, hall())).toBe(true);
-  });
-
-  it("deletes a column from every state, otherwise included", () => {
-    const rules = [lightRule()];
-    removeColumn(rules, "color");
-    const shape = tableShape(rules);
-    expect(shape.ok).toBe(true);
-    if (!shape.ok) return;
-    expect(shape.table.columns).toEqual(["icon"]);
-    expect(shape.table.otherwise).toHaveLength(1);
   });
 
   it("leaves an edited table still table-shaped and byte-stable", () => {

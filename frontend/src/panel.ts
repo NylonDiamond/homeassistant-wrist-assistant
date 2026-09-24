@@ -5584,14 +5584,24 @@ export class WristAssistantPanel extends LitElement {
     button.cell.filled { background: var(--wa-field); }
     button.cell:hover { border-color: var(--wa-line-strong); }
     button.cell .cell-word.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; }
-    /* An empty cell is a ghost of what it would set, not a word: a dashed
-       swatch, a faint icon, or a short dashed box. Hovering brings it up. */
-    button.cell.empty { opacity: .55; }
-    button.cell.empty:hover { opacity: .9; }
-    .swatch.ghost { background: transparent; border: 1px dashed var(--wa-line-strong); }
-    .ghost-icon { display: inline-flex; }
-    .ghost-icon svg { width: 14px; height: 14px; }
-    .ghost-box { display: inline-block; width: 26px; height: 12px; border-radius: 3px; border: 1px dashed var(--wa-line-strong); }
+    /* A chip names its setting quietly and its value in ink, so a row of
+       chips reads "Color red, Opacity 0.5" at a glance. */
+    button.cell .cell-name { color: var(--wa-muted); font-weight: 500; }
+    /* A change the layer will not draw (Color under a By value table, a
+       setting a text part ignores) is struck through rather than hidden. */
+    button.cell.ignored .cell-word, button.cell.ignored .cell-name { text-decoration: line-through; opacity: .7; }
+    /* The row's "+ Change": dashed, like the other adders, and quiet until
+       the pointer is near. */
+    button.cell.add-change { border: 1px dashed var(--wa-line-strong); opacity: .6; gap: 3px; padding: 0 8px 0 5px; }
+    button.cell.add-change svg { width: 12px; height: 12px; }
+    tr:hover button.cell.add-change, button.cell.add-change:hover, button.cell.add-change:focus-visible { opacity: 1; }
+    .then-chips { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+    .no-change { color: var(--wa-muted); font-size: 12px; font-style: italic; padding: 0 4px; }
+    /* The bar over a number table: the chart's band bar, with a piece per
+       band that can be clicked to hold the previews on its row. */
+    .states > .states-bar { margin: 6px 0 0 var(--wa-col); }
+    .band-bar .bb i.pick { cursor: pointer; }
+    .band-bar .bb i.pick:hover { filter: brightness(1.15); }
     .cell-word { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .swatch { width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--wa-line); flex: none; }
     button.cell svg { display: block; }
@@ -5605,18 +5615,18 @@ export class WristAssistantPanel extends LitElement {
     /* The add controls under a states table: one strip of buttons, each with
        its explanation in its tooltip, so the table is the loudest thing here. */
     .states > .states-add { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0 2px var(--wa-col); }
-    /* The column menu: the settings a state can still change, one per line. */
-    .col-menu {
+    /* The change menu: the settings a state can still change, one per line. */
+    .chip-menu {
       position: fixed; inset: auto; margin: 0; padding: 4px; border-radius: 10px; border: 1px solid var(--wa-line-strong);
       background: var(--wa-card); color: var(--wa-ink); box-shadow: 0 8px 24px rgba(0, 0, 0, .28);
       min-width: 140px;
     }
-    .col-menu:popover-open { display: flex; flex-direction: column; }
-    .col-menu button {
+    .chip-menu:popover-open { display: flex; flex-direction: column; }
+    .chip-menu button {
       font: inherit; font-size: 13px; text-align: left; padding: 6px 10px; border-radius: 6px;
       border: none; background: transparent; color: inherit; cursor: pointer;
     }
-    .col-menu button:hover, .col-menu button:focus-visible { background: var(--wa-panel); outline: none; }
+    .chip-menu button:hover, .chip-menu button:focus-visible { background: var(--wa-panel); outline: none; }
     /* The tap action menu: every action under its heading, each with one line
        saying what it does, so the choice is readable without a tooltip. */
     .tap-menu {

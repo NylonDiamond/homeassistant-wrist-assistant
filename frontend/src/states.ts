@@ -113,6 +113,96 @@ export function isNumericComparison(kind: ComparisonKind): boolean {
   return NUMERIC_COMPARISONS.includes(kind);
 }
 
+/** The comparison menu in groups, so on/off, numbers, words and problems do
+ * not sit in one list of fourteen. A number table lists its own group first;
+ * everything else starts with on and off. */
+export interface ComparisonGroup { label: string; kinds: ComparisonKind[] }
+const ON_OFF_GROUP: ComparisonGroup = { label: "On or off", kinds: ["isOn", "isOff"] };
+const NUMBER_GROUP: ComparisonGroup = { label: "Number", kinds: [...NUMERIC_COMPARISONS] };
+const WORDS_GROUP: ComparisonGroup = { label: "Words", kinds: ["equals", "notEquals", "contains", "startsWith", "endsWith"] };
+const PROBLEMS_GROUP: ComparisonGroup = { label: "Problems", kinds: ["isUnavailable", "isStale", "isEmpty"] };
+export function comparisonGroups(numberMode: boolean): ComparisonGroup[] {
+  return numberMode
+    ? [NUMBER_GROUP, ON_OFF_GROUP, WORDS_GROUP, PROBLEMS_GROUP]
+    : [ON_OFF_GROUP, NUMBER_GROUP, WORDS_GROUP, PROBLEMS_GROUP];
+}
+
+/** Whether a resolved reading is a number, which is what makes a fresh table
+ * a set of bands rather than a set of states. */
+export function isNumberish(resolved: string | undefined): boolean {
+  const t = (resolved ?? "").trim();
+  return t !== "" && Number.isFinite(Number(t));
+}
+
+// ── number bands ──────────────────────────────────────────────────────────
+// A number table draws a color bar over its rows, the one a chart's "By value"
+// draws: every threshold the rows name is an edge, and each stretch between
+// two edges is painted in the color of the first row that would match a
+// number inside it. That is exactly what the resolver does, so the bar can
+// never disagree with the rows.
+
+/** The numbers a comparison names, once resolved. A row comparing with an
+ * entity that reads as words names nothing and leaves no edge. */
+export function comparisonEdges(c: Comparison, num: (v: Value | undefined) => number | undefined): number[] {
+  if (!isNumericComparison(c.kind)) return [];
+  const out: number[] = [];
+  const a = num(c.value);
+  if (a !== undefined) out.push(a);
+  if (c.kind === "between") {
+    const b = num(c.upper);
+    if (b !== undefined) out.push(b);
+  }
+  return out;
+}
+
+/** Whether a numeric comparison holds for one number. */
+export function comparisonHolds(c: Comparison, probe: number, num: (v: Value | undefined) => number | undefined): boolean {
+  const a = num(c.value);
+  if (a === undefined) return false;
+  switch (c.kind) {
+    case "lessThan": return probe < a;
+    case "lessOrEqual": return probe <= a;
+    case "greaterThan": return probe > a;
+    case "greaterOrEqual": return probe >= a;
+    case "between": {
+      const b = num(c.upper);
+      return b !== undefined && probe >= a && probe <= b;
+    }
+    default: return false;
+  }
+}
+
+/** The distinct edges of a number table, lowest first. */
+export function tableEdges(rows: readonly { comparison: Comparison }[], num: (v: Value | undefined) => number | undefined): number[] {
+  const set = new Set<number>();
+  for (const r of rows) for (const n of comparisonEdges(r.comparison, num)) set.add(n);
+  return [...set].sort((a, b) => a - b);
+}
+
+/**
+ * Which row paints each stretch of the bar: for the stretch below the first
+ * edge, each stretch between two edges, and the stretch above the last, the
+ * index of the first row holding at its midpoint, `"otherwise"` when none
+ * does and the table has that row, else `undefined` for a gap. `lo` and `hi`
+ * are the bar's ends, which is what gives the two outer stretches a middle.
+ */
+export function bandOwners(
+  rows: readonly { comparison: Comparison }[],
+  edges: readonly number[],
+  lo: number,
+  hi: number,
+  hasOtherwise: boolean,
+  num: (v: Value | undefined) => number | undefined,
+): (number | "otherwise" | undefined)[] {
+  const bounds = [lo, ...edges, hi];
+  return bounds.slice(1).map((next, i) => {
+    const probe = (bounds[i]! + next) / 2;
+    const row = rows.findIndex((r) => comparisonHolds(r.comparison, probe, num));
+    if (row >= 0) return row;
+    return hasOtherwise ? "otherwise" : undefined;
+  });
+}
+
 export function canShowComparison(kind: ComparisonKind): boolean {
   return TABLE_COMPARISONS.includes(kind);
 }
@@ -235,14 +325,6 @@ export function usedColumns(rows: StatesRow[], otherwise?: StyleChange[]): Style
   return COLUMN_ORDER.filter((p) => used.has(p));
 }
 
-/** The used columns plus the ones the picker added, restricted to what this
- * kind of layer actually reads. */
-export function shownColumns(used: StyleProperty[], picked: Iterable<StyleProperty>, allowed: readonly StyleProperty[]): StyleProperty[] {
-  const set = new Set<StyleProperty>(used);
-  for (const p of picked) set.add(p);
-  return COLUMN_ORDER.filter((p) => set.has(p) && allowed.includes(p));
-}
-
 /** The change in one row for one column, if the row sets it. */
 export function cellChange(changes: StyleChange[], property: StyleProperty): StyleChange | undefined {
   return changes.find((ch) => STYLE_PROPERTY[ch.kind] === property);
@@ -352,16 +434,108 @@ export function seedRowColor(comparison: Comparison, index: number): StyleChange
 }
 
 /** Add a state below the last one, testing the same value. With `seedColor`
- * the row starts with a color (`seedRowColor`) rather than an empty cell. */
+ * the row starts with a color (`seedRowColor`) rather than nothing. */
 export function addStateRow(rules: Rule[], value: Value, numberMode: boolean, seedColor = false): void {
   const rule = tableRule(rules);
   const previous = rule.cases[rule.cases.length - 1]?.when.tests[0]?.comparison;
-  const comparison = nextComparison(previous, numberMode);
+  const comparison = nextComparison(previous, numberMode, bandStep(rule.cases));
   rule.cases.push({
     id: newId(),
     when: { join: "all", tests: [{ id: newId(), value: structuredClone(value), comparison }] },
     then: seedColor ? [seedRowColor(comparison, rule.cases.length)] : [],
   });
+}
+
+/** How far apart the last two bands end, so a new band is as wide as the
+ * one before it. Ten when there is no pair to read. */
+function bandStep(cases: readonly RuleCase[]): number {
+  const ends = cases.flatMap((c) => {
+    const n = bandEnd(c.when.tests[0]?.comparison);
+    return n === undefined ? [] : [n];
+  });
+  const step = ends.length >= 2 ? Math.abs(ends[ends.length - 1]! - ends[ends.length - 2]!) : 0;
+  return step || 10;
+}
+
+/** The number a numeric row ends at, when it is typed in. */
+function bandEnd(c: Comparison | undefined): number | undefined {
+  if (!c || !isNumericComparison(c.kind)) return undefined;
+  const v = c.kind === "between" ? c.upper : c.value;
+  if (!v || v.kind.kind !== "literal") return undefined;
+  const n = Number(v.kind.value);
+  return v.kind.value.trim() !== "" && Number.isFinite(n) ? n : undefined;
+}
+
+/** A table's first rows, from the shape of what it tests: a light gets on and
+ * off, a number gets bands, and words get one state equal to the reading. */
+export type FreshShape = "onOff" | "bands" | "words";
+
+export function freshShape(value: Value | undefined, resolved: string | undefined): FreshShape {
+  if (looksBinary(value)) return "onOff";
+  if (isNumberish(resolved)) return "bands";
+  return "words";
+}
+
+/** Where a fresh number table's two bands end: two thirds and four thirds of
+ * the reading, so the reading sits in the middle band and every band shows on
+ * the bar from the first draw. With no reading to go by, 20 and 50. */
+export function seedThresholds(now: number | undefined): [number, number] {
+  if (now === undefined || !Number.isFinite(now) || now === 0) return [20, 50];
+  const round = (n: number) => Math.abs(now) >= 10 ? Math.round(n) : Number(n.toFixed(2));
+  const a = round(now * 2 / 3);
+  const b = round(now * 4 / 3);
+  return a < b ? [a, b] : [b, a];
+}
+
+/** A reading a fresh Words row can equal. Unknown and unavailable are not
+ * states anyone designs for, so they leave the box empty. */
+function usableReading(resolved: string | undefined): string {
+  const t = (resolved ?? "").trim();
+  return t === "unknown" || t === "unavailable" ? "" : t;
+}
+
+/**
+ * Fill an empty table with its first rows: on and off, two bands around the
+ * reading plus a row for everything else, or one row equal to the reading.
+ * With `seedColor` every row starts with a color, the way `addStateRow` does.
+ */
+export function startStates(rules: Rule[], value: Value, shape: FreshShape, resolved: string | undefined, seedColor = false): void {
+  const rule = tableRule(rules);
+  const push = (comparison: Comparison) => {
+    rule.cases.push({
+      id: newId(),
+      when: { join: "all", tests: [{ id: newId(), value: structuredClone(value), comparison }] },
+      then: seedColor ? [seedRowColor(comparison, rule.cases.length)] : [],
+    });
+  };
+  switch (shape) {
+    case "onOff":
+      push({ kind: "isOn" });
+      push({ kind: "isOff" });
+      break;
+    case "bands": {
+      const [a, b] = seedThresholds(Number(resolved));
+      push({ kind: "lessThan", value: literal(String(a)) });
+      push({ kind: "lessThan", value: literal(String(b)) });
+      rule.otherwise = seedColor ? [{ kind: "setColor", value: literal("#30D158") }] : [];
+      break;
+    }
+    case "words":
+      push({ kind: "equals", value: literal(usableReading(resolved)) });
+      break;
+  }
+}
+
+/** What Add a state does to an empty table, in words, under the empty row. */
+export function startText(shape: FreshShape, resolved: string | undefined): string {
+  switch (shape) {
+    case "onOff": return "Add a state starts with Is on and Is off.";
+    case "bands": return `Add a state starts with three bands around ${(resolved ?? "").trim()}.`;
+    case "words": {
+      const reading = usableReading(resolved);
+      return reading === "" ? "Add a state starts with one state." : `Add a state starts with Equals ${reading}.`;
+    }
+  }
 }
 
 export function removeStateRow(rules: Rule[], caseId: string): void {
@@ -399,16 +573,6 @@ export function setTestedValue(rules: Rule[], value: Value): void {
     const test = c.when.tests[0];
     if (test) test.value = structuredClone(value);
   }
-}
-
-/** Delete a column: the change for that property leaves every row. This is the
- * one destructive thing the table does, which is why the button confirms. */
-export function removeColumn(rules: Rule[], property: StyleProperty): void {
-  const rule = rules[0];
-  if (!rule) return;
-  const without = (list: StyleChange[]) => list.filter((ch) => STYLE_PROPERTY[ch.kind] !== property);
-  for (const c of rule.cases) c.then = without(c.then);
-  if (rule.otherwise) rule.otherwise = without(rule.otherwise);
 }
 
 // ── row wording ───────────────────────────────────────────────────────────
@@ -452,25 +616,42 @@ export function whenText(c: Comparison, describe: (v: Value) => string = plainVa
  * The comparison a new row starts with.
  *
  * It reads the row above it, because that is where the answer usually is: the
- * second state of a light is "is off", and the next band starts where the last
- * one stopped. A first row falls back to the value's own shape.
+ * second state of a light is "is off", and the next band ends one `step`
+ * past where the last one did, so "less than 20" is followed by "less than
+ * 30" and the bar grows by one band. Rows are checked top to bottom, which is
+ * what lets a band say only where it ends. A band whose end is not a typed
+ * number (an entity) is followed by "at least" that same value, the one thing
+ * that is certainly the next band. A first row falls back to the value's own
+ * shape.
  */
-export function nextComparison(previous: Comparison | undefined, numberMode: boolean): Comparison {
+export function nextComparison(previous: Comparison | undefined, numberMode: boolean, step = 10): Comparison {
   if (!previous) {
     return numberMode ? { kind: "lessThan", value: literal("20") } : { kind: "isOn" };
   }
+  const end = bandEnd(previous);
   switch (previous.kind) {
     case "isOn": return { kind: "isOff" };
     case "isOff": return { kind: "isOn" };
     case "lessThan": case "lessOrEqual":
-      return { kind: "greaterOrEqual", value: previous.value ?? literal("0") };
+      return end === undefined
+        ? { kind: "greaterOrEqual", value: previous.value ?? literal("0") }
+        : { kind: previous.kind, value: literal(bandNumber(end + step)) };
     case "between":
-      return { kind: "greaterOrEqual", value: previous.upper ?? literal("0") };
+      return end === undefined
+        ? { kind: "greaterOrEqual", value: previous.upper ?? literal("0") }
+        : { kind: "lessThan", value: literal(bandNumber(end + step)) };
     case "greaterThan": case "greaterOrEqual":
-      return { kind: "greaterOrEqual", value: previous.value ?? literal("0") };
+      return end === undefined
+        ? { kind: "greaterOrEqual", value: previous.value ?? literal("0") }
+        : { kind: previous.kind, value: literal(bandNumber(end + step)) };
     default:
       return { kind: previous.kind, ...(comparisonOperand(previous.kind) === "value" ? { value: literal("") } : {}) };
   }
+}
+
+/** A band end as typed text, without the drift of adding decimals. */
+function bandNumber(n: number): string {
+  return String(Number(n.toFixed(2)));
 }
 
 /**

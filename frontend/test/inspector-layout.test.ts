@@ -145,8 +145,9 @@ describe("the cards a new selection opens", () => {
       { kind: { kind: "entityState", entityId: "light.kitchen", displayName: "Kitchen", domain: "light" } });
     expect(action?.label).toBe("Add");
     action!.run();
+    // A light's first click starts the table with on and off.
     expect(el.payload.rules).toHaveLength(1);
-    expect(statesCardSummary(el.payload.rules)).toBe("1 state");
+    expect(statesCardSummary(el.payload.rules)).toBe("2 states");
     // The header button is drawn only while the card is shut.
     expect(flatten(layerEditor(host(cfg, { openSections: collapsedSections() }), el, "rectangular"))).toContain("sec-act");
     expect(flatten(layerEditor(host(cfg), el, "rectangular"))).not.toContain("sec-act");
@@ -156,7 +157,7 @@ describe("the cards a new selection opens", () => {
 });
 
 describe("a folded card's summary", () => {
-  it("counts the states, and says when an Otherwise row catches the rest", () => {
+  it("counts the states, and says when a last row catches the rest", () => {
     const light = { kind: { kind: "entityState" as const, entityId: "light.kitchen", displayName: "Kitchen", domain: "light" } };
     expect(statesCardSummary([])).toBe("none · looks the same for every value");
     const two = buildStatesRule(light, [
@@ -165,7 +166,7 @@ describe("a folded card's summary", () => {
     ]);
     expect(statesCardSummary([two])).toBe("2 states");
     const otherwise = buildStatesRule(light, [{ comparison: { kind: "isOn" }, changes: [] }], []);
-    expect(statesCardSummary([otherwise])).toBe("1 state · otherwise");
+    expect(statesCardSummary([otherwise])).toBe("1 state · plus the rest");
   });
 
   it("gives the page, the spot, the size and a turn only when there is one", () => {
