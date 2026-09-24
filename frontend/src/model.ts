@@ -2321,6 +2321,21 @@ function parseMinuteStyle(raw: unknown): TimelineMinuteStyle {
   return raw === "always" || raw === "never" ? raw : TIMELINE_DEFAULT_MINUTE_STYLE;
 }
 
+/** A `chartTimes` layer's font keys, each kept only away from the row's own
+ * look. An unknown word reads as that look, the way a text layer reads one. */
+function parseChartTimesFont(p: Record<string, unknown>): Pick<ChartTimesElement, "fontWeight" | "fontDesign" | "fontWidth" | "italic" | "monospacedDigits"> {
+  const out: Pick<ChartTimesElement, "fontWeight" | "fontDesign" | "fontWidth" | "italic" | "monospacedDigits"> = {};
+  const weight = p.fontWeight;
+  if (weight === "medium" || weight === "semibold" || weight === "bold") out.fontWeight = weight;
+  const design = p.fontDesign;
+  if (design === "default" || design === "monospaced" || design === "serif") out.fontDesign = design;
+  const width = parseFontWidth(p.fontWidth);
+  if (width !== undefined && width !== "standard") out.fontWidth = width;
+  if (p.italic === true) out.italic = true;
+  if (p.monospacedDigits === true) out.monospacedDigits = true;
+  return out;
+}
+
 /**
  * How many times a timeline prints, from either key.
  *
@@ -2742,6 +2757,21 @@ export interface ChartTimesElement extends Omit<ElementBase, "colorSlot"> {
   labelColorHex: string;
   hourCycle: TimelineHourCycle;
   minutes: TimelineMinuteStyle;
+  /** The times' font, in the text layer's words. Each is absent at the row's
+   * own look: regular, the rounded face, standard width, upright, proportional
+   * digits. So an absent `fontDesign` means rounded here, not the system face,
+   * and `"default"` is written when the system face is picked. */
+  fontWeight?: FontWeight;
+  fontDesign?: FontDesign;
+  fontWidth?: FontWidth;
+  italic?: boolean;
+  monospacedDigits?: boolean;
+}
+
+/** The typeface a `chartTimes` layer draws in: its own, else the rounded face
+ * the row has always drawn in. */
+export function chartTimesFontDesign(t: ChartTimesElement): FontDesign {
+  return t.fontDesign ?? "rounded";
 }
 
 /** A dot on each reading of a chart, as a layer of its own. It draws in its
@@ -5025,6 +5055,7 @@ function parseElementKind(raw: unknown): Element {
           labelColorHex: str(p.labelColorHex, TIMELINE_DEFAULT_LABEL_HEX),
           hourCycle: parseHourCycle(p.hourCycle),
           minutes: parseMinuteStyle(p.minutes),
+          ...parseChartTimesFont(p),
         },
       };
     }
@@ -6894,6 +6925,12 @@ function encodeElementKind(el: Element): J {
       if (t.timeLabelCount !== TIMELINE_DEFAULT_LABEL_COUNT) o.timeLabelCount = clampTimeLabelCount(t.timeLabelCount);
       if (t.hourCycle !== TIMELINE_DEFAULT_HOUR_CYCLE) o.hourCycle = t.hourCycle;
       if (t.minutes !== TIMELINE_DEFAULT_MINUTE_STYLE) o.minutes = t.minutes;
+      // Each font key only away from the row's own look, as the app writes them.
+      if (t.fontWeight !== undefined && t.fontWeight !== "regular") o.fontWeight = t.fontWeight;
+      if (t.fontDesign !== undefined && t.fontDesign !== "rounded") o.fontDesign = t.fontDesign;
+      if (t.fontWidth !== undefined && t.fontWidth !== "standard") o.fontWidth = t.fontWidth;
+      if (t.italic === true) o.italic = true;
+      if (t.monospacedDigits === true) o.monospacedDigits = true;
       return { kind: "chartTimes", payload: o };
     }
     case "imageTime": {
@@ -7814,7 +7851,8 @@ const K = {
   // opens; nothing decodes it, and it leaves the wire on that document's next
   // save. The tap's frames already carry what it did.
   tap: ["action", "openPageId", "openPageName", "attachedTo", "grow"],
-  chartTimes: ["chart", "timeLabelCount", "labelSize", "labelColorHex", "hourCycle", "minutes"],
+  chartTimes: ["chart", "timeLabelCount", "labelSize", "labelColorHex", "hourCycle", "minutes",
+    "fontWeight", "fontDesign", "fontWidth", "italic", "monospacedDigits"],
   chartDots: ["chart", "dots", "size", "colorHex"],
   chartGrid: ["chart", "lines", "colorHex", "thickness"],
   // `size` is retired (the text size, replaced on 2026-09-12 by the chip

@@ -52,6 +52,7 @@ import {
   type ChartStat,
   type TimelineElement,
   type ChartTimesElement,
+  chartTimesFontDesign,
   type TimelineHourCycle,
   type TimelineMinuteStyle,
   TIMELINE_HISTORY_POINTS,
@@ -536,6 +537,12 @@ export interface ResolvedChartTimes extends ResolvedBase {
   labels: TimelineLabel[];
   labelSize: number;
   labelColorHex: string;
+  /** The layer's font, its absent keys settled to the row's own look. */
+  fontWeight: FontWeight;
+  fontDesign: FontDesign;
+  fontWidth: FontWidth;
+  italic: boolean;
+  monospacedDigits: boolean;
 }
 
 /** A picture's timestamp as a layer of its own. `image` is the link as written.
@@ -2537,6 +2544,11 @@ export class Resolver {
           labels: chartTimesLabels(t, this.chartElements.get(t.chart), this.nowMs(), this.timelineElements.get(t.chart)),
           labelSize: t.labelSize,
           labelColorHex: t.labelColorHex,
+          fontWeight: t.fontWeight ?? "regular",
+          fontDesign: chartTimesFontDesign(t),
+          fontWidth: t.fontWidth ?? "standard",
+          italic: t.italic === true,
+          monospacedDigits: t.monospacedDigits === true,
         };
         return out;
       }

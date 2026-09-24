@@ -353,3 +353,37 @@ describe("a picture's timestamp as a layer (the old kind)", () => {
     expect(cfg.elements.some((e) => e.payload.id === id)).toBe(false);
   });
 });
+
+describe("a chartTimes layer's font", () => {
+  function timesPayload(cfg: CustomComplicationConfig): Record<string, unknown> {
+    const els = (encodeConfig(cfg).elements as { kind: string; payload: Record<string, unknown> }[]);
+    return els.find((e) => e.kind === "chartTimes")!.payload;
+  }
+
+  it("writes no font key at the row's own look, and the system face out loud", () => {
+    const { cfg, chart } = historyChart();
+    convertChartTimes(cfg, chart.payload.id);
+    const plain = timesPayload(cfg);
+    for (const k of ["fontWeight", "fontDesign", "fontWidth", "italic", "monospacedDigits"]) expect(plain).not.toHaveProperty(k);
+    const t = chartTimesOf(cfg, chart.payload.id)[0]!;
+    t.payload.fontDesign = "default";
+    t.payload.fontWeight = "bold";
+    t.payload.italic = true;
+    expect(timesPayload(cfg)).toMatchObject({ fontDesign: "default", fontWeight: "bold", italic: true });
+  });
+
+  it("reads an unknown word as the row's own look, and audits the keys as known", () => {
+    const { cfg, chart } = historyChart();
+    convertChartTimes(cfg, chart.payload.id);
+    const wire = encodeConfig(cfg);
+    const payload = (wire.elements as { kind: string; payload: Record<string, unknown> }[]).find((e) => e.kind === "chartTimes")!.payload;
+    Object.assign(payload, { fontWeight: "heavy", fontDesign: "rounded", fontWidth: "ultrawide", italic: "yes", monospacedDigits: true });
+    expect(auditUnknownKeys(wire)).toEqual([]);
+    const t = parseConfig(wire).elements.find((e): e is Times => e.kind === "chartTimes")!;
+    expect(t.payload.fontWeight).toBeUndefined();
+    expect(t.payload.fontDesign).toBeUndefined();
+    expect(t.payload.fontWidth).toBeUndefined();
+    expect(t.payload.italic).toBeUndefined();
+    expect(t.payload.monospacedDigits).toBe(true);
+  });
+});

@@ -209,6 +209,7 @@ import {
   chartMarkersOf,
   convertChartTimes,
   chartTimesOf,
+  chartTimesFontDesign,
   type ChartTimesElement,
   addImageTime,
   imageTimeTextsOf,
@@ -7854,9 +7855,29 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
                   or Long-term statistics.</div>`}
         <div class="hint">The clock times of that ${word}'s span, spread across this layer's width and centred
           in its height. Move and size it like any other layer.</div>`;
-      look = timeLabelFields(t, setTimes, base, "ct", html`
+      look = html`${timeLabelFields(t, setTimes, base, "ct", html`
         <div class="hint">Evenly spaced from the start of the ${word}'s span to now. Auto follows the watch's
-          own clock and drops the minutes past a three hour span.</div>`);
+          own clock and drops the minutes past a three hour span.</div>`)}
+        ${segField("Weight", t.fontWeight ?? "regular", FONT_WEIGHTS, (v) => setTimes((p) => {
+          if (v === "regular") delete p.fontWeight; else p.fontWeight = v;
+        }), { def: (base.fontWeight as FontWeight | undefined) ?? "regular" })}
+        ${segField("Typeface", chartTimesFontDesign(t), FONT_DESIGNS, (v) => setTimes((p) => {
+          if (v === "rounded") delete p.fontDesign; else p.fontDesign = v;
+        }), { def: (base.fontDesign as FontDesign | undefined) ?? "rounded" })}
+        ${chartTimesFontDesign(t) === "rounded" || chartTimesFontDesign(t) === "serif" ? FONT_DESIGN_HINT : nothing}`;
+      lookMore = [
+        ["width", html`${segField("Width", t.fontWidth ?? "standard", FONT_WIDTHS, (v) => setTimes((p) => {
+          if (v === "standard") delete p.fontWidth; else p.fontWidth = v;
+        }), { def: "standard" })}
+        ${t.fontWidth !== undefined && t.fontWidth !== "standard" ? FONT_WIDTH_HINT : nothing}`],
+        ["italic", checkField("Italic", t.italic === true, (v) => setTimes((p) => {
+          if (v) p.italic = true; else delete p.italic;
+        }), base.italic === true)],
+        ["mono digits", html`${checkField("Mono digits", t.monospacedDigits === true, (v) => setTimes((p) => {
+          if (v) p.monospacedDigits = true; else delete p.monospacedDigits;
+        }), base.monospacedDigits === true)}
+        ${t.monospacedDigits ? html`<div class="hint">Digits take the same width, so the times do not shift sideways as they change.</div>` : nothing}`],
+      ];
       break;
     }
     case "imageTime": {
@@ -8232,7 +8253,8 @@ const LOOK_KEYS: Record<CElement["kind"], readonly string[]> = {
   shape: ["colorSlot", "borderColorHex", "borderWidth", "thickness", "fill"],
   image: ["contentMode", "zoom", "panX", "panY", "cornerRadius"],
   tap: [],
-  chartTimes: ["timeLabelCount", "labelSize", "labelColorHex", "hourCycle", "minutes"],
+  chartTimes: ["timeLabelCount", "labelSize", "labelColorHex", "hourCycle", "minutes",
+    "fontWeight", "fontDesign", "fontWidth", "italic", "monospacedDigits"],
   chartDots: ["dots", "size", "colorHex"],
   chartGrid: ["lines", "colorHex", "thickness"],
   imageTime: [],
