@@ -2764,7 +2764,7 @@ ${r_(c)}`}}delete s.hidden,delete s.linkId;let l=zd(a);if(l.length>0){let d=l.sl
        strip and drop it to the middle of the screen. A short list leaves
        the grid's floor empty instead; the eye stays where the tabs are. */
     dialog.pk-dialog {
-      width: min(1400px, 100vw - 48px); height: calc(100vh - 48px); padding: 0;
+      width: min(1400px, 100vw - 48px); height: calc(100dvh - 48px); padding: 0;
       border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg);
       background: var(--wa-card); color: var(--wa-ink); box-shadow: var(--wa-shadow-pop);
       display: flex; flex-direction: column; overflow: hidden;
@@ -2791,6 +2791,11 @@ ${r_(c)}`}}delete s.hidden,delete s.linkId;let l=zd(a);if(l.length>0){let d=l.sl
     .pk-search-input {
       flex: 1; min-width: 0; font: inherit; font-size: 13px; color: var(--wa-ink);
       border: 0; background: transparent; outline: 0; padding: 0;
+    }
+    /* Two classes deep, to beat the panel's own input[type=search] rule,
+       which drew a second, white box inside this one. */
+    .pk-search .pk-search-input, .pk-search .pk-search-input:focus-visible {
+      min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none;
     }
     /* The grid sits on the panel color rather than the card color, so a
        white card reads as a card and not as a rule drawn round some text. */
@@ -3194,10 +3199,39 @@ ${r_(c)}`}}delete s.hidden,delete s.linkId;let l=zd(a);if(l.length>0){let d=l.sl
       .pk-head h2 { flex: 1 0 calc(100% - 48px); order: 0; }
       .pk-head > button.icon { order: 1; }
       .pk-head > :not(h2):not(button.icon) { order: 2; }
-      .pk-head > .pk-search { flex: 1 1 100%; width: auto; max-width: none; }
+      /* The search and the Shape menu share the third line. */
+      .pk-head > .pk-search { order: 3; flex: 1 1 0; width: auto; max-width: none; min-width: 0; }
+      .pk-head > .pk-shape { order: 3; }
+      .pk-shape select { max-width: 130px; }
       .pk-foot { flex-wrap: wrap; row-gap: 8px; padding: 10px 14px; justify-content: flex-end; }
       .pk-foot-hint, .pk-foot-said { flex: 1 1 100%; }
-      .pk-card-acts { position: static; opacity: 1; flex-wrap: wrap; justify-content: flex-end; margin-top: 6px; }
+      /* One line of device tabs that scrolls sideways. Wrapped, a home of
+         two people took three lines of the screen before the first card. The
+         fade at the right edge says there is more along. */
+      .pk-tabs {
+        flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 0 4px;
+        -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+        mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+      }
+      .pk-tabs::-webkit-scrollbar { display: none; }
+      .pk-tab { padding: 9px 10px; }
+      /* Less padding round each of the nested boxes, so the two columns of
+         cards get the width instead of the frames round them. */
+      .pk-body { padding: 10px; }
+      .pk-sec-top { padding: 6px 10px; }
+      .pk-sec-body { padding: 6px; }
+      .pk-box { padding: 6px 6px 8px; }
+      .pk-grid { gap: 8px; }
+      .pk-card { padding: 8px; border-radius: 10px; }
+      .pk-card-top { margin-bottom: 6px; }
+      /* A device with nothing on it: its heading, with its 0, is enough. */
+      .pk-sec.none .pk-sec-body { display: none; }
+      .pk-sec.none .pk-sec-top { border-bottom: 0; }
+      /* A card's buttons on one line under its picture: Devices at the
+         left, hide and delete at the right. */
+      .pk-card-acts { position: static; opacity: 1; flex-wrap: nowrap; justify-content: space-between; gap: 4px; margin-top: 6px; }
+      .pk-card-acts > .pk-dup { margin-right: auto; }
+      .pk-card-acts button.small { font-size: 12px; padding: 0 6px; }
     }
 
     /* New complication: its own button beside the list, because making one was
@@ -3419,13 +3453,22 @@ ${r_(c)}`}}delete s.hidden,delete s.linkId;let l=zd(a);if(l.length>0){let d=l.sl
        that stays put, so a design with twenty entities still has its buttons
        on screen. Only the panel's own tokens, so both skins work. */
     dialog.xf {
-      width: min(600px, calc(100vw - 32px)); max-height: calc(100vh - 40px); padding: 0;
+      width: min(600px, calc(100vw - 32px)); max-height: calc(100dvh - 40px); padding: 0;
       border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg);
       background: var(--wa-card); color: var(--wa-ink);
       box-shadow: var(--wa-shadow-pop);
       display: flex; flex-direction: column;
     }
     dialog.xf::backdrop { background: rgba(0,0,0,.45); }
+    /* On a phone the dialog takes the screen, less a small margin. The body
+       scrolls between the head and the foot, so both stay in view. The
+       heights are dvh throughout: on an iPhone, vh is the height with
+       Safari's bars put away, so a dialog sized by it ran off the top and
+       the bottom of the screen. */
+    @media (max-width: 640px) {
+      dialog.xf { width: calc(100vw - 16px); max-width: none; max-height: calc(100dvh - 16px); }
+      .xfer-body { padding: 12px; gap: 12px; }
+    }
     /* Share stays open under the gallery dialog, so Back returns to it, but
        out of sight: one dialog and one dimmed backdrop at a time. */
     dialog.share-dialog.under { visibility: hidden; }
@@ -3681,6 +3724,14 @@ ${r_(c)}`}}delete s.hidden,delete s.linkId;let l=zd(a);if(l.length>0){let d=l.sl
        beside the name, and each public row's name over its text. */
     @container xfer (max-width: 480px) {
       .xf-acts, .xf-two, .xf-hero { grid-template-columns: minmax(0, 1fr); }
+      /* One under the other, each tile is a row: the icon at the left, its
+         name over its line beside it. Stood up, the three took a screen. */
+      .xf-act {
+        display: grid; grid-template-columns: 30px minmax(0, 1fr); column-gap: 12px; row-gap: 1px;
+        align-items: center; padding: 10px 12px;
+      }
+      .xf-act .ic { grid-row: 1 / 3; }
+      .xf-act b, .xf-act > span:last-child { grid-column: 2; }
       .xf-pub .kv { grid-template-columns: minmax(0, 1fr); gap: 4px; }
       .xf-pub .kv > .k { padding-top: 0; }
       .xf-up { grid-template-columns: 44px minmax(0, 1fr); }
@@ -4174,7 +4225,7 @@ ${r_(c)}`}}delete s.hidden,delete s.linkId;let l=zd(a);if(l.length>0){let d=l.sl
       background: var(--wa-card); color: var(--wa-ink); border-radius: var(--wa-lc-r);
       box-shadow: 0 0 0 1px var(--wa-line-strong), var(--wa-shadow-pop);
     }
-    .add-sheet.centered { left: 50%; top: 50%; transform: translate(-50%, -50%); height: min(700px, calc(100vh - 24px)); }
+    .add-sheet.centered { left: 50%; top: 50%; transform: translate(-50%, -50%); height: min(700px, calc(100dvh - 24px)); }
     .as-head { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 10px; border-bottom: 1px solid var(--wa-line); flex: none; }
     .as-search {
       flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px 0 10px;
@@ -5588,7 +5639,7 @@ ${r_(c)}`}}delete s.hidden,delete s.linkId;let l=zd(a);if(l.length>0){let d=l.sl
     button.help:hover { border-color: var(--wa-line-strong); background: var(--wa-panel); color: var(--wa-ink); }
     button.help:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     dialog.help-dialog {
-      width: min(880px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 0;
+      width: min(880px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0;
       border: 1px solid var(--wa-line); border-radius: 12px;
       background: var(--wa-card); color: var(--wa-ink);
       box-shadow: 0 12px 40px rgba(0,0,0,.4);
@@ -5626,7 +5677,7 @@ ${r_(c)}`}}delete s.hidden,delete s.linkId;let l=zd(a);if(l.length>0){let d=l.sl
        The picture keeps its slot's aspect and never runs taller than the room
        under the bar, so a wide rectangular face on a short window still fits. */
     dialog.zoom-dialog {
-      width: 100vw; max-width: 100vw; height: 100vh; max-height: 100vh; margin: 0; padding: 0; border: 0;
+      width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0; padding: 0; border: 0;
       background: var(--wa-bg, #111); color: var(--wa-ink);
       display: flex; flex-direction: column; overflow: hidden;
     }
@@ -5651,7 +5702,7 @@ ${r_(c)}`}}delete s.hidden,delete s.linkId;let l=zd(a);if(l.length>0){let d=l.sl
     .zoom-stage .preview.medium svg,
     .zoom-stage .preview.large svg,
     .zoom-stage .preview.xlarge svg {
-      width: min(100%, calc((100vh - 90px) * var(--wa-ratio, 1))); max-width: none;
+      width: min(100%, calc((100dvh - 90px) * var(--wa-ratio, 1))); max-width: none;
     }
     /* Demo mode. The stage is plain black rather than the zoom stage's dotted
        ground: the watch's own surround is black, and a grid behind the face
@@ -6878,7 +6929,7 @@ ${r_(c)}`}}delete s.hidden,delete s.linkId;let l=zd(a);if(l.length>0){let d=l.sl
         <label class="pk-search">
           ${E("search")}
           <input type="search" class="pk-search-input" .value=${this.pickerQuery}
-            placeholder="Search by name or person" aria-label="Search complications"
+            placeholder=${this.narrow?"Search":"Search by name or person"} aria-label="Search complications"
             @input=${y=>{this.pickerQuery=y.target.value}} />
         </label>
         <button class="icon" title="Close" aria-label="Close" @click=${()=>this.closePicker()}>${E("close")}</button>
@@ -6910,7 +6961,7 @@ ${r_(c)}`}}delete s.hidden,delete s.linkId;let l=zd(a);if(l.length>0){let d=l.sl
         title="Draw the complication on its own, with no device round it"
         @click=${()=>this.setPickerBare(!0)}>${E("shape")}<span>Shape</span></button>
     </div>`}setPickerBare(t){this.pickerBare=t,this.saveListView()}cardArt(t,i,a,r){if(!this.pickerBare)return u`<span class="pk-card-crop">${om(t,i,a,{shelved:r})}</span>`;let o=Lk(t,i);return u`<span class="pk-card-crop bare" style=${o===void 0?m:`aspect-ratio: ${o}`}
-      >${Fk(t,i,a)}</span>`}pickerIsShut(t){return this.pickerShut.includes(t)}togglePickerShut(t){this.pickerShut=this.pickerIsShut(t)?this.pickerShut.filter(i=>i!==t):[...this.pickerShut,t],this.saveListView()}renderPickerTabBody(t,i,a,r,o){let s=this.unsavedBelongsTo(r,a)?r:void 0,d=de(this.ownerOf(a))==="library"?u`<p class="pk-sec-note lone">${fS}</p>`:m;return t.length===0&&s===void 0?u`${d}<div class="empty">${o}</div>`:u`${d}${this.renderPickerGroups(Qs(t,i,a),a,s)}`}renderPickerSection(t,i,a){let r=this.unsavedBelongsTo(i,t.ownerId)?i:void 0,o=t.rows.length+(r?1:0),s=ep(Qc(a,t.ownerId)),l=this.pickerIsShut(t.ownerId);return u`<section class="pk-sec ${l?"shut":""}" style=${s?`--pk-person: ${s}`:m}>
+      >${Fk(t,i,a)}</span>`}pickerIsShut(t){return this.pickerShut.includes(t)}togglePickerShut(t){this.pickerShut=this.pickerIsShut(t)?this.pickerShut.filter(i=>i!==t):[...this.pickerShut,t],this.saveListView()}renderPickerTabBody(t,i,a,r,o){let s=this.unsavedBelongsTo(r,a)?r:void 0,d=de(this.ownerOf(a))==="library"?u`<p class="pk-sec-note lone">${fS}</p>`:m;return t.length===0&&s===void 0?u`${d}<div class="empty">${o}</div>`:u`${d}${this.renderPickerGroups(Qs(t,i,a),a,s)}`}renderPickerSection(t,i,a){let r=this.unsavedBelongsTo(i,t.ownerId)?i:void 0,o=t.rows.length+(r?1:0),s=ep(Qc(a,t.ownerId)),l=this.pickerIsShut(t.ownerId);return u`<section class="pk-sec ${l?"shut":""} ${o===0?"none":""}" style=${s?`--pk-person: ${s}`:m}>
       <div class="pk-sec-top">
         <h4 class="pk-sec-head">
           <button type="button" class="pk-fold-btn" aria-expanded=${l?"false":"true"}
@@ -6951,7 +7002,7 @@ ${r_(c)}`}}delete s.hidden,delete s.linkId;let l=zd(a);if(l.length>0){let d=l.sl
         ${this.cardArt(r,s,s==="iphone"?l.phone:l.watch,o==="library")}
       </div>
     </div>`}renderPickerFoot(){if(!this.hass.user?.is_admin)return m;let t=this.freeSlot()<0,i=this.selectedOwner?ly(this.selectedOwner):"This device",a=this.saveError??this.copyStatus;return u`<div class="pk-foot">
-      ${a===void 0?u`<span class="pk-foot-hint">${this.touch?"Tap a card to open it. The buttons under its picture duplicate, unassign and delete it.":"Click a card to open it. Hover a card for Duplicate, Unassign and Delete."}</span>`:u`<span class="pk-foot-said ${this.saveError?"err":""}">${a}</span>
+      ${a===void 0?u`<span class="pk-foot-hint">${this.touch?"Tap a card to open it. Under its picture: Devices, hide and delete.":"Click a card to open it. Hover a card for Duplicate, Unassign and Delete."}</span>`:u`<span class="pk-foot-said ${this.saveError?"err":""}">${a}</span>
           <button type="button" class="ghost small"
             @click=${()=>{this.saveError=void 0,this.copyStatus=void 0,this.copyOpen=void 0}}>Dismiss</button>`}
       <button type="button" class="new-btn" ?disabled=${this.backingUp}
@@ -7073,7 +7124,7 @@ ${r_(c)}`}}delete s.hidden,delete s.linkId;let l=zd(a);if(l.length>0){let d=l.sl
         title=${b?`Hidden from ${o}'s own list. Show it there again.`:`Hide from ${o}'s own list. A face or widget already using it keeps it.`}
         aria-label=${b?`Show ${t.name} on ${o}`:`Hide ${t.name} on ${o}`}
         @click=${()=>{this.setPickerHidden(y,!b,r.ownerId)}}>${E(b?"hide":"show")}</button>`:m}
-    </div>`}isOpenCopy(t){return t.ownerId===this.ownerId&&t.id===this.selectedId}rowPlaces(t,i){let a=this.libraryOwner(),r=ko(this.owners).filter(l=>!Le(l)&&!l.is_orphan).map(l=>this.deviceOwnerOf(l)),o=a?[...r,a]:r,s=t.copies.filter(l=>l.item.kind==="record").map(l=>({ownerId:l.ownerId,id:l.id}));return ok(o,i,s,rk(s,l=>de(this.ownerOf(l))))}recordAt(t,i){return(t===this.ownerId?{records:this.records}:this.otherLists.get(t))?.records.find(r=>r.id===i&&!r.deleted)}async removeRowFrom(t,i,a=!1,r=!1){if(!this.hass.user?.is_admin||this.saving)return;let o=i.copies.some(p=>this.isOpenCopy(p));if(o&&!r||o&&this.draft?.dirty&&!this.confirmDiscard())return;if(i.last){await this.shelveCopy(t,i.copies[0],a,o&&r);return}let s=i.owner.ownerId,l=i.owner.kind==="library"?_e:i.owner.label,d=o?this.selectedId:void 0,c=o?this.draft?.config.linkId:void 0;this.saving=!0,this.saveError=void 0;try{await this.loadOtherLists();let p=0;for(let f of i.copies){let h=this.recordAt(s,f.id);if(!h)continue;(await Xi(this.hass,s,h.id,h.revision)).ok||(p+=1)}p>0&&(this.copyStatus=`${t.name} is still on ${l}: the copy there changed on the server. Open the menu again.`),d!==void 0&&p===0&&(this.clearDraft(),this.selectedId=void 0),await this.reloadAfterRowWrite(s),d!==void 0&&p===0&&await this.openAnotherCopy(c,s,d)}catch(p){this.saveError=ze(p)}finally{this.saving=!1}}async openAnotherCopy(t,i,a){let r=this.linkedSiblings(t,i,a)[0];if(!r){this.selectNone();return}await this.openCopyAt(r.ownerId,r.record.id)}async openCopyAt(t,i){if(t!==this.ownerId&&(await this.selectOwner(t),this.ownerId!==t))return;let a=this.recordAt(t,i);a?this.openRecord(a):this.selectNone()}async shelveCopy(t,i,a=!1,r=!1){let o=this.libraryOwner();if(!i||!o||i.ownerId===o.ownerId||this.isOpenCopy(i)&&!r)return;let s=this.recordAt(i.ownerId,i.id);if(!s?.document)return;let l;try{l=Gt(s.document)}catch{return}let d=this.pickerDupFor?.endsWith(`|${t.key}`)===!0;this.saving=!0,this.saveError=void 0;try{await this.loadOtherLists();let c=this.seatsOn(o.ownerId);if(!c){this.saveError=eo([_e]);return}let p=Ge(l)[0],f=Ac(p,c.held,c.blocked);if(f<0){this.saveError=`${_e} has no free seat for this shape. Delete something in it first.`;return}let h=Vs(l,{id:Y(),slotIndex:f,hidden:!1,families:[...l.supportedFamilies]}),g=await Qt(this.hass,o.ownerId,new Ot(h,null).encoded(),null);if(!g.ok){this.saveError=`${t.name} could not be unassigned, so it is still on ${this.ownerName(i.ownerId)}: ${g.message??g.error??"the save failed"}`;return}let y=await Xi(this.hass,i.ownerId,s.id,s.revision);y.ok||(this.copyStatus=`${t.name} is unassigned, but the copy on ${this.ownerName(i.ownerId)} could not be removed. Delete it from its own card.`),d&&(this.pickerDupFor=`${o.ownerId}|${Zc({ownerId:o.ownerId,id:h.id,...h.linkId!==void 0?{linkId:h.linkId}:{}})}`);let b=r&&y.ok;b&&(this.clearDraft(),this.selectedId=void 0),await this.reloadAfterRowWrite(i.ownerId,o.ownerId),b&&await this.openCopyAt(o.ownerId,h.id)}catch(c){this.saveError=ze(c)}finally{this.saving=!1}}rowConfig(t){if(this.selectedCopyOf(t)&&this.draft)return this.draft.config;let i=t.open;if(!(i.item.kind!=="record"||!i.item.record.document))try{return Gt(i.item.record.document)}catch{return}}async addRowTo(t,i,a=!1){if(!this.hass.user?.is_admin||this.saving)return;let r=t.open;if(r.item.kind!=="record")return;let o=this.rowConfig(t);if(!o)return;let s=this.selectedCopyOf(t)!==void 0,l=this.libraryOwner(),d=i.kind!=="library"&&l!==void 0&&t.copies.some(h=>h.ownerId===l.ownerId&&h.item.kind==="record");if(s&&(o.linkId===void 0||d)&&this.draft&&(this.draft.dirty||this.draft.baseRevision===null)){this.saveError=`Save ${t.name} first, then put it on ${i.label}.`;return}let c=Ge(o)[0],p=i.kind==="library"?_e:i.label,f=this.pickerDupFor?.endsWith(`|${t.key}`)?this.pickerDupFor.split("|")[0]:void 0;this.saving=!0,this.saveError=void 0;try{await this.loadOtherLists();let h=this.seatsOn(i.ownerId);if(!h){this.saveError=eo([p]);return}let g=Ac(c,h.held,h.blocked);if(g<0){this.saveError=`${p} has no free seat for this shape (iPhone presets count too). Delete a complication there first.`;return}let y=o.linkId,b=new Map;if(y===void 0){y=Y();let A=this.recordAt(r.ownerId,r.id);if(!A){this.saveError=`${t.name} changed on the server. Open the menu again.`;return}let R=structuredClone(o);R.linkId=y;let P=await Qt(this.hass,r.ownerId,new Ot(R,A.revision).encoded(),A.revision);if(!P.ok||!P.record){this.saveError=`${t.name} could not be linked, so nothing was written to ${p}: ${P.message??P.error??"the save failed"}`;return}b.set(r.id,P.record.revision),s&&this.draft&&(this.draft.config.linkId=y,this.draft=this.draft.commit(P.record.revision))}let w=sk(o,y,{id:Y(),slotIndex:g}),k=await Qt(this.hass,i.ownerId,new Ot(w,null).encoded(),null);if(!k.ok){this.saveError=k.message??k.error??"Save failed";return}let S=(d&&l?await this.dropShelfCopies(t,l,b):void 0)?.landed===!0;f!==void 0&&(this.pickerDupFor=`${f}|${Zc({ownerId:i.ownerId,id:w.id,linkId:y})}`),S&&(this.clearDraft(),this.selectedId=void 0),await this.reloadAfterRowWrite(r.ownerId,i.ownerId,l?.ownerId??""),S&&await this.openCopyAt(i.ownerId,w.id)}catch(h){this.saveError=ze(h)}finally{this.saving=!1}}async dropShelfCopies(t,i,a){let r=!1,o=0;for(let s of t.copies){if(s.ownerId!==i.ownerId||s.item.kind!=="record")continue;let l=this.recordAt(i.ownerId,s.id);if(!l)continue;(await Xi(this.hass,i.ownerId,l.id,a.get(l.id)??l.revision)).ok?r=r||this.isOpenCopy({ownerId:s.ownerId,id:s.id}):o+=1}return o>0&&(this.copyStatus=`${t.name} is on the device, and still unassigned as well. To tidy it, open Devices on its card and untick ${_e}. Do not use Delete: that removes it everywhere.`),{landed:r,failed:o}}duplicateAsFromCard(t){let i=t.open,a=this.rowConfig(t);!a||i.item.kind!=="record"||(this.closePickerDup(),this.closePicker(),this.openDuplicateAs(a,i.ownerId))}openPickerDup(t){this.pickerDupFor=t,this.loadOtherLists(),window.addEventListener("pointerdown",this.pickerDupOutside,{capture:!0})}closePickerDup(){this.pickerDupFor=void 0,window.removeEventListener("pointerdown",this.pickerDupOutside,{capture:!0})}rowHidden(t){return t.id===this.selectedId&&this.draft?this.draft.config.hidden===!0:Sw(t.document)}async setPickerHidden(t,i,a){if(a===this.ownerId&&t.id===this.selectedId){this.mutate(r=>{i?r.hidden=!0:delete r.hidden});return}if(!(!this.hass.user?.is_admin||this.saving||!t.document)){this.saving=!0,this.saveError=void 0;try{let r=Tw(t.document,i),o=await Qt(this.hass,a,r,t.revision);if(!o.ok){this.saveError=o.error==="conflict"?`${String(t.document.name??"That complication")} changed on the server. Try again.`:o.message??o.error??"Save failed";return}a===this.ownerId?(this.beginSendWait(),await this.loadRecords()):await this.loadOtherLists()}catch(r){this.saveError=ze(r)}finally{this.saving=!1}}}clearLegacyPickerHidden(){try{let t=window.localStorage,i=[];for(let a=0;a<t.length;a++){let r=t.key(a);r?.startsWith(N_)&&i.push(r)}for(let a of i)t.removeItem(a)}catch{}}toggleMenu(t,i=this.openMenu!==t){this.openMenu=i?t:this.openMenu===t?void 0:this.openMenu,this.openMenu!==void 0?window.addEventListener("pointerdown",this.menuOutside,{capture:!0}):window.removeEventListener("pointerdown",this.menuOutside,{capture:!0})}browseAll(){this.pickPickerTab(Sn),this.pickerFilter="all",this.openPicker()}togglePicker(t=!this.pickerOpen){t?this.openPicker():this.closePicker()}openPicker(){this.pickerOpen=!0,this.pickerQuery="",this.loadOtherLists(),this.updateComplete.then(()=>{let t=this.renderRoot.querySelector("dialog.pk-dialog");t&&(t.open||t.showModal(),t.querySelector("[role=tab][aria-selected=true]")?.focus())})}closePicker(){let t=this.renderRoot.querySelector("dialog.pk-dialog");t?.open?t.close():this.pickerClosed()}pickerClosed(){this.pickerOpen=!1,this.pickerNote=void 0,this.pickerConfirmDelete=void 0,this.closePickerDup()}importFromPicker(){this.closePicker(),this.openImportDialog()}takenNames(){let t=[...this.records.map(i=>String(i.document?.name??"")),...this.occupied.map(i=>"name"in i&&typeof i.name=="string"?i.name:"")];return new Set(t.map(i=>i.trim().toLowerCase()).filter(i=>i!==""))}newNameProblem(){let t=this.newName.trim();if(t==="")return;let i=t.toLowerCase(),a=Uf([...this.newOwners]),r=o=>o===vi?`A complication in ${_e} already has that name.`:void 0;if(this.ownerId!==void 0&&a.includes(this.ownerId)&&this.takenNames().has(i))return r(this.ownerId)??`A complication on ${this.placePhrase} already has that name.`;for(let o of this.deviceOwnersFor(a)){if(o.ownerId===this.ownerId)continue;if((this.otherLists.get(o.ownerId)?.records??[]).filter(l=>!l.deleted).map(l=>String(l.document?.name??"").trim().toLowerCase()).includes(i))return r(o.ownerId)??`A complication on ${o.label} already has that name.`}}deviceOwnerOf(t){return{ownerId:t.owner_watch_id,label:au(t),kind:de(t),families:xi(t),comingSoon:Bs(t),controls:Os(t),appVersion:t.app_version}}deviceOwners(){return ko(this.owners).filter(t=>!Le(t)).filter(t=>t.owner_watch_id===this.ownerId||!t.is_orphan&&zs(t)).map(t=>this.deviceOwnerOf(t))}deviceOwnersFor(t){return ko(this.owners).filter(i=>t.includes(i.owner_watch_id)).map(i=>this.deviceOwnerOf(i))}newPeople(t){let i=new Set(t.map(a=>a.ownerId));return Zf(this.owners).map(a=>({person:a,devices:a.owners.filter(r=>i.has(r.owner_watch_id))})).filter(a=>a.devices.length>0)}newOffered(){let t=this.newKind;if(t===void 0)return[];let i=Us(this.deviceOwners(),t);return t==="control"||this.newFamily===void 0?i:i.filter(a=>a.families.includes(this.newFamily))}slotsTakenOn(t){return new Set(this.slotHoldersOn(t).map(i=>i.slotIndex).filter(i=>i>=0)).size}renderNewDialog(){let t=this.newNameProblem(),i=this.newName.trim()!=="",a=this.deviceOwners(),r=jf(a),o=this.newKind,s=o===void 0?[]:Ic(o,a),l=this.newOffered(),d=this.newPeople(l),c=l.filter(b=>this.newOwners.has(b.ownerId)).length,p={named:i,nameProblem:t,kind:o,family:this.newFamily,devices:c},f=fk(p),h=Yf(p),g=b=>b?"":"waiting",y=o!==void 0&&o!=="control";return u`<dialog class="new-dialog" @keydown=${this.newKeys} @close=${()=>{this.newOpen=!1}}>
+    </div>`}isOpenCopy(t){return t.ownerId===this.ownerId&&t.id===this.selectedId}rowPlaces(t,i){let a=this.libraryOwner(),r=ko(this.owners).filter(l=>!Le(l)&&!l.is_orphan).map(l=>this.deviceOwnerOf(l)),o=a?[...r,a]:r,s=t.copies.filter(l=>l.item.kind==="record").map(l=>({ownerId:l.ownerId,id:l.id}));return ok(o,i,s,rk(s,l=>de(this.ownerOf(l))))}recordAt(t,i){return(t===this.ownerId?{records:this.records}:this.otherLists.get(t))?.records.find(r=>r.id===i&&!r.deleted)}async removeRowFrom(t,i,a=!1,r=!1){if(!this.hass.user?.is_admin||this.saving)return;let o=i.copies.some(p=>this.isOpenCopy(p));if(o&&!r||o&&this.draft?.dirty&&!this.confirmDiscard())return;if(i.last){await this.shelveCopy(t,i.copies[0],a,o&&r);return}let s=i.owner.ownerId,l=i.owner.kind==="library"?_e:i.owner.label,d=o?this.selectedId:void 0,c=o?this.draft?.config.linkId:void 0;this.saving=!0,this.saveError=void 0;try{await this.loadOtherLists();let p=0;for(let f of i.copies){let h=this.recordAt(s,f.id);if(!h)continue;(await Xi(this.hass,s,h.id,h.revision)).ok||(p+=1)}p>0&&(this.copyStatus=`${t.name} is still on ${l}: the copy there changed on the server. Open the menu again.`),d!==void 0&&p===0&&(this.clearDraft(),this.selectedId=void 0),await this.reloadAfterRowWrite(s),d!==void 0&&p===0&&await this.openAnotherCopy(c,s,d)}catch(p){this.saveError=ze(p)}finally{this.saving=!1}}async openAnotherCopy(t,i,a){let r=this.linkedSiblings(t,i,a)[0];if(!r){this.selectNone();return}await this.openCopyAt(r.ownerId,r.record.id)}async openCopyAt(t,i){if(t!==this.ownerId&&(await this.selectOwner(t),this.ownerId!==t))return;let a=this.recordAt(t,i);a?this.openRecord(a):this.selectNone()}async shelveCopy(t,i,a=!1,r=!1){let o=this.libraryOwner();if(!i||!o||i.ownerId===o.ownerId||this.isOpenCopy(i)&&!r)return;let s=this.recordAt(i.ownerId,i.id);if(!s?.document)return;let l;try{l=Gt(s.document)}catch{return}let d=this.pickerDupFor?.endsWith(`|${t.key}`)===!0;this.saving=!0,this.saveError=void 0;try{await this.loadOtherLists();let c=this.seatsOn(o.ownerId);if(!c){this.saveError=eo([_e]);return}let p=Ge(l)[0],f=Ac(p,c.held,c.blocked);if(f<0){this.saveError=`${_e} has no free seat for this shape. Delete something in it first.`;return}let h=Vs(l,{id:Y(),slotIndex:f,hidden:!1,families:[...l.supportedFamilies]}),g=await Qt(this.hass,o.ownerId,new Ot(h,null).encoded(),null);if(!g.ok){this.saveError=`${t.name} could not be unassigned, so it is still on ${this.ownerName(i.ownerId)}: ${g.message??g.error??"the save failed"}`;return}let y=await Xi(this.hass,i.ownerId,s.id,s.revision);y.ok||(this.copyStatus=`${t.name} is unassigned, but the copy on ${this.ownerName(i.ownerId)} could not be removed. Delete it from its own card.`),d&&(this.pickerDupFor=`${o.ownerId}|${Zc({ownerId:o.ownerId,id:h.id,...h.linkId!==void 0?{linkId:h.linkId}:{}})}`);let b=r&&y.ok;b&&(this.clearDraft(),this.selectedId=void 0),await this.reloadAfterRowWrite(i.ownerId,o.ownerId),b&&await this.openCopyAt(o.ownerId,h.id)}catch(c){this.saveError=ze(c)}finally{this.saving=!1}}rowConfig(t){if(this.selectedCopyOf(t)&&this.draft)return this.draft.config;let i=t.open;if(!(i.item.kind!=="record"||!i.item.record.document))try{return Gt(i.item.record.document)}catch{return}}async addRowTo(t,i,a=!1){if(!this.hass.user?.is_admin||this.saving)return;let r=t.open;if(r.item.kind!=="record")return;let o=this.rowConfig(t);if(!o)return;let s=this.selectedCopyOf(t)!==void 0,l=this.libraryOwner(),d=i.kind!=="library"&&l!==void 0&&t.copies.some(h=>h.ownerId===l.ownerId&&h.item.kind==="record");if(s&&(o.linkId===void 0||d)&&this.draft&&(this.draft.dirty||this.draft.baseRevision===null)){this.saveError=`Save ${t.name} first, then put it on ${i.label}.`;return}let c=Ge(o)[0],p=i.kind==="library"?_e:i.label,f=this.pickerDupFor?.endsWith(`|${t.key}`)?this.pickerDupFor.split("|")[0]:void 0;this.saving=!0,this.saveError=void 0;try{await this.loadOtherLists();let h=this.seatsOn(i.ownerId);if(!h){this.saveError=eo([p]);return}let g=Ac(c,h.held,h.blocked);if(g<0){this.saveError=`${p} has no free seat for this shape (iPhone presets count too). Delete a complication there first.`;return}let y=o.linkId,b=new Map;if(y===void 0){y=Y();let A=this.recordAt(r.ownerId,r.id);if(!A){this.saveError=`${t.name} changed on the server. Open the menu again.`;return}let R=structuredClone(o);R.linkId=y;let P=await Qt(this.hass,r.ownerId,new Ot(R,A.revision).encoded(),A.revision);if(!P.ok||!P.record){this.saveError=`${t.name} could not be linked, so nothing was written to ${p}: ${P.message??P.error??"the save failed"}`;return}b.set(r.id,P.record.revision),s&&this.draft&&(this.draft.config.linkId=y,this.draft=this.draft.commit(P.record.revision))}let w=sk(o,y,{id:Y(),slotIndex:g}),k=await Qt(this.hass,i.ownerId,new Ot(w,null).encoded(),null);if(!k.ok){this.saveError=k.message??k.error??"Save failed";return}let S=(d&&l?await this.dropShelfCopies(t,l,b):void 0)?.landed===!0;f!==void 0&&(this.pickerDupFor=`${f}|${Zc({ownerId:i.ownerId,id:w.id,linkId:y})}`),S&&(this.clearDraft(),this.selectedId=void 0),await this.reloadAfterRowWrite(r.ownerId,i.ownerId,l?.ownerId??""),S&&await this.openCopyAt(i.ownerId,w.id)}catch(h){this.saveError=ze(h)}finally{this.saving=!1}}async dropShelfCopies(t,i,a){let r=!1,o=0;for(let s of t.copies){if(s.ownerId!==i.ownerId||s.item.kind!=="record")continue;let l=this.recordAt(i.ownerId,s.id);if(!l)continue;(await Xi(this.hass,i.ownerId,l.id,a.get(l.id)??l.revision)).ok?r=r||this.isOpenCopy({ownerId:s.ownerId,id:s.id}):o+=1}return o>0&&(this.copyStatus=`${t.name} is on the device, and still unassigned as well. To tidy it, open Devices on its card and untick ${_e}. Do not use Delete: that removes it everywhere.`),{landed:r,failed:o}}duplicateAsFromCard(t){let i=t.open,a=this.rowConfig(t);!a||i.item.kind!=="record"||(this.closePickerDup(),this.closePicker(),this.openDuplicateAs(a,i.ownerId))}openPickerDup(t){this.pickerDupFor=t,this.loadOtherLists(),window.addEventListener("pointerdown",this.pickerDupOutside,{capture:!0})}closePickerDup(){this.pickerDupFor=void 0,window.removeEventListener("pointerdown",this.pickerDupOutside,{capture:!0})}rowHidden(t){return t.id===this.selectedId&&this.draft?this.draft.config.hidden===!0:Sw(t.document)}async setPickerHidden(t,i,a){if(a===this.ownerId&&t.id===this.selectedId){this.mutate(r=>{i?r.hidden=!0:delete r.hidden});return}if(!(!this.hass.user?.is_admin||this.saving||!t.document)){this.saving=!0,this.saveError=void 0;try{let r=Tw(t.document,i),o=await Qt(this.hass,a,r,t.revision);if(!o.ok){this.saveError=o.error==="conflict"?`${String(t.document.name??"That complication")} changed on the server. Try again.`:o.message??o.error??"Save failed";return}a===this.ownerId?(this.beginSendWait(),await this.loadRecords()):await this.loadOtherLists()}catch(r){this.saveError=ze(r)}finally{this.saving=!1}}}clearLegacyPickerHidden(){try{let t=window.localStorage,i=[];for(let a=0;a<t.length;a++){let r=t.key(a);r?.startsWith(N_)&&i.push(r)}for(let a of i)t.removeItem(a)}catch{}}toggleMenu(t,i=this.openMenu!==t){this.openMenu=i?t:this.openMenu===t?void 0:this.openMenu,this.openMenu!==void 0?window.addEventListener("pointerdown",this.menuOutside,{capture:!0}):window.removeEventListener("pointerdown",this.menuOutside,{capture:!0})}browseAll(){this.pickPickerTab(Sn),this.pickerFilter="all",this.openPicker()}togglePicker(t=!this.pickerOpen){t?this.openPicker():this.closePicker()}openPicker(){this.pickerOpen=!0,this.pickerQuery="",this.loadOtherLists(),this.updateComplete.then(()=>{let t=this.renderRoot.querySelector("dialog.pk-dialog");if(!t)return;t.open||t.showModal();let i=t.querySelector("[role=tab][aria-selected=true]");this.touch?i?.scrollIntoView({block:"nearest",inline:"nearest"}):i?.focus()})}closePicker(){let t=this.renderRoot.querySelector("dialog.pk-dialog");t?.open?t.close():this.pickerClosed()}pickerClosed(){this.pickerOpen=!1,this.pickerNote=void 0,this.pickerConfirmDelete=void 0,this.closePickerDup()}importFromPicker(){this.closePicker(),this.openImportDialog()}takenNames(){let t=[...this.records.map(i=>String(i.document?.name??"")),...this.occupied.map(i=>"name"in i&&typeof i.name=="string"?i.name:"")];return new Set(t.map(i=>i.trim().toLowerCase()).filter(i=>i!==""))}newNameProblem(){let t=this.newName.trim();if(t==="")return;let i=t.toLowerCase(),a=Uf([...this.newOwners]),r=o=>o===vi?`A complication in ${_e} already has that name.`:void 0;if(this.ownerId!==void 0&&a.includes(this.ownerId)&&this.takenNames().has(i))return r(this.ownerId)??`A complication on ${this.placePhrase} already has that name.`;for(let o of this.deviceOwnersFor(a)){if(o.ownerId===this.ownerId)continue;if((this.otherLists.get(o.ownerId)?.records??[]).filter(l=>!l.deleted).map(l=>String(l.document?.name??"").trim().toLowerCase()).includes(i))return r(o.ownerId)??`A complication on ${o.label} already has that name.`}}deviceOwnerOf(t){return{ownerId:t.owner_watch_id,label:au(t),kind:de(t),families:xi(t),comingSoon:Bs(t),controls:Os(t),appVersion:t.app_version}}deviceOwners(){return ko(this.owners).filter(t=>!Le(t)).filter(t=>t.owner_watch_id===this.ownerId||!t.is_orphan&&zs(t)).map(t=>this.deviceOwnerOf(t))}deviceOwnersFor(t){return ko(this.owners).filter(i=>t.includes(i.owner_watch_id)).map(i=>this.deviceOwnerOf(i))}newPeople(t){let i=new Set(t.map(a=>a.ownerId));return Zf(this.owners).map(a=>({person:a,devices:a.owners.filter(r=>i.has(r.owner_watch_id))})).filter(a=>a.devices.length>0)}newOffered(){let t=this.newKind;if(t===void 0)return[];let i=Us(this.deviceOwners(),t);return t==="control"||this.newFamily===void 0?i:i.filter(a=>a.families.includes(this.newFamily))}slotsTakenOn(t){return new Set(this.slotHoldersOn(t).map(i=>i.slotIndex).filter(i=>i>=0)).size}renderNewDialog(){let t=this.newNameProblem(),i=this.newName.trim()!=="",a=this.deviceOwners(),r=jf(a),o=this.newKind,s=o===void 0?[]:Ic(o,a),l=this.newOffered(),d=this.newPeople(l),c=l.filter(b=>this.newOwners.has(b.ownerId)).length,p={named:i,nameProblem:t,kind:o,family:this.newFamily,devices:c},f=fk(p),h=Yf(p),g=b=>b?"":"waiting",y=o!==void 0&&o!=="control";return u`<dialog class="new-dialog" @keydown=${this.newKeys} @close=${()=>{this.newOpen=!1}}>
       <div class="new-head">
         <h2>New complication</h2>
         <span class="new-head-note">Name it, pick a device, pick one shape.</span>
@@ -7242,7 +7293,7 @@ ${r_(c)}`}}delete s.hidden,delete s.linkId;let l=zd(a);if(l.length>0){let d=l.sl
       </details>`,m,!r);return u`<dialog class="share-dialog xf ${this.galleryOpen?"under":""}" @close=${()=>{this.shareOpen=!1,this.pointAtRow([],void 0,()=>{})}}>
       ${this.dialogHead(`Share \u201C${i.name.trim()||"Untitled"}\u201D`,a.length===0?"A Control Center control, and no shape":`${oS(a)} \xB7 ${Qg(i)}`,()=>this.closeShareDialog())}
       <div class="xfer-body">
-        ${this.dialogPreview(c,g,h,f&&h.length>0?u`Where <b>${f.name}</b> is`:g?pe(g):"",p.some(A=>A.ids.length>0)?"Point at a name to see where it is":"")}
+        ${this.dialogPreview(c,g,h,f&&h.length>0?u`Where <b>${f.name}</b> is`:g?pe(g):"",p.some(A=>A.ids.length>0)?`${this.touch?"Tap":"Point at"} a name to see where it is`:"")}
         ${k}${C}${S}
       </div>
     </dialog>`}shareSection(t,i,a,r,o=m,s=!1){return u`<section class="xf-sec ${i} ${s?"locked":""}">

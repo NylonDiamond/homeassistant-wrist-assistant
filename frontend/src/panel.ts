@@ -2382,7 +2382,7 @@ export class WristAssistantPanel extends LitElement {
        strip and drop it to the middle of the screen. A short list leaves
        the grid's floor empty instead; the eye stays where the tabs are. */
     dialog.pk-dialog {
-      width: min(1400px, 100vw - 48px); height: calc(100vh - 48px); padding: 0;
+      width: min(1400px, 100vw - 48px); height: calc(100dvh - 48px); padding: 0;
       border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg);
       background: var(--wa-card); color: var(--wa-ink); box-shadow: var(--wa-shadow-pop);
       display: flex; flex-direction: column; overflow: hidden;
@@ -2409,6 +2409,11 @@ export class WristAssistantPanel extends LitElement {
     .pk-search-input {
       flex: 1; min-width: 0; font: inherit; font-size: 13px; color: var(--wa-ink);
       border: 0; background: transparent; outline: 0; padding: 0;
+    }
+    /* Two classes deep, to beat the panel's own input[type=search] rule,
+       which drew a second, white box inside this one. */
+    .pk-search .pk-search-input, .pk-search .pk-search-input:focus-visible {
+      min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none;
     }
     /* The grid sits on the panel color rather than the card color, so a
        white card reads as a card and not as a rule drawn round some text. */
@@ -2812,10 +2817,39 @@ export class WristAssistantPanel extends LitElement {
       .pk-head h2 { flex: 1 0 calc(100% - 48px); order: 0; }
       .pk-head > button.icon { order: 1; }
       .pk-head > :not(h2):not(button.icon) { order: 2; }
-      .pk-head > .pk-search { flex: 1 1 100%; width: auto; max-width: none; }
+      /* The search and the Shape menu share the third line. */
+      .pk-head > .pk-search { order: 3; flex: 1 1 0; width: auto; max-width: none; min-width: 0; }
+      .pk-head > .pk-shape { order: 3; }
+      .pk-shape select { max-width: 130px; }
       .pk-foot { flex-wrap: wrap; row-gap: 8px; padding: 10px 14px; justify-content: flex-end; }
       .pk-foot-hint, .pk-foot-said { flex: 1 1 100%; }
-      .pk-card-acts { position: static; opacity: 1; flex-wrap: wrap; justify-content: flex-end; margin-top: 6px; }
+      /* One line of device tabs that scrolls sideways. Wrapped, a home of
+         two people took three lines of the screen before the first card. The
+         fade at the right edge says there is more along. */
+      .pk-tabs {
+        flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 0 4px;
+        -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+        mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+      }
+      .pk-tabs::-webkit-scrollbar { display: none; }
+      .pk-tab { padding: 9px 10px; }
+      /* Less padding round each of the nested boxes, so the two columns of
+         cards get the width instead of the frames round them. */
+      .pk-body { padding: 10px; }
+      .pk-sec-top { padding: 6px 10px; }
+      .pk-sec-body { padding: 6px; }
+      .pk-box { padding: 6px 6px 8px; }
+      .pk-grid { gap: 8px; }
+      .pk-card { padding: 8px; border-radius: 10px; }
+      .pk-card-top { margin-bottom: 6px; }
+      /* A device with nothing on it: its heading, with its 0, is enough. */
+      .pk-sec.none .pk-sec-body { display: none; }
+      .pk-sec.none .pk-sec-top { border-bottom: 0; }
+      /* A card's buttons on one line under its picture: Devices at the
+         left, hide and delete at the right. */
+      .pk-card-acts { position: static; opacity: 1; flex-wrap: nowrap; justify-content: space-between; gap: 4px; margin-top: 6px; }
+      .pk-card-acts > .pk-dup { margin-right: auto; }
+      .pk-card-acts button.small { font-size: 12px; padding: 0 6px; }
     }
 
     /* New complication: its own button beside the list, because making one was
@@ -3037,13 +3071,22 @@ export class WristAssistantPanel extends LitElement {
        that stays put, so a design with twenty entities still has its buttons
        on screen. Only the panel's own tokens, so both skins work. */
     dialog.xf {
-      width: min(600px, calc(100vw - 32px)); max-height: calc(100vh - 40px); padding: 0;
+      width: min(600px, calc(100vw - 32px)); max-height: calc(100dvh - 40px); padding: 0;
       border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg);
       background: var(--wa-card); color: var(--wa-ink);
       box-shadow: var(--wa-shadow-pop);
       display: flex; flex-direction: column;
     }
     dialog.xf::backdrop { background: rgba(0,0,0,.45); }
+    /* On a phone the dialog takes the screen, less a small margin. The body
+       scrolls between the head and the foot, so both stay in view. The
+       heights are dvh throughout: on an iPhone, vh is the height with
+       Safari's bars put away, so a dialog sized by it ran off the top and
+       the bottom of the screen. */
+    @media (max-width: 640px) {
+      dialog.xf { width: calc(100vw - 16px); max-width: none; max-height: calc(100dvh - 16px); }
+      .xfer-body { padding: 12px; gap: 12px; }
+    }
     /* Share stays open under the gallery dialog, so Back returns to it, but
        out of sight: one dialog and one dimmed backdrop at a time. */
     dialog.share-dialog.under { visibility: hidden; }
@@ -3299,6 +3342,14 @@ export class WristAssistantPanel extends LitElement {
        beside the name, and each public row's name over its text. */
     @container xfer (max-width: 480px) {
       .xf-acts, .xf-two, .xf-hero { grid-template-columns: minmax(0, 1fr); }
+      /* One under the other, each tile is a row: the icon at the left, its
+         name over its line beside it. Stood up, the three took a screen. */
+      .xf-act {
+        display: grid; grid-template-columns: 30px minmax(0, 1fr); column-gap: 12px; row-gap: 1px;
+        align-items: center; padding: 10px 12px;
+      }
+      .xf-act .ic { grid-row: 1 / 3; }
+      .xf-act b, .xf-act > span:last-child { grid-column: 2; }
       .xf-pub .kv { grid-template-columns: minmax(0, 1fr); gap: 4px; }
       .xf-pub .kv > .k { padding-top: 0; }
       .xf-up { grid-template-columns: 44px minmax(0, 1fr); }
@@ -3792,7 +3843,7 @@ export class WristAssistantPanel extends LitElement {
       background: var(--wa-card); color: var(--wa-ink); border-radius: var(--wa-lc-r);
       box-shadow: 0 0 0 1px var(--wa-line-strong), var(--wa-shadow-pop);
     }
-    .add-sheet.centered { left: 50%; top: 50%; transform: translate(-50%, -50%); height: min(700px, calc(100vh - 24px)); }
+    .add-sheet.centered { left: 50%; top: 50%; transform: translate(-50%, -50%); height: min(700px, calc(100dvh - 24px)); }
     .as-head { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 10px; border-bottom: 1px solid var(--wa-line); flex: none; }
     .as-search {
       flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px 0 10px;
@@ -5206,7 +5257,7 @@ export class WristAssistantPanel extends LitElement {
     button.help:hover { border-color: var(--wa-line-strong); background: var(--wa-panel); color: var(--wa-ink); }
     button.help:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     dialog.help-dialog {
-      width: min(880px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 0;
+      width: min(880px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0;
       border: 1px solid var(--wa-line); border-radius: 12px;
       background: var(--wa-card); color: var(--wa-ink);
       box-shadow: 0 12px 40px rgba(0,0,0,.4);
@@ -5244,7 +5295,7 @@ export class WristAssistantPanel extends LitElement {
        The picture keeps its slot's aspect and never runs taller than the room
        under the bar, so a wide rectangular face on a short window still fits. */
     dialog.zoom-dialog {
-      width: 100vw; max-width: 100vw; height: 100vh; max-height: 100vh; margin: 0; padding: 0; border: 0;
+      width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0; padding: 0; border: 0;
       background: var(--wa-bg, #111); color: var(--wa-ink);
       display: flex; flex-direction: column; overflow: hidden;
     }
@@ -5269,7 +5320,7 @@ export class WristAssistantPanel extends LitElement {
     .zoom-stage .preview.medium svg,
     .zoom-stage .preview.large svg,
     .zoom-stage .preview.xlarge svg {
-      width: min(100%, calc((100vh - 90px) * var(--wa-ratio, 1))); max-width: none;
+      width: min(100%, calc((100dvh - 90px) * var(--wa-ratio, 1))); max-width: none;
     }
     /* Demo mode. The stage is plain black rather than the zoom stage's dotted
        ground: the watch's own surround is black, and a grid behind the face
@@ -10971,7 +11022,7 @@ export class WristAssistantPanel extends LitElement {
         <label class="pk-search">
           ${uiIcon("search")}
           <input type="search" class="pk-search-input" .value=${this.pickerQuery}
-            placeholder="Search by name or person" aria-label="Search complications"
+            placeholder=${this.narrow ? "Search" : "Search by name or person"} aria-label="Search complications"
             @input=${(e: Event) => { this.pickerQuery = (e.target as HTMLInputElement).value; }} />
         </label>
         <button class="icon" title="Close" aria-label="Close" @click=${() => this.closePicker()}>${uiIcon("close")}</button>
@@ -11137,7 +11188,7 @@ export class WristAssistantPanel extends LitElement {
     const count = section.rows.length + (mine ? 1 : 0);
     const color = personColorVar(personIndex(people, section.ownerId));
     const shut = this.pickerIsShut(section.ownerId);
-    return html`<section class="pk-sec ${shut ? "shut" : ""}" style=${color ? `--pk-person: ${color}` : nothing}>
+    return html`<section class="pk-sec ${shut ? "shut" : ""} ${count === 0 ? "none" : ""}" style=${color ? `--pk-person: ${color}` : nothing}>
       <div class="pk-sec-top">
         <h4 class="pk-sec-head">
           <button type="button" class="pk-fold-btn" aria-expanded=${shut ? "false" : "true"}
@@ -11289,7 +11340,7 @@ export class WristAssistantPanel extends LitElement {
     return html`<div class="pk-foot">
       ${said === undefined
         ? html`<span class="pk-foot-hint">${this.touch
-          ? "Tap a card to open it. The buttons under its picture duplicate, unassign and delete it."
+          ? "Tap a card to open it. Under its picture: Devices, hide and delete."
           : "Click a card to open it. Hover a card for Duplicate, Unassign and Delete."}</span>`
         : html`<span class="pk-foot-said ${this.saveError ? "err" : ""}">${said}</span>
           <button type="button" class="ghost small"
@@ -12344,7 +12395,11 @@ export class WristAssistantPanel extends LitElement {
       // Focus lands on the tab that is on, not in the search field: a
       // dialog that opens typing-ready reads as a search box, and this one
       // is a grid to look at. Typing is one Tab away.
-      dialog.querySelector<HTMLButtonElement>("[role=tab][aria-selected=true]")?.focus();
+      // Under a finger, a focus ring on a tab nobody pressed reads as a
+      // fault, so the tab is only scrolled into the row's view.
+      const on = dialog.querySelector<HTMLButtonElement>("[role=tab][aria-selected=true]");
+      if (this.touch) on?.scrollIntoView({ block: "nearest", inline: "nearest" });
+      else on?.focus();
     });
   }
 
@@ -13237,7 +13292,7 @@ export class WristAssistantPanel extends LitElement {
       <div class="xfer-body">
         ${this.dialogPreview(layouts, family, spot,
           focused && spot.length > 0 ? html`Where <b>${focused.name}</b> is` : family ? familyTitle(family) : "",
-          rows.some((row) => row.ids.length > 0) ? "Point at a name to see where it is" : "")}
+          rows.some((row) => row.ids.length > 0) ? `${this.touch ? "Tap" : "Point at"} a name to see where it is` : "")}
         ${who}${names}${send}
       </div>
     </dialog>`;
