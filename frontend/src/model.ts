@@ -8138,6 +8138,16 @@ export function defaultLayout(): FamilyLayout {
   return { placements: {}, cornerBodyShape: "circle", borderWidth: 2, rules: [] };
 }
 
+/** The curved text a corner starts with, from New or from the Main content switch. */
+export function defaultCurvedText(): Value {
+  return literal("Text");
+}
+
+/** The bezel gauge a corner starts with, from New or from the Bezel switch. */
+export function defaultBezelGauge(): BezelGauge {
+  return { value: literal("50"), minValue: 0, maxValue: 100, colorHexes: ["#34C759", "#FFCC00", "#FF3B30"] };
+}
+
 /**
  * A fresh document, of one shape.
  *
@@ -8145,11 +8155,20 @@ export function defaultLayout(): FamilyLayout {
  * and never a list. `null` is the other answer: a document with no shape at
  * all, which is the Control Center form, and `newControlConfig` is how that is
  * asked for. Inline starts with a literal since there is no text layer yet.
+ * Corner starts as big curved text over a gauge arc, the stock corner look,
+ * because an empty layer canvas a fifth of a face wide gives nothing to edit.
  *
  * See docs/complication_one_shape_per_document.md in the app repo.
  */
 export function newConfig(name: string, slotIndex: number, family: FamilyKind | null = "rectangular"): CustomComplicationConfig {
-  return buildConfig(name, slotIndex, family === null ? [] : [family]);
+  const cfg = buildConfig(name, slotIndex, family === null ? [] : [family]);
+  const corner = cfg.perFamily.corner;
+  if (corner) {
+    corner.curvedText = defaultCurvedText();
+    corner.bezelGauge = defaultBezelGauge();
+    cfg.schemaVersion = schemaVersionFor(cfg);
+  }
+  return cfg;
 }
 
 /**

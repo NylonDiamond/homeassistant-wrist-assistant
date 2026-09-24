@@ -134,6 +134,30 @@ describe("newConfig", () => {
     expect(cfg.schemaVersion).toBe(6);
   });
 
+  // An empty layer canvas the size of a corner gives nothing to edit, so a new
+  // corner starts as the stock look: big curved text over a gauge arc.
+  it("starts a corner as big curved text over a bezel gauge", () => {
+    const cfg = newConfig("X", 0, "corner");
+    const corner = cfg.perFamily.corner!;
+    expect(corner.curvedText).toEqual(literal("Text"));
+    expect(corner.bezelGauge).toEqual({ value: literal("50"), minValue: 0, maxValue: 100, colorHexes: ["#34C759", "#FFCC00", "#FF3B30"] });
+    expect(corner.bezelText).toBeUndefined();
+    expect(corner.placements).toEqual({});
+    expect(cfg.schemaVersion).toBe(schemaVersionFor(cfg));
+    const back = parseConfig(encodeConfig(cfg))!;
+    expect(back.perFamily.corner!.curvedText).toEqual(corner.curvedText);
+    expect(back.perFamily.corner!.bezelGauge).toEqual(corner.bezelGauge);
+  });
+
+  it("leaves the other shapes' layouts empty", () => {
+    for (const f of ["rectangular", "circular"] as const) {
+      const layout = newConfig("X", 0, f).perFamily[f]!;
+      expect(layout.curvedText).toBeUndefined();
+      expect(layout.bezelGauge).toBeUndefined();
+    }
+    expect(legacyConfig("X", 0).perFamily.corner!.curvedText).toBeUndefined();
+  });
+
   it("creates an Inline-only document with a literal and no canvas layout", () => {
     const cfg = newConfig("X", 0, "inline");
     expect(cfg.supportedFamilies).toEqual(["inline"]);

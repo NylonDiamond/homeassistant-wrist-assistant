@@ -165,6 +165,8 @@ import {
   setGroup,
   setGroupParent,
   literal,
+  defaultCurvedText,
+  defaultBezelGauge,
   inlineUsesParts,
   type InlinePart,
   literalPartText,
@@ -9559,7 +9561,7 @@ function cornerEditor(
   return html`
     <div class="fgroup">
     ${segField("Main content", mode, [["canvas", "Layer canvas"], ["curved", "Big curved text"]], (v) => upd((l) => {
-      if (v === "curved") { if (!l.curvedText) l.curvedText = literal("Text"); }
+      if (v === "curved") { if (!l.curvedText) l.curvedText = defaultCurvedText(); }
       else { delete l.curvedText; delete l.curvedColorHex; }
     }))}
     ${mode === "curved" && layout.curvedText ? html`
@@ -9571,7 +9573,7 @@ function cornerEditor(
     <div class="fgroup">
     ${segField("Bezel", bezelKind, [["none", "None"], ["text", "Text label"], ["gauge", "Gauge arc"]], (v) => upd((l) => {
       if (v === "text") { delete l.bezelGauge; if (!l.bezelText) l.bezelText = literal("Label"); }
-      else if (v === "gauge") { delete l.bezelText; if (!l.bezelGauge) l.bezelGauge = { value: literal("50"), minValue: 0, maxValue: 100, colorHexes: ["#34C759", "#FFCC00", "#FF3B30"] }; }
+      else if (v === "gauge") { delete l.bezelText; if (!l.bezelGauge) l.bezelGauge = defaultBezelGauge(); }
       else { delete l.bezelText; delete l.bezelGauge; }
     }))}
     ${bezelKind === "text" && layout.bezelText ? html`
