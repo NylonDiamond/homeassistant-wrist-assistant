@@ -3393,7 +3393,7 @@ export class WristAssistantPanel extends LitElement {
       background: color-mix(in srgb, var(--wa-ink) 8%, transparent); color: var(--wa-muted);
     }
     .badge.tap { color: #c2185b; background: rgba(236,64,122,.14); }
-    .badge.states { color: #ad1457; background: rgba(236,64,122,.16); }
+    .badge.states { color: #bf360c; background: rgba(255,112,67,.18); }
     :host([dark]) .badge.tap { color: var(--wa-tap); background: color-mix(in srgb, var(--wa-tap) 22%, transparent); }
     :host([dark]) .badge.states { color: var(--wa-states); background: color-mix(in srgb, var(--wa-states) 22%, transparent); }
     /* A layer's attached tap: the bottom part of the layer's own row, under
