@@ -114,7 +114,7 @@ export const GALLERY_LIMITS = {
  * integration's own cap whenever a new rung ships before the Worker is
  * deployed, which is the case this check exists for.
  */
-export const GALLERY_MAX_SCHEMA = 9;
+export const GALLERY_MAX_SCHEMA = 10;
 
 /** The slot id shape the gallery accepts. Digits are allowed in the domain,
  * as in the panel's own placeholder rule. */
