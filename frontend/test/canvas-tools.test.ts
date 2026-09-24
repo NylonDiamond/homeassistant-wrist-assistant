@@ -5,7 +5,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import {
-  FIRST_RUN_TILES, ZOOM_FIT, ZOOM_MAX, ZOOM_MIN, ZOOM_STEPS, anySnap, pickGridStep, runFirstRunTile, slotWord,
+  CURVED_TILE, FIRST_RUN_TILES, ZOOM_FIT, ZOOM_MAX, ZOOM_MIN, ZOOM_STEPS, anySnap, firstRunTiles, pickGridStep, runFirstRunTile, slotWord,
   snapSwitchOn, stageReserve, toggleSnap, zoomIn, zoomLabel, zoomOut, type SnapFlags,
 } from "../src/canvas-tools.js";
 import { GRID_STEPS } from "../src/interact.js";
@@ -104,9 +104,25 @@ describe("first-run tiles", () => {
   it("adds a text, a gauge and a chart layer, and opens the presets", () => {
     const addElement = vi.fn();
     const openAddSheet = vi.fn();
-    for (const tile of FIRST_RUN_TILES) runFirstRunTile(tile, { addElement, openAddSheet });
+    const useCurvedText = vi.fn();
+    for (const tile of FIRST_RUN_TILES) runFirstRunTile(tile, { addElement, openAddSheet, useCurvedText });
     expect(addElement.mock.calls).toEqual([["text"], ["gauge"], ["chart"]]);
     expect(openAddSheet.mock.calls).toEqual([["presets"]]);
+    expect(useCurvedText).not.toHaveBeenCalled();
+  });
+
+  // Curved text is not a layer: the watch draws it or the canvas, never both.
+  // So it is a corner's own tile, first, and no other shape is offered it.
+  it("leads a corner with curved text and offers it nowhere else", () => {
+    expect(firstRunTiles("corner")).toEqual([CURVED_TILE, ...FIRST_RUN_TILES]);
+    for (const f of ["rectangular", "circular", "small"] as const) expect(firstRunTiles(f)).toEqual(FIRST_RUN_TILES);
+    const addElement = vi.fn();
+    const openAddSheet = vi.fn();
+    const useCurvedText = vi.fn();
+    runFirstRunTile(CURVED_TILE, { addElement, openAddSheet, useCurvedText });
+    expect(useCurvedText).toHaveBeenCalledOnce();
+    expect(addElement).not.toHaveBeenCalled();
+    expect(openAddSheet).not.toHaveBeenCalled();
   });
 
   it("names the empty face after where it sits", () => {
