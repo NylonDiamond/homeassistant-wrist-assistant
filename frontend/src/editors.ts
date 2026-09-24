@@ -6,6 +6,7 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import {
+  hasHTTPTap,
   type AccentGroup,
   type AggregateSpec,
   type BezelGauge,
@@ -4786,7 +4787,21 @@ function docTapFields(host: EditorHost): TemplateResult {
       : nothing}
     ${tap.type === "showPage" ? showPageField(host, tap, (next) => host.update((c) => { c.tapAction = next; }, "tap-page")) : nothing}
     ${tap.type === "playTour" ? tourHoldFields(host) : nothing}
-    ${tap.type === "openPage" ? openPageField(host) : nothing}`;
+    ${tap.type === "openPage" ? openPageField(host) : nothing}
+    ${hasHTTPTap(cfg) ? httpShowResultField(host) : nothing}`;
+}
+
+/** "Show the reply": whether an HTTP action tap opens the watch app to show
+ * what the server answered, or fires in the background. One switch for the
+ * whole complication, so the whole tap and every tap layer share it; the
+ * Complication card shows it when any of them runs an HTTP action, and a tap
+ * layer's own editor when that layer does. */
+export function httpShowResultField(host: EditorHost): TemplateResult {
+  return html`
+    ${checkField("Show the reply", host.config.httpShowResult === true, (v) => host.update((c) => {
+      if (v) c.httpShowResult = true; else delete c.httpShowResult;
+    }, "http-show-result"), false)}
+    <div class="hint">On, an HTTP action tap opens the watch app to show the server's reply. Off, it runs in the background. One switch for the whole complication.</div>`;
 }
 
 /** The Tap card at the top of the shape's cards: the whole complication's
@@ -8679,6 +8694,9 @@ export function tapActionEditor(
   label = "Tap action",
 ): TemplateResult {
   const action = tap.action;
+  // The Control Center control (key "control") runs its action from the OS,
+  // never through a face tap, so the reply switch means nothing there.
+  const showReply = action.type === "runHTTPAction" && key !== "control";
   return html`
     ${tapActionMenu(label, action.type, types, (v) => upd((p) => {
       p.action = tapActionForType(v, p.action);
@@ -8707,7 +8725,8 @@ export function tapActionEditor(
       if (pid === undefined) { delete p.openPageId; delete p.openPageName; return; }
       p.openPageId = pid;
       if (name) p.openPageName = name; else delete p.openPageName;
-    }, "tap-page")) : nothing}`;
+    }, "tap-page")) : nothing}
+    ${showReply ? httpShowResultField(host) : nothing}`;
 }
 
 /** A finger covers about this many points, so a target with a shorter side

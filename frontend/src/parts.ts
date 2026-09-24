@@ -133,6 +133,7 @@ export function partFromSelection(
   delete doc.refreshMinutes;
   delete doc.showSuccessFlash;
   delete doc.successFlashColorHex;
+  delete doc.httpShowResult;
   doc.tapAction = { type: "none" };
   doc.dataSources = [];
 

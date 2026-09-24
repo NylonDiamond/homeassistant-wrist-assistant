@@ -2,7 +2,7 @@
 // comparisons, rule precedence) and CustomComplicationConfig.elements(for:).
 // See docs/custom_complication_schema_v4.md §7 for the semantics each
 // function mirrors. Known tolerances vs Swift: `matchesRegex` uses the JS
-// engine instead of ICU, and `%.Nf` uses toFixed.
+// engine instead of ICU. `%.Nf` is `fixedDecimals` (rounds first, then toFixed).
 
 import {
   type Comparison,
@@ -993,6 +993,24 @@ function trimClockParts(parts: Intl.DateTimeFormatPart[], trim: TimestampTrim): 
   return parts.filter((_, i) => keep[i]).map((p) => p.value).join("").trim();
 }
 
+/**
+ * `value` printed with `decimals` places, ties rounded half away from zero and a
+ * result that rounds to zero printed without its sign. Mirrors
+ * `CustomComplication.fixedDecimals`: bare `toFixed` rounds -22.5 to "-22" and the
+ * watch's printf rounds 22.5 to "22", so both sides round first, the same way
+ * (22.5 → "23", -22.5 → "-23", -0.4 → "0"). Past 1e15 there is nothing to round.
+ */
+export function fixedDecimals(value: number, decimals: number): string {
+  const places = Math.min(100, Math.max(0, Math.trunc(decimals)));
+  let rounded = value;
+  const factor = Math.pow(10, Math.min(places, 15));
+  if (Number.isFinite(value) && places <= 15 && Math.abs(value * factor) < 1e15) {
+    rounded = (Math.sign(value) * Math.round(Math.abs(value) * factor)) / factor;
+  }
+  if (rounded === 0) rounded = 0; // folds -0
+  return rounded.toFixed(places);
+}
+
 export function formatValue(
   raw: string,
   format: ValueFormat | undefined,
@@ -1022,7 +1040,7 @@ export function formatValue(
     if (n !== undefined) {
       const scaled = n * (f.multiply ?? 1) + (f.offset ?? 0);
       if (f.decimals !== undefined) {
-        text = scaled.toFixed(Math.max(0, f.decimals));
+        text = fixedDecimals(scaled, f.decimals);
       } else if (scaled !== n) {
         text = Number.isInteger(scaled) ? String(scaled) : swiftStringOfDouble(scaled);
       }

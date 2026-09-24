@@ -4251,6 +4251,11 @@ export interface CustomComplicationConfig {
   showSuccessFlash?: boolean;
   /** The color of that ring. Absent means `CUSTOM_FLASH_DEFAULT`. */
   successFlashColorHex?: string;
+  /** An HTTP action tap (the whole tap or a tap layer) opens the watch app to
+   * show the reply, as the iPhone preset's "show result" switch did, instead
+   * of firing in the background. Only ever true: writers omit the key when
+   * off. An older app ignores it and fires in the background. */
+  httpShowResult?: true;
   /** Layer groups (editor-only). Encoded only when there is at least one. */
   groups?: LayerGroup[];
   /** Kept out of the watch's complication picker. A face already using it
@@ -5367,6 +5372,7 @@ export function parseConfig(raw: unknown): CustomComplicationConfig {
   if (typeof raw.openPageName === "string") cfg.openPageName = raw.openPageName;
   if (typeof raw.showSuccessFlash === "boolean") cfg.showSuccessFlash = raw.showSuccessFlash;
   if (typeof raw.successFlashColorHex === "string") cfg.successFlashColorHex = raw.successFlashColorHex;
+  if (raw.httpShowResult === true) cfg.httpShowResult = true;
   if (raw.hidden === true) cfg.hidden = true;
   if (typeof raw.linkId === "string" && raw.linkId !== "") cfg.linkId = raw.linkId.toUpperCase();
   // A spec of one page is a document with no pages, so it lands as absent and
@@ -7215,6 +7221,7 @@ export function encodeConfig(cfg: CustomComplicationConfig): J {
   if (cfg.openPageName !== undefined) o.openPageName = cfg.openPageName;
   if (cfg.showSuccessFlash !== undefined) o.showSuccessFlash = cfg.showSuccessFlash;
   if (cfg.successFlashColorHex !== undefined) o.successFlashColorHex = cfg.successFlashColorHex;
+  if (cfg.httpShowResult === true) o.httpShowResult = true;
   if (cfg.groups !== undefined && cfg.groups.length > 0) {
     o.groups = cfg.groups.map((g) => ({ id: g.id, name: g.name, locked: g.locked, ...(g.parentId !== undefined ? { parentId: g.parentId } : {}) }));
   }
@@ -7228,6 +7235,13 @@ export function encodeConfig(cfg: CustomComplicationConfig): J {
   if (pages !== undefined) o.pages = pages;
   if (cfg.control !== undefined) o.control = encodeControl(cfg.control);
   return o;
+}
+
+/** Whether the document's own tap or any of its tap layers runs an HTTP
+ * action, which is when `httpShowResult` means anything. */
+export function hasHTTPTap(cfg: CustomComplicationConfig): boolean {
+  return cfg.tapAction.type === "runHTTPAction"
+    || cfg.elements.some((e) => e.kind === "tap" && e.payload.action.type === "runHTTPAction");
 }
 
 /** Whether a stored document is kept out of the watch's complication picker.
@@ -7761,7 +7775,7 @@ const K = {
   // `linkId` joins the copies of one design across devices: one record per
   // device, the same uuid on each. The panel reads and writes it; the apps
   // decode it and never write it back.
-  config: ["schemaVersion", "id", "name", "values", "slotIndex", "elements", "supportedFamilies", "perFamily", "inline", "dataSources", "refreshMinutes", "tapAction", "openPageId", "openPageName", "showSuccessFlash", "successFlashColorHex", "groups", "hidden", "linkId", "control", "pages"],
+  config: ["schemaVersion", "id", "name", "values", "slotIndex", "elements", "supportedFamilies", "perFamily", "inline", "dataSources", "refreshMinutes", "tapAction", "openPageId", "openPageName", "showSuccessFlash", "successFlashColorHex", "httpShowResult", "groups", "hidden", "linkId", "control", "pages"],
   group: ["id", "name", "locked", "parentId"],
   // The document's pages. Its own object at the top level, and the only place
   // these three keys appear.

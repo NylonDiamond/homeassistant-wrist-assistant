@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import { compile, fnv1a64Hex, normaliseScalar, parseValueDocument } from "../src/compiler.js";
-import { countdownRemainingString, formatValue, gaugeFraction, leadingNumber, resolveAll, Resolver, type EntityState } from "../src/resolver.js";
+import { countdownRemainingString, fixedDecimals, formatValue, gaugeFraction, leadingNumber, resolveAll, Resolver, type EntityState } from "../src/resolver.js";
 import { newConfig, newElement, parseValue } from "../src/model.js";
 
 describe("fnv1a64Hex", () => {
@@ -41,6 +41,15 @@ describe("formatValue", () => {
     expect(formatValue("10", { multiply: 2.5 }, undefined)).toBe("25");
     expect(formatValue("10", { multiply: 0.15 }, undefined)).toBe("1.5");
     expect(formatValue("10", { multiply: 1 }, undefined)).toBe("10");
+  });
+  it("rounds ties half away from zero and never prints negative zero, like the watch", () => {
+    expect(formatValue("22.5", { decimals: 0 }, undefined)).toBe("23");
+    expect(formatValue("-22.5", { decimals: 0 }, undefined)).toBe("-23");
+    expect(formatValue("0.25", { decimals: 1 }, undefined)).toBe("0.3");
+    expect(formatValue("-0.4", { decimals: 0, useEntityUnit: true }, "°C")).toBe("0°C");
+    expect(formatValue("-0.04", { decimals: 1 }, undefined)).toBe("0.0");
+    expect(formatValue("-3.6", { decimals: 0 }, undefined)).toBe("-4");
+    expect(fixedDecimals(1e20, 0)).toBe((1e20).toFixed(0));
   });
   it("applies prefix, suffix and text case last", () => {
     expect(formatValue("on", { textCase: "upper", prefix: "is " }, undefined)).toBe("IS ON");
