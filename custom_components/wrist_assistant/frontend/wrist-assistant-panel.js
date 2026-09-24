@@ -5676,25 +5676,24 @@ ${jP(c)}`}}delete s.hidden,delete s.linkId;let l=_d(a);if(l.length>0){let d=l.sl
        part holds rows. The rails on the left of the parts are what say "these
        belong together". */
     .rule {
-      --rule-tint: #5c6bc0;
-      border: 1px solid color-mix(in srgb, var(--rule-tint) 55%, var(--wa-line)); border-radius: 12px; padding: 8px 12px 12px;
-      background: color-mix(in srgb, var(--rule-tint) 6%, transparent);
+      border: 1px solid color-mix(in srgb, var(--wa-states) 45%, var(--wa-line)); border-radius: 12px; padding: 8px 12px 12px;
+      background: color-mix(in srgb, var(--wa-states) 7%, transparent);
     }
     /* The Simple or Advanced switch at the top of the card, on its own line. */
     .editor-switch { margin: 0 0 10px; }
     .editor-switch > .seg.wide { height: 28px; border-radius: 8px; }
     .editor-switch > .hint { margin-top: 4px; }
     .case {
-      border: 1px solid var(--wa-line); border-radius: 10px; padding: 6px 12px 10px; margin-top: 10px;
-      background: var(--wa-panel);
+      border: 1px solid color-mix(in srgb, var(--wa-states) 25%, var(--wa-line)); border-radius: 10px; padding: 6px 12px 10px; margin-top: 10px;
+      background: color-mix(in srgb, var(--wa-states) 4%, var(--wa-panel));
     }
     .case.match { border-color: color-mix(in srgb, var(--success-color, #43a047) 60%, var(--wa-line)); }
     .rule > .rsect, .case > .rsect { margin: 0; }
     .rule > .field { margin-top: 4px; }
-    .rpart { margin-top: 6px; padding-left: 12px; border-left: 3px solid var(--wa-line-strong); }
-    .rpart.then { border-left-color: color-mix(in srgb, var(--wa-accent) 55%, transparent); }
-    .rlabel { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--wa-muted); margin: 4px 0 0; }
-    .rpart.then .rlabel { color: var(--wa-accent); }
+    .rpart { margin-top: 6px; padding-left: 12px; border-left: 3px solid color-mix(in srgb, var(--wa-states) 35%, transparent); }
+    .rpart.then { border-left-color: color-mix(in srgb, var(--wa-states) 75%, transparent); }
+    .rlabel { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: color-mix(in srgb, var(--wa-states) 70%, var(--wa-muted)); margin: 4px 0 0; }
+    .rpart.then .rlabel { color: var(--wa-states); }
     .rpart .radd { margin-bottom: 2px; }
     .rule > .radd { margin: 12px 0 0; }
     .rsect { display: flex; align-items: center; gap: 8px; min-height: 28px; margin: 12px 0 4px; }
@@ -5737,12 +5736,15 @@ ${jP(c)}`}}delete s.hidden,delete s.linkId;let l=_d(a);if(l.length>0){let d=l.sl
     .rbody > .hint { margin-left: var(--wa-col); }
     .rempty { color: var(--wa-muted); font-size: 12.5px; font-style: italic; padding: 4px 2px; }
     .radd { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 2px; }
+    /* The add pills take the colour of the card they sit in: coral inside
+       States, the accent elsewhere. */
+    .states, .rules { --pill-tint: var(--wa-states); }
     button.small.pill {
       height: 30px; min-height: 30px; padding: 0 14px 0 10px; border-radius: 999px; font-weight: 600;
-      color: var(--wa-accent); border-color: transparent;
-      background: color-mix(in srgb, var(--wa-accent) 16%, transparent);
+      color: var(--pill-tint, var(--wa-accent)); border-color: transparent;
+      background: color-mix(in srgb, var(--pill-tint, var(--wa-accent)) 16%, transparent);
     }
-    button.small.pill:hover:not(:disabled) { border-color: transparent; background: color-mix(in srgb, var(--wa-accent) 26%, transparent); }
+    button.small.pill:hover:not(:disabled) { border-color: transparent; background: color-mix(in srgb, var(--pill-tint, var(--wa-accent)) 26%, transparent); }
     button.small.pill svg { width: 14px; height: 14px; }
     .chip-menu button.danger { color: var(--error-color, #e5484d); border: none; background: transparent; }
     .chip-menu button.danger:hover { background: color-mix(in srgb, var(--error-color, #e5484d) 12%, transparent); }
