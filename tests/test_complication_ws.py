@@ -737,6 +737,71 @@ def test_pending_changes_counts_designs_since_the_ack(env) -> None:
     assert env.call(env.ws.ws_watch_status, owner_watch_id="watch-A")["pending_changes"] == 0
 
 
+# ── owner_subscribe ──────────────────────────────────────────────────────
+
+
+class _LiveConnection(_Connection):
+    """A connection that keeps its subscriptions and the events sent on them."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.subscriptions: dict[int, Any] = {}
+        self.events: list[dict] = []
+
+    def send_message(self, message: dict) -> None:
+        self.events.append(message)
+
+
+def _owner_subscribe(env, owner: str) -> _LiveConnection:
+    connection = _LiveConnection()
+    env.ws.ws_owner_subscribe(env.hass, connection, {"id": 7, "owner_id": owner})
+    assert connection.errors == [], connection.errors
+    return connection
+
+
+def test_owner_subscribe_replies_with_the_owner_token(env) -> None:
+    """A commit made while the phone's socket was down is caught right here."""
+    env.add_phone("phone-1")
+    env.save_document("phone-1")
+    connection = _owner_subscribe(env, "phone-1")
+    assert connection.results[7] == {"token": env.store.owner_token("phone-1")}
+
+
+def test_owner_subscribe_sends_only_a_token_for_its_own_commits(env) -> None:
+    """No record, no other owner, no ack: a number and nothing else."""
+    env.add_phone("phone-1")
+    env.add_watch("watch-A")
+    connection = _owner_subscribe(env, "phone-1")
+
+    env.save_document("watch-A")
+    assert connection.events == []
+
+    env.save_document("phone-1")
+    assert connection.events == [
+        {"id": 7, "event": {"token": env.store.owner_token("phone-1")}}
+    ]
+
+    env.store.set_applied_token("phone-1", env.store.owner_token("phone-1"))
+    assert len(connection.events) == 1
+
+
+def test_owner_subscribe_sends_token_zero_on_forget(env) -> None:
+    """A phone forgotten while open pulls at once and blanks its widgets."""
+    env.add_phone("phone-1")
+    env.save_document("phone-1")
+    connection = _owner_subscribe(env, "phone-1")
+    env.store.forget_owner("phone-1")
+    assert connection.events[-1] == {"id": 7, "event": {"token": 0}}
+
+
+def test_owner_subscribe_stops_when_the_socket_unsubscribes(env) -> None:
+    env.add_phone("phone-1")
+    connection = _owner_subscribe(env, "phone-1")
+    connection.subscriptions.pop(7)()
+    env.save_document("phone-1")
+    assert connection.events == []
+
+
 # ── nudge ────────────────────────────────────────────────────────────────
 
 

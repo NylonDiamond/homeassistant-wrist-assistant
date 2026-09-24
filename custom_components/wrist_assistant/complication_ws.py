@@ -8,6 +8,11 @@ house plus rendered templates, so a non-admin household member has no reason
 to reach them. The watch never uses these commands; it pulls over the
 HMAC-signed ``/v2/action`` ops in ``wa_v2_views.py``.
 
+One exception: ``owner_subscribe``, which the iPhone app sends over its own
+WebSocket. The phone's user need not be an administrator, and all it is ever
+told is a number: the token of a commit for the owner it named. The designs
+themselves still travel only over the signed ``complications_sync`` pull.
+
 Commands:
 
     wrist_assistant/complications/owners
@@ -17,6 +22,7 @@ Commands:
     wrist_assistant/complications/save        {owner_watch_id, document, base_revision?}
     wrist_assistant/complications/delete      {owner_watch_id, id, base_revision?}
     wrist_assistant/complications/subscribe   {owner_watch_id?}
+    wrist_assistant/complications/owner_subscribe {owner_id}      (not admin)
     wrist_assistant/complications/history     {owner_watch_id, complication_id}
     wrist_assistant/complications/history_get {owner_watch_id, complication_id,
                                                revision}
@@ -134,6 +140,7 @@ _CMD_GET = f"{DOMAIN}/complications/get"
 _CMD_SAVE = f"{DOMAIN}/complications/save"
 _CMD_DELETE = f"{DOMAIN}/complications/delete"
 _CMD_SUBSCRIBE = f"{DOMAIN}/complications/subscribe"
+_CMD_OWNER_SUBSCRIBE = f"{DOMAIN}/complications/owner_subscribe"
 _CMD_MOVE_OWNER = f"{DOMAIN}/complications/move_owner"
 _CMD_RENDER = f"{DOMAIN}/complications/render_values"
 # The save history of one record. Named apart from `_CMD_HISTORY` below, which
@@ -222,6 +229,7 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_save)
     websocket_api.async_register_command(hass, ws_delete)
     websocket_api.async_register_command(hass, ws_subscribe)
+    websocket_api.async_register_command(hass, ws_owner_subscribe)
     websocket_api.async_register_command(hass, ws_save_history)
     websocket_api.async_register_command(hass, ws_save_history_get)
     websocket_api.async_register_command(hass, ws_save_history_restore)
@@ -919,6 +927,48 @@ def ws_subscribe(
 
     connection.subscriptions[msg["id"]] = store.async_add_listener(_on_change)
     connection.send_result(msg["id"], {"token": store.token})
+
+
+# Deliberately not admin-only: see the module docstring.
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_OWNER_SUBSCRIBE,
+        vol.Required("owner_id"): str,
+    }
+)
+@callback
+def ws_owner_subscribe(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Tell an open iPhone app the moment its complications change.
+
+    The phone parks no long poll, and a silent push is rationed by iOS and
+    can arrive late or not at all. While the app is open it already holds a
+    WebSocket to HA, so this rides on it: every commit for the named owner
+    sends ``{"token": n}``, and the app answers with its normal signed pull.
+
+    The watch's own acks are left out (they carry no record and nothing to
+    pull), and so is every other owner. A forget is sent, with token 0, so a
+    phone that was forgotten while open blanks its widgets straight away.
+    The result carries the owner's current token, so a commit that landed
+    while the socket was down is caught at subscribe time too.
+    """
+    store = _store(hass)
+    if store is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    owner = msg["owner_id"]
+
+    @callback
+    def _on_change(change: ComplicationChange) -> None:
+        if change.owner_watch_id != owner or change.applied_token is not None:
+            return
+        connection.send_message(
+            websocket_api.event_message(msg["id"], {"token": change.token})
+        )
+
+    connection.subscriptions[msg["id"]] = store.async_add_listener(_on_change)
+    connection.send_result(msg["id"], {"token": store.owner_token(owner)})
 
 
 @websocket_api.require_admin

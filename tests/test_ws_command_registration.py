@@ -11,7 +11,7 @@ non-admin user, which no test hitting a real box would notice.
 
 Every command in the module is admin-only, reads included: the panel is
 admin-only, and the reads hand out the slot pool of every watch in the house
-along with rendered templates.
+along with rendered templates. The one exception is listed in ``_NOT_ADMIN``.
 """
 
 from __future__ import annotations
@@ -51,6 +51,13 @@ _ADMIN_ONLY = {
     "ws_parts_list",
     "ws_parts_save",
     "ws_parts_delete",
+}
+
+# The commands a non-admin may call, each one a decision made on purpose.
+# ``ws_owner_subscribe`` is the iPhone app's live line: its user need not be
+# an administrator, and it hands out nothing but the token of a commit.
+_NOT_ADMIN = {
+    "ws_owner_subscribe",
 }
 
 
@@ -114,13 +121,15 @@ def test_every_command_requires_admin() -> None:
     offenders = sorted(
         node.name
         for node in _command_functions(tree)
-        if "require_admin" not in _decorator_names(node)
+        if node.name not in _NOT_ADMIN
+        and "require_admin" not in _decorator_names(node)
     )
     assert not offenders, "missing @require_admin: " + ", ".join(offenders)
 
 
 def test_admin_only_commands_exist() -> None:
-    """Guards the list above against a rename that would silently empty it,
-    and against a new command nobody made a gating decision about."""
+    """Guards the lists above against a rename that would silently empty
+    them, and against a new command nobody made a gating decision about."""
     defined = {node.name for node in _command_functions(_tree())}
-    assert defined == _ADMIN_ONLY, sorted(defined ^ _ADMIN_ONLY)
+    expected = _ADMIN_ONLY | _NOT_ADMIN
+    assert defined == expected, sorted(defined ^ expected)
