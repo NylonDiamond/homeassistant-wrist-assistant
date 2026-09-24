@@ -2505,9 +2505,9 @@ const TIME_FIELDS: [TimeField, string][] = [
   ["now", "Time (14:05)"], ["hour", "Hour"], ["minute", "Minute"], ["weekday", "Day of the week (0 is Monday)"], ["day", "Day of the month"], ["month", "Month number"], ["timestamp", "Unix timestamp (seconds)"],
 ];
 
-/** A template every house can render: how many lights are on. With no lights
- * at all it prints 0 rather than failing. */
-export const STARTER_TEMPLATE = "{{ states.light | selectattr('state', 'eq', 'on') | list | count }}";
+/** A template every house can render: how many lights are on, said in words.
+ * With no lights at all it prints "0 Lights On" rather than failing. */
+export const STARTER_TEMPLATE = "{{ states.light | selectattr('state', 'eq', 'on') | list | count }} Lights On";
 
 /**
  * A template to start from that renders on any Home Assistant, so a new
