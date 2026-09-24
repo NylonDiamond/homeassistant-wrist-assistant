@@ -931,6 +931,11 @@ export function menuShift(left: number, right: number, width: number, margin = 8
   return Math.round(dx);
 }
 
+/** The share of the stage's face left on screen below which the pinned
+ * copy shows up. The stage's empty ground and its values bar do not count:
+ * a face scrolled half away is already too little to watch a change on. */
+const MINI_FACE_AT = 0.5;
+
 /** Where the Add sheet opens: hung under its button, or centred in the
  * window when there is not the room for that. */
 export type AddSheetPlace =
@@ -1389,6 +1394,17 @@ export class WristAssistantPanel extends LitElement {
   private touchQuery = typeof window !== "undefined" && typeof window.matchMedia === "function"
     ? window.matchMedia("(hover: none) and (pointer: coarse)") : undefined;
   private touchChanged = () => { this.touch = this.touchQuery?.matches ?? false; };
+  /** Stacked on a phone, the fields you edit sit under the face, and the face
+   * scrolls off the top while you work on them. Once less than half of the
+   * face is left on screen, a small copy of it pins itself under the top
+   * bar, so every change is still seen as it is made. */
+  @state() private miniFace = false;
+  private stageSeen?: Element;
+  private stageObserver = typeof IntersectionObserver === "undefined" ? undefined
+    : new IntersectionObserver((entries) => {
+      const last = entries[entries.length - 1];
+      if (last) this.miniFace = last.intersectionRatio < MINI_FACE_AT;
+    }, { threshold: Array.from({ length: 21 }, (_, i) => i / 20) });
   /** Which of the top bar's and the left column's own menus is open. */
   @state() private sideMenu?: SideMenu;
   /** The Add sheet, and where it opened. Undefined while it is shut. */
@@ -4721,6 +4737,37 @@ export class WristAssistantPanel extends LitElement {
        half the screen and Preview as ran past it with its last tints cut
        off; it scrolls instead. */
     .stage-tools .pop-menu { max-height: calc(100cqh - 64px); overflow-y: auto; overscroll-behavior: contain; }
+    /* The face pinned under the top bar on a phone (renderMiniFace). The dock
+       takes no height of its own; the strip hangs from it over the page. */
+    .mini-dock { position: relative; flex: none; height: 0; z-index: 15; }
+    /* A field scrolled into view, on focus, lands under the strip, not
+       behind it. */
+    .layout.cols-1 { scroll-padding-top: 140px; }
+    .mini-face {
+      position: absolute; top: 0; left: 0; right: 0;
+      display: flex; align-items: center; justify-content: center;
+      padding: 8px 40px 10px; margin: 0; border: 0; border-radius: 0 0 14px 14px;
+      background: color-mix(in srgb, var(--wa-bg) 88%, transparent);
+      -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--wa-line);
+      box-shadow: 0 8px 20px rgba(0,0,0,.12);
+      cursor: pointer; font: inherit; color: inherit;
+      animation: mini-in .16s ease-out;
+    }
+    @keyframes mini-in { from { opacity: 0; transform: translateY(-8px); } }
+    @media (prefers-reduced-motion: reduce) { .mini-face { animation: none; } }
+    .mini-face > .preview { width: auto; pointer-events: none; }
+    .mini-face > .preview > svg {
+      width: min(calc(100vw - 96px), calc(112px * var(--wa-ratio, 1)));
+      max-width: none; box-shadow: 0 0 0 1px rgba(255,255,255,.08), 0 6px 16px rgba(0,0,0,.3);
+    }
+    .mini-face > .preview.circular > svg { border-radius: 50%; }
+    .mini-up {
+      position: absolute; right: 12px; top: 50%; translate: 0 -50%;
+      display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
+      background: var(--wa-card); border: 1px solid var(--wa-line); color: var(--wa-hint);
+    }
+    .mini-up svg { width: 14px; height: 14px; rotate: 180deg; }
     .pop-menu .pop-title { padding: 7px 10px 6px; margin-bottom: 3px; font-size: 12.5px; font-weight: 700; color: var(--wa-ink); border-bottom: 1px solid var(--wa-line); }
     .pop-menu .pop-head { padding: 6px 10px 3px; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--wa-muted); }
     .preview-menu .row[aria-checked="true"] { background: color-mix(in srgb, var(--wa-accent) 18%, transparent); }
@@ -6372,6 +6419,8 @@ export class WristAssistantPanel extends LitElement {
     super.disconnectedCallback();
     this.sizeObserver.disconnect();
     this.fades.disconnect();
+    this.stageObserver?.disconnect();
+    this.stageSeen = undefined;
     window.removeEventListener("keydown", this.keyHandler);
     window.removeEventListener("keyup", this.keyUpHandler);
     window.removeEventListener("blur", this.blurHandler);
@@ -6509,6 +6558,7 @@ export class WristAssistantPanel extends LitElement {
   }
 
   protected override updated(changed: PropertyValues) {    this.keepMenusOnScreen();
+    this.watchStage();
     // Every render can change what is in a scroll box, so the edge fades are
     // re-measured here rather than only on the first one.
     this.fades.refresh([
@@ -10041,7 +10091,7 @@ export class WristAssistantPanel extends LitElement {
         ? html`<div class="layout bare"><div class="column canvas">${this.renderBanners()}${this.renderCanvas()}</div></div>
           ${this.renderFooter()}`
         : this.watchSupported
-        ? html`<div class="layout cols-${fit.columns}"
+        ? html`${fit.columns === 1 ? this.renderMiniFace() : nothing}<div class="layout cols-${fit.columns}"
               style="--wa-left:${fit.left}px;--wa-right:${fit.right}px">
             <div class=${`column left ${this.inControlView ? "control" : ""}`}>${this.inControlView
               ? html`${this.renderControlHasNoLayers()}${this.renderSharedValues(true)}`
@@ -10195,6 +10245,22 @@ export class WristAssistantPanel extends LitElement {
       const dx = menuShift(r.left, r.right, width);
       if (dx !== 0) menu.style.translate = `${dx}px 0`;
     }
+  }
+
+  /** Whether the inspector sits under the stage rather than to its right. */
+  private stackedLayout(): boolean {
+    return this.narrow || columnFit(this.panelWidth, this.colLeft, this.colRight).columns < 3;
+  }
+
+  /** Keep the observer on the face the stacked layout is showing now. A
+   * three-column layout, or no face at all, has no pinned copy. */
+  private watchStage() {
+    const el = this.renderRoot.querySelector(".layout.cols-1 .stage-face > .preview") ?? undefined;
+    if (el === this.stageSeen) return;
+    if (this.stageSeen) this.stageObserver?.unobserve(this.stageSeen);
+    this.stageSeen = el;
+    if (el) this.stageObserver?.observe(el);
+    else this.miniFace = false;
   }
 
   /** Open or shut one of the top bar's and the left column's own menus; opening
@@ -16527,6 +16593,43 @@ export class WristAssistantPanel extends LitElement {
     </div>`;
   }
 
+  /**
+   * The face pinned under the top bar on a phone, once the stage has scrolled
+   * off (see `miniFace`). It sits between the header and the layout, outside
+   * the layout's scroll box, so it stays put while the page moves under it.
+   * It only shows: the selected layer is outlined, and nothing on it drags.
+   * A tap scrolls back up to the full stage, where the editing is.
+   */
+  private renderMiniFace() {
+    const cfg = this.miniFace && !this.inControlView ? this.canvasConfig() : undefined;
+    if (!cfg) return html`<div class="mini-dock"></div>`;
+    const family = this.activeFamily;
+    const layouts = resolveAll(cfg, this.buildContext(), this.forced);
+    const deviceCase = this.currentCase();
+    const shown = this.shownInspect();
+    let face: TemplateResult | typeof nothing = nothing;
+    if (isDrawable(family)) {
+      const layout = layouts[family];
+      if (layout) {
+        face = html`<div class="preview ${family}" style=${`--wa-ratio:${this.faceRatio(family, deviceCase)}`}>
+          ${renderLayout(layout, {
+            icons: this.icons, imageSizes: this.imageSizes, slot: slotFor(deviceCase, family),
+            ...(shown.kind === "layer" ? { highlightId: shown.id } : {}),
+            ...previewTintFor(family, this.previewAsPhone, this.previewTint),
+          })}
+        </div>`;
+      }
+    } else {
+      face = html`<div class="preview inline">${this.renderInlinePreview(layouts.inline, true)}</div>`;
+    }
+    const back = () => this.renderRoot.querySelector(".layout.cols-1")?.scrollTo({ top: 0, behavior: "smooth" });
+    return html`<div class="mini-dock">
+      <button class="mini-face" title="Show the full canvas" aria-label="Show the full canvas" @click=${back}>
+        ${face}<span class="mini-up" aria-hidden="true">${uiIcon("chevron")}</span>
+      </button>
+    </div>`;
+  }
+
   /** The words on an empty face: what the black box is, and that it is
    * empty. Drawn over the face, not into it, and never saved. */
   private renderFirstRunNote(family: FamilyKind) {
@@ -16651,7 +16754,7 @@ export class WristAssistantPanel extends LitElement {
     } else if (this.showTaps) {
       tail = html`Every tap zone is outlined. Where two overlap, the one higher in Layers wins. Anywhere else does <b>${describeTapAction(cfg.tapAction)}</b>.`;
     } else if (family === "inline") {
-      tail = "One line of text. Edit it on the right.";
+      tail = `One line of text. Edit it ${this.stackedLayout() ? "below" : "on the right"}.`;
     } else if (ins.kind === "group") {
       const g = groupById(cfg, ins.id);
       // Inside a locked group, the drag moves that whole locked group.
@@ -17378,7 +17481,7 @@ export class WristAssistantPanel extends LitElement {
             </ol>
             <a href="https://docs.wrist-assistant.com/" target="_blank" rel="noopener">Read the two-minute guide</a>
           </div>`
-        : html`<p class="insp-note">Click a layer ${deviceKindOf(this.selectedOwner) === "iphone" ? "on the preview" : "on the watch"} or in the list to edit it. The shape's own background and border are the Background row at the bottom of the list.</p>`;
+        : html`<p class="insp-note">${this.touch ? "Tap" : "Click"} a layer ${deviceKindOf(this.selectedOwner) === "iphone" ? "on the preview" : "on the watch"} or in the list to edit it. The shape's own background and border are the Background row at the bottom of the list.</p>`;
       return html`
         <div class="insp-head">${this.crumbs(cfg)}</div>
         <div class="insp-body" style=${editable} @change=${() => this.draft?.endGesture()}>
@@ -17496,7 +17599,7 @@ export class WristAssistantPanel extends LitElement {
               ${common.color === undefined ? html`<div class="hint keep">These layers are different colors. Pick one to give them all the same.</div>` : nothing}`
             : html`<div class="hint keep">No shared color: a picture and a tap zone have none.</div>`}
           <div class="hint">These layers are on the ${familyTitle(family)} shape and on no other, so nothing here reaches another shape.</div>
-          <div class="hint">Size, content and states belong to one layer at a time. Click a layer on its own to reach them.</div>`,
+          <div class="hint">Size, content and states belong to one layer at a time. ${this.touch ? "Tap" : "Click"} a layer on its own to reach them.</div>`,
         { color: SECTION_COLOR.place, icon: "place", summary: "The settings every picked layer has", alwaysOpen: true })}`;
   }
 
