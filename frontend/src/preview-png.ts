@@ -12,7 +12,8 @@
 // Assistant with an access token in its address. Drawing it would put a
 // private photo into a public preview, and the canvas would refuse to export
 // it anyway, since the image comes from another origin. The copied states
-// carry no picture address, so the renderer falls back to the stand-in.
+// carry no picture address, so the renderer falls back to the stand-in. A
+// timestamp on a picture still draws, reading the time of the upload.
 
 import { html, render, svg, type TemplateResult } from "lit";
 import {
@@ -24,7 +25,6 @@ import {
   chartHistoryKey,
   chartStatisticsKey,
   forEachValue,
-  imageTimestampLayersOf,
   inlineRuns,
   timelineHistoryKey,
 } from "./model.js";
@@ -49,21 +49,6 @@ export interface PreviewSource {
    * key. Absent draws those lists empty, which is what a document whose items
    * have not arrived yet draws anyway. */
   listItems?: ReadonlyMap<string, string>;
-}
-
-/** The scrubbed document ready for a public picture: picture layers stay, to
- * be drawn as stand-ins, but the timestamps on them go, since a stand-in has
- * no time to show. A timestamp is an old `imageTime` layer, or a text reading
- * a picture's time with the capsule grouped behind it. */
-export function withPicturePlaceholders(cfg: CustomComplicationConfig): CustomComplicationConfig {
-  const next = structuredClone(cfg);
-  const gone = new Set<string>();
-  for (const el of next.elements) {
-    if (el.kind === "imageTime") gone.add(el.payload.id);
-    if (el.kind === "image") for (const t of imageTimestampLayersOf(next, el.payload.id)) gone.add(t.payload.id);
-  }
-  next.elements = next.elements.filter((el) => !gone.has(el.payload.id));
-  return next;
 }
 
 /**
@@ -138,7 +123,9 @@ export function galleryPreviewContext(
     }
   }
 
-  return { entityStates, templateResults, historySeries, listItems, namedValues: scrubbed.values };
+  // Picture layers draw as stand-ins, so their timestamps read the clock as
+  // though just fetched, and the picture shows them the way the watch does.
+  return { entityStates, templateResults, historySeries, listItems, namedValues: scrubbed.values, pictureStandIns: true };
 }
 
 /**
@@ -188,8 +175,7 @@ export function galleryPreviewPlan(
 ): GalleryPreviewPlan {
   const scrubbed = scrubForShare(cfg, slots);
   const ctx = galleryPreviewContext(cfg, scrubbed, slots, source);
-  const drawn = withPicturePlaceholders(scrubbed);
-  const layouts = resolveAll(drawn, ctx);
+  const layouts = resolveAll(scrubbed, ctx);
   const family = DRAWABLE_FAMILIES.find((f) => layouts[f]);
   if (family === undefined) return layouts.inline ? { kind: "inline", inline: layouts.inline } : { kind: "none" };
   const count = scrubbed.pages?.count ?? 1;
@@ -198,7 +184,7 @@ export function galleryPreviewPlan(
   // each drawn from only the layers that page shows.
   const pages: { page: number; layout: ResolvedLayout }[] = [];
   for (let page = 1; page <= count; page += 1) {
-    const layout = resolveAll(drawn, { ...ctx, page })[family];
+    const layout = resolveAll(scrubbed, { ...ctx, page })[family];
     if (layout) pages.push({ page, layout });
   }
   return { kind: "canvas", family, pages };

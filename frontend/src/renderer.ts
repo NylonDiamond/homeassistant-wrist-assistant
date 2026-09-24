@@ -2373,7 +2373,7 @@ function renderImageTime(el: Extract<ResolvedElement, { kind: "imageTime" }>, bo
   if (size <= 0) return nothing;
   const w = label.length * size * 0.578 + size * 0.89;
   const h = size * 1.25;
-  return renderTimestampChip({ x: box.cx - w / 2, y: box.cy - h / 2, w, h, size, label }, el.url === undefined ? 0.5 : 1);
+  return renderTimestampChip({ x: box.cx - w / 2, y: box.cy - h / 2, w, h, size, label }, el.url === undefined && el.standIn !== true ? 0.5 : 1);
 }
 
 /** Tap area, editor only: a faint dashed box with a small hand glyph so the

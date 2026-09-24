@@ -195,6 +195,11 @@ export interface ResolveContext {
    * `elements(for:page:)` does on the watch. Inline has no pages and is fed
    * every layer whatever this says. See `PagesSpec` in model.ts. */
   page?: number;
+  /** Gallery picture only, never the watch: every picture layer draws as a
+   * stand-in with no address, so a timestamp on one reads this context's
+   * clock as though the picture had just been fetched. Without it the
+   * timestamp would print nothing and the preview would lose it. */
+  pictureStandIns?: boolean;
 }
 
 export interface ResolvedBase {
@@ -557,6 +562,9 @@ export interface ResolvedImageTime extends ResolvedBase {
   linked: boolean;
   /** The linked picture's preview URL. Absent while it has none. */
   url?: string;
+  /** Drawn for a gallery picture, where the picture is a stand-in: the chip
+   * shows as fetched though there is no URL. */
+  standIn?: boolean;
 }
 
 /** A chart's reading dots as a layer of their own. `frame` is the chart's own
@@ -1926,8 +1934,8 @@ export class Resolver {
         // capsule behind it still shows, so the timestamp stays visible to
         // edit. Empty, not undefined, so it is never "--".
         const image = this.imageElements.get(deref.kind.layer.toUpperCase());
-        if (image === undefined || image.source === "inline"
-          || this.ctx.entityStates.get(image.entity.entityId)?.entityPicture === undefined) return "";
+        if (image === undefined || image.source === "inline") return "";
+        if (!this.ctx.pictureStandIns && this.ctx.entityStates.get(image.entity.entityId)?.entityPicture === undefined) return "";
         raw = String(Math.floor(this.nowMs() / 1000));
         break;
       }
@@ -2563,6 +2571,7 @@ export class Resolver {
         };
         const url = image === undefined ? undefined : this.ctx.entityStates.get(image.entity.entityId)?.entityPicture;
         if (url !== undefined) out.url = url;
+        if (this.ctx.pictureStandIns) out.standIn = true;
         return out;
       }
       // Both settle against their chart in `settleChartDots`, once every layer

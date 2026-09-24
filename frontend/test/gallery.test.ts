@@ -42,7 +42,7 @@ import {
   submitToGallery,
   unquotedEntityIds,
 } from "../src/gallery.js";
-import { galleryPreviewContext, galleryPreviewPlan, inlineLineSvg, inlineRunsShown, withPicturePlaceholders } from "../src/preview-png.js";
+import { galleryPreviewContext, galleryPreviewPlan, inlineLineSvg, inlineRunsShown } from "../src/preview-png.js";
 import { inlineSymbolMarker } from "../src/model.js";
 import type { IconProvider } from "../src/renderer.js";
 import { svg as litSvg, type TemplateResult } from "lit";
@@ -768,13 +768,31 @@ describe("preview context", () => {
     expect(ctx.listItems?.get(newListKey)).toBe(rows);
   });
 
-  it("keeps picture layers as stand-ins and leaves their timestamps out", () => {
+  // The picture is a stand-in with no address, so a timestamp on it used to
+  // print nothing, and was taken out. It stays and reads the upload's time.
+  it("draws a picture's timestamp on the stand-in, capsule and time both", () => {
+    const noLiveData = { entityState: () => undefined, templateResults: new Map(), historySeries: new Map() };
+    const cfg = fixtureConfig("image_time_value.json");
+    const plan = galleryPreviewPlan(cfg, shareSlots(cfg, domainsOf(cfg)), noLiveData);
+    if (plan.kind !== "canvas") throw new Error(`expected a canvas plan, got ${plan.kind}`);
+    const els = plan.pages[0]!.layout.elements;
+    expect(els.some((r) => r.kind === "image")).toBe(true);
+    const time = cfg.elements.find((el) => el.kind === "text" && el.payload.value.kind.kind === "imageTime")!;
+    const drawn = els.find((r) => r.id === time.payload.id);
+    expect(drawn?.kind).toBe("text");
+    expect(drawn?.kind === "text" ? drawn.text : "").toMatch(/\d:\d\d/);
+    const capsule = cfg.elements.find((el) => el.kind === "shape" && el.payload.groupId === time.payload.groupId)!;
+    expect(els.some((r) => r.id === capsule.payload.id)).toBe(true);
+  });
+
+  it("draws an old timestamp layer on the stand-in at full strength", () => {
+    const noLiveData = { entityState: () => undefined, templateResults: new Map(), historySeries: new Map() };
     const cfg = fixtureConfig("image_time_layer.json");
-    expect(cfg.elements.some((el) => el.kind === "imageTime")).toBe(true);
-    const out = withPicturePlaceholders(cfg);
-    expect(out.elements.some((el) => el.kind === "image")).toBe(true);
-    expect(out.elements.some((el) => el.kind === "imageTime")).toBe(false);
-    expect(cfg.elements.some((el) => el.kind === "imageTime")).toBe(true);
+    const plan = galleryPreviewPlan(cfg, shareSlots(cfg, domainsOf(cfg)), noLiveData);
+    if (plan.kind !== "canvas") throw new Error(`expected a canvas plan, got ${plan.kind}`);
+    const chip = plan.pages[0]!.layout.elements.find((r) => r.kind === "imageTime");
+    expect(chip).toBeDefined();
+    expect(chip?.kind === "imageTime" && chip.standIn).toBe(true);
   });
 
   describe("the pictures of a paged design", () => {
