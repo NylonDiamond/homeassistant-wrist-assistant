@@ -717,6 +717,26 @@ def test_watch_status_on_a_watch_owner_reports_no_push(env) -> None:
     assert status["last_push_seconds"] is None
 
 
+def test_pending_changes_counts_designs_since_the_ack(env) -> None:
+    """The chip's "2 changes waiting": null before any ack, since there is no
+    token to count from, then the records newer than the applied token."""
+    env.add_watch("watch-A", device_name="Apple Watch")
+    env.save_document("watch-A")
+    assert env.call(env.ws.ws_watch_status, owner_watch_id="watch-A")["pending_changes"] is None
+
+    env.store.set_applied_token("watch-A", env.store.owner_token("watch-A"))
+    env.save_document("watch-A")
+    env.save_document("watch-A")
+    assert env.call(env.ws.ws_watch_status, owner_watch_id="watch-A")["pending_changes"] == 2
+    assert env.call(env.ws.ws_nudge, owner_watch_id="watch-A")["pending_changes"] == 2
+    # Called directly, so the schema default for include_deleted is not applied.
+    listed = env.call(env.ws.ws_list, owner_watch_id="watch-A", include_deleted=False)
+    assert listed["pending_changes"] == 2
+
+    env.store.set_applied_token("watch-A", env.store.owner_token("watch-A"))
+    assert env.call(env.ws.ws_watch_status, owner_watch_id="watch-A")["pending_changes"] == 0
+
+
 # ── nudge ────────────────────────────────────────────────────────────────
 
 
@@ -738,6 +758,7 @@ def test_nudge_on_an_owner_with_no_parked_poll_is_answered_not_refused(env) -> N
         "last_poll_seconds": None,
         "token": 1,
         "applied_token": 1,
+        "pending_changes": 0,
         "pushed": False,
         "push_available": False,
     }

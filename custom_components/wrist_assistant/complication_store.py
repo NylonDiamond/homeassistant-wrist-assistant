@@ -1451,6 +1451,19 @@ class ComplicationStore:
         """
         return self._applied.get(owner_watch_id)
 
+    def pending_changes(self, owner_watch_id: str) -> int | None:
+        """How many designs changed here since the token the device applied.
+
+        Each changed design counts once, however many times it was saved, and
+        a deletion counts too: it is the number of records the device's next
+        pull will bring. ``None`` when the device has never acked, because
+        then there is no applied token to count from.
+        """
+        applied = self.applied_token(owner_watch_id)
+        if applied is None:
+            return None
+        return len(self.changes_since(owner_watch_id, applied))
+
     def set_applied_token(self, owner_watch_id: str, token: int) -> bool:
         """Record the watch's ack. Returns whether it changed.
 

@@ -62,6 +62,18 @@ describe("sendState", () => {
     expect(sendState({ ...away, polling: true }).kind).toBe("waiting");
     expect(sendState({ ...away, polling: true, pending: true }).kind).toBe("sending");
   });
+
+  it("counts the changes waiting for a watch that is not listening", () => {
+    const away = { token: 6, appliedToken: 4, polling: false, pending: false };
+    const two = sendState({ ...away, pendingChanges: 2 });
+    expect(two).toEqual({ kind: "offline", pending: 2 });
+    expect(describeSend(two).label).toBe("2 changes waiting");
+    expect(describeSend(two).note).toBe("open the watch app to sync");
+    expect(describeSend(sendState({ ...away, pendingChanges: 1 })).label).toBe("1 change waiting");
+    // Zero or unknown falls back to the plain sentence rather than "0 changes".
+    expect(describeSend(sendState({ ...away, pendingChanges: 0 })).label).toBe("Open the watch app to sync");
+    expect(describeSend(sendState(away)).label).toBe("Open the watch app to sync");
+  });
 });
 
 // An iPhone the server holds no push token for has no long poll and no push,

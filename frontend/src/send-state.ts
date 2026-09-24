@@ -50,6 +50,9 @@ export interface SendInputs {
    * it. Absent means no, which is what every integration older than the field
    * says by staying silent, and what a watch owner always is. */
   pushAvailable?: boolean;
+  /** How many designs the device's next pull will bring, when the server
+   * says. Undefined before the first ack and from older integrations. */
+  pendingChanges?: number;
 }
 
 export type SendState =
@@ -72,7 +75,8 @@ export type SendState =
   | { kind: "openApp" }
   /** The home's Library, which is not waiting for anything. */
   | { kind: "library" }
-  | { kind: "offline" };
+  /** `pending` is how many designs are waiting for the watch, when known. */
+  | { kind: "offline"; pending?: number };
 
 /** How long a save or a tap waits for the watch's ack before giving up. */
 export const SEND_WAIT_MS = 10_000;
@@ -100,7 +104,9 @@ export function sendState(i: SendInputs): SendState {
   }
   if (i.pending && i.polling) return { kind: "sending" };
   if (i.polling) return { kind: "waiting" };
-  return { kind: "offline" };
+  return typeof i.pendingChanges === "number" && i.pendingChanges > 0
+    ? { kind: "offline", pending: i.pendingChanges }
+    : { kind: "offline" };
 }
 
 /**
@@ -249,6 +255,16 @@ export function describeSend(
         refresh: false,
       };
     case "offline":
+      if (s.pending !== undefined) {
+        return {
+          label: `${s.pending} ${s.pending === 1 ? "change" : "changes"} waiting`,
+          note: "open the watch app to sync",
+          title:
+            "Saved here, not on the watch yet. Saves reach the watch by themselves while Wrist Assistant is open on this home. Open the app, or switch the watch to this home, and it pulls at once.",
+          resend: true,
+          refresh: false,
+        };
+      }
       return {
         label: "Open the watch app to sync",
         title:

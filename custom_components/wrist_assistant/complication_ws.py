@@ -623,6 +623,9 @@ def ws_list(
             # green); a lower number means not yet; null means this watch has
             # never acked at all, so there is nothing here to wake.
             "applied_token": store.applied_token(owner),
+            # How many designs its next pull will bring; null before its
+            # first ack. The chip says "2 changes waiting" with it.
+            "pending_changes": store.pending_changes(owner),
             # Whether this watch holds a long-poll on this server right now,
             # which is the only way a save can reach it without the user
             # tapping Sync now on the watch.
@@ -961,6 +964,7 @@ def ws_watch_status(
             "last_sync_seconds": store.seconds_since_sync(owner),
             "token": store.owner_token(owner),
             "applied_token": store.applied_token(owner),
+            "pending_changes": store.pending_changes(owner),
             # Whether a save to this owner can reach a phone at all: an iPhone
             # owner this server holds an APNs token for. False for every watch,
             # and false for a phone that has never registered one, which is
@@ -1022,6 +1026,7 @@ def ws_nudge(
             "last_poll_seconds": _seconds_since_poll(hass, coordinator, owner),
             "token": domain_data.complication_store.owner_token(owner),
             "applied_token": domain_data.complication_store.applied_token(owner),
+            "pending_changes": domain_data.complication_store.pending_changes(owner),
             "pushed": push.push_now(owner, "refresh") if push_available else False,
             "push_available": push_available,
         },

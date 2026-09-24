@@ -187,6 +187,10 @@ export async function fetchList(hass: HassLike, owner: string) {
      * everything here is on the wrist. Null when the watch has never acked at
      * all, which is not the same as 0: nothing saved here reaches it. */
     applied_token?: number | null;
+    /** How many designs the device's next pull will bring (each changed or
+     * deleted design once). Null before its first ack, absent from
+     * integrations older than the field. */
+    pending_changes?: number | null;
     /** Whether the watch holds a long-poll on this server right now. */
     polling?: boolean;
     /** Seconds since the watch last polled. Null when it has not polled since
@@ -224,6 +228,8 @@ export async function nudgeWatch(hass: HassLike, owner: string) {
     token: number;
     /** Null when the watch has never acked; see `fetchList`. */
     applied_token: number | null;
+    /** See `fetchList`. */
+    pending_changes?: number | null;
   }>({ type: `${D}/nudge`, owner_watch_id: owner });
 }
 
@@ -250,6 +256,8 @@ export async function fetchWatchStatus(hass: HassLike, owner: string) {
     token: number;
     /** Null when the watch has never acked; see `fetchList`. */
     applied_token: number | null;
+    /** See `fetchList`. */
+    pending_changes?: number | null;
   }>({ type: `${D}/watch_status`, owner_watch_id: owner });
 }
 

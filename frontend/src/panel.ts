@@ -1215,6 +1215,9 @@ export class WristAssistantPanel extends LitElement {
    * the watch app" branch reports; null on the wire means the same thing. */
   @state() private serverToken = 0;
   @state() private appliedToken?: number;
+  /** How many designs the selected device's next pull brings, for the chip's
+   * "2 changes waiting". Undefined when the server does not say. */
+  @state() private pendingChanges?: number;
   /** Whether a list or status reply has landed for the selected watch. The
    * chip claims nothing before one does: "Update the watch app" next to a
    * watch nobody has asked about yet is a guess, not a fact. */
@@ -6740,6 +6743,7 @@ export class WristAssistantPanel extends LitElement {
     // previous watch's status must not be shown beside it in the meantime.
     this.sendStatusKnown = false;
     this.lastSyncSeconds = undefined;
+    this.pendingChanges = undefined;
     this.pushAvailable = false;
     this.lastPushSeconds = null;
     // Default the preview to this device's own case when the app reported one.
@@ -6813,6 +6817,7 @@ export class WristAssistantPanel extends LitElement {
       this.pages = reply.pages ?? [];
       this.serverToken = reply.token;
       this.appliedToken = reply.applied_token ?? undefined;
+      this.pendingChanges = typeof reply.pending_changes === "number" ? reply.pending_changes : undefined;
       this.sendStatusKnown = true;
       this.polling = reply.polling ?? false;
       this.lastPollSeconds = typeof reply.last_poll_seconds === "number" ? reply.last_poll_seconds : undefined;
@@ -7244,6 +7249,7 @@ export class WristAssistantPanel extends LitElement {
       this.lastPushSeconds = typeof reply.last_push_seconds === "number" ? reply.last_push_seconds : null;
       this.serverToken = reply.token;
       this.appliedToken = reply.applied_token ?? undefined;
+      this.pendingChanges = typeof reply.pending_changes === "number" ? reply.pending_changes : undefined;
       this.sendStatusKnown = true;
     } catch {
       // A dropped socket or an integration without the command: the chip keeps
@@ -7293,6 +7299,7 @@ export class WristAssistantPanel extends LitElement {
       if (typeof reply.push_available === "boolean") this.pushAvailable = reply.push_available;
       this.serverToken = reply.token;
       this.appliedToken = reply.applied_token ?? undefined;
+      this.pendingChanges = typeof reply.pending_changes === "number" ? reply.pending_changes : undefined;
       this.sendStatusKnown = true;
       // A push that went out is worth waiting on whatever the tokens say: a
       // phone that has never acked is reachable, unlike a watch that has not.
@@ -9163,7 +9170,8 @@ export class WristAssistantPanel extends LitElement {
       ["On watch", "The watch has applied every change. With last seen beside it, the watch is not listening now, so a later save waits until the app is open again."],
       ["Sending…", "Waiting for the watch to pull and confirm."],
       ["Not on watch yet", "The watch is connected but has not confirmed the latest change. Resend, in the top bar's ··· menu, wakes it again."],
-      ["Open the watch app to sync", "The watch is not listening. Open Wrist Assistant on the watch, or switch it to this home, and it pulls at once. Resend, in the ··· menu, tries to wake it."],
+      ["2 changes waiting", "Saved here, not on the watch yet, and the watch is not listening. The number is how many complications changed. Open Wrist Assistant on the watch, or switch it to this home, and it pulls at once. Resend, in the ··· menu, tries to wake it."],
+      ["Open the watch app to sync", "The same, when the number is not known."],
       ["Update the watch app", "This watch has never reported a change. Its app is older than custom complications, or it has not opened this home yet."],
     ];
     const sharing: [string, string][] = [
@@ -9933,6 +9941,7 @@ export class WristAssistantPanel extends LitElement {
       deviceKind: this.selectedOwner?.device_kind,
       lastSyncSeconds: this.lastSyncSeconds,
       pushAvailable: this.pushAvailable,
+      pendingChanges: this.pendingChanges,
     });
     // Before the first reply nothing is known about this device, and the pill
     // would otherwise report the never-acked state as if it were an answer.
