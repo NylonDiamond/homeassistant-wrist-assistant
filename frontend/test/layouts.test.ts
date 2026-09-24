@@ -1,7 +1,7 @@
 // Adding and removing shapes, as pure functions over the config.
 
 import { describe, expect, it } from "vitest";
-import { type FamilyKind, type Value, cornerMode, encodeConfig, literal, setCornerMode, legacyConfig, newConfig, newElement, newRule, parseConfig, schemaVersionFor } from "../src/model.js";
+import { type FamilyKind, type Value, cornerContentSummary, cornerHasContent, cornerMode, encodeConfig, literal, setCornerMode, legacyConfig, newConfig, newElement, newRule, parseConfig, schemaVersionFor } from "../src/model.js";
 import {
   ALL_FAMILIES,
   XLARGE_OFFERED,
@@ -165,6 +165,22 @@ describe("newConfig", () => {
     setCornerMode(corner, "curved");
     expect(corner.curvedText).toEqual(literal("Mine"));
     expect(cornerMode(undefined)).toBe("canvas");
+  });
+
+  it("says what a corner draws besides layers, and counts it as content", () => {
+    const corner = newConfig("X", 0, "corner").perFamily.corner!;
+    expect(cornerHasContent(corner)).toBe(true);
+    expect(cornerContentSummary(corner)).toBe("Curved text · gauge arc");
+    setCornerMode(corner, "canvas");
+    expect(cornerContentSummary(corner)).toBe("Layers · gauge arc");
+    expect(cornerHasContent(corner)).toBe(true);
+    delete corner.bezelGauge;
+    corner.bezelText = literal("Hi");
+    expect(cornerContentSummary(corner)).toBe("Layers · text label");
+    delete corner.bezelText;
+    expect(cornerContentSummary(corner)).toBe("Layers · no bezel");
+    expect(cornerHasContent(corner)).toBe(false);
+    expect(cornerHasContent(undefined)).toBe(false);
   });
 
   it("leaves the other shapes' layouts empty", () => {

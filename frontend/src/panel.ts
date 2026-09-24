@@ -54,6 +54,8 @@ import {
   MAX_SLOTS,
   literal,
   cornerMode,
+  cornerContentSummary,
+  cornerHasContent,
   setCornerMode,
   type CornerMode,
   attachedTapsOf,
@@ -8896,6 +8898,24 @@ export class WristAssistantPanel extends LitElement {
     </div>`;
   }
 
+  /** Which fixed row at the foot of the Layers list the shape was picked
+   * from. Both open the shape's inspector, so this is only what lights. */
+  @state() private pinnedPick: "ground" | "corner" = "ground";
+
+  /** The shape selected from its Corner content row: the Corner content card
+   * open, lit and scrolled to. */
+  private openCornerContent() {
+    this.multi = new Set();
+    if (this.tapFocus && this.inspect.kind === "family") this.leaveTapFocus();
+    this.inspect = { kind: "family" };
+    this.pinnedPick = "corner";
+    if (!this.openSections.has("corner")) this.openSections = new Set([...this.openSections, "corner"]);
+    this.lightSection("corner");
+    void this.updateComplete.then(() => {
+      this.renderRoot.querySelector(".sec.lit")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
+  }
+
   /**
    * A corner's one big choice, in its own row right over the face: big curved
    * text or layers. The watch draws one or the other, so it is a switch over
@@ -8909,13 +8929,8 @@ export class WristAssistantPanel extends LitElement {
     const pick = (next: CornerMode) => {
       if (next === mode) return;
       this.mutate((c) => { const l = c.perFamily.corner; if (l) setCornerMode(l, next); });
-      if (next === "curved") {
-        // Land where the text is typed.
-        this.multi = new Set();
-        this.inspect = { kind: "family" };
-        if (!this.openSections.has("corner")) this.openSections = new Set([...this.openSections, "corner"]);
-        this.lightSection("corner");
-      }
+      // Land where the text is typed.
+      if (next === "curved") this.openCornerContent();
     };
     const button = (value: CornerMode, word: string, sub: string, title: string) => html`<button type="button" class=${mode === value ? "on" : ""}
       role="radio" aria-checked=${mode === value ? "true" : "false"} ?disabled=${off || !this.canEdit}
@@ -9475,7 +9490,7 @@ export class WristAssistantPanel extends LitElement {
       ["Shapes", "Rectangular, Circular, Corner and Inline are the kinds of slot on a watch face. The watch offers a complication only in slots whose shape it has."],
       ["The bar over the face", "It names the shape this complication is. Beside it: which watch case the preview is drawn at, and which tint."],
       ["Canvas shapes", "Rectangular, Circular and Corner each hold their own layers. A layer belongs to one shape, so editing it never changes another. An empty shape can take a copy of another shape's layers."],
-      ["Corner", "Its Corner content card picks big curved text or a canvas of layers."],
+      ["Corner", "The switch over its face picks curved text or layers. Its Corner content row, above Background, holds the curved text and the bezel."],
       ["Inline", "One line built from parts: words, live values and icons. Its one layer is that line."],
       ["Home Screen", "On an iPhone only: Small, Medium, Large and Extra Large are the Home Screen tile sizes. Each is a canvas shape with its own layers, drawn edge to edge in the tile."],
       ["Small · Medium · Large", "A square, a wide band about twice as wide as it is tall, and a tall tile a little taller than it is wide. Add the ones you want; a size the complication does not have is not offered when you add a widget."],
@@ -16245,7 +16260,7 @@ export class WristAssistantPanel extends LitElement {
           : nothing}
       ${curved
         ? html`<div class="hint">Curved text is on, so the watch draws no layers. Pick <b>Layers</b> above the preview to use them.</div>`
-        : shapeRows.length === 0 ? html`<div class="empty lc-empty">Nothing here yet.<br>Layers you add show in this list, top first.</div>` : nothing}
+        : shapeRows.length === 0 && family !== "corner" ? html`<div class="empty lc-empty">Nothing here yet.<br>Layers you add show in this list, top first.</div>` : nothing}
       ${!all && body.length === 0 && shapeRows.length > 0 && paged
         // The shape has layers, they are all on other pages. The empty line
         // above is for a shape with nothing at all and would be a lie here.
@@ -16255,11 +16270,23 @@ export class WristAssistantPanel extends LitElement {
       ${body}
       </div>
       <div class="pinned-set" @pointerleave=${(e: PointerEvent) => this.leaveList(e)}>
-      <div class="layer pinned ground with-tap ${shapeHl && tapShown(GROUND_TAP) ? "tapsel" : ""} ${shapeHl ? "hl" : ""}" style=${`--k:${SECTION_COLOR.place}`} tabindex="0"
+      ${family === "corner" ? html`<div class="layer pinned ${shapeHl && this.pinnedPick === "corner" ? "hl" : ""}" style=${`--k:${SECTION_COLOR.content}`} tabindex="0"
+        title="The corner's curved text and its bezel. Always here. Click to edit them."
+        @click=${() => this.openCornerContent()}
+        @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.openCornerContent(); }}>
+        <span class="grip">${uiIcon("content")}</span>
+        <span class="thumb blank"></span>
+        <span class="name">
+          <b>Corner content</b>
+          <small>${cornerContentSummary(cfg.perFamily.corner)}</small>
+        </span>
+        <span class="right"><span class="ground-cap">always here</span></span>
+      </div>` : nothing}
+      <div class="layer pinned ground with-tap ${shapeHl && tapShown(GROUND_TAP) ? "tapsel" : ""} ${shapeHl && (family !== "corner" || this.pinnedPick === "ground") ? "hl" : ""}" style=${`--k:${SECTION_COLOR.place}`} tabindex="0"
         title="The shape's background and border, and what a tap anywhere else does. Always the bottom layer. Click to edit it."
         @pointerenter=${() => this.enterRow([], { kind: "family" })}
-        @click=${() => { this.multi = new Set(); if (this.tapFocus && this.inspect.kind === "family") this.leaveTapFocus(); this.inspect = ground.inspect; }}
-        @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = ground.inspect; }}
+        @click=${() => { this.multi = new Set(); this.pinnedPick = "ground"; if (this.tapFocus && this.inspect.kind === "family") this.leaveTapFocus(); this.inspect = ground.inspect; }}
+        @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") { this.pinnedPick = "ground"; this.inspect = ground.inspect; } }}
         @dragover=${(e: DragEvent) => { if (!this.dragId) return; e.preventDefault(); this.markDrop(e.currentTarget as HTMLElement, "drop-before"); }}
         @drop=${(e: DragEvent) => {
           e.preventDefault();
@@ -16528,10 +16555,10 @@ export class WristAssistantPanel extends LitElement {
     const drawable = isDrawable(family);
     const designing = this.rowEditList() !== undefined;
     // An empty complication shows what it is and four ways to start, until
-    // its first layer exists. A corner drawing big curved text is not empty,
-    // and it ignores the layer canvas, so it gets neither.
-    const curved = family === "corner" && cfg.perFamily.corner?.curvedText !== undefined;
-    const firstRun = drawable && !designing && !curved && cfg.elements.length === 0;
+    // its first layer exists. A corner drawing curved text or a bezel is not
+    // empty, so it gets neither.
+    const cornerFilled = family === "corner" && cornerHasContent(cfg.perFamily.corner);
+    const firstRun = drawable && !designing && !cornerFilled && cfg.elements.length === 0;
     const tiles = firstRun && this.canEdit;
     // A corner's biggest choice sits right over its face, in a row of its own.
     const modeRow = family === "corner" && !designing;
