@@ -4774,6 +4774,20 @@ export class WristAssistantPanel extends LitElement {
       width: calc(max(120px, min(100cqw - 48px, (100cqh - var(--wa-reserve, 124px)) * var(--wa-ratio, 1))) * var(--wa-zoom, 1));
       max-width: none;
     }
+    /* What is selected, named just over the face's top left corner, the way a
+       drawing app names a frame. Left, not centred, so it stays clear of the
+       floating toolbar when the face reaches the top of the stage. */
+    .face-label {
+      position: absolute; left: 0; bottom: calc(100% + 5px); max-width: 100%; z-index: 2;
+      display: flex; align-items: center; gap: 5px; font-size: 11px; line-height: 14px;
+      color: var(--wa-hint); white-space: nowrap; overflow: hidden; pointer-events: none;
+    }
+    .face-label .fl-kind { flex: none; color: var(--k, var(--wa-hint)); font-size: 9.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+    .face-label .fl-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--wa-ink); font-weight: 500; }
+    .face-label .fl-group { min-width: 0; flex: 0 1 auto; display: inline-flex; align-items: center; gap: 3px; overflow: hidden; text-overflow: ellipsis; }
+    .face-label .fl-sep { flex: none; opacity: .6; }
+    .face-label .fl-lock { display: inline-flex; flex: none; font-size: 10px; }
+    .face-label .fl-lock svg { width: 10px; height: 10px; }
     .stage-face > .under { max-width: 460px; font-size: 11px; font-weight: 400; color: var(--wa-hint); }
     .stage-page { position: absolute; top: 25px; left: 16px; z-index: 3; font-size: 11px; color: var(--wa-hint); pointer-events: none; }
     .stage-tools {
@@ -9703,6 +9717,16 @@ export class WristAssistantPanel extends LitElement {
     this.inspect = { kind: "layer", id: first ? first.payload.id : hit.payload.id };
   }
 
+  /** A press on the bare stage around the face clears the selection and the
+   * pick, the way a click on empty canvas does in a drawing app. A press on
+   * the face, a button or the hint is not on the bare stage. */
+  private onStagePointerDown(e: PointerEvent) {
+    const target = e.target as Element | null;
+    if (!target?.matches?.(".stage, .stage-face, .preview")) return;
+    if (this.multi.size > 0) this.multi = new Set();
+    if (this.inspect.kind === "layer" || this.inspect.kind === "group") this.inspect = { kind: "general" };
+  }
+
   private onPreviewPointerDown(family: FamilyKind, e: PointerEvent) {    // A press on the face calls preventDefault to start a drag, which also
     // stops the browser moving focus. A control used just before (the grid
     // size menu, a number box) then kept it and went on taking the arrow keys
@@ -9714,7 +9738,7 @@ export class WristAssistantPanel extends LitElement {
     // Null, never undefined, off a handle: the checks below test `!== null`, and
     // an undefined handle sent a plain drag on an icon down the corner path,
     // which threw on the first move.
-    const handle = (target.closest("[data-handle]")?.getAttribute("data-handle") ?? null) as HandleCorner | null;
+    const handle = (target.closest("[data-handle]")?.getAttribute("data-handle") ?? null) as ResizeHandle | null;
     const hitId = target.closest("[data-element-id]")?.getAttribute("data-element-id") ?? undefined;
     // What the press landed on, for the double click that may follow it. A
     // drag captures the pointer on the face's own svg, and a click that comes
@@ -9905,7 +9929,8 @@ export class WristAssistantPanel extends LitElement {
     // An icon draws at its own size, centred, so its corners change that size.
     // Both sides grow at once, hence half the side: the corner then stays under
     // the pointer.
-    if (handle !== null && drawn?.kind === "icon") {
+    // An icon has no side handles (see `resizeEdges`).
+    if (handle !== null && isCorner(handle) && drawn?.kind === "icon") {
       const half = iconDrawnSide(drawn) / 2;
       const startSize = drawn.size;
       const cancelScale = beginScaleDrag(svg, e, handle, { w: half, h: half }, (factor, done) => {
@@ -10244,7 +10269,7 @@ export class WristAssistantPanel extends LitElement {
    * attached tap turns the frame into points past its layer's edges, which then
    * apply in every shape; a free-standing tap is simply placed, as any layer is.
    */
-  private beginTapBoxGesture(family: DrawableFamily, e: PointerEvent, svg: SVGSVGElement, tapId: string, handle?: HandleCorner) {
+  private beginTapBoxGesture(family: DrawableFamily, e: PointerEvent, svg: SVGSVGElement, tapId: string, handle?: ResizeHandle) {
     const cfg = this.draft?.config;
     const tap = cfg?.elements.find((x) => x.payload.id === tapId);
     if (!cfg || !tap) return;
@@ -16620,7 +16645,7 @@ export class WristAssistantPanel extends LitElement {
             style=${`--wa-ratio:${ratio};--wa-reserve:${reserve}px;--wa-zoom:${this.canvasZoom}`}>
             ${this.renderStageTools(family, deviceCase)}
             ${paged ? html`<span class="stage-page">Page ${this.shownPage()} of ${pagesSpecOf(cfg).count}</span>` : nothing}
-            <div class="stage">
+            <div class="stage" @pointerdown=${(e: PointerEvent) => this.onStagePointerDown(e)}>
               ${this.renderRowStrip()}
               <div class="stage-face">
                 ${modeRow ? this.renderCornerModeSwitch() : nothing}
@@ -16837,7 +16862,7 @@ export class WristAssistantPanel extends LitElement {
     const groupBox = cfg && this.canEdit && !review && peek === undefined && shown.kind === "group"
       && ins.kind === "group" && ins.id === shown.id ? this.groupBoxFor(cfg, family, shown.id) : undefined;
     const opts = {
-      icons: this.icons, imageSizes: this.imageSizes, tapAreas: true, slot,
+      icons: this.icons, imageSizes: this.imageSizes, tapAreas: true, quietTaps: true, slot,
       ...(groupBox ? { groupBox } : {}),
       highlightId: focus ?? peek ?? highlightId,
       ...(outlineIds.length > 0 && !review && peek === undefined ? { highlightIds: outlineIds } : {}),
@@ -16866,8 +16891,37 @@ export class WristAssistantPanel extends LitElement {
     return html`<div class="preview ${family} active"
       @pointerdown=${(e: PointerEvent) => this.onPreviewPointerDown(family, e)}
       @dblclick=${(e: MouseEvent) => this.onPreviewDoubleClick(e)}>
+      ${cfg && !(review && focus === undefined) ? this.renderFaceLabel(cfg, focus !== undefined ? { kind: "layer", id: focus } : shown) : nothing}
       ${renderLayout(layout, opts)}${overlay ?? nothing}
     </div>`;
+  }
+
+  /**
+   * One small line just over the face naming what is selected, so the eye
+   * need not leave the face for the Layers list: the groups around it, dim,
+   * outermost first, then the layer or group itself. A locked group carries a
+   * lock, since a drag then moves all of it. Only shows; the crumbs in the
+   * inspector head are the ones to click.
+   */
+  private renderFaceLabel(cfg: CustomComplicationConfig, shown: Inspect) {
+    const picked = this.pickedElements(cfg).length;
+    const lock = (g: LayerGroup) => g.locked ? html`<span class="fl-lock" title="Locked: moves as one">${uiIcon("lock")}</span>` : nothing;
+    const trail = (chain: LayerGroup[]) => chain.map((g) => html`<span class="fl-group">${g.name}${lock(g)}</span><span class="fl-sep">›</span>`);
+    let body: TemplateResult | undefined;
+    if (picked >= 2) {
+      body = html`<span class="fl-kind">Picked</span><span class="fl-name">${picked} layers</span>`;
+    } else if (shown.kind === "layer") {
+      const el = elementIn(cfg, shown.id);
+      if (el) {
+        const chain = groupChain(cfg, el.payload.groupId).reverse();
+        body = html`${trail(chain)}<span class="fl-kind" style=${`--k:${KIND_COLOR[el.kind]}`}>${KIND_LABEL[el.kind]}</span><span class="fl-name">${layerTitle(el, describeContext(this.host()))}</span>`;
+      }
+    } else if (shown.kind === "group") {
+      const chain = groupChain(cfg, shown.id).reverse();
+      const g = chain[chain.length - 1];
+      if (g) body = html`${trail(chain.slice(0, -1))}<span class="fl-kind" style=${`--k:${SECTION_COLOR.group}`}>Group</span><span class="fl-name">${g.name}</span>${lock(g)}`;
+    }
+    return body === undefined ? nothing : html`<div class="face-label" aria-live="polite">${body}</div>`;
   }
 
   /**

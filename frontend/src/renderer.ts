@@ -29,7 +29,7 @@ import {
   gaugeLabelText,
 } from "./model.js";
 import type { ImageSizeProvider } from "./image-sizes.js";
-import type { GestureTarget } from "./interact.js";
+import type { GestureTarget, HandleEdge } from "./interact.js";
 import {
   countdownRemainingString,
   type ResolvedBezelGauge,
@@ -303,6 +303,9 @@ export interface RenderOptions {
   handleHit?: number;
   /** Editor affordance: outline tap layers, which the watch never draws. */
   tapAreas?: boolean;
+  /** With `tapAreas`: a free-standing tap draws only while it is highlighted,
+   * picked or hovered, so the stage is not covered in fingers. */
+  quietTaps?: boolean;
   /**
    * Review mode: answer "what happens if I tap here?" and nothing else. Every
    * tap area draws, attached ones included, each labelled with what it does,
@@ -2024,6 +2027,30 @@ export function layerOutline(el: ResolvedElement, box: Box): Box {
 }
 
 /**
+ * The sides of a layer that can be dragged on their own. An icon draws at one
+ * size either way and a circle, ring or arc stays round, so they take corners
+ * only. A line, a bar or a row of dots only has a length to change, so it
+ * takes the two ends along its long side.
+ */
+export function resizeEdges(el: ResolvedElement, outline: Box): readonly HandleEdge[] {
+  const along: readonly HandleEdge[] = outline.w >= outline.h ? ["e", "w"] : ["n", "s"];
+  switch (el.kind) {
+    case "icon": return [];
+    case "shape":
+      if (el.shapeKind === "circle") return [];
+      return el.shapeKind === "line" ? along : ALL_EDGES;
+    case "chartTimes": return ["e", "w"];
+    case "gauge":
+      if (el.style === "ring" || el.style === "arc") return [];
+      if (el.style === "bar") return ["e", "w"];
+      return el.style === "dots" ? along : ALL_EDGES;
+    default: return ALL_EDGES;
+  }
+}
+
+const ALL_EDGES: readonly HandleEdge[] = ["n", "s", "e", "w"];
+
+/**
  * How a corner drag resizes a layer whose outline is not its frame, so the
  * handle stays under the pointer. A circle, ring or arc resizes its square; a
  * line its length; a bar gauge its width; a row of dots starts from the box
@@ -2546,7 +2573,7 @@ function chartsById(elements: readonly ResolvedElement[]): Map<string, ResolvedC
  * drawn in a pass of their own, above the slot clip, so a handle on a layer
  * that touches the slot edge still shows past that edge.
  */
-function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderOptions, charts: ReadonlyMap<string, ResolvedChart> = new Map(), tintPrefix?: string, part: "body" | "handles" = "body") {
+function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderOptions, charts: ReadonlyMap<string, ResolvedChart> = new Map(), tintPrefix?: string, part: "body" | "handles" = "body", bounds?: HandleBounds) {
   if (el.isHidden && !options.showHidden) return nothing;
   const review = options.tapReview === true;
   const showTaps = options.tapAreas === true || review;
@@ -2558,6 +2585,14 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
   // A tap layer draws nothing on the watch. Outside the editor it takes no space
   // and no clicks either, so the preview matches the watch.
   if (el.kind === "tap" && !showTaps) return nothing;
+  // A free-standing tap's box and finger sit over the drawing and pull the eye
+  // off it. Quiet, one only draws while it is the layer being worked on:
+  // selected, picked, or under the pointer in the Layers list. With nothing
+  // drawn it takes no press either, so a click there reaches the layer under
+  // it. Review mode still shows every tap.
+  if (el.kind === "tap" && !review && options.quietTaps === true && options.highlightId !== el.id
+    && options.highlightIds?.includes(el.id) !== true && options.hoverId !== el.id
+    && options.hoverIds?.includes(el.id) !== true) return nothing;
   // An attached tap holds its layer's frame, so normally its dashed box and its
   // finger would sit on top of something already drawn and say nothing the
   // layer's own "tap" chip does not. Only a free-standing tap needs to be shown,
@@ -2636,19 +2671,10 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
   const hit = onChart
     ? nothing
     : svg`<rect x=${outline.x} y=${outline.y} width=${outline.w} height=${outline.h} fill="transparent" stroke="none" />`;
-  // Each handle sits just outside its corner, touching it, so a tiny layer is
-  // never buried under its own four handles.
-  const hs = 3;
-  const o = outline;
-  const grab = options.handleHit ?? 0;
-  const handles = primary && draggable
-    ? [["nw", o.x - hs, o.y - hs], ["ne", o.x + o.w, o.y - hs], ["sw", o.x - hs, o.y + o.h], ["se", o.x + o.w, o.y + o.h]].map(
-        ([corner, x, y]) => svg`${grab > hs
-          ? svg`<rect data-handle=${corner} x=${(x as number) + hs / 2 - grab / 2} y=${(y as number) + hs / 2 - grab / 2} width=${grab} height=${grab}
-            fill="transparent" stroke="none" />`
-          : nothing}<rect data-handle=${corner} x=${x} y=${y} width=${hs} height=${hs}
-          fill="#FFFFFF" stroke="#0A84FF" stroke-width="0.5" style="cursor:${corner}-resize" />`,
-      )
+  // A rotated layer's handles are drawn turned with it, so the face's edges
+  // are not straight lines in its own space: those are left unpinned.
+  const handles = primary && draggable && part === "handles"
+    ? resizeHandles(outline, options.handleHit ?? 0, resizeEdges(el, outline), el.frame.rotationDegrees === 0 ? bounds : undefined)
     : nothing;
   if (part === "handles") {
     return handles === nothing
@@ -3026,7 +3052,10 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
           fill="none" stroke="#0A84FF" stroke-width="4" vector-effect="non-scaling-stroke" pointer-events="none" />`
       : nothing}
     <g opacity=${chromeFade}>${tinted(chrome, chromeGroup, tint)}</g>
-    <g transform="translate(${fit.x} ${fit.y}) scale(${fit.scale})">${handleLayer(elements, design, options, charts)}</g>
+    <g transform="translate(${fit.x} ${fit.y}) scale(${fit.scale})">${handleLayer(elements, design, options, charts, {
+      x0: -fit.x / fit.scale, y0: -fit.y / fit.scale,
+      x1: (canvas.width - fit.x) / fit.scale, y1: (canvas.height - fit.y) / fit.scale,
+    })}</g>
     ${spotlight(elements, design, options.spotlightIds, `${uid}-spot`, canvas.width, canvas.height, `translate(${fit.x} ${fit.y}) scale(${fit.scale})`)}
     ${options.flash === undefined
       ? nothing
@@ -3143,12 +3172,12 @@ function groundTapWash(elements: readonly ResolvedElement[], design: CanvasSize,
 
 /** The selected layer's resize handles, or the selected group's box and
  * its handles, for the pass drawn above the slot clip. */
-function handleLayer(elements: readonly ResolvedElement[], design: CanvasSize, options: RenderOptions, charts: ReadonlyMap<string, ResolvedChart>) {
+function handleLayer(elements: readonly ResolvedElement[], design: CanvasSize, options: RenderOptions, charts: ReadonlyMap<string, ResolvedChart>, bounds?: HandleBounds) {
   if (options.handles !== true) return nothing;
-  if (options.groupBox !== undefined) return groupBoxHandles(options.groupBox, design, options.handleHit ?? 0);
+  if (options.groupBox !== undefined) return groupBoxHandles(options.groupBox, design, options.handleHit ?? 0, bounds);
   if (options.highlightId === undefined) return nothing;
   const el = elements.find((e) => e.id === options.highlightId);
-  return el === undefined ? nothing : renderElement(el, design, options, charts, undefined, "handles");
+  return el === undefined ? nothing : renderElement(el, design, options, charts, undefined, "handles", bounds);
 }
 
 /**
@@ -3157,26 +3186,80 @@ function handleLayer(elements: readonly ResolvedElement[], design: CanvasSize, o
  * and in the middle of each side. The handles sit just outside the box, as a
  * layer's do. `data-group-box` is how a press tells them from a layer's.
  */
-function groupBoxHandles(frame: NormalizedFrame, design: CanvasSize, grab: number) {
-  const x = frame.x * design.width;
-  const y = frame.y * design.height;
-  const w = frame.width * design.width;
-  const h = frame.height * design.height;
-  const hs = 3;
-  const mx = x + w / 2 - hs / 2;
-  const my = y + h / 2 - hs / 2;
-  const spots: [string, number, number][] = [
-    ["nw", x - hs, y - hs], ["n", mx, y - hs], ["ne", x + w, y - hs],
-    ["w", x - hs, my], ["e", x + w, my],
-    ["sw", x - hs, y + h], ["s", mx, y + h], ["se", x + w, y + h],
-  ];
+function groupBoxHandles(frame: NormalizedFrame, design: CanvasSize, grab: number, bounds?: HandleBounds) {
+  const box = { x: frame.x * design.width, y: frame.y * design.height, w: frame.width * design.width, h: frame.height * design.height };
   return svg`<g data-group-box="">
-    <rect x=${x} y=${y} width=${w} height=${h} fill="none" stroke="#0A84FF" stroke-width="1" vector-effect="non-scaling-stroke" pointer-events="none" />
-    ${spots.map(([spot, hx, hy]) => svg`${grab > hs
-      ? svg`<rect data-handle=${spot} x=${hx + hs / 2 - grab / 2} y=${hy + hs / 2 - grab / 2} width=${grab} height=${grab} fill="transparent" stroke="none" />`
-      : nothing}<rect data-handle=${spot} x=${hx} y=${hy} width=${hs} height=${hs}
-      fill="#FFFFFF" stroke="#0A84FF" stroke-width="0.5" style="cursor:${spot}-resize" />`)}
+    <rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} fill="none" stroke="#0A84FF" stroke-width="1" vector-effect="non-scaling-stroke" pointer-events="none" />
+    ${resizeHandles(box, grab, ALL_EDGES, bounds)}
   </g>`;
+}
+
+/** The part of the face the stage shows, in design points. Handles are held
+ * inside it, just past its edges. */
+interface HandleBounds { x0: number; y0: number; x1: number; y1: number }
+
+/** The pointer over each handle: a two-way arrow along the way it drags. */
+const HANDLE_CURSOR: Record<string, string> = {
+  nw: "nwse-resize", se: "nwse-resize", ne: "nesw-resize", sw: "nesw-resize",
+  n: "ns-resize", s: "ns-resize", e: "ew-resize", w: "ew-resize",
+};
+
+/**
+ * Resize handles around a box in design points: a square just outside each
+ * corner, touching it, so a tiny layer is never buried under its own handles,
+ * and for each side in `edges` a square at its middle and a clear strip along
+ * its whole length, so the side drags from anywhere on it.
+ *
+ * With `bounds`, a handle that would land past the face is held at its edge.
+ * The stage cuts off anything past the face, and a layer dragged half off it
+ * lost the handles that could pull it back. A held handle still drags its own
+ * corner or side, since a drag only reads how far the pointer moves.
+ */
+function resizeHandles(o: { x: number; y: number; w: number; h: number }, grab: number, edges: readonly HandleEdge[], bounds?: HandleBounds) {
+  const hs = 3;
+  const cx = (v: number) => bounds ? Math.min(Math.max(v, bounds.x0 - hs), bounds.x1) : v;
+  const cy = (v: number) => bounds ? Math.min(Math.max(v, bounds.y0 - hs), bounds.y1) : v;
+  const left = cx(o.x - hs);
+  const right = cx(o.x + o.w);
+  const top = cy(o.y - hs);
+  const bottom = cy(o.y + o.h);
+  // What of each side shows, for its strip and the square at its middle.
+  const sx0 = bounds ? Math.max(o.x, bounds.x0) : o.x;
+  const sx1 = bounds ? Math.min(o.x + o.w, bounds.x1) : o.x + o.w;
+  const sy0 = bounds ? Math.max(o.y, bounds.y0) : o.y;
+  const sy1 = bounds ? Math.min(o.y + o.h, bounds.y1) : o.y + o.h;
+  const midX = cx((sx0 + sx1) / 2 - hs / 2);
+  const midY = cy((sy0 + sy1) / 2 - hs / 2);
+  // A strip reaches a little way in over the layer, so the pointer finds it
+  // on the outline itself, but never far enough to take a small layer's
+  // middle away from a move.
+  const inX = Math.min(hs / 2, o.w / 4);
+  const inY = Math.min(hs / 2, o.h / 4);
+  const reach = Math.max(hs, grab);
+  const strips: Record<HandleEdge, [number, number, number, number]> = {
+    n: [sx0, top + hs - reach, Math.max(0, sx1 - sx0), reach + inY],
+    s: [sx0, bottom - inY, Math.max(0, sx1 - sx0), reach + inY],
+    w: [left + hs - reach, sy0, reach + inX, Math.max(0, sy1 - sy0)],
+    e: [right - inX, sy0, reach + inX, Math.max(0, sy1 - sy0)],
+  };
+  const squares: [string, number, number][] = [
+    ["nw", left, top], ["ne", right, top], ["sw", left, bottom], ["se", right, bottom],
+  ];
+  // A side too short to hold a square between its corners keeps the strip only.
+  if (edges.includes("n") && sx1 - sx0 > hs * 3) squares.push(["n", midX, top]);
+  if (edges.includes("s") && sx1 - sx0 > hs * 3) squares.push(["s", midX, bottom]);
+  if (edges.includes("w") && sy1 - sy0 > hs * 3) squares.push(["w", left, midY]);
+  if (edges.includes("e") && sy1 - sy0 > hs * 3) squares.push(["e", right, midY]);
+  // Strips first, then the squares' grab areas, then the squares: a corner
+  // wins where it meets a strip.
+  return svg`${edges.map((edge) => {
+    const [x, y, w, h] = strips[edge];
+    return svg`<rect data-handle=${edge} x=${x} y=${y} width=${w} height=${h} fill="transparent" stroke="none" style="cursor:${HANDLE_CURSOR[edge]}" />`;
+  })}${squares.map(([spot, x, y]) => svg`${grab > hs
+    ? svg`<rect data-handle=${spot} x=${x + hs / 2 - grab / 2} y=${y + hs / 2 - grab / 2} width=${grab} height=${grab}
+      fill="transparent" stroke="none" style="cursor:${HANDLE_CURSOR[spot]}" />`
+    : nothing}<rect data-handle=${spot} x=${x} y=${y} width=${hs} height=${hs}
+    fill="#FFFFFF" stroke="#0A84FF" stroke-width="0.5" style="cursor:${HANDLE_CURSOR[spot]}" />`)}`;
 }
 
 export interface ThumbOptions {

@@ -623,7 +623,9 @@ describe("tap focus view", () => {
     const out = draw(cfg, { tapReview: true, tapFocusId: a, highlightId: a, handles: true });
     // One group has the move cursor: the focused tap. Every other group has none.
     expect(out.match(/cursor:move/g)).toHaveLength(1);
-    expect(out.match(/data-handle=/g)).toHaveLength(4);
+    // One layer's set: four corners, and a middle square and a strip on each side.
+    expect(out.match(/data-handle=(nw|ne|sw|se)\b/g)).toHaveLength(4);
+    expect(out.match(/data-handle=/g)).toHaveLength(12);
   });
 
   it("is ignored outside review mode", () => {
