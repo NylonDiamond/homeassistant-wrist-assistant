@@ -455,6 +455,21 @@ describe("text parts in the preview", () => {
     expect(lines[0]!.at(-1)).toEqual(["0.28", 30, 400, "#FFFFFF"]);
   });
 
+  it("starts a new line at each line break a part carries", () => {
+    const svg = draw(textConfig((p) => {
+      p.lineLimit = 3;
+      p.parts = [
+        { id: PART_A, value: literal("Up 21°\nDown "), fontSize: 12 },
+        { id: PART_B, value: literal("18°\nOut 9°"), fontSize: 20 },
+      ];
+    }));
+    const lines = svg.split(/<tspan x=[-\d.]+ y=[-\d.]+>/).slice(1).map((chunk) => runs(chunk));
+    expect(lines.map((line) => line.map(([t]) => t).join(""))).toEqual(["Up 21°", "Down 18°", "Out 9°"]);
+    // Each line keeps the look of the part its characters came from.
+    expect(lines[1]!.map(([t, size]) => [t, size])).toEqual([["Down ", 12], ["18°", 20]]);
+    expect(lines[2]![0]![1]).toBe(20);
+  });
+
   it("cuts an overlong line short with an ellipsis in the look of what it follows", () => {
     const got = runs(draw(textConfig((p) => {
       p.fontSize = 16;

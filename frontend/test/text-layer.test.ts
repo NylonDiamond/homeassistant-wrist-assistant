@@ -84,6 +84,49 @@ describe("text layer line limit", () => {
     expect(tspans(draw("Unbreakablewordhere", (p) => { p.fontSize = 16; p.lineLimit = 2; }))).toEqual([]);
   });
 
+  it("starts a new line at each line break in the text", () => {
+    expect(tspans(draw("Kitchen 21°\nLiving room 20°\nBedroom 18°", (p) => { p.fontSize = 12; p.lineLimit = 3; })))
+      .toEqual(["Kitchen 21°", "Living room 20°", "Bedroom 18°"]);
+  });
+
+  it("keeps a short line short rather than filling it from the next one", () => {
+    expect(tspans(draw("A\nB C D", (p) => { p.fontSize = 12; p.lineLimit = 3; }))).toEqual(["A", "B C D"]);
+  });
+
+  it("keeps a blank line blank", () => {
+    expect(tspans(draw("Top\n\nBottom", (p) => { p.fontSize = 12; p.lineLimit = 3; }))).toEqual(["Top", "", "Bottom"]);
+  });
+
+  it("still wraps a line too wide for the box", () => {
+    const lines = tspans(draw(`Short\n${"word ".repeat(12).trim()}`, (p) => { p.fontSize = 16; p.lineLimit = 3; }));
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toBe("Short");
+    expect(lines.slice(1).join(" ")).toBe("word ".repeat(12).trim());
+  });
+
+  it("shows the first line and an ellipsis on a one-line layer, as SwiftUI does", () => {
+    const svg = draw("Alpha\nBeta\nGamma", (p) => { p.fontSize = 12; });
+    expect(tspans(svg)).toEqual([]);
+    expect(svg).toContain(">Alpha…</text>");
+  });
+
+  it("ends the last line allowed in an ellipsis when lines are left over", () => {
+    expect(tspans(draw("Alpha\nBeta\nGamma", (p) => { p.fontSize = 12; p.lineLimit = 2; }))).toEqual(["Alpha", "Beta…"]);
+  });
+
+  it("colors every line's numbers after a line break", () => {
+    const svg = draw("A 1\nB 2\nC 3", (p) => {
+      p.fontSize = 12;
+      p.lineLimit = 3;
+      p.coloring = "bands";
+      p.bands = [{ id: "B0000000-0000-4000-8000-000000000011", upTo: 2, colorHex: "#32D74B" }];
+      p.bandAboveColorHex = "#FF9F0A";
+    });
+    const [, first, , third] = svg.split(/<tspan x=[-\d.]+ y=[-\d.]+>/);
+    expect(first).toContain("<tspan fill=#32D74B fill-opacity=1>1</tspan>");
+    expect(third).toContain("<tspan fill=#FF9F0A fill-opacity=1>3</tspan>");
+  });
+
   it("only shrinks once a wrapped line still overflows", () => {
     const size = (svg: string) => Number(/font-size=([\d.]+)/.exec(svg)?.[1]);
     // Two short words fit the 181 point box on two lines at full size.

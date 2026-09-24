@@ -952,13 +952,60 @@ function spanColors(text: string, spans: readonly TextSpan[] | undefined): strin
   return out;
 }
 
-/** Where each drawn line starts in `text`. One line is the text itself; two are
- * whole words joined by single spaces (`wrapToTwoLines`), so the second starts at
- * the first word the first line did not take. */
+/** Where each drawn line starts in `text`. One line is the text itself; more are
+ * whole words joined by single spaces, in order, so each starts at the first word
+ * the lines above it did not take. A blank line takes no word. */
 function lineStarts(text: string, lines: readonly string[]): number[] {
   if (lines.length < 2) return [0];
   const words = [...text.matchAll(/\S+/g)].map((m) => m.index);
-  return [words[0] ?? 0, words[lines[0]!.split(" ").length] ?? text.length];
+  let taken = 0;
+  return lines.map((line) => {
+    const start = words[taken] ?? text.length;
+    taken += line.split(/\s+/).filter((w) => w !== "").length;
+    return start;
+  });
+}
+
+/**
+ * Text with line breaks of its own, laid out the way SwiftUI does: every break
+ * starts a new line, a line too wide for the box wraps on word boundaries, and
+ * at `maxLines` the rest is cut, the last line kept ending in an ellipsis. So a
+ * one-line layer shows its first line and "…", which is what the watch draws.
+ * `width` measures words joined by single spaces. Undefined when the text has no
+ * break, which leaves it to the width-only wrap.
+ */
+function breakLines(
+  text: string,
+  maxLines: number,
+  boxWidth: number,
+  width: (words: readonly RegExpExecArray[]) => number,
+): string[] | undefined {
+  if (!text.includes("\n")) return undefined;
+  const join = (list: readonly RegExpExecArray[]) => list.map((m) => m[0]).join(" ");
+  const lines: string[] = [];
+  let cut = false;
+  let offset = 0;
+  for (const para of text.split("\n")) {
+    // Indexed into the whole text, which is what `width` looks sizes up by.
+    const words = [...para.matchAll(/\S+/g)];
+    for (const w of words) w.index += offset;
+    offset += para.length + 1;
+    if (lines.length === maxLines) {
+      if (words.length > 0) cut = true;
+      continue;
+    }
+    let from = 0;
+    // The last line allowed keeps whatever is left, to shrink or truncate.
+    for (let i = 1; i < words.length && lines.length < maxLines - 1; i++) {
+      if (boxWidth > 0 && width(words.slice(from, i + 1)) > boxWidth) {
+        lines.push(join(words.slice(from, i)));
+        from = i;
+      }
+    }
+    lines.push(join(words.slice(from)));
+  }
+  if (cut) lines[lines.length - 1] += "…";
+  return lines;
 }
 
 /** One drawn line as runs of one look. The line is the text from `from` with
@@ -1106,7 +1153,14 @@ function truncateRuns(runs: readonly PartRun[], scale: number, boxWidth: number)
  */
 function renderTextParts(el: Extract<ResolvedElement, { kind: "text" }>, parts: readonly ResolvedTextPart[], box: Box) {
   const looks = partLooks(parts);
-  const lines = el.lineLimit > 1 && box.w > 0 ? wrapPartsToLines(el.text, looks, box.w, el.lineLimit) : [el.text];
+  const size = (i: number) => looks[i]?.fontSize ?? 0;
+  const wordsWidth = (words: readonly RegExpExecArray[]) => words.reduce((w, m, k) => {
+    let add = k === 0 ? 0 : textCharWidth(size(m.index - 1));
+    for (let j = m.index; j < m.index + m[0].length; j++) add += textCharWidth(size(j));
+    return w + add;
+  }, 0);
+  const lines = breakLines(el.text, el.lineLimit, box.w, wordsWidth)
+    ?? (el.lineLimit > 1 && box.w > 0 ? wrapPartsToLines(el.text, looks, box.w, el.lineLimit) : [el.text]);
   const starts = lineStarts(el.text, lines);
   const painted = lines.map((line, i) => paintLine(line, starts[i] ?? 0, el.text, looks, looks[0]!));
   const widest = Math.max(...painted.map((runs) => runsWidth(runs, 1)));
@@ -1159,9 +1213,9 @@ function renderText(el: Extract<ResolvedElement, { kind: "text" }>, box: Box) {
   // lineLimit + minimumScaleFactor(0.5): wrap first when the layer allows two
   // lines, then shrink what is still too wide down to half size, then truncate
   // the tail with an ellipsis the way SwiftUI does instead of overflowing.
-  const lines = el.lineLimit > 1 && box.w > 0
-    ? wrapToLines(el.text, box.w / textCharWidth(el.fontSize), el.lineLimit)
-    : [el.text];
+  const charWidth = textCharWidth(el.fontSize);
+  const lines = breakLines(el.text, el.lineLimit, box.w, (words) => words.map((m) => m[0]).join(" ").length * charWidth)
+    ?? (el.lineLimit > 1 && box.w > 0 ? wrapToLines(el.text, box.w / charWidth, el.lineLimit) : [el.text]);
   const widest = Math.max(...lines.map((l) => l.length)) * textCharWidth(el.fontSize);
   const scale = widest > box.w && box.w > 0 ? Math.max(el.minimumScale, box.w / widest) : 1;
   const fontSize = el.fontSize * scale;
