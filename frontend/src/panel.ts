@@ -9495,7 +9495,7 @@ export class WristAssistantPanel extends LitElement {
       ["Escape", "Leave the row designer, then drop the pick, then the selection. Also closes a dialog"],
     ];
     const mouse: [string, string][] = [
-      ["Click", "A layer on the face or in the list: edit it. Drag it to move, pull a corner to resize"],
+      ["Click", "A layer on the face or in the list: edit it. Drag it to move, pull a corner or side to resize"],
       [`${MULTI_KEY}-click · ⇧-click`, "Add a layer to the pick · Pick a range of rows. Then Group them so a finished part moves as one"],
       ["Rest on a row", "Tints that layer on the face without selecting it. A group row tints every member"],
       ["Drag a row", "Reorder the list. Drop it on a group to put it inside"],
@@ -17096,13 +17096,13 @@ export class WristAssistantPanel extends LitElement {
       // No keys and no Alt under a finger: say what a finger can do.
       const g = lockedUnitOf(cfg, sel.payload.id);
       tail = g
-        ? html`A drag moves the whole group <b>${g.name}</b>; pull a corner to resize this layer.`
-        : `Drag it, or pull a corner.${this.snapGrid && this.snapLayers ? " It snaps to the grid and to the other layers." : this.snapGrid ? " It snaps to the grid." : this.snapLayers ? " It snaps to the other layers." : ""}`;
+        ? html`A drag moves the whole group <b>${g.name}</b>; pull a corner or side to resize this layer.`
+        : `Drag it, or pull a corner or side.${this.snapGrid && this.snapLayers ? " It snaps to the grid and to the other layers." : this.snapGrid ? " It snaps to the grid." : this.snapLayers ? " It snaps to the other layers." : ""}`;
     } else if (sel) {
       const g = lockedUnitOf(cfg, sel.payload.id);
       tail = g
-        ? html`A drag moves the whole group <b>${g.name}</b>; pull a corner to resize this layer. Arrow keys nudge the group.`
-        : html`Drag it, or pull a corner. Arrow keys nudge it.${this.snapGrid && this.snapLayers ? " It snaps to the grid and to the other layers. Hold Alt to drag freely." : this.snapGrid ? " It snaps to the grid. Hold Alt to drag freely." : this.snapLayers ? " It snaps to the other layers. Hold Alt to drag freely." : " Hold Alt while dragging to snap to the grid."}`;
+        ? html`A drag moves the whole group <b>${g.name}</b>; pull a corner or side to resize this layer. Arrow keys nudge the group.`
+        : html`Drag it, or pull a corner or side. Arrow keys nudge it.${this.snapGrid && this.snapLayers ? " It snaps to the grid and to the other layers. Hold Alt to drag freely." : this.snapGrid ? " It snaps to the grid. Hold Alt to drag freely." : this.snapLayers ? " It snaps to the other layers. Hold Alt to drag freely." : " Hold Alt while dragging to snap to the grid."}`;
     } else if (family === "corner" && cfg.perFamily.corner?.curvedText !== undefined) {
       tail = `Big curved text draws in place of layers. Edit it in Corner content ${this.stackedLayout() ? "below" : "on the right"}.`;
     } else if (cfg.elements.length === 0) {
