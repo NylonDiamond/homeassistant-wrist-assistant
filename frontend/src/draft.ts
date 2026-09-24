@@ -238,10 +238,13 @@ export class Draft {
    * undo stack: they are part of what is on screen, and saving does not
    * change what anyone was testing.
    */
-  commit(revision: number): Draft {
+  commit(revision: number, savedDocument?: Record<string, unknown>): Draft {
     const cfg = structuredClone(this.config);
     cfg.dataSources = deriveDataSources(cfg);
     const next = new Draft(cfg, revision);
+    // A save can finish after another edit. The baseline is what the server
+    // accepted, not the draft as it happens to look when the reply arrives.
+    if (savedDocument !== undefined) next.baseline = JSON.stringify(savedDocument);
     next.past = this.past;
     next.future = this.future;
     next.testValues = this.testValues;

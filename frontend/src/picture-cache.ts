@@ -63,6 +63,8 @@ export class PictureCache {
   private readonly held = new Map<string, string>();
   private readonly inFlight = new Set<string>();
   private readonly failedAt = new Map<string, number>();
+  /** A cleared panel must not accept bytes from its previous visit. */
+  private epoch = 0;
 
   constructor(private readonly host: PictureCacheHost) {}
 
@@ -98,8 +100,10 @@ export class PictureCache {
   /** Let go of everything. The panel calls this on its way out: an object URL
    * the document never revokes holds its bytes until the tab is closed. */
   clear() {
+    this.epoch++;
     for (const url of this.held.values()) this.host.revoke(url);
     this.held.clear();
+    this.inFlight.clear();
     this.failedAt.clear();
   }
 
@@ -109,20 +113,24 @@ export class PictureCache {
   }
 
   private async load(entityId: string, liveUrl: string) {
+    const epoch = this.epoch;
     try {
       const reply = await this.host.fetch(liveUrl);
       if (!reply.ok) throw new Error(`HTTP ${reply.status}`);
       const blob = await reply.blob();
+      if (epoch !== this.epoch) return;
       // A zero-byte answer is a camera that is up but has no frame yet. Holding
       // it would pin an empty picture on that card for the rest of the session.
       if (blob.size === 0) throw new Error("empty");
       this.put(entityId, this.host.objectUrl(blob));
       this.failedAt.delete(entityId);
     } catch {
-      this.failedAt.set(entityId, this.host.now());
+      if (epoch === this.epoch) this.failedAt.set(entityId, this.host.now());
     } finally {
-      this.inFlight.delete(entityId);
-      this.host.changed();
+      if (epoch === this.epoch) {
+        this.inFlight.delete(entityId);
+        this.host.changed();
+      }
     }
   }
 

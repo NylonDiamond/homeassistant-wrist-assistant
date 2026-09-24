@@ -1794,6 +1794,11 @@ export class WristAssistantPanel extends LitElement {
   @state() private loadError?: string;
   @state() private saveError?: string;
   @state() private saving = false;
+  /** The editor's own Save while it runs. A click that would leave the open
+   * document waits for it rather than being dropped: the dialog or picker it
+   * came from has usually closed already. Other writes set `saving` too, and
+   * some of them open another record on their way out, so they do not wait. */
+  private draftSave?: Promise<void>;
   @state() private conflict?: Conflict;
   @state() private remoteRevision?: number;
   @state() private confirmDelete = false;
@@ -1836,8 +1841,14 @@ export class WristAssistantPanel extends LitElement {
   private imageSizes = makeImageSizeProvider(() => this.requestUpdate());
   private symbols = new SymbolBrowser(() => this.requestUpdate());
   private unsubscribe?: () => Promise<void>;
+  private recordsLoadRun = 0;
+  private otherListsRun = 0;
   private templateTimer?: number;
   private debounceTimer?: number;
+  /** Ignore older live-data replies after a new document or refresh starts. */
+  private liveTemplateRun = 0;
+  private liveHistoryRun = 0;
+  private liveListRun = 0;
   private lastStatesSnapshot?: Record<string, unknown>;
   private cancelGesture?: () => void;
   /** The id written on whatever the last press on the face landed on, so a
@@ -6810,6 +6821,7 @@ export class WristAssistantPanel extends LitElement {
   }
 
   private async selectOwner(ownerId: string) {
+    await this.draftSave;
     if (this.draft?.dirty && !this.confirmDiscard()) {
       this.requestUpdate();
       return;
@@ -6887,8 +6899,11 @@ export class WristAssistantPanel extends LitElement {
 
   private async loadRecords() {
     if (!this.ownerId) return;
+    const ownerId = this.ownerId;
+    const run = ++this.recordsLoadRun;
     try {
-      const reply = await fetchList(this.hass, this.ownerId);
+      const reply = await fetchList(this.hass, ownerId);
+      if (this.ownerId !== ownerId || run !== this.recordsLoadRun) return;
       this.records = reply.records;
       this.maxSchemaVersion = reply.max_schema_version;
       this.presets = reply.presets ?? [];
@@ -6934,8 +6949,9 @@ export class WristAssistantPanel extends LitElement {
         else this.selectNone();
       }
     } catch (err) {
-      this.loadError = `Could not load complications: ${errText(err)}`;
+      if (this.ownerId === ownerId && run === this.recordsLoadRun) this.loadError = `Could not load complications: ${errText(err)}`;
     }
+    if (this.ownerId !== ownerId || run !== this.recordsLoadRun) return;
     this.refreshSeatClash();
     this.warmPictures();
   }
@@ -7020,6 +7036,10 @@ export class WristAssistantPanel extends LitElement {
   }
 
   private selectRecord(record: ComplicationRecord) {
+    if (this.draftSave) {
+      void this.draftSave.then(() => this.selectRecord(record));
+      return;
+    }
     if (record.id === this.selectedId) return;
     if (this.draft?.dirty && !this.confirmDiscard()) return;
     this.openRecord(record);
@@ -7058,6 +7078,8 @@ export class WristAssistantPanel extends LitElement {
    * asked to discard unsaved work and said no, so a caller with a dialog full
    * of answers (Import) can leave it standing rather than throwing it away. */
   private startNew(config: CustomComplicationConfig): boolean {
+    // Callers wait for `draftSave` first; this only guards one that forgot.
+    if (this.draftSave) return false;
     if (this.draft?.dirty && !this.confirmDiscard()) return false;
     this.selectedId = config.id;
     this.clearDraft();
@@ -7065,6 +7087,8 @@ export class WristAssistantPanel extends LitElement {
     this.inspect = { kind: "general" };
     this.savedName = undefined;
     this.draft = new Draft(config, null);
+    // The new document exists only in this tab, even before its first edit.
+    this.draft.markDirty();
     this.recompile();
     this.ensureActiveFamily();
     this.startView(config);
@@ -7102,8 +7126,10 @@ export class WristAssistantPanel extends LitElement {
    * the open one would be a request per keystroke's save.
    */
   private async loadOtherLists() {
+    const ownerId = this.ownerId;
+    const run = ++this.otherListsRun;
     const ids = this.owners
-      .filter((o) => o.owner_watch_id !== this.ownerId && !o.is_orphan)
+      .filter((o) => o.owner_watch_id !== ownerId && !o.is_orphan)
       .map((o) => o.owner_watch_id);
     const next = new Map<string, { records: ComplicationRecord[]; occupied: OccupiedSlot[]; appliedToken?: number | null; token: number }>();
     for (const id of ids) {
@@ -7121,6 +7147,7 @@ export class WristAssistantPanel extends LitElement {
         // write below refuses rather than putting one in a taken seat.
       }
     }
+    if (this.ownerId !== ownerId || run !== this.otherListsRun) return;
     this.otherLists = next;
     this.refreshSeatClash();
   }
@@ -7319,8 +7346,10 @@ export class WristAssistantPanel extends LitElement {
    */
   private async refreshWatchStatus() {
     if (!this.ownerId || this.sendPending) return;
+    const ownerId = this.ownerId;
     try {
-      const reply = await fetchWatchStatus(this.hass, this.ownerId);
+      const reply = await fetchWatchStatus(this.hass, ownerId);
+      if (this.ownerId !== ownerId || this.sendPending) return;
       this.polling = reply.polling;
       this.lastPollSeconds = typeof reply.last_poll_seconds === "number" ? reply.last_poll_seconds : undefined;
       this.lastSyncSeconds = typeof reply.last_sync_seconds === "number" ? reply.last_sync_seconds : undefined;
@@ -7936,6 +7965,7 @@ export class WristAssistantPanel extends LitElement {
    * afternoon, and it is written there on the first Save.
    */
   private async createNew() {
+    await this.draftSave;
     const name = this.newName.trim();
     const kind = this.newKind;
     if (name === "" || kind === undefined || this.newNameProblem() !== undefined) return;
@@ -8031,7 +8061,22 @@ export class WristAssistantPanel extends LitElement {
   // ── save / delete ─────────────────────────────────────────────────────
 
   private async save(asNew = false) {
+    if (this.draftSave) return;
+    const run = this.saveDraft(asNew);
+    this.draftSave = run;
+    try {
+      await run;
+    } finally {
+      if (this.draftSave === run) this.draftSave = undefined;
+    }
+  }
+
+  private async saveDraft(asNew: boolean) {
     if (!this.draft || !this.ownerId || !this.canEdit || this.saving) return;
+    const openedDraft = this.draft;
+    const ownerId = this.ownerId;
+    const selectedId = this.selectedId;
+    const openedVersion = this.version;
     if (!asNew && !this.draft.dirty && this.draft.baseRevision !== null) return;
     if (!asNew && !this.slotChosen) {
       // Slots are auto-assigned and there is no picker; this only trips when
@@ -8063,8 +8108,12 @@ export class WristAssistantPanel extends LitElement {
         delete cfg.linkId;
         draft = new Draft(cfg, null);
       }
-      const result = await saveRecord(this.hass, this.ownerId, draft.encoded(), draft.baseRevision);
+      const submittedConfig = structuredClone(draft.config);
+      const submittedDocument = draft.encoded();
+      const result = await saveRecord(this.hass, ownerId, submittedDocument, draft.baseRevision);
+      const stillOpen = this.ownerId === ownerId && this.selectedId === selectedId && this.draft === openedDraft;
       if (!result.ok || !result.record) {
+        if (!stillOpen) return;
         if (result.error === "conflict") {
           this.conflict = { current: result.current ?? null, message: result.message ?? "Someone else saved this complication first." };
         } else {
@@ -8072,28 +8121,23 @@ export class WristAssistantPanel extends LitElement {
         }
         return;
       }
-      this.conflict = undefined;
-      this.remoteRevision = undefined;
-      this.selectedId = result.record.id;
-      // A save moves the baseline; it does not wipe undo. `draft` is the one
-      // that was sent, which for Save a copy is the fresh copy rather than
-      // the open document, so a copy never inherits the original's undo.
-      this.draft = draft.commit(result.record.revision);
-      // The saved name is the new baseline: the rename note clears until the
-      // next edit. The watch still caches the picker label, but that is a
-      // one-time re-pick on the wrist, not a per-save nag.
-      this.savedName = String(result.record.document?.name ?? "");
+      if (stillOpen) {
+        this.conflict = undefined;
+        this.remoteRevision = undefined;
+      }
+      if (stillOpen && (!asNew || this.version === openedVersion)) {
+        this.selectedId = result.record.id;
+        // A save moves the baseline; it does not wipe undo. For Save a copy,
+        // open the copy only if the source was not edited while it was saved.
+        this.draft = draft.commit(result.record.revision, submittedDocument);
+        this.savedName = String(result.record.document?.name ?? "");
+        this.recompile();
+        this.dropCachedPictures();
+        this.beginSendWait();
+      }
       // The same edit on every other device this design is on.
-      await this.saveLinkedSiblings(draft.config, result.record.id);
-      this.recompile();
-      // The card for what was just saved goes back to the grid, and it should
-      // not be drawing a frame from before the edit. Only this document's own
-      // entities are let go, so every other card in the grid stays instant.
-      this.dropCachedPictures();
-      // The commit woke the watch's poll; wait for its ack before offering
-      // a manual re-send.
-      this.beginSendWait();
-      await this.loadRecords();
+      await this.saveLinkedSiblings(submittedConfig, result.record.id, ownerId);
+      if (this.ownerId === ownerId) await this.loadRecords();
     } catch (err) {
       this.saveError = errText(err);
     } finally {
@@ -8207,10 +8251,10 @@ export class WristAssistantPanel extends LitElement {
    * else changed meanwhile is reported rather than overwritten. The lists are
    * read again first for those revisions.
    */
-  private async saveLinkedSiblings(saved: CustomComplicationConfig, savedId: string) {
-    if (saved.linkId === undefined || !this.ownerId) return;
+  private async saveLinkedSiblings(saved: CustomComplicationConfig, savedId: string, sourceOwnerId: string) {
+    if (saved.linkId === undefined) return;
     await this.loadOtherLists();
-    const siblings = this.linkedSiblings(saved.linkId, this.ownerId, savedId);
+    const siblings = this.linkedSiblings(saved.linkId, sourceOwnerId, savedId);
     if (siblings.length === 0) return;
     const failed: string[] = [];
     for (const { ownerId, record } of siblings) {
@@ -8303,6 +8347,7 @@ export class WristAssistantPanel extends LitElement {
    * templates: a chart of the last six hours does not change faster than that,
    * and each entry is a database query rather than a state read. */
   private async refreshHistorySeries() {
+    const run = ++this.liveHistoryRun;
     const cfg = this.draft?.config;
     // `mode` is left out at numeric and `gaps` unless a chart asks, so a
     // document with no timeline and no gap chart sends exactly what it always sent.
@@ -8316,6 +8361,7 @@ export class WristAssistantPanel extends LitElement {
       // Rebuilt rather than merged, so a chart the author retargeted or deleted
       // stops answering with the entity it used to point at.
       const next = await this.fetchSeries(wanted);
+      if (run !== this.liveHistoryRun || this.draft?.config !== cfg) return;
       this.historySeries = next.series;
       this.historyReadings = next.readings;
     } catch {
@@ -8334,6 +8380,7 @@ export class WristAssistantPanel extends LitElement {
    * author changed stops answering with the events of the old one.
    */
   private async refreshListItems() {
+    const run = ++this.liveListRun;
     const cfg = this.draft?.config;
     const wanted = cfg ? listItemsRequests(cfg) : undefined;
     if (!wanted || Object.keys(wanted.requests).length === 0) {
@@ -8341,7 +8388,9 @@ export class WristAssistantPanel extends LitElement {
       return;
     }
     try {
-      this.listItems = collectListResults(await fetchListItems(this.hass, wanted.requests));
+      const results = await fetchListItems(this.hass, wanted.requests);
+      if (run !== this.liveListRun || this.draft?.config !== cfg) return;
+      this.listItems = collectListResults(results);
     } catch {
       // An integration too old for the command, or one busy service call: the
       // last items stay on screen, which beats a list that blanks every time
@@ -8403,8 +8452,10 @@ export class WristAssistantPanel extends LitElement {
   }
 
   private async refreshTemplates() {
+    const run = ++this.liveTemplateRun;
     void this.refreshHistorySeries();
     void this.refreshListItems();
+    const cfg = this.draft?.config;
     const doc = this.compiled?.document;
     if (!doc) {
       this.templateResults = new Map();
@@ -8414,6 +8465,7 @@ export class WristAssistantPanel extends LitElement {
     }
     try {
       const reply = await renderTemplates(this.hass, { doc });
+      if (run !== this.liveTemplateRun || this.draft?.config !== cfg) return;
       const result = reply.doc;
       if (!result) return;
       if (!result.ok) {
@@ -8429,7 +8481,7 @@ export class WristAssistantPanel extends LitElement {
       this.templateError = undefined;
       this.templateFetchedAt = Date.now();
     } catch (err) {
-      this.templateError = errText(err);
+      if (run === this.liveTemplateRun && this.draft?.config === cfg) this.templateError = errText(err);
     }
   }
 
@@ -14244,6 +14296,7 @@ export class WristAssistantPanel extends LitElement {
    * document is still there to save again.
    */
   private async doImport() {
+    await this.draftSave;
     const base = this.importConfig();
     if (!base) return;
     const cfg = remapEntities(base, this.importMap);
@@ -14253,9 +14306,6 @@ export class WristAssistantPanel extends LitElement {
     cfg.dataSources = [];
     cfg.schemaVersion = schemaVersionFor(cfg);
     if (!this.startNew(cfg)) return;
-    // Dirty before the save: nothing about it is on the server yet, and if the
-    // save does not go through, Save has to stay live.
-    this.draft?.markDirty();
     this.closeImportDialog();
     await this.save();
   }

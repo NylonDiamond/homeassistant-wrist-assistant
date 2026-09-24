@@ -52,4 +52,27 @@ describe("Draft commit", () => {
     expect(saved.testValues.get("sensor.v")).toBe("120");
     expect(saved.dirty).toBe(false);
   });
+
+  it("keeps edits made while a save is in flight unsaved", () => {
+    const d = new Draft(newConfig("T", 0), null);
+    d.update((c) => { c.name = "First edit"; });
+    const sent = d.encoded();
+    d.update((c) => { c.name = "Second edit"; });
+
+    const afterSave = d.commit(1, sent);
+    expect(afterSave.config.name).toBe("Second edit");
+    expect(afterSave.dirty).toBe(true);
+    expect(afterSave.baseRevision).toBe(1);
+
+    afterSave.undo();
+    expect(afterSave.config.name).toBe("First edit");
+    expect(afterSave.dirty).toBe(false);
+  });
+
+  it("reads clean when the submitted document is still the current draft", () => {
+    const d = new Draft(newConfig("T", 0), null);
+    d.update((c) => { c.name = "Saved name"; });
+
+    expect(d.commit(1, d.encoded()).dirty).toBe(false);
+  });
 });

@@ -182,4 +182,23 @@ describe("PictureCache", () => {
     expect(revoked).toEqual(["blob:1", "blob:2"]);
     expect(cache.size).toBe(0);
   });
+
+  it("ignores a camera reply that arrives after the panel was cleared", async () => {
+    let finish!: (reply: { ok: boolean; status: number; blob: () => Promise<Blob> }) => void;
+    const pending = new Promise<{ ok: boolean; status: number; blob: () => Promise<Blob> }>((resolve) => { finish = resolve; });
+    const changed = vi.fn();
+    const { host: h, fetched } = host({ fetch: () => pending, changed });
+    const cache = new PictureCache(h);
+
+    cache.urlFor("camera.front", "/live");
+    cache.clear();
+    finish({ ok: true, status: 200, blob: async () => bytes() });
+    await settle();
+
+    expect(cache.size).toBe(0);
+    expect(changed).not.toHaveBeenCalled();
+    // A reconnect may ask again even if the old fetch has not finished.
+    expect(cache.urlFor("camera.front", "/live")).toBeUndefined();
+    expect(fetched).toHaveLength(2);
+  });
 });
