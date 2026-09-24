@@ -5197,10 +5197,13 @@ export class WristAssistantPanel extends LitElement {
        holds its cases, a case holds an If part and a Then part, and each
        part holds rows. The rails on the left of the parts are what say "these
        belong together". */
-    .rule { border: 1px solid var(--wa-line-strong); border-radius: 12px; padding: 8px 12px 12px; }
+    .rule {
+      border: 1px solid color-mix(in srgb, var(--wa-states) 45%, var(--wa-line)); border-radius: 12px; padding: 8px 12px 12px;
+      background: color-mix(in srgb, var(--wa-states) 4%, transparent);
+    }
     .case {
       border: 1px solid var(--wa-line); border-radius: 10px; padding: 6px 12px 10px; margin-top: 10px;
-      background: color-mix(in srgb, var(--wa-ink) 2.5%, transparent);
+      background: var(--wa-panel);
     }
     .case.match { border-color: color-mix(in srgb, var(--success-color, #43a047) 60%, var(--wa-line)); }
     .rule > .rsect, .case > .rsect { margin: 0; }
@@ -5677,7 +5680,7 @@ export class WristAssistantPanel extends LitElement {
     }
     /* The add controls under a states table: one strip of buttons, each with
        its explanation in its tooltip, so the table is the loudest thing here. */
-    .states > .states-add { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0 2px var(--wa-col); }
+    .states > .states-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 2px; }
     /* The change menu: the settings a state can still change, one per line. */
     .chip-menu {
       position: fixed; inset: auto; margin: 0; padding: 4px; border-radius: 10px; border: 1px solid var(--wa-line-strong);
