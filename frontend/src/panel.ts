@@ -5198,9 +5198,14 @@ export class WristAssistantPanel extends LitElement {
        part holds rows. The rails on the left of the parts are what say "these
        belong together". */
     .rule {
-      border: 1px solid color-mix(in srgb, var(--wa-states) 45%, var(--wa-line)); border-radius: 12px; padding: 8px 12px 12px;
-      background: color-mix(in srgb, var(--wa-states) 4%, transparent);
+      --rule-tint: #5c6bc0;
+      border: 1px solid color-mix(in srgb, var(--rule-tint) 55%, var(--wa-line)); border-radius: 12px; padding: 8px 12px 12px;
+      background: color-mix(in srgb, var(--rule-tint) 6%, transparent);
     }
+    /* The Simple or Advanced switch at the top of the card, on its own line. */
+    .editor-switch { margin: 0 0 10px; }
+    .editor-switch > .seg.wide { height: 28px; border-radius: 8px; }
+    .editor-switch > .hint { margin-top: 4px; }
     .case {
       border: 1px solid var(--wa-line); border-radius: 10px; padding: 6px 12px 10px; margin-top: 10px;
       background: var(--wa-panel);
@@ -5681,6 +5686,7 @@ export class WristAssistantPanel extends LitElement {
     /* The add controls under a states table: one strip of buttons, each with
        its explanation in its tooltip, so the table is the loudest thing here. */
     .states > .states-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 2px; }
+    .states > .states-add.centered { justify-content: center; margin: 10px 0 6px; }
     /* The change menu: the settings a state can still change, one per line. */
     .chip-menu {
       position: fixed; inset: auto; margin: 0; padding: 4px; border-radius: 10px; border: 1px solid var(--wa-line-strong);

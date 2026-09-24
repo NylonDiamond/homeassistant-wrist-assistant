@@ -9918,7 +9918,7 @@ function ruleEditor(host: EditorHost, rule: Rule, ri: number, count: number, tar
     </div>`}
     <div class="radd">
       <button class="small pill" title="Add a case: when its tests hold, this rule makes these changes" @click=${() => updRule((r) => { r.cases.push(seededCase(host, seed)); })}>${uiIcon("plus")}<span>Add a case</span></button>
-      ${rule.otherwise === undefined
+      ${rule.otherwise === undefined && rule.cases.length > 0
         ? html`<button class="small pill" title="Add Otherwise at the bottom: the changes when no case matches" @click=${() => updRule((r) => { r.otherwise = []; })}>${uiIcon("plus")}<span>Add otherwise</span></button>`
         : nothing}
     </div>
@@ -10262,26 +10262,27 @@ export function statesEditor(
     // chip's pending choice, else the layer's own entity.
     const seed = rules[0]?.cases[0]?.when.tests[0]?.value ?? pendingTestValues.get(key) ?? defaultValue;
     return html`
-      ${rulesEditor(host, rules, target, locate, key, parts, seed)}
-      ${editorSwitch(key, "advanced", shape)}`;
+      ${editorSwitch(key, "advanced", shape)}
+      ${rulesEditor(host, rules, target, locate, key, parts, seed)}`;
   }
   return statesTable(host, shape.table, rules[0], target, locate, key, defaultValue, parts, options);
 }
 
-/** The row at the foot of the States card that picks the editor: the table,
+/** The switch at the top of the States card that picks the editor: Simple,
  * or Advanced for several rules, several tests per state, or a regular
- * expression. Table is greyed out, with the reason, while the rules are past
- * what it can show. */
+ * expression. Simple is greyed out, with the reason, while the rules are
+ * past what it can show. */
 function editorSwitch(key: string, current: "table" | "advanced", shape: TableShape): TemplateResult {
-  return html`
-    ${segField("Editor", current, [["table", "Simple"], ["advanced", "Advanced"]], (v, node) => {
+  return html`<div class="editor-switch">
+    ${segButtons("Editor", current, [["table", "Simple"], ["advanced", "Advanced"]], (v, node) => {
       if (v === "advanced") advancedRules.add(key); else advancedRules.delete(key);
       requestRerender(node);
     }, {
       disabled: { table: !shape.ok },
       titles: { table: shape.ok ? "One value, one test per state" : "These rules are past what the simple editor can show", advanced: "Several rules, several tests per state, or a regular expression" },
     })}
-    ${shape.ok ? nothing : html`<div class="hint">${shape.reason}</div>`}`;
+    ${shape.ok ? nothing : html`<div class="hint">${shape.reason}</div>`}
+  </div>`;
 }
 
 /** What a states table works out before it draws, and what a new row is made
@@ -10508,6 +10509,7 @@ function statesTable(
 
   return html`
     <div class="states">
+      ${editorSwitch(key, "table", { ok: true, table })}
       ${valueEditor(host, tested ?? literal(""), setTested, { label: "Testing", showResolved: true, key: `${key}-lhs` })}
       ${tested === undefined ? html`<div class="hint keep">Choose what these states look at.</div>` : nothing}
       ${parts === undefined ? nothing : partTargetField(parts, partId, describeContext(host), setPart)}
@@ -10533,7 +10535,7 @@ function statesTable(
         <button class="danger small" @click=${(e: Event) => { requestRerender(e.target); fill(); }}>Fill</button>
         <button class="small" @click=${(e: Event) => { pendingStatesFill.delete(key); requestRerender(e.target); }}>Cancel</button>
       </div>`}
-      <div class="states-add">
+      <div class="states-add ${fresh ? "centered" : ""}">
         <button class="small pill" title=${fresh
           ? `Start the states: ${startText(shape, resolved).replace(/^Add a state starts with /, "").replace(/\.$/, "")}`
           : `Add a row: when the value matches, this ${target === "layout" ? "shape" : "layer"} changes how it looks`} @click=${addRow}>${uiIcon("plus")}<span>Add a state</span></button>
@@ -10542,7 +10544,7 @@ function statesTable(
             if (hasRows) { pendingStatesFill.add(key); requestRerender(e.target); return; }
             fill();
           }}>${uiIcon("plus")}<span>Fill from the entity</span></button>`}
-        ${table.otherwise === undefined
+        ${table.otherwise === undefined && table.rows.length > 0
           ? html`<button class="small pill" title="Add an Otherwise row at the bottom: the look when no state above matches" @click=${() => upd((rs) => setOtherwise(rs, true, seedColor))}>${uiIcon("plus")}<span>Add otherwise</span></button>`
           : nothing}
       </div>
@@ -10553,7 +10555,6 @@ function statesTable(
         ? "States are checked top to bottom and the first match wins, so each band only has to say where it ends."
         : "States are checked top to bottom and the first match wins. Otherwise applies when none of them do."}</div>
       <div class="hint">Click a row to hold the previews on it, and again to go back to live.</div>
-      ${editorSwitch(key, "table", { ok: true, table })}
     </div>`;
 }
 
