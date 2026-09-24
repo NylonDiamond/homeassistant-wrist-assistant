@@ -840,6 +840,17 @@ export function selectField<T extends string>(label: string, value: T, options: 
     </select></label>`;
 }
 
+/** A select whose options sit under headings, for a list long enough that a
+ * flat one reads as a wall. An empty group is left out. */
+export function groupedSelectField<T extends string>(label: string, value: T, groups: { label: string; options: [T, string][] }[], set: (v: T) => void) {
+  return html`<label class="field"><span>${label}</span>
+    <select @change=${onInput((v) => set(v as T))}>
+      ${groups.filter((g) => g.options.length > 0).map((g) => html`<optgroup label=${g.label}>
+        ${g.options.map(([v, text]) => html`<option value=${v} ?selected=${v === value}>${text}</option>`)}
+      </optgroup>`)}
+    </select></label>`;
+}
+
 /**
  * A choice of two to four, drawn as a row of buttons with the current one
  * lit. Every option is on screen at once, so the reader knows what the setting
@@ -1979,6 +1990,34 @@ const VALUE_KINDS: [ValueKind["kind"], string][] = [
   ["named", "Shared value"],
 ];
 
+/** The Source menu in four groups, so ten sources do not read as one wall:
+ * what you type, what an entity gives, the clock, and what this complication
+ * already has. */
+const VALUE_KIND_GROUPS: { label: string; kinds: ValueKind["kind"][] }[] = [
+  { label: "Typed in", kinds: ["literal", "jinja"] },
+  { label: "From an entity", kinds: ["entityState", "entityAttribute", "entityAge", "aggregate"] },
+  { label: "Time", kinds: ["time", "dataAge"] },
+  { label: "From this complication", kinds: ["chartStat", "listStat", "item", "imageTime", "named"] },
+];
+
+/** `valueKindsFor`, under its group headings. A source in no group (there
+ * is none today) lands at the end under Other. */
+export function valueKindGroups(host: EditorHost, kind: ValueKind, opts: ValueEditorOptions): { label: string; options: [ValueKind["kind"], string][] }[] {
+  const kinds = valueKindsFor(host, kind, opts);
+  const placed = new Set<ValueKind["kind"]>();
+  const groups = VALUE_KIND_GROUPS.map((g) => ({
+    label: g.label,
+    options: g.kinds.flatMap((k) => {
+      const found = kinds.find(([kk]) => kk === k);
+      if (!found) return [];
+      placed.add(k);
+      return [found];
+    }),
+  }));
+  const other = kinds.filter(([k]) => !placed.has(k));
+  return other.length === 0 ? groups : [...groups, { label: "Other", options: other }];
+}
+
 /** One line under Source that says what the chosen source gives. Sources
  * whose own fields already explain them (a chart's number, a template, a
  * shared value) are left out. */
@@ -2825,11 +2864,10 @@ export function timedPictures(elements: readonly CElement[]): Extract<CElement, 
 function valueForm(host: EditorHost, value: Value, set: (v: Value) => void, opts: ValueEditorOptions): TemplateResult {
   const k = value.kind;
   const setKind = (kind: ValueKind) => set({ ...value, kind });
-  const kinds = valueKindsFor(host, k, opts);
   const body = valueBody(host, value, set, opts);
   const kindHint = VALUE_KIND_HINTS[k.kind];
   return html`
-    ${selectField("Source", k.kind, kinds, (kind) => setKind(switchKind(k, kind)))}
+    ${groupedSelectField("Source", k.kind, valueKindGroups(host, k, opts), (kind) => setKind(switchKind(k, kind)))}
     ${kindHint ? html`<div class="hint">${kindHint}</div>` : nothing}
     ${body}
     ${canShare(value, opts) ? html`<div class="hint keep">
