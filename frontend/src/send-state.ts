@@ -160,7 +160,8 @@ export function agoWords(seconds: number): string {
 }
 
 /** Status text and its explanation; `resend` offers the watch's re-wake link,
- * `refresh` the phone's re-push one (never both), and `note` is the quieter
+ * only while the watch is listening (a closed watch app has no long-poll to
+ * wake), `refresh` the phone's re-push one (never both), and `note` is the quieter
  * half of the chip, drawn in muted ink beside the label rather than in the
  * label's own color. */
 export function describeSend(
@@ -261,7 +262,7 @@ export function describeSend(
           note: "open the watch app to sync",
           title:
             "Saved here, not on the watch yet. Saves reach the watch by themselves while Wrist Assistant is open on this home. Open the app, or switch the watch to this home, and it pulls at once.",
-          resend: true,
+          resend: false,
           refresh: false,
         };
       }
@@ -269,7 +270,7 @@ export function describeSend(
         label: "Open the watch app to sync",
         title:
           "Saves reach the watch by themselves while Wrist Assistant is open on this home. Open the app, or switch the watch to this home, and it pulls at once.",
-        resend: true,
+        resend: false,
         refresh: false,
       };
   }

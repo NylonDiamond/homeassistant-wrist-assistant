@@ -2162,6 +2162,10 @@ export class WristAssistantPanel extends LitElement {
     }
     header button.icon.tb-icon { width: 30px; height: 30px; }
     header button.icon.tb-icon svg.ui-icon { width: 16px; height: 16px; }
+    /* Undo and redo light up amber while there is a step to take. */
+    header button.icon.tb-undo:not(:disabled) { color: var(--wa-amber); opacity: 1; }
+    header button.icon.tb-undo:hover:not(:disabled) { background: var(--wa-amber-bg); }
+    header button.icon.tb-undo:disabled { opacity: .35; cursor: default; }
     .tb-div { width: 1px; height: 20px; flex: none; background: var(--wa-line); }
     .tb-sync {
       display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px 0 8px; min-width: 0; max-width: 380px;
@@ -10207,8 +10211,8 @@ export class WristAssistantPanel extends LitElement {
         @click=${() => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true }))}>${uiIcon("menu")}</button>` : nothing}
       ${this.renderPicker()}
       <span class="spacer"></span>
-      <button class="icon tb-icon" @click=${() => this.undo()} ?disabled=${!d?.canUndo} title="Undo (⌘Z)" aria-label="Undo">${uiIcon("undo")}</button>
-      <button class="icon tb-icon" @click=${() => this.redo()} ?disabled=${!d?.canRedo} title="Redo (⇧⌘Z)" aria-label="Redo">${uiIcon("redo")}</button>
+      <button class="icon tb-icon tb-undo" @click=${() => this.undo()} ?disabled=${!d?.canUndo} title="Undo (⌘Z)" aria-label="Undo">${uiIcon("undo")}</button>
+      <button class="icon tb-icon tb-undo" @click=${() => this.redo()} ?disabled=${!d?.canRedo} title="Redo (⇧⌘Z)" aria-label="Redo">${uiIcon("redo")}</button>
       <span class="tb-div" aria-hidden="true"></span>
       ${this.renderSendPill()}
       ${this.renderImportButton()}

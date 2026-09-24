@@ -82,6 +82,8 @@ describe("sendState", () => {
     expect(s.kind).toBe("offline");
     expect(describeSend(s).label).toBe("Open the watch app to sync");
     expect(describeSend(s).title).toContain("by themselves");
-    expect(describeSend(s).resend).toBe(true);
+    // A closed watch app has no long-poll for Resend to wake.
+    expect(describeSend(s).resend).toBe(false);
+    expect(describeSend({ kind: "offline", pending: 2 }).resend).toBe(false);
   });
 });
