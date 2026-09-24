@@ -2889,10 +2889,25 @@ export class WristAssistantPanel extends LitElement {
     /* What the dialog is about to ask, beside its title: three steps named
        before the first one is answered. */
     .new-head-note { font-size: 11.5px; color: var(--wa-muted); }
+    /* On a phone the note goes under the title, which had been squeezed to a
+       column three lines tall beside it. */
+    @media (max-width: 640px) {
+      .new-head { flex-wrap: wrap; row-gap: 2px; padding: 10px 10px 10px 14px; }
+      .new-head h2 { flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; }
+      .new-head-note { order: 3; flex: 1 1 100%; }
+      .new-head .spacer { display: none; }
+      .new-body { padding: 12px; }
+    }
     /* The three steps, stacked, with the body scrolling rather than the window:
        a home with four devices has four sections of shapes and two boxes of
        people under them. */
     .new-body { padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; max-height: min(88vh, 960px); overflow-y: auto; }
+    /* The dialog holds to the screen and the body takes what the head and
+       the foot leave. The body's own cap alone let a long Duplicate push its
+       foot, and the button that does the work, off the bottom of a phone. */
+    dialog.new-dialog[open] { display: flex; flex-direction: column; max-height: calc(100dvh - 32px); }
+    dialog.new-dialog[open] > .new-head, dialog.new-dialog[open] > .new-foot { flex: none; }
+    dialog.new-dialog[open] > .new-body { flex: 1 1 auto; min-height: 0; max-height: none; }
     /* One tinted container per step, each a different token so the three read
        as an order rather than as three of the same box. Mixed into the card
        rather than written as a color, so dark mode follows. */
@@ -5279,7 +5294,16 @@ export class WristAssistantPanel extends LitElement {
     .help-body section + section h3 { margin-top: 0; }
     .help-head h2 { margin: 0; font-size: 15px; font-weight: 500; }
     .help-head .spacer { flex: 1; }
-    .help-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 8px 24px; padding: 14px 18px 18px; }
+    .help-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); gap: 8px 24px; padding: 14px 18px 18px; }
+    /* On a phone each term stands over its explanation, rather than in a
+       column that squeezed the explanation into half the width. */
+    @media (max-width: 640px) {
+      .help-body { padding: 12px 14px 16px; }
+      .help-body table.terms, .help-body table.terms tbody, .help-body table.terms tr,
+      .help-body table.terms th, .help-body table.terms td { display: block; width: auto; }
+      .help-body table.terms th { padding: 8px 0 2px; }
+      .help-body table.terms td { border-top: 0; padding: 0 0 6px; }
+    }
     .help-body h3 { margin: 0 0 6px; font-size: 12.5px; font-weight: 600; color: var(--wa-muted); }
     .help-body table { border-collapse: collapse; width: 100%; font-size: 13px; }
     .help-body th { text-align: left; font-weight: 500; white-space: nowrap; padding: 5px 12px 5px 0; vertical-align: top; width: 1%; }
@@ -5306,6 +5330,12 @@ export class WristAssistantPanel extends LitElement {
     }
     .zoom-bar .under { margin: 0; text-align: left; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .zoom-bar .spacer { flex: 1; min-width: 0; }
+    /* On a phone the tools wrap to a second line rather than push Close off
+       the right edge, and the hint, which only restates the editor's, goes. */
+    @media (max-width: 640px) {
+      .zoom-bar { flex-wrap: wrap; row-gap: 6px; padding: 8px 10px; }
+      .zoom-bar .under, .zoom-bar .spacer { display: none; }
+    }
     .zoom-stage {
       flex: 1 1 auto; min-height: 0; display: grid; place-items: center; padding: 16px;
       background:
@@ -6688,7 +6718,7 @@ export class WristAssistantPanel extends LitElement {
     if (slashOpensAddSearch(e, inTextField, dialogOpen) && this.canAddHere) {
       e.preventDefault();
       if (this.addSheet) this.focusAddSearch();
-      else this.openAddSheet();
+      else this.openAddSheet(undefined, undefined, true);
       return;
     }
     // With nothing typed into, Escape clears the selection, the way it does in
@@ -15253,12 +15283,13 @@ export class WristAssistantPanel extends LitElement {
 
   /**
    * Open the Add sheet, hung under the + Add button when there is room and in
-   * the middle of the window when there is not. The search has the keyboard
-   * the moment it opens, so the / key and a click on + Add both land ready to
-   * type. The library of saved parts is read the first time, so its tab can
-   * say how many there are.
+   * the middle of the window when there is not. Only the / key opens it with
+   * the keyboard in its search: a click on + Add opens it to look through,
+   * and on a phone a focused search brought the on-screen keyboard up over
+   * the very tiles the sheet is for. The library of saved parts is read the
+   * first time, so its tab can say how many there are.
    */
-  private openAddSheet(anchor?: HTMLElement | null, tab?: AddTab) {
+  private openAddSheet(anchor?: HTMLElement | null, tab?: AddTab, typing = false) {
     if (!this.canAddHere) return;
     const button = anchor ?? this.renderRoot.querySelector<HTMLElement>(".add-open");
     const r = button?.getBoundingClientRect();
@@ -15277,7 +15308,7 @@ export class WristAssistantPanel extends LitElement {
     this.toggleSideMenu(this.sideMenu ?? "top", false);
     window.addEventListener("pointerdown", this.addSheetOutside, { capture: true });
     if (this.parts === undefined || tab === "parts") void this.loadParts();
-    this.focusAddSearch();
+    if (typing) this.focusAddSearch();
   }
 
   private closeAddSheet() {
