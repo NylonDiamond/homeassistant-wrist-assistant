@@ -17,6 +17,7 @@
 import { html, render, svg, type TemplateResult } from "lit";
 import {
   type CustomComplicationConfig,
+  type DrawableFamily,
   type Value,
   DESIGN_BOX,
   DRAWABLE_FAMILIES,
@@ -28,7 +29,7 @@ import {
   timelineHistoryKey,
 } from "./model.js";
 import { keyFor, listExpressionKey, listKey } from "./compiler.js";
-import { type EntityState, type ResolveContext, type ResolvedInline, resolveAll } from "./resolver.js";
+import { type EntityState, type ResolveContext, type ResolvedInline, type ResolvedLayout, resolveAll } from "./resolver.js";
 import { type IconProvider, renderLayout } from "./renderer.js";
 import { type ShareSlot, scrubForShare } from "./transfer.js";
 import { GALLERY_LIMITS, type GalleryPreview } from "./gallery.js";
@@ -141,9 +142,9 @@ export function galleryPreviewContext(
 }
 
 /**
- * The document's one picture, drawn at its shape's own design box, so a Home
+ * The document's picture, drawn at its shape's own design box, so a Home
  * Screen tile comes out at the tile's proportions and a watch shape at the
- * watch's.
+ * watch's. A paged design gets one picture per page.
  *
  * A complication is one shape, so there is one picture. A document an older
  * panel wrote can still carry several shapes and still be shared: it is drawn
@@ -158,17 +159,49 @@ export async function renderGalleryPreviews(
   source: PreviewSource,
   icons: IconProvider,
 ): Promise<GalleryPreview[]> {
-  const scrubbed = scrubForShare(cfg, slots);
-  const ctx = galleryPreviewContext(cfg, scrubbed, slots, source);
-  const layouts = resolveAll(withPicturePlaceholders(scrubbed), ctx);
-  const family = DRAWABLE_FAMILIES.find((f) => layouts[f]);
-  if (family === undefined) {
-    if (!layouts.inline) return [];
-    const line = inlineLineSvg(layouts.inline, icons, measureWith(INLINE_FONT));
+  const plan = galleryPreviewPlan(cfg, slots, source);
+  if (plan.kind === "inline") {
+    const line = inlineLineSvg(plan.inline, icons, measureWith(INLINE_FONT));
     return line ? [{ family: "inline", png: await templateToPng(line) }] : [];
   }
-  const png = await templateToPng(renderLayout(layouts[family]!, { icons, slot: DESIGN_BOX[family], pictureScene: true }));
-  return [{ family, png }];
+  if (plan.kind === "none") return [];
+  const out: GalleryPreview[] = [];
+  for (const { page, layout } of plan.pages) {
+    const png = await templateToPng(renderLayout(layout, { icons, slot: DESIGN_BOX[plan.family], pictureScene: true }));
+    out.push(page === undefined ? { family: plan.family, png } : { family: plan.family, page, png });
+  }
+  return out;
+}
+
+/** What the upload's pictures show, before anything is drawn: the inline
+ * line, or the shape's layout once per page (`page` left off for a design
+ * without pages). */
+export type GalleryPreviewPlan =
+  | { kind: "none" }
+  | { kind: "inline"; inline: ResolvedInline }
+  | { kind: "canvas"; family: DrawableFamily; pages: { page?: number; layout: ResolvedLayout }[] };
+
+export function galleryPreviewPlan(
+  cfg: CustomComplicationConfig,
+  slots: readonly ShareSlot[],
+  source: PreviewSource,
+): GalleryPreviewPlan {
+  const scrubbed = scrubForShare(cfg, slots);
+  const ctx = galleryPreviewContext(cfg, scrubbed, slots, source);
+  const drawn = withPicturePlaceholders(scrubbed);
+  const layouts = resolveAll(drawn, ctx);
+  const family = DRAWABLE_FAMILIES.find((f) => layouts[f]);
+  if (family === undefined) return layouts.inline ? { kind: "inline", inline: layouts.inline } : { kind: "none" };
+  const count = scrubbed.pages?.count ?? 1;
+  if (count <= 1) return { kind: "canvas", family, pages: [{ layout: layouts[family]! }] };
+  // A paged design is still one upload: one picture per page, page 1 first,
+  // each drawn from only the layers that page shows.
+  const pages: { page: number; layout: ResolvedLayout }[] = [];
+  for (let page = 1; page <= count; page += 1) {
+    const layout = resolveAll(drawn, { ...ctx, page })[family];
+    if (layout) pages.push({ page, layout });
+  }
+  return { kind: "canvas", family, pages };
 }
 
 /** The inline line's type, the size the panel's own inline preview uses. */

@@ -96,10 +96,10 @@ export const GALLERY_LIMITS = {
   tags: 5,
   slots: 40,
   slotLabel: 60,
-  // The panel sends one picture, of the document's one shape. Eight is what
-  // the gallery contract states, from when a document held every shape at
-  // once, and it stays here as the cap an older panel's upload is measured
-  // against.
+  // The panel sends one picture of the document's one shape, or one per page
+  // of a paged design (at most PAGES_MAX_COUNT, four). Eight is what the
+  // gallery contract states, from when a document held every shape at once.
+  // Four pictures at the PNG cap still fit the body cap.
   previews: 8,
   shareTextBytes: 64 * 1024,
   pngBytes: 150 * 1024,
@@ -141,6 +141,9 @@ export interface GallerySlot {
 
 export interface GalleryPreview {
   family: FamilyKind;
+  /** Which page of a paged design this picture shows, 1-based. Left off for
+   * a design without pages, which the gallery reads as page 1. */
+  page?: number;
   /** Base64 PNG, no data URL prefix. */
   png: string;
 }

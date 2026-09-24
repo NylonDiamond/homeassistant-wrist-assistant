@@ -42,7 +42,7 @@ import {
   submitToGallery,
   unquotedEntityIds,
 } from "../src/gallery.js";
-import { galleryPreviewContext, inlineLineSvg, inlineRunsShown, withPicturePlaceholders } from "../src/preview-png.js";
+import { galleryPreviewContext, galleryPreviewPlan, inlineLineSvg, inlineRunsShown, withPicturePlaceholders } from "../src/preview-png.js";
 import { inlineSymbolMarker } from "../src/model.js";
 import type { IconProvider } from "../src/renderer.js";
 import { svg as litSvg, type TemplateResult } from "lit";
@@ -775,6 +775,35 @@ describe("preview context", () => {
     expect(out.elements.some((el) => el.kind === "image")).toBe(true);
     expect(out.elements.some((el) => el.kind === "imageTime")).toBe(false);
     expect(cfg.elements.some((el) => el.kind === "imageTime")).toBe(true);
+  });
+
+  describe("the pictures of a paged design", () => {
+    const noLiveData = { entityState: () => undefined, templateResults: new Map(), historySeries: new Map() };
+
+    it("draws one picture per page, each with only that page's layers", () => {
+      const cfg = fixtureConfig("pages.json");
+      const plan = galleryPreviewPlan(cfg, [], noLiveData);
+      if (plan.kind !== "canvas") throw new Error(`expected a canvas plan, got ${plan.kind}`);
+      expect(plan.family).toBe("rectangular");
+      expect(plan.pages.map((p) => p.page)).toEqual([1, 2, 3]);
+      const everyPage = cfg.elements.find((el) => el.kind === "text" && el.payload.page === undefined)!.payload.id;
+      cfg.elements.filter((el) => el.kind !== "tap").forEach((el) => {
+        for (const { page, layout } of plan.pages) {
+          const shown = layout.elements.some((r) => r.id === el.payload.id);
+          expect(shown, `${el.kind} pinned to ${el.payload.page ?? "every page"} on page ${page}`)
+            .toBe(el.payload.id === everyPage || el.payload.page === page);
+        }
+      });
+    });
+
+    it("draws a design without pages once, with no page number", () => {
+      const cfg = fixtureConfig("pages.json");
+      setPageCount(cfg, 1);
+      const plan = galleryPreviewPlan(cfg, [], noLiveData);
+      if (plan.kind !== "canvas") throw new Error(`expected a canvas plan, got ${plan.kind}`);
+      expect(plan.pages).toHaveLength(1);
+      expect(plan.pages[0]!.page).toBeUndefined();
+    });
   });
 
   describe("the inline line's picture", () => {
