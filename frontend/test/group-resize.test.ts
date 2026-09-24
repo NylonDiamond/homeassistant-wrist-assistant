@@ -75,13 +75,23 @@ describe("frameInResizedBox", () => {
 describe("a group corner drag", () => {
   const box = frame({ x: 0.2, y: 0.2, width: 0.4, height: 0.2 });
 
-  it("keeps the box's proportions, led by the side pulled further", () => {
-    // 20 across on a 40-wide box is x1.5; 2 down on a 20-high one is x1.1.
+  it("keeps the box's proportions, scaled by the travel along its diagonal", () => {
+    // A 40 by 20 box: (20·40 + 2·20) / (40² + 20²) = 0.42 more.
     const out = drag({ elementId: "g", frame: box, handle: "se", keepAspect: true }, 20, 2);
     expect(out.x).toBe(0.2);
     expect(out.y).toBe(0.2);
-    expect(out.width).toBeCloseTo(0.6, 6);
-    expect(out.height).toBeCloseTo(0.3, 6);
+    expect(out.width).toBeCloseTo(0.568, 6);
+    expect(out.height).toBeCloseTo(0.284, 6);
+  });
+
+  it("lets the long side lead on a wide, short box", () => {
+    // 60 by 8: pulled 18 in and 6 up. The slip up is most of the short side,
+    // and it must not shrink the whole box; the sideways travel decides it.
+    const wide = frame({ x: 0.2, y: 0.2, width: 0.6, height: 0.08 });
+    const out = drag({ elementId: "g", frame: wide, handle: "se", keepAspect: true }, -18, -6);
+    // 1 − (18·60 + 6·8) / (60² + 8²) ≈ 0.692 of the size.
+    expect(out.width).toBeCloseTo(0.415, 3);
+    expect(out.height).toBeCloseTo(0.055, 3);
   });
 
   it("pins the opposite corner when the top-left is pulled", () => {

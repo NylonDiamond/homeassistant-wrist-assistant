@@ -21,8 +21,8 @@ export interface GestureTarget {
   handle?: ResizeHandle;
   /**
    * A corner drag keeps the frame's proportions: a group scaled as one, so
-   * what is inside it keeps its shape. Whichever side the pointer has pulled
-   * further sets the scale, and the opposite corner stays put. It does not
+   * what is inside it keeps its shape. The pointer's travel along the box's
+   * diagonal sets the scale, and the opposite corner stays put. It does not
    * snap, since a grid line can only ever be met on one of the two sides.
    */
   keepAspect?: boolean;
@@ -638,9 +638,17 @@ export function beginGesture(
         y = bottom - height;
       }
       if (target.keepAspect && isCorner(target.handle) && base.width > 0 && base.height > 0) {
-        const kx = width / base.width;
-        const ky = height / base.height;
-        const k = Math.max(MIN_SIZE / Math.min(base.width, base.height), Math.abs(kx - 1) >= Math.abs(ky - 1) ? kx : ky);
+        // The pointer's travel along the box's diagonal, in points, sets the
+        // scale. Each axis then counts as much as the box is long on it: on a
+        // wide, short box a sideways drag scales it, where letting whichever
+        // side changed more by ratio win made a small slip down the short
+        // side shrink the whole box.
+        const w = base.width * canvas.width;
+        const h = base.height * canvas.height;
+        const sx = target.handle.includes("e") ? 1 : -1;
+        const sy = target.handle.includes("s") ? 1 : -1;
+        const along = 1 + (sx * t.x * w + sy * t.y * h) / (w * w + h * h);
+        const k = Math.max(MIN_SIZE / Math.min(base.width, base.height), along);
         width = base.width * k;
         height = base.height * k;
         if (target.handle.includes("w")) x = right - width;
