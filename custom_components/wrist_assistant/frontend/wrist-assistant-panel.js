@@ -5172,7 +5172,13 @@ ${I_(c)}`}}delete s.hidden,delete s.linkId;let l=Wd(a);if(l.length>0){let d=l.sl
     .face-label .fl-sep { flex: none; opacity: .6; }
     .face-label .fl-lock { display: inline-flex; flex: none; font-size: 10px; }
     .face-label .fl-lock svg { width: 10px; height: 10px; }
-    .stage-face > .under { max-width: 460px; font-size: 11px; font-weight: 400; color: var(--wa-hint); }
+    /* Three lines tall whatever it says, the most any hint wraps to, and read
+       from the top. The face is centred together with the hint, so a hint that
+       grew from one line to two when a layer was selected pushed the face up. */
+    .stage-face > .under {
+      max-width: 460px; font-size: 11px; font-weight: 400; color: var(--wa-hint);
+      line-height: 15px; min-height: 45px; align-items: flex-start; align-content: flex-start;
+    }
     .stage-page { position: absolute; top: 25px; left: 16px; z-index: 3; font-size: 11px; color: var(--wa-hint); pointer-events: none; }
     .stage-tools {
       position: absolute; top: 14px; left: 50%; transform: translateX(-50%); z-index: 5;
