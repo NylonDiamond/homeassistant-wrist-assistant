@@ -218,6 +218,12 @@ def _loaded_modules():
             PartsStore=type("PartsStore", (), {}),
             PartsStoreError=type("PartsStoreError", (Exception,), {}),
         )
+        # Card previews too: tested in test_card_preview_store.py.
+        _stub(
+            f"{_PKG}.card_preview_store",
+            CardPreviewStore=type("CardPreviewStore", (), {}),
+            CardPreviewError=type("CardPreviewError", (Exception,), {}),
+        )
 
         store_mod = _load("complication_store")
         secrets_mod = _load("widget_secret_store")
