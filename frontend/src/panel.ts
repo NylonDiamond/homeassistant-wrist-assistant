@@ -4796,7 +4796,7 @@ export class WristAssistantPanel extends LitElement {
     .fgroup > .hint { margin: 2px 0 6px; }
     .fgroup > .hint:last-child { margin-bottom: 4px; }
     .fgroup button.reset-dot { left: -6px; }
-    .sec-b > :is(.adders, .chart-numbers, .states-switch, details.sub),
+    .sec-b > :is(.adders, .chart-numbers, details.sub),
     .src-editor > details.sub { margin-top: 6px; }
     .sec-b > :is(button.small, button.link) { margin: 4px 0; }
     /* Anything in a card that is not a row (help, a note, a strip of buttons)
@@ -4804,7 +4804,7 @@ export class WristAssistantPanel extends LitElement {
        the left. Boxes that hold rows of their own keep the full width, and
        the Advanced editor's rule and case boxes keep their own left edge. */
     :is(.sec-b, .sec-b :is(.fgroup, .grid2, .grid4, .value-editor, .src-editor, .states, .rich-parts, .part-editor))
-      > :is(.hint, .rich-note, .rich-confirm, .adders, .chips, .states-foot, .states-switch, .span-parts, button.small, button.link, details.sub):not(.value-pop *) {
+      > :is(.hint, .rich-note, .rich-confirm, .adders, .chips, .states-foot, .span-parts, button.small, button.link, details.sub):not(.value-pop *) {
       margin-left: var(--wa-col);
     }
     /* A row whose control is a list or a strip of buttons that can wrap: the
@@ -5188,35 +5188,35 @@ export class WristAssistantPanel extends LitElement {
     .branches button.live-match { border-color: var(--success-color, #43a047); }
     pre { font-size: 11px; white-space: pre-wrap; word-break: break-all; max-height: 400px; overflow: auto; background: var(--wa-panel); padding: 8px; border-radius: 6px; }
     button.link { font: inherit; background: none; border: none; color: var(--wa-accent); cursor: pointer; padding: 0; }
-    /* The Advanced editor: a rule is a box, a case a bar down its left side
-       (green while it matches), a test one line, and the changes the same
-       chips a states row shows. Move and delete buttons stay quiet until the
-       pointer is over their row, as they do in the table. */
-    .rule-box { border: 1px solid var(--wa-line); border-radius: 8px; padding: 8px 10px; margin: 8px 0; }
-    .case-box { border-left: 3px solid var(--wa-line); padding: 2px 0 6px 10px; margin: 10px 0; }
-    .case-box.match { border-left-color: var(--success-color, #43a047); }
-    .case-box.otherwise { border-left-style: dashed; }
-    .rule-head { display: flex; align-items: center; gap: 4px; font-size: 13px; min-height: 26px; }
-    .rule-head .row-flag { width: 14px; }
-    .rule-head button.icon { opacity: 0; }
-    :is(.rule-box > .rule-head, .case-box):hover > .rule-head button.icon,
-    .rule-box > .rule-head:hover button.icon, .rule-head button.icon:focus-visible { opacity: .8; }
-    /* When and Then inside a case, each with its small heading, the way the
-       table heads its columns. */
-    .case-part { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
-    .case-label { font-size: 12px; font-weight: 500; opacity: .6; }
-    .case-part > .adders { margin-top: 0; }
-    .case-part > .then-chips { min-height: 26px; }
-    .seg.join { align-self: flex-start; }
-    .test-box { background: var(--wa-panel); border-radius: 8px; padding: 4px 6px 4px 8px; }
-    .test-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    /* The Advanced editor draws no boxes. A rule is rows of the card like any
+       other setting: Preview, then each case as a Case row (its tests, one
+       line each) and a Then row (the same chips a states row shows), then
+       Otherwise. A second rule starts under a thin line. The dot beside a
+       case is green while it matches, as in the table, and the move and
+       delete buttons stay quiet until the pointer is over their row. */
+    .rule.later { border-top: 1px solid var(--wa-line); margin-top: 10px; padding-top: 8px; }
+    .field.rule-title > span:first-child { font-weight: 600; opacity: 1; }
+    .case { margin-top: 2px; }
+    .case-title > span:first-child { display: inline-flex; align-items: center; gap: 2px; }
+    .case-title .row-flag { width: 12px; }
+    .case-title .row-acts { min-height: 26px; }
+    .case-title button.icon, .test-row > button.icon { opacity: 0; }
+    .case-title > .row-acts:hover button.icon, .test:hover .test-row > button.icon, .case-title button.icon:focus-visible, .test-row > button.icon:focus-visible { opacity: .8; }
+    .rule-title .row-acts { min-height: 26px; }
+    .rule-title:hover button.icon, .rule-title button.icon:focus-visible { opacity: .8; }
+    .rule-title button.icon { opacity: 0; }
+    .seg.join { height: 26px; }
+    .case-title .no-change { padding: 0; }
+    /* A test is one line, level with the row's title: the dot, the value, the
+       comparison and what it is compared with. A test with more boxes than fit
+       on one line (a clock window, a pattern) puts them on the line under. */
+    .test { padding: 1px 0; }
+    .test-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 26px; }
     .test-row .row-flag { width: 12px; flex: none; }
     .test-row .row-flag.off { color: var(--wa-muted); opacity: .6; }
     .test-row .value-chip-field { margin: 0; flex: 0 1 auto; min-width: 0; }
     .test-row .spacer { flex: 1; }
-    .test-row > button.icon { opacity: 0; }
-    .test-box:hover .test-row > button.icon, .test-row > button.icon:focus-visible { opacity: .8; }
-    .test-under { margin: 4px 0 2px 18px; }
+    .test-under { margin: 2px 0 4px 18px; }
     .test-under .hint { margin-top: 4px; }
     .tap-menu-group[data-group="presets"] { --g: #f59e0b; }
     .ok { color: var(--success-color, #43a047); font-size: 12px; }
@@ -5632,8 +5632,6 @@ export class WristAssistantPanel extends LitElement {
       width: auto; flex: none; height: 26px; min-height: 26px; padding: 0 22px 0 9px; border-radius: 8px;
       border: 1px dashed var(--wa-line-strong); background-color: transparent; font-size: 12px; font-weight: 600;
     }
-    .states-switch { display: flex; align-items: baseline; gap: 8px; margin-top: 8px; }
-    .states-switch .hint { margin: 0; }
     /* The add controls under a states table: one strip of buttons, each with
        its explanation in its tooltip, so the table is the loudest thing here. */
     .states > .states-add { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0 2px var(--wa-col); }
