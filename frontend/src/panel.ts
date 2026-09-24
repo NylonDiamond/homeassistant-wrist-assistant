@@ -5188,36 +5188,60 @@ export class WristAssistantPanel extends LitElement {
     .branches button.live-match { border-color: var(--success-color, #43a047); }
     pre { font-size: 11px; white-space: pre-wrap; word-break: break-all; max-height: 400px; overflow: auto; background: var(--wa-panel); padding: 8px; border-radius: 6px; }
     button.link { font: inherit; background: none; border: none; color: var(--wa-accent); cursor: pointer; padding: 0; }
-    /* The Advanced editor draws no boxes. A rule is rows of the card like any
-       other setting: Preview, then each case as a Case row (its tests, one
-       line each) and a Then row (the same chips a states row shows), then
-       Otherwise. A second rule starts under a thin line. The dot beside a
-       case is green while it matches, as in the table, and the move and
-       delete buttons stay quiet until the pointer is over their row. */
-    .rule.later { border-top: 1px solid var(--wa-line); margin-top: 10px; padding-top: 8px; }
-    .field.rule-title > span:first-child { font-weight: 600; opacity: 1; }
-    .case { margin-top: 2px; }
-    .case-title > span:first-child { display: inline-flex; align-items: center; gap: 2px; }
-    .case-title .row-flag { width: 12px; }
-    .case-title .row-acts { min-height: 26px; }
-    .case-title button.icon, .test-row > button.icon { opacity: 0; }
-    .case-title > .row-acts:hover button.icon, .test:hover .test-row > button.icon, .case-title button.icon:focus-visible, .test-row > button.icon:focus-visible { opacity: .8; }
-    .rule-title .row-acts { min-height: 26px; }
-    .rule-title:hover button.icon, .rule-title button.icon:focus-visible { opacity: .8; }
-    .rule-title button.icon { opacity: 0; }
+    /* The Advanced editor, laid out the way Home Assistant lays out an
+       automation: a heading per section, one full-width row per item that
+       says what it does in a sentence, a menu on the row, and a pill to add
+       one more. A row opens in place to be edited. */
+    .rules { margin-top: 2px; }
+    .rule.later { border-top: 1px solid var(--wa-line); margin-top: 12px; padding-top: 6px; }
+    .rsect { display: flex; align-items: center; gap: 8px; min-height: 28px; margin: 12px 0 4px; }
+    .rsect h5 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: 0; }
+    .rsect.sub { margin-top: 10px; }
+    .rsect.sub h5 { font-size: 12.5px; font-weight: 600; opacity: .65; }
+    .rsect .spacer { flex: 1; }
+    .rsect button.icon { opacity: .55; }
+    .rsect button.icon:hover, .rsect button.icon:focus-visible { opacity: 1; }
+    .rnote { font-weight: 400; font-size: 12px; color: var(--success-color, #43a047); }
     .seg.join { height: 26px; }
-    .case-title .no-change { padding: 0; }
-    /* A test is one line, level with the row's title: the dot, the value, the
-       comparison and what it is compared with. A test with more boxes than fit
-       on one line (a clock window, a pattern) puts them on the line under. */
-    .test { padding: 1px 0; }
-    .test-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 26px; }
-    .test-row .row-flag { width: 12px; flex: none; }
-    .test-row .row-flag.off { color: var(--wa-muted); opacity: .6; }
-    .test-row .value-chip-field { margin: 0; flex: 0 1 auto; min-width: 0; }
-    .test-row .spacer { flex: 1; }
-    .test-under { margin: 2px 0 4px 18px; }
-    .test-under .hint { margin-top: 4px; }
+    .rcard {
+      border: 1px solid var(--wa-line); border-radius: 10px; background: var(--wa-field);
+      margin: 6px 0;
+    }
+    .rcard.open { border-color: var(--wa-line-strong); }
+    .rrow {
+      display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 4px 4px 4px 12px;
+      border-radius: 10px; cursor: pointer; outline: none;
+    }
+    .rrow:hover { background: color-mix(in srgb, var(--wa-ink) 4%, transparent); }
+    .rrow:focus-visible { box-shadow: var(--wa-ring); }
+    .rcard.open > .rrow { border-radius: 10px 10px 0 0; }
+    .ric { display: inline-flex; flex: none; color: var(--wa-muted); }
+    .ric svg { width: 18px; height: 18px; }
+    .rsum { flex: 1; min-width: 0; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; overflow: hidden; }
+    .rsum .cell-word { overflow: hidden; text-overflow: ellipsis; }
+    .rsum .cell-name { color: var(--wa-muted); }
+    .rsum.ignored { text-decoration: line-through; opacity: .7; }
+    .rrow .row-flag { width: auto; flex: none; }
+    .rrow .row-flag.off { color: var(--wa-muted); opacity: .6; }
+    .rchev { display: inline-flex; flex: none; color: var(--wa-muted); opacity: .6; transition: transform .15s; }
+    .rchev svg { width: 14px; height: 14px; }
+    .rcard.open .rchev { transform: rotate(180deg); }
+    .rrow > button.icon { flex: none; opacity: .6; }
+    .rrow > button.icon:hover, .rrow > button.icon:focus-visible { opacity: 1; }
+    .rbody { padding: 6px 12px 10px; border-top: 1px solid var(--wa-line); }
+    .rbody > .hint { margin-left: var(--wa-col); }
+    .rempty { color: var(--wa-muted); font-size: 12.5px; font-style: italic; padding: 4px 2px; }
+    .radd { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 2px; }
+    button.small.pill {
+      height: 30px; min-height: 30px; padding: 0 14px 0 10px; border-radius: 999px; font-weight: 600;
+      color: var(--wa-accent); border-color: transparent;
+      background: color-mix(in srgb, var(--wa-accent) 16%, transparent);
+    }
+    button.small.pill:hover:not(:disabled) { border-color: transparent; background: color-mix(in srgb, var(--wa-accent) 26%, transparent); }
+    button.small.pill svg { width: 14px; height: 14px; }
+    .chip-menu button.danger { color: var(--error-color, #e5484d); border: none; background: transparent; }
+    .chip-menu button.danger:hover { background: color-mix(in srgb, var(--error-color, #e5484d) 12%, transparent); }
+    .chip-menu button:disabled { opacity: .4; cursor: default; }
     .tap-menu-group[data-group="presets"] { --g: #f59e0b; }
     .ok { color: var(--success-color, #43a047); font-size: 12px; }
     .no { color: var(--error-color, #db4437); font-size: 12px; }
