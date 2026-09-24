@@ -9891,8 +9891,8 @@ function ruleEditor(host: EditorHost, rule: Rule, ri: number, count: number, tar
   const updRule = (m: (r: Rule) => void, k?: string) => upd((rs) => { const r = rs.find((x) => x.id === rule.id); if (r) m(r); }, k);
   const forPart = parts !== undefined && rule.partId !== undefined;
   const otherwiseLive = live === "otherwise";
-  return html`<div class="rule ${ri > 0 ? "later" : ""}">
-    ${count < 2 ? nothing : ruleHeading(`Rule ${ri + 1}`, { right: html`<span class="racts">
+  return html`<div class="rule">
+    ${ruleHeading(count < 2 ? "Rule" : `Rule ${ri + 1}`, { right: html`<span class="racts">
       ${orderButtons(ri, count, (to) => upd((rs) => moveItem(rs, ri, to)), () => upd((rs) => { const i = rs.findIndex((x) => x.id === rule.id); if (i >= 0) rs.splice(i, 1); }), "this rule")}
     </span>` })}
     ${parts === undefined ? nothing : partTargetField(parts, rule.partId, describeContext(host), (id) => updRule((r) => {
@@ -9906,12 +9906,16 @@ function ruleEditor(host: EditorHost, rule: Rule, ri: number, count: number, tar
       </div>
     </div>
     ${rule.cases.map((c, ci) => caseEditor(host, c, ci, rule, target, updRule, `${key}-${c.id}`, forPart, seed))}
-    ${rule.otherwise === undefined ? nothing : html`
+    ${rule.otherwise === undefined ? nothing : html`<div class="case otherwise ${otherwiseLive ? "match" : ""}">
       ${ruleHeading("Otherwise", {
         note: otherwiseLive ? html` <span class="rnote">· active now</span>` : nothing,
-        right: html`<button type="button" class="icon" title="Remove Otherwise" @click=${() => updRule((r) => { delete r.otherwise; })}>${uiIcon("close")}</button>`,
+        right: html`<span class="racts"><button type="button" class="icon danger" title="Delete Otherwise" @click=${() => updRule((r) => { delete r.otherwise; })}>${uiIcon("delete")}</button></span>`,
       })}
-      ${changeRows(host, rule.otherwise, target, (m, k) => updRule((r) => { if (r.otherwise) m(r.otherwise); }, k), `${key}-otherwise`, forPart)}`}
+      <div class="rpart then">
+        <div class="rlabel">When no case matches</div>
+        ${changeRows(host, rule.otherwise, target, (m, k) => updRule((r) => { if (r.otherwise) m(r.otherwise); }, k), `${key}-otherwise`, forPart)}
+      </div>
+    </div>`}
     <div class="radd">
       <button class="small pill" title="Add a case: when its tests hold, this rule makes these changes" @click=${() => updRule((r) => { r.cases.push(seededCase(host, seed)); })}>${uiIcon("plus")}<span>Add a case</span></button>
       ${rule.otherwise === undefined
@@ -9943,6 +9947,8 @@ function caseEditor(host: EditorHost, c: RuleCase, ci: number, rule: Rule, targe
           ${orderButtons(ci, rule.cases.length, (to) => updRule((r) => moveItem(r.cases, ci, to)), () => updRule((r) => { const i = r.cases.findIndex((y) => y.id === c.id); if (i >= 0) r.cases.splice(i, 1); }), "this case")}
         </span>`,
     })}
+    <div class="rpart if">
+    <div class="rlabel">If</div>
     ${tests.length === 0 ? html`<div class="rempty">No tests yet, so this case always matches.</div>` : nothing}
     ${tests.map((t, ti) => testEditor(host, t, ti, tests.length,
       (m) => updCase((x) => { const y = x.when.tests.find((z) => z.id === t.id); if (y) m(y); }),
@@ -9967,8 +9973,11 @@ function caseEditor(host: EditorHost, c: RuleCase, ci: number, rule: Rule, targe
         </div>
       </div>
     </div>
-    ${ruleHeading("Then", { sub: true })}
-    ${changeRows(host, c.then, target, (m, k) => updCase((x) => m(x.then), k), `${key}-then`, forPart)}
+    </div>
+    <div class="rpart then">
+      <div class="rlabel">Then</div>
+      ${changeRows(host, c.then, target, (m, k) => updCase((x) => m(x.then), k), `${key}-then`, forPart)}
+    </div>
   </div>`;
 }
 

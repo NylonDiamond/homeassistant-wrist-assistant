@@ -5192,8 +5192,25 @@ export class WristAssistantPanel extends LitElement {
        automation: a heading per section, one full-width row per item that
        says what it does in a sentence, a menu on the row, and a pill to add
        one more. A row opens in place to be edited. */
-    .rules { margin-top: 2px; }
-    .rule.later { border-top: 1px solid var(--wa-line); margin-top: 12px; padding-top: 6px; }
+    .rules { margin-top: 4px; display: flex; flex-direction: column; gap: 10px; }
+    /* Three levels of box, each one lighter than the one around it: a rule
+       holds its cases, a case holds an If part and a Then part, and each
+       part holds rows. The rails on the left of the parts are what say "these
+       belong together". */
+    .rule { border: 1px solid var(--wa-line-strong); border-radius: 12px; padding: 8px 12px 12px; }
+    .case {
+      border: 1px solid var(--wa-line); border-radius: 10px; padding: 6px 12px 10px; margin-top: 10px;
+      background: color-mix(in srgb, var(--wa-ink) 2.5%, transparent);
+    }
+    .case.match { border-color: color-mix(in srgb, var(--success-color, #43a047) 60%, var(--wa-line)); }
+    .rule > .rsect, .case > .rsect { margin: 0; }
+    .rule > .field { margin-top: 4px; }
+    .rpart { margin-top: 6px; padding-left: 12px; border-left: 3px solid var(--wa-line-strong); }
+    .rpart.then { border-left-color: color-mix(in srgb, var(--wa-accent) 55%, transparent); }
+    .rlabel { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--wa-muted); margin: 4px 0 0; }
+    .rpart.then .rlabel { color: var(--wa-accent); }
+    .rpart .radd { margin-bottom: 2px; }
+    .rule > .radd { margin: 12px 0 0; }
     .rsect { display: flex; align-items: center; gap: 8px; min-height: 28px; margin: 12px 0 4px; }
     .rsect h5 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: 0; }
     .rsect.sub { margin-top: 10px; }
