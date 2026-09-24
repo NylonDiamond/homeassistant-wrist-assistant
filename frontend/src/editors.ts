@@ -6170,7 +6170,7 @@ export function tapSummary(cfg: CustomComplicationConfig, action: TapAction | un
 
 /**
  * The States card's line while it is folded: "none" and what that means, or
- * how many states there are and whether a last row catches the rest.
+ * how many states there are and whether an Otherwise row catches the rest.
  */
 export function statesCardSummary(rules: Rule[]): string {
   const none = "none · looks the same for every value";
@@ -6181,7 +6181,7 @@ export function statesCardSummary(rules: Rule[]): string {
   const otherwise = shape.table.otherwise !== undefined;
   if (n === 0 && !otherwise) return none;
   const count = n === 1 ? "1 state" : `${n} states`;
-  return otherwise ? `${count} · plus the rest` : count;
+  return otherwise ? `${count} · otherwise` : count;
 }
 
 /**
@@ -10314,7 +10314,7 @@ function statesTable(
             fill();
           }}>${uiIcon("plus")}<span>Fill from the entity</span></button>`}
         ${table.otherwise === undefined
-          ? html`<button class="small" title="Add a last row: the look when no state above matches" @click=${() => upd((rs) => setOtherwise(rs, true, seedColor))}>${uiIcon("plus")}<span>${OTHERWISE_LABEL}</span></button>`
+          ? html`<button class="small" title="Add an Otherwise row at the bottom: the look when no state above matches" @click=${() => upd((rs) => setOtherwise(rs, true, seedColor))}>${uiIcon("plus")}<span>Add otherwise</span></button>`
           : nothing}
       </div>
       ${forced === "live" ? nothing : html`<div class="field"><span>Preview</span>
@@ -10322,7 +10322,7 @@ function statesTable(
       </div>`}
       <div class="hint">${numberMode
         ? "States are checked top to bottom and the first match wins, so each band only has to say where it ends."
-        : `States are checked top to bottom and the first match wins. ${OTHERWISE_LABEL} is the look when none of them do.`}</div>
+        : "States are checked top to bottom and the first match wins. Otherwise applies when none of them do."}</div>
       <div class="hint">Click a row to hold the previews on it, and again to go back to live.</div>
       <div class="states-switch">
         <button class="link" @click=${(e: Event) => { advancedRules.add(key); requestRerender(e.target); }}>Advanced</button>
@@ -10331,9 +10331,9 @@ function statesTable(
     </div>`;
 }
 
-/** The last row's name. It is stored as `otherwise`, and the Advanced editor
- * still calls it that; the table says what it means. */
-const OTHERWISE_LABEL = "When nothing matches";
+/** The last row's name, the same word the Advanced editor and the document
+ * use for it. */
+const OTHERWISE_LABEL = "Otherwise";
 
 /**
  * The bar over a number table. Every threshold the rows name is an edge, and

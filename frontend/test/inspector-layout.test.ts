@@ -157,7 +157,7 @@ describe("the cards a new selection opens", () => {
 });
 
 describe("a folded card's summary", () => {
-  it("counts the states, and says when a last row catches the rest", () => {
+  it("counts the states, and says when an Otherwise row catches the rest", () => {
     const light = { kind: { kind: "entityState" as const, entityId: "light.kitchen", displayName: "Kitchen", domain: "light" } };
     expect(statesCardSummary([])).toBe("none · looks the same for every value");
     const two = buildStatesRule(light, [
@@ -166,7 +166,7 @@ describe("a folded card's summary", () => {
     ]);
     expect(statesCardSummary([two])).toBe("2 states");
     const otherwise = buildStatesRule(light, [{ comparison: { kind: "isOn" }, changes: [] }], []);
-    expect(statesCardSummary([otherwise])).toBe("1 state · plus the rest");
+    expect(statesCardSummary([otherwise])).toBe("1 state · otherwise");
   });
 
   it("gives the page, the spot, the size and a turn only when there is one", () => {
