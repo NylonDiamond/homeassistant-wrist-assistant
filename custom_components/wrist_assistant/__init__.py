@@ -760,6 +760,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # document per shape, since an older server would refuse the second one as
     # a slot conflict.
     coordinator.register_capability("custom_complications_slot_per_shape")
+    # The preset move's read-only status op (wa_v2_views.py,
+    # _op_complications_move_status): which derived ids are live or
+    # tombstoned, and the token the watch has applied. The app deletes a
+    # moved preset only on that proof, so without this capability it never
+    # starts a move.
+    coordinator.register_capability("custom_complications_move_status")
     coordinator.register_capability("gzip")
     coordinator.register_capability("slim_payloads")
     coordinator.register_capability("camera_batch")

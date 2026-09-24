@@ -3006,6 +3006,10 @@ async def _op_complications_create(ctx: _OpContext) -> Response:
             outcome["status"] = "exists"
         elif store.get(ctx.watch_id, doc_id) is not None:
             outcome["status"] = "error"
+            # ``reason`` is the machine-readable half: the app used to match
+            # the word "deleted" in the message, which any other store error
+            # mentioning a deletion would also have matched.
+            outcome["reason"] = "deleted"
             outcome["message"] = "id was deleted on the server"
         else:
             shapes = shapes_of(document)
@@ -3048,11 +3052,67 @@ async def _op_complications_create(ctx: _OpContext) -> Response:
     )
 
 
+async def _op_complications_move_status(ctx: _OpContext) -> Response:
+    """What this owner holds and what its watch has applied, changing nothing.
+
+    The iPhone's preset move signs with the watch's pair and needs two things
+    before it may delete a preset: which of its derived document ids are live
+    or tombstoned (to send only what is missing), and whether the watch has
+    applied the token its create returned (proof the face already draws the
+    document). ``complications_sync`` answers the first but not the second,
+    and a pull signed as the watch stamps ``last_sync`` and would overwrite
+    the watch's own reports, so the move must never call it. This op reads
+    and returns; it stamps no sync, records no ack, touches no report.
+
+    Body: {}
+    Reply: {"ok", "token", "applied_token", "owner_forgotten",
+            "max_schema_version", "max_per_owner", "live_count",
+            "tombstone_count",
+            "live": [{"id", "name", "slotIndex", "shapes"}],
+            "tombstones": [<id>, ...]}
+
+    ``applied_token`` is ``None`` when the watch has never acked. The cap
+    counts live records only; ``tombstone_count`` is there so the app can
+    tell "full" from "mostly deleted" in what it shows the user.
+    """
+    store = ctx.domain_data.complication_store
+    live: list[dict[str, Any]] = []
+    tombstones: list[str] = []
+    for record in store.list(ctx.watch_id, include_deleted=True):
+        if record.deleted:
+            tombstones.append(record.id)
+            continue
+        document = record.document or {}
+        live.append(
+            {
+                "id": record.id,
+                "name": document.get("name", ""),
+                "slotIndex": document.get("slotIndex"),
+                "shapes": sorted(shapes_of(document)),
+            }
+        )
+    return ctx.signed_json(
+        {
+            "ok": True,
+            "token": store.owner_token(ctx.watch_id),
+            "applied_token": store.applied_token(ctx.watch_id),
+            "owner_forgotten": store.is_forgotten(ctx.watch_id),
+            "max_schema_version": COMPLICATION_MAX_SCHEMA_VERSION,
+            "max_per_owner": COMPLICATION_MAX_PER_OWNER,
+            "live_count": len(live),
+            "tombstone_count": len(tombstones),
+            "live": live,
+            "tombstones": tombstones,
+        }
+    )
+
+
 # Op dispatch table. Adding a new op = add a key here.
 _OP_HANDLERS: dict[str, Any] = {
     "complications_sync": _op_complications_sync,
     "complications_restore": _op_complications_restore,
     "complications_create": _op_complications_create,
+    "complications_move_status": _op_complications_move_status,
     "service": _op_service,
     "state": _op_state,
     "history": _op_history,

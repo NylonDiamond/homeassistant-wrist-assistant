@@ -78,6 +78,28 @@ def test_the_sync_op_records_the_caller_s_ack_and_stamps_the_pull() -> None:
         assert expected in body, f"_op_complications_sync no longer calls {expected}"
 
 
+def test_the_move_status_op_reads_and_stamps_nothing() -> None:
+    """The preset move calls this op signed as the watch, before and after
+    every create, to learn what is live and what the watch has applied. If it
+    ever stamped the pull or wrote a report, the panel would show a sync the
+    watch never made and the watch's own reports could be overwritten. The
+    op must stay read-only, and it must keep answering the two fields the
+    move's proof rests on."""
+    body = _function_source("wa_v2_views.py", "_op_complications_move_status")
+    for forbidden in (
+        "set_last_sync",
+        "set_applied_token",
+        "set_occupied",
+        "set_presets",
+        "set_pages",
+        "store.save",
+        "store.delete",
+    ):
+        assert forbidden not in body, f"_op_complications_move_status calls {forbidden}"
+    for expected in ("applied_token", "owner_token", "is_forgotten", "include_deleted"):
+        assert expected in body, f"_op_complications_move_status no longer reads {expected}"
+
+
 def test_the_setup_orphan_sweep_cannot_fail_setup() -> None:
     """The sweep is housekeeping. An exception out of it used to fail
     ``async_setup_entry``, taking notifications and cameras down over a
