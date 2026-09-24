@@ -7533,10 +7533,10 @@ ${kP(c)}`}}delete s.hidden,delete s.linkId;let l=Md(a);if(l.length>0){let d=l.sl
       <div class="lc-head">
         <span class="swatch">${A("layers")}</span><span class="lc-title">Layers</span><span class="lc-sub">top is in front</span>
         <span class="spacer"></span>
+        ${this.renderLayersMenu()}
         ${i?u`<button class="lc-btn pri add-open" aria-haspopup="dialog" aria-expanded=${this.addSheet?"true":"false"}
           title="Add a layer, a preset or a saved part (/)"
           @click=${G=>this.toggleAddSheet(G.currentTarget)}>${A("plus")}<span>Add</span></button>`:m}
-        ${this.renderLayersMenu()}
       </div>
       ${b>=2&&i?u`<div class="group-cta"><span>${b} layers picked</span><span class="spacer"></span>
             <button class="small primary" title=${`Group (${ta}G)`} @click=${()=>this.groupPicked()}>Group them</button>
