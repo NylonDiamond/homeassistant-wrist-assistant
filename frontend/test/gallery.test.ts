@@ -42,7 +42,7 @@ import {
   submitToGallery,
   unquotedEntityIds,
 } from "../src/gallery.js";
-import { galleryPreviewContext, inlineLineSvg, withPicturePlaceholders } from "../src/preview-png.js";
+import { galleryPreviewContext, inlineLineSvg, inlineRunsShown, withPicturePlaceholders } from "../src/preview-png.js";
 import { inlineSymbolMarker } from "../src/model.js";
 import type { IconProvider } from "../src/renderer.js";
 import { svg as litSvg, type TemplateResult } from "lit";
@@ -811,6 +811,18 @@ describe("preview context", () => {
       const out = inlineLineSvg({ symbol: "bolt.fill", label: "Power", text: "12 W" }, icons, measure)!;
       expect(drawn).toEqual(["bolt.fill"]);
       expect(words(out)).toContain("Power: 12 W");
+    });
+
+    it("cuts a long line where the watch cuts it, an icon counting as one", () => {
+      const out = inlineRunsShown([{ text: "Text" }, { symbol: "lamp.desk.fill" }, { text: " " }, { symbol: "bed.double.fill" }, { text: " tstetststwsttsetestset" }]);
+      expect(out).toEqual([{ text: "Text" }, { symbol: "lamp.desk.fill" }, { text: " " }, { symbol: "bed.double.fill" }, { text: " tstetst…" }]);
+      const count = out.reduce((n, r) => n + ("text" in r ? [...r.text].length : 1), 0);
+      expect(count).toBe(16);
+    });
+
+    it("keeps a line that fits whole, and cuts plain words like the panel's card", () => {
+      expect(inlineRunsShown([{ symbol: "bolt.fill" }, { text: "Power: 12 W" }])).toEqual([{ symbol: "bolt.fill" }, { text: "Power: 12 W" }]);
+      expect(inlineRunsShown([{ text: "Front Yard test test" }])).toEqual([{ text: "Front Yard test…" }]);
     });
 
     it("skips an icon the pack cannot draw and draws nothing for nothing", () => {

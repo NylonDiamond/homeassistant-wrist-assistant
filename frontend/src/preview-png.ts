@@ -32,6 +32,7 @@ import { type EntityState, type ResolveContext, type ResolvedInline, resolveAll 
 import { type IconProvider, renderLayout } from "./renderer.js";
 import { type ShareSlot, scrubForShare } from "./transfer.js";
 import { GALLERY_LIMITS, type GalleryPreview } from "./gallery.js";
+import { INLINE_MAX_CHARS } from "./shapeArt.js";
 
 /** Pixels per design point. Tried first; smaller scales follow only when a
  * busy picture comes out over the gallery's size limit. */
@@ -176,7 +177,7 @@ const INLINE_FONT = `600 ${INLINE_SIZE}px -apple-system, "SF Pro Text", system-u
 const INLINE_HEIGHT = 20;
 /** The space between an icon and the words beside it. */
 const INLINE_GAP = 3;
-/** Wider than any watch shows; the gallery shrinks a long line to fit. */
+/** A guard only: the line is already cut to what the watch shows. */
 const INLINE_MAX_WIDTH = 480;
 
 function measureWith(font: string): (text: string) => number {
@@ -186,10 +187,45 @@ function measureWith(font: string): (text: string) => number {
   return (text) => g.measureText(text).width;
 }
 
+type InlineRun = { text: string } | { symbol: string };
+
+/**
+ * The line cut where the watch cuts it, by the panel's own rule
+ * (`INLINE_MAX_CHARS`, `inlineShown` in shapeArt.ts): whole when it fits,
+ * else the first characters and an ellipsis. An icon counts as one character.
+ */
+export function inlineRunsShown(runs: readonly InlineRun[]): InlineRun[] {
+  const trimmed = runs.map((r) => ({ ...r }));
+  const first = trimmed[0];
+  if (first && "text" in first) first.text = first.text.trimStart();
+  const last = trimmed[trimmed.length - 1];
+  if (last && "text" in last) last.text = last.text.trimEnd();
+  const kept = trimmed.filter((r) => !("text" in r) || r.text !== "");
+  const size = (r: InlineRun) => ("text" in r ? [...r.text].length : 1);
+  if (kept.reduce((n, r) => n + size(r), 0) <= INLINE_MAX_CHARS) return kept;
+  const out: InlineRun[] = [];
+  let room = INLINE_MAX_CHARS - 1;
+  for (const run of kept) {
+    if (room <= 0) break;
+    if ("symbol" in run) {
+      out.push(run);
+      room -= 1;
+    } else {
+      const chars = [...run.text].slice(0, room);
+      out.push({ text: chars.join("") });
+      room -= chars.length;
+    }
+  }
+  const end = out[out.length - 1];
+  if (end && "text" in end) end.text = `${end.text.trimEnd()}…`;
+  else out.push({ text: "…" });
+  return out;
+}
+
 /**
  * The inline line as one SVG: the symbol, then `label: value`, with each icon
  * part drawn where it sits, white on clear, as the panel's inline preview
- * draws it. A countdown shows its fallback text, since a picture cannot tick.
+ * draws it, and cut where the watch cuts it. A countdown shows its fallback text, since a picture cannot tick.
  * Undefined when there is nothing to draw. `measure` gives a run's width in
  * the line's font; a test passes its own.
  */
@@ -198,9 +234,10 @@ export function inlineLineSvg(
   icons: IconProvider,
   measure: (text: string) => number,
 ): TemplateResult | undefined {
-  const runs: ({ text: string } | { symbol: string })[] = [];
-  if (inline.symbol) runs.push({ symbol: inline.symbol });
-  runs.push(...inlineRuns(`${inline.label ? `${inline.label}: ` : ""}${inline.text}`));
+  const whole: InlineRun[] = [];
+  if (inline.symbol) whole.push({ symbol: inline.symbol });
+  whole.push(...inlineRuns(`${inline.label ? `${inline.label}: ` : ""}${inline.text}`));
+  const runs = inlineRunsShown(whole);
   const pieces: TemplateResult[] = [];
   const baseline = INLINE_HEIGHT / 2 + INLINE_SIZE * 0.36;
   const iconTop = (INLINE_HEIGHT - INLINE_SIZE) / 2;
