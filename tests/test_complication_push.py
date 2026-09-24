@@ -41,7 +41,7 @@ import pytest
 _SRC = Path(__file__).resolve().parents[1] / "custom_components" / "wrist_assistant"
 _PKG = "wa_push_test_pkg"
 
-DEBOUNCE = 2.0
+DEBOUNCE = 0.5
 FLOOR = 30.0
 
 
@@ -297,9 +297,9 @@ def phone(env):
 
 def test_three_saves_inside_the_debounce_send_one_push(phone) -> None:
     phone.save("phone-1")
-    phone.loop.advance(0.5)
+    phone.loop.advance(DEBOUNCE / 2)
     phone.save("phone-1")
-    phone.loop.advance(0.5)
+    phone.loop.advance(DEBOUNCE / 2)
     phone.save("phone-1")
     assert phone.sends == []
 
@@ -318,7 +318,7 @@ def test_a_second_push_waits_out_the_thirty_second_floor(phone) -> None:
 
     phone.loop.advance(1.0)
     phone.save("phone-1")
-    # The debounce alone would have sent it two seconds after the save.
+    # The debounce alone would have sent it moments after the save.
     phone.loop.advance(DEBOUNCE + 1.0)
     assert len(phone.sends) == 1
 
@@ -337,7 +337,7 @@ def test_the_push_carries_the_token_as_it_stands_when_it_is_sent(phone) -> None:
     never go green, because the ack it waits for names the current token.
     """
     phone.save("phone-1")
-    phone.loop.advance(0.5)
+    phone.loop.advance(DEBOUNCE / 2)
     # A commit the debounce swallows, e.g. the delete half of a slot move.
     phone.store.tokens["phone-1"] = 9
     phone.loop.advance(DEBOUNCE)

@@ -12,9 +12,9 @@ target, and a panel save must never raise into the WebSocket handler that is
 waiting on it.
 
 Two timers per owner keep a burst of saves from spending the phone's background
-allowance. iOS budgets an app to a few background pushes an hour, so a panel
-drag that saves five times has to arrive as one push, and a user editing for a
-minute must not spend the whole allowance inside it.
+allowance. iOS budgets an app to a few background pushes an hour, so a batch
+of commits has to arrive as one push, and a user editing for a minute must not
+spend the whole allowance inside it.
 """
 
 from __future__ import annotations
@@ -34,9 +34,13 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
-# Trailing debounce. A save restarts the timer, so a drag that writes several
-# revisions in a second costs one push, sent after the user stops.
-_DEBOUNCE_SECONDS = 2.0
+# Trailing debounce. A save restarts the timer, so a batch the panel writes as
+# several commits (a move, a restore, a multi-record change) costs one push,
+# sent after the last one. Half a second covers a batch of back-to-back
+# WebSocket round trips. It was 2 s while the editor saved on every drag; the
+# editor now saves only on Save, and a person watching an open phone was
+# waiting out those 2 s for nothing.
+_DEBOUNCE_SECONDS = 0.5
 # No owner gets a second push inside this. A save during the floor is not
 # dropped, it is scheduled for the end of it, so the last save of a long
 # editing session always reaches the phone.
