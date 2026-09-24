@@ -255,7 +255,7 @@ export type TableShape =
  */
 export function tableShape(rules: Rule[]): TableShape {
   if (rules.length > 1) {
-    return { ok: false, reason: `There are ${rules.length} rules here. A table shows one.` };
+    return { ok: false, reason: `There are ${rules.length} rules here. The simple editor shows one.` };
   }
   const rule = rules[0];
   if (!rule) {
@@ -271,24 +271,24 @@ export function tableShape(rules: Rule[]): TableShape {
         ok: false,
         reason: tests.length === 0
           ? `State ${i + 1} checks nothing, so it always matches.`
-          : `State ${i + 1} checks ${tests.length} things at once. A table row checks one.`,
+          : `State ${i + 1} checks ${tests.length} things at once. The simple editor checks one per state.`,
       };
     }
     const test = tests[0]!;
     if (!canShowComparison(test.comparison.kind)) {
-      return { ok: false, reason: `State ${i + 1} uses "${COMPARISON_LABELS[test.comparison.kind]}", which a table row cannot show.` };
+      return { ok: false, reason: `State ${i + 1} uses "${COMPARISON_LABELS[test.comparison.kind]}", which the simple editor cannot show.` };
     }
     if (shared === undefined) shared = test.value;
     else if (!valuesEqual(shared, test.value)) {
-      return { ok: false, reason: "The states test different values. A table tests one value in every row." };
+      return { ok: false, reason: "The states test different values. The simple editor tests one value in every state." };
     }
     const twice = duplicateProperty(c.then);
-    if (twice) return { ok: false, reason: `State ${i + 1} sets ${PROPERTY_LABELS[twice]} twice. A table has one cell per column.` };
+    if (twice) return { ok: false, reason: `State ${i + 1} sets ${PROPERTY_LABELS[twice]} twice. The simple editor sets each thing once.` };
     rows.push({ caseId: c.id, testId: test.id, join: c.when.join, comparison: test.comparison, changes: c.then });
   }
   if (rule.otherwise) {
     const twice = duplicateProperty(rule.otherwise);
-    if (twice) return { ok: false, reason: `Otherwise sets ${PROPERTY_LABELS[twice]} twice. A table has one cell per column.` };
+    if (twice) return { ok: false, reason: `Otherwise sets ${PROPERTY_LABELS[twice]} twice. The simple editor sets each thing once.` };
   }
 
   const table: StatesTable = {

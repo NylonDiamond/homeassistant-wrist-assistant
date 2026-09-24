@@ -10274,12 +10274,12 @@ export function statesEditor(
  * what it can show. */
 function editorSwitch(key: string, current: "table" | "advanced", shape: TableShape): TemplateResult {
   return html`
-    ${segField("Editor", current, [["table", "Table"], ["advanced", "Advanced"]], (v, node) => {
+    ${segField("Editor", current, [["table", "Simple"], ["advanced", "Advanced"]], (v, node) => {
       if (v === "advanced") advancedRules.add(key); else advancedRules.delete(key);
       requestRerender(node);
     }, {
       disabled: { table: !shape.ok },
-      titles: { table: shape.ok ? "One value, one test per state" : "These rules cannot be shown as a table", advanced: "Several rules, several tests per state, or a regular expression" },
+      titles: { table: shape.ok ? "One value, one test per state" : "These rules are past what the simple editor can show", advanced: "Several rules, several tests per state, or a regular expression" },
     })}
     ${shape.ok ? nothing : html`<div class="hint">${shape.reason}</div>`}`;
 }
