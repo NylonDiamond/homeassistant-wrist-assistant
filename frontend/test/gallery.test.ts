@@ -42,7 +42,10 @@ import {
   submitToGallery,
   unquotedEntityIds,
 } from "../src/gallery.js";
-import { galleryPreviewContext, withPicturePlaceholders } from "../src/preview-png.js";
+import { galleryPreviewContext, inlineLineSvg, withPicturePlaceholders } from "../src/preview-png.js";
+import { inlineSymbolMarker } from "../src/model.js";
+import type { IconProvider } from "../src/renderer.js";
+import { svg as litSvg, type TemplateResult } from "lit";
 
 function livingRoom(): CustomComplicationConfig {
   const parsed = parseImportText(readFileSync(join(__dirname, "fixtures-share", "living-room-backup.json"), "utf8"), 6);
@@ -772,5 +775,48 @@ describe("preview context", () => {
     expect(out.elements.some((el) => el.kind === "image")).toBe(true);
     expect(out.elements.some((el) => el.kind === "imageTime")).toBe(false);
     expect(cfg.elements.some((el) => el.kind === "imageTime")).toBe(true);
+  });
+
+  describe("the inline line's picture", () => {
+    const drawn: string[] = [];
+    const icons: IconProvider = {
+      render: (symbol) => {
+        drawn.push(symbol);
+        return symbol === "no.such.icon" ? undefined : litSvg`<svg></svg>`;
+      },
+      available: () => true,
+      names: () => [],
+    };
+    const words = (t: unknown): string[] => {
+      if (typeof t === "string") return [t];
+      if (Array.isArray(t)) return t.flatMap(words);
+      const r = t as TemplateResult | undefined;
+      return r && Array.isArray(r.values) ? r.values.flatMap(words) : [];
+    };
+    const measure = (text: string) => text.length * 8;
+
+    it("draws icon parts as icons, never as their names", () => {
+      drawn.length = 0;
+      const line = `Text${inlineSymbolMarker("lamp.desk.fill")} ${inlineSymbolMarker("bed.double.fill")}`;
+      const out = inlineLineSvg({ text: line }, icons, measure)!;
+      expect(drawn).toEqual(["lamp.desk.fill", "bed.double.fill"]);
+      const text = words(out).join("|");
+      expect(text).toContain("Text");
+      expect(text).not.toContain("lamp.desk");
+      expect(text).not.toMatch(/[\uE000\uE001]/);
+    });
+
+    it("puts the symbol first and the label before the value", () => {
+      drawn.length = 0;
+      const out = inlineLineSvg({ symbol: "bolt.fill", label: "Power", text: "12 W" }, icons, measure)!;
+      expect(drawn).toEqual(["bolt.fill"]);
+      expect(words(out)).toContain("Power: 12 W");
+    });
+
+    it("skips an icon the pack cannot draw and draws nothing for nothing", () => {
+      const out = inlineLineSvg({ text: `A${inlineSymbolMarker("no.such.icon")}` }, icons, measure)!;
+      expect(words(out)).toContain("A");
+      expect(inlineLineSvg({ text: inlineSymbolMarker("no.such.icon") }, icons, measure)).toBeUndefined();
+    });
   });
 });

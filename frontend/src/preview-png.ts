@@ -14,7 +14,7 @@
 // it anyway, since the image comes from another origin. The copied states
 // carry no picture address, so the renderer falls back to the stand-in.
 
-import { render, type TemplateResult } from "lit";
+import { html, render, svg, type TemplateResult } from "lit";
 import {
   type CustomComplicationConfig,
   type Value,
@@ -24,10 +24,11 @@ import {
   chartStatisticsKey,
   forEachValue,
   imageTimestampLayersOf,
+  inlineRuns,
   timelineHistoryKey,
 } from "./model.js";
 import { keyFor, listExpressionKey, listKey } from "./compiler.js";
-import { type EntityState, type ResolveContext, resolveAll } from "./resolver.js";
+import { type EntityState, type ResolveContext, type ResolvedInline, resolveAll } from "./resolver.js";
 import { type IconProvider, renderLayout } from "./renderer.js";
 import { type ShareSlot, scrubForShare } from "./transfer.js";
 import { GALLERY_LIMITS, type GalleryPreview } from "./gallery.js";
@@ -146,8 +147,9 @@ export function galleryPreviewContext(
  * A complication is one shape, so there is one picture. A document an older
  * panel wrote can still carry several shapes and still be shared: it is drawn
  * in the first, which is the shape the upload is filed under. Inline has no
- * canvas, so an inline complication has no picture at all and the list comes
- * back empty. Browser only.
+ * canvas, so its picture is the line itself, words and icons, drawn by
+ * `inlineLineSvg`: the gallery has no icon pack, so an icon part would
+ * otherwise reach it as a bare symbol name. Browser only.
  */
 export async function renderGalleryPreviews(
   cfg: CustomComplicationConfig,
@@ -159,9 +161,71 @@ export async function renderGalleryPreviews(
   const ctx = galleryPreviewContext(cfg, scrubbed, slots, source);
   const layouts = resolveAll(withPicturePlaceholders(scrubbed), ctx);
   const family = DRAWABLE_FAMILIES.find((f) => layouts[f]);
-  if (family === undefined) return [];
+  if (family === undefined) {
+    if (!layouts.inline) return [];
+    const line = inlineLineSvg(layouts.inline, icons, measureWith(INLINE_FONT));
+    return line ? [{ family: "inline", png: await templateToPng(line) }] : [];
+  }
   const png = await templateToPng(renderLayout(layouts[family]!, { icons, slot: DESIGN_BOX[family], pictureScene: true }));
   return [{ family, png }];
+}
+
+/** The inline line's type, the size the panel's own inline preview uses. */
+const INLINE_SIZE = 15;
+const INLINE_FONT = `600 ${INLINE_SIZE}px -apple-system, "SF Pro Text", system-ui, sans-serif`;
+const INLINE_HEIGHT = 20;
+/** The space between an icon and the words beside it. */
+const INLINE_GAP = 3;
+/** Wider than any watch shows; the gallery shrinks a long line to fit. */
+const INLINE_MAX_WIDTH = 480;
+
+function measureWith(font: string): (text: string) => number {
+  const g = document.createElement("canvas").getContext("2d");
+  if (!g) return (text) => text.length * INLINE_SIZE * 0.6;
+  g.font = font;
+  return (text) => g.measureText(text).width;
+}
+
+/**
+ * The inline line as one SVG: the symbol, then `label: value`, with each icon
+ * part drawn where it sits, white on clear, as the panel's inline preview
+ * draws it. A countdown shows its fallback text, since a picture cannot tick.
+ * Undefined when there is nothing to draw. `measure` gives a run's width in
+ * the line's font; a test passes its own.
+ */
+export function inlineLineSvg(
+  inline: ResolvedInline,
+  icons: IconProvider,
+  measure: (text: string) => number,
+): TemplateResult | undefined {
+  const runs: ({ text: string } | { symbol: string })[] = [];
+  if (inline.symbol) runs.push({ symbol: inline.symbol });
+  runs.push(...inlineRuns(`${inline.label ? `${inline.label}: ` : ""}${inline.text}`));
+  const pieces: TemplateResult[] = [];
+  const baseline = INLINE_HEIGHT / 2 + INLINE_SIZE * 0.36;
+  const iconTop = (INLINE_HEIGHT - INLINE_SIZE) / 2;
+  let x = 0;
+  let last: "text" | "symbol" | undefined;
+  for (const run of runs) {
+    if ("symbol" in run) {
+      const glyph = icons.render(run.symbol, INLINE_SIZE, "#FFFFFF");
+      if (!glyph) continue;
+      if (last === "text") x += INLINE_GAP;
+      pieces.push(svg`<g transform="translate(${x} ${iconTop})">${glyph}</g>`);
+      x += INLINE_SIZE + INLINE_GAP;
+      last = "symbol";
+    } else {
+      pieces.push(svg`<text x=${x} y=${baseline} style="white-space: pre" font-family="-apple-system, 'SF Pro Text', system-ui, sans-serif"
+        font-size=${INLINE_SIZE} font-weight="600" fill="#FFFFFF">${run.text}</text>`);
+      x += measure(run.text);
+      last = "text";
+    }
+  }
+  if (pieces.length === 0) return undefined;
+  if (last === "symbol") x -= INLINE_GAP;
+  const width = Math.min(INLINE_MAX_WIDTH, Math.max(1, Math.ceil(x)));
+  return html`<svg xmlns="http://www.w3.org/2000/svg" width=${width} height=${INLINE_HEIGHT}
+    viewBox="0 0 ${width} ${INLINE_HEIGHT}">${pieces}</svg>`;
 }
 
 /**
