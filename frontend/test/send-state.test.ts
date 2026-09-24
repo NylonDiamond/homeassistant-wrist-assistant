@@ -7,9 +7,12 @@ import {
   PHONE_SEND_WAIT_MS,
   SEND_WAIT_MS,
   agoWords,
+  describeHomeSync,
   describeSend,
+  homeSync,
   sendState,
   sendWaitMs,
+  type HomeDevice,
   type SendInputs,
 } from "../src/send-state.js";
 
@@ -266,5 +269,42 @@ describe("agoWords", () => {
     expect(agoWords(23.9 * 3600)).toBe("23 h ago");
     expect(agoWords(24 * 3600)).toBe("1 day ago");
     expect(agoWords(50 * 3600)).toBe("2 days ago");
+  });
+});
+
+describe("homeSync", () => {
+  const dev = (over: Partial<HomeDevice> = {}): HomeDevice =>
+    ({ name: "Watch", kind: "watch", token: 5, appliedToken: 5, count: 1, orphan: false, ...over });
+
+  it("is synced when every device has applied its token", () => {
+    const s = homeSync([dev(), dev({ name: "iPhone", kind: "iphone" })]);
+    expect(s).toEqual({ kind: "synced", devices: ["Watch", "iPhone"] });
+    expect(describeHomeSync(s!).label).toBe("Synced");
+  });
+
+  it("names every device that is behind, watch and phone together", () => {
+    const s = homeSync([
+      dev({ appliedToken: 3 }),
+      dev({ name: "iPhone", kind: "iphone", appliedToken: 4 }),
+      dev({ name: "Other watch" }),
+    ]);
+    expect(s).toEqual({ kind: "waiting", waiting: ["Watch", "iPhone"] });
+    expect(describeHomeSync(s!).label).toBe("Waiting: Watch, iPhone");
+  });
+
+  it("counts a device that applied a later token as synced", () => {
+    expect(homeSync([dev({ token: 5, appliedToken: 9 })])?.kind).toBe("synced");
+  });
+
+  it("waits for a device that owns designs and has never acked", () => {
+    expect(homeSync([dev({ appliedToken: null })])).toEqual({ kind: "waiting", waiting: ["Watch"] });
+  });
+
+  it("leaves out the Library, orphans and empty never-acked devices", () => {
+    expect(homeSync([
+      dev({ name: "Library", kind: "library", appliedToken: null }),
+      dev({ orphan: true, appliedToken: 1 }),
+      dev({ appliedToken: undefined, count: 0 }),
+    ])).toBeUndefined();
   });
 });

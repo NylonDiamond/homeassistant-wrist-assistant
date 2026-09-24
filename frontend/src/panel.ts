@@ -135,7 +135,7 @@ import {
 import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues } from "./test-controls.js";
-import { type SendState, agoWords, describeSend, sendState, sendWaitMs } from "./send-state.js";
+import { type SendState, agoWords, describeHomeSync, describeSend, homeSync, sendState, sendWaitMs } from "./send-state.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
 import {
   type EntityState,
@@ -6314,7 +6314,11 @@ export class WristAssistantPanel extends LitElement {
     window.addEventListener("hashchange", this.takeShareLink);
     this.takeShareLink();
     void this.loadOwners();
-    this.watchStatusTimer = window.setInterval(() => void this.refreshWatchStatus(), WATCH_STATUS_MS);
+    void this.listenToHome();
+    this.watchStatusTimer = window.setInterval(() => {
+      void this.refreshWatchStatus();
+      void this.refreshOwnerTokens();
+    }, WATCH_STATUS_MS);
   }
 
   /** Watches the panel itself, not the window, so opening or closing the Home
@@ -6540,6 +6544,9 @@ export class WristAssistantPanel extends LitElement {
     window.removeEventListener("hashchange", this.takeShareLink);
     void this.unsubscribe?.().catch(() => undefined);
     this.unsubscribe = undefined;
+    void this.homeUnsubscribe?.().catch(() => undefined);
+    this.homeUnsubscribe = undefined;
+    if (this.ownerTokensTimer !== undefined) window.clearTimeout(this.ownerTokensTimer);
     if (this.templateTimer) window.clearInterval(this.templateTimer);
     if (this.debounceTimer) window.clearTimeout(this.debounceTimer);
     if (this.countdownTimer !== undefined) window.clearInterval(this.countdownTimer);
@@ -9547,12 +9554,8 @@ export class WristAssistantPanel extends LitElement {
       ["Hide", "The eye beside a complication in the list. It stops the watch offering that complication when you edit a face, and faces already using it keep it. Hidden ones fold into Hidden at the bottom of the list. For the open complication it saves with Save; for any other it saves at once."],
     ];
     const status: [string, string][] = [
-      ["On watch", "The watch has applied every change. With last seen beside it, the watch is not listening now, so a later save waits until the app is open again."],
-      ["Sending…", "Waiting for the watch to pull and confirm."],
-      ["Not on watch yet", "The watch is connected but has not confirmed the latest change. Resend, in the top bar's ··· menu, wakes it again."],
-      ["2 changes waiting", "Saved here, not on the watch yet, and the watch is not listening. The number is how many complications changed. Open Wrist Assistant on the watch, or switch it to this home, and it pulls at once. Resend, in the ··· menu, tries to wake it."],
-      ["Open the watch app to sync", "The same, when the number is not known."],
-      ["Update the watch app", "This watch has never reported a change. Its app is older than custom complications, or it has not opened this home yet."],
+      ["Synced", "Green. Every watch and iPhone in this home has applied every change."],
+      ["Waiting: Watch, iPhone", "Amber. The devices named have not applied the latest changes yet. Open Wrist Assistant on each, switched to this home, and it pulls at once. Resend or Refresh now, in the top bar's ··· menu, tries to wake the open device."],
     ];
     const sharing: [string, string][] = [
       ["Share", "In the top bar. Turns the open complication into text anyone can import. Your entity ids and names become numbered slots, and you can label each one."],
@@ -9582,7 +9585,7 @@ export class WristAssistantPanel extends LitElement {
           <table><tbody>${rows(mouse)}</tbody></table>
         </section>`;
     } else if (this.helpTab === "sync") {
-      body = html`<div>${section("Saving", saving)}${section("Watch status", status)}</div>${section("Share and import", sharing)}`;
+      body = html`<div>${section("Saving", saving)}${section("Sync status", status)}</div>${section("Share and import", sharing)}`;
     } else if (this.helpTab === "pages") {
       body = html`${section("Pages", pagesWhat)}`;
     } else {
@@ -10399,17 +10402,61 @@ export class WristAssistantPanel extends LitElement {
     return { s, d: describeSend(s) };
   }
 
-  /** Where the saved complication has got to, as a pill: a dot and the words
-   * from `send-state.ts`. Green once it is on the device, amber while it is
-   * not there yet, and quiet for the shelf, which waits for nothing. Resend and
-   * Refresh now live in the ··· menu beside it. */
+  /** Whether every device of the home has what is saved here, as a pill: a
+   * dot and the words from `send-state.ts`. Green when all are in sync, amber
+   * naming the ones that are not. Names are the bare device names unless two
+   * waiting devices share one, which then take their paired phone too. Resend
+   * and Refresh now, for the open device, live in the ··· menu beside it. */
   private renderSendPill() {
-    const info = this.sendInfo();
-    if (!info) return nothing;
-    const { s, d } = info;
-    return html`<span class="tb-sync ${sendTone(s.kind)} ${s.kind}" title=${d.title}>
-      <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${d.label}</span>${d.note ? html`<span class="tb-sync-n">· ${d.note}</span>` : nothing}
+    const bare = this.owners.map((o) => ownerShortLabel(o));
+    const s = homeSync(this.owners.map((o, i) => ({
+      name: bare.filter((n) => n === bare[i]).length > 1 ? ownerLabel(o) : bare[i]!,
+      kind: o.device_kind,
+      token: o.token,
+      appliedToken: o.applied_token,
+      count: o.complication_count,
+      orphan: o.is_orphan,
+    })));
+    if (!s) return nothing;
+    const d = describeHomeSync(s);
+    return html`<span class="tb-sync ${s.kind === "synced" ? "ok" : "warn"}" title=${d.title}>
+      <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${d.label}</span>
     </span>`;
+  }
+
+  /** Re-read every device's tokens for the pill, without the rest of what
+   * `loadOwners` does on first open. Rows are patched in place by id; a
+   * device that came or went waits for the next full load. */
+  private async refreshOwnerTokens() {
+    try {
+      const reply = await fetchOwners(this.hass);
+      const fresh = new Map(reply.owners.map((o) => [o.owner_watch_id, o]));
+      this.owners = this.owners.map((o) => {
+        const f = fresh.get(o.owner_watch_id);
+        return f ? { ...o, token: f.token, applied_token: f.applied_token, complication_count: f.complication_count } : o;
+      });
+    } catch {
+      // The pill keeps what it had rather than blaming a device for a panel problem.
+    }
+  }
+
+  /** Every commit and ack on any device, so the home pill turns green the
+   * moment the last device confirms. Debounced: a save to linked copies is
+   * several commits in a row. */
+  private ownerTokensTimer?: number;
+  private homeUnsubscribe?: () => Promise<void>;
+  private async listenToHome() {
+    try {
+      this.homeUnsubscribe = await subscribeChanges(this.hass, undefined, () => {
+        if (this.ownerTokensTimer !== undefined) window.clearTimeout(this.ownerTokensTimer);
+        this.ownerTokensTimer = window.setTimeout(() => {
+          this.ownerTokensTimer = undefined;
+          void this.refreshOwnerTokens();
+        }, 400);
+      });
+    } catch {
+      // No live feed: the slow status clock still refreshes the pill.
+    }
   }
 
   /** Import, beside Share, for an administrator. A full device keeps the

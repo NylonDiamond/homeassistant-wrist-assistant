@@ -275,3 +275,60 @@ export function describeSend(
       };
   }
 }
+
+/** One device as the home-wide pill needs it: a row of the owners list. */
+export interface HomeDevice {
+  name: string;
+  kind: DeviceKind | null | undefined;
+  /** The owner's store token. */
+  token: number;
+  /** The token the device last applied; null or undefined when it never has. */
+  appliedToken: number | null | undefined;
+  /** How many records it owns. */
+  count: number;
+  orphan: boolean;
+}
+
+/** Every device of the home at once: in sync, or which ones are not yet. */
+export type HomeSync =
+  | { kind: "synced"; devices: string[] }
+  | { kind: "waiting"; waiting: string[] };
+
+/**
+ * The header pill, for the whole home rather than the open device.
+ *
+ * A device pulls all of its changes at once, so the true question is per
+ * device: which ones hold something older than the store. The Library is not
+ * a device and an orphan has no device left to ask, so neither counts. A
+ * device that has never acked and owns nothing has nothing to receive and
+ * does not count either; one that owns designs is waiting for them.
+ *
+ * Behind means an applied token below the owner's token, not unequal to it:
+ * tokens only climb, and a device that applied a later one has everything.
+ * Undefined when no device counts, so the header shows nothing.
+ */
+export function homeSync(devices: readonly HomeDevice[]): HomeSync | undefined {
+  const synced: string[] = [];
+  const waiting: string[] = [];
+  for (const d of devices) {
+    if (d.kind === "library" || d.orphan) continue;
+    const applied = d.appliedToken ?? undefined;
+    if (applied === undefined) {
+      if (d.count > 0) waiting.push(d.name);
+      continue;
+    }
+    (applied < d.token ? waiting : synced).push(d.name);
+  }
+  if (waiting.length > 0) return { kind: "waiting", waiting };
+  return synced.length > 0 ? { kind: "synced", devices: synced } : undefined;
+}
+
+/** The pill's words and its hover text. */
+export function describeHomeSync(s: HomeSync): { label: string; title: string } {
+  if (s.kind === "synced") return { label: "Synced", title: `Synced: ${s.devices.join(", ")}` };
+  const names = s.waiting.join(", ");
+  return {
+    label: `Waiting: ${names}`,
+    title: `Not synced yet: ${names}. Open Wrist Assistant on ${s.waiting.length === 1 ? "it" : "each"} to sync.`,
+  };
+}
