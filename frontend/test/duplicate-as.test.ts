@@ -2,7 +2,7 @@
 // device, or both. Every result is one shape on one device, laid out for the
 // canvas it landed on, and the document it came from is never touched.
 
-import { placeLabel } from "../src/panel.js";
+import { lockScreenTitle, placeLabel } from "../src/panel.js";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -421,5 +421,15 @@ describe("placeLabel", () => {
     expect(placeLabel({ kind: "watch", label: "Jesse Apple Watch" }, "rectangular")).toBe("Jesse Apple Watch");
     expect(placeLabel({ kind: "iphone", label: "iPhone 15 Pro" }, "small")).toBe("iPhone 15 Pro");
     expect(placeLabel({ kind: "iphone", label: "iPhone 15 Pro" }, undefined)).toBe("iPhone 15 Pro");
+  });
+});
+
+describe("lockScreenTitle", () => {
+  it("names the Lock Screen beside an iPhone's watch-sized shapes only", () => {
+    expect(lockScreenTitle("rectangular", true)).toBe("Rectangular (Lock Screen)");
+    expect(lockScreenTitle("circular", true)).toBe("Circular (Lock Screen)");
+    expect(lockScreenTitle("inline", true)).toBe("Inline (Lock Screen)");
+    expect(lockScreenTitle("rectangular", false)).toBe("Rectangular");
+    expect(lockScreenTitle("small", true)).not.toContain("Lock Screen");
   });
 });

@@ -16680,7 +16680,7 @@ export class WristAssistantPanel extends LitElement {
         ? html`${this.renderShapeSwitch(cfg, layouts)}${pagePart ? html`<span class="cv-shape">${pagePart}</span>` : nothing}`
         : f === undefined
           ? nothing
-          : html`<span class="cv-shape"><span class="fam">${familyTitle(f)}${pagePart ? ` · ${pagePart}` : ""}</span>${this.shapeNotes(cfg, layouts, f)}</span>`}
+          : html`<span class="cv-shape"><span class="fam">${this.shapeTitle(f)}${pagePart ? ` · ${pagePart}` : ""}</span>${this.shapeNotes(cfg, layouts, f)}</span>`}
       <span class="spacer"></span>
       ${this.renderDocActions(cfg)}
     </div>`;
@@ -17404,7 +17404,7 @@ export class WristAssistantPanel extends LitElement {
       <button class="tab" aria-pressed=${active ? "true" : "false"}
         title=${`Edit the ${familyTitle(f)} shape`}
         @click=${() => { this.controlView = false; if (f === "inline" && this.inspect.kind === "layer") this.inspect = { kind: "family" }; }}>
-        ${familyTitle(f)}${this.shapeNotes(cfg, layouts, f)}
+        ${this.shapeTitle(f)}${this.shapeNotes(cfg, layouts, f)}
       </button>
     </span>`;
   }
@@ -17619,6 +17619,12 @@ export class WristAssistantPanel extends LitElement {
    * watch's, and it previews in full color the way it always has. */
   private get previewAsPhone(): boolean {
     return deviceKindOf(this.selectedOwner) === "iphone";
+  }
+
+  /** The open shape's name in the canvas head. On an iPhone a watch-sized
+   * shape is a Lock Screen widget, and the head says so. */
+  private shapeTitle(f: FamilyKind): string {
+    return lockScreenTitle(f, this.previewAsPhone);
   }
 
   private previewSlot(family: DrawableFamily) {
@@ -18027,6 +18033,10 @@ export function ownerLabel(o: OwnerSummary): string {
  * watch-sized shape says it is the Lock Screen, since that is where the phone
  * draws it and why the preview then turns white and gray.
  */
+export function lockScreenTitle(f: FamilyKind, phone: boolean): string {
+  return phone && !isHomeFamily(f) ? `${familyTitle(f)} (Lock Screen)` : familyTitle(f);
+}
+
 export function placeLabel(o: { kind: DeviceKind; label: string }, family: FamilyKind | undefined): string {
   return o.kind === "iphone" && family !== undefined && !isHomeFamily(family) ? `${o.label} (Lock Screen)` : o.label;
 }
