@@ -1,5 +1,5 @@
 // Pointer handling for the active family preview: drag a layer to move it,
-// drag a corner handle to resize it. Frames stay normalised (0..1 fractions
+// drag a corner handle to resize it. A selected group adds side handles too. Frames stay normalised (0..1 fractions
 // of the canvas) so the maths is the same for every family. Rotation is a
 // number field in the inspector, not a handle.
 
@@ -7,11 +7,25 @@ import type { NormalizedFrame } from "./model.js";
 import type { CanvasSize } from "./renderer.js";
 
 export type HandleCorner = "nw" | "ne" | "sw" | "se";
+/** The middle of a side. Only a selected group's box has these. */
+export type HandleEdge = "n" | "s" | "e" | "w";
+export type ResizeHandle = HandleCorner | HandleEdge;
+
+export function isCorner(handle: ResizeHandle): handle is HandleCorner {
+  return handle.length === 2;
+}
 
 export interface GestureTarget {
   elementId: string;
   frame: NormalizedFrame;
-  handle?: HandleCorner;
+  handle?: ResizeHandle;
+  /**
+   * A corner drag keeps the frame's proportions: a group scaled as one, so
+   * what is inside it keeps its shape. Whichever side the pointer has pulled
+   * further sets the scale, and the opposite corner stays put. It does not
+   * snap, since a grid line can only ever be met on one of the two sides.
+   */
+  keepAspect?: boolean;
   /**
    * The layer draws as a circle in the square at the middle of its frame, and
    * its handles sit on that square's corners. A corner drag then resizes that
@@ -115,7 +129,7 @@ export function snapFrameMove(frame: NormalizedFrame, grid: Grid): NormalizedFra
  */
 export function snapFrameEdges(
   frame: NormalizedFrame,
-  handle: HandleCorner,
+  handle: ResizeHandle,
   grid: Grid,
   axes: { x: boolean; y: boolean } = { x: true, y: true },
 ): NormalizedFrame {
@@ -304,10 +318,11 @@ export function snapMoveFrame(
  */
 export function snapResizeFrame(
   frame: NormalizedFrame,
-  handle: HandleCorner,
+  handle: ResizeHandle,
   grid: Grid | undefined,
   guides: Guides | undefined,
-  axes: { x: boolean; y: boolean } = { x: true, y: true },
+  // A side handle moves one edge, so only its own axis can land on a line.
+  axes: { x: boolean; y: boolean } = { x: /[ew]/.test(handle), y: /[ns]/.test(handle) },
 ): { frame: NormalizedFrame; guides: GuideLine[] } {
   let next = { ...frame };
   const landed: GuideLine[] = [];
@@ -596,11 +611,11 @@ export function beginGesture(
         next = snapped.frame;
         landed = snapped.guides;
       }
-    } else if (target.square) {
+    } else if (target.square && isCorner(target.handle)) {
       // A circle's square is square in points, which a grid in fractions of a
       // wide face cannot keep, so its corners drag freely.
       next = squareResize(base, canvas, target.handle, t);
-    } else if (target.line || target.bar) {
+    } else if ((target.line || target.bar) && isCorner(target.handle)) {
       next = lineResize(base, canvas, target.handle, t, target.bar === true);
       if (snapping) {
         const along = target.bar === true || next.width * canvas.width >= next.height * canvas.height;
@@ -622,8 +637,17 @@ export function beginGesture(
         height = Math.max(MIN_SIZE, base.height - dy);
         y = bottom - height;
       }
+      if (target.keepAspect && isCorner(target.handle) && base.width > 0 && base.height > 0) {
+        const kx = width / base.width;
+        const ky = height / base.height;
+        const k = Math.max(MIN_SIZE / Math.min(base.width, base.height), Math.abs(kx - 1) >= Math.abs(ky - 1) ? kx : ky);
+        width = base.width * k;
+        height = base.height * k;
+        if (target.handle.includes("w")) x = right - width;
+        if (target.handle.includes("n")) y = bottom - height;
+      }
       next = { ...base, x: round(x), y: round(y), width: round(width), height: round(height) };
-      if (snapping) {
+      if (snapping && !(target.keepAspect && isCorner(target.handle))) {
         const snapped = snapResizeFrame(next, target.handle, snap, guides);
         next = snapped.frame;
         landed = snapped.guides;
@@ -755,6 +779,33 @@ export function beginScaleDrag(
   svg.addEventListener("pointerup", finish);
   svg.addEventListener("pointercancel", finish);
   return cleanup;
+}
+
+/** The box around a set of frames: what a group or a pick moves and resizes. */
+export function boxAround(frames: readonly NormalizedFrame[]): NormalizedFrame {
+  const x0 = Math.min(...frames.map((f) => f.x));
+  const y0 = Math.min(...frames.map((f) => f.y));
+  const x1 = Math.max(...frames.map((f) => f.x + f.width));
+  const y1 = Math.max(...frames.map((f) => f.y + f.height));
+  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0, rotationDegrees: 0 };
+}
+
+/**
+ * Where a frame inside a box lands when the box goes from `from` to `to`: at
+ * the same place inside it, stretched the way the box was. What a group's
+ * resize does to each of its layers.
+ */
+export function frameInResizedBox(frame: NormalizedFrame, from: NormalizedFrame, to: NormalizedFrame): NormalizedFrame {
+  const sx = from.width > 0 ? to.width / from.width : 1;
+  const sy = from.height > 0 ? to.height / from.height : 1;
+  return {
+    ...frame,
+    x: round3(to.x + (frame.x - from.x) * sx),
+    y: round3(to.y + (frame.y - from.y) * sy),
+    // Three decimals would round a sliver of a layer to nothing.
+    width: Math.max(0.001, round3(frame.width * sx)),
+    height: Math.max(0.001, round3(frame.height * sy)),
+  };
 }
 
 /** Corner handle positions in canvas points for a frame. */

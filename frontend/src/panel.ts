@@ -201,7 +201,7 @@ import { Draft, saveRefusal } from "./draft.js";
 import { ScrollFades } from "./scroll-fade.js";
 import { statesSummary } from "./states.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
-import { isHiddenDocument, withHidden } from "./model.js";
+import { elementSize, isHiddenDocument, smallestSize, withHidden, type Placement } from "./model.js";
 import {
   type PickerCopy,
   type PickerDevice,
@@ -230,7 +230,7 @@ import {
 /** Where an older panel kept hidden picker rows, per watch, in this browser.
  * The flag lives on the document now; the old keys are cleared once on load. */
 const LEGACY_PICKER_HIDDEN_PREFIX = "wrist-assistant-panel.picker-hidden.v1:";
-import { GRID_STEPS, NUDGE_COARSE, beginGesture, beginPointDrag, beginScaleDrag, gridFor, gridNudgeFrame, guideCandidates, guideThreshold, nudgeFrame, nudgePoint, type Grid, type GuideLine, type Guides, type HandleCorner } from "./interact.js";
+import { GRID_STEPS, NUDGE_COARSE, beginGesture, beginPointDrag, beginScaleDrag, boxAround, frameInResizedBox, gridFor, gridNudgeFrame, guideCandidates, guideThreshold, isCorner, nudgeFrame, nudgePoint, type Grid, type GuideLine, type Guides, type HandleCorner, type ResizeHandle } from "./interact.js";
 import {
   type CopiedPosition,
   type EditorHost,
@@ -9695,6 +9695,12 @@ export class WristAssistantPanel extends LitElement {
     // moved drops the pick and selects that one layer, as a plain click does.
     // A corner still resizes just the layer it belongs to.
     const pressedId = hitId !== undefined ? selectableLayerId(canvasCfg, hitId) : undefined;
+    // A handle on a selected group's box resizes the whole group.
+    if (handle !== null && svg && this.inspect.kind === "group" && target.closest("[data-group-box]")) {
+      const unit = groupMoveUnit(canvasCfg, this.inspect.id);
+      if (unit) this.beginGroupResize(family as DrawableFamily, e, svg, unit, handle as ResizeHandle);
+      return;
+    }
     if (!multiKey && !handle && svg && this.multi.size >= 2 && pressedId !== undefined && this.multi.has(pressedId)) {
       const ids = pickedMoveIds(canvasCfg, this.multi);
       e.preventDefault();
@@ -9909,6 +9915,69 @@ export class WristAssistantPanel extends LitElement {
     this.beginMoveGesture(family, e, svg, members.map((m) => m.payload.id), `drag-group-${group.id}-${family}`, onClick);
   }
 
+  /** The box a selected group's handles sit on: around every layer a drag of
+   * the group moves, on this shape. */
+  private groupBoxFor(cfg: CustomComplicationConfig, family: DrawableFamily, groupId: string): NormalizedFrame | undefined {
+    const unit = groupMoveUnit(cfg, groupId);
+    const members = unit ? groupLayers(cfg, unit.id) : [];
+    return members.length === 0 ? undefined : boxAround(members.map((m) => effectivePlacement(cfg, family, m).frame));
+  }
+
+  /**
+   * Resize a selected group by a handle on its box.
+   *
+   * A corner scales the group as one. The box keeps its proportions, and every
+   * layer's frame and the size this shape keeps for it (font size, icon size,
+   * line width) go up or down by the same factor, so the group looks the same,
+   * only bigger or smaller. A side stretches the frames alone and leaves every
+   * size as it was: a capsule gets wider and the text on it does not. Sizes a
+   * layer keeps for every shape at once (a corner radius, a border) stay as
+   * they are, since a resize on one shape must not reach the others.
+   */
+  private beginGroupResize(family: DrawableFamily, e: PointerEvent, svg: SVGSVGElement, group: LayerGroup, handle: ResizeHandle) {
+    const cfg = this.canvasConfig();
+    if (!cfg) return;
+    const members = groupLayers(cfg, group.id);
+    if (members.length === 0) return;
+    e.preventDefault();
+    const starts = new Map(members.map((m) => {
+      const p = effectivePlacement(cfg, family, m);
+      return [m.payload.id, { frame: p.frame, size: p.size ?? elementSize(m), kind: m.kind }] as const;
+    }));
+    const bounds = boxAround([...starts.values()].map((s) => s.frame));
+    const scaleSizes = isCorner(handle);
+    const key = `resize-group-${group.id}-${family}`;
+    // A press on a handle that never moves reports the box it started with.
+    // Writing that back would give every member a placement on this shape it
+    // did not have, an edit nobody made.
+    let changed = false;
+    this.cancelGesture?.();
+    const cancel = beginGesture(svg, this.gestureCanvas(family), e, {
+      elementId: key, frame: bounds, handle, keepAspect: scaleSizes,
+      ...this.snapTarget(family), ...this.guideTarget(family, [...starts.keys()]),
+    }, {
+      ...this.guideSink(),
+      onFrame: (_id, f, done) => {
+        changed ||= f.x !== bounds.x || f.y !== bounds.y || f.width !== bounds.width || f.height !== bounds.height;
+        if (changed) {
+          const k = bounds.width > 0 ? f.width / bounds.width : 1;
+          this.mutate((c) => {
+            for (const [id, s] of starts) {
+              const patch: Partial<Placement> = { frame: frameInResizedBox(s.frame, bounds, f) };
+              if (scaleSizes && s.size !== undefined) patch.size = Math.max(smallestSize(s.kind), Math.round(s.size * k * 10) / 10);
+              setPlacement(c, family, id, patch);
+            }
+          }, key);
+        }
+        if (done) {
+          if (changed) this.draft?.endGesture();
+          this.cancelGesture = undefined;
+        }
+      },
+    });
+    this.cancelGesture = cancel;
+  }
+
   /**
    * Move several layers as one block by a drag: a group, or a pick. The grid
    * and the edge of the face work on the box around all of them, so the block
@@ -9921,12 +9990,7 @@ export class WristAssistantPanel extends LitElement {
     const members = cfg.elements.filter((m) => ids.includes(m.payload.id));
     if (members.length === 0) return;
     const starts = new Map(members.map((m) => [m.payload.id, effectivePlacement(cfg, family, m).frame] as const));
-    const frames = [...starts.values()];
-    const x0 = Math.min(...frames.map((f) => f.x));
-    const y0 = Math.min(...frames.map((f) => f.y));
-    const x1 = Math.max(...frames.map((f) => f.x + f.width));
-    const y1 = Math.max(...frames.map((f) => f.y + f.height));
-    const bounds: NormalizedFrame = { x: x0, y: y0, width: x1 - x0, height: y1 - y0, rotationDegrees: 0 };
+    const bounds = boxAround([...starts.values()]);
     const round = (n: number) => Math.round(n * 1000) / 1000;
     this.cancelGesture?.();
     // A plain click sends a pointermove too, of zero distance, between the press
@@ -16628,8 +16692,14 @@ export class WristAssistantPanel extends LitElement {
       && cfg?.elements.some((e) => e.payload.id === this.rowHoverId) ? this.rowHoverId : undefined;
     // A row drawn as the selection needs no hover tint on top.
     const hoverIds = peek !== undefined || hoverTap || this.rowPeek ? [] : this.listHoverIds;
+    // A selected group carries its own box and eight handles. Not for a group
+    // row under the pointer: the handles belong to what a press would act on.
+    const ins = this.inspect;
+    const groupBox = cfg && this.canEdit && !review && peek === undefined && shown.kind === "group"
+      && ins.kind === "group" && ins.id === shown.id ? this.groupBoxFor(cfg, family, shown.id) : undefined;
     const opts = {
       icons: this.icons, imageSizes: this.imageSizes, tapAreas: true, slot,
+      ...(groupBox ? { groupBox } : {}),
       highlightId: focus ?? peek ?? highlightId,
       ...(outlineIds.length > 0 && !review && peek === undefined ? { highlightIds: outlineIds } : {}),
       ...(this.showGridLines || (!this.snapGrid && this.altHeld && this.canEdit) ? { grid: this.gridStep } : {}),

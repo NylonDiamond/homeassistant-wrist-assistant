@@ -266,7 +266,7 @@ export interface RenderOptions {
   /** Element id to outline. */
   highlightId?: string;
   /** More elements to outline, without handles: the members of a selected
-   * group, which move together and are not resized together. */
+   * group. The group's own box carries the handles (`groupBox`). */
   highlightIds?: readonly string[];
   /** Editor affordance: the layer the pick-mode pointer is over, filled and
    * outlined the way a browser inspector shades the node under the cursor. */
@@ -292,6 +292,12 @@ export interface RenderOptions {
   highlightSlot?: boolean;
   /** Draw resize handles on the highlighted element (active family only). */
   handles?: boolean;
+  /**
+   * A selected group's box, around every layer it moves: drawn with eight
+   * handles in place of a layer's four. Its corners scale the group as one,
+   * and its sides stretch it. Only read with `handles`.
+   */
+  groupBox?: NormalizedFrame;
   /** A square, canvas units, of invisible grab area centred on each handle,
    * for a finger. Without it only the drawn 3pt handle can be grabbed. */
   handleHit?: number;
@@ -3074,11 +3080,42 @@ function groundTapWash(elements: readonly ResolvedElement[], design: CanvasSize,
   </g>`;
 }
 
-/** The selected layer's resize handles, for the pass drawn above the slot clip. */
+/** The selected layer's resize handles, or the selected group's box and
+ * its handles, for the pass drawn above the slot clip. */
 function handleLayer(elements: readonly ResolvedElement[], design: CanvasSize, options: RenderOptions, charts: ReadonlyMap<string, ResolvedChart>) {
-  if (options.handles !== true || options.highlightId === undefined) return nothing;
+  if (options.handles !== true) return nothing;
+  if (options.groupBox !== undefined) return groupBoxHandles(options.groupBox, design, options.handleHit ?? 0);
+  if (options.highlightId === undefined) return nothing;
   const el = elements.find((e) => e.id === options.highlightId);
   return el === undefined ? nothing : renderElement(el, design, options, charts, undefined, "handles");
+}
+
+/**
+ * A selected group's box: one solid line around every member, so it reads
+ * apart from the members' own dashed outlines, and a handle at each corner
+ * and in the middle of each side. The handles sit just outside the box, as a
+ * layer's do. `data-group-box` is how a press tells them from a layer's.
+ */
+function groupBoxHandles(frame: NormalizedFrame, design: CanvasSize, grab: number) {
+  const x = frame.x * design.width;
+  const y = frame.y * design.height;
+  const w = frame.width * design.width;
+  const h = frame.height * design.height;
+  const hs = 3;
+  const mx = x + w / 2 - hs / 2;
+  const my = y + h / 2 - hs / 2;
+  const spots: [string, number, number][] = [
+    ["nw", x - hs, y - hs], ["n", mx, y - hs], ["ne", x + w, y - hs],
+    ["w", x - hs, my], ["e", x + w, my],
+    ["sw", x - hs, y + h], ["s", mx, y + h], ["se", x + w, y + h],
+  ];
+  return svg`<g data-group-box="">
+    <rect x=${x} y=${y} width=${w} height=${h} fill="none" stroke="#0A84FF" stroke-width="1" vector-effect="non-scaling-stroke" pointer-events="none" />
+    ${spots.map(([spot, hx, hy]) => svg`${grab > hs
+      ? svg`<rect data-handle=${spot} x=${hx + hs / 2 - grab / 2} y=${hy + hs / 2 - grab / 2} width=${grab} height=${grab} fill="transparent" stroke="none" />`
+      : nothing}<rect data-handle=${spot} x=${hx} y=${hy} width=${hs} height=${hs}
+      fill="#FFFFFF" stroke="#0A84FF" stroke-width="0.5" style="cursor:${spot}-resize" />`)}
+  </g>`;
 }
 
 export interface ThumbOptions {

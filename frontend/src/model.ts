@@ -8436,7 +8436,7 @@ const INSCRIBED = Math.SQRT1_2;
 
 /** The smallest each kind of size may be, matching the editor's own fields, so
  * a refit that scales a long way down still leaves something drawable. */
-function smallestSize(kind: Element["kind"]): number {
+export function smallestSize(kind: Element["kind"]): number {
   return kind === "text" || kind === "icon" ? 4 : 0.5;
 }
 
