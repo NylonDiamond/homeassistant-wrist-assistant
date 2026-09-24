@@ -15587,8 +15587,8 @@ export class WristAssistantPanel extends LitElement {
    * How the Layers card draws its rows, as two small buttons in its header,
    * each one tap per step: Rows swaps Compact and Expanded, Preview steps the
    * row pictures through Small, Medium, Large and round again. Each shows the
-   * view it is on, and
-   * its tooltip names the next one. They replaced a ··· menu that hid two
+   * view it is on, and its tooltip names the next one. They replaced a ···
+   * menu that hid two
    * settings behind a click (Jesse, 2026-09-23).
    */
   private renderLayersViewButtons() {
