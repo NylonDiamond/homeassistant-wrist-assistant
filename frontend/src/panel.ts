@@ -15501,10 +15501,10 @@ export class WristAssistantPanel extends LitElement {
       <div class="lc-head">
         <span class="swatch">${uiIcon("layers")}</span><span class="lc-title">Layers</span><span class="lc-sub">top is in front</span>
         <span class="spacer"></span>
+        ${this.renderLayersMenu()}
         ${edit ? html`<button class="lc-btn pri add-open" aria-haspopup="dialog" aria-expanded=${this.addSheet ? "true" : "false"}
           title="Add a layer, a preset or a saved part (/)"
           @click=${(e: Event) => this.toggleAddSheet(e.currentTarget as HTMLElement)}>${uiIcon("plus")}<span>Add</span></button>` : nothing}
-        ${this.renderLayersMenu()}
       </div>
       ${pickedCount >= 2 && edit
         ? html`<div class="group-cta"><span>${pickedCount} layers picked</span><span class="spacer"></span>
