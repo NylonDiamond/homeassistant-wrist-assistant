@@ -6862,6 +6862,7 @@ ${r_(c)}`}}delete s.hidden,delete s.linkId;let l=zd(a);if(l.length>0){let d=l.sl
       <button class="icon tb-icon" @click=${()=>this.redo()} ?disabled=${!a?.canRedo} title="Redo (⇧⌘Z)" aria-label="Redo">${E("redo")}</button>
       <span class="tb-div" aria-hidden="true"></span>
       ${this.renderSendPill()}
+      ${this.renderImportButton()}
       ${a?u`<button class="tb-btn" aria-haspopup="dialog" aria-expanded=${this.shareOpen?"true":"false"}
         title="Share or back up this complication as text, a file or a link"
         @click=${()=>this.openShareDialog()}>Share</button>`:m}
@@ -6879,18 +6880,17 @@ ${r_(c)}`}}delete s.hidden,delete s.linkId;let l=zd(a);if(l.length>0){let d=l.sl
       ${this.canEdit?u`<span class="tb-pen" aria-hidden="true">✎</span>`:m}
     </label>`}sendInfo(){let t=Av({token:this.serverToken,appliedToken:this.appliedToken,polling:this.polling,pending:this.sendPending,lastPollSeconds:this.lastPollSeconds,deviceKind:this.selectedOwner?.device_kind,lastSyncSeconds:this.lastSyncSeconds,pushAvailable:this.pushAvailable,pendingChanges:this.pendingChanges});if(!((t.kind==="unsupported"||t.kind==="openApp")&&!this.sendStatusKnown)&&!(t.kind==="library"&&this.draft?.baseRevision===null))return{s:t,d:Iv(t)}}renderSendPill(){let t=this.sendInfo();if(!t)return m;let{s:i,d:a}=t;return u`<span class="tb-sync ${fD(i.kind)} ${i.kind}" title=${a.title}>
       <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${a.label}</span>${a.note?u`<span class="tb-sync-n">· ${a.note}</span>`:m}
-    </span>`}renderTopMenu(){if(!this.hass.user?.is_admin)return m;let t=this.sendInfo(),i=this.freeSlot()<0,a=this.sideMenu==="top",r=o=>()=>{this.toggleSideMenu("top",!1),o()};return u`<span class="side-menu" data-side-menu="top">
-      <button class="tb-btn tb-more" aria-haspopup="menu" aria-expanded=${a?"true":"false"} aria-label="More actions" title="More"
+    </span>`}renderImportButton(){if(!this.hass.user?.is_admin)return m;let t=this.freeSlot()<0,i=Le(this.selectedOwner)?_e:this.deviceWord;return u`<button class="tb-btn" aria-haspopup="dialog" ?disabled=${t}
+      title=${t?`${i} is full. ${Z_(this.placePhrase)} has no free slot. Delete a complication first.`:"Paste a complication somebody shared"}
+      @click=${()=>this.openImportDialog()}>Import</button>`}renderTopMenu(){if(!this.hass.user?.is_admin)return m;let t=this.sendInfo();if(!t?.d.resend&&!t?.d.refresh)return m;let i=this.sideMenu==="top",a=r=>()=>{this.toggleSideMenu("top",!1),r()};return u`<span class="side-menu" data-side-menu="top">
+      <button class="tb-btn tb-more" aria-haspopup="menu" aria-expanded=${i?"true":"false"} aria-label="More actions" title="More"
         @click=${()=>this.toggleSideMenu("top")}>···</button>
-      ${a?u`<div class="pop-menu side-pop" role="menu" aria-label="More actions">
-        <button class="row" role="menuitem" ?disabled=${i}
-          title=${i?`${Z_(this.placePhrase)} has no free slot. Delete a complication first.`:"Paste a complication somebody shared"}
-          @click=${r(()=>this.openImportDialog())}>Import…${i?u`<small>${Le(this.selectedOwner)?_e:this.deviceWord} is full</small>`:m}</button>
+      ${i?u`<div class="pop-menu side-pop" role="menu" aria-label="More actions">
         ${t?.d.resend?u`<button class="row" role="menuitem" title="Wake the watch again"
-          @click=${r(()=>{this.sendToWatch()})}>Resend to the watch</button>`:m}
+          @click=${a(()=>{this.sendToWatch()})}>Resend to the watch</button>`:m}
         ${t?.d.refresh?u`<button class="row" role="menuitem"
           title="Send the phone a push so it pulls this now. iOS decides when the widget redraws; opening the app or tapping the widget redraws it at once."
-          @click=${r(()=>{this.sendToWatch()})}>Refresh now</button>`:m}
+          @click=${a(()=>{this.sendToWatch()})}>Refresh now</button>`:m}
       </div>`:m}
     </span>`}keepMenusOnScreen(){let t=window.innerWidth;for(let i of this.renderRoot.querySelectorAll(".pop-menu")){i.style.translate="";let a=i.getBoundingClientRect(),r=dD(a.left,a.right,t);r!==0&&(i.style.translate=`${r}px 0`)}}stackedLayout(){return this.narrow||ry(this.panelWidth,this.colLeft,this.colRight).columns<3}watchStage(){let t=this.renderRoot.querySelector(".layout.cols-1 .stage-face > .preview")??void 0;t!==this.stageSeen&&(this.stageSeen&&this.stageObserver?.unobserve(this.stageSeen),this.stageSeen=t,t?this.stageObserver?.observe(t):this.miniFace=!1)}toggleSideMenu(t,i=this.sideMenu!==t){this.sideMenu=i?t:this.sideMenu===t?void 0:this.sideMenu,this.sideMenu!==void 0?window.addEventListener("pointerdown",this.sideMenuOutside,{capture:!0}):window.removeEventListener("pointerdown",this.sideMenuOutside,{capture:!0})}renderWatchGate(){let t=this.selectedOwner,i=de(t)==="iphone",a=t?.complication_count??0,r=a===0?`Nothing on this ${Cc(t)} changes until then.`:`Your ${a} complication${a===1?"":"s"} keep${a===1?"s":""} working until then.`,o=i?u`<li>
             <span class="gate-n">1</span>

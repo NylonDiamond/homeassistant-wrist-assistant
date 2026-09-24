@@ -10211,6 +10211,7 @@ export class WristAssistantPanel extends LitElement {
       <button class="icon tb-icon" @click=${() => this.redo()} ?disabled=${!d?.canRedo} title="Redo (⇧⌘Z)" aria-label="Redo">${uiIcon("redo")}</button>
       <span class="tb-div" aria-hidden="true"></span>
       ${this.renderSendPill()}
+      ${this.renderImportButton()}
       ${d ? html`<button class="tb-btn" aria-haspopup="dialog" aria-expanded=${this.shareOpen ? "true" : "false"}
         title="Share or back up this complication as text, a file or a link"
         @click=${() => this.openShareDialog()}>Share</button>` : nothing}
@@ -10284,25 +10285,32 @@ export class WristAssistantPanel extends LitElement {
     </span>`;
   }
 
+  /** Import, beside Share, for an administrator. A full device keeps the
+   * button but disables it, and the tooltip says why. */
+  private renderImportButton() {
+    if (!this.hass.user?.is_admin) return nothing;
+    const full = this.freeSlot() < 0;
+    const where = isLibraryOwner(this.selectedOwner) ? UNASSIGNED_LABEL : this.deviceWord;
+    return html`<button class="tb-btn" aria-haspopup="dialog" ?disabled=${full}
+      title=${full ? `${where} is full. ${capFirst(this.placePhrase)} has no free slot. Delete a complication first.` : "Paste a complication somebody shared"}
+      @click=${() => this.openImportDialog()}>Import</button>`;
+  }
+
   /**
-   * The ··· menu: the things the bar does now and then. Import, and the two
-   * nudges that ask a device to pull again. All three are for an administrator;
-   * anyone else gets no menu at all rather than an empty one.
+   * The ··· menu: the two nudges that ask a device to pull again. Both are for
+   * an administrator, and only one applies at a time; with neither there is
+   * no menu at all rather than an empty one.
    */
   private renderTopMenu() {
     if (!this.hass.user?.is_admin) return nothing;
     const info = this.sendInfo();
-    const full = this.freeSlot() < 0;
+    if (!info?.d.resend && !info?.d.refresh) return nothing;
     const open = this.sideMenu === "top";
     const run = (fn: () => void) => () => { this.toggleSideMenu("top", false); fn(); };
     return html`<span class="side-menu" data-side-menu="top">
       <button class="tb-btn tb-more" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"} aria-label="More actions" title="More"
         @click=${() => this.toggleSideMenu("top")}>···</button>
       ${open ? html`<div class="pop-menu side-pop" role="menu" aria-label="More actions">
-        <button class="row" role="menuitem" ?disabled=${full}
-          title=${full ? `${capFirst(this.placePhrase)} has no free slot. Delete a complication first.` : "Paste a complication somebody shared"}
-          @click=${run(() => this.openImportDialog())}>Import…${full
-            ? html`<small>${isLibraryOwner(this.selectedOwner) ? UNASSIGNED_LABEL : this.deviceWord} is full</small>` : nothing}</button>
         ${info?.d.resend ? html`<button class="row" role="menuitem" title="Wake the watch again"
           @click=${run(() => void this.sendToWatch())}>Resend to the watch</button>` : nothing}
         ${info?.d.refresh ? html`<button class="row" role="menuitem"
