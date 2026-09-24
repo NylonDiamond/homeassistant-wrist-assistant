@@ -673,13 +673,12 @@ function layerRowFolds(): string {
     return `
     @container layers (max-width: ${w + 299}px) {
       ${p} .layer {
-        grid-template-columns: 0 3px var(--thumb-w) minmax(0, 1fr);
-        grid-template-areas: "grip bar thumb name" "grip bar right right";
+        grid-template-columns: 0 var(--thumb-w) minmax(0, 1fr);
+        grid-template-areas: "grip thumb name" "grip right right";
         row-gap: 0; padding-top: 5px; padding-bottom: 5px;
       }
       ${p} .layer.dragging { padding-top: 0; padding-bottom: 0; }
       ${p} .layer > .grip { grid-area: grip; }
-      ${p} .layer > .bar { grid-area: bar; }
       ${p} .layer > .thumb, ${p} .layer > .folder { grid-area: thumb; }
       ${p} .layer > .name { grid-area: name; }
       ${p} .layer > .right { grid-area: right; min-width: 0; flex-wrap: wrap; justify-content: flex-start; gap: 0 4px; }
@@ -687,7 +686,7 @@ function layerRowFolds(): string {
       ${p} .layer:not(.group):hover .badges, ${p} .layer.hl .badges, ${p} .layer:focus-within .badges { display: inline-flex; }
       ${p} .layer:not(.group):not(.rich):not(.hl):not(:focus-within):hover .acts { display: none; }
       ${p} .layer.pinned .badges, ${p} .layer.pinned .ground-cap { display: none; }
-      ${p} .layer.group { grid-template-areas: "grip bar thumb name" "grip bar thumb right"; }
+      ${p} .layer.group { grid-template-areas: "grip thumb name" "grip thumb right"; }
       ${p} .layer.group > .right { justify-content: flex-end; gap: 2px; }
       ${p} .group-kids { margin-left: 6px; padding-left: 6px; }
       ${p} .group-box > .group-kids { margin-left: 0; padding-left: 4px; }
@@ -695,14 +694,14 @@ function layerRowFolds(): string {
     }
     @container layers (max-width: ${w + 149}px) {
       ${p} .layer {
-        grid-template-columns: 0 3px minmax(0, 1fr);
-        grid-template-areas: "grip bar thumb" "grip bar name" "grip bar right";
+        grid-template-columns: 0 minmax(0, 1fr);
+        grid-template-areas: "grip thumb" "grip name" "grip right";
       }
       ${p} .layer > .thumb { justify-self: start; width: min(var(--thumb-w), 100%); height: auto; aspect-ratio: ${w} / ${h}; }
       ${p} .layer > .name { padding-top: 4px; }
       ${p} .layer.group {
-        grid-template-columns: 0 3px minmax(0, 1fr) auto;
-        grid-template-areas: "grip bar thumb right" "grip bar name name";
+        grid-template-columns: 0 minmax(0, 1fr) auto;
+        grid-template-areas: "grip thumb right" "grip name name";
       }
       ${p} .layer.group > .folder { justify-self: start; width: auto; }
       ${p} .layer.group > .name { padding-top: 2px; }
@@ -1488,6 +1487,11 @@ export class WristAssistantPanel extends LitElement {
    * its handles on the face) and forget it when the pointer leaves, so the
    * real selection comes back as it was. Nothing is selected by it. */
   @state() private rowPeek?: Inspect;
+  /** With Show all on, the page of the Layers row under the pointer. The
+   * preview draws that page while the pointer is on the row, so a layer on
+   * page 2 is seen where it sits, and goes back to the real page when the
+   * pointer leaves the list. The page itself does not change. */
+  @state() private peekPage?: number;
   /** The layer whose row inside the inspector (a group's members, a chart's
    * extras) is under the pointer. While it is set the preview draws that layer
    * as if it alone were selected, without changing the selection. */
@@ -3332,7 +3336,7 @@ export class WristAssistantPanel extends LitElement {
        The selection still speaks louder, because its wash and its ring both
        land on top of these. */
     .layer {
-      display: grid; grid-template-columns: 0 3px var(--thumb-w) minmax(0, 1fr) auto; align-items: center; gap: 8px;
+      display: grid; grid-template-columns: 0 var(--thumb-w) minmax(0, 1fr) auto; align-items: center; gap: 8px;
       min-height: 46px; padding: 0 6px 0 4px; border-radius: var(--wa-r-sm);
       /* The list is a scrolling flex column: without this, expanded rows
          shrink to their minimum and their lines pile on top of each other. */
@@ -3364,7 +3368,6 @@ export class WristAssistantPanel extends LitElement {
        Layers header says so. The grip keeps a zero-width column so the rest
        of the row's grid stays as it was. */
     .layer .grip { visibility: hidden; overflow: hidden; width: 0; }
-    .layer .bar { width: 3px; height: 26px; border-radius: 2px; background: var(--k); }
     /* The layer's own picture, cropped to it, on the black face. The rounded
        black well is the picture's frame, so an empty thumb still reads as a
        slot rather than a hole. */
@@ -3522,7 +3525,6 @@ export class WristAssistantPanel extends LitElement {
       border-top: 1px solid color-mix(in srgb, var(--wa-line) 70%, transparent);
     }
     .layer.pinned .grip { cursor: default; }
-    .layer.pinned .bar { background: repeating-linear-gradient(180deg, var(--k) 0 3px, transparent 3px 6px); }
     .group-cta {
       display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 8px; margin-bottom: 6px; border-radius: 8px;
       border: 1px solid color-mix(in srgb, var(--wa-accent) 30%, transparent);
@@ -3740,13 +3742,11 @@ export class WristAssistantPanel extends LitElement {
        empty so the names still line up with the rows above. */
     .layer.rowkid { cursor: pointer; }
     .layer.rowkid .grip { cursor: default; }
-    .layer.rowkid .bar { background: repeating-linear-gradient(180deg, var(--k) 0 4px, transparent 4px 7px); }
     .layer.rowkid .rowglyph { display: grid; place-items: center; width: var(--thumb-w); color: var(--wa-muted); }
     .layer.rowkid .rowglyph svg { width: 16px; height: 16px; }
     /* A folder shows a folder where a layer shows its picture. */
     .layer.group .folder { display: grid; place-items: center; width: var(--thumb-w); color: var(--wa-muted); }
     .layer.group .folder svg { width: 17px; height: 17px; }
-    .layer.group .bar { background: repeating-linear-gradient(180deg, var(--k) 0 5px, transparent 5px 8px); }
     .layer.group.drop-into { box-shadow: inset 0 0 0 2px var(--wa-accent); }
     .layer .lockbtn { width: 24px; height: 24px; opacity: .55; }
     .layer .lockbtn svg.ui-icon { width: 15px; height: 15px; }
@@ -3778,18 +3778,16 @@ export class WristAssistantPanel extends LitElement {
     .group-box > .layer.group:not(.hl):not(.lit):not(.drop-into):hover {
       background: color-mix(in srgb, var(--gc) 16%, transparent); box-shadow: none;
     }
-    .group-box > .layer.group .bar { background: repeating-linear-gradient(180deg, var(--gc) 0 5px, transparent 5px 8px); }
     /* The header is one short line: a small folder in the box's hue where a
        layer shows its picture, and the name with its summary beside it. The
        expanded layout keeps its full row. The card's own class raises these
        over the per-width folds further up. */
     .layers-card .group-box > .layer.group:not(.rich) {
-      grid-template-columns: 0 3px 18px minmax(0, 1fr) auto;
-      grid-template-areas: "grip bar thumb name right";
+      grid-template-columns: 0 18px minmax(0, 1fr) auto;
+      grid-template-areas: "grip thumb name right";
       min-height: 32px; padding-top: 0; padding-bottom: 0; row-gap: 0;
     }
     .layers-card .group-box > .layer.group:not(.rich) > .folder { width: 18px; justify-self: center; color: var(--gc); }
-    .layers-card .group-box > .layer.group:not(.rich) > .bar { height: 18px; }
     .layers-card .group-box > .layer.group:not(.rich) > .name { flex-direction: row; align-items: baseline; gap: 8px; padding-top: 0; }
     .layers-card .group-box > .layer.group:not(.rich) > .name b { flex: 0 1 auto; min-width: 0; }
     .layers-card .group-box > .layer.group:not(.rich) > .name small { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -8424,7 +8422,7 @@ export class WristAssistantPanel extends LitElement {
       // import preview, and `galleryPreviewContext` in preview-png.ts draws the
       // share and gallery PNGs. A thumbnail of somebody else's complication has
       // no page anyone has chosen.
-      ...(cfg && usesPages(cfg) ? { page: this.page } : {}),
+      ...(cfg && usesPages(cfg) ? { page: this.shownPage() } : {}),
       entityStates,
       templateResults: seeded.templateResults,
       listItems: seeded.listItems,
@@ -8970,8 +8968,8 @@ export class WristAssistantPanel extends LitElement {
       </div>
       <div class="demo-foot">
         ${pages > 1
-          ? html`<span class="demo-pages" aria-label=${`Page ${this.page} of ${pages}`}>
-              ${Array.from({ length: pages }, (_, i) => html`<i class=${i + 1 === this.page ? "on" : ""}></i>`)}
+          ? html`<span class="demo-pages" aria-label=${`Page ${this.shownPage()} of ${pages}`}>
+              ${Array.from({ length: pages }, (_, i) => html`<i class=${i + 1 === this.shownPage() ? "on" : ""}></i>`)}
             </span>`
           : nothing}
         <span class="demo-note ${note?.kind ?? "idle"}">
@@ -9248,10 +9246,17 @@ export class WristAssistantPanel extends LitElement {
 
   /** The pointer came onto a row of the Layers list: its layers are tinted
    * and the row is drawn as the selection, at once. */
-  private enterRow(ids: readonly string[], peek?: Inspect) {
+  private enterRow(ids: readonly string[], peek?: Inspect, page?: number) {
     this.listHoverIds = ids;
     // A row dragged over others is not a row being looked at.
     this.rowPeek = this.dragId === undefined ? peek : undefined;
+    this.peekPage = this.dragId === undefined ? page : undefined;
+  }
+
+  /** The page the preview draws: the hovered row's page under Show all, else
+   * the page showing. */
+  private shownPage(): number {
+    return this.peekPage ?? this.page;
   }
 
   /** What the list and the preview draw as selected: the row under the
@@ -9271,6 +9276,7 @@ export class WristAssistantPanel extends LitElement {
     if (to?.closest?.(".layers, .pinned-set")) return;
     this.listHoverIds = [];
     this.rowPeek = undefined;
+    this.peekPage = undefined;
   }
 
   /**
@@ -15292,6 +15298,10 @@ export class WristAssistantPanel extends LitElement {
     // Show all draws each page's block from that page's own face, so `face`
     // is moved on as the blocks are built.
     let face = resolved;
+    // Under Show all, the page of the block being built, which its rows hand
+    // to the preview on hover. Undefined for one page's list and for the
+    // Every page block: those rows draw on the page already showing.
+    let rowPage: number | undefined;
     const thumb = (ids: readonly string[]) =>
       face
         ? html`<span class="thumb">${renderLayerThumb(face, ids, { icons: this.icons, imageSizes: this.imageSizes, width: thumbW, height: thumbH })}</span>`
@@ -15318,6 +15328,7 @@ export class WristAssistantPanel extends LitElement {
       const tapTitle = el.kind === "tap" ? `Tappable · ${describeTapAction(el.payload.action)}` : undefined;
       const states = statesSummary(el.payload.rules);
       const d = this.rowDrag(id, edit);
+      const peekAt = rowPage;
       // A layer's attached tap is the bottom part of the layer's own row, under
       // a hairline. Taps are one of the most used things on a complication,
       // and a small "tap" badge that hid under the buttons on hover made it
@@ -15345,12 +15356,11 @@ export class WristAssistantPanel extends LitElement {
       }
       return html`<div class="layer ${attached ? "with-tap" : ""} ${tapSel ? "tapsel" : ""} ${hl ? "hl" : ""} ${held ? "held" : ""} ${this.dialogLitIds.includes(id) ? "lit" : ""} ${hidden ? "dim" : ""} ${this.multi.has(id) ? "multi" : ""} ${inGroup ? "kid" : ""} ${rich ? "rich" : ""}"
         style=${`--k:${KIND_COLOR[el.kind]}`} tabindex="0" draggable=${d.draggable}
-        @pointerenter=${() => this.enterRow([id], { kind: "layer", id })}
+        @pointerenter=${() => this.enterRow([id], { kind: "layer", id }, peekAt)}
         @click=${(e: MouseEvent) => this.clickRow(id, e)}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = { kind: "layer", id }; }}
         @dragstart=${d.onStart} @dragend=${d.onEnd} @dragover=${d.onOver} @drop=${d.onDrop}>
         <span class="grip" title="Drag to reorder. Drop on a group to put it inside.">${uiIcon("grip")}</span>
-        <span class="bar"></span>
         ${thumb([id])}
         <span class="name">
           <b>${layerTitle(el, ctx)}</b>
@@ -15387,6 +15397,7 @@ export class WristAssistantPanel extends LitElement {
       const hl = shown.kind === "group" && shown.id === g.id;
       const open = !this.collapsed.has(g.id);
       const d = this.rowDrag(g.id, edit);
+      const peekAt = rowPage;
       // The folder row has three drop zones. Its top edge puts the dragged row
       // above the whole group, outside it (in the group around it, if any).
       // The middle puts it inside, at the top: a layer as a member, a group as
@@ -15408,7 +15419,7 @@ export class WristAssistantPanel extends LitElement {
       const memberIds = members.map((m) => m.payload.id);
       const subCount = kids.filter((k) => k.kind === "group").length;
       return html`<div class="layer group ${hl ? "hl" : ""} ${held ? "held" : ""} ${this.dialogLitIds.includes(g.id) ? "lit" : ""} ${rich ? "rich" : ""}" style=${`--k:${SECTION_COLOR.group}`} tabindex="0" draggable=${d.draggable}
-        @pointerenter=${() => this.enterRow(memberIds, { kind: "group", id: g.id })}
+        @pointerenter=${() => this.enterRow(memberIds, { kind: "group", id: g.id }, peekAt)}
         @click=${() => { this.multi = new Set(); this.inspect = { kind: "group", id: g.id }; }}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = { kind: "group", id: g.id }; }}
         @dragstart=${d.onStart} @dragend=${d.onEnd}
@@ -15431,7 +15442,6 @@ export class WristAssistantPanel extends LitElement {
           this.reorderLayer(id, g.id, true, g.id);
         }}>
         <span class="grip" title="Drag to reorder the whole group.">${uiIcon("grip")}</span>
-        <span class="bar"></span>
         <span class="folder">${uiIcon("folder")}</span>
         <span class="name">
           <b>${g.name}</b>
@@ -15470,6 +15480,7 @@ export class WristAssistantPanel extends LitElement {
       const hidden = row.payload.isHidden;
       const count = list.payload.template.length;
       const open = () => { this.setRowEdit(listId); this.inspect = { kind: "layer", id }; };
+      const peekAt = rowPage;
       // Every write lands on the real list, found again by id: while the row
       // designer is open the canvas is drawing a throwaway copy of the row.
       const onList = (change: (p: Extract<CElement, { kind: "list" }>["payload"]) => void) => this.mutate((c) => {
@@ -15486,11 +15497,10 @@ export class WristAssistantPanel extends LitElement {
       });
       return html`<div class="layer kid rowkid ${hl ? "hl" : ""} ${hidden ? "dim" : ""}"
         style=${`--k:${KIND_COLOR[row.kind]}`} tabindex="0"
-        @pointerenter=${() => this.enterRow([id], { kind: "layer", id })}
+        @pointerenter=${() => this.enterRow([id], { kind: "layer", id }, peekAt)}
         @click=${() => open()}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") open(); }}>
         <span class="grip" aria-hidden="true"></span>
-        <span class="bar"></span>
         <span class="rowglyph">${uiIcon(rowKindIcon(row.kind))}</span>
         <span class="name">
           <b>${layerTitle(row, ctx)}</b>
@@ -15575,9 +15585,11 @@ export class WristAssistantPanel extends LitElement {
       const base = this.buildContext();
       body = layerListSections(cfg, shapeRows, pageCount).map((sec) => {
         face = resolveAll(cfg, { ...base, page: sec.page ?? this.page }, this.forced)[family];
+        rowPage = sec.page;
         return html`<div class="layers-sec">${sec.label}</div>${buildRows(sec.rows)}`;
       });
       face = resolved;
+      rowPage = undefined;
     } else {
       body = buildRows(layerListRows(cfg, shapeRows, this.page));
     }
@@ -15646,7 +15658,6 @@ export class WristAssistantPanel extends LitElement {
           this.dragId = undefined;
         }}>
         <span class="grip" aria-hidden="true"></span>
-        <span class="bar"></span>
         ${thumb([])}
         <span class="name">
           <b>${ground.name}</b>
@@ -15701,7 +15712,6 @@ export class WristAssistantPanel extends LitElement {
         @click=${open}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") open(); }}>
         <span class="grip">${uiIcon("text")}</span>
-        <span class="bar"></span>
         <span class="thumb blank"></span>
         <span class="name">
           <b>Inline text</b>
@@ -15914,7 +15924,7 @@ export class WristAssistantPanel extends LitElement {
           <div class="stage-wrap ${tiles ? "first-run" : ""}"
             style=${`--wa-ratio:${ratio};--wa-reserve:${reserve}px;--wa-zoom:${this.canvasZoom}`}>
             ${this.renderStageTools(family, deviceCase)}
-            ${paged ? html`<span class="stage-page">Page ${this.page} of ${pagesSpecOf(cfg).count}</span>` : nothing}
+            ${paged ? html`<span class="stage-page">Page ${this.shownPage()} of ${pagesSpecOf(cfg).count}</span>` : nothing}
             <div class="stage">
               ${this.renderRowStrip()}
               <div class="stage-face">
@@ -15957,7 +15967,7 @@ export class WristAssistantPanel extends LitElement {
     const f = supportedFamilies(cfg)[0];
     const seg = this.hasControlTab(cfg);
     const paged = usesPages(cfg) && !this.inControlView;
-    const pagePart = paged ? `page ${this.page} of ${pagesSpecOf(cfg).count}` : "";
+    const pagePart = paged ? `page ${this.shownPage()} of ${pagesSpecOf(cfg).count}` : "";
     const row = this.openRow();
     const on = row ? this.rowPlaces(row, f).filter((p) => p.on) : [];
     return html`<div class="cv-head">
