@@ -2792,8 +2792,27 @@ export function timedPictures(elements: readonly CElement[]): Extract<CElement, 
 function valueForm(host: EditorHost, value: Value, set: (v: Value) => void, opts: ValueEditorOptions): TemplateResult {
   const k = value.kind;
   const setKind = (kind: ValueKind) => set({ ...value, kind });
-  const key = opts.key;
   const kinds = valueKindsFor(host, k, opts);
+  const body = valueBody(host, value, set, opts);
+  const kindHint = VALUE_KIND_HINTS[k.kind];
+  return html`
+    ${selectField("Source", k.kind, kinds, (kind) => setKind(switchKind(k, kind)))}
+    ${kindHint ? html`<div class="hint">${kindHint}</div>` : nothing}
+    ${body}
+    ${canShare(value, opts) ? html`<div class="hint keep">
+      <button type="button" class="link" title="Move this into a shared value that other layers can read too" @click=${() => makeShared(host, value, set)}>Make shared</button>
+      so other layers can read this too.</div>` : nothing}
+    ${opts.noFormat ? nothing : formatEditor(value.format, (f) => set(formatIsEmpty(f) ? { kind: value.kind } : { ...value, format: f }), formatFits(sourceKind(host, value)))}
+    ${opts.showResolved ? nowReadout(host, value, host.resolve(opts.resolveAs ?? value)) : nothing}`;
+}
+
+/** The rows one source needs under the Source picker: a box to type in, an
+ * entity, a chart to read. Shared by the value form and the inline source
+ * editor, so a source is edited the same way wherever it is picked. */
+function valueBody(host: EditorHost, value: Value, set: (v: Value) => void, opts: ValueEditorOptions): TemplateResult | typeof nothing {
+  const k = value.kind;
+  const setKind = (kind: ValueKind) => set({ ...value, kind });
+  const key = opts.key;
   let body: TemplateResult | typeof nothing = nothing;
   switch (k.kind) {
     case "literal":
@@ -2879,16 +2898,228 @@ function valueForm(host: EditorHost, value: Value, set: (v: Value) => void, opts
       break;
     }
   }
-  const kindHint = VALUE_KIND_HINTS[k.kind];
-  return html`
-    ${selectField("Source", k.kind, kinds, (kind) => setKind(switchKind(k, kind)))}
-    ${kindHint ? html`<div class="hint">${kindHint}</div>` : nothing}
+  return body;
+}
+
+// ── Inline source editor ─────────────────────────────────────────────────
+//
+// A text's value drawn in its own card instead of behind a chip. Text is the
+// whole job of a text layer, so the three ways people fill one nearly every
+// time sit on a row of buttons, and what each needs sits right under it: a box
+// to type in, an entity search, a clock field. The rarer sources wait behind
+// More, in the same menu the tap actions use, each with a line saying what it
+// gives. The popover form it replaces cost a click to type one word, and its
+// Source list was the browser's own grey menu.
+
+/** The four buttons of an inline value. */
+export type SourceTab = "text" | "entity" | "clock" | "more";
+
+/** Which button a source sits behind. */
+export function sourceTab(kind: ValueKind["kind"]): SourceTab {
+  switch (kind) {
+    case "literal": return "text";
+    case "entityState":
+    case "entityAttribute":
+    case "entityAge": return "entity";
+    case "time": return "clock";
+    default: return "more";
+  }
+}
+
+const SOURCE_TABS: [Exclude<SourceTab, "more">, string, UiIconName, string][] = [
+  ["text", "Text", "text", "Words or a number you type. It never changes."],
+  ["entity", "Entity", "home", "A live reading from one Home Assistant entity"],
+  ["clock", "Clock", "clock", "The time or the date on the watch"],
+];
+
+/** Everything behind More, in the order people reach for them. `short` is what
+ * the More button says while one of them is picked. */
+const MORE_SOURCES: { kind: ValueKind["kind"]; name: string; short: string; icon: UiIconName; info: string }[] = [
+  { kind: "aggregate", name: "Several entities combined", short: "Combined", icon: "layers", info: "Count them, or take the sum, average, lowest or highest." },
+  { kind: "chartStat", name: "Number from a chart", short: "Chart number", icon: "chart", info: "The latest, lowest, highest or average reading of a chart layer." },
+  { kind: "dataAge", name: "Time since last refresh", short: "Refresh age", icon: "reset", info: "Seconds since the watch last fetched values." },
+  { kind: "jinja", name: "Template (Jinja)", short: "Template", icon: "braces", info: "Anything Home Assistant can render, like two sensors added up." },
+  { kind: "named", name: "Shared value", short: "Shared", icon: "link", info: "One value several layers read, changed in one place." },
+  { kind: "listStat", name: "List count", short: "List count", icon: "list", info: "How many rows a list layer drew." },
+  { kind: "item", name: "Item field", short: "Item field", icon: "list", info: "One field of the list row being drawn." },
+  { kind: "imageTime", name: "Picture time", short: "Picture time", icon: "imageTime", info: "When the watch last fetched a picture layer." },
+];
+
+const ENTITY_READS: [Extract<ValueKind["kind"], "entityState" | "entityAttribute" | "entityAge">, string][] = [
+  ["entityState", "State"],
+  ["entityAttribute", "Attribute"],
+  ["entityAge", "Last changed"],
+];
+const ENTITY_READ_TITLES: Partial<Record<ValueKind["kind"], string>> = {
+  entityState: "What Home Assistant shows for it, like 21.5 or on",
+  entityAttribute: "One detail it carries besides its state, like a light's brightness",
+  entityAge: "Time since its state last changed",
+};
+
+const EMPTY_REF: EntityRef = { entityId: "", displayName: "", domain: "" };
+
+/**
+ * What each button last held, per value, so a trip from Text to Entity and
+ * back brings the typed words back. Kept for the session only; undo covers
+ * everything past that. Keyed by button for the first three and by source
+ * behind More, so each of those remembers its own setup too.
+ */
+const sourceMemory = new Map<string, Partial<Record<string, ValueKind>>>();
+
+function memorySlot(kind: ValueKind["kind"]): string {
+  const tab = sourceTab(kind);
+  return tab === "more" ? kind : tab;
+}
+
+export interface SourceEditorOptions {
+  /** Undo coalescing key prefix, and the name the memory and focus go by. */
+  key: string;
+  /** Title of the row of buttons. */
+  label?: string;
+  /** Where a picked entity goes. A plain text layer passes one that points
+   * its tap at the entity too; without it only this value changes. */
+  onEntity?: (ref: EntityRef) => void;
+  /** The entity the Entity button starts on, such as the one the layer's tap
+   * already names, so switching to it is not always an empty search. */
+  defaultEntity?: EntityRef;
+}
+
+/**
+ * A value as a row of buttons (Text, Entity, Clock, More) with the rows the
+ * chosen one needs under it, then the live reading and the Format fold.
+ *
+ * Moving between buttons remembers what each held (see `sourceMemory`), and
+ * lands the caret where the next thing to do is: the words box for Text, the
+ * search for an Entity not yet picked.
+ */
+export function sourceEditor(host: EditorHost, value: Value, set: (v: Value) => void, opts: SourceEditorOptions): TemplateResult {
+  const k = value.kind;
+  const key = opts.key;
+  const tab = sourceTab(k.kind);
+  const setKind = (kind: ValueKind) => set({ ...value, kind });
+  const valueOpts: ValueEditorOptions = { key, showResolved: true };
+  const allowed = new Set(valueKindsFor(host, k, valueOpts).map(([kind]) => kind));
+  const more = MORE_SOURCES.filter((m) => allowed.has(m.kind));
+  const picked = MORE_SOURCES.find((m) => m.kind === k.kind);
+
+  const go = (next: ValueKind, node: EventTarget | null) => {
+    sourceMemory.set(key, { ...sourceMemory.get(key), [memorySlot(k.kind)]: k });
+    setKind(next);
+    if (next.kind === "literal") focusSourceSoon(node, key, "input[type=text]");
+    else if ("entityId" in next && next.entityId === "") focusSourceSoon(node, key, ".ent-box input");
+  };
+  const toTab = (to: Exclude<SourceTab, "more">, node: EventTarget | null) => {
+    if (to === tab) return;
+    const kept = sourceMemory.get(key)?.[to];
+    if (kept) go(kept, node);
+    else if (to === "text") go({ kind: "literal", value: "" }, node);
+    else if (to === "entity") go({ kind: "entityState", ...(opts.defaultEntity ?? EMPTY_REF) }, node);
+    else go({ kind: "time", timeField: "now" }, node);
+  };
+  const pickMore = (kind: ValueKind["kind"], node: EventTarget | null) => {
+    if (kind === k.kind) return;
+    go(sourceMemory.get(key)?.[kind] ?? switchKind(k, kind), node);
+  };
+
+  const moreId = popoverId(`${key}-more`);
+  const label = opts.label ?? "Shows";
+  const tabs = html`<div class="field seg-field src-field"><span>${label}</span>
+    <div class="seg wide src-tabs" role="radiogroup" aria-label=${label}>
+      ${SOURCE_TABS.map(([t, name, icon, title]) => html`<button type="button" role="radio" aria-checked=${t === tab ? "true" : "false"}
+        class=${t === tab ? "on" : ""} title=${title} @click=${(e: Event) => toTab(t, e.currentTarget)}>${uiIcon(icon)}<span>${name}</span></button>`)}
+      <button type="button" role="radio" aria-checked=${tab === "more" ? "true" : "false"} class=${tab === "more" ? "on" : ""}
+        popovertarget=${moreId} aria-haspopup="menu"
+        title=${picked ? `${picked.name}. Click to pick another source.` : "Charts, templates, shared values and more"}>
+        ${uiIcon(picked?.icon ?? "more")}<span>${tab === "more" && picked ? picked.short : "More"}</span><span class="caret" aria-hidden="true">▾</span>
+      </button>
+    </div>
+    <div class="tap-menu src-menu" id=${moreId} popover role="menu" aria-label="More sources" @toggle=${onValuePopoverToggle}>
+      <div class="tap-menu-group" role="group" aria-label="More sources" data-group="sources">
+        ${more.map((m) => html`<button type="button" role="menuitemradio" aria-checked=${m.kind === k.kind ? "true" : "false"}
+          class="src-item ${m.kind === k.kind ? "on" : ""}" popovertarget=${moreId} popovertargetaction="hide"
+          @click=${(e: Event) => pickMore(m.kind, e.currentTarget)}>
+          <span class="src-ico" aria-hidden="true">${uiIcon(m.icon)}</span>
+          <span class="src-txt"><span class="tap-menu-name">${m.name}</span><span class="tap-menu-info">${m.info}</span></span>
+        </button>`)}
+      </div>
+      ${canShare(value, valueOpts) ? html`<div class="tap-menu-group" role="group" aria-label="Share" data-group="share">
+        <button type="button" role="menuitem" class="src-item" popovertarget=${moreId} popovertargetaction="hide"
+          @click=${() => makeShared(host, value, set)}>
+          <span class="src-ico" aria-hidden="true">${uiIcon("plus")}</span>
+          <span class="src-txt"><span class="tap-menu-name">Make shared</span><span class="tap-menu-info">Move what this shows into a shared value, so other layers can read it too.</span></span>
+        </button>
+      </div>` : nothing}
+    </div>
+  </div>`;
+
+  let body: TemplateResult | typeof nothing;
+  switch (k.kind) {
+    case "literal":
+      body = textField("Words", k.value, (v) => setKind({ kind: "literal", value: v }), { placeholder: "Type what to show" });
+      break;
+    case "entityState":
+    case "entityAttribute":
+    case "entityAge": {
+      const ref: EntityRef = { entityId: k.entityId, displayName: k.displayName, domain: k.domain };
+      // Clearing always lands on this value: a layer-wide pick has no "none"
+      // to write, so the x would otherwise do nothing.
+      const pick = (next: EntityRef) => {
+        if (next.entityId !== "" && opts.onEntity) opts.onEntity(next);
+        else setKind({ ...k, ...next });
+      };
+      body = html`${entityField(host, "Entity", ref, pick, `${key}-entity`)}
+        ${opts.onEntity ? html`<div class="hint">The layer's tap, when it has one, follows the entity picked here.</div>` : nothing}
+        ${segField("Reads", k.kind, ENTITY_READS, (to) => setKind(switchKind(k, to)), { titles: ENTITY_READ_TITLES })}
+        ${k.kind === "entityAttribute" ? attributeField(host, k, (attribute) => setKind({ ...k, attribute })) : nothing}
+        ${k.kind === "entityAge" ? html`<div class="hint">Set Seconds as, under Format, to read 5m instead of 300.</div>` : nothing}`;
+      break;
+    }
+    case "time":
+      body = selectField("Reads", k.timeField, TIME_FIELDS, (v) => setKind({ ...k, timeField: v }));
+      break;
+    default: {
+      const hint = VALUE_KIND_HINTS[k.kind];
+      body = html`${hint ? html`<div class="hint">${hint}</div>` : nothing}${valueBody(host, value, set, valueOpts)}`;
+    }
+  }
+
+  // Typed words print as typed, so the reading would only repeat the box
+  // above it. It comes back once a format changes what they print.
+  const showNow = !(k.kind === "literal" && formatIsEmpty(value.format));
+  return html`<div class="src-editor" data-src=${key}>
+    ${tabs}
     ${body}
-    ${canShare(value, opts) ? html`<div class="hint keep">
-      <button type="button" class="link" title="Move this into a shared value that other layers can read too" @click=${() => makeShared(host, value, set)}>Make shared</button>
-      so other layers can read this too.</div>` : nothing}
-    ${opts.noFormat ? nothing : formatEditor(value.format, (f) => set(formatIsEmpty(f) ? { kind: value.kind } : { ...value, format: f }), formatFits(sourceKind(host, value)))}
-    ${opts.showResolved ? nowReadout(host, value, host.resolve(opts.resolveAs ?? value)) : nothing}`;
+    ${showNow ? nowReadout(host, value, host.resolve(value)) : nothing}
+    ${formatEditor(value.format, (f) => set(formatIsEmpty(f) ? { kind: value.kind } : { ...value, format: f }), formatFits(sourceKind(host, value)))}
+  </div>`;
+}
+
+/**
+ * Which attribute an entity value reads, as a menu of the ones the entity has
+ * right now, each with its current value, so nobody types `brightness` from
+ * memory. An attribute the entity does not carry at the moment (a light that
+ * is off has no brightness) stays in the list, marked, rather than vanishing.
+ */
+function attributeField(host: EditorHost, k: { entityId: string; attribute: string }, set: (attribute: string) => void): TemplateResult {
+  const attrs = host.hass.states[k.entityId]?.attributes ?? {};
+  const show = (v: unknown) => truncate(typeof v === "string" ? v : JSON.stringify(v) ?? "", 24);
+  const options: [string, string][] = [
+    ["", "(choose)"],
+    ...Object.keys(attrs).sort().map((a): [string, string] => [a, `${a} · ${show(attrs[a])}`]),
+  ];
+  if (k.attribute !== "" && !(k.attribute in attrs)) options.push([k.attribute, `${k.attribute} (not there right now)`]);
+  return selectField("Attribute", k.attribute, options, set);
+}
+
+/** Put the caret in a source editor's box once the redraw an edit causes has
+ * drawn it. */
+function focusSourceSoon(node: EventTarget | null, key: string, selector: string): void {
+  if (!(node instanceof Node)) return;
+  const root = node.getRootNode();
+  if (!(root instanceof ShadowRoot) && !(root instanceof Document)) return;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    root.querySelector<HTMLElement>(`[data-src="${CSS.escape(key)}"] ${selector}`)?.focus();
+  }));
 }
 
 /** The source a value really reads: a shared value's own source, followed
@@ -6829,9 +7060,15 @@ function textContentFields(
       // Entity row sits under Type, not over it, so the Type row stays put when
       // the type changes.
       ? richPartsEditor(host, el, family, upd, key)
+      // No separate Entity row: the Entity button is where a text layer picks
+      // one, and it points the layer's tap there too, as that row did.
       : html`
-        ${layerEntityField(host, el, key)}
-        ${valueEditor(host, t.value, (v) => upd((p) => { p.value = v; }, "value"), { showResolved: true, label: type === "countdown" ? "Until" : "Text", key: `${key}-value` })}
+        ${sourceEditor(host, t.value, (v) => upd((p) => { p.value = v; }, "value"), {
+          key: `${key}-value`,
+          label: type === "countdown" ? "Until" : "Shows",
+          onEntity: (ref) => host.update((c) => setLayerEntity(c, layerId, ref, deviceClassOf(host, ref.entityId)), `${key}-entity`),
+          defaultEntity: layerEntityUses(host.config, layerId).find((u) => u.where === "tap")?.ref,
+        })}
         ${countdownFields(host, type === "countdown", t.value, (on) => setType(on ? "countdown" : "plain", null))}
         ${owner ? html`<div class="hint keep">Prints a number from the chart <button type="button" class="link" @click=${() => host.selectLayer(owner.payload.id)}>${layerTitle(owner, describeContext(host))}</button>. It stays in the chart's group and moves with it.</div>` : nothing}`}`;
 }
@@ -6878,7 +7115,7 @@ function richPartsEditor(
     const id = newId();
     selectedParts.set(layerId, id);
     updParts((p) => { (p.parts ??= []).push({ id, value }); });
-    openPopoverSoon(node, popoverId(`${key}-part-${id}`), true);
+    focusSourceSoon(node, `${key}-part-${id}`, "input[type=text], .ent-box input");
   };
   // Moving keeps the part's id, so a state aimed at it stays aimed at it.
   const move = (to: number) => updParts((p) => { if (p.parts) moveItem(p.parts, index, to); });
@@ -6958,7 +7195,7 @@ function richPartsEditor(
           @click=${remove}>${uiIcon("delete")}</button>
       </div>
       ${targeted && count > 1 ? html`<div class="hint keep">A state changes this part. Change or delete that state first.</div>` : nothing}
-      ${valueEditor(host, part.value, (v) => updPart((x) => { x.value = v; }, "value"), { showResolved: true, label: literalPart ? "Text" : "Shows", key: `${key}-part-${part.id}` })}
+      ${sourceEditor(host, part.value, (v) => updPart((x) => { x.value = v; }, "value"), { key: `${key}-part-${part.id}` })}
       ${literalPart ? html`<div class="hint">Spaces count, and show as dots in the parts list. Type one at the start or end when this part needs a gap.</div>` : nothing}
       ${segField("Color", mode, PART_COLORS, (v) => updPart((x) => {
         if (v === "layer") { delete x.colorHex; delete x.coloring; return; }

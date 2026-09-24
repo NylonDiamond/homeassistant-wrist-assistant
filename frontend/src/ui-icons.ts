@@ -16,7 +16,7 @@ export type UiIconName =
   | "lock" | "unlock" | "folder" | "ungroup" | "watch" | "phone"
   | "compact" | "expanded" | "grid" | "search" | "undo" | "redo" | "expand" | "left" | "right"
   | "braces" | "link" | "info" | "globe" | "download" | "check" | "arrow" | "paste" | "guides"
-  | "checklist";
+  | "checklist" | "home" | "more";
 
 function shape(name: UiIconName) {
   switch (name) {
@@ -174,6 +174,13 @@ function shape(name: UiIconName) {
       return svg`<rect x="3" y="4" width="7" height="7" rx="1.8" /><path d="M4.9 7.4L6.3 8.8L8.4 6.4" />
         <rect x="3" y="13" width="7" height="7" rx="1.8" /><path d="M4.9 16.4L6.3 17.8L8.4 15.4" />
         <path d="M13.5 7.5H21M13.5 16.5H21" />`;
+    // A Home Assistant entity: a house, the one picture every HA user reads
+    // as "something in my home".
+    case "home":
+      return svg`<path d="M4 11.5L12 4.5L20 11.5" /><path d="M6.5 9.5V19.5H17.5V9.5" /><path d="M10.2 19.5V14.8H13.8V19.5" />`;
+    // More choices behind a menu.
+    case "more":
+      return svg`<circle cx="6" cy="12" r="1.3" /><circle cx="12" cy="12" r="1.3" /><circle cx="18" cy="12" r="1.3" />`;
   }
 }
 

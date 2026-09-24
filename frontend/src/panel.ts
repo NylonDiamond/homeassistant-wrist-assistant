@@ -4787,12 +4787,13 @@ export class WristAssistantPanel extends LitElement {
     .fgroup > .hint { margin: 2px 0 6px; }
     .fgroup > .hint:last-child { margin-bottom: 4px; }
     .fgroup button.reset-dot { left: -6px; }
-    .sec-b > :is(.adders, .chart-numbers, .states-switch, details.sub) { margin-top: 6px; }
+    .sec-b > :is(.adders, .chart-numbers, .states-switch, details.sub),
+    .src-editor > details.sub { margin-top: 6px; }
     .sec-b > :is(button.small, button.link) { margin: 4px 0; }
     /* Anything in a card that is not a row (help, a note, a strip of buttons)
        starts where the controls start, so the titles keep one clean edge down
        the left. Boxes that hold rows of their own keep the full width. */
-    :is(.sec-b, .sec-b :is(.fgroup, .grid2, .grid4, .value-editor, .states, .rich-parts, .part-editor, .rule-box, .case-box, .test-box, .change-box))
+    :is(.sec-b, .sec-b :is(.fgroup, .grid2, .grid4, .value-editor, .src-editor, .states, .rich-parts, .part-editor, .rule-box, .case-box, .test-box, .change-box))
       > :is(.hint, .rich-note, .rich-confirm, .adders, .chips, .states-foot, .states-switch, .span-parts, button.small, button.link, select.adder, details.sub):not(.value-pop *) {
       margin-left: var(--wa-col);
     }
@@ -5644,6 +5645,32 @@ export class WristAssistantPanel extends LitElement {
     .tap-menu-name { font-size: 13px; }
     .tap-menu button.on .tap-menu-name { font-weight: 600; }
     .tap-menu-info { font-size: 11.5px; line-height: 1.35; opacity: .65; }
+    /* A value in its own card: Text, Entity, Clock and More as one row of
+       buttons with a glyph each, and the rows that source needs under it. The
+       More button names the source picked behind it. */
+    .seg.wide.src-tabs { height: 30px; padding: 2px; gap: 2px; border-radius: 8px; }
+    .seg.wide.src-tabs button {
+      display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 0;
+      border-radius: 6px; font-size: 12px; font-weight: 600; line-height: 1; color: var(--wa-muted);
+    }
+    .seg.wide.src-tabs button:hover { color: var(--wa-ink); }
+    .seg.wide.src-tabs button.on { color: var(--wa-ink); }
+    .seg.wide.src-tabs button.on svg.ui-icon { color: var(--c, var(--wa-accent)); }
+    .seg.wide.src-tabs button svg.ui-icon { width: 13px; height: 13px; flex: none; }
+    .seg.wide.src-tabs button > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .seg.wide.src-tabs button > .caret { flex: none; font-size: 9px; opacity: .6; overflow: visible; }
+    .src-editor .field.src-field { margin-bottom: 2px; }
+    /* The More menu: each source with a tinted glyph, its name and a line
+       saying what it gives. */
+    .tap-menu-group[data-group="sources"] { --g: var(--wa-accent); }
+    .tap-menu-group[data-group="share"] { --g: #8b5cf6; }
+    .tap-menu button.src-item { flex-direction: row; align-items: flex-start; gap: 9px; padding: 6px 8px; }
+    .src-item .src-ico {
+      flex: none; width: 24px; height: 24px; margin-top: 1px; border-radius: 6px; display: grid; place-items: center;
+      background: color-mix(in srgb, var(--g) 18%, transparent); color: color-mix(in srgb, var(--g) 75%, var(--wa-ink));
+    }
+    .src-item .src-ico svg.ui-icon { width: 14px; height: 14px; }
+    .src-item .src-txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
     .confirm-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .value-chip-field.compact { margin: 0; }
     .value-chip-field.compact button.value-chip { padding: 3px 8px; font-size: 13px; max-width: 190px; }
