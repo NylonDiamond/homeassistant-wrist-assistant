@@ -3393,7 +3393,7 @@ export class WristAssistantPanel extends LitElement {
       background: color-mix(in srgb, var(--wa-ink) 8%, transparent); color: var(--wa-muted);
     }
     .badge.tap { color: #c2185b; background: rgba(236,64,122,.14); }
-    .badge.states { color: #8a5a00; background: rgba(249,168,37,.18); }
+    .badge.states { color: #ad1457; background: rgba(236,64,122,.16); }
     :host([dark]) .badge.tap { color: var(--wa-tap); background: color-mix(in srgb, var(--wa-tap) 22%, transparent); }
     :host([dark]) .badge.states { color: var(--wa-states); background: color-mix(in srgb, var(--wa-states) 22%, transparent); }
     /* A layer's attached tap: the bottom part of the layer's own row, under
@@ -4434,7 +4434,7 @@ export class WristAssistantPanel extends LitElement {
     .vchip button.val { background: none; border: 0; padding: 0; cursor: text; min-width: 56px; text-align: right; }
     .vchip button.live-reset { flex: none; }
     .testing-pill { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; text-transform: none; letter-spacing: 0; color: color-mix(in srgb, var(--wa-states) 70%, var(--wa-ink)); }
-    .testing-pill button { font: inherit; font-size: 12px; font-weight: 500; background: var(--wa-states); color: #1a1600; border: 0; border-radius: 999px; padding: 2px 9px; cursor: pointer; }
+    .testing-pill button { font: inherit; font-size: 12px; font-weight: 500; background: var(--wa-states); color: #fff; border: 0; border-radius: 999px; padding: 2px 9px; cursor: pointer; }
     /* Canvas column: quiet header, floating toolbar, zoomable stage, values bar, first run. */
     .canvas-card {
       --wa-float-bg: color-mix(in srgb, var(--wa-raised) 94%, transparent);

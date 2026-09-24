@@ -60,7 +60,7 @@ export const SECTION_COLOR = {
   look: "#a15fe0",
   numbers: "#26a69a",
   position: "#66bb6a",
-  states: "#f9a825",
+  states: "#ec407a",
   tap: KIND_COLOR.tap,
   place: "#78909c",
   complication: "#5c6bc0",
