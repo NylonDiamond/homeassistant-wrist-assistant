@@ -18,7 +18,7 @@ import {
   ownedElements,
 } from "./model.js";
 import { type ResolvedAll, type ResolvedLayout, type CanvasSize } from "./resolver.js";
-import { type IconProvider, estimateTextWidth, renderLayout } from "./renderer.js";
+import { type IconProvider, type TintSurface, estimateTextWidth, renderLayout } from "./renderer.js";
 import { type ImageSizeProvider } from "./image-sizes.js";
 
 // ── how big each preview is drawn ─────────────────────────────────────────
@@ -113,17 +113,20 @@ export function previewWarnings(layout: ResolvedLayout): string[] {
 /**
  * The tint a preview is drawn under, and which surface it stands for.
  *
- * An iPhone draws its Lock Screen complications the way a tinted watch face
- * does: color dropped, every layer painted white through its own alpha. So a
- * phone owner's Lock Screen shapes preview in white unless the tint tool is
- * asking for another color, and the Home Screen tiles preview in full color,
- * since that is what the phone really draws there.
+ * An iPhone draws its Lock Screen complications in `vibrant` mode: color
+ * dropped, every layer painted white at its own brightness, so a photo reads
+ * as gray and a dark background nearly vanishes. A tinted watch face keeps
+ * alpha instead, which turned any opaque background into a solid white box.
+ * So a phone owner's Lock Screen shapes preview on the "lock" surface, in
+ * white unless the tint tool asks for another color, and the Home Screen
+ * tiles preview in full color, since that is what the phone really draws.
  */
-export function previewTintFor(family: DrawableFamily, phone: boolean, override: string | undefined): { tint?: string; tintSurface?: "watch" | "phone" } {
+export function previewTintFor(family: DrawableFamily, phone: boolean, override: string | undefined): { tint?: string; tintSurface?: TintSurface } {
   const home = family === "small" || family === "medium" || family === "large" || family === "xlarge";
   if (home) return override === undefined ? {} : { tint: override, tintSurface: "phone" };
   const tint = override ?? (phone ? "#FFFFFF" : undefined);
-  return tint === undefined ? {} : { tint, tintSurface: "watch" };
+  if (tint === undefined) return {};
+  return { tint, tintSurface: phone ? "lock" : "watch" };
 }
 
 // ── one tab's picture ─────────────────────────────────────────────────────

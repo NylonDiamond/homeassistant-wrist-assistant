@@ -61,3 +61,19 @@ describe("a tinted Home Screen preview", () => {
     expect(tintMatrix("phoneAccent", "#FF0000").startsWith("0 0 0 0 1.0000 0 0 0 0 0.5020")).toBe(true);
   });
 });
+
+// An iPhone Lock Screen is `vibrant` mode: every layer keeps its brightness,
+// so a photo reads as gray and a dark background nearly vanishes, rather
+// than an opaque background turning the whole slot into a white box.
+describe("a Lock Screen preview", () => {
+  it("puts every kind of layer in one group", () => {
+    for (const kind of ["shape", "text", "image", "chart", "imageTime"] as const) {
+      expect(tintGroup(kind, "lock")).toBe("lock");
+      expect(tintGroup(kind, "lock", true)).toBe("lock");
+    }
+  });
+
+  it("turns brightness into alpha, in white", () => {
+    expect(tintMatrix("lock", "#FFFFFF")).toBe("0 0 0 0 1.0000 0 0 0 0 1.0000 0 0 0 0 1.0000 0.2126 0.7152 0.0722 0 0");
+  });
+});

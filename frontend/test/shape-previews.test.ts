@@ -130,8 +130,8 @@ describe("the warning badge", () => {
 
 describe("how a preview is tinted", () => {
   it("draws a phone's Lock Screen shapes in white", () => {
-    expect(previewTintFor("rectangular", true, undefined)).toEqual({ tint: "#FFFFFF", tintSurface: "watch" });
-    expect(previewTintFor("circular", true, undefined)).toEqual({ tint: "#FFFFFF", tintSurface: "watch" });
+    expect(previewTintFor("rectangular", true, undefined)).toEqual({ tint: "#FFFFFF", tintSurface: "lock" });
+    expect(previewTintFor("circular", true, undefined)).toEqual({ tint: "#FFFFFF", tintSurface: "lock" });
   });
 
   it("draws a phone's Home Screen tiles in full color", () => {
@@ -143,7 +143,7 @@ describe("how a preview is tinted", () => {
   });
 
   it("follows the tint tool when it is on", () => {
-    expect(previewTintFor("rectangular", true, "#FF9F0A")).toEqual({ tint: "#FF9F0A", tintSurface: "watch" });
+    expect(previewTintFor("rectangular", true, "#FF9F0A")).toEqual({ tint: "#FF9F0A", tintSurface: "lock" });
     expect(previewTintFor("medium", false, "#FF9F0A")).toEqual({ tint: "#FF9F0A", tintSurface: "phone" });
   });
 });

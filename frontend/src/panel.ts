@@ -8832,7 +8832,7 @@ export class WristAssistantPanel extends LitElement {
     const title = phone
       ? "A tinted Home Screen drops the tile's background and paints every layer in one color, keeping only how bright each part was. Layers in the accent group take the lighter of the two colors."
       : lockWhite
-        ? "An iPhone always draws Lock Screen complications in white, whatever colors you pick, so the preview does the same. Your colors still set how bright each part comes out. Pick a tint here to see the design in another color."
+        ? "An iPhone always draws Lock Screen complications in shades of white, whatever colors you pick, so the preview does the same. Bright parts stay, dark parts fade, and a photo shows in gray. Pick a tint here to see the design in another color."
         : "Many watch faces draw complications in one color. Colors become the face's tint, text and background turn white, and only how see-through each part is survives.";
     const aria = `Preview color, ${current ? `${current.label} ${phone ? "tinted Home Screen" : "tinted face"}` : plain.toLowerCase()}`;
     return { on, current, phone, lockWhite, plain, word, title, aria };
@@ -12010,7 +12010,7 @@ export class WristAssistantPanel extends LitElement {
    * greyed, and a box that cannot be unticked says why. */
   private renderPickerPlace(row: PickerRow, place: DevicePlace, family: FamilyKind | undefined) {
     const target = place.owner;
-    const label = target.kind === "library" ? UNASSIGNED_LABEL : target.label;
+    const label = target.kind === "library" ? UNASSIGNED_LABEL : placeLabel(target, family);
     const full = place.draws && !place.on && this.freeSlotOn(target.ownerId, family) < 0;
     const shelf = this.libraryOwner();
     // A device whose app is too old for this shape, or that has not said
@@ -17317,7 +17317,7 @@ export class WristAssistantPanel extends LitElement {
    */
   private renderAddPlaceRow(row: PickerRow, place: DevicePlace, family: FamilyKind | undefined) {
     const target = place.owner;
-    const label = target.label;
+    const label = placeLabel(target, family);
     const icon = target.kind === "iphone" ? "phone" : "watch";
     const block = this.placeBlock(place, family, label);
     const title = block?.why ?? `Put it on ${label}. Saving it saves it everywhere it is.`;
@@ -18022,6 +18022,15 @@ export function ownerLabel(o: OwnerSummary): string {
  * the person's color, so the paired phone in parentheses and the "(iPhone)"
  * badge only repeat what the glyph says. The bare name is what those read.
  */
+/**
+ * A device's name in a list of places a design can go. An iPhone offered a
+ * watch-sized shape says it is the Lock Screen, since that is where the phone
+ * draws it and why the preview then turns white and gray.
+ */
+export function placeLabel(o: { kind: DeviceKind; label: string }, family: FamilyKind | undefined): string {
+  return o.kind === "iphone" && family !== undefined && !isHomeFamily(family) ? `${o.label} (Lock Screen)` : o.label;
+}
+
 export function ownerShortLabel(o: OwnerSummary): string {
   if (isLibraryOwner(o)) return UNASSIGNED_LABEL;
   return o.device_name ?? o.owner_watch_id;

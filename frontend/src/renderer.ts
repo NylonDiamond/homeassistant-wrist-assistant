@@ -342,7 +342,10 @@ export interface RenderOptions {
    * tinted watch face: color is dropped and only how see-through each part is
    * survives. "phone" is a tinted iPhone Home Screen, which is WidgetKit's
    * `accented` mode: the tile's own ground goes, and every layer is painted in
-   * the tint at the brightness it was drawn in. Ignored without `tint`.
+   * the tint at the brightness it was drawn in. "lock" is an iPhone Lock
+   * Screen, which is `vibrant` mode: the ground stays, and every layer, ground
+   * included, is painted in the tint at its own brightness, so a photo reads
+   * as gray and a dark fill nearly vanishes. Ignored without `tint`.
    */
   tintSurface?: TintSurface;
   /**
@@ -459,15 +462,16 @@ function flashShapeRing(family: DrawableFamily, color: string, canvas: CanvasSiz
  * colors. Which group a layer lands in is the document's `accentGroup`, plus
  * the kinds the app already marks accentable for the watch.
  */
-export type TintGroup = "accent" | "plain" | "picture" | "phoneAccent" | "phonePrimary";
+export type TintGroup = "accent" | "plain" | "picture" | "phoneAccent" | "phonePrimary" | "lock";
 
-/** The two surfaces a tinted preview can stand for. See `RenderOptions.tintSurface`. */
-export type TintSurface = "watch" | "phone";
+/** The surfaces a tinted preview can stand for. See `RenderOptions.tintSurface`. */
+export type TintSurface = "watch" | "phone" | "lock";
 
 /** The groups a surface draws with, which is the set of filters it needs. */
 const TINT_GROUPS: Record<TintSurface, readonly TintGroup[]> = {
   watch: ["accent", "plain", "picture"],
   phone: ["phonePrimary", "phoneAccent"],
+  lock: ["lock"],
 };
 
 /** Tints to preview with, a spread of the colors watch faces offer. */
@@ -482,6 +486,8 @@ export const FACE_TINTS: readonly { label: string; hex: string }[] = [
 
 export function tintGroup(kind: ResolvedElement["kind"], surface: TintSurface = "watch", accented = false): TintGroup {
   const watchAccent = kind !== "text" && kind !== "imageTime" && kind !== "tap" && kind !== "image";
+  // The Lock Screen draws every layer the same way, accent or not.
+  if (surface === "lock") return "lock";
   if (surface === "phone") {
     // The app's `.widgetAccentable()` calls are not platform-gated, so the kinds
     // that are accentable on a watch face are accentable on a Home Screen too.
@@ -516,9 +522,10 @@ export function tintMatrix(group: TintGroup, tintHex: string): string {
   const c = parseColor(hex) ?? { color: "#FFFFFF", opacity: 1 };
   const ch = (i: number) => (parseInt(c.color.slice(1 + i * 2, 3 + i * 2), 16) / 255).toFixed(4);
   const [r, g, b] = group === "plain" ? ["1", "1", "1"] : [ch(0), ch(1), ch(2)];
-  // A picture and the whole Home Screen keep brightness, not alpha: a dark fill
-  // goes and a bright one stays, which is what `accented` mode does to a widget.
-  const keepsBrightness = group === "picture" || group === "phoneAccent" || group === "phonePrimary";
+  // A picture, the whole Home Screen and the whole Lock Screen keep brightness,
+  // not alpha: a dark fill goes and a bright one stays, which is what
+  // `accented` and `vibrant` modes do to a widget.
+  const keepsBrightness = group === "picture" || group === "phoneAccent" || group === "phonePrimary" || group === "lock";
   const alpha = keepsBrightness ? "0.2126 0.7152 0.0722 0 0" : "0 0 0 1 0";
   return `0 0 0 0 ${r} 0 0 0 0 ${g} 0 0 0 0 ${b} ${alpha}`;
 }
@@ -547,7 +554,7 @@ function tintDefs(prefix: string, tintHex: string, surface: TintSurface, extent:
   const r = filterRegion(extent);
   return svg`${TINT_GROUPS[surface].map((g) => svg`<filter id=${`${prefix}-${g}`} filterUnits="userSpaceOnUse" x=${r.x} y=${r.y} width=${r.size} height=${r.size}
     color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values=${tintMatrix(g, tintHex)} />${
-      surface === "phone" ? svg`<feComposite in2="SourceGraphic" operator="in" />` : nothing}</filter>`)}`;
+      surface !== "watch" ? svg`<feComposite in2="SourceGraphic" operator="in" />` : nothing}</filter>`)}`;
 }
 
 /** Wraps a drawing in its tint filter, or returns it untouched in full color. */
@@ -2880,7 +2887,7 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
   const defsTint = tint === undefined ? nothing : tintDefs(tint, options.tint!, surface, extent);
   // The group the tile's own chrome joins: its background, its border, and the
   // corner's bezel ring. It is the default group on both surfaces.
-  const chromeGroup: TintGroup = surface === "phone" ? "phonePrimary" : "plain";
+  const chromeGroup: TintGroup = surface === "phone" ? "phonePrimary" : surface === "lock" ? "lock" : "plain";
   // iOS drops the widget's container background in `accented` mode, so a tinted
   // Home Screen preview draws no background fill at all.
   const bgDrawn = bgPaint !== undefined && !(tint !== undefined && surface === "phone");

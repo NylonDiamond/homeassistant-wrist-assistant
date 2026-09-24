@@ -2,6 +2,7 @@
 // device, or both. Every result is one shape on one device, laid out for the
 // canvas it landed on, and the document it came from is never touched.
 
+import { placeLabel } from "../src/panel.js";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -406,5 +407,19 @@ describe("linkedCopy and linkedDocumentFor", () => {
     src.linkId = LINK;
     expect(duplicateAs(src, "rectangular", { id: "D", slotIndex: 1 }).linkId).toBeUndefined();
     expect(duplicateAs(src, "circular", { id: "D", slotIndex: 1 }).linkId).toBeUndefined();
+  });
+});
+
+// An iPhone takes a watch-sized shape on its Lock Screen, and the list says so.
+describe("placeLabel", () => {
+  it("names the Lock Screen for an iPhone offered a shared shape", () => {
+    expect(placeLabel({ kind: "iphone", label: "iPhone 15 Pro" }, "rectangular")).toBe("iPhone 15 Pro (Lock Screen)");
+    expect(placeLabel({ kind: "iphone", label: "iPhone 15 Pro" }, "inline")).toBe("iPhone 15 Pro (Lock Screen)");
+  });
+
+  it("leaves watches, Home Screen tiles and controls alone", () => {
+    expect(placeLabel({ kind: "watch", label: "Jesse Apple Watch" }, "rectangular")).toBe("Jesse Apple Watch");
+    expect(placeLabel({ kind: "iphone", label: "iPhone 15 Pro" }, "small")).toBe("iPhone 15 Pro");
+    expect(placeLabel({ kind: "iphone", label: "iPhone 15 Pro" }, undefined)).toBe("iPhone 15 Pro");
   });
 });
