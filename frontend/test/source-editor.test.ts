@@ -38,8 +38,8 @@ describe("sourceTab", () => {
     expect(sourceTab("entityState")).toBe("entity");
     expect(sourceTab("entityAttribute")).toBe("entity");
     expect(sourceTab("entityAge")).toBe("entity");
-    expect(sourceTab("time")).toBe("clock");
-    for (const k of ["aggregate", "chartStat", "dataAge", "jinja", "named", "item", "listStat", "imageTime"] as const) {
+    expect(sourceTab("jinja")).toBe("template");
+    for (const k of ["time", "aggregate", "chartStat", "dataAge", "named", "item", "listStat", "imageTime"] as const) {
       expect(sourceTab(k), k).toBe("more");
     }
   });
@@ -48,7 +48,7 @@ describe("sourceTab", () => {
 describe("sourceEditor", () => {
   it("shows four buttons and a box to type in for typed words", () => {
     const markup = draw(literal("Hello"));
-    for (const word of ["Text", "Entity", "Clock", "More", "Type what to show"]) expect(markup, word).toContain(word);
+    for (const word of ["Text", "Entity", "Template", "More", "Type what to show"]) expect(markup, word).toContain(word);
     // Typed words print as typed, so there is no reading to repeat them.
     expect(markup).not.toContain("now-field");
     // The sources are buttons, not the browser's Source menu.
@@ -84,8 +84,8 @@ describe("sourceEditor", () => {
   it("files the rarer sources behind More, each with a line", () => {
     const markup = draw(literal("x"));
     expect(markup).toContain("Number from a chart");
-    expect(markup).toContain("Template (Jinja)");
-    expect(markup).toContain("Anything Home Assistant can render");
+    expect(markup).toContain("Clock and date");
+    expect(markup).toContain("The time or the date, read on the watch.");
     // Only offered where they mean something.
     expect(markup).not.toContain("Picture time");
     expect(markup).not.toContain("Item field");
@@ -93,9 +93,16 @@ describe("sourceEditor", () => {
   });
 
   it("names the source picked behind More on its button", () => {
-    const markup = draw({ kind: { kind: "jinja", value: "{{ 1 }}" } });
-    expect(markup).toMatch(/<span>Template<\/span>/);
+    const markup = draw({ kind: { kind: "time", timeField: "now" } });
+    expect(markup).toMatch(/<span>Clock<\/span>/);
     expect(markup).not.toMatch(/<span>More<\/span>/);
+  });
+
+  it("never lists Picture time, but still names it on a layer that holds it", () => {
+    const cfg = newConfig("Test", 0);
+    const markup = draw({ kind: { kind: "imageTime", layer: "" } }, cfg);
+    expect(markup).toMatch(/<span>Picture time<\/span>/);
+    expect(markup).not.toContain("When the watch last fetched a picture layer.");
   });
 
   it("offers Make shared only for a value worth sharing", () => {

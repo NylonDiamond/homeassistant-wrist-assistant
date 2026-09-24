@@ -2772,13 +2772,17 @@ export function placePopover(anchor: AnchorBox, size: { width: number; height: n
  * being drawn, and List count means nothing in a document with no list. Both
  * still show while the value already holds one, so a value that came in from a
  * shared document is never a picker with a blank selection.
+ *
+ * Picture time is never offered: a picture's Timestamp button makes the one
+ * layer that needs it, and picked by hand it read as a strange choice among
+ * the others (Jesse, 2026-09-23). It stays listed only on a value that holds it.
  */
 export function valueKindsFor(host: EditorHost, kind: ValueKind, opts: ValueEditorOptions): [ValueKind["kind"], string][] {
   const out = VALUE_KINDS.filter(([k]) => opts.allowNamed !== false || k !== "named");
   if (host.rowEditListId !== undefined || kind.kind === "item") out.push(["item", "Item field"]);
   const lists = host.config.elements.some((e) => e.kind === "list");
   if (lists || kind.kind === "listStat") out.push(["listStat", "List count"]);
-  if (timedPictures(host.config.elements).length > 0 || kind.kind === "imageTime") out.push(["imageTime", "Picture time"]);
+  if (kind.kind === "imageTime") out.push(["imageTime", "Picture time"]);
   return out;
 }
 
@@ -2911,8 +2915,10 @@ function valueBody(host: EditorHost, value: Value, set: (v: Value) => void, opts
 // gives. The popover form it replaces cost a click to type one word, and its
 // Source list was the browser's own grey menu.
 
-/** The four buttons of an inline value. */
-export type SourceTab = "text" | "entity" | "clock" | "more";
+/** The four buttons of an inline value. Template got the third button over
+ * the clock: it is the one people reach for when Entity is not enough, and
+ * the clock is a quick pick from More (Jesse, 2026-09-23). */
+export type SourceTab = "text" | "entity" | "template" | "more";
 
 /** Which button a source sits behind. */
 export function sourceTab(kind: ValueKind["kind"]): SourceTab {
@@ -2921,7 +2927,7 @@ export function sourceTab(kind: ValueKind["kind"]): SourceTab {
     case "entityState":
     case "entityAttribute":
     case "entityAge": return "entity";
-    case "time": return "clock";
+    case "jinja": return "template";
     default: return "more";
   }
 }
@@ -2929,16 +2935,16 @@ export function sourceTab(kind: ValueKind["kind"]): SourceTab {
 const SOURCE_TABS: [Exclude<SourceTab, "more">, string, UiIconName, string][] = [
   ["text", "Text", "text", "Words or a number you type. It never changes."],
   ["entity", "Entity", "home", "A live reading from one Home Assistant entity"],
-  ["clock", "Clock", "clock", "The time or the date on the watch"],
+  ["template", "Template", "braces", "A Jinja template Home Assistant renders, for anything one entity cannot give"],
 ];
 
 /** Everything behind More, in the order people reach for them. `short` is what
  * the More button says while one of them is picked. */
 const MORE_SOURCES: { kind: ValueKind["kind"]; name: string; short: string; icon: UiIconName; info: string }[] = [
+  { kind: "time", name: "Clock and date", short: "Clock", icon: "clock", info: "The time or the date, read on the watch." },
   { kind: "aggregate", name: "Several entities combined", short: "Combined", icon: "layers", info: "Count them, or take the sum, average, lowest or highest." },
   { kind: "chartStat", name: "Number from a chart", short: "Chart number", icon: "chart", info: "The latest, lowest, highest or average reading of a chart layer." },
   { kind: "dataAge", name: "Time since last refresh", short: "Refresh age", icon: "reset", info: "Seconds since the watch last fetched values." },
-  { kind: "jinja", name: "Template (Jinja)", short: "Template", icon: "braces", info: "Anything Home Assistant can render, like two sensors added up." },
   { kind: "named", name: "Shared value", short: "Shared", icon: "link", info: "One value several layers read, changed in one place." },
   { kind: "listStat", name: "List count", short: "List count", icon: "list", info: "How many rows a list layer drew." },
   { kind: "item", name: "Item field", short: "Item field", icon: "list", info: "One field of the list row being drawn." },
@@ -2999,13 +3005,16 @@ export function sourceEditor(host: EditorHost, value: Value, set: (v: Value) => 
   const setKind = (kind: ValueKind) => set({ ...value, kind });
   const valueOpts: ValueEditorOptions = { key, showResolved: true };
   const allowed = new Set(valueKindsFor(host, k, valueOpts).map(([kind]) => kind));
-  const more = MORE_SOURCES.filter((m) => allowed.has(m.kind));
+  // Picture time stays off the menu even on the layer that holds it; the
+  // More button still names it there. See `valueKindsFor`.
+  const more = MORE_SOURCES.filter((m) => allowed.has(m.kind) && m.kind !== "imageTime");
   const picked = MORE_SOURCES.find((m) => m.kind === k.kind);
 
   const go = (next: ValueKind, node: EventTarget | null) => {
     sourceMemory.set(key, { ...sourceMemory.get(key), [memorySlot(k.kind)]: k });
     setKind(next);
     if (next.kind === "literal") focusSourceSoon(node, key, "input[type=text]");
+    else if (next.kind === "jinja") focusSourceSoon(node, key, "textarea");
     else if ("entityId" in next && next.entityId === "") focusSourceSoon(node, key, ".ent-box input");
   };
   const toTab = (to: Exclude<SourceTab, "more">, node: EventTarget | null) => {
@@ -3014,7 +3023,7 @@ export function sourceEditor(host: EditorHost, value: Value, set: (v: Value) => 
     if (kept) go(kept, node);
     else if (to === "text") go({ kind: "literal", value: "" }, node);
     else if (to === "entity") go({ kind: "entityState", ...(opts.defaultEntity ?? EMPTY_REF) }, node);
-    else go({ kind: "time", timeField: "now" }, node);
+    else go(switchKind(k, "jinja"), node);
   };
   const pickMore = (kind: ValueKind["kind"], node: EventTarget | null) => {
     if (kind === k.kind) return;
@@ -3029,7 +3038,7 @@ export function sourceEditor(host: EditorHost, value: Value, set: (v: Value) => 
         class=${t === tab ? "on" : ""} title=${title} @click=${(e: Event) => toTab(t, e.currentTarget)}>${uiIcon(icon)}<span>${name}</span></button>`)}
       <button type="button" role="radio" aria-checked=${tab === "more" ? "true" : "false"} class=${tab === "more" ? "on" : ""}
         popovertarget=${moreId} aria-haspopup="menu"
-        title=${picked ? `${picked.name}. Click to pick another source.` : "Charts, templates, shared values and more"}>
+        title=${picked ? `${picked.name}. Click to pick another source.` : "The clock, charts, shared values and more"}>
         ${uiIcon(picked?.icon ?? "more")}<span>${tab === "more" && picked ? picked.short : "More"}</span><span class="caret" aria-hidden="true">▾</span>
       </button>
     </div>
