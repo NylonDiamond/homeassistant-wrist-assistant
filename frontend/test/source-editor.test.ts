@@ -122,6 +122,6 @@ describe("starterTemplate", () => {
 
   it("otherwise counts the lights that are on, which every house can render", () => {
     expect(starterTemplate({ kind: "literal", value: "" })).toBe(STARTER_TEMPLATE);
-    expect(STARTER_TEMPLATE).toBe("{{ states.light | selectattr('state', 'eq', 'on') | list | count }} Lights On");
+    expect(STARTER_TEMPLATE).toBe("💡 {{ states.light | selectattr('state', 'eq', 'on') | list | count }} Lights On");
   });
 });
