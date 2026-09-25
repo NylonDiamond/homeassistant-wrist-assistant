@@ -722,9 +722,9 @@ function layerRowFolds(): string {
     }`;
   }).join("\n");
 }
-/** The Layers list's group boxes, one hue per level of nesting: teal, amber,
- * sky, rose. None is the accent violet, so a box never reads as selected. */
-const GROUP_BOX_HUES = ["#2bb3a3", "#e0a43a", "#4aa3df", "#d9678a"] as const;
+/** The Layers list's group boxes, one hue per level of nesting: teal, blue,
+ * amber, rose. None is the accent violet, so a box never reads as selected. */
+const GROUP_BOX_HUES = ["#2bb3a3", "#5b8def", "#e0a43a", "#d9678a"] as const;
 type ThumbStep = 0 | 1 | 2;
 /** The help dialog's tabs. */
 type HelpTab = "basics" | "pages" | "keys" | "sync";
