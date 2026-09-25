@@ -3193,6 +3193,8 @@ export class WristAssistantPanel extends LitElement {
     .xf-galink:hover { text-decoration: underline; }
     .xf-galink svg.ui-icon { width: 14px; height: 14px; }
     .xf-head .xf-galink { font-size: 12px; }
+    .xf-head .xf-mine { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; font-size: 12px; }
+    .xf-head .xf-mine svg.ui-icon { width: 14px; height: 14px; flex: none; }
     /* The complication, drawn by the renderer on the black of a watch face.
        A spotlight inside the drawing picks out the layers being pointed at. */
     .xf-prev { display: grid; place-items: center; padding: 10px; border-radius: var(--wa-r-md); background: #000; border: 1px solid var(--wa-line); line-height: 0; }
@@ -13766,7 +13768,10 @@ export class WristAssistantPanel extends LitElement {
         shared.length === 0
           ? "A Control Center control, and no shape"
           : `${familyWords(shared)} · ${layerCountWords(cfg)}`,
-        () => this.closeShareDialog())}
+        () => this.closeShareDialog(),
+        admin ? html`<button class="small xf-mine" aria-haspopup="dialog" @click=${() => this.openGalleryDialog("mine")}>
+          ${uiIcon("globe")}<span>My uploads</span>${this.galleryUploads === undefined
+            ? nothing : html`<span class="xf-count">${galleryUploadRows(this.galleryUploads).length}</span>`}</button>` : nothing)}
       <div class="xfer-body">
         ${this.dialogPreview(layouts, family, spot,
           focused && spot.length > 0 ? html`Where <b>${focused.name}</b> is` : family ? familyTitle(family) : "",
@@ -14007,6 +14012,8 @@ export class WristAssistantPanel extends LitElement {
     this.shareLinkShown = false;
     this.shareCopied = undefined;
     this.shareFocus = undefined;
+    // For the count on the head's My uploads.
+    if (this.hass.user?.is_admin && this.galleryUploads === undefined) void this.loadGalleryUploads();
     void this.updateComplete.then(() => {
       const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.share-dialog");
       if (dialog && !dialog.open) dialog.showModal();
@@ -14046,9 +14053,12 @@ export class WristAssistantPanel extends LitElement {
     return galleryDevice(deviceKindOf(this.selectedOwner), cfg ? galleryFamily(cfg) : undefined);
   }
 
-  private openGalleryDialog() {
+  /** Opens on New from Send it, or on My uploads from the Share dialog's
+   * head. Only New needs a shape: My uploads is a list of what was sent. */
+  private openGalleryDialog(tab: "new" | "mine" = "new") {
     const cfg = this.shareConfig();
-    if (!cfg || !this.hass.user?.is_admin || this.sharePicked().length === 0) return;
+    const postable = this.sharePicked().length > 0;
+    if (!cfg || !this.hass.user?.is_admin || (tab === "new" && !postable)) return;
     this.pointAtRow([], undefined, (k) => { this.shareFocus = k; });
     this.galleryOpen = true;
     this.galleryTitle = (this.shareName.trim() || cfg.name.trim()).slice(0, GALLERY_LIMITS.title);
@@ -14061,14 +14071,14 @@ export class WristAssistantPanel extends LitElement {
     this.galleryPreviews = undefined;
     this.galleryPreviewNote = "";
     this.galleryConfirmDelete = undefined;
-    this.galleryTab = "new";
+    this.galleryTab = tab;
     this.galleryStep = 1;
     this.galleryReplaces = undefined;
     void this.updateComplete.then(() => {
       const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.gallery-dialog");
       if (dialog && !dialog.open) dialog.showModal();
     });
-    void this.makeGalleryPreviews(cfg, this.currentShareSlots());
+    if (postable) void this.makeGalleryPreviews(cfg, this.currentShareSlots());
     void this.loadGalleryUploads();
   }
 
@@ -14113,11 +14123,18 @@ export class WristAssistantPanel extends LitElement {
     else this.galleryOpen = false;
   }
 
+  /** Done after a send: the sharing is over, so Share closes with it rather
+   * than coming back with the steps already taken. */
+  private finishGallery() {
+    this.closeGalleryDialog();
+    this.closeShareDialog();
+  }
+
   private async makeGalleryPreviews(cfg: CustomComplicationConfig, slots: readonly ShareSlot[]) {
     const run = ++this.galleryPreviewRun;
     try {
       const previews = await renderGalleryPreviews(cfg, slots, {
-        entityState: (id) => this.entityStateFor(id, "", false),
+        entityState: (id) => this.entityStateFor(id, this.compiled?.entities.get(id)?.iconName ?? "", false),
         templateResults: this.templateResults,
         historySeries: this.historySeries,
         listItems: this.listItems,
@@ -14218,7 +14235,8 @@ export class WristAssistantPanel extends LitElement {
     const rows = this.galleryUploads ? galleryUploadRows(this.galleryUploads) : undefined;
     const tab = this.galleryTab;
     const tabs = html`<div class="seg xf-tabs" role="group" aria-label="Gallery view">
-      <button class=${tab === "new" ? "on" : ""} aria-pressed=${tab === "new" ? "true" : "false"} @click=${() => this.setGalleryTab("new")}>New</button>
+      <button class=${tab === "new" ? "on" : ""} aria-pressed=${tab === "new" ? "true" : "false"}
+        ?disabled=${this.sharePicked().length === 0} @click=${() => this.setGalleryTab("new")}>New</button>
       <button class=${tab === "mine" ? "on" : ""} aria-pressed=${tab === "mine" ? "true" : "false"} @click=${() => this.setGalleryTab("mine")}>My uploads<span class="xf-count">${rows === undefined ? "…" : rows.length}</span></button>
     </div>`;
     return html`<dialog class="gallery-dialog xf" @close=${() => { this.galleryOpen = false; this.pointAtRow([], undefined, () => undefined); }}>
@@ -14268,7 +14286,7 @@ export class WristAssistantPanel extends LitElement {
         : "It shows in the gallery after it is approved. Check My uploads for its status."}</p>
       <div class="btns">
         <button class="small" @click=${() => this.setGalleryTab("mine")}>My uploads</button>
-        <button class="primary" @click=${() => this.closeGalleryDialog()}>Done</button>
+        <button class="primary" @click=${() => this.finishGallery()}>Done</button>
       </div>
     </div></div>`;
   }
