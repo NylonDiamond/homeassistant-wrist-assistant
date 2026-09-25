@@ -4074,19 +4074,15 @@ export class WristAssistantPanel extends LitElement {
     }
     .as-tabs button.lc-btn.as-notes:hover { filter: brightness(1.08); }
     .as-tabs button.lc-btn.as-notes svg.ui-icon { stroke-width: 2.4; }
-    button.as-tile.note-tile {
-      --k: var(--wa-val);
-      border-color: color-mix(in srgb, var(--wa-val) 45%, var(--wa-line));
-      background: color-mix(in srgb, var(--wa-val) 6%, var(--wa-input));
-    }
+    /* The Note tile is an ordinary tile: only its little icon is amber. */
+    button.as-tile.note-tile { --k: var(--wa-val); }
     .as-pic.note-pic {
-      display: flex; flex-direction: column; justify-content: center; gap: 5px; padding: 0 12px; box-sizing: border-box;
-      background: color-mix(in srgb, var(--wa-val) 14%, #16140e);
+      display: flex; flex-direction: column; justify-content: center; gap: 5px; padding: 0 14px; box-sizing: border-box;
     }
     .note-pic .np-head { display: flex; align-items: center; gap: 6px; color: var(--wa-val); }
     .note-pic .np-head svg.ui-icon { width: 13px; height: 13px; flex: none; }
-    .note-pic .np-head i { height: 5px; width: 34%; border-radius: 3px; background: var(--wa-val); opacity: .9; }
-    .note-pic .np-l { display: block; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--wa-val) 55%, transparent); }
+    .note-pic .np-head i { height: 5px; width: 34%; border-radius: 3px; background: #8a8478; }
+    .note-pic .np-l { display: block; height: 4px; border-radius: 2px; background: #45413a; }
     .note-pic .np-l.a { width: 88%; }
     .note-pic .np-l.b { width: 72%; }
     .note-pic .np-l.c { width: 50%; }
@@ -16616,14 +16612,14 @@ export class WristAssistantPanel extends LitElement {
       // elements where people look, and a search for it finds it.
       const noteShown = !searching || NOTE_SEARCH_WORDS.some((w) => w.includes(query.toLowerCase()));
       const hasNote = cfg.notes !== undefined;
-      const noteSect = !noteShown ? nothing : html`<div class="as-sect">For people who import</div><div class="as-grid">
-        <button class="as-tile wide note-tile" title=${hasNote ? "Edit this complication's note" : "Write a note for people who import this"}
+      const noteSect = !noteShown ? nothing : html`<div class="as-sect">Notes</div><div class="as-grid">
+        <button class="as-tile note-tile"
+          title=${`${hasNote ? "Edit this complication's note" : "Write a note"}: for yourself, or anyone you share it with. The watch never shows it.`}
           @click=${() => this.editNotes()}>
           <span class="as-pic note-pic" aria-hidden="true">
             <span class="np-head">${uiIcon("note")}<i></i></span><i class="np-l a"></i><i class="np-l b"></i><i class="np-l c"></i>
           </span>
-          <span class="as-text"><span class="as-name">${hasNote ? "Edit note" : "Note"}</span>
-            <span class="as-blurb">What to set up and what a tap does. It opens on top of the layers after import. The watch never shows it.</span></span>
+          <span class="as-name">Note</span>
         </button></div>`;
       const elements = found.elements.length === 0 && !noteShown
         ? (tab === "all" ? nothing : nothingFound("elements"))
@@ -16667,7 +16663,7 @@ export class WristAssistantPanel extends LitElement {
         <span class="spacer"></span>
         ${usesPages(cfg) ? html`<span class="lc-sub">Goes on page ${this.page}</span>` : nothing}
         <button type="button" class="lc-btn as-notes"
-          title=${cfg.notes === undefined ? "Write a note for people who import this: what to set up, what a tap does" : "Edit the note for people who import this"}
+          title=${cfg.notes === undefined ? "Write a note, for yourself or anyone you share it with" : "Edit this complication's note"}
           @click=${() => this.editNotes()}>${uiIcon(cfg.notes === undefined ? "plus" : "note")}<span>Note</span></button>
       </div>
       ${full ? html`<div class="as-full">This complication has 64 layers, the most it can hold. Delete one to add another.</div>` : nothing}
@@ -17423,7 +17419,7 @@ export class WristAssistantPanel extends LitElement {
             @click=${() => this.deleteNotes()}>Delete notes</button>` : nothing}
           <button type="button" class="lc-btn nc-done" @click=${() => this.finishNotes()}>Done</button>
         </div>
-        <label class="nc-lead" for="notes-box">Tell people what to set up after they import this.</label>
+        <label class="nc-lead" for="notes-box">A reminder for yourself, or what to set up for anyone you share it with.</label>
         ${this.renderNotesEditor(cfg, "notes-box", 9, () => this.finishNotes())}
         <div class="nc-foot"><span>Markdown: # heading, **bold**, *italic*, - bullets, 1. steps, [words](https://…). [Name] links a layer. The buttons type it for you.</span>
           <span class="nc-count">${this.notesDraft.length} / ${NOTES_MAX}</span></div>
@@ -17442,7 +17438,7 @@ export class WristAssistantPanel extends LitElement {
     return html`<section class="notes-card open" aria-label="Notes">
       <div class="nc-head">
         <span class="nc-icon">${uiIcon("note")}</span><b>Notes</b>
-        <span class="nc-sub">from the author</span>
+        ${this.notesImportedId === id ? html`<span class="nc-sub">from the author</span>` : nothing}
         ${this.notesImportedId === id ? html`<span class="nc-new">Just imported</span>` : nothing}
         <span class="spacer"></span>
         ${edit ? html`<button type="button" class="lc-ghost sm" @click=${() => this.editNotes()}>Edit</button>` : nothing}

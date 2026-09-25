@@ -4438,19 +4438,15 @@ ${iO(c)}`}}delete s.hidden,delete s.linkId;let l=Gc(a);if(l.length>0){let d=l.sl
     }
     .as-tabs button.lc-btn.as-notes:hover { filter: brightness(1.08); }
     .as-tabs button.lc-btn.as-notes svg.ui-icon { stroke-width: 2.4; }
-    button.as-tile.note-tile {
-      --k: var(--wa-val);
-      border-color: color-mix(in srgb, var(--wa-val) 45%, var(--wa-line));
-      background: color-mix(in srgb, var(--wa-val) 6%, var(--wa-input));
-    }
+    /* The Note tile is an ordinary tile: only its little icon is amber. */
+    button.as-tile.note-tile { --k: var(--wa-val); }
     .as-pic.note-pic {
-      display: flex; flex-direction: column; justify-content: center; gap: 5px; padding: 0 12px; box-sizing: border-box;
-      background: color-mix(in srgb, var(--wa-val) 14%, #16140e);
+      display: flex; flex-direction: column; justify-content: center; gap: 5px; padding: 0 14px; box-sizing: border-box;
     }
     .note-pic .np-head { display: flex; align-items: center; gap: 6px; color: var(--wa-val); }
     .note-pic .np-head svg.ui-icon { width: 13px; height: 13px; flex: none; }
-    .note-pic .np-head i { height: 5px; width: 34%; border-radius: 3px; background: var(--wa-val); opacity: .9; }
-    .note-pic .np-l { display: block; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--wa-val) 55%, transparent); }
+    .note-pic .np-head i { height: 5px; width: 34%; border-radius: 3px; background: #8a8478; }
+    .note-pic .np-l { display: block; height: 4px; border-radius: 2px; background: #45413a; }
     .note-pic .np-l.a { width: 88%; }
     .note-pic .np-l.b { width: 72%; }
     .note-pic .np-l.c { width: 50%; }
@@ -8300,14 +8296,14 @@ ${iO(c)}`}}delete s.hidden,delete s.linkId;let l=Gc(a);if(l.length>0){let d=l.sl
       ?disabled=${i.elements.length+k.layerCount>64} title=${k.blurb}
       @click=${()=>{this.closeAddSheet(),this.openPreset(k.kind)}}>
       <span class="as-pic">${ST(k.kind)}</span><span class="as-name">${k.title}</span></button>`,g=(k,C)=>C.length===0?m:u`<div class="as-sect">${k}</div><div class="as-grid">${C.map(f)}</div>`,y=(k,C,R)=>u`<button role="tab" class="as-tab ${p===k?"on":""}"
-      aria-selected=${p===k?"true":"false"} @click=${()=>{this.addTab=k,(k==="parts"||k==="all")&&this.parts===void 0&&this.loadParts()}}>${C}${R===void 0?m:u` <span class="as-count">${R}</span>`}</button>`,b=k=>u`<div class="as-empty">No ${k} match "${l}".</div>`,w;if(p==="parts")w=u`<div class="as-parts">${this.partPick?this.renderPartPicked(this.partPick.config):this.renderPartsGrid()}</div>`;else if(p==="presets")w=c.presets.length===0?b("presets"):u`<div class="as-grid">${c.presets.map(h)}</div>`;else{let k=Ub(c.elements,"value"),C=Ub(c.elements,"pictures"),R=Ub(c.elements,"decorate"),A=SN.map(W=>s.find(j=>j.kind===W)).filter(W=>W!==void 0),P=this.parts??[],T=!d||TN.some(W=>W.includes(l.toLowerCase())),L=i.notes!==void 0,z=T?u`<div class="as-sect">For people who import</div><div class="as-grid">
-        <button class="as-tile wide note-tile" title=${L?"Edit this complication's note":"Write a note for people who import this"}
+      aria-selected=${p===k?"true":"false"} @click=${()=>{this.addTab=k,(k==="parts"||k==="all")&&this.parts===void 0&&this.loadParts()}}>${C}${R===void 0?m:u` <span class="as-count">${R}</span>`}</button>`,b=k=>u`<div class="as-empty">No ${k} match "${l}".</div>`,w;if(p==="parts")w=u`<div class="as-parts">${this.partPick?this.renderPartPicked(this.partPick.config):this.renderPartsGrid()}</div>`;else if(p==="presets")w=c.presets.length===0?b("presets"):u`<div class="as-grid">${c.presets.map(h)}</div>`;else{let k=Ub(c.elements,"value"),C=Ub(c.elements,"pictures"),R=Ub(c.elements,"decorate"),A=SN.map(W=>s.find(j=>j.kind===W)).filter(W=>W!==void 0),P=this.parts??[],T=!d||TN.some(W=>W.includes(l.toLowerCase())),L=i.notes!==void 0,z=T?u`<div class="as-sect">Notes</div><div class="as-grid">
+        <button class="as-tile note-tile"
+          title=${`${L?"Edit this complication's note":"Write a note"}: for yourself, or anyone you share it with. The watch never shows it.`}
           @click=${()=>this.editNotes()}>
           <span class="as-pic note-pic" aria-hidden="true">
             <span class="np-head">${E("note")}<i></i></span><i class="np-l a"></i><i class="np-l b"></i><i class="np-l c"></i>
           </span>
-          <span class="as-text"><span class="as-name">${L?"Edit note":"Note"}</span>
-            <span class="as-blurb">What to set up and what a tap does. It opens on top of the layers after import. The watch never shows it.</span></span>
+          <span class="as-name">Note</span>
         </button></div>`:m,B=c.elements.length===0&&!T?p==="all"?m:b("elements"):u`
           ${g("Show a value",k)}
           ${g("Pictures",C)}
@@ -8338,7 +8334,7 @@ ${iO(c)}`}}delete s.hidden,delete s.linkId;let l=Gc(a);if(l.length>0){let d=l.sl
         <span class="spacer"></span>
         ${Ve(i)?u`<span class="lc-sub">Goes on page ${this.page}</span>`:m}
         <button type="button" class="lc-btn as-notes"
-          title=${i.notes===void 0?"Write a note for people who import this: what to set up, what a tap does":"Edit the note for people who import this"}
+          title=${i.notes===void 0?"Write a note, for yourself or anyone you share it with":"Edit this complication's note"}
           @click=${()=>this.editNotes()}>${E(i.notes===void 0?"plus":"note")}<span>Note</span></button>
       </div>
       ${a?u`<div class="as-full">This complication has 64 layers, the most it can hold. Delete one to add another.</div>`:m}
@@ -8517,7 +8513,7 @@ ${iO(c)}`}}delete s.hidden,delete s.linkId;let l=Gc(a);if(l.length>0){let d=l.sl
             @click=${()=>this.deleteNotes()}>Delete notes</button>`:m}
           <button type="button" class="lc-btn nc-done" @click=${()=>this.finishNotes()}>Done</button>
         </div>
-        <label class="nc-lead" for="notes-box">Tell people what to set up after they import this.</label>
+        <label class="nc-lead" for="notes-box">A reminder for yourself, or what to set up for anyone you share it with.</label>
         ${this.renderNotesEditor(t,"notes-box",9,()=>this.finishNotes())}
         <div class="nc-foot"><span>Markdown: # heading, **bold**, *italic*, - bullets, 1. steps, [words](https://…). [Name] links a layer. The buttons type it for you.</span>
           <span class="nc-count">${this.notesDraft.length} / ${2e3}</span></div>
@@ -8529,7 +8525,7 @@ ${iO(c)}`}}delete s.hidden,delete s.linkId;let l=Gc(a);if(l.length>0){let d=l.sl
       </button>`:u`<section class="notes-card open" aria-label="Notes">
       <div class="nc-head">
         <span class="nc-icon">${E("note")}</span><b>Notes</b>
-        <span class="nc-sub">from the author</span>
+        ${this.notesImportedId===a?u`<span class="nc-sub">from the author</span>`:m}
         ${this.notesImportedId===a?u`<span class="nc-new">Just imported</span>`:m}
         <span class="spacer"></span>
         ${i?u`<button type="button" class="lc-ghost sm" @click=${()=>this.editNotes()}>Edit</button>`:m}
