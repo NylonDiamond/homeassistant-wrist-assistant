@@ -995,3 +995,40 @@ describe("the card presets", () => {
     }
   });
 });
+
+// ── every preset is a group ───────────────────────────────────────────────
+
+describe("presets as groups", () => {
+  it("puts every layer a preset adds into one group named after the preset", () => {
+    for (const preset of LAYER_PRESETS) {
+      if (preset.families !== undefined && !preset.families.includes("rectangular")) continue;
+      const cfg = config();
+      const ref = preset.domains
+        ? { entityId: `${preset.domains[0]}.thing`, displayName: "Thing", domain: preset.domains[0]! }
+        : { entityId: "sensor.thing", displayName: "Thing", domain: "sensor" };
+      applyPreset(cfg, preset.kind, ref, { family: "rectangular" });
+      const layers = cfg.elements.filter((e) => !(e.kind === "tap" && e.payload.attachedTo !== undefined));
+      if (layers.length < 2) {
+        // One layer is not a group: a list or a status line stays loose.
+        expect(cfg.groups ?? [], preset.kind).toHaveLength(0);
+        continue;
+      }
+      expect(cfg.groups, preset.kind).toHaveLength(1);
+      const group = cfg.groups![0]!;
+      expect(group.name, preset.kind).toBe(preset.title);
+      expect(group.parentId, preset.kind).toBeUndefined();
+      for (const el of layers) expect(el.payload.groupId, `${preset.kind}: ${el.kind}`).toBe(group.id);
+    }
+  });
+
+  it("keeps two presets on one face as two groups, and the second inside no group", () => {
+    const cfg = config();
+    applyPreset(cfg, "summary", KITCHEN, { family: "rectangular" });
+    applyPreset(cfg, "weatherNow", { entityId: "weather.home", displayName: "Home", domain: "weather" }, { family: "rectangular" });
+    expect(cfg.groups!.map((g) => g.name)).toEqual(["Home summary", "Weather now"]);
+    expect(cfg.groups!.every((g) => g.parentId === undefined)).toBe(true);
+    const encoded = encodeConfig(cfg);
+    expect(auditUnknownKeys(encoded)).toEqual([]);
+    expect(encodeConfig(parseConfig(encoded))).toEqual(encoded);
+  });
+});

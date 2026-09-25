@@ -37,6 +37,7 @@ import {
   IMAGE_TIMESTAMP_CAPSULE_HEX,
   LIST_FAMILIES,
   controlEffectiveKind,
+  createGroup,
   defaultLayout,
   defaultLevel,
   TOGGLEABLE_DOMAINS,
@@ -2408,8 +2409,30 @@ export function addWhoHomeList(cfg: CustomComplicationConfig, env: PresetEnv): s
   return addList(cfg, env, source, { rows: 4, direction: "across", gap: 2 }, [figure, name]);
 }
 
-/** Run one preset and return the id of the layer to select afterwards. */
+/**
+ * Run one preset and return the id of the layer to select afterwards.
+ *
+ * Every layer the preset added goes into one group named after the preset,
+ * so the finished part moves, copies and deletes as one and the Layers list
+ * shows it as one thing. A preset that adds a single layer (a list, a status
+ * line) is left loose: `createGroup` wants two members, and a group of one
+ * would be a name with nothing to hold together. Attached taps follow the
+ * layer they are attached to, as they do everywhere else.
+ */
 export function applyPreset(
+  cfg: CustomComplicationConfig,
+  kind: PresetKind,
+  ref: EntityRef,
+  env: PresetEnv,
+): string {
+  const before = new Set(cfg.elements.map((e) => e.payload.id));
+  const id = buildPreset(cfg, kind, ref, env);
+  const added = cfg.elements.filter((e) => !before.has(e.payload.id)).map((e) => e.payload.id);
+  createGroup(cfg, added, presetSpec(kind).title);
+  return id;
+}
+
+function buildPreset(
   cfg: CustomComplicationConfig,
   kind: PresetKind,
   ref: EntityRef,
