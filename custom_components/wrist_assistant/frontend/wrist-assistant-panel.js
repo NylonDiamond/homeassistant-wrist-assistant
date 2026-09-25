@@ -4744,7 +4744,8 @@ ${L5(c)}`}}delete s.hidden,delete s.linkId;let l=Lc(a);if(l.length>0){let d=l.sl
     .start-more { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; color: var(--wa-accent); }
     .start-more svg { width: 13px; height: 13px; }
     /* Recent: the picker's cards, six across at most, each one a button. */
-    .start-recent { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+    /* Six across at the page's full width, so the six cards are one row. */
+    .start-recent { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 12px; }
     button.start-card {
       display: flex; flex-direction: column; align-items: stretch; gap: 0; min-width: 0; text-align: left;
       padding: 10px; border-radius: 16px; font: inherit; cursor: pointer;
