@@ -7400,10 +7400,11 @@ export function groupMoveUnit(cfg: Pick<CustomComplicationConfig, "groups">, gro
 }
 
 /**
- * The layers a drag on a pick of several moves, in draw order. A picked member
- * brings its whole group, the way a press on a locked group does: its
- * innermost group, or the outermost locked group around it when there is one,
- * which is the unit a press on it would grab. A layer a chart places (its
+ * The layers a drag on a pick of several moves, in draw order. A member of a
+ * locked group brings the outermost locked group around it, the unit a press
+ * on it would grab. A member of an unlocked group moves alone: it was picked
+ * on its own, and dragging the rest of its group with it surprised people.
+ * A layer a chart places (its
  * dots, its grid, anything anchored to a reading) stays put, the way it stays
  * put under a drag of its own: its place comes from the chart.
  */
@@ -7411,7 +7412,7 @@ export function pickedMoveIds(cfg: CustomComplicationConfig, picked: Iterable<st
   const want = new Set<string>();
   for (const id of picked) {
     const group = groupOf(cfg, id);
-    const unit = group === undefined ? undefined : outermostLockedGroup(cfg, group.id) ?? group;
+    const unit = group === undefined ? undefined : outermostLockedGroup(cfg, group.id);
     if (unit) for (const m of groupLayers(cfg, unit.id)) want.add(m.payload.id);
     else want.add(id);
   }

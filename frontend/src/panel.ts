@@ -3985,8 +3985,12 @@ export class WristAssistantPanel extends LitElement {
     .as-parts { display: flex; flex-direction: column; min-height: 0; margin: -10px; }
     .as-parts > .xfer-body { padding: 12px; }
     .as-parts > .xfer-foot { position: sticky; bottom: 0; background: var(--wa-card); }
-    /* Picked for grouping: an accent ring, since the kind color is taken. */
-    .layer.multi { box-shadow: inset 0 0 0 1px var(--wa-accent); }
+    /* Picked with Cmd/Ctrl-click: lit exactly like the selected row, so every
+       picked row reads as selected, not just the one clicked first. */
+    .layer.multi {
+      background: color-mix(in srgb, var(--wa-accent) 30%, var(--wa-card));
+      box-shadow: inset 0 0 0 2px var(--wa-accent);
+    }
     /* A folder row: the chevron folds it, the lock says whether it moves as
        one, and its members sit indented under a guide line. */
     .layer .chev {

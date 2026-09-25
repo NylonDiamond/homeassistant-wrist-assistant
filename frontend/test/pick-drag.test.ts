@@ -24,13 +24,22 @@ describe("dragging a pick", () => {
     expect(pickedMoveIds(cfg, [gauge, shape, icon])).toEqual([shape, icon, gauge]);
   });
 
-  it("brings every member of a picked layer's group", () => {
+  it("brings every member of a picked layer's locked group", () => {
     const { cfg, ids } = config();
     const [shape, text, icon, gauge] = ids as [string, string, string, string];
-    createGroup(cfg, [shape, icon], "Dial");
+    const group = createGroup(cfg, [shape, icon], "Dial");
+    cfg.groups!.find((g) => g.id === group)!.locked = true;
     const moved = pickedMoveIds(cfg, [icon, gauge]);
     expect(new Set(moved)).toEqual(new Set([shape, icon, gauge]));
     expect(moved).not.toContain(text);
+  });
+
+  it("moves only the picked members of an unlocked group", () => {
+    const { cfg, ids } = config();
+    const [shape, text, icon, gauge] = ids as [string, string, string, string];
+    createGroup(cfg, [shape, text, icon], "Dial");
+    cfg.groups![0]!.locked = false;
+    expect(pickedMoveIds(cfg, [text, icon, gauge])).toEqual([text, icon, gauge]);
   });
 
   it("leaves a layer anchored to a chart reading where the chart puts it", () => {

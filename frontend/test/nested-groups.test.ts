@@ -181,11 +181,11 @@ describe("model helpers", () => {
     const { cfg, a, b, c, e, outer } = nested();
     // Locked outer: picking b brings all of outer.
     expect(new Set(pickedMoveIds(cfg, [b, e]))).toEqual(new Set([...ids(groupLayers(cfg, outer)), e]));
-    // Unlocked outer, locked inner: b brings inner only, a brings outer (its
-    // own group), which holds inner too.
+    // Unlocked outer, locked inner: b brings inner only, and a, whose own
+    // group is now unlocked, moves alone.
     group(cfg, outer).locked = false;
     expect(new Set(pickedMoveIds(cfg, [b, e]))).toEqual(new Set([b, c, e]));
-    expect(new Set(pickedMoveIds(cfg, [a]))).toEqual(new Set(ids(groupLayers(cfg, outer))));
+    expect(pickedMoveIds(cfg, [a])).toEqual([a]);
   });
 });
 
