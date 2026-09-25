@@ -2482,15 +2482,16 @@ export class WristAssistantPanel extends LitElement {
     .pk-fold { display: inline-flex; flex: none; color: var(--wa-muted); transform: rotate(0deg); transition: transform .12s ease; }
     .pk-fold svg { width: 13px; height: 13px; }
     .pk-band.shut .pk-fold, .pk-sec.shut .pk-fold { transform: rotate(-90deg); }
-    /* One device's box. Clipping its overflow is what lets the heading's wash
-       of the owner's colour run to the rounded corners without a second radius
-       of its own, and what makes a folded box just its heading strip. */
+    /* One device's box. It does not clip: the wash is its own background, so
+       nothing inside needs cutting to its corners, and a card's Devices menu
+       near the bottom of the box has to hang out past it. The box used to
+       clip, and cut that menu off. */
     /* The whole box is washed with whoever's device it is, heading and cards
        alike, so a device reads as one coloured surface rather than as a
        coloured strip with a grey tray hanging off it. A device that is
        nobody's keeps the accent, so the shelf is still a surface of its own. */
     .pk-sec {
-      display: flex; flex-direction: column; min-width: 0; overflow: hidden;
+      display: flex; flex-direction: column; min-width: 0;
       border: 1px solid var(--wa-line); border-radius: 12px;
       background: color-mix(in srgb, var(--pk-person, var(--wa-accent)) 9%, var(--wa-panel));
     }
@@ -12558,6 +12559,12 @@ export class WristAssistantPanel extends LitElement {
     // How full each place is comes off lists this menu is about to draw rows
     // from, so they are read as it opens.
     void this.loadOtherLists();
+    // A menu on a card near the bottom of the list hangs past the list's
+    // visible end, so the list scrolls just far enough to show all of it.
+    void this.updateComplete.then(() => {
+      const menu = [...this.renderRoot.querySelectorAll<HTMLElement>(".pk-dup-menu")].find((m) => m.dataset.dup === key);
+      menu?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
     window.addEventListener("pointerdown", this.pickerDupOutside, { capture: true });
   }
 

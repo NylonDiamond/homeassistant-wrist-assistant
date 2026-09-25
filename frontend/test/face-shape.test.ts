@@ -51,7 +51,7 @@ describe("corner quarter", () => {
     const width = Number(/viewBox=0 0 ([\d.]+) /.exec(svg)![1]);
     const shell = /<path d=(M [^ ]+ 0 H [^ ]+ A [^ ]+ [^ ]+ 0 0 0 0 [^ ]+ V [^ ]+ H [^ ]+ Z)/.exec(svg);
     expect(shell).not.toBeNull();
-    expect(shell![1].startsWith(`M ${width} 0`)).toBe(true);
+    expect(shell![1]!.startsWith(`M ${width} 0`)).toBe(true);
     // The disc's clip circle sits in the left half.
     const disc = /<clipPath id=[^>]*><circle cx=([\d.]+)/.exec(svg);
     expect(Number(disc![1])).toBeLessThan(width / 2);
