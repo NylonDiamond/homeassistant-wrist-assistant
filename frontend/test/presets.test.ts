@@ -44,8 +44,6 @@ import {
   gaugeRange,
   onComparison,
   planCells,
-  pickSceneLights,
-  planRooms,
   presetSpec,
   thermostatTargetTemplate,
   toggleSymbols,
@@ -59,6 +57,8 @@ import { type StatesRow, type StatesTable, tableShape } from "../src/states.js";
 import { colorWords } from "../src/editors.js";
 import { CURATED_SYMBOLS } from "../src/symbols.js";
 import type { HassEntityState } from "../src/ha-api.js";
+import { NOTES_MAX } from "../src/notes.js";
+import { applyEntityMap, isPlaceholderId, openSlots } from "../src/transfer.js";
 
 const KITCHEN = { entityId: "light.kitchen", displayName: "Kitchen light", domain: "light" };
 
@@ -1074,48 +1074,31 @@ describe("presets as groups", () => {
 });
 
 // ── the scene presets ─────────────────────────────────────────────────────
-// Tiny house and Floor plan fill a whole tile and read the home to fill
-// themselves in, so what is worth pinning is what they pick from a home and
-// that the result stays an ordinary, editable, encodable document.
+// Tiny house and Floor plan fill a whole tile and pick none of the home's
+// entities: each one they read is a stand-in the author fills in, and the
+// document's notes say what to pick. What is worth pinning is that nothing
+// real is picked, that one pick fills a stand-in in everywhere, and that the
+// result stays an ordinary, editable, encodable document.
 
 describe("the scene presets", () => {
   function entity(id: string, stateValue: string, attributes: Record<string, unknown> = {}): HassEntityState {
     return { entity_id: id, state: stateValue, attributes, last_changed: "", last_updated: "" };
   }
 
-  /** A small home: three areas with lights (living has two, one through its
-   * device), a light in no area, the sun, the weather, a thermostat, a kitchen
-   * thermometer, motion in the living room and a front door lock. */
+  /** A small home the scenes must leave alone: lights, the sun, the weather,
+   * a thermometer, motion and a front door lock. */
   function home(): PresetEnv {
     const list = [
       entity("light.bedroom", "off", { friendly_name: "Bedroom" }),
       entity("light.kitchen", "on", { friendly_name: "Kitchen" }),
-      entity("light.living_ceiling", "on", { friendly_name: "Living ceiling" }),
-      entity("light.living_lamp", "off", { friendly_name: "Living lamp" }),
       entity("light.porch", "off", { friendly_name: "Porch" }),
       entity("sun.sun", "below_horizon"),
       entity("weather.home", "rainy", { temperature: 54 }),
-      entity("climate.hall", "heat", { current_temperature: 71 }),
       entity("sensor.kitchen_temperature", "72.4", { device_class: "temperature" }),
       entity("binary_sensor.living_motion", "on", { device_class: "motion" }),
       entity("lock.front_door", "locked", { friendly_name: "Front door" }),
     ];
-    return {
-      family: "large",
-      states: Object.fromEntries(list.map((s) => [s.entity_id, s])),
-      registry: {
-        entities: {
-          "light.bedroom": { area_id: "bedroom" },
-          "light.kitchen": { area_id: "kitchen" },
-          "light.living_ceiling": { area_id: "living" },
-          "light.living_lamp": { device_id: "lamp" },
-          "sensor.kitchen_temperature": { area_id: "kitchen" },
-          "binary_sensor.living_motion": { area_id: "living" },
-        },
-        devices: { lamp: { area_id: "living" } },
-        areas: { bedroom: { name: "Bedroom" }, kitchen: { name: "Kitchen" }, living: { name: "Living room" } },
-      },
-    };
+    return { family: "large", states: Object.fromEntries(list.map((s) => [s.entity_id, s])) };
   }
 
   function build(kind: "houseScene" | "floorPlan", env: PresetEnv): CustomComplicationConfig {
@@ -1130,6 +1113,7 @@ describe("the scene presets", () => {
 
   function checkDocument(cfg: CustomComplicationConfig, kind: "houseScene" | "floorPlan", family: DrawableFamily): void {
     expect(cfg.elements.length, `${kind} ${family}`).toBeLessThanOrEqual(presetSpec(kind).layerCount);
+    expect(cfg.elements.length, `${kind} ${family}`).toBeLessThanOrEqual(64);
     const top = (cfg.groups ?? []).filter((g) => g.parentId === undefined);
     expect(top.map((g) => g.name)).toEqual([presetSpec(kind).title]);
     for (const el of cfg.elements) {
@@ -1143,6 +1127,25 @@ describe("the scene presets", () => {
     const encoded = encodeConfig(cfg);
     expect(auditUnknownKeys(encoded)).toEqual([]);
     expect(encodeConfig(parseConfig(encoded))).toEqual(encoded);
+  }
+
+  /** Every entity id the document reads, outside the notes. */
+  function entityIds(cfg: CustomComplicationConfig): string[] {
+    const { notes: _notes, ...rest } = cfg;
+    return [...new Set([...JSON.stringify(rest).matchAll(/"entityId":"([^"]*)"/g)].map((m) => m[1]!))].filter((id) => id !== "");
+  }
+
+  /** Every `[Name]` in the notes names a shared value, a group or a layer, so
+   * each one is a link. */
+  function expectNotesLink(cfg: CustomComplicationConfig): void {
+    const names = new Set([
+      ...cfg.values.map((v) => v.name),
+      ...(cfg.groups ?? []).map((g) => g.name),
+      ...cfg.elements.map((e) => e.payload.name ?? ""),
+    ]);
+    const links = [...(cfg.notes ?? "").matchAll(/\[([^\]]+)\]/g)].map((m) => m[1]!);
+    expect(links.length).toBeGreaterThan(0);
+    for (const link of links) expect(names.has(link), link).toBe(true);
   }
 
   it("leaves every group it makes unlocked, so each part drags on its own", () => {
@@ -1163,24 +1166,41 @@ describe("the scene presets", () => {
     expect(presetSpec("floorPlan").families).toEqual(["medium", "large", "xlarge"]);
     expect(presetSpec("houseScene").needsEntity).toBe(false);
     expect(presetSpec("floorPlan").needsEntity).toBe(false);
+    expect(presetSpec("houseScene").foldSubGroups).toBe(true);
+    expect(presetSpec("floorPlan").foldSubGroups).toBe(true);
   });
 
   it("builds a house on medium and large that encodes and stays in the tile", () => {
     for (const family of ["medium", "large"] as const) {
       checkDocument(build("houseScene", { ...home(), family }), "houseScene", family);
+      checkDocument(build("houseScene", { family }), "houseScene", family);
     }
   });
 
-  it("hands out one light per area first, then the rest, to the four windows", () => {
+  it("picks none of the home's entities for the house, only stand-ins and the sun", () => {
+    const cfg = build("houseScene", home());
+    for (const id of entityIds(cfg)) expect(id === "sun.sun" || isPlaceholderId(id), id).toBe(true);
+    const slots = openSlots(cfg, home().states!).map((r) => [r.entityId, r.label]);
+    expect(slots).toEqual(expect.arrayContaining([
+      ["light.shared_1", "Downstairs left light"],
+      ["light.shared_2", "Downstairs right light"],
+      ["light.shared_3", "Upstairs left light"],
+      ["light.shared_4", "Upstairs right light"],
+      ["sensor.shared_5", "Inside temperature"],
+      ["weather.shared_6", "Weather"],
+      ["lock.shared_7", "Front door"],
+    ]));
+    expect(openSlots(cfg, home().states!)).toHaveLength(7);
+  });
+
+  it("gives each of the four windows its own light, a glow and a toggle tap over it", () => {
     const cfg = build("houseScene", home());
     // One row per window: the tap is attached, so the Layers list hides it.
     expect(cfg.elements.some((e) => e.kind === "tap" && e.payload.attachedTo === undefined)).toBe(false);
     const windows = cfg.elements.filter((e) => e.payload.name?.endsWith(" window"));
     expect(windows).toHaveLength(4);
     const taps = windows.map((w) => attachedTapsOf(cfg, w.payload.id)[0]!.payload as TapElement);
-    expect(taps.map((t) => (t.action as { entityId: string }).entityId))
-      .toEqual(["light.bedroom", "light.kitchen", "light.living_ceiling", "light.living_lamp"]);
-    for (const tap of taps) expect(tap.action.type).toBe("toggleEntity");
+    expect(taps.map((t) => t.action)).toEqual([1, 2, 3, 4].map((n) => expect.objectContaining({ type: "toggleEntity", entityId: `light.shared_${n}` })));
     for (const el of windows) {
       expect(el.payload.shadow).toBeDefined();
       const table = tableShape(el.payload.rules);
@@ -1194,14 +1214,22 @@ describe("the scene presets", () => {
     expect(cfg.perFamily.large!.placements[taps[0]!.id]!.frame).toEqual(frame);
   });
 
-  it("moves a window to another light with one pick: its glow and its tap", () => {
+  it("fills a stand-in in everywhere with one pick: the shared value, the glow, the tap and the count", () => {
     const cfg = build("houseScene", home());
-    const win = cfg.elements.find((e) => e.payload.name === "Downstairs left window")!;
-    setLayerEntity(cfg, win.payload.id, { entityId: "light.porch", displayName: "Porch", domain: "light" });
+    applyEntityMap(cfg, new Map([["light.shared_1", { entityId: "light.porch", displayName: "Porch", domain: "light" }]]));
+    const win = named(cfg, "Downstairs left window")!;
     expect((attachedTapsOf(cfg, win.payload.id)[0]!.payload as TapElement).action).toMatchObject({ entityId: "light.porch" });
-    // The glow reads its shared value, and the pick moved that shared value.
     expect(valueEntity(cfg, win.payload.rules[0]!.cases[0]!.when.tests[0]!.value)?.ref.entityId).toBe("light.porch");
     expect(cfg.values.find((v) => v.name === "Downstairs left light")!.value.kind).toMatchObject({ entityId: "light.porch" });
+    const count = named(cfg, "Lights on")!;
+    if (count.kind !== "text" || count.payload.value.kind.kind !== "aggregate" || count.payload.value.kind.aggregate.scope.kind !== "entities") throw new Error("no count");
+    expect(count.payload.value.kind.aggregate.scope.entities.map((e) => e.entityId))
+      .toEqual(["light.porch", "light.shared_2", "light.shared_3", "light.shared_4"]);
+    // The weather is one stand-in behind two shared values: one pick fills both.
+    applyEntityMap(cfg, new Map([["weather.shared_6", { entityId: "weather.home", displayName: "Home", domain: "weather" }]]));
+    for (const name of ["Weather", "Outside temperature"]) {
+      expect(cfg.values.find((v) => v.name === name)!.value.kind, name).toMatchObject({ entityId: "weather.home" });
+    }
   });
 
   it("reads every entity through a shared value, lights first, so the Shared values list repoints the house", () => {
@@ -1230,63 +1258,65 @@ describe("the scene presets", () => {
 
   it("moves a window's tap and the count with its shared value, and nothing else", () => {
     const cfg = build("houseScene", home());
-    // A loose tap outside the house on the same light must stay put.
+    // A loose tap outside the house on the same stand-in must stay put.
     const stray = newElement("tap");
-    (stray.payload as TapElement).action = { type: "toggleEntity", entityId: "light.bedroom", displayName: "Bedroom", domain: "light" };
+    (stray.payload as TapElement).action = { type: "toggleEntity", entityId: "light.shared_1", displayName: "Other", domain: "light" };
     cfg.elements.push(stray);
     const shared = cfg.values.find((v) => v.name === "Downstairs left light")!;
-    expect(shared.value.kind).toMatchObject({ entityId: "light.bedroom" });
     setSharedValue(cfg, shared.id, { kind: { kind: "entityState", entityId: "light.porch", displayName: "Porch", domain: "light" } });
-    const win = cfg.elements.find((e) => e.payload.name === "Downstairs left window")!;
+    const win = named(cfg, "Downstairs left window")!;
     expect((attachedTapsOf(cfg, win.payload.id)[0]!.payload as TapElement).action).toMatchObject({ entityId: "light.porch", displayName: "Porch" });
-    const count = cfg.elements.find((e) => e.payload.name === "Lights on")!;
-    if (count.kind !== "text" || count.payload.value.kind.kind !== "aggregate" || count.payload.value.kind.aggregate.scope.kind !== "entities") throw new Error("no count");
-    expect(count.payload.value.kind.aggregate.scope.entities.map((e) => e.entityId))
-      .toEqual(["light.porch", "light.kitchen", "light.living_ceiling", "light.living_lamp"]);
-    expect((stray.payload as TapElement).action).toMatchObject({ entityId: "light.bedroom" });
+    expect((stray.payload as TapElement).action).toMatchObject({ entityId: "light.shared_1" });
   });
 
-  it("skips light groups, unavailable lights, and a lock that is not the house's", () => {
-    const env = home();
-    const add = (s: HassEntityState) => { env.states![s.entity_id] = s; };
-    add(entity("light.all", "on", { friendly_name: "All", entity_id: ["light.kitchen", "light.bedroom"] }));
-    add(entity("light.attic", "unavailable", { friendly_name: "Attic" }));
-    add(entity("lock.car_doors", "unlocked", { friendly_name: "Car doors" }));
-    delete env.states!["lock.front_door"];
-    env.registry!.entities!["light.all"] = { area_id: "attic_area" };
-    env.registry!.areas!["attic_area"] = { name: "Attic" };
-    expect(pickSceneLights(env, 8).map((l) => l.entityId)).not.toContain("light.all");
-    expect(pickSceneLights(env, 8).map((l) => l.entityId)).not.toContain("light.attic");
-    expect(planRooms(env, 8).map((r) => r.name)).not.toContain("Attic");
-    const large = build("houseScene", env);
-    expect(large.elements.some((e) => e.payload.name?.startsWith("Car doors"))).toBe(false);
-    expect(named(large, "Inside card")).toBeDefined();
-    const medium = build("houseScene", { ...env, family: "medium" });
-    expect(named(medium, "Lock")).toBeUndefined();
+  it("numbers its stand-ins past the ones the document already holds", () => {
+    const cfg = newConfig("Scene", 0, "large");
+    applyPreset(cfg, "houseScene", { entityId: "", displayName: "", domain: "" }, home());
+    applyPreset(cfg, "floorPlan", { entityId: "", displayName: "", domain: "" }, { ...home(), family: "large" });
+    const ids = entityIds(cfg).filter(isPlaceholderId);
+    const numbers = ids.map((id) => Number(id.split("_").at(-1)));
+    expect(new Set(numbers).size).toBe(numbers.length);
+    expect(Math.min(...numbers.slice(7))).toBe(8);
+  });
+
+  it("writes its how-to into the notes, with every [Name] a link", () => {
+    for (const family of ["medium", "large"] as const) {
+      const cfg = build("houseScene", { ...home(), family });
+      expect(cfg.notes!.startsWith("# Tiny house")).toBe(true);
+      expect(cfg.notes!.length).toBeLessThanOrEqual(NOTES_MAX);
+      expect(cfg.notes).not.toMatch(/—|–| - /);
+      expectNotesLink(cfg);
+    }
+  });
+
+  it("puts its notes below the author's own, and leaves them alone when both would not fit", () => {
+    const cfg = newConfig("Scene", 0, "large");
+    cfg.notes = "Mine.";
+    applyPreset(cfg, "houseScene", { entityId: "", displayName: "", domain: "" }, home());
+    expect(cfg.notes!.startsWith("Mine.\n\n# Tiny house")).toBe(true);
+    const full = newConfig("Scene", 0, "large");
+    full.notes = "x".repeat(NOTES_MAX - 10);
+    applyPreset(full, "houseScene", { entityId: "", displayName: "", domain: "" }, home());
+    expect(full.notes).toBe("x".repeat(NOTES_MAX - 10));
   });
 
   it("puts the large tile's cards in one Readings folder", () => {
     const cfg = build("houseScene", home());
     const readings = cfg.groups!.find((g) => g.name === "Readings")!;
     expect(cfg.groups!.filter((g) => g.parentId === readings.id).map((g) => g.name)).toEqual(["Inside", "Outside", "Front door"]);
-    expect(presetSpec("houseScene").foldSubGroups).toBe(true);
-    expect(presetSpec("floorPlan").foldSubGroups).toBe(true);
   });
 
-  it("follows the sun and the rain when the home has them, and is always night without", () => {
+  it("follows the sun when the home has one, and is always night without", () => {
     const withSun = build("houseScene", home());
     expect(named(withSun, "Day sky")).toBeDefined();
     expect(named(withSun, "Night")!.payload.rules).toHaveLength(1);
     expect(named(withSun, "Rain")).toBeDefined();
 
-    const bare = home();
-    delete bare.states!["sun.sun"];
-    delete bare.states!["weather.home"];
-    const noSun = build("houseScene", bare);
+    const noSun = build("houseScene", { family: "large" });
     expect(named(noSun, "Day sky")).toBeUndefined();
     expect(named(noSun, "Sun")).toBeUndefined();
     expect(named(noSun, "Night")!.payload.rules).toEqual([]);
-    expect(named(noSun, "Rain")).toBeUndefined();
+    expect(named(noSun, "Rain")).toBeDefined();
   });
 
   it("puts readings along the bottom: three cards on large, two lines on medium", () => {
@@ -1294,15 +1324,14 @@ describe("the scene presets", () => {
     expect(["Inside card", "Outside card", "Front door card"].every((n) => named(large, n))).toBe(true);
     const medium = build("houseScene", { ...home(), family: "medium" });
     const temps = named(medium, "Temperatures");
-    expect(temps?.kind).toBe("text");
-    if (temps?.kind !== "text") return;
+    if (temps?.kind !== "text") throw new Error("no temperatures");
     // Rich text, not a template: each reading is a part, read through a shared value.
     const read = (v: Value) => (v.kind.kind === "literal" ? v.kind : unsharedCopy(medium, v)!.kind);
     expect(temps.payload.parts!.map((p) => read(p.value))).toEqual([
-      expect.objectContaining({ kind: "entityState", entityId: "sensor.kitchen_temperature" }),
+      expect.objectContaining({ kind: "entityState", entityId: "sensor.shared_5" }),
       { kind: "literal", value: " in" },
       { kind: "literal", value: " · " },
-      expect.objectContaining({ kind: "entityAttribute", entityId: "weather.home", attribute: "temperature" }),
+      expect.objectContaining({ kind: "entityAttribute", entityId: "weather.shared_6", attribute: "temperature" }),
       { kind: "literal", value: " out" },
     ]);
     expect(temps.payload.parts![0]!.value.format).toEqual({ decimals: 0, suffix: "°" });
@@ -1310,29 +1339,10 @@ describe("the scene presets", () => {
     if (door?.kind !== "text") throw new Error("no door line");
     expect(door.payload.parts!.map((p) => read(p.value))).toEqual([
       { kind: "literal", value: "Front door " },
-      expect.objectContaining({ kind: "entityState", entityId: "lock.front_door" }),
+      expect.objectContaining({ kind: "entityState", entityId: "lock.shared_7" }),
     ]);
     const all = [large, medium].flatMap((c) => c.elements);
     expect(all.some((e) => e.kind === "text" && e.payload.value.kind.kind === "jinja")).toBe(false);
-  });
-
-  it("shows the house's lock before a car's, and a front door before either", () => {
-    const env = home();
-    env.states!["lock.car_doors"] = entity("lock.car_doors", "unlocked", { friendly_name: "Car doors" });
-    env.states!["lock.back_door"] = entity("lock.back_door", "locked", { friendly_name: "Back door" });
-    env.registry!.entities!["lock.back_door"] = { area_id: "kitchen" };
-    const withFront = build("houseScene", env);
-    expect(named(withFront, "Front door card")).toBeDefined();
-    delete env.states!["lock.front_door"];
-    const backOnly = build("houseScene", env);
-    expect(named(backOnly, "Back door card")).toBeDefined();
-    expect(named(backOnly, "Car doors card")).toBeUndefined();
-  });
-
-  it("draws a house with dark, untappable windows in a home with no lights", () => {
-    const cfg = build("houseScene", { family: "large" });
-    expect(cfg.elements.some((e) => e.kind === "tap" && e.payload.attachedTo === undefined)).toBe(false);
-    checkDocument(cfg, "houseScene", "large");
   });
 
   it("builds a floor plan on every tile it is offered that encodes and stays in the tile", () => {
@@ -1341,40 +1351,42 @@ describe("the scene presets", () => {
     }
   });
 
-  it("makes a room of every area with a light, busiest first, lit rooms turning off and dark ones on", () => {
-    const env = home();
-    expect(planRooms(env, 8).map((r) => r.name)).toEqual(["Living room", "Bedroom", "Kitchen"]);
-    const cfg = build("floorPlan", env);
-    for (const [room, area] of [["Living room", "living"], ["Bedroom", "bedroom"], ["Kitchen", "kitchen"]] as const) {
+  it("starts the plan with named rooms, each reading its own three stand-ins", () => {
+    const medium = build("floorPlan", { ...home(), family: "medium" });
+    expect(medium.elements.filter((e) => e.payload.name?.endsWith(" room")).map((e) => e.payload.name))
+      .toEqual(["Living room room", "Kitchen room", "Bedroom room", "Office room"]);
+    const cfg = build("floorPlan", home());
+    const rooms = ["Living room", "Kitchen", "Bedroom", "Office", "Bathroom", "Hallway"];
+    expect(cfg.values.map((v) => v.name)).toEqual([
+      ...rooms.map((r) => `${r} light`), ...rooms.map((r) => `${r} temperature`), ...rooms.map((r) => `${r} motion`),
+    ]);
+    for (const id of entityIds(cfg)) expect(isPlaceholderId(id), id).toBe(true);
+    expect(openSlots(cfg, home().states!)).toHaveLength(18);
+    const light = (room: string) => cfg.values.find((v) => v.name === `${room} light`)!.value.kind as { entityId: string };
+    for (const room of rooms) {
       const card = named(cfg, `${room} room`)!;
-      // Never light.toggle, which flips each light alone and swaps a mixed room.
-      expect(attachedTapsOf(cfg, card.payload.id)).toEqual([]);
-      const cardFrame = cfg.perFamily.large!.placements[card.payload.id]!.frame;
-      for (const [suffix, service, shown] of [["turn off", "turn_off", "show"], ["turn on", "turn_on", "hide"]] as const) {
-        const tap = named(cfg, `${room} ${suffix}`)!;
-        expect(tap.kind).toBe("tap");
-        expect((tap.payload as TapElement).action).toEqual({ type: "callService", serviceDomain: "light", serviceName: service, serviceDataJSON: JSON.stringify({ area_id: area }) });
-        expect(cfg.perFamily.large!.placements[tap.payload.id]!.frame).toEqual(cardFrame);
-        const table = tableShape(tap.payload.rules);
-        if (!table.ok) throw new Error(table.reason);
-        expect(table.table.rows[0]!.comparison).toEqual({ kind: "greaterThan", value: { kind: { kind: "literal", value: "0" } } });
-        expect(table.table.rows[0]!.changes[0]!.kind).toBe(shown);
-      }
+      const taps = attachedTapsOf(cfg, card.payload.id);
+      expect(taps).toHaveLength(1);
+      expect((taps[0]!.payload as TapElement).action).toMatchObject({ type: "toggleEntity", entityId: light(room).entityId });
+      expect(named(cfg, `${room} motion`)).toBeDefined();
+      expect(named(cfg, `${room} temperature`)).toBeDefined();
     }
-    expect(named(cfg, "Living room motion")).toBeDefined();
-    expect(named(cfg, "Kitchen motion")).toBeUndefined();
-    const temp = named(cfg, "Kitchen temperature");
-    expect(temp?.kind === "text" && temp.payload.value.kind).toEqual({ kind: "entityState", entityId: "sensor.kitchen_temperature", displayName: "sensor.kitchen_temperature", domain: "sensor" });
+    // One pick lights the room, moves its tap, and joins the count.
+    applyEntityMap(cfg, new Map([[light("Kitchen").entityId, { entityId: "light.kitchen", displayName: "Kitchen", domain: "light" }]]));
+    const card = named(cfg, "Kitchen room")!;
+    expect((attachedTapsOf(cfg, card.payload.id)[0]!.payload as TapElement).action).toMatchObject({ entityId: "light.kitchen" });
+    const count = named(cfg, "Lights on")!;
+    if (count.kind !== "text" || count.payload.value.kind.kind !== "aggregate" || count.payload.value.kind.aggregate.scope.kind !== "entities") throw new Error("no count");
+    expect(count.payload.value.kind.aggregate.scope.entities.map((e) => e.entityId)).toContain("light.kitchen");
   });
 
-  it("falls back to a room per light, then to four placeholder rooms", () => {
-    const noAreas = { ...home(), registry: {} };
-    expect(planRooms(noAreas, 6).map((r) => r.light?.entityId))
-      .toEqual(["light.bedroom", "light.kitchen", "light.living_ceiling", "light.living_lamp", "light.porch"]);
-    const empty = build("floorPlan", { family: "medium" });
-    expect(empty.elements.filter((e) => e.payload.name?.endsWith(" room")).map((e) => e.payload.name))
-      .toEqual(["Living room", "Kitchen room", "Bedroom room", "Office room"]);
-    expect(empty.elements.some((e) => e.kind === "tap" && e.payload.attachedTo !== undefined && e.payload.action.type !== "refresh")).toBe(false);
+  it("writes the plan's how-to into the notes, with every [Name] a link", () => {
+    for (const family of ["medium", "large", "xlarge"] as const) {
+      const cfg = build("floorPlan", { ...home(), family });
+      expect(cfg.notes!.startsWith("# Floor plan")).toBe(true);
+      expect(cfg.notes).not.toMatch(/—|–| - /);
+      expectNotesLink(cfg);
+    }
   });
 
   it("tiles the plan with cells that never overlap and never leave it", () => {
@@ -1396,24 +1408,6 @@ describe("the scene presets", () => {
           expect(apart, `${n} rooms: ${i} and ${j}`).toBe(true);
         }
       }
-    }
-  });
-
-  it("stays under the layer cap with the most rooms, each with a thermometer and motion", () => {
-    const states: Record<string, HassEntityState> = {};
-    const entities: Record<string, { area_id?: string | null }> = {};
-    const areas: Record<string, { name?: string | null }> = {};
-    for (let i = 0; i < 10; i++) {
-      areas[`a${i}`] = { name: `Room ${i}` };
-      for (const [id, attrs] of [[`light.l${i}`, {}], [`sensor.t${i}`, { device_class: "temperature" }], [`binary_sensor.m${i}`, { device_class: "motion" }]] as const) {
-        states[id] = entity(id, "on", attrs);
-        entities[id] = { area_id: `a${i}` };
-      }
-    }
-    for (const family of ["medium", "large", "xlarge"] as const) {
-      const cfg = build("floorPlan", { family, states, registry: { entities, areas } });
-      expect(cfg.elements.length, family).toBeLessThanOrEqual(presetSpec("floorPlan").layerCount);
-      expect(cfg.elements.length, family).toBeLessThanOrEqual(64);
     }
   });
 });

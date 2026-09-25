@@ -1315,11 +1315,6 @@ const POPULAR_PRESETS: readonly PresetKind[] = ["gauge", "status", "timer"];
 /** What a search in the Add sheet may be after when it wants the note tile. */
 const NOTE_SEARCH_WORDS: readonly string[] = ["note", "notes", "instructions", "readme", "setup", "help", "import"];
 
-/** The registry snapshots a preset sorts entities into areas with. */
-function presetRegistry(hass: HassLike): PresetEnv["registry"] {
-  return { entities: hass.entities, devices: hass.devices, areas: hass.areas };
-}
-
 export class WristAssistantPanel extends LitElement {
   @property({ attribute: false }) hass!: HassLike;
   @property({ type: Boolean }) narrow = false;
@@ -18832,14 +18827,18 @@ export class WristAssistantPanel extends LitElement {
     // list presets are these: what they need is a filter, and a filter is
     // edited in the Source card rather than chosen from a search box.
     if (presetSpec(kind).needsEntity === false) {
-      const env: PresetEnv = { family: this.canvasFamily, states: this.hass.states, registry: presetRegistry(this.hass) };
+      const env: PresetEnv = { family: this.canvasFamily, states: this.hass.states };
       let created: string | undefined;
       const groupsBefore = new Set((this.draft?.config.groups ?? []).map((g) => g.id));
       const valuesBefore = this.draft?.config.values.length ?? 0;
+      const notesBefore = this.draft?.config.notes;
       this.addHere((c) => { created = applyPreset(c, kind, { entityId: "", displayName: "", domain: "" }, env); });
       // A preset that brought shared values is edited through them, so their
       // list opens even if the author had closed it.
       if ((this.draft?.config.values.length ?? 0) > valuesBefore) this.sharedOpen = true;
+      // A scene writes its how-to into the note, which opens so it is read.
+      const cfgAfter = this.draft?.config;
+      if (cfgAfter && cfgAfter.notes !== notesBefore) this.notesOpenId = cfgAfter.id;
       const arrived = (this.draft?.config.groups ?? []).filter((g) => !groupsBefore.has(g.id));
       if (presetSpec(kind).foldSubGroups && arrived.length > 0) {
         // A scene arrives as one open folder of closed ones: the parts to pick
@@ -18897,7 +18896,7 @@ export class WristAssistantPanel extends LitElement {
     const kind = this.presetKind;
     const ref = this.presetEntity;
     if (!kind || !ref) return;
-    const env: PresetEnv = { family: this.canvasFamily, states: this.hass.states, registry: presetRegistry(this.hass) };
+    const env: PresetEnv = { family: this.canvasFamily, states: this.hass.states };
     const state = this.hass.states[ref.entityId];
     if (state) env.state = state;
     let created: string | undefined;

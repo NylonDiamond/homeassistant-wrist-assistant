@@ -13,6 +13,7 @@
 
 import { CANVAS, type DrawableFamily } from "./renderer.js";
 import type { HassEntityState } from "./ha-api.js";
+import { NOTES_MAX } from "./notes.js";
 import { buildStatesRule, type StatesRowInput } from "./states.js";
 // states-seeds imports toggleSymbols back from here. Safe: neither module
 // calls into the other while it loads.
@@ -396,7 +397,7 @@ export const LAYER_PRESETS: readonly PresetSpec[] = [
   {
     kind: "houseScene",
     title: "Tiny house",
-    blurb: "A drawing of a house that fills the tile. Each window glows while its light is on, and a tap on a window toggles that light. The sky follows the sun and shows rain when the weather says so.",
+    blurb: "A drawing of a house that fills the tile. Each window glows while its light is on, and a tap on a window toggles that light. The sky follows the sun and shows rain when the weather says so. You pick each entity, and the note says what goes where.",
     layerCount: 44,
     layerCountIsMost: true,
     unlockedGroups: true,
@@ -407,8 +408,8 @@ export const LAYER_PRESETS: readonly PresetSpec[] = [
   {
     kind: "floorPlan",
     title: "Floor plan",
-    blurb: "Your areas as rooms seen from above, each lit while a light in it is on, with its temperature and a dot for motion. Tap a lit room to turn its lights off, or a dark one to turn them on. Drag the rooms into the shape of your home.",
-    layerCount: 63,
+    blurb: "Rooms seen from above, each lit while its light is on, with its temperature and a dot for motion. Tap a room to toggle its light. You pick each entity, and the note says what goes where. Drag the rooms into the shape of your home.",
+    layerCount: 43,
     layerCountIsMost: true,
     unlockedGroups: true,
     foldSubGroups: true,
@@ -431,14 +432,6 @@ export interface PresetEnv {
   /** Every entity Home Assistant knows, for a preset that fills in more than
    * the one it was given (Entity rows). */
   states?: Record<string, HassEntityState>;
-  /** The frontend's registry snapshots, for a preset that sorts entities into
-   * areas (Floor plan, Tiny house). Absent in tests and on a frontend that
-   * does not carry them, and then every entity is in no area. */
-  registry?: {
-    entities?: Record<string, { area_id?: string | null; device_id?: string | null }>;
-    devices?: Record<string, { area_id?: string | null }>;
-    areas?: Record<string, { name?: string | null }>;
-  };
 }
 
 /** Amber reads as "live" on a black face; the grey is the system's secondary
@@ -2541,51 +2534,30 @@ function equalsWord(word: string): Comparison {
   return { kind: "equals", value: literal(word) };
 }
 
-/** The area an entity is in: its own, or its device's, as Home Assistant
- * resolves it. */
-function areaIdOf(env: PresetEnv, entityId: string): string | undefined {
-  const reg = env.registry?.entities?.[entityId];
-  if (!reg) return undefined;
-  return reg.area_id || (reg.device_id ? env.registry?.devices?.[reg.device_id]?.area_id : undefined) || undefined;
+/**
+ * The scenes' stand-ins: `<domain>.shared_<n>`, the same shape an import
+ * leaves for an entity nobody has picked yet. The scenes pick nothing for the
+ * author. Each stand-in carries the name the design gives it ("Kitchen
+ * light"), the editor marks every field that still holds one, and a pick in
+ * any of them fills it in everywhere.
+ *
+ * Numbered past every stand-in the document already holds, so a scene added
+ * to an imported design never takes over one of its slots.
+ */
+function standIns(cfg: CustomComplicationConfig): (domain: string, name: string) => EntityRef {
+  let next = 1;
+  for (const m of JSON.stringify(cfg).matchAll(/[a-z0-9_]+\.shared_(\d+)/g)) next = Math.max(next, Number(m[1]) + 1);
+  return (domain, name) => ({ entityId: `${domain}.shared_${next++}`, displayName: name, domain });
 }
 
-function refOf(env: PresetEnv, entityId: string): EntityRef {
-  const name = env.states?.[entityId]?.attributes?.friendly_name;
-  return {
-    entityId,
-    displayName: typeof name === "string" && name.trim() !== "" ? name.trim() : entityId,
-    domain: entityId.split(".")[0] ?? "",
-  };
-}
+/** Whole degrees with the degree sign. */
+const DEGREES = { decimals: 0, suffix: "°" };
 
-function entitiesOf(env: PresetEnv, domain: string): string[] {
-  return Object.keys(env.states ?? {}).filter((id) => id.startsWith(`${domain}.`)).sort();
-}
-
-/** The lights a scene hands out: real bulbs that answer. A light group (its
- * state carries the member list) would light a window for several rooms at
- * once, and an unavailable light would never light one at all. */
-function sceneLightsOf(env: PresetEnv): string[] {
-  return entitiesOf(env, "light").filter((id) => {
-    const s = env.states?.[id];
-    return s !== undefined && s.state !== "unavailable" && s.state !== "unknown" && !Array.isArray(s.attributes?.entity_id);
-  });
-}
-
-function deviceClassOf(env: PresetEnv, entityId: string): string {
-  const dc = env.states?.[entityId]?.attributes?.device_class;
-  return typeof dc === "string" ? dc : "";
-}
-
-/** A temperature to print: a temperature sensor's state, else a thermostat's
- * current temperature, whole degrees with the degree sign. */
-function temperatureValue(env: PresetEnv, candidates: (id: string) => boolean): Value | undefined {
-  const format = { decimals: 0, suffix: "°" };
-  const sensor = entitiesOf(env, "sensor").find((id) => deviceClassOf(env, id) === "temperature" && candidates(id));
-  if (sensor) return { kind: { kind: "entityState", ...refOf(env, sensor) }, format };
-  const climate = entitiesOf(env, "climate").find((id) => candidates(id) && env.states?.[id]?.attributes?.current_temperature !== undefined);
-  if (climate) return { kind: { kind: "entityAttribute", ...refOf(env, climate), attribute: "current_temperature" }, format };
-  return undefined;
+/** Put the scene's how-to in the document's notes, below any the author
+ * already wrote, and leave them alone when the two would not fit. */
+function addSceneNotes(cfg: CustomComplicationConfig, text: string): void {
+  const next = cfg.notes === undefined ? text : `${cfg.notes}\n\n${text}`;
+  if (next.length <= NOTES_MAX) cfg.notes = next;
 }
 
 /** A frame in one shape's own points. */
@@ -2734,45 +2706,48 @@ const DAY_INK_HEX = "#0D2136";
 const DAY_SUB_HEX = "#0D2136BF";
 const NIGHT_SUB_HEX = "#FFFFFFB8";
 
-/**
- * Up to `max` lights for the windows, one per area first so the lit windows
- * mean different rooms, then any others.
- */
-export function pickSceneLights(env: PresetEnv, max: number): EntityRef[] {
-  const seen = new Set<string>();
-  const first: string[] = [];
-  const rest: string[] = [];
-  for (const id of sceneLightsOf(env)) {
-    const area = areaIdOf(env, id);
-    if (area !== undefined && !seen.has(area)) {
-      seen.add(area);
-      first.push(id);
-    } else rest.push(id);
-  }
-  return [...first, ...rest].slice(0, max).map((id) => refOf(env, id));
-}
+/** How the house works and what to pick, for the document's notes. The
+ * `[Name]`s are its shared values, so each one is a link to its row. */
+const HOUSE_NOTES = [
+  "# Tiny house",
+  "Nothing is picked yet. Point each stand-in at one of your own entities, and one pick fills it in everywhere the house uses it.",
+  "## Set up",
+  "1. Pick a light for each window: [Downstairs left light], [Downstairs right light], [Upstairs left light] and [Upstairs right light].",
+  "2. Pick a temperature sensor for [Inside temperature].",
+  "3. Pick your weather for [Weather]. [Outside temperature] reads the same entity, so it fills in too.",
+  "4. Pick your front door lock for [Front door].",
+  "## How it works",
+  "- A window glows while its light is on. Tap the window to turn the light on or off.",
+  "- The sky follows the sun: blue by day, stars and a moon at night.",
+  "- Rain falls over the house while [Weather] says it is raining.",
+].join("\n\n");
 
 /**
- * A house that fills the tile, with the home's lights in its windows.
+ * A house that fills the tile, with a light in each of its windows.
+ *
+ * It picks none of the home's entities. Every one it reads is a stand-in,
+ * named for its part of the picture, which the author points at their own
+ * from the Shared values list, and the notes say which is which. The sun is
+ * the exception: `sun.sun` is the same entity in every home.
  *
  * Daytime colors throughout, and at night one dark wash over the whole picture
  * with the lit windows drawn above it, so a single rule on `sun.sun` turns day
  * into night instead of one on every wall. The sky, the sun, the moon and the
  * stars follow the same entity; without it the picture is always at night. A
  * window's lit panes glow and are hidden while its light is off; the tap over
- * the window toggles it. A home with fewer than four lights leaves the spare
- * windows dark and untappable.
+ * the window toggles it.
  */
 export function addHouseScene(cfg: CustomComplicationConfig, env: PresetEnv): string {
   const family = env.family;
   const medium = family === "medium";
-  const sun = env.states?.["sun.sun"] ? refOf(env, "sun.sun") : undefined;
-  const lights = pickSceneLights(env, HOUSE_WINDOWS.length);
+  const sun = env.states?.["sun.sun"] ? { entityId: "sun.sun", displayName: "Sun", domain: "sun" } : undefined;
+  const standIn = standIns(cfg);
+  const lights = HOUSE_WINDOWS.map((win) => standIn("light", `${win.name} light`));
   // Everything the house reads is a shared value, so the whole scene is
   // repointed from the Shared values list without opening a layer. The window
   // lights come first, in window order, since those are what people change.
-  const lightRefs = lights.map((l, i) => share(cfg, `${HOUSE_WINDOWS[i]!.name} light`, entityStateValue(withDomain(l))));
-  const readings = houseReadings(cfg, env);
+  const lightRefs = lights.map((l) => share(cfg, l.displayName, entityStateValue(l)));
+  const readings = houseReadings(cfg, standIn);
   const put = <T extends Element>(el: T, geometry: PresetGeometry, name?: string): T => {
     if (name) el.payload.name = name;
     placeLayer(cfg, el, family, () => geometry);
@@ -2835,9 +2810,7 @@ export function addHouseScene(cfg: CustomComplicationConfig, env: PresetEnv): st
 
   // The lit windows, above the night wash so they glow in the dark.
   HOUSE_WINDOWS.forEach((win, i) => {
-    const light = lights[i];
-    if (!light) return;
-    const full = withDomain(light);
+    const full = lights[i]!;
     // One row per window: the lit panes are framed on the window alone, so the
     // tap can be attached to them and follow them, and the layer's Entity
     // picker then moves the tap and the rule to another light in one pick.
@@ -2853,16 +2826,14 @@ export function addHouseScene(cfg: CustomComplicationConfig, env: PresetEnv): st
     attachTap(cfg, lit.payload.id, { type: "toggleEntity", ...full });
   });
 
-  if (readings.weather) {
-    const rain = drawing(rainPath(family), `0 0 ${SCENE_WIDTH} ${sceneHeight(family)}`, "#A9C2F0B3");
-    // One row per word rather than "is one of", which the states table cannot show.
-    rain.payload.rules = [buildStatesRule(
-      readings.weather,
-      RAINY_STATES.map((word) => ({ comparison: equalsWord(word), changes: [newStyleChange("show")] })),
-      [newStyleChange("hide")],
-    )];
-    put(rain, skyDrawingGeometry(family), "Rain");
-  }
+  const rain = drawing(rainPath(family), `0 0 ${SCENE_WIDTH} ${sceneHeight(family)}`, "#A9C2F0B3");
+  // One row per word rather than "is one of", which the states table cannot show.
+  rain.payload.rules = [buildStatesRule(
+    readings.weather,
+    RAINY_STATES.map((word) => ({ comparison: equalsWord(word), changes: [newStyleChange("show")] })),
+    [newStyleChange("hide")],
+  )];
+  put(rain, skyDrawingGeometry(family), "Rain");
 
   // The words, white at night and dark ink by day.
   const title = layerOf("text");
@@ -2874,15 +2845,13 @@ export function addHouseScene(cfg: CustomComplicationConfig, env: PresetEnv): st
   put(title, sceneRect(family, 16, 12, 200, 22));
 
   const count = layerOf("text");
-  count.payload.value = lights.length === 0
-    ? literal("Pick a light for each window")
-    : {
-      kind: {
-        kind: "aggregate",
-        aggregate: { function: "count", scope: { kind: "entities", entities: lights.map(withDomain) }, stateFilter: { kind: "isOn" } },
-      },
-      format: { suffix: ` of ${lights.length} ${lights.length === 1 ? "light" : "lights"} on` },
-    };
+  count.payload.value = {
+    kind: {
+      kind: "aggregate",
+      aggregate: { function: "count", scope: { kind: "entities", entities: lights }, stateFilter: { kind: "isOn" } },
+    },
+    format: { suffix: ` of ${lights.length} lights on` },
+  };
   count.payload.fontSize = scenePoints(family, 12);
   count.payload.alignment = "leading";
   count.payload.colorSlot.baseColorHex = NIGHT_SUB_HEX;
@@ -2894,6 +2863,7 @@ export function addHouseScene(cfg: CustomComplicationConfig, env: PresetEnv): st
 
   if (medium) addHouseFootnote(cfg, readings, family, byDay, put);
   else addHouseChips(cfg, readings, family, byDay, put);
+  addSceneNotes(cfg, HOUSE_NOTES);
   return title.payload.id;
 }
 
@@ -2909,31 +2879,23 @@ function share(cfg: CustomComplicationConfig, name: string, value: Value): Value
 
 /** What the house prints besides its lights, each as a shared value. */
 interface HouseReadings {
-  inside?: Value;
-  outside?: Value;
+  inside: Value;
+  outside: Value;
   /** The weather's state, for the rain. */
-  weather?: Value;
-  lock?: { label: string; value: Value };
+  weather: Value;
+  lock: { label: string; value: Value };
 }
 
-function houseReadings(cfg: CustomComplicationConfig, env: PresetEnv): HouseReadings {
-  const out: HouseReadings = {};
-  const inside = temperatureValue(env, (id) => !id.includes("outdoor") && !id.includes("outside"));
-  if (inside) out.inside = share(cfg, "Inside temperature", inside);
-  const weather = entitiesOf(env, "weather")[0];
-  if (weather) {
-    out.outside = share(cfg, "Outside temperature", {
-      kind: { kind: "entityAttribute", ...refOf(env, weather), attribute: "temperature" },
-      format: { decimals: 0, suffix: "°" },
-    });
-    out.weather = share(cfg, "Weather", stateOf(refOf(env, weather)));
-  }
-  const lock = houseLockOf(env);
-  if (lock) {
-    const label = lockLabelOf(env, lock);
-    out.lock = { label, value: share(cfg, label, stateOf(refOf(env, lock))) };
-  }
-  return out;
+/** The readings, each on its own stand-in, except that the outside
+ * temperature and the rain read one weather entity: one pick for both. */
+function houseReadings(cfg: CustomComplicationConfig, standIn: (domain: string, name: string) => EntityRef): HouseReadings {
+  const inside = share(cfg, "Inside temperature", { kind: { kind: "entityState", ...standIn("sensor", "Inside temperature") }, format: DEGREES });
+  const weather = standIn("weather", "Weather");
+  const outside = share(cfg, "Outside temperature", { kind: { kind: "entityAttribute", ...weather, attribute: "temperature" }, format: DEGREES });
+  const shared = share(cfg, "Weather", stateOf(weather));
+  const label = "Front door";
+  const lock = { label, value: share(cfg, label, stateOf(standIn("lock", label))) };
+  return { inside, outside, weather: shared, lock };
 }
 
 /** The round refresh button in the top right: a disc, the arrow on it, and a
@@ -2968,11 +2930,11 @@ function addHouseChips(
   byDay: (el: Element, changes: StyleChange[]) => void,
   put: ScenePut,
 ): void {
-  const chips: { label: string; value: Value }[] = [];
-  if (readings.inside) chips.push({ label: "Inside", value: readings.inside });
-  if (readings.outside) chips.push({ label: "Outside", value: readings.outside });
-  if (readings.lock) chips.push({ label: readings.lock.label, value: { ...readings.lock.value, format: { textCase: "capitalized" } } });
-  if (chips.length === 0) return;
+  const chips: { label: string; value: Value }[] = [
+    { label: "Inside", value: readings.inside },
+    { label: "Outside", value: readings.outside },
+    { label: readings.lock.label, value: { ...readings.lock.value, format: { textCase: "capitalized" } } },
+  ];
   const gap = 8;
   const width = (336 - gap * (chips.length - 1)) / chips.length;
   const all: string[] = [];
@@ -3005,25 +2967,6 @@ function addHouseChips(
   createGroup(cfg, all, "Readings");
 }
 
-/** The lock the house shows: a front door first, then one in an area. A lock
- * in no area and not named "front" is left out, since that is usually a car's,
- * and the house then shows one card fewer. */
-function houseLockOf(env: PresetEnv): string | undefined {
-  const isFront = (id: string) => `${id} ${refOf(env, id).displayName}`.toLowerCase().includes("front");
-  const locks = entitiesOf(env, "lock").filter((id) => isFront(id) || areaIdOf(env, id) !== undefined);
-  const score = (id: string) => {
-    const name = `${id} ${refOf(env, id).displayName}`.toLowerCase();
-    return (name.includes("front") ? 2 : 0) + (areaIdOf(env, id) !== undefined ? 1 : 0);
-  };
-  return [...locks].sort((a, b) => score(b) - score(a))[0];
-}
-
-/** What the house calls its lock: "Front door" when it is one, else its name. */
-function lockLabelOf(env: PresetEnv, lock: string): string {
-  const name = refOf(env, lock).displayName;
-  return `${lock} ${name}`.toLowerCase().includes("front") ? "Front door" : name;
-}
-
 /** A rich text part: a live value, or typed words. */
 function textPart(value: Value): TextPart {
   return { id: newId(), value };
@@ -3046,33 +2989,25 @@ function addHouseFootnote(
   byDay: (el: Element, changes: StyleChange[]) => void,
   put: ScenePut,
 ): void {
-  const parts: TextPart[] = [];
-  if (readings.inside) parts.push(textPart(readings.inside), textPart(literal(" in")));
-  if (readings.outside) {
-    if (parts.length > 0) parts.push(textPart(literal(" · ")));
-    parts.push(textPart(readings.outside), textPart(literal(" out")));
-  }
-  const ids: string[] = [];
-  if (parts.length > 0) {
-    const temps = layerOf("text");
-    setParts(temps, parts);
-    temps.payload.fontSize = scenePoints(family, 15);
-    temps.payload.fontWeight = "semibold";
-    temps.payload.fontDesign = "rounded";
-    temps.payload.alignment = "leading";
-    byDay(temps, [setColorTo(DAY_INK_HEX)]);
-    ids.push(put(temps, sceneRect(family, 16, 122, 150, 20), "Temperatures").payload.id);
-  }
-  if (readings.lock) {
-    const door = layerOf("text");
-    setParts(door, [textPart(literal(`${readings.lock.label} `)), textPart(readings.lock.value)]);
-    door.payload.fontSize = scenePoints(family, 12);
-    door.payload.alignment = "leading";
-    door.payload.colorSlot.baseColorHex = NIGHT_SUB_HEX;
-    byDay(door, [setColorTo(DAY_SUB_HEX)]);
-    ids.push(put(door, sceneRect(family, 16, 143, 150, 15), "Lock").payload.id);
-  }
-  createGroup(cfg, ids, "Readings");
+  const temps = layerOf("text");
+  setParts(temps, [
+    textPart(readings.inside), textPart(literal(" in")), textPart(literal(" · ")),
+    textPart(readings.outside), textPart(literal(" out")),
+  ]);
+  temps.payload.fontSize = scenePoints(family, 15);
+  temps.payload.fontWeight = "semibold";
+  temps.payload.fontDesign = "rounded";
+  temps.payload.alignment = "leading";
+  byDay(temps, [setColorTo(DAY_INK_HEX)]);
+  put(temps, sceneRect(family, 16, 122, 150, 20), "Temperatures");
+  const door = layerOf("text");
+  setParts(door, [textPart(literal(`${readings.lock.label} `)), textPart(readings.lock.value)]);
+  door.payload.fontSize = scenePoints(family, 12);
+  door.payload.alignment = "leading";
+  door.payload.colorSlot.baseColorHex = NIGHT_SUB_HEX;
+  byDay(door, [setColorTo(DAY_SUB_HEX)]);
+  put(door, sceneRect(family, 16, 143, 150, 15), "Lock");
+  createGroup(cfg, [temps.payload.id, door.payload.id], "Readings");
 }
 
 // ── the floor plan ────────────────────────────────────────────────────────
@@ -3086,58 +3021,30 @@ const ROOM_LIT_INK_HEX = "#2B1F06";
 const ROOM_DIM_INK_HEX = "#98A2B8";
 const ROOM_LIT_DIM_HEX = "#2B1F06B3";
 const MOTION_HEX = "#58D3C3";
-const MOTION_CLASSES = ["motion", "occupancy", "presence"];
 
-/** The most rooms each tile draws. Up to seven layers a room, seven more for
- * the floor, title and refresh button, and 64 in a document. */
-function planMaxRooms(family: DrawableFamily): number {
-  return family === "medium" ? 6 : 8;
+/** The rooms each tile starts with. Every room asks for three picks, so the
+ * medium tile keeps to four and the bigger ones stop at six. */
+export function planRoomNames(family: DrawableFamily): string[] {
+  const names = ["Living room", "Kitchen", "Bedroom", "Office", "Bathroom", "Hallway"];
+  return names.slice(0, family === "medium" ? 4 : 6);
 }
 
-export interface PlanRoom {
-  name: string;
-  /** The area whose lights the room shows and toggles. */
-  areaId?: string;
-  /** Or one light, for a home whose lights are in no area. */
-  light?: EntityRef;
-  temperature?: Value;
-  motion?: EntityRef;
-}
-
-/**
- * The rooms to draw: every area with a light in it, the ones with the most
- * lights first (they get the bigger cells). A home with no areas gets a room
- * per light, and a home with no lights gets four named placeholders.
- */
-export function planRooms(env: PresetEnv, max: number): PlanRoom[] {
-  const areas = env.registry?.areas ?? {};
-  const lights = sceneLightsOf(env);
-  const byArea = new Map<string, number>();
-  for (const id of lights) {
-    const area = areaIdOf(env, id);
-    if (area !== undefined && areas[area] !== undefined) byArea.set(area, (byArea.get(area) ?? 0) + 1);
-  }
-  const nameOf = (area: string) => (areas[area]?.name ?? "").trim() || area;
-  const inArea = (area: string) => (id: string) => areaIdOf(env, id) === area;
-  const rooms: PlanRoom[] = [...byArea.entries()]
-    .sort(([a, na], [b, nb]) => nb - na || nameOf(a).localeCompare(nameOf(b)))
-    .slice(0, max)
-    .map(([areaId]) => {
-      const room: PlanRoom = { name: nameOf(areaId), areaId };
-      const temperature = temperatureValue(env, inArea(areaId));
-      if (temperature) room.temperature = temperature;
-      const motion = entitiesOf(env, "binary_sensor").find((id) => inArea(areaId)(id) && MOTION_CLASSES.includes(deviceClassOf(env, id)));
-      if (motion) room.motion = refOf(env, motion);
-      return room;
-    });
-  if (rooms.length > 0) return rooms;
-  if (lights.length > 0) {
-    return lights.slice(0, max).map((id) => {
-      const light = refOf(env, id);
-      return { name: light.displayName, light };
-    });
-  }
-  return ["Living", "Kitchen", "Bedroom", "Office"].slice(0, max).map((name) => ({ name }));
+/** How the plan works and what to pick, for the document's notes. */
+function planNotes(first: string): string {
+  return [
+    "# Floor plan",
+    "Nothing is picked yet. Each room reads three of your entities, and one pick fills its stand-in in everywhere the plan uses it.",
+    "## Set up",
+    `1. Pick a light for each room, like [${first} light]. Pick a light group to light a whole room with one tap.`,
+    `2. Pick a temperature sensor for each room, like [${first} temperature].`,
+    `3. Pick a motion or occupancy sensor for each room, like [${first} motion].`,
+    `4. Rename a room: select its name layer, like [${first} name], and type the new name.`,
+    "5. Drag the rooms into the shape of your home.",
+    "## How it works",
+    "- A room turns amber while its light is on. Tap the room to turn the light on or off.",
+    "- The small dot in a room's corner shows while its motion sensor sees someone.",
+    "- The count at the top says how many of the rooms' lights are on.",
+  ].join("\n\n");
 }
 
 interface PointRect { x: number; y: number; w: number; h: number }
@@ -3187,16 +3094,29 @@ export function planCells(count: number, plan: PointRect): PointRect[] {
 }
 
 /**
- * The home seen from above: each area a room, lit amber while any light in it
- * is on, with its temperature, a bulb, and a dot while its motion sensor sees
- * someone. A tap on a lit room turns every light in its area off, and a tap on
- * a dark one turns them on.
+ * The home seen from above: a room lit amber while its light is on, with its
+ * temperature, a bulb, and a dot while its motion sensor sees someone. A tap on
+ * a room toggles its light.
+ *
+ * Like the house it picks none of the home's entities. Each room reads a light,
+ * a temperature and a motion sensor through three shared values on stand-ins
+ * named for the room, and the notes say what to pick. A light group is the
+ * way to light a whole room: toggling a group turns every member the same way.
  */
 export function addFloorPlan(cfg: CustomComplicationConfig, env: PresetEnv): string {
   const family = env.family;
   const medium = family === "medium";
   const canvas = CANVAS[family];
-  const rooms = planRooms(env, planMaxRooms(family));
+  const standIn = standIns(cfg);
+  const rooms = planRoomNames(family).map((name) => ({ name, light: standIn("light", `${name} light`) }));
+  // The lights first, room by room, since those are what people pick first;
+  // then each room's temperature and motion.
+  const lightValues = rooms.map((room) => share(cfg, room.light.displayName, entityStateValue(room.light)));
+  const readings = rooms.map((room) => ({
+    temperature: share(cfg, `${room.name} temperature`, { kind: { kind: "entityState", ...standIn("sensor", `${room.name} temperature`) }, format: DEGREES }),
+    motion: standIn("binary_sensor", `${room.name} motion`),
+  }));
+  const motionValues = readings.map((r) => share(cfg, r.motion.displayName, entityStateValue(r.motion)));
   const plan = planRect(family);
   const cells = planCells(rooms.length, plan);
   const put = <T extends Element>(el: T, geometry: PresetGeometry, name?: string): T => {
@@ -3213,36 +3133,10 @@ export function addFloorPlan(cfg: CustomComplicationConfig, env: PresetEnv): str
   const walls = put(flatShape("roundedRectangle", PLAN_WALL_HEX, medium ? 9 : 10), pointFrame(family, plan.x, plan.y, plan.w, plan.h), "Walls");
   createGroup(cfg, [back.payload.id, walls.payload.id], "Floor");
 
-  const areaIds: string[] = [];
-  const roomLights: EntityRef[] = [];
   rooms.forEach((room, i) => {
     const cell = cells[i]!;
-    let lit: { value: () => Value; comparison: () => Comparison; tap?: TapAction } | undefined;
-    let areaCall: ((service: "turn_on" | "turn_off") => TapAction) | undefined;
-    if (room.areaId !== undefined) {
-      const areaId = room.areaId;
-      areaIds.push(areaId);
-      lit = {
-        value: () => ({
-          kind: {
-            kind: "aggregate",
-            aggregate: {
-              function: "count",
-              scope: { kind: "filter", domains: ["light"], areaIds: [areaId], labelIds: [], floorIds: [] },
-              stateFilter: { kind: "isOn" },
-            },
-          },
-        }),
-        comparison: () => ({ kind: "greaterThan", value: literal("0") }),
-      };
-      areaCall = (service) => ({ type: "callService", serviceDomain: "light", serviceName: service, serviceDataJSON: JSON.stringify({ area_id: areaId }) });
-    } else if (room.light !== undefined) {
-      const full = withDomain(room.light);
-      roomLights.push(full);
-      lit = { value: () => entityStateValue(full), comparison: () => onComparison(full), tap: { type: "toggleEntity", ...full } };
-    }
     const whenLit = (on: StyleChange[], off?: StyleChange[]): Rule[] =>
-      lit ? [buildStatesRule(lit.value(), [{ comparison: lit.comparison(), changes: on }], off)] : [];
+      [buildStatesRule(lightValues[i]!, [{ comparison: onComparison(room.light), changes: on }], off)];
     const ids: string[] = [];
 
     const card = flatShape("roundedRectangle", ROOM_OFF_HEX, medium ? 5 : 6);
@@ -3258,17 +3152,15 @@ export function addFloorPlan(cfg: CustomComplicationConfig, env: PresetEnv): str
     name.payload.rules = whenLit([setColorTo(ROOM_LIT_INK_HEX)]);
     ids.push(put(name, pointFrame(family, cell.x + 8, cell.y + 5, cell.w - 30, nameSize * 1.45), `${room.name} name`).payload.id);
 
-    if (room.temperature) {
-      const temp = layerOf("text");
-      temp.payload.value = room.temperature;
-      temp.payload.fontSize = tempSize;
-      temp.payload.fontDesign = "rounded";
-      temp.payload.alignment = "leading";
-      temp.payload.colorSlot.baseColorHex = ROOM_DIM_INK_HEX;
-      temp.payload.rules = whenLit([setColorTo(ROOM_LIT_DIM_HEX)]);
-      const h = tempSize * 1.4;
-      ids.push(put(temp, pointFrame(family, cell.x + 8, cell.y + cell.h - 5 - h, cell.w - 30, h), `${room.name} temperature`).payload.id);
-    }
+    const temp = layerOf("text");
+    temp.payload.value = readings[i]!.temperature;
+    temp.payload.fontSize = tempSize;
+    temp.payload.fontDesign = "rounded";
+    temp.payload.alignment = "leading";
+    temp.payload.colorSlot.baseColorHex = ROOM_DIM_INK_HEX;
+    temp.payload.rules = whenLit([setColorTo(ROOM_LIT_DIM_HEX)]);
+    const h = tempSize * 1.4;
+    ids.push(put(temp, pointFrame(family, cell.x + 8, cell.y + cell.h - 5 - h, cell.w - 30, h), `${room.name} temperature`).payload.id);
 
     const bulb = layerOf("icon");
     bulb.payload.symbol = literal("lightbulb");
@@ -3276,32 +3168,13 @@ export function addFloorPlan(cfg: CustomComplicationConfig, env: PresetEnv): str
     bulb.payload.rules = whenLit([setIconTo("lightbulb.fill"), setColorTo(ROOM_LIT_INK_HEX)], [setIconTo("lightbulb"), setColorTo(ROOM_DIM_INK_HEX)]);
     ids.push(put(bulb, { ...pointFrame(family, cell.x + cell.w - 22, cell.y + 4, 18, 18), size: bulbSize }, `${room.name} bulb`).payload.id);
 
-    if (room.motion) {
-      const motion = withDomain(room.motion);
-      const dot = flatShape("circle", MOTION_HEX);
-      dot.payload.shadow = glow(MOTION_HEX, 3);
-      dot.payload.rules = [showWhile(entityStateValue(motion), onComparison(motion))];
-      ids.push(put(dot, pointFrame(family, cell.x + cell.w - 14, cell.y + cell.h - 14, 7, 7), `${room.name} motion`).payload.id);
-    }
+    const motion = readings[i]!.motion;
+    const dot = flatShape("circle", MOTION_HEX);
+    dot.payload.shadow = glow(MOTION_HEX, 3);
+    dot.payload.rules = [showWhile(motionValues[i]!, onComparison(motion))];
+    ids.push(put(dot, pointFrame(family, cell.x + cell.w - 14, cell.y + cell.h - 14, 7, 7), `${room.name} motion`).payload.id);
 
-    if (lit && areaCall) {
-      // Two taps on the card rather than light.toggle, which flips each light on
-      // its own: a room with one light on and one off would swap them and stay
-      // lit. While the room is lit only "turn off" is there, while it is dark
-      // only "turn on", so a tap does what the card shows. It is also safe to
-      // tap twice while a slow bulb has not reported yet.
-      const frame = pointFrame(family, cell.x, cell.y, cell.w, cell.h);
-      const off = layerOf("tap");
-      off.payload.action = areaCall("turn_off");
-      off.payload.rules = [showWhile(lit.value(), lit.comparison())];
-      ids.push(put(off, frame, `${room.name} turn off`).payload.id);
-      const on = layerOf("tap");
-      on.payload.action = areaCall("turn_on");
-      on.payload.rules = [hideWhile(lit.value(), lit.comparison())];
-      ids.push(put(on, frame, `${room.name} turn on`).payload.id);
-    } else if (lit?.tap) {
-      attachTap(cfg, card.payload.id, lit.tap);
-    }
+    attachTap(cfg, card.payload.id, { type: "toggleEntity", ...room.light });
     createGroup(cfg, ids, room.name);
   });
 
@@ -3314,18 +3187,13 @@ export function addFloorPlan(cfg: CustomComplicationConfig, env: PresetEnv): str
   put(title, medium ? pointFrame(family, 14, 10, 46, 21) : pointFrame(family, 16, 12, 200, 22));
 
   const count = layerOf("text");
-  const scope = areaIds.length > 0
-    ? { kind: "filter" as const, domains: ["light"], areaIds, labelIds: [], floorIds: [] }
-    : { kind: "entities" as const, entities: roomLights };
-  const counted = areaIds.length > 0 || roomLights.length > 0;
+  const scope = { kind: "entities" as const, entities: rooms.map((room) => room.light) };
   const reading: Value = { kind: { kind: "aggregate", aggregate: { function: "count", scope, stateFilter: { kind: "isOn" } } } };
-  count.payload.value = counted ? { ...reading, format: { suffix: " lights on" } } : literal("Pick your rooms");
-  if (counted) {
-    count.payload.rules = [buildStatesRule(reading, [
-      { comparison: equalsWord("0"), changes: [setTextTo("All lights off")] },
-      { comparison: equalsWord("1"), changes: [setTextTo("1 light on")] },
-    ])];
-  }
+  count.payload.value = { ...reading, format: { suffix: " lights on" } };
+  count.payload.rules = [buildStatesRule(reading, [
+    { comparison: equalsWord("0"), changes: [setTextTo("All lights off")] },
+    { comparison: equalsWord("1"), changes: [setTextTo("1 light on")] },
+  ])];
   count.payload.fontSize = 12;
   count.payload.alignment = "leading";
   count.payload.colorSlot.baseColorHex = "#8C96AD";
@@ -3342,6 +3210,7 @@ export function addFloorPlan(cfg: CustomComplicationConfig, env: PresetEnv): str
   put(arrow, { ...at, size: round2(d * 0.44) }, "Refresh arrow");
   attachTap(cfg, button.payload.id, { type: "refresh" });
   createGroup(cfg, [button.payload.id, arrow.payload.id], "Refresh");
+  addSceneNotes(cfg, planNotes(rooms[1]!.name));
   return title.payload.id;
 }
 
