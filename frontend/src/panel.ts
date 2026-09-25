@@ -5240,7 +5240,7 @@ export class WristAssistantPanel extends LitElement {
     .values-list .datum.hl { box-shadow: inset 0 0 0 1px var(--c); background: color-mix(in srgb, var(--c) 10%, var(--wa-card)); }
     /* Read by the selected layer: filled, as the selected layer row is. Read
        by the layer the pointer rests on over the face: an outline only. */
-    .values-list .datum.sel { background: color-mix(in srgb, var(--c) 30%, var(--wa-card)); box-shadow: inset 0 0 0 2px var(--c); }
+    .values-list .datum.sel { background: color-mix(in srgb, var(--c) 45%, var(--wa-card)); box-shadow: inset 0 0 0 2px var(--c); }
     .values-list .datum.peek:not(.sel):not(.hl) { box-shadow: inset 0 0 0 1px var(--c); }
     .values-list .datum .meta {
       flex: none; min-width: 0; max-width: 140px; opacity: 1; color: var(--wa-val); font-weight: 600;
