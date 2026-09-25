@@ -313,6 +313,8 @@ export function designKind(copies: readonly PlaceCopy[], kindOf: (ownerId: strin
  * A watch design goes to the home's other watches from here; crossing to a
  * phone is "Duplicate as", where the shape is being chosen anyway. A design
  * on the shelf alone is on no kind of device, so every device is listed.
+ * So is a control (no `family`): it has no shape to choose, and Control
+ * Center on a watch and on an iPhone takes the same document.
  */
 export function devicePlaces(
   owners: readonly DeviceOwner[],
@@ -320,7 +322,8 @@ export function devicePlaces(
   copies: readonly PlaceCopy[],
   kind: DeviceKind,
 ): DevicePlace[] {
-  const listed = owners.filter((o) => o.kind === "library" || kind === "library" || o.kind === kind);
+  const anyKind = kind === "library" || family === undefined;
+  const listed = owners.filter((o) => o.kind === "library" || anyKind || o.kind === kind);
   return listed.map((owner) => {
     const here = copies.filter((c) => c.ownerId === owner.ownerId);
     const draws = owner.kind === "library"

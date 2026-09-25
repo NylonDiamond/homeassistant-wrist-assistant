@@ -12637,7 +12637,7 @@ export class WristAssistantPanel extends LitElement {
    * places to stand even when they draw the same shape, and the editor's
    * "Duplicate as" is where crossing between them is asked for. A design on
    * the shelf is the exception: it is on no device at all, so every device
-   * that draws its shape is offered.
+   * that draws its shape is offered. So is a control, which has no shape.
    */
   private rowPlaces(row: PickerRow, family: FamilyKind | undefined): DevicePlace[] {
     // Every device in the home, not only the ones whose app draws shapes: a
@@ -18154,7 +18154,8 @@ export class WristAssistantPanel extends LitElement {
    * Never the library. Unassigned is where a design waits when it is on
    * nothing, not one more place to be at the same time, and taking the last
    * device off already puts it there. Only devices of this design's kind are
-   * offered; crossing from a watch to an iPhone is "Duplicate as".
+   * offered; crossing from a watch to an iPhone is "Duplicate as". A control has no shape to cross, so it is
+   * offered to both kinds.
    */
   private renderAddPlaceRow(row: PickerRow, place: DevicePlace, family: FamilyKind | undefined) {
     const target = place.owner;

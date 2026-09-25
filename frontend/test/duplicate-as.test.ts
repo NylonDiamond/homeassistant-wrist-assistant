@@ -371,6 +371,19 @@ describe("devicePlaces", () => {
     const places = devicePlaces([WATCH, plain, LIBRARY], undefined, [{ ownerId: "w1", id: "k" }], "watch");
     expect(places.map((p) => [p.owner.ownerId, p.draws])).toEqual([["w1", true], ["w3", false], [LIBRARY_OWNER_ID, true]]);
   });
+
+  // A control has no shape, so a watch's control goes to an iPhone from the
+  // same menu rather than through "Duplicate as".
+  it("offers a watch's control to the iPhones too", () => {
+    const places = devicePlaces(all, undefined, [{ ownerId: "w1", id: "k" }], "watch");
+    expect(places.map((p) => [p.owner.ownerId, p.on])).toEqual([
+      ["w1", true],
+      ["w2", false],
+      ["p1", false],
+      ["p2", false],
+      [LIBRARY_OWNER_ID, false],
+    ]);
+  });
 });
 
 // One design on several devices: the copies share a link and are kept alike.
