@@ -9910,10 +9910,19 @@ export class WristAssistantPanel extends LitElement {
     // moved drops the pick and selects that one layer, as a plain click does.
     // A corner still resizes just the layer it belongs to.
     const pressedId = hitId !== undefined ? selectableLayerId(canvasCfg, hitId) : undefined;
+    // A handle on the pick's box resizes every picked layer together.
+    if (handle !== null && svg && this.multi.size >= 2 && target.closest("[data-group-box]")) {
+      const ids = pickedMoveIds(canvasCfg, this.multi);
+      if (ids.length > 0) this.beginBlockResize(family as DrawableFamily, e, svg, ids, `resize-pick-${family}`, handle as ResizeHandle);
+      return;
+    }
     // A handle on a selected group's box resizes the whole group.
     if (handle !== null && svg && this.inspect.kind === "group" && target.closest("[data-group-box]")) {
       const unit = groupMoveUnit(canvasCfg, this.inspect.id);
-      if (unit) this.beginGroupResize(family as DrawableFamily, e, svg, unit, handle as ResizeHandle);
+      if (unit) {
+        const ids = groupLayers(canvasCfg, unit.id).map((m) => m.payload.id);
+        this.beginBlockResize(family as DrawableFamily, e, svg, ids, `resize-group-${unit.id}-${family}`, handle as ResizeHandle);
+      }
       return;
     }
     if (!multiKey && !handle && svg && this.multi.size >= 2 && pressedId !== undefined && this.multi.has(pressedId)) {
@@ -10139,8 +10148,17 @@ export class WristAssistantPanel extends LitElement {
     return members.length === 0 ? undefined : boxAround(members.map((m) => effectivePlacement(cfg, family, m).frame));
   }
 
+  /** The box a pick of several carries its handles on: around every layer a
+   * drag of the pick moves, on this shape. */
+  private pickBoxFor(cfg: CustomComplicationConfig, family: DrawableFamily): NormalizedFrame | undefined {
+    if (this.multi.size < 2) return undefined;
+    const ids = new Set(pickedMoveIds(cfg, this.multi));
+    const members = cfg.elements.filter((m) => ids.has(m.payload.id));
+    return members.length === 0 ? undefined : boxAround(members.map((m) => effectivePlacement(cfg, family, m).frame));
+  }
+
   /**
-   * Resize a selected group by a handle on its box.
+   * Resize a selected group, or a pick of several, by a handle on its box.
    *
    * A corner scales the group as one. The box keeps its proportions, and every
    * layer's frame and the size this shape keeps for it (font size, icon size,
@@ -10150,10 +10168,10 @@ export class WristAssistantPanel extends LitElement {
    * layer keeps for every shape at once (a corner radius, a border) stay as
    * they are, since a resize on one shape must not reach the others.
    */
-  private beginGroupResize(family: DrawableFamily, e: PointerEvent, svg: SVGSVGElement, group: LayerGroup, handle: ResizeHandle) {
+  private beginBlockResize(family: DrawableFamily, e: PointerEvent, svg: SVGSVGElement, ids: readonly string[], key: string, handle: ResizeHandle) {
     const cfg = this.canvasConfig();
     if (!cfg) return;
-    const members = groupLayers(cfg, group.id);
+    const members = cfg.elements.filter((m) => ids.includes(m.payload.id));
     if (members.length === 0) return;
     e.preventDefault();
     const starts = new Map(members.map((m) => {
@@ -10162,7 +10180,6 @@ export class WristAssistantPanel extends LitElement {
     }));
     const bounds = boxAround([...starts.values()].map((s) => s.frame));
     const scaleSizes = isCorner(handle);
-    const key = `resize-group-${group.id}-${family}`;
     // A press on a handle that never moves reports the box it started with.
     // Writing that back would give every member a placement on this shape it
     // did not have, an edit nobody made.
@@ -17134,8 +17151,12 @@ export class WristAssistantPanel extends LitElement {
     // A selected group carries its own box and eight handles. Not for a group
     // row under the pointer: the handles belong to what a press would act on.
     const ins = this.inspect;
-    const groupBox = cfg && this.canEdit && !review && peek === undefined && shown.kind === "group"
-      && ins.kind === "group" && ins.id === shown.id ? this.groupBoxFor(cfg, family, shown.id) : undefined;
+    // A pick of several carries one box around all of it the same way, and
+    // wins over the handles of the one layer that was clicked first.
+    const boxed = cfg !== undefined && this.canEdit && !review && peek === undefined;
+    const groupBox = !boxed ? undefined
+      : this.multi.size >= 2 ? this.pickBoxFor(cfg, family)
+      : shown.kind === "group" && ins.kind === "group" && ins.id === shown.id ? this.groupBoxFor(cfg, family, shown.id) : undefined;
     const opts = {
       icons: this.icons, imageSizes: this.imageSizes, tapAreas: true, quietTaps: true, slot,
       ...(groupBox ? { groupBox } : {}),
