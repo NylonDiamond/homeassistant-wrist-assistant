@@ -498,24 +498,22 @@ describe("deviceCropArt", () => {
       expect(icons(crop("small", "iphone", { small }))).toBe(12);
     });
 
-    it("shows the corner's whole quarter top right, bezel and all, with the clock moved left", () => {
+    it("shows the corner's whole quarter top left, bezel and all, with the clock where it always is", () => {
       // A 104 by 124 quadrant fitted to half the 70-tall screen: 35 tall,
-      // pushed against the screen's right edge at x 75, masked by the screen.
+      // pushed against the screen's left edge at x 11, masked by the screen.
       const corner = { art: svg`<svg class="complication corner" data-tag="c"></svg>`, width: 104, height: 124, focus: { cx: 70, cy: 29.5, diameter: 34 } };
       const art = crop("corner", "watch", { corner });
-      const width = 35 * (104 / 124);
-      expect(art).toContain(`translate(${75 - width} 13) scale(${35 / 124})`);
+      expect(art).toContain(`translate(11 13) scale(${35 / 124})`);
       expect(art).toContain("data-tag=\"c\"");
       expect(art).toMatch(/<clipPath id=pk-clip-\w+><rect x=11 y=13 width=64 height=70 rx=14 \/><\/clipPath>/);
-      // The clock gives the top right up and sits in the left half.
-      expect(art).toContain(`x=29 y=32 text-anchor="middle" font-size=11`);
-      expect(art).not.toContain(`x=56 y=33`);
+      // The clock keeps the top right, as on every other card.
+      expect(art).toContain(`x=56 y=33 text-anchor="middle" font-size=13`);
     });
 
-    it("stands the lit arc in at the top right when the corner cannot be drawn", () => {
+    it("stands the lit arc in at the top left when the corner cannot be drawn", () => {
       const art = crop("corner", "watch");
-      expect(art).toContain(`A 26 26 0 0 1 71 30`);
-      expect(art).toContain(`x=29 y=32`);
+      expect(art).toContain(`M23 19 A 26 26 0 0 0 15 30`);
+      expect(art).toContain(`x=56 y=33`);
     });
   });
 

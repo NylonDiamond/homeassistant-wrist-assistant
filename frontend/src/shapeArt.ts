@@ -343,9 +343,9 @@ const faceClock = (x: number, y: number, size: number, text: string) =>
  * The watch: case, bands, crown, and the four face slots laid out the way the
  * Modular face lays them out. The clock top right, rectangular the full
  * width of the screen under it, and circular bottom left. A corner takes the
- * screen's top right quarter, bezel text and all, the way the editor's stage
- * draws it, and the clock moves to the left half to make room. Inline, which
- * that face does not carry, sits as a line over the clock.
+ * screen's top left quarter, bezel text and all, the way the editor's stage
+ * draws it. Inline, which that face does not carry, sits as a line over the
+ * clock.
  *
  * The parts rather than a finished drawing, so one layout serves both the
  * whole device and every window onto it.
@@ -383,13 +383,12 @@ function watchBody(families: readonly FamilyKind[], live: LiveShapes, shelved: b
       <rect x="6" y="8" width="74" height="80" rx="18" fill=${CASE} />
       <rect x="82" y="30" width="4" height="12" rx="2" fill=${CASE} />
       <rect x="11" y="13" width="64" height="70" rx="14" fill=${screen} />`;
-  // The clock sits top right, where a corner's quarter goes, so a corner
-  // moves it to the left half, a size smaller so it clears both the bezel
-  // (x 11) and the quarter (from x 45.6).
+  // The corner goes under the clock: its quarter's black reaches the
+  // clock's first digit.
   return svg`${shell}
-    ${hasCorner ? faceClock(29, 32, 11, "10:09") : faceClock(56, 33, 13, "10:09")}
-    ${has("inline") ? inline ?? svg`<rect x="28" y="15" width="30" height="3" rx="1.5" fill=${ON} />` : nothing}
     ${corner}
+    ${faceClock(56, 33, 13, "10:09")}
+    ${has("inline") ? inline ?? svg`<rect x="28" y="15" width="30" height="3" rx="1.5" fill=${ON} />` : nothing}
     ${has("rectangular")
       ? rect ?? svg`<rect x="14" y="56" width="58" height="21" rx="5" fill=${ON} />`
       : svg`${circ ?? svg`<circle cx="21" cy="72" r="7" fill=${lit(has("circular"))} />`}
@@ -401,10 +400,10 @@ function watchBody(families: readonly FamilyKind[], live: LiveShapes, shelved: b
 const WATCH_SCREEN = { x: 11, y: 13, width: 64, height: 70, rx: 14 };
 
 /**
- * The corner on the watch: the screen's top right quarter, which is what the
+ * The corner on the watch: the screen's top left quarter, which is what the
  * renderer draws for it, bezel text, gauge and all, the way the editor's
  * stage shows it. The picture is a quarter of a 208 by 248 pt screen, so it
- * is fitted to half the screen's height, pushed to the right edge, and masked
+ * is fitted to half the screen's height, pushed to the left edge, and masked
  * by the screen's own rounded corner. With nothing to draw, the lit arc stands
  * in, curving into that same corner.
  */
@@ -412,9 +411,9 @@ function cornerQuarter(live: LiveShape | undefined): unknown {
   const s = WATCH_SCREEN;
   const height = s.height / 2;
   const width = height * (104 / 124);
-  const x = s.x + s.width - width;
+  const x = s.x;
   if (live === undefined || live.art === nothing || live.width <= 0 || live.height <= 0) {
-    return svg`<path d=${`M${x + width - 12} ${s.y + 6} A 26 26 0 0 1 ${x + width - 4} ${s.y + 17}`}
+    return svg`<path d=${`M${x + 12} ${s.y + 6} A 26 26 0 0 0 ${x + 4} ${s.y + 17}`}
       stroke=${ON} stroke-width="4" fill="none" stroke-linecap="round" />`;
   }
   const id = clipKey();

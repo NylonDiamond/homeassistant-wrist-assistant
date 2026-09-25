@@ -40,3 +40,20 @@ describe("face shape", () => {
     expect(drawn("rectangular")).toMatch(/<clipPath id=[^>]*>\s*<rect [^>]*rx=0 /);
   });
 });
+
+describe("corner quarter", () => {
+  // The preview draws the top-left quarter, the mirror of the top-right one
+  // the geometry was measured on, so every watch drawing keeps its clock top
+  // right. The shell's rounded corner is top left and the disc sits there.
+  it("draws the top-left quarter of the screen", () => {
+    const layout = resolveAll(newConfig("Face", 0, "corner"), ctx).corner!;
+    const svg = flatten(renderLayout(layout, { icons: noIcons }));
+    const width = Number(/viewBox=0 0 ([\d.]+) /.exec(svg)![1]);
+    const shell = /<path d=(M [^ ]+ 0 H [^ ]+ A [^ ]+ [^ ]+ 0 0 0 0 [^ ]+ V [^ ]+ H [^ ]+ Z)/.exec(svg);
+    expect(shell).not.toBeNull();
+    expect(shell![1].startsWith(`M ${width} 0`)).toBe(true);
+    // The disc's clip circle sits in the left half.
+    const disc = /<clipPath id=[^>]*><circle cx=([\d.]+)/.exec(svg);
+    expect(Number(disc![1])).toBeLessThan(width / 2);
+  });
+});

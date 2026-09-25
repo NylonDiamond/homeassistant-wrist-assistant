@@ -2692,28 +2692,39 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
  * square near the screen corner that watchOS never rotates; the curved part is
  * the system bezel label. All numbers below were measured off a 46 mm watch
  * screenshot on 2026-08-30 (app repo docs/custom_complication_design_box.md,
- * corner addendum). The preview shows the top-right screen quadrant.
+ * corner addendum), on a top-right corner. The preview shows the top-left
+ * screen quadrant instead, the mirror image of what was measured, so the
+ * watch drawings keep their clock top right: the geometry is mirrored and the
+ * text still reads left to right along its arc.
  */
 export function cornerContext(s: number, hasBezel: boolean) {
   return {
-    /** Top-right quarter of the 208x248 pt 46 mm screen. */
+    /** Top-left quarter of the 208x248 pt 46 mm screen. */
     quad: { width: 104 * s, height: 124 * s },
     /** Screen shell corner radius. */
     cornerRadius: 52 * s,
     /**
      * Content-disc centre. Measured: with a bezel label 29.75 pt in from the
-     * right edge and 24 pt down; without one the bigger disc sits 34 pt in and
+     * side edge and 24 pt down; without one the bigger disc sits 34 pt in and
      * 29.5 pt down (the outer margin to the screen edges stays put, the disc
      * grows inward).
      */
     tile: hasBezel
-      ? { cx: (104 - 29.75) * s, cy: 24 * s }
-      : { cx: (104 - 34) * s, cy: 29.5 * s },
-    /** Bezel-label baseline circle, centred on the dial (the quadrant's bottom-left). */
-    dial: { cx: 0, cy: 124 * s, r: 100.5 * s },
-    /** Label arc region for a top-right corner, degrees (0 = right, -90 = up). */
-    labelArc: { start: -90, end: -24 },
+      ? { cx: 29.75 * s, cy: 24 * s }
+      : { cx: 34 * s, cy: 29.5 * s },
+    /** Bezel-label baseline circle, centred on the dial (the quadrant's bottom-right). */
+    dial: { cx: 104 * s, cy: 124 * s, r: 100.5 * s },
+    /** Label arc region, degrees (0 = right, -90 = up), run clockwise so the
+     * text reads left to right. */
+    labelArc: mirrorArc({ start: -90, end: -24 }),
   };
+}
+
+/** A top-right corner's arc, measured, as the top-left one it mirrors to. The
+ * ends swap so the arc still runs clockwise and text on it stays upright and
+ * reads left to right, as the watch sets it. */
+function mirrorArc(arc: { start: number; end: number }): { start: number; end: number } {
+  return { start: -180 - arc.end, end: -180 - arc.start };
 }
 
 /**
@@ -2789,7 +2800,8 @@ function cornerLabelArc(s: number, id: string) {
   // Baseline arc for the top-right corner. Measured: the label starts at
   // 12 o'clock (-90) and the truncation ellipsis lands at about -25, so the
   // reserved region is [-90, -24]; text is centred in it (a truncated label
-  // fills it edge to edge, matching the photo).
+  // fills it edge to edge, matching the photo). cornerContext mirrors it to
+  // the top-left quadrant the preview draws.
   const ctx = cornerContext(s, true);
   return cornerArc(s, id, ctx.dial.r, ctx.labelArc);
 }
@@ -2804,7 +2816,7 @@ function cornerLabelArc(s: number, id: string) {
  */
 const CURVED_FONT = 18.5;
 const CURVED_BASELINE_R = 113;
-const CURVED_ARC = { start: -71, end: -36 };
+const CURVED_ARC = mirrorArc({ start: -71, end: -36 });
 
 /**
  * Bezel gauge geometry, measured off the same screenshot: 6.2 pt stroke
@@ -2813,7 +2825,7 @@ const CURVED_ARC = { start: -71, end: -36 };
  */
 const GAUGE_R = 104;
 const GAUGE_W = 6.2;
-const GAUGE_ARC = { start: -77, end: -30.5 };
+const GAUGE_ARC = mirrorArc({ start: -77, end: -30.5 });
 
 function hexToRgb(hex: string): [number, number, number] {
   const h = hex.replace("#", "");
@@ -2939,7 +2951,7 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
     const tileScale = tile / (design.width * s);
     const slotX = ctx.tile.cx - tile / 2;
     const slotY = ctx.tile.cy - tile / 2;
-    const shell = `M 0 0 H ${ctx.quad.width - ctx.cornerRadius} A ${ctx.cornerRadius} ${ctx.cornerRadius} 0 0 1 ${ctx.quad.width} ${ctx.cornerRadius} V ${ctx.quad.height} H 0 Z`;
+    const shell = `M ${ctx.quad.width} 0 H ${ctx.cornerRadius} A ${ctx.cornerRadius} ${ctx.cornerRadius} 0 0 0 0 ${ctx.cornerRadius} V ${ctx.quad.height} H ${ctx.quad.width} Z`;
     let bezel: TemplateResult | typeof nothing = nothing;
     if (layout.bezelGauge) {
       bezel = cornerGaugeSvg(layout.bezelGauge, s, uid);
