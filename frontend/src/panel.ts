@@ -350,7 +350,7 @@ import {
 import { renderGalleryPreviews } from "./preview-png.js";
 import { PictureCache } from "./picture-cache.js";
 import { BrowserPictureStore } from "./picture-store.js";
-import { base64ToPng, blobToBase64, cardPreviewAddress, parseCardPreviewAddress, shapeToPng } from "./card-snapshot.js";
+import { base64ToPng, blobToBase64, CARD_PREVIEW_VERSION, cardPreviewAddress, parseCardPreviewAddress, shapeToPng } from "./card-snapshot.js";
 import {
   type SavedPart,
   insertPart,
@@ -1796,8 +1796,9 @@ export class WristAssistantPanel extends LitElement {
   /** Parsed config per saved record, keyed by id and invalidated by revision.
    * Every picker card draws the real complication, and parsing and compiling
    * every document in the home on every render of the grid is the one part of
-   * that worth keeping. */
-  private readonly recordPreviews = new Map<string, { revision: number; config: CustomComplicationConfig; entities: EntityRef[] }>();
+   * that worth keeping. `fetches` is whether it reads anything Home Assistant
+   * has to be asked for: a template, a chart's history or a list's items. */
+  private readonly recordPreviews = new Map<string, { revision: number; config: CustomComplicationConfig; entities: EntityRef[]; fetches: boolean }>();
   /** Browse keeps one frame per image across visits. Opening a complication
    * refreshes its frames once and updates these same cached pictures. */
   private readonly pictureStore = new BrowserPictureStore();
@@ -10807,7 +10808,12 @@ export class WristAssistantPanel extends LitElement {
     if (hit && hit.revision === record.revision) return hit;
     try {
       const config = parseConfig(record.document);
-      const entry = { revision: record.revision, config, entities: [...compile(config).entities.values()] };
+      const compiled = compile(config);
+      const series = seriesRequests(config);
+      const fetches = compiled.document !== undefined
+        || Object.keys(series.history).length > 0 || Object.keys(series.statistics).length > 0
+        || Object.keys(listItemsRequests(config).requests).length > 0;
+      const entry = { revision: record.revision, config, entities: [...compiled.entities.values()], fetches };
       this.recordPreviews.set(record.id, entry);
       return entry;
     } catch {
@@ -10902,9 +10908,16 @@ export class WristAssistantPanel extends LitElement {
     for (const [id, preview] of Object.entries(previews ?? {})) this.cardPreviews.set(`${ownerId}|${id}`, preview);
   }
 
-  /** Whether this record has a picture of its current revision. */
+  /** Whether this record has a picture of its current revision. A picture
+   * drawn before cards were drawn with their templates, history and lists does
+   * not count for a record that reads any of them: it shows dashes. */
   private hasCardPreview(ownerId: string, record: ComplicationRecord): boolean {
-    return this.cardPreviews.get(`${ownerId}|${record.id}`)?.revision === record.revision;
+    return this.previewIsCurrent(this.cardPreviews.get(`${ownerId}|${record.id}`), record);
+  }
+
+  private previewIsCurrent(preview: CardPreview | undefined, record: ComplicationRecord): boolean {
+    if (!preview || preview.revision !== record.revision) return false;
+    return (preview.version ?? 1) >= CARD_PREVIEW_VERSION || this.recordPreview(record)?.fetches === false;
   }
 
   /**
@@ -10921,7 +10934,7 @@ export class WristAssistantPanel extends LitElement {
     if (family === undefined) return undefined;
     const key = `${ownerId}|${record.id}`;
     const preview = this.cardPreviews.get(key);
-    if (!preview || preview.revision !== record.revision || preview.family !== family || preview.device !== device) return undefined;
+    if (!preview || !this.previewIsCurrent(preview, record) || preview.family !== family || preview.device !== device) return undefined;
     if (this.cardPictures.failing(key)) return undefined;
     const url = this.cardPictures.urlFor(key, cardPreviewAddress(ownerId, record.id, record.revision));
     if (url === undefined) return {};
@@ -10969,14 +10982,24 @@ export class WristAssistantPanel extends LitElement {
     } catch {
       return;
     }
-    if (!(await this.picturesReady(entities))) return;
+    // The stage already holds what it fetched, so only a card drawn away from
+    // it asks. Whether it still is on the stage is asked after the wait.
+    const [ready, early] = await Promise.all([
+      this.picturesReady(entities),
+      stage === undefined ? this.fetchCardData(cfg) : undefined,
+    ]);
+    if (!ready) return;
     const onStage = stage !== undefined && this.draft?.config === stage && !this.draft.dirty;
-    const layouts = onStage ? resolveAll(cfg, this.cardStageContext()) : resolveAll(cfg, this.configContext(cfg, entities));
+    const fetched = onStage ? undefined : early ?? await this.fetchCardData(cfg);
+    if (!onStage && !fetched) return;
+    const layouts = onStage
+      ? resolveAll(cfg, this.cardStageContext())
+      : resolveAll(cfg, { ...this.configContext(cfg, entities), ...fetched });
     const shape = this.cardShape(cfg, layouts, family as DrawableFamily, device === "iphone");
     if (!shape || shape.art === nothing) return;
     const png = await shapeToPng(shape.art, shape.width, shape.height);
     const reply = await saveCardPreview(this.hass, ownerId, recordId, revision, await blobToBase64(png), {
-      family: family as CardPreview["family"], device, width: shape.width, height: shape.height,
+      family: family as CardPreview["family"], device, width: shape.width, height: shape.height, version: CARD_PREVIEW_VERSION,
       ...(shape.focus ? { focus: shape.focus } : {}),
     });
     if (!reply.ok) return;
@@ -10984,6 +11007,37 @@ export class WristAssistantPanel extends LitElement {
     this.cardPreviews.set(key, reply.preview);
     // The bytes are here already; fetching them straight back would be silly.
     this.cardPictures.seed(key, png, cardPreviewAddress(ownerId, recordId, revision));
+  }
+
+  /**
+   * What a card drawn away from the editor has to ask Home Assistant for: its
+   * templates, its charts' history and its lists' items, all at once. Without
+   * them every value a template fills reads "--" and the picture keeps that
+   * until the next save. Undefined when any of them failed, and the card is
+   * then drawn live and tried again on a later visit.
+   */
+  private async fetchCardData(cfg: CustomComplicationConfig): Promise<Pick<ResolveContext, "templateResults" | "historySeries" | "listItems"> | undefined> {
+    const doc = compile(cfg).document;
+    const series = seriesRequests(cfg);
+    const lists = listItemsRequests(cfg);
+    try {
+      const [templates, history, listReplies] = await Promise.all([
+        doc === undefined ? undefined : renderTemplates(this.hass, { doc }),
+        this.fetchSeries(series),
+        fetchListItems(this.hass, lists.requests),
+      ]);
+      const rendered = templates?.doc;
+      if (doc !== undefined && !rendered?.ok) return undefined;
+      const parsed = rendered?.ok ? parseValueDocument(rendered.value) : undefined;
+      if (doc !== undefined && !parsed) return undefined;
+      return {
+        templateResults: parsed?.values ?? new Map(),
+        historySeries: history.series,
+        listItems: collectListResults(listReplies),
+      };
+    } catch {
+      return undefined;
+    }
   }
 
   /** The stage's context for a card picture: real values rather than test

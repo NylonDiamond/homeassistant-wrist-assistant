@@ -139,7 +139,19 @@ def test_a_preview_survives_a_restart(mod, tmp_path) -> None:
     preview = again.previews_for("w1", [_record("A", 3)])["A"]
     assert preview["family"] == "corner"
     assert preview["focus"] == {"cx": 40.0, "cy": 40.0, "diameter": 30.0}
+    assert "version" not in preview
     assert asyncio.run(again.async_read("w1", "A")) == PNG
+
+
+def test_a_preview_keeps_the_way_it_was_drawn(mod, tmp_path) -> None:
+    store = _loaded(mod, tmp_path)
+    asyncio.run(store.async_put("w1", "A", 3, PNG, {**META, "version": 2}))
+
+    again = _loaded(mod, tmp_path)
+    assert again.previews_for("w1", [_record("A", 3)])["A"]["version"] == 2
+    for bad in (0, True, 2.5, "2"):
+        with pytest.raises(mod.CardPreviewInvalidError):
+            asyncio.run(store.async_put("w1", "A", 4, PNG, {**META, "version": bad}))
 
 
 def test_what_is_not_a_card_is_refused(mod, tmp_path) -> None:

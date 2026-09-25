@@ -116,6 +116,13 @@ def clean_meta(raw: Any) -> dict[str, Any]:
             "cy": _number(focus.get("cy"), "meta.focus.cy"),
             "diameter": _number(focus.get("diameter"), "meta.focus.diameter"),
         }
+    # How the panel drew the picture. It retakes a picture drawn by an older
+    # way that it knows came out wrong; absent is the first way.
+    version = raw.get("version")
+    if version is not None:
+        if isinstance(version, bool) or not isinstance(version, int) or not 1 <= version <= 1000:
+            raise CardPreviewInvalidError("meta.version must be a small whole number")
+        meta["version"] = version
     return meta
 
 

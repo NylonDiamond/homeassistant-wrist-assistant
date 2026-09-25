@@ -102,6 +102,8 @@ export interface CardPreview {
   width: number;
   height: number;
   focus?: { cx: number; cy: number; diameter: number };
+  /** How the panel drew it (`CARD_PREVIEW_VERSION`). Absent is version 1. */
+  version?: number;
 }
 
 export interface ChangeEvent {

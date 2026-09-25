@@ -17,6 +17,12 @@ import { html, render, type TemplateResult } from "lit";
  * scales follow only when a busy picture comes out over the limit. */
 const SCALES = [3, 2, 1.5];
 
+/** How cards are drawn now, saved with each picture. Version 1 drew a card
+ * away from the editor with no templates, history or lists, so every value
+ * they fill read "--" and every chart and list was empty. A picture of a
+ * record that reads any of those and is older than this is taken again. */
+export const CARD_PREVIEW_VERSION = 2;
+
 /** Under the server's 512 KB limit with room for base64 growth. */
 export const CARD_PREVIEW_MAX_BYTES = 360 * 1024;
 
