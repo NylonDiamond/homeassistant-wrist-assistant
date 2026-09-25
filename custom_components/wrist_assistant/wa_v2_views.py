@@ -2373,6 +2373,10 @@ async def _op_update_metadata(ctx: _OpContext) -> Response:
         # removal). Signed 410 tells the watch its registration is gone.
         return ctx.signed_json({"ok": False, "error": "not registered"}, status=410)
 
+    # HMAC carries no user, so this op cannot bind on its own; but a watch
+    # that just reported its owner can take the owner's user.
+    ctx.domain_data.widget_secret_store.inherit_owner_user(ctx.watch_id)
+
     # Same registry propagation as the register_secret view: surface a renamed
     # watch immediately instead of waiting for the next HA restart. Manual
     # renames (`name_by_user`) always win on display and are left untouched.
@@ -2396,6 +2400,7 @@ async def _op_update_metadata(ctx: _OpContext) -> Response:
             "owner_iphone_id": entry.owner_iphone_id if entry else None,
             "device_name": entry.device_name if entry else None,
             "screen_size": entry.screen_size if entry else None,
+            "user_bound": bool(entry is not None and entry.user_id),
         }
     )
 
@@ -2813,6 +2818,13 @@ class WARegisterSecretView(HomeAssistantView):
                 label=label if isinstance(label, str) else None,
                 app_version=app_version,
             )
+        # An iPhone re-registers on every app update; its watches never
+        # re-send a bearer registration once they hold a secret. Carry the
+        # user across so a watch paired before binding is bound through its
+        # owner, and a watch registered under an already-bound owner inherits.
+        if user_id is not None:
+            domain_data.widget_secret_store.bind_owned_watches(watch_id, user_id)
+        domain_data.widget_secret_store.inherit_owner_user(watch_id)
         # Propagate the freshly-reported `device_name` to HA's device registry
         # immediately so the user sees their watch renamed from "Watch
         # DD2509D8" → "Jesse's Apple Watch" without waiting for the next HA
@@ -2826,11 +2838,16 @@ class WARegisterSecretView(HomeAssistantView):
             )
             if device is not None and device.name != device_name:
                 device_registry.async_update_device(device.id, name=device_name)
+        # `user_bound` tells the app the integration binds secrets to users,
+        # so it can stop re-sending this registration; an integration without
+        # the field is one the app keeps nudging until it is updated.
+        bound_entry = domain_data.widget_secret_store.get(watch_id)
         return self.json(
             {
                 "ok": True,
                 "protocol_version": WA_PROTOCOL_VERSION,
                 "algo": algo,
+                "user_bound": bool(bound_entry is not None and bound_entry.user_id),
             }
         )
 

@@ -265,6 +265,61 @@ def test_overlong_fields_are_refused(env) -> None:
     assert env.store.get("watch-1") is None
 
 
+def test_the_reply_says_whether_the_entry_is_bound(env) -> None:
+    assert _post(env, {}, ALICE).body["user_bound"] is True
+    assert _post(env, {"watch_id": "watch-2"}, None).body["user_bound"] is False
+
+
+# ── binding a watch through its iPhone ───────────────────────────────────
+
+
+def test_an_iphone_re_registration_binds_its_unbound_watches(env) -> None:
+    # Paired before binding: the iPhone and two watches, none with a user.
+    env.store.register("iphone-1", SECRET_A, "iphone-self-provision")
+    env.store.register("watch-a", SECRET_B, "watch-self-provision", owner_iphone_id="iphone-1")
+    env.store.register("watch-b", SECRET_B, "watch-self-provision", owner_iphone_id="iphone-1")
+    env.store.register("watch-other", SECRET_B, "watch-self-provision", owner_iphone_id="iphone-9")
+
+    reply = _post(env, {"watch_id": "iphone-1", "label": "iphone-self-provision"}, ALICE)
+    assert reply.status == 200, reply.body
+    assert env.store.get("watch-a").user_id == "alice"
+    assert env.store.get("watch-b").user_id == "alice"
+    assert env.store.get("watch-other").user_id is None
+
+
+def test_a_bound_watch_is_not_rebound_through_its_iphone(env) -> None:
+    env.store.register("iphone-1", SECRET_A, "iphone-self-provision")
+    env.store.register(
+        "watch-a", SECRET_B, "watch-self-provision", owner_iphone_id="iphone-1", user_id="bob"
+    )
+    _post(env, {"watch_id": "iphone-1", "label": "iphone-self-provision"}, ALICE)
+    assert env.store.get("watch-a").user_id == "bob"
+
+
+def test_a_watch_registered_under_a_bound_iphone_inherits_its_user(env) -> None:
+    _post(env, {"watch_id": "iphone-1", "label": "iphone-self-provision"}, ALICE)
+    # The watch self-registers with the bearer it was mirrored; a bearer-less
+    # test stands in for a watch whose registration carried no user.
+    reply = _post(
+        env,
+        {"watch_id": "watch-a", "label": "watch-self-provision", "owner_iphone_id": "iphone-1"},
+        None,
+    )
+    assert reply.status == 200, reply.body
+    assert env.store.get("watch-a").user_id == "alice"
+    assert reply.body["user_bound"] is True
+
+
+def test_inherit_owner_user_needs_a_bound_owner(env) -> None:
+    env.store.register("iphone-1", SECRET_A, "iphone-self-provision")
+    env.store.register("watch-a", SECRET_B, "watch-self-provision", owner_iphone_id="iphone-1")
+    assert env.store.inherit_owner_user("watch-a") is False
+    env.store.register("iphone-1", SECRET_A, "iphone-self-provision", user_id="alice")
+    assert env.store.inherit_owner_user("watch-a") is True
+    assert env.store.inherit_owner_user("watch-a") is False  # already bound
+    assert env.store.inherit_owner_user("nope") is False
+
+
 # ── persistence ──────────────────────────────────────────────────────────
 
 

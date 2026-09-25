@@ -340,6 +340,53 @@ class WidgetSecretStore:
             self._notify_listeners()
         return True
 
+    def bind_owned_watches(self, owner_iphone_id: str, user_id: str) -> list[str]:
+        """Give every unbound watch paired by `owner_iphone_id` that iPhone's user.
+
+        A watch registers itself with the bearer the iPhone mirrored to it,
+        so its user is the iPhone's user by construction. The watch never
+        re-sends that bearer registration once it has a secret (it refreshes
+        over HMAC, which carries no user), but the iPhone does re-register on
+        every app update. This is how a watch paired before user binding gets
+        bound: through its owner. Returns the watch ids that changed.
+        """
+        bound: list[str] = []
+        for watch_id, entry in self._secrets.items():
+            if entry.user_id is None and entry.owner_iphone_id == owner_iphone_id:
+                entry.user_id = user_id
+                bound.append(watch_id)
+        if bound:
+            _LOGGER.info(
+                "Bound %d watch(es) of iPhone %s to user %s", len(bound), owner_iphone_id, user_id
+            )
+            self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
+            self._notify_listeners()
+        return bound
+
+    def inherit_owner_user(self, watch_id: str) -> bool:
+        """Bind an unbound watch to its owner iPhone's user, if that is known.
+
+        The other direction of `bind_owned_watches`: the watch reported (or
+        just learned) its owner after the iPhone was already bound. Returns
+        True when the entry changed.
+        """
+        entry = self._secrets.get(watch_id)
+        if entry is None or entry.user_id is not None or not entry.owner_iphone_id:
+            return False
+        owner = self._secrets.get(entry.owner_iphone_id)
+        if owner is None or owner.user_id is None:
+            return False
+        entry.user_id = owner.user_id
+        _LOGGER.info(
+            "Bound watch %s to user %s through its iPhone %s",
+            watch_id,
+            owner.user_id,
+            entry.owner_iphone_id,
+        )
+        self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
+        self._notify_listeners()
+        return True
+
     def get(self, watch_id: str) -> WidgetSecretEntry | None:
         return self._secrets.get(watch_id)
 
