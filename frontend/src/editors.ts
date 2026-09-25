@@ -3349,6 +3349,7 @@ export function whyUnresolved(host: EditorHost, value: Value): string {
     case "entityAttribute":
     case "entityAge":
       if (k.entityId === "") return "Pick an entity";
+      if (isPlaceholderId(k.entityId)) return "No entity picked yet";
       if (!host.hass.states[k.entityId]) return "No such entity";
       if (k.kind === "entityAttribute" && k.attribute.trim() === "") return "Pick an attribute";
       return k.kind === "entityState" ? "No reading" : "Waiting for Home Assistant";
@@ -5322,7 +5323,7 @@ export function controlCard(host: EditorHost, opts: { alwaysOpen?: boolean } = {
 
 // ── Shared values (named values in the document) ─────────────────────────
 
-export function namedValueEditor(host: EditorHost, nv: NamedValue): TemplateResult {
+export function namedValueEditor(host: EditorHost, nv: NamedValue, usedBy?: TemplateResult): TemplateResult {
   const idx = host.config.values.findIndex((v) => v.id === nv.id);
   const key = `nv-${nv.id}`;
   const uses = sharedValueUses(host.config, nv.id);
@@ -5333,7 +5334,7 @@ export function namedValueEditor(host: EditorHost, nv: NamedValue): TemplateResu
   return html`
     ${textField("Name", nv.name, (v) => host.update((c) => { c.values[idx]!.name = v; }, `${key}-name`), { placeholder: "Name it, like Outside temp" })}
     ${valueEditor(host, nv.value, (v) => host.update((c) => setSharedValue(c, nv.id, v), key), { allowNamed: false, showResolved: true, resolveAs: asRead, inline: true, key })}
-    <div class="field readout"><span>Used by</span><span class="readout-v">${uses === 0 ? "No layers yet" : `${uses} ${uses === 1 ? "layer" : "layers"}`}</span></div>`;
+    <div class="field readout"><span>Used by</span>${usedBy ?? html`<span class="readout-v">${uses === 0 ? "No layers yet" : `${uses} ${uses === 1 ? "layer" : "layers"}`}</span>`}</div>`;
 }
 
 /** A new shared value starts blank, name included: the panel puts the caret

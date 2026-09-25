@@ -5302,10 +5302,30 @@ export class WristAssistantPanel extends LitElement {
       flex: none; padding: 0 5px; border-radius: 4px; font-size: 10.5px; font-weight: 600; line-height: 16px;
       color: var(--wa-muted); background: color-mix(in srgb, var(--wa-ink) 8%, transparent);
     }
-    .values-list .value-open {
-      display: flex; flex-direction: column; gap: 4px; margin-top: -2px; padding: 6px 8px 8px;
-      border-radius: 7px; background: color-mix(in srgb, var(--c) 5%, var(--wa-card));
+    /* Open, the row and its editor are one box: the row is its header, the
+       editor its body, one ring round both. */
+    .values-list .vitem.open {
+      display: flex; flex-direction: column; border-radius: var(--wa-r-sm);
+      background: color-mix(in srgb, var(--c) 6%, var(--wa-card));
+      box-shadow: inset 0 0 0 1.5px var(--c);
     }
+    .values-list .vitem.open > .datum.hl {
+      border-radius: var(--wa-r-sm) var(--wa-r-sm) 0 0; box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--c) 40%, transparent);
+      background: color-mix(in srgb, var(--c) 18%, var(--wa-card));
+    }
+    .values-list .value-open {
+      display: flex; flex-direction: column; gap: 6px; padding: 10px 12px 12px;
+    }
+    .sv-uses { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+    .sv-use {
+      display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 24px; padding: 0 8px; border-radius: 12px;
+      border: 0; cursor: pointer; font: inherit; font-size: 11.5px; font-weight: 600; color: var(--wa-ink);
+      background: color-mix(in srgb, var(--k) 14%, var(--wa-card)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--k) 35%, transparent);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .sv-use:hover { background: color-mix(in srgb, var(--k) 26%, var(--wa-card)); }
+    .sv-use:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .sv-use-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--k); }
     .values-list .value-open .value-editor { display: flex; flex-direction: column; gap: 4px; }
     .values-list .shared-help {
       margin: 0 0 8px; padding: 8px 10px; border-radius: 7px; background: var(--wa-card);
@@ -20046,7 +20066,7 @@ export class WristAssistantPanel extends LitElement {
             @keydown=${(e: KeyboardEvent) => { if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) { e.preventDefault(); toggleOne(); } }}>
           ${this.sharedValueRowBody(cfg, v, slot, r, ctx, this.canEdit ? html`<button class="icon danger" title="Delete. Layers that read it keep their own copy." aria-label="Delete value" @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => { deleteSharedValue(c, v.id); }); if (open) this.openValue = undefined; }}>${uiIcon("delete")}</button>` : nothing)}
         </div>
-        ${open ? html`<div class="value-open">${namedValueEditor(host, v)}</div>` : nothing}</div>`;
+        ${open ? html`<div class="value-open">${namedValueEditor(host, v, this.sharedValueUsedBy(cfg, v.id, ctx))}</div>` : nothing}</div>`;
       })}
       </div>`}
     </div>`;
@@ -20106,6 +20126,22 @@ export class WristAssistantPanel extends LitElement {
             @click=${(e: Event) => { e.stopPropagation(); this.openSlotsDialog(slot.entityId); }}>pick entity</button>`
         : html`<span class="svr-now ${now === undefined ? "none" : ""}" title=${now ?? "Nothing to show yet"}>${now ?? "no value"}</span>`}
       <span class="svr-end"><span class="svr-uses" title=${readers === 0 ? "No layer reads it yet." : `${readers} layer${readers === 1 ? " reads" : "s read"} it.`}>${readers}</span>${del}</span>`;
+  }
+
+  /** The open shared value's Used by line: a chip per layer that reads it,
+   * in its kind's color. Pointing at one lights that layer on the preview,
+   * and a click selects it. */
+  private sharedValueUsedBy(cfg: CustomComplicationConfig, valueId: string, ctx: DescribeContext): TemplateResult {
+    const ids = sharedValueLayerIds(cfg, valueId);
+    if (ids.length === 0) return html`<span class="readout-v">No layers yet</span>`;
+    return html`<span class="sv-uses" @pointerleave=${() => { this.listHoverIds = []; }}>${ids.map((id) => {
+      const el = elementIn(cfg, id);
+      if (!el) return nothing;
+      return html`<button type="button" class="sv-use" style=${`--k:${KIND_COLOR[el.kind]}`} title=${`Select ${layerTitle(el, ctx)}`}
+        @pointerenter=${() => { this.listHoverIds = [id]; }}
+        @click=${(e: Event) => { e.stopPropagation(); this.multi = new Set(); this.showPageOf(id); this.inspect = { kind: "layer", id }; }}>
+        <span class="sv-use-dot"></span>${layerTitle(el, ctx)}</button>`;
+    })}</span>`;
   }
 
   /** Whether the layout is one column, where the page scrolls and the
