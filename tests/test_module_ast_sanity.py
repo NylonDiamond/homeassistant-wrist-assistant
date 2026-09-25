@@ -94,6 +94,7 @@ def test_the_move_status_op_reads_and_stamps_nothing() -> None:
         "set_pages",
         "store.save",
         "store.delete",
+        "acknowledge_forgotten",
     ):
         assert forbidden not in body, f"_op_complications_move_status calls {forbidden}"
     for expected in ("applied_token", "owner_token", "is_forgotten", "include_deleted"):

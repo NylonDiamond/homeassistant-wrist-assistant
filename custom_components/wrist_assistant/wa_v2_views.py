@@ -121,6 +121,7 @@ from .const import (
     COMPLICATION_MAX_PER_OWNER,
     COMPLICATION_MAX_SCHEMA_VERSION,
     DOMAIN,
+    LIBRARY_OWNER_ID,
     MIN_SUPPORTED_APP_PROTOCOL_VERSION,
     WA_PROTOCOL_VERSION,
     WA_STREAM_TOKEN_TTL_SECONDS,
@@ -2659,6 +2660,11 @@ class WARegisterSecretView(HomeAssistantView):
 
         if not isinstance(watch_id, str) or not watch_id:
             return self.json_message("watch_id required", status_code=400)
+        # The Library's owner id is not a device. A secret under it would let
+        # whoever holds that secret pull, create and restore the home's
+        # Library designs as if they were a watch's own.
+        if watch_id == LIBRARY_OWNER_ID:
+            return self.json_message("watch_id is reserved", status_code=400)
         if not isinstance(secret_b64, str) or not secret_b64:
             return self.json_message("secret_b64 required", status_code=400)
         if not isinstance(algo, str) or algo not in SUPPORTED_HMAC_ALGOS:
@@ -2748,6 +2754,11 @@ class WAVersionView(HomeAssistantView):
     Unauthenticated because the bearer may not be configured yet when iOS first
     checks, and the response carries no secrets.
 
+    While the config entry is not loaded (a reload is under way) it answers 503
+    with `{"ok": false, "error": "restarting"}` rather than a reply with no
+    capabilities, so the app retries instead of taking the home for an old
+    integration.
+
     **Path stability contract.** This URL lives at `/api/wrist_assistant/version`
     on purpose — outside any `/vN/` segment — so apps too old to talk to the
     current `/vN/*` endpoints can still probe it to learn they need updating.
@@ -2763,6 +2774,14 @@ class WAVersionView(HomeAssistantView):
         self._hass = hass
 
     async def get(self, request: Request) -> Response:
+        # The view outlives a config-entry reload, which pops the entry's data
+        # and builds it again. Answering 200 in that window meant an empty
+        # capability list, which an app reads as an old integration and stops
+        # asking. A 503 says "try again", like every other v2 view.
+        domain_data = self._hass.data.get(DOMAIN)
+        coordinator = getattr(domain_data, "coordinator", None)
+        if coordinator is None:
+            return self.json({"ok": False, "error": "restarting"}, status_code=503)
         # Pull the version off the loaded integration object instead of a
         # hand-synced const. Keeps the user-facing version string in lockstep
         # with manifest.json — the iOS "Update integration" banner copy quotes
@@ -2790,17 +2809,14 @@ class WAVersionView(HomeAssistantView):
         # carries. The app needs some of these before it has anything to sign
         # with: the custom-complication move wizard is only offered for a home
         # whose integration reports `custom_complications`, and until now the
-        # only way to learn that was a signed poll. Empty while the entry is
-        # still loading, which reads as "no extras" rather than as a lie.
-        domain_data = self._hass.data.get(DOMAIN)
-        coordinator = getattr(domain_data, "coordinator", None)
-        capabilities = coordinator.capabilities if coordinator is not None else []
+        # only way to learn that was a signed poll. The entry registers them
+        # all before it publishes its data, so a loaded entry's list is whole.
         payload = {
             "integration_version": integration_version,
             "wa_protocol_version": WA_PROTOCOL_VERSION,
             "min_supported_app_protocol_version": MIN_SUPPORTED_APP_PROTOCOL_VERSION,
             "app_update_message": APP_UPDATE_MESSAGE,
-            "capabilities": capabilities,
+            "capabilities": coordinator.capabilities,
         }
         if instance_uuid:
             payload["instance_id"] = instance_uuid
@@ -2872,7 +2888,8 @@ async def _op_complications_sync(ctx: _OpContext) -> Response:
     # the only sign of life the panel gets.
     store.set_last_sync(ctx.watch_id)
     records = store.changes_since(ctx.watch_id, raw_since)
-    return ctx.signed_json(
+    forgotten = store.is_forgotten(ctx.watch_id)
+    reply = ctx.signed_json(
         {
             "token": store.owner_token(ctx.watch_id),
             "since_token": raw_since,
@@ -2882,9 +2899,15 @@ async def _op_complications_sync(ctx: _OpContext) -> Response:
             # on it since. An empty reply on its own means "keep your copies,
             # Restore may want them"; this says the empty is deliberate, and
             # the device drops its copies. Older apps ignore the key.
-            "owner_forgotten": store.is_forgotten(ctx.watch_id),
+            "owner_forgotten": forgotten,
         }
     )
+    # Said once. The device drops its copies on this reply, and a device
+    # that pairs again under the same id must read as a normal owner after
+    # it, or the preset move would stop at "forgotten" for good.
+    if forgotten:
+        store.acknowledge_forgotten(ctx.watch_id)
+    return reply
 
 
 async def _op_complications_restore(ctx: _OpContext) -> Response:

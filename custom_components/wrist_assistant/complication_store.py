@@ -1144,7 +1144,8 @@ class ComplicationStore:
         What ``complications_sync`` reports as ``owner_forgotten``. True from
         the forget until the owner's next commit, so a device the user
         re-links (a move, a save, a restore onto it) reads as a normal owner
-        again. Never true for the Library.
+        again, or until the device has been told (see
+        :meth:`acknowledge_forgotten`). Never true for the Library.
         """
         if owner_watch_id not in self._forgotten:
             return False
@@ -1152,6 +1153,21 @@ class ComplicationStore:
             not record.deleted
             for record in self._records.get(owner_watch_id, {}).values()
         )
+
+    def acknowledge_forgotten(self, owner_watch_id: str) -> None:
+        """Clear the forgotten mark once the device has been told about it.
+
+        The mark exists so a device drops its local copies once, on the first
+        pull after the forget. Left standing, it outlives that: a device that
+        pairs again under the same id and holds nothing here yet (a phone with
+        only iPhone presets to move) would keep hearing it, and the preset move
+        refuses to start for a forgotten owner. ``complications_sync`` calls
+        this right after it builds a reply that says forgotten. The read-only
+        ``complications_move_status`` never does.
+        """
+        if owner_watch_id in self._forgotten:
+            self._forgotten.discard(owner_watch_id)
+            self._schedule_save()
 
     def release_owner(
         self, owner_watch_id: str, *, updated_by: str, mark_forgotten: bool = True

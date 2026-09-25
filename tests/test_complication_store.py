@@ -1863,6 +1863,43 @@ def test_a_forgotten_owner_with_only_tombstones_stays_out_of_view(mod):
     assert store.is_forgotten(OWNER) is True
 
 
+def test_forgetting_an_owner_that_held_nothing_still_marks_it(mod):
+    """A phone with only iPhone presets holds nothing here, and must still be
+    told to drop what it draws."""
+    store = _new(mod)
+    assert store.forget_owner(OWNER) is False
+    assert store.is_forgotten(OWNER) is True
+    assert _new(mod).is_forgotten(OWNER) is True
+
+
+def test_acknowledging_the_mark_clears_it_for_good(mod):
+    """Once the device has been told, the same id reads as a normal owner, so
+    a device that pairs again under it can move its presets in."""
+    store = _new(mod)
+    store.forget_owner(OWNER)
+    store.forget_owner(OTHER)
+
+    store.acknowledge_forgotten(OWNER)
+    assert store.is_forgotten(OWNER) is False
+    assert store.is_forgotten(OTHER) is True
+    # Survives a restart, and a second acknowledgement is a no-op.
+    reloaded = _new(mod)
+    assert reloaded.is_forgotten(OWNER) is False
+    assert reloaded.is_forgotten(OTHER) is True
+    reloaded.acknowledge_forgotten(OWNER)
+    reloaded.acknowledge_forgotten("never-seen")
+    assert reloaded.is_forgotten(OWNER) is False
+
+
+def test_a_create_under_a_forgotten_owner_clears_the_mark(mod):
+    """The preset move may run before the watch has pulled: its first save
+    re-links the owner rather than being refused."""
+    store = _new(mod)
+    store.forget_owner(OWNER)
+    store.save(OWNER, _doc(), base_revision=None, updated_by=f"app-import:{OWNER}")
+    assert store.is_forgotten(OWNER) is False
+
+
 # ── releasing a device: its designs go to the Library ────────────────────
 
 
