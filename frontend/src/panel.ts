@@ -3392,27 +3392,27 @@ export class WristAssistantPanel extends LitElement {
     .xf-banner svg.ui-icon { width: 16px; height: 16px; flex: none; margin-top: 1px; color: var(--wa-accent); }
     /* What becomes public: one box per kind of name, each in its own color. */
     .xf-pub { display: grid; gap: 8px; }
-    .xf-pub .pk { --kc: var(--wa-accent); border-radius: var(--wa-r-md); overflow: hidden;
+    .xf-pub .pn { --kc: var(--wa-ink); border-radius: var(--wa-r-md); overflow: hidden;
       background: color-mix(in srgb, var(--kc) 6%, var(--wa-card)); border: 1px solid color-mix(in srgb, var(--kc) 30%, var(--wa-line)); }
-    .xf-pub .pk-e { --kc: var(--wa-ent); }
-    .xf-pub .pk-g { --kc: #9b7bf0; }
-    .xf-pub .pk-v { --kc: var(--wa-val); }
-    .xf-pub .pk-l { --kc: #4a90e2; }
-    .xf-pub .pk-t { --kc: var(--wa-muted); }
-    .xf-pub .pk-h { display: flex; align-items: center; gap: 8px; padding: 8px 10px; font-size: 12.5px; color: var(--wa-ink); list-style: none; }
-    .xf-pub .pk-h::-webkit-details-marker { display: none; }
-    .xf-pub summary.pk-h { cursor: pointer; }
-    .xf-pub summary.pk-h:hover { background: color-mix(in srgb, var(--kc) 10%, transparent); }
-    .xf-pub summary.pk-h:focus-visible { outline: none; box-shadow: inset var(--wa-ring); }
-    .xf-pub .pk-h > i { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--kc); }
-    .xf-pub .pk-h > b { font-weight: 600; }
-    .xf-pub .pk-h > .n { font-size: 11px; font-variant-numeric: tabular-nums; padding: 1px 7px; border-radius: 999px;
+    .xf-pub .pn-e { --kc: var(--wa-ent); }
+    .xf-pub .pn-g { --kc: #9b7bf0; }
+    .xf-pub .pn-v { --kc: var(--wa-val); }
+    .xf-pub .pn-l { --kc: #4a90e2; }
+    .xf-pub .pn-t { --kc: var(--wa-muted); }
+    .xf-pub .pn-h { display: flex; align-items: center; gap: 8px; padding: 8px 10px; font-size: 12.5px; color: var(--wa-ink); list-style: none; }
+    .xf-pub .pn-h::-webkit-details-marker { display: none; }
+    .xf-pub summary.pn-h { cursor: pointer; }
+    .xf-pub summary.pn-h:hover { background: color-mix(in srgb, var(--kc) 10%, transparent); }
+    .xf-pub summary.pn-h:focus-visible { outline: none; box-shadow: inset var(--wa-ring); }
+    .xf-pub .pn-h > i { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--kc); }
+    .xf-pub .pn-h > b { font-weight: 600; }
+    .xf-pub .pn-h > .n { font-size: 11px; font-variant-numeric: tabular-nums; padding: 1px 7px; border-radius: 999px;
       color: var(--wa-muted); background: color-mix(in srgb, var(--kc) 14%, transparent); }
-    .xf-pub .pk-h > .chg { font-size: 11px; color: var(--kc); }
-    .xf-pub .pk-h > svg.ui-icon { width: 13px; height: 13px; margin-left: auto; color: var(--wa-muted); transition: transform .15s ease-out; }
-    .xf-pub details.pk[open] > .pk-h > svg.ui-icon { transform: rotate(90deg); }
-    .xf-pub .pk-b { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 4px; padding: 0 6px 6px; }
-    .xf-pub .pk-head .pk-b { grid-template-columns: minmax(0, 1fr); }
+    .xf-pub .pn-h > .chg { font-size: 11px; color: var(--kc); }
+    .xf-pub .pn-h > svg.ui-icon { width: 13px; height: 13px; margin-left: auto; color: var(--wa-muted); transition: transform .15s ease-out; }
+    .xf-pub details.pn[open] > .pn-h > svg.ui-icon { transform: rotate(90deg); }
+    .xf-pub .pn-b { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 4px; padding: 0 6px 6px; }
+    .xf-pub .pn-head .pn-b { grid-template-columns: minmax(0, 1fr); }
     .xf-pub .kv { min-width: 0; display: flex; flex-direction: column; gap: 5px; padding: 3px; border-radius: 8px; transition: background-color .12s ease-out; }
     .xf-pub .kv.on { background: var(--wa-sel-bg); }
     .xf-sec { --sc: var(--wa-accent); display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 12px; border-radius: var(--wa-r-md);
@@ -14434,18 +14434,18 @@ export class WristAssistantPanel extends LitElement {
       return (typed ?? "").trim() !== "";
     };
     const box = (k: { kind: string; label: string; rows: PublicRow[] }) => {
-      const tone = `pk-${k.kind.startsWith("t:") ? "t" : k.kind}`;
+      const tone = `pn-${k.kind.startsWith("t:") ? "t" : k.kind}`;
       // The name is one box and nothing to fold.
       if (k.kind === "head") {
-        return html`<div class="pk ${tone}"><div class="pk-h"><i></i><b>${k.label}</b></div><div class="pk-b">${k.rows.map(kv)}</div></div>`;
+        return html`<div class="pn ${tone}"><div class="pn-h"><i></i><b>${k.label}</b></div><div class="pn-b">${k.rows.map(kv)}</div></div>`;
       }
       const open = this.shareKindOpen.get(k.kind) ?? startsOpen(k);
       const edits = k.rows.filter(changed).length;
-      return html`<details class="pk ${tone}" .open=${open}
+      return html`<details class="pn ${tone}" .open=${open}
         @toggle=${(e: Event) => this.setShareKindOpen(k.kind, (e.target as HTMLDetailsElement).open)}>
-        <summary class="pk-h"><i></i><b>${k.label}</b><span class="n">${k.rows.length}</span>
+        <summary class="pn-h"><i></i><b>${k.label}</b><span class="n">${k.rows.length}</span>
           ${edits > 0 ? html`<span class="chg">${edits} changed</span>` : nothing}${uiIcon("right")}</summary>
-        ${open ? html`<div class="pk-b">${k.rows.map(kv)}</div>` : nothing}
+        ${open ? html`<div class="pn-b">${k.rows.map(kv)}</div>` : nothing}
       </details>`;
     };
     return html`
