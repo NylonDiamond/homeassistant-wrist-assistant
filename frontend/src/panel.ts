@@ -42,6 +42,8 @@ import {
 } from "./ha-api.js";
 import {
   type CustomComplicationConfig,
+  type NamedValue,
+  type ValueKind,
   type Element as CElement,
   type EntityRef,
   type FamilyKind,
@@ -846,6 +848,15 @@ const GRID_STORE_KEY = "wrist-assistant-panel.grid.v1";
 const OPEN_STORE_KEY = "wrist-assistant-panel.open.v1";/** How tall the slot a dragged row opens is, CSS px. */
 const DROP_GAP = 34;
 
+/** The Shared values list is never dragged shorter than about one row. */
+const SV_MIN_H = 64;
+/** The tile a shared value's row wears for a source that is not an entity
+ * (an entity wears its domain's icon). */
+const SOURCE_ICON: Partial<Record<ValueKind["kind"], UiIconName>> = {
+  literal: "text", time: "clock", dataAge: "clock", imageTime: "imageTime", aggregate: "list",
+  item: "list", listStat: "list", jinja: "braces", named: "link", chartStat: "chart",
+};
+
 /** How long the Layers list holds on to a face hover that has ended, so a
  * pointer crossing from one layer to the next keeps the list still. */
 const FACE_TRAIL_MS = 220;
@@ -1545,6 +1556,9 @@ export class WristAssistantPanel extends LitElement {
   @state() private openValue?: string;
   /** The Shared values card's "?": how shared values work, in four steps. */
   @state() private sharedHelp = false;
+  /** The height the Shared values list was dragged to, or undefined for the
+   * default. Kept with the Layers list's other view choices. */
+  @state() private svHeight?: number;
   /** The value chip whose input is showing. */
   @state() private editingValue?: string;
   /** The layer row being dragged in the Layers list. */
@@ -5309,36 +5323,67 @@ export class WristAssistantPanel extends LitElement {
     }
     .now-v.none { font-style: italic; }
     details.sub.format summary .sum-note { margin-left: 6px; color: var(--wa-muted); font-weight: 400; }
-    .values-list .datum {
-      padding: 0 8px; border-radius: 7px; gap: 8px;
+    /* A row: a tile for the kind of source, the name over what it reads, the
+       value it reads now, and how many layers read it. The same ground and
+       hairline as a Layers row. */
+    .values-list .datum.svr {
+      display: grid; grid-template-columns: 28px minmax(0, 1fr) auto auto auto; align-items: center; gap: 10px;
+      min-height: 44px; padding: 5px 6px 5px 8px; border-radius: var(--wa-r-sm);
+      background: color-mix(in srgb, var(--wa-panel) 60%, var(--wa-card)); box-shadow: inset 0 0 0 1px var(--wa-line);
       transition: box-shadow .12s ease-out, background-color .12s ease-out;
     }
-    .values-list .datum + .datum { box-shadow: none; }
-    .values-list .datum:hover { box-shadow: inset 0 0 0 1px var(--wa-accent); }
-    /* Selected: the same tint the inspector gives its complication section. */
+    .values-list .datum.svr:hover { background: var(--wa-panel); box-shadow: inset 0 0 0 1px var(--wa-line-strong); }
+    /* Open: the same tint the inspector gives its complication section. */
     .values-list .datum.hl { box-shadow: inset 0 0 0 1px var(--c); background: color-mix(in srgb, var(--c) 10%, var(--wa-card)); }
     /* Read by the selected layer: filled, as the selected layer row is. Read
        by the layer the pointer rests on over the face: an outline only. */
     .values-list .datum.sel { background: color-mix(in srgb, var(--c) 45%, var(--wa-card)); box-shadow: inset 0 0 0 2px var(--c); }
-    .values-list .datum.peek:not(.sel):not(.hl) { box-shadow: inset 0 0 0 1px var(--c); }
-    .values-list .datum .meta {
-      flex: none; min-width: 0; max-width: 140px; opacity: 1; color: var(--wa-val); font-weight: 600;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
-      overflow: hidden; text-overflow: ellipsis; white-space: pre;
+    .values-list .datum.peek:not(.sel):not(.hl) { box-shadow: inset 0 0 0 1.5px var(--c); }
+    .svr-ico {
+      width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center;
+      background: color-mix(in srgb, var(--c) 20%, transparent); color: color-mix(in srgb, var(--c) 55%, var(--wa-ink));
     }
-    .values-list .datum .meta.none { font-family: inherit; font-style: italic; color: var(--wa-muted); }
-    .values-list .datum button.icon { opacity: 0; pointer-events: none; flex: none; }
-    .values-list .datum:hover button.icon, .values-list .datum:focus-within button.icon { opacity: .7; pointer-events: auto; }
-    .values-list .datum button.icon:hover:not(:disabled), .values-list .datum button.icon:focus-visible { opacity: 1; }
+    .svr-ico svg { width: 15px; height: 15px; }
+    .svr-ico.need { background: color-mix(in srgb, var(--wa-need) 14%, transparent); color: var(--wa-need); }
+    .svr-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .svr-text .nm { font-size: 13px; font-weight: 600; color: var(--wa-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .svr-src { display: flex; align-items: baseline; gap: 6px; min-width: 0; font-size: 11px; color: var(--wa-muted); overflow: hidden; white-space: nowrap; }
+    .svr-src > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .svr-src .svr-ent { flex: 0 1 auto; color: color-mix(in srgb, var(--wa-ink) 75%, var(--wa-muted)); }
+    .svr-src .svr-id { flex: 0 1000 auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; }
+    .svr-src .svr-need { flex: none; color: var(--wa-need); font-weight: 600; }
+    .svr-now {
+      max-width: 120px; padding: 2px 7px; border-radius: 6px; overflow: hidden; text-overflow: ellipsis; white-space: pre;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; font-weight: 600;
+      color: var(--wa-val); background: color-mix(in srgb, var(--wa-val) 12%, transparent);
+    }
+    .svr-now.none { font-family: inherit; font-weight: 500; font-style: italic; color: var(--wa-muted); background: transparent; }
+    .svr-uses {
+      min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; display: grid; place-items: center;
+      font-size: 10.5px; font-weight: 700; color: var(--wa-muted); background: color-mix(in srgb, var(--wa-ink) 7%, transparent);
+    }
+    .values-list .datum.svr button.icon { opacity: 0; pointer-events: none; }
+    .values-list .datum.svr:hover button.icon, .values-list .datum.svr:focus-within button.icon { opacity: .7; pointer-events: auto; }
+    .values-list .datum.svr button.icon:hover:not(:disabled), .values-list .datum.svr button.icon:focus-visible { opacity: 1; }
     /* The Shared values card: one line under the Layers card, the list
-       unfolding under it. The open list takes at most part of the column and
-       scrolls, so an open value never pushes the layer rows out of sight. */
+       unfolding under it. The list scrolls inside the card, at 40% of the
+       window or the height its top edge was dragged to. */
+    .sv-card { position: relative; }
     .sv-card.open .lc-head { border-bottom: 1px solid color-mix(in srgb, var(--c) 24%, var(--wa-card)); }
-    .sv-tools .spacer { flex: 1; }
-    .sv-body { max-height: 40vh; overflow-y: auto; scrollbar-width: thin; padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 6px; }
-    .sv-tools { display: flex; align-items: center; gap: 6px; }
-    .sv-tools button.sec-help { opacity: 1; }
-    .sv-none { font-size: 12px; color: var(--wa-muted); }
+    .sv-card .lc-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .sv-card button.lc-help.on { color: var(--wa-ink); border-color: var(--c); background: color-mix(in srgb, var(--c) 20%, transparent); }
+    .sv-body {
+      max-height: 40vh; overflow-y: auto; padding: 8px 8px 10px; display: flex; flex-direction: column; gap: 6px;
+      scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--c) 55%, var(--wa-card)) transparent;
+    }
+    .sv-none { font-size: 12px; color: var(--wa-muted); padding: 2px 4px; }
+    /* The resize edge: the gap above the card. A short bar shows on hover. */
+    .sv-grip { position: absolute; left: 0; right: 0; top: -8px; height: 12px; cursor: row-resize; z-index: 5; touch-action: none; }
+    .sv-grip::after {
+      content: ""; position: absolute; left: 50%; top: 4px; width: 36px; height: 4px; margin-left: -18px; border-radius: 2px;
+      background: var(--c); opacity: 0; transition: opacity .12s ease-out;
+    }
+    .sv-grip:hover::after, .sv-grip.dragging::after { opacity: .8; }
     .layout.cols-1 .sv-body { max-height: none; overflow: visible; }
     .chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
     .chips .muted { color: var(--wa-muted); font-size: 12px; }
@@ -7320,7 +7365,7 @@ export class WristAssistantPanel extends LitElement {
     try {
       const raw = window.localStorage.getItem(LIST_STORE_KEY);
       if (!raw) return;
-      const saved = JSON.parse(raw) as { thumbStep?: unknown; detail?: unknown; pickerDevice?: unknown; pickerShut?: unknown; pickerBare?: unknown };
+      const saved = JSON.parse(raw) as { thumbStep?: unknown; detail?: unknown; pickerDevice?: unknown; pickerShut?: unknown; pickerBare?: unknown; svHeight?: unknown };
       if (saved.thumbStep === 0 || saved.thumbStep === 1 || saved.thumbStep === 2) this.thumbStep = saved.thumbStep;
       if (saved.detail === "compact" || saved.detail === "expanded") this.layerDetail = saved.detail;
       // The owner it names is checked when the tabs are drawn, not here: the
@@ -7331,6 +7376,7 @@ export class WristAssistantPanel extends LitElement {
       if (typeof saved.pickerDevice === "string") this.pickerDevice = saved.pickerDevice;
       if (Array.isArray(saved.pickerShut)) this.pickerShut = saved.pickerShut.filter((k): k is string => typeof k === "string");
       if (typeof saved.pickerBare === "boolean") this.pickerBare = saved.pickerBare;
+      if (typeof saved.svHeight === "number" && Number.isFinite(saved.svHeight)) this.svHeight = Math.max(SV_MIN_H, saved.svHeight);
     } catch {
       /* A browser with storage off keeps the defaults. */
     }
@@ -7340,7 +7386,7 @@ export class WristAssistantPanel extends LitElement {
     try {
       window.localStorage.setItem(LIST_STORE_KEY, JSON.stringify({
         thumbStep: this.thumbStep, detail: this.layerDetail, pickerDevice: this.pickerDevice,
-        pickerShut: this.pickerShut, pickerBare: this.pickerBare,
+        pickerShut: this.pickerShut, pickerBare: this.pickerBare, svHeight: this.svHeight,
       }));
     } catch {
       /* Storage off: the choice still holds for this visit. */
@@ -19960,10 +20006,6 @@ export class WristAssistantPanel extends LitElement {
         this.sharedOpen = true;
       }
     };
-    const barButton = values.length === 0 && this.canEdit && !expanded
-      ? html`<button class="lc-ghost sm" title="Add a shared value" @click=${addValue}>Add</button>`
-      : html`<button class="lc-ghost sm" aria-expanded=${expanded ? "true" : "false"}
-          title=${expanded ? "Fold the shared values away" : "Show the shared values"} @click=${toggle}>${expanded ? "Close" : "Open"}</button>`;
     const explain = "Like a variable: set it once, and every layer that reads it follows.";
     const host = this.host();
     const resolver = new Resolver(this.buildContext(), this.draft?.config);
@@ -19972,15 +20014,8 @@ export class WristAssistantPanel extends LitElement {
     const slotLit = this.slotValuesOfSelection();
     const selLit = this.sharedValuesReadBy(cfg, this.inspect, this.multi);
     const faceLit = this.sharedValuesReadBy(cfg, this.listFace);
-    const body = html`<div class="sv-body">
-      <div class="sv-tools">
-        <span class="lc-sub" title=${explain}>set once, used by many layers</span>
-        <button type="button" class="sec-help ${this.sharedHelp ? "on" : ""}" title=${this.sharedHelp ? "Hide how shared values work" : "How shared values work"}
-          aria-label="How shared values work" aria-expanded=${this.sharedHelp ? "true" : "false"}
-          @click=${() => { this.sharedHelp = !this.sharedHelp; }}>?</button>
-        <span class="spacer"></span>
-        ${this.canEdit ? html`<button class="small" @click=${addValue}>Add</button>` : nothing}
-      </div>
+    const sized = this.svHeight !== undefined && !this.oneColumn();
+    const body = html`<div class="sv-body" style=${sized ? `height:${this.svHeight}px;max-height:none` : ""}>
       ${this.sharedHelp ? html`<div class="shared-help">
         <p>${explain} Use one when several layers show the same thing, so a change is made in one place.</p>
         <ol>
@@ -19990,7 +20025,7 @@ export class WristAssistantPanel extends LitElement {
           <li>Each layer can still add its own <b>Format</b>, like a unit or fewer decimals.</li>
         </ol>
       </div>` : nothing}
-      ${values.length === 0 ? html`<div class="sv-none">None yet.</div>` : html`<div class="data"
+      ${values.length === 0 ? html`<div class="sv-none">None yet. Add one, then set a layer's Source to Shared value.</div>` : html`<div class="data"
         @pointerleave=${() => { this.listHoverIds = []; }}>
       ${values.map((v) => {
         const r = resolver.resolve({ kind: { kind: "named", id: v.id } });
@@ -20001,18 +20036,12 @@ export class WristAssistantPanel extends LitElement {
         const readers = () => sharedValueReaders(cfg, v.id);
         const slot = slots?.values.get(v.id.toUpperCase());
         const lit = slotLit.has(v.id.toUpperCase());
-        return html`<div class="vitem ${open ? "open" : ""}"><div class="datum vrow ${open ? "hl" : ""} ${lit ? "slot-lit" : ""} ${selLit.has(v.id) ? "sel" : ""} ${faceLit.has(v.id) ? "peek" : ""}" data-value=${v.id.toUpperCase()} role="button" tabindex="0" aria-expanded=${open ? "true" : "false"}
+        return html`<div class="vitem ${open ? "open" : ""}"><div class="datum vrow svr ${open ? "hl" : ""} ${lit ? "slot-lit" : ""} ${selLit.has(v.id) ? "sel" : ""} ${faceLit.has(v.id) ? "peek" : ""}" data-value=${v.id.toUpperCase()} role="button" tabindex="0" aria-expanded=${open ? "true" : "false"}
             title=${open ? "Close" : "Edit this shared value"}
             @pointerenter=${() => { this.listHoverIds = readers(); }}
             @click=${toggleOne}
             @keydown=${(e: KeyboardEvent) => { if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) { e.preventDefault(); toggleOne(); } }}>
-          <span class="nm">${v.name || "(unnamed)"}</span>
-          <span class="spacer"></span>
-          ${slot
-            ? html`<button type="button" class="badge need" ?disabled=${!this.canEdit}
-                title=${`Reads ${slot.label}, which has no entity yet.${this.canEdit ? " Click to pick one." : ""}`}
-                @click=${(e: Event) => { e.stopPropagation(); this.openSlotsDialog(slot.entityId); }}>pick entity</button>`
-            : html`<span class="meta ${r === undefined ? "none" : ""}" title=${describeValue(v.value, ctx)}>${r ?? "unresolved"}</span>`}
+          ${this.sharedValueRowBody(cfg, v, slot, r, ctx)}
           ${this.canEdit ? html`<button class="icon danger" title="Delete. Layers that read it keep their own copy." aria-label="Delete value" @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => { deleteSharedValue(c, v.id); }); if (open) this.openValue = undefined; }}>${uiIcon("delete")}</button>` : nothing}
         </div>
         ${open ? html`<div class="value-open">${namedValueEditor(host, v)}</div>` : nothing}</div>`;
@@ -20020,13 +20049,97 @@ export class WristAssistantPanel extends LitElement {
       </div>`}
     </div>`;
     return html`<div class="card lc sv-card values-list ${expanded ? "open" : ""}">
+      ${expanded && !this.oneColumn() ? html`<div class="sv-grip" role="separator" aria-orientation="horizontal" aria-label="Resize Shared values"
+        title="Drag to resize. Double-click for the default size."
+        @pointerdown=${(e: PointerEvent) => this.startSvResize(e)}
+        @dblclick=${() => { this.svHeight = undefined; this.saveListView(); }}></div>` : nothing}
       <div class="lc-head">
-        <span class="swatch">${uiIcon("braces")}</span><span class="lc-title">Shared values</span><span class="lc-sub">${values.length}</span>
+        <span class="swatch">${uiIcon("braces")}</span><span class="lc-title">Shared values</span>
+        <button class="lc-help ${this.sharedHelp ? "on" : ""}" title=${this.sharedHelp ? "Hide how shared values work" : "How shared values work"}
+          aria-label="How shared values work" aria-expanded=${this.sharedHelp ? "true" : "false"}
+          @click=${() => { this.sharedHelp = !this.sharedHelp; if (this.sharedHelp) this.sharedOpen = true; }}>?</button>
+        <span class="lc-sub" title=${explain}>${values.length === 0 ? "set once, read by many layers" : `${values.length} · set once, read by many layers`}</span>
         <span class="spacer"></span>
-        ${barButton}
+        ${this.canEdit ? html`<button class="lc-btn" title="Add a shared value" aria-label="Add a shared value" @click=${addValue}>${uiIcon("plus")}<span>Add</span></button>` : nothing}
+        ${values.length > 0 ? html`<button class="lc-ghost sm" aria-expanded=${expanded ? "true" : "false"}
+          title=${expanded ? "Fold the shared values away" : "Show the shared values"} @click=${toggle}>${expanded ? "Close" : "Open"}</button>` : nothing}
       </div>
       ${expanded ? body : nothing}
     </div>`;
+  }
+
+  /**
+   * A shared value's row, after its grip: a tile saying what kind of source
+   * it reads, its name over that source (the entity's name and id, for an
+   * entity), then what it reads right now, or the pick entity button while
+   * its entity is a stand-in, and how many layers read it.
+   */
+  private sharedValueRowBody(cfg: CustomComplicationConfig, v: NamedValue, slot: { label: string; entityId: string } | undefined, now: string | undefined, ctx: DescribeContext) {
+    const k = v.value.kind;
+    const ref = k.kind === "entityState" || k.kind === "entityAttribute" || k.kind === "entityAge" ? k : undefined;
+    const domain = ref ? (ref.domain || ref.entityId.split(".")[0] || "") : "";
+    const icon = ref ? domainIcon(domain) : uiIcon(SOURCE_ICON[k.kind] ?? "braces");
+    let source: TemplateResult;
+    if (slot) {
+      source = html`<span class="svr-need">No entity yet</span><span class="svr-id">${domain || "entity"}</span>`;
+    } else if (ref && ref.entityId !== "") {
+      const live = this.hass?.states[ref.entityId];
+      const friendly = typeof live?.attributes.friendly_name === "string" ? live.attributes.friendly_name : "";
+      const name = friendly || (ref.displayName.trim() !== ref.entityId ? ref.displayName.trim() : "");
+      const extra = k.kind === "entityAttribute" && k.attribute ? ` · ${k.attribute}` : k.kind === "entityAge" ? " · age" : "";
+      source = html`${name ? html`<span class="svr-ent">${name}</span>` : nothing}<span class="svr-id">${ref.entityId}${extra}</span>${live ? nothing : html`<span class="svr-need">not in Home Assistant</span>`}`;
+    } else {
+      source = html`<span class="svr-ent">${describeValue(v.value, ctx)}</span>`;
+    }
+    const readers = sharedValueLayerIds(cfg, v.id).length;
+    return html`<span class="svr-ico ${slot ? "need" : ""}">${icon}</span>
+      <span class="svr-text">
+        <b class="nm">${v.name || "(unnamed)"}</b>
+        <small class="svr-src" title=${describeValue(v.value, ctx)}>${source}</small>
+      </span>
+      ${slot
+        ? html`<button type="button" class="badge need" ?disabled=${!this.canEdit}
+            title=${`Reads ${slot.label}, which has no entity yet.${this.canEdit ? " Click to pick one." : ""}`}
+            @click=${(e: Event) => { e.stopPropagation(); this.openSlotsDialog(slot.entityId); }}>pick entity</button>`
+        : html`<span class="svr-now ${now === undefined ? "none" : ""}" title=${now ?? "Nothing to show yet"}>${now ?? "no value"}</span>`}
+      <span class="svr-uses" title=${readers === 0 ? "No layer reads it yet." : `${readers} layer${readers === 1 ? " reads" : "s read"} it.`}>${readers}</span>`;
+  }
+
+  /** Whether the layout is one column, where the page scrolls and the
+   * Shared values list shows at its full height. */
+  private oneColumn(): boolean {
+    return columnFit(this.panelWidth, this.colLeft, this.colRight).columns === 1;
+  }
+
+  /** Drag the top edge of the Shared values card: up grows the list, down
+   * shrinks it. It never takes the Layers card below its floor. */
+  private startSvResize(e: PointerEvent) {
+    if (e.button !== 0) return;
+    const grip = e.currentTarget as HTMLElement;
+    const body = this.renderRoot.querySelector<HTMLElement>(".sv-card .sv-body");
+    if (!body) return;
+    e.preventDefault();
+    grip.setPointerCapture(e.pointerId);
+    const startY = e.clientY;
+    const startH = body.getBoundingClientRect().height;
+    const layers = this.renderRoot.querySelector<HTMLElement>(".column.left > .layers-card");
+    const column = layers?.parentElement;
+    const room = layers && column ? Math.max(0, layers.getBoundingClientRect().height - column.clientHeight * 0.33) : window.innerHeight * 0.3;
+    const maxH = startH + room;
+    grip.classList.add("dragging");
+    const move = (ev: PointerEvent) => {
+      this.svHeight = Math.round(Math.max(SV_MIN_H, Math.min(maxH, startH + (startY - ev.clientY))));
+    };
+    const up = () => {
+      grip.classList.remove("dragging");
+      grip.removeEventListener("pointermove", move);
+      grip.removeEventListener("pointerup", up);
+      grip.removeEventListener("pointercancel", up);
+      this.saveListView();
+    };
+    grip.addEventListener("pointermove", move);
+    grip.addEventListener("pointerup", up);
+    grip.addEventListener("pointercancel", up);
   }
 
   /** A pointer is held down, so a focus change is part of a click that
