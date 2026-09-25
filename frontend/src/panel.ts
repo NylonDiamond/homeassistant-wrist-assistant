@@ -2346,6 +2346,12 @@ export class WristAssistantPanel extends LitElement {
          color: on the device, and not there yet. */
       --wa-green: #1f8a4c;
       --wa-amber: #9a5b00;
+      /* The Advanced rules editor gives each kind of part its own color: the
+         tests of If, the ready-made tests, the changes of Then, and Otherwise. */
+      --wa-rule-if: #2563eb;
+      --wa-rule-preset: #0f766e;
+      --wa-rule-then: #1f8a4c;
+      --wa-rule-else: #7c3aed;
       --wa-amber-bg: color-mix(in srgb, var(--wa-amber) 12%, transparent);
       --wa-amber-line: color-mix(in srgb, var(--wa-amber) 35%, transparent);
       --wa-shadow-pop: 0 12px 36px rgba(0,0,0,.28);
@@ -2404,6 +2410,10 @@ export class WristAssistantPanel extends LitElement {
       --wa-shape-xlarge: #818cf8;
       --wa-green: #3fbf7f;
       --wa-amber: #f2c063;
+      --wa-rule-if: #60a5fa;
+      --wa-rule-preset: #5fd4c4;
+      --wa-rule-then: #3fbf7f;
+      --wa-rule-else: #a78bfa;
       --wa-shadow-pop: 0 16px 48px rgba(0,0,0,.6);
       color-scheme: dark;
       scrollbar-color: rgba(255,255,255,.14) transparent;
@@ -6384,13 +6394,13 @@ export class WristAssistantPanel extends LitElement {
        automation: a heading per section, one full-width row per item that
        says what it does in a sentence, a menu on the row, and a pill to add
        one more. A row opens in place to be edited. */
-    .rules { margin-top: 4px; display: flex; flex-direction: column; gap: 10px; }
+    .rules { margin-top: 4px; display: flex; flex-direction: column; gap: 8px; }
     /* Three levels of box, each one lighter than the one around it: a rule
        holds its cases, a case holds an If part and a Then part, and each
        part holds rows. The rails on the left of the parts are what say "these
        belong together". */
     .rule {
-      border: 1px solid color-mix(in srgb, var(--wa-states) 45%, var(--wa-line)); border-radius: 12px; padding: 8px 12px 12px;
+      border: 1px solid color-mix(in srgb, var(--wa-states) 45%, var(--wa-line)); border-radius: 12px; padding: 6px 10px 8px;
       background: color-mix(in srgb, var(--wa-states) 7%, transparent);
     }
     /* The Simple or Advanced switch at the top of the card, on its own line. */
@@ -6398,19 +6408,23 @@ export class WristAssistantPanel extends LitElement {
     .editor-switch > .seg.wide { height: 28px; border-radius: 8px; }
     .editor-switch > .hint { margin-top: 4px; }
     .case {
-      border: 1px solid color-mix(in srgb, var(--wa-states) 25%, var(--wa-line)); border-radius: 10px; padding: 6px 12px 10px; margin-top: 10px;
+      border: 1px solid color-mix(in srgb, var(--wa-states) 25%, var(--wa-line)); border-radius: 10px; padding: 4px 10px 8px; margin-top: 8px;
       background: color-mix(in srgb, var(--wa-states) 4%, var(--wa-panel));
     }
     .case.match { border-color: color-mix(in srgb, var(--success-color, #43a047) 60%, var(--wa-line)); }
+    .case.otherwise { border-color: color-mix(in srgb, var(--wa-rule-else) 40%, var(--wa-line)); }
     .rule > .rsect, .case > .rsect { margin: 0; }
     .rule > .field { margin-top: 4px; }
-    .rpart { margin-top: 6px; padding-left: 12px; border-left: 3px solid color-mix(in srgb, var(--wa-states) 35%, transparent); }
-    .rpart.then { border-left-color: color-mix(in srgb, var(--wa-states) 75%, transparent); }
-    .rlabel { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: color-mix(in srgb, var(--wa-states) 70%, var(--wa-muted)); margin: 4px 0 0; }
-    .rpart.then .rlabel { color: var(--wa-states); }
+    /* If is blue and Then is green, rail, label and add buttons alike, so the
+       two halves of a case read apart at a glance. */
+    .rpart { --rpart: var(--wa-rule-if); margin-top: 4px; padding-left: 10px; border-left: 3px solid color-mix(in srgb, var(--rpart) 60%, transparent); }
+    .rpart.then { --rpart: var(--wa-rule-then); }
+    .case.otherwise .rpart.then { border-left-color: color-mix(in srgb, var(--wa-rule-else) 60%, transparent); }
+    .rlabel { font-size: 10.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--rpart, var(--wa-states)); margin: 2px 0 0; }
+    .case.otherwise .rlabel { color: var(--wa-rule-else); }
     .rpart .radd { margin-bottom: 2px; }
-    .rule > .radd { margin: 12px 0 0; }
-    .rsect { display: flex; align-items: center; gap: 8px; min-height: 28px; margin: 12px 0 4px; }
+    .rule > .radd { margin: 8px 0 0; }
+    .rsect { display: flex; align-items: center; gap: 8px; min-height: 24px; margin: 10px 0 2px; }
     .rsect h5 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: 0; }
     .rsect.sub { margin-top: 10px; }
     .rsect.sub h5 { font-size: 12.5px; font-weight: 600; opacity: .65; }
@@ -6420,19 +6434,19 @@ export class WristAssistantPanel extends LitElement {
     .rnote { font-weight: 400; font-size: 12px; color: var(--success-color, #43a047); }
     .seg.join { height: 26px; }
     .rcard {
-      border: 1px solid var(--wa-line); border-radius: 10px; background: var(--wa-field);
-      margin: 6px 0;
+      border: 1px solid var(--wa-line); border-radius: 8px; background: var(--wa-field);
+      margin: 4px 0;
     }
     .rcard.open { border-color: var(--wa-line-strong); }
     .rrow {
-      display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 4px 4px 4px 12px;
-      border-radius: 10px; cursor: pointer; outline: none;
+      display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 2px 2px 2px 10px;
+      border-radius: 8px; cursor: pointer; outline: none;
     }
     .rrow:hover { background: color-mix(in srgb, var(--wa-ink) 4%, transparent); }
     .rrow:focus-visible { box-shadow: var(--wa-ring); }
-    .rcard.open > .rrow { border-radius: 10px 10px 0 0; }
+    .rcard.open > .rrow { border-radius: 8px 8px 0 0; }
     .ric { display: inline-flex; flex: none; color: var(--wa-muted); }
-    .ric svg { width: 18px; height: 18px; }
+    .ric svg { width: 16px; height: 16px; }
     .rsum { flex: 1; min-width: 0; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; overflow: hidden; }
     .rsum .cell-word { overflow: hidden; text-overflow: ellipsis; }
     .rsum .cell-name { color: var(--wa-muted); }
@@ -6446,10 +6460,10 @@ export class WristAssistantPanel extends LitElement {
     .racts button.icon { opacity: .6; }
     .racts button.icon:hover:not(:disabled), .racts button.icon:focus-visible { opacity: 1; }
     .racts button.icon:disabled { opacity: .2; }
-    .rbody { padding: 6px 12px 10px; border-top: 1px solid var(--wa-line); }
+    .rbody { padding: 6px 10px 8px; border-top: 1px solid var(--wa-line); }
     .rbody > .hint { margin-left: var(--wa-col); }
     .rempty { color: var(--wa-muted); font-size: 12.5px; font-style: italic; padding: 4px 2px; }
-    .radd { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 2px; }
+    .radd { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 2px; }
     /* The add pills take the colour of the card they sit in: coral inside
        States, the accent elsewhere. */
     .states, .rules { --pill-tint: var(--wa-states); }
@@ -6460,6 +6474,16 @@ export class WristAssistantPanel extends LitElement {
     }
     button.small.pill:hover:not(:disabled) { border-color: transparent; background: color-mix(in srgb, var(--pill-tint, var(--wa-accent)) 26%, transparent); }
     button.small.pill svg { width: 14px; height: 14px; }
+    /* Each add button in the rules editor has its own color, and they are a
+       size smaller than elsewhere so the rows stay tight. */
+    .rules button.small.pill { height: 24px; min-height: 24px; padding: 0 10px 0 7px; font-size: 12px; gap: 4px; }
+    .rules button.small.pill svg { width: 12px; height: 12px; }
+    .rules button.pill.add-test { --pill-tint: var(--wa-rule-if); }
+    .rules button.pill.add-preset { --pill-tint: var(--wa-rule-preset); }
+    .rules button.pill.add-change { --pill-tint: var(--wa-rule-then); }
+    .rules button.pill.add-case { --pill-tint: var(--wa-states); }
+    .rules button.pill.add-else { --pill-tint: var(--wa-rule-else); }
+    .rules button.pill.add-rule { --pill-tint: var(--wa-muted); color: var(--wa-ink); }
     .chip-menu button.danger { color: var(--error-color, #e5484d); border: none; background: transparent; }
     .chip-menu button.danger:hover { background: color-mix(in srgb, var(--error-color, #e5484d) 12%, transparent); }
     .chip-menu button:disabled { opacity: .4; cursor: default; }

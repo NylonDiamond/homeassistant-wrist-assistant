@@ -9878,7 +9878,7 @@ export function rulesEditor(host: EditorHost, rules: Rule[], target: RuleTarget,
     ${rules.length === 0 ? html`<div class="rempty">No rules yet. A rule checks values and changes how this ${target === "layout" ? "family" : "layer"} looks.</div>` : nothing}
     ${rules.map((rule, ri) => ruleEditor(host, rule, ri, rules.length, target, upd, `${key}-${rule.id}`, parts, seed))}
     <div class="radd">
-      <button class="small pill" title="Add a rule. A later rule wins over an earlier one for the same setting." @click=${() => upd((r) => { r.push(seededRule(host, seed)); })}>${uiIcon("plus")}<span>Add a rule</span></button>
+      <button class="small pill add-rule" title="Add a rule. A later rule wins over an earlier one for the same setting." @click=${() => upd((r) => { r.push(seededRule(host, seed)); })}>${uiIcon("plus")}<span>Add a rule</span></button>
     </div>
     <div class="hint">Inside a rule the first matching case wins. Across rules the later rule wins for the same setting. Different settings add up.</div>
   </div>`;
@@ -10002,9 +10002,9 @@ function ruleEditor(host: EditorHost, rule: Rule, ri: number, count: number, tar
       </div>
     </div>`}
     <div class="radd">
-      <button class="small pill" title="Add a case: when its tests hold, this rule makes these changes" @click=${() => updRule((r) => { r.cases.push(seededCase(host, seed)); })}>${uiIcon("plus")}<span>Add a case</span></button>
+      <button class="small pill add-case" title="Add a case: when its tests hold, this rule makes these changes" @click=${() => updRule((r) => { r.cases.push(seededCase(host, seed)); })}>${uiIcon("plus")}<span>Add a case</span></button>
       ${rule.otherwise === undefined && rule.cases.length > 0
-        ? html`<button class="small pill" title="Add Otherwise at the bottom: the changes when no case matches" @click=${() => updRule((r) => { r.otherwise = []; })}>${uiIcon("plus")}<span>Add otherwise</span></button>`
+        ? html`<button class="small pill add-else" title="Add Otherwise at the bottom: the changes when no case matches" @click=${() => updRule((r) => { r.otherwise = []; })}>${uiIcon("plus")}<span>Add otherwise</span></button>`
         : nothing}
     </div>
   </div>`;
@@ -10041,13 +10041,13 @@ function caseEditor(host: EditorHost, c: RuleCase, ci: number, rule: Rule, targe
       () => updCase((x) => { x.when.tests = x.when.tests.filter((z) => z.id !== t.id); }),
       `${key}-${t.id}`))}
     <div class="radd">
-      <button class="small pill" title="Add a test: one more thing this case checks" @click=${(e: Event) => {
+      <button class="small pill add-test" title="Add a test: one more thing this case checks" @click=${(e: Event) => {
         const t = seededTest(host, seed);
         openRows.add(`${key}-${t.id}`);
         requestRerender(e.target);
         updCase((x) => { x.when.tests.push(t); });
       }}>${uiIcon("plus")}<span>Add a test</span></button>
-      <button type="button" class="small pill" popovertarget=${presetsId} aria-haspopup="menu" title="Add a ready-made test: the sun, the weekday or a clock window">${uiIcon("plus")}<span>Add a preset</span></button>
+      <button type="button" class="small pill add-preset" popovertarget=${presetsId} aria-haspopup="menu" title="Add a ready-made test: the sun, the weekday or a clock window">${uiIcon("plus")}<span>Add a preset</span></button>
       <div class="tap-menu" id=${presetsId} popover role="menu" aria-label="Add a preset" @toggle=${onValuePopoverToggle}>
         <div class="tap-menu-group" role="group" aria-label="Presets" data-group="presets">
           ${RULE_PRESETS.map((p) => html`<button type="button" role="menuitem" popovertarget=${presetsId} popovertargetaction="hide"
@@ -10234,7 +10234,7 @@ function changeRows(host: EditorHost, changes: StyleChange[], target: RuleTarget
       });
     })}
     ${spare.length === 0 ? nothing : html`<div class="radd">
-      <button type="button" class="small pill" popovertarget=${menuId} aria-haspopup="menu" title="Add a change: one more setting this case changes">${uiIcon("plus")}<span>Add a change</span></button>
+      <button type="button" class="small pill add-change" popovertarget=${menuId} aria-haspopup="menu" title="Add a change: one more setting this case changes">${uiIcon("plus")}<span>Add a change</span></button>
       <div class="chip-menu" id=${menuId} popover role="menu" aria-label="Add a change" @toggle=${onValuePopoverToggle}>
         ${spare.map((p) => html`<button type="button" role="menuitem" popovertarget=${menuId} popovertargetaction="hide"
           @click=${(e: Event) => add(p, e.target)}>${PROPERTY_LABELS[p]}</button>`)}
