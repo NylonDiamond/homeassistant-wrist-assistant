@@ -3599,21 +3599,26 @@ export class WristAssistantPanel extends LitElement {
          shrink to their minimum and their lines pile on top of each other. */
       flex: none;
       border: 0 solid transparent; background-clip: padding-box;
-      background: color-mix(in srgb, var(--wa-panel) 60%, var(--wa-card));
-      box-shadow: inset 0 0 0 1px var(--wa-line);
+      /* A row stands a clear step off the card, with an edge a little
+         stronger than the card's hairlines, so each row reads as one thing
+         (Jesse, 2026-09-24). --row and --row-hover are the two grounds every
+         row state below picks from. */
+      --row: color-mix(in srgb, var(--wa-ink) 5%, var(--wa-panel));
+      --row-hover: color-mix(in srgb, var(--wa-ink) 9%, var(--wa-panel));
+      background: var(--row);
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ink) 11%, transparent);
       cursor: pointer; user-select: none; position: relative; font-size: 13px;
       /* Hover and selection change at once; only the drop slot animates. */
       transition: border-top-width .1s ease-out, border-bottom-width .1s ease-out;
     }
-    /* A group's members sit a shade quieter than the rows above them, so they
-       read as nested rather than as another run of top-level rows. */
-    .layer.kid { background: color-mix(in srgb, var(--wa-panel) 30%, var(--wa-card)); }
-    .layer:hover { background: var(--wa-panel); box-shadow: inset 0 0 0 1px var(--wa-line-strong); }
+    /* A group's members wear the same ground as every other row: the group's
+       rail already says they are nested. */
+    .layer:hover { background: var(--row-hover); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ink) 18%, transparent); }
     /* The selected row: a thin accent outline on the hover ground, and no
        wash. A strong accent fill with a 2px ring made the selected row the
        loudest thing in the panel (Jesse, 2026-09-24). */
     .layer.hl {
-      background: var(--wa-panel);
+      background: var(--row-hover);
       box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--wa-accent) 85%, transparent);
     }
     .layer:focus-visible { outline: none; box-shadow: var(--wa-ring); }
@@ -3685,15 +3690,14 @@ export class WristAssistantPanel extends LitElement {
     .tap-strip:hover { background: color-mix(in srgb, var(--tp) 20%, transparent); }
     .tap-strip:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .layer.tapsel {
-      background: color-mix(in srgb, var(--wa-panel) 60%, var(--wa-card));
-      box-shadow: inset 0 0 0 1px var(--wa-line-strong);
+      background: var(--row);
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ink) 18%, transparent);
     }
     .layer.tapsel .tap-strip {
       background: color-mix(in srgb, var(--tp) 16%, transparent);
       box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--tp) 85%, transparent); border-top-color: transparent;
     }
     .layer.dim .tap-strip { opacity: .55; }
-    .layer.pinned .tap-strip { margin: 0 -10px 2px -8px; padding-left: 27px; border-radius: 0; }
     /* The layer selected, not its tap: only the top part wears the selection.
        The row itself goes back to rest and a layer behind the content (the
        isolation keeps it above the row's own ground) draws the wash and ring
@@ -3701,19 +3705,15 @@ export class WristAssistantPanel extends LitElement {
        strip's 22px and its 2px margin). */
     .layer.with-tap { isolation: isolate; }
     .layer.with-tap.hl:not(.tapsel) {
-      background: color-mix(in srgb, var(--wa-panel) 60%, var(--wa-card));
-      box-shadow: inset 0 0 0 1px var(--wa-line);
+      background: var(--row);
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ink) 11%, transparent);
     }
-    .layer.with-tap.kid.hl:not(.tapsel) { background: color-mix(in srgb, var(--wa-panel) 30%, var(--wa-card)); }
     .layer.with-tap.hl:not(.tapsel)::before {
       content: ""; position: absolute; left: 0; right: 0; top: 0; bottom: 24px; z-index: -1; pointer-events: none;
       border-radius: var(--wa-r-sm) var(--wa-r-sm) 0 0;
-      background: var(--wa-panel);
+      background: var(--row-hover);
       box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--wa-accent) 85%, transparent);
     }
-    .pinned-set .layer.pinned.with-tap.hl,
-    .pinned-set .layer.pinned.with-tap.tapsel { background: transparent; box-shadow: none; }
-    .layer.pinned.with-tap.hl:not(.tapsel)::before { border-radius: 0; }
     .tap-strip .tap-glyph { display: grid; place-items: center; flex: none; }
     .tap-strip .tap-glyph svg { width: 13px; height: 13px; }
     .tap-strip .tap-words { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -3757,35 +3757,20 @@ export class WristAssistantPanel extends LitElement {
       padding-top: 0; padding-bottom: 0; border-top-width: 0; border-bottom-width: 0;
       opacity: 0; overflow: hidden;
     }
-    /* The shape row closes the list, under a hairline that runs the full
-       width of the card: it is the ground everything else is drawn on, not
-       another layer in the stack, so nothing can be dropped below it. */
-    .layer.pinned {
-      flex: none; margin: 0; padding: 0 12px 0 10px; min-height: 46px; border-radius: 0;
-      border-top: 1px solid var(--wa-line);
-    }
     /* The row that is not a layer: Background, the shape under everything and
        what a tap anywhere else does. It cannot be dragged, grouped or
-       deleted, so it sits in a tray of its own below one hairline, full-bleed
-       to the card's edges, a shade darker than the rows above so the list
-       reads as the part you can actually reorder. */
+       deleted, so it sits below one hairline that runs the width of the card,
+       where nothing can be dropped past it. The row itself looks like every
+       other row, tap strip and all. It used to sit in a darker full-bleed
+       tray with no row of its own, which read as a different kind of thing
+       from the layers (Jesse, 2026-09-24). */
     .pinned-set {
-      flex: none; margin: 0; border-top: 1px solid var(--wa-line-strong);
-      background: color-mix(in srgb, var(--wa-ink) 5%, transparent);
+      flex: none; margin: 6px 0 0; padding: 6px 8px 8px; border-top: 1px solid var(--wa-line);
+      display: flex; flex-direction: column; gap: 4px;
     }
-    /* The tray's rows keep the tray's own ground and its hairlines. An outline
-       each would box in two rows that are not part of the stack above. */
-    .pinned-set .layer.pinned { margin: 0; border-top: 0; }
     /* Inline has no stack above its rows, so they sit at the foot of the card,
        where a canvas shape's own rows end up. */
     .inline-layers .pinned-set { margin-top: auto; }
-    .pinned-set .layer.pinned:not(.hl):not(.lit) { background: transparent; box-shadow: none; }
-    .pinned-set .layer.pinned:not(.hl):not(.lit):hover {
-      background: color-mix(in srgb, var(--wa-ink) 5%, transparent); box-shadow: none;
-    }
-    .pinned-set .layer.pinned + .layer.pinned {
-      border-top: 1px solid color-mix(in srgb, var(--wa-line) 70%, transparent);
-    }
     .layer.pinned .grip { cursor: default; }
     .group-cta {
       display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 8px; margin-bottom: 6px; border-radius: 8px;
@@ -16343,7 +16328,7 @@ export class WristAssistantPanel extends LitElement {
         <span class="right">
           <span class="badges">
             ${tapTitle ? html`<span class="badge tap" title=${tapTitle}>${tapAct ? tapBadge(tapAct, el.payload.page ?? this.page, pageCount) : "tap"}</span>` : nothing}
-            ${el.payload.rules.length === 0 ? nothing : html`<span class="badge states" title=${states}>${states.replace(/\.$/, "").toLowerCase()}</span>`}
+            ${states === "No states yet." ? nothing : html`<span class="badge states" title=${states}>${states.replace(/\.$/, "").toLowerCase()}</span>`}
             ${hidden ? html`<span class="badge">hidden</span>` : nothing}
           </span>
           ${edit ? html`<span class="acts">

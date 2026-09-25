@@ -389,6 +389,9 @@ export function statesSummary(rules: Rule[]): string {
   const shape = tableShape(rules);
   if (!shape.ok) return "Advanced rules.";
   const n = shape.table.rows.length + (shape.table.otherwise ? 1 : 0);
+  // A table with no rows left (every state deleted, the rule kept) is no
+  // states at all, not a "0 states" badge on the row.
+  if (n === 0) return "No states yet.";
   return n === 1 ? "1 state." : `${n} states.`;
 }
 
