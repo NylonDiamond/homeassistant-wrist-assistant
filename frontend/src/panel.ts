@@ -1762,6 +1762,10 @@ export class WristAssistantPanel extends LitElement {
   private faceAnchor?: ListAnchor;
   /** Scroll glides running, one per scroll box. */
   private glides = new WeakMap<HTMLElement, number>();
+  /** The row the face hover's ring was last put on, and the timer that parks
+   * the ring once it has faded. See placeFaceRing. */
+  private faceRingRow?: HTMLElement;
+  private faceRingPark?: number;
   /** The preview is open full-width in a modal, for fine moves on a small
    * face. Only the face and its gestures come along; the columns stay under
    * the backdrop. */
@@ -3447,7 +3451,7 @@ export class WristAssistantPanel extends LitElement {
        the bottom of the screen. */
     @media (max-width: 640px) {
       dialog.xf { width: calc(100vw - 16px); max-width: none; max-height: calc(100dvh - 16px); }
-      .xfer-body { padding: 12px; gap: 12px; }
+      .xfer-body { --xf-pad: 12px; gap: 12px; }
     }
     /* Share stays open under the gallery dialog, so Back returns to it, but
        out of sight: one dialog and one dimmed backdrop at a time. */
@@ -3460,7 +3464,7 @@ export class WristAssistantPanel extends LitElement {
     .xf-head > button.icon { width: 30px; height: 30px; flex: none; }
     .xf-head > button.icon svg.ui-icon { width: 16px; height: 16px; }
     .xfer-body {
-      padding: 16px; overflow: auto; flex: 1 1 auto; min-height: 0;
+      --xf-pad: 16px; padding: var(--xf-pad); overflow: auto; flex: 1 1 auto; min-height: 0;
       display: flex; flex-direction: column; gap: 16px; container: xfer / inline-size;
     }
     .xfer-body > * { flex: none; }
@@ -3720,6 +3724,17 @@ export class WristAssistantPanel extends LitElement {
     .xf-galtile .t b { font-weight: 600; }
     .xf-galtile .t span { font-size: 12px; color: var(--wa-muted); }
     .xf-hero { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr); gap: 16px; align-items: center; }
+    /* Over a long list of entities to pick, the picture stays at the top of
+       the dialog while the rows scroll under it, so a pick can be checked
+       against it without scrolling back up. Only side by side: stacked on a
+       narrow dialog the picture and its fields would take the screen. */
+    @container xfer (min-width: 481px) {
+      .xf-hero.pin {
+        position: sticky; top: 0; z-index: 2;
+        margin: calc(-1 * var(--xf-pad)) calc(-1 * var(--xf-pad)) 0; padding: var(--xf-pad) var(--xf-pad) 12px;
+        background: var(--wa-card); box-shadow: 0 1px 0 var(--wa-line);
+      }
+    }
     .xf-bar { height: 6px; border-radius: 999px; background: var(--wa-field); overflow: hidden; }
     .xf-bar > i { display: block; height: 100%; background: var(--wa-accent); transition: width .2s ease-out; }
     button.primary:has(> svg.ui-icon) { display: inline-flex; align-items: center; gap: 6px; }
@@ -6386,7 +6401,7 @@ export class WristAssistantPanel extends LitElement {
       border: 1px solid var(--wa-line); background: transparent; color: inherit; cursor: pointer;
     }
     .branches button.active { background: var(--wa-accent); color: var(--wa-accent-ink); border-color: transparent; }
-    .rules .branches button.active { background: var(--wa-states); color: #fff; }
+    .rules .branches button.active { background: color-mix(in srgb, var(--wa-rule-tone) 55%, var(--wa-panel)); color: var(--wa-ink); }
     .branches button.live-match { border-color: var(--success-color, #43a047); }
     pre { font-size: 11px; white-space: pre-wrap; word-break: break-all; max-height: 400px; overflow: auto; background: var(--wa-panel); padding: 8px; border-radius: 6px; }
     button.link { font: inherit; background: none; border: none; color: var(--wa-accent); cursor: pointer; padding: 0; }
@@ -6400,16 +6415,16 @@ export class WristAssistantPanel extends LitElement {
        part holds rows. The rails on the left of the parts are what say "these
        belong together". */
     .rule {
-      border: 1px solid color-mix(in srgb, var(--wa-states) 45%, var(--wa-line)); border-radius: 12px; padding: 6px 10px 8px;
-      background: color-mix(in srgb, var(--wa-states) 7%, transparent);
+      border: 1px solid color-mix(in srgb, var(--wa-rule-tone) 30%, var(--wa-line)); border-radius: 12px; padding: 6px 10px 8px;
+      background: color-mix(in srgb, var(--wa-rule-tone) 4%, transparent);
     }
     /* The Simple or Advanced switch at the top of the card, on its own line. */
     .editor-switch { margin: 0 0 10px; }
     .editor-switch > .seg.wide { height: 28px; border-radius: 8px; }
     .editor-switch > .hint { margin-top: 4px; }
     .case {
-      border: 1px solid color-mix(in srgb, var(--wa-states) 25%, var(--wa-line)); border-radius: 10px; padding: 4px 10px 8px; margin-top: 8px;
-      background: color-mix(in srgb, var(--wa-states) 4%, var(--wa-panel));
+      border: 1px solid color-mix(in srgb, var(--wa-rule-tone) 15%, var(--wa-line)); border-radius: 10px; padding: 4px 10px 8px; margin-top: 8px;
+      background: var(--wa-panel);
     }
     .case.match { border-color: color-mix(in srgb, var(--success-color, #43a047) 60%, var(--wa-line)); }
     .case.otherwise { border-color: color-mix(in srgb, var(--wa-rule-else) 40%, var(--wa-line)); }
@@ -6466,7 +6481,10 @@ export class WristAssistantPanel extends LitElement {
     .radd { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 2px; }
     /* The add pills take the colour of the card they sit in: coral inside
        States, the accent elsewhere. */
-    .states, .rules { --pill-tint: var(--wa-states); }
+    .states { --pill-tint: var(--wa-states); }
+    /* The rules editor wears a quieter coral than the section badge: the full
+       strength on every box and button was loud. */
+    .rules { --wa-rule-tone: color-mix(in srgb, var(--wa-states) 55%, var(--wa-muted)); --pill-tint: var(--wa-rule-tone); }
     button.small.pill {
       height: 30px; min-height: 30px; padding: 0 14px 0 10px; border-radius: 999px; font-weight: 600;
       color: var(--pill-tint, var(--wa-accent)); border-color: transparent;
@@ -6481,7 +6499,7 @@ export class WristAssistantPanel extends LitElement {
     .rules button.pill.add-test { --pill-tint: var(--wa-rule-if); }
     .rules button.pill.add-preset { --pill-tint: var(--wa-rule-preset); }
     .rules button.pill.add-change { --pill-tint: var(--wa-rule-then); }
-    .rules button.pill.add-case { --pill-tint: var(--wa-states); }
+    .rules button.pill.add-case { --pill-tint: var(--wa-rule-tone); }
     .rules button.pill.add-else { --pill-tint: var(--wa-rule-else); }
     .rules button.pill.add-rule { --pill-tint: var(--wa-muted); color: var(--wa-ink); }
     .chip-menu button.danger { color: var(--error-color, #e5484d); border: none; background: transparent; }
@@ -11053,7 +11071,30 @@ export class WristAssistantPanel extends LitElement {
     const list = ring?.parentElement;
     if (!ring || !list) return;
     const row = this.listFace ? list.querySelector<HTMLElement>(".fpeek") : null;
-    if (!row) { ring.classList.remove("on"); return; }
+    if (!row) {
+      if (!ring.classList.contains("on")) return;
+      ring.classList.remove("on");
+      // A ring left where its row was still counts toward the list's scroll
+      // height. Once the hover's groups fold back that spot is past the last
+      // row, and a list with room for every row grew a scrollbar. So the ring
+      // is parked at the top with no size: at once when its row has gone,
+      // otherwise once it has faded.
+      const park = () => {
+        if (ring.classList.contains("on")) return;
+        ring.classList.add("jump");
+        ring.style.transform = "";
+        ring.style.width = "0";
+        ring.style.height = "0";
+        void ring.offsetWidth;
+        ring.classList.remove("jump");
+      };
+      if (this.faceRingRow?.isConnected) this.faceRingPark = window.setTimeout(park, 240);
+      else park();
+      this.faceRingRow = undefined;
+      return;
+    }
+    window.clearTimeout(this.faceRingPark);
+    this.faceRingRow = row;
     const box = ringTarget(row);
     const lr = list.getBoundingClientRect();
     const r = box.getBoundingClientRect();
@@ -16438,7 +16479,7 @@ export class WristAssistantPanel extends LitElement {
     const where = target.dest.unassigned && target.problem === undefined ? UNASSIGNED_LABEL : undefined;
     const clear = () => { this.importFocus = undefined; };
     return html`<div class="xfer-body">
-      <div class="xf-hero">
+      <div class="xf-hero pin">
         ${this.dialogPreview(layouts, family, focus ? uses.get(focus.entityId) ?? [] : [],
           focus ? html`Uses <b>${focus.label}</b>` : family ? familyTitle(family) : "", "")}
         <div class="xf-stack">
@@ -17369,7 +17410,7 @@ export class WristAssistantPanel extends LitElement {
       ? "Open a shape with a canvas first. A part is layers, and there is nowhere to put them here."
       : undefined;
     return html`<div class="xfer-body">
-      <div class="xf-hero">
+      <div class="xf-hero pin">
         ${this.dialogPreview(layouts, family, [], family ? familyTitle(family) : "", "")}
         <div class="xf-stack">
           <div class="xf-sub">${layerCountWords(cfg)}</div>
@@ -17624,7 +17665,7 @@ export class WristAssistantPanel extends LitElement {
     return html`<dialog class="slots-dialog xf" @close=${() => { this.slotsOpen = false; }}>
       ${this.dialogHead("Pick entities", rows.length === 0 ? "" : `${rows.length} still open`, () => this.closeSlotsDialog())}
       <div class="xfer-body">
-        <div class="xf-hero">
+        <div class="xf-hero pin">
           ${this.dialogPreview(layouts, family, focus ? uses.get(focus.entityId) ?? [] : [],
             focus ? html`Uses <b>${focus.label}</b>` : family ? familyTitle(family) : "", "")}
           <div class="xf-stack">
