@@ -4047,6 +4047,8 @@ export class WristAssistantPanel extends LitElement {
     }
     .notes-card .nc-fold svg.ui-icon { transform: rotate(180deg); }
     .notes-card .nc-fold:hover { background: color-mix(in srgb, var(--wa-ink) 8%, transparent); }
+    .notes-card .nc-fold.nc-delete svg.ui-icon { transform: none; width: 14px; height: 14px; }
+    .notes-card .nc-fold.nc-delete:hover { color: var(--error-color, #db4437); background: color-mix(in srgb, var(--error-color, #db4437) 12%, transparent); }
     .notes-card .nc-body { display: flex; flex-direction: column; gap: 8px; line-height: 1.5; font-size: 13px; overflow-wrap: anywhere; }
     .notes-card .nc-body p { margin: 0; white-space: pre-line; }
     .notes-card .nc-body ol, .notes-card .nc-body ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 5px; }
@@ -17411,12 +17413,12 @@ export class WristAssistantPanel extends LitElement {
   private renderNotesCard(cfg: CustomComplicationConfig, edit: boolean) {
     const id = cfg.id;
     if (this.notesEditing && edit) {
-      return html`<section class="notes-card editing" aria-label="Notes">
+      return html`<section class="notes-card editing" aria-label="Note">
         <div class="nc-head">
-          <span class="nc-icon">${uiIcon("note")}</span><b>Notes</b>
+          <span class="nc-icon">${uiIcon("note")}</span><b>Note</b>
           <span class="spacer"></span>
-          ${cfg.notes !== undefined ? html`<button type="button" class="lc-ghost sm" title="Take the notes off this complication"
-            @click=${() => this.deleteNotes()}>Delete notes</button>` : nothing}
+          ${cfg.notes !== undefined ? html`<button type="button" class="lc-ghost sm" title=${`Delete the note (${KEY_MOD}Z brings it back)`}
+            @click=${() => this.deleteNotes()}>Delete note</button>` : nothing}
           <button type="button" class="lc-btn nc-done" @click=${() => this.finishNotes()}>Done</button>
         </div>
         <label class="nc-lead" for="notes-box">A reminder for yourself, or what to set up for anyone you share it with.</label>
@@ -17428,25 +17430,27 @@ export class WristAssistantPanel extends LitElement {
     const notes = cfg.notes;
     if (notes === undefined) return nothing;
     if (this.notesOpenId !== id) {
-      return html`<button type="button" class="notes-card folded" aria-expanded="false" title="Show the notes"
+      return html`<button type="button" class="notes-card folded" aria-expanded="false" title="Show the note"
         @click=${() => { this.notesOpenId = id; }}>
-        <span class="nc-icon">${uiIcon("note")}</span><b>Notes</b>
+        <span class="nc-icon">${uiIcon("note")}</span><b>Note</b>
         <span class="nc-peek">${notesPreview(notes)}</span>
         <span class="nc-chev">${uiIcon("chevron")}</span>
       </button>`;
     }
-    return html`<section class="notes-card open" aria-label="Notes">
+    return html`<section class="notes-card open" aria-label="Note">
       <div class="nc-head">
-        <span class="nc-icon">${uiIcon("note")}</span><b>Notes</b>
+        <span class="nc-icon">${uiIcon("note")}</span><b>Note</b>
         ${this.notesImportedId === id ? html`<span class="nc-sub">from the author</span>` : nothing}
         ${this.notesImportedId === id ? html`<span class="nc-new">Just imported</span>` : nothing}
         <span class="spacer"></span>
-        ${edit ? html`<button type="button" class="lc-ghost sm" @click=${() => this.editNotes()}>Edit</button>` : nothing}
-        <button type="button" class="nc-fold" aria-label="Fold the notes" title="Fold the notes"
+        ${edit ? html`<button type="button" class="lc-ghost sm" @click=${() => this.editNotes()}>Edit</button>
+          <button type="button" class="nc-fold nc-delete" aria-label="Delete the note" title=${`Delete the note (${KEY_MOD}Z brings it back)`}
+            @click=${() => this.deleteNotes()}>${uiIcon("delete")}</button>` : nothing}
+        <button type="button" class="nc-fold" aria-label="Fold the note" title="Fold the note"
           @click=${() => { this.notesOpenId = undefined; this.notesImportedId = undefined; }}>${uiIcon("chevron")}</button>
       </div>
       <div class="nc-body">${this.renderNoteBlocks(cfg, notes)}</div>
-      <div class="nc-foot">Notes show only in this editor. The watch never draws them.</div>
+      <div class="nc-foot">The note shows only in this editor. The watch never draws it.</div>
     </section>`;
   }
 
