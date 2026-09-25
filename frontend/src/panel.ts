@@ -4348,18 +4348,14 @@ export class WristAssistantPanel extends LitElement {
        is wide enough and stacked when it is not. The iPhone box is wider,
        since it holds two screens' worth of shapes. */
     .start-sec-note { font-size: 13px; color: var(--wa-muted); }
-    .start-kinds { display: flex; flex-wrap: wrap; gap: 12px; align-items: stretch; }
+    .start-kinds { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
     .start-kind {
-      flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 12px;
-      padding: 14px 16px 16px; border-radius: 18px;
+      flex: 0 1 auto; min-width: 0; max-width: 100%; display: flex; flex-direction: column; gap: 10px;
+      padding: 12px 14px 14px; border-radius: 18px;
       border: 1px solid var(--wa-line); background: color-mix(in srgb, var(--wa-card) 70%, transparent);
     }
-    .start-kind.iphone { flex-basis: 560px; flex-grow: 2; }
-    .start-kind.control { flex-basis: 170px; flex-grow: 0; }
     .start-kind-head { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; color: var(--wa-ink); }
     .start-kind-head svg { width: 15px; height: 15px; color: var(--wa-accent); }
-    .start-kind-group { display: flex; flex-direction: column; gap: 8px; }
-    .start-kind-where { font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--wa-muted); }
     .start-kind-tiles { display: flex; flex-wrap: wrap; gap: 10px; }
     button.start-shape {
       display: flex; flex-direction: column; align-items: center; gap: 2px; width: 118px; padding: 14px 8px 12px;
@@ -17326,21 +17322,20 @@ export class WristAssistantPanel extends LitElement {
     return html`<section class="start-sec">
       <div class="start-sec-head"><h2>Create a new one</h2><span class="start-sec-note">Pick the shape it draws.</span></div>
       <div class="start-kinds">
-        ${kinds.map((kind) => {
-          const groups = shapeGroups(kind, owners);
+        ${kinds.flatMap((kind) => {
           const device: DeviceKind = kind === "iphone" ? "iphone" : "watch";
-          return html`<div class="start-kind ${kind}">
-            <div class="start-kind-head">${uiIcon(device === "iphone" ? "phone" : "watch")}<span>${kindTitle(kind)}</span></div>
-            ${kind === "control"
-              ? html`<div class="start-kind-tiles">${tile(kind, undefined, false)}</div>`
-              : groups.map((group) => html`<div class="start-kind-group">
-                ${groups.length > 1 ? html`<div class="start-kind-where">${group.title}</div>` : nothing}
-                <div class="start-kind-tiles">
-                  ${group.families.map((family) => tile(kind, family, false))}
-                  ${group.comingSoon.map((family) => tile(kind, family, true))}
-                </div>
-              </div>`)}
+          const box = (title: string, tiles: unknown) => html`<div class="start-kind ${kind}">
+            <div class="start-kind-head">${uiIcon(device === "iphone" ? "phone" : "watch")}<span>${title}</span></div>
+            <div class="start-kind-tiles">${tiles}</div>
           </div>`;
+          if (kind === "control") return [box(kindTitle(kind), tile(kind, undefined, false))];
+          // A box per screen: the watch has one, the iPhone has its Lock
+          // Screen and its Home Screen. Each box hugs its own tiles, so no
+          // box carries a blank where another's second row would be.
+          return shapeGroups(kind, owners).map((group) => box(
+            kind === "watch" ? kindTitle(kind) : `${kindTitle(kind)} · ${group.title}`,
+            html`${group.families.map((family) => tile(kind, family, false))}
+              ${group.comingSoon.map((family) => tile(kind, family, true))}`));
         })}
       </div>
     </section>`;
