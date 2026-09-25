@@ -5238,8 +5238,10 @@ export class WristAssistantPanel extends LitElement {
     .values-list .datum:hover { box-shadow: inset 0 0 0 1px var(--wa-accent); }
     /* Selected: the same tint the inspector gives its complication section. */
     .values-list .datum.hl { box-shadow: inset 0 0 0 1px var(--c); background: color-mix(in srgb, var(--c) 10%, var(--wa-card)); }
-    /* Read by the layer the pointer rests on over the face. */
-    .values-list .datum.peek:not(.hl) { box-shadow: inset 0 0 0 1px var(--c); background: color-mix(in srgb, var(--c) 6%, var(--wa-card)); }
+    /* Read by the selected layer: filled, as the selected layer row is. Read
+       by the layer the pointer rests on over the face: an outline only. */
+    .values-list .datum.sel { background: color-mix(in srgb, var(--c) 30%, var(--wa-card)); box-shadow: inset 0 0 0 2px var(--c); }
+    .values-list .datum.peek:not(.sel):not(.hl) { box-shadow: inset 0 0 0 1px var(--c); }
     .values-list .datum .meta {
       flex: none; min-width: 0; max-width: 140px; opacity: 1; color: var(--wa-val); font-weight: 600;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
@@ -17196,14 +17198,15 @@ export class WristAssistantPanel extends LitElement {
     return out;
   }
 
-  /** The shared values read by what the pointer rests on over the face: the
-   * layer, or any member of the group. Their rows light the way the layer's
-   * own row in the Layers list does. */
-  private sharedValuesOfFaceHover(cfg: CustomComplicationConfig): Set<string> {
+  /** The shared values read by a layer, or by any member of a group, or by
+   * any of the layers picked together. The selection's rows are filled and
+   * the face hover's are outlined, the way the Layers list marks the two. */
+  private sharedValuesReadBy(cfg: CustomComplicationConfig, target: Inspect | undefined, extra: Iterable<string> = []): Set<string> {
     const out = new Set<string>();
-    const h = this.faceHover;
-    if (!h || cfg.values.length === 0) return out;
-    const ids = new Set(h.kind === "layer" ? [h.id] : h.kind === "group" ? groupLayers(cfg, h.id).map((m) => m.payload.id) : []);
+    if (cfg.values.length === 0) return out;
+    const ids = new Set(extra);
+    if (target?.kind === "layer") ids.add(target.id);
+    else if (target?.kind === "group") for (const m of groupLayers(cfg, target.id)) ids.add(m.payload.id);
     if (ids.size === 0) return out;
     for (const v of cfg.values) {
       if (sharedValueLayerIds(cfg, v.id).some((id) => ids.has(id))) out.add(v.id);
@@ -19756,7 +19759,8 @@ export class WristAssistantPanel extends LitElement {
     const ctx = describeContext(host);
     const slots = this.slotInfo();
     const slotLit = this.slotValuesOfSelection();
-    const faceLit = this.sharedValuesOfFaceHover(cfg);
+    const selLit = this.sharedValuesReadBy(cfg, this.inspect, this.multi);
+    const faceLit = this.sharedValuesReadBy(cfg, this.faceHover);
     const body = html`<div class="sv-body">
       <div class="sv-tools">
         <span class="lc-sub" title=${explain}>set once, used by many layers</span>
@@ -19786,7 +19790,7 @@ export class WristAssistantPanel extends LitElement {
         const readers = () => sharedValueReaders(cfg, v.id);
         const slot = slots?.values.get(v.id.toUpperCase());
         const lit = slotLit.has(v.id.toUpperCase());
-        return html`<div class="vitem ${open ? "open" : ""}"><div class="datum vrow ${open ? "hl" : ""} ${lit ? "slot-lit" : ""} ${faceLit.has(v.id) ? "peek" : ""}" data-value=${v.id.toUpperCase()} role="button" tabindex="0" aria-expanded=${open ? "true" : "false"}
+        return html`<div class="vitem ${open ? "open" : ""}"><div class="datum vrow ${open ? "hl" : ""} ${lit ? "slot-lit" : ""} ${selLit.has(v.id) ? "sel" : ""} ${faceLit.has(v.id) ? "peek" : ""}" data-value=${v.id.toUpperCase()} role="button" tabindex="0" aria-expanded=${open ? "true" : "false"}
             title=${open ? "Close" : "Edit this shared value"}
             @pointerenter=${() => { this.listHoverIds = readers(); }}
             @click=${toggleOne}
