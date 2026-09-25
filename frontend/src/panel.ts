@@ -845,6 +845,60 @@ const GRID_STORE_KEY = "wrist-assistant-panel.grid.v1";
  * storage, because it is about this tab: a second tab opens on its own. */
 const OPEN_STORE_KEY = "wrist-assistant-panel.open.v1";/** How tall the slot a dragged row opens is, CSS px. */
 const DROP_GAP = 34;
+
+/** How long the Layers list holds on to a face hover that has ended, so a
+ * pointer crossing from one layer to the next keeps the list still. */
+const FACE_TRAIL_MS = 220;
+/** The glide to a hovered row, and the gentler one back home after. */
+const FACE_GLIDE_MS = 240;
+const FACE_HOME_MS = 360;
+
+/** A row of the Layers list and where it sat in the list's box, with the
+ * group boxes around it, since a fold can take the row itself away. */
+type ListAnchor = { chain: HTMLElement[]; offsets: number[] };
+
+/** The first row showing at the top of a scroll box, and the group boxes
+ * that hold it. */
+function listAnchor(list: HTMLElement): ListAnchor | undefined {
+  const top = list.getBoundingClientRect().top;
+  for (const row of list.querySelectorAll<HTMLElement>(".layer")) {
+    if (row.getBoundingClientRect().bottom <= top + 1) continue;
+    const chain: HTMLElement[] = [row];
+    for (let n = row.parentElement; n && n !== list; n = n.parentElement) {
+      if (n.classList.contains("group-box")) chain.push(n);
+    }
+    return { chain, offsets: chain.map((el) => el.getBoundingClientRect().top - top) };
+  }
+  return undefined;
+}
+
+/** How far the anchor has moved in its box since it was taken: the first of
+ * its elements still in the list decides. Undefined when none is. */
+function anchorShift(list: HTMLElement, a: ListAnchor): number | undefined {
+  const top = list.getBoundingClientRect().top;
+  for (let i = 0; i < a.chain.length; i++) {
+    const el = a.chain[i]!;
+    if (el.isConnected && list.contains(el)) return el.getBoundingClientRect().top - top - a.offsets[i]!;
+  }
+  return undefined;
+}
+
+/** The scroll that brings `el` fully into its box, with a little room at
+ * the edge: none when it is already in view. */
+function nearestShift(box: HTMLElement, el: HTMLElement, room = 12): number {
+  const b = box.getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  if (r.top < b.top + room) return r.top - b.top - room;
+  if (r.bottom > b.bottom - room) return Math.min(r.bottom - b.bottom + room, r.top - b.top - room);
+  return 0;
+}
+
+/** What the face ring outlines for a row: a folder row stands for its whole
+ * group box. */
+function ringTarget(row: HTMLElement): HTMLElement {
+  const box = row.parentElement;
+  return row.classList.contains("group") && box?.classList.contains("group-box") ? box : row;
+}
 /** `tapHover` for the Background row's strip, which has no layer id. */
 const GROUND_TAP = "\u0000ground";
 const COL_MIN = 200;
@@ -1680,6 +1734,20 @@ export class WristAssistantPanel extends LitElement {
    * row in the Layers list gets the hover outline, the other way round from a
    * row under the pointer tinting its layer on the face. */
   @state() private faceHover?: Inspect;
+  /** The face hover as the Layers list and the Shared values card follow it.
+   * It takes a new hover at once but lets go of one a moment late, so a
+   * pointer crossing the gap between two layers does not fold the list shut
+   * and scroll it home between them. */
+  @state() private listFace?: Inspect;
+  private listFaceTimer?: number;
+  /** Where the Layers list and the Shared values card were scrolled when the
+   * face hover began, to glide back to once it ends. */
+  private faceHome?: { layers?: ListAnchor; values?: number };
+  /** The row at the top of the Layers list before an update that moves the
+   * face hover, to hold it in place while groups fold and unfold. */
+  private faceAnchor?: ListAnchor;
+  /** Scroll glides running, one per scroll box. */
+  private glides = new WeakMap<HTMLElement, number>();
   /** The preview is open full-width in a modal, for fine moves on a small
    * face. Only the face and its gestures come along; the columns stay under
    * the backdrop. */
@@ -3851,6 +3919,17 @@ export class WristAssistantPanel extends LitElement {
     /* The row under the pointer, which the preview is showing: an accent
        outline only. The fill stays for the real selection below. */
     .layer.peek { box-shadow: inset 0 0 0 1px var(--wa-accent); }
+    /* The face hover's row: one ring for the whole list, sliding from row to
+       row and fading out where it stands when the hover ends. */
+    .layers { position: relative; }
+    .face-ring {
+      position: absolute; top: 0; left: 0; z-index: 3; pointer-events: none; opacity: 0;
+      box-shadow: inset 0 0 0 1.5px var(--wa-accent), 0 0 0 3px color-mix(in srgb, var(--wa-accent) 18%, transparent);
+      transition: transform .16s cubic-bezier(.2, .8, .2, 1), width .16s cubic-bezier(.2, .8, .2, 1), height .16s cubic-bezier(.2, .8, .2, 1), opacity .22s ease-out;
+    }
+    .face-ring.on { opacity: 1; transition-duration: .16s, .16s, .16s, .1s; }
+    .face-ring.jump { transition: none; }
+    @media (prefers-reduced-motion: reduce) { .face-ring { transition: opacity .1s linear; } }
     /* The selected row: a strong accent wash and a full-weight accent ring,
        the same wherever a row is selected, so eight kind colors and the group
        boxes' hues never fight the selection. */
@@ -7440,6 +7519,22 @@ export class WristAssistantPanel extends LitElement {
   private lastInspectKey?: string;
 
   protected override willUpdate(changed: PropertyValues) {
+    if (changed.has("faceHover")) {
+      if (this.faceHover) {
+        window.clearTimeout(this.listFaceTimer);
+        this.listFaceTimer = undefined;
+        this.listFace = this.faceHover;
+      } else if (this.listFace && this.listFaceTimer === undefined) {
+        this.listFaceTimer = window.setTimeout(() => { this.listFaceTimer = undefined; this.listFace = undefined; }, FACE_TRAIL_MS);
+      }
+    }
+    if (changed.has("listFace")) {
+      const list = this.layersScroller();
+      this.faceAnchor = list ? listAnchor(list) : undefined;
+      if (this.listFace && changed.get("listFace") === undefined) {
+        this.faceHome = { layers: this.faceAnchor, values: this.renderRoot.querySelector<HTMLElement>(".sv-body")?.scrollTop };
+      }
+    }
     // The dark skin follows Home Assistant's own dark mode, so the panel
     // never sits as a black island in a light frontend. Without the flag
     // (an old frontend) the OS setting decides.
@@ -7490,12 +7585,8 @@ export class WristAssistantPanel extends LitElement {
 
   protected override updated(changed: PropertyValues) {    this.keepMenusOnScreen();
     this.watchStage();
-    // The row of what the pointer rests on over the face, brought into the
-    // Layers list's view the moment it lights.
-    if (changed.has("faceHover") && this.faceHover) {
-      this.renderRoot.querySelector<HTMLElement>(".layers .layer.peek")?.scrollIntoView({ block: "nearest" });
-      this.renderRoot.querySelector<HTMLElement>(".sv-body .datum.peek")?.scrollIntoView({ block: "nearest" });
-    }
+    if (changed.has("listFace")) this.followFaceHover();
+    this.placeFaceRing();
     // The start page lists every device's complications, and the other
     // devices' lists are only read when a surface asks for them. Asked once
     // per visit to the page, the way the picker asks once per opening.
@@ -10749,6 +10840,12 @@ export class WristAssistantPanel extends LitElement {
     return h && inspectKey(h) !== inspectKey(this.inspect) ? h : undefined;
   }
 
+  /** The same for the list's copy of it, `listFace`. */
+  private liveListFace(): Inspect | undefined {
+    const h = this.listFace;
+    return h && inspectKey(h) !== inspectKey(this.inspect) ? h : undefined;
+  }
+
   /** The layers the face tints for the face hover: the layer, or every
    * member of the group. */
   private faceHoverIds(): readonly string[] {
@@ -10765,7 +10862,7 @@ export class WristAssistantPanel extends LitElement {
    * moves on. Nothing is written: `collapsed` keeps the author's folds, and a
    * press on the face is what keeps them open (`keepFaceHoverOpen`). */
   private faceHoverOpenIds(): ReadonlySet<string> {
-    const h = this.liveFaceHover();
+    const h = this.liveListFace();
     const cfg = this.canvasConfig();
     if (!h || !cfg || (h.kind !== "layer" && h.kind !== "group")) return new Set();
     const groupId = h.kind === "layer" ? cfg.elements.find((x) => x.payload.id === h.id)?.payload.groupId
@@ -10777,6 +10874,112 @@ export class WristAssistantPanel extends LitElement {
    * opened for now by the face hover. */
   private isFolded(id: string, hoverOpen: ReadonlySet<string>): boolean {
     return this.collapsed.has(id) && !hoverOpen.has(id);
+  }
+
+  /** A press on the face selects what it was over: the list lets go of the
+   * hover at once and stays where it is, on the row just picked, rather than
+   * gliding back to where it was. */
+  private dropFaceTrail() {
+    window.clearTimeout(this.listFaceTimer);
+    this.listFaceTimer = undefined;
+    this.faceHome = undefined;
+    this.listFace = undefined;
+  }
+
+  /** The Layers list's scroll box. Stacked, it does not scroll (the page
+   * does), and every glide on it comes to nothing. */
+  private layersScroller(): HTMLElement | undefined {
+    return this.renderRoot.querySelector<HTMLElement>(".layers-card .layers") ?? undefined;
+  }
+
+  /**
+   * The face hover moved, arrived or left. Groups have just folded or
+   * unfolded for it, so the row that was at the top of the list is first put
+   * back where it was, and nothing on screen jumps. Then the list glides: to
+   * the hovered row, or, once the hover is gone, back to where it was when the
+   * hover began. The Shared values card does the same with its rows.
+   */
+  private followFaceHover() {
+    const list = this.layersScroller();
+    const values = this.renderRoot.querySelector<HTMLElement>(".sv-body") ?? undefined;
+    if (list && this.faceAnchor) {
+      const shift = anchorShift(list, this.faceAnchor);
+      if (shift) { this.stopGlide(list); list.scrollTop += shift; }
+    }
+    this.faceAnchor = undefined;
+    if (this.listFace) {
+      const row = list?.querySelector<HTMLElement>(".fpeek");
+      if (list && row) this.glide(list, list.scrollTop + nearestShift(list, ringTarget(row)), FACE_GLIDE_MS);
+      const vrow = values?.querySelector<HTMLElement>(".datum.peek");
+      if (values && vrow) this.glide(values, values.scrollTop + nearestShift(values, vrow), FACE_GLIDE_MS);
+      return;
+    }
+    const home = this.faceHome;
+    this.faceHome = undefined;
+    if (!home) return;
+    if (list && home.layers) {
+      const shift = anchorShift(list, home.layers);
+      if (shift !== undefined) this.glide(list, list.scrollTop + shift, FACE_HOME_MS);
+    }
+    if (values && home.values !== undefined) this.glide(values, home.values, FACE_HOME_MS);
+  }
+
+  /** Scroll a box to `to` over `ms`, fast at first and settling gently. A new
+   * glide on the same box takes over from the one running. Reduced motion
+   * jumps. */
+  private glide(box: HTMLElement, to: number, ms: number) {
+    this.stopGlide(box);
+    const end = Math.max(0, Math.min(box.scrollHeight - box.clientHeight, Math.round(to)));
+    const from = box.scrollTop;
+    if (Math.abs(end - from) < 1) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) { box.scrollTop = end; return; }
+    const start = performance.now();
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / ms);
+      box.scrollTop = from + (end - from) * (1 - (1 - t) ** 3);
+      if (t < 1) this.glides.set(box, requestAnimationFrame(step));
+      else this.glides.delete(box);
+    };
+    this.glides.set(box, requestAnimationFrame(step));
+  }
+
+  private stopGlide(box: HTMLElement) {
+    const id = this.glides.get(box);
+    if (id !== undefined) cancelAnimationFrame(id);
+    this.glides.delete(box);
+  }
+
+  /**
+   * The ring that marks the face hover's row. It is one box for the whole
+   * list, so a new hover slides it from the last row to the next rather than
+   * blinking one outline off and another on. With no hover it fades where it
+   * is; the next hover shows it in place and fades it in.
+   */
+  private placeFaceRing() {
+    const ring = this.renderRoot.querySelector<HTMLElement>(".layers-card .face-ring");
+    const list = ring?.parentElement;
+    if (!ring || !list) return;
+    const row = this.listFace ? list.querySelector<HTMLElement>(".fpeek") : null;
+    if (!row) { ring.classList.remove("on"); return; }
+    const box = ringTarget(row);
+    const lr = list.getBoundingClientRect();
+    const r = box.getBoundingClientRect();
+    const radius = getComputedStyle(box).borderRadius;
+    const place = () => {
+      ring.style.transform = `translate(${r.left - lr.left + list.scrollLeft}px, ${r.top - lr.top + list.scrollTop}px)`;
+      ring.style.width = `${r.width}px`;
+      ring.style.height = `${r.height}px`;
+      ring.style.borderRadius = radius;
+    };
+    if (!ring.classList.contains("on")) {
+      ring.classList.add("jump");
+      place();
+      void ring.offsetWidth;
+      ring.classList.remove("jump");
+      ring.classList.add("on");
+    } else {
+      place();
+    }
   }
 
   /** A press on the face lands on what the hover opened groups for, so those
@@ -17969,9 +18172,16 @@ export class WristAssistantPanel extends LitElement {
     // shows the row under the pointer as the selection.
     // The thing under the pointer on the face outlines its row the same way.
     const shown = this.inspect;
-    const peeks = [this.rowPeek, this.liveFaceHover()].flatMap((p) => p ? [inspectKey(p)] : []);
+    // The face hover's row is marked `fpeek`: it carries no outline of its
+    // own, since the ring that glides between rows (`face-ring`) draws it.
+    const listPeek = this.rowPeek ? inspectKey(this.rowPeek) : undefined;
+    const facePeek = this.liveListFace();
+    const faceKey = facePeek ? inspectKey(facePeek) : undefined;
     const hoverOpen = this.faceHoverOpenIds();
-    const peekCls = (row: Inspect) => peeks.includes(inspectKey(row)) ? "peek" : "";
+    const peekCls = (row: Inspect) => {
+      const k = inspectKey(row);
+      return k === listPeek ? "peek" : k === faceKey ? "fpeek" : "";
+    };
     const shapeHl = shown.kind === "family";
     const tapShown = (_id: string) => this.tapFocus;
     const ground = backgroundRow(cfg, this.activeFamily);
@@ -18371,6 +18581,7 @@ export class WristAssistantPanel extends LitElement {
         : nothing}
       <div class="layers ${curved ? "skipped" : ""}" @pointerleave=${(e: PointerEvent) => this.leaveList(e)}>
       ${body}
+      <div class="face-ring" aria-hidden="true"></div>
       </div>
       <div class="pinned-set" @pointerleave=${(e: PointerEvent) => this.leaveList(e)}>
       ${family === "corner" ? html`<div class="layer pinned ${shapeHl && this.pinnedPick === "corner" ? "hl" : ""} ${peekCls({ kind: "family" })}" style=${`--k:${SECTION_COLOR.content}`} tabindex="0"
@@ -19458,7 +19669,7 @@ export class WristAssistantPanel extends LitElement {
       ...(hoverIds.length > 0 ? { hoverIds } : {}),
     };
     return html`<div class="preview ${family} active"
-      @pointerdown=${(e: PointerEvent) => { this.keepFaceHoverOpen(); this.faceHover = undefined; this.onPreviewPointerDown(family, e); }}
+      @pointerdown=${(e: PointerEvent) => { this.keepFaceHoverOpen(); this.dropFaceTrail(); this.faceHover = undefined; this.onPreviewPointerDown(family, e); }}
       @pointermove=${(e: PointerEvent) => this.onPreviewPointerMove(e)}
       @pointerleave=${() => { this.faceHover = undefined; }}
       @dblclick=${(e: MouseEvent) => this.onPreviewDoubleClick(e)}>
@@ -19760,7 +19971,7 @@ export class WristAssistantPanel extends LitElement {
     const slots = this.slotInfo();
     const slotLit = this.slotValuesOfSelection();
     const selLit = this.sharedValuesReadBy(cfg, this.inspect, this.multi);
-    const faceLit = this.sharedValuesReadBy(cfg, this.faceHover);
+    const faceLit = this.sharedValuesReadBy(cfg, this.listFace);
     const body = html`<div class="sv-body">
       <div class="sv-tools">
         <span class="lc-sub" title=${explain}>set once, used by many layers</span>
