@@ -737,6 +737,13 @@ type LayerDetail = "compact" | "expanded";
  * browser's copy of them is read past. */
 const LIST_STORE_KEY = "wrist-assistant-panel.layers.v1";
 
+/** Which groups and lists are folded shut in the Layers list, by id. Per
+ * browser, so a refresh keeps them shut. Ids are UUIDs, so one flat list
+ * serves every document; only the newest `FOLD_STORE_MAX` are kept, which
+ * lets folders of deleted documents fall off the end. */
+const FOLD_STORE_KEY = "wrist-assistant-panel.folded.v1";
+const FOLD_STORE_MAX = 500;
+
 const GRID_STORE_KEY = "wrist-assistant-panel.grid.v1";
 
 /** The complication open in this tab, so a reload opens it again. Session
@@ -1501,7 +1508,8 @@ export class WristAssistantPanel extends LitElement {
   /** Alt is down. It flips snapping for a drag, so the grid lines show while
    * it is held even with Snap to grid off. */
   @state() private altHeld = false;
-  /** Groups folded shut in the Layers list. List state only, never saved. */
+  /** Groups and lists folded shut in the Layers list. Kept per browser, never
+   * in the document; change it through `setCollapsed` so it is saved. */
   @state() private collapsed: ReadonlySet<string> = new Set();
   @state() private activeFamily: FamilyKind = "rectangular";
   /**
@@ -6418,6 +6426,7 @@ export class WristAssistantPanel extends LitElement {
     this.clearLegacyPickerHidden();
     this.loadColumnWidths();
     this.loadListView();
+    this.loadCollapsed();
     this.loadGrid();
     this.loadOpen();
     this.sizeObserver.observe(this);
@@ -6588,6 +6597,28 @@ export class WristAssistantPanel extends LitElement {
       }));
     } catch {
       /* Storage off: the choice still holds for this visit. */
+    }
+  }
+
+  private loadCollapsed() {
+    try {
+      const raw = window.localStorage.getItem(FOLD_STORE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as unknown;
+      if (Array.isArray(saved)) this.collapsed = new Set(saved.filter((k): k is string => typeof k === "string"));
+    } catch {
+      /* A browser with storage off opens every group, as before. */
+    }
+  }
+
+  /** Folds or unfolds, and remembers it. A Set keeps insertion order, so the
+   * newest folds are the ones the cap keeps. */
+  private setCollapsed(next: ReadonlySet<string>) {
+    this.collapsed = next;
+    try {
+      window.localStorage.setItem(FOLD_STORE_KEY, JSON.stringify([...next].slice(-FOLD_STORE_MAX)));
+    } catch {
+      /* Storage off: the folds still hold for this visit. */
     }
   }
 
@@ -16493,7 +16524,7 @@ export class WristAssistantPanel extends LitElement {
             aria-label=${g.locked ? "Unlock the group" : "Lock the group"}
             @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => { const x = c.groups?.find((y) => y.id === g.id); if (x) x.locked = !x.locked; }); }}>${uiIcon(g.locked ? "lock" : "unlock")}</button>
           <button class="chev" aria-expanded=${open ? "true" : "false"} title=${open ? "Fold the group" : "Unfold the group"}
-            @click=${(e: Event) => { e.stopPropagation(); const next = new Set(this.collapsed); if (open) next.add(g.id); else next.delete(g.id); this.collapsed = next; }}>${uiIcon("chevron")}</button>
+            @click=${(e: Event) => { e.stopPropagation(); const next = new Set(this.collapsed); if (open) next.add(g.id); else next.delete(g.id); this.setCollapsed(next); }}>${uiIcon("chevron")}</button>
         </span>
       </div>`;
     };
@@ -16571,7 +16602,7 @@ export class WristAssistantPanel extends LitElement {
           e.stopPropagation();
           const next = new Set(this.collapsed);
           if (open) next.add(id); else next.delete(id);
-          this.collapsed = next;
+          this.setCollapsed(next);
         }}>${uiIcon("chevron")}</button>`;
     };
 
@@ -16866,7 +16897,7 @@ export class WristAssistantPanel extends LitElement {
         // underneath stays out of the way until someone opens it.
         const next = new Set(this.collapsed);
         for (const g of arrived) if (g.parentId !== undefined) next.add(g.id);
-        this.collapsed = next;
+        this.setCollapsed(next);
         const top = arrived.find((g) => g.parentId === undefined);
         if (top) this.inspect = { kind: "group", id: top.id };
         return;
