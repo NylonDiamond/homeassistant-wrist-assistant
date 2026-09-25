@@ -5458,12 +5458,14 @@ ${LO(c)}`}}delete s.hidden,delete s.linkId;let l=Fc(a);if(l.length>0){let d=l.sl
     .values-bar.testing .vb-state { color: var(--wa-testing); }
     .values-bar.testing .vb-dot { background: var(--wa-testing); box-shadow: 0 0 6px var(--wa-testing); }
     .vb-empty { min-width: 0; font-size: 11.5px; color: var(--wa-muted); }
-    /* Pills wrap onto more rows while the stage has room above the bar; past
-       four rows (28 px each, 6 px gaps) the rest scrolls down. */
+    /* One value per row, all as wide as the widest, so the names and the
+       controls line up in two columns. Past seven rows (28 px each, 6 px
+       gaps), or 40% of the window, the rest scrolls down. */
     .vb-pills {
-      display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; max-height: 136px; padding: 2px 0;
-      overflow-y: auto; scrollbar-width: thin;
+      display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 0;
+      max-height: min(40vh, 236px); padding: 2px 0; overflow-y: auto; scrollbar-width: thin;
     }
+    .vb-pills .vpill b { flex: 1; }
     .vchip.vpill {
       display: inline-flex; align-items: center; gap: 8px; flex: none; width: auto; height: 28px; padding: 0 10px; border-radius: 8px;
       background: var(--wa-chip-bg); border: 1px solid var(--wa-chip-line); font-size: 11.5px; color: var(--wa-ink); cursor: default;
