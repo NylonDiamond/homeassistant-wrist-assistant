@@ -2569,12 +2569,35 @@ function chartsById(elements: readonly ResolvedElement[]): Map<string, ResolvedC
 }
 
 /**
+ * Where a hidden layer is, while it is pointed at or selected: a dashed
+ * outline and a faint fill, and nothing of the layer itself. A layer a rule
+ * hides right now (a window whose light is off, rain on a dry day) still has
+ * a place on the face, and pointing at its row or at a shared value it reads
+ * should show that place, the way a tap zone is shown though it draws nothing
+ * on the watch. It takes no clicks, so it never stands between the pointer and
+ * a layer that is drawn. Anything not pointed at or selected stays invisible.
+ */
+function hiddenGhost(el: ResolvedElement, canvas: CanvasSize, options: RenderOptions): TemplateResult | typeof nothing {
+  const hovered = options.hoverId === el.id || options.hoverIds?.includes(el.id) === true;
+  const selected = options.highlightId === el.id || options.highlightIds?.includes(el.id) === true;
+  if (!hovered && !selected) return nothing;
+  const box = frameBox(el, canvas);
+  const o = layerOutline(el, box);
+  return svg`<g data-hidden-ghost=${el.id} pointer-events="none" transform="rotate(${el.frame.rotationDegrees} ${box.cx} ${box.cy})">
+    <rect x=${o.x} y=${o.y} width=${o.w} height=${o.h} fill="#0A84FF" fill-opacity=${hovered ? 0.12 : 0.06}
+      stroke="#FFFFFF" stroke-width="1.5" stroke-opacity="0.7" vector-effect="non-scaling-stroke" />
+    <rect x=${o.x} y=${o.y} width=${o.w} height=${o.h} fill="none"
+      stroke="#0A84FF" stroke-width="1.5" stroke-dasharray="4 3" vector-effect="non-scaling-stroke" />
+  </g>`;
+}
+
+/**
  * One layer, or with `part` "handles" only its resize handles. The handles are
  * drawn in a pass of their own, above the slot clip, so a handle on a layer
  * that touches the slot edge still shows past that edge.
  */
 function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderOptions, charts: ReadonlyMap<string, ResolvedChart> = new Map(), tintPrefix?: string, part: "body" | "handles" = "body", bounds?: HandleBounds) {
-  if (el.isHidden && !options.showHidden) return nothing;
+  if (el.isHidden && !options.showHidden) return part === "body" ? hiddenGhost(el, canvas, options) : nothing;
   const review = options.tapReview === true;
   const showTaps = options.tapAreas === true || review;
   // Review narrowed to one tap: that tap is the whole point of the picture, and

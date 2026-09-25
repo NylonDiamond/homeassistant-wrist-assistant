@@ -86,3 +86,23 @@ describe("quiet taps", () => {
     expect(draw(cfg)).toContain(id);
   });
 });
+
+describe("hidden layers", () => {
+  it("shows where a hidden layer is while it is pointed at or selected, and nothing else", () => {
+    const { cfg, el } = withLayer("icon");
+    el.payload.isHidden = true;
+    const id = el.payload.id;
+    const ghost = `data-hidden-ghost=${id}`;
+    // Never drawn and never clickable on its own.
+    expect(draw(cfg, { showHidden: false })).not.toContain(id);
+    // Pointed at in the Layers list or through a shared value it reads.
+    const hovered = draw(cfg, { showHidden: false, hoverIds: [id] });
+    expect(hovered).toContain(ghost);
+    expect(hovered).not.toContain(`data-element-id=${id}`);
+    expect(hovered).toContain('pointer-events="none"');
+    // Selected, or peeked from its row.
+    expect(draw(cfg, { showHidden: false, highlightId: id })).toContain(ghost);
+    // No handles: there is nothing drawn to resize.
+    expect(handlesOf(draw(cfg, { showHidden: false, highlightId: id, handles: true }))).toEqual([]);
+  });
+});
