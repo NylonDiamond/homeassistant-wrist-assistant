@@ -65,6 +65,86 @@ export function notesSummary(text: string, max: number): string {
   return `${(space > max / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
 }
 
+// ── the editor's toolbar ──────────────────────────────────────────────────
+//
+// Each button writes the same plain text a person would type, so the notes on
+// the wire never change shape: the toolbar is a shortcut, not a format.
+
+/** The text after a toolbar action, and the selection to put back. */
+export interface NoteEdit {
+  text: string;
+  start: number;
+  end: number;
+}
+
+/** The whole lines a selection touches, as offsets into the text. */
+function lineSpan(text: string, start: number, end: number): [number, number] {
+  const from = text.lastIndexOf("\n", start - 1) + 1;
+  // A selection that ends just after a newline stops at the line above.
+  const last = end > start && text[end - 1] === "\n" ? end - 1 : end;
+  const nl = text.indexOf("\n", last);
+  return [from, nl < 0 ? text.length : nl];
+}
+
+function stripMarker(line: string): string {
+  return line.replace(ORDERED_RE, "").replace(BULLET_RE, "").trimStart();
+}
+
+/**
+ * Numbered list or bullets on the lines the selection touches. When every one
+ * of them already is that kind of list, they go back to plain lines; a
+ * numbered list carries on from a numbered line just above.
+ */
+export function toggleNoteList(text: string, start: number, end: number, ordered: boolean): NoteEdit {
+  const [from, to] = lineSpan(text, start, end);
+  const lines = text.slice(from, to).split("\n");
+  const marker = ordered ? ORDERED_RE : BULLET_RE;
+  const filled = lines.filter((l) => l.trim() !== "");
+  const off = filled.length > 0 && filled.every((l) => marker.test(l));
+  const above = text.slice(0, Math.max(0, from - 1)).split("\n").at(-1) ?? "";
+  let n = ordered ? Number(/^\s*(\d{1,3})[.)]\s+/.exec(above)?.[1] ?? 0) : 0;
+  const next = lines.map((l) => {
+    if (l.trim() === "" && filled.length > 0) return l;
+    if (off) return stripMarker(l);
+    n += 1;
+    return `${ordered ? `${n}. ` : "- "}${stripMarker(l)}`;
+  });
+  const block = next.join("\n");
+  const out = text.slice(0, from) + block + text.slice(to);
+  // A caret stays a caret, at the end of its line; a selection keeps the
+  // whole block selected, so a second press can undo the first.
+  return start === end && lines.length === 1
+    ? { text: out, start: from + block.length, end: from + block.length }
+    : { text: out, start: from, end: from + block.length };
+}
+
+/**
+ * The caret's line as a heading: on a line of its own, with a blank line on
+ * each side, no list marker and no closing stop, which is what `parseNotes`
+ * reads as one. An empty line becomes a heading to type over.
+ */
+export function makeNoteHeading(text: string, start: number): NoteEdit {
+  const [from, to] = lineSpan(text, start, start);
+  const words = stripMarker(text.slice(from, to)).trim().replace(/[.!?,;:]+$/, "") || "Set up";
+  const before = text.slice(0, from).replace(/\n+$/, "");
+  const after = text.slice(to).replace(/^\n+/, "");
+  const head = before === "" ? "" : `${before}\n\n`;
+  const out = `${head}${words}${after === "" ? "" : `\n\n${after}`}`;
+  return { text: out, start: head.length, end: head.length + words.length };
+}
+
+/** A `[Name]` link in place of the selection, spaced off the words around
+ * it, with the caret after it. */
+export function insertNoteLink(text: string, start: number, end: number, name: string): NoteEdit {
+  const before = text.slice(0, start);
+  const after = text.slice(end);
+  const lead = before === "" || /\s$/.test(before) ? "" : " ";
+  const tail = after === "" || /^[\s.,;:!?)]/.test(after) ? "" : " ";
+  const link = `${lead}[${name}]${tail}`;
+  const caret = start + link.length;
+  return { text: before + link + after, start: caret, end: caret };
+}
+
 /** A link's tooltip: what a click on it does. */
 export function noteTargetTitle(target: NoteTarget): string {
   return target.kind === "value" ? "Open this shared value"

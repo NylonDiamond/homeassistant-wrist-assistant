@@ -322,9 +322,13 @@ import {
 import {
   NOTES_MAX,
   NOTES_PLACEHOLDER,
+  type NoteEdit,
   type NoteSpan,
   type NoteTarget,
   cleanNotes,
+  insertNoteLink,
+  makeNoteHeading,
+  toggleNoteList,
   noteTargetTitle,
   notesPreview,
   notesSummary,
@@ -1486,6 +1490,11 @@ export class WristAssistantPanel extends LitElement {
    * each space as it was typed. */
   @state() private notesEditing = false;
   @state() private notesDraft = "";
+  /** The notes box shows its Preview instead of the text. */
+  @state() private notesPreviewOn = false;
+  /** The toolbar's Link list is open: the selection it will replace, kept
+   * while its search has the focus, and what is typed in that search. */
+  @state() private notesLink?: { at: readonly [number, number]; query: string };
   /** Show all in the Layers card: every page's layers, grouped by page,
    * rather than the page showing. */
   @state() private allPages = false;
@@ -4030,6 +4039,51 @@ export class WristAssistantPanel extends LitElement {
       background: var(--wa-input); color: var(--wa-ink);
     }
     .as-tabs button.as-notes { margin-left: 6px; }
+    /* The notes box's toolbar: small square buttons that write the plain text,
+       a Link list under them, and Preview at the far end. */
+    .notes-editor { display: flex; flex-direction: column; gap: 6px; position: relative; }
+    .nt-bar { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+    .nt-bar .spacer { flex: 1; }
+    button.nt-btn {
+      font: inherit; font-size: 12px; line-height: 1; cursor: pointer; flex: none;
+      display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+      min-width: 28px; height: 28px; padding: 0 7px; border-radius: 7px;
+      border: 1px solid var(--wa-line); background: var(--wa-panel); color: var(--wa-ink);
+    }
+    button.nt-btn.wide { padding: 0 10px; font-weight: 600; font-size: 11.5px; }
+    button.nt-btn svg.ui-icon { width: 13px; height: 13px; }
+    button.nt-btn .nt-glyph { font-weight: 700; font-variant-numeric: tabular-nums; }
+    button.nt-btn:hover:not(:disabled) { border-color: color-mix(in srgb, var(--wa-val) 55%, var(--wa-line)); }
+    button.nt-btn.on { background: color-mix(in srgb, var(--wa-val) 16%, var(--wa-panel)); border-color: var(--wa-val); }
+    button.nt-btn:disabled { opacity: .4; cursor: default; }
+    .nt-links {
+      display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 8px;
+      border: 1px solid color-mix(in srgb, var(--wa-val) 45%, var(--wa-line)); background: var(--wa-card);
+    }
+    .nt-search { display: flex; align-items: center; gap: 6px; padding: 0 8px; height: 30px; border-radius: 7px; background: var(--wa-field); color: var(--wa-muted); }
+    .nt-search svg.ui-icon { width: 14px; height: 14px; flex: none; }
+    .nt-search input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--wa-ink); font: inherit; font-size: 12.5px; outline: none; }
+    .nt-list { display: flex; flex-direction: column; max-height: 190px; overflow-y: auto; }
+    button.nt-item {
+      display: flex; align-items: baseline; gap: 10px; width: 100%; padding: 6px 8px; border: 0; border-radius: 6px;
+      background: transparent; color: var(--wa-ink); font: inherit; font-size: 12.5px; text-align: left; cursor: pointer;
+    }
+    button.nt-item:hover, button.nt-item:focus-visible { background: color-mix(in srgb, var(--wa-val) 12%, transparent); }
+    .nt-item .nt-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    .nt-item .nt-kind { flex: none; font-size: 11px; color: var(--wa-muted); }
+    .nt-preview {
+      min-height: 120px; padding: 10px 12px; border-radius: 7px; box-sizing: border-box;
+      border: 1px dashed color-mix(in srgb, var(--wa-val) 45%, var(--wa-line)); background: var(--wa-input);
+      display: flex; flex-direction: column; gap: 8px; line-height: 1.5; font-size: 13px; overflow-wrap: anywhere;
+    }
+    .nt-preview p { margin: 0; white-space: pre-line; }
+    .nt-preview ol, .nt-preview ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 5px; }
+    .nt-preview .nc-h { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--wa-val); margin-top: 2px; }
+    .nt-preview .note-link {
+      font: inherit; font-size: 12px; font-weight: 600; line-height: 1.3; padding: 0 5px; margin: 0 1px; cursor: pointer;
+      border: 1px solid color-mix(in srgb, var(--wa-val) 45%, transparent); border-radius: 5px;
+      background: color-mix(in srgb, var(--wa-val) 12%, transparent); color: var(--wa-ink);
+    }
     /* The gallery's notes line: a switch when there are notes, an offer when
        there are none. */
     .gal-notes {
@@ -14857,12 +14911,10 @@ export class WristAssistantPanel extends LitElement {
     const cfg = this.shareConfig();
     if (!cfg) return nothing;
     if (this.galleryNotesOpen) {
-      return html`<label class="xf-f"><span class="xf-label">Notes for people who import
+      return html`<div class="xf-f"><span class="xf-label"><label for="gal-notes-box">Notes for people who import</label>
           <span class="r">${this.notesDraft.length} / ${NOTES_MAX}</span></span>
-        <textarea class="notes-box" rows="6" maxlength=${NOTES_MAX} .value=${this.notesDraft}
-          placeholder=${NOTES_PLACEHOLDER}
-          @input=${(e: Event) => this.typeNotes((e.target as HTMLTextAreaElement).value)}></textarea>
-        <span class="hint">Saved on the complication too. [Name] links a shared value, group or layer.</span></label>`;
+        ${this.renderNotesEditor(cfg, "gal-notes-box", 6)}
+        <span class="hint">Saved on the complication too.</span></div>`;
     }
     if (notes !== undefined) {
       const lines = notes.split("\n").filter((l) => l.trim() !== "").length;
@@ -14880,7 +14932,7 @@ export class WristAssistantPanel extends LitElement {
       <span class="gn-icon">${uiIcon("info")}</span>
       <span class="gn-text"><b>Add notes for people who import?</b>
         <small>${busy ? `This one has ${layers} layers and ${values === 1 ? "1 shared value" : `${values} shared values`}. ` : ""}Say what to set up and what a tap does. Notes help most on a design with many parts.</small></span>
-      <button type="button" class="small" @click=${() => { this.notesDraft = ""; this.galleryNotesOpen = true; }}>Add notes</button>
+      <button type="button" class="small" @click=${() => { this.notesDraft = ""; this.notesPreviewOn = false; this.notesLink = undefined; this.galleryNotesOpen = true; }}>Add notes</button>
     </div>`;
   }
 
@@ -17221,11 +17273,8 @@ export class WristAssistantPanel extends LitElement {
           <button type="button" class="lc-btn nc-done" @click=${() => this.finishNotes()}>Done</button>
         </div>
         <label class="nc-lead" for="notes-box">Tell people what to set up after they import this.</label>
-        <textarea id="notes-box" class="notes-box" rows="9" maxlength=${NOTES_MAX} .value=${this.notesDraft}
-          placeholder=${NOTES_PLACEHOLDER}
-          @input=${(e: Event) => this.typeNotes((e.target as HTMLTextAreaElement).value)}
-          @keydown=${(e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); this.finishNotes(); } }}></textarea>
-        <div class="nc-foot"><span>Plain text. [Name] links a shared value, group or layer. A short line alone is a heading. Lines starting 1. or - are a list.</span>
+        ${this.renderNotesEditor(cfg, "notes-box", 9, () => this.finishNotes())}
+        <div class="nc-foot"><span>Plain text, so it reads the same everywhere. The buttons write it for you.</span>
           <span class="nc-count">${this.notesDraft.length} / ${NOTES_MAX}</span></div>
       </section>`;
     }
@@ -17239,11 +17288,6 @@ export class WristAssistantPanel extends LitElement {
         <span class="nc-chev">${uiIcon("chevron")}</span>
       </button>`;
     }
-    const spans = (list: readonly NoteSpan[]) => list.map((s) => s.kind === "text"
-      ? s.text
-      : html`<button type="button" class="note-link" title=${noteTargetTitle(s.target)}
-          @click=${() => this.goToNoteTarget(s.target)}>${s.text}</button>`);
-    const blocks = parseNotes(notes, this.notesResolver(cfg));
     return html`<section class="notes-card open" aria-label="Notes">
       <div class="nc-head">
         <span class="nc-icon">${uiIcon("note")}</span><b>Notes</b>
@@ -17254,15 +17298,153 @@ export class WristAssistantPanel extends LitElement {
         <button type="button" class="nc-fold" aria-label="Fold the notes" title="Fold the notes"
           @click=${() => { this.notesOpenId = undefined; this.notesImportedId = undefined; }}>${uiIcon("chevron")}</button>
       </div>
-      <div class="nc-body">${blocks.map((b) => b.kind === "heading"
-        ? html`<div class="nc-h">${spans(b.spans)}</div>`
-        : b.kind === "para"
-          ? html`<p>${spans(b.spans)}</p>`
-          : b.ordered
-            ? html`<ol>${b.items.map((item) => html`<li>${spans(item)}</li>`)}</ol>`
-            : html`<ul>${b.items.map((item) => html`<li>${spans(item)}</li>`)}</ul>`)}</div>
+      <div class="nc-body">${this.renderNoteBlocks(cfg, notes)}</div>
       <div class="nc-foot">Notes show only in this editor. The watch never draws them.</div>
     </section>`;
+  }
+
+  /** The notes as the card draws them: headings, paragraphs, lists, and a
+   * `[Name]` as a button to what it names. */
+  private renderNoteBlocks(cfg: CustomComplicationConfig, notes: string) {
+    const spans = (list: readonly NoteSpan[]) => list.map((s) => s.kind === "text"
+      ? s.text
+      : html`<button type="button" class="note-link" title=${noteTargetTitle(s.target)}
+          @click=${() => this.goToNoteTarget(s.target)}>${s.text}</button>`);
+    return parseNotes(notes, this.notesResolver(cfg)).map((b) => b.kind === "heading"
+      ? html`<div class="nc-h">${spans(b.spans)}</div>`
+      : b.kind === "para"
+        ? html`<p>${spans(b.spans)}</p>`
+        : b.ordered
+          ? html`<ol>${b.items.map((item) => html`<li>${spans(item)}</li>`)}</ol>`
+          : html`<ul>${b.items.map((item) => html`<li>${spans(item)}</li>`)}</ul>`);
+  }
+
+  /**
+   * The notes box with its toolbar: Heading, Numbered, Bullets and Link write
+   * the plain text a person would type, and Preview shows it the way the card
+   * will. Link opens a list of the names a `[Name]` can reach, so nobody has
+   * to know the brackets exist or spell a layer's name right. Used by the
+   * Layers card and by the gallery dialog, one at a time.
+   */
+  private renderNotesEditor(cfg: CustomComplicationConfig, boxId: string, rows: number, onEscape?: () => void) {
+    const preview = this.notesPreviewOn;
+    const tool = (label: TemplateResult | string, title: string, act: () => void, cls = "") => html`<button type="button"
+      class="nt-btn ${cls}" title=${title} aria-label=${title} ?disabled=${preview}
+      @mousedown=${(e: Event) => e.preventDefault()} @click=${act}>${label}</button>`;
+    return html`<div class="notes-editor">
+      <div class="nt-bar" role="toolbar" aria-label="Write the notes">
+        ${tool(html`<b>H</b>`, "Heading: the line the caret is on, on its own", () => this.applyNoteEdit(boxId, (t, s) => makeNoteHeading(t, s)))}
+        ${tool(html`<span class="nt-glyph">1.</span>`, "Numbered list: the lines picked, as steps", () => this.applyNoteEdit(boxId, (t, s, e) => toggleNoteList(t, s, e, true)))}
+        ${tool(html`<span class="nt-glyph">•</span>`, "Bullets: the lines picked, as a list", () => this.applyNoteEdit(boxId, (t, s, e) => toggleNoteList(t, s, e, false)))}
+        ${tool(html`${uiIcon("link")}<span>Link</span>`, `Link to a shared value, group or layer (${KEY_MOD}K)`,
+          () => this.openNotesLinkPicker(boxId), `wide ${this.notesLink ? "on" : ""}`)}
+        <span class="spacer"></span>
+        <button type="button" class="nt-btn wide ${preview ? "on" : ""}" aria-pressed=${preview ? "true" : "false"}
+          title=${preview ? "Back to the text" : "See the notes the way people will after import"}
+          @click=${() => { this.notesPreviewOn = !preview; this.notesLink = undefined; }}>${preview ? "Edit text" : "Preview"}</button>
+      </div>
+      ${this.notesLink && !preview ? this.renderNotesLinkPicker(cfg, boxId) : nothing}
+      ${preview
+        ? html`<div class="nt-preview nc-body">${cleanNotes(this.notesDraft) === undefined
+            ? html`<span class="hint">Nothing written yet.</span>`
+            : this.renderNoteBlocks(cfg, this.notesDraft)}</div>`
+        : html`<textarea id=${boxId} class="notes-box" rows=${rows} maxlength=${NOTES_MAX} .value=${this.notesDraft}
+            placeholder=${NOTES_PLACEHOLDER}
+            @input=${(e: Event) => this.typeNotes((e.target as HTMLTextAreaElement).value)}
+            @keydown=${(e: KeyboardEvent) => {
+              if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+                e.preventDefault();
+                e.stopPropagation();
+                this.openNotesLinkPicker(boxId);
+              } else if (e.key === "Escape" && onEscape) {
+                e.stopPropagation();
+                onEscape();
+              }
+            }}></textarea>`}
+    </div>`;
+  }
+
+  /** Run one toolbar action on the box's text and selection, then put the
+   * caret back where the action says. An action that would pass the limit
+   * does nothing. */
+  private applyNoteEdit(boxId: string, edit: (text: string, start: number, end: number) => NoteEdit, at?: readonly [number, number]) {
+    const box = this.renderRoot.querySelector<HTMLTextAreaElement>(`#${boxId}`);
+    const text = this.notesDraft;
+    const start = at?.[0] ?? box?.selectionStart ?? text.length;
+    const end = at?.[1] ?? box?.selectionEnd ?? start;
+    const next = edit(text, Math.min(start, text.length), Math.min(end, text.length));
+    if (next.text.length > NOTES_MAX) return;
+    this.typeNotes(next.text);
+    void this.updateComplete.then(() => {
+      const b = this.renderRoot.querySelector<HTMLTextAreaElement>(`#${boxId}`);
+      b?.focus({ preventScroll: true });
+      b?.setSelectionRange(next.start, next.end);
+    });
+  }
+
+  /** Link: keep the selection, since the picker's search takes the focus
+   * away from the box, and open the list of names. */
+  private openNotesLinkPicker(boxId: string) {
+    if (this.notesLink) {
+      this.notesLink = undefined;
+      return;
+    }
+    const box = this.renderRoot.querySelector<HTMLTextAreaElement>(`#${boxId}`);
+    const at = this.notesDraft.length;
+    this.notesLink = { at: [box?.selectionStart ?? at, box?.selectionEnd ?? at], query: "" };
+    void this.updateComplete.then(() => this.renderRoot.querySelector<HTMLInputElement>(".nt-links input")?.focus());
+  }
+
+  /** Every name a link can reach, in the order the resolver tries them, once
+   * each: shared values, groups, then layers. */
+  private noteLinkNames(cfg: CustomComplicationConfig): { name: string; kind: string }[] {
+    const seen = new Set<string>();
+    const out: { name: string; kind: string }[] = [];
+    const put = (name: string | undefined, kind: string) => {
+      const n = (name ?? "").trim();
+      if (n === "" || n.length > 60 || /[[\]\n]/.test(n) || seen.has(n.toLowerCase())) return;
+      seen.add(n.toLowerCase());
+      out.push({ name: n, kind });
+    };
+    for (const v of cfg.values) put(v.name, "Shared value");
+    for (const g of cfg.groups ?? []) put(g.name, "Group");
+    const ctx = describeContext(this.host());
+    for (const el of cfg.elements) put(el.payload.name?.trim() || layerTitle(el, ctx), `${KIND_LABEL[el.kind]} layer`);
+    return out;
+  }
+
+  private renderNotesLinkPicker(cfg: CustomComplicationConfig, boxId: string) {
+    const link = this.notesLink;
+    if (!link) return nothing;
+    const q = link.query.trim().toLowerCase();
+    const all = this.noteLinkNames(cfg);
+    const shown = q === "" ? all : all.filter((n) => n.name.toLowerCase().includes(q));
+    const pick = (name: string) => {
+      this.notesLink = undefined;
+      this.applyNoteEdit(boxId, (t, s, e) => insertNoteLink(t, s, e, name), link.at);
+    };
+    return html`<div class="nt-links" role="dialog" aria-label="Link to a shared value, group or layer">
+      <label class="nt-search">${uiIcon("search")}
+        <input type="search" placeholder="Find a shared value, group or layer…" aria-label="Find a name to link"
+          .value=${link.query}
+          @input=${(e: Event) => { this.notesLink = { ...link, query: (e.target as HTMLInputElement).value }; }}
+          @keydown=${(e: KeyboardEvent) => {
+            if (e.key === "Escape") {
+              e.stopPropagation();
+              this.notesLink = undefined;
+              void this.updateComplete.then(() => this.renderRoot.querySelector<HTMLTextAreaElement>(`#${boxId}`)?.focus());
+            } else if (e.key === "Enter" && shown[0]) {
+              e.preventDefault();
+              pick(shown[0].name);
+            }
+          }} /></label>
+      <div class="nt-list">${all.length === 0
+        ? html`<div class="hint">Name a shared value, group or layer first. Then it can be linked here.</div>`
+        : shown.length === 0
+          ? html`<div class="hint">Nothing is called that.</div>`
+          : shown.map((n) => html`<button type="button" class="nt-item" @click=${() => pick(n.name)}>
+              <span class="nt-name">${n.name}</span><span class="nt-kind">${n.kind}</span></button>`)}</div>
+    </div>`;
   }
 
   /** Names a `[Name]` in the notes can reach, first come first served:
@@ -17300,6 +17482,8 @@ export class WristAssistantPanel extends LitElement {
     this.closeAddSheet();
     this.notesDraft = cfg.notes ?? "";
     this.notesEditing = true;
+    this.notesPreviewOn = false;
+    this.notesLink = undefined;
     this.notesImportedId = undefined;
     void this.updateComplete.then(() => {
       const box = this.renderRoot.querySelector<HTMLTextAreaElement>("#notes-box");
@@ -17323,6 +17507,7 @@ export class WristAssistantPanel extends LitElement {
   private finishNotes() {
     const id = this.draft?.config.id;
     this.notesEditing = false;
+    this.notesLink = undefined;
     this.notesOpenId = this.draft?.config.notes !== undefined ? id : undefined;
   }
 

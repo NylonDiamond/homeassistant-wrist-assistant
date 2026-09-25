@@ -19,6 +19,9 @@ import {
   NOTES_MAX,
   type NoteTarget,
   cleanNotes,
+  insertNoteLink,
+  makeNoteHeading,
+  toggleNoteList,
   noteSpans,
   notesPreview,
   notesSummary,
@@ -138,5 +141,44 @@ describe("reading notes", () => {
     const long = notesSummary(`${"word ".repeat(40)}end.`, 30);
     expect(long.length).toBeLessThanOrEqual(30);
     expect(long.endsWith("…")).toBe(true);
+  });
+});
+
+describe("the notes toolbar", () => {
+  it("numbers the picked lines, carries on a list above, and takes the numbers off again", () => {
+    const text = "Steps\n1. First\nSecond\nThird";
+    const start = text.indexOf("Second");
+    const on = toggleNoteList(text, start, text.length, true);
+    expect(on.text).toBe("Steps\n1. First\n2. Second\n3. Third");
+    expect(on.text.slice(on.start, on.end)).toBe("2. Second\n3. Third");
+    const off = toggleNoteList(on.text, on.start, on.end, true);
+    expect(off.text).toBe("Steps\n1. First\nSecond\nThird");
+  });
+
+  it("turns bullets into numbers rather than stacking markers", () => {
+    expect(toggleNoteList("- a\n- b", 0, 7, true).text).toBe("1. a\n2. b");
+    expect(toggleNoteList("1. a\n2. b", 0, 9, false).text).toBe("- a\n- b");
+  });
+
+  it("puts a marker on an empty line and leaves the caret after it", () => {
+    const edit = toggleNoteList("Intro\n", 6, 6, false);
+    expect(edit.text).toBe("Intro\n- ");
+    expect(edit.start).toBe(8);
+    expect(toggleNoteList("", 0, 0, true)).toEqual({ text: "1. ", start: 3, end: 3 });
+  });
+
+  it("makes a heading the reader sees as one", () => {
+    const text = "Intro.\n1. Set up:\nMore text.";
+    const edit = makeNoteHeading(text, text.indexOf("Set"));
+    expect(edit.text).toBe("Intro.\n\nSet up\n\nMore text.");
+    expect(edit.text.slice(edit.start, edit.end)).toBe("Set up");
+    expect(parseNotes(edit.text, () => undefined)[1]).toEqual({ kind: "heading", spans: [{ kind: "text", text: "Set up" }] });
+    expect(makeNoteHeading("", 0)).toEqual({ text: "Set up", start: 0, end: 6 });
+  });
+
+  it("inserts a link spaced off the words around it", () => {
+    expect(insertNoteLink("Setthen", 3, 3, "Weather")).toEqual({ text: "Set [Weather] then", start: 14, end: 14 });
+    expect(insertNoteLink("Set X.", 4, 5, "Weather").text).toBe("Set [Weather].");
+    expect(insertNoteLink("", 0, 0, "Weather")).toEqual({ text: "[Weather]", start: 9, end: 9 });
   });
 });
