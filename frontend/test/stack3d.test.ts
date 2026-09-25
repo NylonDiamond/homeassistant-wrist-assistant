@@ -11,7 +11,7 @@ import {
 describe("turning the stack", () => {
   it("turns round with a drag across and tips back with a drag down", () => {
     const v = turnStack(STACK_HOME, 100, -20);
-    expect(v.yaw).toBeGreaterThan(STACK_HOME.yaw);
+    expect(v.yaw).toBeLessThan(STACK_HOME.yaw);
     expect(v.pitch).toBeGreaterThan(STACK_HOME.pitch);
     expect(v.spread).toBe(STACK_HOME.spread);
   });

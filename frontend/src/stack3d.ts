@@ -35,7 +35,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
 export function turnStack(view: StackView, dx: number, dy: number): StackView {
   return {
     ...view,
-    yaw: view.yaw + dx * TURN_PER_PX,
+    yaw: view.yaw - dx * TURN_PER_PX,
     pitch: clamp(view.pitch - dy * TURN_PER_PX, 0, STACK_PITCH_MAX),
   };
 }
