@@ -33,6 +33,7 @@ import {
   type TapAction,
   type Value,
   CONTROL_DEFAULT_SYMBOL,
+  CUSTOM_SVG_SYMBOL,
   DRAWABLE_FAMILIES,
   IMAGE_TIMESTAMP_CAPSULE_HEX,
   LIST_FAMILIES,
@@ -56,7 +57,8 @@ export type PresetKind =
   | "stateIcon" | "runButton" | "thermostat" | "nowPlaying" | "summary"
   | "togglePill" | "levelBar" | "weatherCard" | "eventCountdown" | "personPhoto" | "nowPlayingArt"
   | "listEntities" | "listEvents" | "listTodo" | "listHourly" | "listDaily"
-  | "listLightsOn" | "listBatteries" | "listRecent" | "listScenes" | "listWhoHome" | "listToggles";
+  | "listLightsOn" | "listBatteries" | "listRecent" | "listScenes" | "listWhoHome" | "listToggles"
+  | "houseScene" | "floorPlan";
 
 export interface PresetSpec {
   kind: PresetKind;
@@ -80,7 +82,13 @@ export interface PresetSpec {
   needsEntity?: boolean;
   /** Only offered on these shapes. Undefined means every shape with a canvas. */
   families?: readonly FamilyKind[];
+  /** True when `layerCount` is the most it adds rather than the exact count:
+   * a scene preset draws one part per light or room it finds in the home. */
+  layerCountIsMost?: boolean;
 }
+
+/** The Home Screen tiles a whole-tile scene is drawn for. */
+const SCENE_FAMILIES: readonly FamilyKind[] = ["medium", "large"];
 
 /** The toggleable domains whose on state is the word `on`. A grid lights its
  * pills with one `isOn` rule shared by every row, and a lock (`locked`) or a
@@ -375,6 +383,24 @@ export const LAYER_PRESETS: readonly PresetSpec[] = [
     group: "list",
     families: LIST_FAMILIES,
   },
+  {
+    kind: "houseScene",
+    title: "Tiny house",
+    blurb: "A drawing of a house that fills the tile. Each window glows while its light is on, and a tap on a window toggles that light. The sky follows the sun and shows rain when the weather says so.",
+    layerCount: 44,
+    layerCountIsMost: true,
+    needsEntity: false,
+    families: SCENE_FAMILIES,
+  },
+  {
+    kind: "floorPlan",
+    title: "Floor plan",
+    blurb: "Your areas as rooms seen from above, each lit while a light in it is on, with its temperature and a dot for motion. Tap a room to toggle its lights. Drag the rooms into the shape of your home.",
+    layerCount: 55,
+    layerCountIsMost: true,
+    needsEntity: false,
+    families: [...SCENE_FAMILIES, "xlarge"],
+  },
 ];
 
 export function presetSpec(kind: PresetKind): PresetSpec {
@@ -391,6 +417,14 @@ export interface PresetEnv {
   /** Every entity Home Assistant knows, for a preset that fills in more than
    * the one it was given (Entity rows). */
   states?: Record<string, HassEntityState>;
+  /** The frontend's registry snapshots, for a preset that sorts entities into
+   * areas (Floor plan, Tiny house). Absent in tests and on a frontend that
+   * does not carry them, and then every entity is in no area. */
+  registry?: {
+    entities?: Record<string, { area_id?: string | null; device_id?: string | null }>;
+    devices?: Record<string, { area_id?: string | null }>;
+    areas?: Record<string, { name?: string | null }>;
+  };
 }
 
 /** Amber reads as "live" on a black face; the grey is the system's secondary
@@ -2418,6 +2452,780 @@ export function addWhoHomeList(cfg: CustomComplicationConfig, env: PresetEnv): s
   return addList(cfg, env, source, { rows: 4, direction: "across", gap: 2 }, [figure, name]);
 }
 
+// ── scene presets ─────────────────────────────────────────────────────────
+// Two presets that fill a whole Home Screen tile with one picture: a house
+// whose windows are the home's lights, and the home's areas seen from above.
+// Both are ordinary layers (shapes, pasted SVG drawings, text, taps, rules),
+// so every part stays editable afterwards. Neither asks for an entity: each
+// reads the home to fill itself in, and a light or a room is swapped in that
+// part's own cards later.
+
+/** How much larger than its point size a pasted drawing is fitted. Mirrors
+ * `MDI_SIZE_FACTOR` in the renderer and `mdiSizeFactor` in the app. */
+const PATH_SIZE_FACTOR = 1.15;
+
+const FULL_FRAME: NormalizedFrame = { x: 0, y: 0, width: 1, height: 1, rotationDegrees: 0 };
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/** A circle as path data. The drawings here are rectangles and discs only. */
+function disc(cx: number, cy: number, r: number): string {
+  return `M${cx - r} ${cy}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0z`;
+}
+
+function rectPath(x: number, y: number, w: number, h: number): string {
+  return `M${x} ${y}h${w}v${h}h${-w}z`;
+}
+
+/** A pasted drawing in one color. */
+function drawing(path: string, viewBox: string, hex: string): Extract<Element, { kind: "icon" }> {
+  const el = layerOf("icon");
+  el.payload.symbol = literal(CUSTOM_SVG_SYMBOL);
+  el.payload.path = path;
+  el.payload.viewBox = viewBox;
+  el.payload.colorSlot.baseColorHex = hex;
+  return el;
+}
+
+/** A shape with no border and square corners unless told otherwise. */
+function flatShape(kind: "rectangle" | "roundedRectangle" | "circle", hex: string, radius = 0): Extract<Element, { kind: "shape" }> {
+  const el = layerOf("shape");
+  el.payload.kind = kind;
+  el.payload.borderWidth = 0;
+  el.payload.cornerRadius = radius;
+  el.payload.colorSlot.baseColorHex = hex;
+  return el;
+}
+
+/** A top-to-bottom gradient. The flat color is kept as the first stop, which
+ * is what an app older than fills draws. */
+function verticalFill(el: Extract<Element, { kind: "shape" }>, stops: readonly (readonly [number, string])[]): void {
+  el.payload.fill = { kind: "linear", stops: stops.map(([at, colorHex]) => ({ at, colorHex })), angle: 90 };
+  el.payload.colorSlot.baseColorHex = stops[0]![1];
+}
+
+function glow(hex: string, radius: number): { colorHex: string; radius: number; dx: number; dy: number } {
+  return { colorHex: hex, radius, dx: 0, dy: 0 };
+}
+
+/** Shown while the comparison holds, hidden otherwise. */
+function showWhile(value: Value, comparison: Comparison): Rule {
+  return buildStatesRule(value, [{ comparison, changes: [newStyleChange("show")] }], [newStyleChange("hide")]);
+}
+
+function hideWhile(value: Value, comparison: Comparison): Rule {
+  return buildStatesRule(value, [{ comparison, changes: [newStyleChange("hide")] }]);
+}
+
+function stateOf(ref: EntityRef): Value {
+  return { kind: { kind: "entityState", ...ref } };
+}
+
+function equalsWord(word: string): Comparison {
+  return { kind: "equals", value: literal(word) };
+}
+
+/** The area an entity is in: its own, or its device's, as Home Assistant
+ * resolves it. */
+function areaIdOf(env: PresetEnv, entityId: string): string | undefined {
+  const reg = env.registry?.entities?.[entityId];
+  if (!reg) return undefined;
+  return reg.area_id || (reg.device_id ? env.registry?.devices?.[reg.device_id]?.area_id : undefined) || undefined;
+}
+
+function refOf(env: PresetEnv, entityId: string): EntityRef {
+  const name = env.states?.[entityId]?.attributes?.friendly_name;
+  return {
+    entityId,
+    displayName: typeof name === "string" && name.trim() !== "" ? name.trim() : entityId,
+    domain: entityId.split(".")[0] ?? "",
+  };
+}
+
+function entitiesOf(env: PresetEnv, domain: string): string[] {
+  return Object.keys(env.states ?? {}).filter((id) => id.startsWith(`${domain}.`)).sort();
+}
+
+function deviceClassOf(env: PresetEnv, entityId: string): string {
+  const dc = env.states?.[entityId]?.attributes?.device_class;
+  return typeof dc === "string" ? dc : "";
+}
+
+/** A temperature to print: a temperature sensor's state, else a thermostat's
+ * current temperature, whole degrees with the degree sign. */
+function temperatureValue(env: PresetEnv, candidates: (id: string) => boolean): Value | undefined {
+  const format = { decimals: 0, suffix: "°" };
+  const sensor = entitiesOf(env, "sensor").find((id) => deviceClassOf(env, id) === "temperature" && candidates(id));
+  if (sensor) return { kind: { kind: "entityState", ...refOf(env, sensor) }, format };
+  const climate = entitiesOf(env, "climate").find((id) => candidates(id) && env.states?.[id]?.attributes?.current_temperature !== undefined);
+  if (climate) return { kind: { kind: "entityAttribute", ...refOf(env, climate), attribute: "current_temperature" }, format };
+  return undefined;
+}
+
+/** A frame in one shape's own points. */
+function pointFrame(family: DrawableFamily, x: number, y: number, w: number, h: number): PresetGeometry {
+  const canvas = CANVAS[family];
+  return {
+    frame: {
+      x: round4(x / canvas.width),
+      y: round4(y / canvas.height),
+      width: round4(w / canvas.width),
+      height: round4(h / canvas.height),
+      rotationDegrees: 0,
+    },
+  };
+}
+
+// ── the tiny house ────────────────────────────────────────────────────────
+
+/** The house picture was drawn 364 points wide and 382 tall for the large tile,
+ * 170 tall for the medium one. A tile scales it evenly and centres it. */
+const SCENE_WIDTH = 364;
+
+function sceneHeight(family: DrawableFamily): number {
+  return family === "medium" ? 170 : 382;
+}
+
+function sceneScale(family: DrawableFamily): { s: number; ox: number; oy: number } {
+  const canvas = CANVAS[family];
+  const h = sceneHeight(family);
+  const s = Math.min(canvas.width / SCENE_WIDTH, canvas.height / h);
+  return { s, ox: (canvas.width - SCENE_WIDTH * s) / 2, oy: (canvas.height - h * s) / 2 };
+}
+
+/** A rectangle in the picture's own points, as a frame on this tile. */
+function sceneRect(family: DrawableFamily, x: number, y: number, w: number, h: number): PresetGeometry {
+  const { s, ox, oy } = sceneScale(family);
+  return pointFrame(family, ox + x * s, oy + y * s, w * s, h * s);
+}
+
+/** A size in the picture's points (a font, an icon, a radius) as tile points. */
+function scenePoints(family: DrawableFamily, n: number): number {
+  return round2(n * sceneScale(family).s);
+}
+
+/** The house itself, tree to car, is 364 by 300 of its own points. It fills
+ * the top of the large picture and shrinks into the right of the medium one. */
+const HOUSE_W = 364;
+const HOUSE_H = 300;
+const HOUSE_VIEWBOX = `0 0 ${HOUSE_W} ${HOUSE_H}`;
+
+function houseStage(family: DrawableFamily): { x: number; y: number; k: number } {
+  // 160 + 364 x 0.56 is 363.84: the medium house's frame ends at the tile's edge.
+  return family === "medium" ? { x: 160, y: 2, k: 0.56 } : { x: 0, y: 0, k: 1 };
+}
+
+function houseRect(family: DrawableFamily, x: number, y: number, w: number, h: number): PresetGeometry {
+  const st = houseStage(family);
+  return sceneRect(family, st.x + x * st.k, st.y + y * st.k, w * st.k, h * st.k);
+}
+
+/** A drawing in the house's own points: framed on the whole house, sized so
+ * the path fills that frame exactly. */
+function houseDrawingGeometry(family: DrawableFamily): PresetGeometry {
+  const st = houseStage(family);
+  const longest = Math.max(HOUSE_W, HOUSE_H) * st.k;
+  return { ...houseRect(family, 0, 0, HOUSE_W, HOUSE_H), size: round2(scenePoints(family, longest) / PATH_SIZE_FACTOR) };
+}
+
+/** A drawing in the whole picture's points (stars, rain). */
+function skyDrawingGeometry(family: DrawableFamily): PresetGeometry {
+  const h = sceneHeight(family);
+  return { ...sceneRect(family, 0, 0, SCENE_WIDTH, h), size: round2(scenePoints(family, Math.max(SCENE_WIDTH, h)) / PATH_SIZE_FACTOR) };
+}
+
+/** The four windows, in the order lights are handed out: the two downstairs
+ * first, since a lit room downstairs is what reads as "someone is home". */
+const HOUSE_WINDOWS: readonly { name: string; x: number; y: number; w: number; h: number }[] = [
+  { name: "Downstairs left", x: 88, y: 206, w: 44, h: 34 },
+  { name: "Downstairs right", x: 168, y: 206, w: 44, h: 34 },
+  { name: "Upstairs left", x: 94, y: 156, w: 40, h: 30 },
+  { name: "Upstairs right", x: 166, y: 156, w: 40, h: 30 },
+];
+
+/** A window's four panes, which leave its frame and its cross showing between
+ * them when drawn over the frame's own rectangle. */
+function windowPanes(win: { x: number; y: number; w: number; h: number }): string {
+  const border = 2;
+  const bar = 2;
+  const qw = (win.w - 2 * border - bar) / 2;
+  const qh = (win.h - 2 * border - bar) / 2;
+  const x0 = win.x + border;
+  const y0 = win.y + border;
+  return [
+    rectPath(x0, y0, qw, qh),
+    rectPath(x0 + qw + bar, y0, qw, qh),
+    rectPath(x0, y0 + qh + bar, qw, qh),
+    rectPath(x0 + qw + bar, y0 + qh + bar, qw, qh),
+  ].join("");
+}
+
+const HOUSE_PARTS: readonly { name: string; hex: string; path: string }[] = [
+  { name: "Tree", hex: "#4C8A40", path: disc(37, 194, 26) + disc(22, 212, 16) + disc(54, 210, 18) },
+  { name: "Trunk", hex: "#6B4A33", path: rectPath(33, 214, 8, 36) },
+  { name: "Roofs", hex: "#5A4841", path: "M62 144L150 80L238 144Z" + rectPath(192, 92, 14, 36) + "M216 180L270 152L326 180Z" + rectPath(132, 199, 36, 5) },
+  { name: "Walls", hex: "#F1EADB", path: rectPath(76, 142, 148, 108) + rectPath(222, 178, 98, 72) },
+  { name: "Window frames", hex: "#FFFFFF", path: HOUSE_WINDOWS.map((w) => rectPath(w.x, w.y, w.w, w.h)).join("") + disc(150, 118, 10) + rectPath(134, 248, 32, 4) },
+  { name: "Glass", hex: "#86A9C8", path: HOUSE_WINDOWS.map(windowPanes).join("") + disc(150, 118, 7) },
+  { name: "Front door", hex: "#8A4F36", path: rectPath(139, 206, 22, 44) },
+  { name: "Garage door", hex: "#FBF7EE", path: rectPath(236, 194, 70, 56) },
+  { name: "Garage panels", hex: "#E0D8C6", path: rectPath(236, 207, 70, 2) + rectPath(236, 221, 70, 2) + rectPath(236, 235, 70, 2) },
+  { name: "Driveway", hex: "#A7A39B", path: "M236 252H306L328 298H214Z" },
+  { name: "Car", hex: "#4A74C8", path: "M250 269L256 256H286L292 269Z" + "M247 267h48a7 7 0 0 1 7 7v7a7 7 0 0 1-7 7h-48a7 7 0 0 1-7-7v-7a7 7 0 0 1 7-7z" },
+  { name: "Windshield", hex: "#A8CBE4", path: "M254 267L259 259H283L288 267Z" },
+  { name: "Wheels", hex: "#0C0F18", path: rectPath(262, 275, 18, 5) + rectPath(243, 286, 10, 7) + rectPath(289, 286, 10, 7) },
+];
+
+/** Where the stars are, in the picture's points, by tile. */
+function starsPath(family: DrawableFamily): string {
+  const large: [number, number, number][] = [
+    [30, 96, 1.1], [72, 58, 0.9], [118, 74, 1.3], [164, 34, 1], [206, 56, 1.2], [300, 96, 1],
+    [336, 70, 1.3], [96, 128, 0.9], [20, 160, 1.2], [322, 150, 0.9], [276, 120, 1.1],
+  ];
+  const medium: [number, number, number][] = [
+    [150, 22, 1], [236, 58, 1.1], [268, 22, 0.9], [300, 64, 1.2], [132, 74, 0.9], [112, 40, 1.1], [340, 90, 1],
+  ];
+  return (family === "medium" ? medium : large).map(([x, y, r]) => disc(x, y, r)).join("");
+}
+
+function rainPath(family: DrawableFamily): string {
+  const large: [number, number][] = [
+    [20, 30], [64, 80], [110, 20], [150, 120], [200, 60], [240, 140], [290, 30], [330, 100], [40, 170], [90, 220],
+    [130, 180], [180, 240], [220, 200], [270, 90], [310, 190], [350, 50], [120, 270], [260, 260], [340, 240], [30, 120],
+  ];
+  const medium: [number, number][] = [
+    [20, 60], [60, 30], [104, 70], [140, 20], [180, 60], [214, 26], [250, 80], [290, 40], [330, 96], [200, 110],
+    [270, 118], [150, 100], [232, 44], [310, 70], [350, 30],
+  ];
+  const [len, run] = family === "medium" ? [9, 3] : [12, 4];
+  return (family === "medium" ? medium : large).map(([x, y]) => `M${x} ${y}l1.4 0l${-run} ${len}l-1.4 0z`).join("");
+}
+
+/** The weather states that draw rain over the house. */
+const RAINY_STATES = ["rainy", "pouring", "lightning-rainy", "snowy-rainy"];
+
+const DAY_INK_HEX = "#0D2136";
+const DAY_SUB_HEX = "#0D2136BF";
+const NIGHT_SUB_HEX = "#FFFFFFB8";
+
+/**
+ * Up to `max` lights for the windows, one per area first so the lit windows
+ * mean different rooms, then any others.
+ */
+export function pickSceneLights(env: PresetEnv, max: number): EntityRef[] {
+  const seen = new Set<string>();
+  const first: string[] = [];
+  const rest: string[] = [];
+  for (const id of entitiesOf(env, "light")) {
+    const area = areaIdOf(env, id);
+    if (area !== undefined && !seen.has(area)) {
+      seen.add(area);
+      first.push(id);
+    } else rest.push(id);
+  }
+  return [...first, ...rest].slice(0, max).map((id) => refOf(env, id));
+}
+
+/**
+ * A house that fills the tile, with the home's lights in its windows.
+ *
+ * Daytime colors throughout, and at night one dark wash over the whole picture
+ * with the lit windows drawn above it, so a single rule on `sun.sun` turns day
+ * into night instead of one on every wall. The sky, the sun, the moon and the
+ * stars follow the same entity; without it the picture is always at night. A
+ * window's lit panes glow and are hidden while its light is off; the tap over
+ * the window toggles it. A home with fewer than four lights leaves the spare
+ * windows dark and untappable.
+ */
+export function addHouseScene(cfg: CustomComplicationConfig, env: PresetEnv): string {
+  const family = env.family;
+  const medium = family === "medium";
+  const sun = env.states?.["sun.sun"] ? refOf(env, "sun.sun") : undefined;
+  const weather = entitiesOf(env, "weather")[0];
+  const lights = pickSceneLights(env, HOUSE_WINDOWS.length);
+  const put = <T extends Element>(el: T, geometry: PresetGeometry, name?: string): T => {
+    if (name) el.payload.name = name;
+    placeLayer(cfg, el, family, () => geometry);
+    cfg.elements.push(el);
+    return el;
+  };
+  /** The daytime look of a layer, when the sun is up. */
+  const byDay = (el: Element, changes: StyleChange[]): void => {
+    if (sun) el.payload.rules.push(buildStatesRule(stateOf(sun), [{ comparison: equalsWord("above_horizon"), changes }]));
+  };
+  const sky: string[] = [];
+  const house: string[] = [];
+
+  // The sky: day under night, and the night hidden while the sun is up.
+  if (sun) {
+    const day = flatShape("rectangle", "#5CA3DE");
+    verticalFill(day, [[0, "#5CA3DE"], [0.66, "#CFE6F7"]]);
+    sky.push(put(day, { frame: FULL_FRAME }, "Day sky").payload.id);
+  }
+  const night = flatShape("rectangle", "#09122B");
+  verticalFill(night, [[0, "#09122B"], [0.66, "#22335C"]]);
+  if (sun) night.payload.rules = [hideWhile(stateOf(sun), equalsWord("above_horizon"))];
+  sky.push(put(night, { frame: FULL_FRAME }, "Night sky").payload.id);
+
+  const stars = drawing(starsPath(family), `0 0 ${SCENE_WIDTH} ${sceneHeight(family)}`, "#FFFFFFE6");
+  if (sun) stars.payload.rules = [hideWhile(stateOf(sun), equalsWord("above_horizon"))];
+  sky.push(put(stars, skyDrawingGeometry(family), "Stars").payload.id);
+
+  const [orbX, orbY, orbR] = medium ? [200, 34, 12] : [250, 62, 16];
+  if (sun) {
+    const sunDisc = flatShape("circle", "#FFD66B");
+    sunDisc.payload.shadow = glow("#FFD66B", 8);
+    sunDisc.payload.rules = [hideWhile(stateOf(sun), equalsWord("below_horizon"))];
+    sky.push(put(sunDisc, sceneRect(family, orbX - orbR, orbY - orbR, orbR * 2, orbR * 2), "Sun").payload.id);
+  }
+  const moon = flatShape("circle", "#F3EAD0");
+  if (sun) moon.payload.rules = [hideWhile(stateOf(sun), equalsWord("above_horizon"))];
+  const moonR = orbR * 0.8;
+  sky.push(put(moon, sceneRect(family, orbX - moonR, orbY - moonR, moonR * 2, moonR * 2), "Moon").payload.id);
+
+  const horizon = houseRect(family, 0, 250, HOUSE_W, 1).frame.y;
+  const ground = flatShape("rectangle", "#6AA055");
+  sky.push(put(ground, { frame: { x: 0, y: horizon, width: 1, height: round4(1 - horizon), rotationDegrees: 0 } }, "Ground").payload.id);
+  createGroup(cfg, sky, "Sky");
+
+  // The house, one drawing per color, all framed on the whole house.
+  for (const part of HOUSE_PARTS) {
+    house.push(put(drawing(part.path, HOUSE_VIEWBOX, part.hex), houseDrawingGeometry(family), part.name).payload.id);
+  }
+
+  // Night: one wash over everything drawn so far, clear across the top of the
+  // sky so the moon and the stars keep their color.
+  const clearTo = medium ? 0.27 : 0.2;
+  const wash = flatShape("rectangle", "#0A133000");
+  verticalFill(wash, [[0, "#0A133000"], [clearTo, "#0A133000"], [clearTo + 0.2, "#0A1330A6"], [1, "#0A1330B8"]]);
+  if (sun) wash.payload.rules = [hideWhile(stateOf(sun), equalsWord("above_horizon"))];
+  house.push(put(wash, { frame: FULL_FRAME }, "Night").payload.id);
+  house.push(put(drawing(disc(250, 277, 3.6) + disc(292, 277, 3.6), HOUSE_VIEWBOX, "#FFF2C2"), houseDrawingGeometry(family), "Headlights").payload.id);
+  createGroup(cfg, house, "House");
+
+  // The lit windows, above the night wash so they glow in the dark.
+  HOUSE_WINDOWS.forEach((win, i) => {
+    const light = lights[i];
+    if (!light) return;
+    const full = withDomain(light);
+    const lit = drawing(windowPanes(win), HOUSE_VIEWBOX, "#FFD37A");
+    lit.payload.shadow = glow("#FFBE5A", medium ? 5 : 8);
+    lit.payload.rules = [showWhile(entityStateValue(full), onComparison(full))];
+    put(lit, houseDrawingGeometry(family), `${win.name} lit`);
+    const tap = layerOf("tap");
+    tap.payload.action = { type: "toggleEntity", ...full };
+    put(tap, houseRect(family, win.x - 2, win.y - 2, win.w + 4, win.h + 4), `${win.name} tap`);
+    createGroup(cfg, [lit.payload.id, tap.payload.id], `${win.name}: ${full.displayName}`);
+  });
+
+  if (weather) {
+    const rain = drawing(rainPath(family), `0 0 ${SCENE_WIDTH} ${sceneHeight(family)}`, "#A9C2F0B3");
+    // One row per word rather than "is one of", which the states table cannot show.
+    rain.payload.rules = [buildStatesRule(
+      stateOf(refOf(env, weather)),
+      RAINY_STATES.map((word) => ({ comparison: equalsWord(word), changes: [newStyleChange("show")] })),
+      [newStyleChange("hide")],
+    )];
+    put(rain, skyDrawingGeometry(family), "Rain");
+  }
+
+  // The words, white at night and dark ink by day.
+  const title = layerOf("text");
+  title.payload.value = literal("Home");
+  title.payload.fontSize = scenePoints(family, 17);
+  title.payload.fontWeight = "semibold";
+  title.payload.alignment = "leading";
+  byDay(title, [setColorTo(DAY_INK_HEX)]);
+  put(title, sceneRect(family, 16, 12, 200, 22));
+
+  const count = layerOf("text");
+  count.payload.value = lights.length === 0
+    ? literal("Pick a light for each window")
+    : {
+      kind: {
+        kind: "aggregate",
+        aggregate: { function: "count", scope: { kind: "entities", entities: lights.map(withDomain) }, stateFilter: { kind: "isOn" } },
+      },
+      format: { suffix: ` of ${lights.length} ${lights.length === 1 ? "light" : "lights"} on` },
+    };
+  count.payload.fontSize = scenePoints(family, 12);
+  count.payload.alignment = "leading";
+  count.payload.colorSlot.baseColorHex = NIGHT_SUB_HEX;
+  byDay(count, [setColorTo(DAY_SUB_HEX)]);
+  put(count, sceneRect(family, 16, 34, 240, 16), "Lights on");
+  createGroup(cfg, [title.payload.id, count.payload.id], "Title");
+
+  addSceneRefresh(cfg, family, medium ? [320, 12, 32] : [318, 12, 34], (el, day) => byDay(el, day), put);
+
+  if (medium) addHouseFootnote(cfg, env, family, byDay, put);
+  else addHouseChips(cfg, env, family, byDay, put);
+  return title.payload.id;
+}
+
+type ScenePut = <T extends Element>(el: T, geometry: PresetGeometry, name?: string) => T;
+
+/** The round refresh button in the top right: a disc, the arrow on it, and a
+ * refresh tap attached to the disc. `at` is x, y and diameter in the
+ * picture's points. */
+function addSceneRefresh(
+  cfg: CustomComplicationConfig,
+  family: DrawableFamily,
+  at: readonly [number, number, number],
+  byDay: (el: Element, changes: StyleChange[]) => void,
+  put: ScenePut,
+): void {
+  const [x, y, d] = at;
+  const button = flatShape("circle", "#FFFFFF29");
+  byDay(button, [setColorTo("#FFFFFF9E")]);
+  put(button, sceneRect(family, x, y, d, d), "Refresh button");
+  const arrow = layerOf("icon");
+  arrow.payload.symbol = literal("arrow.clockwise");
+  arrow.payload.size = scenePoints(family, d * 0.44);
+  byDay(arrow, [setColorTo(DAY_INK_HEX)]);
+  put(arrow, { ...sceneRect(family, x, y, d, d), size: scenePoints(family, d * 0.44) }, "Refresh arrow");
+  attachTap(cfg, button.payload.id, { type: "refresh" });
+  createGroup(cfg, [button.payload.id, arrow.payload.id], "Refresh");
+}
+
+/** The large tile's three cards along the bottom: inside, outside and the
+ * front door, each only when the home has something to read for it. */
+function addHouseChips(
+  cfg: CustomComplicationConfig,
+  env: PresetEnv,
+  family: DrawableFamily,
+  byDay: (el: Element, changes: StyleChange[]) => void,
+  put: ScenePut,
+): void {
+  const chips: { label: string; value: Value }[] = [];
+  const inside = temperatureValue(env, (id) => !id.includes("outdoor") && !id.includes("outside"));
+  if (inside) chips.push({ label: "Inside", value: inside });
+  const weather = entitiesOf(env, "weather")[0];
+  if (weather) {
+    chips.push({ label: "Outside", value: { kind: { kind: "entityAttribute", ...refOf(env, weather), attribute: "temperature" }, format: { decimals: 0, suffix: "°" } } });
+  }
+  const lock = entitiesOf(env, "lock")[0];
+  if (lock) chips.push({ label: refOf(env, lock).displayName, value: { kind: { kind: "entityState", ...refOf(env, lock) }, format: { textCase: "capitalized" } } });
+  if (chips.length === 0) return;
+  const gap = 8;
+  const width = (336 - gap * (chips.length - 1)) / chips.length;
+  chips.forEach((chip, i) => {
+    const x = 14 + i * (width + gap);
+    const y = 320;
+    const card = flatShape("roundedRectangle", "#FFFFFF17", scenePoints(family, 14));
+    byDay(card, [setColorTo("#FFFFFF9E")]);
+    put(card, sceneRect(family, x, y, width, 48), `${chip.label} card`);
+    const label = layerOf("text");
+    label.payload.value = literal(chip.label);
+    label.payload.fontSize = scenePoints(family, 11);
+    label.payload.alignment = "leading";
+    label.payload.colorSlot.baseColorHex = NIGHT_SUB_HEX;
+    byDay(label, [setColorTo(DAY_SUB_HEX)]);
+    put(label, sceneRect(family, x + 11, y + 7, width - 22, 15), `${chip.label} label`);
+    const value = layerOf("text");
+    value.payload.value = chip.value;
+    value.payload.fontSize = scenePoints(family, 17);
+    value.payload.fontWeight = "semibold";
+    value.payload.fontDesign = "rounded";
+    value.payload.alignment = "leading";
+    byDay(value, [setColorTo(DAY_INK_HEX)]);
+    put(value, sceneRect(family, x + 11, y + 21, width - 22, 22), `${chip.label} value`);
+    createGroup(cfg, [card.payload.id, label.payload.id, value.payload.id], chip.label);
+  });
+}
+
+/** The medium tile's two lines in the bottom left: the temperatures, then the
+ * front door. Templates, because each line reads two or more entities. */
+function addHouseFootnote(
+  cfg: CustomComplicationConfig,
+  env: PresetEnv,
+  family: DrawableFamily,
+  byDay: (el: Element, changes: StyleChange[]) => void,
+  put: ScenePut,
+): void {
+  const whole = (expr: string) => `{{ ${expr} | float(0) | round(0) | int }}`;
+  const parts: string[] = [];
+  const climate = entitiesOf(env, "climate").find((id) => env.states?.[id]?.attributes?.current_temperature !== undefined);
+  const sensor = entitiesOf(env, "sensor").find((id) => deviceClassOf(env, id) === "temperature" && !id.includes("outdoor") && !id.includes("outside"));
+  if (sensor) parts.push(`${whole(`states('${sensor}')`)}° in`);
+  else if (climate) parts.push(`${whole(`state_attr('${climate}', 'current_temperature')`)}° in`);
+  const weather = entitiesOf(env, "weather")[0];
+  if (weather) parts.push(`${whole(`state_attr('${weather}', 'temperature')`)}° out`);
+  const ids: string[] = [];
+  if (parts.length > 0) {
+    const temps = layerOf("text");
+    temps.payload.value = { kind: { kind: "jinja", value: parts.join(" · ") } };
+    temps.payload.fontSize = scenePoints(family, 15);
+    temps.payload.fontWeight = "semibold";
+    temps.payload.fontDesign = "rounded";
+    temps.payload.alignment = "leading";
+    byDay(temps, [setColorTo(DAY_INK_HEX)]);
+    ids.push(put(temps, sceneRect(family, 16, 122, 150, 20), "Temperatures").payload.id);
+  }
+  const lock = entitiesOf(env, "lock")[0];
+  if (lock) {
+    const door = layerOf("text");
+    door.payload.value = { kind: { kind: "jinja", value: `${refOf(env, lock).displayName} {{ states('${lock}') }}` } };
+    door.payload.fontSize = scenePoints(family, 12);
+    door.payload.alignment = "leading";
+    door.payload.colorSlot.baseColorHex = NIGHT_SUB_HEX;
+    byDay(door, [setColorTo(DAY_SUB_HEX)]);
+    ids.push(put(door, sceneRect(family, 16, 143, 150, 15), "Front door").payload.id);
+  }
+  createGroup(cfg, ids, "Readings");
+}
+
+// ── the floor plan ────────────────────────────────────────────────────────
+
+const PLAN_BG_HEX = "#0F141E";
+const PLAN_WALL_HEX = "#2C3446";
+const ROOM_OFF_HEX = "#1A2130";
+const ROOM_LIT_HEX = "#F2BF5B";
+const ROOM_INK_HEX = "#E1E6F0";
+const ROOM_LIT_INK_HEX = "#2B1F06";
+const ROOM_DIM_INK_HEX = "#98A2B8";
+const ROOM_LIT_DIM_HEX = "#2B1F06B3";
+const MOTION_HEX = "#58D3C3";
+const MOTION_CLASSES = ["motion", "occupancy", "presence"];
+
+/** The most rooms each tile draws. Six layers a room, and 64 in a document. */
+function planMaxRooms(family: DrawableFamily): number {
+  return family === "medium" ? 6 : 8;
+}
+
+export interface PlanRoom {
+  name: string;
+  /** The area whose lights the room shows and toggles. */
+  areaId?: string;
+  /** Or one light, for a home whose lights are in no area. */
+  light?: EntityRef;
+  temperature?: Value;
+  motion?: EntityRef;
+}
+
+/**
+ * The rooms to draw: every area with a light in it, the ones with the most
+ * lights first (they get the bigger cells). A home with no areas gets a room
+ * per light, and a home with no lights gets four named placeholders.
+ */
+export function planRooms(env: PresetEnv, max: number): PlanRoom[] {
+  const areas = env.registry?.areas ?? {};
+  const lights = entitiesOf(env, "light");
+  const byArea = new Map<string, number>();
+  for (const id of lights) {
+    const area = areaIdOf(env, id);
+    if (area !== undefined && areas[area] !== undefined) byArea.set(area, (byArea.get(area) ?? 0) + 1);
+  }
+  const nameOf = (area: string) => (areas[area]?.name ?? "").trim() || area;
+  const inArea = (area: string) => (id: string) => areaIdOf(env, id) === area;
+  const rooms: PlanRoom[] = [...byArea.entries()]
+    .sort(([a, na], [b, nb]) => nb - na || nameOf(a).localeCompare(nameOf(b)))
+    .slice(0, max)
+    .map(([areaId]) => {
+      const room: PlanRoom = { name: nameOf(areaId), areaId };
+      const temperature = temperatureValue(env, inArea(areaId));
+      if (temperature) room.temperature = temperature;
+      const motion = entitiesOf(env, "binary_sensor").find((id) => inArea(areaId)(id) && MOTION_CLASSES.includes(deviceClassOf(env, id)));
+      if (motion) room.motion = refOf(env, motion);
+      return room;
+    });
+  if (rooms.length > 0) return rooms;
+  if (lights.length > 0) {
+    return lights.slice(0, max).map((id) => {
+      const light = refOf(env, id);
+      return { name: light.displayName, light };
+    });
+  }
+  return ["Living", "Kitchen", "Bedroom", "Office"].slice(0, max).map((name) => ({ name }));
+}
+
+interface PointRect { x: number; y: number; w: number; h: number }
+
+/** Where the plan sits on each tile, in its points: under the title, with the
+ * tile's own margin all round. */
+function planRect(family: DrawableFamily): PointRect {
+  const canvas = CANVAS[family];
+  switch (family) {
+    case "medium": return { x: 10, y: 42, w: canvas.width - 20, h: canvas.height - 42 - 12 };
+    case "large":
+    case "xlarge": return { x: 13, y: 58, w: canvas.width - 26, h: canvas.height - 58 - 14 };
+    default: return { x: canvas.width * 0.04, y: canvas.height * 0.26, w: canvas.width * 0.92, h: canvas.height * 0.7 };
+  }
+}
+
+/**
+ * The rooms' cells: rows of up to three, walls between them. Widths are
+ * uneven and every other row mirrors, so the grid reads as a floor rather than
+ * a spreadsheet. It is only a start: Home Assistant does not know where a room
+ * is, so the author drags the cells into the real shape of the home.
+ */
+export function planCells(count: number, plan: PointRect): PointRect[] {
+  const wall = 2;
+  const gap = 3;
+  const rows = Math.max(1, Math.ceil(count / 3));
+  const base = Math.floor(count / rows);
+  const extra = count % rows;
+  const inner = { x: plan.x + wall, y: plan.y + wall, w: plan.w - 2 * wall, h: plan.h - 2 * wall };
+  const rowH = (inner.h - gap * (rows - 1)) / rows;
+  const weightsFor: Record<number, number[]> = { 1: [1], 2: [1.4, 1], 3: [1.25, 0.95, 1.1] };
+  const cells: PointRect[] = [];
+  for (let r = 0; r < rows; r++) {
+    const k = base + (r < extra ? 1 : 0);
+    const weights = [...(weightsFor[k] ?? Array.from({ length: k }, () => 1))];
+    if (r % 2 === 1) weights.reverse();
+    const total = weights.reduce((a, b) => a + b, 0);
+    const avail = inner.w - gap * (k - 1);
+    let x = inner.x;
+    for (const weight of weights) {
+      const w = (avail * weight) / total;
+      cells.push({ x: round2(x), y: round2(inner.y + r * (rowH + gap)), w: round2(w), h: round2(rowH) });
+      x += w + gap;
+    }
+  }
+  return cells;
+}
+
+/**
+ * The home seen from above: each area a room, lit amber while any light in it
+ * is on, with its temperature, a bulb, and a dot while its motion sensor sees
+ * someone. A tap on a room toggles every light in its area.
+ */
+export function addFloorPlan(cfg: CustomComplicationConfig, env: PresetEnv): string {
+  const family = env.family;
+  const medium = family === "medium";
+  const canvas = CANVAS[family];
+  const rooms = planRooms(env, planMaxRooms(family));
+  const plan = planRect(family);
+  const cells = planCells(rooms.length, plan);
+  const put = <T extends Element>(el: T, geometry: PresetGeometry, name?: string): T => {
+    if (name) el.payload.name = name;
+    placeLayer(cfg, el, family, () => geometry);
+    cfg.elements.push(el);
+    return el;
+  };
+  const nameSize = medium ? 11.5 : 12.5;
+  const tempSize = medium ? 10.5 : 11;
+  const bulbSize = medium ? 12 : 13;
+
+  const back = put(flatShape("rectangle", PLAN_BG_HEX), { frame: FULL_FRAME }, "Background");
+  const walls = put(flatShape("roundedRectangle", PLAN_WALL_HEX, medium ? 9 : 10), pointFrame(family, plan.x, plan.y, plan.w, plan.h), "Walls");
+  createGroup(cfg, [back.payload.id, walls.payload.id], "Floor");
+
+  const areaIds: string[] = [];
+  const roomLights: EntityRef[] = [];
+  rooms.forEach((room, i) => {
+    const cell = cells[i]!;
+    let lit: { value: () => Value; comparison: () => Comparison; tap: TapAction } | undefined;
+    if (room.areaId !== undefined) {
+      const areaId = room.areaId;
+      areaIds.push(areaId);
+      lit = {
+        value: () => ({
+          kind: {
+            kind: "aggregate",
+            aggregate: {
+              function: "count",
+              scope: { kind: "filter", domains: ["light"], areaIds: [areaId], labelIds: [], floorIds: [] },
+              stateFilter: { kind: "isOn" },
+            },
+          },
+        }),
+        comparison: () => ({ kind: "greaterThan", value: literal("0") }),
+        tap: { type: "callService", serviceDomain: "light", serviceName: "toggle", serviceDataJSON: JSON.stringify({ area_id: areaId }) },
+      };
+    } else if (room.light !== undefined) {
+      const full = withDomain(room.light);
+      roomLights.push(full);
+      lit = { value: () => entityStateValue(full), comparison: () => onComparison(full), tap: { type: "toggleEntity", ...full } };
+    }
+    const whenLit = (on: StyleChange[], off?: StyleChange[]): Rule[] =>
+      lit ? [buildStatesRule(lit.value(), [{ comparison: lit.comparison(), changes: on }], off)] : [];
+    const ids: string[] = [];
+
+    const card = flatShape("roundedRectangle", ROOM_OFF_HEX, medium ? 5 : 6);
+    card.payload.rules = whenLit([setColorTo(ROOM_LIT_HEX)]);
+    ids.push(put(card, pointFrame(family, cell.x, cell.y, cell.w, cell.h), `${room.name} room`).payload.id);
+
+    const name = layerOf("text");
+    name.payload.value = literal(room.name);
+    name.payload.fontSize = nameSize;
+    name.payload.fontWeight = "semibold";
+    name.payload.alignment = "leading";
+    name.payload.colorSlot.baseColorHex = ROOM_INK_HEX;
+    name.payload.rules = whenLit([setColorTo(ROOM_LIT_INK_HEX)]);
+    ids.push(put(name, pointFrame(family, cell.x + 8, cell.y + 5, cell.w - 30, nameSize * 1.45), `${room.name} name`).payload.id);
+
+    if (room.temperature) {
+      const temp = layerOf("text");
+      temp.payload.value = room.temperature;
+      temp.payload.fontSize = tempSize;
+      temp.payload.fontDesign = "rounded";
+      temp.payload.alignment = "leading";
+      temp.payload.colorSlot.baseColorHex = ROOM_DIM_INK_HEX;
+      temp.payload.rules = whenLit([setColorTo(ROOM_LIT_DIM_HEX)]);
+      const h = tempSize * 1.4;
+      ids.push(put(temp, pointFrame(family, cell.x + 8, cell.y + cell.h - 5 - h, cell.w - 30, h), `${room.name} temperature`).payload.id);
+    }
+
+    const bulb = layerOf("icon");
+    bulb.payload.symbol = literal("lightbulb");
+    bulb.payload.colorSlot.baseColorHex = ROOM_DIM_INK_HEX;
+    bulb.payload.rules = whenLit([setIconTo("lightbulb.fill"), setColorTo(ROOM_LIT_INK_HEX)], [setIconTo("lightbulb"), setColorTo(ROOM_DIM_INK_HEX)]);
+    ids.push(put(bulb, { ...pointFrame(family, cell.x + cell.w - 22, cell.y + 4, 18, 18), size: bulbSize }, `${room.name} bulb`).payload.id);
+
+    if (room.motion) {
+      const motion = withDomain(room.motion);
+      const dot = flatShape("circle", MOTION_HEX);
+      dot.payload.shadow = glow(MOTION_HEX, 3);
+      dot.payload.rules = [showWhile(entityStateValue(motion), onComparison(motion))];
+      ids.push(put(dot, pointFrame(family, cell.x + cell.w - 14, cell.y + cell.h - 14, 7, 7), `${room.name} motion`).payload.id);
+    }
+
+    if (lit) attachTap(cfg, card.payload.id, lit.tap);
+    createGroup(cfg, ids, room.name);
+  });
+
+  const title = layerOf("text");
+  title.payload.value = literal("Home");
+  title.payload.fontSize = medium ? 15 : 17;
+  title.payload.fontWeight = "semibold";
+  title.payload.alignment = "leading";
+  title.payload.colorSlot.baseColorHex = ROOM_INK_HEX;
+  put(title, medium ? pointFrame(family, 14, 10, 46, 21) : pointFrame(family, 16, 12, 200, 22));
+
+  const count = layerOf("text");
+  const scope = areaIds.length > 0
+    ? { kind: "filter" as const, domains: ["light"], areaIds, labelIds: [], floorIds: [] }
+    : { kind: "entities" as const, entities: roomLights };
+  const counted = areaIds.length > 0 || roomLights.length > 0;
+  const reading: Value = { kind: { kind: "aggregate", aggregate: { function: "count", scope, stateFilter: { kind: "isOn" } } } };
+  count.payload.value = counted ? { ...reading, format: { suffix: " lights on" } } : literal("Pick your rooms");
+  if (counted) {
+    count.payload.rules = [buildStatesRule(reading, [
+      { comparison: equalsWord("0"), changes: [setTextTo("All lights off")] },
+      { comparison: equalsWord("1"), changes: [setTextTo("1 light on")] },
+    ])];
+  }
+  count.payload.fontSize = 12;
+  count.payload.alignment = "leading";
+  count.payload.colorSlot.baseColorHex = "#8C96AD";
+  put(count, medium ? pointFrame(family, 62, 13, 200, 16) : pointFrame(family, 16, 34, 240, 16), "Lights on");
+  createGroup(cfg, [title.payload.id, count.payload.id], "Title");
+
+  const d = medium ? 30 : 34;
+  const button = flatShape("circle", "#FFFFFF1A");
+  const at = pointFrame(family, canvas.width - (medium ? 10 : 12) - d, medium ? 6 : 12, d, d);
+  put(button, at, "Refresh button");
+  const arrow = layerOf("icon");
+  arrow.payload.symbol = literal("arrow.clockwise");
+  arrow.payload.colorSlot.baseColorHex = ROOM_INK_HEX;
+  put(arrow, { ...at, size: round2(d * 0.44) }, "Refresh arrow");
+  attachTap(cfg, button.payload.id, { type: "refresh" });
+  createGroup(cfg, [button.payload.id, arrow.payload.id], "Refresh");
+  return title.payload.id;
+}
+
 /**
  * Run one preset and return the id of the layer to select afterwards.
  *
@@ -2486,5 +3294,7 @@ function buildPreset(
     case "listScenes": return addScenesList(cfg, env);
     case "listWhoHome": return addWhoHomeList(cfg, env);
     case "listToggles": return addTogglesList(cfg, ref, env);
+    case "houseScene": return addHouseScene(cfg, env);
+    case "floorPlan": return addFloorPlan(cfg, env);
   }
 }

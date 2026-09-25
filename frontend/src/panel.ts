@@ -1209,6 +1209,11 @@ export function addGroupCards<C extends { kind: CElement["kind"]; variant?: AddV
  * empty layers, with the way to the rest beside them. */
 const POPULAR_PRESETS: readonly PresetKind[] = ["gauge", "status", "timer"];
 
+/** The registry snapshots a preset sorts entities into areas with. */
+function presetRegistry(hass: HassLike): PresetEnv["registry"] {
+  return { entities: hass.entities, devices: hass.devices, areas: hass.areas };
+}
+
 export class WristAssistantPanel extends LitElement {
   @property({ attribute: false }) hass!: HassLike;
   @property({ type: Boolean }) narrow = false;
@@ -16840,7 +16845,7 @@ export class WristAssistantPanel extends LitElement {
     // list presets are these: what they need is a filter, and a filter is
     // edited in the Source card rather than chosen from a search box.
     if (presetSpec(kind).needsEntity === false) {
-      const env: PresetEnv = { family: this.canvasFamily };
+      const env: PresetEnv = { family: this.canvasFamily, states: this.hass.states, registry: presetRegistry(this.hass) };
       let created: string | undefined;
       this.addHere((c) => { created = applyPreset(c, kind, { entityId: "", displayName: "", domain: "" }, env); });
       if (created) this.inspect = { kind: "layer", id: created };
@@ -16888,7 +16893,7 @@ export class WristAssistantPanel extends LitElement {
     const kind = this.presetKind;
     const ref = this.presetEntity;
     if (!kind || !ref) return;
-    const env: PresetEnv = { family: this.canvasFamily, states: this.hass.states };
+    const env: PresetEnv = { family: this.canvasFamily, states: this.hass.states, registry: presetRegistry(this.hass) };
     const state = this.hass.states[ref.entityId];
     if (state) env.state = state;
     let created: string | undefined;

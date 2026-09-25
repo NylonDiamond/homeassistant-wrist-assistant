@@ -35,10 +35,14 @@ import {
   gaugeBandRule,
   gaugeRange,
   onComparison,
+  planCells,
+  planRooms,
   presetSpec,
   thermostatTargetTemplate,
   toggleSymbols,
+  type PresetEnv,
 } from "../src/presets.js";
+import type { DrawableFamily } from "../src/renderer.js";
 import { presetColor, presetPreview } from "../src/preset-previews.js";
 import { addPreview } from "../src/add-previews.js";
 import { KIND_ORDER } from "../src/kinds.js";
@@ -354,6 +358,7 @@ describe("the history chart preset", () => {
 describe("every preset", () => {
   it("adds exactly the number of layers its button promised", () => {
     for (const spec of LAYER_PRESETS) {
+      if (spec.layerCountIsMost) continue;
       const cfg = config();
       applyPreset(cfg, spec.kind, KITCHEN, { family: "rectangular" });
       expect(cfg.elements, spec.kind).toHaveLength(spec.layerCount);
@@ -433,7 +438,8 @@ describe("the stacked presets", () => {
         ? { entityId: `${preset.domains[0]}.thing`, displayName: "Thing", domain: preset.domains[0]! }
         : SENSOR;
       applyPreset(cfg, preset.kind, ref, { family: "rectangular" });
-      expect(cfg.elements.length, preset.kind).toBe(preset.layerCount);
+      if (preset.layerCountIsMost) expect(cfg.elements.length, preset.kind).toBeLessThanOrEqual(preset.layerCount);
+      else expect(cfg.elements.length, preset.kind).toBe(preset.layerCount);
     }
   });
 
@@ -1055,5 +1061,214 @@ describe("presets as groups", () => {
     const encoded = encodeConfig(cfg);
     expect(auditUnknownKeys(encoded)).toEqual([]);
     expect(encodeConfig(parseConfig(encoded))).toEqual(encoded);
+  });
+});
+
+// ── the scene presets ─────────────────────────────────────────────────────
+// Tiny house and Floor plan fill a whole tile and read the home to fill
+// themselves in, so what is worth pinning is what they pick from a home and
+// that the result stays an ordinary, editable, encodable document.
+
+describe("the scene presets", () => {
+  function entity(id: string, stateValue: string, attributes: Record<string, unknown> = {}): HassEntityState {
+    return { entity_id: id, state: stateValue, attributes, last_changed: "", last_updated: "" };
+  }
+
+  /** A small home: three areas with lights (living has two, one through its
+   * device), a light in no area, the sun, the weather, a thermostat, a kitchen
+   * thermometer, motion in the living room and a front door lock. */
+  function home(): PresetEnv {
+    const list = [
+      entity("light.bedroom", "off", { friendly_name: "Bedroom" }),
+      entity("light.kitchen", "on", { friendly_name: "Kitchen" }),
+      entity("light.living_ceiling", "on", { friendly_name: "Living ceiling" }),
+      entity("light.living_lamp", "off", { friendly_name: "Living lamp" }),
+      entity("light.porch", "off", { friendly_name: "Porch" }),
+      entity("sun.sun", "below_horizon"),
+      entity("weather.home", "rainy", { temperature: 54 }),
+      entity("climate.hall", "heat", { current_temperature: 71 }),
+      entity("sensor.kitchen_temperature", "72.4", { device_class: "temperature" }),
+      entity("binary_sensor.living_motion", "on", { device_class: "motion" }),
+      entity("lock.front_door", "locked", { friendly_name: "Front door" }),
+    ];
+    return {
+      family: "large",
+      states: Object.fromEntries(list.map((s) => [s.entity_id, s])),
+      registry: {
+        entities: {
+          "light.bedroom": { area_id: "bedroom" },
+          "light.kitchen": { area_id: "kitchen" },
+          "light.living_ceiling": { area_id: "living" },
+          "light.living_lamp": { device_id: "lamp" },
+          "sensor.kitchen_temperature": { area_id: "kitchen" },
+          "binary_sensor.living_motion": { area_id: "living" },
+        },
+        devices: { lamp: { area_id: "living" } },
+        areas: { bedroom: { name: "Bedroom" }, kitchen: { name: "Kitchen" }, living: { name: "Living room" } },
+      },
+    };
+  }
+
+  function build(kind: "houseScene" | "floorPlan", env: PresetEnv): CustomComplicationConfig {
+    const cfg = newConfig("Scene", 0, env.family);
+    applyPreset(cfg, kind, { entityId: "", displayName: "", domain: "" }, env);
+    return cfg;
+  }
+
+  function named(cfg: CustomComplicationConfig, name: string): CElement | undefined {
+    return cfg.elements.find((e) => e.payload.name === name);
+  }
+
+  function checkDocument(cfg: CustomComplicationConfig, kind: "houseScene" | "floorPlan", family: DrawableFamily): void {
+    expect(cfg.elements.length, `${kind} ${family}`).toBeLessThanOrEqual(presetSpec(kind).layerCount);
+    const top = (cfg.groups ?? []).filter((g) => g.parentId === undefined);
+    expect(top.map((g) => g.name)).toEqual([presetSpec(kind).title]);
+    for (const el of cfg.elements) {
+      for (const rule of el.payload.rules) expect(tableShape([rule]).ok, `${kind}: ${el.payload.name}`).toBe(true);
+      const f = cfg.perFamily[family]!.placements[el.payload.id]!.frame;
+      expect(f.x, el.payload.name).toBeGreaterThanOrEqual(0);
+      expect(f.y, el.payload.name).toBeGreaterThanOrEqual(0);
+      expect(f.x + f.width, el.payload.name).toBeLessThanOrEqual(1.0001);
+      expect(f.y + f.height, el.payload.name).toBeLessThanOrEqual(1.0001);
+    }
+    const encoded = encodeConfig(cfg);
+    expect(auditUnknownKeys(encoded)).toEqual([]);
+    expect(encodeConfig(parseConfig(encoded))).toEqual(encoded);
+  }
+
+  it("offers both on the Home Screen tiles only, and asks for no entity", () => {
+    expect(presetSpec("houseScene").families).toEqual(["medium", "large"]);
+    expect(presetSpec("floorPlan").families).toEqual(["medium", "large", "xlarge"]);
+    expect(presetSpec("houseScene").needsEntity).toBe(false);
+    expect(presetSpec("floorPlan").needsEntity).toBe(false);
+  });
+
+  it("builds a house on medium and large that encodes and stays in the tile", () => {
+    for (const family of ["medium", "large"] as const) {
+      checkDocument(build("houseScene", { ...home(), family }), "houseScene", family);
+    }
+  });
+
+  it("hands out one light per area first, then the rest, to the four windows", () => {
+    const cfg = build("houseScene", home());
+    const taps = cfg.elements.filter((e): e is Extract<CElement, { kind: "tap" }> => e.kind === "tap" && e.payload.attachedTo === undefined);
+    expect(taps.map((t) => (t.payload.action as { entityId: string }).entityId))
+      .toEqual(["light.bedroom", "light.kitchen", "light.living_ceiling", "light.living_lamp"]);
+    for (const tap of taps) expect(tap.payload.action.type).toBe("toggleEntity");
+    const lit = cfg.elements.filter((e) => e.payload.name?.endsWith(" lit"));
+    expect(lit).toHaveLength(4);
+    for (const el of lit) {
+      expect(el.payload.shadow).toBeDefined();
+      const table = tableShape(el.payload.rules);
+      if (!table.ok) throw new Error(table.reason);
+      expect(table.table.rows[0]!.changes[0]!.kind).toBe("show");
+      expect(table.table.otherwise?.[0]?.kind).toBe("hide");
+    }
+  });
+
+  it("follows the sun and the rain when the home has them, and is always night without", () => {
+    const withSun = build("houseScene", home());
+    expect(named(withSun, "Day sky")).toBeDefined();
+    expect(named(withSun, "Night")!.payload.rules).toHaveLength(1);
+    expect(named(withSun, "Rain")).toBeDefined();
+
+    const bare = home();
+    delete bare.states!["sun.sun"];
+    delete bare.states!["weather.home"];
+    const noSun = build("houseScene", bare);
+    expect(named(noSun, "Day sky")).toBeUndefined();
+    expect(named(noSun, "Sun")).toBeUndefined();
+    expect(named(noSun, "Night")!.payload.rules).toEqual([]);
+    expect(named(noSun, "Rain")).toBeUndefined();
+  });
+
+  it("puts readings along the bottom: three cards on large, two lines on medium", () => {
+    const large = build("houseScene", home());
+    expect(["Inside card", "Outside card", "Front door card"].every((n) => named(large, n))).toBe(true);
+    const medium = build("houseScene", { ...home(), family: "medium" });
+    const temps = named(medium, "Temperatures");
+    expect(temps?.kind).toBe("text");
+    if (temps?.kind !== "text") return;
+    expect(temps.payload.value.kind).toEqual({
+      kind: "jinja",
+      value: "{{ states('sensor.kitchen_temperature') | float(0) | round(0) | int }}° in · {{ state_attr('weather.home', 'temperature') | float(0) | round(0) | int }}° out",
+    });
+  });
+
+  it("draws a house with dark, untappable windows in a home with no lights", () => {
+    const cfg = build("houseScene", { family: "large" });
+    expect(cfg.elements.some((e) => e.kind === "tap" && e.payload.attachedTo === undefined)).toBe(false);
+    checkDocument(cfg, "houseScene", "large");
+  });
+
+  it("builds a floor plan on every tile it is offered that encodes and stays in the tile", () => {
+    for (const family of ["medium", "large", "xlarge"] as const) {
+      checkDocument(build("floorPlan", { ...home(), family }), "floorPlan", family);
+    }
+  });
+
+  it("makes a room of every area with a light, busiest first, each tap toggling its area", () => {
+    const env = home();
+    expect(planRooms(env, 8).map((r) => r.name)).toEqual(["Living room", "Bedroom", "Kitchen"]);
+    const cfg = build("floorPlan", env);
+    for (const [room, area] of [["Living room", "living"], ["Bedroom", "bedroom"], ["Kitchen", "kitchen"]] as const) {
+      const card = named(cfg, `${room} room`)!;
+      const tap = attachedTapsOf(cfg, card.payload.id)[0]!.payload as TapElement;
+      expect(tap.action).toEqual({ type: "callService", serviceDomain: "light", serviceName: "toggle", serviceDataJSON: JSON.stringify({ area_id: area }) });
+    }
+    expect(named(cfg, "Living room motion")).toBeDefined();
+    expect(named(cfg, "Kitchen motion")).toBeUndefined();
+    const temp = named(cfg, "Kitchen temperature");
+    expect(temp?.kind === "text" && temp.payload.value.kind).toEqual({ kind: "entityState", entityId: "sensor.kitchen_temperature", displayName: "sensor.kitchen_temperature", domain: "sensor" });
+  });
+
+  it("falls back to a room per light, then to four placeholder rooms", () => {
+    const noAreas = { ...home(), registry: {} };
+    expect(planRooms(noAreas, 6).map((r) => r.light?.entityId))
+      .toEqual(["light.bedroom", "light.kitchen", "light.living_ceiling", "light.living_lamp", "light.porch"]);
+    const empty = build("floorPlan", { family: "medium" });
+    expect(empty.elements.filter((e) => e.payload.name?.endsWith(" room")).map((e) => e.payload.name))
+      .toEqual(["Living room", "Kitchen room", "Bedroom room", "Office room"]);
+    expect(empty.elements.some((e) => e.kind === "tap" && e.payload.attachedTo !== undefined && e.payload.action.type !== "refresh")).toBe(false);
+  });
+
+  it("tiles the plan with cells that never overlap and never leave it", () => {
+    const plan = { x: 10, y: 40, w: 320, h: 110 };
+    for (let n = 1; n <= 8; n++) {
+      const cells = planCells(n, plan);
+      expect(cells).toHaveLength(n);
+      for (const c of cells) {
+        expect(c.x).toBeGreaterThanOrEqual(plan.x);
+        expect(c.y).toBeGreaterThanOrEqual(plan.y);
+        expect(c.x + c.w).toBeLessThanOrEqual(plan.x + plan.w + 0.01);
+        expect(c.y + c.h).toBeLessThanOrEqual(plan.y + plan.h + 0.01);
+      }
+      for (let i = 0; i < n; i++) {
+        for (let j = i + 1; j < n; j++) {
+          const a = cells[i]!;
+          const b = cells[j]!;
+          const apart = a.x + a.w <= b.x + 0.01 || b.x + b.w <= a.x + 0.01 || a.y + a.h <= b.y + 0.01 || b.y + b.h <= a.y + 0.01;
+          expect(apart, `${n} rooms: ${i} and ${j}`).toBe(true);
+        }
+      }
+    }
+  });
+
+  it("stays under the layer cap with the most rooms, each with a thermometer and motion", () => {
+    const states: Record<string, HassEntityState> = {};
+    const entities: Record<string, { area_id?: string | null }> = {};
+    const areas: Record<string, { name?: string | null }> = {};
+    for (let i = 0; i < 10; i++) {
+      areas[`a${i}`] = { name: `Room ${i}` };
+      for (const [id, attrs] of [[`light.l${i}`, {}], [`sensor.t${i}`, { device_class: "temperature" }], [`binary_sensor.m${i}`, { device_class: "motion" }]] as const) {
+        states[id] = entity(id, "on", attrs);
+        entities[id] = { area_id: `a${i}` };
+      }
+    }
+    for (const family of ["medium", "large", "xlarge"] as const) {
+      const cfg = build("floorPlan", { family, states, registry: { entities, areas } });
+      expect(cfg.elements.length, family).toBeLessThanOrEqual(presetSpec("floorPlan").layerCount);
+      expect(cfg.elements.length, family).toBeLessThanOrEqual(64);
+    }
   });
 });

@@ -76,6 +76,8 @@ const PRESET_KIND: Record<PresetKind, LayerKind> = {
   listScenes: "list",
   listWhoHome: "list",
   listToggles: "list",
+  houseScene: "shape",
+  floorPlan: "shape",
 };
 
 /** The color a preset's card is tinted with. */
@@ -448,6 +450,30 @@ function sample(kind: PresetKind): TemplateResult {
           ${label(18 + i * 28, 38, ["Sam", "Alex", "Kim", "Jo"][i]!, 8, home ? "var(--k)" : DIM)}
         </g>`;
       })}</g>`;
+    // A house at night, two of its windows lit.
+    case "houseScene":
+      return svg`<g>
+        <rect x="0" y="0" width="120" height="46" rx="6" fill="#0F1A36" />
+        <circle cx="96" cy="10" r="4" fill="#F3EAD0" />
+        <rect x="0" y="38" width="120" height="8" fill="#16241B" />
+        <path d="M34 22L52 9L70 22Z" fill="#1A2033" />
+        <rect x="37" y="21" width="30" height="17" fill="#2A3352" />
+        <rect x="68" y="27" width="18" height="11" fill="#2A3352" />
+        <rect x="41" y="25" width="8" height="6" fill="#FFD37A" />
+        <rect x="55" y="25" width="8" height="6" fill="#1B2238" />
+        <rect x="41" y="32" width="8" height="5" fill="#1B2238" />
+        <rect x="55" y="32" width="8" height="5" fill="#FFD37A" />
+      </g>`;
+    // Rooms from above, two of them lit.
+    case "floorPlan":
+      return svg`<g>
+        <rect x="10" y="4" width="100" height="38" rx="4" fill="#2C3446" />
+        <rect x="12" y="6" width="54" height="17" rx="2" fill="#F2BF5B" />
+        <rect x="68" y="6" width="40" height="17" rx="2" fill="#1A2130" />
+        <rect x="12" y="25" width="32" height="15" rx="2" fill="#1A2130" />
+        <rect x="46" y="25" width="62" height="15" rx="2" fill="#F2BF5B" />
+        <circle cx="102" cy="12" r="1.8" fill="#58D3C3" />
+      </g>`;
   }
 }
 
