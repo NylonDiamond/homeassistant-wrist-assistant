@@ -34,6 +34,8 @@ import {
   galleryFamily,
   galleryPublicFields,
   galleryStatusLabel,
+  designFingerprint,
+  galleryLinkChanged,
   galleryLinkFor,
   latestGalleryVersion,
   galleryUploadRows,
@@ -101,6 +103,24 @@ describe("buildGallerySubmission", () => {
     // The document's id rides beside the text, never inside it.
     expect(body.sourceId).toBe(cfg.id);
     expect(body.shareText).not.toContain(cfg.id);
+  });
+
+  it("fingerprints the design, not its name or this home's fields", () => {
+    const cfg = oneShape("rectangular");
+    const print = designFingerprint(cfg);
+    expect(print).toMatch(/^[0-9a-f]{16}$/);
+    expect(buildGallerySubmission(cfg, [], META).sourceHash).toBe(print);
+    expect(designFingerprint(structuredClone(cfg))).toBe(print);
+    const renamed = structuredClone(cfg);
+    renamed.name = "Something else";
+    renamed.hidden = true;
+    expect(designFingerprint(renamed)).toBe(print);
+    const edited = structuredClone(cfg);
+    edited.notes = "A new line for whoever imports it.";
+    expect(designFingerprint(edited)).not.toBe(print);
+    const trimmed = structuredClone(cfg);
+    trimmed.elements.pop();
+    expect(designFingerprint(trimmed)).not.toBe(print);
   });
 
   // The Worker, the gallery page and this file carry the same eight names, so
@@ -512,7 +532,7 @@ describe("my uploads", () => {
   const upload = (over: Partial<GalleryUpload>): GalleryUpload => ({
     id: "x", title: "T", status: "approved", rejectReason: null, createdAt: "", voteCount: 0,
     replacesId: null, updatedAt: null, importCount: 0, previewUrl: null,
-    sourceId: null, description: "", tags: [], ...over,
+    sourceId: null, sourceHash: null, description: "", tags: [], ...over,
   });
 
   it("reads the source, description and tags", () => {
@@ -528,6 +548,16 @@ describe("my uploads", () => {
     expect(galleryLinkFor([waiting, live], "doc")).toEqual({ kind: "live", upload: live, waiting });
     expect(galleryLinkFor([live], "other")).toBeUndefined();
     expect(galleryLinkFor([live], undefined)).toBeUndefined();
+  });
+
+  it("tells whether the design changed since the newest version sent", () => {
+    const live = upload({ id: "a", createdAt: "1", sourceId: "doc", sourceHash: "old" });
+    const waiting = upload({ id: "b", status: "pending", replacesId: "a", createdAt: "2", sourceId: "doc", sourceHash: "new" });
+    const link = galleryLinkFor([live, waiting], "doc")!;
+    expect(galleryLinkChanged([live, waiting], link, "new")).toBe(false);
+    expect(galleryLinkChanged([live, waiting], link, "old")).toBe(true);
+    const unknown = upload({ id: "c", sourceId: "doc2" });
+    expect(galleryLinkChanged([unknown], galleryLinkFor([unknown], "doc2")!, "x")).toBeUndefined();
   });
 
   it("starts an update from the newest version sent", () => {
@@ -660,7 +690,7 @@ describe("gallery calls", () => {
     const items = [{ id: "a", title: "T", status: "rejected", rejectReason: "Blurry", createdAt: "2026-09-13T00:00:00Z", voteCount: 0 }];
     const list = stub(200, { items });
     expect(await listMyUploads(list.fetch, "key", "https://staging.example/api/gallery")).toEqual([
-      { ...items[0], replacesId: null, updatedAt: null, importCount: 0, previewUrl: null, sourceId: null, description: "", tags: [] },
+      { ...items[0], replacesId: null, updatedAt: null, importCount: 0, previewUrl: null, sourceId: null, sourceHash: null, description: "", tags: [] },
     ]);
     expect(list.calls[0]!.url).toBe("https://staging.example/api/gallery/mine");
     expect(list.calls[0]!.init.method).toBe("GET");

@@ -172,6 +172,8 @@ export interface GallerySubmission {
   /** The document's own id. Only this home reads it back, through /mine: it
    * is how the panel knows a design is already in the gallery. */
   sourceId?: string;
+  /** `designFingerprint` of the document as sent, read back the same way. */
+  sourceHash?: string;
 }
 
 /**
@@ -250,7 +252,35 @@ export function buildGallerySubmission(
     panelVersion: meta.panelVersion,
     ...(meta.device === undefined ? {} : { device: meta.device }),
     ...(cfg.id ? { sourceId: cfg.id } : {}),
+    sourceHash: designFingerprint(cfg),
   };
+}
+
+/**
+ * A short hash of the design itself, for "has it changed since it was sent".
+ * It is the share export with the name left out: the gallery copy is named by
+ * its title, and the fields a share drops (the id, the seat, the link, hiding)
+ * are about this home, not the design. Labels and renames typed in Share are
+ * not in it either; they belong to the listing.
+ *
+ * Two 32-bit lanes over the text rather than a crypto digest: the panel is
+ * often served over plain http, where `crypto.subtle` does not exist, and
+ * this runs after every edit of a design that is in the gallery.
+ */
+export function designFingerprint(cfg: CustomComplicationConfig): string {
+  const doc = exportObject(cfg, "share", []);
+  delete doc.name;
+  const text = stableStringify(doc, null);
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 2654435761);
+    h2 = Math.imul(h2 ^ c, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (h2 >>> 0).toString(16).padStart(8, "0") + (h1 >>> 0).toString(16).padStart(8, "0");
 }
 
 // ── what becomes public ───────────────────────────────────────────────────
@@ -710,6 +740,8 @@ export interface GalleryUpload {
   /** The id of the document it was made from, or null for an upload from a
    * panel that did not send one. */
   sourceId: string | null;
+  /** The design's fingerprint when it was sent, or null when not known. */
+  sourceHash: string | null;
   description: string;
   tags: string[];
 }
@@ -746,6 +778,7 @@ export function readGalleryUpload(raw: unknown, base: string = GALLERY_API_BASE)
     importCount: num("import_count", "importCount"),
     previewUrl: preview === null || preview === "" ? null : resolvePreviewUrl(preview, base),
     sourceId: str("sourceId", "source_id") || null,
+    sourceHash: str("sourceHash", "source_hash") || null,
     description: str("description") ?? "",
     tags: Array.isArray(r.tags) ? r.tags.filter((t): t is string => typeof t === "string") : [],
   };
@@ -854,6 +887,16 @@ export function latestGalleryVersion(items: readonly GalleryUpload[], upload: Ga
     if (v.replacesId === upload.id && v.createdAt > latest.createdAt) latest = v;
   }
   return latest;
+}
+
+/**
+ * Whether the design changed since it last went to the gallery: true or
+ * false against the newest version sent, undefined when that version came
+ * from a panel that did not record a fingerprint.
+ */
+export function galleryLinkChanged(items: readonly GalleryUpload[], link: GalleryLink, fingerprint: string): boolean | undefined {
+  const sent = link.kind === "live" ? latestGalleryVersion(items, link.upload) : link.upload;
+  return sent.sourceHash === null ? undefined : sent.sourceHash !== fingerprint;
 }
 
 export function galleryLinkFor(items: readonly GalleryUpload[], sourceId: string | undefined): GalleryLink | undefined {

@@ -359,6 +359,8 @@ import {
   galleryDevice,
   galleryErrorMessage,
   galleryFamily,
+  designFingerprint,
+  galleryLinkChanged,
   galleryLinkFor,
   latestGalleryVersion,
   galleryPublicFields,
@@ -1786,6 +1788,10 @@ export class WristAssistantPanel extends LitElement {
   /** Whether New was already filled from this design's own upload, so a late
    * uploads list does not fill it again over what the author changed. */
   private galleryLinkApplied = false;
+  /** One fingerprint per document object: an edit makes a new object, so a
+   * cached answer is never stale, and an unchanged design costs nothing. */
+  private fingerprints = new WeakMap<CustomComplicationConfig, string>();
+  private galleryUploadsLoading = false;
   /** The public text row the pointer or the focus is in. */
   /** Waits out typing in a slot label before the pictures are drawn again,
    * since they print the labels. */
@@ -7734,6 +7740,9 @@ export class WristAssistantPanel extends LitElement {
       if (this.ownerId !== ownerId || run !== this.recordsLoadRun) return;
       this.notePreviews(ownerId, reply.previews);
       this.records = reply.records;
+      // Once per visit, so Share can say "Update share" on a design in the
+      // gallery that has changed since. Only an administrator has the key.
+      if (this.hass.user?.is_admin && this.galleryUploads === undefined && !this.galleryUploadsLoading) void this.loadGalleryUploads();
       this.maxSchemaVersion = reply.max_schema_version;
       this.presets = reply.presets ?? [];
       this.occupied = reply.occupied
@@ -11014,6 +11023,17 @@ export class WristAssistantPanel extends LitElement {
    * changed. It is dimmed now while there is nothing to save, and the caption
    * beside it says when the last save was.
    */
+  /** Share, or Update share once a design in the gallery has changed since
+   * its last send. */
+  private renderShareButton() {
+    const changed = this.shareChanged() === true;
+    return html`<button class="tb-btn tb-share" aria-haspopup="dialog" aria-expanded=${this.shareOpen ? "true" : "false"}
+      title=${changed
+        ? "Changed since you posted it to the online gallery. Send the new version from Share"
+        : "Share or back up this complication as text, a file or a link"}
+      @click=${() => this.openShareDialog()}>${changed ? "Update share" : "Share"}</button>`;
+  }
+
   private renderTopBar(stacked: boolean, dirty: boolean) {
     const d = this.draft;
     const rec = this.records.find((r) => r.id === this.selectedId);
@@ -11027,9 +11047,7 @@ export class WristAssistantPanel extends LitElement {
       ${this.renderPicker()}
       ${this.renderNewButton()}
       ${this.renderImportButton()}
-      ${d ? html`<button class="tb-btn tb-share" aria-haspopup="dialog" aria-expanded=${this.shareOpen ? "true" : "false"}
-        title="Share or back up this complication as text, a file or a link"
-        @click=${() => this.openShareDialog()}>Share</button>` : nothing}
+      ${d ? this.renderShareButton() : nothing}
       <span class="spacer"></span>
       ${this.renderSendPill()}
       ${this.renderTopMenu()}
@@ -14349,11 +14367,16 @@ export class WristAssistantPanel extends LitElement {
     if (!link) return nothing;
     const u = link.upload;
     if (link.kind === "pending") {
-      return html`<div class="xf-lead">${uiIcon("info")}<span>Sent to the online gallery as <b>${u.title}</b>. It is waiting for review.</span></div>`;
+      return html`<div class="xf-lead">${uiIcon("info")}<span>Sent to the online gallery as <b>${u.title}</b>. It is waiting for review.${this.shareChangedNote()}</span></div>`;
     }
     return html`<div class="xf-lead">${uiIcon("globe")}<span>In the online gallery as
       <a href=${`${GALLERY_PAGE}?id=${encodeURIComponent(u.id)}`} target="_blank" rel="noopener"><b>${u.title}</b></a>.
-      ${galleryUploadSubline(u)}.${link.waiting ? " A new version is waiting for review." : ""}</span></div>`;
+      ${galleryUploadSubline(u)}.${link.waiting ? " A new version is waiting for review." : ""}${this.shareChangedNote()}</span></div>`;
+  }
+
+  private shareChangedNote(): string {
+    const changed = this.shareChanged();
+    return changed === true ? " You changed it since you sent it." : changed === false ? " No changes since you sent it." : "";
   }
 
   /** One numbered step of the Share dialog, in its own color. A locked step
@@ -14851,6 +14874,7 @@ export class WristAssistantPanel extends LitElement {
 
   private async loadGalleryUploads() {
     this.galleryUploadsError = "";
+    this.galleryUploadsLoading = true;
     try {
       const key = await this.ensureGalleryKey();
       this.galleryUploads = await listMyUploads(galleryFetch, key);
@@ -14860,6 +14884,8 @@ export class WristAssistantPanel extends LitElement {
       this.galleryUploadsError = err instanceof GalleryError
         ? galleryErrorMessage(err)
         : "Could not read this Home Assistant's gallery key.";
+    } finally {
+      this.galleryUploadsLoading = false;
     }
   }
 
@@ -14967,6 +14993,20 @@ export class WristAssistantPanel extends LitElement {
 
   private goGalleryStep(step: 1 | 2) {
     this.galleryStep = step;
+  }
+
+  /** Whether the open design changed since it last went to the gallery.
+   * Undefined when it is not there, or that send did not record it. */
+  private shareChanged(): boolean | undefined {
+    const cfg = this.shareConfig();
+    const link = this.galleryLink();
+    if (!cfg || !link || !this.galleryUploads) return undefined;
+    let print = this.fingerprints.get(cfg);
+    if (print === undefined) {
+      print = designFingerprint(cfg);
+      this.fingerprints.set(cfg, print);
+    }
+    return galleryLinkChanged(this.galleryUploads, link, print);
   }
 
   /** Where the design in Share stands in the gallery, once the list is in. */
