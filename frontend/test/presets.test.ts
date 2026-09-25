@@ -14,6 +14,7 @@ import {
   chartHistoryEntity,
   chartHistoryRequests,
   encodeConfig,
+  groupChain,
   legacyConfig,
   newConfig,
   parseConfig,
@@ -1013,20 +1014,44 @@ describe("presets as groups", () => {
         expect(cfg.groups ?? [], preset.kind).toHaveLength(0);
         continue;
       }
-      expect(cfg.groups, preset.kind).toHaveLength(1);
-      const group = cfg.groups![0]!;
+      const top = (cfg.groups ?? []).filter((g) => g.parentId === undefined);
+      expect(top, preset.kind).toHaveLength(1);
+      const group = top[0]!;
       expect(group.name, preset.kind).toBe(preset.title);
-      expect(group.parentId, preset.kind).toBeUndefined();
-      for (const el of layers) expect(el.payload.groupId, `${preset.kind}: ${el.kind}`).toBe(group.id);
+      // Every layer is in the group, directly or through a row sub-group.
+      for (const el of layers) {
+        const chain = groupChain(cfg, el.payload.groupId).map((g) => g.id);
+        expect(chain, `${preset.kind}: ${el.kind}`).toContain(group.id);
+      }
     }
+  });
+
+  it("gives a preset with rows a sub-group per row, inside the preset's group", () => {
+    const cfg = config();
+    applyPreset(cfg, "summary", KITCHEN, { family: "rectangular" });
+    const top = cfg.groups!.find((g) => g.parentId === undefined)!;
+    expect(top.name).toBe("Home summary");
+    const rows = cfg.groups!.filter((g) => g.parentId === top.id);
+    expect(rows.map((g) => g.name)).toEqual(["Lights", "People", "Doors"]);
+    for (const row of rows) {
+      expect(cfg.elements.filter((e) => e.payload.groupId === row.id).map((e) => e.kind)).toEqual(["shape", "icon", "text"]);
+    }
+    expect(cfg.elements.every((e) => rows.some((r) => r.id === e.payload.groupId))).toBe(true);
+
+    const sun = config();
+    applyPreset(sun, "sunTimes", { entityId: "sun.sun", displayName: "Sun", domain: "sun" }, { family: "rectangular" });
+    const sunTop = sun.groups!.find((g) => g.parentId === undefined)!;
+    expect(sun.groups!.filter((g) => g.parentId === sunTop.id).map((g) => g.name)).toEqual(["Sunrise", "Sunset"]);
   });
 
   it("keeps two presets on one face as two groups, and the second inside no group", () => {
     const cfg = config();
     applyPreset(cfg, "summary", KITCHEN, { family: "rectangular" });
     applyPreset(cfg, "weatherNow", { entityId: "weather.home", displayName: "Home", domain: "weather" }, { family: "rectangular" });
-    expect(cfg.groups!.map((g) => g.name)).toEqual(["Home summary", "Weather now"]);
-    expect(cfg.groups!.every((g) => g.parentId === undefined)).toBe(true);
+    const top = cfg.groups!.filter((g) => g.parentId === undefined);
+    expect(top.map((g) => g.name)).toEqual(["Home summary", "Weather now"]);
+    // The summary's rows are its own sub-groups and nothing else's.
+    for (const g of cfg.groups!) if (g.parentId !== undefined) expect(g.parentId).toBe(top[0]!.id);
     const encoded = encodeConfig(cfg);
     expect(auditUnknownKeys(encoded)).toEqual([]);
     expect(encodeConfig(parseConfig(encoded))).toEqual(encoded);

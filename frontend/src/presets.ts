@@ -1298,6 +1298,7 @@ export function addSunTimes(cfg: CustomComplicationConfig, ref: EntityRef, env: 
     text.payload.alignment = "leading";
     placeLayer(cfg, text, env.family, (family) => sunRowGeometry(family, top, false));
     cfg.elements.push(text);
+    createGroup(cfg, [icon.payload.id, text.payload.id], top ? "Sunrise" : "Sunset");
     return text.payload.id;
   };
   const rise = row("sunrise.fill", "next_rising", true);
@@ -1597,6 +1598,8 @@ export function addHomeSummary(cfg: CustomComplicationConfig, env: PresetEnv): s
     value: Value["kind"];
     suffix: string;
     rewrites: readonly (readonly [string, string])[];
+    /** The row's own sub-group in the Layers list. */
+    name: string;
     idle: string;
     busy: string;
     busyHex: string;
@@ -1605,16 +1608,19 @@ export function addHomeSummary(cfg: CustomComplicationConfig, env: PresetEnv): s
     {
       value: count("light", { kind: "isOn" }), suffix: " lights on",
       rewrites: [["0", "All off"], ["1", "1 light on"]],
+      name: "Lights",
       idle: "lightbulb", busy: "lightbulb.fill", busyHex: ACCENT_HEX, goodWhenZero: false,
     },
     {
       value: count("person", { kind: "equals", value: "home" }), suffix: " home",
       rewrites: [["0", "Nobody home"]],
+      name: "People",
       idle: "person.fill", busy: "person.fill", busyHex: COOL_HEX, goodWhenZero: false,
     },
     {
       value: { kind: "jinja", value: DOORS_OPEN_TEMPLATE }, suffix: " open",
       rewrites: [["0", "All closed"]],
+      name: "Doors",
       idle: "door.left.hand.closed", busy: "door.left.hand.open", busyHex: WARN_HEX, goodWhenZero: true,
     },
   ];
@@ -1647,6 +1653,9 @@ export function addHomeSummary(cfg: CustomComplicationConfig, env: PresetEnv): s
     })))];
     placeLayer(cfg, text, env.family, (family) => summaryRowGeometry(family, i, "text"));
     cfg.elements.push(text);
+    // Each row is a part of its own: card, symbol and count move together,
+    // and `applyPreset` then folds the three rows into the preset's group.
+    createGroup(cfg, [card.payload.id, icon.payload.id, text.payload.id], row.name);
     if (i === 0) first = text.payload.id;
   });
   return first;
