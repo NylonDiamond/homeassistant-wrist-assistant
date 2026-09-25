@@ -3017,8 +3017,13 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
   }
 
   // A Home Screen tile is drawn inside the system's rounded corner, which is
-  // where iOS clips the widget. The watch shapes have no corner of their own.
-  const rx = isHomeTile(family) ? HOME_TILE_CORNER_RADIUS * fit.scale : 0;
+  // where iOS clips the widget. Circular is masked to a disc, so its clip, its
+  // black well and its ring are that disc. It used to lean on the page's
+  // border-radius for that, which stopped clipping once the svg let its
+  // resize handles overflow, and the face drew as a black square.
+  const rx = isHomeTile(family) ? HOME_TILE_CORNER_RADIUS * fit.scale
+    : family === "circular" ? Math.min(canvas.width, canvas.height) / 2
+    : 0;
   const clip = svg`<rect width=${canvas.width} height=${canvas.height} rx=${rx} />`;
   const chrome = border
     ? svg`<rect x=${bw / 2} y=${bw / 2} width=${canvas.width - bw} height=${canvas.height - bw} rx=${Math.max(0, rx - bw / 2)} fill="none" stroke=${border.color} stroke-opacity=${border.opacity} stroke-width=${bw} />`

@@ -186,7 +186,7 @@ var dT=Object.defineProperty;var cT=Object.getOwnPropertyDescriptor;var F=(e,n,t
       ${Q?m:Ov(h,a,n.spotlightIds,`${o}-spot`,de.quad.width,de.quad.height,`translate(${j} ${oe}) scale(${r.scale*U})`)}
       ${n.flash===void 0?m:n.flash.frame===void 0?x`<circle class="wa-flash" pointer-events="none" cx=${j+ne/2} cy=${oe+ne/2}
               r=${ne/2} fill="none" stroke=${n.flash.color} stroke-width=${xi.circleStroke*N} />`:vv(n.flash.frame,n.flash.color,a,{x:j,y:oe,scale:r.scale*U})}
-    </svg>`}let R=Bf(t)?Bv*r.scale:0,E=x`<rect width=${i.width} height=${i.height} rx=${R} />`,H=c?x`<rect x=${p/2} y=${p/2} width=${i.width-p} height=${i.height-p} rx=${Math.max(0,R-p/2)} fill="none" stroke=${c.color} stroke-opacity=${c.opacity} stroke-width=${p} />`:m,T=x`<rect width=${i.width} height=${i.height} rx=${R} fill="#000000" />`,O=`0 0 ${i.width} ${i.height}`;return x`<svg viewBox=${O} xmlns="http://www.w3.org/2000/svg" class="complication ${t}"
+    </svg>`}let R=Bf(t)?Bv*r.scale:t==="circular"?Math.min(i.width,i.height)/2:0,E=x`<rect width=${i.width} height=${i.height} rx=${R} />`,H=c?x`<rect x=${p/2} y=${p/2} width=${i.width-p} height=${i.height-p} rx=${Math.max(0,R-p/2)} fill="none" stroke=${c.color} stroke-opacity=${c.opacity} stroke-width=${p} />`:m,T=x`<rect width=${i.width} height=${i.height} rx=${R} fill="#000000" />`,O=`0 0 ${i.width} ${i.height}`;return x`<svg viewBox=${O} xmlns="http://www.w3.org/2000/svg" class="complication ${t}"
       width=${i.width} height=${i.height}>
     <defs><clipPath id=${o}>${E}</clipPath>${w}</defs>
     <g clip-path=${`url(#${o})`}>
