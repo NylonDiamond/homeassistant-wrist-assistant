@@ -4504,15 +4504,19 @@ export class WristAssistantPanel extends LitElement {
     .preview.inline .inline-line svg { display: inline-block; margin: 0; background: transparent; border-radius: 0; }
     .preview.inline .inline-line.missing { color: #999; font-style: italic; }
     /* On the stage the line is the whole face, so it grows and shrinks with
-       the stage the way the other faces do: the type is sized off the stage
-       (the size container is .stage-wrap), and everything else in the pill,
-       symbols included, is in em so it follows. The zoom buttons scale it
-       further. */
+       the stage the way a rectangular face does: its type is sized so an 11em
+       pill (about a rectangular slot's width at the watch's 15pt) spans the
+       stage less its 48px of gutter, the width a rectangular face takes. The
+       size container is .stage-wrap. Everything else in the pill, symbols
+       included, is in em so it follows, and the zoom buttons scale it all. A
+       line wider than the stage ends in an ellipsis, as it does on the wrist. */
     .stage-face > .preview.inline .inline-line {
-      font-size: calc(clamp(15px, min(3.4cqw, 7cqh), 56px) * var(--wa-zoom, 1));
-      gap: .4em; min-width: 14.5em; padding: .5em 1.2em;
+      font-size: calc(max(15px, min((100cqw - 48px) / 11, 60px)) * var(--wa-zoom, 1));
+      gap: .4em; min-width: 11em; padding: .45em 1.1em; box-sizing: border-box;
+      max-width: calc((100cqw - 48px) * var(--wa-zoom, 1));
     }
-    .stage-face > .preview.inline .inline-line svg { width: 1em; height: 1em; }
+    .stage-face > .preview.inline .inline-line > span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .stage-face > .preview.inline .inline-line svg { flex: none; width: 1em; height: 1em; }
     /* The big mock tile on the stage, where a face would be. It takes the same
        drop shadow the faces take, so it sits on the work surface rather than
        floating over it. */
