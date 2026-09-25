@@ -2575,7 +2575,7 @@ export class WristAssistantPanel extends LitElement {
        the card is sized to the shape: a round one small, since a circle wide
        enough for a rectangle's card is a dinner plate, and a wide one wide,
        so a rectangle's rows and an inline line are big enough to read. */
-    .pk-dialog.bare .pk-grid:is([data-shape="circular"], [data-shape="corner"]) {
+    .pk-dialog.bare .pk-grid[data-shape="circular"] {
       grid-template-columns: repeat(auto-fill, minmax(116px, 1fr));
     }
     .pk-dialog.bare .pk-grid:is([data-shape="rectangular"], [data-shape="inline"], [data-shape="medium"]) {

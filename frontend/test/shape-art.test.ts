@@ -678,15 +678,19 @@ describe("shapeOnlyArt", () => {
     expect(bare("rectangular", "watch", { rectangular: picture(181, 65.5) })).toMatch(/<clipPath id=pk-clip-\w+><rect/);
   });
 
-  // The corner's render is a whole screen quadrant with the content disc in
-  // it, so the drawing is of the disc alone, as it is on the device.
-  it("shows a corner's disc rather than the quadrant it was drawn in", () => {
-    const art = bare("corner", "watch", {
-      corner: { ...picture(100, 100), focus: { cx: 20, cy: 20, diameter: 40 } },
-    });
-    expect(art).toMatch(/<clipPath id=pk-clip-\w+><circle/);
-    // The 13 unit slot for a 40 unit disc, which is what the watch scales it by.
-    expect(scale(art)).toBeCloseTo(13 / 40, 6);
+  // A corner is its disc and the gauge and bezel text curving round it, so
+  // the card keeps the whole quarter the device view draws, framed on the
+  // square at its top where all of that sits.
+  it("shows a corner's whole quarter, not its disc alone", () => {
+    const live = { corner: { ...picture(104, 124), focus: { cx: 20, cy: 20, diameter: 40 } } };
+    const art = bare("corner", "watch", live);
+    expect(art).toMatch(/<clipPath id=pk-clip-\w+><rect/);
+    expect(scale(art)).toBeCloseTo(scale(crop("corner", "watch", live)), 6);
+    const box = window(art);
+    expect(box.x).toBe(11);
+    expect(box.y).toBe(13);
+    expect(box.width).toBeCloseTo(35 * 104 / 124, 6);
+    expect(box.height).toBeCloseTo(box.width, 6);
   });
 
   // Inline is a symbol and a line of words rather than a canvas.

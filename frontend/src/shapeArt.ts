@@ -409,9 +409,7 @@ const WATCH_SCREEN = { x: 11, y: 13, width: 64, height: 70, rx: 14 };
  */
 function cornerQuarter(live: LiveShape | undefined): unknown {
   const s = WATCH_SCREEN;
-  const height = s.height / 2;
-  const width = height * (104 / 124);
-  const x = s.x;
+  const { x, width, height } = cornerQuarterBox();
   if (live === undefined || live.art === nothing || live.width <= 0 || live.height <= 0) {
     return svg`<path d=${`M${x + 12} ${s.y + 6} A 26 26 0 0 0 ${x + 4} ${s.y + 17}`}
       stroke=${ON} stroke-width="4" fill="none" stroke-linecap="round" />`;
@@ -420,6 +418,14 @@ function cornerQuarter(live: LiveShape | undefined): unknown {
   const scale = Math.min(width / live.width, height / live.height);
   return svg`<clipPath id=${id}><rect x=${s.x} y=${s.y} width=${s.width} height=${s.height} rx=${s.rx} /></clipPath>
     <g clip-path=${`url(#${id})`}><g class="pk-live" transform=${`translate(${x} ${s.y}) scale(${scale})`}>${live.art}</g></g>`;
+}
+
+/** Where the corner's quarter sits on the watch drawing: the screen's top
+ * left, half the screen tall, at the 104 by 124 pt quadrant's proportions. */
+function cornerQuarterBox(): Crop {
+  const s = WATCH_SCREEN;
+  const height = s.height / 2;
+  return { x: s.x, y: s.y, width: height * (104 / 124), height };
 }
 
 /**
@@ -815,6 +821,8 @@ export function deviceCropArt(
  * picture is then framed on that slot rather than on the device's window. A
  * circular shape is a sixth of a watch window's width, so framing it on the
  * window left a dot in a black box; framed on the slot, it fills its card.
+ * A watch corner is the exception: its gauge and bezel text reach past its
+ * disc, so it is framed on its quarter of the screen instead.
  *
  * A shape the chosen device has no slot for keeps its device picture: there
  * is nothing to draw on its own, and a blank card says less than a watch.
@@ -831,6 +839,11 @@ export function shapeOnlyArt(
   const phone = device === "iphone";
   const slot = phone ? phoneSlot(family) : watchSlot(family);
   if (slot === undefined) return deviceCropArt(family, device, live);
+  if (family === "corner" && !phone) {
+    const frame = cornerFrame();
+    return html`<svg class="pk-crop bare" viewBox=${`${frame.x} ${frame.y} ${frame.width} ${frame.height}`}
+      preserveAspectRatio="xMidYMid meet" aria-hidden="true">${cornerQuarter(live.corner)}</svg>`;
+  }
   const frame = bareFrame(slot);
   const shape = live[family];
   const drawn = family === "inline"
@@ -856,6 +869,16 @@ function bareFrame(slot: Slot): Crop {
   return { x: slot.x - m, y: slot.y - m, width: slot.width + 2 * m, height: slot.height + 2 * m };
 }
 
+/** The Shape view's frame on a watch corner: the top of its quarter, as a
+ * square. A corner is not only its disc: the gauge and the bezel text curve
+ * round it, and a card of the disc alone lost both. They all sit in the
+ * quarter's upper part, under the screen's rounded corner, so the square
+ * keeps every one of them and drops the empty black below. */
+function cornerFrame(): Crop {
+  const q = cornerQuarterBox();
+  return { x: q.x, y: q.y, width: q.width, height: q.width };
+}
+
 /** The widest a card's well is let get in the Shape view. An inline line is
  * over seven times as wide as it is tall, and a well that shape is a strip
  * too thin to read. Nothing needs a limit the other way: the tallest shape
@@ -879,7 +902,7 @@ export function shapeWell(family: FamilyKind | undefined, device: "watch" | "iph
   if (family === undefined) return undefined;
   const slot = device === "iphone" ? phoneSlot(family) : watchSlot(family);
   if (slot === undefined) return undefined;
-  const frame = bareFrame(slot);
+  const frame = family === "corner" && device === "watch" ? cornerFrame() : bareFrame(slot);
   return Math.min(frame.width / frame.height, WELL_WIDEST);
 }
 
