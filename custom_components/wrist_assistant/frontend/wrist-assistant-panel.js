@@ -4189,6 +4189,21 @@ Click to change`} @click=${E}>
     button.badge.need:hover:not(:disabled) { background: color-mix(in srgb, var(--wa-need) 24%, transparent); }
     button.badge.need:disabled { cursor: default; }
     .slots-note .badge.need { vertical-align: 1px; }
+    .slots-note > span { flex: 1 1 auto; min-width: 0; }
+    /* The one thing to do about the banner, so it is a filled button in the
+       color of the marks it clears rather than a link at the far edge. */
+    .slots-note .slots-pick {
+      flex: none; display: inline-flex; align-items: center; gap: 6px;
+      padding: 7px 14px; border: 0; border-radius: 999px; cursor: pointer;
+      background: var(--wa-need); color: #fff; font: inherit; font-weight: 600; white-space: nowrap;
+      box-shadow: 0 1px 2px color-mix(in srgb, var(--wa-need) 40%, transparent);
+      transition: filter 120ms ease, transform 120ms ease;
+    }
+    .slots-note .slots-pick:hover { filter: brightness(1.1); }
+    .slots-note .slots-pick:active { transform: translateY(1px); }
+    .slots-note .slots-pick:focus-visible { outline: 2px solid var(--wa-need); outline-offset: 2px; }
+    .slots-note .slots-pick svg { width: 14px; height: 14px; }
+    :host([dark]) .slots-note .slots-pick { color: #2a0707; }
     /* Beside the name rather than with the other badges, which give way to
        the buttons under the pointer: this one has to stay clickable there. */
     .layer .name b .nm-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -8436,9 +8451,9 @@ Click to change`} @click=${E}>
         <span class="spacer"></span>
         <button class="primary" ?disabled=${d===0} @click=${()=>this.applySlots()}>${d===0||d===a.length?"Use these":`Use ${d} of ${a.length}`}</button>
       </div>
-    </dialog>`}renderBanners(){let t=[],i=this.renderOrphanBanner();i&&t.push(i);let a=this.slotInfo()?.rows??[];if(a.length>0){let r=a.length,o=a.map(l=>l.label),s=r===1?o[0]:`${o.slice(0,-1).join(", ")} and ${o[r-1]}`;t.push(u`<div class="banner warn link-note slots-note"><span><b>${r===1?"1 entity still needs":`${r} entities still need`} picking:</b> ${s}.
+    </dialog>`}renderBanners(){let t=[],i=this.renderOrphanBanner();i&&t.push(i);let a=this.slotInfo()?.rows??[];if(a.length>0){let r=a.length,o=a.map(c=>c.label),s=r===1?o[0]:`${o.slice(0,-1).join(", ")} and ${o[r-1]}`,l=3,d=r<=l+1?s:`${o.slice(0,l).join(", ")} and ${r-l} more`;t.push(u`<div class="banner warn link-note slots-note"><span title=${s}><b>${r===1?"1 entity still needs":`${r} entities still need`} picking:</b> ${d}.
         Layers that read ${r===1?"it":"them"} are marked <span class="badge need">pick entity</span>.</span>
-        ${this.canEdit?u`<button class="link" @click=${()=>this.openSlotsDialog()}>Pick ${r===1?"it":"them"}</button>`:m}</div>`)}if(this.readOnlyReason?t.push(u`<div class="banner warn"><b>Read only.</b> ${this.readOnlyReason}</div>`):this.draft&&!this.hass.user?.is_admin&&t.push(u`<div class="banner warn"><b>Read only.</b> Only a Home Assistant administrator can save complications.</div>`),this.conflict){let r=this.conflict;t.push(u`<div class="banner err"><b>Save rejected.</b> ${r.message}
+        ${this.canEdit?u`<button class="slots-pick" @click=${()=>this.openSlotsDialog()}>Pick ${r===1?"entity":"entities"}${T("arrow")}</button>`:m}</div>`)}if(this.readOnlyReason?t.push(u`<div class="banner warn"><b>Read only.</b> ${this.readOnlyReason}</div>`):this.draft&&!this.hass.user?.is_admin&&t.push(u`<div class="banner warn"><b>Read only.</b> Only a Home Assistant administrator can save complications.</div>`),this.conflict){let r=this.conflict;t.push(u`<div class="banner err"><b>Save rejected.</b> ${r.message}
         ${r.current?u` The server has revision ${r.current.revision}, saved ${r.current.updatedAt} by ${r.current.updatedBy||"unknown"}.`:" The server no longer has this complication."}
         <div class="acts">
           <button class="small" @click=${()=>this.reloadFromServer()}>Reload the server version (lose my draft)</button>

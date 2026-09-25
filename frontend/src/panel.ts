@@ -3918,6 +3918,21 @@ export class WristAssistantPanel extends LitElement {
     button.badge.need:hover:not(:disabled) { background: color-mix(in srgb, var(--wa-need) 24%, transparent); }
     button.badge.need:disabled { cursor: default; }
     .slots-note .badge.need { vertical-align: 1px; }
+    .slots-note > span { flex: 1 1 auto; min-width: 0; }
+    /* The one thing to do about the banner, so it is a filled button in the
+       color of the marks it clears rather than a link at the far edge. */
+    .slots-note .slots-pick {
+      flex: none; display: inline-flex; align-items: center; gap: 6px;
+      padding: 7px 14px; border: 0; border-radius: 999px; cursor: pointer;
+      background: var(--wa-need); color: #fff; font: inherit; font-weight: 600; white-space: nowrap;
+      box-shadow: 0 1px 2px color-mix(in srgb, var(--wa-need) 40%, transparent);
+      transition: filter 120ms ease, transform 120ms ease;
+    }
+    .slots-note .slots-pick:hover { filter: brightness(1.1); }
+    .slots-note .slots-pick:active { transform: translateY(1px); }
+    .slots-note .slots-pick:focus-visible { outline: 2px solid var(--wa-need); outline-offset: 2px; }
+    .slots-note .slots-pick svg { width: 14px; height: 14px; }
+    :host([dark]) .slots-note .slots-pick { color: #2a0707; }
     /* Beside the name rather than with the other badges, which give way to
        the buttons under the pointer: this one has to stay clickable there. */
     .layer .name b .nm-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -17340,10 +17355,15 @@ export class WristAssistantPanel extends LitElement {
     if (open.length > 0) {
       const n = open.length;
       const names = open.map((r) => r.label);
-      const list = n === 1 ? names[0]! : `${names.slice(0, -1).join(", ")} and ${names[n - 1]!}`;
-      out.push(html`<div class="banner warn link-note slots-note"><span><b>${n === 1 ? "1 entity still needs" : `${n} entities still need`} picking:</b> ${list}.
+      const all = n === 1 ? names[0]! : `${names.slice(0, -1).join(", ")} and ${names[n - 1]!}`;
+      // A scene opens with a dozen or more, and the whole list ran to two
+      // lines of names. Three say what kind of thing is missing; the rest are
+      // in the dialog the button opens, and on hover.
+      const shown = 3;
+      const list = n <= shown + 1 ? all : `${names.slice(0, shown).join(", ")} and ${n - shown} more`;
+      out.push(html`<div class="banner warn link-note slots-note"><span title=${all}><b>${n === 1 ? "1 entity still needs" : `${n} entities still need`} picking:</b> ${list}.
         Layers that read ${n === 1 ? "it" : "them"} are marked <span class="badge need">pick entity</span>.</span>
-        ${this.canEdit ? html`<button class="link" @click=${() => this.openSlotsDialog()}>Pick ${n === 1 ? "it" : "them"}</button>` : nothing}</div>`);
+        ${this.canEdit ? html`<button class="slots-pick" @click=${() => this.openSlotsDialog()}>Pick ${n === 1 ? "entity" : "entities"}${uiIcon("arrow")}</button>` : nothing}</div>`);
     }
     if (this.readOnlyReason) out.push(html`<div class="banner warn"><b>Read only.</b> ${this.readOnlyReason}</div>`);
     else if (this.draft && !this.hass.user?.is_admin) out.push(html`<div class="banner warn"><b>Read only.</b> Only a Home Assistant administrator can save complications.</div>`);
