@@ -722,9 +722,10 @@ function layerRowFolds(): string {
     }`;
   }).join("\n");
 }
-/** The Layers list's group boxes, one hue per level of nesting: teal, blue,
- * amber, rose. None is the accent violet, so a box never reads as selected. */
-const GROUP_BOX_HUES = ["#2bb3a3", "#5b8def", "#e0a43a", "#d9678a"] as const;
+/** The Layers list's group boxes, one hue per level of nesting: teal, slate
+ * blue, sand, dusty rose. Muted and far from the accent violet, so a box never
+ * reads as selected; a bright blue did. */
+const GROUP_BOX_HUES = ["#2bb3a3", "#7890a8", "#b89a62", "#a87888"] as const;
 type ThumbStep = 0 | 1 | 2;
 /** The help dialog's tabs. */
 type HelpTab = "basics" | "pages" | "keys" | "sync";
@@ -4034,8 +4035,8 @@ export class WristAssistantPanel extends LitElement {
     .group-box {
       flex: none; display: flex; flex-direction: column; gap: 3px;
       padding: 1px 2px 2px; border-radius: calc(var(--wa-r-sm) + 2px);
-      border: 1px solid color-mix(in srgb, var(--gc) 50%, var(--wa-line));
-      background: color-mix(in srgb, var(--gc) 10%, transparent);
+      border: 1px solid color-mix(in srgb, var(--gc) 32%, var(--wa-line));
+      background: color-mix(in srgb, var(--gc) 5%, transparent);
     }
     .group-box:has(> .layer.group.hl) { outline: 2px solid var(--wa-accent); outline-offset: -1px; }
     /* The folder row is the box's header, not a card of its own, until it is
