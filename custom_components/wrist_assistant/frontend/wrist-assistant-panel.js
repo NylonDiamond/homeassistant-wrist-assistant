@@ -3819,7 +3819,10 @@ ${z_(c)}`}}delete s.hidden,delete s.linkId;let l=Jd(a);if(l.length>0){let d=l.sl
     .layout {
       display: grid;
       grid-template-columns: var(--wa-left, 300px) 8px minmax(0, 1fr) 8px var(--wa-right, 360px);
-      column-gap: 8px;
+      /* The 8px drag gutters are the space between the columns. An 8px gap
+         on each side of them as well left about 24px between cards, which
+         read as three loose panels rather than one editor (Jesse, 2026-09-24). */
+      column-gap: 2px;
       row-gap: 8px;
       padding: 4px 12px 10px;
       /* The editor is exactly one viewport tall: the grid takes whatever the
@@ -3932,7 +3935,9 @@ ${z_(c)}`}}delete s.hidden,delete s.linkId;let l=Jd(a);if(l.length>0){let d=l.sl
     /* The left column does not scroll: the Pages card keeps its one line and
        the Layers card takes the rest, scrolling its own rows. The Background
        row follows the last layer, and stays in sight once the rows scroll. */
-    .column.left { display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
+    /* It never scrolls itself (the Layers list scrolls inside it), so it
+       keeps no scrollbar gutter: that was more empty space before the canvas. */
+    .column.left { display: flex; flex-direction: column; gap: 10px; overflow: hidden; scrollbar-gutter: auto; }
     .column.left .card { flex: none; }
     /* A basis of 0 rather than auto: with auto the rows of a long design
        count as the card's size. The third is a floor, not a share. */
@@ -5106,10 +5111,20 @@ ${z_(c)}`}}delete s.hidden,delete s.linkId;let l=Jd(a);if(l.length>0){let d=l.sl
       --wa-testing: #f2c063;
     }
     .column.canvas > .card.canvas-card { min-height: 440px; container: cvcard / inline-size; }
+    /* The head wraps rather than squeezes. It used to be one fixed 48px line
+       with every part allowed to shrink, so in a middling width the device
+       chips were clipped and the shape's name cut to nothing, with no sign
+       anything was missing. Now each part (the name, the devices, the shape,
+       the actions) keeps its natural width, and a part that does not fit
+       moves down to a second line whole, slash and all. The actions keep to
+       the right edge of whichever line they land on. */
     .cv-head {
-      display: flex; align-items: center; gap: 12px; height: 48px; padding: 0 16px; flex: none; min-width: 0;
+      display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; row-gap: 6px;
+      min-height: 48px; padding: 9px 16px; box-sizing: border-box; flex: none; min-width: 0;
       border-bottom: 1px solid var(--wa-line);
     }
+    .cv-part { display: inline-flex; align-items: center; gap: 12px; flex: 0 1 auto; min-width: 0; }
+    .cv-acts { display: inline-flex; align-items: center; gap: 12px; flex: none; margin-left: auto; }
     .cv-head .tb-name { flex: 0 1 auto; margin-left: -8px; }
     .cv-slash { flex: none; color: var(--wa-line-strong); }
     /* The whole-complication actions: quiet outlined buttons that read as one
@@ -5152,10 +5167,11 @@ ${z_(c)}`}}delete s.hidden,delete s.linkId;let l=Jd(a);if(l.length>0){let d=l.sl
     .cv-shape small { font-size: 11px; }
     .cv-shape .warn { display: inline-flex; color: var(--wa-val); }
     .cv-shape .warn svg { width: 14px; height: 14px; }
-    .cv-head .spacer { flex: 1; min-width: 0; }
     .cv-head .shape-seg { padding: 2px; gap: 2px; border-radius: 9px; flex-wrap: nowrap; }
     .cv-head .shape-seg button.tab { height: 26px; padding: 0 10px; font-size: 12px; }
-    .cv-head .doc-on { display: inline-flex; align-items: center; gap: 6px; flex: 0 12 auto; min-width: 0; overflow: hidden; }
+    /* Several devices wrap onto more lines rather than hide past the edge. */
+    .cv-head .doc-on { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; row-gap: 6px; flex: 0 1 auto; min-width: 0; }
+    .cv-head .cv-devices { flex-wrap: wrap; row-gap: 6px; }
     .cv-head .doc-chip {
       height: 26px; gap: 7px; padding: 0 10px 0 8px; border-radius: 13px; min-width: 0; flex: 0 1 auto;
       background: var(--wa-chip-bg); border: 1px solid var(--wa-chip-line);
@@ -5179,13 +5195,13 @@ ${z_(c)}`}}delete s.hidden,delete s.linkId;let l=Jd(a);if(l.length>0){let d=l.sl
        with the whole-document actions, then the devices. The ::after is the
        line break, a full width item of no height. */
     @container cvcard (max-width: 560px) {
-      .cv-head { flex-wrap: wrap; height: auto; min-height: 48px; padding: 6px 12px 8px; row-gap: 0; column-gap: 8px; }
+      .cv-head { padding: 6px 12px 8px; column-gap: 8px; }
       .cv-head::after { content: ""; order: 3; flex: 0 0 100%; height: 0; }
-      .cv-head .cv-slash, .cv-head .spacer { display: none; }
+      .cv-head .cv-slash { display: none; }
       .cv-head .tb-name { order: 0; flex: 1 1 0; }
-      .cv-head .cv-shape, .cv-head .shape-seg { order: 1; }
-      .cv-head .cv-act, .cv-head .cv-div { order: 2; }
-      .cv-head .cv-devices { order: 4; flex: 0 1 auto; margin-top: 4px; }
+      .cv-head .cv-what { order: 1; }
+      .cv-head .cv-acts { order: 2; gap: 8px; }
+      .cv-head .cv-where { order: 4; flex: 0 1 auto; }
     }
     .doc-pop .row { display: flex; align-items: center; gap: 8px; }
     .doc-pop .row .why { margin-left: auto; font-size: 11px; font-weight: 500; color: var(--wa-muted); }
@@ -8058,17 +8074,17 @@ ${z_(c)}`}}delete s.hidden,delete s.linkId;let l=Jd(a);if(l.length>0){let d=l.sl
         ${this.demoing&&o?this.renderDemoDialog(r,i,a):m}
       </div>`}faceRatio(t,i){let a=Wn(i,t);return t==="corner"?104/124:a.width/a.height}renderCanvasHead(t,i){let a=We(t)[0],r=this.hasControlTab(t),s=Be(t)&&!this.inControlView?`page ${this.shownPage()} of ${Lt(t).count}`:"",l=this.openRow(),d=l?this.rowPlaces(l,a).filter(c=>c.on):[];return u`<div class="cv-head">
       ${this.renderNameField(t)}
-      ${l&&d.length>0||this.canEdit?u`<span class="cv-slash" aria-hidden="true">/</span>
+      ${l&&d.length>0||this.canEdit?u`<span class="cv-part cv-where"><span class="cv-slash" aria-hidden="true">/</span>
         <span class="cv-devices">
           ${l&&d.length>0?u`<span class="doc-on" role="group" aria-label="Devices this complication is on">
             ${d.map(c=>this.renderPlaceChip(l,c))}
           </span>`:m}
           ${this.canEdit?this.renderAddToDevice(t):m}
-        </span>`:m}
-      <span class="cv-slash" aria-hidden="true">/</span>
+        </span></span>`:m}
+      <span class="cv-part cv-what"><span class="cv-slash" aria-hidden="true">/</span>
       ${r?u`${this.renderShapeSwitch(t,i)}${s?u`<span class="cv-shape">${s}</span>`:m}`:a===void 0?m:u`<span class="cv-shape"><span class="fam">${this.shapeTitle(a)}${s?` \xB7 ${s}`:""}</span>${this.shapeNotes(t,i,a)}</span>`}
-      <span class="spacer"></span>
-      ${this.renderDocActions(t)}
+      </span>
+      ${this.canEdit?u`<span class="cv-acts">${this.renderDocActions(t)}</span>`:m}
     </div>`}renderDocActions(t){if(!this.canEdit)return m;let i=this.draft;return u`<button class="cv-act icon undo" @click=${()=>this.undo()} ?disabled=${!i?.canUndo} title="Undo (⌘Z)" aria-label="Undo">${I("undo")}</button>
       <button class="cv-act icon undo" @click=${()=>this.redo()} ?disabled=${!i?.canRedo} title="Redo (⇧⌘Z)" aria-label="Redo">${I("redo")}</button>
       <span class="cv-div" aria-hidden="true"></span>
