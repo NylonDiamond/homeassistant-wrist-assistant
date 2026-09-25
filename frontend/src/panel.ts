@@ -3692,7 +3692,9 @@ export class WristAssistantPanel extends LitElement {
     .tap-strip .tap-where { margin-left: auto; flex: none; white-space: nowrap; opacity: .85; }
     /* The strip's trash waits for the pointer, like the row's own buttons.
        Hidden rather than taken out, so the strip keeps its width. */
-    .tap-strip .tap-del { margin-left: auto; width: 22px; height: 20px; flex: none; color: var(--tp); opacity: .7; visibility: hidden; }
+    /* Positioned so it paints above the strip's ::after hit area, which
+       otherwise swallowed the trash's click and selected the tap instead. */
+    .tap-strip .tap-del { position: relative; z-index: 1; margin-left: auto; width: 22px; height: 20px; flex: none; color: var(--tp); opacity: .7; visibility: hidden; }
     .tap-strip:hover .tap-del, .tap-strip:focus-visible .tap-del, .tap-strip .tap-del:focus-visible { visibility: visible; }
     .tap-strip .tap-where + .tap-del { margin-left: 4px; }
     .tap-strip .tap-del:hover { opacity: 1; }
