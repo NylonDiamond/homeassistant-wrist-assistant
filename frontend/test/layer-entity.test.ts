@@ -267,6 +267,22 @@ describe("layerEntityNote", () => {
     expect(layerEntityNote(el, layerEntityUses(cfg, el.payload.id))).toContain("change that shared value");
   });
 
+  it("says a pick also moves the shared value a state test reads the entity through", () => {
+    const cfg = newConfig("Test", 0);
+    const id = addToggleButton(cfg, KITCHEN, { family: "rectangular" });
+    const el = cfg.elements.find((e) => e.payload.id === id)!;
+    const valueId = newId();
+    cfg.values.push({ id: valueId, name: "Kitchen light", value: entityState() });
+    for (const rule of el.payload.rules) {
+      for (const c of rule.cases) for (const t of c.when.tests) t.value = { kind: { kind: "named", id: valueId } };
+    }
+    const name = (vid: string) => cfg.values.find((v) => v.id === vid)?.name;
+    expect(layerEntityNote(el, layerEntityUses(cfg, id), name)).toContain('also changes the shared value "Kitchen light"');
+    // And the pick really does move it.
+    setLayerEntity(cfg, id, LOUNGE);
+    expect(valueEntity(cfg, { kind: { kind: "named", id: valueId } })?.ref.entityId).toBe("light.lounge");
+  });
+
   it("explains a shape, which has no value of its own", () => {
     const { cfg, el } = withLayer("shape");
     expect(layerEntityNote(el, layerEntityUses(cfg, el.payload.id))).toContain("Tappable");

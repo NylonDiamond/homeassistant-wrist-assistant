@@ -5564,7 +5564,8 @@ function layerEntityField(host: EditorHost, el: CElement, key: string): Template
   return html`
     ${entityField(host, cameraOnly ? "Camera" : "Entity", ref,
       (next) => host.update((c) => setLayerEntity(c, id, next, deviceClassOf(host, next.entityId)), `${key}-entity`), `${key}-layer-entity`, opts)}
-    <div class="hint ${layerNeedsEntity(el) ? "warn" : ""}">${layerEntityNote(el, uses)}</div>`;
+    <div class="hint ${layerNeedsEntity(el) ? "warn" : ""}">${layerEntityNote(el, uses,
+      (vid) => host.config.values.find((v) => v.id.toUpperCase() === vid.toUpperCase())?.name.trim() || undefined)}</div>`;
 }
 
 /**
@@ -5611,7 +5612,7 @@ function joinWords(parts: string[]): string {
 }
 
 /** Where the entity actually lives on this layer, in words. */
-export function layerEntityNote(el: CElement, uses: readonly LayerEntityUse[]): string {
+export function layerEntityNote(el: CElement, uses: readonly LayerEntityUse[], valueName?: (id: string) => string | undefined): string {
   const content = contentValue(el);
   const contentKind = content?.kind.kind;
   // A literal on a text or gauge layer is a placeholder an entity pick replaces;
@@ -5641,7 +5642,18 @@ export function layerEntityNote(el: CElement, uses: readonly LayerEntityUse[]): 
   if (uses.some((u) => u.where === "tap")) parts.push("the tap");
   const tests = uses.filter((u) => u.where === "test").length;
   if (tests > 0) parts.push(tests === 1 ? "1 state test" : `${tests} state tests`);
-  return `Used by ${joinWords(parts)}.${keptNote}`;
+  // A pick here moves the shared value a state test reads the same entity
+  // through (`setLayerEntity`), which is invisible from this card. Say so, or
+  // a change made here turns up unexplained in the Shared values list.
+  const current = uses[0]?.ref.entityId;
+  const moved = [...new Set(uses
+    .filter((u) => u.where === "test" && u.namedId !== undefined && u.ref.entityId === current)
+    .map((u) => valueName?.(u.namedId!) ?? "")
+    .filter((n) => n !== ""))];
+  const movedNote = moved.length === 0
+    ? ""
+    : ` A pick here also changes the shared value${moved.length === 1 ? "" : "s"} ${joinWords(moved.map((n) => `"${n}"`))}.`;
+  return `Used by ${joinWords(parts)}.${movedNote}${keptNote}`;
 }
 
 /**

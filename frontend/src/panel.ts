@@ -16653,7 +16653,12 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /** The shared values, upper case, through which the selected layer reads a
-   * slot nobody has picked. Their rows light up while it stays selected. */
+   * slot nobody has picked. Their rows light up while it stays selected.
+   *
+   * Only for a layer that reads its slots through shared values alone. One
+   * that names a slot itself is fixed in its own Entity field, and a pick
+   * there moves the shared values its state tests read too (`setLayerEntity`),
+   * so lighting both sent the eye to two places for one job. */
   private slotValuesOfSelection(): Set<string> {
     const out = new Set<string>();
     const cfg = this.draft?.config;
@@ -16661,7 +16666,7 @@ export class WristAssistantPanel extends LitElement {
     const id = this.inspect.id;
     const info = this.slotInfo();
     const need = info?.layers.get(id);
-    if (!info || !need) return out;
+    if (!info || !need || info.direct.has(id)) return out;
     for (const [valueId, row] of info.values) {
       if (need.includes(row) && sharedValueLayerIds(cfg, valueId).includes(id)) out.add(valueId);
     }
