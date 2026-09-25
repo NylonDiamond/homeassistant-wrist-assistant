@@ -3428,7 +3428,11 @@ export class WristAssistantPanel extends LitElement {
     /* The Layers box: the Layers list's own order and folders, a box per name. */
     .xf-pub .pn-tree { --kc: #4a90e2; }
     .xf-pub .pn-tree .pn-b { grid-template-columns: minmax(0, 1fr); gap: 2px; }
-    .xf-pub .tr { display: flex; align-items: center; gap: 6px; min-width: 0; padding-left: calc(var(--d) * 20px); }
+    .xf-pub .tr { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .xf-pub .tg { display: grid; gap: 2px; padding: 2px; border-radius: 10px;
+      background: color-mix(in srgb, var(--kc) 5%, transparent); border: 1px solid color-mix(in srgb, var(--kc) 24%, var(--wa-line)); }
+    .xf-pub .tg.open { padding-bottom: 6px; }
+    .xf-pub .tg-b { display: grid; gap: 2px; padding: 0 4px 0 18px; }
     .xf-pub .tr > .kv { flex: 1; }
     .xf-pub .tr .tt { flex: none; width: 44px; height: 22px; border-radius: 4px; overflow: hidden; background: #000; display: grid; place-items: center; }
     .xf-pub .tr .tt > * { max-width: 100%; max-height: 100%; }
@@ -14560,17 +14564,17 @@ export class WristAssistantPanel extends LitElement {
     const top = sections.reduce((n, sec) => n + sec.rows.length, 0);
     const big = shapeRows.length > PUBLIC_FOLD_AT * 2;
     const ctx = describeContext(this.host());
-    const cell = (row: PublicRow | undefined, lead: unknown, depth: number, extra = "") => {
-      if (!row) return html`<div class="tr ${extra}" style=${`--d:${depth}`}>${lead}</div>`;
+    const cell = (row: PublicRow | undefined, lead: unknown, extra = "") => {
+      if (!row) return html`<div class="tr ${extra}">${lead}</div>`;
       used.add(row.key);
-      return html`<div class="tr ${extra}" style=${`--d:${depth}`}>${lead}${kv(row)}</div>`;
+      return html`<div class="tr ${extra}">${lead}${kv(row)}</div>`;
     };
     const walk = (list: readonly LayerListRow[], depth: number): unknown[] => list.flatMap((item) => {
       if (item.kind === "layer") {
         const el = item.el;
         const pic = html`<span class="tt">${face ? renderLayerThumb(face, [el.payload.id], { icons: this.icons, imageSizes: this.imageSizes, width: THUMB_W, height: THUMB_H }) : nothing}</span>`;
         const row = byKey.get(`l:${el.payload.id}`);
-        return [row ? cell(row, pic, depth) : cell(undefined, html`${pic}<span class="anon">${layerTitle(el, ctx)}</span>`, depth)];
+        return [row ? cell(row, pic) : cell(undefined, html`${pic}<span class="anon">${layerTitle(el, ctx)}</span>`)];
       }
       const g = item.group;
       const open = this.shareTreeOpen.get(g.id) ?? (!big || (depth === 0 && top === 1));
@@ -14579,8 +14583,10 @@ export class WristAssistantPanel extends LitElement {
         @click=${() => { this.shareTreeOpen = new Map(this.shareTreeOpen).set(g.id, !open); }}>${uiIcon("right")}</button>
         <span class="folder">${uiIcon("folder")}</span>`;
       const row = byKey.get(`g:${g.id}`);
-      const head = row ? cell(row, toggle, depth, "grp") : cell(undefined, html`${toggle}<span class="anon">${g.name}</span>`, depth, "grp");
-      return [head, ...(open ? walk(item.rows, depth + 1) : [])];
+      const head = row ? cell(row, toggle, "grp") : cell(undefined, html`${toggle}<span class="anon">${g.name}</span>`, "grp");
+      // A folder is a box around its own rows, so an open one shows where it
+      // starts and where it ends.
+      return [html`<div class="tg ${open ? "open" : ""}">${head}${open ? html`<div class="tg-b">${walk(item.rows, depth + 1)}</div>` : nothing}</div>`];
     });
     const body: unknown[] = [];
     for (const sec of sections) {
@@ -14598,7 +14604,7 @@ export class WristAssistantPanel extends LitElement {
     };
     for (const row of rows) {
       if ((row.key.startsWith("l:") || row.key.startsWith("g:")) && !used.has(row.key) && !inTree(row.key)) {
-        body.push(cell(row, html`<span class="folder">${uiIcon(row.key.startsWith("g:") ? "folder" : "layers")}</span>`, 0));
+        body.push(cell(row, html`<span class="folder">${uiIcon(row.key.startsWith("g:") ? "folder" : "layers")}</span>`));
       }
     }
     return { body, count: shapeRows.length };
