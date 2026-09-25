@@ -3605,9 +3605,8 @@ export class WristAssistantPanel extends LitElement {
       /* Hover and selection change at once; only the drop slot animates. */
       transition: border-top-width .1s ease-out, border-bottom-width .1s ease-out;
     }
-    /* A group's members sit a shade quieter than the rows above them, so they
-       read as nested rather than as another run of top-level rows. */
-    .layer.kid { background: color-mix(in srgb, var(--wa-panel) 30%, var(--wa-card)); }
+    /* A group's members wear the same ground as every other row: the group's
+       box already says they are nested (Jesse, 2026-09-24). */
     .layer:hover { background: var(--wa-panel); box-shadow: inset 0 0 0 1px var(--wa-line-strong); }
     /* The row under the pointer, which the preview is showing: an accent
        outline only. The fill stays for the real selection below. */
@@ -3639,6 +3638,16 @@ export class WristAssistantPanel extends LitElement {
     /* The whole-complication tap row draws nothing, so it keeps the column the
        other rows line up on and shows no black tile where a picture would be. */
     .layer .thumb.blank { background: none; }
+    /* A see-through Background: the checkerboard design apps use for "no
+       fill", so the row does not read as a picture that failed to draw. The
+       picture on top leaves the face unpainted (clearFace) and draws only a
+       border, if there is one. */
+    .layer .thumb.clear {
+      background: repeating-conic-gradient(#d8d8de 0% 25%, #f2f2f5 0% 50%) 0 0 / 10px 10px;
+    }
+    :host([dark]) .layer .thumb.clear {
+      background: repeating-conic-gradient(#2a2a2e 0% 25%, #1a1a1d 0% 50%) 0 0 / 10px 10px;
+    }
     .layer.dim .thumb { opacity: .6; }
     .layer .name { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
     .layer .name b { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
@@ -3703,7 +3712,6 @@ export class WristAssistantPanel extends LitElement {
       background: color-mix(in srgb, var(--wa-panel) 60%, var(--wa-card));
       box-shadow: inset 0 0 0 1px var(--wa-line);
     }
-    .layer.with-tap.kid.hl:not(.tapsel) { background: color-mix(in srgb, var(--wa-panel) 30%, var(--wa-card)); }
     .layer.with-tap.hl:not(.tapsel)::before {
       content: ""; position: absolute; left: 0; right: 0; top: 0; bottom: 24px; z-index: -1; pointer-events: none;
       border-radius: var(--wa-r-sm) var(--wa-r-sm) 0 0;
@@ -16281,9 +16289,9 @@ export class WristAssistantPanel extends LitElement {
     // to the preview on hover. Undefined for one page's list and for the
     // Every page block: those rows draw on the page already showing.
     let rowPage: number | undefined;
-    const thumb = (ids: readonly string[]) =>
+    const thumb = (ids: readonly string[], clearFace = false) =>
       face
-        ? html`<span class="thumb">${renderLayerThumb(face, ids, { icons: this.icons, imageSizes: this.imageSizes, width: thumbW, height: thumbH })}</span>`
+        ? html`<span class="thumb ${clearFace ? "clear" : ""}">${renderLayerThumb(face, ids, { icons: this.icons, imageSizes: this.imageSizes, width: thumbW, height: thumbH, clearFace })}</span>`
         : html`<span class="thumb"></span>`;
     const paged = usesPages(cfg);
     const pageCount = paged ? pagesSpecOf(cfg).count : 1;
@@ -16651,7 +16659,7 @@ export class WristAssistantPanel extends LitElement {
           this.dragId = undefined;
         }}>
         <span class="grip" aria-hidden="true"></span>
-        ${thumb([])}
+        ${thumb([], true)}
         <span class="name">
           <b>${ground.name}</b>
           <small title=${ground.meta}>${ground.meta}</small>

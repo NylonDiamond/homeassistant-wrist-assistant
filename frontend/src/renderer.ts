@@ -3285,6 +3285,10 @@ export interface ThumbOptions {
   /** CSS size of the thumbnail box. The crop takes this aspect ratio. */
   width: number;
   height: number;
+  /** Leave a face with no fill of its own unpainted rather than black, so
+   * the box behind the picture shows through. The Background row sets it
+   * to show a see-through ground as a checkerboard. */
+  clearFace?: boolean;
 }
 
 /** Padding around the cropped layers, as a share of the crop's longer side. */
@@ -3363,6 +3367,7 @@ export function renderLayerThumb(layout: ResolvedLayout, ids: readonly string[],
   const bgFill = layout.backgroundFill === undefined
     ? undefined
     : fillPaintDefs(layout.backgroundFill);
+  const clear = options.clearFace === true && bgFill === undefined && bg === undefined;
   const faceFill = bgFill !== undefined ? bgFill.paint : bg ? bg.color : "#000000";
   const faceOpacity = bgFill !== undefined ? 1 : bg ? bg.opacity : 1;
   const border = parseColor(layout.borderColorHex);
@@ -3389,9 +3394,9 @@ export function renderLayerThumb(layout: ResolvedLayout, ids: readonly string[],
     : svg`<rect width=${design.width} height=${design.height} rx=${rx} fill=${faceFill} fill-opacity=${faceOpacity} />`;
   return svg`<svg viewBox=${`${crop.x} ${crop.y} ${crop.w} ${crop.h}`} xmlns="http://www.w3.org/2000/svg" class="thumb ${family}"
       width=${options.width} height=${options.height} preserveAspectRatio="xMidYMid meet" aria-hidden="true">
-    <rect x=${crop.x} y=${crop.y} width=${crop.w} height=${crop.h} fill="#000000" />
+    ${clear ? nothing : svg`<rect x=${crop.x} y=${crop.y} width=${crop.w} height=${crop.h} fill="#000000" />`}
     ${bgFill === undefined ? nothing : svg`<defs>${bgFill.defs}</defs>`}
-    ${face}
+    ${clear ? nothing : face}
     ${picked.map((el) => renderElement(el, design, render, chartsById(layout.elements)))}
     ${chrome}
   </svg>`;
