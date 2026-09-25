@@ -1745,12 +1745,15 @@ export class WristAssistantPanel extends LitElement {
   @state() private importTextShown = false;
   /** The entity row the pointer or the focus is in, by the id it replaces. */
   @state() private importFocus?: string;
-  /** Recorder series for the Import preview, keyed like `historySeries`. */
+  /** Recorder series, rendered templates and list items for the Import
+   * preview, keyed like the editor's own. See `refreshImportData`. */
   @state() private importHistory = new Map<string, string>();
+  @state() private importTemplates = new Map<string, string>();
+  @state() private importLists = new Map<string, string>();
   private importHistoryTimer?: number;
   /** Counts history fetches, so a slow reply about an older pick is dropped. */
   private importHistoryRun = 0;
-  /** The requests the current `importHistory` answers. */
+  /** The requests the current import data answers. */
   private importHistoryAsked?: string;
   /** The preview's document with the picks applied, cached against the parse
    * and the picks it was built from so a redraw does not remap and recompile. */
@@ -8710,9 +8713,9 @@ export class WristAssistantPanel extends LitElement {
   private static readonly IMPORT_HISTORY_DELAY_MS = 350;
 
   /**
-   * History for the Import dialog's preview, drawn with the entities picked so
-   * far. Its own Maps, not the open draft's: the dialog sits over an editor
-   * whose charts must keep their own answers.
+   * History, templates and list items for the Import dialog's preview, drawn
+   * with the entities picked so far. Its own Maps, not the open draft's: the
+   * dialog sits over an editor whose values must keep their own answers.
    *
    * Debounced, skipped when the question is the one already answered, and
    * numbered, so a slow reply about an earlier pick never lands over a newer one.
@@ -8721,26 +8724,50 @@ export class WristAssistantPanel extends LitElement {
     if (this.importHistoryTimer) window.clearTimeout(this.importHistoryTimer);
     this.importHistoryTimer = window.setTimeout(() => {
       this.importHistoryTimer = undefined;
-      void this.refreshImportHistory();
+      void this.refreshImportData();
     }, WristAssistantPanel.IMPORT_HISTORY_DELAY_MS);
   }
 
-  private async refreshImportHistory() {
-    const cfg = this.importOpen ? this.importPreview()?.config : undefined;
+  private async refreshImportData() {
+    const preview = this.importOpen ? this.importPreview() : undefined;
+    const cfg = preview?.config;
     const wanted = cfg ? seriesRequests(cfg, (id) => this.hass.states[id] !== undefined) : undefined;
-    if (wanted?.signature === this.importHistoryAsked) return;
+    // Templates and lists only once every entity is one of this home's. Until
+    // then they would read a placeholder id and draw "unknown", which says
+    // less than the dashes do.
+    const picked = cfg !== undefined && preview!.entities.every((e) => this.hass.states[e.entityId] !== undefined);
+    let doc: string | undefined;
+    try {
+      doc = picked ? compile(cfg).document : undefined;
+    } catch {
+      doc = undefined;
+    }
+    const lists = picked ? listItemsRequests(cfg) : undefined;
+    const hasSeries = !!wanted && (Object.keys(wanted.history).length > 0 || Object.keys(wanted.statistics).length > 0);
+    const hasLists = !!lists && Object.keys(lists.requests).length > 0;
+    const signature = JSON.stringify([hasSeries ? wanted!.signature : null, doc ?? null, hasLists ? lists!.signature : null]);
+    if (signature === this.importHistoryAsked) return;
     const run = ++this.importHistoryRun;
-    this.importHistoryAsked = wanted?.signature;
-    if (!wanted || (Object.keys(wanted.history).length === 0 && Object.keys(wanted.statistics).length === 0)) {
+    this.importHistoryAsked = signature;
+    if (!hasSeries && doc === undefined && !hasLists) {
       if (this.importHistory.size > 0) this.importHistory = new Map();
+      if (this.importTemplates.size > 0) this.importTemplates = new Map();
+      if (this.importLists.size > 0) this.importLists = new Map();
       return;
     }
     try {
-      const next = await this.fetchSeries(wanted);
+      const [series, templates, listReplies] = await Promise.all([
+        hasSeries ? this.fetchSeries(wanted!) : undefined,
+        doc === undefined ? undefined : renderTemplates(this.hass, { doc }),
+        hasLists ? fetchListItems(this.hass, lists!.requests) : undefined,
+      ]);
       if (run !== this.importHistoryRun) return;
-      this.importHistory = next.series;
+      const rendered = templates?.doc;
+      this.importHistory = series?.series ?? new Map();
+      this.importTemplates = (rendered?.ok ? parseValueDocument(rendered.value)?.values : undefined) ?? new Map();
+      this.importLists = listReplies ? collectListResults(listReplies) : new Map();
     } catch {
-      // Asked again at the next pick. The picture without history is the one
+      // Asked again at the next pick. The picture without them is the one
       // the dialog drew before, so nothing on screen gets worse.
       if (run === this.importHistoryRun) this.importHistoryAsked = undefined;
     }
@@ -11094,15 +11121,15 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /** A document that is not the open one, resolved from the live states of
-   * the entities it reads. Templates are not rendered for it. */
-  private configLayouts(cfg: CustomComplicationConfig, entities: readonly EntityRef[], historySeries?: Map<string, string>): ResolvedAll {
+   * the entities it reads and what `configContext` has fetched for it. */
+  private configLayouts(cfg: CustomComplicationConfig, entities: readonly EntityRef[], fetched?: CardData): ResolvedAll {
     // The open complication has the stage's own context: rendered templates,
     // fetched history, list items. Its card draws off that, or a list of
     // forecasts, which is nothing until fetched, is a black card for the one
     // complication the author is looking at.
     const d = this.draft;
-    if (historySeries === undefined && d && d.config.id === cfg.id) return resolveAll(d.config, this.buildContext(), this.forced);
-    return resolveAll(cfg, this.configContext(cfg, entities, historySeries));
+    if (fetched === undefined && d && d.config.id === cfg.id) return resolveAll(d.config, this.buildContext(), this.forced);
+    return resolveAll(cfg, this.configContext(cfg, entities, fetched));
   }
 
   /** What one complication resolves against when it is drawn small and is not
@@ -11111,23 +11138,22 @@ export class WristAssistantPanel extends LitElement {
    * document draws its page 1 in every picker row and in the import preview:
    * page 1 is what the complication shows first.
    *
-   * The import preview passes its own `historySeries` and fetches nothing
-   * else: its entities are placeholders until picked.
+   * The import preview passes what it fetched itself (`refreshImportData`),
+   * and nothing is fetched here: its entities are placeholders until picked.
    *
    * Picture layers use the same cache as the open editor. This is the path
    * every card in the grid takes, without asking the camera for another frame. */
-  private configContext(cfg: CustomComplicationConfig, entities: readonly EntityRef[], historySeries?: Map<string, string>): ResolveContext {
+  private configContext(cfg: CustomComplicationConfig, entities: readonly EntityRef[], given?: CardData): ResolveContext {
     const entityStates = new Map<string, EntityState>();
     for (const ref of entities) {
       const state = this.entityStateFor(ref.entityId, ref.iconName ?? "", false);
       if (state) entityStates.set(ref.entityId, state);
     }
-    const fetched = historySeries ? undefined : this.fetchedFor(cfg);
+    const fetched = given ?? this.fetchedFor(cfg);
     return {
       entityStates,
       templateResults: new Map(),
       ...fetched,
-      ...(historySeries ? { historySeries } : {}),
       namedValues: cfg.values,
     };
   }
@@ -14690,7 +14716,9 @@ export class WristAssistantPanel extends LitElement {
     // counted as something that came in.
     const have = importableFamilies(parse?.ok ? parse.config : cfg, this.ownerFamilies);
     const preview = this.importPreview();
-    const layouts: ResolvedAll = preview ? this.configLayouts(preview.config, preview.entities, this.importHistory) : {};
+    const layouts: ResolvedAll = preview ? this.configLayouts(preview.config, preview.entities, {
+      templateResults: this.importTemplates, historySeries: this.importHistory, listItems: this.importLists,
+    }) : {};
     const uses = new Map(rows.map((row) => [row.entityId, entityLayerIds(cfg, row.entityId, (id, domain) => isPlaceholderId(id) || known.has(domain))]));
     const required = rows.filter((row) => row.required);
     const picked = required.filter((row) => this.importMap.has(row.entityId)).length;
@@ -15072,6 +15100,8 @@ export class WristAssistantPanel extends LitElement {
     this.importTextShown = false;
     this.importFocus = undefined;
     this.importHistory = new Map();
+    this.importTemplates = new Map();
+    this.importLists = new Map();
     this.importHistoryAsked = undefined;
     this.importPreviewCache = undefined;
     this.importDrop = false;
