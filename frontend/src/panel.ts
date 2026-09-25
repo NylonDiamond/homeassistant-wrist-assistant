@@ -17533,6 +17533,14 @@ export class WristAssistantPanel extends LitElement {
       ?disabled=${cfg.elements.length + p.layerCount > 64} title=${p.blurb}
       @click=${() => { this.closeAddSheet(); this.openPreset(p.kind); }}>
       <span class="as-pic">${presetPreview(p.kind)}</span><span class="as-name">${p.title}</span></button>`;
+    // The scenes sit apart from the other presets, under their own heading:
+    // each is a whole tile of many layers to learn from, not one part to add.
+    const presetGrids = (list: readonly PresetSpec[], label?: string) => {
+      const plain = list.filter((p) => p.group !== "scene");
+      const scenes = list.filter((p) => p.group === "scene");
+      return html`${plain.length === 0 ? nothing : html`${label ? html`<div class="as-sect">${label}</div>` : nothing}<div class="as-grid">${plain.map(presetTile)}</div>`}
+        ${scenes.length === 0 ? nothing : html`<div class="as-sect">Complex examples</div><div class="as-grid">${scenes.map(presetTile)}</div>`}`;
+    };
     const group = (label: string, list: readonly AddCard[]) => list.length === 0 ? nothing
       : html`<div class="as-sect">${label}</div><div class="as-grid">${list.map(tile)}</div>`;
     const tabButton = (id: AddTab, label: string, count: number | undefined) => html`<button role="tab" class="as-tab ${tab === id ? "on" : ""}"
@@ -17547,7 +17555,7 @@ export class WristAssistantPanel extends LitElement {
     } else if (tab === "presets") {
       body = found.presets.length === 0
         ? nothingFound("presets")
-        : html`<div class="as-grid">${found.presets.map(presetTile)}</div>`;
+        : presetGrids(found.presets);
     } else {
       const value = addGroupCards(found.elements, "value");
       const pictures = addGroupCards(found.elements, "pictures");
@@ -17582,7 +17590,7 @@ export class WristAssistantPanel extends LitElement {
         ? (found.elements.length === 0 && found.presets.length === 0 && !noteShown
           ? nothingFound("elements or presets")
           : html`${elements}
-            ${found.presets.length === 0 ? nothing : html`<div class="as-sect">Presets</div><div class="as-grid">${found.presets.map(presetTile)}</div>`}
+            ${presetGrids(found.presets, "Presets")}
             ${searching || parts.length === 0 ? nothing : html`<div class="as-sect">Saved parts</div><div class="pt-grid">${parts.map((part) => this.renderPartCard(part))}</div>`}`)
         : html`${elements}
           ${searching || popular.length === 0 || found.elements.length === 0 ? nothing : html`

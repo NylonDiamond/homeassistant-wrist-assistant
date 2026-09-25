@@ -79,8 +79,9 @@ export interface PresetSpec {
   /** How many layers it adds, for the 64-layer cap. A list counts as one: its
    * row layers live inside it and are not layers of the shape. */
   layerCount: number;
-  /** Which group of buttons it sits in. */
-  group?: "list";
+  /** Which group of buttons it sits in. A "scene" is a whole-tile example
+   * built from many layers, offered apart under Complex examples. */
+  group?: "list" | "scene";
   /** False for a preset that asks nothing: it is built the moment the button
    * is clicked, because a scope filter is edited afterwards rather than
    * chosen up front. Defaults to true. */
@@ -397,6 +398,7 @@ export const LAYER_PRESETS: readonly PresetSpec[] = [
   {
     kind: "houseScene",
     title: "Tiny house",
+    group: "scene",
     blurb: "A drawing of a house that fills the tile. Each window glows while its light is on, and a tap on a window toggles that light. The sky follows the sun and shows rain when the weather says so. You pick each entity, and the note says what goes where.",
     layerCount: 44,
     layerCountIsMost: true,
@@ -408,6 +410,7 @@ export const LAYER_PRESETS: readonly PresetSpec[] = [
   {
     kind: "floorPlan",
     title: "Floor plan",
+    group: "scene",
     blurb: "Rooms seen from above, each lit while its light is on, with its temperature and a dot for motion. Tap a room to toggle its light. You pick each entity, and the note says what goes where. Drag the rooms into the shape of your home.",
     layerCount: 43,
     layerCountIsMost: true,

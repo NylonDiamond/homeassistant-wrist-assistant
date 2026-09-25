@@ -1168,6 +1168,8 @@ describe("the scene presets", () => {
     expect(presetSpec("floorPlan").needsEntity).toBe(false);
     expect(presetSpec("houseScene").foldSubGroups).toBe(true);
     expect(presetSpec("floorPlan").foldSubGroups).toBe(true);
+    // Offered apart, under Complex examples, and they are the only ones there.
+    expect(LAYER_PRESETS.filter((p) => p.group === "scene").map((p) => p.kind)).toEqual(["houseScene", "floorPlan"]);
   });
 
   it("builds a house on medium and large that encodes and stays in the tile", () => {
