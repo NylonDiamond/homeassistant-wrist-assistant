@@ -10350,6 +10350,18 @@ export function setSharedValue(cfg: CustomComplicationConfig, id: string, value:
   });
 }
 
+/** The layers that read one shared value, in document order, each once: in
+ * their own value, a text part or a rule. What hovering the shared value
+ * lights on the preview. Other shared values, a list's row layers and the
+ * watch-face extras are not top-level layers, so they are not listed. */
+export function sharedValueReaders(cfg: CustomComplicationConfig, id: string): string[] {
+  const found = new Set<string>();
+  forEachValue(cfg, (v, site) => {
+    if (site.layerId !== undefined && readsShared(v, id)) found.add(site.layerId);
+  });
+  return cfg.elements.map((e) => e.payload.id).filter((layerId) => found.has(layerId));
+}
+
 /** A name no other shared value in the document has, ignoring case. */
 function freeSharedName(cfg: CustomComplicationConfig, wanted: string): string {
   const taken = new Set(cfg.values.map((n) => n.name.trim().toLowerCase()));

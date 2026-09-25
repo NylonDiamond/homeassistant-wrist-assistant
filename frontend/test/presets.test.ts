@@ -23,6 +23,7 @@ import {
   parseConfig,
   setLayerEntity,
   setSharedValue,
+  sharedValueReaders,
   unsharedCopy,
   valueEntity,
 } from "../src/model.js";
@@ -1216,6 +1217,15 @@ describe("the scene presets", () => {
       if (site.kind !== "named" && "entityId" in v.kind && v.kind.entityId !== "sun.sun") direct.push(v.kind.entityId);
     });
     expect(direct).toEqual([]);
+  });
+
+  it("names the layers that read a shared value, for the hover on the preview", () => {
+    const cfg = build("houseScene", home());
+    const idOf = (name: string) => cfg.values.find((v) => v.name === name)!.id;
+    const names = (id: string) => sharedValueReaders(cfg, id).map((l) => cfg.elements.find((e) => e.payload.id === l)!.payload.name);
+    expect(names(idOf("Downstairs left light"))).toEqual(["Downstairs left window"]);
+    expect(names(idOf("Weather"))).toEqual(["Rain"]);
+    expect(names(idOf("Inside temperature"))).toEqual(["Inside value"]);
   });
 
   it("moves a window's tap and the count with its shared value, and nothing else", () => {

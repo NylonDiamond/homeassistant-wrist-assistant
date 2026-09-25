@@ -59,6 +59,7 @@ import {
   setCornerMode,
   type CornerMode,
   attachedTapsOf,
+  sharedValueReaders,
   detachTaps,
   auditUnknownKeys,
   controlEffectiveKind,
@@ -1427,8 +1428,11 @@ export class WristAssistantPanel extends LitElement {
   @state() private addQuery = "";
   /** The Add sheet's tab. */
   @state() private addTab: AddTab = "all";
-  /** Whether the Shared values footer of the Layers card is open. */
-  @state() private sharedOpen = false;
+  /** Whether the Shared values footer of the Layers card is open. Undefined
+   * until the author opens or closes it: then it is open whenever the document
+   * has a shared value, since a preset that reads its entities through them is
+   * edited there. Each document starts undefined again. */
+  @state() private sharedOpen?: boolean;
   /** Show all in the Layers card: every page's layers, grouped by page,
    * rather than the page showing. */
   @state() private allPages = false;
@@ -7338,6 +7342,7 @@ export class WristAssistantPanel extends LitElement {
     // page is a reading of the document on screen, not a setting of the panel.
     this.stopTour();
     this.page = 1;
+    this.sharedOpen = undefined;
     this.draft = undefined;
     this.compiled = undefined;
     this.compiledDocument = undefined;
@@ -16849,7 +16854,11 @@ export class WristAssistantPanel extends LitElement {
       const env: PresetEnv = { family: this.canvasFamily, states: this.hass.states, registry: presetRegistry(this.hass) };
       let created: string | undefined;
       const groupsBefore = new Set((this.draft?.config.groups ?? []).map((g) => g.id));
+      const valuesBefore = this.draft?.config.values.length ?? 0;
       this.addHere((c) => { created = applyPreset(c, kind, { entityId: "", displayName: "", domain: "" }, env); });
+      // A preset that brought shared values is edited through them, so their
+      // list opens even if the author had closed it.
+      if ((this.draft?.config.values.length ?? 0) > valuesBefore) this.sharedOpen = true;
       const arrived = (this.draft?.config.groups ?? []).filter((g) => !groupsBefore.has(g.id));
       if (presetSpec(kind).foldSubGroups && arrived.length > 0) {
         // A scene arrives as one open folder of closed ones: the parts to pick
@@ -17510,7 +17519,7 @@ export class WristAssistantPanel extends LitElement {
     const cfg = this.draft?.config;
     if (!cfg) return nothing;
     const values = cfg.values;
-    const expanded = this.sharedOpen || this.openValue !== undefined;
+    const expanded = (this.sharedOpen ?? values.length > 0) || this.openValue !== undefined;
     const addValue = () => {
       const nv = newNamedValue();
       this.mutate((c) => { c.values.push(nv); });
@@ -17551,13 +17560,18 @@ export class WristAssistantPanel extends LitElement {
           <li>Each layer can still add its own <b>Format</b>, like a unit or fewer decimals.</li>
         </ol>
       </div>` : nothing}
-      ${values.length === 0 ? html`<div class="sv-none">None yet.</div>` : html`<div class="data">
+      ${values.length === 0 ? html`<div class="sv-none">None yet.</div>` : html`<div class="data"
+        @pointerleave=${() => { this.listHoverIds = []; }}>
       ${values.map((v) => {
         const r = resolver.resolve({ kind: { kind: "named", id: v.id } });
         const open = this.openValue === v.id;
         const toggleOne = () => { this.setOpenValue(open ? undefined : v.id); };
+        // Pointing at a shared value lights the layers that read it, on the
+        // preview and in the Layers list, the way pointing at a layer row does.
+        const readers = () => sharedValueReaders(cfg, v.id);
         return html`<div class="vitem ${open ? "open" : ""}"><div class="datum vrow ${open ? "hl" : ""}" role="button" tabindex="0" aria-expanded=${open ? "true" : "false"}
             title=${open ? "Close" : "Edit this shared value"}
+            @pointerenter=${() => { this.listHoverIds = readers(); }}
             @click=${toggleOne}
             @keydown=${(e: KeyboardEvent) => { if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) { e.preventDefault(); toggleOne(); } }}>
           <span class="nm">${v.name || "(unnamed)"}</span>
