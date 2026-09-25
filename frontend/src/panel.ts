@@ -701,7 +701,7 @@ function layerRowFolds(): string {
       ${p} .layer.group { grid-template-areas: "grip thumb name" "grip thumb right"; }
       ${p} .layer.group > .right { justify-content: flex-end; gap: 2px; }
       ${p} .group-kids { margin-left: 6px; padding-left: 6px; }
-      ${p} .group-box > .group-kids { margin-left: 0; padding-left: 4px; }
+      ${p} .group-box > .group-kids { margin-left: 5px; padding-left: 5px; }
       ${p} .group-cta { flex-wrap: wrap; }
     }
     @container layers (max-width: ${w + 149}px) {
@@ -718,7 +718,7 @@ function layerRowFolds(): string {
       ${p} .layer.group > .folder { justify-self: start; width: auto; }
       ${p} .layer.group > .name { padding-top: 2px; }
       ${p} .group-kids { margin-left: 2px; padding-left: 4px; }
-      ${p} .group-box > .group-kids { margin-left: 0; padding-left: 2px; }
+      ${p} .group-box > .group-kids { margin-left: 3px; padding-left: 4px; }
     }`;
   }).join("\n");
 }
@@ -3609,12 +3609,12 @@ export class WristAssistantPanel extends LitElement {
        read as nested rather than as another run of top-level rows. */
     .layer.kid { background: color-mix(in srgb, var(--wa-panel) 30%, var(--wa-card)); }
     .layer:hover { background: var(--wa-panel); box-shadow: inset 0 0 0 1px var(--wa-line-strong); }
-    /* The selected row: a strong accent wash and a full-weight accent ring,
-       the same wherever a row is selected, so eight kind colors and the group
-       boxes' hues never fight the selection. */
+    /* The selected row: a thin accent outline on the hover ground, and no
+       wash. A strong accent fill with a 2px ring made the selected row the
+       loudest thing in the panel (Jesse, 2026-09-24). */
     .layer.hl {
-      background: color-mix(in srgb, var(--wa-accent) 30%, var(--wa-card));
-      box-shadow: inset 0 0 0 2px var(--wa-accent);
+      background: var(--wa-panel);
+      box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--wa-accent) 85%, transparent);
     }
     .layer:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .layer.lit { background: var(--wa-sel-bg); box-shadow: inset 0 0 0 2px var(--wa-accent); }
@@ -3671,9 +3671,12 @@ export class WristAssistantPanel extends LitElement {
       border-top: 1px solid var(--wa-line);
       border-radius: 0 0 calc(var(--wa-r-sm) - 2px) calc(var(--wa-r-sm) - 2px);
       font-size: 11.5px; font-weight: 600; color: var(--tp);
-      background: color-mix(in srgb, var(--tp) 9%, transparent);
+      /* No fill at rest: the pink words and the hairline already mark the
+         tap, and two red bands in a short list shouted over the layers. The
+         fill comes with the pointer and with the selection. */
+      background: transparent;
     }
-    :host([dark]) .tap-strip { --tp: var(--wa-tap); background: color-mix(in srgb, var(--tp) 13%, transparent); }
+    :host([dark]) .tap-strip { --tp: var(--wa-tap); }
     /* The strip sits 2px inside the row's edges so the row's ring shows round
        it, but a pointer coming up from below met those 2px first and lit the
        layer before its tap. The strip's hit area reaches the edges. */
@@ -3686,8 +3689,8 @@ export class WristAssistantPanel extends LitElement {
       box-shadow: inset 0 0 0 1px var(--wa-line-strong);
     }
     .layer.tapsel .tap-strip {
-      background: color-mix(in srgb, var(--tp) 26%, transparent);
-      box-shadow: inset 0 0 0 2px var(--tp); border-top-color: transparent;
+      background: color-mix(in srgb, var(--tp) 16%, transparent);
+      box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--tp) 85%, transparent); border-top-color: transparent;
     }
     .layer.dim .tap-strip { opacity: .55; }
     .layer.pinned .tap-strip { margin: 0 -10px 2px -8px; padding-left: 27px; border-radius: 0; }
@@ -3705,8 +3708,8 @@ export class WristAssistantPanel extends LitElement {
     .layer.with-tap.hl:not(.tapsel)::before {
       content: ""; position: absolute; left: 0; right: 0; top: 0; bottom: 24px; z-index: -1; pointer-events: none;
       border-radius: var(--wa-r-sm) var(--wa-r-sm) 0 0;
-      background: color-mix(in srgb, var(--wa-accent) 30%, var(--wa-card));
-      box-shadow: inset 0 0 0 2px var(--wa-accent);
+      background: var(--wa-panel);
+      box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--wa-accent) 85%, transparent);
     }
     .pinned-set .layer.pinned.with-tap.hl,
     .pinned-set .layer.pinned.with-tap.tapsel { background: transparent; box-shadow: none; }
@@ -4007,7 +4010,12 @@ export class WristAssistantPanel extends LitElement {
     .layer.group .folder { display: grid; place-items: center; width: var(--thumb-w); color: var(--wa-muted); }
     .layer.group .folder svg { width: 17px; height: 17px; }
     .layer.group.drop-into { box-shadow: inset 0 0 0 2px var(--wa-accent); }
+    /* An unlocked group shows no lock until the pointer, the selection or
+       the keyboard reaches its row. Hidden rather than removed, so the
+       folder row keeps its width. */
     .layer .lockbtn { width: 24px; height: 24px; opacity: .55; }
+    .layer .lockbtn:not(.on) { visibility: hidden; }
+    .layer:hover .lockbtn, .layer.hl .lockbtn, .layer:focus-within .lockbtn { visibility: visible; }
     .layer .lockbtn svg.ui-icon { width: 15px; height: 15px; }
     .layer .lockbtn.on { opacity: 1; color: ${unsafeCSS(SECTION_COLOR.locked)}; }
     .layer:hover .lockbtn, .layer.hl .lockbtn { opacity: 1; }
@@ -4018,17 +4026,15 @@ export class WristAssistantPanel extends LitElement {
     /* A sub-group steps in by less, so a few levels still leave the rows room
        in a narrow column. */
     .group-kids .group-kids { margin-left: 8px; padding-left: 8px; }
-    /* A group is one box: its folder row is the box's top and everything in
-       it sits inside. Each level of nesting has its own hue (--gc, set per
-       box), so a sub-group's box never matches the box around it, and a layer
-       beside a sub-group plainly sits outside it. */
+    /* A group is its folder row with its members hanging off one rail in the
+       level's hue (--gc, set per group), so a sub-group's rail never matches
+       the one around it, and a layer beside a sub-group plainly sits outside
+       it. Groups used to be framed and tinted boxes, which put a box in a box
+       in a box around every nested layer (Jesse, 2026-09-24). */
     .group-box {
       flex: none; display: flex; flex-direction: column; gap: 3px;
-      padding: 1px 2px 2px; border-radius: calc(var(--wa-r-sm) + 2px);
-      border: 1px solid color-mix(in srgb, var(--gc) 50%, var(--wa-line));
-      background: color-mix(in srgb, var(--gc) 10%, transparent);
+      padding: 0; border-radius: var(--wa-r-sm);
     }
-    .group-box:has(> .layer.group.hl) { outline: 2px solid var(--wa-accent); outline-offset: -1px; }
     /* The folder row is the box's header, not a card of its own, until it is
        hovered, selected, lit or a drop target. */
     .group-box > .layer.group:not(.hl):not(.lit):not(.held):not(.drop-into):not(:hover) {
@@ -4051,8 +4057,10 @@ export class WristAssistantPanel extends LitElement {
     .layers-card .group-box > .layer.group:not(.rich) > .name b { flex: 0 1 auto; min-width: 0; }
     .layers-card .group-box > .layer.group:not(.rich) > .name small { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .layers-card .group-box > .layer.group:not(.rich) > .right { justify-content: flex-end; }
-    .group-box > .group-kids { margin: 0; padding-left: 4px; border-left: 0; gap: 3px; }
-    .group-box > .group-kids .group-kids:not(.rowkids) { margin-left: 0; }
+    .group-box > .group-kids {
+      margin: 0 0 2px 8px; padding-left: 8px; gap: 3px;
+      border-left: 2px solid color-mix(in srgb, var(--gc) 65%, transparent);
+    }
     /* Drop targets last, so the slot beats whatever the row already had on its
        own border.
 
@@ -16382,7 +16390,9 @@ export class WristAssistantPanel extends LitElement {
         return "drop-into";
       };
       const memberIds = members.map((m) => m.payload.id);
-      const subCount = kids.filter((k) => k.kind === "group").length;
+      // The folder's second line is only the count. The folder icon says it
+      // is a group, the rail shows its sub-groups and the lock shows when it
+      // is locked, and the line used to repeat all three (Jesse, 2026-09-24).
       return html`<div class="layer group ${hl ? "hl" : ""} ${held ? "held" : ""} ${this.dialogLitIds.includes(g.id) ? "lit" : ""} ${rich ? "rich" : ""}" style=${`--k:${SECTION_COLOR.group}`} tabindex="0" draggable=${d.draggable}
         @pointerenter=${() => this.enterRow(memberIds, { kind: "group", id: g.id }, peekAt)}
         @click=${() => { this.multi = new Set(); this.inspect = { kind: "group", id: g.id }; }}
@@ -16410,9 +16420,9 @@ export class WristAssistantPanel extends LitElement {
         <span class="folder">${uiIcon("folder")}</span>
         <span class="name">
           <b>${g.name}</b>
-          <small><span class="kind">Group</span> · ${members.length === total
+          <small>${members.length === total
             ? `${total} layer${total === 1 ? "" : "s"}`
-            : `${members.length} of ${total} layers on this page`}${subCount > 0 ? ` · ${subCount} sub-group${subCount === 1 ? "" : "s"}` : ""} · ${g.locked ? "locked" : "unlocked"}</small>
+            : `${members.length} of ${total} layers on this page`}</small>
           ${rich ? html`<span class="facts"><span class="fact"><b>Holds</b> ${kids.map((k) => k.kind === "layer" ? layerTitle(k.el, ctx) : k.group.name).join(", ")}</span></span>` : nothing}
         </span>
         <span class="right">
