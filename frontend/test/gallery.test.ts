@@ -724,7 +724,7 @@ describe("preview context", () => {
       const state = ctx.entityStates.get(slot.placeholderId);
       expect(state?.state).toBe("21.5");
       expect(state?.entityId).toBe(slot.placeholderId);
-      expect(state?.iconName).toBe("");
+      expect(state?.iconName).toBe("mdi:private");
       expect(state?.entityPicture).toBeUndefined();
       expect(ctx.entityStates.has(slot.originalId)).toBe(false);
     }

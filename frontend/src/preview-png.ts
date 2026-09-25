@@ -74,8 +74,10 @@ export function galleryPreviewContext(
   for (const slot of slots) {
     const live = source.entityState(slot.originalId);
     if (!live) continue;
-    // Values only. The icon and the picture address stay behind.
-    const copy: EntityState = { ...live, entityId: slot.placeholderId, iconName: "" };
+    // The picture address stays behind. The icon comes along: it is only
+    // drawn, never written into the upload, and a layer showing its entity's
+    // icon drew a question mark without it.
+    const copy: EntityState = { ...live, entityId: slot.placeholderId };
     delete copy.entityPicture;
     entityStates.set(slot.placeholderId, copy);
   }

@@ -743,8 +743,9 @@ interface Crop {
  * the window fills it. A shape no watch draws falls back to the whole case
  * rather than an invented window.
  *
- * The gallery's copy (`homepage/gallery/device-art.js`) keeps the two halves
- * on purpose: its grid mixes shapes, so every card there shares one well.
+ * The gallery's copy (`homepage/gallery/device-art.js`) uses these windows
+ * too, grown away from the band to one 2:1 well, since its grid mixes shapes
+ * and every card there shares that well. Change a window in both.
  */
 function watchCrop(family: FamilyKind): Crop {
   switch (family) {
