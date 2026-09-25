@@ -3769,6 +3769,7 @@ export class WristAssistantPanel extends LitElement {
     .layout.cols-1 > .column.left { order: 3; }
     .layout.cols-1 .column.left > .pages-card { order: 1; }
     .layout.cols-1 .column.left > .layers-card { order: 2; }
+    .layout.cols-1 .column.left > .sv-card { order: 3; }
     /* The two rows between the header and the face each wrapped to a second
        line on a phone, for 47px of nothing. The name goes because the header
        already carries it, in bigger type, 120px above; the device chip keeps
@@ -4063,6 +4064,7 @@ export class WristAssistantPanel extends LitElement {
     }
     .card.pages-card { --c: #26a69a; }
     .card.layers-card { --c: #4a7fe8; }
+    .card.sv-card { --c: #b03e62; }
     .lc-head .swatch {
       width: 18px; height: 18px; border-radius: 5px; border: 0; flex: none; display: grid; place-items: center;
       background: color-mix(in srgb, var(--c) 22%, transparent); color: var(--c);
@@ -5245,22 +5247,15 @@ export class WristAssistantPanel extends LitElement {
     .values-list .datum button.icon { opacity: 0; pointer-events: none; flex: none; }
     .values-list .datum:hover button.icon, .values-list .datum:focus-within button.icon { opacity: .7; pointer-events: auto; }
     .values-list .datum button.icon:hover:not(:disabled), .values-list .datum button.icon:focus-visible { opacity: 1; }
-    /* Shared values footer: one line at the foot of the Layers card, the list
+    /* The Shared values card: one line under the Layers card, the list
        unfolding under it. The open list takes at most part of the column and
        scrolls, so an open value never pushes the layer rows out of sight. */
-    .sv-foot { flex: none; border-top: 1px solid var(--wa-line); }
-    .layers-card > .sv-foot { margin-top: auto; }
-    .sv-bar { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 0 8px 0 12px; }
-    .sv-title { font-size: 12.5px; font-weight: 600; }
-    .sv-bar .spacer, .sv-tools .spacer { flex: 1; }
-    .sv-body { max-height: 40vh; overflow-y: auto; scrollbar-width: thin; padding: 0 10px 10px; display: flex; flex-direction: column; gap: 6px; }
+    .sv-card.open .lc-head { border-bottom: 1px solid color-mix(in srgb, var(--c) 24%, var(--wa-card)); }
+    .sv-tools .spacer { flex: 1; }
+    .sv-body { max-height: 40vh; overflow-y: auto; scrollbar-width: thin; padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 6px; }
     .sv-tools { display: flex; align-items: center; gap: 6px; }
     .sv-tools button.sec-help { opacity: 1; }
     .sv-none { font-size: 12px; color: var(--wa-muted); }
-    /* On the Control Center tab there is no Layers card to sit at the foot
-       of, so it is a card of its own at the foot of the column. */
-    .sv-foot.standalone { border-top: 0; padding: 0; margin-top: auto; }
-    .layout.cols-1 .sv-foot.standalone { margin-top: 0; }
     .layout.cols-1 .sv-body { max-height: none; overflow: visible; }
     .chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
     .chips .muted { color: var(--wa-muted); font-size: 12px; }
@@ -10601,7 +10596,7 @@ export class WristAssistantPanel extends LitElement {
       ["Timeline colors", "A timeline colors each state from its own table."],
       ["Rules", "Rows that test a value, like is on or is greater than, each with the changes it makes: icon, text, color, visibility and more. Rows are checked top to bottom and the first match wins. Otherwise applies when none match. Advanced lets a rule check several things at once."],
       ["Shape rules", "The same card, on the shape itself."],
-      ["Shared values", "Like a variable: set it once in Shared values, at the foot of the Layers card, and every layer that reads it follows. On a layer, set Source to Shared value, or click Make shared."],
+      ["Shared values", "Like a variable: set it once in the Shared values card, under the Layers card, and every layer that reads it follows. On a layer, set Source to Shared value, or click Make shared."],
       ["Values on the watch", "Every entity and shared value the complication reads, with its live reading. Slide, pick or type another value to watch the preview and the states react. Nothing is saved, and Live or Back to live returns to the real reading."],
     ];
     const saving: [string, string][] = [
@@ -11474,8 +11469,8 @@ export class WristAssistantPanel extends LitElement {
         ? html`${fit.columns === 1 ? this.renderMiniFace() : nothing}<div class="layout cols-${fit.columns}"
               style="--wa-left:${fit.left}px;--wa-right:${fit.right}px">
             <div class=${`column left ${this.inControlView ? "control" : ""}`}>${this.inControlView
-              ? html`${this.renderControlHasNoLayers()}${this.renderSharedValues(true)}`
-              : html`${this.renderPages()}${this.renderLayers()}${this.renderPresetDialog()}`}</div>
+              ? html`${this.renderControlHasNoLayers()}${this.renderSharedValues()}`
+              : html`${this.renderPages()}${this.renderLayers()}${this.renderSharedValues()}${this.renderPresetDialog()}`}</div>
             ${this.renderGutter("left")}
             <div class="column canvas">${this.renderBanners()}${this.renderCanvas()}</div>
             ${this.renderGutter("right")}
@@ -18124,6 +18119,14 @@ export class WristAssistantPanel extends LitElement {
       return html`<div class="layer group ${hl ? "hl" : ""} ${peekCls({ kind: "group", id: g.id })} ${held ? "held" : ""} ${this.dialogLitIds.includes(g.id) ? "lit" : ""} ${rich ? "rich" : ""}" style=${`--k:${SECTION_COLOR.group}`} tabindex="0" draggable=${d.draggable}
         @pointerenter=${() => this.enterRow(memberIds, { kind: "group", id: g.id }, peekAt)}
         @click=${() => { this.multi = new Set(); this.inspect = { kind: "group", id: g.id }; }}
+        @dblclick=${(e: MouseEvent) => {
+          // A double click on the folder folds or unfolds it, like the
+          // chevron; one on the row's own buttons is two clicks on them.
+          if ((e.target as HTMLElement).closest("button")) return;
+          const next = new Set(this.collapsed);
+          if (open) next.add(g.id); else next.delete(g.id);
+          this.setCollapsed(next);
+        }}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = { kind: "group", id: g.id }; }}
         @dragstart=${d.onStart} @dragend=${d.onEnd}
         @dragover=${(e: DragEvent) => {
@@ -18390,7 +18393,6 @@ export class WristAssistantPanel extends LitElement {
         ${this.groundTapStrip(cfg, edit)}
       </div>
       </div>
-      ${this.renderSharedValues()}
     </div>`;
   }
 
@@ -18772,7 +18774,6 @@ export class WristAssistantPanel extends LitElement {
         <span class="right"><span class="ground-cap">always here</span></span>
       </div>
       </div>
-      ${this.renderSharedValues()}
     </div>`;
   }
 
@@ -19702,16 +19703,13 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * Values the complication defines once and several layers read, as the foot
-   * of the Layers card, because layers are what read them. At rest it is one
+   * Values the complication defines once and several layers read, as a card
+   * of its own under the Layers card, in its own color. At rest it is one
    * line: the title, how many there are, and Open, or Add while there are
    * none. Open unfolds the list and its editor in place, under the line, with
    * the "?" that says how shared values work.
-   *
-   * `standalone` is the Control Center tab, which has no Layers card to sit
-   * at the foot of, so the same thing stands as a card of its own.
    */
-  private renderSharedValues(standalone = false) {
+  private renderSharedValues() {
     const cfg = this.draft?.config;
     if (!cfg) return nothing;
     const values = cfg.values;
@@ -19787,9 +19785,9 @@ export class WristAssistantPanel extends LitElement {
       })}
       </div>`}
     </div>`;
-    return html`<div class="values-list sv-foot ${standalone ? "card standalone" : ""} ${expanded ? "open" : ""}" style=${`--c:${SECTION_COLOR.complication}`}>
-      <div class="sv-bar">
-        <span class="sv-title">Shared values</span><span class="lc-sub">${values.length}</span>
+    return html`<div class="card lc sv-card values-list ${expanded ? "open" : ""}">
+      <div class="lc-head">
+        <span class="swatch">${uiIcon("braces")}</span><span class="lc-title">Shared values</span><span class="lc-sub">${values.length}</span>
         <span class="spacer"></span>
         ${barButton}
       </div>
@@ -19850,7 +19848,7 @@ export class WristAssistantPanel extends LitElement {
    * caret in its Name box, since naming it is the first thing to do. */
   private openSharedValue(id: string) {
     this.renderRoot.querySelectorAll<HTMLElement>(":popover-open").forEach((p) => p.hidePopover());
-    // The foot of the Layers card unfolds with it, and stays open once the
+    // The Shared values card unfolds with it, and stays open once the
     // value closes again, so the list it came from is still in front of you.
     this.sharedOpen = true;
     this.setOpenValue(id);
