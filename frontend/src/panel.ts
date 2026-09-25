@@ -14210,7 +14210,7 @@ export class WristAssistantPanel extends LitElement {
       // Read again: deleting an upload can take its waiting versions with it.
       void this.loadGalleryUploads();
     } catch (err) {
-      this.galleryUploadsError = err instanceof GalleryError ? galleryErrorMessage(err) : "Could not delete it. Try again.";
+      this.galleryUploadsError = err instanceof GalleryError ? galleryErrorMessage(err) : "Could not remove it. Try again.";
     } finally {
       this.galleryDeleting = undefined;
       this.galleryConfirmDelete = undefined;
@@ -14340,7 +14340,7 @@ export class WristAssistantPanel extends LitElement {
         <label class="xf-f"><span class="xf-label">Description <span class="r">Optional</span></span>
           <textarea rows="2" maxlength=${GALLERY_LIMITS.description} .value=${this.galleryDescription}
             @input=${(e: Event) => { this.galleryDescription = (e.target as HTMLTextAreaElement).value; }}></textarea></label>
-        <div class="xf-f"><span class="xf-label">Tags <span class="r">${tags.size} of ${GALLERY_LIMITS.tags}</span></span>
+        <div class="xf-f"><span class="xf-label">Tags <span class="r">${tags.size === 0 ? `Optional, up to ${GALLERY_LIMITS.tags}` : `${tags.size} of ${GALLERY_LIMITS.tags}`}</span></span>
           <div class="gal-tags">
             ${GALLERY_TAGS.map((tag) => {
               const on = tags.has(tag);
@@ -14405,7 +14405,7 @@ export class WristAssistantPanel extends LitElement {
         : rows.length === 0
           ? this.galleryUploadsError === "" ? html`<div class="xf-lead">${uiIcon("info")}<span>Nothing sent from this Home Assistant yet.</span></div>` : nothing
           : html`<div class="xf-rows">${rows.map((row) => this.renderUploadRow(row))}</div>`}
-      <div class="xf-lead">${uiIcon("info")}<span><b>Update</b> sends this complication as a new version. The link and votes stay. <b>Delete</b> removes it for everyone.</span></div>
+      <div class="xf-lead">${uiIcon("info")}<span><b>Update</b> sends this complication as a new version. The link and votes stay. <b>Remove</b> takes it out of the online gallery for everyone. Your own complication stays.</span></div>
     </div>`;
   }
 
@@ -14444,12 +14444,12 @@ export class WristAssistantPanel extends LitElement {
       const deleting = this.galleryDeleting === u.id;
       return html`${deleting ? nothing : html`<button class="small" @click=${() => { this.galleryConfirmDelete = undefined; }}>Keep</button>`}
         <button class="small danger" ?disabled=${busy}
-          title=${version ? "Withdraws this new version. The one in the gallery stays." : "Removes it from the gallery for everyone"}
-          @click=${() => void this.deleteGalleryUpload(u.id)}>${deleting ? "Deleting…" : version ? "Withdraw it" : "Delete for good"}</button>`;
+          title=${version ? "Withdraws this new version. The one in the gallery stays." : "Takes it out of the online gallery for everyone. Your own complication stays."}
+          @click=${() => void this.deleteGalleryUpload(u.id)}>${deleting ? "Removing…" : version ? "Withdraw it" : "Remove from online gallery"}</button>`;
     }
     return html`<button class="icon danger" ?disabled=${busy}
-      title=${version ? "Withdraw this new version" : "Delete it from the gallery"}
-      aria-label=${version ? `Withdraw the new version of ${u.title}` : `Delete ${u.title}`}
+      title=${version ? "Withdraw this new version" : "Remove from online gallery"}
+      aria-label=${version ? `Withdraw the new version of ${u.title}` : `Remove ${u.title} from the online gallery`}
       @click=${() => void this.deleteGalleryUpload(u.id)}>${uiIcon("delete")}</button>`;
   }
 
