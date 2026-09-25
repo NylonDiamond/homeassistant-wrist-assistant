@@ -16428,6 +16428,14 @@ export class WristAssistantPanel extends LitElement {
       };
       const memberIds = members.map((m) => m.payload.id);
       const subCount = kids.filter((k) => k.kind === "group").length;
+      // The eye works on the whole subtree, the way ⇧⌘H does on a selection:
+      // if anything in the group is showing, the click hides all of it, and
+      // the group reads as hidden only once every layer in it is.
+      const everyLayer = groupLayers(cfg, g.id);
+      const allHidden = everyLayer.length > 0 && everyLayer.every((el) => effectivePlacement(cfg, family, el).isHidden);
+      const toggleHidden = () => this.mutate((c) => {
+        for (const el of groupLayers(c, g.id)) setPlacement(c, family, el.payload.id, { isHidden: !allHidden });
+      });
       return html`<div class="layer group ${hl ? "hl" : ""} ${peekCls(peek?.kind === "group" && peek.id === g.id)} ${held ? "held" : ""} ${this.dialogLitIds.includes(g.id) ? "lit" : ""} ${rich ? "rich" : ""}" style=${`--k:${SECTION_COLOR.group}`} tabindex="0" draggable=${d.draggable}
         @pointerenter=${() => this.enterRow(memberIds, { kind: "group", id: g.id }, peekAt)}
         @click=${() => { this.multi = new Set(); this.inspect = { kind: "group", id: g.id }; }}
@@ -16461,9 +16469,14 @@ export class WristAssistantPanel extends LitElement {
           ${rich ? html`<span class="facts"><span class="fact"><b>Holds</b> ${kids.map((k) => k.kind === "layer" ? layerTitle(k.el, ctx) : k.group.name).join(", ")}</span></span>` : nothing}
         </span>
         <span class="right">
+          ${allHidden ? html`<span class="badges"><span class="badge">hidden</span></span>` : nothing}
           ${edit ? html`<span class="acts">
             <button class="icon" title=${`Ungroup: keep the layers, drop the folder (${KEY_SHIFT}${KEY_MOD}G). What it holds moves up one level.`} aria-label="Ungroup" @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => ungroup(c, g.id)); if (hl) this.inspect = { kind: "general" }; }}>${uiIcon("ungroup")}</button>
           </span>` : nothing}
+          <button class="icon" ?disabled=${!edit}
+            title=${allHidden ? "Hidden on this shape. Click to show every layer in the group." : "Click to hide every layer in the group on this shape."}
+            aria-label=${allHidden ? "Show the group" : "Hide the group"}
+            @click=${(e: Event) => { e.stopPropagation(); toggleHidden(); }}>${uiIcon(allHidden ? "hide" : "show")}</button>
           <button class="icon lockbtn ${g.locked ? "on" : ""}" ?disabled=${!edit}
             title=${g.locked ? "Locked: drags on the watch move the whole group. Click to unlock." : "Unlocked: each layer moves alone, unless the group row is selected. Click to lock."}
             aria-label=${g.locked ? "Unlock the group" : "Lock the group"}
