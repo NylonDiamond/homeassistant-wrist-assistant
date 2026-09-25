@@ -477,6 +477,8 @@ function inspectKey(i: Inspect): string {
 }
 
 type Conflict = { current: ComplicationRecord | null; message: string };
+/** What a small drawing of a complication has to ask Home Assistant for. */
+type CardData = Pick<ResolveContext, "templateResults" | "historySeries" | "listItems">;
 
 /** What one row of the header picker is about: an editable record, or a slot
  * something else holds (an iPhone preset, or a custom on another home). The
@@ -1843,6 +1845,12 @@ export class WristAssistantPanel extends LitElement {
    * `owner|record|revision` of every one already tried this visit, so a card
    * whose picture cannot be taken is not tried on every render. */
   private cardPreviewQueue: Promise<void> = Promise.resolve();
+  /** What small drawings have fetched, by `cardDataKey`; see `fetchedFor`. */
+  private readonly cardData = new Map<string, { at: number; data: CardData | undefined }>();
+  private readonly cardDataKeys = new WeakMap<CustomComplicationConfig, string | null>();
+  private readonly cardDataAsked = new Set<string>();
+  private cardDataQueue: Promise<void> = Promise.resolve();
+  private static readonly CARD_DATA_MAX_AGE_MS = 60_000;
   private readonly cardPreviewTried = new Set<string>();
   /** Whether a warm-up of `pictures` is already waiting for an idle moment.
    * Every list reply asks for one, and they would otherwise stack up. */
@@ -11016,7 +11024,7 @@ export class WristAssistantPanel extends LitElement {
    * until the next save. Undefined when any of them failed, and the card is
    * then drawn live and tried again on a later visit.
    */
-  private async fetchCardData(cfg: CustomComplicationConfig): Promise<Pick<ResolveContext, "templateResults" | "historySeries" | "listItems"> | undefined> {
+  private async fetchCardData(cfg: CustomComplicationConfig): Promise<CardData | undefined> {
     const doc = compile(cfg).document;
     const series = seriesRequests(cfg);
     const lists = listItemsRequests(cfg);
@@ -11098,9 +11106,13 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /** What one complication resolves against when it is drawn small and is not
-   * the one being edited: its own entities read live, and nothing fetched.
-   * No `page`, so a paged document draws its page 1 in every picker row and in
-   * the import preview: page 1 is what the complication shows first.
+   * the one being edited: its own entities read live, plus the templates,
+   * history and list items `fetchedFor` holds for it. No `page`, so a paged
+   * document draws its page 1 in every picker row and in the import preview:
+   * page 1 is what the complication shows first.
+   *
+   * The import preview passes its own `historySeries` and fetches nothing
+   * else: its entities are placeholders until picked.
    *
    * Picture layers use the same cache as the open editor. This is the path
    * every card in the grid takes, without asking the camera for another frame. */
@@ -11110,13 +11122,67 @@ export class WristAssistantPanel extends LitElement {
       const state = this.entityStateFor(ref.entityId, ref.iconName ?? "", false);
       if (state) entityStates.set(ref.entityId, state);
     }
+    const fetched = historySeries ? undefined : this.fetchedFor(cfg);
     return {
       entityStates,
       templateResults: new Map(),
-      // Only the import preview fetches any; a picker row's chart draws empty.
+      ...fetched,
       ...(historySeries ? { historySeries } : {}),
       namedValues: cfg.values,
     };
+  }
+
+  /**
+   * The templates, history and list items a small drawing of `cfg` shows, as
+   * last fetched, and a fetch queued when there are none or they are over a
+   * minute old. Undefined until the first one lands, which redraws.
+   *
+   * Without this every card drawn live read "--" wherever a template fills a
+   * value, as the inline shape does on every card, since it has no picture.
+   * Keyed by what is asked rather than by record, so the copies of one design
+   * on several devices cost one fetch. One fetch at a time, so a home of forty
+   * cards does not ask Home Assistant forty things at once. A failed fetch is
+   * held too, so it is tried again a minute later rather than on every render.
+   */
+  private fetchedFor(cfg: CustomComplicationConfig): CardData | undefined {
+    const key = this.cardDataKey(cfg);
+    if (key === null) return undefined;
+    const held = this.cardData.get(key);
+    const stale = !held || Date.now() - held.at > WristAssistantPanel.CARD_DATA_MAX_AGE_MS;
+    if (stale && !this.cardDataAsked.has(key)) {
+      this.cardDataAsked.add(key);
+      this.cardDataQueue = this.cardDataQueue
+        .then(async () => {
+          const data = await this.fetchCardData(cfg);
+          this.cardData.set(key, { at: Date.now(), data: data ?? held?.data });
+          if (data) this.requestUpdate();
+        })
+        .catch(() => undefined)
+        .finally(() => this.cardDataAsked.delete(key));
+    }
+    return held?.data;
+  }
+
+  /** What `cfg` asks Home Assistant for, as text, or null when it asks for
+   * nothing. Kept per config object: compiling on every render is the cost
+   * `recordPreview` exists to spare. */
+  private cardDataKey(cfg: CustomComplicationConfig): string | null {
+    const known = this.cardDataKeys.get(cfg);
+    if (known !== undefined) return known;
+    let key: string | null = null;
+    try {
+      const doc = compile(cfg).document;
+      const series = seriesRequests(cfg);
+      const lists = listItemsRequests(cfg);
+      const asks = doc !== undefined
+        || Object.keys(series.history).length > 0 || Object.keys(series.statistics).length > 0
+        || Object.keys(lists.requests).length > 0;
+      if (asks) key = JSON.stringify([doc ?? null, series.signature, lists.signature]);
+    } catch {
+      key = null;
+    }
+    this.cardDataKeys.set(cfg, key);
+    return key;
   }
 
   /**
