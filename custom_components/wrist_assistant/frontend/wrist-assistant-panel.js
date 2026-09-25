@@ -4023,6 +4023,9 @@ ${z_(c)}`}}delete s.hidden,delete s.linkId;let l=Jd(a);if(l.length>0){let d=l.sl
     :host([dark]) .layer .thumb.clear {
       background: repeating-conic-gradient(#2a2a2e 0% 25%, #1a1a1d 0% 50%) 0 0 / 10px 10px;
     }
+    /* The picture inside is an <svg class="thumb">, so the black well above
+       lands on it too and would cover the checkerboard. */
+    .layer .thumb.clear > svg { background: none; }
     .layer.dim .thumb { opacity: .6; }
     .layer .name { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
     .layer .name b { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
