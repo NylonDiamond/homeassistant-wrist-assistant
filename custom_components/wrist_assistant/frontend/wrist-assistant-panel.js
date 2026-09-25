@@ -7946,7 +7946,7 @@ ${nO(c)}`}}delete s.hidden,delete s.linkId;let l=Gc(a);if(l.length>0){let d=l.sl
           ${y>0?u`<span class="chg">${y} changed</span>`:m}${E("right")}</summary>
         ${g?u`<div class="pn-b">${h.rows.map(s)}</div>`:m}
       </details>`};return u`
-      <div class="xf-lead">${E("info")}<span>Others can see these names. Change the names of layers and groups here before you share, if you want.</span></div>
+      <div class="xf-lead">${E("info")}<span>Your entities are never shared. Only the names below go with the design. You can change any of them.</span></div>
       <div class="xf-pub" @pointerleave=${h=>this.leaveRows(h,o)} @focusout=${h=>this.leaveRows(h,o)}>
         ${d.filter(h=>h.kind==="head").map(p)}
         ${l?this.renderShareTreeBox(l,t,c):m}
