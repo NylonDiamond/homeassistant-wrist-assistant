@@ -93,6 +93,9 @@ _OPTIONAL_DOCUMENT_KEYS: dict[str, type | tuple[type, ...]] = {
     # Joins the linked copies of one complication across owners (watch and
     # iPhone). Same uuid on every copy; record ids stay different. Editor-only.
     "linkId": str,
+    # What the author tells whoever imports the design. Editor-only; the apps
+    # carry it and never draw it. Writers omit the key when there are none.
+    "notes": str,
     # The Inline shape's text; present exactly when supportedFamilies has "inline".
     "inline": dict,
     # The document's Control Center control. The only key that lets

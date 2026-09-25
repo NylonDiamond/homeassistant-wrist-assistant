@@ -151,6 +151,15 @@ export function scrubForShare(cfg: CustomComplicationConfig, slots: readonly Sha
     return to ? { ...to } : undefined;
   });
   mapFreeText(next, (text) => replaceQuotedEntityIds(text, ids));
+  // Notes are prose, so an id in them is bare rather than quoted. It becomes
+  // the slot's label, which is what the reader's import table calls it.
+  if (next.notes !== undefined) {
+    for (const slot of slots) {
+      if (slot.originalId === "") continue;
+      const bare = new RegExp(`(?<![\\w.])${slot.originalId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w])`, "g");
+      next.notes = next.notes.replace(bare, slot.label.trim() || slot.placeholderId);
+    }
+  }
 
   delete next.openPageId;
   delete next.openPageName;

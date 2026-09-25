@@ -320,6 +320,17 @@ import {
   unresolvedEntities,
 } from "./transfer.js";
 import {
+  NOTES_MAX,
+  NOTES_PLACEHOLDER,
+  type NoteSpan,
+  type NoteTarget,
+  cleanNotes,
+  noteTargetTitle,
+  notesPreview,
+  notesSummary,
+  parseNotes,
+} from "./notes.js";
+import {
   type GalleryFetch,
   type GalleryMeta,
   type GalleryNameRow,
@@ -1440,6 +1451,18 @@ export class WristAssistantPanel extends LitElement {
    * has a shared value, since a preset that reads its entities through them is
    * edited there. Each document starts undefined again. */
   @state() private sharedOpen?: boolean;
+  /** The document whose notes are unfolded on top of the Layers card. Notes
+   * start folded to one line, except on a design just imported, which is when
+   * they are worth reading. */
+  @state() private notesOpenId?: string;
+  /** The document that just came in through Import, for the card's "Just
+   * imported" tag. Cleared when the notes are folded or edited. */
+  @state() private notesImportedId?: string;
+  /** The notes box is open for typing. Kept as its own text while it is, since
+   * the document stores the notes trimmed and a box bound to that would eat
+   * each space as it was typed. */
+  @state() private notesEditing = false;
+  @state() private notesDraft = "";
   /** Show all in the Layers card: every page's layers, grouped by page,
    * rather than the page showing. */
   @state() private allPages = false;
@@ -1719,6 +1742,10 @@ export class WristAssistantPanel extends LitElement {
   private galleryRedrawTimer?: number;
   @state() private galleryTitle = "";
   @state() private galleryDescription = "";
+  /** Send the design's notes with the upload. */
+  @state() private galleryNotes = true;
+  /** The notes box opened from the gallery's "Add notes" offer. */
+  @state() private galleryNotesOpen = false;
   @state() private galleryTags: ReadonlySet<GalleryTag> = new Set();
   @state() private galleryNickname = "";
   /** Undefined while the pictures are being drawn. */
@@ -3909,6 +3936,74 @@ export class WristAssistantPanel extends LitElement {
     .lc-filter .lc-sub { white-space: normal; }
     .lc-filter button.lc-ghost { margin-left: auto; }
     .lc-filter button.lc-ghost + button.lc-ghost { margin-left: 0; }
+    /* The notes on top of the Layers list, in the shared-value amber so they
+       read as a word from the author and not as one more layer. */
+    .notes-card {
+      --nc: var(--wa-val);
+      display: flex; flex-direction: column; gap: 8px; margin: 2px 0 6px; padding: 10px 12px;
+      border: 1px solid color-mix(in srgb, var(--nc) 45%, transparent); border-radius: 9px;
+      background: color-mix(in srgb, var(--nc) 7%, var(--wa-card)); color: var(--wa-ink); font-size: 12.5px;
+    }
+    .notes-card.editing { border-color: var(--nc); }
+    .notes-card.folded {
+      flex-direction: row; align-items: center; gap: 8px; padding: 7px 10px; width: 100%;
+      font: inherit; font-size: 12px; text-align: left; cursor: pointer;
+    }
+    .notes-card.folded:hover { background: color-mix(in srgb, var(--nc) 12%, var(--wa-card)); }
+    .notes-card .nc-head { display: flex; align-items: center; gap: 7px; min-height: 24px; }
+    .notes-card .nc-head .spacer { flex: 1; }
+    .notes-card .nc-icon { display: flex; color: var(--nc); flex: none; }
+    .notes-card .nc-icon svg.ui-icon { width: 15px; height: 15px; }
+    .notes-card b { font-weight: 650; }
+    .notes-card .nc-sub { color: var(--wa-muted); font-size: 11px; }
+    .notes-card .nc-new {
+      font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px;
+      background: var(--nc); color: var(--wa-card);
+    }
+    .notes-card .nc-peek { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--wa-muted); }
+    .notes-card .nc-chev { display: flex; color: var(--wa-muted); }
+    .notes-card .nc-chev svg.ui-icon, .notes-card .nc-fold svg.ui-icon { width: 15px; height: 15px; }
+    .notes-card .nc-fold {
+      display: flex; padding: 3px; border: 0; border-radius: 6px; background: transparent; color: var(--wa-muted); cursor: pointer;
+    }
+    .notes-card .nc-fold svg.ui-icon { transform: rotate(180deg); }
+    .notes-card .nc-fold:hover { background: color-mix(in srgb, var(--wa-ink) 8%, transparent); }
+    .notes-card .nc-body { display: flex; flex-direction: column; gap: 8px; line-height: 1.5; font-size: 13px; overflow-wrap: anywhere; }
+    .notes-card .nc-body p { margin: 0; white-space: pre-line; }
+    .notes-card .nc-body ol, .notes-card .nc-body ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 5px; }
+    .notes-card .nc-h { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--nc); margin-top: 2px; }
+    .notes-card .note-link {
+      font: inherit; font-size: 12px; font-weight: 600; line-height: 1.3; padding: 0 5px; margin: 0 1px; cursor: pointer;
+      border: 1px solid color-mix(in srgb, var(--nc) 45%, transparent); border-radius: 5px;
+      background: color-mix(in srgb, var(--nc) 12%, transparent); color: var(--wa-ink);
+    }
+    .notes-card .note-link:hover { background: color-mix(in srgb, var(--nc) 24%, transparent); }
+    .notes-card .nc-lead { color: var(--wa-muted); font-size: 11.5px; }
+    .notes-card .nc-foot { display: flex; gap: 10px; font-size: 11px; color: var(--wa-muted); padding-top: 6px; border-top: 1px solid color-mix(in srgb, var(--nc) 22%, transparent); }
+    .notes-card .nc-foot > span:first-child { flex: 1; }
+    .notes-card .nc-count { flex: none; font-variant-numeric: tabular-nums; }
+    .notes-card button.nc-done { background: var(--nc); border-color: transparent; color: var(--wa-card); }
+    textarea.notes-box {
+      font: 12.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace; resize: vertical; min-height: 120px; width: 100%; box-sizing: border-box;
+      padding: 8px 10px; border-radius: 7px; border: 1px solid color-mix(in srgb, var(--wa-val) 40%, var(--wa-line));
+      background: var(--wa-input); color: var(--wa-ink);
+    }
+    .as-tabs button.as-notes { margin-left: 6px; }
+    /* The gallery's notes line: a switch when there are notes, an offer when
+       there are none. */
+    .gal-notes {
+      display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: 9px;
+      border: 1px solid color-mix(in srgb, var(--wa-val) 40%, transparent);
+      background: color-mix(in srgb, var(--wa-val) 7%, var(--wa-card)); font-size: 12.5px;
+    }
+    .gal-notes.on { cursor: pointer; }
+    .gal-notes input[type="checkbox"] { margin: 2px 0 0; accent-color: var(--wa-val); flex: none; }
+    .gal-notes .gn-icon { display: flex; color: var(--wa-val); flex: none; margin-top: 1px; }
+    .gal-notes .gn-icon svg.ui-icon { width: 16px; height: 16px; }
+    .gal-notes .gn-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+    .gal-notes .gn-text small { color: var(--wa-muted); font-size: 11.5px; line-height: 1.4; }
+    .gal-notes.ask button { flex: none; align-self: center; }
+    .gal-notes.ask.busy { border-color: var(--wa-val); }
     .lc-filter .lc-drag { font-size: 11px; color: var(--wa-muted); opacity: .8; white-space: nowrap; }
     .lc-filter .lc-sub + .lc-drag::before { content: "·"; margin-right: 6px; }
     .layers-card > .group-cta { margin: 6px 8px 0; }
@@ -7589,6 +7684,7 @@ export class WristAssistantPanel extends LitElement {
     this.stopTour();
     this.page = 1;
     this.sharedOpen = undefined;
+    this.notesEditing = false;
     this.draft = undefined;
     this.compiled = undefined;
     this.compiledDocument = undefined;
@@ -14342,6 +14438,7 @@ export class WristAssistantPanel extends LitElement {
       tags: [...this.galleryTags],
       panelVersion: this.panel?.config?.version ?? "",
       ...(device === undefined ? {} : { device }),
+      includeNotes: this.galleryNotes,
     };
   }
 
@@ -14363,6 +14460,8 @@ export class WristAssistantPanel extends LitElement {
     this.galleryOpen = true;
     this.galleryTitle = (this.shareName.trim() || cfg.name.trim()).slice(0, GALLERY_LIMITS.title);
     this.galleryDescription = "";
+    this.galleryNotes = true;
+    this.galleryNotesOpen = false;
     this.galleryTags = new Set();
     this.galleryNickname = readGalleryNickname();
     this.gallerySending = false;
@@ -14632,14 +14731,20 @@ export class WristAssistantPanel extends LitElement {
   /** Step 1: the listing, beside the card it makes in the gallery. */
   private renderGalleryDetails(problems: readonly string[]) {
     const tags = this.galleryTags;
+    const notes = cleanNotes(this.shareConfig()?.notes);
     return html`<div class="xf-two">
       <div class="xf-stack xf-form">
         <label class="xf-f"><span class="xf-label">Title</span>
           <input type="text" maxlength=${GALLERY_LIMITS.title} .value=${this.galleryTitle}
             @input=${(e: Event) => { this.galleryTitle = (e.target as HTMLInputElement).value; }} /></label>
-        <label class="xf-f"><span class="xf-label">Description <span class="r">Optional</span></span>
-          <textarea rows="2" maxlength=${GALLERY_LIMITS.description} .value=${this.galleryDescription}
-            @input=${(e: Event) => { this.galleryDescription = (e.target as HTMLTextAreaElement).value; }}></textarea></label>
+        <div class="xf-f"><span class="xf-label"><label for="gal-desc">Description</label>
+          <span class="r">${notes !== undefined && this.galleryDescription.trim() === ""
+            ? html`<button type="button" class="lc-ghost sm" title="Start the description with the first lines of your notes"
+                @click=${() => { this.galleryDescription = notesSummary(notes, GALLERY_LIMITS.description); }}>Fill from notes</button>`
+            : "Optional"}</span></span>
+          <textarea id="gal-desc" rows="2" maxlength=${GALLERY_LIMITS.description} .value=${this.galleryDescription}
+            @input=${(e: Event) => { this.galleryDescription = (e.target as HTMLTextAreaElement).value; }}></textarea></div>
+        ${this.renderGalleryNotes(notes)}
         <div class="xf-f"><span class="xf-label">Tags <span class="r">${tags.size === 0 ? `Optional, up to ${GALLERY_LIMITS.tags}` : `${tags.size} of ${GALLERY_LIMITS.tags}`}</span></span>
           <div class="gal-tags">
             ${GALLERY_TAGS.map((tag) => {
@@ -14655,6 +14760,43 @@ export class WristAssistantPanel extends LitElement {
         ${problems.length > 0 ? html`<ul class="xf-blockers" role="alert">${problems.map((p) => html`<li>${p}</li>`)}</ul>` : nothing}
       </div>
       <div>${this.galleryCard()}<div class="xf-caption">How it looks in the gallery</div></div>
+    </div>`;
+  }
+
+  /**
+   * The design's notes in the upload. With notes: a switch to send them or
+   * not, on by default. Without: an offer to write some, since a design worth
+   * posting is often one that needs a word on what to set up. The box it opens
+   * writes the document's own notes, so they stay after the upload too.
+   */
+  private renderGalleryNotes(notes: string | undefined) {
+    const cfg = this.shareConfig();
+    if (!cfg) return nothing;
+    if (this.galleryNotesOpen) {
+      return html`<label class="xf-f"><span class="xf-label">Notes for people who import
+          <span class="r">${this.notesDraft.length} / ${NOTES_MAX}</span></span>
+        <textarea class="notes-box" rows="6" maxlength=${NOTES_MAX} .value=${this.notesDraft}
+          placeholder=${NOTES_PLACEHOLDER}
+          @input=${(e: Event) => this.typeNotes((e.target as HTMLTextAreaElement).value)}></textarea>
+        <span class="hint">Saved on the complication too. [Name] links a shared value, group or layer.</span></label>`;
+    }
+    if (notes !== undefined) {
+      const lines = notes.split("\n").filter((l) => l.trim() !== "").length;
+      return html`<label class="gal-notes on">
+        <input type="checkbox" .checked=${this.galleryNotes}
+          @change=${(e: Event) => { this.galleryNotes = (e.target as HTMLInputElement).checked; }} />
+        <span class="gn-text"><b>Send my notes with it</b>
+          <small>${lines === 1 ? "1 line" : `${lines} lines`}. People see them on top of the layers when they import.</small></span>
+      </label>`;
+    }
+    const layers = cfg.elements.length;
+    const values = cfg.values.length;
+    const busy = layers >= 12 || values >= 3;
+    return html`<div class="gal-notes ask ${busy ? "busy" : ""}">
+      <span class="gn-icon">${uiIcon("info")}</span>
+      <span class="gn-text"><b>Add notes for people who import?</b>
+        <small>${busy ? `This one has ${layers} layers and ${values === 1 ? "1 shared value" : `${values} shared values`}. ` : ""}Say what to set up and what a tap does. Notes help most on a design with many parts.</small></span>
+      <button type="button" class="small" @click=${() => { this.notesDraft = ""; this.galleryNotesOpen = true; }}>Add notes</button>
     </div>`;
   }
 
@@ -15087,6 +15229,9 @@ export class WristAssistantPanel extends LitElement {
           </div>
           ${picked < required.length ? html`<div class="xf-lead">${uiIcon("info")}<span>You can import now and pick the rest later.</span></div>` : nothing}
         </div>`}
+      ${cfg.notes !== undefined
+        ? html`<div class="xf-lead">${uiIcon("note")}<span>The author left notes. They open on top of the layers after import.</span></div>`
+        : nothing}
       ${hasInstanceFilters(cfg)
         ? html`<div class="xf-lead warn">${uiIcon("info")}<span>This design filters by areas, labels or floors from the sender's home. Check its aggregate layers after import.</span></div>`
         : nothing}
@@ -15403,6 +15548,11 @@ export class WristAssistantPanel extends LitElement {
     cfg.dataSources = [];
     cfg.schemaVersion = schemaVersionFor(cfg);
     if (!this.startNew(cfg)) return;
+    // The author's notes are what to set up next, so they open on top.
+    if (cfg.notes !== undefined) {
+      this.notesOpenId = cfg.id;
+      this.notesImportedId = cfg.id;
+    }
     this.closeImportDialog();
     await this.save();
   }
@@ -16229,6 +16379,9 @@ export class WristAssistantPanel extends LitElement {
         ${tabButton("parts", "Saved parts", this.parts?.length)}
         <span class="spacer"></span>
         ${usesPages(cfg) ? html`<span class="lc-sub">Goes on page ${this.page}</span>` : nothing}
+        <button type="button" class="lc-btn as-notes"
+          title=${cfg.notes === undefined ? "Write notes for people who import this: what to set up, what a tap does" : "Edit the notes for people who import this"}
+          @click=${() => this.editNotes()}>${uiIcon(cfg.notes === undefined ? "plus" : "note")}<span>Notes</span></button>
       </div>
       ${full ? html`<div class="as-full">This complication has 64 layers, the most it can hold. Delete one to add another.</div>` : nothing}
       <div class="as-body">${body}</div>
@@ -16905,6 +17058,7 @@ export class WristAssistantPanel extends LitElement {
                 : nothing}
             </div>`
           : nothing}
+      ${this.renderNotesCard(cfg, edit)}
       ${pickedCount < 2 && selectedCount === 0 && cfg.elements.length >= 2 && edit && !cfg.groups?.length
           ? html`<div class="hint">${MULTI_KEY}-click layers here or on the preview, or shift-click a range of rows, then group them so a finished part moves as one. The <b>?</b> button in the header lists every key and mouse trick.</div>`
           : nothing}
@@ -16963,6 +17117,136 @@ export class WristAssistantPanel extends LitElement {
       </div>
       ${this.renderSharedValues()}
     </div>`;
+  }
+
+  /**
+   * The design's notes, on top of the Layers list: what the author tells
+   * whoever imports it. Folded to one line most of the time, unfolded on a
+   * design just imported, and a box to type in while editing. A `[Name]` in the
+   * text is a link to the shared value, group or layer of that name.
+   */
+  private renderNotesCard(cfg: CustomComplicationConfig, edit: boolean) {
+    const id = cfg.id;
+    if (this.notesEditing && edit) {
+      return html`<section class="notes-card editing" aria-label="Notes">
+        <div class="nc-head">
+          <span class="nc-icon">${uiIcon("note")}</span><b>Notes</b>
+          <span class="spacer"></span>
+          ${cfg.notes !== undefined ? html`<button type="button" class="lc-ghost sm" title="Take the notes off this complication"
+            @click=${() => this.deleteNotes()}>Delete notes</button>` : nothing}
+          <button type="button" class="lc-btn nc-done" @click=${() => this.finishNotes()}>Done</button>
+        </div>
+        <label class="nc-lead" for="notes-box">Tell people what to set up after they import this.</label>
+        <textarea id="notes-box" class="notes-box" rows="9" maxlength=${NOTES_MAX} .value=${this.notesDraft}
+          placeholder=${NOTES_PLACEHOLDER}
+          @input=${(e: Event) => this.typeNotes((e.target as HTMLTextAreaElement).value)}
+          @keydown=${(e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); this.finishNotes(); } }}></textarea>
+        <div class="nc-foot"><span>Plain text. [Name] links a shared value, group or layer. A short line alone is a heading. Lines starting 1. or - are a list.</span>
+          <span class="nc-count">${this.notesDraft.length} / ${NOTES_MAX}</span></div>
+      </section>`;
+    }
+    const notes = cfg.notes;
+    if (notes === undefined) return nothing;
+    if (this.notesOpenId !== id) {
+      return html`<button type="button" class="notes-card folded" aria-expanded="false" title="Show the notes"
+        @click=${() => { this.notesOpenId = id; }}>
+        <span class="nc-icon">${uiIcon("note")}</span><b>Notes</b>
+        <span class="nc-peek">${notesPreview(notes)}</span>
+        <span class="nc-chev">${uiIcon("chevron")}</span>
+      </button>`;
+    }
+    const spans = (list: readonly NoteSpan[]) => list.map((s) => s.kind === "text"
+      ? s.text
+      : html`<button type="button" class="note-link" title=${noteTargetTitle(s.target)}
+          @click=${() => this.goToNoteTarget(s.target)}>${s.text}</button>`);
+    const blocks = parseNotes(notes, this.notesResolver(cfg));
+    return html`<section class="notes-card open" aria-label="Notes">
+      <div class="nc-head">
+        <span class="nc-icon">${uiIcon("note")}</span><b>Notes</b>
+        <span class="nc-sub">from the author</span>
+        ${this.notesImportedId === id ? html`<span class="nc-new">Just imported</span>` : nothing}
+        <span class="spacer"></span>
+        ${edit ? html`<button type="button" class="lc-ghost sm" @click=${() => this.editNotes()}>Edit</button>` : nothing}
+        <button type="button" class="nc-fold" aria-label="Fold the notes" title="Fold the notes"
+          @click=${() => { this.notesOpenId = undefined; this.notesImportedId = undefined; }}>${uiIcon("chevron")}</button>
+      </div>
+      <div class="nc-body">${blocks.map((b) => b.kind === "heading"
+        ? html`<div class="nc-h">${spans(b.spans)}</div>`
+        : b.kind === "para"
+          ? html`<p>${spans(b.spans)}</p>`
+          : b.ordered
+            ? html`<ol>${b.items.map((item) => html`<li>${spans(item)}</li>`)}</ol>`
+            : html`<ul>${b.items.map((item) => html`<li>${spans(item)}</li>`)}</ul>`)}</div>
+      <div class="nc-foot">Notes show only in this editor. The watch never draws them.</div>
+    </section>`;
+  }
+
+  /** Names a `[Name]` in the notes can reach, first come first served:
+   * shared values, then groups, then layers, case aside. */
+  private notesResolver(cfg: CustomComplicationConfig): (name: string) => NoteTarget | undefined {
+    const key = (s: string) => s.trim().toLowerCase();
+    const found = new Map<string, NoteTarget>();
+    const put = (name: string | undefined, target: NoteTarget) => {
+      const k = key(name ?? "");
+      if (k !== "" && !found.has(k)) found.set(k, target);
+    };
+    for (const v of cfg.values) put(v.name, { kind: "value", id: v.id });
+    for (const g of cfg.groups ?? []) put(g.name, { kind: "group", id: g.id });
+    const ctx = describeContext(this.host());
+    for (const el of cfg.elements) {
+      put(el.payload.name, { kind: "layer", id: el.payload.id });
+      put(layerTitle(el, ctx), { kind: "layer", id: el.payload.id });
+    }
+    return (name) => found.get(key(name));
+  }
+
+  private goToNoteTarget(target: NoteTarget) {
+    if (target.kind === "value") {
+      this.openSharedValue(target.id);
+      return;
+    }
+    this.multi = new Set();
+    this.inspect = target.kind === "group" ? { kind: "group", id: target.id } : { kind: "layer", id: target.id };
+  }
+
+  /** Open the notes box: from + Notes in the Add sheet, or Edit on the card. */
+  private editNotes() {
+    const cfg = this.draft?.config;
+    if (!cfg || !this.canEdit) return;
+    this.closeAddSheet();
+    this.notesDraft = cfg.notes ?? "";
+    this.notesEditing = true;
+    this.notesImportedId = undefined;
+    void this.updateComplete.then(() => {
+      const box = this.renderRoot.querySelector<HTMLTextAreaElement>("#notes-box");
+      box?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      box?.focus({ preventScroll: true });
+    });
+  }
+
+  /** Every keystroke lands on the document as one undo step per burst of
+   * typing. The box keeps what was typed; the document keeps it trimmed. */
+  private typeNotes(text: string) {
+    this.notesDraft = text;
+    const next = cleanNotes(text);
+    this.mutate((c) => {
+      if (next === undefined) delete c.notes;
+      else c.notes = next;
+    }, "notes");
+  }
+
+  /** Done: the box closes onto the notes it made, unfolded. */
+  private finishNotes() {
+    const id = this.draft?.config.id;
+    this.notesEditing = false;
+    this.notesOpenId = this.draft?.config.notes !== undefined ? id : undefined;
+  }
+
+  private deleteNotes() {
+    this.mutate((c) => { delete c.notes; });
+    this.notesDraft = "";
+    this.notesEditing = false;
+    this.notesOpenId = undefined;
   }
 
   /**

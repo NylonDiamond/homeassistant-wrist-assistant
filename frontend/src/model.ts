@@ -8,6 +8,8 @@
 // carries Inline (see schemaVersionFor); v7 adds the four iPhone Home Screen
 // shapes and marks any document naming one.
 
+import { cleanNotes } from "./notes.js";
+
 /** The watch's three canvas shapes. This set is the schema-6 predicate: a
  * document missing one of them must say 6, because an app that predates
  * per-shape support would draw it from the shared layers. */
@@ -4263,6 +4265,11 @@ export interface CustomComplicationConfig {
   httpShowResult?: true;
   /** Layer groups (editor-only). Encoded only when there is at least one. */
   groups?: LayerGroup[];
+  /** What the author tells whoever imports the design: what to set up, what
+   * a tap does. Plain text, shown on top of the Layers list (see notes.ts).
+   * Editor-only, like `groups`: the apps carry the key along and never draw
+   * it. Encoded only when there is something to say. */
+  notes?: string;
   /** Kept out of the watch's complication picker. A face already using it
    * keeps drawing it. Only ever true: writers omit the key when shown. */
   hidden?: true;
@@ -5394,6 +5401,8 @@ export function parseConfig(raw: unknown): CustomComplicationConfig {
     }));
     if (groups.length > 0) cfg.groups = groups;
   }
+  const notes = cleanNotes(raw.notes);
+  if (notes !== undefined) cfg.notes = notes;
   migrateChartLabels(cfg, Array.isArray(raw.elements) ? raw.elements : []);
   pruneGroups(cfg);
   return cfg;
@@ -7232,6 +7241,8 @@ export function encodeConfig(cfg: CustomComplicationConfig): J {
   if (cfg.groups !== undefined && cfg.groups.length > 0) {
     o.groups = cfg.groups.map((g) => ({ id: g.id, name: g.name, locked: g.locked, ...(g.parentId !== undefined ? { parentId: g.parentId } : {}) }));
   }
+  const notes = cleanNotes(cfg.notes);
+  if (notes !== undefined) o.notes = notes;
   if (cfg.hidden === true) o.hidden = true;
   if (cfg.linkId !== undefined) o.linkId = cfg.linkId;
   // Only ever on the wire when there are really pages; a one-page spec carries
@@ -7783,7 +7794,7 @@ const K = {
   // `linkId` joins the copies of one design across devices: one record per
   // device, the same uuid on each. The panel reads and writes it; the apps
   // decode it and never write it back.
-  config: ["schemaVersion", "id", "name", "values", "slotIndex", "elements", "supportedFamilies", "perFamily", "inline", "dataSources", "refreshMinutes", "tapAction", "openPageId", "openPageName", "showSuccessFlash", "successFlashColorHex", "httpShowResult", "groups", "hidden", "linkId", "control", "pages"],
+  config: ["schemaVersion", "id", "name", "values", "slotIndex", "elements", "supportedFamilies", "perFamily", "inline", "dataSources", "refreshMinutes", "tapAction", "openPageId", "openPageName", "showSuccessFlash", "successFlashColorHex", "httpShowResult", "groups", "notes", "hidden", "linkId", "control", "pages"],
   group: ["id", "name", "locked", "parentId"],
   // The document's pages. Its own object at the top level, and the only place
   // these three keys appear.

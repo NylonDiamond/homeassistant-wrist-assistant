@@ -16,7 +16,7 @@ export type UiIconName =
   | "lock" | "unlock" | "folder" | "ungroup" | "watch" | "phone"
   | "compact" | "expanded" | "grid" | "search" | "undo" | "redo" | "expand" | "left" | "right"
   | "braces" | "link" | "info" | "globe" | "download" | "check" | "arrow" | "paste" | "guides"
-  | "checklist" | "home" | "more" | "thumbSmall" | "thumbMedium" | "thumbLarge" | "menu";
+  | "checklist" | "home" | "more" | "thumbSmall" | "thumbMedium" | "thumbLarge" | "menu" | "note";
 
 function shape(name: UiIconName) {
   switch (name) {
@@ -56,6 +56,9 @@ function shape(name: UiIconName) {
     case "chartGrid":
     case "menu":
       return svg`<path d="M4 7H20M4 12H20M4 17H20" />`;
+    // A page with its corner folded and two lines: the author's notes.
+    case "note":
+      return svg`<path d="M14 3.5H7A2 2 0 0 0 5 5.5V18.5A2 2 0 0 0 7 20.5H17A2 2 0 0 0 19 18.5V8.5Z" /><path d="M14 3.5V8.5H19" /><path d="M8.5 13H15.5M8.5 16.5H13" />`;
     // Clock times, and a picture's timestamp, as layers: the clock is the whole
     // of what either draws.
     case "chartTimes":

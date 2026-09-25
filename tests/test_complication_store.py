@@ -1249,6 +1249,19 @@ def test_hidden_flag_must_be_a_bool(mod, value):
         store.save(OWNER, _doc(hidden=value), base_revision=None, updated_by="t")
 
 
+def test_notes_are_stored_as_written(mod):
+    store = _new(mod)
+    rec = store.save(OWNER, _doc(notes="Set up\n1. Pick a light."), base_revision=None, updated_by="t")
+    assert rec.document["notes"] == "Set up\n1. Pick a light."
+
+
+@pytest.mark.parametrize("value", [1, ["a"], {"text": "a"}])
+def test_notes_must_be_text(mod, value):
+    store = _new(mod)
+    with pytest.raises(mod.ComplicationValidationError):
+        store.save(OWNER, _doc(notes=value), base_revision=None, updated_by="t")
+
+
 def test_document_is_stored_unchanged(mod):
     store = _new(mod)
     doc = _doc(extraFutureField={"nested": [1, 2, 3]})

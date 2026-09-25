@@ -132,6 +132,9 @@ export interface GalleryMeta {
    * Undefined leaves the field off the wire, which the gallery reads as
    * "either". Not typed by the author: `galleryDevice` works it out. */
   device?: GalleryDevice;
+  /** False keeps the design's notes out of the upload. Undefined sends them,
+   * which is what a design with notes wants almost every time. */
+  includeNotes?: boolean;
 }
 
 export interface GallerySlot {
@@ -229,8 +232,10 @@ export function buildGallerySubmission(
   const tags: GalleryTag[] = [];
   for (const tag of meta.tags) if (isGalleryTag(tag) && !tags.includes(tag)) tags.push(tag);
   const family = galleryFamily(cfg);
+  const doc = applyGalleryOverrides(cfg, { ...overrides, name: meta.title });
+  if (meta.includeNotes === false) delete doc.notes;
   return {
-    shareText: exportText(applyGalleryOverrides(cfg, { ...overrides, name: meta.title }), "share", slots),
+    shareText: exportText(doc, "share", slots),
     title: meta.title.trim(),
     description: meta.description.trim(),
     authorName: meta.authorName.trim(),
