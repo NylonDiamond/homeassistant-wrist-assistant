@@ -5327,7 +5327,7 @@ export class WristAssistantPanel extends LitElement {
        value it reads now, and how many layers read it. The same ground and
        hairline as a Layers row. */
     .values-list .datum.svr {
-      display: grid; grid-template-columns: 28px minmax(0, 1fr) auto auto auto; align-items: center; gap: 10px;
+      display: grid; grid-template-columns: 28px minmax(0, 1fr) auto auto; align-items: center; gap: 10px;
       min-height: 44px; padding: 5px 6px 5px 8px; border-radius: var(--wa-r-sm);
       background: color-mix(in srgb, var(--wa-panel) 60%, var(--wa-card)); box-shadow: inset 0 0 0 1px var(--wa-line);
       transition: box-shadow .12s ease-out, background-color .12s ease-out;
@@ -5362,9 +5362,12 @@ export class WristAssistantPanel extends LitElement {
       min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; display: grid; place-items: center;
       font-size: 10.5px; font-weight: 700; color: var(--wa-muted); background: color-mix(in srgb, var(--wa-ink) 7%, transparent);
     }
-    .values-list .datum.svr button.icon { opacity: 0; pointer-events: none; }
-    .values-list .datum.svr:hover button.icon, .values-list .datum.svr:focus-within button.icon { opacity: .7; pointer-events: auto; }
-    .values-list .datum.svr button.icon:hover:not(:disabled), .values-list .datum.svr button.icon:focus-visible { opacity: 1; }
+    .svr-end { display: grid; place-items: center; min-width: 28px; }
+    .svr-end > * { grid-area: 1 / 1; }
+    .values-list .datum.svr .svr-end button.icon { opacity: 0; pointer-events: none; }
+    .values-list .datum.svr:is(:hover, :focus-within) .svr-end:has(button.icon) .svr-uses { opacity: 0; }
+    .values-list .datum.svr:is(:hover, :focus-within) .svr-end button.icon { opacity: .7; pointer-events: auto; }
+    .values-list .datum.svr .svr-end button.icon:hover:not(:disabled), .values-list .datum.svr .svr-end button.icon:focus-visible { opacity: 1; }
     /* The Shared values card: one line under the Layers card, the list
        unfolding under it. The list scrolls inside the card, at 40% of the
        window or the height its top edge was dragged to. */
@@ -20041,8 +20044,7 @@ export class WristAssistantPanel extends LitElement {
             @pointerenter=${() => { this.listHoverIds = readers(); }}
             @click=${toggleOne}
             @keydown=${(e: KeyboardEvent) => { if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) { e.preventDefault(); toggleOne(); } }}>
-          ${this.sharedValueRowBody(cfg, v, slot, r, ctx)}
-          ${this.canEdit ? html`<button class="icon danger" title="Delete. Layers that read it keep their own copy." aria-label="Delete value" @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => { deleteSharedValue(c, v.id); }); if (open) this.openValue = undefined; }}>${uiIcon("delete")}</button>` : nothing}
+          ${this.sharedValueRowBody(cfg, v, slot, r, ctx, this.canEdit ? html`<button class="icon danger" title="Delete. Layers that read it keep their own copy." aria-label="Delete value" @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => { deleteSharedValue(c, v.id); }); if (open) this.openValue = undefined; }}>${uiIcon("delete")}</button>` : nothing)}
         </div>
         ${open ? html`<div class="value-open">${namedValueEditor(host, v)}</div>` : nothing}</div>`;
       })}
@@ -20072,9 +20074,10 @@ export class WristAssistantPanel extends LitElement {
    * A shared value's row, after its grip: a tile saying what kind of source
    * it reads, its name over that source (the entity's name and id, for an
    * entity), then what it reads right now, or the pick entity button while
-   * its entity is a stand-in, and how many layers read it.
+   * its entity is a stand-in, and how many layers read it. The delete button
+   * takes the count's place while the pointer is on the row.
    */
-  private sharedValueRowBody(cfg: CustomComplicationConfig, v: NamedValue, slot: { label: string; entityId: string } | undefined, now: string | undefined, ctx: DescribeContext) {
+  private sharedValueRowBody(cfg: CustomComplicationConfig, v: NamedValue, slot: { label: string; entityId: string } | undefined, now: string | undefined, ctx: DescribeContext, del: TemplateResult | typeof nothing) {
     const k = v.value.kind;
     const ref = k.kind === "entityState" || k.kind === "entityAttribute" || k.kind === "entityAge" ? k : undefined;
     const domain = ref ? (ref.domain || ref.entityId.split(".")[0] || "") : "";
@@ -20102,7 +20105,7 @@ export class WristAssistantPanel extends LitElement {
             title=${`Reads ${slot.label}, which has no entity yet.${this.canEdit ? " Click to pick one." : ""}`}
             @click=${(e: Event) => { e.stopPropagation(); this.openSlotsDialog(slot.entityId); }}>pick entity</button>`
         : html`<span class="svr-now ${now === undefined ? "none" : ""}" title=${now ?? "Nothing to show yet"}>${now ?? "no value"}</span>`}
-      <span class="svr-uses" title=${readers === 0 ? "No layer reads it yet." : `${readers} layer${readers === 1 ? " reads" : "s read"} it.`}>${readers}</span>`;
+      <span class="svr-end"><span class="svr-uses" title=${readers === 0 ? "No layer reads it yet." : `${readers} layer${readers === 1 ? " reads" : "s read"} it.`}>${readers}</span>${del}</span>`;
   }
 
   /** Whether the layout is one column, where the page scrolls and the
