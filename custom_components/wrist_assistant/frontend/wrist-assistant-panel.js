@@ -4068,7 +4068,6 @@ ${z_(c)}`}}delete s.hidden,delete s.linkId;let l=Jd(a);if(l.length>0){let d=l.sl
       box-shadow: inset 0 0 0 2px var(--tp); border-top-color: transparent;
     }
     .layer.dim .tap-strip { opacity: .55; }
-    .layer.pinned .tap-strip { margin: 0 -10px 2px -8px; padding-left: 27px; border-radius: 0; }
     /* The layer selected, not its tap: only the top part wears the selection.
        The row itself goes back to rest and a layer behind the content (the
        isolation keeps it above the row's own ground) draws the wash and ring
@@ -4086,9 +4085,6 @@ ${z_(c)}`}}delete s.hidden,delete s.linkId;let l=Jd(a);if(l.length>0){let d=l.sl
       background: color-mix(in srgb, var(--wa-accent) 30%, var(--wa-card));
       box-shadow: inset 0 0 0 2px var(--wa-accent);
     }
-    .pinned-set .layer.pinned.with-tap.hl,
-    .pinned-set .layer.pinned.with-tap.tapsel { background: transparent; box-shadow: none; }
-    .layer.pinned.with-tap.hl:not(.tapsel)::before { border-radius: 0; }
     .tap-strip .tap-glyph { display: grid; place-items: center; flex: none; }
     .tap-strip .tap-glyph svg { width: 13px; height: 13px; }
     .tap-strip .tap-words { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -4132,35 +4128,19 @@ ${z_(c)}`}}delete s.hidden,delete s.linkId;let l=Jd(a);if(l.length>0){let d=l.sl
       padding-top: 0; padding-bottom: 0; border-top-width: 0; border-bottom-width: 0;
       opacity: 0; overflow: hidden;
     }
-    /* The shape row closes the list, under a hairline that runs the full
-       width of the card: it is the ground everything else is drawn on, not
-       another layer in the stack, so nothing can be dropped below it. */
-    .layer.pinned {
-      flex: none; margin: 0; padding: 0 12px 0 10px; min-height: 46px; border-radius: 0;
-      border-top: 1px solid var(--wa-line);
-    }
     /* The row that is not a layer: Background, the shape under everything and
        what a tap anywhere else does. It cannot be dragged, grouped or
-       deleted, so it sits in a tray of its own below one hairline, full-bleed
-       to the card's edges, a shade darker than the rows above so the list
-       reads as the part you can actually reorder. */
+       deleted, so it sits below one hairline, where nothing can be dropped
+       past it. The row itself looks like every other row, tap strip and all:
+       the darker full-bleed tray it used to sit in read as a different kind
+       of thing from the layers (Jesse, 2026-09-24). */
     .pinned-set {
-      flex: none; margin: 0; border-top: 1px solid var(--wa-line-strong);
-      background: color-mix(in srgb, var(--wa-ink) 5%, transparent);
+      flex: none; margin: 6px 0 0; padding: 6px 8px 8px; border-top: 1px solid var(--wa-line);
+      display: flex; flex-direction: column; gap: 4px;
     }
-    /* The tray's rows keep the tray's own ground and its hairlines. An outline
-       each would box in two rows that are not part of the stack above. */
-    .pinned-set .layer.pinned { margin: 0; border-top: 0; }
     /* Inline has no stack above its rows, so they sit at the foot of the card,
        where a canvas shape's own rows end up. */
     .inline-layers .pinned-set { margin-top: auto; }
-    .pinned-set .layer.pinned:not(.hl):not(.lit) { background: transparent; box-shadow: none; }
-    .pinned-set .layer.pinned:not(.hl):not(.lit):hover {
-      background: color-mix(in srgb, var(--wa-ink) 5%, transparent); box-shadow: none;
-    }
-    .pinned-set .layer.pinned + .layer.pinned {
-      border-top: 1px solid color-mix(in srgb, var(--wa-line) 70%, transparent);
-    }
     .layer.pinned .grip { cursor: default; }
     .group-cta {
       display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 8px; margin-bottom: 6px; border-radius: 8px;
