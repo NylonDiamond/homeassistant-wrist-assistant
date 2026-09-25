@@ -4890,14 +4890,15 @@ ${F_(c)}`}}delete s.hidden,delete s.linkId;let l=Wd(a);if(l.length>0){let d=l.sl
     /* On the stage the line is the whole face, so it grows and shrinks with
        the stage the way a rectangular face does: its type is sized so an 11em
        pill (about a rectangular slot's width at the watch's 15pt) spans the
-       stage less its 48px of gutter, the width a rectangular face takes. The
-       size container is .stage-wrap. Everything else in the pill, symbols
-       included, is in em so it follows, and the zoom buttons scale it all. A
-       line wider than the stage ends in an ellipsis, as it does on the wrist. */
+       stage less its 48px of gutter, the width a rectangular face takes, and
+       never under 120px or over 720px. The size container is .stage-wrap.
+       The pill's width and everything in it, symbols included, is in em, so
+       the whole line scales like a picture: a line that ends in an ellipsis
+       at one size ends at the same letter at every size, as on the wrist.
+       The zoom buttons scale it all. */
     .stage-face > .preview.inline .inline-line {
-      font-size: calc(max(15px, min((100cqw - 48px) / 11, 60px)) * var(--wa-zoom, 1));
-      gap: .4em; min-width: 11em; padding: .45em 1.1em; box-sizing: border-box;
-      max-width: calc((100cqw - 48px) * var(--wa-zoom, 1));
+      font-size: calc(clamp(120px, 100cqw - 48px, 720px) / 11 * var(--wa-zoom, 1));
+      gap: .4em; width: 11em; min-width: 0; padding: .45em 1.1em; box-sizing: border-box;
     }
     .stage-face > .preview.inline .inline-line > span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .stage-face > .preview.inline .inline-line svg { flex: none; width: 1em; height: 1em; }
