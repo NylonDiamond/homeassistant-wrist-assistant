@@ -5027,11 +5027,13 @@ export class WristAssistantPanel extends LitElement {
     .values-foot {
       display: flex; flex: none; min-width: 0; padding: 0 16px 14px; container: vfoot / inline-size;
     }
+    /* A head row (Live at one end, Back to live at the other) over one value
+       per row: the name on the left, its control on the right. */
     .values-bar {
-      display: flex; flex: 1; align-items: center; gap: 10px; min-width: 0; min-height: 40px; padding: 4px 8px 4px 14px;
+      display: flex; flex: 1; flex-direction: column; gap: 6px; min-width: 0; padding: 6px 8px 8px;
       border-radius: 12px; background: var(--wa-float-bg); border: 1px solid var(--wa-float-line); box-shadow: var(--wa-float-shadow);
     }
-    .values-bar .tb-sep { margin: 0; }
+    .vb-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 24px; padding-left: 6px; }
     .vb-state {
       display: inline-flex; align-items: center; gap: 6px; flex: none;
       font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--wa-muted);
@@ -5039,42 +5041,46 @@ export class WristAssistantPanel extends LitElement {
     .vb-dot { width: 6px; height: 6px; border-radius: 3px; background: var(--wa-live); box-shadow: 0 0 6px var(--wa-live); }
     .values-bar.testing .vb-state { color: var(--wa-testing); }
     .values-bar.testing .vb-dot { background: var(--wa-testing); box-shadow: 0 0 6px var(--wa-testing); }
-    .vb-empty { min-width: 0; font-size: 11.5px; color: var(--wa-muted); }
-    /* The bar spans the stage, one value per row: the name on the left, its
-       control on the right. Past seven rows (28 px each, 6 px gaps), or 40%
-       of the window, the rest scrolls down. */
+    .vb-empty { min-width: 0; padding: 0 6px; font-size: 11.5px; color: var(--wa-muted); }
+    /* Past seven rows (30 px each, 4 px gaps), or 40% of the window, the rest
+       scrolls down. */
     .vb-pills {
-      display: flex; flex: 1; flex-direction: column; align-items: stretch; gap: 6px; min-width: 0;
-      max-height: min(40vh, 236px); padding: 2px 0; overflow-y: auto; scrollbar-width: thin;
-    }
-    .vb-pills .vpill b { flex: 1; max-width: none; }
-    /* A phone-width stage has no room for a name beside a control: one row
-       of pills that scrolls sideways, as before. */
-    @container vfoot (max-width: 520px) {
-      .vb-pills { flex-direction: row; max-height: none; overflow-x: auto; overflow-y: hidden; }
-      .vb-pills .vpill b { flex: none; max-width: 160px; }
+      display: flex; flex-direction: column; align-items: stretch; gap: 4px; min-width: 0;
+      max-height: min(40vh, 236px); overflow-y: auto; scrollbar-width: thin;
     }
     .vchip.vpill {
-      display: inline-flex; align-items: center; gap: 8px; flex: none; width: auto; height: 28px; padding: 0 10px; border-radius: 8px;
+      display: flex; align-items: center; gap: 8px; flex: none; width: auto; height: 30px; padding: 0 10px; border-radius: 8px;
       background: var(--wa-chip-bg); border: 1px solid var(--wa-chip-line); font-size: 11.5px; color: var(--wa-ink); cursor: default;
     }
     .vpill .vp-icon { display: inline-flex; flex: none; color: var(--k); }
     .vpill .vp-icon svg { width: 13px; height: 13px; }
-    .vpill b { max-width: 160px; font-weight: 500; }
-    .vchip.vpill .test-ctl { flex: none; gap: 8px; }
-    .vchip.vpill .test-ctl input[type=range] { flex: none; width: 64px; min-width: 64px; height: 14px; }
+    .vpill b { flex: 1; font-weight: 500; }
+    /* Every control sits in one column of the same width, so the sliders,
+       pickers and readings line up down the rows. */
+    .vchip.vpill .test-ctl { flex: none; width: 260px; justify-content: flex-end; gap: 10px; }
+    .vchip.vpill .test-ctl input[type=range] { flex: 1 1 auto; min-width: 64px; height: 14px; }
     .vpill .test-ctl .val, .vpill .test-ctl input[type=text] { order: -1; }
     .vchip.vpill button.val {
-      min-width: 0; text-align: left; color: var(--wa-ink); font-family: inherit; font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums;
+      flex: none; min-width: 64px; text-align: right; color: var(--wa-ink); font-family: inherit; font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums;
     }
     .vchip.vpill.testing { box-shadow: none; border-color: var(--wa-testing); }
     .vchip.vpill.testing button.val { color: var(--wa-testing); }
-    .vchip.vpill .test-ctl select { min-height: 22px; padding: 1px 4px; font-size: 11.5px; }
+    /* A picker drawn like the pill it sits in, not the black input well: a
+       faint tint and hairline, brighter on hover. */
+    .vchip.vpill .test-ctl select {
+      width: 100%; height: 22px; min-height: 22px; padding: 0 24px 0 8px; font-size: 11.5px; font-weight: 600;
+      border-color: color-mix(in srgb, var(--wa-ink) 12%, transparent); background-color: color-mix(in srgb, var(--wa-ink) 6%, transparent);
+      background-position: right 6px center; background-size: 12px;
+    }
+    .vchip.vpill .test-ctl select:hover { background-color: color-mix(in srgb, var(--wa-ink) 11%, transparent); }
+    .vchip.vpill .test-ctl select option { background: var(--wa-panel); color: var(--wa-ink); }
+    .vchip.vpill.testing .test-ctl select { color: var(--wa-testing); border-color: color-mix(in srgb, var(--wa-testing) 45%, transparent); }
     .vchip.vpill input[type=text] { width: 80px; min-height: 22px; font-size: 11.5px; }
-    .vchip.vpill .vtag { background: transparent; border: 1px solid var(--wa-float-sep); font-size: 9.5px; line-height: 14px; padding: 0 4px; }
+    .vchip.vpill .vtag { flex: none; background: transparent; border: 1px solid var(--wa-float-sep); font-size: 9.5px; line-height: 14px; padding: 0 4px; }
     .vpill button.live-reset { display: inline-flex; flex: none; padding: 0; border: 0; background: transparent; color: var(--wa-muted); cursor: pointer; }
     .vpill button.live-reset:hover { color: var(--wa-ink); }
     .vpill button.live-reset svg { width: 13px; height: 13px; }
+    .vpill .live-reset-slot { flex: none; width: 13px; }
     button.vb-live {
       flex: none; height: 24px; padding: 0 8px; border: 1px solid transparent; border-radius: 7px; cursor: pointer;
       font: inherit; font-size: 11px; font-weight: 600; white-space: nowrap; background: transparent; color: var(--wa-muted);
@@ -5082,6 +5088,23 @@ export class WristAssistantPanel extends LitElement {
     button.vb-live:hover:not(:disabled) { color: var(--wa-ink); background: color-mix(in srgb, var(--wa-ink) 8%, transparent); }
     button.vb-live:disabled { opacity: .45; cursor: default; }
     button.vb-live:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    /* A phone-width stage has no room for a name beside a control: Live, the
+       values and Back to live share one row that scrolls sideways. */
+    @container vfoot (max-width: 520px) {
+      .values-bar { flex-direction: row; align-items: center; gap: 10px; padding: 4px 8px 4px 14px; }
+      .vb-head { display: contents; }
+      .vb-state { order: 0; }
+      .vb-pills, .vb-empty { order: 1; }
+      button.vb-live { order: 2; }
+      .vb-pills { flex: 1; flex-direction: row; max-height: none; padding: 2px 0; overflow-x: auto; overflow-y: hidden; }
+      .vchip.vpill { height: 28px; }
+      .vpill b { flex: none; max-width: 160px; }
+      .vchip.vpill .test-ctl { width: auto; gap: 8px; }
+      .vchip.vpill .test-ctl input[type=range] { flex: none; width: 64px; }
+      .vchip.vpill button.val { min-width: 0; }
+      .vchip.vpill .test-ctl select { width: auto; }
+      .vpill .live-reset-slot { display: none; }
+    }
     /* An empty complication: what the black box is, and four ways to start. */
     .first-run-note {
       position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
@@ -17911,16 +17934,23 @@ export class WristAssistantPanel extends LitElement {
     const shared = testableSharedValues(cfg).filter((n) => named.has(n.id));
     const testing = this.testValues.size > 0;
     const title = isLibraryOwner(this.selectedOwner) ? "Values it reads" : `Values on the ${this.deviceWord}`;
-    // One floating bar at the foot of the stage, the same family as the
-    // toolbar over it. It reads Live until any value is overridden, then
-    // Testing, with Back to live beside it. Each value is a pill that keeps its
-    // own slider, picker or box; a row too long for the bar scrolls sideways.
+    // One floating panel at the foot of the stage, the same family as the
+    // toolbar over it. Its head reads Live until any value is overridden, then
+    // Testing, with Back to live at the other end. Each value is a row that
+    // keeps its own slider, picker or box. A phone-width stage folds the head
+    // into one sideways row with the values (see the vfoot container rule).
+    // The reset slot is kept while live, so every control ends at one edge.
+    const resetSlot = html`<span class="live-reset-slot" aria-hidden="true"></span>`;
     return html`<div class="values-foot"><div class="values-bar ${testing ? "testing" : ""}" role="group" aria-label=${title}>
-      <span class="vb-state" title=${testing
-        ? "Testing: the face is drawn with the values you set here. Nothing is saved."
-        : "Live: the face is drawn with what the house says right now. Slide, pick or type a value to try another."}>
-        <i class="vb-dot" aria-hidden="true"></i>${testing ? "Testing" : "Live"}</span>
-      <span class="tb-sep" aria-hidden="true"></span>
+      <div class="vb-head">
+        <span class="vb-state" title=${testing
+          ? "Testing: the face is drawn with the values you set here. Nothing is saved."
+          : "Live: the face is drawn with what the house says right now. Slide, pick or type a value to try another."}>
+          <i class="vb-dot" aria-hidden="true"></i>${testing ? "Testing" : "Live"}</span>
+        <button type="button" class="vb-live" ?disabled=${!testing}
+          title=${testing ? "Drop every value you set here and draw the face from the house again" : "Already live"}
+          @click=${() => { this.editingValue = undefined; this.applyTestValues(new Map()); }}>Back to live</button>
+      </div>
       ${ids.length === 0 && shared.length === 0 ? html`<span class="vb-empty">${this.inControlView
         ? "The control reads no entity yet. Point its target, title or value line at one."
         : "No entities yet. Each layer you add brings its entity here."}</span>` : html`<div class="vb-pills">
@@ -17939,7 +17969,7 @@ export class WristAssistantPanel extends LitElement {
             ${override !== undefined
               ? html`<button type="button" class="live-reset" title=${`Back to the live value: ${live}`} aria-label=${`Back to the live value of ${name}`}
                   @click=${() => this.setTestValue(id, undefined)}>${uiIcon("reset")}</button>`
-              : nothing}
+              : resetSlot}
           </div>`;
         })}
         ${shared.map((n) => {
@@ -17954,19 +17984,15 @@ export class WristAssistantPanel extends LitElement {
           return html`<div class="vchip vpill ctl ${override !== undefined ? "testing" : ""}" style=${`--k:${SECTION_COLOR.complication}`}
             title=${override !== undefined ? `Saved value: ${live}` : ""}>
             <span class="vp-icon">${uiIcon("content")}</span><b>${name}</b>
-            ${this.renderTestControl(key, name, s, override, "", live)}
             <span class="vtag" title="A shared value. Trying one here is not saved; change it in Shared values to keep it.">shared</span>
+            ${this.renderTestControl(key, name, s, override, "", live)}
             ${override !== undefined
               ? html`<button type="button" class="live-reset" title=${`Back to the saved value: ${live}`} aria-label=${`Back to the saved value of ${name}`}
                   @click=${() => this.setTestValue(key, undefined)}>${uiIcon("reset")}</button>`
-              : nothing}
+              : resetSlot}
           </div>`;
         })}
       </div>`}
-      <span class="tb-sep" aria-hidden="true"></span>
-      <button type="button" class="vb-live" ?disabled=${!testing}
-        title=${testing ? "Drop every value you set here and draw the face from the house again" : "Already live"}
-        @click=${() => { this.editingValue = undefined; this.applyTestValues(new Map()); }}>Back to live</button>
     </div></div>`;
   }
 

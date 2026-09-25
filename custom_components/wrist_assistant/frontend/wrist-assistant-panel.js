@@ -5447,11 +5447,13 @@ ${LO(c)}`}}delete s.hidden,delete s.linkId;let l=Fc(a);if(l.length>0){let d=l.sl
     .values-foot {
       display: flex; flex: none; min-width: 0; padding: 0 16px 14px; container: vfoot / inline-size;
     }
+    /* A head row (Live at one end, Back to live at the other) over one value
+       per row: the name on the left, its control on the right. */
     .values-bar {
-      display: flex; flex: 1; align-items: center; gap: 10px; min-width: 0; min-height: 40px; padding: 4px 8px 4px 14px;
+      display: flex; flex: 1; flex-direction: column; gap: 6px; min-width: 0; padding: 6px 8px 8px;
       border-radius: 12px; background: var(--wa-float-bg); border: 1px solid var(--wa-float-line); box-shadow: var(--wa-float-shadow);
     }
-    .values-bar .tb-sep { margin: 0; }
+    .vb-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 24px; padding-left: 6px; }
     .vb-state {
       display: inline-flex; align-items: center; gap: 6px; flex: none;
       font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--wa-muted);
@@ -5459,42 +5461,46 @@ ${LO(c)}`}}delete s.hidden,delete s.linkId;let l=Fc(a);if(l.length>0){let d=l.sl
     .vb-dot { width: 6px; height: 6px; border-radius: 3px; background: var(--wa-live); box-shadow: 0 0 6px var(--wa-live); }
     .values-bar.testing .vb-state { color: var(--wa-testing); }
     .values-bar.testing .vb-dot { background: var(--wa-testing); box-shadow: 0 0 6px var(--wa-testing); }
-    .vb-empty { min-width: 0; font-size: 11.5px; color: var(--wa-muted); }
-    /* The bar spans the stage, one value per row: the name on the left, its
-       control on the right. Past seven rows (28 px each, 6 px gaps), or 40%
-       of the window, the rest scrolls down. */
+    .vb-empty { min-width: 0; padding: 0 6px; font-size: 11.5px; color: var(--wa-muted); }
+    /* Past seven rows (30 px each, 4 px gaps), or 40% of the window, the rest
+       scrolls down. */
     .vb-pills {
-      display: flex; flex: 1; flex-direction: column; align-items: stretch; gap: 6px; min-width: 0;
-      max-height: min(40vh, 236px); padding: 2px 0; overflow-y: auto; scrollbar-width: thin;
-    }
-    .vb-pills .vpill b { flex: 1; max-width: none; }
-    /* A phone-width stage has no room for a name beside a control: one row
-       of pills that scrolls sideways, as before. */
-    @container vfoot (max-width: 520px) {
-      .vb-pills { flex-direction: row; max-height: none; overflow-x: auto; overflow-y: hidden; }
-      .vb-pills .vpill b { flex: none; max-width: 160px; }
+      display: flex; flex-direction: column; align-items: stretch; gap: 4px; min-width: 0;
+      max-height: min(40vh, 236px); overflow-y: auto; scrollbar-width: thin;
     }
     .vchip.vpill {
-      display: inline-flex; align-items: center; gap: 8px; flex: none; width: auto; height: 28px; padding: 0 10px; border-radius: 8px;
+      display: flex; align-items: center; gap: 8px; flex: none; width: auto; height: 30px; padding: 0 10px; border-radius: 8px;
       background: var(--wa-chip-bg); border: 1px solid var(--wa-chip-line); font-size: 11.5px; color: var(--wa-ink); cursor: default;
     }
     .vpill .vp-icon { display: inline-flex; flex: none; color: var(--k); }
     .vpill .vp-icon svg { width: 13px; height: 13px; }
-    .vpill b { max-width: 160px; font-weight: 500; }
-    .vchip.vpill .test-ctl { flex: none; gap: 8px; }
-    .vchip.vpill .test-ctl input[type=range] { flex: none; width: 64px; min-width: 64px; height: 14px; }
+    .vpill b { flex: 1; font-weight: 500; }
+    /* Every control sits in one column of the same width, so the sliders,
+       pickers and readings line up down the rows. */
+    .vchip.vpill .test-ctl { flex: none; width: 260px; justify-content: flex-end; gap: 10px; }
+    .vchip.vpill .test-ctl input[type=range] { flex: 1 1 auto; min-width: 64px; height: 14px; }
     .vpill .test-ctl .val, .vpill .test-ctl input[type=text] { order: -1; }
     .vchip.vpill button.val {
-      min-width: 0; text-align: left; color: var(--wa-ink); font-family: inherit; font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums;
+      flex: none; min-width: 64px; text-align: right; color: var(--wa-ink); font-family: inherit; font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums;
     }
     .vchip.vpill.testing { box-shadow: none; border-color: var(--wa-testing); }
     .vchip.vpill.testing button.val { color: var(--wa-testing); }
-    .vchip.vpill .test-ctl select { min-height: 22px; padding: 1px 4px; font-size: 11.5px; }
+    /* A picker drawn like the pill it sits in, not the black input well: a
+       faint tint and hairline, brighter on hover. */
+    .vchip.vpill .test-ctl select {
+      width: 100%; height: 22px; min-height: 22px; padding: 0 24px 0 8px; font-size: 11.5px; font-weight: 600;
+      border-color: color-mix(in srgb, var(--wa-ink) 12%, transparent); background-color: color-mix(in srgb, var(--wa-ink) 6%, transparent);
+      background-position: right 6px center; background-size: 12px;
+    }
+    .vchip.vpill .test-ctl select:hover { background-color: color-mix(in srgb, var(--wa-ink) 11%, transparent); }
+    .vchip.vpill .test-ctl select option { background: var(--wa-panel); color: var(--wa-ink); }
+    .vchip.vpill.testing .test-ctl select { color: var(--wa-testing); border-color: color-mix(in srgb, var(--wa-testing) 45%, transparent); }
     .vchip.vpill input[type=text] { width: 80px; min-height: 22px; font-size: 11.5px; }
-    .vchip.vpill .vtag { background: transparent; border: 1px solid var(--wa-float-sep); font-size: 9.5px; line-height: 14px; padding: 0 4px; }
+    .vchip.vpill .vtag { flex: none; background: transparent; border: 1px solid var(--wa-float-sep); font-size: 9.5px; line-height: 14px; padding: 0 4px; }
     .vpill button.live-reset { display: inline-flex; flex: none; padding: 0; border: 0; background: transparent; color: var(--wa-muted); cursor: pointer; }
     .vpill button.live-reset:hover { color: var(--wa-ink); }
     .vpill button.live-reset svg { width: 13px; height: 13px; }
+    .vpill .live-reset-slot { flex: none; width: 13px; }
     button.vb-live {
       flex: none; height: 24px; padding: 0 8px; border: 1px solid transparent; border-radius: 7px; cursor: pointer;
       font: inherit; font-size: 11px; font-weight: 600; white-space: nowrap; background: transparent; color: var(--wa-muted);
@@ -5502,6 +5508,23 @@ ${LO(c)}`}}delete s.hidden,delete s.linkId;let l=Fc(a);if(l.length>0){let d=l.sl
     button.vb-live:hover:not(:disabled) { color: var(--wa-ink); background: color-mix(in srgb, var(--wa-ink) 8%, transparent); }
     button.vb-live:disabled { opacity: .45; cursor: default; }
     button.vb-live:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    /* A phone-width stage has no room for a name beside a control: Live, the
+       values and Back to live share one row that scrolls sideways. */
+    @container vfoot (max-width: 520px) {
+      .values-bar { flex-direction: row; align-items: center; gap: 10px; padding: 4px 8px 4px 14px; }
+      .vb-head { display: contents; }
+      .vb-state { order: 0; }
+      .vb-pills, .vb-empty { order: 1; }
+      button.vb-live { order: 2; }
+      .vb-pills { flex: 1; flex-direction: row; max-height: none; padding: 2px 0; overflow-x: auto; overflow-y: hidden; }
+      .vchip.vpill { height: 28px; }
+      .vpill b { flex: none; max-width: 160px; }
+      .vchip.vpill .test-ctl { width: auto; gap: 8px; }
+      .vchip.vpill .test-ctl input[type=range] { flex: none; width: 64px; }
+      .vchip.vpill button.val { min-width: 0; }
+      .vchip.vpill .test-ctl select { width: auto; }
+      .vpill .live-reset-slot { display: none; }
+    }
     /* An empty complication: what the black box is, and four ways to start. */
     .first-run-note {
       position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
@@ -8300,31 +8323,31 @@ ${LO(c)}`}}delete s.hidden,delete s.linkId;let l=Fc(a);if(l.length>0){let d=l.sl
         title=${r?"Remove the Control Center control":"This complication is only its control. Delete the whole complication instead."}
         aria-label="Remove the Control Center control"
         @click=${o=>{o.stopPropagation(),this.removeControl()}}>${I("delete")}</button>`:m}
-    </span>`}renderValuesRow(){let t=this.draft?.config;if(!t)return m;let i=this.inControlView?{kind:"control"}:{kind:"family",family:this.activeFamily},a=new Set(this.compiled?.entities.keys()??[]),r=hv(t,i,p=>a.has(p)),o=r.entityIds.filter(p=>a.has(p)),s=new Set(r.namedIds),l=zv(t).filter(p=>s.has(p.id)),d=this.testValues.size>0,c=Oe(this.selectedOwner)?"Values it reads":`Values on the ${this.deviceWord}`;return u`<div class="values-foot"><div class="values-bar ${d?"testing":""}" role="group" aria-label=${c}>
-      <span class="vb-state" title=${d?"Testing: the face is drawn with the values you set here. Nothing is saved.":"Live: the face is drawn with what the house says right now. Slide, pick or type a value to try another."}>
-        <i class="vb-dot" aria-hidden="true"></i>${d?"Testing":"Live"}</span>
-      <span class="tb-sep" aria-hidden="true"></span>
+    </span>`}renderValuesRow(){let t=this.draft?.config;if(!t)return m;let i=this.inControlView?{kind:"control"}:{kind:"family",family:this.activeFamily},a=new Set(this.compiled?.entities.keys()??[]),r=hv(t,i,h=>a.has(h)),o=r.entityIds.filter(h=>a.has(h)),s=new Set(r.namedIds),l=zv(t).filter(h=>s.has(h.id)),d=this.testValues.size>0,c=Oe(this.selectedOwner)?"Values it reads":`Values on the ${this.deviceWord}`,p=u`<span class="live-reset-slot" aria-hidden="true"></span>`;return u`<div class="values-foot"><div class="values-bar ${d?"testing":""}" role="group" aria-label=${c}>
+      <div class="vb-head">
+        <span class="vb-state" title=${d?"Testing: the face is drawn with the values you set here. Nothing is saved.":"Live: the face is drawn with what the house says right now. Slide, pick or type a value to try another."}>
+          <i class="vb-dot" aria-hidden="true"></i>${d?"Testing":"Live"}</span>
+        <button type="button" class="vb-live" ?disabled=${!d}
+          title=${d?"Drop every value you set here and draw the face from the house again":"Already live"}
+          @click=${()=>{this.editingValue=void 0,this.applyTestValues(new Map)}}>Back to live</button>
+      </div>
       ${o.length===0&&l.length===0?u`<span class="vb-empty">${this.inControlView?"The control reads no entity yet. Point its target, title or value line at one.":"No entities yet. Each layer you add brings its entity here."}</span>`:u`<div class="vb-pills">
-        ${o.map(p=>{let h=this.hass.states[p],f=typeof h?.attributes.friendly_name=="string"?h.attributes.friendly_name:p,g=typeof h?.attributes.unit_of_measurement=="string"?` ${h.attributes.unit_of_measurement}`:"",y=h?`${h.state}${g}`:"not in Home Assistant",b=this.testValues.get(p),v=t.elements.find(k=>xo(t,k.payload.id).some(S=>S.ref.entityId===p))?.kind??"text";return u`<div class="vchip vpill ctl ${b!==void 0?"testing":""}" style=${`--k:${ut[v]}`}
-            title=${b!==void 0?`Live value: ${y}`:p}>
-            <span class="vp-icon">${kr(p.split(".")[0]??"")}</span><b>${f}</b>
-            ${this.renderTestControl(p,f,h,b,g,y)}
-            ${b!==void 0?u`<button type="button" class="live-reset" title=${`Back to the live value: ${y}`} aria-label=${`Back to the live value of ${f}`}
-                  @click=${()=>this.setTestValue(p,void 0)}>${I("reset")}</button>`:m}
+        ${o.map(h=>{let f=this.hass.states[h],g=typeof f?.attributes.friendly_name=="string"?f.attributes.friendly_name:h,y=typeof f?.attributes.unit_of_measurement=="string"?` ${f.attributes.unit_of_measurement}`:"",b=f?`${f.state}${y}`:"not in Home Assistant",w=this.testValues.get(h),k=t.elements.find(S=>xo(t,S.payload.id).some(R=>R.ref.entityId===h))?.kind??"text";return u`<div class="vchip vpill ctl ${w!==void 0?"testing":""}" style=${`--k:${ut[k]}`}
+            title=${w!==void 0?`Live value: ${b}`:h}>
+            <span class="vp-icon">${kr(h.split(".")[0]??"")}</span><b>${g}</b>
+            ${this.renderTestControl(h,g,f,w,y,b)}
+            ${w!==void 0?u`<button type="button" class="live-reset" title=${`Back to the live value: ${b}`} aria-label=${`Back to the live value of ${g}`}
+                  @click=${()=>this.setTestValue(h,void 0)}>${I("reset")}</button>`:p}
           </div>`})}
-        ${l.map(p=>{let h=om(p.id),f=this.sharedRaw(p.id)??"",g=f===""?"empty":f,y=p.name||"(unnamed)",b=this.testValues.get(h),w={entity_id:h,state:f,attributes:{},last_changed:"",last_updated:""};return u`<div class="vchip vpill ctl ${b!==void 0?"testing":""}" style=${`--k:${ye.complication}`}
-            title=${b!==void 0?`Saved value: ${g}`:""}>
-            <span class="vp-icon">${I("content")}</span><b>${y}</b>
-            ${this.renderTestControl(h,y,w,b,"",g)}
+        ${l.map(h=>{let f=om(h.id),g=this.sharedRaw(h.id)??"",y=g===""?"empty":g,b=h.name||"(unnamed)",w=this.testValues.get(f),v={entity_id:f,state:g,attributes:{},last_changed:"",last_updated:""};return u`<div class="vchip vpill ctl ${w!==void 0?"testing":""}" style=${`--k:${ye.complication}`}
+            title=${w!==void 0?`Saved value: ${y}`:""}>
+            <span class="vp-icon">${I("content")}</span><b>${b}</b>
             <span class="vtag" title="A shared value. Trying one here is not saved; change it in Shared values to keep it.">shared</span>
-            ${b!==void 0?u`<button type="button" class="live-reset" title=${`Back to the saved value: ${g}`} aria-label=${`Back to the saved value of ${y}`}
-                  @click=${()=>this.setTestValue(h,void 0)}>${I("reset")}</button>`:m}
+            ${this.renderTestControl(f,b,v,w,"",y)}
+            ${w!==void 0?u`<button type="button" class="live-reset" title=${`Back to the saved value: ${y}`} aria-label=${`Back to the saved value of ${b}`}
+                  @click=${()=>this.setTestValue(f,void 0)}>${I("reset")}</button>`:p}
           </div>`})}
       </div>`}
-      <span class="tb-sep" aria-hidden="true"></span>
-      <button type="button" class="vb-live" ?disabled=${!d}
-        title=${d?"Drop every value you set here and draw the face from the house again":"Already live"}
-        @click=${()=>{this.editingValue=void 0,this.applyTestValues(new Map)}}>Back to live</button>
     </div></div>`}renderTestControl(t,i,a,r,o,s){let l=r??a?.state??"",d=Gv(t,a,r);if(d.kind==="choice")return u`<span class="test-ctl"><select aria-label=${`Test value for ${i}`} @change=${f=>this.setTestValue(t,f.target.value)}>
         ${d.options.map(f=>u`<option value=${f} ?selected=${f===l}>${f}</option>`)}
       </select></span>`;let c=this.editingValue===t?u`<input type="text" .value=${l} aria-label=${`Test value for ${i}`}
