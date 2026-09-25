@@ -1189,10 +1189,36 @@ describe("the scene presets", () => {
     const temps = named(medium, "Temperatures");
     expect(temps?.kind).toBe("text");
     if (temps?.kind !== "text") return;
-    expect(temps.payload.value.kind).toEqual({
-      kind: "jinja",
-      value: "{{ states('sensor.kitchen_temperature') | float(0) | round(0) | int }}° in · {{ state_attr('weather.home', 'temperature') | float(0) | round(0) | int }}° out",
-    });
+    // Rich text, not a template: each reading is a part picked from a list.
+    expect(temps.payload.parts!.map((p) => p.value.kind)).toEqual([
+      expect.objectContaining({ kind: "entityState", entityId: "sensor.kitchen_temperature" }),
+      { kind: "literal", value: " in" },
+      { kind: "literal", value: " · " },
+      expect.objectContaining({ kind: "entityAttribute", entityId: "weather.home", attribute: "temperature" }),
+      { kind: "literal", value: " out" },
+    ]);
+    expect(temps.payload.value.kind).toMatchObject({ kind: "entityState", entityId: "sensor.kitchen_temperature" });
+    const door = named(medium, "Lock");
+    if (door?.kind !== "text") throw new Error("no door line");
+    expect(door.payload.parts!.map((p) => p.value.kind)).toEqual([
+      { kind: "literal", value: "Front door " },
+      expect.objectContaining({ kind: "entityState", entityId: "lock.front_door" }),
+    ]);
+    const all = [large, medium].flatMap((c) => c.elements);
+    expect(all.some((e) => e.kind === "text" && e.payload.value.kind.kind === "jinja")).toBe(false);
+  });
+
+  it("shows the house's lock before a car's, and a front door before either", () => {
+    const env = home();
+    env.states!["lock.car_doors"] = entity("lock.car_doors", "unlocked", { friendly_name: "Car doors" });
+    env.states!["lock.back_door"] = entity("lock.back_door", "locked", { friendly_name: "Back door" });
+    env.registry!.entities!["lock.back_door"] = { area_id: "kitchen" };
+    const withFront = build("houseScene", env);
+    expect(named(withFront, "Front door card")).toBeDefined();
+    delete env.states!["lock.front_door"];
+    const backOnly = build("houseScene", env);
+    expect(named(backOnly, "Back door card")).toBeDefined();
+    expect(named(backOnly, "Car doors card")).toBeUndefined();
   });
 
   it("draws a house with dark, untappable windows in a home with no lights", () => {

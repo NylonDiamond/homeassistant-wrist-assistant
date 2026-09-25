@@ -31,6 +31,7 @@ import {
   type Rule,
   type StyleChange,
   type TapAction,
+  type TextPart,
   type Value,
   CONTROL_DEFAULT_SYMBOL,
   CUSTOM_SVG_SYMBOL,
@@ -45,8 +46,10 @@ import {
   attachTap,
   literal,
   newElement,
+  newId,
   newRule,
   newStyleChange,
+  richTextFallback,
   seedTimelineBands,
 } from "./model.js";
 
@@ -2905,8 +2908,8 @@ function addHouseChips(
   if (weather) {
     chips.push({ label: "Outside", value: { kind: { kind: "entityAttribute", ...refOf(env, weather), attribute: "temperature" }, format: { decimals: 0, suffix: "°" } } });
   }
-  const lock = entitiesOf(env, "lock")[0];
-  if (lock) chips.push({ label: refOf(env, lock).displayName, value: { kind: { kind: "entityState", ...refOf(env, lock) }, format: { textCase: "capitalized" } } });
+  const lock = houseLockOf(env);
+  if (lock) chips.push({ label: lockLabelOf(env, lock), value: { kind: { kind: "entityState", ...refOf(env, lock) }, format: { textCase: "capitalized" } } });
   if (chips.length === 0) return;
   const gap = 8;
   const width = (336 - gap * (chips.length - 1)) / chips.length;
@@ -2935,8 +2938,38 @@ function addHouseChips(
   });
 }
 
+/** The lock the house shows: a front door first, then one in an area before
+ * one in none (a car's lock is rarely in a room). */
+function houseLockOf(env: PresetEnv): string | undefined {
+  const locks = entitiesOf(env, "lock");
+  const score = (id: string) => {
+    const name = `${id} ${refOf(env, id).displayName}`.toLowerCase();
+    return (name.includes("front") ? 2 : 0) + (areaIdOf(env, id) !== undefined ? 1 : 0);
+  };
+  return [...locks].sort((a, b) => score(b) - score(a))[0];
+}
+
+/** What the house calls its lock: "Front door" when it is one, else its name. */
+function lockLabelOf(env: PresetEnv, lock: string): string {
+  const name = refOf(env, lock).displayName;
+  return `${lock} ${name}`.toLowerCase().includes("front") ? "Front door" : name;
+}
+
+/** A rich text part: a live value, or typed words. */
+function textPart(value: Value): TextPart {
+  return { id: newId(), value };
+}
+
+/** Give a text layer these parts, and the value an older watch app shows
+ * instead. */
+function setParts(el: Extract<Element, { kind: "text" }>, parts: TextPart[]): void {
+  el.payload.parts = parts;
+  el.payload.value = richTextFallback(parts);
+}
+
 /** The medium tile's two lines in the bottom left: the temperatures, then the
- * front door. Templates, because each line reads two or more entities. */
+ * front door. Rich text, so each reading is a part the author picks from a
+ * list rather than a template to edit. */
 function addHouseFootnote(
   cfg: CustomComplicationConfig,
   env: PresetEnv,
@@ -2944,18 +2977,21 @@ function addHouseFootnote(
   byDay: (el: Element, changes: StyleChange[]) => void,
   put: ScenePut,
 ): void {
-  const whole = (expr: string) => `{{ ${expr} | float(0) | round(0) | int }}`;
-  const parts: string[] = [];
-  const climate = entitiesOf(env, "climate").find((id) => env.states?.[id]?.attributes?.current_temperature !== undefined);
-  const sensor = entitiesOf(env, "sensor").find((id) => deviceClassOf(env, id) === "temperature" && !id.includes("outdoor") && !id.includes("outside"));
-  if (sensor) parts.push(`${whole(`states('${sensor}')`)}° in`);
-  else if (climate) parts.push(`${whole(`state_attr('${climate}', 'current_temperature')`)}° in`);
+  const parts: TextPart[] = [];
+  const inside = temperatureValue(env, (id) => !id.includes("outdoor") && !id.includes("outside"));
+  if (inside) parts.push(textPart(inside), textPart(literal(" in")));
   const weather = entitiesOf(env, "weather")[0];
-  if (weather) parts.push(`${whole(`state_attr('${weather}', 'temperature')`)}° out`);
+  if (weather) {
+    if (parts.length > 0) parts.push(textPart(literal(" · ")));
+    parts.push(
+      textPart({ kind: { kind: "entityAttribute", ...refOf(env, weather), attribute: "temperature" }, format: { decimals: 0, suffix: "°" } }),
+      textPart(literal(" out")),
+    );
+  }
   const ids: string[] = [];
   if (parts.length > 0) {
     const temps = layerOf("text");
-    temps.payload.value = { kind: { kind: "jinja", value: parts.join(" · ") } };
+    setParts(temps, parts);
     temps.payload.fontSize = scenePoints(family, 15);
     temps.payload.fontWeight = "semibold";
     temps.payload.fontDesign = "rounded";
@@ -2963,15 +2999,18 @@ function addHouseFootnote(
     byDay(temps, [setColorTo(DAY_INK_HEX)]);
     ids.push(put(temps, sceneRect(family, 16, 122, 150, 20), "Temperatures").payload.id);
   }
-  const lock = entitiesOf(env, "lock")[0];
+  const lock = houseLockOf(env);
   if (lock) {
     const door = layerOf("text");
-    door.payload.value = { kind: { kind: "jinja", value: `${refOf(env, lock).displayName} {{ states('${lock}') }}` } };
+    setParts(door, [
+      textPart(literal(`${lockLabelOf(env, lock)} `)),
+      textPart({ kind: { kind: "entityState", ...refOf(env, lock) } }),
+    ]);
     door.payload.fontSize = scenePoints(family, 12);
     door.payload.alignment = "leading";
     door.payload.colorSlot.baseColorHex = NIGHT_SUB_HEX;
     byDay(door, [setColorTo(DAY_SUB_HEX)]);
-    ids.push(put(door, sceneRect(family, 16, 143, 150, 15), "Front door").payload.id);
+    ids.push(put(door, sceneRect(family, 16, 143, 150, 15), "Lock").payload.id);
   }
   createGroup(cfg, ids, "Readings");
 }
