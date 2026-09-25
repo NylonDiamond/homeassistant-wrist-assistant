@@ -1741,9 +1741,12 @@ export class WristAssistantPanel extends LitElement {
   @state() private shareValueNames: ReadonlyMap<string, string> = new Map();
   /** The complication's name for shared copies; empty keeps its own. */
   @state() private shareName = "";
-  /** Layer names for shared copies, keyed by the layer's own name, so one box
-   * renames every layer that shares it. */
+  /** Layer names for shared copies, keyed by layer id: one box per layer, as
+   * in the Layers list. */
   @state() private shareLayerNames: ReadonlyMap<string, string> = new Map();
+  /** The Share dialog's layer folders opened or closed by hand, by group id. A
+   * folder not in it takes its own starting state. */
+  @state() private shareTreeOpen: ReadonlyMap<string, boolean> = new Map();
   /** What the Share dialog's footer last had to say. Empty most of the time:
    * it speaks when a copy or a download landed, and when this browser has no
    * clipboard to write to and the text has been selected instead. */
@@ -3422,6 +3425,22 @@ export class WristAssistantPanel extends LitElement {
     .xf-pub details.pn[open] > .pn-h > svg.ui-icon { transform: rotate(90deg); }
     .xf-pub .pn-b { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 4px; padding: 0 6px 6px; }
     .xf-pub .pn-head .pn-b { grid-template-columns: minmax(0, 1fr); }
+    /* The Layers box: the Layers list's own order and folders, a box per name. */
+    .xf-pub .pn-tree { --kc: #4a90e2; }
+    .xf-pub .pn-tree .pn-b { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+    .xf-pub .tr { display: flex; align-items: center; gap: 6px; min-width: 0; padding-left: calc(var(--d) * 20px); }
+    .xf-pub .tr > .kv { flex: 1; }
+    .xf-pub .tr .tt { flex: none; width: 44px; height: 22px; border-radius: 4px; overflow: hidden; background: #000; display: grid; place-items: center; }
+    .xf-pub .tr .tt > * { max-width: 100%; max-height: 100%; }
+    .xf-pub .tr .fold { flex: none; width: 20px; height: 20px; padding: 0; display: grid; place-items: center; border: 0; background: none; color: var(--wa-muted); cursor: pointer; border-radius: 4px; }
+    .xf-pub .tr .fold:hover { color: var(--wa-ink); background: color-mix(in srgb, var(--kc) 14%, transparent); }
+    .xf-pub .tr .fold svg.ui-icon { width: 12px; height: 12px; transition: transform .15s ease-out; }
+    .xf-pub .tr .fold.open svg.ui-icon { transform: rotate(90deg); }
+    .xf-pub .tr .folder { flex: none; display: grid; place-items: center; width: 18px; color: var(--kc); }
+    .xf-pub .tr .folder svg.ui-icon { width: 15px; height: 15px; }
+    .xf-pub .tr.grp input[type=text] { font-weight: 600; }
+    .xf-pub .tr .anon { flex: 1; min-width: 0; padding: 6px 9px; font-size: 12.5px; color: var(--wa-muted); font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .xf-pub .tr-page { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--wa-muted); padding: 8px 3px 2px; }
     .xf-pub .kv { min-width: 0; display: flex; flex-direction: column; gap: 5px; padding: 3px; border-radius: 8px; transition: background-color .12s ease-out; }
     .xf-pub .kv.on { background: var(--wa-sel-bg); }
     .xf-sec { --sc: var(--wa-accent); display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 12px; border-radius: var(--wa-r-md);
@@ -14225,7 +14244,8 @@ export class WristAssistantPanel extends LitElement {
         <span>${share ? "Your entities are removed. The other person picks their own." : "Exact copy with your entities. Keep it for yourself or this home."}</span></div>`);
     const names = !share ? nothing : this.shareSection(++n, "s-names", "Public names",
       ready
-        ? this.renderPublicRows(rows, this.shareFocus, (key) => this.pointAtRow(rows, key, (k) => { this.shareFocus = k; }))
+        ? this.renderPublicRows(rows, this.shareFocus, (key) => this.pointAtRow(rows, key, (k) => { this.shareFocus = k; }),
+          family !== undefined && isDrawable(family) ? { cfg, family, face: layouts[family] } : undefined)
         : html`<div class="hint">Pick a shape first.</div>`,
       nothing, !ready);
     const send = this.shareSection(++n, "s-send", "Send it", html`
@@ -14384,15 +14404,7 @@ export class WristAssistantPanel extends LitElement {
   /** The names changed for shared copies: the complication, groups, shared
    * values and layers. */
   private shareNameOverrides(): GalleryOverrides {
-    const layerNames = new Map<string, string>();
-    const cfg = this.draft?.config;
-    if (cfg && this.shareLayerNames.size > 0) {
-      for (const el of cfg.elements) {
-        const wanted = el.payload.name === undefined ? undefined : this.shareLayerNames.get(el.payload.name.trim());
-        if (wanted !== undefined) layerNames.set(el.payload.id, wanted);
-      }
-    }
-    return { name: this.shareName, groupNames: this.shareGroupNames, valueNames: this.shareValueNames, layerNames };
+    return { name: this.shareName, groupNames: this.shareGroupNames, valueNames: this.shareValueNames, layerNames: this.shareLayerNames };
   }
 
   /**
@@ -14432,16 +14444,14 @@ export class WristAssistantPanel extends LitElement {
         continue;
       }
       if (group.label === "Layer names") {
-        // Read off the document's own names, so a renamed box still finds its layers.
-        const names: string[] = [];
+        // One box per named layer, the way the Layers list has one row per
+        // layer. A layer with no name of its own carries none to rename.
         for (const el of cfg.elements) {
           const name = el.payload.name?.trim();
-          if (name && !isAttachedTap(cfg, el) && !names.includes(name)) names.push(name);
-        }
-        for (const name of names) {
-          const ids = cfg.elements.filter((el) => !isAttachedTap(cfg, el) && el.payload.name?.trim() === name).map((el) => el.payload.id);
-          rows.push({ key: `l:${name}`, label: "Layer name", name, ids,
-            control: box("Layer name", name, this.shareLayerNames.get(name), (v) => this.setShareLayerName(name, v)) });
+          if (!name || isAttachedTap(cfg, el)) continue;
+          const id = el.payload.id;
+          rows.push({ key: `l:${id}`, label: "Layer name", name, ids: [id],
+            control: box("Layer name", name, this.shareLayerNames.get(id), (v) => this.setShareLayerName(id, v)) });
         }
         continue;
       }
@@ -14457,7 +14467,8 @@ export class WristAssistantPanel extends LitElement {
 
   /** The public names as markup, one row each. Pointing at a row sets
    * `focus`, which lights its layers behind the dialog. */
-  private renderPublicRows(rows: readonly PublicRow[], focus: string | undefined, setFocus: (key: string | undefined) => void) {
+  private renderPublicRows(rows: readonly PublicRow[], focus: string | undefined, setFocus: (key: string | undefined) => void,
+    tree?: { cfg: CustomComplicationConfig; family: FamilyKind; face: ResolvedLayout | undefined }) {
     const clear = () => setFocus(undefined);
     // Each row is only its box: the kind's own heading says what the box names.
     const kv = (row: PublicRow) => {
@@ -14470,9 +14481,13 @@ export class WristAssistantPanel extends LitElement {
     // preset's, not the author's, and dozens of boxes bury the name and the
     // entity names the reader sets it up by. So a long kind starts closed, and
     // read-only text always does, since nothing about it can be changed here.
+    // Layer and group names sit in a copy of the Layers list instead, where
+    // each one is found the way it is found in the editor.
+    const layerTree = tree ? this.renderShareLayerTree(tree.cfg, tree.family, tree.face, rows, kv) : undefined;
     const kinds: { kind: string; label: string; rows: PublicRow[] }[] = [];
     for (const row of rows) {
       const kind = publicRowKind(row);
+      if (layerTree && (kind === "l" || kind === "g")) continue;
       const found = kinds.find((k) => k.kind === kind);
       if (found) found.rows.push(row);
       else kinds.push({ kind, label: PUBLIC_KIND_LABEL[kind] ?? row.label, rows: [row] });
@@ -14483,7 +14498,7 @@ export class WristAssistantPanel extends LitElement {
       const id = row.key.slice(2);
       const typed = row.key.startsWith("g:") ? this.shareGroupNames.get(id)
         : row.key.startsWith("v:") ? this.shareValueNames.get(id)
-        : row.key.startsWith("l:") ? this.shareLayerNames.get(row.name)
+        : row.key.startsWith("l:") ? this.shareLayerNames.get(id)
         : undefined;
       return (typed ?? "").trim() !== "";
     };
@@ -14505,10 +14520,88 @@ export class WristAssistantPanel extends LitElement {
     return html`
       <div class="xf-lead">${uiIcon("info")}<span>Others can see these names. Change the names of layers and groups here before you share, if you want.</span></div>
       <div class="xf-pub" @pointerleave=${(e: Event) => this.leaveRows(e, clear)} @focusout=${(e: Event) => this.leaveRows(e, clear)}>
-        ${kinds.filter((k) => k.kind === "head" || startsOpen(k)).map(box)}
+        ${kinds.filter((k) => k.kind === "head").map(box)}
+        ${layerTree ? this.renderShareTreeBox(layerTree, rows, changed) : nothing}
+        ${kinds.filter((k) => k.kind !== "head" && startsOpen(k)).map(box)}
         ${kinds.filter((k) => k.kind !== "head" && !startsOpen(k)).map(box)}
       </div>
       <div class="hint">Your own complication keeps its names. An empty box keeps the name it had.</div>`;
+  }
+
+  /** The Layers box of the public names: one row per layer, top of the stack
+   * first, in the same folders as the Layers list, each with its picture. */
+  private renderShareTreeBox(tree: { body: unknown; count: number }, rows: readonly PublicRow[], changed: (row: PublicRow) => boolean) {
+    const open = this.shareKindOpen.get("tree") ?? true;
+    const edits = rows.filter((row) => (row.key.startsWith("l:") || row.key.startsWith("g:")) && changed(row)).length;
+    return html`<details class="pn pn-tree" .open=${open}
+      @toggle=${(e: Event) => this.setShareKindOpen("tree", (e.target as HTMLDetailsElement).open)}>
+      <summary class="pn-h"><i></i><b>Layers</b><span class="n">${tree.count}</span>
+        ${edits > 0 ? html`<span class="chg">${edits} changed</span>` : nothing}${uiIcon("right")}</summary>
+      ${open ? html`<div class="pn-b">${tree.body}</div>` : nothing}
+    </details>`;
+  }
+
+  /**
+   * The rows of the Share dialog's Layers box. Layers and folders are the
+   * Layers list's own (`layerListRows`), so they stand in the same order and
+   * nesting. A named layer or group gets its public name box; a layer with no
+   * name has none to rename, so it shows what the editor calls it, dimmed.
+   * A big document starts with its folders closed, except a lone outer one,
+   * which would otherwise leave the box a single line.
+   */
+  private renderShareLayerTree(cfg: CustomComplicationConfig, family: FamilyKind, face: ResolvedLayout | undefined,
+    rows: readonly PublicRow[], kv: (row: PublicRow) => unknown): { body: unknown; count: number } {
+    const byKey = new Map(rows.map((row) => [row.key, row]));
+    const used = new Set<string>();
+    const shapeRows = ownedElements(cfg, family).filter((el) => !isAttachedTap(cfg, el));
+    const sections = usesPages(cfg)
+      ? layerListSections(cfg, shapeRows, pagesSpecOf(cfg).count)
+      : [{ label: "", page: undefined, rows: layerListRows(cfg, shapeRows, 1) }];
+    const top = sections.reduce((n, sec) => n + sec.rows.length, 0);
+    const big = shapeRows.length > PUBLIC_FOLD_AT * 2;
+    const ctx = describeContext(this.host());
+    const cell = (row: PublicRow | undefined, lead: unknown, depth: number, extra = "") => {
+      if (!row) return html`<div class="tr ${extra}" style=${`--d:${depth}`}>${lead}</div>`;
+      used.add(row.key);
+      return html`<div class="tr ${extra}" style=${`--d:${depth}`}>${lead}${kv(row)}</div>`;
+    };
+    const walk = (list: readonly LayerListRow[], depth: number): unknown[] => list.flatMap((item) => {
+      if (item.kind === "layer") {
+        const el = item.el;
+        const pic = html`<span class="tt">${face ? renderLayerThumb(face, [el.payload.id], { icons: this.icons, imageSizes: this.imageSizes, width: THUMB_W, height: THUMB_H }) : nothing}</span>`;
+        const row = byKey.get(`l:${el.payload.id}`);
+        return [row ? cell(row, pic, depth) : cell(undefined, html`${pic}<span class="anon">${layerTitle(el, ctx)}</span>`, depth)];
+      }
+      const g = item.group;
+      const open = this.shareTreeOpen.get(g.id) ?? (!big || (depth === 0 && top === 1));
+      const toggle = html`<button type="button" class="icon fold ${open ? "open" : ""}" aria-expanded=${open ? "true" : "false"}
+        title=${open ? "Close folder" : "Open folder"} aria-label=${`${open ? "Close" : "Open"} ${g.name}`}
+        @click=${() => { this.shareTreeOpen = new Map(this.shareTreeOpen).set(g.id, !open); }}>${uiIcon("right")}</button>
+        <span class="folder">${uiIcon("folder")}</span>`;
+      const row = byKey.get(`g:${g.id}`);
+      const head = row ? cell(row, toggle, depth, "grp") : cell(undefined, html`${toggle}<span class="anon">${g.name}</span>`, depth, "grp");
+      return [head, ...(open ? walk(item.rows, depth + 1) : [])];
+    });
+    const body: unknown[] = [];
+    for (const sec of sections) {
+      if (sec.label !== "") body.push(html`<div class="tr-page">${sec.label}</div>`);
+      body.push(...walk(sec.rows, 0));
+    }
+    // A name inside a closed folder is one click away, so it is not missing.
+    // Only a name the tree has no place for (a group with no layers on this
+    // shape) falls back to a plain box at the end.
+    const inTree = (key: string): boolean => {
+      const id = key.slice(2);
+      return key.startsWith("l:")
+        ? shapeRows.some((el) => el.payload.id === id)
+        : shapeRows.some((el) => isInGroup(cfg, el, id));
+    };
+    for (const row of rows) {
+      if ((row.key.startsWith("l:") || row.key.startsWith("g:")) && !used.has(row.key) && !inTree(row.key)) {
+        body.push(cell(row, html`<span class="folder">${uiIcon(row.key.startsWith("g:") ? "folder" : "layers")}</span>`, 0));
+      }
+    }
+    return { body, count: shapeRows.length };
   }
 
   private setShareKindOpen(kind: string, open: boolean) {
@@ -14542,6 +14635,7 @@ export class WristAssistantPanel extends LitElement {
     this.shareNote = "";
     this.shareTextOpen = false;
     this.shareKindOpen = new Map();
+    this.shareTreeOpen = new Map();
     this.shareLink = undefined;
     this.shareLinkShown = false;
     this.shareCopied = undefined;
@@ -14625,9 +14719,9 @@ export class WristAssistantPanel extends LitElement {
     return { ...this.shareNameOverrides(), name: this.galleryTitle };
   }
 
-  private setShareLayerName(name: string, value: string) {
+  private setShareLayerName(id: string, value: string) {
     const next = new Map(this.shareLayerNames);
-    next.set(name, value);
+    next.set(id, value);
     this.shareLayerNames = next;
   }
 
