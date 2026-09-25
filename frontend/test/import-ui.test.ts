@@ -7,8 +7,8 @@ import { describe, expect, it } from "vitest";
 import { seriesRequests } from "../src/ha-api.js";
 import { familiesFor, importableFamilies, keepFamilies } from "../src/layouts.js";
 import { type CustomComplicationConfig, type Element, legacyConfig, newConfig, newElement } from "../src/model.js";
-import { importProblem, importSummary, importTextFolded, remapEntities, suggestImportName } from "../src/transfer.js";
-import { MIN_IPHONE_VERSION_FOR_HOME_SCREEN } from "../src/version.js";
+import { importDestination, importProblem, importSummary, importTextFolded, remapEntities, suggestImportName } from "../src/transfer.js";
+import { LIBRARY_OWNER_ID, MIN_IPHONE_VERSION_FOR_HOME_SCREEN, MIN_WATCH_VERSION_FOR_SHAPES } from "../src/version.js";
 
 const taken = (...names: string[]) => new Set(names.map((n) => n.toLowerCase()));
 
@@ -78,11 +78,18 @@ describe("importableFamilies", () => {
     expect(importableFamilies(cfg, phone)).toEqual(["rectangular", "circular"]);
   });
 
-  // Dropping every shape would leave no complication at all, so a document
-  // with nothing this device draws arrives whole and the editor copes.
-  it("keeps the document rather than empty its shapes", () => {
+  // A document with nothing this device draws used to arrive whole, which
+  // saved Home Screen widgets onto a watch. It gets nothing back now, and the
+  // import goes to Unassigned instead (`importDestination`).
+  it("gives nothing back for a document this device draws none of", () => {
     const cfg = legacyConfig("Tiles", 0, ["small", "large"]);
-    expect(importableFamilies(cfg, watch)).toEqual(["small", "large"]);
+    expect(importableFamilies(cfg, watch)).toEqual([]);
+    expect(importableFamilies(newConfig("Corner", 0, "corner"), phone)).toEqual([]);
+  });
+
+  it("keeps every shape on Unassigned, which draws them all", () => {
+    const cfg = legacyConfig("Tiles", 0, ["corner", "small", "large"]);
+    expect(importableFamilies(cfg, familiesFor({ device_kind: "library", owner_watch_id: LIBRARY_OWNER_ID }))).toEqual(["corner", "small", "large"]);
   });
 
   it("is what the saved copy is cut down to, layouts and all", () => {
@@ -90,6 +97,56 @@ describe("importableFamilies", () => {
     const saved = keepFamilies(cfg, importableFamilies(cfg, phone));
     expect(saved.supportedFamilies).toEqual(["rectangular", "circular"]);
     expect(saved.perFamily.corner).toBeUndefined();
+  });
+});
+
+// Where Import writes: the device being edited when it can draw the design,
+// Unassigned when it cannot or when the design came in a link.
+describe("importDestination", () => {
+  const watch = { device_kind: "watch" as const, app_version: MIN_WATCH_VERSION_FOR_SHAPES };
+  const oldWatch = { device_kind: "watch" as const, app_version: "2.7.3" };
+  const phone = { device_kind: "iphone" as const, app_version: MIN_IPHONE_VERSION_FOR_HOME_SCREEN };
+  const shelf = { device_kind: "library" as const, owner_watch_id: LIBRARY_OWNER_ID };
+  const base = { ownerName: "Apple Watch", control: false, fromLink: false };
+
+  it("keeps a design the device draws on the device", () => {
+    expect(importDestination({ ...base, owner: watch, shapes: ["rectangular"] })).toEqual({ unassigned: false });
+    expect(importDestination({ ...base, owner: phone, shapes: ["small"] })).toEqual({ unassigned: false });
+  });
+
+  it("sends a Home Screen widget pasted on a watch to Unassigned", () => {
+    const dest = importDestination({ ...base, owner: watch, shapes: ["small"] });
+    expect(dest).toEqual({ unassigned: true, reason: "Apple Watch does not draw Home Screen widgets" });
+  });
+
+  it("sends a watch Corner pasted on a phone to Unassigned", () => {
+    const dest = importDestination({ ...base, ownerName: "iPhone", owner: phone, shapes: ["corner"] });
+    expect(dest).toEqual({ unassigned: true, reason: "iPhone does not draw the Corner shape" });
+  });
+
+  it("keeps a legacy document with one shape the device draws", () => {
+    expect(importDestination({ ...base, owner: watch, shapes: ["rectangular", "small"] })).toEqual({ unassigned: false });
+  });
+
+  it("sends anything to Unassigned from a device whose app is too old", () => {
+    const dest = importDestination({ ...base, owner: oldWatch, shapes: ["rectangular"] });
+    expect(dest.unassigned).toBe(true);
+    if (dest.unassigned) expect(dest.reason).toContain("newer Wrist Assistant app");
+  });
+
+  it("sends a link to Unassigned whatever device is open", () => {
+    const dest = importDestination({ ...base, owner: watch, shapes: ["rectangular"], fromLink: true });
+    expect(dest.unassigned).toBe(true);
+  });
+
+  it("never redirects an import made in Unassigned", () => {
+    expect(importDestination({ ...base, owner: shelf, shapes: ["small"], fromLink: true })).toEqual({ unassigned: false });
+  });
+
+  it("sends a control to Unassigned from a device without Control Center", () => {
+    const dest = importDestination({ ...base, owner: { device_kind: "watch", app_version: "2.7.9" }, shapes: [], control: true });
+    expect(dest.unassigned).toBe(true);
+    expect(importDestination({ ...base, owner: phone, shapes: [], control: true })).toEqual({ unassigned: false });
   });
 });
 

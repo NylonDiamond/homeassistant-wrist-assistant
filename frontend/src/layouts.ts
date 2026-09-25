@@ -221,17 +221,16 @@ export function placeGroups(
  * shape nothing on this device will ever draw. The preview and the saved copy
  * read the same list, so what is shown is what lands.
  *
- * A document naming nothing this device draws keeps its shapes: there is no
- * complication left otherwise, and the panel already copes with a shape that
- * has no tab.
+ * A document naming nothing this device draws gets nothing back. It used to
+ * keep every shape it had, which saved a Home Screen widget onto a watch that
+ * can never draw it; such an import goes to Unassigned instead, which offers
+ * every shape (`importDestination`).
  */
 export function importableFamilies(
   cfg: Pick<CustomComplicationConfig, "supportedFamilies">,
   offered: readonly FamilyKind[],
 ): FamilyKind[] {
-  const have = supportedFamilies(cfg);
-  const kept = have.filter((f) => offered.includes(f));
-  return kept.length > 0 ? kept : have;
+  return supportedFamilies(cfg).filter((f) => offered.includes(f));
 }
 
 /** The document's shapes in canonical order, whatever order the file had. */

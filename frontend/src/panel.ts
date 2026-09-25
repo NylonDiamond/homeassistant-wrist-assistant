@@ -295,6 +295,7 @@ import { presetColor, presetPreview } from "./preset-previews.js";
 import {
   type BackupParse,
   type BackupSource,
+  type ImportDestination,
   type ImportParse,
   type ShareSlot,
   type UnresolvedEntity,
@@ -308,6 +309,7 @@ import {
   exportFileName,
   exportText,
   hasInstanceFilters,
+  importDestination,
   importProblem,
   isPlaceholderId,
   openSlots,
@@ -372,8 +374,10 @@ import {
   galleryStatusLabel,
   galleryUploadRows,
   galleryUploadSubline,
+  galleryUsedHere,
   isPendingUpdate,
   listMyUploads,
+  noteGalleryUsed,
   submitToGallery,
 } from "./gallery.js";
 import { renderGalleryPreviews } from "./preview-png.js";
@@ -399,6 +403,16 @@ const galleryFetch: GalleryFetch = (url, init) => window.fetch(url, init);
 
 /** Where this browser remembers the nickname last sent to the gallery. */
 const GALLERY_NICKNAME_KEY = "wrist-assistant-gallery-nickname";
+
+/** This browser's storage for the gallery's two keys, or undefined where
+ * reaching it at all throws. */
+function galleryStore(): Storage | undefined {
+  try {
+    return window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
 
 /** The nickname last sent, or empty. Storage can be blocked, which only means
  * typing it again. */
@@ -1857,6 +1871,9 @@ export class WristAssistantPanel extends LitElement {
   /** The Import dialog: the pasted text, what it parsed into, the name the
    * copy will take, and one chosen entity per slot the design asks about. */
   @state() private importOpen = false;
+  /** The open Import came from a link in the address, so it goes to
+   * Unassigned (`importDestination`). */
+  @state() private importFromLink = false;
   @state() private importText = "";
   @state() private importParse?: ImportParse;
   /** Set when the text is a whole-home backup rather than one complication. */
@@ -2014,6 +2031,9 @@ export class WristAssistantPanel extends LitElement {
   @state() private previewTint?: string;
   @state() private loadError?: string;
   @state() private saveError?: string;
+  /** The `saveRefusal` a press of Save last put in `saveError`, so the next
+   * edit can take it down again. */
+  private refusedSave?: string;
   @state() private saving = false;
   /** The editor's own Save while it runs. A click that would leave the open
    * document waits for it rather than being dropped: the dialog or picker it
@@ -7832,8 +7852,11 @@ export class WristAssistantPanel extends LitElement {
       this.notePreviews(ownerId, reply.previews);
       this.records = reply.records;
       // Once per visit, so Share can say "Update share" on a design in the
-      // gallery that has changed since. Only an administrator has the key.
-      if (this.hass.user?.is_admin && this.galleryUploads === undefined && !this.galleryUploadsLoading) void this.loadGalleryUploads();
+      // gallery that has changed since. Only an administrator has the key,
+      // and only a browser that has used the gallery asks: anywhere else the
+      // list waits for Share to open (`galleryUsedHere`).
+      if (this.hass.user?.is_admin && this.galleryUploads === undefined && !this.galleryUploadsLoading
+        && galleryUsedHere(galleryStore(), GALLERY_NICKNAME_KEY)) void this.loadGalleryUploads();
       this.maxSchemaVersion = reply.max_schema_version;
       this.presets = reply.presets ?? [];
       this.occupied = reply.occupied
@@ -8387,6 +8410,11 @@ export class WristAssistantPanel extends LitElement {
     this.clampPage();
     this.recompile();
     this.ensureActiveFamily();
+    // A refused save's reason goes with the next edit. The footer says the
+    // refusal live, so one that still stands is still on screen, and one the
+    // edit answered does not linger as a red banner.
+    if (this.refusedSave !== undefined && this.saveError === this.refusedSave) this.saveError = undefined;
+    this.refusedSave = undefined;
   }
 
   /** One fresh frame on opening the document, while the stored frame remains
@@ -9028,6 +9056,7 @@ export class WristAssistantPanel extends LitElement {
     const refusal = saveRefusal(this.draft.config);
     if (refusal !== undefined) {
       this.saveError = refusal;
+      this.refusedSave = refusal;
       return;
     }
     this.saving = true;
@@ -11135,6 +11164,9 @@ export class WristAssistantPanel extends LitElement {
     // A phone hides Home Assistant's sidebar, and a panel of its own has no
     // way back to it unless it offers the menu button itself.
     const menu = this.narrow || this.hass.dockedSidebar === "always_hidden";
+    // Work that cannot be written says why on the button, the footer saying
+    // the same, rather than a live Save that only answers with an error.
+    const refusal = d && dirty ? saveRefusal(d.config) : undefined;
     return html`<header class=${stacked ? "stacked" : nothing}>
       ${menu ? html`<button class="icon tb-icon tb-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
         @click=${() => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true }))}>${uiIcon("menu")}</button>` : nothing}
@@ -11146,8 +11178,8 @@ export class WristAssistantPanel extends LitElement {
       ${this.renderSendPill()}
       ${this.renderTopMenu()}
       ${d ? html`<button class="primary save ${dirty ? "dirty" : ""}" @click=${() => void this.save()}
-          ?disabled=${!this.canEdit || !dirty || this.saving || !this.slotChosen}
-          title=${dirty ? "Save (⌘S)" : "Nothing to save (⌘S)"}>${this.saving ? "Saving…" : "Save"}</button>
+          ?disabled=${!this.canEdit || !dirty || this.saving || !this.slotChosen || refusal !== undefined}
+          title=${refusal !== undefined ? refusal : dirty ? "Save (⌘S)" : "Nothing to save (⌘S)"}>${this.saving ? "Saving…" : "Save"}</button>
         <span class="tb-saved" title=${dirty && rec ? "Unsaved changes" : caption ?? ""}>${caption}</span>` : nothing}
       <button class="help" title="Help" aria-label="Help" @click=${() => { this.helpOpen = true; }}>?</button>
     </header>`;
@@ -14972,6 +15004,8 @@ export class WristAssistantPanel extends LitElement {
     try {
       const key = await this.ensureGalleryKey();
       this.galleryUploads = await listMyUploads(galleryFetch, key);
+      // Something is there, so the next plain open of the panel asks again.
+      if (this.galleryUploads.length > 0) noteGalleryUsed(galleryStore());
       if (this.galleryOpen && this.galleryTab === "new" && !this.gallerySent && !this.galleryLinkApplied) this.applyGalleryLink();
     } catch (err) {
       this.galleryUploads = [];
@@ -15000,6 +15034,7 @@ export class WristAssistantPanel extends LitElement {
         ...(this.galleryReplaces ? { replaces: this.galleryReplaces.id } : {}),
       });
       this.gallerySent = true;
+      noteGalleryUsed(galleryStore());
       writeGalleryNickname(meta.authorName.trim());
       void this.loadGalleryUploads();
     } catch (err) {
@@ -15571,9 +15606,59 @@ export class WristAssistantPanel extends LitElement {
   private importConfig(): CustomComplicationConfig | undefined {
     const parse = this.importParse;
     if (!parse?.ok) return undefined;
-    const keep = importableFamilies(parse.config, this.ownerFamilies).slice(0, 1);
+    const keep = importableFamilies(parse.config, this.importTarget().families).slice(0, 1);
     if (keep.length === supportedFamilies(parse.config).length) return parse.config;
+    // Nothing here draws any of its shapes and there is no Unassigned to send
+    // it to: it stays whole, and Import says why it will not go.
+    if (keep.length === 0) return parse.config;
     return keepFamilies(parse.config, keep);
+  }
+
+  /**
+   * Where Import writes, and anything that stops it going there.
+   *
+   * The device being edited when it can draw the design, and Unassigned when
+   * it cannot or when the design came from a link (`importDestination`). The
+   * shapes the copy keeps are the destination's, so the preview, the saved copy
+   * and the dialog's line about where it goes all read the same answer.
+   */
+  private importTarget(): { ownerId: string | undefined; families: FamilyKind[]; dest: ImportDestination; problem?: string } {
+    const parse = this.importParse;
+    const owner = this.selectedOwner;
+    const dest = importDestination({
+      owner,
+      ownerName: owner ? ownerShortLabel(owner) : "This device",
+      shapes: parse?.ok ? supportedFamilies(parse.config) : [],
+      control: parse?.ok === true && parse.config.control !== undefined,
+      fromLink: this.importFromLink,
+    });
+    const here = { ownerId: this.ownerId, families: this.ownerFamilies };
+    if (!dest.unassigned) return { ...here, dest };
+    const shelf = this.owners.find((o) => isLibraryOwner(o));
+    if (!shelf) {
+      // An integration from before Unassigned. A link then goes where it
+      // always went; a design this device cannot draw does not go at all.
+      if (this.importFromLink && deviceSupportsShapes(owner)) return { ...here, dest: { unassigned: false } };
+      return { ...here, dest, problem: `It cannot go here: ${dest.reason}. Update the Wrist Assistant integration to import it to ${UNASSIGNED_LABEL}.` };
+    }
+    const target = { ownerId: shelf.owner_watch_id, families: familiesFor(shelf), dest };
+    const shapes = parse?.ok ? supportedFamilies(parse.config) : [];
+    if (this.freeSlotOn(shelf.owner_watch_id, shapes[0]) < 0) {
+      return { ...target, problem: `${UNASSIGNED_LABEL} is full, so it has nowhere to go. Delete something in it first.` };
+    }
+    return target;
+  }
+
+  /** Names already in the place Import writes to, lower-cased. */
+  private importTakenNames(): Set<string> {
+    const ownerId = this.importTarget().ownerId;
+    if (ownerId === undefined || ownerId === this.ownerId) return this.takenNames();
+    const list = this.otherLists.get(ownerId);
+    const names = [
+      ...(list?.records ?? []).map((r) => String(r.document?.name ?? "")),
+      ...(list?.occupied ?? []).map((o) => ("name" in o && typeof o.name === "string" ? o.name : "")),
+    ];
+    return new Set(names.map((n) => n.trim().toLowerCase()).filter((n) => n !== ""));
   }
 
   private renderImportDialog() {
@@ -15671,7 +15756,8 @@ export class WristAssistantPanel extends LitElement {
     const parse = this.importParse;
     // What this device can draw, so a shape it has no tab for is never
     // counted as something that came in.
-    const have = importableFamilies(parse?.ok ? parse.config : cfg, this.ownerFamilies);
+    const target = this.importTarget();
+    const have = importableFamilies(parse?.ok ? parse.config : cfg, target.families);
     const preview = this.importPreview();
     const layouts: ResolvedAll = preview ? this.configLayouts(preview.config, preview.entities, {
       templateResults: this.importTemplates, historySeries: this.importHistory, listItems: this.importLists,
@@ -15682,9 +15768,10 @@ export class WristAssistantPanel extends LitElement {
     const focus = rows.find((row) => row.entityId === this.importFocus);
     const family = this.dialogFamily(cfg);
     const name = this.importName.trim();
-    const takenNames = this.takenNames();
+    const takenNames = this.importTakenNames();
     const taken = name !== "" && takenNames.has(name.toLowerCase());
-    const problem = importProblem({ parsed: true, name: this.importName, taken: takenNames, unchosen: 0 });
+    const problem = target.problem ?? importProblem({ parsed: true, name: this.importName, taken: takenNames, unchosen: 0 });
+    const where = target.dest.unassigned && target.problem === undefined ? UNASSIGNED_LABEL : undefined;
     const clear = () => { this.importFocus = undefined; };
     return html`<div class="xfer-body">
       <div class="xf-hero">
@@ -15694,13 +15781,18 @@ export class WristAssistantPanel extends LitElement {
           <label class="xf-f"><span class="xf-label">Name</span>
             <input type="text" maxlength="60" aria-invalid=${taken ? "true" : "false"} .value=${this.importName}
               @input=${(e: Event) => { this.importName = (e.target as HTMLInputElement).value; }} /></label>
-          ${taken ? html`<div class="hint err">A complication on ${this.placePhrase} already has that name.</div>` : nothing}
+          ${taken ? html`<div class="hint err">A complication ${where ? `in ${where}` : `on ${this.placePhrase}`} already has that name.</div>` : nothing}
           ${have.length < 2 ? nothing : html`<div class="hint">This was shared with ${have.length} shapes. A complication is one shape, so ${familyTitle(have[0]!)} is what comes in. Share the others from the panel they were made on.</div>`}
           <div class="xf-sub">${have.length === 0 && cfg.control !== undefined
             ? "A Control Center control, and no shape"
             : html`${have.length < 2 ? `${familyWords(have)} · ` : ""}${layerCountWords(cfg)}`}</div>
         </div>
       </div>
+      ${target.problem !== undefined
+        ? html`<div class="xf-lead warn" role="alert">${uiIcon("info")}<span>${target.problem}</span></div>`
+        : target.dest.unassigned
+        ? html`<div class="xf-lead">${uiIcon("info")}<span>This goes to ${UNASSIGNED_LABEL}: ${target.dest.reason}. Add it to a device from its card.</span></div>`
+        : nothing}
       ${rows.length === 0
         ? html`<div class="xf-lead">${uiIcon("check")}<span>Every entity this design reads is already in your Home Assistant.</span></div>`
         : html`<div class="xf-stack">
@@ -15723,7 +15815,7 @@ export class WristAssistantPanel extends LitElement {
       <button class="ghost" @click=${() => this.startImportOver()}>Start over</button>
       <span class="spacer"></span>
       <button class="primary" ?disabled=${problem !== undefined}
-        title=${problem ?? "Save it to this watch and open it in the editor"} @click=${() => void this.doImport()}>Import and save</button>
+        title=${problem ?? `Save it to ${where ?? this.placePhrase} and open it in the editor`} @click=${() => void this.doImport()}>Import and save</button>
     </div>`;
   }
 
@@ -15929,7 +16021,7 @@ export class WristAssistantPanel extends LitElement {
     const auto = this.autoPicks(this.importConfig() ?? parse.config);
     this.importMap = auto;
     this.importAuto = new Set(auto.keys());
-    this.importName = suggestImportName(parse.config.name, this.takenNames());
+    this.importName = suggestImportName(parse.config.name, this.importTakenNames());
   }
 
   /** The slots this home answers by itself (see `autoSlotPicks`), as the
@@ -15994,12 +16086,14 @@ export class WristAssistantPanel extends LitElement {
       this.linkNote = "This link holds a shared complication, but no watch has connected to this Home Assistant yet.";
       return;
     }
-    if (this.freeSlot() < 0) {
+    // A link goes to Unassigned, so only an integration from before it has a
+    // device's slots to run out of.
+    if (!this.owners.some((o) => isLibraryOwner(o)) && this.freeSlot() < 0) {
       this.linkNote = "This link holds a shared complication, but this watch has no free slot. Delete a complication, then open the link again.";
       return;
     }
     this.linkNote = undefined;
-    this.openImportDialog();
+    this.openImportDialog(true);
     this.setImportText(text);
   }
 
@@ -16018,10 +16112,10 @@ export class WristAssistantPanel extends LitElement {
       if (!cfg) return;
       const rows = unresolvedEntities(cfg, this.hass.states);
       if (rows.some((row) => entitySearchOpen(importEntityKey(row.entityId)))) return;
-      const problem = importProblem({
+      const problem = this.importTarget().problem ?? importProblem({
         parsed: true,
         name: this.importName,
-        taken: this.takenNames(),
+        taken: this.importTakenNames(),
         // Open rows do not stop it: they can be picked in the editor later.
         unchosen: 0,
       });
@@ -16050,8 +16144,17 @@ export class WristAssistantPanel extends LitElement {
    */
   private async doImport() {
     await this.draftSave;
+    const target = this.importTarget();
+    if (target.problem !== undefined || target.ownerId === undefined) return;
     const base = this.importConfig();
     if (!base) return;
+    // Unassigned, for a design the device cannot draw or one from a link. The
+    // switch asks about unsaved work first; declined, the dialog stays with
+    // its answers.
+    if (target.ownerId !== this.ownerId) {
+      await this.selectOwner(target.ownerId);
+      if (this.ownerId !== target.ownerId) return;
+    }
     const cfg = remapEntities(base, this.importMap);
     cfg.id = newId();
     cfg.name = this.importName.trim();
@@ -16066,11 +16169,20 @@ export class WristAssistantPanel extends LitElement {
     }
     this.closeImportDialog();
     await this.save();
+    if (target.dest.unassigned && this.draft?.config.id === cfg.id && this.draft.baseRevision !== null) {
+      this.copyStatus = `Imported to ${UNASSIGNED_LABEL}: ${target.dest.reason}. Add it to a device from the card.`;
+    }
   }
 
-  private openImportDialog() {
-    if (!this.hass.user?.is_admin || this.freeSlot() < 0) return;
+  /** `fromLink` is a design that arrived in the address, which goes to
+   * Unassigned whatever device is open (`importDestination`). */
+  private openImportDialog(fromLink = false) {
+    if (!this.hass.user?.is_admin) return;
+    // A full device can still take a link, which goes to Unassigned; the
+    // dialog says so, or says Unassigned is full too.
+    if (!fromLink && this.freeSlot() < 0) return;
     this.importOpen = true;
+    this.importFromLink = fromLink;
     this.resetImportState();
     void this.updateComplete.then(() => {
       const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.import-dialog");
@@ -20015,10 +20127,12 @@ export class WristAssistantPanel extends LitElement {
     const d = this.draft;
     if (!d) return nothing;
     const rec = this.records.find((r) => r.id === this.selectedId);
+    const refusal = d.dirty || d.baseRevision === null ? saveRefusal(d.config) : undefined;
     const status = footerStatus({
       revision: rec?.revision ?? null,
       dirty: d.dirty,
       updatedBy: rec?.updatedBy ?? "",
+      ...(refusal !== undefined ? { refusal } : {}),
       ...(this.saveError !== undefined ? { error: this.saveError } : {}),
       ...(this.templateError !== undefined ? { templateError: this.templateError } : {}),
     });
@@ -20057,17 +20171,21 @@ export class WristAssistantPanel extends LitElement {
 }
 
 /** What the inspector's footer row says, and the color of its dot: green
- * once saved, amber with unsaved changes, grey before the first save, red for
- * an error. */
+ * once saved, amber with unsaved changes or work Save refuses, grey before the
+ * first save, red for an error. */
 export function footerStatus(i: {
   revision: number | null;
   dirty: boolean;
   updatedBy: string;
   error?: string;
   templateError?: string;
+  /** Why Save will not write this work (`saveRefusal`), given only while
+   * there is work to save. */
+  refusal?: string;
 }): { tone: "ok" | "warn" | "none" | "err"; text: string } {
   if (i.error !== undefined && i.error !== "") return { tone: "err", text: `Not saved: ${i.error}` };
   if (i.templateError !== undefined && i.templateError !== "") return { tone: "err", text: `Template error: ${i.templateError}` };
+  if (i.refusal !== undefined && i.refusal !== "") return { tone: "warn", text: `Cannot save yet: ${i.refusal}` };
   if (i.revision === null) return { tone: "none", text: "Not saved yet" };
   if (i.dirty) return { tone: "warn", text: `Revision ${i.revision} · unsaved changes` };
   const by = savedByWords(i.updatedBy);

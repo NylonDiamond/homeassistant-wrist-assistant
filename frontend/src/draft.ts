@@ -4,7 +4,7 @@
 // `baseRevision` and then `commit()`s on success (plan §"Save and conflict
 // rules").
 
-import { type CustomComplicationConfig, type FamilyKind, encodeConfig, liftChartOwnMarks, normalizeOwnership, parseConfig, syncAttachedTaps } from "./model.js";
+import { type CustomComplicationConfig, type FamilyKind, type ValueKind, describeSite, encodeConfig, forEachValue, liftChartOwnMarks, normalizeOwnership, parseConfig, syncAttachedTaps } from "./model.js";
 import { deriveDataSources } from "./compiler.js";
 import { inlineToParts, syncInlineParts } from "./rich-text.js";
 
@@ -53,12 +53,48 @@ export function draftStatus(i: DraftStatusInput): DraftStatus {
  * undo whatever the split did. So the editor reads it and refuses the write,
  * in the same words wherever the save was pressed.
  *
+ * It also refuses a document with a value that points at nothing: see
+ * `blankReferenceRefusal`.
+ *
  * See docs/complication_one_shape_per_document.md in the app repo.
  */
 export function saveRefusal(cfg: CustomComplicationConfig): string | undefined {
   const shapes = cfg.supportedFamilies.length;
-  if (shapes < 2) return undefined;
-  return `This complication has ${shapes} shapes, and a complication is one shape now. Split it into one complication per shape to edit it.`;
+  if (shapes >= 2) return `This complication has ${shapes} shapes, and a complication is one shape now. Split it into one complication per shape to edit it.`;
+  return blankReferenceRefusal(cfg);
+}
+
+/** What a value that points at something reads, for a refusal's sentence, or
+ * undefined for a value that points at nothing or has chosen what it reads. */
+function blankReferenceWord(k: ValueKind): string | undefined {
+  switch (k.kind) {
+    case "named": return k.id.trim() === "" ? "a shared value" : undefined;
+    case "chartStat": return k.layer.trim() === "" ? "a chart" : undefined;
+    case "listStat": return k.layer.trim() === "" ? "a list" : undefined;
+    case "imageTime": return k.layer.trim() === "" ? "a picture" : undefined;
+    default: return undefined;
+  }
+}
+
+/**
+ * The first value that reads a shared value, chart, list or picture nobody
+ * has chosen yet, as the sentence the footer shows.
+ *
+ * Picking one of those sources starts it on "(choose)", and a document saved
+ * that way carries an empty string where the watch expects an id. The app
+ * cannot read the id, so it throws the whole complication away rather than the
+ * one value. Every value is walked, including a shape that is no longer drawn,
+ * because those are on the wire too.
+ */
+export function blankReferenceRefusal(cfg: CustomComplicationConfig): string | undefined {
+  let out: string | undefined;
+  forEachValue(cfg, (v, site) => {
+    if (out !== undefined) return;
+    const what = blankReferenceWord(v.kind);
+    if (what === undefined) return;
+    out = `${describeSite(site)} reads ${what} that is not chosen. Choose one, or pick another source.`;
+  });
+  return out;
 }
 
 /** One undo step: the document, and the values typed in to test it. */

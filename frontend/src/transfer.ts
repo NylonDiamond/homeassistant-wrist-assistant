@@ -23,6 +23,7 @@ import {
   type AggregateScope,
   type CustomComplicationConfig,
   type EntityRef,
+  type FamilyKind,
   type TapAction,
   auditUnknownKeys,
   ConfigParseError,
@@ -37,8 +38,9 @@ import {
   schemaVersionFor,
 } from "./model.js";
 import { type SlotHolder, freeSlotForFamily } from "./copies.js";
-import { supportedFamilies } from "./layouts.js";
+import { familiesFor, importableFamilies, isHomeFamily, supportedFamilies } from "./layouts.js";
 import { familyTitle } from "./renderer.js";
+import { type DeviceOwnerLike, deviceSupportsShapes, isLibraryOwner, ownerSupportsControls } from "./version.js";
 
 // ── placeholders ──────────────────────────────────────────────────────────
 
@@ -750,6 +752,49 @@ export function importProblem(state: ImportReadiness): string | undefined {
   if (state.unchosen === 1) return "One entity still needs choosing.";
   if (state.unchosen > 1) return `${state.unchosen} entities still need choosing.`;
   return undefined;
+}
+
+/** Where an import is written: the device being edited, or Unassigned and the
+ * reason, in words that finish "Imported to Unassigned: …". */
+export type ImportDestination = { unassigned: false } | { unassigned: true; reason: string };
+
+/**
+ * Whether an import goes to the device being edited or to Unassigned.
+ *
+ * The device is only right when it can draw what comes in. An app too old for
+ * custom complications, or a document whose shapes the device has none of (a
+ * Home Screen widget pasted while a watch is selected), would otherwise be
+ * saved where nothing draws it, and on a device whose seats count by shape it
+ * would hold a seat nobody can see. Unassigned holds every shape, so the
+ * design lands whole and goes onto a device from its card.
+ *
+ * A link opened in the address (the gallery's Add, or a link a friend sent)
+ * says nothing about the device it is for, and the panel opened on whichever
+ * device came first. It always goes to Unassigned.
+ *
+ * A control with no shape asks the same of the device's Control Center.
+ */
+export function importDestination(input: {
+  owner: DeviceOwnerLike | null | undefined;
+  ownerName: string;
+  /** The document's own shapes, before any narrowing to a device. */
+  shapes: readonly FamilyKind[];
+  control: boolean;
+  fromLink: boolean;
+}): ImportDestination {
+  const { owner, ownerName } = input;
+  if (isLibraryOwner(owner)) return { unassigned: false };
+  if (input.fromLink) return { unassigned: true, reason: "a link does not say which device it is for" };
+  if (!deviceSupportsShapes(owner)) return { unassigned: true, reason: `${ownerName} needs a newer Wrist Assistant app to draw it` };
+  const first = input.shapes[0];
+  if (first !== undefined && importableFamilies({ supportedFamilies: [...input.shapes] }, familiesFor(owner)).length === 0) {
+    const what = isHomeFamily(first) ? "Home Screen widgets" : `the ${familyTitle(first)} shape`;
+    return { unassigned: true, reason: `${ownerName} does not draw ${what}` };
+  }
+  if (first === undefined && input.control && !ownerSupportsControls(owner)) {
+    return { unassigned: true, reason: `${ownerName} does not have Control Center controls` };
+  }
+  return { unassigned: false };
 }
 
 /** Whether the Import dialog folds the shared text away to one row. Only text

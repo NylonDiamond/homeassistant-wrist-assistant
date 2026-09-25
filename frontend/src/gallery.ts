@@ -796,6 +796,43 @@ export function resolvePreviewUrl(url: string, base: string = GALLERY_API_BASE):
   }
 }
 
+/** Where this browser remembers that it has used the gallery. */
+export const GALLERY_USED_KEY = "wrist-assistant-gallery-used";
+
+/** The part of `localStorage` the gate reads and writes. */
+export type GalleryUseStore = Pick<Storage, "getItem" | "setItem">;
+
+/**
+ * Whether a plain open of the panel asks the gallery for My uploads.
+ *
+ * Only when this browser has used the gallery before: it sent something, or a
+ * listing came back with something in it. A home that never shared a design
+ * has nothing to learn from wrist-assistant.com, and asking on every visit
+ * sent every administrator's key to it. A nickname left by a send before this
+ * flag existed counts too, so an author who had sent already keeps Update
+ * share without first opening Share. Share and the gallery dialog list on
+ * opening whatever this says. Storage that is off or blocked reads as unused.
+ */
+export function galleryUsedHere(store: GalleryUseStore | undefined, nicknameKey?: string): boolean {
+  try {
+    if (store === undefined) return false;
+    if (store.getItem(GALLERY_USED_KEY) === "1") return true;
+    return nicknameKey !== undefined && (store.getItem(nicknameKey) ?? "") !== "";
+  } catch {
+    return false;
+  }
+}
+
+/** Remember that this browser uses the gallery. Storage that refuses only
+ * means the next visit waits for Share to list. */
+export function noteGalleryUsed(store: GalleryUseStore | undefined): void {
+  try {
+    store?.setItem(GALLERY_USED_KEY, "1");
+  } catch {
+    // Not remembered; Share still lists when it opens.
+  }
+}
+
 export async function listMyUploads(
   fetchFn: GalleryFetch,
   key: string,

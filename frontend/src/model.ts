@@ -6495,7 +6495,22 @@ function encodeAggregate(a: AggregateSpec): J {
   return o;
 }
 
+/** An empty string where the watch expects an id: a shared value, chart, list
+ * or picture left on "(choose)". */
+function blankReference(k: ValueKind): boolean {
+  switch (k.kind) {
+    case "named": return k.id.trim() === "";
+    case "chartStat": case "listStat": case "imageTime": return k.layer.trim() === "";
+    default: return false;
+  }
+}
+
 function encodeValueKind(k: ValueKind): J {
+  // The app reads these ids as UUIDs, and an empty one throws the whole
+  // document away. Save refuses a draft that has one (`saveRefusal`), so this
+  // only catches a document that reached the wire some other way: it is
+  // written as empty text, which draws nothing and decodes everywhere.
+  if (blankReference(k)) return { kind: "literal", value: "" };
   switch (k.kind) {
     case "literal": return { kind: "literal", value: k.value };
     case "entityState": return { kind: "entityState", ...encodeEntityRef(k) };

@@ -40,7 +40,10 @@ import {
   latestGalleryVersion,
   galleryUploadRows,
   galleryUploadSubline,
+  GALLERY_USED_KEY,
+  galleryUsedHere,
   listMyUploads,
+  noteGalleryUsed,
   readGalleryUpload,
   resolvePreviewUrl,
   submitToGallery,
@@ -952,5 +955,43 @@ describe("preview context", () => {
       expect(words(out)).toContain("A");
       expect(inlineLineSvg({ text: inlineSymbolMarker("no.such.icon") }, icons, measure)).toBeUndefined();
     });
+  });
+});
+
+// A plain open of the panel asks the gallery for My uploads only in a browser
+// that has used it. Everywhere else the list waits for Share to open.
+describe("the gallery-used gate", () => {
+  function memory(seed: Record<string, string> = {}) {
+    const data = new Map(Object.entries(seed));
+    return {
+      getItem: (k: string) => data.get(k) ?? null,
+      setItem: (k: string, v: string) => { data.set(k, v); },
+    };
+  }
+  const refusing = {
+    getItem: () => { throw new Error("blocked"); },
+    setItem: () => { throw new Error("blocked"); },
+  };
+
+  it("stays shut in a browser that never used the gallery", () => {
+    expect(galleryUsedHere(memory(), "nick")).toBe(false);
+    expect(galleryUsedHere(undefined, "nick")).toBe(false);
+  });
+
+  it("opens once a send or a listing with something in it is noted", () => {
+    const store = memory();
+    noteGalleryUsed(store);
+    expect(store.getItem(GALLERY_USED_KEY)).toBe("1");
+    expect(galleryUsedHere(store, "nick")).toBe(true);
+  });
+
+  it("counts a nickname left by a send from before the flag", () => {
+    expect(galleryUsedHere(memory({ nick: "Jesse" }), "nick")).toBe(true);
+    expect(galleryUsedHere(memory({ nick: "" }), "nick")).toBe(false);
+  });
+
+  it("reads blocked storage as unused, and noting into it does not throw", () => {
+    expect(galleryUsedHere(refusing, "nick")).toBe(false);
+    expect(() => noteGalleryUsed(refusing)).not.toThrow();
   });
 });
