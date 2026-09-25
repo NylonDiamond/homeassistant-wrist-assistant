@@ -413,6 +413,25 @@ import { type ChartColorRow, chartColorRows } from "./chart-colors.js";
 import { KIND_LABEL, SECTION_COLOR } from "./kinds.js";
 import { domainIcon, domainLabel, isActiveState } from "./domain-icons.js";
 
+/** A stand-in's name and the places it is used, for its entity fields. */
+export interface SlotUse {
+  label: string;
+  layers: number;
+  /** The names of the shared values that read it. */
+  values: string[];
+}
+
+/** One line under a stand-in's entity field: its name, and that one pick
+ * fills it in everywhere it is used. */
+export function slotCaption(use: SlotUse | undefined): string {
+  if (!use) return "A stand-in from a shared design. Click it and pick one of your entities.";
+  const where: string[] = [];
+  if (use.layers > 0) where.push(use.layers === 1 ? "1 layer" : `${use.layers} layers`);
+  if (use.values.length > 0) where.push(`shared value${use.values.length === 1 ? "" : "s"} ${joinWords(use.values.map((n) => `"${n}"`))}`);
+  const tail = where.length === 0 ? "" : `: ${joinWords(where)}`;
+  return `A stand-in for "${use.label}". Click it and pick one of your entities. One pick fills it in everywhere${tail}.`;
+}
+
 export interface EditorHost {
   hass: HassLike;
   config: CustomComplicationConfig;
@@ -503,6 +522,15 @@ export interface EditorHost {
   selectValue(id: string): void;
   /** Hold every update until `endGesture` in one undo step. */
   beginGesture(): void;
+  /** What an entity field says about a stand-in a shared design came with:
+   * the name the design gives it, and where else it is used. Undefined for an
+   * id that is not an open stand-in. */
+  slotUse?(entityId: string): SlotUse | undefined;
+  /** Fill a stand-in everywhere it is used, once `apply` has made the pick
+   * the field asked for, as one undo step. A stand-in is one entity of the
+   * sender's home, so a pick in any one field answers it for the whole
+   * design, the way the Pick entities dialog does. */
+  fillSlot?(slot: string, ref: EntityRef, apply: () => void): void;
   /** The position last copied from a Position card, with the shape it was
    * copied on. Held on the panel, so it pastes onto any layer, on any shape,
    * in any complication opened in this tab. */
@@ -1413,8 +1441,17 @@ export type EntityPickSource = "pick" | "typed" | "blur" | "clear";
  * dialog asks for entities while no complication is open and so has no draft
  * to build a whole host from.
  */
-export function entityField(host: Pick<EditorHost, "hass">, label: string, ref: EntityRef, set: (ref: EntityRef, source?: EntityPickSource) => void, key: string, opts: EntityFieldOptions = {}): TemplateResult {
+export function entityField(host: Pick<EditorHost, "hass"> & Partial<Pick<EditorHost, "slotUse" | "fillSlot">>, label: string, ref: EntityRef, setOwn: (ref: EntityRef, source?: EntityPickSource) => void, key: string, opts: EntityFieldOptions = {}): TemplateResult {
   const states = host.hass.states;
+  // A stand-in is answered once for the whole design, not field by field:
+  // filling only this field would leave the same stand-in open in every
+  // other layer and shared value that names it.
+  const slotUse = isPlaceholderId(ref.entityId) ? host.slotUse?.(ref.entityId) : undefined;
+  const set = (next: EntityRef, source?: EntityPickSource) => {
+    if (slotUse && host.fillSlot && source !== "clear" && next.entityId !== "" && !isPlaceholderId(next.entityId)) {
+      host.fillSlot(ref.entityId, next, () => setOwn(next, source));
+    } else setOwn(next, source);
+  };
   const search = entitySearches.get(key);
   const results = search
     ? searchEntities(entityChoices(states, opts.domain, areaLookup(host.hass)), search.query, ENTITY_RESULT_LIMIT, opts.preferNumeric ? looksNumeric : undefined)
@@ -1478,7 +1515,7 @@ export function entityField(host: Pick<EditorHost, "hass">, label: string, ref: 
   const slot = isPlaceholderId(ref.entityId);
   const caption = ref.entityId === ""
     ? html`<div class="hint">Type part of a name, a room, or an id.</div>`
-    : slot ? html`<div class="hint need">A stand-in from a shared design. Click it and pick one of your entities.</div>`
+    : slot ? html`<div class="hint need">${slotCaption(slotUse)}</div>`
     : live ? nothing : html`<div class="hint warn">Not in Home Assistant right now.</div>`;
 
   const focusSearch = (fieldEl: Element | null) =>
@@ -1493,7 +1530,10 @@ export function entityField(host: Pick<EditorHost, "hass">, label: string, ref: 
   };
 
   const clearable = opts.clearable ?? true;
-  const name = live && typeof live.attributes.friendly_name === "string" ? live.attributes.friendly_name : ref.displayName || ref.entityId;
+  // A stand-in goes by the name the design gives it ("Downstairs left light"),
+  // the same name its shared value and the Pick entities dialog use, rather
+  // than its bare number ("Light 1").
+  const name = live && typeof live.attributes.friendly_name === "string" ? live.attributes.friendly_name : slotUse?.label || ref.displayName || ref.entityId;
   const chosen = html`<div class="ent-chosen ${slot ? "slot" : ""}">
       <button type="button" class="ent-pick" title=${`${name}\n${ref.entityId}\nClick to change`} @click=${edit}>
         <span class="ent-ico ${live && isActiveState(live.state) ? "on" : ""}">${domainIcon(ref.domain || ref.entityId.split(".")[0] || "")}</span>
@@ -2678,7 +2718,10 @@ function valuePopover(host: EditorHost, id: string, label: string, value: Value,
 /** The named values and live states `describeValue` reads to put names where
  * ids would otherwise be. */
 export function describeContext(host: EditorHost): DescribeContext {
-  return { values: host.config.values, hass: host.hass, elements: host.config.elements };
+  return {
+    values: host.config.values, hass: host.hass, elements: host.config.elements,
+    ...(host.slotUse ? { slotLabel: (id: string) => host.slotUse?.(id)?.label } : {}),
+  };
 }
 
 function popoverId(key: string): string {
@@ -5646,7 +5689,9 @@ export function layerEntityNote(el: CElement, uses: readonly LayerEntityUse[], v
   // through (`setLayerEntity`), which is invisible from this card. Say so, or
   // a change made here turns up unexplained in the Shared values list.
   const current = uses[0]?.ref.entityId;
-  const moved = [...new Set(uses
+  // A stand-in's own caption already says one pick fills it in everywhere,
+  // shared values included.
+  const moved = current !== undefined && isPlaceholderId(current) ? [] : [...new Set(uses
     .filter((u) => u.where === "test" && u.namedId !== undefined && u.ref.entityId === current)
     .map((u) => valueName?.(u.namedId!) ?? "")
     .filter((n) => n !== ""))];
@@ -9709,6 +9754,9 @@ export interface DescribeContext {
   hass?: HassLike;
   /** The document's layers, so a chart stat can name its chart. */
   elements?: readonly CElement[];
+  /** The name a design gives an open stand-in ("Downstairs left light"),
+   * so a chip reads the same as the stand-in's entity field. */
+  slotLabel?: (entityId: string) => string | undefined;
 }
 
 const TIME_FIELD_WORDS: Record<TimeField, string> = {
@@ -9719,6 +9767,8 @@ const TIME_FIELD_WORDS: Record<TimeField, string> = {
 /** The friendly name a stored entity reference should read as. */
 function entityWords(ref: EntityRef, ctx?: DescribeContext): string {
   if (ref.entityId === "") return "(no entity)";
+  const slot = ctx?.slotLabel?.(ref.entityId);
+  if (slot) return slot;
   const stored = ref.displayName.trim();
   if (stored !== "" && stored !== ref.entityId) return stored;
   const live = ctx?.hass?.states[ref.entityId]?.attributes.friendly_name;

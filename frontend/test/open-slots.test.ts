@@ -20,6 +20,7 @@ import {
   slotValueIds,
   unresolvedEntities,
 } from "../src/transfer.js";
+import { slotCaption } from "../src/editors.js";
 
 const sun: EntityRef = { entityId: "sun.shared_7", displayName: "Sun 7", domain: "sun" };
 const light1: EntityRef = { entityId: "light.shared_1", displayName: "Light 1", domain: "light" };
@@ -75,6 +76,15 @@ describe("auto picks", () => {
     const rows = unresolvedEntities(sharedCopy().cfg, {});
     expect(autoSlotPicks(rows, {}).size).toBe(0);
     expect(autoSlotPicks(rows, { "sun.sun": {}, "sun.other": {} }).size).toBe(0);
+  });
+});
+
+describe("a slot's entity field", () => {
+  it("names the slot and says one pick fills it everywhere", () => {
+    const text = slotCaption({ label: "Downstairs left light", layers: 5, values: ["Downstairs left light"] });
+    expect(text).toContain('A stand-in for "Downstairs left light"');
+    expect(text).toContain('One pick fills it in everywhere: 5 layers and shared value "Downstairs left light".');
+    expect(slotCaption({ label: "Sun", layers: 1, values: [] })).toContain("everywhere: 1 layer.");
   });
 });
 

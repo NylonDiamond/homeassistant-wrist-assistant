@@ -240,6 +240,7 @@ import { GRID_STEPS, NUDGE_COARSE, beginGesture, beginPointDrag, beginScaleDrag,
 import {
   type CopiedPosition,
   type EditorHost,
+  type SlotUse,
   type EffectivePlacement,
   type PickedFlag,
   ALL_SECTIONS,
@@ -8477,6 +8478,8 @@ export class WristAssistantPanel extends LitElement {
       },
       selectValue: (id) => this.openSharedValue(id),
       beginGesture: () => this.draft?.beginGesture(),
+      slotUse: (entityId) => this.slotUse(entityId),
+      fillSlot: (slot, ref, apply) => this.fillSlot(slot, ref, apply),
       copiedPosition: this.copiedPosition,
       copyPosition: (position) => { this.copiedPosition = position; },
       ...(this.rowEditList() ? { rowEditListId: this.rowEditListId! } : {}),
@@ -16650,6 +16653,36 @@ export class WristAssistantPanel extends LitElement {
     const info = { rows, layers, direct, values };
     this.slotsCache = { cfg, version: this.version, info };
     return info;
+  }
+
+  /** An open slot's name and where it is used, for the caption under each
+   * entity field that still holds it. */
+  private slotUse(entityId: string): SlotUse | undefined {
+    const cfg = this.draft?.config;
+    const info = this.slotInfo();
+    const row = info?.rows.find((r) => r.entityId === entityId);
+    if (!cfg || !info || !row) return undefined;
+    let layers = 0;
+    for (const rows of info.layers.values()) if (rows.includes(row)) layers++;
+    const values = slotValueIds(cfg, entityId)
+      .map((vid) => cfg.values.find((v) => v.id.toUpperCase() === vid)?.name.trim() ?? "")
+      .filter((n) => n !== "");
+    return { label: row.label, layers, values };
+  }
+
+  /** A pick in any one field that holds a slot: make the field's own change
+   * (a layer's pick also sets its device class and tap), then fill the same
+   * slot everywhere else, all as one undo step. */
+  private fillSlot(slot: string, ref: EntityRef, apply: () => void) {
+    const d = this.draft;
+    if (!d) { apply(); return; }
+    d.beginGesture();
+    try {
+      apply();
+      this.mutate((c) => applyEntityMap(c, new Map([[slot, ref]])));
+    } finally {
+      d.endGesture();
+    }
   }
 
   /** The shared values, upper case, through which the selected layer reads a
