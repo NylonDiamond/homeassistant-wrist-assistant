@@ -16,7 +16,7 @@ import {
   setPageCount,
 } from "../src/model.js";
 import { keyFor, listExpressionKey, listKey } from "../src/compiler.js";
-import { exportText, parseImportText, scrubForShare, shareSlots } from "../src/transfer.js";
+import { exportObject, exportText, parseImportText, scrubForShare, shareSlots, stableStringify } from "../src/transfer.js";
 import { supportedFamilies } from "../src/layouts.js";
 import {
   type GalleryFetch,
@@ -87,7 +87,10 @@ describe("buildGallerySubmission", () => {
     const body = buildGallerySubmission(cfg, slots, META);
     const named = structuredClone(cfg);
     named.name = META.title;
-    expect(body.shareText).toBe(exportText(named, "share", slots));
+    // The same document as the Share text, on one line to fit the gallery's limit.
+    expect(body.shareText).toBe(stableStringify(exportObject(named, "share", slots), null));
+    expect(body.shareText).not.toContain("\n");
+    expect(JSON.parse(body.shareText)).toEqual(JSON.parse(exportText(named, "share", slots)));
     for (const slot of slots) expect(body.shareText).not.toContain(slot.originalId);
     expect(body.slots).toEqual(slots.map((s) => ({ id: s.placeholderId, label: s.label })));
     expect(body.families).toEqual(["rectangular"]);

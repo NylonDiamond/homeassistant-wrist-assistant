@@ -420,7 +420,7 @@ describe("parts, sharing and the gallery", () => {
   it("sends parentId to the gallery, never lists it as text, and renames a sub-group in place", () => {
     const { cfg, outer, inner } = nested();
     const body = buildGallerySubmission(cfg, [], { title: "Nest", description: "", authorName: "", tags: [], panelVersion: "test" });
-    expect(body.shareText).toContain(`"parentId": "${outer}"`);
+    expect(body.shareText).toContain(`"parentId":"${outer}"`);
     const fields = galleryPublicFields(cfg, []);
     const all = fields.flatMap((f) => f.values);
     expect(all).not.toContain(outer);

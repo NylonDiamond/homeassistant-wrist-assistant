@@ -423,6 +423,9 @@ const PUBLIC_ROW_LABEL: Record<string, string> = {
   "Other text": "Other text",
 };
 
+/** More layer names than this fold behind one line in the public name check. */
+const PUBLIC_LAYER_FOLD_AT = 6;
+
 /** The public gallery's own page, which Share, the gallery dialog and Import
  * all link to. */
 const GALLERY_PAGE = "https://wrist-assistant.com/gallery/";
@@ -1719,6 +1722,7 @@ export class WristAssistantPanel extends LitElement {
   /** The Share dialog's text box is shown. Folded away each time it opens:
    * the buttons carry the text, and the box is for reading it. */
   @state() private shareTextOpen = false;
+  @state() private shareLayersOpen = false;
   /** Which action tile just landed, for its "copied" or "saved" moment. */
   @state() private shareCopied?: "link" | "file" | "text";
   private shareCopiedTimer?: number;
@@ -3368,6 +3372,8 @@ export class WristAssistantPanel extends LitElement {
     .xf-pub { display: grid; gap: 4px; padding: 8px; border-radius: var(--wa-r-md); background: var(--wa-val-bg); border: 1px solid color-mix(in srgb, var(--wa-val) 40%, var(--wa-line)); }
     .xf-pub .kv { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px; align-items: start; padding: 6px; border-radius: 8px; transition: background-color .12s ease-out; }
     .xf-pub .kv.on { background: var(--wa-sel-bg); }
+    .xf-pub .xf-layers { display: grid; gap: 4px; }
+    .xf-pub .xf-layers > summary { padding: 6px; }
     .xf-sec { --sc: var(--wa-accent); display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 12px; border-radius: var(--wa-r-md);
       background: color-mix(in srgb, var(--sc) 7%, var(--wa-card)); border: 1px solid color-mix(in srgb, var(--sc) 34%, var(--wa-line)); }
     .xf-sec.s-shapes { --sc: #26a69a; }
@@ -14364,17 +14370,29 @@ export class WristAssistantPanel extends LitElement {
    * `focus`, which lights its layers behind the dialog. */
   private renderPublicRows(rows: readonly PublicRow[], focus: string | undefined, setFocus: (key: string | undefined) => void) {
     const clear = () => setFocus(undefined);
+    const kv = (row: PublicRow) => {
+      const on = row.key === focus && row.ids.length > 0;
+      const set = () => setFocus(row.key);
+      return html`<div class="kv ${on ? "on" : ""}" @pointerenter=${set} @focusin=${set}>
+        <span class="k">${row.label}</span>
+        <div class="v">${row.control}</div>
+      </div>`;
+    };
+    // A scene preset names every layer it draws. Those names are the preset's,
+    // not the author's, and dozens of boxes bury the group and entity names
+    // that matter, so a long list of layer names waits behind one line.
+    const layers = rows.filter((row) => row.key.startsWith("l:"));
+    const fold = layers.length > PUBLIC_LAYER_FOLD_AT;
+    const changed = layers.filter((row) => (this.shareLayerNames.get(row.name) ?? "").trim() !== "").length;
     return html`
       <div class="xf-lead">${uiIcon("info")}<span>Others can see these names. Change the names of layers and groups here before you share, if you want.</span></div>
       <div class="xf-pub" @pointerleave=${(e: Event) => this.leaveRows(e, clear)} @focusout=${(e: Event) => this.leaveRows(e, clear)}>
-        ${rows.map((row) => {
-          const on = row.key === focus && row.ids.length > 0;
-          const set = () => setFocus(row.key);
-          return html`<div class="kv ${on ? "on" : ""}" @pointerenter=${set} @focusin=${set}>
-            <span class="k">${row.label}</span>
-            <div class="v">${row.control}</div>
-          </div>`;
-        })}
+        ${(fold ? rows.filter((row) => !row.key.startsWith("l:")) : rows).map(kv)}
+        ${fold ? html`<details class="xf-raw xf-layers" .open=${this.shareLayersOpen}
+          @toggle=${(e: Event) => { this.shareLayersOpen = (e.target as HTMLDetailsElement).open; }}>
+          <summary>${uiIcon("right")}<span>${layers.length} layer names${changed > 0 ? `, ${changed} changed` : ""}</span></summary>
+          ${this.shareLayersOpen ? layers.map(kv) : nothing}
+        </details>` : nothing}
       </div>
       <div class="hint">Your own complication keeps its names. An empty box keeps the name it had.</div>`;
   }
@@ -14404,6 +14422,7 @@ export class WristAssistantPanel extends LitElement {
     this.shareLayerNames = new Map();
     this.shareNote = "";
     this.shareTextOpen = false;
+    this.shareLayersOpen = false;
     this.shareLink = undefined;
     this.shareLinkShown = false;
     this.shareCopied = undefined;

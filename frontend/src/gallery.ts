@@ -20,7 +20,7 @@ import {
   mapFreeText,
   schemaVersionFor,
 } from "./model.js";
-import { type ShareSlot, exportText, hasInstanceFilters, isPlaceholderId, scrubForShare } from "./transfer.js";
+import { type ShareSlot, exportObject, exportText, hasInstanceFilters, isPlaceholderId, scrubForShare, stableStringify } from "./transfer.js";
 import { isHomeFamily, isSharedFamily, supportedFamilies } from "./layouts.js";
 import type { DeviceKind } from "./version.js";
 
@@ -235,7 +235,9 @@ export function buildGallerySubmission(
   const doc = applyGalleryOverrides(cfg, { ...overrides, name: meta.title });
   if (meta.includeNotes === false) delete doc.notes;
   return {
-    shareText: exportText(doc, "share", slots),
+    // On one line: the indent is nearly half of a big design's text, and the
+    // gallery's size limit counts it. Readers get it back by parsing.
+    shareText: stableStringify(exportObject(doc, "share", slots), null),
     title: meta.title.trim(),
     description: meta.description.trim(),
     authorName: meta.authorName.trim(),

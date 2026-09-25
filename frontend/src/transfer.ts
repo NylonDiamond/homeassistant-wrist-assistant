@@ -210,8 +210,21 @@ export function hasInstanceFilters(cfg: CustomComplicationConfig): boolean {
  * edited, and to diff cleanly when somebody posts "here is mine with one line
  * changed". It matches Swift's `.sortedKeys` so the same document exported on
  * either side is the same text.
+ *
+ * `indent: null` prints the same sorted text on one line, for a copy that is
+ * sent somewhere with a size limit rather than read.
  */
-export function stableStringify(value: unknown, indent = "  "): string {
+export function stableStringify(value: unknown, indent: string | null = "  "): string {
+  if (indent === null) {
+    const flat = (v: unknown): string => {
+      if (v === null || typeof v !== "object") return JSON.stringify(v) ?? "null";
+      if (Array.isArray(v)) return `[${v.map(flat).join(",")}]`;
+      const record = v as Record<string, unknown>;
+      const keys = Object.keys(record).filter((k) => record[k] !== undefined).sort();
+      return `{${keys.map((k) => `${JSON.stringify(k)}:${flat(record[k])}`).join(",")}}`;
+    };
+    return flat(value);
+  }
   const write = (v: unknown, pad: string): string => {
     if (v === null || typeof v !== "object") return JSON.stringify(v) ?? "null";
     const inner = pad + indent;
