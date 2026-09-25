@@ -1258,6 +1258,8 @@ export function addGroupCards<C extends { kind: CElement["kind"]; variant?: AddV
 /** The presets most faces start from, offered on the Elements tab under the
  * empty layers, with the way to the rest beside them. */
 const POPULAR_PRESETS: readonly PresetKind[] = ["gauge", "status", "timer"];
+/** What a search in the Add sheet may be after when it wants the note tile. */
+const NOTE_SEARCH_WORDS: readonly string[] = ["note", "notes", "instructions", "readme", "setup", "help", "import"];
 
 /** The registry snapshots a preset sorts entities into areas with. */
 function presetRegistry(hass: HassLike): PresetEnv["registry"] {
@@ -4065,7 +4067,29 @@ export class WristAssistantPanel extends LitElement {
       padding: 8px 10px; border-radius: 7px; border: 1px solid color-mix(in srgb, var(--wa-val) 40%, var(--wa-line));
       background: var(--wa-input); color: var(--wa-ink);
     }
-    .as-tabs button.as-notes { margin-left: 6px; }
+    /* The note stands apart from the layers in the shared-value amber: a lit
+       button in the tab row, and a tile of its own under the elements. */
+    .as-tabs button.lc-btn.as-notes {
+      margin-left: 6px; background: var(--wa-val); border-color: transparent; color: var(--wa-card);
+    }
+    .as-tabs button.lc-btn.as-notes:hover { filter: brightness(1.08); }
+    .as-tabs button.lc-btn.as-notes svg.ui-icon { stroke-width: 2.4; }
+    button.as-tile.note-tile {
+      --k: var(--wa-val);
+      border-color: color-mix(in srgb, var(--wa-val) 45%, var(--wa-line));
+      background: color-mix(in srgb, var(--wa-val) 6%, var(--wa-input));
+    }
+    .as-pic.note-pic {
+      display: flex; flex-direction: column; justify-content: center; gap: 5px; padding: 0 12px; box-sizing: border-box;
+      background: color-mix(in srgb, var(--wa-val) 14%, #16140e);
+    }
+    .note-pic .np-head { display: flex; align-items: center; gap: 6px; color: var(--wa-val); }
+    .note-pic .np-head svg.ui-icon { width: 13px; height: 13px; flex: none; }
+    .note-pic .np-head i { height: 5px; width: 34%; border-radius: 3px; background: var(--wa-val); opacity: .9; }
+    .note-pic .np-l { display: block; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--wa-val) 55%, transparent); }
+    .note-pic .np-l.a { width: 88%; }
+    .note-pic .np-l.b { width: 72%; }
+    .note-pic .np-l.c { width: 50%; }
     /* The notes box's toolbar: small square buttons that write the plain text,
        a Link list under them, and Preview at the far end. */
     .notes-editor { display: flex; flex-direction: column; gap: 6px; position: relative; }
@@ -16588,16 +16612,30 @@ export class WristAssistantPanel extends LitElement {
         .map((kind) => offered.find((p) => p.kind === kind))
         .filter((p): p is PresetSpec => p !== undefined);
       const parts = this.parts ?? [];
-      const elements = found.elements.length === 0
+      // The note is no layer, but it is something to add, so it sits with the
+      // elements where people look, and a search for it finds it.
+      const noteShown = !searching || NOTE_SEARCH_WORDS.some((w) => w.includes(query.toLowerCase()));
+      const hasNote = cfg.notes !== undefined;
+      const noteSect = !noteShown ? nothing : html`<div class="as-sect">For people who import</div><div class="as-grid">
+        <button class="as-tile wide note-tile" title=${hasNote ? "Edit this complication's note" : "Write a note for people who import this"}
+          @click=${() => this.editNotes()}>
+          <span class="as-pic note-pic" aria-hidden="true">
+            <span class="np-head">${uiIcon("note")}<i></i></span><i class="np-l a"></i><i class="np-l b"></i><i class="np-l c"></i>
+          </span>
+          <span class="as-text"><span class="as-name">${hasNote ? "Edit note" : "Note"}</span>
+            <span class="as-blurb">What to set up and what a tap does. It opens on top of the layers after import. The watch never shows it.</span></span>
+        </button></div>`;
+      const elements = found.elements.length === 0 && !noteShown
         ? (tab === "all" ? nothing : nothingFound("elements"))
         : html`
           ${group("Show a value", value)}
           ${group("Pictures", pictures)}
-          ${group("Decorate", decorate)}`;
+          ${group("Decorate", decorate)}
+          ${noteSect}`;
       // All: every element, then every preset, then the saved parts. Elements:
       // the same elements with a taste of the presets and a way to the rest.
       body = tab === "all"
-        ? (found.elements.length === 0 && found.presets.length === 0
+        ? (found.elements.length === 0 && found.presets.length === 0 && !noteShown
           ? nothingFound("elements or presets")
           : html`${elements}
             ${found.presets.length === 0 ? nothing : html`<div class="as-sect">Presets</div><div class="as-grid">${found.presets.map(presetTile)}</div>`}
@@ -16629,8 +16667,8 @@ export class WristAssistantPanel extends LitElement {
         <span class="spacer"></span>
         ${usesPages(cfg) ? html`<span class="lc-sub">Goes on page ${this.page}</span>` : nothing}
         <button type="button" class="lc-btn as-notes"
-          title=${cfg.notes === undefined ? "Write notes for people who import this: what to set up, what a tap does" : "Edit the notes for people who import this"}
-          @click=${() => this.editNotes()}>${uiIcon(cfg.notes === undefined ? "plus" : "note")}<span>Notes</span></button>
+          title=${cfg.notes === undefined ? "Write a note for people who import this: what to set up, what a tap does" : "Edit the note for people who import this"}
+          @click=${() => this.editNotes()}>${uiIcon(cfg.notes === undefined ? "plus" : "note")}<span>Note</span></button>
       </div>
       ${full ? html`<div class="as-full">This complication has 64 layers, the most it can hold. Delete one to add another.</div>` : nothing}
       <div class="as-body">${body}</div>
