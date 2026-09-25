@@ -9897,6 +9897,10 @@ export class WristAssistantPanel extends LitElement {
     const z = this.canvasZoom;
     const off = !this.draft || this.parseError !== undefined;
     return html`<span class="tb-zoom" role="group" aria-label="Zoom">
+      <button class="tb icon" ?disabled=${off} aria-label="Layers in 3D"
+        title="Layers in 3D: the face taken apart, every layer on its own sheet floating over the one under it. Drag to turn it."
+        @click=${() => this.openStack()}><svg class="tb-glyph" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M7 1.5 12.5 4.25 7 7 1.5 4.25Z" /><path d="M1.5 7 7 9.75 12.5 7" /><path d="M1.5 9.75 7 12.5 12.5 9.75" /></svg></button>
+      <span class="tb-sep" aria-hidden="true"></span>
       <button class="tb icon" ?disabled=${off || z <= ZOOM_MIN} aria-label="Zoom out" title="Zoom out"
         @click=${() => { this.canvasZoom = zoomOut(this.canvasZoom); }}>−</button>
       <button class="tb pct" ?disabled=${off} aria-label=${`Zoom ${zoomLabel(z)}. Back to Fit`}
@@ -9905,9 +9909,6 @@ export class WristAssistantPanel extends LitElement {
       <button class="tb icon" ?disabled=${off || z >= ZOOM_MAX} aria-label="Zoom in" title="Zoom in"
         @click=${() => { this.canvasZoom = zoomIn(this.canvasZoom); }}>+</button>
       <span class="tb-sep" aria-hidden="true"></span>
-      <button class="tb icon" ?disabled=${off} aria-label="Layers in 3D"
-        title="Layers in 3D: the face taken apart, every layer on its own sheet floating over the one under it. Drag to turn it."
-        @click=${() => this.openStack()}><svg class="tb-glyph" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M7 1.5 12.5 4.25 7 7 1.5 4.25Z" /><path d="M1.5 7 7 9.75 12.5 7" /><path d="M1.5 9.75 7 12.5 12.5 9.75" /></svg></button>
       <button class="tb icon" ?disabled=${off} aria-label="Full screen"
         title="Full screen: the face as large as the window allows, for small moves. Drag and arrow keys work there too. Escape closes."
         @click=${() => { this.zoomed = true; }}>${uiIcon("expand")}</button>
