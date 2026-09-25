@@ -2187,6 +2187,29 @@ export class WristAssistantPanel extends LitElement {
     button.tb-btn:hover:not(:disabled) { border-color: var(--wa-line-strong); background: var(--wa-panel); }
     button.tb-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     button.tb-btn.tb-more { padding: 0 9px; letter-spacing: .08em; }
+    /* New wears the same fill and plus as the picker's own New, so the two
+       read as one button in two places. */
+    button.tb-btn.tb-new {
+      display: inline-flex; align-items: center; gap: 5px; padding: 0 11px 0 9px;
+      border-color: transparent; background: var(--wa-primary-bg); color: var(--wa-primary-ink);
+    }
+    button.tb-btn.tb-new:hover:not(:disabled) { border-color: transparent; background: var(--wa-primary-bg); filter: brightness(1.1); }
+    button.tb-btn.tb-new svg { width: 13px; height: 13px; }
+    /* Import and Share each carry a faint hue of their own, so the row of
+       four is told apart at a glance without a second loud button beside
+       New. The words are the hue pulled toward the ink, which keeps them
+       readable on both skins. */
+    button.tb-btn.tb-import { --tb-hue: #4a8cff; }
+    button.tb-btn.tb-share { --tb-hue: var(--wa-green); }
+    button.tb-btn.tb-import, button.tb-btn.tb-share {
+      color: color-mix(in srgb, var(--tb-hue) 70%, var(--wa-ink));
+      background: color-mix(in srgb, var(--tb-hue) 10%, var(--wa-card));
+      border-color: color-mix(in srgb, var(--tb-hue) 28%, transparent);
+    }
+    button.tb-btn.tb-import:hover:not(:disabled), button.tb-btn.tb-share:hover:not(:disabled) {
+      background: color-mix(in srgb, var(--tb-hue) 18%, var(--wa-card));
+      border-color: color-mix(in srgb, var(--tb-hue) 45%, transparent);
+    }
     .tb-saved { font-size: 11.5px; color: var(--wa-muted); white-space: nowrap; }
     header.stacked .tb-saved, header.stacked .tb-pen { display: none; }
     /* Stacked (a phone, or a narrow window), the bar is two tidy rows rather
@@ -10383,7 +10406,7 @@ export class WristAssistantPanel extends LitElement {
       ${this.renderPicker()}
       ${this.renderNewButton()}
       ${this.renderImportButton()}
-      ${d ? html`<button class="tb-btn" aria-haspopup="dialog" aria-expanded=${this.shareOpen ? "true" : "false"}
+      ${d ? html`<button class="tb-btn tb-share" aria-haspopup="dialog" aria-expanded=${this.shareOpen ? "true" : "false"}
         title="Share or back up this complication as text, a file or a link"
         @click=${() => this.openShareDialog()}>Share</button>` : nothing}
       <span class="spacer"></span>
@@ -10509,9 +10532,9 @@ export class WristAssistantPanel extends LitElement {
     if (!this.hass.user?.is_admin) return nothing;
     const full = this.freeSlot() < 0;
     const where = isLibraryOwner(this.selectedOwner) ? UNASSIGNED_LABEL : this.deviceWord;
-    return html`<button class="tb-btn" aria-haspopup="dialog" ?disabled=${full || this.ownerBusy}
+    return html`<button class="tb-btn tb-new" aria-haspopup="dialog" ?disabled=${full || this.ownerBusy}
       title=${full ? `${where} is full. ${capFirst(this.placePhrase)} has no free slot. Delete a complication first.` : "Make a new complication"}
-      @click=${() => this.openNewDialog()}>New</button>`;
+      @click=${() => this.openNewDialog()}>${uiIcon("plus")}<span>New</span></button>`;
   }
 
   /** Import, beside New, for an administrator. A full device keeps the
@@ -10520,7 +10543,7 @@ export class WristAssistantPanel extends LitElement {
     if (!this.hass.user?.is_admin) return nothing;
     const full = this.freeSlot() < 0;
     const where = isLibraryOwner(this.selectedOwner) ? UNASSIGNED_LABEL : this.deviceWord;
-    return html`<button class="tb-btn" aria-haspopup="dialog" ?disabled=${full}
+    return html`<button class="tb-btn tb-import" aria-haspopup="dialog" ?disabled=${full}
       title=${full ? `${where} is full. ${capFirst(this.placePhrase)} has no free slot. Delete a complication first.` : "Paste a complication somebody shared"}
       @click=${() => this.openImportDialog()}>Import</button>`;
   }

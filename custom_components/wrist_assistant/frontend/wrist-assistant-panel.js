@@ -2571,6 +2571,29 @@ ${F_(c)}`}}delete s.hidden,delete s.linkId;let l=Wd(a);if(l.length>0){let d=l.sl
     button.tb-btn:hover:not(:disabled) { border-color: var(--wa-line-strong); background: var(--wa-panel); }
     button.tb-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     button.tb-btn.tb-more { padding: 0 9px; letter-spacing: .08em; }
+    /* New wears the same fill and plus as the picker's own New, so the two
+       read as one button in two places. */
+    button.tb-btn.tb-new {
+      display: inline-flex; align-items: center; gap: 5px; padding: 0 11px 0 9px;
+      border-color: transparent; background: var(--wa-primary-bg); color: var(--wa-primary-ink);
+    }
+    button.tb-btn.tb-new:hover:not(:disabled) { border-color: transparent; background: var(--wa-primary-bg); filter: brightness(1.1); }
+    button.tb-btn.tb-new svg { width: 13px; height: 13px; }
+    /* Import and Share each carry a faint hue of their own, so the row of
+       four is told apart at a glance without a second loud button beside
+       New. The words are the hue pulled toward the ink, which keeps them
+       readable on both skins. */
+    button.tb-btn.tb-import { --tb-hue: #4a8cff; }
+    button.tb-btn.tb-share { --tb-hue: var(--wa-green); }
+    button.tb-btn.tb-import, button.tb-btn.tb-share {
+      color: color-mix(in srgb, var(--tb-hue) 70%, var(--wa-ink));
+      background: color-mix(in srgb, var(--tb-hue) 10%, var(--wa-card));
+      border-color: color-mix(in srgb, var(--tb-hue) 28%, transparent);
+    }
+    button.tb-btn.tb-import:hover:not(:disabled), button.tb-btn.tb-share:hover:not(:disabled) {
+      background: color-mix(in srgb, var(--tb-hue) 18%, var(--wa-card));
+      border-color: color-mix(in srgb, var(--tb-hue) 45%, transparent);
+    }
     .tb-saved { font-size: 11.5px; color: var(--wa-muted); white-space: nowrap; }
     header.stacked .tb-saved, header.stacked .tb-pen { display: none; }
     /* Stacked (a phone, or a narrow window), the bar is two tidy rows rather
@@ -6920,7 +6943,7 @@ ${F_(c)}`}}delete s.hidden,delete s.linkId;let l=Wd(a);if(l.length>0){let d=l.sl
       ${this.renderPicker()}
       ${this.renderNewButton()}
       ${this.renderImportButton()}
-      ${a?u`<button class="tb-btn" aria-haspopup="dialog" aria-expanded=${this.shareOpen?"true":"false"}
+      ${a?u`<button class="tb-btn tb-share" aria-haspopup="dialog" aria-expanded=${this.shareOpen?"true":"false"}
         title="Share or back up this complication as text, a file or a link"
         @click=${()=>this.openShareDialog()}>Share</button>`:m}
       <span class="spacer"></span>
@@ -6939,9 +6962,9 @@ ${F_(c)}`}}delete s.hidden,delete s.linkId;let l=Wd(a);if(l.length>0){let d=l.sl
       ${this.canEdit?u`<span class="tb-pen" aria-hidden="true">✎</span>`:m}
     </label>`}sendInfo(){let t=Kx({token:this.serverToken,appliedToken:this.appliedToken,polling:this.polling,pending:this.sendPending,lastPollSeconds:this.lastPollSeconds,deviceKind:this.selectedOwner?.device_kind,lastSyncSeconds:this.lastSyncSeconds,pushAvailable:this.pushAvailable,pendingChanges:this.pendingChanges});if(!((t.kind==="unsupported"||t.kind==="openApp")&&!this.sendStatusKnown)&&!(t.kind==="library"&&this.draft?.baseRevision===null))return{s:t,d:Wx(t)}}renderSendPill(){let t=this.owners.map(r=>Nl(r)),i=jx(this.owners.map((r,o)=>({name:t.filter(s=>s===t[o]).length>1?hu(r):t[o],kind:r.device_kind,token:r.token,appliedToken:r.applied_token,count:r.complication_count,orphan:r.is_orphan})));if(!i)return m;let a=qx(i);return u`<span class="tb-sync ${i.kind==="synced"?"ok":"warn"}" title=${a.title}>
       <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${a.label}</span>
-    </span>`}async refreshOwnerTokens(){try{let t=await ec(this.hass),i=new Map(t.owners.map(a=>[a.owner_watch_id,a]));this.owners=this.owners.map(a=>{let r=i.get(a.owner_watch_id);return r?{...a,token:r.token,applied_token:r.applied_token,complication_count:r.complication_count}:a})}catch{}}async listenToHome(){try{this.homeUnsubscribe=await gf(this.hass,void 0,()=>{this.ownerTokensTimer!==void 0&&window.clearTimeout(this.ownerTokensTimer),this.ownerTokensTimer=window.setTimeout(()=>{this.ownerTokensTimer=void 0,this.refreshOwnerTokens()},400)})}catch{}}renderNewButton(){if(!this.hass.user?.is_admin)return m;let t=this.freeSlot()<0,i=Fe(this.selectedOwner)?He:this.deviceWord;return u`<button class="tb-btn" aria-haspopup="dialog" ?disabled=${t||this.ownerBusy}
+    </span>`}async refreshOwnerTokens(){try{let t=await ec(this.hass),i=new Map(t.owners.map(a=>[a.owner_watch_id,a]));this.owners=this.owners.map(a=>{let r=i.get(a.owner_watch_id);return r?{...a,token:r.token,applied_token:r.applied_token,complication_count:r.complication_count}:a})}catch{}}async listenToHome(){try{this.homeUnsubscribe=await gf(this.hass,void 0,()=>{this.ownerTokensTimer!==void 0&&window.clearTimeout(this.ownerTokensTimer),this.ownerTokensTimer=window.setTimeout(()=>{this.ownerTokensTimer=void 0,this.refreshOwnerTokens()},400)})}catch{}}renderNewButton(){if(!this.hass.user?.is_admin)return m;let t=this.freeSlot()<0,i=Fe(this.selectedOwner)?He:this.deviceWord;return u`<button class="tb-btn tb-new" aria-haspopup="dialog" ?disabled=${t||this.ownerBusy}
       title=${t?`${i} is full. ${DS(this.placePhrase)} has no free slot. Delete a complication first.`:"Make a new complication"}
-      @click=${()=>this.openNewDialog()}>New</button>`}renderImportButton(){if(!this.hass.user?.is_admin)return m;let t=this.freeSlot()<0,i=Fe(this.selectedOwner)?He:this.deviceWord;return u`<button class="tb-btn" aria-haspopup="dialog" ?disabled=${t}
+      @click=${()=>this.openNewDialog()}>${A("plus")}<span>New</span></button>`}renderImportButton(){if(!this.hass.user?.is_admin)return m;let t=this.freeSlot()<0,i=Fe(this.selectedOwner)?He:this.deviceWord;return u`<button class="tb-btn tb-import" aria-haspopup="dialog" ?disabled=${t}
       title=${t?`${i} is full. ${DS(this.placePhrase)} has no free slot. Delete a complication first.`:"Paste a complication somebody shared"}
       @click=${()=>this.openImportDialog()}>Import</button>`}renderTopMenu(){if(!this.hass.user?.is_admin)return m;let t=this.sendInfo();if(!t?.d.resend&&!t?.d.refresh)return m;let i=this.sideMenu==="top",a=r=>()=>{this.toggleSideMenu("top",!1),r()};return u`<span class="side-menu" data-side-menu="top">
       <button class="tb-btn tb-more" aria-haspopup="menu" aria-expanded=${i?"true":"false"} aria-label="More actions" title="More"
