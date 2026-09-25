@@ -7413,6 +7413,11 @@ export class WristAssistantPanel extends LitElement {
 
   protected override updated(changed: PropertyValues) {    this.keepMenusOnScreen();
     this.watchStage();
+    // The row of what the pointer rests on over the face, brought into the
+    // Layers list's view the moment it lights.
+    if (changed.has("faceHover") && this.faceHover) {
+      this.renderRoot.querySelector<HTMLElement>(".layers .layer.peek")?.scrollIntoView({ block: "nearest" });
+    }
     // The start page lists every device's complications, and the other
     // devices' lists are only read when a surface asks for them. Asked once
     // per visit to the page, the way the picker asks once per opening.
@@ -10516,17 +10521,31 @@ export class WristAssistantPanel extends LitElement {
     return [];
   }
 
-  /** The Layers row that stands for the face hover. A layer or group folded
-   * away inside a collapsed group is shown by the outermost folded group's
-   * row, the one row of it the list still draws. */
-  private faceHoverRow(): Inspect | undefined {
+  /** The folded groups around the face hover. They open while the pointer
+   * rests there, so its row can be seen, and fold again when the pointer
+   * moves on. Nothing is written: `collapsed` keeps the author's folds, and a
+   * press on the face is what keeps them open (`keepFaceHoverOpen`). */
+  private faceHoverOpenIds(): ReadonlySet<string> {
     const h = this.liveFaceHover();
     const cfg = this.canvasConfig();
-    if (!h || !cfg || (h.kind !== "layer" && h.kind !== "group")) return h;
+    if (!h || !cfg || (h.kind !== "layer" && h.kind !== "group")) return new Set();
     const groupId = h.kind === "layer" ? cfg.elements.find((x) => x.payload.id === h.id)?.payload.groupId
       : groupById(cfg, h.id)?.parentId;
-    const folded = groupChain(cfg, groupId).filter((g) => this.collapsed.has(g.id)).pop();
-    return folded ? { kind: "group", id: folded.id } : h;
+    return new Set(groupChain(cfg, groupId).filter((g) => this.collapsed.has(g.id)).map((g) => g.id));
+  }
+
+  /** A group the Layers list draws folded: folded by the author, and not
+   * opened for now by the face hover. */
+  private isFolded(id: string, hoverOpen: ReadonlySet<string>): boolean {
+    return this.collapsed.has(id) && !hoverOpen.has(id);
+  }
+
+  /** A press on the face lands on what the hover opened groups for, so those
+   * groups stay open rather than folding back under the selection. */
+  private keepFaceHoverOpen() {
+    const open = this.faceHoverOpenIds();
+    if (open.size === 0) return;
+    this.setCollapsed(new Set([...this.collapsed].filter((id) => !open.has(id))));
   }
 
   /** What the list and the preview draw as selected: the row under the
@@ -17682,7 +17701,8 @@ export class WristAssistantPanel extends LitElement {
     // shows the row under the pointer as the selection.
     // The thing under the pointer on the face outlines its row the same way.
     const shown = this.inspect;
-    const peeks = [this.rowPeek, this.faceHoverRow()].flatMap((p) => p ? [inspectKey(p)] : []);
+    const peeks = [this.rowPeek, this.liveFaceHover()].flatMap((p) => p ? [inspectKey(p)] : []);
+    const hoverOpen = this.faceHoverOpenIds();
     const peekCls = (row: Inspect) => peeks.includes(inspectKey(row)) ? "peek" : "";
     const shapeHl = shown.kind === "family";
     const tapShown = (_id: string) => this.tapFocus;
@@ -17816,7 +17836,7 @@ export class WristAssistantPanel extends LitElement {
     // with its parent's selection, as a member layer is.
     const groupRow = (g: LayerGroup, members: CElement[], total: number, kids: readonly LayerListRow[], held = false) => {
       const hl = shown.kind === "group" && shown.id === g.id;
-      const open = !this.collapsed.has(g.id);
+      const open = !this.isFolded(g.id, hoverOpen);
       const d = this.rowDrag(g.id, edit);
       const peekAt = rowPage;
       // The folder row has three drop zones. Its top edge puts the dragged row
@@ -18006,7 +18026,7 @@ export class WristAssistantPanel extends LitElement {
         // box it sits in.
         const groupHl = held || (shown.kind === "group" && shown.id === g.id);
         const hue = GROUP_BOX_HUES[depth % GROUP_BOX_HUES.length];
-        rows.push(html`<div class="group-box" style=${`--gc:${hue}`}>${groupRow(g, row.members, row.total, row.rows, held)}${this.collapsed.has(g.id)
+        rows.push(html`<div class="group-box" style=${`--gc:${hue}`}>${groupRow(g, row.members, row.total, row.rows, held)}${this.isFolded(g.id, hoverOpen)
           ? nothing
           : html`<div class="group-kids">${buildRows(row.rows, true, groupHl, depth + 1)}</div>`}</div>`);
       }
@@ -19159,7 +19179,7 @@ export class WristAssistantPanel extends LitElement {
       ...(hoverIds.length > 0 ? { hoverIds } : {}),
     };
     return html`<div class="preview ${family} active"
-      @pointerdown=${(e: PointerEvent) => { this.faceHover = undefined; this.onPreviewPointerDown(family, e); }}
+      @pointerdown=${(e: PointerEvent) => { this.keepFaceHoverOpen(); this.faceHover = undefined; this.onPreviewPointerDown(family, e); }}
       @pointermove=${(e: PointerEvent) => this.onPreviewPointerMove(e)}
       @pointerleave=${() => { this.faceHover = undefined; }}
       @dblclick=${(e: MouseEvent) => this.onPreviewDoubleClick(e)}>
