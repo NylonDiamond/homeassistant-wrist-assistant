@@ -3768,27 +3768,27 @@ ${V5(c)}`}}delete s.hidden,delete s.linkId;let l=_c(a);if(l.length>0){let d=l.sl
     .xf-banner svg.ui-icon { width: 16px; height: 16px; flex: none; margin-top: 1px; color: var(--wa-accent); }
     /* What becomes public: one box per kind of name, each in its own color. */
     .xf-pub { display: grid; gap: 8px; }
-    .xf-pub .pk { --kc: var(--wa-accent); border-radius: var(--wa-r-md); overflow: hidden;
+    .xf-pub .pn { --kc: var(--wa-ink); border-radius: var(--wa-r-md); overflow: hidden;
       background: color-mix(in srgb, var(--kc) 6%, var(--wa-card)); border: 1px solid color-mix(in srgb, var(--kc) 30%, var(--wa-line)); }
-    .xf-pub .pk-e { --kc: var(--wa-ent); }
-    .xf-pub .pk-g { --kc: #9b7bf0; }
-    .xf-pub .pk-v { --kc: var(--wa-val); }
-    .xf-pub .pk-l { --kc: #4a90e2; }
-    .xf-pub .pk-t { --kc: var(--wa-muted); }
-    .xf-pub .pk-h { display: flex; align-items: center; gap: 8px; padding: 8px 10px; font-size: 12.5px; color: var(--wa-ink); list-style: none; }
-    .xf-pub .pk-h::-webkit-details-marker { display: none; }
-    .xf-pub summary.pk-h { cursor: pointer; }
-    .xf-pub summary.pk-h:hover { background: color-mix(in srgb, var(--kc) 10%, transparent); }
-    .xf-pub summary.pk-h:focus-visible { outline: none; box-shadow: inset var(--wa-ring); }
-    .xf-pub .pk-h > i { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--kc); }
-    .xf-pub .pk-h > b { font-weight: 600; }
-    .xf-pub .pk-h > .n { font-size: 11px; font-variant-numeric: tabular-nums; padding: 1px 7px; border-radius: 999px;
+    .xf-pub .pn-e { --kc: var(--wa-ent); }
+    .xf-pub .pn-g { --kc: #9b7bf0; }
+    .xf-pub .pn-v { --kc: var(--wa-val); }
+    .xf-pub .pn-l { --kc: #4a90e2; }
+    .xf-pub .pn-t { --kc: var(--wa-muted); }
+    .xf-pub .pn-h { display: flex; align-items: center; gap: 8px; padding: 8px 10px; font-size: 12.5px; color: var(--wa-ink); list-style: none; }
+    .xf-pub .pn-h::-webkit-details-marker { display: none; }
+    .xf-pub summary.pn-h { cursor: pointer; }
+    .xf-pub summary.pn-h:hover { background: color-mix(in srgb, var(--kc) 10%, transparent); }
+    .xf-pub summary.pn-h:focus-visible { outline: none; box-shadow: inset var(--wa-ring); }
+    .xf-pub .pn-h > i { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--kc); }
+    .xf-pub .pn-h > b { font-weight: 600; }
+    .xf-pub .pn-h > .n { font-size: 11px; font-variant-numeric: tabular-nums; padding: 1px 7px; border-radius: 999px;
       color: var(--wa-muted); background: color-mix(in srgb, var(--kc) 14%, transparent); }
-    .xf-pub .pk-h > .chg { font-size: 11px; color: var(--kc); }
-    .xf-pub .pk-h > svg.ui-icon { width: 13px; height: 13px; margin-left: auto; color: var(--wa-muted); transition: transform .15s ease-out; }
-    .xf-pub details.pk[open] > .pk-h > svg.ui-icon { transform: rotate(90deg); }
-    .xf-pub .pk-b { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 4px; padding: 0 6px 6px; }
-    .xf-pub .pk-head .pk-b { grid-template-columns: minmax(0, 1fr); }
+    .xf-pub .pn-h > .chg { font-size: 11px; color: var(--kc); }
+    .xf-pub .pn-h > svg.ui-icon { width: 13px; height: 13px; margin-left: auto; color: var(--wa-muted); transition: transform .15s ease-out; }
+    .xf-pub details.pn[open] > .pn-h > svg.ui-icon { transform: rotate(90deg); }
+    .xf-pub .pn-b { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 4px; padding: 0 6px 6px; }
+    .xf-pub .pn-head .pn-b { grid-template-columns: minmax(0, 1fr); }
     .xf-pub .kv { min-width: 0; display: flex; flex-direction: column; gap: 5px; padding: 3px; border-radius: 8px; transition: background-color .12s ease-out; }
     .xf-pub .kv.on { background: var(--wa-sel-bg); }
     .xf-sec { --sc: var(--wa-accent); display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 12px; border-radius: var(--wa-r-md);
@@ -7840,11 +7840,11 @@ ${V5(c)}`}}delete s.hidden,delete s.linkId;let l=_c(a);if(l.length>0){let d=l.sl
         <span class="xf-ln">${ze(s,r)}</span><em>${Pt[s.kind]}</em>
       </span>`})}</span>`}leaveRows(t,i){let a=t.currentTarget,r=t instanceof FocusEvent?t.relatedTarget:a.getRootNode().activeElement;r instanceof Node&&a.contains(r)||i()}shareConfig(){return this.draft?.config}sharePicked(){let t=this.draft?.config;return t?qe(t):[]}shareNameOverrides(){let t=new Map,i=this.draft?.config;if(i&&this.shareLayerNames.size>0)for(let a of i.elements){let r=a.payload.name===void 0?void 0:this.shareLayerNames.get(a.payload.name.trim());r!==void 0&&t.set(a.payload.id,r)}return{name:this.shareName,groupNames:this.shareGroupNames,valueNames:this.shareValueNames,layerNames:t}}publicNameRows(t,i,a,r,o){let s=MT(t,i,r),l=(h,f)=>a.has(f),d=(h,f,g,y,b)=>u`<input type="text" maxlength=${b??m} aria-label=${`${h}: ${f}`}
           .value=${g??f} placeholder=${f} ?disabled=${this.gallerySending}
-          @input=${w=>y(w.target.value)} />`,c=[{key:"head",label:o.label,name:o.value,ids:[],control:d(o.label,t.name.trim(),this.shareName===""?void 0:this.shareName,h=>{this.shareName=h})}],p=(h,f,g)=>d(f,h.original,g??(h.value===h.original?void 0:h.value),y=>this.setPublicName(h,y),h.kind==="slot"?40:void 0);for(let h of s){if(h.rows){for(let f of h.rows)if(f.kind==="group")c.push({key:`g:${f.id}`,label:"Group name",name:f.value,ids:rt(t,f.id).map(g=>g.payload.id),control:p(f,"Group name",this.shareGroupNames.get(f.id))});else if(f.kind==="shared")c.push({key:`v:${f.id}`,label:"Shared value name",name:f.value,ids:Fv(t,f.id),control:p(f,"Shared value name",this.shareValueNames.get(f.id))});else{let g=i.find(y=>y.placeholderId===f.id);c.push({key:`e:${f.id}`,label:"Entity name",name:f.value,ids:g?hm(t,g.originalId,l):[],control:p(f,"Entity name",void 0)})}continue}if(h.label==="Layer names"){let f=[];for(let g of t.elements){let y=g.payload.name?.trim();y&&!De(t,g)&&!f.includes(y)&&f.push(y)}for(let g of f){let y=t.elements.filter(b=>!De(t,b)&&b.payload.name?.trim()===g).map(b=>b.payload.id);c.push({key:`l:${g}`,label:"Layer name",name:g,ids:y,control:d("Layer name",g,this.shareLayerNames.get(g),b=>this.setShareLayerName(g,b))})}continue}h.values.forEach((f,g)=>{c.push({key:`t:${h.label}:${g}`,label:FO[h.label]??h.label,name:f,ids:[],control:u`<div class="xf-pill mono">${f}</div>`})})}return c}renderPublicRows(t,i,a){let r=()=>a(void 0),o=p=>{let h=p.key===i&&p.ids.length>0,f=()=>a(p.key);return u`<div class="kv ${h?"on":""}" @pointerenter=${f} @focusin=${f}>${p.control}</div>`},s=[];for(let p of t){let h=LO(p),f=s.find(g=>g.kind===h);f?f.rows.push(p):s.push({kind:h,label:MO[h]??p.label,rows:[p]})}let l=p=>p.kind==="e"||p.kind!=="t:Other text"&&p.rows.length<=IO,d=p=>{let h=p.key.slice(2);return((p.key.startsWith("g:")?this.shareGroupNames.get(h):p.key.startsWith("v:")?this.shareValueNames.get(h):p.key.startsWith("l:")?this.shareLayerNames.get(p.name):void 0)??"").trim()!==""},c=p=>{let h=`pk-${p.kind.startsWith("t:")?"t":p.kind}`;if(p.kind==="head")return u`<div class="pk ${h}"><div class="pk-h"><i></i><b>${p.label}</b></div><div class="pk-b">${p.rows.map(o)}</div></div>`;let f=this.shareKindOpen.get(p.kind)??l(p),g=p.rows.filter(d).length;return u`<details class="pk ${h}" .open=${f}
+          @input=${w=>y(w.target.value)} />`,c=[{key:"head",label:o.label,name:o.value,ids:[],control:d(o.label,t.name.trim(),this.shareName===""?void 0:this.shareName,h=>{this.shareName=h})}],p=(h,f,g)=>d(f,h.original,g??(h.value===h.original?void 0:h.value),y=>this.setPublicName(h,y),h.kind==="slot"?40:void 0);for(let h of s){if(h.rows){for(let f of h.rows)if(f.kind==="group")c.push({key:`g:${f.id}`,label:"Group name",name:f.value,ids:rt(t,f.id).map(g=>g.payload.id),control:p(f,"Group name",this.shareGroupNames.get(f.id))});else if(f.kind==="shared")c.push({key:`v:${f.id}`,label:"Shared value name",name:f.value,ids:Fv(t,f.id),control:p(f,"Shared value name",this.shareValueNames.get(f.id))});else{let g=i.find(y=>y.placeholderId===f.id);c.push({key:`e:${f.id}`,label:"Entity name",name:f.value,ids:g?hm(t,g.originalId,l):[],control:p(f,"Entity name",void 0)})}continue}if(h.label==="Layer names"){let f=[];for(let g of t.elements){let y=g.payload.name?.trim();y&&!De(t,g)&&!f.includes(y)&&f.push(y)}for(let g of f){let y=t.elements.filter(b=>!De(t,b)&&b.payload.name?.trim()===g).map(b=>b.payload.id);c.push({key:`l:${g}`,label:"Layer name",name:g,ids:y,control:d("Layer name",g,this.shareLayerNames.get(g),b=>this.setShareLayerName(g,b))})}continue}h.values.forEach((f,g)=>{c.push({key:`t:${h.label}:${g}`,label:FO[h.label]??h.label,name:f,ids:[],control:u`<div class="xf-pill mono">${f}</div>`})})}return c}renderPublicRows(t,i,a){let r=()=>a(void 0),o=p=>{let h=p.key===i&&p.ids.length>0,f=()=>a(p.key);return u`<div class="kv ${h?"on":""}" @pointerenter=${f} @focusin=${f}>${p.control}</div>`},s=[];for(let p of t){let h=LO(p),f=s.find(g=>g.kind===h);f?f.rows.push(p):s.push({kind:h,label:MO[h]??p.label,rows:[p]})}let l=p=>p.kind==="e"||p.kind!=="t:Other text"&&p.rows.length<=IO,d=p=>{let h=p.key.slice(2);return((p.key.startsWith("g:")?this.shareGroupNames.get(h):p.key.startsWith("v:")?this.shareValueNames.get(h):p.key.startsWith("l:")?this.shareLayerNames.get(p.name):void 0)??"").trim()!==""},c=p=>{let h=`pn-${p.kind.startsWith("t:")?"t":p.kind}`;if(p.kind==="head")return u`<div class="pn ${h}"><div class="pn-h"><i></i><b>${p.label}</b></div><div class="pn-b">${p.rows.map(o)}</div></div>`;let f=this.shareKindOpen.get(p.kind)??l(p),g=p.rows.filter(d).length;return u`<details class="pn ${h}" .open=${f}
         @toggle=${y=>this.setShareKindOpen(p.kind,y.target.open)}>
-        <summary class="pk-h"><i></i><b>${p.label}</b><span class="n">${p.rows.length}</span>
+        <summary class="pn-h"><i></i><b>${p.label}</b><span class="n">${p.rows.length}</span>
           ${g>0?u`<span class="chg">${g} changed</span>`:m}${E("right")}</summary>
-        ${f?u`<div class="pk-b">${p.rows.map(o)}</div>`:m}
+        ${f?u`<div class="pn-b">${p.rows.map(o)}</div>`:m}
       </details>`};return u`
       <div class="xf-lead">${E("info")}<span>Others can see these names. Change the names of layers and groups here before you share, if you want.</span></div>
       <div class="xf-pub" @pointerleave=${p=>this.leaveRows(p,r)} @focusout=${p=>this.leaveRows(p,r)}>
