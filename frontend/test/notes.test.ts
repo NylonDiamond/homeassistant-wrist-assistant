@@ -209,14 +209,16 @@ describe("the notes toolbar", () => {
     expect(toggleNoteList("", 0, 0, true)).toEqual({ text: "1. ", start: 3, end: 3 });
   });
 
-  it("puts ## on the caret's line and takes it off again", () => {
+  it("puts # on the caret's line and takes it off again", () => {
     const text = "Intro.\n1. Set up\nMore text.";
     const on = toggleNoteHeading(text, text.indexOf("Set"));
-    expect(on.text).toBe("Intro.\n## Set up\nMore text.");
+    expect(on.text).toBe("Intro.\n# Set up\nMore text.");
     expect(on.start).toBe(on.text.indexOf("\nMore"));
-    expect(parseNotes(on.text, () => undefined)[1]).toEqual({ kind: "heading", level: 2, spans: [{ kind: "text", text: "Set up" }] });
+    expect(parseNotes(on.text, () => undefined)[1]).toEqual({ kind: "heading", level: 1, spans: [{ kind: "text", text: "Set up" }] });
     expect(toggleNoteHeading(on.text, on.start).text).toBe("Intro.\nSet up\nMore text.");
-    expect(toggleNoteHeading("", 0)).toEqual({ text: "## ", start: 3, end: 3 });
+    expect(toggleNoteHeading("", 0)).toEqual({ text: "# ", start: 2, end: 2 });
+    // A smaller heading typed by hand becomes the big one, not a bare line.
+    expect(toggleNoteHeading("## Set up", 0).text).toBe("# Set up");
   });
 
   it("wraps the selection in bold or italic, and unwraps it", () => {

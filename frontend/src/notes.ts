@@ -57,7 +57,7 @@ export function cleanNotes(text: unknown): string | undefined {
 
 /** What an empty notes box shows, as an example of the three things worth
  * saying. */
-export const NOTES_PLACEHOLDER = "What it shows.\n\n## Set up\n1. Point [Kitchen light] at your own light.\n2. …\n\nTap it to …";
+export const NOTES_PLACEHOLDER = "What it shows.\n\n# Set up\n1. Point [Kitchen light] at your own light.\n2. …\n\nTap it to …";
 
 /** A web address a link may open: http or https, nothing else. */
 export function safeHref(href: string): string | undefined {
@@ -282,14 +282,14 @@ export function toggleNoteList(text: string, start: number, end: number, ordered
 }
 
 /**
- * `## ` on the caret's line, or off it again when it is already a heading.
- * A list marker gives way to it. The caret goes to the line's end, ready to
- * type the heading or carry on after it.
+ * `# ` on the caret's line, or off it again when it is already that heading.
+ * A smaller heading (`##`, `###`) or a list marker gives way to it. The caret
+ * goes to the line's end, ready to type the heading or carry on after it.
  */
 export function toggleNoteHeading(text: string, start: number): NoteEdit {
   const [from, to] = lineSpan(text, start, start);
   const line = text.slice(from, to);
-  const next = HEADING_RE.test(line.trimStart()) ? stripMarker(line) : `## ${stripMarker(line)}`;
+  const next = /^#\s+/.test(line.trimStart()) ? stripMarker(line) : `# ${stripMarker(line)}`;
   const out = text.slice(0, from) + next + text.slice(to);
   return { text: out, start: from + next.length, end: from + next.length };
 }

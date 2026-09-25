@@ -17387,7 +17387,7 @@ export class WristAssistantPanel extends LitElement {
         </div>
         <label class="nc-lead" for="notes-box">Tell people what to set up after they import this.</label>
         ${this.renderNotesEditor(cfg, "notes-box", 9, () => this.finishNotes())}
-        <div class="nc-foot"><span>Markdown: ## heading, **bold**, *italic*, - bullets, 1. steps, [words](https://…). [Name] links a layer. The buttons type it for you.</span>
+        <div class="nc-foot"><span>Markdown: # heading, **bold**, *italic*, - bullets, 1. steps, [words](https://…). [Name] links a layer. The buttons type it for you.</span>
           <span class="nc-count">${this.notesDraft.length} / ${NOTES_MAX}</span></div>
       </section>`;
     }
@@ -17456,7 +17456,7 @@ export class WristAssistantPanel extends LitElement {
     const mode = this.notesLink?.mode;
     return html`<div class="notes-editor">
       <div class="nt-bar" role="toolbar" aria-label="Write the notes">
-        ${tool(html`<b>H</b>`, "Heading: ## at the start of the line. Press again to take it off",
+        ${tool(html`<b>H</b>`, "Heading: # at the start of the line. Press again to take it off",
           () => this.applyNoteEdit(boxId, (t, s) => toggleNoteHeading(t, s)))}
         ${tool(html`<b>B</b>`, `Bold: **words** (${KEY_MOD}B)`, () => this.applyNoteEdit(boxId, (t, s, e) => toggleNoteMark(t, s, e, "**")))}
         ${tool(html`<i class="nt-i">I</i>`, `Italic: *words* (${KEY_MOD}I)`, () => this.applyNoteEdit(boxId, (t, s, e) => toggleNoteMark(t, s, e, "*")))}
