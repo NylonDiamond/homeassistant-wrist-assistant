@@ -2010,10 +2010,10 @@ Click to change`} @click=${E}>
         <button class="small" @click=${S=>{Ju.delete(r),ft(S.target)}}>Cancel</button>
       </div>`:m}
       <div class="states-add ${f?"centered":""}">
-        <button class="small pill" title=${f?`Start the states: ${ay(g,h).replace(/^Add a state starts with /,"").replace(/\.$/,"")}`:`Add a row: when the value matches, this ${i==="layout"?"shape":"layer"} changes how it looks`} @click=${N}>${T("plus")}<span>Add a state</span></button>
-        ${$e.length===0?m:u`<button class="small pill" title=${`Write one row per state a ${q.domain.replace(/_/g," ")} reports, each with an icon and a color, ready to edit`}
+        <button class="small pill add-case" title=${f?`Start the states: ${ay(g,h).replace(/^Add a state starts with /,"").replace(/\.$/,"")}`:`Add a row: when the value matches, this ${i==="layout"?"shape":"layer"} changes how it looks`} @click=${N}>${T("plus")}<span>Add a state</span></button>
+        ${$e.length===0?m:u`<button class="small pill add-preset" title=${`Write one row per state a ${q.domain.replace(/_/g," ")} reports, each with an icon and a color, ready to edit`}
           @click=${S=>{if(fe){Ju.add(r),ft(S.target);return}$()}}>${T("plus")}<span>Fill from the entity</span></button>`}
-        ${n.otherwise===void 0&&n.rows.length>0?u`<button class="small pill" title="Add an Otherwise row at the bottom: the look when no state above matches" @click=${()=>d(S=>oy(S,!0,k))}>${T("plus")}<span>Add otherwise</span></button>`:m}
+        ${n.otherwise===void 0&&n.rows.length>0?u`<button class="small pill add-else" title="Add an Otherwise row at the bottom: the look when no state above matches" @click=${()=>d(S=>oy(S,!0,k))}>${T("plus")}<span>Add otherwise</span></button>`:m}
       </div>
       ${I==="live"?m:u`<div class="field"><span>Preview</span>
         <div class="row-acts"><button class="small" @click=${()=>t&&e.setForced(t.id,"live")}>Back to live</button></div>
@@ -6666,10 +6666,9 @@ Click to change`} @click=${E}>
     .radd { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 2px; }
     /* The add pills take the colour of the card they sit in: coral inside
        States, the accent elsewhere. */
-    .states { --pill-tint: var(--wa-states); }
-    /* The rules editor wears a quieter coral than the section badge: the full
-       strength on every box and button was loud. */
-    .rules { --wa-rule-tone: color-mix(in srgb, var(--wa-states) 55%, var(--wa-muted)); --pill-tint: var(--wa-rule-tone); }
+    /* Both rule editors, Simple and Advanced, wear a quieter coral than the
+       section badge: the full strength on every box and button was loud. */
+    .states, .rules { --wa-rule-tone: color-mix(in srgb, var(--wa-states) 55%, var(--wa-muted)); --pill-tint: var(--wa-rule-tone); }
     button.small.pill {
       height: 30px; min-height: 30px; padding: 0 14px 0 10px; border-radius: 999px; font-weight: 600;
       color: var(--pill-tint, var(--wa-accent)); border-color: transparent;
@@ -6679,13 +6678,13 @@ Click to change`} @click=${E}>
     button.small.pill svg { width: 14px; height: 14px; }
     /* Each add button in the rules editor has its own color, and they are a
        size smaller than elsewhere so the rows stay tight. */
-    .rules button.small.pill { height: 24px; min-height: 24px; padding: 0 10px 0 7px; font-size: 12px; gap: 4px; }
-    .rules button.small.pill svg { width: 12px; height: 12px; }
+    :is(.rules, .states) button.small.pill { height: 24px; min-height: 24px; padding: 0 10px 0 7px; font-size: 12px; gap: 4px; }
+    :is(.rules, .states) button.small.pill svg { width: 12px; height: 12px; }
     .rules button.pill.add-test { --pill-tint: var(--wa-rule-if); }
-    .rules button.pill.add-preset { --pill-tint: var(--wa-rule-preset); }
+    :is(.rules, .states) button.pill.add-preset { --pill-tint: var(--wa-rule-preset); }
     .rules button.pill.add-change { --pill-tint: var(--wa-rule-then); }
-    .rules button.pill.add-case { --pill-tint: var(--wa-rule-tone); }
-    .rules button.pill.add-else { --pill-tint: var(--wa-rule-else); }
+    :is(.rules, .states) button.pill.add-case { --pill-tint: var(--wa-rule-tone); }
+    :is(.rules, .states) button.pill.add-else { --pill-tint: var(--wa-rule-else); }
     .rules button.pill.add-rule { --pill-tint: var(--wa-muted); color: var(--wa-ink); }
     .chip-menu button.danger { color: var(--error-color, #e5484d); border: none; background: transparent; }
     .chip-menu button.danger:hover { background: color-mix(in srgb, var(--error-color, #e5484d) 12%, transparent); }
@@ -7027,13 +7026,13 @@ Click to change`} @click=${E}>
     .states-table th > :is(span, button) { vertical-align: middle; }
     .states-table th:hover button.icon, .states-table th button.icon:focus-visible { opacity: .7; }
     .states-table th.acts { width: 1%; }
-    .states-table td { padding: 4px 6px; border-bottom: 1px solid color-mix(in srgb, var(--wa-line) 55%, transparent); vertical-align: middle; }
+    .states-table td { padding: 3px 6px; border-bottom: 1px solid color-mix(in srgb, var(--wa-line) 55%, transparent); vertical-align: middle; }
     .states-table tbody tr:last-child td { border-bottom: none; }
     .states-table td.empty-row { opacity: .6; padding: 12px 6px; border-bottom: none; }
     .states-table tr.state-row { cursor: pointer; }
     .states-table tr.state-row:hover td { background: var(--wa-panel); }
     .states-table tr.state-row.forced td { background: var(--wa-panel); }
-    .states-table tr.state-row.forced td { background: color-mix(in srgb, var(--wa-states) 18%, transparent); }
+    .states-table tr.state-row.forced td { background: color-mix(in srgb, var(--wa-rule-tone) 14%, transparent); }
     /* When shrinks to its controls, so the first setting's column and its
        header start right after it rather than far across the table. */
     .states-table :is(th, td).when { width: 1%; white-space: nowrap; }
@@ -7041,7 +7040,7 @@ Click to change`} @click=${E}>
     .states-table td.acts button.icon { opacity: 0; }
     .states-table tr:hover td.acts button.icon, .states-table td.acts button.icon:focus-visible { opacity: .8; }
     .row-flag { display: inline-block; width: 12px; color: var(--success-color, #43a047); font-size: 11px; }
-    tr.forced .row-flag { color: color-mix(in srgb, var(--wa-states) 70%, var(--wa-ink)); }
+    tr.forced .row-flag { color: color-mix(in srgb, var(--wa-rule-tone) 70%, var(--wa-ink)); }
     /* A row reads as one sentence of controls, drawn the way the band rows
        above a chart draw theirs: the comparison is a chip with a chevron, the
        number a quiet mono box, and a set cell the same box again. */
@@ -7086,7 +7085,7 @@ Click to change`} @click=${E}>
     button.cell.ignored .cell-word, button.cell.ignored .cell-name { text-decoration: line-through; opacity: .7; }
     /* The row's "+ Change": dashed, like the other adders, and quiet until
        the pointer is near. */
-    button.cell.add-change { border: 1px dashed var(--wa-line-strong); opacity: .6; gap: 3px; padding: 0 8px 0 5px; }
+    button.cell.add-change { border: 1px dashed color-mix(in srgb, var(--wa-rule-then) 45%, var(--wa-line)); color: var(--wa-rule-then); opacity: .7; gap: 3px; padding: 0 8px 0 5px; }
     button.cell.add-change svg { width: 12px; height: 12px; }
     tr:hover button.cell.add-change, button.cell.add-change:hover, button.cell.add-change:focus-visible { opacity: 1; }
     .then-chips { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
@@ -7106,7 +7105,7 @@ Click to change`} @click=${E}>
     }
     /* The add controls under a states table: one strip of buttons, each with
        its explanation in its tooltip, so the table is the loudest thing here. */
-    .states > .states-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 2px; }
+    .states > .states-add { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0 2px; }
     .states > .states-add.centered { justify-content: center; margin: 10px 0 6px; }
     /* The change menu: the settings a state can still change, one per line. */
     .chip-menu {

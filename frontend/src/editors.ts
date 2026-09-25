@@ -10629,16 +10629,16 @@ function statesTable(
         <button class="small" @click=${(e: Event) => { pendingStatesFill.delete(key); requestRerender(e.target); }}>Cancel</button>
       </div>`}
       <div class="states-add ${fresh ? "centered" : ""}">
-        <button class="small pill" title=${fresh
+        <button class="small pill add-case" title=${fresh
           ? `Start the states: ${startText(shape, resolved).replace(/^Add a state starts with /, "").replace(/\.$/, "")}`
           : `Add a row: when the value matches, this ${target === "layout" ? "shape" : "layer"} changes how it looks`} @click=${addRow}>${uiIcon("plus")}<span>Add a state</span></button>
-        ${seeds.length === 0 ? nothing : html`<button class="small pill" title=${`Write one row per state a ${seedEntity!.domain.replace(/_/g, " ")} reports, each with an icon and a color, ready to edit`}
+        ${seeds.length === 0 ? nothing : html`<button class="small pill add-preset" title=${`Write one row per state a ${seedEntity!.domain.replace(/_/g, " ")} reports, each with an icon and a color, ready to edit`}
           @click=${(e: Event) => {
             if (hasRows) { pendingStatesFill.add(key); requestRerender(e.target); return; }
             fill();
           }}>${uiIcon("plus")}<span>Fill from the entity</span></button>`}
         ${table.otherwise === undefined && table.rows.length > 0
-          ? html`<button class="small pill" title="Add an Otherwise row at the bottom: the look when no state above matches" @click=${() => upd((rs) => setOtherwise(rs, true, seedColor))}>${uiIcon("plus")}<span>Add otherwise</span></button>`
+          ? html`<button class="small pill add-else" title="Add an Otherwise row at the bottom: the look when no state above matches" @click=${() => upd((rs) => setOtherwise(rs, true, seedColor))}>${uiIcon("plus")}<span>Add otherwise</span></button>`
           : nothing}
       </div>
       ${forced === "live" ? nothing : html`<div class="field"><span>Preview</span>
