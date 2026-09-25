@@ -263,6 +263,13 @@ export interface RenderOptions {
   minGridStroke?: number;
   /** Editor affordance: hidden layers at 35% instead of invisible. */
   showHidden?: boolean;
+  /** Draw only these layers: one sheet of the 3D layer stack (stack3d.ts).
+   * A chart part still finds its chart among all the layers. */
+  onlyIds?: ReadonlySet<string>;
+  /** Leave the face itself out: the black well, the background, the border,
+   * and on a corner the screen quadrant, bezel and dashed ring. With it, a
+   * sheet of the 3D stack is just its layer on clear glass. */
+  bare?: boolean;
   /** Element id to outline. */
   highlightId?: string;
   /** More elements to outline, without handles: the members of a selected
@@ -2942,6 +2949,9 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
   const bw = layout.borderWidth * fit.scale;
   const elements = layout.elements;
   const charts = chartsById(elements);
+  const only = options.onlyIds;
+  const drawnElements = only === undefined ? elements : elements.filter((el) => only.has(el.id));
+  const bare = options.bare === true;
   const tint = options.tint === undefined ? undefined : `${uid}-tint`;
   // A Home Screen tile is only ever tinted the iPhone way, and a watch shape
   // only ever the watch way, so the shape settles the surface on its own.
@@ -2956,7 +2966,7 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
   const chromeGroup: TintGroup = surface === "phone" ? "phonePrimary" : surface === "lock" ? "lock" : "plain";
   // iOS drops the widget's container background in `accented` mode, so a tinted
   // Home Screen preview draws no background fill at all.
-  const bgDrawn = bgPaint !== undefined && !(tint !== undefined && surface === "phone");
+  const bgDrawn = !bare && bgPaint !== undefined && !(tint !== undefined && surface === "phone");
   // Review mode fades the shape's own background and border with the layers.
   // Left at full strength, a colored background showed through the faded
   // layers and tinted the whole face, so a red one read as one big pink tap.
@@ -3010,14 +3020,14 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
       const tileBW = layout.borderWidth * fit.scale * tileScale;
       // The watch strokes the border as a circle ring (the shape the system
       // mask leaves visible), inscribed in the slot square.
-      const chrome = border
+      const chrome = border && !bare
         ? svg`<circle cx=${tile / 2} cy=${tile / 2} r=${tile / 2 - tileBW / 2} fill="none" stroke=${border.color} stroke-opacity=${border.opacity} stroke-width=${tileBW} />`
         : nothing;
       main = svg`<g transform="translate(${slotX} ${slotY})">
         <g clip-path=${`url(#${uid})`}>
           ${bgDrawn ? svg`<g opacity=${chromeFade}>${tinted(svg`${bgFill === undefined ? nothing : svg`<defs>${bgFill.defs}</defs>`}<rect width=${tile} height=${tile} fill=${bgPaint!.fill} fill-opacity=${bgPaint!.opacity} />`, chromeGroup, tint)}</g>` : nothing}
           <g data-design-box transform="scale(${fit.scale * tileScale})">
-            ${elements.map((el) => renderElement(el, design, options, charts, tint))}
+            ${drawnElements.map((el) => renderElement(el, design, options, charts, tint))}
             ${gridLines(design, options.grid)}
             ${guideOverlay(design, options.guides)}
           </g>
@@ -3030,8 +3040,8 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
           ? svg`<circle cx=${tile / 2} cy=${tile / 2} r=${tile / 2} fill="none" stroke="#0A84FF" stroke-width="2"
               vector-effect="non-scaling-stroke" pointer-events="none" />`
           : nothing}
-        <circle cx=${tile / 2} cy=${tile / 2} r=${tile / 2} fill="none"
-          stroke="rgba(255,255,255,0.22)" stroke-width=${0.75 * s} stroke-dasharray=${`${2 * s} ${2 * s}`} />
+        ${bare ? nothing : svg`<circle cx=${tile / 2} cy=${tile / 2} r=${tile / 2} fill="none"
+          stroke="rgba(255,255,255,0.22)" stroke-width=${0.75 * s} stroke-dasharray=${`${2 * s} ${2 * s}`} />`}
         <g opacity=${chromeFade}>${tinted(chrome, chromeGroup, tint)}</g>
         <g transform="scale(${fit.scale * tileScale})">${handleLayer(elements, design, options, charts)}</g>
       </g>`;
@@ -3039,9 +3049,9 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
     return svg`<svg viewBox=${`0 0 ${ctx.quad.width} ${ctx.quad.height}`} xmlns="http://www.w3.org/2000/svg" class="complication corner"
         width=${ctx.quad.width} height=${ctx.quad.height}>
       <defs><clipPath id=${uid}><circle cx=${tile / 2} cy=${tile / 2} r=${tile / 2} /></clipPath>${defsTint}</defs>
-      <path d=${shell} fill="#000000" />
-      ${tinted(bezel, surface === "phone" ? "phoneAccent" : "accent", tint)}
-      ${curvedMode ? tinted(main, surface === "phone" ? "phoneAccent" : "accent", tint) : main}
+      ${bare ? nothing : svg`<path d=${shell} fill="#000000" />
+      ${tinted(bezel, surface === "phone" ? "phoneAccent" : "accent", tint)}`}
+      ${curvedMode ? (bare ? nothing : tinted(main, surface === "phone" ? "phoneAccent" : "accent", tint)) : main}
       ${curvedMode ? nothing : spotlight(elements, design, options.spotlightIds, `${uid}-spot`, ctx.quad.width, ctx.quad.height,
         `translate(${slotX} ${slotY}) scale(${fit.scale * tileScale})`)}
       ${options.flash === undefined
@@ -3065,7 +3075,7 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
     : family === "circular" ? Math.min(canvas.width, canvas.height) / 2
     : 0;
   const clip = svg`<rect width=${canvas.width} height=${canvas.height} rx=${rx} />`;
-  const chrome = border
+  const chrome = border && !bare
     ? svg`<rect x=${bw / 2} y=${bw / 2} width=${canvas.width - bw} height=${canvas.height - bw} rx=${Math.max(0, rx - bw / 2)} fill="none" stroke=${border.color} stroke-opacity=${border.opacity} stroke-width=${bw} />`
     : nothing;
   // Editor affordance: a black well when there is no background so white
@@ -3077,10 +3087,10 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
       width=${canvas.width} height=${canvas.height}>
     <defs><clipPath id=${uid}>${clip}</clipPath>${defsTint}</defs>
     <g clip-path=${`url(#${uid})`}>
-      ${well}
+      ${bare ? nothing : well}
       ${bgDrawn ? svg`<g opacity=${chromeFade}>${tinted(svg`${bgFill === undefined ? nothing : svg`<defs>${bgFill.defs}</defs>`}<rect width=${canvas.width} height=${canvas.height} rx=${rx} fill=${bgPaint!.fill} fill-opacity=${bgPaint!.opacity} />`, chromeGroup, tint)}</g>` : nothing}
       <g data-design-box transform="translate(${fit.x} ${fit.y}) scale(${fit.scale})">
-        ${elements.map((el) => renderElement(el, design, options, charts, tint))}
+        ${drawnElements.map((el) => renderElement(el, design, options, charts, tint))}
             ${gridLines(design, options.grid)}
             ${guideOverlay(design, options.guides)}
       </g>

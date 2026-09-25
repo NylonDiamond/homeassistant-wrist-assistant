@@ -198,6 +198,7 @@ import {
 import { type Person, deviceShortName, peopleOf } from "./people.js";
 import { type LiveDesign, type LiveShape, type LiveShapes, controlDeviceArt, deviceCropArt, deviceShapeArt, shapeOnlyArt, shapeWell, watchWell } from "./shapeArt.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
+import { STACK_FLAT, STACK_HOME, sheetUnits, stackRigStyle, turnStack, zoomStack, type StackView } from "./stack3d.js";
 import { type DeviceKind, type DeviceOwnerLike, LIBRARY_OWNER_ID, deviceKindOf, deviceNoun, deviceSupportsShapes, isLibraryOwner, ownerSupportsControls, updateDeviceMessage } from "./version.js";
 import { type SplitNotice, autoSplitShapes, editBlockedBySplitGate, ownerCanSplit } from "./splitShapes.js";
 import { makeIconProvider } from "./icons.js";
@@ -1688,6 +1689,22 @@ export class WristAssistantPanel extends LitElement {
    * face. Only the face and its gestures come along; the columns stay under
    * the backdrop. */
   @state() private zoomed = false;
+  /** The 3D layer stack is open: every layer on its own sheet, floating over
+   * the one under it (stack3d.ts). */
+  @state() private stacked = false;
+  /** The sheet under the pointer in the stack: a layer id, or "" for the
+   * face's own background. Named in the stack's bar and lit. */
+  @state() private stackHot?: string;
+  /** Where the stack is looked from. Not a state: a drag writes it straight
+   * into the rig's style, so turning never re-renders the panel. */
+  private stackView: StackView = STACK_FLAT;
+  /** Each sheet's height in steps, from the last render, for that same
+   * direct write. */
+  private stackUnits: number[] = [];
+  /** A press on the stack: where it started, the view then, and the sheet it
+   * landed on. A press that never moved is a click, which selects. */
+  private stackDrag?: { x: number; y: number; view: StackView; moved: boolean; sheet?: string };
+  private stackEaseTimer?: number;
   /** How big the stage draws the face, as a share of the size that fits it
    * (see canvas-tools.ts). 1 is Fit, the default. Not saved: every open
    * starts with the whole face in view. */
@@ -6071,6 +6088,56 @@ export class WristAssistantPanel extends LitElement {
     .zoom-stage .preview.xlarge svg {
       width: min(100%, calc((100dvh - 90px) * var(--wa-ratio, 1))); max-width: none;
     }
+    /* The 3D layer stack. The rig is the face's size and turns in 3D; each
+       sheet sits in it at its own height (--u steps of --k face widths). */
+    .stack-title { font-size: 13px; font-weight: 700; color: var(--wa-ink); flex: none; }
+    .zoom-bar .stack-name { position: static; transform: none; margin: 0; min-width: 0; overflow: hidden; }
+    .stack-name .fl-count { color: var(--wa-muted); }
+    .stack-spread-label { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--wa-muted); flex: none; }
+    .stack-spread { width: 120px; accent-color: var(--wa-accent); }
+    .stack-stage {
+      position: relative; flex: 1 1 auto; min-height: 0; display: grid; place-items: center; overflow: hidden;
+      perspective: 2400px; cursor: grab; touch-action: none; user-select: none; outline: none;
+      --fw: min(40vw, calc(52dvh * var(--wa-ratio, 1)));
+      background:
+        radial-gradient(ellipse at 50% 45%, color-mix(in srgb, var(--wa-accent) 12%, transparent) 0, transparent 60%),
+        radial-gradient(color-mix(in srgb, var(--wa-ink) 7%, transparent) 1px, transparent 1px) 0 0 / 18px 18px;
+    }
+    .stack-stage:focus-visible { box-shadow: inset var(--wa-ring); }
+    .stack-stage.dragging { cursor: grabbing; }
+    .stack-rig {
+      position: relative; width: var(--fw); height: calc(var(--fw) / var(--wa-ratio, 1));
+      transform-style: preserve-3d; --r: 7%;
+    }
+    .stack-rig.circular { --r: 50%; }
+    .stack-rig.small, .stack-rig.medium, .stack-rig.large, .stack-rig.xlarge { --r: 12%; }
+    .stack-rig.corner { --r: 0; }
+    .stack-rig .sheet {
+      position: absolute; inset: 0; border-radius: var(--r); pointer-events: none;
+      transform: translateZ(calc(var(--u) * var(--k) * var(--fw)));
+      background: color-mix(in srgb, var(--wa-ink) 3%, transparent);
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ink) 16%, transparent);
+      transition: box-shadow .15s, background .15s;
+    }
+    .stack-rig .sheet.ground { background: transparent; box-shadow: 0 30px 60px rgba(0,0,0,.45); }
+    .stack-rig .sheet svg { display: block; width: 100%; height: 100%; overflow: hidden; border-radius: var(--r); }
+    .stack-rig .sheet svg * { pointer-events: visiblePainted; }
+    .stack-rig .sheet.hot {
+      background: color-mix(in srgb, var(--wa-accent) 10%, transparent);
+      box-shadow: inset 0 0 0 1.5px var(--wa-accent), 0 0 28px color-mix(in srgb, var(--wa-accent) 35%, transparent);
+    }
+    .stack-rig .sheet.picked { box-shadow: inset 0 0 0 2px #0A84FF, 0 0 22px rgba(10,132,255,.35); }
+    .stack-stage.easing .stack-rig, .stack-stage.easing .sheet {
+      transition: transform .9s cubic-bezier(.2,.8,.2,1), box-shadow .15s, background .15s;
+    }
+    .stack-hint {
+      position: absolute; bottom: 12px; left: 0; right: 0; margin: 0; text-align: center;
+      font-size: 11.5px; color: var(--wa-hint); pointer-events: none;
+    }
+    @media (max-width: 640px) {
+      .stack-title, .stack-hint { display: none; }
+      .stack-stage { --fw: min(62vw, calc(44dvh * var(--wa-ratio, 1))); }
+    }
     /* Demo mode. The stage is plain black rather than the zoom stage's dotted
        ground: the watch's own surround is black, and a grid behind the face
        would be one more editor mark in the one view that has none. */
@@ -7447,6 +7514,15 @@ export class WristAssistantPanel extends LitElement {
     if (changed.has("zoomed") && this.zoomed) {
       const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.zoom-dialog");
       if (dialog && !dialog.open) dialog.showModal();
+    }
+    if (changed.has("stacked") && this.stacked) {
+      const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.stack-dialog");
+      if (dialog && !dialog.open) {
+        dialog.showModal();
+        // Open flat, as the editor draws it, then come apart: the first frame
+        // has to paint flat for the move to show.
+        requestAnimationFrame(() => requestAnimationFrame(() => this.easeStack(STACK_HOME)));
+      }
     }
     if (changed.has("demoing") && this.demoing) {
       const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.demo-dialog");
@@ -9831,6 +9907,9 @@ export class WristAssistantPanel extends LitElement {
       <button class="tb icon" ?disabled=${off} aria-label="Full screen"
         title="Full screen: the face as large as the window allows, for small moves. Drag and arrow keys work there too. Escape closes."
         @click=${() => { this.zoomed = true; }}>${uiIcon("expand")}</button>
+      <button class="tb" ?disabled=${off} aria-label="Layers in 3D"
+        title="Layers in 3D: the face taken apart, every layer on its own sheet floating over the one under it. Drag to turn it."
+        @click=${() => this.openStack()}><svg class="tb-glyph" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M7 1.5 12.5 4.25 7 7 1.5 4.25Z" /><path d="M1.5 7 7 9.75 12.5 7" /><path d="M1.5 9.75 7 12.5 12.5 9.75" /></svg><span class="word">3D</span></button>
     </span>`;
   }
 
@@ -10083,6 +10162,153 @@ export class WristAssistantPanel extends LitElement {
     </dialog>`;
   }
 
+  private openStack() {
+    this.stackView = STACK_FLAT;
+    this.stackHot = undefined;
+    this.stacked = true;
+  }
+
+  private closeStack() {
+    window.clearTimeout(this.stackEaseTimer);
+    this.stackDrag = undefined;
+    this.stackHot = undefined;
+    this.stacked = false;
+  }
+
+  /** Write the view into the rig's style, with no render. */
+  private applyStackView() {
+    this.renderRoot.querySelector<HTMLElement>(".stack-rig")?.setAttribute("style", stackRigStyle(this.stackView, this.stackUnits));
+  }
+
+  /** Move to a view with a glide rather than a jump: on open, and on Reset.
+   * Drags, the wheel and the spread slider follow the hand with none. */
+  private easeStack(view: StackView) {
+    const stage = this.renderRoot.querySelector<HTMLElement>(".stack-stage");
+    const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    if (stage && !still) {
+      stage.classList.add("easing");
+      window.clearTimeout(this.stackEaseTimer);
+      this.stackEaseTimer = window.setTimeout(() => stage.classList.remove("easing"), 1000);
+    }
+    this.stackView = view;
+    this.applyStackView();
+    const spread = this.renderRoot.querySelector<HTMLInputElement>(".stack-spread");
+    if (spread) spread.value = String(view.spread);
+  }
+
+  private onStackDown(e: PointerEvent) {
+    if (e.button !== 0) return;
+    const sheet = (e.target as Element).closest?.("[data-sheet]")?.getAttribute("data-sheet") ?? undefined;
+    this.stackDrag = { x: e.clientX, y: e.clientY, view: this.stackView, moved: false, ...(sheet !== undefined ? { sheet } : {}) };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }
+
+  private onStackMove(e: PointerEvent) {
+    const d = this.stackDrag;
+    if (!d) return;
+    const dx = e.clientX - d.x;
+    const dy = e.clientY - d.y;
+    if (!d.moved && Math.hypot(dx, dy) < 4) return;
+    if (!d.moved) {
+      d.moved = true;
+      const stage = e.currentTarget as HTMLElement;
+      stage.classList.remove("easing");
+      stage.classList.add("dragging");
+    }
+    this.stackView = turnStack(d.view, dx, dy);
+    this.applyStackView();
+  }
+
+  private onStackUp(e: PointerEvent) {
+    const d = this.stackDrag;
+    this.stackDrag = undefined;
+    (e.currentTarget as HTMLElement).classList.remove("dragging");
+    // A click on a layer's sheet selects that layer in the editor under it,
+    // so Close lands on it.
+    if (d && !d.moved && d.sheet) {
+      this.multi = new Set();
+      this.showPageOf(d.sheet);
+      this.inspect = { kind: "layer", id: d.sheet };
+    }
+  }
+
+  private onStackKey(e: KeyboardEvent) {
+    const turn: Record<string, [number, number]> = { ArrowLeft: [-15, 0], ArrowRight: [15, 0], ArrowUp: [0, -15], ArrowDown: [0, 15] };
+    const t = turn[e.key];
+    if (t) this.stackView = turnStack(this.stackView, t[0], t[1]);
+    else if (e.key === "+" || e.key === "=") this.stackView = zoomStack(this.stackView, -120);
+    else if (e.key === "-") this.stackView = zoomStack(this.stackView, 120);
+    else return;
+    e.preventDefault();
+    this.applyStackView();
+  }
+
+  /**
+   * The face taken apart: the background on the bottom sheet, then one clear
+   * sheet per layer in drawing order, the front layer on top, a little more
+   * room between groups. Each sheet is the real renderer drawing only its own
+   * layer, so what floats is exactly what the face shows. Layers hidden right
+   * now and tap zones draw nothing on the watch, so they get no sheet.
+   */
+  private renderStackDialog(family: DrawableFamily, layouts: ResolvedAll, deviceCase: PreviewCase) {
+    const layout = layouts[family];
+    const cfg = this.canvasConfig();
+    if (!layout || !cfg) return nothing;
+    const slot = slotFor(deviceCase, family);
+    const ratio = family === "corner" ? 104 / 124 : slot.width / slot.height;
+    const ctx = describeContext(this.host());
+    const base = { icons: this.icons, imageSizes: this.imageSizes, slot, ...previewTintFor(family, this.previewAsPhone, this.previewTint) };
+    const layers = layout.elements.filter((el) => !el.isHidden && el.kind !== "tap").flatMap((el) => {
+      const src = elementIn(cfg, el.id);
+      return src ? [{ id: el.id, src }] : [];
+    });
+    const units = sheetUnits([undefined, ...layers.map((l) => l.src.payload.groupId)]);
+    this.stackUnits = units;
+    const picked = this.inspect.kind === "layer" ? this.inspect.id : undefined;
+    const hot = this.stackHot;
+    const hotLayer = hot ? layers.find((l) => l.id === hot) : undefined;
+    const name = hot === "" ? html`<span class="fl-name">Background</span>`
+      : hotLayer ? html`${groupChain(cfg, hotLayer.src.payload.groupId).reverse().map((g) => html`<span class="fl-group">${g.name}</span><span class="fl-sep">›</span>`)}<span class="fl-kind" style=${`--k:${KIND_COLOR[hotLayer.src.kind]}`}>${KIND_LABEL[hotLayer.src.kind]}</span><span class="fl-name">${layerTitle(hotLayer.src, ctx)}</span>`
+      : html`<span class="fl-count">${layers.length} ${layers.length === 1 ? "layer" : "layers"} and the background</span>`;
+    const sheet = (key: string, i: number, only: ReadonlySet<string>) => html`<div data-sheet=${key}
+        class="sheet ${key === "" ? "ground" : ""} ${hot === key ? "hot" : ""} ${picked === key ? "picked" : ""}"
+        style=${`--u:${units[i]}`}>${renderLayout(layout, { ...base, onlyIds: only, ...(key === "" ? {} : { bare: true }) })}</div>`;
+    return html`<dialog class="zoom-dialog stack-dialog" @close=${() => this.closeStack()}>
+      <div class="zoom-bar">
+        <span class="stack-title">Layers in 3D</span>
+        <span class="face-label stack-name" aria-live="polite">${name}</span>
+        <span class="spacer"></span>
+        <label class="stack-spread-label">Spread
+          <input class="stack-spread" type="range" min="0" max="1" step="0.01" .value=${String(this.stackView.spread)}
+            @input=${(e: Event) => { this.stackView = { ...this.stackView, spread: Number((e.target as HTMLInputElement).value) }; this.applyStackView(); }} />
+        </label>
+        <button class="pick" title="Back to the starting angle" @click=${() => this.easeStack(STACK_HOME)}>Reset</button>
+        <button class="pick" title="Back to the editor (Escape)" @click=${() => this.closeStack()}><span class="glyph">⤡</span>Close</button>
+      </div>
+      <div class="stack-stage" tabindex="0" style=${`--wa-ratio:${ratio}`}
+        aria-label="The layers in 3D. Drag or use the arrow keys to turn, scroll or plus and minus to zoom, click a layer to select it."
+        @pointerdown=${(e: PointerEvent) => this.onStackDown(e)}
+        @pointermove=${(e: PointerEvent) => this.onStackMove(e)}
+        @pointerup=${(e: PointerEvent) => this.onStackUp(e)}
+        @pointercancel=${(e: PointerEvent) => this.onStackUp(e)}
+        @pointerover=${(e: PointerEvent) => {
+          if (this.stackDrag?.moved) return;
+          const key = (e.target as Element).closest?.("[data-sheet]")?.getAttribute("data-sheet") ?? undefined;
+          if (key !== this.stackHot) this.stackHot = key;
+        }}
+        @pointerleave=${() => { this.stackHot = undefined; }}
+        @wheel=${(e: WheelEvent) => { e.preventDefault(); this.stackView = zoomStack(this.stackView, e.deltaY); this.applyStackView(); }}
+        @dblclick=${() => this.easeStack(STACK_HOME)}
+        @keydown=${(e: KeyboardEvent) => this.onStackKey(e)}>
+        <div class="stack-rig ${family}" style=${stackRigStyle(this.stackView, units)}>
+          ${sheet("", 0, new Set())}
+          ${layers.map((l, i) => sheet(l.id, i + 1, new Set([l.id])))}
+        </div>
+        <p class="stack-hint">Drag to turn · Scroll to zoom · Click a layer to select it · Double-click to reset</p>
+      </div>
+    </dialog>`;
+  }
+
   /** Open demo mode. Review mode is dropped first: it draws marks the watch
    * never draws. */
   private openDemo() {
@@ -10309,6 +10535,7 @@ export class WristAssistantPanel extends LitElement {
       ["Snapping", "The three switches over the face. Snap to grid: layers land on a grid when you drag them, 1% by default, and arrows move one grid step; the size sits beside it. Grid lines draws the grid. Snap to layers: edges and middles land on the other layers' and on the middle of the face, with a pink line while they meet. Both snaps start on"],
       ["Alt-drag", "Flips snapping for that drag: a drag that would snap moves freely, and one that would not snaps to the grid"],
       ["Expand", "The button over the face. The face full-window, for small moves. Everything above works there too"],
+      ["3D", "The button over the face. The face taken apart, every layer on its own sheet floating over the one under it, groups a little further apart. Drag to turn it, scroll to zoom, Spread to pull the sheets apart or together. Click a sheet to select its layer"],
       ["Locked group", "Drags as one. Unlock it in its row to move layers alone"],
       ["Timestamp", "A picture's time is a text over a capsule, grouped as Timestamp: drag it as one, or pick either layer in the list for every text or shape setting"],
     ];
@@ -18941,6 +19168,7 @@ export class WristAssistantPanel extends LitElement {
           ${this.renderValuesRow()}
         </div>
         ${this.zoomed && drawable ? this.renderZoomDialog(family, layouts, deviceCase) : nothing}
+        ${this.stacked && drawable ? this.renderStackDialog(family, layouts, deviceCase) : nothing}
         ${this.demoing && drawable ? this.renderDemoDialog(family, layouts, deviceCase) : nothing}
       </div>`;
   }
