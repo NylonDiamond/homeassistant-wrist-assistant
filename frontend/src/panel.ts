@@ -4372,7 +4372,10 @@ export class WristAssistantPanel extends LitElement {
     button.start-shape.soon { border-style: dashed; }
     .start-shape-art { display: block; height: 64px; margin-bottom: 6px; color: var(--wa-accent); --wa-shape-outline: var(--wa-muted); }
     .start-shape-art .shape-art { width: 50px; height: 64px; display: block; }
-    .start-shape-art.pair { display: flex; align-items: center; gap: 2px; }
+    /* The Control Center tile: two tiles wide, a device per half, so it
+       lines up with the pairs of tiles in the boxes beside it. */
+    button.start-shape.pair { flex-direction: row; align-items: flex-start; width: 246px; padding-left: 0; padding-right: 0; }
+    .start-shape-one { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; }
     .start-kind-head svg + svg { margin-left: -3px; }
     .start-shape-name { font-size: 13px; font-weight: 700; }
     .start-shape-sub { font-size: 11px; line-height: 1.35; text-align: center; color: var(--wa-muted); }
@@ -17311,16 +17314,18 @@ export class WristAssistantPanel extends LitElement {
     const why = full ? "Every device is full. Delete a complication first." : undefined;
     const tile = (kind: NewKind, family: FamilyKind | undefined, soon: boolean) => {
       const device: DeviceKind = kind === "iphone" ? "iphone" : "watch";
-      // Control Center is on both devices, so its one tile draws both.
-      const name = family === undefined ? "Both" : familyTitle(family);
+      // Control Center is on both devices, so its one tile is two tiles
+      // wide and draws both, each device named under its own picture.
+      const name = family === undefined ? "Control Center" : familyTitle(family);
       const note = family !== undefined && soon ? familyNote(family) : "";
-      return html`<button type="button" class="start-shape ${soon ? "soon" : ""}" ?disabled=${full || this.ownerBusy || soon}
+      return html`<button type="button" class="start-shape ${soon ? "soon" : ""} ${family === undefined ? "pair" : ""}" ?disabled=${full || this.ownerBusy || soon}
         title=${soon ? `${name}: coming soon` : why ?? `New ${name.toLowerCase()} complication`}
         @click=${() => this.newFromShape(kind, family)}>
-        <span class="start-shape-art ${family === undefined ? "pair" : ""}">${family === undefined
-          ? html`${controlDeviceArt("watch", true)}${controlDeviceArt("iphone", true)}`
-          : deviceShapeArt(family, device, !soon)}</span>
-        <span class="start-shape-name">${name}</span>
+        ${family === undefined
+          ? html`<span class="start-shape-one"><span class="start-shape-art">${controlDeviceArt("watch", true)}</span><span class="start-shape-name">Watch</span></span>
+            <span class="start-shape-one"><span class="start-shape-art">${controlDeviceArt("iphone", true)}</span><span class="start-shape-name">iPhone</span></span>`
+          : html`<span class="start-shape-art">${deviceShapeArt(family, device, !soon)}</span>
+            <span class="start-shape-name">${name}</span>`}
         ${soon ? html`<span class="start-shape-sub">Coming soon${note ? html`<br />${note}` : nothing}</span>` : nothing}
       </button>`;
     };
@@ -17337,7 +17342,7 @@ export class WristAssistantPanel extends LitElement {
           </div>`;
           // Control Center is one kind on both devices: one tile, drawn as
           // both devices' tile grids, opening New with Control Center picked.
-          if (kind === "control") return [box(kindTitle(kind), tile(kind, undefined, false))];
+          if (kind === "control") return [box(`Both · ${kindTitle(kind)}`, tile(kind, undefined, false))];
           // A box per screen: the watch has one, the iPhone has its Lock
           // Screen and its Home Screen. Each box hugs its own tiles, so no
           // box carries a blank where another's second row would be.

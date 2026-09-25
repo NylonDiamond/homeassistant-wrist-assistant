@@ -4790,7 +4790,10 @@ ${L5(c)}`}}delete s.hidden,delete s.linkId;let l=Hc(a);if(l.length>0){let d=l.sl
     button.start-shape.soon { border-style: dashed; }
     .start-shape-art { display: block; height: 64px; margin-bottom: 6px; color: var(--wa-accent); --wa-shape-outline: var(--wa-muted); }
     .start-shape-art .shape-art { width: 50px; height: 64px; display: block; }
-    .start-shape-art.pair { display: flex; align-items: center; gap: 2px; }
+    /* The Control Center tile: two tiles wide, a device per half, so it
+       lines up with the pairs of tiles in the boxes beside it. */
+    button.start-shape.pair { flex-direction: row; align-items: flex-start; width: 246px; padding-left: 0; padding-right: 0; }
+    .start-shape-one { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; }
     .start-kind-head svg + svg { margin-left: -3px; }
     .start-shape-name { font-size: 13px; font-weight: 700; }
     .start-shape-sub { font-size: 11px; line-height: 1.35; text-align: center; color: var(--wa-muted); }
@@ -8367,11 +8370,12 @@ ${L5(c)}`}}delete s.hidden,delete s.linkId;let l=Hc(a);if(l.length>0){let d=l.sl
         <span class="start-card-where">${R(d==="iphone"?"phone":d==="library"?"layers":"watch")}${y}</span>
         <span class="start-card-shape">${$b(o,s)}</span>
       </span>
-    </button>`}renderStartShapes(t){let i=this.deviceOwners(),a=Fp(i);if(a.length===0)return m;let r=t?"Every device is full. Delete a complication first.":void 0,o=(s,l,d)=>{let c=s==="iphone"?"iphone":"watch",p=l===void 0?"Both":ye(l),h=l!==void 0&&d?ur(l):"";return u`<button type="button" class="start-shape ${d?"soon":""}" ?disabled=${t||this.ownerBusy||d}
+    </button>`}renderStartShapes(t){let i=this.deviceOwners(),a=Fp(i);if(a.length===0)return m;let r=t?"Every device is full. Delete a complication first.":void 0,o=(s,l,d)=>{let c=s==="iphone"?"iphone":"watch",p=l===void 0?"Control Center":ye(l),h=l!==void 0&&d?ur(l):"";return u`<button type="button" class="start-shape ${d?"soon":""} ${l===void 0?"pair":""}" ?disabled=${t||this.ownerBusy||d}
         title=${d?`${p}: coming soon`:r??`New ${p.toLowerCase()} complication`}
         @click=${()=>this.newFromShape(s,l)}>
-        <span class="start-shape-art ${l===void 0?"pair":""}">${l===void 0?u`${Pl("watch",!0)}${Pl("iphone",!0)}`:_i(l,c,!d)}</span>
-        <span class="start-shape-name">${p}</span>
+        ${l===void 0?u`<span class="start-shape-one"><span class="start-shape-art">${Pl("watch",!0)}</span><span class="start-shape-name">Watch</span></span>
+            <span class="start-shape-one"><span class="start-shape-art">${Pl("iphone",!0)}</span><span class="start-shape-name">iPhone</span></span>`:u`<span class="start-shape-art">${_i(l,c,!d)}</span>
+            <span class="start-shape-name">${p}</span>`}
         ${d?u`<span class="start-shape-sub">Coming soon${h?u`<br />${h}`:m}</span>`:m}
       </button>`};return u`<section class="start-sec">
       <div class="start-sec-head"><h2>Create a new one</h2><span class="start-sec-note">Pick the shape it draws.</span></div>
@@ -8379,7 +8383,7 @@ ${L5(c)}`}}delete s.hidden,delete s.linkId;let l=Hc(a);if(l.length>0){let d=l.sl
         ${a.flatMap(s=>{let l=s==="iphone"?"iphone":"watch",d=(c,p)=>u`<div class="start-kind ${s}">
             <div class="start-kind-head">${s==="control"?u`${R("watch")}${R("phone")}`:R(l==="iphone"?"phone":"watch")}<span>${c}</span></div>
             <div class="start-kind-tiles">${p}</div>
-          </div>`;return s==="control"?[d(Fl(s),o(s,void 0,!1))]:Ll(s,i).map(c=>d(s==="watch"?Fl(s):`${Fl(s)} \xB7 ${c.title}`,u`${c.families.map(p=>o(s,p,!1))}
+          </div>`;return s==="control"?[d(`Both \xB7 ${Fl(s)}`,o(s,void 0,!1))]:Ll(s,i).map(c=>d(s==="watch"?Fl(s):`${Fl(s)} \xB7 ${c.title}`,u`${c.families.map(p=>o(s,p,!1))}
               ${c.comingSoon.map(p=>o(s,p,!0))}`))})}
       </div>
     </section>`}newFromShape(t,i){this.freeSlot()<0||(this.openNewDialog(),this.pickKind(t),i!==void 0&&(this.newFamily=i))}renderCanvas(){if(this.parseError)return u`<div class="card error">This document cannot be read: ${this.parseError}</div>`;let t=this.canvasConfig();if(!t)return this.renderStartPage();let i=Mt(t,this.buildContext(),this.forced);this.syncCountdownTicker(i);let a=this.currentCase(),r=this.activeFamily;if(this.inControlView)return u`
