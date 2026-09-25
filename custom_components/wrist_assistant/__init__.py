@@ -69,6 +69,7 @@ from .v1_api_views import (
     WatchSummaryView,
     WatchUpdatesView,
 )
+from .audio_upload import CLEANUP_INTERVAL_SECONDS, async_cleanup_clips
 from .v1_audio_upload_views import AudioUploadView
 from .v1_camera_devices_views import CameraDevicesView
 from .v1_camera_stream_views import (
@@ -918,6 +919,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
             timedelta(seconds=60),
         )
     )
+
+    # Broadcast clips live in the public /local/ folder. Each upload sweeps
+    # the old ones, but the last clip of the day would otherwise sit there
+    # until the next upload; this timer (and the sweep at setup) bounds it.
+    @callback
+    def _sweep_audio_clips(_now) -> None:
+        hass.async_create_task(async_cleanup_clips(hass))
+
+    entry.async_on_unload(
+        async_track_time_interval(
+            hass,
+            _sweep_audio_clips,
+            timedelta(seconds=CLEANUP_INTERVAL_SECONDS),
+        )
+    )
+    hass.async_create_task(async_cleanup_clips(hass))
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 

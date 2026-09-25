@@ -149,6 +149,12 @@ data:
       icon: "shield.fill"
 ```
 
+## Security and privacy
+
+**Pairing.** When the iPhone app pairs a watch, the integration stores a per-device secret and binds it to the Home Assistant user who was signed in. Every call from that device then runs as that user, the same way the Home Assistant Companion app works. A watch paired by a non-admin cannot call admin-only services (restart, add-on control, and so on). Only the user who paired a device, or an admin, can pair it again. If a phone or watch is lost, open the Wrist Assistant panel and choose "Forget device" on it; disabling the user in Home Assistant also cuts off every device they paired.
+
+**Push relay.** Apple push notifications must be signed with the app's APNs key, which cannot ship inside a public integration. Notifications are therefore sent through a relay at `push.wrist-assistant.com`, run by the developer, which signs them and hands them to Apple. The relay receives the notification title, body, action buttons and data, the device push token, and the watch id. It keeps nothing after Apple accepts the message. Camera images in notifications are never sent to the relay: the push carries a short-lived link back to your own Home Assistant, and the device fetches the image from there.
+
 ## Need help?
 
 - Wrist Assistant site: <https://wrist-assistant.com/>

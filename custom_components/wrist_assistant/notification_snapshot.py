@@ -29,6 +29,13 @@ _LOGGER = logging.getLogger(__name__)
 # leaked URL ages out quickly.
 DEFAULT_SNAPSHOT_TTL_SECONDS = 600
 
+# How many *fresh* frames the `/live` sibling may capture per token. The frozen
+# frame stays multi-use for the TTL; this only bounds live re-captures, so a
+# leaked URL is a few frames and never a ten-minute feed. Six covers a person
+# tapping the notification image to refresh a handful of times on the phone
+# plus the watch's own fetch.
+DEFAULT_LIVE_CAPTURE_LIMIT = 6
+
 
 @dataclass(slots=True)
 class SnapshotEntry:
@@ -50,6 +57,8 @@ class SnapshotEntry:
     # True when the background capture gave up — waiters serve 404 and the
     # client falls back to fetching the image via camera_entity_id.
     failed: bool = False
+    # Live re-captures this token may still make; see consume_live().
+    live_remaining: int = DEFAULT_LIVE_CAPTURE_LIMIT
 
 
 class NotificationSnapshotStore:
@@ -164,6 +173,19 @@ class NotificationSnapshotStore:
             self._entries.pop(token, None)
             return None
         return entry
+
+    def consume_live(self, token: str, *, now: float | None = None) -> bool:
+        """Spend one of the token's live re-captures.
+
+        True when a fresh capture may go ahead; False once the token has used
+        them up (or is missing/expired), in which case the caller serves the
+        frozen frame instead.
+        """
+        entry = self.get(token, now=now)
+        if entry is None or entry.live_remaining <= 0:
+            return False
+        entry.live_remaining -= 1
+        return True
 
     async def get_wait(
         self, token: str, *, timeout: float = 6.0, now: float | None = None

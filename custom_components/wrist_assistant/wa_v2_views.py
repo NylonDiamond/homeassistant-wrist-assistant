@@ -49,11 +49,9 @@ import asyncio
 import base64
 import gzip
 import logging
-import os
 import time
 import uuid
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import orjson
@@ -62,12 +60,12 @@ from aiohttp.web import Request, Response, StreamResponse
 from homeassistant import loader
 from homeassistant.components.camera import async_get_image
 from homeassistant.components.http import HomeAssistantView
-from homeassistant.core import HomeAssistant, ServiceResponse
+from homeassistant.core import Context, HomeAssistant, ServiceResponse
 from homeassistant.exceptions import HomeAssistantError, ServiceNotFound
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import instance_id as ha_instance_id
 
-from .audio_upload import CLEANUP_AGE_SECONDS, MAX_UPLOAD_SIZE
+from .audio_upload import MAX_UPLOAD_SIZE, async_cleanup_clips, async_save_clip
 from .bundle_ops import (
     BundleRequestError,
     OpError,
@@ -198,6 +196,19 @@ class _OpContext:
     request: Request
     op: str
     algo: str
+    user_id: str | None = None
+    """The Home Assistant user the device's secret is bound to (see
+    `WidgetSecretEntry.user_id`). None for an entry that predates binding."""
+
+    def new_context(self) -> Context:
+        """A `Context` for anything this request does to Home Assistant.
+
+        Carries the bound user so service calls and events run with that
+        user's rights and are attributed to them, exactly as the mobile_app
+        webhook does. With no bound user this is a plain anonymous context,
+        which is what Home Assistant would have made on its own.
+        """
+        return Context(user_id=self.user_id)
 
     def signed_json(
         self,
@@ -278,6 +289,21 @@ class _OpContext:
         )
 
 
+async def _async_bound_user_ok(hass: HomeAssistant, user_id: str | None) -> bool:
+    """Whether the user a secret is bound to may still act.
+
+    A secret outlives Home Assistant's own tokens, so this is where a
+    disabled or deleted user loses the devices they paired: the HMAC still
+    verifies, but the request is refused. An unbound entry (paired before
+    user binding, not yet re-provisioned) passes; there is no user to check.
+    The lookup is an in-memory dictionary read, not I/O.
+    """
+    if user_id is None:
+        return True
+    user = await hass.auth.async_get_user(user_id)
+    return user is not None and user.is_active
+
+
 # ── /v2/action view ──────────────────────────────────────────────────────
 
 
@@ -330,6 +356,12 @@ class WAActionView(HomeAssistantView):
             # Race with deletion between validate and dispatch, or storage
             # corruption — either way, treat as unknown.
             return Response(status=401, text="Unauthorized")
+        if not await _async_bound_user_ok(self._hass, secret_entry.user_id):
+            _LOGGER.debug(
+                "WA request refused (v2/action): bound user of %s is disabled or gone",
+                validated.watch_id,
+            )
+            return Response(status=401, text="Unauthorized")
 
         # Audio upload sends raw bytes; everything else is JSON.
         if validated.op == "audio_upload":
@@ -354,6 +386,7 @@ class WAActionView(HomeAssistantView):
             request=request,
             op=validated.op,
             algo=validated.algo,
+            user_id=secret_entry.user_id,
         )
 
         handler = _OP_HANDLERS.get(validated.op)
@@ -425,6 +458,12 @@ class WADeltaView(HomeAssistantView):
 
         secret_entry = domain_data.widget_secret_store.get(validated.watch_id)
         if secret_entry is None or secret_entry.secret_bytes is None:
+            return Response(status=401, text="Unauthorized")
+        if not await _async_bound_user_ok(self._hass, secret_entry.user_id):
+            _LOGGER.debug(
+                "WA request refused (v2/delta): bound user of %s is disabled or gone",
+                validated.watch_id,
+            )
             return Response(status=401, text="Unauthorized")
 
         try:
@@ -676,6 +715,12 @@ async def _op_service(ctx: _OpContext) -> Response:
 
     return_response = ctx.payload.get("return_response") is True
 
+    # The call runs as the user who paired the device. That is what makes
+    # Home Assistant apply its admin-only check (`async_register_admin_service`
+    # only checks when the context names a user) and what puts the person's
+    # name in the logbook. No allow-list here: Home Assistant's own rules for
+    # that user are the rules.
+    context = ctx.new_context()
     try:
         if return_response:
             response_data: ServiceResponse = await ctx.hass.services.async_call(
@@ -684,11 +729,12 @@ async def _op_service(ctx: _OpContext) -> Response:
                 service_data,
                 blocking=True,
                 return_response=True,
+                context=context,
             )
             return ctx.signed_json({"ok": True, "response": response_data})
         else:
             await ctx.hass.services.async_call(
-                domain, service, service_data, blocking=False
+                domain, service, service_data, blocking=False, context=context
             )
             return ctx.signed_json({"ok": True})
     except ServiceNotFound as err:
@@ -1387,7 +1433,7 @@ async def _op_fire_event(ctx: _OpContext) -> Response:
     if not isinstance(event_data, dict):
         return Response(status=400, text="event_data must be an object")
 
-    ctx.hass.bus.async_fire(event_type, event_data)
+    ctx.hass.bus.async_fire(event_type, event_data, context=ctx.new_context())
     return ctx.signed_json({"ok": True})
 
 
@@ -1427,7 +1473,9 @@ async def _op_remote_command(ctx: _OpContext) -> Response:
         existing.cancel()
 
     holds[entity_id] = ctx.hass.async_create_task(
-        _remote_command_hold_loop(ctx.hass, entity_id, command, hold_secs, holds)
+        _remote_command_hold_loop(
+            ctx.hass, entity_id, command, hold_secs, holds, ctx.new_context()
+        )
     )
     return ctx.signed_json({"ok": True})
 
@@ -1453,8 +1501,13 @@ async def _remote_command_hold_loop(
     command: str,
     hold_secs: float,
     holds: dict[str, asyncio.Task],
+    context: Context,
 ) -> None:
-    """Repeat a remote command on a hold cadence until cancelled or timeout."""
+    """Repeat a remote command on a hold cadence until cancelled or timeout.
+
+    Every repeat carries the context of the request that started the hold,
+    so the whole hold is one user's action.
+    """
     try:
         elapsed = 0.0
         while elapsed < _REMOTE_HOLD_TIMEOUT_SECONDS:
@@ -1466,6 +1519,7 @@ async def _remote_command_hold_loop(
                     "command": command,
                     "hold_secs": hold_secs,
                 },
+                context=context,
             )
             await asyncio.sleep(hold_secs)
             elapsed += hold_secs
@@ -1487,11 +1541,18 @@ def _resolve_companion_target(
     HA instance (multi-user, or a household with several paired watches) could
     name *another* user's watch and read or mutate its entry.
 
-    Ownership is the watch entry's recorded ``owner_iphone_id`` (set at pairing
-    via register_secret / update_metadata). When a companion is named we require
-    that owner to equal the caller. Entries with no recorded owner — paired
-    before owner tracking, or watch-direct registrations — are allowed through
-    for backward compatibility; a properly paired watch is always protected.
+    Ownership is checked two ways, and both must pass:
+
+    * the watch entry's recorded ``owner_iphone_id`` (set at pairing via
+      register_secret / update_metadata) must equal the caller;
+    * the watch entry's bound Home Assistant user must equal the caller's.
+      ``owner_iphone_id`` is a value the registering client asserts about
+      itself, so on its own it protects nothing against a client that
+      registers a matching id; the user binding is what the server knows.
+
+    Entries with no recorded owner or user — paired before either was
+    tracked — are allowed through for backward compatibility; a properly
+    paired watch is always protected.
 
     Returns ``(target_watch_id, None)`` on success, or ``(None, response)`` with
     a 403 when the caller names a companion it does not own.
@@ -1504,7 +1565,12 @@ def _resolve_companion_target(
     store = ctx.domain_data.widget_secret_store
     entry = store.get(companion) if store is not None else None
     owner = entry.owner_iphone_id if entry is not None else None
-    if owner is not None and owner != ctx.watch_id:
+    bound_user = entry.user_id if entry is not None else None
+    if (owner is not None and owner != ctx.watch_id) or (
+        bound_user is not None
+        and ctx.user_id is not None
+        and bound_user != ctx.user_id
+    ):
         _LOGGER.warning(
             "Rejected cross-watch op=%s: caller %s is not owner of companion %s",
             ctx.op,
@@ -1759,8 +1825,9 @@ async def _op_audio_upload(ctx: _OpContext) -> Response:
     """Receive an audio clip for broadcast.
 
     The HMAC-signed body is the raw audio bytes — there's no JSON wrapper. The
-    server saves the file under /config/www/wrist_assistant/ and returns the
-    URL the media player can pull.
+    server saves the file under /config/www/wrist_assistant/ under a random
+    name (that folder is served without authentication, see `audio_upload`)
+    and returns the URL the media player can pull.
     """
     audio = ctx.body
     if len(audio) > MAX_UPLOAD_SIZE:
@@ -1768,36 +1835,14 @@ async def _op_audio_upload(ctx: _OpContext) -> Response:
     if not audio:
         return Response(status=400, text="Empty body")
 
-    www_dir = Path(ctx.hass.config.path("www", "wrist_assistant"))
-    await ctx.hass.async_add_executor_job(www_dir.mkdir, 0o755, True, True)
-    # Background cleanup of stale files.
-    ctx.hass.async_create_task(_audio_cleanup(ctx.hass, www_dir))
+    # Background cleanup of stale files; the timer in __init__ covers the gap
+    # after the last upload.
+    ctx.hass.async_create_task(async_cleanup_clips(ctx.hass))
 
-    timestamp = int(time.time() * 1000)
-    filename = f"broadcast_{timestamp}.m4a"
-    file_path = www_dir / filename
-    await ctx.hass.async_add_executor_job(file_path.write_bytes, audio)
-
-    local_url = f"/local/wrist_assistant/{filename}"
-    _LOGGER.debug("Audio upload saved: %s (%d bytes)", filename, len(audio))
-
+    filename, local_url = await async_save_clip(ctx.hass, audio)
     return ctx.signed_json(
         {"ok": True, "url": local_url, "filename": filename, "size": len(audio)}
     )
-
-
-async def _audio_cleanup(hass: HomeAssistant, directory: Path) -> None:
-    try:
-        now = time.time()
-        files = await hass.async_add_executor_job(
-            lambda: list(directory.glob("broadcast_*.m4a"))
-        )
-        for f in files:
-            stat = await hass.async_add_executor_job(os.stat, f)
-            if now - stat.st_mtime > CLEANUP_AGE_SECONDS:
-                await hass.async_add_executor_job(f.unlink, True)
-    except Exception:  # noqa: BLE001
-        _LOGGER.debug("Audio cleanup error", exc_info=True)
 
 
 async def _op_camera_batch(ctx: _OpContext) -> Response:
@@ -2517,8 +2562,11 @@ class WANotificationSnapshotLiveView(HomeAssistantView):
 
     Auth is the same multi-use token lookup as `WANotificationSnapshotView`
     (the content extension can't carry HMAC/bearer). The token already scopes
-    which camera may be captured, so a leaked URL can only re-snap that one
-    camera for the TTL window. Responses are `no-store` so each tap re-fetches.
+    which camera may be captured, and each token allows only a handful of
+    live re-captures (`NotificationSnapshotStore.consume_live`), so a leaked
+    URL is a few fresh frames of one camera, not a ten-minute live feed. Past
+    the cap the tap serves the frozen frame. Responses are `no-store` so each
+    tap re-fetches.
     """
 
     url = "/api/wrist_assistant/notification/snapshot/{token}/live"
@@ -2538,8 +2586,11 @@ class WANotificationSnapshotLiveView(HomeAssistantView):
             return Response(text="Not Found", status=404)
 
         # No source camera (pre-built image token) → nothing to re-capture;
-        # hand back the cached frame so the tap is at worst a no-op.
-        if not entry.entity_id:
+        # hand back the cached frame so the tap is at worst a no-op. The same
+        # once the token has spent its live re-captures.
+        if not entry.entity_id or not domain_data.notification_snapshot_store.consume_live(
+            token
+        ):
             if entry.data is None:
                 return Response(text="Not Found", status=404)
             return Response(
@@ -2578,11 +2629,25 @@ class WANotificationSnapshotLiveView(HomeAssistantView):
 # ── /v2/register_secret view ─────────────────────────────────────────────
 
 
+# Free-text fields the app reports about itself end up in logs, the device
+# registry and the panel. Cap them so a bad client cannot stuff them.
+_REGISTER_ID_MAX_LEN = 128
+_REGISTER_TEXT_MAX_LEN = 256
+
+
 class WARegisterSecretView(HomeAssistantView):
     """Bearer-authenticated endpoint where the iOS app registers a per-watch
     HMAC secret with HA. Called once per (watch_id, baseURL) on iOS-side
     integration check. The watch never calls this — iOS owns provisioning
     so the watch process never needs the bearer.
+
+    The secret is bound to the Home Assistant user behind the bearer. Every
+    later request signed with it runs as that user (`_OpContext.new_context`),
+    so pairing never grants more than the pairing user already has. Any user
+    may pair, as with the Companion app. A watch_id that is already bound to
+    someone else can only be re-registered by that same user or by an admin;
+    otherwise a second account could silently replace a device's key and take
+    over its identity, push registration and complications.
     """
 
     url = "/api/wrist_assistant/v2/register_secret"
@@ -2665,6 +2730,19 @@ class WARegisterSecretView(HomeAssistantView):
         # Library designs as if they were a watch's own.
         if watch_id == LIBRARY_OWNER_ID:
             return self.json_message("watch_id is reserved", status_code=400)
+        if len(watch_id) > _REGISTER_ID_MAX_LEN or (
+            owner_iphone_id is not None and len(owner_iphone_id) > _REGISTER_ID_MAX_LEN
+        ):
+            return self.json_message("watch_id too long", status_code=400)
+        for field_name, value in (
+            ("label", label),
+            ("device_name", device_name),
+            ("screen_size", screen_size),
+            ("app_version", app_version),
+            ("app_build", app_build),
+        ):
+            if isinstance(value, str) and len(value) > _REGISTER_TEXT_MAX_LEN:
+                return self.json_message(f"{field_name} too long", status_code=400)
         if not isinstance(secret_b64, str) or not secret_b64:
             return self.json_message("secret_b64 required", status_code=400)
         if not isinstance(algo, str) or algo not in SUPPORTED_HMAC_ALGOS:
@@ -2687,6 +2765,28 @@ class WARegisterSecretView(HomeAssistantView):
                 status_code=400,
             )
 
+        # HA's auth middleware put the bearer's user here (requires_auth).
+        user = request.get("hass_user")
+        user_id = user.id if user is not None else None
+        is_admin = bool(user is not None and user.is_admin)
+
+        existing = domain_data.widget_secret_store.get(watch_id)
+        if (
+            existing is not None
+            and existing.user_id is not None
+            and existing.user_id != user_id
+            and not is_admin
+        ):
+            _LOGGER.warning(
+                "Refused register_secret for watch_id=%s: bound to another user",
+                watch_id,
+            )
+            return self.json_message(
+                "This device is paired by another user. Ask an admin to forget "
+                "it in the Wrist Assistant panel first.",
+                status_code=403,
+            )
+
         register_result = domain_data.widget_secret_store.register(
             watch_id=watch_id,
             secret_b64=secret_b64,
@@ -2697,6 +2797,7 @@ class WARegisterSecretView(HomeAssistantView):
             owner_iphone_id=owner_iphone_id,
             device_name=device_name,
             screen_size=screen_size,
+            user_id=user_id,
         )
         if register_result == "new":
             log_secret_registered(

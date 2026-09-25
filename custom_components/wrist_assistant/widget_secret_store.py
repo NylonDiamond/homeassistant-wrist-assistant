@@ -96,6 +96,18 @@ class WidgetSecretEntry:
     selected watch's case. None for entries written by builds that predate
     this field — the panel keeps its 46 mm reference default."""
 
+    user_id: str | None = None
+    """Id of the Home Assistant user whose bearer token registered this
+    secret. Every HMAC-authenticated request from the device runs under a
+    `Context` carrying this user, so Home Assistant applies the same admin
+    checks it applies to that user's own calls, and the logbook attributes
+    the action to them. This is the mobile_app model: the device is exactly
+    as powerful as the person who paired it.
+
+    None for entries written before this field existed. Those run without a
+    user (the pre-binding behaviour) until the iPhone's next automatic
+    re-provision fills it in; see `register()`."""
+
     secret_bytes: bytes | None = field(init=False, repr=False, default=None)
     """Decoded HMAC key bytes, cached on construction to avoid base64-decoding
     on every signed request and every signed response. None if `secret_b64`
@@ -157,6 +169,7 @@ class WidgetSecretStore:
                     owner_iphone_id=entry.get("owner_iphone_id"),
                     device_name=entry.get("device_name"),
                     screen_size=entry.get("screen_size"),
+                    user_id=entry.get("user_id"),
                 )
         _LOGGER.debug("Loaded %d widget secrets from storage", len(self._secrets))
 
@@ -177,6 +190,7 @@ class WidgetSecretStore:
                     "owner_iphone_id": entry.owner_iphone_id,
                     "device_name": entry.device_name,
                     "screen_size": entry.screen_size,
+                    "user_id": entry.user_id,
                 }
                 for watch_id, entry in self._secrets.items()
             }
@@ -194,14 +208,23 @@ class WidgetSecretStore:
         owner_iphone_id: str | None = None,
         device_name: str | None = None,
         screen_size: str | None = None,
+        user_id: str | None = None,
     ) -> Literal["new", "rekey", "idempotent"]:
         """Register or replace a secret for a watch.
+
+        `user_id` is the Home Assistant user behind the registering bearer.
+        The caller decides whether that user may touch this watch_id (see
+        `WARegisterSecretView`); this method only records the outcome. An
+        entry that predates user binding (`user_id is None`) takes the
+        first user it is re-provisioned by without counting as a rekey, so
+        the automatic re-provision after an upgrade binds every existing
+        device silently.
 
         Returns:
             "new"        — first time we've seen this watch_id (first pair).
             "rekey"      — existing watch_id, but secret material or identity
                            changed (user reset the keychain and re-paired the
-                           same device).
+                           same device, or a different user took it over).
             "idempotent" — everything identical, just refreshing last_provision.
         """
         existing = self._secrets.get(watch_id)
@@ -217,10 +240,18 @@ class WidgetSecretStore:
             and existing.owner_iphone_id == owner_iphone_id
             and existing.device_name == device_name
             and existing.screen_size == screen_size
+            and existing.user_id in (None, user_id)
         ):
             # Idempotent re-provision: secret material + identity unchanged.
             # Still refresh `last_provision` so the iPhone "Last provision"
             # sensor reflects the ping; debounced save keeps disk writes cheap.
+            if existing.user_id is None and user_id is not None:
+                existing.user_id = user_id
+                _LOGGER.info(
+                    "Bound widget secret for watch_id=%s to user %s",
+                    watch_id,
+                    user_id,
+                )
             existing.last_provision = now
             self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
             self._notify_listeners()
@@ -236,13 +267,15 @@ class WidgetSecretStore:
             owner_iphone_id=owner_iphone_id,
             device_name=device_name,
             screen_size=screen_size,
+            user_id=user_id,
         )
         _LOGGER.info(
-            "Registered widget secret for watch_id=%s algo=%s app_version=%s owner_iphone_id=%s",
+            "Registered widget secret for watch_id=%s algo=%s app_version=%s owner_iphone_id=%s user=%s",
             watch_id,
             algo,
             app_version,
             owner_iphone_id,
+            user_id,
         )
         self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
         self._notify_listeners()
