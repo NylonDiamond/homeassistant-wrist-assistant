@@ -32,6 +32,7 @@ import {
   mapEntityRefs,
   mapFreeText,
   parseConfig,
+  quotedEntityIds,
   replaceQuotedEntityIds,
   schemaVersionFor,
 } from "./model.js";
@@ -430,7 +431,91 @@ export function unresolvedEntities(
     if (row.label === use.entityId && use.ref.displayName !== "") row.label = use.ref.displayName;
     if (!row.where.includes(use.where)) row.where.push(use.where);
   }
-  return [...rows.values()];
+  const out = [...rows.values()];
+  const perDomain = new Map<string, number>();
+  for (const row of out) if (row.required) perDomain.set(row.domain, (perDomain.get(row.domain) ?? 0) + 1);
+  for (const row of out) {
+    if (!row.required || !isNumberedSlotLabel(row)) continue;
+    row.label = betterSlotLabel(cfg, row, perDomain.get(row.domain) ?? 0) ?? row.label;
+  }
+  return out;
+}
+
+/** The label `shareSlots` makes up when the author leaves it: the domain and
+ * the slot's number, "Light 2". It says what kind of thing to pick and
+ * nothing about which one. */
+function isNumberedSlotLabel(row: UnresolvedEntity): boolean {
+  const n = PLACEHOLDER_RE.exec(row.entityId)?.[1];
+  return n !== undefined && row.label === `${upperFirst(row.domain.replace(/_/g, " "))} ${n}`;
+}
+
+/**
+ * A made-up slot label said better, from what the document already carries.
+ *
+ * A shared value that reads the slot has a name the author chose, and on the
+ * wire it is already the public one, so "Light 1" becomes "Downstairs left
+ * light". Failing that, the only slot of its domain drops the number: "Sun"
+ * rather than "Sun 7", which read as if there were six other suns to choose
+ * between.
+ */
+function betterSlotLabel(cfg: CustomComplicationConfig, row: UnresolvedEntity, sameDomain: number): string | undefined {
+  const names: string[] = [];
+  for (const valueId of slotValueIds(cfg, row.entityId)) {
+    const name = cfg.values.find((v) => v.id.toUpperCase() === valueId)?.name.trim() ?? "";
+    if (name !== "" && !names.includes(name)) names.push(name);
+  }
+  if (names.length === 1) return names[0];
+  if (names.length > 1) return `${names[0]} / ${names[1]}${names.length > 2 ? " …" : ""}`;
+  if (sameDomain === 1) return upperFirst(row.domain.replace(/_/g, " "));
+  return undefined;
+}
+
+/**
+ * Slots this home can answer without asking: the only open slot of a domain,
+ * when the home has exactly one entity of that domain. Every home has one
+ * `sun.sun`, and a design whose sky follows the sun would otherwise stay dark
+ * until the reader worked out that "Sun" wanted it.
+ *
+ * Returned as slot id to entity id; the caller builds the reference.
+ */
+export function autoSlotPicks(rows: readonly UnresolvedEntity[], states: Record<string, unknown>): Map<string, string> {
+  const open = new Map<string, UnresolvedEntity[]>();
+  for (const row of rows) {
+    if (!row.required) continue;
+    open.set(row.domain, [...(open.get(row.domain) ?? []), row]);
+  }
+  const out = new Map<string, string>();
+  for (const [domain, slots] of open) {
+    if (slots.length !== 1) continue;
+    const ids = Object.keys(states).filter((id) => id.startsWith(`${domain}.`));
+    if (ids.length === 1) out.set(slots[0]!.entityId, ids[0]!);
+  }
+  return out;
+}
+
+/**
+ * The slots a document still carries: placeholders nobody has pointed at one
+ * of this home's entities. The editor counts them and asks for them, because a
+ * slot left open reads nothing, and a layer that reads nothing looks broken
+ * rather than unfinished (a sky that stays at night, a reading of "--").
+ */
+export function openSlots(cfg: CustomComplicationConfig, states: Record<string, unknown>): UnresolvedEntity[] {
+  return unresolvedEntities(cfg, states).filter((row) => row.required);
+}
+
+/** The shared values that read a slot, directly: the ones whose own source
+ * names it. */
+export function slotValueIds(cfg: CustomComplicationConfig, entityId: string): string[] {
+  const ids = new Set<string>();
+  mapEntityRefs(cfg, (ref, site) => {
+    if (ref.entityId === entityId && site.kind === "named" && site.valueId !== undefined) ids.add(site.valueId.toUpperCase());
+    return undefined;
+  });
+  mapFreeText(cfg, (text, site) => {
+    if (site.kind === "named" && site.valueId !== undefined && quotedEntityIds(text).includes(entityId)) ids.add(site.valueId.toUpperCase());
+    return text;
+  });
+  return [...ids];
 }
 
 /**
@@ -445,6 +530,12 @@ export function remapEntities(
   map: ReadonlyMap<string, EntityRef>,
 ): CustomComplicationConfig {
   const next = structuredClone(cfg);
+  applyEntityMap(next, map);
+  return next;
+}
+
+/** `remapEntities` in place, for the editor, whose edits mutate the draft. */
+export function applyEntityMap(next: CustomComplicationConfig, map: ReadonlyMap<string, EntityRef>): void {
   mapEntityRefs(next, (ref) => {
     const to = map.get(ref.entityId);
     if (!to) return undefined;
@@ -457,7 +548,6 @@ export function remapEntities(
   const ids = new Map<string, string>();
   for (const [from, to] of map) ids.set(from, to.entityId);
   mapFreeText(next, (text) => replaceQuotedEntityIds(text, ids));
-  return next;
 }
 
 // ── what the import dialog works out ──────────────────────────────────────

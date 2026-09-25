@@ -298,6 +298,8 @@ import {
   type ShareSlot,
   type UnresolvedEntity,
   SHARE_LINK_DAMAGED,
+  applyEntityMap,
+  autoSlotPicks,
   backupFileName,
   backupText,
   decodeShareLink,
@@ -307,6 +309,7 @@ import {
   hasInstanceFilters,
   importProblem,
   isPlaceholderId,
+  openSlots,
   parseBackupText,
   parseImportText,
   planRestore,
@@ -316,6 +319,7 @@ import {
   shareLinkUrl,
   SHARE_LINK_SITE,
   shareSlots,
+  slotValueIds,
   suggestImportName,
   unresolvedEntities,
 } from "./transfer.js";
@@ -492,6 +496,28 @@ const PRESET_ENTITY_KEY = "preset-entity";
  * when the text above it is edited and the table is rebuilt. */
 function importEntityKey(entityId: string): string {
   return `import-entity-${entityId}`;
+}
+
+/** The same for the editor's "Pick entities" dialog. */
+function slotEntityKey(entityId: string): string {
+  return `slot-entity-${entityId}`;
+}
+
+/** The open document's unpicked slots, and who reads each one. */
+interface SlotInfo {
+  rows: UnresolvedEntity[];
+  /** Layer id to the slots it reads. */
+  layers: Map<string, UnresolvedEntity[]>;
+  /** Shared value id, upper case, to the slot it reads. */
+  values: Map<string, UnresolvedEntity>;
+}
+
+/** Open rows first, then the ones filled in for the reader, then the ids this
+ * home simply lacks. Worked out once per document, so a row never jumps while
+ * it is being picked. */
+function slotOrder(rows: readonly UnresolvedEntity[], auto: ReadonlySet<string>): UnresolvedEntity[] {
+  const rank = (row: UnresolvedEntity) => (!row.required ? 2 : auto.has(row.entityId) ? 1 : 0);
+  return [...rows].sort((a, b) => rank(a) - rank(b));
 }
 
 /** The empty reference an unanswered import row shows. */
@@ -1834,6 +1860,18 @@ export class WristAssistantPanel extends LitElement {
   @state() private backingUp = false;
   @state() private importName = "";
   @state() private importMap: ReadonlyMap<string, EntityRef> = new Map();
+  /** Slots the dialog filled in by itself, because this home has only one
+   * entity that fits. Listed last and said so, and still changeable. */
+  @state() private importAuto: ReadonlySet<string> = new Set();
+  /** The editor's "Pick entities" dialog: the open document's slots nobody
+   * has pointed at an entity yet, and the picks made in it so far. */
+  @state() private slotsOpen = false;
+  @state() private slotsMap: ReadonlyMap<string, EntityRef> = new Map();
+  @state() private slotsAuto: ReadonlySet<string> = new Set();
+  @state() private slotsFocus?: string;
+  /** What the open slots come to, cached per document edit: the layers list
+   * and the shared values ask on every render. */
+  private slotsCache?: { cfg: CustomComplicationConfig; version: number; info: SlotInfo };
   /** The shapes Import takes. Undefined takes every shape the text has. */
   @state() private importFamilies?: ReadonlySet<FamilyKind>;
   /** A file is being dragged over the Import dialog. */
@@ -2072,6 +2110,8 @@ export class WristAssistantPanel extends LitElement {
       --wa-tap: ${unsafeCSS(KIND_COLOR.tap)};
       --wa-states: ${unsafeCSS(SECTION_COLOR.states)};
       --wa-place: ${unsafeCSS(SECTION_COLOR.place)};
+      /* Something the author still has to do: a slot with no entity. */
+      --wa-need: var(--error-color, #db4437);
       /* The skin. Light follows the Home Assistant theme it sits in; the dark
          block below replaces these with the editor's own deep palette. The
          rest of the sheet only ever reads these names, so the two skins can
@@ -2185,6 +2225,7 @@ export class WristAssistantPanel extends LitElement {
        of light rather than grey, and a violet accent for the one thing on
        screen you are meant to press. Only colors change here. */
     :host([dark]) {
+      --wa-need: #ff6b6b;
       --wa-bg: #0b0d14;
       --wa-card: #12141d;
       --wa-panel: #1a1d28;
@@ -3323,6 +3364,10 @@ export class WristAssistantPanel extends LitElement {
     .xf-rows { border: 1px solid var(--wa-line); border-radius: var(--wa-r-md); overflow: hidden; }
     .xf-row { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 10px; align-items: start; padding: 10px 12px; transition: background-color .12s ease-out; }
     .xf-row + .xf-row { border-top: 1px solid var(--wa-line); }
+    /* A slot still waiting for an entity: a stripe down its edge and a word
+       beside its name, in the same tone as the editor's "pick entity" badge. */
+    .xf-row.open { box-shadow: inset 3px 0 0 var(--wa-need); }
+    .xf-need { margin-left: 8px; font-size: 11.5px; font-weight: 600; color: var(--wa-need); }
     .xf-row.on { background: var(--wa-sel-bg); }
     .xf-row .ent-ico.xf-dom { background: var(--wa-ent-bg); color: var(--wa-ent); margin-top: 1px; }
     .xf-main { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
@@ -3813,6 +3858,20 @@ export class WristAssistantPanel extends LitElement {
     }
     .badge.tap { color: #c2185b; background: rgba(236,64,122,.14); }
     .badge.states { color: #bf360c; background: rgba(255,112,67,.18); }
+    /* Outlined, so it never reads as one more filled tag beside tap and
+       states: it is a job, and a click opens it. */
+    .badge.need {
+      font-family: inherit; line-height: 1; border: 1px solid var(--wa-need); color: var(--wa-need);
+      background: color-mix(in srgb, var(--wa-need) 12%, transparent);
+    }
+    button.badge.need { cursor: pointer; }
+    button.badge.need:hover:not(:disabled) { background: color-mix(in srgb, var(--wa-need) 24%, transparent); }
+    button.badge.need:disabled { cursor: default; }
+    .slots-note .badge.need { vertical-align: 1px; }
+    /* Beside the name rather than with the other badges, which give way to
+       the buttons under the pointer: this one has to stay clickable there. */
+    .layer .name b .nm-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .layer .name b .badge.need { flex: none; height: 16px; padding: 0 5px; }
     :host([dark]) .badge.tap { color: var(--wa-tap); background: color-mix(in srgb, var(--wa-tap) 22%, transparent); }
     :host([dark]) .badge.states { color: var(--wa-states); background: color-mix(in srgb, var(--wa-states) 22%, transparent); }
     /* A layer's attached tap: the bottom part of the layer's own row, under
@@ -10991,6 +11050,7 @@ export class WristAssistantPanel extends LitElement {
       ${this.shareOpen ? this.renderShareDialog() : nothing}
       ${this.galleryOpen ? this.renderGalleryDialog() : nothing}
       ${this.importOpen ? this.renderImportDialog() : nothing}
+      ${this.slotsOpen ? this.renderSlotsDialog() : nothing}
       ${this.historyOpen ? this.renderHistoryDialog() : nothing}
       ${this.savePartOpen ? this.renderSavePartDialog() : nothing}
       ${this.renderAddSheet()}
@@ -15572,7 +15632,7 @@ export class WristAssistantPanel extends LitElement {
    * left open is allowed; they can be picked in the editor later.
    */
   private renderImportLoaded(cfg: CustomComplicationConfig) {
-    const rows = unresolvedEntities(cfg, this.hass.states);
+    const rows = slotOrder(unresolvedEntities(cfg, this.hass.states), this.importAuto);
     const known = this.knownDomains();
     const parse = this.importParse;
     // What this device can draw, so a shape it has no tab for is never
@@ -15616,7 +15676,7 @@ export class WristAssistantPanel extends LitElement {
           <div class="xf-rows" @pointerleave=${(e: Event) => this.leaveRows(e, clear)} @focusout=${(e: Event) => this.leaveRows(e, clear)}>
             ${rows.map((row) => this.renderImportRow(row, cfg, layouts, uses.get(row.entityId) ?? []))}
           </div>
-          ${picked < required.length ? html`<div class="xf-lead">${uiIcon("info")}<span>You can import now and pick the rest later.</span></div>` : nothing}
+          ${picked < required.length ? html`<div class="xf-lead">${uiIcon("info")}<span>You can import now and pick the rest later. The editor shows what is still open.</span></div>` : nothing}
         </div>`}
       ${cfg.notes !== undefined
         ? html`<div class="xf-lead">${uiIcon("note")}<span>The author left notes. They open on top of the layers after import.</span></div>`
@@ -15681,18 +15741,34 @@ export class WristAssistantPanel extends LitElement {
    * progress; a real id this house happens not to have right now is not,
    * because the entity may be back tomorrow and blanking it helps nobody. */
   private renderImportRow(row: UnresolvedEntity, cfg: CustomComplicationConfig, layouts: ResolvedAll, ids: readonly string[]) {
-    const chosen = this.importMap.get(row.entityId);
-    const set = () => { this.importFocus = row.entityId; };
-    return html`<div class="xf-row pick ${this.importFocus === row.entityId ? "on" : ""}" @pointerenter=${set} @focusin=${set}>
+    return this.slotRow(row, cfg, layouts, ids, {
+      chosen: this.importMap.get(row.entityId),
+      auto: this.importAuto.has(row.entityId),
+      focused: this.importFocus === row.entityId,
+      focus: () => { this.importFocus = row.entityId; },
+      pick: (ref) => this.setImportEntity(row.entityId, ref),
+      key: importEntityKey(row.entityId),
+    });
+  }
+
+  /** The row the Import and Pick entities dialogs share. An open slot wears a
+   * "Needs an entity" line, so the rows still to do stand out from the ones
+   * done without counting ticks. */
+  private slotRow(row: UnresolvedEntity, cfg: CustomComplicationConfig, layouts: ResolvedAll, ids: readonly string[], o: {
+    chosen: EntityRef | undefined; auto: boolean; focused: boolean; focus: () => void; pick: (ref: EntityRef) => void; key: string;
+  }) {
+    const { chosen } = o;
+    const open = row.required && chosen === undefined;
+    return html`<div class="xf-row pick ${o.focused ? "on" : ""} ${open ? "open" : ""}" data-slot=${row.entityId} @pointerenter=${o.focus} @focusin=${o.focus}>
       <span class="ent-ico xf-dom">${domainIcon(row.domain)}</span>
       <div class="xf-main">
-        <div class="xf-name">${row.label}${chosen ? html`<span class="xf-done" title="Picked">${uiIcon("check")}</span>` : nothing}</div>
+        <div class="xf-name">${row.label}${chosen ? html`<span class="xf-done" title="Picked">${uiIcon("check")}</span>` : nothing}
+          ${open ? html`<span class="xf-need">Needs an entity</span>` : nothing}</div>
         ${ids.length > 0 ? this.layerTags(cfg, layouts, ids) : html`<div class="xf-sub">${row.where.join(", ")}</div>`}
         ${row.required ? nothing : html`<div class="xf-sub">Not in your Home Assistant right now. Leave it empty to keep the id.</div>`}
-        <div class="xf-picker">${entityField({ hass: this.hass }, row.label, chosen ?? NO_ENTITY,
-          (ref) => this.setImportEntity(row.entityId, ref),
-          importEntityKey(row.entityId),
-          { compact: true, domain: row.domain, needed: row.required && chosen === undefined })}</div>
+        ${o.auto && chosen ? html`<div class="xf-sub">Picked for you: it is the only one in your Home Assistant.</div>` : nothing}
+        <div class="xf-picker">${entityField({ hass: this.hass }, row.label, chosen ?? NO_ENTITY, o.pick, o.key,
+          { compact: true, domain: row.domain, needed: open })}</div>
       </div>
     </div>`;
   }
@@ -15815,9 +15891,21 @@ export class WristAssistantPanel extends LitElement {
       return;
     }
     if (JSON.stringify(parse.config) === before) return;
-    this.importMap = new Map();
     this.importFamilies = undefined;
+    const auto = this.autoPicks(this.importConfig() ?? parse.config);
+    this.importMap = auto;
+    this.importAuto = new Set(auto.keys());
     this.importName = suggestImportName(parse.config.name, this.takenNames());
+  }
+
+  /** The slots this home answers by itself (see `autoSlotPicks`), as the
+   * references a pick would make. */
+  private autoPicks(cfg: CustomComplicationConfig): Map<string, EntityRef> {
+    const out = new Map<string, EntityRef>();
+    for (const [slot, id] of autoSlotPicks(unresolvedEntities(cfg, this.hass.states), this.hass.states)) {
+      out.set(slot, entityRefFrom(this.hass.states, id));
+    }
+    return out;
   }
 
   /** A chosen file lands in the paste box, so there is one place the document
@@ -15967,6 +16055,7 @@ export class WristAssistantPanel extends LitElement {
     this.restoreResult = undefined;
     this.importName = "";
     this.importMap = new Map();
+    this.importAuto = new Set();
     this.importFamilies = undefined;
     this.importTextShown = false;
     this.importFocus = undefined;
@@ -16338,7 +16427,7 @@ export class WristAssistantPanel extends LitElement {
       return;
     }
     this.partPick = { id: part.id, config };
-    this.partMap = new Map();
+    this.partMap = this.autoPicks(config);
     this.partsError = undefined;
   }
 
@@ -16513,10 +16602,136 @@ export class WristAssistantPanel extends LitElement {
     </div>`;
   }
 
+  /** The open document's unpicked slots, and the layers and shared values
+   * that read each one. Undefined with nothing open. */
+  private slotInfo(): SlotInfo | undefined {
+    const cfg = this.draft?.config;
+    if (!cfg) return undefined;
+    const cached = this.slotsCache;
+    if (cached && cached.cfg === cfg && cached.version === this.version) return cached.info;
+    const rows = openSlots(cfg, this.hass.states);
+    const layers = new Map<string, UnresolvedEntity[]>();
+    const values = new Map<string, UnresolvedEntity>();
+    for (const row of rows) {
+      for (const id of entityLayerIds(cfg, row.entityId, (id) => isPlaceholderId(id))) {
+        layers.set(id, [...(layers.get(id) ?? []), row]);
+      }
+      for (const id of slotValueIds(cfg, row.entityId)) if (!values.has(id)) values.set(id, row);
+    }
+    const info = { rows, layers, values };
+    this.slotsCache = { cfg, version: this.version, info };
+    return info;
+  }
+
+  /** The Pick entities dialog, on one slot when a badge was clicked. Slots
+   * this home answers by itself come filled in, the way Import does it. */
+  private openSlotsDialog(focus?: string) {
+    const cfg = this.draft?.config;
+    if (!cfg || !this.canEdit) return;
+    const auto = this.autoPicks(cfg);
+    this.slotsMap = auto;
+    this.slotsAuto = new Set(auto.keys());
+    this.slotsFocus = focus;
+    this.slotsOpen = true;
+    void this.updateComplete.then(() => {
+      const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.slots-dialog");
+      if (!dialog) return;
+      if (!dialog.open) dialog.showModal();
+      if (focus) dialog.querySelector<HTMLElement>(`.xf-row[data-slot="${focus}"]`)?.scrollIntoView({ block: "center" });
+    });
+  }
+
+  private closeSlotsDialog() {
+    const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.slots-dialog");
+    if (dialog?.open) dialog.close();
+    else this.slotsOpen = false;
+  }
+
+  private setSlotEntity(entityId: string, ref: EntityRef) {
+    const next = new Map(this.slotsMap);
+    if (ref.entityId === "") next.delete(entityId);
+    else next.set(entityId, entityRefFrom(this.hass.states, ref.entityId));
+    this.slotsMap = next;
+  }
+
+  /** Every pick in one edit, so one undo puts the slots back. */
+  private applySlots() {
+    const map = this.slotsMap;
+    if (map.size > 0) this.mutate((c) => { applyEntityMap(c, map); });
+    this.closeSlotsDialog();
+  }
+
+  /** The Import dialog's entity table, for a document already in the editor:
+   * what is still open, a picture that follows the picks, and one button. */
+  private renderSlotsDialog() {
+    const cfg = this.draft?.config;
+    const info = this.slotInfo();
+    if (!cfg || !info) return nothing;
+    const rows = slotOrder(info.rows, this.slotsAuto);
+    const preview = remapEntities(cfg, this.slotsMap);
+    let entities: EntityRef[] = [];
+    try {
+      entities = [...compile(preview).entities.values()];
+    } catch {
+      entities = [];
+    }
+    const layouts = this.configLayouts(preview, entities);
+    const uses = new Map(rows.map((row) => [row.entityId, entityLayerIds(cfg, row.entityId, (id) => isPlaceholderId(id))]));
+    const picked = rows.filter((row) => this.slotsMap.has(row.entityId)).length;
+    const focus = rows.find((row) => row.entityId === this.slotsFocus);
+    const family = this.dialogFamily(cfg);
+    const clear = () => { this.slotsFocus = undefined; };
+    return html`<dialog class="slots-dialog xf" @close=${() => { this.slotsOpen = false; }}>
+      ${this.dialogHead("Pick entities", rows.length === 0 ? "" : `${rows.length} still open`, () => this.closeSlotsDialog())}
+      <div class="xfer-body">
+        <div class="xf-hero">
+          ${this.dialogPreview(layouts, family, focus ? uses.get(focus.entityId) ?? [] : [],
+            focus ? html`Uses <b>${focus.label}</b>` : family ? familyTitle(family) : "", "")}
+          <div class="xf-stack">
+            <div class="xf-lead">${uiIcon("info")}<span>This design came with stand-ins for the author's entities. Point each one at one of yours. The picture follows your picks.</span></div>
+          </div>
+        </div>
+        ${rows.length === 0
+          ? html`<div class="xf-lead">${uiIcon("check")}<span>Every entity this design reads is picked.</span></div>`
+          : html`<div class="xf-stack">
+            <div class="xf-label">Pick your entities<span class="r">${picked} of ${rows.length}</span></div>
+            <div class="xf-bar" role="progressbar" aria-valuemin="0" aria-valuemax=${rows.length} aria-valuenow=${picked}>
+              <i style=${`width:${(picked / rows.length) * 100}%`}></i></div>
+            <div class="xf-rows" @pointerleave=${(e: Event) => this.leaveRows(e, clear)} @focusout=${(e: Event) => this.leaveRows(e, clear)}>
+              ${rows.map((row) => this.slotRow(row, cfg, layouts, uses.get(row.entityId) ?? [], {
+                chosen: this.slotsMap.get(row.entityId),
+                auto: this.slotsAuto.has(row.entityId),
+                focused: this.slotsFocus === row.entityId,
+                focus: () => { this.slotsFocus = row.entityId; },
+                pick: (ref) => this.setSlotEntity(row.entityId, ref),
+                key: slotEntityKey(row.entityId),
+              }))}
+            </div>
+          </div>`}
+      </div>
+      <div class="xfer-foot">
+        <button class="ghost" @click=${() => this.closeSlotsDialog()}>Cancel</button>
+        <span class="spacer"></span>
+        <button class="primary" ?disabled=${picked === 0} @click=${() => this.applySlots()}>${picked === 0 || picked === rows.length
+          ? "Use these"
+          : `Use ${picked} of ${rows.length}`}</button>
+      </div>
+    </dialog>`;
+  }
+
   private renderBanners() {
     const out: TemplateResult[] = [];
     const orphan = this.renderOrphanBanner();
     if (orphan) out.push(orphan);
+    const open = this.slotInfo()?.rows ?? [];
+    if (open.length > 0) {
+      const n = open.length;
+      const names = open.map((r) => r.label);
+      const list = n === 1 ? names[0]! : `${names.slice(0, -1).join(", ")} and ${names[n - 1]!}`;
+      out.push(html`<div class="banner warn link-note slots-note"><span><b>${n === 1 ? "1 entity still needs" : `${n} entities still need`} picking:</b> ${list}.
+        Layers that read ${n === 1 ? "it" : "them"} are marked <span class="badge need">pick entity</span>.</span>
+        ${this.canEdit ? html`<button class="link" @click=${() => this.openSlotsDialog()}>Pick ${n === 1 ? "it" : "them"}</button>` : nothing}</div>`);
+    }
     if (this.readOnlyReason) out.push(html`<div class="banner warn"><b>Read only.</b> ${this.readOnlyReason}</div>`);
     else if (this.draft && !this.hass.user?.is_admin) out.push(html`<div class="banner warn"><b>Read only.</b> Only a Home Assistant administrator can save complications.</div>`);
     if (this.conflict) {
@@ -17136,6 +17351,15 @@ export class WristAssistantPanel extends LitElement {
     // `held` marks a member of the selected group: the row lights up with
     // its folder, a step softer than the selected row itself, because a drag
     // on the face moves all of them and the list should say so.
+    // A layer that reads a slot nobody has picked draws as if the entity were
+    // off or empty, which looks like a bug rather than a job left to do. The
+    // badge says which, and a click opens the picker on that slot.
+    const slots = this.slotInfo();
+    const needBadge = (need: readonly UnresolvedEntity[] | undefined) => need?.length
+      ? html`<button type="button" class="badge need" ?disabled=${!edit}
+          title=${`Reads ${need.map((r) => r.label).join(", ")}, which has no entity yet.${edit ? " Click to pick one." : ""}`}
+          @click=${(e: Event) => { e.stopPropagation(); this.openSlotsDialog(need[0]!.entityId); }}>pick entity</button>`
+      : nothing;
     const layerRow = (el: CElement, inGroup: boolean, held = false, chevron: TemplateResult | typeof nothing = nothing) => {
       const id = el.payload.id;
       const hl = shown.kind === "layer" && shown.id === id;
@@ -17186,7 +17410,7 @@ export class WristAssistantPanel extends LitElement {
         <span class="grip" title="Drag to reorder. Drop on a group to put it inside.">${uiIcon("grip")}</span>
         ${thumb([id])}
         <span class="name">
-          <b>${layerTitle(el, ctx)}</b>
+          <b><span class="nm-t">${layerTitle(el, ctx)}</span>${needBadge(slots?.layers.get(id))}</b>
           <small><span class="kind">${KIND_LABEL[el.kind]}</span> · ${layerMeta(el, resolver, this.historySeries, eff.size)}</small>
           ${rich ? html`<span class="facts">${layerFacts(this.host(), family, el, eff).map((f) => html`<span class="fact"><b>${f.label}</b> ${f.value}</span>`)}</span>` : nothing}
         </span>
@@ -17246,6 +17470,8 @@ export class WristAssistantPanel extends LitElement {
       // the group reads as hidden only once every layer in it is.
       const everyLayer = groupLayers(cfg, g.id);
       const allHidden = everyLayer.length > 0 && everyLayer.every((el) => effectivePlacement(cfg, family, el).isHidden);
+      // A folded group hides its rows' badges, so it wears theirs.
+      const folderNeeds = open ? [] : [...new Set(everyLayer.flatMap((el) => slots?.layers.get(el.payload.id) ?? []))];
       const toggleHidden = () => this.mutate((c) => {
         for (const el of groupLayers(c, g.id)) setPlacement(c, family, el.payload.id, { isHidden: !allHidden });
       });
@@ -17275,7 +17501,7 @@ export class WristAssistantPanel extends LitElement {
         <span class="grip" title="Drag to reorder the whole group.">${uiIcon("grip")}</span>
         <span class="folder">${uiIcon("folder")}</span>
         <span class="name">
-          <b>${g.name}</b>
+          <b><span class="nm-t">${g.name}</span>${needBadge(folderNeeds)}</b>
           <small><span class="kind">Group</span> · ${members.length === total
             ? `${total} layer${total === 1 ? "" : "s"}`
             : `${members.length} of ${total} layers on this page`}${subCount > 0 ? ` · ${subCount} sub-group${subCount === 1 ? "" : "s"}` : ""} · ${g.locked ? "locked" : "unlocked"}</small>
@@ -18857,6 +19083,7 @@ export class WristAssistantPanel extends LitElement {
     const host = this.host();
     const resolver = new Resolver(this.buildContext(), this.draft?.config);
     const ctx = describeContext(host);
+    const slots = this.slotInfo();
     const body = html`<div class="sv-body">
       <div class="sv-tools">
         <span class="lc-sub" title=${explain}>set once, used by many layers</span>
@@ -18884,6 +19111,7 @@ export class WristAssistantPanel extends LitElement {
         // Pointing at a shared value lights the layers that read it, on the
         // preview and in the Layers list, the way pointing at a layer row does.
         const readers = () => sharedValueReaders(cfg, v.id);
+        const slot = slots?.values.get(v.id.toUpperCase());
         return html`<div class="vitem ${open ? "open" : ""}"><div class="datum vrow ${open ? "hl" : ""}" role="button" tabindex="0" aria-expanded=${open ? "true" : "false"}
             title=${open ? "Close" : "Edit this shared value"}
             @pointerenter=${() => { this.listHoverIds = readers(); }}
@@ -18891,7 +19119,11 @@ export class WristAssistantPanel extends LitElement {
             @keydown=${(e: KeyboardEvent) => { if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) { e.preventDefault(); toggleOne(); } }}>
           <span class="nm">${v.name || "(unnamed)"}</span>
           <span class="spacer"></span>
-          <span class="meta ${r === undefined ? "none" : ""}" title=${describeValue(v.value, ctx)}>${r ?? "unresolved"}</span>
+          ${slot
+            ? html`<button type="button" class="badge need" ?disabled=${!this.canEdit}
+                title=${`Reads ${slot.label}, which has no entity yet.${this.canEdit ? " Click to pick one." : ""}`}
+                @click=${(e: Event) => { e.stopPropagation(); this.openSlotsDialog(slot.entityId); }}>pick entity</button>`
+            : html`<span class="meta ${r === undefined ? "none" : ""}" title=${describeValue(v.value, ctx)}>${r ?? "unresolved"}</span>`}
           ${this.canEdit ? html`<button class="icon danger" title="Delete. Layers that read it keep their own copy." aria-label="Delete value" @click=${(e: Event) => { e.stopPropagation(); this.mutate((c) => { deleteSharedValue(c, v.id); }); if (open) this.openValue = undefined; }}>${uiIcon("delete")}</button>` : nothing}
         </div>
         ${open ? html`<div class="value-open">${namedValueEditor(host, v)}</div>` : nothing}</div>`;
