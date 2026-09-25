@@ -636,9 +636,9 @@ const COL_RIGHT_DEFAULT = 360;
 /** Layer-row thumbnail box, CSS px. Wide, because most layers are wider than tall. */
 const THUMB_W = 44;
 const THUMB_H = 22;
-/** The three sizes the row pictures come in, picked in the Layers bar. Small
- * is the size the list has always used; the other two are for reading a busy
- * layer without opening the big preview. */
+/** The three sizes the row pictures come in, picked in the Layers bar. Medium
+ * is the default (Jesse, 2026-09-24): small was too small to read a layer by,
+ * and large is for reading a busy layer without opening the big preview. */
 const THUMB_STEPS = [1, 1.7, 2.6] as const;
 /** How long the page trash stays armed after the first press, in ms. Long
  * enough to read the word and press again, short enough that the button is
@@ -1389,8 +1389,9 @@ export class WristAssistantPanel extends LitElement {
   @state() private editingValue?: string;
   /** The layer row being dragged in the Layers list. */
   private dragId?: string;
-  /** How big the pictures in the Layers rows are drawn. Index into THUMB_STEPS. */
-  @state() private thumbStep: ThumbStep = 0;
+  /** How big the pictures in the Layers rows are drawn. Index into THUMB_STEPS.
+   * Medium until the author picks another size, which is then remembered. */
+  @state() private thumbStep: ThumbStep = 1;
   /** How much each Layers row says. Expanded adds a third line with the
    * layer's place on the face and keeps the badges next to the buttons. */
   @state() private layerDetail: LayerDetail = "compact";
