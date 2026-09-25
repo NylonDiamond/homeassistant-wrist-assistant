@@ -2139,8 +2139,8 @@ export class WristAssistantPanel extends LitElement {
     }
     header .spacer { flex: 1; }
     .toolbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-    /* Top bar: Browse, the name, the place pill, then history, sync, Share,
-       ···, Save and its caption, and the help. */
+    /* Top bar: Browse, New, Import and Share at the left, then sync, ···,
+       Save and its caption, and the help. */
     header { gap: 10px; min-height: 50px; border-bottom: 1px solid var(--wa-line); }
     .picker > button.tb-browse { min-width: 0; max-width: none; height: 30px; gap: 7px; padding: 0 8px 0 10px; font-size: 12.5px; font-weight: 600; }
     .picker > button.tb-browse svg { width: 14px; height: 14px; }
@@ -2707,9 +2707,8 @@ export class WristAssistantPanel extends LitElement {
        rather than under a picture it has to be found beneath. Both rows are
        one line, cut with an ellipsis rather than wrapped, so every card in
        the grid is the same height. */
-    .pk-card-top { display: flex; align-items: center; gap: 7px; min-height: 18px; margin-bottom: 9px; min-width: 0; }
-    /* The picture and the buttons that sit over it. Its own box, so the
-       actions are in the picture's corner rather than over the name. */
+    .pk-card-top { position: relative; display: flex; align-items: center; gap: 7px; min-height: 18px; margin-bottom: 9px; min-width: 0; }
+    /* The picture, and the Devices menu when it is open over it. */
     .pk-card-pic { position: relative; min-width: 0; }
     .pk-card-name {
       flex: 1; min-width: 0; text-align: left; font: inherit; font-size: 13px; font-weight: 700;
@@ -2730,7 +2729,7 @@ export class WristAssistantPanel extends LitElement {
     .pk-dup-open.on { border-color: var(--wa-accent); background: var(--wa-sel-bg); color: var(--wa-accent); }
     .pk-dup-open svg { width: 10px; height: 10px; }
     .pk-dup-menu {
-      position: absolute; top: 40px; left: 0; right: 0; z-index: 5;
+      position: absolute; top: 4px; left: 0; right: 0; z-index: 5;
       display: flex; flex-direction: column; gap: 4px; padding: 8px;
       border: 1px solid var(--wa-line-strong); border-radius: 10px;
       background: var(--wa-card); box-shadow: var(--wa-shadow-pop);
@@ -2781,20 +2780,27 @@ export class WristAssistantPanel extends LitElement {
     }
     .pk-dup-done:hover { filter: brightness(1.1); }
     .pk-dup-done:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    /* Duplicate, hide and delete, in the picture's own top corner. Only on
+    /* Devices, hide and delete, on the name's row at its right end. Only on
        hover, or while the keyboard is in the card, or while a menu or a
        confirm is open: a wall of cards with three buttons on every one of
-       them is a wall of buttons. Over the picture rather than over the card,
-       so they never sit on top of the name. */
+       them is a wall of buttons. They used to sit in the picture's corner,
+       over the very thing the card is there to show. Laid over the name's
+       tail rather than beside it, so a hidden set of buttons does not cut
+       every name in the grid short; the card's colour behind them, faded in
+       from the left, keeps the letters under them from showing through. */
     .pk-card-acts {
-      position: absolute; right: 8px; top: 8px; display: flex; align-items: center; gap: 3px;
-      opacity: 0; transition: opacity .12s ease-out;
+      position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+      display: flex; align-items: center; gap: 3px; padding-left: 18px;
+      background: linear-gradient(to right, transparent, var(--wa-card) 16px);
+      opacity: 0; pointer-events: none; transition: opacity .12s ease-out;
     }
     .pk-card:hover .pk-card-acts, .pk-card:focus-within .pk-card-acts,
-    .pk-card.over .pk-card-acts, .pk-card-acts.asking { opacity: 1; }
+    .pk-card.over .pk-card-acts, .pk-card-acts.asking { opacity: 1; pointer-events: auto; }
     /* A touch screen has no hover, so there is no way to bring these out:
-       they stay. */
-    @media (hover: none) { .pk-card-acts { opacity: 1; } }
+       they stay, beside the name rather than over it. */
+    @media (hover: none) {
+      .pk-card-acts { position: static; transform: none; padding-left: 0; background: none; opacity: 1; pointer-events: auto; }
+    }
     .pk-card-acts button.icon { width: 26px; height: 26px; background: var(--wa-card); }
     .pk-card-acts button.small { min-height: 24px; padding: 0 7px; background: var(--wa-card); }
     .pk-card .pk-note { font-size: 11.5px; line-height: 1.4; color: var(--wa-muted); margin-top: 8px; }
@@ -2848,9 +2854,14 @@ export class WristAssistantPanel extends LitElement {
       /* A device with nothing on it: its heading, with its 0, is enough. */
       .pk-sec.none .pk-sec-body { display: none; }
       .pk-sec.none .pk-sec-top { border-bottom: 0; }
-      /* A card's buttons on one line under its picture: Devices at the
-         left, hide and delete at the right. */
-      .pk-card-acts { position: static; opacity: 1; flex-wrap: nowrap; justify-content: space-between; gap: 4px; margin-top: 6px; }
+      /* A card's buttons on a line of their own under its name: a card two
+         to a row has no room for both on one. Devices at the left, hide and
+         delete at the right. */
+      .pk-card-top { flex-wrap: wrap; row-gap: 6px; }
+      .pk-card-acts {
+        position: static; transform: none; padding-left: 0; background: none; opacity: 1; pointer-events: auto;
+        flex: 1 1 100%; flex-wrap: nowrap; justify-content: space-between; gap: 4px;
+      }
       .pk-card-acts > .pk-dup { margin-right: auto; }
       .pk-card-acts button.small { font-size: 12px; padding: 0 6px; }
     }
@@ -10350,9 +10361,9 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * The top bar, left to right: Browse, the name you can type over, one quiet
-   * pill saying which shape on which device, then the history, where the
-   * complication has got to, Share, the ··· menu, Save and the help.
+   * The top bar, left to right: Browse, New, Import and Share together at the
+   * left, then where the complication has got to, the ··· menu, Save and the
+   * help at the right.
    *
    * Save is always there. It used to turn into the word "Saved", which read as
    * a label rather than a button and moved everything to its right each time it
@@ -10370,12 +10381,13 @@ export class WristAssistantPanel extends LitElement {
       ${menu ? html`<button class="icon tb-icon tb-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
         @click=${() => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true }))}>${uiIcon("menu")}</button>` : nothing}
       ${this.renderPicker()}
-      <span class="spacer"></span>
-      ${this.renderSendPill()}
+      ${this.renderNewButton()}
       ${this.renderImportButton()}
       ${d ? html`<button class="tb-btn" aria-haspopup="dialog" aria-expanded=${this.shareOpen ? "true" : "false"}
         title="Share or back up this complication as text, a file or a link"
         @click=${() => this.openShareDialog()}>Share</button>` : nothing}
+      <span class="spacer"></span>
+      ${this.renderSendPill()}
       ${this.renderTopMenu()}
       ${d ? html`<button class="primary save ${dirty ? "dirty" : ""}" @click=${() => void this.save()}
           ?disabled=${!this.canEdit || !dirty || this.saving || !this.slotChosen}
@@ -10490,7 +10502,19 @@ export class WristAssistantPanel extends LitElement {
     }
   }
 
-  /** Import, beside Share, for an administrator. A full device keeps the
+  /** New, beside Browse, for an administrator: making one should not need
+   * the list opened first. The picker's foot keeps its own New too. A full
+   * device keeps the button but disables it, and the tooltip says why. */
+  private renderNewButton() {
+    if (!this.hass.user?.is_admin) return nothing;
+    const full = this.freeSlot() < 0;
+    const where = isLibraryOwner(this.selectedOwner) ? UNASSIGNED_LABEL : this.deviceWord;
+    return html`<button class="tb-btn" aria-haspopup="dialog" ?disabled=${full || this.ownerBusy}
+      title=${full ? `${where} is full. ${capFirst(this.placePhrase)} has no free slot. Delete a complication first.` : "Make a new complication"}
+      @click=${() => this.openNewDialog()}>New</button>`;
+  }
+
+  /** Import, beside New, for an administrator. A full device keeps the
    * button but disables it, and the tooltip says why. */
   private renderImportButton() {
     if (!this.hass.user?.is_admin) return nothing;
@@ -11583,8 +11607,8 @@ export class WristAssistantPanel extends LitElement {
     return html`<div class="pk-foot">
       ${said === undefined
         ? html`<span class="pk-foot-hint">${this.touch
-          ? "Tap a card to open it. Under its picture: Devices, hide and delete."
-          : "Click a card to open it. Hover a card for Duplicate, Unassign and Delete."}</span>`
+          ? "Tap a card to open it. By its name: Devices, hide and delete."
+          : "Click a card to open it. Hover a card for Devices, hide and delete by its name."}</span>`
         : html`<span class="pk-foot-said ${this.saveError ? "err" : ""}">${said}</span>
           <button type="button" class="ghost small"
             @click=${() => { this.saveError = undefined; this.copyStatus = undefined; this.copyOpen = undefined; }}>Dismiss</button>`}
@@ -11953,13 +11977,6 @@ export class WristAssistantPanel extends LitElement {
           : nothing}
         <button type="button" class="pk-card-name" title=${doing} @click=${hit}>${recName}</button>
         ${hidden ? html`<span class="pk-tag" title="These do not show in their device's own list of complications. A face or widget that already has one keeps it.">hidden</span>` : nothing}
-      </div>
-      <div class="pk-card-pic">
-        <button type="button" class="pk-card-open" title=${doing}
-          aria-label=${doing} @click=${hit}>
-          ${this.cardArt(family, device,
-            pictured ?? (live ? (device === "iphone" ? live.phone : live.watch) : {}), shelved)}
-        </button>
         <span class="pk-card-acts ${confirming ? "asking" : ""} ${picking ? "away" : ""}">
           ${confirming
             ? linked
@@ -11981,6 +11998,13 @@ export class WristAssistantPanel extends LitElement {
               <button type="button" class="icon danger" title="Delete this complication" aria-label=${`Delete ${recName}`}
                 ?disabled=${this.saving} @click=${(e: Event) => { stop(e); this.pickerConfirmDelete = record.id; }}>${uiIcon("delete")}</button>` : nothing}`}
         </span>
+      </div>
+      <div class="pk-card-pic">
+        <button type="button" class="pk-card-open" title=${doing}
+          aria-label=${doing} @click=${hit}>
+          ${this.cardArt(family, device,
+            pictured ?? (live ? (device === "iphone" ? live.phone : live.watch) : {}), shelved)}
+        </button>
         ${menu ? this.renderPickerDupMenu(row, family, cardKey) : nothing}
       </div>
     </div>`;
@@ -12653,12 +12677,16 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /** Everything the picker forgets on the way out, however it was shut: the
-   * close button, Escape, the backdrop, or opening something from it. */
+   * close button, Escape, the backdrop, or opening something from it.
+   * Picking several ends too: coming back to ticks left over from last time
+   * reads as a picker stuck in a mode nobody turned on. A batch still
+   * running keeps going, since it copied its picks before the first write. */
   private pickerClosed() {
     this.pickerOpen = false;
     this.pickerNote = undefined;
     this.pickerConfirmDelete = undefined;
     this.closePickerDup();
+    if (this.pickerSelecting) this.setPickerSelecting(false);
   }
 
   /** A press on the backdrop shuts the dialog. A modal dialog's backdrop is
