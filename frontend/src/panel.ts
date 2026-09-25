@@ -1935,6 +1935,8 @@ export class WristAssistantPanel extends LitElement {
   private unsubscribe?: () => Promise<void>;
   private recordsLoadRun = 0;
   private otherListsRun = 0;
+  /** Whether the start page has asked for the other devices' lists this visit. */
+  private startListsAsked = false;
   private templateTimer?: number;
   private debounceTimer?: number;
   /** Ignore older live-data replies after a new document or refresh starts. */
@@ -4245,6 +4247,155 @@ export class WristAssistantPanel extends LitElement {
       .gate { padding: 16px 12px 28px; }
       .gate-card { padding: 26px 22px 24px; }
       .gate-title { font-size: 21px; }
+    }
+
+    /* The start page: the panel's front door while nothing is open. The same
+       work surface as the stage (dot grid, accent glow), with the content in
+       one column that reads top to bottom: what this is, what the home has,
+       what to start. */
+    .start {
+      flex: 1 1 auto; min-height: 0; overflow: auto;
+      padding: clamp(20px, 5vh, 56px) clamp(16px, 4vw, 48px) 48px;
+      background:
+        radial-gradient(ellipse 60% 50% at 70% 0%, color-mix(in srgb, var(--wa-accent) 16%, transparent) 0, transparent 70%),
+        radial-gradient(color-mix(in srgb, var(--wa-ink) 9%, transparent) 1px, transparent 1px) 0 0 / 18px 18px;
+    }
+    .start-wrap { width: min(1180px, 100%); margin: 0 auto; display: flex; flex-direction: column; gap: 36px; }
+    /* The hero: words on the left, a fan of lit devices on the right. */
+    .start-hero {
+      display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); align-items: center; gap: 32px;
+      padding: clamp(28px, 4vw, 48px) clamp(28px, 4vw, 52px);
+      border-radius: 24px; position: relative; overflow: hidden;
+      background:
+        linear-gradient(135deg, color-mix(in srgb, var(--wa-accent) 14%, var(--wa-card)) 0%, var(--wa-card) 55%, color-mix(in srgb, var(--wa-accent) 6%, var(--wa-card)) 100%);
+      box-shadow: 0 0 0 1px var(--wa-line), 0 30px 80px -30px color-mix(in srgb, var(--wa-accent) 45%, transparent);
+    }
+    .start-hero::before {
+      content: ""; position: absolute; inset: 0; pointer-events: none;
+      background: radial-gradient(ellipse 50% 70% at 85% 50%, color-mix(in srgb, var(--wa-accent) 22%, transparent) 0, transparent 70%);
+    }
+    .start-hero-text { position: relative; min-width: 0; }
+    .start-eyebrow {
+      display: inline-flex; align-items: center; gap: 8px; margin-bottom: 18px;
+      font-size: 11.5px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--wa-accent);
+    }
+    .start-eyebrow::before { content: ""; width: 18px; height: 2px; border-radius: 2px; background: currentColor; }
+    .start-title {
+      margin: 0 0 14px; font-size: clamp(30px, 3.6vw, 44px); line-height: 1.05; font-weight: 800;
+      letter-spacing: -.03em; color: var(--wa-ink); text-wrap: balance;
+    }
+    .start-lead { margin: 0 0 22px; font-size: 15.5px; line-height: 1.55; color: var(--wa-muted); max-width: 46ch; text-wrap: pretty; }
+    .start-facts { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-bottom: 26px; font-size: 13px; color: var(--wa-muted); }
+    .start-fact b { font-size: 22px; font-weight: 800; letter-spacing: -.02em; color: var(--wa-ink); margin-right: 5px; font-variant-numeric: tabular-nums; }
+    .start-acts { display: flex; flex-wrap: wrap; gap: 10px; }
+    .start-acts button { display: inline-flex; align-items: center; gap: 7px; height: 40px; padding: 0 18px; border-radius: 12px; font-size: 14px; }
+    .start-acts button svg { width: 15px; height: 15px; }
+    .start-acts button.primary { box-shadow: 0 8px 24px -8px color-mix(in srgb, var(--wa-accent) 70%, transparent); }
+    .start-acts button.ghost { background: color-mix(in srgb, var(--wa-ink) 5%, transparent); }
+    /* Four devices, lit, fanned out the way a hand of cards is. Pure
+       decoration: the same drawings the New dialog picks a shape with, drawn
+       big enough to say "watch face" from across the room. */
+    .start-show { position: relative; height: 250px; min-width: 0; }
+    .start-show-glow {
+      position: absolute; left: 50%; top: 50%; width: 320px; height: 220px; transform: translate(-50%, -50%);
+      border-radius: 50%; filter: blur(48px);
+      background: color-mix(in srgb, var(--wa-accent) 32%, transparent);
+    }
+    .start-tile {
+      position: absolute; left: 50%; top: 50%; display: grid; place-items: center;
+      width: 120px; height: 150px; border-radius: 20px;
+      background: linear-gradient(160deg, color-mix(in srgb, var(--wa-ink) 9%, var(--wa-card)), var(--wa-card));
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--wa-ink) 14%, transparent), 0 24px 48px -18px rgba(0,0,0,.6);
+      color: var(--wa-accent); --wa-shape-outline: var(--wa-muted);
+      transition: transform .5s cubic-bezier(.2,.8,.2,1);
+    }
+    .start-tile .shape-art { width: 84px; height: 108px; display: block; }
+    .start-tile.t1 { transform: translate(-50%, -50%) rotate(-10deg) translate(-118px, 10px); }
+    .start-tile.t2 { transform: translate(-50%, -50%) rotate(-3deg) translate(-38px, -12px); z-index: 2; width: 132px; height: 164px; }
+    .start-tile.t2 .shape-art { width: 92px; height: 118px; }
+    .start-tile.t3 { transform: translate(-50%, -50%) rotate(5deg) translate(44px, 4px); z-index: 1; }
+    .start-tile.t4 { transform: translate(-50%, -50%) rotate(12deg) translate(124px, 22px); }
+    .start-hero:hover .start-tile.t1 { transform: translate(-50%, -50%) rotate(-13deg) translate(-130px, 4px); }
+    .start-hero:hover .start-tile.t2 { transform: translate(-50%, -50%) rotate(-4deg) translate(-42px, -22px); }
+    .start-hero:hover .start-tile.t3 { transform: translate(-50%, -50%) rotate(7deg) translate(50px, -4px); }
+    .start-hero:hover .start-tile.t4 { transform: translate(-50%, -50%) rotate(15deg) translate(136px, 16px); }
+    /* A section: a small heading and a grid. */
+    .start-sec { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+    .start-sec-head { display: flex; align-items: baseline; gap: 14px; padding: 0 4px; }
+    .start-sec-head h2 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -.01em; color: var(--wa-ink); }
+    .start-more { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; color: var(--wa-accent); }
+    .start-more svg { width: 13px; height: 13px; }
+    /* Recent: the picker's cards, six across at most, each one a button. */
+    .start-recent { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+    button.start-card {
+      display: flex; flex-direction: column; align-items: stretch; gap: 0; min-width: 0; text-align: left;
+      padding: 10px; border-radius: 16px; font: inherit; cursor: pointer;
+      border: 1px solid var(--wa-line); background: var(--wa-card); color: var(--wa-ink);
+      transition: transform .18s ease-out, border-color .18s ease-out, box-shadow .18s ease-out;
+    }
+    button.start-card:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--wa-accent) 55%, var(--wa-line)); box-shadow: 0 18px 40px -20px rgba(0,0,0,.6); }
+    button.start-card:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    button.start-card.shelved { border-style: dashed; border-color: var(--wa-line-strong); }
+    .start-card-pic { display: block; min-width: 0; margin-bottom: 10px; }
+    .start-card-pic .pk-card-crop { border-radius: 10px; }
+    .start-card-name { display: block; font-size: 13.5px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 2px; }
+    .start-card-sub { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 3px; padding: 0 2px; font-size: 11.5px; color: var(--wa-muted); }
+    .start-card-where { display: inline-flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .start-card-where svg { width: 12px; height: 12px; flex: none; }
+    .start-card-shape { flex: none; margin-left: auto; padding: 1px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 600; background: color-mix(in srgb, var(--wa-ink) 7%, transparent); }
+    /* Shapes: one tile per shape, the drawing lit in the accent. */
+    .start-shapes { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+    button.start-shape {
+      display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 18px 10px 14px;
+      border-radius: 16px; font: inherit; cursor: pointer; color: var(--wa-ink);
+      border: 1px solid var(--wa-line); background: var(--wa-card);
+      transition: transform .18s ease-out, border-color .18s ease-out, box-shadow .18s ease-out, background-color .18s ease-out;
+    }
+    button.start-shape:hover:not(:disabled) {
+      transform: translateY(-3px); border-color: color-mix(in srgb, var(--wa-accent) 55%, var(--wa-line));
+      background: color-mix(in srgb, var(--wa-accent) 6%, var(--wa-card)); box-shadow: 0 18px 40px -20px rgba(0,0,0,.6);
+    }
+    button.start-shape:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    button.start-shape:disabled { opacity: .5; cursor: default; }
+    .start-shape-art { display: block; height: 72px; margin-bottom: 8px; color: var(--wa-accent); --wa-shape-outline: var(--wa-muted); }
+    .start-shape-art .shape-art { width: 56px; height: 72px; display: block; }
+    .start-shape-name { font-size: 13.5px; font-weight: 700; }
+    .start-shape-sub { font-size: 11.5px; color: var(--wa-muted); }
+    /* The quiet row at the foot: three doors that are not about this home's
+       own complications. */
+    .start-links { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+    .start-link {
+      display: flex; align-items: center; gap: 14px; min-width: 0; text-align: left; text-decoration: none;
+      padding: 14px 16px; border-radius: 14px; font: inherit; cursor: pointer; color: var(--wa-ink);
+      border: 1px solid var(--wa-line); background: color-mix(in srgb, var(--wa-card) 70%, transparent);
+      transition: border-color .18s ease-out, background-color .18s ease-out;
+    }
+    .start-link:hover:not(:disabled) { border-color: var(--wa-line-strong); background: var(--wa-card); }
+    .start-link:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .start-link:disabled { opacity: .5; cursor: default; }
+    .start-link .ic {
+      flex: none; width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center;
+      color: var(--wa-accent); background: color-mix(in srgb, var(--wa-accent) 12%, transparent);
+    }
+    .start-link .ic svg { width: 18px; height: 18px; }
+    .start-link .t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .start-link .t b { font-size: 13.5px; font-weight: 700; }
+    .start-link .t span { font-size: 12px; color: var(--wa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .start-link > svg { flex: none; width: 14px; height: 14px; color: var(--wa-muted); }
+    @media (max-width: 900px) {
+      .start-hero { grid-template-columns: minmax(0, 1fr); }
+      .start-show { height: 210px; }
+      .start-tile.t1 { transform: translate(-50%, -50%) rotate(-10deg) translate(-100px, 10px); }
+      .start-tile.t4 { transform: translate(-50%, -50%) rotate(12deg) translate(104px, 22px); }
+    }
+    @media (max-width: 640px) {
+      .start { padding: 12px 12px 32px; }
+      .start-wrap { gap: 24px; }
+      .start-hero { padding: 24px 20px 26px; border-radius: 18px; }
+      .start-show { display: none; }
+      .start-title { font-size: 28px; }
+      .start-recent { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+      .start-shapes { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
     }
     /* Three rows: the document itself on top (name, devices, actions), then
        the shape it draws and how it is looked at, then the stage help. */
@@ -6860,6 +7011,14 @@ export class WristAssistantPanel extends LitElement {
 
   protected override updated(changed: PropertyValues) {    this.keepMenusOnScreen();
     this.watchStage();
+    // The start page lists every device's complications, and the other
+    // devices' lists are only read when a surface asks for them. Asked once
+    // per visit to the page, the way the picker asks once per opening.
+    if (this.draft) this.startListsAsked = false;
+    else if (this.watchSupported && !this.startListsAsked && this.owners.length > 0) {
+      this.startListsAsked = true;
+      void this.loadOtherLists();
+    }
     // Every render can change what is in a scroll box, so the edge fades are
     // re-measured here rather than only on the first one.
     this.fades.refresh([
@@ -16994,6 +17153,178 @@ export class WristAssistantPanel extends LitElement {
     if (created) this.inspect = { kind: "layer", id: created };
   }
 
+  // ── start page ────────────────────────────────────────────────────────
+
+  /**
+   * The stage while nothing is open.
+   *
+   * It used to be one small card saying "Nothing open" in the middle of an
+   * empty work surface, which read as an error the panel had not bothered to
+   * word. This is the panel's front door instead: what it is for, the
+   * complications the home already has (the way back to yesterday's work),
+   * and a shape to start a new one from. Everything on it is a door to a
+   * surface that already exists; nothing here is a fourth way to edit.
+   */
+  private renderStartPage() {
+    const admin = this.hass.user?.is_admin === true;
+    const recent = this.startRecent();
+    const rows = this.pickerRows();
+    const total = rows.filter((row) => row.open.item.kind === "record").length;
+    const devices = this.owners.filter((o) => !isLibraryOwner(o) && !o.is_orphan).length;
+    const empty = total === 0;
+    const full = this.freeSlot() < 0;
+    const plural = (n: number, word: string) => `${word}${n === 1 ? "" : "s"}`;
+    return html`<div class="start">
+      <div class="start-wrap">
+        <section class="start-hero">
+          <div class="start-hero-text">
+            <div class="start-eyebrow">Wrist Assistant</div>
+            <h1 class="start-title">${empty ? "Design your first complication." : "Design for the wrist."}</h1>
+            <p class="start-lead">${empty
+              ? "Draw what your home is doing onto a watch face or an iPhone screen: one shape, your entities, live."
+              : "Every complication and widget in this home, drawn from your entities and sent to the devices that show them."}</p>
+            <div class="start-facts">
+              ${empty ? nothing : html`<span class="start-fact"><b>${total}</b> ${plural(total, "complication")}</span>`}
+              <span class="start-fact"><b>${devices}</b> ${plural(devices, "device")}</span>
+            </div>
+            <div class="start-acts">
+              ${admin ? html`<button class="primary start-new" ?disabled=${full || this.ownerBusy}
+                title=${full ? "Every device is full. Delete a complication first." : "Make a new complication"}
+                @click=${() => this.openNewDialog()}>${uiIcon("plus")}<span>New complication</span></button>` : nothing}
+              <button class="ghost start-browse" @click=${() => this.browseAll()}>${uiIcon("compact")}<span>Browse all</span></button>
+              ${admin ? html`<button class="ghost" ?disabled=${full} @click=${() => this.openImportDialog()}>${uiIcon("paste")}<span>Import</span></button>` : nothing}
+            </div>
+          </div>
+          <div class="start-show" aria-hidden="true">
+            <span class="start-show-glow"></span>
+            <span class="start-tile t1">${deviceShapeArt("rectangular", "watch", true)}</span>
+            <span class="start-tile t2">${deviceShapeArt("circular", "watch", true)}</span>
+            <span class="start-tile t3">${deviceShapeArt("corner", "watch", true)}</span>
+            <span class="start-tile t4">${deviceShapeArt("rectangular", "iphone", true)}</span>
+          </div>
+        </section>
+        ${recent.length === 0 ? nothing : html`<section class="start-sec">
+          <div class="start-sec-head">
+            <h2>Pick up where you left off</h2>
+            <button class="link start-more" @click=${() => this.browseAll()}>See all ${total}${uiIcon("arrow")}</button>
+          </div>
+          <div class="start-recent">${recent.map((hit) => this.renderStartCard(hit.row, hit.copy))}</div>
+        </section>`}
+        ${admin ? this.renderStartShapes(full) : nothing}
+        <section class="start-links">
+          <a class="start-link" href=${GALLERY_PAGE} target="_blank" rel="noopener">
+            <span class="ic">${uiIcon("globe")}</span>
+            <span class="t"><b>Browse the gallery</b><span>Ready-made complications from other people</span></span>
+            ${uiIcon("arrow")}
+          </a>
+          ${admin ? html`<button class="start-link" ?disabled=${full} @click=${() => this.openImportDialog()}>
+            <span class="ic">${uiIcon("paste")}</span>
+            <span class="t"><b>Import a shared one</b><span>Paste a share link or drop a file</span></span>
+            ${uiIcon("arrow")}
+          </button>` : nothing}
+          <button class="start-link" @click=${() => { this.helpOpen = true; }}>
+            <span class="ic">${uiIcon("info")}</span>
+            <span class="t"><b>How the editor works</b><span>Layers, states, taps and sending to a device</span></span>
+            ${uiIcon("arrow")}
+          </button>
+        </section>
+      </div>
+    </div>`;
+  }
+
+  /**
+   * The home's complications, newest saved first, six at most.
+   *
+   * One card per design rather than per device copy: the row's own copy is
+   * drawn, which is the edited device's when it has one. Locked seats (an
+   * iPhone preset, another home's custom) cannot be opened, so they are not
+   * offered here.
+   */
+  private startRecent(): { row: PickerRow; copy: PickerCopy<PickerItem>; at: string }[] {
+    const hits: { row: PickerRow; copy: PickerCopy<PickerItem>; at: string }[] = [];
+    for (const row of this.pickerRows()) {
+      const copy = row.open;
+      if (copy.item.kind !== "record") continue;
+      hits.push({ row, copy, at: copy.item.record.updatedAt });
+    }
+    hits.sort((a, b) => b.at.localeCompare(a.at));
+    return hits.slice(0, 6);
+  }
+
+  /** One recent card: the name, where it is, and its picture, the way the
+   * picker draws it. The whole card opens the complication. */
+  private renderStartCard(row: PickerRow, copy: PickerCopy<PickerItem>) {
+    if (copy.item.kind !== "record") return nothing;
+    const record = copy.item.record;
+    const families = ALL_FAMILIES.filter((f) => familiesOf(record).includes(f));
+    const family = families[0];
+    const control = hasControlOf(record);
+    const owner = this.ownerOf(copy.ownerId);
+    const kind = deviceKindOf(owner);
+    const device = this.cardDevice(kind, family);
+    const shelved = isShelvedRow(row);
+    const pictured = this.cardFromPreview(copy.ownerId, record, family, device);
+    const preview = pictured ? undefined : this.recordPreview(record);
+    const live = preview ? this.cardLive(preview.config, preview.entities) : undefined;
+    if (preview && !pictured) this.queueCardPreview(copy.ownerId, record, preview.config);
+    const where = owner ? ownerShortLabel(owner) : UNASSIGNED_LABEL;
+    return html`<button type="button" class="start-card ${shelved ? "shelved" : ""}"
+      title=${`Open ${row.name}`} @click=${() => void this.openFromPicker(row, copy)}>
+      <span class="start-card-pic">${this.cardArt(family, device,
+        pictured ?? (live ? (device === "iphone" ? live.phone : live.watch) : {}), shelved)}</span>
+      <span class="start-card-name">${row.name}</span>
+      <span class="start-card-sub">
+        <span class="start-card-where">${uiIcon(kind === "iphone" ? "phone" : kind === "library" ? "layers" : "watch")}${where}</span>
+        <span class="start-card-shape">${cardShapeTitle(family, control)}</span>
+      </span>
+    </button>`;
+  }
+
+  /**
+   * A tile per shape this home's devices draw: the watch face shapes, then
+   * the iPhone's Lock Screen and Home Screen. Each opens the New dialog with
+   * the device and the shape already picked, so only the name is left.
+   */
+  private renderStartShapes(full: boolean) {
+    const owners = this.deviceOwners();
+    const kinds = kindChoices(owners);
+    const tiles: { kind: NewKind; family: FamilyKind; title: string; sub: string }[] = [];
+    for (const kind of kinds) {
+      if (kind === "control") continue;
+      for (const group of shapeGroups(kind, owners)) {
+        // The watch offers every shape; the phone one per screen, since its
+        // shapes are the Lock Screen's watch shapes again and four tile sizes.
+        const families = kind === "watch" ? group.families : group.families.slice(0, 1);
+        for (const family of families) {
+          tiles.push({ kind, family, title: kind === "watch" ? familyTitle(family) : group.title,
+            sub: kind === "watch" ? "Watch face" : `iPhone · ${familyTitle(family)}` });
+        }
+      }
+    }
+    if (tiles.length === 0) return nothing;
+    return html`<section class="start-sec">
+      <div class="start-sec-head"><h2>Start with a shape</h2></div>
+      <div class="start-shapes">
+        ${tiles.map((t) => html`<button type="button" class="start-shape" ?disabled=${full || this.ownerBusy}
+          title=${full ? "Every device is full. Delete a complication first." : `New ${t.title.toLowerCase()} complication`}
+          @click=${() => this.newFromShape(t.kind, t.family)}>
+          <span class="start-shape-art">${deviceShapeArt(t.family, t.kind === "iphone" ? "iphone" : "watch", true)}</span>
+          <span class="start-shape-name">${t.title}</span>
+          <span class="start-shape-sub">${t.sub}</span>
+        </button>`)}
+      </div>
+    </section>`;
+  }
+
+  /** New, with the device kind and the shape answered by the tile that was
+   * pressed. The dialog opens on the name, which is all that is left to say. */
+  private newFromShape(kind: NewKind, family: FamilyKind) {
+    if (this.freeSlot() < 0) return;
+    this.openNewDialog();
+    this.pickKind(kind);
+    this.newFamily = family;
+  }
+
   // ── canvas column ─────────────────────────────────────────────────────
 
   /**
@@ -17010,21 +17341,7 @@ export class WristAssistantPanel extends LitElement {
   private renderCanvas() {
     if (this.parseError) return html`<div class="card error">This document cannot be read: ${this.parseError}</div>`;
     const cfg = this.canvasConfig();
-    if (!cfg) {
-      // Nothing opens on its own: the stage says where to go instead.
-      return html`<div class="gate start">
-        <div class="gate-card">
-          <div class="gate-glyph">${uiIcon("layers")}</div>
-          <div class="gate-eyebrow">Nothing open</div>
-          <h2 class="gate-title">Pick a complication to edit.</h2>
-          <p class="gate-lead">Browse all, at the top left, lists every complication in this home. Or make a new one.</p>
-          <div class="gate-acts">
-            <button class="primary" @click=${() => this.browseAll()}>Browse all</button>
-            <button class="ghost" @click=${() => this.openNewDialog()}>${uiIcon("plus")}<span>New complication</span></button>
-          </div>
-        </div>
-      </div>`;
-    }
+    if (!cfg) return this.renderStartPage();
     const layouts = resolveAll(cfg, this.buildContext(), this.forced);
     this.syncCountdownTicker(layouts);
     const deviceCase = this.currentCase();
