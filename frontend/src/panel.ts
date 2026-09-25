@@ -3412,7 +3412,7 @@ export class WristAssistantPanel extends LitElement {
     .xf-pub { display: grid; gap: 8px; }
     .xf-pub .pn { --kc: var(--wa-ink); border-radius: var(--wa-r-md); overflow: hidden;
       background: color-mix(in srgb, var(--kc) 6%, var(--wa-card)); border: 1px solid color-mix(in srgb, var(--kc) 30%, var(--wa-line)); }
-    .xf-pub .pn-e { --kc: var(--wa-ent); }
+    .xf-pub .pn-e { --kc: #e26fa8; }
     .xf-pub .pn-g { --kc: #9b7bf0; }
     .xf-pub .pn-v { --kc: var(--wa-val); }
     .xf-pub .pn-l { --kc: #4a90e2; }
@@ -14515,11 +14515,10 @@ export class WristAssistantPanel extends LitElement {
       const set = () => setFocus(row.key);
       return html`<div class="kv ${on ? "on" : ""}" @pointerenter=${set} @focusin=${set}>${row.control}</div>`;
     };
-    // One box per kind of name, each in its own color. A scene preset names
-    // every layer, group and shared value it makes; those names are the
-    // preset's, not the author's, and dozens of boxes bury the name and the
-    // entity names the reader sets it up by. So a long kind starts closed, and
-    // read-only text always does, since nothing about it can be changed here.
+    // One box per kind of name, each in its own color, and every one starts
+    // closed. A scene preset names every layer, group and shared value it
+    // makes, and dozens of open boxes buried the rest of the dialog; closed,
+    // the section reads as a short list of what is public, with counts.
     // Layer and group names sit in a copy of the Layers list instead, where
     // each one is found the way it is found in the editor.
     const layerTree = tree ? this.renderShareLayerTree(tree.cfg, tree.family, tree.face, rows, kv) : undefined;
@@ -14531,8 +14530,6 @@ export class WristAssistantPanel extends LitElement {
       if (found) found.rows.push(row);
       else kinds.push({ kind, label: PUBLIC_KIND_LABEL[kind] ?? row.label, rows: [row] });
     }
-    const startsOpen = (k: { kind: string; rows: PublicRow[] }) =>
-      k.kind === "e" || (k.kind !== "t:Other text" && k.rows.length <= PUBLIC_FOLD_AT);
     const changed = (row: PublicRow): boolean => {
       const id = row.key.slice(2);
       const typed = row.key.startsWith("g:") ? this.shareGroupNames.get(id)
@@ -14547,7 +14544,7 @@ export class WristAssistantPanel extends LitElement {
       if (k.kind === "head") {
         return html`<div class="pn ${tone}"><div class="pn-h"><i></i><b>${k.label}</b></div><div class="pn-b">${k.rows.map(kv)}</div></div>`;
       }
-      const open = this.shareKindOpen.get(k.kind) ?? startsOpen(k);
+      const open = this.shareKindOpen.get(k.kind) ?? false;
       const edits = k.rows.filter(changed).length;
       return html`<details class="pn ${tone}" .open=${open}
         @toggle=${(e: Event) => this.setShareKindOpen(k.kind, (e.target as HTMLDetailsElement).open)}>
@@ -14561,8 +14558,8 @@ export class WristAssistantPanel extends LitElement {
       <div class="xf-pub" @pointerleave=${(e: Event) => this.leaveRows(e, clear)} @focusout=${(e: Event) => this.leaveRows(e, clear)}>
         ${kinds.filter((k) => k.kind === "head").map(box)}
         ${layerTree ? this.renderShareTreeBox(layerTree, rows, changed) : nothing}
-        ${kinds.filter((k) => k.kind !== "head" && startsOpen(k)).map(box)}
-        ${kinds.filter((k) => k.kind !== "head" && !startsOpen(k)).map(box)}
+        ${kinds.filter((k) => k.kind === "e").map(box)}
+        ${kinds.filter((k) => k.kind !== "head" && k.kind !== "e").map(box)}
       </div>
       <div class="hint">Your own complication keeps its names. An empty box keeps the name it had.</div>`;
   }
@@ -14570,7 +14567,7 @@ export class WristAssistantPanel extends LitElement {
   /** The Layers box of the public names: one row per layer, top of the stack
    * first, in the same folders as the Layers list, each with its picture. */
   private renderShareTreeBox(tree: { body: unknown; count: number }, rows: readonly PublicRow[], changed: (row: PublicRow) => boolean) {
-    const open = this.shareKindOpen.get("tree") ?? true;
+    const open = this.shareKindOpen.get("tree") ?? false;
     const edits = rows.filter((row) => (row.key.startsWith("l:") || row.key.startsWith("g:")) && changed(row)).length;
     return html`<details class="pn pn-tree" .open=${open}
       @toggle=${(e: Event) => this.setShareKindOpen("tree", (e.target as HTMLDetailsElement).open)}>
