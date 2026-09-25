@@ -628,6 +628,15 @@ describe("tap focus view", () => {
     expect(out.match(/data-handle=/g)).toHaveLength(12);
   });
 
+  it("keeps the drawing at full strength when asked, for a hover", () => {
+    const { cfg, a } = withTwoTaps();
+    const icon = cfg.elements.find((e) => e.kind === "icon")!.payload.id;
+    expect(draw(cfg, { tapReview: true, tapFocusId: a })).toContain(`data-element-id=${icon} opacity=0.35`);
+    const out = draw(cfg, { tapReview: true, tapFocusId: a, tapFocusUndimmed: true });
+    expect(out).toContain(`data-element-id=${icon} opacity=1`);
+    expect(out).toContain(a);
+  });
+
   it("is ignored outside review mode", () => {
     const { cfg, a, b } = withTwoTaps();
     const out = draw(cfg, { tapFocusId: a });

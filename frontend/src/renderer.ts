@@ -319,6 +319,10 @@ export interface RenderOptions {
    * with the drawing (free-standing). Only read when `tapReview` is on.
    */
   tapFocusId?: string;
+  /** With `tapFocusId`: the drawing keeps its full strength instead of dimming,
+   * so only the one tap's box is added. For a passing look (a tap strip under
+   * the pointer), where the face going gray around it was more than it asked. */
+  tapFocusUndimmed?: boolean;
   /** Natural sizes of the camera pictures, so a layer can be cropped the way
    * the watch crops it. Absent falls back to the browser's own fitting. */
   imageSizes?: ImageSizeProvider;
@@ -2656,7 +2660,8 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
     }
   }
   // Review mode pushes the drawing back so the tap boxes are the thing you read.
-  const dim = review && (el.kind !== "tap" || (inFocusView && !focused)) ? 0.35 : 1;
+  const undimmed = inFocusView && options.tapFocusUndimmed === true;
+  const dim = review && !undimmed && (el.kind !== "tap" || (inFocusView && !focused)) ? 0.35 : 1;
   const opacity = Math.min(1, Math.max(0, el.opacity)) * (el.isHidden ? 0.35 : 1) * dim;
   const primary = options.highlightId === el.id;
   const selected = primary || options.highlightIds?.includes(el.id) === true;

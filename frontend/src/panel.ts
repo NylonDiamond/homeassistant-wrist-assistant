@@ -17298,6 +17298,9 @@ export class WristAssistantPanel extends LitElement {
       // painted in the tint at the brightness it was drawn in.
       ...previewTintFor(family, this.previewAsPhone, this.previewTint),
       ...(focus !== undefined ? { tapFocusId: focus } : {}),
+      // A tap strip under the pointer adds its box and nothing else: the face
+      // stays at full strength rather than graying out around it.
+      ...(hoverTap && focus !== undefined ? { tapFocusUndimmed: true } : {}),
       // No one tap in focus: the view is about the complication's own tap, so
       // wash where it runs.
       ...(review && focus === undefined ? { groundTap: true } : {}),
