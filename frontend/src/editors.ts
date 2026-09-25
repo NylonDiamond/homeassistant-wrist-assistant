@@ -1517,7 +1517,8 @@ export function entityField(host: Pick<EditorHost, "hass"> & Partial<Pick<Editor
     ? html`<div class="hint">Type part of a name, a room, or an id.</div>`
     // `keep`: this is the one thing left to do, not help text, so it shows
     // with a card's help switched off too.
-    : slot ? html`<div class="hint need keep">${slotCaption(slotUse)}</div>`
+    // A compact row sits in a list, which says it once under the rows.
+    : slot ? (opts.compact ? nothing : html`<div class="hint need keep">${slotCaption(slotUse)}</div>`)
     : live ? nothing : html`<div class="hint warn">Not in Home Assistant right now.</div>`;
 
   const focusSearch = (fieldEl: Element | null) =>
