@@ -20,8 +20,12 @@ import {
   type NoteTarget,
   cleanNotes,
   insertNoteLink,
-  makeNoteHeading,
+  insertNoteUrl,
+  noteUrlFromInput,
+  safeHref,
+  toggleNoteHeading,
   toggleNoteList,
+  toggleNoteMark,
   noteSpans,
   notesPreview,
   notesSummary,
@@ -101,8 +105,7 @@ describe("reading notes", () => {
   it("finds headings, numbered and bulleted lists, and paragraphs", () => {
     const blocks = parseNotes([
       "A house that lights up.",
-      "",
-      "Set up:",
+      "## Set up",
       "1. Point [Kitchen light] at your light.",
       "2) Open [Readings]",
       "   and set the sensors.",
@@ -112,7 +115,7 @@ describe("reading notes", () => {
       "Tap the arrow to refresh.",
     ].join("\n"), resolve);
     expect(blocks.map((b) => b.kind)).toEqual(["para", "heading", "list", "list", "para"]);
-    expect(blocks[1]).toEqual({ kind: "heading", spans: [{ kind: "text", text: "Set up" }] });
+    expect(blocks[1]).toEqual({ kind: "heading", level: 2, spans: [{ kind: "text", text: "Set up" }] });
     const steps = blocks[2]!;
     if (steps.kind !== "list") throw new Error("not a list");
     expect(steps.ordered).toBe(true);
@@ -129,14 +132,53 @@ describe("reading notes", () => {
       .toBe("Tap a window to toggle it.\nTap the arrow to refresh.");
   });
 
-  it("does not take a sentence for a heading", () => {
-    expect(parseNotes("Works on its own.", resolve)[0]!.kind).toBe("para");
-    expect(parseNotes("x ".repeat(30).trim(), resolve)[0]!.kind).toBe("para");
+  it("takes only a # line for a heading", () => {
+    expect(parseNotes("Set up", resolve)[0]!.kind).toBe("para");
+    expect(parseNotes("#nospace", resolve)[0]!.kind).toBe("para");
+    expect(parseNotes("# One\n### Three ##", resolve)).toEqual([
+      { kind: "heading", level: 1, spans: [{ kind: "text", text: "One" }] },
+      { kind: "heading", level: 3, spans: [{ kind: "text", text: "Three" }] },
+    ]);
+  });
+
+  it("reads bold, italic and both, leaving a lone mark and snake_case alone", () => {
+    expect(noteSpans("a **b** *c* _d_ ***e***", resolve)).toEqual([
+      { kind: "text", text: "a " },
+      { kind: "strong", spans: [{ kind: "text", text: "b" }] },
+      { kind: "text", text: " " },
+      { kind: "em", spans: [{ kind: "text", text: "c" }] },
+      { kind: "text", text: " " },
+      { kind: "em", spans: [{ kind: "text", text: "d" }] },
+      { kind: "text", text: " " },
+      { kind: "strong", spans: [{ kind: "em", spans: [{ kind: "text", text: "e" }] }] },
+    ]);
+    expect(noteSpans("2 * 3 and light_kitchen_main and ** x **", resolve))
+      .toEqual([{ kind: "text", text: "2 * 3 and light_kitchen_main and ** x **" }]);
+    expect(noteSpans("\\*not italic\\*", resolve)).toEqual([{ kind: "text", text: "*not italic*" }]);
+    expect(noteSpans("**Set [Kitchen light]**", resolve)).toEqual([{ kind: "strong", spans: [
+      { kind: "text", text: "Set " },
+      { kind: "link", text: "Kitchen light", target: { kind: "value", id: "V1" } },
+    ] }]);
+  });
+
+  it("opens web links to http and https only", () => {
+    expect(noteSpans("See [the guide](https://example.com/a?b=1).", resolve)).toEqual([
+      { kind: "text", text: "See " },
+      { kind: "url", text: "the guide", href: "https://example.com/a?b=1" },
+      { kind: "text", text: "." },
+    ]);
+    expect(noteSpans("[x](javascript:alert(1))", resolve)).toEqual([{ kind: "text", text: "[x](javascript:alert(1))" }]);
+    expect(safeHref("data:text/html,hi")).toBeUndefined();
+    expect(safeHref("https://a.b/\"onmouseover")).toBeUndefined();
+    expect(noteUrlFromInput("example.com/x")).toBe("https://example.com/x");
+    expect(noteUrlFromInput("ftp://example.com")).toBeUndefined();
+    expect(noteUrlFromInput("not a link")).toBeUndefined();
   });
 
   it("previews the first line and summarises the first paragraph", () => {
     expect(notesPreview("\n1. Set [Kitchen light]\n2. Go")).toBe("Set Kitchen light");
-    expect(notesSummary("Set up\n\nA [house] that lights\nup with your home.\n\n1. Step", 500))
+    expect(notesPreview("## **Set** up")).toBe("Set up");
+    expect(notesSummary("## Set up\n\nA [house] that *lights*\nup with your home.\n\n1. Step", 500))
       .toBe("A house that lights up with your home.");
     const long = notesSummary(`${"word ".repeat(40)}end.`, 30);
     expect(long.length).toBeLessThanOrEqual(30);
@@ -167,13 +209,33 @@ describe("the notes toolbar", () => {
     expect(toggleNoteList("", 0, 0, true)).toEqual({ text: "1. ", start: 3, end: 3 });
   });
 
-  it("makes a heading the reader sees as one", () => {
-    const text = "Intro.\n1. Set up:\nMore text.";
-    const edit = makeNoteHeading(text, text.indexOf("Set"));
-    expect(edit.text).toBe("Intro.\n\nSet up\n\nMore text.");
-    expect(edit.text.slice(edit.start, edit.end)).toBe("Set up");
-    expect(parseNotes(edit.text, () => undefined)[1]).toEqual({ kind: "heading", spans: [{ kind: "text", text: "Set up" }] });
-    expect(makeNoteHeading("", 0)).toEqual({ text: "Set up", start: 0, end: 6 });
+  it("puts ## on the caret's line and takes it off again", () => {
+    const text = "Intro.\n1. Set up\nMore text.";
+    const on = toggleNoteHeading(text, text.indexOf("Set"));
+    expect(on.text).toBe("Intro.\n## Set up\nMore text.");
+    expect(on.start).toBe(on.text.indexOf("\nMore"));
+    expect(parseNotes(on.text, () => undefined)[1]).toEqual({ kind: "heading", level: 2, spans: [{ kind: "text", text: "Set up" }] });
+    expect(toggleNoteHeading(on.text, on.start).text).toBe("Intro.\nSet up\nMore text.");
+    expect(toggleNoteHeading("", 0)).toEqual({ text: "## ", start: 3, end: 3 });
+  });
+
+  it("wraps the selection in bold or italic, and unwraps it", () => {
+    const bold = toggleNoteMark("tap it now", 4, 7, "**");
+    expect(bold).toEqual({ text: "tap **it** now", start: 6, end: 8 });
+    expect(toggleNoteMark(bold.text, bold.start, bold.end, "**").text).toBe("tap it now");
+    // Italic inside bold is bold italic, and comes off again on its own.
+    const both = toggleNoteMark(bold.text, bold.start, bold.end, "*");
+    expect(both.text).toBe("tap ***it*** now");
+    expect(toggleNoteMark(both.text, both.start, both.end, "*").text).toBe("tap **it** now");
+    // Nothing selected: the pair, with the caret between.
+    expect(toggleNoteMark("a ", 2, 2, "*")).toEqual({ text: "a **", start: 3, end: 3 });
+    // A trailing space picked up by a double-click stays outside.
+    expect(toggleNoteMark("tap it now", 4, 7, "*").text).toBe("tap *it* now");
+  });
+
+  it("inserts a web link with the selected words, or the address", () => {
+    expect(insertNoteUrl("See the guide.", 4, 13, "https://x.io").text).toBe("See [the guide](https://x.io).");
+    expect(insertNoteUrl("See", 3, 3, "https://x.io/a").text).toBe("See [x.io/a](https://x.io/a)");
   });
 
   it("inserts a link spaced off the words around it", () => {

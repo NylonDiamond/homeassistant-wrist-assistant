@@ -327,8 +327,11 @@ import {
   type NoteTarget,
   cleanNotes,
   insertNoteLink,
-  makeNoteHeading,
+  insertNoteUrl,
+  noteUrlFromInput,
+  toggleNoteHeading,
   toggleNoteList,
+  toggleNoteMark,
   noteTargetTitle,
   notesPreview,
   notesSummary,
@@ -1492,9 +1495,10 @@ export class WristAssistantPanel extends LitElement {
   @state() private notesDraft = "";
   /** The notes box shows its Preview instead of the text. */
   @state() private notesPreviewOn = false;
-  /** The toolbar's Link list is open: the selection it will replace, kept
-   * while its search has the focus, and what is typed in that search. */
-  @state() private notesLink?: { at: readonly [number, number]; query: string };
+  /** The toolbar's Link list (`name`) or Web box (`url`) is open: the
+   * selection it will replace, kept while its input has the focus, and what is
+   * typed there. */
+  @state() private notesLink?: { mode: "name" | "url"; at: readonly [number, number]; query: string };
   /** Show all in the Layers card: every page's layers, grouped by page,
    * rather than the page showing. */
   @state() private allPages = false;
@@ -4076,6 +4080,15 @@ export class WristAssistantPanel extends LitElement {
     button.nt-btn.wide { padding: 0 10px; font-weight: 600; font-size: 11.5px; }
     button.nt-btn svg.ui-icon { width: 13px; height: 13px; }
     button.nt-btn .nt-glyph { font-weight: 700; font-variant-numeric: tabular-nums; }
+    button.nt-btn .nt-i { font-family: Georgia, "Times New Roman", serif; font-size: 13.5px; font-weight: 600; }
+    .nt-sep { width: 1px; height: 18px; margin: 0 3px; background: var(--wa-line); flex: none; }
+    .nt-url { display: flex; gap: 6px; align-items: center; }
+    .nt-url .nt-search { flex: 1; min-width: 0; }
+    .nt-links .hint { font-size: 11.5px; color: var(--wa-muted); }
+    .notes-card .nc-h.l1, .nt-preview .nc-h.l1 { font-size: 13px; letter-spacing: .03em; }
+    .notes-card .nc-h.l3, .nt-preview .nc-h.l3 { font-size: 10px; color: var(--wa-muted); }
+    a.note-url { color: var(--wa-accent); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+    a.note-url:hover { text-decoration-thickness: 2px; }
     button.nt-btn:hover:not(:disabled) { border-color: color-mix(in srgb, var(--wa-val) 55%, var(--wa-line)); }
     button.nt-btn.on { background: color-mix(in srgb, var(--wa-val) 16%, var(--wa-panel)); border-color: var(--wa-val); }
     button.nt-btn:disabled { opacity: .4; cursor: default; }
@@ -17374,7 +17387,7 @@ export class WristAssistantPanel extends LitElement {
         </div>
         <label class="nc-lead" for="notes-box">Tell people what to set up after they import this.</label>
         ${this.renderNotesEditor(cfg, "notes-box", 9, () => this.finishNotes())}
-        <div class="nc-foot"><span>Plain text, so it reads the same everywhere. The buttons write it for you.</span>
+        <div class="nc-foot"><span>Markdown: ## heading, **bold**, *italic*, - bullets, 1. steps, [words](https://…). [Name] links a layer. The buttons type it for you.</span>
           <span class="nc-count">${this.notesDraft.length} / ${NOTES_MAX}</span></div>
       </section>`;
     }
@@ -17403,15 +17416,23 @@ export class WristAssistantPanel extends LitElement {
     </section>`;
   }
 
-  /** The notes as the card draws them: headings, paragraphs, lists, and a
-   * `[Name]` as a button to what it names. */
+  /** The notes as the card draws them: headings, paragraphs, lists, bold and
+   * italic, a web link opening in a new tab, and a `[Name]` as a button to
+   * what it names. */
   private renderNoteBlocks(cfg: CustomComplicationConfig, notes: string) {
-    const spans = (list: readonly NoteSpan[]) => list.map((s) => s.kind === "text"
-      ? s.text
-      : html`<button type="button" class="note-link" title=${noteTargetTitle(s.target)}
-          @click=${() => this.goToNoteTarget(s.target)}>${s.text}</button>`);
+    const spans = (list: readonly NoteSpan[]): unknown[] => list.map((s) => {
+      switch (s.kind) {
+        case "text": return s.text;
+        case "strong": return html`<strong>${spans(s.spans)}</strong>`;
+        case "em": return html`<em>${spans(s.spans)}</em>`;
+        case "url": return html`<a class="note-url" href=${s.href} target="_blank" rel="noopener noreferrer nofollow"
+          title=${s.href}>${s.text}</a>`;
+        case "link": return html`<button type="button" class="note-link" title=${noteTargetTitle(s.target)}
+          @click=${() => this.goToNoteTarget(s.target)}>${s.text}</button>`;
+      }
+    });
     return parseNotes(notes, this.notesResolver(cfg)).map((b) => b.kind === "heading"
-      ? html`<div class="nc-h">${spans(b.spans)}</div>`
+      ? html`<div class="nc-h l${b.level}" role="heading" aria-level=${b.level + 2}>${spans(b.spans)}</div>`
       : b.kind === "para"
         ? html`<p>${spans(b.spans)}</p>`
         : b.ordered
@@ -17420,30 +17441,41 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * The notes box with its toolbar: Heading, Numbered, Bullets and Link write
-   * the plain text a person would type, and Preview shows it the way the card
-   * will. Link opens a list of the names a `[Name]` can reach, so nobody has
-   * to know the brackets exist or spell a layer's name right. Used by the
-   * Layers card and by the gallery dialog, one at a time.
+   * The notes box with its toolbar. Heading, Bold, Italic, the two lists and
+   * the two links write the Markdown a person would type; Preview shows it the
+   * way the card will. Link opens a list of the names a `[Name]` can reach, so
+   * nobody has to know the brackets exist or spell a layer's name right; Web
+   * takes an address. Used by the Layers card and by the gallery dialog, one
+   * at a time.
    */
   private renderNotesEditor(cfg: CustomComplicationConfig, boxId: string, rows: number, onEscape?: () => void) {
     const preview = this.notesPreviewOn;
     const tool = (label: TemplateResult | string, title: string, act: () => void, cls = "") => html`<button type="button"
       class="nt-btn ${cls}" title=${title} aria-label=${title} ?disabled=${preview}
       @mousedown=${(e: Event) => e.preventDefault()} @click=${act}>${label}</button>`;
+    const mode = this.notesLink?.mode;
     return html`<div class="notes-editor">
       <div class="nt-bar" role="toolbar" aria-label="Write the notes">
-        ${tool(html`<b>H</b>`, "Heading: the line the caret is on, on its own", () => this.applyNoteEdit(boxId, (t, s) => makeNoteHeading(t, s)))}
+        ${tool(html`<b>H</b>`, "Heading: ## at the start of the line. Press again to take it off",
+          () => this.applyNoteEdit(boxId, (t, s) => toggleNoteHeading(t, s)))}
+        ${tool(html`<b>B</b>`, `Bold: **words** (${KEY_MOD}B)`, () => this.applyNoteEdit(boxId, (t, s, e) => toggleNoteMark(t, s, e, "**")))}
+        ${tool(html`<i class="nt-i">I</i>`, `Italic: *words* (${KEY_MOD}I)`, () => this.applyNoteEdit(boxId, (t, s, e) => toggleNoteMark(t, s, e, "*")))}
+        <span class="nt-sep" aria-hidden="true"></span>
         ${tool(html`<span class="nt-glyph">1.</span>`, "Numbered list: the lines picked, as steps", () => this.applyNoteEdit(boxId, (t, s, e) => toggleNoteList(t, s, e, true)))}
         ${tool(html`<span class="nt-glyph">•</span>`, "Bullets: the lines picked, as a list", () => this.applyNoteEdit(boxId, (t, s, e) => toggleNoteList(t, s, e, false)))}
-        ${tool(html`${uiIcon("link")}<span>Link</span>`, `Link to a shared value, group or layer (${KEY_MOD}K)`,
-          () => this.openNotesLinkPicker(boxId), `wide ${this.notesLink ? "on" : ""}`)}
+        <span class="nt-sep" aria-hidden="true"></span>
+        ${tool(html`${uiIcon("link")}<span>Link</span>`, `Link to a shared value, group or layer: [Name] (${KEY_MOD}K)`,
+          () => this.openNotesLinkPicker(boxId, "name"), `wide ${mode === "name" ? "on" : ""}`)}
+        ${tool(html`${uiIcon("globe")}<span>Web</span>`, "Link to a web page: [words](https://…)",
+          () => this.openNotesLinkPicker(boxId, "url"), `wide ${mode === "url" ? "on" : ""}`)}
         <span class="spacer"></span>
         <button type="button" class="nt-btn wide ${preview ? "on" : ""}" aria-pressed=${preview ? "true" : "false"}
           title=${preview ? "Back to the text" : "See the notes the way people will after import"}
           @click=${() => { this.notesPreviewOn = !preview; this.notesLink = undefined; }}>${preview ? "Edit text" : "Preview"}</button>
       </div>
-      ${this.notesLink && !preview ? this.renderNotesLinkPicker(cfg, boxId) : nothing}
+      ${this.notesLink && !preview
+        ? this.notesLink.mode === "url" ? this.renderNotesUrlBox(boxId) : this.renderNotesLinkPicker(cfg, boxId)
+        : nothing}
       ${preview
         ? html`<div class="nt-preview nc-body">${cleanNotes(this.notesDraft) === undefined
             ? html`<span class="hint">Nothing written yet.</span>`
@@ -17452,10 +17484,12 @@ export class WristAssistantPanel extends LitElement {
             placeholder=${NOTES_PLACEHOLDER}
             @input=${(e: Event) => this.typeNotes((e.target as HTMLTextAreaElement).value)}
             @keydown=${(e: KeyboardEvent) => {
-              if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+              const key = e.metaKey || e.ctrlKey ? e.key.toLowerCase() : "";
+              if (key === "k" || key === "b" || key === "i") {
                 e.preventDefault();
                 e.stopPropagation();
-                this.openNotesLinkPicker(boxId);
+                if (key === "k") this.openNotesLinkPicker(boxId, "name");
+                else this.applyNoteEdit(boxId, (t, s, en) => toggleNoteMark(t, s, en, key === "b" ? "**" : "*"));
               } else if (e.key === "Escape" && onEscape) {
                 e.stopPropagation();
                 onEscape();
@@ -17482,17 +17516,61 @@ export class WristAssistantPanel extends LitElement {
     });
   }
 
-  /** Link: keep the selection, since the picker's search takes the focus
-   * away from the box, and open the list of names. */
-  private openNotesLinkPicker(boxId: string) {
-    if (this.notesLink) {
-      this.notesLink = undefined;
+  /** Link or Web: keep the selection, since the box under the toolbar takes
+   * the focus away from the text, and open it. The same button again shuts
+   * it. */
+  private openNotesLinkPicker(boxId: string, mode: "name" | "url") {
+    const was = this.notesLink;
+    if (was?.mode === mode) {
+      this.closeNotesLink(boxId);
       return;
     }
     const box = this.renderRoot.querySelector<HTMLTextAreaElement>(`#${boxId}`);
     const at = this.notesDraft.length;
-    this.notesLink = { at: [box?.selectionStart ?? at, box?.selectionEnd ?? at], query: "" };
+    this.notesLink = { mode, at: was?.at ?? [box?.selectionStart ?? at, box?.selectionEnd ?? at], query: "" };
     void this.updateComplete.then(() => this.renderRoot.querySelector<HTMLInputElement>(".nt-links input")?.focus());
+  }
+
+  /** Shut the Link or Web box and hand the focus back to the text. */
+  private closeNotesLink(boxId: string) {
+    this.notesLink = undefined;
+    void this.updateComplete.then(() => this.renderRoot.querySelector<HTMLTextAreaElement>(`#${boxId}`)?.focus());
+  }
+
+  /** Web: one box for the address. The selected words become the link's
+   * words; with none, the address does. */
+  private renderNotesUrlBox(boxId: string) {
+    const link = this.notesLink;
+    if (!link) return nothing;
+    const href = noteUrlFromInput(link.query);
+    const typed = link.query.trim() !== "";
+    const add = () => {
+      if (!href) return;
+      this.notesLink = undefined;
+      this.applyNoteEdit(boxId, (t, s, e) => insertNoteUrl(t, s, e, href), link.at);
+    };
+    return html`<div class="nt-links" role="dialog" aria-label="Link to a web page">
+      <div class="nt-url">
+        <label class="nt-search">${uiIcon("globe")}
+          <input type="url" placeholder="https://…" aria-label="Web address" .value=${link.query}
+            @input=${(e: Event) => { this.notesLink = { ...link, query: (e.target as HTMLInputElement).value }; }}
+            @keydown=${(e: KeyboardEvent) => {
+              if (e.key === "Escape") {
+                e.stopPropagation();
+                this.closeNotesLink(boxId);
+              } else if (e.key === "Enter") {
+                e.preventDefault();
+                add();
+              }
+            }} /></label>
+        <button type="button" class="nt-btn wide" ?disabled=${!href} @click=${add}>Add link</button>
+      </div>
+      <div class="hint">${typed && !href
+        ? "That is not a web address. It must start with https:// or http://."
+        : link.at[0] === link.at[1]
+          ? "The address shows as the link. Select some words first to link them instead."
+          : "The words you selected become the link."}</div>
+    </div>`;
   }
 
   /** Every name a link can reach, in the order the resolver tries them, once
@@ -17531,8 +17609,7 @@ export class WristAssistantPanel extends LitElement {
           @keydown=${(e: KeyboardEvent) => {
             if (e.key === "Escape") {
               e.stopPropagation();
-              this.notesLink = undefined;
-              void this.updateComplete.then(() => this.renderRoot.querySelector<HTMLTextAreaElement>(`#${boxId}`)?.focus());
+              this.closeNotesLink(boxId);
             } else if (e.key === "Enter" && shown[0]) {
               e.preventDefault();
               pick(shown[0].name);

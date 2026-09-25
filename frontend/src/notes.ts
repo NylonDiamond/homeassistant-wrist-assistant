@@ -1,17 +1,24 @@
-// A complication's notes: plain text the author writes for whoever imports the
-// design, shown on top of the Layers list. Editor-only, like layer groups: the
-// watch and the iPhone never draw them, and a share or a gallery upload carries
-// them so the reader finds them after import.
+// A complication's notes: the author's words to whoever imports the design,
+// shown on top of the Layers list. Editor-only, like layer groups: the watch
+// and the iPhone never draw them, and a share or a gallery upload carries them
+// so the reader finds them after import.
 //
-// The text stays plain on the wire. This file reads a little structure out of
-// it for display, and nothing more:
+// The text is a small, safe part of Markdown, so it reads well as typed and
+// the gallery page can draw it the same way (`homepage/gallery/index.html` in
+// wrist-assistant-website keeps a plain-JS copy of this reader; change both):
 //
 //   - a blank line starts a new block;
+//   - `#`, `##` or `###` and a space start a heading;
 //   - lines starting "1." or "1)" are a numbered list, "-", "*" or "•" a
 //     bulleted one;
-//   - a block that is one short line with no closing punctuation is a heading;
+//   - `**bold**`, `*italic*` or `_italic_`, and a backslash before a mark to
+//     type it plainly;
+//   - `[text](https://…)` is a link to a web page, http and https only;
 //   - `[Name]` names a shared value, a group or a layer, and becomes a link to
 //     it when one of them has that name.
+//
+// Left out on purpose: images and raw HTML. Notes come from strangers through
+// the gallery, and a picture can report who opened it.
 
 export const NOTES_MAX = 2000;
 
@@ -23,18 +30,22 @@ export type NoteTarget =
 
 export type NoteSpan =
   | { kind: "text"; text: string }
-  | { kind: "link"; text: string; target: NoteTarget };
+  | { kind: "link"; text: string; target: NoteTarget }
+  | { kind: "url"; text: string; href: string }
+  | { kind: "strong"; spans: NoteSpan[] }
+  | { kind: "em"; spans: NoteSpan[] };
 
 export type NoteBlock =
-  | { kind: "heading"; spans: NoteSpan[] }
+  | { kind: "heading"; level: 1 | 2 | 3; spans: NoteSpan[] }
   | { kind: "para"; spans: NoteSpan[] }
   | { kind: "list"; ordered: boolean; items: NoteSpan[][] };
 
-/** A heading is short. Past this it reads as a sentence that lost its stop. */
-const HEADING_MAX = 40;
+type Resolve = (name: string) => NoteTarget | undefined;
+
+const HEADING_RE = /^(#{1,3})\s+/;
 const ORDERED_RE = /^\s*\d{1,3}[.)]\s+/;
 const BULLET_RE = /^\s*[-*•]\s+/;
-const LINK_RE = /\[([^\[\]\n]{1,60})\]/g;
+const ESCAPABLE = "\\*_[]()#`";
 
 /** The notes as stored: trimmed, capped, and undefined when there is nothing
  * to say, so an emptied box takes the key off the document. */
@@ -46,18 +57,163 @@ export function cleanNotes(text: unknown): string | undefined {
 
 /** What an empty notes box shows, as an example of the three things worth
  * saying. */
-export const NOTES_PLACEHOLDER = "What it shows.\n\nSet up\n1. Point [Kitchen light] at your own light.\n2. …\n\nTap it to …";
+export const NOTES_PLACEHOLDER = "What it shows.\n\n## Set up\n1. Point [Kitchen light] at your own light.\n2. …\n\nTap it to …";
+
+/** A web address a link may open: http or https, nothing else. */
+export function safeHref(href: string): string | undefined {
+  const h = href.trim();
+  return /^https?:\/\/[^\s<>"']+$/i.test(h) ? h : undefined;
+}
+
+// ── reading ───────────────────────────────────────────────────────────────
+
+/**
+ * One line (or a joined paragraph) as spans. A `[Name]` nothing answers to
+ * stays as typed, brackets and all, so the author sees it did not match; so
+ * does a mark with no partner, and a web link to anything but http or https.
+ */
+export function noteSpans(line: string, resolve: Resolve): NoteSpan[] {
+  const out: NoteSpan[] = [];
+  const push = (text: string) => {
+    if (text === "") return;
+    const last = out.at(-1);
+    if (last?.kind === "text") last.text += text;
+    else out.push({ kind: "text", text });
+  };
+  let i = 0;
+  while (i < line.length) {
+    const c = line[i]!;
+    if (c === "\\" && i + 1 < line.length && ESCAPABLE.includes(line[i + 1]!)) {
+      push(line[i + 1]!);
+      i += 2;
+      continue;
+    }
+    if (c === "*" && line[i + 1] === "*") {
+      let close = line.indexOf("**", i + 2);
+      // `***both***`: the bold closes on the last pair, the italic inside it.
+      while (close > 0 && line[close + 2] === "*") close += 1;
+      const inner = close < 0 ? "" : line.slice(i + 2, close);
+      if (inner.trim() !== "" && inner === inner.trim()) {
+        out.push({ kind: "strong", spans: noteSpans(inner, resolve) });
+        i = close + 2;
+        continue;
+      }
+    }
+    if ((c === "*" || c === "_") && line[i + 1] !== c) {
+      // `_` only at a word's edge, so snake_case names stay whole.
+      const edge = c === "*" || i === 0 || !/[\p{L}\p{N}]/u.test(line[i - 1]!);
+      let close = line.indexOf(c, i + 1);
+      while (close > 0 && c === "*" && line[close + 1] === "*") close = line.indexOf(c, close + 2);
+      const inner = close < 0 ? "" : line.slice(i + 1, close);
+      const after = line[close + 1];
+      const shut = c === "*" || after === undefined || !/[\p{L}\p{N}]/u.test(after);
+      if (edge && shut && inner.trim() !== "" && inner === inner.trim()) {
+        out.push({ kind: "em", spans: noteSpans(inner, resolve) });
+        i = close + 1;
+        continue;
+      }
+    }
+    if (c === "[") {
+      const close = line.indexOf("]", i + 1);
+      const label = close < 0 ? "" : line.slice(i + 1, close);
+      if (close > 0 && label.length <= 80 && !label.includes("[")) {
+        if (line[close + 1] === "(") {
+          const end = line.indexOf(")", close + 2);
+          const href = end < 0 ? undefined : safeHref(line.slice(close + 2, end));
+          if (href && label.trim() !== "") {
+            out.push({ kind: "url", text: label.trim(), href });
+            i = end + 1;
+            continue;
+          }
+        } else {
+          const target = label.trim() === "" ? undefined : resolve(label.trim());
+          if (target) {
+            out.push({ kind: "link", text: label.trim(), target });
+            i = close + 1;
+            continue;
+          }
+        }
+      }
+    }
+    push(c);
+    i += 1;
+  }
+  return out;
+}
+
+/** The words of some spans, marks and links dropped. */
+export function spansText(spans: readonly NoteSpan[]): string {
+  return spans.map((s) => s.kind === "strong" || s.kind === "em" ? spansText(s.spans) : s.text).join("");
+}
+
+export function parseNotes(text: string, resolve: Resolve): NoteBlock[] {
+  const blocks: NoteBlock[] = [];
+  let para: string[] = [];
+  let list: { ordered: boolean; items: string[] } | undefined;
+  const flushPara = () => {
+    if (para.length === 0) return;
+    blocks.push({ kind: "para", spans: noteSpans(para.join("\n"), resolve) });
+    para = [];
+  };
+  const flushList = () => {
+    if (!list) return;
+    blocks.push({ kind: "list", ordered: list.ordered, items: list.items.map((item) => noteSpans(item, resolve)) });
+    list = undefined;
+  };
+  for (const raw of text.replace(/\r\n?/g, "\n").split("\n")) {
+    const line = raw.trim();
+    if (line === "") {
+      flushPara();
+      flushList();
+      continue;
+    }
+    const heading = HEADING_RE.exec(line);
+    if (heading) {
+      flushPara();
+      flushList();
+      const level = heading[1]!.length as 1 | 2 | 3;
+      blocks.push({ kind: "heading", level, spans: noteSpans(line.slice(heading[0].length).replace(/\s+#+$/, ""), resolve) });
+      continue;
+    }
+    const ordered = ORDERED_RE.test(line);
+    const bullet = !ordered && BULLET_RE.test(line);
+    if (ordered || bullet) {
+      flushPara();
+      if (list && list.ordered !== ordered) flushList();
+      list ??= { ordered, items: [] };
+      list.items.push(line.replace(ordered ? ORDERED_RE : BULLET_RE, ""));
+      continue;
+    }
+    if (list) {
+      // A line under a list item with no marker of its own carries on that
+      // item, the way people wrap a long step.
+      list.items[list.items.length - 1] += ` ${line}`;
+      continue;
+    }
+    para.push(line);
+  }
+  flushPara();
+  flushList();
+  return blocks;
+}
+
+/** The first line, as words, for the folded row. */
+export function notesPreview(text: string): string {
+  const first = text.split("\n").map((l) => l.trim()).find((l) => l !== "") ?? "";
+  const bare = first.replace(HEADING_RE, "").replace(ORDERED_RE, "").replace(BULLET_RE, "");
+  return spansText(noteSpans(bare, () => undefined)).replace(/\[([^\[\]\n]{1,80})\]/g, "$1");
+}
 
 /**
  * The opening of the notes as one plain paragraph, for the gallery's
- * description: the first block of prose, links as their names, cut at a word
- * before `max`. Lists and headings are skipped, since a description is a
- * sentence about the design and not its setup steps.
+ * description: the first block of prose, marks and links as their words, cut
+ * at a word before `max`. Lists and headings are skipped, since a description
+ * is a sentence about the design and not its setup steps.
  */
 export function notesSummary(text: string, max: number): string {
   const para = parseNotes(text, () => undefined).find((b) => b.kind === "para");
   const flat = para?.kind === "para"
-    ? para.spans.map((s) => s.text).join("").replace(LINK_RE, "$1").replace(/\s*\n\s*/g, " ").trim()
+    ? spansText(para.spans).replace(/\[([^\[\]\n]{1,80})\]/g, "$1").replace(/\s*\n\s*/g, " ").trim()
     : notesPreview(text);
   if (flat.length <= max) return flat;
   const cut = flat.slice(0, max - 1);
@@ -65,10 +221,17 @@ export function notesSummary(text: string, max: number): string {
   return `${(space > max / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
 }
 
+/** A link's tooltip: what a click on it does. */
+export function noteTargetTitle(target: NoteTarget): string {
+  return target.kind === "value" ? "Open this shared value"
+    : target.kind === "group" ? "Select this group"
+    : "Select this layer";
+}
+
 // ── the editor's toolbar ──────────────────────────────────────────────────
 //
-// Each button writes the same plain text a person would type, so the notes on
-// the wire never change shape: the toolbar is a shortcut, not a format.
+// Each button writes the Markdown a person would type, so the toolbar is a
+// shortcut and never a format of its own.
 
 /** The text after a toolbar action, and the selection to put back. */
 export interface NoteEdit {
@@ -87,7 +250,7 @@ function lineSpan(text: string, start: number, end: number): [number, number] {
 }
 
 function stripMarker(line: string): string {
-  return line.replace(ORDERED_RE, "").replace(BULLET_RE, "").trimStart();
+  return line.replace(HEADING_RE, "").replace(ORDERED_RE, "").replace(BULLET_RE, "").trimStart();
 }
 
 /**
@@ -119,110 +282,73 @@ export function toggleNoteList(text: string, start: number, end: number, ordered
 }
 
 /**
- * The caret's line as a heading: on a line of its own, with a blank line on
- * each side, no list marker and no closing stop, which is what `parseNotes`
- * reads as one. An empty line becomes a heading to type over.
+ * `## ` on the caret's line, or off it again when it is already a heading.
+ * A list marker gives way to it. The caret goes to the line's end, ready to
+ * type the heading or carry on after it.
  */
-export function makeNoteHeading(text: string, start: number): NoteEdit {
+export function toggleNoteHeading(text: string, start: number): NoteEdit {
   const [from, to] = lineSpan(text, start, start);
-  const words = stripMarker(text.slice(from, to)).trim().replace(/[.!?,;:]+$/, "") || "Set up";
-  const before = text.slice(0, from).replace(/\n+$/, "");
-  const after = text.slice(to).replace(/^\n+/, "");
-  const head = before === "" ? "" : `${before}\n\n`;
-  const out = `${head}${words}${after === "" ? "" : `\n\n${after}`}`;
-  return { text: out, start: head.length, end: head.length + words.length };
+  const line = text.slice(from, to);
+  const next = HEADING_RE.test(line.trimStart()) ? stripMarker(line) : `## ${stripMarker(line)}`;
+  const out = text.slice(0, from) + next + text.slice(to);
+  return { text: out, start: from + next.length, end: from + next.length };
 }
 
-/** A `[Name]` link in place of the selection, spaced off the words around
- * it, with the caret after it. */
-export function insertNoteLink(text: string, start: number, end: number, name: string): NoteEdit {
+/**
+ * `**` or `*` around the selection, or off it again when the selection already
+ * sits between them. With nothing selected the pair goes in with the caret
+ * between, to type into.
+ */
+export function toggleNoteMark(text: string, start: number, end: number, mark: "**" | "*"): NoteEdit {
+  const before = text.slice(0, start);
+  const after = text.slice(end);
+  const inside = text.slice(start, end);
+  const wrapped = before.endsWith(mark) && after.startsWith(mark)
+    // `*` must not be half of a `**` around the selection.
+    && (mark === "**" || !(before.endsWith("**") && after.startsWith("**")) || before.endsWith("***"));
+  if (wrapped) {
+    const out = before.slice(0, -mark.length) + inside + after.slice(mark.length);
+    return { text: out, start: start - mark.length, end: end - mark.length };
+  }
+  // Spaces the selection picked up stay outside the marks, where Markdown
+  // wants them.
+  const lead = inside.length - inside.trimStart().length;
+  const tail = inside.length - inside.trimEnd().length;
+  const core = inside.trim();
+  const out = `${before}${inside.slice(0, lead)}${mark}${core}${mark}${inside.slice(inside.length - tail)}${after}`;
+  const s = start + lead + mark.length;
+  return { text: out, start: s, end: s + core.length };
+}
+
+/** A link in place of the selection, spaced off the words around it, with
+ * the caret after it. */
+function insertSpaced(text: string, start: number, end: number, link: string): NoteEdit {
   const before = text.slice(0, start);
   const after = text.slice(end);
   const lead = before === "" || /\s$/.test(before) ? "" : " ";
   const tail = after === "" || /^[\s.,;:!?)]/.test(after) ? "" : " ";
-  const link = `${lead}[${name}]${tail}`;
-  const caret = start + link.length;
-  return { text: before + link + after, start: caret, end: caret };
+  const put = `${lead}${link}${tail}`;
+  const caret = start + put.length;
+  return { text: before + put + after, start: caret, end: caret };
 }
 
-/** A link's tooltip: what a click on it does. */
-export function noteTargetTitle(target: NoteTarget): string {
-  return target.kind === "value" ? "Open this shared value"
-    : target.kind === "group" ? "Select this group"
-    : "Select this layer";
+/** A `[Name]` link to a shared value, group or layer. */
+export function insertNoteLink(text: string, start: number, end: number, name: string): NoteEdit {
+  return insertSpaced(text, start, end, `[${name}]`);
 }
 
-/** The first line, for the folded row. */
-export function notesPreview(text: string): string {
-  const first = text.split("\n").map((l) => l.trim()).find((l) => l !== "") ?? "";
-  return first.replace(ORDERED_RE, "").replace(BULLET_RE, "").replace(LINK_RE, "$1");
+/** A `[words](https://…)` link to a web page. The selected words are the
+ * link's words; with none, the address is. */
+export function insertNoteUrl(text: string, start: number, end: number, href: string): NoteEdit {
+  const words = text.slice(start, end).replace(/[[\]\n]/g, " ").trim() || href.replace(/^https?:\/\//i, "");
+  return insertSpaced(text, start, end, `[${words}](${href})`);
 }
 
-/** Split one line into text and links. A `[Name]` nothing answers to stays
- * as typed, brackets and all, so the author sees it did not match. */
-export function noteSpans(line: string, resolve: (name: string) => NoteTarget | undefined): NoteSpan[] {
-  const out: NoteSpan[] = [];
-  let at = 0;
-  const push = (text: string) => {
-    if (text === "") return;
-    const last = out.at(-1);
-    if (last?.kind === "text") last.text += text;
-    else out.push({ kind: "text", text });
-  };
-  for (const m of line.matchAll(LINK_RE)) {
-    const name = m[1]!.trim();
-    const target = name === "" ? undefined : resolve(name);
-    push(line.slice(at, m.index));
-    if (target) out.push({ kind: "link", text: name, target });
-    else push(m[0]);
-    at = m.index + m[0].length;
-  }
-  push(line.slice(at));
-  return out;
-}
-
-export function parseNotes(text: string, resolve: (name: string) => NoteTarget | undefined): NoteBlock[] {
-  const blocks: NoteBlock[] = [];
-  let para: string[] = [];
-  let list: { ordered: boolean; items: string[] } | undefined;
-  const flushPara = () => {
-    if (para.length === 0) return;
-    const one = para.length === 1 ? para[0]! : undefined;
-    const heading = one !== undefined && one.length <= HEADING_MAX && !/[.!?,;]$/.test(one);
-    const joined = para.join("\n");
-    blocks.push({ kind: heading ? "heading" : "para", spans: noteSpans(heading ? joined.replace(/:$/, "") : joined, resolve) });
-    para = [];
-  };
-  const flushList = () => {
-    if (!list) return;
-    blocks.push({ kind: "list", ordered: list.ordered, items: list.items.map((item) => noteSpans(item, resolve)) });
-    list = undefined;
-  };
-  for (const raw of text.replace(/\r\n?/g, "\n").split("\n")) {
-    const line = raw.trim();
-    if (line === "") {
-      flushPara();
-      flushList();
-      continue;
-    }
-    const ordered = ORDERED_RE.test(line);
-    const bullet = !ordered && BULLET_RE.test(line);
-    if (ordered || bullet) {
-      flushPara();
-      if (list && list.ordered !== ordered) flushList();
-      list ??= { ordered, items: [] };
-      list.items.push(line.replace(ordered ? ORDERED_RE : BULLET_RE, ""));
-      continue;
-    }
-    if (list) {
-      // A line under a list item with no marker of its own carries on that
-      // item, the way people wrap a long step.
-      list.items[list.items.length - 1] += ` ${line}`;
-      continue;
-    }
-    para.push(line);
-  }
-  flushPara();
-  flushList();
-  return blocks;
+/** What was typed in the web link box, as an address, or undefined when it
+ * is not one. `example.com/x` gains its `https://`. */
+export function noteUrlFromInput(input: string): string | undefined {
+  const t = input.trim();
+  if (t === "") return undefined;
+  const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(t) ? t : /^[^\s/]+\.[^\s/]+/.test(t) ? `https://${t}` : t;
+  return safeHref(withScheme);
 }
