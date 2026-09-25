@@ -843,6 +843,19 @@ export type GalleryLink =
   | { kind: "live"; upload: GalleryUpload; waiting?: GalleryUpload }
   | { kind: "pending"; upload: GalleryUpload };
 
+/**
+ * The listing an update starts from: the newest thing sent for an upload,
+ * which is a new version still in review or turned down when there is one,
+ * else the upload itself. That is where the author last left the words.
+ */
+export function latestGalleryVersion(items: readonly GalleryUpload[], upload: GalleryUpload): GalleryUpload {
+  let latest = upload;
+  for (const v of items) {
+    if (v.replacesId === upload.id && v.createdAt > latest.createdAt) latest = v;
+  }
+  return latest;
+}
+
 export function galleryLinkFor(items: readonly GalleryUpload[], sourceId: string | undefined): GalleryLink | undefined {
   if (!sourceId) return undefined;
   const live = items.find((u) => u.status === "approved" && !isUpdate(u)

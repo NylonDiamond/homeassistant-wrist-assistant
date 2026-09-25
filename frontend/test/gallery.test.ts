@@ -35,6 +35,7 @@ import {
   galleryPublicFields,
   galleryStatusLabel,
   galleryLinkFor,
+  latestGalleryVersion,
   galleryUploadRows,
   galleryUploadSubline,
   listMyUploads,
@@ -527,6 +528,15 @@ describe("my uploads", () => {
     expect(galleryLinkFor([waiting, live], "doc")).toEqual({ kind: "live", upload: live, waiting });
     expect(galleryLinkFor([live], "other")).toBeUndefined();
     expect(galleryLinkFor([live], undefined)).toBeUndefined();
+  });
+
+  it("starts an update from the newest version sent", () => {
+    const live = upload({ id: "a", createdAt: "2026-09-01T00:00:00Z" });
+    const older = upload({ id: "b", status: "rejected", replacesId: "a", createdAt: "2026-09-02T00:00:00Z" });
+    const newest = upload({ id: "c", status: "pending", replacesId: "a", createdAt: "2026-09-03T00:00:00Z", description: "New words" });
+    const other = upload({ id: "d", replacesId: "z", createdAt: "2026-09-04T00:00:00Z" });
+    expect(latestGalleryVersion([other, newest, older, live], live)).toBe(newest);
+    expect(latestGalleryVersion([live], live)).toBe(live);
   });
 
   it("links an older upload through a new version sent from the design", () => {

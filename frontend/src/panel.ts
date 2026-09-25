@@ -360,6 +360,7 @@ import {
   galleryErrorMessage,
   galleryFamily,
   galleryLinkFor,
+  latestGalleryVersion,
   galleryPublicFields,
   galleryStatusLabel,
   galleryUploadRows,
@@ -14986,18 +14987,26 @@ export class WristAssistantPanel extends LitElement {
     if (!link) return;
     const u = link.upload;
     if (link.kind === "live") this.galleryReplaces = { id: u.id, title: u.title };
-    this.galleryTitle = u.title.slice(0, GALLERY_LIMITS.title);
-    if (this.galleryDescription.trim() === "") this.galleryDescription = u.description.slice(0, GALLERY_LIMITS.description);
-    if (this.galleryTags.size === 0) {
-      this.galleryTags = new Set(u.tags.filter((t): t is GalleryTag => (GALLERY_TAGS as readonly string[]).includes(t)).slice(0, GALLERY_LIMITS.tags));
+    this.fillGalleryListing(u, false);
+  }
+
+  /** The title, description and tags as last sent for an upload. `replace`
+   * overwrites what is typed; otherwise only an empty box takes them. */
+  private fillGalleryListing(u: GalleryUpload, replace: boolean) {
+    const from = latestGalleryVersion(this.galleryUploads ?? [], u);
+    this.galleryTitle = (from.title || u.title).slice(0, GALLERY_LIMITS.title);
+    if (replace || this.galleryDescription.trim() === "") this.galleryDescription = from.description.slice(0, GALLERY_LIMITS.description);
+    if (replace || this.galleryTags.size === 0) {
+      this.galleryTags = new Set(from.tags.filter((t): t is GalleryTag => (GALLERY_TAGS as readonly string[]).includes(t)).slice(0, GALLERY_LIMITS.tags));
     }
   }
 
-  /** Update on an upload: the same three steps, sent as its new version. */
+  /** Update on an upload: the same three steps, sent as its new version,
+   * starting from the listing as it was last sent. */
   private startGalleryUpdate(u: GalleryUpload) {
     this.galleryLinkApplied = true;
     this.galleryReplaces = { id: u.id, title: u.title };
-    this.galleryTitle = u.title.slice(0, GALLERY_LIMITS.title);
+    this.fillGalleryListing(u, true);
     this.galleryTab = "new";
     this.galleryStep = 1;
     this.gallerySent = false;
