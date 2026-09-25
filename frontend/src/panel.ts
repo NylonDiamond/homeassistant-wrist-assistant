@@ -312,6 +312,7 @@ import {
   exportFileName,
   exportText,
   hasInstanceFilters,
+  importActions,
   importDestination,
   importProblem,
   isPlaceholderId,
@@ -16514,6 +16515,7 @@ export class WristAssistantPanel extends LitElement {
       ${hasInstanceFilters(cfg)
         ? html`<div class="xf-lead warn">${uiIcon("info")}<span>This design filters by areas, labels or floors from the sender's home. Check its aggregate layers after import.</span></div>`
         : nothing}
+      ${this.renderImportActions(cfg, "import")}
     </div>
     <div class="xfer-foot">
       <button class="ghost" @click=${() => this.startImportOver()}>Start over</button>
@@ -16521,6 +16523,16 @@ export class WristAssistantPanel extends LitElement {
       <button class="primary" ?disabled=${problem !== undefined}
         title=${problem ?? `Save it to ${where ?? this.placePhrase} and open it in the editor`} @click=${() => void this.doImport()}>Import and save</button>
     </div>`;
+  }
+
+  /** The taps of a shared design that run a service, listed before the reader
+   * takes it in. A design can bind `lock.unlock` on an area to a tap, and no
+   * entity row would ever show that; see `importActions`. */
+  private renderImportActions(cfg: CustomComplicationConfig, verb: string) {
+    const actions = importActions(cfg);
+    if (actions.length === 0) return nothing;
+    return html`<div class="xf-lead warn" role="alert">${uiIcon("info")}<span>Tapping this runs services on your Home Assistant. Check them before you ${verb}.</span></div>
+      <div class="xf-stack">${actions.map((a) => html`<div class="hint"><b>${a.where}</b> runs ${a.runs}</div>`)}</div>`;
   }
 
   /** Whether a drag carries something the Import dialog can read. */
@@ -17426,6 +17438,7 @@ export class WristAssistantPanel extends LitElement {
       ${hasInstanceFilters(cfg)
         ? html`<div class="xf-lead warn">${uiIcon("info")}<span>This part filters by areas, labels or floors from the home it was made on. Check its aggregate layers after adding it.</span></div>`
         : nothing}
+      ${this.renderImportActions(cfg, "add it")}
       ${this.partsError ? html`<div class="hint err" role="alert">${this.partsError}</div>` : nothing}
     </div>
     <div class="xfer-foot">

@@ -29,6 +29,7 @@ import {
   exportFileName,
   exportText,
   hasInstanceFilters,
+  importActions,
   isPlaceholderId,
   parseImportText,
   remapEntities,
@@ -595,6 +596,61 @@ describe("importing a stored document", () => {
     expect(sources).toContainEqual({ kind: "entity", entityId: "sensor.my_meter", displayName: "My meter", domain: "sensor" });
     const template = landed.values[0]!.value.kind;
     expect(template.kind === "jinja" ? template.value : "").toBe("{{ states('sensor.my_meter') }}");
+  });
+});
+
+describe("what a shared design runs when tapped", () => {
+  function withTaps(): CustomComplicationConfig {
+    const cfg = documentWithOneEntityTwice();
+    const toggle = newElement("tap");
+    (toggle.payload as TapElement).action = { type: "toggleEntity", entityId: "light.porch", displayName: "Porch", domain: "light" };
+    const service = newElement("tap");
+    (service.payload as TapElement).action = {
+      type: "callService",
+      serviceDomain: "lock",
+      serviceName: "unlock",
+      serviceDataJSON: '{"area_id": "kitchen"}',
+    };
+    const attached = newElement("tap");
+    (attached.payload as TapElement).attachedTo = cfg.elements[0]!.payload.id;
+    (attached.payload as TapElement).action = {
+      type: "callService",
+      serviceDomain: "switch",
+      serviceName: "turn_on",
+      target: { entityId: "switch.pump", displayName: "Pump", domain: "switch" },
+    };
+    cfg.elements = [...cfg.elements, toggle, service, attached];
+    cfg.tapAction = { type: "runHTTPAction", entityId: "sensor.hook", displayName: "Webhook", domain: "sensor" };
+    return cfg;
+  }
+
+  it("lists service and HTTP taps, in document order, and nothing else", () => {
+    const actions = importActions(withTaps());
+    // The base document carries one tap of its own, so the new ones are 3 and 4.
+    expect(actions.map((a) => a.where)).toEqual(["The complication", "Tap 3", "Tap 4 (on a layer)"]);
+    expect(actions[0]!.runs).toBe("an HTTP action, Webhook (sensor.hook)");
+    expect(actions[1]!.runs).toBe('lock.unlock with {"area_id": "kitchen"}');
+    expect(actions[2]!.runs).toBe("switch.turn_on on Pump (switch.pump)");
+  });
+
+  it("is empty for a design whose taps only toggle and open", () => {
+    const cfg = documentWithOneEntityTwice();
+    const toggle = newElement("tap");
+    (toggle.payload as TapElement).action = { type: "toggleEntity", entityId: "light.porch", displayName: "Porch", domain: "light" };
+    cfg.elements = [...cfg.elements, toggle];
+    cfg.tapAction = { type: "openApp" };
+    expect(importActions(cfg)).toEqual([]);
+  });
+
+  it("still lists them on the shared text, and names a slot as the reader's pick", () => {
+    const cfg = withTaps();
+    const shared = parseImportText(exportText(cfg, "share", shareSlots(cfg, KNOWN_DOMAINS)), MAX_SCHEMA);
+    expect(shared.ok).toBe(true);
+    if (!shared.ok) return;
+    const actions = importActions(shared.config);
+    expect(actions).toHaveLength(3);
+    expect(actions[1]!.runs).toBe('lock.unlock with {"area_id": "kitchen"}');
+    expect(actions[2]!.runs).toMatch(/^switch\.turn_on on the entity you pick for /);
   });
 });
 

@@ -622,6 +622,63 @@ export function importFacts(cfg: CustomComplicationConfig, rows: readonly Unreso
   };
 }
 
+// ── what a tap runs ───────────────────────────────────────────────────────
+//
+// A shared design keeps its tap actions. Most of them are harmless on their
+// own (a toggle of an entity the reader picks), but a service call carries
+// the service name and its data whole, and an area or device in that data is
+// not an entity, so no picker ever shows it: a design could bind
+// `lock.unlock` on the kitchen to a tap and nothing else in the import dialog
+// would say so. These are listed before the reader imports, and on the
+// gallery page before they even copy.
+
+/** One tap in a shared design that runs something on the reader's Home
+ * Assistant, said in words the import dialog and the gallery can show. */
+export interface ImportAction {
+  /** Which tap: the complication's own, a numbered tap layer, or the control. */
+  where: string;
+  /** What it runs, e.g. `lock.unlock on Front door (lock.front_door) with {"code": 1}`. */
+  runs: string;
+}
+
+/** Every tap in the document that calls a service or fires an HTTP action, in
+ * document order. Tap layers are counted the way the layer list shows them,
+ * attached ones included, because the reader looks them up there. */
+export function importActions(cfg: CustomComplicationConfig): ImportAction[] {
+  const out: ImportAction[] = [];
+  const add = (where: string, action: TapAction | undefined): void => {
+    const runs = describeRun(action);
+    if (runs !== undefined) out.push({ where, runs });
+  };
+  add("The complication", cfg.tapAction);
+  let n = 0;
+  for (const el of cfg.elements) {
+    if (el.kind !== "tap") continue;
+    n += 1;
+    add(el.payload.attachedTo !== undefined ? `Tap ${n} (on a layer)` : `Tap ${n}`, el.payload.action);
+  }
+  if (cfg.control !== undefined) add("The Control Center control", cfg.control.action);
+  return out;
+}
+
+function describeRun(action: TapAction | undefined): string | undefined {
+  if (action === undefined) return undefined;
+  if (action.type === "callService") {
+    let words = `${action.serviceDomain}.${action.serviceName}`;
+    if (action.target !== undefined && action.target.entityId !== "") words += ` on ${targetWords(action.target)}`;
+    const data = action.serviceDataJSON?.trim() ?? "";
+    if (data !== "") words += ` with ${data}`;
+    return words;
+  }
+  if (action.type === "runHTTPAction") return `an HTTP action, ${targetWords(action)}`;
+  return undefined;
+}
+
+function targetWords(ref: EntityRef): string {
+  if (isPlaceholderId(ref.entityId)) return `the entity you pick for ${ref.displayName || ref.entityId}`;
+  return ref.displayName !== "" ? `${ref.displayName} (${ref.entityId})` : ref.entityId;
+}
+
 // ── share links ───────────────────────────────────────────────────────────
 //
 // A link to this panel with the shared text in its hash. The hash never
