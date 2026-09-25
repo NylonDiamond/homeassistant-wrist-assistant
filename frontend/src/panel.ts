@@ -423,8 +423,26 @@ const PUBLIC_ROW_LABEL: Record<string, string> = {
   "Other text": "Other text",
 };
 
-/** More layer names than this fold behind one line in the public name check. */
-const PUBLIC_LAYER_FOLD_AT = 6;
+/** More names of one kind than this fold behind one line in the public name check. */
+const PUBLIC_FOLD_AT = 6;
+
+/** Which kind of public name a row is: its key's prefix, or the read-only
+ * group it came from. */
+function publicRowKind(row: PublicRow): string {
+  if (row.key.startsWith("t:")) return row.key.slice(0, row.key.lastIndexOf(":"));
+  return row.key === "head" ? "head" : row.key.slice(0, 1);
+}
+
+/** The line a folded kind shows, before its count. */
+const PUBLIC_KIND_LABEL: Record<string, string> = {
+  g: "Group names",
+  v: "Shared value names",
+  l: "Layer names",
+  "t:Template text": "Template text",
+  "t:Service data": "Service data",
+  "t:Embedded pictures": "Embedded pictures",
+  "t:Other text": "Other text",
+};
 
 /** The public gallery's own page, which Share, the gallery dialog and Import
  * all link to. */
@@ -1722,7 +1740,8 @@ export class WristAssistantPanel extends LitElement {
   /** The Share dialog's text box is shown. Folded away each time it opens:
    * the buttons carry the text, and the box is for reading it. */
   @state() private shareTextOpen = false;
-  @state() private shareLayersOpen = false;
+  /** The kinds of public name the Share dialog has unfolded, by `publicRowKind`. */
+  @state() private shareFoldsOpen: ReadonlySet<string> = new Set();
   /** Which action tile just landed, for its "copied" or "saved" moment. */
   @state() private shareCopied?: "link" | "file" | "text";
   private shareCopiedTimer?: number;
@@ -3372,8 +3391,8 @@ export class WristAssistantPanel extends LitElement {
     .xf-pub { display: grid; gap: 4px; padding: 8px; border-radius: var(--wa-r-md); background: var(--wa-val-bg); border: 1px solid color-mix(in srgb, var(--wa-val) 40%, var(--wa-line)); }
     .xf-pub .kv { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px; align-items: start; padding: 6px; border-radius: 8px; transition: background-color .12s ease-out; }
     .xf-pub .kv.on { background: var(--wa-sel-bg); }
-    .xf-pub .xf-layers { display: grid; gap: 4px; }
-    .xf-pub .xf-layers > summary { padding: 6px; }
+    .xf-pub .xf-fold { display: grid; gap: 4px; }
+    .xf-pub .xf-fold > summary { padding: 6px; }
     .xf-sec { --sc: var(--wa-accent); display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 12px; border-radius: var(--wa-r-md);
       background: color-mix(in srgb, var(--sc) 7%, var(--wa-card)); border: 1px solid color-mix(in srgb, var(--sc) 34%, var(--wa-line)); }
     .xf-sec.s-shapes { --sc: #26a69a; }
@@ -14378,23 +14397,52 @@ export class WristAssistantPanel extends LitElement {
         <div class="v">${row.control}</div>
       </div>`;
     };
-    // A scene preset names every layer it draws. Those names are the preset's,
-    // not the author's, and dozens of boxes bury the group and entity names
-    // that matter, so a long list of layer names waits behind one line.
-    const layers = rows.filter((row) => row.key.startsWith("l:"));
-    const fold = layers.length > PUBLIC_LAYER_FOLD_AT;
-    const changed = layers.filter((row) => (this.shareLayerNames.get(row.name) ?? "").trim() !== "").length;
+    // A scene preset names every layer, group and shared value it makes. Those
+    // names are the preset's, not the author's, and dozens of boxes bury the
+    // name and the entity names the reader sets it up by. So a long list of
+    // one kind waits behind one line, and read-only text always does, since
+    // nothing about it can be changed here.
+    const kinds: { kind: string; label: string; rows: PublicRow[] }[] = [];
+    for (const row of rows) {
+      const kind = publicRowKind(row);
+      const found = kinds.find((k) => k.kind === kind);
+      if (found) found.rows.push(row);
+      else kinds.push({ kind, label: PUBLIC_KIND_LABEL[kind] ?? row.label, rows: [row] });
+    }
+    const folds = (k: { kind: string; rows: PublicRow[] }) =>
+      k.kind !== "head" && k.kind !== "e" && (k.kind === "t:Other text" || k.rows.length > PUBLIC_FOLD_AT);
+    const changed = (row: PublicRow): boolean => {
+      const id = row.key.slice(2);
+      const typed = row.key.startsWith("g:") ? this.shareGroupNames.get(id)
+        : row.key.startsWith("v:") ? this.shareValueNames.get(id)
+        : row.key.startsWith("l:") ? this.shareLayerNames.get(row.name)
+        : undefined;
+      return (typed ?? "").trim() !== "";
+    };
+    const fold = (k: { kind: string; label: string; rows: PublicRow[] }) => {
+      const open = this.shareFoldsOpen.has(k.kind);
+      const edits = k.rows.filter(changed).length;
+      return html`<details class="xf-raw xf-fold" .open=${open}
+        @toggle=${(e: Event) => this.setShareFoldOpen(k.kind, (e.target as HTMLDetailsElement).open)}>
+        <summary>${uiIcon("right")}<span>${k.label} (${k.rows.length})${edits > 0 ? `, ${edits} changed` : ""}</span></summary>
+        ${open ? k.rows.map(kv) : nothing}
+      </details>`;
+    };
     return html`
       <div class="xf-lead">${uiIcon("info")}<span>Others can see these names. Change the names of layers and groups here before you share, if you want.</span></div>
       <div class="xf-pub" @pointerleave=${(e: Event) => this.leaveRows(e, clear)} @focusout=${(e: Event) => this.leaveRows(e, clear)}>
-        ${(fold ? rows.filter((row) => !row.key.startsWith("l:")) : rows).map(kv)}
-        ${fold ? html`<details class="xf-raw xf-layers" .open=${this.shareLayersOpen}
-          @toggle=${(e: Event) => { this.shareLayersOpen = (e.target as HTMLDetailsElement).open; }}>
-          <summary>${uiIcon("right")}<span>${layers.length} layer names${changed > 0 ? `, ${changed} changed` : ""}</span></summary>
-          ${this.shareLayersOpen ? layers.map(kv) : nothing}
-        </details>` : nothing}
+        ${kinds.filter((k) => !folds(k)).flatMap((k) => k.rows).map(kv)}
+        ${kinds.filter(folds).map(fold)}
       </div>
       <div class="hint">Your own complication keeps its names. An empty box keeps the name it had.</div>`;
+  }
+
+  private setShareFoldOpen(kind: string, open: boolean) {
+    if (this.shareFoldsOpen.has(kind) === open) return;
+    const next = new Set(this.shareFoldsOpen);
+    if (open) next.add(kind);
+    else next.delete(kind);
+    this.shareFoldsOpen = next;
   }
 
   private setShareMode(mode: "share" | "backup") {
@@ -14422,7 +14470,7 @@ export class WristAssistantPanel extends LitElement {
     this.shareLayerNames = new Map();
     this.shareNote = "";
     this.shareTextOpen = false;
-    this.shareLayersOpen = false;
+    this.shareFoldsOpen = new Set();
     this.shareLink = undefined;
     this.shareLinkShown = false;
     this.shareCopied = undefined;
