@@ -402,6 +402,7 @@ import {
 } from "./model.js";
 import { chartSmoothed, chartSeriesWithHoles, resolveControl, type ResolveContext, type ResolvedControl } from "./resolver.js";
 import { familyNote, isHomeFamily } from "./layouts.js";
+import { isPlaceholderId } from "./transfer.js";
 import { type DeviceKind, deviceSupportsControls, watchVersionNote } from "./version.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
 import {
@@ -1472,8 +1473,12 @@ export function entityField(host: Pick<EditorHost, "hass">, label: string, ref: 
   // A chosen entity is one row the height of a text box: glyph, name, id, live
   // state, and an x. The search box only shows while nothing is chosen or while
   // the row is being changed, so the id is never printed twice.
+  // A stand-in a shared design came with is not a missing entity that may be
+  // back tomorrow: nothing will ever answer to it, so it says what to do.
+  const slot = isPlaceholderId(ref.entityId);
   const caption = ref.entityId === ""
     ? html`<div class="hint">Type part of a name, a room, or an id.</div>`
+    : slot ? html`<div class="hint need">A stand-in from a shared design. Click it and pick one of your entities.</div>`
     : live ? nothing : html`<div class="hint warn">Not in Home Assistant right now.</div>`;
 
   const focusSearch = (fieldEl: Element | null) =>
@@ -1489,7 +1494,7 @@ export function entityField(host: Pick<EditorHost, "hass">, label: string, ref: 
 
   const clearable = opts.clearable ?? true;
   const name = live && typeof live.attributes.friendly_name === "string" ? live.attributes.friendly_name : ref.displayName || ref.entityId;
-  const chosen = html`<div class="ent-chosen">
+  const chosen = html`<div class="ent-chosen ${slot ? "slot" : ""}">
       <button type="button" class="ent-pick" title=${`${name}\n${ref.entityId}\nClick to change`} @click=${edit}>
         <span class="ent-ico ${live && isActiveState(live.state) ? "on" : ""}">${domainIcon(ref.domain || ref.entityId.split(".")[0] || "")}</span>
         <span class="ent-name">${name}</span>
@@ -5772,7 +5777,7 @@ export function card(host: EditorHost, id: string, title: string, body: unknown,
         @click=${(e: Event) => { e.stopPropagation(); if (!open) host.toggleSection(id); opts.action?.run(); }}>${uiIcon("plus")}<span>${opts.action.label}</span></button>`}
       <button type="button" class="sec-help ${help ? "on" : ""}" aria-pressed=${help ? "true" : "false"} title=${helpLabel} aria-label=${helpLabel}
         @click=${(e: Event) => { e.stopPropagation(); toggleHelp(); }}>?</button>`;
-  return html`<section class="sec ${host.litSection === id ? "lit" : ""}" data-open=${open ? "true" : "false"} data-help=${help ? "on" : "off"} style=${opts.color ? `--c:${opts.color}` : ""}>
+  return html`<section class="sec ${host.litSection === id ? "lit" : ""}" data-sec=${id} data-open=${open ? "true" : "false"} data-help=${help ? "on" : "off"} style=${opts.color ? `--c:${opts.color}` : ""}>
     ${pinned
       ? html`<div class="sec-h pinned">${head}</div>`
       : html`<div class="sec-h" role="button" tabindex="0" aria-expanded=${open ? "true" : "false"} @click=${toggle}

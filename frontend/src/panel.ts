@@ -6815,6 +6815,19 @@ export class WristAssistantPanel extends LitElement {
       70% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--wa-ent) 0%, transparent); }
       100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--wa-ent) 0%, transparent); }
     }
+    /* A stand-in from a shared design, in the "pick entity" red, pulsing for
+       the same reason the empty box does: it is the answer to "why does this
+       layer look wrong?", marked where the answer goes. The shared value row
+       that reads one wears the same pulse while a layer reading it is picked. */
+    .ent-chosen.slot { border-radius: 8px; box-shadow: inset 0 0 0 1px var(--wa-need); animation: wa-slot-pulse 1.8s ease-out infinite; }
+    .vrow.slot-lit { border-radius: 6px; animation: wa-slot-pulse 1.8s ease-out infinite; }
+    .hint.need { color: var(--wa-need); }
+    @keyframes wa-slot-pulse {
+      0% { box-shadow: inset 0 0 0 1px var(--wa-need), 0 0 0 0 color-mix(in srgb, var(--wa-need) 55%, transparent); }
+      70% { box-shadow: inset 0 0 0 1px var(--wa-need), 0 0 0 7px color-mix(in srgb, var(--wa-need) 0%, transparent); }
+      100% { box-shadow: inset 0 0 0 1px var(--wa-need), 0 0 0 0 color-mix(in srgb, var(--wa-need) 0%, transparent); }
+    }
+    @media (prefers-reduced-motion: reduce) { .ent-chosen.slot, .vrow.slot-lit { animation: none; box-shadow: inset 0 0 0 2px var(--wa-need); } }
     /* A chosen entity: one row in place of the search box, exactly as tall as
        the box, so the label beside it and the rows under it never move when
        one swaps for the other. The name reads in the ordinary ink, the id
@@ -16623,6 +16636,53 @@ export class WristAssistantPanel extends LitElement {
     return info;
   }
 
+  /** The shared values, upper case, through which the selected layer reads a
+   * slot nobody has picked. Their rows light up while it stays selected. */
+  private slotValuesOfSelection(): Set<string> {
+    const out = new Set<string>();
+    const cfg = this.draft?.config;
+    if (!cfg || this.inspect.kind !== "layer") return out;
+    const id = this.inspect.id;
+    const info = this.slotInfo();
+    const need = info?.layers.get(id);
+    if (!info || !need) return out;
+    for (const [valueId, row] of info.values) {
+      if (need.includes(row) && sharedValueLayerIds(cfg, valueId).includes(id)) out.add(valueId);
+    }
+    return out;
+  }
+
+  /**
+   * A click on a layer that reads an unpicked slot sends the eye to where it
+   * gets picked: the inspector card holding the stand-in, lit and scrolled
+   * to, or, when the layer reads it through a shared value, that shared
+   * value's row, opened and scrolled to. The field and the row keep pulsing
+   * after the card's light goes out.
+   */
+  private pointAtSlots(id: string) {
+    if (!this.slotInfo()?.layers.has(id)) return;
+    const values = this.slotValuesOfSelection();
+    if (values.size > 0) this.sharedOpen = true;
+    void this.updateComplete.then(() => {
+      const field = this.renderRoot.querySelector<HTMLElement>(".column.inspector .ent-chosen.slot");
+      const sec = field?.closest<HTMLElement>(".sec")?.dataset.sec;
+      if (field && sec) {
+        this.lightSection(sec);
+        field.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      } else if (values.size === 0) {
+        // The card with the stand-in is shut. Content is where a layer's
+        // entity nearly always sits.
+        if (!this.openSections.has("content")) this.openSections = new Set([...this.openSections, "content"]);
+        this.lightSection("content");
+        void this.updateComplete.then(() => {
+          this.renderRoot.querySelector(".column.inspector .sec.lit")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        });
+      }
+      const [first] = values;
+      if (first !== undefined) this.renderRoot.querySelector(`.vrow[data-value="${first}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
+  }
+
   /** The Pick entities dialog, on one slot when a badge was clicked. Slots
    * this home answers by itself come filled in, the way Import does it. */
   private openSlotsDialog(focus?: string) {
@@ -17157,6 +17217,7 @@ export class WristAssistantPanel extends LitElement {
     if (this.tapFocus && this.inspect.kind === "layer" && this.inspect.id === id) this.leaveTapFocus();
     this.inspect = { kind: "layer", id };
     this.pickAnchor = id;
+    this.pointAtSlots(id);
   }
 
   /** Select a layer's attached tap: the layer, the tap view narrowed to its
@@ -19084,6 +19145,7 @@ export class WristAssistantPanel extends LitElement {
     const resolver = new Resolver(this.buildContext(), this.draft?.config);
     const ctx = describeContext(host);
     const slots = this.slotInfo();
+    const slotLit = this.slotValuesOfSelection();
     const body = html`<div class="sv-body">
       <div class="sv-tools">
         <span class="lc-sub" title=${explain}>set once, used by many layers</span>
@@ -19112,7 +19174,8 @@ export class WristAssistantPanel extends LitElement {
         // preview and in the Layers list, the way pointing at a layer row does.
         const readers = () => sharedValueReaders(cfg, v.id);
         const slot = slots?.values.get(v.id.toUpperCase());
-        return html`<div class="vitem ${open ? "open" : ""}"><div class="datum vrow ${open ? "hl" : ""}" role="button" tabindex="0" aria-expanded=${open ? "true" : "false"}
+        const lit = slotLit.has(v.id.toUpperCase());
+        return html`<div class="vitem ${open ? "open" : ""}"><div class="datum vrow ${open ? "hl" : ""} ${lit ? "slot-lit" : ""}" data-value=${v.id.toUpperCase()} role="button" tabindex="0" aria-expanded=${open ? "true" : "false"}
             title=${open ? "Close" : "Edit this shared value"}
             @pointerenter=${() => { this.listHoverIds = readers(); }}
             @click=${toggleOne}
