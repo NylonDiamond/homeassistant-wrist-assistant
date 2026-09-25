@@ -1679,6 +1679,11 @@ export class WristAssistantPanel extends LitElement {
    * extras) is under the pointer. While it is set the preview draws that layer
    * as if it alone were selected, without changing the selection. */
   @state() private rowHoverId?: string;
+  /** What a click on the face would select right where the pointer rests: a
+   * layer, or the group a press there grabs first. The face tints it and its
+   * row in the Layers list gets the hover outline, the other way round from a
+   * row under the pointer tinting its layer on the face. */
+  @state() private faceHover?: Inspect;
   /** The preview is open full-width in a modal, for fine moves on a small
    * face. Only the face and its gestures come along; the columns stay under
    * the backdrop. */
@@ -4404,6 +4409,9 @@ export class WristAssistantPanel extends LitElement {
       border: 1px solid color-mix(in srgb, var(--gc) 32%, var(--wa-line));
       background: color-mix(in srgb, var(--gc) 5%, transparent);
     }
+    /* A folder row has no card of its own to outline, so a peek at it (its
+       row, or the group under the pointer on the face) rings the whole box. */
+    .group-box:has(> .layer.group.peek) { outline: 1px solid var(--wa-accent); outline-offset: -1px; }
     .group-box:has(> .layer.group.hl) { outline: 2px solid var(--wa-accent); outline-offset: -1px; }
     /* The folder row is the box's header, not a card of its own, until it is
        hovered, selected, lit or a drop target. */
@@ -10454,6 +10462,71 @@ export class WristAssistantPanel extends LitElement {
    * the page showing. */
   private shownPage(): number {
     return this.peekPage ?? this.page;
+  }
+
+  /**
+   * The pointer moved over the face: find what a click there would select,
+   * by the same rules as a press (`onPreviewPointerDown`). A locked group is
+   * one unit, so its first click selects the group. Once a group is selected,
+   * a click goes one level in. Unlocked groups are see-through. A pressed
+   * button is a drag, a finger has no hover, and review mode reads taps, so
+   * none of those show a hover.
+   */
+  private onPreviewPointerMove(e: PointerEvent) {
+    const next = e.buttons !== 0 || e.pointerType === "touch" || this.showTaps || !this.canEdit
+      ? undefined : this.faceClickTarget(e);
+    const key = (i: Inspect | undefined) => i ? inspectKey(i) : "";
+    if (key(this.faceHover) !== key(next)) this.faceHover = next;
+  }
+
+  private faceClickTarget(e: Event): Inspect | undefined {
+    const cfg = this.canvasConfig();
+    const id = this.hitLayerId(e);
+    if (!cfg || id === undefined) return undefined;
+    const ins = this.inspect;
+    const chain = groupChain(cfg, cfg.elements.find((x) => x.payload.id === id)?.payload.groupId);
+    const selectedAt = ins.kind === "group" ? chain.findIndex((g) => g.id === ins.id) : -1;
+    if (selectedAt >= 0) {
+      const inner = selectedAt > 0 ? chain[selectedAt - 1]! : undefined;
+      return inner ? { kind: "group", id: inner.id } : { kind: "layer", id };
+    }
+    const unit = lockedUnitOf(cfg, id);
+    if (unit) {
+      const inside = ins.kind === "layer" && cfg.elements.some((x) => x.payload.id === ins.id && isInGroup(cfg, x, unit.id));
+      return inside ? { kind: "layer", id } : { kind: "group", id: unit.id };
+    }
+    return { kind: "layer", id };
+  }
+
+  /** The face hover, unless it is what is already selected: that one is lit
+   * already, and a hover on top of it says nothing new. */
+  private liveFaceHover(): Inspect | undefined {
+    const h = this.faceHover;
+    return h && inspectKey(h) !== inspectKey(this.inspect) ? h : undefined;
+  }
+
+  /** The layers the face tints for the face hover: the layer, or every
+   * member of the group. */
+  private faceHoverIds(): readonly string[] {
+    const h = this.liveFaceHover();
+    const cfg = this.canvasConfig();
+    if (!h || !cfg) return [];
+    if (h.kind === "layer") return [h.id];
+    if (h.kind === "group") return groupLayers(cfg, h.id).map((m) => m.payload.id);
+    return [];
+  }
+
+  /** The Layers row that stands for the face hover. A layer or group folded
+   * away inside a collapsed group is shown by the outermost folded group's
+   * row, the one row of it the list still draws. */
+  private faceHoverRow(): Inspect | undefined {
+    const h = this.liveFaceHover();
+    const cfg = this.canvasConfig();
+    if (!h || !cfg || (h.kind !== "layer" && h.kind !== "group")) return h;
+    const groupId = h.kind === "layer" ? cfg.elements.find((x) => x.payload.id === h.id)?.payload.groupId
+      : groupById(cfg, h.id)?.parentId;
+    const folded = groupChain(cfg, groupId).filter((g) => this.collapsed.has(g.id)).pop();
+    return folded ? { kind: "group", id: folded.id } : h;
   }
 
   /** What the list and the preview draw as selected: the row under the
@@ -17607,9 +17680,10 @@ export class WristAssistantPanel extends LitElement {
     // gets an outline (`peek`) and nothing more, so the selection never looks
     // like it moved while the pointer passes over the list. The preview still
     // shows the row under the pointer as the selection.
+    // The thing under the pointer on the face outlines its row the same way.
     const shown = this.inspect;
-    const peek = this.rowPeek;
-    const peekCls = (hit: boolean) => hit ? "peek" : "";
+    const peeks = [this.rowPeek, this.faceHoverRow()].flatMap((p) => p ? [inspectKey(p)] : []);
+    const peekCls = (row: Inspect) => peeks.includes(inspectKey(row)) ? "peek" : "";
     const shapeHl = shown.kind === "family";
     const tapShown = (_id: string) => this.tapFocus;
     const ground = backgroundRow(cfg, this.activeFamily);
@@ -17701,7 +17775,7 @@ export class WristAssistantPanel extends LitElement {
             @click=${(e: Event) => { e.stopPropagation(); this.removeTap(id); }}>${uiIcon("delete")}</button>` : nothing}
         </div>`;
       }
-      return html`<div class="layer ${attached ? "with-tap" : ""} ${tapSel ? "tapsel" : ""} ${hl ? "hl" : ""} ${peekCls(peek?.kind === "layer" && peek.id === id)} ${held ? "held" : ""} ${this.dialogLitIds.includes(id) ? "lit" : ""} ${hidden ? "dim" : ""} ${this.multi.has(id) ? "multi" : ""} ${inGroup ? "kid" : ""} ${rich ? "rich" : ""}"
+      return html`<div class="layer ${attached ? "with-tap" : ""} ${tapSel ? "tapsel" : ""} ${hl ? "hl" : ""} ${peekCls({ kind: "layer", id })} ${held ? "held" : ""} ${this.dialogLitIds.includes(id) ? "lit" : ""} ${hidden ? "dim" : ""} ${this.multi.has(id) ? "multi" : ""} ${inGroup ? "kid" : ""} ${rich ? "rich" : ""}"
         style=${`--k:${KIND_COLOR[el.kind]}`} tabindex="0" draggable=${d.draggable}
         @pointerenter=${() => this.enterRow([id], { kind: "layer", id }, peekAt)}
         @click=${(e: MouseEvent) => this.clickRow(id, e)}
@@ -17775,7 +17849,7 @@ export class WristAssistantPanel extends LitElement {
       const toggleHidden = () => this.mutate((c) => {
         for (const el of groupLayers(c, g.id)) setPlacement(c, family, el.payload.id, { isHidden: !allHidden });
       });
-      return html`<div class="layer group ${hl ? "hl" : ""} ${peekCls(peek?.kind === "group" && peek.id === g.id)} ${held ? "held" : ""} ${this.dialogLitIds.includes(g.id) ? "lit" : ""} ${rich ? "rich" : ""}" style=${`--k:${SECTION_COLOR.group}`} tabindex="0" draggable=${d.draggable}
+      return html`<div class="layer group ${hl ? "hl" : ""} ${peekCls({ kind: "group", id: g.id })} ${held ? "held" : ""} ${this.dialogLitIds.includes(g.id) ? "lit" : ""} ${rich ? "rich" : ""}" style=${`--k:${SECTION_COLOR.group}`} tabindex="0" draggable=${d.draggable}
         @pointerenter=${() => this.enterRow(memberIds, { kind: "group", id: g.id }, peekAt)}
         @click=${() => { this.multi = new Set(); this.inspect = { kind: "group", id: g.id }; }}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = { kind: "group", id: g.id }; }}
@@ -17857,7 +17931,7 @@ export class WristAssistantPanel extends LitElement {
         p.template[i] = b;
         p.template[i + by] = a;
       });
-      return html`<div class="layer kid rowkid ${hl ? "hl" : ""} ${peekCls(peek?.kind === "layer" && peek.id === id)} ${hidden ? "dim" : ""}"
+      return html`<div class="layer kid rowkid ${hl ? "hl" : ""} ${peekCls({ kind: "layer", id })} ${hidden ? "dim" : ""}"
         style=${`--k:${KIND_COLOR[row.kind]}`} tabindex="0"
         @pointerenter=${() => this.enterRow([id], { kind: "layer", id }, peekAt)}
         @click=${() => open()}
@@ -18003,7 +18077,7 @@ export class WristAssistantPanel extends LitElement {
       ${body}
       </div>
       <div class="pinned-set" @pointerleave=${(e: PointerEvent) => this.leaveList(e)}>
-      ${family === "corner" ? html`<div class="layer pinned ${shapeHl && this.pinnedPick === "corner" ? "hl" : ""} ${peekCls(peek?.kind === "family")}" style=${`--k:${SECTION_COLOR.content}`} tabindex="0"
+      ${family === "corner" ? html`<div class="layer pinned ${shapeHl && this.pinnedPick === "corner" ? "hl" : ""} ${peekCls({ kind: "family" })}" style=${`--k:${SECTION_COLOR.content}`} tabindex="0"
         title="The corner's curved text and its bezel. Always here. Click to edit them."
         @click=${() => this.openCornerContent()}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.openCornerContent(); }}>
@@ -18015,7 +18089,7 @@ export class WristAssistantPanel extends LitElement {
         </span>
         <span class="right"><span class="ground-cap">always here</span></span>
       </div>` : nothing}
-      <div class="layer pinned ground with-tap ${peekCls(peek?.kind === "family")} ${shapeHl && tapShown(GROUND_TAP) ? "tapsel" : ""} ${shapeHl && (family !== "corner" || this.pinnedPick === "ground") ? "hl" : ""}" style=${`--k:${SECTION_COLOR.place}`} tabindex="0"
+      <div class="layer pinned ground with-tap ${peekCls({ kind: "family" })} ${shapeHl && tapShown(GROUND_TAP) ? "tapsel" : ""} ${shapeHl && (family !== "corner" || this.pinnedPick === "ground") ? "hl" : ""}" style=${`--k:${SECTION_COLOR.place}`} tabindex="0"
         title="The shape's background and border, and what a tap anywhere else does. Always the bottom layer. Click to edit it."
         @pointerenter=${() => this.enterRow([], { kind: "family" })}
         @click=${() => { this.multi = new Set(); this.pinnedPick = "ground"; if (this.tapFocus && this.inspect.kind === "family") this.leaveTapFocus(); this.inspect = ground.inspect; }}
@@ -19042,7 +19116,9 @@ export class WristAssistantPanel extends LitElement {
     const peek = !review && this.rowHoverId !== undefined
       && cfg?.elements.some((e) => e.payload.id === this.rowHoverId) ? this.rowHoverId : undefined;
     // A row drawn as the selection needs no hover tint on top.
-    const hoverIds = peek !== undefined || hoverTap || this.rowPeek ? [] : this.listHoverIds;
+    // With no row under the pointer, the thing under it on the face is tinted.
+    const hoverIds = peek !== undefined || hoverTap || this.rowPeek ? []
+      : this.listHoverIds.length > 0 ? this.listHoverIds : review ? [] : this.faceHoverIds();
     // A selected group carries its own box and eight handles. Not for a group
     // row under the pointer: the handles belong to what a press would act on.
     const ins = this.inspect;
@@ -19078,12 +19154,14 @@ export class WristAssistantPanel extends LitElement {
       handles: this.canEdit && !hoverTap && (!review || focus !== undefined),
       // A fingertip needs more than the 3pt corner to land on.
       ...(this.touch ? { handleHit: 14 } : {}),
-      // The Layers list owns the tint: resting on a row shows where that
-      // layer sits on the face.
+      // Resting on a row shows where that layer sits on the face, and resting
+      // on the face shows what a click there would pick.
       ...(hoverIds.length > 0 ? { hoverIds } : {}),
     };
     return html`<div class="preview ${family} active"
-      @pointerdown=${(e: PointerEvent) => this.onPreviewPointerDown(family, e)}
+      @pointerdown=${(e: PointerEvent) => { this.faceHover = undefined; this.onPreviewPointerDown(family, e); }}
+      @pointermove=${(e: PointerEvent) => this.onPreviewPointerMove(e)}
+      @pointerleave=${() => { this.faceHover = undefined; }}
       @dblclick=${(e: MouseEvent) => this.onPreviewDoubleClick(e)}>
       ${cfg && !(review && focus === undefined) ? this.renderFaceLabel(cfg, focus !== undefined ? { kind: "layer", id: focus } : shown) : nothing}
       ${renderLayout(layout, opts)}${overlay ?? nothing}
