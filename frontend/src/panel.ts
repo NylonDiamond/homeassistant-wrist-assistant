@@ -4150,7 +4150,10 @@ export class WristAssistantPanel extends LitElement {
        strip of things about the whole complication. */
     /* The canvas column is three blocks stacked: what the whole complication
        is, the face itself, and the two lists of values under it. */
-    .column.canvas { display: flex; flex-direction: column; gap: 8px; }
+    /* No reserved scrollbar gutter: the canvas fills its column and almost
+       never scrolls, and the 11px it kept free doubled the gap before the
+       inspector. A window short enough to scroll it gets the bar then. */
+    .column.canvas { display: flex; flex-direction: column; gap: 8px; scrollbar-gutter: auto; }
     /* The bar and the two lists keep their own height; the face takes what is
        left, so the lists under it are on screen without scrolling. */
     .column.canvas > .card.canvas-card {
