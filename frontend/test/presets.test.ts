@@ -1136,6 +1136,19 @@ describe("the scene presets", () => {
     expect(encodeConfig(parseConfig(encoded))).toEqual(encoded);
   }
 
+  it("leaves every group it makes unlocked, so each part drags on its own", () => {
+    for (const kind of ["houseScene", "floorPlan"] as const) {
+      const cfg = build(kind, home());
+      expect(cfg.groups!.length, kind).toBeGreaterThan(1);
+      expect(cfg.groups!.filter((g) => g.locked).map((g) => g.name), kind).toEqual([]);
+    }
+    // Every other preset still hands back one locked part.
+    const toggle = newConfig("Toggle", 0, "large");
+    applyPreset(toggle, "togglePill", { entityId: "light.kitchen", displayName: "Kitchen", domain: "light" }, { family: "large" });
+    expect(toggle.groups ?? []).not.toEqual([]);
+    expect(toggle.groups!.every((g) => g.locked)).toBe(true);
+  });
+
   it("offers both on the Home Screen tiles only, and asks for no entity", () => {
     expect(presetSpec("houseScene").families).toEqual(["medium", "large"]);
     expect(presetSpec("floorPlan").families).toEqual(["medium", "large", "xlarge"]);
@@ -1233,14 +1246,25 @@ describe("the scene presets", () => {
     }
   });
 
-  it("makes a room of every area with a light, busiest first, each tap toggling its area", () => {
+  it("makes a room of every area with a light, busiest first, lit rooms turning off and dark ones on", () => {
     const env = home();
     expect(planRooms(env, 8).map((r) => r.name)).toEqual(["Living room", "Bedroom", "Kitchen"]);
     const cfg = build("floorPlan", env);
     for (const [room, area] of [["Living room", "living"], ["Bedroom", "bedroom"], ["Kitchen", "kitchen"]] as const) {
       const card = named(cfg, `${room} room`)!;
-      const tap = attachedTapsOf(cfg, card.payload.id)[0]!.payload as TapElement;
-      expect(tap.action).toEqual({ type: "callService", serviceDomain: "light", serviceName: "toggle", serviceDataJSON: JSON.stringify({ area_id: area }) });
+      // Never light.toggle, which flips each light alone and swaps a mixed room.
+      expect(attachedTapsOf(cfg, card.payload.id)).toEqual([]);
+      const cardFrame = cfg.perFamily.large!.placements[card.payload.id]!.frame;
+      for (const [suffix, service, shown] of [["turn off", "turn_off", "show"], ["turn on", "turn_on", "hide"]] as const) {
+        const tap = named(cfg, `${room} ${suffix}`)!;
+        expect(tap.kind).toBe("tap");
+        expect((tap.payload as TapElement).action).toEqual({ type: "callService", serviceDomain: "light", serviceName: service, serviceDataJSON: JSON.stringify({ area_id: area }) });
+        expect(cfg.perFamily.large!.placements[tap.payload.id]!.frame).toEqual(cardFrame);
+        const table = tableShape(tap.payload.rules);
+        if (!table.ok) throw new Error(table.reason);
+        expect(table.table.rows[0]!.comparison).toEqual({ kind: "greaterThan", value: { kind: { kind: "literal", value: "0" } } });
+        expect(table.table.rows[0]!.changes[0]!.kind).toBe(shown);
+      }
     }
     expect(named(cfg, "Living room motion")).toBeDefined();
     expect(named(cfg, "Kitchen motion")).toBeUndefined();

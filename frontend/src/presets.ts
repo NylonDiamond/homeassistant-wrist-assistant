@@ -88,6 +88,9 @@ export interface PresetSpec {
   /** True when `layerCount` is the most it adds rather than the exact count:
    * a scene preset draws one part per light or room it finds in the home. */
   layerCountIsMost?: boolean;
+  /** True when the groups it makes start unlocked, so each part can be
+   * dragged on its own right away. A scene is meant to be rearranged. */
+  unlockedGroups?: boolean;
 }
 
 /** The Home Screen tiles a whole-tile scene is drawn for. */
@@ -392,15 +395,17 @@ export const LAYER_PRESETS: readonly PresetSpec[] = [
     blurb: "A drawing of a house that fills the tile. Each window glows while its light is on, and a tap on a window toggles that light. The sky follows the sun and shows rain when the weather says so.",
     layerCount: 44,
     layerCountIsMost: true,
+    unlockedGroups: true,
     needsEntity: false,
     families: SCENE_FAMILIES,
   },
   {
     kind: "floorPlan",
     title: "Floor plan",
-    blurb: "Your areas as rooms seen from above, each lit while a light in it is on, with its temperature and a dot for motion. Tap a room to toggle its lights. Drag the rooms into the shape of your home.",
-    layerCount: 55,
+    blurb: "Your areas as rooms seen from above, each lit while a light in it is on, with its temperature and a dot for motion. Tap a lit room to turn its lights off, or a dark one to turn them on. Drag the rooms into the shape of your home.",
+    layerCount: 63,
     layerCountIsMost: true,
+    unlockedGroups: true,
     needsEntity: false,
     families: [...SCENE_FAMILIES, "xlarge"],
   },
@@ -3028,7 +3033,8 @@ const ROOM_LIT_DIM_HEX = "#2B1F06B3";
 const MOTION_HEX = "#58D3C3";
 const MOTION_CLASSES = ["motion", "occupancy", "presence"];
 
-/** The most rooms each tile draws. Six layers a room, and 64 in a document. */
+/** The most rooms each tile draws. Up to seven layers a room, seven more for
+ * the floor, title and refresh button, and 64 in a document. */
 function planMaxRooms(family: DrawableFamily): number {
   return family === "medium" ? 6 : 8;
 }
@@ -3128,7 +3134,8 @@ export function planCells(count: number, plan: PointRect): PointRect[] {
 /**
  * The home seen from above: each area a room, lit amber while any light in it
  * is on, with its temperature, a bulb, and a dot while its motion sensor sees
- * someone. A tap on a room toggles every light in its area.
+ * someone. A tap on a lit room turns every light in its area off, and a tap on
+ * a dark one turns them on.
  */
 export function addFloorPlan(cfg: CustomComplicationConfig, env: PresetEnv): string {
   const family = env.family;
@@ -3155,7 +3162,8 @@ export function addFloorPlan(cfg: CustomComplicationConfig, env: PresetEnv): str
   const roomLights: EntityRef[] = [];
   rooms.forEach((room, i) => {
     const cell = cells[i]!;
-    let lit: { value: () => Value; comparison: () => Comparison; tap: TapAction } | undefined;
+    let lit: { value: () => Value; comparison: () => Comparison; tap?: TapAction } | undefined;
+    let areaCall: ((service: "turn_on" | "turn_off") => TapAction) | undefined;
     if (room.areaId !== undefined) {
       const areaId = room.areaId;
       areaIds.push(areaId);
@@ -3171,8 +3179,8 @@ export function addFloorPlan(cfg: CustomComplicationConfig, env: PresetEnv): str
           },
         }),
         comparison: () => ({ kind: "greaterThan", value: literal("0") }),
-        tap: { type: "callService", serviceDomain: "light", serviceName: "toggle", serviceDataJSON: JSON.stringify({ area_id: areaId }) },
       };
+      areaCall = (service) => ({ type: "callService", serviceDomain: "light", serviceName: service, serviceDataJSON: JSON.stringify({ area_id: areaId }) });
     } else if (room.light !== undefined) {
       const full = withDomain(room.light);
       roomLights.push(full);
@@ -3221,7 +3229,24 @@ export function addFloorPlan(cfg: CustomComplicationConfig, env: PresetEnv): str
       ids.push(put(dot, pointFrame(family, cell.x + cell.w - 14, cell.y + cell.h - 14, 7, 7), `${room.name} motion`).payload.id);
     }
 
-    if (lit) attachTap(cfg, card.payload.id, lit.tap);
+    if (lit && areaCall) {
+      // Two taps on the card rather than light.toggle, which flips each light on
+      // its own: a room with one light on and one off would swap them and stay
+      // lit. While the room is lit only "turn off" is there, while it is dark
+      // only "turn on", so a tap does what the card shows. It is also safe to
+      // tap twice while a slow bulb has not reported yet.
+      const frame = pointFrame(family, cell.x, cell.y, cell.w, cell.h);
+      const off = layerOf("tap");
+      off.payload.action = areaCall("turn_off");
+      off.payload.rules = [showWhile(lit.value(), lit.comparison())];
+      ids.push(put(off, frame, `${room.name} turn off`).payload.id);
+      const on = layerOf("tap");
+      on.payload.action = areaCall("turn_on");
+      on.payload.rules = [hideWhile(lit.value(), lit.comparison())];
+      ids.push(put(on, frame, `${room.name} turn on`).payload.id);
+    } else if (lit?.tap) {
+      attachTap(cfg, card.payload.id, lit.tap);
+    }
     createGroup(cfg, ids, room.name);
   });
 
@@ -3282,9 +3307,13 @@ export function applyPreset(
   env: PresetEnv,
 ): string {
   const before = new Set(cfg.elements.map((e) => e.payload.id));
+  const groupsBefore = new Set((cfg.groups ?? []).map((g) => g.id));
   const id = buildPreset(cfg, kind, ref, env);
   const added = cfg.elements.filter((e) => !before.has(e.payload.id)).map((e) => e.payload.id);
   createGroup(cfg, added, presetSpec(kind).title);
+  if (presetSpec(kind).unlockedGroups) {
+    for (const g of cfg.groups ?? []) if (!groupsBefore.has(g.id)) g.locked = false;
+  }
   return id;
 }
 
