@@ -204,12 +204,19 @@ describe("setLayerEntity", () => {
     expect((attachedTapsOf(cfg, el.payload.id)[0]!.payload as TapElement).action).toEqual({ type: "refresh" });
   });
 
-  it("leaves rule tests to the states table", () => {
+  it("moves the rule tests that read the old entity, and only those", () => {
     const cfg = newConfig("Test", 0);
     const id = addToggleButton(cfg, KITCHEN, { family: "rectangular" });
-    setLayerEntity(cfg, id, LOUNGE);
     const el = cfg.elements.find((e) => e.payload.id === id)!;
-    expect(el.payload.rules[0]!.cases[0]!.when.tests[0]!.value.kind).toEqual({ kind: "entityState", ...KITCHEN });
+    // A second test the author picked by hand, on another entity entirely.
+    const other = { entityId: "sun.sun", displayName: "Sun", domain: "sun" };
+    const tests = el.payload.rules[0]!.cases[0]!.when.tests;
+    tests.push({ ...structuredClone(tests[0]!), id: newId(), value: { kind: { kind: "entityState", ...other } } });
+    setLayerEntity(cfg, id, LOUNGE);
+    // One pick moves the whole button: the tap and the on/off look together.
+    expect(tests[0]!.value.kind).toEqual({ kind: "entityState", ...LOUNGE });
+    expect(tests[1]!.value.kind).toEqual({ kind: "entityState", ...other });
+    expect((attachedTapsOf(cfg, id)[0]!.payload as TapElement).action).toMatchObject({ entityId: LOUNGE.entityId });
   });
 
   it("fills in the domain when the caller left it out", () => {

@@ -9769,8 +9769,12 @@ function rebindValue(value: Value | undefined, ref: EntityRef, kind: Element["ki
 
 /**
  * Point a layer at an entity: its own content where that is safe (see
- * `rebindValue`), and the target of the tap attached to it. Rule tests are
- * deliberately left alone; the states table owns those.
+ * `rebindValue`), the target of the tap attached to it, and every rule test
+ * that read the entity the layer was about before. Tests that read some other
+ * entity, or read it through a named value, are left alone: those were picked
+ * on purpose in the states table. Following the old entity is what lets one
+ * pick move a whole part, such as a window that glows while its light is on
+ * and toggles that light when tapped.
  *
  * `deviceClass` is only read by a timeline, whose seeded color table needs to
  * know whether a binary sensor is a door before it can name its two states.
@@ -9788,6 +9792,19 @@ export function setLayerEntity(
   // and deleting the layer is what someone means by that.
   if (!el || ref.entityId === "") return;
   const full: EntityRef = { ...ref, domain: ref.domain || ref.entityId.split(".")[0] || "" };
+  const previous = layerEntity(cfg, layerId)?.entityId;
+  if (previous !== undefined && previous !== full.entityId) {
+    for (const rule of el.payload.rules) {
+      for (const c of rule.cases) {
+        for (const t of c.when.tests) {
+          const k = t.value.kind;
+          if (!("entityId" in k) || k.entityId !== previous) continue;
+          const next = rebindValue(t.value, full, "icon");
+          if (next) t.value = next;
+        }
+      }
+    }
+  }
   if (el.kind === "timeline") {
     const before = el.payload.value.kind.kind === "entityState" ? el.payload.value.kind.entityId : undefined;
     const next = rebindValue(el.payload.value, full, el.kind);
