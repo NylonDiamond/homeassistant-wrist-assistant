@@ -4503,6 +4503,10 @@ export class WristAssistantPanel extends LitElement {
     }
     .preview.inline .inline-line svg { display: inline-block; margin: 0; background: transparent; border-radius: 0; }
     .preview.inline .inline-line.missing { color: #999; font-style: italic; }
+    /* On the stage the line is the whole face, and at its own 15px it sat as a
+       small pill in a big empty stage. Zoom scales the symbols with the text,
+       and the stage's own zoom buttons scale it further. */
+    .stage-face > .preview.inline .inline-line { zoom: calc(2.2 * var(--wa-zoom, 1)); }
     /* The big mock tile on the stage, where a face would be. It takes the same
        drop shadow the faces take, so it sits on the work surface rather than
        floating over it. */
