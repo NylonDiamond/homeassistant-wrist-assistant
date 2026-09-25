@@ -433,8 +433,10 @@ function publicRowKind(row: PublicRow): string {
   return row.key === "head" ? "head" : row.key.slice(0, 1);
 }
 
-/** The line a folded kind shows, before its count. */
+/** The heading of each kind's box. */
 const PUBLIC_KIND_LABEL: Record<string, string> = {
+  head: "Name",
+  e: "Entity names",
   g: "Group names",
   v: "Shared value names",
   l: "Layer names",
@@ -1740,8 +1742,9 @@ export class WristAssistantPanel extends LitElement {
   /** The Share dialog's text box is shown. Folded away each time it opens:
    * the buttons carry the text, and the box is for reading it. */
   @state() private shareTextOpen = false;
-  /** The kinds of public name the Share dialog has unfolded, by `publicRowKind`. */
-  @state() private shareFoldsOpen: ReadonlySet<string> = new Set();
+  /** The kinds of public name the Share dialog has opened or closed by hand,
+   * by `publicRowKind`. A kind not in it takes its own starting state. */
+  @state() private shareKindOpen: ReadonlyMap<string, boolean> = new Map();
   /** Which action tile just landed, for its "copied" or "saved" moment. */
   @state() private shareCopied?: "link" | "file" | "text";
   private shareCopiedTimer?: number;
@@ -3387,29 +3390,44 @@ export class WristAssistantPanel extends LitElement {
     div.xf-blockers { padding-left: 12px; }
     .xf-banner { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: var(--wa-r-md); background: var(--wa-sel-bg); border: 1px solid var(--wa-sel-ring); font-size: 12.5px; line-height: 1.45; }
     .xf-banner svg.ui-icon { width: 16px; height: 16px; flex: none; margin-top: 1px; color: var(--wa-accent); }
-    /* What becomes public, in amber: the thing to read before sending. */
-    .xf-pub { display: grid; gap: 4px; padding: 8px; border-radius: var(--wa-r-md); background: var(--wa-val-bg); border: 1px solid color-mix(in srgb, var(--wa-val) 40%, var(--wa-line)); }
-    .xf-pub .kv { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px; align-items: start; padding: 6px; border-radius: 8px; transition: background-color .12s ease-out; }
+    /* What becomes public: one box per kind of name, each in its own color. */
+    .xf-pub { display: grid; gap: 8px; }
+    .xf-pub .pk { --kc: var(--wa-accent); border-radius: var(--wa-r-md); overflow: hidden;
+      background: color-mix(in srgb, var(--kc) 6%, var(--wa-card)); border: 1px solid color-mix(in srgb, var(--kc) 30%, var(--wa-line)); }
+    .xf-pub .pk-e { --kc: var(--wa-ent); }
+    .xf-pub .pk-g { --kc: #9b7bf0; }
+    .xf-pub .pk-v { --kc: var(--wa-val); }
+    .xf-pub .pk-l { --kc: #4a90e2; }
+    .xf-pub .pk-t { --kc: var(--wa-muted); }
+    .xf-pub .pk-h { display: flex; align-items: center; gap: 8px; padding: 8px 10px; font-size: 12.5px; color: var(--wa-ink); list-style: none; }
+    .xf-pub .pk-h::-webkit-details-marker { display: none; }
+    .xf-pub summary.pk-h { cursor: pointer; }
+    .xf-pub summary.pk-h:hover { background: color-mix(in srgb, var(--kc) 10%, transparent); }
+    .xf-pub summary.pk-h:focus-visible { outline: none; box-shadow: inset var(--wa-ring); }
+    .xf-pub .pk-h > i { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--kc); }
+    .xf-pub .pk-h > b { font-weight: 600; }
+    .xf-pub .pk-h > .n { font-size: 11px; font-variant-numeric: tabular-nums; padding: 1px 7px; border-radius: 999px;
+      color: var(--wa-muted); background: color-mix(in srgb, var(--kc) 14%, transparent); }
+    .xf-pub .pk-h > .chg { font-size: 11px; color: var(--kc); }
+    .xf-pub .pk-h > svg.ui-icon { width: 13px; height: 13px; margin-left: auto; color: var(--wa-muted); transition: transform .15s ease-out; }
+    .xf-pub details.pk[open] > .pk-h > svg.ui-icon { transform: rotate(90deg); }
+    .xf-pub .pk-b { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 4px; padding: 0 6px 6px; }
+    .xf-pub .pk-head .pk-b { grid-template-columns: minmax(0, 1fr); }
+    .xf-pub .kv { min-width: 0; display: flex; flex-direction: column; gap: 5px; padding: 3px; border-radius: 8px; transition: background-color .12s ease-out; }
     .xf-pub .kv.on { background: var(--wa-sel-bg); }
-    .xf-pub .xf-fold { display: grid; gap: 4px; }
-    .xf-pub .xf-fold > summary { padding: 6px; }
     .xf-sec { --sc: var(--wa-accent); display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 12px; border-radius: var(--wa-r-md);
       background: color-mix(in srgb, var(--sc) 7%, var(--wa-card)); border: 1px solid color-mix(in srgb, var(--sc) 34%, var(--wa-line)); }
     .xf-sec.s-shapes { --sc: #26a69a; }
-    .xf-sec.s-names { --sc: var(--wa-val); }
+    .xf-sec.s-names { --sc: var(--wa-green); }
     .xf-sec.s-send { --sc: #4a7fe8; }
     .xf-sec > h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 13px; font-weight: 600; color: var(--wa-ink); }
     .xf-sec > h3 > i { display: inline-grid; place-items: center; flex: none; width: 20px; height: 20px; border-radius: 999px;
       font-style: normal; font-size: 11px; font-weight: 700; color: #fff; background: var(--sc); }
-    .xf-sec.s-names > h3 > i { color: var(--wa-card); }
     .xf-sec > h3 .r { margin-left: auto; display: inline-flex; align-items: center; gap: 10px; font-size: 12px; font-weight: 500; color: var(--wa-muted); }
     .xf-sec-b { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
     .xf-sec.locked > .xf-sec-b { opacity: .45; }
-    .xf-sec.s-names .xf-pub { background: var(--wa-card); }
     .xf-shapes .pk-chip { display: inline-flex; align-items: center; gap: 4px; }
     .xf-shapes .pk-chip svg.ui-icon { width: 12px; height: 12px; }
-    .xf-pub .kv > .k { font-size: 12px; color: var(--wa-muted); padding-top: 6px; }
-    .xf-pub .kv > .v { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
     .xf-pub input[type=text] { width: 100%; box-sizing: border-box; background: var(--wa-card); }
     .xf-pill { font-size: 12px; padding: 5px 8px; border-radius: 6px; background: var(--wa-card); border: 1px solid var(--wa-line); overflow-wrap: anywhere; white-space: pre-wrap; }
     .xf-pill.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -3500,8 +3518,6 @@ export class WristAssistantPanel extends LitElement {
       }
       .xf-act .ic { grid-row: 1 / 3; }
       .xf-act b, .xf-act > span:last-child { grid-column: 2; }
-      .xf-pub .kv { grid-template-columns: minmax(0, 1fr); gap: 4px; }
-      .xf-pub .kv > .k { padding-top: 0; }
       .xf-up { grid-template-columns: 44px minmax(0, 1fr); }
       .xf-up-acts { grid-column: 2; justify-content: flex-start; }
       .xf-up-v { grid-column: 1 / -1; }
@@ -14389,19 +14405,17 @@ export class WristAssistantPanel extends LitElement {
    * `focus`, which lights its layers behind the dialog. */
   private renderPublicRows(rows: readonly PublicRow[], focus: string | undefined, setFocus: (key: string | undefined) => void) {
     const clear = () => setFocus(undefined);
+    // Each row is only its box: the kind's own heading says what the box names.
     const kv = (row: PublicRow) => {
       const on = row.key === focus && row.ids.length > 0;
       const set = () => setFocus(row.key);
-      return html`<div class="kv ${on ? "on" : ""}" @pointerenter=${set} @focusin=${set}>
-        <span class="k">${row.label}</span>
-        <div class="v">${row.control}</div>
-      </div>`;
+      return html`<div class="kv ${on ? "on" : ""}" @pointerenter=${set} @focusin=${set}>${row.control}</div>`;
     };
-    // A scene preset names every layer, group and shared value it makes. Those
-    // names are the preset's, not the author's, and dozens of boxes bury the
-    // name and the entity names the reader sets it up by. So a long list of
-    // one kind waits behind one line, and read-only text always does, since
-    // nothing about it can be changed here.
+    // One box per kind of name, each in its own color. A scene preset names
+    // every layer, group and shared value it makes; those names are the
+    // preset's, not the author's, and dozens of boxes bury the name and the
+    // entity names the reader sets it up by. So a long kind starts closed, and
+    // read-only text always does, since nothing about it can be changed here.
     const kinds: { kind: string; label: string; rows: PublicRow[] }[] = [];
     for (const row of rows) {
       const kind = publicRowKind(row);
@@ -14409,8 +14423,8 @@ export class WristAssistantPanel extends LitElement {
       if (found) found.rows.push(row);
       else kinds.push({ kind, label: PUBLIC_KIND_LABEL[kind] ?? row.label, rows: [row] });
     }
-    const folds = (k: { kind: string; rows: PublicRow[] }) =>
-      k.kind !== "head" && k.kind !== "e" && (k.kind === "t:Other text" || k.rows.length > PUBLIC_FOLD_AT);
+    const startsOpen = (k: { kind: string; rows: PublicRow[] }) =>
+      k.kind === "e" || (k.kind !== "t:Other text" && k.rows.length <= PUBLIC_FOLD_AT);
     const changed = (row: PublicRow): boolean => {
       const id = row.key.slice(2);
       const typed = row.key.startsWith("g:") ? this.shareGroupNames.get(id)
@@ -14419,30 +14433,33 @@ export class WristAssistantPanel extends LitElement {
         : undefined;
       return (typed ?? "").trim() !== "";
     };
-    const fold = (k: { kind: string; label: string; rows: PublicRow[] }) => {
-      const open = this.shareFoldsOpen.has(k.kind);
+    const box = (k: { kind: string; label: string; rows: PublicRow[] }) => {
+      const tone = `pk-${k.kind.startsWith("t:") ? "t" : k.kind}`;
+      // The name is one box and nothing to fold.
+      if (k.kind === "head") {
+        return html`<div class="pk ${tone}"><div class="pk-h"><i></i><b>${k.label}</b></div><div class="pk-b">${k.rows.map(kv)}</div></div>`;
+      }
+      const open = this.shareKindOpen.get(k.kind) ?? startsOpen(k);
       const edits = k.rows.filter(changed).length;
-      return html`<details class="xf-raw xf-fold" .open=${open}
-        @toggle=${(e: Event) => this.setShareFoldOpen(k.kind, (e.target as HTMLDetailsElement).open)}>
-        <summary>${uiIcon("right")}<span>${k.label} (${k.rows.length})${edits > 0 ? `, ${edits} changed` : ""}</span></summary>
-        ${open ? k.rows.map(kv) : nothing}
+      return html`<details class="pk ${tone}" .open=${open}
+        @toggle=${(e: Event) => this.setShareKindOpen(k.kind, (e.target as HTMLDetailsElement).open)}>
+        <summary class="pk-h"><i></i><b>${k.label}</b><span class="n">${k.rows.length}</span>
+          ${edits > 0 ? html`<span class="chg">${edits} changed</span>` : nothing}${uiIcon("right")}</summary>
+        ${open ? html`<div class="pk-b">${k.rows.map(kv)}</div>` : nothing}
       </details>`;
     };
     return html`
       <div class="xf-lead">${uiIcon("info")}<span>Others can see these names. Change the names of layers and groups here before you share, if you want.</span></div>
       <div class="xf-pub" @pointerleave=${(e: Event) => this.leaveRows(e, clear)} @focusout=${(e: Event) => this.leaveRows(e, clear)}>
-        ${kinds.filter((k) => !folds(k)).flatMap((k) => k.rows).map(kv)}
-        ${kinds.filter(folds).map(fold)}
+        ${kinds.filter((k) => k.kind === "head" || startsOpen(k)).map(box)}
+        ${kinds.filter((k) => k.kind !== "head" && !startsOpen(k)).map(box)}
       </div>
       <div class="hint">Your own complication keeps its names. An empty box keeps the name it had.</div>`;
   }
 
-  private setShareFoldOpen(kind: string, open: boolean) {
-    if (this.shareFoldsOpen.has(kind) === open) return;
-    const next = new Set(this.shareFoldsOpen);
-    if (open) next.add(kind);
-    else next.delete(kind);
-    this.shareFoldsOpen = next;
+  private setShareKindOpen(kind: string, open: boolean) {
+    if (this.shareKindOpen.get(kind) === open) return;
+    this.shareKindOpen = new Map(this.shareKindOpen).set(kind, open);
   }
 
   private setShareMode(mode: "share" | "backup") {
@@ -14470,7 +14487,7 @@ export class WristAssistantPanel extends LitElement {
     this.shareLayerNames = new Map();
     this.shareNote = "";
     this.shareTextOpen = false;
-    this.shareFoldsOpen = new Set();
+    this.shareKindOpen = new Map();
     this.shareLink = undefined;
     this.shareLinkShown = false;
     this.shareCopied = undefined;
