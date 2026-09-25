@@ -17227,7 +17227,7 @@ export class WristAssistantPanel extends LitElement {
         <section class="start-links">
           <a class="start-link" href=${GALLERY_PAGE} target="_blank" rel="noopener">
             <span class="ic">${uiIcon("globe")}</span>
-            <span class="t"><b>Browse the gallery</b><span>Ready-made complications from other people</span></span>
+            <span class="t"><b>Browse the online gallery</b><span>Ready-made complications from other people</span></span>
             ${uiIcon("arrow")}
           </a>
           ${admin ? html`<button class="start-link" ?disabled=${full} @click=${() => this.openImportDialog()}>
@@ -17307,9 +17307,9 @@ export class WristAssistantPanel extends LitElement {
     const kinds = kindChoices(owners);
     if (kinds.length === 0) return nothing;
     const why = full ? "Every device is full. Delete a complication first." : undefined;
-    const tile = (kind: NewKind, family: FamilyKind | undefined, soon: boolean) => {
-      const device: DeviceKind = kind === "iphone" ? "iphone" : "watch";
-      const name = family === undefined ? kindTitle(kind) : familyTitle(family);
+    const tile = (kind: NewKind, family: FamilyKind | undefined, soon: boolean, on: DeviceKind = kind === "iphone" ? "iphone" : "watch") => {
+      const device = on;
+      const name = family === undefined ? (device === "iphone" ? "iPhone" : "Watch") : familyTitle(family);
       const note = family !== undefined && soon ? familyNote(family) : "";
       return html`<button type="button" class="start-shape ${soon ? "soon" : ""}" ?disabled=${full || this.ownerBusy || soon}
         title=${soon ? `${name}: coming soon` : why ?? `New ${name.toLowerCase()} complication`}
@@ -17328,7 +17328,10 @@ export class WristAssistantPanel extends LitElement {
             <div class="start-kind-head">${uiIcon(device === "iphone" ? "phone" : "watch")}<span>${title}</span></div>
             <div class="start-kind-tiles">${tiles}</div>
           </div>`;
-          if (kind === "control") return [box(kindTitle(kind), tile(kind, undefined, false))];
+          // Control Center is one kind on both devices: a tile per device,
+          // each drawn as its own device's tile grid, both opening the same
+          // New dialog with Control Center picked.
+          if (kind === "control") return [box(kindTitle(kind), html`${tile(kind, undefined, false, "watch")}${tile(kind, undefined, false, "iphone")}`)];
           // A box per screen: the watch has one, the iPhone has its Lock
           // Screen and its Home Screen. Each box hugs its own tiles, so no
           // box carries a blank where another's second row would be.
