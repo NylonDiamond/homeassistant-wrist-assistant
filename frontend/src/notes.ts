@@ -3,9 +3,9 @@
 // and the iPhone never draw them, and a share or a gallery upload carries them
 // so the reader finds them after import.
 //
-// The text is a small, safe part of Markdown, so it reads well as typed and
-// the gallery page can draw it the same way (`homepage/gallery/index.html` in
-// wrist-assistant-website keeps a plain-JS copy of this reader; change both):
+// The text is a small, safe part of Markdown, so it reads well as typed. The
+// gallery page shows only the description, never the notes; they travel in
+// the share text and open here after import:
 //
 //   - a blank line starts a new block;
 //   - `#`, `##` or `###` and a space start a heading;
