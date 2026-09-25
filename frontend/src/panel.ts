@@ -5238,6 +5238,8 @@ export class WristAssistantPanel extends LitElement {
     .values-list .datum:hover { box-shadow: inset 0 0 0 1px var(--wa-accent); }
     /* Selected: the same tint the inspector gives its complication section. */
     .values-list .datum.hl { box-shadow: inset 0 0 0 1px var(--c); background: color-mix(in srgb, var(--c) 10%, var(--wa-card)); }
+    /* Read by the layer the pointer rests on over the face. */
+    .values-list .datum.peek:not(.hl) { box-shadow: inset 0 0 0 1px var(--c); background: color-mix(in srgb, var(--c) 6%, var(--wa-card)); }
     .values-list .datum .meta {
       flex: none; min-width: 0; max-width: 140px; opacity: 1; color: var(--wa-val); font-weight: 600;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
@@ -7490,6 +7492,7 @@ export class WristAssistantPanel extends LitElement {
     // Layers list's view the moment it lights.
     if (changed.has("faceHover") && this.faceHover) {
       this.renderRoot.querySelector<HTMLElement>(".layers .layer.peek")?.scrollIntoView({ block: "nearest" });
+      this.renderRoot.querySelector<HTMLElement>(".sv-body .datum.peek")?.scrollIntoView({ block: "nearest" });
     }
     // The start page lists every device's complications, and the other
     // devices' lists are only read when a surface asks for them. Asked once
@@ -17193,6 +17196,21 @@ export class WristAssistantPanel extends LitElement {
     return out;
   }
 
+  /** The shared values read by what the pointer rests on over the face: the
+   * layer, or any member of the group. Their rows light the way the layer's
+   * own row in the Layers list does. */
+  private sharedValuesOfFaceHover(cfg: CustomComplicationConfig): Set<string> {
+    const out = new Set<string>();
+    const h = this.faceHover;
+    if (!h || cfg.values.length === 0) return out;
+    const ids = new Set(h.kind === "layer" ? [h.id] : h.kind === "group" ? groupLayers(cfg, h.id).map((m) => m.payload.id) : []);
+    if (ids.size === 0) return out;
+    for (const v of cfg.values) {
+      if (sharedValueLayerIds(cfg, v.id).some((id) => ids.has(id))) out.add(v.id);
+    }
+    return out;
+  }
+
   /** The selected layer reads an unpicked slot, and only through a shared
    * value. The inspector then keeps its fields quiet: the shared value's row
    * is the one place to fix it. */
@@ -19738,6 +19756,7 @@ export class WristAssistantPanel extends LitElement {
     const ctx = describeContext(host);
     const slots = this.slotInfo();
     const slotLit = this.slotValuesOfSelection();
+    const faceLit = this.sharedValuesOfFaceHover(cfg);
     const body = html`<div class="sv-body">
       <div class="sv-tools">
         <span class="lc-sub" title=${explain}>set once, used by many layers</span>
@@ -19767,7 +19786,7 @@ export class WristAssistantPanel extends LitElement {
         const readers = () => sharedValueReaders(cfg, v.id);
         const slot = slots?.values.get(v.id.toUpperCase());
         const lit = slotLit.has(v.id.toUpperCase());
-        return html`<div class="vitem ${open ? "open" : ""}"><div class="datum vrow ${open ? "hl" : ""} ${lit ? "slot-lit" : ""}" data-value=${v.id.toUpperCase()} role="button" tabindex="0" aria-expanded=${open ? "true" : "false"}
+        return html`<div class="vitem ${open ? "open" : ""}"><div class="datum vrow ${open ? "hl" : ""} ${lit ? "slot-lit" : ""} ${faceLit.has(v.id) ? "peek" : ""}" data-value=${v.id.toUpperCase()} role="button" tabindex="0" aria-expanded=${open ? "true" : "false"}
             title=${open ? "Close" : "Edit this shared value"}
             @pointerenter=${() => { this.listHoverIds = readers(); }}
             @click=${toggleOne}
