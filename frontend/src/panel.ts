@@ -2076,7 +2076,12 @@ export class WristAssistantPanel extends LitElement {
   private historySignature = "";
   /** `listItemsRequests().signature` as of the last scheduled refresh. */
   private listSignature = "";
-  private icons: IconProvider = makeIconProvider(() => this.requestUpdate());
+  private icons: IconProvider = makeIconProvider(() => {
+    this.requestUpdate();
+    for (const wake of this.symbolWaiters.splice(0)) wake();
+  });
+  /** Card captures waiting for the symbol catalogue; see `symbolsReady`. */
+  private readonly symbolWaiters: (() => void)[] = [];
   /** Natural sizes of the preview's camera pictures, so an image layer can be
    * cropped exactly the way the watch crops it. */
   private imageSizes = makeImageSizeProvider(() => this.requestUpdate());
@@ -11666,16 +11671,16 @@ export class WristAssistantPanel extends LitElement {
     for (const [id, preview] of Object.entries(previews ?? {})) this.cardPreviews.set(`${ownerId}|${id}`, preview);
   }
 
-  /** Whether this record has a picture of its current revision. A picture
-   * drawn before cards were drawn with their templates, history and lists does
-   * not count for a record that reads any of them: it shows dashes. */
+  /** Whether this record has a picture of its current revision, drawn the way
+   * cards are drawn now (`CARD_PREVIEW_VERSION`). An older picture may show
+   * dashes for its templates or a "?" for a symbol, so it is taken again. */
   private hasCardPreview(ownerId: string, record: ComplicationRecord): boolean {
     return this.previewIsCurrent(this.cardPreviews.get(`${ownerId}|${record.id}`), record);
   }
 
   private previewIsCurrent(preview: CardPreview | undefined, record: ComplicationRecord): boolean {
     if (!preview || preview.revision !== record.revision) return false;
-    return (preview.version ?? 1) >= CARD_PREVIEW_VERSION || this.recordPreview(record)?.fetches === false;
+    return (preview.version ?? 1) >= CARD_PREVIEW_VERSION;
   }
 
   /**
@@ -11703,6 +11708,25 @@ export class WristAssistantPanel extends LitElement {
       ...(preview.focus ? { focus: preview.focus } : {}),
     };
     return { [family]: shape };
+  }
+
+  /**
+   * True once the symbol catalogue has answered, so a card is never kept with
+   * the dashed "?" that stands in for a glyph the file has not delivered yet.
+   * The first cards of a visit are queued before the file arrives, and a "?"
+   * taken then would stay for the life of the revision. False when the
+   * catalogue has not answered in a reasonable time: the grid then draws the
+   * card live and tries again on a later visit.
+   */
+  private symbolsReady(): Promise<boolean> {
+    if (this.icons.names() !== undefined) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(false), 15_000);
+      this.symbolWaiters.push(() => {
+        clearTimeout(timer);
+        resolve(this.icons.names() !== undefined);
+      });
+    });
   }
 
   /** Take a card picture for a record the grid had to draw live, once per
@@ -11742,11 +11766,12 @@ export class WristAssistantPanel extends LitElement {
     }
     // The stage already holds what it fetched, so only a card drawn away from
     // it asks. Whether it still is on the stage is asked after the wait.
-    const [ready, early] = await Promise.all([
+    const [ready, early, symbols] = await Promise.all([
       this.picturesReady(entities),
       stage === undefined ? this.fetchCardData(cfg) : undefined,
+      this.symbolsReady(),
     ]);
-    if (!ready) return;
+    if (!ready || !symbols) return;
     const onStage = stage !== undefined && this.draft?.config === stage && !this.draft.dirty;
     const fetched = onStage ? undefined : early ?? await this.fetchCardData(cfg);
     if (!onStage && !fetched) return;
