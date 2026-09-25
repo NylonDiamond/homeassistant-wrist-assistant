@@ -512,6 +512,10 @@ interface SlotInfo {
   /** The layers that name a slot themselves, rather than only through a
    * shared value: there the fix is in the layer's own card. */
   direct: Set<string>;
+  /** Layer id to the slots it names itself. A layer can name one slot (the
+   * sun, in its day color rule) and read another only through a shared value
+   * (the outside temperature), and each is fixed in its own place. */
+  directSlots: Map<string, Set<string>>;
   /** Shared value id, upper case, to the slot it reads. */
   values: Map<string, UnresolvedEntity>;
 }
@@ -6826,9 +6830,9 @@ export class WristAssistantPanel extends LitElement {
     /* It opens with a bright flash, three hard beats of a thick ring, a wide
        halo and a red wash, to pull the eye across the screen, then settles
        into the quiet pulse. A click on the layer plays the flash again. */
-    .ent-chosen.slot { border-radius: 8px; box-shadow: inset 0 0 0 1px var(--wa-need); animation: wa-slot-flash .6s ease-out 3, wa-slot-pulse 1.8s ease-out 1.8s infinite; }
+    .ent-chosen.slot, .value-chip.slot { border-radius: 8px; box-shadow: inset 0 0 0 1px var(--wa-need); animation: wa-slot-flash .6s ease-out 3, wa-slot-pulse 1.8s ease-out 1.8s infinite; }
     .vrow.slot-lit { border-radius: 6px; animation: wa-slot-flash .6s ease-out 3, wa-slot-pulse 1.8s ease-out 1.8s infinite; }
-    .column.inspector.slot-via-value .ent-chosen.slot { animation: none; box-shadow: none; }
+    .column.inspector.slot-via-value :is(.ent-chosen, .value-chip).slot { animation: none; box-shadow: none; }
     .hint.need { color: var(--wa-need); }
     @keyframes wa-slot-flash {
       0% { background-color: color-mix(in srgb, var(--wa-need) 32%, transparent);
@@ -6841,8 +6845,8 @@ export class WristAssistantPanel extends LitElement {
       70% { box-shadow: inset 0 0 0 1px var(--wa-need), 0 0 0 7px color-mix(in srgb, var(--wa-need) 0%, transparent); }
       100% { box-shadow: inset 0 0 0 1px var(--wa-need), 0 0 0 0 color-mix(in srgb, var(--wa-need) 0%, transparent); }
     }
-    @media (prefers-reduced-motion: reduce) { .ent-chosen.slot, .vrow.slot-lit { animation: none; box-shadow: inset 0 0 0 2px var(--wa-need); } }
-    @media (prefers-reduced-motion: reduce) { .column.inspector.slot-via-value .ent-chosen.slot { box-shadow: none; } }
+    @media (prefers-reduced-motion: reduce) { .ent-chosen.slot, .value-chip.slot, .vrow.slot-lit { animation: none; box-shadow: inset 0 0 0 2px var(--wa-need); } }
+    @media (prefers-reduced-motion: reduce) { .column.inspector.slot-via-value :is(.ent-chosen, .value-chip).slot { box-shadow: none; } }
     /* A chosen entity: one row in place of the search box, exactly as tall as
        the box, so the label beside it and the rows under it never move when
        one swaps for the other. The name reads in the ordinary ink, the id
@@ -16643,14 +16647,18 @@ export class WristAssistantPanel extends LitElement {
     const layers = new Map<string, UnresolvedEntity[]>();
     const values = new Map<string, UnresolvedEntity>();
     const direct = new Set<string>();
+    const directSlots = new Map<string, Set<string>>();
     for (const row of rows) {
       for (const id of entityLayerIds(cfg, row.entityId, (id) => isPlaceholderId(id))) {
         layers.set(id, [...(layers.get(id) ?? []), row]);
       }
-      for (const id of entityLayerIds(cfg, row.entityId, (id) => isPlaceholderId(id), false)) direct.add(id);
+      for (const id of entityLayerIds(cfg, row.entityId, (id) => isPlaceholderId(id), false)) {
+        direct.add(id);
+        directSlots.set(id, new Set([...(directSlots.get(id) ?? []), row.entityId]));
+      }
       for (const id of slotValueIds(cfg, row.entityId)) if (!values.has(id)) values.set(id, row);
     }
-    const info = { rows, layers, direct, values };
+    const info = { rows, layers, direct, directSlots, values };
     this.slotsCache = { cfg, version: this.version, info };
     return info;
   }
@@ -16688,10 +16696,12 @@ export class WristAssistantPanel extends LitElement {
   /** The shared values, upper case, through which the selected layer reads a
    * slot nobody has picked. Their rows light up while it stays selected.
    *
-   * Only for a layer that reads its slots through shared values alone. One
-   * that names a slot itself is fixed in its own Entity field, and a pick
-   * there moves the shared values its state tests read too (`setLayerEntity`),
-   * so lighting both sent the eye to two places for one job. */
+   * Only for the slots the layer reads through shared values alone. A slot
+   * the layer also names itself is fixed in its own field, and a pick there
+   * fills it in everywhere, the shared value included, so lighting the row
+   * too sent the eye to two places for one job. A different slot the layer
+   * names itself (the sun in its day color rule) lights in the inspector
+   * beside this: two jobs, two places. */
   private slotValuesOfSelection(): Set<string> {
     const out = new Set<string>();
     const cfg = this.draft?.config;
@@ -16699,8 +16709,10 @@ export class WristAssistantPanel extends LitElement {
     const id = this.inspect.id;
     const info = this.slotInfo();
     const need = info?.layers.get(id);
-    if (!info || !need || info.direct.has(id)) return out;
+    if (!info || !need) return out;
+    const own = info.directSlots.get(id);
     for (const [valueId, row] of info.values) {
+      if (own?.has(row.entityId)) continue;
       if (need.includes(row) && sharedValueLayerIds(cfg, valueId).includes(id)) out.add(valueId);
     }
     return out;
@@ -16729,6 +16741,17 @@ export class WristAssistantPanel extends LitElement {
     const direct = info.direct.has(id);
     const values = this.slotValuesOfSelection();
     if (values.size > 0) this.sharedOpen = true;
+    // Open every card that holds a stand-in the layer names itself: a shut
+    // card hides the field that needs the pick. A rule's test sits in Rules,
+    // a tap's target in Tap, anything else in Content.
+    const cfg = this.draft?.config;
+    if (direct && cfg) {
+      const cards = new Set(layerEntityUses(cfg, id)
+        .filter((u) => u.namedId === undefined && isPlaceholderId(u.ref.entityId))
+        .map((u) => (u.where === "test" ? "states" : u.where === "tap" ? "tappable" : "content")));
+      const shut = [...cards].filter((c) => !this.openSections.has(c));
+      if (shut.length > 0) this.openSections = new Set([...this.openSections, ...shut]);
+    }
     const replay = (el: Element | null) => {
       for (const a of el?.getAnimations() ?? []) { a.cancel(); a.play(); }
     };
@@ -16740,21 +16763,11 @@ export class WristAssistantPanel extends LitElement {
         replay(row);
       }
       if (!direct) return;
-      const field = this.renderRoot.querySelector<HTMLElement>(".column.inspector .ent-chosen.slot");
-      const sec = field?.closest<HTMLElement>(".sec")?.dataset.sec;
-      if (field && sec) {
-        this.lightSection(sec);
-        field.scrollIntoView({ block: "nearest", behavior: "smooth" });
-        replay(field);
-      } else {
-        // The card with the stand-in is shut. Content is where a layer's
-        // entity nearly always sits.
-        if (!this.openSections.has("content")) this.openSections = new Set([...this.openSections, "content"]);
-        this.lightSection("content");
-        void this.updateComplete.then(() => {
-          this.renderRoot.querySelector(".column.inspector .sec.lit")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-        });
-      }
+      const fields = [...this.renderRoot.querySelectorAll<HTMLElement>(".column.inspector :is(.ent-chosen, .value-chip).slot")];
+      const sec = fields[0]?.closest<HTMLElement>(".sec")?.dataset.sec;
+      if (sec) this.lightSection(sec);
+      fields[0]?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      for (const f of fields) replay(f);
     });
   }
 

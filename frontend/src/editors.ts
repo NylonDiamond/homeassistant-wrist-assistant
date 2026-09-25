@@ -2694,9 +2694,13 @@ export function valueEditor(host: EditorHost, value: Value, set: (v: Value) => v
   // A chip whose summary is an entity's name says so in the entity color. A
   // typed-in number or a template is the author's own words and stays ink.
   const namesEntity = "entityId" in value.kind;
+  // A chip on a stand-in is ringed like a stand-in's entity field, so a click
+  // on its layer can point at it (a rule's "Testing" is where a day and night
+  // design reads the sun).
+  const slot = "entityId" in value.kind && isPlaceholderId(value.kind.entityId);
   return html`<div class="field value-chip-field ${opts.compact ? "compact" : ""}">
     ${opts.compact || opts.noLabel ? nothing : html`<span>${label}</span>`}
-    <button type="button" class="value-chip ${opts.compact ? "chip-cell" : ""}" popovertarget=${id} aria-haspopup="dialog" title=${`${label}: ${summary}. Click to change it.`}>
+    <button type="button" class="value-chip ${opts.compact ? "chip-cell" : ""} ${slot ? "slot" : ""}" popovertarget=${id} aria-haspopup="dialog" title=${`${label}: ${summary}. Click to change it.`}>
       <span class="chip-text ${namesEntity ? "ent-tok" : ""}">${summary}</span>
       ${resolved === undefined ? nothing : html`<span class="chip-now mono" title="Value right now">${resolved}</span>`}
       <span class="chip-caret" aria-hidden="true">▾</span>
