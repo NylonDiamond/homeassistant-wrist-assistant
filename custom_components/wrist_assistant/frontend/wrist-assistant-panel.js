@@ -6351,7 +6351,8 @@ Click to change`} @click=${E}>
     /* The 3D layer stack. The rig is the face's size and turns in 3D; each
        sheet sits in it at its own height (--u steps of --k face widths). */
     .stack-title { font-size: 13px; font-weight: 700; color: var(--wa-ink); flex: none; }
-    .zoom-bar .stack-name { position: static; transform: none; margin: 0; min-width: 0; overflow: hidden; }
+    .zoom-bar .stack-name { position: static; transform: none; margin: 0; min-width: 0; overflow: hidden; font-size: 12.5px; line-height: 16px; }
+    .zoom-bar .stack-name .fl-kind { font-size: 10.5px; }
     .stack-name .fl-count { color: var(--wa-muted); }
     .stack-spread-label { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--wa-muted); flex: none; }
     .stack-spread { width: 120px; accent-color: var(--wa-accent); }
@@ -6375,8 +6376,8 @@ Click to change`} @click=${E}>
     .stack-rig .sheet {
       position: absolute; inset: 0; border-radius: var(--r); pointer-events: none;
       transform: translateZ(calc(var(--u) * var(--k) * var(--fw)));
-      background: color-mix(in srgb, var(--wa-ink) 3%, transparent);
-      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ink) 16%, transparent);
+      background: transparent;
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ink) 9%, transparent);
       transition: box-shadow .15s, background .15s;
     }
     .stack-rig .sheet.ground { background: transparent; box-shadow: 0 30px 60px rgba(0,0,0,.45); }
