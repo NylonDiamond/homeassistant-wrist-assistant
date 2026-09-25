@@ -169,6 +169,9 @@ export interface GallerySubmission {
   /** The approved upload this one is a new version of. The link and votes
    * stay with it; the old version stays up until this one is approved. */
   replaces?: string;
+  /** The document's own id. Only this home reads it back, through /mine: it
+   * is how the panel knows a design is already in the gallery. */
+  sourceId?: string;
 }
 
 /**
@@ -246,6 +249,7 @@ export function buildGallerySubmission(
     slots: slots.map((slot) => ({ id: slot.placeholderId, label: slot.label.trim() })),
     panelVersion: meta.panelVersion,
     ...(meta.device === undefined ? {} : { device: meta.device }),
+    ...(cfg.id ? { sourceId: cfg.id } : {}),
   };
 }
 
@@ -703,6 +707,11 @@ export interface GalleryUpload {
   importCount: number;
   /** An absolute address for the first preview picture, or null. */
   previewUrl: string | null;
+  /** The id of the document it was made from, or null for an upload from a
+   * panel that did not send one. */
+  sourceId: string | null;
+  description: string;
+  tags: string[];
 }
 
 /**
@@ -736,6 +745,9 @@ export function readGalleryUpload(raw: unknown, base: string = GALLERY_API_BASE)
     updatedAt: str("updated_at", "updatedAt"),
     importCount: num("import_count", "importCount"),
     previewUrl: preview === null || preview === "" ? null : resolvePreviewUrl(preview, base),
+    sourceId: str("sourceId", "source_id") || null,
+    description: str("description") ?? "",
+    tags: Array.isArray(r.tags) ? r.tags.filter((t): t is string => typeof t === "string") : [],
   };
 }
 
@@ -811,6 +823,36 @@ export function galleryUploadRows(items: readonly GalleryUpload[]): GalleryUploa
     });
   }
   return rows;
+}
+
+/**
+ * Where one document stands in the gallery, from this home's uploads.
+ *
+ * `live`: it is in the gallery, so the next send is its new version. An older
+ * upload that never carried the document's id still counts once a new version
+ * of it came from this document. `waiting` is a new version of it still in
+ * review, which a new send replaces.
+ *
+ * `pending`: its first upload is still waiting for review. A new send replaces
+ * that copy rather than queueing a second one.
+ *
+ * Undefined: nothing this home sent came from it, or every copy was turned
+ * down or taken out, so a send is a plain new upload.
+ */
+export type GalleryLink =
+  | { kind: "live"; upload: GalleryUpload; waiting?: GalleryUpload }
+  | { kind: "pending"; upload: GalleryUpload };
+
+export function galleryLinkFor(items: readonly GalleryUpload[], sourceId: string | undefined): GalleryLink | undefined {
+  if (!sourceId) return undefined;
+  const live = items.find((u) => u.status === "approved" && !isUpdate(u)
+    && (u.sourceId === sourceId || items.some((v) => v.replacesId === u.id && v.sourceId === sourceId)));
+  if (live) {
+    const waiting = items.find((v) => v.replacesId === live.id && isPendingUpdate(v));
+    return waiting ? { kind: "live", upload: live, waiting } : { kind: "live", upload: live };
+  }
+  const pending = items.find((u) => u.status === "pending" && !isUpdate(u) && u.sourceId === sourceId);
+  return pending ? { kind: "pending", upload: pending } : undefined;
 }
 
 /** The line under an upload's title: why it was turned down, or how it is doing. */

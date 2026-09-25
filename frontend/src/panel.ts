@@ -343,6 +343,7 @@ import {
   type GalleryNameRow,
   type GalleryOverrides,
   type GalleryPreview,
+  type GalleryLink,
   type GalleryTag,
   type GalleryUpload,
   type GalleryUploadRow,
@@ -358,6 +359,7 @@ import {
   galleryDevice,
   galleryErrorMessage,
   galleryFamily,
+  galleryLinkFor,
   galleryPublicFields,
   galleryStatusLabel,
   galleryUploadRows,
@@ -1780,6 +1782,9 @@ export class WristAssistantPanel extends LitElement {
   @state() private galleryStep: 1 | 2 = 1;
   /** The approved upload this one is sent as a new version of. */
   @state() private galleryReplaces?: { id: string; title: string };
+  /** Whether New was already filled from this design's own upload, so a late
+   * uploads list does not fill it again over what the author changed. */
+  private galleryLinkApplied = false;
   /** The public text row the pointer or the focus is in. */
   /** Waits out typing in a slot label before the pictures are drawn again,
    * since they print the labels. */
@@ -14287,12 +14292,18 @@ export class WristAssistantPanel extends LitElement {
           family !== undefined && isDrawable(family) ? { cfg, family, face: layouts[family] } : undefined)
         : html`<div class="hint">Pick a shape first.</div>`,
       nothing, !ready);
+    const posted = admin ? this.galleryLink() : undefined;
     const send = this.shareSection(++n, "s-send", "Send it", html`
+      ${this.renderGalleryStanding(posted)}
       <div class="xf-acts">
         <button class="xf-act" ?disabled=${!share || !admin || !ready} aria-haspopup="dialog"
           @click=${() => this.openGalleryDialog()}>
-          <span class="ic">${uiIcon("globe")}</span><b>Post to online gallery</b>
-          <span>${!share ? "Only shares can go" : admin ? "Everyone can find it, after review" : "Needs a Home Assistant administrator"}</span>
+          <span class="ic">${uiIcon("globe")}</span><b>${posted?.kind === "live" ? "Update in online gallery" : posted?.kind === "pending" ? "Send to gallery again" : "Post to online gallery"}</b>
+          <span>${!share ? "Only shares can go"
+            : !admin ? "Needs a Home Assistant administrator"
+            : posted?.kind === "live" ? "A new version. The link and votes stay"
+            : posted?.kind === "pending" ? "Takes the place of the copy in review"
+            : "Everyone can find it, after review"}</span>
         </button>
         <button class="xf-act ${copied === "link" ? "flash" : ""}" ?disabled=${!ready} @click=${() => void this.copyShareLink(text)}>
           <span class="ic">${uiIcon(copied === "link" ? "check" : "link")}</span><b>${copied === "link" ? "Link copied" : "Copy link"}</b>
@@ -14329,6 +14340,19 @@ export class WristAssistantPanel extends LitElement {
         ${who}${names}${send}
       </div>
     </dialog>`;
+  }
+
+  /** A line over Send it when this design is already in the gallery or on its
+   * way there, so nobody posts the same thing twice without knowing. */
+  private renderGalleryStanding(link: GalleryLink | undefined) {
+    if (!link) return nothing;
+    const u = link.upload;
+    if (link.kind === "pending") {
+      return html`<div class="xf-lead">${uiIcon("info")}<span>Sent to the online gallery as <b>${u.title}</b>. It is waiting for review.</span></div>`;
+    }
+    return html`<div class="xf-lead">${uiIcon("globe")}<span>In the online gallery as
+      <a href=${`${GALLERY_PAGE}?id=${encodeURIComponent(u.id)}`} target="_blank" rel="noopener"><b>${u.title}</b></a>.
+      ${galleryUploadSubline(u)}.${link.waiting ? " A new version is waiting for review." : ""}</span></div>`;
   }
 
   /** One numbered step of the Share dialog, in its own color. A locked step
@@ -14743,6 +14767,8 @@ export class WristAssistantPanel extends LitElement {
     this.galleryTab = tab;
     this.galleryStep = 1;
     this.galleryReplaces = undefined;
+    this.galleryLinkApplied = false;
+    if (tab === "new") this.applyGalleryLink();
     void this.updateComplete.then(() => {
       const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.gallery-dialog");
       if (dialog && !dialog.open) dialog.showModal();
@@ -14827,6 +14853,7 @@ export class WristAssistantPanel extends LitElement {
     try {
       const key = await this.ensureGalleryKey();
       this.galleryUploads = await listMyUploads(galleryFetch, key);
+      if (this.galleryOpen && this.galleryTab === "new" && !this.gallerySent && !this.galleryLinkApplied) this.applyGalleryLink();
     } catch (err) {
       this.galleryUploads = [];
       this.galleryUploadsError = err instanceof GalleryError
@@ -14925,7 +14952,13 @@ export class WristAssistantPanel extends LitElement {
         this.galleryStep = 1;
         this.galleryError = "";
       }
-      if (this.galleryTab === "new") this.galleryReplaces = undefined;
+      // New again goes back to what this design is: an update when it is in
+      // the gallery, a new upload when it is not.
+      if (this.galleryTab === "new") {
+        this.galleryReplaces = undefined;
+        this.galleryLinkApplied = false;
+      }
+      if (!this.galleryLinkApplied) this.applyGalleryLink();
     }
     this.galleryTab = tab;
     this.galleryConfirmDelete = undefined;
@@ -14935,8 +14968,34 @@ export class WristAssistantPanel extends LitElement {
     this.galleryStep = step;
   }
 
+  /** Where the design in Share stands in the gallery, once the list is in. */
+  private galleryLink(): GalleryLink | undefined {
+    return this.galleryUploads ? galleryLinkFor(this.galleryUploads, this.shareConfig()?.id) : undefined;
+  }
+
+  /**
+   * Starts New from this design's own upload: in the gallery, the send is its
+   * new version; still waiting, the send replaces the waiting copy. Either
+   * way the listing starts as it stands, and a box already typed in keeps
+   * what was typed. Waits for the uploads list when it is not in yet.
+   */
+  private applyGalleryLink() {
+    if (this.galleryUploads === undefined) return;
+    this.galleryLinkApplied = true;
+    const link = this.galleryLink();
+    if (!link) return;
+    const u = link.upload;
+    if (link.kind === "live") this.galleryReplaces = { id: u.id, title: u.title };
+    this.galleryTitle = u.title.slice(0, GALLERY_LIMITS.title);
+    if (this.galleryDescription.trim() === "") this.galleryDescription = u.description.slice(0, GALLERY_LIMITS.description);
+    if (this.galleryTags.size === 0) {
+      this.galleryTags = new Set(u.tags.filter((t): t is GalleryTag => (GALLERY_TAGS as readonly string[]).includes(t)).slice(0, GALLERY_LIMITS.tags));
+    }
+  }
+
   /** Update on an upload: the same three steps, sent as its new version. */
   private startGalleryUpdate(u: GalleryUpload) {
+    this.galleryLinkApplied = true;
     this.galleryReplaces = { id: u.id, title: u.title };
     this.galleryTitle = u.title.slice(0, GALLERY_LIMITS.title);
     this.galleryTab = "new";
@@ -14944,6 +15003,19 @@ export class WristAssistantPanel extends LitElement {
     this.gallerySent = false;
     this.galleryError = "";
     this.galleryConfirmDelete = undefined;
+  }
+
+  /** Says what a send does when it is not a plain new upload. */
+  private renderGalleryBanner() {
+    const link = this.galleryLink();
+    if (this.galleryReplaces) {
+      const waiting = link?.kind === "live" && link.upload.id === this.galleryReplaces.id && link.waiting !== undefined;
+      return html`<div class="xf-banner">${uiIcon("info")}<span>New version of <b>${this.galleryReplaces.title}</b>. The link and votes stay. The old version stays up until this one is approved.${waiting ? " It takes the place of the new version already waiting for review." : ""}</span></div>`;
+    }
+    if (link?.kind === "pending") {
+      return html`<div class="xf-banner">${uiIcon("info")}<span>This design is already waiting for review as <b>${link.upload.title}</b>. Sending it again takes the place of that copy.</span></div>`;
+    }
+    return nothing;
   }
 
   private renderGallerySent() {
@@ -14982,7 +15054,7 @@ export class WristAssistantPanel extends LitElement {
     const body = step === 1 ? this.renderGalleryDetails(blockers.details) : this.renderGallerySend(cfg, slots, all);
     return html`${steps}
       <div class="xfer-body">
-        ${this.galleryReplaces ? html`<div class="xf-banner">${uiIcon("info")}<span>New version of <b>${this.galleryReplaces.title}</b>. The link and votes stay. The old version stays up until this one is approved.</span></div>` : nothing}
+        ${this.renderGalleryBanner()}
         ${body}
       </div>
       <div class="xfer-foot">
