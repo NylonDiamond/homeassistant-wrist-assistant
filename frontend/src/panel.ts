@@ -4372,6 +4372,8 @@ export class WristAssistantPanel extends LitElement {
     button.start-shape.soon { border-style: dashed; }
     .start-shape-art { display: block; height: 64px; margin-bottom: 6px; color: var(--wa-accent); --wa-shape-outline: var(--wa-muted); }
     .start-shape-art .shape-art { width: 50px; height: 64px; display: block; }
+    .start-shape-art.pair { display: flex; align-items: center; gap: 2px; }
+    .start-kind-head svg + svg { margin-left: -3px; }
     .start-shape-name { font-size: 13px; font-weight: 700; }
     .start-shape-sub { font-size: 11px; line-height: 1.35; text-align: center; color: var(--wa-muted); }
     /* The quiet row at the foot: three doors that are not about this home's
@@ -13441,7 +13443,7 @@ export class WristAssistantPanel extends LitElement {
       aria-checked=${on ? "true" : "false"} title=${kindNote(kind)}
       @click=${() => pick(kind)}>
       <span class="shape-arts">${kind === "control"
-        ? controlDeviceArt(device, on)
+        ? html`${controlDeviceArt("watch", on)}${controlDeviceArt("iphone", on)}`
         : deviceShapeArt("rectangular", device, on)}</span>
       <span class="shape-card-name">${kindTitle(kind)}</span>
       <span class="shape-card-note">${kindNote(kind)}</span>
@@ -17307,14 +17309,17 @@ export class WristAssistantPanel extends LitElement {
     const kinds = kindChoices(owners);
     if (kinds.length === 0) return nothing;
     const why = full ? "Every device is full. Delete a complication first." : undefined;
-    const tile = (kind: NewKind, family: FamilyKind | undefined, soon: boolean, on: DeviceKind = kind === "iphone" ? "iphone" : "watch") => {
-      const device = on;
-      const name = family === undefined ? (device === "iphone" ? "iPhone" : "Watch") : familyTitle(family);
+    const tile = (kind: NewKind, family: FamilyKind | undefined, soon: boolean) => {
+      const device: DeviceKind = kind === "iphone" ? "iphone" : "watch";
+      // Control Center is on both devices, so its one tile draws both.
+      const name = family === undefined ? "Both" : familyTitle(family);
       const note = family !== undefined && soon ? familyNote(family) : "";
       return html`<button type="button" class="start-shape ${soon ? "soon" : ""}" ?disabled=${full || this.ownerBusy || soon}
         title=${soon ? `${name}: coming soon` : why ?? `New ${name.toLowerCase()} complication`}
         @click=${() => this.newFromShape(kind, family)}>
-        <span class="start-shape-art">${family === undefined ? controlDeviceArt(device, true) : deviceShapeArt(family, device, !soon)}</span>
+        <span class="start-shape-art ${family === undefined ? "pair" : ""}">${family === undefined
+          ? html`${controlDeviceArt("watch", true)}${controlDeviceArt("iphone", true)}`
+          : deviceShapeArt(family, device, !soon)}</span>
         <span class="start-shape-name">${name}</span>
         ${soon ? html`<span class="start-shape-sub">Coming soon${note ? html`<br />${note}` : nothing}</span>` : nothing}
       </button>`;
@@ -17325,13 +17330,14 @@ export class WristAssistantPanel extends LitElement {
         ${kinds.flatMap((kind) => {
           const device: DeviceKind = kind === "iphone" ? "iphone" : "watch";
           const box = (title: string, tiles: unknown) => html`<div class="start-kind ${kind}">
-            <div class="start-kind-head">${uiIcon(device === "iphone" ? "phone" : "watch")}<span>${title}</span></div>
+            <div class="start-kind-head">${kind === "control"
+              ? html`${uiIcon("watch")}${uiIcon("phone")}`
+              : uiIcon(device === "iphone" ? "phone" : "watch")}<span>${title}</span></div>
             <div class="start-kind-tiles">${tiles}</div>
           </div>`;
-          // Control Center is one kind on both devices: a tile per device,
-          // each drawn as its own device's tile grid, both opening the same
-          // New dialog with Control Center picked.
-          if (kind === "control") return [box(kindTitle(kind), html`${tile(kind, undefined, false, "watch")}${tile(kind, undefined, false, "iphone")}`)];
+          // Control Center is one kind on both devices: one tile, drawn as
+          // both devices' tile grids, opening New with Control Center picked.
+          if (kind === "control") return [box(kindTitle(kind), tile(kind, undefined, false))];
           // A box per screen: the watch has one, the iPhone has its Lock
           // Screen and its Home Screen. Each box hugs its own tiles, so no
           // box carries a blank where another's second row would be.
