@@ -192,6 +192,7 @@ import {
   newStyleChange,
   newTest,
   setLayerEntity,
+  setSharedValue,
   styleChangePayload,
   switchComparison,
   copyShapeLayers,
@@ -5271,7 +5272,7 @@ export function namedValueEditor(host: EditorHost, nv: NamedValue): TemplateResu
   const asRead: Value = { kind: { kind: "named", id: nv.id } };
   return html`
     ${textField("Name", nv.name, (v) => host.update((c) => { c.values[idx]!.name = v; }, `${key}-name`), { placeholder: "Name it, like Outside temp" })}
-    ${valueEditor(host, nv.value, (v) => host.update((c) => { c.values[idx]!.value = v; }, key), { allowNamed: false, showResolved: true, resolveAs: asRead, inline: true, key })}
+    ${valueEditor(host, nv.value, (v) => host.update((c) => setSharedValue(c, nv.id, v), key), { allowNamed: false, showResolved: true, resolveAs: asRead, inline: true, key })}
     <div class="field readout"><span>Used by</span><span class="readout-v">${uses === 0 ? "No layers yet" : `${uses} ${uses === 1 ? "layer" : "layers"}`}</span></div>`;
 }
 

@@ -51,6 +51,7 @@ import {
   newStyleChange,
   richTextFallback,
   seedTimelineBands,
+  shareValue,
 } from "./model.js";
 
 export type PresetKind =
@@ -2766,8 +2767,12 @@ export function addHouseScene(cfg: CustomComplicationConfig, env: PresetEnv): st
   const family = env.family;
   const medium = family === "medium";
   const sun = env.states?.["sun.sun"] ? refOf(env, "sun.sun") : undefined;
-  const weather = entitiesOf(env, "weather")[0];
   const lights = pickSceneLights(env, HOUSE_WINDOWS.length);
+  // Everything the house reads is a shared value, so the whole scene is
+  // repointed from the Shared values list without opening a layer. The window
+  // lights come first, in window order, since those are what people change.
+  const lightRefs = lights.map((l, i) => share(cfg, `${HOUSE_WINDOWS[i]!.name} light`, entityStateValue(withDomain(l))));
+  const readings = houseReadings(cfg, env);
   const put = <T extends Element>(el: T, geometry: PresetGeometry, name?: string): T => {
     if (name) el.payload.name = name;
     placeLayer(cfg, el, family, () => geometry);
@@ -2839,7 +2844,7 @@ export function addHouseScene(cfg: CustomComplicationConfig, env: PresetEnv): st
     const pad = 2;
     const lit = drawing(windowPanes(win), `${win.x - pad} ${win.y - pad} ${win.w + 2 * pad} ${win.h + 2 * pad}`, "#FFD37A");
     lit.payload.shadow = glow("#FFBE5A", medium ? 5 : 8);
-    lit.payload.rules = [showWhile(entityStateValue(full), onComparison(full))];
+    lit.payload.rules = [showWhile(lightRefs[i]!, onComparison(full))];
     const k = houseStage(family).k;
     put(lit, {
       ...houseRect(family, win.x - pad, win.y - pad, win.w + 2 * pad, win.h + 2 * pad),
@@ -2848,11 +2853,11 @@ export function addHouseScene(cfg: CustomComplicationConfig, env: PresetEnv): st
     attachTap(cfg, lit.payload.id, { type: "toggleEntity", ...full });
   });
 
-  if (weather) {
+  if (readings.weather) {
     const rain = drawing(rainPath(family), `0 0 ${SCENE_WIDTH} ${sceneHeight(family)}`, "#A9C2F0B3");
     // One row per word rather than "is one of", which the states table cannot show.
     rain.payload.rules = [buildStatesRule(
-      stateOf(refOf(env, weather)),
+      readings.weather,
       RAINY_STATES.map((word) => ({ comparison: equalsWord(word), changes: [newStyleChange("show")] })),
       [newStyleChange("hide")],
     )];
@@ -2887,12 +2892,49 @@ export function addHouseScene(cfg: CustomComplicationConfig, env: PresetEnv): st
 
   addSceneRefresh(cfg, family, medium ? [320, 12, 32] : [318, 12, 34], (el, day) => byDay(el, day), put);
 
-  if (medium) addHouseFootnote(cfg, env, family, byDay, put);
-  else addHouseChips(cfg, env, family, byDay, put);
+  if (medium) addHouseFootnote(cfg, readings, family, byDay, put);
+  else addHouseChips(cfg, readings, family, byDay, put);
   return title.payload.id;
 }
 
 type ScenePut = <T extends Element>(el: T, geometry: PresetGeometry, name?: string) => T;
+
+/** Add a shared value holding `value` and return the reference that reads it.
+ * The format stays on the reference, the way Make shared leaves it. */
+function share(cfg: CustomComplicationConfig, name: string, value: Value): Value {
+  const { named, ref } = shareValue(cfg, value, name);
+  cfg.values.push(named);
+  return ref;
+}
+
+/** What the house prints besides its lights, each as a shared value. */
+interface HouseReadings {
+  inside?: Value;
+  outside?: Value;
+  /** The weather's state, for the rain. */
+  weather?: Value;
+  lock?: { label: string; value: Value };
+}
+
+function houseReadings(cfg: CustomComplicationConfig, env: PresetEnv): HouseReadings {
+  const out: HouseReadings = {};
+  const inside = temperatureValue(env, (id) => !id.includes("outdoor") && !id.includes("outside"));
+  if (inside) out.inside = share(cfg, "Inside temperature", inside);
+  const weather = entitiesOf(env, "weather")[0];
+  if (weather) {
+    out.outside = share(cfg, "Outside temperature", {
+      kind: { kind: "entityAttribute", ...refOf(env, weather), attribute: "temperature" },
+      format: { decimals: 0, suffix: "°" },
+    });
+    out.weather = share(cfg, "Weather", stateOf(refOf(env, weather)));
+  }
+  const lock = houseLockOf(env);
+  if (lock) {
+    const label = lockLabelOf(env, lock);
+    out.lock = { label, value: share(cfg, label, stateOf(refOf(env, lock))) };
+  }
+  return out;
+}
 
 /** The round refresh button in the top right: a disc, the arrow on it, and a
  * refresh tap attached to the disc. `at` is x, y and diameter in the
@@ -2921,20 +2963,15 @@ function addSceneRefresh(
  * front door, each only when the home has something to read for it. */
 function addHouseChips(
   cfg: CustomComplicationConfig,
-  env: PresetEnv,
+  readings: HouseReadings,
   family: DrawableFamily,
   byDay: (el: Element, changes: StyleChange[]) => void,
   put: ScenePut,
 ): void {
   const chips: { label: string; value: Value }[] = [];
-  const inside = temperatureValue(env, (id) => !id.includes("outdoor") && !id.includes("outside"));
-  if (inside) chips.push({ label: "Inside", value: inside });
-  const weather = entitiesOf(env, "weather")[0];
-  if (weather) {
-    chips.push({ label: "Outside", value: { kind: { kind: "entityAttribute", ...refOf(env, weather), attribute: "temperature" }, format: { decimals: 0, suffix: "°" } } });
-  }
-  const lock = houseLockOf(env);
-  if (lock) chips.push({ label: lockLabelOf(env, lock), value: { kind: { kind: "entityState", ...refOf(env, lock) }, format: { textCase: "capitalized" } } });
+  if (readings.inside) chips.push({ label: "Inside", value: readings.inside });
+  if (readings.outside) chips.push({ label: "Outside", value: readings.outside });
+  if (readings.lock) chips.push({ label: readings.lock.label, value: { ...readings.lock.value, format: { textCase: "capitalized" } } });
   if (chips.length === 0) return;
   const gap = 8;
   const width = (336 - gap * (chips.length - 1)) / chips.length;
@@ -3004,21 +3041,16 @@ function setParts(el: Extract<Element, { kind: "text" }>, parts: TextPart[]): vo
  * list rather than a template to edit. */
 function addHouseFootnote(
   cfg: CustomComplicationConfig,
-  env: PresetEnv,
+  readings: HouseReadings,
   family: DrawableFamily,
   byDay: (el: Element, changes: StyleChange[]) => void,
   put: ScenePut,
 ): void {
   const parts: TextPart[] = [];
-  const inside = temperatureValue(env, (id) => !id.includes("outdoor") && !id.includes("outside"));
-  if (inside) parts.push(textPart(inside), textPart(literal(" in")));
-  const weather = entitiesOf(env, "weather")[0];
-  if (weather) {
+  if (readings.inside) parts.push(textPart(readings.inside), textPart(literal(" in")));
+  if (readings.outside) {
     if (parts.length > 0) parts.push(textPart(literal(" · ")));
-    parts.push(
-      textPart({ kind: { kind: "entityAttribute", ...refOf(env, weather), attribute: "temperature" }, format: { decimals: 0, suffix: "°" } }),
-      textPart(literal(" out")),
-    );
+    parts.push(textPart(readings.outside), textPart(literal(" out")));
   }
   const ids: string[] = [];
   if (parts.length > 0) {
@@ -3031,13 +3063,9 @@ function addHouseFootnote(
     byDay(temps, [setColorTo(DAY_INK_HEX)]);
     ids.push(put(temps, sceneRect(family, 16, 122, 150, 20), "Temperatures").payload.id);
   }
-  const lock = houseLockOf(env);
-  if (lock) {
+  if (readings.lock) {
     const door = layerOf("text");
-    setParts(door, [
-      textPart(literal(`${lockLabelOf(env, lock)} `)),
-      textPart({ kind: { kind: "entityState", ...refOf(env, lock) } }),
-    ]);
+    setParts(door, [textPart(literal(`${readings.lock.label} `)), textPart(readings.lock.value)]);
     door.payload.fontSize = scenePoints(family, 12);
     door.payload.alignment = "leading";
     door.payload.colorSlot.baseColorHex = NIGHT_SUB_HEX;

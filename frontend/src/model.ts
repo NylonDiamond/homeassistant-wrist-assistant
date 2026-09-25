@@ -9770,9 +9770,10 @@ function rebindValue(value: Value | undefined, ref: EntityRef, kind: Element["ki
 /**
  * Point a layer at an entity: its own content where that is safe (see
  * `rebindValue`), the target of the tap attached to it, and every rule test
- * that read the entity the layer was about before. Tests that read some other
- * entity, or read it through a named value, are left alone: those were picked
- * on purpose in the states table. Following the old entity is what lets one
+ * that read the entity the layer was about before. A test that reads it
+ * through a shared value changes that shared value (`setSharedValue`). Tests
+ * on some other entity are left alone: those were picked on purpose in the
+ * states table. Following the old entity is what lets one
  * pick move a whole part, such as a window that glows while its light is on
  * and toggles that light when tapped.
  *
@@ -9794,15 +9795,27 @@ export function setLayerEntity(
   const full: EntityRef = { ...ref, domain: ref.domain || ref.entityId.split(".")[0] || "" };
   const previous = layerEntity(cfg, layerId)?.entityId;
   if (previous !== undefined && previous !== full.entityId) {
+    const sharedIds = new Set<string>();
     for (const rule of el.payload.rules) {
       for (const c of rule.cases) {
         for (const t of c.when.tests) {
           const k = t.value.kind;
+          // A test that reads the old entity through a shared value moves the
+          // shared value itself: that value is what the part is about.
+          if (k.kind === "named") {
+            if (valueEntity(cfg, t.value)?.ref.entityId === previous) sharedIds.add(k.id);
+            continue;
+          }
           if (!("entityId" in k) || k.entityId !== previous) continue;
           const next = rebindValue(t.value, full, "icon");
           if (next) t.value = next;
         }
       }
+    }
+    for (const id of sharedIds) {
+      const named = cfg.values.find((n) => n.id.toUpperCase() === id.toUpperCase());
+      const next = named ? rebindValue(named.value, full, "icon") : undefined;
+      if (next) setSharedValue(cfg, id, next);
     }
   }
   if (el.kind === "timeline") {
@@ -10280,6 +10293,61 @@ export function sharedValueUses(cfg: CustomComplicationConfig, id: string): numb
     places.add(site.layerId ?? `${site.kind}:${site.valueId ?? ""}:${site.family ?? ""}:${site.part ?? ""}`);
   });
   return places.size;
+}
+
+/**
+ * Give a shared value a new value, and when that moves it from one entity to
+ * another, move the rest of its part along with it.
+ *
+ * A tap cannot read a shared value (the watch fires the entity the tap names),
+ * and neither can a count's list of entities. So a window that glows while
+ * "Kitchen light" is on and toggles it when tapped names the light twice: once
+ * through the shared value, once in its tap. Changing only the shared value
+ * would leave the tap on the old light. Instead, every place that named the
+ * old entity directly, within the part the shared value belongs to, follows.
+ *
+ * The part is the top-level group of each layer that reads the shared value,
+ * or that layer alone when it is in no group. Other shared values are never
+ * touched, and nothing outside the part is, so a second use of the old entity
+ * elsewhere in the document stays as the author set it.
+ */
+export function setSharedValue(cfg: CustomComplicationConfig, id: string, value: Value): void {
+  const named = cfg.values.find((n) => n.id.toUpperCase() === id.toUpperCase());
+  if (!named) return;
+  const entityOf = (v: Value) => ("entityId" in v.kind && v.kind.entityId !== "" ? v.kind.entityId : undefined);
+  const before = entityOf(named.value);
+  named.value = value;
+  const after = "entityId" in value.kind ? { entityId: value.kind.entityId, displayName: value.kind.displayName, domain: value.kind.domain } : undefined;
+  if (before === undefined || after === undefined || after.entityId === "" || after.entityId === before) return;
+
+  const readers = new Set<string>();
+  forEachValue(cfg, (v, site) => {
+    if (site.layerId !== undefined && readsShared(v, id)) readers.add(site.layerId);
+  });
+  const byId = new Map(cfg.elements.map((e) => [e.payload.id, e]));
+  const topOf = (layerId: string): string | undefined => {
+    const el = byId.get(layerId);
+    if (!el) return undefined;
+    // An attached tap belongs to whatever part its layer does.
+    const owner = el.kind === "tap" && el.payload.attachedTo !== undefined ? byId.get(el.payload.attachedTo) ?? el : el;
+    return groupChain(cfg, owner.payload.groupId).at(-1)?.id;
+  };
+  const parts = new Set<string>();
+  for (const layerId of readers) {
+    const top = topOf(layerId);
+    if (top !== undefined) parts.add(top);
+  }
+  const inPart = (layerId: string): boolean => {
+    if (readers.has(layerId)) return true;
+    const el = byId.get(layerId);
+    if (el?.kind === "tap" && el.payload.attachedTo !== undefined && readers.has(el.payload.attachedTo)) return true;
+    const top = topOf(layerId);
+    return top !== undefined && parts.has(top);
+  };
+  mapEntityRefs(cfg, (ref, site) => {
+    if (ref.entityId !== before || site.kind === "named" || site.layerId === undefined || !inPart(site.layerId)) return undefined;
+    return { ...after, domain: after.domain || after.entityId.split(".")[0] || "" };
+  });
 }
 
 /** A name no other shared value in the document has, ignoring case. */

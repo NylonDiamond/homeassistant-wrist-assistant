@@ -8,17 +8,23 @@ import {
   type Element as CElement,
   type Rule,
   type TapElement,
+  type Value,
   DRAWABLE_FAMILIES,
   attachedTapsOf,
   auditUnknownKeys,
   chartHistoryEntity,
   chartHistoryRequests,
   encodeConfig,
+  forEachValue,
   groupChain,
   legacyConfig,
   newConfig,
+  newElement,
   parseConfig,
   setLayerEntity,
+  setSharedValue,
+  unsharedCopy,
+  valueEntity,
 } from "../src/model.js";
 import {
   ALARM_LOW_RAMP,
@@ -1192,7 +1198,42 @@ describe("the scene presets", () => {
     const win = cfg.elements.find((e) => e.payload.name === "Downstairs left window")!;
     setLayerEntity(cfg, win.payload.id, { entityId: "light.porch", displayName: "Porch", domain: "light" });
     expect((attachedTapsOf(cfg, win.payload.id)[0]!.payload as TapElement).action).toMatchObject({ entityId: "light.porch" });
-    expect(win.payload.rules[0]!.cases[0]!.when.tests[0]!.value.kind).toMatchObject({ entityId: "light.porch" });
+    // The glow reads its shared value, and the pick moved that shared value.
+    expect(valueEntity(cfg, win.payload.rules[0]!.cases[0]!.when.tests[0]!.value)?.ref.entityId).toBe("light.porch");
+    expect(cfg.values.find((v) => v.name === "Downstairs left light")!.value.kind).toMatchObject({ entityId: "light.porch" });
+  });
+
+  it("reads every entity through a shared value, lights first, so the Shared values list repoints the house", () => {
+    const cfg = build("houseScene", home());
+    expect(cfg.values.map((v) => v.name)).toEqual([
+      "Downstairs left light", "Downstairs right light", "Upstairs left light", "Upstairs right light",
+      "Inside temperature", "Outside temperature", "Weather", "Front door",
+    ]);
+    // No layer names an entity outright except the taps and the count, which
+    // cannot read a shared value, and the sun.
+    const direct: string[] = [];
+    forEachValue(cfg, (v, site) => {
+      if (site.kind !== "named" && "entityId" in v.kind && v.kind.entityId !== "sun.sun") direct.push(v.kind.entityId);
+    });
+    expect(direct).toEqual([]);
+  });
+
+  it("moves a window's tap and the count with its shared value, and nothing else", () => {
+    const cfg = build("houseScene", home());
+    // A loose tap outside the house on the same light must stay put.
+    const stray = newElement("tap");
+    (stray.payload as TapElement).action = { type: "toggleEntity", entityId: "light.bedroom", displayName: "Bedroom", domain: "light" };
+    cfg.elements.push(stray);
+    const shared = cfg.values.find((v) => v.name === "Downstairs left light")!;
+    expect(shared.value.kind).toMatchObject({ entityId: "light.bedroom" });
+    setSharedValue(cfg, shared.id, { kind: { kind: "entityState", entityId: "light.porch", displayName: "Porch", domain: "light" } });
+    const win = cfg.elements.find((e) => e.payload.name === "Downstairs left window")!;
+    expect((attachedTapsOf(cfg, win.payload.id)[0]!.payload as TapElement).action).toMatchObject({ entityId: "light.porch", displayName: "Porch" });
+    const count = cfg.elements.find((e) => e.payload.name === "Lights on")!;
+    if (count.kind !== "text" || count.payload.value.kind.kind !== "aggregate" || count.payload.value.kind.aggregate.scope.kind !== "entities") throw new Error("no count");
+    expect(count.payload.value.kind.aggregate.scope.entities.map((e) => e.entityId))
+      .toEqual(["light.porch", "light.kitchen", "light.living_ceiling", "light.living_lamp"]);
+    expect((stray.payload as TapElement).action).toMatchObject({ entityId: "light.bedroom" });
   });
 
   it("skips light groups, unavailable lights, and a lock that is not the house's", () => {
@@ -1245,18 +1286,19 @@ describe("the scene presets", () => {
     const temps = named(medium, "Temperatures");
     expect(temps?.kind).toBe("text");
     if (temps?.kind !== "text") return;
-    // Rich text, not a template: each reading is a part picked from a list.
-    expect(temps.payload.parts!.map((p) => p.value.kind)).toEqual([
+    // Rich text, not a template: each reading is a part, read through a shared value.
+    const read = (v: Value) => (v.kind.kind === "literal" ? v.kind : unsharedCopy(medium, v)!.kind);
+    expect(temps.payload.parts!.map((p) => read(p.value))).toEqual([
       expect.objectContaining({ kind: "entityState", entityId: "sensor.kitchen_temperature" }),
       { kind: "literal", value: " in" },
       { kind: "literal", value: " · " },
       expect.objectContaining({ kind: "entityAttribute", entityId: "weather.home", attribute: "temperature" }),
       { kind: "literal", value: " out" },
     ]);
-    expect(temps.payload.value.kind).toMatchObject({ kind: "entityState", entityId: "sensor.kitchen_temperature" });
+    expect(temps.payload.parts![0]!.value.format).toEqual({ decimals: 0, suffix: "°" });
     const door = named(medium, "Lock");
     if (door?.kind !== "text") throw new Error("no door line");
-    expect(door.payload.parts!.map((p) => p.value.kind)).toEqual([
+    expect(door.payload.parts!.map((p) => read(p.value))).toEqual([
       { kind: "literal", value: "Front door " },
       expect.objectContaining({ kind: "entityState", entityId: "lock.front_door" }),
     ]);
