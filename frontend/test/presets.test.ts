@@ -18,6 +18,7 @@ import {
   legacyConfig,
   newConfig,
   parseConfig,
+  setLayerEntity,
 } from "../src/model.js";
 import {
   ALARM_LOW_RAMP,
@@ -36,6 +37,7 @@ import {
   gaugeRange,
   onComparison,
   planCells,
+  pickSceneLights,
   planRooms,
   presetSpec,
   thermostatTargetTemplate,
@@ -1164,19 +1166,60 @@ describe("the scene presets", () => {
 
   it("hands out one light per area first, then the rest, to the four windows", () => {
     const cfg = build("houseScene", home());
-    const taps = cfg.elements.filter((e): e is Extract<CElement, { kind: "tap" }> => e.kind === "tap" && e.payload.attachedTo === undefined);
-    expect(taps.map((t) => (t.payload.action as { entityId: string }).entityId))
+    // One row per window: the tap is attached, so the Layers list hides it.
+    expect(cfg.elements.some((e) => e.kind === "tap" && e.payload.attachedTo === undefined)).toBe(false);
+    const windows = cfg.elements.filter((e) => e.payload.name?.endsWith(" window"));
+    expect(windows).toHaveLength(4);
+    const taps = windows.map((w) => attachedTapsOf(cfg, w.payload.id)[0]!.payload as TapElement);
+    expect(taps.map((t) => (t.action as { entityId: string }).entityId))
       .toEqual(["light.bedroom", "light.kitchen", "light.living_ceiling", "light.living_lamp"]);
-    for (const tap of taps) expect(tap.payload.action.type).toBe("toggleEntity");
-    const lit = cfg.elements.filter((e) => e.payload.name?.endsWith(" lit"));
-    expect(lit).toHaveLength(4);
-    for (const el of lit) {
+    for (const tap of taps) expect(tap.action.type).toBe("toggleEntity");
+    for (const el of windows) {
       expect(el.payload.shadow).toBeDefined();
       const table = tableShape(el.payload.rules);
       if (!table.ok) throw new Error(table.reason);
       expect(table.table.rows[0]!.changes[0]!.kind).toBe("show");
       expect(table.table.otherwise?.[0]?.kind).toBe("hide");
     }
+    // The tap sits over the window, not over the whole house.
+    const frame = cfg.perFamily.large!.placements[windows[0]!.payload.id]!.frame;
+    expect(frame.width).toBeLessThan(0.2);
+    expect(cfg.perFamily.large!.placements[taps[0]!.id]!.frame).toEqual(frame);
+  });
+
+  it("moves a window to another light with one pick: its glow and its tap", () => {
+    const cfg = build("houseScene", home());
+    const win = cfg.elements.find((e) => e.payload.name === "Downstairs left window")!;
+    setLayerEntity(cfg, win.payload.id, { entityId: "light.porch", displayName: "Porch", domain: "light" });
+    expect((attachedTapsOf(cfg, win.payload.id)[0]!.payload as TapElement).action).toMatchObject({ entityId: "light.porch" });
+    expect(win.payload.rules[0]!.cases[0]!.when.tests[0]!.value.kind).toMatchObject({ entityId: "light.porch" });
+  });
+
+  it("skips light groups, unavailable lights, and a lock that is not the house's", () => {
+    const env = home();
+    const add = (s: HassEntityState) => { env.states![s.entity_id] = s; };
+    add(entity("light.all", "on", { friendly_name: "All", entity_id: ["light.kitchen", "light.bedroom"] }));
+    add(entity("light.attic", "unavailable", { friendly_name: "Attic" }));
+    add(entity("lock.car_doors", "unlocked", { friendly_name: "Car doors" }));
+    delete env.states!["lock.front_door"];
+    env.registry!.entities!["light.all"] = { area_id: "attic_area" };
+    env.registry!.areas!["attic_area"] = { name: "Attic" };
+    expect(pickSceneLights(env, 8).map((l) => l.entityId)).not.toContain("light.all");
+    expect(pickSceneLights(env, 8).map((l) => l.entityId)).not.toContain("light.attic");
+    expect(planRooms(env, 8).map((r) => r.name)).not.toContain("Attic");
+    const large = build("houseScene", env);
+    expect(large.elements.some((e) => e.payload.name?.startsWith("Car doors"))).toBe(false);
+    expect(named(large, "Inside card")).toBeDefined();
+    const medium = build("houseScene", { ...env, family: "medium" });
+    expect(named(medium, "Lock")).toBeUndefined();
+  });
+
+  it("puts the large tile's cards in one Readings folder", () => {
+    const cfg = build("houseScene", home());
+    const readings = cfg.groups!.find((g) => g.name === "Readings")!;
+    expect(cfg.groups!.filter((g) => g.parentId === readings.id).map((g) => g.name)).toEqual(["Inside", "Outside", "Front door"]);
+    expect(presetSpec("houseScene").foldSubGroups).toBe(true);
+    expect(presetSpec("floorPlan").foldSubGroups).toBe(true);
   });
 
   it("follows the sun and the rain when the home has them, and is always night without", () => {

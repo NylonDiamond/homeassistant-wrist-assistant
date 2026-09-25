@@ -16847,7 +16847,20 @@ export class WristAssistantPanel extends LitElement {
     if (presetSpec(kind).needsEntity === false) {
       const env: PresetEnv = { family: this.canvasFamily, states: this.hass.states, registry: presetRegistry(this.hass) };
       let created: string | undefined;
+      const groupsBefore = new Set((this.draft?.config.groups ?? []).map((g) => g.id));
       this.addHere((c) => { created = applyPreset(c, kind, { entityId: "", displayName: "", domain: "" }, env); });
+      const arrived = (this.draft?.config.groups ?? []).filter((g) => !groupsBefore.has(g.id));
+      if (presetSpec(kind).foldSubGroups && arrived.length > 0) {
+        // A scene arrives as one open folder of closed ones: the parts to pick
+        // (the windows, the rooms) read as a short list, and the drawing
+        // underneath stays out of the way until someone opens it.
+        const next = new Set(this.collapsed);
+        for (const g of arrived) if (g.parentId !== undefined) next.add(g.id);
+        this.collapsed = next;
+        const top = arrived.find((g) => g.parentId === undefined);
+        if (top) this.inspect = { kind: "group", id: top.id };
+        return;
+      }
       if (created) this.inspect = { kind: "layer", id: created };
       return;
     }

@@ -91,6 +91,9 @@ export interface PresetSpec {
   /** True when the groups it makes start unlocked, so each part can be
    * dragged on its own right away. A scene is meant to be rearranged. */
   unlockedGroups?: boolean;
+  /** True when the panel closes the sub-groups it makes as it adds them, so
+   * a preset of many layers first reads as a short list of parts. */
+  foldSubGroups?: boolean;
 }
 
 /** The Home Screen tiles a whole-tile scene is drawn for. */
@@ -396,6 +399,7 @@ export const LAYER_PRESETS: readonly PresetSpec[] = [
     layerCount: 44,
     layerCountIsMost: true,
     unlockedGroups: true,
+    foldSubGroups: true,
     needsEntity: false,
     families: SCENE_FAMILIES,
   },
@@ -406,6 +410,7 @@ export const LAYER_PRESETS: readonly PresetSpec[] = [
     layerCount: 63,
     layerCountIsMost: true,
     unlockedGroups: true,
+    foldSubGroups: true,
     needsEntity: false,
     families: [...SCENE_FAMILIES, "xlarge"],
   },
@@ -2556,6 +2561,16 @@ function entitiesOf(env: PresetEnv, domain: string): string[] {
   return Object.keys(env.states ?? {}).filter((id) => id.startsWith(`${domain}.`)).sort();
 }
 
+/** The lights a scene hands out: real bulbs that answer. A light group (its
+ * state carries the member list) would light a window for several rooms at
+ * once, and an unavailable light would never light one at all. */
+function sceneLightsOf(env: PresetEnv): string[] {
+  return entitiesOf(env, "light").filter((id) => {
+    const s = env.states?.[id];
+    return s !== undefined && s.state !== "unavailable" && s.state !== "unknown" && !Array.isArray(s.attributes?.entity_id);
+  });
+}
+
 function deviceClassOf(env: PresetEnv, entityId: string): string {
   const dc = env.states?.[entityId]?.attributes?.device_class;
   return typeof dc === "string" ? dc : "";
@@ -2726,7 +2741,7 @@ export function pickSceneLights(env: PresetEnv, max: number): EntityRef[] {
   const seen = new Set<string>();
   const first: string[] = [];
   const rest: string[] = [];
-  for (const id of entitiesOf(env, "light")) {
+  for (const id of sceneLightsOf(env)) {
     const area = areaIdOf(env, id);
     if (area !== undefined && !seen.has(area)) {
       seen.add(area);
@@ -2818,14 +2833,19 @@ export function addHouseScene(cfg: CustomComplicationConfig, env: PresetEnv): st
     const light = lights[i];
     if (!light) return;
     const full = withDomain(light);
-    const lit = drawing(windowPanes(win), HOUSE_VIEWBOX, "#FFD37A");
+    // One row per window: the lit panes are framed on the window alone, so the
+    // tap can be attached to them and follow them, and the layer's Entity
+    // picker then moves the tap and the rule to another light in one pick.
+    const pad = 2;
+    const lit = drawing(windowPanes(win), `${win.x - pad} ${win.y - pad} ${win.w + 2 * pad} ${win.h + 2 * pad}`, "#FFD37A");
     lit.payload.shadow = glow("#FFBE5A", medium ? 5 : 8);
     lit.payload.rules = [showWhile(entityStateValue(full), onComparison(full))];
-    put(lit, houseDrawingGeometry(family), `${win.name} lit`);
-    const tap = layerOf("tap");
-    tap.payload.action = { type: "toggleEntity", ...full };
-    put(tap, houseRect(family, win.x - 2, win.y - 2, win.w + 4, win.h + 4), `${win.name} tap`);
-    createGroup(cfg, [lit.payload.id, tap.payload.id], `${win.name}: ${full.displayName}`);
+    const k = houseStage(family).k;
+    put(lit, {
+      ...houseRect(family, win.x - pad, win.y - pad, win.w + 2 * pad, win.h + 2 * pad),
+      size: round2(scenePoints(family, (win.w + 2 * pad) * k) / PATH_SIZE_FACTOR),
+    }, `${win.name} window`);
+    attachTap(cfg, lit.payload.id, { type: "toggleEntity", ...full });
   });
 
   if (weather) {
@@ -2918,6 +2938,7 @@ function addHouseChips(
   if (chips.length === 0) return;
   const gap = 8;
   const width = (336 - gap * (chips.length - 1)) / chips.length;
+  const all: string[] = [];
   chips.forEach((chip, i) => {
     const x = 14 + i * (width + gap);
     const y = 320;
@@ -2939,14 +2960,20 @@ function addHouseChips(
     value.payload.alignment = "leading";
     byDay(value, [setColorTo(DAY_INK_HEX)]);
     put(value, sceneRect(family, x + 11, y + 21, width - 22, 22), `${chip.label} value`);
-    createGroup(cfg, [card.payload.id, label.payload.id, value.payload.id], chip.label);
+    const ids = [card.payload.id, label.payload.id, value.payload.id];
+    createGroup(cfg, ids, chip.label);
+    all.push(...ids);
   });
+  // One folder for the cards, so the Layers list shows one row for all three.
+  createGroup(cfg, all, "Readings");
 }
 
-/** The lock the house shows: a front door first, then one in an area before
- * one in none (a car's lock is rarely in a room). */
+/** The lock the house shows: a front door first, then one in an area. A lock
+ * in no area and not named "front" is left out, since that is usually a car's,
+ * and the house then shows one card fewer. */
 function houseLockOf(env: PresetEnv): string | undefined {
-  const locks = entitiesOf(env, "lock");
+  const isFront = (id: string) => `${id} ${refOf(env, id).displayName}`.toLowerCase().includes("front");
+  const locks = entitiesOf(env, "lock").filter((id) => isFront(id) || areaIdOf(env, id) !== undefined);
   const score = (id: string) => {
     const name = `${id} ${refOf(env, id).displayName}`.toLowerCase();
     return (name.includes("front") ? 2 : 0) + (areaIdOf(env, id) !== undefined ? 1 : 0);
@@ -3056,7 +3083,7 @@ export interface PlanRoom {
  */
 export function planRooms(env: PresetEnv, max: number): PlanRoom[] {
   const areas = env.registry?.areas ?? {};
-  const lights = entitiesOf(env, "light");
+  const lights = sceneLightsOf(env);
   const byArea = new Map<string, number>();
   for (const id of lights) {
     const area = areaIdOf(env, id);
