@@ -58,11 +58,16 @@ export function draftStatus(i: DraftStatusInput): DraftStatus {
  *
  * See docs/complication_one_shape_per_document.md in the app repo.
  */
-export function saveRefusal(cfg: CustomComplicationConfig): string | undefined {
+export function saveRefusal(cfg: CustomComplicationConfig, nameFor?: LayerNamer): string | undefined {
   const shapes = cfg.supportedFamilies.length;
   if (shapes >= 2) return `This complication has ${shapes} shapes, and a complication is one shape now. Split it into one complication per shape to edit it.`;
-  return blankReferenceRefusal(cfg);
+  return blankReferenceRefusal(cfg, nameFor);
 }
+
+/** The title the Layers list shows for a layer id, or undefined for one it
+ * does not know. The walker only knows a layer by its entity or literal, and
+ * a layer that reads nothing yet has neither. */
+export type LayerNamer = (layerId: string) => string | undefined;
 
 /** What a value that points at something reads, for a refusal's sentence, or
  * undefined for a value that points at nothing or has chosen what it reads. */
@@ -86,13 +91,18 @@ function blankReferenceWord(k: ValueKind): string | undefined {
  * one value. Every value is walked, including a shape that is no longer drawn,
  * because those are on the wire too.
  */
-export function blankReferenceRefusal(cfg: CustomComplicationConfig): string | undefined {
+export function blankReferenceRefusal(cfg: CustomComplicationConfig, nameFor?: LayerNamer): string | undefined {
   let out: string | undefined;
   forEachValue(cfg, (v, site) => {
     if (out !== undefined) return;
     const what = blankReferenceWord(v.kind);
     if (what === undefined) return;
-    out = `${describeSite(site)} reads ${what} that is not chosen. Choose one, or pick another source.`;
+    // The site names a layer by its entity or literal; a layer that reads
+    // nothing yet has neither, so the sentence would say "Text layer" while
+    // the Layers list says "Newest reading". Take the list's word for it.
+    const named = !site.layerName && site.layerId !== undefined ? nameFor?.(site.layerId) : undefined;
+    const where = named ? { ...site, layerName: named } : site;
+    out = `${describeSite(where)} reads ${what} that is not chosen. Choose one, or pick another source.`;
   });
   return out;
 }

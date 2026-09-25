@@ -203,7 +203,7 @@ import { type SplitNotice, autoSplitShapes, editBlockedBySplitGate, ownerCanSpli
 import { makeIconProvider } from "./icons.js";
 import { makeImageSizeProvider } from "./image-sizes.js";
 import { SymbolBrowser } from "./symbols.js";
-import { Draft, saveRefusal } from "./draft.js";
+import { Draft, type LayerNamer, saveRefusal } from "./draft.js";
 import { ScrollFades } from "./scroll-fade.js";
 import { statesSummary } from "./states.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
@@ -8467,6 +8467,18 @@ export class WristAssistantPanel extends LitElement {
     this.afterMutation();
   }
 
+  /** A save refusal names a layer as the Layers list does, title and all,
+   * rather than by the entity the walker knows it by. */
+  private layerNamer(): LayerNamer {
+    const d = this.draft;
+    if (!d) return () => undefined;
+    const ctx = describeContext(this.host());
+    return (layerId) => {
+      const el = d.config.elements.find((e) => e.payload.id === layerId);
+      return el ? layerTitle(el, ctx) : undefined;
+    };
+  }
+
   private host(): EditorHost {
     const resolver = new Resolver(this.buildContext(), this.draft?.config);
     return {
@@ -9053,7 +9065,7 @@ export class WristAssistantPanel extends LitElement {
     }
     // A document an older panel wrote, with several shapes in it. It opens and
     // it draws; writing it back would put the old form in the store again.
-    const refusal = saveRefusal(this.draft.config);
+    const refusal = saveRefusal(this.draft.config, this.layerNamer());
     if (refusal !== undefined) {
       this.saveError = refusal;
       this.refusedSave = refusal;
@@ -11166,7 +11178,7 @@ export class WristAssistantPanel extends LitElement {
     const menu = this.narrow || this.hass.dockedSidebar === "always_hidden";
     // Work that cannot be written says why on the button, the footer saying
     // the same, rather than a live Save that only answers with an error.
-    const refusal = d && dirty ? saveRefusal(d.config) : undefined;
+    const refusal = d && dirty ? saveRefusal(d.config, this.layerNamer()) : undefined;
     return html`<header class=${stacked ? "stacked" : nothing}>
       ${menu ? html`<button class="icon tb-icon tb-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
         @click=${() => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true }))}>${uiIcon("menu")}</button>` : nothing}
@@ -20127,7 +20139,7 @@ export class WristAssistantPanel extends LitElement {
     const d = this.draft;
     if (!d) return nothing;
     const rec = this.records.find((r) => r.id === this.selectedId);
-    const refusal = d.dirty || d.baseRevision === null ? saveRefusal(d.config) : undefined;
+    const refusal = d.dirty || d.baseRevision === null ? saveRefusal(d.config, this.layerNamer()) : undefined;
     const status = footerStatus({
       revision: rec?.revision ?? null,
       dirty: d.dirty,

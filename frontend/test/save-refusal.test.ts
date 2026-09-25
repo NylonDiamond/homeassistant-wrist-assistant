@@ -65,6 +65,14 @@ describe("a reference nobody chose", () => {
     expect(saveRefusal(withText({ kind: "named", id: "" }))).toContain("reads a shared value that is not chosen");
   });
 
+  it("names an unnamed layer the way the Layers list does", () => {
+    const cfg = withText({ kind: "chartStat", layer: "", stat: "latest" }, "");
+    const id = cfg.elements[0]!.payload.id;
+    expect(saveRefusal(cfg)).toContain("Text layer reads a chart");
+    expect(saveRefusal(cfg, (layerId) => (layerId === id ? "Newest reading" : undefined)))
+      .toContain('Text layer "Newest reading" reads a chart');
+  });
+
   it("lets a chosen reference through", () => {
     expect(saveRefusal(withText({ kind: "chartStat", layer: "0A3F2C1E-0000-4000-8000-000000000001", stat: "latest" }))).toBeUndefined();
     expect(blankReferenceRefusal(withText({ kind: "literal", value: "" }))).toBeUndefined();
