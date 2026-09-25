@@ -10,7 +10,7 @@ import { nothing, svg } from "lit";
 
 import { ALL_FAMILIES, isHomeFamily } from "../src/layouts.js";
 import type { FamilyKind } from "../src/model.js";
-import { PHONE_FRAME, PHONE_LOCK_WINDOW, PHONE_WINDOW, controlDeviceArt, deviceCropArt, deviceShapeArt, inlineShown, phoneSlot, shapeArtKinds, shapeOnlyArt, shapeWell } from "../src/shapeArt.js";
+import { PHONE_FRAME, PHONE_LOCK_WINDOW, PHONE_WINDOW, controlDeviceArt, deviceCropArt, deviceShapeArt, inlineShown, phoneSlot, shapeArtKinds, shapeOnlyArt, shapeWell, watchWell } from "../src/shapeArt.js";
 import type { LiveShapes } from "../src/shapeArt.js";
 import type { DeviceKind } from "../src/version.js";
 
@@ -270,17 +270,19 @@ describe("deviceCropArt", () => {
     expect(slot.y + slot.height).toBe(phone("large").y + phone("large").height);
   });
 
-  // The watch's window is the well's own proportions (86 by 48, the half of
-  // a watch) and fills it: a window of another shape would have its edges
-  // trimmed to fit, and what was trimmed is the part that matters.
-  it("cuts every watch window to the card's own proportions", () => {
+  // The card's well takes the watch window's own proportions and the window
+  // fills it, so nothing is trimmed and no black is added.
+  it("gives each watch card a well of its window's own proportions", () => {
     for (const [family, device] of SLOTS) {
       if (device !== "watch") continue;
       const box = viewBox(crop(family, device));
-      expect(box.width / box.height, `${family} on ${device}`).toBeGreaterThan(1.7);
-      expect(box.width / box.height, `${family} on ${device}`).toBeLessThan(2.1);
+      expect(watchWell(family), family).toBeCloseTo(box.width / box.height, 6);
+      expect(box.width / box.height, family).toBeGreaterThan(1.9);
+      expect(box.width / box.height, family).toBeLessThan(2.6);
     }
     expect(crop("rectangular", "watch")).toMatch(/preserveAspectRatio="?xMidYMid slice"?/);
+    expect(watchWell(undefined)).toBeUndefined();
+    expect(watchWell("small")).toBeUndefined();
   });
 
   // The phone's window is taller than the well, so a Large tile can be shown
@@ -312,16 +314,24 @@ describe("deviceCropArt", () => {
     expect(medium.y + medium.height).toBe(large.y + large.height);
   });
 
-  // The watch has two windows, its two halves: the lower one for rectangular
-  // and circular, the upper one for corner and inline, each reaching past the
-  // case to a slice of the band so the piece of watch reads as a watch.
-  it("shows the lower half of the watch for rectangular and circular and the upper half for corner and inline", () => {
-    const lower = { x: 0, y: 48, width: 86, height: 48 };
-    const upper = { x: 0, y: 0, width: 86, height: 48 };
-    expect(viewBox(crop("rectangular", "watch"))).toEqual(lower);
-    expect(viewBox(crop("circular", "watch"))).toEqual(lower);
-    expect(viewBox(crop("corner", "watch"))).toEqual(upper);
-    expect(viewBox(crop("inline", "watch"))).toEqual(upper);
+  // Rectangular and circular look at the bottom of the watch, corner and
+  // inline at the top, each cut close round its own shape and reaching past
+  // the case to a stub of the band so the piece of watch reads as a watch.
+  it("cuts each watch window close round its own shape", () => {
+    expect(viewBox(crop("rectangular", "watch"))).toEqual({ x: 3, y: 51, width: 80, height: 40 });
+    expect(viewBox(crop("circular", "watch"))).toEqual({ x: 3, y: 59, width: 80, height: 32 });
+    expect(viewBox(crop("corner", "watch"))).toEqual({ x: 3, y: 5, width: 83, height: 40 });
+    expect(viewBox(crop("inline", "watch"))).toEqual({ x: 3, y: 5, width: 83, height: 35 });
+    // Past the case (6 to 80, 8 to 88) into the band on every side it has one.
+    for (const family of ["rectangular", "circular"] as FamilyKind[]) {
+      const box = viewBox(crop(family, "watch"));
+      expect(box.y + box.height, family).toBeGreaterThan(88);
+      expect(box.x, family).toBeLessThan(6);
+      expect(box.x + box.width, family).toBeGreaterThan(80);
+    }
+    for (const family of ["corner", "inline"] as FamilyKind[]) {
+      expect(viewBox(crop(family, "watch")).y, family).toBeLessThan(8);
+    }
     // The band stubs sit at the top and bottom edges of the drawing.
     expect(crop("rectangular", "watch")).toContain(`x="27" y="86" width="32" height="10"`);
     expect(crop("corner", "watch")).toContain(`x="27" y="0" width="32" height="10"`);

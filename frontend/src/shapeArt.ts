@@ -733,28 +733,39 @@ interface Crop {
 /**
  * Where on the watch each shape's window sits.
  *
- * Wide rather than square, at about two to one, which is the shape of the
- * well a card gives it: the window is filled and its edges trimmed, so a crop
- * of another shape would lose the part that matters.
- *
- * Two windows, the two halves of the watch. Rectangular and circular take the
- * lower half, corner and inline the upper one, each half running from the
- * middle of the face out past the case to a slice of the band, so every card
- * of one half shows the same piece of watch and the eye has one thing to
- * learn. A shape no watch draws falls back to the whole case rather than an
- * invented window.
+ * Rectangular and circular look at the bottom of the watch, corner and inline
+ * at the top, each window running from just above its slot out past the case
+ * to a stub of the band, so the piece of watch still reads as a watch. Each
+ * window is cut close round its own shape rather than being a whole half of
+ * the watch: half a watch put a circle under a band of empty face, and every
+ * shape has a box of its own in the list, so the cards of one box still share
+ * a height. The card's well takes the window's proportions (`watchWell`) and
+ * the window fills it. A shape no watch draws falls back to the whole case
+ * rather than an invented window.
  */
 function watchCrop(family: FamilyKind): Crop {
   switch (family) {
     case "rectangular":
+      return { x: 3, y: 51, width: 80, height: 40 };
     case "circular":
-      return { x: 0, y: 48, width: 86, height: 48 };
+      return { x: 3, y: 59, width: 80, height: 32 };
+    // The top windows run to the drawing's right edge so the crown shows.
     case "corner":
+      return { x: 3, y: 5, width: 83, height: 40 };
     case "inline":
-      return { x: 0, y: 0, width: 86, height: 48 };
+      return { x: 3, y: 5, width: 83, height: 35 };
     default:
       return { x: 0, y: 0, width: 86, height: 96 };
   }
+}
+
+/** The proportions, width over height, of the well a watch card gives this
+ * shape in the device view, which are its window's. Nothing for a shape no
+ * watch draws: that keeps the card's default well. */
+export function watchWell(family: FamilyKind | undefined): number | undefined {
+  if (family === undefined || watchSlot(family) === undefined) return undefined;
+  const box = watchCrop(family);
+  return box.width / box.height;
 }
 
 /**

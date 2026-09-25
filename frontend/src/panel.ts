@@ -195,7 +195,7 @@ import {
   shapeOffered,
 } from "./newComplication.js";
 import { type Person, deviceShortName, peopleOf } from "./people.js";
-import { type LiveDesign, type LiveShape, type LiveShapes, controlDeviceArt, deviceCropArt, deviceShapeArt, shapeOnlyArt, shapeWell } from "./shapeArt.js";
+import { type LiveDesign, type LiveShape, type LiveShapes, controlDeviceArt, deviceCropArt, deviceShapeArt, shapeOnlyArt, shapeWell, watchWell } from "./shapeArt.js";
 import { KIND_COLOR, KIND_LABEL, KIND_ORDER, SECTION_COLOR } from "./kinds.js";
 import { type DeviceKind, type DeviceOwnerLike, LIBRARY_OWNER_ID, deviceKindOf, deviceNoun, deviceSupportsShapes, isLibraryOwner, ownerSupportsControls, updateDeviceMessage } from "./version.js";
 import { type SplitNotice, autoSplitShapes, editBlockedBySplitGate, ownerCanSplit } from "./splitShapes.js";
@@ -11606,7 +11606,11 @@ export class WristAssistantPanel extends LitElement {
     shelved: boolean,
   ) {
     if (!this.pickerBare) {
-      return html`<span class="pk-card-crop">${deviceCropArt(family, device, live, { shelved })}</span>`;
+      // Each watch window is cut close round its own shape, so the well takes
+      // that window's proportions. A phone keeps the shared well.
+      const well = device === "watch" ? watchWell(family) : undefined;
+      return html`<span class="pk-card-crop" style=${well === undefined ? nothing : `aspect-ratio: ${well}`}
+        >${deviceCropArt(family, device, live, { shelved })}</span>`;
     }
     // The well takes the shape's own proportions, so nothing is a small
     // picture in a large black box. A shape with no well of its own kept its
