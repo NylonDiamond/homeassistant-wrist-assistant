@@ -14554,7 +14554,7 @@ export class WristAssistantPanel extends LitElement {
       </details>`;
     };
     return html`
-      <div class="xf-lead">${uiIcon("info")}<span>Others can see these names. Change the names of layers and groups here before you share, if you want.</span></div>
+      <div class="xf-lead">${uiIcon("info")}<span>Your entities are never shared. Only the names below go with the design. You can change any of them.</span></div>
       <div class="xf-pub" @pointerleave=${(e: Event) => this.leaveRows(e, clear)} @focusout=${(e: Event) => this.leaveRows(e, clear)}>
         ${kinds.filter((k) => k.kind === "head").map(box)}
         ${layerTree ? this.renderShareTreeBox(layerTree, rows, changed) : nothing}
