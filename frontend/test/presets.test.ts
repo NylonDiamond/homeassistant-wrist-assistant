@@ -700,3 +700,298 @@ describe("the iPhone-era presets", () => {
       .toEqual(["sensor.hall_temp", "sensor.bed_temp", "sensor.power", "light.kitchen"]);
   });
 });
+
+// ── card presets ──────────────────────────────────────────────────────────
+// The pill, the bar, the photo and the art: presets whose look is a card.
+// What matters is that each one is made of the layers its card promised,
+// that every rule stays inside the states table, and that the rows of a list
+// of cards start with the card so it draws underneath.
+
+describe("the card presets", () => {
+  const CARD_HEX = "#FFFFFF1F";
+  const PLAYER = { entityId: "media_player.lounge", displayName: "Lounge", domain: "media_player" };
+  const WEATHER = { entityId: "weather.home", displayName: "Home", domain: "weather" };
+  const CAL = { entityId: "calendar.family", displayName: "Family", domain: "calendar" };
+  const SAM = { entityId: "person.sam", displayName: "Sam", domain: "person" };
+  const HUMIDITY = { entityId: "sensor.hall_humidity", displayName: "Hall humidity", domain: "sensor" };
+
+  function build(kind: Parameters<typeof applyPreset>[1], ref: { entityId: string; displayName: string; domain: string },
+    env: Partial<Parameters<typeof applyPreset>[3]> = {}): { cfg: CustomComplicationConfig; id: string } {
+    const cfg = config();
+    const id = applyPreset(cfg, kind, ref, { family: "rectangular", ...env });
+    return { cfg, id };
+  }
+
+  function tableOf(rules: readonly Rule[]): StatesTable {
+    const shape = tableShape([...rules]);
+    if (!shape.ok) throw new Error(shape.reason);
+    return shape.table;
+  }
+
+  function hexOf(row: StatesRow | undefined): string | undefined {
+    const change = row?.changes.find((c) => c.kind === "setColor");
+    return change?.value?.kind.kind === "literal" ? change.value.kind.value : undefined;
+  }
+
+  it("draws the home summary as three cards, each under its symbol and count", () => {
+    const { cfg, id } = build("summary", KITCHEN);
+    expect(cfg.elements.map((e) => e.kind)).toEqual([
+      "shape", "icon", "text", "shape", "icon", "text", "shape", "icon", "text",
+    ]);
+    for (const el of cfg.elements) {
+      if (el.kind === "shape") {
+        expect(el.payload.kind).toBe("capsule");
+        expect(el.payload.borderWidth).toBe(0);
+        expect(el.payload.colorSlot.baseColorHex).toBe(CARD_HEX);
+      }
+      if (el.kind === "text") {
+        expect(el.payload.alignment).toBe("trailing");
+        expect(el.payload.fontWeight).toBe("semibold");
+      }
+    }
+    expect(layer(cfg, id).kind).toBe("text");
+    // Each row's card sits above the next row's, and the three fill the face.
+    const cards = cfg.elements.filter((e) => e.kind === "shape").map((e) => e.payload.frame);
+    expect(cards[0]!.y).toBeLessThan(cards[1]!.y);
+    expect(cards[1]!.y).toBeLessThan(cards[2]!.y);
+    expect(cards[2]!.y + cards[2]!.height).toBeLessThanOrEqual(1);
+  });
+
+  it("builds a toggle pill whose tap is on the pill and whose ink flips while it is on", () => {
+    const { cfg, id } = build("togglePill", KITCHEN);
+    const pill = layer(cfg, id);
+    if (pill.kind !== "shape") throw new Error("wrong kind");
+    expect(pill.payload.kind).toBe("capsule");
+    const tap = attachedTapsOf(cfg, id)[0]?.payload as TapElement | undefined;
+    expect(tap?.action).toEqual({ type: "toggleEntity", ...KITCHEN });
+    // The pill lights amber; the icon and the name go dark on it.
+    const on = tableOf(pill.payload.rules).rows[0]!;
+    expect(on.comparison.kind).toBe("isOn");
+    expect(hexOf(on)).toBe("#FF9F0A");
+    const icon = cfg.elements.find((e) => e.kind === "icon")!;
+    const name = cfg.elements.find((e) => e.kind === "text")!;
+    expect(hexOf(tableOf(icon.payload.rules).rows[0])).toBe("#1C1C1E");
+    expect(hexOf(tableOf(name.payload.rules).rows[0])).toBe("#1C1C1E");
+    expect(name.payload.value).toEqual({ kind: { kind: "literal", value: "Kitchen light" } });
+    // The pill is wide-shape only: it carries a name, and a corner cannot.
+    expect(presetSpec("togglePill").families).toEqual(["rectangular", "small", "medium", "large", "xlarge"]);
+  });
+
+  it("uses the entity's own on test for the pill, so a lock's pill lights on locked", () => {
+    const { cfg, id } = build("togglePill", { entityId: "lock.front", displayName: "Front", domain: "lock" });
+    const pill = layer(cfg, id);
+    const row = tableOf(pill.payload.rules).rows[0]!;
+    expect(row.comparison).toEqual({ kind: "equals", value: { kind: { kind: "literal", value: "locked" } } });
+  });
+
+  it("puts a bar under a reading, on the entity's own range and ramp", () => {
+    const st = state({ device_class: "battery", unit_of_measurement: "%" }, "64");
+    const { cfg, id } = build("levelBar", HUMIDITY, { state: st });
+    expect(cfg.elements.map((e) => e.kind)).toEqual(["text", "text", "shape"]);
+    expect(layer(cfg, id).kind).toBe("text");
+    const bar = cfg.elements[2]!;
+    if (bar.kind !== "shape") throw new Error("wrong kind");
+    expect(bar.payload.kind).toBe("capsule");
+    expect(bar.payload.level).toMatchObject({ minValue: 0, maxValue: 100, direction: "right" });
+    expect(bar.payload.level?.value.kind).toMatchObject({ kind: "entityState", entityId: HUMIDITY.entityId });
+    // A battery runs red to green, the same ramp the ring uses.
+    const rows = tableOf(bar.payload.rules).rows;
+    expect(rows.map(hexOf)).toEqual([...ALARM_LOW_RAMP]);
+    // The bar is a thin strip along the bottom, in points rather than a
+    // fraction, so it stays thin on a tall Home Screen tile.
+    expect(bar.payload.frame.height).toBeLessThan(0.1);
+    expect(bar.payload.frame.y + bar.payload.frame.height).toBeCloseTo(0.9, 2);
+    expect(presetSpec("levelBar").preferNumeric).toBe(true);
+  });
+
+  it("lays the weather card out beside the symbol on a wide face and under it on a round one", () => {
+    const wide = build("weatherCard", WEATHER).cfg;
+    expect(wide.elements.map((e) => e.kind)).toEqual(["icon", "text", "text"]);
+    const [icon, temp, details] = wide.elements;
+    expect(icon!.payload.frame.x + icon!.payload.frame.width).toBeLessThanOrEqual(temp!.payload.frame.x);
+    if (temp!.kind !== "text" || details!.kind !== "text") throw new Error("wrong kind");
+    expect(temp!.payload.alignment).toBe("leading");
+    expect(temp!.payload.value.kind).toMatchObject({ kind: "entityAttribute", attribute: "temperature" });
+    expect(details!.payload.value.kind).toMatchObject({ kind: "jinja" });
+    if (details!.payload.value.kind.kind !== "jinja") throw new Error("wrong kind");
+    expect(details!.payload.value.kind.value).toContain("'humidity'");
+    expect(details!.payload.value.kind.value).toContain("'wind_speed'");
+
+    const round = config();
+    applyPreset(round, "weatherCard", WEATHER, { family: "circular" });
+    const [rIcon, rTemp] = round.elements;
+    expect(rIcon!.payload.frame.y + rIcon!.payload.frame.height).toBeLessThanOrEqual(rTemp!.payload.frame.y + 0.001);
+    if (rTemp!.kind !== "text") throw new Error("wrong kind");
+    expect(rTemp!.payload.alignment).toBeUndefined();
+  });
+
+  it("counts down to the calendar's next event from seconds the server works out", () => {
+    const { cfg, id } = build("eventCountdown", CAL);
+    expect(cfg.elements.map((e) => e.kind)).toEqual(["text", "text", "text"]);
+    const countdown = layer(cfg, id);
+    if (countdown.kind !== "text") throw new Error("wrong kind");
+    expect(countdown.payload.countdown).toBe(true);
+    expect(countdown.payload.monospacedDigits).toBe(true);
+    if (countdown.payload.value.kind.kind !== "jinja") throw new Error("wrong kind");
+    // `start_time` is a local date string, which the countdown cannot read,
+    // so the template hands it unix seconds and says Now for an event under way.
+    expect(countdown.payload.value.kind.value).toContain("as_timestamp(s) | int");
+    expect(countdown.payload.value.kind.value).toContain("now().timestamp()");
+    expect(countdown.payload.value.kind.value).toContain("Now");
+    const title = cfg.elements[0]!;
+    if (title.kind !== "text" || title.payload.value.kind.kind !== "jinja") throw new Error("wrong kind");
+    expect(title.payload.value.kind.value).toContain("'message'");
+    expect(title.payload.value.kind.value).toContain("No events");
+    const at = cfg.elements[2]!;
+    if (at.kind !== "text") throw new Error("wrong kind");
+    expect(at.payload.value.format).toEqual({ timestamp: "clock" });
+  });
+
+  it("rings a person's picture with a disc that goes green at home", () => {
+    const { cfg, id } = build("personPhoto", SAM);
+    expect(cfg.elements.map((e) => e.kind)).toEqual(["shape", "image", "text"]);
+    const [disc, photo, word] = cfg.elements;
+    if (disc!.kind !== "shape" || photo!.kind !== "image" || word!.kind !== "text") throw new Error("wrong kind");
+    expect(layer(cfg, id).kind).toBe("image");
+    expect(disc!.payload.kind).toBe("circle");
+    expect(hexOf(tableOf(disc!.payload.rules).rows[0])).toBe(ALARM_LOW_RAMP[2]);
+    expect(photo!.payload.source).toBe("entityPicture");
+    expect(photo!.payload.entity).toEqual(SAM);
+    // The picture is square and clipped to a circle: the radius is half its
+    // side in points, on the shape it was built for.
+    const side = photo!.payload.frame.width * 181;
+    expect(photo!.payload.frame.height * 65.5).toBeCloseTo(side, 1);
+    expect(photo!.payload.cornerRadius).toBeCloseTo(side / 2, 1);
+    // The disc is bigger than the picture all round, and that margin is the ring.
+    expect(disc!.payload.frame.x).toBeLessThan(photo!.payload.frame.x);
+    expect(disc!.payload.frame.y).toBeLessThan(photo!.payload.frame.y);
+    const words = tableOf(word!.payload.rules).rows.map((r) =>
+      r.changes.find((c) => c.kind === "setText")?.value?.kind.kind === "literal"
+        ? (r.changes.find((c) => c.kind === "setText")!.value!.kind as { value: string }).value : "");
+    expect(words).toEqual(["Home", "Away"]);
+  });
+
+  it("fills the face with the cover art and a dark band the song sits on, tap to play or pause", () => {
+    const { cfg, id } = build("nowPlayingArt", PLAYER);
+    // The tap lands beside the picture it is attached to; the band and the
+    // song draw after both, on top.
+    expect(cfg.elements.map((e) => e.kind)).toEqual(["image", "tap", "shape", "text"]);
+    const [art, , band, title] = cfg.elements;
+    if (art!.kind !== "image" || band!.kind !== "shape" || title!.kind !== "text") throw new Error("wrong kind");
+    expect(art!.payload.source).toBe("entityPicture");
+    expect(art!.payload.frame).toEqual({ x: 0, y: 0, width: 1, height: 1, rotationDegrees: 0 });
+    expect(band!.payload.colorSlot.baseColorHex).toBe("#0000008C");
+    expect(band!.payload.frame.y).toBeGreaterThan(0.6);
+    expect(layer(cfg, id)).toBe(title);
+    expect(title!.payload.value.kind).toMatchObject({ kind: "entityAttribute", attribute: "media_title" });
+    const tap = attachedTapsOf(cfg, art!.payload.id)[0]?.payload as TapElement | undefined;
+    expect(tap?.action).toEqual({
+      type: "callService", serviceDomain: "media_player", serviceName: "media_play_pause", target: { ...PLAYER },
+    });
+  });
+
+  it("adds a bar to the thermostat that reads the thermostat's own range live", () => {
+    const climate = { entityId: "climate.hall", displayName: "Hall", domain: "climate" };
+    const st = { ...state({ min_temp: 7, max_temp: 30 }, "heat"), entity_id: climate.entityId };
+    const { cfg } = build("thermostat", climate, { state: st });
+    expect(cfg.elements.map((e) => e.kind)).toEqual(["icon", "text", "text", "shape"]);
+    const bar = cfg.elements[3]!;
+    if (bar.kind !== "shape") throw new Error("wrong kind");
+    expect(bar.payload.level).toMatchObject({
+      minValue: 7, maxValue: 30, direction: "right",
+      minSource: { kind: { kind: "entityAttribute", entityId: climate.entityId, attribute: "min_temp" } },
+      maxSource: { kind: { kind: "entityAttribute", entityId: climate.entityId, attribute: "max_temp" } },
+    });
+    expect(bar.payload.level?.value.kind).toMatchObject({ kind: "entityAttribute", attribute: "current_temperature" });
+    // Without a stated range the bar spans a room in either scale.
+    const bare = build("thermostat", climate).cfg.elements[3]!;
+    if (bare.kind !== "shape") throw new Error("wrong kind");
+    expect(bare.payload.level).toMatchObject({ minValue: 5, maxValue: 35 });
+    // Orange while heating, blue while cooling, like the number above it.
+    const rows = tableOf(bar.payload.rules).rows;
+    expect(rows.map(hexOf)).toEqual(["#FF9F0A", NEUTRAL_RAMP[0]]);
+  });
+
+  it("starts every card list's row with the card, so it draws underneath", () => {
+    const cardLists: Parameters<typeof applyPreset>[1][] =
+      ["listEntities", "listEvents", "listTodo", "listLightsOn", "listBatteries", "listRecent", "listScenes", "listToggles"];
+    for (const kind of cardLists) {
+      const { cfg, id } = build(kind, KITCHEN);
+      const list = layer(cfg, id);
+      if (list.kind !== "list") throw new Error(`${kind}: wrong kind`);
+      const first = list.payload.template[0]!;
+      expect(first.kind, kind).toBe("shape");
+      if (first.kind !== "shape") continue;
+      expect(first.payload.frame, kind).toEqual({ x: 0, y: 0, width: 1, height: 1, rotationDegrees: 0 });
+      expect(first.payload.borderWidth, kind).toBe(0);
+      expect(first.payload.colorSlot.baseColorHex, kind).toBe(CARD_HEX);
+      expect(first.payload.level, kind).toBeUndefined();
+      // The rows keep a hair apart so they read as cards rather than one slab.
+      expect(list.payload.gap, kind).toBeGreaterThanOrEqual(2);
+      // The list keeps less margin than a plain one: each card has its own edge.
+      expect(list.payload.frame.width, kind).toBeGreaterThan(0.92);
+    }
+    // The forecasts and Who is home run across the face and stay bare.
+    for (const kind of ["listHourly", "listDaily", "listWhoHome"] as const) {
+      const { cfg, id } = build(kind, WEATHER);
+      const list = layer(cfg, id);
+      if (list.kind !== "list") throw new Error(`${kind}: wrong kind`);
+      expect(list.payload.template[0]!.kind, kind).not.toBe("shape");
+    }
+  });
+
+  it("builds the toggle grid as four pills that light on `on`, from the on/off domains only", () => {
+    const st = (id: string, name: string, value = "on"): HassEntityState => ({
+      entity_id: id, state: value, last_changed: "", last_updated: "", attributes: { friendly_name: name },
+    });
+    const states: Record<string, HassEntityState> = {};
+    for (const s of [
+      st("light.hall", "Hall"), st("switch.fan", "Fan"), st("lock.front", "Front", "locked"),
+      st("cover.garage", "Garage", "open"), st("input_boolean.guest", "Guest"), st("fan.office", "Office"),
+    ]) states[s.entity_id] = s;
+    const { cfg, id } = build("listToggles", KITCHEN, { states });
+    const list = layer(cfg, id);
+    if (list.kind !== "list" || list.payload.source.kind !== "entities" || list.payload.source.scope.kind !== "entities") {
+      throw new Error("wrong kind");
+    }
+    // The picked light, then the other light, then the glance domains in
+    // order; never the lock or the cover, whose on is not the word on.
+    expect(list.payload.source.scope.entities.map((r) => r.entityId))
+      .toEqual(["light.kitchen", "light.hall", "switch.fan", "fan.office"]);
+    expect(list.payload.columns).toBe(2);
+    expect(list.payload.rows).toBe(4);
+    expect(list.payload.template.map((r) => r.kind)).toEqual(["shape", "icon", "text", "tap"]);
+    const [pill, icon, name, tap] = list.payload.template;
+    if (pill!.kind !== "shape" || icon!.kind !== "icon" || name!.kind !== "text" || tap!.kind !== "tap") throw new Error("wrong kind");
+    for (const el of [pill!, icon!, name!]) {
+      const row = tableOf(el.payload.rules).rows[0]!;
+      expect(row.comparison).toEqual({ kind: "isOn" });
+      expect(tableOf(el.payload.rules).value?.kind).toEqual({ kind: "item", field: "state" });
+    }
+    expect(hexOf(tableOf(pill!.payload.rules).rows[0])).toBe("#FF9F0A");
+    expect(hexOf(tableOf(icon!.payload.rules).rows[0])).toBe("#1C1C1E");
+    expect(hexOf(tableOf(name!.payload.rules).rows[0])).toBe("#1C1C1E");
+    expect(tap!.payload.action).toEqual({ type: "toggleEntity", entityId: "{item.entityId}", displayName: "", domain: "" });
+    expect(presetSpec("listToggles").domains).not.toContain("lock");
+    expect(presetSpec("listToggles").domains).not.toContain("cover");
+    expect(presetSpec("listToggles").domains).toContain("light");
+  });
+
+  it("keeps every card preset inside the states table and on the wire", () => {
+    const cases: [Parameters<typeof applyPreset>[1], { entityId: string; displayName: string; domain: string }][] = [
+      ["summary", KITCHEN], ["togglePill", KITCHEN], ["levelBar", HUMIDITY], ["weatherCard", WEATHER],
+      ["eventCountdown", CAL], ["personPhoto", SAM], ["nowPlayingArt", PLAYER], ["listToggles", KITCHEN],
+      ["thermostat", { entityId: "climate.hall", displayName: "Hall", domain: "climate" }],
+    ];
+    for (const [kind, ref] of cases) {
+      const { cfg } = build(kind, ref);
+      const layers = cfg.elements.flatMap((e) => e.kind === "list" ? [e, ...e.payload.template] : [e]);
+      for (const el of layers) {
+        for (const rule of el.payload.rules) expect(tableShape([rule]).ok, `${kind}: ${el.kind}`).toBe(true);
+      }
+      const encoded = encodeConfig(cfg);
+      expect(auditUnknownKeys(encoded), kind).toEqual([]);
+      expect(encodeConfig(parseConfig(encoded)), kind).toEqual(encoded);
+    }
+  });
+});

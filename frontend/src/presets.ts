@@ -34,6 +34,7 @@ import {
   type Value,
   CONTROL_DEFAULT_SYMBOL,
   DRAWABLE_FAMILIES,
+  IMAGE_TIMESTAMP_CAPSULE_HEX,
   LIST_FAMILIES,
   controlEffectiveKind,
   defaultLayout,
@@ -52,8 +53,9 @@ export type PresetKind =
   | "battery" | "sparkline" | "lastChanged" | "person" | "timer" | "alarm"
   | "weatherNow" | "sunTimes" | "openCount"
   | "stateIcon" | "runButton" | "thermostat" | "nowPlaying" | "summary"
+  | "togglePill" | "levelBar" | "weatherCard" | "eventCountdown" | "personPhoto" | "nowPlayingArt"
   | "listEntities" | "listEvents" | "listTodo" | "listHourly" | "listDaily"
-  | "listLightsOn" | "listBatteries" | "listRecent" | "listScenes" | "listWhoHome";
+  | "listLightsOn" | "listBatteries" | "listRecent" | "listScenes" | "listWhoHome" | "listToggles";
 
 export interface PresetSpec {
   kind: PresetKind;
@@ -78,6 +80,12 @@ export interface PresetSpec {
   /** Only offered on these shapes. Undefined means every shape with a canvas. */
   families?: readonly FamilyKind[];
 }
+
+/** The toggleable domains whose on state is the word `on`. A grid lights its
+ * pills with one `isOn` rule shared by every row, and a lock (`locked`) or a
+ * cover (`open`) would never light, so those are not offered. */
+export const ON_OFF_DOMAINS: readonly string[] =
+  TOGGLEABLE_DOMAINS.filter((d) => !["cover", "lock", "valve", "media_player"].includes(d));
 
 export const LAYER_PRESETS: readonly PresetSpec[] = [
   {
@@ -206,9 +214,9 @@ export const LAYER_PRESETS: readonly PresetSpec[] = [
   {
     kind: "thermostat",
     title: "Thermostat",
-    blurb: "The temperature now, big, and the target under it. Orange while it heats and blue while it cools.",
+    blurb: "The temperature now, big, the target under it, and a bar along the bottom showing where it sits in the thermostat's range. Orange while it heats and blue while it cools.",
     domains: ["climate"],
-    layerCount: 3,
+    layerCount: 4,
   },
   {
     kind: "nowPlaying",
@@ -220,10 +228,53 @@ export const LAYER_PRESETS: readonly PresetSpec[] = [
   {
     kind: "summary",
     title: "Home summary",
-    blurb: "Three lines: how many lights are on, who is home and how many doors and windows are open.",
-    layerCount: 6,
+    blurb: "Three card rows: how many lights are on, who is home and how many doors and windows are open.",
+    layerCount: 9,
     needsEntity: false,
     families: LIST_FAMILIES,
+  },
+  {
+    kind: "togglePill",
+    title: "Toggle pill",
+    blurb: "A pill with the entity's icon and name in it. It fills with color while the entity is on. Tap it to toggle.",
+    domains: TOGGLEABLE_DOMAINS,
+    layerCount: 4,
+    families: LIST_FAMILIES,
+  },
+  {
+    kind: "levelBar",
+    title: "Reading and bar",
+    blurb: "The entity's name, its reading big, and a bar under it that fills with the reading and changes color across three bands.",
+    preferNumeric: true,
+    layerCount: 3,
+  },
+  {
+    kind: "weatherCard",
+    title: "Weather card",
+    blurb: "A symbol for the weather, the temperature big, and the humidity and wind on a quiet line.",
+    domains: ["weather"],
+    layerCount: 3,
+  },
+  {
+    kind: "eventCountdown",
+    title: "Next event countdown",
+    blurb: "The next event on one calendar, a live countdown to when it starts, and the time it starts.",
+    domains: ["calendar"],
+    layerCount: 3,
+  },
+  {
+    kind: "personPhoto",
+    title: "Person photo",
+    blurb: "Their picture in a ring, with a word under it. Green while they are home, grey while they are out.",
+    domains: ["person", "device_tracker"],
+    layerCount: 3,
+  },
+  {
+    kind: "nowPlayingArt",
+    title: "Now playing art",
+    blurb: "The cover art filling the face, with the song on a dark band along the bottom. Tap it to play or pause.",
+    domains: ["media_player"],
+    layerCount: 4,
   },
   {
     kind: "listEntities",
@@ -314,6 +365,15 @@ export const LAYER_PRESETS: readonly PresetSpec[] = [
     needsEntity: false,
     families: LIST_FAMILIES,
   },
+  {
+    kind: "listToggles",
+    title: "Toggle grid",
+    blurb: "Four pills in a two by two grid, one per entity, each lit while it is on. Tap a pill to toggle it. Starts with the one you pick; swap the rest in the Source card.",
+    domains: ON_OFF_DOMAINS,
+    layerCount: 1,
+    group: "list",
+    families: LIST_FAMILIES,
+  },
 ];
 
 export function presetSpec(kind: PresetKind): PresetSpec {
@@ -336,6 +396,15 @@ export interface PresetEnv {
  * label color, which is what an off thing should look like. */
 export const ACCENT_HEX = "#FF9F0A";
 const MUTED_HEX = "#8E8E93";
+
+/** The fill behind a card row: an eighth of white, which on the black face is
+ * the grey a system widget's cells are drawn in, and on a tinted face is a
+ * hair lighter than the face itself rather than a fixed grey fighting it. */
+export const CARD_HEX = "#FFFFFF1F";
+/** The ink on a pill that is lit: near black, because white on amber does not
+ * read and the pill's own color is what says "on". */
+const ON_INK_HEX = "#1C1C1E";
+const WHITE_HEX = "#FFFFFF";
 
 /** The three band colors of a gauge, lowest reading first. Every hex here is
  * one `colorWords` can name, so a band cell reads "red" rather than "#FF453A". */
@@ -1356,7 +1425,7 @@ export function addThermostat(cfg: CustomComplicationConfig, ref: EntityRef, env
     { comparison: { kind: "equals", value: literal("cooling") }, changes: [setIconTo("snowflake"), setColorTo(COOL_HEX)] },
     { comparison: { kind: "equals", value: literal("fan") }, changes: [setIconTo("fan.fill"), setColorTo(COOL_HEX)] },
   ], [setIconTo("thermometer.medium"), setColorTo(MUTED_HEX)])];
-  placeLayer(cfg, icon, env.family, labelBandGeometry);
+  placeLayer(cfg, icon, env.family, (family) => bandGeometry(family, 0.06, 0.16, 0.8, 13));
   cfg.elements.push(icon);
 
   const now = layerOf("text");
@@ -1369,7 +1438,7 @@ export function addThermostat(cfg: CustomComplicationConfig, ref: EntityRef, env
     { comparison: { kind: "equals", value: literal("heating") }, changes: [setColorTo(ACCENT_HEX)] },
     { comparison: { kind: "equals", value: literal("cooling") }, changes: [setColorTo(COOL_HEX)] },
   ])];
-  placeLayer(cfg, now, env.family, mainBandGeometry);
+  placeLayer(cfg, now, env.family, (family) => bandGeometry(family, 0.24, 0.36, 0.82, 26));
   cfg.elements.push(now);
 
   const target = layerOf("text");
@@ -1379,9 +1448,39 @@ export function addThermostat(cfg: CustomComplicationConfig, ref: EntityRef, env
   target.payload.rules = [buildStatesRule(entityStateValue(full), [
     { comparison: { kind: "equals", value: literal("off") }, changes: [setTextTo("Off")] },
   ])];
-  placeLayer(cfg, target, env.family, captionBandGeometry);
+  placeLayer(cfg, target, env.family, (family) => bandGeometry(family, 0.6, 0.16, 0.8, 13));
   cfg.elements.push(target);
+
+  // Where the room sits in the thermostat's own range, as a bar along the
+  // bottom. The range is read live from `min_temp` and `max_temp`, with the
+  // entity's numbers now as the fallback and a plain 5 to 35 behind those.
+  const range = thermostatRange(env.state);
+  const bar = newCard();
+  bar.payload.colorSlot.baseColorHex = MUTED_HEX;
+  bar.payload.level = {
+    ...defaultLevel({ kind: { kind: "entityAttribute", ...full, attribute: "current_temperature" } }),
+    minValue: range.min,
+    maxValue: range.max,
+    minSource: { kind: { kind: "entityAttribute", ...full, attribute: "min_temp" } },
+    maxSource: { kind: { kind: "entityAttribute", ...full, attribute: "max_temp" } },
+    direction: "right",
+  };
+  bar.payload.rules = [buildStatesRule(action, [
+    { comparison: { kind: "equals", value: literal("heating") }, changes: [setColorTo(ACCENT_HEX)] },
+    { comparison: { kind: "equals", value: literal("cooling") }, changes: [setColorTo(COOL_HEX)] },
+  ], [setColorTo(MUTED_HEX)])];
+  placeLayer(cfg, bar, env.family, bottomBarGeometry);
+  cfg.elements.push(bar);
   return now.payload.id;
+}
+
+/** The ends of a thermostat's bar: its own `min_temp` and `max_temp` when it
+ * states them, else a span that covers any room in either scale. */
+export function thermostatRange(state: HassEntityState | undefined): { min: number; max: number } {
+  const min = state?.attributes?.min_temp;
+  const max = state?.attributes?.max_temp;
+  if (typeof min === "number" && typeof max === "number" && max > min) return { min, max };
+  return { min: 5, max: 35 };
 }
 
 /**
@@ -1448,28 +1547,41 @@ export const DOORS_OPEN_TEMPLATE =
   + " | selectattr('state', 'eq', 'on')"
   + " | list | count }}";
 
-/** One of the summary's three rows: a symbol on the left, a line beside it. */
-function summaryRowGeometry(family: DrawableFamily, row: number, icon: boolean): PresetGeometry {
+/** A card: a capsule with no border, filled in the card grey, for a row's
+ * other layers to sit on. Framed by the caller. */
+function newCard(kind: "capsule" | "roundedRectangle" = "capsule"): Extract<Element, { kind: "shape" }> {
+  const el = layerOf("shape");
+  el.payload.kind = kind;
+  el.payload.borderWidth = 0;
+  el.payload.colorSlot.baseColorHex = CARD_HEX;
+  return el;
+}
+
+/** One of the summary's three rows: a card across the face, a symbol at its
+ * left end and the count at its right. Three cards with a hair between them
+ * fill the face top to bottom. */
+function summaryRowGeometry(family: DrawableFamily, row: number, part: "card" | "icon" | "text"): PresetGeometry {
   const canvas = CANVAS[family];
-  const y = 0.06 + row * 0.31;
-  const height = 0.26;
-  const size = clamp(Math.round(canvas.height * height * (icon ? 0.8 : 0.72)), 8, 20);
-  return {
-    frame: icon
-      ? { x: 0.04, y, width: 0.14, height, rotationDegrees: 0 }
-      : { x: 0.22, y, width: 0.74, height, rotationDegrees: 0 },
-    size,
-  };
+  const height = 0.3;
+  const y = 0.02 + row * 0.33;
+  const size = clamp(Math.round(canvas.height * height * (part === "icon" ? 0.72 : 0.7)), 8, 20);
+  switch (part) {
+    case "card": return { frame: { x: 0.02, y, width: 0.96, height, rotationDegrees: 0 } };
+    case "icon": return { frame: { x: 0.06, y, width: 0.12, height, rotationDegrees: 0 }, size };
+    case "text": return { frame: { x: 0.2, y, width: 0.74, height, rotationDegrees: 0 }, size };
+  }
 }
 
 /**
  * Lights on, people home, doors open: the iPhone's Status Summary.
  *
- * Each line is a count with its words as a suffix, and a rule that rewrites
- * the counts that read badly ("0 lights on" is "All off"). The icon beside it
- * lights up while there is something to report. Like Open now, it asks for
- * nothing: every light and every person counts, and the scope is narrowed in
- * the Source card afterwards.
+ * Each row is a card with a symbol at one end and a count at the other, the
+ * count with its words as a suffix and a rule that rewrites the counts that
+ * read badly ("0 lights on" is "All off"). The symbol lights up while there
+ * is something to report. Like Open now, it asks for nothing: every light and
+ * every person counts, and the scope is narrowed in the Source card
+ * afterwards. The card goes in first on each row, because the list draws in
+ * order and the card is the thing underneath.
  */
 export function addHomeSummary(cfg: CustomComplicationConfig, env: PresetEnv): string {
   const count = (domain: string, stateFilter: { kind: "isOn" } | { kind: "equals"; value: string }): Value["kind"] => ({
@@ -1497,7 +1609,7 @@ export function addHomeSummary(cfg: CustomComplicationConfig, env: PresetEnv): s
     {
       value: count("person", { kind: "equals", value: "home" }), suffix: " home",
       rewrites: [["0", "Nobody home"]],
-      idle: "house.fill", busy: "house.fill", busyHex: GOOD_HEX, goodWhenZero: false,
+      idle: "person.fill", busy: "person.fill", busyHex: COOL_HEX, goodWhenZero: false,
     },
     {
       value: { kind: "jinja", value: DOORS_OPEN_TEMPLATE }, suffix: " open",
@@ -1511,27 +1623,381 @@ export function addHomeSummary(cfg: CustomComplicationConfig, env: PresetEnv): s
     const reading = (): Value => ({ kind: row.value });
     const zero = { kind: "equals" as const, value: literal("0") };
 
+    const card = newCard();
+    placeLayer(cfg, card, env.family, (family) => summaryRowGeometry(family, i, "card"));
+    cfg.elements.push(card);
+
     const icon = layerOf("icon");
     icon.payload.symbol = literal(row.busy);
     icon.payload.colorSlot.baseColorHex = row.busyHex;
     icon.payload.rules = [buildStatesRule(reading(), [
       { comparison: zero, changes: [setIconTo(row.idle), setColorTo(row.goodWhenZero ? GOOD_HEX : MUTED_HEX)] },
     ], [setIconTo(row.busy), setColorTo(row.busyHex)])];
-    placeLayer(cfg, icon, env.family, (family) => summaryRowGeometry(family, i, true));
+    placeLayer(cfg, icon, env.family, (family) => summaryRowGeometry(family, i, "icon"));
     cfg.elements.push(icon);
 
     const text = layerOf("text");
     text.payload.value = { kind: row.value, format: { suffix: row.suffix } };
-    text.payload.alignment = "leading";
+    text.payload.alignment = "trailing";
+    text.payload.fontWeight = "semibold";
     text.payload.rules = [buildStatesRule(reading(), row.rewrites.map(([equals, words]) => ({
       comparison: { kind: "equals" as const, value: literal(equals) },
       changes: [setTextTo(words)],
     })))];
-    placeLayer(cfg, text, env.family, (family) => summaryRowGeometry(family, i, false));
+    placeLayer(cfg, text, env.family, (family) => summaryRowGeometry(family, i, "text"));
     cfg.elements.push(text);
     if (i === 0) first = text.payload.id;
   });
   return first;
+}
+
+// ── card presets ──────────────────────────────────────────────────────────
+// Presets whose look is a card: a pill or a bar under the reading, the way
+// the system's own widgets draw a cell. Wide shapes only where the pill
+// carries a name; the reading-and-bar and the photo fit every shape.
+
+/** The pill and what sits in it: the pill itself across the middle of the
+ * face, the symbol at its left end and the name filling the rest. */
+function pillGeometry(family: DrawableFamily, part: "card" | "icon" | "text"): PresetGeometry {
+  const canvas = CANVAS[family];
+  const height = 0.5;
+  const y = 0.25;
+  const size = clamp(Math.round(canvas.height * height * (part === "icon" ? 0.55 : 0.5)), 9, 22);
+  switch (part) {
+    case "card": return { frame: { x: 0.05, y, width: 0.9, height, rotationDegrees: 0 } };
+    case "icon": return { frame: { x: 0.1, y, width: 0.14, height, rotationDegrees: 0 }, size };
+    case "text": return { frame: { x: 0.27, y, width: 0.63, height, rotationDegrees: 0 }, size };
+  }
+}
+
+/**
+ * A pill that fills with the accent while the entity is on, with its symbol
+ * and its name inside it, and a tap that toggles it.
+ *
+ * The Toggle button is a bare glyph, which is what fits a corner; this is the
+ * same idea drawn the way a wide face can afford, and the tap is attached to
+ * the pill so the whole pill is the button. The ink inside flips to near
+ * black while the pill is lit, because the pill's own color carries the state
+ * and white on amber does not read.
+ */
+export function addTogglePill(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
+  const full = withDomain(ref);
+  const symbols = toggleSymbols(full);
+  const on = (): Comparison => onComparison(full);
+  const reading = (): Value => entityStateValue(full);
+
+  const pill = newCard();
+  pill.payload.rules = [buildStatesRule(reading(), [
+    { comparison: on(), changes: [setColorTo(ACCENT_HEX)] },
+  ], [setColorTo(CARD_HEX)])];
+  placeLayer(cfg, pill, env.family, (family) => pillGeometry(family, "card"));
+  cfg.elements.push(pill);
+
+  const icon = layerOf("icon");
+  icon.payload.symbol = literal(symbols.off);
+  icon.payload.rules = [buildStatesRule(reading(), [
+    { comparison: on(), changes: [setIconTo(symbols.on), setColorTo(ON_INK_HEX)] },
+  ], [setIconTo(symbols.off), setColorTo(WHITE_HEX)])];
+  placeLayer(cfg, icon, env.family, (family) => pillGeometry(family, "icon"));
+  cfg.elements.push(icon);
+
+  const name = layerOf("text");
+  name.payload.value = refLabel(full);
+  name.payload.alignment = "leading";
+  name.payload.fontWeight = "semibold";
+  name.payload.rules = [buildStatesRule(reading(), [
+    { comparison: on(), changes: [setColorTo(ON_INK_HEX)] },
+  ], [setColorTo(WHITE_HEX)])];
+  placeLayer(cfg, name, env.family, (family) => pillGeometry(family, "text"));
+  cfg.elements.push(name);
+
+  attachTap(cfg, pill.payload.id, { type: "toggleEntity", ...full });
+  return pill.payload.id;
+}
+
+/** A thin bar along the bottom of the face, under the bands above it. Its
+ * height is in points, because a bar that scaled with the face would be a
+ * slab on a Home Screen tile. */
+function bottomBarGeometry(family: DrawableFamily): PresetGeometry {
+  const canvas = CANVAS[family];
+  const height = clamp(Math.round(canvas.height * 0.08), 4, 8);
+  return { frame: { x: 0.08, y: round4(0.9 - height / canvas.height), width: 0.84, height: round4(height / canvas.height), rotationDegrees: 0 } };
+}
+
+/**
+ * A capsule that fills from the left with a reading, colored by where in the
+ * range the reading sits. `colors` runs lowest band first, the same way a
+ * gauge's do, and the rule is the same one a gauge wears so the two agree.
+ */
+function levelBar(
+  ref: EntityRef,
+  value: Value,
+  range: { min: number; max: number },
+  colors: BandColors,
+): Extract<Element, { kind: "shape" }> {
+  const bar = newCard();
+  bar.payload.colorSlot.baseColorHex = colors[1];
+  bar.payload.level = { ...defaultLevel(value), minValue: range.min, maxValue: range.max, direction: "right" };
+  bar.payload.rules = [gaugeBandRule(ref, range, colors)];
+  return bar;
+}
+
+/**
+ * The name, the reading big, and a bar under it that fills with the reading.
+ *
+ * The Sensor gauge says the same thing as an arc, which suits a round face;
+ * a bar suits a wide one, and leaves room for the name above the number that
+ * the arc has to do without. Range and ramp come from the entity the same way
+ * the gauge's do, so a battery runs red to green and a temperature stays
+ * neutral.
+ */
+export function addLevelBar(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
+  const full = withDomain(ref);
+  addQuietLine(cfg, refLabel(full), env, (family) => bandGeometry(family, 0.06, 0.18, 0.8, 13));
+
+  const text = layerOf("text");
+  text.payload.value = entityStateValue(full, env.state);
+  text.payload.fontWeight = "semibold";
+  placeLayer(cfg, text, env.family, (family) => bandGeometry(family, 0.26, 0.4, 0.82, 26));
+  cfg.elements.push(text);
+
+  const bar = levelBar(full, entityStateValue(full), gaugeRange(env.state), bandColors(env.state));
+  placeLayer(cfg, bar, env.family, bottomBarGeometry);
+  cfg.elements.push(bar);
+  return text.payload.id;
+}
+
+/**
+ * The humidity and the wind on one line, each only when the entity reports
+ * it. `%g`-free on purpose: both round to whole numbers, because "64.3%" on a
+ * wrist is noise.
+ */
+export function weatherDetailsTemplate(entityId: string): string {
+  const attr = (name: string) => `state_attr('${entityId}', '${name}')`;
+  return `{% set h = ${attr("humidity")} %}{% set w = ${attr("wind_speed")} %}{% set u = ${attr("wind_speed_unit")} or '' %}`
+    + `{% if h is number %}{{ h | round | int }}%{% endif %}`
+    + `{% if h is number and w is number %} · {% endif %}`
+    + `{% if w is number %}{{ w | round | int }} {{ u }}{% endif %}`;
+}
+
+/** Whether a shape is wide enough for a symbol beside its text rather than
+ * over it. The two watch bands and the two wide Home Screen tiles are. */
+function isWide(family: DrawableFamily): boolean {
+  return family === "rectangular" || family === "medium" || family === "large" || family === "xlarge";
+}
+
+/** The weather card's three parts. On a wide shape the symbol takes the left
+ * third and the two lines stack beside it; on a square one they stack. */
+function weatherCardGeometry(family: DrawableFamily, part: "icon" | "temp" | "details"): PresetGeometry {
+  const canvas = CANVAS[family];
+  if (isWide(family)) {
+    switch (part) {
+      case "icon": return { frame: { x: 0.04, y: 0.14, width: 0.3, height: 0.72, rotationDegrees: 0 }, size: clamp(Math.round(canvas.height * 0.5), 12, 40) };
+      case "temp": return { frame: { x: 0.36, y: 0.1, width: 0.6, height: 0.5, rotationDegrees: 0 }, size: clamp(Math.round(canvas.height * 0.42), 12, 34) };
+      case "details": return { frame: { x: 0.36, y: 0.62, width: 0.6, height: 0.28, rotationDegrees: 0 }, size: clamp(Math.round(canvas.height * 0.2), 8, 14) };
+    }
+  }
+  switch (part) {
+    case "icon": return bandGeometry(family, 0.06, 0.3, 0.95, 26);
+    case "temp": return bandGeometry(family, 0.38, 0.38, 0.85, 30);
+    case "details": return bandGeometry(family, 0.78, 0.18, 0.8, 13);
+  }
+}
+
+/**
+ * The weather outside, with more of it than Weather now: the symbol, the
+ * temperature big, and the humidity and wind under it. The symbol rule is the
+ * same table Weather now uses, so the two agree on what rain looks like.
+ */
+export function addWeatherCard(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
+  const full = withDomain(ref);
+  const icon = layerOf("icon");
+  icon.payload.symbol = literal("cloud.fill");
+  icon.payload.rules = [buildStatesRule(entityStateValue(full),
+    WEATHER_SYMBOLS.map(([state, symbol]) => ({
+      comparison: { kind: "equals" as const, value: literal(state) },
+      changes: [setIconTo(symbol)],
+    })),
+    [setIconTo("cloud.fill")])];
+  placeLayer(cfg, icon, env.family, (family) => weatherCardGeometry(family, "icon"));
+  cfg.elements.push(icon);
+
+  const temp = layerOf("text");
+  temp.payload.value = {
+    kind: { kind: "entityAttribute", ...full, attribute: "temperature" },
+    format: { decimals: 0, suffix: "°" },
+  };
+  temp.payload.fontWeight = "semibold";
+  if (isWide(env.family)) temp.payload.alignment = "leading";
+  placeLayer(cfg, temp, env.family, (family) => weatherCardGeometry(family, "temp"));
+  cfg.elements.push(temp);
+
+  const details = layerOf("text");
+  details.payload.value = { kind: { kind: "jinja", value: weatherDetailsTemplate(full.entityId) } };
+  details.payload.colorSlot.baseColorHex = MUTED_HEX;
+  if (isWide(env.family)) details.payload.alignment = "leading";
+  placeLayer(cfg, details, env.family, (family) => weatherCardGeometry(family, "details"));
+  cfg.elements.push(details);
+  return temp.payload.id;
+}
+
+/**
+ * When the calendar's next event starts, as unix seconds for the countdown to
+ * tick toward. An event already under way prints "Now" and a calendar with
+ * nothing coming prints nothing, because a countdown handed a past time draws
+ * the raw number.
+ */
+export function eventStartTemplate(entityId: string): string {
+  return `{% set s = state_attr('${entityId}', 'start_time') %}`
+    + `{% if s and as_timestamp(s) > now().timestamp() %}{{ as_timestamp(s) | int }}`
+    + `{% elif s %}Now{% else %}{% endif %}`;
+}
+
+/** The event's name, or the words for having none. `message` is unset on a
+ * calendar with nothing ahead, and "None" is not what that should say. */
+export function eventTitleTemplate(entityId: string): string {
+  return `{{ state_attr('${entityId}', 'message') or 'No events' }}`;
+}
+
+/**
+ * The next event on one calendar: its name, a live countdown to it, and the
+ * clock time it starts.
+ *
+ * The calendar entity carries only its next event, in `message` and
+ * `start_time`, so no list is needed. `start_time` is a local date string
+ * rather than ISO, which the countdown cannot read, so the template turns it
+ * into seconds on the server, and the same seconds print as the clock time
+ * on the line under it.
+ */
+export function addEventCountdown(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
+  const full = withDomain(ref);
+  addQuietLine(cfg, { kind: { kind: "jinja", value: eventTitleTemplate(full.entityId) } }, env, labelBandGeometry);
+
+  const countdown = layerOf("text");
+  countdown.payload.value = { kind: { kind: "jinja", value: eventStartTemplate(full.entityId) } };
+  countdown.payload.countdown = true;
+  countdown.payload.monospacedDigits = true;
+  countdown.payload.fontWeight = "semibold";
+  placeLayer(cfg, countdown, env.family, mainBandGeometry);
+  cfg.elements.push(countdown);
+
+  const at = layerOf("text");
+  at.payload.value = {
+    kind: { kind: "jinja", value: `{% set s = state_attr('${full.entityId}', 'start_time') %}{% if s %}{{ as_timestamp(s) | int }}{% endif %}` },
+    format: { timestamp: "clock" },
+  };
+  at.payload.colorSlot.baseColorHex = MUTED_HEX;
+  placeLayer(cfg, at, env.family, captionBandGeometry);
+  cfg.elements.push(at);
+  return countdown.payload.id;
+}
+
+/** The disc behind the photo, and the photo inside it. The disc is a hair
+ * larger than the photo all round, and that hair is the ring. */
+function photoGeometry(family: DrawableFamily, part: "disc" | "photo"): PresetGeometry & { radius?: number } {
+  const canvas = CANVAS[family];
+  const disc = Math.min(canvas.width, canvas.height) * 0.6;
+  const ring = clamp(Math.round(disc * 0.07), 1.5, 4);
+  const side = part === "disc" ? disc : disc - ring * 2;
+  const centreY = canvas.height * 0.42;
+  return {
+    frame: {
+      x: round4((canvas.width - side) / 2 / canvas.width),
+      y: round4((centreY - side / 2) / canvas.height),
+      width: round4(side / canvas.width),
+      height: round4(side / canvas.height),
+      rotationDegrees: 0,
+    },
+    radius: round4(side / 2),
+  };
+}
+
+/**
+ * Their picture in a ring, and a word under it.
+ *
+ * The ring is a disc behind the picture rather than a border on it: a rule
+ * can recolor a disc and cannot recolor a border. The picture is the
+ * entity's own `entity_picture`, clipped to a circle by a corner radius of
+ * half its side. A person with no picture gets a plain disc, which still says
+ * home or away by its color.
+ */
+export function addPersonPhoto(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
+  const full = withDomain(ref);
+  const home = (): Value => entityStateValue(full);
+
+  const disc = layerOf("shape");
+  disc.payload.kind = "circle";
+  disc.payload.borderWidth = 0;
+  disc.payload.colorSlot.baseColorHex = MUTED_HEX;
+  disc.payload.rules = [buildStatesRule(home(), [
+    { comparison: { kind: "equals", value: literal("home") }, changes: [setColorTo(GOOD_HEX)] },
+  ], [setColorTo(MUTED_HEX)])];
+  placeLayer(cfg, disc, env.family, (family) => photoGeometry(family, "disc"));
+  cfg.elements.push(disc);
+
+  const photo = layerOf("image");
+  photo.payload.entity = full;
+  photo.payload.source = "entityPicture";
+  photo.payload.cornerRadius = photoGeometry(env.family, "photo").radius!;
+  placeLayer(cfg, photo, env.family, (family) => photoGeometry(family, "photo"));
+  cfg.elements.push(photo);
+
+  const word = layerOf("text");
+  word.payload.value = entityStateValue(full);
+  word.payload.colorSlot.baseColorHex = MUTED_HEX;
+  word.payload.rules = [buildStatesRule(home(), [
+    { comparison: { kind: "equals", value: literal("home") }, changes: [setTextTo("Home"), setColorTo(GOOD_HEX)] },
+    { comparison: { kind: "equals", value: literal("not_home") }, changes: [setTextTo("Away")] },
+  ])];
+  placeLayer(cfg, word, env.family, (family) => bandGeometry(family, 0.76, 0.18, 0.8, 13));
+  cfg.elements.push(word);
+  return photo.payload.id;
+}
+
+/**
+ * The cover art filling the face, the song on a dark band across the bottom,
+ * and a tap on the picture that plays or pauses.
+ *
+ * The band is the same translucent black a picture's timestamp chip wears,
+ * so the two look like one family. A player that is off has no art and no
+ * title, and the band says so in words, dimmed, the way Now playing does.
+ */
+export function addNowPlayingArt(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
+  const full = withDomain(ref);
+  const quiet: readonly (readonly [string, string])[] = [["off", "Off"], ["idle", "Idle"], ["standby", "Standby"]];
+
+  const art = layerOf("image");
+  art.payload.entity = full;
+  art.payload.source = "entityPicture";
+  placeLayer(cfg, art, env.family, cameraGeometry);
+  cfg.elements.push(art);
+
+  const band = newCard("roundedRectangle");
+  band.payload.cornerRadius = 5;
+  band.payload.colorSlot.baseColorHex = IMAGE_TIMESTAMP_CAPSULE_HEX;
+  placeLayer(cfg, band, env.family, () => ({ frame: { x: 0.04, y: 0.66, width: 0.92, height: 0.3, rotationDegrees: 0 } }));
+  cfg.elements.push(band);
+
+  const title = layerOf("text");
+  title.payload.value = { kind: { kind: "entityAttribute", ...full, attribute: "media_title" } };
+  title.payload.fontWeight = "semibold";
+  title.payload.rules = [buildStatesRule(entityStateValue(full), [
+    ...quiet.map(([word, text]) => ({
+      comparison: { kind: "equals" as const, value: literal(word) },
+      changes: [setTextTo(text), setOpacityTo(0.6)],
+    })),
+    { comparison: { kind: "isUnavailable" }, changes: [setTextTo("Unavailable"), setOpacityTo(0.6)] },
+  ])];
+  placeLayer(cfg, title, env.family, (family) => bandGeometry(family, 0.68, 0.26, 0.6, 15));
+  cfg.elements.push(title);
+
+  attachTap(cfg, art.payload.id, {
+    type: "callService",
+    serviceDomain: "media_player",
+    serviceName: "media_play_pause",
+    target: full,
+  });
+  return title.payload.id;
 }
 
 // ── list presets ──────────────────────────────────────────────────────────
@@ -1542,9 +2008,24 @@ export function addHomeSummary(cfg: CustomComplicationConfig, env: PresetEnv): s
 // draw nothing on the others.
 
 /** The list's own box on the face: nearly all of it, with a hair of margin so
- * the top and bottom rows are not against the bezel. */
-function listGeometry(): NormalizedFrame {
-  return { x: 0.04, y: 0.06, width: 0.92, height: 0.88, rotationDegrees: 0 };
+ * the top and bottom rows are not against the bezel. A list of cards keeps
+ * less, because each card brings its own edge. */
+function listGeometry(cards = false): NormalizedFrame {
+  return cards
+    ? { x: 0.02, y: 0.03, width: 0.96, height: 0.94, rotationDegrees: 0 }
+    : { x: 0.04, y: 0.06, width: 0.92, height: 0.88, rotationDegrees: 0 };
+}
+
+/** The gap between two card rows, in points: enough to read as two cards and
+ * no more, since every point of gap is a point off the rows. */
+const CARD_GAP = 2;
+
+/** One card row layer: a capsule across the whole cell, first in the
+ * template so the row's other layers sit on it. */
+function rowCard(kind: "capsule" | "roundedRectangle" = "capsule"): Element {
+  const el = newCard(kind);
+  el.payload.frame = { x: 0, y: 0, width: 1, height: 1, rotationDegrees: 0 };
+  return el;
 }
 
 function itemValue(field: string, format?: Value["format"]): Value {
@@ -1609,7 +2090,7 @@ function addList(
   cfg: CustomComplicationConfig,
   env: PresetEnv,
   source: ListSource,
-  layout: { rows: number; direction?: ListDirection; columns?: number; gap?: number },
+  layout: { rows: number; direction?: ListDirection; columns?: number; gap?: number; cards?: boolean },
   template: Element[],
 ): string {
   const el = layerOf("list");
@@ -1617,9 +2098,10 @@ function addList(
   el.payload.rows = layout.rows;
   if (layout.direction) el.payload.direction = layout.direction;
   if (layout.columns !== undefined) el.payload.columns = layout.columns;
-  if (layout.gap !== undefined) el.payload.gap = layout.gap;
+  const gap = layout.gap ?? (layout.cards ? CARD_GAP : undefined);
+  if (gap !== undefined) el.payload.gap = gap;
   el.payload.template = template;
-  placeLayer(cfg, el, env.family, () => ({ frame: listGeometry() }));
+  placeLayer(cfg, el, env.family, () => ({ frame: listGeometry(layout.cards) }));
   cfg.elements.push(el);
   return el.payload.id;
 }
@@ -1641,10 +2123,11 @@ export function addEntitiesList(cfg: CustomComplicationConfig, ref: EntityRef, e
     descending: false,
     attributes: [],
   };
-  return addList(cfg, env, source, { rows: 4 }, [
-    rowIcon({ x: 0, y: 0.1, width: 0.14, height: 0.8 }, 10),
-    rowText(itemValue("name"), { x: 0.18, y: 0, width: 0.5, height: 1 }, { align: "leading" }),
-    rowText(itemValue("state", { useEntityUnit: true }), { x: 0.7, y: 0, width: 0.3, height: 1 },
+  return addList(cfg, env, source, { rows: 4, cards: true }, [
+    rowCard(),
+    rowIcon({ x: 0.04, y: 0.1, width: 0.12, height: 0.8 }, 10),
+    rowText(itemValue("name"), { x: 0.2, y: 0, width: 0.46, height: 1 }, { align: "leading" }),
+    rowText(itemValue("state", { useEntityUnit: true }), { x: 0.66, y: 0, width: 0.3, height: 1 },
       { align: "trailing", colorHex: MUTED_HEX }),
   ]);
 }
@@ -1660,12 +2143,14 @@ const COMPANION_DOMAINS: readonly string[] = ["light", "climate", "lock", "cover
  * a temperature), then the same domain, then the glance domains above. Nothing
  * unavailable or unknown, since a row of dashes looks broken, no groups, and
  * nothing without a name. Sorted by name inside each tier, so the same home always
- * gets the same rows.
+ * gets the same rows. `domains` narrows the pool and sets the order of the
+ * later tiers; without it the glance domains above do both.
  */
 export function companionEntities(
   ref: EntityRef,
   states: Record<string, HassEntityState> | undefined,
   count: number,
+  domains: readonly string[] = COMPANION_DOMAINS,
 ): EntityRef[] {
   if (!states) return [];
   const domain = domainOf(ref);
@@ -1680,7 +2165,7 @@ export function companionEntities(
   const tier = (s: HassEntityState): number => {
     const d = s.entity_id.split(".")[0] ?? "";
     if (d === domain) return deviceClass !== undefined && s.attributes?.device_class === deviceClass ? 0 : 1;
-    const i = COMPANION_DOMAINS.indexOf(d);
+    const i = domains.indexOf(d);
     return i < 0 ? Infinity : 2 + i;
   };
   const name = (s: HassEntityState): string => String(s.attributes.friendly_name).trim();
@@ -1694,9 +2179,10 @@ export function companionEntities(
 
 /** The next few events, each with the time it starts. */
 export function addEventsList(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
-  return addList(cfg, env, { kind: "calendar", entities: [withDomain(ref)], hours: 24 }, { rows: 3 }, [
-    rowText(itemValue("title"), { x: 0, y: 0, width: 0.68, height: 1 }, { align: "leading" }),
-    rowText(itemValue("start", { timestamp: "clock" }), { x: 0.7, y: 0, width: 0.3, height: 1 },
+  return addList(cfg, env, { kind: "calendar", entities: [withDomain(ref)], hours: 24 }, { rows: 3, cards: true }, [
+    rowCard(),
+    rowText(itemValue("title"), { x: 0.05, y: 0, width: 0.6, height: 1 }, { align: "leading" }),
+    rowText(itemValue("start", { timestamp: "clock" }), { x: 0.66, y: 0, width: 0.3, height: 1 },
       { align: "trailing", colorHex: MUTED_HEX }),
   ]);
 }
@@ -1710,9 +2196,10 @@ export function addTodoList(cfg: CustomComplicationConfig, ref: EntityRef, env: 
     serviceName: "update_item",
     serviceDataJSON: `{"entity_id": "{item.listId}", "item": "{item.uid}", "status": "completed"}`,
   };
-  return addList(cfg, env, { kind: "todo", entities: [full], status: "open", sort: "list" }, { rows: 4 }, [
-    rowIcon({ x: 0, y: 0.1, width: 0.14, height: 0.8 }, 10),
-    rowText(itemValue("title"), { x: 0.18, y: 0, width: 0.82, height: 1 }, { align: "leading" }),
+  return addList(cfg, env, { kind: "todo", entities: [full], status: "open", sort: "list" }, { rows: 4, cards: true }, [
+    rowCard(),
+    rowIcon({ x: 0.04, y: 0.1, width: 0.12, height: 0.8 }, 10),
+    rowText(itemValue("title"), { x: 0.2, y: 0, width: 0.76, height: 1 }, { align: "leading" }),
     rowTap(complete),
   ]);
 }
@@ -1751,9 +2238,10 @@ export function addLightsOnList(cfg: CustomComplicationConfig, env: PresetEnv): 
     descending: false,
     attributes: [],
   };
-  return addList(cfg, env, source, { rows: 4 }, [
-    rowIcon({ x: 0, y: 0.1, width: 0.14, height: 0.8 }, 10),
-    rowText(itemValue("name"), { x: 0.18, y: 0, width: 0.82, height: 1 }, { align: "leading" }),
+  return addList(cfg, env, source, { rows: 4, cards: true }, [
+    rowCard(),
+    rowIcon({ x: 0.04, y: 0.1, width: 0.12, height: 0.8 }, 10),
+    rowText(itemValue("name"), { x: 0.2, y: 0, width: 0.76, height: 1 }, { align: "leading" }),
     rowTap({ type: "toggleEntity", entityId: "{item.entityId}", displayName: "", domain: "" }),
   ]);
 }
@@ -1780,15 +2268,16 @@ export function addBatteriesList(cfg: CustomComplicationConfig, env: PresetEnv):
     descending: false,
     attributes: [],
   };
-  const bar = rowLevel(itemValue("state"), { x: 0, y: 0.34, width: 0.14, height: 0.32 }, GOOD_HEX);
+  const bar = rowLevel(itemValue("state"), { x: 0.04, y: 0.34, width: 0.12, height: 0.32 }, GOOD_HEX);
   bar.payload.rules = [buildStatesRule(itemValue("state"), [
     { comparison: { kind: "lessThan", value: literal("25") }, changes: [setColorTo(BAD_HEX)] },
     { comparison: { kind: "lessThan", value: literal("60") }, changes: [setColorTo(WARN_HEX)] },
   ], [setColorTo(GOOD_HEX)])];
-  return addList(cfg, env, source, { rows: 4 }, [
+  return addList(cfg, env, source, { rows: 4, cards: true }, [
+    rowCard(),
     bar,
-    rowText(itemValue("name"), { x: 0.18, y: 0, width: 0.5, height: 1 }, { align: "leading" }),
-    rowText(itemValue("state", { decimals: 0, useEntityUnit: true }), { x: 0.7, y: 0, width: 0.3, height: 1 },
+    rowText(itemValue("name"), { x: 0.2, y: 0, width: 0.46, height: 1 }, { align: "leading" }),
+    rowText(itemValue("state", { decimals: 0, useEntityUnit: true }), { x: 0.66, y: 0, width: 0.3, height: 1 },
       { align: "trailing" }),
   ]);
 }
@@ -1824,9 +2313,10 @@ export function addRecentList(cfg: CustomComplicationConfig, env: PresetEnv): st
     descending: true,
     attributes: [],
   };
-  return addList(cfg, env, source, { rows: 4 }, [
-    rowText(itemValue("name"), { x: 0, y: 0, width: 0.7, height: 1 }, { align: "leading" }),
-    rowText(itemValue("age", { relativeTime: true }), { x: 0.72, y: 0, width: 0.28, height: 1 },
+  return addList(cfg, env, source, { rows: 4, cards: true }, [
+    rowCard(),
+    rowText(itemValue("name"), { x: 0.05, y: 0, width: 0.6, height: 1 }, { align: "leading" }),
+    rowText(itemValue("age", { relativeTime: true }), { x: 0.66, y: 0, width: 0.3, height: 1 },
       { align: "trailing", colorHex: MUTED_HEX }),
   ]);
 }
@@ -1840,10 +2330,48 @@ export function addScenesList(cfg: CustomComplicationConfig, env: PresetEnv): st
     descending: false,
     attributes: [],
   };
-  return addList(cfg, env, source, { rows: 4, columns: 2, gap: 3 }, [
-    rowIcon({ x: 0.34, y: 0.06, width: 0.32, height: 0.44 }, 12),
-    rowText(itemValue("name"), { x: 0, y: 0.54, width: 1, height: 0.46 }, { size: 9 }),
+  const card = rowCard("roundedRectangle");
+  if (card.kind === "shape") card.payload.cornerRadius = 5;
+  return addList(cfg, env, source, { rows: 4, columns: 2, gap: 3, cards: true }, [
+    card,
+    rowIcon({ x: 0.34, y: 0.08, width: 0.32, height: 0.42 }, 12),
+    rowText(itemValue("name"), { x: 0.04, y: 0.54, width: 0.92, height: 0.42 }, { size: 9 }),
     rowTap({ type: "runScene", entityId: "{item.entityId}", displayName: "", domain: "" }),
+  ]);
+}
+
+/**
+ * Four pills in a grid, one per entity, lit while that entity is on, with a
+ * tap on each that toggles it.
+ *
+ * The Toggle pill drawn as a list: the same pill, the same ink flip, one rule
+ * per layer reading `item.state` so it serves every row. Starts with the
+ * entity picked and fills the other three cells from the same on/off domains,
+ * nearest kind first, so the grid draws full on creation.
+ */
+export function addTogglesList(cfg: CustomComplicationConfig, ref: EntityRef, env: PresetEnv): string {
+  const source: ListSource = {
+    kind: "entities",
+    scope: { kind: "entities", entities: [withDomain(ref), ...companionEntities(ref, env.states, 3, ON_OFF_DOMAINS)] },
+    sort: "name",
+    descending: false,
+    attributes: [],
+  };
+  const lit = (on: StyleChange[], off: StyleChange[]): Rule =>
+    buildStatesRule(itemValue("state"), [{ comparison: { kind: "isOn" }, changes: on }], off);
+
+  const pill = rowCard();
+  pill.payload.rules = [lit([setColorTo(ACCENT_HEX)], [setColorTo(CARD_HEX)])];
+  const icon = rowIcon({ x: 0.08, y: 0.2, width: 0.18, height: 0.6 }, 11);
+  icon.payload.rules = [lit([setColorTo(ON_INK_HEX)], [setColorTo(WHITE_HEX)])];
+  const name = rowText(itemValue("name"), { x: 0.3, y: 0, width: 0.64, height: 1 }, { size: 10, align: "leading", weight: "semibold" });
+  name.payload.rules = [lit([setColorTo(ON_INK_HEX)], [setColorTo(WHITE_HEX)])];
+
+  return addList(cfg, env, source, { rows: 4, columns: 2, gap: 3, cards: true }, [
+    pill,
+    icon,
+    name,
+    rowTap({ type: "toggleEntity", entityId: "{item.entityId}", displayName: "", domain: "" }),
   ]);
 }
 
@@ -1909,6 +2437,12 @@ export function applyPreset(
     case "thermostat": return addThermostat(cfg, ref, env);
     case "nowPlaying": return addNowPlaying(cfg, ref, env);
     case "summary": return addHomeSummary(cfg, env);
+    case "togglePill": return addTogglePill(cfg, ref, env);
+    case "levelBar": return addLevelBar(cfg, ref, env);
+    case "weatherCard": return addWeatherCard(cfg, ref, env);
+    case "eventCountdown": return addEventCountdown(cfg, ref, env);
+    case "personPhoto": return addPersonPhoto(cfg, ref, env);
+    case "nowPlayingArt": return addNowPlayingArt(cfg, ref, env);
     case "listEntities": return addEntitiesList(cfg, ref, env);
     case "listEvents": return addEventsList(cfg, ref, env);
     case "listTodo": return addTodoList(cfg, ref, env);
@@ -1919,5 +2453,6 @@ export function applyPreset(
     case "listRecent": return addRecentList(cfg, env);
     case "listScenes": return addScenesList(cfg, env);
     case "listWhoHome": return addWhoHomeList(cfg, env);
+    case "listToggles": return addTogglesList(cfg, ref, env);
   }
 }

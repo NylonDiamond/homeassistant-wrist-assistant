@@ -59,6 +59,12 @@ const PRESET_KIND: Record<PresetKind, LayerKind> = {
   thermostat: "text",
   nowPlaying: "text",
   summary: "text",
+  togglePill: "shape",
+  levelBar: "text",
+  weatherCard: "icon",
+  eventCountdown: "text",
+  personPhoto: "image",
+  nowPlayingArt: "image",
   listEntities: "list",
   listEvents: "list",
   listTodo: "list",
@@ -69,6 +75,7 @@ const PRESET_KIND: Record<PresetKind, LayerKind> = {
   listRecent: "list",
   listScenes: "list",
   listWhoHome: "list",
+  listToggles: "list",
 };
 
 /** The color a preset's card is tinted with. */
@@ -105,6 +112,13 @@ function stack(top: string, main: string, opts: { fill?: string; below?: boolean
     ${opts.below ? label(60, 18, main, 19, opts.fill ?? "var(--k)", "600") : label(60, 17, top, 8, DIM)}
     ${opts.below ? label(60, 33, top, 8, DIM) : label(60, 34, main, 17, opts.fill ?? "var(--k)", "600")}
   </g>`;
+}
+
+/** The grey card a row sits on: white at the same fraction the preset writes,
+ * so the sample and the face agree on how loud a card is. A capsule unless a
+ * corner radius is given. */
+function card(x: number, y: number, w: number, h: number, rx = h / 2): TemplateResult {
+  return svg`<rect x=${x} y=${y} width=${w} height=${h} rx=${rx} fill="#FFFFFF" opacity=".12" />`;
 }
 
 /** A horizontal row of list rows: N lines of a wide bar and a short one, which
@@ -293,30 +307,82 @@ function sample(kind: PresetKind): TemplateResult {
         ${label(60, 29, "Clair de lune", 11, "var(--k)", "600")}
         ${label(60, 40, "Debussy", 8, DIM)}
       </g>`;
-    // Three rows of a dot and a count, the way the old iPhone summary read.
+    // A lit pill: dark ink on the accent, which is the preset's own "on".
+    case "togglePill":
+      return svg`<g>
+        <rect x="14" y="12" width="92" height="22" rx="11" fill="#FF9F0A" />
+        <g transform="translate(22 17)">
+          <path d="M5 .8a4 4 0 0 1 4 4c0 1.6-1 2.4-1.4 3.3H2.4C2 7.2 1 6.4 1 4.8a4 4 0 0 1 4-4z" fill="#1C1C1E" />
+          <path d="M3.4 10.6h3.2" stroke="#1C1C1E" stroke-width="1.3" stroke-linecap="round" />
+        </g>
+        ${label(38, 27, "Kitchen", 11, "#1C1C1E", "600", "start")}
+      </g>`;
+    // The name, the reading, and the bar under it, part filled in amber.
+    case "levelBar":
+      return svg`<g>
+        ${label(60, 12, "Humidity", 7, DIM)}
+        ${label(60, 30, "64%", 16, "var(--k)", "600")}
+        <rect x="14" y="36" width="92" height="5" rx="2.5" fill=${DIM} opacity=".4" />
+        <rect x="14" y="36" width="59" height="5" rx="2.5" fill=${AMBER} />
+      </g>`;
+    // The symbol on the left, the temperature and the details beside it.
+    case "weatherCard":
+      return svg`<g>
+        <g transform="translate(12 9) scale(2.4)">${sunGlyph}</g>
+        ${label(48, 25, "21°", 18, "var(--k)", "600", "start")}
+        ${label(48, 38, "64% · 12 km/h", 7, DIM, "500", "start")}
+      </g>`;
+    // The event, the countdown, and when it starts.
+    case "eventCountdown":
+      return svg`<g>
+        ${label(60, 12, "Dentist", 7, DIM)}
+        ${label(60, 30, "1:23:45", 16, "var(--k)", "600")}
+        ${label(60, 41, "14:00", 7, DIM)}
+      </g>`;
+    // A disc for the ring, the photo as a lighter disc inside it, the word.
+    case "personPhoto":
+      return svg`<g>
+        <circle cx="60" cy="18" r="14" fill=${GREEN} />
+        <circle cx="60" cy="18" r="11.5" fill="var(--k)" opacity=".45" />
+        <g transform="translate(55 11.5)">${figure("#FFFFFF")}</g>
+        ${label(60, 42, "Home", 8, GREEN)}
+      </g>`;
+    // The art as a tinted frame, the dark band along its bottom, the song.
+    case "nowPlayingArt":
+      return svg`<g>
+        <rect x="6" y="4" width="108" height="38" rx="5" fill="var(--k)" opacity=".3" />
+        <path d="M6 32l26-14 20 10 14-8 48 18v4H6z" fill="var(--k)" opacity=".3" />
+        <rect x="10" y="28" width="100" height="11" rx="3" fill="#000000" opacity=".55" />
+        ${label(60, 36.5, "Clair de lune", 8, "#FFFFFF", "600")}
+      </g>`;
+    // Three card rows: a colored glyph at the left end, the count at the right.
     case "summary":
       return svg`${listRows(3, (y, h, i) => svg`<g>
-        <circle cx="12" cy=${y + h / 2} r="3.2" fill=${[AMBER, GREEN, GREEN][i]!} />
-        ${label(22, y + h * 0.75, ["3 lights on", "2 home", "All closed"][i]!, 9, "var(--k)", "500", "start")}
+        ${card(4, y, 112, h)}
+        <circle cx="13" cy=${y + h / 2} r="3.2" fill=${[AMBER, "#0A84FF", GREEN][i]!} />
+        ${label(110, y + h * 0.75, ["3 lights on", "2 home", "All closed"][i]!, 9, "var(--k)", "600", "end")}
       </g>`)}`;
-    // A dot, a name and a reading per row.
+    // A card per row: a dot, a name and a reading.
     case "listEntities":
       return svg`${listRows(3, (y, h, i) => svg`<g>
-        <circle cx="12" cy=${y + h / 2} r="3" fill="var(--k)" opacity=".8" />
-        ${label(22, y + h * 0.75, ["Kitchen", "Office", "Garage"][i]!, 9, "var(--k)", "500", "start")}
-        ${label(112, y + h * 0.75, ["21.5°", "On", "Closed"][i]!, 8, DIM, "500", "end")}
+        ${card(4, y, 112, h)}
+        <circle cx="13" cy=${y + h / 2} r="3" fill="var(--k)" opacity=".8" />
+        ${label(24, y + h * 0.75, ["Kitchen", "Office", "Garage"][i]!, 9, "var(--k)", "500", "start")}
+        ${label(110, y + h * 0.75, ["21.5°", "On", "Closed"][i]!, 8, DIM, "500", "end")}
       </g>`)}`;
-    // A title and the time it starts, twice.
+    // A card per event: the title and the time it starts.
     case "listEvents":
       return svg`${listRows(3, (y, h, i) => svg`<g>
-        ${label(8, y + h * 0.75, ["Stand-up", "Dentist", "Pickup"][i]!, 9, "var(--k)", "500", "start")}
-        ${label(112, y + h * 0.75, ["9:30", "14:00", "16:15"][i]!, 8, DIM, "500", "end")}
+        ${card(4, y, 112, h)}
+        ${label(11, y + h * 0.75, ["Stand-up", "Dentist", "Pickup"][i]!, 9, "var(--k)", "500", "start")}
+        ${label(110, y + h * 0.75, ["9:30", "14:00", "16:15"][i]!, 8, DIM, "500", "end")}
       </g>`)}`;
-    // A box to tick and the thing to do.
+    // A card per item: a box to tick and the thing to do.
     case "listTodo":
       return svg`${listRows(3, (y, h, i) => svg`<g>
-        <rect x="8" y=${y + h / 2 - 4} width="8" height="8" rx="2" fill="none" stroke=${DIM} stroke-width="1.2" />
-        ${label(22, y + h * 0.75, ["Milk", "Post office", "Call Sam"][i]!, 9, "var(--k)", "500", "start")}
+        ${card(4, y, 112, h)}
+        <rect x="9" y=${y + h / 2 - 4} width="8" height="8" rx="2" fill="none" stroke=${DIM} stroke-width="1.2" />
+        ${label(24, y + h * 0.75, ["Milk", "Post office", "Call Sam"][i]!, 9, "var(--k)", "500", "start")}
       </g>`)}`;
     case "listHourly":
       return svg`<g>${["10", "11", "12", "13"].map((t, i) =>
@@ -324,38 +390,53 @@ function sample(kind: PresetKind): TemplateResult {
     case "listDaily":
       return svg`<g>${["Mon", "Tue", "Wed", "Thu"].map((t, i) =>
         acrossColumn(4 + i * 28, 28, t, ["21°", "19°", "17°", "20°"][i]!, i === 2 ? cloudGlyph : sunGlyph))}</g>`;
-    // A dot for the light and its name, the way the rows come out.
+    // A card per light: a dot for the light and its name.
     case "listLightsOn":
       return svg`${listRows(3, (y, h, i) => svg`<g>
-        <circle cx="12" cy=${y + h / 2} r="3.4" fill="var(--k)" />
-        ${label(22, y + h * 0.75, ["Kitchen", "Hall", "Porch"][i]!, 9, "var(--k)", "500", "start")}
+        ${card(4, y, 112, h)}
+        <circle cx="13" cy=${y + h / 2} r="3.4" fill="var(--k)" />
+        ${label(24, y + h * 0.75, ["Kitchen", "Hall", "Porch"][i]!, 9, "var(--k)", "500", "start")}
       </g>`)}`;
-    // A bar that runs down, the name, and the number.
+    // A card per battery: a bar that runs down, the name, and the number.
     case "listBatteries":
       return svg`${listRows(3, (y, h, i) => {
         const pct = [12, 46, 88][i]!;
         return svg`<g>
-          <rect x="8" y=${y + h / 2 - 3} width="18" height="6" rx="3" fill=${DIM} opacity=".4" />
-          <rect x="8" y=${y + h / 2 - 3} width=${(18 * pct) / 100} height="6" rx="3"
+          ${card(4, y, 112, h)}
+          <rect x="9" y=${y + h / 2 - 3} width="16" height="6" rx="3" fill=${DIM} opacity=".4" />
+          <rect x="9" y=${y + h / 2 - 3} width=${(16 * pct) / 100} height="6" rx="3"
             fill=${pct < 25 ? RED : pct < 60 ? AMBER : GREEN} />
-          ${label(32, y + h * 0.75, ["Sensor", "Remote", "Lock"][i]!, 9, "var(--k)", "500", "start")}
-          ${label(112, y + h * 0.75, `${pct}%`, 8, DIM, "500", "end")}
+          ${label(31, y + h * 0.75, ["Sensor", "Remote", "Lock"][i]!, 9, "var(--k)", "500", "start")}
+          ${label(110, y + h * 0.75, `${pct}%`, 8, DIM, "500", "end")}
         </g>`;
       })}`;
     case "listRecent":
       return svg`${listRows(3, (y, h, i) => svg`<g>
-        ${label(8, y + h * 0.75, ["Back door", "Motion", "Kettle"][i]!, 9, "var(--k)", "500", "start")}
-        ${label(112, y + h * 0.75, ["1m", "6m", "22m"][i]!, 8, DIM, "500", "end")}
+        ${card(4, y, 112, h)}
+        ${label(11, y + h * 0.75, ["Back door", "Motion", "Kettle"][i]!, 9, "var(--k)", "500", "start")}
+        ${label(110, y + h * 0.75, ["1m", "6m", "22m"][i]!, 8, DIM, "500", "end")}
       </g>`)}`;
-    // Two by two, a glyph and a name per cell.
+    // Two by two cards, a glyph and a name per cell.
     case "listScenes":
       return svg`<g>${[0, 1, 2, 3].map((i) => {
         const x = 8 + (i % 2) * 56;
         const y = 4 + Math.floor(i / 2) * 20;
         return svg`<g>
-          <rect x=${x} y=${y} width="48" height="17" rx="4" fill="var(--k)" opacity=".16" />
+          ${card(x, y, 48, 17, 4)}
           <circle cx=${x + 11} cy=${y + 8.5} r="3.2" fill="var(--k)" />
           ${label(x + 19, y + 12, ["Movie", "Away", "Night", "Dinner"][i]!, 8, "var(--k)", "500", "start")}
+        </g>`;
+      })}</g>`;
+    // Two by two pills, the lit ones in the accent with dark ink.
+    case "listToggles":
+      return svg`<g>${[0, 1, 2, 3].map((i) => {
+        const x = 8 + (i % 2) * 56;
+        const y = 4 + Math.floor(i / 2) * 20;
+        const on = i === 0 || i === 3;
+        return svg`<g>
+          ${on ? svg`<rect x=${x} y=${y} width="48" height="17" rx="8.5" fill="#FF9F0A" />` : card(x, y, 48, 17)}
+          <circle cx=${x + 10} cy=${y + 8.5} r="3" fill=${on ? "#1C1C1E" : "var(--k)"} />
+          ${label(x + 17, y + 12, ["Kitchen", "Fan", "Porch", "Lamp"][i]!, 8, on ? "#1C1C1E" : "var(--k)", "600", "start")}
         </g>`;
       })}</g>`;
     // Four people across, the two at home lit.

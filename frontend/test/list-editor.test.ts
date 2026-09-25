@@ -683,10 +683,10 @@ describe("the list presets", () => {
   const listPresets = LAYER_PRESETS.filter((p) => p.group === "list");
   const CALENDAR = { entityId: "calendar.home", displayName: "Home", domain: "calendar" };
 
-  it("is the nine the plan named, plus the iPhone's Multi-Entity", () => {
+  it("is the nine the plan named, plus the iPhone's Multi-Entity and the toggle grid", () => {
     expect(listPresets.map((p) => p.title)).toEqual([
       "Entity rows", "Next events", "To-do", "Hourly forecast", "Daily forecast",
-      "Lights on", "Low batteries", "Recent activity", "Scenes grid", "Who is home",
+      "Lights on", "Low batteries", "Recent activity", "Scenes grid", "Who is home", "Toggle grid",
     ]);
   });
 
@@ -750,7 +750,7 @@ describe("the list presets", () => {
     expect(needs).toEqual({
       listEntities: true, listEvents: true, listTodo: true, listHourly: true, listDaily: true,
       listLightsOn: false, listBatteries: false, listRecent: false, listScenes: false,
-      listWhoHome: false,
+      listWhoHome: false, listToggles: true,
     });
   });
 
@@ -769,7 +769,7 @@ describe("the list presets", () => {
       descending: false,
       attributes: [],
     });
-    const bar = made.payload.template.find((r) => r.kind === "shape");
+    const bar = made.payload.template.find((r) => r.kind === "shape" && r.payload.level !== undefined);
     if (bar?.kind !== "shape") throw new Error("no bar");
     expect(bar.payload.level).toEqual({
       value: { kind: { kind: "item", field: "state" } },
@@ -792,7 +792,7 @@ describe("the list presets", () => {
     const id = applyPreset(cfg, "listBatteries", CALENDAR, { family: "rectangular" });
     const made = cfg.elements.find((e) => e.payload.id === id)!;
     if (made.kind !== "list") throw new Error("wrong kind");
-    const bar = made.payload.template.find((r) => r.kind === "shape");
+    const bar = made.payload.template.find((r) => r.kind === "shape" && r.payload.level !== undefined);
     if (bar?.kind !== "shape") throw new Error("no bar");
 
     expect(bar.payload.rules).toHaveLength(1);
