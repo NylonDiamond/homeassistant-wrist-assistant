@@ -3609,6 +3609,9 @@ export class WristAssistantPanel extends LitElement {
        read as nested rather than as another run of top-level rows. */
     .layer.kid { background: color-mix(in srgb, var(--wa-panel) 30%, var(--wa-card)); }
     .layer:hover { background: var(--wa-panel); box-shadow: inset 0 0 0 1px var(--wa-line-strong); }
+    /* The row under the pointer, which the preview is showing: an accent
+       outline only. The fill stays for the real selection below. */
+    .layer.peek { box-shadow: inset 0 0 0 1px var(--wa-accent); }
     /* The selected row: a strong accent wash and a full-weight accent ring,
        the same wherever a row is selected, so eight kind colors and the group
        boxes' hues never fight the selection. */
@@ -16263,13 +16266,15 @@ export class WristAssistantPanel extends LitElement {
     const ordered = elementsOnPage(cfg, shapeRows, this.page).reverse();
     const ctx = describeContext(this.host());
     const resolver = new Resolver(this.buildContext(), this.draft?.config);
-    // Rows light for the row under the pointer, if any, as though it were
-    // selected; the real selection shows again when the pointer leaves.
-    const shown = this.shownInspect();
+    // The rows light for the real selection only. The row under the pointer
+    // gets an outline (`peek`) and nothing more, so the selection never looks
+    // like it moved while the pointer passes over the list. The preview still
+    // shows the row under the pointer as the selection.
+    const shown = this.inspect;
+    const peek = this.rowPeek;
+    const peekCls = (hit: boolean) => hit ? "peek" : "";
     const shapeHl = shown.kind === "family";
-    // The tap look follows the same pretend: a strip under the pointer, or,
-    // with no row under the pointer, a tap that is really selected.
-    const tapShown = (id: string) => this.rowPeek ? this.tapHover === id : this.tapFocus;
+    const tapShown = (_id: string) => this.tapFocus;
     const ground = backgroundRow(cfg, this.activeFamily);
     const pickedCount = [...this.multi].filter((id) => cfg.elements.some((e) => e.payload.id === id)).length;
     // A lone selection (one layer, or the members of a selected group) has no
@@ -16348,7 +16353,7 @@ export class WristAssistantPanel extends LitElement {
             @click=${(e: Event) => { e.stopPropagation(); this.removeTap(id); }}>${uiIcon("delete")}</button>` : nothing}
         </div>`;
       }
-      return html`<div class="layer ${attached ? "with-tap" : ""} ${tapSel ? "tapsel" : ""} ${hl ? "hl" : ""} ${held ? "held" : ""} ${this.dialogLitIds.includes(id) ? "lit" : ""} ${hidden ? "dim" : ""} ${this.multi.has(id) ? "multi" : ""} ${inGroup ? "kid" : ""} ${rich ? "rich" : ""}"
+      return html`<div class="layer ${attached ? "with-tap" : ""} ${tapSel ? "tapsel" : ""} ${hl ? "hl" : ""} ${peekCls(peek?.kind === "layer" && peek.id === id)} ${held ? "held" : ""} ${this.dialogLitIds.includes(id) ? "lit" : ""} ${hidden ? "dim" : ""} ${this.multi.has(id) ? "multi" : ""} ${inGroup ? "kid" : ""} ${rich ? "rich" : ""}"
         style=${`--k:${KIND_COLOR[el.kind]}`} tabindex="0" draggable=${d.draggable}
         @pointerenter=${() => this.enterRow([id], { kind: "layer", id }, peekAt)}
         @click=${(e: MouseEvent) => this.clickRow(id, e)}
@@ -16412,7 +16417,7 @@ export class WristAssistantPanel extends LitElement {
       };
       const memberIds = members.map((m) => m.payload.id);
       const subCount = kids.filter((k) => k.kind === "group").length;
-      return html`<div class="layer group ${hl ? "hl" : ""} ${held ? "held" : ""} ${this.dialogLitIds.includes(g.id) ? "lit" : ""} ${rich ? "rich" : ""}" style=${`--k:${SECTION_COLOR.group}`} tabindex="0" draggable=${d.draggable}
+      return html`<div class="layer group ${hl ? "hl" : ""} ${peekCls(peek?.kind === "group" && peek.id === g.id)} ${held ? "held" : ""} ${this.dialogLitIds.includes(g.id) ? "lit" : ""} ${rich ? "rich" : ""}" style=${`--k:${SECTION_COLOR.group}`} tabindex="0" draggable=${d.draggable}
         @pointerenter=${() => this.enterRow(memberIds, { kind: "group", id: g.id }, peekAt)}
         @click=${() => { this.multi = new Set(); this.inspect = { kind: "group", id: g.id }; }}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.inspect = { kind: "group", id: g.id }; }}
@@ -16489,7 +16494,7 @@ export class WristAssistantPanel extends LitElement {
         p.template[i] = b;
         p.template[i + by] = a;
       });
-      return html`<div class="layer kid rowkid ${hl ? "hl" : ""} ${hidden ? "dim" : ""}"
+      return html`<div class="layer kid rowkid ${hl ? "hl" : ""} ${peekCls(peek?.kind === "layer" && peek.id === id)} ${hidden ? "dim" : ""}"
         style=${`--k:${KIND_COLOR[row.kind]}`} tabindex="0"
         @pointerenter=${() => this.enterRow([id], { kind: "layer", id }, peekAt)}
         @click=${() => open()}
@@ -16634,7 +16639,7 @@ export class WristAssistantPanel extends LitElement {
       ${body}
       </div>
       <div class="pinned-set" @pointerleave=${(e: PointerEvent) => this.leaveList(e)}>
-      ${family === "corner" ? html`<div class="layer pinned ${shapeHl && this.pinnedPick === "corner" ? "hl" : ""}" style=${`--k:${SECTION_COLOR.content}`} tabindex="0"
+      ${family === "corner" ? html`<div class="layer pinned ${shapeHl && this.pinnedPick === "corner" ? "hl" : ""} ${peekCls(peek?.kind === "family")}" style=${`--k:${SECTION_COLOR.content}`} tabindex="0"
         title="The corner's curved text and its bezel. Always here. Click to edit them."
         @click=${() => this.openCornerContent()}
         @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this.openCornerContent(); }}>
@@ -16646,7 +16651,7 @@ export class WristAssistantPanel extends LitElement {
         </span>
         <span class="right"><span class="ground-cap">always here</span></span>
       </div>` : nothing}
-      <div class="layer pinned ground with-tap ${shapeHl && tapShown(GROUND_TAP) ? "tapsel" : ""} ${shapeHl && (family !== "corner" || this.pinnedPick === "ground") ? "hl" : ""}" style=${`--k:${SECTION_COLOR.place}`} tabindex="0"
+      <div class="layer pinned ground with-tap ${peekCls(peek?.kind === "family")} ${shapeHl && tapShown(GROUND_TAP) ? "tapsel" : ""} ${shapeHl && (family !== "corner" || this.pinnedPick === "ground") ? "hl" : ""}" style=${`--k:${SECTION_COLOR.place}`} tabindex="0"
         title="The shape's background and border, and what a tap anywhere else does. Always the bottom layer. Click to edit it."
         @pointerenter=${() => this.enterRow([], { kind: "family" })}
         @click=${() => { this.multi = new Set(); this.pinnedPick = "ground"; if (this.tapFocus && this.inspect.kind === "family") this.leaveTapFocus(); this.inspect = ground.inspect; }}
