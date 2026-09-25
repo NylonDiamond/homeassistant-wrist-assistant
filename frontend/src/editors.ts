@@ -9278,7 +9278,9 @@ export function autoLayerTitle(el: CElement, ctx?: DescribeContext): string {
       // which one it is. Adding the chart's name made titles too long to read.
       const k = el.payload.value.kind;
       if (k.kind === "chartStat") return CHART_STATS.find(([s]) => s === k.stat)?.[1] ?? "Chart number";
-      return unquote(describeValue(el.payload.value, ctx));
+      // No format in brackets: the row's lead already shows the printed text,
+      // and "(as time, no AM/PM, with seconds)" made the title unreadable.
+      return unquote(describeValueBody(el.payload.value, ctx));
     }
     // The marker is not a name anyone typed, so a pasted drawing is titled for
     // what it is rather than for `svg:custom`.

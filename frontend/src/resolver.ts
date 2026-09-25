@@ -200,6 +200,10 @@ export interface ResolveContext {
    * clock as though the picture had just been fetched. Without it the
    * timestamp would print nothing and the preview would lose it. */
   pictureStandIns?: boolean;
+  /** Panel only: the moment a picture's timestamp reads (epoch ms), held still
+   * so the preview does not tick every second. The panel moves it on save and
+   * on a demo tap. Undefined reads the clock, as the gallery picture does. */
+  pictureTimeMs?: number;
 }
 
 export interface ResolvedBase {
@@ -1954,7 +1958,7 @@ export class Resolver {
         const image = this.imageElements.get(deref.kind.layer.toUpperCase());
         if (image === undefined || image.source === "inline") return "";
         if (!this.ctx.pictureStandIns && this.ctx.entityStates.get(image.entity.entityId)?.entityPicture === undefined) return "";
-        raw = String(Math.floor(this.nowMs() / 1000));
+        raw = String(Math.floor((this.ctx.pictureTimeMs ?? this.nowMs()) / 1000));
         break;
       }
       default: {

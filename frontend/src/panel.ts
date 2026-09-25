@@ -8438,6 +8438,7 @@ export class WristAssistantPanel extends LitElement {
         // open the copy only if the source was not edited while it was saved.
         this.draft = draft.commit(result.record.revision, submittedDocument);
         this.savedName = String(result.record.document?.name ?? "");
+        this.pictureTimeMs = Date.now();
         this.recompile();
         this.beginSendWait();
         // Browse shows this picture of it until the next save.
@@ -8898,8 +8899,14 @@ export class WristAssistantPanel extends LitElement {
       namedValues: withTests ? testedNamedValues(values, this.testValues) : values,
       dataAgeSeconds: this.templateFetchedAt === undefined ? undefined : (Date.now() - this.templateFetchedAt) / 1000,
       testedEntities: withTests ? new Set(this.testValues.keys()) : new Set(),
+      pictureTimeMs: this.pictureTimeMs,
     };
   }
+
+  /** When a picture's timestamp says it was fetched. Held still rather than
+   * read off the clock, so the preview is not redrawn every second for it;
+   * a save or a demo tap moves it to now, as a fresh fetch would. */
+  private pictureTimeMs = Date.now();
 
   // ── preview gestures ──────────────────────────────────────────────────
 
@@ -9509,6 +9516,7 @@ export class WristAssistantPanel extends LitElement {
     // A tap during a tour takes over from the page on screen, which is the
     // watch's own rule, so the tour stops before the action runs.
     this.stopTour();
+    this.pictureTimeMs = Date.now();
     // Opened before the call rather than after it, so a house that answers fast
     // cannot push the new state into the gap while the demo is still frozen.
     if (tapRefetches(action)) this.openDemoRefetch();
