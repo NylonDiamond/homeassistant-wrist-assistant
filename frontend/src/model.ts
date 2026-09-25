@@ -10594,12 +10594,14 @@ export function viewReads(
  * group draws nothing itself.
  *
  * `freeTextId` gates quoted ids in templates and service data the same way it
- * does for `documentEntityUses`.
+ * does for `documentEntityUses`. `throughValues: false` counts only the layers
+ * that name the entity themselves.
  */
 export function entityLayerIds(
   cfg: CustomComplicationConfig,
   entityId: string,
   freeTextId?: (entityId: string, domain: string) => boolean,
+  throughValues = true,
 ): string[] {
   const layers = new Set<string>();
   const values = new Set<string>();
@@ -10623,7 +10625,7 @@ export function entityLayerIds(
   }
   walkDocument(cfg, visitor);
   // Shared values reading shared values: follow the chain until it stops growing.
-  for (let grew = values.size > 0; grew;) {
+  for (let grew = throughValues && values.size > 0; grew;) {
     grew = false;
     forEachValue(cfg, (v, site) => {
       if (v.kind.kind !== "named" || !values.has(v.kind.id.toUpperCase())) return;

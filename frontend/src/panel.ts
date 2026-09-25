@@ -508,6 +508,9 @@ interface SlotInfo {
   rows: UnresolvedEntity[];
   /** Layer id to the slots it reads. */
   layers: Map<string, UnresolvedEntity[]>;
+  /** The layers that name a slot themselves, rather than only through a
+   * shared value: there the fix is in the layer's own card. */
+  direct: Set<string>;
   /** Shared value id, upper case, to the slot it reads. */
   values: Map<string, UnresolvedEntity>;
 }
@@ -6819,15 +6822,26 @@ export class WristAssistantPanel extends LitElement {
        the same reason the empty box does: it is the answer to "why does this
        layer look wrong?", marked where the answer goes. The shared value row
        that reads one wears the same pulse while a layer reading it is picked. */
-    .ent-chosen.slot { border-radius: 8px; box-shadow: inset 0 0 0 1px var(--wa-need); animation: wa-slot-pulse 1.8s ease-out infinite; }
-    .vrow.slot-lit { border-radius: 6px; animation: wa-slot-pulse 1.8s ease-out infinite; }
+    /* It opens with a bright flash, three hard beats of a thick ring, a wide
+       halo and a red wash, to pull the eye across the screen, then settles
+       into the quiet pulse. A click on the layer plays the flash again. */
+    .ent-chosen.slot { border-radius: 8px; box-shadow: inset 0 0 0 1px var(--wa-need); animation: wa-slot-flash .6s ease-out 3, wa-slot-pulse 1.8s ease-out 1.8s infinite; }
+    .vrow.slot-lit { border-radius: 6px; animation: wa-slot-flash .6s ease-out 3, wa-slot-pulse 1.8s ease-out 1.8s infinite; }
+    .column.inspector.slot-via-value .ent-chosen.slot { animation: none; box-shadow: none; }
     .hint.need { color: var(--wa-need); }
+    @keyframes wa-slot-flash {
+      0% { background-color: color-mix(in srgb, var(--wa-need) 32%, transparent);
+        box-shadow: inset 0 0 0 2px var(--wa-need), 0 0 0 0 color-mix(in srgb, var(--wa-need) 90%, transparent), 0 0 18px 2px color-mix(in srgb, var(--wa-need) 60%, transparent); }
+      100% { background-color: color-mix(in srgb, var(--wa-need) 6%, transparent);
+        box-shadow: inset 0 0 0 2px var(--wa-need), 0 0 0 10px color-mix(in srgb, var(--wa-need) 0%, transparent), 0 0 18px 2px color-mix(in srgb, var(--wa-need) 0%, transparent); }
+    }
     @keyframes wa-slot-pulse {
       0% { box-shadow: inset 0 0 0 1px var(--wa-need), 0 0 0 0 color-mix(in srgb, var(--wa-need) 55%, transparent); }
       70% { box-shadow: inset 0 0 0 1px var(--wa-need), 0 0 0 7px color-mix(in srgb, var(--wa-need) 0%, transparent); }
       100% { box-shadow: inset 0 0 0 1px var(--wa-need), 0 0 0 0 color-mix(in srgb, var(--wa-need) 0%, transparent); }
     }
     @media (prefers-reduced-motion: reduce) { .ent-chosen.slot, .vrow.slot-lit { animation: none; box-shadow: inset 0 0 0 2px var(--wa-need); } }
+    @media (prefers-reduced-motion: reduce) { .column.inspector.slot-via-value .ent-chosen.slot { box-shadow: none; } }
     /* A chosen entity: one row in place of the search box, exactly as tall as
        the box, so the label beside it and the rows under it never move when
        one swaps for the other. The name reads in the ordinary ink, the id
@@ -11081,7 +11095,7 @@ export class WristAssistantPanel extends LitElement {
             ${this.renderGutter("left")}
             <div class="column canvas">${this.renderBanners()}${this.renderCanvas()}</div>
             ${this.renderGutter("right")}
-            <div class="column inspector card">${this.renderInspector()}${this.renderFooter()}</div>
+            <div class="column inspector card ${this.slotViaValueOnly() ? "slot-via-value" : ""}">${this.renderInspector()}${this.renderFooter()}</div>
           </div>`
         : this.renderWatchGate()}`;
   }
@@ -16625,13 +16639,15 @@ export class WristAssistantPanel extends LitElement {
     const rows = openSlots(cfg, this.hass.states);
     const layers = new Map<string, UnresolvedEntity[]>();
     const values = new Map<string, UnresolvedEntity>();
+    const direct = new Set<string>();
     for (const row of rows) {
       for (const id of entityLayerIds(cfg, row.entityId, (id) => isPlaceholderId(id))) {
         layers.set(id, [...(layers.get(id) ?? []), row]);
       }
+      for (const id of entityLayerIds(cfg, row.entityId, (id) => isPlaceholderId(id), false)) direct.add(id);
       for (const id of slotValueIds(cfg, row.entityId)) if (!values.has(id)) values.set(id, row);
     }
-    const info = { rows, layers, values };
+    const info = { rows, layers, direct, values };
     this.slotsCache = { cfg, version: this.version, info };
     return info;
   }
@@ -16652,24 +16668,47 @@ export class WristAssistantPanel extends LitElement {
     return out;
   }
 
+  /** The selected layer reads an unpicked slot, and only through a shared
+   * value. The inspector then keeps its fields quiet: the shared value's row
+   * is the one place to fix it. */
+  private slotViaValueOnly(): boolean {
+    if (this.inspect.kind !== "layer") return false;
+    const info = this.slotInfo();
+    return info !== undefined && info.layers.has(this.inspect.id) && !info.direct.has(this.inspect.id);
+  }
+
   /**
    * A click on a layer that reads an unpicked slot sends the eye to where it
    * gets picked: the inspector card holding the stand-in, lit and scrolled
    * to, or, when the layer reads it through a shared value, that shared
-   * value's row, opened and scrolled to. The field and the row keep pulsing
-   * after the card's light goes out.
+   * value's row, opened and scrolled to, and nothing in the inspector. The
+   * field and the row keep pulsing after the card's light goes out, and
+   * their glow starts over from its bright first flash on every click.
    */
   private pointAtSlots(id: string) {
-    if (!this.slotInfo()?.layers.has(id)) return;
+    const info = this.slotInfo();
+    if (!info?.layers.has(id)) return;
+    const direct = info.direct.has(id);
     const values = this.slotValuesOfSelection();
     if (values.size > 0) this.sharedOpen = true;
+    const replay = (el: Element | null) => {
+      for (const a of el?.getAnimations() ?? []) { a.cancel(); a.play(); }
+    };
     void this.updateComplete.then(() => {
+      const [first] = values;
+      if (first !== undefined) {
+        const row = this.renderRoot.querySelector(`.vrow[data-value="${first}"]`);
+        row?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        replay(row);
+      }
+      if (!direct) return;
       const field = this.renderRoot.querySelector<HTMLElement>(".column.inspector .ent-chosen.slot");
       const sec = field?.closest<HTMLElement>(".sec")?.dataset.sec;
       if (field && sec) {
         this.lightSection(sec);
         field.scrollIntoView({ block: "nearest", behavior: "smooth" });
-      } else if (values.size === 0) {
+        replay(field);
+      } else {
         // The card with the stand-in is shut. Content is where a layer's
         // entity nearly always sits.
         if (!this.openSections.has("content")) this.openSections = new Set([...this.openSections, "content"]);
@@ -16678,8 +16717,6 @@ export class WristAssistantPanel extends LitElement {
           this.renderRoot.querySelector(".column.inspector .sec.lit")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
         });
       }
-      const [first] = values;
-      if (first !== undefined) this.renderRoot.querySelector(`.vrow[data-value="${first}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     });
   }
 
@@ -17416,10 +17453,12 @@ export class WristAssistantPanel extends LitElement {
     // off or empty, which looks like a bug rather than a job left to do. The
     // badge says which, and a click opens the picker on that slot.
     const slots = this.slotInfo();
-    const needBadge = (need: readonly UnresolvedEntity[] | undefined) => need?.length
+    // Through a shared value only, the badge says so: the fix is in that
+    // shared value's row, not in the layer's own cards.
+    const needBadge = (need: readonly UnresolvedEntity[] | undefined, viaValue: boolean) => need?.length
       ? html`<button type="button" class="badge need" ?disabled=${!edit}
-          title=${`Reads ${need.map((r) => r.label).join(", ")}, which has no entity yet.${edit ? " Click to pick one." : ""}`}
-          @click=${(e: Event) => { e.stopPropagation(); this.openSlotsDialog(need[0]!.entityId); }}>pick entity</button>`
+          title=${`Reads ${need.map((r) => r.label).join(", ")}${viaValue ? " through a shared value" : ""}, which has no entity yet.${edit ? " Click to pick one." : ""}`}
+          @click=${(e: Event) => { e.stopPropagation(); this.openSlotsDialog(need[0]!.entityId); }}>${viaValue ? "pick shared value" : "pick entity"}</button>`
       : nothing;
     const layerRow = (el: CElement, inGroup: boolean, held = false, chevron: TemplateResult | typeof nothing = nothing) => {
       const id = el.payload.id;
@@ -17471,7 +17510,7 @@ export class WristAssistantPanel extends LitElement {
         <span class="grip" title="Drag to reorder. Drop on a group to put it inside.">${uiIcon("grip")}</span>
         ${thumb([id])}
         <span class="name">
-          <b><span class="nm-t">${layerTitle(el, ctx)}</span>${needBadge(slots?.layers.get(id))}</b>
+          <b><span class="nm-t">${layerTitle(el, ctx)}</span>${needBadge(slots?.layers.get(id), !slots?.direct.has(id))}</b>
           <small><span class="kind">${KIND_LABEL[el.kind]}</span> · ${layerMeta(el, resolver, this.historySeries, eff.size)}</small>
           ${rich ? html`<span class="facts">${layerFacts(this.host(), family, el, eff).map((f) => html`<span class="fact"><b>${f.label}</b> ${f.value}</span>`)}</span>` : nothing}
         </span>
@@ -17562,7 +17601,7 @@ export class WristAssistantPanel extends LitElement {
         <span class="grip" title="Drag to reorder the whole group.">${uiIcon("grip")}</span>
         <span class="folder">${uiIcon("folder")}</span>
         <span class="name">
-          <b><span class="nm-t">${g.name}</span>${needBadge(folderNeeds)}</b>
+          <b><span class="nm-t">${g.name}</span>${needBadge(folderNeeds, !everyLayer.some((el) => slots?.direct.has(el.payload.id)))}</b>
           <small><span class="kind">Group</span> · ${members.length === total
             ? `${total} layer${total === 1 ? "" : "s"}`
             : `${members.length} of ${total} layers on this page`}${subCount > 0 ? ` · ${subCount} sub-group${subCount === 1 ? "" : "s"}` : ""} · ${g.locked ? "locked" : "unlocked"}</small>

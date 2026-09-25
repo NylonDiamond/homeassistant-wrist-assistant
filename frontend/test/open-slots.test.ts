@@ -8,6 +8,7 @@ import {
   type CustomComplicationConfig,
   type EntityRef,
   type Value,
+  entityLayerIds,
   newConfig,
   newElement,
   newId,
@@ -82,6 +83,14 @@ describe("open slots in the editor", () => {
     const { cfg, valueId } = sharedCopy();
     expect(slotValueIds(cfg, "light.shared_1")).toEqual([valueId.toUpperCase()]);
     expect(slotValueIds(cfg, "sun.shared_7")).toEqual([]);
+  });
+
+  it("tells a layer that names a slot from one that reads it through a shared value", () => {
+    const { cfg } = sharedCopy();
+    const [viaValue, direct] = cfg.elements.map((e) => e.payload.id);
+    expect(entityLayerIds(cfg, "light.shared_1")).toEqual([viaValue]);
+    expect(entityLayerIds(cfg, "light.shared_1", undefined, false)).toEqual([]);
+    expect(entityLayerIds(cfg, "light.shared_2", undefined, false)).toEqual([direct]);
   });
 
   it("closes a slot once it is picked, in place", () => {
