@@ -632,31 +632,36 @@ describe("shapeOnlyArt", () => {
     expect(phone).not.toContain("9:41");
   });
 
-  // The whole point of the view: the same card, minus the device. A shape
-  // that grew when the watch came off would be a second drawing, not the
-  // same one with less in it.
-  it("keeps the window and the scale the device view uses", () => {
+  // The same drawing as the device view, in the same slot at the same scale:
+  // only the frame round it changes.
+  it("draws the shape in its slot at the device view's scale", () => {
     for (const [family, device] of [
-      ["rectangular", "watch"], ["circular", "watch"], ["inline", "watch"],
+      ["rectangular", "watch"], ["circular", "watch"],
       ["small", "iphone"], ["large", "iphone"], ["rectangular", "iphone"],
     ] as [FamilyKind, "watch" | "iphone"][]) {
       const live = { [family]: picture(181, 65.5) } as LiveShapes;
-      expect(window(bare(family, device, live)), family).toEqual(window(crop(family, device, live)));
-      if (family !== "inline") expect(scale(bare(family, device, live)), family).toBeCloseTo(scale(crop(family, device, live)), 6);
+      expect(scale(bare(family, device, live)), family).toBeCloseTo(scale(crop(family, device, live)), 6);
     }
   });
 
-  it("fits a phone in whole and fills a watch window, the way the device view does", () => {
-    expect(bare("rectangular", "watch")).toContain("preserveAspectRatio=xMidYMid slice");
-    expect(bare("small", "iphone")).toContain("preserveAspectRatio=xMidYMid meet");
+  // A circular slot is a sixth of the watch window's width. Framed on the
+  // window it was a dot in a black box; framed on itself it fills the card.
+  it("frames the picture on the slot with a thin margin", () => {
+    const rect = window(bare("rectangular", "watch"));
+    expect(rect.width).toBeCloseTo(58 + 2 * 2.1, 6);
+    expect(rect.height).toBeCloseTo(21 + 2 * 2.1, 6);
+    const round = window(bare("circular", "watch"));
+    expect(round.width).toBeCloseTo(14 * 1.2, 6);
+    expect(round.height).toBeCloseTo(14 * 1.2, 6);
+    const small = phoneSlot("small")!;
+    const tile = window(bare("small", "iphone"));
+    expect(tile.width).toBeCloseTo(small.width * 1.2, 6);
+    expect(tile.x).toBeCloseTo(small.x - small.width * 0.1, 6);
   });
 
-  // The shape sat low on the face because that is where the face puts it.
-  // With the face gone there is nothing to sit low on.
-  it("moves the shape to the middle of the window", () => {
-    const art = bare("rectangular", "watch", { rectangular: picture(58, 21) });
-    const box = window(art);
-    expect(art).toContain(`translate(${box.x + (box.width - 58) / 2} ${box.y + (box.height - 21) / 2}) scale(1)`);
+  it("fits the frame in whole", () => {
+    expect(bare("rectangular", "watch")).toContain(`preserveAspectRatio="xMidYMid meet"`);
+    expect(bare("small", "iphone")).toContain(`preserveAspectRatio="xMidYMid meet"`);
   });
 
   it("falls back to the slot's own shape and size when there is no render", () => {
@@ -721,20 +726,22 @@ describe("shapeWell", () => {
   it("gives a round shape a square well and a rectangular one its own", () => {
     expect(shapeWell("circular", "watch")).toBeCloseTo(1, 6);
     expect(shapeWell("corner", "watch")).toBeCloseTo(1, 6);
-    expect(shapeWell("rectangular", "watch")).toBeCloseTo(58 / 21, 6);
+    expect(shapeWell("rectangular", "watch")).toBeCloseTo((58 + 4.2) / (21 + 4.2), 6);
     const medium = phoneSlot("medium")!;
-    expect(shapeWell("medium", "iphone")).toBeCloseTo(medium.width / medium.height, 6);
+    const m = medium.height * 0.1;
+    expect(shapeWell("medium", "iphone")).toBeCloseTo((medium.width + 2 * m) / (medium.height + 2 * m), 6);
   });
 
   it("stops a line getting so wide its words cannot be read", () => {
     // The watch's inline slot is 58 by 8, which is over seven to one.
-    expect(shapeWell("inline", "watch")).toBe(4);
-    expect(shapeWell("inline", "iphone")).toBe(4);
+    expect(shapeWell("inline", "watch")).toBe(5);
+    expect(shapeWell("inline", "iphone")).toBe(5);
   });
 
   it("leaves a tall tile its own shape, since no shape is narrow enough to need a floor", () => {
     const xl = phoneSlot("xlarge")!;
-    expect(shapeWell("xlarge", "iphone")).toBeCloseTo(xl.width / xl.height, 6);
+    const m = xl.width * 0.1;
+    expect(shapeWell("xlarge", "iphone")).toBeCloseTo((xl.width + 2 * m) / (xl.height + 2 * m), 6);
     for (const family of ALL_FAMILIES) {
       for (const device of ["watch", "iphone"] as const) {
         expect(shapeWell(family, device) ?? 1, family).toBeGreaterThan(0.5);

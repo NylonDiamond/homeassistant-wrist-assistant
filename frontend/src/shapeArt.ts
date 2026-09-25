@@ -810,12 +810,11 @@ export function deviceCropArt(
  * placing a complication asks and is a lot of watch case for somebody reading
  * a list of thirty of them. This answers "what does it look like".
  *
- * It is the same picture with the furniture taken out, not a second drawing:
- * the same window, the same slot, the same scale, so a card is the same size
- * either way and only the case, the bands, the crown, the clock, the home
- * screen icons and the unlit neighbours go. The slot is moved to the middle
- * of the window, because a shape that sat low and left on a face reads as
- * badly placed once the face it was placed on is gone.
+ * It is the same slot with the furniture taken out, not a second drawing: the
+ * shape is drawn into its own slot exactly as the device draws it, and the
+ * picture is then framed on that slot rather than on the device's window. A
+ * circular shape is a sixth of a watch window's width, so framing it on the
+ * window left a dot in a black box; framed on the slot, it fills its card.
  *
  * A shape the chosen device has no slot for keeps its device picture: there
  * is nothing to draw on its own, and a blank card says less than a watch.
@@ -832,29 +831,36 @@ export function shapeOnlyArt(
   const phone = device === "iphone";
   const slot = phone ? phoneSlot(family) : watchSlot(family);
   if (slot === undefined) return deviceCropArt(family, device, live);
-  const box = phone ? phoneCrop(family) : watchCrop(family);
-  const middle = {
-    x: box.x + (box.width - slot.width) / 2,
-    y: box.y + (box.height - slot.height) / 2,
-    width: slot.width,
-    height: slot.height,
-  };
+  const frame = bareFrame(slot);
   const shape = live[family];
   const drawn = family === "inline"
-    ? placedInline(shape, middle, phone ? LOCK_INLINE_FONT : INLINE_FONT)
-    : placed(shape, middle, "fit", clipKey(),
+    ? placedInline(shape, slot, phone ? LOCK_INLINE_FONT : INLINE_FONT)
+    : placed(shape, slot, "fit", clipKey(),
       family === "circular" || family === "corner" ? "circle" : { rx: bareRx(family, phone) });
-  return html`<svg class="pk-crop bare" viewBox=${`${box.x} ${box.y} ${box.width} ${box.height}`}
-    preserveAspectRatio=${phone ? "xMidYMid meet" : "xMidYMid slice"} aria-hidden="true">${
-    drawn ?? bareStandin(family, middle, bareRx(family, phone))}</svg>`;
+  // Fitted whole: the well takes the frame's own shape, so this only leaves
+  // black above and below a line whose well was stopped short of its width.
+  return html`<svg class="pk-crop bare" viewBox=${`${frame.x} ${frame.y} ${frame.width} ${frame.height}`}
+    preserveAspectRatio="xMidYMid meet" aria-hidden="true">${
+    drawn ?? bareStandin(family, slot, bareRx(family, phone))}</svg>`;
+}
+
+/** The black round a shape on its own, as a share of the slot's shorter side:
+ * enough that a round shape's ring and a tile's corners are not cut by the
+ * card's own rounding, and no more. */
+const FRAME_MARGIN = 0.1;
+
+/** The Shape view's frame on one slot: the slot with a thin margin of black
+ * all round it. */
+function bareFrame(slot: Slot): Crop {
+  const m = Math.min(slot.width, slot.height) * FRAME_MARGIN;
+  return { x: slot.x - m, y: slot.y - m, width: slot.width + 2 * m, height: slot.height + 2 * m };
 }
 
 /** The widest a card's well is let get in the Shape view. An inline line is
- * over seven times as wide as it is tall, and a well of that shape is a
- * hairline with unreadable words in it. Nothing needs a limit the other way:
- * the tallest shape there is, an Extra Large tile, is still wider than half
- * its own height. */
-const WELL_WIDEST = 4;
+ * over seven times as wide as it is tall, and a well that shape is a strip
+ * too thin to read. Nothing needs a limit the other way: the tallest shape
+ * there is, an Extra Large tile, is still wider than half its own height. */
+const WELL_WIDEST = 5;
 
 /**
  * The shape of the well a card gives one shape in the Shape view, as its
@@ -873,7 +879,8 @@ export function shapeWell(family: FamilyKind | undefined, device: "watch" | "iph
   if (family === undefined) return undefined;
   const slot = device === "iphone" ? phoneSlot(family) : watchSlot(family);
   if (slot === undefined) return undefined;
-  return Math.min(slot.width / slot.height, WELL_WIDEST);
+  const frame = bareFrame(slot);
+  return Math.min(frame.width / frame.height, WELL_WIDEST);
 }
 
 /** The corner the device picture rounds this slot by, so a shape drawn on its

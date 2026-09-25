@@ -2571,6 +2571,16 @@ export class WristAssistantPanel extends LitElement {
        them gives back the room it was holding for the device pictures.
        Two classes deep, so the column counts above do not win it back. */
     .pk-dialog.bare .pk-grid { grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 9px; }
+    /* Each box holds one shape, and each shape's picture fills its card, so
+       the card is sized to the shape: a round one small, since a circle wide
+       enough for a rectangle's card is a dinner plate, and a wide one wide,
+       so a rectangle's rows and an inline line are big enough to read. */
+    .pk-dialog.bare .pk-grid:is([data-shape="circular"], [data-shape="corner"]) {
+      grid-template-columns: repeat(auto-fill, minmax(116px, 1fr));
+    }
+    .pk-dialog.bare .pk-grid:is([data-shape="rectangular"], [data-shape="inline"], [data-shape="medium"]) {
+      grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    }
     .pk-dialog.bare .pk-card { padding: 8px; border-radius: 10px; }
     .pk-dialog.bare .pk-card-top { margin-bottom: 6px; min-height: 16px; gap: 6px; }
     .pk-dialog.bare .pk-card-name { font-size: 12px; }
@@ -11702,7 +11712,7 @@ export class WristAssistantPanel extends LitElement {
           <span class="pk-box-name">${group.label}</span>
           <span class="pk-box-count">(${group.rows.length + (group.unsaved ? 1 : 0)})</span>
         </div>
-        <div class="pk-grid">
+        <div class="pk-grid" data-shape=${group.key}>
           ${group.rows.map((row) => this.renderPickerCard(row, at))}
           ${group.unsaved && unsaved ? this.renderUnsavedCard(unsaved) : nothing}
         </div>
