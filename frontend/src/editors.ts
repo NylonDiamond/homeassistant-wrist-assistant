@@ -1515,7 +1515,9 @@ export function entityField(host: Pick<EditorHost, "hass"> & Partial<Pick<Editor
   const slot = isPlaceholderId(ref.entityId);
   const caption = ref.entityId === ""
     ? html`<div class="hint">Type part of a name, a room, or an id.</div>`
-    : slot ? html`<div class="hint need">${slotCaption(slotUse)}</div>`
+    // `keep`: this is the one thing left to do, not help text, so it shows
+    // with a card's help switched off too.
+    : slot ? html`<div class="hint need keep">${slotCaption(slotUse)}</div>`
     : live ? nothing : html`<div class="hint warn">Not in Home Assistant right now.</div>`;
 
   const focusSearch = (fieldEl: Element | null) =>
@@ -3481,6 +3483,11 @@ function scopeFields(host: EditorHost, scope: AggregateScope, set: (s: Aggregate
             ${entityField(host, `Entity ${i + 1}`, e, (ref) => { const list = [...scope.entities]; list[i] = ref; set({ ...scope, entities: list }); }, `${key}-agg-${i}`, { compact: true })}
             <button class="icon" title="Remove" @click=${() => set({ ...scope, entities: scope.entities.filter((_, j) => j !== i) })}>${uiIcon("close")}</button>
           </div>`)}
+          ${scope.entities.some((e) => isPlaceholderId(e.entityId))
+            // Compact rows print no caption of their own, and four copies of
+            // one would be noise, so the list says it once.
+            ? html`<div class="hint need keep">Red rows are stand-ins from a shared design. Click one and pick one of your entities. One pick fills that stand-in in everywhere, shared values included.</div>`
+            : nothing}
           <button class="small" @click=${() => set({ ...scope, entities: [...scope.entities, { entityId: "", displayName: "", domain: "" }] })}>Add entity</button>`}`;
 }
 
