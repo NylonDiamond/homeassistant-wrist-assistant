@@ -4344,11 +4344,26 @@ export class WristAssistantPanel extends LitElement {
     .start-card-where { display: inline-flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .start-card-where svg { width: 12px; height: 12px; flex: none; }
     .start-card-shape { flex: none; margin-left: auto; padding: 1px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 600; background: color-mix(in srgb, var(--wa-ink) 7%, transparent); }
-    /* Shapes: one tile per shape, the drawing lit in the accent. */
-    .start-shapes { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+    /* Create a new one: a box per device kind, side by side while the page
+       is wide enough and stacked when it is not. The iPhone box is wider,
+       since it holds two screens' worth of shapes. */
+    .start-sec-note { font-size: 13px; color: var(--wa-muted); }
+    .start-kinds { display: flex; flex-wrap: wrap; gap: 12px; align-items: stretch; }
+    .start-kind {
+      flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 12px;
+      padding: 14px 16px 16px; border-radius: 18px;
+      border: 1px solid var(--wa-line); background: color-mix(in srgb, var(--wa-card) 70%, transparent);
+    }
+    .start-kind.iphone { flex-basis: 560px; flex-grow: 2; }
+    .start-kind.control { flex-basis: 170px; flex-grow: 0; }
+    .start-kind-head { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; color: var(--wa-ink); }
+    .start-kind-head svg { width: 15px; height: 15px; color: var(--wa-accent); }
+    .start-kind-group { display: flex; flex-direction: column; gap: 8px; }
+    .start-kind-where { font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--wa-muted); }
+    .start-kind-tiles { display: flex; flex-wrap: wrap; gap: 10px; }
     button.start-shape {
-      display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 18px 10px 14px;
-      border-radius: 16px; font: inherit; cursor: pointer; color: var(--wa-ink);
+      display: flex; flex-direction: column; align-items: center; gap: 2px; width: 118px; padding: 14px 8px 12px;
+      border-radius: 14px; font: inherit; cursor: pointer; color: var(--wa-ink);
       border: 1px solid var(--wa-line); background: var(--wa-card);
       transition: transform .18s ease-out, border-color .18s ease-out, box-shadow .18s ease-out, background-color .18s ease-out;
     }
@@ -4358,10 +4373,11 @@ export class WristAssistantPanel extends LitElement {
     }
     button.start-shape:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     button.start-shape:disabled { opacity: .5; cursor: default; }
-    .start-shape-art { display: block; height: 72px; margin-bottom: 8px; color: var(--wa-accent); --wa-shape-outline: var(--wa-muted); }
-    .start-shape-art .shape-art { width: 56px; height: 72px; display: block; }
-    .start-shape-name { font-size: 13.5px; font-weight: 700; }
-    .start-shape-sub { font-size: 11.5px; color: var(--wa-muted); }
+    button.start-shape.soon { border-style: dashed; }
+    .start-shape-art { display: block; height: 64px; margin-bottom: 6px; color: var(--wa-accent); --wa-shape-outline: var(--wa-muted); }
+    .start-shape-art .shape-art { width: 50px; height: 64px; display: block; }
+    .start-shape-name { font-size: 13px; font-weight: 700; }
+    .start-shape-sub { font-size: 11px; line-height: 1.35; text-align: center; color: var(--wa-muted); }
     /* The quiet row at the foot: three doors that are not about this home's
        own complications. */
     .start-links { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
@@ -4396,7 +4412,7 @@ export class WristAssistantPanel extends LitElement {
       .start-show { display: none; }
       .start-title { font-size: 28px; }
       .start-recent { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
-      .start-shapes { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+      button.start-shape { width: calc(50% - 5px); }
     }
     /* Three rows: the document itself on top (name, devices, actions), then
        the shape it draws and how it is looked at, then the stage help. */
@@ -17180,7 +17196,7 @@ export class WristAssistantPanel extends LitElement {
         <section class="start-hero">
           <div class="start-hero-text">
             <div class="start-eyebrow">Wrist Assistant</div>
-            <h1 class="start-title">${empty ? "Design your first complication." : "Design for the wrist."}</h1>
+            <h1 class="start-title">${empty ? "Make your first complication." : "Your home, on every screen."}</h1>
             <p class="start-lead">${empty
               ? "Draw what your home is doing onto a watch face or an iPhone screen: one shape, your entities, live."
               : "Every complication and widget in this home, drawn from your entities and sent to the devices that show them."}</p>
@@ -17282,48 +17298,62 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * A tile per shape this home's devices draw: the watch face shapes, then
-   * the iPhone's Lock Screen and Home Screen. Each opens the New dialog with
-   * the device and the shape already picked, so only the name is left.
+   * Create a new one: every shape this home's devices draw, in a box per
+   * device kind. The watch box holds the four face shapes; the iPhone box its
+   * Lock Screen shapes and its four Home Screen tiles, each under its own
+   * heading; Control Center is a box of one. A shape a device will draw soon
+   * is drawn dimmed and says so, the way the New dialog says it. Each tile
+   * opens the New dialog with the device and the shape already picked, so
+   * only the name is left.
    */
   private renderStartShapes(full: boolean) {
     const owners = this.deviceOwners();
     const kinds = kindChoices(owners);
-    const tiles: { kind: NewKind; family: FamilyKind; title: string; sub: string }[] = [];
-    for (const kind of kinds) {
-      if (kind === "control") continue;
-      for (const group of shapeGroups(kind, owners)) {
-        // The watch offers every shape; the phone one per screen, since its
-        // shapes are the Lock Screen's watch shapes again and four tile sizes.
-        const families = kind === "watch" ? group.families : group.families.slice(0, 1);
-        for (const family of families) {
-          tiles.push({ kind, family, title: kind === "watch" ? familyTitle(family) : group.title,
-            sub: kind === "watch" ? "Watch face" : `iPhone · ${familyTitle(family)}` });
-        }
-      }
-    }
-    if (tiles.length === 0) return nothing;
+    if (kinds.length === 0) return nothing;
+    const why = full ? "Every device is full. Delete a complication first." : undefined;
+    const tile = (kind: NewKind, family: FamilyKind | undefined, soon: boolean) => {
+      const device: DeviceKind = kind === "iphone" ? "iphone" : "watch";
+      const name = family === undefined ? kindTitle(kind) : familyTitle(family);
+      const note = family !== undefined && soon ? familyNote(family) : "";
+      return html`<button type="button" class="start-shape ${soon ? "soon" : ""}" ?disabled=${full || this.ownerBusy || soon}
+        title=${soon ? `${name}: coming soon` : why ?? `New ${name.toLowerCase()} complication`}
+        @click=${() => this.newFromShape(kind, family)}>
+        <span class="start-shape-art">${family === undefined ? controlDeviceArt(device, true) : deviceShapeArt(family, device, !soon)}</span>
+        <span class="start-shape-name">${name}</span>
+        ${soon ? html`<span class="start-shape-sub">Coming soon${note ? html`<br />${note}` : nothing}</span>` : nothing}
+      </button>`;
+    };
     return html`<section class="start-sec">
-      <div class="start-sec-head"><h2>Start with a shape</h2></div>
-      <div class="start-shapes">
-        ${tiles.map((t) => html`<button type="button" class="start-shape" ?disabled=${full || this.ownerBusy}
-          title=${full ? "Every device is full. Delete a complication first." : `New ${t.title.toLowerCase()} complication`}
-          @click=${() => this.newFromShape(t.kind, t.family)}>
-          <span class="start-shape-art">${deviceShapeArt(t.family, t.kind === "iphone" ? "iphone" : "watch", true)}</span>
-          <span class="start-shape-name">${t.title}</span>
-          <span class="start-shape-sub">${t.sub}</span>
-        </button>`)}
+      <div class="start-sec-head"><h2>Create a new one</h2><span class="start-sec-note">Pick the shape it draws.</span></div>
+      <div class="start-kinds">
+        ${kinds.map((kind) => {
+          const groups = shapeGroups(kind, owners);
+          const device: DeviceKind = kind === "iphone" ? "iphone" : "watch";
+          return html`<div class="start-kind ${kind}">
+            <div class="start-kind-head">${uiIcon(device === "iphone" ? "phone" : "watch")}<span>${kindTitle(kind)}</span></div>
+            ${kind === "control"
+              ? html`<div class="start-kind-tiles">${tile(kind, undefined, false)}</div>`
+              : groups.map((group) => html`<div class="start-kind-group">
+                ${groups.length > 1 ? html`<div class="start-kind-where">${group.title}</div>` : nothing}
+                <div class="start-kind-tiles">
+                  ${group.families.map((family) => tile(kind, family, false))}
+                  ${group.comingSoon.map((family) => tile(kind, family, true))}
+                </div>
+              </div>`)}
+          </div>`;
+        })}
       </div>
     </section>`;
   }
 
   /** New, with the device kind and the shape answered by the tile that was
-   * pressed. The dialog opens on the name, which is all that is left to say. */
-  private newFromShape(kind: NewKind, family: FamilyKind) {
+   * pressed. The dialog opens on the name, which is all that is left to say.
+   * Control Center has no shape, so its tile answers the kind alone. */
+  private newFromShape(kind: NewKind, family: FamilyKind | undefined) {
     if (this.freeSlot() < 0) return;
     this.openNewDialog();
     this.pickKind(kind);
-    this.newFamily = family;
+    if (family !== undefined) this.newFamily = family;
   }
 
   // ── canvas column ─────────────────────────────────────────────────────
