@@ -5444,9 +5444,11 @@ ${LO(c)}`}}delete s.hidden,delete s.linkId;let l=Fc(a);if(l.length>0){let d=l.sl
     .snap-steps button.on { background: var(--wa-seg-on); color: var(--wa-ink); }
     .snap-steps button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     /* The values bar, the same floating family as the toolbar. */
-    .values-foot { display: flex; justify-content: center; flex: none; min-width: 0; padding: 0 16px 14px; }
+    .values-foot {
+      display: flex; flex: none; min-width: 0; padding: 0 16px 14px; container: vfoot / inline-size;
+    }
     .values-bar {
-      display: flex; align-items: center; gap: 10px; min-width: 0; max-width: 100%; min-height: 40px; padding: 4px 8px 4px 14px;
+      display: flex; flex: 1; align-items: center; gap: 10px; min-width: 0; min-height: 40px; padding: 4px 8px 4px 14px;
       border-radius: 12px; background: var(--wa-float-bg); border: 1px solid var(--wa-float-line); box-shadow: var(--wa-float-shadow);
     }
     .values-bar .tb-sep { margin: 0; }
@@ -5458,14 +5460,20 @@ ${LO(c)}`}}delete s.hidden,delete s.linkId;let l=Fc(a);if(l.length>0){let d=l.sl
     .values-bar.testing .vb-state { color: var(--wa-testing); }
     .values-bar.testing .vb-dot { background: var(--wa-testing); box-shadow: 0 0 6px var(--wa-testing); }
     .vb-empty { min-width: 0; font-size: 11.5px; color: var(--wa-muted); }
-    /* One value per row, all as wide as the widest, so the names and the
-       controls line up in two columns. Past seven rows (28 px each, 6 px
-       gaps), or 40% of the window, the rest scrolls down. */
+    /* The bar spans the stage, one value per row: the name on the left, its
+       control on the right. Past seven rows (28 px each, 6 px gaps), or 40%
+       of the window, the rest scrolls down. */
     .vb-pills {
-      display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 0;
+      display: flex; flex: 1; flex-direction: column; align-items: stretch; gap: 6px; min-width: 0;
       max-height: min(40vh, 236px); padding: 2px 0; overflow-y: auto; scrollbar-width: thin;
     }
-    .vb-pills .vpill b { flex: 1; }
+    .vb-pills .vpill b { flex: 1; max-width: none; }
+    /* A phone-width stage has no room for a name beside a control: one row
+       of pills that scrolls sideways, as before. */
+    @container vfoot (max-width: 520px) {
+      .vb-pills { flex-direction: row; max-height: none; overflow-x: auto; overflow-y: hidden; }
+      .vb-pills .vpill b { flex: none; max-width: 160px; }
+    }
     .vchip.vpill {
       display: inline-flex; align-items: center; gap: 8px; flex: none; width: auto; height: 28px; padding: 0 10px; border-radius: 8px;
       background: var(--wa-chip-bg); border: 1px solid var(--wa-chip-line); font-size: 11.5px; color: var(--wa-ink); cursor: default;
