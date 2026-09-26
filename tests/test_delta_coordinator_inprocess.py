@@ -792,3 +792,35 @@ def test_a_change_in_the_timeout_tick_is_not_skipped(coordinator) -> None:
         assert body["next_cursor"] == coord._cursor
 
     asyncio.run(run())
+
+
+def test_buffer_builds_payloads_only_for_changes_a_watch_reads(coordinator) -> None:
+    """The buffer keeps HA's State and builds a payload on first read. A
+    change nobody follows is never copied, and each buffered change still
+    reports its own state, not the entity's latest one."""
+    module, hass, coord = coordinator
+    mine = "light.followed"
+    hass.states.set(mine, "off")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[mine])
+        c0 = body["next_cursor"]
+
+        for i in range(50):
+            _change(hass, coord, "sensor.noise", str(i))
+        _change(hass, coord, mine, "on")
+        _change(hass, coord, mine, "off")
+        assert all(e.payload is None for e in coord._events)
+
+        status, body = await _poll(coord, since=c0, entities=[mine], timeout=0)
+        assert status == 200, body
+        assert [e["state"] for e in body["events"]] == ["on", "off"]
+        built = [e for e in coord._events if e.payload is not None]
+        assert [e.entity_id for e in built] == [mine, mine]
+
+        # A second read reuses the built payload rather than copying again.
+        first = built[0].payload
+        await _poll(coord, since=c0, entities=[mine], timeout=0)
+        assert built[0].payload is first
+
+    asyncio.run(run())

@@ -66,11 +66,19 @@ class WatchSession:
 
 @dataclass(slots=True)
 class DeltaEvent:
-    """Single tracked entity update."""
+    """Single state change in the ring buffer.
+
+    Holds HA's own State, which is immutable, and leaves the watch payload
+    to be built the first time a poll asks for it (see _event_payload).
+    Most buffered changes belong to entities no watch follows, and a
+    payload walks every attribute, so building it on arrival cost a deep
+    copy per state change in the house.
+    """
 
     cursor: int
     entity_id: str
-    payload: dict[str, Any]
+    state: State
+    payload: dict[str, Any] | None = None
 
 
 _SLIM_ATTRIBUTES: dict[str, set[str]] = {
@@ -1004,19 +1012,11 @@ class DeltaCoordinator:
             return
 
         self._cursor += 1
-        payload = {
-            "entity_id": new_state.entity_id,
-            "state": new_state.state,
-            "new_state": self._state_to_payload(new_state),
-            "context_id": new_state.context.id if new_state.context is not None else None,
-            "last_updated": new_state.last_updated.timestamp(),
-        }
-
         self._events.append(
             DeltaEvent(
                 cursor=self._cursor,
                 entity_id=new_state.entity_id,
-                payload=payload,
+                state=new_state,
             )
         )
         self._event_times.append(self.hass.loop.time())
@@ -1149,7 +1149,7 @@ class DeltaCoordinator:
             if event.entity_id not in entities:
                 continue
 
-            payload = event.payload
+            payload = self._event_payload(event)
             if slim:
                 payload = self._slim_event_payload(payload)
             if compact:
@@ -1633,6 +1633,23 @@ class DeltaCoordinator:
             summary["domain_entities"] = domain_entities
 
         return summary
+
+    def _event_payload(self, event: DeltaEvent) -> dict[str, Any]:
+        """Build a buffered change's payload once, on first use.
+
+        Every later step (slim, compact, attribute diff) returns a new dict
+        rather than editing this one, so one copy serves every watch.
+        """
+        if event.payload is None:
+            state = event.state
+            event.payload = {
+                "entity_id": state.entity_id,
+                "state": state.state,
+                "new_state": self._state_to_payload(state),
+                "context_id": state.context.id if state.context is not None else None,
+                "last_updated": state.last_updated.timestamp(),
+            }
+        return event.payload
 
     def _state_to_payload(self, state: State) -> dict[str, Any]:
         """Return HA state payload shape expected by the watch client."""
