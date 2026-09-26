@@ -18,6 +18,7 @@ import {
   updateDeviceMessage,
   updateIPhoneMessage,
   updateWatchMessage,
+  versionForCopy,
   watchSupportsShapes,
   watchVersionNote,
 } from "../src/version.js";
@@ -47,13 +48,26 @@ describe("watchVersionNote", () => {
 describe("updateWatchMessage", () => {
   it("names the reported version and the minimum", () => {
     expect(updateWatchMessage("2.7.2", "2.8.0")).toBe(
-      "This watch runs Wrist Assistant 2.7.2. The editor needs 2.8.0 or later. Update Wrist Assistant on your iPhone; the watch app updates with it.",
+      "This watch runs Wrist Assistant 2.7.2. The editor needs 3.0 or later. Update Wrist Assistant on your iPhone; the watch app updates with it.",
     );
   });
 
   it("says so when the watch never reported a version", () => {
     expect(updateWatchMessage(null, "2.8.0")).toMatch(/^This watch has not reported its Wrist Assistant version yet\./);
     expect(updateWatchMessage("beta", "2.8.0")).toMatch(/^This watch has not reported/);
+  });
+});
+
+describe("versionForCopy", () => {
+  it("names the first public version for a minimum only testers had", () => {
+    expect(versionForCopy("2.8.0")).toBe("3.0");
+    expect(versionForCopy("2.9")).toBe("3.0");
+  });
+
+  it("names a later minimum as it is, without a .0 patch", () => {
+    expect(versionForCopy("3.0.0")).toBe("3.0");
+    expect(versionForCopy("3.1.0")).toBe("3.1");
+    expect(versionForCopy("3.1.2")).toBe("3.1.2");
   });
 });
 
@@ -200,7 +214,7 @@ describe("updateIPhoneMessage", () => {
   // screens it draws on are named: one release brings the two.
   it("names the reported version and the minimum", () => {
     expect(updateIPhoneMessage("2.7.2", "2.8.0")).toBe(
-      "This iPhone runs Wrist Assistant 2.7.2. Lock Screen and Home Screen complications need 2.8.0 or later. Update Wrist Assistant on your iPhone.",
+      "This iPhone runs Wrist Assistant 2.7.2. Lock Screen and Home Screen complications need 3.0 or later. Update Wrist Assistant on your iPhone.",
     );
   });
 

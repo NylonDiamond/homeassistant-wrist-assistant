@@ -186,6 +186,23 @@ export function watchVersionNote(
   return `Needs Wrist Assistant ${named} or later on your watch.`;
 }
 
+/** The first version anyone outside TestFlight can install. The per-shape
+ * release was 2.8.0 during the beta and was renamed 3.0 before it shipped, so
+ * the gates above stay at 2.8.0 (testers on a 2.8.0 build keep working) while
+ * the words people read name 3.0. */
+export const FIRST_PUBLIC_VERSION = "3.0.0";
+
+/** A minimum as the update messages name it: never below the first public
+ * version, since nobody can install a version that only testers had, and
+ * without a trailing ".0" patch. */
+export function versionForCopy(minimum: string): string {
+  const need = parseVersion(minimum);
+  if (!need) return minimum;
+  const first = parseVersion(FIRST_PUBLIC_VERSION)!;
+  const shown = compareVersions(need, first) < 0 ? first : need;
+  return shown[2] === 0 ? `${shown[0]}.${shown[1]}` : shown.join(".");
+}
+
 /** The lead line of the whole-panel gate, worded for what the watch reported.
  * The steps that follow it live in the panel's gate screen. */
 export function updateWatchMessage(appVersion: string | null | undefined, minimum = MIN_WATCH_VERSION_FOR_SHAPES): string {
@@ -193,7 +210,7 @@ export function updateWatchMessage(appVersion: string | null | undefined, minimu
   const reported = have
     ? `This watch runs Wrist Assistant ${appVersion}.`
     : "This watch has not reported its Wrist Assistant version yet.";
-  return `${reported} The editor needs ${minimum} or later. Update Wrist Assistant on your iPhone; the watch app updates with it.`;
+  return `${reported} The editor needs ${versionForCopy(minimum)} or later. Update Wrist Assistant on your iPhone; the watch app updates with it.`;
 }
 
 /** The same lead line for a phone owner. Its own sentence rather than a
@@ -205,7 +222,7 @@ export function updateIPhoneMessage(appVersion: string | null | undefined, minim
   const reported = have
     ? `This iPhone runs Wrist Assistant ${appVersion}.`
     : "This iPhone has not reported its Wrist Assistant version yet.";
-  return `${reported} Lock Screen and Home Screen complications need ${minimum} or later. Update Wrist Assistant on your iPhone.`;
+  return `${reported} Lock Screen and Home Screen complications need ${versionForCopy(minimum)} or later. Update Wrist Assistant on your iPhone.`;
 }
 
 /** Whether the panel opens for this owner, whichever device it is. A watch
