@@ -1,7 +1,7 @@
 # Device registry calls that stop working in Home Assistant 2027.8.0
 
 Found 2026-09-26 in the Home Assistant log while testing 2.1.0-beta.16.
-Not fixed in 2.1.0 on purpose: the release was already tested on devices,
+Not fixed in 3.0.0 (the release tested as 2.1.0 betas) on purpose: the release was already tested on devices,
 and the deadline is far away. Fix it in the next integration release.
 
 ## What Home Assistant says
