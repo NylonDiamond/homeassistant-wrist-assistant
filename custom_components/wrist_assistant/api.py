@@ -744,6 +744,57 @@ class DeltaCoordinator:
                 custom_entity_ids=custom_entity_ids,
             )
 
+        request_cursor = since_cursor
+
+        def quiet_reply(cursor: int) -> tuple[int, dict[str, Any] | None]:
+            """Answer a poll that found nothing for this watch.
+
+            A 204 makes the watch keep the cursor it sent. When unrelated
+            changes moved the cursor past it, send the new cursor in a small
+            200 instead (no info summary), so a watch in a busy house never
+            falls out of the ring buffer between polls.
+            """
+            if cursor <= request_cursor:
+                return 204, None
+            return 200, self._response_payload(
+                events=[],
+                next_cursor=cursor,
+                need_entities=False,
+                resync_required=False,
+            )
+
+        def timed_out() -> tuple[int, dict[str, Any] | None]:
+            """Last scan before a held poll gives up.
+
+            A change can land in the same loop tick the wait timed out, and
+            the cursor about to go back must not skip it.
+            """
+            changed = self._changed_entity_ids(since_cursor)
+            events, cursor = self._collect_events(
+                since_cursor=since_cursor,
+                entities=session.entities,
+                limit=MAX_EVENTS_PER_RESPONSE,
+                slim=slim,
+                compact=compact,
+                session=session if attribute_diffs else None,
+                attribute_diffs=attribute_diffs,
+            )
+            template_events = self._evaluate_templates(session, changed_ids=changed)
+            if template_events:
+                events.extend(template_events)
+            if events:
+                return 200, self._response_payload(
+                    events=events,
+                    next_cursor=cursor,
+                    need_entities=False,
+                    resync_required=False,
+                    battery_threshold=battery_threshold,
+                    summary_entities=summary_entities,
+                    include_summary=include_summary,
+                    custom_entity_ids=custom_entity_ids,
+                )
+            return quiet_reply(cursor)
+
         changed_ids = self._changed_entity_ids(since_cursor)
         events, next_cursor = self._collect_events(
             since_cursor=since_cursor,
@@ -785,8 +836,9 @@ class DeltaCoordinator:
                 custom_entity_ids=custom_entity_ids,
             )
 
-        # Probe: timeout 0 means "answer now". Nothing past the cursor, so the
-        # answer is an empty 204: no body, no summary work. Returned before the
+        # Probe: timeout 0 means "answer now". Nothing for this watch past the
+        # cursor, so the answer is an empty 204, or a small 200 carrying the
+        # moved cursor (see quiet_reply): no summary work. Returned before the
         # waiter below is registered so a probe never wakes or supersedes a
         # long poll the same watch is holding. The watch sends one of these as
         # its first poll after a short background pause, purely to learn that
@@ -810,7 +862,7 @@ class DeltaCoordinator:
                 custom_entity_ids=custom_entity_ids,
             )
         if timeout <= 0:
-            return 204, None
+            return quiet_reply(next_cursor)
 
         deadline = self.hass.loop.time() + timeout
         observed_generation = self._generation
@@ -832,7 +884,7 @@ class DeltaCoordinator:
             while True:
                 remaining = deadline - self.hass.loop.time()
                 if remaining <= 0:
-                    return 204, None
+                    return timed_out()
 
                 if self._generation != observed_generation:
                     observed_generation = self._generation
@@ -866,7 +918,7 @@ class DeltaCoordinator:
                 try:
                     await asyncio.wait_for(waiter_event.wait(), timeout=remaining)
                 except TimeoutError:
-                    return 204, None
+                    return timed_out()
 
                 waiter_event.clear()
                 # Superseded by a newer poll (or shutdown/force_resync)? Let
@@ -1108,11 +1160,16 @@ class DeltaCoordinator:
             matched.append(payload)
             last_sent_cursor = event.cursor
             if len(matched) >= limit:
-                break
+                return matched, last_sent_cursor
 
-        if matched:
-            return matched, last_sent_cursor
-        return [], since_cursor
+        # The scan reached the newest change without filling the page, so
+        # every change up to it has been checked. Move the cursor past the
+        # unrelated ones too. Holding it at the last match let a busy house
+        # push it out of the ring buffer, and the watch then paid a full
+        # resync (410) for changes it never subscribed to.
+        if self._events:
+            return matched, max(since_cursor, self._events[-1].cursor)
+        return matched, since_cursor
 
     def _apply_attribute_diff(
         self,

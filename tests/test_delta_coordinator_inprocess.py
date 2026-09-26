@@ -691,3 +691,104 @@ def test_entity_events_still_win_over_the_token(coordinator) -> None:
         assert body["complications_token"] == 9
 
     asyncio.run(run())
+
+
+def test_unrelated_changes_move_the_cursor_so_a_busy_house_never_resyncs(coordinator) -> None:
+    """A watch whose own entities stay quiet must still keep up with the ring
+    buffer. Before the fix a held poll timed out with a bare 204, the watch
+    kept its old cursor, and once MAX_EVENTS_BUFFER unrelated changes passed
+    it got a 410 and a full resync for nothing."""
+    module, hass, coord = coordinator
+    mine = "light.quiet"
+    noisy = "sensor.presence_target_x"
+    hass.states.set(mine, "off")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[mine])
+        cursor = body["next_cursor"]
+
+        half = module.MAX_EVENTS_BUFFER // 2 + 100
+        for round_ in range(3):
+            for i in range(half):
+                _change(hass, coord, noisy, f"{round_}-{i}")
+            status, body = await asyncio.wait_for(
+                _poll(coord, since=cursor, entities=[mine], timeout=1), timeout=3
+            )
+            assert status == 200, (round_, status, body)
+            assert body["events"] == []
+            assert body["resync_required"] is False
+            assert body["next_cursor"] == coord._cursor
+            assert "info_summary" not in body
+            cursor = body["next_cursor"]
+
+        # More than a full buffer of unrelated changes has passed, and the
+        # watch's own change still arrives as a plain delta.
+        _change(hass, coord, mine, "on")
+        status, body = await _poll(coord, since=cursor, entities=[mine], timeout=0)
+        assert status == 200, body
+        assert [e["entity_id"] for e in body["events"]] == [mine]
+
+    asyncio.run(run())
+
+
+def test_quiet_house_still_answers_a_bare_204(coordinator) -> None:
+    """Nothing changed anywhere: the timeout and the probe stay bodyless."""
+    module, hass, coord = coordinator
+    ent = "light.still"
+    hass.states.set(ent, "off")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent])
+        c0 = body["next_cursor"]
+        status, body = await asyncio.wait_for(
+            _poll(coord, since=c0, entities=[ent], timeout=1), timeout=3
+        )
+        assert status == 204 and body is None
+        status, body = await _poll(coord, since=c0, entities=[ent], timeout=0)
+        assert status == 204 and body is None
+
+    asyncio.run(run())
+
+
+def test_probe_carries_the_moved_cursor_without_summary_work(coordinator) -> None:
+    module, hass, coord = coordinator
+    mine = "light.probe_me"
+    hass.states.set(mine, "off")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[mine])
+        c0 = body["next_cursor"]
+        for i in range(10):
+            _change(hass, coord, "sensor.noise", str(i))
+        status, body = await _poll(
+            coord, since=c0, entities=[mine], timeout=0, include_summary=True
+        )
+        assert status == 200, body
+        assert body["events"] == []
+        assert body["next_cursor"] == c0 + 10
+        assert "info_summary" not in body
+
+    asyncio.run(run())
+
+
+def test_a_change_in_the_timeout_tick_is_not_skipped(coordinator) -> None:
+    """The cursor a timed-out poll hands back must not jump over a change to
+    the watch's own entity that landed without waking the waiter."""
+    module, hass, coord = coordinator
+    mine = "light.racy"
+    hass.states.set(mine, "off")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[mine])
+        c0 = body["next_cursor"]
+        coord._wake_watchers_for_entity = lambda entity_id: None
+        _change(hass, coord, "sensor.noise", "1")
+        _change(hass, coord, mine, "on")
+        status, body = await asyncio.wait_for(
+            _poll(coord, since=c0, entities=[mine], timeout=1), timeout=3
+        )
+        assert status == 200, body
+        assert [e["entity_id"] for e in body["events"]] == [mine]
+        assert body["next_cursor"] == coord._cursor
+
+    asyncio.run(run())
