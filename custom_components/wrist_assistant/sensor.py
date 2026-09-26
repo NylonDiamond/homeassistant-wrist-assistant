@@ -12,10 +12,11 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory, UnitOfTime
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.event import async_call_later
 
 from .api import DeltaCoordinator, MAX_EVENTS_BUFFER
 from .const import DOMAIN, WristAssistantConfigEntry
@@ -167,6 +168,11 @@ class _WristAssistantSensorBase(SensorEntity):
 
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    # Also rewrite on every poll from any watch. The event counters move with
+    # state changes, not sessions, and polls are when they have always
+    # refreshed. Both are disabled by default, so this costs nothing unless
+    # someone turns them on.
+    _refresh_on_poll = False
 
     def __init__(
         self, coordinator: DeltaCoordinator, entry: ConfigEntry
@@ -187,9 +193,17 @@ class _WristAssistantSensorBase(SensorEntity):
                 self._handle_update
             )
         )
+        if self._refresh_on_poll:
+            self.async_on_remove(
+                self._coordinator.async_add_poll_listener(self._handle_poll)
+            )
 
     @callback
     def _handle_update(self) -> None:
+        self.async_write_ha_state()
+
+    @callback
+    def _handle_poll(self, _watch_id: str) -> None:
         self.async_write_ha_state()
 
 
@@ -387,9 +401,10 @@ class MonitoredEntitiesSensor(_WristAssistantSensorBase, RestoreSensor):
             if dev_reg.async_get_device(identifiers={(DOMAIN, f"watch_{wid}")})
             is not None
         }
-        if len(kept) != len(self._counts):
-            self._counts = kept
-            self.async_write_ha_state()
+        # Write even when nothing was dropped: a renamed watch changes the
+        # per_watch names, and polls no longer rewrite this sensor.
+        self._counts = kept
+        self.async_write_ha_state()
 
     @property
     def native_value(self) -> int:
@@ -417,6 +432,7 @@ class EventsProcessedSensor(_WristAssistantSensorBase):
     _attr_icon = "mdi:counter"
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
     _attr_entity_registry_enabled_default = False
+    _refresh_on_poll = True
 
     def __init__(self, coordinator: DeltaCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
@@ -435,6 +451,7 @@ class EventBufferUsageSensor(_WristAssistantSensorBase):
     _attr_native_unit_of_measurement = "%"
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_registry_enabled_default = False
+    _refresh_on_poll = True
 
     def __init__(self, coordinator: DeltaCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
@@ -509,7 +526,64 @@ class _WatchSensorBase(SensorEntity):
         return self._watch_id in self._coordinator._sessions
 
 
-class WatchLastActivitySensor(RestoreSensor):
+# A foreground watch polls many times a minute, and Last activity moves on
+# every one. Writing each poll cost a state change and a recorder row per poll
+# per watch, so the sensors that refresh from polls write at most this often.
+_POLL_WRITE_INTERVAL = 60.0
+
+
+class _PollThrottledRefresh:
+    """Refresh from this watch's polls, at most one state write a minute.
+
+    Session changes the sensor shows (for Last activity, the watch appearing
+    or coming back) still write at once through `_handle_update`. A poll within a
+    minute of the last write schedules one trailing write instead, so the row
+    is never more than a minute behind the watch.
+    """
+
+    _poll_write_at: float | None = None
+    _unsub_poll_write: CALLBACK_TYPE | None = None
+
+    def _async_track_polls(self) -> None:
+        self.async_on_remove(
+            self._coordinator.async_add_poll_listener(self._handle_poll)
+        )
+        self.async_on_remove(self._cancel_poll_write)
+
+    @callback
+    def _handle_poll(self, watch_id: str) -> None:
+        if watch_id != self._watch_id or self._unsub_poll_write is not None:
+            return
+        wait = 0.0
+        if self._poll_write_at is not None:
+            wait = self._poll_write_at + _POLL_WRITE_INTERVAL - self.hass.loop.time()
+        if wait <= 0:
+            self._handle_update()
+        else:
+            self._unsub_poll_write = async_call_later(
+                self.hass, wait, self._handle_poll_write
+            )
+
+    @callback
+    def _handle_poll_write(self, _now: datetime) -> None:
+        self._unsub_poll_write = None
+        self._handle_update()
+
+    @callback
+    def _cancel_poll_write(self) -> None:
+        if self._unsub_poll_write is not None:
+            self._unsub_poll_write()
+            self._unsub_poll_write = None
+
+    @callback
+    def _write_throttled_state(self) -> None:
+        # Any write satisfies a pending trailing one.
+        self._cancel_poll_write()
+        self._poll_write_at = self.hass.loop.time()
+        self.async_write_ha_state()
+
+
+class WatchLastActivitySensor(_PollThrottledRefresh, RestoreSensor):
     """Timestamp of last poll from this watch — persists across restart/idle.
 
     Created off the secret store so it exists for any provisioned watch, not
@@ -537,10 +611,13 @@ class WatchLastActivitySensor(RestoreSensor):
         self._coordinator = coordinator
         self._secret_store = secret_store
         self._watch_id = watch_id
-        # Running last-known value. Seeded from restore at startup, refreshed on
-        # every live poll, and held when the session prunes (5-min TTL) so the
-        # row doesn't collapse to "Unknown" the moment the watch goes idle.
+        # Running last-known value. Seeded from restore at startup, refreshed
+        # from live polls (at most once a minute), and held when the session
+        # prunes (5-min TTL) so the row doesn't collapse to "Unknown" the
+        # moment the watch goes idle.
         self._last_value: datetime | None = None
+        # Whether this watch had a live session at the last session change.
+        self._was_live = False
         self._attr_unique_id = f"wrist_assistant_{watch_id}_last_activity"
         self._attr_device_info = build_device_info(
             secret_store, watch_id, kind=DEVICE_KIND_WATCH, via_device=via_device, hass=hass
@@ -552,15 +629,28 @@ class WatchLastActivitySensor(RestoreSensor):
         if last is not None and isinstance(last.native_value, datetime):
             self._last_value = last.native_value
         self.async_on_remove(
-            self._coordinator.async_add_session_listener(self._handle_update)
+            self._coordinator.async_add_session_listener(
+                self._handle_session_change
+            )
         )
+        self._async_track_polls()
+
+    @callback
+    def _handle_session_change(self) -> None:
+        # Write at once only when this watch appears or comes back. Another
+        # watch's session changes do not move this one's last poll, and a
+        # session going away leaves the held value as it was.
+        live = self._watch_id in self._coordinator._sessions
+        if live and not self._was_live:
+            self._handle_update()
+        self._was_live = live
 
     @callback
     def _handle_update(self) -> None:
         session = self._coordinator._sessions.get(self._watch_id)
         if session is not None:
             self._last_value = session.last_seen
-        self.async_write_ha_state()
+        self._write_throttled_state()
 
     @property
     def available(self) -> bool:
@@ -574,7 +664,7 @@ class WatchLastActivitySensor(RestoreSensor):
         return self._last_value
 
 
-class WatchSubscribedEntitiesSensor(RestoreSensor):
+class WatchSubscribedEntitiesSensor(_PollThrottledRefresh, RestoreSensor):
     """Entities this watch monitors (count + list) — persists across restart/idle.
 
     Like Last activity, created off the secret store and restored at startup so
@@ -602,9 +692,10 @@ class WatchSubscribedEntitiesSensor(RestoreSensor):
         self._coordinator = coordinator
         self._secret_store = secret_store
         self._watch_id = watch_id
-        # Running last-known subscription set. Seeded from restore, refreshed on
-        # every live poll, held when the session prunes so the row doesn't drop
-        # to "0 entities" the moment the watch goes idle.
+        # Running last-known subscription set. Seeded from restore, refreshed
+        # when the session changes and from live polls (at most once a minute,
+        # which picks up renamed entities), held when the session prunes so
+        # the row doesn't drop to "0 entities" the moment the watch goes idle.
         self._last_count: int = 0
         self._last_entities: dict[str, str] = {}
         self._attr_unique_id = f"wrist_assistant_{watch_id}_subscribed_entities"
@@ -625,6 +716,7 @@ class WatchSubscribedEntitiesSensor(RestoreSensor):
         self.async_on_remove(
             self._coordinator.async_add_session_listener(self._handle_update)
         )
+        self._async_track_polls()
 
     @callback
     def _handle_update(self) -> None:
@@ -632,7 +724,7 @@ class WatchSubscribedEntitiesSensor(RestoreSensor):
         if live is not None:
             self._last_entities = live
             self._last_count = len(live)
-        self.async_write_ha_state()
+        self._write_throttled_state()
 
     @property
     def available(self) -> bool:
@@ -648,15 +740,15 @@ class WatchSubscribedEntitiesSensor(RestoreSensor):
             entities[eid] = state.name if state else eid
         return entities
 
+    # Both read the set `_handle_update` just built, rather than sorting and
+    # naming every entity again for each property on each write.
     @property
     def native_value(self) -> int:
-        live = self._live_entities()
-        return len(live) if live is not None else self._last_count
+        return self._last_count
 
     @property
     def extra_state_attributes(self) -> dict:
-        live = self._live_entities()
-        return {"entities": live if live is not None else self._last_entities}
+        return {"entities": self._last_entities}
 
 
 class WatchPollIntervalSensor(_WatchSensorBase):
@@ -681,6 +773,19 @@ class WatchPollIntervalSensor(_WatchSensorBase):
     ) -> None:
         super().__init__(coordinator, entry, watch_id, via_device, hass=hass)
         self._attr_unique_id = f"wrist_assistant_{watch_id}_poll_interval"
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        # Moves on every poll, which session listeners no longer hear about.
+        # Disabled by default, so the per-poll write is opt-in.
+        self.async_on_remove(
+            self._coordinator.async_add_poll_listener(self._handle_poll)
+        )
+
+    @callback
+    def _handle_poll(self, watch_id: str) -> None:
+        if watch_id == self._watch_id:
+            self.async_write_ha_state()
 
     @property
     def native_value(self) -> float | None:

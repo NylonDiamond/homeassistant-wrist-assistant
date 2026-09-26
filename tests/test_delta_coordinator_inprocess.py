@@ -310,6 +310,75 @@ def test_session_listener_exception_does_not_break_poll(coordinator) -> None:
     asyncio.run(run())
 
 
+def test_session_listeners_fire_only_when_a_session_changes(coordinator) -> None:
+    """A plain poll rewrote every diagnostic sensor, one recorder row per poll.
+
+    Session listeners now hear only what they show: a session appearing or
+    going away, and a session's entity list moving. Poll listeners hear every
+    poll, with the watch that made it.
+    """
+    module, hass, coord = coordinator
+    a, b = "wrist_assistant.t6a", "wrist_assistant.t6b"
+    hass.states.set(a, "off")
+    hass.states.set(b, "off")
+    session_calls: list[None] = []
+    poll_calls: list[str] = []
+    coord.async_add_session_listener(lambda: session_calls.append(None))
+    coord.async_add_poll_listener(poll_calls.append)
+
+    async def run() -> None:
+        # New session: fires.
+        await _poll(coord, entities=[a])
+        assert len(session_calls) == 1
+        # Same entity list again, and a poll that sends no list: nothing.
+        await _poll(coord, entities=[a])
+        await _poll(coord)
+        assert len(session_calls) == 1
+        # The list moves: fires.
+        await _poll(coord, entities=[a, b])
+        assert len(session_calls) == 2
+        # A new config hash clears the list: fires once, then quiet.
+        await _poll(coord, config_hash="y")
+        assert len(session_calls) == 3
+        assert coord._sessions["w1"].entities == set()
+        await _poll(coord, config_hash="y")
+        assert len(session_calls) == 3
+        # A second watch appears: fires.
+        await _poll(coord, watch_id="w2", entities=[a])
+        assert len(session_calls) == 4
+        # Every poll reached the poll listeners.
+        assert poll_calls == ["w1"] * 6 + ["w2"]
+        # The first watch goes idle past the TTL and is pruned: fires.
+        coord._sessions["w1"].last_seen -= module.SESSION_TTL + timedelta(seconds=1)
+        coord._prune_sessions()
+        assert len(session_calls) == 5
+        # And comes back as a new session: fires again.
+        await _poll(coord, entities=[a])
+        assert len(session_calls) == 6
+
+    asyncio.run(run())
+
+
+def test_poll_listener_exception_does_not_break_poll(coordinator) -> None:
+    _module, hass, coord = coordinator
+    ent = "wrist_assistant.t7"
+    hass.states.set(ent, "off")
+    calls: list[str] = []
+
+    def bad(_watch_id: str) -> None:
+        raise RuntimeError("boom")
+
+    coord.async_add_poll_listener(bad)
+    coord.async_add_poll_listener(calls.append)
+
+    async def run() -> None:
+        status, _ = await _poll(coord, entities=[ent])
+        assert status == 200
+        assert calls == ["w1"]
+
+    asyncio.run(run())
+
+
 def test_events_still_delivered_after_an_idle_gap(coordinator) -> None:
     """A gap must not break the ring buffer's index lookup.
 

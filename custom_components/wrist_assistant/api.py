@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import logging
@@ -284,6 +285,7 @@ class DeltaCoordinator:
         self._wake_all_watchers: set[str] = set()  # watch_ids with all_states template deps
         self._event_times: deque[float] = deque(maxlen=MAX_EVENTS_BUFFER)
         self._session_callbacks: list[callback] = []
+        self._poll_callbacks: list[Callable[[str], None]] = []
         self._capabilities: set[str] = {"smart_camera_stream", "template_subscriptions", "compact_events", "attribute_diffs", "instant_poll"}
         self._sorted_capabilities: list[str] = sorted(self._capabilities)
         # Custom complications ride the poll: the owner's store token goes
@@ -388,12 +390,33 @@ class DeltaCoordinator:
 
     @callback
     def async_add_session_listener(self, cb: callback) -> callback:
-        """Register a callback fired when sessions change. Returns unsubscribe."""
+        """Register a callback fired when sessions change. Returns unsubscribe.
+
+        "Change" means a session appears or goes away, or a session's entity
+        list moves. A plain poll that changes neither fires nothing: use
+        async_add_poll_listener for per-poll values.
+        """
         self._session_callbacks.append(cb)
 
         @callback
         def _unsub() -> None:
             self._session_callbacks.remove(cb)
+
+        return _unsub
+
+    @callback
+    def async_add_poll_listener(self, cb: Callable[[str], None]) -> callback:
+        """Register a callback fired with the watch_id on every poll.
+
+        For values that move on each poll (last seen, poll interval). A
+        foreground watch polls many times a minute, so a listener that writes
+        entity state should throttle itself. Returns unsubscribe.
+        """
+        self._poll_callbacks.append(cb)
+
+        @callback
+        def _unsub() -> None:
+            self._poll_callbacks.remove(cb)
 
         return _unsub
 
@@ -410,6 +433,15 @@ class DeltaCoordinator:
                 cb()
             except Exception:  # noqa: BLE001 — one bad listener must not break sync
                 _LOGGER.exception("Session listener %s raised", cb)
+
+    @callback
+    def _fire_poll_callbacks(self, watch_id: str) -> None:
+        """Notify poll listeners, isolated the same way as session listeners."""
+        for cb in list(self._poll_callbacks):
+            try:
+                cb(watch_id)
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("Poll listener %s raised", cb)
 
     @callback
     def _rebuild_watcher_index(self, watch_id: str) -> None:
@@ -622,14 +654,21 @@ class DeltaCoordinator:
             session.last_poll_interval = now - session.last_seen
         session.last_seen = now
 
+        # Session listeners (the diagnostic sensors, new-watch discovery) only
+        # show which sessions exist and each one's entity list, so they run
+        # when one of those moves rather than on every poll.
+        sessions_changed = is_new_session
         if entities is not None:
-            session.entities = {entity_id for entity_id in entities if isinstance(entity_id, str)}
+            new_entities = {entity_id for entity_id in entities if isinstance(entity_id, str)}
+            sessions_changed = sessions_changed or new_entities != session.entities
+            session.entities = new_entities
             session.config_hash = config_hash
             session.entities_synced = True
             session.last_sent_attrs.clear()
         elif session.config_hash != config_hash:
             # Watch config changed, ask client to send the latest entity list.
             session.config_hash = config_hash
+            sessions_changed = sessions_changed or bool(session.entities)
             session.entities.clear()
             session.entities_synced = False
             session.last_sent_attrs.clear()
@@ -640,7 +679,9 @@ class DeltaCoordinator:
             session.template_values.clear()
             session.template_deps.clear()
 
-        self._fire_session_callbacks()
+        if sessions_changed:
+            self._fire_session_callbacks()
+        self._fire_poll_callbacks(watch_id)
 
         if not session.entities_synced:
             return 200, self._response_payload(
