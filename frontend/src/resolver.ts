@@ -283,7 +283,11 @@ export interface ResolvedTextArc {
 /** One visible part of a rich text layer. Mirrors `ResolvedText.Part` in the
  * app repo, key for key. */
 export interface ResolvedTextPart {
+  /** Empty on an icon part. */
   text: string;
+  /** An icon part's SF Symbol, drawn in the line at the part's size, weight
+   * and color. Absent on every part of words. */
+  symbol?: string;
   fontSize: number;
   fontWeight: FontWeight;
   fontDesign: FontDesign;
@@ -2040,6 +2044,23 @@ export class Resolver {
     return cached?.iconName ?? deref.kind.iconName;
   }
 
+  /**
+   * The symbol an icon part draws, or undefined when it draws nothing.
+   *
+   * First match wins: an icon change aimed at the part, then the entity's own
+   * icon, then the value, as an icon layer settles its symbol. Unlike a layer
+   * there is no question mark to fall back on: a part sits inside words, so a
+   * template that renders empty, a reading that is missing, a Material Design
+   * name or the custom-drawing marker (only an icon layer can carry the
+   * drawing for either) leaves the part out and the words close up. Mirrors
+   * the app's resolver.
+   */
+  private partSymbol(icon: Value, style: Map<StyleProperty, StyleChange>): string | undefined {
+    const name = (this.styleText(style, "icon") ?? this.entityIcon(icon) ?? this.resolve(icon))?.trim();
+    if (name === undefined || name === "" || name.startsWith("mdi:") || name === CUSTOM_SVG_SYMBOL) return undefined;
+    return name;
+  }
+
   // ── rules ─────────────────────────────────────────────────────────────
 
   private isStale(): boolean {
@@ -2205,14 +2226,21 @@ export class Resolver {
    * leaking onto the layer. Each look falls back rule first, then the part's
    * own setting, then the layer, so a layer rule that recolors the text
    * reaches every part that has no color of its own.
+   *
+   * An icon part reads an icon change instead of a text one, and never colors
+   * by value. On a curve it is left out, because the watch lays a curve out
+   * glyph by glyph and cannot measure a symbol as one.
    */
   private resolveTextParts(parts: readonly TextPart[], rules: readonly Rule[], layer: ResolvedText, forced?: ForcedBranches): ResolvedTextPart[] {
     const out: ResolvedTextPart[] = [];
     for (const part of parts) {
+      if (part.icon !== undefined && layer.arc !== undefined) continue;
       const style = this.applyRules(rules.filter((r) => r.partId === part.id), forced);
       if (style.get("visibility")?.kind === "hide") continue;
+      const symbol = part.icon === undefined ? undefined : this.partSymbol(part.icon, style);
+      if (part.icon !== undefined && symbol === undefined) continue;
       const resolved: ResolvedTextPart = {
-        text: this.styleText(style, "text") ?? this.resolve(part.value) ?? "--",
+        text: symbol !== undefined ? "" : this.styleText(style, "text") ?? this.resolve(part.value) ?? "--",
         fontSize: this.styleNumber(style, "fontSize") ?? part.fontSize ?? layer.fontSize,
         fontWeight: style.get("fontWeight")?.weight ?? part.fontWeight ?? layer.fontWeight,
         fontDesign: style.get("fontDesign")?.design ?? part.fontDesign ?? layer.fontDesign,
@@ -2220,7 +2248,9 @@ export class Resolver {
         italic: style.get("italic")?.italic ?? part.italic ?? layer.italic,
         colorHex: this.styleColor(style, "color") ?? part.colorHex ?? layer.colorHex,
       };
-      if (part.coloring === "bands" && (part.bands?.length ?? 0) > 0) {
+      if (symbol !== undefined) {
+        resolved.symbol = symbol;
+      } else if (part.coloring === "bands" && (part.bands?.length ?? 0) > 0) {
         resolved.spans = textValueSpans(resolved.text, resolved.colorHex, part);
       }
       out.push(resolved);

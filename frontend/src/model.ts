@@ -1233,7 +1233,16 @@ export interface TextElement extends ElementBase {
 export interface TextPart {
   /** What rules aim at with `Rule.partId`. Uppercase, like every id here. */
   id: string;
+  /** An icon part's is always the empty literal: a watch app from before icon
+   * parts reads `icon` as a key it does not know and draws this, so the icon
+   * drops out of the line and the rest of it still reads. */
   value: Value;
+  /** An icon part: the SF Symbol drawn in the line instead of words. Present
+   * means the part is an icon. A full value, so a template can change the
+   * symbol or render empty to leave the part out, and an entity draws its own
+   * icon, as on an icon layer. Text-only looks (typeface, width, slant, color
+   * by value) mean nothing to it. */
+  icon?: Value;
   /** Absent means the layer's resolved color. */
   colorHex?: string;
   /** Absent means the layer's resolved weight. */
@@ -1288,9 +1297,12 @@ export function literalPartText(value: Value): string | undefined {
  * With no live part at all it is the typed words joined.
  */
 export function richTextFallback(parts: readonly TextPart[]): Value {
-  const isLive = (p: TextPart) => p.value.kind.kind !== "literal";
+  // An icon part adds nothing: an older watch has no way to draw it, and its
+  // value is empty anyway. Checked on the key rather than trusted to the
+  // value, so a hand-edited document cannot put words there.
+  const isLive = (p: TextPart) => p.icon === undefined && p.value.kind.kind !== "literal";
   const words = (from: number, to: number) =>
-    parts.slice(from, to).map((p) => literalPartText(p.value) ?? "").join("");
+    parts.slice(from, to).map((p) => (p.icon === undefined ? literalPartText(p.value) ?? "" : "")).join("");
   const first = parts.findIndex(isLive);
   if (first < 0) return literal(words(0, parts.length));
   const next = parts.findIndex((p, i) => i > first && isLive(p));
@@ -4609,6 +4621,7 @@ function parseTextParts(raw: unknown): TextPart[] {
       id: str(o.id, newId()).toUpperCase(),
       value: isObject(o.value) ? parseValue(o.value) : literal(""),
     };
+    if (isObject(o.icon)) part.icon = parseValue(o.icon);
     if (typeof o.colorHex === "string") part.colorHex = o.colorHex;
     const weight = optStr(o.fontWeight);
     if (weight === "regular" || weight === "medium" || weight === "semibold" || weight === "bold") part.fontWeight = weight;
@@ -6616,6 +6629,7 @@ export function encodeRules(rules: Rule[]): J[] {
  * only when set, so a part round-trips exactly as it was written. */
 function encodeTextPart(p: TextPart): J {
   const o: J = { id: p.id, value: encodeValue(p.value) };
+  if (p.icon !== undefined) o.icon = encodeValue(p.icon);
   if (p.colorHex !== undefined) o.colorHex = p.colorHex;
   if (p.fontWeight !== undefined) o.fontWeight = p.fontWeight;
   if (p.fontSize !== undefined) o.fontSize = encNum(p.fontSize);
@@ -7852,7 +7866,7 @@ const K = {
     "fontDesign", "fontWidth", "italic", "minimumScale", "alignment",
     "coloring", "bands", "bandAboveColorHex", "highlight", "highColorHex", "lowColorHex", "parts",
     "arc", "chartAnchor"],
-  textPart: ["id", "value", "colorHex", "fontWeight", "fontSize", "fontDesign", "fontWidth", "italic",
+  textPart: ["id", "value", "icon", "colorHex", "fontWeight", "fontSize", "fontDesign", "fontWidth", "italic",
     "coloring", "bands", "bandAboveColorHex"],
   icon: ["symbol", "path", "viewBox", "size", "level", "chartAnchor"],
   gauge: ["value", "minValue", "maxValue", "style", "lineWidth", "trackColorHex",
@@ -8089,6 +8103,7 @@ export function auditUnknownKeys(raw: unknown): string[] {
         e.payload.parts.forEach((part, j) => {
           check(part, K.textPart, `${ep}.payload.parts[${j}]`);
           if (isObject(part)) value(part.value, `${ep}.payload.parts[${j}].value`);
+          if (isObject(part) && "icon" in part) value(part.icon, `${ep}.payload.parts[${j}].icon`);
         });
       }
       if (kind === "image") check(e.payload.entity, K.entityRef, `${ep}.payload.entity`);
@@ -10140,8 +10155,14 @@ function walkDocument(cfg: CustomComplicationConfig, visit: DocumentVisitor): vo
       if (primary) onValue(primary, base);
       // A rich text layer's parts, after its value and in order, as the
       // compiler walks them. The value is only the first live part's fallback,
-      // so an entity a later part reads would otherwise stay in a share.
-      if (el.kind === "text") for (const part of el.payload.parts ?? []) onValue(part.value, { ...base, part: "textPart" });
+      // so an entity a later part reads would otherwise stay in a share. An
+      // icon part's symbol follows its value, as the compiler walks it.
+      if (el.kind === "text") {
+        for (const part of el.payload.parts ?? []) {
+          onValue(part.value, { ...base, part: "textPart" });
+          if (part.icon) onValue(part.icon, { ...base, part: "textPart" });
+        }
+      }
       if (el.kind === "gauge" && el.payload.total) onValue(el.payload.total, { ...base, part: "total" });
       if (el.kind === "gauge" && el.payload.minSource) onValue(el.payload.minSource, { ...base, part: "gaugeMin" });
       if (el.kind === "gauge" && el.payload.maxSource) onValue(el.payload.maxSource, { ...base, part: "gaugeMax" });

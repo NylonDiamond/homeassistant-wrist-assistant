@@ -73,11 +73,17 @@ export type RichTextMoved = "fontSize" | "fontWeight" | "color" | "bands";
 /** A part that stops its layer's parts joining into one template, and why:
  * `kind` for a value with no template form (data age, a chart's number, a
  * shared value that cannot be followed), `format` for a format with none
- * (relative time, duration). */
+ * (relative time, duration), `icon` for an icon part, which only rich text can
+ * draw. */
 export interface RichTextBlocked {
   index: number;
   partId: string;
-  reason: "kind" | "format";
+  reason: "kind" | "format" | "icon";
+}
+
+/** Every icon part, as a part in the way of leaving rich text. */
+function iconBlocks(parts: readonly TextPart[]): RichTextBlocked[] {
+  return parts.flatMap((part, index) => (part.icon === undefined ? [] : [{ index, partId: part.id, reason: "icon" as const }]));
 }
 
 export type RichTextJoin =
@@ -97,7 +103,8 @@ export type RichTextOff =
  * parts join into one value (`joinTextParts`) and their styles go; when a part
  * blocks the join nothing changes and the blocking parts come back. Either way
  * every rule loses its `partId` and changes the whole text. A countdown never
- * drew its parts, so they simply go.
+ * drew its parts, so they simply go. An icon part has no plain text form, so
+ * it blocks the way out whether it is alone or one of many.
  */
 export function turnOffRichText(el: TextElement, namedValues: readonly NamedValue[] = []): RichTextOff {
   const parts = el.parts ?? [];
@@ -106,6 +113,8 @@ export function turnOffRichText(el: TextElement, namedValues: readonly NamedValu
     dropPartIds(el.rules);
     return { ok: true, joined: false, moved: [] };
   }
+  const icons = iconBlocks(parts);
+  if (parts.length === 1 && icons.length > 0) return { ok: false, blocked: icons };
   if (parts.length === 1) {
     const part = parts[0]!;
     const moved: RichTextMoved[] = [];
@@ -255,13 +264,21 @@ function templatePiece(original: Value, namedValues: readonly NamedValue[]): str
  * template, typed words as text, an entity's state as `states()`, an attribute
  * as `state_attr()`, a template as it was, and every other kind through the
  * compiler's own expression. A part whose value has no template form blocks the
- * join, and every such part is listed so the editor can name them all at once.
+ * join, and so does an icon part, and every such part is listed so the editor
+ * can name them all at once.
  */
 export function joinTextParts(parts: readonly TextPart[], namedValues: readonly NamedValue[] = []): RichTextJoin {
-  if (parts.every((p) => p.value.kind.kind === "literal")) return { ok: true, value: richTextFallback(parts) };
+  // Checked before the all-words shortcut: an icon part's value is the empty
+  // literal, so it would otherwise join as nothing and the icon would be lost.
+  const icons = iconBlocks(parts);
+  if (icons.length === 0 && parts.every((p) => p.value.kind.kind === "literal")) return { ok: true, value: richTextFallback(parts) };
   const pieces: string[] = [];
   const blocked: RichTextBlocked[] = [];
   parts.forEach((part, index) => {
+    if (part.icon !== undefined) {
+      blocked.push({ index, partId: part.id, reason: "icon" });
+      return;
+    }
     const piece = templatePiece(part.value, namedValues);
     if (typeof piece === "string") pieces.push(piece);
     else blocked.push({ index, partId: part.id, reason: piece.blocked });

@@ -860,7 +860,9 @@ function arcGlyphs(el: Extract<ResolvedElement, { kind: "text" }>): ArcGlyph[] {
     fontWidth: el.fontWidth, italic: el.italic, colorHex: el.colorHex,
   };
   const drawsParts = el.parts !== undefined && el.parts.map((p) => p.text).join("") === el.text;
-  const looks = drawsParts ? partLooks(el.parts!) : undefined;
+  // The resolver leaves icon parts off a curve. Filtered here too, so a stale
+  // one can never shift every look after it by a character.
+  const looks = drawsParts ? partLooks(el.parts!.filter((p) => p.symbol === undefined)) : undefined;
   const colors = drawsParts ? undefined : spanColors(el.text, el.spans);
   const out: ArcGlyph[] = [];
   let at = 0;
@@ -1069,16 +1071,48 @@ interface PartLook {
   fontWidth: string;
   italic: boolean;
   colorHex: string;
+  /** Set on an icon part's look, whose one character is `ICON_MARK`. */
+  symbol?: string;
 }
 
 type PartRun = { text: string; look: PartLook };
 
+/** What an icon part is in the line the preview lays out: one character, so
+ * wrapping, shrinking and truncating treat an icon as a single glyph that never
+ * breaks. The Object Replacement Character, which no reading prints. */
+const ICON_MARK = "￼";
+
+/** How wide an icon sits in the line, as a fraction of its part's font size.
+ * An SF Symbol set in text takes about an em. */
+const ICON_ADVANCE = 1;
+
+/** The rich text line as the preview lays it out: each part's words, and
+ * `ICON_MARK` for each icon. Without icons it is the resolved text itself. */
+function partsLine(parts: readonly ResolvedTextPart[]): string {
+  return parts.map((p) => (p.symbol === undefined ? p.text : ICON_MARK)).join("");
+}
+
+/** One character's width at a size: an icon's advance for `ICON_MARK`, the
+ * usual estimate for anything else. */
+function charWidth(ch: string, size: number): number {
+  return ch === ICON_MARK ? ICON_ADVANCE * size : ch.length * textCharWidth(size);
+}
+
 /** The look of each code unit of the joined parts: the part's size and weight,
  * and its span's color when it colors by value. One object per span, so
- * `paintLine` merges exactly the characters that share a run. */
+ * `paintLine` merges exactly the characters that share a run. An icon part is
+ * one code unit, `ICON_MARK`, with a look of its own. */
 function partLooks(parts: readonly ResolvedTextPart[]): PartLook[] {
   const out: PartLook[] = [];
   for (const part of parts) {
+    if (part.symbol !== undefined) {
+      out.push({
+        fontSize: part.fontSize, fontWeight: part.fontWeight,
+        fontDesign: part.fontDesign, fontWidth: part.fontWidth,
+        italic: part.italic, colorHex: part.colorHex, symbol: part.symbol,
+      });
+      continue;
+    }
     const runs = part.spans !== undefined && part.spans.map((s) => s.text).join("") === part.text
       ? part.spans
       : [{ text: part.text, colorHex: part.colorHex }];
@@ -1096,7 +1130,9 @@ function partLooks(parts: readonly ResolvedTextPart[]): PartLook[] {
 
 /** Width of drawn runs at `scale`, each character at its own size. */
 function runsWidth(runs: readonly PartRun[], scale: number): number {
-  return runs.reduce((w, r) => w + r.text.length * textCharWidth(r.look.fontSize * scale), 0);
+  let w = 0;
+  for (const r of runs) for (const ch of r.text) w += charWidth(ch, r.look.fontSize * scale);
+  return w;
 }
 
 /** `wrapToLines`, measured character by character, because the parts of one
@@ -1119,7 +1155,7 @@ function wrapPartsToLines(text: string, looks: readonly PartLook[], boxWidth: nu
     for (let i = from; i <= last; i++) {
       const start = words[i]!.index ?? 0;
       let add = i === from ? 0 : textCharWidth(size(start - 1));
-      for (let j = start; j < start + words[i]![0].length; j++) add += textCharWidth(size(j));
+      for (let j = start; j < start + words[i]![0].length; j++) add += charWidth(text[j]!, size(j));
       if (i > from && used + add > boxWidth) break;
       used += add;
       taken = i + 1;
@@ -1144,12 +1180,12 @@ function truncateRuns(runs: readonly PartRun[], scale: number, boxWidth: number)
     const budget = boxWidth - 0.8 * size;
     let text = "";
     for (const ch of run.text) {
-      if (kept > 0 && used + ch.length * textCharWidth(size) > budget) {
+      if (kept > 0 && used + charWidth(ch, size) > budget) {
         if (text !== "") out.push({ text, look: run.look });
         break cut;
       }
       text += ch;
-      used += ch.length * textCharWidth(size);
+      used += charWidth(ch, size);
       kept += 1;
     }
     out.push({ text, look: run.look });
@@ -1172,18 +1208,19 @@ function truncateRuns(runs: readonly PartRun[], scale: number, boxWidth: number)
  * plain layer, measured per character at each run's size, and a shrink scales
  * every run by the one factor so the parts keep their proportions.
  */
-function renderTextParts(el: Extract<ResolvedElement, { kind: "text" }>, parts: readonly ResolvedTextPart[], box: Box) {
+function renderTextParts(el: Extract<ResolvedElement, { kind: "text" }>, parts: readonly ResolvedTextPart[], box: Box, icons: IconProvider) {
   const looks = partLooks(parts);
+  const text = partsLine(parts);
   const size = (i: number) => looks[i]?.fontSize ?? 0;
   const wordsWidth = (words: readonly RegExpExecArray[]) => words.reduce((w, m, k) => {
     let add = k === 0 ? 0 : textCharWidth(size(m.index - 1));
-    for (let j = m.index; j < m.index + m[0].length; j++) add += textCharWidth(size(j));
+    for (let j = m.index; j < m.index + m[0].length; j++) add += charWidth(text[j]!, size(j));
     return w + add;
   }, 0);
-  const lines = breakLines(el.text, el.lineLimit, box.w, wordsWidth)
-    ?? (el.lineLimit > 1 && box.w > 0 ? wrapPartsToLines(el.text, looks, box.w, el.lineLimit) : [el.text]);
-  const starts = lineStarts(el.text, lines);
-  const painted = lines.map((line, i) => paintLine(line, starts[i] ?? 0, el.text, looks, looks[0]!));
+  const lines = breakLines(text, el.lineLimit, box.w, wordsWidth)
+    ?? (el.lineLimit > 1 && box.w > 0 ? wrapPartsToLines(text, looks, box.w, el.lineLimit) : [text]);
+  const starts = lineStarts(text, lines);
+  const painted = lines.map((line, i) => paintLine(line, starts[i] ?? 0, text, looks, looks[0]!));
   const widest = Math.max(...painted.map((runs) => runsWidth(runs, 1)));
   const scale = widest > box.w && box.w > 0 ? Math.max(el.minimumScale, box.w / widest) : 1;
   const drawn = painted.map((runs) => truncateRuns(runs, scale, box.w));
@@ -1196,6 +1233,9 @@ function renderTextParts(el: Extract<ResolvedElement, { kind: "text" }>, parts: 
   // a plain layer.
   const baseline = 0.35 * tallest;
   const step = tallest * 1.15;
+  if (drawn.some((runs) => runs.some((r) => r.look.symbol !== undefined))) {
+    return renderPartPieces(el, drawn, box, scale, baseline, step, icons);
+  }
   const lineBody = (runs: readonly PartRun[]) => runs.map((run) => {
     const a = colorAttrs(run.look.colorHex, "fill");
     return svg`<tspan font-size=${run.look.fontSize * scale} font-weight=${FONT_WEIGHT[run.look.fontWeight] ?? 400}
@@ -1214,7 +1254,68 @@ function renderTextParts(el: Extract<ResolvedElement, { kind: "text" }>, parts: 
     fill=${c.fill} fill-opacity=${c["fill-opacity"]}>${body}</text>`;
 }
 
-function renderText(el: Extract<ResolvedElement, { kind: "text" }>, box: Box) {
+/**
+ * Rich text with an icon in it, placed piece by piece: an SVG `<text>` cannot
+ * hold a drawing, so every stretch of words is a `<text>` of its own and every
+ * icon a glyph between them, each at the x the layout above measured. A
+ * stretch with something after it on the line is held to its measured width,
+ * so a font wider than the estimate cannot run into the icon that follows.
+ * Lines, baseline and alignment are the ones `renderTextParts` worked out.
+ */
+function renderPartPieces(
+  el: Extract<ResolvedElement, { kind: "text" }>,
+  drawn: readonly (readonly PartRun[])[],
+  box: Box,
+  scale: number,
+  baseline: number,
+  step: number,
+  icons: IconProvider,
+) {
+  return svg`${drawn.map((runs, i) => {
+    const y = box.cy + baseline + (i - (drawn.length - 1) / 2) * step;
+    const width = runsWidth(runs, scale);
+    let x = el.alignment === "leading" ? box.x : el.alignment === "trailing" ? box.x + box.w - width : box.cx - width / 2;
+    // Each run cut where its icons sit, so a pending stretch of words is
+    // flushed before an icon and at the end of the line.
+    const pieces: { text?: string; symbol?: string; look: PartLook }[] = [];
+    for (const run of runs) {
+      let words = "";
+      for (const ch of run.text) {
+        if (ch === ICON_MARK && run.look.symbol !== undefined) {
+          if (words !== "") pieces.push({ text: words, look: run.look });
+          words = "";
+          pieces.push({ symbol: run.look.symbol, look: run.look });
+        } else {
+          words += ch;
+        }
+      }
+      if (words !== "") pieces.push({ text: words, look: run.look });
+    }
+    return pieces.map((piece, k) => {
+      const s = piece.look.fontSize * scale;
+      const at = x;
+      if (piece.symbol !== undefined) {
+        x += ICON_ADVANCE * s;
+        // Centred where a capital letter's middle sits, a third of the size
+        // above the baseline, so the icon lines up with the words beside it.
+        const glyph = icons.render(piece.symbol, s, piece.look.colorHex);
+        return glyph ? svg`<g transform="translate(${at} ${y - 0.35 * s - s / 2})">${glyph}</g>` : nothing;
+      }
+      const w = runsWidth([{ text: piece.text!, look: piece.look }], scale);
+      x += w;
+      const a = colorAttrs(piece.look.colorHex, "fill");
+      const stretch = textStyle(false, piece.look.fontWidth);
+      return svg`<text x=${at} y=${y} text-anchor="start"
+        textLength=${k < pieces.length - 1 ? w : nothing} lengthAdjust=${k < pieces.length - 1 ? "spacing" : nothing}
+        font-size=${s} font-weight=${FONT_WEIGHT[piece.look.fontWeight] ?? 400}
+        font-family=${fontFamilyFor(piece.look.fontDesign)} font-style=${piece.look.italic ? "italic" : "normal"}
+        style=${stretch === nothing ? "white-space: pre" : `white-space: pre; ${stretch}`}
+        fill=${a.fill} fill-opacity=${a["fill-opacity"]}>${piece.text}</text>`;
+    });
+  })}`;
+}
+
+function renderText(el: Extract<ResolvedElement, { kind: "text" }>, box: Box, icons: IconProvider) {
   // Curved first: the resolver only leaves an arc on a shape that draws one and
   // never on a countdown, so everything below still reads as it did.
   if (el.arc !== undefined) return renderArcText(el, box);
@@ -1222,8 +1323,9 @@ function renderText(el: Extract<ResolvedElement, { kind: "text" }>, box: Box) {
   // and a stale pairing should still tick rather than freeze on its parts. Parts
   // that no longer spell the text draw as plain text, the way stale spans do.
   if (el.parts !== undefined && el.countdownEnd === undefined && el.parts.map((p) => p.text).join("") === el.text) {
-    if (el.text === "") return nothing;
-    return renderTextParts(el, el.parts, box);
+    // An icon part adds no text, so a line of nothing but icons still draws.
+    if (partsLine(el.parts) === "") return nothing;
+    return renderTextParts(el, el.parts, box, icons);
   }
   const c = colorAttrs(el.colorHex, "fill");
   // Live countdown: the preview shows the remaining time at render; the panel
@@ -2638,7 +2740,7 @@ function renderElement(el: ResolvedElement, canvas: CanvasSize, options: RenderO
   const labelled = review && (!inFocusView || focused);
   let body;
   if (part === "body") switch (el.kind) {
-    case "text": body = renderText(el, box); break;
+    case "text": body = renderText(el, box, options.icons); break;
     case "icon": body = renderIcon(el, box, options.icons); break;
     case "gauge": body = renderGauge(el, box); break;
     case "chart": body = renderChart(el, box); break;
@@ -3341,8 +3443,11 @@ const THUMB_PAD = 0.14;
  */
 function inkBox(el: ResolvedElement, canvas: CanvasSize): Box {
   const b = frameBox(el, canvas);
-  if (el.kind !== "text" || el.text === "") return b;
-  const w = Math.min(b.w, Math.max(el.fontSize, el.text.length * el.fontSize * 0.55));
+  if (el.kind !== "text") return b;
+  // An icon part has no text but takes room, so it counts as a character.
+  const shown = el.parts !== undefined && el.countdownEnd === undefined ? partsLine(el.parts) : el.text;
+  if (shown === "") return b;
+  const w = Math.min(b.w, Math.max(el.fontSize, shown.length * el.fontSize * 0.55));
   const h = Math.min(b.h, el.fontSize * 1.3);
   return { x: b.cx - w / 2, y: b.cy - h / 2, w, h, cx: b.cx, cy: b.cy };
 }

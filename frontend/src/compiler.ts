@@ -373,8 +373,14 @@ export function compile(config: CustomComplicationConfig): Compiled {
     // A rich text layer draws its parts, and its value is only the fallback
     // an older watch shows, so every part is fetched. Walked even under a
     // countdown, which ignores parts, so flipping that switch never changes
-    // what the watch is asked to fetch.
-    if (el.kind === "text") for (const part of el.payload.parts ?? []) visit(part.value);
+    // what the watch is asked to fetch. An icon part's symbol is fetched the
+    // same way, so a template that picks it lands in the document.
+    if (el.kind === "text") {
+      for (const part of el.payload.parts ?? []) {
+        visit(part.value);
+        if (part.icon) visit(part.icon);
+      }
+    }
     // A dot gauge's total is an ordinary value, so it is fetched like one. The
     // usual pairing, a filtered count and the same count unfiltered, dedupes to
     // two lines of one template document and no extra request.

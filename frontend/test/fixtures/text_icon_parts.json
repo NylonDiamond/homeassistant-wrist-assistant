@@ -1,0 +1,247 @@
+{
+  "name": "Text icon parts",
+  "description": "Icon parts draw an SF Symbol inside a rich text line. Each is written with an empty literal value, so a build from before icon parts draws nothing in its place. The net line has a literal house in its own colour and size, then the words, then a template icon that renders a symbol, a template icon that renders empty and is left out, an entity icon that reads the entity's live icon over the one captured when it was picked, an mdi: name that is left out, an icon set by a rule aimed at the part that also makes it bold, and an icon hidden by a rule aimed at it. A layer rule recolours every part with no colour of its own, icons included. An icon part's text is empty and it carries its symbol; a text part carries none. A curved line leaves its icon parts out, so its parts still spell its text. The compiler walks each icon's source, so the entity and both templates are fetched.",
+  "config": {
+    "schemaVersion": 6,
+    "id": "AAAAAAAA-0000-4000-8000-000000000500",
+    "name": "Text icon parts",
+    "slotIndex": 2,
+    "supportedFamilies": [
+      "rectangular"
+    ],
+    "values": [
+      {
+        "id": "AAAAAAA1-0000-4000-8000-000000000501",
+        "name": "Charging icon",
+        "value": {
+          "kind": { "kind": "jinja", "value": "{{ 'bolt.fill' if is_state('switch.charger', 'on') else '' }}" }
+        }
+      },
+      {
+        "id": "AAAAAAA2-0000-4000-8000-000000000502",
+        "name": "Alarm icon",
+        "value": {
+          "kind": { "kind": "jinja", "value": "{{ 'alarm' if is_state('alarm_control_panel.home', 'triggered') else '' }}" }
+        }
+      }
+    ],
+    "elements": [
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000501",
+          "value": { "kind": { "kind": "literal", "value": " → NET" } },
+          "fontSize": 14,
+          "fontWeight": "regular",
+          "parts": [
+            {
+              "id": "A0000000-0000-4000-8000-000000000511",
+              "value": { "kind": { "kind": "literal", "value": "" } },
+              "icon": { "kind": { "kind": "literal", "value": "house.fill" } },
+              "colorHex": "#FF9F0A",
+              "fontSize": 16
+            },
+            {
+              "id": "A0000000-0000-4000-8000-000000000512",
+              "value": { "kind": { "kind": "literal", "value": " → NET" } }
+            },
+            {
+              "id": "A0000000-0000-4000-8000-000000000513",
+              "value": { "kind": { "kind": "literal", "value": "" } },
+              "icon": { "kind": { "kind": "named", "id": "AAAAAAA1-0000-4000-8000-000000000501" } }
+            },
+            {
+              "id": "A0000000-0000-4000-8000-000000000514",
+              "value": { "kind": { "kind": "literal", "value": "" } },
+              "icon": { "kind": { "kind": "named", "id": "AAAAAAA2-0000-4000-8000-000000000502" } }
+            },
+            {
+              "id": "A0000000-0000-4000-8000-000000000515",
+              "value": { "kind": { "kind": "literal", "value": "" } },
+              "icon": { "kind": { "kind": "entityState", "entityId": "switch.charger", "displayName": "Charger", "domain": "switch", "iconName": "bolt" } },
+              "colorHex": "#30D158"
+            },
+            {
+              "id": "A0000000-0000-4000-8000-000000000516",
+              "value": { "kind": { "kind": "literal", "value": "" } },
+              "icon": { "kind": { "kind": "literal", "value": "mdi:home" } }
+            },
+            {
+              "id": "A0000000-0000-4000-8000-000000000517",
+              "value": { "kind": { "kind": "literal", "value": "" } },
+              "icon": { "kind": { "kind": "literal", "value": "leaf" } }
+            },
+            {
+              "id": "A0000000-0000-4000-8000-000000000518",
+              "value": { "kind": { "kind": "literal", "value": "" } },
+              "icon": { "kind": { "kind": "literal", "value": "star" } }
+            }
+          ],
+          "colorSlot": { "baseColorHex": "#FFFFFF" },
+          "rules": [
+            {
+              "id": "DDDDDDDD-0000-4000-8000-000000000521",
+              "cases": [
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-000000000522",
+                  "when": {
+                    "join": "all",
+                    "tests": [
+                      {
+                        "id": "BBBBBBBB-0000-4000-8000-000000000523",
+                        "value": { "kind": { "kind": "literal", "value": "a" } },
+                        "comparison": {
+                          "kind": "equals",
+                          "value": { "kind": { "kind": "literal", "value": "a" } }
+                        }
+                      }
+                    ]
+                  },
+                  "then": [
+                    { "kind": "setIcon", "value": { "kind": { "kind": "literal", "value": "leaf.fill" } } },
+                    { "kind": "setFontWeight", "weight": "bold" }
+                  ]
+                }
+              ],
+              "partId": "A0000000-0000-4000-8000-000000000517"
+            },
+            {
+              "id": "DDDDDDDD-0000-4000-8000-000000000524",
+              "cases": [
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-000000000525",
+                  "when": {
+                    "join": "all",
+                    "tests": [
+                      {
+                        "id": "BBBBBBBB-0000-4000-8000-000000000526",
+                        "value": { "kind": { "kind": "literal", "value": "a" } },
+                        "comparison": {
+                          "kind": "equals",
+                          "value": { "kind": { "kind": "literal", "value": "a" } }
+                        }
+                      }
+                    ]
+                  },
+                  "then": [
+                    { "kind": "hide" }
+                  ]
+                }
+              ],
+              "partId": "A0000000-0000-4000-8000-000000000518"
+            },
+            {
+              "id": "DDDDDDDD-0000-4000-8000-000000000527",
+              "cases": [
+                {
+                  "id": "CCCCCCCC-0000-4000-8000-000000000528",
+                  "when": {
+                    "join": "all",
+                    "tests": [
+                      {
+                        "id": "BBBBBBBB-0000-4000-8000-000000000529",
+                        "value": { "kind": { "kind": "literal", "value": "a" } },
+                        "comparison": {
+                          "kind": "equals",
+                          "value": { "kind": { "kind": "literal", "value": "a" } }
+                        }
+                      }
+                    ]
+                  },
+                  "then": [
+                    { "kind": "setColor", "value": { "kind": { "kind": "literal", "value": "#AAAAAA" } } }
+                  ]
+                }
+              ]
+            }
+          ],
+          "frame": { "x": 0, "y": 0, "width": 1, "height": 0.4, "rotationDegrees": 0 },
+          "isHidden": false
+        }
+      },
+      {
+        "kind": "text",
+        "payload": {
+          "id": "EEEEEEEE-0000-4000-8000-000000000502",
+          "value": { "kind": { "kind": "literal", "value": "NET" } },
+          "fontSize": 14,
+          "fontWeight": "regular",
+          "parts": [
+            {
+              "id": "A0000000-0000-4000-8000-000000000531",
+              "value": { "kind": { "kind": "literal", "value": "" } },
+              "icon": { "kind": { "kind": "literal", "value": "house.fill" } }
+            },
+            {
+              "id": "A0000000-0000-4000-8000-000000000532",
+              "value": { "kind": { "kind": "literal", "value": "NET" } }
+            }
+          ],
+          "arc": { "radius": 0.5 },
+          "colorSlot": { "baseColorHex": "#FFFFFF" },
+          "rules": [],
+          "frame": { "x": 0, "y": 0.4, "width": 1, "height": 0.6, "rotationDegrees": 0 },
+          "isHidden": false
+        }
+      }
+    ],
+    "perFamily": [
+      "rectangular",
+      { "cornerBodyShape": "wedge", "borderWidth": 2 }
+    ],
+    "dataSources": [],
+    "refreshMinutes": 15,
+    "tapAction": {
+      "type": "refresh"
+    }
+  },
+  "inputs": {
+    "entityStates": {
+      "switch.charger": { "state": "on", "iconName": "powerplug" }
+    },
+    "templateResults": {
+      "n_aaaaaaa1000040008000000000000501": "bolt.fill",
+      "n_aaaaaaa2000040008000000000000502": ""
+    }
+  },
+  "expectedCompiled": {
+    "entities": [
+      "switch.charger"
+    ],
+    "expressionKeys": [
+      "n_aaaaaaa1000040008000000000000501",
+      "n_aaaaaaa2000040008000000000000502"
+    ]
+  },
+  "expected": {
+    "rectangular": {
+      "elements": [
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000501",
+          "kind": "text",
+          "text": " → NET",
+          "fontSize": 14,
+          "fontWeight": "regular",
+          "colorHex": "#AAAAAA",
+          "spans": null,
+          "parts": [
+            { "text": "", "fontSize": 16, "fontWeight": "regular", "fontDesign": "default", "fontWidth": "standard", "italic": false, "colorHex": "#FF9F0A", "symbol": "house.fill" },
+            { "text": " → NET", "fontSize": 14, "fontWeight": "regular", "fontDesign": "default", "fontWidth": "standard", "italic": false, "colorHex": "#AAAAAA" },
+            { "text": "", "fontSize": 14, "fontWeight": "regular", "fontDesign": "default", "fontWidth": "standard", "italic": false, "colorHex": "#AAAAAA", "symbol": "bolt.fill" },
+            { "text": "", "fontSize": 14, "fontWeight": "regular", "fontDesign": "default", "fontWidth": "standard", "italic": false, "colorHex": "#30D158", "symbol": "powerplug" },
+            { "text": "", "fontSize": 14, "fontWeight": "bold", "fontDesign": "default", "fontWidth": "standard", "italic": false, "colorHex": "#AAAAAA", "symbol": "leaf.fill" }
+          ]
+        },
+        {
+          "id": "EEEEEEEE-0000-4000-8000-000000000502",
+          "kind": "text",
+          "text": "NET",
+          "spans": null,
+          "parts": [
+            { "text": "NET", "fontSize": 14, "fontWeight": "regular", "fontDesign": "default", "fontWidth": "standard", "italic": false, "colorHex": "#FFFFFF" }
+          ]
+        }
+      ]
+    }
+  }
+}

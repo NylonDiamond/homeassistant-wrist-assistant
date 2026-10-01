@@ -93,7 +93,11 @@ function originalRefs(cfg: CustomComplicationConfig, slots: readonly ShareSlot[]
   const uses = documentEntityUses(cfg, () => true);
   const map = new Map<string, EntityRef>();
   for (const slot of slots) {
-    const use = uses.find((u) => u.entityId === slot.originalId);
+    // A use with a name first: an entity quoted in a template comes back as a
+    // bare id, so when it is also picked somewhere by name, that ref is the one
+    // the document holds.
+    const all = uses.filter((u) => u.entityId === slot.originalId);
+    const use = all.find((u) => u.ref.displayName !== "") ?? all[0];
     map.set(slot.placeholderId, use?.ref ?? { entityId: slot.originalId, displayName: "", domain: slot.domain });
   }
   return map;

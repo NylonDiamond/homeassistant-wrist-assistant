@@ -3594,7 +3594,10 @@ function rowLayerValues(el: CElement): Value[] {
   switch (el.kind) {
     case "text":
       push(el.payload.value);
-      for (const part of el.payload.parts ?? []) push(part.value);
+      for (const part of el.payload.parts ?? []) {
+        push(part.value);
+        push(part.icon);
+      }
       break;
     case "icon":
       push(el.payload.symbol);
@@ -6974,6 +6977,12 @@ const PART_SIZE_MAX = 40;
 export type PartColorMode = "layer" | "pick" | "bands";
 
 const PART_COLORS: [PartColorMode, string][] = [["layer", "Layer"], ["pick", "Pick"], ["bands", "By value"]];
+/** An icon has no numbers to color by value, so its part offers the other two. */
+const ICON_PART_COLORS = PART_COLORS.filter(([m]) => m !== "bands");
+
+/** The symbol a new icon part starts on, the same one a new Inline icon part
+ * takes. */
+export const ICON_PART_DEFAULT_SYMBOL = "star.fill";
 
 /** What a text layer draws, as its Type row names it. */
 export type TextType = "plain" | "rich" | "countdown";
@@ -7022,9 +7031,19 @@ export function partChip(value: Value, ctx?: DescribeContext): { kind: "text" | 
   return { kind: "value", label: describeValueBody(value, ctx) };
 }
 
+/** What an icon part draws, in a few words: the symbol's name when it is
+ * typed in, else what picks it (an entity, a template). */
+export function iconPartName(icon: Value, ctx?: DescribeContext): string {
+  if (icon.kind.kind === "literal") return icon.kind.value.trim() === "" ? "none" : truncate(icon.kind.value, 28);
+  if (icon.kind.kind === "jinja") return "from a template";
+  return truncate(describeValueBody(icon, ctx), 28);
+}
+
 /** A part as one entry of a rule's Changes menu: its number, then its words
- * trimmed short or the name of what it reads. */
+ * trimmed short or the name of what it reads. An icon part says so, then
+ * which icon. */
 export function rulePartLabel(part: TextPart, index: number, ctx?: DescribeContext): string {
+  if (part.icon !== undefined) return `Part ${index + 1}: icon ${iconPartName(part.icon, ctx)}`;
   const words = literalPartText(part.value);
   const what = words === undefined
     ? truncate(describeValueBody(part.value, ctx), 28)
@@ -7060,7 +7079,14 @@ export function partDotBackground(part: TextPart, layerHex: string): string {
 
 /** Why rich text cannot turn off yet, naming every part in the way. */
 export function richTextBlockedHint(blocked: readonly RichTextBlocked[]): string {
-  return `Rich text stays on, because the parts cannot join into one line. ${blockedReasons(blocked)} Change or remove ${blocked.length === 1 ? "that part" : "those parts"} first.`;
+  // When only icons are in the way, the join is not the problem: plain text
+  // cannot show an icon at all, and nothing changes one into words, so the
+  // hint says that and asks for them to be removed.
+  const onlyIcons = blocked.every((b) => b.reason === "icon");
+  const lead = onlyIcons
+    ? "Rich text stays on, because plain text cannot show an icon."
+    : "Rich text stays on, because the parts cannot join into one line.";
+  return `${lead} ${blockedReasons(blocked)} ${onlyIcons ? "Remove" : "Change or remove"} ${blocked.length === 1 ? "that part" : "those parts"} first.`;
 }
 
 /** Which parts cannot go in a template, and why, in a sentence per reason. */
@@ -7070,9 +7096,11 @@ function blockedReasons(blocked: readonly RichTextBlocked[]): string {
     : `Parts ${joinWords(list.map((b) => String(b.index + 1)))}`);
   const kinds = blocked.filter((b) => b.reason === "kind");
   const formats = blocked.filter((b) => b.reason === "format");
+  const icons = blocked.filter((b) => b.reason === "icon");
   const said: string[] = [];
   if (kinds.length > 0) said.push(`${named(kinds)} ${kinds.length === 1 ? "shows" : "show"} a value a template cannot read, such as data age or a chart's number.`);
   if (formats.length > 0) said.push(`${named(formats)} ${formats.length === 1 ? "uses" : "use"} a relative time or duration format, which a template cannot print.`);
+  if (icons.length > 0) said.push(`${named(icons)} ${icons.length === 1 ? "is an icon" : "are icons"}, and icons only show in Rich text.`);
   return said.join(" ");
 }
 
@@ -7259,6 +7287,13 @@ function richPartsEditor(
     updParts((p) => { (p.parts ??= []).push({ id, value }); });
     focusSourceSoon(node, `${key}-part-${id}`, "input[type=text], .ent-box input");
   };
+  // An icon part opens on a symbol, as the Inline line's does, so the line
+  // shows something at once; the picker under it is open to change it.
+  const addIcon = () => {
+    const id = newId();
+    selectedParts.set(layerId, id);
+    updParts((p) => { (p.parts ??= []).push({ id, value: literal(""), icon: literal(ICON_PART_DEFAULT_SYMBOL) }); });
+  };
   // Moving keeps the part's id, so a state aimed at it stays aimed at it.
   const move = (to: number) => updParts((p) => { if (p.parts) moveItem(p.parts, index, to); });
   const remove = () => {
@@ -7268,9 +7303,25 @@ function richPartsEditor(
   };
 
   const chips = parts.map((p, i) => {
-    const chip = partChip(p.value, ctx);
     const on = p.id === part.id;
     const mode = partColorMode(p);
+    if (p.icon !== undefined) {
+      // A typed-in symbol shows as itself, in the part's color, as the Inline
+      // line's icon chips do. One an entity or a template picks is named.
+      const typed = p.icon.kind.kind === "literal" ? p.icon.kind.value.trim() : undefined;
+      const glyph = typed ? host.icons.render(typed, 13, p.colorHex ?? layerHex) : undefined;
+      const weight = p.fontWeight === undefined ? undefined : FONT_WEIGHTS.find(([w]) => w === p.fontWeight)?.[1];
+      return html`<button type="button" role="option" aria-selected=${on ? "true" : "false"}
+        class="part-chip ${p.icon.kind.kind === "jinja" ? "template" : "value"} ${on ? "on" : ""}"
+        aria-label=${rulePartLabel(p, i, ctx)} title=${typed ?? ""} @click=${(e: Event) => select(p.id, e.currentTarget)}>
+        <span class="part-dot" style=${`background:${partDotBackground(p, layerHex)}`}
+          title=${mode === "pick" ? "Its own color" : "The layer color"}></span>
+        <span class="part-txt">${glyph ?? (typed === undefined ? partChip(p.icon, ctx).label : typed === "" ? html`<span class="part-empty">no icon</span>` : typed)}</span>
+        ${weight === undefined ? nothing : html`<span class="part-flag" title="Its own weight">${weight}</span>`}
+        ${p.fontSize === undefined ? nothing : html`<span class="part-flag" title="Its own font size">${p.fontSize} pt</span>`}
+      </button>`;
+    }
+    const chip = partChip(p.value, ctx);
     const now = chip.kind === "value" ? host.resolve(p.value) : undefined;
     const weight = p.fontWeight === undefined ? undefined : FONT_WEIGHTS.find(([w]) => w === p.fontWeight)?.[1];
     return html`<button type="button" role="option" aria-selected=${on ? "true" : "false"} class="part-chip ${chip.kind} ${on ? "on" : ""}"
@@ -7289,8 +7340,12 @@ function richPartsEditor(
   });
 
   const targeted = t.rules.some((r) => r.partId === part.id);
+  const iconPart = part.icon !== undefined;
   const literalPart = part.value.kind.kind === "literal";
   const mode = partColorMode(part);
+  // The watch lays a curve out glyph by glyph and cannot measure a symbol as
+  // one, so a curved layer draws its words and leaves its icons out.
+  const curved = t.arc !== undefined && familyAllowsArcText(family);
   const ownSize = part.fontSize !== undefined;
   const layerWeight = FONT_WEIGHTS.find(([w]) => w === t.fontWeight)?.[1] ?? t.fontWeight;
   const layerDesign = FONT_DESIGNS.find(([d]) => d === (t.fontDesign ?? "default"))?.[1] ?? "System";
@@ -7324,11 +7379,13 @@ function richPartsEditor(
           @click=${(e: Event) => add(literal(""), e.currentTarget)}>${uiIcon("text")}<span>Add text</span></button>
         <button type="button" class="small" title="Add a part that shows a live value"
           @click=${(e: Event) => add({ kind: { kind: "entityState", entityId: "", displayName: "", domain: "" } }, e.currentTarget)}>${uiIcon("braces")}<span>Add value</span></button>
+        <button type="button" class="small" title="Add a part that shows an icon"
+          @click=${addIcon}>${uiIcon("icon")}<span>Add icon</span></button>
       </div>
     </div>
     <div class="part-editor">
       <div class="part-head">
-        <span class="part-title"><b>Part ${index + 1}</b> of ${count} · ${literalPart ? "Text" : "Value"}</span>
+        <span class="part-title"><b>Part ${index + 1}</b> of ${count} · ${iconPart ? "Icon" : literalPart ? "Text" : "Value"}</span>
         <span class="spacer"></span>
         <button type="button" class="icon" title="Move left" aria-label="Move left" ?disabled=${index === 0} @click=${() => move(index - 1)}>${uiIcon("left")}</button>
         <button type="button" class="icon" title="Move right" aria-label="Move right" ?disabled=${index === count - 1} @click=${() => move(index + 1)}>${uiIcon("right")}</button>
@@ -7337,9 +7394,23 @@ function richPartsEditor(
           @click=${remove}>${uiIcon("delete")}</button>
       </div>
       ${targeted && count > 1 ? html`<div class="hint keep">A state changes this part. Change or delete that state first.</div>` : nothing}
-      ${sourceEditor(host, part.value, (v) => updPart((x) => { x.value = v; }, "value"), { key: `${key}-part-${part.id}` })}
-      ${literalPart ? html`<div class="hint">Spaces count, and show as dots in the parts list. Type one at the start or end when this part needs a gap.</div>` : nothing}
-      ${segField("Color", mode, PART_COLORS, (v) => updPart((x) => {
+      ${iconPart
+        // SF Symbols only: no `setSymbolPath`, so the picker never offers a
+        // Material Design icon, which a part has nowhere to carry the drawing of.
+        ? html`${valueEditor(host, part.icon!, (v) => updPart((x) => { x.icon = v; }, "icon"), {
+            noFormat: true, showResolved: true, symbol: true, label: "Icon", key: `${key}-part-${part.id}-icon`,
+          })}
+          <div class="hint">An entity draws its own icon. A template can pick the symbol, and one that renders empty leaves the part out.</div>
+          ${curved ? html`<div class="hint warn">Curved text leaves icons out. Only the words follow the curve.</div>` : nothing}`
+        : html`${sourceEditor(host, part.value, (v) => updPart((x) => { x.value = v; }, "value"), { key: `${key}-part-${part.id}` })}
+          ${literalPart ? html`<div class="hint">Spaces count, and show as dots in the parts list. Type one at the start or end when this part needs a gap.</div>` : nothing}`}
+      ${iconPart
+        ? segField("Color", mode === "pick" ? "pick" : "layer", ICON_PART_COLORS, (v) => updPart((x) => {
+            delete x.coloring;
+            if (v === "layer") delete x.colorHex;
+            else x.colorHex = sameColor(layerHex, "#FFFFFF") ? "#64D2FF" : layerHex;
+          }), { def: "layer", titles: { layer: "Use the layer color" } })
+        : segField("Color", mode, PART_COLORS, (v) => updPart((x) => {
         if (v === "layer") { delete x.colorHex; delete x.coloring; return; }
         if (v === "pick") { delete x.coloring; x.colorHex = sameColor(layerHex, "#FFFFFF") ? "#64D2FF" : layerHex; return; }
         delete x.colorHex;
@@ -7349,7 +7420,7 @@ function richPartsEditor(
         if ((x.bands?.length ?? 0) === 0) x.bands = seedBands(chartNumbers(host.resolve(x.value) ?? ""));
       }), { def: "layer", titles: colorTitles, ...(literalPart && mode !== "bands" ? { disabled: { bands: true } } : {}) })}
       ${mode === "pick" ? colorField("Part color", part.colorHex, (v) => updPart((x) => { x.colorHex = v ?? layerHex; }, "color")) : nothing}
-      ${mode === "bands" ? html`
+      ${mode === "bands" && !iconPart ? html`
         ${bandTableFields({ bands: part.bands ?? [], bandAboveColorHex: part.bandAboveColorHex ?? CHART_DEFAULT_BAND_HIGH_HEX }, part.colorHex ?? layerHex, setBands,
           numbers.length === 1 ? numbers[0] : undefined)}
         <div class="hint">These bands belong to this part. Another value in the same layer keeps its own.</div>` : nothing}
@@ -7357,7 +7428,7 @@ function richPartsEditor(
           : { atDefault: false, title: `Back to the layer weight (${layerWeight})`, reset: () => updPart((x) => { delete x.fontWeight; }) })}
         ${segButtons("Weight", part.fontWeight, FONT_WEIGHTS, (v) => updPart((x) => { x.fontWeight = v; }), { inherited: t.fontWeight })}
       </div>
-      <div class="field seg-field">${fieldLabel("Typeface", part.fontDesign === undefined ? undefined
+      ${iconPart ? nothing : html`<div class="field seg-field">${fieldLabel("Typeface", part.fontDesign === undefined ? undefined
           : { atDefault: false, title: `Back to the layer typeface (${layerDesign})`, reset: () => updPart((x) => { delete x.fontDesign; }) })}
         ${segButtons("Typeface", part.fontDesign, FONT_DESIGNS, (v) => updPart((x) => { x.fontDesign = v; }), { inherited: t.fontDesign ?? "default" })}
       </div>
@@ -7371,7 +7442,7 @@ function richPartsEditor(
           : { atDefault: false, title: `Back to the layer slant (${t.italic === true ? "italic" : "upright"})`, reset: () => updPart((x) => { delete x.italic; }) })}
         ${segButtons("Italic", part.italic === undefined ? undefined : part.italic ? "on" : "off", PART_ITALICS,
           (v) => updPart((x) => { x.italic = v === "on"; }), { inherited: t.italic === true ? "on" : "off" })}
-      </div>
+      </div>`}
       <label class="field num part-size">${fieldLabel("Font size", ownSize
           ? { atDefault: false, title: `Back to the layer size (${layerSize} pt)`, reset: () => updPart((x) => { delete x.fontSize; }) }
           : undefined,
@@ -9354,6 +9425,12 @@ export function autoLayerTitle(el: CElement, ctx?: DescribeContext): string {
       // which one it is. Adding the chart's name made titles too long to read.
       const k = el.payload.value.kind;
       if (k.kind === "chartStat") return CHART_STATS.find(([s]) => s === k.stat)?.[1] ?? "Chart number";
+      // Rich text with no words in its fallback, such as an icon and a value
+      // the fallback cannot name: titled for its first icon rather than blank.
+      const icon = textUsesParts(el.payload) && literalPartText(el.payload.value)?.trim() === ""
+        ? el.payload.parts!.find((p) => p.icon !== undefined)?.icon
+        : undefined;
+      if (icon) return `Icon ${iconPartName(icon, ctx)}`;
       // No format in brackets: the row's lead already shows the printed text,
       // and "(as time, no AM/PM, with seconds)" made the title unreadable.
       return unquote(describeValueBody(el.payload.value, ctx));
@@ -9731,11 +9808,34 @@ const CHANGE_KINDS = Object.keys(CHANGE_LABELS) as StyleChangeKind[];
  * else such a rule sets is ignored, on the watch and in the preview. */
 export const PART_RULE_PROPERTIES: readonly StyleProperty[] = ["color", "text", "fontSize", "fontWeight", "fontDesign", "fontWidth", "italic", "visibility"];
 
+/** What a rule aimed at an icon part can change: the icon in place of the
+ * text, and the looks a symbol has. Typeface, width and slant shape letters
+ * and mean nothing to a symbol. */
+export const ICON_PART_RULE_PROPERTIES: readonly StyleProperty[] = ["icon", "color", "fontSize", "fontWeight", "visibility"];
+
+/** What a rule is aimed at: the whole layer (false), a part of words (true or
+ * "text"), or an icon part ("icon"). */
+export type PartAim = boolean | "text" | "icon";
+
+/** Which kind of part a rule aimed at `partId` changes, or false when it is
+ * aimed at none. A part that has gone reads as a part of words, as every
+ * part did before icon parts. */
+export function partAim(parts: readonly TextPart[] | undefined, partId: string | undefined): PartAim {
+  if (parts === undefined || partId === undefined) return false;
+  return parts.find((p) => p.id === partId)?.icon !== undefined ? "icon" : "text";
+}
+
+/** Whether a rule with this aim reads a setting. An icon part's settings are
+ * its own, whatever the layer's kind would offer. */
+function aimReads(target: RuleTarget, aim: PartAim, p: StyleProperty): boolean {
+  if (aim === "icon") return ICON_PART_RULE_PROPERTIES.includes(p);
+  return RULE_TARGET_PROPERTIES[target].includes(p) && (aim === false || PART_RULE_PROPERTIES.includes(p));
+}
+
 /** The changes a rule can add: those its target reads, narrowed to what a
  * part reads when the rule is aimed at one. */
-export function changeKindsFor(target: RuleTarget, forPart = false): StyleChangeKind[] {
-  const allowed = RULE_TARGET_PROPERTIES[target].filter((p) => !forPart || PART_RULE_PROPERTIES.includes(p));
-  return CHANGE_KINDS.filter((k) => allowed.includes(STYLE_PROPERTY[k]));
+export function changeKindsFor(target: RuleTarget, forPart: PartAim = false): StyleChangeKind[] {
+  return CHANGE_KINDS.filter((k) => aimReads(target, forPart, STYLE_PROPERTY[k]));
 }
 
 /** The Changes menu on a rich text layer's rule: the whole text, or one part. */
@@ -9974,7 +10074,7 @@ function ruleEditor(host: EditorHost, rule: Rule, ri: number, count: number, tar
   const current = host.forced.get(rule.id) ?? "live";
   const isActive = (v: string) => (current === "live" ? v === "live" : current === "otherwise" ? v === "otherwise" : current.caseId === v);
   const updRule = (m: (r: Rule) => void, k?: string) => upd((rs) => { const r = rs.find((x) => x.id === rule.id); if (r) m(r); }, k);
-  const forPart = parts !== undefined && rule.partId !== undefined;
+  const forPart = partAim(parts, rule.partId);
   const otherwiseLive = live === "otherwise";
   return html`<div class="rule">
     ${ruleHeading(count < 2 ? "Rule" : `Rule ${ri + 1}`, { right: html`<span class="racts">
@@ -10015,7 +10115,7 @@ function ruleEditor(host: EditorHost, rule: Rule, ri: number, count: number, tar
  * as rows. The All or Any choice sits in the heading and is only shown once
  * there are two tests to join, because with one it changes nothing.
  */
-function caseEditor(host: EditorHost, c: RuleCase, ci: number, rule: Rule, target: RuleTarget, updRule: (m: (r: Rule) => void, k?: string) => void, key: string, forPart = false, seed?: Value): TemplateResult {
+function caseEditor(host: EditorHost, c: RuleCase, ci: number, rule: Rule, target: RuleTarget, updRule: (m: (r: Rule) => void, k?: string) => void, key: string, forPart: PartAim = false, seed?: Value): TemplateResult {
   const updCase = (m: (c: RuleCase) => void, k?: string) => updRule((r) => { const x = r.cases.find((y) => y.id === c.id); if (x) m(x); }, k);
   const matches = host.liveBranch(rule) === c.id;
   const presetsId = popoverId(`${key}-presets`);
@@ -10203,7 +10303,7 @@ function weekdayRow(options: string[], set: (days: number[]) => void): TemplateR
  * not draw (aimed at a part that ignores it, or a kind this layer has no use
  * for) keeps its row, struck through, rather than vanishing with its value.
  */
-function changeRows(host: EditorHost, changes: StyleChange[], target: RuleTarget, updList: (m: (list: StyleChange[]) => void, k?: string) => void, key: string, forPart = false): TemplateResult {
+function changeRows(host: EditorHost, changes: StyleChange[], target: RuleTarget, updList: (m: (list: StyleChange[]) => void, k?: string) => void, key: string, forPart: PartAim = false): TemplateResult {
   const allowed = changeKindsFor(target, forPart);
   const set = changes.map((ch) => STYLE_PROPERTY[ch.kind]);
   const spare = COLUMN_ORDER.filter((p) => !set.includes(p) && allowed.includes(PROPERTY_CHANGE_KIND[p]));
@@ -10217,7 +10317,7 @@ function changeRows(host: EditorHost, changes: StyleChange[], target: RuleTarget
     ${changes.length === 0 ? html`<div class="rempty">No change yet.</div>` : nothing}
     ${changes.map((ch, i) => {
       const property = STYLE_PROPERTY[ch.kind];
-      const ignored = !RULE_TARGET_PROPERTIES[target].includes(property) || (forPart && !PART_RULE_PROPERTIES.includes(property));
+      const ignored = !aimReads(target, forPart, property);
       const upd = (m: (c: StyleChange) => void, k?: string) => updList((list) => { if (list[i]) m(list[i]!); }, k ? `${i}-${k}` : undefined);
       return ruleRow({
         key: `${key}-${i}`,
@@ -10230,7 +10330,7 @@ function changeRows(host: EditorHost, changes: StyleChange[], target: RuleTarget
           ${ignored ? html`<div class="hint warn">This layer does not draw this setting here, so the change does nothing.</div>` : nothing}
           ${property === "visibility"
             ? segField("This state", ch.kind === "hide" ? "hide" : "show", [["show", "Shown"], ["hide", "Hidden"]], (v) => upd((c) => { c.kind = v as StyleChangeKind; }))
-            : changeBody(host, ch, upd, `${key}-${i}`)}`,
+            : changeBody(host, ch, upd, `${key}-${i}`, forPart === "icon")}`,
       });
     })}
     ${spare.length === 0 ? nothing : html`<div class="radd">
@@ -10247,7 +10347,7 @@ const COLOR_KINDS: StyleChangeKind[] = ["setColor", "setBorderColor", "setBackgr
 /** The controls behind one style change: a color, a symbol, a value, a number
  * or a weight. Shared by the Advanced editor's change box and by a states
  * table cell, so the two can never offer different things. */
-function changeBody(host: EditorHost, ch: StyleChange, upd: (m: (c: StyleChange) => void, k?: string) => void, key: string): TemplateResult | typeof nothing {
+function changeBody(host: EditorHost, ch: StyleChange, upd: (m: (c: StyleChange) => void, k?: string) => void, key: string, sfOnly = false): TemplateResult | typeof nothing {
   const payload = styleChangePayload(ch.kind);
   let body: TemplateResult | typeof nothing = nothing;
   if (payload === "value") {
@@ -10264,8 +10364,9 @@ function changeBody(host: EditorHost, ch: StyleChange, upd: (m: (c: StyleChange)
         noFormat: ch.kind === "setIcon", symbol: ch.kind === "setIcon", showResolved: true,
         label: ch.kind === "setIcon" ? "Symbol" : "To", key: `${key}-value`,
         // A swapped-in Material Design icon carries its drawing on the change,
-        // as the icon layer's own does on the layer.
-        setSymbolPath: ch.kind === "setIcon"
+        // as the icon layer's own does on the layer. An icon part draws SF
+        // Symbols only, so a change aimed at one is not offered the others.
+        setSymbolPath: ch.kind === "setIcon" && !sfOnly
           ? (d) => upd((c) => { if (d) c.path = d; else delete c.path; }, "value")
           : undefined,
       });
@@ -10399,7 +10500,7 @@ interface StatesPlan {
   offered: StyleProperty[];
   colorIgnored: boolean;
   partId: string | undefined;
-  forPart: boolean;
+  forPart: PartAim;
   seedColor: boolean;
 }
 
@@ -10435,8 +10536,8 @@ function statesPlan(
   // stays in view with a hint rather than disappearing with its value.
   const pendingPart = pendingPartTargets.get(key);
   const partId = rule ? rule.partId : parts?.some((p) => p.id === pendingPart) ? pendingPart : undefined;
-  const forPart = parts !== undefined && partId !== undefined;
-  const offered = (forPart ? allowed.filter((p) => PART_RULE_PROPERTIES.includes(p)) : [...allowed])
+  const forPart = partAim(parts, partId);
+  const offered = (forPart === "icon" ? [...ICON_PART_RULE_PROPERTIES] : forPart ? allowed.filter((p) => PART_RULE_PROPERTIES.includes(p)) : [...allowed])
     .filter((p) => !(colorByValue && p === "color"));
   // A new row starts with a color when the table already sets colors, or
   // when color is what this kind of layer's first state usually changes, so
@@ -10503,7 +10604,7 @@ function statesTable(
 
   const plan = statesPlan(host, table, rule, target, key, defaultValue, parts, options);
   const { tested, resolved, fresh, shape, numberMode, offered, colorIgnored, partId, forPart, seedColor } = plan;
-  const partIgnores = forPart ? table.columns.filter((p) => !PART_RULE_PROPERTIES.includes(p)) : [];
+  const partIgnores = forPart ? table.columns.filter((p) => !aimReads(target, forPart, p)) : [];
   const setPart = (id: string, node: EventTarget | null) => {
     if (!rule) {
       if (id) pendingPartTargets.set(key, id); else pendingPartTargets.delete(key);
@@ -10536,7 +10637,7 @@ function statesTable(
     upd((rs) => addPlannedRow(rs, plan));
   };
 
-  const rowOptions = { offered, colorIgnored, forPart };
+  const rowOptions = { offered, colorIgnored, forPart, target };
   const rows = table.rows.map((row, i) => statesRow(host, {
     ...rowOptions,
     key: `${key}-${row.caseId}`,
@@ -10621,7 +10722,7 @@ function statesTable(
           ${fresh ? html`<tr><td class="empty-row" colspan="3">${statesEmptyText(target)}${tested === undefined ? nothing : html` ${startText(shape, resolved)}`}</td></tr>` : nothing}
         </tbody>
       </table></div>
-      ${partIgnores.length === 0 ? nothing : html`<div class="hint warn">A part ignores ${joinWords(partIgnores.map((p) => PROPERTY_LABELS[p]))}. Pick Whole text to use ${partIgnores.length === 1 ? "it" : "them"}.</div>`}
+      ${partIgnores.length === 0 ? nothing : html`<div class="hint warn">${forPart === "icon" ? "An icon part" : "A part"} ignores ${joinWords(partIgnores.map((p) => PROPERTY_LABELS[p]))}. Pick Whole text to use ${partIgnores.length === 1 ? "it" : "them"}.</div>`}
       ${!colorIgnored ? nothing : html`<div class="hint warn">Color is set by value above, so a Color change here draws nothing. Switch Color to One color to use it, or remove the change.</div>`}
       ${!pendingStatesFill.has(key) ? nothing : html`<div class="hint warn confirm-row">
         Fill from the entity? The ${table.rows.length} state${table.rows.length === 1 ? "" : "s"} in this table ${table.rows.length === 1 ? "is" : "are"} replaced by one row per state a ${seedEntity?.domain.replace(/_/g, " ")} reports.
@@ -10711,8 +10812,9 @@ interface StatesRowOptions {
   offered: readonly StyleProperty[];
   /** A Color change here draws nothing, so its chip says so. */
   colorIgnored: boolean;
-  /** The row aims at a text part, which ignores some settings. */
-  forPart: boolean;
+  /** The row aims at a part, which ignores some settings. */
+  forPart: PartAim;
+  target: RuleTarget;
   changes: StyleChange[];
   live: boolean;
   forced: boolean;
@@ -10751,7 +10853,8 @@ function statesRow(host: EditorHost, o: StatesRowOptions): TemplateResult {
     <td class="then"><span class="then-chips">
       ${set.length === 0 ? html`<span class="no-change">No change</span>` : nothing}
       ${set.map((p) => statesChip(host, p, o.changes, o.updChanges, `${o.key}-${p}`, {
-        ignored: (p === "color" && o.colorIgnored) || (o.forPart && !PART_RULE_PROPERTIES.includes(p)),
+        ignored: (p === "color" && o.colorIgnored) || (o.forPart !== false && !aimReads(o.target, o.forPart, p)),
+        sfOnly: o.forPart === "icon",
       }))}
       ${spare.length === 0 ? nothing : changeMenu(o.key, spare, add)}
     </span></td>
@@ -10766,7 +10869,7 @@ function statesChip(
   changes: StyleChange[],
   updChanges: (m: (list: StyleChange[]) => void, k?: string) => void,
   key: string,
-  o: { ignored: boolean },
+  o: { ignored: boolean; sfOnly?: boolean },
 ): TemplateResult | typeof nothing {
   const ch = cellChange(changes, property);
   if (!ch) return nothing;
@@ -10790,7 +10893,7 @@ function changeChip(
   id: string,
   upd: (m: (c: StyleChange) => void, k?: string) => void,
   remove: () => void,
-  o: { ignored: boolean },
+  o: { ignored: boolean; sfOnly?: boolean },
 ): TemplateResult {
   const label = PROPERTY_LABELS[property];
   return html`
@@ -10806,7 +10909,7 @@ function changeChip(
         ? html`${o.ignored ? html`<div class="hint warn">This layer does not draw this setting here, so the change does nothing.</div>` : nothing}
           ${property === "visibility"
             ? segField("This state", ch.kind === "hide" ? "hide" : "show", [["show", "Shown"], ["hide", "Hidden"]], (v) => upd((c) => { c.kind = v as StyleChangeKind; }))
-            : changeBody(host, ch, upd, id)}
+            : changeBody(host, ch, upd, id, o.sfOnly === true)}
           <button class="link" @click=${(e: Event) => {
             // Closed first: removing the change takes this popover's own chip
             // out of the document, and a popover removed while open never

@@ -392,8 +392,9 @@ export function galleryPublicFields(
     if (site.part === "serviceData") pushUnique(serviceData, text);
     return text;
   });
-  // An icon's literal symbol, on the layer or set by a rule, is a built-in
-  // icon name such as `circle.fill`, not something the author wrote.
+  // An icon's literal symbol, on an icon layer, on a text layer's icon part or
+  // set by a rule, is a built-in icon name such as `circle.fill`, not
+  // something the author wrote.
   const symbolOf = (v: Value | undefined): void => {
     if (v?.kind.kind === "literal") symbols.add(v.kind.value.trim());
   };
@@ -409,6 +410,7 @@ export function galleryPublicFields(
   const pictures: string[] = [];
   for (const el of scrubbed.elements) {
     if (el.kind === "icon") symbolOf(el.payload.symbol);
+    if (el.kind === "text") for (const part of el.payload.parts ?? []) symbolOf(part.icon);
     if (el.kind === "image") {
       const bytes = inlineImageBytes(el.payload);
       if (bytes > 0) pictures.push(`Embedded image, ${Math.max(1, Math.round(bytes / 1024))} KiB`);
