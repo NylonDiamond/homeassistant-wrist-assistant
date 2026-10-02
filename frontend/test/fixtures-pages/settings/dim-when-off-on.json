@@ -1,6 +1,6 @@
 {
   "name": "Dim When Off turned back on",
-  "source": "WristAssistant/Views/PageEditorView.swift:7159",
+  "source": "WristAssistant/Views/PageEditorView.swift:7180",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

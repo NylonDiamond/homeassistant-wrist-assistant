@@ -1,6 +1,6 @@
 {
   "name": "Status badge off on a alarm_control_panel tile (Alarm State)",
-  "source": "WristAssistant/Views/PageEditorView.swift:7240",
+  "source": "WristAssistant/Views/PageEditorView.swift:7261",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

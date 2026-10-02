@@ -1,6 +1,6 @@
 {
   "name": "The title mode switch writes nothing while the theme's color is used",
-  "source": "WristAssistant/Views/PageEditorView.swift:16003",
+  "source": "WristAssistant/Views/PageEditorView.swift:15982",
   "page": {
     "backgroundBrightness": 0.6,
     "backgroundColor": "#000000",

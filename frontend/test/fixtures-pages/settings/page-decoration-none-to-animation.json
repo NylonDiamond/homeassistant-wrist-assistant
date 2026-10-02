@@ -1,6 +1,6 @@
 {
   "name": "None to Anim: nothing until an effect is picked",
-  "source": "WristAssistant/Views/PageEditorView.swift:16576",
+  "source": "WristAssistant/Views/PageEditorView.swift:16555",
   "page": {
     "backgroundBrightness": 0.6,
     "backgroundColor": "#000000",

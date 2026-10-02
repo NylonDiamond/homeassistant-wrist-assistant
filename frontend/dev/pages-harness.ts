@@ -25,6 +25,8 @@ import type { HassEntityState, HassLike, OwnerSummary } from "../src/ha-api.js";
 import { EXTRA_STATES, type HomeRegistries, StandInIcons, homeRegistries } from "./harness-home.js";
 // @ts-expect-error A module the harness build makes from the page fixtures.
 import pageFixturesModule from "harness:page-fixtures";
+// The phone's library catalog as the app's tests write it.
+import catalogFixture from "../test/fixtures-catalog/catalog.json";
 
 type Json = Record<string, unknown>;
 
@@ -33,9 +35,11 @@ const pageFixtures = pageFixturesModule as Record<string, Json>;
 // ── the server's rules, as `const.py` sets them ──────────────────────────
 
 let DELAY_MS = 150;
-const KINDS = ["behavior", "pages"];
+const KINDS = ["behavior", "catalog", "pages"];
+// The catalog is the phone's: the panel reads it and never saves it.
 const PANEL_KINDS = ["behavior", "pages"];
-const MAX_DOCUMENT_BYTES: Record<string, number> = { pages: 2 * 1024 * 1024, behavior: 256 * 1024 };
+const MAX_DOCUMENT_BYTES: Record<string, number> = { pages: 2 * 1024 * 1024, behavior: 256 * 1024, catalog: 256 * 1024 };
+const CATALOG_LIST_KEYS = ["httpActions", "macros", "statusPages"];
 const HISTORY_LIMIT = 5;
 const PANEL_WRITER = "panel";
 const KIND_LIST_KEYS: Record<string, string> = { pages: "pages" };
@@ -179,7 +183,24 @@ function validateDocument(kind: string, document: unknown, checkItems: boolean):
   const limit = MAX_DOCUMENT_BYTES[kind] ?? 0;
   if (size > limit) fail("invalid", `document is ${size} bytes; the limit for ${kind} is ${limit}`);
   if (kind === "pages") checkPages(document.pages as unknown[], checkItems);
+  else if (kind === "catalog") checkCatalog(document);
   return size;
+}
+
+/** `_check_catalog`: each library list absent or a list of objects with a
+ * non-empty string `id` and a string `name`; nothing else looked at. */
+function checkCatalog(document: Json): void {
+  for (const listKey of CATALOG_LIST_KEYS) {
+    if (!(listKey in document)) continue;
+    const entries = document[listKey];
+    if (!Array.isArray(entries)) fail("invalid", `document.${listKey} must be a list`);
+    entries.forEach((entry, index) => {
+      const where = `document.${listKey}[${index}]`;
+      if (!isObject(entry)) fail("invalid", `${where} must be an object`);
+      if (typeof entry.id !== "string" || entry.id === "") fail("invalid", `${where}.id must be a non-empty string`);
+      if (typeof entry.name !== "string") fail("invalid", `${where}.name must be a string`);
+    });
+  }
 }
 
 /** `_check_pages`: page ids always, tile ids and entity ids with
@@ -309,6 +330,14 @@ class FakeStore {
     markDelivered(record, record.revision, at);
     if (opts.notify !== false) this.notify(owner, k, record.revision);
     return record;
+  }
+
+  /** A record gone (the harness's No catalog switch): listeners hear
+   * revision 0, as for a record that was removed. */
+  remove(owner: string, kind: string): boolean {
+    const had = this.records.get(owner)?.delete(kind) ?? false;
+    if (had) this.notify(owner, kind, 0);
+    return had;
   }
 
   panelSave(owner: unknown, kind: unknown, document: unknown, baseRevision: unknown): StoredRecord {
@@ -505,6 +534,51 @@ function seedStore(): void {
   }
 
   // The Ultra has no record at all: the view's "no pages yet" state.
+
+  // The phone's library catalog (part 3e), the bytes the app's tests write,
+  // on both watches with pages unless the No catalog switch is on.
+  if (catalogOn) {
+    for (const watch of [ALEX_WATCH, SAM_WATCH]) {
+      store.put(watch, "catalog", clone(catalogFixture as Json), { base: 0, by: watch, at: minutesAgo(30), notify: false });
+    }
+  }
+}
+
+/** Whether the store holds a catalog for the watches with pages: off is an
+ * app older than the kind, or a phone that never published one.
+ * `pages-harness.html?nocatalog` starts with it off. */
+let catalogOn = !new URLSearchParams(location.search).has("nocatalog");
+let libraryCount = 0;
+
+/** The iPhone publishes its catalog again with one more HTTP action, as
+ * after a save in its HTTP Actions settings: a new revision and a live
+ * event. */
+function iphoneAddsAnAction(): void {
+  const watch = shownWatch();
+  const record = store.record(watch, "catalog");
+  if (!record) return say(`${watchLabel(watch)} has no catalog. Switch Catalog on first.`);
+  const document = clone(record.document);
+  const n = ++libraryCount;
+  const id = `C3A0E000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+  (document.httpActions as Json[]).push({ id, name: `Harness Action ${n}`, ...(n % 2 === 0 ? { hasReply: true } : {}) });
+  const saved = store.put(watch, "catalog", document, { base: record.revision, by: watch });
+  addLog({ what: "iphone", note: `catalog with "Harness Action ${n}"; revision ${saved.revision}`, type: "device upload" });
+  say(`iPhone: published its catalog with "Harness Action ${n}". Catalog revision ${saved.revision}.`);
+}
+
+function setCatalog(on: boolean): void {
+  catalogOn = on;
+  const watch = shownWatch();
+  if (!on) {
+    const removed = [ALEX_WATCH, SAM_WATCH, watch].filter((w, i, all) => all.indexOf(w) === i).filter((w) => store.remove(w, "catalog"));
+    say(removed.length > 0 ? "No catalog: the store holds none, as with an app older than the kind." : "There was no catalog.");
+    return;
+  }
+  if (!store.record(watch, "catalog")) {
+    const saved = store.put(watch, "catalog", clone(catalogFixture as Json), { base: 0, by: watch });
+    addLog({ what: "iphone", note: `first catalog; revision ${saved.revision}`, type: "device upload" });
+  }
+  say(`iPhone: published its catalog for ${watchLabel(watch)}.`);
 }
 
 const ENTITY_KEYS = /^(entityId|entityIds|resolvedEntityIds|.*EntityId|.*EntityIds)$/;
@@ -1160,6 +1234,11 @@ tickBox.addEventListener("change", () => {
 });
 setTicking(true);
 
+const catalogBox = document.createElement("input");
+catalogBox.type = "checkbox";
+catalogBox.checked = catalogOn;
+catalogBox.addEventListener("change", () => setCatalog(catalogBox.checked));
+
 const themeLight = button("Light", () => setDark(false));
 const themeDark = button("Dark", () => setDark(true));
 
@@ -1275,6 +1354,7 @@ function onHarnessChange(): void {
 strip.append(
   row("Harness", statusEl),
   row("iPhone", ...iphoneActions.map(([text, run]) => button(text, run))),
+  row("Library", label("Catalog", catalogBox), button("iPhone: add an HTTP action", iphoneAddsAnAction, "Publish the catalog again with one more HTTP action: a new revision and a live event.")),
   row("Server", failBtn, offlineBtn, label("Admin", adminBox), label("States tick", tickBox), button("Reset", () => reset(), "Reseed the store, clear the log, mount a fresh element.")),
   row("View", themeLight, themeDark, label("Narrow", narrowBox), widthSelect),
   saidEl,

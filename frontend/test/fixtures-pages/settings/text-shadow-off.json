@@ -1,6 +1,6 @@
 {
   "name": "Text shadow off",
-  "source": "WristAssistant/Views/PageEditorView.swift:7353",
+  "source": "WristAssistant/Views/PageEditorView.swift:7374",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

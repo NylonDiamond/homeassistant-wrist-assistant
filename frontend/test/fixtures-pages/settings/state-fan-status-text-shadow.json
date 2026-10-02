@@ -1,6 +1,6 @@
 {
   "name": "Text shadow off on a fan tile (Speed Display)",
-  "source": "WristAssistant/Views/PageEditorView.swift:7226",
+  "source": "WristAssistant/Views/PageEditorView.swift:7247",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

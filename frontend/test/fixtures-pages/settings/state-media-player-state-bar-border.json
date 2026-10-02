@@ -1,6 +1,6 @@
 {
   "name": "Bar border on on a media_player tile (State Bar)",
-  "source": "WristAssistant/Views/PageEditorView.swift:7219",
+  "source": "WristAssistant/Views/PageEditorView.swift:7240",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

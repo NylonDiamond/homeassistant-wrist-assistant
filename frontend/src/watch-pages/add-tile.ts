@@ -1,6 +1,8 @@
 // The Add tile dialog's body: pick an entity or a kind (spacer, header, go to
 // page, peek page) and add it to the selected page with the phone's defaults
-// (part 3c).
+// (part 3c), or one of the iPhone's HTTP actions, macros and status pages
+// from the catalog (part 3e). With no catalog, one line says where those
+// lists come from.
 //
 // `<wa-page-editor>` opens the dialog from the stage's Add tile button and
 // draws `renderAddTile` under the dialog's title; Escape, the close button
@@ -37,6 +39,18 @@ import {
   watchAddedCountText,
   watchLeftOutText,
 } from "./add-tile-list.js";
+import {
+  type WatchCatalog,
+  type WatchCatalogEntry,
+  type WatchCatalogMacro,
+  type WatchLibraryKind,
+  WATCH_LIBRARY_WORDS,
+  WATCH_NO_CATALOG_TEXT,
+  watchCatalogEntries,
+  watchCatalogListedText,
+  watchCatalogSubtitle,
+  watchCatalogWarning,
+} from "./catalog.js";
 import type { AddTileHost } from "./editor-host.js";
 import {
   type WatchPage,
@@ -60,6 +74,9 @@ import {
 } from "./tile-new.js";
 
 type LinkKind = "pageLink" | "peekLink";
+/** Which list is open under the kind buttons: pages to link to, or the
+ * iPhone's library of one kind. */
+type OpenList = LinkKind | WatchLibraryKind;
 
 /** What the dialog remembers between draws. One object, changed in place
  * and only here. */
@@ -75,8 +92,8 @@ interface AddTileView {
   highlighted: string | undefined;
   /** Entities added during this search, kept in the list as "Added". */
   keep: Set<string>;
-  /** Which page list is open under the kind buttons. */
-  links: LinkKind | undefined;
+  /** Which list is open under the kind buttons. */
+  links: OpenList | undefined;
   /** Tiles added in this visit. */
   added: number;
   note: { tone: "ok" | "err"; text: string } | undefined;
@@ -214,6 +231,37 @@ function addLink(host: AddTileHost, view: AddTileView, kind: LinkKind, target: W
   if (commit(host, view, { kind, page: target }, words)) view.links = undefined;
 }
 
+/** What each library list asks, and what an add of it is called. */
+const LIBRARY_WORDS: Readonly<Record<WatchLibraryKind, { question: string; tile: string; button: string }>> = {
+  httpAction: { question: "Which HTTP action should the tile run?", tile: "an HTTP action tile", button: "HTTP action" },
+  macro: { question: "Which macro should the tile run?", tile: "a macro tile", button: "Macro" },
+  statusPage: { question: "Which status page should the tile open?", tile: "a status page tile", button: "Status page" },
+};
+
+/** Add a tile for one entry of the iPhone's library, as the phone's add
+ * does: the entry's name as the label, a macro's own icon and color. All
+ * three may repeat. */
+function addLibrary(host: AddTileHost, view: AddTileView, kind: WatchLibraryKind, entry: WatchCatalogEntry): void {
+  let add: WatchTileAdd;
+  if (kind === "httpAction") {
+    add = { kind, action: { id: entry.id, name: entry.name } };
+  } else if (kind === "macro") {
+    const macro = entry as WatchCatalogMacro;
+    add = {
+      kind,
+      macro: {
+        id: macro.id,
+        name: macro.name,
+        ...(macro.icon === undefined ? {} : { icon: macro.icon }),
+        ...(macro.colorHex === undefined ? {} : { colorHex: macro.colorHex }),
+      },
+    };
+  } else {
+    add = { kind, statusPage: { id: entry.id, name: entry.name } };
+  }
+  if (commit(host, view, add, `Added ${LIBRARY_WORDS[kind].tile} for "${entry.name}".`)) view.links = undefined;
+}
+
 // ── drawing ──────────────────────────────────────────────────────────────
 
 /** The id of an entity's row, for `aria-activedescendant`. Entity ids are
@@ -277,6 +325,33 @@ function renderLinks(host: AddTileHost, view: AddTileView, kind: LinkKind): Temp
   </div>`;
 }
 
+/** One library list from the catalog, in the phone's order, with the
+ * phone's subtitles and warnings; an entry with a warning is offered too,
+ * as on the phone. */
+function renderLibrary(host: AddTileHost, view: AddTileView, kind: WatchLibraryKind, catalog: WatchCatalog): TemplateResult {
+  const entries = watchCatalogEntries(catalog, kind);
+  const words = WATCH_LIBRARY_WORDS[kind];
+  const listed = watchCatalogListedText(catalog);
+  return html`<div class="at-links" id="at-links">
+    <div class="at-sub">${LIBRARY_WORDS[kind].question}</div>
+    ${entries.length === 0
+      ? html`<div class="at-muted">The iPhone lists no ${words.many} yet. Make one in the iPhone app and it shows here.</div>`
+      : html`<div class="at-pages" role="group" aria-label=${`The iPhone's ${words.many}`}>
+          ${entries.map((e) => {
+            const sub = watchCatalogSubtitle(kind, e);
+            const warning = watchCatalogWarning(kind, e);
+            return html`<button type="button" class="at-page" ?disabled=${host.busy}
+              @click=${() => addLibrary(host, view, kind, e)}>
+              <span class="at-page-name">${e.name}</span>
+              ${sub === undefined ? nothing : html`<span class="at-tag">${sub}</span>`}
+              ${warning === undefined ? nothing : html`<span class="at-tag warn">${warning}</span>`}
+            </button>`;
+          })}
+        </div>`}
+    ${listed === undefined ? nothing : html`<div class="at-muted">${listed}</div>`}
+  </div>`;
+}
+
 /** The dialog's body. The visit watch sits outside the part that changes,
  * so swapping the body for a refusal is not taken for a close. */
 export function renderAddTile(host: AddTileHost): TemplateResult | typeof nothing {
@@ -316,10 +391,17 @@ function renderBody(host: AddTileHost, view: AddTileView): TemplateResult {
     ? [...pool.kinds, { name: view.kind, count: 0 }]
     : pool.kinds;
 
-  const toggleLinks = (kind: LinkKind) => {
+  const toggleLinks = (kind: OpenList) => {
     view.links = view.links === kind ? undefined : kind;
     host.requestUpdate();
   };
+  const catalog = host.catalog;
+  const listButton = (kind: OpenList, text: string) => html`<button type="button" class="pe-btn ${view.links === kind ? "on" : ""}"
+    aria-expanded=${view.links === kind ? "true" : "false"} aria-controls=${view.links === kind ? "at-links" : nothing}
+    @click=${() => toggleLinks(kind)}>${text}${uiIcon("chevron")}</button>`;
+  let openList: TemplateResult | typeof nothing = nothing;
+  if (view.links === "pageLink" || view.links === "peekLink") openList = renderLinks(host, view, view.links);
+  else if (view.links !== undefined && catalog !== undefined) openList = renderLibrary(host, view, view.links, catalog);
   const searchChanged = (query: string, kind: string) => {
     view.query = query;
     view.kind = kind;
@@ -398,12 +480,15 @@ function renderBody(host: AddTileHost, view: AddTileView): TemplateResult {
         @click=${() => commit(host, view, { kind: "spacer" }, "Added a spacer.")}>Spacer</button>
       <button type="button" class="pe-btn" ?disabled=${busy}
         @click=${() => commit(host, view, { kind: "header" }, "Added a header.")}>Header</button>
-      <button type="button" class="pe-btn ${view.links === "pageLink" ? "on" : ""}" aria-expanded=${view.links === "pageLink" ? "true" : "false"}
-        aria-controls=${view.links === "pageLink" ? "at-links" : nothing} @click=${() => toggleLinks("pageLink")}>Go to page${uiIcon("chevron")}</button>
-      <button type="button" class="pe-btn ${view.links === "peekLink" ? "on" : ""}" aria-expanded=${view.links === "peekLink" ? "true" : "false"}
-        aria-controls=${view.links === "peekLink" ? "at-links" : nothing} @click=${() => toggleLinks("peekLink")}>Peek page${uiIcon("chevron")}</button>
+      ${listButton("pageLink", "Go to page")}
+      ${listButton("peekLink", "Peek page")}
     </div>
-    ${view.links === undefined ? nothing : renderLinks(host, view, view.links)}
+    ${catalog === undefined
+      ? html`<div class="at-muted at-lib-none">${WATCH_NO_CATALOG_TEXT}</div>`
+      : html`<div class="at-kinds at-lib" role="group" aria-label="From the iPhone">
+          ${(Object.keys(LIBRARY_WORDS) as WatchLibraryKind[]).map((kind) => listButton(kind, LIBRARY_WORDS[kind].button))}
+        </div>`}
+    ${openList}
 
     <div class="at-ents">
       <label class="at-sub" for="at-search">Entity</label>
@@ -463,6 +548,8 @@ export const addTileStyles = css`
   .at-kinds > .pe-btn > svg.ui-icon { width: 12px; height: 12px; flex: none; transition: transform .12s ease-out; }
   .at-kinds > .pe-btn[aria-expanded=true] { background: var(--wa-sel-bg, var(--wa-panel)); border-color: var(--wa-sel-ring, var(--wa-line-strong)); }
   .at-kinds > .pe-btn[aria-expanded=true] > svg.ui-icon { transform: rotate(180deg); }
+  .at-kinds.at-lib { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .at-tag.warn { color: var(--wa-need); background: color-mix(in srgb, var(--wa-need) 12%, transparent); }
 
   .at-links {
     display: flex; flex-direction: column; gap: 8px; padding: 10px;
@@ -521,5 +608,6 @@ export const addTileStyles = css`
 
   @media (max-width: 480px) {
     .at-kinds { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .at-kinds.at-lib { grid-template-columns: minmax(0, 1fr); }
   }
 `;

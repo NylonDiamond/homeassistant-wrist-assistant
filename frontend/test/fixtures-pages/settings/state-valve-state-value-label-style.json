@@ -1,6 +1,6 @@
 {
   "name": "Value label Pill on a valve tile (Position Display)",
-  "source": "WristAssistant/Views/PageEditorView.swift:7198",
+  "source": "WristAssistant/Views/PageEditorView.swift:7219",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

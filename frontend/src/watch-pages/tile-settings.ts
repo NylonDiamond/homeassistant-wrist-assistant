@@ -1,6 +1,9 @@
 // The selected tile's settings, in the side column's Tile card under the
 // place and size fields: icon and color, text, action, a header's look and a
-// page link's target (part 3c).
+// page link's target (part 3c); styling (3d); and for an HTTP action, macro
+// or status page tile its target, the Request task and the Macro task, with
+// Run HTTP Action in hold and slide, from the iPhone's catalog on the host
+// (3e, `library-model.ts`).
 //
 // `<wa-page-editor>` calls `renderTileSettings` on every draw with the
 // selected tile, and puts `tileSettingsStyles` in its sheet after the shared
@@ -70,6 +73,39 @@ import type { TileSettingsHost } from "./editor-host.js";
 import { findWatchPage } from "./edit.js";
 import { type WatchPagesDocument, tileEntityId, tileKind, watchPageId, watchPageName, watchPagesOf } from "./model.js";
 import {
+  type WatchLibraryKind,
+  WATCH_LIBRARY_WORDS,
+  WATCH_NO_CATALOG_TEXT,
+  WATCH_NOT_ON_IPHONE_TEXT,
+  findWatchCatalogEntry,
+  watchCatalogListedText,
+  watchCatalogWarning,
+  watchLibraryTarget,
+} from "./catalog.js";
+import {
+  type WatchHTTPReply,
+  type WatchMacroCloseMode,
+  WATCH_HTTP_REFRESH_SECONDS,
+  WATCH_HTTP_VALUE_RANGES,
+  WATCH_MACRO_CLOSE_MODES,
+  setWatchLibraryTileTarget,
+  setWatchTileHTTPRefresh,
+  setWatchTileHTTPRefreshOnPull,
+  setWatchTileHTTPReply,
+  setWatchTileHTTPShowName,
+  setWatchTileHTTPToastSeconds,
+  setWatchTileHTTPValueColor,
+  setWatchTileHTTPValueFontSize,
+  setWatchTileHTTPValueLineLimit,
+  setWatchTileHTTPValueLineSpacing,
+  setWatchTileHTTPValueOffsetY,
+  setWatchTileMacroCloseMode,
+  setWatchTileMacroRunSilently,
+  watchHTTPRequestSettings,
+  watchMacroSettings,
+} from "./library-model.js";
+import {
+  type WatchChoice,
   type WatchSlideDirection,
   WATCH_FONT_SIZE_RANGE,
   WATCH_HEADER_TEXT_SIZE_RANGE,
@@ -94,6 +130,9 @@ import {
   setWatchTileFontWeight,
   setWatchTileHideWhenOff,
   setWatchTileHoldSlide,
+  setWatchTileHoldSlideHTTP,
+  setWatchTileHoldSlideHTTPBanner,
+  setWatchTileHoldSlideHTTPBannerSeconds,
   setWatchTileHoldSlideTarget,
   setWatchTileHoldSlideTargetMode,
   setWatchTileIcon,
@@ -118,11 +157,14 @@ import {
 } from "./tile-settings-model.js";
 import {
   type WatchColorModeChoice,
+  type WatchHTTPSlideRow,
   type WatchMenu,
+  type WatchMenuOption,
   type WatchSkipChoice,
   type WatchTileSettingsSection,
   WATCH_COLOR_MODES,
   WATCH_DEFAULT_CHOICE,
+  WATCH_HTTP_REPLY_OFF,
   WATCH_SKIP_CHOICES,
   WATCH_TILE_SETTINGS_SECTION_TITLES,
   isWatchStoredChoice,
@@ -139,7 +181,11 @@ import {
   watchFontWeightMenu,
   watchGlowPercent,
   watchHeaderTextSizeRefusal,
+  watchHTTPBannerSecondsMenu,
+  watchHTTPReplyMenu,
+  watchHTTPSlideChoice,
   watchHoldSlideMenus,
+  watchLibraryTargetMenu,
   watchIconSizeHint,
   watchIconSizeRefusal,
   watchLabelNote,
@@ -159,6 +205,7 @@ import {
   watchEntityAddFromHass,
   watchEntityDefaults,
   watchGradientOf,
+  watchLibraryTileLook,
   watchLinkTargetPages,
   watchThemeDisplayName,
   watchThemeSwatches,
@@ -173,6 +220,9 @@ const KEY = "tile-settings";
  * folds Action keeps it folded from tile to tile. */
 const OPEN_AT_FIRST: Readonly<Record<WatchTileSettingsSection, boolean>> = {
   opens: true,
+  target: true,
+  request: false,
+  macro: false,
   header: true,
   icon: true,
   state: false,
@@ -371,13 +421,23 @@ export function typedNumber(text: string | undefined, stored: number | undefined
  * select even after a person has picked from it.
  */
 export function menuField(label: string, menu: WatchMenu, pick: (value: string) => void): TemplateResult {
+  const option = (o: WatchMenuOption) => html`<option value=${o.value} ?disabled=${o.disabled === true}
+    .selected=${live(o.value === menu.selected)}>${o.label}</option>`;
+  // Options next to each other with one group go under one heading.
+  const runs: { group: string | undefined; options: WatchMenuOption[] }[] = [];
+  for (const o of menu.options) {
+    const last = runs[runs.length - 1];
+    if (last !== undefined && last.group !== undefined && last.group === o.group) last.options.push(o);
+    else runs.push({ group: o.group, options: [o] });
+  }
   return html`<label class="field"><span>${label}</span>
       <select @change=${(e: Event) => {
         const value = (e.target as HTMLSelectElement).value;
         if (!isWatchStoredChoice(value)) pick(value);
       }}>
-        ${menu.options.map((o) => html`<option value=${o.value} ?disabled=${o.disabled === true}
-          .selected=${live(o.value === menu.selected)}>${o.label}</option>`)}
+        ${runs.map((run) => run.group === undefined
+          ? run.options.map(option)
+          : html`<optgroup label=${run.group}>${run.options.map(option)}</optgroup>`)}
       </select></label>
     ${menu.note === undefined ? nothing : html`<div class="hint ts-under">${menu.note}</div>`}`;
 }
@@ -408,9 +468,14 @@ export function linkButton(text: string, title: string, action: () => void): Tem
   return html`<button type="button" class="link ts-link" title=${title} @click=${action}>${text}</button>`;
 }
 
-/** The defaults of the tile's kind for this page: icon and color. */
+/** The defaults of the tile's kind for this page: icon and color. A macro
+ * tile's are its macro's own style from the catalog (`libraryStyle`), else
+ * the table's. */
 function kindDefaults(host: TileSettingsHost): { icon: string | undefined; color: string | undefined } {
-  const add = watchEntityAddFromHass(host.hass as unknown as WatchHassView, tileEntityId(host.tile));
+  const entityId = tileEntityId(host.tile);
+  const library = watchLibraryTarget(entityId);
+  if (library?.kind === "macro") return watchLibraryTileLook("macro", findWatchCatalogEntry(host.catalog, "macro", library.id));
+  const add = watchEntityAddFromHass(host.hass as unknown as WatchHassView, entityId);
   return watchEntityDefaults(add, host.page);
 }
 
@@ -455,6 +520,20 @@ function sectionSummary(host: TileSettingsHost, section: WatchTileSettingsSectio
       const page = link === undefined ? undefined : findWatchPage(host.document, link.targetId);
       return page === undefined ? "" : watchPageName(page);
     }
+    case "target": {
+      const target = watchLibraryTarget(tileEntityId(tile));
+      if (target === undefined || host.catalog === undefined) return "";
+      return findWatchCatalogEntry(host.catalog, target.kind, target.id)?.name ?? WATCH_NOT_ON_IPHONE_TEXT;
+    }
+    case "request": {
+      const reply = watchHTTPRequestSettings(tile).reply;
+      return reply === "toast" ? "Reply as a banner" : reply === "tileValue" ? "Reply on the tile" : "";
+    }
+    case "macro": {
+      const m = watchMacroSettings(tile);
+      const close = WATCH_MACRO_CLOSE_MODES.find((c) => c.value === m.closeMode)!.label;
+      return m.runSilently ? `Silent, closes: ${close}` : `Closes: ${close}`;
+    }
     case "header": {
       const h = watchHeaderSettings(tile);
       return h === undefined ? "" : h.style === "label" ? `Label${h.label ? `: ${h.label}` : ""}` : "Line";
@@ -465,7 +544,7 @@ function sectionSummary(host: TileSettingsHost, section: WatchTileSettingsSectio
     }
     case "text": {
       const text = watchTileTextSettings(tile);
-      const name = text.label !== undefined && text.label !== "" ? text.label : watchTileFallbackName(tile, host.hass.states, watchPagesOf(host.document));
+      const name = text.label !== undefined && text.label !== "" ? text.label : watchTileFallbackName(tile, host.hass.states, watchPagesOf(host.document), host.catalog);
       return text.showLabel ? name : `${name} (hidden)`;
     }
     case "action": {
@@ -491,6 +570,12 @@ function sectionBody(host: TileSettingsHost, section: WatchTileSettingsSection):
   switch (section) {
     case "opens":
       return renderOpens(host);
+    case "target":
+      return renderTarget(host);
+    case "request":
+      return renderRequest(host);
+    case "macro":
+      return renderMacro(host);
     case "header":
       return renderHeader(host);
     case "icon":
@@ -534,6 +619,154 @@ function renderOpens(host: TileSettingsHost): TemplateResult {
     <div class="hint ts-under">${link.kind === "page"
       ? "A tap goes to that page. A label that is the page's name follows it."
       : "A tap shows that page over this one, hidden pages included. A label that is the page's name follows it."}</div>`;
+}
+
+// ── library tiles: target, request, macro ────────────────────────────────
+
+const TARGET_HINTS: Readonly<Record<WatchLibraryKind, string>> = {
+  httpAction: "A tap runs this action. A label that is the action's name follows it.",
+  macro: "A tap runs this macro. A label that is the macro's name follows it.",
+  statusPage: "A tap opens this status page. A label that is the page's name follows it.",
+};
+
+/**
+ * The Target of an HTTP action, macro or status page tile: the catalog's
+ * entries of its kind. A target the catalog does not list shows the tile's
+ * label and "Not on the iPhone", and stays until another is picked. With no
+ * catalog the tile shows its label and the line that says where the list
+ * comes from; nothing can be picked.
+ */
+function renderTarget(host: TileSettingsHost): TemplateResult {
+  const target = watchLibraryTarget(tileEntityId(host.tile));
+  if (target === undefined) return html``;
+  const words = WATCH_LIBRARY_WORDS[target.kind];
+  const catalog = host.catalog;
+  if (catalog === undefined) {
+    const label = watchTileTextSettings(host.tile).label;
+    return html`<div class="ts-target-now">${label !== undefined && label.trim() !== "" ? label : words.one}</div>
+      <div class="hint ts-under">${WATCH_NO_CATALOG_TEXT}</div>`;
+  }
+  const menu = watchLibraryTargetMenu(host.tile, catalog);
+  if (menu === undefined) return html``;
+  const pick = (id: string) =>
+    commit(host, "target", (d) => {
+      // The catalog, the tile and the old target's name as they are when the
+      // pick lands: the catalog may have moved while the menu was open.
+      const now = host.catalog;
+      const entry = findWatchCatalogEntry(now, target.kind, id);
+      const current = watchLibraryTarget(tileEntityId(host.tile));
+      if (entry === undefined || current === undefined) return d;
+      const old = findWatchCatalogEntry(now, current.kind, current.id)?.name ?? null;
+      return setWatchLibraryTileTarget(d, host.pageId, host.tileId, target.kind, entry, old);
+    });
+  const warning = menu.current === undefined ? undefined : watchCatalogWarning(target.kind, menu.current);
+  const listed = watchCatalogListedText(catalog);
+  const onlyMissing = menu.options.every((o) => o.disabled === true);
+  return html`
+    ${menu.options.length === 0
+      ? html`<p class="hint">The iPhone lists no ${words.many} yet.</p>`
+      : menuField(words.one, menu, pick)}
+    ${warning === undefined ? nothing : html`<div class="hint warn ts-under">${warning}.</div>`}
+    <div class="hint ts-under">${onlyMissing ? nothing : TARGET_HINTS[target.kind]}${listed === undefined ? nothing : html` ${listed}`}</div>`;
+}
+
+const REPLY_HINTS: Readonly<Record<WatchHTTPReply | "off", string>> = {
+  off: "The watch stays quiet after a successful run. Failures always show their error.",
+  toast: "After each successful run, a banner shows the reply. Failures always show their error.",
+  tileValue: "The tile shows the value from its last run in place of its icon. Successful runs show no banner.",
+};
+
+/** The Request task of an HTTP action tile: how the reply shows, the
+ * banner's seconds, and the Tile Value rows. */
+function renderRequest(host: TileSettingsHost): TemplateResult {
+  const tile = host.tile;
+  const target = watchLibraryTarget(tileEntityId(tile));
+  const action = target === undefined ? undefined : findWatchCatalogEntry(host.catalog, "httpAction", target.id);
+  const r = watchHTTPRequestSettings(tile);
+  const pickReply = (v: string) =>
+    commit(host, "httpReply", (d) => setWatchTileHTTPReply(d, host.pageId, host.tileId, v === WATCH_HTTP_REPLY_OFF ? null : (v as WatchHTTPReply)));
+  return html`
+    ${menuField("Show reply", watchHTTPReplyMenu(tile, action), pickReply)}
+    <div class="hint ts-under">${REPLY_HINTS[r.reply ?? "off"]}</div>
+    ${r.reply === "toast"
+      ? menuField("Banner for", watchHTTPBannerSecondsMenu(r.toastSeconds), (v) =>
+          commit(host, "httpToastSeconds", (d) => setWatchTileHTTPToastSeconds(d, host.pageId, host.tileId, Number(v))))
+      : nothing}
+    ${r.reply === "tileValue" ? renderTileValue(host, r) : nothing}`;
+}
+
+const REFRESH_CHOICES: WatchChoice[] = [
+  { value: "off", label: "Off" },
+  { value: "onOpen", label: "On open" },
+  ...WATCH_HTTP_REFRESH_SECONDS.map((s) => ({ value: String(s), label: s === 1 ? "Every second" : `Every ${s} seconds` })),
+];
+
+/** The Tile Value rows, as the phone has them. */
+function renderTileValue(host: TileSettingsHost, r: ReturnType<typeof watchHTTPRequestSettings>): TemplateResult {
+  const P = () => [host.pageId, host.tileId] as const;
+  const R = WATCH_HTTP_VALUE_RANGES;
+  const fontSize = typedNumber(typed(host, "httpFontSize"), r.fontSize);
+  const lines = typedNumber(typed(host, "httpLines"), r.lineLimit);
+  const setFontSize = (v: number | undefined) =>
+    commit(host, "httpFontSize", (d) => setWatchTileHTTPValueFontSize(d, ...P(), v ?? null), {
+      typing: true,
+      ...(v === undefined ? {} : reasonOf(watchWholeRefusal(v, R.fontSize.min, R.fontSize.max))),
+    });
+  const setLines = (v: number | undefined) =>
+    commit(host, "httpLines", (d) => setWatchTileHTTPValueLineLimit(d, ...P(), v ?? null), {
+      typing: true,
+      ...(v === undefined ? {} : reasonOf(watchWholeRefusal(v, R.lineLimit.min, R.lineLimit.max))),
+    });
+  const color = typed(host, "httpColor") ?? r.color;
+  const setColor = (v: string | undefined) => {
+    if (v === undefined) commit(host, "httpColor", (d) => setWatchTileHTTPValueColor(d, ...P(), null));
+    else commit(host, "httpColor", (d) => setWatchTileHTTPValueColor(d, ...P(), v), { typing: true, ...reasonOf(watchColorRefusal(v)) });
+    host.requestUpdate();
+  };
+  const refresh = watchChoiceMenu(REFRESH_CHOICES, String(r.refresh));
+  return html`<div class="ts-sub">
+    <div class="ts-sub-h"><span>Tile value</span></div>
+    ${menuField("Auto-refresh", refresh, (v) =>
+      commit(host, "httpRefresh", (d) => setWatchTileHTTPRefresh(d, ...P(), v === "off" || v === "onOpen" ? v : Number(v))))}
+    <div class="hint ts-under">Once each time the page opens, or on a timer while it is open. Short intervals use more battery.</div>
+    ${checkField("Refresh on pull", r.refreshOnPull, (on) => commit(host, "httpRefreshOnPull", (d) => setWatchTileHTTPRefreshOnPull(d, ...P(), on)))}
+    ${checkField("Show name", r.showName, (on) => commit(host, "httpShowName", (d) => setWatchTileHTTPShowName(d, ...P(), on)))}
+    <div class="hint ts-under">Captions the value with the tile's name.</div>
+    ${typingField(host, "httpFontSize", html`<div class="ts-with-link">
+      ${numberField("Text size", fontSize, setFontSize, { step: 1, min: R.fontSize.min, max: R.fontSize.max, optional: true, placeholder: "Auto", unit: "pt" })}
+      ${r.fontSize === undefined ? nothing : linkButton("Auto", "Let the watch size the value", () => commit(host, "httpFontSize", (d) => setWatchTileHTTPValueFontSize(d, ...P(), null)))}
+    </div>`, r.fontSize)}
+    ${typingField(host, "httpLines", html`<div class="ts-with-link">
+      ${numberField("Lines", lines, setLines, { step: 1, min: R.lineLimit.min, max: R.lineLimit.max, optional: true, placeholder: "Auto" })}
+      ${r.lineLimit === undefined ? nothing : linkButton("Auto", "More lines on taller tiles", () => commit(host, "httpLines", (d) => setWatchTileHTTPValueLineLimit(d, ...P(), null)))}
+    </div>`, r.lineLimit)}
+    ${typingField(host, "httpLineSpacing", sliderField("Line spacing", r.lineSpacing, (v) =>
+      commit(host, "httpLineSpacing", (d) => setWatchTileHTTPValueLineSpacing(d, ...P(), v), { typing: true }), {
+      min: R.lineSpacing.min, max: R.lineSpacing.max, step: 1, def: 0, unit: "pt",
+    }), r.lineSpacing)}
+    ${typingField(host, "httpOffsetY", sliderField("Vertical position", r.offsetY, (v) =>
+      commit(host, "httpOffsetY", (d) => setWatchTileHTTPValueOffsetY(d, ...P(), v), { typing: true }), {
+      min: R.offsetY.min, max: R.offsetY.max, step: 1, def: 0, unit: "pt",
+    }), r.offsetY)}
+    <div class="hint ts-under">Below 0 moves the value up, above 0 down.</div>
+    ${typingField(host, "httpColor", html`<div class="ts-no-alpha">${colorField("Text color", color, setColor, true, undefined, { switchOn: r.color !== undefined })}</div>`)}
+    <div class="hint ts-under">${r.color === undefined ? "Off: the watch's own text color." : "On: this color. Switch it off for the watch's own."}</div>
+  </div>`;
+}
+
+/** The Macro task of a macro tile: Run silently and When it finishes. */
+function renderMacro(host: TileSettingsHost): TemplateResult {
+  const m = watchMacroSettings(host.tile);
+  const target = watchLibraryTarget(tileEntityId(host.tile));
+  const macro = target === undefined ? undefined : findWatchCatalogEntry(host.catalog, "macro", target.id);
+  const warning = macro === undefined ? undefined : watchCatalogWarning("macro", macro);
+  return html`
+    ${warning === undefined ? nothing : html`<div class="hint warn">${warning}.</div>`}
+    ${checkField("Run silently", m.runSilently, (on) => commit(host, "macroRunSilently", (d) => setWatchTileMacroRunSilently(d, host.pageId, host.tileId, on)))}
+    <div class="hint ts-under">No steps sheet, only haptics and a banner. A macro with a confirmation step still asks before it goes on.</div>
+    <div class="ts-stack">${segField<WatchMacroCloseMode>("When it finishes", m.closeMode, WATCH_MACRO_CLOSE_MODES.map((c) => [c.value, c.label] as [WatchMacroCloseMode, string]), (v) =>
+      commit(host, "macroCloseMode", (d) => setWatchTileMacroCloseMode(d, host.pageId, host.tileId, v)))}</div>
+    <div class="hint">What the run sheet does once the macro ends: stay open, close after a clean run, or always close.</div>`;
 }
 
 // ── icon and color ───────────────────────────────────────────────────────
@@ -732,7 +965,7 @@ export function reasonOf(reason: string | undefined): { reason?: string } {
 function renderText(host: TileSettingsHost): TemplateResult {
   const tile = host.tile;
   const t = watchTileTextSettings(tile);
-  const fallback = watchTileFallbackName(tile, host.hass.states, watchPagesOf(host.document));
+  const fallback = watchTileFallbackName(tile, host.hass.states, watchPagesOf(host.document), host.catalog);
   const label = typed(host, "label") ?? t.label ?? "";
   const fontSize = typedNumber(typed(host, "fontSize"), t.fontSize);
   const setFontSize = (v: number | undefined) =>
@@ -767,7 +1000,7 @@ function renderText(host: TileSettingsHost): TemplateResult {
 function renderAction(host: TileSettingsHost): TemplateResult {
   const tile = host.tile;
   const tap = watchSingleTapMenu(tile);
-  const slides = watchHoldSlideMenus(tile);
+  const slides = watchHoldSlideMenus(tile, host.catalog);
   const a = watchTileActionSettings(tile);
   return html`
     ${tap === undefined
@@ -792,8 +1025,16 @@ function renderAction(host: TileSettingsHost): TemplateResult {
 }
 
 function renderHoldSlide(host: TileSettingsHost, slides: NonNullable<ReturnType<typeof watchHoldSlideMenus>>): TemplateResult {
-  const setDirection = (direction: WatchSlideDirection, value: string) =>
+  const setDirection = (direction: WatchSlideDirection, value: string) => {
+    // An HTTP action's entry sets the action and its target in one edit,
+    // so no direction is ever saved as Run HTTP Action with nothing to run.
+    const http = watchHTTPSlideChoice(value);
+    if (http !== undefined) {
+      return commit(host, `slide:${direction}`, (d) =>
+        findWatchCatalogEntry(host.catalog, "httpAction", http) === undefined ? d : setWatchTileHoldSlideHTTP(d, host.pageId, host.tileId, direction, http));
+    }
     commit(host, `slide:${direction}`, (d) => setWatchTileHoldSlide(d, host.pageId, host.tileId, direction, value === WATCH_DEFAULT_CHOICE ? null : value));
+  };
   return html`<div class="ts-sub">
     <div class="ts-sub-h">
       <span>Hold and slide</span>
@@ -808,9 +1049,24 @@ function renderHoldSlide(host: TileSettingsHost, slides: NonNullable<ReturnType<
       ${slides.rows.map((row) => html`
         ${menuField(row.title, row, (v) => setDirection(row.direction, v))}
         ${row.trigger === undefined ? nothing : renderTrigger(host, row.direction, row.trigger)}
+        ${row.http === undefined ? nothing : renderSlideBanner(host, row.direction, row.http)}
         ${fieldNote(host, `slide:${row.direction}`)}`)}
     </fieldset>
     <div class="hint ts-under">Hold the tile, then slide. None turns a default off.</div>
+  </div>`;
+}
+
+/** A Run HTTP Action direction's banner: on or off, and for how long. */
+function renderSlideBanner(host: TileSettingsHost, direction: WatchSlideDirection, http: WatchHTTPSlideRow): TemplateResult {
+  const setting = `slideBanner:${direction}`;
+  return html`<div class="ts-nested">
+    ${checkField("Show the reply", http.banner, (on) =>
+      commit(host, setting, (d) => setWatchTileHoldSlideHTTPBanner(d, host.pageId, host.tileId, direction, on)))}
+    ${http.banner
+      ? menuField("Banner for", http.seconds, (v) =>
+          commit(host, `${setting}:seconds`, (d) => setWatchTileHoldSlideHTTPBannerSeconds(d, host.pageId, host.tileId, direction, Number(v))))
+      : html`<div class="hint ts-under">Off: the slide runs the action with no banner. Failures still show.</div>`}
+    ${fieldNote(host, setting)}
   </div>`;
 }
 
@@ -1328,6 +1584,7 @@ export const tileSettingsStyles = css`
   .ts-glyph-dot { width: 10px; height: 10px; border-radius: 50%; background: rgba(255, 255, 255, .55); }
   .ts-icon-name { min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
     overflow-wrap: anywhere; }
+  .ts-target-now { padding: 4px 0 2px; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
   .ts-chips, .ts-after { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 6px; }
   .ts-after { padding-left: calc(var(--wa-lab) + 8px); }
 

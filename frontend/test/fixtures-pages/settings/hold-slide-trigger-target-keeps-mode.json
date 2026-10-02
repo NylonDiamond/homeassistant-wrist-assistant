@@ -1,6 +1,6 @@
 {
   "name": "Picking another entity keeps the old mode",
-  "source": "WristAssistant/Views/PageEditorView.swift:7518",
+  "source": "WristAssistant/Views/PageEditorView.swift:7539",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

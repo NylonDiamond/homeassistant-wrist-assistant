@@ -1,6 +1,6 @@
 {
   "name": "Status icon size 20 on a fan tile (Activity Badge)",
-  "source": "WristAssistant/Views/PageEditorView.swift:7268",
+  "source": "WristAssistant/Views/PageEditorView.swift:7289",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

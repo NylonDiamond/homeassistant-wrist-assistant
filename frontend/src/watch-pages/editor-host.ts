@@ -15,13 +15,14 @@
 import type { HassLike } from "../ha-api.js";
 import type { IconProvider } from "../renderer.js";
 import type { SymbolBrowser } from "../symbols.js";
+import type { WatchCatalog } from "./catalog.js";
 import type { WatchPagesApplyOptions } from "./draft.js";
 import type { WatchPage, WatchPageTile, WatchPagesDocument } from "./model.js";
 
 /** What both modules get. Built afresh for every draw; keep none of it across
  * draws except through `uiState`.
  *
- * `document`, `page`, `otherPages`, `busy` (and a tile host's `tile`) are
+ * `document`, `page`, `otherPages`, `catalog`, `busy` (and a tile host's `tile`) are
  * getters that read the draft every time they are read, never a copy taken at
  * the draw: one task can run two edits (a field's blur commit and then
  * another control's handler, a drag step after a merge, a script), and the
@@ -50,6 +51,11 @@ export interface WatchPagesEditorHost {
   /** Every other page a person can pick, in watch order: the targets of a
    * Go to page or Peek page tile. System pages are left out. */
   readonly otherPages: readonly WatchPage[];
+  /** The iPhone's HTTP actions, macros and status pages (`catalog.ts`), as
+   * the element read them last; undefined while the phone has published
+   * none. Held by the element, never in the document: nothing here saves,
+   * undoes or merges it. A getter like `document`. */
+  readonly catalog: WatchCatalog | undefined;
   /** True while a save is out, a tile or a page is being dragged, or the page
    * is shown "As on the watch": `apply` refuses every edit then. Draw the
    * fields disabled. */

@@ -1,6 +1,6 @@
 {
   "name": "Target temperature off on a climate tile (Temperature Display)",
-  "source": "WristAssistant/Views/PageEditorView.swift:7247",
+  "source": "WristAssistant/Views/PageEditorView.swift:7268",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

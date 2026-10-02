@@ -60,6 +60,7 @@ import { SymbolBrowser } from "../symbols.js";
 import { uiIcon } from "../ui-icons.js";
 import { deliveryState, initialWatch, rejectedNow, settingsWatches, watchName } from "../watch-settings.js";
 import { addTileStyles, renderAddTile } from "./add-tile.js";
+import { type WatchCatalog, watchCatalogEventIsNews, watchCatalogFromRecord } from "./catalog.js";
 import { type WatchPagesApplyOptions, type WatchPagesDraft, saveWatchPagesDraft } from "./draft.js";
 import { type AddTileHost, type TileSettingsHost, type WatchPagesEditorHost, NO_ICONS, ScrubRun, extendHost, memoIconNames, watchKeysTypeText } from "./editor-host.js";
 import {
@@ -401,6 +402,10 @@ export class WaPageEditor extends LitElement {
 
   @state() private watchId?: string;
   @state() private record?: WatchConfigRecord;
+  /** The iPhone's library (`catalog.ts`) for the watch on screen, undefined
+   * while there is none. Kept here and never in the draft: it is read only,
+   * never saved, undone or merged. */
+  @state() private catalog?: WatchCatalog;
   @state() private loading = false;
   @state() private loadError?: string;
   @state() private history: WatchConfigHistoryEntry[] = [];
@@ -470,6 +475,7 @@ export class WaPageEditor extends LitElement {
   /** Bumped by every load, so a reply that arrives after another watch was
    * picked, or after a newer load, is dropped. */
   private loadSeq = 0;
+  private catalogSeq = 0;
   private historySeq = 0;
   private subscribeSeq = 0;
   private unsubscribe?: () => Promise<void>;
@@ -538,6 +544,7 @@ export class WaPageEditor extends LitElement {
     this.endSubscription();
     this.stopPolling();
     this.loadSeq++;
+    this.catalogSeq++;
     this.historySeq++;
   }
 
@@ -585,6 +592,8 @@ export class WaPageEditor extends LitElement {
     const watchId = this.watchId;
     if (!this.isConnected || watchId === undefined) return;
     void this.load(watchId, true);
+    // A catalog the phone published while the socket was down sent no event.
+    void this.loadCatalog(watchId);
   };
 
   /** Follow the save of the watch on screen to its end, whoever started it:
@@ -767,6 +776,9 @@ export class WaPageEditor extends LitElement {
       this.cancelGestures();
       this.watchId = watchId;
       this.note = undefined;
+      // The other watch's library is not this one's.
+      this.catalog = undefined;
+      this.catalogSeq++;
       this.history = [];
       if (this.historyState !== "unsupported") this.historyState = "loading";
       const selection = keptWatchPagesSelection(watchId);
@@ -783,6 +795,26 @@ export class WaPageEditor extends LitElement {
     }
     this.startSubscription(watchId);
     void this.load(watchId, quiet);
+    void this.loadCatalog(watchId);
+  }
+
+  /** Read the iPhone's library beside the pages record. Never in the way of
+   * the pages: a failed read (an integration older than the kind refuses
+   * it) is the same as none, and only the newest read for the watch on
+   * screen lands. */
+  private async loadCatalog(watchId: string): Promise<void> {
+    const hass = this.hass;
+    if (!hass) return;
+    const seq = ++this.catalogSeq;
+    try {
+      const record = await fetchWatchConfig(hass, watchId, "catalog");
+      if (seq !== this.catalogSeq || watchId !== this.watchId) return;
+      this.catalog = watchCatalogFromRecord(record);
+    } catch {
+      if (seq !== this.catalogSeq || watchId !== this.watchId) return;
+      // Keep what is shown: a dropped socket is not news that the phone
+      // took its library away. An older integration never had one.
+    }
   }
 
   /** Read the record. A quiet load keeps what is on screen until the answer
@@ -870,14 +902,19 @@ export class WaPageEditor extends LitElement {
 
   /** Hear every save of this watch's config. A new `pages` revision reloads
    * quietly and is merged into the draft; the phone's own uploads arrive
-   * this way too. */
+   * this way too. A new `catalog` revision reads the library again. */
   private startSubscription(watchId: string): void {
     const hass = this.hass;
     this.endSubscription();
     if (!hass) return;
     const seq = ++this.subscribeSeq;
     subscribeWatchConfig(hass, watchId, (event) => {
-      if (seq !== this.subscribeSeq || event.kind !== "pages") return;
+      if (seq !== this.subscribeSeq) return;
+      if (event.kind === "catalog") {
+        if (watchCatalogEventIsNews(event, this.catalog)) void this.loadCatalog(watchId);
+        return;
+      }
+      if (event.kind !== "pages") return;
       if (event.revision !== (this.record?.revision ?? 0)) void this.load(watchId, true);
     }).then(
       (unsubscribe) => {
@@ -1035,6 +1072,9 @@ export class WaPageEditor extends LitElement {
       document: () => draft.document,
       page: pageNow,
       otherPages: () => listedWatchPages(draft.document).filter((p) => !sameWatchId(p.id, pageId)),
+      // The element's, read live: a catalog that arrives while a picker is
+      // open is the one its next pick reads.
+      catalog: () => this.catalog,
       busy: busyNow,
     });
   }

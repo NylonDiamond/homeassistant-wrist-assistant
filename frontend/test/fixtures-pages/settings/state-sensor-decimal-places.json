@@ -1,6 +1,6 @@
 {
   "name": "Decimals 2 on a sensor tile (Value Display)",
-  "source": "WristAssistant/Views/PageEditorView.swift:7275",
+  "source": "WristAssistant/Views/PageEditorView.swift:7296",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

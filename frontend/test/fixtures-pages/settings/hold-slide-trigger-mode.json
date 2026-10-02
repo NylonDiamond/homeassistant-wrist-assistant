@@ -1,6 +1,6 @@
 {
   "name": "Change the trigger's mode",
-  "source": "WristAssistant/Views/PageEditorView.swift:7518",
+  "source": "WristAssistant/Views/PageEditorView.swift:7539",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

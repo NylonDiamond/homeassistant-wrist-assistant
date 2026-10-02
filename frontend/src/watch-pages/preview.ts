@@ -553,6 +553,25 @@ export function watchHeaderLook(tile: WatchPageTile): { style: "line" | "label";
   return { style, textSize: storedNumber(tile.labelFontSizeOverride) ?? 10, glow };
 }
 
+/** An HTTP action tile that shows its reply on the tile (Tile Value): the
+ * watch draws the value where the icon would be, sized, colored and moved by
+ * the tile's keys, with the name under it unless Show Name is off. The
+ * preview has no value to show, so it draws a dash, as the watch does before
+ * the first run. Undefined for any other tile. */
+export function watchHTTPTileValueLook(
+  tile: WatchPageTile,
+): { fontSize: number | undefined; color: string | undefined; offsetY: number; showName: boolean } | undefined {
+  if (tileKind(tileEntityId(tile)) !== "http_action" || tile.httpResponseDisplay !== "tileValue") return undefined;
+  const size = storedNumber(tile.httpTileValueFontSize);
+  const color = parseTileColor(tile.httpTileValueColorHex);
+  return {
+    fontSize: size !== undefined && size > 0 ? Math.min(Math.max(size, 6), 60) : undefined,
+    color: color === undefined || color.kind === "rainbow" ? undefined : tileInkColor(color),
+    offsetY: Math.max(-20, Math.min(20, storedNumber(tile.httpTileValueOffsetY) ?? 0)),
+    showName: tile.httpTileValueShowName !== false,
+  };
+}
+
 /** The label's inline style: size, weight, design, color and shadow. */
 function labelStyle(tile: WatchPageTile, widthPt: number, s: number): string {
   const family = watchTileLabelFamily(tile);
@@ -639,8 +658,11 @@ function tileFace(
   // (a sensor, a climate): hidden with Off, in a capsule with Pill.
   const readingStyle = unknown || watchStateDomains("bars").includes(kind) ? undefined : watchValueLabelStyle(tile);
   const reading = unknown ? kindLabel : cls === "virtual" ? kindLabel : stateWithDecimals(tile, tileStateText(tile, input.states), input);
-  const state = readingStyle === "Off" ? undefined : reading;
-  const showLabel = tileShowsLabel(tile);
+  // Tile Value: the value in place of the symbol, the name under it or not,
+  // and no line of the kind.
+  const value = watchHTTPTileValueLook(tile);
+  const state = readingStyle === "Off" || value !== undefined ? undefined : reading;
+  const showLabel = tileShowsLabel(tile) && (value === undefined || value.showName);
   const ground = unknown ? "rgba(255, 255, 255, 0.08)" : tileGround(color, watchTileColorOpacity(tile));
   const active = watchTilePreviewActive(tile, input.states);
   const border = unknown ? "" : watchTileBorderStyle(tile, active, s, watchTileFallbackInk(tile, input.page));
@@ -653,9 +675,11 @@ function tileFace(
     title=${titled ? hint : nothing}>
     ${unknown ? nothing : tileUnderlay(tile, input, active, height, s)}
     ${unknown ? nothing : tileOverlay(tile, input, active, width, height, s)}
-    ${!unknown && watchTileHasNoIcon(tile)
-      ? nothing
-      : symbolMark(input.icons, unknown ? undefined : tileSymbol(tile), symbolPt * s, unknown ? "#8E8E93" : ink, tile.iconShadow === true)}
+    ${value !== undefined
+      ? html`<span class="wp-value" style=${`font-size:${(value.fontSize ?? symbolPt) * s}px;color:${value.color ?? "#FFFFFF"}${value.offsetY === 0 ? "" : `;transform:translateY(${value.offsetY * s}px)`}`}>—</span>`
+      : !unknown && watchTileHasNoIcon(tile)
+        ? nothing
+        : symbolMark(input.icons, unknown ? undefined : tileSymbol(tile), symbolPt * s, unknown ? "#8E8E93" : ink, tile.iconShadow === true)}
     <span class="wp-words">
       ${showLabel ? html`<span class="wp-label" style=${labelStyle(tile, width, s)}>${label}</span>` : nothing}
       ${state === undefined ? nothing : html`<span class="wp-state ${readingStyle === "Pill" ? "pill" : ""}" style=${`font-size:${9 * s}px${readingStyle === "Pill" ? `;${pillStyle(s)}` : ""}`}>${state}</span>`}
@@ -758,6 +782,7 @@ export const watchPagePreviewStyles = css`
   .wp-title svg { flex: none; display: block; }
   .wp-title > span { overflow: hidden; text-overflow: ellipsis; }
   .wp-sym.shadow { filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.7)); }
+  .wp-value { flex: none; line-height: 1; font-weight: 600; font-variant-numeric: tabular-nums; }
   .wp-words { display: flex; flex-direction: column; min-width: 0; max-width: 100%; }
   .wp-label, .wp-state { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .wp-state { color: rgba(255, 255, 255, 0.62); }

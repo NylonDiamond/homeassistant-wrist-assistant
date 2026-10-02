@@ -70,7 +70,7 @@ describe("every add case file", () => {
   const files = readdirSync(dir).filter((f) => f.endsWith(".json")).sort();
 
   it("finds the case files", () => {
-    expect(files.length).toBeGreaterThanOrEqual(144);
+    expect(files.length).toBeGreaterThanOrEqual(155);
   });
 
   for (const file of files) {

@@ -117,6 +117,7 @@
   ],
   "unknownActionLabel": "Sync Needed",
   "libraryActions": ["httpAction", "runMacro"],
+  "libraryActionsMeaning": "As a hold and slide value, httpAction needs an entry of the catalog's httpActions: the direction's holdSlideHTTPActionTargets value is that entry's id. runMacro is never offered in hold and slide. As the single tap of its own tile kind (httpAction on http_action, runMacro on macro) neither needs anything: the target is the tile's entityId.",
   "directions": ["up", "down", "left", "right"],
   "kinds": {
     "*": {

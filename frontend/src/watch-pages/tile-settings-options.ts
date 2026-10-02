@@ -17,6 +17,7 @@ import {
   WATCH_LABEL_FONT_DESIGNS,
   WATCH_LABEL_FONT_WEIGHTS,
   isWatchLibraryAction,
+  isWatchUUID,
   watchColorInMode,
   watchColorMode,
   watchHoldSlideSettings,
@@ -26,8 +27,23 @@ import {
   watchTileActionSettings,
   watchTileIconSizeTop,
   watchTileIconSizeValue,
+  watchTapActionLabel,
+  watchTileKindEntry,
   watchTriggerModes,
 } from "./tile-settings-model.js";
+import {
+  type WatchCatalog,
+  type WatchCatalogEntry,
+  type WatchCatalogHTTPAction,
+  type WatchLibraryKind,
+  WATCH_LIBRARY_WORDS,
+  WATCH_NOT_ON_IPHONE_TEXT,
+  findWatchCatalogEntry,
+  watchCatalogEntries,
+  watchCatalogSubtitle,
+  watchCatalogWarning,
+  watchLibraryTarget,
+} from "./catalog.js";
 import { sameWatchId, findWatchPage } from "./edit.js";
 import { watchTileHasStateTask } from "./styling-model.js";
 import {
@@ -45,10 +61,24 @@ import type { HassEntityState } from "../ha-api.js";
 // ── sections ─────────────────────────────────────────────────────────────
 
 /** The folding sections of the Tile card, in the order they are drawn. */
-export type WatchTileSettingsSection = "opens" | "header" | "icon" | "state" | "text" | "border" | "action" | "background";
+export type WatchTileSettingsSection =
+  | "opens"
+  | "target"
+  | "request"
+  | "macro"
+  | "header"
+  | "icon"
+  | "state"
+  | "text"
+  | "border"
+  | "action"
+  | "background";
 
 export const WATCH_TILE_SETTINGS_SECTION_TITLES: Readonly<Record<WatchTileSettingsSection, string>> = {
   opens: "Opens",
+  target: "Target",
+  request: "Request",
+  macro: "Macro",
   header: "Header",
   icon: "Icon and color",
   state: "State",
@@ -62,9 +92,10 @@ export const WATCH_TILE_SETTINGS_SECTION_TITLES: Readonly<Record<WatchTileSettin
  * The sections a tile gets, in the order of the phone's tasks: Border and
  * Background only for a spacer (it has no icon or words); Header and Action
  * for a header, whose look is on the Header task; Opens first for a go to
- * page or peek tile; Icon and color, State (for the domains the phone shows
- * it for), Text, Border, Action and Background for everything else. A smart
- * page never gets here.
+ * page or peek tile; Target first for an HTTP action, macro or status page
+ * tile, then Request (an HTTP action) or Macro (a macro); Icon and color,
+ * State (for the domains the phone shows it for), Text, Border, Action and
+ * Background for everything else. A smart page never gets here.
  *
  * A header has no Border or Background, a departure from the phone, which
  * shows both: the watch's `DividerTile` reads none of their keys.
@@ -75,6 +106,12 @@ export function watchTileSettingsSections(tile: WatchPageTile): WatchTileSetting
   if (kind === "divider") return ["header", "action"];
   const out: WatchTileSettingsSection[] = [];
   if (watchPageLinkTarget(tile) !== undefined) out.push("opens");
+  const library = watchLibraryTarget(tileEntityId(tile));
+  if (library !== undefined) {
+    out.push("target");
+    if (library.kind === "httpAction") out.push("request");
+    if (library.kind === "macro") out.push("macro");
+  }
   out.push("icon");
   if (watchTileHasStateTask(tile)) out.push("state");
   out.push("text", "border", "action", "background");
@@ -89,6 +126,9 @@ export interface WatchMenuOption {
   value: string;
   label: string;
   disabled?: boolean;
+  /** Options next to each other with the same group are drawn under one
+   * heading (an `optgroup`). */
+  group?: string;
 }
 
 /** A select's entries, which one is current, and a line for under it. */
@@ -153,11 +193,49 @@ export interface WatchTriggerRow {
   modes: WatchMenu | undefined;
 }
 
+/** A direction set to Run HTTP Action: which action, and its banner. */
+export interface WatchHTTPSlideRow {
+  /** The stored target id, `""` when none is stored. */
+  targetId: string;
+  /** The catalog's entry for it, when the catalog lists it. */
+  entry: WatchCatalogHTTPAction | undefined;
+  /** The banner switch: on unless `false` is stored. */
+  banner: boolean;
+  /** The banner's seconds, 1, 2, 3 or 5. */
+  seconds: WatchMenu;
+}
+
 /** One hold and slide direction's row. */
 export interface WatchHoldSlideRow extends WatchMenu {
   direction: WatchSlideDirection;
   title: string;
   trigger: WatchTriggerRow | undefined;
+  /** Set while the direction is stored as Run HTTP Action. */
+  http: WatchHTTPSlideRow | undefined;
+}
+
+/** The value prefix of a Run HTTP Action entry of a direction's menu: the
+ * action's id follows. */
+const HTTP_SLIDE = "http:";
+
+/** The HTTP action a direction's menu value picks, or undefined for any
+ * other value. */
+export function watchHTTPSlideChoice(value: string): string | undefined {
+  return value.startsWith(HTTP_SLIDE) ? value.slice(HTTP_SLIDE.length) : undefined;
+}
+
+/** An HTTP action as a menu names it: its name, and the phone's warning. */
+function httpActionLabel(action: WatchCatalogHTTPAction): string {
+  const warning = watchCatalogWarning("httpAction", action);
+  return warning === undefined ? action.name : `${action.name} (${warning.charAt(0).toLowerCase()}${warning.slice(1)})`;
+}
+
+/** The banner seconds menu: 1, 2, 3 (the standard, stored as nothing) and
+ * 5; a stored value the phone does not offer shown first, disabled. */
+export function watchHTTPBannerSecondsMenu(stored: unknown): WatchMenu {
+  const choices: WatchChoice[] = [1, 2, 3, 5].map((s) => ({ value: String(s), label: s === 1 ? "1 second" : `${s} seconds` }));
+  const value = stored === undefined || stored === null ? "3" : String(stored);
+  return watchChoiceMenu(choices, value);
 }
 
 /** The Hold and slide card, or undefined for a kind that has none. */
@@ -176,9 +254,19 @@ export interface WatchHoldSlideMenus {
  * `"none"` and so turns a default off. A stored library action or unknown
  * string is the current entry, disabled. A direction set to Trigger entity
  * carries its target and the target domain's modes.
+ *
+ * With a catalog that lists an HTTP action, Run HTTP Action is offered as
+ * one entry per action, under a "Run HTTP Action" heading, so one pick sets
+ * the action and its target together (`watchHTTPSlideChoice`). A direction
+ * stored as Run HTTP Action selects its action's entry, or shows its target
+ * as not on the iPhone, and carries its banner settings. Without a catalog a
+ * stored Run HTTP Action is shown, not offered.
  */
-export function watchHoldSlideMenus(tile: WatchPageTile): WatchHoldSlideMenus | undefined {
-  const now = watchHoldSlideSettings(tile);
+export function watchHoldSlideMenus(tile: WatchPageTile, catalog?: WatchCatalog): WatchHoldSlideMenus | undefined {
+  // A slide's target is typed `UUID` on the phone: an entry whose id is not
+  // one could never be stored.
+  const actions = (catalog?.httpActions ?? []).filter((a) => isWatchUUID(a.id));
+  const now = watchHoldSlideSettings(tile, { httpActions: actions.length > 0 });
   if (!now.picker) return undefined;
   const absent = watchHoldSlideSettings({
     ...tile,
@@ -186,21 +274,43 @@ export function watchHoldSlideMenus(tile: WatchPageTile): WatchHoldSlideMenus | 
     holdSlideTriggerTargets: undefined,
     holdSlideHTTPActionTargets: undefined,
   });
+  const runLabel = watchTapActionLabel(watchTileKindEntry(tile), "httpAction");
   const rows = now.directions.map((d, i): WatchHoldSlideRow => {
     const defaultLabel = absent.directions[i]!.resolvedLabel;
     const options: WatchMenuOption[] = [{ value: WATCH_DEFAULT_CHOICE, label: `Default (${defaultLabel})` }];
-    // Library actions need the library (part 3e): shown when stored, never
-    // offered.
-    const offered = d.offered.filter((c) => !isWatchLibraryAction(c.value));
+    // A library action needs a catalog entry: Run HTTP Action is offered
+    // only with an action to run, Run Macro never.
+    const offered = d.offered.filter((c) => !isWatchLibraryAction(c.value) || (c.value === "httpAction" && actions.length > 0));
     const none = offered.filter((c) => c.value === "none");
     let selected = d.stored ?? WATCH_DEFAULT_CHOICE;
     let note: string | undefined;
-    if (d.stored !== undefined && !offered.some((c) => c.value === d.stored)) {
+    const storedHTTP = d.stored === "httpAction" && offered.some((c) => c.value === "httpAction");
+    const targetId = typeof d.httpTarget === "string" ? d.httpTarget : "";
+    const entry = storedHTTP ? findWatchCatalogEntry(catalog, "httpAction", targetId) : undefined;
+    if (storedHTTP) {
+      if (entry !== undefined) {
+        selected = HTTP_SLIDE + entry.id;
+      } else {
+        selected = STORED + "httpAction";
+        options.push({ value: selected, label: `${runLabel} (${targetId === "" ? "no action picked" : WATCH_NOT_ON_IPHONE_TEXT.toLowerCase()})`, disabled: true });
+        note = targetId === ""
+          ? "No action is picked, so the watch shows Sync Needed. Pick one."
+          : "The iPhone no longer lists this action. Pick another, or the watch fails the slide.";
+      }
+    } else if (d.stored !== undefined && !offered.some((c) => c.value === d.stored)) {
       selected = STORED + d.stored;
       options.push({ value: selected, label: d.storedLabel ?? d.stored, disabled: true });
       note = WATCH_NOT_OFFERED_NOTE;
     }
-    options.push(...offered.filter((c) => c.value !== "none"), ...none);
+    for (const c of offered) {
+      if (c.value === "none") continue;
+      if (c.value !== "httpAction") {
+        options.push(c);
+        continue;
+      }
+      options.push(...actions.map((a) => ({ value: HTTP_SLIDE + a.id, label: httpActionLabel(a), group: c.label })));
+    }
+    options.push(...none);
     let trigger: WatchTriggerRow | undefined;
     if (d.stored === "triggerEntity") {
       const target = d.target;
@@ -222,6 +332,9 @@ export function watchHoldSlideMenus(tile: WatchPageTile): WatchHoldSlideMenus | 
         };
       }
     }
+    const http: WatchHTTPSlideRow | undefined = d.stored === "httpAction"
+      ? { targetId, entry, banner: d.httpBanner, seconds: watchHTTPBannerSecondsMenu(d.httpBannerSeconds) }
+      : undefined;
     return {
       direction: d.direction,
       title: WATCH_SLIDE_DIRECTION_TITLES[d.direction],
@@ -229,6 +342,7 @@ export function watchHoldSlideMenus(tile: WatchPageTile): WatchHoldSlideMenus | 
       selected,
       ...(note === undefined ? {} : { note }),
       trigger,
+      http,
     };
   });
   return { rows, anyStored: now.anyStored, readable: now.parses };
@@ -332,16 +446,98 @@ export function watchLinkTargetMenu(
   };
 }
 
+// ── library targets ──────────────────────────────────────────────────────
+
+/** The Target menu of an HTTP action, macro or status page tile. */
+export interface WatchLibraryTargetMenu extends WatchMenu {
+  kind: WatchLibraryKind;
+  /** The id the tile stores, as stored. */
+  targetId: string;
+  /** The catalog's entry for it, undefined when the catalog does not list
+   * it. */
+  current: WatchCatalogEntry | undefined;
+  /** The current entry's name in the catalog now, for the label rule;
+   * `null` when the catalog does not list it. */
+  oldTargetName: string | null;
+}
+
+/** An entry as a menu names it: its name, its subtitle and the phone's
+ * warning. */
+function libraryEntryLabel(kind: WatchLibraryKind, entry: WatchCatalogEntry): string {
+  const extra = [watchCatalogSubtitle(kind, entry), watchCatalogWarning(kind, entry)].filter((t) => t !== undefined);
+  return extra.length === 0 ? entry.name : `${entry.name} (${extra.join(", ")})`;
+}
+
+/**
+ * The Target menu for a library tile with a catalog, or undefined for any
+ * other tile. The catalog's entries of the tile's kind in library order. A
+ * target the catalog does not list is shown first, disabled, with the
+ * tile's stored label and "Not on the iPhone"; picking another retargets
+ * the tile, and nothing rewrites it on its own.
+ */
+export function watchLibraryTargetMenu(tile: WatchPageTile, catalog: WatchCatalog): WatchLibraryTargetMenu | undefined {
+  const target = watchLibraryTarget(tileEntityId(tile));
+  if (target === undefined) return undefined;
+  const entries = watchCatalogEntries(catalog, target.kind);
+  const options: WatchMenuOption[] = entries.map((e) => ({ value: e.id, label: libraryEntryLabel(target.kind, e) }));
+  const current = findWatchCatalogEntry(catalog, target.kind, target.id);
+  const base = { kind: target.kind, targetId: target.id, current, oldTargetName: current?.name ?? null };
+  if (current !== undefined) return { ...base, options, selected: current.id };
+  const selected = STORED + target.id;
+  const label = typeof tile.customLabel === "string" && tile.customLabel.trim() !== "" ? tile.customLabel : WATCH_LIBRARY_WORDS[target.kind].one;
+  return {
+    ...base,
+    options: [{ value: selected, label: `${label} (${WATCH_NOT_ON_IPHONE_TEXT})`, disabled: true }, ...options],
+    selected,
+    note: entries.length === 0
+      ? `${WATCH_NOT_ON_IPHONE_TEXT}, and the iPhone lists no other ${WATCH_LIBRARY_WORDS[target.kind].many}. The tile stays as it is.`
+      : `${WATCH_NOT_ON_IPHONE_TEXT}. The tile stays as it is until another is picked.`,
+  };
+}
+
+/** The Show reply menu's value for Off (no key). */
+export const WATCH_HTTP_REPLY_OFF = "off";
+
+/**
+ * The Show reply menu of an HTTP action tile: Off, Banner, Tile value. Tile
+ * value is offered only when the catalog says the action has a Reply Value
+ * (`hasReply`), as the phone enables it; while it is stored it stays
+ * selectable. A stored string the watch does not know reads as Off, as on
+ * the watch, and is named under the menu.
+ */
+export function watchHTTPReplyMenu(tile: WatchPageTile, action: WatchCatalogHTTPAction | undefined): WatchMenu {
+  const reply = tile.httpResponseDisplay === "toast" || tile.httpResponseDisplay === "tileValue" ? tile.httpResponseDisplay : undefined;
+  const tileValue = action?.hasReply === true || reply === "tileValue";
+  const options: WatchMenuOption[] = [
+    { value: WATCH_HTTP_REPLY_OFF, label: "Off" },
+    { value: "toast", label: "Banner" },
+    { value: "tileValue", label: "Tile value", ...(tileValue ? {} : { disabled: true }) },
+  ];
+  const menu: WatchMenu = { options, selected: reply ?? WATCH_HTTP_REPLY_OFF };
+  const unknown = typeof tile.httpResponseDisplay === "string" && reply === undefined ? tile.httpResponseDisplay : undefined;
+  if (unknown !== undefined) menu.note = `Stored as "${unknown}", which the watch reads as Off.`;
+  else if (!tileValue) menu.note = "Tile value needs a Reply Value on this action, set in the iPhone app.";
+  else if (reply === "tileValue" && action !== undefined && !action.hasReply) menu.note = "The iPhone does not list a Reply Value for this action, so the tile shows a dash.";
+  return menu;
+}
+
 // ── text ─────────────────────────────────────────────────────────────────
 
 /** The name a tile shows with no label of its own: Home Assistant's name
- * for an entity, the target's name for a page link. The label field's
- * placeholder. */
+ * for an entity, the target's name for a page link; for the library tiles
+ * the watch's own fallbacks ("Action" on an HTTP action tile, the library
+ * name of a macro or status page). The label field's placeholder. */
 export function watchTileFallbackName(
   tile: WatchPageTile,
   states?: Readonly<Record<string, HassEntityState>>,
   pages?: readonly WatchPage[],
+  catalog?: WatchCatalog,
 ): string {
+  const library = watchLibraryTarget(tileEntityId(tile));
+  if (library !== undefined) {
+    if (library.kind === "httpAction") return "Action";
+    return findWatchCatalogEntry(catalog, library.kind, library.id)?.name ?? (library.kind === "macro" ? "Macro" : "Status Page");
+  }
   const rest = { ...tile };
   delete rest.customLabel;
   return tileLabel(rest, states, pages);
@@ -349,9 +545,12 @@ export function watchTileFallbackName(
 
 /** The line under the label field. */
 export function watchLabelNote(tile: WatchPageTile): string {
-  return watchPageLinkTarget(tile) !== undefined
-    ? "Leave it empty to show the name of the page it opens."
-    : "Leave it empty to show the name Home Assistant has.";
+  if (watchPageLinkTarget(tile) !== undefined) return "Leave it empty to show the name of the page it opens.";
+  const library = watchLibraryTarget(tileEntityId(tile))?.kind;
+  if (library === "httpAction") return "Leave it empty and the watch shows \"Action\".";
+  if (library === "macro") return "Leave it empty to show the macro's name.";
+  if (library === "statusPage") return "Leave it empty to show the status page's name.";
+  return "Leave it empty to show the name Home Assistant has.";
 }
 
 // ── colors ───────────────────────────────────────────────────────────────

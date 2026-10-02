@@ -1,6 +1,6 @@
 {
   "name": "Retarget a link whose label is the old page's name",
-  "source": "WristAssistant/Views/PageEditorView.swift:8122",
+  "source": "WristAssistant/Views/PageEditorView.swift:8104",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

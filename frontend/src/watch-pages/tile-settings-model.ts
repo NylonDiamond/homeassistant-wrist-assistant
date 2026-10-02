@@ -157,6 +157,8 @@ export const WATCH_TILE_SETTING_KEYS: readonly string[] = [
   "holdSlideActions",
   "holdSlideTriggerTargets",
   "holdSlideHTTPActionTargets",
+  "holdSlideHTTPActionShowBanner",
+  "holdSlideHTTPActionBannerSeconds",
   "requiresConfirmation",
   "hideWhenInactive",
   "automationSkipConditionOverride",
@@ -181,8 +183,10 @@ export function watchTapActionLabel(entry: WatchTileKindEntry, action: string): 
   return entry.labels[action] ?? ACTION_LABELS.get(action) ?? TABLE.unknownActionLabel;
 }
 
-/** Whether an action needs a library entry (an HTTP action or a macro). The
- * panel shows such a value when it is stored and offers it nowhere else. */
+/** Whether an action needs a library entry (an HTTP action or a macro) when
+ * it is a hold and slide value (`libraryActionsMeaning`). As the single tap
+ * of its own tile kind it needs nothing: the target is the tile's
+ * `entityId`. */
 export function isWatchLibraryAction(action: string): boolean {
   return LIBRARY_ACTIONS.has(action);
 }
@@ -727,7 +731,9 @@ export interface WatchSingleTapSettings {
    * else the kind's default. */
   resolved: string;
   resolvedLabel: string;
-  /** The menu, in order, with this kind's words. Never a library action. */
+  /** The menu, in order, with this kind's words. A library action only on
+   * its own kind (Run HTTP Action on an HTTP action tile, Run Macro on a
+   * macro tile), where the target is the tile itself. */
   offered: WatchChoice[];
   /** A stored value the menu does not have (a library action or an unknown
    * string): shown, not offered. */
@@ -735,8 +741,11 @@ export interface WatchSingleTapSettings {
   storedLabel: string | undefined;
 }
 
+/** The single tap menu: the kind's whole list. Only the HTTP action and
+ * macro kinds list a library action there, each its own, which needs no
+ * pick: the tile's `entityId` is the target. */
 function offeredTap(entry: WatchTileKindEntry): string[] {
-  return entry.tapActions.filter((a) => !LIBRARY_ACTIONS.has(a));
+  return entry.tapActions.slice();
 }
 
 /** The Single Tap menu for a tile: offered, stored, and what the watch does. */
@@ -760,7 +769,7 @@ export function watchSingleTapSettings(tile: WatchPageTile): WatchSingleTapSetti
 
 /** Single Tap: an action the kind's menu offers, stored even when it equals
  * the default; `null` (Reset to Default) removes the key. Refused for a kind
- * with no menu, and for a library action. */
+ * with no menu, and for a library action on a kind that is not its own. */
 export function setWatchTileSingleTap(
   document: WatchPagesDocument,
   pageId: string,
@@ -780,6 +789,30 @@ export function setWatchTileSingleTap(
 const HOLD_SLIDE_ACTIONS = "holdSlideActions";
 const HOLD_SLIDE_TRIGGERS = "holdSlideTriggerTargets";
 const HOLD_SLIDE_HTTP = "holdSlideHTTPActionTargets";
+const HOLD_SLIDE_HTTP_BANNER = "holdSlideHTTPActionShowBanner";
+const HOLD_SLIDE_HTTP_SECONDS = "holdSlideHTTPActionBannerSeconds";
+
+/** The banner seconds a direction may store (`HTTPBannerDuration`): 3, the
+ * standard, is stored as no entry. */
+export const WATCH_HTTP_BANNER_SECONDS: readonly number[] = [1, 2, 5];
+/** What no seconds entry means. */
+export const WATCH_HTTP_BANNER_DEFAULT_SECONDS = 3;
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Whether a value reads as a `UUID` on the phone. A hold and slide HTTP
+ * target is typed `UUID` there: anything else makes the whole document
+ * unreadable. */
+export function isWatchUUID(value: unknown): value is string {
+  return typeof value === "string" && UUID.test(value);
+}
+
+/** What the hold and slide card may offer beyond the tile itself. */
+export interface WatchHoldSlideOptions {
+  /** The catalog lists at least one HTTP action: Run HTTP Action is
+   * offered on every direction. Without it, a stored one is shown only. */
+  httpActions?: boolean;
+}
 
 /**
  * A stored hold and slide array read into a map: `[direction, value, ...]`
@@ -834,9 +867,10 @@ function withoutDirection(tile: WatchPageTile, key: string, direction: WatchSlid
 }
 
 /** The hold and slide menu for one direction: the kind's list without the
- * library actions, unless one is stored for that direction. */
-function offeredHoldSlide(entry: WatchTileKindEntry, stored: unknown): string[] {
-  return entry.holdSlideActions.filter((a) => !LIBRARY_ACTIONS.has(a) || a === stored);
+ * library actions, unless one is stored for that direction, or it is Run
+ * HTTP Action and the catalog has an HTTP action to run. */
+function offeredHoldSlide(entry: WatchTileKindEntry, stored: unknown, httpActions = false): string[] {
+  return entry.holdSlideActions.filter((a) => !LIBRARY_ACTIONS.has(a) || a === stored || (a === "httpAction" && httpActions));
 }
 
 /** A trigger target as stored: `entityId`, `mode`, `friendlyName`. */
@@ -878,6 +912,10 @@ export interface WatchHoldSlideDirectionSettings {
   target: WatchTriggerTarget | undefined;
   /** The library id of the HTTP action, when one is stored. */
   httpTarget: unknown;
+  /** The banner after the HTTP action runs: on unless `false` is stored. */
+  httpBanner: boolean;
+  /** The stored banner seconds, undefined for the standard 3. */
+  httpBannerSeconds: unknown;
 }
 
 /** What the Hold + Slide card shows for a tile. */
@@ -892,12 +930,15 @@ export interface WatchHoldSlideSettings {
   directions: WatchHoldSlideDirectionSettings[];
 }
 
-/** The Hold + Slide card for a tile, each direction with its menu, default, stored value and target. */
-export function watchHoldSlideSettings(tile: WatchPageTile): WatchHoldSlideSettings {
+/** The Hold + Slide card for a tile, each direction with its menu, default,
+ * stored value and targets. `options.httpActions` offers Run HTTP Action. */
+export function watchHoldSlideSettings(tile: WatchPageTile, options: WatchHoldSlideOptions = {}): WatchHoldSlideSettings {
   const entry = watchTileKindEntry(tile);
   const actions = readWatchSlideMap(tile[HOLD_SLIDE_ACTIONS]);
   const triggers = readWatchSlideMap(tile[HOLD_SLIDE_TRIGGERS]);
   const http = readWatchSlideMap(tile[HOLD_SLIDE_HTTP]);
+  const banners = readWatchSlideMap(tile[HOLD_SLIDE_HTTP_BANNER]);
+  const seconds = readWatchSlideMap(tile[HOLD_SLIDE_HTTP_SECONDS]);
   const known = new Set(TABLE.actions.map((a) => a.raw));
   const directions = WATCH_SLIDE_DIRECTIONS.map((direction): WatchHoldSlideDirectionSettings => {
     const raw = actions?.get(direction);
@@ -923,7 +964,7 @@ export function watchHoldSlideSettings(tile: WatchPageTile): WatchHoldSlideSetti
       const other = fallback ?? "none";
       resolved = entry.holdSlideActions.includes(other) ? other : "none";
     }
-    const offered = offeredHoldSlide(entry, stored);
+    const offered = offeredHoldSlide(entry, stored, options.httpActions === true);
     return {
       direction,
       stored,
@@ -935,11 +976,13 @@ export function watchHoldSlideSettings(tile: WatchPageTile): WatchHoldSlideSetti
       storedLabel: stored === undefined ? undefined : watchTapActionLabel(entry, stored),
       target,
       httpTarget,
+      httpBanner: banners?.get(direction) !== false,
+      httpBannerSeconds: seconds?.get(direction),
     };
   });
   return {
     picker: entry.holdSlidePicker,
-    parses: actions !== undefined && triggers !== undefined && http !== undefined,
+    parses: actions !== undefined && triggers !== undefined && http !== undefined && banners !== undefined && seconds !== undefined,
     anyStored: (actions?.size ?? 0) > 0,
     directions,
   };
@@ -978,7 +1021,8 @@ function holdSlideChange(tile: WatchPageTile, direction: WatchSlideDirection, ac
  * target, any but `httpAction` its HTTP target; the banner keys stay, as on
  * the phone. Each array is written in the order up, down, left, right, and
  * removed when it empties. Refused for a kind with no card, a value not
- * offered, or a stored array that does not parse.
+ * offered, or a stored array that does not parse. Run HTTP Action comes with
+ * its target or not at all: `setWatchTileHoldSlideHTTP`.
  */
 export function setWatchTileHoldSlide(
   document: WatchPagesDocument,
@@ -1012,6 +1056,95 @@ export function clearWatchTileHoldSlide(
     const maps = [HOLD_SLIDE_ACTIONS, HOLD_SLIDE_TRIGGERS, HOLD_SLIDE_HTTP];
     if (maps.some((key) => readWatchSlideMap(tile[key]) === undefined)) return tile;
     return maps.reduce(withoutKey, tile);
+  });
+}
+
+/**
+ * Run HTTP Action on one direction, with the action it runs, in one edit:
+ * `holdSlideActions[direction] = "httpAction"` and
+ * `holdSlideHTTPActionTargets[direction]` the action's id in upper case.
+ * The direction's trigger target goes; its banner entries stay. Picking
+ * another action moves only the target. Refused for a kind with no card or
+ * no Run HTTP Action, an id that is no UUID (the phone types it `UUID`), or
+ * a stored array that does not parse. The caller offers only actions the
+ * catalog lists.
+ */
+export function setWatchTileHoldSlideHTTP(
+  document: WatchPagesDocument,
+  pageId: string,
+  tileId: string,
+  direction: WatchSlideDirection,
+  actionId: string,
+): WatchPagesDocument {
+  if (!isDirection(direction) || !isWatchUUID(actionId)) return document;
+  const id = actionId.toUpperCase();
+  return editTile(document, pageId, tileId, (tile) => {
+    const entry = watchTileKindEntry(tile);
+    if (!entry.holdSlidePicker || !entry.holdSlideActions.includes("httpAction") || !slideMapsParse(tile)) return tile;
+    const next = holdSlideChange(tile, direction, "httpAction");
+    const http = readWatchSlideMap(next[HOLD_SLIDE_HTTP]);
+    if (http === undefined || http.get(direction) === id) return next;
+    http.set(direction, id);
+    return withSlideMap(next, HOLD_SLIDE_HTTP, http);
+  });
+}
+
+/** One banner key of a direction set to Run HTTP Action, changed by
+ * `change` on its map (false: nothing to do). Refused when the direction is
+ * not Run HTTP Action or an array does not parse. */
+function editBannerMap(
+  document: WatchPagesDocument,
+  pageId: string,
+  tileId: string,
+  direction: WatchSlideDirection,
+  key: string,
+  change: (map: Map<WatchSlideDirection, unknown>) => boolean,
+): WatchPagesDocument {
+  if (!isDirection(direction)) return document;
+  return editTile(document, pageId, tileId, (tile) => {
+    if (!watchTileKindEntry(tile).holdSlidePicker) return tile;
+    const actions = readWatchSlideMap(tile[HOLD_SLIDE_ACTIONS]);
+    const map = readWatchSlideMap(tile[key]);
+    if (actions === undefined || map === undefined || actions.get(direction) !== "httpAction") return tile;
+    return change(map) ? withSlideMap(tile, key, map) : tile;
+  });
+}
+
+/** A Run HTTP Action direction's banner: off writes `false`, on removes the
+ * entry (the array with it once empty). The seconds stay, as on the
+ * phone. */
+export function setWatchTileHoldSlideHTTPBanner(
+  document: WatchPagesDocument,
+  pageId: string,
+  tileId: string,
+  direction: WatchSlideDirection,
+  on: boolean,
+): WatchPagesDocument {
+  if (!isBool(on)) return document;
+  return editBannerMap(document, pageId, tileId, direction, HOLD_SLIDE_HTTP_BANNER, (map) => {
+    if (on) return map.delete(direction);
+    if (map.get(direction) === false) return false;
+    map.set(direction, false);
+    return true;
+  });
+}
+
+/** A Run HTTP Action direction's banner seconds: 1, 2 or 5 written; 3, the
+ * standard, or `null` removes the entry. */
+export function setWatchTileHoldSlideHTTPBannerSeconds(
+  document: WatchPagesDocument,
+  pageId: string,
+  tileId: string,
+  direction: WatchSlideDirection,
+  seconds: number | null,
+): WatchPagesDocument {
+  const remove = seconds === null || seconds === WATCH_HTTP_BANNER_DEFAULT_SECONDS;
+  if (!remove && (typeof seconds !== "number" || !WATCH_HTTP_BANNER_SECONDS.includes(seconds))) return document;
+  return editBannerMap(document, pageId, tileId, direction, HOLD_SLIDE_HTTP_SECONDS, (map) => {
+    if (remove) return map.delete(direction);
+    if (map.get(direction) === seconds) return false;
+    map.set(direction, seconds);
+    return true;
   });
 }
 

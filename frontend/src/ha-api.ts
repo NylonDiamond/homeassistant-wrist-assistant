@@ -397,8 +397,14 @@ export async function restoreSaveHistory(
 }
 
 /** The kinds of watch config Home Assistant keeps a copy of. The panel reads
- * and saves both. */
-export type WatchConfigKind = "pages" | "behavior";
+ * all three and saves `pages` and `behavior` (`WatchConfigPanelKind`).
+ * `catalog` is the iPhone's list of its HTTP actions, macros and status
+ * pages: the phone publishes it and the server refuses a panel save or
+ * restore of it. */
+export type WatchConfigKind = "pages" | "behavior" | "catalog";
+
+/** The kinds the panel may save and restore. */
+export type WatchConfigPanelKind = Exclude<WatchConfigKind, "catalog">;
 
 /** One watch's stored config of one kind, as the get command answers.
  * `revision` 0 with no `document` is a watch the phone has never uploaded
@@ -439,7 +445,7 @@ export async function fetchWatchConfig(hass: HassLike, owner: string, kind: Watc
 export async function saveWatchConfig(
   hass: HassLike,
   owner: string,
-  kind: WatchConfigKind,
+  kind: WatchConfigPanelKind,
   baseRevision: number,
   document: Record<string, unknown>,
 ) {
@@ -492,7 +498,7 @@ export async function fetchWatchConfigHistoryEntry(hass: HassLike, owner: string
 export async function restoreWatchConfig(
   hass: HassLike,
   owner: string,
-  kind: WatchConfigKind,
+  kind: WatchConfigPanelKind,
   revision: number,
   baseRevision: number,
 ) {

@@ -2660,5 +2660,35 @@
     "role": "entityPage",
     "customLabel": "the target page's name",
     "duplicatesAllowed": true
-  }
+  },
+  "httpActionTile": {
+    "entityIdPrefix": "http_action.",
+    "icon": "network",
+    "hex": "#CCD8E6",
+    "customLabel": "the action's catalog name: its trimmed name, else \"HTTP Action\"; never its URL",
+    "extras": {
+      "httpResponseDisplay": "toast"
+    },
+    "duplicatesAllowed": true
+  },
+  "macroTile": {
+    "entityIdPrefix": "macro.",
+    "icon": "link",
+    "hex": "#CCD8E6",
+    "customLabel": "the macro's catalog name: its trimmed name, else \"Macro\"",
+    "extras": {},
+    "duplicatesAllowed": true,
+    "iconFromLibrary": true,
+    "colorFromLibrary": true,
+    "libraryStyle": "iconFromLibrary: the catalog entry's icon when it has one, else icon. colorFromLibrary: its colorHex as stored when it has one, else hex. Never the page theme, never the gradient form."
+  },
+  "statusPageTile": {
+    "entityIdPrefix": "status_page.",
+    "icon": "list.bullet.rectangle.portrait",
+    "hex": "#7CC4E8",
+    "customLabel": "the status page's catalog name, as stored",
+    "extras": {},
+    "duplicatesAllowed": true
+  },
+  "libraryRetarget": "Retargeting an httpActionTile, macroTile or statusPageTile rewrites entityId to the prefix and the new entry's id. customLabel becomes the new entry's catalog name only while it equals the old entry's catalog name now, or is empty or absent; with the old entry gone from the catalog only the empty or absent label follows. Icon, color and every other key stay. Retargeting to the entry it already points at changes nothing."
 }
