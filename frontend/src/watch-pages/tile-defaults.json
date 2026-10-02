@@ -1,0 +1,2664 @@
+{
+  "version": 1,
+  "note": "Generated from the iPhone app's Swift code by WatchPagesTablesTests; do not edit. Regenerate tile-defaults.json with TEST_RUNNER_WA_UPDATE_FIXTURES=1 ./scripts/test.sh WatchPagesTablesTests in the app repository.",
+  "themeOrder": [
+    "midnight",
+    "sunrise",
+    "forest",
+    "sunnyBeachDay",
+    "neonLagoon",
+    "softVintage",
+    "hyperPop",
+    "ember",
+    "sakura",
+    "polar"
+  ],
+  "themes": {
+    "ember": {
+      "displayName": "Ember",
+      "roles": {
+        "entityLight": "#E8A33D",
+        "entitySwitch": "#B8723A",
+        "entityLock": "#D46A2E",
+        "entityCover": "#8A6478",
+        "entityClimate": "#E8512F",
+        "entityButton": "#C48040",
+        "entityScene": "#E89040",
+        "entityScript": "#9A6A5A",
+        "entityPerson": "#C47850",
+        "entityFan": "#D49050",
+        "entityMediaPlayer": "#B86878",
+        "entityTimer": "#D47060",
+        "entityRemote": "#8A5A68",
+        "entityVacuum": "#8A8A50",
+        "entityPage": "#B86838",
+        "entitySensor": "#A8887A",
+        "entityCamera": "#8A6450",
+        "entitySpacer": "#5A4438"
+      },
+      "gradientRoles": {
+        "entityLight": "GRADIENT|#E8A33D|#34B7C5",
+        "entitySwitch": "GRADIENT|#B8723A|#319C96",
+        "entityLock": "GRADIENT|#D46A2E|#27B4A1",
+        "entityCover": "GRADIENT|#8A6478|#567555",
+        "entityClimate": "GRADIENT|#E8512F|#28C593",
+        "entityButton": "GRADIENT|#C48040|#36A7A5",
+        "entityScene": "GRADIENT|#E89040|#36C5C2",
+        "entityScript": "GRADIENT|#9A6A5A|#4D8375",
+        "entityPerson": "GRADIENT|#C47850|#44A797",
+        "entityFan": "GRADIENT|#D49050|#44B4B3",
+        "entityMediaPlayer": "GRADIENT|#B86878|#589C6D",
+        "entityTimer": "GRADIENT|#D47060|#52B491",
+        "entityRemote": "GRADIENT|#8A5A68|#4D7555",
+        "entityVacuum": "GRADIENT|#8A8A50|#445D75",
+        "entityPage": "GRADIENT|#B86838|#309C8F",
+        "entitySensor": "GRADIENT|#A8887A|#688F87",
+        "entityCamera": "GRADIENT|#8A6450|#44756E",
+        "entitySpacer": "GRADIENT|#5A4438|#304D48"
+      },
+      "expandedSwatchHexes": [
+        "#E8A33D",
+        "#B8723A",
+        "#D46A2E",
+        "#8A6478",
+        "#E8512F",
+        "#C48040",
+        "#A8887A",
+        "#D49050",
+        "#B86878",
+        "#A05A6E",
+        "#E89040",
+        "#9A6A5A",
+        "#C47850",
+        "#D47060",
+        "#8A8A50",
+        "#5A4438",
+        "#B86838",
+        "#9A5A3E",
+        "#E88A30",
+        "#A08070",
+        "#B8A090",
+        "#F2D8C0",
+        "#E8C0A0",
+        "#DCA880",
+        "#D09068",
+        "#B06040",
+        "#9A5A50",
+        "#8A5060",
+        "#5A2810",
+        "#7A3818",
+        "#9A4820",
+        "#B85828",
+        "#D46830",
+        "#F0D0B0"
+      ],
+      "expandedSwatchGradients": [
+        "GRADIENT|#E8A33D|#34B7C5",
+        "GRADIENT|#B8723A|#319C96",
+        "GRADIENT|#D46A2E|#27B4A1",
+        "GRADIENT|#8A6478|#567555",
+        "GRADIENT|#E8512F|#28C593",
+        "GRADIENT|#C48040|#36A7A5",
+        "GRADIENT|#A8887A|#688F87",
+        "GRADIENT|#D49050|#44B4B3",
+        "GRADIENT|#B86878|#589C6D",
+        "GRADIENT|#A05A6E|#4D8859",
+        "GRADIENT|#E89040|#36C5C2",
+        "GRADIENT|#9A6A5A|#4D8375",
+        "GRADIENT|#C47850|#44A797",
+        "GRADIENT|#D47060|#52B491",
+        "GRADIENT|#8A8A50|#445D75",
+        "GRADIENT|#5A4438|#304D48",
+        "GRADIENT|#B86838|#309C8F",
+        "GRADIENT|#9A5A3E|#358374",
+        "GRADIENT|#E88A30|#29C5C4",
+        "GRADIENT|#A08070|#5F8881",
+        "GRADIENT|#B8A090|#7A9C99",
+        "GRADIENT|#F2D8C0|#A3CECD",
+        "GRADIENT|#E8C0A0|#88C5C2",
+        "GRADIENT|#DCA880|#6DBBB6",
+        "GRADIENT|#D09068|#58B1A7",
+        "GRADIENT|#B06040|#369681",
+        "GRADIENT|#9A5A50|#44836C",
+        "GRADIENT|#8A5060|#44754F",
+        "GRADIENT|#5A2810|#0E4D41",
+        "GRADIENT|#7A3818|#146859",
+        "GRADIENT|#9A4820|#1B8371",
+        "GRADIENT|#B85828|#229C88",
+        "GRADIENT|#D46830|#29B49E",
+        "GRADIENT|#F0D0B0|#96CCCC"
+      ]
+    },
+    "forest": {
+      "displayName": "Forest",
+      "roles": {
+        "entityLight": "#DCC857",
+        "entitySwitch": "#3FC878",
+        "entityLock": "#D99343",
+        "entityCover": "#5D96E2",
+        "entityClimate": "#D96A63",
+        "entityButton": "#2BAF9A",
+        "entityScene": "#DDA34A",
+        "entityScript": "#4F87D6",
+        "entityPerson": "#3B8DBF",
+        "entityFan": "#3DB1D0",
+        "entityMediaPlayer": "#9C70CC",
+        "entityTimer": "#DB7F86",
+        "entityRemote": "#7D8A9A",
+        "entityVacuum": "#2DB780",
+        "entityPage": "#3C7CA7",
+        "entitySensor": "#77A79E",
+        "entityCamera": "#4E8A9F",
+        "entitySpacer": "#3E6F61"
+      },
+      "gradientRoles": {
+        "entityLight": "GRADIENT|#DCC857|#4A93BB",
+        "entitySwitch": "GRADIENT|#3FC878|#A036AA",
+        "entityLock": "GRADIENT|#D99343|#39B4B8",
+        "entityCover": "GRADIENT|#5D96E2|#C0574F",
+        "entityClimate": "GRADIENT|#D96A63|#54B88C",
+        "entityButton": "GRADIENT|#2BAF9A|#95256F",
+        "entityScene": "GRADIENT|#DDA34A|#3FAFBC",
+        "entityScript": "GRADIENT|#4F87D6|#B64D43",
+        "entityPerson": "GRADIENT|#3B8DBF|#A23240",
+        "entityFan": "GRADIENT|#3DB1D0|#B13458",
+        "entityMediaPlayer": "GRADIENT|#9C70CC|#ADAC5F",
+        "entityTimer": "GRADIENT|#DB7F86|#6CBA8D",
+        "entityRemote": "GRADIENT|#7D8A9A|#836C6A",
+        "entityVacuum": "GRADIENT|#2DB780|#9C2690",
+        "entityPage": "GRADIENT|#3C7CA7|#8E333C",
+        "entitySensor": "GRADIENT|#77A79E|#8E6581",
+        "entityCamera": "GRADIENT|#4E8A9F|#874253",
+        "entitySpacer": "GRADIENT|#3E6F61|#5E3555"
+      },
+      "expandedSwatchHexes": [
+        "#DCC857",
+        "#3FC878",
+        "#D99343",
+        "#5D96E2",
+        "#D96A63",
+        "#2BAF9A",
+        "#77A79E",
+        "#3DB1D0",
+        "#9C70CC",
+        "#C060A6",
+        "#DDA34A",
+        "#4F87D6",
+        "#3B8DBF",
+        "#DB7F86",
+        "#2DB780",
+        "#3E6F61",
+        "#3C7CA7",
+        "#3C9A82",
+        "#D6E7DE",
+        "#B7D8C6",
+        "#98C9AE",
+        "#79B995",
+        "#5BAA83",
+        "#469A8A",
+        "#568CB5",
+        "#6EA49A",
+        "#2A7857",
+        "#34906B",
+        "#3FA87F",
+        "#DDEBE3"
+      ],
+      "expandedSwatchGradients": [
+        "GRADIENT|#DCC857|#4A93BB",
+        "GRADIENT|#3FC878|#A036AA",
+        "GRADIENT|#D99343|#39B4B8",
+        "GRADIENT|#5D96E2|#C0574F",
+        "GRADIENT|#D96A63|#54B88C",
+        "GRADIENT|#2BAF9A|#95256F",
+        "GRADIENT|#77A79E|#8E6581",
+        "GRADIENT|#3DB1D0|#B13458",
+        "GRADIENT|#9C70CC|#ADAC5F",
+        "GRADIENT|#C060A6|#64A352",
+        "GRADIENT|#DDA34A|#3FAFBC",
+        "GRADIENT|#4F87D6|#B64D43",
+        "GRADIENT|#3B8DBF|#A23240",
+        "GRADIENT|#DB7F86|#6CBA8D",
+        "GRADIENT|#2DB780|#9C2690",
+        "GRADIENT|#3E6F61|#5E3555",
+        "GRADIENT|#3C7CA7|#8E333C",
+        "GRADIENT|#3C9A82|#83336F",
+        "GRADIENT|#D6E7DE|#8F9B94",
+        "GRADIENT|#B7D8C6|#B69CB8",
+        "GRADIENT|#98C9AE|#A981AB",
+        "GRADIENT|#79B995|#9A679D",
+        "GRADIENT|#5BAA83|#914D90",
+        "GRADIENT|#469A8A|#833C6D",
+        "GRADIENT|#568CB5|#9A494F",
+        "GRADIENT|#6EA49A|#8B5E7D",
+        "GRADIENT|#2A7857|#662461",
+        "GRADIENT|#34906B|#7A2C73",
+        "GRADIENT|#3FA87F|#8F3685",
+        "GRADIENT|#DDEBE3|#959F99"
+      ]
+    },
+    "hyperPop": {
+      "displayName": "Hyper Pop",
+      "roles": {
+        "entityLight": "#FEE440",
+        "entitySwitch": "#00F5D4",
+        "entityLock": "#FB5607",
+        "entityCover": "#9B5DE5",
+        "entityClimate": "#F15BB5",
+        "entityButton": "#00BBF9",
+        "entityScene": "#FFBE0B",
+        "entityScript": "#8338EC",
+        "entityPerson": "#3A86FF",
+        "entityFan": "#5CC8F5",
+        "entityMediaPlayer": "#FF4FA0",
+        "entityTimer": "#FF7F6B",
+        "entityRemote": "#7B4FBF",
+        "entityVacuum": "#00E08F",
+        "entityPage": "#2D72FF",
+        "entitySensor": "#A9CFFF",
+        "entityCamera": "#5B8FF5",
+        "entitySpacer": "#5A57A8"
+      },
+      "gradientRoles": {
+        "entityLight": "GRADIENT|#FEE440|#369DD8",
+        "entitySwitch": "GRADIENT|#00F5D4|#D00084",
+        "entityLock": "GRADIENT|#FB5607|#06D5B1",
+        "entityCover": "GRADIENT|#9B5DE5|#C3BE4F",
+        "entityClimate": "GRADIENT|#F15BB5|#5ACD4D",
+        "entityButton": "GRADIENT|#00BBF9|#D40035",
+        "entityScene": "GRADIENT|#FFBE0B|#09A8D9",
+        "entityScript": "GRADIENT|#8338EC|#C9BC30",
+        "entityPerson": "GRADIENT|#3A86FF|#D94431",
+        "entityFan": "GRADIENT|#5CC8F5|#D04E69",
+        "entityMediaPlayer": "GRADIENT|#FF4FA0|#43D949",
+        "entityTimer": "GRADIENT|#FF7F6B|#5BD9AB",
+        "entityRemote": "GRADIENT|#7B4FBF|#A29843",
+        "entityVacuum": "GRADIENT|#00E08F|#BE00A4",
+        "entityPage": "GRADIENT|#2D72FF|#D94526",
+        "entitySensor": "GRADIENT|#A9CFFF|#D99490",
+        "entityCamera": "GRADIENT|#5B8FF5|#D0634D",
+        "entitySpacer": "GRADIENT|#5A57A8|#8F6F4A"
+      },
+      "expandedSwatchHexes": [
+        "#FEE440",
+        "#00F5D4",
+        "#FB5607",
+        "#9B5DE5",
+        "#F15BB5",
+        "#00BBF9",
+        "#A9CFFF",
+        "#5CC8F5",
+        "#FF4FA0",
+        "#E04FCF",
+        "#FFBE0B",
+        "#8338EC",
+        "#3A86FF",
+        "#FF7F6B",
+        "#00E08F",
+        "#5A57A8",
+        "#2D72FF",
+        "#7C49E6",
+        "#E2E9FF",
+        "#C4D9FF",
+        "#A5C7FF",
+        "#86B2FF",
+        "#68A0FF",
+        "#4F8FFF",
+        "#6F6FF2",
+        "#8E66EB"
+      ],
+      "expandedSwatchGradients": [
+        "GRADIENT|#FEE440|#369DD8",
+        "GRADIENT|#00F5D4|#D00084",
+        "GRADIENT|#FB5607|#06D5B1",
+        "GRADIENT|#9B5DE5|#C3BE4F",
+        "GRADIENT|#F15BB5|#5ACD4D",
+        "GRADIENT|#00BBF9|#D40035",
+        "GRADIENT|#A9CFFF|#D99490",
+        "GRADIENT|#5CC8F5|#D04E69",
+        "GRADIENT|#FF4FA0|#43D949",
+        "GRADIENT|#E04FCF|#72BE43",
+        "GRADIENT|#FFBE0B|#09A8D9",
+        "GRADIENT|#8338EC|#C9BC30",
+        "GRADIENT|#3A86FF|#D94431",
+        "GRADIENT|#FF7F6B|#5BD9AB",
+        "GRADIENT|#00E08F|#BE00A4",
+        "GRADIENT|#5A57A8|#8F6F4A",
+        "GRADIENT|#2D72FF|#D94526",
+        "GRADIENT|#7C49E6|#C3AC3E",
+        "GRADIENT|#E2E9FF|#D9C6C0",
+        "GRADIENT|#C4D9FF|#D9AEA7",
+        "GRADIENT|#A5C7FF|#D9968C",
+        "GRADIENT|#86B2FF|#D98072",
+        "GRADIENT|#68A0FF|#D96958",
+        "GRADIENT|#4F8FFF|#D95843",
+        "GRADIENT|#6F6FF2|#CE965E",
+        "GRADIENT|#8E66EB|#C8B157"
+      ]
+    },
+    "midnight": {
+      "displayName": "Midnight",
+      "roles": {
+        "entityLight": "#F2D35C",
+        "entitySwitch": "#56D978",
+        "entityLock": "#F3A43D",
+        "entityCover": "#8E7BEE",
+        "entityClimate": "#F07278",
+        "entityButton": "#35BFD4",
+        "entityScene": "#F4B34D",
+        "entityScript": "#7F8DFF",
+        "entityPerson": "#4C8FEA",
+        "entityFan": "#4EB6F0",
+        "entityMediaPlayer": "#D771D0",
+        "entityTimer": "#F58A9C",
+        "entityRemote": "#9B59B6",
+        "entityVacuum": "#42C89A",
+        "entityPage": "#3E78C4",
+        "entitySensor": "#8FAAC7",
+        "entityCamera": "#5A7FB8",
+        "entitySpacer": "#43607C"
+      },
+      "gradientRoles": {
+        "entityLight": "GRADIENT|#F2D35C|#4EA8CE",
+        "entitySwitch": "GRADIENT|#56D978|#9E49B8",
+        "entityLock": "GRADIENT|#F3A43D|#34C4CF",
+        "entityCover": "GRADIENT|#8E7BEE|#CAAA69",
+        "entityClimate": "GRADIENT|#F07278|#61CC91",
+        "entityButton": "GRADIENT|#35BFD4|#B42D5F",
+        "entityScene": "GRADIENT|#F4B34D|#41C0CF",
+        "entityScript": "GRADIENT|#7F8DFF|#D9966C",
+        "entityPerson": "GRADIENT|#4C8FEA|#C74B41",
+        "entityFan": "GRADIENT|#4EB6F0|#CC4256",
+        "entityMediaPlayer": "GRADIENT|#D771D0|#85B760",
+        "entityTimer": "GRADIENT|#F58A9C|#75D093",
+        "entityRemote": "GRADIENT|#9B59B6|#8A9B4C",
+        "entityVacuum": "GRADIENT|#42C89A|#AA3898",
+        "entityPage": "GRADIENT|#3E78C4|#A73C35",
+        "entitySensor": "GRADIENT|#8FAAC7|#A97A7A",
+        "entityCamera": "GRADIENT|#5A7FB8|#9C554D",
+        "entitySpacer": "GRADIENT|#43607C|#693939"
+      },
+      "expandedSwatchHexes": [
+        "#F2D35C",
+        "#56D978",
+        "#F3A43D",
+        "#8E7BEE",
+        "#F07278",
+        "#35BFD4",
+        "#8FAAC7",
+        "#4EB6F0",
+        "#D771D0",
+        "#C466F0",
+        "#F4B34D",
+        "#7F8DFF",
+        "#4C8FEA",
+        "#F58A9C",
+        "#42C89A",
+        "#43607C",
+        "#3E78C4",
+        "#6A74D8",
+        "#DCE7FF",
+        "#BDD2FF",
+        "#9FBCF7",
+        "#82A8F0",
+        "#6593E8",
+        "#4B80DD",
+        "#6D7FE4",
+        "#8A93E8",
+        "#2C4F87",
+        "#3565A3",
+        "#437CC0",
+        "#5AA4F2",
+        "#E4ECFF"
+      ],
+      "expandedSwatchGradients": [
+        "GRADIENT|#F2D35C|#4EA8CE",
+        "GRADIENT|#56D978|#9E49B8",
+        "GRADIENT|#F3A43D|#34C4CF",
+        "GRADIENT|#8E7BEE|#CAAA69",
+        "GRADIENT|#F07278|#61CC91",
+        "GRADIENT|#35BFD4|#B42D5F",
+        "GRADIENT|#8FAAC7|#A97A7A",
+        "GRADIENT|#4EB6F0|#CC4256",
+        "GRADIENT|#D771D0|#85B760",
+        "GRADIENT|#C466F0|#B7CC57",
+        "GRADIENT|#F4B34D|#41C0CF",
+        "GRADIENT|#7F8DFF|#D9966C",
+        "GRADIENT|#4C8FEA|#C74B41",
+        "GRADIENT|#F58A9C|#75D093",
+        "GRADIENT|#42C89A|#AA3898",
+        "GRADIENT|#43607C|#693939",
+        "GRADIENT|#3E78C4|#A73C35",
+        "GRADIENT|#6A74D8|#B8805A",
+        "GRADIENT|#DCE7FF|#D9C1BB",
+        "GRADIENT|#BDD2FF|#D9ABA1",
+        "GRADIENT|#9FBCF7|#D29487",
+        "GRADIENT|#82A8F0|#CC7D6E",
+        "GRADIENT|#6593E8|#C56656",
+        "GRADIENT|#4B80DD|#BC5140",
+        "GRADIENT|#6D7FE4|#C2805D",
+        "GRADIENT|#8A93E8|#C59675",
+        "GRADIENT|#2C4F87|#732E25",
+        "GRADIENT|#3565A3|#8B332D",
+        "GRADIENT|#437CC0|#A33E39",
+        "GRADIENT|#5AA4F2|#CE4E4D",
+        "GRADIENT|#E4ECFF|#D9C6C2"
+      ]
+    },
+    "neonLagoon": {
+      "displayName": "Neon Lagoon",
+      "roles": {
+        "entityLight": "#FFC145",
+        "entitySwitch": "#02C3BD",
+        "entityLock": "#FF9E4D",
+        "entityCover": "#6D64FF",
+        "entityClimate": "#EC368D",
+        "entityButton": "#00D1E2",
+        "entityScene": "#FFB357",
+        "entityScript": "#746BFF",
+        "entityPerson": "#4C9BFF",
+        "entityFan": "#47C4FF",
+        "entityMediaPlayer": "#D057D9",
+        "entityTimer": "#F55A96",
+        "entityRemote": "#8A6FE8",
+        "entityVacuum": "#2CCEA2",
+        "entityPage": "#365FDC",
+        "entitySensor": "#9EC2E8",
+        "entityCamera": "#5890D0",
+        "entitySpacer": "#526391"
+      },
+      "gradientRoles": {
+        "entityLight": "GRADIENT|#FFC145|#3BBED9",
+        "entitySwitch": "GRADIENT|#02C3BD|#A60259",
+        "entityLock": "GRADIENT|#FF9E4D|#41D9D2",
+        "entityCover": "GRADIENT|#6D64FF|#D99F55",
+        "entityClimate": "GRADIENT|#EC368D|#2EC931",
+        "entityButton": "GRADIENT|#00D1E2|#C00052",
+        "entityScene": "GRADIENT|#FFB357|#4AD2D9",
+        "entityScript": "GRADIENT|#746BFF|#D9A25B",
+        "entityPerson": "GRADIENT|#4C9BFF|#D94A41",
+        "entityFan": "GRADIENT|#47C4FF|#D93C58",
+        "entityMediaPlayer": "GRADIENT|#D057D9|#89B84A",
+        "entityTimer": "GRADIENT|#F55A96|#4CD05B",
+        "entityRemote": "GRADIENT|#8A6FE8|#C5A95E",
+        "entityVacuum": "GRADIENT|#2CCEA2|#AF2590",
+        "entityPage": "GRADIENT|#365FDC|#BB522E",
+        "entitySensor": "GRADIENT|#9EC2E8|#C58786",
+        "entityCamera": "GRADIENT|#5890D0|#B14E4B",
+        "entitySpacer": "GRADIENT|#526391|#7B5246"
+      },
+      "expandedSwatchHexes": [
+        "#FFC145",
+        "#02C3BD",
+        "#FF9E4D",
+        "#6D64FF",
+        "#EC368D",
+        "#00D1E2",
+        "#9EC2E8",
+        "#47C4FF",
+        "#D057D9",
+        "#E055B0",
+        "#FFB357",
+        "#746BFF",
+        "#4C9BFF",
+        "#F55A96",
+        "#2CCEA2",
+        "#526391",
+        "#365FDC",
+        "#4A4FD4",
+        "#DCEAFD",
+        "#BEDAFB",
+        "#A1C9F6",
+        "#83B7F1",
+        "#65A4EA",
+        "#4A93E2",
+        "#5B74E0",
+        "#7E73E0",
+        "#4E148C"
+      ],
+      "expandedSwatchGradients": [
+        "GRADIENT|#FFC145|#3BBED9",
+        "GRADIENT|#02C3BD|#A60259",
+        "GRADIENT|#FF9E4D|#41D9D2",
+        "GRADIENT|#6D64FF|#D99F55",
+        "GRADIENT|#EC368D|#2EC931",
+        "GRADIENT|#00D1E2|#C00052",
+        "GRADIENT|#9EC2E8|#C58786",
+        "GRADIENT|#47C4FF|#D93C58",
+        "GRADIENT|#D057D9|#89B84A",
+        "GRADIENT|#E055B0|#5BBE48",
+        "GRADIENT|#FFB357|#4AD2D9",
+        "GRADIENT|#746BFF|#D9A25B",
+        "GRADIENT|#4C9BFF|#D94A41",
+        "GRADIENT|#F55A96|#4CD05B",
+        "GRADIENT|#2CCEA2|#AF2590",
+        "GRADIENT|#526391|#7B5246",
+        "GRADIENT|#365FDC|#BB522E",
+        "GRADIENT|#4A4FD4|#B4753F",
+        "GRADIENT|#DCEAFD|#D7BDBB",
+        "GRADIENT|#BEDAFB|#D5A4A2",
+        "GRADIENT|#A1C9F6|#D18B89",
+        "GRADIENT|#83B7F1|#CD726F",
+        "GRADIENT|#65A4EA|#C75956",
+        "GRADIENT|#4A93E2|#C0413F",
+        "GRADIENT|#5B74E0|#BE714D",
+        "GRADIENT|#7E73E0|#BE9962",
+        "GRADIENT|#4E148C|#777511"
+      ]
+    },
+    "polar": {
+      "displayName": "Polar",
+      "roles": {
+        "entityLight": "#C8D8E0",
+        "entitySwitch": "#6AABB8",
+        "entityLock": "#A8B8C8",
+        "entityCover": "#7090B8",
+        "entityClimate": "#B07888",
+        "entityButton": "#78B8C8",
+        "entityScene": "#A8C0D0",
+        "entityScript": "#6880A8",
+        "entityPerson": "#5898B8",
+        "entityFan": "#70B0D0",
+        "entityMediaPlayer": "#9080A8",
+        "entityTimer": "#A890A0",
+        "entityRemote": "#7080A0",
+        "entityVacuum": "#68A8A0",
+        "entityPage": "#5080A8",
+        "entitySensor": "#90A8B8",
+        "entityCamera": "#6088A8",
+        "entitySpacer": "#3A4858"
+      },
+      "gradientRoles": {
+        "entityLight": "GRADIENT|#C8D8E0|#BEAAAD",
+        "entitySwitch": "GRADIENT|#6AABB8|#9C5A70",
+        "entityLock": "GRADIENT|#A8B8C8|#AA8F8F",
+        "entityCover": "GRADIENT|#7090B8|#9C635F",
+        "entityClimate": "GRADIENT|#B07888|#669670",
+        "entityButton": "GRADIENT|#78B8C8|#AA667A",
+        "entityScene": "GRADIENT|#A8C0D0|#B18F92",
+        "entityScript": "GRADIENT|#6880A8|#8F5F58",
+        "entityPerson": "GRADIENT|#5898B8|#9C4B58",
+        "entityFan": "GRADIENT|#70B0D0|#B15F6D",
+        "entityMediaPlayer": "GRADIENT|#9080A8|#8F8B6D",
+        "entityTimer": "GRADIENT|#A890A0|#7E8F7A",
+        "entityRemote": "GRADIENT|#7080A0|#88665F",
+        "entityVacuum": "GRADIENT|#68A8A0|#8F587A",
+        "entityPage": "GRADIENT|#5080A8|#8F4447",
+        "entitySensor": "GRADIENT|#90A8B8|#9C7A7E",
+        "entityCamera": "GRADIENT|#6088A8|#8F5255",
+        "entitySpacer": "GRADIENT|#3A4858|#4B3231"
+      },
+      "expandedSwatchHexes": [
+        "#C8D8E0",
+        "#6AABB8",
+        "#A8B8C8",
+        "#7090B8",
+        "#B07888",
+        "#78B8C8",
+        "#90A8B8",
+        "#70B0D0",
+        "#9080A8",
+        "#8078B0",
+        "#A8C0D0",
+        "#6880A8",
+        "#5898B8",
+        "#A890A0",
+        "#68A8A0",
+        "#3A4858",
+        "#5080A8",
+        "#5898A0",
+        "#B8A090",
+        "#D8E8F0",
+        "#C0D8E8",
+        "#A8C8E0",
+        "#90B8D8",
+        "#78A8D0",
+        "#6098C8",
+        "#7090B0",
+        "#8088A0",
+        "#1A3048",
+        "#284060",
+        "#385078",
+        "#486890",
+        "#5880A8",
+        "#8EC8E8"
+      ],
+      "expandedSwatchGradients": [
+        "GRADIENT|#C8D8E0|#BEAAAD",
+        "GRADIENT|#6AABB8|#9C5A70",
+        "GRADIENT|#A8B8C8|#AA8F8F",
+        "GRADIENT|#7090B8|#9C635F",
+        "GRADIENT|#B07888|#669670",
+        "GRADIENT|#78B8C8|#AA667A",
+        "GRADIENT|#90A8B8|#9C7A7E",
+        "GRADIENT|#70B0D0|#B15F6D",
+        "GRADIENT|#9080A8|#8F8B6D",
+        "GRADIENT|#8078B0|#968566",
+        "GRADIENT|#A8C0D0|#B18F92",
+        "GRADIENT|#6880A8|#8F5F58",
+        "GRADIENT|#5898B8|#9C4B58",
+        "GRADIENT|#A890A0|#7E8F7A",
+        "GRADIENT|#68A8A0|#8F587A",
+        "GRADIENT|#3A4858|#4B3231",
+        "GRADIENT|#5080A8|#8F4447",
+        "GRADIENT|#5898A0|#884B63",
+        "GRADIENT|#B8A090|#7A9C99",
+        "GRADIENT|#D8E8F0|#CCB8BB",
+        "GRADIENT|#C0D8E8|#C5A3A7",
+        "GRADIENT|#A8C8E0|#BE8F92",
+        "GRADIENT|#90B8D8|#B87A7E",
+        "GRADIENT|#78A8D0|#B16669",
+        "GRADIENT|#6098C8|#AA5255",
+        "GRADIENT|#7090B0|#965F5F",
+        "GRADIENT|#8088A0|#88746D",
+        "GRADIENT|#1A3048|#3D1716",
+        "GRADIENT|#284060|#522522",
+        "GRADIENT|#385078|#663630",
+        "GRADIENT|#486890|#7A413D",
+        "GRADIENT|#5880A8|#8F4B4B",
+        "GRADIENT|#8EC8E8|#C57984"
+      ]
+    },
+    "sakura": {
+      "displayName": "Sakura",
+      "roles": {
+        "entityLight": "#F2D0A8",
+        "entitySwitch": "#8AAA80",
+        "entityLock": "#D4A088",
+        "entityCover": "#9A80B8",
+        "entityClimate": "#E87080",
+        "entityButton": "#B890A8",
+        "entityScene": "#F0B8C0",
+        "entityScript": "#9078B0",
+        "entityPerson": "#A888C0",
+        "entityFan": "#A890C0",
+        "entityMediaPlayer": "#E080A0",
+        "entityTimer": "#E89098",
+        "entityRemote": "#A078B8",
+        "entityVacuum": "#80AA88",
+        "entityPage": "#B070A0",
+        "entitySensor": "#B8A0B0",
+        "entityCamera": "#8A7898",
+        "entitySpacer": "#5A4858"
+      },
+      "gradientRoles": {
+        "entityLight": "GRADIENT|#F2D0A8|#8FCBCE",
+        "entitySwitch": "GRADIENT|#8AAA80|#766D91",
+        "entityLock": "GRADIENT|#D4A088|#74B4A8",
+        "entityCover": "GRADIENT|#9A80B8|#9C9B6D",
+        "entityClimate": "GRADIENT|#E87080|#5FC585",
+        "entityButton": "GRADIENT|#B890A8|#7E9C7A",
+        "entityScene": "GRADIENT|#F0B8C0|#9CCCAD",
+        "entityScript": "GRADIENT|#9078B0|#969266",
+        "entityPerson": "GRADIENT|#A888C0|#A0A374",
+        "entityFan": "GRADIENT|#A890C0|#A3A37A",
+        "entityMediaPlayer": "GRADIENT|#E080A0|#6DBE7A",
+        "entityTimer": "GRADIENT|#E89098|#7AC599",
+        "entityRemote": "GRADIENT|#A078B8|#969C66",
+        "entityVacuum": "GRADIENT|#80AA88|#856D91",
+        "entityPage": "GRADIENT|#B070A0|#6D965F",
+        "entitySensor": "GRADIENT|#B8A0B0|#8B9C88",
+        "entityCamera": "GRADIENT|#8A7898|#7F8166",
+        "entitySpacer": "GRADIENT|#5A4858|#434D3D"
+      },
+      "expandedSwatchHexes": [
+        "#F2D0A8",
+        "#8AAA80",
+        "#D4A088",
+        "#9A80B8",
+        "#E87080",
+        "#B890A8",
+        "#B8A0B0",
+        "#A890C0",
+        "#E080A0",
+        "#C878B0",
+        "#F0B8C0",
+        "#9078B0",
+        "#A888C0",
+        "#E89098",
+        "#80AA88",
+        "#5A4858",
+        "#B070A0",
+        "#9868A0",
+        "#E8A088",
+        "#C0B0B8",
+        "#F8D8E0",
+        "#F0C0D0",
+        "#E8A8C0",
+        "#E090B0",
+        "#D878A0",
+        "#C86898",
+        "#A878A8",
+        "#9080A0",
+        "#5A2040",
+        "#7A3058",
+        "#9A4070",
+        "#B85088",
+        "#D060A0",
+        "#F2A0B5",
+        "#F8E0E8"
+      ],
+      "expandedSwatchGradients": [
+        "GRADIENT|#F2D0A8|#8FCBCE",
+        "GRADIENT|#8AAA80|#766D91",
+        "GRADIENT|#D4A088|#74B4A8",
+        "GRADIENT|#9A80B8|#9C9B6D",
+        "GRADIENT|#E87080|#5FC585",
+        "GRADIENT|#B890A8|#7E9C7A",
+        "GRADIENT|#B8A0B0|#8B9C88",
+        "GRADIENT|#A890C0|#A3A37A",
+        "GRADIENT|#E080A0|#6DBE7A",
+        "GRADIENT|#C878B0|#74AA66",
+        "GRADIENT|#F0B8C0|#9CCCAD",
+        "GRADIENT|#9078B0|#969266",
+        "GRADIENT|#A888C0|#A0A374",
+        "GRADIENT|#E89098|#7AC599",
+        "GRADIENT|#80AA88|#856D91",
+        "GRADIENT|#5A4858|#434D3D",
+        "GRADIENT|#B070A0|#6D965F",
+        "GRADIENT|#9868A0|#778858",
+        "GRADIENT|#E8A088|#74C5B1",
+        "GRADIENT|#C0B0B8|#746A6F",
+        "GRADIENT|#F8D8E0|#B8D3BE",
+        "GRADIENT|#F0C0D0|#A3CCAA",
+        "GRADIENT|#E8A8C0|#8FC596",
+        "GRADIENT|#E090B0|#7ABE81",
+        "GRADIENT|#D878A0|#66B86D",
+        "GRADIENT|#C86898|#58AA58",
+        "GRADIENT|#A878A8|#7A8F66",
+        "GRADIENT|#9080A0|#88886D",
+        "GRADIENT|#5A2040|#1E4D1B",
+        "GRADIENT|#7A3058|#2B6829",
+        "GRADIENT|#9A4070|#398336",
+        "GRADIENT|#B85088|#479C44",
+        "GRADIENT|#D060A0|#58B152",
+        "GRADIENT|#F2A0B5|#88CE99",
+        "GRADIENT|#F8E0E8|#AC9BA0"
+      ]
+    },
+    "softVintage": {
+      "displayName": "Soft Vintage",
+      "roles": {
+        "entityLight": "#F1EBE1",
+        "entitySwitch": "#AC8974",
+        "entityLock": "#C8A890",
+        "entityCover": "#726A7E",
+        "entityClimate": "#C49186",
+        "entityButton": "#B79685",
+        "entityScene": "#D8C8B5",
+        "entityScript": "#8C7D9C",
+        "entityPerson": "#8A82A0",
+        "entityFan": "#918AA4",
+        "entityMediaPlayer": "#B77C84",
+        "entityTimer": "#D4A89C",
+        "entityRemote": "#8A7DA0",
+        "entityVacuum": "#A88D7A",
+        "entityPage": "#7B7288",
+        "entitySensor": "#B8ACA0",
+        "entityCamera": "#8A828E",
+        "entitySpacer": "#665C68"
+      },
+      "gradientRoles": {
+        "entityLight": "GRADIENT|#F1EBE1|#A4A09A",
+        "entitySwitch": "GRADIENT|#AC8974|#63928C",
+        "entityLock": "GRADIENT|#C8A890|#7AAAA7",
+        "entityCover": "GRADIENT|#726A7E|#6B695A",
+        "entityClimate": "GRADIENT|#C49186|#72A796",
+        "entityButton": "GRADIENT|#B79685|#719C95",
+        "entityScene": "GRADIENT|#D8C8B5|#9AB6B8",
+        "entityScript": "GRADIENT|#8C7D9C|#85846A",
+        "entityPerson": "GRADIENT|#8A82A0|#88826E",
+        "entityFan": "GRADIENT|#918AA4|#8B8675",
+        "entityMediaPlayer": "GRADIENT|#B77C84|#699C7C",
+        "entityTimer": "GRADIENT|#D4A89C|#85B4A7",
+        "entityRemote": "GRADIENT|#8A7DA0|#88846A",
+        "entityVacuum": "GRADIENT|#A88D7A|#688F8B",
+        "entityPage": "GRADIENT|#7B7288|#747261",
+        "entitySensor": "GRADIENT|#B8ACA0|#889C9C",
+        "entityCamera": "GRADIENT|#8A828E|#403C42",
+        "entitySpacer": "GRADIENT|#665C68|#55584E"
+      },
+      "expandedSwatchHexes": [
+        "#F1EBE1",
+        "#AC8974",
+        "#C8A890",
+        "#726A7E",
+        "#C49186",
+        "#B79685",
+        "#B8ACA0",
+        "#918AA4",
+        "#B77C84",
+        "#B0849B",
+        "#D8C8B5",
+        "#8C7D9C",
+        "#8A82A0",
+        "#D4A89C",
+        "#A88D7A",
+        "#665C68",
+        "#7B7288",
+        "#8E7078",
+        "#E5DBCF",
+        "#CDB8A8",
+        "#A78FA1",
+        "#8D8196",
+        "#C49A8D",
+        "#B5837D",
+        "#98837B",
+        "#B6A095"
+      ],
+      "expandedSwatchGradients": [
+        "GRADIENT|#F1EBE1|#A4A09A",
+        "GRADIENT|#AC8974|#63928C",
+        "GRADIENT|#C8A890|#7AAAA7",
+        "GRADIENT|#726A7E|#6B695A",
+        "GRADIENT|#C49186|#72A796",
+        "GRADIENT|#B79685|#719C95",
+        "GRADIENT|#B8ACA0|#889C9C",
+        "GRADIENT|#918AA4|#8B8675",
+        "GRADIENT|#B77C84|#699C7C",
+        "GRADIENT|#B0849B|#719670",
+        "GRADIENT|#D8C8B5|#9AB6B8",
+        "GRADIENT|#8C7D9C|#85846A",
+        "GRADIENT|#8A82A0|#88826E",
+        "GRADIENT|#D4A89C|#85B4A7",
+        "GRADIENT|#A88D7A|#688F8B",
+        "GRADIENT|#665C68|#55584E",
+        "GRADIENT|#7B7288|#747261",
+        "GRADIENT|#8E7078|#5F7965",
+        "GRADIENT|#E5DBCF|#99928A",
+        "GRADIENT|#CDB8A8|#8FAEAC",
+        "GRADIENT|#A78FA1|#7F8E7A",
+        "GRADIENT|#8D8196|#7E806E",
+        "GRADIENT|#C49A8D|#78A79A",
+        "GRADIENT|#B5837D|#6A9A87",
+        "GRADIENT|#98837B|#69817C",
+        "GRADIENT|#B6A095|#7F9B96"
+      ]
+    },
+    "sunnyBeachDay": {
+      "displayName": "Sunny Beach Day",
+      "roles": {
+        "entityLight": "#E9C46A",
+        "entitySwitch": "#2A9D8F",
+        "entityLock": "#D98A4E",
+        "entityCover": "#8B7DD6",
+        "entityClimate": "#E76F51",
+        "entityButton": "#1FB7A6",
+        "entityScene": "#F4A261",
+        "entityScript": "#5FA5E6",
+        "entityPerson": "#35A8CF",
+        "entityFan": "#4DBFE0",
+        "entityMediaPlayer": "#F08D62",
+        "entityTimer": "#F09480",
+        "entityRemote": "#8E7CC3",
+        "entityVacuum": "#3FB58A",
+        "entityPage": "#2F79B6",
+        "entitySensor": "#88B6C9",
+        "entityCamera": "#4A8FB5",
+        "entitySpacer": "#3B5F77"
+      },
+      "gradientRoles": {
+        "entityLight": "GRADIENT|#E9C46A|#5AB0C6",
+        "entitySwitch": "GRADIENT|#2A9D8F|#852460",
+        "entityLock": "GRADIENT|#D98A4E|#42B8B0",
+        "entityCover": "GRADIENT|#8B7DD6|#B69C6A",
+        "entityClimate": "GRADIENT|#E76F51|#45C49E",
+        "entityButton": "GRADIENT|#1FB7A6|#9C1A69",
+        "entityScene": "GRADIENT|#F4A261|#52CFC8",
+        "entityScript": "GRADIENT|#5FA5E6|#C35153",
+        "entityPerson": "GRADIENT|#35A8CF|#B02D4D",
+        "entityFan": "GRADIENT|#4DBFE0|#BE4164",
+        "entityMediaPlayer": "GRADIENT|#F08D62|#53CCB4",
+        "entityTimer": "GRADIENT|#F09480|#6DCCAD",
+        "entityRemote": "GRADIENT|#8E7CC3|#A69769",
+        "entityVacuum": "GRADIENT|#3FB58A|#9A368C",
+        "entityPage": "GRADIENT|#2F79B6|#9B282D",
+        "entitySensor": "GRADIENT|#88B6C9|#AB747F",
+        "entityCamera": "GRADIENT|#4A8FB5|#9A3F4C",
+        "entitySpacer": "GRADIENT|#3B5F77|#653237"
+      },
+      "expandedSwatchHexes": [
+        "#E9C46A",
+        "#2A9D8F",
+        "#D98A4E",
+        "#8B7DD6",
+        "#E76F51",
+        "#1FB7A6",
+        "#88B6C9",
+        "#4DBFE0",
+        "#F08D62",
+        "#C47ABF",
+        "#F4A261",
+        "#5FA5E6",
+        "#35A8CF",
+        "#F09480",
+        "#3FB58A",
+        "#3B5F77",
+        "#2F79B6",
+        "#2F968D",
+        "#E6EEF2",
+        "#CFE0EA",
+        "#B8D3E1",
+        "#9DC4D8",
+        "#81B5CF",
+        "#67A6C5",
+        "#9FC8C0",
+        "#DCC790",
+        "#264653",
+        "#36B7A6",
+        "#5DBED5",
+        "#73A9D6",
+        "#A6D3CC"
+      ],
+      "expandedSwatchGradients": [
+        "GRADIENT|#E9C46A|#5AB0C6",
+        "GRADIENT|#2A9D8F|#852460",
+        "GRADIENT|#D98A4E|#42B8B0",
+        "GRADIENT|#8B7DD6|#B69C6A",
+        "GRADIENT|#E76F51|#45C49E",
+        "GRADIENT|#1FB7A6|#9C1A69",
+        "GRADIENT|#88B6C9|#AB747F",
+        "GRADIENT|#4DBFE0|#BE4164",
+        "GRADIENT|#F08D62|#53CCB4",
+        "GRADIENT|#C47ABF|#83A768",
+        "GRADIENT|#F4A261|#52CFC8",
+        "GRADIENT|#5FA5E6|#C35153",
+        "GRADIENT|#35A8CF|#B02D4D",
+        "GRADIENT|#F09480|#6DCCAD",
+        "GRADIENT|#3FB58A|#9A368C",
+        "GRADIENT|#3B5F77|#653237",
+        "GRADIENT|#2F79B6|#9B282D",
+        "GRADIENT|#2F968D|#80285B",
+        "GRADIENT|#E6EEF2|#9DA3A5",
+        "GRADIENT|#CFE0EA|#C7B0B3",
+        "GRADIENT|#B8D3E1|#BF9CA2",
+        "GRADIENT|#9DC4D8|#B8858E",
+        "GRADIENT|#81B5CF|#B06E79",
+        "GRADIENT|#67A6C5|#A75865",
+        "GRADIENT|#9FC8C0|#AA879F",
+        "GRADIENT|#DCC790|#7AADBB",
+        "GRADIENT|#264653|#472028",
+        "GRADIENT|#36B7A6|#9C2E73",
+        "GRADIENT|#5DBED5|#B54F6F",
+        "GRADIENT|#73A9D6|#B66266",
+        "GRADIENT|#A6D3CC|#B38DA6"
+      ]
+    },
+    "sunrise": {
+      "displayName": "Sunrise",
+      "roles": {
+        "entityLight": "#F4CF63",
+        "entitySwitch": "#59C878",
+        "entityLock": "#F78F42",
+        "entityCover": "#B67EE8",
+        "entityClimate": "#F06A5E",
+        "entityButton": "#2BB8B2",
+        "entityScene": "#F5A14E",
+        "entityScript": "#9A82EC",
+        "entityPerson": "#4D91E0",
+        "entityFan": "#53B7E6",
+        "entityMediaPlayer": "#EA77B6",
+        "entityTimer": "#F37F79",
+        "entityRemote": "#A569BD",
+        "entityVacuum": "#48BF8B",
+        "entityPage": "#4B77CC",
+        "entitySensor": "#A9B0C5",
+        "entityCamera": "#5A82B8",
+        "entitySpacer": "#6C677F"
+      },
+      "gradientRoles": {
+        "entityLight": "GRADIENT|#F4CF63|#54B1CF",
+        "entitySwitch": "GRADIENT|#59C878|#954CAA",
+        "entityLock": "GRADIENT|#F78F42|#38D2C6",
+        "entityCover": "GRADIENT|#B67EE8|#C3C56B",
+        "entityClimate": "GRADIENT|#F06A5E|#50CC98",
+        "entityButton": "GRADIENT|#2BB8B2|#9C2566",
+        "entityScene": "GRADIENT|#F5A14E|#42D0D0",
+        "entityScript": "GRADIENT|#9A82EC|#C9B06E",
+        "entityPerson": "GRADIENT|#4D91E0|#BE4641",
+        "entityFan": "GRADIENT|#53B7E6|#C3475D",
+        "entityMediaPlayer": "GRADIENT|#EA77B6|#6AC765",
+        "entityTimer": "GRADIENT|#F37F79|#67CFA0",
+        "entityRemote": "GRADIENT|#A569BD|#91A159",
+        "entityVacuum": "GRADIENT|#48BF8B|#A23D9C",
+        "entityPage": "GRADIENT|#4B77CC|#AD5140",
+        "entitySensor": "GRADIENT|#A9B0C5|#A79690",
+        "entityCamera": "GRADIENT|#5A82B8|#9C524D",
+        "entitySpacer": "GRADIENT|#6C677F|#6C6658"
+      },
+      "expandedSwatchHexes": [
+        "#F4CF63",
+        "#59C878",
+        "#F78F42",
+        "#B67EE8",
+        "#F06A5E",
+        "#2BB8B2",
+        "#A9B0C5",
+        "#53B7E6",
+        "#EA77B6",
+        "#D074BE",
+        "#F5A14E",
+        "#9A82EC",
+        "#4D91E0",
+        "#F37F79",
+        "#48BF8B",
+        "#6C677F",
+        "#4B77CC",
+        "#8D73D9",
+        "#F8E1BF",
+        "#F5CA93",
+        "#F1B374",
+        "#EA9A5E",
+        "#E17F4E",
+        "#CF6A5A",
+        "#9C8ED3",
+        "#B3BFD6",
+        "#F7B24A",
+        "#FBEBD4"
+      ],
+      "expandedSwatchGradients": [
+        "GRADIENT|#F4CF63|#54B1CF",
+        "GRADIENT|#59C878|#954CAA",
+        "GRADIENT|#F78F42|#38D2C6",
+        "GRADIENT|#B67EE8|#C3C56B",
+        "GRADIENT|#F06A5E|#50CC98",
+        "GRADIENT|#2BB8B2|#9C2566",
+        "GRADIENT|#A9B0C5|#A79690",
+        "GRADIENT|#53B7E6|#C3475D",
+        "GRADIENT|#EA77B6|#6AC765",
+        "GRADIENT|#D074BE|#7AB163",
+        "GRADIENT|#F5A14E|#42D0D0",
+        "GRADIENT|#9A82EC|#C9B06E",
+        "GRADIENT|#4D91E0|#BE4641",
+        "GRADIENT|#F37F79|#67CFA0",
+        "GRADIENT|#48BF8B|#A23D9C",
+        "GRADIENT|#6C677F|#6C6658",
+        "GRADIENT|#4B77CC|#AD5140",
+        "GRADIENT|#8D73D9|#B8A362",
+        "GRADIENT|#F8E1BF|#A2CED3",
+        "GRADIENT|#F5CA93|#7DCBD0",
+        "GRADIENT|#F1B374|#63CCCD",
+        "GRADIENT|#EA9A5E|#50C7BE",
+        "GRADIENT|#E17F4E|#42BFAA",
+        "GRADIENT|#CF6A5A|#4DB08C",
+        "GRADIENT|#9C8ED3|#B3A279",
+        "GRADIENT|#B3BFD6|#B69D98",
+        "GRADIENT|#F7B24A|#3FC3D2",
+        "GRADIENT|#FBEBD4|#B4D2D5"
+      ]
+    }
+  },
+  "roles": [
+    "entityLight",
+    "entitySwitch",
+    "entityLock",
+    "entityCover",
+    "entityClimate",
+    "entityButton",
+    "entityScene",
+    "entityScript",
+    "entityPerson",
+    "entityFan",
+    "entityMediaPlayer",
+    "entityTimer",
+    "entityRemote",
+    "entityVacuum",
+    "entityPage",
+    "entitySensor",
+    "entityCamera",
+    "entitySpacer"
+  ],
+  "addFallbackTheme": "sunnyBeachDay",
+  "watchFallbackTheme": "neonLagoon",
+  "domains": {
+    "alarm_control_panel": {
+      "icon": "shield",
+      "role": "entityLock"
+    },
+    "assist": {
+      "icon": "waveform.and.mic",
+      "role": "entitySensor"
+    },
+    "automation": {
+      "icon": "gearshape.2",
+      "role": "entityFan"
+    },
+    "binary_sensor": {
+      "icon": "sensor",
+      "role": "entitySensor",
+      "stateRules": true
+    },
+    "button": {
+      "icon": "button.programmable",
+      "role": "entityButton"
+    },
+    "calendar": {
+      "icon": "calendar",
+      "role": "entitySensor"
+    },
+    "camera": {
+      "icon": "video",
+      "role": "entityCamera"
+    },
+    "climate": {
+      "icon": "thermometer",
+      "role": "entityClimate"
+    },
+    "counter": {
+      "icon": "number",
+      "role": "entitySensor",
+      "stateRules": true
+    },
+    "cover": {
+      "icon": "blinds.horizontal.closed",
+      "role": "entityCover"
+    },
+    "date": {
+      "icon": "calendar.badge.clock",
+      "role": "entitySensor"
+    },
+    "datetime": {
+      "icon": "calendar.badge.clock",
+      "role": "entitySensor"
+    },
+    "device_tracker": {
+      "icon": "location",
+      "role": "entitySensor"
+    },
+    "divider": {
+      "icon": null,
+      "hex": "#CCD8E6"
+    },
+    "event": {
+      "icon": "bolt.badge.clock",
+      "role": "entitySensor"
+    },
+    "fan": {
+      "icon": "fan",
+      "role": "entityFan"
+    },
+    "http_action": {
+      "icon": "network",
+      "hex": "#CCD8E6"
+    },
+    "humidifier": {
+      "icon": "humidity",
+      "role": "entitySensor"
+    },
+    "image": {
+      "icon": "photo",
+      "role": "entityCamera"
+    },
+    "input_boolean": {
+      "icon": "togglepower",
+      "role": "entitySwitch"
+    },
+    "input_button": {
+      "icon": "button.programmable",
+      "role": "entityButton"
+    },
+    "input_datetime": {
+      "icon": "calendar.badge.clock",
+      "role": "entitySensor"
+    },
+    "input_number": {
+      "icon": "slider.horizontal.3",
+      "role": "entityScript"
+    },
+    "input_select": {
+      "icon": "list.bullet",
+      "role": "entityCover"
+    },
+    "input_text": {
+      "icon": "text.cursor",
+      "role": "entitySensor"
+    },
+    "lawn_mower": {
+      "icon": "leaf",
+      "role": "entitySensor"
+    },
+    "light": {
+      "icon": "lightbulb",
+      "role": "entityLight"
+    },
+    "lock": {
+      "icon": "lock",
+      "role": "entityLock"
+    },
+    "macro": {
+      "icon": "link",
+      "hex": "#CCD8E6",
+      "fromMacroLibrary": true
+    },
+    "media_player": {
+      "icon": "play.circle",
+      "role": "entityMediaPlayer",
+      "tvRemote": {
+        "icon": "av.remote",
+        "appleIcon": "appletv",
+        "role": "entityRemote"
+      }
+    },
+    "multicam": {
+      "icon": "rectangle.split.2x2",
+      "hex": "#5A7FB8"
+    },
+    "music_hub": {
+      "icon": "music.note.house",
+      "hex": "#E89545"
+    },
+    "number": {
+      "icon": "slider.horizontal.3",
+      "role": "entityScript"
+    },
+    "page": {
+      "icon": "rectangle.on.rectangle",
+      "role": "entityPage"
+    },
+    "person": {
+      "icon": "person",
+      "role": "entityPerson"
+    },
+    "point_control": {
+      "icon": "hand.point.up.left",
+      "hex": "#00FFFF"
+    },
+    "remote": {
+      "icon": "av.remote",
+      "role": "entityRemote",
+      "appleIcon": "appletv"
+    },
+    "scene": {
+      "icon": "play",
+      "role": "entityScene"
+    },
+    "script": {
+      "icon": "scroll",
+      "role": "entityScript"
+    },
+    "select": {
+      "icon": "list.bullet",
+      "role": "entityCover"
+    },
+    "sensor": {
+      "icon": "sensor",
+      "role": "entitySensor",
+      "stateRules": true
+    },
+    "show_page": {
+      "icon": "rectangle.stack.fill",
+      "role": "entityPage"
+    },
+    "siren": {
+      "icon": "light.beacon.max",
+      "role": "entitySensor"
+    },
+    "speak_message": {
+      "icon": "message.and.waveform",
+      "role": "entityMediaPlayer"
+    },
+    "status_page": {
+      "icon": "list.bullet.rectangle.portrait",
+      "hex": "#7CC4E8"
+    },
+    "switch": {
+      "icon": "switch.2",
+      "role": "entitySwitch"
+    },
+    "template": {
+      "icon": "chevron.left.forwardslash.chevron.right",
+      "hex": "#CCD8E6"
+    },
+    "text": {
+      "icon": "text.cursor",
+      "role": "entitySensor"
+    },
+    "time": {
+      "icon": "clock",
+      "role": "entitySensor"
+    },
+    "timer": {
+      "icon": "timer",
+      "role": "entityTimer"
+    },
+    "todo": {
+      "icon": "checklist",
+      "role": "entityFan"
+    },
+    "update": {
+      "icon": "square.and.arrow.down",
+      "role": "entitySensor"
+    },
+    "vacuum": {
+      "icon": "hurricane",
+      "role": "entityVacuum"
+    },
+    "valve": {
+      "icon": "drop.circle",
+      "role": "entityCover"
+    },
+    "water_heater": {
+      "icon": "drop.degreesign",
+      "role": "entitySensor"
+    },
+    "weather": {
+      "icon": "cloud.sun",
+      "role": "entitySensor"
+    },
+    "webhook_inbox": {
+      "icon": "tray.fill",
+      "hex": "#7CC4E8"
+    },
+    "zone": {
+      "icon": "mappin.and.ellipse",
+      "role": "entityPerson"
+    }
+  },
+  "otherDomains": {
+    "icon": null,
+    "color": null
+  },
+  "sensorState": {
+    "deviceClassIgnoresCase": true,
+    "numericState": "The state as Swift's Double(String) reads it: a plain decimal number such as 42 or -3.5. Anything else, an empty state included, is not a number and takes the other value.",
+    "byDomain": {
+      "binary_sensor": {
+        "icon": "sensor",
+        "hex": "#8E8E93"
+      },
+      "counter": {
+        "icon": "number.circle",
+        "hex": "#64D2FF"
+      },
+      "sensor": {
+        "icon": "sensor",
+        "hex": "#8E8E93"
+      }
+    },
+    "deviceClasses": {
+      "battery": {
+        "iconBands": [
+          {
+            "atLeast": 0,
+            "below": 10,
+            "icon": "battery.0"
+          },
+          {
+            "atLeast": 10,
+            "below": 25,
+            "icon": "battery.25"
+          },
+          {
+            "atLeast": 25,
+            "below": 50,
+            "icon": "battery.50"
+          },
+          {
+            "atLeast": 50,
+            "below": 75,
+            "icon": "battery.75"
+          }
+        ],
+        "otherIcon": "battery.100",
+        "hexBands": [
+          {
+            "below": 20,
+            "hex": "#FF3B30"
+          }
+        ],
+        "otherHex": "#34C759"
+      },
+      "carbon_dioxide": {
+        "icon": "carbon.dioxide.cloud",
+        "hex": "#FF6B6B"
+      },
+      "carbon_monoxide": {
+        "icon": "exclamationmark.triangle",
+        "hex": "#FF6B6B"
+      },
+      "co": {
+        "icon": "exclamationmark.triangle",
+        "hex": null
+      },
+      "co2": {
+        "icon": "carbon.dioxide.cloud",
+        "hex": null
+      },
+      "current": {
+        "icon": "waveform.path",
+        "hex": null
+      },
+      "distance": {
+        "icon": "ruler",
+        "hex": null
+      },
+      "door": {
+        "icon": "door.left.hand.open",
+        "hex": "#FF9500"
+      },
+      "duration": {
+        "icon": "timer",
+        "hex": null
+      },
+      "energy": {
+        "icon": "bolt.circle",
+        "hex": "#FFCC00"
+      },
+      "frequency": {
+        "icon": "waveform",
+        "hex": null
+      },
+      "garage_door": {
+        "icon": "door.garage.open",
+        "hex": null
+      },
+      "gas": {
+        "icon": "aqi.medium",
+        "hex": "#FF6B6B"
+      },
+      "humidity": {
+        "icon": "humidity",
+        "hex": "#5AC8FA"
+      },
+      "illuminance": {
+        "icon": "sun.max",
+        "hex": "#FFD60A"
+      },
+      "mass": {
+        "icon": "scalemass",
+        "hex": null
+      },
+      "moisture": {
+        "icon": "drop",
+        "hex": null
+      },
+      "motion": {
+        "icon": "figure.walk",
+        "hex": "#AF52DE"
+      },
+      "nitrogen_dioxide": {
+        "icon": "cloud",
+        "hex": null
+      },
+      "no2": {
+        "icon": "cloud",
+        "hex": null
+      },
+      "o3": {
+        "icon": "sun.haze",
+        "hex": null
+      },
+      "occupancy": {
+        "icon": "person.fill",
+        "hex": "#AF52DE"
+      },
+      "opening": {
+        "icon": "rectangle.portrait.and.arrow.right",
+        "hex": null
+      },
+      "ozone": {
+        "icon": "sun.haze",
+        "hex": null
+      },
+      "pm1": {
+        "icon": "aqi.medium",
+        "hex": "#FF6B6B"
+      },
+      "pm10": {
+        "icon": "aqi.medium",
+        "hex": "#FF6B6B"
+      },
+      "pm25": {
+        "icon": "aqi.medium",
+        "hex": "#FF6B6B"
+      },
+      "power": {
+        "icon": "bolt",
+        "hex": "#FFCC00"
+      },
+      "pressure": {
+        "icon": "gauge",
+        "hex": null
+      },
+      "signal_strength": {
+        "icon": "wifi",
+        "hex": null
+      },
+      "so2": {
+        "icon": "smoke",
+        "hex": null
+      },
+      "speed": {
+        "icon": "speedometer",
+        "hex": null
+      },
+      "sulphur_dioxide": {
+        "icon": "smoke",
+        "hex": null
+      },
+      "temperature": {
+        "icon": "thermometer.medium",
+        "hex": "#FF9500"
+      },
+      "timestamp": {
+        "icon": "clock",
+        "hex": null
+      },
+      "voc": {
+        "icon": "leaf",
+        "hex": null
+      },
+      "volatile_organic_compounds": {
+        "icon": "leaf",
+        "hex": null
+      },
+      "voltage": {
+        "icon": "bolt.badge.clock",
+        "hex": null
+      },
+      "weight": {
+        "icon": "scalemass",
+        "hex": null
+      },
+      "window": {
+        "icon": "window.horizontal",
+        "hex": "#FF9500"
+      }
+    }
+  },
+  "calendar": {
+    "swatchTheme": "sunnyBeachDay",
+    "hash": "djb2 over the entity id's Unicode scalars in signed 64 bit arithmetic that wraps: start at 5381, then hash = hash * 33 + scalar for each. The index is the hash's magnitude modulo the swatch count.",
+    "samples": {
+      "calendar.a_very_long_calendar_name_that_overflows_the_sixty_four_bit_hash_several_times": "#2F968D",
+      "calendar.birthdays": "#A6D3CC",
+      "calendar.family": "#36B7A6",
+      "calendar.home_assistant": "#3B5F77",
+      "calendar.school_holidays": "#E76F51",
+      "calendar.work": "#2F79B6",
+      "calendar.ünïcode_events": "#81B5CF"
+    }
+  },
+  "label": {
+    "assist": "Assist",
+    "speak_message": "Speak",
+    "samples": [
+      {
+        "entityId": "light.living_room_lamp",
+        "friendlyName": "Living Room Lamp",
+        "label": "Living Room Lamp"
+      },
+      {
+        "entityId": "light.living_room_lamp",
+        "label": "Living Room Lamp"
+      },
+      {
+        "entityId": "light.living_room_lamp",
+        "friendlyName": "",
+        "label": "Living Room Lamp"
+      },
+      {
+        "entityId": "sensor.tv2go_power",
+        "label": "Tv2Go Power"
+      },
+      {
+        "entityId": "light.KITCHEN_ceiling",
+        "label": "Kitchen Ceiling"
+      },
+      {
+        "entityId": "sensor.outdoor.temp_c",
+        "label": "Outdoor.Temp C"
+      },
+      {
+        "entityId": "light.o'brien_reading",
+        "label": "O'brien Reading"
+      },
+      {
+        "entityId": "switch.café_plug",
+        "label": "Café Plug"
+      },
+      {
+        "entityId": "light.__double__under",
+        "label": "  Double  Under"
+      },
+      {
+        "entityId": "light.x",
+        "label": "X"
+      },
+      {
+        "entityId": "light.",
+        "label": ""
+      },
+      {
+        "entityId": "light",
+        "label": ""
+      },
+      {
+        "entityId": "media_player.hi-fi_system",
+        "label": "Hi-Fi System"
+      },
+      {
+        "entityId": "light.room 2b",
+        "label": "Room 2B"
+      },
+      {
+        "entityId": "sensor.pm2_5_level",
+        "label": "Pm2 5 Level"
+      },
+      {
+        "entityId": "light.rgbw_strip_v2",
+        "label": "Rgbw Strip V2"
+      },
+      {
+        "entityId": "sensor.ünïcode_ßensor",
+        "label": "Ünïcode Ssensor"
+      },
+      {
+        "entityId": "light.lamp.2nd_floor",
+        "label": "Lamp.2Nd Floor"
+      }
+    ]
+  },
+  "addable": [
+    {
+      "domain": "light",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "light",
+          "name": "Lights",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "light",
+          "name": "Lights",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "switch",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "switchEntity",
+          "name": "Switches",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "switchEntity",
+          "name": "Switches",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "lock",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "lock",
+          "name": "Locks",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "lock",
+          "name": "Locks",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "cover",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "cover",
+          "name": "Covers",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "cover",
+          "name": "Covers",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "valve",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "valve",
+          "name": "Valves",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "valve",
+          "name": "Valves",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "climate",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "climate",
+          "name": "Climate",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "climate",
+          "name": "Climate",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "button",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "button",
+          "name": "Buttons",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "button",
+          "name": "Buttons",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "input_button",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "button",
+          "name": "Buttons",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "button",
+          "name": "Buttons",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "scene",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "scene",
+          "name": "Scenes",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "scene",
+          "name": "Scenes",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "script",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "script",
+          "name": "Scripts",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "script",
+          "name": "Scripts",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "person",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "person",
+          "name": "Persons",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "person",
+          "name": "Persons",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "fan",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "fan",
+          "name": "Fans",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "fan",
+          "name": "Fans",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "media_player",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "mediaPlayer",
+          "name": "Media Players",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "mediaPlayer",
+          "name": "Media Players",
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "remote",
+          "name": "Remotes",
+          "tvOnly": true,
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "timer",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "timer",
+          "name": "Timers",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "timer",
+          "name": "Timers",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "remote",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "remote",
+          "name": "Remotes",
+          "preferred": true,
+          "extras": {},
+          "linksDeviceMediaPlayer": true
+        },
+        {
+          "via": "button",
+          "picker": "remote",
+          "name": "Remotes",
+          "extras": {},
+          "linksDeviceMediaPlayer": true
+        }
+      ]
+    },
+    {
+      "domain": "automation",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "automation",
+          "name": "Automations",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "automation",
+          "name": "Automations",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "alarm_control_panel",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "alarmPanel",
+          "name": "Alarm Panels",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "alarmPanel",
+          "name": "Alarm",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "vacuum",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "vacuum",
+          "name": "Vacuums",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "vacuum",
+          "name": "Vacuums",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "camera",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "camera",
+          "name": "Cameras",
+          "preferred": true,
+          "extras": {
+            "cameraDisplayMode": "preview"
+          }
+        },
+        {
+          "via": "button",
+          "picker": "camera",
+          "name": "Cameras",
+          "extras": {
+            "cameraDisplayMode": "preview"
+          }
+        }
+      ]
+    },
+    {
+      "domain": "sensor",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "sensor",
+          "name": "Sensors",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "sensor",
+          "name": "Sensors",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "binary_sensor",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "sensor",
+          "name": "Sensors",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "sensor",
+          "name": "Sensors",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "update",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "update",
+          "name": "Updates",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "sensor",
+          "name": "Sensors",
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "update",
+          "name": "Updates",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "water_heater",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "waterHeater",
+          "name": "Water Heaters",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "waterHeater",
+          "name": "Water Heaters",
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "sensor",
+          "name": "Sensors",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "lawn_mower",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "lawnMower",
+          "name": "Lawn Mowers",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "lawnMower",
+          "name": "Mowers",
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "sensor",
+          "name": "Sensors",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "humidifier",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "humidifier",
+          "name": "Humidifiers",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "humidifier",
+          "name": "Humidifiers",
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "sensor",
+          "name": "Sensors",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "device_tracker",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "deviceTracker",
+          "name": "Trackers",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "sensor",
+          "name": "Sensors",
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "deviceTracker",
+          "name": "Trackers",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "zone",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "zone",
+          "name": "Zones",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "sensor",
+          "name": "Sensors",
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "zone",
+          "name": "Zones",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "event",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "event",
+          "name": "Events",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "sensor",
+          "name": "Sensors",
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "event",
+          "name": "Events",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "calendar",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "calendar",
+          "name": "Calendars",
+          "preferred": true,
+          "extras": {},
+          "writesCalendarSourceColor": true
+        },
+        {
+          "via": "button",
+          "picker": "sensor",
+          "name": "Sensors",
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "calendar",
+          "name": "Calendars",
+          "extras": {},
+          "writesCalendarSourceColor": true
+        }
+      ]
+    },
+    {
+      "domain": "date",
+      "routes": [
+        {
+          "via": "button",
+          "picker": "sensor",
+          "name": "Sensors",
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "date",
+          "name": "Dates",
+          "preferred": true,
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "time",
+      "routes": [
+        {
+          "via": "button",
+          "picker": "sensor",
+          "name": "Sensors",
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "time",
+          "name": "Times",
+          "preferred": true,
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "datetime",
+      "routes": [
+        {
+          "via": "button",
+          "picker": "sensor",
+          "name": "Sensors",
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "dateTime",
+          "name": "Date+Time",
+          "preferred": true,
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "input_datetime",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "inputDateTime",
+          "name": "Input DateTimes",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "sensor",
+          "name": "Sensors",
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "dateTime",
+          "name": "Date+Time",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "image",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "image",
+          "name": "Images",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "image",
+          "name": "Images",
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "sensor",
+          "name": "Sensors",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "weather",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "weather",
+          "name": "Weather",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "sensor",
+          "name": "Sensors",
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "weather",
+          "name": "Weather",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "siren",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "siren",
+          "name": "Sirens",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "siren",
+          "name": "Sirens",
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "sensor",
+          "name": "Sensors",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "input_boolean",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "inputBoolean",
+          "name": "Toggles",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "inputBoolean",
+          "name": "Toggles",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "input_number",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "inputNumber",
+          "name": "Numbers",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "inputNumber",
+          "name": "Numbers",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "number",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "inputNumber",
+          "name": "Numbers",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "inputNumber",
+          "name": "Numbers",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "input_select",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "inputSelect",
+          "name": "Selects",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "inputSelect",
+          "name": "Selects",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "select",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "inputSelect",
+          "name": "Selects",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "inputSelect",
+          "name": "Selects",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "text",
+      "routes": [
+        {
+          "via": "button",
+          "picker": "text",
+          "name": "Text",
+          "preferred": true,
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "input_text",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "text",
+          "name": "Text",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "sensor",
+          "name": "Sensors",
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "text",
+          "name": "Text",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "counter",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "counter",
+          "name": "Counters",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "sensor",
+          "name": "Sensors",
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "counter",
+          "name": "Counters",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "todo",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "todo",
+          "name": "Todo",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "todo",
+          "name": "Todos",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "conversation",
+      "routes": [
+        {
+          "via": "search",
+          "picker": "conversation",
+          "name": "Conversation Agents",
+          "preferred": true,
+          "extras": {}
+        },
+        {
+          "via": "button",
+          "picker": "sensor",
+          "name": "Sensors",
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "tts",
+      "routes": [
+        {
+          "via": "button",
+          "picker": "sensor",
+          "name": "Sensors",
+          "preferred": true,
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "stt",
+      "routes": [
+        {
+          "via": "button",
+          "picker": "sensor",
+          "name": "Sensors",
+          "preferred": true,
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "wake_word",
+      "routes": [
+        {
+          "via": "button",
+          "picker": "sensor",
+          "name": "Sensors",
+          "preferred": true,
+          "extras": {}
+        }
+      ]
+    },
+    {
+      "domain": "assist_satellite",
+      "routes": [
+        {
+          "via": "button",
+          "picker": "sensor",
+          "name": "Sensors",
+          "preferred": true,
+          "extras": {}
+        }
+      ]
+    }
+  ],
+  "tile": {
+    "colSpan": 6,
+    "rowSpan": 4
+  },
+  "spacer": {
+    "entityIdPrefix": "spacer.",
+    "showLabel": false,
+    "colSpan": 6,
+    "rowSpan": 4,
+    "idOrder": ["the id in the entity id", "the tile id"]
+  },
+  "header": {
+    "entityId": "divider.line.custom",
+    "colSpan": 12,
+    "rowSpan": 1,
+    "showLabel": false,
+    "color": "#CCD8E6"
+  },
+  "pageLink": {
+    "entityIdPrefix": "page.",
+    "icon": "rectangle.on.rectangle",
+    "role": "entityPage",
+    "customLabel": "the target page's name",
+    "duplicatesAllowed": true
+  },
+  "peekLink": {
+    "entityIdPrefix": "show_page.",
+    "icon": "rectangle.stack.fill",
+    "role": "entityPage",
+    "customLabel": "the target page's name",
+    "duplicatesAllowed": true
+  }
+}

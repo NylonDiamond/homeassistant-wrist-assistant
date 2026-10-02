@@ -1,0 +1,1805 @@
+{
+  "version": 1,
+  "note": "Generated from the iPhone app's Swift code by WatchPagesTablesTests; do not edit. Regenerate tile-actions.json with TEST_RUNNER_WA_UPDATE_FIXTURES=1 ./scripts/test.sh WatchPagesTablesTests in the app repository.",
+  "actions": [
+    {
+      "raw": "toggle",
+      "label": "Toggle"
+    },
+    {
+      "raw": "openControl",
+      "label": "Open Controls"
+    },
+    {
+      "raw": "none",
+      "label": "None"
+    },
+    {
+      "raw": "nextTrack",
+      "label": "Next Track"
+    },
+    {
+      "raw": "mute",
+      "label": "Mute"
+    },
+    {
+      "raw": "openCover",
+      "label": "Open"
+    },
+    {
+      "raw": "closeCover",
+      "label": "Close"
+    },
+    {
+      "raw": "stopCover",
+      "label": "Stop"
+    },
+    {
+      "raw": "triggerAutomation",
+      "label": "Trigger"
+    },
+    {
+      "raw": "refreshSnapshot",
+      "label": "Refresh Snapshot"
+    },
+    {
+      "raw": "lockEntity",
+      "label": "Lock"
+    },
+    {
+      "raw": "unlockEntity",
+      "label": "Unlock"
+    },
+    {
+      "raw": "startTimer",
+      "label": "Start"
+    },
+    {
+      "raw": "pauseTimer",
+      "label": "Pause"
+    },
+    {
+      "raw": "cancelTimer",
+      "label": "Cancel"
+    },
+    {
+      "raw": "decrementCounter",
+      "label": "Decrement"
+    },
+    {
+      "raw": "resetCounter",
+      "label": "Reset"
+    },
+    {
+      "raw": "startListening",
+      "label": "Start Listening"
+    },
+    {
+      "raw": "speakMessage",
+      "label": "Speak Message"
+    },
+    {
+      "raw": "vacuumStart",
+      "label": "Start"
+    },
+    {
+      "raw": "vacuumDock",
+      "label": "Return to Dock"
+    },
+    {
+      "raw": "vacuumPause",
+      "label": "Pause"
+    },
+    {
+      "raw": "mowerStart",
+      "label": "Start"
+    },
+    {
+      "raw": "mowerDock",
+      "label": "Return to Dock"
+    },
+    {
+      "raw": "mowerPause",
+      "label": "Pause"
+    },
+    {
+      "raw": "triggerEntity",
+      "label": "Trigger Entity"
+    },
+    {
+      "raw": "httpAction",
+      "label": "Run HTTP Action"
+    },
+    {
+      "raw": "runMacro",
+      "label": "Run Macro"
+    }
+  ],
+  "unknownActionLabel": "Sync Needed",
+  "libraryActions": ["httpAction", "runMacro"],
+  "directions": ["up", "down", "left", "right"],
+  "kinds": {
+    "*": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "toggle",
+      "absentTap": "toggle",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle",
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "alarm_control_panel": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": true,
+      "dimWhenOff": true,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle Alarm",
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "assist": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["startListening", "none"],
+      "defaultTap": "startListening",
+      "absentTap": "startListening",
+      "holdSlideActions": ["startListening", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "startListening"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "startListening": "Run Assist",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "assist_satellite": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "toggle",
+      "absentTap": "toggle",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle",
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "automation": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "triggerAutomation", "none"],
+      "defaultTap": "toggle",
+      "absentTap": "toggle",
+      "holdSlideActions": ["toggle", "openControl", "triggerAutomation", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": true,
+      "skipConditions": true,
+      "labels": {
+        "toggle": "Toggle Automation",
+        "openControl": "Open Controls",
+        "triggerAutomation": "Trigger",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "binary_sensor": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["openControl", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": ["openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "openControl": "Open Details",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "button": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "toggle",
+      "absentTap": "toggle",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Press Button",
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "calendar": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["openControl", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": ["openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "camera": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["openControl", "refreshSnapshot", "none"],
+      "defaultTap": "toggle",
+      "absentTap": "toggle",
+      "holdSlideActions": ["openControl", "refreshSnapshot", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "refreshSnapshot"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "openControl": "Open Camera Settings",
+        "refreshSnapshot": "Refresh Snapshot",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action",
+        "toggle": "Open Live View"
+      }
+    },
+    "climate": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle Climate",
+        "openControl": "Open Climate",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "conversation": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "toggle",
+      "absentTap": "toggle",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle",
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "counter": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "decrementCounter", "resetCounter", "none"],
+      "defaultTap": "toggle",
+      "absentTap": "toggle",
+      "holdSlideActions": [
+        "toggle",
+        "openControl",
+        "decrementCounter",
+        "resetCounter",
+        "triggerEntity",
+        "httpAction",
+        "none"
+      ],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Increment Counter",
+        "openControl": "Open Controls",
+        "decrementCounter": "Decrement",
+        "resetCounter": "Reset",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "cover": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "openCover", "closeCover", "stopCover", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": [
+        "toggle",
+        "openControl",
+        "openCover",
+        "closeCover",
+        "stopCover",
+        "triggerEntity",
+        "httpAction",
+        "none"
+      ],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle Cover",
+        "openControl": "Open Cover Controls",
+        "openCover": "Open",
+        "closeCover": "Close",
+        "stopCover": "Stop",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "date": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle",
+        "openControl": "Open Date/Time",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "datetime": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle",
+        "openControl": "Open Date/Time",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "device_tracker": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["openControl", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": ["openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "divider": {
+      "tapPicker": false,
+      "holdSlidePicker": false,
+      "tapActions": ["openControl", "none"],
+      "defaultTap": "none",
+      "absentTap": "none",
+      "holdSlideActions": ["openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {},
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "event": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["openControl", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": ["openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "fan": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "toggle",
+      "absentTap": "toggle",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": true,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle Fan",
+        "openControl": "Open Fan Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "http_action": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["httpAction", "none"],
+      "defaultTap": "httpAction",
+      "absentTap": "httpAction",
+      "holdSlideActions": ["triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {},
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "httpAction": "Run HTTP Action",
+        "none": "None",
+        "triggerEntity": "Trigger Entity"
+      }
+    },
+    "humidifier": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "toggle",
+      "absentTap": "toggle",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle Humidifier",
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "image": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["openControl", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": ["openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "input_boolean": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "toggle",
+      "absentTap": "toggle",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": true,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle Boolean",
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "input_button": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "toggle",
+      "absentTap": "toggle",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Press Button",
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "input_datetime": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle",
+        "openControl": "Open Date/Time",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "input_number": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle",
+        "openControl": "Open Slider",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "input_select": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle",
+        "openControl": "Open Picker",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "input_text": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "toggle"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Set Value",
+        "openControl": "Open Text",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "lawn_mower": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "mowerStart", "mowerDock", "mowerPause", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": [
+        "toggle",
+        "openControl",
+        "mowerStart",
+        "mowerDock",
+        "mowerPause",
+        "triggerEntity",
+        "httpAction",
+        "none"
+      ],
+      "holdSlideDefaults": {
+        "down": "mowerDock"
+      },
+      "defaultRequiresConfirmation": true,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle Mower",
+        "openControl": "Open Controls",
+        "mowerStart": "Start",
+        "mowerDock": "Return to Dock",
+        "mowerPause": "Pause",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "light": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "toggle",
+      "absentTap": "toggle",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": true,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle Light",
+        "openControl": "Open Light Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "lock": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "lockEntity", "unlockEntity", "none"],
+      "defaultTap": "toggle",
+      "absentTap": "toggle",
+      "holdSlideActions": [
+        "toggle",
+        "openControl",
+        "lockEntity",
+        "unlockEntity",
+        "triggerEntity",
+        "httpAction",
+        "none"
+      ],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": true,
+      "dimWhenOff": true,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle Lock",
+        "openControl": "Open Lock Controls",
+        "lockEntity": "Lock",
+        "unlockEntity": "Unlock",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "macro": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["runMacro", "none"],
+      "defaultTap": "runMacro",
+      "absentTap": "runMacro",
+      "holdSlideActions": ["triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {},
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "runMacro": "Run Macro",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "media_player": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "nextTrack", "mute", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": ["toggle", "openControl", "nextTrack", "mute", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "toggle"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": true,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle Playback",
+        "openControl": "Open Player",
+        "nextTrack": "Next Track",
+        "mute": "Mute",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "multicam": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["openControl", "refreshSnapshot", "none"],
+      "defaultTap": "toggle",
+      "absentTap": "toggle",
+      "holdSlideActions": ["openControl", "refreshSnapshot", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "refreshSnapshot"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "openControl": "Open Camera Settings",
+        "refreshSnapshot": "Refresh Snapshot",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action",
+        "toggle": "Open Live View"
+      }
+    },
+    "music_hub": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "toggle"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": true,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle",
+        "openControl": "Open Music Hub",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "number": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle",
+        "openControl": "Open Slider",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "page": {
+      "tapPicker": false,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "toggle",
+      "absentTap": "toggle",
+      "holdSlideActions": ["triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {},
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Go to Page",
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "person": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["openControl", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": ["openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": true,
+      "skipConditions": false,
+      "labels": {
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "point_control": {
+      "tapPicker": false,
+      "holdSlidePicker": false,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "toggle",
+      "absentTap": "toggle",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": true,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle",
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "remote": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "toggle"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": true,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle Remote",
+        "openControl": "Open Remote",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "scene": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "toggle",
+      "absentTap": "toggle",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Activate Scene",
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "script": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "toggle",
+      "absentTap": "toggle",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Run Script",
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "select": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle",
+        "openControl": "Open Picker",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "sensor": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["openControl", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": ["openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "openControl": "Open Details",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "show_page": {
+      "tapPicker": false,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "toggle",
+      "absentTap": "toggle",
+      "holdSlideActions": ["triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {},
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle",
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "siren": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "toggle"
+      },
+      "defaultRequiresConfirmation": true,
+      "dimWhenOff": true,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle Siren",
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "spacer": {
+      "tapPicker": false,
+      "holdSlidePicker": false,
+      "tapActions": ["openControl", "none"],
+      "defaultTap": "none",
+      "absentTap": "none",
+      "holdSlideActions": ["openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {},
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "speak_message": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["speakMessage", "none"],
+      "defaultTap": "speakMessage",
+      "absentTap": "speakMessage",
+      "holdSlideActions": ["speakMessage", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "speakMessage"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "speakMessage": "Speak Message",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "status_page": {
+      "tapPicker": false,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "toggle",
+      "absentTap": "toggle",
+      "holdSlideActions": ["triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {},
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle",
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "stt": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "toggle",
+      "absentTap": "toggle",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle",
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "switch": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "toggle",
+      "absentTap": "toggle",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": true,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle Switch",
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "template": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["openControl", "none"],
+      "defaultTap": "toggle",
+      "absentTap": "toggle",
+      "holdSlideActions": ["openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action",
+        "toggle": "Refresh"
+      }
+    },
+    "text": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "toggle"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Set Value",
+        "openControl": "Open Text",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "time": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle",
+        "openControl": "Open Date/Time",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "timer": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "startTimer", "pauseTimer", "cancelTimer", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": [
+        "toggle",
+        "openControl",
+        "startTimer",
+        "pauseTimer",
+        "cancelTimer",
+        "triggerEntity",
+        "httpAction",
+        "none"
+      ],
+      "holdSlideDefaults": {
+        "down": "toggle"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": true,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle Timer",
+        "openControl": "Open Timer",
+        "startTimer": "Start",
+        "pauseTimer": "Pause",
+        "cancelTimer": "Cancel",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "todo": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Complete Item",
+        "openControl": "Open Todo",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "tts": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "toggle",
+      "absentTap": "toggle",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle",
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "update": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": true,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Install Update",
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "vacuum": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "vacuumStart", "vacuumDock", "vacuumPause", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": [
+        "toggle",
+        "openControl",
+        "vacuumStart",
+        "vacuumDock",
+        "vacuumPause",
+        "triggerEntity",
+        "httpAction",
+        "none"
+      ],
+      "holdSlideDefaults": {
+        "down": "vacuumDock"
+      },
+      "defaultRequiresConfirmation": true,
+      "dimWhenOff": true,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle Vacuum",
+        "openControl": "Open Vacuum Controls",
+        "vacuumStart": "Start",
+        "vacuumDock": "Return to Dock",
+        "vacuumPause": "Pause",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "valve": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "openCover", "closeCover", "stopCover", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": [
+        "toggle",
+        "openControl",
+        "openCover",
+        "closeCover",
+        "stopCover",
+        "triggerEntity",
+        "httpAction",
+        "none"
+      ],
+      "holdSlideDefaults": {
+        "down": "toggle"
+      },
+      "defaultRequiresConfirmation": true,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle Valve",
+        "openControl": "Open Cover Controls",
+        "openCover": "Open",
+        "closeCover": "Close",
+        "stopCover": "Stop",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "wake_word": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "toggle",
+      "absentTap": "toggle",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle",
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "water_heater": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "toggle",
+      "absentTap": "toggle",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle Heater",
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "weather": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["openControl", "none"],
+      "defaultTap": "openControl",
+      "absentTap": "openControl",
+      "holdSlideActions": ["openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "openControl": "Open Weather",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    },
+    "webhook_inbox": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["openControl", "none"],
+      "defaultTap": "toggle",
+      "absentTap": "toggle",
+      "holdSlideActions": ["triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {},
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action",
+        "toggle": "Toggle"
+      }
+    },
+    "zone": {
+      "tapPicker": true,
+      "holdSlidePicker": true,
+      "tapActions": ["toggle", "openControl", "none"],
+      "defaultTap": "toggle",
+      "absentTap": "toggle",
+      "holdSlideActions": ["toggle", "openControl", "triggerEntity", "httpAction", "none"],
+      "holdSlideDefaults": {
+        "down": "openControl"
+      },
+      "defaultRequiresConfirmation": false,
+      "dimWhenOff": false,
+      "skipConditions": false,
+      "labels": {
+        "toggle": "Toggle",
+        "openControl": "Open Controls",
+        "none": "None",
+        "triggerEntity": "Trigger Entity",
+        "httpAction": "Run HTTP Action"
+      }
+    }
+  },
+  "triggerEntity": {
+    "targetDomains": [
+      "alarm_control_panel",
+      "automation",
+      "button",
+      "camera",
+      "climate",
+      "counter",
+      "cover",
+      "fan",
+      "humidifier",
+      "input_boolean",
+      "input_button",
+      "input_select",
+      "lawn_mower",
+      "light",
+      "lock",
+      "media_player",
+      "remote",
+      "scene",
+      "script",
+      "select",
+      "siren",
+      "switch",
+      "timer",
+      "update",
+      "vacuum",
+      "valve",
+      "water_heater"
+    ],
+    "modes": {
+      "*": ["toggle", "refresh"],
+      "alarm_control_panel": [
+        "armHome",
+        "armAway",
+        "armNight",
+        "armVacation",
+        "armCustomBypass",
+        "disarm",
+        "trigger",
+        "refresh"
+      ],
+      "automation": ["trigger", "toggle", "enable", "disable", "refresh"],
+      "button": ["press", "refresh"],
+      "camera": ["turnOn", "turnOff", "enableMotionDetection", "disableMotionDetection", "refresh"],
+      "climate": ["toggle", "turnOn", "turnOff", "toggleAuxHeat", "refresh"],
+      "counter": ["increment", "decrement", "reset", "refresh"],
+      "cover": [
+        "toggle",
+        "open",
+        "close",
+        "stop",
+        "toggleTilt",
+        "openTilt",
+        "closeTilt",
+        "stopTilt",
+        "refresh"
+      ],
+      "fan": [
+        "toggle",
+        "turnOn",
+        "turnOff",
+        "increaseSpeed",
+        "decreaseSpeed",
+        "oscillate",
+        "toggleDirection",
+        "refresh"
+      ],
+      "humidifier": ["toggle", "turnOn", "turnOff", "refresh"],
+      "input_boolean": ["toggle", "turnOn", "turnOff", "refresh"],
+      "input_button": ["press", "refresh"],
+      "input_select": ["selectNext", "selectPrevious", "selectFirst", "selectLast", "refresh"],
+      "lawn_mower": ["start", "pause", "dock", "refresh"],
+      "light": ["toggle", "turnOn", "turnOff", "refresh"],
+      "lock": ["toggle", "lock", "unlock", "open", "refresh"],
+      "media_player": [
+        "toggle",
+        "turnOn",
+        "turnOff",
+        "play",
+        "pause",
+        "playPause",
+        "stop",
+        "nextTrack",
+        "previousTrack",
+        "volumeUp",
+        "volumeDown",
+        "mute",
+        "toggleShuffle",
+        "cycleRepeat",
+        "clearPlaylist",
+        "unjoin",
+        "refresh"
+      ],
+      "remote": ["toggle", "turnOn", "turnOff", "refresh"],
+      "scene": ["activate", "refresh"],
+      "script": ["run", "toggle", "enable", "disable", "refresh"],
+      "select": ["selectNext", "selectPrevious", "selectFirst", "selectLast", "refresh"],
+      "siren": ["toggle", "turnOn", "turnOff", "refresh"],
+      "switch": ["toggle", "turnOn", "turnOff", "refresh"],
+      "timer": ["start", "pause", "cancel", "finish", "refresh"],
+      "update": ["install", "skip", "clearSkipped", "refresh"],
+      "vacuum": ["start", "pause", "stop", "returnToBase", "locate", "cleanSpot", "refresh"],
+      "valve": ["toggle", "open", "close", "stop", "refresh"],
+      "water_heater": ["toggle", "turnOn", "turnOff", "toggleAwayMode", "refresh"]
+    },
+    "modeLabels": {
+      "turnOn": "Turn On",
+      "turnOff": "Turn Off",
+      "toggle": "Toggle",
+      "lock": "Lock",
+      "unlock": "Unlock",
+      "open": "Open",
+      "close": "Close",
+      "stop": "Stop",
+      "start": "Start",
+      "pause": "Pause",
+      "cancel": "Cancel",
+      "dock": "Dock",
+      "returnToBase": "Return to Base",
+      "locate": "Locate",
+      "activate": "Activate",
+      "run": "Run",
+      "enable": "Enable",
+      "disable": "Disable",
+      "trigger": "Trigger",
+      "press": "Press",
+      "play": "Play",
+      "playPause": "Play/Pause",
+      "nextTrack": "Next Track",
+      "previousTrack": "Previous Track",
+      "volumeUp": "Volume Up",
+      "volumeDown": "Volume Down",
+      "mute": "Toggle Mute",
+      "increaseSpeed": "Increase Speed",
+      "decreaseSpeed": "Decrease Speed",
+      "oscillate": "Toggle Oscillation",
+      "openTilt": "Open Tilt",
+      "closeTilt": "Close Tilt",
+      "stopTilt": "Stop Tilt",
+      "toggleTilt": "Toggle Tilt",
+      "toggleShuffle": "Toggle Shuffle",
+      "cycleRepeat": "Cycle Repeat",
+      "toggleDirection": "Reverse Direction",
+      "cleanSpot": "Clean Spot",
+      "finish": "Finish",
+      "increment": "Increment",
+      "decrement": "Decrement",
+      "reset": "Reset",
+      "selectNext": "Next Option",
+      "selectPrevious": "Previous Option",
+      "selectFirst": "First Option",
+      "selectLast": "Last Option",
+      "enableMotionDetection": "Enable Motion Detection",
+      "disableMotionDetection": "Disable Motion Detection",
+      "clearPlaylist": "Clear Playlist",
+      "unjoin": "Leave Speaker Group",
+      "toggleAwayMode": "Toggle Away Mode",
+      "toggleAuxHeat": "Toggle Aux Heat",
+      "armCustomBypass": "Arm Custom Bypass",
+      "skip": "Skip Version",
+      "clearSkipped": "Clear Skipped",
+      "refresh": "Refresh",
+      "armHome": "Arm Home",
+      "armAway": "Arm Away",
+      "armNight": "Arm Night",
+      "armVacation": "Arm Vacation",
+      "disarm": "Disarm",
+      "install": "Install"
+    }
+  },
+  "labelFontWeights": [
+    {
+      "label": "Light",
+      "value": "light",
+      "stored": "light"
+    },
+    {
+      "label": "Regular",
+      "value": "regular",
+      "stored": null
+    },
+    {
+      "label": "Medium",
+      "value": "medium",
+      "stored": "medium"
+    },
+    {
+      "label": "Semibold",
+      "value": "semibold",
+      "stored": "semibold"
+    },
+    {
+      "label": "Bold",
+      "value": "bold",
+      "stored": "bold"
+    }
+  ],
+  "labelFontDesigns": [
+    {
+      "label": "Default",
+      "value": "default",
+      "stored": null
+    },
+    {
+      "label": "Rounded",
+      "value": "rounded",
+      "stored": "rounded"
+    },
+    {
+      "label": "Mono",
+      "value": "monospaced",
+      "stored": "monospaced"
+    },
+    {
+      "label": "Serif",
+      "value": "serif",
+      "stored": "serif"
+    }
+  ],
+  "iconTapAnimations": [
+    {
+      "value": "replace",
+      "label": "Morph"
+    },
+    {
+      "value": "bounce",
+      "label": "Bounce"
+    },
+    {
+      "value": "fade",
+      "label": "Fade"
+    },
+    {
+      "value": "slide",
+      "label": "Slide"
+    },
+    {
+      "value": "swing",
+      "label": "Swing"
+    },
+    {
+      "value": "flip",
+      "label": "Flip"
+    },
+    {
+      "value": "spin",
+      "label": "Spin"
+    },
+    {
+      "value": "pop",
+      "label": "Pop"
+    },
+    {
+      "value": "jelly",
+      "label": "Jelly"
+    },
+    {
+      "value": "explode",
+      "label": "Explode"
+    }
+  ],
+  "newIconTapAnimation": "replace"
+}
