@@ -16,6 +16,7 @@ import type { IconProvider } from "../renderer.js";
 import {
   type PlacedWatchTile,
   type WatchPage,
+  type WatchPageTile,
   type WatchTileColor,
   dividerParts,
   isSmartWatchPage,
@@ -66,7 +67,8 @@ function tileGround(color: WatchTileColor | undefined): string {
   return "linear-gradient(135deg, rgba(255,59,48,.35), rgba(255,149,0,.35), rgba(255,204,0,.35), rgba(52,199,89,.35), rgba(0,122,255,.35), rgba(175,82,222,.35))";
 }
 
-function screenColor(page: WatchPage): string {
+/** The page's own background, black when it has none. */
+export function watchScreenColor(page: WatchPage): string {
   const color = parseTileColor(page.backgroundColor);
   return color?.kind === "solid" ? rgba(color.hex, color.opacity) : "#000";
 }
@@ -79,10 +81,36 @@ function symbolMark(icons: IconProvider | undefined, symbol: string | undefined,
 
 function renderTile(placed: PlacedWatchTile, input: WatchPagePreviewInput, unit: number, top: number, s: number): TemplateResult {
   const { tile, x, y, width, height } = placed;
+  const box = `left:${x * s}px;top:${(top + y) * s}px;width:${width * s}px;height:${height * s}px;`;
+  return tileFace(tile, width, height, box, input, unit, s, true);
+}
+
+/** A tile's look alone, filling the box it is put in (which must be
+ * positioned), for the editor's tiles: the editor wraps each in a button of
+ * its own and moves that. `width` and `height` are the tile's size in points,
+ * which the look is worked out from. */
+export function renderWatchTileFace(
+  tile: WatchPageTile,
+  size: { width: number; height: number },
+  input: WatchPagePreviewInput,
+  unit: number,
+): TemplateResult {
+  return tileFace(tile, size.width, size.height, "inset:0;", input, unit, input.scale ?? 1.5, false);
+}
+
+function tileFace(
+  tile: WatchPageTile,
+  width: number,
+  height: number,
+  box: string,
+  input: WatchPagePreviewInput,
+  unit: number,
+  s: number,
+  titled: boolean,
+): TemplateResult {
   const entityId = tileEntityId(tile);
   const kind = tileKind(entityId);
   const cls = tileClass(entityId, input.states);
-  const box = `left:${x * s}px;top:${(top + y) * s}px;width:${width * s}px;height:${height * s}px;`;
   const color = parseTileColor(tile.color);
   const ink = tileInkColor(color);
   const label = tileLabel(tile, input.states, input.pages);
@@ -91,13 +119,13 @@ function renderTile(placed: PlacedWatchTile, input: WatchPagePreviewInput, unit:
 
   if (cls === "divider") {
     const { style } = dividerParts(entityId);
-    return html`<div class="wp-divider" style=${`${box}--ink:${ink};font-size:${9 * s}px`} title=${hint}>
+    return html`<div class="wp-divider" style=${`${box}--ink:${ink};font-size:${9 * s}px`} title=${titled ? hint : nothing}>
       ${style === "label" && label !== "" ? html`<span class="wp-divider-label">${label}</span>` : nothing}
       <span class="wp-divider-line"></span>
     </div>`;
   }
   if (cls === "spacer") {
-    return html`<div class="wp-spacer" style=${`${box}border-radius:${Math.min(TILE_RADIUS, width / 2, height / 2) * s}px`} title=${hint}></div>`;
+    return html`<div class="wp-spacer" style=${`${box}border-radius:${Math.min(TILE_RADIUS, width / 2, height / 2) * s}px`} title=${titled ? hint : nothing}></div>`;
   }
 
   const unknown = cls === "unknown";
@@ -111,7 +139,7 @@ function renderTile(placed: PlacedWatchTile, input: WatchPagePreviewInput, unit:
   const ground = unknown ? "rgba(255, 255, 255, 0.08)" : tileGround(color);
   return html`<div class="wp-tile ${compact ? "compact" : ""} ${unknown ? "unknown" : ""}"
     style=${`${box}border-radius:${radius}px;background:${ground};padding:${Math.min(TILE_PAD, height / 4) * s}px ${Math.min(TILE_PAD + 1, width / 4) * s}px;gap:${3 * s}px`}
-    title=${hint}>
+    title=${titled ? hint : nothing}>
     ${symbolMark(input.icons, unknown ? undefined : tileSymbol(tile), symbolPt * s, unknown ? "#8E8E93" : ink)}
     <span class="wp-words">
       ${showLabel ? html`<span class="wp-label" style=${`font-size:${10.5 * s}px`}>${label}</span>` : nothing}
@@ -130,7 +158,7 @@ export function renderWatchPagePreview(input: WatchPagePreviewInput): TemplateRe
   if (isSmartWatchPage(page)) {
     const domains = smartPageDomains(page).map(smartDomainLabel);
     return html`<div class="wp-screen" role="img" aria-label=${`${name}, a smart page`}
-      style=${`width:${width}px;height:${screen.height * s}px;background:${screenColor(page)}`}>
+      style=${`width:${width}px;height:${screen.height * s}px;background:${watchScreenColor(page)}`}>
       <div class="wp-smart">
         <b>Smart page</b>
         <span>${domains.length > 0
@@ -140,14 +168,29 @@ export function renderWatchPagePreview(input: WatchPagePreviewInput): TemplateRe
     </div>`;
   }
   const layout = watchPageLayout(page, screen);
-  const scrolls = layout.height > screen.height + 0.5;
+  const scrolls = watchPagePreviewScrolls(page, screen);
   return html`<div class="wp-screen" role="group" aria-label=${`Preview of ${name}`}
-    style=${`width:${width}px;height:${layout.height * s}px;background:${screenColor(page)}`}>
+    style=${`width:${width}px;height:${layout.height * s}px;background:${watchScreenColor(page)}`}>
     ${layout.topInset > 0 ? html`<span class="wp-clock" style=${`font-size:${13 * s}px;height:${layout.topInset * s}px;padding-right:${12 * s}px`}>10:09</span>` : nothing}
     ${layout.tiles.length === 0 ? html`<div class="wp-smart"><span>No tiles on this page.</span></div>` : nothing}
     ${layout.tiles.map((placed) => renderTile(placed, input, layout.unit, layout.topInset, s))}
-    ${scrolls ? html`<div class="wp-fold" style=${`top:${screen.height * s}px`}><span>End of the screen, the page scrolls on</span></div>` : nothing}
+    ${scrolls ? renderWatchScreenFold(screen.height * s) : nothing}
   </div>`;
+}
+
+/** The dashed line where the watch's screen ends. The words that explain it
+ * go outside the picture (`WATCH_SCREEN_FOLD_TEXT`), where they cover no
+ * tile. */
+export function renderWatchScreenFold(top: number): TemplateResult {
+  return html`<div class="wp-fold" style=${`top:${top}px`} title=${WATCH_SCREEN_FOLD_TEXT}></div>`;
+}
+
+export const WATCH_SCREEN_FOLD_TEXT = "The dashed line marks the end of the watch's screen. The page scrolls on below it.";
+
+/** Whether the picture of a page runs past the screen, so it shows the
+ * fold. A smart page never does. */
+export function watchPagePreviewScrolls(page: WatchPage, screen: { width: number; height: number }): boolean {
+  return !isSmartWatchPage(page) && watchPageLayout(page, screen).height > screen.height + 0.5;
 }
 
 /** The picture's own rules. The screen is dark in both of the panel's skins,
@@ -212,16 +255,6 @@ export const watchPagePreviewStyles = css`
     right: 0;
     border-top: 1px dashed rgba(255, 255, 255, 0.55);
     pointer-events: none;
-  }
-  .wp-fold > span {
-    position: absolute;
-    right: 8px;
-    top: 2px;
-    padding: 1px 6px;
-    border-radius: 6px;
-    background: rgba(0, 0, 0, 0.7);
-    color: rgba(255, 255, 255, 0.8);
-    font-size: 10px;
   }
   .wp-smart {
     position: absolute;

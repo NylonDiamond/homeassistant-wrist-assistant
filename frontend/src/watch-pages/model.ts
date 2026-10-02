@@ -513,6 +513,18 @@ export interface WatchPageLayout {
   height: number;
 }
 
+/** Whether a page holds a header (`divider.` tile), which the watch pulls the
+ * rows below up for, so the flat editing grid and the watch differ. */
+export function watchPageHasHeader(page: WatchPage): boolean {
+  return watchPageTiles(page).some((t) => tileKind(tileEntityId(t)) === "divider");
+}
+
+export interface WatchPageLayoutOptions {
+  /** Every row one step below the last, with no pull up at headers, so a
+   * cell maps to points by plain multiplication. What the editor drags on. */
+  flat?: boolean;
+}
+
 /**
  * Every tile of a page placed in points on a screen of `screen` points, by
  * the watch's own arithmetic (`GridLayout` in the app's `InteractiveGrid`).
@@ -523,15 +535,22 @@ export interface WatchPageLayout {
  * by 0.6 of a unit and by 0.4 more for each later one, and a header moves up
  * with the headers at its own row too. A tile that hides itself when off is
  * drawn where it is stored; the watch closes such gaps, the editor does not.
+ * With `flat`, nothing is pulled up.
  */
-export function watchPageLayout(page: WatchPage, screen: { width: number; height: number }): WatchPageLayout {
+export function watchPageLayout(
+  page: WatchPage,
+  screen: { width: number; height: number },
+  options?: WatchPageLayoutOptions,
+): WatchPageLayout {
   const spacing = WATCH_GRID_SPACING;
   const unit = (screen.width - (WATCH_GRID_COLUMNS - 1) * spacing) / WATCH_GRID_COLUMNS;
   const step = unit + spacing;
   const items = watchPageTiles(page);
   const geometry = items.map(tileGeometry);
   const isDivider = items.map((t) => tileKind(tileEntityId(t)) === "divider");
-  const headerRows = [...new Set(geometry.filter((_, i) => isDivider[i]).map((g) => g.row))].sort((a, b) => a - b);
+  const headerRows = options?.flat === true
+    ? []
+    : [...new Set(geometry.filter((_, i) => isDivider[i]).map((g) => g.row))].sort((a, b) => a - b);
   const shift = (count: number) => (count === 0 ? 0 : unit * 0.6 + (count - 1) * unit * 0.4);
   const headersAbove = (row: number) => shift(headerRows.filter((r) => r < row).length);
   const headersAtOrAbove = (row: number) => shift(headerRows.filter((r) => r <= row).length);

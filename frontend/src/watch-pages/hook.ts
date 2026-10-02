@@ -47,6 +47,33 @@ export function navigateWatchPages(route: PanelRoute | undefined, pages: boolean
   window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
 }
 
+/** What the editor's chunk tells the entry about the page drafts it keeps. */
+export interface WatchPagesDraftProbe {
+  /** Whether any kept draft holds edits. */
+  dirty(): boolean;
+  /** Drop every kept draft. */
+  drop(): void;
+}
+
+let draftProbe: WatchPagesDraftProbe | undefined;
+
+/** Called once by the editor's chunk when it loads. Before that there can be
+ * no draft, so the entry never needs the chunk to answer. */
+export function registerWatchPagesDrafts(probe: WatchPagesDraftProbe): void {
+  draftProbe = probe;
+}
+
+/** Whether a page draft holds edits, for the panel's leave guards. */
+export function watchPagesDirty(): boolean {
+  return draftProbe?.dirty() ?? false;
+}
+
+/** The person agreed to leave with page edits unsaved: drop them, as the
+ * complication draft is lost with the panel. */
+export function dropWatchPagesDrafts(): void {
+  draftProbe?.drop();
+}
+
 let loading: Promise<void> | undefined;
 let loadFailed = false;
 

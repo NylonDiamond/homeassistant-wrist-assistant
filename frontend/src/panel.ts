@@ -398,7 +398,7 @@ import {
 } from "./parts.js";
 import { domainIcon } from "./domain-icons.js";
 import { WatchSettings, watchSettingsStyles } from "./watch-settings-view.js";
-import { type PanelRoute, isWatchPagesRoute, navigateWatchPages, renderWatchPagesButton, renderWatchPagesView, watchPagesHookStyles } from "./watch-pages/hook.js";
+import { type PanelRoute, dropWatchPagesDrafts, isWatchPagesRoute, navigateWatchPages, renderWatchPagesButton, renderWatchPagesView, watchPagesDirty, watchPagesHookStyles } from "./watch-pages/hook.js";
 import {
   FIRST_RUN_TILES, ZOOM_FIT, ZOOM_MAX, ZOOM_MIN, anySnap, pickGridStep, runFirstRunTile, slotWord, snapSwitchOn,
   stageReserve, toggleSnap, zoomIn, zoomLabel, zoomOut, type FirstRunTile, type SnapFlags, type SnapSwitch,
@@ -7587,7 +7587,7 @@ export class WristAssistantPanel extends LitElement {
    * It cannot offer a Save button; no page can add one to that dialog. The
    * `returnValue` is for Safari, which ignores `preventDefault` here. */
   private beforeUnload = (e: BeforeUnloadEvent) => {
-    if (!this.draft?.dirty) return;
+    if (!this.draft?.dirty && !watchPagesDirty()) return;
     e.preventDefault();
     e.returnValue = "";
   };
@@ -7603,7 +7603,8 @@ export class WristAssistantPanel extends LitElement {
    * where it is and go through.
    */
   private leaveGuard = (e: MouseEvent) => {
-    if (!this.draft?.dirty) return;
+    // The watch page drafts count too: they outlive the page editor's route.
+    if (!this.draft?.dirty && !watchPagesDirty()) return;
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     const path = e.composedPath();
     if (path.includes(this)) return;
@@ -7611,7 +7612,10 @@ export class WristAssistantPanel extends LitElement {
     if (!link || (link.target !== "" && link.target !== "_self")) return;
     const to = new URL(link.href, window.location.href);
     if (to.origin !== window.location.origin || to.pathname === window.location.pathname) return;
-    if (this.confirmDiscard()) return;
+    if (this.confirmDiscard()) {
+      dropWatchPagesDrafts();
+      return;
+    }
     e.preventDefault();
     e.stopImmediatePropagation();
   };
