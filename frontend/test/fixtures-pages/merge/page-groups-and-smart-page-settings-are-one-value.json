@@ -1,0 +1,56 @@
+{
+  "name": "A page's groups and dynamicConfig are not merged inside: the phone changed one group, so its whole groups list wins over the server's added group; the server changed dynamicConfig, so its whole dynamicConfig wins",
+  "base": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [],
+        "groups": [
+          {"id": "576DE9E8-A3FA-48DB-B654-B15C7F824E04", "overlayStyle": "none", "overlayColor": "#FFFFFF"}
+        ],
+        "dynamicConfig": {"tileColSpan": 4, "tileRowSpan": 3, "sortOrder": "domain", "liveUpdates": false}
+      }
+    ]
+  },
+  "phone": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [],
+        "groups": [
+          {"id": "576DE9E8-A3FA-48DB-B654-B15C7F824E04", "overlayStyle": "none", "overlayColor": "#FF9800"}
+        ],
+        "dynamicConfig": {"tileColSpan": 4, "tileRowSpan": 3, "sortOrder": "domain", "liveUpdates": false}
+      }
+    ]
+  },
+  "server": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [],
+        "groups": [
+          {"id": "576DE9E8-A3FA-48DB-B654-B15C7F824E04", "overlayStyle": "none", "overlayColor": "#FFFFFF"},
+          {"id": "6B88F7B9-3B31-49BC-ABA9-4C03586AF89B", "overlayStyle": "none", "overlayColor": "#FFFFFF"}
+        ],
+        "dynamicConfig": {"tileColSpan": 6, "tileRowSpan": 3, "sortOrder": "name", "liveUpdates": false}
+      }
+    ]
+  },
+  "expected": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [],
+        "groups": [
+          {"id": "576DE9E8-A3FA-48DB-B654-B15C7F824E04", "overlayStyle": "none", "overlayColor": "#FF9800"}
+        ],
+        "dynamicConfig": {"tileColSpan": 6, "tileRowSpan": 3, "sortOrder": "name", "liveUpdates": false}
+      }
+    ]
+  }
+}

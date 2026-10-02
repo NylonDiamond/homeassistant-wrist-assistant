@@ -1,0 +1,47 @@
+{
+  "name": "The phone removes a tile's color and the server changes it: a removal is the phone's change, so the color is gone",
+  "base": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen", "color": "#FFB300"}
+        ]
+      }
+    ]
+  },
+  "phone": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen"}
+        ]
+      }
+    ]
+  },
+  "server": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen", "color": "#4CAF50"}
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen"}
+        ]
+      }
+    ]
+  }
+}

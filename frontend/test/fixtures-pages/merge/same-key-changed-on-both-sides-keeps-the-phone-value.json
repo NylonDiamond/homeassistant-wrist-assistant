@@ -1,0 +1,47 @@
+{
+  "name": "Both sides recolor the same tile: the phone's color wins, and the server's other edit to that tile stays",
+  "base": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen", "color": "#FFB300", "icon": "lightbulb"}
+        ]
+      }
+    ]
+  },
+  "phone": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen", "color": "#FF5722", "icon": "lightbulb"}
+        ]
+      }
+    ]
+  },
+  "server": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen", "color": "#4CAF50", "icon": "lamp.ceiling"}
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen", "color": "#FF5722", "icon": "lamp.ceiling"}
+        ]
+      }
+    ]
+  }
+}

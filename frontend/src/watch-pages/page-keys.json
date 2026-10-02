@@ -1,0 +1,2056 @@
+{
+  "version": 1,
+  "enums": {
+    "GridDensity": [
+      "standard"
+    ],
+    "PageSwitcherDisplayMode": [
+      "text",
+      "icon"
+    ],
+    "ComplicationDisplayMode": [
+      "text",
+      "icon"
+    ],
+    "BackgroundImageFit": [
+      "fill",
+      "fit",
+      "stretch"
+    ],
+    "TileBackgroundPattern": [
+      "none",
+      "stripes",
+      "crosshatch",
+      "checkerboard",
+      "horizontalLines",
+      "verticalLines",
+      "grid",
+      "dots",
+      "diamond",
+      "gradient",
+      "waves",
+      "zigzag",
+      "sunburst",
+      "concentric",
+      "triangles",
+      "hexagons",
+      "cornerGlow",
+      "vignette",
+      "noise"
+    ],
+    "GroupOverlayStyle": [
+      "none",
+      "fireflies",
+      "aurora",
+      "bokeh",
+      "wisps",
+      "scanlines",
+      "matrix",
+      "pulse",
+      "electric",
+      "plasma",
+      "radar",
+      "rain",
+      "snow",
+      "stars",
+      "fire",
+      "confetti",
+      "bubbles",
+      "sparkle"
+    ],
+    "PageTitleDisplayStyle": [
+      "none",
+      "minimal",
+      "pill",
+      "glass"
+    ],
+    "PageTitleTextSize": [
+      "size7",
+      "size8",
+      "size9",
+      "size10",
+      "size11",
+      "size12",
+      "size13",
+      "size14",
+      "size15",
+      "size16",
+      "size17",
+      "size18",
+      "size19",
+      "size20",
+      "size22"
+    ],
+    "DSTheme": [
+      "midnight",
+      "sunrise",
+      "forest",
+      "sunnyBeachDay",
+      "neonLagoon",
+      "softVintage",
+      "hyperPop",
+      "ember",
+      "sakura",
+      "polar"
+    ],
+    "FontWeight": [
+      "light",
+      "regular",
+      "medium",
+      "semibold",
+      "bold"
+    ],
+    "FontDesign": [
+      "default",
+      "rounded",
+      "monospaced",
+      "serif"
+    ],
+    "StateValueLabelStyle": [
+      "Off",
+      "Plain",
+      "Pill"
+    ],
+    "StateBarStyle": [
+      "Top",
+      "Fill"
+    ],
+    "StateBarColorStyle": [
+      "Tile",
+      "White"
+    ],
+    "BorderThickness": [
+      "none",
+      "extraThin",
+      "thin",
+      "medium",
+      "thick",
+      "auto"
+    ],
+    "TileAnimation": [
+      "none",
+      "fireflies",
+      "aurora",
+      "bokeh",
+      "wisps",
+      "scanlines",
+      "matrix",
+      "pulse",
+      "electric",
+      "plasma",
+      "radar",
+      "rain",
+      "snow",
+      "stars",
+      "fire",
+      "confetti",
+      "bubbles",
+      "sparkle"
+    ],
+    "MacroCloseMode": [
+      "stayOpen",
+      "onSuccess",
+      "always"
+    ],
+    "TileTapAction": [
+      "toggle",
+      "openControl",
+      "none",
+      "nextTrack",
+      "mute",
+      "openCover",
+      "closeCover",
+      "stopCover",
+      "triggerAutomation",
+      "refreshSnapshot",
+      "lockEntity",
+      "unlockEntity",
+      "startTimer",
+      "pauseTimer",
+      "cancelTimer",
+      "decrementCounter",
+      "resetCounter",
+      "startListening",
+      "speakMessage",
+      "vacuumStart",
+      "vacuumDock",
+      "vacuumPause",
+      "mowerStart",
+      "mowerDock",
+      "mowerPause",
+      "triggerEntity",
+      "httpAction",
+      "runMacro"
+    ],
+    "SlideDirection": [
+      "up",
+      "down",
+      "left",
+      "right"
+    ],
+    "HTTPResponseDisplay": [
+      "toast",
+      "tileValue"
+    ],
+    "GroupBorderStyle": [
+      "none",
+      "line",
+      "animate"
+    ],
+    "BorderAnimation": [
+      "none",
+      "chase",
+      "orbit",
+      "sparkle",
+      "pulse",
+      "shimmer",
+      "flow",
+      "rainbow",
+      "comet",
+      "wavy",
+      "electric",
+      "helix",
+      "neon",
+      "fire",
+      "matrix",
+      "heartbeat",
+      "aquarium"
+    ],
+    "LineStyle": [
+      "solid",
+      "dashed",
+      "dotted"
+    ],
+    "IconTapAnimation": [
+      "replace",
+      "bounce",
+      "fade",
+      "slide",
+      "swing",
+      "flip",
+      "spin",
+      "pop",
+      "jelly",
+      "explode"
+    ],
+    "CameraDisplayMode": [
+      "icon",
+      "preview"
+    ],
+    "MultiCamTapMode": [
+      "grid",
+      "individual"
+    ],
+    "CameraFillMode": [
+      "fill",
+      "fit"
+    ],
+    "RemoteEdgeVolumeSide": [
+      "left",
+      "right"
+    ],
+    "RemoteButtonKind": [
+      "back",
+      "home",
+      "menu",
+      "select",
+      "power",
+      "play_pause",
+      "stop",
+      "prev",
+      "next",
+      "back_10",
+      "forward_10",
+      "shuffle",
+      "repeat",
+      "seek",
+      "source",
+      "sound_mode",
+      "volume_arc",
+      "volume_up",
+      "volume_down",
+      "mute",
+      "empty"
+    ],
+    "AssistPrimaryAction": [
+      "assistOnly",
+      "assistAndSpeakReply",
+      "speakOnly"
+    ],
+    "AssistSpeakTargetMode": [
+      "configuredSpeakers",
+      "watchSpeaker"
+    ],
+    "AssistReplyOutputMode": [
+      "silent",
+      "watchSpeaker",
+      "defaultSpeakers",
+      "configuredSpeakers",
+      "chooseEachTime"
+    ],
+    "AssistSpeechVolumeMode": [
+      "keepCurrent",
+      "setForMessageThenRestore",
+      "setAndKeep"
+    ],
+    "SpeechOutputTargetMode": [
+      "watchSpeaker",
+      "configuredSpeakers",
+      "chooseEachTime"
+    ],
+    "BroadcastTargetMode": [
+      "configuredSpeakers",
+      "chooseEachTime"
+    ],
+    "TriggerMode": [
+      "turnOn",
+      "turnOff",
+      "toggle",
+      "lock",
+      "unlock",
+      "open",
+      "close",
+      "stop",
+      "start",
+      "pause",
+      "cancel",
+      "dock",
+      "returnToBase",
+      "locate",
+      "activate",
+      "run",
+      "enable",
+      "disable",
+      "trigger",
+      "press",
+      "play",
+      "playPause",
+      "nextTrack",
+      "previousTrack",
+      "volumeUp",
+      "volumeDown",
+      "mute",
+      "increaseSpeed",
+      "decreaseSpeed",
+      "oscillate",
+      "openTilt",
+      "closeTilt",
+      "stopTilt",
+      "toggleTilt",
+      "toggleShuffle",
+      "cycleRepeat",
+      "toggleDirection",
+      "cleanSpot",
+      "finish",
+      "increment",
+      "decrement",
+      "reset",
+      "selectNext",
+      "selectPrevious",
+      "selectFirst",
+      "selectLast",
+      "enableMotionDetection",
+      "disableMotionDetection",
+      "clearPlaylist",
+      "unjoin",
+      "toggleAwayMode",
+      "toggleAuxHeat",
+      "armCustomBypass",
+      "skip",
+      "clearSkipped",
+      "refresh",
+      "armHome",
+      "armAway",
+      "armNight",
+      "armVacation",
+      "disarm",
+      "install"
+    ],
+    "DynamicSortOrder": [
+      "domain",
+      "alphabetical"
+    ],
+    "SelectionMode": [
+      "all",
+      "specific"
+    ],
+    "DomainHeaderStyle": [
+      "none",
+      "gap",
+      "line",
+      "label"
+    ],
+    "VisibilityOperator": [
+      "eq",
+      "neq",
+      "gt",
+      "lt",
+      "gte",
+      "lte",
+      "contains"
+    ]
+  },
+  "types": {
+    "document": {
+      "swift": "GridConfiguration",
+      "keys": {
+        "schemaVersion": {
+          "type": "int",
+          "required": false,
+          "default": 1
+        },
+        "pages": {
+          "type": "array",
+          "of": "object",
+          "ref": "page",
+          "required": true,
+          "default": []
+        }
+      }
+    },
+    "page": {
+      "swift": "PageConfig",
+      "keys": {
+        "id": {
+          "type": "uuid",
+          "required": false
+        },
+        "name": {
+          "type": "string",
+          "required": false,
+          "default": "Page"
+        },
+        "items": {
+          "type": "array",
+          "of": "object",
+          "ref": "tile",
+          "required": false,
+          "default": []
+        },
+        "groups": {
+          "type": "array",
+          "of": "object",
+          "ref": "tileGroup",
+          "required": false,
+          "default": []
+        },
+        "gridDensity": {
+          "type": "enum",
+          "enum": "GridDensity",
+          "required": false,
+          "default": "standard"
+        },
+        "isSystemPage": {
+          "type": "bool",
+          "required": false,
+          "default": false
+        },
+        "isDeletable": {
+          "type": "bool",
+          "required": false,
+          "default": true
+        },
+        "isHidden": {
+          "type": "bool",
+          "required": false,
+          "default": false
+        },
+        "dynamicConfig": {
+          "type": "object",
+          "ref": "dynamicPage",
+          "required": false
+        },
+        "switcherIcon": {
+          "type": "symbol",
+          "required": false
+        },
+        "switcherColor": {
+          "type": "color",
+          "required": false
+        },
+        "hideFromSwitcher": {
+          "type": "bool",
+          "required": false,
+          "default": false
+        },
+        "switcherDisplayMode": {
+          "type": "enum",
+          "enum": "PageSwitcherDisplayMode",
+          "required": false
+        },
+        "switcherText": {
+          "type": "string",
+          "required": false
+        },
+        "complicationDisplayMode": {
+          "type": "enum",
+          "enum": "ComplicationDisplayMode",
+          "required": false,
+          "default": "text"
+        },
+        "complicationText": {
+          "type": "string",
+          "required": false
+        },
+        "complicationIcon": {
+          "type": "symbol",
+          "required": false
+        },
+        "complicationColor": {
+          "type": "color",
+          "required": false
+        },
+        "complicationTextColorHex": {
+          "type": "color",
+          "required": false
+        },
+        "complicationTextFontSize": {
+          "type": "number",
+          "required": false,
+          "default": 0.2
+        },
+        "complicationTextFontWeight": {
+          "type": "enum",
+          "enum": "FontWeight",
+          "strict": false,
+          "required": false
+        },
+        "complicationTextFontDesign": {
+          "type": "enum",
+          "enum": "FontDesign",
+          "strict": false,
+          "required": false
+        },
+        "complicationIconSize": {
+          "type": "number",
+          "required": false,
+          "default": 0.4
+        },
+        "complicationBackgroundColor": {
+          "type": "color",
+          "required": false,
+          "default": "#000000"
+        },
+        "themeOverride": {
+          "type": "enum",
+          "enum": "DSTheme",
+          "strict": false,
+          "required": false,
+          "default": "neonLagoon"
+        },
+        "backgroundColor": {
+          "type": "color",
+          "required": false,
+          "new": "#000000"
+        },
+        "backgroundBrightness": {
+          "type": "number",
+          "required": false,
+          "default": 0.6
+        },
+        "backgroundImageId": {
+          "type": "string",
+          "required": false
+        },
+        "backgroundImageOpacity": {
+          "type": "number",
+          "required": false,
+          "default": 1.0,
+          "writeWhen": {
+            "key": "backgroundImageId",
+            "present": true
+          }
+        },
+        "backgroundImageBlur": {
+          "type": "number",
+          "required": false,
+          "default": 0.0,
+          "writeWhen": {
+            "key": "backgroundImageId",
+            "present": true
+          }
+        },
+        "backgroundImageFit": {
+          "type": "enum",
+          "enum": "BackgroundImageFit",
+          "required": false,
+          "default": "fill",
+          "writeWhen": {
+            "key": "backgroundImageId",
+            "present": true
+          }
+        },
+        "backgroundPattern": {
+          "type": "enum",
+          "enum": "TileBackgroundPattern",
+          "required": false,
+          "default": "none",
+          "writeWhen": {
+            "key": "backgroundPattern",
+            "not": "none"
+          }
+        },
+        "backgroundPatternColor": {
+          "type": "color",
+          "required": false,
+          "default": "#FFFFFF",
+          "writeWhen": {
+            "key": "backgroundPattern",
+            "not": "none"
+          }
+        },
+        "backgroundPatternOpacity": {
+          "type": "number",
+          "required": false,
+          "default": 0.5,
+          "writeWhen": {
+            "key": "backgroundPattern",
+            "not": "none"
+          }
+        },
+        "backgroundPatternScale": {
+          "type": "number",
+          "required": false,
+          "default": 1.0,
+          "writeWhen": {
+            "key": "backgroundPattern",
+            "not": "none"
+          }
+        },
+        "backgroundOverlay": {
+          "type": "enum",
+          "enum": "GroupOverlayStyle",
+          "required": false,
+          "default": "none",
+          "writeWhen": {
+            "key": "backgroundOverlay",
+            "not": "none"
+          }
+        },
+        "backgroundOverlayColor": {
+          "type": "color",
+          "required": false,
+          "default": "#FFFFFF",
+          "writeWhen": {
+            "key": "backgroundOverlay",
+            "not": "none"
+          }
+        },
+        "backgroundOverlaySpeed": {
+          "type": "number",
+          "required": false,
+          "default": 1.0,
+          "writeWhen": {
+            "key": "backgroundOverlay",
+            "not": "none"
+          }
+        },
+        "backgroundOverlayIntensity": {
+          "type": "number",
+          "required": false,
+          "default": 0.5,
+          "writeWhen": {
+            "key": "backgroundOverlay",
+            "not": "none"
+          }
+        },
+        "backgroundOverlaySize": {
+          "type": "number",
+          "required": false,
+          "default": 1.0,
+          "writeWhen": {
+            "key": "backgroundOverlay",
+            "not": "none"
+          }
+        },
+        "fullScreen": {
+          "type": "bool",
+          "required": false,
+          "default": false
+        },
+        "useGradientColors": {
+          "type": "bool",
+          "required": false,
+          "default": false
+        },
+        "pageTitleDisplayStyle": {
+          "type": "enum",
+          "enum": "PageTitleDisplayStyle",
+          "required": false,
+          "default": "none"
+        },
+        "pageTitleTextSize": {
+          "type": "enum",
+          "enum": "PageTitleTextSize",
+          "required": false,
+          "default": "size10"
+        },
+        "pageTitleTextColor": {
+          "type": "color",
+          "required": false
+        },
+        "pageTitleIcon": {
+          "type": "symbol",
+          "required": false,
+          "default": "house"
+        }
+      }
+    },
+    "tile": {
+      "swift": "GridItemConfig",
+      "keys": {
+        "id": {
+          "type": "uuid",
+          "required": true
+        },
+        "entityId": {
+          "type": "entity",
+          "required": true
+        },
+        "icon": {
+          "type": "symbol",
+          "required": false
+        },
+        "color": {
+          "type": "color",
+          "required": false
+        },
+        "backgroundPattern": {
+          "type": "enum",
+          "enum": "TileBackgroundPattern",
+          "required": true,
+          "default": "none"
+        },
+        "patternOpacity": {
+          "type": "number",
+          "required": true,
+          "default": 1.0
+        },
+        "patternColor": {
+          "type": "color",
+          "required": false
+        },
+        "patternScale": {
+          "type": "number",
+          "required": false,
+          "default": 1.0
+        },
+        "weatherDetailTextScale": {
+          "type": "number",
+          "required": false,
+          "default": 1.5
+        },
+        "weatherDetailShowIcons": {
+          "type": "bool",
+          "required": false,
+          "default": true
+        },
+        "customLabel": {
+          "type": "string",
+          "required": false
+        },
+        "showLabel": {
+          "type": "bool",
+          "required": true,
+          "default": true
+        },
+        "labelColorHex": {
+          "type": "color",
+          "required": false
+        },
+        "labelFontSizeOverride": {
+          "type": "number",
+          "required": false
+        },
+        "badgeFontSizeOverride": {
+          "type": "number",
+          "required": false
+        },
+        "statusIconSizeOverride": {
+          "type": "number",
+          "required": false
+        },
+        "decimalPlaces": {
+          "type": "int",
+          "required": false
+        },
+        "labelFontWeight": {
+          "type": "enum",
+          "enum": "FontWeight",
+          "strict": false,
+          "required": false,
+          "new": "light"
+        },
+        "labelFontDesign": {
+          "type": "enum",
+          "enum": "FontDesign",
+          "strict": false,
+          "required": false
+        },
+        "labelShadow": {
+          "type": "bool",
+          "required": true,
+          "default": true
+        },
+        "iconShadow": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "statusTextShadow": {
+          "type": "bool",
+          "required": true,
+          "default": true
+        },
+        "stateBarShadow": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "stateValueLabelStyle": {
+          "type": "enum",
+          "enum": "StateValueLabelStyle",
+          "required": true,
+          "default": "Plain"
+        },
+        "stateBarStyle": {
+          "type": "enum",
+          "enum": "StateBarStyle",
+          "required": true,
+          "default": "Top"
+        },
+        "stateBarColorStyle": {
+          "type": "enum",
+          "enum": "StateBarColorStyle",
+          "required": true,
+          "default": "Tile"
+        },
+        "stateBarBorder": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "activeIconAnimationEnabled": {
+          "type": "bool",
+          "required": false
+        },
+        "borderThickness": {
+          "type": "enum",
+          "enum": "BorderThickness",
+          "required": true,
+          "default": "extraThin"
+        },
+        "tileAnimation": {
+          "type": "enum",
+          "enum": "TileAnimation",
+          "required": true,
+          "default": "none"
+        },
+        "animationSpeed": {
+          "type": "number",
+          "required": true,
+          "default": 1.0
+        },
+        "animationIntensity": {
+          "type": "number",
+          "required": true,
+          "default": 1.0
+        },
+        "animationSize": {
+          "type": "number",
+          "required": true,
+          "default": 1.0
+        },
+        "animationColor": {
+          "type": "color",
+          "required": false
+        },
+        "requiresConfirmation": {
+          "type": "bool",
+          "required": false
+        },
+        "autoCloseMacroRun": {
+          "type": "bool",
+          "required": false,
+          "default": true
+        },
+        "macroCloseMode": {
+          "type": "enum",
+          "enum": "MacroCloseMode",
+          "strict": false,
+          "required": false
+        },
+        "macroRunSilently": {
+          "type": "bool",
+          "required": false,
+          "default": false
+        },
+        "singleTapAction": {
+          "type": "enum",
+          "enum": "TileTapAction",
+          "strict": false,
+          "required": false
+        },
+        "holdSlideActions": {
+          "type": "slideMap",
+          "of": "enum",
+          "enum": "TileTapAction",
+          "strict": false,
+          "required": false
+        },
+        "holdSlideTriggerTargets": {
+          "type": "slideMap",
+          "of": "object",
+          "ref": "triggerTarget",
+          "required": false
+        },
+        "holdSlideHTTPActionTargets": {
+          "type": "slideMap",
+          "of": "uuid",
+          "required": false
+        },
+        "holdSlideHTTPActionShowBanner": {
+          "type": "slideMap",
+          "of": "bool",
+          "required": false
+        },
+        "holdSlideHTTPActionBannerSeconds": {
+          "type": "slideMap",
+          "of": "number",
+          "required": false
+        },
+        "automationSkipConditionOverride": {
+          "type": "bool",
+          "required": false
+        },
+        "httpResponseDisplay": {
+          "type": "enum",
+          "enum": "HTTPResponseDisplay",
+          "strict": false,
+          "required": false
+        },
+        "httpToastSeconds": {
+          "type": "number",
+          "required": false,
+          "default": 3.0
+        },
+        "httpAutoRefreshOnOpen": {
+          "type": "bool",
+          "required": false,
+          "default": false
+        },
+        "httpAutoRefreshOnPull": {
+          "type": "bool",
+          "required": false,
+          "default": false
+        },
+        "httpAutoRefreshInterval": {
+          "type": "int",
+          "required": false
+        },
+        "httpTileValueShowName": {
+          "type": "bool",
+          "required": false,
+          "default": true
+        },
+        "httpTileValueFontSize": {
+          "type": "number",
+          "required": false
+        },
+        "httpTileValueColorHex": {
+          "type": "color",
+          "required": false
+        },
+        "httpTileValueOffsetY": {
+          "type": "number",
+          "required": false,
+          "default": 0.0
+        },
+        "httpTileValueLineLimit": {
+          "type": "int",
+          "required": false
+        },
+        "httpTileValueLineSpacing": {
+          "type": "number",
+          "required": false,
+          "default": 0.0
+        },
+        "colorOpacity": {
+          "type": "number",
+          "required": true,
+          "default": 1.0
+        },
+        "groupId": {
+          "type": "uuid",
+          "required": false
+        },
+        "capabilities": {
+          "type": "object",
+          "ref": "entityCapabilities",
+          "required": false
+        },
+        "overlayStyle": {
+          "type": "enum",
+          "enum": "GroupOverlayStyle",
+          "required": true,
+          "default": "none"
+        },
+        "overlayColor": {
+          "type": "color",
+          "required": true,
+          "default": "#FFFFFF"
+        },
+        "overlaySpeed": {
+          "type": "number",
+          "required": true,
+          "default": 1.0
+        },
+        "overlayIntensity": {
+          "type": "number",
+          "required": true,
+          "default": 1.0
+        },
+        "overlaySize": {
+          "type": "number",
+          "required": true,
+          "default": 1.0
+        },
+        "borderStyle": {
+          "type": "enum",
+          "enum": "GroupBorderStyle",
+          "required": true,
+          "default": "none"
+        },
+        "borderAnimation": {
+          "type": "enum",
+          "enum": "BorderAnimation",
+          "required": true,
+          "default": "none"
+        },
+        "borderAnimationSpeed": {
+          "type": "number",
+          "required": true,
+          "default": 1.0
+        },
+        "borderAnimationIntensity": {
+          "type": "number",
+          "required": true,
+          "default": 1.0
+        },
+        "borderAnimationSize": {
+          "type": "number",
+          "required": true,
+          "default": 1.0
+        },
+        "borderColor": {
+          "type": "color",
+          "required": false
+        },
+        "borderLineStyle": {
+          "type": "enum",
+          "enum": "LineStyle",
+          "required": true,
+          "default": "solid"
+        },
+        "borderGlow": {
+          "type": "number",
+          "required": true,
+          "default": 0.0
+        },
+        "effectActiveOnly": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "borderActiveOnly": {
+          "type": "bool",
+          "required": true,
+          "default": true
+        },
+        "iconSizeOverride": {
+          "type": "number",
+          "required": false
+        },
+        "iconTapAnimation": {
+          "type": "enum",
+          "enum": "IconTapAnimation",
+          "strict": false,
+          "required": true,
+          "default": "replace"
+        },
+        "cameraDisplayMode": {
+          "type": "enum",
+          "enum": "CameraDisplayMode",
+          "required": true,
+          "default": "icon"
+        },
+        "cameraAspectRatio": {
+          "type": "number",
+          "required": false
+        },
+        "cameraFillOffsetX": {
+          "type": "number",
+          "required": true,
+          "default": 0.0
+        },
+        "cameraFillOffsetY": {
+          "type": "number",
+          "required": true,
+          "default": 0.0
+        },
+        "cameraRefreshOnOpen": {
+          "type": "bool",
+          "required": false
+        },
+        "cameraGroupIds": {
+          "type": "array",
+          "of": "entity",
+          "required": false
+        },
+        "cameraGridColumns": {
+          "type": "int",
+          "required": false
+        },
+        "cameraRowWeights": {
+          "type": "array",
+          "of": "number",
+          "required": false
+        },
+        "multiCamTapMode": {
+          "type": "enum",
+          "enum": "MultiCamTapMode",
+          "required": false
+        },
+        "cameraFillMode": {
+          "type": "enum",
+          "enum": "CameraFillMode",
+          "required": false
+        },
+        "cameraFillModes": {
+          "type": "array",
+          "of": "enum",
+          "enum": "CameraFillMode",
+          "required": false
+        },
+        "cameraFillOffsetsX": {
+          "type": "array",
+          "of": "number",
+          "required": false
+        },
+        "cameraFillOffsetsY": {
+          "type": "array",
+          "of": "number",
+          "required": false
+        },
+        "multiCamBorderEnabled": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "multiCamBorderColor": {
+          "type": "color",
+          "required": true,
+          "default": "FFFFFF"
+        },
+        "multiCamBorderThickness": {
+          "type": "enum",
+          "enum": "BorderThickness",
+          "required": true,
+          "default": "thin"
+        },
+        "musicHubSpeakerIds": {
+          "type": "array",
+          "of": "entity",
+          "required": false
+        },
+        "showAlbumArt": {
+          "type": "bool",
+          "required": true,
+          "default": true
+        },
+        "musicHubGroupPresets": {
+          "type": "array",
+          "of": "object",
+          "ref": "musicHubPreset",
+          "required": false
+        },
+        "additionalCalendarEntityIds": {
+          "type": "array",
+          "of": "entity",
+          "required": false
+        },
+        "calendarSourceColors": {
+          "type": "map",
+          "of": "color",
+          "required": false
+        },
+        "hideWhenInactive": {
+          "type": "bool",
+          "required": false
+        },
+        "peekDisableAnimation": {
+          "type": "bool",
+          "required": false,
+          "default": false
+        },
+        "templateString": {
+          "type": "string",
+          "required": false
+        },
+        "templateRefreshInterval": {
+          "type": "number",
+          "required": false
+        },
+        "stateColorRules": {
+          "type": "array",
+          "of": "object",
+          "ref": "stateColorRule",
+          "required": false
+        },
+        "usesStateIcons": {
+          "type": "bool",
+          "required": false
+        },
+        "stateIcons": {
+          "type": "map",
+          "of": "symbol",
+          "required": false
+        },
+        "stateColors": {
+          "type": "map",
+          "of": "color",
+          "required": false
+        },
+        "dimWhenOff": {
+          "type": "bool",
+          "required": false,
+          "default": true
+        },
+        "usePersonPhoto": {
+          "type": "bool",
+          "required": false
+        },
+        "associatedMediaPlayerId": {
+          "type": "entity",
+          "required": false
+        },
+        "associatedVolumePlayerId": {
+          "type": "entity",
+          "required": false
+        },
+        "remoteLauncherScriptIds": {
+          "type": "array",
+          "of": "entity",
+          "required": false
+        },
+        "remoteLauncherLabels": {
+          "type": "array",
+          "of": "string",
+          "required": false
+        },
+        "remoteLauncherIcons": {
+          "type": "array",
+          "of": "symbol",
+          "required": false
+        },
+        "remoteLauncherColors": {
+          "type": "array",
+          "of": "color",
+          "required": false
+        },
+        "remoteQuickActionConfirm": {
+          "type": "bool",
+          "required": false
+        },
+        "remoteCrownSelectEnabled": {
+          "type": "bool",
+          "required": false
+        },
+        "remoteCrownBackEnabled": {
+          "type": "bool",
+          "required": false
+        },
+        "remoteEdgeVolumeEnabled": {
+          "type": "bool",
+          "required": false
+        },
+        "remoteEdgeVolumeSide": {
+          "type": "enum",
+          "enum": "RemoteEdgeVolumeSide",
+          "strict": false,
+          "required": false
+        },
+        "remoteButtonLayout": {
+          "type": "array",
+          "of": "enum",
+          "enum": "RemoteButtonKind",
+          "strict": false,
+          "required": false
+        },
+        "vacuumCleaningModeEntityId": {
+          "type": "entity",
+          "required": false
+        },
+        "vacuumFanSpeedEntityId": {
+          "type": "entity",
+          "required": false
+        },
+        "vacuumExtraSelectEntityId": {
+          "type": "entity",
+          "required": false
+        },
+        "vacuumExtraSelectLabel": {
+          "type": "string",
+          "required": false
+        },
+        "vacuumSwitchEntityIds": {
+          "type": "array",
+          "of": "entity",
+          "required": false
+        },
+        "vacuumBatteryEntityId": {
+          "type": "entity",
+          "required": false
+        },
+        "showBatteryOnTile": {
+          "type": "bool",
+          "required": false
+        },
+        "showActivityStatus": {
+          "type": "bool",
+          "required": false
+        },
+        "showTargetTempOnTile": {
+          "type": "bool",
+          "required": false
+        },
+        "showCurrentTempOnTile": {
+          "type": "bool",
+          "required": false
+        },
+        "mowerBatteryEntityId": {
+          "type": "entity",
+          "required": false
+        },
+        "autoSubmitPIN": {
+          "type": "bool",
+          "required": false
+        },
+        "assistPrimaryAction": {
+          "type": "enum",
+          "enum": "AssistPrimaryAction",
+          "required": false,
+          "default": "assistOnly"
+        },
+        "assistSpeakTargetMode": {
+          "type": "enum",
+          "enum": "AssistSpeakTargetMode",
+          "required": false,
+          "default": "watchSpeaker"
+        },
+        "assistReplyOutputMode": {
+          "type": "enum",
+          "enum": "AssistReplyOutputMode",
+          "required": false
+        },
+        "assistTargetSpeakerIds": {
+          "type": "array",
+          "of": "entity",
+          "required": false
+        },
+        "assistChooseListSpeakerIds": {
+          "type": "array",
+          "of": "entity",
+          "required": false
+        },
+        "assistTTSEngine": {
+          "type": "string",
+          "required": false
+        },
+        "assistAgentId": {
+          "type": "string",
+          "required": false
+        },
+        "assistSpeechVolumeMode": {
+          "type": "enum",
+          "enum": "AssistSpeechVolumeMode",
+          "required": false,
+          "default": "keepCurrent"
+        },
+        "assistSpeechVolumePercent": {
+          "type": "int",
+          "required": false,
+          "default": 70
+        },
+        "assistImmediateListen": {
+          "type": "bool",
+          "required": false,
+          "default": true
+        },
+        "assistAutoSendOnPause": {
+          "type": "bool",
+          "required": false,
+          "default": true
+        },
+        "speakMessageOutputMode": {
+          "type": "enum",
+          "enum": "SpeechOutputTargetMode",
+          "required": false,
+          "default": "watchSpeaker"
+        },
+        "speakMessageTargetSpeakerIds": {
+          "type": "array",
+          "of": "entity",
+          "required": false
+        },
+        "speakMessageChooseListSpeakerIds": {
+          "type": "array",
+          "of": "entity",
+          "required": false
+        },
+        "speakMessageTTSEngine": {
+          "type": "string",
+          "required": false
+        },
+        "speakMessageSpeechVolumeMode": {
+          "type": "enum",
+          "enum": "AssistSpeechVolumeMode",
+          "required": false,
+          "default": "keepCurrent"
+        },
+        "speakMessageSpeechVolumePercent": {
+          "type": "int",
+          "required": false,
+          "default": 70
+        },
+        "speakMessageImmediateListen": {
+          "type": "bool",
+          "required": false,
+          "default": true
+        },
+        "broadcastTargetMode": {
+          "type": "enum",
+          "enum": "BroadcastTargetMode",
+          "required": false,
+          "default": "configuredSpeakers"
+        },
+        "broadcastTargetSpeakerIds": {
+          "type": "array",
+          "of": "entity",
+          "required": false
+        },
+        "broadcastChooseListSpeakerIds": {
+          "type": "array",
+          "of": "entity",
+          "required": false
+        },
+        "broadcastImmediateListen": {
+          "type": "bool",
+          "required": false,
+          "default": false
+        },
+        "colSpan": {
+          "type": "int",
+          "required": true,
+          "default": 6
+        },
+        "rowSpan": {
+          "type": "int",
+          "required": true,
+          "default": 4
+        },
+        "gridCol": {
+          "type": "int",
+          "required": true,
+          "default": 0
+        },
+        "gridRow": {
+          "type": "int",
+          "required": true,
+          "default": 0
+        }
+      }
+    },
+    "tileGroup": {
+      "swift": "TileGroup",
+      "keys": {
+        "id": {
+          "type": "uuid",
+          "required": true
+        },
+        "backgroundPattern": {
+          "type": "enum",
+          "enum": "TileBackgroundPattern",
+          "required": true,
+          "default": "none"
+        },
+        "backgroundPatternOpacity": {
+          "type": "number",
+          "required": false
+        },
+        "backgroundPatternColor": {
+          "type": "color",
+          "required": false
+        },
+        "backgroundPatternScale": {
+          "type": "number",
+          "required": false
+        },
+        "overlayStyle": {
+          "type": "enum",
+          "enum": "GroupOverlayStyle",
+          "required": true,
+          "default": "none"
+        },
+        "overlayColor": {
+          "type": "color",
+          "required": true,
+          "default": "#FFFFFF"
+        },
+        "overlaySpeed": {
+          "type": "number",
+          "required": true,
+          "default": 1.0
+        },
+        "overlayIntensity": {
+          "type": "number",
+          "required": true,
+          "default": 1.0
+        },
+        "overlaySize": {
+          "type": "number",
+          "required": true,
+          "default": 1.0
+        }
+      }
+    },
+    "dynamicPage": {
+      "swift": "DynamicPageConfig",
+      "keys": {
+        "rules": {
+          "type": "array",
+          "of": "object",
+          "ref": "domainRule",
+          "required": true,
+          "default": []
+        },
+        "tileColSpan": {
+          "type": "int",
+          "required": true,
+          "default": 4
+        },
+        "tileRowSpan": {
+          "type": "int",
+          "required": true,
+          "default": 3
+        },
+        "tileShowLabel": {
+          "type": "bool",
+          "required": true,
+          "default": true
+        },
+        "sortOrder": {
+          "type": "enum",
+          "enum": "DynamicSortOrder",
+          "required": true,
+          "default": "domain"
+        },
+        "liveUpdates": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "refreshOnAppear": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "pullToRefresh": {
+          "type": "bool",
+          "required": true,
+          "default": true
+        }
+      }
+    },
+    "domainRule": {
+      "swift": "DomainRule",
+      "keys": {
+        "id": {
+          "type": "uuid",
+          "required": false
+        },
+        "domain": {
+          "type": "string",
+          "required": true
+        },
+        "mode": {
+          "type": "enum",
+          "enum": "SelectionMode",
+          "required": false,
+          "default": "all"
+        },
+        "entityIds": {
+          "type": "array",
+          "of": "entity",
+          "required": false,
+          "default": []
+        },
+        "resolvedEntityIds": {
+          "type": "array",
+          "of": "entity",
+          "required": false
+        },
+        "activeWhen": {
+          "type": "string",
+          "required": false
+        },
+        "invertActive": {
+          "type": "bool",
+          "required": false,
+          "default": false
+        },
+        "mediaPlayerPlayingOnly": {
+          "type": "bool",
+          "required": false,
+          "default": false,
+          "writeWhen": {
+            "key": "mediaPlayerPlayingOnly",
+            "not": false
+          }
+        },
+        "deviceClassFilter": {
+          "type": "array",
+          "of": "string",
+          "required": false
+        },
+        "maxNumericValue": {
+          "type": "number",
+          "required": false
+        },
+        "tileStyle": {
+          "type": "object",
+          "ref": "domainTileStyle",
+          "required": false
+        },
+        "header": {
+          "type": "enum",
+          "enum": "DomainHeaderStyle",
+          "required": false,
+          "default": "label"
+        },
+        "headerColor": {
+          "type": "color",
+          "required": false
+        },
+        "headerLabel": {
+          "type": "string",
+          "required": false
+        },
+        "headerLabelSize": {
+          "type": "number",
+          "required": false
+        },
+        "headerGlow": {
+          "type": "number",
+          "required": false,
+          "default": 0.0,
+          "writeWhen": {
+            "key": "headerGlow",
+            "gt": 0
+          }
+        }
+      }
+    },
+    "domainTileStyle": {
+      "swift": "DomainTileStyle",
+      "keys": {
+        "icon": {
+          "type": "symbol",
+          "required": false
+        },
+        "color": {
+          "type": "color",
+          "required": false
+        },
+        "colorOpacity": {
+          "type": "number",
+          "required": false
+        },
+        "backgroundPattern": {
+          "type": "enum",
+          "enum": "TileBackgroundPattern",
+          "required": false
+        },
+        "patternOpacity": {
+          "type": "number",
+          "required": false
+        },
+        "patternColor": {
+          "type": "color",
+          "required": false
+        },
+        "patternScale": {
+          "type": "number",
+          "required": false
+        },
+        "activeIconAnimationEnabled": {
+          "type": "bool",
+          "required": false
+        },
+        "iconTapAnimation": {
+          "type": "enum",
+          "enum": "IconTapAnimation",
+          "strict": false,
+          "required": false
+        },
+        "stateValueLabelStyle": {
+          "type": "enum",
+          "enum": "StateValueLabelStyle",
+          "required": false
+        },
+        "stateBarStyle": {
+          "type": "enum",
+          "enum": "StateBarStyle",
+          "required": false
+        },
+        "stateBarColorStyle": {
+          "type": "enum",
+          "enum": "StateBarColorStyle",
+          "required": false
+        },
+        "stateBarBorder": {
+          "type": "bool",
+          "required": false
+        },
+        "decimalPlaces": {
+          "type": "int",
+          "required": false
+        },
+        "showLabel": {
+          "type": "bool",
+          "required": false
+        },
+        "labelColorHex": {
+          "type": "color",
+          "required": false
+        },
+        "labelFontSizeOverride": {
+          "type": "number",
+          "required": false
+        },
+        "badgeFontSizeOverride": {
+          "type": "number",
+          "required": false
+        },
+        "statusIconSizeOverride": {
+          "type": "number",
+          "required": false
+        },
+        "labelFontWeight": {
+          "type": "enum",
+          "enum": "FontWeight",
+          "strict": false,
+          "required": false
+        },
+        "labelFontDesign": {
+          "type": "enum",
+          "enum": "FontDesign",
+          "strict": false,
+          "required": false
+        },
+        "labelShadow": {
+          "type": "bool",
+          "required": false
+        },
+        "iconShadow": {
+          "type": "bool",
+          "required": false
+        },
+        "statusTextShadow": {
+          "type": "bool",
+          "required": false
+        },
+        "stateBarShadow": {
+          "type": "bool",
+          "required": false
+        },
+        "showActivityStatus": {
+          "type": "bool",
+          "required": false
+        },
+        "usePersonPhoto": {
+          "type": "bool",
+          "required": false
+        },
+        "borderThickness": {
+          "type": "enum",
+          "enum": "BorderThickness",
+          "required": false
+        },
+        "borderStyle": {
+          "type": "enum",
+          "enum": "GroupBorderStyle",
+          "required": false
+        },
+        "borderAnimation": {
+          "type": "enum",
+          "enum": "BorderAnimation",
+          "required": false
+        },
+        "borderAnimationSpeed": {
+          "type": "number",
+          "required": false
+        },
+        "borderAnimationIntensity": {
+          "type": "number",
+          "required": false
+        },
+        "borderAnimationSize": {
+          "type": "number",
+          "required": false
+        },
+        "borderColor": {
+          "type": "color",
+          "required": false
+        },
+        "borderLineStyle": {
+          "type": "enum",
+          "enum": "LineStyle",
+          "required": false
+        },
+        "borderGlow": {
+          "type": "number",
+          "required": false
+        },
+        "effectActiveOnly": {
+          "type": "bool",
+          "required": false
+        },
+        "borderActiveOnly": {
+          "type": "bool",
+          "required": false
+        },
+        "requiresConfirmation": {
+          "type": "bool",
+          "required": false
+        },
+        "colSpan": {
+          "type": "int",
+          "required": false
+        },
+        "rowSpan": {
+          "type": "int",
+          "required": false
+        },
+        "iconSizeOverride": {
+          "type": "number",
+          "required": false
+        },
+        "tileAnimation": {
+          "type": "enum",
+          "enum": "TileAnimation",
+          "required": false
+        },
+        "animationSpeed": {
+          "type": "number",
+          "required": false
+        },
+        "animationIntensity": {
+          "type": "number",
+          "required": false
+        },
+        "animationSize": {
+          "type": "number",
+          "required": false
+        },
+        "animationColor": {
+          "type": "color",
+          "required": false
+        },
+        "overlayStyle": {
+          "type": "enum",
+          "enum": "GroupOverlayStyle",
+          "required": false
+        },
+        "overlayColor": {
+          "type": "color",
+          "required": false
+        },
+        "overlaySpeed": {
+          "type": "number",
+          "required": false
+        },
+        "overlayIntensity": {
+          "type": "number",
+          "required": false
+        },
+        "overlaySize": {
+          "type": "number",
+          "required": false
+        }
+      }
+    },
+    "stateColorRule": {
+      "swift": "StateColorRule",
+      "keys": {
+        "id": {
+          "type": "uuid",
+          "required": true
+        },
+        "state": {
+          "type": "string",
+          "required": true
+        },
+        "comparisonOperator": {
+          "type": "enum",
+          "enum": "VisibilityOperator",
+          "required": true,
+          "default": "eq"
+        },
+        "colorHex": {
+          "type": "color",
+          "required": true
+        },
+        "iconOverride": {
+          "type": "symbol",
+          "required": false
+        },
+        "labelOverride": {
+          "type": "string",
+          "required": false
+        }
+      }
+    },
+    "musicHubPreset": {
+      "swift": "MusicHubGroupPreset",
+      "keys": {
+        "id": {
+          "type": "uuid",
+          "required": true
+        },
+        "name": {
+          "type": "string",
+          "required": true
+        },
+        "speakerIds": {
+          "type": "array",
+          "of": "entity",
+          "required": true
+        }
+      }
+    },
+    "triggerTarget": {
+      "swift": "TriggerEntityTarget",
+      "keys": {
+        "entityId": {
+          "type": "entity",
+          "required": true
+        },
+        "mode": {
+          "type": "enum",
+          "enum": "TriggerMode",
+          "required": true
+        },
+        "friendlyName": {
+          "type": "string",
+          "required": false
+        }
+      }
+    },
+    "entityCapabilities": {
+      "swift": "EntityCapabilities",
+      "keys": {
+        "supportedColorModes": {
+          "type": "array",
+          "of": "string",
+          "required": false
+        },
+        "climateSupportedFeatures": {
+          "type": "int",
+          "required": false
+        },
+        "hvacModes": {
+          "type": "array",
+          "of": "string",
+          "required": false
+        },
+        "minTemp": {
+          "type": "number",
+          "required": false
+        },
+        "maxTemp": {
+          "type": "number",
+          "required": false
+        },
+        "tempStep": {
+          "type": "number",
+          "required": false
+        },
+        "fanSupportedFeatures": {
+          "type": "int",
+          "required": false
+        },
+        "fanPresetModes": {
+          "type": "array",
+          "of": "string",
+          "required": false
+        },
+        "mediaPlayerSupportedFeatures": {
+          "type": "int",
+          "required": false
+        },
+        "coverSupportedFeatures": {
+          "type": "int",
+          "required": false
+        },
+        "vacuumSupportedFeatures": {
+          "type": "int",
+          "required": false
+        },
+        "vacuumFanSpeedList": {
+          "type": "array",
+          "of": "string",
+          "required": false
+        },
+        "vacuumCleaningModes": {
+          "type": "array",
+          "of": "string",
+          "required": false
+        }
+      }
+    }
+  },
+  "notes": {
+    "required": "A required key must be present or the whole document fails to decode on the phone and the watch. A required key without a default has no fixed starting value: the editor supplies one (an id, the entity, the name).",
+    "default": "On a required key: the value a new item carries. On an optional key: what an absent key means. An optional key with no default has no single meaning when absent (it depends on the tile kind or a global setting).",
+    "new": "On an optional key: the value the phone writes on a new item when that differs from what an absent key means.",
+    "strict": "An unknown enum value makes the whole document unreadable unless the key says strict false. On a strict false key the app keeps or ignores a value it does not know.",
+    "writeWhen": "The phone writes the key only when the condition holds: not means the named key differs from the value, gt means it is greater, present means the named key is set. A key left out decodes to its default.",
+    "uuid": "Ids are UUID strings in upper case, as the phone writes them (8-4-4-4-12 hex digits). Write new ids in upper case so the phone's own encoding of the document does not change.",
+    "color": "A color is \"#RRGGBB\" or \"#RRGGBBAA\". Also seen: the same without \"#\" (multiCamBorderColor defaults to \"FFFFFF\"), \"GRADIENT|#RRGGBB|#RRGGBB\" for a two color gradient, \"#RAINBOW\", and \"#THEME\" in borderColor for the theme gradient. Older documents can hold a color name (yellow, blue, red, green, purple, orange, white).",
+    "symbol": "An SF Symbol name.",
+    "entity": "A Home Assistant entity id, \"domain.object_id\".",
+    "number": "JSON number. The phone writes whole values without a fraction (1, not 1.0).",
+    "slideMap": "A dictionary keyed by hold and slide direction is a flat JSON array of pairs: [direction, value, direction, value]. Directions are the SlideDirection values and are strict. A JSON object in its place makes the document unreadable. A writer puts the pairs in the order up, down, left, right; a reader must accept any order.",
+    "map": "A JSON object with string keys. stateIcons and stateColors are keyed by the lower case Home Assistant state (\"unavailable\" also covers unknown); calendarSourceColors is keyed by calendar entity id.",
+    "tileKind": "A tile has no type field. Its kind is the part of entityId before the first dot: a Home Assistant domain, or one of the virtual kinds.",
+    "virtualKinds": {
+      "spacer": "spacer.<UUID>, an empty cell.",
+      "divider": "divider.<style>.<domain>[.g<glow>]: style is line or label, domain names the section, glow is 0 to 100 (percent). The label text is customLabel, else the domain name.",
+      "page": "page.<page id>, switches to that page.",
+      "show_page": "show_page.<page id>, shows that page on top of the current one.",
+      "status_page": "status_page.<status page id>, opens a status page kept on the phone.",
+      "http_action": "http_action.<action id>, fires an HTTP action kept on the phone.",
+      "macro": "macro.<macro id>, runs a macro kept on the phone.",
+      "multicam": "multicam.<UUID>, cameras listed in cameraGroupIds.",
+      "music_hub": "music_hub.<UUID>, speakers listed in musicHubSpeakerIds.",
+      "point_control": "point_control.<UUID>.",
+      "template": "template.<UUID>, shows the result of templateString.",
+      "assist": "assist.voice_hub, the Assist tile.",
+      "speak_message": "speak_message.voice_hub, the Speak Message tile.",
+      "webhook_inbox": "webhook_inbox.all; webhook_inbox.<topic> is reserved for a single topic."
+    },
+    "grid": "Placement is absolute on a 12 column grid: gridCol 0 to 11, gridRow from 0, colSpan 1 to 12, rowSpan from 1. Nothing in the decoder stops overlaps.",
+    "pageIds": "Every page needs a unique id. A page without one gets a new id on every decode; duplicate page ids crash the watch."
+  }
+}

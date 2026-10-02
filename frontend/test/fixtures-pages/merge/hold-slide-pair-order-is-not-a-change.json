@@ -1,0 +1,67 @@
+{
+  "name": "The base holds a tile's holdSlide pairs in another order than the phone writes them, with the same pairs: that is no change on the phone, so the server's edit to the slide actions wins",
+  "base": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14",
+            "entityId": "light.kitchen",
+            "holdSlideActions": ["down", "none", "up", "toggle"],
+            "holdSlideHTTPActionBannerSeconds": ["left", 3.5, "up", 1.5]
+          }
+        ]
+      }
+    ]
+  },
+  "phone": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14",
+            "entityId": "light.kitchen",
+            "holdSlideActions": ["up", "toggle", "down", "none"],
+            "holdSlideHTTPActionBannerSeconds": ["up", 1.5, "left", 3.5]
+          }
+        ]
+      }
+    ]
+  },
+  "server": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14",
+            "entityId": "light.kitchen",
+            "holdSlideActions": ["up", "openControl", "down", "none"],
+            "holdSlideHTTPActionBannerSeconds": ["left", 3.5, "up", 1.5]
+          }
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14",
+            "entityId": "light.kitchen",
+            "holdSlideActions": ["up", "openControl", "down", "none"],
+            "holdSlideHTTPActionBannerSeconds": ["left", 3.5, "up", 1.5]
+          }
+        ]
+      }
+    ]
+  }
+}

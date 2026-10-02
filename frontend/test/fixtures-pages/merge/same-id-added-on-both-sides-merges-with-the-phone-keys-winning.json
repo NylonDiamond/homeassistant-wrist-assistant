@@ -1,0 +1,48 @@
+{
+  "name": "Both sides add a page with the same id: it merges key by key against nothing, so the phone's keys win, the server's other keys and tiles stay",
+  "base": {
+    "pages": [
+      {"id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC", "name": "Home", "items": []}
+    ]
+  },
+  "phone": {
+    "pages": [
+      {"id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC", "name": "Home", "items": []},
+      {
+        "id": "7EFE84AE-65F5-4D51-905A-CC87A8F91BAB",
+        "name": "Garage",
+        "items": [
+          {"id": "B8664ED7-C50C-4851-BF56-C92E58AEC1A9", "entityId": "cover.garage_door", "customLabel": "Garage door"}
+        ]
+      }
+    ]
+  },
+  "server": {
+    "pages": [
+      {"id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC", "name": "Home", "items": []},
+      {
+        "id": "7EFE84AE-65F5-4D51-905A-CC87A8F91BAB",
+        "name": "Garage and drive",
+        "backgroundColor": "#202020",
+        "items": [
+          {"id": "B8664ED7-C50C-4851-BF56-C92E58AEC1A9", "entityId": "cover.garage_door", "customLabel": "Door", "color": "#795548"},
+          {"id": "85D64C36-6C9E-4D9E-847B-574E92A09882", "entityId": "scene.movie_night"}
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "pages": [
+      {"id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC", "name": "Home", "items": []},
+      {
+        "id": "7EFE84AE-65F5-4D51-905A-CC87A8F91BAB",
+        "name": "Garage",
+        "backgroundColor": "#202020",
+        "items": [
+          {"id": "B8664ED7-C50C-4851-BF56-C92E58AEC1A9", "entityId": "cover.garage_door", "customLabel": "Garage door", "color": "#795548"},
+          {"id": "85D64C36-6C9E-4D9E-847B-574E92A09882", "entityId": "scene.movie_night"}
+        ]
+      }
+    ]
+  }
+}

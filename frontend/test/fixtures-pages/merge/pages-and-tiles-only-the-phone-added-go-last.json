@@ -1,0 +1,53 @@
+{
+  "name": "The phone adds a page and a tile at the front, the server adds a tile at the front: the server's tile keeps its place, the phone's page and tile go last",
+  "base": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen"}
+        ]
+      }
+    ]
+  },
+  "phone": {
+    "pages": [
+      {"id": "7EFE84AE-65F5-4D51-905A-CC87A8F91BAB", "name": "Garage", "items": []},
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {"id": "69FA47E5-572D-4708-AC90-A4293D8C8367", "entityId": "switch.coffee_maker"},
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen"}
+        ]
+      }
+    ]
+  },
+  "server": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {"id": "85D64C36-6C9E-4D9E-847B-574E92A09882", "entityId": "scene.movie_night"},
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen"}
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {"id": "85D64C36-6C9E-4D9E-847B-574E92A09882", "entityId": "scene.movie_night"},
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen"},
+          {"id": "69FA47E5-572D-4708-AC90-A4293D8C8367", "entityId": "switch.coffee_maker"}
+        ]
+      },
+      {"id": "7EFE84AE-65F5-4D51-905A-CC87A8F91BAB", "name": "Garage", "items": []}
+    ]
+  }
+}

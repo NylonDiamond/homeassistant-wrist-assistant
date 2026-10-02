@@ -1,0 +1,44 @@
+{
+  "name": "The server deletes a page in which the phone renamed a tile: the page stays whole as the phone has it, after the server's pages",
+  "base": {
+    "pages": [
+      {
+        "id": "77DB791C-A1D9-4642-B591-721D20088FA6",
+        "name": "Lights",
+        "items": [
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen", "customLabel": "Kitchen"}
+        ]
+      },
+      {"id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC", "name": "Home", "items": []}
+    ]
+  },
+  "phone": {
+    "pages": [
+      {
+        "id": "77DB791C-A1D9-4642-B591-721D20088FA6",
+        "name": "Lights",
+        "items": [
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen", "customLabel": "Kitchen lights"}
+        ]
+      },
+      {"id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC", "name": "Home", "items": []}
+    ]
+  },
+  "server": {
+    "pages": [
+      {"id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC", "name": "Home", "items": []}
+    ]
+  },
+  "expected": {
+    "pages": [
+      {"id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC", "name": "Home", "items": []},
+      {
+        "id": "77DB791C-A1D9-4642-B591-721D20088FA6",
+        "name": "Lights",
+        "items": [
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen", "customLabel": "Kitchen lights"}
+        ]
+      }
+    ]
+  }
+}

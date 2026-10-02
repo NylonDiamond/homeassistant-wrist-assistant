@@ -1,0 +1,29 @@
+{
+  "name": "Keys beside pages merge one by one: the phone's change to one key and the server's change and addition of others all stay",
+  "base": {
+    "schemaVersion": 1,
+    "exampleSetting": "a",
+    "otherSetting": 1,
+    "pages": []
+  },
+  "phone": {
+    "schemaVersion": 1,
+    "exampleSetting": "b",
+    "otherSetting": 1,
+    "pages": []
+  },
+  "server": {
+    "schemaVersion": 1,
+    "exampleSetting": "a",
+    "otherSetting": 2,
+    "panelOnlySetting": true,
+    "pages": []
+  },
+  "expected": {
+    "schemaVersion": 1,
+    "exampleSetting": "b",
+    "otherSetting": 2,
+    "panelOnlySetting": true,
+    "pages": []
+  }
+}

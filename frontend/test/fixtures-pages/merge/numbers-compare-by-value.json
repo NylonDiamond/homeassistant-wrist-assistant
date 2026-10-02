@@ -1,0 +1,47 @@
+{
+  "name": "6 and 6.0 are the same value: the phone wrote 6.0 for an unchanged gridCol, so the server's move to 0 wins",
+  "base": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen", "gridCol": 6, "colSpan": 6}
+        ]
+      }
+    ]
+  },
+  "phone": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen", "gridCol": 6.0, "colSpan": 6}
+        ]
+      }
+    ]
+  },
+  "server": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen", "gridCol": 0, "colSpan": 6}
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen", "gridCol": 0, "colSpan": 6}
+        ]
+      }
+    ]
+  }
+}

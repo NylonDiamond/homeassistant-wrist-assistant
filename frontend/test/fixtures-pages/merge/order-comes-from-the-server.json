@@ -1,0 +1,55 @@
+{
+  "name": "The phone swaps two pages and renames one, the server swaps two tiles: pages and tiles are in the server's order, the rename stays",
+  "base": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen"},
+          {"id": "686E2455-977D-4F0B-914F-BA804DC98CEA", "entityId": "fan.bedroom"}
+        ]
+      },
+      {"id": "77DB791C-A1D9-4642-B591-721D20088FA6", "name": "Lights", "items": []}
+    ]
+  },
+  "phone": {
+    "pages": [
+      {"id": "77DB791C-A1D9-4642-B591-721D20088FA6", "name": "All lights", "items": []},
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen"},
+          {"id": "686E2455-977D-4F0B-914F-BA804DC98CEA", "entityId": "fan.bedroom"}
+        ]
+      }
+    ]
+  },
+  "server": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {"id": "686E2455-977D-4F0B-914F-BA804DC98CEA", "entityId": "fan.bedroom"},
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen"}
+        ]
+      },
+      {"id": "77DB791C-A1D9-4642-B591-721D20088FA6", "name": "Lights", "items": []}
+    ]
+  },
+  "expected": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {"id": "686E2455-977D-4F0B-914F-BA804DC98CEA", "entityId": "fan.bedroom"},
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen"}
+        ]
+      },
+      {"id": "77DB791C-A1D9-4642-B591-721D20088FA6", "name": "All lights", "items": []}
+    ]
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "name": "The phone deletes a tile the server left alone, while the server renames another: the tile is gone, the rename stays",
+  "base": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen", "customLabel": "Kitchen"},
+          {"id": "686E2455-977D-4F0B-914F-BA804DC98CEA", "entityId": "fan.bedroom", "customLabel": "Fan"}
+        ]
+      }
+    ]
+  },
+  "phone": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {"id": "686E2455-977D-4F0B-914F-BA804DC98CEA", "entityId": "fan.bedroom", "customLabel": "Fan"}
+        ]
+      }
+    ]
+  },
+  "server": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen", "customLabel": "Kitchen"},
+          {"id": "686E2455-977D-4F0B-914F-BA804DC98CEA", "entityId": "fan.bedroom", "customLabel": "Bedroom fan"}
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {"id": "686E2455-977D-4F0B-914F-BA804DC98CEA", "entityId": "fan.bedroom", "customLabel": "Bedroom fan"}
+        ]
+      }
+    ]
+  }
+}

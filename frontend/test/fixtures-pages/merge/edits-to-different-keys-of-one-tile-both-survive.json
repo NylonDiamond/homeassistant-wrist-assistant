@@ -1,0 +1,47 @@
+{
+  "name": "The phone renames a tile and the server moves the same tile: the tile has the new name in the new place",
+  "base": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen", "customLabel": "Kitchen", "gridCol": 0, "gridRow": 0, "colSpan": 6, "rowSpan": 1}
+        ]
+      }
+    ]
+  },
+  "phone": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen", "customLabel": "Kitchen lights", "gridCol": 0, "gridRow": 0, "colSpan": 6, "rowSpan": 1}
+        ]
+      }
+    ]
+  },
+  "server": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen", "customLabel": "Kitchen", "gridCol": 6, "gridRow": 2, "colSpan": 6, "rowSpan": 1}
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen", "customLabel": "Kitchen lights", "gridCol": 6, "gridRow": 2, "colSpan": 6, "rowSpan": 1}
+        ]
+      }
+    ]
+  }
+}

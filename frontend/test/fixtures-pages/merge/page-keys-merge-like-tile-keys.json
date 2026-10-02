@@ -1,0 +1,27 @@
+{
+  "name": "The phone renames a page and the server changes its background: the page has both, and the server's hide of another page stays",
+  "base": {
+    "pages": [
+      {"id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC", "name": "Home", "backgroundColor": "#000000", "items": []},
+      {"id": "77DB791C-A1D9-4642-B591-721D20088FA6", "name": "Lights", "isHidden": false, "items": []}
+    ]
+  },
+  "phone": {
+    "pages": [
+      {"id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC", "name": "Downstairs", "backgroundColor": "#000000", "items": []},
+      {"id": "77DB791C-A1D9-4642-B591-721D20088FA6", "name": "Lights", "isHidden": false, "items": []}
+    ]
+  },
+  "server": {
+    "pages": [
+      {"id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC", "name": "Home", "backgroundColor": "#1A237E", "items": []},
+      {"id": "77DB791C-A1D9-4642-B591-721D20088FA6", "name": "Lights", "isHidden": true, "items": []}
+    ]
+  },
+  "expected": {
+    "pages": [
+      {"id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC", "name": "Downstairs", "backgroundColor": "#1A237E", "items": []},
+      {"id": "77DB791C-A1D9-4642-B591-721D20088FA6", "name": "Lights", "isHidden": true, "items": []}
+    ]
+  }
+}

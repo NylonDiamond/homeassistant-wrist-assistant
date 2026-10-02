@@ -1,0 +1,67 @@
+{
+  "name": "A tile's arrays are not merged inside: the phone added a camera, so its whole cameraGroupIds wins; the server added a slide direction, so its whole holdSlideActions (the flat array form) wins",
+  "base": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "58F6BD48-003E-4771-8264-187E8503E16B",
+            "entityId": "camera.driveway",
+            "cameraGroupIds": ["camera.driveway", "camera.back_yard"],
+            "holdSlideActions": ["up", "toggle"]
+          }
+        ]
+      }
+    ]
+  },
+  "phone": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "58F6BD48-003E-4771-8264-187E8503E16B",
+            "entityId": "camera.driveway",
+            "cameraGroupIds": ["camera.driveway", "camera.back_yard", "camera.side_gate"],
+            "holdSlideActions": ["up", "toggle"]
+          }
+        ]
+      }
+    ]
+  },
+  "server": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "58F6BD48-003E-4771-8264-187E8503E16B",
+            "entityId": "camera.driveway",
+            "cameraGroupIds": ["camera.back_yard", "camera.driveway"],
+            "holdSlideActions": ["up", "toggle", "down", "none"]
+          }
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "58F6BD48-003E-4771-8264-187E8503E16B",
+            "entityId": "camera.driveway",
+            "cameraGroupIds": ["camera.driveway", "camera.back_yard", "camera.side_gate"],
+            "holdSlideActions": ["up", "toggle", "down", "none"]
+          }
+        ]
+      }
+    ]
+  }
+}
