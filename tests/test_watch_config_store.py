@@ -16,7 +16,8 @@ From the live line: the change listeners (every trigger, what is not a
 trigger, a listener that raises, removal) and ``revisions``. From step 3: the
 panel saving pages, the page shape guard at both levels, the unreadable report
 (``rejected_revision``), the history list and entry, restore, and files
-written before any of it.
+written before any of it. From step 3e: the ``catalog`` kind, its cap and
+shape guard, and the panel being refused it.
 """
 
 from __future__ import annotations
@@ -50,7 +51,11 @@ INDEX_KEY = "wrist_assistant.watch_config"
 # test_the_size_caps_match_const below.
 MAX_BYTES = 2 * 1024 * 1024
 MAX_BEHAVIOR_BYTES = 256 * 1024
+MAX_CATALOG_BYTES = 256 * 1024
 HISTORY_LIMIT = 5
+# Kept equal to const.py by test_the_kinds_match_const below.
+KINDS = frozenset({"pages", "behavior", "catalog"})
+PANEL_KINDS = frozenset({"pages", "behavior"})
 
 OWNER = "watch-A"
 OTHER = "watch-B"
@@ -130,12 +135,13 @@ def _loaded_module():
             f"{_PKG}.const",
             WATCH_CONFIG_STORAGE_KEY=INDEX_KEY,
             WATCH_CONFIG_STORAGE_VERSION=1,
-            WATCH_CONFIG_KINDS=frozenset({"pages", "behavior"}),
-            WATCH_CONFIG_PANEL_KINDS=frozenset({"pages", "behavior"}),
+            WATCH_CONFIG_KINDS=KINDS,
+            WATCH_CONFIG_PANEL_KINDS=PANEL_KINDS,
             WATCH_CONFIG_PANEL_WRITER="panel",
             WATCH_CONFIG_MAX_DOCUMENT_BYTES={
                 "pages": MAX_BYTES,
                 "behavior": MAX_BEHAVIOR_BYTES,
+                "catalog": MAX_CATALOG_BYTES,
             },
             WATCH_CONFIG_HISTORY_LIMIT=HISTORY_LIMIT,
         )
@@ -623,7 +629,28 @@ def test_the_size_caps_match_const() -> None:
     # this is the integration's own source, evaluated with no builtins.
     expression = compile(ast.Expression(node.value), "const.py", "eval")
     caps = eval(expression, {"__builtins__": {}})  # noqa: S307
-    assert caps == {"pages": MAX_BYTES, "behavior": MAX_BEHAVIOR_BYTES}
+    assert caps == {
+        "pages": MAX_BYTES,
+        "behavior": MAX_BEHAVIOR_BYTES,
+        "catalog": MAX_CATALOG_BYTES,
+    }
+
+
+def test_the_kinds_match_const() -> None:
+    """The kind sets above are the shipped ones, read out of const.py."""
+    const = Path(_STORE_PATH).with_name("const.py")
+    tree = ast.parse(const.read_text())
+    found: dict[str, frozenset[str]] = {}
+    for node in tree.body:
+        if (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id in ("WATCH_CONFIG_KINDS", "WATCH_CONFIG_PANEL_KINDS")
+        ):
+            # frozenset({...}): the set literal is the call's one argument.
+            found[node.targets[0].id] = frozenset(ast.literal_eval(node.value.args[0]))
+    assert found == {"WATCH_CONFIG_KINDS": KINDS, "WATCH_CONFIG_PANEL_KINDS": PANEL_KINDS}
 
 
 def test_behavior_is_any_json_object(mod):
@@ -1670,6 +1697,124 @@ def test_restore_of_a_kind_the_panel_may_not_save_is_invalid(mod):
     store = _new(mod)
     with pytest.raises(mod.WatchConfigValidationError, match="kind"):
         store.restore(OWNER, "quick_actions", 1, base_revision=1)
+
+
+# ── step 3e: the catalog kind ────────────────────────────────────────────
+
+
+def _catalog(**extra: Any) -> dict:
+    """A stand-in for WatchLibraryCatalog, in the contract's shape."""
+    doc = {
+        "httpActions": [
+            {"icon": "car.fill", "iconColor": "#A0C8FF",
+             "id": "6F1C2D0E-0000-4000-8000-0000000000A1", "name": "Open Gate"},
+            {"id": "6F1C2D0E-0000-4000-8000-0000000000A2", "name": "HTTP Action",
+             "needsSetup": True},
+        ],
+        "macros": [
+            {"colorHex": "#FF9F0A", "icon": "moon.fill",
+             "id": "6F1C2D0E-0000-4000-8000-0000000000B1", "name": "Bedtime", "steps": 4},
+        ],
+        "schemaVersion": 1,
+        "statusPages": [
+            {"id": "00000000-0000-0000-0000-000000000001", "name": "Lights", "rows": 1},
+        ],
+    }
+    doc.update(extra)
+    return doc
+
+
+def test_a_device_may_save_and_read_a_catalog(mod):
+    store = _new(mod)
+    doc = _catalog(futureKey={"kept": True})
+    record = _put(store, kind="catalog", doc=doc)
+    assert record.revision == 1
+    assert record.delivered_revision == 1
+    assert store.get(OWNER, "catalog").document == doc
+    record = _put(store, kind="catalog", doc=_catalog(), base=1, digest=HASH_2)
+    assert record.revision == 2
+    assert [e.revision for e in store.history(OWNER, "catalog")] == [1]
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        {},
+        {"schemaVersion": 1},
+        {"httpActions": [], "macros": [], "statusPages": []},
+        {"macros": [{"id": "m", "name": ""}]},
+        {"httpActions": [{"id": "a", "name": "A", "url": "ignored", "extra": [1]}]},
+    ],
+)
+def test_a_catalog_with_any_lists_absent_or_empty_is_accepted(mod, document):
+    store = _new(mod)
+    assert _put(store, kind="catalog", doc=document).document == document
+
+
+@pytest.mark.parametrize(
+    ("document", "message"),
+    [
+        ([], "document must be a JSON object"),
+        ({"httpActions": {}}, "document.httpActions must be a list"),
+        ({"macros": None}, "document.macros must be a list"),
+        ({"statusPages": "Lights"}, "document.statusPages must be a list"),
+        ({"httpActions": ["Open Gate"]}, r"document.httpActions\[0\] must be an object"),
+        ({"macros": [{"id": "m", "name": "M"}, {"name": "No id"}]},
+         r"document.macros\[1\].id must be a non-empty string"),
+        ({"statusPages": [{"id": "", "name": "Lights"}]},
+         r"document.statusPages\[0\].id must be a non-empty string"),
+        ({"httpActions": [{"id": 7, "name": "Seven"}]},
+         r"document.httpActions\[0\].id must be a non-empty string"),
+        ({"httpActions": [{"id": "a"}]}, r"document.httpActions\[0\].name must be a string"),
+        ({"macros": [{"id": "m", "name": None}]}, r"document.macros\[0\].name must be a string"),
+    ],
+)
+def test_a_catalog_of_the_wrong_shape_is_refused(mod, document, message):
+    store = _new(mod)
+    with pytest.raises(mod.WatchConfigValidationError, match=message):
+        _put(store, kind="catalog", doc=document)
+    assert store.get(OWNER, "catalog") is None
+    assert _FakeStore.writes == []
+
+
+def test_the_catalog_has_its_own_cap(mod):
+    store = _new(mod)
+    overhead = mod.document_size({"b": ""})
+    at_cap = {"b": "x" * (MAX_CATALOG_BYTES - overhead)}
+    assert _put(store, kind="catalog", doc=at_cap).revision == 1
+    over = {"b": "x" * (MAX_CATALOG_BYTES - overhead + 1)}
+    with pytest.raises(mod.WatchConfigValidationError, match="limit for catalog"):
+        _put(store, kind="catalog", doc=over, base=1)
+
+
+def test_the_panel_may_neither_save_nor_restore_a_catalog(mod):
+    store = _new(mod)
+    _put(store, kind="catalog", doc=_catalog())
+    _put(store, kind="catalog", doc=_catalog(schemaVersion=2), base=1, digest=HASH_2)
+    with pytest.raises(mod.WatchConfigValidationError) as exc:
+        store.panel_save(OWNER, "catalog", _catalog(), base_revision=2)
+    assert exc.value.code == "invalid"
+    assert exc.value.message == "the panel cannot save catalog; it may save behavior, pages"
+    with pytest.raises(mod.WatchConfigValidationError, match="the panel cannot save catalog"):
+        store.restore(OWNER, "catalog", 1, base_revision=2)
+    record = store.get(OWNER, "catalog")
+    assert (record.revision, record.hash, record.updated_by) == (2, HASH_2, OWNER)
+
+
+def test_the_catalog_is_announced_listed_moved_and_forgotten_like_any_kind(mod):
+    store = _new(mod)
+    heard = _listen(store)
+    _put(store)
+    _put(store, kind="catalog", doc=_catalog())
+    assert heard == [(OWNER, "pages", 1), (OWNER, "catalog", 1)]
+    assert store.revisions(OWNER) == {"catalog": 1, "pages": 1}
+    assert sorted(store.move_owner(OWNER, OTHER, updated_by="t")) == ["catalog", "pages"]
+    assert store.get(OTHER, "catalog").document == _catalog()
+    assert store.revisions(OTHER) == {"catalog": 1, "pages": 1}
+    del heard[:]
+    assert store.forget_owner(OTHER) is True
+    assert sorted(heard) == [(OTHER, "catalog", 0), (OTHER, "pages", 0)]
+    assert store.revisions(OTHER) == {}
 
 
 # ── step 3: files written before it ──────────────────────────────────────

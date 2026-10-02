@@ -3289,7 +3289,7 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
     ever read its own record. In step 1 that is the phone signing with the
     watch's pair; later the watch reads it with the same signature.
 
-    Body:  {"kind": "pages" | "behavior", "since_revision": <int>?,
+    Body:  {"kind": "pages" | "behavior" | "catalog", "since_revision": <int>?,
             "unreadable_revision": <int>?}
     Reply: {"ok": true, "kind", "revision", "hash", "updated_at", "document"?}
 
@@ -3366,7 +3366,7 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
 async def _op_watch_config_put(ctx: _OpContext) -> Response:
     """Save the caller's watch config of one kind, compare-and-swap.
 
-    Body:  {"kind": "pages" | "behavior", "base_revision": <int>,
+    Body:  {"kind": "pages" | "behavior" | "catalog", "base_revision": <int>,
             "hash": <sha256 hex>, "document": {...}, "force": <bool>?}
     Reply: {"ok": true, "revision": <int>}
     Refusal: signed 409 {"ok": false, "error": "conflict", "revision", "hash"}

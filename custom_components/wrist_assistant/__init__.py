@@ -50,6 +50,7 @@ from .const import (
     PLATFORMS,
     WA_HMAC_NONCE_TTL_SECONDS,
     WATCH_CONFIG_CAPABILITY,
+    WATCH_CONFIG_CATALOG_CAPABILITY,
     WATCH_CONFIG_LIVE_CAPABILITY,
     WATCH_CONFIG_REJECT_REPORT_CAPABILITY,
     WIDGET_SECRET_STORAGE_KEY,
@@ -807,6 +808,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # device that fetched a revision it could not decode says so, and the
     # panel shows it instead of reading that save as delivered.
     coordinator.register_capability(WATCH_CONFIG_REJECT_REPORT_CAPABILITY)
+    # The `catalog` kind: the phone's library of HTTP actions, macros and
+    # status pages, published for the panel's tile picker. The phone sends it
+    # only when it sees this, since an older integration refuses the kind.
+    coordinator.register_capability(WATCH_CONFIG_CATALOG_CAPABILITY)
 
     runtime_data = WristAssistantData(
         coordinator=coordinator,

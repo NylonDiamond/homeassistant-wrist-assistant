@@ -18,6 +18,7 @@ the wire shapes the app is built against are asserted here exactly:
 * (step 3) a put is refused for a page fault but never for a tile fault, and
   a get carrying ``unreadable_revision`` equal to the stored revision files
   the report instead of a delivery, with the same reply.
+* (step 3e) ``catalog`` rides the same two ops, with its own shape guard.
 
 The static half (both ops in the dispatch table, the capabilities advertised)
 sits at the bottom.
@@ -523,6 +524,45 @@ def test_a_report_for_behavior(env) -> None:
     assert env.store.get(WATCH, "pages") is None
 
 
+# ── step 3e: the catalog ─────────────────────────────────────────────────
+
+
+def _catalog(name: str = "Open Gate") -> dict:
+    return {
+        "httpActions": [{"id": "6F1C2D0E-0000-4000-8000-0000000000A1", "name": name}],
+        "macros": [],
+        "schemaVersion": 1,
+        "statusPages": [{"id": "00000000-0000-0000-0000-000000000001", "name": "Lights"}],
+    }
+
+
+def test_the_catalog_rides_the_same_ops(env) -> None:
+    reply = _put(env, _put_body(_catalog(), kind="catalog"))
+    assert reply.status == 200
+    assert reply.body == {"ok": True, "revision": 1}
+    got = _get(env, {"kind": "catalog"})
+    assert got.body["kind"] == "catalog"
+    assert got.body["document"] == _catalog()
+    assert "document" not in _get(env, {"kind": "catalog", "since_revision": 1}).body
+    assert env.store.get(WATCH, "catalog").delivered_revision == 1
+    # A force upload over a stale base, the phone's only way to publish.
+    forced = _put(env, _put_body(_catalog("Gate"), kind="catalog", digest=HASH_2, force=True))
+    assert forced.body == {"ok": True, "revision": 2}
+    assert _get(env, {"kind": "pages"}).body["revision"] == 0
+
+
+def test_a_catalog_of_the_wrong_shape_is_a_signed_400(env) -> None:
+    doc = {"macros": [{"id": "M1"}]}
+    reply = _put(env, _put_body(doc, kind="catalog"))
+    assert reply.status == 400
+    assert reply.body == {
+        "ok": False,
+        "error": "invalid",
+        "message": "document.macros[0].name must be a string",
+    }
+    assert env.store.get(WATCH, "catalog") is None
+
+
 # ── static: dispatch and capability ──────────────────────────────────────
 
 
@@ -565,3 +605,11 @@ def test_the_reject_report_capability_is_advertised() -> None:
     const = (_PKG_DIR / "const.py").read_text()
     assert "register_capability(WATCH_CONFIG_REJECT_REPORT_CAPABILITY)" in init
     assert 'WATCH_CONFIG_REJECT_REPORT_CAPABILITY = "watch_config_reject_report"' in const
+
+
+def test_the_catalog_capability_is_advertised() -> None:
+    """The phone publishes its catalog only when it sees this."""
+    init = (_PKG_DIR / "__init__.py").read_text()
+    const = (_PKG_DIR / "const.py").read_text()
+    assert "register_capability(WATCH_CONFIG_CATALOG_CAPABILITY)" in init
+    assert 'WATCH_CONFIG_CATALOG_CAPABILITY = "watch_config_catalog"' in const

@@ -4,8 +4,10 @@ Part of moving watch configuration out of the phone (see
 ``docs/pages_in_home_assistant_step1.md``, ``..._step2.md`` and
 ``..._step3.md`` in the app repo). The phone uploads its page config (kind
 ``pages``) and its watch behavior settings (kind ``behavior``) here after each
-edit, and pulls a newer copy back down when it has nothing unsent. The panel
-may read, save and restore either kind (see ``watch_config_ws.py``); the phone
+edit, and pulls a newer copy back down when it has nothing unsent. It also
+publishes its library catalog (kind ``catalog``), which only the phone writes.
+The panel may read, save and restore pages and behavior, and read the catalog
+(see ``watch_config_ws.py``); the phone
 picks a panel save up on its next check, or at once over the live line while
 the app is open, and hands it to the watch. A later step has the watch read
 its record directly.
@@ -218,7 +220,8 @@ def validate_document(kind: str, document: Any, *, check_items: bool = False) ->
     and under the kind's cap. A page config's pages are then checked for the
     shape the watch needs to survive (see :func:`_check_pages`): the page
     level always, the tile level only with ``check_items``, which a panel save
-    and a restore pass and a device save does not.
+    and a restore pass and a device save does not. A catalog's entries are
+    checked for an id and a name (see :func:`_check_catalog`).
 
     The server guards the shape, not the content. No key's value is looked at
     beyond the ids: the app is the only thing that understands a tile or a
@@ -238,7 +241,38 @@ def validate_document(kind: str, document: Any, *, check_items: bool = False) ->
         )
     if kind == "pages":
         _check_pages(document["pages"], check_items=check_items)
+    elif kind == "catalog":
+        _check_catalog(document)
     return size
+
+
+# The library lists a catalog may carry, each optional.
+_CATALOG_LIST_KEYS = ("httpActions", "macros", "statusPages")
+
+
+def _check_catalog(document: dict[str, Any]) -> None:
+    """The library catalog's shape guard, for every writer.
+
+    ``httpActions``, ``macros`` and ``statusPages`` are each absent or a list,
+    and each entry an object with a non-empty string ``id`` and a string
+    ``name``. What the panel's picker needs to list an entry and point a tile
+    at it. No other key is looked at, so a newer app can add some.
+    """
+    for list_key in _CATALOG_LIST_KEYS:
+        if list_key not in document:
+            continue
+        entries = document[list_key]
+        if not isinstance(entries, list):
+            raise WatchConfigValidationError(f"document.{list_key} must be a list")
+        for index, entry in enumerate(entries):
+            where = f"document.{list_key}[{index}]"
+            if not isinstance(entry, dict):
+                raise WatchConfigValidationError(f"{where} must be an object")
+            entry_id = entry.get("id")
+            if not isinstance(entry_id, str) or not entry_id:
+                raise WatchConfigValidationError(f"{where}.id must be a non-empty string")
+            if not isinstance(entry.get("name"), str):
+                raise WatchConfigValidationError(f"{where}.name must be a string")
 
 
 def _check_pages(pages: list[Any], *, check_items: bool) -> None:
@@ -972,7 +1006,8 @@ class WatchConfigStore:
 
         Stricter than a device save, on purpose:
 
-        * Only the kinds in ``WATCH_CONFIG_PANEL_KINDS`` (both, today).
+        * Only the kinds in ``WATCH_CONFIG_PANEL_KINDS`` (pages and behavior,
+          never the catalog).
         * The tile level of the page shape guard as well as the page level
           (:func:`validate_document` with ``check_items``). The panel builds
           what it sends, so it can always fix a fault there.

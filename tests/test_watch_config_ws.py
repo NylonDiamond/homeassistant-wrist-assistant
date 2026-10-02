@@ -5,8 +5,9 @@ Loads ``watch_config_ws.py`` with stubbed Home Assistant modules over a real
 commands. The panel's Watch settings view and page editor are built against
 the get, save, history, history_entry and restore shapes, and the phone
 against the subscribe shapes, so results and events are asserted as whole
-dicts and errors as exact (code, message) pairs.
-``test_ws_command_registration.py`` covers the registration and the admin
+dicts and errors as exact (code, message) pairs. The ``catalog`` kind (step
+3e) is read through the same commands and refused to the panel's save and
+restore. ``test_ws_command_registration.py`` covers the registration and the admin
 gate statically.
 """
 
@@ -686,3 +687,51 @@ def test_subscribe_to_an_unreadable_file_is_unavailable_and_not_subscribed(env) 
         "the stored watch config could not be read; restart Home Assistant",
     )
     assert connection.subscriptions == {}
+
+
+# ── step 3e: the catalog (the phone writes it, the panel reads it) ───────
+
+
+def _catalog(name: str = "Open Gate") -> dict:
+    return {
+        "httpActions": [{"id": "6F1C2D0E-0000-4000-8000-0000000000A1", "name": name}],
+        "macros": [{"id": "6F1C2D0E-0000-4000-8000-0000000000B1", "name": "Bedtime",
+                    "steps": 4}],
+        "schemaVersion": 1,
+    }
+
+
+def test_get_may_read_the_catalog(env) -> None:
+    _phone_upload(env, "catalog", _catalog())
+    result = _get(env, "catalog")
+    assert (result["kind"], result["revision"], result["updated_by"]) == ("catalog", 1, WATCH)
+    assert result["document"] == _catalog()
+
+
+def test_history_of_the_catalog_lists_the_phone_s_uploads(env) -> None:
+    _phone_upload(env, "catalog", _catalog())
+    _phone_upload(env, "catalog", _catalog("Gate"), base=1)
+    assert [e["revision"] for e in _history(env, "catalog")["entries"]] == [1]
+    connection = _entry(env, 1, kind="catalog")
+    assert connection.results[1]["document"] == _catalog()
+
+
+def test_the_panel_may_neither_save_nor_restore_the_catalog(env) -> None:
+    _phone_upload(env, "catalog", _catalog())
+    _phone_upload(env, "catalog", _catalog("Gate"), base=1)
+    refusal = ("invalid", "the panel cannot save catalog; it may save behavior, pages")
+    connection = _save(env, _catalog("Panel"), 2, kind="catalog")
+    assert connection.results == {}
+    assert [(code, message) for _id, code, message in connection.errors] == [refusal]
+    assert _restore_error(env, 1, 2, kind="catalog") == refusal
+    result = _get(env, "catalog")
+    assert (result["revision"], result["document"]) == (2, _catalog("Gate"))
+
+
+def test_subscribe_lists_the_catalog_and_hears_its_uploads(env) -> None:
+    _phone_upload(env, "pages", {"pages": []})
+    _phone_upload(env, "catalog", _catalog())
+    connection = _subscribe(env)
+    assert connection.results[1] == {"revisions": {"catalog": 1, "pages": 1}}
+    _phone_upload(env, "catalog", _catalog("Gate"), base=1)
+    assert connection.events() == [{"kind": "catalog", "revision": 2}]
