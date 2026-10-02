@@ -301,3 +301,16 @@ describe("words", () => {
     for (const t of texts) expect(t).not.toMatch(/[–—]| - /);
   });
 });
+
+describe("an empty list and an empty home", () => {
+  it("tells a full page from a home with nothing the watch has a tile for", () => {
+    expect(watchAddEmptyText("", "", 0, [], 0)).toBe("Home Assistant has no entity the watch has a tile for.");
+    expect(watchAddEmptyText("", "", 0, [], 3)).toBe("Every entity the watch has a tile for is on this page already.");
+    expect(watchAddEmptyText("", "", 0)).toBe("Every entity the watch has a tile for is on this page already.");
+  });
+
+  it("builds an empty pool from a hass with no states yet", () => {
+    const pool = watchAddPool({ hass: { states: undefined } as never, onPage: new Set(), keep: new Set() });
+    expect(pool).toEqual({ candidates: [], onPage: [], kinds: [], leftOut: 0 });
+  });
+});

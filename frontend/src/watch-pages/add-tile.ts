@@ -19,6 +19,7 @@
 
 import { css, html, nothing, svg, type TemplateResult } from "lit";
 import { AsyncDirective, directive } from "lit/async-directive.js";
+import { guard } from "lit/directives/guard.js";
 import { uiIcon } from "../ui-icons.js";
 import {
   type WatchAddCandidate,
@@ -191,7 +192,9 @@ function addEntity(
   if (c === undefined) return;
   view.highlighted = c.entityId;
   const name = rowName(c);
-  if (onPage.has(c.entityId)) {
+  // The page as it is now, not as drawn: a second click on a row before it
+  // was drawn as added finds it there and adds nothing.
+  if (onPage.has(c.entityId) || watchPageTiles(host.page).some((t) => tileEntityId(t) === c.entityId)) {
     view.note = { tone: "err", text: watchAddRefusalText("onPage", name) };
     host.requestUpdate();
     return;
@@ -342,6 +345,8 @@ function renderBody(host: AddTileHost, view: AddTileView): TemplateResult {
     }
     if (e.key === "Enter") {
       e.preventDefault();
+      // A held Enter repeats: one press, one tile.
+      if (e.repeat) return;
       if (hl >= 0) addEntity(host, view, results, hl, onPage);
       revealHighlight(e.target);
     }
@@ -355,7 +360,13 @@ function renderBody(host: AddTileHost, view: AddTileView): TemplateResult {
     requestAnimationFrame(() => root.querySelector<HTMLInputElement>("#at-search")?.focus());
   };
 
-  const rows = results.slice(0, count).map((c, i) => {
+  // The rows are drawn again only when what they show moved: the rows, how
+  // many, the highlight, the page's entities, the page (its theme colors
+  // the chips), the provider (glyphs that arrived) and busy. A new `hass`
+  // with nothing else changed (several a second) redraws none of them. A
+  // state's own change (a device class) shows with the next of those.
+  const onPageKey = [...onPage].sort().join("\n");
+  const rows = () => results.slice(0, count).map((c, i) => {
     const added = onPage.has(c.entityId);
     const name = rowName(c);
     const label = [name, c.kind, c.area, added ? "added" : undefined].filter(Boolean).join(", ");
@@ -388,9 +399,9 @@ function renderBody(host: AddTileHost, view: AddTileView): TemplateResult {
       <button type="button" class="pe-btn" ?disabled=${busy}
         @click=${() => commit(host, view, { kind: "header" }, "Added a header.")}>Header</button>
       <button type="button" class="pe-btn ${view.links === "pageLink" ? "on" : ""}" aria-expanded=${view.links === "pageLink" ? "true" : "false"}
-        aria-controls="at-links" @click=${() => toggleLinks("pageLink")}>Go to page${uiIcon("chevron")}</button>
+        aria-controls=${view.links === "pageLink" ? "at-links" : nothing} @click=${() => toggleLinks("pageLink")}>Go to page${uiIcon("chevron")}</button>
       <button type="button" class="pe-btn ${view.links === "peekLink" ? "on" : ""}" aria-expanded=${view.links === "peekLink" ? "true" : "false"}
-        aria-controls="at-links" @click=${() => toggleLinks("peekLink")}>Peek page${uiIcon("chevron")}</button>
+        aria-controls=${view.links === "peekLink" ? "at-links" : nothing} @click=${() => toggleLinks("peekLink")}>Peek page${uiIcon("chevron")}</button>
     </div>
     ${view.links === undefined ? nothing : renderLinks(host, view, view.links)}
 
@@ -414,10 +425,10 @@ function renderBody(host: AddTileHost, view: AddTileView): TemplateResult {
         </select>
       </div>
       <div class="at-list">
-        <div role="listbox" id="at-listbox" aria-label="Entities">${rows}</div>
+        <div role="listbox" id="at-listbox" aria-label="Entities">${guard([results, count, hl, onPageKey, host.page, host.icons, busy], rows)}</div>
         ${results.length === 0
           ? html`<div class="at-empty">${watchAddEmptyText(view.query, view.kind, pool.candidates.length,
-              view.query.trim() === "" ? [] : watchAddResults(pool.onPage, view.query, view.kind))}</div>`
+              view.query.trim() === "" ? [] : watchAddResults(pool.onPage, view.query, view.kind), pool.onPage.length)}</div>`
           : nothing}
         ${left > 0
           ? html`<button type="button" class="at-more" @click=${showMore}>${watchAddMoreText(left)}</button>`

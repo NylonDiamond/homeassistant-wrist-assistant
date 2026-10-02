@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 
 import { WatchPagesDraft } from "../src/watch-pages/draft.js";
-import { NO_ICONS, ScrubRun } from "../src/watch-pages/editor-host.js";
+import { NO_ICONS, ScrubRun, extendHost, memoIconNames } from "../src/watch-pages/editor-host.js";
 import type { WatchPagesDocument } from "../src/watch-pages/model.js";
 
 function doc(name: string): WatchPagesDocument {
@@ -76,5 +76,76 @@ describe("NO_ICONS", () => {
     expect(NO_ICONS.available()).toBe(false);
     expect(NO_ICONS.names()).toEqual([]);
     expect(NO_ICONS.render("star.fill", 22, "#FFFFFF")).toBeUndefined();
+  });
+});
+
+describe("a host read live", () => {
+  it("keeps the base's getters through extendHost, where a spread copies them once", () => {
+    let document = { pages: [1] } as unknown as WatchPagesDocument;
+    const base = Object.defineProperties({ pageId: "P", apply: () => true }, {
+      document: { get: () => document, enumerable: true },
+    }) as { pageId: string; apply: () => boolean; readonly document: WatchPagesDocument };
+    let tile = "a";
+    const host = extendHost(base, { tileId: () => "T", tile: () => tile });
+    const spread = { ...base };
+    document = { pages: [2] } as unknown as WatchPagesDocument;
+    tile = "b";
+    expect(host.document).toBe(document);
+    expect(spread.document).not.toBe(document);
+    expect(host.tile).toBe("b");
+    expect(host.pageId).toBe("P");
+    expect(host.apply()).toBe(true);
+    // A host made from a host keeps both layers live.
+    const twice = extendHost(host, { close: () => () => undefined });
+    tile = "c";
+    expect([twice.tile, twice.document, typeof twice.close]).toEqual(["c", document, "function"]);
+  });
+});
+
+describe("the symbol names asked once", () => {
+  it("answers the same array until a new memo is made, and asks again while loading", () => {
+    let calls = 0;
+    let loaded = false;
+    const provider = {
+      render: () => undefined,
+      available: () => true,
+      names: () => {
+        calls += 1;
+        return loaded ? ["b", "a"].sort() : undefined;
+      },
+      mdiPath: (name: string) => `path:${name}`,
+    };
+    const icons = memoIconNames(provider);
+    expect(icons.names()).toBeUndefined();
+    loaded = true;
+    const first = icons.names();
+    expect(first).toEqual(["a", "b"]);
+    expect(icons.names()).toBe(first);
+    expect(calls).toBe(2);
+    expect(icons.mdiPath?.("mdi:x")).toBe("path:mdi:x");
+    expect(icons.mdiNames).toBeUndefined();
+    expect(memoIconNames(NO_ICONS).names()).toEqual([]);
+  });
+});
+
+describe("the settings' notes and the symbol name set", () => {
+  it("drops every field's refusal and nothing else when the selection changes", async () => {
+    const { forgetTileSettingsNotes } = await import("../src/watch-pages/tile-settings.js");
+    const state = new Map<string, unknown>([
+      ["tile-settings:note:A:iconSize", "Use 8 to 23."],
+      ["tile-settings:note:B:fontSize", "Use 4 to 16."],
+      ["tile-settings:typed:A:label", "Kit"],
+      ["tile-settings:open:text", true],
+    ]);
+    forgetTileSettingsNotes(state);
+    expect([...state.keys()]).toEqual(["tile-settings:typed:A:label", "tile-settings:open:text"]);
+  });
+
+  it("is one set per names array", async () => {
+    const { symbolNameSet } = await import("../src/editors.js");
+    const names = ["a", "b"];
+    expect(symbolNameSet(names)).toBe(symbolNameSet(names));
+    expect(symbolNameSet(names).has("b")).toBe(true);
+    expect(symbolNameSet(["a", "b"])).not.toBe(symbolNameSet(names));
   });
 });

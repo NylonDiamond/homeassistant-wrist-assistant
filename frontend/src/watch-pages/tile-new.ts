@@ -690,7 +690,8 @@ function newLinkTile(spec: LinkSpec, target: WatchLinkTarget, page: WatchPage | 
     id: newIdFrom(options),
     entityId: `${spec.entityIdPrefix}${targetId}`,
     icon: spec.icon,
-    customLabel: typeof target.name === "string" ? target.name : "",
+    // A page with no name is "Page" on the phone, and its links say so.
+    customLabel: typeof target.name === "string" ? target.name : "Page",
     colSpan: TABLE.tile.colSpan,
     rowSpan: TABLE.tile.rowSpan,
   };
@@ -701,7 +702,7 @@ function newLinkTile(spec: LinkSpec, target: WatchLinkTarget, page: WatchPage | 
 
 /** A new go to page tile: `page.<target id>` (upper case), its icon, the
  * page theme's page color (gradient on a gradient page), the target's name
- * as `customLabel` as it is now, 6 by 4. */
+ * as `customLabel` as it is now (`"Page"` for a page with none), 6 by 4. */
 export function newWatchPageLinkTile(
   target: WatchLinkTarget,
   page: WatchPage | undefined,

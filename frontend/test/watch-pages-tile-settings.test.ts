@@ -69,7 +69,14 @@ import {
   watchTileTextSettings,
   watchTriggerModes,
   writeWatchSlideMap,
+  scrubWatchOrphanTriggers,
+  watchStoredPageName,
+  watchTileIconSizeTop,
+  watchTileIconSizeValue,
 } from "../src/watch-pages/tile-settings-model.js";
+import { watchLinkTargetMenu } from "../src/watch-pages/tile-settings-options.js";
+import { newWatchEntityTile, newWatchPageLinkTile } from "../src/watch-pages/tile-new.js";
+import { watchHeaderLook } from "../src/watch-pages/preview.js";
 
 type Json = Record<string, unknown>;
 
@@ -101,14 +108,6 @@ function docWith(tile: Json): WatchPagesDocument {
 
 function tileIn(document: WatchPagesDocument): WatchPageTile {
   return (findWatchPage(document, PAGE)!.items as WatchPageTile[])[1]!;
-}
-
-function sortedKeys(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortedKeys);
-  if (typeof value !== "object" || value === null) return value;
-  const out: Json = {};
-  for (const key of Object.keys(value).sort()) out[key] = sortedKeys((value as Json)[key]);
-  return out;
 }
 
 // The phone's gradient version of a solid color, taken from the test values
@@ -245,15 +244,9 @@ describe("settings case files written by the phone", () => {
       expect(pages[0]).toBe(oldPages[0]);
       expect(pages[2]).toBe(oldPages[2]);
       expect((pages[1]!.items as Json[])[0]).toBe((oldPages[1]!.items as Json[])[0]);
-      // To the byte, unless the edit added a key: the phone encodes sorted
-      // keys, the panel puts a new key at the end.
-      const added = Object.keys(c.expected).filter((k) => !Object.hasOwn(c.tile, k));
-      if (added.length === 0) {
-        expect(JSON.stringify(tile)).toBe(JSON.stringify(c.expected));
-      } else {
-        expect(Object.keys(tile).slice(-added.length)).toEqual(added);
-        expect(JSON.stringify(sortedKeys(tile))).toBe(JSON.stringify(c.expected));
-      }
+      // To the byte: the phone encodes sorted keys, and a key the panel adds
+      // to a tile in that order goes where the phone puts it.
+      expect(JSON.stringify(tile)).toBe(JSON.stringify(c.expected));
     });
   }
 });
@@ -310,8 +303,11 @@ describe("refusals return the document as given", () => {
 
   it("for sizes out of range", () => {
     for (const bad of [3, 3.4, 16.5, 17, Number.NaN, Infinity]) expect(setWatchTileFontSize(doc, PAGE, T, bad)).toBe(doc);
-    for (const bad of [7, 7.4, 48.6, 49, Number.NaN]) expect(setWatchTileIconSize(doc, PAGE, T, bad)).toBe(doc);
+    // A 6 by 4 tile with a label tops out at 48.6: up to 49 stores that.
+    for (const bad of [7, 7.4, 49.5, 50, Number.NaN]) expect(setWatchTileIconSize(doc, PAGE, T, bad)).toBe(doc);
     expect(tileIn(setWatchTileIconSize(doc, PAGE, T, 48.4)).iconSizeOverride).toBe(48);
+    expect(tileIn(setWatchTileIconSize(doc, PAGE, T, 48.6)).iconSizeOverride).toBe(48.6);
+    expect(tileIn(setWatchTileIconSize(doc, PAGE, T, 49)).iconSizeOverride).toBe(48.6);
     expect(tileIn(setWatchTileFontSize(doc, PAGE, T, 3.6)).labelFontSizeOverride).toBe(4);
   });
 
@@ -522,13 +518,12 @@ describe("hold and slide arrays", () => {
 
   it("refuse an array that does not parse", () => {
     expect(readWatchSlideMap(["up"])).toBeUndefined();
-    expect(readWatchSlideMap(["up", "toggle", "up", "none"])).toBeUndefined();
     expect(readWatchSlideMap(["north", "toggle"])).toBeUndefined();
     expect(readWatchSlideMap({ up: "toggle" })).toBeUndefined();
   });
 
   it("a setter leaves an unparsable array alone and refuses", () => {
-    for (const bad of [["up"], ["up", "toggle", "up", "none"], ["north", "toggle"], { up: "toggle" }]) {
+    for (const bad of [["up"], ["north", "toggle"], { up: "toggle" }]) {
       const t = edits(tileOf({ holdSlideActions: bad }));
       expect(setWatchTileHoldSlide(t.doc, PAGE, t.id, "down", "toggle")).toBe(t.doc);
       expect(clearWatchTileHoldSlide(t.doc, PAGE, t.id)).toBe(t.doc);
@@ -863,5 +858,209 @@ describe("watchColorInMode and watchColorMode", () => {
     expect(normalizeWatchColor("GRADIENT|#ABCDEF|#000000", "solid")).toBeUndefined();
     expect(normalizeWatchColor("#RAINBOW", "label")).toBeUndefined();
     expect(normalizeWatchColor("#RAINBOW", "tile")).toBe("#RAINBOW");
+  });
+});
+
+// ── review fixes ─────────────────────────────────────────────────────────
+
+describe("the save's tidy of a trigger with no entity", () => {
+  const orphan = (patch: Json) => tileOf({ holdSlideActions: ["left", "triggerEntity"], ...patch });
+
+  it("sets the direction to None and drops its target, as the phone's save does", () => {
+    const t = edits(orphan({ holdSlideTriggerTargets: ["left", { entityId: "  ", mode: "toggle" }] }));
+    const after = scrubWatchOrphanTriggers(t.doc);
+    expect(t.read(after).holdSlideActions).toEqual(["left", "none"]);
+    expect(Object.hasOwn(t.read(after), "holdSlideTriggerTargets")).toBe(false);
+    // Every page, the system and smart pages' copies too, as the tidy runs
+    // over the document that is sent.
+    const pages = after.pages as Json[];
+    expect(((pages[0]!.items as Json[])[0]!).holdSlideActions).toEqual(["left", "none"]);
+    expect(((pages[2]!.items as Json[])[0]!).holdSlideActions).toEqual(["left", "none"]);
+  });
+
+  it("covers a direction with no target entry at all, and keeps the others", () => {
+    const t = edits(orphan({
+      holdSlideActions: ["up", "triggerEntity", "left", "triggerEntity", "down", "toggle"],
+      holdSlideTriggerTargets: ["up", { entityId: "light.hall", mode: "toggle" }],
+    }));
+    const tile = t.read(scrubWatchOrphanTriggers(t.doc));
+    expect(tile.holdSlideActions).toEqual(["up", "triggerEntity", "down", "toggle", "left", "none"]);
+    expect(tile.holdSlideTriggerTargets).toEqual(["up", { entityId: "light.hall", mode: "toggle" }]);
+  });
+
+  it("keeps the identity of everything with nothing to tidy", () => {
+    const t = edits(orphan({ holdSlideTriggerTargets: ["left", { entityId: "light.hall", mode: "toggle" }] }));
+    expect(scrubWatchOrphanTriggers(t.doc)).toBe(t.doc);
+    const loose = edits(orphan({}));
+    const after = scrubWatchOrphanTriggers(loose.doc);
+    const pages = after.pages as Json[];
+    const old = loose.doc.pages as Json[];
+    expect((pages[1]!.items as Json[])[0]).toBe((old[1]!.items as Json[])[0]);
+    const plain = docWith(structuredClone(OTHER_TILE));
+    expect(scrubWatchOrphanTriggers(plain)).toBe(plain);
+  });
+
+  it("leaves a tile whose arrays do not parse alone", () => {
+    for (const bad of [["left"], { left: "triggerEntity" }]) {
+      const a = edits(tileOf({ holdSlideActions: bad }));
+      expect(scrubWatchOrphanTriggers(a.doc)).toBe(a.doc);
+      const b = edits(orphan({ holdSlideTriggerTargets: bad }));
+      expect(scrubWatchOrphanTriggers(b.doc)).toBe(b.doc);
+    }
+  });
+});
+
+describe("icon size at the top of a tile with a fraction", () => {
+  // A 6 by 2 tile with a label: 23.76 at most, which the phone's slider
+  // stores at its end.
+  const small = edits(tileOf({ colSpan: 6, rowSpan: 2, showLabel: true }));
+
+  it("stores the largest size for the next whole number above it", () => {
+    expect(watchTileMaxIconSize(small.read(small.doc))).toBeCloseTo(23.76, 10);
+    expect(watchTileIconSizeTop(23.76)).toBe(24);
+    expect(small.read(setWatchTileIconSize(small.doc, PAGE, LAMP_ID, 24)).iconSizeOverride).toBe(watchTileMaxIconSize(small.read(small.doc)));
+    expect(small.read(setWatchTileIconSize(small.doc, PAGE, LAMP_ID, 23)).iconSizeOverride).toBe(23);
+    expect(setWatchTileIconSize(small.doc, PAGE, LAMP_ID, 25)).toBe(small.doc);
+  });
+
+  it("takes nothing past a whole largest size", () => {
+    expect(watchTileIconSizeTop(30)).toBe(30);
+    expect(watchTileIconSizeValue(30, 30)).toBe(30);
+    expect(watchTileIconSizeValue(30.4, 30)).toBe(30);
+    expect(watchTileIconSizeValue(31, 30)).toBeUndefined();
+    expect(watchTileIconSizeValue(7.4, 30)).toBeUndefined();
+    expect(watchTileIconSizeValue(Number.NaN, 30)).toBeUndefined();
+  });
+});
+
+describe("hold and slide setters check every array they are about to touch", () => {
+  it("refuses Trigger entity while the target array does not parse", () => {
+    for (const bad of [["up"], ["north", { entityId: "light.hall", mode: "toggle" }], { up: {} }]) {
+      const t = edits(tileOf({ holdSlideTriggerTargets: bad }));
+      expect(setWatchTileHoldSlide(t.doc, PAGE, t.id, "up", "triggerEntity")).toBe(t.doc);
+      expect(setWatchTileHoldSlide(t.doc, PAGE, t.id, "up", null)).toBe(t.doc);
+    }
+  });
+
+  it("refuses a target or a mode while the HTTP array does not parse", () => {
+    const t = edits(tileOf({
+      holdSlideActions: ["left", "triggerEntity"],
+      holdSlideTriggerTargets: ["left", { entityId: "light.hall", mode: "toggle" }],
+      holdSlideHTTPActionTargets: ["left"],
+    }));
+    expect(setWatchTileHoldSlideTarget(t.doc, PAGE, t.id, "left", "switch.fan")).toBe(t.doc);
+    expect(setWatchTileHoldSlideTargetMode(t.doc, PAGE, t.id, "left", "turnOn")).toBe(t.doc);
+    expect(setWatchTileHoldSlide(t.doc, PAGE, t.id, "left", "triggerEntity")).toBe(t.doc);
+  });
+});
+
+describe("a page with no name", () => {
+  const NAMELESS = "C3A0E000-0000-4000-8000-0000000000EE";
+
+  it("is \"Page\", as the phone reads it", () => {
+    expect(watchStoredPageName({})).toBe("Page");
+    expect(watchStoredPageName({ name: 3 })).toBe("Page");
+    expect(watchStoredPageName({ name: "" })).toBe("");
+    expect(watchStoredPageName({ name: "Den" })).toBe("Den");
+  });
+
+  it("names a new link and a retarget \"Page\"", () => {
+    expect(newWatchPageLinkTile({ id: NAMELESS }, undefined).customLabel).toBe("Page");
+    const link = edits(tileOf({ entityId: `page.${SMART_PAGE}`, customLabel: "Smart" }));
+    const retargeted = link.read(setWatchPageLinkTarget(link.doc, PAGE, link.id, { id: NAMELESS }, "Smart"));
+    expect(retargeted.entityId).toBe(`page.${NAMELESS}`);
+    expect(retargeted.customLabel).toBe("Page");
+  });
+
+  it("is the old target's name a label follows", () => {
+    const tile = tileOf({ entityId: `page.${NAMELESS}`, customLabel: "Page" });
+    const doc = deepFreeze({
+      schemaVersion: 1,
+      pages: [
+        { id: PAGE, name: "Living", items: [tile] },
+        { id: NAMELESS, items: [] },
+        { id: SMART_PAGE, name: "Den", items: [] },
+      ],
+    }) as WatchPagesDocument;
+    const menu = watchLinkTargetMenu(doc, tile as WatchPageTile, (doc.pages as WatchPageTile[]).slice(1) as never);
+    expect(menu?.oldTargetName).toBe("Page");
+    const after = setWatchPageLinkTarget(doc, PAGE, tile.id as string, { id: SMART_PAGE, name: "Den" }, menu?.oldTargetName);
+    expect(((after.pages as Json[])[0]!.items as Json[])[0]!.customLabel).toBe("Den");
+  });
+});
+
+describe("a hold and slide array with a direction twice", () => {
+  it("reads the last, as Swift's dictionary decoding does", () => {
+    expect(readWatchSlideMap(["up", "toggle", "up", "none"])).toEqual(new Map([["up", "none"]]));
+    const t = edits(tileOf({ holdSlideActions: ["up", "toggle", "down", "none", "up", "openControl"] }));
+    expect(watchHoldSlideSettings(t.read(t.doc)).parses).toBe(true);
+    expect(watchHoldSlideSettings(t.read(t.doc)).directions[0]!.stored).toBe("openControl");
+  });
+
+  it("is written back with one of each", () => {
+    const t = edits(tileOf({ holdSlideActions: ["up", "toggle", "up", "none"] }));
+    expect(t.read(setWatchTileHoldSlide(t.doc, PAGE, t.id, "left", "toggle")).holdSlideActions).toEqual(["up", "none", "left", "toggle"]);
+  });
+});
+
+describe("a tap animation the watch does not know", () => {
+  it("reads as bounce, the stored string kept", () => {
+    const odd = watchTileIconSettings(tileOf({ iconTapAnimation: "wobble" }) as WatchPageTile);
+    expect(odd.tapAnimation).toBe("bounce");
+    expect(odd.tapAnimationStored).toBe("wobble");
+    const known = watchTileIconSettings(tileOf({ iconTapAnimation: "spin" }) as WatchPageTile);
+    expect([known.tapAnimation, known.tapAnimationStored]).toEqual(["spin", "spin"]);
+    const absent = tileOf({});
+    delete absent.iconTapAnimation;
+    const none = watchTileIconSettings(absent as WatchPageTile);
+    expect([none.tapAnimation, none.tapAnimationStored]).toEqual(["replace", undefined]);
+  });
+
+  it("stays as stored until another is picked", () => {
+    const t = edits(tileOf({ iconTapAnimation: "wobble" }));
+    expect(t.read(setWatchTileIconShadow(t.doc, PAGE, t.id, true)).iconTapAnimation).toBe("wobble");
+    expect(t.read(setWatchTileTapAnimation(t.doc, PAGE, t.id, "bounce")).iconTapAnimation).toBe("bounce");
+  });
+});
+
+describe("a header's glow as the watch reads it", () => {
+  it("in the settings and the preview, uncapped", () => {
+    const header = (entityId: string) => ({ id: "C3A0E000-0000-4000-8000-0000000000F1", entityId }) as WatchPageTile;
+    expect(watchHeaderSettings(header("divider.line.custom.g250"))!.glow).toBe(2.5);
+    expect(watchHeaderSettings(header("divider.label.custom.g-10"))!.glow).toBe(-0.1);
+    expect(watchHeaderSettings(header("divider.line.custom.gx.g40"))!.glow).toBe(0.4);
+    expect(watchHeaderLook(header("divider.line.custom.g250")).glow).toBe(2.5);
+    expect(watchHeaderLook(header("divider.line.custom.g+5")).glow).toBe(0.05);
+  });
+});
+
+describe("a key a setter adds goes where the phone's sorted encoding puts it", () => {
+  it("on a tile in sorted order", () => {
+    const t = edits(LAMP);
+    const keys = Object.keys(t.read(setWatchTileIconSize(t.doc, PAGE, t.id, 20)));
+    expect(keys).toEqual([...keys].sort());
+    expect(keys).toContain("iconSizeOverride");
+  });
+
+  it("at the end of a tile in some other order", () => {
+    const tile: Json = { id: LAMP_ID, entityId: "light.desk_lamp", colSpan: 6 };
+    const t = edits(tile);
+    expect(Object.keys(t.read(setWatchTileIconShadow(t.doc, PAGE, t.id, true)))).toEqual(["id", "entityId", "colSpan", "iconShadow"]);
+  });
+
+  it("in a trigger target", () => {
+    const t = edits(tileOf({
+      holdSlideActions: ["left", "triggerEntity"],
+      holdSlideTriggerTargets: ["left", { entityId: "light.hall", mode: "toggle" }],
+    }));
+    const named = t.read(setWatchTileHoldSlideTarget(t.doc, PAGE, t.id, "left", "light.kitchen", "Kitchen"));
+    expect(JSON.stringify(named.holdSlideTriggerTargets)).toBe(JSON.stringify(["left", { entityId: "light.kitchen", friendlyName: "Kitchen", mode: "toggle" }]));
+  });
+
+  it("and a new calendar tile's colors are sorted too", () => {
+    const tile = newWatchEntityTile({ entityId: "calendar.home" }, undefined);
+    const keys = Object.keys(tile);
+    expect(keys).toEqual([...keys].sort());
+    expect(Object.keys(tile.calendarSourceColors as Json)).toEqual(["calendar.home"]);
   });
 });

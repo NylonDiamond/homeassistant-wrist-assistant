@@ -168,7 +168,14 @@ describe("tile kinds", () => {
   it("reads a header's style, domain and glow", () => {
     expect(dividerParts("divider.label.light.g40")).toEqual({ style: "label", domain: "light", glow: 0.4 });
     expect(dividerParts("divider.line.custom")).toEqual({ style: "line", domain: "custom", glow: 0 });
-    expect(dividerParts("divider.fancy.switch.g250")).toEqual({ style: "line", domain: "switch", glow: 1 });
+    // As the watch reads it: no cap, a sign allowed, the first that parses.
+    expect(dividerParts("divider.fancy.switch.g250")).toEqual({ style: "line", domain: "switch", glow: 2.5 });
+    expect(dividerParts("divider.line.custom.g-20")).toEqual({ style: "line", domain: "custom", glow: -0.2 });
+    expect(dividerParts("divider.line.custom.g+15")).toEqual({ style: "line", domain: "custom", glow: 0.15 });
+    expect(dividerParts("divider.line.garage.gx.g30.g70")).toEqual({ style: "line", domain: "garage", glow: 0.3 });
+    expect(dividerParts("divider.line.custom.g")).toEqual({ style: "line", domain: "custom", glow: 0 });
+    expect(dividerParts("divider.line.custom.g1.5")).toEqual({ style: "line", domain: "custom", glow: 0.01 });
+    expect(dividerParts("divider.line.custom.g99999999999999999999")).toEqual({ style: "line", domain: "custom", glow: 0 });
   });
 
   it("draws a tile with its own symbol, else its kind's", () => {

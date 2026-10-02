@@ -595,3 +595,39 @@ describe("saveWatchPagesDraft", () => {
     }
   });
 });
+
+describe("a save that tidies the document first", () => {
+  it("sends the prepared document, and the draft holds it and is clean after", async () => {
+    const draft = new WatchPagesDraft(document(), 3);
+    const pages = draft.document.pages as JsonObject[];
+    const renamed = { ...draft.document, pages: [{ ...pages[0]!, name: "Den" }] };
+    draft.apply(renamed);
+    const tidy = (d: WatchPagesDocument): WatchPagesDocument => {
+      const first = (d.pages as JsonObject[])[0]!;
+      return first.name === "Den" ? { ...d, pages: [{ ...first, name: "Den tidy" }] } : d;
+    };
+    const sent: WatchPagesDocument[] = [];
+    const result = await saveWatchPagesDraft(draft, {
+      prepare: tidy,
+      save: async (_base, d) => {
+        sent.push(d);
+        return { revision: 4 };
+      },
+      fetch: async () => ({ revision: 4, document: document() }),
+    });
+    expect(result.ok).toBe(true);
+    expect((sent[0]!.pages as JsonObject[])[0]!.name).toBe("Den tidy");
+    expect(draft.document).toBe(sent[0]);
+    expect(draft.dirty).toBe(false);
+  });
+
+  it("changes nothing when the tidy has nothing to do", async () => {
+    const draft = new WatchPagesDraft(document(), 3);
+    draft.apply({ ...draft.document, extra: 1 });
+    const before = draft.document;
+    const depth = draft.undoDepth;
+    await saveWatchPagesDraft(draft, { prepare: (d) => d, save: async () => ({ revision: 4 }), fetch: async () => ({ revision: 4, document: document() }) });
+    expect(draft.document).toBe(before);
+    expect(draft.undoDepth).toBe(depth);
+  });
+});

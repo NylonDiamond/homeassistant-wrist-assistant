@@ -61,7 +61,7 @@ import { uiIcon } from "../ui-icons.js";
 import { deliveryState, initialWatch, rejectedNow, settingsWatches, watchName } from "../watch-settings.js";
 import { addTileStyles, renderAddTile } from "./add-tile.js";
 import { type WatchPagesApplyOptions, type WatchPagesDraft, saveWatchPagesDraft } from "./draft.js";
-import { type AddTileHost, type WatchPagesEditorHost, NO_ICONS, ScrubRun } from "./editor-host.js";
+import { type AddTileHost, type TileSettingsHost, type WatchPagesEditorHost, NO_ICONS, ScrubRun, extendHost, memoIconNames } from "./editor-host.js";
 import {
   type WatchCell,
   type WatchDropOutcome,
@@ -135,7 +135,8 @@ import {
   watchScreenColor,
 } from "./preview.js";
 import { type WatchPagesNote, watchCommandError, watchPagesSaveNote } from "./save-note.js";
-import { renderTileSettings, tileSettingsStyles } from "./tile-settings.js";
+import { forgetTileSettingsNotes, renderTileSettings, tileSettingsStyles } from "./tile-settings.js";
+import { scrubWatchOrphanTriggers } from "./tile-settings-model.js";
 import {
   type StageGrid,
   autoScrollStep,
@@ -173,6 +174,9 @@ if (typeof window !== "undefined") {
 /** How often the view asks whether the iPhone has collected a save. Nothing
  * on the live line says so: it only carries new revisions. */
 const DELIVERY_POLL_MS = 15_000;
+
+/** The keys held back while a number is dragged (`onKeyDown`). */
+const SCRUB_HELD_KEYS: ReadonlySet<string> = new Set(["Escape", "Delete", "Backspace", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
 
 const NO_RECORD_TEXT = "Open the iPhone app once with Save pages to Home Assistant turned on.";
 
@@ -430,6 +434,11 @@ export class WaPageEditor extends LitElement {
   private readonly uiState = new Map<string, unknown>();
   /** A drag on a number field running now: one undo step. */
   private readonly scrub = new ScrubRun();
+  /** The title or box that drag holds: when it leaves the tree (its tile
+   * went, its section folded) no end can come from it. */
+  private scrubHandle?: Element;
+  /** `memoIcons`: the provider and tick the memo was made for. */
+  private iconMemo?: { provider: IconProvider; tick: number; icons: IconProvider };
 
   private gesture?: Gesture;
   private rowDrag?: RowDrag;
@@ -490,6 +499,13 @@ export class WaPageEditor extends LitElement {
 
   private get busy(): boolean {
     return this.saving || this.gesture !== undefined || this.rowDrag !== undefined;
+  }
+
+  /** A change from elsewhere waits: `busy`, or a number being dragged. The
+   * drag edits (it is no gesture of `busy`), but a merge under it would be
+   * undone by its next step, and the next save would write that back. */
+  private get holdReload(): boolean {
+    return this.busy || this.scrub.active;
   }
 
   constructor() {
@@ -628,6 +644,9 @@ export class WaPageEditor extends LitElement {
     // A field removed while typed in (an undo took its tile away) never sent
     // a blur: what was typed there is dropped, not shown in another field.
     if (this.typing !== undefined && (this.renderRoot as ShadowRoot).activeElement === null) this.typing = undefined;
+    // The dragged number's field was drawn away (an undo, a merge, a folded
+    // section): its drag can send no end any more.
+    if (this.scrub.active && this.scrubHandle?.isConnected !== true) this.endScrub();
     // Open each question once, when it is first drawn. Opening any closed
     // one on every draw reopened a question that was just answered: the
     // draw after the answer came before the dialog's own close event.
@@ -672,6 +691,7 @@ export class WaPageEditor extends LitElement {
     const document = this.draft?.document;
     if (document === undefined || this.watchId === undefined) return;
     let page = this.selectedPageId === undefined ? undefined : findWatchPage(document, this.selectedPageId);
+    const had = this.selectedTileId;
     if (page === undefined) {
       page = listedWatchPages(document)[0];
       this.selectedPageId = page === undefined ? undefined : watchPageId(page);
@@ -679,6 +699,12 @@ export class WaPageEditor extends LitElement {
     }
     if (this.selectedTileId !== undefined && (page === undefined || this.tileOn(page, this.selectedTileId) === undefined)) {
       this.selectedTileId = undefined;
+    }
+    if (had !== undefined && this.selectedTileId === undefined) {
+      // The tile went (an undo, a merge): its refusals and a drag on its
+      // numbers go with it. Its fields are drawn away, so no blur is due.
+      forgetTileSettingsNotes(this.uiState);
+      this.endScrub();
     }
     keepWatchPagesSelection(this.watchId, { pageId: this.selectedPageId, tileId: this.selectedTileId });
   }
@@ -694,6 +720,7 @@ export class WaPageEditor extends LitElement {
 
   private selectPage(pageId: string): void {
     if (sameWatchId(pageId, this.selectedPageId)) return;
+    this.leaveTile();
     this.selectedPageId = pageId;
     this.selectedTileId = undefined;
     this.fieldNote = undefined;
@@ -701,8 +728,23 @@ export class WaPageEditor extends LitElement {
 
   private selectTile(tileId: string | undefined): void {
     if (tileId === this.selectedTileId) return;
+    this.leaveTile();
     this.selectedTileId = tileId;
     this.fieldNote = undefined;
+  }
+
+  /**
+   * The selected tile is about to change. A settings field still holding
+   * text (an entity typed in full, not picked) is let go first, so its blur
+   * commit lands on its own tile now, before the press that changes the
+   * selection starts a drag and makes every edit wait. Then the old tile's
+   * refusals go and a drag on one of its numbers ends.
+   */
+  private leaveTile(): void {
+    const focused = (this.renderRoot as ShadowRoot).activeElement;
+    if (focused instanceof HTMLElement && focused.closest(".ts-root") !== null) focused.blur();
+    forgetTileSettingsNotes(this.uiState);
+    this.endScrub();
   }
 
   private pageButton(pageId: string): HTMLElement | null {
@@ -748,7 +790,7 @@ export class WaPageEditor extends LitElement {
   private async load(watchId: string, quiet = false): Promise<void> {
     const hass = this.hass;
     if (!hass) return;
-    if (quiet && this.busy) {
+    if (quiet && this.holdReload) {
       this.reloadPending = true;
       return;
     }
@@ -762,7 +804,7 @@ export class WaPageEditor extends LitElement {
     try {
       const record = await fetchWatchConfig(hass, watchId, "pages");
       if (seq !== this.loadSeq) return;
-      if (quiet && this.busy) {
+      if (quiet && this.holdReload) {
         this.reloadPending = true;
         return;
       }
@@ -783,7 +825,7 @@ export class WaPageEditor extends LitElement {
 
   /** A gesture or a save ended: fetch what arrived meanwhile. */
   private flushPending(): void {
-    if (!this.reloadPending || this.busy || this.watchId === undefined) return;
+    if (!this.reloadPending || this.holdReload || this.watchId === undefined) return;
     this.reloadPending = false;
     void this.load(this.watchId, true);
   }
@@ -867,7 +909,7 @@ export class WaPageEditor extends LitElement {
     const watchId = this.watchId;
     const shown = this.record;
     if (!hass || watchId === undefined || shown === undefined) return;
-    if (this.busy) {
+    if (this.holdReload) {
       this.pollIfWaiting();
       return;
     }
@@ -882,7 +924,7 @@ export class WaPageEditor extends LitElement {
           rejected_revision: fresh.rejected_revision,
           rejected_at: fresh.rejected_at,
         };
-      } else if (this.busy) {
+      } else if (this.holdReload) {
         this.reloadPending = true;
       } else {
         this.show(fresh);
@@ -919,8 +961,16 @@ export class WaPageEditor extends LitElement {
    * complication draft under this editor. */
   private onScrubStart = (e: Event): void => {
     e.stopPropagation();
+    this.endScrub();
     this.draft?.endCoalesce();
     this.scrub.start();
+    const handle = e.composedPath()[0];
+    this.scrubHandle = handle instanceof Element ? handle : undefined;
+    // The handle's own end never comes when the field goes from under the
+    // pointer, so the pointer's release anywhere ends the run too: a run
+    // never outlives its pointer.
+    window.addEventListener("pointerup", this.onScrubPointerUp, true);
+    window.addEventListener("pointercancel", this.onScrubPointerUp, true);
   };
 
   private onScrubEnd = (e: Event): void => {
@@ -928,8 +978,19 @@ export class WaPageEditor extends LitElement {
     this.endScrub();
   };
 
+  private onScrubPointerUp = (): void => {
+    this.endScrub();
+  };
+
+  /** End the drag's run, if one is going, and fetch a change that waited
+   * for it. */
   private endScrub(): void {
-    if (this.scrub.end()) this.draft?.endCoalesce();
+    window.removeEventListener("pointerup", this.onScrubPointerUp, true);
+    window.removeEventListener("pointercancel", this.onScrubPointerUp, true);
+    this.scrubHandle = undefined;
+    if (!this.scrub.end()) return;
+    this.draft?.endCoalesce();
+    this.flushPending();
   }
 
   /** What the two 3c modules are handed on each draw, for the selected page
@@ -939,28 +1000,52 @@ export class WaPageEditor extends LitElement {
     const hass = this.hass;
     if (draft === undefined || hass === undefined || page === undefined) return undefined;
     const pageId = watchPageId(page);
-    const document = draft.document;
-    const busy = this.busy || this.editingOff(page);
-    return {
+    // Read live (`editor-host.ts`): the draft object stays this watch's for
+    // as long as the host can be called, and its document moves with every
+    // edit, undo and merge. The page drawn stands in only once the page is
+    // gone, when every edit to it is refused anyway.
+    // Looked up again only when the document moved: a draw reads it often.
+    let seen: { document: WatchPagesDocument; page: WatchPage } | undefined;
+    const pageNow = (): WatchPage => {
+      const document = draft.document;
+      if (seen?.document !== document) seen = { document, page: findWatchPage(document, pageId) ?? page };
+      return seen.page;
+    };
+    const busyNow = (): boolean => this.busy || this.editingOff(pageNow());
+    const base = {
       hass,
-      icons: this.icons ?? NO_ICONS,
+      icons: this.memoIcons(),
       symbols: this.symbols,
-      document,
       pageId,
-      page,
-      otherPages: listedWatchPages(document).filter((p) => !sameWatchId(p.id, pageId)),
-      busy,
       uiState: this.uiState,
       // A refused edit (`busy`) changes nothing, as a drag during a save
       // does: a save that merges must not find the document moved under it.
-      apply: (next, options) => !busy && !this.busy && this.edit(next, this.scrub.options(options)),
+      apply: (next: WatchPagesDocument, options?: WatchPagesApplyOptions) =>
+        this.draft === draft && !busyNow() && this.edit(next, this.scrub.options(options)),
       endCoalesce: () => this.draft?.endCoalesce(),
-      selectTile: (id) => {
+      selectTile: (id: string | undefined) => {
         this.selectTile(id);
         if (id !== undefined) this.revealTile = true;
       },
       requestUpdate: () => this.requestUpdate(),
     };
+    return extendHost(base, {
+      document: () => draft.document,
+      page: pageNow,
+      otherPages: () => listedWatchPages(draft.document).filter((p) => !sameWatchId(p.id, pageId)),
+      busy: busyNow,
+    });
+  }
+
+  /** The panel's provider with its names answered once per provider and
+   * tick (`memoIconNames`). */
+  private memoIcons(): IconProvider {
+    const provider = this.icons ?? NO_ICONS;
+    const memo = this.iconMemo;
+    if (memo !== undefined && memo.provider === provider && memo.tick === this.iconsTick) return memo.icons;
+    const icons = memoIconNames(provider);
+    this.iconMemo = { provider, tick: this.iconsTick, icons };
+    return icons;
   }
 
   private openAddTile(): void {
@@ -996,6 +1081,9 @@ export class WaPageEditor extends LitElement {
     if (!hass || watchId === undefined || !draft || !draft.dirty || draft.saving || this.gesture || this.rowDrag) return;
     this.note = undefined;
     const running = saveWatchPagesDraft(draft, {
+      // A hold and slide direction left on Trigger entity with nothing
+      // picked is saved as None, as the phone saves it.
+      prepare: scrubWatchOrphanTriggers,
       save: (base, document) => saveWatchConfig(hass, watchId, "pages", base, document).catch((err: unknown) => {
         throw flatError(err);
       }),
@@ -1246,6 +1334,13 @@ export class WaPageEditor extends LitElement {
     const path = e.composedPath();
     if (!path.includes(this) && !nothingFocused()) return;
     if (this.renderRoot.querySelector("dialog[open]")) return;
+    if (this.scrub.active && SCRUB_HELD_KEYS.has(e.key)) {
+      // While a number is dragged, a key that would take its tile away
+      // (Escape, Delete) or move it waits for the drag to end: the field
+      // would go from under the pointer.
+      e.preventDefault();
+      return;
+    }
     const mod = e.metaKey || e.ctrlKey;
     const key = e.key.toLowerCase();
     if (mod && !e.altKey && key === "s") {
@@ -2156,7 +2251,19 @@ export class WaPageEditor extends LitElement {
     const host = this.editorHost(page);
     const tileId = tileIdOf(tile);
     if (host === undefined || tileId === "") return nothing;
-    return renderTileSettings({ ...host, tileId, tile });
+    // Live as the host's own fields are: the tile as the page has it when
+    // read, the one drawn once it is gone; looked up again only when the
+    // page moved.
+    let seen: { page: WatchPage; tile: WatchPageTile } | undefined;
+    const tileHost: TileSettingsHost = extendHost(host, {
+      tileId: () => tileId,
+      tile: () => {
+        const now = host.page;
+        if (seen?.page !== now) seen = { page: now, tile: this.tileOn(now, tileId) ?? tile };
+        return seen.tile;
+      },
+    });
+    return renderTileSettings(tileHost);
   }
 
   /** The Add tile dialog, the delete question's pattern: a native modal
@@ -2166,14 +2273,16 @@ export class WaPageEditor extends LitElement {
     const page = this.currentPage();
     const host = this.editorHost(page);
     if (page === undefined || host === undefined) return nothing;
-    const tileId = this.selectedTileId;
-    const tile = tileId === undefined ? undefined : this.tileOn(page, tileId);
-    const addHost: AddTileHost = {
-      ...host,
-      tileId: tile === undefined ? undefined : tileId,
-      tile,
-      close: () => this.closeAsk(),
+    const selectedTile = (): WatchPageTile | undefined => {
+      const id = this.selectedTileId;
+      return id === undefined ? undefined : this.tileOn(host.page, id);
     };
+    const close = () => this.closeAsk();
+    const addHost: AddTileHost = extendHost(host, {
+      tileId: () => (selectedTile() === undefined ? undefined : this.selectedTileId),
+      tile: selectedTile,
+      close: () => close,
+    });
     return html`<dialog class="pe-ask pe-add-dialog" aria-labelledby="pe-add-title"
       @close=${() => { this.addTileOpen = false; }}>
       <div class="pe-ask-head">

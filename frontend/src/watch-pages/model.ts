@@ -284,17 +284,35 @@ export function tileClass(entityId: string, states?: Readonly<Record<string, unk
   return "unknown";
 }
 
-/** A header's look, read from `divider.<style>.<domain>[.g<NN>]`. `glow` is
- * 0 to 1. A style other than `label` is drawn as a line, as the watch does. */
+/** A header's look, read from `divider.<style>.<domain>[.g<NN>]`. A style
+ * other than `label` is drawn as a line, as the watch does. `glow` is read as
+ * the watch reads it (`glowIntensity`): the first dot part that starts with
+ * `g` and whose rest is a Swift `Int` (a sign allowed), over 100, with no cap
+ * either way; 0 when there is none. */
 export function dividerParts(entityId: string): { style: "line" | "label"; domain: string; glow: number } {
   const parts = entityId.split(".");
   const style = parts[1] === "label" ? "label" : "line";
   let glow = 0;
-  for (const part of parts.slice(1)) {
-    const m = /^g(\d+)$/.exec(part);
-    if (m) glow = Math.min(1, Number(m[1]) / 100);
+  for (const part of parts) {
+    if (!part.startsWith("g")) continue;
+    const value = swiftInt(part.slice(1));
+    if (value !== undefined) {
+      glow = value / 100;
+      break;
+    }
   }
   return { style, domain: parts[2] ?? "", glow };
+}
+
+const INT64_MAX = 9223372036854775807n;
+
+/** `Int(text)` in Swift: an optional `+` or `-`, then decimal digits and
+ * nothing else, within 64 bits; undefined otherwise. */
+function swiftInt(text: string): number | undefined {
+  if (!/^[+-]?[0-9]+$/.test(text)) return undefined;
+  const value = BigInt(text.startsWith("+") ? text.slice(1) : text);
+  if (value > INT64_MAX || value < -INT64_MAX - 1n) return undefined;
+  return Number(value);
 }
 
 /** The SF Symbol a kind is drawn with when its tile names none: the app's

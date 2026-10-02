@@ -288,6 +288,12 @@ export interface WatchPagesSaveIO {
   save(baseRevision: number, document: WatchPagesDocument): Promise<{ revision: number }>;
   /** Reads the record Home Assistant holds now. */
   fetch(): Promise<{ revision: number; document: unknown }>;
+  /** What the document is turned into before each send, as the phone's own
+   * save tidies a page before it writes it. The result, when it differs, is
+   * applied to the draft as a step of its own, so the draft holds what was
+   * sent and is clean after the save. Return the document itself for no
+   * change. */
+  prepare?(document: WatchPagesDocument): WatchPagesDocument;
 }
 
 /**
@@ -369,6 +375,8 @@ async function runSave(draft: WatchPagesDraft, io: WatchPagesSaveIO): Promise<Wa
   });
 
   for (let attempt = 1; ; attempt++) {
+    const prepared = io.prepare?.(draft.document);
+    if (prepared !== undefined && prepared !== draft.document) draft.apply(prepared);
     const sent = draft.document;
     const problems = checkWatchPages(sent);
     if (problems.length > 0) return failed("invalid", problems.join(" "), problems);

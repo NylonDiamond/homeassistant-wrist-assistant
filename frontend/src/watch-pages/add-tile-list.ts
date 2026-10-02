@@ -71,7 +71,8 @@ export function watchAddPool(input: WatchAddPoolInput): WatchAddPool {
   const already: Record<string, HassEntityState> = {};
   const kindOf = new Map<string, string>();
   let leftOut = 0;
-  for (const [id, state] of Object.entries(hass.states)) {
+  // A frontend between connections can hand out a `hass` with no states yet.
+  for (const [id, state] of Object.entries(hass.states ?? {})) {
     if (state === undefined) continue;
     const addable = watchAddableDomain(id);
     if (addable === undefined) {
@@ -265,14 +266,22 @@ export function watchAddMoreText(left: number): string {
 /** The words when the list has no rows. `onPage` is what the same search
  * finds among the page's own entities: a person looking for a light that is
  * on the page already learns that it is, rather than that it does not
- * exist. */
+ * exist. `onPageCount` is how many addable entities the page holds, so an
+ * empty pool can tell a full page from a home with nothing to add. */
 export function watchAddEmptyText(
   query: string,
   kind: string,
   poolSize: number,
   onPage: readonly { name: string }[] = [],
+  onPageCount?: number,
 ): string {
-  if (poolSize === 0) return "Every entity the watch has a tile for is on this page already.";
+  if (poolSize === 0) {
+    // `onPageCount`, the entities of the pool on the page already: none at
+    // all means Home Assistant has nothing the watch has a tile for.
+    return onPageCount === 0
+      ? "Home Assistant has no entity the watch has a tile for."
+      : "Every entity the watch has a tile for is on this page already.";
+  }
   if (query.trim() !== "" && onPage.length > 0) {
     return onPage.length === 1
       ? `${onPage[0]!.name} is already on this page.`

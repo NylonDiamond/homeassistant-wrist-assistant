@@ -227,11 +227,42 @@ function sameValue(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-/** The tile with `key` set: in its place when the tile has it, else at the
- * end. The tile itself when the key already holds that value. */
+/** Whether an object's keys are in the order the phone encodes them
+ * (`JSONEncoder` with `.sortedKeys`: by code unit, which is what `<` on two
+ * strings compares). */
+function keysSorted(object: Record<string, unknown>): boolean {
+  const keys = Object.keys(object);
+  for (let i = 1; i < keys.length; i += 1) if (!(keys[i - 1]! < keys[i]!)) return false;
+  return true;
+}
+
+/**
+ * The object with `key` set: in its place when the object has it. A new key
+ * goes where the phone's sorted encoding puts it when the object's keys are
+ * in that order already, so an object the panel edits is, to the byte, the
+ * one the phone would write; on an object in some other order it goes at
+ * the end.
+ */
+function withField<T extends Record<string, unknown>>(object: T, key: string, value: unknown): T {
+  if (Object.hasOwn(object, key) || !keysSorted(object)) return { ...object, [key]: value };
+  const out: Record<string, unknown> = {};
+  let placed = false;
+  for (const k of Object.keys(object)) {
+    if (!placed && key < k) {
+      out[key] = value;
+      placed = true;
+    }
+    out[k] = object[k];
+  }
+  if (!placed) out[key] = value;
+  return out as T;
+}
+
+/** The tile with `key` set (`withField`). The tile itself when the key
+ * already holds that value. */
 function withKey(tile: WatchPageTile, key: string, value: unknown): WatchPageTile {
   if (Object.hasOwn(tile, key) && sameValue(tile[key], value)) return tile;
-  return { ...tile, [key]: value };
+  return withField(tile, key, value);
 }
 
 /** The tile without `key`, or the tile itself when it has none. */
@@ -445,9 +476,33 @@ export function watchTileMaxIconSize(tile: WatchPageTile): number {
   return Math.max(WATCH_ICON_SIZE_RANGE.min, Math.min(availableWidth, availableHeight));
 }
 
-/** Icon Size: a whole number (rounded) from 8 to `watchTileMaxIconSize`,
- * or `null` for Auto, which removes the key. The stored value is not
- * clamped later when the tile is resized; the watch clamps it. */
+/** The highest number the icon size field takes for a tile whose largest
+ * size is `max`: the next whole number up, which stands for `max` itself
+ * (`watchTileIconSizeValue`). `max` when it is whole. */
+export function watchTileIconSizeTop(max: number): number {
+  return Math.max(WATCH_ICON_SIZE_RANGE.min, Math.ceil(max));
+}
+
+/**
+ * The icon size stored for a typed or dragged `size` on a tile whose largest
+ * is `max`, or undefined when it is out of range. A whole number (rounded)
+ * from 8 to `max`; a number that rounds above `max` but not past the next
+ * whole number stores `max` itself. The phone's slider runs from 8 to `max`
+ * in steps of 1 and clamps the step past its end to the end, so at the top
+ * it stores 23.76, not 24 (`GlowSlider`, `IconTabContent.iconSizeSlider`).
+ */
+export function watchTileIconSizeValue(size: number, max: number): number | undefined {
+  if (typeof size !== "number" || !Number.isFinite(size) || !Number.isFinite(max)) return undefined;
+  const n = Math.round(size);
+  if (n < WATCH_ICON_SIZE_RANGE.min) return undefined;
+  if (n <= max) return n;
+  return n <= watchTileIconSizeTop(max) ? Math.max(WATCH_ICON_SIZE_RANGE.min, max) : undefined;
+}
+
+/** Icon Size: `watchTileIconSizeValue` for the tile's
+ * `watchTileMaxIconSize`, or `null` for Auto, which removes the key. The
+ * stored value is not clamped later when the tile is resized; the watch
+ * clamps it. */
 export function setWatchTileIconSize(
   document: WatchPagesDocument,
   pageId: string,
@@ -455,7 +510,7 @@ export function setWatchTileIconSize(
   size: number | null,
 ): WatchPagesDocument {
   return setKey(document, pageId, tileId, "iconSizeOverride", (tile) =>
-    size === null ? REMOVE : wholeIn(size, WATCH_ICON_SIZE_RANGE.min, watchTileMaxIconSize(tile)),
+    size === null ? REMOVE : watchTileIconSizeValue(size, watchTileMaxIconSize(tile)),
   );
 }
 
@@ -506,8 +561,16 @@ export interface WatchTileIconSettings {
   iconShadow: boolean;
   /** `applies`: the row shows for this kind. */
   dimWhenOff: { applies: boolean; value: boolean };
+  /** What the watch plays: a stored value it does not know reads as
+   * `bounce`, as the watch decodes it. */
   tapAnimation: string;
+  /** The stored string, kept as it is until a person picks one. */
+  tapAnimationStored: string | undefined;
 }
+
+/** What the watch decodes an `iconTapAnimation` it does not know as
+ * (`IconTapAnimation.init(from:)`). */
+const UNKNOWN_TAP_ANIMATION = "bounce";
 
 /** The Icon task's values for a tile, absent keys read as the watch reads them. */
 export function watchTileIconSettings(tile: WatchPageTile): WatchTileIconSettings {
@@ -519,7 +582,13 @@ export function watchTileIconSettings(tile: WatchPageTile): WatchTileIconSetting
     iconSizeMax: watchTileMaxIconSize(tile),
     iconShadow: tile.iconShadow === true,
     dimWhenOff: { applies: watchTileKindEntry(tile).dimWhenOff, value: tile.dimWhenOff !== false },
-    tapAnimation: typeof tile.iconTapAnimation === "string" ? tile.iconTapAnimation : TABLE.newIconTapAnimation,
+    tapAnimation:
+      typeof tile.iconTapAnimation !== "string"
+        ? TABLE.newIconTapAnimation
+        : WATCH_ICON_TAP_ANIMATIONS.some((c) => c.value === tile.iconTapAnimation)
+          ? tile.iconTapAnimation
+          : UNKNOWN_TAP_ANIMATION,
+    tapAnimationStored: typeof tile.iconTapAnimation === "string" ? tile.iconTapAnimation : undefined,
   };
 }
 
@@ -714,9 +783,10 @@ const HOLD_SLIDE_HTTP = "holdSlideHTTPActionTargets";
 
 /**
  * A stored hold and slide array read into a map: `[direction, value, ...]`
- * in any order. Absent (or null) is an empty map. Undefined when it does not
- * parse: not an array, an odd length, a direction that is not one of the
- * four, or one given twice.
+ * in any order. Absent (or null) is an empty map. A direction given twice
+ * keeps its last value, as Swift's dictionary decoding does; writing the map
+ * back leaves one of each. Undefined when it does not parse: not an array,
+ * an odd length, or a direction that is not one of the four.
  */
 export function readWatchSlideMap(value: unknown): Map<WatchSlideDirection, unknown> | undefined {
   const map = new Map<WatchSlideDirection, unknown>();
@@ -724,10 +794,16 @@ export function readWatchSlideMap(value: unknown): Map<WatchSlideDirection, unkn
   if (!Array.isArray(value) || value.length % 2 !== 0) return undefined;
   for (let i = 0; i < value.length; i += 2) {
     const direction = value[i];
-    if (!isDirection(direction) || map.has(direction)) return undefined;
+    if (!isDirection(direction)) return undefined;
     map.set(direction, value[i + 1]);
   }
   return map;
+}
+
+/** Whether all three hold and slide arrays parse: a setter touches the
+ * card only then, whichever array it is about to write. */
+function slideMapsParse(tile: WatchPageTile): boolean {
+  return [HOLD_SLIDE_ACTIONS, HOLD_SLIDE_TRIGGERS, HOLD_SLIDE_HTTP].every((key) => readWatchSlideMap(tile[key]) !== undefined);
 }
 
 /** A map written back as the phone writes it: pairs in the order up, down,
@@ -871,6 +947,9 @@ export function watchHoldSlideSettings(tile: WatchPageTile): WatchHoldSlideSetti
 
 /** Change one direction on a tile, the phone's direction setter. */
 function holdSlideChange(tile: WatchPageTile, direction: WatchSlideDirection, action: string | null): WatchPageTile {
+  // Trigger entity and Run HTTP Action keep a target in the other two
+  // arrays: every one of them has to parse before the direction moves.
+  if (!slideMapsParse(tile)) return tile;
   const actions = readWatchSlideMap(tile[HOLD_SLIDE_ACTIONS]);
   if (actions === undefined) return tile;
   let next = tile;
@@ -964,6 +1043,7 @@ function withTriggerTarget(
   direction: WatchSlideDirection,
   make: (old: unknown) => Record<string, unknown> | undefined,
 ): WatchPageTile {
+  if (!slideMapsParse(tile)) return tile;
   const actions = readWatchSlideMap(tile[HOLD_SLIDE_ACTIONS]);
   const triggers = readWatchSlideMap(tile[HOLD_SLIDE_TRIGGERS]);
   if (actions === undefined || triggers === undefined || actions.get(direction) !== "triggerEntity") return tile;
@@ -998,12 +1078,11 @@ export function setWatchTileHoldSlideTarget(
       const kept = isJsonObject(old) ? old : undefined;
       const mode = typeof kept?.mode === "string" ? kept.mode : watchTriggerModeValues(tileKind(entityId))[0];
       if (mode === undefined) return undefined;
-      const next: Record<string, unknown> = kept ? { ...kept } : {};
-      next.entityId = entityId;
+      // Keys added in the phone's sorted order (`withField`), as on a tile.
+      let next: Record<string, unknown> = withField(kept ? { ...kept } : {}, "entityId", entityId);
       if (friendlyName === undefined) delete next.friendlyName;
-      else next.friendlyName = friendlyName;
-      next.mode = mode;
-      return next;
+      else next = withField(next, "friendlyName", friendlyName);
+      return withField(next, "mode", mode);
     });
   });
 }
@@ -1023,7 +1102,7 @@ export function setWatchTileHoldSlideTargetMode(
     return withTriggerTarget(tile, direction, (old) => {
       const target = triggerTargetOf(old);
       if (target === undefined || !watchTriggerModeValues(tileKind(target.entityId)).includes(mode)) return undefined;
-      return { ...(old as Record<string, unknown>), mode };
+      return withField(old as Record<string, unknown>, "mode", mode);
     });
   });
 }
@@ -1107,7 +1186,8 @@ export interface WatchHeaderSettings {
   label: string | undefined;
   /** Absent draws at `WATCH_HEADER_TEXT_SIZE_RANGE.auto`. */
   textSize: number | undefined;
-  /** 0 to 1. */
+  /** As the watch reads it (`dividerParts`): a whole percent over 100, so
+   * 0.4 for `g40`; not held to 0 to 1. */
   glow: number;
   color: string | undefined;
 }
@@ -1231,17 +1311,19 @@ export function watchPageLinkTarget(tile: WatchPageTile): { kind: "page" | "show
  * icon and color never change. The label follows (becomes the new page's
  * name) when it equals `oldTargetName`, the old target's name now, or is
  * empty or absent; a label of its own, or a stale name from before a
- * rename, stays. Refused for the tile's own page and for a target that is
- * the one it has.
+ * rename, stays. A page with no name is called `"Page"`, as the phone reads
+ * it (`watchStoredPageName`). Refused for the tile's own page and for a
+ * target that is the one it has.
  */
 export function setWatchPageLinkTarget(
   document: WatchPagesDocument,
   pageId: string,
   tileId: string,
-  page: { id: string; name: string },
+  page: { id: string; name?: unknown },
   oldTargetName?: string,
 ): WatchPagesDocument {
-  if (typeof page?.id !== "string" || page.id === "" || typeof page.name !== "string") return document;
+  if (typeof page?.id !== "string" || page.id === "") return document;
+  const name = watchStoredPageName(page);
   return editTile(document, pageId, tileId, (tile, ownPageId) => {
     const link = watchPageLinkTarget(tile);
     if (link === undefined || sameWatchId(page.id, ownPageId)) return tile;
@@ -1250,6 +1332,67 @@ export function setWatchPageLinkTarget(
     const label = tile.customLabel;
     const follows = label === undefined || label === null || label === "" || (oldTargetName !== undefined && label === oldTargetName);
     const next = withKey(tile, "entityId", entityId);
-    return follows ? withKey(next, "customLabel", page.name) : next;
+    return follows ? withKey(next, "customLabel", name) : next;
   });
+}
+
+/** A page's name as the phone reads it: a missing (or unreadable) name is
+ * `"Page"` (`GridPage.init(from:)`), and that is what a link to it stores. */
+export function watchStoredPageName(page: { name?: unknown } | undefined): string {
+  return typeof page?.name === "string" ? page.name : "Page";
+}
+
+// ── saving ───────────────────────────────────────────────────────────────
+
+/** A tile with every hold and slide direction that is set to Trigger entity
+ * and has no target (or one with an empty entity) set to `"none"`, its
+ * target entry dropped. The tile itself when there is none, or when the
+ * actions or trigger array does not parse. */
+function scrubOrphanTriggers(tile: WatchPageTile): WatchPageTile {
+  const actions = readWatchSlideMap(tile[HOLD_SLIDE_ACTIONS]);
+  if (actions === undefined || actions.size === 0) return tile;
+  const triggers = readWatchSlideMap(tile[HOLD_SLIDE_TRIGGERS]);
+  if (triggers === undefined) return tile;
+  let changed = false;
+  for (const [direction, action] of actions) {
+    if (action !== "triggerEntity") continue;
+    const target = triggers.get(direction);
+    const entityId = isJsonObject(target) && typeof target.entityId === "string" ? target.entityId.trim() : "";
+    if (entityId !== "") continue;
+    actions.set(direction, "none");
+    triggers.delete(direction);
+    changed = true;
+  }
+  if (!changed) return tile;
+  return withSlideMap(withSlideMap(tile, HOLD_SLIDE_ACTIONS, actions), HOLD_SLIDE_TRIGGERS, triggers);
+}
+
+/**
+ * The phone's save tidy (`PageEditorView.scrubOrphanTriggerEntityActions`)
+ * over every tile of every page: a hold and slide direction left on Trigger
+ * entity with no entity picked becomes an explicit `"none"`, and its target
+ * entry goes (the array with it once empty). The watch would show such a
+ * direction as needing a sync. Pages and tiles with nothing to tidy keep
+ * their identity; the document itself comes back when nothing changed.
+ */
+export function scrubWatchOrphanTriggers(document: WatchPagesDocument): WatchPagesDocument {
+  const pages = document.pages;
+  if (!Array.isArray(pages)) return document;
+  let nextPages: unknown[] | undefined;
+  pages.forEach((page, pageIndex) => {
+    if (!isJsonObject(page) || !Array.isArray(page.items)) return;
+    const items = page.items;
+    let nextItems: unknown[] | undefined;
+    items.forEach((tile, tileIndex) => {
+      if (!isJsonObject(tile)) return;
+      const next = scrubOrphanTriggers(tile as WatchPageTile);
+      if (next === tile) return;
+      nextItems ??= items.slice();
+      nextItems[tileIndex] = next;
+    });
+    if (nextItems === undefined) return;
+    nextPages ??= pages.slice();
+    nextPages[pageIndex] = { ...page, items: nextItems };
+  });
+  return nextPages === undefined ? document : ({ ...document, pages: nextPages } as WatchPagesDocument);
 }

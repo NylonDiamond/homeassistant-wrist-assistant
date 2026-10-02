@@ -165,7 +165,8 @@ export function watchTileLabelColor(tile: WatchPageTile): string | undefined {
 }
 
 /** A header's look: its style, text size (`labelFontSizeOverride`, else
- * 10) and line glow, 0 to 1. */
+ * 10) and line glow as the watch reads it (`dividerParts`: not held to 0 to
+ * 1, and 0 or below draws no glow). */
 export function watchHeaderLook(tile: WatchPageTile): { style: "line" | "label"; textSize: number; glow: number } {
   const { style, glow } = dividerParts(tileEntityId(tile));
   return { style, textSize: storedNumber(tile.labelFontSizeOverride) ?? 10, glow };
@@ -185,8 +186,11 @@ function labelStyle(tile: WatchPageTile, widthPt: number, s: number): string {
 }
 
 /** A header's line: thicker and brighter with its glow. */
-function headerLine(glow: number, s: number, quiet: boolean): TemplateResult {
+function headerLine(stored: number, s: number, quiet: boolean): TemplateResult {
   const base = quiet ? 0.35 : 0.5;
+  // The watch draws any glow above 0, through opacities that stop at 1, so
+  // a glow above 1 draws as 1 does.
+  const glow = Math.min(1, stored);
   const style = glow > 0
     ? `height:${(1 + glow) * s}px;opacity:${0.7 + 0.3 * glow};background:color-mix(in srgb, var(--ink), #fff ${Math.round(glow * 45)}%);box-shadow:0 0 ${2 * glow * s}px ${glow * s}px color-mix(in srgb, var(--ink) ${Math.round(40 * glow)}%, transparent)`
     : `height:${Math.max(1, (quiet ? 0.5 : 1) * s)}px;opacity:${base}`;

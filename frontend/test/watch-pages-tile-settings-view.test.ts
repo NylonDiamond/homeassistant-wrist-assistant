@@ -292,9 +292,12 @@ describe("numbers", () => {
 
   it("says when the tile's size is what caps the icon", () => {
     expect(watchIconSizeRefusal(24, 31.6)).toBeUndefined();
-    expect(watchIconSizeRefusal(40, 31.6)).toMatch(/stops growing at 31/);
-    expect(watchIconSizeRefusal(4, 31.6)).toBe("Use a number from 8 to 31.");
-    expect(watchIconSizeRefusal(9, 8)).toMatch(/stops growing at 8/);
+    // Up to the next whole number takes the largest size itself.
+    expect(watchIconSizeRefusal(32, 31.6)).toBeUndefined();
+    expect(watchIconSizeRefusal(33, 31.6)).toMatch(/stops growing at 31\.6\. Use 8 to 32/);
+    expect(watchIconSizeRefusal(40, 31.6)).toMatch(/stops growing at 31\.6/);
+    expect(watchIconSizeRefusal(4, 31.6)).toBe("Use a number from 8 to 32.");
+    expect(watchIconSizeRefusal(9, 8)).toMatch(/stops growing at 8\./);
   });
 
   it("shows a glow in whole percent", () => {

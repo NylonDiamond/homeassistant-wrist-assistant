@@ -4,6 +4,7 @@
 // so the bundle stays free of HA's internal component library.
 
 import { html, nothing, type TemplateResult } from "lit";
+import { live } from "lit/directives/live.js";
 import { repeat } from "lit/directives/repeat.js";
 import {
   hasHTTPTap,
@@ -1010,17 +1011,29 @@ export function checkField(label: string, value: boolean, set: (v: boolean) => v
  * the hex, and the opacity in percent. The hex box takes eight digits too, so
  * alpha can be typed either way. `def` adds a reset dot back to that color
  * (or, for an optional color, `null` clears it). */
-export function colorField(label: string, value: string | undefined, set: (v: string | undefined) => void, optional = false, def?: string | null) {
+export function colorField(
+  label: string,
+  value: string | undefined,
+  set: (v: string | undefined) => void,
+  optional = false,
+  def?: string | null,
+  opts: { switchOn?: boolean } = {},
+) {
   const { rgb, alpha } = colorParts(value);
   const back: ResetTo | undefined = def === undefined ? undefined : {
     atDefault: sameColor(value, def ?? undefined),
     title: def === null ? "Back to none" : `Back to ${def}`,
     reset: () => set(def ?? undefined),
   };
-  const off = optional && value === undefined;
+  // `switchOn`, for a caller whose box can hold text that is not stored yet:
+  // the switch shows that state rather than whether the box is empty, and
+  // always shows it (`live`), even when a press on it was refused. Without
+  // it the switch is drawn as it always was.
+  const on = opts.switchOn;
+  const off = optional && (on === undefined ? value === undefined : !on);
   return html`<div class="field color">${fieldLabel(label, back)}
     <div class="color-row">
-      ${optional ? html`<input type="checkbox" title="Enabled" aria-label=${`${label} on`} .checked=${value !== undefined} @change=${(e: Event) => set((e.target as HTMLInputElement).checked ? composeColor(rgb, alpha) : undefined)} />` : nothing}
+      ${optional ? html`<input type="checkbox" title="Enabled" aria-label=${`${label} on`} .checked=${on === undefined ? value !== undefined : live(on)} @change=${(e: Event) => set((e.target as HTMLInputElement).checked ? composeColor(rgb, alpha) : undefined)} />` : nothing}
       ${colorBox(label, value, set, off)}
     </div></div>`;
 }
@@ -1260,6 +1273,63 @@ export function entityChoices(
   return out;
 }
 
+/** The last pool `entityResults` built, with what it was built from. */
+let lastEntityPool:
+  | {
+      domainKey: string;
+      registries: readonly unknown[];
+      ids: string[];
+      names: unknown[];
+      values: unknown[];
+      choices: EntityChoice[];
+    }
+  | undefined;
+let lastEntityResults: { choices: EntityChoice[]; query: string; numeric: boolean; results: EntityChoice[] } | undefined;
+
+/**
+ * An open entity search's rows: `entityChoices` ranked by `searchEntities`,
+ * as the field always drew them. The pool is a function of the entity ids,
+ * their friendly names and states, the registries and the domain filter, so
+ * it is built again only when one of those changed, not for every new `hass`
+ * Home Assistant hands out; the rows likewise only when the pool or the
+ * query moved. Comparing costs one pass over the states, where building
+ * costs that and a sort.
+ */
+function entityResults(hass: HassLike, domain: string | readonly string[] | undefined, query: string, numeric: boolean): EntityChoice[] {
+  const states = hass.states ?? {};
+  const domainKey = domain === undefined ? "\u0000" : typeof domain === "string" ? domain : domain.join(",");
+  const registries = [hass.entities, hass.devices, hass.areas];
+  const ids: string[] = [];
+  const names: unknown[] = [];
+  const values: unknown[] = [];
+  for (const id in states) {
+    ids.push(id);
+    names.push(states[id]?.attributes?.friendly_name);
+    values.push(states[id]?.state);
+  }
+  const last = lastEntityPool;
+  const same =
+    last !== undefined &&
+    last.domainKey === domainKey &&
+    sameEntries(last.registries, registries) &&
+    sameEntries(last.ids, ids) &&
+    sameEntries(last.names, names) &&
+    sameEntries(last.values, values);
+  const choices = same ? last.choices : entityChoices(states, domain, areaLookup(hass));
+  if (!same) lastEntityPool = { domainKey, registries, ids, names, values, choices };
+  const ranked = lastEntityResults;
+  if (ranked !== undefined && ranked.choices === choices && ranked.query === query && ranked.numeric === numeric) return ranked.results;
+  const results = searchEntities(choices, query, ENTITY_RESULT_LIMIT, numeric ? looksNumeric : undefined);
+  lastEntityResults = { choices, query, numeric, results };
+  return results;
+}
+
+function sameEntries(a: readonly unknown[], b: readonly unknown[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) if (a[i] !== b[i]) return false;
+  return true;
+}
+
 /**
  * Where each entity lives, read from the registry snapshots the Home Assistant
  * frontend already keeps on `hass`. An entity's own area wins; otherwise it
@@ -1452,9 +1522,7 @@ export function entityField(host: Pick<EditorHost, "hass"> & Partial<Pick<Editor
     } else setOwn(next, source);
   };
   const search = entitySearches.get(key);
-  const results = search
-    ? searchEntities(entityChoices(states, opts.domain, areaLookup(host.hass)), search.query, ENTITY_RESULT_LIMIT, opts.preferNumeric ? looksNumeric : undefined)
-    : [];
+  const results = search ? entityResults(host.hass, opts.domain, search.query, opts.preferNumeric === true) : [];
   const index = search ? Math.max(0, Math.min(search.index, results.length - 1)) : 0;
   const live = ref.entityId ? states[ref.entityId] : undefined;
 
@@ -1654,6 +1722,56 @@ export function symbolChoices(known: Set<string>): { value: string; label: strin
   ];
 }
 
+// The symbol field asks for these on every draw, and a draw comes several
+// times a second while Home Assistant hands out new states. Each is a pure
+// function of its inputs, kept by their identity: a provider that hands back
+// the same names array every time (the page editor's does) pays for the set,
+// the category sizes and the search once, and one that hands out a fresh
+// array (the panel's) works as before.
+
+const symbolSets = new WeakMap<readonly string[], Set<string>>();
+
+/** The names as a set, one per names array. Read it, never change it. */
+export function symbolNameSet(pack: readonly string[]): Set<string> {
+  let known = symbolSets.get(pack);
+  if (known === undefined) {
+    known = new Set(pack);
+    symbolSets.set(pack, known);
+  }
+  return known;
+}
+
+const choicesBySet = new WeakMap<Set<string>, { value: string; label: string }[]>();
+
+function symbolChoicesOf(known: Set<string>): { value: string; label: string }[] {
+  let choices = choicesBySet.get(known);
+  if (choices === undefined) {
+    choices = symbolChoices(known);
+    choicesBySet.set(known, choices);
+  }
+  return choices;
+}
+
+let lastSymbolMatches:
+  | { category: string; query: string; pack: readonly string[]; known: Set<string>; pool: { names: string[]; fromPack: boolean }; matches: string[] }
+  | undefined;
+
+/** `symbolPool` and the search over it, the last answer again for the same
+ * inputs. */
+function symbolMatches(
+  category: string,
+  query: string,
+  pack: readonly string[],
+  known: Set<string>,
+): { pool: { names: string[]; fromPack: boolean }; matches: string[] } {
+  const last = lastSymbolMatches;
+  if (last !== undefined && last.category === category && last.query === query && last.pack === pack && last.known === known) return last;
+  const pool = symbolPool(category, query, pack, known);
+  const matches = searchSymbols(pool.names, query);
+  lastSymbolMatches = { category, query, pack, known, pool, matches };
+  return lastSymbolMatches;
+}
+
 /** Everything a search can reach: the whole installed pack, or the curated
  * catalogue when no pack answers with its names. Both the starter set and each
  * category are a window onto this, and the dropdown already sizes those, so this
@@ -1720,7 +1838,7 @@ export function symbolField(
   const query = browser.query(key);
   const listed = host.icons.names();
   const pack = listed ?? [];
-  const known = new Set(pack);
+  const known = symbolNameSet(pack);
   const current = symbol.trim();
   const isMdiName = current.startsWith(MDI_PREFIX);
   const offersMdi = setPath !== undefined;
@@ -1772,8 +1890,7 @@ export function symbolField(
     </div>`;
   } else if (open) {
     const category = browser.category(key);
-    const pool = symbolPool(category, query, pack, known);
-    const matches = searchSymbols(pool.names, query);
+    const { pool, matches } = symbolMatches(category, query, pack, known);
     const shown = pool.fromPack ? matches.slice(0, SYMBOL_GRID_LIMIT) : matches;
     const sfRecent = browser.recent.filter((s) => !s.startsWith(MDI_PREFIX));
     const recent = known.size === 0 ? sfRecent : sfRecent.filter((s) => known.has(s));
@@ -1782,7 +1899,7 @@ export function symbolField(
       <div class="sym-controls">
         <input type="search" placeholder="Search symbols" .value=${query} @input=${onInput((v) => browser.setQuery(key, v))} />
         <select @change=${onInput((v) => browser.setCategory(key, v))}>
-          ${symbolChoices(known).map(
+          ${symbolChoicesOf(known).map(
             (c) => html`<option value=${c.value} ?selected=${c.value === category}>${c.label}</option>`
           )}
         </select>

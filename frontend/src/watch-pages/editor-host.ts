@@ -18,8 +18,16 @@ import type { SymbolBrowser } from "../symbols.js";
 import type { WatchPagesApplyOptions } from "./draft.js";
 import type { WatchPage, WatchPageTile, WatchPagesDocument } from "./model.js";
 
-/** What both modules get. Built afresh for every draw, so every value is the
- * one on screen now; keep none of it across draws except through `uiState`. */
+/** What both modules get. Built afresh for every draw; keep none of it across
+ * draws except through `uiState`.
+ *
+ * `document`, `page`, `otherPages`, `busy` (and a tile host's `tile`) are
+ * getters that read the draft every time they are read, never a copy taken at
+ * the draw: one task can run two edits (a field's blur commit and then
+ * another control's handler, a drag step after a merge, a script), and the
+ * second must start from what the first left, or it puts the first back. So
+ * a host is never spread (`{...host}` copies a getter's value once and drops
+ * the getter); `extendHost` adds fields to one and keeps them. */
 export interface WatchPagesEditorHost {
   /** Home Assistant as the panel has it now: `states`, and the `entities`,
    * `devices` and `areas` registries where the frontend has them. What
@@ -87,6 +95,44 @@ export const NO_ICONS: IconProvider = {
   available: () => false,
   names: () => [],
 };
+
+/**
+ * `base` with more fields, each a getter read every time. The base is the
+ * new object's prototype, so its own getters (`document`, `busy`) stay
+ * getters and its functions stay reachable. A spread would have copied each
+ * getter's value of that moment instead.
+ */
+export function extendHost<B extends object, X extends object>(
+  base: B,
+  extra: { readonly [K in keyof X]: () => X[K] },
+): B & X {
+  const out = Object.create(base) as B & X;
+  for (const key of Object.keys(extra) as (keyof X & string)[]) {
+    Object.defineProperty(out, key, { get: extra[key], enumerable: true, configurable: true });
+  }
+  return out;
+}
+
+/**
+ * The provider with its `names()` answered once. The panel's provider sorts a
+ * fresh copy of every name on each call, and the settings and the symbol
+ * field ask on every draw (several a second while Home Assistant ticks); the
+ * same array also lets the symbol field's own caches, which go by the
+ * array's identity, hold. Make a new one whenever the provider or its tick
+ * changes (names that arrived later). An undefined answer (still loading) is
+ * asked again next time.
+ */
+export function memoIconNames(provider: IconProvider): IconProvider {
+  let names: string[] | undefined;
+  const out: IconProvider = {
+    render: (symbol, size, colorHex) => provider.render(symbol, size, colorHex),
+    available: () => provider.available(),
+    names: () => (names ??= provider.names()),
+  };
+  if (typeof provider.mdiNames === "function") out.mdiNames = () => provider.mdiNames!();
+  if (typeof provider.mdiPath === "function") out.mdiPath = (name) => provider.mdiPath!(name);
+  return out;
+}
 
 /**
  * A drag on a number field (`SCRUB_START` to `SCRUB_END`) as one undo step.

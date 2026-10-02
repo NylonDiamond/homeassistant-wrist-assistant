@@ -22,7 +22,10 @@ import {
   watchHoldSlideSettings,
   watchPageLinkTarget,
   watchSingleTapSettings,
+  watchStoredPageName,
   watchTileActionSettings,
+  watchTileIconSizeTop,
+  watchTileIconSizeValue,
   watchTriggerModes,
 } from "./tile-settings-model.js";
 import { sameWatchId, findWatchPage } from "./edit.js";
@@ -299,7 +302,9 @@ export function watchLinkTargetMenu(
   const base = {
     kind: link.kind,
     current,
-    oldTargetName: typeof current?.name === "string" ? current.name : undefined,
+    // A page with no name is "Page" to the phone, and so is a label that
+    // followed it.
+    oldTargetName: current === undefined ? undefined : watchStoredPageName(current),
   };
   if (offered !== undefined) return { ...base, options, selected: watchPageId(offered) };
   const selected = STORED + link.targetId;
@@ -438,14 +443,31 @@ export function watchWholeRefusal(value: number, min: number, max: number): stri
   return undefined;
 }
 
-/** Why an icon size is refused, naming what limits it. */
+/** Why an icon size is refused, naming what limits it. Up to the next
+ * whole number above the tile's largest size is taken, as that largest
+ * size (`watchTileIconSizeValue`). */
 export function watchIconSizeRefusal(value: number, max: number): string | undefined {
-  const top = Math.max(WATCH_ICON_SIZE_RANGE.min, Math.floor(max));
+  if (watchTileIconSizeValue(value, max) !== undefined) return undefined;
+  const top = watchTileIconSizeTop(max);
   const reason = watchWholeRefusal(value, WATCH_ICON_SIZE_RANGE.min, top);
-  if (reason === undefined) return undefined;
-  return Math.round(value) > top
-    ? `At this tile's size an icon stops growing at ${top}. Use 8 to ${top}, or make the tile bigger.`
-    : reason;
+  return Number.isFinite(value) && Math.round(value) > top
+    ? `At this tile's size an icon stops growing at ${watchIconSizeWords(max)}. Use 8 to ${top}, or make the tile bigger.`
+    : (reason ?? `Use a number from ${WATCH_ICON_SIZE_RANGE.min} to ${top}.`);
+}
+
+/** A tile's largest icon size in words: the whole number, or the number
+ * with its two decimals ("23.76"). */
+export function watchIconSizeWords(max: number): string {
+  return Number.isInteger(max) ? String(max) : String(Math.round(max * 100) / 100);
+}
+
+/** The line under the icon size field. A largest size with a fraction is
+ * what the next whole number up stores, as the phone's slider does at its
+ * end. */
+export function watchIconSizeHint(max: number): string {
+  const top = watchTileIconSizeTop(max);
+  if (Number.isInteger(max)) return `Empty is Auto. At this tile's size, 8 to ${top}.`;
+  return `Empty is Auto. At this tile's size, 8 to ${top}; ${top} stores the largest, ${watchIconSizeWords(max)}.`;
 }
 
 export function watchFontSizeRefusal(value: number): string | undefined {
