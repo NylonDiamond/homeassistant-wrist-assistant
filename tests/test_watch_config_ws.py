@@ -1,11 +1,12 @@
-"""In-process tests for the panel's two watch config WebSocket commands.
+"""In-process tests for the watch config WebSocket commands.
 
 Loads ``watch_config_ws.py`` with stubbed Home Assistant modules over a real
 ``WatchConfigStore``, the way ``test_complication_ws.py`` runs the editor's
-commands. The panel's Watch settings view is built against these shapes, so
-results are asserted as whole dicts and errors as exact (code, message)
-pairs. ``test_ws_command_registration.py`` covers the registration and the
-admin gate statically.
+commands. The panel's Watch settings view is built against the get and save
+shapes, and the phone against the subscribe shapes, so results and events are
+asserted as whole dicts and errors as exact (code, message) pairs.
+``test_ws_command_registration.py`` covers the registration and the admin
+gate statically.
 """
 
 from __future__ import annotations
@@ -48,12 +49,25 @@ class _Connection:
     def __init__(self) -> None:
         self.results: dict[int, Any] = {}
         self.errors: list[tuple[int, str, str]] = []
+        self.messages: list[Any] = []
+        self.subscriptions: dict[int, Any] = {}
 
     def send_result(self, msg_id: int, payload: Any) -> None:
         self.results[msg_id] = payload
 
     def send_error(self, msg_id: int, code: str, message: str) -> None:
         self.errors.append((msg_id, code, message))
+
+    def send_message(self, message: Any) -> None:
+        self.messages.append(message)
+
+    def events(self) -> list[Any]:
+        return [m["event"] for m in self.messages if m.get("type") == "event"]
+
+
+def _event_message(msg_id: int, event: Any) -> dict[str, Any]:
+    """``websocket_api.event_message``, shaped as Home Assistant shapes it."""
+    return {"id": msg_id, "type": "event", "event": event}
 
 
 def _stub(name: str, **attrs: object) -> None:
@@ -71,6 +85,7 @@ def env():
             "homeassistant.components.websocket_api",
             ActiveConnection=type("ActiveConnection", (), {}),
             async_register_command=lambda hass, func: None,
+            event_message=_event_message,
             require_admin=lambda func: func,
             websocket_command=lambda schema: (lambda func: func),
         )
@@ -312,3 +327,116 @@ def test_an_unreadable_file_is_unavailable(env) -> None:
     )
     assert code == "unavailable"
     assert _save(env, {}, 1).errors[0][1] == "unavailable"
+
+
+# ── subscribe (the phone's live line) ────────────────────────────────────
+
+
+def _subscribe(env, owner: str = WATCH) -> _Connection:
+    connection = _call(env, env.ws.ws_watch_config_subscribe, owner_watch_id=owner)
+    assert connection.errors == [], connection.errors
+    return connection
+
+
+def test_subscribe_with_no_record_answers_an_empty_object(env) -> None:
+    connection = _subscribe(env)
+    assert connection.results[1] == {"revisions": {}}
+    assert connection.events() == []
+    assert 1 in connection.subscriptions
+
+
+def test_subscribe_answers_every_kind_the_watch_has(env) -> None:
+    _phone_upload(env, "pages", {"pages": []})
+    _phone_upload(env, "behavior", {})
+    _save(env, {"wrapPages": True}, 1)
+    assert _subscribe(env).results[1] == {"revisions": {"behavior": 2, "pages": 1}}
+
+
+def test_a_phone_upload_is_an_event(env) -> None:
+    """The phone's own upload echoes back; it ignores a revision it holds."""
+    connection = _subscribe(env)
+    _phone_upload(env, "behavior", {})
+    _phone_upload(env, "pages", {"pages": []})
+    assert connection.events() == [
+        {"kind": "behavior", "revision": 1},
+        {"kind": "pages", "revision": 1},
+    ]
+    assert all(m["id"] == 1 for m in connection.messages)
+
+
+def test_a_panel_save_is_an_event(env) -> None:
+    _phone_upload(env, "behavior", {})
+    connection = _subscribe(env)
+    assert _save(env, {"wrapPages": True}, 1).errors == []
+    assert connection.events() == [{"kind": "behavior", "revision": 2}]
+
+
+def test_a_refused_save_or_a_delivery_is_not_an_event(env) -> None:
+    _phone_upload(env, "behavior", {})
+    connection = _subscribe(env)
+    assert _save(env, {"wrapPages": True}, 7).errors[0][1] == "conflict"
+    _save(env, {"wrapPages": True}, 1)
+    env.store.mark_delivered(WATCH, "behavior", 2)
+    assert connection.events() == [{"kind": "behavior", "revision": 2}]
+
+
+def test_another_watch_s_saves_are_never_sent(env) -> None:
+    connection = _subscribe(env)
+    other = _subscribe(env, "watch-B")
+    env.store.put(
+        "watch-B", "behavior", {}, document_hash=PHONE_HASH, base_revision=0, updated_by="watch-B"
+    )
+    assert connection.events() == []
+    assert other.events() == [{"kind": "behavior", "revision": 1}]
+
+
+def test_a_forget_sends_revision_zero_for_each_kind(env) -> None:
+    _phone_upload(env, "pages", {"pages": []})
+    _phone_upload(env, "behavior", {})
+    connection = _subscribe(env)
+    env.store.forget_owner(WATCH)
+    assert connection.events() == [
+        {"kind": "behavior", "revision": 0},
+        {"kind": "pages", "revision": 0},
+    ]
+
+
+def test_a_move_tells_each_side_its_own_news(env) -> None:
+    _phone_upload(env, "behavior", {})
+    _save(env, {"wrapPages": True}, 1)
+    source = _subscribe(env)
+    target = _subscribe(env, "watch-B")
+    env.store.move_owner(WATCH, "watch-B", updated_by="t")
+    assert source.events() == [{"kind": "behavior", "revision": 0}]
+    assert target.events() == [{"kind": "behavior", "revision": 2}]
+
+
+def test_unsubscribing_stops_the_events(env) -> None:
+    connection = _subscribe(env)
+    _phone_upload(env, "behavior", {})
+    connection.subscriptions.pop(1)()
+    _save(env, {"wrapPages": True}, 1)
+    assert connection.events() == [{"kind": "behavior", "revision": 1}]
+
+
+def test_subscribe_answers_unavailable_before_the_integration_is_ready(env) -> None:
+    env.hass.data = {}
+    connection = _call(env, env.ws.ws_watch_config_subscribe, owner_watch_id=WATCH)
+    assert connection.errors == [(1, "unavailable", "integration not ready")]
+    assert connection.subscriptions == {}
+
+
+def test_subscribe_to_an_unreadable_file_is_unavailable_and_not_subscribed(env) -> None:
+    _phone_upload(env, "behavior", {})
+    _FakeStore.unreadable.add(env.mod._owner_key(WATCH))
+    store = env.mod.WatchConfigStore(env.hass)
+    asyncio.run(store.async_load())
+    env.hass.data[DOMAIN].watch_config_store = store
+    connection = _call(env, env.ws.ws_watch_config_subscribe, owner_watch_id=WATCH)
+    assert connection.results == {}
+    [(_id, code, message)] = connection.errors
+    assert (code, message) == (
+        "unavailable",
+        "the stored watch config could not be read; restart Home Assistant",
+    )
+    assert connection.subscriptions == {}

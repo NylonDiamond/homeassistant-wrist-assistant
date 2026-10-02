@@ -50,6 +50,7 @@ from .const import (
     PLATFORMS,
     WA_HMAC_NONCE_TTL_SECONDS,
     WATCH_CONFIG_CAPABILITY,
+    WATCH_CONFIG_LIVE_CAPABILITY,
     WIDGET_SECRET_STORAGE_KEY,
     WIDGET_SECRET_STORAGE_VERSION,
     WristAssistantConfigEntry,
@@ -796,6 +797,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # sees this, so an older integration is never sent a request it would
     # answer with "unknown op".
     coordinator.register_capability(WATCH_CONFIG_CAPABILITY)
+    # The watch config live line (watch_config_ws.py, watch_config/subscribe):
+    # an open phone app hears about a panel save at once instead of on its
+    # next foreground. Advertised apart from the ops so a phone can tell an
+    # integration that stores its config from one that also announces saves.
+    coordinator.register_capability(WATCH_CONFIG_LIVE_CAPABILITY)
 
     runtime_data = WristAssistantData(
         coordinator=coordinator,
@@ -821,7 +827,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         # Panel-facing complication editor API (admin-only mutations).
         # Registered once per HA process, like the HTTP views below.
         async_register_websocket_commands(hass)
-        # The panel's Watch settings view (admin only), beside the editor's.
+        # The panel's Watch settings view (admin only), beside the editor's,
+        # and the phone's watch config live line (any signed-in user).
         async_register_watch_config_commands(hass)
         # v2 transport: /v2/* HMAC for all watch traffic. WARegisterSecretView
         # is the one bearer-authed exception — iOS posts to it once to

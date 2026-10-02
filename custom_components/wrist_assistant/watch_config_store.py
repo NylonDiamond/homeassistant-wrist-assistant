@@ -6,7 +6,8 @@ repo). The phone uploads its page config (kind ``pages``) and its watch
 behavior settings (kind ``behavior``) here after each edit, and pulls a newer
 copy back down when it has nothing unsent. The panel may read either kind and
 save ``behavior`` (see ``watch_config_ws.py``); the phone picks a panel save up
-on its next check and hands it to the watch. Later steps add a page editor in
+on its next check, or at once over the live line while the app is open, and
+hands it to the watch. Later steps add a page editor in
 the panel and a watch that reads its record directly.
 
 A record is keyed on the watch, not the phone: the owner is the id that signed
@@ -47,6 +48,14 @@ that owner, plus a small index naming the owners. A document can be large
 (the cap is ``WATCH_CONFIG_MAX_DOCUMENT_BYTES``), so one watch's save must not
 rewrite another watch's file. The index only changes when an owner appears or
 goes away.
+
+Listeners (:meth:`WatchConfigStore.async_add_listener`) hear one
+:class:`WatchConfigChange` per kind whose revision moved: every accepted save,
+device or panel; revision 0 for each kind a forget removed; and for a move,
+the target's resulting revisions and revision 0 for each of the source's
+kinds. Delivery is not a change: a signed get that only moves
+``delivered_revision`` tells nobody. This is what the phone's live line
+(``watch_config/subscribe`` in ``watch_config_ws.py``) rides on.
 """
 
 from __future__ import annotations
@@ -56,6 +65,7 @@ import hashlib
 import json
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -391,11 +401,30 @@ class WatchConfigRecord:
         )
 
 
+@dataclass(frozen=True)
+class WatchConfigChange:
+    """What a listener receives: one owner's ``kind`` now stands at ``revision``.
+
+    Revision 0 means the owner holds nothing of that kind any more (a forget,
+    or the source side of a move). Only the number travels, on purpose: the
+    live line it feeds is open to any signed-in user, and the document still
+    reaches the phone only through the signed get.
+    """
+
+    owner_watch_id: str
+    kind: str
+    revision: int
+
+
+ChangeListener = Callable[[WatchConfigChange], None]
+
+
 class WatchConfigStore:
     """Every owner's watch config records, one storage file per owner."""
 
     def __init__(self, hass: HomeAssistant) -> None:
         self._hass = hass
+        self._listeners: list[ChangeListener] = []
         # owner_watch_id → kind → record
         self._records: dict[str, dict[str, WatchConfigRecord]] = {}
         # One Store per owner, kept for the life of this instance so a forget
@@ -550,6 +579,36 @@ class WatchConfigStore:
         self._records.clear()
         await self._index.async_remove()
 
+    # ── change notification ────────────────────────────────────────────
+
+    @callback
+    def async_add_listener(self, listener: ChangeListener) -> Callable[[], None]:
+        self._listeners.append(listener)
+
+        def _remove() -> None:
+            if listener in self._listeners:
+                self._listeners.remove(listener)
+
+        return _remove
+
+    def _notify(self, owner_watch_id: str, kind: str, revision: int) -> None:
+        """Tell every listener that ``kind`` of the owner is at ``revision``.
+
+        Called after the change is in memory, so a listener that reads the
+        store sees it. A listener that raises is logged and skipped: the save
+        it was told about has already been accepted and must stay accepted.
+        A kind this build does not know (kept on disk for a newer build) is
+        never announced, since no get here could serve it.
+        """
+        if kind not in WATCH_CONFIG_KINDS:
+            return
+        change = WatchConfigChange(owner_watch_id, kind, revision)
+        for listener in list(self._listeners):
+            try:
+                listener(change)
+            except Exception:
+                _LOGGER.exception("Watch config change listener failed")
+
     # ── reads ──────────────────────────────────────────────────────────
 
     def _check_available(self, owner_watch_id: str) -> None:
@@ -566,6 +625,21 @@ class WatchConfigStore:
         kind = validate_kind(kind)
         self._check_available(owner_watch_id)
         return self._records.get(owner_watch_id, {}).get(kind)
+
+    def revisions(self, owner_watch_id: str) -> dict[str, int]:
+        """The owner's current revision of every kind it holds a record of.
+
+        Empty when it holds none. Only the kinds this build serves: one kept
+        on disk for a newer build could not be fetched by any get here. What
+        the live line answers at subscribe time, so a save that landed while
+        the phone's socket was down is caught then.
+        """
+        self._check_available(owner_watch_id)
+        return {
+            kind: record.revision
+            for kind, record in sorted(self._records.get(owner_watch_id, {}).items())
+            if kind in WATCH_CONFIG_KINDS
+        }
 
     def diagnostics(self) -> dict[str, dict[str, dict[str, Any]]]:
         """Revision, size, times and delivery per owner and kind. Never a
@@ -662,6 +736,9 @@ class WatchConfigStore:
         # its next get.
         record.mark_delivered(record.revision)
         self._schedule_owner_save(owner_watch_id)
+        # Announced even though the writer already knows: the phone's own
+        # upload echoes back to it, and it ignores a revision it has stored.
+        self._notify(owner_watch_id, kind, record.revision)
         return record
 
     @staticmethod
@@ -748,6 +825,7 @@ class WatchConfigStore:
             WATCH_CONFIG_PANEL_WRITER,
         )
         self._schedule_owner_save(owner_watch_id)
+        self._notify(owner_watch_id, kind, existing.revision)
         return existing
 
     def mark_delivered(self, owner_watch_id: str, kind: str, revision: int) -> bool:
@@ -775,14 +853,20 @@ class WatchConfigStore:
         paired again. The file is removed, not emptied, and that includes a
         file that could not be read: the user asked for the device to go, and
         an unreadable copy of its config has nobody left to recover it for.
+
+        Listeners hear revision 0 for each kind removed, so a phone forgotten
+        while open stops treating its stored revision as current. An
+        unreadable file had no kinds anyone could see, so it announces none.
         """
         had = owner_watch_id in self._records or owner_watch_id in self._failed_owners
-        self._records.pop(owner_watch_id, None)
+        removed = sorted(self._records.pop(owner_watch_id, {}))
         self._failed_owners.discard(owner_watch_id)
         if had:
             self._remove_owner_file(owner_watch_id)
             self._schedule_index_save()
             _LOGGER.info("Forgot watch config for %s", owner_watch_id)
+        for kind in removed:
+            self._notify(owner_watch_id, kind, 0)
         return had
 
     @callback
@@ -812,6 +896,11 @@ class WatchConfigStore:
         The source is then forgotten. An owner whose file is unreadable on
         either side is refused, so a move never writes over something this
         instance could not read.
+
+        Listeners hear the forget of the source (revision 0 per kind, from
+        :meth:`forget_owner`), then the target's resulting revision of every
+        kind moved, the kept ones included: their history grew, and a repeat
+        of a revision the phone holds costs it nothing.
         """
         if not isinstance(source_owner, str) or not source_owner:
             raise WatchConfigValidationError("source_owner_watch_id is required")
@@ -844,6 +933,8 @@ class WatchConfigStore:
         if new_owner:
             self._schedule_index_save()
         self.forget_owner(source_owner)
+        for kind in moved:
+            self._notify(target_owner, kind, target[kind].revision)
         _LOGGER.info(
             "Moved watch config (%s) from %s to %s by %s",
             ", ".join(moved),

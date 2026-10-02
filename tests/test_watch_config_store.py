@@ -12,6 +12,8 @@ forget, move, owner isolation, the persistence round trip, and an unreadable
 file never being saved over. From step 2: the ``behavior`` kind and its own
 cap, delivery tracking (and files written before it existed), and the panel
 save with its ``no_record`` and ``conflict`` refusals and server-side hash.
+From the live line: the change listeners (every trigger, what is not a
+trigger, a listener that raises, removal) and ``revisions``.
 """
 
 from __future__ import annotations
@@ -893,3 +895,206 @@ def test_a_panel_save_to_an_unreadable_owner_is_unavailable(mod):
     again = _new(mod)
     with pytest.raises(mod.WatchConfigUnavailableError):
         again.panel_save(OWNER, "behavior", _behavior(), base_revision=1)
+
+
+# ── live line: change listeners ──────────────────────────────────────────
+
+
+def _listen(store) -> list[tuple[str, str, int]]:
+    """Every change the store announces, as (owner, kind, revision)."""
+    heard: list[tuple[str, str, int]] = []
+    store.async_add_listener(
+        lambda change: heard.append((change.owner_watch_id, change.kind, change.revision))
+    )
+    return heard
+
+
+def test_every_device_save_is_announced_with_its_revision(mod):
+    store = _new(mod)
+    heard = _listen(store)
+    _put(store)
+    _put(store, base=1, digest=HASH_2)
+    _put(store, kind="behavior", doc=_behavior())
+    _put(store, base=0, force=True, digest=HASH_3)
+    assert heard == [
+        (OWNER, "pages", 1),
+        (OWNER, "pages", 2),
+        (OWNER, "behavior", 1),
+        (OWNER, "pages", 3),
+    ]
+
+
+def test_a_panel_save_is_announced(mod):
+    store = _new(mod)
+    _phone_behavior(store)
+    heard = _listen(store)
+    store.panel_save(OWNER, "behavior", _behavior(wrapPages=True), base_revision=1)
+    assert heard == [(OWNER, "behavior", 2)]
+
+
+def test_a_refused_save_announces_nothing(mod):
+    store = _new(mod)
+    _phone_behavior(store)
+    heard = _listen(store)
+    with pytest.raises(mod.WatchConfigConflictError):
+        _put(store, kind="behavior", doc=_behavior(), base=0)
+    with pytest.raises(mod.WatchConfigValidationError):
+        _put(store, kind="behavior", doc=[], base=1)
+    with pytest.raises(mod.WatchConfigConflictError):
+        store.panel_save(OWNER, "behavior", _behavior(), base_revision=4)
+    with pytest.raises(mod.WatchConfigNoRecordError):
+        store.panel_save(OTHER, "behavior", _behavior(), base_revision=1)
+    with pytest.raises(mod.WatchConfigValidationError):
+        store.panel_save(OWNER, "pages", _doc(), base_revision=1)
+    assert heard == []
+
+
+def test_delivery_alone_is_not_a_change(mod):
+    """What a signed get does on the phone's check: it moves delivery state
+    and nothing else, so nobody is told."""
+    store = _new(mod)
+    _phone_behavior(store)
+    store.panel_save(OWNER, "behavior", _behavior(wrapPages=True), base_revision=1)
+    heard = _listen(store)
+    assert store.mark_delivered(OWNER, "behavior", 2) is True
+    assert store.mark_delivered(OWNER, "behavior", 2) is False
+    assert heard == []
+
+
+def test_a_forget_announces_revision_zero_for_each_kind_removed(mod):
+    store = _new(mod)
+    _put(store)
+    _put(store, base=1, digest=HASH_2)
+    _phone_behavior(store)
+    _put(store, OTHER)
+    heard = _listen(store)
+    assert store.forget_owner(OWNER) is True
+    assert heard == [(OWNER, "behavior", 0), (OWNER, "pages", 0)]
+
+
+def test_forgetting_nothing_or_an_unreadable_owner_announces_nothing(mod):
+    store = _new(mod)
+    _put(store)
+    _FakeStore.unreadable.add(mod._owner_key(OWNER))
+    again = _new(mod)
+    heard = _listen(again)
+    assert again.forget_owner(OTHER) is False
+    assert again.forget_owner(OWNER) is True
+    assert heard == []
+
+
+def test_a_kind_this_build_does_not_know_is_never_announced(mod):
+    store = _new(mod)
+    _put(store)
+    key = mod._owner_key(OWNER)
+    _FakeStore.files[key]["records"]["quick_actions"] = {
+        "revision": 3, "hash": HASH_2, "updated_at": "", "updated_by": OWNER,
+        "document": {"actions": []},
+    }
+    again = _new(mod)
+    assert again.revisions(OWNER) == {"pages": 1}
+    heard = _listen(again)
+    again.forget_owner(OWNER)
+    assert heard == [(OWNER, "pages", 0)]
+
+
+def test_a_move_to_an_empty_target_announces_both_sides(mod):
+    store = _new(mod)
+    _put(store)
+    _put(store, base=1, digest=HASH_2)
+    _phone_behavior(store)
+    heard = _listen(store)
+    store.move_owner(OWNER, OTHER, updated_by="t")
+    assert heard == [
+        (OWNER, "behavior", 0),
+        (OWNER, "pages", 0),
+        (OTHER, "behavior", 1),
+        (OTHER, "pages", 2),
+    ]
+
+
+def test_a_move_onto_a_kept_target_announces_the_target_s_own_revision(mod):
+    store = _new(mod)
+    _put(store, OWNER)
+    _put(store, OTHER, digest=HASH_2)
+    _put(store, OTHER, base=1, digest=HASH_3)
+    _put(store, OTHER, base=2, digest=HASH_1)
+    heard = _listen(store)
+    store.move_owner(OWNER, OTHER, updated_by="t")
+    assert heard == [(OWNER, "pages", 0), (OTHER, "pages", 3)]
+
+
+def test_a_move_with_nothing_to_carry_announces_nothing(mod):
+    store = _new(mod)
+    _put(store, OTHER)
+    heard = _listen(store)
+    assert store.move_owner(OWNER, OTHER, updated_by="t") == []
+    assert heard == []
+
+
+def test_a_listener_sees_the_change_already_in_the_store(mod):
+    store = _new(mod)
+    seen: list[Any] = []
+    store.async_add_listener(
+        lambda change: seen.append(store.revisions(change.owner_watch_id))
+    )
+    _put(store)
+    _phone_behavior(store)
+    store.move_owner(OWNER, OTHER, updated_by="t")
+    assert seen == [
+        {"pages": 1},
+        {"behavior": 1, "pages": 1},
+        # The source's two forgets, then the target's two arrivals: every
+        # listener call sees the move finished.
+        {},
+        {},
+        {"behavior": 1, "pages": 1},
+        {"behavior": 1, "pages": 1},
+    ]
+
+
+def test_a_listener_that_raises_never_breaks_a_save(mod):
+    store = _new(mod)
+
+    def _broken(_change) -> None:
+        raise RuntimeError("listener bug")
+
+    store.async_add_listener(_broken)
+    heard = _listen(store)
+    record = _put(store)
+    assert record.revision == 1
+    assert store.get(OWNER, "pages").revision == 1
+    assert _FakeStore.files[mod._owner_key(OWNER)]["records"]["pages"]["revision"] == 1
+    store.forget_owner(OWNER)
+    # The listener after the broken one still heard both.
+    assert heard == [(OWNER, "pages", 1), (OWNER, "pages", 0)]
+
+
+def test_a_removed_listener_hears_nothing_more(mod):
+    store = _new(mod)
+    heard: list[Any] = []
+    remove = store.async_add_listener(heard.append)
+    _put(store)
+    remove()
+    remove()
+    _put(store, base=1, digest=HASH_2)
+    assert [(c.owner_watch_id, c.kind, c.revision) for c in heard] == [(OWNER, "pages", 1)]
+
+
+def test_revisions_name_every_kind_the_owner_holds(mod):
+    store = _new(mod)
+    assert store.revisions(OWNER) == {}
+    _put(store)
+    _put(store, base=1, digest=HASH_2)
+    _phone_behavior(store)
+    assert store.revisions(OWNER) == {"behavior": 1, "pages": 2}
+    assert store.revisions(OTHER) == {}
+
+
+def test_revisions_of_an_unreadable_owner_are_unavailable(mod):
+    store = _new(mod)
+    _put(store)
+    _FakeStore.unreadable.add(mod._owner_key(OWNER))
+    again = _new(mod)
+    with pytest.raises(mod.WatchConfigUnavailableError):
+        again.revisions(OWNER)

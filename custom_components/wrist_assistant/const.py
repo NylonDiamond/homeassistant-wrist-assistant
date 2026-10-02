@@ -143,6 +143,11 @@ WATCH_CONFIG_HISTORY_LIMIT = 5
 # What the integration advertises once it serves watch_config_get/put. The
 # phone makes no watch_config request at all without it.
 WATCH_CONFIG_CAPABILITY = "watch_config"
+# What the integration advertises once it serves the watch_config/subscribe
+# WebSocket command (watch_config_ws.py). The phone subscribes only when it
+# sees this, so an older integration is never sent a command it would answer
+# with "unknown_command".
+WATCH_CONFIG_LIVE_CAPABILITY = "watch_config_live"
 # Highest CustomComplicationConfig schemaVersion this integration can edit.
 # Must track `CustomComplicationConfig.currentSchemaVersion` in the app repo.
 # A newer document is displayed read-only and never re-saved.

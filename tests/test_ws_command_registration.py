@@ -11,8 +11,8 @@ non-admin user, which no test hitting a real box would notice.
 
 Every command in both modules is admin-only, reads included: the panel is
 admin-only, and the reads hand out the slot pool of every watch in the house
-along with rendered templates, or a watch's whole page config. The one
-exception is listed in ``_NOT_ADMIN``.
+along with rendered templates, or a watch's whole page config. The
+exceptions, one per module, are listed in ``_NOT_ADMIN``.
 
 Two modules hold commands: ``complication_ws.py`` (the editor) and
 ``watch_config_ws.py`` (the Watch settings view). Each is checked on its own,
@@ -65,19 +65,27 @@ _ADMIN_ONLY = {
     "ws_preview_get",
 }
 
-# The commands a non-admin may call, each one a decision made on purpose.
-# ``ws_owner_subscribe`` is the iPhone app's live line: its user need not be
-# an administrator, and it hands out nothing but the token of a commit.
+# The commands a non-admin may call, per module, each one a decision made on
+# purpose. Both are the iPhone app's live lines, and its user need not be an
+# administrator:
+# * ``ws_owner_subscribe`` hands out nothing but the token of a commit.
+# * ``ws_watch_config_subscribe`` hands out nothing but revision numbers, the
+#   same kind of thing. The documents themselves still travel only over the
+#   signed ``watch_config_get``.
 _NOT_ADMIN = {
-    "ws_owner_subscribe",
+    _MODULE.name: {"ws_owner_subscribe"},
+    _WATCH_CONFIG_MODULE.name: {"ws_watch_config_subscribe"},
 }
 
 
 _MODULES = [_MODULE, _WATCH_CONFIG_MODULE]
 # Per module: the commands it must define, and which of them skip the gate.
 _EXPECTED = {
-    _MODULE.name: (_ADMIN_ONLY | _NOT_ADMIN, _NOT_ADMIN),
-    _WATCH_CONFIG_MODULE.name: (_WATCH_CONFIG_ADMIN_ONLY, set()),
+    _MODULE.name: (_ADMIN_ONLY | _NOT_ADMIN[_MODULE.name], _NOT_ADMIN[_MODULE.name]),
+    _WATCH_CONFIG_MODULE.name: (
+        _WATCH_CONFIG_ADMIN_ONLY | _NOT_ADMIN[_WATCH_CONFIG_MODULE.name],
+        _NOT_ADMIN[_WATCH_CONFIG_MODULE.name],
+    ),
 }
 
 
@@ -164,3 +172,12 @@ def test_the_watch_config_commands_are_registered_at_setup() -> None:
     it: the panel would get ``unknown_command`` with nothing in the log."""
     source = (_PKG / "__init__.py").read_text()
     assert "async_register_watch_config_commands(hass)" in source
+
+
+def test_the_watch_config_live_capability_is_advertised() -> None:
+    """The phone subscribes only when it sees the capability, so a command
+    that is registered but never advertised is never used."""
+    init = (_PKG / "__init__.py").read_text()
+    const = (_PKG / "const.py").read_text()
+    assert "register_capability(WATCH_CONFIG_LIVE_CAPABILITY)" in init
+    assert 'WATCH_CONFIG_LIVE_CAPABILITY = "watch_config_live"' in const
