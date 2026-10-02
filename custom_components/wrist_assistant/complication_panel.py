@@ -1,14 +1,17 @@
 """Sidebar panel registration for the custom complication editor.
 
-The panel is a single prebuilt ES module (``frontend/wrist-assistant-panel.js``,
-built from ``frontend/src`` by esbuild and committed so HACS installs need no
-build step). HA serves it from a static path under ``/wrist_assistant_static``
-and mounts it in the sidebar as a custom panel that receives the live ``hass``
+The panel is a prebuilt ES module (``frontend/wrist-assistant-panel.js``) plus
+the chunks it imports from ``frontend/chunks/``, built from ``frontend/src`` by
+esbuild and committed so HACS installs need no build step. HA serves the whole
+folder from a static path under ``/wrist_assistant_static`` and mounts the
+entry module in the sidebar as a custom panel that receives the live ``hass``
 object.
 
 The module URL carries the integration version as a cache-buster: browsers
 cache panel modules aggressively and a stale bundle after an upgrade is the
-first thing users would otherwise report.
+first thing users would otherwise report. The chunks need none: each is named
+by a hash of its content, and the entry names them, so a changed chunk changes
+the entry.
 """
 
 from __future__ import annotations

@@ -221,6 +221,14 @@ export function deliveryState(record: Pick<WatchConfigRecord, "revision" | "deli
   return record.delivered_revision >= record.revision ? "delivered" : "waiting";
 }
 
+/** Whether the phone said it could not decode the revision the store holds
+ * now. An older rejection is history: a later save replaced what it was
+ * about. False on an integration that does not send the field. */
+export function rejectedNow(record: Pick<WatchConfigRecord, "revision" | "rejected_revision"> | undefined): boolean {
+  if (record === undefined || record.revision <= 0) return false;
+  return record.rejected_revision === record.revision;
+}
+
 /** The code of a WebSocket error, such as `conflict` or `no_record`. */
 export function errorCode(err: unknown): string | undefined {
   const code = (err as { code?: unknown } | null | undefined)?.code;
@@ -252,6 +260,15 @@ export function conflictRevision(err: unknown): number | undefined {
  */
 export function settingsWatches(owners: readonly OwnerSummary[]): OwnerSummary[] {
   return owners.filter((o) => deviceKindOf(o) === "watch" && !o.is_orphan);
+}
+
+/** A watch's name in the tabs and the head. Both real watches report
+ * themselves as "Apple Watch", so a name two watches share takes the paired
+ * phone's, the way the panel's device list tells them apart. */
+export function watchName(watch: OwnerSummary, watches: readonly OwnerSummary[]): string {
+  const name = watch.device_name ?? watch.owner_watch_id;
+  const shared = watches.filter((w) => (w.device_name ?? w.owner_watch_id) === name).length > 1;
+  return shared && watch.paired_iphone_name ? `${name} (${watch.paired_iphone_name})` : name;
 }
 
 /** The watch the view opens on: the one being edited when it is a watch,

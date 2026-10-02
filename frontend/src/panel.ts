@@ -398,6 +398,7 @@ import {
 } from "./parts.js";
 import { domainIcon } from "./domain-icons.js";
 import { WatchSettings, watchSettingsStyles } from "./watch-settings-view.js";
+import { type PanelRoute, isWatchPagesRoute, navigateWatchPages, renderWatchPagesButton, renderWatchPagesView, watchPagesHookStyles } from "./watch-pages/hook.js";
 import {
   FIRST_RUN_TILES, ZOOM_FIT, ZOOM_MAX, ZOOM_MIN, anySnap, pickGridStep, runFirstRunTile, slotWord, snapSwitchOn,
   stageReserve, toggleSnap, zoomIn, zoomLabel, zoomOut, type FirstRunTile, type SnapFlags, type SnapSwitch,
@@ -1386,6 +1387,9 @@ export class WristAssistantPanel extends LitElement {
   @property({ attribute: false }) hass!: HassLike;
   @property({ type: Boolean }) narrow = false;
   @property({ attribute: false }) panel?: { config?: { version?: string } };
+  /** Home Assistant's route for this panel. The sub-path `/pages` shows the
+   * watch page editor (`watch-pages/hook.ts`) in place of the editor. */
+  @property({ attribute: false }) route?: PanelRoute;
 
   /** The Watch settings dialog, opened from the top bar. */
   private watchSettings = new WatchSettings(this);
@@ -2212,6 +2216,8 @@ export class WristAssistantPanel extends LitElement {
   private lastPressHitId?: string;
   private keyHandler = (e: KeyboardEvent) => {
     if (e.key === "Alt") this.altHeld = true;
+    // Under the page editor the draft is out of sight, so its keys stay still.
+    if (isWatchPagesRoute(this.route)) return;
     this.onKey(e);
   };
   /** A window that loses focus with Alt down never sees its keyup. */
@@ -7264,7 +7270,7 @@ export class WristAssistantPanel extends LitElement {
     .sym-none { font-size: 14px; opacity: .4; }
     .sym-name { font-size: 9px; line-height: 1.1; text-align: center; opacity: .8; overflow-wrap: anywhere; max-height: 22px; overflow: hidden; }
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .ent-box.needs { animation: none; } }
-  `, watchSettingsStyles];
+  `, watchSettingsStyles, watchPagesHookStyles];
 
   // ── lifecycle ─────────────────────────────────────────────────────────
 
@@ -11773,7 +11779,21 @@ export class WristAssistantPanel extends LitElement {
 
   // ── render ────────────────────────────────────────────────────────────
 
-  override render() {    const d = this.draft;
+  override render() {
+    // The page editor takes the panel's place. An open draft stays as it is
+    // under it, and the leave guards still cover it.
+    if (isWatchPagesRoute(this.route)) {
+      return renderWatchPagesView({
+        hass: this.hass, owners: this.owners, ownerId: this.ownerId, narrow: this.narrow, icons: this.icons,
+        menu: this.narrow || this.hass.dockedSidebar === "always_hidden",
+        onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
+        onBack: () => navigateWatchPages(this.route, false),
+        actions: this.watchSettings.renderButton(this.hass, this.owners, this.ownerId),
+        dialogs: this.watchSettings.render(this.hass, this.owners),
+        onLoaded: () => this.requestUpdate(),
+      });
+    }
+    const d = this.draft;
     // A complication that was never saved is work to save as it stands: its
     // baseline is the config it was made from, so nothing else says so.
     const dirty = !!d?.dirty || d?.baseRevision === null;
@@ -11871,6 +11891,7 @@ export class WristAssistantPanel extends LitElement {
           ?disabled=${!this.canEdit || !dirty || this.saving || !this.slotChosen || refusal !== undefined}
           title=${refusal !== undefined ? refusal : dirty ? "Save (⌘S)" : "Nothing to save (⌘S)"}>${this.saving ? "Saving…" : "Save"}</button>
         <span class="tb-saved" title=${dirty && rec ? "Unsaved changes" : caption ?? ""}>${caption}</span>` : nothing}
+      ${renderWatchPagesButton(this.hass, this.owners, () => navigateWatchPages(this.route, true))}
       ${this.watchSettings.renderButton(this.hass, this.owners, this.ownerId)}
       <button class="help" title="Help" aria-label="Help" @click=${() => { this.helpOpen = true; }}>?</button>
     </header>`;

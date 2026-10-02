@@ -397,7 +397,7 @@ export async function restoreSaveHistory(
 }
 
 /** The kinds of watch config Home Assistant keeps a copy of. The panel reads
- * either and saves only `behavior`. */
+ * and saves both. */
 export type WatchConfigKind = "pages" | "behavior";
 
 /** One watch's stored config of one kind, as the get command answers.
@@ -414,6 +414,12 @@ export interface WatchConfigRecord {
   updated_by: string | null;
   delivered_revision: number;
   delivered_at: string | null;
+  /** The revision the phone fetched and could not decode, 0 when none. When
+   * it equals `revision`, the stored copy is one the phone cannot use. Absent
+   * from integrations older than the field. */
+  rejected_revision?: number;
+  /** When the phone said so. Null or absent when it never has. */
+  rejected_at?: string | null;
   document?: Record<string, unknown>;
 }
 
@@ -424,15 +430,16 @@ export async function fetchWatchConfig(hass: HassLike, owner: string, kind: Watc
   return hass.connection.sendMessagePromise<WatchConfigRecord>({ type: `${WC}/get`, owner_watch_id: owner, kind });
 }
 
-/** Save one watch's behavior settings, compare-and-swap on `baseRevision`.
+/** Save one watch's config of one kind, compare-and-swap on `baseRevision`.
  * Admin only. A refusal rejects with a WebSocket error whose `code` is
  * `conflict` (someone saved since; the message starts "stored revision is
  * N"), `no_record` (the phone has never uploaded, so there is nothing to
- * base a save on), `invalid` or `unavailable`. */
+ * base a save on), `invalid` or `unavailable`. An integration older than
+ * page saves answers `invalid` for `pages`. */
 export async function saveWatchConfig(
   hass: HassLike,
   owner: string,
-  kind: "behavior",
+  kind: WatchConfigKind,
   baseRevision: number,
   document: Record<string, unknown>,
 ) {
@@ -442,6 +449,79 @@ export async function saveWatchConfig(
     kind,
     base_revision: baseRevision,
     document,
+  });
+}
+
+/** One earlier save of a watch config, as the history list names it. No
+ * document: `fetchWatchConfigHistoryEntry` reads the one that is wanted.
+ * `size` is the document's size in bytes as the store measured it. */
+export interface WatchConfigHistoryEntry {
+  revision: number;
+  hash: string | null;
+  updated_at: string | null;
+  updated_by: string | null;
+  size: number;
+}
+
+/** The kept earlier saves of one kind, newest first. Admin only. An
+ * integration older than the command rejects with code `unknown_command`. */
+export async function fetchWatchConfigHistory(hass: HassLike, owner: string, kind: WatchConfigKind) {
+  return hass.connection.sendMessagePromise<{ entries: WatchConfigHistoryEntry[] }>({
+    type: `${WC}/history`,
+    owner_watch_id: owner,
+    kind,
+  });
+}
+
+/** One earlier save with its document. Admin only. Rejects with `not_found`
+ * when the store no longer keeps that revision. */
+export async function fetchWatchConfigHistoryEntry(hass: HassLike, owner: string, kind: WatchConfigKind, revision: number) {
+  return hass.connection.sendMessagePromise<{
+    revision: number;
+    hash: string | null;
+    updated_at: string | null;
+    updated_by: string | null;
+    document: Record<string, unknown>;
+  }>({ type: `${WC}/history_entry`, owner_watch_id: owner, kind, revision });
+}
+
+/** Save an earlier revision again as a new revision, by `panel`. The same
+ * conflict rule and shape guard as a save: `baseRevision` is the revision on
+ * screen, so a save that landed since comes back as `conflict`, and a
+ * revision the store no longer keeps as `not_found`. Admin only. */
+export async function restoreWatchConfig(
+  hass: HassLike,
+  owner: string,
+  kind: WatchConfigKind,
+  revision: number,
+  baseRevision: number,
+) {
+  return hass.connection.sendMessagePromise<{ revision: number }>({
+    type: `${WC}/restore`,
+    owner_watch_id: owner,
+    kind,
+    revision,
+    base_revision: baseRevision,
+  });
+}
+
+/** What the live line says when a watch's stored config changes: which kind,
+ * and its revision now (0 when it was removed). Never the document. */
+export interface WatchConfigChangeEvent {
+  kind: string;
+  revision: number;
+}
+
+/** Hear every accepted save of one watch's config, whoever made it. The
+ * promise gives the function that ends the subscription. */
+export function subscribeWatchConfig(
+  hass: HassLike,
+  owner: string,
+  callback: (event: WatchConfigChangeEvent) => void,
+) {
+  return hass.connection.subscribeMessage<WatchConfigChangeEvent>(callback, {
+    type: `${WC}/subscribe`,
+    owner_watch_id: owner,
   });
 }
 

@@ -1,24 +1,82 @@
-// Bundles the panel into one ES module the integration serves as a static
-// file. The output is committed so a HACS install needs no toolchain.
+// Bundles the panel into ES modules the integration serves as static files.
+// The output is committed so a HACS install needs no toolchain.
+//
+// The entry keeps its one name, `wrist-assistant-panel.js`, which is what the
+// integration registers. Code that loads later (the watch page editor) and
+// code it shares with the entry go into `chunks/`, named by their content, so
+// a browser that has cached one never mistakes it for a newer one. The entry
+// imports them by relative path, and the integration serves the whole folder.
+//
+// A chunk no build wrote is deleted after every successful build, so the
+// folder holds exactly what the entry names and CI can tell a stale or missing
+// chunk from a fresh one. Deleting after rather than before means a failed
+// rebuild in watch mode leaves the last good set in place.
 import * as esbuild from "esbuild";
+import { readFileSync, readdirSync, rmSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
 
 const watch = process.argv.includes("--watch");
+const outdir = "../custom_components/wrist_assistant/frontend";
+const chunkDir = join(outdir, "chunks");
+const entryName = "wrist-assistant-panel";
+
+/** `import.meta.url` is where a module was served from. In the entry that is
+ * the folder the symbol files sit in (`icons.ts` fetches them beside it); in
+ * a chunk it is `chunks/`, where they are not. So only the entry may use it. */
+function checkImportMeta(outputs) {
+  const bad = outputs.filter((file) => file.startsWith(resolve(chunkDir)) && readFileSync(file, "utf8").includes("import.meta"));
+  return bad.map((file) => relative(outdir, file));
+}
+
+let importMetaFault;
+
+const tidyChunks = {
+  name: "tidy-chunks",
+  setup(build) {
+    build.onEnd((result) => {
+      if (result.errors.length > 0 || !result.metafile) return;
+      const outputs = Object.keys(result.metafile.outputs).map((file) => resolve(file));
+      const keep = new Set(outputs);
+      let files = [];
+      try {
+        files = readdirSync(chunkDir);
+      } catch {
+        // No chunks folder: nothing to tidy.
+      }
+      for (const name of files) {
+        const file = resolve(chunkDir, name);
+        if (!keep.has(file)) rmSync(file, { force: true });
+      }
+      const bad = checkImportMeta(outputs);
+      if (bad.length > 0) {
+        importMetaFault = `import.meta is used in ${bad.join(", ")}. Nothing the page editor imports may import icons.ts, or it leaves the entry.`;
+        console.error(`error: ${importMetaFault}`);
+      }
+    });
+  },
+};
 
 const options = {
-  entryPoints: ["src/panel.ts"],
+  entryPoints: { [entryName]: "src/panel.ts" },
   bundle: true,
   format: "esm",
+  splitting: true,
   target: "es2022",
   minify: !watch,
   sourcemap: watch ? "inline" : false,
-  outfile: "../custom_components/wrist_assistant/frontend/wrist-assistant-panel.js",
+  outdir,
+  entryNames: "[name]",
+  chunkNames: "chunks/[name]-[hash]",
+  metafile: true,
   legalComments: "none",
   logLevel: "info",
+  plugins: [tidyChunks],
 };
 
 if (watch) {
   const ctx = await esbuild.context(options);
   await ctx.watch();
 } else {
-  await esbuild.build(options);
+  await esbuild.build(options).catch(() => process.exit(1));
+  if (importMetaFault !== undefined) process.exit(1);
 }

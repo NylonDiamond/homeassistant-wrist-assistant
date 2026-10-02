@@ -37,6 +37,7 @@ import {
   sectionRuns,
   settingValue,
   settingsWatches,
+  watchName,
   withEdit,
 } from "./watch-settings.js";
 
@@ -462,15 +463,6 @@ export class WatchSettings implements ReactiveController {
       <span class="tb-sync-n">open the app to send it now</span>
     </span>`;
   }
-}
-
-/** A watch's name in the tabs and the head. Both real watches report
- * themselves as "Apple Watch", so a name two watches share takes the paired
- * phone's, the way the panel's device list tells them apart. */
-function watchName(watch: OwnerSummary, watches: readonly OwnerSummary[]): string {
-  const name = watch.device_name ?? watch.owner_watch_id;
-  const shared = watches.filter((w) => (w.device_name ?? w.owner_watch_id) === name).length > 1;
-  return shared && watch.paired_iphone_name ? `${name} (${watch.paired_iphone_name})` : name;
 }
 
 function errText(err: unknown): string {

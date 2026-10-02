@@ -47,11 +47,21 @@ jobs:
       - name: Rebuild the panel bundle
         working-directory: frontend
         run: npm run build
+      # The build writes hashed chunks beside the entry and deletes any it did
+      # not write. A changed or deleted file means the commit is stale; a file
+      # git does not track means a chunk the entry needs was never committed.
       - name: Fail if the committed bundle is stale
         run: |
           if ! git diff --exit-code -- custom_components/wrist_assistant/frontend; then
             echo "::error::The committed panel bundle does not match frontend/src."
             echo "::error::Run 'cd frontend && npm run build' and commit the result."
+            exit 1
+          fi
+          untracked=$(git ls-files --others -- custom_components/wrist_assistant/frontend)
+          if [ -n "$untracked" ]; then
+            echo "$untracked"
+            echo "::error::The build wrote files that are not committed (a new or renamed chunk)."
+            echo "::error::Run 'cd frontend && npm run build' and commit everything under custom_components/wrist_assistant/frontend."
             exit 1
           fi
 
