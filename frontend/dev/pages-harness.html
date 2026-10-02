@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Page editor harness</title>
+<link rel="icon" href="data:,">
+<style>
+  /* The panel's color tokens, copied from `src/panel.ts` (its `:host` block
+     and its `:host([dark])` block). The element reads these through its
+     shadow root, so it looks as it does in the panel. Copy again when the
+     panel's change. */
+  .wa-skin {
+    --wa-text: #42a5f5;
+    --wa-icon: #ab47bc;
+    --wa-gauge: #fb8c00;
+    --wa-shape: #43a047;
+    --wa-image: #00acc1;
+    --wa-tap: #ec407a;
+    --wa-states: #ff7043;
+    --wa-place: #78909c;
+    --wa-need: var(--error-color, #db4437);
+    --wa-bg: var(--primary-background-color, #f3f1ec);
+    --wa-card: var(--card-background-color, #ffffff);
+    --wa-panel: var(--secondary-background-color, #f6f4ef);
+    --wa-raised: #faf9f6;
+    --wa-input: #ffffff;
+    --wa-line: var(--divider-color, #e4e0d7);
+    --wa-line-strong: #cfc9bd;
+    --wa-ink: var(--primary-text-color, #201d19);
+    --wa-muted: var(--secondary-text-color, #7d766c);
+    --wa-accent: var(--primary-color, #3d5bd9);
+    --wa-accent-ink: #fff;
+    --wa-primary-bg: var(--wa-ink);
+    --wa-primary-ink: #fff;
+    --wa-sel-bg: #edf0fb;
+    --wa-sel-ring: #c5cef2;
+    --wa-lab: 88px;
+    --wa-col: calc(var(--wa-lab) + 8px);
+    --wa-field: color-mix(in srgb, var(--wa-ink) 5.5%, transparent);
+    --wa-seg-on: var(--wa-card);
+    --wa-ent: #0f766e;
+    --wa-val: #9a5b00;
+    --wa-ent-bg: color-mix(in srgb, var(--wa-ent) 12%, transparent);
+    --wa-val-bg: color-mix(in srgb, var(--wa-val) 14%, transparent);
+    --wa-art-case: #cfc9bd;
+    --wa-art-screen: #26241f;
+    --wa-art-dim: #45413a;
+    --wa-art-clock: #5d584f;
+    --wa-art-dock: #322f2a;
+    --wa-art-blur: #2f2c27;
+    --wa-art-off: #3a372f;
+    --wa-person-1: #6d28d9;
+    --wa-person-2: #0f766e;
+    --wa-person-3: #9a5b00;
+    --wa-person-4: #be123c;
+    --wa-person-5: #0369a1;
+    --wa-person-6: #4d7c0f;
+    --wa-shape-rectangular: #0369a1;
+    --wa-shape-circular: #0f766e;
+    --wa-shape-corner: #9a5b00;
+    --wa-shape-inline: #6d28d9;
+    --wa-shape-control: #be123c;
+    --wa-shape-small: #4d7c0f;
+    --wa-shape-medium: #c2410c;
+    --wa-shape-large: #a21caf;
+    --wa-shape-xlarge: #4338ca;
+    --wa-r-sm: 8px;
+    --wa-r-md: 12px;
+    --wa-r-lg: 16px;
+    --wa-lc-r: 10px;
+    --wa-green: #1f8a4c;
+    --wa-amber: #9a5b00;
+    --wa-rule-if: #2563eb;
+    --wa-rule-preset: #0f766e;
+    --wa-rule-then: #1f8a4c;
+    --wa-rule-else: #7c3aed;
+    --wa-amber-bg: color-mix(in srgb, var(--wa-amber) 12%, transparent);
+    --wa-amber-line: color-mix(in srgb, var(--wa-amber) 35%, transparent);
+    --wa-shadow-pop: 0 12px 36px rgba(0,0,0,.28);
+    --wa-ring: 0 0 0 3px color-mix(in srgb, var(--wa-accent) 28%, transparent);
+    color: var(--wa-ink);
+    background: var(--wa-bg);
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", Roboto, sans-serif;
+    font-size: 14px;
+  }
+  .wa-skin.dark {
+    --wa-need: #ff6b6b;
+    --wa-bg: #0b0d14;
+    --wa-card: #12141d;
+    --wa-panel: #1a1d28;
+    --wa-raised: #171a24;
+    --wa-input: #0e1017;
+    --wa-line: rgba(255,255,255,.08);
+    --wa-line-strong: rgba(255,255,255,.16);
+    --wa-ink: #eceef5;
+    --wa-muted: #8d92a6;
+    --wa-accent: #7b6cff;
+    --wa-accent-ink: #fff;
+    --wa-primary-bg: var(--wa-accent);
+    --wa-primary-ink: var(--wa-accent-ink);
+    --wa-sel-bg: color-mix(in srgb, var(--wa-accent) 18%, var(--wa-card));
+    --wa-sel-ring: color-mix(in srgb, var(--wa-accent) 45%, transparent);
+    --wa-seg-on: #2b2f3d;
+    --wa-ent: #5fd4c4;
+    --wa-val: #ffc45c;
+    --wa-ent-bg: color-mix(in srgb, var(--wa-ent) 14%, transparent);
+    --wa-val-bg: color-mix(in srgb, var(--wa-val) 16%, transparent);
+    --wa-art-case: #2b2f3d;
+    --wa-art-screen: #05060a;
+    --wa-art-dim: #232734;
+    --wa-art-clock: #3a3f52;
+    --wa-art-dock: #14161f;
+    --wa-art-blur: #0f1119;
+    --wa-art-off: #1b1f2b;
+    --wa-person-1: #a78bfa;
+    --wa-person-2: #5eead4;
+    --wa-person-3: #fbbf24;
+    --wa-person-4: #fb7185;
+    --wa-person-5: #38bdf8;
+    --wa-person-6: #a3e635;
+    --wa-shape-rectangular: #38bdf8;
+    --wa-shape-circular: #5eead4;
+    --wa-shape-corner: #fbbf24;
+    --wa-shape-inline: #a78bfa;
+    --wa-shape-control: #fb7185;
+    --wa-shape-small: #a3e635;
+    --wa-shape-medium: #fb923c;
+    --wa-shape-large: #e879f9;
+    --wa-shape-xlarge: #818cf8;
+    --wa-green: #3fbf7f;
+    --wa-amber: #f2c063;
+    --wa-rule-if: #60a5fa;
+    --wa-rule-preset: #5fd4c4;
+    --wa-rule-then: #3fbf7f;
+    --wa-rule-else: #a78bfa;
+    --wa-shadow-pop: 0 16px 48px rgba(0,0,0,.6);
+    color-scheme: dark;
+    scrollbar-color: rgba(255,255,255,.14) transparent;
+  }
+
+  /* The harness itself: a plain strip above a stage. Nothing here reaches the
+     element, which has its own shadow root. */
+  /* Chrome's automatic dark mode for web pages (on when the system is dark
+     and the flag or setting is set) repaints every color of a page that does
+     not say it has its own: the Light switch then changed the tokens but the
+     page still looked dark. The harness draws both skins itself. */
+  html { color-scheme: only light; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    display: flex; flex-direction: column; height: 100dvh;
+    font: 13px/1.35 -apple-system, BlinkMacSystemFont, "Inter", Roboto, sans-serif;
+    background: #d9d6cf; color: #1d1b18;
+  }
+  body.dark { background: #05060a; color: #d8dbe6; }
+  #strip {
+    flex: none; display: flex; flex-direction: column; gap: 6px; padding: 8px 12px;
+    border-bottom: 2px dashed #8a8579; background: #fffbe6;
+  }
+  body.dark #strip { background: #1d1a10; border-bottom-color: #5c5640; }
+  #strip .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  #strip .tag { font-weight: 700; min-width: 70px; }
+  #strip button, #strip select { font: inherit; padding: 3px 8px; }
+  #strip label { display: inline-flex; align-items: center; gap: 4px; }
+  #strip .on { outline: 2px solid #c2410c; }
+  #status { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  #said { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: #7a4b00; }
+  body.dark #said { color: #f2c063; }
+  #strip details { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+  #strip details ol { margin: 4px 0 0; padding-left: 28px; max-height: 160px; overflow: auto; }
+  #strip details li.err { color: #b91c1c; }
+  #strip details li.unknown { color: #fff; background: #b91c1c; }
+  #stage { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; justify-content: center; }
+  #frame {
+    display: flex; flex-direction: column; min-height: 0; height: 100%;
+    width: 100%; max-width: 100%;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.2);
+  }
+  #frame > wa-page-editor { flex: 1 1 auto; min-height: 0; }
+</style>
+</head>
+<body>
+  <div id="strip"></div>
+  <div id="stage"><div id="frame" class="wa-skin"></div></div>
+  <script type="module" src="dist/pages-harness.js"></script>
+</body>
+</html>
