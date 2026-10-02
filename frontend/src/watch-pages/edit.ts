@@ -66,12 +66,28 @@ export const WATCH_TILE_SIZE_PRESETS: readonly { name: string; colSpan: number; 
 export type WatchIdGenerator = () => string;
 
 export interface WatchEditOptions {
-  /** Where new ids come from. Defaults to `crypto.randomUUID()`. */
+  /** Where new ids come from. Defaults to `randomWatchId`. */
   newId?: WatchIdGenerator;
 }
 
+/**
+ * A random version 4 UUID. `crypto.randomUUID` exists only in a secure
+ * context, and a Home Assistant reached over plain http is not one, so there
+ * the id is built from `crypto.getRandomValues`, which every context has.
+ */
+export function randomWatchId(): string {
+  const c = globalThis.crypto;
+  if (typeof c?.randomUUID === "function") return c.randomUUID();
+  const bytes = new Uint8Array(16);
+  c.getRandomValues(bytes);
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 function newIdFrom(options: WatchEditOptions | undefined): string {
-  const make = options?.newId ?? (() => crypto.randomUUID());
+  const make = options?.newId ?? randomWatchId;
   return make().toUpperCase();
 }
 

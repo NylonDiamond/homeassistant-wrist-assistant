@@ -25,6 +25,7 @@ import {
   newWatchPageName,
   nudgeWatchTile,
   previewWatchTileResize,
+  randomWatchId,
   repairWatchTileGroups,
   resizeWatchTile,
   sameWatchId,
@@ -208,6 +209,25 @@ describe("add page", () => {
     expect(newWatchPageName(doc(page(P1, [], { name: "New Page 3 " }), page(P2, [], { name: "Kitchen" })))).toBe(
       "New Page 1",
     );
+  });
+
+  it("makes ids without crypto.randomUUID, which plain http does not have", () => {
+    const real = Object.getOwnPropertyDescriptor(globalThis, "crypto")!;
+    const secure = globalThis.crypto;
+    const plain = { getRandomValues: (a: Uint8Array<ArrayBuffer>) => secure.getRandomValues(a) };
+    Object.defineProperty(globalThis, "crypto", { value: plain, configurable: true });
+    try {
+      const v4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+      const a = randomWatchId();
+      const b = randomWatchId();
+      expect(a).toMatch(v4);
+      expect(b).toMatch(v4);
+      expect(a).not.toBe(b);
+      const pages = addWatchPage(doc(page(P1, [])), {}).pages as JsonObject[];
+      expect(pages[1]!.id).toMatch(/^[0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/);
+    } finally {
+      Object.defineProperty(globalThis, "crypto", real);
+    }
   });
 
   it("appends after every page, system pages included, with an upper case id", () => {
