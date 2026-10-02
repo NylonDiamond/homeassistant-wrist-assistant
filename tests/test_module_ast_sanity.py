@@ -200,12 +200,13 @@ def test_the_panel_mirrors_the_per_owner_complication_cap() -> None:
 
 
 def test_uninstall_removes_every_store_the_integration_writes() -> None:
-    """`async_remove_entry` must wipe the complication store too.
+    """`async_remove_entry` must wipe the complication and watch config stores too.
 
     Nothing can check this against a live box, because the test would have to
     uninstall the integration, and the failure is silent when it happens: a
-    re-added integration comes back holding complications for watch ids that
-    no longer pair with anything. So it is asserted here, statically.
+    re-added integration comes back holding complications and page configs for
+    watch ids that no longer pair with anything. So it is asserted here,
+    statically.
     """
     source = (_PKG / "__init__.py").read_text()
     tree = ast.parse(source, filename="__init__.py")
@@ -220,5 +221,14 @@ def test_uninstall_removes_every_store_the_integration_writes() -> None:
         "WIDGET_SECRET_STORAGE_KEY",
         "NOTIFICATION_TOKEN_STORAGE_KEY",
         "ComplicationStore(hass).async_remove()",
+        "WatchConfigStore(hass).async_remove()",
     ):
         assert expected in body, f"async_remove_entry no longer removes {expected}"
+
+
+def test_removing_a_device_in_ha_also_forgets_its_watch_config() -> None:
+    """The UI removal is the second forget path, beside the panel's Forget
+    (which test_complication_ws.py runs). Its function needs a real device
+    registry entry, so it is checked statically here."""
+    body = _function_source("__init__.py", "async_remove_config_entry_device")
+    assert "watch_config_store.forget_owner(watch_id)" in body

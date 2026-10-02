@@ -49,6 +49,7 @@ from .const import (
     NOTIFICATION_TOKEN_STORAGE_VERSION,
     PLATFORMS,
     WA_HMAC_NONCE_TTL_SECONDS,
+    WATCH_CONFIG_CAPABILITY,
     WIDGET_SECRET_STORAGE_KEY,
     WIDGET_SECRET_STORAGE_VERSION,
     WristAssistantConfigEntry,
@@ -60,6 +61,7 @@ from .parts_store import PartsStore
 from .snapshot_aspect_store import SnapshotAspectStore
 from .snapshot_crop_store import SnapshotCropStore
 from .snapshot_stream_store import SnapshotStreamStore
+from .watch_config_store import WatchConfigStore
 from .notifications import NotificationTokenStore, TokenEntry
 from .v1_api_views import (
     MusicAssistantPlayersView,
@@ -742,6 +744,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         )
     except Exception:
         _LOGGER.exception("Card preview sweep failed; continuing setup")
+    # Watch config documents (the phone's pages in step 1). An unreadable file
+    # is contained inside the store and never fails setup.
+    watch_config_store = WatchConfigStore(hass)
+    await watch_config_store.async_load()
     # Custom complications ride the watch's long-poll: the owner's store
     # token on every reply, the watch's ack on every request, and a panel
     # save wakes the parked poll so the watch pulls at once.
@@ -784,6 +790,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # advertise, and it lets iOS hide the control on a box whose integration
     # predates it rather than letting the watch ask and get nothing back.
     coordinator.register_capability("statistics_series")
+    # The watch config ops (wa_v2_views.py, _op_watch_config_get and
+    # _op_watch_config_put). The phone keeps its pages to itself unless it
+    # sees this, so an older integration is never sent a request it would
+    # answer with "unknown op".
+    coordinator.register_capability(WATCH_CONFIG_CAPABILITY)
 
     runtime_data = WristAssistantData(
         coordinator=coordinator,
@@ -800,6 +811,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         complication_store=complication_store,
         parts_store=parts_store,
         card_preview_store=card_preview_store,
+        watch_config_store=watch_config_store,
     )
     entry.runtime_data = runtime_data
     hass.data[DOMAIN] = runtime_data
@@ -1115,6 +1127,8 @@ async def async_remove_config_entry_device(
         domain_data.complication_store.release_owner(
             watch_id, updated_by=f"device-removed:{watch_id}"
         )
+        # Its watch config goes with it, as on the panel's Forget.
+        domain_data.watch_config_store.forget_owner(watch_id)
 
     return True
 
@@ -1142,6 +1156,8 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     # is already unloaded, so this instance owns nothing, but keeping the one
     # removal path means the storage key and version cannot drift from it.
     await ComplicationStore(hass).async_remove()
+    # The watch config files go the same way, every owner's and the index.
+    await WatchConfigStore(hass).async_remove()
 
 
 async def _create_apns_client(hass: HomeAssistant) -> APNsClient | None:

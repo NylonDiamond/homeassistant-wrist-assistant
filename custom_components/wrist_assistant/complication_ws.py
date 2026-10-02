@@ -143,6 +143,7 @@ from .statistics_series import (
 from .card_preview_store import CardPreviewError, CardPreviewStore
 from .gallery_key_store import gallery_key_store
 from .parts_store import PartsStore, PartsStoreError
+from .watch_config_store import WatchConfigStoreError
 from .widget_secret_store import DEVICE_KIND_IPHONE, DEVICE_KIND_LIBRARY
 
 _LOGGER = logging.getLogger(__name__)
@@ -602,6 +603,9 @@ def ws_forget_device(
     moved = domain_data.complication_store.release_owner(
         watch_id, updated_by=f"forget:{watch_id}"
     )
+    # The watch config (its pages, in step 1) belongs to the device alone, so
+    # unlike a design it has nowhere to move to and is deleted.
+    watch_config_removed = domain_data.watch_config_store.forget_owner(watch_id)
 
     # Removing the store entry strips the device's entities on the next
     # listener pass, but the device registry record itself would linger as an
@@ -623,6 +627,7 @@ def ws_forget_device(
             "device_removed": device is not None,
             "complications_removed": had_records,
             "complications_moved_to_library": moved,
+            "watch_config_removed": watch_config_removed,
         },
     )
 
@@ -1155,11 +1160,28 @@ def ws_move_owner(
     except ComplicationStoreError as err:
         _send_store_error(connection, msg["id"], err)
         return
+    # The watch's config follows its designs onto the new id. Only after the
+    # designs moved, so a refused move leaves both owners as they were. A
+    # config that cannot be carried (an unreadable file on either side) is
+    # logged rather than failing a move that has already been committed.
+    watch_config_moved: list[str] = []
+    try:
+        watch_config_moved = hass.data[DOMAIN].watch_config_store.move_owner(
+            msg["source_owner_watch_id"], target, updated_by=updated_by
+        )
+    except WatchConfigStoreError as err:
+        _LOGGER.warning(
+            "Moved complications from %s to %s but not the watch config: %s",
+            msg["source_owner_watch_id"],
+            target,
+            err.message,
+        )
     connection.send_result(
         msg["id"],
         {
             "records": [record.as_dict() for record in records],
             "token": store.owner_token(target),
+            "watch_config_moved": watch_config_moved,
         },
     )
 

@@ -131,6 +131,12 @@ from .logbook_events import (
     log_secret_registered,
     log_secret_reprovisioned,
 )
+from .watch_config_store import (
+    WatchConfigConflictError,
+    WatchConfigStoreError,
+    WatchConfigUnavailableError,
+    WatchConfigValidationError,
+)
 from .webhook_relay import (
     WEBHOOK_ID_METADATA_KEY,
     async_provision_webhook,
@@ -3248,8 +3254,113 @@ async def _op_complications_move_status(ctx: _OpContext) -> Response:
     )
 
 
+# ── watch config (the phone's pages, kept in Home Assistant) ─────────────
+
+
+def _watch_config_refusal(ctx: _OpContext, err: WatchConfigStoreError) -> Response:
+    """The signed reply for a refused watch_config op.
+
+    A conflict is the one refusal with a fixed shape, because the phone acts on
+    it: the stored revision and hash, so it can tell "someone else saved" from
+    "my own earlier upload landed and the reply was lost" (the hash is then its
+    own). ``hash`` is null when there is no record. Everything else carries the
+    store's code and message, as the complication ops do.
+    """
+    if isinstance(err, WatchConfigConflictError):
+        return ctx.signed_json(
+            {
+                "ok": False,
+                "error": "conflict",
+                "revision": err.revision,
+                "hash": err.hash,
+            },
+            status=409,
+        )
+    status = 503 if isinstance(err, WatchConfigUnavailableError) else 400
+    return ctx.signed_json(
+        {"ok": False, "error": err.code, "message": err.message}, status=status
+    )
+
+
+async def _op_watch_config_get(ctx: _OpContext) -> Response:
+    """The caller's stored watch config of one kind.
+
+    The owner is always the id that signed the request, so a device can only
+    ever read its own record. In step 1 that is the phone signing with the
+    watch's pair; later the watch reads it with the same signature.
+
+    Body:  {"kind": "pages", "since_revision": <int>?}
+    Reply: {"ok": true, "kind", "revision", "hash", "updated_at", "document"?}
+
+    ``document`` is left out when ``since_revision`` equals the stored
+    revision, so an up-to-date phone downloads a few bytes rather than its
+    whole config on every foreground check. With no record the reply is
+    ``revision: 0`` with ``hash`` and ``updated_at`` null and no document. The
+    save history is never sent.
+    """
+    raw_since = ctx.payload.get("since_revision")
+    if raw_since is not None and (
+        isinstance(raw_since, bool) or not isinstance(raw_since, int) or raw_since < 0
+    ):
+        return _watch_config_refusal(
+            ctx,
+            WatchConfigValidationError("since_revision must be a non-negative integer"),
+        )
+    kind = ctx.payload.get("kind")
+    try:
+        record = ctx.domain_data.watch_config_store.get(ctx.watch_id, kind)
+    except WatchConfigStoreError as err:
+        return _watch_config_refusal(ctx, err)
+    if record is None:
+        return ctx.signed_json(
+            {"ok": True, "kind": kind, "revision": 0, "hash": None, "updated_at": None}
+        )
+    reply: dict[str, Any] = {
+        "ok": True,
+        "kind": kind,
+        "revision": record.revision,
+        "hash": record.hash,
+        "updated_at": record.updated_at,
+    }
+    if raw_since != record.revision:
+        reply["document"] = record.document
+    return ctx.signed_json(reply)
+
+
+async def _op_watch_config_put(ctx: _OpContext) -> Response:
+    """Save the caller's watch config of one kind, compare-and-swap.
+
+    Body:  {"kind": "pages", "base_revision": <int>, "hash": <sha256 hex>,
+            "document": {...}, "force": <bool>?}
+    Reply: {"ok": true, "revision": <int>}
+    Refusal: signed 409 {"ok": false, "error": "conflict", "revision", "hash"}
+             when ``base_revision`` is not the stored revision (0 for no
+             record) and ``force`` is not true; signed 400 for a malformed
+             request; signed 503 when the stored file could not be read.
+
+    ``hash`` is the client's own SHA-256 of the document, kept as given and
+    handed back by get; the server never recomputes it (see
+    ``watch_config_store.py`` for why). ``updated_by`` is the signing id.
+    """
+    try:
+        record = ctx.domain_data.watch_config_store.put(
+            ctx.watch_id,
+            ctx.payload.get("kind"),
+            ctx.payload.get("document"),
+            document_hash=ctx.payload.get("hash"),
+            base_revision=ctx.payload.get("base_revision"),
+            force=ctx.payload.get("force", False),
+            updated_by=ctx.watch_id,
+        )
+    except WatchConfigStoreError as err:
+        return _watch_config_refusal(ctx, err)
+    return ctx.signed_json({"ok": True, "revision": record.revision})
+
+
 # Op dispatch table. Adding a new op = add a key here.
 _OP_HANDLERS: dict[str, Any] = {
+    "watch_config_get": _op_watch_config_get,
+    "watch_config_put": _op_watch_config_put,
     "complications_sync": _op_complications_sync,
     "complications_restore": _op_complications_restore,
     "complications_create": _op_complications_create,

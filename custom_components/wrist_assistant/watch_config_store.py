@@ -1,0 +1,666 @@
+"""Watch config documents kept in Home Assistant, one record per watch per kind.
+
+The first step of moving watch configuration out of the phone (see
+``docs/pages_in_home_assistant_step1.md`` in the app repo). Today the phone
+still edits everything; it uploads its page config here after each edit and
+pulls a newer copy back down when it has nothing unsent. Later steps add other
+kinds, a panel editor, and a watch that reads its record directly.
+
+A record is keyed on the watch, not the phone: the owner is the id that signed
+the request, which is the watch's own pair even when the phone sends it. The
+watch must own its config from the first day, because the step where it reads
+the record itself signs with that same id.
+
+Each record carries:
+
+* ``revision``: whole number, one more on every accepted save. Saves are
+  compare-and-swap on it, so two writers can never silently overwrite each
+  other; a forced save is the one exception, and it files what it replaced.
+* ``hash``: the client's SHA-256 of the document, as lowercase hex. Stored as
+  opaque metadata and never recomputed here, because the client hashes its own
+  serialized bytes and Python's re-serialization of the same JSON is not byte
+  for byte what Swift wrote (key order, slash escaping, number spelling). The
+  only promise is that the hash handed back is the one the writer sent.
+* ``updated_at`` / ``updated_by``: server time of the save, and the signing id
+  of the writer.
+* ``document``: the JSON object exactly as parsed from the request. It is
+  checked at the envelope only (an object, its kind's list key is a list, under
+  the size cap) and never rewritten. The server does not understand tiles.
+* ``history``: the last few documents a save replaced. Storage only: a get
+  never returns it. It exists so a forced save, or a wrong pull, loses nothing
+  that cannot be put back by hand.
+
+Storage is one Home Assistant ``Store`` file per owner, holding every kind for
+that owner, plus a small index naming the owners. A document can be large
+(the cap is ``WATCH_CONFIG_MAX_DOCUMENT_BYTES``), so one watch's save must not
+rewrite another watch's file. The index only changes when an owner appears or
+goes away.
+"""
+
+from __future__ import annotations
+
+import copy
+import hashlib
+import json
+import logging
+import re
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from typing import Any
+
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.storage import Store
+
+from .const import (
+    WATCH_CONFIG_HISTORY_LIMIT,
+    WATCH_CONFIG_KINDS,
+    WATCH_CONFIG_MAX_DOCUMENT_BYTES,
+    WATCH_CONFIG_STORAGE_KEY,
+    WATCH_CONFIG_STORAGE_VERSION,
+)
+
+_LOGGER = logging.getLogger(__name__)
+
+_SAVE_DEBOUNCE_SECONDS = 1
+
+# The list key each kind's document must carry. The envelope check is this and
+# nothing more: a kind added later names its own key here, and the storage
+# shape does not change.
+_KIND_LIST_KEYS: dict[str, str] = {"pages": "pages"}
+
+# A SHA-256 digest as lowercase hex. Lowercase only, and refused otherwise
+# rather than folded: the phone compares the hash it remembers with the one it
+# computes, and a server that quietly lowercased an uppercase hash would hand
+# back a value the phone never computes, which reads as an edit on every pull.
+_HASH_RE = re.compile(r"[0-9a-f]{64}")
+
+
+class WatchConfigStoreError(Exception):
+    """Base class; ``code`` is the stable machine-readable reason."""
+
+    code = "error"
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+class WatchConfigValidationError(WatchConfigStoreError):
+    """The request or its document envelope is malformed."""
+
+    code = "invalid"
+
+
+class WatchConfigConflictError(WatchConfigStoreError):
+    """``base_revision`` does not match the stored revision.
+
+    Carries the stored revision and hash (0 and ``None`` when there is no
+    record), which is what the signed 409 tells the client.
+    """
+
+    code = "conflict"
+
+    def __init__(self, message: str, revision: int, document_hash: str | None) -> None:
+        super().__init__(message)
+        self.revision = revision
+        self.hash = document_hash
+
+
+class WatchConfigUnavailableError(WatchConfigStoreError):
+    """The owner's file could not be read at startup.
+
+    Reads and writes are both refused for that owner until a restart finds a
+    readable file. Answering "no record" instead would invite the phone to
+    upload over a file that may be fine or worth recovering by hand.
+    """
+
+    code = "unavailable"
+
+
+def _now_iso() -> str:
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _owner_key(owner_watch_id: str) -> str:
+    """The storage key of one owner's file.
+
+    Owner ids are not guaranteed to be safe in a file name (an iPhone's has a
+    colon in it); a digest always is, and never collides in practice. The
+    owner's id is written inside the file, so a human reading ``.storage`` can
+    still tell whose it is.
+    """
+    digest = hashlib.sha256(owner_watch_id.encode()).hexdigest()[:32]
+    return f"{WATCH_CONFIG_STORAGE_KEY}.{digest}"
+
+
+def document_size(document: Any) -> int:
+    """The size the cap is measured against: compact UTF-8 JSON, in bytes.
+
+    No whitespace and non-ASCII left unescaped, so it is close to what a
+    compact client encoder sends. It is a guard on what lands on disk, not a
+    promise about the request body, which may differ by a few escapes.
+    """
+    try:
+        encoded = json.dumps(document, separators=(",", ":"), ensure_ascii=False)
+    except (TypeError, ValueError) as err:
+        raise WatchConfigValidationError("document is not JSON serializable") from err
+    return len(encoded.encode("utf-8"))
+
+
+def validate_kind(kind: Any) -> str:
+    """The kind, if this server stores it."""
+    if not isinstance(kind, str) or kind not in WATCH_CONFIG_KINDS:
+        raise WatchConfigValidationError(
+            f"kind must be one of {', '.join(sorted(WATCH_CONFIG_KINDS))}"
+        )
+    return kind
+
+
+def validate_document(kind: str, document: Any) -> int:
+    """Check the envelope of one document and return its size in bytes.
+
+    An object, its kind's list key present and a list, and under the cap.
+    Nothing inside the list is looked at: the phone is the only thing that
+    understands a page, and a server that half understood one would refuse
+    configs a newer app writes.
+    """
+    if not isinstance(document, dict):
+        raise WatchConfigValidationError("document must be a JSON object")
+    list_key = _KIND_LIST_KEYS[kind]
+    if not isinstance(document.get(list_key), list):
+        raise WatchConfigValidationError(f"document.{list_key} must be a list")
+    size = document_size(document)
+    if size > WATCH_CONFIG_MAX_DOCUMENT_BYTES:
+        raise WatchConfigValidationError(
+            f"document is {size} bytes; the limit is {WATCH_CONFIG_MAX_DOCUMENT_BYTES}"
+        )
+    return size
+
+
+def validate_hash(document_hash: Any) -> str:
+    """The client's document hash: 64 lowercase hex characters."""
+    if not isinstance(document_hash, str) or not _HASH_RE.fullmatch(document_hash):
+        raise WatchConfigValidationError(
+            "hash must be a SHA-256 digest in lowercase hex"
+        )
+    return document_hash
+
+
+@dataclass
+class WatchConfigHistoryEntry:
+    """One document a later save replaced, with that revision's own envelope."""
+
+    revision: int
+    hash: str
+    updated_at: str
+    updated_by: str
+    document: dict[str, Any]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "revision": self.revision,
+            "hash": self.hash,
+            "updated_at": self.updated_at,
+            "updated_by": self.updated_by,
+            "document": self.document,
+        }
+
+    @classmethod
+    def from_dict(cls, raw: Any) -> WatchConfigHistoryEntry | None:
+        """One entry off disk, or ``None`` for anything unusable.
+
+        Junk drops rather than refuses: history is a safety net, and a
+        hand-edited file must not cost someone their current config.
+        """
+        if not isinstance(raw, dict):
+            return None
+        revision = raw.get("revision")
+        document = raw.get("document")
+        if isinstance(revision, bool) or not isinstance(revision, int):
+            return None
+        if not isinstance(document, dict):
+            return None
+        return cls(
+            revision=revision,
+            hash=str(raw.get("hash", "")),
+            updated_at=str(raw.get("updated_at", "")),
+            updated_by=str(raw.get("updated_by", "")),
+            document=document,
+        )
+
+
+@dataclass
+class WatchConfigRecord:
+    """One owner's document of one kind, plus its envelope."""
+
+    owner_watch_id: str
+    kind: str
+    revision: int
+    hash: str
+    updated_at: str
+    updated_by: str
+    document: dict[str, Any]
+    # Past documents, oldest first. Storage only; no reply carries it.
+    history: list[WatchConfigHistoryEntry] = field(default_factory=list)
+    # Measured on save and on load, never written to disk. Diagnostics report
+    # it so a large config is visible without anyone reading the document.
+    size_bytes: int = 0
+
+    def as_storage_dict(self) -> dict[str, Any]:
+        stored: dict[str, Any] = {
+            "revision": self.revision,
+            "hash": self.hash,
+            "updated_at": self.updated_at,
+            "updated_by": self.updated_by,
+            "document": self.document,
+        }
+        if self.history:
+            stored["history"] = [entry.as_dict() for entry in self.history]
+        return stored
+
+    @classmethod
+    def from_dict(
+        cls, owner_watch_id: str, kind: str, raw: Any
+    ) -> WatchConfigRecord | None:
+        if not isinstance(raw, dict):
+            return None
+        revision = raw.get("revision")
+        document = raw.get("document")
+        if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:
+            return None
+        if not isinstance(document, dict):
+            return None
+        history_raw = raw.get("history")
+        history = (
+            [
+                entry
+                for item in history_raw
+                if (entry := WatchConfigHistoryEntry.from_dict(item)) is not None
+            ]
+            if isinstance(history_raw, list)
+            else []
+        )
+        try:
+            size = document_size(document)
+        except WatchConfigValidationError:
+            return None
+        return cls(
+            owner_watch_id=owner_watch_id,
+            kind=kind,
+            revision=revision,
+            hash=str(raw.get("hash", "")),
+            updated_at=str(raw.get("updated_at", "")),
+            updated_by=str(raw.get("updated_by", "")),
+            document=document,
+            history=history[-WATCH_CONFIG_HISTORY_LIMIT:],
+            size_bytes=size,
+        )
+
+    def remember(self, entry: WatchConfigHistoryEntry) -> None:
+        """File a document into the history, oldest dropped past the limit."""
+        self.history.append(entry)
+        if len(self.history) > WATCH_CONFIG_HISTORY_LIMIT:
+            del self.history[: len(self.history) - WATCH_CONFIG_HISTORY_LIMIT]
+
+    def current_as_history(self) -> WatchConfigHistoryEntry:
+        return WatchConfigHistoryEntry(
+            revision=self.revision,
+            hash=self.hash,
+            updated_at=self.updated_at,
+            updated_by=self.updated_by,
+            document=self.document,
+        )
+
+
+class WatchConfigStore:
+    """Every owner's watch config records, one storage file per owner."""
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass = hass
+        # owner_watch_id → kind → record
+        self._records: dict[str, dict[str, WatchConfigRecord]] = {}
+        # One Store per owner, kept for the life of this instance so a forget
+        # followed by a new save reuses the object whose pending write the
+        # removal cancelled, rather than racing a second one at the same file.
+        self._files: dict[str, Store] = {}
+        # Owners whose file could not be read; see WatchConfigUnavailableError.
+        self._failed_owners: set[str] = set()
+        # Set when the index could not be read. Every owner is then unknown,
+        # so everything is refused until a restart.
+        self._load_failed = False
+        self._index: Store = Store(
+            hass, WATCH_CONFIG_STORAGE_VERSION, WATCH_CONFIG_STORAGE_KEY
+        )
+
+    # ── persistence ────────────────────────────────────────────────────
+
+    def _file(self, owner_watch_id: str) -> Store:
+        store = self._files.get(owner_watch_id)
+        if store is None:
+            store = Store(
+                self._hass, WATCH_CONFIG_STORAGE_VERSION, _owner_key(owner_watch_id)
+            )
+            self._files[owner_watch_id] = store
+        return store
+
+    async def _async_read_index(self) -> list[str] | None:
+        """The owner ids the index names, or ``None`` when it is unreadable."""
+        try:
+            data = await self._index.async_load()
+        except Exception:
+            _LOGGER.exception(
+                "Could not read .storage/%s; watch config is unavailable until "
+                "Home Assistant restarts with a readable file",
+                WATCH_CONFIG_STORAGE_KEY,
+            )
+            return None
+        if not data:
+            return []
+        owners = data.get("owners") if isinstance(data, dict) else None
+        if not isinstance(owners, list):
+            _LOGGER.error(
+                "Could not read .storage/%s: expected an owner list; watch "
+                "config is unavailable until Home Assistant restarts with a "
+                "readable file",
+                WATCH_CONFIG_STORAGE_KEY,
+            )
+            return None
+        return [owner for owner in owners if isinstance(owner, str) and owner]
+
+    async def async_load(self) -> None:
+        """Read the index, then every owner file it names.
+
+        A failure is contained the way ``ComplicationStore.async_load``
+        contains one: setup carries on, and whatever could not be read is
+        never saved over. An unreadable index refuses everything; an
+        unreadable owner file refuses that owner alone.
+        """
+        owners = await self._async_read_index()
+        if owners is None:
+            self._load_failed = True
+            return
+        dropped = False
+        for owner in owners:
+            try:
+                data = await self._file(owner).async_load()
+            except Exception:
+                self._failed_owners.add(owner)
+                _LOGGER.exception(
+                    "Could not read the watch config file for %s; refusing its "
+                    "reads and saves until Home Assistant restarts with a "
+                    "readable file",
+                    owner,
+                )
+                continue
+            raw_records = data.get("records") if isinstance(data, dict) else None
+            if data and not isinstance(raw_records, dict):
+                self._failed_owners.add(owner)
+                _LOGGER.error(
+                    "Watch config file for %s is not the shape this store "
+                    "writes; refusing its reads and saves",
+                    owner,
+                )
+                continue
+            records: dict[str, WatchConfigRecord] = {}
+            for kind, raw in (raw_records or {}).items():
+                if not isinstance(kind, str):
+                    continue
+                # A kind this build does not know is still kept on disk,
+                # untouched: a downgrade must not erase what a newer build
+                # stored. It is held in memory only to be written back.
+                record = WatchConfigRecord.from_dict(owner, kind, raw)
+                if record is not None:
+                    records[kind] = record
+            if records:
+                self._records[owner] = records
+            else:
+                # Listed but empty or missing: nothing to keep an entry for.
+                dropped = True
+        if dropped:
+            self._schedule_index_save()
+        _LOGGER.debug(
+            "Loaded watch config for %d owner(s), %d unreadable",
+            len(self._records),
+            len(self._failed_owners),
+        )
+
+    def _serialize_index(self) -> dict[str, Any]:
+        return {"owners": sorted(set(self._records) | self._failed_owners)}
+
+    def _serialize_owner(self, owner_watch_id: str) -> dict[str, Any]:
+        return {
+            "owner_watch_id": owner_watch_id,
+            "records": {
+                kind: record.as_storage_dict()
+                for kind, record in self._records.get(owner_watch_id, {}).items()
+            },
+        }
+
+    def _schedule_index_save(self) -> None:
+        if self._load_failed:
+            return
+        self._index.async_delay_save(self._serialize_index, _SAVE_DEBOUNCE_SECONDS)
+
+    def _schedule_owner_save(self, owner_watch_id: str) -> None:
+        self._file(owner_watch_id).async_delay_save(
+            lambda: self._serialize_owner(owner_watch_id), _SAVE_DEBOUNCE_SECONDS
+        )
+
+    def _remove_owner_file(self, owner_watch_id: str) -> None:
+        """Delete one owner's file, from a synchronous caller.
+
+        ``Store.async_remove`` cancels the pending debounced write before it
+        unlinks, so a save scheduled just before the forget never lands.
+        """
+        self._hass.async_create_task(
+            self._file(owner_watch_id).async_remove(),
+            name=f"wrist_assistant_watch_config_remove_{owner_watch_id}",
+        )
+
+    async def async_remove(self) -> None:
+        """Delete every owner file and the index (the integration is removed).
+
+        Reads the index itself, so it works on a fresh instance after the
+        entry is unloaded, which is how ``async_remove_entry`` calls it.
+        """
+        owners = await self._async_read_index() or []
+        for owner in set(owners) | set(self._records):
+            await self._file(owner).async_remove()
+        self._records.clear()
+        await self._index.async_remove()
+
+    # ── reads ──────────────────────────────────────────────────────────
+
+    def _check_available(self, owner_watch_id: str) -> None:
+        if self._load_failed or owner_watch_id in self._failed_owners:
+            raise WatchConfigUnavailableError(
+                "the stored watch config could not be read; restart Home Assistant"
+            )
+
+    def owners(self) -> list[str]:
+        return sorted(self._records)
+
+    def get(self, owner_watch_id: str, kind: Any) -> WatchConfigRecord | None:
+        """The owner's record of that kind, or ``None`` when there is none."""
+        kind = validate_kind(kind)
+        self._check_available(owner_watch_id)
+        return self._records.get(owner_watch_id, {}).get(kind)
+
+    def diagnostics(self) -> dict[str, dict[str, dict[str, Any]]]:
+        """Revision, size and time per owner and kind. Never a document."""
+        report: dict[str, dict[str, dict[str, Any]]] = {
+            owner: {
+                kind: {
+                    "revision": record.revision,
+                    "size_bytes": record.size_bytes,
+                    "updated_at": record.updated_at,
+                    "history_count": len(record.history),
+                }
+                for kind, record in sorted(by_kind.items())
+            }
+            for owner, by_kind in sorted(self._records.items())
+        }
+        for owner in sorted(self._failed_owners):
+            report[owner] = {"unreadable": {}}
+        return report
+
+    # ── writes ─────────────────────────────────────────────────────────
+
+    def put(
+        self,
+        owner_watch_id: str,
+        kind: Any,
+        document: Any,
+        *,
+        document_hash: Any,
+        base_revision: Any,
+        force: Any = False,
+        updated_by: str,
+    ) -> WatchConfigRecord:
+        """Save one document, compare-and-swap on the revision.
+
+        Accepted when ``base_revision`` equals the stored revision (0 when
+        there is no record), or when ``force`` is true. Every accepted save
+        replacing a document files that document in the history first, so a
+        forced save never loses the copy it overwrote. Everything about the
+        request is checked before the revision is, so a malformed save is
+        refused as malformed even when it is also stale.
+        """
+        if not isinstance(owner_watch_id, str) or not owner_watch_id:
+            raise WatchConfigValidationError("owner_watch_id is required")
+        kind = validate_kind(kind)
+        size = validate_document(kind, document)
+        document_hash = validate_hash(document_hash)
+        if not isinstance(force, bool):
+            raise WatchConfigValidationError("force must be true or false")
+        if not force and (
+            isinstance(base_revision, bool)
+            or not isinstance(base_revision, int)
+            or base_revision < 0
+        ):
+            raise WatchConfigValidationError(
+                "base_revision must be a non-negative integer"
+            )
+        self._check_available(owner_watch_id)
+
+        by_kind = self._records.get(owner_watch_id, {})
+        existing = by_kind.get(kind)
+        stored_revision = existing.revision if existing is not None else 0
+        if not force and base_revision != stored_revision:
+            raise WatchConfigConflictError(
+                f"stored revision is {stored_revision}, save was based on "
+                f"{base_revision}",
+                stored_revision,
+                existing.hash if existing is not None else None,
+            )
+
+        if existing is None:
+            record = WatchConfigRecord(
+                owner_watch_id=owner_watch_id,
+                kind=kind,
+                revision=1,
+                hash=document_hash,
+                updated_at=_now_iso(),
+                updated_by=updated_by,
+                document=document,
+                size_bytes=size,
+            )
+            new_owner = owner_watch_id not in self._records
+            self._records.setdefault(owner_watch_id, {})[kind] = record
+            if new_owner:
+                self._schedule_index_save()
+        else:
+            record = existing
+            record.remember(record.current_as_history())
+            record.revision += 1
+            record.hash = document_hash
+            record.updated_at = _now_iso()
+            record.updated_by = updated_by
+            record.document = document
+            record.size_bytes = size
+        self._schedule_owner_save(owner_watch_id)
+        return record
+
+    @callback
+    def forget_owner(self, owner_watch_id: str) -> bool:
+        """Delete everything stored for one watch. Returns whether there was any.
+
+        Called beside the complication store's release on both forget paths.
+        Unlike a complication there is nothing to tombstone: a watch config is
+        not replicated to anything that could resurrect it, and the phone reads
+        the empty answer as "upload", which is right for a device that is
+        paired again. The file is removed, not emptied, and that includes a
+        file that could not be read: the user asked for the device to go, and
+        an unreadable copy of its config has nobody left to recover it for.
+        """
+        had = owner_watch_id in self._records or owner_watch_id in self._failed_owners
+        self._records.pop(owner_watch_id, None)
+        self._failed_owners.discard(owner_watch_id)
+        if had:
+            self._remove_owner_file(owner_watch_id)
+            self._schedule_index_save()
+            _LOGGER.info("Forgot watch config for %s", owner_watch_id)
+        return had
+
+    @callback
+    def move_owner(
+        self, source_owner: str, target_owner: str, *, updated_by: str
+    ) -> list[str]:
+        """Carry one watch's config onto another watch. Returns the kinds moved.
+
+        The reinstall recovery path, run beside the complication move: a
+        reinstalled watch can come back under a new id, and its config must
+        follow it. Per kind:
+
+        * The target holds nothing of that kind: the record moves whole, with
+          its revision, hash and history unchanged. The document did not
+          change, so a phone that synced it before still reads it as in step.
+        * The target already holds one: the target's record stays. It is what
+          the device under the new id has been working with since it came
+          back, and in step 1 the phone is the only editor, so its latest
+          upload is the truth. The source's current document is filed into
+          the target's history, so nothing is lost. Its own older history is
+          not carried: it would push the target's past documents out of a
+          five-entry list.
+
+        The source is then forgotten. An owner whose file is unreadable on
+        either side is refused, so a move never writes over something this
+        instance could not read.
+        """
+        if not isinstance(source_owner, str) or not source_owner:
+            raise WatchConfigValidationError("source_owner_watch_id is required")
+        if not isinstance(target_owner, str) or not target_owner:
+            raise WatchConfigValidationError("target_owner_watch_id is required")
+        if source_owner == target_owner:
+            raise WatchConfigValidationError(
+                "the source and the target are the same watch"
+            )
+        self._check_available(source_owner)
+        self._check_available(target_owner)
+        moving = self._records.get(source_owner)
+        if not moving:
+            return []
+        new_owner = target_owner not in self._records
+        target = self._records.setdefault(target_owner, {})
+        moved: list[str] = []
+        for kind, source_record in sorted(moving.items()):
+            existing = target.get(kind)
+            if existing is None:
+                record = copy.deepcopy(source_record)
+                record.owner_watch_id = target_owner
+                target[kind] = record
+            else:
+                existing.remember(copy.deepcopy(source_record.current_as_history()))
+            moved.append(kind)
+        self._schedule_owner_save(target_owner)
+        if new_owner:
+            self._schedule_index_save()
+        self.forget_owner(source_owner)
+        _LOGGER.info(
+            "Moved watch config (%s) from %s to %s by %s",
+            ", ".join(moved),
+            source_owner,
+            target_owner,
+            updated_by,
+        )
+        return moved

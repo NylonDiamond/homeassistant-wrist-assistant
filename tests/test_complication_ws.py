@@ -176,6 +176,11 @@ def _loaded_modules():
             LIBRARY_OWNER_ID=LIBRARY,
             WIDGET_SECRET_STORAGE_KEY="wrist_assistant.widget_secrets",
             WIDGET_SECRET_STORAGE_VERSION=1,
+            WATCH_CONFIG_STORAGE_KEY="wrist_assistant.watch_config",
+            WATCH_CONFIG_STORAGE_VERSION=1,
+            WATCH_CONFIG_KINDS=frozenset({"pages"}),
+            WATCH_CONFIG_MAX_DOCUMENT_BYTES=4096,
+            WATCH_CONFIG_HISTORY_LIMIT=5,
         )
         # Neither series module is exercised here; complication_ws only needs
         # their names to build its command schemas at import time.
@@ -227,7 +232,10 @@ def _loaded_modules():
 
         store_mod = _load("complication_store")
         secrets_mod = _load("widget_secret_store")
-        yield _load("complication_ws"), store_mod, secrets_mod
+        # The real one: forget and move reach into it, and what they leave
+        # behind is asserted below.
+        watch_config_mod = _load("watch_config_store")
+        yield _load("complication_ws"), store_mod, secrets_mod, watch_config_mod
     finally:
         for key in list(sys.modules):
             if key not in saved_modules:
@@ -329,12 +337,24 @@ class _Connection:
         self.errors.append((msg_id, code, message))
 
 
+class _NotificationStore:
+    """The two calls ``devices/forget`` makes; no test here holds a token."""
+
+    def get_entries(self, _watch_id: str) -> list:
+        return []
+
+    def remove(self, _watch_id: str) -> None:
+        return None
+
+
 class _DomainData:
-    def __init__(self, store, secret_store, coordinator, push) -> None:
+    def __init__(self, store, secret_store, coordinator, push, watch_config) -> None:
         self.complication_store = store
         self.widget_secret_store = secret_store
         self.coordinator = coordinator
         self.complication_push = push
+        self.watch_config_store = watch_config
+        self.notification_store = _NotificationStore()
 
 
 class _Hass:
@@ -342,6 +362,10 @@ class _Hass:
         self.data = {DOMAIN: domain_data}
         self.devices = _DeviceRegistry()
         self.entities = _EntityRegistry()
+
+    def async_create_task(self, coro, name: str | None = None, **_kwargs: object):
+        """The watch config forget removes its file through this."""
+        return asyncio.run(coro)
 
 
 @dataclass
@@ -403,13 +427,17 @@ class _Env:
 
 @pytest.fixture
 def env():
-    with _loaded_modules() as (ws, store_mod, secrets_mod):
+    with _loaded_modules() as (ws, store_mod, secrets_mod, watch_config_mod):
         store = store_mod.ComplicationStore(object())
         asyncio.run(store.async_load())
         secrets = secrets_mod.WidgetSecretStore(object())
         coordinator = _Coordinator()
         push = _Push()
-        hass = _Hass(_DomainData(store, secrets, coordinator, push))
+        domain_data = _DomainData(store, secrets, coordinator, push, None)
+        hass = _Hass(domain_data)
+        watch_config = watch_config_mod.WatchConfigStore(hass)
+        asyncio.run(watch_config.async_load())
+        domain_data.watch_config_store = watch_config
         yield _Env(ws, store, secrets, coordinator, hass, secrets_mod, push)
 
 
@@ -680,6 +708,72 @@ def test_forgetting_the_library_is_refused_rather_than_obeyed(env) -> None:
     )
     assert [code for _id, code, _msg in connection.errors] == ["not_found"]
     assert len(env.store.list(LIBRARY)) == 1
+
+
+# ── watch config on forget and move ──────────────────────────────────────
+
+
+def _save_pages(env: _Env, owner: str, name: str) -> None:
+    env.hass.data[DOMAIN].watch_config_store.put(
+        owner,
+        "pages",
+        {"pages": [{"name": name}]},
+        document_hash="a" * 64,
+        base_revision=0,
+        updated_by=owner,
+    )
+
+
+def test_forgetting_a_device_deletes_its_watch_config(env) -> None:
+    """A device's pages have no Library to go to, so they go with it."""
+    env.add_watch("watch-A", device_name="Apple Watch")
+    env.add_watch("watch-B", device_name="Other Watch")
+    _save_pages(env, "watch-A", "A")
+    _save_pages(env, "watch-B", "B")
+    watch_config = env.hass.data[DOMAIN].watch_config_store
+
+    result = env.call(env.ws.ws_forget_device, watch_id="watch-A", force=False)
+    assert result["watch_config_removed"] is True
+    assert watch_config.get("watch-A", "pages") is None
+    assert watch_config.get("watch-B", "pages").document["pages"][0]["name"] == "B"
+
+    env.add_watch("watch-C", device_name="Bare Watch")
+    result = env.call(env.ws.ws_forget_device, watch_id="watch-C", force=False)
+    assert result["watch_config_removed"] is False
+
+
+def test_moving_an_owner_carries_its_watch_config(env) -> None:
+    """The reinstall recovery path: the pages follow the designs."""
+    env.add_watch("watch-new", device_name="Apple Watch")
+    env.save_document("watch-old")
+    _save_pages(env, "watch-old", "old pages")
+    watch_config = env.hass.data[DOMAIN].watch_config_store
+
+    result = env.call(
+        env.ws.ws_move_owner,
+        source_owner_watch_id="watch-old",
+        target_owner_watch_id="watch-new",
+    )
+    assert result["watch_config_moved"] == ["pages"]
+    assert watch_config.get("watch-old", "pages") is None
+    moved = watch_config.get("watch-new", "pages")
+    assert moved.revision == 1
+    assert moved.document["pages"][0]["name"] == "old pages"
+
+
+def test_a_refused_move_leaves_the_watch_config_where_it_was(env) -> None:
+    """Nothing live to move refuses the whole command, pages included."""
+    _save_pages(env, "watch-old", "old pages")
+    connection = _Connection()
+    env.ws.ws_move_owner(
+        env.hass,
+        connection,
+        {"id": 1, "source_owner_watch_id": "watch-old", "target_owner_watch_id": "watch-new"},
+    )
+    assert [code for _id, code, _msg in connection.errors] == ["not_found"]
+    watch_config = env.hass.data[DOMAIN].watch_config_store
+    assert watch_config.get("watch-old", "pages").revision == 1
+    assert watch_config.get("watch-new", "pages") is None
 
 
 # ── watch_status ─────────────────────────────────────────────────────────

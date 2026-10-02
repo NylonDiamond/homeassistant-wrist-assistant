@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from .snapshot_crop_store import SnapshotCropStore
     from .snapshot_stream_store import SnapshotStreamStore
     from .wa_stream_tokens import BatchSnapshotTokenStore, StreamTokenStore
+    from .watch_config_store import WatchConfigStore
     from .widget_secret_store import WidgetSecretStore
 
 
@@ -59,6 +60,9 @@ class WristAssistantData:
     # The picture each Browse card shows, taken by the panel on save. Panel
     # only, like the parts.
     card_preview_store: CardPreviewStore
+    # Watch config documents (the phone's page config in step 1), one record
+    # per watch per kind. Read and written over the signed watch_config ops.
+    watch_config_store: WatchConfigStore
     apns_client: APNsClient | None = field(default=None)
     # Sends a phone owner the background push a watch owner gets as a long-poll
     # wake. Built after the relay client is resolved, so it is None for the
@@ -108,6 +112,26 @@ PARTS_STORAGE_VERSION = 1
 # with the pictures themselves in a folder of their own beside it.
 CARD_PREVIEW_STORAGE_KEY = "wrist_assistant.card_previews"
 CARD_PREVIEW_STORAGE_VERSION = 1
+# Watch config documents (owner watch → kind → envelope + document), see
+# watch_config_store.py. This key is the index naming the owners; each owner's
+# records live in a file of their own under this key plus a digest of the
+# owner id, so one watch's save never rewrites another watch's document.
+WATCH_CONFIG_STORAGE_KEY = "wrist_assistant.watch_config"
+WATCH_CONFIG_STORAGE_VERSION = 1
+# The kinds a client may read and write. Step 1 is the page config alone
+# (`GridConfiguration` in the app). A later kind is a new name here and a list
+# key in the store's envelope check, with no change to the storage shape.
+WATCH_CONFIG_KINDS = frozenset({"pages"})
+# Compact UTF-8 JSON size a stored document may reach. A guess with headroom:
+# the size of a large real page config has not been measured yet. Home
+# Assistant's HTTP server accepts request bodies up to 16 MiB, so the cap,
+# not the server, is what refuses an oversized upload.
+WATCH_CONFIG_MAX_DOCUMENT_BYTES = 2 * 1024 * 1024
+# Documents a save replaced, kept per record, oldest dropped. Storage only.
+WATCH_CONFIG_HISTORY_LIMIT = 5
+# What the integration advertises once it serves watch_config_get/put. The
+# phone makes no watch_config request at all without it.
+WATCH_CONFIG_CAPABILITY = "watch_config"
 # Highest CustomComplicationConfig schemaVersion this integration can edit.
 # Must track `CustomComplicationConfig.currentSchemaVersion` in the app repo.
 # A newer document is displayed read-only and never re-saved.
