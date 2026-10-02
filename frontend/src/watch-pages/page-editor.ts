@@ -20,9 +20,16 @@
 // The panel loads this module on its own, with one `import()`, when its route
 // is `/pages`, and draws the element in its own shadow tree. The element has
 // a shadow root of its own, so none of the panel's rules reach it; it reads
-// the panel's `--wa-*` colors, which do, and keeps every other rule here.
-// Nothing this module imports may import `icons.ts`: the panel hands its
-// symbol provider in through `icons`.
+// the panel's `--wa-*` colors, which do, takes the panel's form rules from
+// `form-styles.ts`, and keeps every other rule here. Nothing this module
+// imports may import `icons.ts`: the panel hands its symbol provider in
+// through `icons`, and tells of glyphs arriving through `iconsTick`.
+//
+// Part 3c's two views, the tile settings and the Add tile dialog, are
+// modules of their own (`tile-settings.ts`, `add-tile.ts`) that this element
+// calls with a host (`editor-host.ts`). They draw with the panel's field rows
+// from `editors.ts`, whose drags on a number (`SCRUB_START`, `SCRUB_END`)
+// stop here: the panel hears them as gestures on the complication draft.
 //
 // Plan: app repo docs/pages_in_home_assistant_step3.md.
 
@@ -43,13 +50,18 @@ import {
   saveWatchConfig,
   subscribeWatchConfig,
 } from "../ha-api.js";
+import { SCRUB_END, SCRUB_START } from "../editors.js";
+import { formStyles } from "../form-styles.js";
 import { peopleOf } from "../people.js";
 import { personColorVar } from "../pickerRows.js";
 import { type IconProvider, REFERENCE_CASE, caseForScreenSize } from "../renderer.js";
 import { agoWords } from "../send-state.js";
+import { SymbolBrowser } from "../symbols.js";
 import { uiIcon } from "../ui-icons.js";
 import { deliveryState, initialWatch, rejectedNow, settingsWatches, watchName } from "../watch-settings.js";
+import { addTileStyles, renderAddTile } from "./add-tile.js";
 import { type WatchPagesApplyOptions, type WatchPagesDraft, saveWatchPagesDraft } from "./draft.js";
+import { type AddTileHost, type WatchPagesEditorHost, NO_ICONS, ScrubRun } from "./editor-host.js";
 import {
   type WatchCell,
   type WatchDropOutcome,
@@ -123,6 +135,7 @@ import {
   watchScreenColor,
 } from "./preview.js";
 import { type WatchPagesNote, watchCommandError, watchPagesSaveNote } from "./save-note.js";
+import { renderTileSettings, tileSettingsStyles } from "./tile-settings.js";
 import {
   type StageGrid,
   autoScrollStep,
@@ -375,6 +388,10 @@ export class WaPageEditor extends LitElement {
   @property({ type: Boolean, reflect: true }) narrow = false;
   /** The panel's symbol provider, shared so the symbol file is read once. */
   @property({ attribute: false }) icons?: IconProvider;
+  /** Bumped by the panel each time `icons` has something new to draw: the
+   * symbol file, or a glyph fetched on its own. The provider tells the
+   * panel, not this element; a new number here is what draws again. */
+  @property({ attribute: false }) iconsTick = 0;
 
   @state() private watchId?: string;
   @state() private record?: WatchConfigRecord;
@@ -403,6 +420,16 @@ export class WaPageEditor extends LitElement {
   @state() private asOnWatch = false;
   /** Why the last value typed in the tile card was refused. */
   @state() private fieldNote?: string;
+  /** The Add tile dialog is open, over the selected page. */
+  @state() private addTileOpen = false;
+
+  /** The symbol grids' state (open, searched, recent) for the modules'
+   * symbol fields. Not the panel's: its changes must draw this element. */
+  private readonly symbols = new SymbolBrowser(() => this.requestUpdate());
+  /** The modules' view state (`WatchPagesEditorHost.uiState`). */
+  private readonly uiState = new Map<string, unknown>();
+  /** A drag on a number field running now: one undo step. */
+  private readonly scrub = new ScrubRun();
 
   private gesture?: Gesture;
   private rowDrag?: RowDrag;
@@ -436,7 +463,6 @@ export class WaPageEditor extends LitElement {
   private subscribeSeq = 0;
   private unsubscribe?: () => Promise<void>;
   private pollTimer?: number;
-  private iconTimer?: number;
   /** The connection whose `ready` event this element listens to. */
   private readyConnection?: HassConnectionEvents;
 
@@ -466,14 +492,19 @@ export class WaPageEditor extends LitElement {
     return this.saving || this.gesture !== undefined || this.rowDrag !== undefined;
   }
 
+  constructor() {
+    super();
+    // On the element itself: the field rows dispatch these from inside the
+    // shadow root, bubbling and composed, and they go no further than here.
+    this.addEventListener(SCRUB_START, this.onScrubStart);
+    this.addEventListener(SCRUB_END, this.onScrubEnd);
+  }
+
   override connectedCallback(): void {
     super.connectedCallback();
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("pointerdown", this.onWindowPointerDown, true);
     this.listenForReconnect();
-    // The symbol file may still be on its way after a visit elsewhere, and
-    // the wait for it stopped when the element left the tree.
-    if (this.icons && this.icons.names() === undefined) this.waitForSymbols();
     // Back in the tree after a visit elsewhere: the record may have moved.
     if (this.watchId !== undefined) this.openWatch(this.watchId, true);
   }
@@ -485,10 +516,9 @@ export class WaPageEditor extends LitElement {
     this.stopListeningForReconnect();
     this.reloadPending = false;
     this.cancelGestures();
+    this.endScrub();
     this.endSubscription();
     this.stopPolling();
-    if (this.iconTimer !== undefined) window.clearInterval(this.iconTimer);
-    this.iconTimer = undefined;
     this.loadSeq++;
     this.historySeq++;
   }
@@ -508,7 +538,6 @@ export class WaPageEditor extends LitElement {
         const id = initialWatch(watches, this.ownerId);
         if (id !== undefined && id !== this.watchId) this.openWatch(id);
       }
-      if (changed.has("icons")) this.waitForSymbols();
     }
     this.followSave();
     this.reconcileSelection();
@@ -580,6 +609,12 @@ export class WaPageEditor extends LitElement {
         if (this.selectedPageId !== undefined) this.focusPageRow = this.selectedPageId;
       }
     }
+    if (this.addTileOpen) {
+      // The page the dialog adds to went away, or turned into a smart page,
+      // in a merge from the iPhone.
+      const page = this.currentPage();
+      if (page === undefined || isSmartWatchPage(page)) this.closeAsk();
+    }
     const restoreAsk = this.restoreAsk;
     if (restoreAsk !== undefined && !this.restoring && this.historyState === "ready") {
       if (!this.history.some((e) => e.revision === restoreAsk.entry.revision)) {
@@ -625,24 +660,6 @@ export class WaPageEditor extends LitElement {
       const tile = this.selectedTileId === undefined ? undefined : this.tileButton(this.selectedTileId);
       tile?.scrollIntoView({ block: "nearest", inline: "nearest" });
     }
-  }
-
-  /** Redraw once the symbol file has arrived. The provider tells the panel,
-   * not this element, so this asks it now and then until it knows its names. */
-  private waitForSymbols(): void {
-    if (this.iconTimer !== undefined) window.clearInterval(this.iconTimer);
-    this.iconTimer = undefined;
-    const icons = this.icons;
-    if (!icons || icons.names() !== undefined) return;
-    let tries = 0;
-    this.iconTimer = window.setInterval(() => {
-      tries++;
-      if (icons.names() !== undefined || tries > 60) {
-        window.clearInterval(this.iconTimer);
-        this.iconTimer = undefined;
-        this.requestUpdate();
-      }
-    }, 500);
   }
 
   // ── selection ──────────────────────────────────────────────────────────
@@ -715,6 +732,9 @@ export class WaPageEditor extends LitElement {
       this.menuPageId = undefined;
       this.closeAsk();
       this.fieldNote = undefined;
+      this.endScrub();
+      // The modules' view state was about the other watch's tiles.
+      this.uiState.clear();
       quiet = false;
     }
     this.startSubscription(watchId);
@@ -894,6 +914,61 @@ export class WaPageEditor extends LitElement {
     return changed;
   }
 
+  /** A drag on a number field's title or box began, in a module's field
+   * row. Stopped here, so the panel never opens a gesture on the
+   * complication draft under this editor. */
+  private onScrubStart = (e: Event): void => {
+    e.stopPropagation();
+    this.draft?.endCoalesce();
+    this.scrub.start();
+  };
+
+  private onScrubEnd = (e: Event): void => {
+    e.stopPropagation();
+    this.endScrub();
+  };
+
+  private endScrub(): void {
+    if (this.scrub.end()) this.draft?.endCoalesce();
+  }
+
+  /** What the two 3c modules are handed on each draw, for the selected page
+   * (`editor-host.ts`). Undefined while there is nothing to edit. */
+  private editorHost(page: WatchPage | undefined): WatchPagesEditorHost | undefined {
+    const draft = this.draft;
+    const hass = this.hass;
+    if (draft === undefined || hass === undefined || page === undefined) return undefined;
+    const pageId = watchPageId(page);
+    const document = draft.document;
+    const busy = this.busy || this.editingOff(page);
+    return {
+      hass,
+      icons: this.icons ?? NO_ICONS,
+      symbols: this.symbols,
+      document,
+      pageId,
+      page,
+      otherPages: listedWatchPages(document).filter((p) => !sameWatchId(p.id, pageId)),
+      busy,
+      uiState: this.uiState,
+      // A refused edit (`busy`) changes nothing, as a drag during a save
+      // does: a save that merges must not find the document moved under it.
+      apply: (next, options) => !busy && !this.busy && this.edit(next, this.scrub.options(options)),
+      endCoalesce: () => this.draft?.endCoalesce(),
+      selectTile: (id) => {
+        this.selectTile(id);
+        if (id !== undefined) this.revealTile = true;
+      },
+      requestUpdate: () => this.requestUpdate(),
+    };
+  }
+
+  private openAddTile(): void {
+    if (this.busy || this.editingOff()) return;
+    this.menuPageId = undefined;
+    this.addTileOpen = true;
+  }
+
   private undo(): void {
     if (this.draft?.undo()) this.requestUpdate();
   }
@@ -1021,6 +1096,7 @@ export class WaPageEditor extends LitElement {
     this.renderRoot.querySelector<HTMLDialogElement>("dialog.pe-ask")?.close();
     this.restoreAsk = undefined;
     this.deleteAsk = undefined;
+    this.addTileOpen = false;
   }
 
   private deletePage(): void {
@@ -1704,6 +1780,7 @@ export class WaPageEditor extends LitElement {
       ${this.renderBody(watches)}
       ${this.restoreAsk ? this.renderRestoreAsk(this.restoreAsk) : nothing}
       ${this.deleteAsk && draft ? this.renderDeleteAsk(this.deleteAsk, draft.document) : nothing}
+      ${this.addTileOpen ? this.renderAddTileDialog() : nothing}
     `;
   }
 
@@ -1719,7 +1796,7 @@ export class WaPageEditor extends LitElement {
       <span class="pe-tools-gap"></span>
       <button class="pe-btn" title="Go back to the copy Home Assistant holds. Undo brings the edits back." ?disabled=${!dirty || this.saving}
         @click=${() => this.discard()}>Discard</button>
-      <button class="pe-btn primary" title=${`Save (${MOD}S)`} ?disabled=${!dirty || this.saving}
+      <button class="pe-btn pe-primary" title=${`Save (${MOD}S)`} ?disabled=${!dirty || this.saving}
         @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
     </div>`;
   }
@@ -1852,7 +1929,7 @@ export class WaPageEditor extends LitElement {
           <button role="menuitem" @click=${() => this.startRename(id)}>Rename</button>
           <button role="menuitem" ?disabled=${index === 0} @click=${() => this.movePage(id, index - 1, true)}>Move up</button>
           <button role="menuitem" ?disabled=${index >= count - 1} @click=${() => this.movePage(id, index + 1, true)}>Move down</button>
-          <button role="menuitem" class="danger" @click=${() => this.askDelete(id)}>Delete…</button>
+          <button role="menuitem" class="pe-danger" @click=${() => this.askDelete(id)}>Delete…</button>
         </div>` : nothing}
     </div>`;
   }
@@ -1875,16 +1952,22 @@ export class WaPageEditor extends LitElement {
     const scale = this.narrow ? 1.25 : 1.5;
     const input = { page, pages, screen: watchCase.screen, states: this.hass?.states, icons: this.icons, scale };
     this.stageScreen = watchCase.screen;
+    const addOff = this.saving || asOnWatch;
     return html`<div class="pe-stage-head">
         <div class="pe-stage-title">
           <h3>${watchPageName(page)}</h3>
           <span class="pe-muted">${facts.join(" · ")}</span>
         </div>
-        ${headers ? html`<label class="pe-switch" title="Headers pull the rows below them up on the watch. Editing is off while this is on.">
-            <input type="checkbox" role="switch" .checked=${live(this.asOnWatch)}
-              @change=${(e: Event) => { this.asOnWatch = (e.target as HTMLInputElement).checked; this.cancelGestures(); }} />
-            <span>As on the watch</span>
-          </label>` : nothing}
+        <div class="pe-stage-acts">
+          ${headers ? html`<label class="pe-switch" title="Headers pull the rows below them up on the watch. Editing is off while this is on.">
+              <input type="checkbox" role="switch" .checked=${live(this.asOnWatch)}
+                @change=${(e: Event) => { this.asOnWatch = (e.target as HTMLInputElement).checked; this.cancelGestures(); }} />
+              <span>As on the watch</span>
+            </label>` : nothing}
+          ${smart ? nothing : html`<button class="pe-btn pe-add-tile" aria-haspopup="dialog" ?disabled=${addOff}
+              title=${this.saving ? SAVING_TEXT : asOnWatch ? "Turn off \"As on the watch\" to add a tile." : "Add a tile to this page"}
+              @click=${() => this.openAddTile()}>${uiIcon("plus")}<span>Add tile</span></button>`}
+        </div>
       </div>
       <div class="pe-stage-body">
         ${smart || asOnWatch ? renderWatchPagePreview(input) : this.renderEditScreen(page, input)}
@@ -1893,7 +1976,7 @@ export class WaPageEditor extends LitElement {
         : html`<p class="pe-muted pe-fold-text">${WATCH_SCREEN_FOLD_TEXT}</p>`}
       ${smart ? nothing
         : asOnWatch ? html`<p class="pe-muted">Shown as the watch draws it. Turn off "As on the watch" to edit.</p>`
-        : tiles === 0 ? html`<p class="pe-muted">No tiles yet. Tiles are added in the iPhone app for now.</p>`
+        : tiles === 0 ? html`<p class="pe-muted">No tiles yet.</p>`
         : html`<p class="pe-muted pe-hint">Drag a tile to move it, or onto another tile to swap the two. Drag an edge or the corner of the selected tile to resize it. Arrow keys move the selected tile.</p>`}`;
   }
 
@@ -2062,9 +2145,43 @@ export class WaPageEditor extends LitElement {
             @click=${() => this.sizeTile(p.colSpan, p.rowSpan)}>${p.name}</button>`;
         })}
       </div>
-      <button class="pe-btn danger" ?disabled=${off} title="Delete or Backspace" @click=${() => this.deleteTile()}>
+      ${this.renderTileSettingsFor(page, tile)}
+      <button class="pe-btn pe-danger" ?disabled=${off} title="Delete or Backspace" @click=${() => this.deleteTile()}>
         ${uiIcon("delete")}<span>Delete tile</span></button>
     </div>`;
+  }
+
+  /** The tile settings module's rows for the selected tile. */
+  private renderTileSettingsFor(page: WatchPage, tile: WatchPageTile): TemplateResult | typeof nothing {
+    const host = this.editorHost(page);
+    const tileId = tileIdOf(tile);
+    if (host === undefined || tileId === "") return nothing;
+    return renderTileSettings({ ...host, tileId, tile });
+  }
+
+  /** The Add tile dialog, the delete question's pattern: a native modal
+   * opened once when first drawn (`updated`), its state dropped on close. The
+   * body is the add tile module's. */
+  private renderAddTileDialog(): TemplateResult | typeof nothing {
+    const page = this.currentPage();
+    const host = this.editorHost(page);
+    if (page === undefined || host === undefined) return nothing;
+    const tileId = this.selectedTileId;
+    const tile = tileId === undefined ? undefined : this.tileOn(page, tileId);
+    const addHost: AddTileHost = {
+      ...host,
+      tileId: tile === undefined ? undefined : tileId,
+      tile,
+      close: () => this.closeAsk(),
+    };
+    return html`<dialog class="pe-ask pe-add-dialog" aria-labelledby="pe-add-title"
+      @close=${() => { this.addTileOpen = false; }}>
+      <div class="pe-ask-head">
+        <h3 id="pe-add-title">Add a tile to "${watchPageName(page)}"</h3>
+        <button type="button" class="pe-icon-btn" title="Close" aria-label="Close" @click=${() => this.closeAsk()}>${uiIcon("close")}</button>
+      </div>
+      ${renderAddTile(addHost)}
+    </dialog>`;
   }
 
   private renderPageCard(page: WatchPage): TemplateResult {
@@ -2094,7 +2211,7 @@ export class WaPageEditor extends LitElement {
         <span>Hidden on the watch</span>
       </label>
       <p class="pe-muted">${smart ? "A smart page: the watch fills it itself." : `${plural(tiles, "tile", "tiles")}, ${plural(rows, "row", "rows")}`}</p>
-      <button class="pe-btn danger" @click=${() => this.askDelete(id)}>${uiIcon("delete")}<span>Delete page…</span></button>
+      <button class="pe-btn pe-danger" @click=${() => this.askDelete(id)}>${uiIcon("delete")}<span>Delete page…</span></button>
     </div>`;
   }
 
@@ -2147,7 +2264,7 @@ export class WaPageEditor extends LitElement {
             </span>
             ${current
               ? html`<span class="pe-badge">Current</span>`
-              : html`<button class="pe-btn ${entry.revision === offer ? "primary" : ""}" ?disabled=${this.restoring || dirty}
+              : html`<button class="pe-btn ${entry.revision === offer ? "pe-primary" : ""}" ?disabled=${this.restoring || dirty}
                   title=${dirty ? "Save or discard your edits first." : nothing}
                   @click=${() => this.askRestore(entry)}>Restore</button>`}
           </li>`;
@@ -2173,7 +2290,7 @@ export class WaPageEditor extends LitElement {
       <p>It is saved again as a new revision${record ? `, after revision ${record.revision}` : ""}. The copy shown now stays in the earlier saves. The iPhone picks it up the next time it checks and sends it to the watch.</p>
       <div class="pe-ask-foot">
         <button class="pe-btn" ?disabled=${this.restoring} @click=${() => this.closeAsk()}>Cancel</button>
-        <button class="pe-btn primary" ?disabled=${this.restoring} @click=${() => void this.restore()}>${this.restoring ? "Restoring…" : "Restore"}</button>
+        <button class="pe-btn pe-primary" ?disabled=${this.restoring} @click=${() => void this.restore()}>${this.restoring ? "Restoring…" : "Restore"}</button>
       </div>
     </dialog>`;
   }
@@ -2214,12 +2331,16 @@ export class WaPageEditor extends LitElement {
       <p class="pe-muted">Quick menus and complications set up in the iPhone app may also open this page. Home Assistant cannot see those.</p>
       <div class="pe-ask-foot">
         <button class="pe-btn" @click=${() => this.closeAsk()}>Cancel</button>
-        <button class="pe-btn primary danger" @click=${() => this.deletePage()}>Delete page</button>
+        <button class="pe-btn pe-primary pe-danger" @click=${() => this.deletePage()}>Delete page</button>
       </div>
     </dialog>`;
   }
 
-  static override styles = [watchPagePreviewStyles, css`
+  // The panel's form rules first, so the field rows of `editors.ts` look as
+  // they do in the panel; this element's own rules come after and win the
+  // ties. The two modules' rules come last, so a module can size its own
+  // parts of this element (its dialog, say) without outranking anything.
+  static override styles = [formStyles, watchPagePreviewStyles, css`
     :host {
       display: block;
       flex: 1 1 auto;
@@ -2236,7 +2357,8 @@ export class WaPageEditor extends LitElement {
     h2, h3, p { margin: 0; }
     h2 { font-size: 20px; font-weight: 650; }
     h3 { font-size: 13px; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: var(--wa-muted); }
-    code { font-size: 12px; overflow-wrap: anywhere; }
+    /* The browser's own monospace, not the shared sheet's family. */
+    code { font-family: monospace; font-size: 12px; overflow-wrap: anywhere; }
     .pe-muted { color: var(--wa-muted); font-size: 13px; }
     .pe-warn { color: var(--wa-amber); font-size: 13px; font-weight: 600; }
 
@@ -2345,7 +2467,7 @@ export class WaPageEditor extends LitElement {
     .pe-menu > button:hover:not(:disabled) { background: var(--wa-field); }
     .pe-menu > button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .pe-menu > button:disabled { opacity: .45; cursor: default; }
-    .pe-menu > button.danger { color: var(--wa-need); }
+    .pe-menu > button.pe-danger { color: var(--wa-need); }
     .pe-drop-line {
       position: absolute; left: 0; right: 0; height: 3px; margin-top: -1px; border-radius: 2px;
       background: var(--wa-accent); pointer-events: none;
@@ -2361,6 +2483,7 @@ export class WaPageEditor extends LitElement {
     /* The stage. */
     .pe-stage { align-items: stretch; }
     .pe-stage-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 12px; }
+    .pe-stage-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
     .pe-stage-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
     .pe-stage-head h3 { font-size: 16px; text-transform: none; letter-spacing: 0; color: var(--wa-ink); }
     /* The picture keeps its size and the card scrolls sideways under it on a
@@ -2439,8 +2562,12 @@ export class WaPageEditor extends LitElement {
     .pe-field > input {
       width: 100%; min-height: 32px; padding: 0 8px; border: 1px solid var(--wa-line-strong); border-radius: var(--wa-r-sm, 8px);
       background: var(--wa-input, var(--wa-card)); color: var(--wa-ink); font: inherit; font-size: 14px;
+      transition: all 0s;
     }
-    .pe-field > input:focus { outline: none; box-shadow: var(--wa-ring); border-color: var(--wa-sel-ring); }
+    /* The shared sheet's input rules tie with these or outrank them: no
+       hover tint, and the focus ring still wins while hovered. */
+    .pe-field > input:hover:not(:disabled) { border-color: var(--wa-line-strong); }
+    .pe-field > input:focus:not(:disabled) { outline: none; box-shadow: var(--wa-ring); border-color: var(--wa-sel-ring); }
     .pe-field > input:disabled { opacity: .55; }
     .pe-presets { display: flex; flex-wrap: wrap; gap: 6px; }
     .pe-chip {
@@ -2477,11 +2604,13 @@ export class WaPageEditor extends LitElement {
     .pe-btn:hover:not(:disabled) { background: var(--wa-panel); }
     .pe-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .pe-btn:disabled { opacity: .55; cursor: default; }
-    .pe-btn.primary { border-color: transparent; background: var(--wa-primary-bg); color: var(--wa-primary-ink); }
-    .pe-btn.primary:hover:not(:disabled) { background: var(--wa-primary-bg); filter: brightness(1.1); }
-    .pe-btn.danger { color: var(--wa-need); align-self: flex-start; }
-    .pe-btn.primary.danger { color: #fff; background: var(--wa-need); align-self: auto; }
-    .pe-btn.primary.danger:hover:not(:disabled) { background: var(--wa-need); }
+    /* Not "primary" and "danger": the shared sheet's button.primary and
+       button.danger outrank .pe-btn and would restyle these. */
+    .pe-btn.pe-primary { border-color: transparent; background: var(--wa-primary-bg); color: var(--wa-primary-ink); }
+    .pe-btn.pe-primary:hover:not(:disabled) { background: var(--wa-primary-bg); filter: brightness(1.1); }
+    .pe-btn.pe-danger { color: var(--wa-need); align-self: flex-start; }
+    .pe-btn.pe-primary.pe-danger { color: #fff; background: var(--wa-need); align-self: auto; }
+    .pe-btn.pe-primary.pe-danger:hover:not(:disabled) { background: var(--wa-need); }
 
     dialog.pe-ask {
       width: min(460px, calc(100vw - 32px)); padding: 20px; border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg, 16px);
@@ -2494,14 +2623,22 @@ export class WaPageEditor extends LitElement {
     dialog.pe-ask p.pe-muted { font-size: 13px; }
     .pe-ask-list { margin-top: 4px; padding-left: 20px; font-size: 14px; line-height: 1.45; }
     .pe-check { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
-    .pe-check > input { width: 16px; height: 16px; margin: 0; accent-color: var(--wa-accent); }
+    /* A plain tick box, not the shared sheet's switch: everything back to
+       the browser's own, in every state. The :is() only lifts the rule to
+       the weight of the shared sheet's :checked and :focus-visible rules. */
+    .pe-check > input:is(*, :checked, :focus-visible) { all: revert; width: 16px; height: 16px; margin: 0; accent-color: var(--wa-accent); }
+    .pe-check > input::after { content: none; }
     .pe-ask-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 6px; }
+    /* The Add tile dialog (dialog.pe-add-dialog): its title and a close
+       button, then the module's body. */
+    .pe-ask-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+    .pe-ask-head > .pe-icon-btn { margin: -4px -6px 0 0; }
 
     :host([narrow]) { padding: 12px; }
     @container (max-width: 820px) {
       .pe-hint { display: none; }
     }
-  `];
+  `, tileSettingsStyles, addTileStyles];
 }
 
 if (!customElements.get("wa-page-editor")) {

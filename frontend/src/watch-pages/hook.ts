@@ -106,6 +106,9 @@ export interface WatchPagesViewInput {
   ownerId: string | undefined;
   narrow: boolean;
   icons: IconProvider;
+  /** Bumped by the panel whenever `icons` has something new to draw, so the
+   * editor (which the provider does not tell) draws again. */
+  iconsTick: number;
   /** Whether the bar offers Home Assistant's menu, as the panel's own does on
    * a phone or with the sidebar hidden. */
   menu: boolean;
@@ -134,7 +137,7 @@ export function renderWatchPagesView(input: WatchPagesViewInput): TemplateResult
     ${input.dialogs}
     ${ready
       ? html`<wa-page-editor .hass=${input.hass} .owners=${input.owners} .ownerId=${input.ownerId}
-          .icons=${input.icons} ?narrow=${input.narrow}></wa-page-editor>`
+          .icons=${input.icons} .iconsTick=${input.iconsTick} ?narrow=${input.narrow}></wa-page-editor>`
       : html`<div class="wp-loading">${loadFailed
           ? html`<span>The page editor did not load. Reload the page to try again.</span>`
           : "Loading…"}</div>`}`;
