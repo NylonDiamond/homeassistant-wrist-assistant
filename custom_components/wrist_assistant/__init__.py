@@ -62,6 +62,7 @@ from .snapshot_aspect_store import SnapshotAspectStore
 from .snapshot_crop_store import SnapshotCropStore
 from .snapshot_stream_store import SnapshotStreamStore
 from .watch_config_store import WatchConfigStore
+from .watch_config_ws import async_register_watch_config_commands
 from .notifications import NotificationTokenStore, TokenEntry
 from .v1_api_views import (
     MusicAssistantPlayersView,
@@ -820,6 +821,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         # Panel-facing complication editor API (admin-only mutations).
         # Registered once per HA process, like the HTTP views below.
         async_register_websocket_commands(hass)
+        # The panel's Watch settings view (admin only), beside the editor's.
+        async_register_watch_config_commands(hass)
         # v2 transport: /v2/* HMAC for all watch traffic. WARegisterSecretView
         # is the one bearer-authed exception — iOS posts to it once to
         # provision the per-watch secret, and the secret never leaves iOS

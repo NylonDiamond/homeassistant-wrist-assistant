@@ -9,9 +9,14 @@ but never registered is invisible: the frontend and the test suite get
 that loses its ``require_admin`` decorator becomes callable by any logged-in
 non-admin user, which no test hitting a real box would notice.
 
-Every command in the module is admin-only, reads included: the panel is
+Every command in both modules is admin-only, reads included: the panel is
 admin-only, and the reads hand out the slot pool of every watch in the house
-along with rendered templates. The one exception is listed in ``_NOT_ADMIN``.
+along with rendered templates, or a watch's whole page config. The one
+exception is listed in ``_NOT_ADMIN``.
+
+Two modules hold commands: ``complication_ws.py`` (the editor) and
+``watch_config_ws.py`` (the Watch settings view). Each is checked on its own,
+since each has its own registration function.
 """
 
 from __future__ import annotations
@@ -19,12 +24,17 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-_MODULE = (
-    Path(__file__).resolve().parents[1]
-    / "custom_components"
-    / "wrist_assistant"
-    / "complication_ws.py"
-)
+import pytest
+
+_PKG = Path(__file__).resolve().parents[1] / "custom_components" / "wrist_assistant"
+_MODULE = _PKG / "complication_ws.py"
+_WATCH_CONFIG_MODULE = _PKG / "watch_config_ws.py"
+
+# The Watch settings view's two commands. Admin-only like every other.
+_WATCH_CONFIG_ADMIN_ONLY = {
+    "ws_watch_config_get",
+    "ws_watch_config_save",
+}
 
 # Every command this module defines. All of them are admin-only; the set is
 # spelled out rather than derived so that adding a command without deciding
@@ -63,8 +73,16 @@ _NOT_ADMIN = {
 }
 
 
-def _tree() -> ast.Module:
-    return ast.parse(_MODULE.read_text(), filename=str(_MODULE))
+_MODULES = [_MODULE, _WATCH_CONFIG_MODULE]
+# Per module: the commands it must define, and which of them skip the gate.
+_EXPECTED = {
+    _MODULE.name: (_ADMIN_ONLY | _NOT_ADMIN, _NOT_ADMIN),
+    _WATCH_CONFIG_MODULE.name: (_WATCH_CONFIG_ADMIN_ONLY, set()),
+}
+
+
+def _tree(module: Path = _MODULE) -> ast.Module:
+    return ast.parse(module.read_text(), filename=str(module))
 
 
 _Func = (ast.FunctionDef, ast.AsyncFunctionDef)
@@ -109,8 +127,9 @@ def _registered_names(tree: ast.Module) -> set[str]:
     return registered
 
 
-def test_every_command_is_registered() -> None:
-    tree = _tree()
+@pytest.mark.parametrize("module", _MODULES, ids=[m.name for m in _MODULES])
+def test_every_command_is_registered(module: Path) -> None:
+    tree = _tree(module)
     defined = {node.name for node in _command_functions(tree)}
     missing = sorted(defined - _registered_names(tree))
     assert not missing, (
@@ -118,20 +137,30 @@ def test_every_command_is_registered() -> None:
     )
 
 
-def test_every_command_requires_admin() -> None:
-    tree = _tree()
+@pytest.mark.parametrize("module", _MODULES, ids=[m.name for m in _MODULES])
+def test_every_command_requires_admin(module: Path) -> None:
+    tree = _tree(module)
+    _expected, not_admin = _EXPECTED[module.name]
     offenders = sorted(
         node.name
         for node in _command_functions(tree)
-        if node.name not in _NOT_ADMIN
+        if node.name not in not_admin
         and "require_admin" not in _decorator_names(node)
     )
     assert not offenders, "missing @require_admin: " + ", ".join(offenders)
 
 
-def test_admin_only_commands_exist() -> None:
+@pytest.mark.parametrize("module", _MODULES, ids=[m.name for m in _MODULES])
+def test_admin_only_commands_exist(module: Path) -> None:
     """Guards the lists above against a rename that would silently empty
     them, and against a new command nobody made a gating decision about."""
-    defined = {node.name for node in _command_functions(_tree())}
-    expected = _ADMIN_ONLY | _NOT_ADMIN
+    defined = {node.name for node in _command_functions(_tree(module))}
+    expected, _not_admin = _EXPECTED[module.name]
     assert defined == expected, sorted(defined ^ expected)
+
+
+def test_the_watch_config_commands_are_registered_at_setup() -> None:
+    """The module's own registration function is no use if setup never calls
+    it: the panel would get ``unknown_command`` with nothing in the log."""
+    source = (_PKG / "__init__.py").read_text()
+    assert "async_register_watch_config_commands(hass)" in source

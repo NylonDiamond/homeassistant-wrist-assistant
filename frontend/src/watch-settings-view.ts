@@ -1,0 +1,509 @@
+// The Watch settings dialog: one watch's simple behavior settings, edited in
+// the panel and saved to the copy Home Assistant keeps for the iPhone.
+//
+// It is a controller rather than an element of its own so it draws inside the
+// panel's shadow root and wears the panel's own rows: the inspector's tinted
+// cards, its switches, segmented choices, selects, color and entity fields, and
+// the header's sync pill for where a save has got to. Everything that decides
+// something lives in `watch-settings.ts`, which the tests read without a DOM.
+//
+// The path a change takes: the panel saves a new revision, the iPhone app
+// pulls it the next time it checks (launch, foreground, reconnect) and sends it
+// to the watch the way it sends any settings change. There is no live line, so
+// while a save waits the dialog asks the store again now and then and turns
+// the pill green once the phone has it.
+
+import { css, html, nothing, type ReactiveController, type ReactiveControllerHost, type TemplateResult } from "lit";
+import { checkField, colorField, entityField, entityRefFor, segField, selectField } from "./editors.js";
+import { type HassLike, type OwnerSummary, type WatchConfigRecord, fetchWatchConfig, saveWatchConfig } from "./ha-api.js";
+import { SECTION_COLOR } from "./kinds.js";
+import { peopleOf } from "./people.js";
+import { personColorVar } from "./pickerRows.js";
+import { agoWords } from "./send-state.js";
+import { type UiIconName, uiIcon } from "./ui-icons.js";
+import {
+  type CatalogSection,
+  type CatalogSetting,
+  type SettingValue,
+  WATCH_SETTINGS_CATALOG,
+  buildSaveDocument,
+  conflictRevision,
+  deliveryState,
+  dirtyKeys,
+  errorCode,
+  formValues,
+  initialWatch,
+  optionsFor,
+  sectionRuns,
+  settingValue,
+  settingsWatches,
+  withEdit,
+} from "./watch-settings.js";
+
+/** How often an open dialog asks whether the iPhone has collected a save. */
+const DELIVERY_POLL_MS = 15_000;
+
+/** Each card's mark and tint, from the inspector's own palette. */
+const SECTION_LOOK: Record<string, { icon: UiIconName; color: string }> = {
+  connection: { icon: "globe", color: SECTION_COLOR.place },
+  interaction: { icon: "tap", color: SECTION_COLOR.tap },
+  navigation: { icon: "pages", color: SECTION_COLOR.numbers },
+  camera: { icon: "image", color: SECTION_COLOR.look },
+};
+
+/** What the plan asks the view to say when the watch has no record yet. */
+const NO_RECORD_TEXT = "Open the iPhone app once and turn on Save pages to Home Assistant in Developer settings.";
+
+interface Note {
+  text: string;
+  kind: "warn" | "err";
+}
+
+/** A question the foot asks before edits are thrown away. */
+interface Confirm {
+  text: string;
+  label: string;
+  run: () => void;
+}
+
+type PanelHost = ReactiveControllerHost & { renderRoot: ParentNode };
+
+export class WatchSettings implements ReactiveController {
+  private open = false;
+  private hass?: HassLike;
+  private ownerId?: string;
+  private record?: WatchConfigRecord;
+  private loading = false;
+  private loadError?: string;
+  private edits: ReadonlyMap<string, SettingValue> = new Map();
+  private saving = false;
+  private note?: Note;
+  private confirm?: Confirm;
+  /** Sections whose help is hidden. Help starts shown: this is a form people
+   * fill once, and its short titles ("Delay", "Debounce") need their line. */
+  private helpOff: ReadonlySet<string> = new Set();
+  /** Bumped by every load, so a reply that arrives after another watch was
+   * picked, or after a newer load, is dropped. */
+  private loadSeq = 0;
+  private pollTimer?: number;
+
+  constructor(private readonly host: PanelHost) {
+    host.addController(this);
+  }
+
+  hostDisconnected(): void {
+    this.stopPolling();
+  }
+
+  /** The dialog is only in the tree while open, and a native dialog needs
+   * showModal() for its backdrop, focus trap and Escape. */
+  hostUpdated(): void {
+    if (!this.open) return;
+    const dialog = this.host.renderRoot.querySelector<HTMLDialogElement>("dialog.ws-dialog");
+    if (dialog && !dialog.open) dialog.showModal();
+  }
+
+  private changed(): void {
+    this.host.requestUpdate();
+  }
+
+  // ── opening, loading, saving ───────────────────────────────────────────
+
+  /** Open on the watch being edited when it is one, else the home's first. */
+  show(hass: HassLike, owners: readonly OwnerSummary[], current: string | undefined): void {
+    this.hass = hass;
+    const id = initialWatch(settingsWatches(owners), current);
+    if (id === undefined) return;
+    this.open = true;
+    this.confirm = undefined;
+    this.note = undefined;
+    this.changed();
+    void this.load(id);
+  }
+
+  private async load(ownerId: string, keepNote = false): Promise<void> {
+    const hass = this.hass;
+    if (!hass) return;
+    const seq = ++this.loadSeq;
+    this.ownerId = ownerId;
+    this.record = undefined;
+    this.edits = new Map();
+    this.loading = true;
+    this.loadError = undefined;
+    if (!keepNote) this.note = undefined;
+    this.stopPolling();
+    this.changed();
+    try {
+      const record = await fetchWatchConfig(hass, ownerId, "behavior");
+      if (seq !== this.loadSeq) return;
+      this.record = record;
+    } catch (err) {
+      if (seq !== this.loadSeq) return;
+      this.loadError = errText(err);
+    }
+    this.loading = false;
+    this.pollIfWaiting();
+    this.changed();
+  }
+
+  private async save(): Promise<void> {
+    const hass = this.hass;
+    const ownerId = this.ownerId;
+    const record = this.record;
+    if (!hass || ownerId === undefined || record?.document === undefined || this.saving) return;
+    if (dirtyKeys(record.document, this.edits).length === 0) return;
+    const document = buildSaveDocument(record.document, this.edits);
+    this.saving = true;
+    this.note = undefined;
+    this.changed();
+    try {
+      const reply = await saveWatchConfig(hass, ownerId, "behavior", record.revision, document);
+      if (ownerId !== this.ownerId || !this.open) return;
+      // The store keeps the document as sent, so what was sent is the new
+      // revision. Delivery stays where it was: the phone has not seen it yet.
+      this.record = {
+        ...record,
+        revision: reply.revision,
+        updated_at: new Date().toISOString(),
+        updated_by: "panel",
+        document,
+      };
+      this.edits = new Map();
+      this.pollIfWaiting();
+    } catch (err) {
+      if (ownerId !== this.ownerId || !this.open) return;
+      const code = errorCode(err);
+      if (code === "conflict") {
+        const stored = conflictRevision(err);
+        await this.load(ownerId, true);
+        this.note = {
+          kind: "warn",
+          text: `Your changes were not saved. These settings changed somewhere else${stored === undefined ? "" : ` (now revision ${stored})`}, so the newest copy is shown. Make your changes again on top of it.`,
+        };
+      } else if (code === "no_record") {
+        await this.load(ownerId, true);
+        this.note = { kind: "warn", text: "Your changes were not saved. Home Assistant no longer holds settings for this watch." };
+      } else {
+        this.note = { kind: "err", text: `Could not save: ${errText(err)}` };
+      }
+    } finally {
+      this.saving = false;
+      this.changed();
+    }
+  }
+
+  /**
+   * While a save waits for the phone, ask the store again now and then.
+   *
+   * Only the delivery fields are taken from the answer while the revision is
+   * the one shown. A newer revision means the phone wrote since, and with no
+   * edits in the form it simply replaces what is shown.
+   */
+  private pollIfWaiting(): void {
+    this.stopPolling();
+    if (!this.open || deliveryState(this.record) !== "waiting") return;
+    this.pollTimer = window.setTimeout(() => void this.poll(), DELIVERY_POLL_MS);
+  }
+
+  private async poll(): Promise<void> {
+    this.pollTimer = undefined;
+    const hass = this.hass;
+    const ownerId = this.ownerId;
+    const shown = this.record;
+    if (!hass || ownerId === undefined || shown === undefined || !this.open) return;
+    try {
+      const fresh = await fetchWatchConfig(hass, ownerId, "behavior");
+      if (ownerId !== this.ownerId || this.record !== shown || !this.open) return;
+      if (fresh.revision === shown.revision) {
+        this.record = { ...shown, delivered_revision: fresh.delivered_revision, delivered_at: fresh.delivered_at };
+      } else if (this.edits.size === 0 && !this.saving) {
+        this.record = fresh;
+      }
+      this.changed();
+    } catch {
+      // A missed check is not news: the next one, or reopening, will tell.
+    }
+    this.pollIfWaiting();
+  }
+
+  private stopPolling(): void {
+    if (this.pollTimer !== undefined) window.clearTimeout(this.pollTimer);
+    this.pollTimer = undefined;
+  }
+
+  // ── closing and switching, which may cost edits ────────────────────────
+
+  private get dirty(): boolean {
+    return dirtyKeys(this.record?.document, this.edits).length > 0;
+  }
+
+  /** Run `then` now, or once the foot has asked about the unsaved edits. */
+  private guard(label: string, then: () => void): void {
+    if (!this.dirty) { then(); return; }
+    this.confirm = { text: "Your changes to these settings are not saved.", label, run: then };
+    this.changed();
+  }
+
+  private close(): void {
+    this.host.renderRoot.querySelector<HTMLDialogElement>("dialog.ws-dialog")?.close();
+  }
+
+  /** The dialog has gone, by Close, Escape or Discard: forget the visit. */
+  private closed(): void {
+    this.open = false;
+    this.loadSeq++;
+    this.stopPolling();
+    this.record = undefined;
+    this.edits = new Map();
+    this.confirm = undefined;
+    this.note = undefined;
+    this.changed();
+  }
+
+  private pickWatch(ownerId: string): void {
+    if (ownerId === this.ownerId) return;
+    this.guard("Discard and switch", () => {
+      this.confirm = undefined;
+      void this.load(ownerId);
+    });
+  }
+
+  private edit(setting: CatalogSetting, value: SettingValue): void {
+    this.edits = withEdit(this.edits, this.record?.document, setting, value);
+    this.confirm = undefined;
+    this.changed();
+  }
+
+  private toggleHelp(sectionId: string): void {
+    const next = new Set(this.helpOff);
+    if (next.has(sectionId)) next.delete(sectionId);
+    else next.add(sectionId);
+    this.helpOff = next;
+    this.changed();
+  }
+
+  // ── drawing ────────────────────────────────────────────────────────────
+
+  /** The top bar's way in. Administrators only, since both commands are
+   * theirs, and only in a home with a watch to set up. */
+  renderButton(hass: HassLike, owners: readonly OwnerSummary[], current: string | undefined): TemplateResult | typeof nothing {
+    if (!hass.user?.is_admin || settingsWatches(owners).length === 0) return nothing;
+    return html`<button class="tb-btn tb-watch" aria-haspopup="dialog" aria-expanded=${this.open ? "true" : "false"}
+      title="How the watch behaves: gestures, pages, cameras and connection"
+      @click=${() => this.show(hass, owners, current)}>${uiIcon("watch")}<span>Watch settings</span></button>`;
+  }
+
+  render(hass: HassLike, owners: readonly OwnerSummary[]): TemplateResult | typeof nothing {
+    if (!this.open) return nothing;
+    this.hass = hass;
+    const watches = settingsWatches(owners);
+    const owner = watches.find((w) => w.owner_watch_id === this.ownerId);
+    const name = owner ? watchName(owner, watches) : "Watch";
+    return html`<dialog class="ws-dialog xf" aria-label="Watch settings"
+      @cancel=${(e: Event) => {
+        // Escape with unsaved edits asks first, the way Close does.
+        if (!this.dirty) return;
+        e.preventDefault();
+        this.guard("Discard and close", () => this.close());
+      }}
+      @close=${() => this.closed()}>
+      <div class="xf-head">
+        <div class="xf-t"><h2>Watch settings</h2><span>${this.headLine(name)}</span></div>
+        <button class="icon" title="Close" aria-label="Close" @click=${() => this.guard("Discard and close", () => this.close())}>${uiIcon("close")}</button>
+      </div>
+      ${watches.length > 1 ? this.renderTabs(watches, owners) : nothing}
+      <div class="xfer-body ws-body">
+        ${this.note ? html`<div class="banner ${this.note.kind} ws-note" role="alert"><span>${this.note.text}</span>
+          <button class="link" @click=${() => { this.note = undefined; this.changed(); }}>Dismiss</button></div>` : nothing}
+        ${this.renderBody(hass)}
+      </div>
+      ${this.renderFoot()}
+    </dialog>`;
+  }
+
+  /** Under the title: which watch, and which revision of its settings. */
+  private headLine(name: string): string {
+    const r = this.record;
+    if (r === undefined || r.revision <= 0) return name;
+    const by = r.updated_by === "panel" ? "saved here" : "from the iPhone";
+    const at = r.updated_at ? Date.parse(r.updated_at) : NaN;
+    const when = Number.isNaN(at) ? "" : ` ${agoWords(Math.max(0, (Date.now() - at) / 1000))}`;
+    return `${name} · revision ${r.revision}, ${by}${when}`;
+  }
+
+  /** One tab per watch, as the picker draws its device tabs: the watch
+   * glyph and the count in the person's color, the name in ink. */
+  private renderTabs(watches: readonly OwnerSummary[], owners: readonly OwnerSummary[]) {
+    const people = peopleOf(owners);
+    return html`<div class="pk-tabs ws-tabs" role="tablist" aria-label="Watches">
+      ${watches.map((w) => {
+        const index = people.findIndex((p) => p.owners.some((o) => o.owner_watch_id === w.owner_watch_id));
+        const color = personColorVar(index);
+        const on = w.owner_watch_id === this.ownerId;
+        return html`<button type="button" role="tab" class="pk-tab ${on ? "on" : ""}" aria-selected=${on ? "true" : "false"}
+          style=${color ? `--pk-person: ${color}` : nothing} ?disabled=${this.saving}
+          title=${people[index]?.label ? `${people[index]!.label}'s watch` : nothing}
+          @click=${() => this.pickWatch(w.owner_watch_id)}>
+          <span class="pk-tab-glyph" aria-hidden="true">${uiIcon("watch")}</span>
+          <span class="pk-tab-name">${watchName(w, watches)}</span>
+        </button>`;
+      })}
+    </div>`;
+  }
+
+  private renderBody(hass: HassLike) {
+    if (this.loading) return html`<div class="empty">Loading…</div>`;
+    if (this.loadError !== undefined) {
+      const id = this.ownerId;
+      return html`<div class="xf-lead warn">${uiIcon("info")}<span>Could not read this watch's settings: ${this.loadError}</span></div>
+        ${id === undefined ? nothing : html`<button class="small ws-retry" @click=${() => void this.load(id)}>Try again</button>`}`;
+    }
+    const record = this.record;
+    if (record === undefined) return nothing;
+    if (record.revision <= 0 || record.document === undefined) {
+      return html`<div class="xf-lead">${uiIcon("info")}<span><b>No settings from this watch yet.</b> ${NO_RECORD_TEXT}</span></div>`;
+    }
+    const values = formValues(record.document, this.edits);
+    return html`${WATCH_SETTINGS_CATALOG.sections.map((section) => this.renderSection(hass, section, values))}`;
+  }
+
+  /** One catalog section as an inspector card that is always open: the
+   * inspector's mark, title and "?" for its help. */
+  private renderSection(hass: HassLike, section: CatalogSection, values: ReadonlyMap<string, SettingValue>) {
+    const look = SECTION_LOOK[section.id];
+    const help = !this.helpOff.has(section.id);
+    const helpLabel = help ? `Hide the help in ${section.title}` : `Show help for ${section.title}`;
+    const runs = sectionRuns(section, values);
+    return html`<section class="sec" data-sec=${`ws-${section.id}`} data-open="true" data-help=${help ? "on" : "off"}
+      style=${look ? `--c:${look.color}` : nothing}>
+      <div class="sec-h pinned">
+        <span class="swatch">${uiIcon(look?.icon ?? "content")}</span>
+        <span class="tt"><h4>${section.title}</h4></span>
+        <button type="button" class="sec-help ${help ? "on" : ""}" aria-pressed=${help ? "true" : "false"} title=${helpLabel} aria-label=${helpLabel}
+          @click=${() => this.toggleHelp(section.id)}>?</button>
+      </div>
+      <div class="sec-b">
+        ${runs.map((run) => html`${this.renderRow(hass, run.setting, values)}${run.dependents.length === 0
+          ? nothing
+          : html`<div class="fgroup">${run.dependents.map((s) => this.renderRow(hass, s, values))}</div>`}`)}
+      </div>
+    </section>`;
+  }
+
+  /** One setting with the panel's own field for its kind, and its help line
+   * under it. Every field offers the reset dot back to the watch's default. */
+  private renderRow(hass: HassLike, setting: CatalogSetting, values: ReadonlyMap<string, SettingValue>) {
+    const value = values.get(setting.key) ?? settingValue(setting, undefined);
+    const set = (v: SettingValue) => this.edit(setting, v);
+    const helpLine = setting.help ? html`<div class="hint">${setting.help}</div>` : nothing;
+    switch (setting.type) {
+      case "bool":
+        return html`${checkField(setting.label, value === true, set, setting.default === true)}${helpLine}`;
+      case "color":
+        return html`${colorField(setting.label, String(value), (v) => { if (v !== undefined) set(v); }, false, String(setting.default))}${helpLine}`;
+      case "entity": {
+        const id = String(value);
+        const ref = id === "" ? { entityId: "", displayName: "", domain: "" } : entityRefFor(hass, id);
+        return html`${entityField({ hass }, setting.label, ref, (next) => set(next.entityId),
+          `ws:${this.ownerId ?? ""}:${setting.key}`, setting.domain === undefined ? {} : { domain: setting.domain })}${helpLine}`;
+      }
+      case "enum": {
+        const options = optionsFor(setting, value).map((o): [string, string] => [o.value, o.label]);
+        const def = String(setting.default);
+        // The panel's own rule: up to four choices as a row of buttons, a
+        // longer list as a menu.
+        return html`${options.length <= 4
+          ? segField(setting.label, String(value), options, (v) => set(v), { def })
+          : selectField(setting.label, String(value), options, (v) => set(v), { def })}${helpLine}`;
+      }
+    }
+  }
+
+  /** Where the settings have got to on the left, Close and Save on the right;
+   * or, before edits are thrown away, the question and its two answers. */
+  private renderFoot() {
+    const confirm = this.confirm;
+    if (confirm) {
+      return html`<div class="xfer-foot">
+        <span class="xf-sub">${confirm.text}</span>
+        <span class="spacer"></span>
+        <button class="small" @click=${() => { this.confirm = undefined; this.changed(); }}>Keep editing</button>
+        <button class="primary" @click=${() => { this.confirm = undefined; confirm.run(); }}>${confirm.label}</button>
+      </div>`;
+    }
+    const record = this.record;
+    const changes = dirtyKeys(record?.document, this.edits).length;
+    const canSave = changes > 0 && !this.saving && record?.document !== undefined;
+    return html`<div class="xfer-foot">
+      ${changes > 0
+        ? html`<span class="xf-sub">${changes} unsaved ${changes === 1 ? "change" : "changes"}</span>`
+        : this.renderDelivery(record)}
+      <span class="spacer"></span>
+      <button class="small" @click=${() => this.guard("Discard and close", () => this.close())}>Close</button>
+      <button class="primary" ?disabled=${!canSave}
+        title=${changes > 0 ? "Save these settings for the iPhone to send to the watch" : "Nothing to save"}
+        @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
+    </div>`;
+  }
+
+  /** The header's sync pill, saying whether the iPhone has the revision
+   * shown: green once it has, amber while a save waits for it. */
+  private renderDelivery(record: WatchConfigRecord | undefined) {
+    const state = deliveryState(record);
+    if (state === "none" || record === undefined) return nothing;
+    if (state === "delivered") {
+      return html`<span class="tb-sync ok" title=${`The iPhone has revision ${record.revision} and passes it to the watch.`}>
+        <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">On the iPhone</span>
+      </span>`;
+    }
+    return html`<span class="tb-sync warn sending"
+      title=${`Saved as revision ${record.revision}. The iPhone picks it up the next time Wrist Assistant opens or comes back to the front, then sends it to the watch.`}>
+      <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">Waiting for the iPhone</span>
+      <span class="tb-sync-n">open the app to send it now</span>
+    </span>`;
+  }
+}
+
+/** A watch's name in the tabs and the head. Both real watches report
+ * themselves as "Apple Watch", so a name two watches share takes the paired
+ * phone's, the way the panel's device list tells them apart. */
+function watchName(watch: OwnerSummary, watches: readonly OwnerSummary[]): string {
+  const name = watch.device_name ?? watch.owner_watch_id;
+  const shared = watches.filter((w) => (w.device_name ?? w.owner_watch_id) === name).length > 1;
+  return shared && watch.paired_iphone_name ? `${name} (${watch.paired_iphone_name})` : name;
+}
+
+function errText(err: unknown): string {
+  return String((err as { message?: string })?.message ?? err);
+}
+
+/** The dialog's own rules, added to the panel's sheet. Everything else it
+ * wears (cards, rows, tabs, pill, head and foot) is the panel's. */
+export const watchSettingsStyles = css`
+  /* The top bar's button: the watch glyph and its words on one line. */
+  button.tb-btn.tb-watch { display: inline-flex; align-items: center; gap: 6px; padding: 0 11px 0 9px; }
+  button.tb-btn.tb-watch svg.ui-icon { width: 14px; height: 14px; }
+  /* A fixed height, like the picker's, so moving between watches does not
+     resize the dialog under the pointer. */
+  dialog.ws-dialog { width: min(660px, calc(100vw - 32px)); height: min(860px, calc(100dvh - 40px)); }
+  @media (max-width: 640px) {
+    dialog.ws-dialog { width: calc(100vw - 16px); height: calc(100dvh - 16px); }
+  }
+  /* The cards sit closer than the dialog's usual blocks, and the title column
+     is wider than the inspector's: these titles are whole phrases. The help
+     column is set again beside it, because the panel's is worked out from the
+     panel's own title width. */
+  .ws-body { --wa-lab: 156px; --wa-col: 164px; gap: 8px; }
+  .ws-body > .sec { margin: 0; }
+  @container xfer (max-width: 440px) {
+    .ws-body .sec { --wa-lab: 104px; --wa-col: 112px; }
+  }
+  .ws-body > .ws-note { display: flex; align-items: center; gap: 10px; }
+  .ws-body > .ws-note > span { flex: 1; min-width: 0; }
+  .ws-body > button.ws-retry { align-self: flex-start; }
+  /* The indicator has no opacity, so the color row drops the percent box. */
+  .ws-body .color-box .alpha { display: none; }
+  .ws-tabs { padding: 0 8px; }
+  .ws-tabs .pk-tab:disabled { cursor: default; opacity: .6; }
+  .xfer-foot .tb-sync { min-width: 0; flex: 0 1 auto; }
+`;

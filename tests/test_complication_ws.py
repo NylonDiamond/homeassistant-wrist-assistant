@@ -178,8 +178,10 @@ def _loaded_modules():
             WIDGET_SECRET_STORAGE_VERSION=1,
             WATCH_CONFIG_STORAGE_KEY="wrist_assistant.watch_config",
             WATCH_CONFIG_STORAGE_VERSION=1,
-            WATCH_CONFIG_KINDS=frozenset({"pages"}),
-            WATCH_CONFIG_MAX_DOCUMENT_BYTES=4096,
+            WATCH_CONFIG_KINDS=frozenset({"pages", "behavior"}),
+            WATCH_CONFIG_PANEL_KINDS=frozenset({"behavior"}),
+            WATCH_CONFIG_PANEL_WRITER="panel",
+            WATCH_CONFIG_MAX_DOCUMENT_BYTES={"pages": 4096, "behavior": 4096},
             WATCH_CONFIG_HISTORY_LIMIT=5,
         )
         # Neither series module is exercised here; complication_ws only needs

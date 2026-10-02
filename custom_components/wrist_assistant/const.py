@@ -118,15 +118,26 @@ CARD_PREVIEW_STORAGE_VERSION = 1
 # owner id, so one watch's save never rewrites another watch's document.
 WATCH_CONFIG_STORAGE_KEY = "wrist_assistant.watch_config"
 WATCH_CONFIG_STORAGE_VERSION = 1
-# The kinds a client may read and write. Step 1 is the page config alone
-# (`GridConfiguration` in the app). A later kind is a new name here and a list
-# key in the store's envelope check, with no change to the storage shape.
-WATCH_CONFIG_KINDS = frozenset({"pages"})
-# Compact UTF-8 JSON size a stored document may reach. A guess with headroom:
-# the size of a large real page config has not been measured yet. Home
-# Assistant's HTTP server accepts request bodies up to 16 MiB, so the cap,
+# The kinds a client may read and write: the page config (`GridConfiguration`
+# in the app) and the watch behavior settings (`WCBehaviorPreferences`). A
+# later kind is a new name here and a size cap below, with no change to the
+# storage shape.
+WATCH_CONFIG_KINDS = frozenset({"pages", "behavior"})
+# The kinds the panel may save. Pages are read-only there until the page
+# editor moves; the panel may still read them.
+WATCH_CONFIG_PANEL_KINDS = frozenset({"behavior"})
+# `updated_by` on a record the panel saved, in place of a device's signing id.
+WATCH_CONFIG_PANEL_WRITER = "panel"
+# Compact UTF-8 JSON size a stored document may reach, per kind. Every kind in
+# WATCH_CONFIG_KINDS needs an entry. The page cap is a guess with headroom (a
+# large real page config has not been measured yet); the behavior settings are
+# a flat object of a few dozen keys, so a much smaller cap still leaves plenty.
+# Home Assistant's HTTP server accepts request bodies up to 16 MiB, so the cap,
 # not the server, is what refuses an oversized upload.
-WATCH_CONFIG_MAX_DOCUMENT_BYTES = 2 * 1024 * 1024
+WATCH_CONFIG_MAX_DOCUMENT_BYTES: dict[str, int] = {
+    "pages": 2 * 1024 * 1024,
+    "behavior": 256 * 1024,
+}
 # Documents a save replaced, kept per record, oldest dropped. Storage only.
 WATCH_CONFIG_HISTORY_LIMIT = 5
 # What the integration advertises once it serves watch_config_get/put. The

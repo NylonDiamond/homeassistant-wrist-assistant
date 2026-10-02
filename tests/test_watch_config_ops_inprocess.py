@@ -13,6 +13,8 @@ the wire shapes the app is built against are asserted here exactly:
 * a stale put answers a signed 409 ``{"ok": false, "error": "conflict",
   "revision": N, "hash": "..."}`` and nothing else.
 * the owner is always the signing id; nothing a body says can change that.
+* (step 2) ``behavior`` rides the same two ops, and every get about a stored
+  record marks that revision delivered, with or without the document.
 
 The static half (both ops in the dispatch table, the capability advertised)
 sits at the bottom.
@@ -325,6 +327,73 @@ def test_two_watches_keep_separate_revisions(env) -> None:
     reply = _put(env, _put_body(_doc("B")), watch_id=OTHER)
     assert reply.body == {"ok": True, "revision": 1}
     assert _get(env, {"kind": "pages"}, watch_id=OTHER).body["document"]["pages"][0]["name"] == "B"
+
+
+# ── step 2: behavior and delivery ────────────────────────────────────────
+
+
+def test_behavior_rides_the_same_ops(env) -> None:
+    settings = {"longPressDuration": "Short", "wrapPages": True}
+    reply = _put(env, _put_body(settings, kind="behavior"))
+    assert reply.status == 200
+    assert reply.body == {"ok": True, "revision": 1}
+    got = _get(env, {"kind": "behavior"})
+    assert got.body["document"] == settings
+    assert got.body["kind"] == "behavior"
+    # The page record is untouched by it.
+    assert _get(env, {"kind": "pages"}).body["revision"] == 0
+
+
+def test_a_get_that_carries_the_document_marks_it_delivered(env) -> None:
+    _put(env, _put_body({}, kind="behavior"))
+    env.store.panel_save(WATCH, "behavior", {"wrapPages": True}, base_revision=1)
+    record = env.store.get(WATCH, "behavior")
+    assert (record.revision, record.delivered_revision) == (2, 1)
+
+    reply = _get(env, {"kind": "behavior", "since_revision": 1})
+    assert reply.body["document"] == {"wrapPages": True}
+    assert record.delivered_revision == 2
+    assert record.delivered_at
+
+
+def test_a_get_that_says_already_there_marks_it_delivered(env) -> None:
+    """The phone applied the save but its get reply was the one that got lost,
+    or a record moved and the new id has not asked yet: the next "you already
+    have it" settles it."""
+    _put(env, _put_body({}, kind="behavior"))
+    env.store.panel_save(WATCH, "behavior", {"wrapPages": True}, base_revision=1)
+    record = env.store.get(WATCH, "behavior")
+    record.delivered_revision, record.delivered_at = 0, None
+
+    reply = _get(env, {"kind": "behavior", "since_revision": 2})
+    assert "document" not in reply.body
+    assert record.delivered_revision == 2
+
+
+def test_an_up_to_date_get_writes_nothing(env) -> None:
+    _put(env, _put_body())
+    _FakeStore.writes.clear()
+    for _ in range(3):
+        _get(env, {"kind": "pages", "since_revision": 1})
+    assert _FakeStore.writes == []
+
+
+def test_a_get_with_no_record_or_a_bad_kind_marks_nothing(env) -> None:
+    assert _get(env, {"kind": "behavior"}).body["revision"] == 0
+    assert _get(env, {"kind": "nope"}).status == 400
+    assert _FakeStore.writes == []
+
+
+def test_a_signed_put_counts_as_delivered(env) -> None:
+    _put(env, _put_body())
+    assert env.store.get(WATCH, "pages").delivered_revision == 1
+
+
+def test_another_owner_s_get_never_delivers_this_one(env) -> None:
+    _put(env, _put_body({}, kind="behavior"))
+    env.store.panel_save(WATCH, "behavior", {"wrapPages": True}, base_revision=1)
+    _get(env, {"kind": "behavior"}, watch_id=OTHER)
+    assert env.store.get(WATCH, "behavior").delivered_revision == 1
 
 
 # ── static: dispatch and capability ──────────────────────────────────────

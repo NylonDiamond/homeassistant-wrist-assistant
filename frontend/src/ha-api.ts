@@ -396,6 +396,55 @@ export async function restoreSaveHistory(
   });
 }
 
+/** The kinds of watch config Home Assistant keeps a copy of. The panel reads
+ * either and saves only `behavior`. */
+export type WatchConfigKind = "pages" | "behavior";
+
+/** One watch's stored config of one kind, as the get command answers.
+ * `revision` 0 with no `document` is a watch the phone has never uploaded
+ * for. `delivered_revision` is the newest revision the phone is known to
+ * hold: a phone upload counts, a panel save does not until the phone's next
+ * check collects it. `updated_by` is `panel` for a panel save, else the
+ * watch id the phone signed with. */
+export interface WatchConfigRecord {
+  kind: string;
+  revision: number;
+  hash: string | null;
+  updated_at: string | null;
+  updated_by: string | null;
+  delivered_revision: number;
+  delivered_at: string | null;
+  document?: Record<string, unknown>;
+}
+
+const WC = "wrist_assistant/watch_config";
+
+/** Admin only. */
+export async function fetchWatchConfig(hass: HassLike, owner: string, kind: WatchConfigKind) {
+  return hass.connection.sendMessagePromise<WatchConfigRecord>({ type: `${WC}/get`, owner_watch_id: owner, kind });
+}
+
+/** Save one watch's behavior settings, compare-and-swap on `baseRevision`.
+ * Admin only. A refusal rejects with a WebSocket error whose `code` is
+ * `conflict` (someone saved since; the message starts "stored revision is
+ * N"), `no_record` (the phone has never uploaded, so there is nothing to
+ * base a save on), `invalid` or `unavailable`. */
+export async function saveWatchConfig(
+  hass: HassLike,
+  owner: string,
+  kind: "behavior",
+  baseRevision: number,
+  document: Record<string, unknown>,
+) {
+  return hass.connection.sendMessagePromise<{ revision: number }>({
+    type: `${WC}/save`,
+    owner_watch_id: owner,
+    kind,
+    base_revision: baseRevision,
+    document,
+  });
+}
+
 /** Hand every live record of one watch to another watch. Admin only. */
 export async function moveOwner(hass: HassLike, source: string, target: string) {
   return hass.connection.sendMessagePromise<{

@@ -1,0 +1,427 @@
+{
+  "version": 1,
+  "sections": [
+    {
+      "id": "connection",
+      "title": "Connection",
+      "settings": [
+        {
+          "key": "serverMode",
+          "type": "enum",
+          "label": "Server",
+          "help": "Switch between home and away.",
+          "default": "Auto",
+          "options": [
+            {"value": "Auto", "label": "Auto"},
+            {"value": "Local", "label": "Local"},
+            {"value": "Remote", "label": "Remote"}
+          ]
+        },
+        {
+          "key": "deltaTimeout",
+          "type": "enum",
+          "label": "Timeout",
+          "help": "Delta request wait time.",
+          "default": "45s",
+          "options": [
+            {"value": "25s", "label": "25s"},
+            {"value": "35s", "label": "35s"},
+            {"value": "45s", "label": "45s"},
+            {"value": "55s", "label": "55s"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "interaction",
+      "title": "Interaction",
+      "settings": [
+        {
+          "key": "longPressDuration",
+          "type": "enum",
+          "label": "Long press",
+          "help": "Hold to open quick actions.",
+          "default": "Short",
+          "options": [
+            {"value": "Super Fast", "label": "Super fast (75 ms)"},
+            {"value": "Short", "label": "Short (150 ms)"},
+            {"value": "Normal", "label": "Normal (200 ms)"},
+            {"value": "Long", "label": "Long (300 ms)"},
+            {"value": "Extra Long", "label": "Extra long (1 s)"}
+          ]
+        },
+        {
+          "key": "entityRadialVerticalQuickRadialGestureEnabled",
+          "type": "bool",
+          "label": "Quick radial gesture",
+          "help": "In entity radial menus, a quick gesture opens the Quick Radial Menu.",
+          "default": true
+        },
+        {
+          "key": "entityRadialVerticalQuickRadialGestureTrigger",
+          "type": "enum",
+          "label": "Trigger",
+          "help": "Gesture type to activate Quick Radial Menu.",
+          "default": "Swipe Up/Down",
+          "options": [
+            {"value": "Up/Down x2", "label": "Up/down x2"},
+            {"value": "Swipe Up/Down", "label": "Swipe up/down"},
+            {"value": "Clockwise", "label": "Clockwise"}
+          ],
+          "showIf": {"key": "entityRadialVerticalQuickRadialGestureEnabled", "equals": true}
+        },
+        {
+          "key": "entityRadialVerticalQuickRadialGestureSpeed",
+          "type": "enum",
+          "label": "Speed",
+          "help": "How fast the gesture must be completed: 0.35, 0.45, 0.6 or 0.8 seconds.",
+          "default": "Fast",
+          "options": [
+            {"value": "Fast", "label": "Fast"},
+            {"value": "Normal", "label": "Normal"},
+            {"value": "Slow", "label": "Slow"},
+            {"value": "Very Slow", "label": "Very slow"}
+          ],
+          "showIf": {"key": "entityRadialVerticalQuickRadialGestureEnabled", "equals": true}
+        },
+        {
+          "key": "topSectionDoubleTapAction",
+          "type": "enum",
+          "label": "Double-tap top section",
+          "help": "Double-tap the page title or top area.",
+          "default": "Disabled",
+          "options": [
+            {"value": "Disabled", "label": "Disabled"},
+            {"value": "Toggle Aimed Entity (Point Control)", "label": "Toggle aimed entity (Point Control)"},
+            {"value": "Room Jump", "label": "Room jump"},
+            {"value": "Activate Scene", "label": "Activate scene"},
+            {"value": "Run Script", "label": "Run script"},
+            {"value": "Refresh", "label": "Refresh"},
+            {"value": "Next Page", "label": "Next page"},
+            {"value": "Previous Page", "label": "Previous page"},
+            {"value": "Toggle First Tile", "label": "Toggle first tile"}
+          ]
+        },
+        {
+          "key": "topSectionDoubleTapSceneTargetId",
+          "type": "entity",
+          "domain": "scene",
+          "label": "Scene",
+          "help": "The scene a double-tap activates.",
+          "default": "",
+          "showIf": {"key": "topSectionDoubleTapAction", "equals": "Activate Scene"}
+        },
+        {
+          "key": "topSectionDoubleTapScriptTargetId",
+          "type": "entity",
+          "domain": "script",
+          "label": "Script",
+          "help": "The script a double-tap runs.",
+          "default": "",
+          "showIf": {"key": "topSectionDoubleTapAction", "equals": "Run Script"}
+        },
+        {
+          "key": "sliderCrownSensitivity",
+          "type": "enum",
+          "label": "Slider speed",
+          "help": "Crown speed for brightness sliders.",
+          "default": "Normal",
+          "options": [
+            {"value": "Precise", "label": "Precise"},
+            {"value": "Normal", "label": "Normal"},
+            {"value": "Fast", "label": "Fast"}
+          ]
+        },
+        {
+          "key": "dismissControlsOnClose",
+          "type": "bool",
+          "label": "Reset view on exit",
+          "help": "Close open control panels and peeked pages when you leave the app, returning to your main page instead of reopening to them.",
+          "default": true
+        },
+        {
+          "key": "showControlEntityName",
+          "type": "bool",
+          "label": "Show entity name",
+          "help": "Show the entity's name beneath the dial on value controls (thermostat, light, fan, shade, number) so you can confirm which one is open.",
+          "default": true
+        },
+        {
+          "key": "automationTriggerSkipConditions",
+          "type": "bool",
+          "label": "Skip conditions by default",
+          "help": "Run automation actions without re-evaluating conditions when triggered from the watch. Triggers are always bypassed.",
+          "default": true
+        },
+        {
+          "key": "showPendingAnimation",
+          "type": "bool",
+          "label": "Pending animation",
+          "help": "Bounce icon until confirmed.",
+          "default": true
+        }
+      ]
+    },
+    {
+      "id": "navigation",
+      "title": "Navigation",
+      "settings": [
+        {
+          "key": "pageTransitionStyle",
+          "type": "enum",
+          "label": "Page transition",
+          "help": "Animation when switching pages.",
+          "default": "None",
+          "options": [
+            {"value": "Default", "label": "Default"},
+            {"value": "Slide", "label": "Slide"},
+            {"value": "Fade", "label": "Fade"},
+            {"value": "None", "label": "None"}
+          ]
+        },
+        {
+          "key": "showPageIndicator",
+          "type": "bool",
+          "label": "Page dots",
+          "help": "Show current page position.",
+          "default": true
+        },
+        {
+          "key": "pageIndicatorStyle",
+          "type": "enum",
+          "label": "Indicator style",
+          "default": "Dots",
+          "options": [
+            {"value": "Lines", "label": "Lines"},
+            {"value": "Dots", "label": "Dots"},
+            {"value": "Dash", "label": "Dash"}
+          ],
+          "showIf": {"key": "showPageIndicator", "equals": true}
+        },
+        {
+          "key": "pageIndicatorOpacity",
+          "type": "enum",
+          "label": "Brightness",
+          "help": "Indicator visibility.",
+          "default": "Subtle",
+          "options": [
+            {"value": "Subtle", "label": "Subtle"},
+            {"value": "Medium", "label": "Medium"},
+            {"value": "Bright", "label": "Bright"}
+          ],
+          "showIf": {"key": "showPageIndicator", "equals": true}
+        },
+        {
+          "key": "pageIndicatorPosition",
+          "type": "enum",
+          "label": "Position",
+          "help": "Where to show indicator.",
+          "default": "Bottom",
+          "options": [
+            {"value": "Bottom", "label": "Bottom"},
+            {"value": "Top", "label": "Top"}
+          ],
+          "showIf": {"key": "showPageIndicator", "equals": true}
+        },
+        {
+          "key": "pageIndicatorSize",
+          "type": "enum",
+          "label": "Size",
+          "help": "Indicator scale.",
+          "default": "Small",
+          "options": [
+            {"value": "Small", "label": "Small"},
+            {"value": "Medium", "label": "Medium"},
+            {"value": "Large", "label": "Large"}
+          ],
+          "showIf": {"key": "showPageIndicator", "equals": true}
+        },
+        {
+          "key": "pageIndicatorColorHex",
+          "type": "color",
+          "label": "Color",
+          "help": "The indicator's color. White unless you pick one.",
+          "default": "#FFFFFF",
+          "showIf": {"key": "showPageIndicator", "equals": true}
+        },
+        {
+          "key": "pullDownAction",
+          "type": "enum",
+          "label": "Pull down action",
+          "help": "Swipe down from the top of a page.",
+          "default": "Refresh",
+          "options": [
+            {"value": "Disabled", "label": "Disabled"},
+            {"value": "Refresh", "label": "Refresh"},
+            {"value": "Next Page", "label": "Next page"},
+            {"value": "Previous Page", "label": "Previous page"},
+            {"value": "Room Jump", "label": "Room jump"},
+            {"value": "Activate Scene", "label": "Activate scene"},
+            {"value": "Run Script", "label": "Run script"},
+            {"value": "Toggle First Tile", "label": "Toggle first tile"}
+          ]
+        },
+        {
+          "key": "pullDownSceneTargetId",
+          "type": "entity",
+          "domain": "scene",
+          "label": "Scene",
+          "help": "The scene a pull down activates.",
+          "default": "",
+          "showIf": {"key": "pullDownAction", "equals": "Activate Scene"}
+        },
+        {
+          "key": "pullDownScriptTargetId",
+          "type": "entity",
+          "domain": "script",
+          "label": "Script",
+          "help": "The script a pull down runs.",
+          "default": "",
+          "showIf": {"key": "pullDownAction", "equals": "Run Script"}
+        },
+        {
+          "key": "wrapPages",
+          "type": "bool",
+          "label": "Loop pages",
+          "help": "Last page returns to first.",
+          "default": false
+        },
+        {
+          "key": "bottomEdgePageSwipeSensitivity",
+          "type": "enum",
+          "label": "Edge swipe",
+          "help": "Slide bottom edge to switch pages. The level is the distance needed to switch.",
+          "default": "High",
+          "options": [
+            {"value": "Off", "label": "Off"},
+            {"value": "Low", "label": "Low"},
+            {"value": "Medium", "label": "Medium"},
+            {"value": "High", "label": "High"},
+            {"value": "Max", "label": "Max"}
+          ]
+        },
+        {
+          "key": "popupBackgroundMaterial",
+          "type": "enum",
+          "label": "Popup background",
+          "help": "Material blur for tile control overlays.",
+          "default": "Regular",
+          "options": [
+            {"value": "Ultra Thin", "label": "Ultra thin (most transparent)"},
+            {"value": "Thin", "label": "Thin"},
+            {"value": "Regular", "label": "Regular"},
+            {"value": "Thick", "label": "Thick"},
+            {"value": "Ultra Thick", "label": "Ultra thick (most opaque)"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "camera",
+      "title": "Camera",
+      "settings": [
+        {
+          "key": "cameraStreamMode",
+          "type": "enum",
+          "label": "Streaming",
+          "help": "Live streams smooth real-time video and falls back on its own if a camera can't stream. Switch to Snapshots only if live video has trouble on your network.",
+          "default": "Auto",
+          "options": [
+            {"value": "Auto", "label": "Live"},
+            {"value": "Polling", "label": "Snapshots"}
+          ]
+        },
+        {
+          "key": "cameraRefreshRate",
+          "type": "enum",
+          "label": "Standard rate",
+          "help": "Polling interval when streaming is unavailable.",
+          "default": "1s",
+          "options": [
+            {"value": "0.5s", "label": "0.5s"},
+            {"value": "1s", "label": "1s"},
+            {"value": "2s", "label": "2s"},
+            {"value": "3s", "label": "3s"},
+            {"value": "5s", "label": "5s"}
+          ]
+        },
+        {
+          "key": "cameraHDRefreshRate",
+          "type": "enum",
+          "label": "HD rate",
+          "help": "Polling interval in HD when streaming is unavailable.",
+          "default": "2s",
+          "options": [
+            {"value": "0.5s", "label": "0.5s"},
+            {"value": "1s", "label": "1s"},
+            {"value": "2s", "label": "2s"},
+            {"value": "3s", "label": "3s"},
+            {"value": "5s", "label": "5s"}
+          ]
+        },
+        {
+          "key": "cameraRefreshOnOpen",
+          "type": "bool",
+          "label": "Refresh on page open",
+          "help": "Default for camera tiles when a page becomes visible. Override it per camera in the iPhone app's page editor.",
+          "default": true
+        },
+        {
+          "key": "cameraRefreshOnOpenDebounce",
+          "type": "enum",
+          "label": "Debounce",
+          "help": "Skip if snapshot is newer than this.",
+          "default": "10s",
+          "options": [
+            {"value": "5s", "label": "5s"},
+            {"value": "10s", "label": "10s"},
+            {"value": "30s", "label": "30s"},
+            {"value": "60s", "label": "60s"}
+          ],
+          "showIf": {"key": "cameraRefreshOnOpen", "equals": true}
+        },
+        {
+          "key": "cameraRefreshOnPageOpenDelay",
+          "type": "enum",
+          "label": "Delay",
+          "help": "Wait before refreshing. Cancels if you swipe away.",
+          "default": "Off",
+          "options": [
+            {"value": "Off", "label": "Off"},
+            {"value": "250ms", "label": "250ms"},
+            {"value": "500ms", "label": "500ms"},
+            {"value": "1s", "label": "1s"}
+          ],
+          "showIf": {"key": "cameraRefreshOnOpen", "equals": true}
+        },
+        {
+          "key": "cameraShowLoadingDots",
+          "type": "bool",
+          "label": "Loading dots",
+          "help": "Show per-camera progress dots at the top of the page while cameras load.",
+          "default": true
+        },
+        {
+          "key": "cameraSwipeSensitivity",
+          "type": "enum",
+          "label": "Swipe next camera",
+          "help": "Slide bottom edge to switch.",
+          "default": "Medium",
+          "options": [
+            {"value": "Off", "label": "Off"},
+            {"value": "Low", "label": "Low"},
+            {"value": "Medium", "label": "Medium"},
+            {"value": "High", "label": "High"}
+          ]
+        },
+        {
+          "key": "cameraSwipeWrap",
+          "type": "bool",
+          "label": "Loop cameras",
+          "help": "Wrap around after last camera.",
+          "default": false
+        }
+      ]
+    }
+  ]
+}

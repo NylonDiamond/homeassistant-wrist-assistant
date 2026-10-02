@@ -397,6 +397,7 @@ import {
   suggestPartName,
 } from "./parts.js";
 import { domainIcon } from "./domain-icons.js";
+import { WatchSettings, watchSettingsStyles } from "./watch-settings-view.js";
 import {
   FIRST_RUN_TILES, ZOOM_FIT, ZOOM_MAX, ZOOM_MIN, anySnap, pickGridStep, runFirstRunTile, slotWord, snapSwitchOn,
   stageReserve, toggleSnap, zoomIn, zoomLabel, zoomOut, type FirstRunTile, type SnapFlags, type SnapSwitch,
@@ -1386,6 +1387,9 @@ export class WristAssistantPanel extends LitElement {
   @property({ type: Boolean }) narrow = false;
   @property({ attribute: false }) panel?: { config?: { version?: string } };
 
+  /** The Watch settings dialog, opened from the top bar. */
+  private watchSettings = new WatchSettings(this);
+
   /** Side column widths in px, dragged by the gutters and kept per browser.
    * These are the widths the user asked for; columnFit() decides how much of
    * that the panel can afford at its current width. */
@@ -2223,7 +2227,7 @@ export class WristAssistantPanel extends LitElement {
     if (this.heldArrows.size === 0) this.draft?.endGesture();
   };
 
-  static override styles = css`
+  static override styles = [css`
     :host {
       /* Column so the footer can sit under a layout that takes the rest of the
          height, rather than being pushed off the bottom of the page. */
@@ -7260,7 +7264,7 @@ export class WristAssistantPanel extends LitElement {
     .sym-none { font-size: 14px; opacity: .4; }
     .sym-name { font-size: 9px; line-height: 1.1; text-align: center; opacity: .8; overflow-wrap: anywhere; max-height: 22px; overflow: hidden; }
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .ent-box.needs { animation: none; } }
-  `;
+  `, watchSettingsStyles];
 
   // ── lifecycle ─────────────────────────────────────────────────────────
 
@@ -11801,6 +11805,7 @@ export class WristAssistantPanel extends LitElement {
       ${this.slotsOpen ? this.renderSlotsDialog() : nothing}
       ${this.historyOpen ? this.renderHistoryDialog() : nothing}
       ${this.savePartOpen ? this.renderSavePartDialog() : nothing}
+      ${this.watchSettings.render(this.hass, this.owners)}
       ${this.renderAddSheet()}
       ${this.watchSupported && !this.draft
         // Nothing open: the side columns have nothing to hold, so the stage
@@ -11866,6 +11871,7 @@ export class WristAssistantPanel extends LitElement {
           ?disabled=${!this.canEdit || !dirty || this.saving || !this.slotChosen || refusal !== undefined}
           title=${refusal !== undefined ? refusal : dirty ? "Save (⌘S)" : "Nothing to save (⌘S)"}>${this.saving ? "Saving…" : "Save"}</button>
         <span class="tb-saved" title=${dirty && rec ? "Unsaved changes" : caption ?? ""}>${caption}</span>` : nothing}
+      ${this.watchSettings.renderButton(this.hass, this.owners, this.ownerId)}
       <button class="help" title="Help" aria-label="Help" @click=${() => { this.helpOpen = true; }}>?</button>
     </header>`;
   }

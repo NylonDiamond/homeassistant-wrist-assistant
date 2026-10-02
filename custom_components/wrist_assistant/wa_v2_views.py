@@ -3289,7 +3289,7 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
     ever read its own record. In step 1 that is the phone signing with the
     watch's pair; later the watch reads it with the same signature.
 
-    Body:  {"kind": "pages", "since_revision": <int>?}
+    Body:  {"kind": "pages" | "behavior", "since_revision": <int>?}
     Reply: {"ok": true, "kind", "revision", "hash", "updated_at", "document"?}
 
     ``document`` is left out when ``since_revision`` equals the stored
@@ -3297,6 +3297,11 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
     whole config on every foreground check. With no record the reply is
     ``revision: 0`` with ``hash`` and ``updated_at`` null and no document. The
     save history is never sent.
+
+    Every reply about a stored record marks that revision delivered, whether
+    it carried the document or said "you already have it": either way the
+    device now holds it. That is what the panel reads to tell a panel save
+    that is still waiting for the phone from one the phone has collected.
     """
     raw_since = ctx.payload.get("since_revision")
     if raw_since is not None and (
@@ -3307,8 +3312,9 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
             WatchConfigValidationError("since_revision must be a non-negative integer"),
         )
     kind = ctx.payload.get("kind")
+    store = ctx.domain_data.watch_config_store
     try:
-        record = ctx.domain_data.watch_config_store.get(ctx.watch_id, kind)
+        record = store.get(ctx.watch_id, kind)
     except WatchConfigStoreError as err:
         return _watch_config_refusal(ctx, err)
     if record is None:
@@ -3324,14 +3330,18 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
     }
     if raw_since != record.revision:
         reply["document"] = record.document
-    return ctx.signed_json(reply)
+    response = ctx.signed_json(reply)
+    # After the reply is built, so a reply that failed to serialize never
+    # counts as a delivery.
+    store.mark_delivered(ctx.watch_id, kind, record.revision)
+    return response
 
 
 async def _op_watch_config_put(ctx: _OpContext) -> Response:
     """Save the caller's watch config of one kind, compare-and-swap.
 
-    Body:  {"kind": "pages", "base_revision": <int>, "hash": <sha256 hex>,
-            "document": {...}, "force": <bool>?}
+    Body:  {"kind": "pages" | "behavior", "base_revision": <int>,
+            "hash": <sha256 hex>, "document": {...}, "force": <bool>?}
     Reply: {"ok": true, "revision": <int>}
     Refusal: signed 409 {"ok": false, "error": "conflict", "revision", "hash"}
              when ``base_revision`` is not the stored revision (0 for no
@@ -3340,7 +3350,8 @@ async def _op_watch_config_put(ctx: _OpContext) -> Response:
 
     ``hash`` is the client's own SHA-256 of the document, kept as given and
     handed back by get; the server never recomputes it (see
-    ``watch_config_store.py`` for why). ``updated_by`` is the signing id.
+    ``watch_config_store.py`` for why). ``updated_by`` is the signing id, and
+    the saved revision counts as delivered: the device that wrote it holds it.
     """
     try:
         record = ctx.domain_data.watch_config_store.put(
