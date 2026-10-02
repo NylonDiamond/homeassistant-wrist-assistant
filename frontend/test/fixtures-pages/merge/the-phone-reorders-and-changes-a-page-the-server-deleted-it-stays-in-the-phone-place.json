@@ -1,0 +1,30 @@
+{
+  "name": "The phone moves the last page to the front and renames it, the server deletes that page: it stays as the phone has it, at the front",
+  "base": {
+    "pages": [
+      {"id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC", "name": "Home", "items": []},
+      {"id": "77DB791C-A1D9-4642-B591-721D20088FA6", "name": "Lights", "items": []},
+      {"id": "7EFE84AE-65F5-4D51-905A-CC87A8F91BAB", "name": "Garage", "items": []}
+    ]
+  },
+  "phone": {
+    "pages": [
+      {"id": "7EFE84AE-65F5-4D51-905A-CC87A8F91BAB", "name": "Workshop", "items": []},
+      {"id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC", "name": "Home", "items": []},
+      {"id": "77DB791C-A1D9-4642-B591-721D20088FA6", "name": "Lights", "items": []}
+    ]
+  },
+  "server": {
+    "pages": [
+      {"id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC", "name": "Home", "items": []},
+      {"id": "77DB791C-A1D9-4642-B591-721D20088FA6", "name": "Lights", "items": []}
+    ]
+  },
+  "expected": {
+    "pages": [
+      {"id": "7EFE84AE-65F5-4D51-905A-CC87A8F91BAB", "name": "Workshop", "items": []},
+      {"id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC", "name": "Home", "items": []},
+      {"id": "77DB791C-A1D9-4642-B591-721D20088FA6", "name": "Lights", "items": []}
+    ]
+  }
+}

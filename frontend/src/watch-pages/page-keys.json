@@ -404,7 +404,8 @@
           "of": "object",
           "ref": "page",
           "required": true,
-          "default": []
+          "default": [],
+          "fresh": true
         }
       }
     },
@@ -413,47 +414,55 @@
       "keys": {
         "id": {
           "type": "uuid",
-          "required": false
+          "required": false,
+          "fresh": true
         },
         "name": {
           "type": "string",
           "required": false,
-          "default": "Page"
+          "default": "Page",
+          "fresh": true
         },
         "items": {
           "type": "array",
           "of": "object",
           "ref": "tile",
           "required": false,
-          "default": []
+          "default": [],
+          "fresh": true
         },
         "groups": {
           "type": "array",
           "of": "object",
           "ref": "tileGroup",
           "required": false,
-          "default": []
+          "default": [],
+          "fresh": true
         },
         "gridDensity": {
           "type": "enum",
           "enum": "GridDensity",
           "required": false,
-          "default": "standard"
+          "default": "standard",
+          "fresh": true
         },
         "isSystemPage": {
           "type": "bool",
           "required": false,
-          "default": false
+          "default": false,
+          "fresh": true
         },
         "isDeletable": {
           "type": "bool",
           "required": false,
-          "default": true
+          "default": true,
+          "fresh": true
         },
         "isHidden": {
           "type": "bool",
           "required": false,
-          "default": false
+          "default": false,
+          "fresh": true
         },
         "dynamicConfig": {
           "type": "object",
@@ -471,7 +480,8 @@
         "hideFromSwitcher": {
           "type": "bool",
           "required": false,
-          "default": false
+          "default": false,
+          "fresh": true
         },
         "switcherDisplayMode": {
           "type": "enum",
@@ -486,7 +496,8 @@
           "type": "enum",
           "enum": "ComplicationDisplayMode",
           "required": false,
-          "default": "text"
+          "default": "text",
+          "fresh": true
         },
         "complicationText": {
           "type": "string",
@@ -536,17 +547,20 @@
           "enum": "DSTheme",
           "strict": false,
           "required": false,
-          "default": "neonLagoon"
+          "default": "neonLagoon",
+          "fresh": true
         },
         "backgroundColor": {
           "type": "color",
           "required": false,
-          "new": "#000000"
+          "new": "#000000",
+          "fresh": true
         },
         "backgroundBrightness": {
           "type": "number",
           "required": false,
-          "default": 0.6
+          "default": 0.6,
+          "fresh": true
         },
         "backgroundImageId": {
           "type": "string",
@@ -666,24 +680,28 @@
         "fullScreen": {
           "type": "bool",
           "required": false,
-          "default": false
+          "default": false,
+          "fresh": true
         },
         "useGradientColors": {
           "type": "bool",
           "required": false,
-          "default": false
+          "default": false,
+          "fresh": true
         },
         "pageTitleDisplayStyle": {
           "type": "enum",
           "enum": "PageTitleDisplayStyle",
           "required": false,
-          "default": "none"
+          "default": "none",
+          "fresh": true
         },
         "pageTitleTextSize": {
           "type": "enum",
           "enum": "PageTitleTextSize",
           "required": false,
-          "default": "size10"
+          "default": "size10",
+          "fresh": true
         },
         "pageTitleTextColor": {
           "type": "color",
@@ -692,7 +710,8 @@
         "pageTitleIcon": {
           "type": "symbol",
           "required": false,
-          "default": "house"
+          "default": "house",
+          "fresh": true
         }
       }
     },
@@ -701,11 +720,13 @@
       "keys": {
         "id": {
           "type": "uuid",
-          "required": true
+          "required": true,
+          "fresh": true
         },
         "entityId": {
           "type": "entity",
-          "required": true
+          "required": true,
+          "fresh": true
         },
         "icon": {
           "type": "symbol",
@@ -719,12 +740,14 @@
           "type": "enum",
           "enum": "TileBackgroundPattern",
           "required": true,
-          "default": "none"
+          "default": "none",
+          "fresh": true
         },
         "patternOpacity": {
           "type": "number",
           "required": true,
-          "default": 1.0
+          "default": 1.0,
+          "fresh": true
         },
         "patternColor": {
           "type": "color",
@@ -752,7 +775,8 @@
         "showLabel": {
           "type": "bool",
           "required": true,
-          "default": true
+          "default": true,
+          "fresh": true
         },
         "labelColorHex": {
           "type": "color",
@@ -779,7 +803,8 @@
           "enum": "FontWeight",
           "strict": false,
           "required": false,
-          "new": "light"
+          "new": "light",
+          "fresh": true
         },
         "labelFontDesign": {
           "type": "enum",
@@ -790,45 +815,53 @@
         "labelShadow": {
           "type": "bool",
           "required": true,
-          "default": true
+          "default": true,
+          "fresh": true
         },
         "iconShadow": {
           "type": "bool",
           "required": true,
-          "default": false
+          "default": false,
+          "fresh": true
         },
         "statusTextShadow": {
           "type": "bool",
           "required": true,
-          "default": true
+          "default": true,
+          "fresh": true
         },
         "stateBarShadow": {
           "type": "bool",
           "required": true,
-          "default": false
+          "default": false,
+          "fresh": true
         },
         "stateValueLabelStyle": {
           "type": "enum",
           "enum": "StateValueLabelStyle",
           "required": true,
-          "default": "Plain"
+          "default": "Plain",
+          "fresh": true
         },
         "stateBarStyle": {
           "type": "enum",
           "enum": "StateBarStyle",
           "required": true,
-          "default": "Top"
+          "default": "Top",
+          "fresh": true
         },
         "stateBarColorStyle": {
           "type": "enum",
           "enum": "StateBarColorStyle",
           "required": true,
-          "default": "Tile"
+          "default": "Tile",
+          "fresh": true
         },
         "stateBarBorder": {
           "type": "bool",
           "required": true,
-          "default": false
+          "default": false,
+          "fresh": true
         },
         "activeIconAnimationEnabled": {
           "type": "bool",
@@ -838,28 +871,33 @@
           "type": "enum",
           "enum": "BorderThickness",
           "required": true,
-          "default": "extraThin"
+          "default": "extraThin",
+          "fresh": true
         },
         "tileAnimation": {
           "type": "enum",
           "enum": "TileAnimation",
           "required": true,
-          "default": "none"
+          "default": "none",
+          "fresh": true
         },
         "animationSpeed": {
           "type": "number",
           "required": true,
-          "default": 1.0
+          "default": 1.0,
+          "fresh": true
         },
         "animationIntensity": {
           "type": "number",
           "required": true,
-          "default": 1.0
+          "default": 1.0,
+          "fresh": true
         },
         "animationSize": {
           "type": "number",
           "required": true,
-          "default": 1.0
+          "default": 1.0,
+          "fresh": true
         },
         "animationColor": {
           "type": "color",
@@ -978,7 +1016,8 @@
         "colorOpacity": {
           "type": "number",
           "required": true,
-          "default": 1.0
+          "default": 1.0,
+          "fresh": true
         },
         "groupId": {
           "type": "uuid",
@@ -993,54 +1032,64 @@
           "type": "enum",
           "enum": "GroupOverlayStyle",
           "required": true,
-          "default": "none"
+          "default": "none",
+          "fresh": true
         },
         "overlayColor": {
           "type": "color",
           "required": true,
-          "default": "#FFFFFF"
+          "default": "#FFFFFF",
+          "fresh": true
         },
         "overlaySpeed": {
           "type": "number",
           "required": true,
-          "default": 1.0
+          "default": 1.0,
+          "fresh": true
         },
         "overlayIntensity": {
           "type": "number",
           "required": true,
-          "default": 1.0
+          "default": 1.0,
+          "fresh": true
         },
         "overlaySize": {
           "type": "number",
           "required": true,
-          "default": 1.0
+          "default": 1.0,
+          "fresh": true
         },
         "borderStyle": {
           "type": "enum",
           "enum": "GroupBorderStyle",
           "required": true,
-          "default": "none"
+          "default": "none",
+          "fresh": true
         },
         "borderAnimation": {
           "type": "enum",
           "enum": "BorderAnimation",
           "required": true,
-          "default": "none"
+          "default": "none",
+          "fresh": true
         },
         "borderAnimationSpeed": {
           "type": "number",
           "required": true,
-          "default": 1.0
+          "default": 1.0,
+          "fresh": true
         },
         "borderAnimationIntensity": {
           "type": "number",
           "required": true,
-          "default": 1.0
+          "default": 1.0,
+          "fresh": true
         },
         "borderAnimationSize": {
           "type": "number",
           "required": true,
-          "default": 1.0
+          "default": 1.0,
+          "fresh": true
         },
         "borderColor": {
           "type": "color",
@@ -1050,22 +1099,26 @@
           "type": "enum",
           "enum": "LineStyle",
           "required": true,
-          "default": "solid"
+          "default": "solid",
+          "fresh": true
         },
         "borderGlow": {
           "type": "number",
           "required": true,
-          "default": 0.0
+          "default": 0.0,
+          "fresh": true
         },
         "effectActiveOnly": {
           "type": "bool",
           "required": true,
-          "default": false
+          "default": false,
+          "fresh": true
         },
         "borderActiveOnly": {
           "type": "bool",
           "required": true,
-          "default": true
+          "default": true,
+          "fresh": true
         },
         "iconSizeOverride": {
           "type": "number",
@@ -1076,13 +1129,15 @@
           "enum": "IconTapAnimation",
           "strict": false,
           "required": true,
-          "default": "replace"
+          "default": "replace",
+          "fresh": true
         },
         "cameraDisplayMode": {
           "type": "enum",
           "enum": "CameraDisplayMode",
           "required": true,
-          "default": "icon"
+          "default": "icon",
+          "fresh": true
         },
         "cameraAspectRatio": {
           "type": "number",
@@ -1091,12 +1146,14 @@
         "cameraFillOffsetX": {
           "type": "number",
           "required": true,
-          "default": 0.0
+          "default": 0.0,
+          "fresh": true
         },
         "cameraFillOffsetY": {
           "type": "number",
           "required": true,
-          "default": 0.0
+          "default": 0.0,
+          "fresh": true
         },
         "cameraRefreshOnOpen": {
           "type": "bool",
@@ -1145,18 +1202,21 @@
         "multiCamBorderEnabled": {
           "type": "bool",
           "required": true,
-          "default": false
+          "default": false,
+          "fresh": true
         },
         "multiCamBorderColor": {
           "type": "color",
           "required": true,
-          "default": "FFFFFF"
+          "default": "FFFFFF",
+          "fresh": true
         },
         "multiCamBorderThickness": {
           "type": "enum",
           "enum": "BorderThickness",
           "required": true,
-          "default": "thin"
+          "default": "thin",
+          "fresh": true
         },
         "musicHubSpeakerIds": {
           "type": "array",
@@ -1166,7 +1226,8 @@
         "showAlbumArt": {
           "type": "bool",
           "required": true,
-          "default": true
+          "default": true,
+          "fresh": true
         },
         "musicHubGroupPresets": {
           "type": "array",
@@ -1452,22 +1513,26 @@
         "colSpan": {
           "type": "int",
           "required": true,
-          "default": 6
+          "default": 6,
+          "fresh": true
         },
         "rowSpan": {
           "type": "int",
           "required": true,
-          "default": 4
+          "default": 4,
+          "fresh": true
         },
         "gridCol": {
           "type": "int",
           "required": true,
-          "default": 0
+          "default": 0,
+          "fresh": true
         },
         "gridRow": {
           "type": "int",
           "required": true,
-          "default": 0
+          "default": 0,
+          "fresh": true
         }
       }
     },
@@ -1476,13 +1541,15 @@
       "keys": {
         "id": {
           "type": "uuid",
-          "required": true
+          "required": true,
+          "fresh": true
         },
         "backgroundPattern": {
           "type": "enum",
           "enum": "TileBackgroundPattern",
           "required": true,
-          "default": "none"
+          "default": "none",
+          "fresh": true
         },
         "backgroundPatternOpacity": {
           "type": "number",
@@ -1500,27 +1567,32 @@
           "type": "enum",
           "enum": "GroupOverlayStyle",
           "required": true,
-          "default": "none"
+          "default": "none",
+          "fresh": true
         },
         "overlayColor": {
           "type": "color",
           "required": true,
-          "default": "#FFFFFF"
+          "default": "#FFFFFF",
+          "fresh": true
         },
         "overlaySpeed": {
           "type": "number",
           "required": true,
-          "default": 1.0
+          "default": 1.0,
+          "fresh": true
         },
         "overlayIntensity": {
           "type": "number",
           "required": true,
-          "default": 1.0
+          "default": 1.0,
+          "fresh": true
         },
         "overlaySize": {
           "type": "number",
           "required": true,
-          "default": 1.0
+          "default": 1.0,
+          "fresh": true
         }
       }
     },
@@ -1532,43 +1604,51 @@
           "of": "object",
           "ref": "domainRule",
           "required": true,
-          "default": []
+          "default": [],
+          "fresh": true
         },
         "tileColSpan": {
           "type": "int",
           "required": true,
-          "default": 4
+          "default": 4,
+          "fresh": true
         },
         "tileRowSpan": {
           "type": "int",
           "required": true,
-          "default": 3
+          "default": 3,
+          "fresh": true
         },
         "tileShowLabel": {
           "type": "bool",
           "required": true,
-          "default": true
+          "default": true,
+          "fresh": true
         },
         "sortOrder": {
           "type": "enum",
           "enum": "DynamicSortOrder",
           "required": true,
-          "default": "domain"
+          "default": "domain",
+          "fresh": true
         },
         "liveUpdates": {
           "type": "bool",
           "required": true,
-          "default": false
+          "default": false,
+          "fresh": true
         },
         "refreshOnAppear": {
           "type": "bool",
           "required": true,
-          "default": false
+          "default": false,
+          "fresh": true
         },
         "pullToRefresh": {
           "type": "bool",
           "required": true,
-          "default": true
+          "default": true,
+          "fresh": true
         }
       }
     },
@@ -1577,23 +1657,27 @@
       "keys": {
         "id": {
           "type": "uuid",
-          "required": false
+          "required": false,
+          "fresh": true
         },
         "domain": {
           "type": "string",
-          "required": true
+          "required": true,
+          "fresh": true
         },
         "mode": {
           "type": "enum",
           "enum": "SelectionMode",
           "required": false,
-          "default": "all"
+          "default": "all",
+          "fresh": true
         },
         "entityIds": {
           "type": "array",
           "of": "entity",
           "required": false,
-          "default": []
+          "default": [],
+          "fresh": true
         },
         "resolvedEntityIds": {
           "type": "array",
@@ -1607,7 +1691,8 @@
         "invertActive": {
           "type": "bool",
           "required": false,
-          "default": false
+          "default": false,
+          "fresh": true
         },
         "mediaPlayerPlayingOnly": {
           "type": "bool",
@@ -1636,7 +1721,8 @@
           "type": "enum",
           "enum": "DomainHeaderStyle",
           "required": false,
-          "default": "label"
+          "default": "label",
+          "fresh": true
         },
         "headerColor": {
           "type": "color",
@@ -1895,21 +1981,25 @@
       "keys": {
         "id": {
           "type": "uuid",
-          "required": true
+          "required": true,
+          "fresh": true
         },
         "state": {
           "type": "string",
-          "required": true
+          "required": true,
+          "fresh": true
         },
         "comparisonOperator": {
           "type": "enum",
           "enum": "VisibilityOperator",
           "required": true,
-          "default": "eq"
+          "default": "eq",
+          "fresh": true
         },
         "colorHex": {
           "type": "color",
-          "required": true
+          "required": true,
+          "fresh": true
         },
         "iconOverride": {
           "type": "symbol",
@@ -1926,16 +2016,19 @@
       "keys": {
         "id": {
           "type": "uuid",
-          "required": true
+          "required": true,
+          "fresh": true
         },
         "name": {
           "type": "string",
-          "required": true
+          "required": true,
+          "fresh": true
         },
         "speakerIds": {
           "type": "array",
           "of": "entity",
-          "required": true
+          "required": true,
+          "fresh": true
         }
       }
     },
@@ -1944,12 +2037,14 @@
       "keys": {
         "entityId": {
           "type": "entity",
-          "required": true
+          "required": true,
+          "fresh": true
         },
         "mode": {
           "type": "enum",
           "enum": "TriggerMode",
-          "required": true
+          "required": true,
+          "fresh": true
         },
         "friendlyName": {
           "type": "string",

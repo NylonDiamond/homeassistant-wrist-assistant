@@ -1,0 +1,29 @@
+{
+  "name": "The phone swaps two pages, the server adds a page at the front: the pages are in the phone's order, then the server's new page",
+  "base": {
+    "pages": [
+      {"id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC", "name": "Home", "items": []},
+      {"id": "77DB791C-A1D9-4642-B591-721D20088FA6", "name": "Lights", "items": []}
+    ]
+  },
+  "phone": {
+    "pages": [
+      {"id": "77DB791C-A1D9-4642-B591-721D20088FA6", "name": "Lights", "items": []},
+      {"id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC", "name": "Home", "items": []}
+    ]
+  },
+  "server": {
+    "pages": [
+      {"id": "BDF30AAD-BF9C-49D5-B11E-6E196EDDBA28", "name": "Panel page", "items": []},
+      {"id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC", "name": "Home", "items": []},
+      {"id": "77DB791C-A1D9-4642-B591-721D20088FA6", "name": "Lights", "items": []}
+    ]
+  },
+  "expected": {
+    "pages": [
+      {"id": "77DB791C-A1D9-4642-B591-721D20088FA6", "name": "Lights", "items": []},
+      {"id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC", "name": "Home", "items": []},
+      {"id": "BDF30AAD-BF9C-49D5-B11E-6E196EDDBA28", "name": "Panel page", "items": []}
+    ]
+  }
+}

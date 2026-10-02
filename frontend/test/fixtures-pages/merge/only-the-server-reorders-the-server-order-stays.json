@@ -1,0 +1,31 @@
+{
+  "name": "The server reverses the pages and the phone renames one without moving any: the pages are in the server's order, the rename stays",
+  "base": {
+    "pages": [
+      {"id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC", "name": "Home", "items": []},
+      {"id": "77DB791C-A1D9-4642-B591-721D20088FA6", "name": "Lights", "items": []},
+      {"id": "7EFE84AE-65F5-4D51-905A-CC87A8F91BAB", "name": "Garage", "items": []}
+    ]
+  },
+  "phone": {
+    "pages": [
+      {"id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC", "name": "Home", "items": []},
+      {"id": "77DB791C-A1D9-4642-B591-721D20088FA6", "name": "All lights", "items": []},
+      {"id": "7EFE84AE-65F5-4D51-905A-CC87A8F91BAB", "name": "Garage", "items": []}
+    ]
+  },
+  "server": {
+    "pages": [
+      {"id": "7EFE84AE-65F5-4D51-905A-CC87A8F91BAB", "name": "Garage", "items": []},
+      {"id": "77DB791C-A1D9-4642-B591-721D20088FA6", "name": "Lights", "items": []},
+      {"id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC", "name": "Home", "items": []}
+    ]
+  },
+  "expected": {
+    "pages": [
+      {"id": "7EFE84AE-65F5-4D51-905A-CC87A8F91BAB", "name": "Garage", "items": []},
+      {"id": "77DB791C-A1D9-4642-B591-721D20088FA6", "name": "All lights", "items": []},
+      {"id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC", "name": "Home", "items": []}
+    ]
+  }
+}

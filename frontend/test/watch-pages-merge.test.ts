@@ -1,0 +1,496 @@
+// The three-way merge of the watch's page config, its JSON equality, and the
+// shape check that stops a save.
+//
+// The case files in `fixtures-pages/merge` are the specification the phone
+// runs too (copied from the app repo, which is canonical, by
+// `scripts/sync-complication-fixtures.sh`); every file in the folder is run.
+// `phone` in a case file is the local side, which in the panel is the draft.
+
+import { describe, expect, it } from "vitest";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+
+import type { JsonObject, WatchPagesDocument } from "../src/watch-pages/model.js";
+import {
+  WATCH_PAGES_SLIDE_MAP_KEYS,
+  checkWatchPages,
+  mergeWatchPages,
+  mergeWatchPagesByKey,
+  sameWatchPagesJson,
+} from "../src/watch-pages/merge.js";
+
+function deepFreeze<T>(value: T): T {
+  if (typeof value === "object" && value !== null && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const child of Object.values(value as object)) deepFreeze(child);
+  }
+  return value;
+}
+
+/** A structured copy, to check after a merge that nothing changed. */
+function snapshot(value: unknown): unknown {
+  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+}
+
+/** Every value, at any depth, that is `null`, by path. */
+function nullPaths(value: unknown, path = "$"): string[] {
+  if (value === null) return [path];
+  if (Array.isArray(value)) return value.flatMap((v, i) => nullPaths(v, `${path}[${i}]`));
+  if (typeof value === "object") return Object.entries(value as object).flatMap(([k, v]) => nullPaths(v, `${path}.${k}`));
+  return [];
+}
+
+// ── the case files ───────────────────────────────────────────────────────
+
+const casesDir = join(__dirname, "fixtures-pages", "merge");
+const caseFiles = existsSync(casesDir)
+  ? readdirSync(casesDir, { withFileTypes: true })
+      .filter((e) => e.isFile() && e.name.endsWith(".json"))
+      .map((e) => e.name)
+      .sort()
+  : [];
+
+interface MergeCase {
+  name: string;
+  base?: WatchPagesDocument | null;
+  phone: WatchPagesDocument;
+  server: WatchPagesDocument;
+  expected: WatchPagesDocument;
+}
+
+describe("merge case files", () => {
+  it("are read from the folder", () => {
+    expect(caseFiles.length).toBeGreaterThan(0);
+  });
+
+  for (const file of caseFiles) {
+    const c = JSON.parse(readFileSync(join(casesDir, file), "utf8")) as MergeCase;
+    it(`${file}: ${c.name}`, () => {
+      const before = { base: snapshot(c.base), phone: snapshot(c.phone), server: snapshot(c.server) };
+      deepFreeze(c);
+      const merged = mergeWatchPages(c.base ?? null, c.phone, c.server);
+      expect(sameWatchPagesJson(merged, c.expected)).toBe(true);
+      expect(merged).toEqual(c.expected);
+      expect({ base: snapshot(c.base), phone: snapshot(c.phone), server: snapshot(c.server) }).toEqual(before);
+    });
+  }
+});
+
+// ── order ────────────────────────────────────────────────────────────────
+
+/** A document of pages with the given ids and names, no tiles. */
+function pages(...entries: Array<string | [string, string]>): WatchPagesDocument {
+  return {
+    schemaVersion: 1,
+    pages: entries.map((e) => (typeof e === "string" ? { id: e, name: e } : { id: e[0], name: e[1] })),
+  };
+}
+
+function idsOf(document: WatchPagesDocument): string[] {
+  return (document.pages as JsonObject[]).map((p) => p.id as string);
+}
+
+function namesOf(document: WatchPagesDocument): string[] {
+  return (document.pages as JsonObject[]).map((p) => p.name as string);
+}
+
+function merge(base: WatchPagesDocument | null, local: WatchPagesDocument, server: WatchPagesDocument): WatchPagesDocument {
+  return mergeWatchPages(deepFreeze(base), deepFreeze(local), deepFreeze(server));
+}
+
+describe("order of a merged list", () => {
+  it("is the server's when local did not reorder", () => {
+    const out = merge(pages("A", "B", "C"), pages("A", "B", "C"), pages("C", "A", "B"));
+    expect(idsOf(out)).toEqual(["C", "A", "B"]);
+  });
+
+  it("puts what only local holds after the server's, in local's order", () => {
+    const out = merge(pages("A", "B"), pages("Y", "A", "X", "B"), pages("B", "A", "S"));
+    // Local added Y and X without moving A and B: no reorder.
+    expect(idsOf(out)).toEqual(["B", "A", "S", "Y", "X"]);
+  });
+
+  it("does not count adding or deleting as a reorder", () => {
+    const out = merge(pages("A", "B", "C"), pages("A", "C", "N"), pages("C", "B", "A"));
+    // Local deleted B (unchanged on the server, so gone) and added N.
+    expect(idsOf(out)).toEqual(["C", "A", "N"]);
+  });
+
+  it("is local's when local reordered, with what only the server holds after", () => {
+    const out = merge(pages("A", "B", "C"), pages("C", "A", "B"), pages("A", "S", "B", "C"));
+    expect(idsOf(out)).toEqual(["C", "A", "B", "S"]);
+  });
+
+  it("is local's when both sides reordered", () => {
+    const out = merge(pages("A", "B", "C"), pages("B", "A", "C"), pages("C", "B", "A"));
+    expect(idsOf(out)).toEqual(["B", "A", "C"]);
+  });
+
+  it("keeps a page local added in its place when local reordered", () => {
+    const out = merge(pages("A", "B", "C"), pages("C", "N", "A", "B"), pages("A", "B", "C", "S"));
+    expect(idsOf(out)).toEqual(["C", "N", "A", "B", "S"]);
+  });
+
+  it("merges the keys of a page in local's order", () => {
+    const out = merge(pages("A", "B"), pages("B", "A"), pages("A", ["B", "Renamed"]));
+    expect(idsOf(out)).toEqual(["B", "A"]);
+    expect(namesOf(out)).toEqual(["Renamed", "A"]);
+  });
+
+  describe("when local reordered", () => {
+    const base = pages("A", "B", "C");
+
+    it("drops a page the server deleted and local left as it was", () => {
+      const out = merge(base, pages("C", "B", "A"), pages("A", "C"));
+      expect(idsOf(out)).toEqual(["C", "A"]);
+    });
+
+    it("keeps, in local's place, a page the server deleted and local changed", () => {
+      const out = merge(base, pages("C", ["B", "Changed"], "A"), pages("A", "C"));
+      expect(idsOf(out)).toEqual(["C", "B", "A"]);
+      expect(namesOf(out)).toEqual(["C", "Changed", "A"]);
+    });
+
+    it("drops a page local deleted and the server left as it was", () => {
+      const out = merge(base, pages("C", "A"), pages("A", "B", "C"));
+      expect(idsOf(out)).toEqual(["C", "A"]);
+    });
+
+    it("puts last a page local deleted and the server changed", () => {
+      const out = merge(base, pages("C", "A"), pages("A", ["B", "Changed"], "C"));
+      expect(idsOf(out)).toEqual(["C", "A", "B"]);
+      expect(namesOf(out)).toEqual(["C", "A", "Changed"]);
+    });
+  });
+
+  describe("when local did not reorder", () => {
+    const base = pages("A", "B", "C");
+
+    it("drops a page local deleted and the server left as it was", () => {
+      const out = merge(base, pages("A", "C"), pages("C", "B", "A"));
+      expect(idsOf(out)).toEqual(["C", "A"]);
+    });
+
+    it("keeps, in the server's place, a page local deleted and the server changed", () => {
+      const out = merge(base, pages("A", "C"), pages("C", ["B", "Changed"], "A"));
+      expect(idsOf(out)).toEqual(["C", "B", "A"]);
+    });
+
+    it("drops a page the server deleted and local left as it was", () => {
+      const out = merge(base, pages("A", "B", "C"), pages("C", "A"));
+      expect(idsOf(out)).toEqual(["C", "A"]);
+    });
+
+    it("puts last a page the server deleted and local changed", () => {
+      const out = merge(base, pages("A", ["B", "Changed"], "C"), pages("C", "A"));
+      expect(idsOf(out)).toEqual(["C", "A", "B"]);
+    });
+  });
+
+  it("uses the server's document as the base when there is none", () => {
+    // Same relative order as the server: no reorder, so the server's order
+    // with local's added page last, and every difference reads as local's.
+    const same = merge(null, pages("A", ["B", "Mine"], "N"), pages("A", "B", "S"));
+    expect(idsOf(same)).toEqual(["A", "B", "N"]);
+    expect(namesOf(same)).toEqual(["A", "Mine", "N"]);
+    // Another order than the server's: local's order.
+    const moved = merge(null, pages("B", "A"), pages("A", "B", "S"));
+    expect(idsOf(moved)).toEqual(["B", "A"]);
+  });
+
+  it("applies to the tiles of each page on their own", () => {
+    const tile = (id: string) => ({ id, entityId: `light.${id.toLowerCase()}` });
+    const doc = (pageOrder: string[], tileOrder: string[]): WatchPagesDocument => ({
+      pages: pageOrder.map((id) => ({ id, items: id === "P" ? tileOrder.map(tile) : [] })),
+    });
+    const out = merge(doc(["P", "Q"], ["a", "b", "c"]), doc(["P", "Q"], ["c", "b", "a"]), doc(["Q", "P"], ["a", "b", "c", "d"]));
+    expect(idsOf(out)).toEqual(["Q", "P"]);
+    const p = (out.pages as JsonObject[])[1]!;
+    expect((p.items as JsonObject[]).map((t) => t.id)).toEqual(["c", "b", "a", "d"]);
+  });
+});
+
+// ── keys and lists ───────────────────────────────────────────────────────
+
+describe("merge by key", () => {
+  it("takes local's value for a key local changed, else the server's", () => {
+    const out = mergeWatchPagesByKey(
+      deepFreeze({ a: 1, b: 1, c: 1 }),
+      deepFreeze({ a: 2, b: 1, c: 1 }),
+      deepFreeze({ a: 3, b: 3, c: 1 }),
+    );
+    expect(out).toEqual({ a: 2, b: 3, c: 1 });
+  });
+
+  it("counts a removal as a change, and never writes null", () => {
+    const out = mergeWatchPagesByKey({ a: 1, b: 1, c: 1 }, { b: 1, c: null }, { a: 1, b: null, c: 1, d: null });
+    expect(out).toEqual({});
+    expect(Object.keys(out)).toEqual([]);
+  });
+
+  it("with no base keeps every key local holds and adds the server's others", () => {
+    const out = mergeWatchPagesByKey(null, { a: 2, n: null }, { a: 1, b: 1, n: 5 });
+    expect(out).toEqual({ a: 2, b: 1 });
+  });
+
+  it("puts the server's keys first in the server's order, then local's own", () => {
+    const out = mergeWatchPagesByKey({ x: 0 }, { z: 1, x: 0, y: 2 }, { b: 1, x: 5, a: 1 });
+    expect(Object.keys(out)).toEqual(["b", "x", "a", "z", "y"]);
+  });
+
+  it("orders a merged tile's keys the same way", () => {
+    const tile = (extra: JsonObject) => ({ pages: [{ id: "P", items: [{ id: "T", entityId: "light.a", ...extra }] }] });
+    const out = merge(tile({ color: "a" }), tile({ local: 1, color: "b" }), tile({ server: 1, color: "a" }));
+    const merged = ((out.pages as JsonObject[])[0]!.items as JsonObject[])[0]!;
+    expect(Object.keys(merged)).toEqual(["id", "entityId", "server", "color", "local"]);
+    expect(merged.color).toBe("b");
+  });
+});
+
+describe("taking a side whole", () => {
+  it("returns the server's very document when local changed nothing", () => {
+    const base = pages("A", "B");
+    const server = pages("B", ["A", "New"]);
+    expect(merge(base, base, server)).toBe(server);
+    expect(merge(base, pages("A", "B"), server)).toBe(server);
+  });
+
+  it("returns local's very document when the server changed nothing", () => {
+    const base = pages("A", "B");
+    const local = pages("B", ["A", "New"], "C");
+    expect(merge(base, local, pages("A", "B"))).toBe(local);
+  });
+
+  it("keeps the other side's objects where only one side changed", () => {
+    const base = pages("A", "B", "C");
+    const local = pages(["A", "Mine"], "B", "C");
+    const server = pages("A", "B", ["C", "Theirs"]);
+    const out = merge(base, local, server);
+    const [a, b, c] = out.pages as JsonObject[];
+    expect(a).toBe((local.pages as JsonObject[])[0]);
+    expect(b).toBe((server.pages as JsonObject[])[1]);
+    expect(c).toBe((server.pages as JsonObject[])[2]);
+  });
+
+  it("keeps a page only one side holds as that object", () => {
+    const base = pages("A");
+    const local = pages("A", "L");
+    const server = pages("A", "S");
+    const out = merge(base, local, server);
+    expect((out.pages as JsonObject[])[1]).toBe((server.pages as JsonObject[])[1]);
+    expect((out.pages as JsonObject[])[2]).toBe((local.pages as JsonObject[])[1]);
+  });
+
+  it("keeps a key's value as the object it came from", () => {
+    const groups = [{ id: "G", name: "group" }];
+    const base = { pages: [{ id: "P", groups: [] as unknown[], name: "a" }] };
+    const local = { pages: [{ id: "P", groups, name: "a" }] };
+    const server = { pages: [{ id: "P", groups: [] as unknown[], name: "b" }] };
+    const out = merge(base, local, server);
+    expect((out.pages as JsonObject[])[0]!.groups).toBe(groups);
+  });
+
+  it("keeps a list that cannot be matched as the very list of the side it comes from", () => {
+    const localItems = [{ entityId: "light.a" }];
+    const base = { pages: [{ id: "P", items: [] as unknown[], name: "a" }] };
+    const local = { pages: [{ id: "P", items: localItems, name: "a" }] };
+    const server = { pages: [{ id: "P", items: [] as unknown[], name: "b" }] };
+    const out = merge(base, local, server);
+    const page = (out.pages as JsonObject[])[0]!;
+    expect(page.items).toBe(localItems);
+    expect(page.name).toBe("b");
+  });
+
+  it("merges a list one side lacks as one value", () => {
+    const base = { pages: [{ id: "P", items: [{ id: "T", entityId: "a" }] }] };
+    const local = { pages: [{ id: "P" }] };
+    const server = { pages: [{ id: "P", items: [{ id: "T", entityId: "a" }, { id: "U", entityId: "b" }] }] };
+    // Local removed the list, the server changed it: local's removal stands.
+    expect(merge(base, local, server)).toEqual({ pages: [{ id: "P" }] });
+  });
+
+  it("never holds null where a merge picks keys", () => {
+    const base = { a: 1, pages: [{ id: "P", x: 1, items: [{ id: "T", entityId: "e", y: 1 }] }] };
+    const local = { a: null, pages: [{ id: "P", x: null, items: [{ id: "T", entityId: "e", y: null }] }] };
+    const server = { a: 1, b: null, pages: [{ id: "P", x: 1, z: null, items: [{ id: "T", entityId: "e", y: 1, w: null }] }] };
+    const out = merge(base, local, server);
+    expect(nullPaths(out)).toEqual([]);
+    expect(out).toEqual({ pages: [{ id: "P", items: [{ id: "T", entityId: "e" }] }] });
+  });
+
+  it("drops a null page list", () => {
+    expect(merge({ pages: [] }, { pages: null }, { pages: [] })).toEqual({});
+  });
+});
+
+// ── equality ─────────────────────────────────────────────────────────────
+
+describe("JSON equality", () => {
+  it("ignores object key order", () => {
+    expect(sameWatchPagesJson({ a: 1, b: { c: 2, d: 3 } }, { b: { d: 3, c: 2 }, a: 1 })).toBe(true);
+  });
+
+  it("is deep and minds array order", () => {
+    expect(sameWatchPagesJson({ a: [1, { b: 2 }] }, { a: [1, { b: 2 }] })).toBe(true);
+    expect(sameWatchPagesJson({ a: [1, { b: 2 }] }, { a: [1, { b: 3 }] })).toBe(false);
+    expect(sameWatchPagesJson([1, 2], [2, 1])).toBe(false);
+    expect(sameWatchPagesJson([1, 2], [1, 2, 3])).toBe(false);
+  });
+
+  it("reads null as absent, at every depth", () => {
+    expect(sameWatchPagesJson(null, undefined)).toBe(true);
+    expect(sameWatchPagesJson({ a: 1, b: null }, { a: 1 })).toBe(true);
+    expect(sameWatchPagesJson({ a: 1 }, { a: 1, b: null })).toBe(true);
+    expect(sameWatchPagesJson({ x: [{ b: null }] }, { x: [{}] })).toBe(true);
+    expect(sameWatchPagesJson({ a: null }, { a: 0 })).toBe(false);
+    expect(sameWatchPagesJson([null], [null])).toBe(true);
+    expect(sameWatchPagesJson([null], [0])).toBe(false);
+  });
+
+  it("compares numbers by value", () => {
+    expect(sameWatchPagesJson(JSON.parse("6.0"), 6)).toBe(true);
+    expect(sameWatchPagesJson(6, 6.5)).toBe(false);
+  });
+
+  it("never takes a boolean for a number", () => {
+    expect(sameWatchPagesJson(true, 1)).toBe(false);
+    expect(sameWatchPagesJson(false, 0)).toBe(false);
+    expect(sameWatchPagesJson({ a: true }, { a: 1 })).toBe(false);
+    expect(sameWatchPagesJson(true, true)).toBe(true);
+  });
+
+  it("tells types apart", () => {
+    expect(sameWatchPagesJson("1", 1)).toBe(false);
+    expect(sameWatchPagesJson([], {})).toBe(false);
+    expect(sameWatchPagesJson({}, [])).toBe(false);
+    expect(sameWatchPagesJson("", undefined)).toBe(false);
+  });
+
+  it("reads keys only as the object's own", () => {
+    expect(sameWatchPagesJson({}, { constructor: null })).toBe(true);
+    expect(sameWatchPagesJson({ constructor: 1 }, {})).toBe(false);
+    expect(sameWatchPagesJson(JSON.parse('{"__proto__": 1}'), {})).toBe(false);
+  });
+
+  describe("slide maps", () => {
+    it("are the five holdSlide keys", () => {
+      expect([...WATCH_PAGES_SLIDE_MAP_KEYS].sort()).toEqual([
+        "holdSlideActions",
+        "holdSlideHTTPActionBannerSeconds",
+        "holdSlideHTTPActionShowBanner",
+        "holdSlideHTTPActionTargets",
+        "holdSlideTriggerTargets",
+      ]);
+    });
+
+    it("compare as sets of pairs", () => {
+      expect(sameWatchPagesJson({ holdSlideActions: ["up", "a", "down", "b"] }, { holdSlideActions: ["down", "b", "up", "a"] })).toBe(true);
+      expect(sameWatchPagesJson({ holdSlideActions: ["up", "a", "down", "b"] }, { holdSlideActions: ["down", "a", "up", "b"] })).toBe(false);
+      expect(sameWatchPagesJson({ holdSlideActions: ["up", "a"] }, { holdSlideActions: ["up", "a", "down", "b"] })).toBe(false);
+      expect(
+        sameWatchPagesJson(
+          { holdSlideTriggerTargets: ["left", { id: 1, x: 2 }, "up", 1] },
+          { holdSlideTriggerTargets: ["up", 1.0, "left", { x: 2, id: 1 }] },
+        ),
+      ).toBe(true);
+    });
+
+    it("compare as sets inside a tile in a document", () => {
+      const doc = (actions: unknown[]) => ({ pages: [{ id: "P", items: [{ id: "T", holdSlideActions: actions }] }] });
+      expect(sameWatchPagesJson(doc(["up", "a", "left", "b"]), doc(["left", "b", "up", "a"]))).toBe(true);
+    });
+
+    it("compare in order when either side is not a map of pairs", () => {
+      // An odd length, a direction that is not a string, a direction twice.
+      for (const broken of [["up", "a", "down"], [1, "a", 2, "b"], ["up", "a", "up", "b"]]) {
+        expect(sameWatchPagesJson({ holdSlideActions: broken }, { holdSlideActions: [...broken] })).toBe(true);
+        expect(sameWatchPagesJson({ holdSlideActions: broken }, { holdSlideActions: [...broken].reverse() })).toBe(false);
+      }
+    });
+
+    it("compare in order under any other key", () => {
+      expect(sameWatchPagesJson({ actions: ["up", "a", "down", "b"] }, { actions: ["down", "b", "up", "a"] })).toBe(false);
+    });
+
+    it("are no change in a merge when only their order moved", () => {
+      const doc = (actions: unknown[], name: string) => ({ pages: [{ id: "P", name, items: [{ id: "T", entityId: "e", holdSlideActions: actions }] }] });
+      const base = doc(["down", "b", "up", "a"], "x");
+      const local = doc(["up", "a", "down", "b"], "x");
+      const server = doc(["up", "c", "down", "b"], "y");
+      expect(merge(base, local, server)).toBe(server);
+    });
+  });
+});
+
+// ── shape check ──────────────────────────────────────────────────────────
+
+describe("checkWatchPages", () => {
+  it("passes a sound document", () => {
+    expect(
+      checkWatchPages({
+        schemaVersion: 1,
+        pages: [
+          { id: "A", items: [{ id: "T", entityId: "light.a" }, { id: "U", entityId: "light.b" }] },
+          { id: "B" },
+          { id: "C", items: [{ id: "T", entityId: "light.a" }] },
+        ],
+      }),
+    ).toEqual([]);
+  });
+
+  it("passes every shared fixture document", () => {
+    const dir = join(__dirname, "fixtures-pages");
+    if (!existsSync(dir)) return;
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+      expect(checkWatchPages(JSON.parse(readFileSync(join(dir, entry.name), "utf8"))), entry.name).toEqual([]);
+    }
+  });
+
+  it("refuses a document that is not an object, or has no page list", () => {
+    expect(checkWatchPages(null)).toHaveLength(1);
+    expect(checkWatchPages([])).toHaveLength(1);
+    expect(checkWatchPages({})).toHaveLength(1);
+    expect(checkWatchPages({ pages: {} })).toHaveLength(1);
+  });
+
+  it("names pages that are not objects or have no id", () => {
+    const problems = checkWatchPages({ pages: [1, { name: "Home" }, { id: "" }, { id: 5 }] });
+    expect(problems).toEqual([
+      "Page 1 is not an object.",
+      'Page 2 ("Home") has no id.',
+      "Page 3 has no id.",
+      "Page 4 has no id.",
+    ]);
+  });
+
+  it("finds two pages with one id, whatever the case", () => {
+    expect(checkWatchPages({ pages: [{ id: "ab", name: "One" }, { id: "AB" }] })).toEqual([
+      'Page 2 has the same id as Page 1 ("One").',
+    ]);
+  });
+
+  it("finds tiles that are not a list", () => {
+    expect(checkWatchPages({ pages: [{ id: "A", items: {} }] })).toEqual(["Page 1 has tiles that are not a list."]);
+    expect(checkWatchPages({ pages: [{ id: "A", items: null }] })).toEqual(["Page 1 has tiles that are not a list."]);
+  });
+
+  it("finds tiles that are not objects or lack an id or an entity", () => {
+    const problems = checkWatchPages({
+      pages: [{ id: "A", items: ["x", { entityId: "light.a" }, { id: "T" }, { id: "U", entityId: 3 }, { id: "V", entityId: "" }] }],
+    });
+    expect(problems).toEqual([
+      "Page 1, tile 1 is not an object.",
+      "Page 1, tile 2 has no id.",
+      "Page 1, tile 3 has no entity.",
+      "Page 1, tile 4 has no entity.",
+      "Page 1, tile 5 has no entity.",
+    ]);
+  });
+
+  it("finds two tiles with one id in a page, whatever the case", () => {
+    expect(
+      checkWatchPages({ pages: [{ id: "A", items: [{ id: "t", entityId: "a" }, { id: "T", entityId: "b" }] }] }),
+    ).toEqual(["Page 1, tile 2 has the same id as tile 1."]);
+  });
+});
