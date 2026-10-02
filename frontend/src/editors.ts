@@ -371,8 +371,7 @@ import {
 import type { HassEntityState, HassLike } from "./ha-api.js";
 import { MIN_ZOOM, familyTitle, type IconProvider } from "./renderer.js";
 import { IMAGE_UPLOAD_ACCEPT, encodeInlinePicture, formatKiB } from "./inline-image.js";
-import { CURATED_SYMBOLS, SYMBOL_CATEGORIES, SymbolBrowser, searchSymbols, type SymbolPack } from "./symbols.js";
-import { MDI_PREFIX } from "./icons.js";
+import { CURATED_SYMBOLS, MDI_PREFIX, SYMBOL_CATEGORIES, SymbolBrowser, searchSymbols, type SymbolPack } from "./symbols.js";
 import { centerFrame, isCentered, typedFrame, type CenterAxis } from "./interact.js";
 import {
   DESIGN_BOX,
@@ -1678,7 +1677,7 @@ export function symbolCount(shown: number, matches: number, searching: boolean, 
   return matches === 1 ? "1 symbol matches." : `${matches} symbols match.`;
 }
 
-function symbolTile(host: EditorHost, name: string, selected: boolean, pick: (n: string) => void): TemplateResult {
+function symbolTile(host: SymbolFieldHost, name: string, selected: boolean, pick: (n: string) => void): TemplateResult {
   // The color passed here is overridden by CSS `currentColor`, which wins over
   // the presentation attribute the provider writes, so tiles follow the theme.
   const glyph = host.icons.render(name, 22, "#FFFFFF");
@@ -1702,8 +1701,13 @@ function symbolTile(host: EditorHost, name: string, selected: boolean, pick: (n:
  * field. A layer's symbol is most of what the layer is, so its grid starts
  * open; a symbol that is one row of a long properties sheet passes false.
  */
-function symbolField(
-  host: EditorHost,
+/** What the symbol field reads from its host: the provider that draws and
+ * lists the glyphs, and the browser that keeps what is open, typed and recent.
+ * Narrower than `EditorHost`, so the page editor can hand in its own two. */
+export type SymbolFieldHost = Pick<EditorHost, "icons" | "symbols">;
+
+export function symbolField(
+  host: SymbolFieldHost,
   symbol: string,
   set: (v: string) => void,
   key: string,

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Panel harness</title>
+<link rel="icon" href="data:,">
+<style>
+  /* The panel sets its own tokens on its host, so the page needs none. */
+  html { color-scheme: only light; }
+  html, body { margin: 0; height: 100%; }
+  body { font: 14px/1.35 -apple-system, BlinkMacSystemFont, "Inter", Roboto, sans-serif; }
+  #frame { display: flex; flex-direction: column; height: 100dvh; }
+  #frame > wrist-assistant-panel { flex: 1 1 auto; min-height: 0; }
+</style>
+</head>
+<body>
+  <div id="frame"></div>
+  <script type="module" src="dist/panel-harness.js"></script>
+</body>
+</html>

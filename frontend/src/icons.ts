@@ -16,10 +16,7 @@ import type { IconProvider } from "./renderer.js";
 import { parseColor } from "./renderer.js";
 import { SYMBOL_DIGEST } from "./symbol-digest.js";
 import { MDI_DIGEST } from "./mdi-digest.js";
-
-/** What a Material Design icon name starts with, everywhere: in `symbol`, in
- * the bundled catalogue's keys, and in the picker. */
-export const MDI_PREFIX = "mdi:";
+import { MDI_PREFIX } from "./symbols.js";
 
 interface CustomIconResult {
   path?: string;

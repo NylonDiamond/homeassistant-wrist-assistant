@@ -1,5 +1,6 @@
-// Bundles the page editor's local harness: `pages-harness.ts` and everything
-// it imports from `../src`, into `dev/dist/` and nowhere else. The panel's own
+// Bundles the local harnesses: `pages-harness.ts` (the page editor) and
+// `panel-harness.ts` (the whole panel), with everything they import from
+// `../src`, into `dev/dist/` and nowhere else. The panel's own
 // bundle (`../build.mjs`) is never read or written from here, so a harness
 // build cannot change what the integration serves.
 //
@@ -60,7 +61,9 @@ const report = {
 
 const options = {
   absWorkingDir: frontendDir,
-  entryPoints: { "pages-harness": "dev/pages-harness.ts" },
+  // The panel's own harness (`panel-harness.ts`) builds beside it: the whole
+  // panel with a complication open, for looking at its styles.
+  entryPoints: { "pages-harness": "dev/pages-harness.ts", "panel-harness": "dev/panel-harness.ts" },
   bundle: true,
   format: "esm",
   splitting: false,

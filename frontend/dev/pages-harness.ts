@@ -22,6 +22,7 @@
 
 import "../src/watch-pages/page-editor.js";
 import type { HassEntityState, HassLike, OwnerSummary } from "../src/ha-api.js";
+import { EXTRA_STATES, type HomeRegistries, StandInIcons, homeRegistries } from "./harness-home.js";
 // @ts-expect-error A module the harness build makes from the page fixtures.
 import pageFixturesModule from "harness:page-fixtures";
 
@@ -572,14 +573,38 @@ function madeUpState(entityId: string, index: number): HassEntityState {
   return { entity_id: entityId, state, attributes, last_changed: at, last_updated: at };
 }
 
-/** A made-up state for every entity a fixture or a stored document names. */
+/** A made-up state for every entity a fixture or a stored document names,
+ * and the few more the entity picker should meet (`harness-home.ts`). */
 function buildStates(): Record<string, HassEntityState> {
   const ids = new Set<string>();
   for (const fixture of Object.values(pageFixtures)) entityIdsIn(fixture, ids);
   for (const byKind of store.records.values()) for (const record of byKind.values()) entityIdsIn(record.document, ids);
   const states: Record<string, HassEntityState> = {};
   [...ids].sort().forEach((id, i) => { states[id] = madeUpState(id, i); });
+  for (const extra of EXTRA_STATES) states[extra.entity_id] ??= extra;
+  // `?many=3000` adds that many more entities, a few of kinds the watch has
+  // no tile for, to try the Add tile list on a large home.
+  const many = Number(new URLSearchParams(location.search).get("many") ?? 0);
+  const bulkDomains = ["light", "switch", "sensor", "binary_sensor", "media_player", "cover", "automation", "group", "sun"];
+  for (let i = 0; i < many; i++) {
+    const id = `${bulkDomains[i % bulkDomains.length]}.bulk_${String(i).padStart(4, "0")}`;
+    states[id] ??= madeUpState(id, i);
+  }
   return states;
+}
+
+/** Every `icon` a fixture's tiles name: real SF Symbols the stand-in symbol
+ * provider then draws. */
+function iconNamesIn(value: unknown, out = new Set<string>()): Set<string> {
+  if (Array.isArray(value)) {
+    for (const v of value) iconNamesIn(v, out);
+  } else if (isObject(value)) {
+    for (const [k, v] of Object.entries(value)) {
+      if (k === "icon" && typeof v === "string" && v !== "" && !v.includes(":")) out.add(v);
+      else iconNamesIn(v, out);
+    }
+  }
+  return out;
 }
 
 // ── the connection ───────────────────────────────────────────────────────
@@ -821,17 +846,34 @@ const connection: HassLike["connection"] & {
 };
 
 let states: Record<string, HassEntityState> = {};
+/** Made with the states on every reset, then the same objects on every
+ * tick, as the frontend keeps them. */
+let registries: HomeRegistries = { entities: {}, devices: {}, areas: {} };
 let dark = false;
 
 function makeHass(): HassLike {
   return {
     connection,
     states,
+    entities: registries.entities,
+    devices: registries.devices,
+    areas: registries.areas,
     user: { id: "harness-user", name: "Harness admin", is_admin: admin },
     language: "en",
     themes: { darkMode: dark },
   };
 }
+
+// The panel hands the element its symbol provider and bumps `iconsTick` when
+// the provider has more to draw. The stand-in's names arrive 600 ms after the
+// page loads, as the panel's symbol file does. `?noicons` in the address
+// mounts the element with no provider at all, as the harness did before.
+const noIcons = new URLSearchParams(location.search).has("noicons");
+const icons = new StandInIcons(iconNamesIn(pageFixtures));
+window.setTimeout(() => {
+  icons.arrive();
+  if (editor) editor.iconsTick++;
+}, 600);
 
 // ── the page and the strip ───────────────────────────────────────────────
 
@@ -863,7 +905,7 @@ function mount(): void {
   el.owners = OWNERS;
   el.ownerId = undefined;
   el.narrow = prefs.narrow;
-  el.icons = undefined;
+  el.icons = noIcons ? undefined : icons;
   frame.append(el);
   editor = el;
 }
@@ -1211,6 +1253,7 @@ function reset(): void {
   log.length = 0;
   seedStore();
   states = buildStates();
+  registries = homeRegistries(states);
   mount();
   applyLayout();
   say("Store reseeded.");

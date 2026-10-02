@@ -48,6 +48,29 @@ ignored by git.
   - Light or Dark, Narrow (390 px and the `narrow` attribute), width.
 - Every reply waits about 150 ms. An unknown message type is refused with
   `unknown_command`, warned in the console and marked red in the log.
+- `hass` carries Home Assistant's registries as the frontend does
+  (`entities`, `devices`, `areas`, in `harness-home.ts`), consistent with the
+  states: rooms, a Living Room TV whose `media_player.` and `remote.` share a
+  device, sensors of several device classes, calendars and cameras. The
+  entity picker reads the areas from them.
+- A stand-in symbol provider: a few dozen real SF Symbol names (the start of
+  the picker's catalogue and every tile icon in the fixtures), each drawn as
+  a plain mark. Its names arrive 600 ms after the page loads and the harness
+  bumps the element's `iconsTick`, as the panel does when its symbol file is
+  in. Open `pages-harness.html?noicons` for an element with no provider.
+- `pages-harness.html?many=3000` adds that many more entities (lights,
+  switches, sensors and the rest, some of kinds the watch has no tile for),
+  to try the Add tile list on a large home.
+
+## The panel harness
+
+`panel-harness.html` mounts the whole panel the same way, with a
+complication open in the editor: one watch, a few complications taken from
+`test/fixtures/*.json`, a state for every entity they name, canned replies
+for the commands the panel sends on its way in. It is for looking at the
+panel's own styles (the form rules it shares with the page editor among
+them), not for saves. `#open=rules` opens the fixture of that name, `#dark`
+the dark skin. Symbols draw as placeholders: the symbol file is not served.
 
 ## From the console
 

@@ -247,6 +247,13 @@ interface BrowseState {
 /** The two catalogues a symbol field can browse. */
 export type SymbolPack = "sf" | "mdi";
 
+/** What a Material Design icon name starts with, everywhere: in `symbol`, in
+ * the bundled catalogue's keys, and in the picker. It lives here rather than
+ * in `icons.ts` so that `editors.ts` can name it without importing that file:
+ * the page editor's chunk imports `editors.ts`, and `icons.ts` reads
+ * `import.meta.url`, which only the entry may. */
+export const MDI_PREFIX = "mdi:";
+
 export class SymbolBrowser {
   /**
    * A layer's symbol field shows its grid, so the state worth keeping is which
