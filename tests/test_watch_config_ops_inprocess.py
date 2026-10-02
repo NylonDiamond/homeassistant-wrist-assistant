@@ -15,8 +15,11 @@ the wire shapes the app is built against are asserted here exactly:
 * the owner is always the signing id; nothing a body says can change that.
 * (step 2) ``behavior`` rides the same two ops, and every get about a stored
   record marks that revision delivered, with or without the document.
+* (step 3) a put is refused for a page fault but never for a tile fault, and
+  a get carrying ``unreadable_revision`` equal to the stored revision files
+  the report instead of a delivery, with the same reply.
 
-The static half (both ops in the dispatch table, the capability advertised)
+The static half (both ops in the dispatch table, the capabilities advertised)
 sits at the bottom.
 """
 
@@ -109,7 +112,10 @@ def _put(env, payload: dict, watch_id: str = WATCH) -> _Response:
 
 
 def _doc(name: str = "Home") -> dict:
-    return {"schemaVersion": 1, "pages": [{"name": name, "tiles": []}]}
+    return {
+        "schemaVersion": 1,
+        "pages": [{"id": "6F1C2D0E-0000-4000-8000-000000000001", "name": name, "items": []}],
+    }
 
 
 def _put_body(doc: dict | None = None, *, base: Any = 0, digest: str = HASH_1,
@@ -396,6 +402,127 @@ def test_another_owner_s_get_never_delivers_this_one(env) -> None:
     assert env.store.get(WATCH, "behavior").delivered_revision == 1
 
 
+# ── step 3: the shape guard on a device put ──────────────────────────────
+
+
+def test_a_put_with_duplicate_item_ids_is_accepted(env) -> None:
+    """A device is never refused for a fault in its own tiles."""
+    tile = {"id": "T1", "entityId": "light.made_up"}
+    doc = {"pages": [{"id": "P1", "items": [tile, dict(tile)]}]}
+    reply = _put(env, _put_body(doc))
+    assert reply.body == {"ok": True, "revision": 1}
+    assert _get(env, {"kind": "pages"}).body["document"] == doc
+
+
+@pytest.mark.parametrize(
+    ("pages", "message"),
+    [
+        (
+            [{"id": "P1"}, {"id": "P1"}],
+            'document.pages[1] has the page id "P1" of document.pages[0]; '
+            "page ids must be unique",
+        ),
+        ([{"name": "no id"}], "document.pages[0].id must be a non-empty string"),
+        ([3], "document.pages[0] must be an object"),
+    ],
+)
+def test_a_put_with_a_page_fault_is_a_signed_400(env, pages, message) -> None:
+    reply = _put(env, _put_body({"pages": pages}))
+    assert reply.status == 400
+    assert reply.body == {"ok": False, "error": "invalid", "message": message}
+    assert env.store.get(WATCH, "pages") is None
+
+
+# ── step 3: the unreadable report ────────────────────────────────────────
+
+
+def _panel_saved(env) -> Any:
+    """Revision 1 from the phone, revision 2 from the panel, not yet fetched."""
+    _put(env, _put_body(_doc("phone")))
+    env.store.panel_save(WATCH, "pages", _doc("panel"), base_revision=1)
+    return env.store.get(WATCH, "pages")
+
+
+def test_a_report_about_the_stored_revision_is_kept_and_is_not_a_delivery(env) -> None:
+    record = _panel_saved(env)
+    plain = _get(env, {"kind": "pages", "since_revision": 1})
+    record.delivered_revision, record.delivered_at = 1, None
+
+    reply = _get(env, {"kind": "pages", "since_revision": 1, "unreadable_revision": 2})
+    # The reply is the same as without the field.
+    assert reply.status == 200
+    assert reply.body == plain.body
+    assert (record.rejected_revision, record.delivered_revision) == (2, 1)
+    assert record.rejected_at
+    # And a later plain check with the document in hand does deliver it.
+    _get(env, {"kind": "pages", "since_revision": 2})
+    assert record.delivered_revision == 2
+    assert record.rejected_revision == 2
+
+
+def test_a_report_also_works_on_an_up_to_date_check(env) -> None:
+    """The device that could not decode revision 2 still remembers its old
+    revision, but may send either since_revision; neither delivers."""
+    record = _panel_saved(env)
+    record.delivered_revision, record.delivered_at = 1, None
+    reply = _get(env, {"kind": "pages", "since_revision": 2, "unreadable_revision": 2})
+    assert "document" not in reply.body
+    assert (record.rejected_revision, record.delivered_revision) == (2, 1)
+
+
+@pytest.mark.parametrize("reported", [0, 1, 3])
+def test_a_stale_report_is_ignored_and_the_get_delivers_as_usual(env, reported) -> None:
+    record = _panel_saved(env)
+    reply = _get(env, {"kind": "pages", "since_revision": 1, "unreadable_revision": reported})
+    assert reply.status == 200
+    assert reply.body["revision"] == 2
+    assert (record.rejected_revision, record.rejected_at) == (0, None)
+    assert record.delivered_revision == 2
+
+
+def test_a_report_with_no_record_is_ignored(env) -> None:
+    reply = _get(env, {"kind": "pages", "unreadable_revision": 1})
+    assert reply.status == 200
+    assert reply.body["revision"] == 0
+    assert _FakeStore.writes == []
+
+
+@pytest.mark.parametrize("value", [-1, "2", True, 2.0, [2]])
+def test_a_malformed_report_is_a_signed_400(env, value) -> None:
+    record = _panel_saved(env)
+    reply = _get(env, {"kind": "pages", "unreadable_revision": value})
+    assert reply.status == 400
+    assert reply.body == {
+        "ok": False,
+        "error": "invalid",
+        "message": "unreadable_revision must be a non-negative integer",
+    }
+    assert (record.rejected_revision, record.delivered_revision) == (0, 1)
+
+
+def test_a_null_report_is_the_same_as_none(env) -> None:
+    record = _panel_saved(env)
+    _get(env, {"kind": "pages", "unreadable_revision": None})
+    assert (record.rejected_revision, record.delivered_revision) == (0, 2)
+
+
+def test_a_report_is_about_the_signer_s_own_record(env) -> None:
+    record = _panel_saved(env)
+    _put(env, _put_body(_doc("other")), watch_id=OTHER)
+    _put(env, _put_body(_doc("other 2"), base=1, digest=HASH_2), watch_id=OTHER)
+    _get(env, {"kind": "pages", "unreadable_revision": 2}, watch_id=OTHER)
+    assert record.rejected_revision == 0
+    assert env.store.get(OTHER, "pages").rejected_revision == 2
+
+
+def test_a_report_for_behavior(env) -> None:
+    _put(env, _put_body({}, kind="behavior"))
+    _get(env, {"kind": "behavior", "unreadable_revision": 1})
+    record = env.store.get(WATCH, "behavior")
+    assert record.rejected_revision == 1
+    assert env.store.get(WATCH, "pages") is None
+
+
 # ── static: dispatch and capability ──────────────────────────────────────
 
 
@@ -430,3 +557,11 @@ def test_the_watch_config_capability_is_advertised() -> None:
     const = (_PKG_DIR / "const.py").read_text()
     assert "register_capability(WATCH_CONFIG_CAPABILITY)" in init
     assert 'WATCH_CONFIG_CAPABILITY = "watch_config"' in const
+
+
+def test_the_reject_report_capability_is_advertised() -> None:
+    """A device sends ``unreadable_revision`` only when it sees this."""
+    init = (_PKG_DIR / "__init__.py").read_text()
+    const = (_PKG_DIR / "const.py").read_text()
+    assert "register_capability(WATCH_CONFIG_REJECT_REPORT_CAPABILITY)" in init
+    assert 'WATCH_CONFIG_REJECT_REPORT_CAPABILITY = "watch_config_reject_report"' in const

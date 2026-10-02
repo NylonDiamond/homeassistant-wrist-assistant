@@ -3289,7 +3289,8 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
     ever read its own record. In step 1 that is the phone signing with the
     watch's pair; later the watch reads it with the same signature.
 
-    Body:  {"kind": "pages" | "behavior", "since_revision": <int>?}
+    Body:  {"kind": "pages" | "behavior", "since_revision": <int>?,
+            "unreadable_revision": <int>?}
     Reply: {"ok": true, "kind", "revision", "hash", "updated_at", "document"?}
 
     ``document`` is left out when ``since_revision`` equals the stored
@@ -3302,6 +3303,15 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
     it carried the document or said "you already have it": either way the
     device now holds it. That is what the panel reads to tell a panel save
     that is still waiting for the phone from one the phone has collected.
+
+    The one exception is ``unreadable_revision``: "I fetched this revision of
+    this kind and could not decode it", sent only by a device that sees the
+    ``watch_config_reject_report`` capability. When it is the stored revision
+    the record keeps it as ``rejected_revision`` (the panel then says the
+    device could not read that save and offers an earlier one), and this get
+    does not count as a delivery of it. Any other value is stale and ignored.
+    The reply is the same either way. A value that is not a non-negative
+    integer is refused, like a bad ``since_revision``.
     """
     raw_since = ctx.payload.get("since_revision")
     if raw_since is not None and (
@@ -3310,6 +3320,18 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
         return _watch_config_refusal(
             ctx,
             WatchConfigValidationError("since_revision must be a non-negative integer"),
+        )
+    unreadable = ctx.payload.get("unreadable_revision")
+    if unreadable is not None and (
+        isinstance(unreadable, bool)
+        or not isinstance(unreadable, int)
+        or unreadable < 0
+    ):
+        return _watch_config_refusal(
+            ctx,
+            WatchConfigValidationError(
+                "unreadable_revision must be a non-negative integer"
+            ),
         )
     kind = ctx.payload.get("kind")
     store = ctx.domain_data.watch_config_store
@@ -3332,8 +3354,12 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
         reply["document"] = record.document
     response = ctx.signed_json(reply)
     # After the reply is built, so a reply that failed to serialize never
-    # counts as a delivery.
-    store.mark_delivered(ctx.watch_id, kind, record.revision)
+    # counts as a delivery (or files a report). A report about the stored
+    # revision takes the place of the delivery; a stale one leaves it as usual.
+    if unreadable is None or not store.report_unreadable(
+        ctx.watch_id, kind, unreadable
+    ):
+        store.mark_delivered(ctx.watch_id, kind, record.revision)
     return response
 
 

@@ -53,8 +53,9 @@ async def async_get_config_entry_diagnostics(
             "tokens": notification_tokens,
             "apns_configured": data.apns_client is not None,
         },
-        # Revision, size and save time per owner and kind, so a sync problem
-        # or an oversized config shows up in a diagnostics download. Never the
+        # Revision, size, save time, delivery and the last revision a device
+        # could not read, per owner and kind, so a sync problem or an
+        # oversized config shows up in a diagnostics download. Never the
         # document: it names the user's entities and pages.
         "watch_config": data.watch_config_store.diagnostics(),
     }

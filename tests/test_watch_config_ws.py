@@ -2,9 +2,10 @@
 
 Loads ``watch_config_ws.py`` with stubbed Home Assistant modules over a real
 ``WatchConfigStore``, the way ``test_complication_ws.py`` runs the editor's
-commands. The panel's Watch settings view is built against the get and save
-shapes, and the phone against the subscribe shapes, so results and events are
-asserted as whole dicts and errors as exact (code, message) pairs.
+commands. The panel's Watch settings view and page editor are built against
+the get, save, history, history_entry and restore shapes, and the phone
+against the subscribe shapes, so results and events are asserted as whole
+dicts and errors as exact (code, message) pairs.
 ``test_ws_command_registration.py`` covers the registration and the admin
 gate statically.
 """
@@ -137,6 +138,22 @@ def _save(env, document: dict, base: int, kind: str = "behavior", owner: str = W
     )
 
 
+def _pages_doc(name: str = "Home", *, items: list | None = None) -> dict:
+    """A small page config: one page, made-up entity ids only."""
+    return {
+        "schemaVersion": 1,
+        "pages": [
+            {
+                "id": "6F1C2D0E-0000-4000-8000-000000000001",
+                "name": name,
+                "items": items
+                if items is not None
+                else [{"id": "T1", "entityId": "light.made_up", "colSpan": 6}],
+            }
+        ],
+    }
+
+
 def _phone_upload(env, kind: str, document: dict, base: int = 0) -> None:
     env.store.put(
         WATCH, kind, document, document_hash=PHONE_HASH, base_revision=base, updated_by=WATCH
@@ -155,6 +172,8 @@ def test_get_with_no_record(env) -> None:
         "updated_by": None,
         "delivered_revision": 0,
         "delivered_at": None,
+        "rejected_revision": 0,
+        "rejected_at": None,
     }
 
 
@@ -170,13 +189,26 @@ def test_get_returns_the_record_with_its_delivery(env) -> None:
         "updated_by": WATCH,
         "delivered_revision": 1,
         "delivered_at": record.delivered_at,
+        "rejected_revision": 0,
+        "rejected_at": None,
         "document": settings,
     }
 
 
+def test_get_shows_the_unreadable_report(env) -> None:
+    _phone_upload(env, "pages", _pages_doc())
+    assert _save(env, _pages_doc("Renamed"), 1, kind="pages").errors == []
+    env.store.report_unreadable(WATCH, "pages", 2)
+    record = env.store.get(WATCH, "pages")
+    result = _get(env, "pages")
+    assert (result["revision"], result["rejected_revision"]) == (2, 2)
+    assert result["rejected_at"] == record.rejected_at
+    assert result["rejected_at"]
+
+
 def test_get_may_read_pages(env) -> None:
-    _phone_upload(env, "pages", {"pages": [{"name": "Home"}]})
-    assert _get(env, "pages")["document"] == {"pages": [{"name": "Home"}]}
+    _phone_upload(env, "pages", _pages_doc())
+    assert _get(env, "pages")["document"] == _pages_doc()
 
 
 def test_get_never_moves_delivery(env) -> None:
@@ -272,19 +304,62 @@ def test_a_stale_save_is_a_conflict_naming_the_stored_revision(env) -> None:
     assert _get(env)["document"] == {"wrapPages": True}
 
 
-def test_save_refuses_pages(env) -> None:
-    _phone_upload(env, "pages", {"pages": []})
+def test_save_may_save_pages(env) -> None:
+    _phone_upload(env, "pages", _pages_doc())
+    edited = _pages_doc("Renamed")
+    connection = _save(env, edited, 1, kind="pages")
+    assert connection.errors == []
+    assert connection.results[1] == {"revision": 2}
+    result = _get(env, "pages")
+    assert (result["updated_by"], result["document"]) == ("panel", edited)
+    assert result["hash"] == env.mod.canonical_hash(edited)
+
+
+def test_save_of_pages_with_nothing_stored_is_no_record(env) -> None:
+    code, _message = _error(
+        env,
+        env.ws.ws_watch_config_save,
+        owner_watch_id=WATCH,
+        kind="pages",
+        base_revision=0,
+        document=_pages_doc(),
+    )
+    assert code == "no_record"
+
+
+def test_save_of_pages_with_duplicate_item_ids_is_invalid(env) -> None:
+    _phone_upload(env, "pages", _pages_doc())
+    tile = {"id": "T1", "entityId": "light.made_up"}
     code, message = _error(
         env,
         env.ws.ws_watch_config_save,
         owner_watch_id=WATCH,
         kind="pages",
         base_revision=1,
-        document={"pages": []},
+        document=_pages_doc(items=[tile, dict(tile)]),
     )
     assert code == "invalid"
-    assert message == "the panel cannot save pages; it may save behavior"
+    assert message == (
+        'document.pages[0] (id "6F1C2D0E-0000-4000-8000-000000000001").items[1] '
+        'has the item id "T1" of items[0]; item ids must be unique in a page'
+    )
     assert _get(env, "pages")["revision"] == 1
+
+
+def test_save_of_pages_with_duplicate_page_ids_is_invalid(env) -> None:
+    _phone_upload(env, "pages", _pages_doc())
+    document = _pages_doc()
+    document["pages"].append(dict(document["pages"][0], name="Copy"))
+    code, message = _error(
+        env,
+        env.ws.ws_watch_config_save,
+        owner_watch_id=WATCH,
+        kind="pages",
+        base_revision=1,
+        document=document,
+    )
+    assert code == "invalid"
+    assert message.startswith('document.pages[1] has the page id "6F1C2D0E-')
 
 
 def test_save_refuses_an_oversized_document(env) -> None:
@@ -314,6 +389,15 @@ def test_both_commands_answer_unavailable_before_the_integration_is_ready(env) -
         base_revision=1,
         document={},
     ) == ("unavailable", "integration not ready")
+    for command, extra in (
+        (env.ws.ws_watch_config_history, {}),
+        (env.ws.ws_watch_config_history_entry, {"revision": 1}),
+        (env.ws.ws_watch_config_restore, {"revision": 1, "base_revision": 2}),
+    ):
+        assert _error(env, command, owner_watch_id=WATCH, kind="behavior", **extra) == (
+            "unavailable",
+            "integration not ready",
+        )
 
 
 def test_an_unreadable_file_is_unavailable(env) -> None:
@@ -327,6 +411,168 @@ def test_an_unreadable_file_is_unavailable(env) -> None:
     )
     assert code == "unavailable"
     assert _save(env, {}, 1).errors[0][1] == "unavailable"
+    assert _history_error(env)[0] == "unavailable"
+    assert _restore_error(env, 1, 2)[0] == "unavailable"
+
+
+# ── history, history_entry and restore ───────────────────────────────────
+
+
+def _history(env, kind: str = "behavior") -> Any:
+    return _ok(env, env.ws.ws_watch_config_history, owner_watch_id=WATCH, kind=kind)
+
+
+def _history_error(env, kind: str = "behavior") -> tuple[str, str]:
+    return _error(env, env.ws.ws_watch_config_history, owner_watch_id=WATCH, kind=kind)
+
+
+def _entry(env, revision: Any, kind: str = "behavior") -> _Connection:
+    return _call(
+        env,
+        env.ws.ws_watch_config_history_entry,
+        owner_watch_id=WATCH,
+        kind=kind,
+        revision=revision,
+    )
+
+
+def _restore(env, revision: Any, base: Any, kind: str = "behavior") -> _Connection:
+    return _call(
+        env,
+        env.ws.ws_watch_config_restore,
+        owner_watch_id=WATCH,
+        kind=kind,
+        revision=revision,
+        base_revision=base,
+    )
+
+
+def _restore_error(env, revision: Any, base: Any, kind: str = "behavior") -> tuple[str, str]:
+    connection = _restore(env, revision, base, kind)
+    assert connection.results == {}
+    [(_id, code, message)] = connection.errors
+    return code, message
+
+
+def _three_behavior_saves(env) -> list[dict]:
+    """Revisions 1 (phone), 2 (panel), 3 (phone); returns their documents."""
+    docs = [{"wrapPages": False}, {"wrapPages": True, "longPressDuration": "Long"}, {}]
+    _phone_upload(env, "behavior", docs[0])
+    assert _save(env, docs[1], 1).errors == []
+    _phone_upload(env, "behavior", docs[2], base=2)
+    return docs
+
+
+def test_history_lists_entries_newest_first_without_documents(env) -> None:
+    docs = _three_behavior_saves(env)
+    record = env.store.get(WATCH, "behavior")
+    assert _history(env) == {
+        "entries": [
+            {
+                "revision": 2,
+                "hash": env.mod.canonical_hash(docs[1]),
+                "updated_at": record.history[1].updated_at,
+                "updated_by": "panel",
+                "size": len('{"wrapPages":true,"longPressDuration":"Long"}'),
+            },
+            {
+                "revision": 1,
+                "hash": PHONE_HASH,
+                "updated_at": record.history[0].updated_at,
+                "updated_by": WATCH,
+                "size": len('{"wrapPages":false}'),
+            },
+        ]
+    }
+
+
+def test_history_with_no_record_is_empty(env) -> None:
+    assert _history(env) == {"entries": []}
+    assert _history(env, "pages") == {"entries": []}
+
+
+def test_history_refuses_an_unknown_kind(env) -> None:
+    code, message = _history_error(env, "quick_actions")
+    assert code == "invalid"
+    assert "kind" in message
+
+
+def test_history_entry_returns_the_document(env) -> None:
+    docs = _three_behavior_saves(env)
+    connection = _entry(env, 2)
+    assert connection.errors == []
+    entry = env.store.get(WATCH, "behavior").history[1]
+    assert connection.results[1] == {
+        "revision": 2,
+        "hash": env.mod.canonical_hash(docs[1]),
+        "updated_at": entry.updated_at,
+        "updated_by": "panel",
+        "document": docs[1],
+    }
+
+
+def test_history_entry_that_is_not_there_is_not_found(env) -> None:
+    _three_behavior_saves(env)
+    connection = _entry(env, 3)
+    assert connection.results == {}
+    assert connection.errors == [(1, "not_found", "revision 3 of behavior is not in the history")]
+    assert _entry(env, 1, kind="pages").errors[0][1] == "not_found"
+    assert _entry(env, 0).errors[0][1] == "invalid"
+
+
+def test_restore_saves_the_entry_as_a_new_panel_revision(env) -> None:
+    docs = _three_behavior_saves(env)
+    events = _subscribe(env)
+    connection = _restore(env, 1, 3)
+    assert connection.errors == []
+    assert connection.results[1] == {"revision": 4}
+    result = _get(env)
+    assert (result["revision"], result["updated_by"], result["document"]) == (4, "panel", docs[0])
+    assert result["hash"] == env.mod.canonical_hash(docs[0])
+    assert result["delivered_revision"] == 3
+    assert [e["revision"] for e in _history(env)["entries"]] == [3, 2, 1]
+    assert events.events() == [{"kind": "behavior", "revision": 4}]
+
+
+def test_restore_of_pages(env) -> None:
+    original = _pages_doc("Original")
+    _phone_upload(env, "pages", original)
+    assert _save(env, _pages_doc("Renamed"), 1, kind="pages").errors == []
+    connection = _restore(env, 1, 2, kind="pages")
+    assert connection.results[1] == {"revision": 3}
+    assert _get(env, "pages")["document"] == original
+
+
+def test_restore_on_a_stale_base_is_a_conflict_naming_the_stored_revision(env) -> None:
+    _three_behavior_saves(env)
+    code, message = _restore_error(env, 1, 2)
+    assert (code, message) == ("conflict", "stored revision is 3, restore was based on 2")
+    match = CONFLICT_REVISION.match(message)
+    assert match is not None and int(match.group(1)) == 3
+    assert _get(env)["revision"] == 3
+
+
+def test_restore_of_an_unknown_revision_is_not_found(env) -> None:
+    _three_behavior_saves(env)
+    assert _restore_error(env, 9, 3) == (
+        "not_found",
+        "revision 9 of behavior is not in the history",
+    )
+    assert _get(env)["revision"] == 3
+
+
+def test_restore_with_nothing_stored_is_no_record(env) -> None:
+    assert _restore_error(env, 1, 1)[0] == "no_record"
+
+
+def test_restore_of_a_tile_fault_a_device_wrote_is_invalid(env) -> None:
+    tile = {"id": "T1", "entityId": "light.made_up"}
+    _phone_upload(env, "pages", _pages_doc(items=[tile, dict(tile)]))
+    _phone_upload(env, "pages", _pages_doc(), base=1)
+    code, message = _restore_error(env, 1, 2, kind="pages")
+    assert code == "invalid"
+    assert "item ids must be unique in a page" in message
+    assert _get(env, "pages")["revision"] == 2
 
 
 # ── subscribe (the phone's live line) ────────────────────────────────────

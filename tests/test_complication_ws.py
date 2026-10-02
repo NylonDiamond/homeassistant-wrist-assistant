@@ -179,7 +179,7 @@ def _loaded_modules():
             WATCH_CONFIG_STORAGE_KEY="wrist_assistant.watch_config",
             WATCH_CONFIG_STORAGE_VERSION=1,
             WATCH_CONFIG_KINDS=frozenset({"pages", "behavior"}),
-            WATCH_CONFIG_PANEL_KINDS=frozenset({"behavior"}),
+            WATCH_CONFIG_PANEL_KINDS=frozenset({"pages", "behavior"}),
             WATCH_CONFIG_PANEL_WRITER="panel",
             WATCH_CONFIG_MAX_DOCUMENT_BYTES={"pages": 4096, "behavior": 4096},
             WATCH_CONFIG_HISTORY_LIMIT=5,
@@ -719,7 +719,7 @@ def _save_pages(env: _Env, owner: str, name: str) -> None:
     env.hass.data[DOMAIN].watch_config_store.put(
         owner,
         "pages",
-        {"pages": [{"name": name}]},
+        {"pages": [{"id": f"page-{name}", "name": name}]},
         document_hash="a" * 64,
         base_revision=0,
         updated_by=owner,

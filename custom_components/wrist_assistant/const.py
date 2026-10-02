@@ -123,9 +123,10 @@ WATCH_CONFIG_STORAGE_VERSION = 1
 # later kind is a new name here and a size cap below, with no change to the
 # storage shape.
 WATCH_CONFIG_KINDS = frozenset({"pages", "behavior"})
-# The kinds the panel may save. Pages are read-only there until the page
-# editor moves; the panel may still read them.
-WATCH_CONFIG_PANEL_KINDS = frozenset({"behavior"})
+# The kinds the panel may save, and restore from a record's history. Both,
+# since the page editor moved into the panel (step 3). The panel still never
+# creates a record: the first copy of either kind comes from a device.
+WATCH_CONFIG_PANEL_KINDS = frozenset({"pages", "behavior"})
 # `updated_by` on a record the panel saved, in place of a device's signing id.
 WATCH_CONFIG_PANEL_WRITER = "panel"
 # Compact UTF-8 JSON size a stored document may reach, per kind. Every kind in
@@ -148,6 +149,12 @@ WATCH_CONFIG_CAPABILITY = "watch_config"
 # sees this, so an older integration is never sent a command it would answer
 # with "unknown_command".
 WATCH_CONFIG_LIVE_CAPABILITY = "watch_config_live"
+# What the integration advertises once the signed watch_config_get accepts
+# `unreadable_revision` (a device saying it fetched a revision it could not
+# decode). A device sends the field only when it sees this: an older
+# integration would drop the key unread, so the report would go nowhere and
+# that get would count as a delivery.
+WATCH_CONFIG_REJECT_REPORT_CAPABILITY = "watch_config_reject_report"
 # Highest CustomComplicationConfig schemaVersion this integration can edit.
 # Must track `CustomComplicationConfig.currentSchemaVersion` in the app repo.
 # A newer document is displayed read-only and never re-saved.

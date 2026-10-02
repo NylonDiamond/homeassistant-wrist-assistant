@@ -15,8 +15,8 @@ along with rendered templates, or a watch's whole page config. The
 exceptions, one per module, are listed in ``_NOT_ADMIN``.
 
 Two modules hold commands: ``complication_ws.py`` (the editor) and
-``watch_config_ws.py`` (the Watch settings view). Each is checked on its own,
-since each has its own registration function.
+``watch_config_ws.py`` (the Watch settings view and the page editor). Each is
+checked on its own, since each has its own registration function.
 """
 
 from __future__ import annotations
@@ -30,10 +30,15 @@ _PKG = Path(__file__).resolve().parents[1] / "custom_components" / "wrist_assist
 _MODULE = _PKG / "complication_ws.py"
 _WATCH_CONFIG_MODULE = _PKG / "watch_config_ws.py"
 
-# The Watch settings view's two commands. Admin-only like every other.
+# The Watch settings view's and the page editor's commands. Admin-only like
+# every other: history_entry hands out a whole past document, and restore
+# writes one.
 _WATCH_CONFIG_ADMIN_ONLY = {
     "ws_watch_config_get",
     "ws_watch_config_save",
+    "ws_watch_config_history",
+    "ws_watch_config_history_entry",
+    "ws_watch_config_restore",
 }
 
 # Every command this module defines. All of them are admin-only; the set is

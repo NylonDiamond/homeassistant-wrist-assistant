@@ -51,6 +51,7 @@ from .const import (
     WA_HMAC_NONCE_TTL_SECONDS,
     WATCH_CONFIG_CAPABILITY,
     WATCH_CONFIG_LIVE_CAPABILITY,
+    WATCH_CONFIG_REJECT_REPORT_CAPABILITY,
     WIDGET_SECRET_STORAGE_KEY,
     WIDGET_SECRET_STORAGE_VERSION,
     WristAssistantConfigEntry,
@@ -802,6 +803,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # next foreground. Advertised apart from the ops so a phone can tell an
     # integration that stores its config from one that also announces saves.
     coordinator.register_capability(WATCH_CONFIG_LIVE_CAPABILITY)
+    # The unreadable report on watch_config_get (`unreadable_revision`): a
+    # device that fetched a revision it could not decode says so, and the
+    # panel shows it instead of reading that save as delivered.
+    coordinator.register_capability(WATCH_CONFIG_REJECT_REPORT_CAPABILITY)
 
     runtime_data = WristAssistantData(
         coordinator=coordinator,

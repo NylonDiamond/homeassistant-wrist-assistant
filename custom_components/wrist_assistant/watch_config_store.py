@@ -1,14 +1,14 @@
 """Watch config documents kept in Home Assistant, one record per watch per kind.
 
 Part of moving watch configuration out of the phone (see
-``docs/pages_in_home_assistant_step1.md`` and ``..._step2.md`` in the app
-repo). The phone uploads its page config (kind ``pages``) and its watch
-behavior settings (kind ``behavior``) here after each edit, and pulls a newer
-copy back down when it has nothing unsent. The panel may read either kind and
-save ``behavior`` (see ``watch_config_ws.py``); the phone picks a panel save up
-on its next check, or at once over the live line while the app is open, and
-hands it to the watch. Later steps add a page editor in
-the panel and a watch that reads its record directly.
+``docs/pages_in_home_assistant_step1.md``, ``..._step2.md`` and
+``..._step3.md`` in the app repo). The phone uploads its page config (kind
+``pages``) and its watch behavior settings (kind ``behavior``) here after each
+edit, and pulls a newer copy back down when it has nothing unsent. The panel
+may read, save and restore either kind (see ``watch_config_ws.py``); the phone
+picks a panel save up on its next check, or at once over the live line while
+the app is open, and hands it to the watch. A later step has the watch read
+its record directly.
 
 A record is keyed on the watch, not the phone: the owner is the id that signed
 the request, which is the watch's own pair even when the phone sends it. The
@@ -29,19 +29,30 @@ Each record carries:
   the server computes one (:func:`canonical_hash`).
 * ``updated_at`` / ``updated_by``: server time of the save, and the signing id
   of the writer, or ``panel`` for a panel save.
-* ``document``: the JSON object exactly as parsed from the request. It is
-  checked at the envelope only (an object, a page config's ``pages`` is a list,
-  under its kind's size cap) and never rewritten. The server does not
-  understand tiles or settings.
-* ``history``: the last few documents a save replaced. Storage only: a get
-  never returns it. It exists so a forced save, or a wrong pull, loses nothing
-  that cannot be put back by hand.
+* ``document``: the JSON object exactly as parsed from the request, never
+  rewritten. It is checked at the envelope (an object, a page config's
+  ``pages`` is a list, under its kind's size cap) and, for a page config, at
+  the shape the watch cannot survive without (:func:`validate_document`). The
+  server does not understand tiles or settings.
+* ``history``: the last few documents a save replaced, each with the
+  revision, hash, time and writer it had. The signed get never returns it; the
+  panel lists it and restores from it (:meth:`WatchConfigStore.history`,
+  :meth:`WatchConfigStore.restore`), so a forced save, a wrong pull or a bad
+  panel save loses nothing that cannot be put back.
 * ``delivered_revision`` / ``delivered_at``: the highest revision a device is
   known to hold, and when that became known. Moved by a signed get that carried
   the document or answered "you already have it", and by a signed put (the
   device that wrote a revision holds it). The panel compares it with
   ``revision`` to say whether the phone has picked a panel save up yet. Files
   written before these fields existed load with 0 and no time.
+* ``rejected_revision`` / ``rejected_at``: the last revision a device reported
+  it fetched and could not decode, and when (0 and no time for never). Set by
+  a signed get carrying ``unreadable_revision`` equal to the stored revision,
+  and cleared only by a forget: a later save simply has a higher revision, so
+  the panel reads "could not read this save" only while the two are equal,
+  and then it outranks delivery (the get that fetched the document counted as
+  a delivery before the device knew it could not read it). Files written
+  before these fields existed load with 0 and no time.
 
 Storage is one Home Assistant ``Store`` file per owner, holding every kind for
 that owner, plus a small index naming the owners. A document can be large
@@ -51,10 +62,11 @@ goes away.
 
 Listeners (:meth:`WatchConfigStore.async_add_listener`) hear one
 :class:`WatchConfigChange` per kind whose revision moved: every accepted save,
-device or panel; revision 0 for each kind a forget removed; and for a move,
-the target's resulting revisions and revision 0 for each of the source's
-kinds. Delivery is not a change: a signed get that only moves
-``delivered_revision`` tells nobody. This is what the phone's live line
+device or panel, a restore included; revision 0 for each kind a forget
+removed; and for a move, the target's resulting revisions and revision 0 for
+each of the source's kinds. Delivery is not a change, and neither is an
+unreadable report: a signed get that only moves ``delivered_revision`` or
+``rejected_revision`` tells nobody. This is what the phone's live line
 (``watch_config/subscribe`` in ``watch_config_ws.py``) rides on.
 """
 
@@ -87,10 +99,11 @@ _LOGGER = logging.getLogger(__name__)
 
 _SAVE_DEBOUNCE_SECONDS = 1
 
-# The list key a kind's document must carry, for the kinds that have one. The
-# envelope check is this and nothing more: a page config without its page list
-# is not a page config, while the behavior settings are a flat object whose
-# every key is optional ("absent means the default"), so an object is enough.
+# The list key a kind's document must carry, for the kinds that have one: a
+# page config without its page list is not a page config, while the behavior
+# settings are a flat object whose every key is optional ("absent means the
+# default"), so an object is enough. The page list's own shape is checked by
+# _check_pages below.
 _KIND_LIST_KEYS: dict[str, str] = {"pages": "pages"}
 
 # A SHA-256 digest as lowercase hex. Lowercase only, and refused otherwise
@@ -139,6 +152,13 @@ class WatchConfigNoRecordError(WatchConfigStoreError):
     """
 
     code = "no_record"
+
+
+class WatchConfigNotFoundError(WatchConfigStoreError):
+    """A history revision the record does not hold (never saved, or dropped
+    past the history limit)."""
+
+    code = "not_found"
 
 
 class WatchConfigUnavailableError(WatchConfigStoreError):
@@ -191,13 +211,19 @@ def validate_kind(kind: Any) -> str:
     return kind
 
 
-def validate_document(kind: str, document: Any) -> int:
-    """Check the envelope of one document and return its size in bytes.
+def validate_document(kind: str, document: Any, *, check_items: bool = False) -> int:
+    """Check the envelope and shape of one document and return its size in bytes.
 
     An object, its kind's list key present and a list when the kind has one,
-    and under the kind's cap. Nothing inside is looked at: the phone is the
-    only thing that understands a page or a setting, and a server that half
-    understood one would refuse configs a newer app writes.
+    and under the kind's cap. A page config's pages are then checked for the
+    shape the watch needs to survive (see :func:`_check_pages`): the page
+    level always, the tile level only with ``check_items``, which a panel save
+    and a restore pass and a device save does not.
+
+    The server guards the shape, not the content. No key's value is looked at
+    beyond the ids: the app is the only thing that understands a tile or a
+    setting, and a server that half understood one would refuse configs a
+    newer app writes.
     """
     if not isinstance(document, dict):
         raise WatchConfigValidationError("document must be a JSON object")
@@ -210,7 +236,72 @@ def validate_document(kind: str, document: Any) -> int:
         raise WatchConfigValidationError(
             f"document is {size} bytes; the limit for {kind} is {limit}"
         )
+    if kind == "pages":
+        _check_pages(document["pages"], check_items=check_items)
     return size
+
+
+def _check_pages(pages: list[Any], *, check_items: bool) -> None:
+    """The page config's shape guard, in two levels.
+
+    Every writer: each page is an object with a non-empty string ``id``, and
+    no two pages share one. Duplicate page ids crash the watch, and a page with
+    no id is given a new one on every decode, so neither may land whoever
+    writes it.
+
+    With ``check_items`` (a panel save or a restore): ``items`` is a list when
+    present, each item an object with a non-empty string ``id`` and
+    ``entityId``, and no two items in one page share an id. A device save
+    skips this level on purpose: a phone refused for a fault in its own old
+    tiles could never upload again, while the panel can always fix what it
+    sends.
+
+    Ids are compared ignoring case. The app reads them as UUIDs, which parse
+    the same either way, so ``"ab"`` and ``"AB"`` are one id on the watch.
+    """
+    seen: dict[str, int] = {}
+    for index, page in enumerate(pages):
+        where = f"document.pages[{index}]"
+        if not isinstance(page, dict):
+            raise WatchConfigValidationError(f"{where} must be an object")
+        page_id = page.get("id")
+        if not isinstance(page_id, str) or not page_id:
+            raise WatchConfigValidationError(f"{where}.id must be a non-empty string")
+        folded = page_id.upper()
+        if folded in seen:
+            raise WatchConfigValidationError(
+                f'{where} has the page id "{page_id}" of '
+                f"document.pages[{seen[folded]}]; page ids must be unique"
+            )
+        seen[folded] = index
+        if check_items:
+            _check_items(page, f'{where} (id "{page_id}")')
+
+
+def _check_items(page: dict[str, Any], where: str) -> None:
+    """The tile level of :func:`_check_pages` for one page. ``where`` names
+    the page by index and id, so a refusal says which page to look at."""
+    if "items" not in page:
+        return
+    items = page["items"]
+    if not isinstance(items, list):
+        raise WatchConfigValidationError(f"{where}.items must be a list")
+    seen: dict[str, int] = {}
+    for index, item in enumerate(items):
+        at = f"{where}.items[{index}]"
+        if not isinstance(item, dict):
+            raise WatchConfigValidationError(f"{at} must be an object")
+        for key in ("id", "entityId"):
+            value = item.get(key)
+            if not isinstance(value, str) or not value:
+                raise WatchConfigValidationError(f"{at}.{key} must be a non-empty string")
+        folded = item["id"].upper()
+        if folded in seen:
+            raise WatchConfigValidationError(
+                f'{at} has the item id "{item["id"]}" of items[{seen[folded]}]; '
+                "item ids must be unique in a page"
+            )
+        seen[folded] = index
 
 
 def canonical_hash(document: dict[str, Any]) -> str:
@@ -232,6 +323,23 @@ def canonical_hash(document: dict[str, Any]) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
+def _validate_revision(revision: Any) -> int:
+    """A history revision to look up: a whole number of at least 1."""
+    if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:
+        raise WatchConfigValidationError("revision must be a positive integer")
+    return revision
+
+
+def _validate_base_revision(base_revision: Any) -> int:
+    if (
+        isinstance(base_revision, bool)
+        or not isinstance(base_revision, int)
+        or base_revision < 0
+    ):
+        raise WatchConfigValidationError("base_revision must be a non-negative integer")
+    return base_revision
+
+
 def validate_hash(document_hash: Any) -> str:
     """The client's document hash: 64 lowercase hex characters."""
     if not isinstance(document_hash, str) or not _HASH_RE.fullmatch(document_hash):
@@ -241,14 +349,25 @@ def validate_hash(document_hash: Any) -> str:
     return document_hash
 
 
+def _text_or_none(value: Any) -> str | None:
+    """A stored string field, or ``None`` when it is absent, empty or junk."""
+    return value if isinstance(value, str) and value else None
+
+
 @dataclass
 class WatchConfigHistoryEntry:
-    """One document a later save replaced, with that revision's own envelope."""
+    """One document a later save replaced, with that revision's own envelope.
+
+    Every entry this build files carries all four envelope fields. ``None``
+    is for one read off disk without a field (hand-edited, or written by a
+    build that left it empty): the entry is kept, and the panel shows the
+    field as unknown.
+    """
 
     revision: int
-    hash: str
-    updated_at: str
-    updated_by: str
+    hash: str | None
+    updated_at: str | None
+    updated_by: str | None
     document: dict[str, Any]
 
     def as_dict(self) -> dict[str, Any]:
@@ -260,12 +379,26 @@ class WatchConfigHistoryEntry:
             "document": self.document,
         }
 
+    def summary(self) -> dict[str, Any]:
+        """The entry as the panel's history list shows it: the envelope and
+        the document's size (compact UTF-8 JSON, as the cap measures it), but
+        never the document."""
+        return {
+            "revision": self.revision,
+            "hash": self.hash,
+            "updated_at": self.updated_at,
+            "updated_by": self.updated_by,
+            "size": document_size(self.document),
+        }
+
     @classmethod
     def from_dict(cls, raw: Any) -> WatchConfigHistoryEntry | None:
         """One entry off disk, or ``None`` for anything unusable.
 
         Junk drops rather than refuses: history is a safety net, and a
-        hand-edited file must not cost someone their current config.
+        hand-edited file must not cost someone their current config. Only a
+        whole-number revision and an object document are required; a missing
+        envelope field reads as ``None``.
         """
         if not isinstance(raw, dict):
             return None
@@ -277,9 +410,9 @@ class WatchConfigHistoryEntry:
             return None
         return cls(
             revision=revision,
-            hash=str(raw.get("hash", "")),
-            updated_at=str(raw.get("updated_at", "")),
-            updated_by=str(raw.get("updated_by", "")),
+            hash=_text_or_none(raw.get("hash")),
+            updated_at=_text_or_none(raw.get("updated_at")),
+            updated_by=_text_or_none(raw.get("updated_by")),
             document=document,
         )
 
@@ -295,7 +428,8 @@ class WatchConfigRecord:
     updated_at: str
     updated_by: str
     document: dict[str, Any]
-    # Past documents, oldest first. Storage only; no reply carries it.
+    # Past documents, oldest first. No signed reply carries it; the panel
+    # lists and restores it.
     history: list[WatchConfigHistoryEntry] = field(default_factory=list)
     # Measured on save and on load, never written to disk. Diagnostics report
     # it so a large config is visible without anyone reading the document.
@@ -304,6 +438,10 @@ class WatchConfigRecord:
     # that became known (``None`` for never). See the module docstring.
     delivered_revision: int = 0
     delivered_at: str | None = None
+    # The last revision a device reported it could not decode (0 for none),
+    # and when (``None`` for never). See the module docstring.
+    rejected_revision: int = 0
+    rejected_at: str | None = None
 
     def as_storage_dict(self) -> dict[str, Any]:
         stored: dict[str, Any] = {
@@ -313,6 +451,8 @@ class WatchConfigRecord:
             "updated_by": self.updated_by,
             "delivered_revision": self.delivered_revision,
             "delivered_at": self.delivered_at,
+            "rejected_revision": self.rejected_revision,
+            "rejected_at": self.rejected_at,
             "document": self.document,
         }
         if self.history:
@@ -331,6 +471,32 @@ class WatchConfigRecord:
         self.delivered_revision = revision
         self.delivered_at = _now_iso()
         return True
+
+    def mark_rejected(self) -> bool:
+        """Record that a device could not decode the current revision.
+        Returns whether it moved.
+
+        Always the current revision: a report about an older one says nothing
+        about what is stored now. A repeat keeps the first time, so a phone
+        reporting on every check costs no disk write after the first.
+        """
+        if self.rejected_revision == self.revision:
+            return False
+        self.rejected_revision = self.revision
+        self.rejected_at = _now_iso()
+        return True
+
+    def history_entry(self, revision: int) -> WatchConfigHistoryEntry | None:
+        """The history entry filed at ``revision``, or ``None``.
+
+        The newest one when two share a revision, which a move onto a watch
+        that already had a record can cause (the other watch's document is
+        filed with its own numbering).
+        """
+        for entry in reversed(self.history):
+            if entry.revision == revision:
+                return entry
+        return None
 
     @classmethod
     def from_dict(
@@ -368,9 +534,18 @@ class WatchConfigRecord:
             or delivered_revision < 0
         ):
             delivered_revision = 0
-        delivered_at = raw.get("delivered_at")
-        if not isinstance(delivered_at, str) or not delivered_at:
-            delivered_at = None
+        delivered_at = _text_or_none(raw.get("delivered_at"))
+        # The same for the unreadable report, which files written before it
+        # existed lack: 0 and no time. One past the record's revision cannot
+        # be about anything stored, so it reads as none too.
+        rejected_revision = raw.get("rejected_revision", 0)
+        if (
+            isinstance(rejected_revision, bool)
+            or not isinstance(rejected_revision, int)
+            or not 0 < rejected_revision <= revision
+        ):
+            rejected_revision = 0
+        rejected_at = _text_or_none(raw.get("rejected_at"))
         return cls(
             owner_watch_id=owner_watch_id,
             kind=kind,
@@ -383,6 +558,8 @@ class WatchConfigRecord:
             size_bytes=size,
             delivered_revision=min(delivered_revision, revision),
             delivered_at=delivered_at if delivered_revision > 0 else None,
+            rejected_revision=rejected_revision,
+            rejected_at=rejected_at if rejected_revision > 0 else None,
         )
 
     def remember(self, entry: WatchConfigHistoryEntry) -> None:
@@ -641,9 +818,32 @@ class WatchConfigStore:
             if kind in WATCH_CONFIG_KINDS
         }
 
+    def history(self, owner_watch_id: str, kind: Any) -> list[WatchConfigHistoryEntry]:
+        """The owner's history of that kind, newest first.
+
+        Empty when there is no record, or a record nothing has replaced yet.
+        The current document is not in it: that is the record itself.
+        """
+        record = self.get(owner_watch_id, kind)
+        return list(reversed(record.history)) if record is not None else []
+
+    def history_entry(
+        self, owner_watch_id: str, kind: Any, revision: Any
+    ) -> WatchConfigHistoryEntry:
+        """One history entry by revision, or :class:`WatchConfigNotFoundError`
+        when the record has none at that revision (or there is no record)."""
+        revision = _validate_revision(revision)
+        record = self.get(owner_watch_id, kind)
+        entry = record.history_entry(revision) if record is not None else None
+        if entry is None:
+            raise WatchConfigNotFoundError(
+                f"revision {revision} of {kind} is not in the history"
+            )
+        return entry
+
     def diagnostics(self) -> dict[str, dict[str, dict[str, Any]]]:
-        """Revision, size, times and delivery per owner and kind. Never a
-        document."""
+        """Revision, size, times, delivery and the unreadable report per owner
+        and kind. Never a document."""
         report: dict[str, dict[str, dict[str, Any]]] = {
             owner: {
                 kind: {
@@ -653,6 +853,8 @@ class WatchConfigStore:
                     "updated_by": record.updated_by,
                     "delivered_revision": record.delivered_revision,
                     "delivered_at": record.delivered_at,
+                    "rejected_revision": record.rejected_revision,
+                    "rejected_at": record.rejected_at,
                     "history_count": len(record.history),
                 }
                 for kind, record in sorted(by_kind.items())
@@ -684,6 +886,10 @@ class WatchConfigStore:
         forced save never loses the copy it overwrote. Everything about the
         request is checked before the revision is, so a malformed save is
         refused as malformed even when it is also stale.
+
+        Only the page level of the shape guard applies here, never the tile
+        level (see :func:`_check_pages`), so a device is never refused for a
+        fault in its own older tiles.
         """
         if not isinstance(owner_watch_id, str) or not owner_watch_id:
             raise WatchConfigValidationError("owner_watch_id is required")
@@ -692,14 +898,8 @@ class WatchConfigStore:
         document_hash = validate_hash(document_hash)
         if not isinstance(force, bool):
             raise WatchConfigValidationError("force must be true or false")
-        if not force and (
-            isinstance(base_revision, bool)
-            or not isinstance(base_revision, int)
-            or base_revision < 0
-        ):
-            raise WatchConfigValidationError(
-                "base_revision must be a non-negative integer"
-            )
+        if not force:
+            _validate_base_revision(base_revision)
         self._check_available(owner_watch_id)
 
         by_kind = self._records.get(owner_watch_id, {})
@@ -751,7 +951,7 @@ class WatchConfigStore:
     ) -> None:
         """Make ``document`` the record's next revision, filing the current one
         into the history first. Every save that replaces a document, device or
-        panel, goes through here."""
+        panel, a restore included, goes through here."""
         record.remember(record.current_as_history())
         record.revision += 1
         record.hash = document_hash
@@ -772,12 +972,14 @@ class WatchConfigStore:
 
         Stricter than a device save, on purpose:
 
-        * Only the kinds in ``WATCH_CONFIG_PANEL_KINDS`` (the behavior
-          settings). Pages are read-only in the panel.
+        * Only the kinds in ``WATCH_CONFIG_PANEL_KINDS`` (both, today).
+        * The tile level of the page shape guard as well as the page level
+          (:func:`validate_document` with ``check_items``). The panel builds
+          what it sends, so it can always fix a fault there.
         * Never a new record. ``base_revision`` 0, or no stored record at all,
           is refused with :class:`WatchConfigNoRecordError`: the first copy
-          comes from the phone, so the panel never invents a document the phone
-          has not seen.
+          comes from a device, so the panel never invents a document the
+          device has not seen.
         * No ``force``. A stale base is a conflict, and the panel reloads.
 
         The server computes the hash (:func:`canonical_hash`) and writes
@@ -787,23 +989,73 @@ class WatchConfigStore:
         """
         if not isinstance(owner_watch_id, str) or not owner_watch_id:
             raise WatchConfigValidationError("owner_watch_id is required")
+        kind = self._panel_kind(kind)
+        size = validate_document(kind, document, check_items=True)
+        base_revision = _validate_base_revision(base_revision)
+        self._check_available(owner_watch_id)
+
+        existing = self._panel_target(owner_watch_id, kind, base_revision, "save")
+        return self._panel_commit(existing, document, size)
+
+    def restore(
+        self,
+        owner_watch_id: str,
+        kind: Any,
+        revision: Any,
+        *,
+        base_revision: Any,
+    ) -> WatchConfigRecord:
+        """Make a history entry's document the record's next revision.
+
+        A panel save in every respect but where the document comes from: the
+        same kinds, the same ``no_record`` and ``conflict`` refusals on
+        ``base_revision``, the same shape guard with the tile level, the
+        server's hash, ``updated_by`` ``panel``, the current document filed
+        into the history, and listeners told. The entry stays in the history
+        too, until five later saves push it out.
+
+        Refused with :class:`WatchConfigNotFoundError` when the record holds
+        no entry at ``revision``. The stale base is checked first, so a panel
+        whose list is out of date is told to reload rather than that an entry
+        it saw is gone. An entry a device wrote may fail the tile level (a
+        device save never checks it); that is refused as ``invalid`` and the
+        record is left alone.
+        """
+        if not isinstance(owner_watch_id, str) or not owner_watch_id:
+            raise WatchConfigValidationError("owner_watch_id is required")
+        kind = self._panel_kind(kind)
+        revision = _validate_revision(revision)
+        base_revision = _validate_base_revision(base_revision)
+        self._check_available(owner_watch_id)
+
+        existing = self._panel_target(owner_watch_id, kind, base_revision, "restore")
+        entry = existing.history_entry(revision)
+        if entry is None:
+            raise WatchConfigNotFoundError(
+                f"revision {revision} of {kind} is not in the history"
+            )
+        # A copy: the entry stays in the history, and the record's document
+        # must not be the same object as the one filed there.
+        document = copy.deepcopy(entry.document)
+        size = validate_document(kind, document, check_items=True)
+        return self._panel_commit(existing, document, size)
+
+    @staticmethod
+    def _panel_kind(kind: Any) -> str:
         kind = validate_kind(kind)
         if kind not in WATCH_CONFIG_PANEL_KINDS:
             raise WatchConfigValidationError(
                 f"the panel cannot save {kind}; it may save "
                 f"{', '.join(sorted(WATCH_CONFIG_PANEL_KINDS))}"
             )
-        size = validate_document(kind, document)
-        if (
-            isinstance(base_revision, bool)
-            or not isinstance(base_revision, int)
-            or base_revision < 0
-        ):
-            raise WatchConfigValidationError(
-                "base_revision must be a non-negative integer"
-            )
-        self._check_available(owner_watch_id)
+        return kind
 
+    def _panel_target(
+        self, owner_watch_id: str, kind: str, base_revision: int, action: str
+    ) -> WatchConfigRecord:
+        """The record a panel write replaces, after the ``no_record`` and
+        ``conflict`` checks. ``action`` names the write in the conflict
+        message, which always begins ``stored revision is <N>``."""
         existing = self._records.get(owner_watch_id, {}).get(kind)
         if base_revision == 0 or existing is None:
             raise WatchConfigNoRecordError(
@@ -812,21 +1064,26 @@ class WatchConfigStore:
             )
         if base_revision != existing.revision:
             raise WatchConfigConflictError(
-                f"stored revision is {existing.revision}, save was based on "
+                f"stored revision is {existing.revision}, {action} was based on "
                 f"{base_revision}",
                 existing.revision,
                 existing.hash,
             )
+        return existing
+
+    def _panel_commit(
+        self, record: WatchConfigRecord, document: dict[str, Any], size: int
+    ) -> WatchConfigRecord:
         self._replace(
-            existing,
+            record,
             document,
             canonical_hash(document),
             size,
             WATCH_CONFIG_PANEL_WRITER,
         )
-        self._schedule_owner_save(owner_watch_id)
-        self._notify(owner_watch_id, kind, existing.revision)
-        return existing
+        self._schedule_owner_save(record.owner_watch_id)
+        self._notify(record.owner_watch_id, record.kind, record.revision)
+        return record
 
     def mark_delivered(self, owner_watch_id: str, kind: str, revision: int) -> bool:
         """Record that the owner's device holds ``revision`` of ``kind``.
@@ -840,6 +1097,25 @@ class WatchConfigStore:
         if record is None or not record.mark_delivered(revision):
             return False
         self._schedule_owner_save(owner_watch_id)
+        return True
+
+    def report_unreadable(self, owner_watch_id: str, kind: str, revision: int) -> bool:
+        """A device says it fetched ``revision`` of ``kind`` and could not
+        decode it. Returns whether that is the stored revision.
+
+        Called by the signed get carrying ``unreadable_revision``. Only a
+        report about the stored revision counts: it sets ``rejected_revision``
+        and ``rejected_at`` (the first report's time, kept through repeats),
+        and the caller must then not mark that revision delivered. A report
+        about any other revision is stale (a newer save already replaced what
+        the device could not read) and changes nothing. Saves only when the
+        value moves. Tells no listener: the revision did not change.
+        """
+        record = self._records.get(owner_watch_id, {}).get(kind)
+        if record is None or revision != record.revision:
+            return False
+        if record.mark_rejected():
+            self._schedule_owner_save(owner_watch_id)
         return True
 
     @callback
@@ -885,7 +1161,9 @@ class WatchConfigStore:
           Its delivery is reset to nothing: it said which revision the device
           signing as the old id held, and nothing signing as the new id has
           asked yet. The panel then reads "waiting for the iPhone" until the
-          first get under the new id, which is the honest answer.
+          first get under the new id, which is the honest answer. Its
+          unreadable report moves with it: the document is the same one the
+          device could not read.
         * The target already holds one: the target's record stays. It is what
           the device under the new id has been working with since it came
           back, so it is the newer truth. The source's current document is filed into

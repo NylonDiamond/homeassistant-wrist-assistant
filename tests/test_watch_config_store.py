@@ -13,7 +13,10 @@ file never being saved over. From step 2: the ``behavior`` kind and its own
 cap, delivery tracking (and files written before it existed), and the panel
 save with its ``no_record`` and ``conflict`` refusals and server-side hash.
 From the live line: the change listeners (every trigger, what is not a
-trigger, a listener that raises, removal) and ``revisions``.
+trigger, a listener that raises, removal) and ``revisions``. From step 3: the
+panel saving pages, the page shape guard at both levels, the unreadable report
+(``rejected_revision``), the history list and entry, restore, and files
+written before any of it.
 """
 
 from __future__ import annotations
@@ -128,7 +131,7 @@ def _loaded_module():
             WATCH_CONFIG_STORAGE_KEY=INDEX_KEY,
             WATCH_CONFIG_STORAGE_VERSION=1,
             WATCH_CONFIG_KINDS=frozenset({"pages", "behavior"}),
-            WATCH_CONFIG_PANEL_KINDS=frozenset({"behavior"}),
+            WATCH_CONFIG_PANEL_KINDS=frozenset({"pages", "behavior"}),
             WATCH_CONFIG_PANEL_WRITER="panel",
             WATCH_CONFIG_MAX_DOCUMENT_BYTES={
                 "pages": MAX_BYTES,
@@ -164,10 +167,11 @@ def _new(mod):
 
 
 def _doc(name: str = "Home", **extra: Any) -> dict:
-    """A small stand-in for a GridConfiguration. The store reads only `pages`."""
+    """A small stand-in for a GridConfiguration. The store reads only `pages`,
+    and in it only the page ids and, for a panel write, each page's `items`."""
     doc = {
         "schemaVersion": 1,
-        "pages": [{"id": "6F1C2D0E-0000-4000-8000-000000000001", "name": name, "tiles": []}],
+        "pages": [{"id": "6F1C2D0E-0000-4000-8000-000000000001", "name": name, "items": []}],
     }
     doc.update(extra)
     return doc
@@ -497,7 +501,8 @@ def test_the_owner_file_holds_the_document_and_history_but_the_index_does_not(mo
     record = stored["records"]["pages"]
     assert set(record) == {
         "revision", "hash", "updated_at", "updated_by",
-        "delivered_revision", "delivered_at", "document", "history",
+        "delivered_revision", "delivered_at", "rejected_revision", "rejected_at",
+        "document", "history",
     }
     assert [e["revision"] for e in record["history"]] == [1]
     assert _FakeStore.files[INDEX_KEY] == {"owners": [OWNER]}
@@ -572,9 +577,16 @@ def test_diagnostics_report_revision_size_and_time_but_never_the_document(mod):
         "updated_by": OWNER,
         "delivered_revision": 2,
         "delivered_at": record.delivered_at,
+        "rejected_revision": 0,
+        "rejected_at": None,
         "history_count": 1,
     }
     assert "secret" not in repr(report)
+
+    assert store.report_unreadable(OWNER, "pages", 2) is True
+    entry = store.diagnostics()[OWNER]["pages"]
+    assert (entry["rejected_revision"], entry["rejected_at"]) == (2, record.rejected_at)
+    assert entry["rejected_at"]
 
 
 def test_remove_deletes_every_owner_file_and_the_index(mod):
@@ -850,11 +862,29 @@ def test_a_stale_panel_save_conflicts_with_the_stored_revision(mod):
     assert store.get(OWNER, "behavior").document["wrapPages"] is True
 
 
-def test_the_panel_cannot_save_pages(mod):
+def test_the_panel_may_save_pages(mod):
     store = _new(mod)
+    original = _doc("phone")
+    _put(store, doc=original)
+    edited = _doc("panel")
+    record = store.panel_save(OWNER, "pages", edited, base_revision=1)
+    assert record.revision == 2
+    assert record.updated_by == "panel"
+    assert record.document == edited
+    assert record.hash == mod.canonical_hash(edited)
+    assert record.delivered_revision == 1
+    assert [e.document for e in record.history] == [original]
+
+
+def test_a_panel_save_of_pages_still_needs_a_device_copy_first(mod):
+    store = _new(mod)
+    with pytest.raises(mod.WatchConfigNoRecordError):
+        store.panel_save(OWNER, "pages", _doc(), base_revision=0)
+    with pytest.raises(mod.WatchConfigNoRecordError):
+        store.panel_save(OWNER, "pages", _doc(), base_revision=1)
     _put(store)
-    with pytest.raises(mod.WatchConfigValidationError, match="cannot save pages"):
-        store.panel_save(OWNER, "pages", _doc("panel"), base_revision=1)
+    with pytest.raises(mod.WatchConfigNoRecordError):
+        store.panel_save(OWNER, "pages", _doc(), base_revision=0)
     assert store.get(OWNER, "pages").revision == 1
 
 
@@ -935,6 +965,7 @@ def test_a_panel_save_is_announced(mod):
 def test_a_refused_save_announces_nothing(mod):
     store = _new(mod)
     _phone_behavior(store)
+    _put(store)
     heard = _listen(store)
     with pytest.raises(mod.WatchConfigConflictError):
         _put(store, kind="behavior", doc=_behavior(), base=0)
@@ -945,7 +976,11 @@ def test_a_refused_save_announces_nothing(mod):
     with pytest.raises(mod.WatchConfigNoRecordError):
         store.panel_save(OTHER, "behavior", _behavior(), base_revision=1)
     with pytest.raises(mod.WatchConfigValidationError):
-        store.panel_save(OWNER, "pages", _doc(), base_revision=1)
+        store.panel_save(OWNER, "pages", _pages(_page("P", items=[_item("T"), _item("T")])),
+                         base_revision=1)
+    with pytest.raises(mod.WatchConfigNotFoundError):
+        store.restore(OWNER, "pages", 7, base_revision=1)
+    assert store.report_unreadable(OWNER, "pages", 1) is True
     assert heard == []
 
 
@@ -1098,3 +1133,608 @@ def test_revisions_of_an_unreadable_owner_are_unavailable(mod):
     again = _new(mod)
     with pytest.raises(mod.WatchConfigUnavailableError):
         again.revisions(OWNER)
+
+
+# ── step 3: the page shape guard ─────────────────────────────────────────
+
+
+def _item(item_id: str, entity_id: str = "light.made_up", **extra: Any) -> dict:
+    item = {"id": item_id, "entityId": entity_id, "colSpan": 6}
+    item.update(extra)
+    return item
+
+
+_NO_ITEMS = object()
+
+
+def _page(page_id: Any, *, items: Any = _NO_ITEMS, **extra: Any) -> dict:
+    """A page; ``items`` left out means no `items` key at all, while
+    ``items=None`` writes a null one."""
+    page: dict[str, Any] = {"id": page_id, "name": f"Page {page_id}"}
+    if items is not _NO_ITEMS:
+        page["items"] = items
+    page.update(extra)
+    return page
+
+
+def _pages(*pages: Any) -> dict:
+    return {"schemaVersion": 1, "pages": list(pages)}
+
+
+def _panel_pages(store, doc: dict, base: int = 1):
+    return store.panel_save(OWNER, "pages", doc, base_revision=base)
+
+
+@pytest.mark.parametrize(
+    ("pages", "message"),
+    [
+        ([["not", "a", "page"]], r"^document\.pages\[0\] must be an object$"),
+        ([_page("A"), "B"], r"^document\.pages\[1\] must be an object$"),
+        ([_page("A"), {"name": "no id"}], r"^document\.pages\[1\]\.id must be a non-empty string$"),
+        ([_page("")], r"^document\.pages\[0\]\.id must be a non-empty string$"),
+        ([_page(7)], r"^document\.pages\[0\]\.id must be a non-empty string$"),
+        ([_page(None)], r"^document\.pages\[0\]\.id must be a non-empty string$"),
+        (
+            [_page("A"), _page("B"), _page("A")],
+            r'^document\.pages\[2\] has the page id "A" of document\.pages\[0\]; '
+            r"page ids must be unique$",
+        ),
+        # The app reads page ids as UUIDs, which parse the same in either case.
+        (
+            [_page("6f1c2d0e-0000-4000-8000-00000000000a"),
+             _page("6F1C2D0E-0000-4000-8000-00000000000A")],
+            r"^document\.pages\[1\] has the page id",
+        ),
+    ],
+)
+def test_the_page_level_is_refused_for_every_writer(mod, pages, message):
+    store = _new(mod)
+    with pytest.raises(mod.WatchConfigValidationError, match=message) as exc:
+        _put(store, doc=_pages(*pages))
+    assert exc.value.code == "invalid"
+    assert store.get(OWNER, "pages") is None
+
+    _put(store)
+    with pytest.raises(mod.WatchConfigValidationError, match=message):
+        _panel_pages(store, _pages(*pages))
+    with pytest.raises(mod.WatchConfigValidationError, match=message):
+        _put(store, doc=_pages(*pages), base=0, force=True, digest=HASH_2)
+    assert store.get(OWNER, "pages").revision == 1
+
+
+@pytest.mark.parametrize(
+    "items",
+    [
+        [_item("T1"), _item("T1")],
+        [_item("t1"), _item("T1")],
+        "not a list",
+        None,
+        [["not an item"]],
+        [{"entityId": "light.made_up"}],
+        [_item("")],
+        [_item("T1", entity_id="")],
+        [{"id": "T1"}],
+        [_item("T1", entity_id=None)],
+    ],
+)
+def test_a_device_save_is_never_refused_for_a_tile_fault(mod, items):
+    """A phone refused for its own old tiles could never upload again."""
+    store = _new(mod)
+    doc = _pages(_page("A", items=items))
+    record = _put(store, doc=doc)
+    assert record.revision == 1
+    assert record.document == doc
+
+
+@pytest.mark.parametrize(
+    ("items", "message"),
+    [
+        (
+            [_item("T1"), _item("T2"), _item("T1")],
+            r'^document\.pages\[1\] \(id "B"\)\.items\[2\] has the item id "T1" of '
+            r"items\[0\]; item ids must be unique in a page$",
+        ),
+        (
+            [_item("abc"), _item("ABC")],
+            r'^document\.pages\[1\] \(id "B"\)\.items\[1\] has the item id "ABC"',
+        ),
+        ("not a list", r'^document\.pages\[1\] \(id "B"\)\.items must be a list$'),
+        (None, r'^document\.pages\[1\] \(id "B"\)\.items must be a list$'),
+        ([_item("T1"), 3], r'^document\.pages\[1\] \(id "B"\)\.items\[1\] must be an object$'),
+        (
+            [{"entityId": "light.made_up"}],
+            r'^document\.pages\[1\] \(id "B"\)\.items\[0\]\.id must be a non-empty string$',
+        ),
+        (
+            [_item("")],
+            r'^document\.pages\[1\] \(id "B"\)\.items\[0\]\.id must be a non-empty string$',
+        ),
+        (
+            [{"id": "T1"}],
+            r'^document\.pages\[1\] \(id "B"\)\.items\[0\]\.entityId must be a non-empty '
+            r"string$",
+        ),
+        (
+            [_item("T1", entity_id="")],
+            r"\.items\[0\]\.entityId must be a non-empty string$",
+        ),
+        (
+            [_item("T1", entity_id=["light.made_up"])],
+            r"\.items\[0\]\.entityId must be a non-empty string$",
+        ),
+    ],
+)
+def test_a_panel_save_is_refused_for_a_tile_fault(mod, items, message):
+    store = _new(mod)
+    _put(store)
+    doc = _pages(_page("A", items=[_item("T1")]), _page("B", items=items))
+    with pytest.raises(mod.WatchConfigValidationError, match=message):
+        _panel_pages(store, doc)
+    assert store.get(OWNER, "pages").revision == 1
+
+
+def test_a_panel_save_with_a_good_shape_is_accepted(mod):
+    store = _new(mod)
+    _put(store)
+    doc = _pages(
+        # The same item id on two pages is fine: ids are unique per page.
+        _page("A", items=[_item("T1"), _item("T2", entity_id="spacer.made_up")]),
+        _page("B", items=[_item("T1")]),
+        # No items at all, and an empty list, are both fine.
+        _page("C"),
+        _page("D", items=[]),
+    )
+    assert _panel_pages(store, doc).revision == 2
+
+
+def test_the_shape_guard_never_looks_at_other_keys(mod):
+    """The shape, not the content: keys, values and nesting the server does
+    not know pass through untouched."""
+    store = _new(mod)
+    _put(store)
+    doc = _pages(
+        _page("A", items=[_item("T1", holdSlideActions=["up", {"x": 1}], colSpan="wide")],
+              groups=[{"id": "G", "items": "not checked here"}], gridDensity=None),
+    )
+    doc["futureKey"] = {"pages": "not the page list"}
+    record = _panel_pages(store, doc)
+    assert record.document == doc
+
+
+def test_the_shape_guard_comes_before_the_conflict(mod):
+    """A malformed save is refused as malformed even when it is also stale,
+    the same as a device save."""
+    store = _new(mod)
+    _put(store)
+    bad = _pages(_page("A"), _page("A"))
+    with pytest.raises(mod.WatchConfigValidationError):
+        _panel_pages(store, bad, base=9)
+    with pytest.raises(mod.WatchConfigValidationError):
+        _put(store, doc=bad, base=9)
+
+
+def test_behavior_is_never_shape_checked(mod):
+    store = _new(mod)
+    doc = {"pages": [{"no": "id"}, {"no": "id"}], "items": [1, 1]}
+    _put(store, kind="behavior", doc=doc)
+    assert store.panel_save(OWNER, "behavior", doc, base_revision=1).revision == 2
+
+
+# ── step 3: the unreadable report ────────────────────────────────────────
+
+
+def test_a_report_about_the_stored_revision_is_kept(mod):
+    store = _new(mod)
+    _put(store)
+    _panel_pages(store, _doc("panel"))
+    record = store.get(OWNER, "pages")
+    assert (record.rejected_revision, record.rejected_at) == (0, None)
+
+    _FakeStore.writes.clear()
+    assert store.report_unreadable(OWNER, "pages", 2) is True
+    assert record.rejected_revision == 2
+    assert record.rejected_at and record.rejected_at.endswith("Z")
+    assert _FakeStore.writes == [mod._owner_key(OWNER)]
+    stored = _FakeStore.files[mod._owner_key(OWNER)]["records"]["pages"]
+    assert (stored["rejected_revision"], stored["rejected_at"]) == (2, record.rejected_at)
+    # It is not a delivery, and it moves no revision.
+    assert (record.revision, record.delivered_revision) == (2, 1)
+
+
+def test_a_repeated_report_keeps_the_first_time_and_writes_nothing(mod):
+    store = _new(mod)
+    _put(store)
+    store.report_unreadable(OWNER, "pages", 1)
+    record = store.get(OWNER, "pages")
+    record.rejected_at = "2026-10-01T20:00:00Z"
+    _FakeStore.writes.clear()
+    assert store.report_unreadable(OWNER, "pages", 1) is True
+    assert record.rejected_at == "2026-10-01T20:00:00Z"
+    assert _FakeStore.writes == []
+
+
+@pytest.mark.parametrize("reported", [0, 1, 3, 99])
+def test_a_stale_report_changes_nothing(mod, reported):
+    store = _new(mod)
+    _put(store)
+    _put(store, base=1, digest=HASH_2)
+    _FakeStore.writes.clear()
+    assert store.report_unreadable(OWNER, "pages", reported) is False
+    record = store.get(OWNER, "pages")
+    assert (record.rejected_revision, record.rejected_at) == (0, None)
+    assert _FakeStore.writes == []
+
+
+def test_a_report_without_a_record_or_for_the_other_kind_changes_nothing(mod):
+    store = _new(mod)
+    assert store.report_unreadable(OWNER, "pages", 1) is False
+    _put(store)
+    assert store.report_unreadable(OWNER, "behavior", 1) is False
+    assert store.report_unreadable(OTHER, "pages", 1) is False
+    assert store.get(OWNER, "pages").rejected_revision == 0
+
+
+def test_a_later_save_leaves_the_report_behind_without_clearing_it(mod):
+    store = _new(mod)
+    _put(store)
+    store.report_unreadable(OWNER, "pages", 1)
+    at = store.get(OWNER, "pages").rejected_at
+    _panel_pages(store, _doc("fixed"))
+    _put(store, doc=_doc("phone again"), base=2, digest=HASH_2)
+    record = store.get(OWNER, "pages")
+    assert record.revision == 3
+    assert (record.rejected_revision, record.rejected_at) == (1, at)
+    # A report about the new revision replaces the old one.
+    assert store.report_unreadable(OWNER, "pages", 3) is True
+    assert record.rejected_revision == 3
+
+
+def test_the_report_survives_a_restart(mod):
+    store = _new(mod)
+    _put(store, kind="behavior", doc=_behavior())
+    store.report_unreadable(OWNER, "behavior", 1)
+    before = store.get(OWNER, "behavior")
+    after = _new(mod).get(OWNER, "behavior")
+    assert (after.rejected_revision, after.rejected_at) == (1, before.rejected_at)
+
+
+def test_a_whole_move_carries_the_report_and_a_forget_drops_it(mod):
+    store = _new(mod)
+    _put(store)
+    store.report_unreadable(OWNER, "pages", 1)
+    at = store.get(OWNER, "pages").rejected_at
+
+    store.move_owner(OWNER, OTHER, updated_by="t")
+    moved = store.get(OTHER, "pages")
+    assert (moved.rejected_revision, moved.rejected_at) == (1, at)
+    assert (moved.delivered_revision, moved.delivered_at) == (0, None)
+
+    store.forget_owner(OTHER)
+    record = _put(store, OTHER)
+    assert (record.rejected_revision, record.rejected_at) == (0, None)
+
+
+def test_a_kept_target_keeps_its_own_report(mod):
+    store = _new(mod)
+    _put(store, OWNER)
+    store.report_unreadable(OWNER, "pages", 1)
+    _put(store, OTHER, digest=HASH_2)
+    store.move_owner(OWNER, OTHER, updated_by="t")
+    assert store.get(OTHER, "pages").rejected_revision == 0
+
+
+@pytest.mark.parametrize(
+    ("raw_revision", "raw_at", "expected"),
+    [
+        (True, "2026-10-01T20:00:00Z", (0, None)),
+        ("4", "2026-10-01T20:00:00Z", (0, None)),
+        (-1, "2026-10-01T20:00:00Z", (0, None)),
+        (9, "2026-10-01T20:00:00Z", (0, None)),
+        (3, 17, (3, None)),
+        (3, "", (3, None)),
+        (0, "2026-10-01T20:00:00Z", (0, None)),
+        (4, "2026-10-01T20:00:00Z", (4, "2026-10-01T20:00:00Z")),
+    ],
+)
+def test_junk_report_fields_read_as_no_report(mod, raw_revision, raw_at, expected):
+    key = mod._owner_key(OWNER)
+    _FakeStore.files[INDEX_KEY] = {"owners": [OWNER]}
+    _FakeStore.files[key] = {
+        "owner_watch_id": OWNER,
+        "records": {
+            "pages": {
+                "revision": 4, "hash": HASH_1, "updated_at": "", "updated_by": OWNER,
+                "rejected_revision": raw_revision, "rejected_at": raw_at,
+                "document": _doc(),
+            }
+        },
+    }
+    record = _new(mod).get(OWNER, "pages")
+    assert record is not None
+    assert (record.rejected_revision, record.rejected_at) == expected
+
+
+# ── step 3: history and restore ──────────────────────────────────────────
+
+
+def _three_saves(store) -> list[dict]:
+    """Revisions 1 (phone), 2 (panel) and 3 (phone); returns their documents."""
+    docs = [_doc("one"), _doc("two, a longer name"), _doc("three")]
+    _put(store, doc=docs[0], digest=HASH_1)
+    _panel_pages(store, docs[1])
+    _put(store, doc=docs[2], base=2, digest=HASH_3)
+    return docs
+
+
+def test_history_is_newest_first_with_sizes_and_no_documents(mod):
+    store = _new(mod)
+    docs = _three_saves(store)
+    entries = store.history(OWNER, "pages")
+    assert [e.revision for e in entries] == [2, 1]
+    summaries = [e.summary() for e in entries]
+    record = store.get(OWNER, "pages")
+    assert summaries == [
+        {
+            "revision": 2,
+            "hash": mod.canonical_hash(docs[1]),
+            "updated_at": record.history[1].updated_at,
+            "updated_by": "panel",
+            "size": mod.document_size(docs[1]),
+        },
+        {
+            "revision": 1,
+            "hash": HASH_1,
+            "updated_at": record.history[0].updated_at,
+            "updated_by": OWNER,
+            "size": mod.document_size(docs[0]),
+        },
+    ]
+    assert summaries[0]["size"] == len(
+        json.dumps(docs[1], separators=(",", ":"), ensure_ascii=False).encode()
+    )
+    assert "one" not in repr(summaries)
+    # Listing does not reorder what is stored.
+    assert [e.revision for e in record.history] == [1, 2]
+
+
+def test_history_without_a_record_or_without_a_replaced_save_is_empty(mod):
+    store = _new(mod)
+    assert store.history(OWNER, "pages") == []
+    _put(store)
+    assert store.history(OWNER, "pages") == []
+    assert store.history(OWNER, "behavior") == []
+
+
+def test_history_refuses_an_unknown_kind_and_an_unreadable_owner(mod):
+    store = _new(mod)
+    with pytest.raises(mod.WatchConfigValidationError):
+        store.history(OWNER, "quick_actions")
+    _put(store)
+    _FakeStore.unreadable.add(mod._owner_key(OWNER))
+    again = _new(mod)
+    with pytest.raises(mod.WatchConfigUnavailableError):
+        again.history(OWNER, "pages")
+
+
+def test_history_keeps_only_five_and_lists_them_newest_first(mod):
+    store = _new(mod)
+    for revision in range(8):
+        _put(store, doc=_doc(f"v{revision + 1}"), base=revision, digest=f"{revision:x}" * 64)
+    assert [e.revision for e in store.history(OWNER, "pages")] == [7, 6, 5, 4, 3]
+
+
+def test_a_history_entry_carries_its_document(mod):
+    store = _new(mod)
+    docs = _three_saves(store)
+    entry = store.history_entry(OWNER, "pages", 1)
+    assert entry.as_dict() == {
+        "revision": 1,
+        "hash": HASH_1,
+        "updated_at": entry.updated_at,
+        "updated_by": OWNER,
+        "document": docs[0],
+    }
+
+
+@pytest.mark.parametrize("revision", [3, 4, 99])
+def test_a_history_entry_that_is_not_there_is_not_found(mod, revision):
+    """3 is the current revision: the record itself, not a history entry."""
+    store = _new(mod)
+    _three_saves(store)
+    with pytest.raises(mod.WatchConfigNotFoundError) as exc:
+        store.history_entry(OWNER, "pages", revision)
+    assert exc.value.code == "not_found"
+    assert exc.value.message == f"revision {revision} of pages is not in the history"
+
+
+def test_a_history_entry_with_no_record_is_not_found(mod):
+    store = _new(mod)
+    with pytest.raises(mod.WatchConfigNotFoundError):
+        store.history_entry(OWNER, "behavior", 1)
+
+
+@pytest.mark.parametrize("revision", [0, -1, True, "1", 1.0, None])
+def test_a_bad_history_revision_is_invalid(mod, revision):
+    store = _new(mod)
+    _three_saves(store)
+    with pytest.raises(mod.WatchConfigValidationError, match="revision must be a positive"):
+        store.history_entry(OWNER, "pages", revision)
+    with pytest.raises(mod.WatchConfigValidationError, match="revision must be a positive"):
+        store.restore(OWNER, "pages", revision, base_revision=3)
+
+
+def test_restore_saves_the_old_document_as_a_new_panel_revision(mod):
+    store = _new(mod)
+    docs = _three_saves(store)
+    heard = _listen(store)
+    record = store.restore(OWNER, "pages", 1, base_revision=3)
+    assert record.revision == 4
+    assert record.updated_by == "panel"
+    assert record.document == docs[0]
+    assert record.hash == mod.canonical_hash(docs[0])
+    # The current document is filed, and the restored entry stays.
+    assert [e.revision for e in record.history] == [1, 2, 3]
+    assert record.history[-1].document == docs[2]
+    assert record.history[0].document == docs[0]
+    # A copy, not the history entry's own object.
+    assert record.document is not record.history[0].document
+    # Delivery is left where it was, as for any panel save.
+    assert record.delivered_revision == 3
+    assert heard == [(OWNER, "pages", 4)]
+    stored = _FakeStore.files[mod._owner_key(OWNER)]["records"]["pages"]
+    assert (stored["revision"], stored["updated_by"], stored["document"]) == (4, "panel", docs[0])
+
+
+def test_restore_on_a_stale_base_is_a_conflict(mod):
+    store = _new(mod)
+    _three_saves(store)
+    heard = _listen(store)
+    with pytest.raises(mod.WatchConfigConflictError) as exc:
+        store.restore(OWNER, "pages", 1, base_revision=2)
+    assert exc.value.code == "conflict"
+    assert exc.value.message == "stored revision is 3, restore was based on 2"
+    assert (exc.value.revision, exc.value.hash) == (3, HASH_3)
+    # Stale wins over a missing entry: a panel with an old list reloads.
+    with pytest.raises(mod.WatchConfigConflictError):
+        store.restore(OWNER, "pages", 99, base_revision=2)
+    assert store.get(OWNER, "pages").revision == 3
+    assert heard == []
+
+
+def test_restore_of_an_unknown_revision_is_not_found(mod):
+    store = _new(mod)
+    _three_saves(store)
+    with pytest.raises(mod.WatchConfigNotFoundError, match="revision 3 of pages"):
+        store.restore(OWNER, "pages", 3, base_revision=3)
+    assert store.get(OWNER, "pages").revision == 3
+
+
+def test_restore_without_a_record_is_no_record(mod):
+    store = _new(mod)
+    for base in (0, 1):
+        with pytest.raises(mod.WatchConfigNoRecordError):
+            store.restore(OWNER, "pages", 1, base_revision=base)
+    _put(store)
+    with pytest.raises(mod.WatchConfigNoRecordError):
+        store.restore(OWNER, "pages", 1, base_revision=0)
+
+
+def test_restore_of_a_behavior_record(mod):
+    store = _new(mod)
+    original = _behavior(keyThePanelHides=[1])
+    _phone_behavior(store, original)
+    store.panel_save(OWNER, "behavior", _behavior(wrapPages=True), base_revision=1)
+    record = store.restore(OWNER, "behavior", 1, base_revision=2)
+    assert (record.revision, record.updated_by, record.document) == (3, "panel", original)
+    assert record.hash == mod.canonical_hash(original)
+
+
+def test_restore_refuses_an_old_document_that_fails_the_tile_level(mod):
+    """A device save never checks tiles, so an old entry may not pass; the
+    restore is refused and nothing moves."""
+    store = _new(mod)
+    bad = _pages(_page("A", items=[_item("T1"), _item("T1")]))
+    _put(store, doc=bad)
+    _put(store, doc=_doc("fine"), base=1, digest=HASH_2)
+    with pytest.raises(mod.WatchConfigValidationError, match="item ids must be unique"):
+        store.restore(OWNER, "pages", 1, base_revision=2)
+    record = store.get(OWNER, "pages")
+    assert record.revision == 2
+    assert [e.revision for e in record.history] == [1]
+
+
+def test_restore_is_kept_across_a_restart(mod):
+    store = _new(mod)
+    docs = _three_saves(store)
+    store.restore(OWNER, "pages", 2, base_revision=3)
+    after = _new(mod).get(OWNER, "pages")
+    assert (after.revision, after.updated_by, after.document) == (4, "panel", docs[1])
+    assert [e.revision for e in after.history] == [1, 2, 3]
+
+
+def test_restore_and_entry_take_the_newest_of_two_entries_sharing_a_revision(mod):
+    """A move onto a watch with a record files the other watch's document
+    with its own numbering, so two entries can share a revision."""
+    store = _new(mod)
+    _put(store, OWNER, _doc("old watch"))
+    _put(store, OTHER, _doc("new watch"), digest=HASH_2)
+    _put(store, OTHER, _doc("new watch 2"), base=1, digest=HASH_3)
+    store.move_owner(OWNER, OTHER, updated_by="t")
+    assert [e.revision for e in store.history(OTHER, "pages")] == [1, 1]
+    assert store.history_entry(OTHER, "pages", 1).document == _doc("old watch")
+    record = store.restore(OTHER, "pages", 1, base_revision=2)
+    assert record.document == _doc("old watch")
+
+
+def test_restore_of_a_kind_the_panel_may_not_save_is_invalid(mod):
+    store = _new(mod)
+    with pytest.raises(mod.WatchConfigValidationError, match="kind"):
+        store.restore(OWNER, "quick_actions", 1, base_revision=1)
+
+
+# ── step 3: files written before it ──────────────────────────────────────
+
+
+def test_a_file_written_before_step_3_still_loads_and_works(mod):
+    """Exactly the record shape step 2 wrote: delivery fields but no report,
+    and history entries from older builds, one missing envelope fields and
+    one with them empty. Its stand-in pages use `tiles`, which no guard
+    reads, and the device copy has a tile fault the panel would refuse."""
+    key = mod._owner_key(OWNER)
+    old_document = {
+        "schemaVersion": 1,
+        "pages": [{"id": "P1", "name": "Home", "items": [_item("T"), _item("T")]}],
+    }
+    _FakeStore.files[INDEX_KEY] = {"owners": [OWNER]}
+    _FakeStore.files[key] = {
+        "owner_watch_id": OWNER,
+        "records": {
+            "pages": {
+                "revision": 4,
+                "hash": HASH_1,
+                "updated_at": "2026-10-01T20:00:00Z",
+                "updated_by": OWNER,
+                "delivered_revision": 4,
+                "delivered_at": "2026-10-01T20:00:01Z",
+                "document": old_document,
+                "history": [
+                    {"revision": 2, "document": {"pages": [{"id": "P1", "tiles": []}]}},
+                    {"revision": 3, "hash": "", "updated_at": "", "updated_by": "",
+                     "document": _doc("three")},
+                ],
+            },
+            "behavior": {
+                "revision": 1, "hash": HASH_2, "updated_at": "", "updated_by": OWNER,
+                "document": _behavior(),
+            },
+        },
+    }
+    store = _new(mod)
+    record = store.get(OWNER, "pages")
+    assert record.revision == 4
+    assert record.document == old_document
+    assert (record.delivered_revision, record.rejected_revision, record.rejected_at) == (
+        4, 0, None
+    )
+    assert store.get(OWNER, "behavior").rejected_revision == 0
+    assert [e.summary() for e in store.history(OWNER, "pages")] == [
+        {"revision": 3, "hash": None, "updated_at": None, "updated_by": None,
+         "size": mod.document_size(_doc("three"))},
+        {"revision": 2, "hash": None, "updated_at": None, "updated_by": None,
+         "size": mod.document_size({"pages": [{"id": "P1", "tiles": []}]})},
+    ]
+
+    # Everything works on it: the report, a device save over the faulty
+    # tiles, a restore of an entry without an envelope, and the rewrite.
+    assert store.report_unreadable(OWNER, "pages", 4) is True
+    assert _put(store, doc=old_document, base=4, digest=HASH_2).revision == 5
+    assert store.restore(OWNER, "pages", 2, base_revision=5).revision == 6
+    written = _FakeStore.files[key]["records"]["pages"]
+    assert (written["rejected_revision"], written["revision"]) == (4, 6)
+    assert written["history"][0] == {
+        "revision": 2, "hash": None, "updated_at": None, "updated_by": None,
+        "document": {"pages": [{"id": "P1", "tiles": []}]},
+    }
+    again = _new(mod).get(OWNER, "pages")
+    assert (again.revision, again.rejected_revision) == (6, 4)
+    assert [e.revision for e in again.history] == [2, 3, 4, 5]
