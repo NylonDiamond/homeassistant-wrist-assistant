@@ -29,6 +29,7 @@ import {
   watchTriggerModes,
 } from "./tile-settings-model.js";
 import { sameWatchId, findWatchPage } from "./edit.js";
+import { watchTileHasStateTask } from "./styling-model.js";
 import {
   type WatchPage,
   type WatchPageTile,
@@ -44,29 +45,39 @@ import type { HassEntityState } from "../ha-api.js";
 // ── sections ─────────────────────────────────────────────────────────────
 
 /** The folding sections of the Tile card, in the order they are drawn. */
-export type WatchTileSettingsSection = "opens" | "header" | "icon" | "text" | "action";
+export type WatchTileSettingsSection = "opens" | "header" | "icon" | "state" | "text" | "border" | "action" | "background";
 
 export const WATCH_TILE_SETTINGS_SECTION_TITLES: Readonly<Record<WatchTileSettingsSection, string>> = {
   opens: "Opens",
   header: "Header",
   icon: "Icon and color",
+  state: "State",
   text: "Text",
+  border: "Border",
   action: "Action",
+  background: "Background",
 };
 
 /**
- * The sections a tile gets: none for a spacer (the watch draws nothing in
- * it); Header and Action for a header, whose look is all on the Header task;
- * Opens first for a go to page or peek tile; Icon and color, Text and Action
- * for everything else. A smart page never gets here.
+ * The sections a tile gets, in the order of the phone's tasks: Border and
+ * Background only for a spacer (it has no icon or words); Header and Action
+ * for a header, whose look is on the Header task; Opens first for a go to
+ * page or peek tile; Icon and color, State (for the domains the phone shows
+ * it for), Text, Border, Action and Background for everything else. A smart
+ * page never gets here.
+ *
+ * A header has no Border or Background, a departure from the phone, which
+ * shows both: the watch's `DividerTile` reads none of their keys.
  */
 export function watchTileSettingsSections(tile: WatchPageTile): WatchTileSettingsSection[] {
   const kind = tileKind(tileEntityId(tile));
-  if (kind === "spacer") return [];
+  if (kind === "spacer") return ["border", "background"];
   if (kind === "divider") return ["header", "action"];
   const out: WatchTileSettingsSection[] = [];
   if (watchPageLinkTarget(tile) !== undefined) out.push("opens");
-  out.push("icon", "text", "action");
+  out.push("icon");
+  if (watchTileHasStateTask(tile)) out.push("state");
+  out.push("text", "border", "action", "background");
   return out;
 }
 

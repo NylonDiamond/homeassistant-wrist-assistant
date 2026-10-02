@@ -28,7 +28,11 @@ ignored by git.
   come from `test/fixtures-pages/*.json`; every entity they name has a
   made-up state.
 - The strip acts on the watch the element shows (the last `get` for `pages`):
-  - iPhone: rename, move a tile, reorder pages, delete a page, add a page.
+  - iPhone: rename, move a tile, reorder pages, style a page (a pattern as
+    its one decoration, a title, and borders, a pattern, an effect and state
+    bars on its first tiles, for the State, Border, Background and Page
+    sections, keys in sorted order as the phone writes them),
+    delete a page, add a page.
     Each is a device upload: a new revision signed by the watch, delivered at
     once, and a live event. "Add a page" on the Ultra uploads its first copy.
   - iPhone picks up the save, iPhone cannot read it: delivery and rejection,

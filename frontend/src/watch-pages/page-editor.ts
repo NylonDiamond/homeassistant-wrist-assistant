@@ -61,7 +61,7 @@ import { uiIcon } from "../ui-icons.js";
 import { deliveryState, initialWatch, rejectedNow, settingsWatches, watchName } from "../watch-settings.js";
 import { addTileStyles, renderAddTile } from "./add-tile.js";
 import { type WatchPagesApplyOptions, type WatchPagesDraft, saveWatchPagesDraft } from "./draft.js";
-import { type AddTileHost, type TileSettingsHost, type WatchPagesEditorHost, NO_ICONS, ScrubRun, extendHost, memoIconNames } from "./editor-host.js";
+import { type AddTileHost, type TileSettingsHost, type WatchPagesEditorHost, NO_ICONS, ScrubRun, extendHost, memoIconNames, watchKeysTypeText } from "./editor-host.js";
 import {
   type WatchCell,
   type WatchDropOutcome,
@@ -132,10 +132,12 @@ import {
   renderWatchTileFace,
   watchPagePreviewScrolls,
   watchPagePreviewStyles,
-  watchScreenColor,
+  renderWatchPageTitle,
+  watchScreenBackground,
 } from "./preview.js";
 import { type WatchPagesNote, watchCommandError, watchPagesSaveNote } from "./save-note.js";
 import { forgetTileSettingsNotes, renderTileSettings, tileSettingsStyles } from "./tile-settings.js";
+import { pageSettingsStyles, renderPageSettings } from "./page-settings.js";
 import { scrubWatchOrphanTriggers } from "./tile-settings-model.js";
 import {
   type StageGrid,
@@ -327,12 +329,12 @@ function sameRect(a: WatchRect, b: WatchRect): boolean {
   return a.col === b.col && a.row === b.row && a.colSpan === b.colSpan && a.rowSpan === b.rowSpan;
 }
 
-/** Fields where keys type text or step a number: the editor's own keys stay
- * out of them. */
+/** Fields where keys type text: the editor's own keys stay out of them. A
+ * slider or a menu is not one, so Cmd+Z there undoes the edit it made
+ * (`watchKeysTypeText`). */
 function isTextField(node: EventTarget | undefined): boolean {
-  if (node instanceof HTMLTextAreaElement || node instanceof HTMLSelectElement) return true;
-  if (node instanceof HTMLInputElement) return !["checkbox", "radio", "button", "submit", "reset"].includes(node.type);
-  return node instanceof HTMLElement && node.isContentEditable;
+  if (!(node instanceof HTMLElement)) return false;
+  return watchKeysTypeText(node.tagName, node instanceof HTMLInputElement ? node.type : undefined, node.isContentEditable);
 }
 
 /** Whether no element has focus: the active element, followed through shadow
@@ -2120,9 +2122,10 @@ export class WaPageEditor extends LitElement {
         ? cellRectPx(grid, drawnRect(watchTileRect(selectedPlaced.tile)))
         : undefined;
     return html`<div class="wp-screen pe-screen ${this.saving ? "saving" : ""}" tabindex="-1" role="group" aria-label=${`Layout of ${watchPageName(page)}`}
-      style=${`width:${width}px;height:${height}px;background:${watchScreenColor(page)};--pe-base:${watchScreenColor(page)}`}
+      style=${`width:${width}px;height:${height}px;background:${watchScreenBackground(shown, s)}`}
       @click=${() => this.selectTile(undefined)}>
       ${layout.topInset > 0 ? html`<span class="wp-clock" style=${`font-size:${13 * s}px;height:${layout.topInset * s}px;padding-right:${12 * s}px`}>10:09</span>` : nothing}
+      ${renderWatchPageTitle(shown, s, layout.topInset, input.icons)}
       <svg class="pe-cells" width=${width} height=${gridHeight} viewBox=${`0 0 ${width} ${gridHeight}`}
         style=${`top:${grid.top}px`} aria-hidden="true"><path d=${cellsPath(grid, rows, 3 * s)} /></svg>
       ${height > screen.height * s + 0.5 ? renderWatchScreenFold(screen.height * s) : nothing}
@@ -2320,8 +2323,17 @@ export class WaPageEditor extends LitElement {
         <span>Hidden on the watch</span>
       </label>
       <p class="pe-muted">${smart ? "A smart page: the watch fills it itself." : `${plural(tiles, "tile", "tiles")}, ${plural(rows, "row", "rows")}`}</p>
+      ${this.renderPageSettingsFor(page)}
       <button class="pe-btn pe-danger" @click=${() => this.askDelete(id)}>${uiIcon("delete")}<span>Delete page…</span></button>
     </div>`;
+  }
+
+  /** The page's styling rows (`page-settings.ts`): theme, background,
+   * title. Not on a smart page, whose look the watch decides. */
+  private renderPageSettingsFor(page: WatchPage): TemplateResult | typeof nothing {
+    if (isSmartWatchPage(page)) return nothing;
+    const host = this.editorHost(page);
+    return host === undefined ? nothing : renderPageSettings(host);
   }
 
   /** Where the stored copy has got to: who saved it and when, whether the
@@ -2610,17 +2622,18 @@ export class WaPageEditor extends LitElement {
        light form of the accent: the screen is black in both skins, where the
        light skin's own accent is too dark to see. */
     .pe-screen { --pe-mark: color-mix(in srgb, var(--wa-accent) 55%, #fff); --pe-edge: rgba(255, 255, 255, 0.16); }
-    /* Every tile stands on the screen's own color with a hairline edge, so a
-       faint tint reads as a tile rather than as words on the grid. A spacer
-       stays an outline. */
+    /* A tile has no ground of its own: the screen draws the page's
+       background (color, brightness, pattern) under it, as the watch does,
+       and the face draws the tile. A hairline edge keeps a faint tint
+       reading as a tile rather than as words on the grid, and a spacer the
+       watch draws next to nothing of findable. */
     .pe-tile {
       position: absolute; display: block; margin: 0; padding: 0; border: 0; border-radius: 10px;
-      background: linear-gradient(var(--pe-base, #000), var(--pe-base, #000)), #000;
+      background: transparent;
       box-shadow: inset 0 0 0 1px var(--pe-edge);
       color: inherit; font: inherit; text-align: left; cursor: grab;
       touch-action: manipulation;
     }
-    .pe-tile.spacer { background: none; box-shadow: none; }
     .pe-tile.fixed { pointer-events: none; }
     .pe-tile:focus-visible { outline: none; box-shadow: inset 0 0 0 1px var(--pe-edge), 0 0 0 2px #000, 0 0 0 4px var(--pe-mark); }
     .pe-tile.sel { touch-action: none; box-shadow: inset 0 0 0 1px var(--pe-edge), 0 0 0 2px var(--pe-mark); z-index: 2; }
@@ -2747,7 +2760,7 @@ export class WaPageEditor extends LitElement {
     @container (max-width: 820px) {
       .pe-hint { display: none; }
     }
-  `, tileSettingsStyles, addTileStyles];
+  `, tileSettingsStyles, pageSettingsStyles, addTileStyles];
 }
 
 if (!customElements.get("wa-page-editor")) {

@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-pages/model.js";
-import { watchGradientOf, watchLinkTargetPages } from "../src/watch-pages/tile-new.js";
+import { watchEntityDefaults, watchGradientOf, watchLinkTargetPages } from "../src/watch-pages/tile-new.js";
 import {
   WATCH_DEFAULT_CHOICE,
   WATCH_NOT_OFFERED_NOTE,
@@ -37,6 +37,12 @@ import {
   watchTriggerEntityName,
 } from "../src/watch-pages/tile-settings-options.js";
 import { WATCH_ICON_TAP_ANIMATIONS } from "../src/watch-pages/tile-settings-model.js";
+import { type WatchPagesApplyOptions, WatchPagesDraft } from "../src/watch-pages/draft.js";
+import { NO_ICONS, type TileSettingsHost, extendHost } from "../src/watch-pages/editor-host.js";
+import { setWatchPageBackgroundColor, setWatchPageBrightness, watchPageSettings } from "../src/watch-pages/page-settings-model.js";
+import { pagePaletteActions } from "../src/watch-pages/page-settings.js";
+import { setWatchTileBorderColor, watchTileBorderSettings } from "../src/watch-pages/styling-model.js";
+import { commit, resetDotPressed, stylingPaletteActions } from "../src/watch-pages/tile-settings.js";
 
 const tile = (entityId: string, extra: Record<string, unknown> = {}): WatchPageTile => ({ id: "T1", entityId, ...extra });
 
@@ -50,12 +56,15 @@ function documentWith(...pages: WatchPage[]): WatchPagesDocument {
 }
 
 describe("sections", () => {
-  it("gives each kind its sections in order", () => {
-    expect(watchTileSettingsSections(tile("light.desk"))).toEqual(["icon", "text", "action"]);
+  it("gives each kind its sections in the order of the phone's tasks", () => {
+    expect(watchTileSettingsSections(tile("light.desk"))).toEqual(["icon", "state", "text", "border", "action", "background"]);
+    expect(watchTileSettingsSections(tile("switch.fan"))).toEqual(["icon", "text", "border", "action", "background"]);
+    expect(watchTileSettingsSections(tile("climate.hall"))).toEqual(["icon", "state", "text", "border", "action", "background"]);
+    // No Border or Background on a header: the watch reads none of their keys.
     expect(watchTileSettingsSections(tile("divider.line.custom"))).toEqual(["header", "action"]);
-    expect(watchTileSettingsSections(tile(`page.${P2}`))).toEqual(["opens", "icon", "text", "action"]);
-    expect(watchTileSettingsSections(tile(`show_page.${P2}`))).toEqual(["opens", "icon", "text", "action"]);
-    expect(watchTileSettingsSections(tile("spacer.ABC"))).toEqual([]);
+    expect(watchTileSettingsSections(tile(`page.${P2}`))).toEqual(["opens", "icon", "text", "border", "action", "background"]);
+    expect(watchTileSettingsSections(tile(`show_page.${P2}`))).toEqual(["opens", "icon", "text", "border", "action", "background"]);
+    expect(watchTileSettingsSections(tile("spacer.ABC"))).toEqual(["border", "background"]);
   });
 });
 
@@ -303,6 +312,121 @@ describe("numbers", () => {
   it("shows a glow in whole percent", () => {
     expect(watchGlowPercent(0.35)).toBe(35);
     expect(watchGlowPercent(2)).toBe(100);
+  });
+});
+
+// ── the edits, through a host over a draft ───────────────────────────────
+
+const PAGE_ID = "C3A0E000-0000-4000-8000-0000000000AA";
+const TILE_ID = "C3A0E000-0000-4000-8000-000000000001";
+
+/** A host as the page editor builds one: every read goes to the draft. */
+function draftHost(page: WatchPage, tileId = TILE_ID) {
+  const draft = new WatchPagesDraft({ schemaVersion: 1, pages: [page] }, 1);
+  const pageNow = () => (draft.document.pages as WatchPage[])[0]!;
+  const host = {
+    hass: { states: {} },
+    icons: NO_ICONS,
+    get document() { return draft.document; },
+    pageId: PAGE_ID,
+    get page() { return pageNow(); },
+    otherPages: [],
+    busy: false,
+    uiState: new Map<string, unknown>(),
+    apply: (next: WatchPagesDocument, options?: WatchPagesApplyOptions) => draft.apply(next, options),
+    endCoalesce: () => draft.endCoalesce(),
+    selectTile: () => undefined,
+    requestUpdate: () => undefined,
+    tileId,
+    get tile() { return ((pageNow().items as WatchPageTile[] | undefined) ?? []).find((t) => t.id === tileId) ?? ({} as WatchPageTile); },
+  } as unknown as TileSettingsHost;
+  return { draft, host, page: pageNow, tile: () => host.tile };
+}
+
+const lightPage = (extra: Record<string, unknown> = {}, pageExtra: Record<string, unknown> = {}): WatchPage => ({
+  id: PAGE_ID, name: "Living", themeOverride: "neonLagoon", useGradientColors: false, backgroundColor: "#000000", backgroundBrightness: 0.6, ...pageExtra,
+  items: [{ id: TILE_ID, entityId: "light.desk", color: "#FFD60A", borderStyle: "line", ...extra }],
+});
+
+describe("a styling palette", () => {
+  const border = (host: TileSettingsHost) => stylingPaletteActions(host, "borderColor", {
+    color: () => watchTileBorderSettings(host.tile).color,
+    write: (d, v) => setWatchTileBorderColor(d, PAGE_ID, TILE_ID, v),
+  });
+
+  it("reads the color when Gradient is picked, not when it was drawn", () => {
+    const { host, tile } = draftHost(lightPage({ borderColor: "#112233" }));
+    const act = border(host); // one draw
+    act.swatch("#FF0000");
+    act.pickMode("gradient");
+    expect(tile().borderColor).toBe(watchGradientOf("#FF0000"));
+  });
+
+  it("writes a custom color in the form the stored color has now", () => {
+    const { host, tile } = draftHost(lightPage());
+    const act = border(host);
+    act.swatch(watchGradientOf("#FF0000"));
+    act.custom("#00ff00");
+    expect(tile().borderColor).toBe(watchGradientOf("#00FF00"));
+  });
+
+  it("on a rainbow, Solid or Gradient writes the kind's color in that form", () => {
+    const kind = watchEntityDefaults({ entityId: "light.desk" }, lightPage()).color!;
+    for (const [mode, expected] of [["solid", kind], ["gradient", watchGradientOf(kind)]] as const) {
+      const { host, tile } = draftHost(lightPage({ borderColor: "#RAINBOW" }));
+      border(host).pickMode(mode);
+      expect(tile().borderColor, mode).toBe(expected);
+    }
+  });
+});
+
+describe("a page palette", () => {
+  const background = (host: TileSettingsHost) => pagePaletteActions(host, "bgColor", {
+    color: () => watchPageSettings(host.page).backgroundColor,
+    swatches: ["#112233", "#445566"],
+    write: (d, v) => setWatchPageBackgroundColor(d, PAGE_ID, v),
+    modeKey: "backgroundColor",
+  });
+  const pageHost = (pageExtra: Record<string, unknown>) => {
+    const h = draftHost(lightPage({}, pageExtra));
+    return { ...h, host: extendHost(h.host, { tileId: () => `page-${PAGE_ID}`, tile: () => ({}) as WatchPageTile }) };
+  };
+
+  it("reads the color when Gradient is picked, not when it was drawn", () => {
+    const { host, page } = pageHost({ backgroundColor: "#112233" });
+    const act = background(host);
+    act.swatch("#445566");
+    act.pickMode("gradient");
+    expect(page().backgroundColor).toBe(watchGradientOf("#445566"));
+  });
+
+  it("on OLED black, Gradient turns the swatches and leaves black as it is", () => {
+    const { host, page, draft } = pageHost({ backgroundColor: "#000000" });
+    const act = background(host);
+    expect(act.gradient()).toBe(false);
+    act.pickMode("gradient");
+    expect(page().backgroundColor).toBe("#000000");
+    expect(draft.canUndo).toBe(false);
+    expect(act.gradient()).toBe(true);
+    expect(act.shown()).toBe("gradient");
+    act.custom("#123456");
+    expect(page().backgroundColor).toBe(watchGradientOf("#123456"));
+  });
+});
+
+describe("a slider's reset dot", () => {
+  it("ends the drag's undo step and makes one of its own", () => {
+    const { host, draft, page } = draftHost(lightPage({}, { backgroundColor: "#112233" }));
+    const set = (v: number) => commit(host, "brightness", (d) => setWatchPageBrightness(d, PAGE_ID, v), { typing: true });
+    set(1); set(1.2); // a drag
+    resetDotPressed(host);
+    set(0.6); // the dot, through the slider's own setter
+    set(0.9); set(1.1); // another drag
+    expect(draft.undoDepth).toBe(3);
+    draft.undo();
+    expect(page().backgroundBrightness).toBe(0.6);
+    draft.undo();
+    expect(page().backgroundBrightness).toBe(1.2);
   });
 });
 

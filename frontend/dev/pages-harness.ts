@@ -70,6 +70,14 @@ function isObject(value: unknown): value is Json {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** `values` set on `target` in place, then every key of it in sorted order,
+ * as the phone's encoder writes an object. */
+function assignSorted(target: Json, values: Json): void {
+  const all: Json = { ...target, ...values };
+  for (const key of Object.keys(target)) delete target[key];
+  for (const key of Object.keys(all).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))) target[key] = all[key];
+}
+
 function isInt(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value);
 }
@@ -540,10 +548,14 @@ function madeUpState(entityId: string, index: number): HassEntityState {
     case "binary_sensor": state = toggle; attributes.device_class = "door"; break;
     case "lock": state = index % 2 === 0 ? "locked" : "unlocked"; break;
     case "cover": state = "open"; attributes.current_position = 70; break;
-    case "climate": state = "heat"; attributes.current_temperature = 20.5; attributes.temperature = 21; break;
-    case "media_player": state = "playing"; attributes.media_title = "Evening Mix"; attributes.volume_level = 0.4; break;
+    // `hvac_modes` and `supported_features` narrow the State Icons and
+    // Colors rows, as the phone narrows them.
+    case "climate": state = "heat"; attributes.current_temperature = 20.5; attributes.temperature = 21; attributes.hvac_modes = ["off", "heat", "cool", "auto"]; break;
+    case "media_player": state = "playing"; attributes.media_title = "Evening Mix"; attributes.volume_level = 0.4; attributes.supported_features = 1 | 4 | 128 | 256; break;
     case "person": case "device_tracker": state = "home"; break;
-    case "alarm_control_panel": state = "armed_home"; break;
+    case "alarm_control_panel": state = "armed_home"; attributes.supported_features = 1 | 2; break;
+    case "light": state = toggle; if (toggle === "on") attributes.brightness = 180; break;
+    case "fan": state = toggle; attributes.percentage = 66; break;
     case "vacuum": state = "docked"; break;
     case "lawn_mower": state = "docked"; break;
     case "weather": state = "partlycloudy"; attributes.temperature = 17; attributes.temperature_unit = "°C"; break;
@@ -1014,6 +1026,31 @@ const iphoneActions: [string, () => void][] = [
       return `deleted "${String(page.name)}"`;
     }
     return undefined;
+  })],
+  ["iPhone: style a page", () => iphoneUpload("Style a page", (doc) => {
+    // Part 3d: a page with a pattern and a title, and its first tiles with a
+    // border, a pattern, an effect and a state bar, as the phone writes
+    // them: one decoration at a time (a pattern leaves the background black
+    // at the cleared brightness, with no overlay or image keys), every key in
+    // sorted order.
+    const page = pagesOf(doc).find((p) => !isObject(p.dynamicConfig) && p.isSystemPage !== true && Array.isArray(p.items) && p.items.length > 0);
+    if (!page) return undefined;
+    for (const key of Object.keys(page)) {
+      if (/^background(Overlay|Image)/.test(key)) delete page[key];
+    }
+    assignSorted(page, {
+      backgroundColor: "#000000", backgroundBrightness: 0.6,
+      backgroundPattern: "dots", backgroundPatternColor: "#A5B7CF", backgroundPatternOpacity: 0.6, backgroundPatternScale: 1,
+      pageTitleDisplayStyle: "pill", pageTitleTextSize: "size12", pageTitleIcon: "house.fill",
+    });
+    const tiles = (page.items as Json[]).filter(isObject);
+    const looks: Json[] = [
+      { borderStyle: "line", borderThickness: "medium", borderLineStyle: "solid", borderGlow: 0.6, borderActiveOnly: false, stateBarStyle: "Top", stateBarBorder: true },
+      { borderStyle: "line", borderThickness: "thin", borderLineStyle: "dashed", borderActiveOnly: false, backgroundPattern: "stripes", patternOpacity: 1 },
+      { borderStyle: "animate", borderAnimation: "chase", borderActiveOnly: false, tileAnimation: "aurora", stateBarStyle: "Fill", stateValueLabelStyle: "Pill" },
+    ];
+    tiles.slice(0, looks.length).forEach((tile, i) => assignSorted(tile, looks[i]!));
+    return `styled "${String(page.name)}" and ${Math.min(tiles.length, looks.length)} of its tiles`;
   })],
   ["iPhone: add a page", () => {
     const watch = shownWatch();

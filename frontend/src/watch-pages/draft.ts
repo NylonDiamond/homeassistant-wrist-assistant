@@ -15,6 +15,7 @@
 
 import { type WatchPagesDocument, isJsonObject } from "./model.js";
 import { checkWatchPages, mergeWatchPages, sameWatchPagesJson } from "./merge.js";
+import { settleMergedWatchPages } from "./page-settings-model.js";
 
 /** The most undo steps a draft keeps. The oldest goes first. */
 export const WATCH_PAGES_UNDO_LIMIT = 100;
@@ -167,7 +168,8 @@ export class WatchPagesDraft {
    * Home Assistant holds a newer document, `server` at `revision`. Every
    * document the draft holds (the current one and each undo and redo step)
    * becomes the three-way merge of itself onto `server` against the old
-   * `base`, and `server` becomes the base. So the edits stay, the other side's
+   * `base` (each page then made whole by `settleMergedWatchPages`), and
+   * `server` becomes the base. So the edits stay, the other side's
    * changes come in, and an undo after the rebase keeps the other side's
    * change. A merged document that is the same JSON as `server` is `server`
    * itself, so a clean draft stays clean and holds the server's very object.
@@ -212,7 +214,10 @@ export class WatchPagesDraft {
       let out: WatchPagesDocument;
       if (document === oldBase) out = server;
       else {
-        out = mergeWatchPages(oldBase, document, server);
+        // The key by key merge, then each page made whole again: a theme
+        // change or the gradient switch rewrites every tile, which a merge
+        // key by key can leave half done.
+        out = settleMergedWatchPages(oldBase, document, server, mergeWatchPages(oldBase, document, server));
         if (out !== server && sameWatchPagesJson(out, server)) out = server;
       }
       done.set(document, out);

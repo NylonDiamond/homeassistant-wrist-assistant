@@ -193,12 +193,12 @@ function isDirection(value: unknown): value is WatchSlideDirection {
 
 // ── plumbing ─────────────────────────────────────────────────────────────
 
-type TileChange = (tile: WatchPageTile, pageId: unknown) => WatchPageTile;
+export type TileChange = (tile: WatchPageTile, pageId: unknown) => WatchPageTile;
 
 /** The document with one tile changed, the first in `items` with that id.
  * The document itself when the page or tile is not editable or the change
  * returns the tile it was given. */
-function editTile(
+export function editTile(
   document: WatchPagesDocument,
   pageId: string,
   tileId: string,
@@ -221,7 +221,7 @@ function editTile(
   return { ...document, pages: nextPages };
 }
 
-function sameValue(a: unknown, b: unknown): boolean {
+export function sameValue(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
   return JSON.stringify(a) === JSON.stringify(b);
@@ -230,7 +230,7 @@ function sameValue(a: unknown, b: unknown): boolean {
 /** Whether an object's keys are in the order the phone encodes them
  * (`JSONEncoder` with `.sortedKeys`: by code unit, which is what `<` on two
  * strings compares). */
-function keysSorted(object: Record<string, unknown>): boolean {
+export function keysSorted(object: Record<string, unknown>): boolean {
   const keys = Object.keys(object);
   for (let i = 1; i < keys.length; i += 1) if (!(keys[i - 1]! < keys[i]!)) return false;
   return true;
@@ -243,7 +243,7 @@ function keysSorted(object: Record<string, unknown>): boolean {
  * one the phone would write; on an object in some other order it goes at
  * the end.
  */
-function withField<T extends Record<string, unknown>>(object: T, key: string, value: unknown): T {
+export function withField<T extends Record<string, unknown>>(object: T, key: string, value: unknown): T {
   if (Object.hasOwn(object, key) || !keysSorted(object)) return { ...object, [key]: value };
   const out: Record<string, unknown> = {};
   let placed = false;
@@ -260,13 +260,13 @@ function withField<T extends Record<string, unknown>>(object: T, key: string, va
 
 /** The tile with `key` set (`withField`). The tile itself when the key
  * already holds that value. */
-function withKey(tile: WatchPageTile, key: string, value: unknown): WatchPageTile {
+export function withKey(tile: WatchPageTile, key: string, value: unknown): WatchPageTile {
   if (Object.hasOwn(tile, key) && sameValue(tile[key], value)) return tile;
   return withField(tile, key, value);
 }
 
 /** The tile without `key`, or the tile itself when it has none. */
-function withoutKey(tile: WatchPageTile, key: string): WatchPageTile {
+export function withoutKey(tile: WatchPageTile, key: string): WatchPageTile {
   if (!Object.hasOwn(tile, key)) return tile;
   const next = { ...tile };
   delete next[key];
@@ -274,16 +274,16 @@ function withoutKey(tile: WatchPageTile, key: string): WatchPageTile {
 }
 
 /** `withKey`, or `withoutKey` for undefined. */
-function withOptional(tile: WatchPageTile, key: string, value: unknown): WatchPageTile {
+export function withOptional(tile: WatchPageTile, key: string, value: unknown): WatchPageTile {
   return value === undefined ? withoutKey(tile, key) : withKey(tile, key, value);
 }
 
 /** What `accept` returns in `setKey` to remove the key. */
-const REMOVE = Symbol("remove");
+export const REMOVE = Symbol("remove");
 
 /** A setter for one key whose value `accept` checks: undefined from `accept`
  * refuses, `REMOVE` removes the key. */
-function setKey(
+export function setKey(
   document: WatchPagesDocument,
   pageId: string,
   tileId: string,
@@ -297,7 +297,7 @@ function setKey(
   });
 }
 
-function isBool(value: unknown): value is boolean {
+export function isBool(value: unknown): value is boolean {
   return typeof value === "boolean";
 }
 

@@ -1379,15 +1379,18 @@
         },
         "showActivityStatus": {
           "type": "bool",
-          "required": false
+          "required": false,
+          "default": true
         },
         "showTargetTempOnTile": {
           "type": "bool",
-          "required": false
+          "required": false,
+          "default": true
         },
         "showCurrentTempOnTile": {
           "type": "bool",
-          "required": false
+          "required": false,
+          "default": true
         },
         "mowerBatteryEntityId": {
           "type": "entity",

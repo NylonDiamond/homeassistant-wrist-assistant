@@ -96,6 +96,24 @@ export const NO_ICONS: IconProvider = {
   names: () => [],
 };
 
+/** The input types keys type text into, where Cmd+Z and the editor's own
+ * keys belong to the field. */
+const TEXT_INPUT_TYPES: ReadonlySet<string> = new Set(["text", "number", "search", "email", "url", "tel", "password"]);
+
+/**
+ * Whether a focused element takes typed text, so the editor leaves its keys
+ * (undo, redo) to it: a text-like input, a text area, or an editable
+ * element. A slider, a menu, a switch or a button is not one, and an undo
+ * there is the editor's. Takes the element's tag name (any case), its
+ * `type` for an input, and whether it is editable.
+ */
+export function watchKeysTypeText(tag: string, type: string | undefined, editable: boolean): boolean {
+  const name = tag.toLowerCase();
+  if (name === "textarea") return true;
+  if (name === "input") return TEXT_INPUT_TYPES.has((type ?? "text").toLowerCase() || "text");
+  return editable;
+}
+
 /**
  * `base` with more fields, each a getter read every time. The base is the
  * new object's prototype, so its own getters (`document`, `busy`) stay

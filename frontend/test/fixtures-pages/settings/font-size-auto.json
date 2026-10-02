@@ -1,6 +1,6 @@
 {
   "name": "Font size back to Auto",
-  "source": "WristAssistant/Views/PageEditor/Tabs/TextTabContent.swift:191",
+  "source": "WristAssistant/Views/PageEditor/Tabs/TextTabContent.swift:189",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

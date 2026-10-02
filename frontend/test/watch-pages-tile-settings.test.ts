@@ -75,7 +75,23 @@ import {
   watchTileIconSizeValue,
 } from "../src/watch-pages/tile-settings-model.js";
 import { watchLinkTargetMenu } from "../src/watch-pages/tile-settings-options.js";
-import { newWatchEntityTile, newWatchPageLinkTile } from "../src/watch-pages/tile-new.js";
+import { newWatchEntityTile, newWatchPageLinkTile, watchGradientOf } from "../src/watch-pages/tile-new.js";
+import {
+  WATCH_TILE_STYLING_SETTERS,
+  clearWatchTileStateOverrides,
+  resetWatchTileState,
+  resetWatchTileTask,
+  setWatchTileStateColor,
+  setWatchTileStateIcon,
+} from "../src/watch-pages/styling-model.js";
+import {
+  WATCH_PAGE_STYLING_SETTERS,
+  resetWatchPage,
+  selectWatchPageDecoration,
+  setWatchPageColorMode,
+  setWatchPageGradientColors,
+  setWatchPageTheme,
+} from "../src/watch-pages/page-settings-model.js";
 import { watchHeaderLook } from "../src/watch-pages/preview.js";
 
 type Json = Record<string, unknown>;
@@ -137,13 +153,25 @@ interface SettingsCase {
   expected: Json;
 }
 
+/** A page case: a whole page and one edit in, the whole page out. */
+interface PageSettingsCase {
+  name: string;
+  source: string;
+  page: Json;
+  edit: Json & { op: string };
+  expected: Json;
+}
+
 const dir = join(__dirname, "fixtures-pages", "settings");
-const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".json")).sort() : [];
+// `WA_SETTINGS_CASES` points the replay at another folder of case files
+// (the app's own, before they are synced here).
+const casesDir = process.env.WA_SETTINGS_CASES ?? dir;
+const files = existsSync(casesDir) ? readdirSync(casesDir).filter((f) => f.endsWith(".json")).sort() : [];
 
 function applyCase(document: WatchPagesDocument, c: SettingsCase): WatchPagesDocument {
   // The case file decides each field's type; `never` passes it on as is.
   const e = c.edit as unknown as Record<
-    "value" | "gradient" | "mode" | "direction" | "entityId" | "friendlyName" | "style" | "page" | "oldTargetName",
+    "value" | "gradient" | "mode" | "direction" | "entityId" | "friendlyName" | "style" | "page" | "oldTargetName" | "task" | "state",
     never
   >;
   const T = c.tile.id as string;
@@ -216,6 +244,58 @@ function applyCase(document: WatchPagesDocument, c: SettingsCase): WatchPagesDoc
       return setWatchHeaderColor(document, PAGE, T, e.value);
     case "pageTarget":
       return setWatchPageLinkTarget(document, PAGE, T, e.page, e.oldTargetName);
+    // Part 3d: every styling row by the key it writes.
+    case "set":
+      return tileSetter(c.edit.key)(document, PAGE, T, e.value);
+    case "swatch":
+      return tileSetter(c.edit.key)(document, PAGE, T, (e.gradient ? watchGradientOf(e.value) : e.value) as never);
+    case "reset":
+      return resetWatchTileTask(document, PAGE, T, e.task);
+    case "stateIcon":
+      return setWatchTileStateIcon(document, PAGE, T, e.state, e.value);
+    case "stateColor":
+      return setWatchTileStateColor(document, PAGE, T, e.state, e.value);
+    case "stateRowReset":
+      return resetWatchTileState(document, PAGE, T, e.state);
+    case "stateOverridesClear":
+      return clearWatchTileStateOverrides(document, PAGE, T);
+    default:
+      throw new Error(`unknown op ${c.edit.op}`);
+  }
+}
+
+function tileSetter(key: unknown) {
+  const setter = typeof key === "string" && Object.hasOwn(WATCH_TILE_STYLING_SETTERS, key) ? WATCH_TILE_STYLING_SETTERS[key] : undefined;
+  if (setter === undefined) throw new Error(`no tile setter for ${String(key)}`);
+  return setter;
+}
+
+function pageSetter(key: unknown) {
+  const setter = typeof key === "string" && Object.hasOwn(WATCH_PAGE_STYLING_SETTERS, key) ? WATCH_PAGE_STYLING_SETTERS[key] : undefined;
+  if (setter === undefined) throw new Error(`no page setter for ${String(key)}`);
+  return setter;
+}
+
+/** One page case's edit on a document that holds its page. */
+function applyPageCase(document: WatchPagesDocument, c: PageSettingsCase): WatchPagesDocument {
+  const e = c.edit as unknown as Record<"value" | "gradient" | "mode" | "key" | "task", never>;
+  const P = c.page.id as string;
+  switch (c.edit.op) {
+    case "pageSet":
+      return pageSetter(e.key)(document, P, e.value);
+    case "pageSwatch":
+      return pageSetter(e.key)(document, P, (e.gradient ? watchGradientOf(e.value) : e.value) as never);
+    case "pageColorMode":
+      return setWatchPageColorMode(document, P, e.key, e.mode);
+    case "decoration":
+      return selectWatchPageDecoration(document, P, e.value).document;
+    case "theme":
+      return setWatchPageTheme(document, P, e.value);
+    case "gradientColors":
+      return setWatchPageGradientColors(document, P, e.value);
+    case "reset":
+      if (e.task !== "page") throw new Error(`unknown page reset ${String(e.task)}`);
+      return resetWatchPage(document, P);
     default:
       throw new Error(`unknown op ${c.edit.op}`);
   }
@@ -223,11 +303,40 @@ function applyCase(document: WatchPagesDocument, c: SettingsCase): WatchPagesDoc
 
 describe("settings case files written by the phone", () => {
   it("are all here", () => {
-    expect(files.length).toBeGreaterThanOrEqual(62);
+    expect(files.length).toBeGreaterThanOrEqual(228);
   });
 
   for (const file of files) {
-    const c = JSON.parse(readFileSync(join(dir, file), "utf8")) as SettingsCase;
+    const raw = JSON.parse(readFileSync(join(casesDir, file), "utf8")) as SettingsCase | PageSettingsCase;
+    if ("page" in raw) {
+      const c = raw;
+      it(`${file}: ${c.name}`, () => {
+        const before = deepFreeze({
+          schemaVersion: 1,
+          pages: [
+            { id: SYSTEM_PAGE, name: "System", isSystemPage: true, items: [] },
+            structuredClone(c.page),
+            { id: SMART_PAGE, name: "Smart", dynamicConfig: { rules: [] }, items: [] },
+          ],
+        }) as WatchPagesDocument;
+        const after = applyPageCase(before, c);
+        const page = (after.pages as Json[])[1]!;
+        expect(page).toEqual(c.expected);
+        if (JSON.stringify(c.page) === JSON.stringify(c.expected)) {
+          expect(after).toBe(before);
+          return;
+        }
+        expect(after).not.toBe(before);
+        const pages = after.pages as Json[];
+        const oldPages = before.pages as Json[];
+        expect(pages[0]).toBe(oldPages[0]);
+        expect(pages[2]).toBe(oldPages[2]);
+        // To the byte, as the phone encodes the page.
+        expect(JSON.stringify(page)).toBe(JSON.stringify(c.expected));
+      });
+      continue;
+    }
+    const c = raw;
     it(`${file}: ${c.name}`, () => {
       const before = docWith(c.tile);
       const after = applyCase(before, c);

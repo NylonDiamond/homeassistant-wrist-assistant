@@ -1,6 +1,6 @@
 {
   "name": "Font size, rounded",
-  "source": "WristAssistant/Views/PageEditor/Tabs/TextTabContent.swift:180",
+  "source": "WristAssistant/Views/PageEditor/Tabs/TextTabContent.swift:178",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

@@ -29,6 +29,43 @@ import { live } from "lit/directives/live.js";
 import type { EntityRef } from "../model.js";
 import { checkField, colorField, entityField, numberField, segField, sliderField, symbolField, symbolNameSet, textField } from "../editors.js";
 import { uiIcon } from "../ui-icons.js";
+import {
+  type WatchTileStylingTask,
+  clearWatchTileStateOverrides,
+  resetWatchTileState,
+  resetWatchTileTask,
+  setWatchTileBorderActiveOnly,
+  setWatchTileBorderAnimation,
+  setWatchTileBorderColor,
+  setWatchTileBorderGlow,
+  setWatchTileBorderIntensity,
+  setWatchTileBorderLineStyle,
+  setWatchTileBorderSize,
+  setWatchTileBorderSpeed,
+  setWatchTileBorderStyle,
+  setWatchTileBorderThickness,
+  setWatchTileEffect,
+  setWatchTileEffectActiveOnly,
+  setWatchTileEffectColor,
+  setWatchTileEffectIntensity,
+  setWatchTileEffectSize,
+  setWatchTileEffectSpeed,
+  setWatchTilePattern,
+  setWatchTilePatternColor,
+  setWatchTilePatternOpacity,
+  setWatchTilePatternScale,
+  setWatchTileStateColor,
+  setWatchTileStateIcon,
+  watchTileBackgroundSettings,
+  watchTileBorderSettings,
+  type WatchStateRow,
+  WATCH_STATE_ROW_SETTERS,
+  watchTileStateCards,
+  watchTileStateIcons,
+  watchTileTaskModified,
+} from "./styling-model.js";
+import { watchDecimalOptions, watchStateEmptyText, watchStylingChoices, watchStylingLabel, watchStylingReset, watchStylingSlider } from "./tile-styling.js";
+import { watchPageSwatchTheme } from "./page-settings-model.js";
 import type { TileSettingsHost } from "./editor-host.js";
 import { findWatchPage } from "./edit.js";
 import { type WatchPagesDocument, tileEntityId, tileKind, watchPageId, watchPageName, watchPagesOf } from "./model.js";
@@ -114,6 +151,7 @@ import {
   watchTileFallbackName,
   watchTileSettingsSections,
   watchTriggerEntityName,
+  watchWholeRefusal,
 } from "./tile-settings-options.js";
 import {
   watchAddThemeOf,
@@ -137,8 +175,11 @@ const OPEN_AT_FIRST: Readonly<Record<WatchTileSettingsSection, boolean>> = {
   opens: true,
   header: true,
   icon: true,
+  state: false,
   text: false,
+  border: false,
   action: false,
+  background: false,
 };
 
 // ── state kept between draws ─────────────────────────────────────────────
@@ -170,7 +211,7 @@ export function forgetTileSettingsNotes(uiState: Map<string, unknown>): void {
 }
 
 /** What a field shows while it is typed in, else undefined. */
-function typed(host: TileSettingsHost, setting: string): string | undefined {
+export function typed(host: TileSettingsHost, setting: string): string | undefined {
   const value = host.uiState.get(typedKey(host, setting));
   return typeof value === "string" ? value : undefined;
 }
@@ -186,7 +227,7 @@ function focusedField(): Element | null {
 
 /** Typed text of fields that are not focused any more: a field removed while
  * focused sends no focusout. */
-function dropStaleTyping(host: TileSettingsHost): void {
+export function dropStaleTyping(host: TileSettingsHost): void {
   const focused = focusedField();
   const inField = focused instanceof HTMLElement ? focused.closest<HTMLElement>("[data-ts-field]")?.dataset.tsField : undefined;
   for (const key of [...host.uiState.keys()]) {
@@ -200,12 +241,15 @@ function dropStaleTyping(host: TileSettingsHost): void {
  * by the field; a setter that returns the document it was given changes
  * nothing. `typing` makes a run of edits from one field one undo step.
  */
-function commit(
+export function commit(
   host: TileSettingsHost,
   setting: string,
   make: (document: WatchPagesDocument) => WatchPagesDocument,
   options: { typing?: boolean; reason?: string } = {},
 ): void {
+  // A reset dot's edit is a step of its own, never part of a run of typing
+  // or a drag (`resetDotPressed`).
+  const fromDot = host.uiState.delete(RESET_DOT_KEY);
   if (host.busy) return;
   const note = noteKey(host, setting);
   if (options.reason !== undefined) {
@@ -214,12 +258,27 @@ function commit(
     return;
   }
   const had = host.uiState.delete(note);
+  const typing = options.typing === true && !fromDot;
   const next = make(host.document);
   if (next === host.document) {
     if (had) host.requestUpdate();
     return;
   }
-  host.apply(next, options.typing ? { coalesce: `tile:${host.tileId}:${setting}` } : undefined);
+  host.apply(next, typing ? { coalesce: `tile:${host.tileId}:${setting}` } : undefined);
+}
+
+const RESET_DOT_KEY = `${KEY}:resetDot`;
+
+/**
+ * A field's reset dot was pressed: the run of edits going on (a drag of the
+ * slider, typing) ends, and the edit the dot makes next is a step of its
+ * own, so an undo after another drag comes back to the reset value. The
+ * dot calls the same setter as the slider, so the field tells it apart here,
+ * before the dot's own click handler runs.
+ */
+export function resetDotPressed(host: TileSettingsHost): void {
+  host.endCoalesce();
+  host.uiState.set(RESET_DOT_KEY, true);
 }
 
 /** The refusal shown by a field, if any. */
@@ -233,7 +292,7 @@ function fieldNote(host: TileSettingsHost, setting: string): TemplateResult | ty
  * its run of edits ends when it loses focus. Only the text and number boxes
  * count; a search box or a swatch inside the same row does not.
  */
-function typingField(host: TileSettingsHost, setting: string, body: TemplateResult, stored?: number): TemplateResult {
+export function typingField(host: TileSettingsHost, setting: string, body: TemplateResult, stored?: number): TemplateResult {
   const key = typedKey(host, setting);
   const keeps = (target: EventTarget | null): target is HTMLInputElement =>
     target instanceof HTMLInputElement && (target.type === "text" || target.type === "number") && !target.closest(".alpha");
@@ -256,8 +315,16 @@ function typingField(host: TileSettingsHost, setting: string, body: TemplateResu
       host.uiState.set(key, e.target.value);
     },
   };
+  // On the way down too: the dot stops its click where it is.
+  const dot = {
+    capture: true,
+    handleEvent: (e: Event) => {
+      if (e.target instanceof Element && e.target.closest(".reset-dot") !== null) resetDotPressed(host);
+    },
+  };
   return html`<div class="ts-typing" data-ts-field=${setting}
     @input=${record}
+    @click=${dot}
     @change=${(e: Event) => {
       const t = e.target;
       if (!(t instanceof HTMLInputElement)) return;
@@ -288,7 +355,7 @@ function typingField(host: TileSettingsHost, setting: string, body: TemplateResu
 }
 
 /** The number a typed text stands for: undefined for an empty box. */
-function typedNumber(text: string | undefined, stored: number | undefined): number | undefined {
+export function typedNumber(text: string | undefined, stored: number | undefined): number | undefined {
   if (text === undefined) return stored;
   if (text.trim() === "") return undefined;
   const n = Number(text);
@@ -303,7 +370,7 @@ function typedNumber(text: string | undefined, stored: number | undefined): numb
  * option's `selected` is set as a property, so an undo or a merge moves the
  * select even after a person has picked from it.
  */
-function menuField(label: string, menu: WatchMenu, pick: (value: string) => void): TemplateResult {
+export function menuField(label: string, menu: WatchMenu, pick: (value: string) => void): TemplateResult {
   return html`<label class="field"><span>${label}</span>
       <select @change=${(e: Event) => {
         const value = (e.target as HTMLSelectElement).value;
@@ -316,7 +383,7 @@ function menuField(label: string, menu: WatchMenu, pick: (value: string) => void
 }
 
 /** A row of small round color buttons, the page theme's swatches. */
-function swatchRow(
+export function swatchRow(
   label: string,
   swatches: readonly string[],
   current: unknown,
@@ -337,7 +404,7 @@ function swatchRow(
 }
 
 /** A small text button beside a row, for a way back to a default. */
-function linkButton(text: string, title: string, action: () => void): TemplateResult {
+export function linkButton(text: string, title: string, action: () => void): TemplateResult {
   return html`<button type="button" class="link ts-link" title=${title} @click=${action}>${text}</button>`;
 }
 
@@ -405,6 +472,18 @@ function sectionSummary(host: TileSettingsHost, section: WatchTileSettingsSectio
       const tap = watchSingleTapSettings(tile);
       return tap.picker ? `Tap: ${tap.resolvedLabel}` : "";
     }
+    case "state":
+      return watchTileTaskModified(tile, "state") ? "Changed" : "";
+    case "border": {
+      const b = watchTileBorderSettings(tile);
+      if (tileKind(tileEntityId(tile)) === "spacer") return watchStylingLabel("borderThickness", b.thickness);
+      return b.style === "none" ? "" : b.style === "animate" ? `Animate: ${watchStylingLabel("borderAnimation", b.animation)}` : watchStylingLabel("borderThickness", b.thickness);
+    }
+    case "background": {
+      const g = watchTileBackgroundSettings(tile);
+      if (tileKind(tileEntityId(tile)) === "spacer") return g.pattern === "none" ? "" : watchStylingLabel("backgroundPattern", g.pattern);
+      return [g.pattern, g.effect].filter((v) => v !== "none").map((v, i) => watchStylingLabel(i === 0 && g.pattern !== "none" ? "backgroundPattern" : "tileAnimation", v)).join(", ");
+    }
   }
 }
 
@@ -420,6 +499,12 @@ function sectionBody(host: TileSettingsHost, section: WatchTileSettingsSection):
       return renderText(host);
     case "action":
       return renderAction(host);
+    case "state":
+      return renderState(host);
+    case "border":
+      return renderBorder(host);
+    case "background":
+      return renderBackground(host);
   }
 }
 
@@ -559,6 +644,7 @@ function renderIcon(host: TileSettingsHost): TemplateResult {
     ))}
     </div>
     ${renderTileColor(host, defaults.color)}
+    ${renderStateIcons(host)}
     ${renderIconSize(host)}
     ${checkField("Icon shadow", s.iconShadow, (on) => commit(host, "iconShadow", (d) => setWatchTileIconShadow(d, host.pageId, host.tileId, on)))}
     ${s.dimWhenOff.applies
@@ -637,7 +723,7 @@ function renderIconSize(host: TileSettingsHost): TemplateResult {
     <div class="hint ts-under">${watchIconSizeHint(s.iconSizeMax)}</div>`;
 }
 
-function reasonOf(reason: string | undefined): { reason?: string } {
+export function reasonOf(reason: string | undefined): { reason?: string } {
   return reason === undefined ? {} : { reason };
 }
 
@@ -811,6 +897,394 @@ function renderHeader(host: TileSettingsHost): TemplateResult {
       ? nothing
       : html`<div class="ts-after"><button type="button" class="pe-chip ${atDefault ? "on" : ""}" aria-pressed=${atDefault ? "true" : "false"}
           title=${`The header's own color: ${defaultColor}`} @click=${() => writeColor(defaultColor)}>Default color</button></div>`}`;
+}
+
+// ── styling: shared rows ─────────────────────────────────────────────────
+
+type Edit<V> = (document: WatchPagesDocument, pageId: string, tileId: string, value: V) => WatchPagesDocument;
+
+/** A styling enum: buttons for up to four values, a menu for more. A
+ * stored value the table does not offer is shown, not offered. */
+export function stylingEnumField(label: string, enumName: string, value: string, pick: (v: string) => void): TemplateResult {
+  const choices = watchStylingChoices(enumName);
+  if (choices.length <= 4 && choices.some((c) => c.value === value)) {
+    return segField(label, value, choices.map((c) => [c.value, c.label] as [string, string]), (v) => pick(v));
+  }
+  return menuField(label, watchChoiceMenu(choices, value), pick);
+}
+
+function enumRow(host: TileSettingsHost, setting: string, label: string, enumName: string, value: string, set: Edit<string>): TemplateResult {
+  return stylingEnumField(label, enumName, value, (v) => commit(host, setting, (d) => set(d, host.pageId, host.tileId, v)));
+}
+
+function boolRow(host: TileSettingsHost, setting: string, label: string, value: boolean, set: Edit<boolean>): TemplateResult {
+  return checkField(label, value, (on) => commit(host, setting, (d) => set(d, host.pageId, host.tileId, on)));
+}
+
+/** A slider from the table, its edits one undo step per drag or run of
+ * typing; the dot goes back to the task's reset value when it has one. */
+function sliderRow(
+  host: TileSettingsHost,
+  setting: string,
+  label: string,
+  sliderName: string,
+  value: number,
+  set: Edit<number>,
+  options: { reset?: unknown; percent?: boolean } = {},
+): TemplateResult {
+  const spec = watchStylingSlider(sliderName);
+  const def = typeof options.reset === "number" ? options.reset : (spec.auto ?? spec.min);
+  const format = options.percent ? (v: number) => `${Math.round(v * 100)}%` : undefined;
+  return typingField(host, setting, sliderField(label, value, (v) => commit(host, setting, (d) => set(d, host.pageId, host.tileId, v), { typing: true }), {
+    min: spec.min,
+    max: spec.max,
+    step: spec.step,
+    def,
+    ...(format === undefined ? {} : { format }),
+  }), value);
+}
+
+/** A whole number slider with an Auto button (`null` removes the key). */
+function autoSizeRow(host: TileSettingsHost, setting: string, label: string, sliderName: string, value: number | undefined, set: Edit<number | null>): TemplateResult {
+  const spec = watchStylingSlider(sliderName);
+  const shown = typedNumber(typed(host, setting), value);
+  const write = (v: number | undefined) =>
+    commit(host, setting, (d) => set(d, host.pageId, host.tileId, v ?? null), {
+      typing: true,
+      ...(v === undefined ? {} : reasonOf(watchWholeRefusal(v, spec.min, spec.max))),
+    });
+  return html`${typingField(host, setting, html`<div class="ts-with-link">
+      ${numberField(label, shown, write, { step: 1, min: spec.min, max: spec.max, optional: true, placeholder: `Auto (${spec.auto ?? ""})`, unit: "pt" })}
+      ${value === undefined ? nothing : linkButton("Auto", "Let the watch size it", () => commit(host, setting, (d) => set(d, host.pageId, host.tileId, null)))}
+    </div>`, value)}`;
+}
+
+/** The value a task's reset writes for a key. */
+function resetValue(task: WatchTileStylingTask, key: string): unknown {
+  return watchStylingReset(task)[key];
+}
+
+/** A task's Reset, shown while the reset would change the tile. */
+function resetRow(host: TileSettingsHost, task: WatchTileStylingTask, words: string): TemplateResult | typeof nothing {
+  if (!watchTileTaskModified(host.tile, task)) return nothing;
+  return html`<div class="ts-after ts-reset">${linkButton(`Reset ${words}`, `Put every ${words.toLowerCase()} setting back as the iPhone app's reset does`, () =>
+    commit(host, `reset:${task}`, (d) => resetWatchTileTask(d, host.pageId, host.tileId, task)))}</div>`;
+}
+
+/**
+ * A color of a styling task: Solid or Gradient (and Rainbow where the phone
+ * offers it), the page theme's swatches in that form, a custom color, and a
+ * chip for no color of its own (the key removed). With no color stored the
+ * swatches follow the page's Solid or Gradient switch until a form is
+ * picked.
+ */
+/** What a styling palette needs: its color, read when an edit is made (two
+ * edits in one task must not start from the color drawn), and its setter. */
+export interface StylingPaletteSource {
+  color: () => string | undefined;
+  write: (document: WatchPagesDocument, value: string | null) => WatchPagesDocument;
+}
+
+/**
+ * The edits of a styling palette, each reading the color when it is made.
+ * `gradient()` is whether the swatches show their gradient form. Solid or
+ * Gradient on a rainbow writes the kind's color in that form, as the tile
+ * color does; with no color stored it only turns the swatches.
+ */
+export function stylingPaletteActions(host: TileSettingsHost, setting: string, source: StylingPaletteSource) {
+  const formKey = `${KEY}:form:${host.tileId.toUpperCase()}:${setting}`;
+  const gradient = (): boolean => {
+    const mode = watchColorModeChoice(source.color());
+    const chosen = host.uiState.get(formKey);
+    return mode === "gradient" || ((mode === "none" || mode === "rainbow") && (chosen === "gradient" || (chosen === undefined && watchAddUsesGradient(host.page))));
+  };
+  const write = (value: string | null, typing = false) => commit(host, setting, (d) => source.write(d, value), { typing });
+  const pickMode = (next: WatchColorModeChoice): void => {
+    if (next === "rainbow") return write("#RAINBOW");
+    if (next !== "solid" && next !== "gradient") return;
+    const now = source.color();
+    const mode = watchColorModeChoice(now);
+    if (mode === "none") {
+      host.uiState.set(formKey, next);
+      host.requestUpdate();
+      return;
+    }
+    const fallback = mode === "rainbow" ? (kindDefaults(host).color ?? watchThemeSwatches(watchPageSwatchTheme(host.page), false)[0]) : undefined;
+    const value = watchColorForMode(now, next, fallback, watchGradientOf);
+    if (value !== undefined) write(value);
+  };
+  const custom = (value: string | undefined): void => {
+    const reason = watchColorRefusal(value);
+    if (reason !== undefined || value === undefined) return commit(host, setting, (d) => d, { reason: reason ?? "Pick a color." });
+    write(gradient() ? watchGradientOf(value) : value, true);
+  };
+  return { gradient, pickMode, custom, swatch: (value: string) => write(value), clear: () => write(null) };
+}
+
+function stylingPalette(
+  host: TileSettingsHost,
+  setting: string,
+  opts: StylingPaletteSource & {
+    label: string;
+    rainbow: boolean;
+    absentLabel: string;
+    absentTitle: string;
+  },
+): TemplateResult {
+  const color = opts.color();
+  const mode = watchColorModeChoice(color);
+  const act = stylingPaletteActions(host, setting, opts);
+  const gradient = act.gradient();
+  const theme = watchPageSwatchTheme(host.page);
+  const swatches = watchThemeSwatches(theme, gradient);
+  const modes = (WATCH_COLOR_MODES as [WatchColorModeChoice, string][]).filter(([m]) => m !== "rainbow" || opts.rainbow);
+  const shownMode = mode === "none" ? (gradient ? "gradient" : "solid") : mode;
+  return html`
+    <div class="ts-sub-h"><span>${opts.label}</span></div>
+    ${segField<WatchColorModeChoice>("Form", shownMode, modes, (v) => act.pickMode(v))}
+    <div class="ts-swatch-row">${swatchRow(`${opts.label}: ${watchThemeDisplayName(theme)} colors`, swatches, color, act.swatch)}</div>
+    ${typingField(host, setting, html`<div class="ts-no-alpha">${colorField("Custom", typed(host, setting) ?? watchCustomBoxColor(color), act.custom)}</div>`)}
+    <div class="ts-after">
+      <button type="button" class="pe-chip ${color === undefined ? "on" : ""}" aria-pressed=${color === undefined ? "true" : "false"}
+        title=${opts.absentTitle} @click=${act.clear}>${opts.absentLabel}</button>
+    </div>`;
+}
+
+// ── styling: State ───────────────────────────────────────────────────────
+
+/** The words of each State row; the rows and their order are the table's. */
+const STATE_ROW_LABELS: Readonly<Record<string, string>> = {
+  showTargetTempOnTile: "Target temperature",
+  showCurrentTempOnTile: "Current temperature",
+  statusTextShadow: "Text shadow",
+  stateValueLabelStyle: "Value",
+  decimalPlaces: "Decimals",
+  badgeFontSizeOverride: "Size",
+  stateBarStyle: "Bar",
+  stateBarColorStyle: "Bar color",
+  stateBarBorder: "Bar border",
+  stateBarShadow: "Bar shadow",
+  showActivityStatus: "Show status badge",
+  statusIconSizeOverride: "Icon size",
+};
+
+function renderStateRow(host: TileSettingsHost, row: WatchStateRow): TemplateResult | typeof nothing {
+  const label = STATE_ROW_LABELS[row.key] ?? row.key;
+  const setters = WATCH_STATE_ROW_SETTERS as Record<string, Edit<never>>;
+  const set = setters[row.key];
+  if (set === undefined) return nothing;
+  switch (row.key) {
+    case "stateValueLabelStyle":
+    case "stateBarStyle":
+    case "stateBarColorStyle":
+      return enumRow(host, row.key, label, row.key, String(row.value), set as Edit<string>);
+    case "decimalPlaces": {
+      const { options } = watchDecimalOptions();
+      return segField(label, String(row.value), options.map((n) => [String(n), String(n)] as [string, string]), (v) =>
+        commit(host, row.key, (d) => (set as Edit<number>)(d, host.pageId, host.tileId, Number(v))));
+    }
+    case "badgeFontSizeOverride":
+    case "statusIconSizeOverride":
+      return autoSizeRow(host, row.key, label, row.key, typeof row.value === "number" ? row.value : undefined, set as Edit<number | null>);
+    default:
+      return boolRow(host, row.key, label, row.value === true, set as Edit<boolean>);
+  }
+}
+
+function renderState(host: TileSettingsHost): TemplateResult {
+  const cards = watchTileStateCards(host.tile);
+  if (cards.length === 0) return html`<p class="hint">${watchStateEmptyText()}</p>`;
+  return html`
+    ${cards.map((card) => html`
+      <div class="ts-sub-h"><span>${card.title}</span></div>
+      ${card.rows.map((row) => renderStateRow(host, row))}
+      ${card.subtitle === "" ? nothing : html`<div class="hint ts-under">${card.subtitle}.</div>`}`)}
+    ${resetRow(host, "state", "State")}`;
+}
+
+// ── styling: State Icons and Colors ──────────────────────────────────────
+
+interface StateEditing {
+  state: string;
+  what: "icon" | "color";
+}
+
+function stateEditKey(host: TileSettingsHost): string {
+  return `${KEY}:stateEdit:${host.tileId.toUpperCase()}`;
+}
+
+/** The card under Icon and color: one row per state of the domain, narrowed
+ * by the entity's live attributes. Nothing for a domain with no states. */
+function renderStateIcons(host: TileSettingsHost): TemplateResult | typeof nothing {
+  const entityId = tileEntityId(host.tile);
+  const attributes = host.hass.states[entityId]?.attributes;
+  const card = watchTileStateIcons(host.tile, attributes);
+  if (card === undefined || card.rows.length === 0) return nothing;
+  const raw = host.uiState.get(stateEditKey(host));
+  const editing = typeof raw === "object" && raw !== null ? (raw as StateEditing) : undefined;
+  const tileColor = watchTileIconSettings(host.tile).color;
+  const tileIcon = watchTileIconSettings(host.tile).icon;
+  const toggleEdit = (state: string, what: StateEditing["what"]) => {
+    const same = editing?.state === state && editing.what === what;
+    if (same) host.uiState.delete(stateEditKey(host));
+    else host.uiState.set(stateEditKey(host), { state, what });
+    host.endCoalesce();
+    host.requestUpdate();
+  };
+  return html`<div class="ts-sub">
+    <div class="ts-sub-h"><span>State icons and colors</span><span class="ts-faint">Optional</span></div>
+    ${card.rows.map((row) => {
+      const ink = watchColorEnds(row.color ?? tileColor)?.from ?? "#FFFFFF";
+      const symbol = row.icon ?? (tileIcon !== undefined && tileIcon !== "" ? tileIcon : row.defaultIcon);
+      const glyph = symbol === undefined ? undefined : host.icons.render(symbol, 18, ink);
+      const open = editing?.state === row.key ? editing.what : undefined;
+      return html`<div class="ts-state-row ${row.overridden ? "own" : ""}">
+          <span class="ts-state-glyph" aria-hidden="true">${glyph ?? html`<span class="ts-glyph-dot"></span>`}</span>
+          <span class="ts-state-label">${row.label}</span>
+          <button type="button" class="ts-swatch ts-state-color ${open === "color" ? "on" : ""}" aria-expanded=${open === "color" ? "true" : "false"}
+            title=${row.color === undefined ? `${row.label}: the tile's color` : `${row.label}: ${row.color}`} aria-label=${`${row.label} color`}
+            style=${`--sw:${row.color === undefined ? "transparent" : `linear-gradient(135deg, ${watchColorEnds(row.color)?.from ?? ink}, ${watchColorEnds(row.color)?.to ?? ink})`}`}
+            @click=${() => toggleEdit(row.key, "color")}></button>
+          <button type="button" class="pe-chip ts-state-icon ${open === "icon" ? "on" : ""}" aria-expanded=${open === "icon" ? "true" : "false"}
+            title=${row.icon === undefined ? `${row.label}: no icon of its own` : `${row.label}: ${row.icon}`}
+            @click=${() => toggleEdit(row.key, "icon")}>Icon</button>
+          ${row.overridden
+            ? html`<button type="button" class="pe-icon-btn ts-state-reset" title=${`${row.label}: back to the tile's icon and color`} aria-label=${`Reset ${row.label}`}
+                @click=${() => commit(host, `state:${row.key}`, (d) => resetWatchTileState(d, host.pageId, host.tileId, row.key))}>${uiIcon("undo")}</button>`
+            : html`<span class="ts-state-reset"></span>`}
+        </div>
+        ${open === "icon" ? renderStateIconPicker(host, row.key, row.icon) : nothing}
+        ${open === "color" ? renderStateColorPicker(host, row.key, row.color) : nothing}`;
+    })}
+    ${card.any
+      ? html`<div class="ts-after">${linkButton("Clear state overrides", "Every state back to the tile's icon and color", () => {
+          host.uiState.delete(stateEditKey(host));
+          commit(host, "stateClear", (d) => clearWatchTileStateOverrides(d, host.pageId, host.tileId));
+        })}</div>`
+      : nothing}
+    <div class="hint ts-under">An icon or color per state. A state with none uses the tile's.</div>
+  </div>`;
+}
+
+function renderStateIconPicker(host: TileSettingsHost, state: string, icon: string | undefined): TemplateResult {
+  const setting = `stateIcon:${state}`;
+  return html`<div class="ts-nested">${typingField(host, setting, symbolField(
+    { icons: host.icons, symbols: host.symbols },
+    typed(host, setting) ?? icon ?? "",
+    (name) => {
+      const value = name.trim();
+      if (value === "") return;
+      commit(host, setting, (d) => setWatchTileStateIcon(d, host.pageId, host.tileId, state, value), { typing: true });
+    },
+    `pe:ts:state:${state}`,
+    undefined,
+    "Symbol",
+    true,
+  ))}</div>`;
+}
+
+function renderStateColorPicker(host: TileSettingsHost, state: string, color: string | undefined): TemplateResult {
+  const setting = `stateColor:${state}`;
+  const theme = watchPageSwatchTheme(host.page);
+  const write = (value: string | null, typing = false) =>
+    commit(host, setting, (d) => setWatchTileStateColor(d, host.pageId, host.tileId, state, value), { typing });
+  const custom = (value: string | undefined) => {
+    const reason = watchColorRefusal(value);
+    if (reason !== undefined || value === undefined) return commit(host, setting, (d) => d, { reason: reason ?? "Pick a color." });
+    write(value, true);
+  };
+  return html`<div class="ts-nested">
+    <div class="ts-swatch-row">${swatchRow(`${watchThemeDisplayName(theme)} colors`, watchThemeSwatches(theme, false), color, (v) => write(v))}</div>
+    ${typingField(host, setting, html`<div class="ts-no-alpha">${colorField("Custom", typed(host, setting) ?? watchCustomBoxColor(color), custom)}</div>`)}
+    <div class="ts-after"><button type="button" class="pe-chip ${color === undefined ? "on" : ""}" aria-pressed=${color === undefined ? "true" : "false"}
+      title="No color of its own: the tile's color" @click=${() => write(null)}>Default</button></div>
+  </div>`;
+}
+
+// ── styling: Border ──────────────────────────────────────────────────────
+
+// A spacer and a header show only what the watch draws of them, which is a
+// departure from the phone: it shows every Border and Background row on
+// them, and most do nothing there. The watch's `SpacerTile` reads the color,
+// the pattern and `borderThickness` (a solid border at any thickness but
+// none, whatever the style says); its `DividerTile` reads no Border or
+// Background key at all, so a header has neither section
+// (`watchTileSettingsSections`).
+
+function renderBorder(host: TileSettingsHost): TemplateResult {
+  const b = watchTileBorderSettings(host.tile);
+  const reset = (key: string) => resetValue("border", key);
+  if (tileKind(tileEntityId(host.tile)) === "spacer") {
+    return html`
+      ${enumRow(host, "borderThickness", "Thickness", "borderThickness", b.thickness, setWatchTileBorderThickness)}
+      <div class="hint ts-under">A spacer draws a plain line in its own color at this thickness. The other border settings do nothing on it.</div>
+      ${resetRow(host, "border", "Border")}`;
+  }
+  return html`
+    ${enumRow(host, "borderStyle", "Style", "borderStyle", b.style, setWatchTileBorderStyle)}
+    ${b.style === "line" ? html`
+      ${enumRow(host, "borderThickness", "Thickness", "borderThickness", b.thickness, setWatchTileBorderThickness)}
+      ${enumRow(host, "borderLineStyle", "Line style", "borderLineStyle", b.lineStyle, setWatchTileBorderLineStyle)}
+      ${sliderRow(host, "borderGlow", "Glow", "borderGlow", b.glow, setWatchTileBorderGlow, { reset: reset("borderGlow"), percent: true })}` : nothing}
+    ${b.style === "animate" ? html`
+      ${enumRow(host, "borderAnimation", "Animation", "borderAnimation", b.animation, setWatchTileBorderAnimation)}
+      ${b.animation === "none" ? nothing : html`
+        ${sliderRow(host, "borderSpeed", "Speed", "borderAnimationSpeed", b.speed, setWatchTileBorderSpeed, { reset: reset("borderAnimationSpeed") })}
+        ${sliderRow(host, "borderIntensity", "Intensity", "borderAnimationIntensity", b.intensity, setWatchTileBorderIntensity, { reset: reset("borderAnimationIntensity") })}
+        ${sliderRow(host, "borderSize", "Size", "borderAnimationSize", b.size, setWatchTileBorderSize, { reset: reset("borderAnimationSize") })}`}` : nothing}
+    ${b.style === "none" ? nothing : html`
+      ${boolRow(host, "borderActiveOnly", "Only when on", b.activeOnly, setWatchTileBorderActiveOnly)}
+      ${stylingPalette(host, "borderColor", {
+        label: "Border color",
+        color: () => watchTileBorderSettings(host.tile).color,
+        rainbow: true,
+        absentLabel: "Tile color",
+        absentTitle: "No color of its own: the border takes the tile's color",
+        write: (d, v) => setWatchTileBorderColor(d, host.pageId, host.tileId, v),
+      })}`}
+    ${resetRow(host, "border", "Border")}`;
+}
+
+// ── styling: Background ──────────────────────────────────────────────────
+
+function renderBackground(host: TileSettingsHost): TemplateResult {
+  const g = watchTileBackgroundSettings(host.tile);
+  const reset = (key: string) => resetValue("background", key);
+  return html`
+    <div class="ts-sub-h"><span>Pattern</span></div>
+    ${enumRow(host, "pattern", "Pattern", "backgroundPattern", g.pattern, setWatchTilePattern)}
+    ${g.pattern === "none" ? nothing : html`
+      ${sliderRow(host, "patternOpacity", "Opacity", "patternOpacity", g.patternOpacity, setWatchTilePatternOpacity, { reset: reset("patternOpacity"), percent: true })}
+      ${sliderRow(host, "patternScale", "Size", "patternScale", g.patternScale, setWatchTilePatternScale)}
+      ${stylingPalette(host, "patternColor", {
+        label: "Pattern color",
+        color: () => watchTileBackgroundSettings(host.tile).patternColor,
+        rainbow: false,
+        absentLabel: "Default gray",
+        absentTitle: "No color of its own: the watch draws the pattern in gray",
+        write: (d, v) => setWatchTilePatternColor(d, host.pageId, host.tileId, v),
+      })}`}
+    ${tileKind(tileEntityId(host.tile)) === "spacer" ? resetRow(host, "background", "Background") : renderEffect(host, g, reset)}`;
+}
+
+function renderEffect(host: TileSettingsHost, g: ReturnType<typeof watchTileBackgroundSettings>, reset: (key: string) => unknown): TemplateResult {
+  return html`
+    <div class="ts-sub-h"><span>Effect</span></div>
+    ${enumRow(host, "effect", "Effect", "tileAnimation", g.effect, setWatchTileEffect)}
+    ${g.effect === "none" ? nothing : html`
+      ${boolRow(host, "effectActiveOnly", "Only when on", g.effectActiveOnly, setWatchTileEffectActiveOnly)}
+      ${stylingPalette(host, "effectColor", {
+        label: "Effect color",
+        color: () => watchTileBackgroundSettings(host.tile).effectColor,
+        rainbow: true,
+        absentLabel: "Tile color",
+        absentTitle: "No color of its own: the effect takes the tile's color",
+        write: (d, v) => setWatchTileEffectColor(d, host.pageId, host.tileId, v),
+      })}
+      ${sliderRow(host, "effectSpeed", "Speed", "animationSpeed", g.speed, setWatchTileEffectSpeed, { reset: reset("animationSpeed") })}
+      ${sliderRow(host, "effectIntensity", "Intensity", "animationIntensity", g.intensity, setWatchTileEffectIntensity, { reset: reset("animationIntensity") })}
+      ${sliderRow(host, "effectSize", "Size", "animationSize", g.size, setWatchTileEffectSize, { reset: reset("animationSize") })}`}
+    ${resetRow(host, "background", "Background")}`;
 }
 
 /** This module's rules, in the page editor's sheet after the shared form

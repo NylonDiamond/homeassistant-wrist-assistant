@@ -1,6 +1,6 @@
 {
   "name": "Don't skip conditions",
-  "source": "WristAssistant/Views/PageEditorView.swift:7780",
+  "source": "WristAssistant/Views/PageEditorView.swift:7589",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

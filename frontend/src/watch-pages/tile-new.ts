@@ -172,7 +172,7 @@ function freshTile(fields: JsonObject): WatchPageTile {
 const GRADIENT_PREFIX = "GRADIENT|";
 
 /** `DSThemeHex.normalizedHex`: trimmed, one `#`, upper case. */
-function normalizedHex(hex: string): string {
+export function normalizedHex(hex: string): string {
   const trimmed = hex.trim();
   const body = trimmed.startsWith("#") ? trimmed.slice(1) : trimmed;
   return `#${body.toUpperCase()}`;
@@ -329,6 +329,16 @@ function roleColor(theme: string, role: string, gradient: boolean): string | und
   return gradient ? (own(t.gradientRoles, role) ?? watchGradientOf(solid)) : solid;
 }
 
+/** The color a tile of this entity's kind takes from `theme` when it has
+ * none of its own: the domain's role color, else its fixed color, else
+ * undefined. A theme the app does not have reads as the add fallback. */
+export function watchKindColor(entityId: string, theme: string): string | undefined {
+  const spec = own(TABLE.domains, tileKind(entityId));
+  if (spec === undefined) return TABLE.otherDomains.color ?? undefined;
+  if (spec.role !== undefined) return roleColor(theme, spec.role, false);
+  return spec.hex;
+}
+
 // ── calendar color ───────────────────────────────────────────────────────
 
 /**
@@ -381,7 +391,7 @@ function titleCase(ch: string): string {
  * apostrophe does not end a word ("o'brien" is "O'brien"), and a combining
  * mark counts as a letter. Everything else is kept.
  */
-function capitalized(text: string): string {
+export function watchCapitalized(text: string): string {
   let out = "";
   let inWord = false;
   for (const ch of text) {
@@ -409,7 +419,7 @@ export function watchEntityLabel(entityId: string, friendlyName?: string, picker
   if (kind === "assist") return TABLE.label.assist;
   if (kind === "speak_message" || kind === "speakMessage") return TABLE.label.speak_message;
   if (friendlyName !== undefined && friendlyName !== "") return friendlyName;
-  return capitalized(tileTarget(entityId).replaceAll("_", " "));
+  return watchCapitalized(tileTarget(entityId).replaceAll("_", " "));
 }
 
 // ── entity defaults ──────────────────────────────────────────────────────
