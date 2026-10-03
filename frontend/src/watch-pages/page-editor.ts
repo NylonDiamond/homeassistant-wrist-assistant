@@ -159,7 +159,8 @@ import { forgetTileSettingsNotes, renderTileSettings, tileSettingsStyles } from 
 import { pageSettingsStyles, renderPageSettings } from "./page-settings.js";
 import { specialSettingsStyles } from "./special-settings.js";
 import { watchCameraRefreshDefaults, watchDeviceSiblings, watchObjectName } from "./special-model.js";
-import { readSmartConfig } from "./smart-model.js";
+import { readSmartConfig, resolveSmartPagesBeforeSave } from "./smart-model.js";
+import { renderSmartPageRows, renderSmartRulesCard, smartSelectedRuleIndex, smartSettingsStyles, smartStageFacts } from "./smart-settings.js";
 import { scrubWatchOrphanTriggers } from "./tile-settings-model.js";
 import {
   type StageGrid,
@@ -1349,8 +1350,10 @@ export class WaPageEditor extends LitElement {
     this.note = undefined;
     const running = saveWatchPagesDraft(draft, {
       // A hold and slide direction left on Trigger entity with nothing
-      // picked is saved as None, as the phone saves it.
-      prepare: scrubWatchOrphanTriggers,
+      // picked is saved as None, as the phone saves it. Every `all` rule
+      // of a smart page the draft changed is resolved from Home Assistant's
+      // states as they are at the send (part 3f batch 3).
+      prepare: (document) => resolveSmartPagesBeforeSave(scrubWatchOrphanTriggers(document), draft.base, this.hass?.states),
       save: (base, document) => saveWatchConfig(hass, watchId, "pages", base, document).catch((err: unknown) => {
         throw flatError(err);
       }),
@@ -2223,7 +2226,7 @@ export class WaPageEditor extends LitElement {
         ${page ? this.renderStage(page, watchPagesOf(document), owner) : html`<p class="pe-muted">${listed.length === 0 ? "Add a page to start." : "Pick a page."}</p>`}
       </section>
       <aside class="pe-side">
-        ${page && tile ? this.renderTileCard(page, tile, watchPagesOf(document)) : page ? this.renderPageCard(page) : nothing}
+        ${page && tile ? this.renderTileCard(page, tile, watchPagesOf(document)) : page ? html`${this.renderRulesCard(page)}${this.renderPageCard(page)}` : nothing}
         ${this.renderState(record, document)}
         ${this.renderHistory(record, draft.dirty)}
       </aside>
@@ -2306,10 +2309,10 @@ export class WaPageEditor extends LitElement {
     const smart = isSmartWatchPage(page);
     const tiles = watchPageTiles(page).length;
     const rows = watchPageExtent(page);
-    const facts = [
-      smart ? "Smart page" : `${plural(tiles, "tile", "tiles")}, ${plural(rows, "row", "rows")}`,
-      found ? watchCase.label : `${watchCase.label}, this watch's size is not known`,
-    ];
+    const config = readSmartConfig(page);
+    // A smart page names itself as the watch does, from its fill.
+    const facts = smartStageFacts(page, this.hass?.states) ?? [`${plural(tiles, "tile", "tiles")}, ${plural(rows, "row", "rows")}`];
+    facts.push(found ? watchCase.label : `${watchCase.label}, this watch's size is not known`);
     if (isHiddenWatchPage(page)) facts.push("hidden on the watch");
     const headers = !smart && watchPageHasHeader(page);
     const asOnWatch = headers && this.asOnWatch;
@@ -2317,6 +2320,17 @@ export class WaPageEditor extends LitElement {
     const input: WatchPagePreviewInput = {
       page, pages, screen: watchCase.screen, states: this.hass?.states, icons: this.icons, scale, catalog: this.catalog, templates: this.templateRenders,
     };
+    if (config !== undefined) {
+      // The selected rule's tiles draw full, the rest faint; a click on a
+      // tile selects its rule.
+      input.smart = {
+        rule: smartSelectedRuleIndex(config, this.selectedSmartRuleId),
+        pick: (index: number) => {
+          const id = config.rules[index]?.id;
+          if (id !== undefined && id !== "") this.selectedSmartRuleId = id;
+        },
+      };
+    }
     this.stageScreen = watchCase.screen;
     const addOff = this.saving || asOnWatch;
     return html`<div class="pe-stage-head">
@@ -2591,18 +2605,32 @@ export class WaPageEditor extends LitElement {
           @change=${(e: Event) => this.setHidden(id, (e.target as HTMLInputElement).checked)} />
         <span>Hidden on the watch</span>
       </label>
-      <p class="pe-muted">${smart ? "A smart page: the watch fills it itself." : `${plural(tiles, "tile", "tiles")}, ${plural(rows, "row", "rows")}`}</p>
+      ${smart ? nothing : html`<p class="pe-muted">${plural(tiles, "tile", "tiles")}, ${plural(rows, "row", "rows")}</p>`}
+      ${this.renderSmartRowsFor(page)}
       ${this.renderPageSettingsFor(page)}
       <button class="pe-btn pe-danger" @click=${() => this.askDelete(id)}>${uiIcon("delete")}<span>Delete page…</span></button>
     </div>`;
   }
 
   /** The page's styling rows (`page-settings.ts`): theme, background,
-   * title. Not on a smart page, whose look the watch decides. */
+   * title. A smart page has them too: the watch draws them over its fill. */
   private renderPageSettingsFor(page: WatchPage): TemplateResult | typeof nothing {
-    if (isSmartWatchPage(page)) return nothing;
     const host = this.editorHost(page);
     return host === undefined ? nothing : renderPageSettings(host);
+  }
+
+  /** The Smart Page switch and, on a smart page, its rows
+   * (`smart-settings.ts`). */
+  private renderSmartRowsFor(page: WatchPage): TemplateResult | typeof nothing {
+    const host = this.editorHost(page);
+    return host === undefined ? nothing : renderSmartPageRows(host);
+  }
+
+  /** On a smart page, the Rules card where the Tile card would be. */
+  private renderRulesCard(page: WatchPage): TemplateResult | typeof nothing {
+    if (!isSmartWatchPage(page)) return nothing;
+    const host = this.editorHost(page);
+    return host === undefined ? nothing : renderSmartRulesCard(host);
   }
 
   /** Where the stored copy has got to: who saved it and when, whether the
@@ -3062,7 +3090,7 @@ export class WaPageEditor extends LitElement {
     @container (max-width: 820px) {
       .pe-hint { display: none; }
     }
-  `, tileSettingsStyles, specialSettingsStyles, appSettingsStyles, pageSettingsStyles, addTileStyles];
+  `, tileSettingsStyles, specialSettingsStyles, appSettingsStyles, pageSettingsStyles, addTileStyles, smartSettingsStyles];
 }
 
 if (!customElements.get("wa-page-editor")) {

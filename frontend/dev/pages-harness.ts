@@ -509,7 +509,8 @@ function seedStore(): void {
   store.put(ALEX_WATCH, "pages", combine("05-pages"), { base: 0, by: ALEX_WATCH, at: minutesAgo(60 * 24 * 6), notify: false });
   store.put(ALEX_WATCH, "pages", combine("05-pages", "03-hold-and-slide"), { base: 1, by: ALEX_WATCH, at: minutesAgo(60 * 26), notify: false });
   // The last one also has a page of the special tiles (part 3f).
-  const alex = store.put(ALEX_WATCH, "pages", withSpecialPage(combine("05-pages", "03-hold-and-slide", "01-entity-tiles")), {
+  // And a second smart page, with two rules on one domain (part 3f batch 3).
+  const alex = store.put(ALEX_WATCH, "pages", withSmartPage(withSpecialPage(combine("05-pages", "03-hold-and-slide", "01-entity-tiles"))), {
     base: 2, by: ALEX_WATCH, at: minutesAgo(40), notify: false,
   });
   // Alex's behavior settings, whose room quick jump points at two of the
@@ -627,7 +628,7 @@ function madeUpState(entityId: string, index: number): HassEntityState {
       else if (/room/.test(objectId)) { state = "living_room"; attributes.unit_of_measurement = ""; }
       else { state = String(10 + index); attributes.unit_of_measurement = "W"; attributes.device_class = "power"; }
       break;
-    case "binary_sensor": state = toggle; attributes.device_class = "door"; break;
+    case "binary_sensor": state = toggle; attributes.device_class = /window/.test(objectId) ? "window" : "door"; break;
     case "lock": state = index % 2 === 0 ? "locked" : "unlocked"; break;
     case "cover": state = "open"; attributes.current_position = 70; break;
     // `hvac_modes` and `supported_features` narrow the State Icons and
@@ -859,6 +860,42 @@ function withSpecialPage(document: Json): Json {
   const page = specialTilesPage();
   if (page === undefined) return document;
   return { ...document, pages: [...pagesOf(document), page] };
+}
+
+/** A smart page (part 3f batch 3) as the phone's Add Domain writes it:
+ * Lights, then Doors and Windows, two rules on one domain, so the Rules
+ * card shows its shared domain note. The doors are resolved, the windows
+ * are not yet (a save resolves them). */
+function smartOpeningsPage(): Json {
+  const rule = (id: string, domain: string, label: string, icon: string, color: string, extra: Json = {}): Json => ({
+    domain, entityIds: [], header: "label", headerLabel: label, id, invertActive: false, mode: "all",
+    tileStyle: { color, icon }, ...extra,
+  });
+  return {
+    id: "5F3C1A00-0000-4000-8000-0000000000FE",
+    name: "Openings",
+    items: [],
+    groups: [],
+    dynamicConfig: {
+      liveUpdates: false, pullToRefresh: true, refreshOnAppear: false, sortOrder: "domain", tileColSpan: 4, tileRowSpan: 3, tileShowLabel: true,
+      rules: [
+        rule("5F3C1A00-0000-4000-8000-0000000000E1", "light", "Lights", "lightbulb.fill", "#FFCC00", {
+          resolvedEntityIds: ["light.hallway", "light.kitchen", "light.porch"], headerGlow: 0.5,
+        }),
+        rule("5F3C1A00-0000-4000-8000-0000000000E2", "binary_sensor", "Doors", "door.left.hand.open", "#5AC8FA", {
+          deviceClassFilter: ["door"], resolvedEntityIds: ["binary_sensor.back_door", "binary_sensor.front_door", "binary_sensor.kitchen_window"],
+        }),
+        rule("5F3C1A00-0000-4000-8000-0000000000E3", "binary_sensor", "Windows", "window.horizontal", "#5AC8FA", {
+          deviceClassFilter: ["window"], header: "line",
+        }),
+      ],
+    },
+  };
+}
+
+/** A document with the smart Openings page added at the end. */
+function withSmartPage(document: Json): Json {
+  return { ...document, pages: [...pagesOf(document), smartOpeningsPage()] };
 }
 
 /** A made-up state for every entity a fixture or a stored document names,
