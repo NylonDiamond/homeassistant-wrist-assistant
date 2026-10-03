@@ -9,14 +9,16 @@ but never registered is invisible: the frontend and the test suite get
 that loses its ``require_admin`` decorator becomes callable by any logged-in
 non-admin user, which no test hitting a real box would notice.
 
-Every command in both modules is admin-only, reads included: the panel is
-admin-only, and the reads hand out the slot pool of every watch in the house
-along with rendered templates, or a watch's whole page config. The
-exceptions, one per module, are listed in ``_NOT_ADMIN``.
+Every command is admin-only, reads included: the panel is admin-only, and the
+reads hand out the slot pool of every watch in the house along with rendered
+templates, a watch's whole page config, or what a watch waiting to pair
+reported. The exceptions, at most one per module, are listed in
+``_NOT_ADMIN``.
 
-Two modules hold commands: ``complication_ws.py`` (the editor) and
-``watch_config_ws.py`` (the Watch settings view and the page editor). Each is
-checked on its own, since each has its own registration function.
+Three modules hold commands: ``complication_ws.py`` (the editor),
+``watch_config_ws.py`` (the Watch settings view and the page editor) and
+``pairing_ws.py`` (confirming a watch's pairing code). Each is checked on its
+own, since each has its own registration function.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ import pytest
 _PKG = Path(__file__).resolve().parents[1] / "custom_components" / "wrist_assistant"
 _MODULE = _PKG / "complication_ws.py"
 _WATCH_CONFIG_MODULE = _PKG / "watch_config_ws.py"
+_PAIRING_MODULE = _PKG / "pairing_ws.py"
 
 # The Watch settings view's and the page editor's commands. Admin-only like
 # every other: history_entry hands out a whole past document, and restore
@@ -39,6 +42,13 @@ _WATCH_CONFIG_ADMIN_ONLY = {
     "ws_watch_config_history",
     "ws_watch_config_history_entry",
     "ws_watch_config_restore",
+}
+
+# Confirming a pairing code writes a device secret bound to the confirming
+# user, and a lookup hands out what a waiting watch reported. Admin only.
+_PAIRING_ADMIN_ONLY = {
+    "ws_pair_lookup",
+    "ws_pair_confirm",
 }
 
 # Every command this module defines. All of them are admin-only; the set is
@@ -80,10 +90,11 @@ _ADMIN_ONLY = {
 _NOT_ADMIN = {
     _MODULE.name: {"ws_owner_subscribe"},
     _WATCH_CONFIG_MODULE.name: {"ws_watch_config_subscribe"},
+    _PAIRING_MODULE.name: set(),
 }
 
 
-_MODULES = [_MODULE, _WATCH_CONFIG_MODULE]
+_MODULES = [_MODULE, _WATCH_CONFIG_MODULE, _PAIRING_MODULE]
 # Per module: the commands it must define, and which of them skip the gate.
 _EXPECTED = {
     _MODULE.name: (_ADMIN_ONLY | _NOT_ADMIN[_MODULE.name], _NOT_ADMIN[_MODULE.name]),
@@ -91,6 +102,7 @@ _EXPECTED = {
         _WATCH_CONFIG_ADMIN_ONLY | _NOT_ADMIN[_WATCH_CONFIG_MODULE.name],
         _NOT_ADMIN[_WATCH_CONFIG_MODULE.name],
     ),
+    _PAIRING_MODULE.name: (_PAIRING_ADMIN_ONLY, _NOT_ADMIN[_PAIRING_MODULE.name]),
 }
 
 
@@ -186,3 +198,18 @@ def test_the_watch_config_live_capability_is_advertised() -> None:
     const = (_PKG / "const.py").read_text()
     assert "register_capability(WATCH_CONFIG_LIVE_CAPABILITY)" in init
     assert 'WATCH_CONFIG_LIVE_CAPABILITY = "watch_config_live"' in const
+
+
+def test_the_pairing_commands_and_view_are_registered_at_setup() -> None:
+    """The panel's confirm and the watch's pair/start are useless apart."""
+    source = (_PKG / "__init__.py").read_text()
+    assert "async_register_pairing_commands(hass)" in source
+    assert "register_view(WAPairStartView(hass))" in source
+
+
+def test_the_watch_pairing_capability_is_advertised() -> None:
+    """A watch with no iPhone offers to pair by code only when it sees this."""
+    init = (_PKG / "__init__.py").read_text()
+    const = (_PKG / "const.py").read_text()
+    assert "register_capability(WATCH_PAIRING_CAPABILITY)" in init
+    assert 'WATCH_PAIRING_CAPABILITY = "watch_pairing"' in const

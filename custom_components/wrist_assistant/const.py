@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from .snapshot_aspect_store import SnapshotAspectStore
     from .snapshot_crop_store import SnapshotCropStore
     from .snapshot_stream_store import SnapshotStreamStore
+    from .wa_pair_requests import PairRequestStore
     from .wa_stream_tokens import BatchSnapshotTokenStore, StreamTokenStore
     from .watch_config_store import WatchConfigStore
     from .widget_secret_store import WidgetSecretStore
@@ -63,6 +64,9 @@ class WristAssistantData:
     # Watch config documents (the phone's page config in step 1), one record
     # per watch per kind. Read and written over the signed watch_config ops.
     watch_config_store: WatchConfigStore
+    # Watches waiting for an admin to confirm their pairing code. Memory
+    # only; written by /v2/pair/start, read and cleared by pairing_ws.py.
+    pair_request_store: PairRequestStore
     apns_client: APNsClient | None = field(default=None)
     # Sends a phone owner the background push a watch owner gets as a long-poll
     # wake. Built after the relay client is resolved, so it is None for the
@@ -170,6 +174,10 @@ WATCH_CONFIG_CATALOG_CAPABILITY = "watch_config_catalog"
 # poll. The watch uses it as the trigger to pull; the pull itself is the
 # signed watch_config_get, gated on WATCH_CONFIG_CAPABILITY.
 WATCH_CONFIG_DELTA_CAPABILITY = "watch_config_delta"
+# What the integration advertises once it serves /v2/pair/start and the
+# panel's pair/lookup and pair/confirm (pairing_ws.py). A watch with no
+# iPhone offers to pair by code only when /version lists this.
+WATCH_PAIRING_CAPABILITY = "watch_pairing"
 # Highest CustomComplicationConfig schemaVersion this integration can edit.
 # Must track `CustomComplicationConfig.currentSchemaVersion` in the app repo.
 # A newer document is displayed read-only and never re-saved.

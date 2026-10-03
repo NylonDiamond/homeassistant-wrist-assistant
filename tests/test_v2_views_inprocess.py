@@ -30,6 +30,7 @@ from typing import Any
 import pytest
 
 from test_complication_store import MAX_PER_OWNER, MAX_SCHEMA, _doc, _loaded_module
+from test_pair_requests import loaded_pair_module
 
 _MODULE = (
     Path(__file__).resolve().parents[1]
@@ -109,9 +110,12 @@ def _handlers(store_mod: Any) -> dict[str, Any]:
         flags=__future__.annotations.compiler_flag,
         dont_inherit=True,
     )
+    with loaded_pair_module() as pair_mod:
+        validate_pair_fields = pair_mod.validate_pair_fields
     namespace: dict[str, Any] = {
         "Any": Any,
         "uuid": uuid,
+        "validate_pair_fields": validate_pair_fields,
         "Response": _Response,
         "HomeAssistantView": _View,
         "loader": types.SimpleNamespace(async_get_integration=_integration),

@@ -1,11 +1,17 @@
 """HMAC-authenticated /v2/* endpoints for the bearer-free watch transport.
 
 The watch app no longer carries an HA bearer token. Every request from the
-watch is HMAC-signed using a per-watch secret registered with HA at pair-time
-(see `WARegisterSecretView` below). Read-style responses are
-HMAC-signed back so a wrong host can't feed the watch forged data.
+watch is HMAC-signed using a per-watch secret registered with HA at pair-time.
+A pair comes from the iPhone's sign-in through `register_secret`
+(`WARegisterSecretView`), or from a code the watch shows and an admin confirms
+in the panel (`WAPairStartView`, then `pairing_ws.py`). Read-style responses
+are HMAC-signed back so a wrong host can't feed the watch forged data.
 
 Endpoints registered here:
+
+* `POST /api/wrist_assistant/v2/register_secret` (bearer) and
+  `POST /api/wrist_assistant/v2/pair/start` (no auth): the two ways a pair
+  starts. Both check the fields with `validate_pair_fields`.
 
 * `POST /api/wrist_assistant/v2/action` — small JSON ops dispatched by
   `X-WA-Op`. Vocabulary covers services, single-entity reads, batch reads,
@@ -119,7 +125,6 @@ from .const import (
     COMPLICATION_MAX_PER_OWNER,
     COMPLICATION_MAX_SCHEMA_VERSION,
     DOMAIN,
-    LIBRARY_OWNER_ID,
     MIN_SUPPORTED_APP_PROTOCOL_VERSION,
     WA_PROTOCOL_VERSION,
     WA_STREAM_TOKEN_TTL_SECONDS,
@@ -130,6 +135,11 @@ from .logbook_events import (
     log_push_token_registered,
     log_secret_registered,
     log_secret_reprovisioned,
+)
+from .wa_pair_requests import (
+    PAIR_POLL_AFTER_SECONDS,
+    PAIR_START_FIELDS,
+    validate_pair_fields,
 )
 from .watch_config_store import (
     WatchConfigConflictError,
@@ -143,8 +153,6 @@ from .webhook_relay import (
     async_sync_webhook_devices,
 )
 from .widget_hmac import (
-    DEFAULT_HMAC_ALGO,
-    SUPPORTED_HMAC_ALGOS,
     WAHMACError,
     WANonceCache,
     sign_response,
@@ -2640,17 +2648,11 @@ class WANotificationSnapshotLiveView(HomeAssistantView):
 # ── /v2/register_secret view ─────────────────────────────────────────────
 
 
-# Free-text fields the app reports about itself end up in logs, the device
-# registry and the panel. Cap them so a bad client cannot stuff them.
-_REGISTER_ID_MAX_LEN = 128
-_REGISTER_TEXT_MAX_LEN = 256
-
-
 class WARegisterSecretView(HomeAssistantView):
-    """Bearer-authenticated endpoint where the iOS app registers a per-watch
-    HMAC secret with HA. Called once per (watch_id, baseURL) on iOS-side
-    integration check. The watch never calls this — iOS owns provisioning
-    so the watch process never needs the bearer.
+    """Bearer-authenticated endpoint where the iPhone app registers a
+    device's HMAC secret: its own, and each watch's when the iPhone signs in.
+    A watch with no iPhone pairs by code instead (`WAPairStartView` and the
+    panel's confirm in `pairing_ws.py`), and never needs a bearer either way.
 
     The secret is bound to the Home Assistant user behind the bearer. Every
     later request signed with it runs as that user (`_OpContext.new_context`),
@@ -2680,101 +2682,20 @@ class WARegisterSecretView(HomeAssistantView):
         if not isinstance(payload, dict):
             return self.json_message("Expected JSON object body", status_code=400)
 
-        watch_id = payload.get("watch_id")
-        secret_b64 = payload.get("secret_b64")
-        label = payload.get("label")
-        # Optional. Older iOS builds don't send this; default to the v1 algo
-        # so they keep working unchanged. Future builds opt into a new algo
-        # by sending it here.
-        algo = payload.get("algo", DEFAULT_HMAC_ALGO)
-        # Diagnostic-only metadata for the per-device sensors. Older app builds
-        # omit these — store None and the sensors render "unknown" until the
-        # next provision call from an updated app.
-        raw_app_version = payload.get("app_version")
-        raw_app_build = payload.get("app_build")
-        raw_owner_iphone_id = payload.get("owner_iphone_id")
-        raw_device_name = payload.get("device_name")
-        app_version = (
-            raw_app_version
-            if isinstance(raw_app_version, str) and raw_app_version
-            else None
-        )
-        app_build = (
-            raw_app_build
-            if isinstance(raw_app_build, str) and raw_app_build
-            else None
-        )
-        # `owner_iphone_id` links a watch entry to its paired iPhone entry so
-        # HA's device tree shows the watches under their iPhone. Watches paired
-        # by an older iOS build omit it — those watches root under the global
-        # service device instead. iPhones never set this field on themselves.
-        owner_iphone_id = (
-            raw_owner_iphone_id
-            if isinstance(raw_owner_iphone_id, str) and raw_owner_iphone_id
-            else None
-        )
-        # User-visible device name (WKInterfaceDevice.name on watchOS,
-        # UIDevice.name on iOS with the user-assigned-device-name entitlement).
-        # Older builds omit it — DeviceInfo falls back to `Watch <short_id>` /
-        # `iPhone <short_id>`. Strip whitespace so "  " doesn't shadow the
-        # fallback with an empty-looking name.
-        device_name = (
-            raw_device_name.strip()
-            if isinstance(raw_device_name, str) and raw_device_name.strip()
-            else None
-        )
-        # Screen size in points ("208x248"). The complication panel matches it
-        # against its watch-case table so the preview dropdown defaults to
-        # this watch's case. Older builds omit it — the panel keeps its 46 mm
-        # reference default.
-        raw_screen_size = payload.get("screen_size")
-        screen_size = (
-            raw_screen_size.strip()
-            if isinstance(raw_screen_size, str) and raw_screen_size.strip()
-            else None
-        )
-
-        if not isinstance(watch_id, str) or not watch_id:
-            return self.json_message("watch_id required", status_code=400)
-        # The Library's owner id is not a device. A secret under it would let
-        # whoever holds that secret pull, create and restore the home's
-        # Library designs as if they were a watch's own.
-        if watch_id == LIBRARY_OWNER_ID:
-            return self.json_message("watch_id is reserved", status_code=400)
-        if len(watch_id) > _REGISTER_ID_MAX_LEN or (
-            owner_iphone_id is not None and len(owner_iphone_id) > _REGISTER_ID_MAX_LEN
-        ):
-            return self.json_message("watch_id too long", status_code=400)
-        for field_name, value in (
-            ("label", label),
-            ("device_name", device_name),
-            ("screen_size", screen_size),
-            ("app_version", app_version),
-            ("app_build", app_build),
-        ):
-            if isinstance(value, str) and len(value) > _REGISTER_TEXT_MAX_LEN:
-                return self.json_message(f"{field_name} too long", status_code=400)
-        if not isinstance(secret_b64, str) or not secret_b64:
-            return self.json_message("secret_b64 required", status_code=400)
-        if not isinstance(algo, str) or algo not in SUPPORTED_HMAC_ALGOS:
-            return self.json_message(
-                f"algo must be one of: {sorted(SUPPORTED_HMAC_ALGOS)}",
-                status_code=400,
-            )
-
-        try:
-            secret_bytes = base64.b64decode(secret_b64, validate=True)
-        except (ValueError, TypeError):
-            return self.json_message("secret_b64 is not valid base64", status_code=400)
-        # Per-algo key-length check. Only sha256 is wired today; when adding a
-        # new algo to `SUPPORTED_HMAC_ALGOS`, add its expected key length here
-        # too — silently accepting the wrong size would let a typo turn into a
-        # very weak HMAC.
-        if algo == "hmac-sha256" and len(secret_bytes) != 32:
-            return self.json_message(
-                "secret must be 32 bytes (256 bits) for hmac-sha256",
-                status_code=400,
-            )
+        # The same checks /v2/pair/start and the panel's confirm make, with
+        # the same error texts (wa_pair_requests.validate_pair_fields).
+        fields, error = validate_pair_fields(payload)
+        if error is not None:
+            return self.json_message(error.message, status_code=error.status)
+        watch_id = fields.watch_id
+        secret_b64 = fields.secret_b64
+        label = fields.label
+        algo = fields.algo
+        app_version = fields.app_version
+        app_build = fields.app_build
+        owner_iphone_id = fields.owner_iphone_id
+        device_name = fields.device_name
+        screen_size = fields.screen_size
 
         # HA's auth middleware put the bearer's user here (requires_auth).
         user = request.get("hass_user")
@@ -2854,6 +2775,67 @@ class WARegisterSecretView(HomeAssistantView):
                 "protocol_version": WA_PROTOCOL_VERSION,
                 "algo": algo,
                 "user_bound": bool(bound_entry is not None and bound_entry.user_id),
+            }
+        )
+
+
+# ── /v2/pair/start view ──────────────────────────────────────────────────
+
+
+class WAPairStartView(HomeAssistantView):
+    """Unauthenticated endpoint where a watch with no iPhone asks to pair.
+
+    The watch sends its id and a fresh secret with the same fields
+    `register_secret` takes, checked by the same rules with the same error
+    texts. The reply is a six-character code for an admin to type into the
+    panel. This view only stores the request: it writes nothing to the
+    secret store, touches no device and logs nothing to the Logbook, so the
+    pair signs nothing until an admin confirms it (`pairing_ws.py`). The
+    watch learns of the confirm by polling `verify_identity` with the new
+    pair, which answers 401 until then.
+
+    Requests last ten minutes, one per watch (a new start replaces the old
+    one), and at most 64 wait at once; past that it answers 429.
+    """
+
+    url = "/api/wrist_assistant/v2/pair/start"
+    name = "api:wrist_assistant_v2_pair_start"
+    requires_auth = False
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass = hass
+
+    async def post(self, request: Request) -> Response:
+        domain_data = self._hass.data.get(DOMAIN)
+        pair_store = getattr(domain_data, "pair_request_store", None)
+        if pair_store is None:
+            return self.json_message("Integration not loaded", status_code=503)
+
+        try:
+            payload = await request.json()
+        except (ValueError, UnicodeDecodeError):
+            return self.json_message("Invalid JSON body", status_code=400)
+        if not isinstance(payload, dict):
+            return self.json_message("Expected JSON object body", status_code=400)
+
+        # A watch pairing by code has no iPhone to name and no label of its
+        # own, so only the fields it may set are read.
+        fields, error = validate_pair_fields(
+            {key: payload[key] for key in PAIR_START_FIELDS if key in payload}
+        )
+        if error is not None:
+            return self.json_message(error.message, status_code=error.status)
+
+        pending = pair_store.start(fields)
+        if pending is None:
+            return self.json({"ok": False, "error": "too_many_pending"}, status_code=429)
+        _LOGGER.debug("Pairing code issued for watch_id=%s", fields.watch_id)
+        return self.json(
+            {
+                "ok": True,
+                "code": pending.code,
+                "expires_in": pair_store.expires_in(pending),
+                "poll_after": PAIR_POLL_AFTER_SECONDS,
             }
         )
 

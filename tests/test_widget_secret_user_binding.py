@@ -34,7 +34,9 @@ from typing import Any
 
 import pytest
 
-_PKG = "custom_components.wrist_assistant"
+from test_pair_requests import loaded_pair_module
+
+_PKG ="custom_components.wrist_assistant"
 _SRC = Path(__file__).resolve().parents[1] / "custom_components" / "wrist_assistant"
 
 SECRET_A = base64.b64encode(b"a" * 32).decode()
@@ -162,7 +164,11 @@ def _register_view_class() -> type:
         dont_inherit=True,
     )
     registry = types.SimpleNamespace(async_get_device=lambda **_: None)
+    # The field checks live in wa_pair_requests.py, shared with pair/start.
+    with loaded_pair_module() as pair_mod:
+        validate_pair_fields = pair_mod.validate_pair_fields
     namespace: dict[str, Any] = {
+        "validate_pair_fields": validate_pair_fields,
         "Any": Any,
         "base64": base64,
         "Response": _Response,
@@ -172,8 +178,6 @@ def _register_view_class() -> type:
         "WA_PROTOCOL_VERSION": 2,
         "DEFAULT_HMAC_ALGO": "hmac-sha256",
         "SUPPORTED_HMAC_ALGOS": frozenset({"hmac-sha256"}),
-        "_REGISTER_ID_MAX_LEN": 128,
-        "_REGISTER_TEXT_MAX_LEN": 256,
         "_LOGGER": logging.getLogger("test_widget_secret_user_binding"),
         "log_secret_registered": lambda *a, **k: None,
         "log_secret_reprovisioned": lambda *a, **k: None,

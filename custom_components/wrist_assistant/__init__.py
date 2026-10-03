@@ -54,6 +54,7 @@ from .const import (
     WATCH_CONFIG_DELTA_CAPABILITY,
     WATCH_CONFIG_LIVE_CAPABILITY,
     WATCH_CONFIG_REJECT_REPORT_CAPABILITY,
+    WATCH_PAIRING_CAPABILITY,
     WIDGET_SECRET_STORAGE_KEY,
     WIDGET_SECRET_STORAGE_VERSION,
     WristAssistantConfigEntry,
@@ -86,6 +87,8 @@ from .v1_camera_stream_views import (
     CameraViewportView,
 )
 from .v1_notifications_views import NotificationRegisterView
+from .pairing_ws import async_register_pairing_commands
+from .wa_pair_requests import PairRequestStore
 from .wa_stream_tokens import BatchSnapshotTokenStore, StreamTokenStore
 from .wa_v2_views import (
     WAActionView,
@@ -93,6 +96,7 @@ from .wa_v2_views import (
     WADeltaView,
     WANotificationSnapshotLiveView,
     WANotificationSnapshotView,
+    WAPairStartView,
     WARegisterSecretView,
     WAStreamView,
     WAVersionView,
@@ -705,6 +709,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     await widget_secret_store.async_load()
     stream_token_store = StreamTokenStore()
     batch_snapshot_token_store = BatchSnapshotTokenStore()
+    # Watches waiting for an admin to confirm their pairing code. Memory only:
+    # a restart drops them and the watch asks for a new code.
+    pair_request_store = PairRequestStore()
     notification_snapshot_store = NotificationSnapshotStore()
     snapshot_crop_store = SnapshotCropStore(hass)
     await snapshot_crop_store.async_load()
@@ -825,6 +832,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # `watch_config` on every delta reply and the wake on a save (attached
     # above): the watch's trigger to pull its own pages and behavior.
     coordinator.register_capability(WATCH_CONFIG_DELTA_CAPABILITY)
+    # Pairing by code (wa_v2_views.py, WAPairStartView, and pairing_ws.py): a
+    # watch with no iPhone offers it only when /version lists this.
+    coordinator.register_capability(WATCH_PAIRING_CAPABILITY)
 
     runtime_data = WristAssistantData(
         coordinator=coordinator,
@@ -842,6 +852,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         parts_store=parts_store,
         card_preview_store=card_preview_store,
         watch_config_store=watch_config_store,
+        pair_request_store=pair_request_store,
     )
     entry.runtime_data = runtime_data
     hass.data[DOMAIN] = runtime_data
@@ -853,14 +864,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         # The panel's Watch settings view (admin only), beside the editor's,
         # and the phone's watch config live line (any signed-in user).
         async_register_watch_config_commands(hass)
-        # v2 transport: /v2/* HMAC for all watch traffic. WARegisterSecretView
-        # is the one bearer-authed exception — iOS posts to it once to
-        # provision the per-watch secret, and the secret never leaves iOS
-        # keychain after that. WAVersionView is unauthenticated metadata for
-        # the iOS banner.
+        # The panel's pairing-code lookup and confirm (admin only).
+        async_register_pairing_commands(hass)
+        # v2 transport: /v2/* HMAC for all watch traffic. A pair comes from
+        # the iPhone's sign-in through WARegisterSecretView (bearer), or from
+        # a code the watch gets from WAPairStartView (no auth, stores only a
+        # pending request) and an admin confirms in the panel. WAVersionView
+        # is unauthenticated metadata for the apps' version check.
         nonce_cache = WANonceCache(ttl_seconds=WA_HMAC_NONCE_TTL_SECONDS)
         hass.data[f"{DOMAIN}_nonce_cache"] = nonce_cache
         hass.http.register_view(WARegisterSecretView(hass))
+        hass.http.register_view(WAPairStartView(hass))
         hass.http.register_view(WAVersionView(hass))
         hass.http.register_view(WAActionView(hass, nonce_cache))
         hass.http.register_view(WADeltaView(hass, nonce_cache))
@@ -936,6 +950,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         camera_stream_coordinator.shutdown()
         stream_token_store.shutdown()
         batch_snapshot_token_store.shutdown()
+        pair_request_store.shutdown()
         complication_push.shutdown()
 
     entry.async_on_unload(
@@ -1108,6 +1123,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: WristAssistantConfigEnt
             data.camera_stream_coordinator.shutdown()
             data.stream_token_store.shutdown()
             data.batch_snapshot_token_store.shutdown()
+            data.pair_request_store.shutdown()
             # A reload builds a fresh one. Without this the old instance's
             # parked timers still fire, against a relay client and a store
             # this entry has already let go of.

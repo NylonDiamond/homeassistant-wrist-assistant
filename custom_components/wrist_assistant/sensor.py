@@ -95,8 +95,9 @@ async def async_setup_entry(
     )
 
     # Provisioned-but-maybe-not-yet-polled devices. Driven off widget_secret_store
-    # so an iPhone or freshly-paired watch shows up the moment iOS calls
-    # /v2/register_secret, even before the watch's first /v2/delta hit.
+    # so an iPhone or freshly-paired watch shows up the moment its pair lands
+    # (the iPhone's /v2/register_secret, or a code confirmed in the panel),
+    # even before the watch's first /v2/delta hit.
     # iPhones live exclusively here (they never poll), so this is the *only*
     # surface that makes them visible in HA.
     known_secrets: set[str] = set()
@@ -240,8 +241,8 @@ class WatchCountSensor(_WristAssistantSensorBase):
     """Total paired watches (v1 + v2), connected or not.
 
     Counted via the HA device registry rather than the widget secret store:
-    v1 watches use bearer auth and never call register_secret, so they have
-    no entry in widget_secret_store. The device registry, on the other hand,
+    v1 watches use bearer auth and are never paired, so they have no entry
+    in widget_secret_store. The device registry, on the other hand,
     sees every watch the moment it polls (regardless of protocol), so it's
     the only source that covers both transports uniformly."""
 
@@ -955,7 +956,10 @@ class WatchAppVersionSensor(_SecretStoreSensorBase):
 
 
 class WatchLastProvisionSensor(_SecretStoreSensorBase):
-    """Timestamp of the most recent register_secret call from this watch.
+    """Timestamp of the most recent pairing or metadata refresh for this watch.
+
+    A pair comes from the iPhone's sign-in through `register_secret`, or from
+    a code confirmed in the panel; a signed `update_metadata` refreshes it.
 
     Surfaces the stale-keychain case: the watch device row still exists in HA
     (its old secret is on disk) but the watch's local keychain has been wiped,
@@ -964,9 +968,9 @@ class WatchLastProvisionSensor(_SecretStoreSensorBase):
     `last_provision` ages while the user keeps using the watch. A timestamp far
     in the past on a watch that's otherwise active is the visible smoking gun.
 
-    v1-only watches never reach this code path: v1 uses bearer auth and never
-    calls register_secret, so they have no entry in widget_secret_store and the
-    spawn loop skips them entirely."""
+    v1-only watches never reach this code path: v1 uses bearer auth and is
+    never paired, so they have no entry in widget_secret_store and the spawn
+    loop skips them entirely."""
 
     _attr_name = "Last provision"
     _attr_device_class = SensorDeviceClass.TIMESTAMP

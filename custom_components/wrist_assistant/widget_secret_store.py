@@ -1,12 +1,14 @@
 """Persistent store of widget HMAC secrets keyed by watch_id.
 
-Each paired watch generates a 32-byte random secret on its keychain and
-registers it with HA via `WidgetSecretRegisterView`. The watch — and the
-watch's widget extension via the App Group — keep the secret locally; HA
-keeps a copy here so it can validate HMACs on widget requests.
+Each paired device has a 32-byte random secret. The device and the watch's
+widget extension (through the App Group) keep it locally; HA keeps a copy
+here so it can validate HMACs on signed requests.
 
-The bearer token never reaches the watch's widget extension under this
-design; the secret is what authorizes widget requests.
+A pair comes from the iPhone's sign-in through `register_secret`
+(`WARegisterSecretView`), or from a code the watch shows and an admin confirms
+in the panel (`pairing_ws.py`). Either way the entry is bound to a Home
+Assistant user, and the secret, never a bearer, is what authorizes the
+watch's requests.
 """
 
 from __future__ import annotations
@@ -32,6 +34,8 @@ _SAVE_DEBOUNCE_SECONDS = 2
 # constants so sensor.py can infer device_kind without re-spelling the strings.
 LABEL_IPHONE_SELF_PROVISION = "iphone-self-provision"
 LABEL_WATCH_SELF_PROVISION = "watch-self-provision"
+# A watch paired by a code an admin confirmed in the panel, with no iPhone.
+LABEL_WATCH_CODE_PAIR = "watch-code-pair"
 
 DEVICE_KIND_IPHONE = "iphone"
 DEVICE_KIND_WATCH = "watch"
@@ -343,12 +347,12 @@ class WidgetSecretStore:
     def bind_owned_watches(self, owner_iphone_id: str, user_id: str) -> list[str]:
         """Give every unbound watch paired by `owner_iphone_id` that iPhone's user.
 
-        A watch registers itself with the bearer the iPhone mirrored to it,
-        so its user is the iPhone's user by construction. The watch never
-        re-sends that bearer registration once it has a secret (it refreshes
-        over HMAC, which carries no user), but the iPhone does re-register on
-        every app update. This is how a watch paired before user binding gets
-        bound: through its owner. Returns the watch ids that changed.
+        A watch paired through the iPhone's sign-in belongs to the iPhone's
+        user. It refreshes over HMAC, which carries no user, but the iPhone
+        re-registers on every app update, so a watch paired before user
+        binding gets bound through its owner. A watch paired by code is bound
+        to the confirming admin at once and has no owner iPhone. Returns the
+        watch ids that changed.
         """
         bound: list[str] = []
         for watch_id, entry in self._secrets.items():
