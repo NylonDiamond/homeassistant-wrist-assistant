@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import importlib.util
+import logging
 import types
 from typing import Any
 
@@ -119,7 +120,7 @@ def env():
         )
 
 
-def _pending(env, secret: str = SECRET_A, **extra: Any):
+def _pending(env, secret: str = SECRET_A, remote: str | None = None, **extra: Any):
     fields, error = env.pair_mod.validate_pair_fields(
         {
             "watch_id": WATCH,
@@ -132,7 +133,7 @@ def _pending(env, secret: str = SECRET_A, **extra: Any):
         }
     )
     assert error is None
-    return env.pair_store.start(fields)
+    return env.pair_store.start(fields, remote=remote)
 
 
 def _call(env, command, user: _User = ROOT, **msg) -> _Connection:
@@ -158,9 +159,10 @@ def _error(env, command, **msg) -> tuple[str, str]:
 
 
 def test_lookup_finds_a_code_as_typed(env) -> None:
-    pending = _pending(env)
+    pending = _pending(env, remote="192.0.2.7")
     env.clock.now += 30
-    result = _ok(env, env.ws.ws_pair_lookup, code=f"  {pending.code.lower()} ")
+    typed = f"  {pending.code[:3].lower()}-{pending.code[3:].lower()} "
+    result = _ok(env, env.ws.ws_pair_lookup, code=typed)
     assert result == {
         "found": True,
         "watch_id": WATCH,
@@ -169,12 +171,22 @@ def test_lookup_finds_a_code_as_typed(env) -> None:
         "app_version": "3.0.1",
         "app_build": "2",
         "expires_in": 570,
+        "remote": "192.0.2.7",
+        "age_seconds": 30,
         "already_paired": False,
         "paired_by_other_user": False,
     }
     # Looking up changes nothing.
     assert env.pair_store.get(pending.code) is pending
     assert env.secret_store.all_watch_ids == []
+
+
+def test_lookup_of_a_request_with_no_address_reports_null(env) -> None:
+    pending = _pending(env)
+    env.clock.now += 0.9
+    result = _ok(env, env.ws.ws_pair_lookup, code=pending.code)
+    assert result["remote"] is None
+    assert result["age_seconds"] == 0
 
 
 def test_lookup_of_an_unknown_code_is_not_found(env) -> None:
@@ -248,6 +260,27 @@ def test_confirm_rekeys_a_known_watch_and_renames_its_device(env) -> None:
     assert entry.label == "watch-code-pair"
     assert env.logbook[0][0] == "reprovisioned"
     assert env.registry.updates == [(f"dev-{WATCH}", "Test Watch")]
+
+
+def test_taking_over_another_user_s_watch_is_logged_as_a_warning(env, caplog) -> None:
+    env.secret_store.register(WATCH, SECRET_B, "watch-self-provision", user_id="bob")
+    pending = _pending(env)
+    with caplog.at_level(logging.WARNING, logger=env.ws.__name__):
+        _ok(env, env.ws.ws_pair_confirm, code=pending.code)
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    message = warnings[0].getMessage()
+    assert WATCH in message
+    assert "from user bob to user root" in message
+
+
+def test_rekeying_one_s_own_or_an_unbound_watch_warns_nothing(env, caplog) -> None:
+    env.secret_store.register(WATCH, SECRET_B, "watch-self-provision", user_id="root")
+    env.secret_store.register("watch-unbound", SECRET_B, "watch-self-provision")
+    with caplog.at_level(logging.WARNING, logger=env.ws.__name__):
+        _ok(env, env.ws.ws_pair_confirm, code=_pending(env).code)
+        _ok(env, env.ws.ws_pair_confirm, code=_pending(env, watch_id="watch-unbound").code)
+    assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
 
 
 def test_confirm_leaves_a_device_alone_without_a_new_name(env) -> None:

@@ -106,6 +106,16 @@ def test_codes_are_compared_trimmed_and_upper_cased(mod) -> None:
     assert store.get("ABC234") is None
 
 
+@pytest.mark.parametrize(
+    "typed", ["ABC234", " abc234 ", "abc-234", "ABC 234", "a b-c\t2-3 4\n", "--abc234--"]
+)
+def test_spaces_and_hyphens_are_dropped_from_a_typed_code(mod, typed) -> None:
+    assert mod.normalize_pair_code(typed) == "ABC234"
+    store = mod.PairRequestStore(clock=_Clock(), code_factory=_codes("ABC234"))
+    pending = store.start(_fields(mod))
+    assert store.get(typed) is pending
+
+
 # ── TTL ──────────────────────────────────────────────────────────────────
 
 
@@ -156,18 +166,98 @@ def test_the_store_refuses_past_its_cap_and_a_replace_still_fits(mod) -> None:
     cap = mod.PairRequestStore._MAX_ENTRIES
     assert cap == 64
     for index in range(cap):
-        assert store.start(_fields(mod, f"watch-{index}")) is not None
-    assert store.start(_fields(mod, "one-too-many")) is None
+        assert store.start(_fields(mod, f"watch-{index}"), remote=f"10.0.0.{index}") is not None
+    assert store.start(_fields(mod, "one-too-many"), remote="10.0.1.1") is None
     assert len(store) == cap
 
     # A watch asking again is never refused by its own old request.
-    assert store.start(_fields(mod, "watch-0")) is not None
+    assert store.start(_fields(mod, "watch-0"), remote="10.0.0.0") is not None
     assert len(store) == cap
 
     # Once the requests expire there is room again.
     clock.now += 601
-    assert store.start(_fields(mod, "one-too-many")) is not None
+    assert store.start(_fields(mod, "one-too-many"), remote="10.0.1.1") is not None
     assert len(store) == 1
+
+
+def test_one_address_holds_at_most_four_requests(mod) -> None:
+    clock = _Clock()
+    store = mod.PairRequestStore(clock=clock)
+    per_remote = mod.PairRequestStore._MAX_PER_REMOTE
+    assert per_remote == 4
+    for index in range(per_remote):
+        assert store.start(_fields(mod, f"watch-{index}"), remote="10.0.0.9") is not None
+    assert store.start(_fields(mod, "fifth"), remote="10.0.0.9") is None
+    assert len(store) == per_remote
+
+    # Another address is unaffected.
+    assert store.start(_fields(mod, "fifth"), remote="10.0.0.8") is not None
+
+    # A watch asking again from the full address replaces its own entry and
+    # does not count twice.
+    again = store.start(_fields(mod, "watch-0", device_name="Again"), remote="10.0.0.9")
+    assert again is not None
+    assert again.fields.device_name == "Again"
+    assert sum(1 for p in store._entries.values() if p.remote == "10.0.0.9") == per_remote
+
+    # Expired requests free the address.
+    clock.now += 601
+    assert store.start(_fields(mod, "sixth"), remote="10.0.0.9") is not None
+
+
+def test_a_refused_start_keeps_the_watch_s_earlier_request(mod) -> None:
+    store = mod.PairRequestStore(
+        clock=_Clock(), code_factory=_codes("AAAAAA", "BBBBBB", "CCCCCC", "DDDDDD", "EEEEEE")
+    )
+    first = store.start(_fields(mod, "mover"), remote="10.0.0.1")
+    for index in range(4):
+        store.start(_fields(mod, f"watch-{index}"), remote="10.0.0.2")
+    # The watch moves to the full address: refused, and its old code stays.
+    assert store.start(_fields(mod, "mover"), remote="10.0.0.2") is None
+    assert store.get(first.code) is first
+
+
+# ── where a request came from ────────────────────────────────────────────
+
+
+def test_a_request_keeps_its_address_and_start_time(mod) -> None:
+    clock = _Clock()
+    store = mod.PairRequestStore(clock=clock, code_factory=_codes("AAAAAA", "BBBBBB"))
+    pending = store.start(_fields(mod), remote="192.0.2.7")
+    assert pending.remote == "192.0.2.7"
+    assert pending.created_at == clock.now
+    assert store.age_seconds(pending) == 0
+
+    clock.now += 42.9
+    assert store.age_seconds(pending) == 42
+    assert store.age_seconds(pending, now=pending.created_at - 5) == 0
+
+    assert store.start(_fields(mod, "watch-2")).remote is None
+
+
+# ── a watch with a request waiting ───────────────────────────────────────
+
+
+def test_has_pending_is_true_only_while_the_watch_s_request_lives(mod) -> None:
+    clock = _Clock()
+    store = mod.PairRequestStore(clock=clock, code_factory=_codes("AAAAAA"))
+    assert store.has_pending("watch-1") is False
+
+    pending = store.start(_fields(mod, "watch-1"))
+    assert store.has_pending("watch-1") is True
+    assert store.has_pending("watch-2") is False
+
+    clock.now += 599
+    assert store.has_pending("watch-1") is True
+    clock.now += 1
+    assert store.has_pending("watch-1") is False
+    assert len(store) == 0
+
+    # Removed by a confirm reads the same as expired.
+    store = mod.PairRequestStore(clock=clock, code_factory=_codes("BBBBBB"))
+    pending = store.start(_fields(mod, "watch-1"))
+    store.remove(pending.code)
+    assert store.has_pending("watch-1") is False
 
 
 # ── collisions ───────────────────────────────────────────────────────────

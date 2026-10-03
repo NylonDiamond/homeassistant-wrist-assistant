@@ -13,7 +13,7 @@ Commands:
     wrist_assistant/pair/lookup   {code}
     wrist_assistant/pair/confirm  {code}
 
-Codes are compared trimmed and upper-cased. Refusals are WebSocket errors:
+Codes are compared upper-cased with spaces and hyphens dropped. Refusals are WebSocket errors:
 ``unavailable`` (the integration is not ready), ``unknown_code`` (no such
 code, or it expired, or it was already confirmed), ``paired_by_other_user``,
 and the field checks' own codes (``invalid_watch_id``, ``invalid_field``,
@@ -76,11 +76,14 @@ def ws_pair_lookup(
     """What a code stands for, so the admin can check it before confirming.
 
     Result: {"found": true, "watch_id", "device_name", "screen_size",
-             "app_version", "app_build", "expires_in", "already_paired",
-             "paired_by_other_user"}
+             "app_version", "app_build", "expires_in", "remote",
+             "age_seconds", "already_paired", "paired_by_other_user"}
          or {"found": false}
 
-    ``expires_in`` is whole seconds left. ``already_paired`` means the watch
+    ``expires_in`` is whole seconds left. ``remote`` is the address the
+    request came from (a string, or null when unknown) and ``age_seconds``
+    whole seconds since it was made, so the admin can tell their own watch's
+    code from a stranger's. ``already_paired`` means the watch
     id holds a secret already (a confirm replaces it), and
     ``paired_by_other_user`` that the secret is bound to another user.
     Looking up changes nothing.
@@ -108,6 +111,8 @@ def ws_pair_lookup(
             "app_version": fields.app_version,
             "app_build": fields.app_build,
             "expires_in": pair_store.expires_in(pending, now=now),
+            "remote": pending.remote,
+            "age_seconds": pair_store.age_seconds(pending, now=now),
             "already_paired": existing is not None,
             "paired_by_other_user": bool(
                 existing is not None
@@ -190,6 +195,15 @@ def ws_pair_confirm(
             "it in the Wrist Assistant panel first.",
         )
         return
+    # An admin may take a watch over from another user, but the change of
+    # owner should be visible in the log, not only in the store.
+    if existing is not None and existing.user_id is not None and existing.user_id != user_id:
+        _LOGGER.warning(
+            "Pair confirm for watch_id=%s rebinds it from user %s to user %s",
+            watch_id,
+            existing.user_id,
+            user_id,
+        )
 
     result = secret_store.register(
         watch_id=watch_id,

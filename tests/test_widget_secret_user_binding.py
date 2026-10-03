@@ -36,7 +36,7 @@ import pytest
 
 from test_pair_requests import loaded_pair_module
 
-_PKG ="custom_components.wrist_assistant"
+_PKG = "custom_components.wrist_assistant"
 _SRC = Path(__file__).resolve().parents[1] / "custom_components" / "wrist_assistant"
 
 SECRET_A = base64.b64encode(b"a" * 32).decode()
@@ -132,11 +132,12 @@ class _User:
 
 
 class _Request:
-    """The two things the view reads: the JSON body and ``hass_user``."""
+    """What the views read: the JSON body, ``hass_user`` and the address."""
 
-    def __init__(self, payload: dict, user: _User | None) -> None:
+    def __init__(self, payload: dict, user: _User | None, *, remote: str | None = None) -> None:
         self._payload = payload
         self._user = user
+        self.remote = remote
 
     async def json(self) -> dict:
         return self._payload

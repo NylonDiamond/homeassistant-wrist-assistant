@@ -10,8 +10,10 @@ then the pair signs nothing.
 ``PairRequestStore`` holds the requests in memory, modelled on
 ``StreamTokenStore``: one TTL for every entry, so insertion order is expiry
 order, a hard cap, and an injectable clock. One request per watch id; a new
-start for the same watch replaces the old one. A restart drops them all,
-which only means the watch asks for a new code.
+start for the same watch replaces the old one. Each request remembers the
+address it came from, so one address can hold only a few at once and the
+admin sees where a code came from before confirming it. A restart drops
+them all, which only means the watch asks for a new code.
 
 ``validate_pair_fields`` is the one set of rules for the fields a pairing
 carries. ``/v2/register_secret``, ``/v2/pair/start`` and the confirm all call
@@ -22,6 +24,7 @@ from __future__ import annotations
 
 import base64
 import math
+import re
 import secrets
 import time
 from collections import OrderedDict
@@ -195,8 +198,10 @@ def validate_pair_fields(
 
 
 def normalize_pair_code(code: str) -> str:
-    """A code as typed, trimmed and upper-cased, for comparison."""
-    return code.strip().upper()
+    """A code as typed, for comparison: upper-cased, with every space and
+    hyphen dropped, so ``abc-234`` and `` ABC 234 `` both read as ``ABC234``.
+    """
+    return re.sub(r"[\s-]+", "", code).upper()
 
 
 def new_pair_code() -> str:
@@ -212,6 +217,9 @@ class PendingPair:
     fields: PairFields
     created_at: float
     expires_at: float
+    # The address the start came from (aiohttp's ``request.remote``), shown
+    # to the admin at lookup. None when the transport reports none.
+    remote: str | None = None
 
     @property
     def watch_id(self) -> str:
@@ -222,6 +230,11 @@ class PairRequestStore:
     """Bounded TTL store of pending pairings, keyed by code."""
 
     _MAX_ENTRIES = 64
+    # One address may hold only this many requests at once, so a single
+    # client cannot fill the whole store. A home rarely pairs more than one
+    # watch at a time; behind a proxy that hides client addresses every
+    # watch shares the proxy's, and four is still room enough.
+    _MAX_PER_REMOTE = 4
     # A free code is found on the first try unless the generator is broken:
     # 64 entries out of 32^6 codes.
     _MAX_CODE_ATTEMPTS = 32
@@ -241,19 +254,36 @@ class PairRequestStore:
     def now(self) -> float:
         return self._clock()
 
-    def start(self, fields: PairFields, *, now: float | None = None) -> PendingPair | None:
-        """Store a pending pairing and return it, or None when the store is full.
+    def start(
+        self,
+        fields: PairFields,
+        *,
+        remote: str | None = None,
+        now: float | None = None,
+    ) -> PendingPair | None:
+        """Store a pending pairing and return it, or None when the store is
+        full or ``remote`` already holds its share of requests.
 
-        An earlier request for the same watch is replaced, so a watch that
-        asks again is never refused by its own old code.
+        An earlier request for the same watch is replaced, and does not count
+        against either cap, so a watch that asks again is never refused by
+        its own old code. A refused start leaves the store as it was.
         """
         current = self._clock() if now is None else now
         self._evict_expired(current)
-        for code, pending in list(self._entries.items()):
-            if pending.watch_id == fields.watch_id:
-                del self._entries[code]
-        if len(self._entries) >= self._MAX_ENTRIES:
+        replaced = [
+            code for code, pending in self._entries.items() if pending.watch_id == fields.watch_id
+        ]
+        if len(self._entries) - len(replaced) >= self._MAX_ENTRIES:
             return None
+        same_remote = sum(
+            1
+            for pending in self._entries.values()
+            if pending.remote == remote and pending.watch_id != fields.watch_id
+        )
+        if same_remote >= self._MAX_PER_REMOTE:
+            return None
+        for code in replaced:
+            del self._entries[code]
         for _ in range(self._MAX_CODE_ATTEMPTS):
             code = normalize_pair_code(self._code_factory())
             if code not in self._entries:
@@ -265,9 +295,19 @@ class PairRequestStore:
             fields=fields,
             created_at=current,
             expires_at=current + self._ttl,
+            remote=remote,
         )
         self._entries[code] = pending
         return pending
+
+    def has_pending(self, watch_id: str, *, now: float | None = None) -> bool:
+        """Whether a watch id has an unexpired request waiting for a confirm."""
+        current = self._clock() if now is None else now
+        self._evict_expired(current)
+        return any(
+            pending.watch_id == watch_id and pending.expires_at > current
+            for pending in self._entries.values()
+        )
 
     def get(self, code: str, *, now: float | None = None) -> PendingPair | None:
         """The pending pairing for a code as typed, or None when unknown or expired."""
@@ -285,6 +325,11 @@ class PairRequestStore:
         """Whole seconds left on a pending pairing, rounded up, never negative."""
         current = self._clock() if now is None else now
         return max(0, math.ceil(pending.expires_at - current))
+
+    def age_seconds(self, pending: PendingPair, *, now: float | None = None) -> int:
+        """Whole seconds since a pending pairing started, rounded down, never negative."""
+        current = self._clock() if now is None else now
+        return max(0, math.floor(current - pending.created_at))
 
     def __len__(self) -> int:
         return len(self._entries)

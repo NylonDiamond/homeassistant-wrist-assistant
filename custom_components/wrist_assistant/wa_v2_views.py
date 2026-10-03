@@ -318,6 +318,35 @@ async def _async_bound_user_ok(hass: HomeAssistant, user_id: str | None) -> bool
     return user is not None and user.is_active
 
 
+def _log_signed_request_rejected(
+    hass: HomeAssistant,
+    domain_data: WristAssistantData,
+    request: Request,
+    reason: str,
+) -> None:
+    """The Logbook row for a refused signature, left out when it is expected.
+
+    A known watch pairing again by code polls ``verify_identity`` with its
+    new secret while Home Assistant still holds the old one, so every poll
+    fails ``bad_signature`` until an admin confirms the code. Those failures
+    are the pairing working, not a fault; a row for each, every few seconds,
+    would bury the Logbook. While the watch id has a pending request it is
+    treated as unknown, which ``log_hmac_failure`` never logs.
+    """
+    attempted_watch = request.headers.get("X-WA-Watch", "")
+    pair_store = getattr(domain_data, "pair_request_store", None)
+    pairing = bool(
+        attempted_watch and pair_store is not None and pair_store.has_pending(attempted_watch)
+    )
+    log_hmac_failure(
+        hass,
+        watch_id=attempted_watch,
+        reason=reason,
+        is_known_watch=not pairing
+        and domain_data.widget_secret_store.get(attempted_watch) is not None,
+    )
+
+
 # ── /v2/action view ──────────────────────────────────────────────────────
 
 
@@ -355,14 +384,7 @@ class WAActionView(HomeAssistantView):
             )
         except WAHMACError as err:
             _LOGGER.debug("WA HMAC rejected (v2/action): %s", err.reason)
-            attempted_watch = request.headers.get("X-WA-Watch", "")
-            log_hmac_failure(
-                self._hass,
-                watch_id=attempted_watch,
-                reason=err.reason,
-                is_known_watch=domain_data.widget_secret_store.get(attempted_watch)
-                is not None,
-            )
+            _log_signed_request_rejected(self._hass, domain_data, request, err.reason)
             return Response(status=401, text="Unauthorized")
 
         secret_entry = domain_data.widget_secret_store.get(validated.watch_id)
@@ -460,14 +482,7 @@ class WADeltaView(HomeAssistantView):
             )
         except WAHMACError as err:
             _LOGGER.debug("WA HMAC rejected (v2/delta): %s", err.reason)
-            attempted_watch = request.headers.get("X-WA-Watch", "")
-            log_hmac_failure(
-                self._hass,
-                watch_id=attempted_watch,
-                reason=err.reason,
-                is_known_watch=domain_data.widget_secret_store.get(attempted_watch)
-                is not None,
-            )
+            _log_signed_request_rejected(self._hass, domain_data, request, err.reason)
             return Response(status=401, text="Unauthorized")
 
         secret_entry = domain_data.widget_secret_store.get(validated.watch_id)
@@ -2795,7 +2810,8 @@ class WAPairStartView(HomeAssistantView):
     pair, which answers 401 until then.
 
     Requests last ten minutes, one per watch (a new start replaces the old
-    one), and at most 64 wait at once; past that it answers 429.
+    one), at most four per address and 64 in all wait at once; past either
+    it answers 429. The address is kept for the panel's lookup.
     """
 
     url = "/api/wrist_assistant/v2/pair/start"
@@ -2826,10 +2842,12 @@ class WAPairStartView(HomeAssistantView):
         if error is not None:
             return self.json_message(error.message, status_code=error.status)
 
-        pending = pair_store.start(fields)
+        pending = pair_store.start(fields, remote=request.remote)
         if pending is None:
             return self.json({"ok": False, "error": "too_many_pending"}, status_code=429)
-        _LOGGER.debug("Pairing code issued for watch_id=%s", fields.watch_id)
+        _LOGGER.debug(
+            "Pairing code issued for watch_id=%s from %s", fields.watch_id, pending.remote
+        )
         return self.json(
             {
                 "ok": True,
