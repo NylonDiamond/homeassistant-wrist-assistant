@@ -15,7 +15,16 @@
 
 import { css, html, nothing, type ReactiveController, type ReactiveControllerHost, type TemplateResult } from "lit";
 import { checkField, colorField, entityField, entityRefFor, segField, selectField } from "./editors.js";
-import { type HassLike, type OwnerSummary, type WatchConfigRecord, fetchWatchConfig, saveWatchConfig } from "./ha-api.js";
+import {
+  type HassLike,
+  type OwnerSummary,
+  type PairLookupFound,
+  type WatchConfigRecord,
+  confirmPairCode,
+  fetchWatchConfig,
+  lookupPairCode,
+  saveWatchConfig,
+} from "./ha-api.js";
 import { SECTION_COLOR } from "./kinds.js";
 import { peopleOf } from "./people.js";
 import { personColorVar } from "./pickerRows.js";
@@ -26,6 +35,8 @@ import {
   type CatalogSetting,
   type SettingValue,
   NO_RECORD_TEXT,
+  PAIR_CODE_LENGTH,
+  PAIR_NOT_FOUND_TEXT,
   WATCH_SETTINGS_CATALOG,
   buildSaveDocument,
   conflictRevision,
@@ -34,7 +45,13 @@ import {
   errorCode,
   formValues,
   initialWatch,
+  normalizePairCode,
   optionsFor,
+  pairCodeIsComplete,
+  pairErrorText,
+  pairLookupLine,
+  pairLookupWarnings,
+  pairedText,
   sectionRuns,
   settingValue,
   settingsWatches,
@@ -53,6 +70,9 @@ const SECTION_LOOK: Record<string, { icon: UiIconName; color: string }> = {
   camera: { icon: "image", color: SECTION_COLOR.look },
 };
 
+/** The pairing card's mark and tint. */
+const PAIR_LOOK: { icon: UiIconName; color: string } = { icon: "link", color: SECTION_COLOR.complication };
+
 interface Note {
   text: string;
   kind: "warn" | "err";
@@ -66,6 +86,23 @@ interface Confirm {
 }
 
 type PanelHost = ReactiveControllerHost & { renderRoot: ParentNode };
+
+/** Reads the device list again and answers it, so a watch that has just been
+ * paired shows up as a tab. The panel's own full owners load. */
+type RefreshOwners = () => Promise<readonly OwnerSummary[]>;
+
+/** The "Pair a watch" card's state: the code being typed, then what looking
+ * it up found, then the pairing. */
+interface PairState {
+  code: string;
+  /** The watch waiting on `code`, once looked up. */
+  found?: PairLookupFound & { code: string };
+  notFound?: boolean;
+  busy?: "lookup" | "confirm";
+  error?: string;
+  /** "Paired <name>." after a confirm. */
+  done?: string;
+}
 
 export class WatchSettings implements ReactiveController {
   private open = false;
@@ -85,8 +122,15 @@ export class WatchSettings implements ReactiveController {
    * picked, or after a newer load, is dropped. */
   private loadSeq = 0;
   private pollTimer?: number;
+  private pair: PairState = { code: "" };
+  /** Bumped by every change of code and by closing, so a lookup that answers
+   * for a code no longer in the field is dropped. */
+  private pairSeq = 0;
+  /** Bumped by every open and close, so a pairing that answers after the
+   * dialog was shut leaves the next visit's card alone. */
+  private visit = 0;
 
-  constructor(private readonly host: PanelHost) {
+  constructor(private readonly host: PanelHost, private readonly refreshOwners?: RefreshOwners) {
     host.addController(this);
   }
 
@@ -108,16 +152,19 @@ export class WatchSettings implements ReactiveController {
 
   // ── opening, loading, saving ───────────────────────────────────────────
 
-  /** Open on the watch being edited when it is one, else the home's first. */
+  /** Open on the watch being edited when it is one, else the home's first.
+   * A home with no watch yet opens on the pairing card alone. */
   show(hass: HassLike, owners: readonly OwnerSummary[], current: string | undefined): void {
     this.hass = hass;
     const id = initialWatch(settingsWatches(owners), current);
-    if (id === undefined) return;
     this.open = true;
     this.confirm = undefined;
     this.note = undefined;
+    this.visit++;
+    this.pairSeq++;
+    this.pair = { code: "" };
     this.changed();
-    void this.load(id);
+    if (id !== undefined) void this.load(id);
   }
 
   private async load(ownerId: string, keepNote = false): Promise<void> {
@@ -256,7 +303,82 @@ export class WatchSettings implements ReactiveController {
     this.edits = new Map();
     this.confirm = undefined;
     this.note = undefined;
+    this.visit++;
+    this.pairSeq++;
+    this.pair = { code: "" };
     this.changed();
+  }
+
+  // ── pairing a watch by its code ────────────────────────────────────────
+
+  /** A new code in the field: whatever was found for the old one goes. */
+  private setPairCode(raw: string): string {
+    const code = normalizePairCode(raw).slice(0, PAIR_CODE_LENGTH);
+    if (code !== this.pair.code) {
+      this.pairSeq++;
+      this.pair = { code, busy: this.pair.busy };
+    }
+    this.changed();
+    return code;
+  }
+
+  private async lookUpPair(): Promise<void> {
+    const hass = this.hass;
+    const code = this.pair.code;
+    if (!hass || this.pair.busy || !pairCodeIsComplete(code)) return;
+    const visit = this.visit;
+    const seq = ++this.pairSeq;
+    this.pair = { code, busy: "lookup" };
+    this.changed();
+    try {
+      const reply = await lookupPairCode(hass, code);
+      if (seq !== this.pairSeq) return;
+      this.pair = reply.found ? { code, found: { ...reply, code } } : { code, notFound: true };
+    } catch (err) {
+      if (seq !== this.pairSeq) return;
+      this.pair = { code, error: pairErrorText(err, "lookup") };
+    } finally {
+      // Typing on while it ran keeps the new code but frees the buttons.
+      if (visit === this.visit) this.pair = { ...this.pair, busy: undefined };
+      this.changed();
+    }
+  }
+
+  private async confirmPair(): Promise<void> {
+    const hass = this.hass;
+    const found = this.pair.found;
+    if (!hass || this.pair.busy || found === undefined) return;
+    const visit = this.visit;
+    this.pair = { ...this.pair, busy: "confirm", error: undefined };
+    this.changed();
+    let paired: { watchId: string } | undefined;
+    try {
+      const reply = await confirmPairCode(hass, found.code);
+      paired = { watchId: reply.watch_id };
+      if (visit === this.visit) {
+        this.pairSeq++;
+        this.pair = { code: "", done: pairedText(reply.device_name ?? found.device_name) };
+      }
+    } catch (err) {
+      if (visit === this.visit) {
+        this.pairSeq++;
+        // An unknown code here is one that ran out between the lookup and
+        // the Pair button, or was confirmed somewhere else meanwhile.
+        this.pair = errorCode(err) === "unknown_code"
+          ? { code: found.code, notFound: true }
+          : { code: found.code, found, error: pairErrorText(err, "confirm") };
+      }
+    } finally {
+      if (visit === this.visit) this.pair = { ...this.pair, busy: undefined };
+      this.changed();
+    }
+    if (paired === undefined || !this.refreshOwners) return;
+    // The new watch joins the device list, and becomes the one shown when the
+    // dialog had none to show.
+    const owners = await this.refreshOwners();
+    if (visit !== this.visit || this.ownerId !== undefined) return;
+    const id = initialWatch(settingsWatches(owners), paired.watchId);
+    if (id !== undefined) void this.load(id, true);
   }
 
   private pickWatch(ownerId: string): void {
@@ -283,10 +405,11 @@ export class WatchSettings implements ReactiveController {
 
   // ── drawing ────────────────────────────────────────────────────────────
 
-  /** The top bar's way in. Administrators only, since both commands are
-   * theirs, and only in a home with a watch to set up. */
+  /** The top bar's way in. Administrators only, since every command is
+   * theirs. A home with no watch yet still gets it: pairing the first watch
+   * without an iPhone starts here. */
   renderButton(hass: HassLike, owners: readonly OwnerSummary[], current: string | undefined): TemplateResult | typeof nothing {
-    if (!hass.user?.is_admin || settingsWatches(owners).length === 0) return nothing;
+    if (!hass.user?.is_admin) return nothing;
     return html`<button class="tb-btn tb-watch" aria-haspopup="dialog" aria-expanded=${this.open ? "true" : "false"}
       title="How the watch behaves: gestures, pages, cameras and connection"
       @click=${() => this.show(hass, owners, current)}>${uiIcon("watch")}<span>Watch settings</span></button>`;
@@ -315,6 +438,7 @@ export class WatchSettings implements ReactiveController {
         ${this.note ? html`<div class="banner ${this.note.kind} ws-note" role="alert"><span>${this.note.text}</span>
           <button class="link" @click=${() => { this.note = undefined; this.changed(); }}>Dismiss</button></div>` : nothing}
         ${this.renderBody(hass)}
+        ${this.renderPair()}
       </div>
       ${this.renderFoot()}
     </dialog>`;
@@ -356,6 +480,9 @@ export class WatchSettings implements ReactiveController {
       const id = this.ownerId;
       return html`<div class="xf-lead warn">${uiIcon("info")}<span>Could not read this watch's settings: ${this.loadError}</span></div>
         ${id === undefined ? nothing : html`<button class="small ws-retry" @click=${() => void this.load(id)}>Try again</button>`}`;
+    }
+    if (this.ownerId === undefined) {
+      return html`<div class="xf-lead">${uiIcon("info")}<span><b>No watch has connected to this Home Assistant yet.</b> Pair one below, or open the Wrist Assistant app on your iPhone.</span></div>`;
     }
     const record = this.record;
     if (record === undefined) return nothing;
@@ -416,6 +543,65 @@ export class WatchSettings implements ReactiveController {
           : selectField(setting.label, String(value), options, (v) => set(v), { def })}${helpLine}`;
       }
     }
+  }
+
+  /** The last card: pairing a watch that has no iPhone, by the code it shows.
+   * Look up first, so the administrator sees which watch it is (its name, app
+   * version and build) before it gets a key. */
+  private renderPair() {
+    const p = this.pair;
+    const complete = pairCodeIsComplete(p.code);
+    const found = p.found !== undefined && p.found.code === p.code ? p.found : undefined;
+    return html`<section class="sec ws-pair" data-sec="ws-pair" data-open="true" data-help="on" style=${`--c:${PAIR_LOOK.color}`}>
+      <div class="sec-h pinned">
+        <span class="swatch">${uiIcon(PAIR_LOOK.icon)}</span>
+        <span class="tt"><h4>Pair a watch</h4></span>
+      </div>
+      <div class="sec-b">
+        <div class="hint keep">On the watch, choose Pair with Home Assistant and type the code it shows.</div>
+        <div class="field">
+          <span>Code</span>
+          <div class="row-acts ws-pair-row">
+            <input type="text" class="mono ws-pair-code" aria-label="Pairing code" maxlength=${PAIR_CODE_LENGTH}
+              autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false"
+              .value=${p.code}
+              @input=${(e: Event) => {
+                const input = e.target as HTMLInputElement;
+                // Write the clean code back at once: lit leaves the field
+                // alone when the clean code is the one it already holds.
+                input.value = this.setPairCode(input.value);
+              }}
+              @paste=${(e: ClipboardEvent) => {
+                // A pasted "ABC-DEF" is longer than the field allows, so it
+                // is cleaned before the length cut rather than after.
+                const text = e.clipboardData?.getData("text");
+                if (text === undefined) return;
+                e.preventDefault();
+                (e.target as HTMLInputElement).value = this.setPairCode(text);
+              }}
+              @keydown=${(e: KeyboardEvent) => {
+                if (e.key !== "Enter" || e.isComposing) return;
+                e.preventDefault();
+                void this.lookUpPair();
+              }} />
+            <button class="small" ?disabled=${!complete || p.busy !== undefined}
+              title=${complete ? "Find the watch showing this code" : `Type the ${PAIR_CODE_LENGTH} character code first`}
+              @click=${() => void this.lookUpPair()}>${p.busy === "lookup" ? "Looking up…" : "Look up"}</button>
+          </div>
+        </div>
+        ${found === undefined ? nothing : html`<div class="field readout">
+            <span>Watch</span>
+            <div class="readout-v ws-pair-watch">${pairLookupLine(found)}</div>
+          </div>
+          ${pairLookupWarnings(found).map((line) => html`<div class="hint warn">${line}</div>`)}
+          <button class="small primary ws-pair-go" ?disabled=${p.busy !== undefined}
+            title="Give this watch its key, so it can read from Home Assistant without an iPhone"
+            @click=${() => void this.confirmPair()}>${p.busy === "confirm" ? "Pairing…" : "Pair"}</button>`}
+        ${p.notFound ? html`<div class="hint warn" role="status">${PAIR_NOT_FOUND_TEXT}</div>` : nothing}
+        ${p.done ? html`<div class="hint keep ws-pair-done" role="status">${p.done}</div>` : nothing}
+        ${p.error ? html`<div class="hint err" role="alert">${p.error}</div>` : nothing}
+      </div>
+    </section>`;
   }
 
   /** Where the settings have got to on the left, Close and Save on the right;
@@ -496,4 +682,10 @@ export const watchSettingsStyles = css`
   .ws-tabs { padding: 0 8px; }
   .ws-tabs .pk-tab:disabled { cursor: default; opacity: .6; }
   .xfer-foot .tb-sync { min-width: 0; flex: 0 1 auto; }
+  /* The pairing card: the code box only as wide as a code, spaced out so the
+     six characters read one by one, with Look up beside it. */
+  .ws-pair-row { flex-wrap: nowrap; }
+  .ws-body .ws-pair .field input.ws-pair-code { flex: 0 1 112px; width: 112px; letter-spacing: .14em; text-transform: uppercase; }
+  .ws-pair-row > button.small { flex: none; }
+  .ws-pair .readout-v.ws-pair-watch { color: var(--wa-ink); }
 `;

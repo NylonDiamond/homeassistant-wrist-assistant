@@ -432,6 +432,51 @@ export interface WatchConfigRecord {
   document?: Record<string, unknown>;
 }
 
+const PAIR = "wrist_assistant/pair";
+
+/** A pairing request a watch is waiting on, as `pair/lookup` finds it by its
+ * code. `expires_in` is in seconds. */
+export interface PairLookupFound {
+  found: true;
+  watch_id: string;
+  device_name?: string | null;
+  screen_size?: string | null;
+  app_version?: string | null;
+  app_build?: string | null;
+  expires_in: number;
+  /** The watch already has a key here; pairing again gives it a new one. */
+  already_paired: boolean;
+  /** The watch's key was made by another Home Assistant user. */
+  paired_by_other_user: boolean;
+}
+
+export type PairLookup = PairLookupFound | { found: false };
+
+/** `new` paired a watch for the first time, `rekey` gave a paired watch a new
+ * key, `idempotent` found the same key already in place. */
+export type PairResult = "new" | "rekey" | "idempotent";
+
+export interface PairConfirmReply {
+  ok: true;
+  watch_id: string;
+  device_name?: string | null;
+  result: PairResult;
+}
+
+/** Find the pairing request a watch shows `code` for. Admin only. An
+ * unknown or expired code answers `{found: false}`, not an error. */
+export async function lookupPairCode(hass: HassLike, code: string) {
+  return hass.connection.sendMessagePromise<PairLookup>({ type: `${PAIR}/lookup`, code });
+}
+
+/** Pair the watch that shows `code`, as the signed in administrator. A
+ * refusal rejects with a WebSocket error whose `code` is `unknown_code`
+ * (unknown or expired), `unavailable` (the integration is not ready),
+ * `invalid_secret` or another of the secret checks. */
+export async function confirmPairCode(hass: HassLike, code: string) {
+  return hass.connection.sendMessagePromise<PairConfirmReply>({ type: `${PAIR}/confirm`, code });
+}
+
 const WC = "wrist_assistant/watch_config";
 
 /** Admin only. */

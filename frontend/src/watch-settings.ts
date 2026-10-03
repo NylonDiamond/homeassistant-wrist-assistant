@@ -275,6 +275,82 @@ export function watchName(watch: OwnerSummary, watches: readonly OwnerSummary[])
  * nothing from the watch yet: where the iPhone app's switch is. */
 export const NO_RECORD_TEXT = "Open the iPhone app, then turn on Edit pages in Home Assistant under Settings, Pages in Home Assistant.";
 
+// ── pairing a watch by its code ──────────────────────────────────────────
+//
+// A watch with no iPhone asks Home Assistant for a pairing and shows a six
+// character code; an administrator types it into the dialog's "Pair a watch"
+// card. Plan: app repo docs/pages_in_home_assistant_step4.md, 4c.
+
+/** A pairing code's length. */
+export const PAIR_CODE_LENGTH = 6;
+
+/** What the card says when no watch is waiting on the code typed. */
+export const PAIR_NOT_FOUND_TEXT = "No pairing with that code. Codes last 10 minutes.";
+
+/** The warning under a watch that already has a key here. */
+export const PAIR_ALREADY_PAIRED_TEXT = "This watch is already paired. Pairing again gives it a new key.";
+
+/** The warning under a watch whose key another user made. */
+export const PAIR_OTHER_USER_TEXT = "This watch was paired by another user.";
+
+/** A code as the server compares it: trimmed, upper-case, without the spaces
+ * and hyphens people type to group it, and nothing that is not a letter or
+ * a digit from 2 to 9 (the code's alphabet has no 0 or 1). */
+export function normalizePairCode(raw: string): string {
+  return raw.trim().toUpperCase().replace(/[\s-]+/g, "").replace(/[^A-Z2-9]/g, "");
+}
+
+/** Whether a normalized code is whole and worth looking up. */
+export function pairCodeIsComplete(code: string): boolean {
+  return code.length === PAIR_CODE_LENGTH && /^[A-Z2-9]+$/.test(code);
+}
+
+/** The fields of a found pairing that the card describes. */
+export interface PairLookupFacts {
+  device_name?: string | null;
+  app_version?: string | null;
+  app_build?: string | null;
+  already_paired?: boolean;
+  paired_by_other_user?: boolean;
+}
+
+function present(value: string | null | undefined): string | undefined {
+  const text = value?.trim();
+  return text ? text : undefined;
+}
+
+/** The watch a code belongs to, as "Apple Watch Series 11, app 3.0.1 (2)".
+ * A watch with no name is "Apple Watch"; with no app version the app part is
+ * left out, and with no build only the version is given. */
+export function pairLookupLine(lookup: PairLookupFacts): string {
+  const name = present(lookup.device_name) ?? "Apple Watch";
+  const version = present(lookup.app_version);
+  if (version === undefined) return name;
+  const build = present(lookup.app_build);
+  return `${name}, app ${version}${build === undefined ? "" : ` (${build})`}`;
+}
+
+/** The warnings to read before pairing, in the order the card shows them. */
+export function pairLookupWarnings(lookup: PairLookupFacts): string[] {
+  const out: string[] = [];
+  if (lookup.already_paired === true) out.push(PAIR_ALREADY_PAIRED_TEXT);
+  if (lookup.paired_by_other_user === true) out.push(PAIR_OTHER_USER_TEXT);
+  return out;
+}
+
+/** What the card says once a watch is paired. */
+export function pairedText(deviceName: string | null | undefined): string {
+  return `Paired ${present(deviceName) ?? "Apple Watch"}.`;
+}
+
+/** The card's line for a refusal. An integration from before pairing does
+ * not know the command at all, which HA reports as `unknown_command`. */
+export function pairErrorText(err: unknown, step: "lookup" | "confirm"): string {
+  if (errorCode(err) === "unknown_command") return "Update the Wrist Assistant integration to pair a watch with a code.";
+  const message = String((err as { message?: string } | null | undefined)?.message ?? err);
+  return step === "lookup" ? `Could not look up that code: ${message}` : `Could not pair: ${message}`;
+}
+
 /** The watch the view opens on: the one being edited when it is a watch,
  * else the first. Undefined when the home has none. */
 export function initialWatch(watches: readonly OwnerSummary[], current: string | undefined): string | undefined {

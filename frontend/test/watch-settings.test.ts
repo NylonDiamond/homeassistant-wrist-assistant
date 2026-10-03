@@ -20,8 +20,17 @@ import {
   formValues,
   initialWatch,
   isShown,
+  PAIR_ALREADY_PAIRED_TEXT,
+  PAIR_NOT_FOUND_TEXT,
+  PAIR_OTHER_USER_TEXT,
   normalizeColor,
+  normalizePairCode,
   optionsFor,
+  pairCodeIsComplete,
+  pairErrorText,
+  pairLookupLine,
+  pairLookupWarnings,
+  pairedText,
   sectionRuns,
   settingValue,
   settingsWatches,
@@ -310,5 +319,68 @@ describe("a watch with nothing in Home Assistant yet", () => {
   it("points at the iPhone app's own switch, by its current name and place", () => {
     expect(NO_RECORD_TEXT).toBe("Open the iPhone app, then turn on Edit pages in Home Assistant under Settings, Pages in Home Assistant.");
     expect(NO_RECORD_TEXT).not.toMatch(/Developer|Save pages to Home Assistant/);
+  });
+});
+
+describe("pairing a watch by its code", () => {
+  it("cleans a typed code the way the server compares it", () => {
+    expect(normalizePairCode("  abc def ")).toBe("ABCDEF");
+    expect(normalizePairCode("abc-def")).toBe("ABCDEF");
+    expect(normalizePairCode("ab c-\td9")).toBe("ABCD9");
+    expect(normalizePairCode("k7m2p9")).toBe("K7M2P9");
+  });
+
+  it("keeps only letters and the digits 2 to 9", () => {
+    expect(normalizePairCode("A1B0C!d.e_f")).toBe("ABCDEF");
+    expect(normalizePairCode("é2ü3")).toBe("23");
+    expect(normalizePairCode("")).toBe("");
+  });
+
+  it("calls a code complete at exactly six characters", () => {
+    expect(pairCodeIsComplete("ABCDEF")).toBe(true);
+    expect(pairCodeIsComplete("K7M2P9")).toBe(true);
+    expect(pairCodeIsComplete("ABCDE")).toBe(false);
+    expect(pairCodeIsComplete("ABCDEFG")).toBe(false);
+    expect(pairCodeIsComplete("")).toBe(false);
+  });
+
+  it("names the watch with its app version and build", () => {
+    expect(pairLookupLine({ device_name: "Apple Watch Series 11", app_version: "3.0.1", app_build: "2" }))
+      .toBe("Apple Watch Series 11, app 3.0.1 (2)");
+  });
+
+  it("falls back to Apple Watch and leaves out what is missing", () => {
+    expect(pairLookupLine({ device_name: null, app_version: "3.0.1", app_build: "2" })).toBe("Apple Watch, app 3.0.1 (2)");
+    expect(pairLookupLine({ device_name: "  ", app_version: "3.0.1" })).toBe("Apple Watch, app 3.0.1");
+    expect(pairLookupLine({ device_name: "Apple Watch Ultra 3", app_version: null, app_build: "2" })).toBe("Apple Watch Ultra 3");
+    expect(pairLookupLine({})).toBe("Apple Watch");
+  });
+
+  it("warns about a watch that is already paired, or paired by someone else", () => {
+    expect(pairLookupWarnings({ already_paired: false, paired_by_other_user: false })).toEqual([]);
+    expect(pairLookupWarnings({ already_paired: true, paired_by_other_user: false })).toEqual([PAIR_ALREADY_PAIRED_TEXT]);
+    expect(pairLookupWarnings({ already_paired: true, paired_by_other_user: true }))
+      .toEqual([PAIR_ALREADY_PAIRED_TEXT, PAIR_OTHER_USER_TEXT]);
+    expect(PAIR_ALREADY_PAIRED_TEXT).toBe("This watch is already paired. Pairing again gives it a new key.");
+    expect(PAIR_OTHER_USER_TEXT).toBe("This watch was paired by another user.");
+  });
+
+  it("says how long a code lasts when none matches", () => {
+    expect(PAIR_NOT_FOUND_TEXT).toBe("No pairing with that code. Codes last 10 minutes.");
+  });
+
+  it("names the watch once it is paired", () => {
+    expect(pairedText("Apple Watch Series 11")).toBe("Paired Apple Watch Series 11.");
+    expect(pairedText(null)).toBe("Paired Apple Watch.");
+    expect(pairedText(" ")).toBe("Paired Apple Watch.");
+  });
+
+  it("asks for a newer integration when the command is unknown, else gives the message", () => {
+    expect(pairErrorText({ code: "unknown_command", message: "Unknown command." }, "lookup"))
+      .toBe("Update the Wrist Assistant integration to pair a watch with a code.");
+    expect(pairErrorText({ code: "unavailable", message: "Integration not ready" }, "lookup"))
+      .toBe("Could not look up that code: Integration not ready");
+    expect(pairErrorText({ code: "invalid_secret", message: "secret must be 32 bytes" }, "confirm"))
+      .toBe("Could not pair: secret must be 32 bytes");
   });
 });
