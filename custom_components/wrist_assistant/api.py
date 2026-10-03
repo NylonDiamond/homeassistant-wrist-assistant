@@ -319,7 +319,10 @@ class DeltaCoordinator:
         self._watch_config_store: Any | None = None
         # watch_id → the watch_config revisions its last reply with a body
         # carried. A poll whose revisions moved since then is answered at once
-        # with an empty reply, once per change, like _token_notified.
+        # with an empty reply, once per change, like _token_notified. A poll
+        # that parks or probes with nothing recorded (its first after a prune,
+        # or after a bodiless 204) records the current revisions first, so a
+        # save that wakes it has something to compare against.
         self._watch_config_sent: dict[str, dict[str, int]] = {}
         self._unsub_state_changed = hass.bus.async_listen(
             EVENT_STATE_CHANGED, self._handle_state_changed
@@ -435,13 +438,29 @@ class DeltaCoordinator:
 
     def _watch_config_behind(self, watch_id: str) -> bool:
         """True when the revisions moved since the last reply this watch was
-        handed with a body. A watch that has had no such reply yet is not
-        behind: its first one carries the field anyway."""
+        handed with a body (or recorded before it parked or probed, see
+        _note_watch_config_baseline). A watch with nothing recorded is not
+        behind: its next reply with a body carries the field anyway."""
         sent = self._watch_config_sent.get(watch_id)
         if sent is None:
             return False
         current = self.watch_config_revisions(watch_id)
         return current is not None and current != sent
+
+    def _note_watch_config_baseline(self, watch_id: str) -> None:
+        """Record the current revisions for a watch that has none recorded.
+
+        Called before a poll parks or a probe answers. Without it, a watch
+        whose record was pruned, or whose last answer was a bodiless 204,
+        would not count as behind when a save wakes it: the poll would park
+        again and the save would wait for the next reply with a body. An
+        unreadable owner file records nothing, as it puts nothing on a reply.
+        """
+        if watch_id in self._watch_config_sent:
+            return
+        current = self.watch_config_revisions(watch_id)
+        if current is not None:
+            self._watch_config_sent[watch_id] = current
 
     @callback
     def watch_config_changed(self, change: Any) -> None:
@@ -945,6 +964,9 @@ class DeltaCoordinator:
                 include_summary=include_summary,
                 custom_entity_ids=custom_entity_ids,
             )
+        # Not behind. Before probing or parking, make sure there is something
+        # recorded for a later save to be compared against.
+        self._note_watch_config_baseline(watch_id)
         if timeout <= 0:
             return quiet_reply(next_cursor)
 

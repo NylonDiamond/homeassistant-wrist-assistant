@@ -15,7 +15,9 @@ Covered:
   a newer one has started must not evict the newer poll's waiter.
 * Watch config on the poll: the signer's pages and behavior revisions on
   every reply (0 with no record, never the catalog), and a save of either
-  kind waking the owner's parked poll through the store listener.
+  kind waking the owner's parked poll through the store listener, including
+  a poll with nothing recorded yet (after a prune or a 204 probe) and a
+  phone's save through the real watch_config_put op.
 """
 
 from __future__ import annotations
@@ -28,6 +30,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
+
+# The real watch_config_put handler, pulled out of wa_v2_views.py the way its
+# own tests do, so a phone's save is driven through the op and not the listener.
+from test_watch_config_ops_inprocess import _Ctx as _OpCtx
+from test_watch_config_ops_inprocess import _handlers as _op_handlers
+from test_watch_config_ops_inprocess import _put_body as _op_put_body
 
 _API_PATH = (
     Path(__file__).resolve().parents[1]
@@ -1194,5 +1202,164 @@ def test_prune_forgets_what_a_watch_was_told(coordinator) -> None:
         coord._sessions["w1"].last_seen -= module.SESSION_TTL + timedelta(seconds=1)
         coord._prune_sessions()
         assert "w1" not in coord._watch_config_sent
+
+    asyncio.run(run())
+
+
+def _forget_what_w1_was_told(module, coord) -> None:
+    """Prune w1's session, which drops what it was told, as five idle minutes
+    would."""
+    coord._sessions["w1"].last_seen -= module.SESSION_TTL + timedelta(seconds=1)
+    coord._prune_sessions()
+    assert "w1" not in coord._watch_config_sent
+
+
+def test_a_save_wakes_the_first_poll_after_a_prune(coordinator) -> None:
+    """Nothing recorded for the watch when it parks: the poll records the
+    current revisions first, so the save that wakes it is seen as news and
+    answered at once rather than parking again."""
+    module, hass, coord = coordinator
+    store, _const = _watch_config_store()
+    coord.attach_watch_config_store(store)
+    store.async_add_listener(coord.watch_config_changed)
+    ent = "wrist_assistant.wc11"
+    hass.states.set(ent, "off")
+    _device_put(store, "pages")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent])
+        c0 = body["next_cursor"]
+        _forget_what_w1_was_told(module, coord)
+
+        held = asyncio.create_task(_poll(coord, since=c0, entities=[ent], timeout=10))
+        await asyncio.sleep(0.05)
+        assert "w1" in coord._waiters and not held.done()
+        assert coord._watch_config_sent["w1"] == {"pages": 1, "behavior": 0}
+
+        started = hass.loop.time()
+        store.panel_save("w1", "pages", _pages_doc("Renamed"), base_revision=1)
+        status, body = await asyncio.wait_for(held, timeout=2)
+        assert hass.loop.time() - started < 1.0
+        assert status == 200, body
+        assert body["events"] == []
+        assert body["watch_config"] == {"pages": 2, "behavior": 0}
+
+        # Told once: the next poll parks and times out quietly.
+        status, body = await asyncio.wait_for(
+            _poll(coord, since=c0, entities=[ent], timeout=1), timeout=3
+        )
+        assert status == 204 and body is None
+
+    asyncio.run(run())
+
+
+def test_a_204_probe_records_what_a_later_save_is_compared_against(coordinator) -> None:
+    """A probe that answers 204 carries no body, so the reply wrapper records
+    nothing. The probe records the current revisions itself: a save landing
+    before the next long poll is then news to that poll, which answers at
+    once with the new revisions instead of parking on them."""
+    module, hass, coord = coordinator
+    store, _const = _watch_config_store()
+    coord.attach_watch_config_store(store)
+    store.async_add_listener(coord.watch_config_changed)
+    ent = "wrist_assistant.wc12"
+    hass.states.set(ent, "off")
+    _device_put(store, "behavior")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent])
+        c0 = body["next_cursor"]
+        _forget_what_w1_was_told(module, coord)
+
+        status, body = await asyncio.wait_for(
+            _poll(coord, since=c0, entities=[ent], timeout=0), timeout=1
+        )
+        assert status == 204 and body is None
+        assert coord._watch_config_sent["w1"] == {"pages": 0, "behavior": 1}
+
+        # The save lands between the probe and the long poll: no poll is
+        # parked, so its wake is a no-op and the long poll must catch it.
+        _device_put(store, "behavior", base=1, digest=_HASH_2)
+        status, body = await asyncio.wait_for(
+            _poll(coord, since=c0, entities=[ent], timeout=10), timeout=1
+        )
+        assert status == 200 and body["events"] == []
+        assert body["watch_config"] == {"pages": 0, "behavior": 2}
+
+        # And a save while the next one is parked wakes it the same way.
+        held = asyncio.create_task(_poll(coord, since=c0, entities=[ent], timeout=10))
+        await asyncio.sleep(0.05)
+        _device_put(store, "pages")
+        status, body = await asyncio.wait_for(held, timeout=2)
+        assert status == 200 and body["watch_config"] == {"pages": 1, "behavior": 2}
+
+    asyncio.run(run())
+
+
+def test_a_wake_with_an_unreadable_owner_file_leaves_the_poll_parked(coordinator) -> None:
+    """The owner's file cannot be read when the wake arrives: there are no
+    revisions to hand out, so the poll stays parked rather than answering
+    with nothing new, and nothing raises."""
+    module, hass, coord = coordinator
+    store, _const = _watch_config_store()
+    coord.attach_watch_config_store(store)
+    store.async_add_listener(coord.watch_config_changed)
+    ent = "wrist_assistant.wc13"
+    hass.states.set(ent, "off")
+    _device_put(store, "pages")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent])
+        c0 = body["next_cursor"]
+        _forget_what_w1_was_told(module, coord)
+
+        held = asyncio.create_task(_poll(coord, since=c0, entities=[ent], timeout=1))
+        await asyncio.sleep(0.05)
+        waiter = coord._waiters.get("w1")
+        assert waiter is not None
+
+        store._failed_owners.add("w1")
+        store_module = sys.modules[type(store).__module__]
+        coord.watch_config_changed(store_module.WatchConfigChange("w1", "pages", 2))
+        await asyncio.sleep(0.05)
+        assert not held.done(), "an unreadable owner file released the poll"
+        assert coord._waiters.get("w1") is waiter
+
+        status, body = await asyncio.wait_for(held, timeout=3)
+        assert status == 204 and body is None
+
+    asyncio.run(run())
+
+
+def test_a_phone_put_through_the_op_wakes_the_parked_poll(coordinator) -> None:
+    """The phone's save arrives through the real watch_config_put op, signed
+    with the owner's id. The store announces it, the listener setup adds wakes the
+    owner's parked poll, and that poll answers with the new revision."""
+    module, hass, coord = coordinator
+    store, _const = _watch_config_store()
+    coord.attach_watch_config_store(store)
+    store.async_add_listener(coord.watch_config_changed)
+    views = _op_handlers(sys.modules[type(store).__module__])
+    ent = "wrist_assistant.wc14"
+    hass.states.set(ent, "off")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent])
+        c0 = body["next_cursor"]
+        assert body["watch_config"] == {"pages": 0, "behavior": 0}
+
+        held = asyncio.create_task(_poll(coord, since=c0, entities=[ent], timeout=10))
+        await asyncio.sleep(0.05)
+        assert "w1" in coord._waiters
+
+        reply = await views["_op_watch_config_put"](
+            _OpCtx(store, "w1", _op_put_body(_pages_doc(), base=0, digest=_HASH_1))
+        )
+        assert reply.status == 200 and reply.body == {"ok": True, "revision": 1}
+
+        status, body = await asyncio.wait_for(held, timeout=2)
+        assert status == 200, body
+        assert body["events"] == []
+        assert body["watch_config"] == {"pages": 1, "behavior": 0}
 
     asyncio.run(run())
