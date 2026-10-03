@@ -22,8 +22,6 @@ import {
   parseTileColor,
   renameWatchPage,
   sizeOf,
-  smartDomainLabel,
-  smartPageDomains,
   tileClass,
   tileDrawsKindLine,
   tileGeometry,
@@ -35,6 +33,7 @@ import {
   tileStateText,
   tileSymbol,
   tileTarget,
+  watchHeaderDomainName,
   watchPageExtent,
   watchPageLayout,
   watchPageName,
@@ -120,15 +119,15 @@ describe("reading the document", () => {
     expect(watchPageName({})).toBe("Untitled page");
   });
 
-  it("knows a smart page and the domains it fills itself with", () => {
+  it("knows a smart page and names its domains as the watch's headers do", () => {
     const [home, smart] = watchPagesOf(sample());
     expect(isSmartWatchPage(home!)).toBe(false);
     expect(isSmartWatchPage(smart!)).toBe(true);
     expect(isSmartWatchPage({ dynamicConfig: null })).toBe(false);
-    expect(smartPageDomains(smart!)).toEqual(["light", "switch"]);
-    expect(smartPageDomains(home!)).toEqual([]);
-    expect(smartDomainLabel("binary_sensor")).toBe("Binary sensors");
-    expect(smartDomainLabel("new_domain")).toBe("New domain");
+    expect(watchHeaderDomainName("binary_sensor")).toBe("Binary Sensors");
+    // A domain the table does not list: Foundation's `capitalized`.
+    expect(watchHeaderDomainName("new_domain")).toBe("New_Domain");
+    expect(watchHeaderDomainName("o'brien")).toBe("O'brien");
     expect(isHiddenWatchPage(smart!)).toBe(true);
     expect(isHiddenWatchPage(home!)).toBe(false);
   });

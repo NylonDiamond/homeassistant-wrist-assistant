@@ -695,14 +695,19 @@ export function withResolvedRule(document: WatchPagesDocument, pageId: string, r
  * The save step: every `all` rule with a string domain, on each smart page
  * that is new or differs from the page of the same id in `base`, resolved
  * from the states. A list already equal is not rewritten, so a page whose
- * lists are current comes back as it was. Without states, the document.
+ * lists are current comes back as it was. Without states, or with none in
+ * them (Home Assistant reconnecting), the document. A stored list that is
+ * not empty is kept when the states hold none of the domain (its
+ * integration not loaded yet): the save would otherwise leave the watch
+ * subscribed to nothing. The Resolve button and an add write what they
+ * find, empty included.
  */
 export function resolveSmartPagesBeforeSave(
   document: WatchPagesDocument,
   base: WatchPagesDocument | null | undefined,
   states: States | undefined,
 ): WatchPagesDocument {
-  if (states === undefined) return document;
+  if (states === undefined || Object.keys(states).length === 0) return document;
   const before = new Map<string, WatchPage>();
   if (base !== null && base !== undefined) {
     for (const page of watchPagesOf(base)) {
@@ -720,6 +725,9 @@ export function resolveSmartPagesBeforeSave(
       if (!isJsonObject(rule) || typeof rule.id !== "string") continue;
       const view = viewOf(rule);
       if (view === undefined || view.mode !== "all") continue;
+      if ((view.resolvedEntityIds ?? []).length > 0 && resolveSmartRule(states, view.domain).length === 0) continue;
+      // By id: two rules sharing one would both resolve the first. Ids are
+      // unique UUIDs in practice, so that is left alone.
       next = withResolvedRule(next, pageId, rule.id, states);
     }
   }
@@ -797,14 +805,13 @@ export function setSmartRuleInvert(document: WatchPagesDocument, pageId: string,
   return editRule(document, pageId, ruleId, (rule) => withValue(rule, "invertActive", on));
 }
 
-/** "Playing only" of a media player rule: true written, false removes the
- * key. Refused for any other domain. */
+/** "Playing only": true written, false removes the key. Written on any
+ * rule, as the phone's `SmartPageRules.setPlayingOnly` does; the row is only
+ * drawn for a media player rule. */
 export function setSmartRulePlayingOnly(document: WatchPagesDocument, pageId: string, ruleId: string, on: boolean): WatchPagesDocument {
   if (typeof on !== "boolean") return document;
-  return editRule(document, pageId, ruleId, (rule) => {
-    if (rule.domain !== "media_player") return undefined;
-    return on ? withValue(rule, "mediaPlayerPlayingOnly", true) : without(rule, "mediaPlayerPlayingOnly");
-  });
+  return editRule(document, pageId, ruleId, (rule) =>
+    on ? withValue(rule, "mediaPlayerPlayingOnly", true) : without(rule, "mediaPlayerPlayingOnly"));
 }
 
 /** A device class chip: removed when the filter holds it, else added at
@@ -818,8 +825,10 @@ export function toggleSmartRuleDeviceClass(document: WatchPagesDocument, pageId:
   });
 }
 
-/** Swift's `Double(text)` for the forms a decimal pad can type, signs and
- * exponents included; undefined for anything else. */
+/** A decimal number as a decimal pad types it, a sign and an exponent
+ * included; undefined for anything else. Narrower than Swift's
+ * `Double(text)`, which also reads hex (`0x10`), `inf` and `nan`: no pad
+ * types those, so the box refuses them. */
 export function parseSmartNumber(text: string): number | undefined {
   if (!/^[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$/.test(text)) return undefined;
   const n = Number(text);
@@ -861,7 +870,10 @@ export function smartRuleUnresolved(rule: WatchSmartRule): boolean {
 }
 
 /** How the max value box shows a stored value: a whole number without a
- * fraction, "" when there is none. */
+ * fraction, "" when there is none. From 1e15 up the phone's
+ * `SmartPageRules.maxValueText` prints Swift's `1e+15` where this prints
+ * every digit; both read back as the same number, and no sensor limit is
+ * that large, so the box is left to differ there. */
 export function smartMaxValueText(rule: WatchSmartRule): string {
   return rule.maxNumericValue === undefined ? "" : String(rule.maxNumericValue);
 }
@@ -972,6 +984,25 @@ export function moveSmartRule(document: WatchPagesDocument, pageId: string, rule
     next.splice(toIndex, 0, rule);
     return withField(config, "rules", next);
   });
+}
+
+/** Up (`step` -1) or Down (+1): the rule moved one place from where the
+ * document holds it, counting every entry of the list, a rule the view
+ * skips included; refused at either end. */
+export function moveSmartRuleBy(document: WatchPagesDocument, pageId: string, ruleId: string, step: -1 | 1): WatchPagesDocument {
+  const config = listedPage(document, pageId)?.dynamicConfig;
+  if (!isJsonObject(config)) return document;
+  const from = ruleIndex(config, ruleId);
+  return from < 0 ? document : moveSmartRule(document, pageId, ruleId, from + step);
+}
+
+/** Where a rule sits in the document's list and how long the list is,
+ * every entry counted; undefined when the page holds no such rule. */
+export function smartRulePlace(page: WatchPage, ruleId: string): { index: number; count: number } | undefined {
+  const config = page.dynamicConfig;
+  if (!isJsonObject(config)) return undefined;
+  const index = ruleIndex(config, ruleId);
+  return index < 0 ? undefined : { index, count: ruleList(config).length };
 }
 
 /** Deletes a rule. */
@@ -1252,7 +1283,12 @@ export function smartActiveGroups(config: WatchSmartConfig, states: States | und
       rule.mode === "all"
         ? rule.resolvedEntityIds !== undefined && rule.resolvedEntityIds.length > 0
           ? rule.resolvedEntityIds
-          : resolveSmartRule(states, rule.domain)
+          : // The watch's "everything it knows" reads its own stores only
+            // (none for humidifier, water heater or siren); every Home
+            // Assistant entity of the domain stands in for it, so the
+            // preview can show tiles the watch has not loaded. Accepted
+            // (decision 10): leave it.
+            resolveSmartRule(states, rule.domain)
         : rule.entityIds;
     const ids = source.filter((id) => smartEntityAvailable(id, states) && passesRule(id, rule, states));
     if (config.sortOrder === "alphabetical") {

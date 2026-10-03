@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 
 import type { HassEntityState } from "../src/ha-api.js";
 import type { WatchPage, WatchPagesDocument } from "../src/watch-pages/model.js";
-import { setWatchTileBorderStyle, resetWatchTileTask } from "../src/watch-pages/styling-model.js";
+import { clearWatchTileTask, setWatchTileBorderStyle } from "../src/watch-pages/styling-model.js";
 import { setWatchTileLabel, setWatchTileShowLabel } from "../src/watch-pages/tile-settings-model.js";
 import { watchFreshTile } from "../src/watch-pages/tile-new.js";
 import {
@@ -635,13 +635,16 @@ describe("rule writers", () => {
     expect(r(setSmartRuleInvert(on, PAGE, R1, false)).invertActive).toBe(false);
   });
 
-  it("writes playing only when true and removes it when false, on a media player only", () => {
+  it("writes playing only when true and removes it when false, on any rule as the phone does", () => {
     const on = setSmartRulePlayingOnly(base(), PAGE, R2, true);
     expect(r(on, 1).mediaPlayerPlayingOnly).toBe(true);
     expect(sorted(r(on, 1))).toBe(true);
     expect(Object.hasOwn(r(setSmartRulePlayingOnly(on, PAGE, R2, false), 1), "mediaPlayerPlayingOnly")).toBe(false);
+    // SmartPageRules.setPlayingOnly writes on any rule; the row is drawn
+    // for a media player only.
+    expect(r(setSmartRulePlayingOnly(base(), PAGE, R1, true)).mediaPlayerPlayingOnly).toBe(true);
     const before = base();
-    expect(setSmartRulePlayingOnly(before, PAGE, R1, true)).toBe(before);
+    expect(setSmartRulePlayingOnly(before, PAGE, R1, false)).toBe(before);
   });
 
   it("toggles device classes in tapping order, the last one removing the key", () => {
@@ -832,6 +835,25 @@ describe("resolve", () => {
     const all = resolveSmartPagesBeforeSave(base, undefined, states);
     expect((((all.pages as Json[])[1]!.dynamicConfig as Json).rules as Json[])[0]!.resolvedEntityIds).toEqual(["light.a", "light.b"]);
   });
+
+  it("does nothing before a save with empty states, and keeps a stored list the states hold none of", () => {
+    const base = deepFreeze({
+      pages: [{ id: PAGE, items: [], dynamicConfig: config([rule(R1, "light", { resolvedEntityIds: ["light.old"] }), rule(R2, "fan"), rule(R3, "switch", { resolvedEntityIds: ["switch.old"] })]) }],
+    });
+    const draft = setSmartLiveUpdates(base, PAGE, true);
+    // Home Assistant reconnecting: no states at all, nothing written.
+    expect(resolveSmartPagesBeforeSave(draft, base, {})).toBe(draft);
+    // No fan or light in the states: the light's stored list stays, the fan
+    // gets its empty one; the switch is resolved as usual.
+    const out = resolveSmartPagesBeforeSave(draft, base, statesOf(state("switch.c", "on")));
+    const rules = (((out.pages as Json[])[0]!.dynamicConfig as Json).rules as Json[]);
+    expect(rules[0]!.resolvedEntityIds).toEqual(["light.old"]);
+    expect(rules[1]!.resolvedEntityIds).toEqual([]);
+    expect(rules[2]!.resolvedEntityIds).toEqual(["switch.c"]);
+    // The Resolve button writes what it finds, empty included.
+    const pressed = withResolvedRule(draft, PAGE, R1, statesOf(state("switch.c", "on")));
+    expect((((pressed.pages as Json[])[0]!.dynamicConfig as Json).rules as Json[])[0]!.resolvedEntityIds).toEqual([]);
+  });
 });
 
 // ── the stand-in tile ────────────────────────────────────────────────────
@@ -872,22 +894,18 @@ describe("the per-domain style through a stand-in tile", () => {
     expect(rulesOf(after)[0]!.tileStyle).toEqual({ borderStyle: "animate", color: "#FFCC00", icon: "lightbulb.fill", junk: 1, showLabel: false });
   });
 
-  it("writes what a task reset changed and removes what it removed", () => {
-    const only = rule(R1, "light", { tileStyle: { borderStyle: "animate", borderColor: "#FF0000", borderGlow: 0.5 } });
+  it("a section reset removes the section's keys from the rule's style", () => {
+    const only = rule(R1, "light", { tileStyle: { borderStyle: "animate", borderColor: "#FF0000", borderGlow: 0.5, color: "#FFCC00" } });
     const document = smartDoc([only]);
-    const reset = resetWatchTileTask(smartStyleStandIn(only, PAGE, pageOf(document)), PAGE, R1, "border");
+    const reset = clearWatchTileTask(smartStyleStandIn(only, PAGE, pageOf(document)), PAGE, R1, "border");
     const after = applySmartStyleStandIn(document, PAGE, R1, reset);
-    expect(rulesOf(after)[0]!.tileStyle).toEqual({
-      borderActiveOnly: true,
-      borderAnimation: "none",
-      borderAnimationIntensity: 1,
-      borderAnimationSize: 1,
-      borderAnimationSpeed: 1,
-      borderGlow: 0,
-      borderLineStyle: "solid",
-      borderStyle: "none",
-      borderThickness: "extraThin",
-    });
+    // Absent reads as the tile default on the watch, as the phone's rule
+    // Reset leaves it.
+    expect(rulesOf(after)[0]!.tileStyle).toEqual({ color: "#FFCC00" });
+    // Only border keys: the emptied style goes too.
+    const bare = smartDoc([rule(R1, "light", { tileStyle: { borderStyle: "line" } })]);
+    const cleared = clearWatchTileTask(smartStyleStandIn(rulesOf(bare)[0]!, PAGE, pageOf(bare)), PAGE, R1, "border");
+    expect(Object.hasOwn(rulesOf(applySmartStyleStandIn(bare, PAGE, R1, cleared))[0]!, "tileStyle")).toBe(false);
   });
 
   it("removes an emptied tileStyle, and leaves the document alone when nothing changed", () => {

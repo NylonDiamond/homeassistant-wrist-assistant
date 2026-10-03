@@ -121,19 +121,6 @@ export function isSmartWatchPage(page: WatchPage): boolean {
   return isJsonObject(page.dynamicConfig);
 }
 
-/** The Home Assistant domains a smart page fills itself from, in rule order,
- * each once. Empty for a page that is not smart. */
-export function smartPageDomains(page: WatchPage): string[] {
-  const config = page.dynamicConfig;
-  if (!isJsonObject(config) || !Array.isArray(config.rules)) return [];
-  const out: string[] = [];
-  for (const rule of config.rules) {
-    const domain = isJsonObject(rule) && typeof rule.domain === "string" ? rule.domain : "";
-    if (domain !== "" && !out.includes(domain)) out.push(domain);
-  }
-  return out;
-}
-
 // ── tile kinds ─────────────────────────────────────────────────────────────
 
 export function tileEntityId(tile: WatchPageTile): string {
@@ -221,28 +208,6 @@ const DOMAIN_LABELS: Readonly<Record<string, string>> = {
   zone: "Zone",
 };
 
-/** The plural names the app gives the domains a smart page can list. */
-const SMART_DOMAIN_LABELS: Readonly<Record<string, string>> = {
-  light: "Lights",
-  switch: "Switches",
-  fan: "Fans",
-  input_boolean: "Input booleans",
-  automation: "Automations",
-  cover: "Covers",
-  valve: "Valves",
-  lock: "Locks",
-  climate: "Climate",
-  media_player: "Media players",
-  vacuum: "Vacuums",
-  humidifier: "Humidifiers",
-  water_heater: "Water heaters",
-  remote: "Remotes",
-  siren: "Sirens",
-  binary_sensor: "Binary sensors",
-  sensor: "Sensors",
-  alarm_control_panel: "Alarm panels",
-};
-
 /**
  * The name the watch draws on an app tile with no label of its own, where
  * it differs from the kind's name: "Assist" and "Speak" from
@@ -292,11 +257,6 @@ export function tileKindLabel(kind: string): string {
   return DOMAIN_LABELS[kind] ?? (humanize(kind) || "Tile");
 }
 
-/** A domain as a smart page's note lists it. */
-export function smartDomainLabel(domain: string): string {
-  return SMART_DOMAIN_LABELS[domain] ?? humanize(domain);
-}
-
 /** The watch's names of the domains a smart page fills from ("Binary
  * Sensors"), from `tile-smart.json`. */
 const WATCH_DOMAIN_NAMES: Readonly<Record<string, string>> = Object.fromEntries(
@@ -305,14 +265,50 @@ const WATCH_DOMAIN_NAMES: Readonly<Record<string, string>> = Object.fromEntries(
   ),
 );
 
-/** Foundation's `capitalized`: the first letter of each run of letters
- * upper cased, the rest lower cased ("water_softener" is "Water_Softener"). */
-function swiftCapitalized(text: string): string {
+/** Letters that have a title case form of their own (the Latin digraphs). */
+const TITLE_CASE: Readonly<Record<string, string>> = {
+  "Ǆ": "ǅ",
+  "ǅ": "ǅ",
+  "ǆ": "ǅ",
+  "Ǉ": "ǈ",
+  "ǈ": "ǈ",
+  "ǉ": "ǈ",
+  "Ǌ": "ǋ",
+  "ǋ": "ǋ",
+  "ǌ": "ǋ",
+  "Ǳ": "ǲ",
+  "ǲ": "ǲ",
+  "ǳ": "ǲ",
+};
+
+function titleCase(ch: string): string {
+  const digraph = TITLE_CASE[ch];
+  if (digraph !== undefined) return digraph;
+  const upper = [...ch.toUpperCase()];
+  // "ß" upper cases to "SS"; its title case is "Ss".
+  return upper[0]! + upper.slice(1).join("").toLowerCase();
+}
+
+/**
+ * Foundation's `capitalized`, as the label samples show it: a letter right
+ * after anything that is not a letter (a space, digit, dot, hyphen, the
+ * start) takes its title case, every other letter its lower case. An
+ * apostrophe does not end a word ("o'brien" is "O'brien"), and a combining
+ * mark counts as a letter. Everything else is kept. Here rather than in
+ * `tile-new.ts`, which re-exports it, so the header names below need no
+ * import back into this module.
+ */
+export function watchCapitalized(text: string): string {
   let out = "";
   let inWord = false;
   for (const ch of text) {
-    const letter = /^[\p{L}\p{M}]$/u.test(ch) || ch === "'" || ch === "’";
-    out += letter ? (inWord ? ch.toLowerCase() : ch.toUpperCase()) : ch;
+    if (ch === "'" || ch === "’") {
+      out += ch;
+      continue;
+    }
+    const letter = /^[\p{L}\p{M}]$/u.test(ch);
+    if (letter) out += inWord ? ch.toLowerCase() : titleCase(ch);
+    else out += ch;
     inWord = letter;
   }
   return out;
@@ -320,9 +316,9 @@ function swiftCapitalized(text: string): string {
 
 /** The words a header with no label of its own draws for its domain, as
  * the watch draws them: the domain's display name, else the domain
- * capitalized. */
+ * capitalized ("water_softener" is "Water_Softener"). */
 export function watchHeaderDomainName(domain: string): string {
-  return WATCH_DOMAIN_NAMES[domain] ?? swiftCapitalized(domain);
+  return WATCH_DOMAIN_NAMES[domain] ?? watchCapitalized(domain);
 }
 
 /**

@@ -566,6 +566,26 @@ export function resetWatchTileTask(
   });
 }
 
+/** A task's reset on a smart page rule's style: every key of the task
+ * removed, so each reads as the watch's own default, as the phone's rule
+ * Reset leaves them. */
+export function clearWatchTileTask(
+  document: WatchPagesDocument,
+  pageId: string,
+  tileId: string,
+  task: WatchTileStylingTask,
+): WatchPagesDocument {
+  if (task !== "state" && task !== "border" && task !== "background") return document;
+  const keys = Object.keys(watchStylingReset(task));
+  return editTile(document, pageId, tileId, (tile) => keys.reduce((next, key) => withoutKey(next, key), tile));
+}
+
+/** Whether a tile holds any key of a task: what a rule's style shows the
+ * "modified" mark and the Reset row for. */
+export function watchTileTaskHeld(tile: WatchPageTile, task: WatchTileStylingTask): boolean {
+  return Object.keys(watchStylingReset(task)).some((key) => Object.hasOwn(tile, key));
+}
+
 /** Whether a task's reset would change the tile: what the "modified" mark
  * of a section shows. */
 export function watchTileTaskModified(tile: WatchPageTile, task: WatchTileStylingTask): boolean {

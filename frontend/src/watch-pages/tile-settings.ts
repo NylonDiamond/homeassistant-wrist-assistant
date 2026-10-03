@@ -35,6 +35,7 @@ import { uiIcon } from "../ui-icons.js";
 import {
   type WatchTileStylingTask,
   clearWatchTileStateOverrides,
+  clearWatchTileTask,
   resetWatchTileState,
   resetWatchTileTask,
   setWatchTileBorderActiveOnly,
@@ -65,6 +66,7 @@ import {
   WATCH_STATE_ROW_SETTERS,
   watchTileStateCards,
   watchTileStateIcons,
+  watchTileTaskHeld,
   watchTileTaskModified,
 } from "./styling-model.js";
 import { watchDecimalOptions, watchStateEmptyText, watchStylingChoices, watchStylingLabel, watchStylingReset, watchStylingSlider } from "./tile-styling.js";
@@ -490,10 +492,13 @@ function kindDefaults(host: TileSettingsHost): { icon: string | undefined; color
 /**
  * The Icon task's Default: writes the kind's default icon and nothing else
  * (a macro tile: its macro's own icon from the catalog, else `link`). Each
- * Default writes only its own key, as on the phone.
+ * Default writes only its own key, as on the phone. On a smart page rule's
+ * style (`host.domainStyle`) it removes the key instead.
  */
 export function watchTileDefaultIconEdit(host: TileSettingsHost): (d: WatchPagesDocument) => WatchPagesDocument {
-  const icon = kindDefaults(host).icon;
+  // A rule's style: Default removes the key, and the watch draws its own
+  // (part 3f batch 3, decision 7).
+  const icon = host.domainStyle === true ? undefined : kindDefaults(host).icon;
   return (d) =>
     icon !== undefined
       ? setWatchTileIcon(d, host.pageId, host.tileId, icon)
@@ -503,10 +508,10 @@ export function watchTileDefaultIconEdit(host: TileSettingsHost): (d: WatchPages
 /**
  * The color's Default: writes the kind's default color and nothing else (a
  * macro tile: its macro's own `colorHex` from the catalog, else
- * `#CCD8E6`).
+ * `#CCD8E6`). On a rule's style it removes the key instead.
  */
 export function watchTileDefaultColorEdit(host: TileSettingsHost): (d: WatchPagesDocument) => WatchPagesDocument {
-  const color = kindDefaults(host).color;
+  const color = host.domainStyle === true ? undefined : kindDefaults(host).color;
   return (d) =>
     color !== undefined
       ? setWatchTileColor(d, host.pageId, host.tileId, color)
@@ -604,7 +609,7 @@ function sectionSummary(host: TileSettingsHost, section: WatchTileSettingsSectio
     case "size":
       return "";
     case "state":
-      return watchTileTaskModified(tile, "state") ? "Changed" : "";
+      return taskModified(host, "state") ? "Changed" : "";
     case "border": {
       const b = watchTileBorderSettings(tile);
       if (tileKind(tileEntityId(tile)) === "spacer") return watchStylingLabel("borderThickness", b.thickness);
@@ -871,7 +876,8 @@ function renderIcon(host: TileSettingsHost): TemplateResult {
   const shown = s.icon === undefined ? defaults.icon : s.icon === "" ? undefined : s.icon;
   const ink = watchColorEnds(s.color)?.from ?? "#FFFFFF";
   const glyph = shown === undefined ? undefined : host.icons.render(shown, 26, ink);
-  const atDefaultIcon = s.icon === undefined || (defaults.icon !== undefined && s.icon === defaults.icon);
+  // A rule's style is at its default only with no icon of its own.
+  const atDefaultIcon = s.icon === undefined || (host.domainStyle !== true && defaults.icon !== undefined && s.icon === defaults.icon);
 
   const setIcon = (name: string) => {
     const picked = gridPick;
@@ -902,7 +908,7 @@ function renderIcon(host: TileSettingsHost): TemplateResult {
     <div class="ts-chips" role="group" aria-label="Icon">
       <button type="button" class="pe-chip ${s.icon === "" ? "on" : ""}" aria-pressed=${s.icon === "" ? "true" : "false"} @click=${noIcon}>No icon</button>
       <button type="button" class="pe-chip ${atDefaultIcon && s.icon !== "" ? "on" : ""}" aria-pressed=${atDefaultIcon && s.icon !== "" ? "true" : "false"}
-        title=${defaults.icon === undefined ? "The watch picks the icon" : `The default for this kind of tile: ${defaults.icon}`}
+        title=${host.domainStyle === true ? "No icon of its own: the watch draws its default" : defaults.icon === undefined ? "The watch picks the icon" : `The default for this kind of tile: ${defaults.icon}`}
         @click=${defaultIcon}>Default</button>
     </div>
     <div class="ts-symbol" @click=${{
@@ -966,7 +972,8 @@ function renderTileColor(host: TileSettingsHost, defaultColor: string | undefine
   };
   // No color stored draws the theme's color for the kind, which is what
   // Default writes out.
-  const atDefault = color === undefined || (defaultColor !== undefined && sameWatchColor(color, defaultColor));
+  // A rule's style only with no color of its own.
+  const atDefault = color === undefined || (host.domainStyle !== true && defaultColor !== undefined && sameWatchColor(color, defaultColor));
   const resetColor = () => commit(host, "color", watchTileDefaultColorEdit(host));
   const typedHex = typed(host, "color");
   return html`
@@ -978,7 +985,7 @@ function renderTileColor(host: TileSettingsHost, defaultColor: string | undefine
     ${typingField(host, "color", html`<div class="ts-no-alpha">${colorField("Custom", typedHex ?? watchCustomBoxColor(color), custom)}</div>`)}
     <div class="ts-after">
       <button type="button" class="pe-chip ${atDefault ? "on" : ""}" aria-pressed=${atDefault ? "true" : "false"}
-        title=${defaultColor === undefined ? "No color of its own: the watch picks one" : `The theme's color for this kind of tile: ${defaultColor}`}
+        title=${defaultColor === undefined || host.domainStyle === true ? "No color of its own: the watch picks one" : `The theme's color for this kind of tile: ${defaultColor}`}
         @click=${resetColor}>Default color</button>
     </div>`;
 }
@@ -1272,11 +1279,22 @@ function resetValue(task: WatchTileStylingTask, key: string): unknown {
   return watchStylingReset(task)[key];
 }
 
-/** A task's Reset, shown while the reset would change the tile. */
+/** Whether a task's Reset is offered and its section reads "Changed": on a
+ * tile while the reset would change it, on a rule's style while the style
+ * holds one of the task's keys. */
+function taskModified(host: TileSettingsHost, task: WatchTileStylingTask): boolean {
+  return host.domainStyle === true ? watchTileTaskHeld(host.tile, task) : watchTileTaskModified(host.tile, task);
+}
+
+/** A task's Reset, shown while `taskModified`. On a tile it writes the
+ * phone's reset values; on a rule's style it removes the task's keys, so
+ * each reads as the watch's own default. */
 function resetRow(host: TileSettingsHost, task: WatchTileStylingTask, words: string): TemplateResult | typeof nothing {
-  if (!watchTileTaskModified(host.tile, task)) return nothing;
-  return html`<div class="ts-after ts-reset">${linkButton(`Reset ${words}`, `Put every ${words.toLowerCase()} setting back as the iPhone app's reset does`, () =>
-    commit(host, `reset:${task}`, (d) => resetWatchTileTask(d, host.pageId, host.tileId, task)))}</div>`;
+  if (!taskModified(host, task)) return nothing;
+  const domain = host.domainStyle === true;
+  return html`<div class="ts-after ts-reset">${linkButton(`Reset ${words}`,
+    domain ? `Remove every ${words.toLowerCase()} setting from the rule, so the watch draws its own` : `Put every ${words.toLowerCase()} setting back as the iPhone app's reset does`, () =>
+    commit(host, `reset:${task}`, (d) => (domain ? clearWatchTileTask : resetWatchTileTask)(d, host.pageId, host.tileId, task)))}</div>`;
 }
 
 /**

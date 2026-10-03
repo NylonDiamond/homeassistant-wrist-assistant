@@ -42,6 +42,7 @@ import {
   tileEntityId,
   tileKind,
   tileTarget,
+  watchCapitalized,
   watchPageTiles,
   watchPagesOf,
 } from "./model.js";
@@ -420,52 +421,9 @@ export function watchCalendarColor(entityId: string): string {
 
 // ── labels ───────────────────────────────────────────────────────────────
 
-/** Letters that have a title case form of their own (the Latin digraphs). */
-const TITLE_CASE: Readonly<Record<string, string>> = {
-  "Ǆ": "ǅ",
-  "ǅ": "ǅ",
-  "ǆ": "ǅ",
-  "Ǉ": "ǈ",
-  "ǈ": "ǈ",
-  "ǉ": "ǈ",
-  "Ǌ": "ǋ",
-  "ǋ": "ǋ",
-  "ǌ": "ǋ",
-  "Ǳ": "ǲ",
-  "ǲ": "ǲ",
-  "ǳ": "ǲ",
-};
-
-function titleCase(ch: string): string {
-  const digraph = TITLE_CASE[ch];
-  if (digraph !== undefined) return digraph;
-  const upper = [...ch.toUpperCase()];
-  // "ß" upper cases to "SS"; its title case is "Ss".
-  return upper[0]! + upper.slice(1).join("").toLowerCase();
-}
-
-/**
- * Foundation's `capitalized`, as the label samples show it: a letter right
- * after anything that is not a letter (a space, digit, dot, hyphen, the
- * start) takes its title case, every other letter its lower case. An
- * apostrophe does not end a word ("o'brien" is "O'brien"), and a combining
- * mark counts as a letter. Everything else is kept.
- */
-export function watchCapitalized(text: string): string {
-  let out = "";
-  let inWord = false;
-  for (const ch of text) {
-    if (ch === "'" || ch === "’") {
-      out += ch;
-      continue;
-    }
-    const letter = /^[\p{L}\p{M}]$/u.test(ch);
-    if (letter) out += inWord ? ch.toLowerCase() : titleCase(ch);
-    else out += ch;
-    inWord = letter;
-  }
-  return out;
-}
+/** Foundation's `capitalized` lives in `model.ts`, which the header names
+ * read too; it is offered here as well, where the labels are made. */
+export { watchCapitalized };
 
 /**
  * The label a new entity tile stores (`customLabel`): the friendly name when

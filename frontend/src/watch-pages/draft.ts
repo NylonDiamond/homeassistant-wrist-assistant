@@ -132,6 +132,20 @@ export class WatchPagesDraft {
     return true;
   }
 
+  /**
+   * Makes `next` the document with no undo step of its own and redo kept:
+   * for what a save sends in place of the document (`WatchPagesSaveIO.prepare`),
+   * which `saved` makes the base anyway. An undo after it takes back the
+   * last edit, not the save's tidying. Ends a run of coalesced edits.
+   * Returns whether the document changed.
+   */
+  amend(next: WatchPagesDocument): boolean {
+    this._coalesceKey = undefined;
+    if (next === this._document || sameWatchPagesJson(next, this._document)) return false;
+    this._document = next;
+    return true;
+  }
+
   /** Ends a run of coalesced edits, so the next edit is a step of its own. */
   endCoalesce(): void {
     this._coalesceKey = undefined;
@@ -294,10 +308,10 @@ export interface WatchPagesSaveIO {
   /** Reads the record Home Assistant holds now. */
   fetch(): Promise<{ revision: number; document: unknown }>;
   /** What the document is turned into before each send, as the phone's own
-   * save tidies a page before it writes it. The result, when it differs, is
-   * applied to the draft as a step of its own, so the draft holds what was
-   * sent and is clean after the save. Return the document itself for no
-   * change. */
+   * save tidies a page before it writes it. The result, when it differs,
+   * replaces the draft's document with no undo step (`amend`), so the draft
+   * holds what was sent and is clean after the save, and the first undo
+   * after it takes back an edit. Return the document itself for no change. */
   prepare?(document: WatchPagesDocument): WatchPagesDocument;
 }
 
@@ -383,7 +397,7 @@ async function runSave(draft: WatchPagesDraft, io: WatchPagesSaveIO): Promise<Wa
 
   for (let attempt = 1; ; attempt++) {
     const prepared = io.prepare?.(draft.document);
-    if (prepared !== undefined && prepared !== draft.document) draft.apply(prepared);
+    if (prepared !== undefined && prepared !== draft.document) draft.amend(prepared);
     const sent = draft.document;
     const shape = checkWatchPages(sent);
     const problems = shape.length > 0 ? shape : checkWatchPagesValues(sent);

@@ -10,7 +10,19 @@
 // `smartSettingsStyles` in its sheet. Every edit goes through `commit` with a
 // writer of `smart-model.ts`, read against the document as it is when it
 // commits: each action is one undo step, a run of typing in one field one
-// step. The words come from `tile-smart.json`.
+// step.
+//
+// The phone's words come from `tile-smart.json`, which the Swift side
+// writes. The panel has rows and buttons the phone lacks, and their words
+// are the panel's own, written here: the card's "Rules" heading and strip
+// label, "Header", "Mode", the "N entity"/"N entities" count and the
+// badge's "Entities", "Columns" and "Rows" on the size boxes, the heading's
+// "Up", "Down", "Reset" and "Delete" with their tooltips, "Size", "Search",
+// the Resolve tooltip, the pick's "(not found)", "No ... in Home
+// Assistant" and "N more" lines, the hints under the boxes ("Empty is ...",
+// "Empty takes the page's tile size"), the refusals, "Added" and its
+// reason (`SMART_PRESET_ADDED_REASON`) on Add Domain, and the chip
+// tooltips. A new word goes in the table when the phone shows it too.
 //
 // The per-domain style edits a stand-in tile (`smartStyleStandIn`): a host
 // whose document is the stand-in, whose `apply` writes the keys a setter
@@ -43,7 +55,7 @@ import {
   convertToSmartPage,
   deleteSmartRule,
   disableSmartPage,
-  moveSmartRule,
+  moveSmartRuleBy,
   parseSmartNumber,
   readSmartConfig,
   resetSmartRule,
@@ -76,6 +88,7 @@ import {
   smartPresetAdded,
   smartRuleAfterDelete,
   smartRuleName,
+  smartRulePlace,
   smartRuleUnresolved,
   smartStandInTile,
   smartStyleStandIn,
@@ -426,15 +439,19 @@ function renderRule(host: WatchPagesEditorHost, config: WatchSmartConfig, rule: 
   const R = rule.id;
   const badge = smartCountBadge(rule);
   const name = smartRuleName(rule);
-  const last = config.rules.length - 1;
+  // Up and Down count the document's list, which can hold a rule the view
+  // skips (one without a domain).
+  const place = smartRulePlace(host.page, R);
+  const first = place === undefined || place.index === 0;
+  const last = place === undefined || place.index === place.count - 1;
   return html`
     <div class="sm-rule-h">
       <span class="sm-glyph" aria-hidden="true">${ruleGlyph(host, rule, 18)}</span>
       <span class="sm-rule-name">${name}</span>
-      ${badge === undefined ? nothing : html`<span class="pe-badge sm-badge" title="Entities">${badge}</span>`}
+      ${badge === undefined ? nothing : html`<span class="pe-badge sm-badge" title="Entities" aria-label=${`${badge} entities`}>${badge}</span>`}
       <span class="sm-acts">
-        ${actButton("Up", `Move ${name} up`, host.busy || index === 0, () => commit(rh, "move", (d) => moveSmartRule(d, P, R, index - 1)))}
-        ${actButton("Down", `Move ${name} down`, host.busy || index === last, () => commit(rh, "move", (d) => moveSmartRule(d, P, R, index + 1)))}
+        ${actButton("Up", `Move ${name} up`, host.busy || first, () => commit(rh, "move", (d) => moveSmartRuleBy(d, P, R, -1)))}
+        ${actButton("Down", `Move ${name} down`, host.busy || last, () => commit(rh, "move", (d) => moveSmartRuleBy(d, P, R, 1)))}
         ${actButton("Reset", "The rule's look and filters back as its preset adds it. The mode, picks and device classes stay.", host.busy, () =>
           commit(rh, "reset", (d) => resetSmartRule(d, P, R, smartDomainColorHex(rule.domain, host.page))))}
         ${actButton("Delete", `Delete ${name}. Undo brings it back.`, host.busy, () => smartRuleDeleted(host, R, index))}

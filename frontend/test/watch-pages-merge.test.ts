@@ -831,9 +831,12 @@ describe("checkWatchPagesValues", () => {
     const rule = { id: "6F1C1E0A-0000-4000-8000-00000000000C", domain: "light", mode: "all", entityIds: [], invertActive: false, header: "label" };
     const config = (rules: unknown[], extra: Record<string, unknown> = {}) => ({ dynamicConfig: { ...FULL_DYNAMIC_CONFIG, ...extra, rules } });
     expect(checkWatchPagesValues(withTile({}, config([rule])))).toEqual([]);
-    // A rule without a domain, or with one that is not text.
-    expect(checkWatchPagesValues(withTile({}, config([rule, { ...rule, domain: undefined }])))).toEqual([`${where} 2: domain is missing.`]);
-    expect(checkWatchPagesValues(withTile({}, config([{ ...rule, domain: 3 }])))).toEqual([`${where} 1: domain is not text.`]);
+    // A rule without a domain, or with one that is not text, or no rule at
+    // all: the Rules card skips it, so the message says how to remove it.
+    const hint = "Turn Smart page off and on, or delete the rule on the iPhone.";
+    expect(checkWatchPagesValues(withTile({}, config([rule, { ...rule, domain: undefined }])))).toEqual([`${where} 2: domain is missing. ${hint}`]);
+    expect(checkWatchPagesValues(withTile({}, config([{ ...rule, domain: 3 }])))).toEqual([`${where} 1: domain is not text. ${hint}`]);
+    expect(checkWatchPagesValues(withTile({}, config([rule, "light"])))).toEqual([`${where} 2 is not an object. ${hint}`]);
     // The batch 2 checks apply inside: an enum, a UUID, a tileStyle enum.
     expect(checkWatchPagesValues(withTile({}, config([rule], { sortOrder: "byName" })))).toEqual([
       'Page 1 ("Home"): dynamicConfig: sortOrder holds "byName", which is not one of its choices.',

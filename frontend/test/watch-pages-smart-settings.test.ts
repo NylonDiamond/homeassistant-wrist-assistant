@@ -15,6 +15,7 @@ import type { HassEntityState } from "../src/ha-api.js";
 import type { IconProvider } from "../src/renderer.js";
 import { SymbolBrowser } from "../src/symbols.js";
 import { type WatchPagesApplyOptions, WatchPagesDraft } from "../src/watch-pages/draft.js";
+import { checkWatchPagesValues } from "../src/watch-pages/merge.js";
 import type { WatchPagesEditorHost } from "../src/watch-pages/editor-host.js";
 import type { JsonObject, WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-pages/model.js";
 import { tileLabel } from "../src/watch-pages/model.js";
@@ -436,6 +437,25 @@ describe("a rule's rows", () => {
     s.draft.undo();
     expect(s.config()!.rules.map((r) => r.id)).toEqual([R1, R3, R2]);
   });
+
+  it("moves by the document's places when a rule without a domain sits between", () => {
+    const skipped = { id: "55555555-0000-4000-8000-000000000005", header: "label", mode: "all" };
+    const s = setup(smartPage([LIGHTS, skipped, DOORS]));
+    const ids = () => ((s.page().dynamicConfig as JsonObject).rules as JsonObject[]).map((r) => r.id);
+    s.host.selectSmartRule(R2);
+    click(renderSmartRulesCard(s.host), ">Up<");
+    expect(ids()).toEqual([R1, R2, skipped.id]);
+    click(renderSmartRulesCard(s.host), ">Up<");
+    expect(ids()).toEqual([R2, R1, skipped.id]);
+    // First in the document: Up is off.
+    expect(flatten(renderSmartRulesCard(s.host))).toContain("title=Move Doors up ?disabled=true");
+    expect(flatten(renderSmartRulesCard(s.host))).toContain("title=Move Doors down ?disabled=false");
+  });
+
+  it("reads the count badge as a number of entities", () => {
+    const s = setup(smartPage([LIGHTS]));
+    expect(flatten(renderSmartRulesCard(s.host))).toContain("aria-label=3 entities>3</span>");
+  });
 });
 
 describe("a rule's Header", () => {
@@ -479,15 +499,19 @@ describe("a rule's Header", () => {
 const ALLOWED = new Set<string>((tileSmart as { domainStyle: { keys: string[] } }).domainStyle.keys);
 
 /** Presses every control the style sections draw (each handler with a
- * stand-in event that turns a switch both ways, picks, types and clicks)
- * and returns the stand-in tile keys each edit changed. */
+ * stand-in event that turns a switch both ways, picks, types and clicks),
+ * each through the real adapter into the draft, and returns the stand-in
+ * tile keys each edit changed and what `checkWatchPagesValues` found in the
+ * document after any edit (a value the `DomainTileStyle` decoder refuses). */
 function pressEverything(s: ReturnType<typeof setup>, ruleId: string, sections: ReturnType<typeof watchDomainStyleSections>) {
   const changed = new Set<string>();
+  const problems: string[] = [];
   let edits = 0;
   const style = smartStyleHost(s.host, ruleId);
   for (const section of sections) style.uiState.set(`tile-settings:open:${section}`, true);
-  // Watch what each setter did to the stand-in, before the adapter keeps
-  // only the style keys.
+  const adapter = style.apply;
+  // Watch what each setter did to the stand-in, then hand it to the
+  // adapter, which keeps only the style keys.
   Object.defineProperty(style, "apply", {
     get: () => (next: WatchPagesDocument, options?: WatchPagesApplyOptions) => {
       const before = style.tile as JsonObject;
@@ -496,7 +520,9 @@ function pressEverything(s: ReturnType<typeof setup>, ruleId: string, sections: 
         if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) changed.add(key);
       }
       edits++;
-      return false;
+      const applied = adapter(next, options);
+      problems.push(...checkWatchPagesValues(s.draft.document));
+      return applied;
     },
   });
   const events = [
@@ -518,23 +544,25 @@ function pressEverything(s: ReturnType<typeof setup>, ruleId: string, sections: 
       }
     });
   }
-  return { changed, edits };
+  return { changed, edits, problems };
 }
 
 describe("a rule's style through the stand-in tile", () => {
-  it("writes only keys a rule's tileStyle holds, from every control drawn", () => {
+  it("writes only keys a rule's tileStyle holds, and only values the phone reads, from every control drawn", () => {
     const rules = [
-      { id: R1, domain: "light", tileStyle: { borderStyle: "line", tileAnimation: "shimmer", backgroundPattern: "dots" } },
-      { id: R2, domain: "climate", tileStyle: { borderStyle: "animate", borderAnimation: "pulse" } },
+      { id: R1, domain: "light", tileStyle: { borderStyle: "line", tileAnimation: "aurora", backgroundPattern: "dots", color: "#FFCC00", icon: "lightbulb" } },
+      { id: R2, domain: "climate", tileStyle: { borderStyle: "animate", borderAnimation: "pulse", statusTextShadow: false } },
       { id: R3, domain: "automation", tileStyle: {} },
-      { id: R4, domain: "media_player", tileStyle: { requiresConfirmation: true } },
+      { id: R4, domain: "media_player", tileStyle: { requiresConfirmation: true, overlayStyle: "rain" } },
     ];
     let total = 0;
     const all = new Set<string>();
     for (const r of rules) {
       const s = setup(smartPage([ruleOf(r.id, r.domain, { tileStyle: r.tileStyle })]));
-      const { changed, edits } = pressEverything(s, r.id, watchDomainStyleSections(true));
+      expect(checkWatchPagesValues(s.draft.document), `${r.domain} before`).toEqual([]);
+      const { changed, edits, problems } = pressEverything(s, r.id, watchDomainStyleSections(true));
       total += edits;
+      expect(problems, r.domain).toEqual([]);
       for (const key of changed) {
         all.add(key);
         expect(ALLOWED.has(key), `${r.domain}: ${key}`).toBe(true);
@@ -565,6 +593,50 @@ describe("a rule's style through the stand-in tile", () => {
     expect((s.rule(R1).tileStyle as JsonObject).labelShadow).toBe(false);
     s.draft.undo();
     expect(Object.hasOwn(s.rule(R1).tileStyle as JsonObject, "labelShadow")).toBe(false);
+  });
+
+  it("Default icon and Default color remove the key, and light only while it is absent", () => {
+    const s = setup(smartPage([ruleOf(R1, "light", { tileStyle: { color: "#FFCC00", icon: "lightbulb", iconShadow: true } })]));
+    const style = smartStyleHost(s.host, R1);
+    style.uiState.set("tile-settings:open:icon", true);
+    const view = () => renderTileSettings(style, { sections: ["icon"] });
+    const lit = (words: string) => new RegExp(`class="pe-chip on" aria-pressed=true[^>]*>${words}<`).test(flatten(view()));
+    // The kind's add icon is still the rule's own: not lit.
+    expect(lit("Default")).toBe(false);
+    expect(lit("Default color")).toBe(false);
+    click(view(), ">Default<");
+    expect(s.rule(R1).tileStyle).toEqual({ color: "#FFCC00", iconShadow: true });
+    expect(lit("Default")).toBe(true);
+    click(view(), ">Default color<");
+    expect(s.rule(R1).tileStyle).toEqual({ iconShadow: true });
+    expect(lit("Default color")).toBe(true);
+    expect(checkWatchPagesValues(s.draft.document)).toEqual([]);
+    s.draft.undo();
+    expect((s.rule(R1).tileStyle as JsonObject).color).toBe("#FFCC00");
+  });
+
+  it("a section Reset removes the section's keys, shown only while the style holds one", () => {
+    const s = setup(smartPage([ruleOf(R1, "light", { tileStyle: { borderStyle: "animate", borderGlow: 0.5, statusTextShadow: false, color: "#FFCC00" } })]));
+    const style = smartStyleHost(s.host, R1);
+    for (const section of ["state", "border", "background"]) style.uiState.set(`tile-settings:open:${section}`, true);
+    const view = () => flatten(renderTileSettings(style, { sections: ["state", "border", "background"] }));
+    expect(view()).toContain("Reset State");
+    expect(view()).toContain("Reset Border");
+    // Nothing of the background in the style: no row.
+    expect(view()).not.toContain("Reset Background");
+    click(renderTileSettings(style, { sections: ["state", "border", "background"] }), "Reset Border");
+    expect(s.rule(R1).tileStyle).toEqual({ color: "#FFCC00", statusTextShadow: false });
+    click(renderTileSettings(style, { sections: ["state", "border", "background"] }), "Reset State");
+    expect(s.rule(R1).tileStyle).toEqual({ color: "#FFCC00" });
+    expect(view()).not.toContain("Reset State");
+    expect(view()).not.toContain("Reset Border");
+    expect(checkWatchPagesValues(s.draft.document)).toEqual([]);
+    // A fresh rule reads no "Changed" on its folded State section.
+    style.uiState.set("tile-settings:open:state", false);
+    expect(flatten(renderTileSettings(style, { sections: ["state"] }))).not.toContain("Changed");
+    style.uiState.set("tile-settings:open:state", true);
+    s.draft.undo();
+    expect((s.rule(R1).tileStyle as JsonObject).statusTextShadow).toBe(false);
   });
 
   it("draws Size before Background with the domain presets and Page size", () => {
@@ -603,8 +675,27 @@ describe("the stage of a smart page", () => {
     expect(text.match(/class=wp-smart-item \s/g)?.length).toBe(3); // the lights' header and two tiles
     expect(text.match(/class=wp-smart-item dim/g)?.length).toBe(2); // the doors' header and one tile
     expect(text).toContain("data-rule=1");
+    // The selected rule's tiles are announced as pressed.
+    expect(text.match(/aria-pressed=true/g)?.length).toBe(3);
+    expect(text.match(/aria-pressed=false/g)?.length).toBe(2);
     handler(tree, "front door")({ stopPropagation() {} });
     expect(picked).toEqual([1]);
+  });
+
+  it("dims by domain: the second of two rules on one domain lights them all, and a click keeps it", () => {
+    const doors = { ...DOORS, resolvedEntityIds: ["binary_sensor.front_door", "binary_sensor.hall_window"] };
+    const windows = ruleOf(R3, "binary_sensor", { deviceClassFilter: ["window"], headerLabel: "Windows", resolvedEntityIds: ["binary_sensor.front_door", "binary_sensor.hall_window"], invertActive: true });
+    const page = smartPage([LIGHTS, doors, windows]);
+    const picked: number[] = [];
+    const tree = renderWatchPagePreview({ page, pages: [page], screen, states: STATES, smart: { rule: 2, pick: (i) => picked.push(i) } });
+    const text = flatten(tree);
+    // Only the lights draw faint: their header and two tiles.
+    expect(text.match(/class=wp-smart-item dim/g)?.length).toBe(3);
+    expect(text).not.toMatch(/class=wp-smart-item dim[^>]*data-rule=1/);
+    handler(tree, "front door")({ stopPropagation() {} });
+    expect(picked).toEqual([2]);
+    handler(tree, "desk")({ stopPropagation() {} });
+    expect(picked).toEqual([2, 0]);
   });
 
   it("with no active entity shows All Off, bold, and what the page tracks", () => {

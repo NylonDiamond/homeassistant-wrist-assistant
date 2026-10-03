@@ -632,6 +632,44 @@ describe("a save that tidies the document first", () => {
     expect(draft.dirty).toBe(false);
   });
 
+  it("adds no undo step: the depth after the save is the depth before, and undo takes back the edit", async () => {
+    const draft = new WatchPagesDraft(document(), 3);
+    const pages = draft.document.pages as JsonObject[];
+    const original = pages[0]!.name;
+    draft.apply({ ...draft.document, pages: [{ ...pages[0]!, name: "Den" }] });
+    const depth = draft.undoDepth;
+    const tidy = (d: WatchPagesDocument): WatchPagesDocument => {
+      const first = (d.pages as JsonObject[])[0]!;
+      return first.name === "Den" ? { ...d, pages: [{ ...first, name: "Den tidy" }] } : d;
+    };
+    const result = await saveWatchPagesDraft(draft, { prepare: tidy, save: async () => ({ revision: 4 }), fetch: async () => ({ revision: 4, document: document() }) });
+    expect(result.ok).toBe(true);
+    expect(draft.undoDepth).toBe(depth);
+    draft.undo();
+    expect((draft.document.pages as JsonObject[])[0]!.name).toBe(original);
+    expect(draft.canUndo).toBe(false);
+  });
+
+  it("amend replaces the document with no undo step, keeps redo, and ends a run of typing", () => {
+    const draft = new WatchPagesDraft(document(), 3);
+    const pages = draft.document.pages as JsonObject[];
+    const named = (name: string) => ({ ...draft.document, pages: [{ ...pages[0]!, name }] });
+    draft.apply(named("A"));
+    draft.apply(named("B"));
+    draft.undo();
+    expect(draft.amend(named("A tidy"))).toBe(true);
+    expect(draft.undoDepth).toBe(1);
+    expect(draft.redoDepth).toBe(1);
+    expect(draft.amend(named("A tidy"))).toBe(false);
+    // In a run of typing: amend ends it, so the next edit with the run's
+    // key is a step of its own.
+    draft.apply(named("C"), { coalesce: "name" });
+    expect(draft.undoDepth).toBe(2);
+    draft.amend(named("C tidy"));
+    draft.apply(named("D"), { coalesce: "name" });
+    expect(draft.undoDepth).toBe(3);
+  });
+
   it("changes nothing when the tidy has nothing to do", async () => {
     const draft = new WatchPagesDraft(document(), 3);
     draft.apply({ ...draft.document, extra: 1 });

@@ -770,6 +770,17 @@ const WATCH_INT_MAX = 2 ** 31 - 1;
  * default (`DynamicPageConfig`'s eight keys). */
 const EVERY_REQUIRED_KEY_TYPES: ReadonlySet<string> = new Set(["dynamicPage"]);
 
+/** What to do about a smart page rule the panel cannot show (no domain as
+ * text, or no object at all), which the Rules card skips and so cannot
+ * delete. */
+const SKIPPED_RULE_HINT = "Turn Smart page off and on, or delete the rule on the iPhone.";
+
+/** Whether a problem with `key` of a `typeName` object (an element of it
+ * when `element`) is one with a rule the Rules card skips. */
+function skippedRule(typeName: string, key: string, element: boolean): boolean {
+  return (typeName === "domainRule" && key === "domain") || (typeName === "dynamicPage" && key === "rules" && element);
+}
+
 /** The color names older documents can hold (`page-keys.json` notes). */
 const COLOR_NAMES: ReadonlySet<string> = new Set(["yellow", "blue", "red", "green", "purple", "orange", "white"]);
 
@@ -838,14 +849,16 @@ function checkObjectValues(typeName: string, object: JsonObject, where: string, 
     if (key === ITEMS_KEY && typeName === "page") continue;
     const value = present(own(object, key));
     if (value === undefined) {
-      if (nested && spec.required === true && (everyRequired || !Object.hasOwn(spec, "default"))) problems.push(`${where}: ${key} is missing.`);
+      if (nested && spec.required === true && (everyRequired || !Object.hasOwn(spec, "default"))) {
+        problems.push(`${where}: ${key} is missing.${skippedRule(typeName, key, false) ? ` ${SKIPPED_RULE_HINT}` : ""}`);
+      }
       continue;
     }
     // `part` names an element after the key: ", entry 2".
     const check = (type: string, element: unknown, part: string): boolean => {
       const at = `${where}: ${key}${part}`;
       const problem = valueProblem(type, spec, element, at, problems);
-      if (problem !== undefined) problems.push(`${at} ${problem}.`);
+      if (problem !== undefined) problems.push(`${at} ${problem}.${skippedRule(typeName, key, part !== "") ? ` ${SKIPPED_RULE_HINT}` : ""}`);
       return problem === undefined;
     };
     const fail = (problem: string) => problems.push(`${where}: ${key} ${problem}.`);
@@ -889,7 +902,8 @@ function tileLabel(index: number, tile: JsonObject): string {
  * slide map, and inside an object entry (a music hub preset, a smart page's
  * rule) every required key that has no default. A smart page's
  * `dynamicConfig` must hold all eight of its keys, and its rules, their
- * `tileStyle` included, are checked key by key like a tile. Keys it does not
+ * `tileStyle` included, are checked key by key like a tile; a rule the
+ * Rules card cannot show says how to get rid of it. Keys it does not
  * know, and `null`, are left alone, as the phone leaves them. Run over the
  * whole document before a save, after `checkWatchPages`.
  */

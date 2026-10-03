@@ -1492,7 +1492,7 @@ export function renderWatchPagePreview(input: WatchPagePreviewInput): TemplateRe
  * A smart page as the watch fills it (part 3f batch 3): the synthetic page
  * from Home Assistant's states, its tiles plain tiles drawn as any other,
  * each in a box of its own (a button when `input.smart.pick` is given) that
- * draws at 30% when another rule is selected. With no active entity, the
+ * draws at 30% when the selected rule is of another domain. With no active entity, the
  * watch's empty state: "All Off" and what the page tracks.
  */
 function renderSmartPreview(input: WatchPagePreviewInput): TemplateResult {
@@ -1520,16 +1520,23 @@ function renderSmartPreview(input: WatchPagePreviewInput): TemplateResult {
   }
   const selected = input.smart?.rule;
   const pick = input.smart?.pick;
+  // By domain, as the phone dims: the watch draws every group of a domain
+  // with its first rule, so a second rule on the domain lights them all.
+  const selectedDomain = selected === undefined ? undefined : config.rules[selected]?.domain;
   const tile = (placed: PlacedWatchTile): TemplateResult => {
     const index = smartRuleIndexForTile(config, placed.tile);
-    const dim = selected !== undefined && index !== selected;
+    const domain = index === undefined ? undefined : config.rules[index]?.domain;
+    const dim = selected !== undefined && (domain === undefined || domain !== selectedDomain);
     const box = `left:${placed.x * s}px;top:${(layout.topInset + placed.y) * s}px;width:${placed.width * s}px;height:${placed.height * s}px`;
     const face = tileFace(placed.tile, placed.width, placed.height, "inset:0;", input, layout.unit, s, pick === undefined);
     const cls = `wp-smart-item ${dim ? "dim" : ""}`;
     if (pick === undefined || index === undefined) return html`<div class=${cls} style=${box}>${face}</div>`;
     const label = watchPreviewTileLabel(placed.tile, input);
+    // A click on a tile of the selected rule's domain keeps that rule.
+    const target = selected !== undefined && !dim ? selected : index;
     return html`<button type="button" class=${cls} style=${box} data-rule=${index}
-      aria-label=${label} title=${label} @click=${(e: Event) => { e.stopPropagation(); pick(index); }}>${face}</button>`;
+      aria-label=${label} title=${label} aria-pressed=${selected !== undefined && !dim ? "true" : "false"}
+      @click=${(e: Event) => { e.stopPropagation(); pick(target); }}>${face}</button>`;
   };
   return html`<div class="wp-screen" role="group" aria-label=${`Preview of ${name}`}
     style=${`width:${width}px;height:${layout.height * s}px;background:${watchScreenBackground(page, s)}`}>
