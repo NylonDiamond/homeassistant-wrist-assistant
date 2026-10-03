@@ -271,6 +271,10 @@ export function watchName(watch: OwnerSummary, watches: readonly OwnerSummary[])
   return shared && watch.paired_iphone_name ? `${name} (${watch.paired_iphone_name})` : name;
 }
 
+/** What Watch settings and the page editor say when Home Assistant holds
+ * nothing from the watch yet: where the iPhone app's switch is. */
+export const NO_RECORD_TEXT = "Open the iPhone app, then turn on Edit pages in Home Assistant under Settings, Pages in Home Assistant.";
+
 /** The watch the view opens on: the one being edited when it is a watch,
  * else the first. Undefined when the home has none. */
 export function initialWatch(watches: readonly OwnerSummary[], current: string | undefined): string | undefined {

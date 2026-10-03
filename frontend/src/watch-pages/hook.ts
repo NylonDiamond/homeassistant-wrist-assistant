@@ -29,6 +29,24 @@ export function isWatchPagesRoute(route: PanelRoute | undefined): boolean {
   return path === WATCH_PAGES_PATH || path.startsWith(`${WATCH_PAGES_PATH}/`);
 }
 
+/** The watch a link opens the editor on: `/pages/<owner_watch_id>`, as the
+ * iPhone app's "Open in Home Assistant" builds it. Only the first segment
+ * after `/pages/` counts. None, or one that does not decode, gives nothing,
+ * and the editor makes its usual pick. */
+export function watchPagesRouteOwner(route: PanelRoute | undefined): string | undefined {
+  const path = route?.path ?? "";
+  const lead = `${WATCH_PAGES_PATH}/`;
+  if (!path.startsWith(lead)) return undefined;
+  const segment = path.slice(lead.length).split("/")[0] ?? "";
+  if (segment === "") return undefined;
+  try {
+    const owner = decodeURIComponent(segment);
+    return owner === "" ? undefined : owner;
+  } catch {
+    return undefined;
+  }
+}
+
 /** The panel's own address, with or without the editor's sub-path. Without a
  * route (a frontend that does not pass one) it is worked out from the
  * address bar. */

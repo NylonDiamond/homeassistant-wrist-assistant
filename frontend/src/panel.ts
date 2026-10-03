@@ -407,7 +407,7 @@ import {
   formRowStyles,
   formSegStyles,
 } from "./form-styles.js";
-import { type PanelRoute, dropWatchPagesDrafts, isWatchPagesRoute, navigateWatchPages, renderWatchPagesButton, renderWatchPagesView, watchPagesDirty, watchPagesHookStyles } from "./watch-pages/hook.js";
+import { type PanelRoute, dropWatchPagesDrafts, isWatchPagesRoute, navigateWatchPages, renderWatchPagesButton, renderWatchPagesView, watchPagesDirty, watchPagesHookStyles, watchPagesRouteOwner } from "./watch-pages/hook.js";
 import {
   FIRST_RUN_TILES, ZOOM_FIT, ZOOM_MAX, ZOOM_MIN, anySnap, pickGridStep, runFirstRunTile, slotWord, snapSwitchOn,
   stageReserve, toggleSnap, zoomIn, zoomLabel, zoomOut, type FirstRunTile, type SnapFlags, type SnapSwitch,
@@ -11341,9 +11341,10 @@ export class WristAssistantPanel extends LitElement {
   override render() {
     // The page editor takes the panel's place. An open draft stays as it is
     // under it, and the leave guards still cover it.
+    // A link to `/pages/<owner_watch_id>` opens it on that watch.
     if (isWatchPagesRoute(this.route)) {
       return renderWatchPagesView({
-        hass: this.hass, owners: this.owners, ownerId: this.ownerId, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
+        hass: this.hass, owners: this.owners, ownerId: watchPagesRouteOwner(this.route) ?? this.ownerId, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
         menu: this.narrow || this.hass.dockedSidebar === "always_hidden",
         onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
         onBack: () => navigateWatchPages(this.route, false),

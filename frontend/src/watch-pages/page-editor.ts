@@ -75,7 +75,7 @@ import { type IconProvider, REFERENCE_CASE, caseForScreenSize } from "../rendere
 import { agoWords } from "../send-state.js";
 import { SymbolBrowser } from "../symbols.js";
 import { uiIcon } from "../ui-icons.js";
-import { deliveryState, initialWatch, rejectedNow, settingsWatches, watchName } from "../watch-settings.js";
+import { NO_RECORD_TEXT, deliveryState, initialWatch, rejectedNow, settingsWatches, watchName } from "../watch-settings.js";
 import { addTileStyles, renderAddTile } from "./add-tile.js";
 import { type WatchCatalog, watchCatalogEventIsNews, watchCatalogFromRecord, watchCatalogReadMeansNone } from "./catalog.js";
 import { type WatchPagesApplyOptions, type WatchPagesDraft, saveWatchPagesDraft } from "./draft.js";
@@ -202,8 +202,6 @@ const DELIVERY_POLL_MS = 15_000;
 
 /** The keys held back while a number is dragged (`onKeyDown`). */
 const SCRUB_HELD_KEYS: ReadonlySet<string> = new Set(["Escape", "Delete", "Backspace", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
-
-const NO_RECORD_TEXT = "Open the iPhone app once with Save pages to Home Assistant turned on.";
 
 const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const MOD = IS_MAC ? "⌘" : "Ctrl+";

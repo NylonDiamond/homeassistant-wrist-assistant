@@ -52,7 +52,7 @@ export function watchPagesSaveNote(result: WatchPagesSaveResult): WatchPagesNote
     case "no_record":
       return {
         kind: "warn",
-        text: "Not saved. Home Assistant no longer holds pages for this watch. Open the iPhone app once with Save pages to Home Assistant turned on, then save again.",
+        text: "Not saved. Home Assistant no longer holds pages for this watch. Open the iPhone app with Edit pages in Home Assistant turned on, then save again.",
       };
     case "invalid": {
       const problems = result.problems ?? [];

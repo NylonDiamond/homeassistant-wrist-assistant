@@ -25,6 +25,7 @@ import {
   type CatalogSection,
   type CatalogSetting,
   type SettingValue,
+  NO_RECORD_TEXT,
   WATCH_SETTINGS_CATALOG,
   buildSaveDocument,
   conflictRevision,
@@ -51,9 +52,6 @@ const SECTION_LOOK: Record<string, { icon: UiIconName; color: string }> = {
   navigation: { icon: "pages", color: SECTION_COLOR.numbers },
   camera: { icon: "image", color: SECTION_COLOR.look },
 };
-
-/** What the plan asks the view to say when the watch has no record yet. */
-const NO_RECORD_TEXT = "Open the iPhone app once and turn on Save pages to Home Assistant in Developer settings.";
 
 interface Note {
   text: string;

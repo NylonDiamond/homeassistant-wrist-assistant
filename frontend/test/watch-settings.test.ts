@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import type { OwnerSummary } from "../src/ha-api.js";
 import {
   type CatalogSetting,
+  NO_RECORD_TEXT,
   WATCH_SETTINGS_CATALOG,
   buildSaveDocument,
   catalogSettings,
@@ -297,5 +298,17 @@ describe("which devices the view offers", () => {
     expect(initialWatch(watches, "p1")).toBe("w1");
     expect(initialWatch(watches, undefined)).toBe("w1");
     expect(initialWatch([], "w1")).toBeUndefined();
+  });
+
+  it("opens on an unknown watch a link names as it would with none", () => {
+    const watches = settingsWatches(owners);
+    expect(initialWatch(watches, "gone")).toBe("w1");
+  });
+});
+
+describe("a watch with nothing in Home Assistant yet", () => {
+  it("points at the iPhone app's own switch, by its current name and place", () => {
+    expect(NO_RECORD_TEXT).toBe("Open the iPhone app, then turn on Edit pages in Home Assistant under Settings, Pages in Home Assistant.");
+    expect(NO_RECORD_TEXT).not.toMatch(/Developer|Save pages to Home Assistant/);
   });
 });
