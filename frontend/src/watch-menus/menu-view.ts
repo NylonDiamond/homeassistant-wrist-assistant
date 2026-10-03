@@ -464,7 +464,7 @@ function renderSlotEditor(host: MenusViewHost, ref: MenuListRef, slot: JsonObjec
       <span class="me-gap"></span>
       <button type="button" class="pe-btn pe-danger" @click=${() => host.edit((d) => removeWatchMenuSlot(d, ref, id))}>Remove</button>
     </div>
-    ${spec === undefined ? html`<div class="hint warn">A newer app wrote this action. The watch shows Sync Needed until the iPhone sends it again. Pick another action to replace it.</div>` : nothing}
+    ${spec === undefined ? html`<div class="hint warn">A newer app wrote this action. A watch with an older app shows Sync Needed for it until the app is updated. Pick another action to replace it.</div>` : nothing}
     ${selectField("Place", position, positions, (v) => host.edit((d) => moveWatchMenuSlot(d, ref, id, v)), { snapBack: true })}
     ${checkField("Shown", slot.isVisible !== false, (v) => host.edit((d) => setWatchMenuSlotVisible(d, ref, id, v)), true)}
     ${actionSelect(host, ref, slot)}

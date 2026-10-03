@@ -1,8 +1,10 @@
 // The Watch settings view's thinking, without its drawing.
 //
-// A watch's behavior settings are one JSON document, the one the iPhone app
-// encodes for `WCBehaviorPreferences` and keeps a copy of in Home Assistant.
-// The panel edits a few of its keys: the simple ones the catalog lists. The
+// A watch's behavior settings are one JSON document, the app's
+// `WCBehaviorPreferences`. Home Assistant keeps it: the iPhone app sends its
+// copy, or the panel makes the first one (`watchBehaviorDefaults`), and the
+// watch reads it from there. The panel edits a few of its keys: the simple
+// ones the catalog lists. The
 // catalog (`watch-settings-catalog.json`) is shared with the app, whose test
 // checks every key and option in it against the Swift types, so this file
 // never names a setting itself. It only knows the four kinds of row.
@@ -22,6 +24,7 @@
 import catalogJson from "./watch-settings-catalog.json";
 import type { OwnerSummary, WatchConfigRecord } from "./ha-api.js";
 import { deviceKindOf } from "./version.js";
+import { watchCommandError } from "./watch-pages/save-note.js";
 
 export type SettingValue = string | boolean;
 
@@ -214,8 +217,9 @@ export function optionsFor(setting: CatalogSetting, value: SettingValue): Settin
 /** Where a saved document has got to. `none`: the watch has no record. */
 export type DeliveryState = "none" | "waiting" | "delivered";
 
-/** The phone has a revision once a signed read has carried it to the phone
- * (or the phone wrote it), which the store records as `delivered_revision`. */
+/** A device has a revision once a signed read has carried it there (the
+ * watch's own check, or the iPhone's), or the iPhone wrote it, which the
+ * store records as `delivered_revision`. */
 export function deliveryState(record: Pick<WatchConfigRecord, "revision" | "delivered_revision"> | undefined): DeliveryState {
   if (record === undefined || record.revision <= 0) return "none";
   return record.delivered_revision >= record.revision ? "delivered" : "waiting";
@@ -228,6 +232,18 @@ export function rejectedNow(record: Pick<WatchConfigRecord, "revision" | "reject
   if (record === undefined || record.revision <= 0) return false;
   return record.rejected_revision === record.revision;
 }
+
+/** Who saved a record, for the head lines: "saved here" for the panel, else
+ * "from the watch" (the writer signed as the watch's own pair, whether the
+ * watch or its iPhone sent it). Lower case; the caller capitalises. */
+export function savedByWords(updatedBy: string | null | undefined): string {
+  return updatedBy === "panel" ? "saved here" : "from the watch";
+}
+
+/** The pill and its help line while a save waits for a device. */
+export const WAITING_PILL_TEXT = "Waiting to be collected";
+export const COLLECTED_PILL_TEXT = "Collected";
+export const WAITING_HELP_TEXT = "The watch picks it up the next time it checks, or the iPhone passes it on.";
 
 /** The code of a WebSocket error, such as `conflict` or `no_record`. */
 export function errorCode(err: unknown): string | undefined {
@@ -271,9 +287,138 @@ export function watchName(watch: OwnerSummary, watches: readonly OwnerSummary[])
   return shared && watch.paired_iphone_name ? `${name} (${watch.paired_iphone_name})` : name;
 }
 
-/** What Watch settings and the page editor say when Home Assistant holds
- * nothing from the watch yet: where the iPhone app's switch is. */
-export const NO_RECORD_TEXT = "Open the iPhone app, then turn on Edit pages in Home Assistant under Settings, Pages in Home Assistant.";
+// ── no record yet ────────────────────────────────────────────────────────
+//
+// Home Assistant holds nothing of a kind for the watch yet. The panel can
+// make the first record itself (a save over revision 0, which the
+// integration takes for a paired watch), or the iPhone app sends its own once
+// its switch is on. Plan: app repo docs/pages_in_home_assistant_step4.md,
+// "4e build contract".
+
+/** Where the iPhone app's switch is, by its current name and place. */
+const IPHONE_SWITCH_TEXT = "open the iPhone app and turn on Edit pages in Home Assistant under Settings, Pages in Home Assistant.";
+
+/** What the page editor says when Home Assistant holds no pages from the
+ * watch yet: the button, or the iPhone app's switch. */
+export const PAGES_NO_RECORD_TEXT = `Start with an empty page here, or ${IPHONE_SWITCH_TEXT}`;
+
+/** What Watch settings says when Home Assistant holds no settings from the
+ * watch yet. */
+export const SETTINGS_NO_RECORD_TEXT = `Start with the defaults here, or ${IPHONE_SWITCH_TEXT}`;
+
+/** The page editor's button that makes the first pages record. */
+export const PAGES_START_BUTTON = "Start with an empty page";
+
+/** Watch settings' button that makes the first settings record. */
+export const SETTINGS_START_BUTTON = "Start with the defaults";
+
+/** The line under each Start button. A watch with an iPhone pulls only while
+ * the iPhone's switch is on; with the switch off it keeps the iPhone's copy
+ * and never sees what was started here. */
+export const START_PHONE_FIRST_TEXT =
+  "If this watch has an iPhone, turn on Edit pages in Home Assistant there first. Otherwise the watch keeps the iPhone's copy.";
+
+/** What the page editor says when Home Assistant holds a pages record this
+ * panel cannot read, such as one from a newer schema. There is no Start: a
+ * save over revision 0 would only meet a conflict. */
+export const PAGES_UNREADABLE_TEXT = "Home Assistant holds pages for this watch that this panel cannot read. Update the integration.";
+
+/** The same for Watch settings. */
+export const SETTINGS_UNREADABLE_TEXT = "Home Assistant holds settings for this watch that this panel cannot read. Update the integration.";
+
+/** Whether Home Assistant holds a record (revision above 0) whose document
+ * `read` cannot take: not "no record yet", so no Start is offered. */
+export function watchRecordUnreadable(record: WatchConfigRecord | undefined, read: (document: unknown) => unknown): boolean {
+  return record !== undefined && record.revision > 0 && read(record.document) === undefined;
+}
+
+/** A start refused as `no_record`: the integration makes a first record only
+ * for a watch it has a key for. */
+export const PAIR_FIRST_TEXT = "Pair this watch first. Watch settings has Pair a watch.";
+
+/** The same, said inside Watch settings, whose pairing card is below. */
+export const SETTINGS_PAIR_FIRST_TEXT = "Pair this watch first, under Pair a watch below.";
+
+/** A start refused as `conflict`: a record came in meanwhile and is shown. */
+export const PAGES_START_CONFLICT_TEXT = "The iPhone sent pages meanwhile, so those are shown.";
+export const SETTINGS_START_CONFLICT_TEXT = "The iPhone sent settings meanwhile, so those are shown.";
+
+/** `WCBehaviorPreferences.currentSchemaVersion` in the app. */
+export const BEHAVIOR_SCHEMA_VERSION = 1;
+
+/**
+ * Keys the app's decoder needs that the catalog does not show, each at the
+ * app's own default (`WCBehaviorPreferences.init`). The first four are not
+ * optional in Swift, so a document without them does not decode at all. The
+ * list of domains that skip the pending bounce is what a fresh install of
+ * the iPhone app writes; left out, the watch would bounce for every domain.
+ */
+const BEHAVIOR_APP_DEFAULTS: Readonly<Record<string, unknown>> = {
+  crownSensitivity: "Normal",
+  crownSwitchesPages: false,
+  doubleTapSpeed: "Fast",
+  hapticIntensity: "Medium",
+  pendingAnimationDisabledDomains: [
+    "automation",
+    "fan",
+    "input_boolean",
+    "input_number",
+    "input_select",
+    "light",
+    "media_player",
+    "switch",
+    "timer",
+  ],
+};
+
+/**
+ * The first behavior document of a watch, which "Start with the defaults"
+ * saves: `schemaVersion`, every catalog setting at its default, and the keys
+ * the app's decoder needs beside them (`BEHAVIOR_APP_DEFAULTS`). An entity
+ * whose default is no target is left out, as the phone stores "no target".
+ * Keys in sorted order, as the phone's encoder writes them. A new object on
+ * every call.
+ */
+export function watchBehaviorDefaults(catalog: WatchSettingsCatalog = WATCH_SETTINGS_CATALOG): BehaviorDocument {
+  const fields: Record<string, unknown> = { schemaVersion: BEHAVIOR_SCHEMA_VERSION };
+  for (const setting of catalogSettings(catalog)) {
+    if (setting.type === "entity" && setting.default === "") continue;
+    fields[setting.key] = setting.default;
+  }
+  for (const [key, value] of Object.entries(BEHAVIOR_APP_DEFAULTS)) {
+    if (!Object.hasOwn(fields, key)) fields[key] = structuredClone(value);
+  }
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(fields).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))) sorted[key] = fields[key];
+  return sorted;
+}
+
+/** How "Start with the defaults" ended in Watch settings. */
+export type WatchBehaviorStartResult =
+  | { ok: true; revision: number; document: BehaviorDocument }
+  | { ok: false; code: "no_record" | "conflict" | "unsupported" | "error"; message: string };
+
+/**
+ * Create the watch's behavior record from `watchBehaviorDefaults()`: a save
+ * over revision 0. `no_record` back means the watch is not paired,
+ * `conflict` that a record came meanwhile (the caller reads it),
+ * `unknown_command` an integration too old to keep watch config. Any other
+ * refusal is an error in Home Assistant's own words.
+ */
+export async function createWatchBehavior(
+  save: (baseRevision: number, document: BehaviorDocument) => Promise<{ revision: number }>,
+): Promise<WatchBehaviorStartResult> {
+  const document = watchBehaviorDefaults();
+  try {
+    const { revision } = await save(0, document);
+    return { ok: true, revision, document };
+  } catch (err) {
+    const { code, message } = watchCommandError(err);
+    if (code === "no_record" || code === "conflict") return { ok: false, code, message };
+    if (code === "unknown_command") return { ok: false, code: "unsupported", message };
+    return { ok: false, code: "error", message };
+  }
+}
 
 // ── pairing a watch by its code ──────────────────────────────────────────
 //

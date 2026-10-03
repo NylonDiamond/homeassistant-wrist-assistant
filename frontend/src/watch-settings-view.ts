@@ -1,5 +1,5 @@
 // The Watch settings dialog: one watch's simple behavior settings, edited in
-// the panel and saved to the copy Home Assistant keeps for the iPhone.
+// the panel and saved to the copy Home Assistant keeps for the watch.
 //
 // It is a controller rather than an element of its own so it draws inside the
 // panel's shadow root and wears the panel's own rows: the inspector's tinted
@@ -7,11 +7,12 @@
 // the header's sync pill for where a save has got to. Everything that decides
 // something lives in `watch-settings.ts`, which the tests read without a DOM.
 //
-// The path a change takes: the panel saves a new revision, the iPhone app
-// pulls it the next time it checks (launch, foreground, reconnect) and sends it
-// to the watch the way it sends any settings change. There is no live line, so
-// while a save waits the dialog asks the store again now and then and turns
-// the pill green once the phone has it.
+// The path a change takes: the panel saves a new revision, and the watch pulls
+// it the next time it checks, or the iPhone app pulls it (launch, foreground,
+// reconnect) and passes it on the way it sends any settings change. A watch
+// with no record yet gets one from "Start with the defaults". There is no
+// live line, so while a save waits the dialog asks the store again now and
+// then and turns the pill green once a device has it.
 
 import { css, html, nothing, type ReactiveController, type ReactiveControllerHost, type TemplateResult } from "lit";
 import { checkField, colorField, entityField, entityRefFor, segField, selectField } from "./editors.js";
@@ -34,12 +35,21 @@ import {
   type CatalogSection,
   type CatalogSetting,
   type SettingValue,
-  NO_RECORD_TEXT,
+  COLLECTED_PILL_TEXT,
   PAIR_CODE_LENGTH,
   PAIR_NOT_FOUND_TEXT,
+  SETTINGS_NO_RECORD_TEXT,
+  SETTINGS_PAIR_FIRST_TEXT,
+  SETTINGS_START_BUTTON,
+  SETTINGS_START_CONFLICT_TEXT,
+  SETTINGS_UNREADABLE_TEXT,
+  START_PHONE_FIRST_TEXT,
+  WAITING_HELP_TEXT,
+  WAITING_PILL_TEXT,
   WATCH_SETTINGS_CATALOG,
   buildSaveDocument,
   conflictRevision,
+  createWatchBehavior,
   deliveryState,
   dirtyKeys,
   errorCode,
@@ -54,14 +64,16 @@ import {
   pairRemoteWarning,
   pairRequestLine,
   pairedText,
+  savedByWords,
   sectionRuns,
   settingValue,
   settingsWatches,
   watchName,
+  watchRecordUnreadable,
   withEdit,
 } from "./watch-settings.js";
 
-/** How often an open dialog asks whether the iPhone has collected a save. */
+/** How often an open dialog asks whether a device has collected a save. */
 const DELIVERY_POLL_MS = 15_000;
 
 /** Each card's mark and tint, from the inspector's own palette. */
@@ -77,7 +89,7 @@ const PAIR_LOOK: { icon: UiIconName; color: string } = { icon: "link", color: SE
 
 interface Note {
   text: string;
-  kind: "warn" | "err";
+  kind: "note" | "warn" | "err";
 }
 
 /** A question the foot asks before edits are thrown away. */
@@ -115,6 +127,8 @@ export class WatchSettings implements ReactiveController {
   private loadError?: string;
   private edits: ReadonlyMap<string, SettingValue> = new Map();
   private saving = false;
+  /** "Start with the defaults" is out. */
+  private starting = false;
   private note?: Note;
   private confirm?: Confirm;
   /** Sections whose help is hidden. Help starts shown: this is a form people
@@ -217,7 +231,7 @@ export class WatchSettings implements ReactiveController {
       const reply = await saveWatchConfig(hass, ownerId, "behavior", record.revision, document);
       if (ownerId !== this.ownerId || !this.open) return;
       // The store keeps the document as sent, so what was sent is the new
-      // revision. Delivery stays where it was: the phone has not seen it yet.
+      // revision. Delivery stays where it was: no device has seen it yet.
       this.record = {
         ...record,
         revision: reply.revision,
@@ -239,7 +253,7 @@ export class WatchSettings implements ReactiveController {
         };
       } else if (code === "no_record") {
         await this.load(ownerId, true);
-        this.note = { kind: "warn", text: "Your changes were not saved. Home Assistant no longer holds settings for this watch." };
+        this.note = { kind: "warn", text: "Your changes were not saved. Home Assistant no longer holds settings for this watch. Start with the defaults again, or let the iPhone send its settings." };
       } else {
         this.note = { kind: "err", text: `Could not save: ${errText(err)}` };
       }
@@ -250,11 +264,49 @@ export class WatchSettings implements ReactiveController {
   }
 
   /**
-   * While a save waits for the phone, ask the store again now and then.
+   * "Start with the defaults": create the watch's settings record from the
+   * catalog's defaults, a save over revision 0. The integration takes it only
+   * for a paired watch; a record that came meanwhile is read and shown.
+   */
+  private async start(): Promise<void> {
+    const hass = this.hass;
+    const ownerId = this.ownerId;
+    const record = this.record;
+    if (!hass || ownerId === undefined || this.starting || this.saving) return;
+    // A record is there (perhaps one this panel cannot read): never start
+    // over it.
+    if (record !== undefined && record.revision > 0) return;
+    this.starting = true;
+    this.note = undefined;
+    this.changed();
+    const result = await createWatchBehavior((base, document) => saveWatchConfig(hass, ownerId, "behavior", base, document));
+    this.starting = false;
+    if (ownerId !== this.ownerId || !this.open) {
+      this.changed();
+      return;
+    }
+    if (result.ok) {
+      this.note = { kind: "note", text: `Started with the defaults, saved as revision ${result.revision}. The watch picks them up the next time it checks.` };
+    } else if (result.code === "no_record") {
+      this.note = { kind: "warn", text: SETTINGS_PAIR_FIRST_TEXT };
+      this.changed();
+      return;
+    } else if (result.code === "conflict") {
+      this.note = { kind: "warn", text: SETTINGS_START_CONFLICT_TEXT };
+    } else {
+      this.note = { kind: "err", text: `Could not start: ${result.message}` };
+      this.changed();
+      return;
+    }
+    await this.load(ownerId, true);
+  }
+
+  /**
+   * While a save waits for a device, ask the store again now and then.
    *
    * Only the delivery fields are taken from the answer while the revision is
-   * the one shown. A newer revision means the phone wrote since, and with no
-   * edits in the form it simply replaces what is shown.
+   * the one shown. A newer revision means someone else wrote since, and with
+   * no edits in the form it simply replaces what is shown.
    */
   private pollIfWaiting(): void {
     this.stopPolling();
@@ -471,7 +523,7 @@ export class WatchSettings implements ReactiveController {
   private headLine(name: string): string {
     const r = this.record;
     if (r === undefined || r.revision <= 0) return name;
-    const by = r.updated_by === "panel" ? "saved here" : "from the iPhone";
+    const by = savedByWords(r.updated_by);
     const at = r.updated_at ? Date.parse(r.updated_at) : NaN;
     const when = Number.isNaN(at) ? "" : ` ${agoWords(Math.max(0, (Date.now() - at) / 1000))}`;
     return `${name} · revision ${r.revision}, ${by}${when}`;
@@ -509,8 +561,17 @@ export class WatchSettings implements ReactiveController {
     }
     const record = this.record;
     if (record === undefined) return nothing;
+    // A record that is there but unreadable is not "no settings yet": a
+    // start would only meet a conflict.
+    if (watchRecordUnreadable(record, (document) => document)) {
+      return html`<div class="xf-lead warn">${uiIcon("info")}<span>${SETTINGS_UNREADABLE_TEXT}</span></div>`;
+    }
     if (record.revision <= 0 || record.document === undefined) {
-      return html`<div class="xf-lead">${uiIcon("info")}<span><b>No settings from this watch yet.</b> ${NO_RECORD_TEXT}</span></div>`;
+      return html`<div class="xf-lead">${uiIcon("info")}<span><b>No settings from this watch yet.</b> ${SETTINGS_NO_RECORD_TEXT}</span></div>
+        <button class="small primary ws-start" ?disabled=${this.starting || this.saving}
+          title="Save the app's default settings as this watch's first copy"
+          @click=${() => void this.start()}>${this.starting ? "Starting…" : SETTINGS_START_BUTTON}</button>
+        <div class="hint ws-start-hint">${START_PHONE_FIRST_TEXT}</div>`;
     }
     const values = formValues(record.document, this.edits);
     return html`${WATCH_SETTINGS_CATALOG.sections.map((section) => this.renderSection(hass, section, values))}`;
@@ -651,7 +712,9 @@ export class WatchSettings implements ReactiveController {
     }
     const record = this.record;
     const changes = dirtyKeys(record?.document, this.edits).length;
-    const canSave = changes > 0 && !this.saving && record?.document !== undefined;
+    // A watch with no record is created by "Start with the defaults" in the
+    // body; Save sends edits to a record that exists.
+    const canSave = changes > 0 && !this.saving && !this.starting && record?.document !== undefined;
     return html`<div class="xfer-foot">
       ${changes > 0
         ? html`<span class="xf-sub">${changes} unsaved ${changes === 1 ? "change" : "changes"}</span>`
@@ -659,25 +722,23 @@ export class WatchSettings implements ReactiveController {
       <span class="spacer"></span>
       <button class="small" @click=${() => this.guard("Discard and close", () => this.close())}>Close</button>
       <button class="primary" ?disabled=${!canSave}
-        title=${changes > 0 ? "Save these settings for the iPhone to send to the watch" : "Nothing to save"}
+        title=${changes > 0 ? "Save these settings for the watch to pick up" : "Nothing to save"}
         @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
     </div>`;
   }
 
-  /** The header's sync pill, saying whether the iPhone has the revision
-   * shown: green once it has, amber while a save waits for it. */
+  /** The header's sync pill, saying whether a device has collected the
+   * revision shown: green once one has, amber while a save waits. */
   private renderDelivery(record: WatchConfigRecord | undefined) {
     const state = deliveryState(record);
     if (state === "none" || record === undefined) return nothing;
     if (state === "delivered") {
-      return html`<span class="tb-sync ok" title=${`The iPhone has revision ${record.revision} and passes it to the watch.`}>
-        <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">On the iPhone</span>
+      return html`<span class="tb-sync ok" title=${`Revision ${record.revision} has been collected.`}>
+        <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${COLLECTED_PILL_TEXT}</span>
       </span>`;
     }
-    return html`<span class="tb-sync warn sending"
-      title=${`Saved as revision ${record.revision}. The iPhone picks it up the next time Wrist Assistant opens or comes back to the front, then sends it to the watch.`}>
-      <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">Waiting for the iPhone</span>
-      <span class="tb-sync-n">open the app to send it now</span>
+    return html`<span class="tb-sync warn sending" title=${`Saved as revision ${record.revision}. ${WAITING_HELP_TEXT}`}>
+      <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${WAITING_PILL_TEXT}</span>
     </span>`;
   }
 }
@@ -709,7 +770,7 @@ export const watchSettingsStyles = css`
   }
   .ws-body > .ws-note { display: flex; align-items: center; gap: 10px; }
   .ws-body > .ws-note > span { flex: 1; min-width: 0; }
-  .ws-body > button.ws-retry { align-self: flex-start; }
+  .ws-body > button.ws-retry, .ws-body > button.ws-start { align-self: flex-start; }
   /* The indicator has no opacity, so the color row drops the percent box. */
   .ws-body .color-box .alpha { display: none; }
   .ws-tabs { padding: 0 8px; }

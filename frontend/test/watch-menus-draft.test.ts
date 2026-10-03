@@ -308,8 +308,10 @@ describe("no record: Start with the defaults", () => {
     expect(WATCH_MENUS_START_BUTTON).toBe("Start with the defaults");
     expect(WATCH_MENUS_PAIR_FIRST_TEXT).toBe("Pair this watch first.");
     expect(WATCH_MENUS_UPDATE_TEXT).toBe("Update the integration to edit menus here.");
-    expect(WATCH_MENUS_NO_RECORD_TEXT).toMatch(/iPhone/);
-    expect(WATCH_MENUS_NO_RECORD_TEXT).toMatch(/Edit pages in Home Assistant/);
+    expect(WATCH_MENUS_NO_RECORD_TEXT).toBe(
+      "Start with the defaults here, or open the iPhone app and turn on Edit pages in Home Assistant under Settings, Pages in Home Assistant.",
+    );
+    expect(WATCH_MENUS_NO_RECORD_TEXT.startsWith(WATCH_MENUS_START_BUTTON)).toBe(true);
     for (const text of [WATCH_MENUS_NO_RECORD_TEXT, WATCH_MENUS_NO_RECORD_TITLE]) expect(text).not.toMatch(new RegExp(" - |\\u2013|\\u2014"));
   });
 });

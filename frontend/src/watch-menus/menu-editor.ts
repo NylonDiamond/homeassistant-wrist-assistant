@@ -49,7 +49,17 @@ import { type WatchCatalog, watchCatalogEventIsNews, watchCatalogFromRecord, wat
 import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/editor-host.js";
 import { isJsonObject, isSystemWatchPage, watchPageId, watchPageName, watchPagesOf } from "../watch-pages/model.js";
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
-import { deliveryState, initialWatch, rejectedNow, settingsWatches, watchName } from "../watch-settings.js";
+import {
+  COLLECTED_PILL_TEXT,
+  WAITING_HELP_TEXT,
+  START_PHONE_FIRST_TEXT,
+  WAITING_PILL_TEXT,
+  deliveryState,
+  initialWatch,
+  rejectedNow,
+  settingsWatches,
+  watchName,
+} from "../watch-settings.js";
 import {
   type WatchMenusDraft,
   anyWatchMenusDirty,
@@ -90,7 +100,7 @@ if (typeof window !== "undefined") {
   });
 }
 
-/** How often the view asks whether the iPhone has collected a save. */
+/** How often the view asks whether a device has collected a save. */
 const DELIVERY_POLL_MS = 15_000;
 
 const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
@@ -134,7 +144,7 @@ function ago(iso: string | null | undefined): string {
 
 /** Who made a save: the panel writes `panel`, a device its id. */
 function savedBy(updatedBy: string | null | undefined): string {
-  return updatedBy === "panel" ? "Saved here" : "From the iPhone";
+  return updatedBy === "panel" ? "Saved here" : "From the watch";
 }
 
 function isTextField(node: EventTarget | undefined): boolean {
@@ -871,6 +881,7 @@ export class WaMenuEditor extends LitElement {
       const id = this.watchId;
       return html`<div class="pe-empty"><b>${WATCH_MENUS_NO_RECORD_TITLE}</b><span>${WATCH_MENUS_NO_RECORD_TEXT}</span>
         <button class="pe-btn pe-primary" ?disabled=${this.starting} @click=${() => void this.startWithDefaults()}>${this.starting ? "Starting…" : WATCH_MENUS_START_BUTTON}</button>
+        <span class="pe-muted">${START_PHONE_FIRST_TEXT}</span>
         ${kept?.dirty && id !== undefined ? html`<span class="pe-warn">Your unsaved edits from before are kept. They come back, merged in, when menus are here again.</span>
           <button class="pe-btn" @click=${() => { forgetWatchMenusDraft(id); this.requestUpdate(); }}>Discard the kept edits</button>` : nothing}
       </div>`;
@@ -902,12 +913,12 @@ export class WaMenuEditor extends LitElement {
       <h3>Stored copy</h3>
       <p><b>Revision ${record.revision}</b> · ${savedBy(record.updated_by)}${when ? ` ${when}` : ""}</p>
       ${rejected
-        ? html`<p class="pe-pill err"><i aria-hidden="true"></i>The iPhone could not read this save</p>
-          <p class="pe-muted">${this.historyState === "unsupported" ? "Save the menus again from the iPhone." : "Restore an earlier save below."}</p>`
+        ? html`<p class="pe-pill err"><i aria-hidden="true"></i>The watch or the iPhone could not read this save</p>
+          <p class="pe-muted">${this.historyState === "unsupported" ? "Change the menus and save them again." : "Restore an earlier save below."}</p>`
         : delivery === "delivered"
-        ? html`<p class="pe-pill ok" title=${`Revision ${record.revision} has been collected.`}><i aria-hidden="true"></i>Collected</p>`
-        : html`<p class="pe-pill warn"><i aria-hidden="true"></i>Waiting to be collected</p>
-          <p class="pe-muted">The watch or the iPhone picks it up the next time it checks.</p>`}
+        ? html`<p class="pe-pill ok" title=${`Revision ${record.revision} has been collected.`}><i aria-hidden="true"></i>${COLLECTED_PILL_TEXT}</p>`
+        : html`<p class="pe-pill warn"><i aria-hidden="true"></i>${WAITING_PILL_TEXT}</p>
+          <p class="pe-muted">${WAITING_HELP_TEXT}</p>`}
       <p class=${budget.near ? "pe-warn" : "pe-muted"}>${kb(budget.size)} of the ${kb(budget.limit)} the watch takes${budget.near ? ". Close to the limit." : ""}</p>
     </div>`;
   }

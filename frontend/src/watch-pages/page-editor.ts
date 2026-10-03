@@ -5,7 +5,9 @@
 // own size, where the stored copy has got to, and the earlier saves with a way
 // to put one back. Part 3b edits them: pages are added, renamed, hidden,
 // moved and deleted, and tiles are moved, swapped, resized and deleted on the
-// page, with undo, redo and a save that merges when the iPhone saved too.
+// page, with undo, redo and a save that merges when the iPhone saved too. A
+// watch with no pages record yet gets one from "Start with an empty page"
+// (4e).
 //
 // Every edit is a function of `edit.ts` applied to a `WatchPagesDraft`
 // (`draft.ts`), which keeps the undo steps and merges a change from elsewhere
@@ -75,10 +77,26 @@ import { type IconProvider, REFERENCE_CASE, caseForScreenSize } from "../rendere
 import { agoWords } from "../send-state.js";
 import { SymbolBrowser } from "../symbols.js";
 import { uiIcon } from "../ui-icons.js";
-import { NO_RECORD_TEXT, deliveryState, initialWatch, rejectedNow, settingsWatches, watchName } from "../watch-settings.js";
+import {
+  COLLECTED_PILL_TEXT,
+  PAGES_NO_RECORD_TEXT,
+  PAGES_START_BUTTON,
+  PAGES_START_CONFLICT_TEXT,
+  PAGES_UNREADABLE_TEXT,
+  PAIR_FIRST_TEXT,
+  START_PHONE_FIRST_TEXT,
+  WAITING_HELP_TEXT,
+  WAITING_PILL_TEXT,
+  deliveryState,
+  initialWatch,
+  rejectedNow,
+  settingsWatches,
+  watchName,
+  watchRecordUnreadable,
+} from "../watch-settings.js";
 import { addTileStyles, renderAddTile } from "./add-tile.js";
 import { type WatchCatalog, watchCatalogEventIsNews, watchCatalogFromRecord, watchCatalogReadMeansNone } from "./catalog.js";
-import { type WatchPagesApplyOptions, type WatchPagesDraft, saveWatchPagesDraft } from "./draft.js";
+import { type WatchPagesApplyOptions, type WatchPagesDraft, createWatchPages, saveWatchPagesDraft } from "./draft.js";
 import { type AddTileHost, type TileSettingsHost, type WatchPagesEditorHost, NO_ICONS, ScrubRun, extendHost, memoIconNames, watchKeysTypeText } from "./editor-host.js";
 import {
   type WatchCell,
@@ -196,7 +214,7 @@ if (typeof window !== "undefined") {
   });
 }
 
-/** How often the view asks whether the iPhone has collected a save. Nothing
+/** How often the view asks whether a device has collected a save. Nothing
  * on the live line says so: it only carries new revisions. */
 const DELIVERY_POLL_MS = 15_000;
 
@@ -333,9 +351,10 @@ function ago(iso: string | null | undefined): string {
   return Number.isNaN(at) ? "" : agoWords(Math.max(0, (Date.now() - at) / 1000));
 }
 
-/** Who made a save, in words: the panel writes `panel`, a device its id. */
+/** Who made a save, in words: the panel writes `panel`, a device the id of
+ * the watch's pair, whether the watch or its iPhone sent it. */
 function savedBy(updatedBy: string | null | undefined): string {
-  return updatedBy === "panel" ? "Saved here" : "From the iPhone";
+  return updatedBy === "panel" ? "Saved here" : "From the watch";
 }
 
 function plural(n: number, one: string, many: string): string {
@@ -482,6 +501,8 @@ export class WaPageEditor extends LitElement {
   @state() private note?: Note;
   @state() private restoreAsk?: RestoreAsk;
   @state() private restoring = false;
+  /** "Start with an empty page" is out. */
+  @state() private starting = false;
   /** The panel's list arrives after the panel's first draw. Until it does,
    * the view asks for the devices itself, to tell "none yet" from "not
    * loaded yet". */
@@ -1071,7 +1092,7 @@ export class WaPageEditor extends LitElement {
       if (!(keptWatchPagesDraft(watchId)?.dirty ?? false)) forgetWatchPagesDraft(watchId);
     }
     const taken = takeWatchPagesRecord(watchId, document, record.revision);
-    if (taken.mergedIntoEdits) this.note = { kind: "warn", text: "The pages changed on the iPhone. Your edits are kept." };
+    if (taken.mergedIntoEdits) this.note = { kind: "warn", text: "The pages changed elsewhere. Your edits are kept." };
     this.requestUpdate();
   }
 
@@ -2092,7 +2113,7 @@ export class WaPageEditor extends LitElement {
       const reply = await restoreWatchConfig(hass, watchId, "pages", ask.entry.revision, ask.baseRevision);
       note = {
         kind: "ok",
-        text: `Revision ${ask.entry.revision} is back, saved as revision ${reply.revision}. The iPhone picks it up the next time it checks.`,
+        text: `Revision ${ask.entry.revision} is back, saved as revision ${reply.revision}. The watch picks it up the next time it checks, or the iPhone passes it on.`,
       };
       if (watchId === this.watchId) {
         this.restartDraft = { watchId, revision: reply.revision };
@@ -2124,6 +2145,39 @@ export class WaPageEditor extends LitElement {
     void this.load(watchId, true);
   }
 
+  // ── no record: "Start with an empty page" ──────────────────────────────
+
+  /** Create the watch's pages record with one empty page, then open that
+   * page. Home Assistant takes it only for a paired watch; a record that came
+   * in meanwhile is read and shown instead. */
+  private async startEmptyPage(): Promise<void> {
+    const hass = this.hass;
+    const watchId = this.watchId;
+    if (!hass || watchId === undefined || this.starting) return;
+    // A record is there (perhaps one this panel cannot read): never start
+    // over it.
+    if (this.record !== undefined && this.record.revision > 0) return;
+    this.starting = true;
+    this.note = undefined;
+    const result = await createWatchPages((base, document) => saveWatchConfig(hass, watchId, "pages", base, document));
+    this.starting = false;
+    if (watchId !== this.watchId) return;
+    if (result.ok) {
+      this.note = { kind: "ok", text: `Started with an empty page, saved as revision ${result.revision}. The watch picks it up the next time it checks.` };
+      this.selectedPageId = result.pageId;
+      this.selectedTileId = undefined;
+    } else if (result.code === "no_record") {
+      this.note = { kind: "warn", text: PAIR_FIRST_TEXT };
+      return;
+    } else if (result.code === "conflict") {
+      this.note = { kind: "warn", text: PAGES_START_CONFLICT_TEXT };
+    } else {
+      this.note = { kind: "err", text: `Could not start: ${result.message}` };
+      return;
+    }
+    void this.load(watchId, true);
+  }
+
   // ── drawing ────────────────────────────────────────────────────────────
 
   override render(): TemplateResult {
@@ -2134,7 +2188,7 @@ export class WaPageEditor extends LitElement {
       <div class="pe-head">
         <div class="pe-title">
           <h2>Watch pages</h2>
-          <span>${only ? `${watchName(only, watches)}. ` : ""}A save reaches the iPhone the next time Wrist Assistant opens or comes to the front there, and goes on to the watch from the iPhone.</span>
+          <span>${only ? `${watchName(only, watches)}. ` : ""}A save reaches the watch the next time it checks, or through the iPhone.</span>
         </div>
         ${watches.length > 1 ? this.renderTabs(watches) : nothing}
       </div>
@@ -2203,13 +2257,21 @@ export class WaPageEditor extends LitElement {
     if (record.revision <= 0 || draft === undefined) {
       // Edits kept from before Home Assistant lost this watch's record (it
       // was removed, or the store started over). They stay, and are merged
-      // into the record the iPhone uploads next; said here, with a way to
-      // drop them, so the leave question never asks about edits no one can
-      // see.
+      // into the record that comes next (a start here, or the iPhone's
+      // upload); said here, with a way to drop them, so the leave question
+      // never asks about edits no one can see.
       const kept = this.watchId === undefined ? undefined : keptWatchPagesDraft(this.watchId);
       const id = this.watchId;
-      return html`<div class="pe-empty"><b>No pages from this watch yet.</b><span>${NO_RECORD_TEXT}</span>
-        ${kept?.dirty && id !== undefined ? html`<span class="pe-warn">Your unsaved edits from before are kept. They come back, merged in, when the iPhone saves the pages here again.</span>
+      // A record that is there but unreadable (a newer schema) is not "no
+      // pages yet": a start would only meet a conflict.
+      const start = watchRecordUnreadable(record, asWatchPagesDocument)
+        ? html`<span>${PAGES_UNREADABLE_TEXT}</span>`
+        : html`<b>No pages from this watch yet.</b><span>${PAGES_NO_RECORD_TEXT}</span>
+          <button class="pe-btn pe-primary" ?disabled=${this.starting || id === undefined}
+            @click=${() => void this.startEmptyPage()}>${this.starting ? "Starting…" : PAGES_START_BUTTON}</button>
+          <span class="pe-muted">${START_PHONE_FIRST_TEXT}</span>`;
+      return html`<div class="pe-empty">${start}
+        ${kept?.dirty && id !== undefined ? html`<span class="pe-warn">Your unsaved edits from before are kept. They come back, merged in, when Home Assistant holds pages for this watch again.</span>
           <button class="pe-btn" @click=${() => { forgetWatchPagesDraft(id); this.requestUpdate(); }}>Discard the kept edits</button>` : nothing}
       </div>`;
     }
@@ -2631,8 +2693,8 @@ export class WaPageEditor extends LitElement {
     return host === undefined ? nothing : renderSmartRulesCard(host);
   }
 
-  /** Where the stored copy has got to: who saved it and when, whether the
-   * iPhone has it, whether it could read it, and how big the pages are now. */
+  /** Where the stored copy has got to: who saved it and when, whether a
+   * device has it, whether it could read it, and how big the pages are now. */
   private renderState(record: WatchConfigRecord, document: WatchPagesDocument): TemplateResult {
     const delivery = deliveryState(record);
     const rejected = rejectedNow(record);
@@ -2643,12 +2705,12 @@ export class WaPageEditor extends LitElement {
       <h3>Stored copy</h3>
       <p><b>Revision ${record.revision}</b> · ${savedBy(record.updated_by)}${when ? ` ${when}` : ""}</p>
       ${rejected
-        ? html`<p class="pe-pill err"><i aria-hidden="true"></i>The iPhone could not read this save</p>
-          <p class="pe-muted">${this.historyState === "unsupported" ? "Save the pages again from the iPhone." : "Restore an earlier save below."}</p>`
+        ? html`<p class="pe-pill err"><i aria-hidden="true"></i>The watch or the iPhone could not read this save</p>
+          <p class="pe-muted">${this.historyState === "unsupported" ? "Change the pages and save them again." : "Restore an earlier save below."}</p>`
         : delivery === "delivered"
-        ? html`<p class="pe-pill ok" title=${`The iPhone has revision ${record.revision} and passes it to the watch.`}><i aria-hidden="true"></i>On the iPhone</p>`
-        : html`<p class="pe-pill warn"><i aria-hidden="true"></i>Waiting for the iPhone</p>
-          <p class="pe-muted">The iPhone picks it up the next time Wrist Assistant opens or comes to the front.</p>`}
+        ? html`<p class="pe-pill ok" title=${`Revision ${record.revision} has been collected.`}><i aria-hidden="true"></i>${COLLECTED_PILL_TEXT}</p>`
+        : html`<p class="pe-pill warn"><i aria-hidden="true"></i>${WAITING_PILL_TEXT}</p>
+          <p class="pe-muted">${WAITING_HELP_TEXT}</p>`}
       <p class=${share > 0.8 ? "pe-warn" : "pe-muted"}>${kb(size)} of the ${kb(WATCH_SYNC_LIMIT_BYTES)} the watch takes${share > 0.8 ? ". Close to the limit." : ""}</p>
     </div>`;
   }
@@ -2666,7 +2728,7 @@ export class WaPageEditor extends LitElement {
     } else if (entries.length === 0) body = html`<p class="pe-muted">No earlier saves yet.</p>`;
     else {
       // The newest entry older than the copy on screen is the one to offer
-      // first when the iPhone could not read that copy.
+      // first when a device could not read that copy.
       const offer = rejected ? entries.find((e) => e.revision < record.revision)?.revision : undefined;
       body = html`${dirty ? html`<p class="pe-muted">Save or discard your edits first.</p>` : nothing}
         <ul class="pe-history">
@@ -2703,7 +2765,7 @@ export class WaPageEditor extends LitElement {
       <h3 id="pe-ask-title">Restore revision ${ask.entry.revision}?</h3>
       <p>${savedBy(ask.entry.updated_by)}${when ? ` ${when}` : ""}, ${kb(ask.entry.size)}.</p>
       ${ask.summary ? html`<p class="pe-muted">${ask.summary}</p>` : nothing}
-      <p>It is saved again as a new revision${record ? `, after revision ${record.revision}` : ""}. The copy shown now stays in the earlier saves. The iPhone picks it up the next time it checks and sends it to the watch.</p>
+      <p>It is saved again as a new revision${record ? `, after revision ${record.revision}` : ""}. The copy shown now stays in the earlier saves. The watch picks it up the next time it checks, or the iPhone passes it on.</p>
       <div class="pe-ask-foot">
         <button class="pe-btn" ?disabled=${this.restoring} @click=${() => this.closeAsk()}>Cancel</button>
         <button class="pe-btn pe-primary" ?disabled=${this.restoring} @click=${() => void this.restore()}>${this.restoring ? "Restoring…" : "Restore"}</button>
@@ -2744,7 +2806,7 @@ export class WaPageEditor extends LitElement {
           ${links.roomMappingKeys.map((key) => html`<li>The page for <b>${key}</b></li>`)}
         </ul>
         <p class="pe-muted">After the delete the watch opens another page there instead. The setting itself stays as it is.</p>` : nothing}
-      <p class="pe-muted">Quick menus and complications set up in the iPhone app may also open this page. Home Assistant cannot see those.</p>
+      <p class="pe-muted">The Anywhere menu, the Entity quick menu and complications may also open this page. This list does not include those.</p>
       <div class="pe-ask-foot">
         <button class="pe-btn" @click=${() => this.closeAsk()}>Cancel</button>
         <button class="pe-btn pe-primary pe-danger" @click=${() => this.deletePage()}>Delete page</button>

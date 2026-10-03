@@ -411,11 +411,12 @@ export type WatchConfigKind = "pages" | "behavior" | "catalog" | "menus";
 export type WatchConfigPanelKind = Exclude<WatchConfigKind, "catalog">;
 
 /** One watch's stored config of one kind, as the get command answers.
- * `revision` 0 with no `document` is a watch the phone has never uploaded
- * for. `delivered_revision` is the newest revision the phone is known to
- * hold: a phone upload counts, a panel save does not until the phone's next
- * check collects it. `updated_by` is `panel` for a panel save, else the
- * watch id the phone signed with. */
+ * `revision` 0 with no `document` is a watch nothing has stored that kind
+ * for yet (no iPhone upload and no panel start). `delivered_revision` is the
+ * newest revision a device is known to hold: an iPhone upload counts, a
+ * panel save does not until the watch's own pull or the iPhone's next check
+ * collects it. `updated_by` is `panel` for a panel save, else the watch id
+ * the device signed with. */
 export interface WatchConfigRecord {
   kind: string;
   revision: number;
@@ -491,13 +492,15 @@ export async function fetchWatchConfig(hass: HassLike, owner: string, kind: Watc
 }
 
 /** Save one watch's config of one kind, compare-and-swap on `baseRevision`.
- * Admin only. A refusal rejects with a WebSocket error whose `code` is
- * `conflict` (someone saved since; the message starts "stored revision is
- * N"), `no_record` (the phone has never uploaded, so there is nothing to
- * base a save on), `invalid` or `unavailable`. An integration older than
- * page saves answers `invalid` for `pages`. A save over `baseRevision` 0
- * creates the record (revision 1) when none is stored and the watch is
- * paired; an unpaired watch gets `no_record`, a stored record `conflict`. */
+ * Admin only. A record has three parties: the iPhone mirror writes it, the
+ * panel writes it here, and the watch reads it with its own signed pull. A
+ * refusal rejects with a WebSocket error whose `code` is `conflict` (someone
+ * saved since; the message starts "stored revision is N"), `no_record`
+ * (nothing is stored to save over, or the watch is not paired for a
+ * create), `invalid` or `unavailable`. An integration older than page saves
+ * answers `invalid` for `pages`. A save over `baseRevision` 0 creates the
+ * record (revision 1) when none is stored and the watch is paired; an
+ * unpaired watch gets `no_record`, a stored record `conflict`. */
 export async function saveWatchConfig(
   hass: HassLike,
   owner: string,

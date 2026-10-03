@@ -3254,7 +3254,11 @@ async def _op_complications_move_status(ctx: _OpContext) -> Response:
     )
 
 
-# ── watch config (the phone's pages, kept in Home Assistant) ─────────────
+# ── watch config (a watch's pages, settings and menus, kept in Home Assistant)
+#
+# Three parties: the iPhone mirror writes a record with the put op, the panel
+# writes one over the WebSocket (``watch_config_ws.py``), and the watch reads
+# its own with the get op. The watch never writes.
 
 
 def _watch_config_refusal(ctx: _OpContext, err: WatchConfigStoreError) -> Response:
@@ -3286,23 +3290,24 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
     """The caller's stored watch config of one kind.
 
     The owner is always the id that signed the request, so a device can only
-    ever read its own record. In step 1 that is the phone signing with the
-    watch's pair; later the watch reads it with the same signature.
+    ever read its own record: the phone signing with the watch's pair, or the
+    watch itself pulling with that same signature (the record may have come
+    from the iPhone mirror or from the panel).
 
     Body:  {"kind": "pages" | "behavior" | "catalog" | "menus",
             "since_revision": <int>?, "unreadable_revision": <int>?}
     Reply: {"ok": true, "kind", "revision", "hash", "updated_at", "document"?}
 
     ``document`` is left out when ``since_revision`` equals the stored
-    revision, so an up-to-date phone downloads a few bytes rather than its
-    whole config on every foreground check. With no record the reply is
+    revision, so an up-to-date device downloads a few bytes rather than its
+    whole config on every check. With no record the reply is
     ``revision: 0`` with ``hash`` and ``updated_at`` null and no document. The
     save history is never sent.
 
     Every reply about a stored record marks that revision delivered, whether
     it carried the document or said "you already have it": either way the
     device now holds it. That is what the panel reads to tell a panel save
-    that is still waiting for the phone from one the phone has collected.
+    that is still waiting from one the watch or the phone has collected.
 
     The one exception is ``unreadable_revision``: "I fetched this revision of
     this kind and could not decode it", sent only by a device that sees the
@@ -3365,6 +3370,9 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
 
 async def _op_watch_config_put(ctx: _OpContext) -> Response:
     """Save the caller's watch config of one kind, compare-and-swap.
+
+    The iPhone mirror's write. The watch only reads (the get op above), and
+    the panel writes over the WebSocket instead.
 
     Body:  {"kind": "pages" | "behavior" | "catalog" | "menus",
             "base_revision": <int>, "hash": <sha256 hex>, "document": {...},

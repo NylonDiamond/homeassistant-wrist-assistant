@@ -9,11 +9,23 @@ import { describe, expect, it } from "vitest";
 import type { OwnerSummary } from "../src/ha-api.js";
 import {
   type CatalogSetting,
-  NO_RECORD_TEXT,
+  BEHAVIOR_SCHEMA_VERSION,
+  COLLECTED_PILL_TEXT,
+  PAGES_NO_RECORD_TEXT,
+  PAGES_START_BUTTON,
+  PAGES_START_CONFLICT_TEXT,
+  PAIR_FIRST_TEXT,
+  SETTINGS_NO_RECORD_TEXT,
+  SETTINGS_PAIR_FIRST_TEXT,
+  SETTINGS_START_BUTTON,
+  SETTINGS_START_CONFLICT_TEXT,
+  WAITING_HELP_TEXT,
+  WAITING_PILL_TEXT,
   WATCH_SETTINGS_CATALOG,
   buildSaveDocument,
   catalogSettings,
   conflictRevision,
+  createWatchBehavior,
   deliveryState,
   dirtyKeys,
   errorCode,
@@ -35,9 +47,11 @@ import {
   pairRemoteWarning,
   pairRequestLine,
   pairedText,
+  savedByWords,
   sectionRuns,
   settingValue,
   settingsWatches,
+  watchBehaviorDefaults,
   withEdit,
 } from "../src/watch-settings.js";
 
@@ -320,9 +334,98 @@ describe("which devices the view offers", () => {
 });
 
 describe("a watch with nothing in Home Assistant yet", () => {
-  it("points at the iPhone app's own switch, by its current name and place", () => {
-    expect(NO_RECORD_TEXT).toBe("Open the iPhone app, then turn on Edit pages in Home Assistant under Settings, Pages in Home Assistant.");
-    expect(NO_RECORD_TEXT).not.toMatch(/Developer|Save pages to Home Assistant/);
+  it("offers the button first, then the iPhone app's own switch by its current name and place", () => {
+    expect(PAGES_NO_RECORD_TEXT).toBe(
+      "Start with an empty page here, or open the iPhone app and turn on Edit pages in Home Assistant under Settings, Pages in Home Assistant.",
+    );
+    expect(SETTINGS_NO_RECORD_TEXT).toBe(
+      "Start with the defaults here, or open the iPhone app and turn on Edit pages in Home Assistant under Settings, Pages in Home Assistant.",
+    );
+    expect(PAGES_START_BUTTON).toBe("Start with an empty page");
+    expect(SETTINGS_START_BUTTON).toBe("Start with the defaults");
+    expect(PAIR_FIRST_TEXT).toBe("Pair this watch first. Watch settings has Pair a watch.");
+    expect(SETTINGS_PAIR_FIRST_TEXT).toBe("Pair this watch first, under Pair a watch below.");
+    expect(PAGES_START_CONFLICT_TEXT).toBe("The iPhone sent pages meanwhile, so those are shown.");
+    expect(SETTINGS_START_CONFLICT_TEXT).toBe("The iPhone sent settings meanwhile, so those are shown.");
+    const all = [PAGES_NO_RECORD_TEXT, SETTINGS_NO_RECORD_TEXT, PAIR_FIRST_TEXT, SETTINGS_PAIR_FIRST_TEXT, PAGES_START_CONFLICT_TEXT, SETTINGS_START_CONFLICT_TEXT];
+    for (const text of all) {
+      expect(text).not.toMatch(/Developer|Save pages to Home Assistant/);
+      expect(text).not.toMatch(new RegExp(" - |\\u2013|\\u2014"));
+    }
+  });
+
+  it("says who saved a record and where a save has got to without naming only the iPhone", () => {
+    expect(savedByWords("panel")).toBe("saved here");
+    expect(savedByWords("W1")).toBe("from the watch");
+    expect(savedByWords(null)).toBe("from the watch");
+    expect(WAITING_PILL_TEXT).toBe("Waiting to be collected");
+    expect(COLLECTED_PILL_TEXT).toBe("Collected");
+    expect(WAITING_HELP_TEXT).toBe("The watch picks it up the next time it checks, or the iPhone passes it on.");
+  });
+});
+
+describe("Start with the defaults", () => {
+  const refusal = (code: string, message = code) => Object.assign(new Error(message), { code });
+
+  it("builds every catalog setting at its default, schema 1, keys sorted", () => {
+    const doc = watchBehaviorDefaults();
+    expect(doc.schemaVersion).toBe(BEHAVIOR_SCHEMA_VERSION);
+    expect(BEHAVIOR_SCHEMA_VERSION).toBe(1);
+    for (const setting of catalogSettings()) {
+      if (setting.type === "entity" && setting.default === "") expect(Object.hasOwn(doc, setting.key), setting.key).toBe(false);
+      else expect(doc[setting.key], setting.key).toEqual(setting.default);
+    }
+    const keys = Object.keys(doc);
+    expect(keys).toEqual([...keys].sort());
+    expect(Object.values(doc)).not.toContain(null);
+    // Every value reads back as itself: nothing in the form differs from the
+    // defaults, so the new record opens with no edits.
+    const values = formValues(doc);
+    for (const setting of catalogSettings()) expect(values.get(setting.key), setting.key).toBe(setting.default);
+  });
+
+  it("carries the keys the app cannot decode without, at the app's own defaults", () => {
+    const doc = watchBehaviorDefaults();
+    // The fields of `WCBehaviorPreferences` that are not optional in Swift.
+    const required: Record<string, unknown> = {
+      longPressDuration: "Short",
+      doubleTapSpeed: "Fast",
+      hapticIntensity: "Medium",
+      showPendingAnimation: true,
+      crownSwitchesPages: false,
+      crownSensitivity: "Normal",
+      wrapPages: false,
+      showPageIndicator: true,
+    };
+    for (const [key, value] of Object.entries(required)) expect(doc[key], key).toEqual(value);
+    expect(doc.pendingAnimationDisabledDomains).toEqual([
+      "automation", "fan", "input_boolean", "input_number", "input_select", "light", "media_player", "switch", "timer",
+    ]);
+  });
+
+  it("is a new object each time", () => {
+    const a = watchBehaviorDefaults();
+    (a.pendingAnimationDisabledDomains as string[]).push("lock");
+    expect(watchBehaviorDefaults().pendingAnimationDisabledDomains).not.toContain("lock");
+  });
+
+  it("saves the defaults over revision 0 for a paired watch", async () => {
+    const calls: [number, Record<string, unknown>][] = [];
+    const result = await createWatchBehavior(async (base, document) => { calls.push([base, document]); return { revision: 1 }; });
+    expect(result).toEqual({ ok: true, revision: 1, document: watchBehaviorDefaults() });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]![0]).toBe(0);
+    expect(calls[0]![1]).toEqual(watchBehaviorDefaults());
+  });
+
+  it("tells a watch that is not paired, a record that came meanwhile, and an old integration apart", async () => {
+    expect(await createWatchBehavior(async () => { throw refusal("no_record"); })).toMatchObject({ ok: false, code: "no_record" });
+    expect(await createWatchBehavior(async () => { throw refusal("conflict", "stored revision is 1, save was based on 0"); }))
+      .toEqual({ ok: false, code: "conflict", message: "stored revision is 1, save was based on 0" });
+    expect(await createWatchBehavior(async () => { throw { type: "result", success: false, error: { code: "unknown_command", message: "x" } }; }))
+      .toMatchObject({ ok: false, code: "unsupported" });
+    expect(await createWatchBehavior(async () => { throw refusal("unavailable", "the store is not ready"); }))
+      .toEqual({ ok: false, code: "error", message: "the store is not ready" });
   });
 });
 

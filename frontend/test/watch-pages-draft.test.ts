@@ -3,6 +3,8 @@
 // that merges and tries again on a conflict.
 
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import type { JsonObject, WatchPagesDocument } from "../src/watch-pages/model.js";
 import {
@@ -10,8 +12,14 @@ import {
   WATCH_PAGES_UNDO_LIMIT,
   WatchPagesDraft,
   type WatchPagesSaveIO,
+  createWatchPages,
   saveWatchPagesDraft,
+  startWatchPages,
 } from "../src/watch-pages/draft.js";
+import { newWatchPage } from "../src/watch-pages/edit.js";
+import { dropAllWatchPages, takeWatchPagesRecord } from "../src/watch-pages/kept.js";
+import { checkWatchPages, checkWatchPagesValues } from "../src/watch-pages/merge.js";
+import pageKeys from "../src/watch-pages/page-keys.json";
 
 // ── documents ────────────────────────────────────────────────────────────
 
@@ -678,5 +686,64 @@ describe("a save that tidies the document first", () => {
     await saveWatchPagesDraft(draft, { prepare: (d) => d, save: async () => ({ revision: 4 }), fetch: async () => ({ revision: 4, document: document() }) });
     expect(draft.document).toBe(before);
     expect(draft.undoDepth).toBe(depth);
+  });
+});
+
+// ── no record: "Start with an empty page" ────────────────────────────────
+
+describe("Start with an empty page", () => {
+  const NEW_PAGE_FIXTURE = readFileSync(join(__dirname, "fixtures-pages", "06-new-page.json"), "utf8");
+  const PHONE_ID = "5A17E000-0000-4000-8000-00000000000F";
+  const refusal = (code: string, message = code) => Object.assign(new Error(message), { code });
+
+  it("is the phone's own new page document to the byte: one page from the fresh keys, schema 1", () => {
+    const doc = startWatchPages({ newId: () => PHONE_ID.toLowerCase() });
+    expect(JSON.stringify(doc)).toBe(NEW_PAGE_FIXTURE.trimEnd());
+    expect(doc.schemaVersion).toBe(1);
+    expect(pageKeys.types.document.keys.schemaVersion.default).toBe(1);
+    const pages = doc.pages as JsonObject[];
+    expect(pages).toHaveLength(1);
+    expect(pages[0]).toEqual(newWatchPage(PHONE_ID, "New Page 1"));
+    expect(checkWatchPages(doc)).toEqual([]);
+    expect(checkWatchPagesValues(doc)).toEqual([]);
+  });
+
+  it("makes a new upper case id each time", () => {
+    const a = (startWatchPages().pages as JsonObject[])[0]!.id as string;
+    const b = (startWatchPages().pages as JsonObject[])[0]!.id as string;
+    expect(a).toMatch(/^[0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/);
+    expect(a).not.toBe(b);
+  });
+
+  it("saves it over revision 0 for a paired watch and names the new page", async () => {
+    const calls: [number, WatchPagesDocument][] = [];
+    const result = await createWatchPages(async (base, doc) => { calls.push([base, doc]); return { revision: 1 }; }, { newId: () => PHONE_ID });
+    expect(result).toEqual({ ok: true, revision: 1, pageId: PHONE_ID });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]![0]).toBe(0);
+    expect(JSON.stringify(calls[0]![1])).toBe(NEW_PAGE_FIXTURE.trimEnd());
+  });
+
+  it("tells a watch that is not paired, a record that came meanwhile, and an old integration apart", async () => {
+    expect(await createWatchPages(async () => { throw refusal("no_record"); })).toMatchObject({ ok: false, code: "no_record" });
+    expect(await createWatchPages(async () => { throw refusal("conflict", "stored revision is 3, save was based on 0"); }))
+      .toEqual({ ok: false, code: "conflict", message: "stored revision is 3, save was based on 0" });
+    expect(await createWatchPages(async () => { throw { type: "result", success: false, error: { code: "unknown_command", message: "x" } }; }))
+      .toMatchObject({ ok: false, code: "unsupported" });
+    expect(await createWatchPages(async () => { throw refusal("invalid", "document is too big"); }))
+      .toEqual({ ok: false, code: "error", message: "document is too big" });
+  });
+
+  it("a kept draft with edits takes the new record in, merged", async () => {
+    dropAllWatchPages();
+    const old = takeWatchPagesRecord("w-start", document(), 4).draft;
+    old.apply(withName(document(), "Edited"));
+    expect(old.dirty).toBe(true);
+    const created = startWatchPages({ newId: () => PHONE_ID });
+    const taken = takeWatchPagesRecord("w-start", created, 1);
+    expect(taken.draft).toBe(old);
+    expect(taken.draft.revision).toBe(1);
+    expect(taken.draft.base).toBe(created);
+    dropAllWatchPages();
   });
 });

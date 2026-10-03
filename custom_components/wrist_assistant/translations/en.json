@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Wrist Assistant",
-        "description": "This enables Wrist Assistant sync with Home Assistant. Finish setup in the Wrist Assistant app."
+        "description": "This enables Wrist Assistant sync with Home Assistant. Finish setup in the Wrist Assistant app on your iPhone, or pair a watch by code from the panel."
       }
     },
     "abort": {

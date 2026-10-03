@@ -1070,10 +1070,11 @@ function capital(text: string): string {
 
 export const WATCH_MENUS_NO_RECORD_TITLE = "No menus from this watch yet.";
 
-/** How menus reach Home Assistant without the panel: the iPhone sends them
- * while Edit pages in Home Assistant is on. */
+/** The two ways a watch's first menus record comes about: the button here,
+ * or the iPhone, which sends its menus while Edit pages in Home Assistant is
+ * on. */
 export const WATCH_MENUS_NO_RECORD_TEXT =
-  "Open the iPhone app and turn on Edit pages in Home Assistant under Settings, Pages in Home Assistant: the iPhone then sends its menus here. Or start with the app's default menus.";
+  "Start with the defaults here, or open the iPhone app and turn on Edit pages in Home Assistant under Settings, Pages in Home Assistant.";
 
 export const WATCH_MENUS_START_BUTTON = "Start with the defaults";
 

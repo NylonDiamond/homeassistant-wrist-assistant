@@ -13,9 +13,11 @@
 //
 // Plan: app repo docs/pages_in_home_assistant_step3.md ("3b build contract").
 
-import { type WatchPagesDocument, isJsonObject } from "./model.js";
+import { type WatchEditOptions, addWatchPage } from "./edit.js";
+import { type WatchPage, type WatchPagesDocument, isJsonObject } from "./model.js";
 import { checkWatchPages, checkWatchPagesValues, mergeWatchPages, sameWatchPagesJson } from "./merge.js";
 import { settleMergedWatchPages } from "./page-settings-model.js";
+import { watchCommandError } from "./save-note.js";
 
 /** The most undo steps a draft keeps. The oldest goes first. */
 export const WATCH_PAGES_UNDO_LIMIT = 100;
@@ -429,5 +431,49 @@ async function runSave(draft: WatchPagesDraft, io: WatchPagesSaveIO): Promise<Wa
     }
     draft.saved(sent, revision);
     return { ok: true, revision: draft.revision, merged };
+  }
+}
+
+// ── no record: "Start with an empty page" ────────────────────────────────
+
+/**
+ * The first page document of a watch Home Assistant holds no pages for: one
+ * new, empty page, built as `addWatchPage` builds one ("New Page 1", every
+ * `fresh` key of `page-keys.json`), at schema 1. Keys in sorted order, as the
+ * phone's encoder writes them, so it is the phone's own new page document to
+ * the byte. Pure: the page id comes from `options.newId` when given.
+ */
+export function startWatchPages(options?: WatchEditOptions): WatchPagesDocument {
+  const { pages } = addWatchPage({}, options);
+  return { pages, schemaVersion: 1 };
+}
+
+/** How "Start with an empty page" ended. `pageId` is the new page's id. */
+export type WatchPagesStartResult =
+  | { ok: true; revision: number; pageId: string }
+  | { ok: false; code: "no_record" | "conflict" | "unsupported" | "error"; message: string };
+
+/**
+ * Create the watch's pages record with one empty page (`startWatchPages`): a
+ * save over revision 0, which Home Assistant takes only while it holds no
+ * record for a paired watch. `no_record` back means the watch is not paired;
+ * `conflict` means a record came meanwhile (the caller reads it);
+ * `unknown_command` means an integration too old to keep watch config at
+ * all. Any other refusal is an error with Home Assistant's own words.
+ */
+export async function createWatchPages(
+  save: (baseRevision: number, document: WatchPagesDocument) => Promise<{ revision: number }>,
+  options?: WatchEditOptions,
+): Promise<WatchPagesStartResult> {
+  const document = startWatchPages(options);
+  const pageId = String((document.pages as WatchPage[])[0]!.id);
+  try {
+    const { revision } = await save(0, document);
+    return { ok: true, revision, pageId };
+  } catch (error) {
+    const { code, message } = watchCommandError(error);
+    if (code === "no_record" || code === "conflict") return { ok: false, code, message };
+    if (code === "unknown_command") return { ok: false, code: "unsupported", message };
+    return { ok: false, code: "error", message };
   }
 }

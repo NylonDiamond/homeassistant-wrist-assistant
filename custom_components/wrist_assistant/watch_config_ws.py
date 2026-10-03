@@ -97,7 +97,8 @@ def ws_watch_config_get(
 
     With no record, ``revision``, ``delivered_revision`` and
     ``rejected_revision`` are 0, the strings are null, and there is no
-    ``document``: the view's "open the iPhone app once" state.
+    ``document``: the view's "no record yet" state, which the panel's start
+    button (a save over base 0) or the iPhone mirror's first upload ends.
     ``rejected_revision`` equal to ``revision`` means a device fetched this
     save and could not decode it, which outranks delivery; any lower value is
     an old report a later save has replaced. Reading changes nothing,

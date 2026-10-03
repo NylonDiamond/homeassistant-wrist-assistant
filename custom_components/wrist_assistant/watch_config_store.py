@@ -2,22 +2,28 @@
 
 Part of moving watch configuration out of the phone (see
 ``docs/pages_in_home_assistant_step1.md``, ``..._step2.md`` and
-``..._step3.md`` and ``..._step4.md`` in the app repo). The phone uploads its
-page config (kind ``pages``), its watch behavior settings (kind ``behavior``)
-and its menus (kind ``menus``: the Anywhere menu, the Entity quick menu and
-the page switcher's style) here after each edit, and pulls a newer copy back
-down when it has nothing unsent. It also publishes its library catalog (kind
-``catalog``), which only the phone writes. The panel may read, save and
-restore pages, behavior and menus, and read the catalog (see
-``watch_config_ws.py``); the phone picks a panel save up on its next check, or
-at once over the live line while the app is open, and the watch pulls its own
-records over the signed get when the delta reply names a newer revision.
+``..._step3.md`` and ``..._step4.md`` in the app repo). A record has three
+parties:
 
-The first record of a kind normally comes from a device. The panel may create
-one too (``base_revision`` 0 with nothing stored), but only for a watch the
-secret store knows: a watch with no phone never uploads, so without that its
-editor would stay empty, and an id nothing has paired as must never gain a
-record the panel invented.
+* The iPhone mirror. With its switch on, the phone uploads its page config
+  (kind ``pages``), its watch behavior settings (kind ``behavior``) and its
+  menus (kind ``menus``: the Anywhere menu, the Entity quick menu and the
+  page switcher's style) here after each edit, and pulls a newer copy back
+  down when it has nothing unsent. It also publishes its library catalog
+  (kind ``catalog``), which only the phone writes.
+* The panel. It may read, save and restore pages, behavior and menus, and
+  read the catalog (see ``watch_config_ws.py``), and it may make a watch's
+  first record of those kinds.
+* The watch's own pull. The watch reads its records over the signed get when
+  the delta reply names a newer revision; it never writes. The phone, when
+  there is one, also picks a panel save up on its next check, or at once
+  over the live line while the app is open.
+
+The first record of a kind comes from the iPhone mirror or from the panel
+(``base_revision`` 0 with nothing stored). The panel's create is taken only
+for a watch the secret store knows: a watch with no phone never uploads, so
+without it that watch would have no pages or settings at all, and an id
+nothing has paired as must never gain a record the panel invented.
 
 A record is keyed on the watch, not the phone: the owner is the id that signed
 the request, which is the watch's own pair even when the phone sends it. The
@@ -1201,8 +1207,7 @@ class WatchConfigStore:
     @staticmethod
     def _no_record(kind: str) -> WatchConfigNoRecordError:
         return WatchConfigNoRecordError(
-            f"there is no stored {kind} record to save over; the iPhone "
-            "uploads the first copy"
+            f"there is no stored {kind} record to save over"
         )
 
     @staticmethod
@@ -1345,8 +1350,9 @@ class WatchConfigStore:
           change, so a phone that synced it before still reads it as in step.
           Its delivery is reset to nothing: it said which revision the device
           signing as the old id held, and nothing signing as the new id has
-          asked yet. The panel then reads "waiting for the iPhone" until the
-          first get under the new id, which is the honest answer. Its
+          asked yet. The panel then reads "waiting to be collected" until the
+          first get under the new id (the watch's own pull, or the iPhone
+          mirror's), which is the honest answer. Its
           unreadable report moves with it: the document is the same one the
           device could not read.
         * The target already holds one: the target's record stays. It is what

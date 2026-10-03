@@ -155,7 +155,7 @@ describe("the words after a save", () => {
   it("names every way a save can fail in plain words", () => {
     expect(watchPagesSaveNote({ ...base, ok: false, code: "conflict" }).text).toMatch(/kept changing on the iPhone/);
     expect(watchPagesSaveNote({ ...base, ok: false, code: "no_record" }).text).toBe(
-      "Not saved. Home Assistant no longer holds pages for this watch. Open the iPhone app with Edit pages in Home Assistant turned on, then save again.",
+      "Not saved. Home Assistant no longer holds pages for this watch. Start with an empty page again, or let the iPhone send its pages.",
     );
     expect(watchPagesSaveNote({ ...base, ok: false, code: "unavailable" }).kind).toBe("warn");
     expect(watchPagesSaveNote({ ...base, ok: false, code: "invalid", problems: ["Page 1 has no id."] }).text)
