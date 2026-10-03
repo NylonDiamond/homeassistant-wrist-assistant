@@ -1,6 +1,6 @@
 {
   "name": "No snapshot loads: every camera counts as 1.78, the group still widens, cameraAspectRatio is not written",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:614",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:616",
   "page": {
     "backgroundBrightness": 0.6,
     "backgroundColor": "#000000",

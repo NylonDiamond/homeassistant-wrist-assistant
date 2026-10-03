@@ -1,6 +1,6 @@
 {
   "name": "Removing the only camera of a group removes the tile (Remove is offered from two cameras)",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:708",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:710",
   "page": {
     "backgroundBrightness": 0.6,
     "backgroundColor": "#000000",

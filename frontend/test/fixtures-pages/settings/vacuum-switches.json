@@ -1,6 +1,6 @@
 {
   "name": "Switches in the order picked",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:978",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:980",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

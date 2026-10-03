@@ -1,6 +1,6 @@
 {
   "name": "Add a camera; one already in the group is skipped",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:644",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:646",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

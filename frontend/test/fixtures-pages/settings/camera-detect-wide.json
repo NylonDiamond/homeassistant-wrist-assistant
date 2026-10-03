@@ -1,6 +1,6 @@
 {
   "name": "A 16:9 camera: 12 by 7 from column 0, the tiles below pushed down",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:623",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:625",
   "page": {
     "backgroundBrightness": 0.6,
     "backgroundColor": "#000000",

@@ -1,6 +1,6 @@
 {
   "name": "Auto-Submit off removes the key",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1172",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1174",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

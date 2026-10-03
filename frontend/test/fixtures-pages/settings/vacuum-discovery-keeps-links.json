@@ -1,6 +1,6 @@
 {
   "name": "Discovery with links already set: switches untouched, new ones appended",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1032",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1034",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

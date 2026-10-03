@@ -1,6 +1,6 @@
 {
   "name": "Discovery applied as the sheet suggests it",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1032",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1034",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

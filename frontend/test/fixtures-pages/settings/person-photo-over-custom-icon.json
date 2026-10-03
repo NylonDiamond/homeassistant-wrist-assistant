@@ -1,6 +1,6 @@
 {
   "name": "Photo on a tile with its own icon (which reads Icon while absent) writes true",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1165",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1167",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

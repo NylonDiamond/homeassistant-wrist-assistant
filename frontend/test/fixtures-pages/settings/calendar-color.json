@@ -1,6 +1,6 @@
 {
   "name": "A calendar's swatch, as listed",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1138",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1140",
   "tile": {
     "additionalCalendarEntityIds": ["calendar.work", "calendar.school"],
     "animationIntensity": 1,

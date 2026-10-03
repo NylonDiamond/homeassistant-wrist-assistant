@@ -1,6 +1,6 @@
 {
   "name": "Pick an extra select; no label is written",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:965",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:967",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

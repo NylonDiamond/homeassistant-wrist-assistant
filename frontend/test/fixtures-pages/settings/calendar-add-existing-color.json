@@ -1,6 +1,6 @@
 {
   "name": "A calendar that has a color keeps it",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1108",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1110",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

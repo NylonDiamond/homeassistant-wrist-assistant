@@ -1,6 +1,6 @@
 {
   "name": "A 9:16 doorbell: 8 by 14 does not fit from column 8, so column 0",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:623",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:625",
   "page": {
     "backgroundBrightness": 0.6,
     "backgroundColor": "#000000",

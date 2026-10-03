@@ -1,6 +1,6 @@
 {
   "name": "Apply with the picks changed: an extra select and its label, switches in pick order",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1047",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1049",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

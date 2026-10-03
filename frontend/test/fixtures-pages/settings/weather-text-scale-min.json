@@ -1,6 +1,6 @@
 {
   "name": "Text size at the low end writes 1",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1152",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1154",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

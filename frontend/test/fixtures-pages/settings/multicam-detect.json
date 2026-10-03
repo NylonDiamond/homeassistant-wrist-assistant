@@ -1,6 +1,6 @@
 {
   "name": "Two 16:9 cameras side by side: 12 by 3",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:614",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:616",
   "page": {
     "backgroundBrightness": 0.6,
     "backgroundColor": "#000000",

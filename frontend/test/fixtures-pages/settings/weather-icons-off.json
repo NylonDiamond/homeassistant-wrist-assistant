@@ -1,6 +1,6 @@
 {
   "name": "Hide the condition icons",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1158",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1160",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

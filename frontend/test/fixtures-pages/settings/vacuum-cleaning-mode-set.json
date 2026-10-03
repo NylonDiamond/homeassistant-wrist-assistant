@@ -1,6 +1,6 @@
 {
   "name": "Link a cleaning mode select",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:961",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:963",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

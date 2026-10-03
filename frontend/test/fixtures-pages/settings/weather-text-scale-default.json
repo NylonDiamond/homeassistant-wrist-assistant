@@ -1,6 +1,6 @@
 {
   "name": "Text size back at 1.5 removes the key",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1152",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1154",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

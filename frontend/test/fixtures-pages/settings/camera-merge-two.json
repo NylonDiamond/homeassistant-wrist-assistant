@@ -1,6 +1,6 @@
 {
   "name": "Two cameras become a new group at the first free place once they are gone, appended last",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:567",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:569",
   "page": {
     "backgroundBrightness": 0.6,
     "backgroundColor": "#000000",

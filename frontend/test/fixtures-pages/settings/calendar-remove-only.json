@@ -1,6 +1,6 @@
 {
   "name": "The only calendar is not removed (Remove is offered from two calendars)",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1119",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1121",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

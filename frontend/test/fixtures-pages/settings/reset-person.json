@@ -1,6 +1,6 @@
 {
   "name": "Reset Person",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1223",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1225",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,
