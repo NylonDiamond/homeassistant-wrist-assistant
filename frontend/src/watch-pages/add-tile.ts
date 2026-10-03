@@ -1,8 +1,10 @@
 // The Add tile dialog's body: pick an entity or a kind (spacer, header, go to
 // page, peek page) and add it to the selected page with the phone's defaults
 // (part 3c), or one of the iPhone's HTTP actions, macros and status pages
-// from the catalog (part 3e). With no catalog, one line says where those
-// lists come from.
+// from the catalog (part 3e), or one of the app's own tiles: Music Hub,
+// Template, Assist, Speak Message and Point Control (3f batch 2). With no
+// catalog, one line says where the library lists come from; without Music
+// Assistant, Music Hub is off and one line says why.
 //
 // `<wa-page-editor>` opens the dialog from the stage's Add tile button and
 // draws `renderAddTile` under the dialog's title; Escape, the close button
@@ -25,9 +27,13 @@ import { guard } from "lit/directives/guard.js";
 import { uiIcon } from "../ui-icons.js";
 import {
   type WatchAddCandidate,
+  type WatchAppAddButton,
   WATCH_ADD_BUSY_TEXT,
   WATCH_ADD_ROWS,
+  WATCH_APP_ADD_BUTTONS,
   WatchAddListCache,
+  watchAppAdd,
+  watchAppAddBlockedText,
   watchAddEmptyText,
   watchAddHighlightIndex,
   watchAddMoreText,
@@ -262,6 +268,18 @@ function addLibrary(host: AddTileHost, view: AddTileView, kind: WatchLibraryKind
   if (commit(host, view, add, `Added ${LIBRARY_WORDS[kind].tile} for "${entry.name}".`)) view.links = undefined;
 }
 
+/** Add one of the app's own tiles. All of them may repeat. A button that
+ * cannot add (Music Hub without Music Assistant) says why instead. */
+function addApp(host: AddTileHost, view: AddTileView, button: WatchAppAddButton): void {
+  const blocked = watchAppAddBlockedText(button.key, host.musicAssistant);
+  if (blocked !== undefined) {
+    view.note = { tone: "err", text: blocked };
+    host.requestUpdate();
+    return;
+  }
+  commit(host, view, watchAppAdd(button.key, host.hass), button.done);
+}
+
 // ── drawing ──────────────────────────────────────────────────────────────
 
 /** The id of an entity's row, for `aria-activedescendant`. Entity ids are
@@ -396,6 +414,10 @@ function renderBody(host: AddTileHost, view: AddTileView): TemplateResult {
     host.requestUpdate();
   };
   const catalog = host.catalog;
+  // The one app button that can be off says why under the buttons.
+  const appBlocked = WATCH_APP_ADD_BUTTONS.map((b) => watchAppAddBlockedText(b.key, host.musicAssistant)).find(
+    (t) => t !== undefined,
+  );
   const listButton = (kind: OpenList, text: string) => html`<button type="button" class="pe-btn ${view.links === kind ? "on" : ""}"
     aria-expanded=${view.links === kind ? "true" : "false"} aria-controls=${view.links === kind ? "at-links" : nothing}
     @click=${() => toggleLinks(kind)}>${text}${uiIcon("chevron")}</button>`;
@@ -482,7 +504,14 @@ function renderBody(host: AddTileHost, view: AddTileView): TemplateResult {
         @click=${() => commit(host, view, { kind: "header" }, "Added a header.")}>Header</button>
       ${listButton("pageLink", "Go to page")}
       ${listButton("peekLink", "Peek page")}
+      ${WATCH_APP_ADD_BUTTONS.map((b) => {
+        const blocked = watchAppAddBlockedText(b.key, host.musicAssistant);
+        return html`<button type="button" class="pe-btn" ?disabled=${busy || blocked !== undefined}
+          title=${blocked ?? nothing} aria-describedby=${blocked === undefined ? nothing : "at-app-blocked"}
+          @click=${() => addApp(host, view, b)}>${b.label}</button>`;
+      })}
     </div>
+    ${appBlocked === undefined ? nothing : html`<div class="at-muted" id="at-app-blocked">${appBlocked}</div>`}
     ${catalog === undefined
       ? html`<div class="at-muted at-lib-none">${WATCH_NO_CATALOG_TEXT}</div>`
       : html`<div class="at-kinds at-lib" role="group" aria-label="From the iPhone">

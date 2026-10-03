@@ -8,8 +8,11 @@ import { describe, expect, it } from "vitest";
 import type { HassEntityState } from "../src/ha-api.js";
 import {
   WATCH_ADD_ROWS,
+  WATCH_APP_ADD_BUTTONS,
   WatchAddListCache,
   type WatchAddPoolInput,
+  watchAppAdd,
+  watchAppAddBlockedText,
   watchAddEmptyText,
   watchAddHighlightIndex,
   watchAddMoreText,
@@ -22,7 +25,8 @@ import {
   watchAddedCountText,
   watchLeftOutText,
 } from "../src/watch-pages/add-tile-list.js";
-import type { WatchAddRefusal } from "../src/watch-pages/tile-new.js";
+import type { WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-pages/model.js";
+import { type WatchAddRefusal, WATCH_TILE_APP, addNewWatchTile } from "../src/watch-pages/tile-new.js";
 
 function st(entityId: string, state: string, friendly?: string): HassEntityState {
   return {
@@ -312,5 +316,119 @@ describe("an empty list and an empty home", () => {
   it("builds an empty pool from a hass with no states yet", () => {
     const pool = watchAddPool({ hass: { states: undefined } as never, onPage: new Set(), keep: new Set() });
     expect(pool).toEqual({ candidates: [], onPage: [], kinds: [], leftOut: 0 });
+  });
+});
+
+describe("the app tile buttons", () => {
+  function player(entityId: string, features: unknown): HassEntityState {
+    return { ...st(entityId, "idle"), attributes: { supported_features: features } };
+  }
+
+  const MUSIC_HOME = states([
+    player("media_player.living_room", 524292),
+    player("media_player.den_tv", 4),
+    player("media_player.kitchen", 524288),
+    player("media_player.bedroom", 1572864),
+    // Past 2^32: the grouping bit is read without JavaScript's 32 bit `&`.
+    player("media_player.big", 2 ** 33 + 524288),
+    player("media_player.odd", "524288"),
+    st("light.kitchen", "on", "Kitchen"),
+  ]);
+
+  function document(): WatchPagesDocument {
+    return { schemaVersion: 1, pages: [{ id: "P1", name: "Main", themeOverride: "neonLagoon", items: [] }] };
+  }
+
+  function tilesOf(doc: WatchPagesDocument): WatchPageTile[] {
+    return (doc.pages as WatchPage[])[0]!.items as WatchPageTile[];
+  }
+
+  it("lists Music Hub, then Template, Assist, Speak Message and Point Control, and no Webhook Inbox", () => {
+    expect(WATCH_APP_ADD_BUTTONS.map((b) => b.label)).toEqual(["Music Hub", "Template", "Assist", "Speak Message", "Point Control"]);
+    expect(WATCH_APP_ADD_BUTTONS.map((b) => b.chip)).toEqual(["Media", "Others", "Others", "Others", "Others"]);
+    expect(WATCH_APP_ADD_BUTTONS.some((b) => /inbox|webhook/i.test(b.label))).toBe(false);
+  });
+
+  it("makes the adds the case files pin", () => {
+    const hass = { states: MUSIC_HOME };
+    expect(watchAppAdd("template", hass)).toEqual({ kind: "template" });
+    expect(watchAppAdd("pointControl", hass)).toEqual({ kind: "pointControl" });
+    expect(watchAppAdd("assist", hass)).toEqual({ kind: "entity", entityId: "assist.voice_hub", picker: "assist" });
+    expect(watchAppAdd("speak", hass)).toEqual({ kind: "entity", entityId: "speak_message.voice_hub", picker: "speakMessage" });
+  });
+
+  it("gives a music hub the home's media players and lists the ones that can group, by id", () => {
+    const add = watchAppAdd("musicHub", { states: MUSIC_HOME });
+    expect(add).toEqual({
+      kind: "musicHub",
+      players: [
+        { entityId: "media_player.living_room", supportedFeatures: 524292 },
+        { entityId: "media_player.den_tv", supportedFeatures: 4 },
+        { entityId: "media_player.kitchen", supportedFeatures: 524288 },
+        { entityId: "media_player.bedroom", supportedFeatures: 1572864 },
+        { entityId: "media_player.big", supportedFeatures: 2 ** 33 + 524288 },
+        { entityId: "media_player.odd", supportedFeatures: 0 },
+      ],
+    });
+    let n = 0;
+    const result = addNewWatchTile(document(), "P1", add, { newId: () => `id-${n++}` });
+    expect(result.tile?.entityId).toBe("music_hub.ID-0");
+    expect(result.tile?.id).toBe("ID-1");
+    expect(result.tile?.musicHubSpeakerIds).toEqual([
+      "media_player.bedroom",
+      "media_player.big",
+      "media_player.kitchen",
+      "media_player.living_room",
+    ]);
+    expect(result.tile?.showAlbumArt).toBe(true);
+  });
+
+  it("lists the grouping sample as the app does", () => {
+    const sample = WATCH_TILE_APP as unknown as {
+      musicHub: { groupingSample: { players: { entityId: string; supportedFeatures: number }[]; speakers: string[] } };
+    };
+    const { players, speakers } = sample.musicHub.groupingSample;
+    const result = addNewWatchTile(document(), "P1", { kind: "musicHub", players }, { newId: () => "x" });
+    expect(result.tile?.musicHubSpeakerIds).toEqual(speakers);
+  });
+
+  it("writes [] for a home with no player that can group, or no states yet", () => {
+    for (const hass of [{ states: states([player("media_player.tv", 4)]) }, { states: undefined as never }]) {
+      const result = addNewWatchTile(document(), "P1", watchAppAdd("musicHub", hass), { newId: () => "x" });
+      expect(result.tile?.musicHubSpeakerIds).toEqual([]);
+    }
+  });
+
+  it("adds every app tile more than once to the same page", () => {
+    let doc = document();
+    let n = 0;
+    for (const b of WATCH_APP_ADD_BUTTONS) {
+      for (let i = 0; i < 2; i += 1) {
+        const result = addNewWatchTile(doc, "P1", watchAppAdd(b.key, { states: MUSIC_HOME }), { newId: () => `n-${n++}` });
+        expect(result.refusal, b.key).toBeUndefined();
+        doc = result.document;
+      }
+    }
+    expect(tilesOf(doc).map((t) => String(t.entityId).split(".")[0])).toEqual([
+      "music_hub", "music_hub", "template", "template", "assist", "assist",
+      "speak_message", "speak_message", "point_control", "point_control",
+    ]);
+    expect(tilesOf(doc)[6]!.speakMessageOutputMode).toBe("configuredSpeakers");
+    expect(tilesOf(doc)[4]!.speakMessageOutputMode).toBeUndefined();
+  });
+
+  it("turns Music Hub off with the phone's words until Music Assistant is known to be there", () => {
+    const words = "Music Assistant Required. Install the Music Assistant integration in Home Assistant to use Music Hub.";
+    expect(watchAppAddBlockedText("musicHub", undefined)).toBe(words);
+    expect(watchAppAddBlockedText("musicHub", false)).toBe(words);
+    expect(watchAppAddBlockedText("musicHub", true)).toBeUndefined();
+    for (const b of WATCH_APP_ADD_BUTTONS.filter((x) => x.key !== "musicHub")) {
+      for (const music of [undefined, false, true]) expect(watchAppAddBlockedText(b.key, music)).toBeUndefined();
+    }
+  });
+
+  it("never breaks a sentence with a dash", () => {
+    const texts = [...WATCH_APP_ADD_BUTTONS.map((b) => b.done), watchAppAddBlockedText("musicHub", false)!];
+    for (const t of texts) expect(t).not.toMatch(/[–—]| - /);
   });
 });

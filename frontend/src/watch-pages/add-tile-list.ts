@@ -14,7 +14,17 @@
 
 import { type EntityChoice, areaLookup, entityChoices, searchEntities } from "../editors.js";
 import type { HassEntityState, HassLike } from "../ha-api.js";
-import { type WatchAddRefusal, watchAddableDomain } from "./tile-new.js";
+import {
+  type WatchAddRefusal,
+  type WatchHassView,
+  type WatchTileAdd,
+  WATCH_ASSIST_ENTITY_ID,
+  WATCH_MUSIC_ASSISTANT_REQUIRED_TEXT,
+  WATCH_SPEAK_ENTITY_ID,
+  WATCH_TILE_APP,
+  watchAddableDomain,
+  watchMediaPlayersFromHass,
+} from "./tile-new.js";
 
 /** One row: the panel's search row, plus the plain name of the entity's kind
  * as the phone's add names it ("Lights", "Media Players"). */
@@ -218,6 +228,61 @@ export function watchAddNextOpen(
   for (let i = index + 1; i < results.length; i += 1) if (!isAdded(results[i]!.entityId)) return i;
   for (let i = index - 1; i >= 0; i -= 1) if (!isAdded(results[i]!.entityId)) return i;
   return index;
+}
+
+// ── app tiles ────────────────────────────────────────────────────────────
+
+/** The app tile buttons the dialog shows. */
+export type WatchAppAddKey = "musicHub" | "template" | "assist" | "speak" | "pointControl";
+
+export interface WatchAppAddButton {
+  key: WatchAppAddKey;
+  /** The button's words, as the phone's chip names it. */
+  label: string;
+  /** The phone's chip the button sits under. */
+  chip: "Media" | "Others";
+  /** The line after an add. */
+  done: string;
+}
+
+/** The app tile buttons in the dialog's order: Music Hub (the phone's Media
+ * chip), then Template, Assist, Speak Message and Point Control (its Others
+ * chip). No Webhook Inbox: on the phone that add is Debug only. */
+export const WATCH_APP_ADD_BUTTONS: readonly WatchAppAddButton[] = [
+  { key: "musicHub", label: "Music Hub", chip: "Media", done: "Added a Music Hub tile." },
+  { key: "template", label: "Template", chip: "Others", done: "Added a Template tile." },
+  { key: "assist", label: "Assist", chip: "Others", done: "Added an Assist tile." },
+  { key: "speak", label: "Speak Message", chip: "Others", done: "Added a Speak Message tile." },
+  { key: "pointControl", label: "Point Control", chip: "Others", done: "Added a Point Control tile." },
+];
+
+/**
+ * The add a button makes: a template, music hub or point control tile with an
+ * id of its own, or an entity add of the fixed assist or speak message id
+ * through its picker. A music hub reads the home's media players from
+ * `hass.states`, so it lists the players that can group as the phone does.
+ */
+export function watchAppAdd(key: WatchAppAddKey, hass: Pick<WatchHassView, "states">): WatchTileAdd {
+  switch (key) {
+    case "template":
+    case "pointControl":
+      return { kind: key };
+    case "musicHub":
+      return { kind: "musicHub", players: watchMediaPlayersFromHass(hass) };
+    case "assist":
+      return { kind: "entity", entityId: WATCH_ASSIST_ENTITY_ID, picker: WATCH_TILE_APP.assist.add.picker };
+    case "speak":
+      return { kind: "entity", entityId: WATCH_SPEAK_ENTITY_ID, picker: WATCH_TILE_APP.speak.add.picker };
+  }
+}
+
+/** Why a button cannot add, or undefined when it can. Music Hub needs Music
+ * Assistant (any config entry of the domain, the phone's rule): while that is
+ * not known to be there (not installed, still asking, or the call failed),
+ * the button is off and says the phone's alert words. */
+export function watchAppAddBlockedText(key: WatchAppAddKey, musicAssistant: boolean | undefined): string | undefined {
+  if (key === "musicHub" && musicAssistant !== true) return WATCH_MUSIC_ASSISTANT_REQUIRED_TEXT;
+  return undefined;
 }
 
 // ── words ────────────────────────────────────────────────────────────────

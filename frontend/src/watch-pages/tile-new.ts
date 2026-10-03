@@ -17,10 +17,17 @@
 // place for its size and is appended to `items`; only the document, `pages`,
 // the page and its `items` are new objects. Ids are written in upper case.
 //
-// Plan: app repo docs/pages_in_home_assistant_step3.md, "3c build contract"
-// and, for the HTTP action, macro and status page tiles, "3e build contract".
+// The app tiles (template, music hub, point control, and the extra key of a
+// speak message tile) come from `tile-app.json`, which the app writes from
+// its Swift code too (`AppTileRules`, `TileAddDefaults.templateTile` and the
+// rest).
+//
+// Plan: app repo docs/pages_in_home_assistant_step3.md, "3c build contract",
+// for the HTTP action, macro and status page tiles "3e build contract", and
+// for the app tiles "3f batch 2 build contract".
 
 import pageKeys from "./page-keys.json";
+import tileApp from "./tile-app.json";
 import tileDefaults from "./tile-defaults.json";
 import { type WatchEditOptions, firstFreeWatchCell, randomWatchId, sameWatchId } from "./edit.js";
 import {
@@ -139,6 +146,35 @@ interface TileDefaultsTable {
  * test vectors; nothing else should reach into it. */
 export const WATCH_TILE_DEFAULTS: Readonly<TileDefaultsTable> = tileDefaults as unknown as TileDefaultsTable;
 const TABLE = WATCH_TILE_DEFAULTS;
+
+/** An app tile with an id of its own (`<kind>.<UUID>`): a fixed icon, color
+ * and label, never the theme's (`TileAddDefaults.appTile`). */
+interface AppAddSpec {
+  entityIdPrefix: string;
+  icon: string;
+  hex: string;
+  customLabel: string;
+}
+
+/** The parts of `tile-app.json` an add reads. */
+interface TileAppTable {
+  template: {
+    add: AppAddSpec & { addPreset: string };
+    presets: { id: string; template: string }[];
+  };
+  musicHub: {
+    add: AppAddSpec & { showAlbumArt: boolean };
+    groupingBit: number;
+    musicAssistant: { title: string; message: string };
+  };
+  pointControl: { add: AppAddSpec };
+  assist: { add: { entityId: string; picker: string; extras?: Record<string, unknown> } };
+  speak: { add: { entityId: string; picker: string; extras?: Record<string, unknown> } };
+}
+
+/** The app tile table as the app wrote it. Exported for the tests. */
+export const WATCH_TILE_APP: Readonly<TileAppTable> = tileApp as unknown as TileAppTable;
+const APP = WATCH_TILE_APP;
 
 interface PageKeySpec {
   fresh?: boolean;
@@ -644,13 +680,29 @@ export function watchEntityAddFromHass(hass: WatchHassView, entityId: string, pi
 
 // ── builders ─────────────────────────────────────────────────────────────
 
+/** The extra keys of the app's voice tiles, by kind: a speak message tile
+ * starts in Choose Speakers (`speakMessageOutputMode: "configuredSpeakers"`,
+ * `TileAddDefaults.entityTile`, AddTabContent.swift:619-621). These kinds
+ * have no `addable` route, so their extras live in `tile-app.json`. */
+const APP_ENTITY_EXTRAS: Readonly<Record<string, Record<string, unknown>>> = Object.fromEntries(
+  [APP.assist.add, APP.speak.add]
+    .filter((a) => a.extras !== undefined)
+    .map((a) => [tileKind(a.entityId), a.extras!]),
+);
+
+/** The entity ids of the app's two voice tiles: one fixed id each, and both
+ * may repeat on a page. */
+export const WATCH_ASSIST_ENTITY_ID = APP.assist.add.entityId;
+export const WATCH_SPEAK_ENTITY_ID = APP.speak.add.entityId;
+
 /**
  * A new entity tile (`addEntityByDomain`): the fresh keys, `entityId`,
  * `icon` and `color` from `watchEntityDefaults` (each only when there is
  * one), `customLabel` from `watchEntityLabel`, size 6 by 4, and the extra
  * keys of the picker's route: `cameraDisplayMode: "preview"` for a camera,
  * `calendarSourceColors` for a calendar, `associatedMediaPlayerId` (the
- * first `media_player.` on the device) for a remote when there is one. No
+ * first `media_player.` on the device) for a remote when there is one, and
+ * `speakMessageOutputMode: "configuredSpeakers"` for a speak message tile. No
  * `singleTapAction`, no `capabilities`. Placed at row 0, column 0; the add
  * places it.
  */
@@ -681,6 +733,8 @@ export function newWatchEntityTile(
       if (player !== undefined) fields.associatedMediaPlayerId = player;
     }
   }
+  const appExtras = own(APP_ENTITY_EXTRAS, domain);
+  if (appExtras !== undefined) Object.assign(fields, structuredClone(appExtras));
   return freshTile(fields);
 }
 
@@ -831,7 +885,101 @@ export function newWatchLibraryTile(
   });
 }
 
-/** One add, in the shape the case files use. */
+// ── app tiles ────────────────────────────────────────────────────────────
+
+/** The three app kinds with an id of their own, as an add names them. */
+export type WatchAppAddKind = "template" | "musicHub" | "pointControl";
+
+function appSpec(kind: WatchAppAddKind): AppAddSpec {
+  return kind === "template" ? APP.template.add : kind === "musicHub" ? APP.musicHub.add : APP.pointControl.add;
+}
+
+/** A media player as the music hub add reads it (`AppTileRules.MediaPlayer`):
+ * its id and `supported_features`. */
+export interface WatchMediaPlayer {
+  entityId: string;
+  supportedFeatures: number;
+}
+
+/** Whether a `supported_features` value has the bit `bit` (a power of two),
+ * read without the 32 bit limit of JavaScript's `&`. */
+function hasFeature(features: number, bit: number): boolean {
+  return Number.isFinite(features) && features >= 0 && Math.floor(features / bit) % 2 === 1;
+}
+
+/** The speakers a new music hub lists (`AppTileRules.groupingSpeakers`):
+ * every player whose `supported_features` has the grouping bit (524288),
+ * sorted by entity id; `[]` when there is none. */
+export function watchGroupingSpeakers(players: readonly WatchMediaPlayer[]): string[] {
+  const bit = APP.musicHub.groupingBit;
+  return players
+    .filter((p) => hasFeature(p.supportedFeatures, bit))
+    .map((p) => p.entityId)
+    .sort(byCodeUnit);
+}
+
+/** Every `media_player.` in Home Assistant's states with its
+ * `supported_features` (0 when it is not a whole number), in states order:
+ * what the phone's state cache hands the music hub add. */
+export function watchMediaPlayersFromHass(hass: Pick<WatchHassView, "states">): WatchMediaPlayer[] {
+  const players: WatchMediaPlayer[] = [];
+  for (const [entityId, entity] of Object.entries(hass.states ?? {})) {
+    if (entity === undefined || !entityId.startsWith("media_player.")) continue;
+    const features = entity.attributes?.supported_features;
+    players.push({ entityId, supportedFeatures: typeof features === "number" && Number.isInteger(features) ? features : 0 });
+  }
+  return players;
+}
+
+/** The text a new template tile starts with: the Home Status preset's, byte
+ * for byte. */
+export function watchTemplateAddText(): string {
+  const preset = APP.template.presets.find((p) => p.id === APP.template.add.addPreset);
+  return preset?.template ?? "";
+}
+
+/** The words the phone shows when Music Assistant is missing and Music Hub
+ * is pressed (its alert's title and message, as one line). */
+export const WATCH_MUSIC_ASSISTANT_REQUIRED_TEXT = `${APP.musicHub.musicAssistant.title}. ${APP.musicHub.musicAssistant.message}`;
+
+/**
+ * A new template, music hub or point control tile (`TileAddDefaults.appTile`):
+ * the fresh keys, `entityId` the kind's prefix and a new upper case id (made
+ * first), then the tile's own id, the kind's fixed icon, color and label
+ * (never the theme's, never the gradient form), size 6 by 4, and the kind's
+ * own keys: a template's `templateString` (the Home Status preset), a music
+ * hub's `musicHubSpeakerIds` (`watchGroupingSpeakers` of `players`, `[]`
+ * when none) and `showAlbumArt` true. Placed at row 0, column 0; the add
+ * places it.
+ */
+export function newWatchAppTile(
+  kind: WatchAppAddKind,
+  options?: WatchEditOptions,
+  players: readonly WatchMediaPlayer[] = [],
+): WatchPageTile {
+  const spec = appSpec(kind);
+  const entityId = `${spec.entityIdPrefix}${newIdFrom(options)}`;
+  const fields: JsonObject = {
+    id: newIdFrom(options),
+    entityId,
+    icon: spec.icon,
+    color: spec.hex,
+    customLabel: spec.customLabel,
+    colSpan: TABLE.tile.colSpan,
+    rowSpan: TABLE.tile.rowSpan,
+  };
+  if (kind === "template") fields.templateString = watchTemplateAddText();
+  if (kind === "musicHub") {
+    fields.musicHubSpeakerIds = watchGroupingSpeakers(players);
+    fields.showAlbumArt = APP.musicHub.add.showAlbumArt;
+  }
+  return freshTile(fields);
+}
+
+/** One add, in the shape the case files use. A music hub add carries the
+ * home's media players (`watchMediaPlayersFromHass`); assist and speak
+ * message tiles are entity adds of `WATCH_ASSIST_ENTITY_ID` and
+ * `WATCH_SPEAK_ENTITY_ID`. */
 export type WatchTileAdd =
   | ({ kind: "entity" } & WatchEntityAdd)
   | { kind: "spacer" }
@@ -840,7 +988,10 @@ export type WatchTileAdd =
   | { kind: "peekLink"; page: WatchLinkTarget }
   | { kind: "httpAction"; action: WatchLibraryEntryAdd }
   | { kind: "macro"; macro: WatchLibraryEntryAdd }
-  | { kind: "statusPage"; statusPage: WatchLibraryEntryAdd };
+  | { kind: "statusPage"; statusPage: WatchLibraryEntryAdd }
+  | { kind: "template" }
+  | { kind: "musicHub"; players: readonly WatchMediaPlayer[] }
+  | { kind: "pointControl" };
 
 /** The library entry of a library add. */
 function libraryEntryOf(add: Extract<WatchTileAdd, { kind: WatchLibraryAddKind }>): WatchLibraryEntryAdd {
@@ -864,6 +1015,11 @@ export function newWatchTile(add: WatchTileAdd, page: WatchPage | undefined, opt
     case "macro":
     case "statusPage":
       return newWatchLibraryTile(add.kind, libraryEntryOf(add), options);
+    case "template":
+    case "pointControl":
+      return newWatchAppTile(add.kind, options);
+    case "musicHub":
+      return newWatchAppTile(add.kind, options, add.players);
   }
 }
 
@@ -893,6 +1049,10 @@ const REPEATABLE_KINDS: ReadonlySet<string> = new Set([
   "macro",
   // The phone's status page add never checks for a repeat.
   "status_page",
+  // A new id each, and the phone checks nothing (`duplicatesAllowed`).
+  "template",
+  "music_hub",
+  "point_control",
 ]);
 
 /** The first page with this id, system pages included, with its place. */
@@ -921,6 +1081,10 @@ export function watchAddEntityId(add: WatchTileAdd): string {
     case "macro":
     case "statusPage":
       return watchLibraryEntityId(add.kind, libraryEntryOf(add).id);
+    case "template":
+    case "musicHub":
+    case "pointControl":
+      return appSpec(add.kind).entityIdPrefix;
   }
 }
 
@@ -929,8 +1093,8 @@ export function watchAddEntityId(add: WatchTileAdd): string {
  * why (`WatchAddRefusal`): the page must exist, be no system page and no
  * smart page, and, for an entity tile, hold no tile with the same `entityId`
  * (compared exactly, as on the phone). Spacers, headers, page links and the
- * app's assist, speak, HTTP action, macro and status page tiles may repeat. Undefined means it
- * can.
+ * app's assist, speak, template, music hub, point control, HTTP action,
+ * macro and status page tiles may repeat. Undefined means it can.
  */
 export function watchAddRefusal(document: WatchPagesDocument, pageId: string, entityId: string): WatchAddRefusal | undefined {
   const index = pageIndex(document, pageId);
