@@ -1,0 +1,2273 @@
+{
+  "version": 1,
+  "note": "Generated from the iPhone app's Swift code by WatchMenusTablesTests; do not edit. Regenerate menu-actions.json with TEST_RUNNER_WA_UPDATE_FIXTURES=1 ./scripts/test.sh WatchMenusTablesTests in the app repository.",
+  "categories": [
+    {
+      "id": "entityControl",
+      "label": "Entity Quick Menu",
+      "shortLabel": "Entity"
+    },
+    {
+      "id": "navigation",
+      "label": "Navigation",
+      "shortLabel": "Nav"
+    },
+    {
+      "id": "quickAction",
+      "label": "Quick Actions",
+      "shortLabel": "Quick"
+    },
+    {
+      "id": "remote",
+      "label": "Remote Control",
+      "shortLabel": "Remote"
+    },
+    {
+      "id": "information",
+      "label": "Information",
+      "shortLabel": "Info"
+    }
+  ],
+  "actions": [
+    {
+      "raw": "brightness",
+      "label": "Brightness",
+      "category": "entityControl",
+      "icon": "sun.max.fill",
+      "color": "#E9C46A",
+      "requiresPremium": false
+    },
+    {
+      "raw": "colorTemperature",
+      "label": "Color Temp",
+      "category": "entityControl",
+      "icon": "thermometer.sun.fill",
+      "color": "#F4A261",
+      "requiresPremium": false
+    },
+    {
+      "raw": "colorPicker",
+      "label": "Color Picker",
+      "category": "entityControl",
+      "icon": "paintpalette.fill",
+      "color": "#F08D62",
+      "requiresPremium": false
+    },
+    {
+      "raw": "effectsPicker",
+      "label": "Effects",
+      "category": "entityControl",
+      "icon": "sparkles",
+      "color": "#C47ABF",
+      "requiresPremium": false,
+      "description": "Browse and apply light effects"
+    },
+    {
+      "raw": "position",
+      "label": "Position",
+      "category": "entityControl",
+      "icon": "arrow.up.and.down.square.fill",
+      "color": "#8B7DD6",
+      "requiresPremium": false
+    },
+    {
+      "raw": "targetTemperature",
+      "label": "Target Temp",
+      "category": "entityControl",
+      "icon": "thermometer.medium",
+      "color": "#4DBFE0",
+      "requiresPremium": false
+    },
+    {
+      "raw": "heatSetpoint",
+      "label": "Heat Setpoint",
+      "category": "entityControl",
+      "icon": "flame.fill",
+      "color": "#F4A261",
+      "requiresPremium": false
+    },
+    {
+      "raw": "coolSetpoint",
+      "label": "Cool Setpoint",
+      "category": "entityControl",
+      "icon": "snowflake",
+      "color": "#4DBFE0",
+      "requiresPremium": false
+    },
+    {
+      "raw": "hvacMode",
+      "label": "HVAC Mode",
+      "category": "entityControl",
+      "icon": "thermometer.variable",
+      "color": "#E76F51",
+      "requiresPremium": false,
+      "description": "Cycle through heating/cooling modes"
+    },
+    {
+      "raw": "volume",
+      "label": "Volume",
+      "category": "entityControl",
+      "icon": "speaker.wave.2.fill",
+      "color": "#F08D62",
+      "requiresPremium": false
+    },
+    {
+      "raw": "nextTrack",
+      "label": "Next Track",
+      "category": "entityControl",
+      "icon": "forward.end.fill",
+      "color": "#F08D62",
+      "requiresPremium": false
+    },
+    {
+      "raw": "prevTrack",
+      "label": "Previous Track",
+      "category": "entityControl",
+      "icon": "backward.end.fill",
+      "color": "#F08D62",
+      "requiresPremium": false
+    },
+    {
+      "raw": "mute",
+      "label": "Mute",
+      "category": "entityControl",
+      "icon": "speaker.slash.fill",
+      "color": "#F08D62",
+      "requiresPremium": false
+    },
+    {
+      "raw": "mediaStop",
+      "label": "Stop",
+      "category": "entityControl",
+      "icon": "stop.fill",
+      "color": "#F08D62",
+      "requiresPremium": false
+    },
+    {
+      "raw": "mediaSource",
+      "label": "Source",
+      "category": "entityControl",
+      "icon": "tv.music.note",
+      "color": "#F08D62",
+      "requiresPremium": false
+    },
+    {
+      "raw": "mediaSoundMode",
+      "label": "Sound Mode",
+      "category": "entityControl",
+      "icon": "hifispeaker.fill",
+      "color": "#F08D62",
+      "requiresPremium": false
+    },
+    {
+      "raw": "mediaShuffle",
+      "label": "Shuffle",
+      "category": "entityControl",
+      "icon": "shuffle",
+      "color": "#F08D62",
+      "requiresPremium": false
+    },
+    {
+      "raw": "mediaRepeat",
+      "label": "Repeat",
+      "category": "entityControl",
+      "icon": "repeat",
+      "color": "#F08D62",
+      "requiresPremium": false
+    },
+    {
+      "raw": "fanSpeed",
+      "label": "Fan Speed",
+      "category": "entityControl",
+      "icon": "gauge.medium",
+      "color": "#4DBFE0",
+      "requiresPremium": false
+    },
+    {
+      "raw": "fanDirection",
+      "label": "Direction",
+      "category": "entityControl",
+      "icon": "arrow.left.arrow.right",
+      "color": "#4DBFE0",
+      "requiresPremium": false
+    },
+    {
+      "raw": "fanOscillate",
+      "label": "Oscillate",
+      "category": "entityControl",
+      "icon": "arrow.left.and.right",
+      "color": "#4DBFE0",
+      "requiresPremium": false
+    },
+    {
+      "raw": "fanPresetMode",
+      "label": "Preset Mode",
+      "category": "entityControl",
+      "icon": "slider.horizontal.below.rectangle",
+      "color": "#4DBFE0",
+      "requiresPremium": false
+    },
+    {
+      "raw": "inputNumberValue",
+      "label": "Value",
+      "category": "entityControl",
+      "icon": "dial.medium",
+      "color": "#5E5CE6",
+      "requiresPremium": false,
+      "description": "Adjust value with an arc slider"
+    },
+    {
+      "raw": "switchToggle",
+      "label": "Toggle Switch",
+      "category": "entityControl",
+      "icon": "power",
+      "color": "#2A9D8F",
+      "requiresPremium": false
+    },
+    {
+      "raw": "lockToggle",
+      "label": "Toggle Lock",
+      "category": "entityControl",
+      "icon": "lock.fill",
+      "color": "#D98A4E",
+      "requiresPremium": false
+    },
+    {
+      "raw": "inputBooleanToggle",
+      "label": "Toggle",
+      "category": "entityControl",
+      "icon": "togglepower",
+      "color": "#2A9D8F",
+      "requiresPremium": false
+    },
+    {
+      "raw": "automationToggle",
+      "label": "Enable/Disable",
+      "category": "entityControl",
+      "icon": "gearshape.2.fill",
+      "color": "#64D2FF",
+      "requiresPremium": false,
+      "description": "Enable or disable this automation"
+    },
+    {
+      "raw": "automationTrigger",
+      "label": "Trigger",
+      "category": "entityControl",
+      "icon": "play.fill",
+      "color": "#64D2FF",
+      "requiresPremium": false,
+      "description": "Run this automation immediately"
+    },
+    {
+      "raw": "vacuumStart",
+      "label": "Start",
+      "category": "entityControl",
+      "icon": "play.fill",
+      "color": "#3FB58A",
+      "requiresPremium": false
+    },
+    {
+      "raw": "vacuumPause",
+      "label": "Pause",
+      "category": "entityControl",
+      "icon": "pause.fill",
+      "color": "#3FB58A",
+      "requiresPremium": false
+    },
+    {
+      "raw": "vacuumReturnToBase",
+      "label": "Return Home",
+      "category": "entityControl",
+      "icon": "house.fill",
+      "color": "#3FB58A",
+      "requiresPremium": false
+    },
+    {
+      "raw": "vacuumLocate",
+      "label": "Locate",
+      "category": "entityControl",
+      "icon": "location.fill",
+      "color": "#3FB58A",
+      "requiresPremium": false
+    },
+    {
+      "raw": "timerStart",
+      "label": "Start",
+      "category": "entityControl",
+      "icon": "play.fill",
+      "color": "#F09480",
+      "requiresPremium": false
+    },
+    {
+      "raw": "timerPause",
+      "label": "Pause",
+      "category": "entityControl",
+      "icon": "pause.fill",
+      "color": "#F09480",
+      "requiresPremium": false
+    },
+    {
+      "raw": "timerCancel",
+      "label": "Cancel",
+      "category": "entityControl",
+      "icon": "xmark.circle.fill",
+      "color": "#FF6B6B",
+      "requiresPremium": false
+    },
+    {
+      "raw": "inputSelectNext",
+      "label": "Next",
+      "category": "entityControl",
+      "icon": "chevron.right",
+      "color": "#BF5AF2",
+      "requiresPremium": false
+    },
+    {
+      "raw": "inputSelectPrevious",
+      "label": "Previous",
+      "category": "entityControl",
+      "icon": "chevron.left",
+      "color": "#BF5AF2",
+      "requiresPremium": false
+    },
+    {
+      "raw": "selectOption",
+      "label": "Select",
+      "category": "entityControl",
+      "icon": "list.bullet",
+      "color": "#BF5AF2",
+      "requiresPremium": false
+    },
+    {
+      "raw": "alarmDisarm",
+      "label": "Disarm",
+      "category": "entityControl",
+      "icon": "lock.open.fill",
+      "color": "#7BC47F",
+      "requiresPremium": false
+    },
+    {
+      "raw": "alarmArmHome",
+      "label": "Arm Home",
+      "category": "entityControl",
+      "icon": "house.fill",
+      "color": "#E8A855",
+      "requiresPremium": false
+    },
+    {
+      "raw": "alarmArmAway",
+      "label": "Arm Away",
+      "category": "entityControl",
+      "icon": "figure.walk",
+      "color": "#FF6B6B",
+      "requiresPremium": false
+    },
+    {
+      "raw": "alarmArmNight",
+      "label": "Arm Night",
+      "category": "entityControl",
+      "icon": "moon.fill",
+      "color": "#BF5AF2",
+      "requiresPremium": false
+    },
+    {
+      "raw": "alarmArmVacation",
+      "label": "Vacation",
+      "category": "entityControl",
+      "icon": "airplane",
+      "color": "#BF5AF2",
+      "requiresPremium": false
+    },
+    {
+      "raw": "alarmTrigger",
+      "label": "Trigger",
+      "category": "entityControl",
+      "icon": "exclamationmark.triangle.fill",
+      "color": "#FF6B6B",
+      "requiresPremium": false
+    },
+    {
+      "raw": "lightFlash",
+      "label": "Flash",
+      "category": "entityControl",
+      "icon": "bolt.fill",
+      "color": "#E9C46A",
+      "requiresPremium": false
+    },
+    {
+      "raw": "coverStop",
+      "label": "Stop",
+      "category": "entityControl",
+      "icon": "stop.fill",
+      "color": "#8B7DD6",
+      "requiresPremium": false
+    },
+    {
+      "raw": "coverTilt",
+      "label": "Tilt",
+      "category": "entityControl",
+      "icon": "arrow.up.and.down.text.horizontal",
+      "color": "#8B7DD6",
+      "requiresPremium": false
+    },
+    {
+      "raw": "climateFanMode",
+      "label": "Fan Mode",
+      "category": "entityControl",
+      "icon": "fan.fill",
+      "color": "#E76F51",
+      "requiresPremium": false
+    },
+    {
+      "raw": "climatePresetMode",
+      "label": "Preset",
+      "category": "entityControl",
+      "icon": "slider.horizontal.below.rectangle",
+      "color": "#E76F51",
+      "requiresPremium": false
+    },
+    {
+      "raw": "climateSwingMode",
+      "label": "Swing Mode",
+      "category": "entityControl",
+      "icon": "arrow.triangle.2.circlepath",
+      "color": "#E76F51",
+      "requiresPremium": false
+    },
+    {
+      "raw": "pages",
+      "label": "Page Switcher",
+      "category": "navigation",
+      "icon": "square.stack.3d.up.fill",
+      "color": "#2F79B6",
+      "requiresPremium": true,
+      "description": "Open the page switcher overlay"
+    },
+    {
+      "raw": "openQuickRadialMenu",
+      "label": "Open Quick Radial Menu",
+      "category": "navigation",
+      "icon": "hand.tap.fill",
+      "color": "#7CC4E8",
+      "requiresPremium": true,
+      "description": "Open the customizable radial menu"
+    },
+    {
+      "raw": "settings",
+      "label": "Entity Settings",
+      "category": "entityControl",
+      "icon": "slider.horizontal.3",
+      "color": "#88B6C9",
+      "requiresPremium": false,
+      "description": "Open settings for this entity"
+    },
+    {
+      "raw": "toggle",
+      "label": "Toggle On/Off",
+      "category": "quickAction",
+      "icon": "power",
+      "color": "#2A9D8F",
+      "requiresPremium": false
+    },
+    {
+      "raw": "refresh",
+      "label": "Refresh",
+      "category": "quickAction",
+      "icon": "arrow.clockwise",
+      "color": "#4DBFE0",
+      "requiresPremium": false
+    },
+    {
+      "raw": "runScene",
+      "label": "Run Scene",
+      "category": "quickAction",
+      "icon": "sparkles",
+      "color": "#F4A261",
+      "requiresPremium": true,
+      "payload": [
+        {
+          "key": "entityId",
+          "type": "entity",
+          "required": true
+        }
+      ]
+    },
+    {
+      "raw": "runScript",
+      "label": "Run Script",
+      "category": "quickAction",
+      "icon": "scroll",
+      "color": "#5FA5E6",
+      "requiresPremium": true,
+      "payload": [
+        {
+          "key": "entityId",
+          "type": "entity",
+          "required": true
+        }
+      ]
+    },
+    {
+      "raw": "triggerEntity",
+      "label": "Trigger Entity",
+      "category": "quickAction",
+      "icon": "target",
+      "color": "#7CC4E8",
+      "requiresPremium": true,
+      "payload": [
+        {
+          "key": "entityId",
+          "type": "entity",
+          "required": true,
+          "new": ""
+        },
+        {
+          "key": "triggerMode",
+          "type": "enum",
+          "enum": "TriggerMode",
+          "alwaysWritten": true,
+          "absentMeans": "domainDefault",
+          "new": "toggle"
+        },
+        {
+          "key": "confirmOnRelease",
+          "type": "bool",
+          "default": false,
+          "omitted": true,
+          "new": true
+        }
+      ]
+    },
+    {
+      "raw": "runHTTPAction",
+      "label": "Run HTTP Action",
+      "category": "quickAction",
+      "icon": "globe",
+      "color": "#7CC4E8",
+      "requiresPremium": true,
+      "payload": [
+        {
+          "key": "entityId",
+          "type": "uuid",
+          "target": "httpAction",
+          "required": true
+        },
+        {
+          "key": "confirmOnRelease",
+          "type": "bool",
+          "default": false,
+          "omitted": true,
+          "new": true
+        },
+        {
+          "key": "showBanner",
+          "type": "bool",
+          "default": true,
+          "omitted": true,
+          "new": true
+        },
+        {
+          "key": "bannerSeconds",
+          "type": "number",
+          "absentMeans": 3,
+          "min": 1,
+          "max": 30
+        }
+      ]
+    },
+    {
+      "raw": "navigateToPage",
+      "label": "Go to Page",
+      "category": "navigation",
+      "icon": "arrow.right.square",
+      "color": "#2F79B6",
+      "requiresPremium": true,
+      "payload": [
+        {
+          "key": "pageId",
+          "type": "uuid",
+          "target": "page",
+          "required": true
+        }
+      ]
+    },
+    {
+      "raw": "serverMode",
+      "label": "Server Mode",
+      "category": "navigation",
+      "icon": "network",
+      "color": "#7CC4E8",
+      "requiresPremium": true,
+      "description": "Switch between local and cloud server. Resets to the phone-configured default when the watch app relaunches."
+    },
+    {
+      "raw": "switchInstance",
+      "label": "Switch Instance",
+      "category": "navigation",
+      "icon": "rectangle.2.swap",
+      "color": "#2F79B6",
+      "requiresPremium": true,
+      "description": "Jump straight to your next Home Assistant. Shows that instance's pages and connects to it.",
+      "payload": [
+        {
+          "key": "instanceSwitchBehavior",
+          "type": "enum",
+          "enum": "InstanceSwitchBehavior",
+          "default": "nextInstance",
+          "omitted": true,
+          "new": "nextInstance"
+        }
+      ]
+    },
+    {
+      "raw": "peekAppInfo",
+      "label": "App Info",
+      "category": "information",
+      "icon": "info.circle.fill",
+      "color": "#88B6C9",
+      "requiresPremium": true
+    },
+    {
+      "raw": "assist",
+      "label": "Ask Assist",
+      "category": "quickAction",
+      "icon": "mic.fill",
+      "color": "#35A8CF",
+      "requiresPremium": true,
+      "description": "Dictate a command to Home Assistant Assist"
+    },
+    {
+      "raw": "ttsMenu",
+      "label": "Pick from List - TTS",
+      "category": "quickAction",
+      "icon": "speaker.wave.2.bubble.fill",
+      "color": "#F08D62",
+      "requiresPremium": true,
+      "description": "Pick a saved phrase to speak on your speakers"
+    },
+    {
+      "raw": "speakPhrase",
+      "label": "Speak Phrase",
+      "category": "quickAction",
+      "icon": "speaker.wave.2.fill",
+      "color": "#F08D62",
+      "requiresPremium": true,
+      "payload": [
+        {
+          "key": "phraseId",
+          "type": "uuid",
+          "target": "ttsPhrase",
+          "required": true
+        }
+      ]
+    },
+    {
+      "raw": "speakMessage",
+      "label": "Speak Message - TTS",
+      "category": "quickAction",
+      "icon": "waveform.badge.mic",
+      "color": "#F08D62",
+      "requiresPremium": true,
+      "description": "Dictate a message to speak on your speakers"
+    },
+    {
+      "raw": "remoteTogglePower",
+      "label": "Power Toggle",
+      "category": "remote",
+      "icon": "power",
+      "color": "#8E7CC3",
+      "requiresPremium": false
+    },
+    {
+      "raw": "remoteDpad",
+      "label": "D-Pad",
+      "category": "remote",
+      "icon": "arrow.up.left.and.arrow.down.right",
+      "color": "#8E7CC3",
+      "requiresPremium": false,
+      "description": "Open fullscreen directional remote"
+    },
+    {
+      "raw": "remoteUp",
+      "label": "Up",
+      "category": "remote",
+      "icon": "chevron.up",
+      "color": "#8E7CC3",
+      "requiresPremium": false
+    },
+    {
+      "raw": "remoteDown",
+      "label": "Down",
+      "category": "remote",
+      "icon": "chevron.down",
+      "color": "#8E7CC3",
+      "requiresPremium": false
+    },
+    {
+      "raw": "remoteLeft",
+      "label": "Left",
+      "category": "remote",
+      "icon": "chevron.left",
+      "color": "#8E7CC3",
+      "requiresPremium": false
+    },
+    {
+      "raw": "remoteRight",
+      "label": "Right",
+      "category": "remote",
+      "icon": "chevron.right",
+      "color": "#8E7CC3",
+      "requiresPremium": false
+    },
+    {
+      "raw": "remoteSelect",
+      "label": "Select",
+      "category": "remote",
+      "icon": "circle.fill",
+      "color": "#8E7CC3",
+      "requiresPremium": false
+    },
+    {
+      "raw": "remoteMenu",
+      "label": "Menu",
+      "category": "remote",
+      "icon": "line.3.horizontal",
+      "color": "#8E7CC3",
+      "requiresPremium": false
+    },
+    {
+      "raw": "remoteHome",
+      "label": "Home",
+      "category": "remote",
+      "icon": "tv",
+      "color": "#8E7CC3",
+      "requiresPremium": false
+    },
+    {
+      "raw": "remotePlayPause",
+      "label": "Play/Pause",
+      "category": "remote",
+      "icon": "playpause.fill",
+      "color": "#8E7CC3",
+      "requiresPremium": false
+    },
+    {
+      "raw": "remoteMute",
+      "label": "Mute",
+      "category": "remote",
+      "icon": "speaker.slash.fill",
+      "color": "#8E7CC3",
+      "requiresPremium": false
+    },
+    {
+      "raw": "remoteNextTrack",
+      "label": "Next Track",
+      "category": "remote",
+      "icon": "forward.end.fill",
+      "color": "#8E7CC3",
+      "requiresPremium": false
+    },
+    {
+      "raw": "remoteVolume",
+      "label": "Volume",
+      "category": "remote",
+      "icon": "speaker.wave.2.fill",
+      "color": "#8E7CC3",
+      "requiresPremium": false,
+      "description": "Adjust volume on associated media player"
+    },
+    {
+      "raw": "broadcast",
+      "label": "Broadcast Voice",
+      "category": "quickAction",
+      "icon": "mic.fill",
+      "color": "#FF6B6B",
+      "requiresPremium": true,
+      "description": "Record and broadcast your voice to a speaker"
+    },
+    {
+      "raw": "sirenToggle",
+      "label": "Toggle Siren",
+      "category": "entityControl",
+      "icon": "speaker.wave.3.fill",
+      "color": "#E87070",
+      "requiresPremium": false
+    },
+    {
+      "raw": "sirenOn",
+      "label": "Siren On",
+      "category": "entityControl",
+      "icon": "speaker.wave.3.fill",
+      "color": "#E87070",
+      "requiresPremium": false
+    },
+    {
+      "raw": "sirenOff",
+      "label": "Siren Off",
+      "category": "entityControl",
+      "icon": "speaker.slash.fill",
+      "color": "#E87070",
+      "requiresPremium": false
+    },
+    {
+      "raw": "mowerStart",
+      "label": "Start Mowing",
+      "category": "entityControl",
+      "icon": "play.fill",
+      "color": "#7BC47F",
+      "requiresPremium": false
+    },
+    {
+      "raw": "mowerPause",
+      "label": "Pause Mowing",
+      "category": "entityControl",
+      "icon": "pause.fill",
+      "color": "#E8A855",
+      "requiresPremium": false
+    },
+    {
+      "raw": "mowerDock",
+      "label": "Return to Dock",
+      "category": "entityControl",
+      "icon": "house.fill",
+      "color": "#7BC47F",
+      "requiresPremium": false
+    },
+    {
+      "raw": "counterIncrement",
+      "label": "Increment",
+      "category": "entityControl",
+      "icon": "plus.circle.fill",
+      "color": "#5E5CE6",
+      "requiresPremium": false
+    },
+    {
+      "raw": "counterDecrement",
+      "label": "Decrement",
+      "category": "entityControl",
+      "icon": "minus.circle.fill",
+      "color": "#5E5CE6",
+      "requiresPremium": false
+    },
+    {
+      "raw": "counterReset",
+      "label": "Reset",
+      "category": "entityControl",
+      "icon": "arrow.counterclockwise.circle.fill",
+      "color": "#FF6B6B",
+      "requiresPremium": false
+    },
+    {
+      "raw": "coverOpen",
+      "label": "Open",
+      "category": "entityControl",
+      "icon": "arrow.up.square.fill",
+      "color": "#8B7DD6",
+      "requiresPremium": false
+    },
+    {
+      "raw": "coverClose",
+      "label": "Close",
+      "category": "entityControl",
+      "icon": "arrow.down.square.fill",
+      "color": "#8B7DD6",
+      "requiresPremium": false
+    },
+    {
+      "raw": "lockLock",
+      "label": "Lock",
+      "category": "entityControl",
+      "icon": "lock.fill",
+      "color": "#D98A4E",
+      "requiresPremium": false
+    },
+    {
+      "raw": "lockUnlock",
+      "label": "Unlock",
+      "category": "entityControl",
+      "icon": "lock.open.fill",
+      "color": "#D98A4E",
+      "requiresPremium": false
+    },
+    {
+      "raw": "automationEnable",
+      "label": "Enable",
+      "category": "entityControl",
+      "icon": "checkmark.circle.fill",
+      "color": "#64D2FF",
+      "requiresPremium": false
+    },
+    {
+      "raw": "automationDisable",
+      "label": "Disable",
+      "category": "entityControl",
+      "icon": "xmark.circle.fill",
+      "color": "#64D2FF",
+      "requiresPremium": false
+    },
+    {
+      "raw": "sceneActivate",
+      "label": "Activate",
+      "category": "entityControl",
+      "icon": "play.fill",
+      "color": "#F4A261",
+      "requiresPremium": false
+    },
+    {
+      "raw": "scriptToggle",
+      "label": "Toggle Script",
+      "category": "entityControl",
+      "icon": "gearshape.2.fill",
+      "color": "#5FA5E6",
+      "requiresPremium": false
+    },
+    {
+      "raw": "scriptRun",
+      "label": "Run Script",
+      "category": "entityControl",
+      "icon": "play.fill",
+      "color": "#5FA5E6",
+      "requiresPremium": false
+    },
+    {
+      "raw": "scriptEnable",
+      "label": "Enable Script",
+      "category": "entityControl",
+      "icon": "checkmark.circle.fill",
+      "color": "#5FA5E6",
+      "requiresPremium": false
+    },
+    {
+      "raw": "scriptDisable",
+      "label": "Disable Script",
+      "category": "entityControl",
+      "icon": "xmark.circle.fill",
+      "color": "#5FA5E6",
+      "requiresPremium": false
+    },
+    {
+      "raw": "openInMaps",
+      "label": "Open in Maps",
+      "category": "entityControl",
+      "icon": "map.fill",
+      "color": "#35A8CF",
+      "requiresPremium": false
+    },
+    {
+      "raw": "todoAddItem",
+      "label": "Add Item",
+      "category": "entityControl",
+      "icon": "plus.circle.fill",
+      "color": "#7BC47F",
+      "requiresPremium": false
+    },
+    {
+      "raw": "textSetValue",
+      "label": "Set Value",
+      "category": "entityControl",
+      "icon": "text.cursor",
+      "color": "#88B6C9",
+      "requiresPremium": false
+    },
+    {
+      "raw": "showStatusPage",
+      "label": "Status Page",
+      "category": "information",
+      "icon": "list.bullet.rectangle.portrait",
+      "color": "#88B6C9",
+      "requiresPremium": true,
+      "payload": [
+        {
+          "key": "pageId",
+          "type": "uuid",
+          "target": "statusPage"
+        },
+        {
+          "key": "openOnRelease",
+          "type": "bool",
+          "default": true,
+          "omitted": true,
+          "new": true
+        }
+      ]
+    }
+  ],
+  "unknownActionLabel": "Sync Needed",
+  "unknownActionIcon": "arrow.triangle.2.circlepath",
+  "unknownActionColor": "#E8A855",
+  "anywhereActions": [
+    {
+      "category": "navigation",
+      "actions": ["pages", "serverMode", "switchInstance", "navigateToPage"]
+    },
+    {
+      "category": "quickAction",
+      "actions": ["assist", "ttsMenu", "speakMessage", "broadcast", "triggerEntity", "runHTTPAction"]
+    },
+    {
+      "category": "information",
+      "actions": ["peekAppInfo", "showStatusPage"]
+    }
+  ],
+  "entityActions": {
+    "alarm_control_panel": [
+      {
+        "category": "entityControl",
+        "actions": [
+          "alarmDisarm",
+          "alarmArmHome",
+          "alarmArmAway",
+          "alarmArmNight",
+          "alarmArmVacation",
+          "alarmTrigger",
+          "settings"
+        ]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "all": [
+      {
+        "category": "entityControl",
+        "actions": ["settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "assist": [
+      {
+        "category": "navigation",
+        "actions": ["pages", "serverMode", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "broadcast", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "automation": [
+      {
+        "category": "entityControl",
+        "actions": [
+          "automationEnable",
+          "automationDisable",
+          "automationTrigger",
+          "automationToggle",
+          "settings"
+        ]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["toggle", "assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "button": [
+      {
+        "category": "entityControl",
+        "actions": ["settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["toggle", "assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "calendar": [
+      {
+        "category": "entityControl",
+        "actions": ["settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "camera": [
+      {
+        "category": "entityControl",
+        "actions": ["settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "climate": [
+      {
+        "category": "entityControl",
+        "actions": [
+          "targetTemperature",
+          "heatSetpoint",
+          "coolSetpoint",
+          "hvacMode",
+          "climateFanMode",
+          "climatePresetMode",
+          "climateSwingMode",
+          "settings"
+        ]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "counter": [
+      {
+        "category": "entityControl",
+        "actions": ["counterIncrement", "counterDecrement", "counterReset", "settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "cover": [
+      {
+        "category": "entityControl",
+        "actions": ["coverOpen", "coverClose", "position", "coverStop", "coverTilt", "settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "date": [
+      {
+        "category": "entityControl",
+        "actions": ["settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "datetime": [
+      {
+        "category": "entityControl",
+        "actions": ["settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "device_tracker": [
+      {
+        "category": "entityControl",
+        "actions": ["openInMaps", "settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "event": [
+      {
+        "category": "entityControl",
+        "actions": ["settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "fan": [
+      {
+        "category": "entityControl",
+        "actions": ["fanSpeed", "fanDirection", "fanOscillate", "fanPresetMode", "settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "http_action": [
+      {
+        "category": "navigation",
+        "actions": ["pages", "serverMode", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "broadcast", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "humidifier": [
+      {
+        "category": "entityControl",
+        "actions": ["switchToggle", "settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["toggle", "assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "image": [
+      {
+        "category": "entityControl",
+        "actions": ["settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "input_boolean": [
+      {
+        "category": "entityControl",
+        "actions": ["inputBooleanToggle", "settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["toggle", "assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "input_datetime": [
+      {
+        "category": "entityControl",
+        "actions": ["settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "input_number": [
+      {
+        "category": "entityControl",
+        "actions": ["inputNumberValue", "settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "input_select": [
+      {
+        "category": "entityControl",
+        "actions": ["selectOption", "inputSelectNext", "inputSelectPrevious", "settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "lawn_mower": [
+      {
+        "category": "entityControl",
+        "actions": ["mowerStart", "mowerPause", "mowerDock", "settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "light": [
+      {
+        "category": "entityControl",
+        "actions": [
+          "brightness",
+          "colorTemperature",
+          "colorPicker",
+          "effectsPicker",
+          "lightFlash",
+          "settings"
+        ]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "lock": [
+      {
+        "category": "entityControl",
+        "actions": ["lockLock", "lockUnlock", "lockToggle", "settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["toggle", "assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "media_player": [
+      {
+        "category": "entityControl",
+        "actions": [
+          "volume",
+          "nextTrack",
+          "prevTrack",
+          "mute",
+          "mediaStop",
+          "mediaSource",
+          "mediaSoundMode",
+          "mediaShuffle",
+          "mediaRepeat",
+          "broadcast",
+          "settings"
+        ]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["broadcast", "assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "multicam": [
+      {
+        "category": "entityControl",
+        "actions": ["settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "music_hub": [
+      {
+        "category": "entityControl",
+        "actions": [
+          "volume",
+          "nextTrack",
+          "prevTrack",
+          "mute",
+          "mediaStop",
+          "mediaSource",
+          "mediaSoundMode",
+          "mediaShuffle",
+          "mediaRepeat",
+          "settings"
+        ]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["broadcast", "assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "page": [
+      {
+        "category": "entityControl",
+        "actions": ["settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "person": [
+      {
+        "category": "entityControl",
+        "actions": ["openInMaps", "settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "point_control": [
+      {
+        "category": "entityControl",
+        "actions": ["settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "remote": [
+      {
+        "category": "remote",
+        "actions": [
+          "remoteDpad",
+          "remoteMenu",
+          "remoteHome",
+          "remotePlayPause",
+          "remoteVolume",
+          "remoteMute",
+          "remoteNextTrack",
+          "remoteUp",
+          "remoteDown",
+          "remoteLeft",
+          "remoteRight",
+          "remoteSelect"
+        ]
+      },
+      {
+        "category": "entityControl",
+        "actions": ["settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "scene": [
+      {
+        "category": "entityControl",
+        "actions": ["sceneActivate", "settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "script": [
+      {
+        "category": "entityControl",
+        "actions": ["scriptRun", "scriptToggle", "scriptEnable", "scriptDisable", "settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "sensor": [
+      {
+        "category": "entityControl",
+        "actions": ["settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "siren": [
+      {
+        "category": "entityControl",
+        "actions": ["sirenOn", "sirenOff", "sirenToggle", "settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["toggle", "assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "speak_message": [
+      {
+        "category": "navigation",
+        "actions": ["pages", "serverMode", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "broadcast", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "status_page": [
+      {
+        "category": "entityControl",
+        "actions": ["settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "switch": [
+      {
+        "category": "entityControl",
+        "actions": ["switchToggle", "settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["toggle", "assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "template": [
+      {
+        "category": "entityControl",
+        "actions": ["settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "text": [
+      {
+        "category": "entityControl",
+        "actions": ["textSetValue", "settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "time": [
+      {
+        "category": "entityControl",
+        "actions": ["settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "timer": [
+      {
+        "category": "entityControl",
+        "actions": ["timerStart", "timerPause", "timerCancel", "settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "todo": [
+      {
+        "category": "entityControl",
+        "actions": ["todoAddItem", "settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "update": [
+      {
+        "category": "entityControl",
+        "actions": ["settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "vacuum": [
+      {
+        "category": "entityControl",
+        "actions": ["vacuumStart", "vacuumPause", "vacuumReturnToBase", "vacuumLocate", "settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "valve": [
+      {
+        "category": "entityControl",
+        "actions": ["coverOpen", "coverClose", "position", "coverStop", "coverTilt", "settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "water_heater": [
+      {
+        "category": "entityControl",
+        "actions": ["switchToggle", "settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["toggle", "assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "weather": [
+      {
+        "category": "entityControl",
+        "actions": ["settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ],
+    "zone": [
+      {
+        "category": "entityControl",
+        "actions": ["settings"]
+      },
+      {
+        "category": "navigation",
+        "actions": ["pages", "openQuickRadialMenu", "switchInstance", "navigateToPage"]
+      },
+      {
+        "category": "quickAction",
+        "actions": ["assist", "ttsMenu", "speakMessage", "triggerEntity", "runHTTPAction"]
+      },
+      {
+        "category": "information",
+        "actions": ["peekAppInfo", "showStatusPage"]
+      }
+    ]
+  },
+  "multiInstanceOnly": ["switchInstance"],
+  "parameterizedPremium": "In the Entity quick menu's picker every action that needs a target (triggerEntity, runHTTPAction, navigateToPage, peekAppInfo, showStatusPage) is locked on the free plan, as is every action with requiresPremium. The Anywhere menu's picker locks nothing.",
+  "triggerEntity": {
+    "targetDomains": [
+      "alarm_control_panel",
+      "automation",
+      "button",
+      "camera",
+      "climate",
+      "counter",
+      "cover",
+      "fan",
+      "humidifier",
+      "input_boolean",
+      "input_button",
+      "input_select",
+      "lawn_mower",
+      "light",
+      "lock",
+      "media_player",
+      "remote",
+      "scene",
+      "script",
+      "select",
+      "siren",
+      "switch",
+      "timer",
+      "update",
+      "vacuum",
+      "valve",
+      "water_heater"
+    ],
+    "modes": {
+      "*": ["toggle", "refresh"],
+      "alarm_control_panel": [
+        "armHome",
+        "armAway",
+        "armNight",
+        "armVacation",
+        "armCustomBypass",
+        "disarm",
+        "trigger",
+        "refresh"
+      ],
+      "automation": ["trigger", "toggle", "enable", "disable", "refresh"],
+      "button": ["press", "refresh"],
+      "camera": ["turnOn", "turnOff", "enableMotionDetection", "disableMotionDetection", "refresh"],
+      "climate": ["toggle", "turnOn", "turnOff", "toggleAuxHeat", "refresh"],
+      "counter": ["increment", "decrement", "reset", "refresh"],
+      "cover": [
+        "toggle",
+        "open",
+        "close",
+        "stop",
+        "toggleTilt",
+        "openTilt",
+        "closeTilt",
+        "stopTilt",
+        "refresh"
+      ],
+      "fan": [
+        "toggle",
+        "turnOn",
+        "turnOff",
+        "increaseSpeed",
+        "decreaseSpeed",
+        "oscillate",
+        "toggleDirection",
+        "refresh"
+      ],
+      "humidifier": ["toggle", "turnOn", "turnOff", "refresh"],
+      "input_boolean": ["toggle", "turnOn", "turnOff", "refresh"],
+      "input_button": ["press", "refresh"],
+      "input_select": ["selectNext", "selectPrevious", "selectFirst", "selectLast", "refresh"],
+      "lawn_mower": ["start", "pause", "dock", "refresh"],
+      "light": ["toggle", "turnOn", "turnOff", "refresh"],
+      "lock": ["toggle", "lock", "unlock", "open", "refresh"],
+      "media_player": [
+        "toggle",
+        "turnOn",
+        "turnOff",
+        "play",
+        "pause",
+        "playPause",
+        "stop",
+        "nextTrack",
+        "previousTrack",
+        "volumeUp",
+        "volumeDown",
+        "mute",
+        "toggleShuffle",
+        "cycleRepeat",
+        "clearPlaylist",
+        "unjoin",
+        "refresh"
+      ],
+      "remote": ["toggle", "turnOn", "turnOff", "refresh"],
+      "scene": ["activate", "refresh"],
+      "script": ["run", "toggle", "enable", "disable", "refresh"],
+      "select": ["selectNext", "selectPrevious", "selectFirst", "selectLast", "refresh"],
+      "siren": ["toggle", "turnOn", "turnOff", "refresh"],
+      "switch": ["toggle", "turnOn", "turnOff", "refresh"],
+      "timer": ["start", "pause", "cancel", "finish", "refresh"],
+      "update": ["install", "skip", "clearSkipped", "refresh"],
+      "vacuum": ["start", "pause", "stop", "returnToBase", "locate", "cleanSpot", "refresh"],
+      "valve": ["toggle", "open", "close", "stop", "refresh"],
+      "water_heater": ["toggle", "turnOn", "turnOff", "toggleAwayMode", "refresh"]
+    },
+    "modeLabels": {
+      "turnOn": "Turn On",
+      "turnOff": "Turn Off",
+      "toggle": "Toggle",
+      "lock": "Lock",
+      "unlock": "Unlock",
+      "open": "Open",
+      "close": "Close",
+      "stop": "Stop",
+      "start": "Start",
+      "pause": "Pause",
+      "cancel": "Cancel",
+      "dock": "Dock",
+      "returnToBase": "Return to Base",
+      "locate": "Locate",
+      "activate": "Activate",
+      "run": "Run",
+      "enable": "Enable",
+      "disable": "Disable",
+      "trigger": "Trigger",
+      "press": "Press",
+      "play": "Play",
+      "playPause": "Play/Pause",
+      "nextTrack": "Next Track",
+      "previousTrack": "Previous Track",
+      "volumeUp": "Volume Up",
+      "volumeDown": "Volume Down",
+      "mute": "Toggle Mute",
+      "increaseSpeed": "Increase Speed",
+      "decreaseSpeed": "Decrease Speed",
+      "oscillate": "Toggle Oscillation",
+      "openTilt": "Open Tilt",
+      "closeTilt": "Close Tilt",
+      "stopTilt": "Stop Tilt",
+      "toggleTilt": "Toggle Tilt",
+      "toggleShuffle": "Toggle Shuffle",
+      "cycleRepeat": "Cycle Repeat",
+      "toggleDirection": "Reverse Direction",
+      "cleanSpot": "Clean Spot",
+      "finish": "Finish",
+      "increment": "Increment",
+      "decrement": "Decrement",
+      "reset": "Reset",
+      "selectNext": "Next Option",
+      "selectPrevious": "Previous Option",
+      "selectFirst": "First Option",
+      "selectLast": "Last Option",
+      "enableMotionDetection": "Enable Motion Detection",
+      "disableMotionDetection": "Disable Motion Detection",
+      "clearPlaylist": "Clear Playlist",
+      "unjoin": "Leave Speaker Group",
+      "toggleAwayMode": "Toggle Away Mode",
+      "toggleAuxHeat": "Toggle Aux Heat",
+      "armCustomBypass": "Arm Custom Bypass",
+      "skip": "Skip Version",
+      "clearSkipped": "Clear Skipped",
+      "refresh": "Refresh",
+      "armHome": "Arm Home",
+      "armAway": "Arm Away",
+      "armNight": "Arm Night",
+      "armVacation": "Arm Vacation",
+      "disarm": "Disarm",
+      "install": "Install"
+    },
+    "targetIcons": {
+      "*": "target",
+      "alarm_control_panel": "shield",
+      "automation": "gearshape.2",
+      "button": "button.programmable",
+      "camera": "target",
+      "climate": "thermometer.sun",
+      "counter": "target",
+      "cover": "blinds.horizontal.open",
+      "fan": "fan",
+      "humidifier": "humidifier",
+      "input_boolean": "togglepower",
+      "input_button": "button.programmable",
+      "input_select": "target",
+      "lawn_mower": "leaf",
+      "light": "lightbulb",
+      "lock": "lock",
+      "media_player": "play.rectangle",
+      "remote": "av.remote",
+      "scene": "play",
+      "script": "scroll",
+      "select": "target",
+      "siren": "speaker.wave.3",
+      "switch": "switch.2",
+      "timer": "timer",
+      "update": "arrow.down.circle",
+      "vacuum": "hurricane",
+      "valve": "drop.circle",
+      "water_heater": "flame"
+    },
+    "targetColors": {
+      "*": "#7CC4E8",
+      "alarm_control_panel": "#D98A4E",
+      "automation": "#5CC8E8",
+      "button": "#1FB7A6",
+      "camera": "#7CC4E8",
+      "climate": "#E76F51",
+      "counter": "#7CC4E8",
+      "cover": "#8B7DD6",
+      "fan": "#4DBFE0",
+      "humidifier": "#1FB7A6",
+      "input_boolean": "#2A9D8F",
+      "input_button": "#1FB7A6",
+      "input_select": "#7CC4E8",
+      "lawn_mower": "#7BC47F",
+      "light": "#E9C46A",
+      "lock": "#D98A4E",
+      "media_player": "#F08D62",
+      "remote": "#8E7CC3",
+      "scene": "#F4A261",
+      "script": "#5FA5E6",
+      "select": "#7CC4E8",
+      "siren": "#E87070",
+      "switch": "#2A9D8F",
+      "timer": "#F09480",
+      "update": "#7CC4E8",
+      "vacuum": "#3FB58A",
+      "valve": "#8B7DD6",
+      "water_heater": "#D98A4E"
+    },
+    "retarget": "When the target entity changes, the slot's icon and color follow the new domain (targetIcons, targetColors) only while they still equal the old target's (target and the info color for a slot with no target yet). A mode the new domain does not list becomes that domain's first mode."
+  },
+  "positions": [
+    {
+      "value": "topLeft",
+      "label": "Top Left",
+      "mirrored": "topRight",
+      "opposite": "topRight"
+    },
+    {
+      "value": "topCenter",
+      "label": "Top Center",
+      "mirrored": "topCenter",
+      "opposite": "bottomCenter"
+    },
+    {
+      "value": "topRight",
+      "label": "Top Right",
+      "mirrored": "topLeft",
+      "opposite": "topLeft"
+    },
+    {
+      "value": "leftCenter",
+      "label": "Left Center",
+      "mirrored": "rightCenter",
+      "opposite": "rightCenter"
+    },
+    {
+      "value": "rightCenter",
+      "label": "Right Center",
+      "mirrored": "leftCenter",
+      "opposite": "leftCenter"
+    },
+    {
+      "value": "bottomLeft",
+      "label": "Bottom Left",
+      "mirrored": "bottomRight",
+      "opposite": "bottomRight"
+    },
+    {
+      "value": "bottomCenter",
+      "label": "Bottom Center",
+      "mirrored": "bottomCenter",
+      "opposite": "topCenter"
+    },
+    {
+      "value": "bottomRight",
+      "label": "Bottom Right",
+      "mirrored": "bottomLeft",
+      "opposite": "bottomLeft"
+    }
+  ],
+  "showForEntityTypes": [
+    "light",
+    "cover",
+    "climate",
+    "switch",
+    "lock",
+    "button",
+    "sensor",
+    "media_player",
+    "fan",
+    "remote",
+    "vacuum",
+    "input_number",
+    "input_select",
+    "automation",
+    "alarm_control_panel"
+  ]
+}

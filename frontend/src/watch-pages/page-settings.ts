@@ -12,14 +12,20 @@
 // Plan: app repo docs/pages_in_home_assistant_step3.md ("3d build contract").
 
 import { css, html, nothing, type TemplateResult } from "lit";
-import { colorField, segField, sliderField, symbolField, symbolNameSet } from "../editors.js";
+import { checkField, colorField, segField, sliderField, symbolField, symbolNameSet, textField } from "../editors.js";
 import { uiIcon } from "../ui-icons.js";
 import { type TileSettingsHost, type WatchPagesEditorHost, extendHost } from "./editor-host.js";
 import type { WatchPageTile, WatchPagesDocument } from "./model.js";
 import {
   type WatchPageDecoration,
   type WatchPageDecorationMemory,
+  WATCH_PAGE_SWITCHER_MODES,
   resetWatchPage,
+  setWatchPageHideFromSwitcher,
+  setWatchPageSwitcherColor,
+  setWatchPageSwitcherDisplayMode,
+  setWatchPageSwitcherIcon,
+  setWatchPageSwitcherText,
   selectWatchPageDecoration,
   setWatchPageBackgroundColor,
   setWatchPageColorMode,
@@ -54,10 +60,15 @@ import { watchPageRoleSwatches, watchPatternSwatches, watchStylingSlider, watchS
 
 const KEY = "page-settings";
 
-type Section = "theme" | "background" | "title";
+type Section = "theme" | "background" | "title" | "switcher";
 
-const SECTION_TITLES: Readonly<Record<Section, string>> = { theme: "Theme", background: "Background", title: "Page title" };
-const OPEN_AT_FIRST: Readonly<Record<Section, boolean>> = { theme: true, background: true, title: false };
+const SECTION_TITLES: Readonly<Record<Section, string>> = {
+  theme: "Theme",
+  background: "Background",
+  title: "Page title",
+  switcher: "In the page switcher",
+};
+const OPEN_AT_FIRST: Readonly<Record<Section, boolean>> = { theme: true, background: true, title: false, switcher: false };
 
 /** The decorations a person can pick here, in the phone's order. Image is
  * set on the phone only. */
@@ -90,7 +101,7 @@ function toggle(host: WatchPagesEditorHost, section: Section): void {
 export function renderPageSettings(host: WatchPagesEditorHost): TemplateResult {
   const sh = scoped(host);
   dropStaleTyping(sh);
-  const sections: Section[] = ["theme", "background", "title"];
+  const sections: Section[] = ["theme", "background", "title", "switcher"];
   return html`<div class="ts-root ps-root">
     ${sections.map((section) => {
       const open = isOpen(host, section);
@@ -125,6 +136,8 @@ function summary(host: WatchPagesEditorHost, section: Section): string {
       return DECORATION_CHOICES.find(([d]) => d === s.decoration)?.[1] ?? (s.decoration === "image" ? "Image" : "");
     case "title":
       return s.titleStyle === "none" ? "Hidden" : s.titleStyle;
+    case "switcher":
+      return s.hideFromSwitcher ? "Hidden" : s.switcherText ?? (s.switcherDisplayMode === "icon" ? "Icon" : "Shown");
   }
 }
 
@@ -136,6 +149,8 @@ function body(sh: TileSettingsHost, section: Section): TemplateResult {
       return renderBackground(sh);
     case "title":
       return renderTitle(sh);
+    case "switcher":
+      return renderSwitcher(sh);
   }
 }
 
@@ -385,6 +400,35 @@ function renderTitle(sh: TileSettingsHost): TemplateResult {
       })}
       ${s.titleColor === undefined ? html`<div class="hint ts-under">None set: the theme's title color.</div>` : nothing}
       ${s.fullScreen ? html`<div class="hint warn">Full screen is on (set on the iPhone): the watch hides the title.</div>` : nothing}`}`;
+}
+
+// ── the page switcher ────────────────────────────────────────────────────
+
+/** How the page shows in the watch's page switcher: hidden or not, as text
+ * or an icon, its name, icon and color there. Each left empty is chosen by
+ * the watch, as on the iPhone. The switcher's own look is in the menu
+ * editor. */
+function renderSwitcher(sh: TileSettingsHost): TemplateResult {
+  const s = watchPageSettings(sh.page);
+  const mode = s.switcherDisplayMode ?? "text";
+  const modes = WATCH_PAGE_SWITCHER_MODES.map((m) => [m, m === "icon" ? "Icon" : "Name"] as [string, string]);
+  const name = typeof sh.page.name === "string" ? sh.page.name : "";
+  const setIcon = (value: string) => commit(sh, "switcherIcon", (d) => setWatchPageSwitcherIcon(d, sh.pageId, value), { typing: true });
+  const setColor = (value: string | undefined) => commit(sh, "switcherColor", (d) => setWatchPageSwitcherColor(d, sh.pageId, value), { typing: true });
+  return html`
+    ${checkField("Hidden", s.hideFromSwitcher, (v) => commit(sh, "hideFromSwitcher", (d) => setWatchPageHideFromSwitcher(d, sh.pageId, v)), false)}
+    ${s.hideFromSwitcher ? html`<div class="hint ts-under">The page stays on the watch. Only the switcher leaves it out.</div>` : nothing}
+    ${segField("Show as", modes.some(([m]) => m === mode) ? mode : "text", modes, (v) =>
+      commit(sh, "switcherDisplayMode", (d) => setWatchPageSwitcherDisplayMode(d, sh.pageId, v)))}
+    ${typingField(sh, "switcherText", textField("Name", typed(sh, "switcherText") ?? s.switcherText ?? "", (v) =>
+      commit(sh, "switcherText", (d) => setWatchPageSwitcherText(d, sh.pageId, v), { typing: true }), { placeholder: name }))}
+    <div class="ts-chips" role="group" aria-label="Switcher icon">
+      <button type="button" class="pe-chip ${s.switcherIcon === undefined ? "on" : ""}" aria-pressed=${s.switcherIcon === undefined ? "true" : "false"}
+        title="The watch picks one from the page's first tile" @click=${() => commit(sh, "switcherIcon", (d) => setWatchPageSwitcherIcon(d, sh.pageId, ""))}>Automatic icon</button>
+    </div>
+    ${typingField(sh, "switcherIcon", symbolField({ icons: sh.icons, symbols: sh.symbols }, typed(sh, "switcherIcon") ?? s.switcherIcon ?? "", setIcon, "pe:ps:switcher-icon", undefined, "Icon", false))}
+    ${typingField(sh, "switcherColor", html`<div class="ts-no-alpha">${colorField("Color", typed(sh, "switcherColor") ?? s.switcherColor, setColor, true, null, { switchOn: s.switcherColor !== undefined })}</div>`)}
+    <div class="hint ts-under">Left empty, the watch shows the page's name and picks the icon and color itself. The switcher's own look is under Menus.</div>`;
 }
 
 /** This module's rules, after the tile settings' in the page editor's

@@ -400,11 +400,12 @@ export async function restoreSaveHistory(
 }
 
 /** The kinds of watch config Home Assistant keeps a copy of. The panel reads
- * all three and saves `pages` and `behavior` (`WatchConfigPanelKind`).
+ * all four and saves `pages`, `behavior` and `menus` (`WatchConfigPanelKind`).
  * `catalog` is the iPhone's list of its HTTP actions, macros and status
  * pages: the phone publishes it and the server refuses a panel save or
- * restore of it. */
-export type WatchConfigKind = "pages" | "behavior" | "catalog";
+ * restore of it. `menus` (the Anywhere menu, the Entity quick menu and the
+ * page switcher) is refused as `invalid` by an integration older than it. */
+export type WatchConfigKind = "pages" | "behavior" | "catalog" | "menus";
 
 /** The kinds the panel may save and restore. */
 export type WatchConfigPanelKind = Exclude<WatchConfigKind, "catalog">;
@@ -494,7 +495,9 @@ export async function fetchWatchConfig(hass: HassLike, owner: string, kind: Watc
  * `conflict` (someone saved since; the message starts "stored revision is
  * N"), `no_record` (the phone has never uploaded, so there is nothing to
  * base a save on), `invalid` or `unavailable`. An integration older than
- * page saves answers `invalid` for `pages`. */
+ * page saves answers `invalid` for `pages`. A save over `baseRevision` 0
+ * creates the record (revision 1) when none is stored and the watch is
+ * paired; an unpaired watch gets `no_record`, a stored record `conflict`. */
 export async function saveWatchConfig(
   hass: HassLike,
   owner: string,

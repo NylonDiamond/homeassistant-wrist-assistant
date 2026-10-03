@@ -1,0 +1,1544 @@
+{
+  "version": 1,
+  "note": "Generated from the iPhone app's Swift code by WatchMenusTablesTests; do not edit. Regenerate menu-keys.json with TEST_RUNNER_WA_UPDATE_FIXTURES=1 ./scripts/test.sh WatchMenusTablesTests in the app repository.",
+  "enums": {
+    "SlotPosition": [
+      "topLeft",
+      "topCenter",
+      "topRight",
+      "leftCenter",
+      "rightCenter",
+      "bottomLeft",
+      "bottomCenter",
+      "bottomRight"
+    ],
+    "EntranceStyle": ["spring", "popIn", "fade", "none"],
+    "BeamStyle": ["sectorWedge", "auroraWash", "radiantBloom", "ripplePulse", "wakeWave", "none"],
+    "TriggerMode": [
+      "turnOn",
+      "turnOff",
+      "toggle",
+      "lock",
+      "unlock",
+      "open",
+      "close",
+      "stop",
+      "start",
+      "pause",
+      "cancel",
+      "dock",
+      "returnToBase",
+      "locate",
+      "activate",
+      "run",
+      "enable",
+      "disable",
+      "trigger",
+      "press",
+      "play",
+      "playPause",
+      "nextTrack",
+      "previousTrack",
+      "volumeUp",
+      "volumeDown",
+      "mute",
+      "increaseSpeed",
+      "decreaseSpeed",
+      "oscillate",
+      "openTilt",
+      "closeTilt",
+      "stopTilt",
+      "toggleTilt",
+      "toggleShuffle",
+      "cycleRepeat",
+      "toggleDirection",
+      "cleanSpot",
+      "finish",
+      "increment",
+      "decrement",
+      "reset",
+      "selectNext",
+      "selectPrevious",
+      "selectFirst",
+      "selectLast",
+      "enableMotionDetection",
+      "disableMotionDetection",
+      "clearPlaylist",
+      "unjoin",
+      "toggleAwayMode",
+      "toggleAuxHeat",
+      "armCustomBypass",
+      "skip",
+      "clearSkipped",
+      "refresh",
+      "armHome",
+      "armAway",
+      "armNight",
+      "armVacation",
+      "disarm",
+      "install"
+    ],
+    "PageSwitcherDisplayMode": ["text", "icon"],
+    "InstanceSwitchBehavior": ["nextInstance", "pickerRing"],
+    "QuickActionType": [
+      "brightness",
+      "colorTemperature",
+      "colorPicker",
+      "effectsPicker",
+      "position",
+      "targetTemperature",
+      "heatSetpoint",
+      "coolSetpoint",
+      "hvacMode",
+      "volume",
+      "nextTrack",
+      "prevTrack",
+      "mute",
+      "mediaStop",
+      "mediaSource",
+      "mediaSoundMode",
+      "mediaShuffle",
+      "mediaRepeat",
+      "fanSpeed",
+      "fanDirection",
+      "fanOscillate",
+      "fanPresetMode",
+      "inputNumberValue",
+      "switchToggle",
+      "lockToggle",
+      "inputBooleanToggle",
+      "automationToggle",
+      "automationTrigger",
+      "vacuumStart",
+      "vacuumPause",
+      "vacuumReturnToBase",
+      "vacuumLocate",
+      "timerStart",
+      "timerPause",
+      "timerCancel",
+      "inputSelectNext",
+      "inputSelectPrevious",
+      "selectOption",
+      "alarmDisarm",
+      "alarmArmHome",
+      "alarmArmAway",
+      "alarmArmNight",
+      "alarmArmVacation",
+      "alarmTrigger",
+      "lightFlash",
+      "coverStop",
+      "coverTilt",
+      "climateFanMode",
+      "climatePresetMode",
+      "climateSwingMode",
+      "pages",
+      "openQuickRadialMenu",
+      "settings",
+      "toggle",
+      "refresh",
+      "runScene",
+      "runScript",
+      "triggerEntity",
+      "runHTTPAction",
+      "navigateToPage",
+      "serverMode",
+      "switchInstance",
+      "peekAppInfo",
+      "assist",
+      "ttsMenu",
+      "speakPhrase",
+      "speakMessage",
+      "remoteTogglePower",
+      "remoteDpad",
+      "remoteUp",
+      "remoteDown",
+      "remoteLeft",
+      "remoteRight",
+      "remoteSelect",
+      "remoteMenu",
+      "remoteHome",
+      "remotePlayPause",
+      "remoteMute",
+      "remoteNextTrack",
+      "remoteVolume",
+      "broadcast",
+      "sirenToggle",
+      "sirenOn",
+      "sirenOff",
+      "mowerStart",
+      "mowerPause",
+      "mowerDock",
+      "counterIncrement",
+      "counterDecrement",
+      "counterReset",
+      "coverOpen",
+      "coverClose",
+      "lockLock",
+      "lockUnlock",
+      "automationEnable",
+      "automationDisable",
+      "sceneActivate",
+      "scriptToggle",
+      "scriptRun",
+      "scriptEnable",
+      "scriptDisable",
+      "openInMaps",
+      "todoAddItem",
+      "textSetValue",
+      "showStatusPage"
+    ]
+  },
+  "labels": {
+    "SlotPosition": {
+      "topLeft": "Top Left",
+      "topCenter": "Top Center",
+      "topRight": "Top Right",
+      "leftCenter": "Left Center",
+      "rightCenter": "Right Center",
+      "bottomLeft": "Bottom Left",
+      "bottomCenter": "Bottom Center",
+      "bottomRight": "Bottom Right"
+    },
+    "EntranceStyle": {
+      "spring": "Spring",
+      "popIn": "Pop",
+      "fade": "Fade",
+      "none": "None"
+    },
+    "BeamStyle": {
+      "sectorWedge": "Wedge",
+      "auroraWash": "Aurora",
+      "radiantBloom": "Bloom",
+      "ripplePulse": "Ripple",
+      "wakeWave": "Wake",
+      "none": "None"
+    },
+    "TriggerMode": {
+      "turnOn": "Turn On",
+      "turnOff": "Turn Off",
+      "toggle": "Toggle",
+      "lock": "Lock",
+      "unlock": "Unlock",
+      "open": "Open",
+      "close": "Close",
+      "stop": "Stop",
+      "start": "Start",
+      "pause": "Pause",
+      "cancel": "Cancel",
+      "dock": "Dock",
+      "returnToBase": "Return to Base",
+      "locate": "Locate",
+      "activate": "Activate",
+      "run": "Run",
+      "enable": "Enable",
+      "disable": "Disable",
+      "trigger": "Trigger",
+      "press": "Press",
+      "play": "Play",
+      "playPause": "Play/Pause",
+      "nextTrack": "Next Track",
+      "previousTrack": "Previous Track",
+      "volumeUp": "Volume Up",
+      "volumeDown": "Volume Down",
+      "mute": "Toggle Mute",
+      "increaseSpeed": "Increase Speed",
+      "decreaseSpeed": "Decrease Speed",
+      "oscillate": "Toggle Oscillation",
+      "openTilt": "Open Tilt",
+      "closeTilt": "Close Tilt",
+      "stopTilt": "Stop Tilt",
+      "toggleTilt": "Toggle Tilt",
+      "toggleShuffle": "Toggle Shuffle",
+      "cycleRepeat": "Cycle Repeat",
+      "toggleDirection": "Reverse Direction",
+      "cleanSpot": "Clean Spot",
+      "finish": "Finish",
+      "increment": "Increment",
+      "decrement": "Decrement",
+      "reset": "Reset",
+      "selectNext": "Next Option",
+      "selectPrevious": "Previous Option",
+      "selectFirst": "First Option",
+      "selectLast": "Last Option",
+      "enableMotionDetection": "Enable Motion Detection",
+      "disableMotionDetection": "Disable Motion Detection",
+      "clearPlaylist": "Clear Playlist",
+      "unjoin": "Leave Speaker Group",
+      "toggleAwayMode": "Toggle Away Mode",
+      "toggleAuxHeat": "Toggle Aux Heat",
+      "armCustomBypass": "Arm Custom Bypass",
+      "skip": "Skip Version",
+      "clearSkipped": "Clear Skipped",
+      "refresh": "Refresh",
+      "armHome": "Arm Home",
+      "armAway": "Arm Away",
+      "armNight": "Arm Night",
+      "armVacation": "Arm Vacation",
+      "disarm": "Disarm",
+      "install": "Install"
+    },
+    "InstanceSwitchBehavior": {
+      "nextInstance": "Next Instance",
+      "pickerRing": "Choose from List"
+    }
+  },
+  "types": {
+    "document": {
+      "swift": "WCQuickSettingsConfig",
+      "keys": {
+        "schemaVersion": {
+          "type": "int",
+          "default": 1
+        },
+        "quickAction": {
+          "type": "object",
+          "ref": "quickAction",
+          "required": true
+        },
+        "pageSwitcher": {
+          "type": "object",
+          "ref": "pageSwitcher",
+          "required": true
+        },
+        "entityRadial": {
+          "type": "object",
+          "ref": "entityRadial",
+          "required": true
+        }
+      }
+    },
+    "quickAction": {
+      "swift": "QuickActionConfig",
+      "keys": {
+        "schemaVersion": {
+          "type": "int",
+          "default": 1
+        },
+        "slots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "slot"
+          },
+          "required": true
+        },
+        "glowIntensity": {
+          "type": "number",
+          "required": true,
+          "default": 0.5
+        },
+        "showIconBubble": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "showContextLabel": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "showNeonOutline": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "showFingerShadow": {
+          "type": "bool",
+          "required": true,
+          "default": true
+        },
+        "entranceStyle": {
+          "type": "enum",
+          "enum": "EntranceStyle",
+          "required": true,
+          "default": "none"
+        },
+        "backgroundDim": {
+          "type": "number",
+          "required": true,
+          "default": 1
+        },
+        "beamStyle": {
+          "type": "enum",
+          "enum": "BeamStyle",
+          "required": true,
+          "default": "none"
+        },
+        "beamColor": {
+          "type": "color",
+          "required": true,
+          "default": "#FFFFFF"
+        },
+        "beamIntensity": {
+          "type": "number",
+          "required": true,
+          "default": 0.5
+        }
+      }
+    },
+    "slot": {
+      "swift": "QuickActionSlot",
+      "keys": {
+        "id": {
+          "type": "uuid",
+          "required": true
+        },
+        "position": {
+          "type": "enum",
+          "enum": "SlotPosition",
+          "required": true
+        },
+        "action": {
+          "type": "object",
+          "ref": "action",
+          "required": true
+        },
+        "icon": {
+          "type": "symbol",
+          "required": true
+        },
+        "color": {
+          "type": "color",
+          "required": true
+        },
+        "isVisible": {
+          "type": "bool",
+          "required": true,
+          "default": true
+        },
+        "entityTypes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "hiddenPhraseIds": {
+          "type": "array",
+          "items": {
+            "type": "uuid"
+          },
+          "keep": true
+        },
+        "knownPhraseIds": {
+          "type": "array",
+          "items": {
+            "type": "uuid"
+          },
+          "keep": true
+        },
+        "voiceConfig": {
+          "type": "opaque",
+          "swift": "VoiceRoutingConfig",
+          "required": true,
+          "default": {},
+          "keep": true
+        },
+        "automationSkipConditionOverride": {
+          "type": "bool",
+          "keep": true
+        }
+      }
+    },
+    "action": {
+      "swift": "QuickAction",
+      "keys": {
+        "type": {
+          "type": "enum",
+          "enum": "QuickActionType",
+          "required": true,
+          "strict": false
+        },
+        "entityId": {
+          "type": "string"
+        },
+        "pageId": {
+          "type": "uuid"
+        },
+        "phraseId": {
+          "type": "uuid"
+        },
+        "openOnRelease": {
+          "type": "bool"
+        },
+        "triggerMode": {
+          "type": "enum",
+          "enum": "TriggerMode",
+          "strict": false
+        },
+        "confirmOnRelease": {
+          "type": "bool"
+        },
+        "showBanner": {
+          "type": "bool"
+        },
+        "bannerSeconds": {
+          "type": "number"
+        },
+        "instanceSwitchBehavior": {
+          "type": "enum",
+          "enum": "InstanceSwitchBehavior",
+          "strict": false
+        }
+      }
+    },
+    "entityRadial": {
+      "swift": "EntityRadialConfig",
+      "keys": {
+        "schemaVersion": {
+          "type": "int",
+          "default": 1
+        },
+        "allSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          },
+          "required": true
+        },
+        "lightSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          },
+          "required": true
+        },
+        "switchSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          },
+          "required": true
+        },
+        "lockSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          },
+          "required": true
+        },
+        "coverSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          },
+          "required": true
+        },
+        "climateSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          },
+          "required": true
+        },
+        "buttonSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          },
+          "required": true
+        },
+        "sensorSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          },
+          "required": true
+        },
+        "mediaPlayerSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          },
+          "required": true
+        },
+        "fanSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          },
+          "required": true
+        },
+        "inputBooleanSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          },
+          "required": true
+        },
+        "inputNumberSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          },
+          "required": true
+        },
+        "inputSelectSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          },
+          "required": true
+        },
+        "vacuumSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          },
+          "required": true
+        },
+        "automationSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          },
+          "required": true
+        },
+        "alarmControlPanelSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          },
+          "required": true
+        },
+        "remoteSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          },
+          "required": true
+        },
+        "sirenSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          },
+          "required": true
+        },
+        "humidifierSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          },
+          "required": true
+        },
+        "waterHeaterSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          },
+          "required": true
+        },
+        "timerSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          },
+          "required": true
+        },
+        "lawnMowerSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          },
+          "required": true
+        },
+        "counterSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          },
+          "required": true
+        },
+        "sceneSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          },
+          "required": true
+        },
+        "scriptSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          },
+          "required": true
+        },
+        "personSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          },
+          "required": true
+        },
+        "deviceTrackerSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          },
+          "required": true
+        },
+        "todoSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          },
+          "required": true
+        },
+        "textSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          },
+          "required": true
+        },
+        "assistSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          }
+        },
+        "speakMessageSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          }
+        },
+        "httpActionSlots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "entitySlot"
+          }
+        },
+        "entityOverrides": {
+          "type": "map",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "ref": "entitySlot"
+            }
+          }
+        },
+        "lightInheritsAll": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "switchInheritsAll": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "lockInheritsAll": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "coverInheritsAll": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "climateInheritsAll": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "buttonInheritsAll": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "sensorInheritsAll": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "mediaPlayerInheritsAll": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "fanInheritsAll": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "inputBooleanInheritsAll": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "inputNumberInheritsAll": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "inputSelectInheritsAll": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "vacuumInheritsAll": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "automationInheritsAll": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "alarmControlPanelInheritsAll": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "remoteInheritsAll": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "sirenInheritsAll": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "humidifierInheritsAll": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "waterHeaterInheritsAll": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "timerInheritsAll": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "lawnMowerInheritsAll": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "counterInheritsAll": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "sceneInheritsAll": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "scriptInheritsAll": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "personInheritsAll": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "deviceTrackerInheritsAll": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "todoInheritsAll": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "textInheritsAll": {
+          "type": "bool",
+          "required": true,
+          "default": false
+        },
+        "assistInheritsAll": {
+          "type": "bool",
+          "default": false
+        },
+        "speakMessageInheritsAll": {
+          "type": "bool",
+          "default": false
+        },
+        "httpActionInheritsAll": {
+          "type": "bool",
+          "default": false
+        }
+      }
+    },
+    "entitySlot": {
+      "swift": "EntityRadialSlot",
+      "keys": {
+        "id": {
+          "type": "uuid",
+          "required": true
+        },
+        "position": {
+          "type": "enum",
+          "enum": "SlotPosition",
+          "required": true
+        },
+        "action": {
+          "type": "object",
+          "ref": "action",
+          "required": true
+        },
+        "icon": {
+          "type": "symbol",
+          "required": true
+        },
+        "color": {
+          "type": "color",
+          "required": true
+        },
+        "isVisible": {
+          "type": "bool",
+          "required": true,
+          "default": true
+        },
+        "linkedSlotId": {
+          "type": "uuid",
+          "keep": true
+        },
+        "hiddenPhraseIds": {
+          "type": "array",
+          "items": {
+            "type": "uuid"
+          },
+          "keep": true
+        },
+        "knownPhraseIds": {
+          "type": "array",
+          "items": {
+            "type": "uuid"
+          },
+          "keep": true
+        },
+        "voiceConfig": {
+          "type": "opaque",
+          "swift": "VoiceRoutingConfig",
+          "required": true,
+          "default": {},
+          "keep": true
+        },
+        "automationSkipConditionOverride": {
+          "type": "bool",
+          "keep": true
+        }
+      }
+    },
+    "pageSwitcher": {
+      "swift": "PageSwitcherConfig",
+      "keys": {
+        "schemaVersion": {
+          "type": "int",
+          "default": 1
+        },
+        "iconRadius": {
+          "type": "number",
+          "required": true,
+          "default": 0.37
+        },
+        "displayOffset": {
+          "type": "number",
+          "required": true,
+          "default": 40
+        },
+        "glowIntensity": {
+          "type": "number",
+          "required": true,
+          "default": 0.5
+        },
+        "selectedScale": {
+          "type": "number",
+          "required": true,
+          "default": 1.2
+        },
+        "displayMode": {
+          "type": "enum",
+          "enum": "PageSwitcherDisplayMode",
+          "required": true,
+          "default": "text"
+        }
+      }
+    }
+  },
+  "domains": [
+    {
+      "domain": "all",
+      "label": "All",
+      "icon": "square.grid.2x2",
+      "slotKey": "allSlots",
+      "inheritKey": null
+    },
+    {
+      "domain": "light",
+      "label": "Light",
+      "icon": "lightbulb",
+      "slotKey": "lightSlots",
+      "inheritKey": "lightInheritsAll"
+    },
+    {
+      "domain": "switch",
+      "label": "Switch",
+      "icon": "power",
+      "slotKey": "switchSlots",
+      "inheritKey": "switchInheritsAll"
+    },
+    {
+      "domain": "lock",
+      "label": "Lock",
+      "icon": "lock",
+      "slotKey": "lockSlots",
+      "inheritKey": "lockInheritsAll"
+    },
+    {
+      "domain": "cover",
+      "label": "Cover",
+      "icon": "window.vertical.closed",
+      "slotKey": "coverSlots",
+      "inheritKey": "coverInheritsAll"
+    },
+    {
+      "domain": "valve",
+      "label": "Valve",
+      "icon": "drop.circle",
+      "slotKey": "coverSlots",
+      "inheritKey": "coverInheritsAll"
+    },
+    {
+      "domain": "climate",
+      "label": "Climate",
+      "icon": "thermometer.medium",
+      "slotKey": "climateSlots",
+      "inheritKey": "climateInheritsAll"
+    },
+    {
+      "domain": "button",
+      "label": "Button",
+      "icon": "button.vertical.right.press",
+      "slotKey": "buttonSlots",
+      "inheritKey": "buttonInheritsAll"
+    },
+    {
+      "domain": "sensor",
+      "label": "Sensor",
+      "icon": "sensor",
+      "slotKey": "sensorSlots",
+      "inheritKey": "sensorInheritsAll"
+    },
+    {
+      "domain": "camera",
+      "label": "Camera",
+      "icon": "video",
+      "slotKey": "sensorSlots",
+      "inheritKey": "sensorInheritsAll"
+    },
+    {
+      "domain": "fan",
+      "label": "Fan",
+      "icon": "fan",
+      "slotKey": "fanSlots",
+      "inheritKey": "fanInheritsAll"
+    },
+    {
+      "domain": "scene",
+      "label": "Scene",
+      "icon": "play",
+      "slotKey": "sceneSlots",
+      "inheritKey": "sceneInheritsAll"
+    },
+    {
+      "domain": "script",
+      "label": "Script",
+      "icon": "scroll",
+      "slotKey": "scriptSlots",
+      "inheritKey": "scriptInheritsAll"
+    },
+    {
+      "domain": "person",
+      "label": "Person",
+      "icon": "person",
+      "slotKey": "personSlots",
+      "inheritKey": "personInheritsAll"
+    },
+    {
+      "domain": "media_player",
+      "label": "Media",
+      "icon": "play.circle",
+      "slotKey": "mediaPlayerSlots",
+      "inheritKey": "mediaPlayerInheritsAll"
+    },
+    {
+      "domain": "music_hub",
+      "label": "Music Hub",
+      "icon": "music.note.house",
+      "slotKey": "mediaPlayerSlots",
+      "inheritKey": "mediaPlayerInheritsAll"
+    },
+    {
+      "domain": "multicam",
+      "label": "Multi-Cam",
+      "icon": "rectangle.split.2x2",
+      "slotKey": "sensorSlots",
+      "inheritKey": "sensorInheritsAll"
+    },
+    {
+      "domain": "page",
+      "label": "Page",
+      "icon": "arrow.right.square",
+      "slotKey": "sensorSlots",
+      "inheritKey": "sensorInheritsAll"
+    },
+    {
+      "domain": "status_page",
+      "label": "Status Page",
+      "icon": "list.bullet.rectangle.portrait",
+      "slotKey": "sensorSlots",
+      "inheritKey": "sensorInheritsAll"
+    },
+    {
+      "domain": "point_control",
+      "label": "Pt Control",
+      "icon": "cursorarrow.click",
+      "slotKey": "sensorSlots",
+      "inheritKey": "sensorInheritsAll"
+    },
+    {
+      "domain": "template",
+      "label": "Template",
+      "icon": "chevron.left.forwardslash.chevron.right",
+      "slotKey": "sensorSlots",
+      "inheritKey": "sensorInheritsAll"
+    },
+    {
+      "domain": "assist",
+      "label": "Assist",
+      "icon": "waveform.and.mic",
+      "slotKey": "assistSlots",
+      "inheritKey": "assistInheritsAll"
+    },
+    {
+      "domain": "speak_message",
+      "label": "Speak",
+      "icon": "message.and.waveform",
+      "slotKey": "speakMessageSlots",
+      "inheritKey": "speakMessageInheritsAll"
+    },
+    {
+      "domain": "timer",
+      "label": "Timer",
+      "icon": "timer",
+      "slotKey": "timerSlots",
+      "inheritKey": "timerInheritsAll"
+    },
+    {
+      "domain": "vacuum",
+      "label": "Vacuum",
+      "icon": "vacuum",
+      "slotKey": "vacuumSlots",
+      "inheritKey": "vacuumInheritsAll"
+    },
+    {
+      "domain": "input_boolean",
+      "label": "Toggle",
+      "icon": "togglepower",
+      "slotKey": "inputBooleanSlots",
+      "inheritKey": "inputBooleanInheritsAll"
+    },
+    {
+      "domain": "input_number",
+      "label": "Number",
+      "icon": "slider.horizontal.3",
+      "slotKey": "inputNumberSlots",
+      "inheritKey": "inputNumberInheritsAll"
+    },
+    {
+      "domain": "input_select",
+      "label": "Select",
+      "icon": "list.bullet",
+      "slotKey": "inputSelectSlots",
+      "inheritKey": "inputSelectInheritsAll"
+    },
+    {
+      "domain": "text",
+      "label": "Text",
+      "icon": "text.cursor",
+      "slotKey": "textSlots",
+      "inheritKey": "textInheritsAll"
+    },
+    {
+      "domain": "counter",
+      "label": "Counter",
+      "icon": "number.circle",
+      "slotKey": "counterSlots",
+      "inheritKey": "counterInheritsAll"
+    },
+    {
+      "domain": "todo",
+      "label": "Todo",
+      "icon": "checklist",
+      "slotKey": "todoSlots",
+      "inheritKey": "todoInheritsAll"
+    },
+    {
+      "domain": "automation",
+      "label": "Auto",
+      "icon": "gearshape.2",
+      "slotKey": "automationSlots",
+      "inheritKey": "automationInheritsAll"
+    },
+    {
+      "domain": "alarm_control_panel",
+      "label": "Alarm",
+      "icon": "shield",
+      "slotKey": "alarmControlPanelSlots",
+      "inheritKey": "alarmControlPanelInheritsAll"
+    },
+    {
+      "domain": "remote",
+      "label": "Remote",
+      "icon": "av.remote",
+      "slotKey": "remoteSlots",
+      "inheritKey": "remoteInheritsAll"
+    },
+    {
+      "domain": "update",
+      "label": "Update",
+      "icon": "arrow.triangle.2.circlepath",
+      "slotKey": "sensorSlots",
+      "inheritKey": "sensorInheritsAll"
+    },
+    {
+      "domain": "water_heater",
+      "label": "Heater",
+      "icon": "drop.degreesign",
+      "slotKey": "waterHeaterSlots",
+      "inheritKey": "waterHeaterInheritsAll"
+    },
+    {
+      "domain": "lawn_mower",
+      "label": "Mower",
+      "icon": "leaf",
+      "slotKey": "lawnMowerSlots",
+      "inheritKey": "lawnMowerInheritsAll"
+    },
+    {
+      "domain": "humidifier",
+      "label": "Humid",
+      "icon": "humidity",
+      "slotKey": "humidifierSlots",
+      "inheritKey": "humidifierInheritsAll"
+    },
+    {
+      "domain": "device_tracker",
+      "label": "Tracker",
+      "icon": "location",
+      "slotKey": "deviceTrackerSlots",
+      "inheritKey": "deviceTrackerInheritsAll"
+    },
+    {
+      "domain": "zone",
+      "label": "Zone",
+      "icon": "mappin.and.ellipse",
+      "slotKey": "sensorSlots",
+      "inheritKey": "sensorInheritsAll"
+    },
+    {
+      "domain": "event",
+      "label": "Event",
+      "icon": "bolt.badge.clock",
+      "slotKey": "sensorSlots",
+      "inheritKey": "sensorInheritsAll"
+    },
+    {
+      "domain": "calendar",
+      "label": "Calendar",
+      "icon": "calendar",
+      "slotKey": "sensorSlots",
+      "inheritKey": "sensorInheritsAll"
+    },
+    {
+      "domain": "date",
+      "label": "Date",
+      "icon": "calendar.badge.clock",
+      "slotKey": "sensorSlots",
+      "inheritKey": "sensorInheritsAll"
+    },
+    {
+      "domain": "time",
+      "label": "Time",
+      "icon": "clock",
+      "slotKey": "sensorSlots",
+      "inheritKey": "sensorInheritsAll"
+    },
+    {
+      "domain": "datetime",
+      "label": "DateTime",
+      "icon": "calendar.badge.clock",
+      "slotKey": "sensorSlots",
+      "inheritKey": "sensorInheritsAll"
+    },
+    {
+      "domain": "input_datetime",
+      "label": "Input DT",
+      "icon": "calendar.badge.clock",
+      "slotKey": "sensorSlots",
+      "inheritKey": "sensorInheritsAll"
+    },
+    {
+      "domain": "image",
+      "label": "Image",
+      "icon": "photo",
+      "slotKey": "sensorSlots",
+      "inheritKey": "sensorInheritsAll"
+    },
+    {
+      "domain": "weather",
+      "label": "Weather",
+      "icon": "cloud.sun",
+      "slotKey": "sensorSlots",
+      "inheritKey": "sensorInheritsAll"
+    },
+    {
+      "domain": "siren",
+      "label": "Siren",
+      "icon": "light.beacon.max",
+      "slotKey": "sirenSlots",
+      "inheritKey": "sirenInheritsAll"
+    },
+    {
+      "domain": "http_action",
+      "label": "HTTP Actions",
+      "icon": "network",
+      "slotKey": "httpActionSlots",
+      "inheritKey": "httpActionInheritsAll"
+    }
+  ],
+  "domainAliases": {
+    "input_button": "button",
+    "input_text": "text",
+    "macro": "http_action"
+  },
+  "style": {
+    "quickAction": [
+      {
+        "key": "showIconBubble",
+        "label": "Glass Background",
+        "type": "bool",
+        "default": false
+      },
+      {
+        "key": "showNeonOutline",
+        "label": "Neon Outline",
+        "type": "bool",
+        "default": false
+      },
+      {
+        "key": "showContextLabel",
+        "label": "Icon Labels",
+        "type": "bool",
+        "default": false
+      },
+      {
+        "key": "showFingerShadow",
+        "label": "Finger Shadow",
+        "type": "bool",
+        "default": true
+      },
+      {
+        "key": "entranceStyle",
+        "label": "Entrance Style",
+        "type": "enum",
+        "enum": "EntranceStyle",
+        "default": "none"
+      },
+      {
+        "key": "backgroundDim",
+        "label": "Background Dim",
+        "type": "number",
+        "default": 1,
+        "min": 0.3,
+        "max": 1,
+        "step": 0.05,
+        "presets": [
+          {
+            "label": "Subtle",
+            "value": 0.4
+          },
+          {
+            "label": "Medium",
+            "value": 0.65
+          },
+          {
+            "label": "Full",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "key": "beamStyle",
+        "label": "Beam Style",
+        "type": "enum",
+        "enum": "BeamStyle",
+        "default": "none"
+      },
+      {
+        "key": "beamColor",
+        "label": "Beam Color",
+        "type": "color",
+        "default": "#FFFFFF",
+        "swatches": [
+          "#FFFFFF",
+          "#E9C46A",
+          "#2A9D8F",
+          "#D98A4E",
+          "#8B7DD6",
+          "#E76F51",
+          "#1FB7A6",
+          "#88B6C9",
+          "#4DBFE0",
+          "#F08D62",
+          "#C47ABF",
+          "#F4A261",
+          "#5FA5E6",
+          "#35A8CF",
+          "#F09480",
+          "#3FB58A",
+          "#3B5F77",
+          "#2F79B6",
+          "#2F968D",
+          "#E6EEF2",
+          "#CFE0EA",
+          "#B8D3E1",
+          "#9DC4D8",
+          "#81B5CF",
+          "#67A6C5",
+          "#9FC8C0",
+          "#DCC790",
+          "#264653",
+          "#36B7A6",
+          "#5DBED5",
+          "#73A9D6",
+          "#A6D3CC"
+        ],
+        "shownWhen": {
+          "key": "beamStyle",
+          "not": "none"
+        }
+      },
+      {
+        "key": "beamIntensity",
+        "label": "Beam Intensity",
+        "type": "number",
+        "default": 0.5,
+        "min": 0.1,
+        "max": 1,
+        "step": 0.05,
+        "shownWhen": {
+          "key": "beamStyle",
+          "not": "none"
+        }
+      },
+      {
+        "key": "glowIntensity",
+        "label": "Glow",
+        "type": "number",
+        "default": 0.5,
+        "min": 0,
+        "max": 1,
+        "step": 0.05,
+        "phone": false
+      }
+    ],
+    "pageSwitcher": [
+      {
+        "key": "iconRadius",
+        "label": "Icon Radius",
+        "type": "number",
+        "default": 0.37,
+        "min": 0.3,
+        "max": 0.6,
+        "step": 0.01,
+        "phone": false
+      },
+      {
+        "key": "displayOffset",
+        "label": "Vertical Offset",
+        "type": "number",
+        "default": 40,
+        "min": -50,
+        "max": 50,
+        "step": 1,
+        "phone": false
+      },
+      {
+        "key": "glowIntensity",
+        "label": "Glow",
+        "type": "number",
+        "default": 0.5,
+        "min": 0,
+        "max": 1,
+        "step": 0.05,
+        "phone": false
+      },
+      {
+        "key": "selectedScale",
+        "label": "Selected Scale",
+        "type": "number",
+        "default": 1.2,
+        "min": 1,
+        "max": 1.5,
+        "step": 0.05,
+        "phone": false
+      },
+      {
+        "key": "displayMode",
+        "label": "Display Mode",
+        "type": "enum",
+        "enum": "PageSwitcherDisplayMode",
+        "default": "text",
+        "phone": false
+      }
+    ]
+  }
+}

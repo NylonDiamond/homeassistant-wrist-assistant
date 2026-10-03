@@ -21,7 +21,11 @@
 // store and mounts a fresh element.
 
 import "../src/watch-pages/page-editor.js";
+import "../src/watch-menus/menu-editor.js";
 import type { HassEntityState, HassLike, OwnerSummary } from "../src/ha-api.js";
+// The phone's menus as the app's tests write them, for `?menus`.
+import menusConfigured from "../test/fixtures-menus/02-configured.json";
+import menusDefaults from "../test/fixtures-menus/01-defaults.json";
 import { EXTRA_STATES, type HomeRegistries, StandInIcons, homeRegistries } from "./harness-home.js";
 // @ts-expect-error A module the harness build makes from the page fixtures.
 import pageFixturesModule from "harness:page-fixtures";
@@ -623,6 +627,11 @@ function seedStore(): void {
   }
 
   // The Ultra has no record at all: the view's "no pages yet" state.
+
+  // Menus (`?menus`): Alex's iPhone sent a configured set, Sam's the
+  // defaults; the Ultra has none, for "Start with the defaults".
+  store.put(ALEX_WATCH, "menus", clone(menusConfigured as Json), { base: 0, by: ALEX_WATCH, at: minutesAgo(90), notify: false });
+  store.put(SAM_WATCH, "menus", clone(menusDefaults as Json), { base: 0, by: SAM_WATCH, at: minutesAgo(60 * 30), notify: false });
 
   // The phone's library catalog (part 3e), the bytes the app's tests write,
   // on both watches with pages unless the No catalog switch is on.
@@ -1306,7 +1315,11 @@ window.setTimeout(() => {
 
 const frame = document.getElementById("frame") as HTMLElement;
 const strip = document.getElementById("strip") as HTMLElement;
-let editor: HTMLElementTagNameMap["wa-page-editor"] | undefined;
+let editor: HTMLElementTagNameMap["wa-page-editor"] | HTMLElementTagNameMap["wa-menu-editor"] | undefined;
+
+/** `pages-harness.html?menus` mounts the menu editor in place of the page
+ * editor, on the same store. */
+const menusMode = new URLSearchParams(location.search).has("menus");
 
 interface Prefs { dark: boolean; narrow: boolean; width: string }
 const prefs: Prefs = { dark: false, narrow: false, width: "full" };
@@ -1327,6 +1340,17 @@ function savePrefs(): void {
 
 function mount(): void {
   frame.replaceChildren();
+  if (menusMode) {
+    const menus = document.createElement("wa-menu-editor");
+    menus.hass = makeHass();
+    menus.owners = OWNERS;
+    menus.ownerId = undefined;
+    menus.narrow = prefs.narrow;
+    menus.icons = noIcons ? undefined : icons;
+    frame.append(menus);
+    editor = menus;
+    return;
+  }
   const el = document.createElement("wa-page-editor");
   el.hass = makeHass();
   el.owners = OWNERS;

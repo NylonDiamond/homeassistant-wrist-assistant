@@ -12,7 +12,7 @@ import { type TemplateResult, html, svg } from "lit";
 export type UiIconName =
   | "up" | "down" | "show" | "hide" | "duplicate" | "delete" | "close" | "reset"
   | "text" | "icon" | "gauge" | "chart" | "timeline" | "list" | "shape" | "image" | "tap" | "chartTimes" | "chartDots" | "chartGrid" | "imageTime"
-  | "grip" | "chevron" | "content" | "look" | "clock" | "states" | "place" | "layers" | "pages" | "plus"
+  | "grip" | "chevron" | "content" | "look" | "clock" | "states" | "place" | "layers" | "pages" | "radial" | "plus"
   | "lock" | "unlock" | "folder" | "ungroup" | "watch" | "phone"
   | "compact" | "expanded" | "grid" | "search" | "undo" | "redo" | "expand" | "left" | "right"
   | "braces" | "link" | "info" | "globe" | "download" | "check" | "arrow" | "paste" | "guides"
@@ -71,6 +71,10 @@ function shape(name: UiIconName) {
       return svg`<path d="M12 3V6.5M12 17.5V21M3 12H6.5M17.5 12H21" /><circle cx="12" cy="12" r="4.5" />`;
     case "layers":
       return svg`<path d="M12 4L20 8.5L12 13L4 8.5Z" /><path d="M4 12.5L12 17L20 12.5" /><path d="M4 16.5L12 21L20 16.5" />`;
+    // Menus: a ring of small circles around a center, the way the watch's
+    // radial menus open around the finger.
+    case "radial":
+      return svg`<circle cx="12" cy="12" r="1.6" /><circle cx="12" cy="4.5" r="1.8" /><circle cx="19.5" cy="12" r="1.8" /><circle cx="12" cy="19.5" r="1.8" /><circle cx="4.5" cy="12" r="1.8" /><circle cx="17.3" cy="6.7" r="1.4" /><circle cx="6.7" cy="17.3" r="1.4" />`;
     // Pages: one face in front and the next one behind it, offset, so the
     // glyph says "several of the same thing, one showing" rather than the
     // stacked sheets of the Layers icon.

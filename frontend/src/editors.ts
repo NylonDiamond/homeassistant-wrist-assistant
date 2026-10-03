@@ -882,12 +882,16 @@ function numberInput(value: number | undefined, set: (v: number | undefined) => 
     : html`<span class="unit" aria-hidden="true">${opts.unit}</span>`}</span>`;
 }
 
-export function selectField<T extends string>(label: string, value: T, options: [T, string][], set: (v: T) => void, opts: { def?: T } = {}) {
+export function selectField<T extends string>(label: string, value: T, options: [T, string][], set: (v: T) => void, opts: { def?: T; snapBack?: boolean } = {}) {
   const name = (v: T) => options.find(([o]) => o === v)?.[1] ?? v;
-  return html`<label class="field">${fieldLabel(label, backTo(value, opts.def, set, name))}
-    <select @change=${onInput((v) => set(v as T))}>
-      ${options.map(([v, text]) => html`<option value=${v} ?selected=${v === value}>${text}</option>`)}
-    </select></label>`;
+  const rows = options.map(([v, text]) => html`<option value=${v} ?selected=${v === value}>${text}</option>`);
+  // `snapBack`: the select shows `value` on every draw, so a choice the
+  // editor refused goes back to the one it holds once it draws again.
+  return opts.snapBack === true
+    ? html`<label class="field">${fieldLabel(label, backTo(value, opts.def, set, name))}
+      <select .value=${live(value)} @change=${onInput((v) => set(v as T))}>${rows}</select></label>`
+    : html`<label class="field">${fieldLabel(label, backTo(value, opts.def, set, name))}
+      <select @change=${onInput((v) => set(v as T))}>${rows}</select></label>`;
 }
 
 /** A select whose options sit under headings, for a list long enough that a

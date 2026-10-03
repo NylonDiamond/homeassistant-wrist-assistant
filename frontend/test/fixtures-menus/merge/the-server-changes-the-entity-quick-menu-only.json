@@ -1,0 +1,551 @@
+{
+  "name": "The server changes the Entity quick menu and the phone changes nothing: the server's Entity quick menu is kept",
+  "base": {
+    "entityRadial": {
+      "alarmControlPanelInheritsAll": false,
+      "alarmControlPanelSlots": [],
+      "allSlots": [],
+      "assistInheritsAll": false,
+      "assistSlots": [],
+      "automationInheritsAll": false,
+      "automationSlots": [],
+      "buttonInheritsAll": false,
+      "buttonSlots": [],
+      "climateInheritsAll": false,
+      "climateSlots": [],
+      "counterInheritsAll": false,
+      "counterSlots": [],
+      "coverInheritsAll": false,
+      "coverSlots": [],
+      "deviceTrackerInheritsAll": false,
+      "deviceTrackerSlots": [],
+      "fanInheritsAll": false,
+      "fanSlots": [],
+      "httpActionInheritsAll": false,
+      "httpActionSlots": [],
+      "humidifierInheritsAll": false,
+      "humidifierSlots": [],
+      "inputBooleanInheritsAll": false,
+      "inputBooleanSlots": [],
+      "inputNumberInheritsAll": false,
+      "inputNumberSlots": [],
+      "inputSelectInheritsAll": false,
+      "inputSelectSlots": [],
+      "lawnMowerInheritsAll": false,
+      "lawnMowerSlots": [],
+      "lightInheritsAll": false,
+      "lightSlots": [
+        {
+          "action": {
+            "type": "brightness"
+          },
+          "color": "#E8D174",
+          "icon": "sun.max.fill",
+          "id": "3E4D2000-0000-4000-8000-000000000003",
+          "isVisible": true,
+          "position": "topCenter",
+          "voiceConfig": {}
+        },
+        {
+          "action": {
+            "type": "settings"
+          },
+          "color": "#A8B8C8",
+          "icon": "slider.horizontal.3",
+          "id": "3E4D2000-0000-4000-8000-000000000004",
+          "isVisible": true,
+          "position": "bottomCenter",
+          "voiceConfig": {}
+        }
+      ],
+      "lockInheritsAll": false,
+      "lockSlots": [],
+      "mediaPlayerInheritsAll": false,
+      "mediaPlayerSlots": [],
+      "personInheritsAll": false,
+      "personSlots": [],
+      "remoteInheritsAll": false,
+      "remoteSlots": [],
+      "sceneInheritsAll": false,
+      "sceneSlots": [],
+      "schemaVersion": 1,
+      "scriptInheritsAll": false,
+      "scriptSlots": [],
+      "sensorInheritsAll": false,
+      "sensorSlots": [],
+      "sirenInheritsAll": false,
+      "sirenSlots": [],
+      "speakMessageInheritsAll": false,
+      "speakMessageSlots": [],
+      "switchInheritsAll": false,
+      "switchSlots": [],
+      "textInheritsAll": false,
+      "textSlots": [],
+      "timerInheritsAll": false,
+      "timerSlots": [],
+      "todoInheritsAll": false,
+      "todoSlots": [],
+      "vacuumInheritsAll": false,
+      "vacuumSlots": [],
+      "waterHeaterInheritsAll": false,
+      "waterHeaterSlots": []
+    },
+    "pageSwitcher": {
+      "displayMode": "text",
+      "displayOffset": 40,
+      "glowIntensity": 0.5,
+      "iconRadius": 0.37,
+      "schemaVersion": 1,
+      "selectedScale": 1.2
+    },
+    "quickAction": {
+      "backgroundDim": 1,
+      "beamColor": "#FFFFFF",
+      "beamIntensity": 0.5,
+      "beamStyle": "none",
+      "entranceStyle": "none",
+      "glowIntensity": 0.5,
+      "schemaVersion": 1,
+      "showContextLabel": false,
+      "showFingerShadow": true,
+      "showIconBubble": false,
+      "showNeonOutline": false,
+      "slots": [
+        {
+          "action": {
+            "type": "refresh"
+          },
+          "color": "#7CC4E8",
+          "icon": "arrow.clockwise",
+          "id": "3E4D2000-0000-4000-8000-000000000001",
+          "isVisible": true,
+          "position": "topLeft",
+          "voiceConfig": {}
+        },
+        {
+          "action": {
+            "type": "pages"
+          },
+          "color": "#7094C4",
+          "icon": "square.stack.3d.up",
+          "id": "3E4D2000-0000-4000-8000-000000000002",
+          "isVisible": true,
+          "position": "leftCenter",
+          "voiceConfig": {}
+        }
+      ]
+    },
+    "schemaVersion": 1
+  },
+  "phone": {
+    "entityRadial": {
+      "alarmControlPanelInheritsAll": false,
+      "alarmControlPanelSlots": [],
+      "allSlots": [],
+      "assistInheritsAll": false,
+      "assistSlots": [],
+      "automationInheritsAll": false,
+      "automationSlots": [],
+      "buttonInheritsAll": false,
+      "buttonSlots": [],
+      "climateInheritsAll": false,
+      "climateSlots": [],
+      "counterInheritsAll": false,
+      "counterSlots": [],
+      "coverInheritsAll": false,
+      "coverSlots": [],
+      "deviceTrackerInheritsAll": false,
+      "deviceTrackerSlots": [],
+      "fanInheritsAll": false,
+      "fanSlots": [],
+      "httpActionInheritsAll": false,
+      "httpActionSlots": [],
+      "humidifierInheritsAll": false,
+      "humidifierSlots": [],
+      "inputBooleanInheritsAll": false,
+      "inputBooleanSlots": [],
+      "inputNumberInheritsAll": false,
+      "inputNumberSlots": [],
+      "inputSelectInheritsAll": false,
+      "inputSelectSlots": [],
+      "lawnMowerInheritsAll": false,
+      "lawnMowerSlots": [],
+      "lightInheritsAll": false,
+      "lightSlots": [
+        {
+          "action": {
+            "type": "brightness"
+          },
+          "color": "#E8D174",
+          "icon": "sun.max.fill",
+          "id": "3E4D2000-0000-4000-8000-000000000003",
+          "isVisible": true,
+          "position": "topCenter",
+          "voiceConfig": {}
+        },
+        {
+          "action": {
+            "type": "settings"
+          },
+          "color": "#A8B8C8",
+          "icon": "slider.horizontal.3",
+          "id": "3E4D2000-0000-4000-8000-000000000004",
+          "isVisible": true,
+          "position": "bottomCenter",
+          "voiceConfig": {}
+        }
+      ],
+      "lockInheritsAll": false,
+      "lockSlots": [],
+      "mediaPlayerInheritsAll": false,
+      "mediaPlayerSlots": [],
+      "personInheritsAll": false,
+      "personSlots": [],
+      "remoteInheritsAll": false,
+      "remoteSlots": [],
+      "sceneInheritsAll": false,
+      "sceneSlots": [],
+      "schemaVersion": 1,
+      "scriptInheritsAll": false,
+      "scriptSlots": [],
+      "sensorInheritsAll": false,
+      "sensorSlots": [],
+      "sirenInheritsAll": false,
+      "sirenSlots": [],
+      "speakMessageInheritsAll": false,
+      "speakMessageSlots": [],
+      "switchInheritsAll": false,
+      "switchSlots": [],
+      "textInheritsAll": false,
+      "textSlots": [],
+      "timerInheritsAll": false,
+      "timerSlots": [],
+      "todoInheritsAll": false,
+      "todoSlots": [],
+      "vacuumInheritsAll": false,
+      "vacuumSlots": [],
+      "waterHeaterInheritsAll": false,
+      "waterHeaterSlots": []
+    },
+    "pageSwitcher": {
+      "displayMode": "text",
+      "displayOffset": 40,
+      "glowIntensity": 0.5,
+      "iconRadius": 0.37,
+      "schemaVersion": 1,
+      "selectedScale": 1.2
+    },
+    "quickAction": {
+      "backgroundDim": 1,
+      "beamColor": "#FFFFFF",
+      "beamIntensity": 0.5,
+      "beamStyle": "none",
+      "entranceStyle": "none",
+      "glowIntensity": 0.5,
+      "schemaVersion": 1,
+      "showContextLabel": false,
+      "showFingerShadow": true,
+      "showIconBubble": false,
+      "showNeonOutline": false,
+      "slots": [
+        {
+          "action": {
+            "type": "refresh"
+          },
+          "color": "#7CC4E8",
+          "icon": "arrow.clockwise",
+          "id": "3E4D2000-0000-4000-8000-000000000001",
+          "isVisible": true,
+          "position": "topLeft",
+          "voiceConfig": {}
+        },
+        {
+          "action": {
+            "type": "pages"
+          },
+          "color": "#7094C4",
+          "icon": "square.stack.3d.up",
+          "id": "3E4D2000-0000-4000-8000-000000000002",
+          "isVisible": true,
+          "position": "leftCenter",
+          "voiceConfig": {}
+        }
+      ]
+    },
+    "schemaVersion": 1
+  },
+  "server": {
+    "entityRadial": {
+      "alarmControlPanelInheritsAll": false,
+      "alarmControlPanelSlots": [],
+      "allSlots": [],
+      "assistInheritsAll": false,
+      "assistSlots": [],
+      "automationInheritsAll": false,
+      "automationSlots": [],
+      "buttonInheritsAll": false,
+      "buttonSlots": [],
+      "climateInheritsAll": false,
+      "climateSlots": [],
+      "counterInheritsAll": false,
+      "counterSlots": [],
+      "coverInheritsAll": false,
+      "coverSlots": [],
+      "deviceTrackerInheritsAll": false,
+      "deviceTrackerSlots": [],
+      "fanInheritsAll": false,
+      "fanSlots": [],
+      "httpActionInheritsAll": false,
+      "httpActionSlots": [],
+      "humidifierInheritsAll": false,
+      "humidifierSlots": [],
+      "inputBooleanInheritsAll": false,
+      "inputBooleanSlots": [],
+      "inputNumberInheritsAll": false,
+      "inputNumberSlots": [],
+      "inputSelectInheritsAll": false,
+      "inputSelectSlots": [],
+      "lawnMowerInheritsAll": false,
+      "lawnMowerSlots": [],
+      "lightInheritsAll": true,
+      "lightSlots": [
+        {
+          "action": {
+            "type": "brightness"
+          },
+          "color": "#E8D174",
+          "icon": "lightbulb.max.fill",
+          "id": "3E4D2000-0000-4000-8000-000000000003",
+          "isVisible": true,
+          "position": "topCenter",
+          "voiceConfig": {}
+        },
+        {
+          "action": {
+            "type": "settings"
+          },
+          "color": "#A8B8C8",
+          "icon": "slider.horizontal.3",
+          "id": "3E4D2000-0000-4000-8000-000000000004",
+          "isVisible": true,
+          "position": "bottomCenter",
+          "voiceConfig": {}
+        }
+      ],
+      "lockInheritsAll": false,
+      "lockSlots": [],
+      "mediaPlayerInheritsAll": false,
+      "mediaPlayerSlots": [],
+      "personInheritsAll": false,
+      "personSlots": [],
+      "remoteInheritsAll": false,
+      "remoteSlots": [],
+      "sceneInheritsAll": false,
+      "sceneSlots": [],
+      "schemaVersion": 1,
+      "scriptInheritsAll": false,
+      "scriptSlots": [],
+      "sensorInheritsAll": false,
+      "sensorSlots": [],
+      "sirenInheritsAll": false,
+      "sirenSlots": [],
+      "speakMessageInheritsAll": false,
+      "speakMessageSlots": [],
+      "switchInheritsAll": false,
+      "switchSlots": [],
+      "textInheritsAll": false,
+      "textSlots": [],
+      "timerInheritsAll": false,
+      "timerSlots": [],
+      "todoInheritsAll": false,
+      "todoSlots": [],
+      "vacuumInheritsAll": false,
+      "vacuumSlots": [],
+      "waterHeaterInheritsAll": false,
+      "waterHeaterSlots": []
+    },
+    "pageSwitcher": {
+      "displayMode": "text",
+      "displayOffset": 40,
+      "glowIntensity": 0.5,
+      "iconRadius": 0.37,
+      "schemaVersion": 1,
+      "selectedScale": 1.2
+    },
+    "quickAction": {
+      "backgroundDim": 1,
+      "beamColor": "#FFFFFF",
+      "beamIntensity": 0.5,
+      "beamStyle": "none",
+      "entranceStyle": "none",
+      "glowIntensity": 0.5,
+      "schemaVersion": 1,
+      "showContextLabel": false,
+      "showFingerShadow": true,
+      "showIconBubble": false,
+      "showNeonOutline": false,
+      "slots": [
+        {
+          "action": {
+            "type": "refresh"
+          },
+          "color": "#7CC4E8",
+          "icon": "arrow.clockwise",
+          "id": "3E4D2000-0000-4000-8000-000000000001",
+          "isVisible": true,
+          "position": "topLeft",
+          "voiceConfig": {}
+        },
+        {
+          "action": {
+            "type": "pages"
+          },
+          "color": "#7094C4",
+          "icon": "square.stack.3d.up",
+          "id": "3E4D2000-0000-4000-8000-000000000002",
+          "isVisible": true,
+          "position": "leftCenter",
+          "voiceConfig": {}
+        }
+      ]
+    },
+    "schemaVersion": 1
+  },
+  "expected": {
+    "entityRadial": {
+      "alarmControlPanelInheritsAll": false,
+      "alarmControlPanelSlots": [],
+      "allSlots": [],
+      "assistInheritsAll": false,
+      "assistSlots": [],
+      "automationInheritsAll": false,
+      "automationSlots": [],
+      "buttonInheritsAll": false,
+      "buttonSlots": [],
+      "climateInheritsAll": false,
+      "climateSlots": [],
+      "counterInheritsAll": false,
+      "counterSlots": [],
+      "coverInheritsAll": false,
+      "coverSlots": [],
+      "deviceTrackerInheritsAll": false,
+      "deviceTrackerSlots": [],
+      "fanInheritsAll": false,
+      "fanSlots": [],
+      "httpActionInheritsAll": false,
+      "httpActionSlots": [],
+      "humidifierInheritsAll": false,
+      "humidifierSlots": [],
+      "inputBooleanInheritsAll": false,
+      "inputBooleanSlots": [],
+      "inputNumberInheritsAll": false,
+      "inputNumberSlots": [],
+      "inputSelectInheritsAll": false,
+      "inputSelectSlots": [],
+      "lawnMowerInheritsAll": false,
+      "lawnMowerSlots": [],
+      "lightInheritsAll": true,
+      "lightSlots": [
+        {
+          "action": {
+            "type": "brightness"
+          },
+          "color": "#E8D174",
+          "icon": "lightbulb.max.fill",
+          "id": "3E4D2000-0000-4000-8000-000000000003",
+          "isVisible": true,
+          "position": "topCenter",
+          "voiceConfig": {}
+        },
+        {
+          "action": {
+            "type": "settings"
+          },
+          "color": "#A8B8C8",
+          "icon": "slider.horizontal.3",
+          "id": "3E4D2000-0000-4000-8000-000000000004",
+          "isVisible": true,
+          "position": "bottomCenter",
+          "voiceConfig": {}
+        }
+      ],
+      "lockInheritsAll": false,
+      "lockSlots": [],
+      "mediaPlayerInheritsAll": false,
+      "mediaPlayerSlots": [],
+      "personInheritsAll": false,
+      "personSlots": [],
+      "remoteInheritsAll": false,
+      "remoteSlots": [],
+      "sceneInheritsAll": false,
+      "sceneSlots": [],
+      "schemaVersion": 1,
+      "scriptInheritsAll": false,
+      "scriptSlots": [],
+      "sensorInheritsAll": false,
+      "sensorSlots": [],
+      "sirenInheritsAll": false,
+      "sirenSlots": [],
+      "speakMessageInheritsAll": false,
+      "speakMessageSlots": [],
+      "switchInheritsAll": false,
+      "switchSlots": [],
+      "textInheritsAll": false,
+      "textSlots": [],
+      "timerInheritsAll": false,
+      "timerSlots": [],
+      "todoInheritsAll": false,
+      "todoSlots": [],
+      "vacuumInheritsAll": false,
+      "vacuumSlots": [],
+      "waterHeaterInheritsAll": false,
+      "waterHeaterSlots": []
+    },
+    "pageSwitcher": {
+      "displayMode": "text",
+      "displayOffset": 40,
+      "glowIntensity": 0.5,
+      "iconRadius": 0.37,
+      "schemaVersion": 1,
+      "selectedScale": 1.2
+    },
+    "quickAction": {
+      "backgroundDim": 1,
+      "beamColor": "#FFFFFF",
+      "beamIntensity": 0.5,
+      "beamStyle": "none",
+      "entranceStyle": "none",
+      "glowIntensity": 0.5,
+      "schemaVersion": 1,
+      "showContextLabel": false,
+      "showFingerShadow": true,
+      "showIconBubble": false,
+      "showNeonOutline": false,
+      "slots": [
+        {
+          "action": {
+            "type": "refresh"
+          },
+          "color": "#7CC4E8",
+          "icon": "arrow.clockwise",
+          "id": "3E4D2000-0000-4000-8000-000000000001",
+          "isVisible": true,
+          "position": "topLeft",
+          "voiceConfig": {}
+        },
+        {
+          "action": {
+            "type": "pages"
+          },
+          "color": "#7094C4",
+          "icon": "square.stack.3d.up",
+          "id": "3E4D2000-0000-4000-8000-000000000002",
+          "isVisible": true,
+          "position": "leftCenter",
+          "voiceConfig": {}
+        }
+      ]
+    },
+    "schemaVersion": 1
+  }
+}

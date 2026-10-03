@@ -342,6 +342,51 @@ export function setWatchPageTitleIcon(document: WatchPagesDocument, pageId: stri
   return setPageKey(document, pageId, "pageTitleIcon", () => icon.trim());
 }
 
+// ── the page switcher ────────────────────────────────────────────────────
+
+/** The page switcher's display modes, from `page-keys.json`. */
+export const WATCH_PAGE_SWITCHER_MODES: readonly string[] =
+  (pageKeys as unknown as { enums: Record<string, string[]> }).enums.PageSwitcherDisplayMode ?? ["text", "icon"];
+
+/** The page's icon in the page switcher: a symbol name, `""` for the
+ * automatic one (the key removed). */
+export function setWatchPageSwitcherIcon(document: WatchPagesDocument, pageId: string, icon: string): WatchPagesDocument {
+  if (typeof icon !== "string") return document;
+  const name = icon.trim();
+  return setPageKey(document, pageId, "switcherIcon", () => (name === "" ? null : name));
+}
+
+/** The page's color in the page switcher: `#RRGGBB`, or undefined for the
+ * automatic one (the key removed). A gradient or anything else is refused:
+ * the switcher reads a plain hex. */
+export function setWatchPageSwitcherColor(document: WatchPagesDocument, pageId: string, color: string | undefined): WatchPagesDocument {
+  if (color === undefined) return setPageKey(document, pageId, "switcherColor", () => null);
+  const m = typeof color === "string" ? /^#?([0-9a-fA-F]{6})([0-9a-fA-F]{2})?$/.exec(color.trim()) : null;
+  if (m === null) return document;
+  return setPageKey(document, pageId, "switcherColor", () => `#${m[1]!.toUpperCase()}`);
+}
+
+/** The page's name in the page switcher; empty goes back to the page's own
+ * name (the key removed), as the phone does. */
+export function setWatchPageSwitcherText(document: WatchPagesDocument, pageId: string, text: string): WatchPagesDocument {
+  if (typeof text !== "string") return document;
+  return setPageKey(document, pageId, "switcherText", () => (text === "" ? null : text));
+}
+
+/** Text or icon for this page in the switcher; undefined removes the key,
+ * which the watch reads as text. */
+export function setWatchPageSwitcherDisplayMode(document: WatchPagesDocument, pageId: string, mode: string | undefined): WatchPagesDocument {
+  if (mode === undefined) return setPageKey(document, pageId, "switcherDisplayMode", () => null);
+  if (!WATCH_PAGE_SWITCHER_MODES.includes(mode)) return document;
+  return setPageKey(document, pageId, "switcherDisplayMode", () => mode);
+}
+
+/** Whether the page is left out of the page switcher. */
+export function setWatchPageHideFromSwitcher(document: WatchPagesDocument, pageId: string, hide: boolean): WatchPagesDocument {
+  if (typeof hide !== "boolean") return document;
+  return setPageKey(document, pageId, "hideFromSwitcher", () => hide);
+}
+
 /** The setter of each Page row, by the key it writes. */
 export const WATCH_PAGE_STYLING_SETTERS: Readonly<Record<string, (document: WatchPagesDocument, pageId: string, value: never) => WatchPagesDocument>> = {
   backgroundColor: setWatchPageBackgroundColor,
@@ -359,6 +404,11 @@ export const WATCH_PAGE_STYLING_SETTERS: Readonly<Record<string, (document: Watc
   pageTitleTextSize: setWatchPageTitleSize,
   pageTitleTextColor: setWatchPageTitleColor,
   pageTitleIcon: setWatchPageTitleIcon,
+  switcherIcon: setWatchPageSwitcherIcon,
+  switcherColor: setWatchPageSwitcherColor,
+  switcherText: setWatchPageSwitcherText,
+  switcherDisplayMode: setWatchPageSwitcherDisplayMode,
+  hideFromSwitcher: setWatchPageHideFromSwitcher,
 };
 
 // ── reset ────────────────────────────────────────────────────────────────
@@ -700,6 +750,14 @@ export interface WatchPageSettings {
   titleColor: string | undefined;
   titleIcon: string;
   fullScreen: boolean;
+  /** The page in the page switcher. Each absent means the automatic one:
+   * an icon from the page's first tile, a color by the page's place, the
+   * page's own name, and text. */
+  switcherIcon: string | undefined;
+  switcherColor: string | undefined;
+  switcherText: string | undefined;
+  switcherDisplayMode: string | undefined;
+  hideFromSwitcher: boolean;
 }
 
 export function watchPageSettings(page: WatchPage): WatchPageSettings {
@@ -726,5 +784,10 @@ export function watchPageSettings(page: WatchPage): WatchPageSettings {
     titleColor: typeof page.pageTitleTextColor === "string" ? page.pageTitleTextColor : undefined,
     titleIcon: s("pageTitleIcon"),
     fullScreen: page.fullScreen === true,
+    switcherIcon: typeof page.switcherIcon === "string" && page.switcherIcon !== "" ? page.switcherIcon : undefined,
+    switcherColor: typeof page.switcherColor === "string" ? page.switcherColor : undefined,
+    switcherText: typeof page.switcherText === "string" ? page.switcherText : undefined,
+    switcherDisplayMode: typeof page.switcherDisplayMode === "string" ? page.switcherDisplayMode : undefined,
+    hideFromSwitcher: page.hideFromSwitcher === true,
   };
 }
