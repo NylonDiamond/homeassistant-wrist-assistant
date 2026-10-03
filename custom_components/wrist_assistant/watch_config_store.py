@@ -260,32 +260,34 @@ def validate_document(kind: str, document: Any, *, check_items: bool = False) ->
     return size
 
 
-# The sections a menus document may carry, each optional: the Anywhere menu
-# (`QuickActionConfig`), the Entity quick menu (`EntityRadialConfig`) and the
-# page switcher's style (`PageSwitcherConfig`).
+# The sections a menus document carries, every one required: the Anywhere
+# menu (`QuickActionConfig`), the Entity quick menu (`EntityRadialConfig`) and
+# the page switcher's style (`PageSwitcherConfig`). Both apps read a missing
+# section as "refuse the document", never as "reset that menu", so a writer
+# that drops one cannot wipe a menu by accident.
 _MENUS_SECTION_KEYS = ("quickAction", "entityRadial", "pageSwitcher")
 
 
 def _check_menus(document: dict[str, Any]) -> None:
     """The menus' shape guard, for every writer.
 
-    ``quickAction``, ``entityRadial`` and ``pageSwitcher`` are each absent or
-    an object. ``quickAction.slots`` and every key of ``entityRadial`` whose
-    name ends in ``Slots`` are slot lists (see :func:`_check_slot_list`), and
-    ``entityRadial.entityOverrides`` is absent or an object whose every value
-    is a slot list. A slot with no id is given a new one on every decode and
-    two slots sharing one confuse the editor, so neither may land whoever
+    ``quickAction``, ``entityRadial`` and ``pageSwitcher`` are each present
+    and an object. ``quickAction.slots`` and every key of ``entityRadial``
+    whose name ends in ``Slots`` are slot lists (see :func:`_check_slot_list`),
+    and ``entityRadial.entityOverrides`` is absent or an object whose every
+    value is a slot list. A slot with no id is given a new one on every decode
+    and two slots sharing one confuse the editor, so neither may land whoever
     writes it. No other key is looked at, so a newer app can add some.
     """
     for key in _MENUS_SECTION_KEYS:
-        if key in document and not isinstance(document[key], dict):
+        if key not in document:
+            raise WatchConfigValidationError(f"document.{key} is required")
+        if not isinstance(document[key], dict):
             raise WatchConfigValidationError(f"document.{key} must be an object")
-    quick_action = document.get("quickAction")
-    if quick_action is not None and "slots" in quick_action:
+    quick_action = document["quickAction"]
+    if "slots" in quick_action:
         _check_slot_list(quick_action["slots"], "document.quickAction.slots")
-    entity_radial = document.get("entityRadial")
-    if entity_radial is None:
-        return
+    entity_radial = document["entityRadial"]
     for key, slots in entity_radial.items():
         if key.endswith("Slots"):
             _check_slot_list(slots, f"document.entityRadial.{key}")

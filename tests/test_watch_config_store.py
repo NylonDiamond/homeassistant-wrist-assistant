@@ -1881,21 +1881,25 @@ def test_a_device_may_save_and_read_menus(mod):
     assert store.revisions(OWNER) == {"menus": 2}
 
 
+def _sections(**given) -> dict:
+    """A menus document with every section present, the given ones filled."""
+    return {"quickAction": {}, "entityRadial": {}, "pageSwitcher": {}, **given}
+
+
 @pytest.mark.parametrize(
     "document",
     [
-        {},
-        {"schemaVersion": 1},
-        {"quickAction": {}, "entityRadial": {}, "pageSwitcher": {}},
-        {"quickAction": {"slots": []}},
-        {"entityRadial": {"lightSlots": [], "entityOverrides": {}}},
+        _sections(),
+        _sections(schemaVersion=1),
+        _sections(quickAction={"slots": []}),
+        _sections(entityRadial={"lightSlots": [], "entityOverrides": {}}),
         # Keys that do not end in Slots are never looked at.
-        {"entityRadial": {"lightInheritsAll": "yes", "slotsCount": 3, "beamStyle": None}},
-        {"pageSwitcher": {"slots": "not a list, and never read"}},
+        _sections(entityRadial={"lightInheritsAll": "yes", "slotsCount": 3, "beamStyle": None}),
+        _sections(pageSwitcher={"slots": "not a list, and never read"}),
         # The same id in two lists is two menus, not a clash.
-        {"quickAction": {"slots": [{"id": "a"}]},
-         "entityRadial": {"allSlots": [{"id": "a"}], "lightSlots": [{"id": "a"}],
-                          "entityOverrides": {"light.x": [{"id": "a"}]}}},
+        _sections(quickAction={"slots": [{"id": "a"}]},
+                  entityRadial={"allSlots": [{"id": "a"}], "lightSlots": [{"id": "a"}],
+                                "entityOverrides": {"light.x": [{"id": "a"}]}}),
     ],
 )
 def test_menus_of_any_shape_the_guard_allows_are_accepted(mod, document):
@@ -1903,37 +1907,47 @@ def test_menus_of_any_shape_the_guard_allows_are_accepted(mod, document):
     assert _put(store, kind="menus", doc=document).document == document
 
 
+def _without(key: str) -> dict:
+    document = _sections()
+    del document[key]
+    return document
+
+
 @pytest.mark.parametrize(
     ("document", "message"),
     [
         ([], "document must be a JSON object"),
-        ({"quickAction": []}, "document.quickAction must be an object"),
-        ({"entityRadial": None}, "document.entityRadial must be an object"),
-        ({"pageSwitcher": "icons"}, "document.pageSwitcher must be an object"),
-        ({"quickAction": {"slots": {}}}, "document.quickAction.slots must be a list"),
-        ({"quickAction": {"slots": None}}, "document.quickAction.slots must be a list"),
-        ({"quickAction": {"slots": ["top"]}},
+        ({}, "document.quickAction is required"),
+        (_without("quickAction"), "document.quickAction is required"),
+        (_without("entityRadial"), "document.entityRadial is required"),
+        (_without("pageSwitcher"), "document.pageSwitcher is required"),
+        (_sections(quickAction=[]), "document.quickAction must be an object"),
+        (_sections(entityRadial=None), "document.entityRadial must be an object"),
+        (_sections(pageSwitcher="icons"), "document.pageSwitcher must be an object"),
+        (_sections(quickAction={"slots": {}}), "document.quickAction.slots must be a list"),
+        (_sections(quickAction={"slots": None}), "document.quickAction.slots must be a list"),
+        (_sections(quickAction={"slots": ["top"]}),
          r"document.quickAction.slots\[0\] must be an object"),
-        ({"quickAction": {"slots": [{"id": "a"}, {"position": "top"}]}},
+        (_sections(quickAction={"slots": [{"id": "a"}, {"position": "top"}]}),
          r"document.quickAction.slots\[1\].id must be a non-empty string"),
-        ({"quickAction": {"slots": [{"id": ""}]}},
+        (_sections(quickAction={"slots": [{"id": ""}]}),
          r"document.quickAction.slots\[0\].id must be a non-empty string"),
-        ({"quickAction": {"slots": [{"id": 7}]}},
+        (_sections(quickAction={"slots": [{"id": 7}]}),
          r"document.quickAction.slots\[0\].id must be a non-empty string"),
-        ({"quickAction": {"slots": [{"id": "ab"}, {"id": "c"}, {"id": "AB"}]}},
+        (_sections(quickAction={"slots": [{"id": "ab"}, {"id": "c"}, {"id": "AB"}]}),
          r'document.quickAction.slots\[2\] has the slot id "AB" of '
          r"document.quickAction.slots\[0\]; slot ids must be unique in a list"),
-        ({"entityRadial": {"lightSlots": {}}},
+        (_sections(entityRadial={"lightSlots": {}}),
          "document.entityRadial.lightSlots must be a list"),
-        ({"entityRadial": {"httpActionSlots": [{"id": "a"}, {"id": "a"}]}},
+        (_sections(entityRadial={"httpActionSlots": [{"id": "a"}, {"id": "a"}]}),
          r"document.entityRadial.httpActionSlots\[1\] has the slot id"),
-        ({"entityRadial": {"futureDomainSlots": [{}]}},
+        (_sections(entityRadial={"futureDomainSlots": [{}]}),
          r"document.entityRadial.futureDomainSlots\[0\].id must be a non-empty string"),
-        ({"entityRadial": {"entityOverrides": []}},
+        (_sections(entityRadial={"entityOverrides": []}),
          "document.entityRadial.entityOverrides must be an object"),
-        ({"entityRadial": {"entityOverrides": {"light.x": {}}}},
+        (_sections(entityRadial={"entityOverrides": {"light.x": {}}}),
          r'document.entityRadial.entityOverrides\["light.x"\] must be a list'),
-        ({"entityRadial": {"entityOverrides": {"light.x": [{"id": "a"}, {"id": "a"}]}}},
+        (_sections(entityRadial={"entityOverrides": {"light.x": [{"id": "a"}, {"id": "a"}]}}),
          r'document.entityRadial.entityOverrides\["light.x"\]\[1\] has the slot id'),
     ],
 )
@@ -1947,10 +1961,10 @@ def test_menus_of_the_wrong_shape_are_refused(mod, document, message):
 
 def test_the_menus_have_their_own_cap(mod):
     store = _new(mod)
-    overhead = mod.document_size({"b": ""})
-    at_cap = {"b": "x" * (MAX_MENUS_BYTES - overhead)}
+    overhead = mod.document_size(_sections(b=""))
+    at_cap = _sections(b="x" * (MAX_MENUS_BYTES - overhead))
     assert _put(store, kind="menus", doc=at_cap).revision == 1
-    over = {"b": "x" * (MAX_MENUS_BYTES - overhead + 1)}
+    over = _sections(b="x" * (MAX_MENUS_BYTES - overhead + 1))
     with pytest.raises(mod.WatchConfigValidationError, match="limit for menus"):
         _put(store, kind="menus", doc=over, base=1)
 
@@ -2069,7 +2083,7 @@ def test_a_create_is_checked_before_the_pairing_is_asked(mod):
     asyncio.run(store.async_load())
     with pytest.raises(mod.WatchConfigValidationError, match="slot ids must be unique"):
         store.panel_save(
-            OWNER, "menus", {"quickAction": {"slots": [{"id": "a"}, {"id": "a"}]}},
+            OWNER, "menus", _sections(quickAction={"slots": [{"id": "a"}, {"id": "a"}]}),
             base_revision=0,
         )
     with pytest.raises(mod.WatchConfigValidationError, match="the panel cannot save catalog"):

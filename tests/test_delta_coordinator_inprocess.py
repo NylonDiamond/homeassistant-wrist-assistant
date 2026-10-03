@@ -907,6 +907,7 @@ def _menus_doc(display_mode: str = "icons") -> dict:
     return {
         "schemaVersion": 1,
         "quickAction": {"schemaVersion": 1, "slots": [{"id": "S1", "position": "top"}]},
+        "entityRadial": {"schemaVersion": 1, "lightSlots": [{"id": "S1"}]},
         "pageSwitcher": {"schemaVersion": 1, "displayMode": display_mode},
     }
 
