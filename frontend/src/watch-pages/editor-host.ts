@@ -113,6 +113,17 @@ export interface WatchPagesEditorHost {
   endCoalesce(): void;
   /** Select a tile of the selected page by id (one just added), or none. */
   selectTile(id: string | undefined): void;
+  /** On a smart page, the selected rule's id as the document has it (the
+   * rule the Rules card shows, the per-domain style edits, and whose tiles
+   * the preview draws full); undefined when none is selected or the page is
+   * not smart. Held by the element, never in the document: nothing here
+   * saves, undoes or merges it. A getter, like `document`; a rule that is
+   * gone reads as none. */
+  readonly smartRuleId: string | undefined;
+  /** Select a rule of the selected smart page by id (one just added, the
+   * neighbor of one just deleted, a tile's rule clicked on the stage), or
+   * none. */
+  selectSmartRule(id: string | undefined): void;
   /** Draw the element again, after a change to `uiState`. */
   requestUpdate(): void;
 }

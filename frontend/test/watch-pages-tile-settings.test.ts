@@ -240,7 +240,9 @@ const dir = join(__dirname, "fixtures-pages", "settings");
 // `WA_SETTINGS_CASES` points the replay at another folder of case files
 // (the app's own, before they are synced here).
 const casesDir = process.env.WA_SETTINGS_CASES ?? dir;
-const files = existsSync(casesDir) ? readdirSync(casesDir).filter((f) => f.endsWith(".json")).sort() : [];
+// The smart page cases (`smart-*.json`) are replayed by
+// `watch-pages-smart-model.test.ts`.
+const files = existsSync(casesDir) ? readdirSync(casesDir).filter((f) => f.endsWith(".json") && !f.startsWith("smart-")).sort() : [];
 
 function applyCase(document: WatchPagesDocument, c: SettingsCase): WatchPagesDocument {
   // The case file decides each field's type; `never` passes it on as is.

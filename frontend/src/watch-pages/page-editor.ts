@@ -159,6 +159,7 @@ import { forgetTileSettingsNotes, renderTileSettings, tileSettingsStyles } from 
 import { pageSettingsStyles, renderPageSettings } from "./page-settings.js";
 import { specialSettingsStyles } from "./special-settings.js";
 import { watchCameraRefreshDefaults, watchDeviceSiblings, watchObjectName } from "./special-model.js";
+import { readSmartConfig } from "./smart-model.js";
 import { scrubWatchOrphanTriggers } from "./tile-settings-model.js";
 import {
   type StageGrid,
@@ -490,6 +491,8 @@ export class WaPageEditor extends LitElement {
 
   @state() private selectedPageId?: string;
   @state() private selectedTileId?: string;
+  /** The selected rule of a smart page (`WatchPagesEditorHost.smartRuleId`). */
+  @state() private selectedSmartRuleId?: string;
   @state() private renaming?: { pageId: string; value: string };
   /** Not a reactive state: a keystroke needs no draw, the field shows it. */
   private typing?: Typing;
@@ -1262,6 +1265,9 @@ export class WaPageEditor extends LitElement {
         this.selectTile(id);
         if (id !== undefined) this.revealTile = true;
       },
+      selectSmartRule: (id: string | undefined) => {
+        this.selectedSmartRuleId = id;
+      },
       requestUpdate: () => this.requestUpdate(),
       deviceSiblings: (entityId: string) => watchDeviceSiblings(this.hass?.entities, entityId),
       loadImageSize: (url: string) => this.loadImageSize(url),
@@ -1278,6 +1284,11 @@ export class WaPageEditor extends LitElement {
       musicAssistant: () => this.homeData.musicAssistant,
       cloudTTS: () => this.homeData.cloudTTS,
       templateRenders: () => this.templateRenders,
+      smartRuleId: () => {
+        const id = this.selectedSmartRuleId;
+        const rules = readSmartConfig(pageNow())?.rules ?? [];
+        return id !== undefined && rules.some((r) => sameWatchId(r.id, id)) ? id : undefined;
+      },
       busy: busyNow,
     });
   }
