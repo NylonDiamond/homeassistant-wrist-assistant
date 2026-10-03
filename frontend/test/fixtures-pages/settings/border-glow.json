@@ -1,6 +1,6 @@
 {
   "name": "Border glow",
-  "source": "WristAssistant/Views/PageEditorView.swift:9772",
+  "source": "WristAssistant/Views/PageEditorView.swift:9578",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

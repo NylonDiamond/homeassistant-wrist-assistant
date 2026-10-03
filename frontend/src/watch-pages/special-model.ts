@@ -56,8 +56,10 @@ interface ButtonCondition {
 
 type Size = [number, number];
 
-/** The special task of a tile: the phone's `EditorTask` raw value. */
-export type WatchSpecialTask = "data" | "alarm" | "camera" | "calendarSettings" | "weather" | "person";
+/** The special task of a tile: the phone's `EditorTask` raw value. The app
+ * kinds' tasks (`template`, `musicHub`, the inbox's, and `data` for assist,
+ * speak message and point control) are drawn by `app-settings.ts`. */
+export type WatchSpecialTask = "data" | "inbox" | "alarm" | "camera" | "musicHub" | "calendarSettings" | "weather" | "person" | "template";
 
 interface SpecialTable {
   version: number;

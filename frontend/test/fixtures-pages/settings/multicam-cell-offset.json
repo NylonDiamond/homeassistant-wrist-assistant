@@ -1,6 +1,6 @@
 {
   "name": "A cell's Position step makes both offset arrays",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:768",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:779",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

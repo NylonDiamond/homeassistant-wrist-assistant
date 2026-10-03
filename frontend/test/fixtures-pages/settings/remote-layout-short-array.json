@@ -1,6 +1,6 @@
 {
   "name": "A short layout with an unknown kind is read, then written as 12",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:197",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:208",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

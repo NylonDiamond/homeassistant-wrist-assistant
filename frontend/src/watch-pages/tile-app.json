@@ -1,0 +1,1566 @@
+{
+  "version": 1,
+  "note": "Generated from the iPhone app's Swift code by WatchPagesTablesTests; do not edit. Regenerate tile-app.json with TEST_RUNNER_WA_UPDATE_FIXTURES=1 ./scripts/test.sh WatchPagesTablesTests in the app repository.",
+  "template": {
+    "add": {
+      "entityIdPrefix": "template.",
+      "icon": "chevron.left.forwardslash.chevron.right",
+      "hex": "#CCD8E6",
+      "customLabel": "Template",
+      "templateString": "the text of the preset addPreset",
+      "addPreset": "home_status",
+      "duplicatesAllowed": true,
+      "ids": "Two new ids: the entity id's UUID first, then the tile's id. 6 by 4 at the first free place, as every add.",
+      "chip": "Others"
+    },
+    "presets": [
+      {
+        "id": "home_status",
+        "label": "Home Status",
+        "icon": "house",
+        "template": "[icon:lightbulb.fill] {{ states.light | selectattr('state','eq','on') | list | count }} lights on\n[icon:lock.open.fill] {{ states.lock | selectattr('state','eq','unlocked') | list | count }} unlocked\n[icon:person.fill] {{ states.person | selectattr('state','eq','home') | list | count }} home"
+      },
+      {
+        "id": "lights",
+        "label": "Lights On",
+        "icon": "lightbulb",
+        "template": "{{ states.light | selectattr('state','eq','on') | list | count }} lights on"
+      },
+      {
+        "id": "doors",
+        "label": "Doors Open",
+        "icon": "door.left.hand.open",
+        "template": "{{ states.binary_sensor | selectattr('state','eq','on') | selectattr('attributes.device_class','eq','door') | list | count }} doors open"
+      },
+      {
+        "id": "locks",
+        "label": "Lock Status",
+        "icon": "lock",
+        "template": "{{ states.lock | selectattr('state','eq','locked') | list | count }}/{{ states.lock | list | count }} locked"
+      },
+      {
+        "id": "home",
+        "label": "Who's Home",
+        "icon": "person.2",
+        "template": "{% set people = states.person | selectattr('state','eq','home') | list %}{% if people %}{{ people | map(attribute='name') | join(', ') }}{% else %}Nobody home{% endif %}"
+      },
+      {
+        "id": "weather",
+        "label": "Weather",
+        "icon": "cloud.sun",
+        "template": "{{ states('weather.forecast_home') | capitalize }}\n{{ state_attr('weather.forecast_home','temperature') }}°"
+      },
+      {
+        "id": "temp_humidity",
+        "label": "Temp + Humid",
+        "icon": "thermometer",
+        "template": "{{ states('sensor.temperature') | round(0) }}°\n{{ states('sensor.humidity') | round(0) }}%"
+      },
+      {
+        "id": "last_motion",
+        "label": "Last Motion",
+        "icon": "figure.walk",
+        "template": "{% set motions = states.binary_sensor | selectattr('attributes.device_class','eq','motion') | selectattr('state','eq','on') | sort(attribute='last_changed', reverse=true) | list %}{% if motions %}{{ motions[0].name }}\n{{ relative_time(motions[0].last_changed) }} ago{% else %}No motion{% endif %}"
+      }
+    ],
+    "presetSelected": "A preset chip is selected only while templateString equals its template, character for character. A tap writes the preset's template.",
+    "write": "The editor writes templateString on every change, as typed: no trim, an emptied editor writes \"\", the key is never removed. Each opening of the phone's editor sheet is one undo step.",
+    "reset": "The Template task has no reset and no modified dot.",
+    "unusedKeys": ["templateRefreshInterval"],
+    "richText": {
+      "marker": "\\[icon:([^\\]]+)\\]",
+      "rule": "Every marker becomes an icon; the text between markers stays text. Inside a marker the words split on whitespace: the first word is the symbol, the first later word starting color: (any case) gives the color, an empty color is none. A marker with no word stays as literal text.",
+      "colorNames": [
+        "red",
+        "orange",
+        "yellow",
+        "green",
+        "mint",
+        "teal",
+        "cyan",
+        "blue",
+        "indigo",
+        "purple",
+        "pink",
+        "brown",
+        "gray",
+        "grey",
+        "white",
+        "black"
+      ],
+      "hexDigits": [3, 6, 8],
+      "colorRule": "A color is one of colorNames (any case), else 3, 6 or 8 hex digits with or without #, 8 being RRGGBBAA. Anything else is no color: the icon takes the text color.",
+      "samples": [
+        {
+          "input": "[icon:power] Off",
+          "segments": [
+            {
+              "icon": "power",
+              "color": null
+            },
+            {
+              "text": " Off"
+            }
+          ]
+        },
+        {
+          "input": "[icon:snowflake color:blue] Woonkamer 21°",
+          "segments": [
+            {
+              "icon": "snowflake",
+              "color": "blue"
+            },
+            {
+              "text": " Woonkamer 21°"
+            }
+          ]
+        },
+        {
+          "input": "[icon:flame.fill   Color:#FF8800 ]",
+          "segments": [
+            {
+              "icon": "flame.fill",
+              "color": "#FF8800"
+            }
+          ]
+        },
+        {
+          "input": "[icon:drop.fill color:]",
+          "segments": [
+            {
+              "icon": "drop.fill",
+              "color": null
+            }
+          ]
+        },
+        {
+          "input": "a[icon: ]b",
+          "segments": [
+            {
+              "text": "a"
+            },
+            {
+              "text": "[icon: ]"
+            },
+            {
+              "text": "b"
+            }
+          ]
+        },
+        {
+          "input": "[icon:snowflake color:blue] A\n[icon:power color:gray] B",
+          "segments": [
+            {
+              "icon": "snowflake",
+              "color": "blue"
+            },
+            {
+              "text": " A\n"
+            },
+            {
+              "icon": "power",
+              "color": "gray"
+            },
+            {
+              "text": " B"
+            }
+          ]
+        },
+        {
+          "input": "No markers at all",
+          "segments": [
+            {
+              "text": "No markers at all"
+            }
+          ]
+        },
+        {
+          "input": "[icon:lightbulb.fill] 3 lights on\n[icon:lock.open.fill] 1 unlocked",
+          "segments": [
+            {
+              "icon": "lightbulb.fill",
+              "color": null
+            },
+            {
+              "text": " 3 lights on\n"
+            },
+            {
+              "icon": "lock.open.fill",
+              "color": null
+            },
+            {
+              "text": " 1 unlocked"
+            }
+          ]
+        }
+      ],
+      "colorSamples": [
+        {
+          "spec": "blue",
+          "color": {
+            "name": "blue"
+          }
+        },
+        {
+          "spec": "Orange",
+          "color": {
+            "name": "orange"
+          }
+        },
+        {
+          "spec": "grey",
+          "color": {
+            "name": "grey"
+          }
+        },
+        {
+          "spec": "#F80",
+          "color": {
+            "hex": "#FF8800FF"
+          }
+        },
+        {
+          "spec": "FF8800",
+          "color": {
+            "hex": "#FF8800FF"
+          }
+        },
+        {
+          "spec": "#FF880080",
+          "color": {
+            "hex": "#FF880080"
+          }
+        },
+        {
+          "spec": "blu",
+          "color": null
+        },
+        {
+          "spec": "#GG0000",
+          "color": null
+        },
+        {
+          "spec": "#12345",
+          "color": null
+        },
+        {
+          "spec": "",
+          "color": null
+        },
+        {
+          "spec": "red",
+          "color": {
+            "name": "red"
+          }
+        },
+        {
+          "spec": "orange",
+          "color": {
+            "name": "orange"
+          }
+        },
+        {
+          "spec": "yellow",
+          "color": {
+            "name": "yellow"
+          }
+        },
+        {
+          "spec": "green",
+          "color": {
+            "name": "green"
+          }
+        },
+        {
+          "spec": "mint",
+          "color": {
+            "name": "mint"
+          }
+        },
+        {
+          "spec": "teal",
+          "color": {
+            "name": "teal"
+          }
+        },
+        {
+          "spec": "cyan",
+          "color": {
+            "name": "cyan"
+          }
+        },
+        {
+          "spec": "blue",
+          "color": {
+            "name": "blue"
+          }
+        },
+        {
+          "spec": "indigo",
+          "color": {
+            "name": "indigo"
+          }
+        },
+        {
+          "spec": "purple",
+          "color": {
+            "name": "purple"
+          }
+        },
+        {
+          "spec": "pink",
+          "color": {
+            "name": "pink"
+          }
+        },
+        {
+          "spec": "brown",
+          "color": {
+            "name": "brown"
+          }
+        },
+        {
+          "spec": "gray",
+          "color": {
+            "name": "gray"
+          }
+        },
+        {
+          "spec": "grey",
+          "color": {
+            "name": "grey"
+          }
+        },
+        {
+          "spec": "white",
+          "color": {
+            "name": "white"
+          }
+        },
+        {
+          "spec": "black",
+          "color": {
+            "name": "black"
+          }
+        }
+      ]
+    },
+    "watch": {
+      "draws": "Only the rendered text, in the tile color: no icon, no label, no badges, whatever icon, customLabel and showLabel say.",
+      "lineLimit": 5,
+      "alignment": "Centered when the text has one line, else leading.",
+      "empty": "An empty or absent templateString draws the add's icon at 40% in the tile color.",
+      "error": "A failed render draws a yellow exclamationmark.triangle."
+    }
+  },
+  "musicHub": {
+    "add": {
+      "entityIdPrefix": "music_hub.",
+      "icon": "music.note.house",
+      "hex": "#E89545",
+      "customLabel": "Music",
+      "musicHubSpeakerIds": "Every media_player whose supported_features has groupingBit, sorted by entity id; [] when there is none.",
+      "showAlbumArt": true,
+      "duplicatesAllowed": true,
+      "ids": "Two new ids: the entity id's UUID first, then the tile's id.",
+      "chip": "Media",
+      "gate": "Music Assistant must be installed (musicAssistant)."
+    },
+    "groupingBit": 524288,
+    "groupingSample": {
+      "players": [
+        {
+          "entityId": "media_player.study",
+          "supportedFeatures": 524292
+        },
+        {
+          "entityId": "media_player.den_tv",
+          "supportedFeatures": 4
+        },
+        {
+          "entityId": "media_player.attic",
+          "supportedFeatures": 524288
+        }
+      ],
+      "speakers": ["media_player.attic", "media_player.study"]
+    },
+    "maxPresets": 3,
+    "minSpeakersForPresets": 2,
+    "presetName": "Preset {n}",
+    "rules": {
+      "open": "Opening the Music task writes nothing. Only the add fills the speaker list.",
+      "albumArt": "showAlbumArt is written true or false, never removed.",
+      "speakersAdd": "Add Speaker lists the players with groupingBit. New picks are appended in the order given, an id already listed is skipped; unpicking removes nothing.",
+      "speakerRemove": "The id leaves musicHubSpeakerIds (the last one leaves []) and every preset; presets stay even when emptied.",
+      "speakerMove": "A dragged speaker lands at the place of the row it is dropped on.",
+      "presetAdd": "Add Preset shows while there are fewer than maxPresets presets and the hub lists minSpeakersForPresets or more speakers. It appends {id, name, speakerIds: []}: id a new upper case UUID, name presetName with n the count plus one (a name can repeat after a delete).",
+      "presetRemove": "No preset left removes musicHubGroupPresets.",
+      "presetName": "The name as typed, no trim, \"\" allowed.",
+      "presetToggle": "A speaker's row in an open preset (one row per hub speaker, in hub order) appends the id when it is not in the preset, else removes it; the order is tap order.",
+      "presetMove": "A dragged preset lands at the place of the row it is dropped on.",
+      "reset": "The Music task has no reset.",
+      "undo": "Every write is one undo step."
+    },
+    "words": {
+      "albumArt": "Show Album Art",
+      "albumArtDetail": "Display artwork as tile background",
+      "speakersHeader": "Speakers available for grouping on watch",
+      "speakersFooter": "Library, queue, search, and provider-aware grouping require the Music Assistant integration in Home Assistant.",
+      "speakerList": "Speaker List",
+      "noSpeakers": "No speakers added yet",
+      "addSpeaker": "Add Speaker",
+      "presetsHeader": "Optional quick-pick buttons shown above speaker list on watch",
+      "presets": "Speaker Presets",
+      "presetCount": "{count} / {max}",
+      "addPreset": "Add Preset"
+    },
+    "musicAssistant": {
+      "domain": "music_assistant",
+      "rule": "Installed when Home Assistant has any config entry of the domain, loaded or not.",
+      "title": "Music Assistant Required",
+      "message": "Install the Music Assistant integration in Home Assistant to use Music Hub."
+    }
+  },
+  "assist": {
+    "add": {
+      "entityId": "assist.voice_hub",
+      "picker": "assist",
+      "customLabel": "Assist",
+      "color": "The page theme's role color, as tile-defaults.json domains.assist; its gradient form on a gradient page.",
+      "duplicatesAllowed": true,
+      "chip": "Others"
+    },
+    "modes": [
+      {
+        "value": "assistOnly",
+        "label": "Silent Reply",
+        "detail": "Send your voice command to Home Assistant and see the reply on your watch."
+      },
+      {
+        "value": "assistAndSpeakReply",
+        "label": "Speak Reply",
+        "detail": "Send your command to Home Assistant and speak the reply on a speaker."
+      }
+    ],
+    "modeAbsent": "assistOnly",
+    "speakOnlyReadsAs": "assistOnly",
+    "replySpeakers": [
+      {
+        "value": "watchSpeaker",
+        "label": "Apple Watch",
+        "detail": "Plays speech locally from Apple Watch. No Home Assistant media_player target is required."
+      },
+      {
+        "value": "configuredSpeakers",
+        "label": "Choose Speakers",
+        "detail": "Uses this tile's chosen speakers and TTS engine. Falls back to the global defaults when nothing is selected."
+      }
+    ],
+    "replySpeakerAbsent": "watchSpeaker",
+    "replySpeakerShownWith": "assistAndSpeakReply",
+    "watchSpeakerNote": "Replies are spoken locally from Apple Watch. Home Assistant speaker targets and voice engine are not used.",
+    "rows": [
+      "Assistant: Conversation Agent (assistAgentId), always.",
+      "Assist Mode (assistPrimaryAction), always.",
+      "Reply Speaker (assistSpeakTargetMode), only in Speak Reply.",
+      "Choose Speakers (assistTargetSpeakerIds), Voice Engine (assistTTSEngine), Speech Volume (assistSpeechVolumeMode) and Target Volume (assistSpeechVolumePercent, not in keepCurrent), only in Speak Reply with Choose Speakers.",
+      "Voice Input: Start Listening Immediately (assistImmediateListen), always."
+    ],
+    "hiddenRows": "A hidden row keeps its key: leaving Speak Reply or Choose Speakers removes nothing.",
+    "writtenKeys": [
+      "assistAgentId",
+      "assistPrimaryAction",
+      "assistSpeakTargetMode",
+      "assistTargetSpeakerIds",
+      "assistTTSEngine",
+      "assistSpeechVolumeMode",
+      "assistSpeechVolumePercent",
+      "assistImmediateListen"
+    ],
+    "neverWritten": ["assistReplyOutputMode", "assistChooseListSpeakerIds", "assistAutoSendOnPause"],
+    "replyOutputMode": "A stored assistReplyOutputMode overrides Assist Mode and Reply Speaker on the watch. An Assist Mode edit, a Reply Speaker edit and Reset Data remove it.",
+    "listenAbsent": true,
+    "agent": {
+      "help": "Pick a conversation agent such as an LLM-backed assistant. Default uses Home Assistant's normal Assist route.",
+      "useDefault": "Use Default Assistant",
+      "write": "A pick is written trimmed; Clear and Use Default Assistant remove assistAgentId."
+    }
+  },
+  "speak": {
+    "add": {
+      "entityId": "speak_message.voice_hub",
+      "picker": "speakMessage",
+      "customLabel": "Speak",
+      "color": "The page theme's role color, as tile-defaults.json domains.speak_message; its gradient form on a gradient page.",
+      "extras": {
+        "speakMessageOutputMode": "configuredSpeakers"
+      },
+      "duplicatesAllowed": true,
+      "chip": "Others",
+      "saveWarning": "The add's Choose Speakers with no speakers warns on the next save (checks); when the catalog's voice lists default speakers, the warning can name that fallback."
+    },
+    "outputs": [
+      {
+        "value": "watchSpeaker",
+        "label": "Apple Watch",
+        "help": "Speaks directly from the Apple Watch speaker."
+      },
+      {
+        "value": "configuredSpeakers",
+        "label": "Choose Speakers",
+        "help": "Uses this tile's selected speakers and TTS engine. Falls back to the global defaults when nothing is selected."
+      },
+      {
+        "value": "chooseEachTime",
+        "label": "Choose on Watch",
+        "help": "Prompts on watch from this tile's configured speaker list."
+      }
+    ],
+    "outputAbsent": "watchSpeaker",
+    "watchSpeakerNote": "Messages are spoken locally from Apple Watch. Home Assistant speaker targets and voice engine are not used.",
+    "rows": [
+      "Speaker (speakMessageOutputMode), always.",
+      "Choose Speakers (speakMessageTargetSpeakerIds) in configuredSpeakers; Speakers Shown on Watch, Choose Watch List (speakMessageChooseListSpeakerIds) in chooseEachTime.",
+      "Voice Engine (speakMessageTTSEngine), Speech Volume (speakMessageSpeechVolumeMode, short labels) and Target Volume (speakMessageSpeechVolumePercent, not in keepCurrent) in both speaker modes.",
+      "Voice Input: Start Listening Immediately (speakMessageImmediateListen), always."
+    ],
+    "warnings": {
+      "chooseEachTimeEmptyList": "Choose at least one Home Assistant speaker to show on watch for this tile.",
+      "chooseEachTimeNoEngine": "Set a voice engine for this tile. The watch will ask which Home speaker to use each time.",
+      "rule": "Under Choose on Watch: the first while the watch list is empty, the second while neither the tile nor the voice defaults have an engine."
+    },
+    "listenAbsent": true
+  },
+  "voice": {
+    "volume": {
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "absent": 70,
+      "presets": [
+        {
+          "label": "Quiet",
+          "value": 25
+        },
+        {
+          "label": "Medium",
+          "value": 50
+        },
+        {
+          "label": "Loud",
+          "value": 75
+        }
+      ],
+      "write": "Rounded to a whole percent, then clamped to min...max. A stored value reads clamped; one undo step per slider change.",
+      "readSamples": [
+        {
+          "stored": -5,
+          "shows": 0
+        },
+        {
+          "stored": 0,
+          "shows": 0
+        },
+        {
+          "stored": 42,
+          "shows": 42
+        },
+        {
+          "stored": 100,
+          "shows": 100
+        },
+        {
+          "stored": 130,
+          "shows": 100
+        },
+        {
+          "stored": null,
+          "shows": 70
+        }
+      ]
+    },
+    "volumeModes": [
+      {
+        "value": "keepCurrent",
+        "label": "Keep Current",
+        "shortLabel": "Keep",
+        "detail": "Uses each target speaker's current volume."
+      },
+      {
+        "value": "setForMessageThenRestore",
+        "label": "Set for Message + Restore",
+        "shortLabel": "Set + Restore",
+        "detail": "Sets the selected volume before speaking, then restores previous volume after the message."
+      },
+      {
+        "value": "setAndKeep",
+        "label": "Set and Keep",
+        "shortLabel": "Set + Keep",
+        "detail": "Sets the selected volume before speaking and leaves it there."
+      }
+    ],
+    "volumeModeAbsent": "keepCurrent",
+    "speakers": {
+      "write": "A speaker sheet's Done writes the picks sorted by id, without repeats; none removes the key.",
+      "countSummary": "Assist's row: \"None selected\", \"1 selected\", \"{n} selected\". The default speakers never count.",
+      "countSamples": [
+        {
+          "ids": [],
+          "shows": "None selected"
+        },
+        {
+          "ids": ["media_player.kitchen"],
+          "shows": "1 selected"
+        },
+        {
+          "ids": ["media_player.kitchen", "media_player.office"],
+          "shows": "2 selected"
+        }
+      ],
+      "listSamples": [
+        {
+          "ids": [],
+          "shows": "None selected"
+        },
+        {
+          "ids": ["media_player.kitchen_speaker", "media_player.office"],
+          "shows": "Kitchen Speaker, Office"
+        }
+      ],
+      "listSummary": "Speak's rows: \"None selected\", else the object ids with _ as spaces in Foundation's capitalized, joined with \", \". The panel shows friendly names instead."
+    },
+    "engine": {
+      "help": "Home Assistant voice engine used for this tile (for example: Google Translate, Piper, Nabu Casa TTS).",
+      "useDefault": "Use Default Engine",
+      "write": "A pick is written trimmed; Use Default Engine (shown while the tile has an engine) removes the key.",
+      "display": "The tile's engine, else the voice default engine, by name; else \"Not set\" in the warning color.",
+      "displaySamples": [
+        {
+          "tileEngine": "tts.piper",
+          "defaultEngine": "tts.google_translate_en_com",
+          "shows": "Piper",
+          "configured": true
+        },
+        {
+          "tileEngine": null,
+          "defaultEngine": "tts.google_translate_en_com",
+          "shows": "Google Translate En Com",
+          "configured": true
+        },
+        {
+          "tileEngine": "  ",
+          "defaultEngine": "  ",
+          "shows": "Not set",
+          "configured": false
+        },
+        {
+          "tileEngine": null,
+          "defaultEngine": "",
+          "shows": "Not set",
+          "configured": false
+        }
+      ]
+    },
+    "agentSamples": [
+      {
+        "tileAgent": "conversation.house_helper",
+        "defaultAgent": "conversation.home_assistant",
+        "shows": "House Helper"
+      },
+      {
+        "tileAgent": null,
+        "defaultAgent": "conversation.home_assistant",
+        "shows": "Global: Home Assistant"
+      },
+      {
+        "tileAgent": null,
+        "defaultAgent": "conversation.house_helper",
+        "shows": "Global: House Helper"
+      },
+      {
+        "tileAgent": " ",
+        "defaultAgent": "",
+        "shows": "Home Assistant default"
+      },
+      {
+        "tileAgent": null,
+        "defaultAgent": "",
+        "shows": "Home Assistant default"
+      }
+    ],
+    "lists": {
+      "agents": "Every conversation. state, by name.",
+      "engines": "Every tts. state named by its friendly_name (else the object id with _ as spaces, capitalized), plus tts.<platform> for every tts service named <platform>_say that is not listed yet, named the same way. tts.cloud only while Home Assistant Cloud's status says logged_in true and cloud \"connected\"; a failed status call drops it. Sorted by name ignoring case, then by id.",
+      "engineSample": {
+        "states": [
+          {
+            "entityId": "tts.piper",
+            "friendlyName": "Piper"
+          },
+          {
+            "entityId": "tts.cloud",
+            "friendlyName": "Home Assistant Cloud"
+          },
+          {
+            "entityId": "tts.example_voice",
+            "friendlyName": null
+          },
+          {
+            "entityId": "sensor.not_an_engine",
+            "friendlyName": "Not an engine"
+          }
+        ],
+        "services": ["google_translate_say", "cloud_say", "speak", "piper_say", "_say", "clear_cache"],
+        "cloudOff": [
+          {
+            "entityId": "tts.example_voice",
+            "name": "Example Voice"
+          },
+          {
+            "entityId": "tts.google_translate",
+            "name": "Google Translate"
+          },
+          {
+            "entityId": "tts.piper",
+            "name": "Piper"
+          }
+        ],
+        "cloudOn": [
+          {
+            "entityId": "tts.example_voice",
+            "name": "Example Voice"
+          },
+          {
+            "entityId": "tts.google_translate",
+            "name": "Google Translate"
+          },
+          {
+            "entityId": "tts.cloud",
+            "name": "Home Assistant Cloud"
+          },
+          {
+            "entityId": "tts.piper",
+            "name": "Piper"
+          }
+        ]
+      },
+      "speakers": "Every media_player: announce bit first, then by name ignoring case.",
+      "announceBit": 1048576,
+      "speakerSample": {
+        "players": [
+          {
+            "entityId": "media_player.zeta_speaker",
+            "name": "zeta Speaker",
+            "supportedFeatures": 1048576
+          },
+          {
+            "entityId": "media_player.den_tv",
+            "name": "Den TV",
+            "supportedFeatures": 0
+          },
+          {
+            "entityId": "media_player.alpha_speaker",
+            "name": "Alpha Speaker",
+            "supportedFeatures": 1572864
+          },
+          {
+            "entityId": "media_player.attic",
+            "name": "attic",
+            "supportedFeatures": 524288
+          }
+        ],
+        "order": [
+          "media_player.alpha_speaker",
+          "media_player.zeta_speaker",
+          "media_player.attic",
+          "media_player.den_tv"
+        ]
+      },
+      "musicHubSpeakers": "Every media_player with musicHub.groupingBit, sorted by entity id.",
+      "failed": "A list that does not load shows the stored id as the only choice; nothing blocks."
+    },
+    "defaults": "The catalog's voice object (defaultAssistAgentId, defaultSpeakers, defaultTTSEngine, each left out when blank) is what a tile falls back to. No voice key: an older phone. {}: the phone has no defaults."
+  },
+  "checks": {
+    "speak": "A speak_message. tile in configuredSpeakers with no speakMessageTargetSpeakerIds, or in chooseEachTime with no speakMessageChooseListSpeakerIds (an absent speakMessageOutputMode is watchSpeaker).",
+    "assist": "An assist.voice_hub tile in Speak Reply (assistPrimaryAction assistAndSpeakReply; absent and speakOnly read assistOnly) with Choose Speakers (assistSpeakTargetMode configuredSpeakers) and no assistTargetSpeakerIds.",
+    "flow": "Warnings, never refusals: before a save, one dialog per check that finds a tile (Speak first, then Assist), naming the tiles, with Save anyway and Cancel.",
+    "title": "No Speakers Selected",
+    "saveAnyway": "Save Anyway",
+    "cancel": "Cancel",
+    "messages": {
+      "speakOne": "This Speak tile is set to Choose Speakers but no speakers are selected. It will fall back to global defaults until speakers are picked.",
+      "speakMany": "{count} Speak tiles are set to Choose Speakers but have no speakers selected. They will fall back to global defaults until speakers are picked.",
+      "assistOne": "This Assist tile is set to Choose Speakers but no speakers are selected. It will fall back to global defaults until speakers are picked.",
+      "assistMany": "{count} Assist tiles are set to Choose Speakers but have no speakers selected. They will fall back to global defaults until speakers are picked."
+    },
+    "samples": [
+      {
+        "name": "A new Speak tile: Choose Speakers, no speakers",
+        "tile": {
+          "animationIntensity": 1,
+          "animationSize": 1,
+          "animationSpeed": 1,
+          "backgroundPattern": "none",
+          "borderActiveOnly": true,
+          "borderAnimation": "none",
+          "borderAnimationIntensity": 1,
+          "borderAnimationSize": 1,
+          "borderAnimationSpeed": 1,
+          "borderGlow": 0,
+          "borderLineStyle": "solid",
+          "borderStyle": "none",
+          "borderThickness": "extraThin",
+          "cameraDisplayMode": "icon",
+          "cameraFillOffsetX": 0,
+          "cameraFillOffsetY": 0,
+          "colSpan": 6,
+          "color": "#D057D9",
+          "colorOpacity": 1,
+          "customLabel": "Speak",
+          "effectActiveOnly": false,
+          "entityId": "speak_message.voice_hub",
+          "gridCol": 0,
+          "gridRow": 0,
+          "icon": "message.and.waveform",
+          "iconShadow": false,
+          "iconTapAnimation": "replace",
+          "id": "C3A0E000-0000-4000-8000-000000000001",
+          "labelFontWeight": "light",
+          "labelShadow": true,
+          "multiCamBorderColor": "FFFFFF",
+          "multiCamBorderEnabled": false,
+          "multiCamBorderThickness": "thin",
+          "overlayColor": "#FFFFFF",
+          "overlayIntensity": 1,
+          "overlaySize": 1,
+          "overlaySpeed": 1,
+          "overlayStyle": "none",
+          "patternOpacity": 1,
+          "rowSpan": 4,
+          "showAlbumArt": true,
+          "showLabel": true,
+          "speakMessageOutputMode": "configuredSpeakers",
+          "stateBarBorder": false,
+          "stateBarColorStyle": "Tile",
+          "stateBarShadow": false,
+          "stateBarStyle": "Top",
+          "stateValueLabelStyle": "Plain",
+          "statusTextShadow": true,
+          "tileAnimation": "none"
+        },
+        "speakMissing": true,
+        "assistMissing": false
+      },
+      {
+        "name": "Speak, Choose Speakers with a speaker",
+        "tile": {
+          "animationIntensity": 1,
+          "animationSize": 1,
+          "animationSpeed": 1,
+          "backgroundPattern": "none",
+          "borderActiveOnly": true,
+          "borderAnimation": "none",
+          "borderAnimationIntensity": 1,
+          "borderAnimationSize": 1,
+          "borderAnimationSpeed": 1,
+          "borderGlow": 0,
+          "borderLineStyle": "solid",
+          "borderStyle": "none",
+          "borderThickness": "extraThin",
+          "cameraDisplayMode": "icon",
+          "cameraFillOffsetX": 0,
+          "cameraFillOffsetY": 0,
+          "colSpan": 6,
+          "color": "#D057D9",
+          "colorOpacity": 1,
+          "customLabel": "Speak",
+          "effectActiveOnly": false,
+          "entityId": "speak_message.voice_hub",
+          "gridCol": 0,
+          "gridRow": 0,
+          "icon": "message.and.waveform",
+          "iconShadow": false,
+          "iconTapAnimation": "replace",
+          "id": "C3A0E000-0000-4000-8000-000000000001",
+          "labelFontWeight": "light",
+          "labelShadow": true,
+          "multiCamBorderColor": "FFFFFF",
+          "multiCamBorderEnabled": false,
+          "multiCamBorderThickness": "thin",
+          "overlayColor": "#FFFFFF",
+          "overlayIntensity": 1,
+          "overlaySize": 1,
+          "overlaySpeed": 1,
+          "overlayStyle": "none",
+          "patternOpacity": 1,
+          "rowSpan": 4,
+          "showAlbumArt": true,
+          "showLabel": true,
+          "speakMessageOutputMode": "configuredSpeakers",
+          "speakMessageTargetSpeakerIds": ["media_player.kitchen"],
+          "stateBarBorder": false,
+          "stateBarColorStyle": "Tile",
+          "stateBarShadow": false,
+          "stateBarStyle": "Top",
+          "stateValueLabelStyle": "Plain",
+          "statusTextShadow": true,
+          "tileAnimation": "none"
+        },
+        "speakMissing": false,
+        "assistMissing": false
+      },
+      {
+        "name": "Speak, Choose on Watch with an empty list",
+        "tile": {
+          "animationIntensity": 1,
+          "animationSize": 1,
+          "animationSpeed": 1,
+          "backgroundPattern": "none",
+          "borderActiveOnly": true,
+          "borderAnimation": "none",
+          "borderAnimationIntensity": 1,
+          "borderAnimationSize": 1,
+          "borderAnimationSpeed": 1,
+          "borderGlow": 0,
+          "borderLineStyle": "solid",
+          "borderStyle": "none",
+          "borderThickness": "extraThin",
+          "cameraDisplayMode": "icon",
+          "cameraFillOffsetX": 0,
+          "cameraFillOffsetY": 0,
+          "colSpan": 6,
+          "color": "#D057D9",
+          "colorOpacity": 1,
+          "customLabel": "Speak",
+          "effectActiveOnly": false,
+          "entityId": "speak_message.voice_hub",
+          "gridCol": 0,
+          "gridRow": 0,
+          "icon": "message.and.waveform",
+          "iconShadow": false,
+          "iconTapAnimation": "replace",
+          "id": "C3A0E000-0000-4000-8000-000000000001",
+          "labelFontWeight": "light",
+          "labelShadow": true,
+          "multiCamBorderColor": "FFFFFF",
+          "multiCamBorderEnabled": false,
+          "multiCamBorderThickness": "thin",
+          "overlayColor": "#FFFFFF",
+          "overlayIntensity": 1,
+          "overlaySize": 1,
+          "overlaySpeed": 1,
+          "overlayStyle": "none",
+          "patternOpacity": 1,
+          "rowSpan": 4,
+          "showAlbumArt": true,
+          "showLabel": true,
+          "speakMessageOutputMode": "chooseEachTime",
+          "stateBarBorder": false,
+          "stateBarColorStyle": "Tile",
+          "stateBarShadow": false,
+          "stateBarStyle": "Top",
+          "stateValueLabelStyle": "Plain",
+          "statusTextShadow": true,
+          "tileAnimation": "none"
+        },
+        "speakMissing": true,
+        "assistMissing": false
+      },
+      {
+        "name": "Speak, Choose on Watch with a list",
+        "tile": {
+          "animationIntensity": 1,
+          "animationSize": 1,
+          "animationSpeed": 1,
+          "backgroundPattern": "none",
+          "borderActiveOnly": true,
+          "borderAnimation": "none",
+          "borderAnimationIntensity": 1,
+          "borderAnimationSize": 1,
+          "borderAnimationSpeed": 1,
+          "borderGlow": 0,
+          "borderLineStyle": "solid",
+          "borderStyle": "none",
+          "borderThickness": "extraThin",
+          "cameraDisplayMode": "icon",
+          "cameraFillOffsetX": 0,
+          "cameraFillOffsetY": 0,
+          "colSpan": 6,
+          "color": "#D057D9",
+          "colorOpacity": 1,
+          "customLabel": "Speak",
+          "effectActiveOnly": false,
+          "entityId": "speak_message.voice_hub",
+          "gridCol": 0,
+          "gridRow": 0,
+          "icon": "message.and.waveform",
+          "iconShadow": false,
+          "iconTapAnimation": "replace",
+          "id": "C3A0E000-0000-4000-8000-000000000001",
+          "labelFontWeight": "light",
+          "labelShadow": true,
+          "multiCamBorderColor": "FFFFFF",
+          "multiCamBorderEnabled": false,
+          "multiCamBorderThickness": "thin",
+          "overlayColor": "#FFFFFF",
+          "overlayIntensity": 1,
+          "overlaySize": 1,
+          "overlaySpeed": 1,
+          "overlayStyle": "none",
+          "patternOpacity": 1,
+          "rowSpan": 4,
+          "showAlbumArt": true,
+          "showLabel": true,
+          "speakMessageChooseListSpeakerIds": ["media_player.kitchen"],
+          "speakMessageOutputMode": "chooseEachTime",
+          "stateBarBorder": false,
+          "stateBarColorStyle": "Tile",
+          "stateBarShadow": false,
+          "stateBarStyle": "Top",
+          "stateValueLabelStyle": "Plain",
+          "statusTextShadow": true,
+          "tileAnimation": "none"
+        },
+        "speakMissing": false,
+        "assistMissing": false
+      },
+      {
+        "name": "Speak, Apple Watch",
+        "tile": {
+          "animationIntensity": 1,
+          "animationSize": 1,
+          "animationSpeed": 1,
+          "backgroundPattern": "none",
+          "borderActiveOnly": true,
+          "borderAnimation": "none",
+          "borderAnimationIntensity": 1,
+          "borderAnimationSize": 1,
+          "borderAnimationSpeed": 1,
+          "borderGlow": 0,
+          "borderLineStyle": "solid",
+          "borderStyle": "none",
+          "borderThickness": "extraThin",
+          "cameraDisplayMode": "icon",
+          "cameraFillOffsetX": 0,
+          "cameraFillOffsetY": 0,
+          "colSpan": 6,
+          "color": "#D057D9",
+          "colorOpacity": 1,
+          "customLabel": "Speak",
+          "effectActiveOnly": false,
+          "entityId": "speak_message.voice_hub",
+          "gridCol": 0,
+          "gridRow": 0,
+          "icon": "message.and.waveform",
+          "iconShadow": false,
+          "iconTapAnimation": "replace",
+          "id": "C3A0E000-0000-4000-8000-000000000001",
+          "labelFontWeight": "light",
+          "labelShadow": true,
+          "multiCamBorderColor": "FFFFFF",
+          "multiCamBorderEnabled": false,
+          "multiCamBorderThickness": "thin",
+          "overlayColor": "#FFFFFF",
+          "overlayIntensity": 1,
+          "overlaySize": 1,
+          "overlaySpeed": 1,
+          "overlayStyle": "none",
+          "patternOpacity": 1,
+          "rowSpan": 4,
+          "showAlbumArt": true,
+          "showLabel": true,
+          "speakMessageOutputMode": "watchSpeaker",
+          "stateBarBorder": false,
+          "stateBarColorStyle": "Tile",
+          "stateBarShadow": false,
+          "stateBarStyle": "Top",
+          "stateValueLabelStyle": "Plain",
+          "statusTextShadow": true,
+          "tileAnimation": "none"
+        },
+        "speakMissing": false,
+        "assistMissing": false
+      },
+      {
+        "name": "Speak with no Speaker key reads Apple Watch",
+        "tile": {
+          "animationIntensity": 1,
+          "animationSize": 1,
+          "animationSpeed": 1,
+          "backgroundPattern": "none",
+          "borderActiveOnly": true,
+          "borderAnimation": "none",
+          "borderAnimationIntensity": 1,
+          "borderAnimationSize": 1,
+          "borderAnimationSpeed": 1,
+          "borderGlow": 0,
+          "borderLineStyle": "solid",
+          "borderStyle": "none",
+          "borderThickness": "extraThin",
+          "cameraDisplayMode": "icon",
+          "cameraFillOffsetX": 0,
+          "cameraFillOffsetY": 0,
+          "colSpan": 6,
+          "color": "#D057D9",
+          "colorOpacity": 1,
+          "customLabel": "Speak",
+          "effectActiveOnly": false,
+          "entityId": "speak_message.voice_hub",
+          "gridCol": 0,
+          "gridRow": 0,
+          "icon": "message.and.waveform",
+          "iconShadow": false,
+          "iconTapAnimation": "replace",
+          "id": "C3A0E000-0000-4000-8000-000000000001",
+          "labelFontWeight": "light",
+          "labelShadow": true,
+          "multiCamBorderColor": "FFFFFF",
+          "multiCamBorderEnabled": false,
+          "multiCamBorderThickness": "thin",
+          "overlayColor": "#FFFFFF",
+          "overlayIntensity": 1,
+          "overlaySize": 1,
+          "overlaySpeed": 1,
+          "overlayStyle": "none",
+          "patternOpacity": 1,
+          "rowSpan": 4,
+          "showAlbumArt": true,
+          "showLabel": true,
+          "stateBarBorder": false,
+          "stateBarColorStyle": "Tile",
+          "stateBarShadow": false,
+          "stateBarStyle": "Top",
+          "stateValueLabelStyle": "Plain",
+          "statusTextShadow": true,
+          "tileAnimation": "none"
+        },
+        "speakMissing": false,
+        "assistMissing": false
+      },
+      {
+        "name": "Assist, Speak Reply, Choose Speakers, no speakers",
+        "tile": {
+          "animationIntensity": 1,
+          "animationSize": 1,
+          "animationSpeed": 1,
+          "assistPrimaryAction": "assistAndSpeakReply",
+          "assistSpeakTargetMode": "configuredSpeakers",
+          "backgroundPattern": "none",
+          "borderActiveOnly": true,
+          "borderAnimation": "none",
+          "borderAnimationIntensity": 1,
+          "borderAnimationSize": 1,
+          "borderAnimationSpeed": 1,
+          "borderGlow": 0,
+          "borderLineStyle": "solid",
+          "borderStyle": "none",
+          "borderThickness": "extraThin",
+          "cameraDisplayMode": "icon",
+          "cameraFillOffsetX": 0,
+          "cameraFillOffsetY": 0,
+          "colSpan": 6,
+          "color": "#9EC2E8",
+          "colorOpacity": 1,
+          "customLabel": "Assist",
+          "effectActiveOnly": false,
+          "entityId": "assist.voice_hub",
+          "gridCol": 0,
+          "gridRow": 0,
+          "icon": "waveform.and.mic",
+          "iconShadow": false,
+          "iconTapAnimation": "replace",
+          "id": "C3A0E000-0000-4000-8000-000000000001",
+          "labelFontWeight": "light",
+          "labelShadow": true,
+          "multiCamBorderColor": "FFFFFF",
+          "multiCamBorderEnabled": false,
+          "multiCamBorderThickness": "thin",
+          "overlayColor": "#FFFFFF",
+          "overlayIntensity": 1,
+          "overlaySize": 1,
+          "overlaySpeed": 1,
+          "overlayStyle": "none",
+          "patternOpacity": 1,
+          "rowSpan": 4,
+          "showAlbumArt": true,
+          "showLabel": true,
+          "stateBarBorder": false,
+          "stateBarColorStyle": "Tile",
+          "stateBarShadow": false,
+          "stateBarStyle": "Top",
+          "stateValueLabelStyle": "Plain",
+          "statusTextShadow": true,
+          "tileAnimation": "none"
+        },
+        "speakMissing": false,
+        "assistMissing": true
+      },
+      {
+        "name": "Assist, Silent Reply over hidden Choose Speakers with no speakers",
+        "tile": {
+          "animationIntensity": 1,
+          "animationSize": 1,
+          "animationSpeed": 1,
+          "assistPrimaryAction": "assistOnly",
+          "assistSpeakTargetMode": "configuredSpeakers",
+          "backgroundPattern": "none",
+          "borderActiveOnly": true,
+          "borderAnimation": "none",
+          "borderAnimationIntensity": 1,
+          "borderAnimationSize": 1,
+          "borderAnimationSpeed": 1,
+          "borderGlow": 0,
+          "borderLineStyle": "solid",
+          "borderStyle": "none",
+          "borderThickness": "extraThin",
+          "cameraDisplayMode": "icon",
+          "cameraFillOffsetX": 0,
+          "cameraFillOffsetY": 0,
+          "colSpan": 6,
+          "color": "#9EC2E8",
+          "colorOpacity": 1,
+          "customLabel": "Assist",
+          "effectActiveOnly": false,
+          "entityId": "assist.voice_hub",
+          "gridCol": 0,
+          "gridRow": 0,
+          "icon": "waveform.and.mic",
+          "iconShadow": false,
+          "iconTapAnimation": "replace",
+          "id": "C3A0E000-0000-4000-8000-000000000001",
+          "labelFontWeight": "light",
+          "labelShadow": true,
+          "multiCamBorderColor": "FFFFFF",
+          "multiCamBorderEnabled": false,
+          "multiCamBorderThickness": "thin",
+          "overlayColor": "#FFFFFF",
+          "overlayIntensity": 1,
+          "overlaySize": 1,
+          "overlaySpeed": 1,
+          "overlayStyle": "none",
+          "patternOpacity": 1,
+          "rowSpan": 4,
+          "showAlbumArt": true,
+          "showLabel": true,
+          "stateBarBorder": false,
+          "stateBarColorStyle": "Tile",
+          "stateBarShadow": false,
+          "stateBarStyle": "Top",
+          "stateValueLabelStyle": "Plain",
+          "statusTextShadow": true,
+          "tileAnimation": "none"
+        },
+        "speakMissing": false,
+        "assistMissing": false
+      },
+      {
+        "name": "Assist with no mode over Choose Speakers with no speakers",
+        "tile": {
+          "animationIntensity": 1,
+          "animationSize": 1,
+          "animationSpeed": 1,
+          "assistSpeakTargetMode": "configuredSpeakers",
+          "backgroundPattern": "none",
+          "borderActiveOnly": true,
+          "borderAnimation": "none",
+          "borderAnimationIntensity": 1,
+          "borderAnimationSize": 1,
+          "borderAnimationSpeed": 1,
+          "borderGlow": 0,
+          "borderLineStyle": "solid",
+          "borderStyle": "none",
+          "borderThickness": "extraThin",
+          "cameraDisplayMode": "icon",
+          "cameraFillOffsetX": 0,
+          "cameraFillOffsetY": 0,
+          "colSpan": 6,
+          "color": "#9EC2E8",
+          "colorOpacity": 1,
+          "customLabel": "Assist",
+          "effectActiveOnly": false,
+          "entityId": "assist.voice_hub",
+          "gridCol": 0,
+          "gridRow": 0,
+          "icon": "waveform.and.mic",
+          "iconShadow": false,
+          "iconTapAnimation": "replace",
+          "id": "C3A0E000-0000-4000-8000-000000000001",
+          "labelFontWeight": "light",
+          "labelShadow": true,
+          "multiCamBorderColor": "FFFFFF",
+          "multiCamBorderEnabled": false,
+          "multiCamBorderThickness": "thin",
+          "overlayColor": "#FFFFFF",
+          "overlayIntensity": 1,
+          "overlaySize": 1,
+          "overlaySpeed": 1,
+          "overlayStyle": "none",
+          "patternOpacity": 1,
+          "rowSpan": 4,
+          "showAlbumArt": true,
+          "showLabel": true,
+          "stateBarBorder": false,
+          "stateBarColorStyle": "Tile",
+          "stateBarShadow": false,
+          "stateBarStyle": "Top",
+          "stateValueLabelStyle": "Plain",
+          "statusTextShadow": true,
+          "tileAnimation": "none"
+        },
+        "speakMissing": false,
+        "assistMissing": false
+      },
+      {
+        "name": "Assist, a stored speakOnly reads Silent Reply",
+        "tile": {
+          "animationIntensity": 1,
+          "animationSize": 1,
+          "animationSpeed": 1,
+          "assistPrimaryAction": "speakOnly",
+          "assistSpeakTargetMode": "configuredSpeakers",
+          "backgroundPattern": "none",
+          "borderActiveOnly": true,
+          "borderAnimation": "none",
+          "borderAnimationIntensity": 1,
+          "borderAnimationSize": 1,
+          "borderAnimationSpeed": 1,
+          "borderGlow": 0,
+          "borderLineStyle": "solid",
+          "borderStyle": "none",
+          "borderThickness": "extraThin",
+          "cameraDisplayMode": "icon",
+          "cameraFillOffsetX": 0,
+          "cameraFillOffsetY": 0,
+          "colSpan": 6,
+          "color": "#9EC2E8",
+          "colorOpacity": 1,
+          "customLabel": "Assist",
+          "effectActiveOnly": false,
+          "entityId": "assist.voice_hub",
+          "gridCol": 0,
+          "gridRow": 0,
+          "icon": "waveform.and.mic",
+          "iconShadow": false,
+          "iconTapAnimation": "replace",
+          "id": "C3A0E000-0000-4000-8000-000000000001",
+          "labelFontWeight": "light",
+          "labelShadow": true,
+          "multiCamBorderColor": "FFFFFF",
+          "multiCamBorderEnabled": false,
+          "multiCamBorderThickness": "thin",
+          "overlayColor": "#FFFFFF",
+          "overlayIntensity": 1,
+          "overlaySize": 1,
+          "overlaySpeed": 1,
+          "overlayStyle": "none",
+          "patternOpacity": 1,
+          "rowSpan": 4,
+          "showAlbumArt": true,
+          "showLabel": true,
+          "stateBarBorder": false,
+          "stateBarColorStyle": "Tile",
+          "stateBarShadow": false,
+          "stateBarStyle": "Top",
+          "stateValueLabelStyle": "Plain",
+          "statusTextShadow": true,
+          "tileAnimation": "none"
+        },
+        "speakMissing": false,
+        "assistMissing": false
+      },
+      {
+        "name": "Assist, Speak Reply, Apple Watch",
+        "tile": {
+          "animationIntensity": 1,
+          "animationSize": 1,
+          "animationSpeed": 1,
+          "assistPrimaryAction": "assistAndSpeakReply",
+          "assistSpeakTargetMode": "watchSpeaker",
+          "backgroundPattern": "none",
+          "borderActiveOnly": true,
+          "borderAnimation": "none",
+          "borderAnimationIntensity": 1,
+          "borderAnimationSize": 1,
+          "borderAnimationSpeed": 1,
+          "borderGlow": 0,
+          "borderLineStyle": "solid",
+          "borderStyle": "none",
+          "borderThickness": "extraThin",
+          "cameraDisplayMode": "icon",
+          "cameraFillOffsetX": 0,
+          "cameraFillOffsetY": 0,
+          "colSpan": 6,
+          "color": "#9EC2E8",
+          "colorOpacity": 1,
+          "customLabel": "Assist",
+          "effectActiveOnly": false,
+          "entityId": "assist.voice_hub",
+          "gridCol": 0,
+          "gridRow": 0,
+          "icon": "waveform.and.mic",
+          "iconShadow": false,
+          "iconTapAnimation": "replace",
+          "id": "C3A0E000-0000-4000-8000-000000000001",
+          "labelFontWeight": "light",
+          "labelShadow": true,
+          "multiCamBorderColor": "FFFFFF",
+          "multiCamBorderEnabled": false,
+          "multiCamBorderThickness": "thin",
+          "overlayColor": "#FFFFFF",
+          "overlayIntensity": 1,
+          "overlaySize": 1,
+          "overlaySpeed": 1,
+          "overlayStyle": "none",
+          "patternOpacity": 1,
+          "rowSpan": 4,
+          "showAlbumArt": true,
+          "showLabel": true,
+          "stateBarBorder": false,
+          "stateBarColorStyle": "Tile",
+          "stateBarShadow": false,
+          "stateBarStyle": "Top",
+          "stateValueLabelStyle": "Plain",
+          "statusTextShadow": true,
+          "tileAnimation": "none"
+        },
+        "speakMissing": false,
+        "assistMissing": false
+      },
+      {
+        "name": "Assist, Speak Reply, Choose Speakers with a speaker",
+        "tile": {
+          "animationIntensity": 1,
+          "animationSize": 1,
+          "animationSpeed": 1,
+          "assistPrimaryAction": "assistAndSpeakReply",
+          "assistSpeakTargetMode": "configuredSpeakers",
+          "assistTargetSpeakerIds": ["media_player.kitchen"],
+          "backgroundPattern": "none",
+          "borderActiveOnly": true,
+          "borderAnimation": "none",
+          "borderAnimationIntensity": 1,
+          "borderAnimationSize": 1,
+          "borderAnimationSpeed": 1,
+          "borderGlow": 0,
+          "borderLineStyle": "solid",
+          "borderStyle": "none",
+          "borderThickness": "extraThin",
+          "cameraDisplayMode": "icon",
+          "cameraFillOffsetX": 0,
+          "cameraFillOffsetY": 0,
+          "colSpan": 6,
+          "color": "#9EC2E8",
+          "colorOpacity": 1,
+          "customLabel": "Assist",
+          "effectActiveOnly": false,
+          "entityId": "assist.voice_hub",
+          "gridCol": 0,
+          "gridRow": 0,
+          "icon": "waveform.and.mic",
+          "iconShadow": false,
+          "iconTapAnimation": "replace",
+          "id": "C3A0E000-0000-4000-8000-000000000001",
+          "labelFontWeight": "light",
+          "labelShadow": true,
+          "multiCamBorderColor": "FFFFFF",
+          "multiCamBorderEnabled": false,
+          "multiCamBorderThickness": "thin",
+          "overlayColor": "#FFFFFF",
+          "overlayIntensity": 1,
+          "overlaySize": 1,
+          "overlaySpeed": 1,
+          "overlayStyle": "none",
+          "patternOpacity": 1,
+          "rowSpan": 4,
+          "showAlbumArt": true,
+          "showLabel": true,
+          "stateBarBorder": false,
+          "stateBarColorStyle": "Tile",
+          "stateBarShadow": false,
+          "stateBarStyle": "Top",
+          "stateValueLabelStyle": "Plain",
+          "statusTextShadow": true,
+          "tileAnimation": "none"
+        },
+        "speakMissing": false,
+        "assistMissing": false
+      }
+    ]
+  },
+  "pointControl": {
+    "add": {
+      "entityIdPrefix": "point_control.",
+      "icon": "hand.point.up.left",
+      "hex": "#00FFFF",
+      "customLabel": "Point Control",
+      "duplicatesAllowed": true,
+      "ids": "Two new ids: the entity id's UUID first, then the tile's id.",
+      "chip": "Others"
+    },
+    "switches": [
+      {
+        "key": "pointControlTapToToggle",
+        "label": "Tap to Toggle",
+        "onDetail": "Tap immediately toggles the aimed entity",
+        "offDetail": "Tap opens the point control overlay",
+        "absent": false
+      },
+      {
+        "key": "pointControlLiveTile",
+        "label": "Live Point Control Tile",
+        "onDetail": "Show live needle and aimed entity on grid tile",
+        "offDetail": "Show live needle and aimed entity on grid tile",
+        "absent": false
+      }
+    ],
+    "where": "behavior",
+    "rule": "Both switches are keys of the behavior document, not tile keys: one value for every point control tile, outside the page's Save and undo. The panel shows them read only (absent reads Off) with \"Change on the iPhone\". Room mappings need the watch compass and stay on the phone.",
+    "readOnlyLine": "Change on the iPhone",
+    "reset": "The Pointer task writes no tile key and has no reset."
+  },
+  "webhookInbox": {
+    "roundTrip": "No add and no task in the panel: a webhook_inbox. tile is carried as it is, entityId never rewritten. Every common task works on it.",
+    "setUpLine": "Webhook inbox. Set up on the iPhone.",
+    "topicRule": "The part after webhook_inbox.; empty or all means every topic (\"All topics\"), anything else is \"#<topic>\".",
+    "labelRule": "The watch draws customLabel when it is set (even empty), else \"#<topic>\", else \"Inbox\".",
+    "icon": "tray",
+    "colorRole": "info",
+    "samples": [
+      {
+        "entityId": "webhook_inbox.all",
+        "customLabel": null,
+        "topic": "All topics",
+        "label": "Inbox"
+      },
+      {
+        "entityId": "webhook_inbox.alerts",
+        "customLabel": null,
+        "topic": "#alerts",
+        "label": "#alerts"
+      },
+      {
+        "entityId": "webhook_inbox.alerts",
+        "customLabel": "Doorbell",
+        "topic": "#alerts",
+        "label": "Doorbell"
+      },
+      {
+        "entityId": "webhook_inbox.all",
+        "customLabel": "",
+        "topic": "All topics",
+        "label": ""
+      },
+      {
+        "entityId": "webhook_inbox.",
+        "customLabel": null,
+        "topic": "All topics",
+        "label": "Inbox"
+      }
+    ]
+  },
+  "resets": {
+    "data": "Reset Data on an assist or speak tile writes resets.data of tile-special.json, which removes assistReplyOutputMode too.",
+    "none": ["template", "musicHub", "pointControl"]
+  }
+}

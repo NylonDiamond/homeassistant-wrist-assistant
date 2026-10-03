@@ -1,6 +1,6 @@
 {
   "name": "Hide the battery on the tile",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1080",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1091",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

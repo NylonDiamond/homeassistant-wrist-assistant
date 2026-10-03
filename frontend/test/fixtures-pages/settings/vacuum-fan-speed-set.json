@@ -1,6 +1,6 @@
 {
   "name": "Link a fan speed select",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:964",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:975",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

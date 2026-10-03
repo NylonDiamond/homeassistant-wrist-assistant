@@ -1,6 +1,6 @@
 {
   "name": "Remove the first of two quick actions",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:133",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:144",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

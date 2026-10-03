@@ -1,6 +1,6 @@
 {
   "name": "An icon past the end of a missing icons array pads it with app.fill",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:156",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:167",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

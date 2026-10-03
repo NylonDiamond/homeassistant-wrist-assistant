@@ -1,6 +1,6 @@
 {
   "name": "Slide right runs an HTTP action: the action and the target in one edit",
-  "source": "WristAssistant/Views/PageEditorView.swift:7453",
+  "source": "WristAssistant/Views/PageEditorView.swift:7364",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

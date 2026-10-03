@@ -1,6 +1,6 @@
 {
   "name": "A camera merged into a group: the group keeps its id and place, its cameras first",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:549",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:560",
   "page": {
     "backgroundBrightness": 0.6,
     "backgroundColor": "#000000",

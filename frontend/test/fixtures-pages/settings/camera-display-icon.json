@@ -1,6 +1,6 @@
 {
   "name": "Display mode Icon",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:368",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:379",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

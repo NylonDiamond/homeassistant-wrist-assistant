@@ -1,6 +1,6 @@
 {
   "name": "Clear Selection removes the media player",
-  "source": "WristAssistant/Views/PageEditorView.swift:8302",
+  "source": "WristAssistant/Views/PageEditorView.swift:8128",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

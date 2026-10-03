@@ -1,6 +1,6 @@
 {
   "name": "Link a battery sensor",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:965",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:976",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

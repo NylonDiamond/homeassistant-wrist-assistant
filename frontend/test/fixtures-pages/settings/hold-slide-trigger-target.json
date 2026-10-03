@@ -1,6 +1,6 @@
 {
   "name": "Pick the entity a slide triggers; the mode is the domain's first",
-  "source": "WristAssistant/Views/PageEditorView.swift:7434",
+  "source": "WristAssistant/Views/PageEditorView.swift:7345",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

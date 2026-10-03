@@ -1,6 +1,6 @@
 {
   "name": "Quick actions run without confirmation",
-  "source": "WristAssistant/Views/PageEditorView.swift:8362",
+  "source": "WristAssistant/Views/PageEditorView.swift:8188",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

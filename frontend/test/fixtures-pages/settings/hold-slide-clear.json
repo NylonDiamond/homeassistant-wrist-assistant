@@ -1,6 +1,6 @@
 {
   "name": "Reset to Defaults clears every direction and its targets",
-  "source": "WristAssistant/Views/PageEditor/Tabs/ConfirmationTabContent.swift:295",
+  "source": "WristAssistant/Views/PageEditor/Tabs/ConfirmationTabContent.swift:296",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

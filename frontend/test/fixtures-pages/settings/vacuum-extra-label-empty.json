@@ -1,6 +1,6 @@
 {
   "name": "An empty label removes the key",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:974",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:985",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

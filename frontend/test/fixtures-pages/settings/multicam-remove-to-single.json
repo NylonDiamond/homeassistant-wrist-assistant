@@ -1,6 +1,6 @@
 {
   "name": "Removing one of two turns the group into the other camera",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:680",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:691",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

@@ -1,6 +1,6 @@
 {
   "name": "Effect only when on",
-  "source": "WristAssistant/Views/PageEditorView.swift:9712",
+  "source": "WristAssistant/Views/PageEditorView.swift:9518",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

@@ -1,6 +1,6 @@
 {
   "name": "Add a calendar; the primary picked again is skipped",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1110",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1121",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

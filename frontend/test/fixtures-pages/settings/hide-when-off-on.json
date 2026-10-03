@@ -1,6 +1,6 @@
 {
   "name": "Hide when off",
-  "source": "WristAssistant/Views/PageEditor/Tabs/ConfirmationTabContent.swift:395",
+  "source": "WristAssistant/Views/PageEditor/Tabs/ConfirmationTabContent.swift:396",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

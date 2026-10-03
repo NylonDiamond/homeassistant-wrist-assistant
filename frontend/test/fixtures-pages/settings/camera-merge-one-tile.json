@@ -1,6 +1,6 @@
 {
   "name": "One camera alone is not merged: nothing changes",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:516",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:527",
   "page": {
     "backgroundBrightness": 0.6,
     "backgroundColor": "#000000",

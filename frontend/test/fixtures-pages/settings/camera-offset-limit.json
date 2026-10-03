@@ -1,6 +1,6 @@
 {
   "name": "A step past the limit stays at the limit",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:382",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:393",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

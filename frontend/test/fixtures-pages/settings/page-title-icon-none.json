@@ -1,6 +1,6 @@
 {
   "name": "Title icon None writes an empty icon",
-  "source": "WristAssistant/Views/PageEditorView.swift:15568",
+  "source": "WristAssistant/Views/PageEditorView.swift:15349",
   "page": {
     "backgroundBrightness": 0.6,
     "backgroundColor": "#000000",

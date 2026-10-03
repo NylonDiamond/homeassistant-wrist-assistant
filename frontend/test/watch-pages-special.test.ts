@@ -87,7 +87,15 @@ describe("the special table", () => {
       calendar: "calendarSettings:Calendars",
       weather: "weather:Weather",
       person: "person:Person",
+      // Part 3f batch 2: the app kinds (`tile-app.json` has their rules).
+      assist: "data:Assist",
+      speak_message: "data:Speak",
+      point_control: "data:Pointer",
+      music_hub: "musicHub:Music",
+      template: "template:Template",
+      webhook_inbox: "inbox:Inbox",
     });
+    expect(WATCH_SPECIAL.tasks.order).toEqual(["data", "inbox", "alarm", "camera", "musicHub", "calendarSettings", "weather", "person", "template"]);
     expect(WATCH_SPECIAL.remote.kinds).toHaveLength(21);
     expect(WATCH_SPECIAL.remote.defaultLayout).toHaveLength(12);
   });

@@ -1,6 +1,6 @@
 {
   "name": "Height minus stops at the minimum",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:798",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:809",
   "page": {
     "backgroundBrightness": 0.6,
     "backgroundColor": "#000000",

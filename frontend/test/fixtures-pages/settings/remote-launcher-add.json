@@ -1,6 +1,6 @@
 {
   "name": "Add a quick action",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:122",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:133",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

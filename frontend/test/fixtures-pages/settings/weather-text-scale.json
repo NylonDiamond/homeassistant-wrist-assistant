@@ -1,6 +1,6 @@
 {
   "name": "Text size snaps to the step and is written clean",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1154",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1165",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

@@ -1,6 +1,6 @@
 {
   "name": "A camera already in the merged group is listed once, at its first place",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:539",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:550",
   "page": {
     "backgroundBrightness": 0.6,
     "backgroundColor": "#000000",

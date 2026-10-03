@@ -1,6 +1,6 @@
 {
   "name": "Page animation size",
-  "source": "WristAssistant/Views/PageEditorView.swift:16671",
+  "source": "WristAssistant/Views/PageEditorView.swift:16452",
   "page": {
     "backgroundBrightness": 0.6,
     "backgroundColor": "#000000",

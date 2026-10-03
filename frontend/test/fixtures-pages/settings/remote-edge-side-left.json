@@ -1,6 +1,6 @@
 {
   "name": "Edge volume on the left",
-  "source": "WristAssistant/Views/PageEditorView.swift:8402",
+  "source": "WristAssistant/Views/PageEditorView.swift:8228",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

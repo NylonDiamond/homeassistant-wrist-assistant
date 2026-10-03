@@ -1,6 +1,6 @@
 {
   "name": "A slot dragged onto another swaps them",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:205",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:216",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

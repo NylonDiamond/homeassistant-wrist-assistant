@@ -1,6 +1,6 @@
 {
   "name": "A 4 by 4 group at the first camera's place would cover the tile beside it, so it takes the first free place",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:569",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:580",
   "page": {
     "backgroundBrightness": 0.6,
     "backgroundColor": "#000000",

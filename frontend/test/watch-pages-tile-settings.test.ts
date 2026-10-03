@@ -143,6 +143,27 @@ import {
   unmergeWatchCameraGroup,
   watchVacuumDiscoverySuggestions,
 } from "../src/watch-pages/special-model.js";
+import {
+  WATCH_APP_SETTERS,
+  type WatchSpeakerListKey,
+  type WatchVoiceIdKey,
+  type WatchVolumePercentKey,
+  addWatchMusicHubPreset,
+  addWatchMusicHubSpeakers,
+  moveWatchMusicHubPreset,
+  moveWatchMusicHubSpeaker,
+  removeWatchMusicHubPreset,
+  removeWatchMusicHubSpeaker,
+  renameWatchMusicHubPreset,
+  setWatchAssistMode,
+  setWatchAssistReplySpeaker,
+  setWatchTemplatePreset,
+  setWatchTemplateText,
+  setWatchVoiceId,
+  setWatchVoiceSpeakers,
+  setWatchVoiceVolume,
+  toggleWatchMusicHubPresetSpeaker,
+} from "../src/watch-pages/app-model.js";
 
 type Json = Record<string, unknown>;
 
@@ -408,6 +429,37 @@ function applySpecialCase(document: WatchPagesDocument, T: string, edit: Json & 
       return setWatchWeatherShowIcons(document, PAGE, T, e.value);
     case "autoSubmitPIN":
       return setWatchAlarmAutoSubmit(document, PAGE, T, e.value);
+    // Part 3f batch 2: the app tiles.
+    case "templatePreset":
+      return setWatchTemplatePreset(document, PAGE, T, e.id);
+    case "templateText":
+      return setWatchTemplateText(document, PAGE, T, e.value);
+    case "musicHubSpeakersAdd":
+      return addWatchMusicHubSpeakers(document, PAGE, T, e.ids);
+    case "musicHubSpeakerRemove":
+      return removeWatchMusicHubSpeaker(document, PAGE, T, e.index);
+    case "musicHubSpeakerMove":
+      return moveWatchMusicHubSpeaker(document, PAGE, T, e.from, e.to);
+    case "musicHubPresetAdd":
+      return addWatchMusicHubPreset(document, PAGE, T, { newId: () => edit.id as string });
+    case "musicHubPresetRemove":
+      return removeWatchMusicHubPreset(document, PAGE, T, e.index);
+    case "musicHubPresetMove":
+      return moveWatchMusicHubPreset(document, PAGE, T, e.from, e.to);
+    case "musicHubPresetName":
+      return renameWatchMusicHubPreset(document, PAGE, T, e.index, e.value);
+    case "musicHubPresetToggle":
+      return toggleWatchMusicHubPresetSpeaker(document, PAGE, T, e.index, edit.speakerId as string);
+    case "assistMode":
+      return setWatchAssistMode(document, PAGE, T, e.value);
+    case "assistReplySpeaker":
+      return setWatchAssistReplySpeaker(document, PAGE, T, e.value);
+    case "voiceId":
+      return setWatchVoiceId(document, PAGE, T, edit.key as WatchVoiceIdKey, e.value);
+    case "voiceSpeakers":
+      return setWatchVoiceSpeakers(document, PAGE, T, edit.key as WatchSpeakerListKey, e.ids);
+    case "voiceVolume":
+      return setWatchVoiceVolume(document, PAGE, T, edit.key as WatchVolumePercentKey, e.value);
     default:
       throw new Error(`unknown op ${edit.op}`);
   }
@@ -425,6 +477,7 @@ function idsFrom(ids: unknown): () => string {
 
 function tileSetter(key: unknown) {
   if (typeof key === "string" && Object.hasOwn(WATCH_SPECIAL_SETTERS, key)) return WATCH_SPECIAL_SETTERS[key]!;
+  if (typeof key === "string" && Object.hasOwn(WATCH_APP_SETTERS, key)) return WATCH_APP_SETTERS[key]!;
   const setter = typeof key === "string" && Object.hasOwn(WATCH_TILE_STYLING_SETTERS, key) ? WATCH_TILE_STYLING_SETTERS[key] : undefined;
   if (setter === undefined) throw new Error(`no tile setter for ${String(key)}`);
   return setter;

@@ -2,7 +2,17 @@
   "version": 1,
   "note": "Generated from the iPhone app's Swift code by WatchPagesTablesTests; do not edit. Regenerate tile-special.json with TEST_RUNNER_WA_UPDATE_FIXTURES=1 ./scripts/test.sh WatchPagesTablesTests in the app repository.",
   "tasks": {
-    "order": ["data", "alarm", "camera", "calendarSettings", "weather", "person"],
+    "order": [
+      "data",
+      "inbox",
+      "alarm",
+      "camera",
+      "musicHub",
+      "calendarSettings",
+      "weather",
+      "person",
+      "template"
+    ],
     "kinds": {
       "remote": {
         "task": "data",
@@ -39,9 +49,34 @@
       "person": {
         "task": "person",
         "title": "Person"
+      },
+      "assist": {
+        "task": "data",
+        "title": "Assist"
+      },
+      "speak_message": {
+        "task": "data",
+        "title": "Speak"
+      },
+      "point_control": {
+        "task": "data",
+        "title": "Pointer"
+      },
+      "music_hub": {
+        "task": "musicHub",
+        "title": "Music"
+      },
+      "template": {
+        "task": "template",
+        "title": "Template"
+      },
+      "webhook_inbox": {
+        "task": "inbox",
+        "title": "Inbox"
       }
     },
-    "placement": "A tile shows its kind's task before Icon; the tasks of different kinds never meet on one tile. A remote, vacuum and lawn mower task is the phone's Data task under the kind's title.",
+    "placement": "A tile shows its kind's task before Icon; the tasks of different kinds never meet on one tile. A remote, vacuum, lawn mower, assist, speak_message and point_control task is the phone's Data task under the kind's title.",
+    "appKinds": "The batch 2 kinds' rules are in tile-app.json. The webhook_inbox task (inbox) stays on the phone: the panel carries an inbox tile as it is.",
     "tvRemote": "A media_player whose device_class is tv, with no remote. entity of the same object id, is a remote here: the Remote task without the Linked Media Player card (associatedMediaPlayerId is never offered; the TV is its own media player). This is decided by the entity, however the tile was added.",
     "climate": "Climate has no task of its own: its options are the State task's rows (tile-styling.json).",
     "multiSelect": "Person and the Camera rows that are not about one group also apply to every selected tile of the kind on the phone; the panel edits one tile."
@@ -859,6 +894,7 @@
       "assistChooseListSpeakerIds": null,
       "assistImmediateListen": null,
       "assistPrimaryAction": null,
+      "assistReplyOutputMode": null,
       "assistSpeakTargetMode": null,
       "assistSpeechVolumeMode": null,
       "assistSpeechVolumePercent": null,

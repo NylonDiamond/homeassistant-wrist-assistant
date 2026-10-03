@@ -1,6 +1,6 @@
 {
   "name": "A drag moves the first camera to the end",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:738",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:749",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

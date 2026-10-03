@@ -1,6 +1,6 @@
 {
   "name": "Value label Pill on a media_player tile (Volume Display)",
-  "source": "WristAssistant/Views/PageEditorView.swift:7114",
+  "source": "WristAssistant/Views/PageEditorView.swift:7025",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

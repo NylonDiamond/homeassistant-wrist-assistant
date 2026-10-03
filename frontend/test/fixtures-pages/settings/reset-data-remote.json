@@ -1,6 +1,6 @@
 {
   "name": "Reset Data on a tile with every Data key: the four remote keys that were missed included",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1180",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1192",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,
@@ -10,6 +10,7 @@
     "assistChooseListSpeakerIds": ["media_player.kitchen_speaker"],
     "assistImmediateListen": true,
     "assistPrimaryAction": "assistOnly",
+    "assistReplyOutputMode": "chooseEachTime",
     "assistSpeakTargetMode": "configuredSpeakers",
     "assistSpeechVolumeMode": "keepCurrent",
     "assistSpeechVolumePercent": 40,

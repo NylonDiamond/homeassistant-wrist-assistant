@@ -1,6 +1,6 @@
 {
   "name": "Clearing the extra select drops its label",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:968",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:979",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

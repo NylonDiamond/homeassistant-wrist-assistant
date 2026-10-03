@@ -2157,6 +2157,13 @@
       "webhook_inbox": "webhook_inbox.all; webhook_inbox.<topic> is reserved for a single topic."
     },
     "grid": "Placement is absolute on a 12 column grid: gridCol 0 to 11, gridRow from 0, colSpan 1 to 12, rowSpan from 1. Nothing in the decoder stops overlaps.",
-    "pageIds": "Every page needs a unique id. A page without one gets a new id on every decode; duplicate page ids crash the watch."
+    "pageIds": "Every page needs a unique id. A page without one gets a new id on every decode; duplicate page ids crash the watch.",
+    "keys": {
+      "templateString": "Only a template tile draws it; an empty string is kept.",
+      "templateRefreshInterval": "Unused.",
+      "assistPrimaryAction": "speakOnly reads as assistOnly on an Assist tile.",
+      "assistSpeechVolumePercent": "0 to 100, clamped on read.",
+      "speakMessageSpeechVolumePercent": "0 to 100, clamped on read."
+    }
   }
 }

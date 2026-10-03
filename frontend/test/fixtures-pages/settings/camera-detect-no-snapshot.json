@@ -1,6 +1,6 @@
 {
   "name": "A snapshot that does not load changes nothing",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:625",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:636",
   "page": {
     "backgroundBrightness": 0.6,
     "backgroundColor": "#000000",

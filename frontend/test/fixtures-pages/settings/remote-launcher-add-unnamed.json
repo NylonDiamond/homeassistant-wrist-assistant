@@ -1,6 +1,6 @@
 {
   "name": "A script with no name is labelled from its id",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:122",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:133",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

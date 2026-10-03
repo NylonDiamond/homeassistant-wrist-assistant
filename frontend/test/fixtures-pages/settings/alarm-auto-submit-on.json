@@ -1,6 +1,6 @@
 {
   "name": "Auto-Submit on",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1174",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1185",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

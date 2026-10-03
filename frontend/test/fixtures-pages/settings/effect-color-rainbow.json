@@ -1,6 +1,6 @@
 {
   "name": "Effect color, rainbow",
-  "source": "WristAssistant/Views/PageEditorView.swift:9708",
+  "source": "WristAssistant/Views/PageEditorView.swift:9514",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

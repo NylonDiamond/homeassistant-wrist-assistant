@@ -1,6 +1,6 @@
 {
   "name": "Solid to Gradient rewrites tile and effect colors",
-  "source": "WristAssistant/Views/PageEditorView.swift:777",
+  "source": "WristAssistant/Views/PageEditorView.swift:687",
   "page": {
     "backgroundBrightness": 0.6,
     "backgroundColor": "#16245C",

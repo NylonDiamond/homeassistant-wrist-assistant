@@ -1,6 +1,6 @@
 {
   "name": "Wide cameras stack in one column; a missing snapshot counts as 1.78",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:616",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:627",
   "page": {
     "backgroundBrightness": 0.6,
     "backgroundColor": "#000000",

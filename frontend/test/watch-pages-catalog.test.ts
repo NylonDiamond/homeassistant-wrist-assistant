@@ -44,9 +44,19 @@ describe("the phone's catalog bytes", () => {
   const catalog = watchCatalogFromRecord(record())!;
 
   it("are what the contract says the phone uploads: sorted keys, schema 1, no URL anywhere", () => {
-    expect(Object.keys(DOCUMENT)).toEqual(["httpActions", "macros", "schemaVersion", "statusPages"]);
+    expect(Object.keys(DOCUMENT)).toEqual(["httpActions", "macros", "schemaVersion", "statusPages", "voice"]);
     expect(DOCUMENT.schemaVersion).toBe(1);
     expect(BYTES).not.toMatch(/https?:|"url"|"headers"|"body"|"method"/i);
+  });
+
+  it("read the phone's voice defaults (part 3f batch 2), speakers in stored order", () => {
+    expect(catalog.voice).toEqual({
+      defaultAssistAgentId: "conversation.house_helper",
+      defaultSpeakers: ["media_player.example_lounge", "media_player.example_kitchen"],
+      defaultTTSEngine: "tts.example_voice",
+    });
+    // Sorted keys, as the phone encodes the catalog.
+    expect(Object.keys(DOCUMENT.voice as object)).toEqual(["defaultAssistAgentId", "defaultSpeakers", "defaultTTSEngine"]);
   });
 
   it("read every HTTP action with its flags and picker style", () => {

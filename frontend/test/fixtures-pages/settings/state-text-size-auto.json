@@ -1,6 +1,6 @@
 {
   "name": "State text size back to Auto removes the key",
-  "source": "WristAssistant/Views/PageEditorView.swift:7177",
+  "source": "WristAssistant/Views/PageEditorView.swift:7088",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

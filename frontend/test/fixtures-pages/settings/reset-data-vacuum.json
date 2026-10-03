@@ -1,6 +1,6 @@
 {
   "name": "Reset Data on a vacuum",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1180",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1192",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

@@ -1,6 +1,6 @@
 {
   "name": "Content mode Fill",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:373",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:384",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

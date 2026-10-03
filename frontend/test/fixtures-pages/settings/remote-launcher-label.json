@@ -1,6 +1,6 @@
 {
   "name": "A quick action's label",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:151",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:162",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

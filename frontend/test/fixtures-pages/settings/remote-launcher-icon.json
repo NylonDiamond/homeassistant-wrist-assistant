@@ -1,6 +1,6 @@
 {
   "name": "A quick action's icon",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:156",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:167",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

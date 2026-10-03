@@ -1,6 +1,6 @@
 {
   "name": "A quick action's color",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:161",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:172",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

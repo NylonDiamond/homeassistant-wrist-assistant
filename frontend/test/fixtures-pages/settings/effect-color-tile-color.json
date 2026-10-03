@@ -1,6 +1,6 @@
 {
   "name": "Effect color back to the tile color removes the key (the panel's button)",
-  "source": "WristAssistant/Views/PageEditorView.swift:9708",
+  "source": "WristAssistant/Views/PageEditorView.swift:9514",
   "tile": {
     "animationColor": "#365FDC",
     "animationIntensity": 1,

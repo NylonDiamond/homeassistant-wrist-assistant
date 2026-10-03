@@ -1,6 +1,6 @@
 {
   "name": "A slot of the default layout set to Stop writes all 12",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:197",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:208",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

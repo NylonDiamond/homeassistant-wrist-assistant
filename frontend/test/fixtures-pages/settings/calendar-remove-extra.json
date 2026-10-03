@@ -1,6 +1,6 @@
 {
   "name": "Remove an extra calendar",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1125",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1136",
   "tile": {
     "additionalCalendarEntityIds": ["calendar.work", "calendar.school"],
     "animationIntensity": 1,

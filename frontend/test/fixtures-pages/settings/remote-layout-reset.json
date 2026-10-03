@@ -1,6 +1,6 @@
 {
   "name": "Reset removes the layout",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:219",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:230",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

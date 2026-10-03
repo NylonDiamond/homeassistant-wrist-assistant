@@ -1,6 +1,6 @@
 {
   "name": "Title display Minimal",
-  "source": "WristAssistant/Views/PageEditorView.swift:15528",
+  "source": "WristAssistant/Views/PageEditorView.swift:15309",
   "page": {
     "backgroundBrightness": 0.6,
     "backgroundColor": "#000000",

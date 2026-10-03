@@ -1,6 +1,6 @@
 {
   "name": "A layout of 13 entries is cut to 12 when a slot is set",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:197",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:208",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

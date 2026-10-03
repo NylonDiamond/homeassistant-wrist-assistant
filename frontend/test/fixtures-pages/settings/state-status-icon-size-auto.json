@@ -1,6 +1,6 @@
 {
   "name": "Status icon size back to Auto removes the key",
-  "source": "WristAssistant/Views/PageEditorView.swift:7184",
+  "source": "WristAssistant/Views/PageEditorView.swift:7095",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

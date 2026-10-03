@@ -1,6 +1,6 @@
 {
   "name": "Adding only a camera already in the group changes nothing",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:644",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:655",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

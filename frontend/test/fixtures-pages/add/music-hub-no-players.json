@@ -1,0 +1,69 @@
+{
+  "name": "A music hub with no grouping player lists []",
+  "page": {
+    "themeOverride": "neonLagoon",
+    "items": []
+  },
+  "add": {
+    "kind": "musicHub",
+    "players": [
+      {
+        "entityId": "media_player.den_tv",
+        "supportedFeatures": 4
+      }
+    ]
+  },
+  "ids": ["C3A0E000-0000-4000-8000-000000000100", "C3A0E000-0000-4000-8000-000000000101"],
+  "expected": {
+    "animationIntensity": 1,
+    "animationSize": 1,
+    "animationSpeed": 1,
+    "backgroundPattern": "none",
+    "borderActiveOnly": true,
+    "borderAnimation": "none",
+    "borderAnimationIntensity": 1,
+    "borderAnimationSize": 1,
+    "borderAnimationSpeed": 1,
+    "borderGlow": 0,
+    "borderLineStyle": "solid",
+    "borderStyle": "none",
+    "borderThickness": "extraThin",
+    "cameraDisplayMode": "icon",
+    "cameraFillOffsetX": 0,
+    "cameraFillOffsetY": 0,
+    "colSpan": 6,
+    "color": "#E89545",
+    "colorOpacity": 1,
+    "customLabel": "Music",
+    "effectActiveOnly": false,
+    "entityId": "music_hub.C3A0E000-0000-4000-8000-000000000100",
+    "gridCol": 0,
+    "gridRow": 0,
+    "icon": "music.note.house",
+    "iconShadow": false,
+    "iconTapAnimation": "replace",
+    "id": "C3A0E000-0000-4000-8000-000000000101",
+    "labelFontWeight": "light",
+    "labelShadow": true,
+    "multiCamBorderColor": "FFFFFF",
+    "multiCamBorderEnabled": false,
+    "multiCamBorderThickness": "thin",
+    "musicHubSpeakerIds": [],
+    "overlayColor": "#FFFFFF",
+    "overlayIntensity": 1,
+    "overlaySize": 1,
+    "overlaySpeed": 1,
+    "overlayStyle": "none",
+    "patternOpacity": 1,
+    "rowSpan": 4,
+    "showAlbumArt": true,
+    "showLabel": true,
+    "stateBarBorder": false,
+    "stateBarColorStyle": "Tile",
+    "stateBarShadow": false,
+    "stateBarStyle": "Top",
+    "stateValueLabelStyle": "Plain",
+    "statusTextShadow": true,
+    "tileAnimation": "none"
+  }
+}
