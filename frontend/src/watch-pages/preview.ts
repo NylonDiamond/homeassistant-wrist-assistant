@@ -44,6 +44,7 @@ import { watchPageTheme, watchPageValue } from "./page-settings-model.js";
 import { WATCH_TILE_DEFAULTS, watchKindColor, watchThemeRoleColors } from "./tile-new.js";
 import { watchStateDomains, watchStylingTheme } from "./tile-styling.js";
 import { type WatchCatalog, watchLibraryTileFallbackName } from "./catalog.js";
+import { isWatchTvRemote, watchUsesPersonPhoto } from "./special-model.js";
 
 export interface WatchPagePreviewInput {
   page: WatchPage;
@@ -294,14 +295,10 @@ function lower(value: unknown): string {
   return String(value ?? "").toLowerCase();
 }
 
-/** Whether a `media_player.` tile is drawn as a remote: a TV (`device_class`
- * `tv`) with no `remote.` of the same object id, the rule the add uses
- * (`tvRemote`). Needs the states to decide. */
+/** Whether a `media_player.` tile is drawn as a remote: the Remote task's
+ * rule (`isWatchTvRemote`), which is the watch's. */
 export function watchTileIsTvRemote(tile: WatchPageTile, states?: Readonly<Record<string, HassEntityState>>): boolean {
-  const entityId = tileEntityId(tile);
-  if (tileKind(entityId) !== "media_player" || states === undefined) return false;
-  const entity = Object.hasOwn(states, entityId) ? states[entityId] : undefined;
-  return entity?.attributes?.device_class === "tv" && !Object.hasOwn(states, `remote.${tileTarget(entityId)}`);
+  return isWatchTvRemote(tileEntityId(tile), states);
 }
 
 /** The key a tile's state icons and colors are read under, as the watch
@@ -543,9 +540,7 @@ export function watchSpecialTileLook(
     }
     case "person": {
       const home = state === "home";
-      const icons = tile.stateIcons !== null && typeof tile.stateIcons === "object" && !Array.isArray(tile.stateIcons) ? Object.values(tile.stateIcons as Record<string, unknown>) : [];
-      const customIcon = icons.some((v) => typeof v === "string" && v !== "") || (typeof tile.icon === "string" && tile.icon !== "person");
-      const usePhoto = typeof tile.usePersonPhoto === "boolean" ? tile.usePersonPhoto : !customIcon;
+      const usePhoto = watchUsesPersonPhoto(tile);
       const picture = attrs.entity_picture;
       return {
         symbol: stateIcon ?? (noIcon ? undefined : (ownIcon ?? "person")),

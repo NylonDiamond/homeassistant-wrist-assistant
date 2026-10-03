@@ -1,6 +1,6 @@
 {
   "name": "A cell's Fit makes the modes and the offsets",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:740",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:752",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

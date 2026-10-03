@@ -1,0 +1,106 @@
+{
+  "name": "The phone added a camera to a group while the server ran detection on it (widened it, two grid columns, row weights 1 / 1.6): the phone changed cameraGroupIds, so the five per camera lists and cameraGridColumns (which the phone has none of) are the phone's, never three cameras with two weights; the size and the ratio, which only the server changed, are the server's",
+  "base": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "58F6BD48-003E-4771-8264-187E8503E16B",
+            "entityId": "multicam.9A1C2E3F-4B5D-4E6F-8A7B-0C1D2E3F4A5B",
+            "colSpan": 4,
+            "rowSpan": 4,
+            "customLabel": "Driveway, Back Yard",
+            "cameraFillMode": "fill",
+            "cameraFillOffsetX": 0,
+            "cameraFillOffsetY": 0,
+            "cameraGroupIds": ["camera.driveway", "camera.back_yard"],
+            "cameraRowWeights": [1, 1],
+            "cameraFillModes": ["fill", "fill"],
+            "cameraFillOffsetsX": [0, 0],
+            "cameraFillOffsetsY": [0, 0]
+          }
+        ]
+      }
+    ]
+  },
+  "phone": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "58F6BD48-003E-4771-8264-187E8503E16B",
+            "entityId": "multicam.9A1C2E3F-4B5D-4E6F-8A7B-0C1D2E3F4A5B",
+            "colSpan": 4,
+            "rowSpan": 4,
+            "customLabel": "Driveway, Back Yard, Side Gate",
+            "cameraFillMode": "fill",
+            "cameraFillOffsetX": 0,
+            "cameraFillOffsetY": 0,
+            "cameraGroupIds": ["camera.driveway", "camera.back_yard", "camera.side_gate"],
+            "cameraRowWeights": [1, 1, 1],
+            "cameraFillModes": ["fill", "fill", "fill"],
+            "cameraFillOffsetsX": [0, 0, 0],
+            "cameraFillOffsetsY": [0, 0, 0]
+          }
+        ]
+      }
+    ]
+  },
+  "server": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "58F6BD48-003E-4771-8264-187E8503E16B",
+            "entityId": "multicam.9A1C2E3F-4B5D-4E6F-8A7B-0C1D2E3F4A5B",
+            "colSpan": 12,
+            "rowSpan": 4,
+            "customLabel": "Driveway, Back Yard",
+            "cameraFillMode": "fill",
+            "cameraFillOffsetX": 0,
+            "cameraFillOffsetY": 0,
+            "cameraGroupIds": ["camera.driveway", "camera.back_yard"],
+            "cameraRowWeights": [0.625, 0.625],
+            "cameraFillModes": ["fill", "fill"],
+            "cameraFillOffsetsX": [0, 0],
+            "cameraFillOffsetsY": [0, 0],
+            "cameraGridColumns": 2,
+            "cameraAspectRatio": 1.6
+          }
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "58F6BD48-003E-4771-8264-187E8503E16B",
+            "entityId": "multicam.9A1C2E3F-4B5D-4E6F-8A7B-0C1D2E3F4A5B",
+            "colSpan": 12,
+            "rowSpan": 4,
+            "customLabel": "Driveway, Back Yard, Side Gate",
+            "cameraFillMode": "fill",
+            "cameraFillOffsetX": 0,
+            "cameraFillOffsetY": 0,
+            "cameraGroupIds": ["camera.driveway", "camera.back_yard", "camera.side_gate"],
+            "cameraRowWeights": [1, 1, 1],
+            "cameraFillModes": ["fill", "fill", "fill"],
+            "cameraFillOffsetsX": [0, 0, 0],
+            "cameraFillOffsetsY": [0, 0, 0],
+            "cameraAspectRatio": 1.6
+          }
+        ]
+      }
+    ]
+  }
+}

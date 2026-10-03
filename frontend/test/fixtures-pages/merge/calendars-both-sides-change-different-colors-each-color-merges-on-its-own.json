@@ -1,0 +1,85 @@
+{
+  "name": "Neither side changed the calendars: the phone recolored calendar.work, the server set calendar.school to no color. calendarSourceColors merges by calendar id, so both changes stay",
+  "base": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "58F6BD48-003E-4771-8264-187E8503E16B",
+            "entityId": "calendar.family",
+            "customLabel": "Family",
+            "additionalCalendarEntityIds": ["calendar.work", "calendar.school"],
+            "calendarSourceColors": {
+              "calendar.family": "#36B7A6",
+              "calendar.school": "#E6EEF2",
+              "calendar.work": "#2F79B6"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "phone": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "58F6BD48-003E-4771-8264-187E8503E16B",
+            "entityId": "calendar.family",
+            "customLabel": "Family",
+            "additionalCalendarEntityIds": ["calendar.work", "calendar.school"],
+            "calendarSourceColors": {
+              "calendar.family": "#36B7A6",
+              "calendar.school": "#E6EEF2",
+              "calendar.work": "#FFD60A"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "server": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "58F6BD48-003E-4771-8264-187E8503E16B",
+            "entityId": "calendar.family",
+            "customLabel": "Family",
+            "additionalCalendarEntityIds": ["calendar.work", "calendar.school"],
+            "calendarSourceColors": {
+              "calendar.family": "#36B7A6",
+              "calendar.work": "#2F79B6"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "58F6BD48-003E-4771-8264-187E8503E16B",
+            "entityId": "calendar.family",
+            "customLabel": "Family",
+            "additionalCalendarEntityIds": ["calendar.work", "calendar.school"],
+            "calendarSourceColors": {
+              "calendar.family": "#36B7A6",
+              "calendar.work": "#FFD60A"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

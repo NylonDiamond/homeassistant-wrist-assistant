@@ -1,6 +1,6 @@
 {
   "name": "Adding a camera rewrites a label the person typed",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:652",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:654",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

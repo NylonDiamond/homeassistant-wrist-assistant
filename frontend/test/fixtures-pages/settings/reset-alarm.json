@@ -1,6 +1,6 @@
 {
   "name": "Reset Alarm",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1207",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1219",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

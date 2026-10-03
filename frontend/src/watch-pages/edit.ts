@@ -1282,12 +1282,15 @@ export function previewWatchTileResize(
 export interface WatchResizeOptions extends WatchEditOptions {
   /** The page when the gesture, or the size card, began. */
   baseline?: WatchPage;
+  /** Tiles the resized tile may still overlap: ones it overlapped before the
+   * edit, which the edit did not cause. */
+  keepOverlapsWith?: readonly string[];
 }
 
 /** Commit a resize as `previewWatchTileResize` computes it, then repair the
  * groups of every tile that moved or changed size. Refused (the document
  * comes back as it is) when the preview says `refused`, and when the resized
- * tile would still overlap another. */
+ * tile would still overlap another (one of `keepOverlapsWith` aside). */
 export function resizeWatchTile(
   document: WatchPagesDocument,
   pageId: string,
@@ -1303,7 +1306,8 @@ export function resizeWatchTile(
   if (si < 0) return document;
   applyResize(work.tiles, si, whole.rect, baselineOf(options?.baseline));
   const item = work.tiles[si]!;
-  if (work.tiles.some((t, i) => i !== si && overlaps(item, t))) return document;
+  const kept = new Set((options?.keepOverlapsWith ?? []).map((id) => idKey(id)).filter((k): k is string => k !== undefined));
+  if (work.tiles.some((t, i) => i !== si && !kept.has(t.key) && overlaps(item, t))) return document;
   if (movedPastEnd(work)) return document;
   repairMovedGroups(work, options);
   return withPage(document, slot, closeWork(work));

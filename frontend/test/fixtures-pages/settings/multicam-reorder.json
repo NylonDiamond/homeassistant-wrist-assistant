@@ -1,6 +1,6 @@
 {
   "name": "The down arrow swaps a camera with the next one",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:706",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:718",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

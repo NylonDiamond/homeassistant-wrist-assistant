@@ -1,0 +1,101 @@
+{
+  "name": "Neither side changed the cameras: the phone set the first cell to Fit (which made both offset lists, zero filled) and raised the second camera's height, the server moved the second cell's crop and lowered the first camera's height. Lists both sides changed merge index by index, an entry the base has none of reading as the pad (weight 1, fill, offset 0), so each side's own entries survive",
+  "base": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "58F6BD48-003E-4771-8264-187E8503E16B",
+            "entityId": "multicam.9A1C2E3F-4B5D-4E6F-8A7B-0C1D2E3F4A5B",
+            "colSpan": 4,
+            "rowSpan": 4,
+            "customLabel": "Driveway, Back Yard",
+            "cameraFillMode": "fill",
+            "cameraFillOffsetX": 0,
+            "cameraFillOffsetY": 0,
+            "cameraGroupIds": ["camera.driveway", "camera.back_yard"],
+            "cameraRowWeights": [1, 1],
+            "cameraFillModes": ["fill", "fill"]
+          }
+        ]
+      }
+    ]
+  },
+  "phone": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "58F6BD48-003E-4771-8264-187E8503E16B",
+            "entityId": "multicam.9A1C2E3F-4B5D-4E6F-8A7B-0C1D2E3F4A5B",
+            "colSpan": 4,
+            "rowSpan": 4,
+            "customLabel": "Driveway, Back Yard",
+            "cameraFillMode": "fill",
+            "cameraFillOffsetX": 0,
+            "cameraFillOffsetY": 0,
+            "cameraGroupIds": ["camera.driveway", "camera.back_yard"],
+            "cameraRowWeights": [1, 1.2],
+            "cameraFillModes": ["fit", "fill"],
+            "cameraFillOffsetsX": [0, 0],
+            "cameraFillOffsetsY": [0, 0]
+          }
+        ]
+      }
+    ]
+  },
+  "server": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "58F6BD48-003E-4771-8264-187E8503E16B",
+            "entityId": "multicam.9A1C2E3F-4B5D-4E6F-8A7B-0C1D2E3F4A5B",
+            "colSpan": 4,
+            "rowSpan": 4,
+            "customLabel": "Driveway, Back Yard",
+            "cameraFillMode": "fill",
+            "cameraFillOffsetX": 0,
+            "cameraFillOffsetY": 0,
+            "cameraGroupIds": ["camera.driveway", "camera.back_yard"],
+            "cameraRowWeights": [0.8, 1],
+            "cameraFillModes": ["fill", "fill"],
+            "cameraFillOffsetsX": [0, 0.25],
+            "cameraFillOffsetsY": [0, 0]
+          }
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "58F6BD48-003E-4771-8264-187E8503E16B",
+            "entityId": "multicam.9A1C2E3F-4B5D-4E6F-8A7B-0C1D2E3F4A5B",
+            "colSpan": 4,
+            "rowSpan": 4,
+            "customLabel": "Driveway, Back Yard",
+            "cameraFillMode": "fill",
+            "cameraFillOffsetX": 0,
+            "cameraFillOffsetY": 0,
+            "cameraGroupIds": ["camera.driveway", "camera.back_yard"],
+            "cameraRowWeights": [0.8, 1.2],
+            "cameraFillModes": ["fit", "fill"],
+            "cameraFillOffsetsX": [0, 0.25],
+            "cameraFillOffsetsY": [0, 0]
+          }
+        ]
+      }
+    ]
+  }
+}

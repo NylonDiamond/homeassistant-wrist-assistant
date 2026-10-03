@@ -1,6 +1,6 @@
 {
   "name": "Split into Individual Cameras: each at the first free place, with the add's icon",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:816",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:828",
   "page": {
     "backgroundBrightness": 0.6,
     "backgroundColor": "#000000",

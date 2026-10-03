@@ -1,6 +1,6 @@
 {
   "name": "Four square cameras: a 2 by 2 grid, every cell Fill again",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:612",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:614",
   "page": {
     "backgroundBrightness": 0.6,
     "backgroundColor": "#000000",

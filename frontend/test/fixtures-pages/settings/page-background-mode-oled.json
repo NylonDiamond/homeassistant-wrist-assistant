@@ -1,6 +1,6 @@
 {
   "name": "The mode switch leaves OLED black alone",
-  "source": "WristAssistant/Views/PageEditorView.swift:15876",
+  "source": "WristAssistant/Views/PageEditorView.swift:15877",
   "page": {
     "backgroundBrightness": 0.6,
     "backgroundColor": "#000000",

@@ -1,6 +1,6 @@
 {
   "name": "Remove the middle camera of three",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:696",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:698",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

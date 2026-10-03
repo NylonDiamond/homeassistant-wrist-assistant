@@ -23,6 +23,7 @@
 
 import pageKeys from "./page-keys.json";
 import tileSpecial from "./tile-special.json";
+import settingsCatalog from "../watch-settings-catalog.json";
 import { type WatchEditOptions, deleteWatchTile, findWatchPage, firstFreeWatchCell, previewWatchTileResize, randomWatchId, resizeWatchTile, sameWatchId, watchTileRect } from "./edit.js";
 import { REMOVE, editTile, isBool, sameValue, setKey, withField, withKey, withoutKey } from "./tile-settings-model.js";
 import { WATCH_TILE_DEFAULTS, watchCalendarColor, watchCapitalized, watchEntityDefaults, watchFreshTile, watchThemeSwatches } from "./tile-new.js";
@@ -108,7 +109,12 @@ interface SpecialTable {
     textScale: { key: string; min: number; max: number; step: number; auto: number };
     showIcons: { key: string; absent: boolean };
   };
-  person: { key: string; choices: { value: boolean; label: string; icon: string }[] };
+  person: {
+    key: string;
+    choices: { value: boolean; label: string; icon: string }[];
+    /** The watch's `resolvedUsePersonPhoto` with no stored choice. */
+    absentSamples: { icon: string | null; stateIcons: Record<string, string> | null; photo: boolean }[];
+  };
   alarm: { key: string; absent: boolean };
   resets: Record<string, Record<string, unknown>>;
 }
@@ -261,10 +267,21 @@ function stateOf(states: WatchSpecialStates | undefined, entityId: string) {
   return states !== undefined && Object.hasOwn(states, entityId) ? states[entityId] : undefined;
 }
 
-/** A `media_player.` with `device_class` `tv` and no `remote.` of the same
- * object id stands in for a remote (`isTVRemote`). */
+/**
+ * A `media_player.` the watch draws as a remote, by the watch's two rules:
+ *
+ * - `device_class` `tv` and no `remote.` of the same object id
+ *   (`HomeAssistantAPI.fetchRemotes`, the phone's `isTVRemote`);
+ * - an id that, lower cased, contains `lg` or `webos`: the watch takes it for
+ *   a webOS TV and registers it as a remote whatever its state says
+ *   (`RemotePlatform.detect` in the app's `WristAssistant Watch App/Models/
+ *   RemoteEntity.swift`, used by `EntityStateViewModel`). The phone editor
+ *   and `tile-special.json` know only the first rule.
+ */
 export function isWatchTvRemote(entityId: string, states: WatchSpecialStates | undefined): boolean {
   if (tileKind(entityId) !== "media_player") return false;
+  const id = entityId.toLowerCase();
+  if (id.includes("lg") || id.includes("webos")) return true;
   if (stateOf(states, entityId)?.attributes?.device_class !== "tv") return false;
   return !Object.hasOwn(states ?? {}, `remote.${tileTarget(entityId)}`);
 }
@@ -318,13 +335,29 @@ export interface WatchSpecialResize {
   refused?: WatchSpecialResizeRefusal;
 }
 
+type Rect = { col: number; row: number; colSpan: number; rowSpan: number };
+
+function rectsOverlap(a: Rect, b: Rect): boolean {
+  return a.row < b.row + b.rowSpan && a.row + a.rowSpan > b.row && a.col < b.col + b.colSpan && a.col + a.colSpan > b.col;
+}
+
+/** The ids of the tiles of a page a tile at `rect` overlaps, itself left
+ * out. */
+function overlappedIds(page: WatchPage, tileId: string, rect: Rect): string[] {
+  return (page.items as unknown[])
+    .filter((t): t is WatchPageTile => isJsonObject(t) && !sameWatchId(t.id, tileId) && rectsOverlap(rect, watchTileRect(t)))
+    .map((t) => String(t.id).toUpperCase());
+}
+
 /**
  * Change a tile's keys and resize it in one edit, as the phone does: the
  * change returns the new tile and the size to go to, then the tile keeps its
  * place (moved left when it would pass the last column) and every tile it
  * overlaps is pushed down, cascading (`resizeWatchTile`). The phone leaves
  * an overlap with a tile above in place; the panel refuses the whole edit
- * instead, keys included, and says why.
+ * instead, keys included, and says why, but only for an overlap the edit
+ * adds: a tile the resized one overlapped already before may stay under it
+ * (a group the phone placed over another tile can still be sized).
  */
 function changeAndResize(
   document: WatchPagesDocument,
@@ -349,8 +382,11 @@ function changeAndResize(
   // overlaps, as the phone's resize does.
   const preview = previewWatchTileResize(page, tileId, rect);
   if (preview.refused !== undefined) return { document, refused: "end" };
-  if (preview.overlaps) return { document, refused: "overlap" };
-  return { document: resizeWatchTile(keyed, pageId, tileId, rect) };
+  const before = editablePage(document, pageId);
+  const beforeTile = before === undefined ? undefined : tileOn(before, tileId);
+  const already = before === undefined || beforeTile === undefined ? [] : overlappedIds(before, tileId, watchTileRect(beforeTile));
+  if (preview.overlaps && overlappedIds(preview.page, tileId, preview.rect).some((id) => !already.includes(id))) return { document, refused: "overlap" };
+  return { document: resizeWatchTile(keyed, pageId, tileId, rect, { keepOverlapsWith: already }) };
 }
 
 /** A resize to a size, through the push down (a suggested size). */
@@ -803,12 +839,28 @@ export function watchCameraRefreshChoices(globalOn: boolean, debounce: string): 
   }));
 }
 
-/** The behavior document's camera keys, with the phone's defaults. */
+/** A watch behavior setting's default, as the behavior catalog
+ * (`watch-settings-catalog.json`) names it. */
+function behaviorDefault(key: string): unknown {
+  const sections = (settingsCatalog as { sections: { settings: { key: string; default?: unknown }[] }[] }).sections;
+  for (const section of sections) {
+    const setting = section.settings.find((s) => s.key === key);
+    if (setting !== undefined) return setting.default;
+  }
+  return undefined;
+}
+
+/** The behavior document's camera keys, with the behavior catalog's
+ * defaults for what it does not hold. */
 export function watchCameraRefreshDefaults(behavior: unknown): { on: boolean; debounce: string } {
   const doc = isJsonObject(behavior) ? behavior : {};
+  const on = behaviorDefault("cameraRefreshOnOpen");
+  const debounce = behaviorDefault("cameraRefreshOnOpenDebounce");
   return {
-    on: typeof doc.cameraRefreshOnOpen === "boolean" ? doc.cameraRefreshOnOpen : true,
-    debounce: typeof doc.cameraRefreshOnOpenDebounce === "string" && doc.cameraRefreshOnOpenDebounce !== "" ? doc.cameraRefreshOnOpenDebounce : "10s",
+    on: typeof doc.cameraRefreshOnOpen === "boolean" ? doc.cameraRefreshOnOpen : on === true,
+    debounce: typeof doc.cameraRefreshOnOpenDebounce === "string" && doc.cameraRefreshOnOpenDebounce !== ""
+      ? doc.cameraRefreshOnOpenDebounce
+      : typeof debounce === "string" ? debounce : "",
   };
 }
 
@@ -879,6 +931,37 @@ export function detectWatchCameraRatios(
   });
 }
 
+/** The cameras a camera or group tile shows, in order: a group's
+ * `cameraGroupIds`, a camera's own entity. */
+export function watchTileCameraIds(tile: WatchPageTile): string[] {
+  return isGroup(tile) ? (strings(tile.cameraGroupIds) ?? []) : isCamera(tile) ? [tileEntityId(tile)] : [];
+}
+
+/**
+ * Ratio detection with the ratios measured by camera id, applied to the
+ * cameras the tile holds when it commits: a camera that left the tile while
+ * the pictures loaded is skipped, a requested camera whose picture did not
+ * load (null) counts as missing (1.78 in a group). A camera the tile holds
+ * that was not requested (added meanwhile) has no measure, so nothing is
+ * changed and `unmeasured` names it. `missing` counts the tile's cameras
+ * with no ratio.
+ */
+export function detectWatchCameraRatiosById(
+  document: WatchPagesDocument,
+  pageId: string,
+  tileId: string,
+  measured: ReadonlyMap<string, number | null | undefined>,
+): WatchSpecialResize & { unmeasured?: string[]; missing: number } {
+  const page = editablePage(document, pageId);
+  const tile = page === undefined ? undefined : tileOn(page, tileId);
+  const ids = tile === undefined ? [] : watchTileCameraIds(tile);
+  const unmeasured = ids.filter((id) => !measured.has(id));
+  if (unmeasured.length > 0) return { document, unmeasured, missing: 0 };
+  const ratios = ids.map((id) => measured.get(id) ?? null);
+  const missing = ratios.filter((r) => watchSnapshotRatio(r === null ? undefined : { width: r, height: 1 }) === undefined).length;
+  return { ...detectWatchCameraRatios(document, pageId, tileId, ratios), missing };
+}
+
 // ── Camera group ─────────────────────────────────────────────────────────
 
 /** A camera group's settings, the per-camera lists read at the camera
@@ -935,11 +1018,12 @@ export const setWatchCameraBorderColor: Setter<string> = (document, pageId, tile
  * "Merge into Camera Grid": the chosen camera and group tiles, in page order,
  * become one group. The groups' cameras come first with their per-camera
  * settings (padded with weight 1, Fill, offsets 0), then each camera tile
- * with weight 1, its own fill mode (else Fill) and offsets. The first chosen
- * group keeps its id, place and keys and takes the lists and the label; every
- * other chosen tile goes. With no group chosen a new 4 by 4 group takes the
- * first chosen tile's place and is appended last; `newId` gives its entity
- * id's UUID, then its id. Refused with fewer than two camera tiles.
+ * with weight 1, its own fill mode (else Fill) and offsets; a camera listed
+ * already is skipped. The first chosen group keeps its id, place and keys
+ * and takes the lists and the label; every other chosen tile goes. With no
+ * group chosen the chosen tiles go and a new 4 by 4 group takes the first
+ * free place left, appended last; `newId` gives its entity id's UUID, then
+ * its id. Refused with fewer than two camera tiles.
  */
 export function mergeWatchCameraTiles(
   document: WatchPagesDocument,
@@ -956,32 +1040,7 @@ export function mergeWatchCameraTiles(
   const cameras = chosen.filter(isCamera);
   if (groups.length + cameras.length < 2) return { document };
 
-  const ids: string[] = [];
-  const weights: unknown[] = [];
-  const modes: unknown[] = [];
-  const offsetsX: unknown[] = [];
-  const offsetsY: unknown[] = [];
-  for (const group of groups) {
-    const groupIds = strings(group.cameraGroupIds) ?? [];
-    const w = list(group.cameraRowWeights) ?? [];
-    const m = list(group.cameraFillModes) ?? [];
-    const x = list(group.cameraFillOffsetsX) ?? [];
-    const y = list(group.cameraFillOffsetsY) ?? [];
-    ids.push(...groupIds);
-    groupIds.forEach((_, i) => {
-      weights.push(i < w.length ? w[i] : 1.0);
-      modes.push(i < m.length ? m[i] : "fill");
-      offsetsX.push(i < x.length ? x[i] : 0);
-      offsetsY.push(i < y.length ? y[i] : 0);
-    });
-  }
-  for (const camera of cameras) {
-    ids.push(tileEntityId(camera));
-    weights.push(1.0);
-    modes.push(str(camera.cameraFillMode) ?? "fill");
-    offsetsX.push(num(camera.cameraFillOffsetX) ?? 0);
-    offsetsY.push(num(camera.cameraFillOffsetY) ?? 0);
-  }
+  const { ids, weights, modes, offsetsX, offsetsY } = mergedCameraLists(groups, cameras);
   const label = watchCameraGroupLabel(ids);
 
   const base = groups[0];
@@ -998,10 +1057,11 @@ export function mergeWatchCameraTiles(
     });
     return { document: next, groupId: String(base.id) };
   }
-  const anchor = watchTileRect(chosen[0]!);
   const spec = T.multicam.newTile;
   const entityUuid = newIdFrom(options);
   const id = newIdFrom(options);
+  for (const t of chosen) next = deleteWatchTile(next, pageId, String(t.id), options);
+  const place = firstFreeWatchCell(findWatchPage(next, pageId)!, spec.colSpan, spec.rowSpan);
   const group = watchFreshTile({
     id,
     entityId: `${spec.entityIdPrefix}${entityUuid}`,
@@ -1016,11 +1076,53 @@ export function mergeWatchCameraTiles(
     cameraFillOffsetsY: offsetsY,
     colSpan: spec.colSpan,
     rowSpan: spec.rowSpan,
-    gridRow: anchor.row,
-    gridCol: anchor.col,
+    gridRow: place.row,
+    gridCol: place.col,
   });
-  for (const t of chosen) next = deleteWatchTile(next, pageId, String(t.id), options);
   return { document: appendTile(next, pageId, group), groupId: id };
+}
+
+/** The lists of a merge: the groups' cameras first with their per-camera
+ * settings (padded with weight 1, Fill, offsets 0), then each camera tile
+ * with weight 1, its own fill mode (else Fill) and offsets. A camera already
+ * listed is skipped, as Add camera skips it. */
+function mergedCameraLists(groups: readonly WatchPageTile[], cameras: readonly WatchPageTile[]) {
+  const ids: string[] = [];
+  const weights: unknown[] = [];
+  const modes: unknown[] = [];
+  const offsetsX: unknown[] = [];
+  const offsetsY: unknown[] = [];
+  const push = (id: string, w: unknown, m: unknown, x: unknown, y: unknown) => {
+    if (ids.includes(id)) return;
+    ids.push(id);
+    weights.push(w);
+    modes.push(m);
+    offsetsX.push(x);
+    offsetsY.push(y);
+  };
+  for (const group of groups) {
+    const w = list(group.cameraRowWeights) ?? [];
+    const m = list(group.cameraFillModes) ?? [];
+    const x = list(group.cameraFillOffsetsX) ?? [];
+    const y = list(group.cameraFillOffsetsY) ?? [];
+    (strings(group.cameraGroupIds) ?? []).forEach((id, i) =>
+      push(id, i < w.length ? w[i] : 1.0, i < m.length ? m[i] : "fill", i < x.length ? x[i] : 0, i < y.length ? y[i] : 0));
+  }
+  for (const camera of cameras) {
+    push(tileEntityId(camera), 1.0, str(camera.cameraFillMode) ?? "fill", num(camera.cameraFillOffsetX) ?? 0, num(camera.cameraFillOffsetY) ?? 0);
+  }
+  return { ids, weights, modes, offsetsX, offsetsY };
+}
+
+/** The cameras a merge of these tiles would list, in order, each once (what
+ * "Group N cameras" counts). */
+export function watchCameraMergeIds(page: WatchPage, tileIds: readonly string[]): string[] {
+  const chosen = watchPageTilesOf(page).filter((t) => tileIds.some((id) => sameWatchId(t.id, id)) && isCameraLike(t));
+  return mergedCameraLists(chosen.filter(isGroup), chosen.filter(isCamera)).ids;
+}
+
+function watchPageTilesOf(page: WatchPage): WatchPageTile[] {
+  return Array.isArray(page.items) ? (page.items as unknown[]).filter((t): t is WatchPageTile => isJsonObject(t)) : [];
 }
 
 /** "Add Camera": the cameras not in the group yet are appended, each with
@@ -1093,6 +1195,23 @@ export function removeWatchCameraFromGroup(document: WatchPagesDocument, pageId:
     optional("cameraFillOffsetsY", offsetsY);
     return withKey(next, "customLabel", removeLabel(strings(ids) ?? []));
   });
+}
+
+/** "Remove" on a page (the phone's page remove): as
+ * `removeWatchCameraFromGroup`, except that a group whose last camera is
+ * removed goes from the page, its groups repaired as a delete repairs them. */
+export function removeWatchGroupCamera(
+  document: WatchPagesDocument,
+  pageId: string,
+  tileId: string,
+  index: number,
+  options?: WatchEditOptions,
+): WatchPagesDocument {
+  const page = editablePage(document, pageId);
+  const tile = page === undefined ? undefined : tileOn(page, tileId);
+  if (tile === undefined || !isGroup(tile) || !Array.isArray(tile.cameraGroupIds)) return document;
+  if (tile.cameraGroupIds.length === 1 && index === 0) return deleteWatchTile(document, pageId, tileId, options);
+  return removeWatchCameraFromGroup(document, pageId, tileId, index);
 }
 
 const CELL_KEYS = ["cameraRowWeights", "cameraFillModes", "cameraFillOffsetsX", "cameraFillOffsetsY"] as const;
@@ -1558,12 +1677,12 @@ export function watchWeatherSettings(tile: WatchPageTile): { textScale: number; 
   };
 }
 
-/** "Text Size": snapped to the step, written as the clean decimal, removed
- * at the default. */
+/** "Text Size": held to the slider's range, snapped to the step, written as
+ * the clean decimal, removed at the default. */
 export function setWatchWeatherTextScale(document: WatchPagesDocument, pageId: string, tileId: string, value: number): WatchPagesDocument {
   const s = T.weather.textScale;
-  if (typeof value !== "number" || !Number.isFinite(value) || value < s.min - s.step / 2 || value > s.max + s.step / 2) return document;
-  const steps = Math.round(value / s.step);
+  if (typeof value !== "number" || !Number.isFinite(value)) return document;
+  const steps = Math.round(Math.min(s.max, Math.max(s.min, value)) / s.step);
   const snapped = steps / Math.round(1 / s.step);
   return setKey(document, pageId, tileId, s.key, (tile) => (isWeather(tile) ? (Math.abs(snapped - s.auto) < 0.001 ? REMOVE : snapped) : undefined));
 }
@@ -1578,13 +1697,20 @@ export function setWatchWeatherShowIcons(document: WatchPagesDocument, pageId: s
 
 export const setWatchUsePersonPhoto = boolSetter("usePersonPhoto", isKind("person"));
 
-/** Photo or Icon as the watch reads it: absent is Photo, unless the tile has
- * an icon of its own that is not the person default. */
+/** Whether a person tile has an icon of its own (`hasCustomPersonIcon`): a
+ * state icon that is not empty, or an `icon` other than `person`, `""`
+ * included. */
+export function watchHasCustomPersonIcon(tile: WatchPageTile): boolean {
+  const icons = tile.stateIcons;
+  if (isJsonObject(icons) && Object.values(icons).some((v) => typeof v === "string" && v !== "")) return true;
+  return typeof tile.icon === "string" && tile.icon !== "person";
+}
+
+/** Photo or Icon as the watch reads it (`resolvedUsePersonPhoto`): the
+ * stored choice, else Photo unless the tile has an icon of its own. The
+ * preview draws by the same rule. */
 export function watchUsesPersonPhoto(tile: WatchPageTile): boolean {
-  if (typeof tile.usePersonPhoto === "boolean") return tile.usePersonPhoto;
-  const icon = str(tile.icon);
-  const own = WATCH_TILE_DEFAULTS.domains.person?.icon;
-  return icon === undefined || icon === "" || icon === own;
+  return typeof tile.usePersonPhoto === "boolean" ? tile.usePersonPhoto : !watchHasCustomPersonIcon(tile);
 }
 
 /** "Auto-Submit": on writes true, off removes the key. */

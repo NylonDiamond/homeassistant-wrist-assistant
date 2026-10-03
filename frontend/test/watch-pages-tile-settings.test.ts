@@ -119,6 +119,7 @@ import {
   nudgeWatchCameraOffset,
   removeWatchCalendar,
   removeWatchCameraFromGroup,
+  removeWatchGroupCamera,
   removeWatchRemoteLauncher,
   resetWatchRemoteLayout,
   resetWatchSpecialTask,
@@ -462,6 +463,8 @@ function applyPageCase(document: WatchPagesDocument, c: PageSettingsCase): Watch
       return mergeWatchCameraTiles(document, P, c.edit.tileIds as string[], { newId: idsFrom(c.edit.ids) }).document;
     case "cameraCellWeight":
       return setWatchCameraCellWeight(document, P, c.edit.tileId as string, c.edit.index as number, c.edit.delta as number).document;
+    case "cameraGroupRemove":
+      return removeWatchGroupCamera(document, P, c.edit.tileId as string, c.edit.index as number);
     case "cameraUnmerge":
       return unmergeWatchCameraGroup(document, P, c.edit.tileId as string, { newId: idsFrom(c.edit.ids) }).document;
     default:

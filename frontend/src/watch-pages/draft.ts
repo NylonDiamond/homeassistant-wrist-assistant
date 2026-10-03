@@ -14,7 +14,7 @@
 // Plan: app repo docs/pages_in_home_assistant_step3.md ("3b build contract").
 
 import { type WatchPagesDocument, isJsonObject } from "./model.js";
-import { checkWatchPages, mergeWatchPages, sameWatchPagesJson } from "./merge.js";
+import { checkWatchPages, checkWatchPagesValues, mergeWatchPages, sameWatchPagesJson } from "./merge.js";
 import { settleMergedWatchPages } from "./page-settings-model.js";
 
 /** The most undo steps a draft keeps. The oldest goes first. */
@@ -306,7 +306,8 @@ export interface WatchPagesSaveIO {
  * are the server's (`conflict`, `no_record`, `invalid`, `unavailable`), any
  * other code an error carried, `unknown` for an error with none, and `busy`
  * when the draft was already being saved (nothing is sent then).
- * `problems` lists what `checkWatchPages` found when the draft was not sent.
+ * `problems` lists what `checkWatchPages` or `checkWatchPagesValues` found
+ * when the draft was not sent.
  */
 export interface WatchPagesSaveResult {
   ok: boolean;
@@ -338,8 +339,9 @@ function errorMessage(error: unknown): string {
 }
 
 /**
- * Saves the draft. A document `checkWatchPages` finds fault with is not sent
- * (`invalid`). A save that meets `conflict` reads the newest record, rebases
+ * Saves the draft. A document `checkWatchPages` finds fault with, or then
+ * `checkWatchPagesValues` (a value the phone and the watch cannot read), is
+ * not sent (`invalid`). A save that meets `conflict` reads the newest record, rebases
  * the draft onto it and saves again, sending at most
  * `WATCH_PAGES_SAVE_ATTEMPTS` saves in all. A record that cannot be read back
  * (revision 0, or no document object) fails with `no_record`. Every other
@@ -383,7 +385,8 @@ async function runSave(draft: WatchPagesDraft, io: WatchPagesSaveIO): Promise<Wa
     const prepared = io.prepare?.(draft.document);
     if (prepared !== undefined && prepared !== draft.document) draft.apply(prepared);
     const sent = draft.document;
-    const problems = checkWatchPages(sent);
+    const shape = checkWatchPages(sent);
+    const problems = shape.length > 0 ? shape : checkWatchPagesValues(sent);
     if (problems.length > 0) return failed("invalid", problems.join(" "), problems);
     let revision: number;
     try {

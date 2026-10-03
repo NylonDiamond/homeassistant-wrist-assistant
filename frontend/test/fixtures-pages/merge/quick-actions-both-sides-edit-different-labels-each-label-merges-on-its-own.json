@@ -1,0 +1,75 @@
+{
+  "name": "Neither side changed the scripts: the phone renamed the first action and gave it an icon, the server renamed the second and gave it a color. The labels both sides changed merge index by index; the icons and colors only one side changed are that side's",
+  "base": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "58F6BD48-003E-4771-8264-187E8503E16B",
+            "entityId": "remote.lounge_box",
+            "remoteLauncherScriptIds": ["script.launch_netflix", "script.movie_night"],
+            "remoteLauncherLabels": ["Launch Netflix", "Movie Night"],
+            "remoteLauncherIcons": ["app.fill", "app.fill"],
+            "remoteLauncherColors": ["", ""]
+          }
+        ]
+      }
+    ]
+  },
+  "phone": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "58F6BD48-003E-4771-8264-187E8503E16B",
+            "entityId": "remote.lounge_box",
+            "remoteLauncherScriptIds": ["script.launch_netflix", "script.movie_night"],
+            "remoteLauncherLabels": ["Netflix", "Movie Night"],
+            "remoteLauncherIcons": ["tv", "app.fill"],
+            "remoteLauncherColors": ["", ""]
+          }
+        ]
+      }
+    ]
+  },
+  "server": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "58F6BD48-003E-4771-8264-187E8503E16B",
+            "entityId": "remote.lounge_box",
+            "remoteLauncherScriptIds": ["script.launch_netflix", "script.movie_night"],
+            "remoteLauncherLabels": ["Launch Netflix", "Movies"],
+            "remoteLauncherIcons": ["app.fill", "app.fill"],
+            "remoteLauncherColors": ["", "#FF9F0A"]
+          }
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "58F6BD48-003E-4771-8264-187E8503E16B",
+            "entityId": "remote.lounge_box",
+            "remoteLauncherScriptIds": ["script.launch_netflix", "script.movie_night"],
+            "remoteLauncherLabels": ["Netflix", "Movies"],
+            "remoteLauncherIcons": ["tv", "app.fill"],
+            "remoteLauncherColors": ["", "#FF9F0A"]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -70,7 +70,7 @@ import {
 import { watchDecimalOptions, watchStateEmptyText, watchStylingChoices, watchStylingLabel, watchStylingReset, watchStylingSlider } from "./tile-styling.js";
 import { watchPageSwatchTheme } from "./page-settings-model.js";
 import type { TileSettingsHost } from "./editor-host.js";
-import { renderSpecial, specialSummary, watchSpecialSectionTitle } from "./special-settings.js";
+import { forgetSpecialStatus, renderSpecial, specialSummary, watchSpecialSectionTitle } from "./special-settings.js";
 import { findWatchPage } from "./edit.js";
 import { type WatchPagesDocument, tileEntityId, tileKind, watchPageId, watchPageName, watchPagesOf } from "./model.js";
 import {
@@ -257,10 +257,12 @@ function noteKey(host: TileSettingsHost, setting: string): string {
   return `${KEY}:note:${host.tileId.toUpperCase()}:${setting}`;
 }
 
-/** Drop every field's refusal: the selection is changing, and a refusal
- * belongs to the field it was shown by. `<wa-page-editor>` calls this. */
+/** Drop every field's refusal and the special rows' status lines: the
+ * selection is changing, and a refusal belongs to the field it was shown
+ * by. `<wa-page-editor>` calls this. */
 export function forgetTileSettingsNotes(uiState: Map<string, unknown>): void {
   for (const key of [...uiState.keys()]) if (key.startsWith(`${KEY}:note:`)) uiState.delete(key);
+  forgetSpecialStatus(uiState);
 }
 
 /** What a field shows while it is typed in, else undefined. */

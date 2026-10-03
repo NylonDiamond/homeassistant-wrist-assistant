@@ -18,7 +18,7 @@ import { css, html, nothing, type TemplateResult } from "lit";
 import type { EntityRef } from "../model.js";
 import { checkField, colorField, entityField, segField, sliderField, symbolField, textField } from "../editors.js";
 import { uiIcon } from "../ui-icons.js";
-import type { TileSettingsHost } from "./editor-host.js";
+import { type TileSettingsHost, extendHost } from "./editor-host.js";
 import { type WatchPagesDocument, tileEntityId, tileKind, watchPageTiles } from "./model.js";
 import { watchPageSwatchTheme } from "./page-settings-model.js";
 import { watchThemeDisplayName, watchThemeSwatches } from "./tile-new.js";
@@ -36,13 +36,13 @@ import {
   applyWatchVacuumDiscovery,
   centerWatchCameraCellOffset,
   centerWatchCameraOffset,
-  detectWatchCameraRatios,
+  detectWatchCameraRatiosById,
   isWatchTvRemote,
   mergeWatchCameraTiles,
   nudgeWatchCameraCellOffset,
   nudgeWatchCameraOffset,
   removeWatchCalendar,
-  removeWatchCameraFromGroup,
+  removeWatchGroupCamera,
   removeWatchRemoteLauncher,
   resetWatchRemoteLayout,
   resetWatchSpecialTask,
@@ -84,6 +84,7 @@ import {
   watchCalendarIds,
   watchCalendarSourceColor,
   watchCameraGroupSettings,
+  watchCameraMergeIds,
   watchCameraRefreshChoices,
   watchCameraSettings,
   watchEditablePalette,
@@ -102,6 +103,7 @@ import {
   watchSpecialTaskModified,
   watchSuggestedMediaPlayer,
   watchSuggestedTileSizes,
+  watchTileCameraIds,
   watchToggled,
   watchUsesPersonPhoto,
   watchVacuumAttention,
@@ -305,9 +307,12 @@ function renderLaunchers(host: TileSettingsHost): TemplateResult {
     <div class="ts-sub-h"><span>Quick actions</span></div>
     ${checkField("Require confirmation", s.quickConfirm, (on) => commit(host, "quickConfirm", (d) => setWatchRemoteQuickConfirm(d, ...at(host), on)))}
     ${rows.map((row, i) => {
-      const labelSetting = `launcherLabel:${i}`;
-      const iconSetting = `launcherIcon:${i}`;
-      const colorSetting = `launcherColor:${i}`;
+      // Keyed by the row's script and place, so text typed in a row never
+      // shows on another script's row after a remove moves the rows up.
+      const rowKey = `${row.scriptId}:${i}`;
+      const labelSetting = `launcherLabel:${rowKey}`;
+      const iconSetting = `launcherIcon:${rowKey}`;
+      const colorSetting = `launcherColor:${rowKey}`;
       const writeColor = (value: string | null, typing = false) =>
         commit(host, colorSetting, (d) => setWatchRemoteLauncherColor(d, ...at(host), i, value), { typing });
       const custom = (value: string | undefined) => {
@@ -348,6 +353,9 @@ function renderLayout(host: TileSettingsHost): TemplateResult {
   const selected = typeof stored === "number" && stored >= 0 && stored < T.remote.slotCount ? stored : undefined;
   const noteKey = stateKey(host, "layoutNote");
   const note = host.uiState.get(noteKey);
+  // A picked slot whose button the players cannot do says why, as a line,
+  // not only on hover.
+  const selectedReason = selected === undefined || s.layout[selected] === "empty" ? "" : watchRemoteKindAvailability(s.layout[selected]!, players).reason;
   const select = (i: number | undefined) => {
     if (i === undefined) host.uiState.delete(selKey);
     else host.uiState.set(selKey, i);
@@ -380,8 +388,10 @@ function renderLayout(host: TileSettingsHost): TemplateResult {
         const kind = watchRemoteButtonKind(value);
         const a = watchRemoteKindAvailability(value, players);
         const on = selected === i;
+        const name = value === "empty" ? "Empty" : (kind?.label ?? value);
         return html`<button type="button" class="sp-slot ${on ? "on" : ""} ${a.available ? "" : "dim"} ${value === "empty" ? "empty" : ""}"
-          aria-pressed=${on ? "true" : "false"} title=${a.reason || (kind?.label ?? value)} @click=${() => slotClick(i)}>
+          aria-pressed=${on ? "true" : "false"} title=${a.reason || name}
+          aria-label=${`Slot ${i + 1}: ${name}${a.available ? "" : `. ${a.reason}`}`} @click=${() => slotClick(i)}>
           ${kind === undefined || value === "empty" ? nothing : html`<span class="sp-slot-glyph">${glyph(kind.symbol, !a.available) ?? nothing}</span>`}
           <span class="sp-slot-label">${value === "empty" ? "" : (kind?.label ?? value)}</span>
         </button>`;
@@ -390,13 +400,17 @@ function renderLayout(host: TileSettingsHost): TemplateResult {
     <div class="hint">${selected === undefined
       ? s.layoutStored ? "Pick a slot, then a button for it. Pick two slots to swap them." : "The watch's own layout, which swaps Prev and Next for -10s and +10s when the player can seek. Pick a slot to change it."
       : `Slot ${selected + 1}: pick a button below, or another slot to swap with.`}</div>
+    ${selectedReason === "" || typeof note === "string"
+      ? nothing
+      : html`<div class="hint warn" role="status">${watchRemoteButtonKind(s.layout[selected!]!)?.label ?? s.layout[selected!]}: ${selectedReason}.</div>`}
     ${selected === undefined
       ? nothing
       : html`<div class="sp-palette" role="group" aria-label="Buttons">
         ${T.remote.kinds.map((kind) => {
           const a = watchRemoteKindAvailability(kind.value, players);
           return html`<button type="button" class="pe-chip sp-chip ${a.available ? "" : "dim"} ${s.layout[selected] === kind.value ? "on" : ""}"
-            title=${a.reason || kind.category} @click=${() => place(kind.value, a.reason)}>
+            title=${a.reason || kind.category} aria-label=${a.available ? kind.label : `${kind.label}. ${a.reason}`}
+            @click=${() => place(kind.value, a.reason)}>
             ${kind.value === "empty" ? nothing : html`<span class="sp-slot-glyph">${glyph(kind.symbol, !a.available) ?? nothing}</span>`}${kind.label}</button>`;
         })}
       </div>`}
@@ -432,17 +446,69 @@ function pictureOf(host: TileSettingsHost, cameraId: string): string | undefined
   return typeof picture === "string" && picture !== "" ? picture : undefined;
 }
 
-/** Detect Camera Ratio: every camera's snapshot loaded for its size, then
- * the detection as one step. A camera that does not load counts as missing:
- * a single camera then stays as it is, a group's camera counts as 1.78. */
+/** A status line under a special row: its words and the document they are
+ * about. The next edit (an undo too) moves the document on, and the line
+ * goes; a change of the selected tile drops it (`forgetSpecialStatus`). */
+interface SpecialStatus {
+  text: string;
+  document: WatchPagesDocument;
+}
+
+/** The `uiState` key parts of the status lines `forgetSpecialStatus` drops. */
+const STATUS_PARTS = ["detect", "layoutNote", "discoverResult"];
+
+/** Drop every status line of this module: the selection is changing.
+ * `forgetTileSettingsNotes` calls this. */
+export function forgetSpecialStatus(uiState: Map<string, unknown>): void {
+  for (const key of [...uiState.keys()]) {
+    if (STATUS_PARTS.some((part) => key.startsWith(`${KEY}:${part}:`))) uiState.delete(key);
+  }
+}
+
+/** A status line's words while it is still about the document as it is.
+ * One drawn over another document is dropped, so an undo back to the
+ * document it was about does not bring it back. */
+function statusOf(host: TileSettingsHost, what: string): string | undefined {
+  const key = stateKey(host, what);
+  const status = host.uiState.get(key);
+  if (typeof status === "string") return status;
+  const s = status as Partial<SpecialStatus> | undefined;
+  if (s === undefined || typeof s.text !== "string") return undefined;
+  if (s.document === host.document) return s.text;
+  host.uiState.delete(key);
+  return undefined;
+}
+
+/** `host` for another tile of the page (a group just made from the open
+ * camera), so a refusal is filed under that tile. */
+function hostFor(host: TileSettingsHost, tileId: string): TileSettingsHost {
+  if (host.tileId.toUpperCase() === tileId.toUpperCase()) return host;
+  const find = () => watchPageTiles(host.page).find((t) => typeof t.id === "string" && t.id.toUpperCase() === tileId.toUpperCase());
+  return extendHost(host, { tileId: () => tileId, tile: () => find() ?? host.tile });
+}
+
+/**
+ * Detect Camera Ratio: every camera's snapshot loaded for its size, then the
+ * detection as one step, applied by camera id to the cameras the tile holds
+ * then (`detectWatchCameraRatiosById`). A camera that does not load counts as
+ * missing: a single camera then stays as it is, a group's camera counts as
+ * 1.78. Every outcome that is not a plain change is said under the button: a
+ * refusal by the field, a save going on, cameras added meanwhile.
+ */
 export async function detectCameraRatio(host: TileSettingsHost, tileId = host.tileId): Promise<void> {
+  const at = hostFor(host, tileId);
   const find = () => watchPageTiles(host.page).find((t) => typeof t.id === "string" && t.id.toUpperCase() === tileId.toUpperCase());
   const tile = find();
   if (tile === undefined) return;
-  const group = tileKind(tileEntityId(tile)) === "multicam";
-  const cameraIds = group ? watchCameraGroupSettings(tile).cameraIds : [tileEntityId(tile)];
-  const statusKey = `${KEY}:detect:${tileId.toUpperCase()}`;
-  host.uiState.set(statusKey, "Loading the snapshots…");
+  const statusKey = stateKey(at, "detect");
+  const runningKey = stateKey(at, "detecting");
+  const say = (text: string) => {
+    host.uiState.set(statusKey, { text, document: host.document } satisfies SpecialStatus);
+    host.requestUpdate();
+  };
+  const cameraIds = [...new Set(watchTileCameraIds(tile))];
+  host.uiState.delete(statusKey);
+  host.uiState.set(runningKey, true);
   host.requestUpdate();
   const sizes = await Promise.all(cameraIds.map(async (id) => {
     const url = pictureOf(host, id);
@@ -453,29 +519,32 @@ export async function detectCameraRatio(host: TileSettingsHost, tileId = host.ti
       return undefined;
     }
   }));
-  const ratios = sizes.map((size) => watchSnapshotRatio(size) ?? null);
-  const missing = ratios.filter((r) => r === null).length;
-  host.uiState.delete(statusKey);
+  host.uiState.delete(runningKey);
+  const measured = new Map(cameraIds.map((id, i) => [id, watchSnapshotRatio(sizes[i]) ?? null]));
   // Gone while the pictures loaded (an undo, a delete, a merge from the
   // iPhone): nothing to detect on.
-  if (find() === undefined) return host.requestUpdate();
-  if (!group && missing > 0) {
-    host.uiState.set(statusKey, "The snapshot did not load, so nothing changed.");
-    return host.requestUpdate();
-  }
-  commitResize(host, "detect", (d) => detectWatchCameraRatios(d, host.pageId, tileId, ratios));
-  if (group && missing > 0) host.uiState.set(statusKey, `${missing} snapshot${missing === 1 ? "" : "s"} did not load and count${missing === 1 ? "s" : ""} as ${T.camera.detectFallbackRatio}:1.`);
+  const now = find();
+  if (now === undefined) return host.requestUpdate();
+  if (host.busy) return say("The page was saving, so the ratio was not applied. Detect again.");
+  const group = tileKind(tileEntityId(now)) === "multicam";
+  const tried = detectWatchCameraRatiosById(host.document, host.pageId, tileId, measured);
+  if (tried.unmeasured !== undefined) return say("The cameras changed while the snapshots loaded, so nothing changed. Detect again.");
+  if (!group && tried.missing > 0) return say("The snapshot did not load, so nothing changed.");
+  if (tried.refused !== undefined) return commit(at, "detect", (d) => d, { reason: RESIZE_REASONS[tried.refused] });
+  commit(at, "detect", (d) => detectWatchCameraRatiosById(d, host.pageId, tileId, measured).document);
+  const missing = tried.missing;
+  if (group && missing > 0) say(`${missing} snapshot${missing === 1 ? "" : "s"} did not load and count${missing === 1 ? "s" : ""} as ${T.camera.detectFallbackRatio}:1.`);
   host.requestUpdate();
 }
 
 function renderDetect(host: TileSettingsHost, ratio: number | undefined): TemplateResult {
-  const status = host.uiState.get(stateKey(host, "detect"));
-  const running = status === "Loading the snapshots…";
+  const running = host.uiState.get(stateKey(host, "detecting")) === true;
+  const status = running ? "Loading the snapshots…" : statusOf(host, "detect");
   return html`<div class="ts-chips">
       <button type="button" class="pe-chip" ?disabled=${running} @click=${() => void detectCameraRatio(host)}>${ratio === undefined ? "Detect camera ratio" : "Detect again"}</button>
       ${ratio === undefined ? nothing : html`<span class="sp-faint sp-ratio">${watchRatioName(ratio)}</span>`}
     </div>
-    ${typeof status === "string" ? html`<div class="hint" role="status">${status}</div>` : nothing}
+    ${status === undefined ? nothing : html`<div class="hint" role="status">${status}</div>`}
     ${noteOf(host, "detect")}`;
 }
 
@@ -522,7 +591,8 @@ function renderCamera(host: TileSettingsHost): TemplateResult {
 /**
  * The open camera tile and the picked camera and group tiles become one
  * group (the phone's merge, one undo step), the group is selected, and its
- * ratios are detected (a second step, as on the phone). Resolves once the
+ * ratios are detected (a second step, as on the phone) through a host for
+ * the group, so a refusal shows by the group's Detect. Resolves once the
  * detection is in; returns the group's id, or undefined when the merge was
  * refused.
  */
@@ -535,7 +605,7 @@ export async function groupWithCameras(host: TileSettingsHost, tileIds: readonly
   });
   if (groupId === undefined) return undefined;
   host.selectTile(groupId);
-  await detectCameraRatio(host, groupId);
+  await detectCameraRatio(hostFor(host, groupId), groupId);
   return groupId;
 }
 
@@ -550,6 +620,8 @@ function renderGroupWith(host: TileSettingsHost): TemplateResult {
   const pickKey = stateKey(host, "groupWith");
   const raw = host.uiState.get(pickKey);
   const picked = Array.isArray(raw) ? (raw as string[]).filter((id) => others.some((t) => String(t.id).toUpperCase() === id)) : [];
+  // The cameras of the result, each once, as the merge lists them.
+  const count = watchCameraMergeIds(host.page, [host.tileId, ...picked]).length;
   const toggleOne = (id: string) => {
     host.uiState.set(pickKey, watchToggled(picked, id.toUpperCase()));
     host.requestUpdate();
@@ -569,8 +641,8 @@ function renderGroupWith(host: TileSettingsHost): TemplateResult {
           return checkField(tileKind(entityId) === "multicam" ? `${label} (group)` : label, picked.includes(id), () => toggleOne(id));
         })}
         <div class="ts-chips"><button type="button" class="pe-chip" ?disabled=${picked.length === 0} @click=${merge}>
-          ${picked.length === 0 ? "Pick cameras to group" : `Group ${picked.length + 1} cameras`}</button></div>
-        <div class="hint">One tile shows them all, in page order. A group among them keeps its place; else the new group takes this camera's.</div>`}
+          ${picked.length === 0 ? "Pick cameras to group" : `Group ${count} cameras`}</button></div>
+        <div class="hint">One tile shows them all, in page order, each camera once. A group among them keeps its place; else the new group goes to the first free place.</div>`}
   </div>`;
 }
 
@@ -616,7 +688,7 @@ function renderCameraGroup(host: TileSettingsHost): TemplateResult {
           ${g.cameraIds.length >= 2
             ? html`<button type="button" class="sp-icon-btn" aria-label="Remove ${nameOf(host, id)} from the group"
                 title=${g.cameraIds.length === 2 ? "The tile becomes the other camera" : "Remove from the group"}
-                @click=${() => commit(host, "groupRemove", (d) => removeWatchCameraFromGroup(d, ...at(host), i))}>${uiIcon("delete")}</button>`
+                @click=${() => commit(host, "groupRemove", (d) => removeWatchGroupCamera(d, ...at(host), i))}>${uiIcon("delete")}</button>`
             : nothing}</div>
         ${percent === undefined
           ? nothing
@@ -696,6 +768,7 @@ function renderVacuum(host: TileSettingsHost): TemplateResult {
     const id = next.entityId.trim();
     if (id === "") return;
     if (tileKind(id) !== "switch") return commit(host, "vacSwitches", (d) => d, { reason: "Pick a switch." });
+    if (watchVacuumPicks(host.tile).switches.includes(id)) return commit(host, "vacSwitches", (d) => d, { reason: "That switch is linked already." });
     commit(host, "vacSwitches", (d) => setWatchVacuumSwitches(d, ...at(host), [...watchVacuumPicks(host.tile).switches, id]));
   };
   return html`
@@ -825,12 +898,24 @@ function renderCalendars(host: TileSettingsHost): TemplateResult {
 function renderWeather(host: TileSettingsHost): TemplateResult {
   const w = watchWeatherSettings(host.tile);
   const s = T.weather.textScale;
+  // The number box beside the slider: a value it is left with (Enter or a
+  // blur) is held to the range and snapped, and the box then shows what is
+  // stored, so it never keeps a value that was not taken.
+  const settle = (e: Event) => {
+    const box = e.target;
+    if (!(box instanceof HTMLInputElement) || box.type !== "number") return;
+    const typedValue = Number(box.value);
+    if (box.value.trim() !== "" && Number.isFinite(typedValue)) {
+      commit(host, "weatherScale", (d) => setWatchWeatherTextScale(d, ...at(host), typedValue), { typing: true });
+    }
+    box.value = String(watchWeatherSettings(host.tile).textScale);
+  };
   return html`
-    ${typingField(host, "weatherScale", sliderField("Text size", w.textScale, (v) =>
+    <div class="sp-contents" @change=${settle}>${typingField(host, "weatherScale", sliderField("Text size", w.textScale, (v) =>
       commit(host, "weatherScale", (d) => setWatchWeatherTextScale(d, ...at(host), v), { typing: true }), {
       min: s.min, max: s.max, step: s.step, def: s.auto,
       format: (v) => (Math.abs(v - s.auto) < 0.001 ? "Default" : `${Math.round(v * 100)}%`),
-    }), w.textScale)}
+    }), w.textScale)}</div>
     ${checkField("Show icons", w.showIcons, (on) => commit(host, "weatherIcons", (d) => setWatchWeatherShowIcons(d, ...at(host), on)))}
     <div class="hint">Both change the watch's weather detail and forecast rows, not the tile.</div>`;
 }
@@ -869,6 +954,7 @@ export const specialSettingsStyles = css`
   .sp-stepper { display: flex; align-items: center; gap: 8px; }
   .sp-best { font-size: 10.5px; color: var(--wa-accent); font-weight: 600; }
   .sp-ratio { align-self: center; }
+  .sp-contents { display: contents; }
 
   .sp-layout { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px 0; }
   .sp-slot { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 44px;

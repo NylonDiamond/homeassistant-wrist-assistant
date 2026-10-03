@@ -1,0 +1,88 @@
+{
+  "name": "The phone added a calendar while the server removed the primary (which made calendar.work the primary): the phone changed additionalCalendarEntityIds, so the primary, the extras and the colors are the phone's, and calendar.work is never both the primary and an extra",
+  "base": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "58F6BD48-003E-4771-8264-187E8503E16B",
+            "entityId": "calendar.family",
+            "customLabel": "Family",
+            "additionalCalendarEntityIds": ["calendar.work", "calendar.school"],
+            "calendarSourceColors": {
+              "calendar.family": "#36B7A6",
+              "calendar.school": "#E6EEF2",
+              "calendar.work": "#2F79B6"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "phone": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "58F6BD48-003E-4771-8264-187E8503E16B",
+            "entityId": "calendar.family",
+            "customLabel": "Family",
+            "additionalCalendarEntityIds": ["calendar.work", "calendar.school", "calendar.chores"],
+            "calendarSourceColors": {
+              "calendar.family": "#36B7A6",
+              "calendar.school": "#E6EEF2",
+              "calendar.work": "#2F79B6",
+              "calendar.chores": "#F2994A"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "server": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "58F6BD48-003E-4771-8264-187E8503E16B",
+            "entityId": "calendar.work",
+            "customLabel": "Family",
+            "additionalCalendarEntityIds": ["calendar.school"],
+            "calendarSourceColors": {
+              "calendar.school": "#E6EEF2",
+              "calendar.work": "#2F79B6"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "58F6BD48-003E-4771-8264-187E8503E16B",
+            "entityId": "calendar.family",
+            "customLabel": "Family",
+            "additionalCalendarEntityIds": ["calendar.work", "calendar.school", "calendar.chores"],
+            "calendarSourceColors": {
+              "calendar.family": "#36B7A6",
+              "calendar.school": "#E6EEF2",
+              "calendar.work": "#2F79B6",
+              "calendar.chores": "#F2994A"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -15,6 +15,7 @@
 // Plan: app repo docs/pages_in_home_assistant_step3.md ("The sync rule for
 // pages changes to a three-way merge", and "The merge keeps a reorder").
 
+import pageKeys from "./page-keys.json";
 import { type JsonObject, type WatchPagesDocument, isJsonObject } from "./model.js";
 
 /** The key of the page list at the top of the document. */
@@ -224,6 +225,10 @@ export function mergeWatchPagesByKey(
  * - A tile's hold and slide keys merge one direction at a time, each
  *   direction's action, targets and banner settings as one unit
  *   (`mergeSlideDirections`).
+ * - A camera group's cameras with their per-camera lists and columns, a
+ *   remote's four quick action lists, and a calendar tile's calendars with
+ *   their colors merge as one unit each, keyed on the list the others follow
+ *   (`mergeListUnit`), so the lists never come apart.
  * - A page or tile one side deleted is gone when the other side left it as it
  *   was in `base`, and stays, as the other side has it, when that side
  *   changed it.
@@ -375,8 +380,124 @@ function mergeElement(
     );
   } else {
     mergeSlideDirections(merged, base, local, server);
+    for (const unit of WATCH_PAGES_LIST_UNITS) mergeListUnit(unit, merged, base, local, server);
   }
   return shareWhole(merged, server, local);
+}
+
+// ── parallel lists ───────────────────────────────────────────────────────
+
+/**
+ * A tile's lists that hold one entry per id of a key list, merged as one
+ * unit (the app's `WatchConfigMirrorRule.listUnits`).
+ */
+export interface WatchPagesListUnit {
+  /** The key list. A side that changed it since `base` moved the unit. */
+  ids: string;
+  /** Lists with one entry per id, at the same index, each with the value a
+   * missing entry reads as (what the editors pad with). */
+  parallel: readonly (readonly [string, unknown])[];
+  /** Maps with one entry per id, keyed by the id. */
+  keyed: readonly string[];
+  /** Further keys the side that moved the unit decides. */
+  with: readonly string[];
+}
+
+/**
+ * The camera group (the four per camera lists, the grid's columns, and
+ * `entityId`, which turns from `multicam.` to `camera.` when a remove leaves
+ * one camera), the quick actions, and the calendars (the primary moves when
+ * it is removed, and each calendar's color).
+ */
+export const WATCH_PAGES_LIST_UNITS: readonly WatchPagesListUnit[] = [
+  {
+    ids: "cameraGroupIds",
+    parallel: [["cameraRowWeights", 1], ["cameraFillModes", "fill"], ["cameraFillOffsetsX", 0], ["cameraFillOffsetsY", 0]],
+    keyed: [],
+    with: ["cameraGridColumns", "entityId"],
+  },
+  {
+    ids: "remoteLauncherScriptIds",
+    parallel: [["remoteLauncherLabels", ""], ["remoteLauncherIcons", "app.fill"], ["remoteLauncherColors", ""]],
+    keyed: [],
+    with: [],
+  },
+  {
+    ids: "additionalCalendarEntityIds",
+    parallel: [],
+    keyed: ["calendarSourceColors"],
+    with: ["entityId"],
+  },
+];
+
+/** A keyed map's entries: none for an absent map, undefined when the value
+ * is not an object. */
+function keyedEntries(value: unknown): JsonObject | undefined {
+  const map = present(value);
+  if (map === undefined) return {};
+  return isJsonObject(map) ? map : undefined;
+}
+
+/**
+ * The list units of a tile both sides hold, over the key by key result in
+ * `merged`, local first as for a slide direction:
+ *
+ * - Local changed the unit's key list since `base`: every key of the unit is
+ *   local's, a key local has none of removed.
+ * - Else the server changed it: every key is the server's.
+ * - Else neither did. A parallel list both sides changed, both holding a
+ *   list, merges index by index: local's entry where local has one that
+ *   differs from the base's (a missing base entry reads as the pad), else the
+ *   server's, else local's; as long as the longer side's list, never past the
+ *   key list. A keyed map both sides changed, both (and the base) holding an
+ *   object or nothing, merges entry by entry: local's where it differs from
+ *   the base's, else the server's; an empty map is removed. Every other key
+ *   stays as the key by key rule left it.
+ */
+function mergeListUnit(unit: WatchPagesListUnit, merged: JsonObject, base: JsonObject, local: JsonObject, server: JsonObject): void {
+  const localMoved = !sameWatchPagesJson(own(local, unit.ids), own(base, unit.ids));
+  const serverMoved = !sameWatchPagesJson(own(server, unit.ids), own(base, unit.ids));
+  if (localMoved || serverMoved) {
+    const winner = localMoved ? local : server;
+    for (const key of [unit.ids, ...unit.parallel.map(([k]) => k), ...unit.keyed, ...unit.with]) {
+      setOrRemove(merged, key, present(own(winner, key)));
+    }
+    return;
+  }
+  const bothChanged = (key: string) =>
+    !sameWatchPagesJson(own(local, key), own(base, key)) && !sameWatchPagesJson(own(server, key), own(base, key));
+  const ids = present(own(local, unit.ids));
+  if (Array.isArray(ids)) {
+    for (const [key, pad] of unit.parallel) {
+      if (!bothChanged(key)) continue;
+      const mine = present(own(local, key));
+      const theirs = present(own(server, key));
+      if (!Array.isArray(mine) || !Array.isArray(theirs)) continue;
+      const old = present(own(base, key));
+      const before = Array.isArray(old) ? old : [];
+      const count = Math.min(ids.length, Math.max(mine.length, theirs.length));
+      const entries = Array.from({ length: count }, (_, i) => {
+        const was = i < before.length ? before[i] : pad;
+        if (i < mine.length && !sameWatchPagesJson(mine[i], was)) return mine[i];
+        return i < theirs.length ? theirs[i] : mine[i];
+      });
+      setOrRemove(merged, key, sameWatchPagesJson(entries, theirs) ? theirs : sameWatchPagesJson(entries, mine) ? mine : entries);
+    }
+  }
+  for (const key of unit.keyed) {
+    if (!bothChanged(key)) continue;
+    const mine = keyedEntries(own(local, key));
+    const theirs = keyedEntries(own(server, key));
+    const old = keyedEntries(own(base, key));
+    if (mine === undefined || theirs === undefined || old === undefined) continue;
+    const entries: JsonObject = {};
+    const names = new Set([...Object.keys(old), ...Object.keys(mine), ...Object.keys(theirs)]);
+    for (const name of names) {
+      const picked = sameWatchPagesJson(own(mine, name), own(old, name)) ? own(theirs, name) : own(mine, name);
+      if (present(picked) !== undefined) put(entries, name, picked);
+    }
+    setOrRemove(merged, key, Object.keys(entries).length === 0 ? undefined : entries);
+  }
 }
 
 // ── hold and slide ───────────────────────────────────────────────────────
@@ -543,6 +664,151 @@ export function checkWatchPages(document: unknown): string[] {
       }
       const entityId = own(tile, "entityId");
       if (typeof entityId !== "string" || entityId === "") problems.push(`${where} has no entity.`);
+    });
+  });
+  return problems;
+}
+
+// ── value check ──────────────────────────────────────────────────────────
+
+/** A key's spec in `page-keys.json`, as far as the value check reads it. */
+interface ValueSpec {
+  type: string;
+  of?: string;
+  enum?: string;
+  strict?: boolean;
+  empty?: boolean;
+  ref?: string;
+}
+
+const VALUE_TYPES = pageKeys as unknown as {
+  enums: Record<string, string[]>;
+  types: Record<string, { keys: Record<string, ValueSpec> }>;
+};
+
+const HEX = /^#?[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?$/;
+
+/** The color names older documents can hold (`page-keys.json` notes). */
+const COLOR_NAMES: ReadonlySet<string> = new Set(["yellow", "blue", "red", "green", "purple", "orange", "white"]);
+
+/** Whether a color is one the phone writes or has written: `#RRGGBB` or
+ * `#RRGGBBAA` with or without `#`, a two color gradient, `#RAINBOW`,
+ * `#THEME`, an old color name, and `""` only where the key allows empty. */
+function colorReadable(value: string, empty: boolean): boolean {
+  if (value === "") return empty;
+  if (HEX.test(value) || value === "#RAINBOW" || value === "#THEME" || COLOR_NAMES.has(value)) return true;
+  const parts = value.split("|");
+  return parts.length === 3 && parts[0] === "GRADIENT" && HEX.test(parts[1]!) && HEX.test(parts[2]!);
+}
+
+/** What is wrong with one value of a type (`type` is the spec's own type,
+ * or its `of` for an element), as words after the key; undefined when the
+ * phone reads it. An object of a known kind is checked key by key into
+ * `problems`. */
+function valueProblem(type: string, spec: ValueSpec, value: unknown, where: string, problems: string[]): string | undefined {
+  switch (type) {
+    case "bool":
+      return typeof value === "boolean" ? undefined : "is not true or false";
+    case "number":
+      return typeof value === "number" && Number.isFinite(value) ? undefined : "is not a number";
+    case "int":
+      return Number.isInteger(value) ? undefined : "is not a whole number";
+    case "string":
+    case "symbol":
+    case "uuid":
+    case "entity":
+      return typeof value === "string" ? undefined : "is not text";
+    case "color":
+      if (typeof value !== "string") return "is not a color";
+      return colorReadable(value, spec.empty === true) ? undefined : `holds the color ${JSON.stringify(value)}`;
+    case "enum": {
+      if (typeof value !== "string") return "is not text";
+      if (spec.strict === false) return undefined;
+      const allowed = VALUE_TYPES.enums[spec.enum ?? ""];
+      return allowed === undefined || allowed.includes(value) ? undefined : `holds ${JSON.stringify(value)}, which is not one of its choices`;
+    }
+    case "object":
+      if (!isJsonObject(value)) return "is not an object";
+      if (spec.ref !== undefined) checkObjectValues(spec.ref, value, where, problems);
+      return undefined;
+    default:
+      return undefined;
+  }
+}
+
+/** Every known key of an object of a `page-keys.json` type, into
+ * `problems`. `where` names the object. Lists of pages and tiles are left to
+ * `checkWatchPagesValues`, which names their elements. */
+function checkObjectValues(typeName: string, object: JsonObject, where: string, problems: string[]): void {
+  const keys = VALUE_TYPES.types[typeName]?.keys;
+  if (keys === undefined) return;
+  for (const [key, spec] of Object.entries(keys)) {
+    if (key === PAGES_KEY && typeName === "document") continue;
+    if (key === ITEMS_KEY && typeName === "page") continue;
+    const value = present(own(object, key));
+    if (value === undefined) continue;
+    // `part` names an element after the key: ", entry 2".
+    const check = (type: string, element: unknown, part: string): boolean => {
+      const at = `${where}: ${key}${part}`;
+      const problem = valueProblem(type, spec, element, at, problems);
+      if (problem !== undefined) problems.push(`${at} ${problem}.`);
+      return problem === undefined;
+    };
+    const fail = (problem: string) => problems.push(`${where}: ${key} ${problem}.`);
+    if (spec.type === "array") {
+      if (!Array.isArray(value)) fail("is not a list");
+      else value.every((element, i) => check(spec.of ?? "", element, `, entry ${i + 1}`));
+    } else if (spec.type === "map") {
+      if (!isJsonObject(value)) fail("is not an object");
+      else Object.entries(value).every(([name, element]) => check(spec.of ?? "", element, ` for ${JSON.stringify(name)}`));
+    } else if (spec.type === "slideMap") {
+      const directions = VALUE_TYPES.enums.SlideDirection ?? [];
+      if (!Array.isArray(value) || value.length % 2 !== 0) fail("is not a list of directions and values");
+      else for (let i = 0; i < value.length; i += 2) {
+        const direction: unknown = value[i];
+        if (typeof direction !== "string" || !directions.includes(direction)) {
+          fail(`holds the direction ${JSON.stringify(direction)}`);
+          break;
+        }
+        if (!check(spec.of ?? "", value[i + 1], ` for ${direction}`)) break;
+      }
+    } else {
+      check(spec.type, value, "");
+    }
+  }
+}
+
+/** A tile as a problem names it: its place, counted from 1, and its entity. */
+function tileLabel(index: number, tile: JsonObject): string {
+  const entityId = own(tile, "entityId");
+  return typeof entityId === "string" && entityId !== "" ? `tile ${index + 1} (${entityId})` : `tile ${index + 1}`;
+}
+
+/**
+ * The values that would make the document unreadable on the phone and the
+ * watch, in plain words naming the page, the tile and the key, or an empty
+ * list. Every key `page-keys.json` knows is checked, at every depth, by its
+ * type: a strict enum holds one of its choices, a bool, number, whole number
+ * or text the same in JSON, a color one the phone writes (`""` only where
+ * the key says `empty`), each element of a list or map, each direction of a
+ * slide map. Keys it does not know, and `null`, are left alone, as the phone
+ * leaves them. Run over the whole document before a save, after
+ * `checkWatchPages`.
+ */
+export function checkWatchPagesValues(document: unknown): string[] {
+  if (!isJsonObject(document)) return [];
+  const problems: string[] = [];
+  checkObjectValues("document", document, "The page config", problems);
+  const pages = own(document, PAGES_KEY);
+  if (!Array.isArray(pages)) return problems;
+  pages.forEach((page: unknown, index) => {
+    if (!isJsonObject(page)) return;
+    const label = pageLabel(index, page);
+    checkObjectValues("page", page, label, problems);
+    const items = own(page, ITEMS_KEY);
+    if (!Array.isArray(items)) return;
+    items.forEach((tile: unknown, tileIndex) => {
+      if (isJsonObject(tile)) checkObjectValues("tile", tile, `${label}, ${tileLabel(tileIndex, tile)}`, problems);
     });
   });
   return problems;

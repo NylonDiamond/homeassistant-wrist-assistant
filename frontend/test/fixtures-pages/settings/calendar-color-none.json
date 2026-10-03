@@ -1,6 +1,6 @@
 {
   "name": "None on the only colored calendar removes the map",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1126",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1138",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

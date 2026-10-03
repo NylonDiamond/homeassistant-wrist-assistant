@@ -684,7 +684,7 @@
       "mergeName": "A merge or an add names a camera by its id without camera., _ as spaces, in Foundation's capitalized; more than manyAbove cameras is \"<n> Cameras\". The add rewrites the label over one the person typed.",
       "removeName": "A remove names every camera left by its object id (after the last .) made readable the same way, joined \" + \"."
     },
-    "merge": "The phone merges camera tiles chosen together; the panel takes the open camera or group tile and the camera and group tiles picked to go with it, in page order. Needs two or more camera and group tiles. Camera ids: each group's cameraGroupIds in page order, with its cameraRowWeights, cameraFillModes, cameraFillOffsetsX, cameraFillOffsetsY at the same index (padded with 1, fill, 0, 0); then each camera tile with weight 1, its cameraFillMode (absent: fill) and its offsets. With a group among them the first group in page order keeps its id, place and every other key, takes the five arrays and the label, and every other chosen tile is removed. With only cameras a new tile (newTile, the arrays, the label) takes the place of the first chosen tile in page order, the cameras are removed and it is appended last. Detection then runs on the group.",
+    "merge": "The phone merges camera tiles chosen together; the panel takes the open camera or group tile and the camera and group tiles picked to go with it, in page order. Needs two or more camera and group tiles. Camera ids: each group's cameraGroupIds in page order, with its cameraRowWeights, cameraFillModes, cameraFillOffsetsX, cameraFillOffsetsY at the same index (padded with 1, fill, 0, 0); then each camera tile with weight 1, its cameraFillMode (absent: fill) and its offsets. With a group among them the first group in page order keeps its id, place and every other key, takes the five arrays and the label, and every other chosen tile is removed. With only cameras the cameras are removed, then a new tile (newTile, the arrays, the label) takes the first free place (tile-defaults.json, as the add places a tile) among the tiles left and is appended last. Detection then runs on the group.",
     "detection": "Detection on a group, with one ratio per camera (a snapshot that does not load is detectFallbackRatio). The mean ratio over 2: cameraGridColumns 1; over 1.2: the smaller of 2 and the camera count; else the columns of the automatic grid (1 or 2 cameras: 1, else ceil(sqrt(n))). Rows: ceil(n / columns). cameraRowWeights: 1 / ratio each. Width: the page's columns; cell width: width / columns. Height: with one column the sum of max(1, cellWidth / ratio), else rows * max(1, cellWidth / mean), rounded, at least rowSpanMin. Writes cameraAspectRatio (the first ratio that loaded, untouched when none did), cameraGridColumns, cameraRowWeights, cameraFillMode fill, cameraFillModes all fill; gridCol 0 when it passes the columns; then the resize to width by height, pushing the tiles it overlaps down.",
     "add": "Add Camera picks from every camera; the picks already in the group are skipped, the others appended to cameraGroupIds; cameraRowWeights gains 1 for each (made from [] when absent); cameraFillModes gains fill and both offset arrays 0, only when they exist; then the label (labels).",
     "remove": "Remove, offered with two cameras or more, drops the index from all five arrays. Two or more left: the arrays, cameraFillModes and the offset arrays removed when empty, cameraRowWeights kept even empty, the label joined \" + \". One left: entityId becomes that camera; cameraGroupIds, cameraRowWeights, cameraFillModes, both offset arrays and multiCamTapMode removed; cameraFillMode the slot's mode (else fill), cameraFillOffsetX and Y the slot's offsets (else 0); multiCamBorderEnabled false; customLabel the camera's object id made readable. Icon, color and display mode stay.",
@@ -808,7 +808,43 @@
         "icon": "person.fill"
       }
     ],
-    "absent": "Photo, unless the tile has its own icon (one that is not the person domain's default), then Icon.",
+    "absent": "Photo, unless the tile has its own icon, then Icon: an icon that is set and is not person (\"\" counts as its own), or any stateIcons entry that is not \"\". The watch reads it the same way (resolvedUsePersonPhoto).",
+    "absentSamples": [
+      {
+        "icon": "person",
+        "stateIcons": null,
+        "photo": true
+      },
+      {
+        "icon": null,
+        "stateIcons": null,
+        "photo": true
+      },
+      {
+        "icon": "figure.walk",
+        "stateIcons": null,
+        "photo": false
+      },
+      {
+        "icon": "",
+        "stateIcons": null,
+        "photo": false
+      },
+      {
+        "icon": "person",
+        "stateIcons": {
+          "home": "house.fill"
+        },
+        "photo": false
+      },
+      {
+        "icon": "person",
+        "stateIcons": {
+          "home": ""
+        },
+        "photo": true
+      }
+    ],
     "write": "Always written, true or false."
   },
   "alarm": {

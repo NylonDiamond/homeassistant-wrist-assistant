@@ -1,0 +1,75 @@
+{
+  "name": "The phone removed the first quick action while the server gave it a star icon: the phone changed remoteLauncherScriptIds, so all four lists are the phone's and the star never lands on the second script",
+  "base": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "58F6BD48-003E-4771-8264-187E8503E16B",
+            "entityId": "remote.lounge_box",
+            "remoteLauncherScriptIds": ["script.launch_netflix", "script.movie_night"],
+            "remoteLauncherLabels": ["Launch Netflix", "Movie Night"],
+            "remoteLauncherIcons": ["app.fill", "app.fill"],
+            "remoteLauncherColors": ["", ""]
+          }
+        ]
+      }
+    ]
+  },
+  "phone": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "58F6BD48-003E-4771-8264-187E8503E16B",
+            "entityId": "remote.lounge_box",
+            "remoteLauncherScriptIds": ["script.movie_night"],
+            "remoteLauncherLabels": ["Movie Night"],
+            "remoteLauncherIcons": ["app.fill"],
+            "remoteLauncherColors": [""]
+          }
+        ]
+      }
+    ]
+  },
+  "server": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "58F6BD48-003E-4771-8264-187E8503E16B",
+            "entityId": "remote.lounge_box",
+            "remoteLauncherScriptIds": ["script.launch_netflix", "script.movie_night"],
+            "remoteLauncherLabels": ["Launch Netflix", "Movie Night"],
+            "remoteLauncherIcons": ["star.fill", "app.fill"],
+            "remoteLauncherColors": ["", ""]
+          }
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "58F6BD48-003E-4771-8264-187E8503E16B",
+            "entityId": "remote.lounge_box",
+            "remoteLauncherScriptIds": ["script.movie_night"],
+            "remoteLauncherLabels": ["Movie Night"],
+            "remoteLauncherIcons": ["app.fill"],
+            "remoteLauncherColors": [""]
+          }
+        ]
+      }
+    ]
+  }
+}

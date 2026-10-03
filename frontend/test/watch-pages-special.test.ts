@@ -8,28 +8,35 @@ import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
+import settingsCatalog from "../src/watch-settings-catalog.json";
 import type { WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-pages/model.js";
 import { type WatchPagesApplyOptions, WatchPagesDraft } from "../src/watch-pages/draft.js";
 import { NO_ICONS, type TileSettingsHost } from "../src/watch-pages/editor-host.js";
 import { watchTileSettingsSections } from "../src/watch-pages/tile-settings-options.js";
+import { forgetTileSettingsNotes } from "../src/watch-pages/tile-settings.js";
 import { detectCameraRatio, groupWithCameras, specialSummary, watchSpecialSectionTitle } from "../src/watch-pages/special-settings.js";
 import {
   WATCH_SPECIAL,
   WATCH_SPECIAL_SETTING_KEYS,
   addWatchCalendars,
   detectWatchCameraRatios,
+  detectWatchCameraRatiosById,
   isWatchTvRemote,
   mergeWatchCameraTiles,
   removeWatchCameraFromGroup,
+  removeWatchGroupCamera,
   resetWatchSpecialTask,
+  setWatchCameraCellWeight,
   setWatchCameraFill,
   setWatchRemoteLauncherColor,
   setWatchRemoteMediaPlayer,
   setWatchUsePersonPhoto,
   setWatchVacuumEntity,
+  setWatchWeatherTextScale,
   watchBatterySensors,
   watchBestFitTileSize,
   watchCameraGroupLabel,
+  watchCameraMergeIds,
   watchCameraRefreshChoices,
   watchCameraRefreshDefaults,
   watchCleaningModeAutoDetectable,
@@ -96,6 +103,13 @@ describe("the special table", () => {
     expect(watchSpecialTask(tile("media_player.lounge_tv"), tv)).toEqual({ task: "data", title: "Remote", kind: "remote" });
     // A TV with a remote of its own stays a media player.
     expect(isWatchTvRemote("media_player.lounge_tv", { ...tv, "remote.lounge_tv": { state: "on" } })).toBe(false);
+    // The watch also draws an LG or webOS id as a remote, whatever its state
+    // says (RemotePlatform.detect), so the Remote task shows for it too.
+    expect(isWatchTvRemote("media_player.LG_OLED", undefined)).toBe(true);
+    expect(isWatchTvRemote("media_player.bedroom_webos", {})).toBe(true);
+    expect(watchSpecialTask(tile("media_player.lg_c3"))).toEqual({ task: "data", title: "Remote", kind: "remote" });
+    expect(isWatchTvRemote("light.lg_strip", undefined)).toBe(false);
+    expect(isWatchTvRemote("media_player.kitchen", {})).toBe(false);
   });
 });
 
@@ -204,6 +218,10 @@ describe("camera sizes and words", () => {
   });
 
   it("words the refresh default from the behavior document", () => {
+    // Absent keys read as the behavior catalog's defaults.
+    const catalog = (settingsCatalog as { sections: { settings: { key: string; default?: unknown }[] }[] }).sections.flatMap((s) => s.settings);
+    const defaultOf = (key: string) => catalog.find((s) => s.key === key)?.default;
+    expect(watchCameraRefreshDefaults(undefined)).toEqual({ on: defaultOf("cameraRefreshOnOpen"), debounce: defaultOf("cameraRefreshOnOpenDebounce") });
     expect(watchCameraRefreshDefaults(undefined)).toEqual({ on: true, debounce: "10s" });
     expect(watchCameraRefreshDefaults({ cameraRefreshOnOpen: false })).toEqual({ on: false, debounce: "10s" });
     expect(watchCameraRefreshChoices(true, "30s").map((c) => c.label)).toEqual(["Default (On/30s)", "On", "Off"]);
@@ -284,6 +302,13 @@ describe("vacuum discovery and attention", () => {
     expect(watchUsesPersonPhoto(tile("person.alex"))).toBe(true);
     expect(watchUsesPersonPhoto(tile("person.alex", { icon: "star" }))).toBe(false);
     expect(watchUsesPersonPhoto(tile("person.alex", { icon: "star", usePersonPhoto: true }))).toBe(true);
+    // The watch's own samples (`resolvedUsePersonPhoto`): "" and a state
+    // icon count as an icon of the tile's own.
+    expect(WATCH_SPECIAL.person.absentSamples.length).toBeGreaterThanOrEqual(6);
+    for (const s of WATCH_SPECIAL.person.absentSamples) {
+      const t = tile("person.alex", { ...(s.icon === null ? {} : { icon: s.icon }), ...(s.stateIcons === null ? {} : { stateIcons: s.stateIcons }) });
+      expect(watchUsesPersonPhoto(t), JSON.stringify(s)).toBe(s.photo);
+    }
   });
 });
 
@@ -324,6 +349,84 @@ describe("refusals return the document as given", () => {
       { id: "T2", entityId: "light.top", gridCol: 0, gridRow: 0, colSpan: 6, rowSpan: 4 },
     ));
     expect(detectWatchCameraRatios(doc, PAGE_ID, "C1", [16 / 9])).toEqual({ document: doc, refused: "overlap" });
+  });
+
+  it("but not for an overlap that was there before the edit", () => {
+    // A group placed over a tile that starts above it (as an older merge
+    // did): its height and its detection still work, and an overlap with
+    // another tile is still refused.
+    const group = { id: "G1", entityId: "multicam.X", cameraGroupIds: ["camera.a", "camera.b"], cameraRowWeights: [1, 1], gridCol: 0, gridRow: 2, colSpan: 4, rowSpan: 4 };
+    const doc = documentWith(pageOf(
+      { id: "T1", entityId: "light.top", gridCol: 0, gridRow: 0, colSpan: 4, rowSpan: 4 },
+      group,
+      { id: "T2", entityId: "light.side", gridCol: 4, gridRow: 0, colSpan: 8, rowSpan: 12 },
+    ));
+    const lower = setWatchCameraCellWeight(doc, PAGE_ID, "G1", 0, -0.2);
+    expect(lower.refused).toBeUndefined();
+    const items = (lower.document.pages as WatchPage[])[0]!.items as Json[];
+    expect(items[1]).toMatchObject({ cameraRowWeights: [0.8, 1], rowSpan: 4 });
+    // Detection widens the group to 12 columns, over the tall tile beside it.
+    expect(detectWatchCameraRatios(doc, PAGE_ID, "G1", [16 / 9, 16 / 9]).refused).toBe("overlap");
+  });
+});
+
+describe("a merge of cameras", () => {
+  it("puts a new group at the first free place once the cameras are gone, and lists each camera once", () => {
+    const doc = documentWith(pageOf(
+      { id: "L1", entityId: "light.a", gridCol: 0, gridRow: 0, colSpan: 4, rowSpan: 6 },
+      { id: "C1", entityId: "camera.a", gridCol: 4, gridRow: 4, colSpan: 2, rowSpan: 2 },
+      { id: "G1", entityId: "multicam.X", cameraGroupIds: ["camera.a", "camera.b"], gridCol: 8, gridRow: 0, colSpan: 4, rowSpan: 4 },
+      { id: "C2", entityId: "camera.c", gridCol: 4, gridRow: 0, colSpan: 4, rowSpan: 2 },
+    ));
+    const page = (doc.pages as WatchPage[])[0]!;
+    expect(watchCameraMergeIds(page, ["C1", "G1"])).toEqual(["camera.a", "camera.b"]);
+    const grouped = mergeWatchCameraTiles(doc, PAGE_ID, ["C1", "G1"]);
+    expect(((grouped.document.pages as WatchPage[])[0]!.items as Json[]).find((t) => t.id === "G1")!.cameraGroupIds).toEqual(["camera.a", "camera.b"]);
+    const ids = ["E", "N"];
+    const fresh = mergeWatchCameraTiles(doc, PAGE_ID, ["C1", "C2"], { newId: () => ids.shift()! });
+    const items = (fresh.document.pages as WatchPage[])[0]!.items as Json[];
+    expect(items.map((t) => t.id)).toEqual(["L1", "G1", "N"]);
+    // The cameras' own places are free again: the first 4 by 4 free place is
+    // at column 4, row 0.
+    expect(items[2]).toMatchObject({ gridCol: 4, gridRow: 0, colSpan: 4, rowSpan: 4 });
+  });
+
+  it("removes a group's last camera with the tile", () => {
+    const doc = documentWith(pageOf({ id: "G1", entityId: "multicam.X", cameraGroupIds: ["camera.a"] }, { id: "L1", entityId: "light.a" }));
+    const out = removeWatchGroupCamera(doc, PAGE_ID, "G1", 0);
+    expect(((out.pages as WatchPage[])[0]!.items as Json[]).map((t) => t.id)).toEqual(["L1"]);
+  });
+});
+
+describe("detection by camera id", () => {
+  const group = (ids: string[]) => documentWith(pageOf({ id: "G1", entityId: "multicam.X", cameraGroupIds: ids, gridCol: 0, gridRow: 0, colSpan: 4, rowSpan: 4 }));
+  const measured = new Map<string, number | null>([["camera.a", 2.4], ["camera.b", null]]);
+
+  it("applies each ratio to its camera wherever it is now", () => {
+    const swapped = detectWatchCameraRatiosById(group(["camera.b", "camera.a"]), PAGE_ID, "G1", measured);
+    const byPosition = detectWatchCameraRatios(group(["camera.b", "camera.a"]), PAGE_ID, "G1", [null, 2.4]);
+    expect(swapped.document).toEqual(byPosition.document);
+    expect(swapped.missing).toBe(1);
+  });
+
+  it("skips a camera that left the group, and changes nothing for one that was not measured", () => {
+    const left = detectWatchCameraRatiosById(group(["camera.a"]), PAGE_ID, "G1", measured);
+    expect(left.document).toEqual(detectWatchCameraRatios(group(["camera.a"]), PAGE_ID, "G1", [2.4]).document);
+    expect(left.missing).toBe(0);
+    const doc = group(["camera.a", "camera.c"]);
+    expect(detectWatchCameraRatiosById(doc, PAGE_ID, "G1", measured)).toEqual({ document: doc, unmeasured: ["camera.c"], missing: 0 });
+  });
+});
+
+describe("weather text size", () => {
+  it("holds a typed value to the slider's range and snaps it", () => {
+    const doc = documentWith(pageOf({ id: "W1", entityId: "weather.home" }));
+    const scale = (v: number) => ((setWatchWeatherTextScale(doc, PAGE_ID, "W1", v).pages as WatchPage[])[0]!.items as Json[])[0]!.weatherDetailTextScale;
+    expect(scale(0.4)).toBe(1);
+    expect(scale(2.5)).toBe(2);
+    expect(scale(1.17)).toBe(1.15);
+    expect(scale(1.5)).toBeUndefined();
+    expect(setWatchWeatherTextScale(doc, PAGE_ID, "W1", Number.NaN)).toBe(doc);
   });
 });
 
@@ -393,11 +496,49 @@ describe("the camera flows", () => {
     expect(draft.undoDepth).toBe(1);
   });
 
-  it("leaves a camera whose picture does not load as it is, and says so", async () => {
+  it("leaves a camera whose picture does not load as it is, and says so until the next edit or selection", async () => {
     const { draft, host } = draftHost(pageOf(camera("C1", "camera.front", 0, 0)), "C1", {}, states);
     await detectCameraRatio(host);
     expect(draft.undoDepth).toBe(0);
-    expect(host.uiState.get("special:detect:C1")).toBe("The snapshot did not load, so nothing changed.");
+    // The line is about the document as it was: an edit moves past it.
+    expect(host.uiState.get("special:detect:C1")).toEqual({ text: "The snapshot did not load, so nothing changed.", document: draft.document });
+    forgetTileSettingsNotes(host.uiState);
+    expect(host.uiState.has("special:detect:C1")).toBe(false);
+  });
+
+  it("says why a detection that ends during a save was not applied", async () => {
+    const { draft, host } = draftHost(pageOf(camera("C1", "camera.front", 0, 0)), "C1", pictures, states);
+    let busy = false;
+    Object.defineProperty(host, "busy", { get: () => busy });
+    const loading = detectCameraRatio(host);
+    busy = true;
+    await loading;
+    expect(draft.undoDepth).toBe(0);
+    expect((host.uiState.get("special:detect:C1") as { text: string }).text).toMatch(/saving/);
+  });
+
+  it("shows a refused detection after a merge by the new group's Detect", async () => {
+    // The new group takes the first free place, row 1, under a tile that
+    // starts at row 0; detection widens it over the tall tile beside it.
+    const { draft, host, page } = draftHost(pageOf(
+      { id: "L0", entityId: "light.top", gridCol: 0, gridRow: 0, colSpan: 8, rowSpan: 1 },
+      { id: "T1", entityId: "light.tall", gridCol: 8, gridRow: 0, colSpan: 4, rowSpan: 12 },
+      { ...camera("C1", "camera.front", 0, 1), colSpan: 4 },
+      { ...camera("C2", "camera.back", 4, 1), colSpan: 4 },
+    ), "C1", pictures, states);
+    const groupId = await groupWithCameras(host, ["C2"]);
+    const group = (page().items as Json[]).find((t) => t.id === groupId)!;
+    expect(group).toMatchObject({ gridCol: 0, gridRow: 1, colSpan: 4, rowSpan: 4 });
+    expect(draft.undoDepth).toBe(1);
+    expect(host.uiState.get(`tile-settings:note:${groupId!.toUpperCase()}:detect`)).toMatch(/no room/);
+  });
+
+  it("counts the cameras of the result on the group button", () => {
+    const { host } = draftHost(pageOf(
+      camera("C1", "camera.front", 0, 0),
+      { id: "G1", entityId: "multicam.X", cameraGroupIds: ["camera.front", "camera.side", "camera.yard"], gridCol: 6, gridRow: 0, colSpan: 6, rowSpan: 4 },
+    ), "C1", pictures, states);
+    expect(watchCameraMergeIds(host.page, ["C1", "G1"])).toHaveLength(3);
   });
 
   it("groups cameras, selects the group and detects it: two undo steps, as on the phone", async () => {

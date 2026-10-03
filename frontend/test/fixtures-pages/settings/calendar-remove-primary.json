@@ -1,6 +1,6 @@
 {
   "name": "Remove the primary: the first extra takes its place, the label stays",
-  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1111",
+  "source": "WristAssistant/Views/PageEditor/SpecialTileRules.swift:1123",
   "tile": {
     "additionalCalendarEntityIds": ["calendar.work", "calendar.school"],
     "animationIntensity": 1,

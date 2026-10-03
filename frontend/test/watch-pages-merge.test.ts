@@ -14,6 +14,7 @@ import type { JsonObject, WatchPagesDocument } from "../src/watch-pages/model.js
 import {
   WATCH_PAGES_SLIDE_MAP_KEYS,
   checkWatchPages,
+  checkWatchPagesValues,
   mergeWatchPages,
   mergeWatchPagesByKey,
   sameWatchPagesJson,
@@ -630,5 +631,181 @@ describe("checkWatchPages", () => {
     expect(
       checkWatchPages({ pages: [{ id: "A", items: [{ id: "t", entityId: "a" }, { id: "T", entityId: "b" }] }] }),
     ).toEqual(["Page 1, tile 2 has the same id as tile 1."]);
+  });
+});
+
+// ── value check ──────────────────────────────────────────────────────────
+
+describe("checkWatchPagesValues", () => {
+  const withTile = (tile: JsonObject, page: JsonObject = {}) => ({
+    schemaVersion: 1,
+    pages: [{ id: "P", name: "Home", ...page, items: [{ id: "T0", entityId: "light.a" }, { id: "T1", entityId: "camera.door", ...tile }] }],
+  });
+
+  it("refuses a strict enum value the watch does not know, by page, tile and key", () => {
+    expect(checkWatchPagesValues(withTile({ cameraDisplayMode: "big" }))).toEqual([
+      'Page 1 ("Home"), tile 2 (camera.door): cameraDisplayMode holds "big", which is not one of its choices.',
+    ]);
+    expect(checkWatchPagesValues(withTile({ cameraFillModes: ["fill", "zoom"] }))).toEqual([
+      'Page 1 ("Home"), tile 2 (camera.door): cameraFillModes, entry 2 holds "zoom", which is not one of its choices.',
+    ]);
+    // A key that is not strict keeps what it does not know.
+    expect(checkWatchPagesValues(withTile({ remoteButtonLayout: ["bogus"], remoteEdgeVolumeSide: "top" }))).toEqual([]);
+  });
+
+  it("checks types, colors with their empty rule, maps, slide maps and nested objects", () => {
+    expect(checkWatchPagesValues(withTile({ showLabel: "yes", colSpan: 1.5, cameraRowWeights: [1, "x"] })).sort()).toEqual([
+      'Page 1 ("Home"), tile 2 (camera.door): cameraRowWeights, entry 2 is not a number.',
+      'Page 1 ("Home"), tile 2 (camera.door): colSpan is not a whole number.',
+      'Page 1 ("Home"), tile 2 (camera.door): showLabel is not true or false.',
+    ]);
+    expect(checkWatchPagesValues(withTile({ remoteLauncherColors: ["", "#FF0000"], color: "yellow", borderColor: "#THEME" }))).toEqual([]);
+    expect(checkWatchPagesValues(withTile({ color: "" }))).toEqual(['Page 1 ("Home"), tile 2 (camera.door): color holds the color "".']);
+    expect(checkWatchPagesValues(withTile({ stateIcons: { on: 3 } }))).toEqual(['Page 1 ("Home"), tile 2 (camera.door): stateIcons for "on" is not text.']);
+    expect(checkWatchPagesValues(withTile({ holdSlideActions: ["sideways", "toggle"] }))).toEqual([
+      'Page 1 ("Home"), tile 2 (camera.door): holdSlideActions holds the direction "sideways".',
+    ]);
+    expect(checkWatchPagesValues(withTile({}, { gridDensity: "huge" }))).toEqual(['Page 1 ("Home"): gridDensity holds "huge", which is not one of its choices.']);
+    expect(checkWatchPagesValues(withTile({}, { dynamicConfig: { sortOrder: "name" } }))).toEqual([
+      'Page 1 ("Home"): dynamicConfig: sortOrder holds "name", which is not one of its choices.',
+    ]);
+    // Absent and null are left alone, and so is a key the panel does not know.
+    expect(checkWatchPagesValues(withTile({ cameraDisplayMode: null, futureKey: { any: 1 } }))).toEqual([]);
+  });
+
+  it("passes every page, tile and add the case files hold", () => {
+    const root = join(__dirname, "fixtures-pages");
+    const files = [
+      ...readdirSync(root).filter((f) => f.endsWith(".json")).map((f) => join(root, f)),
+      ...["settings", "add"].flatMap((d) => readdirSync(join(root, d)).filter((f) => f.endsWith(".json")).map((f) => join(root, d, f))),
+    ];
+    const documents: unknown[] = [];
+    const collect = (v: unknown): void => {
+      if (Array.isArray(v)) v.forEach(collect);
+      else if (v !== null && typeof v === "object") {
+        const o = v as JsonObject;
+        if (Array.isArray(o.pages)) documents.push(o);
+        else if (Array.isArray(o.items) && typeof o.id === "string") documents.push({ pages: [o] });
+        else if (typeof o.entityId === "string" && typeof o.id === "string") documents.push({ pages: [{ id: "P", items: [o] }] });
+        Object.values(o).forEach(collect);
+      }
+    };
+    for (const file of files) collect(JSON.parse(readFileSync(file, "utf8")));
+    expect(documents.length).toBeGreaterThan(500);
+    for (const d of documents) expect(checkWatchPagesValues(d)).toEqual([]);
+  });
+});
+
+// ── parallel lists ───────────────────────────────────────────────────────
+
+describe("a tile's parallel lists", () => {
+  const P = "P1";
+  const doc = (tile: JsonObject): WatchPagesDocument => ({ pages: [{ id: P, name: "p", items: [{ id: "G", gridRow: 0, gridCol: 0, colSpan: 12, rowSpan: 6, ...tile }] }] });
+  const tileOf = (d: WatchPagesDocument) => ((d.pages as JsonObject[])[0]!.items as JsonObject[])[0]!;
+  const group = (extra: JsonObject = {}): WatchPagesDocument =>
+    doc({ entityId: "multicam.X", cameraGroupIds: ["camera.a", "camera.b"], cameraRowWeights: [1, 1], customLabel: "A, B", ...extra });
+
+  it("takes a camera group's lists and columns whole from the side that changed the cameras", () => {
+    // The panel detected (weights, fills and columns), the phone added a camera.
+    const base = group();
+    const local = group({ cameraRowWeights: [0.5625, 0.5625], cameraFillModes: ["fill", "fill"], cameraGridColumns: 2 });
+    const server = group({ cameraGroupIds: ["camera.a", "camera.b", "camera.c"], cameraRowWeights: [1, 1, 1], customLabel: "A, B, C" });
+    const out = tileOf(merge(base, local, server));
+    expect(out.cameraGroupIds).toEqual(["camera.a", "camera.b", "camera.c"]);
+    expect(out.cameraRowWeights).toEqual([1, 1, 1]);
+    expect(out).not.toHaveProperty("cameraFillModes");
+    expect(out).not.toHaveProperty("cameraGridColumns");
+  });
+
+  it("gives the cameras to local when both sides changed them, as a slide direction", () => {
+    // The panel swapped, the phone set the first camera to Fit.
+    const base = group();
+    const local = group({ cameraGroupIds: ["camera.b", "camera.a"] });
+    const server = group({ cameraFillModes: ["fit", "fill"], cameraFillOffsetsX: [0, 0], cameraFillOffsetsY: [0, 0] });
+    const out = tileOf(merge(base, local, server));
+    expect(out.cameraGroupIds).toEqual(["camera.b", "camera.a"]);
+    expect(out).not.toHaveProperty("cameraFillModes");
+    expect(out).not.toHaveProperty("cameraFillOffsetsX");
+    const both = tileOf(merge(base, local, group({ cameraGroupIds: ["camera.a", "camera.b", "camera.c"], cameraRowWeights: [1, 1, 1] })));
+    expect(both.cameraGroupIds).toEqual(["camera.b", "camera.a"]);
+    expect(both.cameraRowWeights).toEqual([1, 1]);
+  });
+
+  it("keeps a removed camera's fill from moving to the next camera", () => {
+    const three = { cameraGroupIds: ["camera.a", "camera.b", "camera.c"], cameraRowWeights: [1, 1, 1] };
+    const base = group(three);
+    const local = group({ cameraGroupIds: ["camera.b", "camera.c"], cameraRowWeights: [1, 1], customLabel: "B + C" });
+    const server = group({ ...three, cameraFillModes: ["fill", "fit", "fill"] });
+    const out = tileOf(merge(base, local, server));
+    expect(out.cameraGroupIds).toEqual(["camera.b", "camera.c"]);
+    expect(out).not.toHaveProperty("cameraFillModes");
+  });
+
+  it("turns the tile with the cameras: a group the phone made one camera stays one camera", () => {
+    const base = group();
+    const server = doc({ entityId: "camera.a", cameraFillMode: "fill", cameraFillOffsetX: 0, cameraFillOffsetY: 0, multiCamBorderEnabled: false, customLabel: "A" });
+    // The panel added a camera to the group the phone turned into a camera:
+    // local changed the cameras, so the group stays, with its kind.
+    const local = group({ cameraGroupIds: ["camera.a", "camera.b", "camera.c"], cameraRowWeights: [1, 1, 1], customLabel: "A, B, C" });
+    const kept = tileOf(merge(base, local, server));
+    expect(kept.entityId).toBe("multicam.X");
+    expect(kept.cameraGroupIds).toEqual(["camera.a", "camera.b", "camera.c"]);
+    // The other way round: the phone's single camera wins whole.
+    const turned = tileOf(merge(base, server, local));
+    expect(turned.entityId).toBe("camera.a");
+    expect(turned).not.toHaveProperty("cameraGroupIds");
+    expect(turned).not.toHaveProperty("cameraRowWeights");
+    // A side that only edited a cell leaves the turn to the other.
+    const cell = group({ cameraFillModes: ["fit", "fill"] });
+    const out = tileOf(merge(base, cell, server));
+    expect(out.entityId).toBe("camera.a");
+    expect(out).not.toHaveProperty("cameraGroupIds");
+    expect(out).not.toHaveProperty("cameraFillModes");
+  });
+
+  it("merges a list both sides changed camera by camera when the cameras stayed", () => {
+    const base = group({ cameraFillModes: ["fill", "fill"], cameraRowWeights: [1, 1] });
+    const local = group({ cameraFillModes: ["fit", "fill"], cameraRowWeights: [1.2, 1] });
+    const server = group({ cameraFillModes: ["fill", "fit"], cameraRowWeights: [1, 1], cameraGridColumns: 2 });
+    const out = tileOf(merge(base, local, server));
+    expect(out.cameraFillModes).toEqual(["fit", "fit"]);
+    expect(out.cameraRowWeights).toEqual([1.2, 1]);
+    expect(out.cameraGridColumns).toBe(2);
+    // Lists as long as the cameras: a short side is padded, a long one cut.
+    const short = tileOf(merge(base, group({ cameraFillModes: ["fit"] }), group({ cameraFillModes: ["fill", "fill", "fit"] })));
+    expect(short.cameraFillModes).toEqual(["fit", "fill"]);
+  });
+
+  it("takes the quick actions whole from the side that changed the scripts", () => {
+    const remote = (extra: JsonObject) => doc({ entityId: "remote.tv", ...extra });
+    const two = {
+      remoteLauncherScriptIds: ["script.one", "script.two"],
+      remoteLauncherLabels: ["One", "Two"],
+      remoteLauncherIcons: ["app.fill", "app.fill"],
+      remoteLauncherColors: ["", ""],
+    };
+    // The panel set the first icon, the phone removed the first action.
+    const base = remote(two);
+    const local = remote({ ...two, remoteLauncherIcons: ["star", "app.fill"] });
+    const server = remote({ remoteLauncherScriptIds: ["script.two"], remoteLauncherLabels: ["Two"], remoteLauncherIcons: ["app.fill"], remoteLauncherColors: [""] });
+    const out = tileOf(merge(base, local, server));
+    expect(out.remoteLauncherScriptIds).toEqual(["script.two"]);
+    expect(out.remoteLauncherIcons).toEqual(["app.fill"]);
+    // The panel edited a label, the phone added an action: four lists of two.
+    const one = { remoteLauncherScriptIds: ["script.one"], remoteLauncherLabels: ["One"], remoteLauncherIcons: ["app.fill"], remoteLauncherColors: [""] };
+    const added = tileOf(merge(remote(one), remote({ ...one, remoteLauncherLabels: ["Uno"] }), remote(two)));
+    expect(added.remoteLauncherScriptIds).toEqual(["script.one", "script.two"]);
+    expect(added.remoteLauncherLabels).toEqual(["One", "Two"]);
+    // Neither changed the scripts: labels and icons merge by action.
+    const each = tileOf(merge(base, remote({ ...two, remoteLauncherLabels: ["Uno", "Two"] }), remote({ ...two, remoteLauncherLabels: ["One", "Dos"], remoteLauncherIcons: ["app.fill", "star"] })));
+    expect(each.remoteLauncherLabels).toEqual(["Uno", "Dos"]);
+    expect(each.remoteLauncherIcons).toEqual(["app.fill", "star"]);
+  });
+
+  it("hands back a side's own list when the merged one is that list", () => {
+    const base = group();
+    const server = group({ cameraGroupIds: ["camera.a", "camera.b", "camera.c"], cameraRowWeights: [1, 1, 1] });
+    const out = merge(base, group({ name: "x" }), server);
+    expect(tileOf(out).cameraGroupIds).toBe(tileOf(server).cameraGroupIds);
   });
 });

@@ -1,6 +1,6 @@
 {
   "name": "The shown decoration again does nothing",
-  "source": "WristAssistant/Views/PageEditorView.swift:16222",
+  "source": "WristAssistant/Views/PageEditorView.swift:16223",
   "page": {
     "backgroundBrightness": 0.8,
     "backgroundColor": "#101238",

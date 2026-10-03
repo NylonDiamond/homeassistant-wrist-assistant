@@ -516,6 +516,17 @@ describe("saveWatchPagesDraft", () => {
     expect(result.problems).toEqual(['Page 1 ("Home"), tile 2 has the same id as tile 1.']);
   });
 
+  it("does not send a value the watch cannot read, and names the page, tile and key", async () => {
+    const doc = document();
+    const draft = new WatchPagesDraft(doc, 3);
+    draft.apply(withTile(doc, B, { entityId: "camera.door", cameraFillMode: "zoom" }));
+    const save = vi.fn();
+    const result = await saveWatchPagesDraft(draft, { save, fetch: vi.fn() });
+    expect(save).not.toHaveBeenCalled();
+    expect(result.code).toBe("invalid");
+    expect(result.problems).toEqual(['Page 1 ("Home"), tile 2 (camera.door): cameraFillMode holds "zoom", which is not one of its choices.']);
+  });
+
   it("sends nothing more when the merge leaves the server's very copy", async () => {
     // The iPhone saved the same rename: after the conflict the draft is the
     // server's document, so the second save is never sent.
