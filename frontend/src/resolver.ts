@@ -910,6 +910,60 @@ export function durationSeconds(raw: string): number | undefined {
   return days * 86400 + seconds;
 }
 
+/** Date, clock and zone of an ISO 8601 instant. The date and clock part with
+ * `T`, a lowercase `t` or a space, which is how Home Assistant's templates print
+ * a `datetime` ("2026-10-03 05:45:00+00:00"); its websocket and most sensors
+ * use the `T`. The zone is required. */
+const ISO_INSTANT = /^(\d{4})-(\d{2})-(\d{2})[Tt ](\d{2}):(\d{2})(?::(\d{2})(?:[.,](\d+))?)?(?:([Zz])|([+-])(\d{2}):?(\d{2}))$/;
+
+/** Unix seconds out of an ISO 8601 date and time that names its zone:
+ * "2026-10-03T05:45:00.000Z", "2026-10-03 07:45:00+02:00". A time with no zone,
+ * a date with no time, or a day the calendar does not have is undefined, and
+ * `formatValue` then leaves the string as it reads: the zone a naive time
+ * means is a guess, and a guessed hour is worse than the text.
+ *
+ * Mirrors `CustomComplication.instantSeconds(from:)` in Swift digit for digit,
+ * which is why it is not `Date.parse`: that accepts "2026" and "Oct 3" too, and
+ * the preview would print a time the watch never does. */
+export function instantSeconds(raw: string): number | undefined {
+  const m = ISO_INSTANT.exec(raw.trim());
+  if (m === null) return undefined;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const hour = Number(m[4]);
+  const minute = Number(m[5]);
+  const second = m[6] === undefined ? 0 : Number(m[6]);
+  const fraction = m[7] === undefined ? 0 : Number(`0.${m[7]}`);
+  if (year < 1 || month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return undefined;
+  if (hour > 23 || minute > 59 || second > 59) return undefined;
+  let offset = 0;
+  if (m[9] !== undefined) {
+    const offsetHours = Number(m[10]);
+    const offsetMinutes = Number(m[11]);
+    if (offsetHours > 23 || offsetMinutes > 59) return undefined;
+    offset = (m[9] === "-" ? -1 : 1) * (offsetHours * 3600 + offsetMinutes * 60);
+  }
+  return daysFromCivil(year, month, day) * 86400 + hour * 3600 + minute * 60 + second + fraction - offset;
+}
+
+function daysInMonth(year: number, month: number): number {
+  if (month === 2) return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0 ? 29 : 28;
+  return month === 4 || month === 6 || month === 9 || month === 11 ? 30 : 31;
+}
+
+/** Days from 1970-01-01 to a proleptic Gregorian date, for any year from 1.
+ * Howard Hinnant's `days_from_civil`, in whole-number arithmetic so the panel
+ * and the watch land on the same day without either one's calendar. */
+function daysFromCivil(year: number, month: number, day: number): number {
+  const y = month <= 2 ? year - 1 : year;
+  const era = Math.floor(y / 400);
+  const yearOfEra = y - era * 400;
+  const dayOfYear = Math.floor((153 * (month > 2 ? month - 3 : month + 9) + 2) / 5) + day - 1;
+  const dayOfEra = yearOfEra * 365 + Math.floor(yearOfEra / 4) - Math.floor(yearOfEra / 100) + dayOfYear;
+  return era * 146097 + dayOfEra - 719468;
+}
+
 /** A length of time as its two largest non-zero units: "2d 3h", "1h 23m",
  * "23m 15s", "45s", "0s". Mirrors `CustomComplication.durationString` in Swift,
  * including its cap: the watch converts to a 32-bit `Int`, so a value that is
@@ -1031,14 +1085,16 @@ export function formatValue(
   let text = raw;
   const trimmedNumber = swiftDouble(raw.trim());
   const durationValue = f.duration ? durationSeconds(raw) : undefined;
+  let stamp: number | undefined;
   if (durationValue !== undefined) {
     text = durationString(durationValue);
   } else if (f.relativeTime && trimmedNumber !== undefined) {
     text = relativeTimeString(trimmedNumber);
-  } else if (f.timestamp !== undefined && trimmedNumber !== undefined) {
-    // After the two that also read a number, and only when the value is one: a
-    // field holding a title rather than a time prints exactly what it says.
-    text = timestampString(trimmedNumber, f.timestamp, locale, timeZone, {
+  } else if (f.timestamp !== undefined && (stamp = trimmedNumber ?? instantSeconds(raw)) !== undefined) {
+    // After the two that also read a number, and only when the value is a time,
+    // as unix seconds or as an ISO instant: a field holding a title rather than
+    // a time prints exactly what it says.
+    text = timestampString(stamp, f.timestamp, locale, timeZone, {
       minutes: f.hideMinutes,
       dayPeriod: f.hideDayPeriod,
       seconds: f.showSeconds,

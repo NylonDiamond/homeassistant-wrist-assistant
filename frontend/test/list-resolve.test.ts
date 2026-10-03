@@ -19,7 +19,7 @@ import {
   newElement,
 } from "../src/model.js";
 import { listExpressionKey } from "../src/compiler.js";
-import { type ResolveContext, type ResolvedElement, formatValue, resolveAll, timestampString } from "../src/resolver.js";
+import { type ResolveContext, type ResolvedElement, formatValue, instantSeconds, resolveAll, timestampString } from "../src/resolver.js";
 
 /** A readable, valid hexadecimal UUID: ids are uppercased on the way in, and a
  * mnemonic like `ROW-1` would not survive the Swift side's `UUID`. */
@@ -500,6 +500,43 @@ describe("the timestamp format", () => {
 
   it("leaves a value that is not a number exactly as it reads", () => {
     expect(formatValue("Standup", { timestamp: "clock" }, undefined, "en-US", "UTC")).toBe("Standup");
+  });
+
+  it("reads an ISO instant in every shape Home Assistant writes one", () => {
+    const at = 1791006300; // 2026-10-03 05:45 UTC
+    expect(instantSeconds("2026-10-03T05:45:00.000Z")).toBe(at);
+    expect(instantSeconds("2026-10-03T05:45:00+00:00")).toBe(at);
+    // A template prints a datetime with a space.
+    expect(instantSeconds("2026-10-03 07:45:00+02:00")).toBe(at);
+    expect(instantSeconds("2026-10-02T23:45:00-06:00")).toBe(at);
+    expect(instantSeconds("2026-10-03t07:45+0200")).toBe(at);
+    expect(instantSeconds(" 2026-10-03T05:45:00z ")).toBe(at);
+    expect(instantSeconds("2026-10-03T05:45:00.123456+00:00")).toBeCloseTo(at + 0.123456, 6);
+    expect(instantSeconds("2024-02-29T00:00:00Z")).toBe(1709164800);
+    // Past 2038, where the watch's 32-bit Int would have trapped.
+    expect(instantSeconds("2100-03-01T00:00:00Z")).toBe(4107542400);
+    expect(instantSeconds("0001-01-01T00:00:00Z")).toBe(-62135596800);
+  });
+
+  it("refuses a time with no zone, a date alone and a day that does not exist", () => {
+    for (const raw of [
+      "2026-10-03T05:45:00", "2026-10-03 05:45", "2026-10-03", "05:45:00", "2026",
+      "2026-02-29T00:00:00Z", "2026-13-01T00:00:00Z", "2026-10-03T24:00:00Z",
+      "2026-10-03T05:60:00Z", "2026-10-03T05:45:00.Z", "2026-10-03T05:45:00+2:00",
+      "0000-01-01T00:00:00Z", "Oct 3 2026", "",
+    ]) expect(instantSeconds(raw), raw).toBeUndefined();
+  });
+
+  it("prints an ISO instant as a time, in the zone it was asked for", () => {
+    const f = (raw: string, timestamp: "clock" | "date", locale = "en-GB") =>
+      formatValue(raw, { timestamp }, undefined, locale, "UTC");
+    expect(f("2026-10-03T05:45:00.000Z", "clock")).toBe("05:45");
+    expect(f("2026-10-03 07:45:00+02:00", "clock")).toBe("05:45");
+    // The offset moves the day: half past midnight in Berlin is the day before in UTC.
+    expect(f("2026-10-03T00:30:00+02:00", "date", "en-US")).toBe("Oct 2");
+    // A naive time, and a plain number that only looks like a year, keep their old meaning.
+    expect(f("2026-10-03 05:45:00", "clock")).toBe("2026-10-03 05:45:00");
+    expect(f("2026", "date", "en-US")).toBe("Jan 1");
   });
 
   it("gives way to duration and relative time, which also read a number", () => {

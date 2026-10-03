@@ -423,9 +423,10 @@ export interface ValueFormat {
    * ("1h 23m"). Exclusive with `relativeTime`, and applied first if a document
    * somehow carries both. */
   duration?: boolean;
-  /** Read the value as unix seconds and print it as a time. Runs after
-   * `duration` and `relativeTime`, and only when the raw value parses as a
-   * number, so a value that is not a time prints exactly what it always did.
+  /** Read the value as a moment and print it as a time. Runs after
+   * `duration` and `relativeTime`, and only when the raw value is unix seconds
+   * or an ISO 8601 instant with its zone (`instantSeconds`), so a value that is
+   * not a time prints exactly what it always did.
    * Written only when set, so every document saved before this key is byte
    * identical. See `TimestampStyle`. */
   timestamp?: TimestampStyle;
