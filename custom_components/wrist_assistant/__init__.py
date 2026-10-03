@@ -53,6 +53,7 @@ from .const import (
     WATCH_CONFIG_CATALOG_CAPABILITY,
     WATCH_CONFIG_DELTA_CAPABILITY,
     WATCH_CONFIG_LIVE_CAPABILITY,
+    WATCH_CONFIG_MENUS_CAPABILITY,
     WATCH_CONFIG_REJECT_REPORT_CAPABILITY,
     WATCH_PAIRING_CAPABILITY,
     WIDGET_SECRET_STORAGE_KEY,
@@ -757,18 +758,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     except Exception:
         _LOGGER.exception("Card preview sweep failed; continuing setup")
     # Watch config documents (the phone's pages in step 1). An unreadable file
-    # is contained inside the store and never fails setup.
-    watch_config_store = WatchConfigStore(hass)
+    # is contained inside the store and never fails setup. The store asks the
+    # secret store whether a watch is paired before the panel may create that
+    # watch's first record; it is handed a question, not the secret store.
+    watch_config_store = WatchConfigStore(
+        hass,
+        is_paired=lambda watch_id: widget_secret_store.get(watch_id) is not None,
+    )
     await watch_config_store.async_load()
     # Custom complications ride the watch's long-poll: the owner's store
     # token on every reply, the watch's ack on every request, and a panel
     # save wakes the parked poll so the watch pulls at once.
     coordinator.attach_complication_store(complication_store)
-    # Watch config rides it too: the signer's pages and behavior revisions on
-    # every reply, and a save of either kind wakes that owner's parked poll so
-    # the watch pulls at once, with no phone in the path. The store only knows
-    # it has listeners; the coordinator's listener picks the two kinds and
-    # leaves the complication token alone (renotify=False).
+    # Watch config rides it too: the signer's pages, behavior and menus
+    # revisions on every reply, and a save of any of them wakes that owner's
+    # parked poll so the watch pulls at once, with no phone in the path. The
+    # store only knows it has listeners; the coordinator's listener picks the
+    # three kinds and leaves the complication token alone (renotify=False).
     coordinator.attach_watch_config_store(watch_config_store)
     entry.async_on_unload(
         watch_config_store.async_add_listener(coordinator.watch_config_changed)
@@ -829,8 +835,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # status pages, published for the panel's tile picker. The phone sends it
     # only when it sees this, since an older integration refuses the kind.
     coordinator.register_capability(WATCH_CONFIG_CATALOG_CAPABILITY)
+    # The `menus` kind: the Anywhere menu, the Entity quick menu and the page
+    # switcher's style, named on the delta reply and editable (and creatable
+    # for a paired watch) in the panel. The phone mirrors its menus and the
+    # watch pulls them only when it sees this, since an older integration
+    # refuses the kind.
+    coordinator.register_capability(WATCH_CONFIG_MENUS_CAPABILITY)
     # `watch_config` on every delta reply and the wake on a save (attached
-    # above): the watch's trigger to pull its own pages and behavior.
+    # above): the watch's trigger to pull its own pages, behavior and menus.
     coordinator.register_capability(WATCH_CONFIG_DELTA_CAPABILITY)
     # Pairing by code (wa_v2_views.py, WAPairStartView, and pairing_ws.py): a
     # watch with no iPhone offers it only when /version lists this.

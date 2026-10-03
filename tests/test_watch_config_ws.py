@@ -7,8 +7,9 @@ the get, save, history, history_entry and restore shapes, and the phone
 against the subscribe shapes, so results and events are asserted as whole
 dicts and errors as exact (code, message) pairs. The ``catalog`` kind (step
 3e) is read through the same commands and refused to the panel's save and
-restore. ``test_ws_command_registration.py`` covers the registration and the admin
-gate statically.
+restore. The ``menus`` kind (step 4d) is saved like the others, and a save
+on base 0 creates a paired watch's first copy. ``test_ws_command_registration.py``
+covers the registration and the admin gate statically.
 """
 
 from __future__ import annotations
@@ -260,8 +261,22 @@ def test_after_the_phone_collects_a_save_it_reads_as_delivered(env) -> None:
     assert result["delivered_at"]
 
 
-def test_save_with_base_zero_is_no_record(env) -> None:
+def test_save_with_base_zero_over_a_stored_record_is_a_conflict(env) -> None:
     _phone_upload(env, "behavior", {})
+    code, message = _error(
+        env,
+        env.ws.ws_watch_config_save,
+        owner_watch_id=WATCH,
+        kind="behavior",
+        base_revision=0,
+        document={},
+    )
+    assert (code, message) == ("conflict", "stored revision is 1, save was based on 0")
+    match = CONFLICT_REVISION.match(message)
+    assert match is not None and int(match.group(1)) == 1
+
+
+def test_save_with_base_zero_and_nothing_stored_is_no_record_for_an_unpaired_watch(env) -> None:
     assert _error(
         env,
         env.ws.ws_watch_config_save,
@@ -271,8 +286,10 @@ def test_save_with_base_zero_is_no_record(env) -> None:
         document={},
     ) == (
         "no_record",
-        "there is no stored behavior record to save over; the iPhone uploads the first copy",
+        "there is no stored behavior record and this watch is not paired; "
+        "pair it before starting its config here",
     )
+    assert _get(env)["revision"] == 0
 
 
 def test_save_with_nothing_stored_is_no_record(env) -> None:
@@ -719,7 +736,7 @@ def test_history_of_the_catalog_lists_the_phone_s_uploads(env) -> None:
 def test_the_panel_may_neither_save_nor_restore_the_catalog(env) -> None:
     _phone_upload(env, "catalog", _catalog())
     _phone_upload(env, "catalog", _catalog("Gate"), base=1)
-    refusal = ("invalid", "the panel cannot save catalog; it may save behavior, pages")
+    refusal = ("invalid", "the panel cannot save catalog; it may save behavior, menus, pages")
     connection = _save(env, _catalog("Panel"), 2, kind="catalog")
     assert connection.results == {}
     assert [(code, message) for _id, code, message in connection.errors] == [refusal]
@@ -735,3 +752,91 @@ def test_subscribe_lists_the_catalog_and_hears_its_uploads(env) -> None:
     assert connection.results[1] == {"revisions": {"catalog": 1, "pages": 1}}
     _phone_upload(env, "catalog", _catalog("Gate"), base=1)
     assert connection.events() == [{"kind": "catalog", "revision": 2}]
+
+
+# ── step 4d: the menus, and the panel's first copy for a paired watch ────
+
+
+def _menus(display_mode: str = "icons") -> dict:
+    return {
+        "schemaVersion": 1,
+        "quickAction": {"schemaVersion": 1, "slots": [{"id": "S1", "position": "top"}]},
+        "entityRadial": {"schemaVersion": 1, "lightSlots": [{"id": "S1"}]},
+        "pageSwitcher": {"schemaVersion": 1, "displayMode": display_mode},
+    }
+
+
+def _paired_store(env) -> None:
+    """Swap in a store whose secret store knows WATCH, as setup builds it."""
+    store = env.mod.WatchConfigStore(env.hass, is_paired=lambda owner: owner == WATCH)
+    asyncio.run(store.async_load())
+    env.hass.data[DOMAIN].watch_config_store = store
+    env.store = store
+
+
+def test_save_creates_the_first_menus_for_a_paired_watch(env) -> None:
+    _paired_store(env)
+    subscriber = _subscribe(env)
+    connection = _save(env, _menus(), 0, kind="menus")
+    assert connection.errors == []
+    assert connection.results[1] == {"revision": 1}
+    result = _get(env, "menus")
+    assert result == {
+        "kind": "menus",
+        "revision": 1,
+        "hash": env.mod.canonical_hash(_menus()),
+        "updated_at": result["updated_at"],
+        "updated_by": "panel",
+        "delivered_revision": 0,
+        "delivered_at": None,
+        "rejected_revision": 0,
+        "rejected_at": None,
+        "document": _menus(),
+    }
+    assert result["updated_at"]
+    assert _history(env, "menus")["entries"] == []
+    assert subscriber.events() == [{"kind": "menus", "revision": 1}]
+    # The panel's next save builds on it, and the created copy is history.
+    assert _save(env, _menus("text"), 1, kind="menus").results[1] == {"revision": 2}
+    assert [e["revision"] for e in _history(env, "menus")["entries"]] == [1]
+    assert _restore(env, 1, 2, "menus").results[1] == {"revision": 3}
+    assert _get(env, "menus")["document"] == _menus()
+
+
+def test_save_of_menus_for_an_unpaired_watch_is_no_record(env) -> None:
+    _paired_store(env)
+    code, _message = _error(
+        env,
+        env.ws.ws_watch_config_save,
+        owner_watch_id="watch-never-paired",
+        kind="menus",
+        base_revision=0,
+        document=_menus(),
+    )
+    assert code == "no_record"
+    assert _get(env, "menus", owner="watch-never-paired")["revision"] == 0
+
+
+def test_save_of_menus_with_a_duplicate_slot_id_is_invalid(env) -> None:
+    _paired_store(env)
+    document = _menus()
+    document["quickAction"]["slots"].append({"id": "s1"})
+    code, message = _error(
+        env,
+        env.ws.ws_watch_config_save,
+        owner_watch_id=WATCH,
+        kind="menus",
+        base_revision=0,
+        document=document,
+    )
+    assert code == "invalid"
+    assert message == (
+        'document.quickAction.slots[1] has the slot id "s1" of '
+        "document.quickAction.slots[0]; slot ids must be unique in a list"
+    )
+    assert _get(env, "menus")["revision"] == 0
+
+
+def test_restore_still_needs_a_record_for_a_paired_watch(env) -> None:
+    _paired_store(env)
+    assert _restore_error(env, 1, 0, kind="menus")[0] == "no_record"

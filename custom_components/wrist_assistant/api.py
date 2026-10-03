@@ -34,9 +34,9 @@ MAX_EVENTS_BUFFER = 5000
 MAX_EVENTS_PER_RESPONSE = 250
 SESSION_TTL = timedelta(minutes=5)
 # The watch config kinds the delta reply names, as `watch_config: {kind: rev}`.
-# The two a watch applies (WATCH_CONFIG_PANEL_KINDS in const.py). Never the
+# The three a watch applies (WATCH_CONFIG_PANEL_KINDS in const.py). Never the
 # catalog, which only the phone and the panel read.
-DELTA_WATCH_CONFIG_KINDS = ("pages", "behavior")
+DELTA_WATCH_CONFIG_KINDS = ("pages", "behavior", "menus")
 
 _LOGGER = logging.getLogger(__name__)
 _ATTR_DIFF_SENTINEL = object()
@@ -313,7 +313,7 @@ class DeltaCoordinator:
         # of spinning on immediate empty replies.
         self._token_notified: dict[str, int] = {}
         # Watch config rides the poll the same way: every reply with a body
-        # names the signer's pages and behavior revisions, and a save wakes
+        # names the signer's pages, behavior and menus revisions, and a save wakes
         # the parked poll (see watch_config_changed). None until setup
         # attaches the store (attach_watch_config_store).
         self._watch_config_store: Any | None = None
@@ -422,7 +422,7 @@ class DeltaCoordinator:
         self._watch_config_store = store
 
     def watch_config_revisions(self, watch_id: str) -> dict[str, int] | None:
-        """The signer's own pages and behavior revisions, 0 for a kind it holds
+        """The signer's own pages, behavior and menus revisions, 0 for a kind it holds
         no record of. None when no store is attached or this owner's file
         could not be read: the reply then leaves the field out rather than
         saying "no record", which would be wrong."""
@@ -464,7 +464,7 @@ class DeltaCoordinator:
 
     @callback
     def watch_config_changed(self, change: Any) -> None:
-        """Store listener: a pages or behavior save wakes that owner's parked
+        """Store listener: a pages, behavior or menus save wakes that owner's parked
         poll, which answers at once with the new revision.
 
         Any saver counts (a panel save, a restore, a device's own put, a
@@ -685,7 +685,7 @@ class DeltaCoordinator:
         when the two differ.
 
         Every reply with a body also carries ``watch_config``: the signer's
-        pages and behavior revisions (0 for a kind with no record), so the
+        pages, behavior and menus revisions (0 for a kind with no record), so the
         watch pulls a kind through ``watch_config_get`` when its revision is
         above the one it applied.
         """

@@ -35,11 +35,17 @@ const pageFixtures = pageFixturesModule as Record<string, Json>;
 // ── the server's rules, as `const.py` sets them ──────────────────────────
 
 let DELAY_MS = 150;
-const KINDS = ["behavior", "catalog", "pages"];
+const KINDS = ["behavior", "catalog", "menus", "pages"];
 // The catalog is the phone's: the panel reads it and never saves it.
-const PANEL_KINDS = ["behavior", "pages"];
-const MAX_DOCUMENT_BYTES: Record<string, number> = { pages: 2 * 1024 * 1024, behavior: 256 * 1024, catalog: 256 * 1024 };
+const PANEL_KINDS = ["behavior", "menus", "pages"];
+const MAX_DOCUMENT_BYTES: Record<string, number> = {
+  pages: 2 * 1024 * 1024,
+  behavior: 256 * 1024,
+  catalog: 256 * 1024,
+  menus: 256 * 1024,
+};
 const CATALOG_LIST_KEYS = ["httpActions", "macros", "statusPages"];
+const MENUS_SECTION_KEYS = ["quickAction", "entityRadial", "pageSwitcher"];
 const HISTORY_LIMIT = 5;
 const PANEL_WRITER = "panel";
 const KIND_LIST_KEYS: Record<string, string> = { pages: "pages" };
@@ -188,7 +194,48 @@ function validateDocument(kind: string, document: unknown, checkItems: boolean):
   if (size > limit) fail("invalid", `document is ${size} bytes; the limit for ${kind} is ${limit}`);
   if (kind === "pages") checkPages(document.pages as unknown[], checkItems);
   else if (kind === "catalog") checkCatalog(document);
+  else if (kind === "menus") checkMenus(document);
   return size;
+}
+
+/** `_check_menus`: the three sections absent or objects; `quickAction.slots`,
+ * every `entityRadial` key ending in `Slots` and every value of
+ * `entityRadial.entityOverrides` a slot list. Nothing else looked at. */
+function checkMenus(document: Json): void {
+  for (const key of MENUS_SECTION_KEYS) {
+    if (key in document && !isObject(document[key])) fail("invalid", `document.${key} must be an object`);
+  }
+  const quickAction = document.quickAction as Json | undefined;
+  if (quickAction !== undefined && "slots" in quickAction) checkSlotList(quickAction.slots, "document.quickAction.slots");
+  const entityRadial = document.entityRadial as Json | undefined;
+  if (entityRadial === undefined) return;
+  for (const [key, slots] of Object.entries(entityRadial)) {
+    if (key.endsWith("Slots")) checkSlotList(slots, `document.entityRadial.${key}`);
+  }
+  if (!("entityOverrides" in entityRadial)) return;
+  const overrides = entityRadial.entityOverrides;
+  if (!isObject(overrides)) fail("invalid", "document.entityRadial.entityOverrides must be an object");
+  for (const [entityId, slots] of Object.entries(overrides)) {
+    checkSlotList(slots, `document.entityRadial.entityOverrides["${entityId}"]`);
+  }
+}
+
+/** `_check_slot_list`: objects with a non-empty string `id`, unique in the
+ * list ignoring case. */
+function checkSlotList(slots: unknown, where: string): void {
+  if (!Array.isArray(slots)) fail("invalid", `${where} must be a list`);
+  const seen = new Map<string, number>();
+  slots.forEach((slot, index) => {
+    const at = `${where}[${index}]`;
+    if (!isObject(slot)) fail("invalid", `${at} must be an object`);
+    const slotId = slot.id;
+    if (typeof slotId !== "string" || slotId === "") fail("invalid", `${at}.id must be a non-empty string`);
+    const folded = slotId.toUpperCase();
+    if (seen.has(folded)) {
+      fail("invalid", `${at} has the slot id "${slotId}" of ${where}[${seen.get(folded)}]; slot ids must be unique in a list`);
+    }
+    seen.set(folded, index);
+  });
 }
 
 /** `_check_catalog`: each library list absent or a list of objects with a
@@ -350,8 +397,41 @@ class FakeStore {
     validateDocument(k, document, true);
     const base = validateBaseRevision(baseRevision);
     this.checkAvailable(true);
-    const existing = this.panelTarget(owner, k, base, "save");
+    const existing = this.record(owner, k);
+    if (!existing) {
+      // `panel_save`'s create path: base 0 and a paired watch (here, one the
+      // owners list names) get revision 1; anything else is no_record.
+      if (base !== 0) {
+        fail("no_record", `there is no stored ${k} record to save over; the iPhone uploads the first copy`);
+      }
+      if (!OWNERS.some((o) => o.owner_watch_id === owner)) {
+        fail("no_record", `there is no stored ${k} record and this watch is not paired; pair it before starting its config here`);
+      }
+      return this.panelCreate(owner, k, document as Json);
+    }
+    if (base !== existing.revision) {
+      fail("conflict", `stored revision is ${existing.revision}, save was based on ${base}`);
+    }
     return this.panelCommit(owner, k, existing, document as Json);
+  }
+
+  private panelCreate(owner: string, kind: string, document: Json): StoredRecord {
+    const record: StoredRecord = {
+      revision: 1,
+      hash: documentHash(document),
+      updated_at: nowIso(),
+      updated_by: PANEL_WRITER,
+      delivered_revision: 0,
+      delivered_at: null,
+      rejected_revision: 0,
+      rejected_at: null,
+      document,
+      history: [],
+    };
+    if (!this.records.has(owner)) this.records.set(owner, new Map());
+    this.records.get(owner)!.set(kind, record);
+    this.notify(owner, kind, record.revision);
+    return record;
   }
 
   restore(owner: unknown, kind: unknown, revision: unknown, baseRevision: unknown): StoredRecord {

@@ -123,30 +123,34 @@ CARD_PREVIEW_STORAGE_VERSION = 1
 WATCH_CONFIG_STORAGE_KEY = "wrist_assistant.watch_config"
 WATCH_CONFIG_STORAGE_VERSION = 1
 # The kinds a client may read and write: the page config (`GridConfiguration`
-# in the app), the watch behavior settings (`WCBehaviorPreferences`) and the
+# in the app), the watch behavior settings (`WCBehaviorPreferences`), the
 # library catalog (`WatchLibraryCatalog`: the phone's HTTP actions, macros and
-# status pages by id and name, which the panel's tile picker reads). A later
-# kind is a new name here and a size cap below, with no change to the storage
-# shape.
-WATCH_CONFIG_KINDS = frozenset({"pages", "behavior", "catalog"})
+# status pages by id and name, which the panel's tile picker reads) and the
+# menus (the Anywhere menu, the Entity quick menu and the page switcher's
+# style, as `quickAction`, `entityRadial` and `pageSwitcher`). A later kind is
+# a new name here and a size cap below, with no change to the storage shape.
+WATCH_CONFIG_KINDS = frozenset({"pages", "behavior", "catalog", "menus"})
 # The kinds the panel may save, and restore from a record's history: pages and
-# behavior, since the page editor moved into the panel (step 3). Never the
-# catalog, which only the phone writes. The panel still never creates a
-# record: the first copy of any kind comes from a device.
-WATCH_CONFIG_PANEL_KINDS = frozenset({"pages", "behavior"})
+# behavior since the page editor moved into the panel (step 3), and menus
+# (step 4d). Never the catalog, which only the phone writes. The panel may
+# create the first record of one of these kinds, but only for a watch that is
+# paired (see WatchConfigStore.panel_save).
+WATCH_CONFIG_PANEL_KINDS = frozenset({"pages", "behavior", "menus"})
 # `updated_by` on a record the panel saved, in place of a device's signing id.
 WATCH_CONFIG_PANEL_WRITER = "panel"
 # Compact UTF-8 JSON size a stored document may reach, per kind. Every kind in
 # WATCH_CONFIG_KINDS needs an entry. The page cap is a guess with headroom (a
 # large real page config has not been measured yet); the behavior settings are
 # a flat object of a few dozen keys, so a much smaller cap still leaves plenty.
-# A catalog of 200 entries is about 30 KB. Home Assistant's HTTP server accepts
-# request bodies up to 16 MiB, so the cap, not the server, is what refuses an
-# oversized upload.
+# A catalog of 200 entries is about 30 KB. The menus are a few dozen slots
+# plus per-entity overrides, the same order as the catalog. Home Assistant's
+# HTTP server accepts request bodies up to 16 MiB, so the cap, not the server,
+# is what refuses an oversized upload.
 WATCH_CONFIG_MAX_DOCUMENT_BYTES: dict[str, int] = {
     "pages": 2 * 1024 * 1024,
     "behavior": 256 * 1024,
     "catalog": 256 * 1024,
+    "menus": 256 * 1024,
 }
 # Documents a save replaced, kept per record, oldest dropped. Storage only.
 WATCH_CONFIG_HISTORY_LIMIT = 5
@@ -168,11 +172,17 @@ WATCH_CONFIG_REJECT_REPORT_CAPABILITY = "watch_config_reject_report"
 # publishes its library catalog only when it sees this: an older integration
 # would refuse the kind as invalid on every upload.
 WATCH_CONFIG_CATALOG_CAPABILITY = "watch_config_catalog"
+# What the integration advertises once it stores the `menus` kind, carries it
+# on the delta reply and lets the panel create its first record. The phone
+# mirrors its menus and the watch pulls them only when it sees this: an older
+# integration would refuse the kind as invalid.
+WATCH_CONFIG_MENUS_CAPABILITY = "watch_config_menus"
 # What the integration advertises once every /v2/delta reply with a body names
 # the signer's own `watch_config: {"pages": rev, "behavior": rev}` (0 for a
 # kind with no record) and a save of either kind wakes that owner's parked
 # poll. The watch uses it as the trigger to pull; the pull itself is the
-# signed watch_config_get, gated on WATCH_CONFIG_CAPABILITY.
+# signed watch_config_get, gated on WATCH_CONFIG_CAPABILITY. With
+# WATCH_CONFIG_MENUS_CAPABILITY the field names `menus` too.
 WATCH_CONFIG_DELTA_CAPABILITY = "watch_config_delta"
 # What the integration advertises once it serves /v2/pair/start and the
 # panel's pair/lookup and pair/confirm (pairing_ws.py). A watch with no

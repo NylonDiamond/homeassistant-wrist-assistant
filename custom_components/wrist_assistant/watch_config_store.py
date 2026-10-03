@@ -2,15 +2,22 @@
 
 Part of moving watch configuration out of the phone (see
 ``docs/pages_in_home_assistant_step1.md``, ``..._step2.md`` and
-``..._step3.md`` in the app repo). The phone uploads its page config (kind
-``pages``) and its watch behavior settings (kind ``behavior``) here after each
-edit, and pulls a newer copy back down when it has nothing unsent. It also
-publishes its library catalog (kind ``catalog``), which only the phone writes.
-The panel may read, save and restore pages and behavior, and read the catalog
-(see ``watch_config_ws.py``); the phone
-picks a panel save up on its next check, or at once over the live line while
-the app is open, and hands it to the watch. A later step has the watch read
-its record directly.
+``..._step3.md`` and ``..._step4.md`` in the app repo). The phone uploads its
+page config (kind ``pages``), its watch behavior settings (kind ``behavior``)
+and its menus (kind ``menus``: the Anywhere menu, the Entity quick menu and
+the page switcher's style) here after each edit, and pulls a newer copy back
+down when it has nothing unsent. It also publishes its library catalog (kind
+``catalog``), which only the phone writes. The panel may read, save and
+restore pages, behavior and menus, and read the catalog (see
+``watch_config_ws.py``); the phone picks a panel save up on its next check, or
+at once over the live line while the app is open, and the watch pulls its own
+records over the signed get when the delta reply names a newer revision.
+
+The first record of a kind normally comes from a device. The panel may create
+one too (``base_revision`` 0 with nothing stored), but only for a watch the
+secret store knows: a watch with no phone never uploads, so without that its
+editor would stay empty, and an id nothing has paired as must never gain a
+record the panel invented.
 
 A record is keyed on the watch, not the phone: the owner is the id that signed
 the request, which is the watch's own pair even when the phone sends it. The
@@ -30,12 +37,13 @@ Each record carries:
   handed back is the one the writer sent. A panel save has no client hash, so
   the server computes one (:func:`canonical_hash`).
 * ``updated_at`` / ``updated_by``: server time of the save, and the signing id
-  of the writer, or ``panel`` for a panel save.
+  of the writer, or ``panel`` for a panel save (a panel create included).
 * ``document``: the JSON object exactly as parsed from the request, never
   rewritten. It is checked at the envelope (an object, a page config's
-  ``pages`` is a list, under its kind's size cap) and, for a page config, at
-  the shape the watch cannot survive without (:func:`validate_document`). The
-  server does not understand tiles or settings.
+  ``pages`` is a list, under its kind's size cap) and, for a page config, a
+  catalog and the menus, at the shape the watch or the panel cannot survive
+  without (:func:`validate_document`). The server does not understand tiles,
+  slots or settings.
 * ``history``: the last few documents a save replaced, each with the
   revision, hash, time and writer it had. The signed get never returns it; the
   panel lists it and restores from it (:meth:`WatchConfigStore.history`,
@@ -64,12 +72,13 @@ goes away.
 
 Listeners (:meth:`WatchConfigStore.async_add_listener`) hear one
 :class:`WatchConfigChange` per kind whose revision moved: every accepted save,
-device or panel, a restore included; revision 0 for each kind a forget
-removed; and for a move, the target's resulting revisions and revision 0 for
-each of the source's kinds. Delivery is not a change, and neither is an
-unreadable report: a signed get that only moves ``delivered_revision`` or
-``rejected_revision`` tells nobody. This is what the phone's live line
-(``watch_config/subscribe`` in ``watch_config_ws.py``) rides on.
+device or panel, a panel create and a restore included; revision 0 for each
+kind a forget removed; and for a move, the target's resulting revisions and
+revision 0 for each of the source's kinds. Delivery is not a change, and
+neither is an unreadable report: a signed get that only moves
+``delivered_revision`` or ``rejected_revision`` tells nobody. This is what the
+phone's live line (``watch_config/subscribe`` in ``watch_config_ws.py``) and
+the watch's delta wake ride on.
 """
 
 from __future__ import annotations
@@ -147,10 +156,12 @@ class WatchConfigConflictError(WatchConfigStoreError):
 
 
 class WatchConfigNoRecordError(WatchConfigStoreError):
-    """A panel save with nothing stored to save over.
+    """A panel write with nothing stored to write over.
 
-    The panel never creates a record. The first copy always comes from the
-    phone, so the panel can never invent a document the phone has not seen.
+    A restore, or a panel save on a base above 0, with no record. Also a panel
+    save on base 0 for an owner the secret store does not know: the panel
+    creates a first record only for a paired watch, so it never invents a
+    document for an id nothing signs as.
     """
 
     code = "no_record"
@@ -221,7 +232,8 @@ def validate_document(kind: str, document: Any, *, check_items: bool = False) ->
     shape the watch needs to survive (see :func:`_check_pages`): the page
     level always, the tile level only with ``check_items``, which a panel save
     and a restore pass and a device save does not. A catalog's entries are
-    checked for an id and a name (see :func:`_check_catalog`).
+    checked for an id and a name (see :func:`_check_catalog`), and the menus'
+    sections and slot lists for their shape (see :func:`_check_menus`).
 
     The server guards the shape, not the content. No key's value is looked at
     beyond the ids: the app is the only thing that understands a tile or a
@@ -243,7 +255,78 @@ def validate_document(kind: str, document: Any, *, check_items: bool = False) ->
         _check_pages(document["pages"], check_items=check_items)
     elif kind == "catalog":
         _check_catalog(document)
+    elif kind == "menus":
+        _check_menus(document)
     return size
+
+
+# The sections a menus document may carry, each optional: the Anywhere menu
+# (`QuickActionConfig`), the Entity quick menu (`EntityRadialConfig`) and the
+# page switcher's style (`PageSwitcherConfig`).
+_MENUS_SECTION_KEYS = ("quickAction", "entityRadial", "pageSwitcher")
+
+
+def _check_menus(document: dict[str, Any]) -> None:
+    """The menus' shape guard, for every writer.
+
+    ``quickAction``, ``entityRadial`` and ``pageSwitcher`` are each absent or
+    an object. ``quickAction.slots`` and every key of ``entityRadial`` whose
+    name ends in ``Slots`` are slot lists (see :func:`_check_slot_list`), and
+    ``entityRadial.entityOverrides`` is absent or an object whose every value
+    is a slot list. A slot with no id is given a new one on every decode and
+    two slots sharing one confuse the editor, so neither may land whoever
+    writes it. No other key is looked at, so a newer app can add some.
+    """
+    for key in _MENUS_SECTION_KEYS:
+        if key in document and not isinstance(document[key], dict):
+            raise WatchConfigValidationError(f"document.{key} must be an object")
+    quick_action = document.get("quickAction")
+    if quick_action is not None and "slots" in quick_action:
+        _check_slot_list(quick_action["slots"], "document.quickAction.slots")
+    entity_radial = document.get("entityRadial")
+    if entity_radial is None:
+        return
+    for key, slots in entity_radial.items():
+        if key.endswith("Slots"):
+            _check_slot_list(slots, f"document.entityRadial.{key}")
+    if "entityOverrides" not in entity_radial:
+        return
+    overrides = entity_radial["entityOverrides"]
+    if not isinstance(overrides, dict):
+        raise WatchConfigValidationError(
+            "document.entityRadial.entityOverrides must be an object"
+        )
+    for entity_id, slots in overrides.items():
+        _check_slot_list(
+            slots, f'document.entityRadial.entityOverrides["{entity_id}"]'
+        )
+
+
+def _check_slot_list(slots: Any, where: str) -> None:
+    """One menu slot list: a list of objects, each with a non-empty string
+    ``id``, no two in the list sharing one.
+
+    Ids are compared ignoring case, as for pages: the app reads them as UUIDs,
+    which parse the same either way. The same id in two different lists is
+    not refused: each list is a menu of its own.
+    """
+    if not isinstance(slots, list):
+        raise WatchConfigValidationError(f"{where} must be a list")
+    seen: dict[str, int] = {}
+    for index, slot in enumerate(slots):
+        at = f"{where}[{index}]"
+        if not isinstance(slot, dict):
+            raise WatchConfigValidationError(f"{at} must be an object")
+        slot_id = slot.get("id")
+        if not isinstance(slot_id, str) or not slot_id:
+            raise WatchConfigValidationError(f"{at}.id must be a non-empty string")
+        folded = slot_id.upper()
+        if folded in seen:
+            raise WatchConfigValidationError(
+                f'{at} has the slot id "{slot_id}" of {where}[{seen[folded]}]; '
+                "slot ids must be unique in a list"
+            )
+        seen[folded] = index
 
 
 # The library lists a catalog may carry, each optional.
@@ -628,13 +711,23 @@ class WatchConfigChange:
 
 
 ChangeListener = Callable[[WatchConfigChange], None]
+# Whether an owner id has a pair in the secret store: the one question the
+# panel's create path asks (see WatchConfigStore.panel_save).
+PairedCheck = Callable[[str], bool]
 
 
 class WatchConfigStore:
     """Every owner's watch config records, one storage file per owner."""
 
-    def __init__(self, hass: HomeAssistant) -> None:
+    def __init__(
+        self, hass: HomeAssistant, *, is_paired: PairedCheck | None = None
+    ) -> None:
+        """``is_paired`` answers whether an owner id has a pair in the secret
+        store. Setup passes one backed by ``WidgetSecretStore``; without it no
+        owner counts as paired, so the panel can never create a record (what
+        a store made only to remove its files, or a test, wants)."""
         self._hass = hass
+        self._is_paired = is_paired
         self._listeners: list[ChangeListener] = []
         # owner_watch_id → kind → record
         self._records: dict[str, dict[str, WatchConfigRecord]] = {}
@@ -1006,21 +1099,24 @@ class WatchConfigStore:
 
         Stricter than a device save, on purpose:
 
-        * Only the kinds in ``WATCH_CONFIG_PANEL_KINDS`` (pages and behavior,
-          never the catalog).
+        * Only the kinds in ``WATCH_CONFIG_PANEL_KINDS`` (pages, behavior and
+          menus, never the catalog).
         * The tile level of the page shape guard as well as the page level
           (:func:`validate_document` with ``check_items``). The panel builds
           what it sends, so it can always fix a fault there.
-        * Never a new record. ``base_revision`` 0, or no stored record at all,
-          is refused with :class:`WatchConfigNoRecordError`: the first copy
-          comes from a device, so the panel never invents a document the
-          device has not seen.
+        * A new record only for a paired watch. ``base_revision`` 0 with no
+          stored record creates revision 1 when the secret store knows the
+          owner (``is_paired``), and is refused with
+          :class:`WatchConfigNoRecordError` otherwise, so the panel never
+          invents a document for an id nothing signs as. A base above 0 with
+          no record is ``no_record`` too, and a base of 0 over a stored record
+          is a conflict: someone made the first copy since the panel looked.
         * No ``force``. A stale base is a conflict, and the panel reloads.
 
         The server computes the hash (:func:`canonical_hash`) and writes
-        ``updated_by`` as ``panel``. Delivery is left where it was, which is
-        what makes the panel say "waiting for the iPhone" until the phone's
-        next get collects the save.
+        ``updated_by`` as ``panel``. Delivery is left where it was (0 for a
+        record the panel created), which is what makes the panel show the
+        save as waiting until a device's next get collects it.
         """
         if not isinstance(owner_watch_id, str) or not owner_watch_id:
             raise WatchConfigValidationError("owner_watch_id is required")
@@ -1029,7 +1125,17 @@ class WatchConfigStore:
         base_revision = _validate_base_revision(base_revision)
         self._check_available(owner_watch_id)
 
-        existing = self._panel_target(owner_watch_id, kind, base_revision, "save")
+        existing = self._records.get(owner_watch_id, {}).get(kind)
+        if existing is None:
+            if base_revision != 0:
+                raise self._no_record(kind)
+            if not self._owner_is_paired(owner_watch_id):
+                raise WatchConfigNoRecordError(
+                    f"there is no stored {kind} record and this watch is not "
+                    "paired; pair it before starting its config here"
+                )
+            return self._panel_create(owner_watch_id, kind, document, size)
+        self._check_panel_base(existing, base_revision, "save")
         return self._panel_commit(existing, document, size)
 
     def restore(
@@ -1085,18 +1191,24 @@ class WatchConfigStore:
             )
         return kind
 
-    def _panel_target(
-        self, owner_watch_id: str, kind: str, base_revision: int, action: str
-    ) -> WatchConfigRecord:
-        """The record a panel write replaces, after the ``no_record`` and
-        ``conflict`` checks. ``action`` names the write in the conflict
-        message, which always begins ``stored revision is <N>``."""
-        existing = self._records.get(owner_watch_id, {}).get(kind)
-        if base_revision == 0 or existing is None:
-            raise WatchConfigNoRecordError(
-                f"there is no stored {kind} record to save over; the iPhone "
-                "uploads the first copy"
-            )
+    def _owner_is_paired(self, owner_watch_id: str) -> bool:
+        """Whether the secret store knows the owner. False when no check was
+        handed in (see ``__init__``)."""
+        return self._is_paired is not None and bool(self._is_paired(owner_watch_id))
+
+    @staticmethod
+    def _no_record(kind: str) -> WatchConfigNoRecordError:
+        return WatchConfigNoRecordError(
+            f"there is no stored {kind} record to save over; the iPhone "
+            "uploads the first copy"
+        )
+
+    @staticmethod
+    def _check_panel_base(
+        existing: WatchConfigRecord, base_revision: int, action: str
+    ) -> None:
+        """The ``conflict`` check of a panel write. ``action`` names the write
+        in the message, which always begins ``stored revision is <N>``."""
         if base_revision != existing.revision:
             raise WatchConfigConflictError(
                 f"stored revision is {existing.revision}, {action} was based on "
@@ -1104,7 +1216,43 @@ class WatchConfigStore:
                 existing.revision,
                 existing.hash,
             )
+
+    def _panel_target(
+        self, owner_watch_id: str, kind: str, base_revision: int, action: str
+    ) -> WatchConfigRecord:
+        """The record a restore replaces, after the ``no_record`` and
+        ``conflict`` checks. A restore never creates: ``base_revision`` 0 or
+        no stored record is ``no_record``."""
+        existing = self._records.get(owner_watch_id, {}).get(kind)
+        if base_revision == 0 or existing is None:
+            raise self._no_record(kind)
+        self._check_panel_base(existing, base_revision, action)
         return existing
+
+    def _panel_create(
+        self, owner_watch_id: str, kind: str, document: dict[str, Any], size: int
+    ) -> WatchConfigRecord:
+        """Revision 1 of a kind the owner holds no record of, written by the
+        panel: the server's hash, ``updated_by`` ``panel``, no history, and
+        nothing delivered yet. Listeners are told, so the watch's parked poll
+        wakes and pulls it."""
+        record = WatchConfigRecord(
+            owner_watch_id=owner_watch_id,
+            kind=kind,
+            revision=1,
+            hash=canonical_hash(document),
+            updated_at=_now_iso(),
+            updated_by=WATCH_CONFIG_PANEL_WRITER,
+            document=document,
+            size_bytes=size,
+        )
+        new_owner = owner_watch_id not in self._records
+        self._records.setdefault(owner_watch_id, {})[kind] = record
+        if new_owner:
+            self._schedule_index_save()
+        self._schedule_owner_save(owner_watch_id)
+        self._notify(owner_watch_id, kind, record.revision)
+        return record
 
     def _panel_commit(
         self, record: WatchConfigRecord, document: dict[str, Any], size: int

@@ -160,20 +160,23 @@ def ws_watch_config_get(
 def ws_watch_config_save(
     hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Save one watch's page config or behavior settings as edited in the panel.
+    """Save one watch's page config, behavior settings or menus as edited in
+    the panel.
 
     Result: {"revision": <new revision>}
 
     The panel sends the whole document, keys it does not show included, and
-    the store keeps it as sent. Refused with ``no_record`` when
-    ``base_revision`` is 0 or nothing is stored (a device makes the first
-    copy), with ``conflict`` when ``base_revision`` is not the stored
-    revision (message ``stored revision is <N>, save was based on <M>``), and
-    with ``invalid`` for an unknown kind or a malformed document, a page
-    config that fails the shape guard included (the message names the page
-    by index and id). The hash is computed here and ``updated_by`` is
-    ``panel``; the replaced document goes into the record's history like any
-    save.
+    the store keeps it as sent. ``base_revision`` 0 with nothing stored
+    creates revision 1 for a paired watch (the result is then
+    ``{"revision": 1}``). Refused with ``no_record`` when nothing is stored
+    and either the base is above 0 or the watch is not paired, with
+    ``conflict`` when ``base_revision`` is not the stored revision (message
+    ``stored revision is <N>, save was based on <M>``, a base of 0 over a
+    stored record included), and with ``invalid`` for an unknown kind or a
+    malformed document, a page config or menus that fail the shape guard
+    included (the message names the page or slot list by where it sits).
+    The hash is computed here and ``updated_by`` is ``panel``; the replaced
+    document goes into the record's history like any save.
     """
     store = _store(hass)
     if store is None:

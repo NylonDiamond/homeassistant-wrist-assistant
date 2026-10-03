@@ -19,6 +19,7 @@ the wire shapes the app is built against are asserted here exactly:
   a get carrying ``unreadable_revision`` equal to the stored revision files
   the report instead of a delivery, with the same reply.
 * (step 3e) ``catalog`` rides the same two ops, with its own shape guard.
+* (step 4d) ``menus`` rides the same two ops, with its own shape guard.
 
 The static half (both ops in the dispatch table, the capabilities advertised)
 sits at the bottom.
@@ -563,6 +564,52 @@ def test_a_catalog_of_the_wrong_shape_is_a_signed_400(env) -> None:
     assert env.store.get(WATCH, "catalog") is None
 
 
+# ── step 4d: the menus ───────────────────────────────────────────────────
+
+
+def _menus(display_mode: str = "icons") -> dict:
+    return {
+        "entityRadial": {
+            "entityOverrides": {"light.made_up": [{"id": "6F1C2D0E-0000-4000-8000-0000000000C1"}]},
+            "lightSlots": [{"id": "6F1C2D0E-0000-4000-8000-0000000000C1"}],
+            "schemaVersion": 1,
+        },
+        "pageSwitcher": {"displayMode": display_mode, "schemaVersion": 1},
+        "quickAction": {
+            "schemaVersion": 1,
+            "slots": [{"id": "6F1C2D0E-0000-4000-8000-0000000000C1", "position": "top"}],
+        },
+        "schemaVersion": 1,
+    }
+
+
+def test_the_menus_ride_the_same_ops(env) -> None:
+    reply = _put(env, _put_body(_menus(), kind="menus"))
+    assert reply.status == 200
+    assert reply.body == {"ok": True, "revision": 1}
+    got = _get(env, {"kind": "menus"})
+    assert (got.body["kind"], got.body["revision"], got.body["hash"]) == ("menus", 1, HASH_1)
+    assert got.body["document"] == _menus()
+    assert "document" not in _get(env, {"kind": "menus", "since_revision": 1}).body
+    assert env.store.get(WATCH, "menus").delivered_revision == 1
+    again = _put(env, _put_body(_menus("text"), kind="menus", base=1, digest=HASH_2))
+    assert again.body == {"ok": True, "revision": 2}
+
+
+def test_menus_of_the_wrong_shape_are_a_signed_400(env) -> None:
+    doc = _menus()
+    doc["entityRadial"]["entityOverrides"]["light.made_up"].append({"id": ""})
+    reply = _put(env, _put_body(doc, kind="menus"))
+    assert reply.status == 400
+    assert reply.body == {
+        "ok": False,
+        "error": "invalid",
+        "message": 'document.entityRadial.entityOverrides["light.made_up"][1].id '
+        "must be a non-empty string",
+    }
+    assert env.store.get(WATCH, "menus") is None
+
+
 # ── static: dispatch and capability ──────────────────────────────────────
 
 
@@ -613,3 +660,20 @@ def test_the_catalog_capability_is_advertised() -> None:
     const = (_PKG_DIR / "const.py").read_text()
     assert "register_capability(WATCH_CONFIG_CATALOG_CAPABILITY)" in init
     assert 'WATCH_CONFIG_CATALOG_CAPABILITY = "watch_config_catalog"' in const
+
+
+def test_the_menus_capability_is_advertised() -> None:
+    """The phone mirrors its menus, and the watch pulls them, only when it
+    sees this."""
+    init = (_PKG_DIR / "__init__.py").read_text()
+    const = (_PKG_DIR / "const.py").read_text()
+    assert "register_capability(WATCH_CONFIG_MENUS_CAPABILITY)" in init
+    assert 'WATCH_CONFIG_MENUS_CAPABILITY = "watch_config_menus"' in const
+
+
+def test_setup_hands_the_store_its_pairing_check() -> None:
+    """The panel's create path asks the secret store whether the owner is
+    paired. A setup that forgot to pass the check would build a store on
+    which the panel can never create a record."""
+    init = (_PKG_DIR / "__init__.py").read_text()
+    assert "is_paired=lambda watch_id: widget_secret_store.get(watch_id) is not None" in init

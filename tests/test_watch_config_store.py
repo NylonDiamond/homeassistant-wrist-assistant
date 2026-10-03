@@ -17,7 +17,9 @@ trigger, a listener that raises, removal) and ``revisions``. From step 3: the
 panel saving pages, the page shape guard at both levels, the unreadable report
 (``rejected_revision``), the history list and entry, restore, and files
 written before any of it. From step 3e: the ``catalog`` kind, its cap and
-shape guard, and the panel being refused it.
+shape guard, and the panel being refused it. From step 4d: the ``menus``
+kind, its cap and shape guard, and the panel creating a first record for a
+paired watch (and being refused one for any other).
 """
 
 from __future__ import annotations
@@ -52,10 +54,11 @@ INDEX_KEY = "wrist_assistant.watch_config"
 MAX_BYTES = 2 * 1024 * 1024
 MAX_BEHAVIOR_BYTES = 256 * 1024
 MAX_CATALOG_BYTES = 256 * 1024
+MAX_MENUS_BYTES = 256 * 1024
 HISTORY_LIMIT = 5
 # Kept equal to const.py by test_the_kinds_match_const below.
-KINDS = frozenset({"pages", "behavior", "catalog"})
-PANEL_KINDS = frozenset({"pages", "behavior"})
+KINDS = frozenset({"pages", "behavior", "catalog", "menus"})
+PANEL_KINDS = frozenset({"pages", "behavior", "menus"})
 
 OWNER = "watch-A"
 OTHER = "watch-B"
@@ -142,6 +145,7 @@ def _loaded_module():
                 "pages": MAX_BYTES,
                 "behavior": MAX_BEHAVIOR_BYTES,
                 "catalog": MAX_CATALOG_BYTES,
+                "menus": MAX_MENUS_BYTES,
             },
             WATCH_CONFIG_HISTORY_LIMIT=HISTORY_LIMIT,
         )
@@ -166,8 +170,13 @@ def mod():
         yield module
 
 
-def _new(mod):
-    store = mod.WatchConfigStore(_Hass())
+def _new(mod, *, paired: set[str] | None = None):
+    """A loaded store. ``paired`` is the owner ids the secret store knows;
+    without it the store is built with no pairing check, as before step 4d."""
+    if paired is None:
+        store = mod.WatchConfigStore(_Hass())
+    else:
+        store = mod.WatchConfigStore(_Hass(), is_paired=lambda owner: owner in paired)
     asyncio.run(store.async_load())
     return store
 
@@ -633,6 +642,7 @@ def test_the_size_caps_match_const() -> None:
         "pages": MAX_BYTES,
         "behavior": MAX_BEHAVIOR_BYTES,
         "catalog": MAX_CATALOG_BYTES,
+        "menus": MAX_MENUS_BYTES,
     }
 
 
@@ -858,16 +868,20 @@ def test_the_panel_hash_is_sha256_of_compact_sorted_key_json(mod):
     assert mod._HASH_RE.fullmatch(record.hash)
 
 
-def test_a_panel_save_with_base_zero_is_no_record_even_when_one_exists(mod):
-    store = _new(mod)
+def test_a_panel_save_with_base_zero_over_a_stored_record_is_a_conflict(mod):
+    """Base 0 says "nothing is stored"; a record that exists means someone
+    made the first copy since the panel looked, so it reloads at that one."""
+    store = _new(mod, paired={OWNER})
     _phone_behavior(store)
-    with pytest.raises(mod.WatchConfigNoRecordError) as exc:
+    with pytest.raises(mod.WatchConfigConflictError) as exc:
         store.panel_save(OWNER, "behavior", _behavior(), base_revision=0)
-    assert exc.value.code == "no_record"
+    assert exc.value.code == "conflict"
+    assert (exc.value.revision, exc.value.hash) == (1, HASH_1)
+    assert exc.value.message == "stored revision is 1, save was based on 0"
     assert store.get(OWNER, "behavior").revision == 1
 
 
-def test_the_panel_never_creates_a_record(mod):
+def test_the_panel_never_creates_a_record_without_a_pairing_check(mod):
     store = _new(mod)
     for base in (0, 1, 7):
         with pytest.raises(mod.WatchConfigNoRecordError):
@@ -903,16 +917,18 @@ def test_the_panel_may_save_pages(mod):
     assert [e.document for e in record.history] == [original]
 
 
-def test_a_panel_save_of_pages_still_needs_a_device_copy_first(mod):
-    store = _new(mod)
+def test_a_panel_save_of_pages_for_an_unpaired_watch_needs_a_device_copy_first(mod):
+    store = _new(mod, paired={OTHER})
     with pytest.raises(mod.WatchConfigNoRecordError):
         store.panel_save(OWNER, "pages", _doc(), base_revision=0)
     with pytest.raises(mod.WatchConfigNoRecordError):
         store.panel_save(OWNER, "pages", _doc(), base_revision=1)
     _put(store)
-    with pytest.raises(mod.WatchConfigNoRecordError):
+    with pytest.raises(mod.WatchConfigConflictError):
         store.panel_save(OWNER, "pages", _doc(), base_revision=0)
     assert store.get(OWNER, "pages").revision == 1
+    # Over the device's copy the panel saves as always, paired or not.
+    assert store.panel_save(OWNER, "pages", _doc("panel"), base_revision=1).revision == 2
 
 
 @pytest.mark.parametrize(
@@ -1794,7 +1810,9 @@ def test_the_panel_may_neither_save_nor_restore_a_catalog(mod):
     with pytest.raises(mod.WatchConfigValidationError) as exc:
         store.panel_save(OWNER, "catalog", _catalog(), base_revision=2)
     assert exc.value.code == "invalid"
-    assert exc.value.message == "the panel cannot save catalog; it may save behavior, pages"
+    assert exc.value.message == (
+        "the panel cannot save catalog; it may save behavior, menus, pages"
+    )
     with pytest.raises(mod.WatchConfigValidationError, match="the panel cannot save catalog"):
         store.restore(OWNER, "catalog", 1, base_revision=2)
     record = store.get(OWNER, "catalog")
@@ -1815,6 +1833,271 @@ def test_the_catalog_is_announced_listed_moved_and_forgotten_like_any_kind(mod):
     assert store.forget_owner(OTHER) is True
     assert sorted(heard) == [(OTHER, "catalog", 0), (OTHER, "pages", 0)]
     assert store.revisions(OTHER) == {}
+
+
+# ── step 4d: the menus kind ──────────────────────────────────────────────
+
+_SLOT_A = "6F1C2D0E-0000-4000-8000-0000000000C1"
+_SLOT_B = "6F1C2D0E-0000-4000-8000-0000000000C2"
+
+
+def _menus(**extra: Any) -> dict:
+    """A stand-in for the menus document in the contract's shape: the three
+    sections, each with its own schemaVersion and keys the store never reads."""
+    doc = {
+        "schemaVersion": 1,
+        "quickAction": {
+            "schemaVersion": 1,
+            "glowIntensity": 0.6,
+            "slots": [
+                {"id": _SLOT_A, "position": "top", "action": {"type": "assist"}},
+                {"id": _SLOT_B, "position": "right", "isVisible": False},
+            ],
+        },
+        "entityRadial": {
+            "schemaVersion": 1,
+            "allSlots": [{"id": _SLOT_A, "action": "toggle"}],
+            "lightSlots": [{"id": _SLOT_A}, {"id": _SLOT_B}],
+            "lightInheritsAll": True,
+            "entityOverrides": {"light.made_up": [{"id": _SLOT_B, "action": "on"}]},
+        },
+        "pageSwitcher": {"schemaVersion": 1, "displayMode": "icons", "iconSize": 24},
+    }
+    doc.update(extra)
+    return doc
+
+
+def test_a_device_may_save_and_read_menus(mod):
+    store = _new(mod)
+    heard = _listen(store)
+    doc = _menus(futureKey={"kept": True})
+    record = _put(store, kind="menus", doc=doc)
+    assert (record.revision, record.delivered_revision) == (1, 1)
+    assert store.get(OWNER, "menus").document == doc
+    record = _put(store, kind="menus", doc=_menus(), base=1, digest=HASH_2)
+    assert record.revision == 2
+    assert [e.revision for e in store.history(OWNER, "menus")] == [1]
+    assert heard == [(OWNER, "menus", 1), (OWNER, "menus", 2)]
+    assert store.revisions(OWNER) == {"menus": 2}
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        {},
+        {"schemaVersion": 1},
+        {"quickAction": {}, "entityRadial": {}, "pageSwitcher": {}},
+        {"quickAction": {"slots": []}},
+        {"entityRadial": {"lightSlots": [], "entityOverrides": {}}},
+        # Keys that do not end in Slots are never looked at.
+        {"entityRadial": {"lightInheritsAll": "yes", "slotsCount": 3, "beamStyle": None}},
+        {"pageSwitcher": {"slots": "not a list, and never read"}},
+        # The same id in two lists is two menus, not a clash.
+        {"quickAction": {"slots": [{"id": "a"}]},
+         "entityRadial": {"allSlots": [{"id": "a"}], "lightSlots": [{"id": "a"}],
+                          "entityOverrides": {"light.x": [{"id": "a"}]}}},
+    ],
+)
+def test_menus_of_any_shape_the_guard_allows_are_accepted(mod, document):
+    store = _new(mod)
+    assert _put(store, kind="menus", doc=document).document == document
+
+
+@pytest.mark.parametrize(
+    ("document", "message"),
+    [
+        ([], "document must be a JSON object"),
+        ({"quickAction": []}, "document.quickAction must be an object"),
+        ({"entityRadial": None}, "document.entityRadial must be an object"),
+        ({"pageSwitcher": "icons"}, "document.pageSwitcher must be an object"),
+        ({"quickAction": {"slots": {}}}, "document.quickAction.slots must be a list"),
+        ({"quickAction": {"slots": None}}, "document.quickAction.slots must be a list"),
+        ({"quickAction": {"slots": ["top"]}},
+         r"document.quickAction.slots\[0\] must be an object"),
+        ({"quickAction": {"slots": [{"id": "a"}, {"position": "top"}]}},
+         r"document.quickAction.slots\[1\].id must be a non-empty string"),
+        ({"quickAction": {"slots": [{"id": ""}]}},
+         r"document.quickAction.slots\[0\].id must be a non-empty string"),
+        ({"quickAction": {"slots": [{"id": 7}]}},
+         r"document.quickAction.slots\[0\].id must be a non-empty string"),
+        ({"quickAction": {"slots": [{"id": "ab"}, {"id": "c"}, {"id": "AB"}]}},
+         r'document.quickAction.slots\[2\] has the slot id "AB" of '
+         r"document.quickAction.slots\[0\]; slot ids must be unique in a list"),
+        ({"entityRadial": {"lightSlots": {}}},
+         "document.entityRadial.lightSlots must be a list"),
+        ({"entityRadial": {"httpActionSlots": [{"id": "a"}, {"id": "a"}]}},
+         r"document.entityRadial.httpActionSlots\[1\] has the slot id"),
+        ({"entityRadial": {"futureDomainSlots": [{}]}},
+         r"document.entityRadial.futureDomainSlots\[0\].id must be a non-empty string"),
+        ({"entityRadial": {"entityOverrides": []}},
+         "document.entityRadial.entityOverrides must be an object"),
+        ({"entityRadial": {"entityOverrides": {"light.x": {}}}},
+         r'document.entityRadial.entityOverrides\["light.x"\] must be a list'),
+        ({"entityRadial": {"entityOverrides": {"light.x": [{"id": "a"}, {"id": "a"}]}}},
+         r'document.entityRadial.entityOverrides\["light.x"\]\[1\] has the slot id'),
+    ],
+)
+def test_menus_of_the_wrong_shape_are_refused(mod, document, message):
+    store = _new(mod)
+    with pytest.raises(mod.WatchConfigValidationError, match=message):
+        _put(store, kind="menus", doc=document)
+    assert store.get(OWNER, "menus") is None
+    assert _FakeStore.writes == []
+
+
+def test_the_menus_have_their_own_cap(mod):
+    store = _new(mod)
+    overhead = mod.document_size({"b": ""})
+    at_cap = {"b": "x" * (MAX_MENUS_BYTES - overhead)}
+    assert _put(store, kind="menus", doc=at_cap).revision == 1
+    over = {"b": "x" * (MAX_MENUS_BYTES - overhead + 1)}
+    with pytest.raises(mod.WatchConfigValidationError, match="limit for menus"):
+        _put(store, kind="menus", doc=over, base=1)
+
+
+def test_the_panel_may_save_and_restore_menus(mod):
+    store = _new(mod)
+    original = _menus()
+    _put(store, kind="menus", doc=original)
+    edited = _menus(pageSwitcher={"schemaVersion": 1, "displayMode": "text"})
+    record = store.panel_save(OWNER, "menus", edited, base_revision=1)
+    assert (record.revision, record.updated_by, record.document) == (2, "panel", edited)
+    assert record.hash == mod.canonical_hash(edited)
+    assert record.delivered_revision == 1
+    record = store.restore(OWNER, "menus", 1, base_revision=2)
+    assert (record.revision, record.updated_by, record.document) == (3, "panel", original)
+
+
+def test_a_panel_save_of_menus_is_shape_checked(mod):
+    store = _new(mod)
+    _put(store, kind="menus", doc=_menus())
+    bad = _menus(quickAction={"slots": [{"id": "a"}, {"id": "a"}]})
+    with pytest.raises(mod.WatchConfigValidationError, match="slot ids must be unique"):
+        store.panel_save(OWNER, "menus", bad, base_revision=1)
+    assert store.get(OWNER, "menus").revision == 1
+
+
+# ── step 4d: the panel creates a first record for a paired watch ─────────
+
+
+def _first_copy(kind: str) -> dict:
+    return {"pages": _doc("panel"), "behavior": _behavior(), "menus": _menus()}[kind]
+
+
+@pytest.mark.parametrize("kind", sorted(PANEL_KINDS))
+def test_the_panel_creates_revision_one_for_a_paired_watch(mod, kind):
+    store = _new(mod, paired={OWNER})
+    heard = _listen(store)
+    document = _first_copy(kind)
+    record = store.panel_save(OWNER, kind, document, base_revision=0)
+    assert (record.owner_watch_id, record.kind, record.revision) == (OWNER, kind, 1)
+    assert (record.updated_by, record.document) == ("panel", document)
+    assert record.hash == mod.canonical_hash(document)
+    assert record.size_bytes == mod.document_size(document)
+    assert record.history == []
+    assert (record.delivered_revision, record.delivered_at) == (0, None)
+    assert (record.rejected_revision, record.rejected_at) == (0, None)
+    assert record.updated_at
+    assert store.get(OWNER, kind) is record
+    assert heard == [(OWNER, kind, 1)]
+    # Written to the owner's own file, and the owner joins the index.
+    written = _FakeStore.files[mod._owner_key(OWNER)]["records"][kind]
+    assert (written["revision"], written["updated_by"], written["document"]) == (
+        1, "panel", document
+    )
+    assert "history" not in written
+    assert _FakeStore.files[INDEX_KEY] == {"owners": [OWNER]}
+    again = _new(mod).get(OWNER, kind)
+    assert (again.revision, again.hash, again.document) == (1, record.hash, document)
+
+
+def test_a_created_record_is_then_saved_like_any_other(mod):
+    store = _new(mod, paired={OWNER})
+    store.panel_save(OWNER, "menus", _menus(), base_revision=0)
+    # A device that fetched revision 1 holds it, and its next upload builds on it.
+    assert store.mark_delivered(OWNER, "menus", 1) is True
+    with pytest.raises(mod.WatchConfigConflictError) as exc:
+        _put(store, kind="menus", doc=_menus(), base=0)
+    assert exc.value.revision == 1
+    assert _put(store, kind="menus", doc=_menus(), base=1, digest=HASH_2).revision == 2
+    record = store.panel_save(OWNER, "menus", _menus(schemaVersion=2), base_revision=2)
+    assert record.revision == 3
+    assert [e.revision for e in record.history] == [1, 2]
+    assert record.history[0].updated_by == "panel"
+
+
+def test_a_create_beside_another_kind_keeps_the_owner_s_other_records(mod):
+    store = _new(mod, paired={OWNER})
+    _put(store)
+    store.panel_save(OWNER, "menus", _menus(), base_revision=0)
+    assert store.revisions(OWNER) == {"menus": 1, "pages": 1}
+    records = _FakeStore.files[mod._owner_key(OWNER)]["records"]
+    assert sorted(records) == ["menus", "pages"]
+
+
+def test_the_panel_never_creates_a_record_for_a_watch_that_is_not_paired(mod):
+    store = _new(mod, paired={OTHER})
+    heard = _listen(store)
+    with pytest.raises(mod.WatchConfigNoRecordError) as exc:
+        store.panel_save(OWNER, "menus", _menus(), base_revision=0)
+    assert exc.value.code == "no_record"
+    assert exc.value.message == (
+        "there is no stored menus record and this watch is not paired; "
+        "pair it before starting its config here"
+    )
+    assert store.get(OWNER, "menus") is None
+    assert heard == []
+    assert _FakeStore.writes == []
+
+
+def test_a_create_needs_base_zero(mod):
+    store = _new(mod, paired={OWNER})
+    with pytest.raises(mod.WatchConfigNoRecordError, match="no stored menus record"):
+        store.panel_save(OWNER, "menus", _menus(), base_revision=1)
+    assert store.get(OWNER, "menus") is None
+    assert _FakeStore.writes == []
+
+
+def test_a_create_is_checked_before_the_pairing_is_asked(mod):
+    asked: list[str] = []
+
+    def is_paired(owner: str) -> bool:
+        asked.append(owner)
+        return True
+
+    store = mod.WatchConfigStore(_Hass(), is_paired=is_paired)
+    asyncio.run(store.async_load())
+    with pytest.raises(mod.WatchConfigValidationError, match="slot ids must be unique"):
+        store.panel_save(
+            OWNER, "menus", {"quickAction": {"slots": [{"id": "a"}, {"id": "a"}]}},
+            base_revision=0,
+        )
+    with pytest.raises(mod.WatchConfigValidationError, match="the panel cannot save catalog"):
+        store.panel_save(OWNER, "catalog", _catalog(), base_revision=0)
+    assert asked == []
+    # A save over a stored record never asks either.
+    _put(store, kind="behavior", doc=_behavior())
+    store.panel_save(OWNER, "behavior", _behavior(wrapPages=True), base_revision=1)
+    assert asked == []
+    store.panel_save(OWNER, "menus", _menus(), base_revision=0)
+    assert asked == [OWNER]
+
+
+def test_a_create_for_an_unreadable_owner_is_unavailable(mod):
+    _FakeStore.files[INDEX_KEY] = {"owners": [OWNER]}
+    _FakeStore.unreadable.add(mod._owner_key(OWNER))
+    store = _new(mod, paired={OWNER})
+    with pytest.raises(mod.WatchConfigUnavailableError):
+        store.panel_save(OWNER, "menus", _menus(), base_revision=0)
+    assert _FakeStore.writes == []
+
+
+def test_a_restore_never_creates_even_for_a_paired_watch(mod):
+    store = _new(mod, paired={OWNER})
+    for base in (0, 1):
+        with pytest.raises(mod.WatchConfigNoRecordError):
+            store.restore(OWNER, "menus", 1, base_revision=base)
+    assert store.get(OWNER, "menus") is None
 
 
 # ── step 3: files written before it ──────────────────────────────────────
