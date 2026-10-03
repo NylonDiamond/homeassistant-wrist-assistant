@@ -36,11 +36,12 @@ import {
   tileShowsLabel,
   tileStateText,
   tileSymbol,
+  tileTarget,
   watchPageLayout,
   watchPageName,
 } from "./model.js";
 import { watchPageTheme, watchPageValue } from "./page-settings-model.js";
-import { WATCH_TILE_DEFAULTS, watchKindColor } from "./tile-new.js";
+import { WATCH_TILE_DEFAULTS, watchKindColor, watchThemeRoleColors } from "./tile-new.js";
 import { watchStateDomains, watchStylingTheme } from "./tile-styling.js";
 import { type WatchCatalog, watchLibraryTileFallbackName } from "./catalog.js";
 
@@ -236,11 +237,572 @@ const OFF_STATES: ReadonlySet<string> = new Set([
 
 /** Whether the picture draws a tile as on: an entity whose state is not an
  * off state; a tile with no entity state to read (no states, a virtual
- * tile) is drawn on, so its styling shows. */
+ * tile) is drawn on, so its styling shows. A remote, vacuum, climate,
+ * person or alarm panel is on as its own watch tile says (`specialActive`). */
 export function watchTilePreviewActive(tile: WatchPageTile, states?: Readonly<Record<string, HassEntityState>>): boolean {
   const entity = states?.[tileEntityId(tile)];
   if (entity === undefined) return true;
+  const special = specialActive(tile, states!, entity);
+  if (special !== undefined) return special;
   return !OFF_STATES.has(String(entity.state ?? "").toLowerCase());
+}
+
+// ── special tiles, as their own watch views draw them (part 3f) ─────────
+
+/** The theme tokens the special tiles take their default colors from, per
+ * theme (`DS+Color.swift`): the semantic warning, danger and accent, the
+ * secondary text's white opacity, and the three temperature colors. The
+ * entity role colors come from the tile table (`watchThemeRoleColors`). */
+const THEME_TOKENS: Readonly<Record<string, { warning: string; danger: string; accent: string; secondary: number; tempWarm: string; tempCool: string; tempNeutral: string }>> = {
+  midnight: { warning: "#F5BD3A", danger: "#FF5D72", accent: "#8CA8FF", secondary: 0.72, tempWarm: "#F3A43D", tempCool: "#4EB6F0", tempNeutral: "#8FAAC7" },
+  sunrise: { warning: "#F7B24A", danger: "#F06B5C", accent: "#F0A55B", secondary: 0.78, tempWarm: "#F78F42", tempCool: "#53B7E6", tempNeutral: "#A9B0C5" },
+  forest: { warning: "#E0B654", danger: "#DD6A62", accent: "#4CCF8F", secondary: 0.74, tempWarm: "#D99343", tempCool: "#3DB1D0", tempNeutral: "#77A79E" },
+  sunnyBeachDay: { warning: "#E9C46A", danger: "#E76F51", accent: "#2EC4B6", secondary: 0.7, tempWarm: "#F4A261", tempCool: "#4DBFE0", tempNeutral: "#88B6C9" },
+  neonLagoon: { warning: "#FFC145", danger: "#EC368D", accent: "#02C3BD", secondary: 0.78, tempWarm: "#FF9E4D", tempCool: "#47C4FF", tempNeutral: "#9EC2E8" },
+  softVintage: { warning: "#AC8974", danger: "#C49186", accent: "#C49186", secondary: 0.78, tempWarm: "#AC8974", tempCool: "#918AA4", tempNeutral: "#B8ACA0" },
+  hyperPop: { warning: "#FEE440", danger: "#FF4D9E", accent: "#00F5D4", secondary: 0.8, tempWarm: "#FB5607", tempCool: "#00BBF9", tempNeutral: "#A9CFFF" },
+  ember: { warning: "#E8A33D", danger: "#E8512F", accent: "#E8512F", secondary: 0.74, tempWarm: "#E88A30", tempCool: "#A08070", tempNeutral: "#B8A090" },
+  sakura: { warning: "#E8B85A", danger: "#E85A72", accent: "#F2A0B5", secondary: 0.76, tempWarm: "#E8A088", tempCool: "#A890C0", tempNeutral: "#C0B0B8" },
+  polar: { warning: "#D4B87A", danger: "#D47080", accent: "#8EC8E8", secondary: 0.74, tempWarm: "#B8A090", tempCool: "#70B0D0", tempNeutral: "#90A8B8" },
+};
+
+/** A theme color for a special tile: `hex` at `alpha` (the secondary text
+ * is white at the theme's opacity). */
+export interface WatchInk {
+  hex: string;
+  alpha: number;
+}
+
+function themeInk(page: WatchPage | undefined, token: "warning" | "danger" | "accent" | "secondary" | "tempWarm" | "tempCool" | "tempNeutral" | `entity${string}`): WatchInk {
+  const theme = page === undefined ? WATCH_TILE_DEFAULTS.watchFallbackTheme : watchPageTheme(page);
+  if (token.startsWith("entity")) {
+    const role = watchThemeRoleColors(theme)[token];
+    return { hex: role ?? "#FFFFFF", alpha: 1 };
+  }
+  const t = THEME_TOKENS[theme] ?? THEME_TOKENS[WATCH_TILE_DEFAULTS.watchFallbackTheme] ?? THEME_TOKENS.midnight!;
+  if (token === "secondary") return { hex: "#FFFFFF", alpha: t.secondary };
+  return { hex: t[token as Exclude<keyof typeof t, "secondary">], alpha: 1 };
+}
+
+/** A stored color as one plain ink, or undefined when there is none. */
+function ownInk(value: unknown): WatchInk | undefined {
+  const c = parseTileColor(value);
+  return c === undefined ? undefined : { hex: tileInkColor(c), alpha: 1 };
+}
+
+function lower(value: unknown): string {
+  return String(value ?? "").toLowerCase();
+}
+
+/** Whether a `media_player.` tile is drawn as a remote: a TV (`device_class`
+ * `tv`) with no `remote.` of the same object id, the rule the add uses
+ * (`tvRemote`). Needs the states to decide. */
+export function watchTileIsTvRemote(tile: WatchPageTile, states?: Readonly<Record<string, HassEntityState>>): boolean {
+  const entityId = tileEntityId(tile);
+  if (tileKind(entityId) !== "media_player" || states === undefined) return false;
+  const entity = Object.hasOwn(states, entityId) ? states[entityId] : undefined;
+  return entity?.attributes?.device_class === "tv" && !Object.hasOwn(states, `remote.${tileTarget(entityId)}`);
+}
+
+/** The key a tile's state icons and colors are read under, as the watch
+ * resolves it (`resolvedStateKey`): undefined unless `usesStateIcons` is
+ * true and the entity is there; `unavailable` for unknown or unavailable. */
+export function watchTileStateKey(tile: WatchPageTile, raw: string | undefined): string | undefined {
+  if (tile.usesStateIcons !== true || raw === undefined) return undefined;
+  const key = raw.toLowerCase();
+  return key === "unknown" || key === "unavailable" ? "unavailable" : key;
+}
+
+function stateEntry(map: unknown, key: string | undefined): string | undefined {
+  if (key === undefined || map === null || typeof map !== "object" || Array.isArray(map)) return undefined;
+  const value = Object.hasOwn(map, key) ? (map as Record<string, unknown>)[key] : undefined;
+  return typeof value === "string" ? value : undefined;
+}
+
+/** The linked media player of a remote tile: `associatedMediaPlayerId`,
+ * else `media_player.<object id>` (a TV tile is its own player). */
+export function watchRemotePlayerId(tile: WatchPageTile): string {
+  const own = typeof tile.associatedMediaPlayerId === "string" ? tile.associatedMediaPlayerId.trim() : "";
+  if (own !== "") return own;
+  const entityId = tileEntityId(tile);
+  return tileKind(entityId) === "media_player" ? entityId : `media_player.${tileTarget(entityId)}`;
+}
+
+/** The remote's symbol: its own unless it is one of the three the pickers
+ * assign, else by the platform the entity id names (`RemotePlatform`). */
+export function watchRemoteSymbol(tile: WatchPageTile): string | undefined {
+  if (tile.icon === "") return undefined;
+  const own = typeof tile.icon === "string" ? tile.icon : "";
+  if (own !== "" && !["appletv", "play.rectangle", "av.remote"].includes(own)) return own;
+  const id = tileEntityId(tile).toLowerCase();
+  if (id.includes("apple_tv")) return "appletv";
+  if (["android", "shield", "samsung", "lg", "webos", "roku"].some((w) => id.includes(w))) return "av.remote";
+  if (id.includes("xbox")) return "xbox.logo";
+  return "av.remote";
+}
+
+/** The battery symbol and color the watch draws by level. */
+export function watchBatteryBadge(level: number): { symbol: string; ink: WatchInk } {
+  const symbol = level < 25 ? "battery.25" : level < 50 ? "battery.50" : level < 75 ? "battery.75" : "battery.100";
+  const ink = level < 20 ? { hex: "#FF3B30", alpha: 1 } : level < 40 ? { hex: "#FF9500", alpha: 1 } : { hex: "#FFFFFF", alpha: 0.62 };
+  return { symbol, ink };
+}
+
+/** A climate's temperature as the watch writes it: one decimal when the
+ * step is under 1, else none, then a degree sign. */
+export function watchClimateTemperature(value: number, step: number): string {
+  return `${value.toFixed(step > 0 && step < 1 ? 1 : 0)}°`;
+}
+
+/** The person's location badge: Home, Away, else the zone's first word, at
+ * most 6 characters, capitalized (`PersonEntity.locationBadge`). */
+export function watchPersonBadge(state: string): string {
+  const s = state.toLowerCase();
+  if (s === "home") return "Home";
+  if (s === "not_home") return "Away";
+  const first = state.replace(/_/g, " ").split(" ").find((w) => w !== "") ?? state;
+  const short = first.slice(0, 6);
+  return short === "" ? "" : short[0]!.toUpperCase() + short.slice(1).toLowerCase();
+}
+
+const ALARM_WORDS: Readonly<Record<string, string>> = {
+  disarmed: "OFF", armed_home: "HOME", armed_away: "AWAY", armed_night: "NIGHT", armed_vacation: "VACATION",
+  armed_custom_bypass: "CUSTOM", pending: "PENDING", arming: "ARMING", disarming: "DISARMING", triggered: "ALERT",
+};
+
+/** An alarm panel's state as the watch parses it: an unknown state reads as
+ * disarmed (`AlarmState(rawValue:) ?? .disarmed`). */
+function alarmState(raw: string): string {
+  return Object.hasOwn(ALARM_WORDS, raw) ? raw : "disarmed";
+}
+
+/** Whether a special tile is on as its watch view says, or undefined for
+ * any other tile. */
+function specialActive(tile: WatchPageTile, states: Readonly<Record<string, HassEntityState>>, entity: HassEntityState): boolean | undefined {
+  const state = lower(entity.state);
+  switch (tileKind(tileEntityId(tile))) {
+    case "remote":
+      return remoteActive(tile, states, entity);
+    case "media_player":
+      return watchTileIsTvRemote(tile, states) ? remoteActive(tile, states, entity) : undefined;
+    case "vacuum":
+      return state === "cleaning" || state === "returning";
+    case "climate":
+      return state !== "off" && state !== "unavailable";
+    case "person":
+      return state === "home";
+    case "alarm_control_panel": {
+      const a = alarmState(state);
+      return a !== "disarmed";
+    }
+    default:
+      return undefined;
+  }
+}
+
+function remoteActive(tile: WatchPageTile, states: Readonly<Record<string, HassEntityState>>, entity: HassEntityState): boolean {
+  const id = watchRemotePlayerId(tile);
+  const player = Object.hasOwn(states, id) ? states[id] : undefined;
+  if (player !== undefined) return !["off", "standby"].includes(lower(player.state));
+  return tileKind(tileEntityId(tile)) === "remote" ? lower(entity.state) === "on" : !["off", "standby"].includes(lower(entity.state));
+}
+
+/** A badge in a tile's top left: lines of words, or a battery. */
+export type WatchSpecialBadge =
+  | { kind: "text"; lines: string[]; ink: WatchInk; weight: number; pill: boolean }
+  | { kind: "battery"; level: number; symbol: string; ink: WatchInk };
+
+/**
+ * How a remote (or a TV), vacuum, lawn mower, climate, person or alarm
+ * panel tile draws at rest, as its own watch view does; undefined for any
+ * other tile. `symbol` undefined is no symbol, `filled` asks for the
+ * symbol's fill variant, `photo` is a person's picture in place of the
+ * symbol, `stateLine` keeps the picture's line of state (the mower, a plain
+ * sensor tile on the watch).
+ */
+export interface WatchSpecialLook {
+  symbol: string | undefined;
+  filled: boolean;
+  ink: WatchInk;
+  opacity: number;
+  photo?: string;
+  active: boolean;
+  topLeft?: WatchSpecialBadge;
+  topRight?: string;
+  stateLine: boolean;
+}
+
+export function watchSpecialTileLook(
+  tile: WatchPageTile,
+  input: Pick<WatchPagePreviewInput, "states" | "page">,
+): WatchSpecialLook | undefined {
+  const states = input.states;
+  const entityId = tileEntityId(tile);
+  const entity = states !== undefined && Object.hasOwn(states, entityId) ? states[entityId] : undefined;
+  const raw = entity === undefined ? undefined : String(entity.state ?? "");
+  const state = lower(raw);
+  const attrs = entity?.attributes ?? {};
+  const active = watchTilePreviewActive(tile, states);
+  const activity = tile.showActivityStatus !== false;
+  const kind = tileKind(entityId);
+  const page = input.page;
+  const secondary: WatchInk = { hex: "#FFFFFF", alpha: 0.62 };
+  const key = watchTileStateKey(tile, raw);
+  const stateIcon = stateEntry(tile.stateIcons, key);
+  const stateColor = ownInk(stateEntry(tile.stateColors, key));
+  const noIcon = tile.icon === "";
+  const ownIcon = typeof tile.icon === "string" && tile.icon !== "" ? tile.icon : undefined;
+
+  if (kind === "remote" || watchTileIsTvRemote(tile, states)) {
+    const playerId = watchRemotePlayerId(tile);
+    const player = states !== undefined && Object.hasOwn(states, playerId) ? states[playerId] : undefined;
+    const ps = lower(player?.state);
+    const playerOn = player !== undefined && ps !== "off" && ps !== "standby";
+    const volume = player?.attributes?.volume_level;
+    return {
+      symbol: watchRemoteSymbol(tile),
+      filled: true,
+      ink: ownInk(tile.color) ?? themeInk(page, "entityRemote"),
+      opacity: 1,
+      active,
+      topRight: !activity || player === undefined ? undefined : ps === "playing" ? "play.fill" : ps === "paused" || ps === "idle" ? "pause.fill" : undefined,
+      topLeft: activity && playerOn && typeof volume === "number" && Number.isFinite(volume)
+        ? { kind: "text", lines: [`${Math.trunc(volume * 100)}%`], ink: secondary, weight: 500, pill: false }
+        : undefined,
+      stateLine: false,
+    };
+  }
+
+  switch (kind) {
+    case "vacuum": {
+      const v = ["cleaning", "docked", "returning", "idle", "paused", "error"].includes(state) ? state : "unknown";
+      const byState: Record<string, string> = { cleaning: "hurricane", docked: "house", returning: "arrow.uturn.backward", idle: "hurricane", paused: "pause.fill", error: "exclamationmark.triangle", unknown: "hurricane" };
+      const ink = v === "cleaning" || v === "returning" || v === "paused" ? themeInk(page, "entityVacuum") : v === "error" ? themeInk(page, "danger") : themeInk(page, "secondary");
+      const battery = attrs.battery_level;
+      const status: Record<string, string> = { cleaning: "play.fill", returning: "arrow.uturn.backward", paused: "pause.fill", error: "exclamationmark.triangle" };
+      return {
+        symbol: noIcon ? undefined : (ownIcon ?? byState[v]),
+        filled: true,
+        ink: ownInk(tile.color) ?? ink,
+        opacity: 1,
+        active,
+        topLeft: tile.showBatteryOnTile !== false && typeof battery === "number" && Number.isFinite(battery) ? batteryBadge(Math.trunc(battery)) : undefined,
+        topRight: activity ? status[v] : undefined,
+        stateLine: false,
+      };
+    }
+    case "lawn_mower": {
+      const batteryId = typeof tile.mowerBatteryEntityId === "string" && tile.mowerBatteryEntityId !== "" ? tile.mowerBatteryEntityId : `sensor.${tileTarget(entityId)}_battery`;
+      const sensor = states !== undefined && Object.hasOwn(states, batteryId) ? states[batteryId] : undefined;
+      const level = sensor === undefined || String(sensor.state ?? "").trim() === "" ? NaN : Number(sensor.state);
+      const status = ({ mowing: "play.fill", starting: "play.fill", on: "play.fill", returning: "arrow.uturn.backward", paused: "pause.fill", error: "exclamationmark.triangle" } as Record<string, string>)[state];
+      return {
+        symbol: stateIcon ?? (noIcon ? undefined : (ownIcon ?? "leaf.fill")),
+        filled: false,
+        ink: stateColor ?? ownInk(tile.color) ?? { hex: "#34C759", alpha: 1 },
+        opacity: 1,
+        active,
+        topLeft: tile.showBatteryOnTile !== false && Number.isFinite(level) ? batteryBadge(Math.trunc(level)) : undefined,
+        topRight: activity ? status : undefined,
+        stateLine: true,
+      };
+    }
+    case "climate": {
+      const modeIcon: Record<string, string> = { off: "power", heat: "flame", cool: "snowflake", heat_cool: "thermometer.variable", auto: "thermometer.variable", dry: "drop.degreesign", fan_only: "fan" };
+      const modeInk = state === "heat" ? themeInk(page, "tempWarm") : state === "cool" ? themeInk(page, "tempCool")
+        : state === "heat_cool" || state === "auto" ? themeInk(page, "tempNeutral") : state === "fan_only" ? themeInk(page, "entityFan") : themeInk(page, "entityClimate");
+      const on = state !== "off" && state !== "unavailable";
+      const style = watchValueLabelStyle(tile);
+      const lines: string[] = [];
+      if (style !== "Off" && entity !== undefined) {
+        const step = storedNumber(attrs.target_temp_step) ?? 1;
+        const features = storedNumber(attrs.supported_features) ?? 0;
+        const dual = state === "heat_cool" || (features !== 0 && (features & 2) !== 0 && (features & 1) === 0);
+        const low = storedNumber(attrs.target_temp_low);
+        const high = storedNumber(attrs.target_temp_high);
+        const target = storedNumber(attrs.temperature);
+        const current = storedNumber(attrs.current_temperature);
+        if (tile.showTargetTempOnTile !== false) {
+          if (dual && low !== undefined && high !== undefined) lines.push(`${watchClimateTemperature(low, step)}/${watchClimateTemperature(high, step)}`);
+          else if (target !== undefined) lines.push(watchClimateTemperature(target, step));
+        }
+        if (tile.showCurrentTempOnTile !== false && current !== undefined) lines.push(watchClimateTemperature(current, step));
+      }
+      const action = lower(attrs.hvac_action);
+      const badge = action === "heating" ? "flame.fill" : action === "cooling" ? "snowflake" : action === "drying" ? "dehumidifier.fill" : action === "fan" ? "fan.fill" : undefined;
+      return {
+        symbol: stateIcon ?? (noIcon ? undefined : (ownIcon ?? (modeIcon[state] ?? "thermometer"))),
+        filled: stateIcon === undefined && on,
+        ink: stateColor ?? ownInk(tile.color) ?? modeInk,
+        opacity: on ? 1 : 0.85,
+        active,
+        topLeft: lines.length === 0 ? undefined : { kind: "text", lines, ink: secondary, weight: 500, pill: style === "Pill" },
+        topRight: activity && on ? badge : undefined,
+        stateLine: false,
+      };
+    }
+    case "person": {
+      const home = state === "home";
+      const icons = tile.stateIcons !== null && typeof tile.stateIcons === "object" && !Array.isArray(tile.stateIcons) ? Object.values(tile.stateIcons as Record<string, unknown>) : [];
+      const customIcon = icons.some((v) => typeof v === "string" && v !== "") || (typeof tile.icon === "string" && tile.icon !== "person");
+      const usePhoto = typeof tile.usePersonPhoto === "boolean" ? tile.usePersonPhoto : !customIcon;
+      const picture = attrs.entity_picture;
+      return {
+        symbol: stateIcon ?? (noIcon ? undefined : (ownIcon ?? "person")),
+        filled: stateIcon === undefined,
+        ink: stateColor ?? ownInk(tile.color) ?? themeInk(page, "entityPerson"),
+        opacity: home || tile.dimWhenOff === false || entity === undefined ? 1 : 0.6,
+        photo: usePhoto && typeof picture === "string" && picture !== "" ? picture : undefined,
+        active,
+        topLeft: activity && raw !== undefined ? { kind: "text", lines: [watchPersonBadge(raw)], ink: { hex: "#FFFFFF", alpha: 0.8 }, weight: 500, pill: false } : undefined,
+        stateLine: false,
+      };
+    }
+    case "alarm_control_panel": {
+      const a = alarmState(state);
+      const byState: Record<string, string> = { triggered: "exclamationmark.shield", pending: "shield.lefthalf.filled", arming: "shield.lefthalf.filled", disarming: "shield.lefthalf.filled" };
+      const ink = a === "disarmed" ? themeInk(page, "secondary")
+        : a === "armed_away" || a === "triggered" ? themeInk(page, "danger")
+        : a === "armed_night" ? { hex: "#BF5AF2", alpha: 1 }
+        : a === "pending" || a === "arming" || a === "disarming" ? themeInk(page, "accent")
+        : themeInk(page, "warning");
+      return {
+        symbol: stateIcon ?? (noIcon ? undefined : (ownIcon ?? byState[a] ?? "shield")),
+        filled: stateIcon === undefined,
+        ink: stateColor ?? ownInk(tile.color) ?? ink,
+        opacity: 1,
+        active,
+        topLeft: activity && entity !== undefined ? { kind: "text", lines: [ALARM_WORDS[a]!], ink: secondary, weight: 600, pill: false } : undefined,
+        stateLine: false,
+      };
+    }
+    default:
+      return undefined;
+  }
+}
+
+/** A special tile's symbol, or a person's photo in a circle 1.35 times the
+ * symbol's size with a rim in the symbol's color at 90%. */
+function specialSymbol(look: WatchSpecialLook, icons: IconProvider | undefined, symbolPt: number, room: number, s: number, shadow: boolean): TemplateResult | typeof nothing {
+  const opacity = look.opacity * (look.photo === undefined ? look.ink.alpha : 1);
+  const fade = opacity >= 1 ? "" : `opacity:${Math.round(opacity * 1000) / 1000}`;
+  if (look.photo !== undefined) {
+    const d = Math.max(8, Math.min(symbolPt * 1.35, room));
+    const rim = Math.max(1, d * 0.045);
+    return html`<img class="wp-photo" alt="" src=${look.photo}
+      style=${`width:${d * s}px;height:${d * s}px;border:${Math.round(rim * s * 100) / 100}px solid ${rgba(look.ink.hex, 0.9)}${fade === "" ? "" : `;${fade}`}`} />`;
+  }
+  if (look.symbol === undefined) return nothing;
+  const mark = symbolMark(icons, filledSymbol(icons, look.symbol, look.filled), Math.max(8, Math.min(symbolPt, room)) * s, look.ink.hex, shadow);
+  return fade === "" ? mark : html`<span class="wp-sym-fade" style=${fade}>${mark}</span>`;
+}
+
+function batteryBadge(level: number): WatchSpecialBadge {
+  const { symbol, ink } = watchBatteryBadge(level);
+  return { kind: "battery", level, symbol, ink };
+}
+
+function inkCss(ink: WatchInk): string {
+  return ink.alpha >= 1 ? ink.hex : rgba(ink.hex, ink.alpha);
+}
+
+/** The symbol's fill variant when the provider draws one, else the name. */
+function filledSymbol(icons: IconProvider | undefined, name: string, filled: boolean): string {
+  if (!filled || name.endsWith(".fill")) return name;
+  const f = `${name}.fill`;
+  return icons?.render(f, 1, "#FFFFFF") !== undefined ? f : name;
+}
+
+/** A special tile's badges, top left and top right, at the badge padding.
+ * Returns the bottom of the top left one in points (0 for none). */
+function specialBadges(tile: WatchPageTile, look: WatchSpecialLook, input: WatchPagePreviewInput, widthPt: number, heightPt: number, s: number): { parts: TemplateResult[]; bottom: number } {
+  const pad = watchBadgePadding(widthPt, heightPt);
+  const size = watchBadgeFontSize(tile, widthPt, heightPt);
+  const parts: TemplateResult[] = [];
+  let bottom = 0;
+  const shadow = tile.statusTextShadow === false ? "" : `text-shadow:0 ${s}px ${2 * s}px rgba(0, 0, 0, 0.8)`;
+  const b = look.topLeft;
+  if (b?.kind === "text") {
+    const style = [`font-size:${size * s}px`, `top:${pad * s}px`, `left:${pad * s}px`, `color:${inkCss(b.ink)}`, `font-weight:${b.weight}`, b.pill ? pillStyle(s) : "", shadow].filter((p) => p !== "").join(";");
+    parts.push(html`<span class="wp-badge" style=${style}>${b.lines.map((l) => html`<span>${l}</span>`)}</span>`);
+    bottom = pad + b.lines.length * size * 1.15;
+  } else if (b?.kind === "battery") {
+    const font = Math.max(size - 1, 4);
+    const style = [`font-size:${font * s}px`, `top:${pad * s}px`, `left:${pad * s}px`, `color:${inkCss(b.ink)}`, `gap:${s}px`, `text-shadow:0 ${s}px ${2 * s}px rgba(0, 0, 0, 0.6)`].join(";");
+    parts.push(html`<span class="wp-badge row" style=${style}>${symbolMark(input.icons, b.symbol, Math.max(font - 2, 3) * s, b.ink.hex)}<span>${b.level}</span></span>`);
+    bottom = pad + font * 1.15;
+  }
+  if (look.topRight !== undefined) {
+    const px = (storedNumber(tile.statusIconSizeOverride) ?? 15) * 0.7 + (look.topRight.includes("exclamationmark") ? 1.5 : 0);
+    parts.push(html`<span class="wp-badge" style=${`top:${Math.max(0, pad - 1) * s}px;right:${pad * s}px;opacity:0.62`}>${symbolMark(input.icons, look.topRight, px * s, "#FFFFFF")}</span>`);
+  }
+  return { parts, bottom };
+}
+
+// ── cameras ──────────────────────────────────────────────────────────────
+
+/** A camera tile's corner radius by its short side in points. */
+export function watchCameraCornerRadius(widthPt: number, heightPt: number): number {
+  const side = Math.min(widthPt, heightPt);
+  return side < 25 ? 4 : side < 40 ? 5 : side < 60 ? 6 : 8;
+}
+
+/** A camera tile's border width in icon mode, by `borderThickness`. */
+export function watchCameraBorderWidth(thickness: unknown): number {
+  switch (thickness) {
+    case "none": return 0;
+    case "thin": return 1;
+    case "medium": return 2;
+    case "thick": return 3;
+    case "auto": return 1;
+    default: return 0.75;
+  }
+}
+
+/** A camera group's grid (`multiCamGridSize`): `columns` when set above 0,
+ * else one column for 1 or 2 cameras, else ceil(sqrt(n)) columns. */
+export function watchMultiCamGrid(count: number, columns?: unknown): { columns: number; rows: number } {
+  if (count <= 0) return { columns: 1, rows: 1 };
+  const own = typeof columns === "number" && Number.isFinite(columns) ? Math.trunc(columns) : 0;
+  if (own > 0) return { columns: own, rows: Math.ceil(count / own) };
+  if (count <= 2) return { columns: 1, rows: count };
+  const cols = Math.ceil(Math.sqrt(count));
+  return { columns: cols, rows: Math.ceil(count / cols) };
+}
+
+/** The rows' heights (`multiCamRowHeights`): in proportion to the weights
+ * only with one column and one weight per row, else even. */
+export function watchMultiCamRowHeights(total: number, rows: number, spacing: number, columns: number, weights: unknown): number[] {
+  if (rows <= 0) return [];
+  const w = Array.isArray(weights) && weights.every((x) => typeof x === "number" && Number.isFinite(x)) ? (weights as number[]) : undefined;
+  if (columns === 1 && w !== undefined && w.length === rows) {
+    const available = total - spacing * (rows - 1);
+    if (available <= 0) return Array(rows).fill(Math.max(0, total / rows));
+    const sum = w.reduce((a, b) => a + b, 0);
+    if (sum <= 0) return Array(rows).fill(available / rows);
+    return w.map((x) => (x / sum) * available);
+  }
+  return Array(rows).fill(Math.max(0, (total - spacing * (rows - 1)) / rows));
+}
+
+/** How cell `i` of a camera group fills: `cameraFillModes[i]`, then
+ * `cameraFillMode`, then fill. */
+export function watchMultiCamCellFill(tile: WatchPageTile, i: number): "fill" | "fit" {
+  const modes = Array.isArray(tile.cameraFillModes) ? tile.cameraFillModes : [];
+  const own = i < modes.length ? modes[i] : undefined;
+  const mode = own === "fill" || own === "fit" ? own : tile.cameraFillMode;
+  return mode === "fit" ? "fit" : "fill";
+}
+
+/** A camera group's border: on, its width (gaps and outer inset) and the
+ * CSS background that shows through the gaps. Off is 1 point black gaps. */
+export function watchMultiCamBorder(tile: WatchPageTile): { on: boolean; width: number; spacing: number; background: string } {
+  if (tile.multiCamBorderEnabled !== true) return { on: false, width: 0, spacing: 1, background: "#000" };
+  const t = tile.multiCamBorderThickness;
+  const width = t === "medium" ? 2 : t === "thick" ? 3 : t === "none" ? 0 : t === "extraThin" ? 0.75 : t === "auto" ? 0 : 1;
+  const raw = typeof tile.multiCamBorderColor === "string" ? tile.multiCamBorderColor : "FFFFFF";
+  const c = parseTileColor(raw);
+  const background = c?.kind === "rainbow" ? "linear-gradient(135deg, #FF3B30, #FF9500, #FFCC00, #34C759, #007AFF, #AF52DE)"
+    : c?.kind === "gradient" ? `linear-gradient(135deg, ${c.from}, ${c.to})`
+    : c?.kind === "solid" ? c.hex : "#FFFFFF";
+  return { on: true, width, spacing: Math.max(width, 1), background };
+}
+
+function pictureOf(states: Readonly<Record<string, HassEntityState>> | undefined, entityId: string): string | undefined {
+  const p = states !== undefined && Object.hasOwn(states, entityId) ? states[entityId]?.attributes?.entity_picture : undefined;
+  return typeof p === "string" && p !== "" ? p : undefined;
+}
+
+/** A snapshot in a box of `w` by `h` points: letterboxed with fit, else
+ * cropped and moved by the offsets (half the box per 1). The move shifts
+ * the whole scaled picture, as the watch's offset does, so what overflows
+ * the box comes into view before any black does. */
+function snapshot(url: string, fill: boolean, w: number, h: number, ox: number, oy: number, s: number): TemplateResult {
+  const shift = (v: number) => {
+    const px = Math.round(v * s * 100) / 100;
+    return px === 0 ? "50%" : `calc(50% ${px < 0 ? "-" : "+"} ${Math.abs(px)}px)`;
+  };
+  const position = fill ? `${shift(-ox * w * 0.5)} ${shift(-oy * h * 0.5)}` : "50% 50%";
+  const css = `background-image:url("${url.replace(/["\\]/g, (c) => `\\${c}`)}");background-size:${fill ? "cover" : "contain"};background-position:${position}`;
+  return html`<span class="wp-snap" role="img" aria-label="Snapshot" style=${css}></span>`;
+}
+
+/** A camera or camera group tile as the watch draws it: no tile ground, a
+ * rounded box with its own border. */
+function cameraFace(tile: WatchPageTile, width: number, height: number, box: string, input: WatchPagePreviewInput, unit: number, s: number, hint: string | undefined): TemplateResult {
+  const entityId = tileEntityId(tile);
+  const group = tileKind(entityId) === "multicam";
+  const ink = ownInk(tile.color) ?? themeInk(input.page, "entityCamera");
+  const radius = watchCameraCornerRadius(width, height) * s;
+  const preview = tile.cameraDisplayMode === "preview";
+  const symbolPt = watchPreviewIconSize(tile, width, height, height < unit * 2.5);
+  const outer = `${box}border-radius:${radius}px`;
+  // The watch strokes the rim over the content.
+  const rim = html`<span class="wp-cam-rim" style=${`box-shadow:inset 0 0 0 ${(preview ? 1 : watchCameraBorderWidth(tile.borderThickness)) * s}px ${rgba(ink.hex, preview ? 0.3 : 0.6)}`}></span>`;
+  if (!preview) {
+    const symbol = group ? (typeof tile.icon === "string" ? tile.icon : "rectangle.split.2x2") : tile.icon === "" ? "" : (typeof tile.icon === "string" && tile.icon !== "" ? tile.icon : "video");
+    const custom = typeof tile.customLabel === "string" ? tile.customLabel.trim() : "";
+    const label = group ? (custom === "" ? "Cameras" : custom) : watchPreviewTileLabel(tile, input);
+    const color = watchTileLabelColor(tile) ?? "#FFFFFF";
+    return html`<div class="wp-cam icon" style=${`${outer};gap:${4 * s}px`} title=${hint ?? nothing}>
+      ${symbol === "" ? nothing : symbolMark(input.icons, filledSymbol(input.icons, symbol, group), symbolPt * s, ink.hex, tile.iconShadow === true)}
+      ${tileShowsLabel(tile) ? html`<span class="wp-label" style=${`${labelStyle(tile, width, s)};color:${color}`}>${label}</span>` : nothing}
+      ${rim}
+    </div>`;
+  }
+  if (!group) {
+    const url = pictureOf(input.states, entityId);
+    const symbol = tile.icon === "" ? undefined : (typeof tile.icon === "string" && tile.icon !== "" ? tile.icon : "video");
+    const fill = tile.cameraFillMode === "fill";
+    return html`<div class="wp-cam" style=${`${outer};background:#000`} title=${hint ?? nothing}>
+      ${url !== undefined
+        ? snapshot(url, fill, width, height, storedNumber(tile.cameraFillOffsetX) ?? 0, storedNumber(tile.cameraFillOffsetY) ?? 0, s)
+        : html`<span class="wp-cam-empty"></span>${symbol === undefined ? nothing : html`<span style="opacity:0.6;display:flex">${symbolMark(input.icons, symbol, symbolPt * s, ink.hex)}</span>`}`}
+      ${rim}
+    </div>`;
+  }
+  const ids = Array.isArray(tile.cameraGroupIds) ? tile.cameraGroupIds.filter((id): id is string => typeof id === "string") : [];
+  const border = watchMultiCamBorder(tile);
+  if (ids.length === 0) {
+    return html`<div class="wp-cam" style=${`${outer};background:${border.background}`} title=${hint ?? nothing}>
+      <span style="opacity:0.6;display:flex">${symbolMark(input.icons, filledSymbol(input.icons, "rectangle.split.2x2", true), symbolPt * s, ink.hex)}</span>
+      ${rim}
+    </div>`;
+  }
+  const grid = watchMultiCamGrid(ids.length, tile.cameraGridColumns);
+  const inset = border.on ? border.width : 0;
+  const innerW = width - inset * 2;
+  const innerH = height - inset * 2;
+  const cellW = (innerW - border.spacing * (grid.columns - 1)) / Math.max(grid.columns, 1);
+  const rows = watchMultiCamRowHeights(innerH, grid.rows, border.spacing, grid.columns, tile.cameraRowWeights);
+  const offsetsX = Array.isArray(tile.cameraFillOffsetsX) ? tile.cameraFillOffsetsX : [];
+  const offsetsY = Array.isArray(tile.cameraFillOffsetsY) ? tile.cameraFillOffsetsY : [];
+  const cells: TemplateResult[] = [];
+  let y = inset;
+  for (let r = 0; r < grid.rows; r++) {
+    const h = rows[r] ?? 0;
+    for (let c = 0; c < grid.columns; c++) {
+      const i = r * grid.columns + c;
+      const x = inset + c * (cellW + border.spacing);
+      const place = `left:${x * s}px;top:${y * s}px;width:${Math.max(0, cellW) * s}px;height:${Math.max(0, h) * s}px`;
+      if (i >= ids.length) {
+        cells.push(html`<span class="wp-cell" style=${place}></span>`);
+        continue;
+      }
+      const id = ids[i]!;
+      const url = pictureOf(input.states, id);
+      const gone = lower(input.states?.[id]?.state) === "unavailable";
+      const small = Math.min(cellW, h);
+      cells.push(html`<span class="wp-cell" style=${place} title=${id}>
+        ${url !== undefined
+          ? snapshot(url, watchMultiCamCellFill(tile, i) === "fill", cellW, h, storedNumber(offsetsX[i]) ?? 0, storedNumber(offsetsY[i]) ?? 0, s)
+          : html`<span style="opacity:0.2;display:flex">${symbolMark(input.icons, "video.fill", small * 0.3 * s, "#FFFFFF")}</span>`}
+        ${gone ? html`<span class="wp-cell-gone"><span style="opacity:0.7;display:flex">${symbolMark(input.icons, "video.slash.fill", small * 0.25 * s, "#FFFFFF")}</span></span>` : nothing}
+      </span>`);
+    }
+    y += h + border.spacing;
+  }
+  return html`<div class="wp-cam" style=${`${outer};background:${border.background}`} title=${hint ?? nothing}>${cells}${rim}</div>`;
 }
 
 /** How full the state bar is, 0 to 1, from the entity's attributes, or
@@ -362,7 +924,7 @@ function tileUnderlay(tile: WatchPageTile, input: WatchPagePreviewInput, active:
 /** The state bar of a tile, when the picture draws one: in the tile's
  * color (its kind's when it has none), or white. */
 function barOf(tile: WatchPageTile, input: WatchPagePreviewInput, active: boolean): { fill: boolean; percent: number; ink: string } | undefined {
-  if (!watchStateDomains("bars").includes(tileKind(tileEntityId(tile)))) return undefined;
+  if (!watchStateDomains("bars").includes(tileKind(tileEntityId(tile))) || watchTileIsTvRemote(tile, input.states)) return undefined;
   const percent = watchTileStatePercent(tile, input.states);
   if (percent === undefined || percent <= 0 || !active) return undefined;
   const ink = tile.stateBarColorStyle === "White" ? "#B3B3B3" : flatInk(tile.color, watchTileFallbackInk(tile, input.page));
@@ -422,7 +984,7 @@ function tileOverlay(tile: WatchPageTile, input: WatchPagePreviewInput, active: 
 function valueBadge(tile: WatchPageTile, input: WatchPagePreviewInput, active: boolean, widthPt: number, heightPt: number) {
   const kind = tileKind(tileEntityId(tile));
   const style = watchValueLabelStyle(tile);
-  if (!watchStateDomains("bars").includes(kind) || style === undefined || style === "Off") return undefined;
+  if (!watchStateDomains("bars").includes(kind) || style === undefined || style === "Off" || watchTileIsTvRemote(tile, input.states)) return undefined;
   const percent = watchTileStatePercent(tile, input.states);
   if (percent === undefined) return undefined;
   const bar = barOf(tile, input, active);
@@ -665,12 +1227,18 @@ function tileFace(
     return html`<div class="wp-spacer" style=${`${box}border-radius:${Math.min(TILE_RADIUS, width / 2, height / 2) * s}px;${watchSpacerStyle(tile, s)}`} title=${titled ? hint : nothing}>${tileUnderlay(tile, input, true, height, s, true)}</div>`;
   }
 
+  if (kind === "camera" || kind === "multicam") return cameraFace(tile, width, height, box, input, unit, s, titled ? hint : undefined);
+
   const unknown = cls === "unknown";
   const radius = Math.min(TILE_RADIUS, width / 2, height / 2) * s;
   // A tile shorter than two and a half units has no room for a column, so its
   // symbol and words sit side by side.
   const compact = height < unit * 2.5;
   const symbolPt = watchPreviewIconSize(tile, width, height, compact);
+  // A remote, vacuum, mower, climate, person or alarm panel: its own
+  // symbol, color and badges.
+  const look = unknown ? undefined : watchSpecialTileLook(tile, input);
+  const special = look === undefined ? undefined : specialBadges(tile, look, input, width, height, s);
   // The reading of a tile whose value label the watch draws without a bar
   // (a sensor, a climate): hidden with Off, in a capsule with Pill.
   const readingStyle = unknown || watchStateDomains("bars").includes(kind) ? undefined : watchValueLabelStyle(tile);
@@ -678,7 +1246,7 @@ function tileFace(
   // Tile Value: the value in place of the symbol, the name under it or not,
   // and no line of the kind.
   const value = watchHTTPTileValueLook(tile);
-  const state = readingStyle === "Off" || value !== undefined ? undefined : reading;
+  const state = readingStyle === "Off" || value !== undefined || (look !== undefined && !look.stateLine) ? undefined : reading;
   const showLabel = tileShowsLabel(tile) && (value === undefined || value.showName);
   const ground = unknown ? "rgba(255, 255, 255, 0.08)" : tileGround(color, watchTileColorOpacity(tile));
   const active = watchTilePreviewActive(tile, input.states);
@@ -686,17 +1254,26 @@ function tileFace(
   // The picture's symbol sits top left, where the watch puts the value
   // label: a column moves down under the label.
   const badge = unknown || compact ? undefined : valueBadge(tile, input, active, width, height);
-  const padTop = Math.max(Math.min(TILE_PAD, height / 4), badge === undefined ? 0 : Math.min(badge.bottom + 1, height / 3));
+  const badgeBottom = Math.max(badge?.bottom ?? 0, compact ? 0 : (special?.bottom ?? 0));
+  const padTop = Math.max(Math.min(TILE_PAD, height / 4), badgeBottom === 0 ? 0 : Math.min(badgeBottom + 1, height / (special === undefined ? 3 : 2)));
+  // A special tile's badges can stand taller than a value label: its symbol
+  // (or photo) shrinks to the room left, so nothing is drawn over it.
+  const room = compact ? Infinity
+    : height - padTop - Math.min(TILE_PAD, height / 4) - 3
+      - (showLabel ? watchTileLabelFontSize(tile, width) * 1.15 + 3 : 0) - (state !== undefined ? 9 * 1.15 + 3 : 0);
   return html`<div class="wp-tile ${compact ? "compact" : ""} ${unknown ? "unknown" : ""}"
     style=${`${box}border-radius:${radius}px;background:${ground};padding:${padTop * s}px ${Math.min(TILE_PAD + 1, width / 4) * s}px ${Math.min(TILE_PAD, height / 4) * s}px;gap:${3 * s}px;${border}`}
     title=${titled ? hint : nothing}>
     ${unknown ? nothing : tileUnderlay(tile, input, active, height, s)}
     ${unknown ? nothing : tileOverlay(tile, input, active, width, height, s)}
+    ${special === undefined ? nothing : special.parts}
     ${value !== undefined
       ? html`<span class="wp-value" style=${`font-size:${(value.fontSize ?? symbolPt) * s}px;color:${value.color ?? "#FFFFFF"}${value.offsetY === 0 ? "" : `;transform:translateY(${value.offsetY * s}px)`}`}>—</span>`
-      : !unknown && watchTileHasNoIcon(tile)
-        ? nothing
-        : symbolMark(input.icons, unknown ? undefined : tileSymbol(tile), symbolPt * s, unknown ? "#8E8E93" : ink, tile.iconShadow === true)}
+      : look !== undefined
+        ? specialSymbol(look, input.icons, symbolPt, room, s, tile.iconShadow === true)
+        : !unknown && watchTileHasNoIcon(tile)
+          ? nothing
+          : symbolMark(input.icons, unknown ? undefined : tileSymbol(tile), symbolPt * s, unknown ? "#8E8E93" : ink, tile.iconShadow === true)}
     <span class="wp-words">
       ${showLabel ? html`<span class="wp-label" style=${labelStyle(tile, width, s)}>${label}</span>` : nothing}
       ${state === undefined ? nothing : html`<span class="wp-state ${readingStyle === "Pill" ? "pill" : ""}" style=${`font-size:${9 * s}px${readingStyle === "Pill" ? `;${pillStyle(s)}` : ""}`}>${state}</span>`}
@@ -799,6 +1376,25 @@ export const watchPagePreviewStyles = css`
   .wp-title svg { flex: none; display: block; }
   .wp-title > span { overflow: hidden; text-overflow: ellipsis; }
   .wp-sym.shadow { filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.7)); }
+  .wp-sym-fade { display: block; flex: none; position: relative; }
+  .wp-photo { display: block; flex: none; position: relative; box-sizing: border-box; border-radius: 50%; object-fit: cover; background: #000; }
+  .wp-badge {
+    position: absolute; display: flex; flex-direction: column; line-height: 1.15; white-space: nowrap; pointer-events: none;
+    font-family: ui-rounded, "SF Pro Rounded", "Nunito", system-ui, sans-serif; font-variant-numeric: tabular-nums;
+  }
+  .wp-badge.row { flex-direction: row; align-items: center; font-weight: 500; }
+  .wp-badge svg { display: block; }
+  .wp-cam {
+    position: absolute; box-sizing: border-box; overflow: hidden;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+  }
+  .wp-cam.icon { background: rgba(0, 0, 0, 0.3); }
+  .wp-cam .wp-label { max-width: 90%; position: relative; }
+  .wp-cam-rim { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; }
+  .wp-cam-empty { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.3); }
+  .wp-snap { position: absolute; inset: 0; display: block; background-repeat: no-repeat; }
+  .wp-cell { position: absolute; overflow: hidden; background: #000; display: flex; align-items: center; justify-content: center; }
+  .wp-cell-gone { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(255, 59, 48, 0.3); }
   .wp-value { flex: none; line-height: 1; font-weight: 600; font-variant-numeric: tabular-nums; }
   .wp-words { display: flex; flex-direction: column; min-width: 0; max-width: 100%; }
   .wp-label, .wp-state { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

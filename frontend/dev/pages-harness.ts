@@ -504,7 +504,8 @@ function seedStore(): void {
   // Alex: three uploads from the iPhone, the last one delivered.
   store.put(ALEX_WATCH, "pages", combine("05-pages"), { base: 0, by: ALEX_WATCH, at: minutesAgo(60 * 24 * 6), notify: false });
   store.put(ALEX_WATCH, "pages", combine("05-pages", "03-hold-and-slide"), { base: 1, by: ALEX_WATCH, at: minutesAgo(60 * 26), notify: false });
-  const alex = store.put(ALEX_WATCH, "pages", combine("05-pages", "03-hold-and-slide", "01-entity-tiles"), {
+  // The last one also has a page of the special tiles (part 3f).
+  const alex = store.put(ALEX_WATCH, "pages", withSpecialPage(combine("05-pages", "03-hold-and-slide", "01-entity-tiles")), {
     base: 2, by: ALEX_WATCH, at: minutesAgo(40), notify: false,
   });
   // Alex's behavior settings, whose room quick jump points at two of the
@@ -659,6 +660,97 @@ function madeUpState(entityId: string, index: number): HassEntityState {
   return { entity_id: entityId, state, attributes, last_changed: at, last_updated: at };
 }
 
+// ── the special tiles page (part 3f) ─────────────────────────────────────
+
+/** A stand-in snapshot: a data URL picture, so nothing goes to the network. */
+function snapshotUrl(label: string, hue: number, width: number, height: number): string {
+  const art = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`
+    + `<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${hue},45%,38%)"/><stop offset="1" stop-color="hsl(${hue + 40},35%,14%)"/></linearGradient></defs>`
+    + `<rect width="${width}" height="${height}" fill="url(#g)"/>`
+    + `<rect x="${width * 0.1}" y="${height * 0.55}" width="${width * 0.8}" height="${height * 0.3}" fill="hsla(${hue},30%,70%,0.25)"/>`
+    + `<text x="${width / 2}" y="${height * 0.4}" font-family="sans-serif" font-size="${height / 6}" fill="#fff" text-anchor="middle">${label}</text></svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(art)}`;
+}
+
+function specialState(entityId: string, state: string, attributes: Record<string, unknown>): HassEntityState {
+  const at = isoAt(Date.now() - 600_000);
+  return { entity_id: entityId, state, attributes, last_changed: at, last_updated: at };
+}
+
+/** The states the special tiles page reads: a remote with its playing
+ * player, a TV with no remote of its own, three cameras (one with no
+ * snapshot, one unavailable), and the rest at a state that shows a badge. */
+const SPECIAL_STATES: readonly HassEntityState[] = [
+  specialState("remote.living_room_apple_tv", "on", { friendly_name: "Living Room Apple TV" }),
+  specialState("media_player.living_room_apple_tv", "playing", { friendly_name: "Living Room Apple TV", volume_level: 0.42, supported_features: 1 | 4 | 128 | 256 }),
+  specialState("media_player.lounge_tv", "paused", { friendly_name: "Lounge TV", device_class: "tv", volume_level: 0.18, supported_features: 1 | 4 | 128 | 256 }),
+  specialState("camera.front_door", "idle", { friendly_name: "Front Door", entity_picture: snapshotUrl("Front Door", 200, 640, 360) }),
+  specialState("camera.back_yard", "idle", { friendly_name: "Back Yard", entity_picture: snapshotUrl("Back Yard", 110, 640, 360) }),
+  specialState("camera.garage", "idle", { friendly_name: "Garage" }),
+  specialState("camera.driveway", "unavailable", { friendly_name: "Driveway" }),
+  specialState("vacuum.robo", "cleaning", { friendly_name: "Robo", battery_level: 64 }),
+  specialState("lawn_mower.lawny", "mowing", { friendly_name: "Lawny" }),
+  specialState("sensor.lawny_battery", "17", { friendly_name: "Lawny battery", unit_of_measurement: "%", device_class: "battery" }),
+  specialState("climate.hall", "heat", { friendly_name: "Hall", hvac_action: "heating", temperature: 21.5, current_temperature: 20.2, target_temp_step: 0.5, hvac_modes: ["off", "heat", "cool", "auto"] }),
+  specialState("person.alex", "home", { friendly_name: "Alex", entity_picture: snapshotUrl("A", 20, 256, 256) }),
+  specialState("person.sam", "work_office", { friendly_name: "Sam" }),
+  specialState("alarm_control_panel.house", "armed_away", { friendly_name: "House", supported_features: 1 | 2 }),
+  specialState("calendar.family", "on", { friendly_name: "Family", message: "School run" }),
+  specialState("weather.home", "partlycloudy", { friendly_name: "Home", temperature: 17, temperature_unit: "°C" }),
+];
+
+/** The symbols the special tiles draw beyond their tiles' own, for the
+ * stand-in symbol provider. */
+const SPECIAL_SYMBOLS = [
+  "appletv", "appletv.fill", "av.remote", "av.remote.fill", "play.fill", "pause.fill", "video", "video.fill", "video.slash.fill",
+  "rectangle.split.2x2", "rectangle.split.2x2.fill", "hurricane", "house", "house.fill", "arrow.uturn.backward",
+  "exclamationmark.triangle", "battery.25", "battery.50", "battery.75", "battery.100", "leaf.fill", "flame", "flame.fill",
+  "snowflake", "thermometer.variable", "power", "person", "person.fill", "shield", "shield.fill", "exclamationmark.shield",
+  "shield.lefthalf.filled", "calendar", "cloud.sun.fill",
+];
+
+/** A page with one tile of each special kind, on Alex's watch. Each tile
+ * starts from the first fixture tile, so it carries every key a tile the
+ * iPhone uploads does. */
+function specialTilesPage(): Json | undefined {
+  const base = pagesOf(pageFixtures["01-entity-tiles"])[0];
+  const first = Array.isArray(base?.items) && isObject(base.items[0]) ? (base.items[0] as Json) : undefined;
+  if (base === undefined || first === undefined) return undefined;
+  let n = 0;
+  const tile = (fields: Json): Json => {
+    const { icon: _icon, color: _color, customLabel: _label, ...rest } = clone(first);
+    return { ...rest, id: `5F3C1A00-0000-4000-8000-${String(++n).padStart(12, "0")}`, ...fields };
+  };
+  const items = [
+    tile({ entityId: "remote.living_room_apple_tv", icon: "appletv", color: "#8A5A68", gridCol: 0, gridRow: 0, colSpan: 4, rowSpan: 3 }),
+    tile({ entityId: "media_player.lounge_tv", icon: "av.remote", color: "#8A5A68", gridCol: 4, gridRow: 0, colSpan: 4, rowSpan: 3 }),
+    tile({ entityId: "climate.hall", gridCol: 8, gridRow: 0, colSpan: 4, rowSpan: 3 }),
+    tile({ entityId: "camera.front_door", cameraDisplayMode: "preview", cameraFillMode: "fill", cameraFillOffsetX: 0.5, gridCol: 0, gridRow: 3, colSpan: 6, rowSpan: 4 }),
+    tile({ entityId: "camera.back_yard", icon: "video", color: "#8A6450", gridCol: 6, gridRow: 3, colSpan: 6, rowSpan: 4 }),
+    tile({
+      entityId: "multicam.7E0B1C2D-3E4F-4A5B-8C6D-9E0F1A2B3C4D", icon: "rectangle.split.2x2", color: "#5A7FB8", customLabel: "4 Cameras",
+      cameraDisplayMode: "preview", cameraGroupIds: ["camera.front_door", "camera.back_yard", "camera.garage", "camera.driveway"],
+      cameraRowWeights: [1, 1, 1, 1], cameraFillModes: ["fill", "fit", "fill", "fill"], cameraFillOffsetsX: [0, 0, 0, 0], cameraFillOffsetsY: [0, 0, 0, 0],
+      multiCamBorderEnabled: true, multiCamBorderColor: "5A7FB8", multiCamBorderThickness: "medium", gridCol: 0, gridRow: 7, colSpan: 12, rowSpan: 5,
+    }),
+    tile({ entityId: "vacuum.robo", gridCol: 0, gridRow: 12, colSpan: 4, rowSpan: 3 }),
+    tile({ entityId: "lawn_mower.lawny", gridCol: 4, gridRow: 12, colSpan: 4, rowSpan: 3 }),
+    tile({ entityId: "person.alex", gridCol: 8, gridRow: 12, colSpan: 4, rowSpan: 3 }),
+    tile({ entityId: "alarm_control_panel.house", gridCol: 0, gridRow: 15, colSpan: 4, rowSpan: 3 }),
+    tile({ entityId: "person.sam", usePersonPhoto: false, gridCol: 4, gridRow: 15, colSpan: 4, rowSpan: 3 }),
+    tile({ entityId: "calendar.family", icon: "calendar", gridCol: 8, gridRow: 15, colSpan: 2, rowSpan: 3 }),
+    tile({ entityId: "weather.home", icon: "cloud.sun.fill", gridCol: 10, gridRow: 15, colSpan: 2, rowSpan: 3 }),
+  ];
+  return { ...clone(base), id: "5F3C1A00-0000-4000-8000-0000000000FF", name: "Special tiles", items };
+}
+
+/** A document with the special tiles page added at the end. */
+function withSpecialPage(document: Json): Json {
+  const page = specialTilesPage();
+  if (page === undefined) return document;
+  return { ...document, pages: [...pagesOf(document), page] };
+}
+
 /** A made-up state for every entity a fixture or a stored document names,
  * and the few more the entity picker should meet (`harness-home.ts`). */
 function buildStates(): Record<string, HassEntityState> {
@@ -668,6 +760,7 @@ function buildStates(): Record<string, HassEntityState> {
   const states: Record<string, HassEntityState> = {};
   [...ids].sort().forEach((id, i) => { states[id] = madeUpState(id, i); });
   for (const extra of EXTRA_STATES) states[extra.entity_id] ??= extra;
+  for (const special of SPECIAL_STATES) states[special.entity_id] = special;
   // `?many=3000` adds that many more entities, a few of kinds the watch has
   // no tile for, to try the Add tile list on a large home.
   const many = Number(new URLSearchParams(location.search).get("many") ?? 0);
@@ -955,7 +1048,7 @@ function makeHass(): HassLike {
 // page loads, as the panel's symbol file does. `?noicons` in the address
 // mounts the element with no provider at all, as the harness did before.
 const noIcons = new URLSearchParams(location.search).has("noicons");
-const icons = new StandInIcons(iconNamesIn(pageFixtures));
+const icons = new StandInIcons([...iconNamesIn(pageFixtures), ...SPECIAL_SYMBOLS]);
 window.setTimeout(() => {
   icons.arrive();
   if (editor) editor.iconsTick++;
