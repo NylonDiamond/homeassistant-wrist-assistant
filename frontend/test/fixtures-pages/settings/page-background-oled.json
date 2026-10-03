@@ -1,6 +1,6 @@
 {
   "name": "OLED",
-  "source": "WristAssistant/Views/PageEditorView.swift:16464",
+  "source": "WristAssistant/Views/PageEditorView.swift:16130",
   "page": {
     "backgroundBrightness": 0.9,
     "backgroundColor": "#101238",

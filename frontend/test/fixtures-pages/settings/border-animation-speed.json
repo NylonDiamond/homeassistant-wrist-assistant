@@ -1,6 +1,6 @@
 {
   "name": "Border animation speed",
-  "source": "WristAssistant/Views/PageEditorView.swift:9846",
+  "source": "WristAssistant/Views/PageEditorView.swift:9752",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

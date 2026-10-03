@@ -1,6 +1,6 @@
 {
   "name": "A direction changed from Trigger Entity drops its target",
-  "source": "WristAssistant/Views/PageEditorView.swift:7506",
+  "source": "WristAssistant/Views/PageEditorView.swift:7401",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

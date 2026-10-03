@@ -1,6 +1,6 @@
 {
   "name": "Removing the only override removes the map and usesStateIcons",
-  "source": "WristAssistant/Views/PageEditorView.swift:1462",
+  "source": "WristAssistant/Views/PageEditorView.swift:1388",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

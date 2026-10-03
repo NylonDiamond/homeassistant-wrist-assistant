@@ -1,6 +1,6 @@
 {
   "name": "Brightness",
-  "source": "WristAssistant/Views/PageEditorView.swift:16502",
+  "source": "WristAssistant/Views/PageEditorView.swift:16168",
   "page": {
     "backgroundBrightness": 0.9,
     "backgroundColor": "#101238",

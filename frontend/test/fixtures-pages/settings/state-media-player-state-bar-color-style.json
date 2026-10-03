@@ -1,6 +1,6 @@
 {
   "name": "State bar color White on a media_player tile (State Bar)",
-  "source": "WristAssistant/Views/PageEditorView.swift:7233",
+  "source": "WristAssistant/Views/PageEditorView.swift:7128",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

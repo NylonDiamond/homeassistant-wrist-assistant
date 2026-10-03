@@ -1,6 +1,6 @@
 {
   "name": "Header line glow",
-  "source": "WristAssistant/Views/PageEditorView.swift:12664",
+  "source": "WristAssistant/Views/PageEditorView.swift:12570",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

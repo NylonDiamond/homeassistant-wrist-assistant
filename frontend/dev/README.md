@@ -68,6 +68,19 @@ ignored by git.
   states: rooms, a Living Room TV whose `media_player.` and `remote.` share a
   device, sensors of several device classes, calendars and cameras. The
   entity picker reads the areas from them.
+- Alex's last upload ends with a "Special tiles" page (part 3f): a remote
+  and a TV media player standing in for one, a climate tile, two cameras, a
+  group of four (one camera with no snapshot, one unavailable), a vacuum, a
+  mower, two people, an alarm panel, a calendar and a weather tile. Their
+  settings have what they read: the remote's and the vacuum's devices in
+  the entity registry (the remote's "Use <player>" suggestion, the vacuum's
+  discovery with two selects, two switches and a battery sensor), two
+  scripts for quick actions, a receiver for the volume player, a second
+  calendar, and `cameraRefreshOnOpenDebounce: "30s"` in Alex's behavior
+  document for the Camera task's "Default (On/30s)". The element's picture
+  loader is a stand-in: a stand-in snapshot's size comes from its data URL
+  after 250 ms, so Detect camera ratio works with no network, and a camera
+  with no snapshot does not load.
 - A stand-in symbol provider: a few dozen real SF Symbol names (the start of
   the picker's catalogue and every tile icon in the fixtures), each drawn as
   a plain mark. Its names arrive 600 ms after the page loads and the harness

@@ -47,6 +47,7 @@ import {
 } from "./catalog.js";
 import { sameWatchId, findWatchPage } from "./edit.js";
 import { watchTileHasStateTask } from "./styling-model.js";
+import { type WatchSpecialStates, watchSpecialTask } from "./special-model.js";
 import {
   type WatchPage,
   type WatchPageTile,
@@ -69,6 +70,7 @@ export type WatchTileSettingsSection =
   | "request"
   | "macro"
   | "header"
+  | "special"
   | "icon"
   | "state"
   | "text"
@@ -82,6 +84,8 @@ export const WATCH_TILE_SETTINGS_SECTION_TITLES: Readonly<Record<WatchTileSettin
   request: "Request",
   macro: "Macro",
   header: "Header",
+  // Drawn under the task's own title (`watchSpecialTask`).
+  special: "Special",
   icon: "Icon and color",
   state: "State",
   text: "Text",
@@ -101,8 +105,13 @@ export const WATCH_TILE_SETTINGS_SECTION_TITLES: Readonly<Record<WatchTileSettin
  *
  * A header has no Border or Background, a departure from the phone, which
  * shows both: the watch's `DividerTile` reads none of their keys.
+ *
+ * A special tile (remote, vacuum, mower, camera, camera group, calendar,
+ * weather, person, alarm panel) gets its kind's task as `special`, before
+ * Icon, as on the phone (`special-model.ts`). A TV media player is a remote,
+ * which only the states can tell.
  */
-export function watchTileSettingsSections(tile: WatchPageTile): WatchTileSettingsSection[] {
+export function watchTileSettingsSections(tile: WatchPageTile, states?: WatchSpecialStates): WatchTileSettingsSection[] {
   const kind = tileKind(tileEntityId(tile));
   if (kind === "spacer") return ["border", "background"];
   if (kind === "divider") return ["header", "action"];
@@ -114,6 +123,7 @@ export function watchTileSettingsSections(tile: WatchPageTile): WatchTileSetting
     if (library.kind === "httpAction") out.push("request");
     if (library.kind === "macro") out.push("macro");
   }
+  if (watchSpecialTask(tile, states) !== undefined) out.push("special");
   out.push("icon");
   if (watchTileHasStateTask(tile)) out.push("state");
   out.push("text", "border", "action", "background");

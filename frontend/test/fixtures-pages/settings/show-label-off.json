@@ -1,6 +1,6 @@
 {
   "name": "Hide the label",
-  "source": "WristAssistant/Views/PageEditorView.swift:7339",
+  "source": "WristAssistant/Views/PageEditorView.swift:7234",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

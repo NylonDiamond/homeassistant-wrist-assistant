@@ -1,0 +1,871 @@
+{
+  "version": 1,
+  "note": "Generated from the iPhone app's Swift code by WatchPagesTablesTests; do not edit. Regenerate tile-special.json with TEST_RUNNER_WA_UPDATE_FIXTURES=1 ./scripts/test.sh WatchPagesTablesTests in the app repository.",
+  "tasks": {
+    "order": ["data", "alarm", "camera", "calendarSettings", "weather", "person"],
+    "kinds": {
+      "remote": {
+        "task": "data",
+        "title": "Remote"
+      },
+      "vacuum": {
+        "task": "data",
+        "title": "Vacuum"
+      },
+      "lawn_mower": {
+        "task": "data",
+        "title": "Mower"
+      },
+      "alarm_control_panel": {
+        "task": "alarm",
+        "title": "Alarm"
+      },
+      "camera": {
+        "task": "camera",
+        "title": "Camera"
+      },
+      "multicam": {
+        "task": "camera",
+        "title": "Camera"
+      },
+      "calendar": {
+        "task": "calendarSettings",
+        "title": "Calendars"
+      },
+      "weather": {
+        "task": "weather",
+        "title": "Weather"
+      },
+      "person": {
+        "task": "person",
+        "title": "Person"
+      }
+    },
+    "placement": "A tile shows its kind's task before Icon; the tasks of different kinds never meet on one tile. A remote, vacuum and lawn mower task is the phone's Data task under the kind's title.",
+    "tvRemote": "A media_player whose device_class is tv, with no remote. entity of the same object id, is a remote here: the Remote task without the Linked Media Player card (associatedMediaPlayerId is never offered; the TV is its own media player). This is decided by the entity, however the tile was added.",
+    "climate": "Climate has no task of its own: its options are the State task's rows (tile-styling.json).",
+    "multiSelect": "Person and the Camera rows that are not about one group also apply to every selected tile of the kind on the phone; the panel edits one tile."
+  },
+  "remote": {
+    "slotCount": 12,
+    "kinds": [
+      {
+        "value": "back",
+        "label": "Back",
+        "symbol": "chevron.backward",
+        "category": "Navigation"
+      },
+      {
+        "value": "home",
+        "label": "Home",
+        "symbol": "tv",
+        "category": "Navigation"
+      },
+      {
+        "value": "menu",
+        "label": "Menu",
+        "symbol": "contextualmenu.and.cursorarrow",
+        "category": "Navigation"
+      },
+      {
+        "value": "select",
+        "label": "Select",
+        "symbol": "hand.tap",
+        "category": "Navigation"
+      },
+      {
+        "value": "power",
+        "label": "Power",
+        "symbol": "power",
+        "category": "Power"
+      },
+      {
+        "value": "play_pause",
+        "label": "Play",
+        "symbol": "playpause.fill",
+        "category": "Transport"
+      },
+      {
+        "value": "stop",
+        "label": "Stop",
+        "symbol": "stop.fill",
+        "category": "Transport"
+      },
+      {
+        "value": "prev",
+        "label": "Prev",
+        "symbol": "backward.fill",
+        "category": "Transport"
+      },
+      {
+        "value": "next",
+        "label": "Next",
+        "symbol": "forward.fill",
+        "category": "Transport"
+      },
+      {
+        "value": "back_10",
+        "label": "-10s",
+        "symbol": "gobackward.10",
+        "category": "Transport"
+      },
+      {
+        "value": "forward_10",
+        "label": "+10s",
+        "symbol": "goforward.10",
+        "category": "Transport"
+      },
+      {
+        "value": "shuffle",
+        "label": "Shuffle",
+        "symbol": "shuffle",
+        "category": "Transport"
+      },
+      {
+        "value": "repeat",
+        "label": "Repeat",
+        "symbol": "repeat",
+        "category": "Transport"
+      },
+      {
+        "value": "seek",
+        "label": "Seek",
+        "symbol": "slider.horizontal.below.rectangle",
+        "category": "Media"
+      },
+      {
+        "value": "source",
+        "label": "Source",
+        "symbol": "rectangle.on.rectangle.angled",
+        "category": "Media"
+      },
+      {
+        "value": "sound_mode",
+        "label": "Sound",
+        "symbol": "hifispeaker",
+        "category": "Media"
+      },
+      {
+        "value": "volume_arc",
+        "label": "Vol",
+        "symbol": "speaker.wave.2.fill",
+        "category": "Volume"
+      },
+      {
+        "value": "volume_up",
+        "label": "Vol +",
+        "symbol": "speaker.wave.3.fill",
+        "category": "Volume"
+      },
+      {
+        "value": "volume_down",
+        "label": "Vol -",
+        "symbol": "speaker.wave.1.fill",
+        "category": "Volume"
+      },
+      {
+        "value": "mute",
+        "label": "Mute",
+        "symbol": "speaker.slash.fill",
+        "category": "Volume"
+      },
+      {
+        "value": "empty",
+        "label": "Clear",
+        "symbol": "",
+        "category": "Blank"
+      }
+    ],
+    "defaultLayout": [
+      "back",
+      "home",
+      "power",
+      "prev",
+      "play_pause",
+      "next",
+      "menu",
+      "seek",
+      "source",
+      "volume_arc",
+      "select",
+      "mute"
+    ],
+    "layout": "remoteButtonLayout is read as 12 kinds: absent is defaultLayout (the only layout the watch adapts: prev and next become -10s and +10s when the player can seek); an unknown value is empty; a short array is filled from defaultLayout's slots at the same places; a long one is cut to 12. Every change (a slot set to a kind, two slots swapped) writes all 12 at once; Reset removes the key. There is no cancel: an edit is written when made.",
+    "availability": {
+      "rule": "A kind is available when any condition of anyOf holds, and an empty condition always holds. player media is the linked media player (associatedMediaPlayerId, or a TV remote's own entity); player volume is associatedVolumePlayerId, else the media player. With bit, the player's supported_features must have it; when supported_features is 0 the fallback attribute decides (shuffle and repeat: present; source_list and sound_mode_list: not empty), and with no fallback the condition fails. needsAttribute must hold as well. nativeMute holds when the remote's platform has a native mute key. Availability dims a chip and shows the reason; it never blocks the placement.",
+      "reasonRule": "linked when a media player is linked (for volume_up and volume_down: a volume player, else the media player); the reasons of always available kinds are empty.",
+      "kinds": {
+        "back": {
+          "anyOf": [{}],
+          "reason": {
+            "linked": "",
+            "unlinked": ""
+          }
+        },
+        "home": {
+          "anyOf": [{}],
+          "reason": {
+            "linked": "",
+            "unlinked": ""
+          }
+        },
+        "menu": {
+          "anyOf": [{}],
+          "reason": {
+            "linked": "",
+            "unlinked": ""
+          }
+        },
+        "select": {
+          "anyOf": [{}],
+          "reason": {
+            "linked": "",
+            "unlinked": ""
+          }
+        },
+        "power": {
+          "anyOf": [{}],
+          "reason": {
+            "linked": "",
+            "unlinked": ""
+          }
+        },
+        "play_pause": {
+          "anyOf": [{}],
+          "reason": {
+            "linked": "",
+            "unlinked": ""
+          }
+        },
+        "stop": {
+          "anyOf": [
+            {
+              "player": "media",
+              "bit": 4096
+            }
+          ],
+          "reason": {
+            "linked": "This player doesn't support Stop",
+            "unlinked": "Link a media player to use Stop"
+          }
+        },
+        "prev": {
+          "anyOf": [
+            {
+              "player": "media"
+            }
+          ],
+          "reason": {
+            "linked": "Link a media player to use Prev/Next",
+            "unlinked": "Link a media player to use Prev/Next"
+          }
+        },
+        "next": {
+          "anyOf": [
+            {
+              "player": "media"
+            }
+          ],
+          "reason": {
+            "linked": "Link a media player to use Prev/Next",
+            "unlinked": "Link a media player to use Prev/Next"
+          }
+        },
+        "back_10": {
+          "anyOf": [
+            {
+              "player": "media",
+              "bit": 2
+            }
+          ],
+          "reason": {
+            "linked": "This player doesn't support seeking",
+            "unlinked": "Link a media player that supports seeking"
+          }
+        },
+        "forward_10": {
+          "anyOf": [
+            {
+              "player": "media",
+              "bit": 2
+            }
+          ],
+          "reason": {
+            "linked": "This player doesn't support seeking",
+            "unlinked": "Link a media player that supports seeking"
+          }
+        },
+        "shuffle": {
+          "anyOf": [
+            {
+              "player": "media",
+              "bit": 32768,
+              "fallback": "shuffle"
+            }
+          ],
+          "reason": {
+            "linked": "This player doesn't support Shuffle",
+            "unlinked": "Link a media player with Shuffle"
+          }
+        },
+        "repeat": {
+          "anyOf": [
+            {
+              "player": "media",
+              "bit": 262144,
+              "fallback": "repeat"
+            }
+          ],
+          "reason": {
+            "linked": "This player doesn't support Repeat",
+            "unlinked": "Link a media player with Repeat"
+          }
+        },
+        "seek": {
+          "anyOf": [
+            {
+              "player": "media",
+              "bit": 2
+            }
+          ],
+          "reason": {
+            "linked": "This player doesn't support seeking",
+            "unlinked": "Link a media player that supports seeking"
+          }
+        },
+        "source": {
+          "anyOf": [
+            {
+              "player": "media",
+              "bit": 2048,
+              "fallback": "source_list",
+              "needsAttribute": "source_list"
+            },
+            {
+              "player": "volume",
+              "bit": 2048,
+              "fallback": "source_list",
+              "needsAttribute": "source_list"
+            }
+          ],
+          "reason": {
+            "linked": "This player has no selectable inputs",
+            "unlinked": "Link a media player with inputs"
+          }
+        },
+        "sound_mode": {
+          "anyOf": [
+            {
+              "player": "media",
+              "bit": 65536,
+              "fallback": "sound_mode_list"
+            }
+          ],
+          "reason": {
+            "linked": "This player doesn't support Sound Modes",
+            "unlinked": "Link a media player with Sound Modes"
+          }
+        },
+        "volume_arc": {
+          "anyOf": [
+            {
+              "player": "volume"
+            }
+          ],
+          "reason": {
+            "linked": "Link a media/volume player to use Volume",
+            "unlinked": "Link a media/volume player to use Volume"
+          }
+        },
+        "volume_up": {
+          "anyOf": [
+            {
+              "player": "volume",
+              "bit": 1024
+            },
+            {
+              "nativeMute": true
+            }
+          ],
+          "reason": {
+            "linked": "This player doesn't support volume steps",
+            "unlinked": "Link a volume player to use Vol ±"
+          }
+        },
+        "volume_down": {
+          "anyOf": [
+            {
+              "player": "volume",
+              "bit": 1024
+            },
+            {
+              "nativeMute": true
+            }
+          ],
+          "reason": {
+            "linked": "This player doesn't support volume steps",
+            "unlinked": "Link a volume player to use Vol ±"
+          }
+        },
+        "mute": {
+          "anyOf": [
+            {
+              "player": "volume",
+              "bit": 8
+            },
+            {
+              "nativeMute": true
+            },
+            {
+              "player": "volume"
+            }
+          ],
+          "reason": {
+            "linked": "Mute isn't available on this device",
+            "unlinked": "Mute isn't available on this device"
+          }
+        },
+        "empty": {
+          "anyOf": [{}],
+          "reason": {
+            "linked": "",
+            "unlinked": ""
+          }
+        }
+      }
+    },
+    "platforms": [
+      {
+        "value": "apple_tv",
+        "contains": ["apple_tv"],
+        "nativeMute": false
+      },
+      {
+        "value": "androidtv_remote",
+        "contains": ["android", "shield"],
+        "nativeMute": true
+      },
+      {
+        "value": "samsungtv",
+        "contains": ["samsung"],
+        "nativeMute": true
+      },
+      {
+        "value": "webostv",
+        "contains": ["lg", "webos"],
+        "nativeMute": true
+      },
+      {
+        "value": "roku",
+        "contains": ["roku"],
+        "nativeMute": true
+      },
+      {
+        "value": "xbox",
+        "contains": ["xbox"],
+        "nativeMute": true
+      },
+      {
+        "value": "braviatv",
+        "contains": ["bravia", "sony"],
+        "nativeMute": true
+      },
+      {
+        "value": "philips_js",
+        "contains": ["philips"],
+        "nativeMute": true
+      },
+      {
+        "value": "generic",
+        "contains": [],
+        "nativeMute": false
+      }
+    ],
+    "platformRule": "The remote's platform from its entity id, lower cased: the first platform in order whose contains has a substring of the id, else generic.",
+    "launcher": {
+      "icon": "app.fill",
+      "color": "",
+      "colorMeaning": "\"\" is the remote's accent color. A color once picked cannot go back to \"\" on the phone.",
+      "label": "The script's friendly name, else its id without the first 7 characters (script.) with _ as spaces, in Foundation's capitalized (tile-defaults.json label).",
+      "samples": [
+        {
+          "scriptId": "script.launch_netflix",
+          "friendlyName": "Launch Netflix",
+          "label": "Launch Netflix"
+        },
+        {
+          "scriptId": "script.movie_night",
+          "friendlyName": "",
+          "label": "Movie Night"
+        }
+      ],
+      "arrays": "remoteLauncherScriptIds, remoteLauncherLabels, remoteLauncherIcons, remoteLauncherColors are parallel. Add appends to all four (each made from [] when absent, never padded first). Remove drops the index from each array long enough; an empty array is removed. A label, icon or color pads its array to the index (\"\", app.fill, \"\") and sets it; no icon is app.fill, no color is \"\"."
+    },
+    "inputDefaults": {
+      "remoteCrownSelectEnabled": true,
+      "remoteCrownBackEnabled": true,
+      "remoteEdgeVolumeEnabled": false,
+      "remoteEdgeVolumeSide": "right",
+      "remoteQuickActionConfirm": true
+    },
+    "inputWrites": "The switches write true or false, never remove the key. Reverse = Back shows only while crown select reads on, the side only while edge volume reads on.",
+    "edgeSides": [
+      {
+        "value": "left",
+        "label": "Left"
+      },
+      {
+        "value": "right",
+        "label": "Right"
+      }
+    ],
+    "pickers": {
+      "associatedMediaPlayerId": "media_player",
+      "associatedVolumePlayerId": "media_player",
+      "remoteLauncherScriptIds": "script"
+    },
+    "pickerClear": "Clear Selection writes null (removes the key) for either player.",
+    "mediaPlayerSuggestion": "With no linked media player, the Remote task looks up the remote's device (the entity registry's device_id) and offers its first media_player., in registry order, as \"Use <player>\". Nothing is written until it is picked. The add writes that player itself (tile-defaults.json linksDeviceMediaPlayer).",
+    "saveCheck": "Saving a page with a remote. tile that has no associatedMediaPlayerId asks once (No Media Player, Save Anyway); a TV remote is never asked about."
+  },
+  "camera": {
+    "displayModes": [
+      {
+        "value": "icon",
+        "label": "Icon"
+      },
+      {
+        "value": "preview",
+        "label": "Preview"
+      }
+    ],
+    "fillModes": [
+      {
+        "value": "fill",
+        "label": "Fill"
+      },
+      {
+        "value": "fit",
+        "label": "Fit"
+      }
+    ],
+    "fillAbsent": {
+      "single": "fit",
+      "cell": "fill"
+    },
+    "fill": "Fill or Fit writes cameraFillMode; Fit also writes cameraFillOffsetX and cameraFillOffsetY 0. Crop Position shows only while the mode reads Fill.",
+    "offset": {
+      "step": 0.25,
+      "limit": 3,
+      "rule": "A D-pad step: up is cameraFillOffsetY minus step, down plus, left cameraFillOffsetX minus, right plus; a step is held inside the limit on the side it moves to (a step down from v is the larger of v minus step and -limit, a step up the smaller of v plus step and limit). The middle dot writes both 0."
+    },
+    "refresh": {
+      "key": "cameraRefreshOnOpen",
+      "choices": [
+        {
+          "value": null,
+          "label": "Default (On/<debounce>)",
+          "labelWhenOff": "Default (Off)"
+        },
+        {
+          "value": true,
+          "label": "On"
+        },
+        {
+          "value": false,
+          "label": "Off"
+        }
+      ],
+      "defaultFrom": "The behavior document's cameraRefreshOnOpen (absent: true) and cameraRefreshOnOpenDebounce (absent: \"10s\") name the Default choice."
+    },
+    "bestFitCandidates": [
+      [12, 3],
+      [12, 4],
+      [12, 7],
+      [12, 9],
+      [12, 12],
+      [9, 6],
+      [9, 9],
+      [9, 12],
+      [8, 2],
+      [8, 4],
+      [8, 6],
+      [8, 8],
+      [8, 14],
+      [6, 2],
+      [6, 3],
+      [6, 5],
+      [6, 6],
+      [6, 8],
+      [6, 10],
+      [4, 1],
+      [4, 2],
+      [4, 3],
+      [4, 4],
+      [4, 6],
+      [4, 8],
+      [3, 2],
+      [3, 3],
+      [3, 4],
+      [3, 5],
+      [2, 2],
+      [2, 3],
+      [2, 4]
+    ],
+    "bestFit": "The candidate whose colSpan / rowSpan is closest to the ratio, the first on a tie.",
+    "suggestionBands": [
+      {
+        "above": 2.5,
+        "sizes": [[12, 4], [12, 3], [8, 2], [6, 2], [4, 1]]
+      },
+      {
+        "above": 1.5,
+        "sizes": [[12, 7], [8, 4], [6, 3], [4, 2], [3, 2]]
+      },
+      {
+        "above": 1.1,
+        "sizes": [[12, 9], [8, 6], [6, 5], [4, 3], [3, 2]]
+      },
+      {
+        "above": 0.9,
+        "sizes": [[12, 12], [8, 8], [6, 6], [4, 4], [3, 3]]
+      },
+      {
+        "above": 0.6,
+        "sizes": [[9, 12], [6, 8], [4, 6], [3, 4], [2, 3]]
+      },
+      {
+        "above": null,
+        "sizes": [[8, 14], [6, 10], [4, 8], [3, 5], [2, 4]]
+      }
+    ],
+    "suggestions": "Suggested Sizes (a single camera with a ratio): the first band whose above the ratio is greater than, the last band for the rest; the one equal to the best fit is marked Best fit. A size writes colSpan and rowSpan through the resize.",
+    "ratioNames": [
+      {
+        "ratio": 1.7777777777777777,
+        "name": "16:9 (Wide)"
+      },
+      {
+        "ratio": 1.3333333333333333,
+        "name": "4:3"
+      },
+      {
+        "ratio": 1,
+        "name": "1:1 (Square)"
+      },
+      {
+        "ratio": 0.75,
+        "name": "3:4 (Portrait)"
+      },
+      {
+        "ratio": 0.5625,
+        "name": "9:16 (Doorbell)"
+      }
+    ],
+    "ratioName": "The first ratioNames entry within 0.1, else over 1.5 \"%.2f:1 (Wide)\", over 0.9 \"%.2f:1\", else \"1:%.2f (Tall)\" of 1 / ratio.",
+    "detectFallbackRatio": 1.78,
+    "detection": "Detect Camera Ratio with the ratio of the snapshot (width / height). A single camera: cameraAspectRatio is the ratio; gridCol becomes 0 when gridCol plus the best fit's colSpan passes the page's columns; then the resize to the best fit, pushing the tiles it overlaps down. A snapshot that does not load changes nothing."
+  },
+  "multicam": {
+    "newTile": {
+      "entityIdPrefix": "multicam.",
+      "icon": "rectangle.split.2x2",
+      "hex": "#5A7FB8",
+      "displayMode": "preview",
+      "colSpan": 4,
+      "rowSpan": 4,
+      "ids": "Two new ids, in order: the UUID of the entity id (upper case), then the tile's id."
+    },
+    "labels": {
+      "joinMerge": ", ",
+      "joinRemove": " + ",
+      "manyAbove": 3,
+      "many": "<n> Cameras",
+      "mergeName": "A merge or an add names a camera by its id without camera., _ as spaces, in Foundation's capitalized; more than manyAbove cameras is \"<n> Cameras\". The add rewrites the label over one the person typed.",
+      "removeName": "A remove names every camera left by its object id (after the last .) made readable the same way, joined \" + \"."
+    },
+    "merge": "The phone merges camera tiles chosen together; the panel takes the open camera or group tile and the camera and group tiles picked to go with it, in page order. Needs two or more camera and group tiles. Camera ids: each group's cameraGroupIds in page order, with its cameraRowWeights, cameraFillModes, cameraFillOffsetsX, cameraFillOffsetsY at the same index (padded with 1, fill, 0, 0); then each camera tile with weight 1, its cameraFillMode (absent: fill) and its offsets. With a group among them the first group in page order keeps its id, place and every other key, takes the five arrays and the label, and every other chosen tile is removed. With only cameras a new tile (newTile, the arrays, the label) takes the place of the first chosen tile in page order, the cameras are removed and it is appended last. Detection then runs on the group.",
+    "detection": "Detection on a group, with one ratio per camera (a snapshot that does not load is detectFallbackRatio). The mean ratio over 2: cameraGridColumns 1; over 1.2: the smaller of 2 and the camera count; else the columns of the automatic grid (1 or 2 cameras: 1, else ceil(sqrt(n))). Rows: ceil(n / columns). cameraRowWeights: 1 / ratio each. Width: the page's columns; cell width: width / columns. Height: with one column the sum of max(1, cellWidth / ratio), else rows * max(1, cellWidth / mean), rounded, at least rowSpanMin. Writes cameraAspectRatio (the first ratio that loaded, untouched when none did), cameraGridColumns, cameraRowWeights, cameraFillMode fill, cameraFillModes all fill; gridCol 0 when it passes the columns; then the resize to width by height, pushing the tiles it overlaps down.",
+    "add": "Add Camera picks from every camera; the picks already in the group are skipped, the others appended to cameraGroupIds; cameraRowWeights gains 1 for each (made from [] when absent); cameraFillModes gains fill and both offset arrays 0, only when they exist; then the label (labels).",
+    "remove": "Remove, offered with two cameras or more, drops the index from all five arrays. Two or more left: the arrays, cameraFillModes and the offset arrays removed when empty, cameraRowWeights kept even empty, the label joined \" + \". One left: entityId becomes that camera; cameraGroupIds, cameraRowWeights, cameraFillModes, both offset arrays and multiCamTapMode removed; cameraFillMode the slot's mode (else fill), cameraFillOffsetX and Y the slot's offsets (else 0); multiCamBorderEnabled false; customLabel the camera's object id made readable. Icon, color and display mode stay.",
+    "reorder": "The arrows swap a camera with its neighbor in cameraGroupIds and in each per-camera array longer than the larger index. A drag moves the camera from its index to before toOffset (insert-before; nothing when toOffset is the index or the next one) in cameraGroupIds and in each per-camera array exactly as long.",
+    "cell": "A cell's Fill or Fit writes the whole cameraFillModes (made all fill at the camera count, padded with fill); Fit also writes that cell's offsets 0. A cell's Position writes both offset arrays (made zero filled at the camera count, padded with 0), with the same step and limit as a single camera.",
+    "weight": {
+      "step": 0.2,
+      "min": 0.2
+    },
+    "weightRule": "Height plus or minus changes the camera's cameraRowWeights entry by step, at least min; with no weight for the camera nothing changes. When the old sum is above 0 the tile's rowSpan becomes round(rowSpan * new sum / old sum), at least rowSpanMin, through the resize (pushing tiles down). Shown as the weight's percent of the sum.",
+    "rowSpanMin": 2,
+    "borderThicknesses": [
+      {
+        "value": "thin",
+        "label": "Thin"
+      },
+      {
+        "value": "medium",
+        "label": "Medium"
+      },
+      {
+        "value": "thick",
+        "label": "Thick"
+      }
+    ],
+    "borderDefaults": {
+      "multiCamBorderEnabled": false,
+      "multiCamBorderColor": "FFFFFF",
+      "multiCamBorderThickness": "thin"
+    },
+    "border": "Grid Border writes multiCamBorderEnabled; while on, a color (the page theme's expandedSwatchHexes, #RAINBOW, or a picked color) to multiCamBorderColor and a thickness to multiCamBorderThickness. multiCamTapMode is never offered.",
+    "unmergeTile": {
+      "icon": "video",
+      "colSpan": 4,
+      "rowSpan": 4,
+      "displayMode": "preview",
+      "rule": "Split into Individual Cameras removes the group and adds a tile per camera, in order: the icon, the page theme's camera color as the add colors it (tile-defaults.json domains.camera, gradient form on a gradient page), customLabel the object id made readable, the size, cameraDisplayMode preview, at the first free place (tile-defaults.json) among the tiles then on the page. Each takes one new id, in order."
+    }
+  },
+  "vacuum": {
+    "selectDomains": ["select", "input_select"],
+    "batteryDeviceClass": "battery",
+    "slots": [
+      {
+        "slot": "cleaningMode",
+        "key": "vacuumCleaningModeEntityId",
+        "picker": "select",
+        "noneLabel": "Auto-detect"
+      },
+      {
+        "slot": "fanSpeed",
+        "key": "vacuumFanSpeedEntityId",
+        "picker": "select",
+        "noneLabel": "Use vacuum attributes"
+      },
+      {
+        "slot": "extraSelect",
+        "key": "vacuumExtraSelectEntityId",
+        "picker": "select",
+        "noneLabel": "Not set"
+      },
+      {
+        "slot": "battery",
+        "key": "vacuumBatteryEntityId",
+        "picker": "sensor",
+        "noneLabel": "Use vacuum attributes"
+      }
+    ],
+    "slotRule": "A pick writes the entity id; the none row and Clear write null (remove the key). Clearing the extra select removes vacuumExtraSelectLabel too. The select pickers list every entity of selectDomains, the battery picker every sensor, battery device class first.",
+    "extraLabel": "vacuumExtraSelectLabel, a text field shown while an extra select is set; empty removes the key.",
+    "switches": "vacuumSwitchEntityIds in the order picked, each once; a pick of a listed switch takes it out, any other is appended; empty removes the key. Remove takes one out.",
+    "cleaningModeAutoDetect": "The watch finds a cleaning mode select itself when, with <name> the vacuum's object id, select.<name>_cleaning_mode or input_select.<name>_cleaning_mode exists, or a select ending cleaning_mode contains <name>, or exactly one select ends cleaning_mode.",
+    "attention": "A row needs attention when the vacuum lacks the attribute and nothing is linked: cleaning mode (no cleaning_modes or cleaning_mode_list attribute, no vacuumCleaningModeEntityId, and the watch would not find one), fan speed (no fan_speed_list, no vacuumFanSpeedEntityId), battery (no battery_level, no vacuumBatteryEntityId). With any row needing attention the rows show in a warning card; else behind Override Linked Entities.",
+    "discovery": "Discover Linked Entities lists the device's other entities (the entity registry's device_id, registry order) as selects (selectDomains), switches, sensors. The sheet starts from the tile's own links; then an empty cleaning mode takes the first select containing cleaning_mode, no switches every switch, an empty battery the first sensor containing battery. Apply writes each pick that is set (an extra select also writes its label: the object id made readable, else \"Extra\") and appends the picked switches not linked yet, in pick order.",
+    "extraLabelFallback": "Extra",
+    "showBatteryOnTile": "Absent reads on; the switch writes true or false."
+  },
+  "mower": {
+    "fallbackBatteryId": "sensor.<object id>_battery",
+    "fallbackSample": {
+      "entityId": "lawn_mower.front_lawn",
+      "battery": "sensor.front_lawn_battery"
+    },
+    "batteryResolved": "The battery is known when mowerBatteryEntityId is set or the fallback sensor exists; then the battery row sits behind Override Battery Sensor, else it shows with a warning.",
+    "picker": "Every sensor, battery device class or id first, then by name. Not set and Clear write null.",
+    "showBatteryOnTile": "Absent reads on; the switch writes true or false."
+  },
+  "calendar": {
+    "list": "The tile's calendars: entityId (Primary), then additionalCalendarEntityIds.",
+    "add": "Add Calendar picks calendars; each that is neither the primary nor listed is appended to additionalCalendarEntityIds and, when calendarSourceColors has no entry for it, gets the add's color (tile-defaults.json calendar). Unpicking removes nothing.",
+    "removePrimaryRule": "Remove is offered with two calendars or more. Removing the primary makes the first extra the primary (entityId) and drops it from the extras; customLabel stays. Removing an extra drops it. The removed calendar's color entry goes; an empty list or map is removed.",
+    "color": "A calendar's swatch row: none removes its calendarSourceColors entry, a swatch of the editable palette (tile-defaults.json calendar swatchTheme, never the page theme) writes the hex as listed. An empty map is removed."
+  },
+  "weather": {
+    "textScale": {
+      "key": "weatherDetailTextScale",
+      "min": 1,
+      "max": 2,
+      "step": 0.05,
+      "auto": 1.5,
+      "write": "Snapped to the step and written as the decimal (steps / 20); removed within 0.001 of auto."
+    },
+    "showIcons": {
+      "key": "weatherDetailShowIcons",
+      "absent": true,
+      "write": "On removes the key, off writes false."
+    },
+    "note": "Both change only the watch's weather detail view, never the tile."
+  },
+  "person": {
+    "key": "usePersonPhoto",
+    "choices": [
+      {
+        "value": true,
+        "label": "Photo",
+        "icon": "person.crop.circle.fill"
+      },
+      {
+        "value": false,
+        "label": "Icon",
+        "icon": "person.fill"
+      }
+    ],
+    "absent": "Photo, unless the tile has its own icon (one that is not the person domain's default), then Icon.",
+    "write": "Always written, true or false."
+  },
+  "alarm": {
+    "key": "autoSubmitPIN",
+    "absent": false,
+    "write": "On writes true, off removes the key."
+  },
+  "resets": {
+    "data": {
+      "assistAgentId": null,
+      "assistAutoSendOnPause": null,
+      "assistChooseListSpeakerIds": null,
+      "assistImmediateListen": null,
+      "assistPrimaryAction": null,
+      "assistSpeakTargetMode": null,
+      "assistSpeechVolumeMode": null,
+      "assistSpeechVolumePercent": null,
+      "assistTTSEngine": null,
+      "assistTargetSpeakerIds": null,
+      "associatedMediaPlayerId": null,
+      "associatedVolumePlayerId": null,
+      "mowerBatteryEntityId": null,
+      "peekDisableAnimation": null,
+      "remoteButtonLayout": null,
+      "remoteCrownBackEnabled": null,
+      "remoteCrownSelectEnabled": null,
+      "remoteEdgeVolumeEnabled": null,
+      "remoteEdgeVolumeSide": null,
+      "remoteLauncherColors": null,
+      "remoteLauncherIcons": null,
+      "remoteLauncherLabels": null,
+      "remoteLauncherScriptIds": null,
+      "remoteQuickActionConfirm": null,
+      "showBatteryOnTile": null,
+      "speakMessageChooseListSpeakerIds": null,
+      "speakMessageImmediateListen": null,
+      "speakMessageOutputMode": null,
+      "speakMessageSpeechVolumeMode": null,
+      "speakMessageSpeechVolumePercent": null,
+      "speakMessageTTSEngine": null,
+      "speakMessageTargetSpeakerIds": null,
+      "vacuumBatteryEntityId": null,
+      "vacuumCleaningModeEntityId": null,
+      "vacuumExtraSelectEntityId": null,
+      "vacuumExtraSelectLabel": null,
+      "vacuumFanSpeedEntityId": null,
+      "vacuumSwitchEntityIds": null
+    },
+    "alarm": {
+      "autoSubmitPIN": null
+    },
+    "person": {
+      "usePersonPhoto": null
+    },
+    "camera": {},
+    "calendarSettings": {},
+    "weather": {},
+    "note": "Each task's reset writes exactly these keys, null removing the key. On a speak_message. tile Reset Data writes speakMessageOutputMode \"configuredSpeakers\" instead. Camera, Calendars and Weather have no reset."
+  }
+}

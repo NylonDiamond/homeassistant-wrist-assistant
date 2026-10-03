@@ -140,6 +140,8 @@ import {
 import { type WatchPagesNote, watchCommandError, watchPagesSaveNote } from "./save-note.js";
 import { forgetTileSettingsNotes, renderTileSettings, tileSettingsStyles } from "./tile-settings.js";
 import { pageSettingsStyles, renderPageSettings } from "./page-settings.js";
+import { specialSettingsStyles } from "./special-settings.js";
+import { watchCameraRefreshDefaults, watchDeviceSiblings } from "./special-model.js";
 import { scrubWatchOrphanTriggers } from "./tile-settings-model.js";
 import {
   type StageGrid,
@@ -386,6 +388,25 @@ function handleSizes(box: { width: number; height: number }): string {
   return `--pe-hv:${along(box.height)}px;--pe-hh:${along(box.width)}px;`;
 }
 
+/** A picture's natural size, loaded as an image (a camera's snapshot, whose
+ * `entity_picture` is a tokened path on Home Assistant itself). Undefined
+ * when it does not load within 15 seconds. */
+function loadImageNaturalSize(url: string): Promise<{ width: number; height: number } | undefined> {
+  return new Promise((resolve) => {
+    const image = new Image();
+    const done = (size: { width: number; height: number } | undefined) => {
+      window.clearTimeout(timer);
+      image.onload = null;
+      image.onerror = null;
+      resolve(size);
+    };
+    const timer = window.setTimeout(() => done(undefined), 15_000);
+    image.onload = () => done(image.naturalWidth > 0 && image.naturalHeight > 0 ? { width: image.naturalWidth, height: image.naturalHeight } : undefined);
+    image.onerror = () => done(undefined);
+    image.src = url;
+  });
+}
+
 export class WaPageEditor extends LitElement {
   @property({ attribute: false }) hass?: HassLike;
   /** The home's devices, as the panel holds them. */
@@ -400,6 +421,10 @@ export class WaPageEditor extends LitElement {
    * symbol file, or a glyph fetched on its own. The provider tells the
    * panel, not this element; a new number here is what draws again. */
   @property({ attribute: false }) iconsTick = 0;
+  /** Loads a picture and reads its natural size, for a camera's ratio
+   * detection. The default loads it as an image; the harness and tests
+   * stand one in so nothing goes to the network. */
+  @property({ attribute: false }) loadImageSize: (url: string) => Promise<{ width: number; height: number } | undefined> = loadImageNaturalSize;
 
   @state() private watchId?: string;
   @state() private record?: WatchConfigRecord;
@@ -407,6 +432,10 @@ export class WaPageEditor extends LitElement {
    * while there is none. Kept here and never in the draft: it is read only,
    * never saved, undone or merged. */
   @state() private catalog?: WatchCatalog;
+  /** The watch's camera refresh setting from its behavior document, for the
+   * Camera task's Default words; the phone's defaults until it is read. */
+  @state() private cameraRefresh: { on: boolean; debounce: string } = watchCameraRefreshDefaults(undefined);
+  private behaviorSeq = 0;
   @state() private loading = false;
   @state() private loadError?: string;
   @state() private history: WatchConfigHistoryEntry[] = [];
@@ -780,6 +809,8 @@ export class WaPageEditor extends LitElement {
       // The other watch's library is not this one's.
       this.catalog = undefined;
       this.catalogSeq++;
+      this.cameraRefresh = watchCameraRefreshDefaults(undefined);
+      this.behaviorSeq++;
       this.history = [];
       if (this.historyState !== "unsupported") this.historyState = "loading";
       const selection = keptWatchPagesSelection(watchId);
@@ -797,6 +828,23 @@ export class WaPageEditor extends LitElement {
     this.startSubscription(watchId);
     void this.load(watchId, quiet);
     void this.loadCatalog(watchId);
+    void this.loadBehavior(watchId);
+  }
+
+  /** Read the watch's camera setting from its behavior document. A failed
+   * read keeps the phone's defaults; only the newest read lands. */
+  private async loadBehavior(watchId: string): Promise<void> {
+    const hass = this.hass;
+    if (!hass) return;
+    const seq = ++this.behaviorSeq;
+    try {
+      const record = await fetchWatchConfig(hass, watchId, "behavior");
+      if (seq !== this.behaviorSeq || watchId !== this.watchId) return;
+      this.cameraRefresh = watchCameraRefreshDefaults(record.revision > 0 ? record.document : undefined);
+    } catch {
+      if (seq !== this.behaviorSeq || watchId !== this.watchId) return;
+      this.cameraRefresh = watchCameraRefreshDefaults(undefined);
+    }
   }
 
   /** Read the iPhone's library beside the pages record. Never in the way of
@@ -915,6 +963,10 @@ export class WaPageEditor extends LitElement {
       if (seq !== this.subscribeSeq) return;
       if (event.kind === "catalog") {
         if (watchCatalogEventIsNews(event, this.catalog)) void this.loadCatalog(watchId);
+        return;
+      }
+      if (event.kind === "behavior") {
+        void this.loadBehavior(watchId);
         return;
       }
       if (event.kind !== "pages") return;
@@ -1070,6 +1122,8 @@ export class WaPageEditor extends LitElement {
         if (id !== undefined) this.revealTile = true;
       },
       requestUpdate: () => this.requestUpdate(),
+      deviceSiblings: (entityId: string) => watchDeviceSiblings(this.hass?.entities, entityId),
+      loadImageSize: (url: string) => this.loadImageSize(url),
     };
     return extendHost(base, {
       document: () => draft.document,
@@ -1078,6 +1132,7 @@ export class WaPageEditor extends LitElement {
       // The element's, read live: a catalog that arrives while a picker is
       // open is the one its next pick reads.
       catalog: () => this.catalog,
+      cameraRefreshDefaults: () => this.cameraRefresh,
       busy: busyNow,
     });
   }
@@ -2803,7 +2858,7 @@ export class WaPageEditor extends LitElement {
     @container (max-width: 820px) {
       .pe-hint { display: none; }
     }
-  `, tileSettingsStyles, pageSettingsStyles, addTileStyles];
+  `, tileSettingsStyles, specialSettingsStyles, pageSettingsStyles, addTileStyles];
 }
 
 if (!customElements.get("wa-page-editor")) {

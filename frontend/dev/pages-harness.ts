@@ -521,6 +521,9 @@ function seedStore(): void {
     roomQuickJumpSourceEntityId: "sensor.alex_room",
     roomQuickJumpFallbackPageId: home ?? "",
     roomQuickJumpMappings: { living_room: living ?? "" },
+    // The Camera task's "Default (On/30s)" words come from these (part 3f).
+    cameraRefreshOnOpen: true,
+    cameraRefreshOnOpenDebounce: "30s",
   }, { base: 0, by: ALEX_WATCH, at: minutesAgo(60 * 24 * 3), notify: false });
 
   // Sam: one upload, then a panel save the iPhone has not collected yet.
@@ -696,8 +699,48 @@ const SPECIAL_STATES: readonly HassEntityState[] = [
   specialState("person.sam", "work_office", { friendly_name: "Sam" }),
   specialState("alarm_control_panel.house", "armed_away", { friendly_name: "House", supported_features: 1 | 2 }),
   specialState("calendar.family", "on", { friendly_name: "Family", message: "School run" }),
+  specialState("calendar.work", "off", { friendly_name: "Work" }),
   specialState("weather.home", "partlycloudy", { friendly_name: "Home", temperature: 17, temperature_unit: "°C" }),
+  // What the special tiles' settings pick from (part 3f): the remote's
+  // quick action scripts, a receiver for its volume, and the vacuum's
+  // companion entities, which share its device (`SPECIAL_DEVICES`).
+  specialState("script.movie_night", "off", { friendly_name: "Movie Night" }),
+  specialState("script.launch_netflix", "off", { friendly_name: "" }),
+  specialState("media_player.living_room_receiver", "on", { friendly_name: "Living Room Receiver", volume_level: 0.3, supported_features: 4 | 8 | 1024 | 2048, source_list: ["TV", "Phono"] }),
+  specialState("select.robo_cleaning_mode", "vacuum", { friendly_name: "Robo cleaning mode", options: ["vacuum", "mop", "vacuum_and_mop"] }),
+  specialState("select.robo_mop_intensity", "medium", { friendly_name: "Robo mop intensity", options: ["low", "medium", "high"] }),
+  specialState("switch.robo_do_not_disturb", "off", { friendly_name: "Robo do not disturb" }),
+  specialState("switch.robo_child_lock", "off", { friendly_name: "Robo child lock" }),
+  specialState("sensor.robo_battery", "64", { friendly_name: "Robo battery", unit_of_measurement: "%", device_class: "battery" }),
 ];
+
+/** The devices the special tiles' settings read beyond the home's: the
+ * remote's (its "Use <player>" suggestion) and the vacuum's (discovery). */
+const SPECIAL_DEVICES: readonly { id: string; entities: readonly string[] }[] = [
+  { id: "dev_living_room_apple_tv", entities: ["remote.living_room_apple_tv", "media_player.living_room_apple_tv"] },
+  { id: "dev_robo", entities: ["vacuum.robo", "select.robo_cleaning_mode", "select.robo_mop_intensity", "switch.robo_do_not_disturb", "switch.robo_child_lock", "sensor.robo_battery"] },
+];
+
+/** The registries with the special devices' entities on their devices. */
+function withSpecialDevices(home: HomeRegistries): HomeRegistries {
+  const entities = { ...home.entities };
+  for (const device of SPECIAL_DEVICES) {
+    for (const id of device.entities) {
+      if (entities[id] !== undefined) entities[id] = { ...entities[id]!, device_id: device.id };
+    }
+  }
+  return { ...home, entities };
+}
+
+/** A stand-in for the element's picture loader: the size a stand-in
+ * snapshot was drawn at, read from its data URL, after a short wait, as a
+ * snapshot from Home Assistant would arrive. Anything else does not load. */
+function loadStandInImage(url: string): Promise<{ width: number; height: number } | undefined> {
+  const svg = url.startsWith("data:image/svg+xml,") ? decodeURIComponent(url.slice("data:image/svg+xml,".length)) : "";
+  const m = /width="(\d+)" height="(\d+)"/.exec(svg);
+  const size = m === null ? undefined : { width: Number(m[1]), height: Number(m[2]) };
+  return new Promise((resolve) => window.setTimeout(() => resolve(size), 250));
+}
 
 /** The symbols the special tiles draw beyond their tiles' own, for the
  * stand-in symbol provider. */
@@ -1085,6 +1128,7 @@ function mount(): void {
   el.ownerId = undefined;
   el.narrow = prefs.narrow;
   el.icons = noIcons ? undefined : icons;
+  el.loadImageSize = loadStandInImage;
   frame.append(el);
   editor = el;
 }
@@ -1463,7 +1507,7 @@ function reset(): void {
   log.length = 0;
   seedStore();
   states = buildStates();
-  registries = homeRegistries(states);
+  registries = withSpecialDevices(homeRegistries(states));
   mount();
   applyLayout();
   say("Store reseeded.");

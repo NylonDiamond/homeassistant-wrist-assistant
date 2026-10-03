@@ -1317,29 +1317,35 @@
         "remoteLauncherColors": {
           "type": "array",
           "of": "color",
+          "empty": true,
           "required": false
         },
         "remoteQuickActionConfirm": {
           "type": "bool",
-          "required": false
+          "required": false,
+          "default": true
         },
         "remoteCrownSelectEnabled": {
           "type": "bool",
-          "required": false
+          "required": false,
+          "default": true
         },
         "remoteCrownBackEnabled": {
           "type": "bool",
-          "required": false
+          "required": false,
+          "default": true
         },
         "remoteEdgeVolumeEnabled": {
           "type": "bool",
-          "required": false
+          "required": false,
+          "default": false
         },
         "remoteEdgeVolumeSide": {
           "type": "enum",
           "enum": "RemoteEdgeVolumeSide",
           "strict": false,
-          "required": false
+          "required": false,
+          "default": "right"
         },
         "remoteButtonLayout": {
           "type": "array",
@@ -1375,7 +1381,8 @@
         },
         "showBatteryOnTile": {
           "type": "bool",
-          "required": false
+          "required": false,
+          "default": true
         },
         "showActivityStatus": {
           "type": "bool",
@@ -1398,7 +1405,8 @@
         },
         "autoSubmitPIN": {
           "type": "bool",
-          "required": false
+          "required": false,
+          "default": false
         },
         "assistPrimaryAction": {
           "type": "enum",

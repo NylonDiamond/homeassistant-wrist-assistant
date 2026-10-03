@@ -18,6 +18,7 @@ import type { SymbolBrowser } from "../symbols.js";
 import type { WatchCatalog } from "./catalog.js";
 import type { WatchPagesApplyOptions } from "./draft.js";
 import type { WatchPage, WatchPageTile, WatchPagesDocument } from "./model.js";
+import type { WatchDeviceSiblings } from "./special-model.js";
 
 /** What both modules get. Built afresh for every draw; keep none of it across
  * draws except through `uiState`.
@@ -56,6 +57,18 @@ export interface WatchPagesEditorHost {
    * none. Held by the element, never in the document: nothing here saves,
    * undoes or merges it. A getter like `document`. */
   readonly catalog: WatchCatalog | undefined;
+  /** The watch's own camera setting from its `behavior` document (refresh
+   * on page open, and the debounce), with the phone's defaults while there
+   * is none: the words of the Camera task's Default. A getter. */
+  readonly cameraRefreshDefaults: { on: boolean; debounce: string };
+  /** The entities on the same device as `entityId` in Home Assistant's
+   * entity registry (registry order), for a remote's "Use <player>" and a
+   * vacuum's discovery. Empty when the entity has no device. */
+  deviceSiblings(entityId: string): WatchDeviceSiblings;
+  /** Load a picture (a camera's `entity_picture`) and read its natural size,
+   * for ratio detection; undefined when it does not load. The element
+   * loads it as an image; a test or the harness stands one in. */
+  loadImageSize(url: string): Promise<{ width: number; height: number } | undefined>;
   /** True while a save is out, a tile or a page is being dragged, or the page
    * is shown "As on the watch": `apply` refuses every edit then. Draw the
    * fields disabled. */

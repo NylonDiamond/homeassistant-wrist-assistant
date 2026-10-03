@@ -174,7 +174,13 @@ function sortedKeys(value: JsonObject): JsonObject {
 }
 
 /** Every `fresh` tile key with its `new` value, else its `default`, then the
- * kind's own keys over them, in sorted key order. */
+ * kind's own keys over them, in sorted key order. Exported for the camera
+ * group and the split cameras (`special-model.ts`), which the phone builds
+ * from a fresh tile too. */
+export function watchFreshTile(fields: JsonObject): WatchPageTile {
+  return freshTile(fields);
+}
+
 function freshTile(fields: JsonObject): WatchPageTile {
   const tile: JsonObject = {};
   for (const [key, spec] of Object.entries(TILE_KEYS)) {

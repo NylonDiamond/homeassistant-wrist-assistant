@@ -1,6 +1,6 @@
 {
   "name": "Reset Page; theme and gradient switch stay, pageTitleIcon back to house",
-  "source": "WristAssistant/Views/PageEditorView.swift:2851",
+  "source": "WristAssistant/Views/PageEditorView.swift:2777",
   "page": {
     "backgroundBrightness": 0.9,
     "backgroundColor": "#101238",

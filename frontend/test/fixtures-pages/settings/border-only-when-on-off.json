@@ -1,6 +1,6 @@
 {
   "name": "Border shown when off too",
-  "source": "WristAssistant/Views/PageEditorView.swift:9870",
+  "source": "WristAssistant/Views/PageEditorView.swift:9776",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

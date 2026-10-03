@@ -1,6 +1,6 @@
 {
   "name": "Border color back to the tile color removes the key (the panel's button)",
-  "source": "WristAssistant/Views/PageEditorView.swift:9858",
+  "source": "WristAssistant/Views/PageEditorView.swift:9764",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

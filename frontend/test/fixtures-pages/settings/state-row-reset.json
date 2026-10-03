@@ -1,6 +1,6 @@
 {
   "name": "A row's reset removes its icon and color",
-  "source": "WristAssistant/Views/PageEditorView.swift:7084",
+  "source": "WristAssistant/Views/PageEditorView.swift:6979",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

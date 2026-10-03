@@ -1,6 +1,6 @@
 {
   "name": "A label left from before the old page was renamed stays",
-  "source": "WristAssistant/Views/PageEditorView.swift:8104",
+  "source": "WristAssistant/Views/PageEditorView.swift:7999",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

@@ -1,6 +1,6 @@
 {
   "name": "Background gradient back to solid",
-  "source": "WristAssistant/Views/PageEditorView.swift:16210",
+  "source": "WristAssistant/Views/PageEditorView.swift:15876",
   "page": {
     "backgroundBrightness": 0.9,
     "backgroundColor": "GRADIENT|#101238|#301D0E",

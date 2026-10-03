@@ -104,8 +104,49 @@ import {
   setWatchTileMacroCloseMode,
   setWatchTileMacroRunSilently,
 } from "../src/watch-pages/library-model.js";
+import {
+  WATCH_SPECIAL_SETTERS,
+  addWatchCalendars,
+  addWatchCamerasToGroup,
+  addWatchRemoteLauncher,
+  applyWatchVacuumDiscovery,
+  centerWatchCameraCellOffset,
+  centerWatchCameraOffset,
+  detectWatchCameraRatios,
+  mergeWatchCameraTiles,
+  moveWatchCameraInGroup,
+  nudgeWatchCameraCellOffset,
+  nudgeWatchCameraOffset,
+  removeWatchCalendar,
+  removeWatchCameraFromGroup,
+  removeWatchRemoteLauncher,
+  resetWatchRemoteLayout,
+  resetWatchSpecialTask,
+  setWatchAlarmAutoSubmit,
+  setWatchCalendarColor,
+  setWatchCameraCellFill,
+  setWatchCameraCellWeight,
+  setWatchCameraDisplayMode,
+  setWatchCameraFill,
+  setWatchRemoteLauncherColor,
+  setWatchRemoteLauncherIcon,
+  setWatchRemoteLauncherLabel,
+  setWatchRemoteLayoutSlot,
+  setWatchVacuumEntity,
+  setWatchVacuumExtraLabel,
+  setWatchVacuumSwitches,
+  setWatchWeatherShowIcons,
+  setWatchWeatherTextScale,
+  swapWatchCameraInGroup,
+  swapWatchRemoteLayoutSlots,
+  unmergeWatchCameraGroup,
+  watchVacuumDiscoverySuggestions,
+} from "../src/watch-pages/special-model.js";
 
 type Json = Record<string, unknown>;
+
+/** The special tasks with a reset (part 3f); the rest are 3d's. */
+const SPECIAL_TASKS = ["data", "alarm", "person", "camera", "calendarSettings", "weather"];
 
 const PAGE = "C3A0E000-0000-4000-8000-0000000000AA";
 const SYSTEM_PAGE = "C3A0E000-0000-4000-8000-0000000000BB";
@@ -261,7 +302,9 @@ function applyCase(document: WatchPagesDocument, c: SettingsCase): WatchPagesDoc
     case "swatch":
       return tileSetter(c.edit.key)(document, PAGE, T, (e.gradient ? watchGradientOf(e.value) : e.value) as never);
     case "reset":
-      return resetWatchTileTask(document, PAGE, T, e.task);
+      return SPECIAL_TASKS.includes(c.edit.task as string)
+        ? resetWatchSpecialTask(document, PAGE, T, e.task)
+        : resetWatchTileTask(document, PAGE, T, e.task);
     case "stateIcon":
       return setWatchTileStateIcon(document, PAGE, T, e.state, e.value);
     case "stateColor":
@@ -288,12 +331,99 @@ function applyCase(document: WatchPagesDocument, c: SettingsCase): WatchPagesDoc
       return setWatchTileMacroCloseMode(document, PAGE, T, e.value);
     case "macroRunSilently":
       return setWatchTileMacroRunSilently(document, PAGE, T, e.value);
+    // Part 3f batch 1: the special tiles.
     default:
-      throw new Error(`unknown op ${c.edit.op}`);
+      return applySpecialCase(document, T, c.edit);
   }
 }
 
+/** A special tile case's edit (part 3f), on the tile `T` of `PAGE`. */
+function applySpecialCase(document: WatchPagesDocument, T: string, edit: Json & { op: string }): WatchPagesDocument {
+  // The case file decides each field's type; `never` passes it on as is.
+  const e = edit as unknown as Record<
+    "slot" | "kind" | "from" | "to" | "scriptId" | "friendlyName" | "index" | "value" | "dx" | "dy" | "entityIds" | "direction" | "toOffset" | "ids" | "picks" | "siblings" | "id" | "hex",
+    never
+  >;
+  switch (edit.op) {
+    case "remoteLayoutSlot":
+      return setWatchRemoteLayoutSlot(document, PAGE, T, e.slot, e.kind);
+    case "remoteLayoutSwap":
+      return swapWatchRemoteLayoutSlots(document, PAGE, T, e.from, e.to);
+    case "remoteLayoutReset":
+      return resetWatchRemoteLayout(document, PAGE, T);
+    case "remoteLauncherAdd":
+      return addWatchRemoteLauncher(document, PAGE, T, e.scriptId, e.friendlyName);
+    case "remoteLauncherLabel":
+      return setWatchRemoteLauncherLabel(document, PAGE, T, e.index, e.value);
+    case "remoteLauncherIcon":
+      return setWatchRemoteLauncherIcon(document, PAGE, T, e.index, e.value);
+    case "remoteLauncherColor":
+      return setWatchRemoteLauncherColor(document, PAGE, T, e.index, e.value);
+    case "remoteLauncherRemove":
+      return removeWatchRemoteLauncher(document, PAGE, T, e.index);
+    case "cameraDisplayMode":
+      return setWatchCameraDisplayMode(document, PAGE, T, e.value);
+    case "cameraFill":
+      return setWatchCameraFill(document, PAGE, T, e.value);
+    case "cameraOffset":
+      return nudgeWatchCameraOffset(document, PAGE, T, e.dx, e.dy);
+    case "cameraOffsetCenter":
+      return centerWatchCameraOffset(document, PAGE, T);
+    case "cameraGroupAdd":
+      return addWatchCamerasToGroup(document, PAGE, T, e.entityIds);
+    case "cameraGroupRemove":
+      return removeWatchCameraFromGroup(document, PAGE, T, e.index);
+    case "cameraGroupSwap":
+      return swapWatchCameraInGroup(document, PAGE, T, e.index, e.direction);
+    case "cameraGroupMove":
+      return moveWatchCameraInGroup(document, PAGE, T, e.from, e.toOffset);
+    case "cameraCellFill":
+      return setWatchCameraCellFill(document, PAGE, T, e.index, e.value);
+    case "cameraCellOffset":
+      return nudgeWatchCameraCellOffset(document, PAGE, T, e.index, e.dx, e.dy);
+    case "cameraCellOffsetCenter":
+      return centerWatchCameraCellOffset(document, PAGE, T, e.index);
+    case "vacuumEntity":
+      return setWatchVacuumEntity(document, PAGE, T, e.slot, e.value);
+    case "vacuumExtraLabel":
+      return setWatchVacuumExtraLabel(document, PAGE, T, e.value);
+    case "vacuumSwitches":
+      return setWatchVacuumSwitches(document, PAGE, T, e.ids);
+    case "vacuumDiscovery": {
+      // `siblings`: the sheet applied as it suggests; `picks`: as picked.
+      if (edit.picks !== undefined) return applyWatchVacuumDiscovery(document, PAGE, T, e.picks);
+      const tile = (findWatchPage(document, PAGE)!.items as WatchPageTile[]).find((t) => t.id === T)!;
+      return applyWatchVacuumDiscovery(document, PAGE, T, watchVacuumDiscoverySuggestions(tile, e.siblings));
+    }
+    case "calendarAdd":
+      return addWatchCalendars(document, PAGE, T, e.ids);
+    case "calendarRemove":
+      return removeWatchCalendar(document, PAGE, T, e.id);
+    case "calendarColor":
+      return setWatchCalendarColor(document, PAGE, T, e.id, e.hex);
+    case "weatherTextScale":
+      return setWatchWeatherTextScale(document, PAGE, T, e.value);
+    case "weatherShowIcons":
+      return setWatchWeatherShowIcons(document, PAGE, T, e.value);
+    case "autoSubmitPIN":
+      return setWatchAlarmAutoSubmit(document, PAGE, T, e.value);
+    default:
+      throw new Error(`unknown op ${edit.op}`);
+  }
+}
+
+/** The ids a case hands out, in order. */
+function idsFrom(ids: unknown): () => string {
+  const queue = [...(ids as string[])];
+  return () => {
+    const next = queue.shift();
+    if (next === undefined) throw new Error("the case ran out of ids");
+    return next;
+  };
+}
+
 function tileSetter(key: unknown) {
+  if (typeof key === "string" && Object.hasOwn(WATCH_SPECIAL_SETTERS, key)) return WATCH_SPECIAL_SETTERS[key]!;
   const setter = typeof key === "string" && Object.hasOwn(WATCH_TILE_STYLING_SETTERS, key) ? WATCH_TILE_STYLING_SETTERS[key] : undefined;
   if (setter === undefined) throw new Error(`no tile setter for ${String(key)}`);
   return setter;
@@ -325,6 +455,15 @@ function applyPageCase(document: WatchPagesDocument, c: PageSettingsCase): Watch
     case "reset":
       if (e.task !== "page") throw new Error(`unknown page reset ${String(e.task)}`);
       return resetWatchPage(document, P);
+    // Part 3f batch 1: the camera edits that move tiles.
+    case "cameraDetected":
+      return detectWatchCameraRatios(document, P, c.edit.tileId as string, c.edit.ratios as (number | null)[]).document;
+    case "cameraMerge":
+      return mergeWatchCameraTiles(document, P, c.edit.tileIds as string[], { newId: idsFrom(c.edit.ids) }).document;
+    case "cameraCellWeight":
+      return setWatchCameraCellWeight(document, P, c.edit.tileId as string, c.edit.index as number, c.edit.delta as number).document;
+    case "cameraUnmerge":
+      return unmergeWatchCameraGroup(document, P, c.edit.tileId as string, { newId: idsFrom(c.edit.ids) }).document;
     default:
       throw new Error(`unknown op ${c.edit.op}`);
   }
@@ -332,7 +471,7 @@ function applyPageCase(document: WatchPagesDocument, c: PageSettingsCase): Watch
 
 describe("settings case files written by the phone", () => {
   it("are all here", () => {
-    expect(files.length).toBeGreaterThanOrEqual(259);
+    expect(files.length).toBeGreaterThanOrEqual(351);
   });
 
   for (const file of files) {

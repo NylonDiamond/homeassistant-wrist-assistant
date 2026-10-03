@@ -70,6 +70,7 @@ import {
 import { watchDecimalOptions, watchStateEmptyText, watchStylingChoices, watchStylingLabel, watchStylingReset, watchStylingSlider } from "./tile-styling.js";
 import { watchPageSwatchTheme } from "./page-settings-model.js";
 import type { TileSettingsHost } from "./editor-host.js";
+import { renderSpecial, specialSummary, watchSpecialSectionTitle } from "./special-settings.js";
 import { findWatchPage } from "./edit.js";
 import { type WatchPagesDocument, tileEntityId, tileKind, watchPageId, watchPageName, watchPagesOf } from "./model.js";
 import {
@@ -225,6 +226,7 @@ const OPEN_AT_FIRST: Readonly<Record<WatchTileSettingsSection, boolean>> = {
   request: false,
   macro: false,
   header: true,
+  special: true,
   icon: true,
   state: false,
   text: false,
@@ -333,7 +335,7 @@ export function resetDotPressed(host: TileSettingsHost): void {
 }
 
 /** The refusal shown by a field, if any. */
-function fieldNote(host: TileSettingsHost, setting: string): TemplateResult | typeof nothing {
+export function fieldNote(host: TileSettingsHost, setting: string): TemplateResult | typeof nothing {
   const note = host.uiState.get(noteKey(host, setting));
   return typeof note === "string" ? html`<div class="hint warn ts-note" role="status">${note}</div>` : nothing;
 }
@@ -510,7 +512,7 @@ export function watchTileDefaultColorEdit(host: TileSettingsHost): (d: WatchPage
 
 /** The settings rows for `host.tile`, or nothing. */
 export function renderTileSettings(host: TileSettingsHost): TemplateResult | typeof nothing {
-  const sections = watchTileSettingsSections(host.tile);
+  const sections = watchTileSettingsSections(host.tile, host.hass.states);
   if (sections.length === 0) return nothing;
   dropStaleTyping(host);
   return html`<div class="ts-root">
@@ -521,7 +523,7 @@ export function renderTileSettings(host: TileSettingsHost): TemplateResult | typ
 function renderSection(host: TileSettingsHost, section: WatchTileSettingsSection): TemplateResult {
   const open = isOpen(host, section);
   const id = `ts-body-${section}`;
-  const title = WATCH_TILE_SETTINGS_SECTION_TITLES[section];
+  const title = section === "special" ? watchSpecialSectionTitle(host) : WATCH_TILE_SETTINGS_SECTION_TITLES[section];
   const summary = open ? "" : sectionSummary(host, section);
   return html`<section class="ts-sec" data-open=${open ? "true" : "false"}>
     <h4 class="ts-h">
@@ -561,6 +563,8 @@ function sectionSummary(host: TileSettingsHost, section: WatchTileSettingsSectio
       const close = WATCH_MACRO_CLOSE_MODES.find((c) => c.value === m.closeMode)!.label;
       return m.runSilently ? `Silent, closes: ${close}` : `Closes: ${close}`;
     }
+    case "special":
+      return specialSummary(host);
     case "header": {
       const h = watchHeaderSettings(tile);
       return h === undefined ? "" : h.style === "label" ? `Label${h.label ? `: ${h.label}` : ""}` : "Line";
@@ -605,6 +609,8 @@ function sectionBody(host: TileSettingsHost, section: WatchTileSettingsSection):
       return renderMacro(host);
     case "header":
       return renderHeader(host);
+    case "special":
+      return renderSpecial(host);
     case "icon":
       return renderIcon(host);
     case "text":
