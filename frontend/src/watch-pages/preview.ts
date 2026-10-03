@@ -26,8 +26,6 @@ import {
   dividerParts,
   isSmartWatchPage,
   parseTileColor,
-  smartDomainLabel,
-  smartPageDomains,
   tileClass,
   tileDrawsKindLine,
   tileEntityId,
@@ -55,6 +53,7 @@ import {
   watchTemplateText,
 } from "./app-model.js";
 import { templateIconColor, templateRichTextSegments } from "./rich-text.js";
+import { readSmartConfig, smartRuleIndexForTile, smartSyntheticPage, smartTrackingWords, smartWord } from "./smart-model.js";
 
 export interface WatchPagePreviewInput {
   page: WatchPage;
@@ -74,6 +73,11 @@ export interface WatchPagePreviewInput {
    * text it was asked for, which a template tile draws as the watch does. A
    * tile missing here, or whose render was for another text, draws "...". */
   templates?: ReadonlyMap<string, WatchTemplateRender>;
+  /** A smart page's view (part 3f batch 3): the selected rule's index in
+   * its `rules`, whose tiles draw full while every other tile and header
+   * draws at 30%, and what a click on a tile does with the index of the
+   * rule that drew it. Without `pick` the tiles are not buttons. */
+  smart?: { rule?: number; pick?: (ruleIndex: number) => void };
 }
 
 /** The name a tile draws: its own label, else for an HTTP action, macro or
@@ -1471,18 +1475,7 @@ export function renderWatchPagePreview(input: WatchPagePreviewInput): TemplateRe
   const { page, screen } = input;
   const width = screen.width * s;
   const name = watchPageName(page);
-  if (isSmartWatchPage(page)) {
-    const domains = smartPageDomains(page).map(smartDomainLabel);
-    return html`<div class="wp-screen" role="img" aria-label=${`${name}, a smart page`}
-      style=${`width:${width}px;height:${screen.height * s}px;background:${watchScreenBackground(page, s)}`}>
-      <div class="wp-smart">
-        <b>Smart page</b>
-        <span>${domains.length > 0
-          ? `The watch fills this page itself with: ${domains.join(", ")}.`
-          : "The watch fills this page itself."}</span>
-      </div>
-    </div>`;
-  }
+  if (isSmartWatchPage(page)) return renderSmartPreview(input);
   const layout = watchPageLayout(page, screen);
   const scrolls = watchPagePreviewScrolls(page, screen);
   return html`<div class="wp-screen" role="group" aria-label=${`Preview of ${name}`}
@@ -1492,6 +1485,58 @@ export function renderWatchPagePreview(input: WatchPagePreviewInput): TemplateRe
     ${layout.tiles.length === 0 ? html`<div class="wp-smart"><span>No tiles on this page.</span></div>` : nothing}
     ${layout.tiles.map((placed) => renderTile(placed, input, layout.unit, layout.topInset, s))}
     ${scrolls ? renderWatchScreenFold(screen.height * s) : nothing}
+  </div>`;
+}
+
+/**
+ * A smart page as the watch fills it (part 3f batch 3): the synthetic page
+ * from Home Assistant's states, its tiles plain tiles drawn as any other,
+ * each in a box of its own (a button when `input.smart.pick` is given) that
+ * draws at 30% when another rule is selected. With no active entity, the
+ * watch's empty state: "All Off" and what the page tracks.
+ */
+function renderSmartPreview(input: WatchPagePreviewInput): TemplateResult {
+  const s = input.scale ?? 1.5;
+  const { page, screen } = input;
+  const width = screen.width * s;
+  const name = watchPageName(page);
+  const config = readSmartConfig(page);
+  const synthetic = smartSyntheticPage(page, input.states);
+  const shown: WatchPage = { ...synthetic };
+  delete shown.dynamicConfig;
+  const layout = watchPageLayout(shown, screen);
+  if (config === undefined || layout.tiles.length === 0) {
+    const tracking = config === undefined ? "" : smartTrackingWords(config);
+    const check = input.icons?.render("checkmark.circle.fill", 28 * s, "#34C759");
+    return html`<div class="wp-screen" role="img" aria-label=${`${name}: ${smartWord("allOff")}. ${tracking}`}
+      style=${`width:${width}px;height:${screen.height * s}px;background:${watchScreenBackground(page, s)}`}>
+      ${renderWatchPageTitle(shown, s, layout.topInset, input.icons)}
+      <div class="wp-smart">
+        ${check === undefined ? nothing : html`<span class="wp-smart-check">${check}</span>`}
+        <b>${smartWord("allOff")}</b>
+        <span>${tracking}</span>
+      </div>
+    </div>`;
+  }
+  const selected = input.smart?.rule;
+  const pick = input.smart?.pick;
+  const tile = (placed: PlacedWatchTile): TemplateResult => {
+    const index = smartRuleIndexForTile(config, placed.tile);
+    const dim = selected !== undefined && index !== selected;
+    const box = `left:${placed.x * s}px;top:${(layout.topInset + placed.y) * s}px;width:${placed.width * s}px;height:${placed.height * s}px`;
+    const face = tileFace(placed.tile, placed.width, placed.height, "inset:0;", input, layout.unit, s, pick === undefined);
+    const cls = `wp-smart-item ${dim ? "dim" : ""}`;
+    if (pick === undefined || index === undefined) return html`<div class=${cls} style=${box}>${face}</div>`;
+    const label = watchPreviewTileLabel(placed.tile, input);
+    return html`<button type="button" class=${cls} style=${box} data-rule=${index}
+      aria-label=${label} title=${label} @click=${(e: Event) => { e.stopPropagation(); pick(index); }}>${face}</button>`;
+  };
+  return html`<div class="wp-screen" role="group" aria-label=${`Preview of ${name}`}
+    style=${`width:${width}px;height:${layout.height * s}px;background:${watchScreenBackground(page, s)}`}>
+    ${layout.topInset > 0 ? html`<span class="wp-clock" style=${`font-size:${13 * s}px;height:${layout.topInset * s}px;padding-right:${12 * s}px`}>10:09</span>` : nothing}
+    ${renderWatchPageTitle(shown, s, layout.topInset, input.icons)}
+    ${layout.tiles.map(tile)}
+    ${layout.height > screen.height + 0.5 ? renderWatchScreenFold(screen.height * s) : nothing}
   </div>`;
 }
 
@@ -1630,4 +1675,14 @@ export const watchPagePreviewStyles = css`
     font-size: 13px;
   }
   .wp-smart > b { color: #fff; font-size: 15px; }
+  .wp-smart-check { display: block; line-height: 0; }
+  /* A smart page's tile, in a box of its own so a rule's tiles can be told
+     apart: the tiles of every other rule draw faint, as on the phone. */
+  .wp-smart-item {
+    position: absolute; display: block; margin: 0; padding: 0; border: 0; border-radius: 16px;
+    background: transparent; color: inherit; font: inherit; text-align: inherit; transition: opacity .12s ease-out;
+  }
+  button.wp-smart-item { cursor: pointer; }
+  button.wp-smart-item:focus-visible { outline: 2px solid var(--wa-accent, #0a84ff); outline-offset: 1px; }
+  .wp-smart-item.dim { opacity: 0.3; }
 `;

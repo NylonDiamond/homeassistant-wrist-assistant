@@ -19,6 +19,7 @@
 import type { HassEntityState } from "../ha-api.js";
 import tileApp from "./tile-app.json";
 import tileDefaults from "./tile-defaults.json";
+import tileSmart from "./tile-smart.json";
 
 export type JsonObject = Record<string, unknown>;
 
@@ -296,6 +297,34 @@ export function smartDomainLabel(domain: string): string {
   return SMART_DOMAIN_LABELS[domain] ?? humanize(domain);
 }
 
+/** The watch's names of the domains a smart page fills from ("Binary
+ * Sensors"), from `tile-smart.json`. */
+const WATCH_DOMAIN_NAMES: Readonly<Record<string, string>> = Object.fromEntries(
+  (Array.isArray(tileSmart.domains?.list) ? tileSmart.domains.list : []).flatMap((d: { domain?: unknown; displayName?: unknown }) =>
+    typeof d.domain === "string" && typeof d.displayName === "string" ? [[d.domain, d.displayName]] : [],
+  ),
+);
+
+/** Foundation's `capitalized`: the first letter of each run of letters
+ * upper cased, the rest lower cased ("water_softener" is "Water_Softener"). */
+function swiftCapitalized(text: string): string {
+  let out = "";
+  let inWord = false;
+  for (const ch of text) {
+    const letter = /^[\p{L}\p{M}]$/u.test(ch) || ch === "'" || ch === "’";
+    out += letter ? (inWord ? ch.toLowerCase() : ch.toUpperCase()) : ch;
+    inWord = letter;
+  }
+  return out;
+}
+
+/** The words a header with no label of its own draws for its domain, as
+ * the watch draws them: the domain's display name, else the domain
+ * capitalized. */
+export function watchHeaderDomainName(domain: string): string {
+  return WATCH_DOMAIN_NAMES[domain] ?? swiftCapitalized(domain);
+}
+
 /**
  * How the preview draws a tile:
  *
@@ -419,7 +448,7 @@ export function tileLabel(
   const kind = tileKind(entityId);
   if (kind === "divider") {
     const { domain } = dividerParts(entityId);
-    return domain === "" || domain === "custom" ? "" : smartDomainLabel(domain);
+    return domain === "" || domain === "custom" ? "" : watchHeaderDomainName(domain);
   }
   if (kind === "page" || kind === "show_page") {
     const target = tileTarget(entityId).toUpperCase();

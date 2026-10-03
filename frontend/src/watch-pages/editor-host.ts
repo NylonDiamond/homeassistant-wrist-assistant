@@ -132,6 +132,12 @@ export interface WatchPagesEditorHost {
 export interface TileSettingsHost extends WatchPagesEditorHost {
   readonly tileId: string;
   readonly tile: WatchPageTile;
+  /** Set when the tile stands in for a smart page rule's style (part 3f
+   * batch 3, `smart-settings.ts`): the sections leave out every row whose
+   * key a rule's `tileStyle` cannot hold (the name, the per state icons and
+   * colors, the target temperature switches, dim when off, every action but
+   * the confirmation). */
+  readonly domainStyle?: true;
 }
 
 /** The Add tile dialog's host. The selected tile, when there is one, is the

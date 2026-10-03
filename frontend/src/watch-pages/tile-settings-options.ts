@@ -77,6 +77,9 @@ export type WatchTileSettingsSection =
   | "text"
   | "border"
   | "action"
+  // A smart page rule's own tile size (part 3f batch 3): drawn only for a
+  // rule's style, whose host hands the section's rows in.
+  | "size"
   | "background";
 
 export const WATCH_TILE_SETTINGS_SECTION_TITLES: Readonly<Record<WatchTileSettingsSection, string>> = {
@@ -92,8 +95,17 @@ export const WATCH_TILE_SETTINGS_SECTION_TITLES: Readonly<Record<WatchTileSettin
   text: "Text",
   border: "Border",
   action: "Action",
+  size: "Size",
   background: "Background",
 };
+
+/** The tile sections that can hold a smart page rule's style (part 3f
+ * batch 3), in the order they are drawn: no Opens, Target, Request, Macro,
+ * Header or special task, which a rule's `tileStyle` has no key of; State
+ * only where the domain has it; Size before Background. */
+export function watchDomainStyleSections(stateTask: boolean): WatchTileSettingsSection[] {
+  return ["icon", ...(stateTask ? (["state"] as const) : []), "text", "border", "action", "size", "background"];
+}
 
 /**
  * The sections a tile gets, in the order of the phone's tasks: Border and

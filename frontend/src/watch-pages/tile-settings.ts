@@ -234,6 +234,7 @@ const OPEN_AT_FIRST: Readonly<Record<WatchTileSettingsSection, boolean>> = {
   text: false,
   border: false,
   action: false,
+  size: true,
   background: false,
 };
 
@@ -514,24 +515,32 @@ export function watchTileDefaultColorEdit(host: TileSettingsHost): (d: WatchPage
 
 // ── sections ─────────────────────────────────────────────────────────────
 
+/** What a caller hands `renderTileSettings` beyond its host: the sections to
+ * draw instead of the tile's own (a smart page rule's style), and the Size
+ * section's rows, which only such a caller has. */
+export interface TileSettingsExtras {
+  sections?: readonly WatchTileSettingsSection[];
+  size?: { summary: () => string; body: () => TemplateResult };
+}
+
 /** The settings rows for `host.tile`, or nothing. */
-export function renderTileSettings(host: TileSettingsHost): TemplateResult | typeof nothing {
-  const sections = watchTileSettingsSections(host.tile, host.hass.states);
+export function renderTileSettings(host: TileSettingsHost, extras: TileSettingsExtras = {}): TemplateResult | typeof nothing {
+  const sections = (extras.sections ?? watchTileSettingsSections(host.tile, host.hass.states)).filter((s) => s !== "size" || extras.size !== undefined);
   if (sections.length === 0) return nothing;
   dropStaleTyping(host);
   return html`<div class="ts-root">
-    ${sections.map((section) => renderSection(host, section))}
+    ${sections.map((section) => renderSection(host, section, extras))}
   </div>`;
 }
 
-function renderSection(host: TileSettingsHost, section: WatchTileSettingsSection): TemplateResult {
+function renderSection(host: TileSettingsHost, section: WatchTileSettingsSection, extras: TileSettingsExtras): TemplateResult {
   // A webhook inbox has no task here (its topics live on the iPhone): one
   // line stands where the task would be (part 3f batch 2).
   if (section === "special" && watchSpecialTask(host.tile, host.hass.states)?.task === "inbox") return renderInboxLine(host);
   const open = isOpen(host, section);
   const id = `ts-body-${section}`;
   const title = section === "special" ? watchSpecialSectionTitle(host) : WATCH_TILE_SETTINGS_SECTION_TITLES[section];
-  const summary = open ? "" : sectionSummary(host, section);
+  const summary = open ? "" : section === "size" ? (extras.size?.summary() ?? "") : sectionSummary(host, section);
   return html`<section class="ts-sec" data-open=${open ? "true" : "false"}>
     <h4 class="ts-h">
       <button type="button" class="ts-fold" aria-expanded=${open ? "true" : "false"} aria-controls=${open ? id : nothing}
@@ -542,7 +551,7 @@ function renderSection(host: TileSettingsHost, section: WatchTileSettingsSection
       </button>
     </h4>
     ${open
-      ? html`<fieldset class="ts-body sec-b" id=${id} ?disabled=${host.busy} aria-label=${title}>${sectionBody(host, section)}</fieldset>`
+      ? html`<fieldset class="ts-body sec-b" id=${id} ?disabled=${host.busy} aria-label=${title}>${section === "size" ? (extras.size?.body() ?? nothing) : sectionBody(host, section)}</fieldset>`
       : nothing}
   </section>`;
 }
@@ -582,13 +591,18 @@ function sectionSummary(host: TileSettingsHost, section: WatchTileSettingsSectio
     }
     case "text": {
       const text = watchTileTextSettings(tile);
+      // A rule's tiles carry each entity's own name.
+      if (host.domainStyle === true) return text.showLabel ? "Label shown" : "Label hidden";
       const name = text.label !== undefined && text.label !== "" ? text.label : watchTileFallbackName(tile, host.hass.states, watchPagesOf(host.document), host.catalog);
       return text.showLabel ? name : `${name} (hidden)`;
     }
     case "action": {
+      if (host.domainStyle === true) return watchTileActionSettings(tile).askBeforeRunning.value ? "Ask before running" : "";
       const tap = watchSingleTapSettings(tile);
       return tap.picker ? `Tap: ${tap.resolvedLabel}` : "";
     }
+    case "size":
+      return "";
     case "state":
       return watchTileTaskModified(tile, "state") ? "Changed" : "";
     case "border": {
@@ -630,6 +644,8 @@ function sectionBody(host: TileSettingsHost, section: WatchTileSettingsSection):
       return renderBorder(host);
     case "background":
       return renderBackground(host);
+    case "size":
+      return html``;
   }
 }
 
@@ -910,10 +926,10 @@ function renderIcon(host: TileSettingsHost): TemplateResult {
     ))}
     </div>
     ${renderTileColor(host, defaults.color)}
-    ${renderStateIcons(host)}
+    ${host.domainStyle === true ? nothing : renderStateIcons(host)}
     ${renderIconSize(host)}
     ${checkField("Icon shadow", s.iconShadow, (on) => commit(host, "iconShadow", (d) => setWatchTileIconShadow(d, host.pageId, host.tileId, on)))}
-    ${s.dimWhenOff.applies
+    ${s.dimWhenOff.applies && host.domainStyle !== true
       ? html`${checkField("Dim when off", s.dimWhenOff.value, (on) => commit(host, "dimWhenOff", (d) => setWatchTileDimWhenOff(d, host.pageId, host.tileId, on)))}
           <div class="hint ts-under">The tile dims while it is off.</div>`
       : nothing}
@@ -1007,10 +1023,13 @@ function renderText(host: TileSettingsHost): TemplateResult {
     // switch goes back to what is stored.
     host.requestUpdate();
   };
+  // A rule's tiles each carry their entity's own name: no name row.
   return html`
-    ${typingField(host, "label", textField("Label", label, (v) =>
-      commit(host, "label", (d) => setWatchTileLabel(d, host.pageId, host.tileId, v, { emptyRemoves: true }), { typing: true }), { placeholder: fallback }))}
-    <div class="hint ts-under">${watchLabelNote(tile)}</div>
+    ${host.domainStyle === true
+      ? nothing
+      : html`${typingField(host, "label", textField("Label", label, (v) =>
+          commit(host, "label", (d) => setWatchTileLabel(d, host.pageId, host.tileId, v, { emptyRemoves: true }), { typing: true }), { placeholder: fallback }))}
+        <div class="hint ts-under">${watchLabelNote(tile)}</div>`}
     ${checkField("Show label", t.showLabel, (on) => commit(host, "showLabel", (d) => setWatchTileShowLabel(d, host.pageId, host.tileId, on)))}
     ${typingField(host, "fontSize", html`<div class="ts-with-link">
       ${numberField("Font size", fontSize, setFontSize, { step: 1, min: WATCH_FONT_SIZE_RANGE.min, max: WATCH_FONT_SIZE_RANGE.max, optional: true, placeholder: "Auto", unit: "pt" })}
@@ -1028,22 +1047,26 @@ function renderText(host: TileSettingsHost): TemplateResult {
 
 function renderAction(host: TileSettingsHost): TemplateResult {
   const tile = host.tile;
-  const tap = watchSingleTapMenu(tile);
-  const slides = watchHoldSlideMenus(tile, host.catalog);
   const a = watchTileActionSettings(tile);
-  return html`
-    ${tap === undefined
-      ? nothing
-      : menuField("Single tap", tap, (v) =>
-          commit(host, "singleTap", (d) => setWatchTileSingleTap(d, host.pageId, host.tileId, v === WATCH_DEFAULT_CHOICE ? null : v)))}
-    ${slides === undefined ? nothing : renderHoldSlide(host, slides)}
+  const ask = html`
     ${checkField("Ask before running", a.askBeforeRunning.value, (on) =>
       commit(host, "askBeforeRunning", (d) => setWatchTileAskBeforeRunning(d, host.pageId, host.tileId, on)))}
     <div class="hint ts-under">${watchAskBeforeRunningNote(tile)}
       ${a.askBeforeRunning.stored === undefined
         ? nothing
         : linkButton("Use the default", "Remove this tile's own setting", () =>
-            commit(host, "askBeforeRunning", (d) => setWatchTileAskBeforeRunning(d, host.pageId, host.tileId, null)))}</div>
+            commit(host, "askBeforeRunning", (d) => setWatchTileAskBeforeRunning(d, host.pageId, host.tileId, null)))}</div>`;
+  // A rule's style holds the confirmation and no other action key.
+  if (host.domainStyle === true) return ask;
+  const tap = watchSingleTapMenu(tile);
+  const slides = watchHoldSlideMenus(tile, host.catalog);
+  return html`
+    ${tap === undefined
+      ? nothing
+      : menuField("Single tap", tap, (v) =>
+          commit(host, "singleTap", (d) => setWatchTileSingleTap(d, host.pageId, host.tileId, v === WATCH_DEFAULT_CHOICE ? null : v)))}
+    ${slides === undefined ? nothing : renderHoldSlide(host, slides)}
+    ${ask}
     ${checkField("Hide when off", a.hideWhenOff, (on) => commit(host, "hideWhenOff", (d) => setWatchTileHideWhenOff(d, host.pageId, host.tileId, on)))}
     <div class="hint ts-under">The watch leaves the tile out while it is off.</div>
     ${a.skipConditions.shown
@@ -1376,8 +1399,15 @@ function renderStateRow(host: TileSettingsHost, row: WatchStateRow): TemplateRes
   }
 }
 
+/** The State rows a rule's style cannot hold: the phone fixes both on for
+ * a domain. */
+const NO_DOMAIN_STATE_ROWS: ReadonlySet<string> = new Set(["showTargetTempOnTile", "showCurrentTempOnTile"]);
+
 function renderState(host: TileSettingsHost): TemplateResult {
-  const cards = watchTileStateCards(host.tile);
+  const domain = host.domainStyle === true;
+  const cards = watchTileStateCards(host.tile)
+    .map((card) => (domain ? { ...card, rows: card.rows.filter((row) => !NO_DOMAIN_STATE_ROWS.has(row.key)) } : card))
+    .filter((card) => !domain || card.rows.length > 0);
   if (cards.length === 0) return html`<p class="hint">${watchStateEmptyText()}</p>`;
   return html`
     ${cards.map((card) => html`
