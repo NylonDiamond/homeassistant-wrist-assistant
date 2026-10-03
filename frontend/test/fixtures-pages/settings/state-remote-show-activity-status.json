@@ -1,6 +1,6 @@
 {
   "name": "Status badge off on a remote tile (Activity Badge)",
-  "source": "WristAssistant/Views/PageEditorView.swift:7017",
+  "source": "WristAssistant/Views/PageEditorView.swift:7094",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

@@ -1,6 +1,6 @@
 {
   "name": "Edge Volume Slide on",
-  "source": "WristAssistant/Views/PageEditorView.swift:8172",
+  "source": "WristAssistant/Views/PageEditorView.swift:8249",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

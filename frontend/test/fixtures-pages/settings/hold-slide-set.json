@@ -1,6 +1,6 @@
 {
   "name": "Slide up toggles",
-  "source": "WristAssistant/Views/PageEditorView.swift:7262",
+  "source": "WristAssistant/Views/PageEditorView.swift:7339",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

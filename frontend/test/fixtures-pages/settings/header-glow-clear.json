@@ -1,6 +1,6 @@
 {
   "name": "Glow at zero removes the part",
-  "source": "WristAssistant/Views/PageEditorView.swift:12330",
+  "source": "WristAssistant/Views/PageEditorView.swift:12407",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

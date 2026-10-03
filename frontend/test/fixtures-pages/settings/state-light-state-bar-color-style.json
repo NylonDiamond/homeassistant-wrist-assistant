@@ -1,6 +1,6 @@
 {
   "name": "State bar color White on a light tile (State Bar)",
-  "source": "WristAssistant/Views/PageEditorView.swift:6989",
+  "source": "WristAssistant/Views/PageEditorView.swift:7066",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

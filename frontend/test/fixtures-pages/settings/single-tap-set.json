@@ -1,6 +1,6 @@
 {
   "name": "Single tap set, even to a value the domain offers",
-  "source": "WristAssistant/Views/PageEditorView.swift:7246",
+  "source": "WristAssistant/Views/PageEditorView.swift:7323",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

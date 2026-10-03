@@ -1,0 +1,51 @@
+{
+  "name": "The phone turns a normal page smart (its tiles removed) while the server recolors a tile of it: the server changed the tile the phone deleted, so the tile stays, on a page the watch fills from its rules; the watch ignores it, and it comes back when the page is turned back with Disable",
+  "base": {
+    "pages": [
+      {
+        "id": "8E2C4F61-7B3A-4D9E-A1C5-2F6B8D0E4A37",
+        "name": "Home",
+        "items": [
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen", "customLabel": "Kitchen", "gridCol": 0, "gridRow": 0, "colSpan": 6, "rowSpan": 1}
+        ],
+        "groups": []
+      }
+    ]
+  },
+  "phone": {
+    "pages": [
+      {
+        "id": "8E2C4F61-7B3A-4D9E-A1C5-2F6B8D0E4A37",
+        "name": "Home",
+        "items": [],
+        "groups": [],
+        "dynamicConfig": {"liveUpdates": false, "pullToRefresh": true, "refreshOnAppear": false, "rules": [], "sortOrder": "domain", "tileColSpan": 4, "tileRowSpan": 3, "tileShowLabel": true}
+      }
+    ]
+  },
+  "server": {
+    "pages": [
+      {
+        "id": "8E2C4F61-7B3A-4D9E-A1C5-2F6B8D0E4A37",
+        "name": "Home",
+        "items": [
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen", "customLabel": "Kitchen", "gridCol": 0, "gridRow": 0, "colSpan": 6, "rowSpan": 1, "color": "#FF9800"}
+        ],
+        "groups": []
+      }
+    ]
+  },
+  "expected": {
+    "pages": [
+      {
+        "id": "8E2C4F61-7B3A-4D9E-A1C5-2F6B8D0E4A37",
+        "name": "Home",
+        "items": [
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen", "customLabel": "Kitchen", "gridCol": 0, "gridRow": 0, "colSpan": 6, "rowSpan": 1, "color": "#FF9800"}
+        ],
+        "groups": [],
+        "dynamicConfig": {"liveUpdates": false, "pullToRefresh": true, "refreshOnAppear": false, "rules": [], "sortOrder": "domain", "tileColSpan": 4, "tileRowSpan": 3, "tileShowLabel": true}
+      }
+    ]
+  }
+}

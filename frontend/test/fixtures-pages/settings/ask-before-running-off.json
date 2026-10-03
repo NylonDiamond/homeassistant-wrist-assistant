@@ -1,6 +1,6 @@
 {
   "name": "Ask before running off on a lock, whose default is on",
-  "source": "WristAssistant/Views/PageEditorView.swift:7237",
+  "source": "WristAssistant/Views/PageEditorView.swift:7314",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

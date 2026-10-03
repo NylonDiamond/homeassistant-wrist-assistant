@@ -1,6 +1,6 @@
 {
   "name": "Bar border on on a cover tile (State Bar)",
-  "source": "WristAssistant/Views/PageEditorView.swift:6996",
+  "source": "WristAssistant/Views/PageEditorView.swift:7073",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

@@ -1,6 +1,6 @@
 {
   "name": "Link the remote's media player",
-  "source": "WristAssistant/Views/PageEditorView.swift:8082",
+  "source": "WristAssistant/Views/PageEditorView.swift:8159",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

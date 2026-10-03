@@ -1,6 +1,6 @@
 {
   "name": "Link the mower's battery sensor",
-  "source": "WristAssistant/Views/PageEditorView.swift:8375",
+  "source": "WristAssistant/Views/PageEditorView.swift:8452",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

@@ -1,6 +1,6 @@
 {
   "name": "Bar shadow on on a cover tile (State Bar)",
-  "source": "WristAssistant/Views/PageEditorView.swift:7010",
+  "source": "WristAssistant/Views/PageEditorView.swift:7087",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

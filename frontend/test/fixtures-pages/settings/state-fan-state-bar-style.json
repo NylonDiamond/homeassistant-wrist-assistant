@@ -1,6 +1,6 @@
 {
   "name": "State bar Fill on a fan tile (State Bar)",
-  "source": "WristAssistant/Views/PageEditorView.swift:6982",
+  "source": "WristAssistant/Views/PageEditorView.swift:7059",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

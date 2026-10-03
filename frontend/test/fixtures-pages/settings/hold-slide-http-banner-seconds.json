@@ -1,6 +1,6 @@
 {
   "name": "The banner shows for 5 seconds",
-  "source": "WristAssistant/Views/PageEditorView.swift:7354",
+  "source": "WristAssistant/Views/PageEditorView.swift:7431",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

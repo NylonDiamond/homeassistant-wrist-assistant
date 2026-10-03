@@ -1,0 +1,64 @@
+{
+  "name": "Both sides turn one normal page smart, the phone adding a light rule and the server a cover rule with alphabetical sort: dynamicConfig merges against an empty one, so the phone's eight values win, both rules are kept in the server's order with the rule only the phone added last, and the tile both sides removed is gone",
+  "base": {
+    "pages": [
+      {
+        "id": "8E2C4F61-7B3A-4D9E-A1C5-2F6B8D0E4A37",
+        "name": "Home",
+        "items": [
+          {"id": "1D9ADA72-6F73-45E7-B7A2-6A1CD828AC14", "entityId": "light.kitchen", "customLabel": "Kitchen", "gridCol": 0, "gridRow": 0, "colSpan": 6, "rowSpan": 1}
+        ],
+        "groups": []
+      }
+    ]
+  },
+  "phone": {
+    "pages": [
+      {
+        "id": "8E2C4F61-7B3A-4D9E-A1C5-2F6B8D0E4A37",
+        "name": "Home",
+        "items": [],
+        "groups": [],
+        "dynamicConfig": {
+          "liveUpdates": false, "pullToRefresh": true, "refreshOnAppear": false, "sortOrder": "domain", "tileColSpan": 4, "tileRowSpan": 3, "tileShowLabel": true,
+          "rules": [
+            {"domain": "light", "entityIds": [], "header": "label", "headerLabel": "Lights", "id": "0FAF2494-16BC-438B-B1F6-D19E4BB8C2A2", "invertActive": false, "mode": "all", "resolvedEntityIds": ["light.example_desk", "light.example_porch"], "tileStyle": {"color": "#F5C26B", "icon": "lightbulb.fill"}}
+          ]
+        }
+      }
+    ]
+  },
+  "server": {
+    "pages": [
+      {
+        "id": "8E2C4F61-7B3A-4D9E-A1C5-2F6B8D0E4A37",
+        "name": "Home",
+        "items": [],
+        "groups": [],
+        "dynamicConfig": {
+          "liveUpdates": false, "pullToRefresh": true, "refreshOnAppear": false, "sortOrder": "alphabetical", "tileColSpan": 4, "tileRowSpan": 3, "tileShowLabel": true,
+          "rules": [
+            {"domain": "cover", "entityIds": [], "header": "label", "headerLabel": "Covers", "id": "C68694AF-4077-475E-8CAE-FF247FC87D69", "invertActive": false, "mode": "all", "resolvedEntityIds": ["cover.example_blind"], "tileStyle": {"color": "#4FC3F7", "icon": "blinds.vertical.open"}}
+          ]
+        }
+      }
+    ]
+  },
+  "expected": {
+    "pages": [
+      {
+        "id": "8E2C4F61-7B3A-4D9E-A1C5-2F6B8D0E4A37",
+        "name": "Home",
+        "items": [],
+        "groups": [],
+        "dynamicConfig": {
+          "liveUpdates": false, "pullToRefresh": true, "refreshOnAppear": false, "sortOrder": "domain", "tileColSpan": 4, "tileRowSpan": 3, "tileShowLabel": true,
+          "rules": [
+            {"domain": "cover", "entityIds": [], "header": "label", "headerLabel": "Covers", "id": "C68694AF-4077-475E-8CAE-FF247FC87D69", "invertActive": false, "mode": "all", "resolvedEntityIds": ["cover.example_blind"], "tileStyle": {"color": "#4FC3F7", "icon": "blinds.vertical.open"}},
+            {"domain": "light", "entityIds": [], "header": "label", "headerLabel": "Lights", "id": "0FAF2494-16BC-438B-B1F6-D19E4BB8C2A2", "invertActive": false, "mode": "all", "resolvedEntityIds": ["light.example_desk", "light.example_porch"], "tileStyle": {"color": "#F5C26B", "icon": "lightbulb.fill"}}
+          ]
+        }
+      }
+    ]
+  }
+}

@@ -1,6 +1,6 @@
 {
   "name": "Text shadow off on a climate tile (Temperature Display)",
-  "source": "WristAssistant/Views/PageEditorView.swift:7003",
+  "source": "WristAssistant/Views/PageEditorView.swift:7080",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,
