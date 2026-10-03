@@ -71,6 +71,8 @@ import { watchDecimalOptions, watchStateEmptyText, watchStylingChoices, watchSty
 import { watchPageSwatchTheme } from "./page-settings-model.js";
 import type { TileSettingsHost } from "./editor-host.js";
 import { forgetSpecialStatus, renderSpecial, specialSummary, watchSpecialSectionTitle } from "./special-settings.js";
+import { renderInboxLine } from "./app-settings.js";
+import { watchSpecialTask } from "./special-model.js";
 import { findWatchPage } from "./edit.js";
 import { type WatchPagesDocument, tileEntityId, tileKind, watchPageId, watchPageName, watchPagesOf } from "./model.js";
 import {
@@ -523,6 +525,9 @@ export function renderTileSettings(host: TileSettingsHost): TemplateResult | typ
 }
 
 function renderSection(host: TileSettingsHost, section: WatchTileSettingsSection): TemplateResult {
+  // A webhook inbox has no task here (its topics live on the iPhone): one
+  // line stands where the task would be (part 3f batch 2).
+  if (section === "special" && watchSpecialTask(host.tile, host.hass.states)?.task === "inbox") return renderInboxLine(host);
   const open = isOpen(host, section);
   const id = `ts-body-${section}`;
   const title = section === "special" ? watchSpecialSectionTitle(host) : WATCH_TILE_SETTINGS_SECTION_TITLES[section];

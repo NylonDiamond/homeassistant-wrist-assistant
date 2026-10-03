@@ -62,9 +62,11 @@ import {
   watchCloudTTSAvailable,
   watchHasConfigEntry,
   watchMergedRenders,
+  watchSaveSpeakerWarning,
   watchTemplateRequests,
   watchTemplateSignature,
 } from "./app-model.js";
+import { appSettingsStyles } from "./app-settings.js";
 import { SCRUB_END, SCRUB_START } from "../editors.js";
 import { formStyles } from "../form-styles.js";
 import { peopleOf } from "../people.js";
@@ -156,7 +158,7 @@ import { type WatchPagesNote, watchCommandError, watchPagesSaveNote } from "./sa
 import { forgetTileSettingsNotes, renderTileSettings, tileSettingsStyles } from "./tile-settings.js";
 import { pageSettingsStyles, renderPageSettings } from "./page-settings.js";
 import { specialSettingsStyles } from "./special-settings.js";
-import { watchCameraRefreshDefaults, watchDeviceSiblings } from "./special-model.js";
+import { watchCameraRefreshDefaults, watchDeviceSiblings, watchObjectName } from "./special-model.js";
 import { scrubWatchOrphanTriggers } from "./tile-settings-model.js";
 import {
   type StageGrid,
@@ -450,6 +452,9 @@ export class WaPageEditor extends LitElement {
   /** The watch's camera refresh setting from its behavior document, for the
    * Camera task's Default words; the phone's defaults until it is read. */
   @state() private cameraRefresh: { on: boolean; debounce: string } = watchCameraRefreshDefaults(undefined);
+  /** The watch's behavior document as last read, for the Pointer section's
+   * read only switches; undefined while there is none or the read failed. */
+  @state() private behavior?: Readonly<Record<string, unknown>>;
   private behaviorSeq = 0;
   /** What the element knows of the home beyond its states (part 3f batch
    * 2): asked the first time a watch is opened and again after a reconnect.
@@ -489,6 +494,10 @@ export class WaPageEditor extends LitElement {
   private typing?: Typing;
   @state() private menuPageId?: string;
   @state() private deleteAsk?: DeleteAsk;
+  /** The save question (part 3f batch 2): Speak or Assist tiles that will
+   * fall back to the default speakers. Worked out again at each draw from
+   * the draft, so an edit made meanwhile is shown. */
+  @state() private saveAsk = false;
   /** Draw the page as the watch does, headers pulling the rows up. Read
    * only. */
   @state() private asOnWatch = false;
@@ -851,6 +860,7 @@ export class WaPageEditor extends LitElement {
       this.catalog = undefined;
       this.catalogSeq++;
       this.cameraRefresh = watchCameraRefreshDefaults(undefined);
+      this.behavior = undefined;
       this.behaviorSeq++;
       this.history = [];
       if (this.historyState !== "unsupported") this.historyState = "loading";
@@ -969,9 +979,11 @@ export class WaPageEditor extends LitElement {
       const record = await fetchWatchConfig(hass, watchId, "behavior");
       if (seq !== this.behaviorSeq || watchId !== this.watchId) return;
       this.cameraRefresh = watchCameraRefreshDefaults(record.revision > 0 ? record.document : undefined);
+      this.behavior = record.revision > 0 && isJsonObject(record.document) ? record.document : undefined;
     } catch {
       if (seq !== this.behaviorSeq || watchId !== this.watchId) return;
       this.cameraRefresh = watchCameraRefreshDefaults(undefined);
+      this.behavior = undefined;
     }
   }
 
@@ -1261,6 +1273,7 @@ export class WaPageEditor extends LitElement {
       // open is the one its next pick reads.
       catalog: () => this.catalog,
       cameraRefreshDefaults: () => this.cameraRefresh,
+      behavior: () => this.behavior,
       musicAssistant: () => this.homeData.musicAssistant,
       cloudTTS: () => this.homeData.cloudTTS,
       templateRenders: () => this.templateRenders,
@@ -1302,7 +1315,12 @@ export class WaPageEditor extends LitElement {
     }
   }
 
-  private async save(): Promise<void> {
+  /**
+   * Save the draft. Speak or Assist tiles left on Choose Speakers with no
+   * speakers first ask, as the phone's save does: a warning, never a
+   * refusal. `anyway` is the answer "Save Anyway".
+   */
+  private async save(anyway = false): Promise<void> {
     const hass = this.hass;
     const watchId = this.watchId;
     // A name or number still being typed is part of what gets saved.
@@ -1310,6 +1328,12 @@ export class WaPageEditor extends LitElement {
     this.commitTyping();
     const draft = this.draft;
     if (!hass || watchId === undefined || !draft || !draft.dirty || draft.saving || this.gesture || this.rowDrag) return;
+    if (anyway) this.closeAsk();
+    else if (watchSaveSpeakerWarning(draft.document, this.catalog?.voice) !== undefined) {
+      this.closeAsk();
+      this.saveAsk = true;
+      return;
+    }
     this.note = undefined;
     const running = saveWatchPagesDraft(draft, {
       // A hold and slide direction left on Trigger entity with nothing
@@ -1415,6 +1439,7 @@ export class WaPageEditor extends LitElement {
     this.renderRoot.querySelector<HTMLDialogElement>("dialog.pe-ask")?.close();
     this.restoreAsk = undefined;
     this.deleteAsk = undefined;
+    this.saveAsk = false;
     this.addTileOpen = false;
   }
 
@@ -2106,6 +2131,7 @@ export class WaPageEditor extends LitElement {
       ${this.renderBody(watches)}
       ${this.restoreAsk ? this.renderRestoreAsk(this.restoreAsk) : nothing}
       ${this.deleteAsk && draft ? this.renderDeleteAsk(this.deleteAsk, draft.document) : nothing}
+      ${this.saveAsk && draft ? this.renderSaveAsk(draft.document) : nothing}
       ${this.addTileOpen ? this.renderAddTileDialog() : nothing}
     `;
   }
@@ -2688,6 +2714,38 @@ export class WaPageEditor extends LitElement {
     </dialog>`;
   }
 
+  /** The save question: the Speak and Assist tiles that will fall back to
+   * the default speakers, in the phone's words. An edit that fixes every
+   * tile while it is open leaves nothing to ask: the dialog then says so
+   * and still saves. */
+  private renderSaveAsk(document: WatchPagesDocument): TemplateResult {
+    const warning = watchSaveSpeakerWarning(document, this.catalog?.voice);
+    const pages = watchPagesOf(document);
+    const states = this.hass?.states;
+    const speaker = (id: string) => {
+      const name = states?.[id]?.attributes?.friendly_name;
+      return typeof name === "string" && name.trim() !== "" ? name : watchObjectName(id);
+    };
+    return html`<dialog class="pe-ask" aria-labelledby="pe-save-title"
+      @close=${() => { this.saveAsk = false; }}>
+      <h3 id="pe-save-title">${warning?.title ?? "Save"}</h3>
+      ${warning === undefined
+        ? html`<p>Every Speak and Assist tile has its speakers now.</p>`
+        : html`${warning.messages.map((m) => html`<p>${m}</p>`)}
+          <ul class="pe-ask-list">${warning.tiles.map((t) => {
+            const label = tileLabel(t.tile, states, pages);
+            return html`<li><b>${watchPageName(t.page)}</b>: ${tileKindLabel(tileKind(tileEntityId(t.tile)))}${label !== "" ? ` "${label}"` : ""}</li>`;
+          })}</ul>
+          ${warning.fallback.length > 0
+            ? html`<p class="pe-muted">Until then they use the iPhone's default speakers: ${warning.fallback.map(speaker).join(", ")}.</p>`
+            : nothing}`}
+      <div class="pe-ask-foot">
+        <button class="pe-btn" @click=${() => this.closeAsk()}>${warning?.cancel ?? "Cancel"}</button>
+        <button class="pe-btn pe-primary" @click=${() => void this.save(true)}>${warning?.saveAnyway ?? "Save"}</button>
+      </div>
+    </dialog>`;
+  }
+
   // The panel's form rules first, so the field rows of `editors.ts` look as
   // they do in the panel; this element's own rules come after and win the
   // ties. The two modules' rules come last, so a module can size its own
@@ -2991,7 +3049,7 @@ export class WaPageEditor extends LitElement {
     @container (max-width: 820px) {
       .pe-hint { display: none; }
     }
-  `, tileSettingsStyles, specialSettingsStyles, pageSettingsStyles, addTileStyles];
+  `, tileSettingsStyles, specialSettingsStyles, appSettingsStyles, pageSettingsStyles, addTileStyles];
 }
 
 if (!customElements.get("wa-page-editor")) {

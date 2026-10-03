@@ -27,6 +27,9 @@ export interface HassLike {
   devices?: Record<string, { area_id?: string | null; name?: string | null }>;
   areas?: Record<string, { name?: string | null }>;
   user?: { id?: string; is_admin?: boolean; name?: string };
+  /** The frontend's services by domain, then by name: the voice engine list
+      reads `tts.<platform>_say` from it. Optional, as the registries are. */
+  services?: Record<string, Record<string, unknown>>;
   language?: string;
   /** The frontend's theme state; `darkMode` is what the panel's dark skin keys off. */
   themes?: { darkMode?: boolean };

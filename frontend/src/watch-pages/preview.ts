@@ -45,7 +45,7 @@ import { WATCH_TILE_DEFAULTS, watchKindColor, watchThemeRoleColors } from "./til
 import { watchStateDomains, watchStylingTheme } from "./tile-styling.js";
 import { type WatchCatalog, watchLibraryTileFallbackName } from "./catalog.js";
 import { isWatchTvRemote, watchUsesPersonPhoto } from "./special-model.js";
-import { watchMusicHubActiveSpeaker, watchTemplateText } from "./app-model.js";
+import { watchInboxLabel, watchMusicHubActiveSpeaker, watchTemplateText } from "./app-model.js";
 import { templateIconColor, templateRichTextSegments } from "./rich-text.js";
 
 export interface WatchPagePreviewInput {
@@ -617,8 +617,7 @@ export function watchSpecialTileLook(
       // theme's info color, the label, else the topic, else "Inbox". The
       // corner mark for an inbox not set up on the watch is the watch's to
       // know.
-      const topic = tileTarget(entityId);
-      const custom = typeof tile.customLabel === "string" && tile.customLabel !== "" ? tile.customLabel : undefined;
+      // A `customLabel` of "" draws no words, as on the watch.
       return {
         symbol: noIcon ? undefined : (ownIcon ?? "tray"),
         filled: true,
@@ -626,7 +625,7 @@ export function watchSpecialTileLook(
         opacity: 1,
         active: true,
         stateLine: false,
-        label: custom ?? (topic === "" || topic === "all" ? "Inbox" : `#${topic}`),
+        label: watchInboxLabel(tile),
       };
     }
     default:

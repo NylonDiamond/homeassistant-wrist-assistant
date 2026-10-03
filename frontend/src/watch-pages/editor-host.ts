@@ -62,6 +62,11 @@ export interface WatchPagesEditorHost {
    * on page open, and the debounce), with the phone's defaults while there
    * is none: the words of the Camera task's Default. A getter. */
   readonly cameraRefreshDefaults: { on: boolean; debounce: string };
+  /** The watch's `behavior` document as the element read it last (the
+   * Pointer section's two switches live there); undefined while there is
+   * none, before the read is in, and after a read that failed. Read only
+   * here: the panel never writes it. A getter. */
+  readonly behavior: Readonly<Record<string, unknown>> | undefined;
   /** Whether Music Assistant has a config entry in this home, in any state
    * (the phone's rule for the Music Hub add); undefined until the element's
    * call is answered, and after a call that failed. Asked once for the home,

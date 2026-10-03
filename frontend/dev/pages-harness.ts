@@ -723,6 +723,13 @@ const SPECIAL_STATES: readonly HassEntityState[] = [
     supported_features: 524288 | 1 | 4 | 16384, mass_player_type: "player", group_members: [],
   }),
   specialState("media_player.office_speaker", "idle", { friendly_name: "Office Speaker", supported_features: 524288 | 1 | 4 | 16384, mass_player_type: "player", group_members: [] }),
+  // The voice pickers' choices (part 3f batch 2): a conversation agent, two
+  // voice engines (and `tts.cloud` from the `cloud_say` service), and a
+  // speaker that announces, which the speaker lists put first.
+  specialState("conversation.house_helper", "unknown", { friendly_name: "House Helper" }),
+  specialState("tts.piper", "unknown", { friendly_name: "Piper" }),
+  specialState("tts.google_translate_en_com", "unknown", { friendly_name: "Google Translate en com" }),
+  specialState("media_player.hallway_display", "idle", { friendly_name: "Hallway Display", supported_features: 1048576 | 1 | 4 }),
 ];
 
 /** The devices the special tiles' settings read beyond the home's: the
@@ -764,6 +771,7 @@ const SPECIAL_SYMBOLS = [
   // Part 3f batch 2: the template tile's placeholder and the Home Status
   // preset's icons, the music hub's.
   "chevron.left.forwardslash.chevron.right", "lightbulb.fill", "lock.open.fill", "music.note.house", "music.note.house.fill",
+  "waveform.and.mic", "message.and.waveform", "hand.point.up.left", "hand.point.up.left.fill",
 ];
 
 /** The Home Status preset's text, the phone's template add
@@ -830,6 +838,17 @@ function specialTilesPage(): Json | undefined {
     tile({
       entityId: "music_hub.5F3C1A00-0000-4000-8000-0000000000A2", icon: "music.note.house", color: "#E89545", customLabel: "Music",
       musicHubSpeakerIds: ["media_player.kitchen_speaker", "media_player.office_speaker"], showAlbumArt: true, gridCol: 6, gridRow: 18, colSpan: 6, rowSpan: 4,
+    }),
+    // The voice tiles as the phone adds them (a new Speak tile is on Choose
+    // Speakers with none, so a save asks), and a point control tile.
+    tile({ entityId: "assist.voice_hub", icon: "waveform.and.mic", color: "#5E9EFF", customLabel: "Assist", gridCol: 0, gridRow: 22, colSpan: 4, rowSpan: 3 }),
+    tile({
+      entityId: "speak_message.voice_hub", icon: "message.and.waveform", color: "#D057D9", customLabel: "Speak",
+      speakMessageOutputMode: "configuredSpeakers", gridCol: 4, gridRow: 22, colSpan: 4, rowSpan: 3,
+    }),
+    tile({
+      entityId: "point_control.5F3C1A00-0000-4000-8000-0000000000A3", icon: "hand.point.up.left", color: "#00FFFF", customLabel: "Point Control",
+      gridCol: 8, gridRow: 22, colSpan: 4, rowSpan: 3,
     }),
   ];
   return { ...clone(base), id: "5F3C1A00-0000-4000-8000-0000000000FF", name: "Special tiles", items };
@@ -1133,6 +1152,12 @@ let states: Record<string, HassEntityState> = {};
 let registries: HomeRegistries = { entities: {}, devices: {}, areas: {} };
 let dark = false;
 
+/** The services the panel reads: the `tts` domain's, as Home Assistant
+ * lists them. */
+const HARNESS_SERVICES: Record<string, Record<string, unknown>> = {
+  tts: { speak: {}, clear_cache: {}, cloud_say: {} },
+};
+
 function makeHass(): HassLike {
   return {
     connection,
@@ -1143,6 +1168,9 @@ function makeHass(): HassLike {
     user: { id: "harness-user", name: "Harness admin", is_admin: admin },
     language: "en",
     themes: { darkMode: dark },
+    // The voice engines list `tts.<platform>` for each `<platform>_say`
+    // service (part 3f batch 2); Home Assistant Cloud's is the one here.
+    services: HARNESS_SERVICES,
   };
 }
 

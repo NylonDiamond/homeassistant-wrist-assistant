@@ -24,6 +24,7 @@ import { watchPageSwatchTheme } from "./page-settings-model.js";
 import { watchThemeDisplayName, watchThemeSwatches } from "./tile-new.js";
 import { watchColorRefusal, watchCustomBoxColor } from "./tile-settings-options.js";
 import { commit, fieldNote, linkButton, menuField, swatchRow, typed, typingField } from "./tile-settings.js";
+import { appSummary, isWatchAppTaskKind, renderAppTask, watchAppTaskHasReset } from "./app-settings.js";
 import {
   type WatchSpecialResize,
   type WatchSpecialTask,
@@ -168,6 +169,7 @@ export function watchSpecialSectionTitle(host: TileSettingsHost): string {
 export function specialSummary(host: TileSettingsHost): string {
   const task = watchSpecialTask(host.tile, host.hass.states);
   const tile = host.tile;
+  if (isWatchAppTaskKind(task?.kind)) return appSummary(host, task!.kind);
   switch (task?.kind) {
     case "remote": {
       if (isWatchTvRemote(tileEntityId(tile), host.hass.states)) return "TV";
@@ -208,6 +210,11 @@ export function specialSummary(host: TileSettingsHost): string {
 export function renderSpecial(host: TileSettingsHost): TemplateResult {
   const task = watchSpecialTask(host.tile, host.hass.states);
   if (task === undefined) return html``;
+  // Part 3f batch 2: the app kinds' tasks; only Assist and Speak (Data) have
+  // a reset.
+  if (isWatchAppTaskKind(task.kind)) {
+    return html`${renderAppTask(host, task.kind)}${watchAppTaskHasReset(task.kind) ? resetRow(host, task.task, task.title) : nothing}`;
+  }
   let body: TemplateResult;
   switch (task.kind) {
     case "remote":
