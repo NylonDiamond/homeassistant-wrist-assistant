@@ -1,0 +1,81 @@
+{
+  "name": "Neither side changed an action: the phone picked another HTTP action for slide up, the server another for slide down and 5 banner seconds for it, and each entry is kept from the side that changed it, written up, down, left, right",
+  "base": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "7B1E4C9A-2D3F-4A5B-8C6D-9E0F1A2B3C4D",
+            "entityId": "light.kitchen",
+            "holdSlideActions": ["up", "httpAction", "down", "httpAction"],
+            "holdSlideHTTPActionTargets": [
+              "up", "C3A0E000-0000-4000-8000-000000000080",
+              "down", "C3A0E000-0000-4000-8000-000000000085"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "phone": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "7B1E4C9A-2D3F-4A5B-8C6D-9E0F1A2B3C4D",
+            "entityId": "light.kitchen",
+            "holdSlideActions": ["up", "httpAction", "down", "httpAction"],
+            "holdSlideHTTPActionTargets": [
+              "up", "C3A0E000-0000-4000-8000-000000000085",
+              "down", "C3A0E000-0000-4000-8000-000000000085"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "server": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "7B1E4C9A-2D3F-4A5B-8C6D-9E0F1A2B3C4D",
+            "entityId": "light.kitchen",
+            "holdSlideActions": ["up", "httpAction", "down", "httpAction"],
+            "holdSlideHTTPActionTargets": [
+              "up", "C3A0E000-0000-4000-8000-000000000080",
+              "down", "C3A0E000-0000-4000-8000-000000000080"
+            ],
+            "holdSlideHTTPActionBannerSeconds": ["down", 5]
+          }
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "7B1E4C9A-2D3F-4A5B-8C6D-9E0F1A2B3C4D",
+            "entityId": "light.kitchen",
+            "holdSlideActions": ["up", "httpAction", "down", "httpAction"],
+            "holdSlideHTTPActionTargets": [
+              "up", "C3A0E000-0000-4000-8000-000000000085",
+              "down", "C3A0E000-0000-4000-8000-000000000080"
+            ],
+            "holdSlideHTTPActionBannerSeconds": ["down", 5]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -29,10 +29,11 @@ import {
   watchMacroSettings,
 } from "../src/watch-pages/library-model.js";
 import type { WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-pages/model.js";
-import { watchHTTPTileValueLook } from "../src/watch-pages/preview.js";
+import { watchHTTPTileValueLook, watchPreviewTileLabel } from "../src/watch-pages/preview.js";
 import { addNewWatchTile, newWatchLibraryTile, watchLibraryTileLook } from "../src/watch-pages/tile-new.js";
 import {
   WATCH_SLIDE_DIRECTIONS,
+  clearWatchTileHoldSlide,
   isWatchUUID,
   setWatchTileHoldSlide,
   setWatchTileHoldSlideHTTP,
@@ -43,6 +44,8 @@ import {
 import {
   WATCH_HTTP_REPLY_OFF,
   isWatchStoredChoice,
+  watchHTTPBannerSecondsMenu,
+  watchHTTPRefreshMenu,
   watchHTTPReplyMenu,
   watchHTTPSlideChoice,
   watchHoldSlideMenus,
@@ -52,7 +55,7 @@ import {
   watchTileSettingsSections,
 } from "../src/watch-pages/tile-settings-options.js";
 import { NO_ICONS, type TileSettingsHost } from "../src/watch-pages/editor-host.js";
-import { commit } from "../src/watch-pages/tile-settings.js";
+import { commit, watchTileDefaultColorEdit, watchTileDefaultIconEdit } from "../src/watch-pages/tile-settings.js";
 import pageKeys from "../src/watch-pages/page-keys.json";
 
 type Json = Record<string, unknown>;
@@ -146,12 +149,12 @@ describe("adding from the catalog", () => {
 describe("retargeting", () => {
   it("changes nothing for the entry it points at, in any case", () => {
     const doc = docWith(http({ customLabel: "" }));
-    expect(setWatchLibraryTileTarget(doc, PAGE, T, "httpAction", { id: OPEN_GATE!.id.toLowerCase(), name: "Open Gate" }, "Open Gate")).toBe(doc);
+    expect(setWatchLibraryTileTarget(doc, PAGE, T, "httpAction", { id: OPEN_GATE!.id.toLowerCase(), name: "Open Gate" }, ["Open Gate"])).toBe(doc);
   });
 
   it("writes the new id in upper case and refuses another kind's entry", () => {
     const doc = docWith(macro());
-    const next = tileIn(setWatchLibraryTileTarget(doc, PAGE, T, "macro", { id: LEAVE!.id.toLowerCase(), name: LEAVE!.name }, BEDTIME!.name));
+    const next = tileIn(setWatchLibraryTileTarget(doc, PAGE, T, "macro", { id: LEAVE!.id.toLowerCase(), name: LEAVE!.name }, [BEDTIME!.name]));
     expect(next.entityId).toBe(`macro.${LEAVE!.id}`);
     expect(next.customLabel).toBe("Leave Home");
     // Icon and color stay.
@@ -165,9 +168,21 @@ describe("retargeting", () => {
   it("a label that is absent follows; a stale one stays", () => {
     const absent = tileOf({ entityId: `status_page.${LIGHTS!.id}` });
     delete absent.customLabel;
-    expect(tileIn(setWatchLibraryTileTarget(docWith(absent), PAGE, T, "statusPage", UPSTAIRS!, "Lights")).customLabel).toBe("Upstairs");
+    expect(tileIn(setWatchLibraryTileTarget(docWith(absent), PAGE, T, "statusPage", UPSTAIRS!, ["Lights"])).customLabel).toBe("Upstairs");
     const stale = statusPage({ customLabel: "Old Lights" });
-    expect(tileIn(setWatchLibraryTileTarget(docWith(stale), PAGE, T, "statusPage", UPSTAIRS!, "Lights")).customLabel).toBe("Old Lights");
+    expect(tileIn(setWatchLibraryTileTarget(docWith(stale), PAGE, T, "statusPage", UPSTAIRS!, ["Lights"])).customLabel).toBe("Old Lights");
+  });
+
+  it("a label that is any of the old entry's names follows; the panel passes only the catalog's", () => {
+    const url = "https://hooks.example.invalid/run?token=abc123";
+    const doc = docWith(http({ entityId: `http_action.${UNNAMED!.id}`, customLabel: url }));
+    // The phone knows the URL of an unnamed action, so a label an older add
+    // wrote from it follows there.
+    expect(tileIn(setWatchLibraryTileTarget(doc, PAGE, T, "httpAction", OPEN_GATE!, [UNNAMED!.name, url])).customLabel).toBe("Open Gate");
+    // The catalog never carries a URL: from the panel the label stays.
+    const fromPanel = tileIn(setWatchLibraryTileTarget(doc, PAGE, T, "httpAction", OPEN_GATE!, [UNNAMED!.name]));
+    expect([fromPanel.entityId, fromPanel.customLabel]).toEqual([`http_action.${OPEN_GATE!.id}`, url]);
+    expect(tileIn(setWatchLibraryTileTarget(doc, PAGE, T, "httpAction", OPEN_GATE!)).customLabel).toBe(url);
   });
 });
 
@@ -269,7 +284,8 @@ describe("the Request task", () => {
 
 describe("the Macro task", () => {
   it("reads a stored mode, else the legacy bool", () => {
-    expect(watchMacroSettings(macro())).toEqual({ runSilently: false, closeMode: "onSuccess" });
+    expect(watchMacroSettings(macro())).toEqual({ runSilently: false, closeMode: "onSuccess", legacyClose: false });
+    expect(watchMacroSettings(macro({ autoCloseMacroRun: true })).legacyClose).toBe(true);
     expect(watchMacroSettings(macro({ autoCloseMacroRun: false })).closeMode).toBe("stayOpen");
     expect(watchMacroSettings(macro({ autoCloseMacroRun: true })).closeMode).toBe("onSuccess");
     expect(watchMacroSettings(macro({ macroCloseMode: "always", autoCloseMacroRun: false })).closeMode).toBe("always");
@@ -282,6 +298,18 @@ describe("the Macro task", () => {
     const doc = docWith(macro());
     expect(setWatchTileMacroCloseMode(doc, PAGE, T, "later" as never)).toBe(doc);
     expect(setWatchTileMacroCloseMode(doc, PAGE, T, "onSuccess")).not.toBe(doc);
+  });
+
+  it("a legacy close setting is written out when its mode is picked again", () => {
+    // `autoCloseMacroRun: true` shows On success; picking On success writes
+    // the explicit mode and removes the legacy key, one undo step.
+    const { host, tile, draft } = draftHost(macro({ autoCloseMacroRun: true }));
+    expect(watchMacroSettings(tile()).closeMode).toBe("onSuccess");
+    commit(host, "macroCloseMode", (d) => setWatchTileMacroCloseMode(d, PAGE, T, "onSuccess"));
+    expect(tile().macroCloseMode).toBe("onSuccess");
+    expect(Object.hasOwn(tile(), "autoCloseMacroRun")).toBe(false);
+    expect(watchMacroSettings(tile()).legacyClose).toBe(false);
+    expect(draft.undoDepth).toBe(1);
   });
 });
 
@@ -390,7 +418,7 @@ describe("the hold and slide menus with a catalog", () => {
     const tile = lamp({ holdSlideActions: ["up", "httpAction"], holdSlideHTTPActionTargets: ["up", "C3A0E000-0000-4000-8000-0000000000FF"] });
     const row = watchHoldSlideMenus(tile, CATALOG)!.rows[0]!;
     expect(isWatchStoredChoice(row.selected)).toBe(true);
-    expect(row.options.find((o) => o.value === row.selected)).toMatchObject({ label: "Run HTTP Action (not on the iphone)", disabled: true });
+    expect(row.options.find((o) => o.value === row.selected)).toMatchObject({ label: "Run HTTP Action (not on the iPhone)", disabled: true });
     expect(row.note).toMatch(/no longer lists/);
     expect(row.http?.entry).toBeUndefined();
     // Without a catalog it is shown, not offered, and its banner keys stay editable.
@@ -402,8 +430,22 @@ describe("the hold and slide menus with a catalog", () => {
   it("name the seconds, a stored one the phone does not offer first", () => {
     const tile = lamp({ holdSlideActions: ["up", "httpAction"], holdSlideHTTPActionTargets: ["up", OPEN_GATE!.id], holdSlideHTTPActionBannerSeconds: ["up", 10] });
     const seconds = watchHoldSlideMenus(tile, CATALOG)!.rows[0]!.http!.seconds;
-    expect(seconds.options.map((o) => o.label)).toEqual(["10", "1 second", "2 seconds", "3 seconds", "5 seconds"]);
+    expect(seconds.options.map((o) => o.label)).toEqual(["10 seconds", "1 second", "2 seconds", "3 seconds", "5 seconds"]);
     expect(isWatchStoredChoice(seconds.selected)).toBe(true);
+  });
+
+  it("Reset all drops each direction with its targets and keeps the banner keys, as the phone's card does", () => {
+    const tile = lamp({
+      holdSlideActions: ["up", "httpAction", "down", "triggerEntity"],
+      holdSlideHTTPActionBannerSeconds: ["up", 5],
+      holdSlideHTTPActionShowBanner: ["up", false],
+      holdSlideHTTPActionTargets: ["up", OPEN_GATE!.id],
+      holdSlideTriggerTargets: ["down", { entityId: "script.night", mode: "run" }],
+    });
+    const after = tileIn(clearWatchTileHoldSlide(docWith(tile), PAGE, T));
+    for (const key of ["holdSlideActions", "holdSlideHTTPActionTargets", "holdSlideTriggerTargets"]) expect(Object.hasOwn(after, key), key).toBe(false);
+    expect(after.holdSlideHTTPActionShowBanner).toEqual(["up", false]);
+    expect(after.holdSlideHTTPActionBannerSeconds).toEqual(["up", 5]);
   });
 });
 
@@ -465,6 +507,39 @@ describe("the Tile card for a library tile", () => {
     expect(watchLabelNote(http())).toMatch(/"Action"/);
     expect(watchLabelNote(macro())).toMatch(/macro's name/);
   });
+
+  it("a target not in the catalog and no label of its own reads as the watch names it", () => {
+    const missing = "C3A0E000-0000-4000-8000-0000000000FF";
+    const bare = (t: WatchPageTile) => {
+      const out = { ...t };
+      delete out.customLabel;
+      return out;
+    };
+    expect(watchLibraryTargetMenu(bare(http({ entityId: `http_action.${missing}` })), CATALOG)!.options[0]!.label).toBe("Action (Not on the iPhone)");
+    expect(watchLibraryTargetMenu(macro({ entityId: `macro.${missing}`, customLabel: " " }), CATALOG)!.options[0]!.label).toBe("Macro (Not on the iPhone)");
+    expect(watchLibraryTargetMenu(bare(statusPage({ entityId: `status_page.${missing}` })), CATALOG)!.options[0]!.label).toBe("Status Page (Not on the iPhone)");
+  });
+
+  it("the Tile value hint says when the iPhone has not listed the action", () => {
+    // No catalog, or a target the catalog does not list: the panel cannot
+    // know whether it has a Reply Value.
+    const unknown = watchHTTPReplyMenu(http(), undefined);
+    expect(unknown.options[2]!.disabled).toBe(true);
+    expect(unknown.note).toMatch(/has not listed this action/);
+    expect(unknown.note).not.toMatch(/needs a Reply Value/);
+    expect(watchHTTPReplyMenu(http(), OPEN_GATE).note).toMatch(/needs a Reply Value/);
+  });
+
+  it("a stored value off a ladder shows with its unit", () => {
+    expect(watchHTTPBannerSecondsMenu(6).options[0]).toMatchObject({ label: "6 seconds", disabled: true });
+    expect(watchHTTPBannerSecondsMenu(undefined).selected).toBe("3");
+    expect(watchHTTPBannerSecondsMenu("soon").options[0]!.label).toBe("soon");
+    const refresh = watchHTTPRefreshMenu(60);
+    expect(refresh.options[0]).toMatchObject({ label: "Every 60 seconds", disabled: true });
+    expect(refresh.options.slice(1).map((o) => o.label)).toEqual(["Off", "On open", "Every second", "Every 3 seconds", "Every 5 seconds", "Every 10 seconds", "Every 30 seconds"]);
+    expect(watchHTTPRefreshMenu(30).selected).toBe("30");
+    expect(watchHTTPRefreshMenu("onOpen").note).toBeUndefined();
+  });
 });
 
 // ── through a host, as the view edits ────────────────────────────────────
@@ -507,8 +582,8 @@ describe("edits through the host", () => {
     // The phone renamed Bedtime after the menu was drawn.
     setCatalog(readWatchCatalog({ macros: [{ ...BEDTIME, name: "Night" }, LEAVE] }));
     commit(host, "target", (d) => {
-      const old = host.catalog!.macros.find((m) => m.id === BEDTIME!.id)?.name ?? null;
-      return setWatchLibraryTileTarget(d, PAGE, T, "macro", LEAVE!, old);
+      const old = host.catalog!.macros.find((m) => m.id === BEDTIME!.id)?.name;
+      return setWatchLibraryTileTarget(d, PAGE, T, "macro", LEAVE!, old === undefined ? [] : [old]);
     });
     // "Bedtime" is no longer the old entry's name: the label stays.
     expect(tile().customLabel).toBe("Bedtime");
@@ -524,6 +599,35 @@ describe("edits through the host", () => {
     commit(host, "httpReply", (d) => setWatchTileHTTPReply(d, PAGE, T, null));
     expect(Object.hasOwn(tile(), "httpAutoRefreshInterval") || Object.hasOwn(tile(), "icon") || Object.hasOwn(tile(), "httpResponseDisplay")).toBe(false);
   });
+
+  it("on a macro tile each Default writes only its own key, from the macro's style", () => {
+    // Icon and color both changed away from Bedtime's own.
+    const { host, tile, draft } = draftHost(macro({ icon: "star", color: "#30D158" }));
+    commit(host, "color", watchTileDefaultColorEdit(host));
+    expect([tile().icon, tile().color]).toEqual(["star", "#FF9F0A"]);
+    commit(host, "icon", watchTileDefaultIconEdit(host));
+    expect([tile().icon, tile().color]).toEqual(["moon.fill", "#FF9F0A"]);
+    expect(draft.undoDepth).toBe(2);
+    // A macro the catalog does not list, or no catalog: link and the accent.
+    for (const catalog of [readWatchCatalog({}), undefined]) {
+      const other = draftHost(macro({ icon: "star", color: "#30D158" }));
+      other.setCatalog(catalog);
+      commit(other.host, "color", watchTileDefaultColorEdit(other.host));
+      expect([other.tile().icon, other.tile().color]).toEqual(["star", "#CCD8E6"]);
+      commit(other.host, "icon", watchTileDefaultIconEdit(other.host));
+      expect([other.tile().icon, other.tile().color]).toEqual(["link", "#CCD8E6"]);
+    }
+  });
+
+  it("a retarget writes the catalog's id in upper case, whatever case the phone listed it in", () => {
+    const lower = readWatchCatalog({ macros: [{ ...BEDTIME }, { ...LEAVE, id: LEAVE!.id.toLowerCase() }] });
+    const { host, tile } = draftHost(macro(), lower);
+    const entry = host.catalog!.macros[1]!;
+    expect(entry.id).toBe(LEAVE!.id.toLowerCase());
+    commit(host, "target", (d) => setWatchLibraryTileTarget(d, PAGE, T, "macro", entry, ["Bedtime"]));
+    expect(tile().entityId).toBe(`macro.${LEAVE!.id.toUpperCase()}`);
+    expect(tile().customLabel).toBe(LEAVE!.name);
+  });
 });
 
 // ── the preview ──────────────────────────────────────────────────────────
@@ -536,5 +640,31 @@ describe("the preview of an HTTP action tile showing its value", () => {
     expect(
       watchHTTPTileValueLook(http({ httpResponseDisplay: "tileValue", httpTileValueFontSize: 90, httpTileValueColorHex: "#FFD60A", httpTileValueOffsetY: -40, httpTileValueShowName: false })),
     ).toEqual({ fontSize: 60, color: "#FFD60A", offsetY: -20, showName: false });
+  });
+});
+
+describe("the preview's name for a library tile with no label of its own", () => {
+  const bare = (t: WatchPageTile) => {
+    const out = { ...t };
+    delete out.customLabel;
+    return out;
+  };
+  const input = { states: {}, pages: [] as WatchPage[], catalog: CATALOG };
+
+  it("is the watch's: Action, the macro's or status page's catalog name", () => {
+    expect(watchPreviewTileLabel(bare(http()), input)).toBe("Action");
+    expect(watchPreviewTileLabel(http({ customLabel: "  " }), input)).toBe("Action");
+    expect(watchPreviewTileLabel(bare(macro()), input)).toBe("Bedtime");
+    expect(watchPreviewTileLabel(bare(statusPage()), input)).toBe("Lights");
+  });
+
+  it("falls back to Macro and Status Page with no catalog entry, and keeps a label", () => {
+    const none = { states: {}, pages: [] as WatchPage[] };
+    expect(watchPreviewTileLabel(bare(macro()), none)).toBe("Macro");
+    expect(watchPreviewTileLabel(bare(statusPage()), none)).toBe("Status Page");
+    expect(watchPreviewTileLabel(bare(http()), none)).toBe("Action");
+    expect(watchPreviewTileLabel(macro({ customLabel: "Night" }), input)).toBe("Night");
+    // Other tiles as before.
+    expect(watchPreviewTileLabel(tileOf({ entityId: "light.desk", customLabel: undefined }), { states: { "light.desk": { entity_id: "light.desk", state: "on", attributes: { friendly_name: "Desk" } } } as never, pages: [] })).toBe("Desk");
   });
 });

@@ -9,16 +9,18 @@
 // (`WatchPagesEditorHost.catalog`). Undefined there means no catalog: an app
 // older than the kind, or a phone that has not published one yet.
 //
-// The reader is forgiving: an element without a string `id` and a string
-// `name` is skipped, an unknown key is ignored, a flag of the wrong type reads
-// as absent. Ids are compared without regard to case, as the phone's
-// `UUID(uuidString:)` reads them.
+// The reader is forgiving: an element without a UUID string `id` and a string
+// `name` is skipped, and so is a second entry whose id differs only in case;
+// an unknown key is ignored, a flag of the wrong type reads as absent. Ids are
+// compared without regard to case, as the phone's `UUID(uuidString:)` reads
+// them.
 //
 // Plan: app repo docs/pages_in_home_assistant_step3.md ("3e build contract").
 
 import type { WatchConfigRecord } from "../ha-api.js";
 import { sameWatchId } from "./edit.js";
 import { isJsonObject, tileKind, tileTarget } from "./model.js";
+import { isWatchUUID } from "./tile-settings-model.js";
 
 /** One HTTP action. `icon` and `iconColor` style a picker row only; they
  * never reach a tile. */
@@ -95,13 +97,21 @@ function count(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : undefined;
 }
 
-/** The objects of a list with a string `id` (not empty) and a string
- * `name`; anything else, and a value that is no list, gives nothing. */
+/** The objects of a list with a UUID string `id` and a string `name`, the
+ * first of ids that differ only in case; anything else, and a value that is
+ * no list, gives nothing. The id is a tile's `entityId` suffix and a slide
+ * target, which the phone types `UUID`, so an entry with any other id could
+ * never be picked. */
 function entries(value: unknown): Record<string, unknown>[] {
   if (!Array.isArray(value)) return [];
-  return value.filter(
-    (e): e is Record<string, unknown> => isJsonObject(e) && typeof e.id === "string" && e.id !== "" && typeof e.name === "string",
-  );
+  const seen = new Set<string>();
+  return value.filter((e): e is Record<string, unknown> => {
+    if (!isJsonObject(e) || !isWatchUUID(e.id) || typeof e.name !== "string") return false;
+    const key = e.id.toUpperCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function withOptional<T extends object>(out: T, key: string, value: unknown): T {
@@ -146,6 +156,15 @@ export function watchCatalogFromRecord(record: WatchConfigRecord | undefined): W
   return readWatchCatalog(record.document, { revision: record.revision, updatedAt: record.updated_at });
 }
 
+/** Whether a failed read of the catalog means there is none: an integration
+ * older than the kind refuses it as `invalid` ("kind must be one of ..."),
+ * and one older than the store does not know the command. Anything else (a
+ * dropped socket) says nothing about the phone's library. */
+export function watchCatalogReadMeansNone(error: unknown): boolean {
+  const code = isJsonObject(error) ? error.code : undefined;
+  return code === "invalid" || code === "unknown_command";
+}
+
 /** Whether a live line event means the catalog should be read again: a
  * `catalog` event whose revision is not the one held (0 when none is
  * held). Every other kind is someone else's. */
@@ -182,6 +201,26 @@ export function watchLibraryTarget(entityId: string): { kind: WatchLibraryKind; 
   const tile = tileKind(entityId);
   const kind = (Object.keys(WATCH_LIBRARY_TILE_KINDS) as WatchLibraryKind[]).find((k) => WATCH_LIBRARY_TILE_KINDS[k] === tile);
   return kind === undefined ? undefined : { kind, id: tileTarget(entityId) };
+}
+
+/** The watch's own fallbacks for a library tile with no label of its own. */
+const LIBRARY_LABEL_FALLBACKS: Readonly<Record<WatchLibraryKind, string>> = {
+  httpAction: "Action",
+  macro: "Macro",
+  statusPage: "Status Page",
+};
+
+/**
+ * The name the watch shows on a library tile with no label of its own: on
+ * an HTTP action tile always "Action", never the action's name; on a macro
+ * or status page tile the catalog's name for its target, else "Macro" or
+ * "Status Page". Undefined for any other tile.
+ */
+export function watchLibraryTileFallbackName(entityId: string, catalog: WatchCatalog | undefined): string | undefined {
+  const target = watchLibraryTarget(entityId);
+  if (target === undefined) return undefined;
+  if (target.kind === "httpAction") return LIBRARY_LABEL_FALLBACKS.httpAction;
+  return findWatchCatalogEntry(catalog, target.kind, target.id)?.name ?? LIBRARY_LABEL_FALLBACKS[target.kind];
 }
 
 // ── words ────────────────────────────────────────────────────────────────

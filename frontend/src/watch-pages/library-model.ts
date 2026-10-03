@@ -28,11 +28,15 @@ import { REMOVE, editTile, isBool, normalizeWatchColor, setKey, withKey, withOpt
  * Point an HTTP action, macro or status page tile at another entry of its
  * library (`libraryRetarget`): `entityId` becomes the kind's prefix and the
  * new id in upper case. The label becomes the new entry's `name` only while
- * it is `oldTargetName` (the old entry's name in the catalog now; `null` when
- * the catalog no longer lists it) or empty or absent. Icon, color and every
- * other key stay. Retargeting to the entry it already points at (ids
- * compared without regard to case) changes nothing; so does a tile of
- * another kind.
+ * it is one of `oldTargetNames` (the old entry's names now; none when it is
+ * gone) or empty or absent. Icon, color and every other key stay.
+ * Retargeting to the entry it already points at (ids compared without
+ * regard to case) changes nothing; so does a tile of another kind.
+ *
+ * The phone passes an HTTP action's two names, the one its add writes now
+ * and its URL for an unnamed one, which an older add wrote. The panel knows
+ * only the catalog's name, so it passes that alone: a label that is an old
+ * URL stays here, and follows on the phone.
  */
 export function setWatchLibraryTileTarget(
   document: WatchPagesDocument,
@@ -40,7 +44,7 @@ export function setWatchLibraryTileTarget(
   tileId: string,
   kind: WatchLibraryKind,
   entry: { id: string; name: string },
-  oldTargetName?: string | null,
+  oldTargetNames: readonly string[] = [],
 ): WatchPagesDocument {
   if (typeof entry?.id !== "string" || entry.id === "" || typeof entry.name !== "string") return document;
   return editTile(document, pageId, tileId, (tile) => {
@@ -48,7 +52,7 @@ export function setWatchLibraryTileTarget(
     if (target === undefined || target.kind !== kind || sameWatchId(target.id, entry.id)) return tile;
     const label = tile.customLabel;
     const follows =
-      label === undefined || label === null || label === "" || (typeof oldTargetName === "string" && label === oldTargetName);
+      label === undefined || label === null || label === "" || (typeof label === "string" && oldTargetNames.includes(label));
     const next = withKey(tile, "entityId", watchLibraryEntityId(kind, entry.id));
     return follows ? withKey(next, "customLabel", entry.name) : next;
   });
@@ -303,6 +307,9 @@ export interface WatchMacroSettings {
   /** As the watch resolves it: the stored mode, else the legacy
    * `autoCloseMacroRun` (absent or true is On success, false Stay open). */
   closeMode: WatchMacroCloseMode;
+  /** The tile stores the legacy `autoCloseMacroRun`: picking the mode shown
+   * writes it out as `macroCloseMode` and removes the legacy key. */
+  legacyClose: boolean;
 }
 
 export function watchMacroSettings(tile: WatchPageTile): WatchMacroSettings {
@@ -310,6 +317,7 @@ export function watchMacroSettings(tile: WatchPageTile): WatchMacroSettings {
   return {
     runSilently: tile.macroRunSilently === true,
     closeMode: stored ?? (tile.autoCloseMacroRun === false ? "stayOpen" : "onSuccess"),
+    legacyClose: tile.autoCloseMacroRun !== undefined && tile.autoCloseMacroRun !== null,
   };
 }
 

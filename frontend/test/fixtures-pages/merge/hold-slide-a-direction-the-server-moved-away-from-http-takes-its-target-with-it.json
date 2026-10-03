@@ -1,0 +1,69 @@
+{
+  "name": "The server moved slide up from Run HTTP Action to Open Control and dropped its target, while the phone changed slide down: a direction's five slide entries are one unit, so up is the server's whole (no target left behind) and down is the phone's, written up, down, left, right",
+  "base": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "7B1E4C9A-2D3F-4A5B-8C6D-9E0F1A2B3C4D",
+            "entityId": "light.kitchen",
+            "holdSlideActions": ["up", "httpAction", "down", "toggle"],
+            "holdSlideHTTPActionTargets": ["up", "C3A0E000-0000-4000-8000-000000000080"],
+            "holdSlideHTTPActionBannerSeconds": ["up", 5]
+          }
+        ]
+      }
+    ]
+  },
+  "phone": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "7B1E4C9A-2D3F-4A5B-8C6D-9E0F1A2B3C4D",
+            "entityId": "light.kitchen",
+            "holdSlideActions": ["up", "httpAction", "down", "none"],
+            "holdSlideHTTPActionTargets": ["up", "C3A0E000-0000-4000-8000-000000000080"],
+            "holdSlideHTTPActionBannerSeconds": ["up", 5]
+          }
+        ]
+      }
+    ]
+  },
+  "server": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "7B1E4C9A-2D3F-4A5B-8C6D-9E0F1A2B3C4D",
+            "entityId": "light.kitchen",
+            "holdSlideActions": ["up", "openControl", "down", "toggle"],
+            "holdSlideHTTPActionBannerSeconds": ["up", 5]
+          }
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "7B1E4C9A-2D3F-4A5B-8C6D-9E0F1A2B3C4D",
+            "entityId": "light.kitchen",
+            "holdSlideActions": ["up", "openControl", "down", "none"],
+            "holdSlideHTTPActionBannerSeconds": ["up", 5]
+          }
+        ]
+      }
+    ]
+  }
+}

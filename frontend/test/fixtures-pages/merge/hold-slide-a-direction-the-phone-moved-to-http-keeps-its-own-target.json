@@ -1,0 +1,73 @@
+{
+  "name": "The phone moved slide left from a trigger entity to Run HTTP Action, while the server picked another trigger entity for left and added slide right: left is the phone's whole (its action and HTTP target, no trigger target) and right, which only the server changed, stays",
+  "base": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "7B1E4C9A-2D3F-4A5B-8C6D-9E0F1A2B3C4D",
+            "entityId": "light.kitchen",
+            "holdSlideActions": ["left", "triggerEntity"],
+            "holdSlideTriggerTargets": [
+              "left",
+              {"entityId": "scene.movie_night", "friendlyName": "Movie Night", "mode": "activate"}
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "phone": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "7B1E4C9A-2D3F-4A5B-8C6D-9E0F1A2B3C4D",
+            "entityId": "light.kitchen",
+            "holdSlideActions": ["left", "httpAction"],
+            "holdSlideHTTPActionTargets": ["left", "C3A0E000-0000-4000-8000-000000000085"]
+          }
+        ]
+      }
+    ]
+  },
+  "server": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "7B1E4C9A-2D3F-4A5B-8C6D-9E0F1A2B3C4D",
+            "entityId": "light.kitchen",
+            "holdSlideActions": ["left", "triggerEntity", "right", "toggle"],
+            "holdSlideTriggerTargets": [
+              "left",
+              {"entityId": "scene.reading", "friendlyName": "Reading", "mode": "activate"}
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "pages": [
+      {
+        "id": "C52206FB-F7ED-4FB7-95F4-E6519A2865FC",
+        "name": "Home",
+        "items": [
+          {
+            "id": "7B1E4C9A-2D3F-4A5B-8C6D-9E0F1A2B3C4D",
+            "entityId": "light.kitchen",
+            "holdSlideActions": ["left", "httpAction", "right", "toggle"],
+            "holdSlideHTTPActionTargets": ["left", "C3A0E000-0000-4000-8000-000000000085"]
+          }
+        ]
+      }
+    ]
+  }
+}

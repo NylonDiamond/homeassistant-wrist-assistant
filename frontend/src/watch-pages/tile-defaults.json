@@ -2690,5 +2690,5 @@
     "extras": {},
     "duplicatesAllowed": true
   },
-  "libraryRetarget": "Retargeting an httpActionTile, macroTile or statusPageTile rewrites entityId to the prefix and the new entry's id. customLabel becomes the new entry's catalog name only while it equals the old entry's catalog name now, or is empty or absent; with the old entry gone from the catalog only the empty or absent label follows. Icon, color and every other key stay. Retargeting to the entry it already points at changes nothing."
+  "libraryRetarget": "Retargeting an httpActionTile, macroTile or statusPageTile rewrites entityId to the prefix and the new entry's id. customLabel becomes the new entry's catalog name only while it equals one of the old entry's names now (oldTargetNames), or is empty or absent; with the old entry gone from the catalog only the empty or absent label follows. The old names are the entry's catalog name, and for an HTTP action on the phone also its URL fallback, which the add wrote as the label of an unnamed action before 3e, so a URL label is replaced too. The panel knows only the catalog name. Icon, color and every other key stay. Retargeting to the entry it already points at changes nothing."
 }

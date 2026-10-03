@@ -43,6 +43,7 @@ import {
   watchCatalogSubtitle,
   watchCatalogWarning,
   watchLibraryTarget,
+  watchLibraryTileFallbackName,
 } from "./catalog.js";
 import { sameWatchId, findWatchPage } from "./edit.js";
 import { watchTileHasStateTask } from "./styling-model.js";
@@ -57,6 +58,7 @@ import {
   watchPageName,
 } from "./model.js";
 import type { HassEntityState } from "../ha-api.js";
+import { type WatchHTTPRefresh, WATCH_HTTP_REFRESH_SECONDS } from "./library-model.js";
 
 // ── sections ─────────────────────────────────────────────────────────────
 
@@ -230,12 +232,22 @@ function httpActionLabel(action: WatchCatalogHTTPAction): string {
   return warning === undefined ? action.name : `${action.name} (${warning.charAt(0).toLowerCase()}${warning.slice(1)})`;
 }
 
+/** A number of seconds in words ("1 second", "6 seconds"), or the stored
+ * text as it is when it is no number. */
+export function watchSecondsText(value: string, every = false): string {
+  const n = Number(value);
+  if (value.trim() === "" || !Number.isFinite(n)) return value;
+  if (every) return n === 1 ? "Every second" : `Every ${n} seconds`;
+  return n === 1 ? "1 second" : `${n} seconds`;
+}
+
 /** The banner seconds menu: 1, 2, 3 (the standard, stored as nothing) and
- * 5; a stored value the phone does not offer shown first, disabled. */
+ * 5; a stored value the phone does not offer shown first, disabled, in the
+ * same words. */
 export function watchHTTPBannerSecondsMenu(stored: unknown): WatchMenu {
-  const choices: WatchChoice[] = [1, 2, 3, 5].map((s) => ({ value: String(s), label: s === 1 ? "1 second" : `${s} seconds` }));
+  const choices: WatchChoice[] = [1, 2, 3, 5].map((s) => ({ value: String(s), label: watchSecondsText(String(s)) }));
   const value = stored === undefined || stored === null ? "3" : String(stored);
-  return watchChoiceMenu(choices, value);
+  return watchChoiceMenu(choices, value, (v) => watchSecondsText(v));
 }
 
 /** The Hold and slide card, or undefined for a kind that has none. */
@@ -292,7 +304,7 @@ export function watchHoldSlideMenus(tile: WatchPageTile, catalog?: WatchCatalog)
         selected = HTTP_SLIDE + entry.id;
       } else {
         selected = STORED + "httpAction";
-        options.push({ value: selected, label: `${runLabel} (${targetId === "" ? "no action picked" : WATCH_NOT_ON_IPHONE_TEXT.toLowerCase()})`, disabled: true });
+        options.push({ value: selected, label: `${runLabel} (${targetId === "" ? "no action picked" : "not on the iPhone"})`, disabled: true });
         note = targetId === ""
           ? "No action is picked, so the watch shows Sync Needed. Pick one."
           : "The iPhone no longer lists this action. Pick another, or the watch fails the slide.";
@@ -377,12 +389,12 @@ export function watchSkipValue(choice: WatchSkipChoice): boolean | null {
 
 /** A menu of fixed choices with a stored value it may not have: that value
  * is shown first, disabled. */
-export function watchChoiceMenu(choices: readonly WatchChoice[], value: string): WatchMenu {
+export function watchChoiceMenu(choices: readonly WatchChoice[], value: string, storedLabel?: (value: string) => string): WatchMenu {
   const options: WatchMenuOption[] = choices.map((c) => ({ value: c.value, label: c.label }));
   if (choices.some((c) => c.value === value)) return { options, selected: value };
   const stored = STORED + value;
   return {
-    options: [{ value: stored, label: value === "" ? "(empty)" : value, disabled: true }, ...options],
+    options: [{ value: stored, label: value === "" ? "(empty)" : (storedLabel?.(value) ?? value), disabled: true }, ...options],
     selected: stored,
     note: "Not one the iPhone app offers. Picking another replaces it.",
   };
@@ -484,7 +496,11 @@ export function watchLibraryTargetMenu(tile: WatchPageTile, catalog: WatchCatalo
   const base = { kind: target.kind, targetId: target.id, current, oldTargetName: current?.name ?? null };
   if (current !== undefined) return { ...base, options, selected: current.id };
   const selected = STORED + target.id;
-  const label = typeof tile.customLabel === "string" && tile.customLabel.trim() !== "" ? tile.customLabel : WATCH_LIBRARY_WORDS[target.kind].one;
+  // With no label of its own, what the watch shows: "Action", "Macro" or
+  // "Status Page" (the catalog has no name for it).
+  const label = typeof tile.customLabel === "string" && tile.customLabel.trim() !== ""
+    ? tile.customLabel
+    : (watchLibraryTileFallbackName(tileEntityId(tile), catalog) ?? WATCH_LIBRARY_WORDS[target.kind].one);
   return {
     ...base,
     options: [{ value: selected, label: `${label} (${WATCH_NOT_ON_IPHONE_TEXT})`, disabled: true }, ...options],
@@ -493,6 +509,18 @@ export function watchLibraryTargetMenu(tile: WatchPageTile, catalog: WatchCatalo
       ? `${WATCH_NOT_ON_IPHONE_TEXT}, and the iPhone lists no other ${WATCH_LIBRARY_WORDS[target.kind].many}. The tile stays as it is.`
       : `${WATCH_NOT_ON_IPHONE_TEXT}. The tile stays as it is until another is picked.`,
   };
+}
+
+/** The Auto-refresh menu of a Tile Value tile: Off, On open, then the
+ * ladder's seconds; a stored interval off the ladder shown first, disabled,
+ * in the same words ("Every 60 seconds"). */
+export function watchHTTPRefreshMenu(refresh: WatchHTTPRefresh): WatchMenu {
+  const choices: WatchChoice[] = [
+    { value: "off", label: "Off" },
+    { value: "onOpen", label: "On open" },
+    ...WATCH_HTTP_REFRESH_SECONDS.map((s) => ({ value: String(s), label: watchSecondsText(String(s), true) })),
+  ];
+  return watchChoiceMenu(choices, String(refresh), (v) => watchSecondsText(v, true));
 }
 
 /** The Show reply menu's value for Off (no key). */
@@ -516,6 +544,7 @@ export function watchHTTPReplyMenu(tile: WatchPageTile, action: WatchCatalogHTTP
   const menu: WatchMenu = { options, selected: reply ?? WATCH_HTTP_REPLY_OFF };
   const unknown = typeof tile.httpResponseDisplay === "string" && reply === undefined ? tile.httpResponseDisplay : undefined;
   if (unknown !== undefined) menu.note = `Stored as "${unknown}", which the watch reads as Off.`;
+  else if (!tileValue && action === undefined) menu.note = "The iPhone has not listed this action here, so Tile value cannot be offered. Open the iPhone app to list it.";
   else if (!tileValue) menu.note = "Tile value needs a Reply Value on this action, set in the iPhone app.";
   else if (reply === "tileValue" && action !== undefined && !action.hasReply) menu.note = "The iPhone does not list a Reply Value for this action, so the tile shows a dash.";
   return menu;
@@ -533,11 +562,8 @@ export function watchTileFallbackName(
   pages?: readonly WatchPage[],
   catalog?: WatchCatalog,
 ): string {
-  const library = watchLibraryTarget(tileEntityId(tile));
-  if (library !== undefined) {
-    if (library.kind === "httpAction") return "Action";
-    return findWatchCatalogEntry(catalog, library.kind, library.id)?.name ?? (library.kind === "macro" ? "Macro" : "Status Page");
-  }
+  const library = watchLibraryTileFallbackName(tileEntityId(tile), catalog);
+  if (library !== undefined) return library;
   const rest = { ...tile };
   delete rest.customLabel;
   return tileLabel(rest, states, pages);

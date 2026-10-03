@@ -272,7 +272,8 @@ function applyCase(document: WatchPagesDocument, c: SettingsCase): WatchPagesDoc
       return clearWatchTileStateOverrides(document, PAGE, T);
     // Part 3e: the library tiles.
     case "libraryTarget":
-      return setWatchLibraryTileTarget(document, PAGE, T, c.edit.kind as WatchLibraryKind, { id: c.edit.id as string, name: c.edit.name as string }, e.oldTargetName);
+      // `oldTargetNames`: the old entry's names now, none when it is gone.
+      return setWatchLibraryTileTarget(document, PAGE, T, c.edit.kind as WatchLibraryKind, { id: c.edit.id as string, name: c.edit.name as string }, c.edit.oldTargetNames as string[]);
     case "holdSlideHTTP":
       return setWatchTileHoldSlideHTTP(document, PAGE, T, e.direction, c.edit.id as string);
     case "holdSlideHTTPBanner":

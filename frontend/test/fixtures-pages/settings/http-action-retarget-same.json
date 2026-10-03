@@ -1,6 +1,6 @@
 {
   "name": "Retarget to the action the tile already runs: nothing changes",
-  "source": "WristAssistant/Views/PageEditor/Tabs/AddTabContent.swift:770",
+  "source": "WristAssistant/Views/PageEditor/Tabs/AddTabContent.swift:774",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,
@@ -58,7 +58,7 @@
     "kind": "httpAction",
     "id": "C3A0E000-0000-4000-8000-000000000080",
     "name": "Open Gate",
-    "oldTargetName": "Open Gate"
+    "oldTargetNames": ["Open Gate"]
   },
   "expected": {
     "animationIntensity": 1,

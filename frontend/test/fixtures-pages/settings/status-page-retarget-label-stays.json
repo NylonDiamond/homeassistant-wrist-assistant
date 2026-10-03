@@ -1,6 +1,6 @@
 {
   "name": "Retarget a status page tile with a label of its own",
-  "source": "WristAssistant/Views/PageEditor/Tabs/AddTabContent.swift:770",
+  "source": "WristAssistant/Views/PageEditor/Tabs/AddTabContent.swift:774",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,
@@ -57,7 +57,7 @@
     "kind": "statusPage",
     "id": "C3A0E000-0000-4000-8000-000000000086",
     "name": "Upstairs",
-    "oldTargetName": "Lights"
+    "oldTargetNames": ["Lights"]
   },
   "expected": {
     "animationIntensity": 1,

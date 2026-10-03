@@ -1,6 +1,6 @@
 {
   "name": "Page animation rainbow",
-  "source": "WristAssistant/Views/PageEditorView.swift:17026",
+  "source": "WristAssistant/Views/PageEditorView.swift:17027",
   "page": {
     "backgroundBrightness": 0.6,
     "backgroundColor": "#000000",

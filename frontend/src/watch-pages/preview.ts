@@ -42,6 +42,7 @@ import {
 import { watchPageTheme, watchPageValue } from "./page-settings-model.js";
 import { WATCH_TILE_DEFAULTS, watchKindColor } from "./tile-new.js";
 import { watchStateDomains, watchStylingTheme } from "./tile-styling.js";
+import { type WatchCatalog, watchLibraryTileFallbackName } from "./catalog.js";
 
 export interface WatchPagePreviewInput {
   page: WatchPage;
@@ -54,6 +55,22 @@ export interface WatchPagePreviewInput {
   icons?: IconProvider;
   /** CSS pixels per point. */
   scale?: number;
+  /** The iPhone's library, which names a macro or status page tile with no
+   * label of its own as the watch does. */
+  catalog?: WatchCatalog;
+}
+
+/** The name a tile draws: its own label, else for an HTTP action, macro or
+ * status page tile the watch's fallback ("Action", the macro's or status
+ * page's name in the catalog, else "Macro" or "Status Page"), else
+ * `tileLabel`. */
+export function watchPreviewTileLabel(tile: WatchPageTile, input: Pick<WatchPagePreviewInput, "states" | "pages" | "catalog">): string {
+  const custom = typeof tile.customLabel === "string" ? tile.customLabel.trim() : "";
+  if (custom === "") {
+    const library = watchLibraryTileFallbackName(tileEntityId(tile), input.catalog);
+    if (library !== undefined) return library;
+  }
+  return tileLabel(tile, input.states, input.pages);
 }
 
 /** The watch's corner radius for a tile, `DS.radius(.tileWatch)` in the app. */
@@ -631,7 +648,7 @@ function tileFace(
   const cls = tileClass(entityId, input.states);
   const color = parseTileColor(tile.color);
   const ink = tileInkColor(color);
-  const label = tileLabel(tile, input.states, input.pages);
+  const label = watchPreviewTileLabel(tile, input);
   const kindLabel = tileKindLabel(kind);
   const hint = [label, kindLabel, entityId].filter((t, i, all) => t !== "" && all.indexOf(t) === i).join(" · ");
 

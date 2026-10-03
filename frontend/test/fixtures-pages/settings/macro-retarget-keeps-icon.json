@@ -1,6 +1,6 @@
 {
   "name": "Retarget a styled macro tile: the label follows, icon and color stay",
-  "source": "WristAssistant/Views/PageEditor/Tabs/AddTabContent.swift:770",
+  "source": "WristAssistant/Views/PageEditor/Tabs/AddTabContent.swift:774",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,
@@ -57,7 +57,7 @@
     "kind": "macro",
     "id": "C3A0E000-0000-4000-8000-000000000082",
     "name": "Bedtime",
-    "oldTargetName": "Movie Night"
+    "oldTargetNames": ["Movie Night"]
   },
   "expected": {
     "animationIntensity": 1,

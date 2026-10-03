@@ -1,6 +1,6 @@
 {
   "name": "The old action is gone and the label is empty: the label follows",
-  "source": "WristAssistant/Views/PageEditor/Tabs/AddTabContent.swift:770",
+  "source": "WristAssistant/Views/PageEditor/Tabs/AddTabContent.swift:774",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,
@@ -58,7 +58,7 @@
     "kind": "httpAction",
     "id": "C3A0E000-0000-4000-8000-000000000085",
     "name": "Garage Door",
-    "oldTargetName": null
+    "oldTargetNames": []
   },
   "expected": {
     "animationIntensity": 1,

@@ -220,7 +220,10 @@ export function mergeWatchPagesByKey(
  *   local changed it since `base`, and takes the server's otherwise. A key one
  *   side removed counts as changed by that side.
  * - Every other value is one value, however deep: a page's `groups` and
- *   `dynamicConfig`, a tile's arrays and its slide maps.
+ *   `dynamicConfig`, a tile's arrays.
+ * - A tile's hold and slide keys merge one direction at a time, each
+ *   direction's action, targets and banner settings as one unit
+ *   (`mergeSlideDirections`).
  * - A page or tile one side deleted is gone when the other side left it as it
  *   was in `base`, and stays, as the other side has it, when that side
  *   changed it.
@@ -370,8 +373,106 @@ function mergeElement(
       childListKey,
       mergeList(own(base, childListKey), own(local, childListKey), own(server, childListKey), undefined),
     );
+  } else {
+    mergeSlideDirections(merged, base, local, server);
   }
   return shareWhole(merged, server, local);
+}
+
+// ── hold and slide ───────────────────────────────────────────────────────
+
+/** The slide map that says what each direction does; the others hang off
+ * it (a trigger's target, an HTTP action's target, banner and seconds). */
+const SLIDE_ACTIONS_KEY = "holdSlideActions";
+
+/** The order the phone writes a slide map's pairs in. */
+const SLIDE_DIRECTION_ORDER = ["up", "down", "left", "right"];
+
+/** A slide map's entries by direction: none for an absent or `null` map,
+ * and a `null` value is no entry. Undefined when the value is not a flat
+ * array of distinct string directions each followed by a value. */
+function slideEntries(value: unknown): Map<string, unknown> | undefined {
+  if (present(value) === undefined) return new Map();
+  const pairs = slidePairs(value);
+  if (pairs === undefined) return undefined;
+  const entries = new Map<string, unknown>();
+  for (const [direction, entry] of pairs) {
+    if (present(entry) !== undefined) entries.set(direction, entry);
+  }
+  return entries;
+}
+
+/** Whether two slide maps hold the same entries. */
+function sameEntries(a: ReadonlyMap<string, unknown>, b: ReadonlyMap<string, unknown>): boolean {
+  return a.size === b.size && [...a].every(([d, v]) => b.has(d) && sameWatchPagesJson(v, b.get(d)));
+}
+
+/**
+ * The five slide maps of a tile both sides hold, merged by direction over
+ * the key by key result in `merged`. One direction's entries in all five
+ * maps (its action, trigger target, HTTP action target, banner switch and
+ * banner seconds) are one unit, so a merge never pairs one side's
+ * `httpAction` with the other side's missing target:
+ *
+ * - Local changed the direction's action since `base`: all five entries are
+ *   local's, an entry local has none of included.
+ * - Else the server changed it: all five are the server's.
+ * - Else neither did, and each entry is local's when local changed it, the
+ *   server's otherwise.
+ *
+ * Each map is then the server's value as it stands when it holds exactly the
+ * merged entries, else local's when that one does, else absent when no entry
+ * is left, else the entries written up, down, left, right (any other
+ * direction after, by name). A map on any side that is not a flat array of
+ * distinct directions and values leaves the key by key result alone.
+ */
+function mergeSlideDirections(merged: JsonObject, base: JsonObject, local: JsonObject, server: JsonObject): void {
+  const keys = [...WATCH_PAGES_SLIDE_MAP_KEYS];
+  const maps = (side: JsonObject): Map<string, unknown>[] | undefined => {
+    const out: Map<string, unknown>[] = [];
+    for (const key of keys) {
+      const m = slideEntries(own(side, key));
+      if (m === undefined) return undefined;
+      out.push(m);
+    }
+    return out;
+  };
+  const bm = maps(base);
+  const lm = maps(local);
+  const sm = maps(server);
+  if (bm === undefined || lm === undefined || sm === undefined) return;
+  const directions = new Set<string>();
+  for (const m of [...bm, ...lm, ...sm]) for (const d of m.keys()) directions.add(d);
+  if (directions.size === 0) return;
+
+  const actions = keys.indexOf(SLIDE_ACTIONS_KEY);
+  const result = keys.map(() => new Map<string, unknown>());
+  for (const d of directions) {
+    const localMoved = !sameWatchPagesJson(lm[actions]!.get(d), bm[actions]!.get(d));
+    const serverMoved = !sameWatchPagesJson(sm[actions]!.get(d), bm[actions]!.get(d));
+    keys.forEach((_, i) => {
+      const mine = lm[i]!.get(d);
+      const picked = localMoved
+        ? mine
+        : serverMoved
+          ? sm[i]!.get(d)
+          : sameWatchPagesJson(mine, bm[i]!.get(d)) ? sm[i]!.get(d) : mine;
+      if (present(picked) !== undefined) result[i]!.set(d, picked);
+    });
+  }
+  keys.forEach((key, i) => {
+    const entries = result[i]!;
+    if (sameEntries(entries, sm[i]!)) setOrRemove(merged, key, present(own(server, key)));
+    else if (sameEntries(entries, lm[i]!)) setOrRemove(merged, key, present(own(local, key)));
+    else setOrRemove(merged, key, entries.size === 0 ? undefined : writeSlidePairs(entries));
+  });
+}
+
+/** Entries as the flat array the phone writes: up, down, left, right, then
+ * any other direction by name. */
+function writeSlidePairs(pairs: Map<string, unknown>): unknown[] {
+  const order = [...SLIDE_DIRECTION_ORDER.filter((d) => pairs.has(d)), ...[...pairs.keys()].filter((d) => !SLIDE_DIRECTION_ORDER.includes(d)).sort()];
+  return order.flatMap((d) => [d, pairs.get(d)]);
 }
 
 // ── shape check ──────────────────────────────────────────────────────────

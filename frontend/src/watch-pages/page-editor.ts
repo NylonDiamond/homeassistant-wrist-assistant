@@ -60,7 +60,7 @@ import { SymbolBrowser } from "../symbols.js";
 import { uiIcon } from "../ui-icons.js";
 import { deliveryState, initialWatch, rejectedNow, settingsWatches, watchName } from "../watch-settings.js";
 import { addTileStyles, renderAddTile } from "./add-tile.js";
-import { type WatchCatalog, watchCatalogEventIsNews, watchCatalogFromRecord } from "./catalog.js";
+import { type WatchCatalog, watchCatalogEventIsNews, watchCatalogFromRecord, watchCatalogReadMeansNone } from "./catalog.js";
 import { type WatchPagesApplyOptions, type WatchPagesDraft, saveWatchPagesDraft } from "./draft.js";
 import { type AddTileHost, type TileSettingsHost, type WatchPagesEditorHost, NO_ICONS, ScrubRun, extendHost, memoIconNames, watchKeysTypeText } from "./editor-host.js";
 import {
@@ -133,6 +133,7 @@ import {
   renderWatchTileFace,
   watchPagePreviewScrolls,
   watchPagePreviewStyles,
+  watchPreviewTileLabel,
   renderWatchPageTitle,
   watchScreenBackground,
 } from "./preview.js";
@@ -810,10 +811,12 @@ export class WaPageEditor extends LitElement {
       const record = await fetchWatchConfig(hass, watchId, "catalog");
       if (seq !== this.catalogSeq || watchId !== this.watchId) return;
       this.catalog = watchCatalogFromRecord(record);
-    } catch {
+    } catch (error) {
       if (seq !== this.catalogSeq || watchId !== this.watchId) return;
-      // Keep what is shown: a dropped socket is not news that the phone
-      // took its library away. An older integration never had one.
+      // An integration too old to know the kind refuses it: no catalog, and
+      // nothing to tell anyone. Anything else keeps what is shown: a dropped
+      // socket is not news that the phone took its library away.
+      if (watchCatalogReadMeansNone(error)) this.catalog = undefined;
     }
   }
 
@@ -2087,7 +2090,7 @@ export class WaPageEditor extends LitElement {
     const headers = !smart && watchPageHasHeader(page);
     const asOnWatch = headers && this.asOnWatch;
     const scale = this.narrow ? 1.25 : 1.5;
-    const input = { page, pages, screen: watchCase.screen, states: this.hass?.states, icons: this.icons, scale };
+    const input = { page, pages, screen: watchCase.screen, states: this.hass?.states, icons: this.icons, scale, catalog: this.catalog };
     this.stageScreen = watchCase.screen;
     const addOff = this.saving || asOnWatch;
     return html`<div class="pe-stage-head">
@@ -2200,7 +2203,7 @@ export class WaPageEditor extends LitElement {
     const width = box0?.width ?? placed.width * s;
     const height = box0?.height ?? placed.height * s;
     const kindLabel = tileKindLabel(tileKind(tileEntityId(tile)));
-    const label = tileLabel(tile, input.states, input.pages);
+    const label = watchPreviewTileLabel(tile, input);
     const selected = id !== "" && sameWatchId(id, this.selectedTileId);
     const moving = move !== undefined && sameWatchId(id, move.tileId);
     const partner = move?.outcome?.kind === "swap" && sameWatchId(id, move.outcome.targetId);
@@ -2246,7 +2249,7 @@ export class WaPageEditor extends LitElement {
     const rect = watchTileRect(tile);
     const entityId = tileEntityId(tile);
     const kindLabel = tileKindLabel(tileKind(entityId));
-    const label = tileLabel(tile, this.hass?.states, pages);
+    const label = watchPreviewTileLabel(tile, { states: this.hass?.states, pages, catalog: this.catalog });
     const off = this.editingOff(page);
     const id = tileIdOf(tile);
     const field = (name: string, value: number, min: number, max: number | undefined, commit: (v: number) => void) => {

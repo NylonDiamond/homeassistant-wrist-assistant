@@ -422,6 +422,144 @@ describe("JSON equality", () => {
   });
 });
 
+// ── hold and slide ───────────────────────────────────────────────────────
+
+describe("hold and slide directions", () => {
+  const A = "4F7A2C1E-9B3D-4E5F-8A6B-1C2D3E4F5A6B";
+  const B = "6A0B3C2D-1E4F-4A5B-9C8D-7E6F5A4B3C2D";
+  const P = "C3A0E000-0000-4000-8000-0000000000AA";
+  const T = "C3A0E000-0000-4000-8000-000000000001";
+  const doc = (slides: JsonObject): WatchPagesDocument => ({
+    pages: [{ id: P, name: "Living", items: [{ id: T, entityId: "light.desk_lamp", ...slides }] }],
+  });
+  const tileOf = (d: WatchPagesDocument) => ((d.pages as JsonObject[])[0]!.items as JsonObject[])[0]!;
+  const slideKeys = (d: WatchPagesDocument) =>
+    Object.fromEntries(Object.entries(tileOf(d)).filter(([k]) => WATCH_PAGES_SLIDE_MAP_KEYS.has(k)));
+
+  it("the phone moves a direction away from Run HTTP Action while the panel changes another: no action without its target", () => {
+    const base = doc({ holdSlideActions: ["up", "httpAction"], holdSlideHTTPActionTargets: ["up", A] });
+    const server = doc({ holdSlideActions: ["up", "toggle"] });
+    const local = doc({ holdSlideActions: ["up", "httpAction", "down", "none"], holdSlideHTTPActionTargets: ["up", A] });
+    expect(slideKeys(merge(base, local, server))).toEqual({ holdSlideActions: ["up", "toggle", "down", "none"] });
+  });
+
+  it("the side that changed a direction's action gives the whole direction, banner and all", () => {
+    const base = doc({ holdSlideActions: ["up", "httpAction"], holdSlideHTTPActionTargets: ["up", A] });
+    // The panel only turned the banner off; the phone moved up to a trigger.
+    const local = doc({ holdSlideActions: ["up", "httpAction"], holdSlideHTTPActionTargets: ["up", A], holdSlideHTTPActionShowBanner: ["up", false] });
+    const trigger = { entityId: "script.night", mode: "run" };
+    const server = doc({ holdSlideActions: ["up", "triggerEntity"], holdSlideTriggerTargets: ["up", trigger] });
+    expect(slideKeys(merge(base, local, server))).toEqual({ holdSlideActions: ["up", "triggerEntity"], holdSlideTriggerTargets: ["up", trigger] });
+    // The other way round: the panel moved it, the phone changed its target.
+    const moved = doc({ holdSlideActions: ["up", "toggle"] });
+    const retargeted = doc({ holdSlideActions: ["up", "httpAction"], holdSlideHTTPActionTargets: ["up", B] });
+    expect(slideKeys(merge(base, moved, retargeted))).toEqual({ holdSlideActions: ["up", "toggle"] });
+  });
+
+  it("a target change alone goes with its direction; another direction's change on the other side stays", () => {
+    const base = doc({ holdSlideActions: ["up", "httpAction"], holdSlideHTTPActionTargets: ["up", A] });
+    const local = doc({ holdSlideActions: ["up", "httpAction"], holdSlideHTTPActionTargets: ["up", B], holdSlideHTTPActionBannerSeconds: ["up", 5] });
+    const server = doc({ holdSlideActions: ["left", "openControl", "up", "httpAction"], holdSlideHTTPActionTargets: ["up", A] });
+    expect(slideKeys(merge(base, local, server))).toEqual({
+      // The actions come out as the server holds them: its very array.
+      holdSlideActions: ["left", "openControl", "up", "httpAction"],
+      holdSlideHTTPActionBannerSeconds: ["up", 5],
+      holdSlideHTTPActionTargets: ["up", B],
+    });
+  });
+
+  it("both sides changed one direction's action: local's whole direction", () => {
+    const base = doc({ holdSlideActions: ["down", "toggle"] });
+    const local = doc({ holdSlideActions: ["down", "httpAction"], holdSlideHTTPActionTargets: ["down", A] });
+    const server = doc({ holdSlideActions: ["down", "httpAction"], holdSlideHTTPActionTargets: ["down", B], holdSlideHTTPActionShowBanner: ["down", false] });
+    expect(slideKeys(merge(base, local, server))).toEqual({ holdSlideActions: ["down", "httpAction"], holdSlideHTTPActionTargets: ["down", A] });
+  });
+
+  it("a key that comes out as one side holds it is that side's very array", () => {
+    const base = doc({ holdSlideActions: ["down", "none", "up", "toggle"] });
+    const local = doc({ holdSlideActions: ["up", "toggle", "down", "none"] });
+    const server = doc({ holdSlideActions: ["down", "none", "up", "openControl"] });
+    const out = merge(base, local, server);
+    expect(tileOf(out).holdSlideActions).toBe(tileOf(server).holdSlideActions);
+    expect(out).toBe(server);
+  });
+
+  it("with neither side moving the action, each entry is local's when local changed it", () => {
+    const base = doc({ holdSlideActions: ["up", "httpAction"], holdSlideHTTPActionTargets: ["up", A] });
+    const local = doc({ holdSlideActions: ["up", "httpAction"], holdSlideHTTPActionTargets: ["up", A], holdSlideHTTPActionShowBanner: ["up", false] });
+    const server = doc({ holdSlideActions: ["up", "httpAction"], holdSlideHTTPActionTargets: ["up", B] });
+    expect(slideKeys(merge(base, local, server))).toEqual({
+      holdSlideActions: ["up", "httpAction"],
+      holdSlideHTTPActionShowBanner: ["up", false],
+      holdSlideHTTPActionTargets: ["up", B],
+    });
+  });
+
+  it("a slide map that does not parse leaves the key by key result alone", () => {
+    const base = doc({ holdSlideActions: ["up", "httpAction"], holdSlideHTTPActionTargets: ["up", A] });
+    const local = doc({ holdSlideActions: ["up", "httpAction"], holdSlideHTTPActionTargets: ["up", A], holdSlideHTTPActionShowBanner: ["up"] });
+    const server = doc({ holdSlideActions: ["up", "toggle"] });
+    expect(slideKeys(merge(base, local, server))).toEqual({ holdSlideActions: ["up", "toggle"], holdSlideHTTPActionShowBanner: ["up"] });
+  });
+
+  it("an entry that is null is no entry, and a direction the phone does not know goes last by name", () => {
+    const base = doc({ holdSlideActions: ["up", "toggle"] });
+    const local = doc({ holdSlideActions: ["up", "toggle", "zed", "none", "north", "none"] });
+    const server = doc({ holdSlideActions: ["down", "none", "up", null] });
+    expect(tileOf(merge(base, local, server)).holdSlideActions).toEqual(["down", "none", "north", "none", "zed", "none"]);
+  });
+
+  it("never leaves Run HTTP Action without its target, nor a target beside another action, from any sound sides", () => {
+    // Every direction value a side can hold, each sound on its own.
+    const units: Array<JsonObject | undefined> = [
+      undefined,
+      { action: "toggle" },
+      { action: "none" },
+      { action: "httpAction", http: A },
+      { action: "httpAction", http: B },
+      { action: "httpAction", http: A, banner: false },
+      { action: "triggerEntity", trigger: { entityId: "script.night", mode: "run" } },
+    ];
+    const build = (up: JsonObject | undefined, down: JsonObject | undefined): WatchPagesDocument => {
+      const keys: Record<string, unknown[]> = {};
+      const add = (key: string, dir: string, value: unknown) => {
+        if (value !== undefined) (keys[key] ??= []).push(dir, value);
+      };
+      for (const [dir, unit] of [["up", up], ["down", down]] as const) {
+        add("holdSlideActions", dir, unit?.action);
+        add("holdSlideHTTPActionTargets", dir, unit?.http);
+        add("holdSlideHTTPActionShowBanner", dir, unit?.banner);
+        add("holdSlideTriggerTargets", dir, unit?.trigger);
+      }
+      return doc(keys);
+    };
+    const pairs = (value: unknown) => {
+      const m = new Map<string, unknown>();
+      const list = Array.isArray(value) ? value : [];
+      for (let i = 0; i < list.length; i += 2) m.set(list[i] as string, list[i + 1]);
+      return m;
+    };
+    let runs = 0;
+    for (const b of units) for (const l of units) for (const s of units) {
+      // `down` holds the other side's edit to another direction.
+      const out = tileOf(merge(build(b, { action: "toggle" }), build(l, { action: "toggle" }), build(s, { action: "none" })));
+      const actions = pairs(out.holdSlideActions);
+      const http = pairs(out.holdSlideHTTPActionTargets);
+      const triggers = pairs(out.holdSlideTriggerTargets);
+      for (const dir of ["up", "down"]) {
+        expect(actions.get(dir) === "httpAction", `${dir} ${JSON.stringify([b, l, s])}`).toBe(http.has(dir));
+        expect(actions.get(dir) === "triggerEntity", `${dir} ${JSON.stringify([b, l, s])}`).toBe(triggers.has(dir));
+      }
+      // Local's direction when local changed it, else the server's.
+      const want = JSON.stringify(l) !== JSON.stringify(b) && (l?.action !== b?.action || s?.action === b?.action) ? l : s;
+      expect(actions.get("up"), JSON.stringify([b, l, s])).toBe(want?.action);
+      expect(actions.get("down")).toBe("none");
+      runs++;
+    }
+    expect(runs).toBe(units.length ** 3);
+  });
+});
+
 // ── shape check ──────────────────────────────────────────────────────────
 
 describe("checkWatchPages", () => {

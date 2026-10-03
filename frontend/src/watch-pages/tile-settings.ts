@@ -81,11 +81,11 @@ import {
   watchCatalogListedText,
   watchCatalogWarning,
   watchLibraryTarget,
+  watchLibraryTileFallbackName,
 } from "./catalog.js";
 import {
   type WatchHTTPReply,
   type WatchMacroCloseMode,
-  WATCH_HTTP_REFRESH_SECONDS,
   WATCH_HTTP_VALUE_RANGES,
   WATCH_MACRO_CLOSE_MODES,
   setWatchLibraryTileTarget,
@@ -182,6 +182,7 @@ import {
   watchGlowPercent,
   watchHeaderTextSizeRefusal,
   watchHTTPBannerSecondsMenu,
+  watchHTTPRefreshMenu,
   watchHTTPReplyMenu,
   watchHTTPSlideChoice,
   watchHoldSlideMenus,
@@ -479,6 +480,32 @@ function kindDefaults(host: TileSettingsHost): { icon: string | undefined; color
   return watchEntityDefaults(add, host.page);
 }
 
+/**
+ * The Icon task's Default: writes the kind's default icon and nothing else
+ * (a macro tile: its macro's own icon from the catalog, else `link`). Each
+ * Default writes only its own key, as on the phone.
+ */
+export function watchTileDefaultIconEdit(host: TileSettingsHost): (d: WatchPagesDocument) => WatchPagesDocument {
+  const icon = kindDefaults(host).icon;
+  return (d) =>
+    icon !== undefined
+      ? setWatchTileIcon(d, host.pageId, host.tileId, icon)
+      : setWatchTileIconDefault(d, host.pageId, host.tileId, { icon: null, color: watchTileIconSettings(host.tile).color ?? null });
+}
+
+/**
+ * The color's Default: writes the kind's default color and nothing else (a
+ * macro tile: its macro's own `colorHex` from the catalog, else
+ * `#CCD8E6`).
+ */
+export function watchTileDefaultColorEdit(host: TileSettingsHost): (d: WatchPagesDocument) => WatchPagesDocument {
+  const color = kindDefaults(host).color;
+  return (d) =>
+    color !== undefined
+      ? setWatchTileColor(d, host.pageId, host.tileId, color)
+      : setWatchTileIconDefault(d, host.pageId, host.tileId, { icon: watchTileIconSettings(host.tile).icon ?? null, color: null });
+}
+
 // ── sections ─────────────────────────────────────────────────────────────
 
 /** The settings rows for `host.tile`, or nothing. */
@@ -642,8 +669,11 @@ function renderTarget(host: TileSettingsHost): TemplateResult {
   const words = WATCH_LIBRARY_WORDS[target.kind];
   const catalog = host.catalog;
   if (catalog === undefined) {
+    // With no label of its own, the name the watch shows ("Action",
+    // "Macro", "Status Page").
     const label = watchTileTextSettings(host.tile).label;
-    return html`<div class="ts-target-now">${label !== undefined && label.trim() !== "" ? label : words.one}</div>
+    const shown = label !== undefined && label.trim() !== "" ? label : (watchLibraryTileFallbackName(tileEntityId(host.tile), undefined) ?? words.one);
+    return html`<div class="ts-target-now">${shown}</div>
       <div class="hint ts-under">${WATCH_NO_CATALOG_TEXT}</div>`;
   }
   const menu = watchLibraryTargetMenu(host.tile, catalog);
@@ -656,8 +686,8 @@ function renderTarget(host: TileSettingsHost): TemplateResult {
       const entry = findWatchCatalogEntry(now, target.kind, id);
       const current = watchLibraryTarget(tileEntityId(host.tile));
       if (entry === undefined || current === undefined) return d;
-      const old = findWatchCatalogEntry(now, current.kind, current.id)?.name ?? null;
-      return setWatchLibraryTileTarget(d, host.pageId, host.tileId, target.kind, entry, old);
+      const old = findWatchCatalogEntry(now, current.kind, current.id)?.name;
+      return setWatchLibraryTileTarget(d, host.pageId, host.tileId, target.kind, entry, old === undefined ? [] : [old]);
     });
   const warning = menu.current === undefined ? undefined : watchCatalogWarning(target.kind, menu.current);
   const listed = watchCatalogListedText(catalog);
@@ -695,12 +725,6 @@ function renderRequest(host: TileSettingsHost): TemplateResult {
     ${r.reply === "tileValue" ? renderTileValue(host, r) : nothing}`;
 }
 
-const REFRESH_CHOICES: WatchChoice[] = [
-  { value: "off", label: "Off" },
-  { value: "onOpen", label: "On open" },
-  ...WATCH_HTTP_REFRESH_SECONDS.map((s) => ({ value: String(s), label: s === 1 ? "Every second" : `Every ${s} seconds` })),
-];
-
 /** The Tile Value rows, as the phone has them. */
 function renderTileValue(host: TileSettingsHost, r: ReturnType<typeof watchHTTPRequestSettings>): TemplateResult {
   const P = () => [host.pageId, host.tileId] as const;
@@ -723,7 +747,7 @@ function renderTileValue(host: TileSettingsHost, r: ReturnType<typeof watchHTTPR
     else commit(host, "httpColor", (d) => setWatchTileHTTPValueColor(d, ...P(), v), { typing: true, ...reasonOf(watchColorRefusal(v)) });
     host.requestUpdate();
   };
-  const refresh = watchChoiceMenu(REFRESH_CHOICES, String(r.refresh));
+  const refresh = watchHTTPRefreshMenu(r.refresh);
   return html`<div class="ts-sub">
     <div class="ts-sub-h"><span>Tile value</span></div>
     ${menuField("Auto-refresh", refresh, (v) =>
@@ -765,7 +789,7 @@ function renderMacro(host: TileSettingsHost): TemplateResult {
     ${checkField("Run silently", m.runSilently, (on) => commit(host, "macroRunSilently", (d) => setWatchTileMacroRunSilently(d, host.pageId, host.tileId, on)))}
     <div class="hint ts-under">No steps sheet, only haptics and a banner. A macro with a confirmation step still asks before it goes on.</div>
     <div class="ts-stack">${segField<WatchMacroCloseMode>("When it finishes", m.closeMode, WATCH_MACRO_CLOSE_MODES.map((c) => [c.value, c.label] as [WatchMacroCloseMode, string]), (v) =>
-      commit(host, "macroCloseMode", (d) => setWatchTileMacroCloseMode(d, host.pageId, host.tileId, v)))}</div>
+      commit(host, "macroCloseMode", (d) => setWatchTileMacroCloseMode(d, host.pageId, host.tileId, v)), { reselect: m.legacyClose })}</div>
     <div class="hint">What the run sheet does once the macro ends: stay open, close after a clean run, or always close.</div>`;
 }
 
@@ -835,11 +859,7 @@ function renderIcon(host: TileSettingsHost): TemplateResult {
     commit(host, "icon", (d) => setWatchTileIcon(d, host.pageId, host.tileId, value), { typing: !picked });
   };
   const noIcon = () => commit(host, "icon", (d) => setWatchTileIcon(d, host.pageId, host.tileId, ""));
-  const defaultIcon = () =>
-    commit(host, "icon", (d) =>
-      defaults.icon !== undefined
-        ? setWatchTileIcon(d, host.pageId, host.tileId, defaults.icon)
-        : setWatchTileIconDefault(d, host.pageId, host.tileId, { icon: null, color: watchTileIconSettings(host.tile).color ?? null }));
+  const defaultIcon = () => commit(host, "icon", watchTileDefaultIconEdit(host));
 
   const typedIcon = typed(host, "icon");
   const what = s.icon === "" ? "No icon" : shown ?? "Default icon";
@@ -918,11 +938,7 @@ function renderTileColor(host: TileSettingsHost, defaultColor: string | undefine
   // No color stored draws the theme's color for the kind, which is what
   // Default writes out.
   const atDefault = color === undefined || (defaultColor !== undefined && sameWatchColor(color, defaultColor));
-  const resetColor = () =>
-    commit(host, "color", (d) =>
-      defaultColor !== undefined
-        ? setWatchTileColor(d, host.pageId, host.tileId, defaultColor)
-        : setWatchTileIconDefault(d, host.pageId, host.tileId, { icon: watchTileIconSettings(host.tile).icon ?? null, color: null }));
+  const resetColor = () => commit(host, "color", watchTileDefaultColorEdit(host));
   const typedHex = typed(host, "color");
   return html`
     ${segField<WatchColorModeChoice>("Color", mode, WATCH_COLOR_MODES as [WatchColorModeChoice, string][], (v) => pickMode(v))}

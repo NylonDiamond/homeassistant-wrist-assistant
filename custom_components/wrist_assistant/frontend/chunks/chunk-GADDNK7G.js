@@ -321,7 +321,7 @@ ${D1(c)}`}}delete s.hidden,delete s.linkId;let l=Sg(o);if(l.length>0){let d=l.sl
     ${gn(e,t,n,i,o)}</div>`}function gn(e,t,n,i,o={}){return f`<div class="seg wide" role="radiogroup" aria-label=${e}>
       ${n.map(([r,a])=>{let s=t===void 0&&r===o.inherited,l=s?`${o.titles?.[r]??a} (from the layer)`:o.titles?.[r];return f`<button type="button" role="radio" aria-checked=${r===t?"true":"false"}
         class=${r===t?"on":s?"inh":""} title=${l??y} ?disabled=${o.disabled?.[r]===!0}
-        @click=${d=>{r!==t&&i(r,d.currentTarget)}}>${a}</button>`})}
+        @click=${d=>{(r!==t||o.reselect===!0)&&i(r,d.currentTarget)}}>${a}</button>`})}
     </div>`}function Zx(e,t){let n=i=>Jt(i.value,i.def,i.set,o=>i.options.find(([r])=>r===o)?.[1]??o);return f`<div class="field seg-field pair">${Pe(e.label,n(e))}
     <div class="pair-row">
       ${gn(e.label,e.value,e.options,e.set,e)}
@@ -2520,7 +2520,7 @@ Click to change`} @click=${F}>
     .sym-name { font-size: 9px; line-height: 1.1; text-align: center; opacity: .8; overflow-wrap: anywhere; max-height: 22px; overflow: hidden; }
 `,uM=At`
     @media (prefers-reduced-motion: reduce) { .ent-box.needs { animation: none; } }
-`,nO=[oM,rM,aM,sM,lM,dM,cM,uM];var Qh="/pages";function sO(e){let t=e?.path??"";return t===Qh||t.startsWith(`${Qh}/`)}function pM(e,t,n=""){let i=e?.prefix??n.replace(/\/pages(\/.*)?$/,"");return t?`${i}${Qh}`:i}function lO(e,t){let n=pM(e,t,window.location.pathname);n===""||n===window.location.pathname||(history.pushState(null,"",n),window.dispatchEvent(new CustomEvent("location-changed",{detail:{replace:!1}})))}var tf;function dO(e){tf=e}function cO(){return tf?.dirty()??!1}function uO(){tf?.drop()}var ck,ef=!1;function hM(){return ck??=import("./page-editor-OGHKVVKZ.js").then(()=>{},e=>{throw ef=!0,e}),ck}function pO(e,t,n){return!e.user?.is_admin||dk(t).length===0?y:f`<button class="tb-btn tb-pages" title="The watch's pages, as Home Assistant keeps them"
+`,nO=[oM,rM,aM,sM,lM,dM,cM,uM];var Qh="/pages";function sO(e){let t=e?.path??"";return t===Qh||t.startsWith(`${Qh}/`)}function pM(e,t,n=""){let i=e?.prefix??n.replace(/\/pages(\/.*)?$/,"");return t?`${i}${Qh}`:i}function lO(e,t){let n=pM(e,t,window.location.pathname);n===""||n===window.location.pathname||(history.pushState(null,"",n),window.dispatchEvent(new CustomEvent("location-changed",{detail:{replace:!1}})))}var tf;function dO(e){tf=e}function cO(){return tf?.dirty()??!1}function uO(){tf?.drop()}var ck,ef=!1;function hM(){return ck??=import("./page-editor-D4BCNYIR.js").then(()=>{},e=>{throw ef=!0,e}),ck}function pO(e,t,n){return!e.user?.is_admin||dk(t).length===0?y:f`<button class="tb-btn tb-pages" title="The watch's pages, as Home Assistant keeps them"
     @click=${n}>${W("pages")}<span>Pages</span></button>`}function hO(e){let t=customElements.get("wa-page-editor")!==void 0;return!t&&!ef&&hM().then(e.onLoaded,e.onLoaded),f`<header class="wp-bar">
       ${e.menu?f`<button class="icon tb-icon tb-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
         @click=${e.onMenu}>${W("menu")}</button>`:y}

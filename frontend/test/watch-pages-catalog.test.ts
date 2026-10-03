@@ -16,9 +16,11 @@ import {
   watchCatalogEventIsNews,
   watchCatalogFromRecord,
   watchCatalogListedText,
+  watchCatalogReadMeansNone,
   watchCatalogSubtitle,
   watchCatalogWarning,
   watchLibraryTarget,
+  watchLibraryTileFallbackName,
 } from "../src/watch-pages/catalog.js";
 
 const BYTES = readFileSync(join(__dirname, "fixtures-catalog", "catalog.json"), "utf8");
@@ -113,26 +115,51 @@ describe("no catalog", () => {
 });
 
 describe("junk", () => {
-  it("skips every element without a string id and name, and ignores the rest", () => {
+  const A = "C3A0E000-0000-4000-8000-00000000000A";
+  const B = "C3A0E000-0000-4000-8000-00000000000B";
+  const S = "C3A0E000-0000-4000-8000-000000000005";
+  const U = "C3A0E000-0000-4000-8000-000000000006";
+
+  it("skips every element without a UUID string id and a string name, and ignores the rest", () => {
     const catalog = readWatchCatalog({
       httpActions: [
-        { id: "A", name: "Kept", hasReply: "yes", needsSetup: 1, icon: 3, url: "https://x" },
+        { id: A, name: "Kept", hasReply: "yes", needsSetup: 1, icon: 3, url: "https://x" },
         { id: "", name: "Blank id" },
         { id: 7, name: "Number id" },
-        { id: "B" },
+        { id: B },
         { name: "No id" },
         null,
         "C",
         ["D", "E"],
       ],
-      macros: { id: "M", name: "Not a list" },
-      statusPages: [{ id: "S", name: "", rows: -1 }, { id: "T", name: "T", rows: 2.5 }],
+      macros: { id: A, name: "Not a list" },
+      statusPages: [{ id: S, name: "", rows: -1 }, { id: U, name: "T", rows: 2.5 }],
       voice: { anything: true },
     });
-    expect(catalog.httpActions).toEqual([{ id: "A", name: "Kept", hasReply: false, needsSetup: false }]);
+    expect(catalog.httpActions).toEqual([{ id: A, name: "Kept", hasReply: false, needsSetup: false }]);
     expect(catalog.macros).toEqual([]);
     // An empty name is a name; a count that is no whole number is none.
-    expect(catalog.statusPages).toEqual([{ id: "S", name: "" }, { id: "T", name: "T" }]);
+    expect(catalog.statusPages).toEqual([{ id: S, name: "" }, { id: U, name: "T" }]);
+  });
+
+  it("skips an id that is no UUID, which no tile or slide could store", () => {
+    const catalog = readWatchCatalog({
+      httpActions: [{ id: "NOT-A-UUID", name: "Junk" }, { id: `${A}x`, name: "Long" }, { id: A, name: "Good" }],
+      macros: [{ id: "M", name: "M" }],
+      statusPages: [{ id: "00000000-0000-0000-0000-000000000001", name: "Lights" }],
+    });
+    expect(catalog.httpActions.map((a) => a.name)).toEqual(["Good"]);
+    expect(catalog.macros).toEqual([]);
+    expect(catalog.statusPages.map((p) => p.name)).toEqual(["Lights"]);
+  });
+
+  it("keeps the first of ids that differ only in case, in each list on its own", () => {
+    const catalog = readWatchCatalog({
+      httpActions: [{ id: A.toLowerCase(), name: "First" }, { id: A, name: "Second" }, { id: B, name: "Other" }],
+      macros: [{ id: A, name: "A macro may share an action's id" }],
+    });
+    expect(catalog.httpActions.map((a) => [a.id, a.name])).toEqual([[A.toLowerCase(), "First"], [B, "Other"]]);
+    expect(catalog.macros.map((m) => m.name)).toEqual(["A macro may share an action's id"]);
   });
 
   it("reads a document that is no object as an empty catalog", () => {
@@ -144,6 +171,18 @@ describe("junk", () => {
 
   it("says nothing of a time it cannot read", () => {
     expect(watchCatalogListedText(readWatchCatalog({}, { updatedAt: "not a time" }))).toBeUndefined();
+  });
+});
+
+describe("a read that fails", () => {
+  it("means no catalog only when the integration does not know the kind or the command", () => {
+    // What `watch_config/get` answers for a kind the store does not have.
+    expect(watchCatalogReadMeansNone({ code: "invalid", message: "kind must be one of behavior, pages" })).toBe(true);
+    expect(watchCatalogReadMeansNone({ code: "unknown_command", message: "Unknown command." })).toBe(true);
+    // A dropped socket or a refused login says nothing about the library.
+    for (const other of [{ code: "unavailable" }, { code: 3 }, new Error("connection lost"), undefined, "invalid"]) {
+      expect(watchCatalogReadMeansNone(other)).toBe(false);
+    }
   });
 });
 
@@ -171,5 +210,21 @@ describe("a tile's library target", () => {
     expect(watchLibraryTarget("status_page.Y")).toEqual({ kind: "statusPage", id: "Y" });
     expect(watchLibraryTarget("page.Y")).toBeUndefined();
     expect(watchLibraryTarget("light.desk")).toBeUndefined();
+  });
+
+  it("names a tile with no label as the watch does", () => {
+    const catalog = readWatchCatalog(DOCUMENT);
+    const action = catalog.httpActions[0]!;
+    const macro = catalog.macros[0]!;
+    const page = catalog.statusPages[0]!;
+    // An HTTP action tile is "Action", never the action's name.
+    expect(watchLibraryTileFallbackName(`http_action.${action.id}`, catalog)).toBe("Action");
+    expect(watchLibraryTileFallbackName(`macro.${macro.id.toLowerCase()}`, catalog)).toBe(macro.name);
+    expect(watchLibraryTileFallbackName(`status_page.${page.id}`, catalog)).toBe(page.name);
+    // Not listed, or no catalog.
+    expect(watchLibraryTileFallbackName("macro.C3A0E000-0000-4000-8000-0000000000FF", catalog)).toBe("Macro");
+    expect(watchLibraryTileFallbackName(`status_page.${page.id}`, undefined)).toBe("Status Page");
+    expect(watchLibraryTileFallbackName(`http_action.${action.id}`, undefined)).toBe("Action");
+    expect(watchLibraryTileFallbackName("light.desk", catalog)).toBeUndefined();
   });
 });

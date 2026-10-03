@@ -1,6 +1,6 @@
 {
   "name": "Page animation intensity",
-  "source": "WristAssistant/Views/PageEditorView.swift:16992",
+  "source": "WristAssistant/Views/PageEditorView.swift:16993",
   "page": {
     "backgroundBrightness": 0.6,
     "backgroundColor": "#000000",
