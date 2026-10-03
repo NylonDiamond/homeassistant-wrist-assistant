@@ -73,8 +73,8 @@ interface MergeCase {
 
 describe("merge case files", () => {
   it("are read from the folder", () => {
-    // The count after the music hub cases, so a sync that drops some fails.
-    expect(caseFiles.length).toBeGreaterThanOrEqual(55);
+    // The count after the smart page cases, so a sync that drops some fails.
+    expect(caseFiles.length).toBeGreaterThanOrEqual(64);
   });
 
   for (const file of caseFiles) {

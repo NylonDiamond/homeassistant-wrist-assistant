@@ -223,7 +223,10 @@ export function mergeWatchPagesByKey(
  * - A smart page's `dynamicConfig`, when both sides hold one, merges by key
  *   the same way, its `rules` are matched by `id` like tiles, each rule
  *   merges by key, and a rule's `tileStyle`, when both sides hold one, by
- *   key again (`mergeDynamicConfig`). A rule's lists (`entityIds`,
+ *   key again (`mergeDynamicConfig`); a `tileStyle` left with no key is
+ *   removed, as the phone's encoder removes it. A `dynamicConfig` both
+ *   sides added over a base without one merges against an empty one. A
+ *   rule's lists (`entityIds`,
  *   `resolvedEntityIds`, `deviceClassFilter`) are one value each.
  * - Every other value is one value, however deep: a page's `groups`, a
  *   tile's arrays, a `dynamicConfig` or `tileStyle` only one side holds.
@@ -410,6 +413,7 @@ function mergeObjectKey(
   local: JsonObject,
   server: JsonObject,
   inside?: (merged: JsonObject, base: JsonObject, local: JsonObject, server: JsonObject) => void,
+  dropEmpty = false,
 ): void {
   const l = present(own(local, key));
   const s = present(own(server, key));
@@ -418,7 +422,9 @@ function mergeObjectKey(
   const from = isJsonObject(b) ? b : {};
   const out = pickByKey(from, l, s, sameKeyValue);
   inside?.(out, from, l, s);
-  setOrRemove(merged, key, shareWhole(out, s, l));
+  // An object the merge left with no key is removed when the phone's
+  // encoder leaves it out (a rule's `tileStyle`).
+  setOrRemove(merged, key, dropEmpty && Object.keys(out).length === 0 ? undefined : shareWhole(out, s, l));
 }
 
 /** A smart page's `dynamicConfig` by key, its rules by id (`mergeRule`), in
@@ -430,10 +436,11 @@ function mergeDynamicConfig(merged: JsonObject, base: JsonObject, local: JsonObj
 }
 
 /** One rule held by both sides: each key by `mergeWatchPagesByKey`'s pick
- * (its lists one value each), and its `tileStyle` by key. */
+ * (its lists one value each), and its `tileStyle` by key; a `tileStyle`
+ * that merge leaves empty is removed, as the phone removes it. */
 function mergeRule(base: JsonObject, local: JsonObject, server: JsonObject): JsonObject {
   const merged = pickByKey(base, local, server, sameKeyValue);
-  mergeObjectKey(TILE_STYLE_KEY, merged, base, local, server);
+  mergeObjectKey(TILE_STYLE_KEY, merged, base, local, server, undefined, true);
   return shareWhole(merged, server, local);
 }
 

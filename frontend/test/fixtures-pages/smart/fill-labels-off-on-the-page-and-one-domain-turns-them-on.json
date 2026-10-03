@@ -1,0 +1,24 @@
+{
+  "name": "Labels off on the page: the light rule's showLabel true turns them on for lights; a switch style without showLabel and a fan rule without a style keep them off",
+  "config": {
+    "liveUpdates": false,
+    "pullToRefresh": true,
+    "refreshOnAppear": false,
+    "rules": [
+      {"domain": "light", "entityIds": [], "header": "none", "id": "97804FD2-3F06-404E-8B48-168A0FCA9169", "invertActive": false, "mode": "all", "tileStyle": {"showLabel": true}},
+      {"domain": "switch", "entityIds": [], "header": "none", "id": "544FB7C5-0C1C-4896-B449-B7D6A799EBF9", "invertActive": false, "mode": "all", "tileStyle": {"icon": "switch.2"}},
+      {"domain": "fan", "entityIds": [], "header": "none", "id": "1CF1A9A1-93CA-447B-A508-04E158AA7C25", "invertActive": false, "mode": "all"}
+    ],
+    "sortOrder": "domain",
+    "tileColSpan": 4,
+    "tileRowSpan": 3,
+    "tileShowLabel": false
+  },
+  "groups": [["light.example_desk"], ["switch.example_heater"], ["fan.example_ceiling"]],
+  "columns": 12,
+  "expected": [
+    {"animationIntensity": 1, "animationSize": 1, "animationSpeed": 1, "backgroundPattern": "none", "borderActiveOnly": true, "borderAnimation": "none", "borderAnimationIntensity": 1, "borderAnimationSize": 1, "borderAnimationSpeed": 1, "borderGlow": 0, "borderLineStyle": "solid", "borderStyle": "none", "borderThickness": "extraThin", "cameraDisplayMode": "icon", "cameraFillOffsetX": 0, "cameraFillOffsetY": 0, "colSpan": 4, "colorOpacity": 1, "effectActiveOnly": false, "entityId": "light.example_desk", "gridCol": 0, "gridRow": 0, "iconShadow": false, "iconTapAnimation": "replace", "labelFontWeight": "light", "labelShadow": true, "multiCamBorderColor": "FFFFFF", "multiCamBorderEnabled": false, "multiCamBorderThickness": "thin", "overlayColor": "#FFFFFF", "overlayIntensity": 1, "overlaySize": 1, "overlaySpeed": 1, "overlayStyle": "none", "patternOpacity": 1, "rowSpan": 3, "showAlbumArt": true, "showLabel": true, "stateBarBorder": false, "stateBarColorStyle": "Tile", "stateBarShadow": false, "stateBarStyle": "Top", "stateValueLabelStyle": "Plain", "statusTextShadow": true, "tileAnimation": "none"},
+    {"animationIntensity": 1, "animationSize": 1, "animationSpeed": 1, "backgroundPattern": "none", "borderActiveOnly": true, "borderAnimation": "none", "borderAnimationIntensity": 1, "borderAnimationSize": 1, "borderAnimationSpeed": 1, "borderGlow": 0, "borderLineStyle": "solid", "borderStyle": "none", "borderThickness": "extraThin", "cameraDisplayMode": "icon", "cameraFillOffsetX": 0, "cameraFillOffsetY": 0, "colSpan": 4, "colorOpacity": 1, "effectActiveOnly": false, "entityId": "switch.example_heater", "gridCol": 0, "gridRow": 3, "icon": "switch.2", "iconShadow": false, "iconTapAnimation": "replace", "labelFontWeight": "light", "labelShadow": true, "multiCamBorderColor": "FFFFFF", "multiCamBorderEnabled": false, "multiCamBorderThickness": "thin", "overlayColor": "#FFFFFF", "overlayIntensity": 1, "overlaySize": 1, "overlaySpeed": 1, "overlayStyle": "none", "patternOpacity": 1, "rowSpan": 3, "showAlbumArt": true, "showLabel": false, "stateBarBorder": false, "stateBarColorStyle": "Tile", "stateBarShadow": false, "stateBarStyle": "Top", "stateValueLabelStyle": "Plain", "statusTextShadow": true, "tileAnimation": "none"},
+    {"animationIntensity": 1, "animationSize": 1, "animationSpeed": 1, "backgroundPattern": "none", "borderActiveOnly": true, "borderAnimation": "none", "borderAnimationIntensity": 1, "borderAnimationSize": 1, "borderAnimationSpeed": 1, "borderGlow": 0, "borderLineStyle": "solid", "borderStyle": "none", "borderThickness": "extraThin", "cameraDisplayMode": "icon", "cameraFillOffsetX": 0, "cameraFillOffsetY": 0, "colSpan": 4, "colorOpacity": 1, "effectActiveOnly": false, "entityId": "fan.example_ceiling", "gridCol": 0, "gridRow": 6, "iconShadow": false, "iconTapAnimation": "replace", "labelFontWeight": "light", "labelShadow": true, "multiCamBorderColor": "FFFFFF", "multiCamBorderEnabled": false, "multiCamBorderThickness": "thin", "overlayColor": "#FFFFFF", "overlayIntensity": 1, "overlaySize": 1, "overlaySpeed": 1, "overlayStyle": "none", "patternOpacity": 1, "rowSpan": 3, "showAlbumArt": true, "showLabel": false, "stateBarBorder": false, "stateBarColorStyle": "Tile", "stateBarShadow": false, "stateBarStyle": "Top", "stateValueLabelStyle": "Plain", "statusTextShadow": true, "tileAnimation": "none"}
+  ]
+}

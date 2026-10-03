@@ -1,0 +1,67 @@
+{
+  "name": "On a smart page the phone renames the light rule's header and the server turns the switch rule's header into a line: rules merge by id, so both edits survive",
+  "base": {
+    "pages": [
+      {
+        "id": "5CAD61CA-4453-43F2-8733-CDBCF03CDAFC",
+        "name": "Active",
+        "items": [],
+        "dynamicConfig": {
+          "liveUpdates": false, "pullToRefresh": true, "refreshOnAppear": false, "sortOrder": "domain", "tileColSpan": 4, "tileRowSpan": 3, "tileShowLabel": true,
+          "rules": [
+            {"domain": "light", "entityIds": [], "header": "label", "headerLabel": "Lights", "id": "0FAF2494-16BC-438B-B1F6-D19E4BB8C2A2", "invertActive": false, "mode": "all", "resolvedEntityIds": ["light.example_desk", "light.example_porch"], "tileStyle": {"color": "#F5C26B", "icon": "lightbulb.fill"}},
+            {"domain": "switch", "entityIds": [], "header": "label", "headerLabel": "Switches", "id": "2FE1EC94-0213-423B-B0BA-AAD5A18E1B25", "invertActive": false, "mode": "all", "resolvedEntityIds": ["switch.example_heater"], "tileStyle": {"color": "#7FB2F0", "icon": "switch.2"}}
+          ]
+        }
+      }
+    ]
+  },
+  "phone": {
+    "pages": [
+      {
+        "id": "5CAD61CA-4453-43F2-8733-CDBCF03CDAFC",
+        "name": "Active",
+        "items": [],
+        "dynamicConfig": {
+          "liveUpdates": false, "pullToRefresh": true, "refreshOnAppear": false, "sortOrder": "domain", "tileColSpan": 4, "tileRowSpan": 3, "tileShowLabel": true,
+          "rules": [
+            {"domain": "light", "entityIds": [], "header": "label", "headerLabel": "Lamps", "id": "0FAF2494-16BC-438B-B1F6-D19E4BB8C2A2", "invertActive": false, "mode": "all", "resolvedEntityIds": ["light.example_desk", "light.example_porch"], "tileStyle": {"color": "#F5C26B", "icon": "lightbulb.fill"}},
+            {"domain": "switch", "entityIds": [], "header": "label", "headerLabel": "Switches", "id": "2FE1EC94-0213-423B-B0BA-AAD5A18E1B25", "invertActive": false, "mode": "all", "resolvedEntityIds": ["switch.example_heater"], "tileStyle": {"color": "#7FB2F0", "icon": "switch.2"}}
+          ]
+        }
+      }
+    ]
+  },
+  "server": {
+    "pages": [
+      {
+        "id": "5CAD61CA-4453-43F2-8733-CDBCF03CDAFC",
+        "name": "Active",
+        "items": [],
+        "dynamicConfig": {
+          "liveUpdates": false, "pullToRefresh": true, "refreshOnAppear": false, "sortOrder": "domain", "tileColSpan": 4, "tileRowSpan": 3, "tileShowLabel": true,
+          "rules": [
+            {"domain": "light", "entityIds": [], "header": "label", "headerLabel": "Lights", "id": "0FAF2494-16BC-438B-B1F6-D19E4BB8C2A2", "invertActive": false, "mode": "all", "resolvedEntityIds": ["light.example_desk", "light.example_porch"], "tileStyle": {"color": "#F5C26B", "icon": "lightbulb.fill"}},
+            {"domain": "switch", "entityIds": [], "header": "line", "headerLabel": "Switches", "id": "2FE1EC94-0213-423B-B0BA-AAD5A18E1B25", "invertActive": false, "mode": "all", "resolvedEntityIds": ["switch.example_heater"], "tileStyle": {"color": "#7FB2F0", "icon": "switch.2"}}
+          ]
+        }
+      }
+    ]
+  },
+  "expected": {
+    "pages": [
+      {
+        "id": "5CAD61CA-4453-43F2-8733-CDBCF03CDAFC",
+        "name": "Active",
+        "items": [],
+        "dynamicConfig": {
+          "liveUpdates": false, "pullToRefresh": true, "refreshOnAppear": false, "sortOrder": "domain", "tileColSpan": 4, "tileRowSpan": 3, "tileShowLabel": true,
+          "rules": [
+            {"domain": "light", "entityIds": [], "header": "label", "headerLabel": "Lamps", "id": "0FAF2494-16BC-438B-B1F6-D19E4BB8C2A2", "invertActive": false, "mode": "all", "resolvedEntityIds": ["light.example_desk", "light.example_porch"], "tileStyle": {"color": "#F5C26B", "icon": "lightbulb.fill"}},
+            {"domain": "switch", "entityIds": [], "header": "line", "headerLabel": "Switches", "id": "2FE1EC94-0213-423B-B0BA-AAD5A18E1B25", "invertActive": false, "mode": "all", "resolvedEntityIds": ["switch.example_heater"], "tileStyle": {"color": "#7FB2F0", "icon": "switch.2"}}
+          ]
+        }
+      }
+    ]
+  }
+}

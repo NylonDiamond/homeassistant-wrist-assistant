@@ -1,0 +1,18 @@
+{
+  "name": "No active entities: an empty groups list gives no tiles, not even a header",
+  "config": {
+    "liveUpdates": false,
+    "pullToRefresh": true,
+    "refreshOnAppear": false,
+    "rules": [
+      {"domain": "light", "entityIds": [], "header": "label", "headerLabel": "Lights", "id": "6C0DF15E-38E6-4442-98DB-EFB6026ED079", "invertActive": false, "mode": "all"}
+    ],
+    "sortOrder": "domain",
+    "tileColSpan": 4,
+    "tileRowSpan": 3,
+    "tileShowLabel": true
+  },
+  "groups": [],
+  "columns": 12,
+  "expected": []
+}

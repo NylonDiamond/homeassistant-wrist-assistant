@@ -1,0 +1,63 @@
+{
+  "name": "Both sides resolve the light rule, each finding a different new light, and the server also turns its header into a line: resolvedEntityIds is one value, so the phone's list wins, and the server's header stays",
+  "base": {
+    "pages": [
+      {
+        "id": "5CAD61CA-4453-43F2-8733-CDBCF03CDAFC",
+        "name": "Active",
+        "items": [],
+        "dynamicConfig": {
+          "liveUpdates": false, "pullToRefresh": true, "refreshOnAppear": false, "sortOrder": "domain", "tileColSpan": 4, "tileRowSpan": 3, "tileShowLabel": true,
+          "rules": [
+            {"domain": "light", "entityIds": [], "header": "label", "headerLabel": "Lights", "id": "0FAF2494-16BC-438B-B1F6-D19E4BB8C2A2", "invertActive": false, "mode": "all", "resolvedEntityIds": ["light.example_desk", "light.example_porch"], "tileStyle": {"color": "#F5C26B", "icon": "lightbulb.fill"}}
+          ]
+        }
+      }
+    ]
+  },
+  "phone": {
+    "pages": [
+      {
+        "id": "5CAD61CA-4453-43F2-8733-CDBCF03CDAFC",
+        "name": "Active",
+        "items": [],
+        "dynamicConfig": {
+          "liveUpdates": false, "pullToRefresh": true, "refreshOnAppear": false, "sortOrder": "domain", "tileColSpan": 4, "tileRowSpan": 3, "tileShowLabel": true,
+          "rules": [
+            {"domain": "light", "entityIds": [], "header": "label", "headerLabel": "Lights", "id": "0FAF2494-16BC-438B-B1F6-D19E4BB8C2A2", "invertActive": false, "mode": "all", "resolvedEntityIds": ["light.example_desk", "light.example_kitchen", "light.example_porch"], "tileStyle": {"color": "#F5C26B", "icon": "lightbulb.fill"}}
+          ]
+        }
+      }
+    ]
+  },
+  "server": {
+    "pages": [
+      {
+        "id": "5CAD61CA-4453-43F2-8733-CDBCF03CDAFC",
+        "name": "Active",
+        "items": [],
+        "dynamicConfig": {
+          "liveUpdates": false, "pullToRefresh": true, "refreshOnAppear": false, "sortOrder": "domain", "tileColSpan": 4, "tileRowSpan": 3, "tileShowLabel": true,
+          "rules": [
+            {"domain": "light", "entityIds": [], "header": "line", "headerLabel": "Lights", "id": "0FAF2494-16BC-438B-B1F6-D19E4BB8C2A2", "invertActive": false, "mode": "all", "resolvedEntityIds": ["light.example_desk", "light.example_garden", "light.example_porch"], "tileStyle": {"color": "#F5C26B", "icon": "lightbulb.fill"}}
+          ]
+        }
+      }
+    ]
+  },
+  "expected": {
+    "pages": [
+      {
+        "id": "5CAD61CA-4453-43F2-8733-CDBCF03CDAFC",
+        "name": "Active",
+        "items": [],
+        "dynamicConfig": {
+          "liveUpdates": false, "pullToRefresh": true, "refreshOnAppear": false, "sortOrder": "domain", "tileColSpan": 4, "tileRowSpan": 3, "tileShowLabel": true,
+          "rules": [
+            {"domain": "light", "entityIds": [], "header": "line", "headerLabel": "Lights", "id": "0FAF2494-16BC-438B-B1F6-D19E4BB8C2A2", "invertActive": false, "mode": "all", "resolvedEntityIds": ["light.example_desk", "light.example_kitchen", "light.example_porch"], "tileStyle": {"color": "#F5C26B", "icon": "lightbulb.fill"}}
+          ]
+        }
+      }
+    ]
+  }
+}

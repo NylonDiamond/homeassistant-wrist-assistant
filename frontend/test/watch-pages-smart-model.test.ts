@@ -3,10 +3,8 @@
 // samples of `tile-smart.json`, and beyond them the readers, every writer of
 // the Page card and the Rules card, the stand-in tile for the per-domain
 // style, the resolve and the save step, and the watch's fill (active test,
-// groups, layout, title and words).
-//
-// TODO(3f batch 3): the fill cases (`fixtures-pages/smart/fill-*.json`) are
-// not written yet; replay them here when they land.
+// groups, layout, title and words). The fill cases
+// (`fixtures-pages/smart/fill-*.json`) are replayed through the layout.
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -16,6 +14,7 @@ import type { HassEntityState } from "../src/ha-api.js";
 import type { WatchPage, WatchPagesDocument } from "../src/watch-pages/model.js";
 import { setWatchTileBorderStyle, resetWatchTileTask } from "../src/watch-pages/styling-model.js";
 import { setWatchTileLabel, setWatchTileShowLabel } from "../src/watch-pages/tile-settings-model.js";
+import { watchFreshTile } from "../src/watch-pages/tile-new.js";
 import {
   WATCH_DOMAIN_TILE_STYLE_KEYS,
   WATCH_SMART,
@@ -323,6 +322,52 @@ describe("smart settings case files written by the phone", () => {
   it("cover every writer", () => {
     expect(opsRun.size).toBeGreaterThanOrEqual(22);
   });
+});
+
+/** A fill case: a config and the watch's groups in, the synthetic tiles
+ * out, each as the phone encodes a `GridItemConfig` (every key it writes
+ * for a fresh tile) and without `id` (the watch's are random). */
+interface FillCase {
+  name: string;
+  config: Json;
+  groups: string[][];
+  columns: number;
+  expected: Json[];
+}
+
+const fillDir = join(__dirname, "fixtures-pages", "smart");
+const fillFiles = existsSync(fillDir)
+  ? readdirSync(fillDir)
+      .filter((f) => f.startsWith("fill-") && f.endsWith(".json"))
+      .sort()
+  : [];
+
+describe("fill case files written by the phone", () => {
+  it("are all here", () => {
+    expect(fillFiles.length).toBeGreaterThanOrEqual(10);
+  });
+
+  for (const file of fillFiles) {
+    const c = JSON.parse(readFileSync(join(fillDir, file), "utf8")) as FillCase;
+    it(`${file}: ${c.name}`, () => {
+      const config = readSmartConfig({ id: PAGE, dynamicConfig: deepFreeze(structuredClone(c.config)) } as WatchPage)!;
+      const groups = c.groups.map((ids) => ({ ruleIndex: config.rules.findIndex((r) => r.domain === ids[0]?.split(".")[0]), entityIds: ids }));
+      const items = smartPageLayout(config, groups, c.columns);
+      expect(items.length).toBe(c.expected.length);
+      items.forEach((item, i) => {
+        const expected = c.expected[i]!;
+        const { id, ...ours } = item as Json;
+        expect(typeof id).toBe("string");
+        // Every key the port writes is the phone's, with its value.
+        expect(ours, `item ${i}`).toEqual(Object.fromEntries(Object.keys(ours).map((k) => [k, expected[k]])));
+        // Every other key the phone wrote is what a fresh tile holds anyway.
+        const fresh = watchFreshTile({});
+        for (const key of Object.keys(expected).filter((k) => !Object.hasOwn(ours, k))) {
+          expect(fresh[key], `item ${i} ${key}`).toEqual(expected[key]);
+        }
+      });
+    });
+  }
 });
 
 // ── readers ──────────────────────────────────────────────────────────────

@@ -1,0 +1,71 @@
+{
+  "name": "The phone moves the lock rule first while the server gives the switch header a glow: the phone's rule order and the server's glow both stay",
+  "base": {
+    "pages": [
+      {
+        "id": "5CAD61CA-4453-43F2-8733-CDBCF03CDAFC",
+        "name": "Active",
+        "items": [],
+        "dynamicConfig": {
+          "liveUpdates": false, "pullToRefresh": true, "refreshOnAppear": false, "sortOrder": "domain", "tileColSpan": 4, "tileRowSpan": 3, "tileShowLabel": true,
+          "rules": [
+            {"domain": "light", "entityIds": [], "header": "label", "headerLabel": "Lights", "id": "0FAF2494-16BC-438B-B1F6-D19E4BB8C2A2", "invertActive": false, "mode": "all", "resolvedEntityIds": ["light.example_desk", "light.example_porch"], "tileStyle": {"color": "#F5C26B", "icon": "lightbulb.fill"}},
+            {"domain": "switch", "entityIds": [], "header": "label", "headerLabel": "Switches", "id": "2FE1EC94-0213-423B-B0BA-AAD5A18E1B25", "invertActive": false, "mode": "all", "resolvedEntityIds": ["switch.example_heater"], "tileStyle": {"color": "#7FB2F0", "icon": "switch.2"}},
+            {"domain": "lock", "entityIds": [], "header": "label", "headerLabel": "Locks", "id": "31E5F6EA-DBEE-47EF-A38C-A5C2E129F90B", "invertActive": false, "mode": "all", "resolvedEntityIds": ["lock.example_front"], "tileStyle": {"color": "#E57373", "icon": "lock.fill"}}
+          ]
+        }
+      }
+    ]
+  },
+  "phone": {
+    "pages": [
+      {
+        "id": "5CAD61CA-4453-43F2-8733-CDBCF03CDAFC",
+        "name": "Active",
+        "items": [],
+        "dynamicConfig": {
+          "liveUpdates": false, "pullToRefresh": true, "refreshOnAppear": false, "sortOrder": "domain", "tileColSpan": 4, "tileRowSpan": 3, "tileShowLabel": true,
+          "rules": [
+            {"domain": "lock", "entityIds": [], "header": "label", "headerLabel": "Locks", "id": "31E5F6EA-DBEE-47EF-A38C-A5C2E129F90B", "invertActive": false, "mode": "all", "resolvedEntityIds": ["lock.example_front"], "tileStyle": {"color": "#E57373", "icon": "lock.fill"}},
+            {"domain": "light", "entityIds": [], "header": "label", "headerLabel": "Lights", "id": "0FAF2494-16BC-438B-B1F6-D19E4BB8C2A2", "invertActive": false, "mode": "all", "resolvedEntityIds": ["light.example_desk", "light.example_porch"], "tileStyle": {"color": "#F5C26B", "icon": "lightbulb.fill"}},
+            {"domain": "switch", "entityIds": [], "header": "label", "headerLabel": "Switches", "id": "2FE1EC94-0213-423B-B0BA-AAD5A18E1B25", "invertActive": false, "mode": "all", "resolvedEntityIds": ["switch.example_heater"], "tileStyle": {"color": "#7FB2F0", "icon": "switch.2"}}
+          ]
+        }
+      }
+    ]
+  },
+  "server": {
+    "pages": [
+      {
+        "id": "5CAD61CA-4453-43F2-8733-CDBCF03CDAFC",
+        "name": "Active",
+        "items": [],
+        "dynamicConfig": {
+          "liveUpdates": false, "pullToRefresh": true, "refreshOnAppear": false, "sortOrder": "domain", "tileColSpan": 4, "tileRowSpan": 3, "tileShowLabel": true,
+          "rules": [
+            {"domain": "light", "entityIds": [], "header": "label", "headerLabel": "Lights", "id": "0FAF2494-16BC-438B-B1F6-D19E4BB8C2A2", "invertActive": false, "mode": "all", "resolvedEntityIds": ["light.example_desk", "light.example_porch"], "tileStyle": {"color": "#F5C26B", "icon": "lightbulb.fill"}},
+            {"domain": "switch", "entityIds": [], "header": "label", "headerGlow": 0.5, "headerLabel": "Switches", "id": "2FE1EC94-0213-423B-B0BA-AAD5A18E1B25", "invertActive": false, "mode": "all", "resolvedEntityIds": ["switch.example_heater"], "tileStyle": {"color": "#7FB2F0", "icon": "switch.2"}},
+            {"domain": "lock", "entityIds": [], "header": "label", "headerLabel": "Locks", "id": "31E5F6EA-DBEE-47EF-A38C-A5C2E129F90B", "invertActive": false, "mode": "all", "resolvedEntityIds": ["lock.example_front"], "tileStyle": {"color": "#E57373", "icon": "lock.fill"}}
+          ]
+        }
+      }
+    ]
+  },
+  "expected": {
+    "pages": [
+      {
+        "id": "5CAD61CA-4453-43F2-8733-CDBCF03CDAFC",
+        "name": "Active",
+        "items": [],
+        "dynamicConfig": {
+          "liveUpdates": false, "pullToRefresh": true, "refreshOnAppear": false, "sortOrder": "domain", "tileColSpan": 4, "tileRowSpan": 3, "tileShowLabel": true,
+          "rules": [
+            {"domain": "lock", "entityIds": [], "header": "label", "headerLabel": "Locks", "id": "31E5F6EA-DBEE-47EF-A38C-A5C2E129F90B", "invertActive": false, "mode": "all", "resolvedEntityIds": ["lock.example_front"], "tileStyle": {"color": "#E57373", "icon": "lock.fill"}},
+            {"domain": "light", "entityIds": [], "header": "label", "headerLabel": "Lights", "id": "0FAF2494-16BC-438B-B1F6-D19E4BB8C2A2", "invertActive": false, "mode": "all", "resolvedEntityIds": ["light.example_desk", "light.example_porch"], "tileStyle": {"color": "#F5C26B", "icon": "lightbulb.fill"}},
+            {"domain": "switch", "entityIds": [], "header": "label", "headerGlow": 0.5, "headerLabel": "Switches", "id": "2FE1EC94-0213-423B-B0BA-AAD5A18E1B25", "invertActive": false, "mode": "all", "resolvedEntityIds": ["switch.example_heater"], "tileStyle": {"color": "#7FB2F0", "icon": "switch.2"}}
+          ]
+        }
+      }
+    ]
+  }
+}

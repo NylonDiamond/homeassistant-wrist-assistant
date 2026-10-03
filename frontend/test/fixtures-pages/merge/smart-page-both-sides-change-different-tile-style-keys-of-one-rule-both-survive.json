@@ -1,0 +1,63 @@
+{
+  "name": "The phone recolors the light rule's tiles and the server gives them a line border: a rule's tileStyle merges by key, so the phone's color and the server's border both survive",
+  "base": {
+    "pages": [
+      {
+        "id": "5CAD61CA-4453-43F2-8733-CDBCF03CDAFC",
+        "name": "Active",
+        "items": [],
+        "dynamicConfig": {
+          "liveUpdates": false, "pullToRefresh": true, "refreshOnAppear": false, "sortOrder": "domain", "tileColSpan": 4, "tileRowSpan": 3, "tileShowLabel": true,
+          "rules": [
+            {"domain": "light", "entityIds": [], "header": "label", "headerLabel": "Lights", "id": "0FAF2494-16BC-438B-B1F6-D19E4BB8C2A2", "invertActive": false, "mode": "all", "resolvedEntityIds": ["light.example_desk", "light.example_porch"], "tileStyle": {"color": "#F5C26B", "icon": "lightbulb.fill"}}
+          ]
+        }
+      }
+    ]
+  },
+  "phone": {
+    "pages": [
+      {
+        "id": "5CAD61CA-4453-43F2-8733-CDBCF03CDAFC",
+        "name": "Active",
+        "items": [],
+        "dynamicConfig": {
+          "liveUpdates": false, "pullToRefresh": true, "refreshOnAppear": false, "sortOrder": "domain", "tileColSpan": 4, "tileRowSpan": 3, "tileShowLabel": true,
+          "rules": [
+            {"domain": "light", "entityIds": [], "header": "label", "headerLabel": "Lights", "id": "0FAF2494-16BC-438B-B1F6-D19E4BB8C2A2", "invertActive": false, "mode": "all", "resolvedEntityIds": ["light.example_desk", "light.example_porch"], "tileStyle": {"color": "#FFD54F", "icon": "lightbulb.fill"}}
+          ]
+        }
+      }
+    ]
+  },
+  "server": {
+    "pages": [
+      {
+        "id": "5CAD61CA-4453-43F2-8733-CDBCF03CDAFC",
+        "name": "Active",
+        "items": [],
+        "dynamicConfig": {
+          "liveUpdates": false, "pullToRefresh": true, "refreshOnAppear": false, "sortOrder": "domain", "tileColSpan": 4, "tileRowSpan": 3, "tileShowLabel": true,
+          "rules": [
+            {"domain": "light", "entityIds": [], "header": "label", "headerLabel": "Lights", "id": "0FAF2494-16BC-438B-B1F6-D19E4BB8C2A2", "invertActive": false, "mode": "all", "resolvedEntityIds": ["light.example_desk", "light.example_porch"], "tileStyle": {"borderStyle": "line", "color": "#F5C26B", "icon": "lightbulb.fill"}}
+          ]
+        }
+      }
+    ]
+  },
+  "expected": {
+    "pages": [
+      {
+        "id": "5CAD61CA-4453-43F2-8733-CDBCF03CDAFC",
+        "name": "Active",
+        "items": [],
+        "dynamicConfig": {
+          "liveUpdates": false, "pullToRefresh": true, "refreshOnAppear": false, "sortOrder": "domain", "tileColSpan": 4, "tileRowSpan": 3, "tileShowLabel": true,
+          "rules": [
+            {"domain": "light", "entityIds": [], "header": "label", "headerLabel": "Lights", "id": "0FAF2494-16BC-438B-B1F6-D19E4BB8C2A2", "invertActive": false, "mode": "all", "resolvedEntityIds": ["light.example_desk", "light.example_porch"], "tileStyle": {"borderStyle": "line", "color": "#FFD54F", "icon": "lightbulb.fill"}}
+          ]
+        }
+      }
+    ]
+  }
+}

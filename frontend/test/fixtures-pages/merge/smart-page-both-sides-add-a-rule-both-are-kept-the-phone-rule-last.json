@@ -1,0 +1,67 @@
+{
+  "name": "The phone adds a fan rule and the server a cover rule to one smart page: both are kept, in the server's order with the rule only the phone added last, as for tiles",
+  "base": {
+    "pages": [
+      {
+        "id": "5CAD61CA-4453-43F2-8733-CDBCF03CDAFC",
+        "name": "Active",
+        "items": [],
+        "dynamicConfig": {
+          "liveUpdates": false, "pullToRefresh": true, "refreshOnAppear": false, "sortOrder": "domain", "tileColSpan": 4, "tileRowSpan": 3, "tileShowLabel": true,
+          "rules": [
+            {"domain": "light", "entityIds": [], "header": "label", "headerLabel": "Lights", "id": "0FAF2494-16BC-438B-B1F6-D19E4BB8C2A2", "invertActive": false, "mode": "all", "resolvedEntityIds": ["light.example_desk", "light.example_porch"], "tileStyle": {"color": "#F5C26B", "icon": "lightbulb.fill"}}
+          ]
+        }
+      }
+    ]
+  },
+  "phone": {
+    "pages": [
+      {
+        "id": "5CAD61CA-4453-43F2-8733-CDBCF03CDAFC",
+        "name": "Active",
+        "items": [],
+        "dynamicConfig": {
+          "liveUpdates": false, "pullToRefresh": true, "refreshOnAppear": false, "sortOrder": "domain", "tileColSpan": 4, "tileRowSpan": 3, "tileShowLabel": true,
+          "rules": [
+            {"domain": "light", "entityIds": [], "header": "label", "headerLabel": "Lights", "id": "0FAF2494-16BC-438B-B1F6-D19E4BB8C2A2", "invertActive": false, "mode": "all", "resolvedEntityIds": ["light.example_desk", "light.example_porch"], "tileStyle": {"color": "#F5C26B", "icon": "lightbulb.fill"}},
+            {"domain": "fan", "entityIds": [], "header": "label", "headerLabel": "Fans", "id": "F2AA20EB-1FC8-4F73-86F0-3835B6642AD7", "invertActive": false, "mode": "all", "resolvedEntityIds": ["fan.example_ceiling"], "tileStyle": {"color": "#80CBC4", "icon": "fan.fill"}}
+          ]
+        }
+      }
+    ]
+  },
+  "server": {
+    "pages": [
+      {
+        "id": "5CAD61CA-4453-43F2-8733-CDBCF03CDAFC",
+        "name": "Active",
+        "items": [],
+        "dynamicConfig": {
+          "liveUpdates": false, "pullToRefresh": true, "refreshOnAppear": false, "sortOrder": "domain", "tileColSpan": 4, "tileRowSpan": 3, "tileShowLabel": true,
+          "rules": [
+            {"domain": "light", "entityIds": [], "header": "label", "headerLabel": "Lights", "id": "0FAF2494-16BC-438B-B1F6-D19E4BB8C2A2", "invertActive": false, "mode": "all", "resolvedEntityIds": ["light.example_desk", "light.example_porch"], "tileStyle": {"color": "#F5C26B", "icon": "lightbulb.fill"}},
+            {"domain": "cover", "entityIds": [], "header": "label", "headerLabel": "Covers", "id": "C68694AF-4077-475E-8CAE-FF247FC87D69", "invertActive": false, "mode": "all", "resolvedEntityIds": ["cover.example_blind"], "tileStyle": {"color": "#4FC3F7", "icon": "blinds.vertical.open"}}
+          ]
+        }
+      }
+    ]
+  },
+  "expected": {
+    "pages": [
+      {
+        "id": "5CAD61CA-4453-43F2-8733-CDBCF03CDAFC",
+        "name": "Active",
+        "items": [],
+        "dynamicConfig": {
+          "liveUpdates": false, "pullToRefresh": true, "refreshOnAppear": false, "sortOrder": "domain", "tileColSpan": 4, "tileRowSpan": 3, "tileShowLabel": true,
+          "rules": [
+            {"domain": "light", "entityIds": [], "header": "label", "headerLabel": "Lights", "id": "0FAF2494-16BC-438B-B1F6-D19E4BB8C2A2", "invertActive": false, "mode": "all", "resolvedEntityIds": ["light.example_desk", "light.example_porch"], "tileStyle": {"color": "#F5C26B", "icon": "lightbulb.fill"}},
+            {"domain": "cover", "entityIds": [], "header": "label", "headerLabel": "Covers", "id": "C68694AF-4077-475E-8CAE-FF247FC87D69", "invertActive": false, "mode": "all", "resolvedEntityIds": ["cover.example_blind"], "tileStyle": {"color": "#4FC3F7", "icon": "blinds.vertical.open"}},
+            {"domain": "fan", "entityIds": [], "header": "label", "headerLabel": "Fans", "id": "F2AA20EB-1FC8-4F73-86F0-3835B6642AD7", "invertActive": false, "mode": "all", "resolvedEntityIds": ["fan.example_ceiling"], "tileStyle": {"color": "#80CBC4", "icon": "fan.fill"}}
+          ]
+        }
+      }
+    ]
+  }
+}

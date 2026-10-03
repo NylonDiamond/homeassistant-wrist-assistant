@@ -1,5 +1,5 @@
 {
-  "name": "A page's groups and dynamicConfig are not merged inside: the phone changed one group, so its whole groups list wins over the server's added group; the server changed dynamicConfig, so its whole dynamicConfig wins",
+  "name": "A page's groups are not merged inside, its dynamicConfig is: the phone changed one group, so its whole groups list wins over the server's added group; the phone widened the tiles and the server sorted alphabetically, so dynamicConfig keeps both",
   "base": {
     "pages": [
       {
@@ -9,7 +9,7 @@
         "groups": [
           {"id": "576DE9E8-A3FA-48DB-B654-B15C7F824E04", "overlayStyle": "none", "overlayColor": "#FFFFFF"}
         ],
-        "dynamicConfig": {"tileColSpan": 4, "tileRowSpan": 3, "sortOrder": "domain", "liveUpdates": false}
+        "dynamicConfig": {"liveUpdates": false, "pullToRefresh": true, "refreshOnAppear": false, "rules": [], "sortOrder": "domain", "tileColSpan": 4, "tileRowSpan": 3, "tileShowLabel": true}
       }
     ]
   },
@@ -22,7 +22,7 @@
         "groups": [
           {"id": "576DE9E8-A3FA-48DB-B654-B15C7F824E04", "overlayStyle": "none", "overlayColor": "#FF9800"}
         ],
-        "dynamicConfig": {"tileColSpan": 4, "tileRowSpan": 3, "sortOrder": "domain", "liveUpdates": false}
+        "dynamicConfig": {"liveUpdates": false, "pullToRefresh": true, "refreshOnAppear": false, "rules": [], "sortOrder": "domain", "tileColSpan": 6, "tileRowSpan": 3, "tileShowLabel": true}
       }
     ]
   },
@@ -36,7 +36,7 @@
           {"id": "576DE9E8-A3FA-48DB-B654-B15C7F824E04", "overlayStyle": "none", "overlayColor": "#FFFFFF"},
           {"id": "6B88F7B9-3B31-49BC-ABA9-4C03586AF89B", "overlayStyle": "none", "overlayColor": "#FFFFFF"}
         ],
-        "dynamicConfig": {"tileColSpan": 6, "tileRowSpan": 3, "sortOrder": "name", "liveUpdates": false}
+        "dynamicConfig": {"liveUpdates": false, "pullToRefresh": true, "refreshOnAppear": false, "rules": [], "sortOrder": "alphabetical", "tileColSpan": 4, "tileRowSpan": 3, "tileShowLabel": true}
       }
     ]
   },
@@ -49,7 +49,7 @@
         "groups": [
           {"id": "576DE9E8-A3FA-48DB-B654-B15C7F824E04", "overlayStyle": "none", "overlayColor": "#FF9800"}
         ],
-        "dynamicConfig": {"tileColSpan": 6, "tileRowSpan": 3, "sortOrder": "name", "liveUpdates": false}
+        "dynamicConfig": {"liveUpdates": false, "pullToRefresh": true, "refreshOnAppear": false, "rules": [], "sortOrder": "alphabetical", "tileColSpan": 6, "tileRowSpan": 3, "tileShowLabel": true}
       }
     ]
   }
