@@ -23,6 +23,8 @@ import {
   PAIR_ALREADY_PAIRED_TEXT,
   PAIR_NOT_FOUND_TEXT,
   PAIR_OTHER_USER_TEXT,
+  PAIR_REMOTE_WARNING_TEXT,
+  isPrivateAddress,
   normalizeColor,
   normalizePairCode,
   optionsFor,
@@ -30,6 +32,8 @@ import {
   pairErrorText,
   pairLookupLine,
   pairLookupWarnings,
+  pairRemoteWarning,
+  pairRequestLine,
   pairedText,
   sectionRuns,
   settingValue,
@@ -382,5 +386,40 @@ describe("pairing a watch by its code", () => {
       .toBe("Could not look up that code: Integration not ready");
     expect(pairErrorText({ code: "invalid_secret", message: "secret must be 32 bytes" }, "confirm"))
       .toBe("Could not pair: secret must be 32 bytes");
+  });
+
+  it("says when and from where the watch asked", () => {
+    expect(pairRequestLine({ age_seconds: 12, remote: "172.16.43.50" })).toBe("Requested 12 s ago from 172.16.43.50");
+    expect(pairRequestLine({ age_seconds: 12, remote: null })).toBe("Requested 12 s ago");
+    expect(pairRequestLine({ age_seconds: 0, remote: "" })).toBe("Requested 0 s ago");
+    expect(pairRequestLine({ age_seconds: 90, remote: null })).toBe("Requested 90 s ago");
+    expect(pairRequestLine({ age_seconds: 91, remote: null })).toBe("Requested 1 min ago");
+    expect(pairRequestLine({ age_seconds: 150, remote: "10.0.0.4" })).toBe("Requested 2 min ago from 10.0.0.4");
+    expect(pairRequestLine({ age_seconds: 599, remote: null })).toBe("Requested 9 min ago");
+    expect(pairRequestLine({ age_seconds: -3, remote: null })).toBe("Requested 0 s ago");
+    expect(pairRequestLine({ remote: "192.168.1.9" })).toBe("Requested from 192.168.1.9");
+    expect(pairRequestLine({})).toBeUndefined();
+    expect(pairRequestLine({ remote: null })).toBeUndefined();
+  });
+
+  it("tells a home network address from an outside one", () => {
+    for (const a of ["10.1.2.3", "172.16.0.1", "172.31.255.254", "192.168.1.1", "127.0.0.1", "::1", "fe80::1",
+      "FE80::abcd", "fc00::1", "fd12:3456::1", "::ffff:192.168.1.5", "[fd00::2]"]) {
+      expect(isPrivateAddress(a), a).toBe(true);
+    }
+    for (const a of ["8.8.8.8", "172.15.0.1", "172.32.0.1", "192.169.0.1", "11.0.0.1", "2001:db8::1", "::ffff:8.8.8.8"]) {
+      expect(isPrivateAddress(a), a).toBe(false);
+    }
+  });
+
+  it("warns about a request from outside the network, and says nothing of an unknown one", () => {
+    expect(pairRemoteWarning("203.0.113.7")).toBe(PAIR_REMOTE_WARNING_TEXT);
+    expect(pairRemoteWarning("2001:db8::1")).toBe(PAIR_REMOTE_WARNING_TEXT);
+    expect(pairRemoteWarning("172.16.43.50")).toBeUndefined();
+    expect(pairRemoteWarning("fd00::5")).toBeUndefined();
+    expect(pairRemoteWarning(null)).toBeUndefined();
+    expect(pairRemoteWarning(undefined)).toBeUndefined();
+    expect(pairRemoteWarning("")).toBeUndefined();
+    expect(PAIR_REMOTE_WARNING_TEXT).toBe("The request came from outside your network. Only pair a watch you expect.");
   });
 });

@@ -338,6 +338,50 @@ export function pairLookupWarnings(lookup: PairLookupFacts): string[] {
   return out;
 }
 
+/** The warning under a request from an address outside the home network. */
+export const PAIR_REMOTE_WARNING_TEXT = "The request came from outside your network. Only pair a watch you expect.";
+
+/** When and from where the watch asked: "Requested 12 s ago from
+ * 172.16.43.50", or "Requested 2 min ago" past 90 seconds and without an
+ * address. Undefined when the reply carries neither, as an integration from
+ * before these fields sends. */
+export function pairRequestLine(lookup: { remote?: string | null; age_seconds?: number | null }): string | undefined {
+  const remote = present(lookup.remote);
+  const age = lookup.age_seconds;
+  let when = "";
+  if (typeof age === "number" && Number.isFinite(age)) {
+    const seconds = Math.max(0, Math.round(age));
+    when = seconds > 90 ? ` ${Math.floor(seconds / 60)} min ago` : ` ${seconds} s ago`;
+  }
+  if (when === "" && remote === undefined) return undefined;
+  return `Requested${when}${remote === undefined ? "" : ` from ${remote}`}`;
+}
+
+/** Whether an address is on the home network or the machine itself:
+ * 10/8, 172.16/12, 192.168/16 and loopback for IPv4, loopback, link local
+ * and unique local for IPv6. An IPv4 address written in IPv6 form counts as
+ * its IPv4 self. */
+export function isPrivateAddress(address: string): boolean {
+  let a = address.trim().toLowerCase();
+  if (a.startsWith("[") && a.endsWith("]")) a = a.slice(1, -1);
+  if (a.startsWith("::ffff:") && a.includes(".")) a = a.slice("::ffff:".length);
+  if (a.startsWith("10.") || a.startsWith("192.168.") || a.startsWith("127.")) return true;
+  const v4 = /^172\.(\d{1,3})\./.exec(a);
+  if (v4) {
+    const second = Number(v4[1]);
+    return second >= 16 && second <= 31;
+  }
+  return a === "::1" || a.startsWith("fe80:") || (a.includes(":") && (a.startsWith("fc") || a.startsWith("fd")));
+}
+
+/** The warning for a request from outside the home network. An unknown
+ * address gets none: there is nothing to say about it. */
+export function pairRemoteWarning(remote: string | null | undefined): string | undefined {
+  const address = present(remote);
+  if (address === undefined || isPrivateAddress(address)) return undefined;
+  return PAIR_REMOTE_WARNING_TEXT;
+}
+
 /** What the card says once a watch is paired. */
 export function pairedText(deviceName: string | null | undefined): string {
   return `Paired ${present(deviceName) ?? "Apple Watch"}.`;

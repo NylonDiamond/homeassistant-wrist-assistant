@@ -448,6 +448,11 @@ export interface PairLookupFound {
   already_paired: boolean;
   /** The watch's key was made by another Home Assistant user. */
   paired_by_other_user: boolean;
+  /** The address the watch's pairing request came from, null when Home
+      Assistant could not tell. Missing from an integration before it. */
+  remote?: string | null;
+  /** How long ago the watch asked, in seconds. */
+  age_seconds?: number;
 }
 
 export type PairLookup = PairLookupFound | { found: false };

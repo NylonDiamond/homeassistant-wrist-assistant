@@ -51,6 +51,8 @@ import {
   pairErrorText,
   pairLookupLine,
   pairLookupWarnings,
+  pairRemoteWarning,
+  pairRequestLine,
   pairedText,
   sectionRuns,
   settingValue,
@@ -163,6 +165,15 @@ export class WatchSettings implements ReactiveController {
     this.visit++;
     this.pairSeq++;
     this.pair = { code: "" };
+    if (id === undefined) {
+      // Nothing to load: clear whatever an earlier visit left, a load cut off
+      // by closing included, so the card says no watch has connected.
+      this.loadSeq++;
+      this.ownerId = undefined;
+      this.record = undefined;
+      this.loadError = undefined;
+      this.loading = false;
+    }
     this.changed();
     if (id !== undefined) void this.load(id);
   }
@@ -373,12 +384,24 @@ export class WatchSettings implements ReactiveController {
       this.changed();
     }
     if (paired === undefined || !this.refreshOwners) return;
-    // The new watch joins the device list, and becomes the one shown when the
-    // dialog had none to show.
-    const owners = await this.refreshOwners();
-    if (visit !== this.visit || this.ownerId !== undefined) return;
-    const id = initialWatch(settingsWatches(owners), paired.watchId);
-    if (id !== undefined) void this.load(id, true);
+    // The new watch joins the device list and becomes the one shown, its tab
+    // selected, whether or not another watch was open.
+    let owners: readonly OwnerSummary[];
+    try {
+      owners = await this.refreshOwners();
+    } catch {
+      return;
+    }
+    if (visit !== this.visit) return;
+    const watches = settingsWatches(owners);
+    const id = watches.some((w) => w.owner_watch_id === paired.watchId)
+      ? paired.watchId
+      : this.ownerId === undefined ? initialWatch(watches, undefined) : undefined;
+    if (id === undefined) return;
+    this.guard("Discard and switch", () => {
+      this.confirm = undefined;
+      void this.load(id, true);
+    });
   }
 
   private pickWatch(ownerId: string): void {
@@ -593,6 +616,7 @@ export class WatchSettings implements ReactiveController {
             <span>Watch</span>
             <div class="readout-v ws-pair-watch">${pairLookupLine(found)}</div>
           </div>
+          ${this.renderPairRequest(found)}
           ${pairLookupWarnings(found).map((line) => html`<div class="hint warn">${line}</div>`)}
           <button class="small primary ws-pair-go" ?disabled=${p.busy !== undefined}
             title="Give this watch its key, so it can read from Home Assistant without an iPhone"
@@ -602,6 +626,15 @@ export class WatchSettings implements ReactiveController {
         ${p.error ? html`<div class="hint err" role="alert">${p.error}</div>` : nothing}
       </div>
     </section>`;
+  }
+
+  /** Under the watch line: when and from where it asked, and a warning when
+   * that address is outside the home network. */
+  private renderPairRequest(found: PairLookupFound) {
+    const line = pairRequestLine(found);
+    const warning = pairRemoteWarning(found.remote);
+    return html`${line === undefined ? nothing : html`<div class="hint keep ws-pair-request">${line}</div>`}
+      ${warning === undefined ? nothing : html`<div class="hint warn">${warning}</div>`}`;
   }
 
   /** Where the settings have got to on the left, Close and Save on the right;
