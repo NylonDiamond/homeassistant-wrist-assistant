@@ -1,0 +1,22 @@
+{
+  "name": "A tile that has a color keeps it, a gradient token included; only the tile without one is filled",
+  "rule": "applyDefaultTileColors",
+  "input": {
+    "pages": [
+      {"id": "5C0E0000-0000-4000-8000-00000000000A", "name": "Home", "themeOverride": "neonLagoon", "items": [
+        {"id": "5C0E0000-0000-4000-8000-000000000101", "entityId": "light.demo_kitchen", "color": "#123456"},
+        {"id": "5C0E0000-0000-4000-8000-000000000102", "entityId": "fan.demo_bedroom", "color": "GRADIENT|#FF0000|#0000FF"},
+        {"id": "5C0E0000-0000-4000-8000-000000000103", "entityId": "fan.demo_office"}
+      ]}
+    ]
+  },
+  "expected": {
+    "pages": [
+      {"id": "5C0E0000-0000-4000-8000-00000000000A", "name": "Home", "themeOverride": "neonLagoon", "items": [
+        {"id": "5C0E0000-0000-4000-8000-000000000101", "entityId": "light.demo_kitchen", "color": "#123456"},
+        {"id": "5C0E0000-0000-4000-8000-000000000102", "entityId": "fan.demo_bedroom", "color": "GRADIENT|#FF0000|#0000FF"},
+        {"id": "5C0E0000-0000-4000-8000-000000000103", "entityId": "fan.demo_office", "color": "#47C4FF"}
+      ]}
+    ]
+  }
+}

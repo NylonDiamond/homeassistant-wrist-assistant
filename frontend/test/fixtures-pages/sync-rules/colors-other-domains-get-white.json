@@ -1,0 +1,22 @@
+{
+  "name": "Automations and every domain without a color of its own get white, because the accent role has no hex in the palette",
+  "rule": "applyDefaultTileColors",
+  "input": {
+    "pages": [
+      {"id": "5C0E0000-0000-4000-8000-00000000000A", "name": "Home", "themeOverride": "midnight", "items": [
+        {"id": "5C0E0000-0000-4000-8000-000000000101", "entityId": "automation.demo_morning"},
+        {"id": "5C0E0000-0000-4000-8000-000000000102", "entityId": "input_boolean.demo_guest_mode"},
+        {"id": "5C0E0000-0000-4000-8000-000000000103", "entityId": "demo_without_a_dot"}
+      ]}
+    ]
+  },
+  "expected": {
+    "pages": [
+      {"id": "5C0E0000-0000-4000-8000-00000000000A", "name": "Home", "themeOverride": "midnight", "items": [
+        {"id": "5C0E0000-0000-4000-8000-000000000101", "entityId": "automation.demo_morning", "color": "#FFFFFF"},
+        {"id": "5C0E0000-0000-4000-8000-000000000102", "entityId": "input_boolean.demo_guest_mode", "color": "#FFFFFF"},
+        {"id": "5C0E0000-0000-4000-8000-000000000103", "entityId": "demo_without_a_dot", "color": "#FFFFFF"}
+      ]}
+    ]
+  }
+}

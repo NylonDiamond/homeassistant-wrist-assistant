@@ -1,0 +1,17 @@
+{
+  "name": "Without multiple pages a hidden page is never the first user page: the first one not hidden stays and the hidden one goes",
+  "rule": "limitToFirstUserPage",
+  "multiplePagesEnabled": false,
+  "input": {
+    "pages": [
+      {"id": "5C0E0000-0000-4000-8000-00000000000A", "name": "Home", "isHidden": true, "items": []},
+      {"id": "5C0E0000-0000-4000-8000-00000000000B", "name": "Lights", "items": []},
+      {"id": "5C0E0000-0000-4000-8000-00000000000C", "name": "Garage", "items": []}
+    ]
+  },
+  "expected": {
+    "pages": [
+      {"id": "5C0E0000-0000-4000-8000-00000000000B", "name": "Lights", "items": []}
+    ]
+  }
+}

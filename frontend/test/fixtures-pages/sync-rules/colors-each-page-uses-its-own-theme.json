@@ -1,0 +1,30 @@
+{
+  "name": "Each page fills its tiles from its own theme, and a theme name the app does not know falls back to Neon Lagoon",
+  "rule": "applyDefaultTileColors",
+  "input": {
+    "pages": [
+      {"id": "5C0E0000-0000-4000-8000-00000000000A", "name": "Home", "themeOverride": "midnight", "items": [
+        {"id": "5C0E0000-0000-4000-8000-000000000101", "entityId": "light.demo_kitchen"}
+      ]},
+      {"id": "5C0E0000-0000-4000-8000-00000000000B", "name": "Fire", "themeOverride": "ember", "items": [
+        {"id": "5C0E0000-0000-4000-8000-000000000102", "entityId": "light.demo_fireplace"}
+      ]},
+      {"id": "5C0E0000-0000-4000-8000-00000000000C", "name": "Unknown", "themeOverride": "demoNoSuchTheme", "items": [
+        {"id": "5C0E0000-0000-4000-8000-000000000103", "entityId": "light.demo_attic"}
+      ]}
+    ]
+  },
+  "expected": {
+    "pages": [
+      {"id": "5C0E0000-0000-4000-8000-00000000000A", "name": "Home", "themeOverride": "midnight", "items": [
+        {"id": "5C0E0000-0000-4000-8000-000000000101", "entityId": "light.demo_kitchen", "color": "#F2D35C"}
+      ]},
+      {"id": "5C0E0000-0000-4000-8000-00000000000B", "name": "Fire", "themeOverride": "ember", "items": [
+        {"id": "5C0E0000-0000-4000-8000-000000000102", "entityId": "light.demo_fireplace", "color": "#E8A33D"}
+      ]},
+      {"id": "5C0E0000-0000-4000-8000-00000000000C", "name": "Unknown", "themeOverride": "demoNoSuchTheme", "items": [
+        {"id": "5C0E0000-0000-4000-8000-000000000103", "entityId": "light.demo_attic", "color": "#FFC145"}
+      ]}
+    ]
+  }
+}

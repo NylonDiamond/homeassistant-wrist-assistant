@@ -1,0 +1,17 @@
+{
+  "name": "Without multiple pages a document whose user pages are all hidden is left as it is, every hidden page kept",
+  "rule": "limitToFirstUserPage",
+  "multiplePagesEnabled": false,
+  "input": {
+    "pages": [
+      {"id": "5C0E0000-0000-4000-8000-00000000000A", "name": "Home", "isHidden": true, "items": []},
+      {"id": "5C0E0000-0000-4000-8000-00000000000B", "name": "Lights", "isHidden": true, "items": []}
+    ]
+  },
+  "expected": {
+    "pages": [
+      {"id": "5C0E0000-0000-4000-8000-00000000000A", "name": "Home", "isHidden": true, "items": []},
+      {"id": "5C0E0000-0000-4000-8000-00000000000B", "name": "Lights", "isHidden": true, "items": []}
+    ]
+  }
+}

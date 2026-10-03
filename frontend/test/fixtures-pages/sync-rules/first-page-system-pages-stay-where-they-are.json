@@ -1,0 +1,20 @@
+{
+  "name": "Without multiple pages the system pages stay in their places beside the first user page, a hidden system page too",
+  "rule": "limitToFirstUserPage",
+  "multiplePagesEnabled": false,
+  "input": {
+    "pages": [
+      {"id": "5C0E0000-0000-4000-8000-0000000000A1", "name": "System one", "isSystemPage": true, "isDeletable": false, "items": []},
+      {"id": "5C0E0000-0000-4000-8000-00000000000A", "name": "Home", "items": []},
+      {"id": "5C0E0000-0000-4000-8000-00000000000B", "name": "Lights", "items": []},
+      {"id": "5C0E0000-0000-4000-8000-0000000000A2", "name": "System two", "isSystemPage": true, "isHidden": true, "items": []}
+    ]
+  },
+  "expected": {
+    "pages": [
+      {"id": "5C0E0000-0000-4000-8000-0000000000A1", "name": "System one", "isSystemPage": true, "isDeletable": false, "items": []},
+      {"id": "5C0E0000-0000-4000-8000-00000000000A", "name": "Home", "items": []},
+      {"id": "5C0E0000-0000-4000-8000-0000000000A2", "name": "System two", "isSystemPage": true, "isHidden": true, "items": []}
+    ]
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "name": "A hold and slide trigger target takes the name the lookup gives, trimmed, whether it had a stored name or none",
+  "rule": "refreshTriggerEntityFriendlyNames",
+  "names": {
+    "script.demo_good_night": "Good Night Routine",
+    "light.demo_living_room": "  Living Room Lamp  "
+  },
+  "input": {
+    "pages": [
+      {"id": "5C0E0000-0000-4000-8000-00000000000A", "name": "Home", "items": [
+        {"id": "5C0E0000-0000-4000-8000-000000000101", "entityId": "media_player.demo_speaker", "holdSlideTriggerTargets": [
+          "down", {"entityId": "script.demo_good_night", "mode": "run", "friendlyName": "Good Night"},
+          "left", {"entityId": "light.demo_living_room", "mode": "turnOff"}
+        ]}
+      ]}
+    ]
+  },
+  "expected": {
+    "pages": [
+      {"id": "5C0E0000-0000-4000-8000-00000000000A", "name": "Home", "items": [
+        {"id": "5C0E0000-0000-4000-8000-000000000101", "entityId": "media_player.demo_speaker", "holdSlideTriggerTargets": [
+          "down", {"entityId": "script.demo_good_night", "mode": "run", "friendlyName": "Good Night Routine"},
+          "left", {"entityId": "light.demo_living_room", "mode": "turnOff", "friendlyName": "Living Room Lamp"}
+        ]}
+      ]}
+    ]
+  }
+}

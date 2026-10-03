@@ -1,0 +1,28 @@
+{
+  "name": "A tile without a color takes its domain's color from the Neon Lagoon theme, the default when a page names no theme",
+  "rule": "applyDefaultTileColors",
+  "input": {
+    "pages": [
+      {"id": "5C0E0000-0000-4000-8000-00000000000A", "name": "Home", "themeOverride": null, "items": [
+        {"id": "5C0E0000-0000-4000-8000-000000000101", "entityId": "light.demo_kitchen"},
+        {"id": "5C0E0000-0000-4000-8000-000000000102", "entityId": "switch.demo_kettle"},
+        {"id": "5C0E0000-0000-4000-8000-000000000103", "entityId": "scene.demo_movie_time"},
+        {"id": "5C0E0000-0000-4000-8000-000000000104", "entityId": "valve.demo_garden"},
+        {"id": "5C0E0000-0000-4000-8000-000000000105", "entityId": "binary_sensor.demo_door"},
+        {"id": "5C0E0000-0000-4000-8000-000000000106", "entityId": "input_button.demo_doorbell"}
+      ]}
+    ]
+  },
+  "expected": {
+    "pages": [
+      {"id": "5C0E0000-0000-4000-8000-00000000000A", "name": "Home", "themeOverride": null, "items": [
+        {"id": "5C0E0000-0000-4000-8000-000000000101", "entityId": "light.demo_kitchen", "color": "#FFC145"},
+        {"id": "5C0E0000-0000-4000-8000-000000000102", "entityId": "switch.demo_kettle", "color": "#02C3BD"},
+        {"id": "5C0E0000-0000-4000-8000-000000000103", "entityId": "scene.demo_movie_time", "color": "#FFB357"},
+        {"id": "5C0E0000-0000-4000-8000-000000000104", "entityId": "valve.demo_garden", "color": "#6D64FF"},
+        {"id": "5C0E0000-0000-4000-8000-000000000105", "entityId": "binary_sensor.demo_door", "color": "#9EC2E8"},
+        {"id": "5C0E0000-0000-4000-8000-000000000106", "entityId": "input_button.demo_doorbell", "color": "#00D1E2"}
+      ]}
+    ]
+  }
+}

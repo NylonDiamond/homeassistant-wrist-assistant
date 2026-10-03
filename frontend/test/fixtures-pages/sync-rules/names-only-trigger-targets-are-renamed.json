@@ -1,0 +1,32 @@
+{
+  "name": "Only trigger targets take names: a tile for the same entity, and a tile with no targets, are left as they are, on every page",
+  "rule": "refreshTriggerEntityFriendlyNames",
+  "names": {
+    "light.demo_kitchen": "Kitchen Ceiling",
+    "fan.demo_bedroom": "Bedroom Fan"
+  },
+  "input": {
+    "pages": [
+      {"id": "5C0E0000-0000-4000-8000-00000000000A", "name": "Home", "items": [
+        {"id": "5C0E0000-0000-4000-8000-000000000101", "entityId": "light.demo_kitchen", "customLabel": "Kitchen"}
+      ]},
+      {"id": "5C0E0000-0000-4000-8000-00000000000B", "name": "Bedroom", "items": [
+        {"id": "5C0E0000-0000-4000-8000-000000000102", "entityId": "climate.demo_bedroom", "holdSlideTriggerTargets": [
+          "up", {"entityId": "fan.demo_bedroom", "mode": "turnOn", "friendlyName": "Fan"}
+        ]}
+      ]}
+    ]
+  },
+  "expected": {
+    "pages": [
+      {"id": "5C0E0000-0000-4000-8000-00000000000A", "name": "Home", "items": [
+        {"id": "5C0E0000-0000-4000-8000-000000000101", "entityId": "light.demo_kitchen", "customLabel": "Kitchen"}
+      ]},
+      {"id": "5C0E0000-0000-4000-8000-00000000000B", "name": "Bedroom", "items": [
+        {"id": "5C0E0000-0000-4000-8000-000000000102", "entityId": "climate.demo_bedroom", "holdSlideTriggerTargets": [
+          "up", {"entityId": "fan.demo_bedroom", "mode": "turnOn", "friendlyName": "Bedroom Fan"}
+        ]}
+      ]}
+    ]
+  }
+}

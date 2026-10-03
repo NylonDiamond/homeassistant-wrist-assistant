@@ -1,0 +1,29 @@
+{
+  "name": "A target the lookup does not know, or names with only whitespace, keeps the name it had, or stays without one",
+  "rule": "refreshTriggerEntityFriendlyNames",
+  "names": {
+    "scene.demo_movie_time": "   "
+  },
+  "input": {
+    "pages": [
+      {"id": "5C0E0000-0000-4000-8000-00000000000A", "name": "Home", "items": [
+        {"id": "5C0E0000-0000-4000-8000-000000000101", "entityId": "light.demo_kitchen", "holdSlideTriggerTargets": [
+          "up", {"entityId": "scene.demo_movie_time", "mode": "activate", "friendlyName": "Movie Time"},
+          "right", {"entityId": "script.demo_unknown", "mode": "run", "friendlyName": "Old Name"},
+          "left", {"entityId": "switch.demo_unnamed", "mode": "toggle"}
+        ]}
+      ]}
+    ]
+  },
+  "expected": {
+    "pages": [
+      {"id": "5C0E0000-0000-4000-8000-00000000000A", "name": "Home", "items": [
+        {"id": "5C0E0000-0000-4000-8000-000000000101", "entityId": "light.demo_kitchen", "holdSlideTriggerTargets": [
+          "up", {"entityId": "scene.demo_movie_time", "mode": "activate", "friendlyName": "Movie Time"},
+          "right", {"entityId": "script.demo_unknown", "mode": "run", "friendlyName": "Old Name"},
+          "left", {"entityId": "switch.demo_unnamed", "mode": "toggle"}
+        ]}
+      ]}
+    ]
+  }
+}

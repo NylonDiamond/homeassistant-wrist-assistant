@@ -1,0 +1,23 @@
+{
+  "name": "Without multiple pages only the first user page goes to the watch",
+  "rule": "limitToFirstUserPage",
+  "multiplePagesEnabled": false,
+  "input": {
+    "pages": [
+      {"id": "5C0E0000-0000-4000-8000-00000000000A", "name": "Home", "items": [
+        {"id": "5C0E0000-0000-4000-8000-000000000101", "entityId": "light.demo_kitchen"}
+      ]},
+      {"id": "5C0E0000-0000-4000-8000-00000000000B", "name": "Lights", "items": [
+        {"id": "5C0E0000-0000-4000-8000-000000000102", "entityId": "light.demo_porch"}
+      ]},
+      {"id": "5C0E0000-0000-4000-8000-00000000000C", "name": "Garage", "items": []}
+    ]
+  },
+  "expected": {
+    "pages": [
+      {"id": "5C0E0000-0000-4000-8000-00000000000A", "name": "Home", "items": [
+        {"id": "5C0E0000-0000-4000-8000-000000000101", "entityId": "light.demo_kitchen"}
+      ]}
+    ]
+  }
+}
