@@ -220,8 +220,13 @@ export function mergeWatchPagesByKey(
  *   matched by `id`. Inside a page or a tile each key keeps local's value when
  *   local changed it since `base`, and takes the server's otherwise. A key one
  *   side removed counts as changed by that side.
- * - Every other value is one value, however deep: a page's `groups` and
- *   `dynamicConfig`, a tile's arrays.
+ * - A smart page's `dynamicConfig`, when both sides hold one, merges by key
+ *   the same way, its `rules` are matched by `id` like tiles, each rule
+ *   merges by key, and a rule's `tileStyle`, when both sides hold one, by
+ *   key again (`mergeDynamicConfig`). A rule's lists (`entityIds`,
+ *   `resolvedEntityIds`, `deviceClassFilter`) are one value each.
+ * - Every other value is one value, however deep: a page's `groups`, a
+ *   tile's arrays, a `dynamicConfig` or `tileStyle` only one side holds.
  * - A tile's hold and slide keys merge one direction at a time, each
  *   direction's action, targets and banner settings as one unit
  *   (`mergeSlideDirections`).
@@ -230,19 +235,20 @@ export function mergeWatchPagesByKey(
  *   colors, and a music hub's speakers with its presets merge as one unit
  *   each, keyed on the list the others follow (`mergeListUnit`), so the
  *   lists never come apart.
- * - A page or tile one side deleted is gone when the other side left it as it
- *   was in `base`, and stays, as the other side has it, when that side
+ * - A page, tile or rule one side deleted is gone when the other side left it
+ *   as it was in `base`, and stays, as the other side has it, when that side
  *   changed it.
- * - Order, for the pages and for the tiles of each page on their own: local
- *   reordered a list when the elements it shares with `base` (same `id` in
- *   both) come in another order than in `base`; adding and deleting alone is
- *   no reorder. When it did not, the order is the server's, and what only
- *   local holds (added there, or kept because local changed what the server
- *   deleted) follows in local's order. When it did, the order is local's, and
- *   what only the server holds follows in the server's order. Order never
- *   decides which elements stay or how their keys merge.
- * - A page or tile both sides added under one id merges key by key against
- *   nothing, so local's keys win and the server's others stay.
+ * - Order, for the pages, for the tiles of each page and for the rules of
+ *   each smart page on their own: local reordered a list when the elements
+ *   it shares with `base` (same `id` in both) come in another order than in
+ *   `base`; adding and deleting alone is no reorder. When it did not, the
+ *   order is the server's, and what only local holds (added there, or kept
+ *   because local changed what the server deleted) follows in local's
+ *   order. When it did, the order is local's, and what only the server
+ *   holds follows in the server's order. Order never decides which elements
+ *   stay or how their keys merge.
+ * - A page, tile or rule both sides added under one id merges key by key
+ *   against nothing, so local's keys win and the server's others stay.
  * - A list cannot be matched, and is one value again, when local or the
  *   server has none, or when on any side its elements are not all objects
  *   with a distinct, non-empty string `id` (compared exactly, case and all).
@@ -261,7 +267,7 @@ export function mergeWatchPages(
 ): WatchPagesDocument {
   const from = base ?? server;
   const merged = pickByKey(from, local, server, (_key, a, b) => sameWatchPagesJson(a, b));
-  setOrRemove(merged, PAGES_KEY, mergeList(own(from, PAGES_KEY), own(local, PAGES_KEY), own(server, PAGES_KEY), ITEMS_KEY));
+  setOrRemove(merged, PAGES_KEY, mergeList(own(from, PAGES_KEY), own(local, PAGES_KEY), own(server, PAGES_KEY), mergePage));
   return shareWhole(merged, server, local);
 }
 
@@ -293,12 +299,15 @@ function sameOrder(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((id, i) => id === b[i]);
 }
 
+/** How one element both sides of a list hold is merged (a page, a tile, a
+ * rule), against its base element or `{}`. */
+type MergeElement = (base: JsonObject, local: JsonObject, server: JsonObject) => JsonObject;
+
 /**
- * One list of id'd objects, three ways. `childListKey` names the list inside
- * each element that is matched the same way (the tiles of a page); undefined
- * for the innermost list. Undefined back means the key is absent.
+ * One list of id'd objects, three ways, each element both sides hold merged
+ * by `mergeOne`. Undefined back means the key is absent.
  */
-function mergeList(base: unknown, local: unknown, server: unknown, childListKey: string | undefined): unknown {
+function mergeList(base: unknown, local: unknown, server: unknown, mergeOne: MergeElement): unknown {
   const b = present(base);
   const l = present(local);
   const s = present(server);
@@ -315,7 +324,7 @@ function mergeList(base: unknown, local: unknown, server: unknown, childListKey:
 
   // One element held by both sides, merged.
   const both = (id: string, localElement: JsonObject, serverElement: JsonObject): JsonObject =>
-    mergeElement(baseById.get(id) ?? {}, localElement, serverElement, childListKey);
+    mergeOne(baseById.get(id) ?? {}, localElement, serverElement);
   // An element only one side holds: added there, or deleted on the other
   // side and changed on this one, and then this side's. Deleted on the other
   // side and left as it was in the base on this one: gone.
@@ -363,26 +372,68 @@ function sameElements(merged: readonly JsonObject[], side: readonly unknown[]): 
   });
 }
 
-/** One page or tile held by both sides: each key as `mergeWatchPagesByKey`
- * picks it, with slide maps compared as sets, except `childListKey`, which is
- * matched again. */
-function mergeElement(
+/** One page held by both sides: each key as `mergeWatchPagesByKey` picks it,
+ * with slide maps compared as sets, except its tiles, which are matched
+ * again, and a smart page's `dynamicConfig` (`mergeDynamicConfig`). */
+function mergePage(base: JsonObject, local: JsonObject, server: JsonObject): JsonObject {
+  const merged = pickByKey(base, local, server, sameKeyValue);
+  setOrRemove(merged, ITEMS_KEY, mergeList(own(base, ITEMS_KEY), own(local, ITEMS_KEY), own(server, ITEMS_KEY), mergeTile));
+  mergeDynamicConfig(merged, base, local, server);
+  return shareWhole(merged, server, local);
+}
+
+/** One tile held by both sides: each key as `mergeWatchPagesByKey` picks it,
+ * with slide maps compared as sets, then its slide directions and list
+ * units. */
+function mergeTile(base: JsonObject, local: JsonObject, server: JsonObject): JsonObject {
+  const merged = pickByKey(base, local, server, sameKeyValue);
+  mergeSlideDirections(merged, base, local, server);
+  for (const unit of WATCH_PAGES_LIST_UNITS) mergeListUnit(unit, merged, base, local, server);
+  return shareWhole(merged, server, local);
+}
+
+/** The key of a smart page's config, of its rules, and of a rule's style. */
+const DYNAMIC_CONFIG_KEY = "dynamicConfig";
+const RULES_KEY = "rules";
+const TILE_STYLE_KEY = "tileStyle";
+
+/**
+ * An object key both sides hold as an object, merged by key against the
+ * base's object (`{}` when the base has none), over the key by key result
+ * in `merged`; `inside` merges deeper keys of the merged object. A key one
+ * side does not hold as an object keeps the key by key result.
+ */
+function mergeObjectKey(
+  key: string,
+  merged: JsonObject,
   base: JsonObject,
   local: JsonObject,
   server: JsonObject,
-  childListKey: string | undefined,
-): JsonObject {
+  inside?: (merged: JsonObject, base: JsonObject, local: JsonObject, server: JsonObject) => void,
+): void {
+  const l = present(own(local, key));
+  const s = present(own(server, key));
+  if (!isJsonObject(l) || !isJsonObject(s)) return;
+  const b = present(own(base, key));
+  const from = isJsonObject(b) ? b : {};
+  const out = pickByKey(from, l, s, sameKeyValue);
+  inside?.(out, from, l, s);
+  setOrRemove(merged, key, shareWhole(out, s, l));
+}
+
+/** A smart page's `dynamicConfig` by key, its rules by id (`mergeRule`), in
+ * the order rule of `mergeList`. */
+function mergeDynamicConfig(merged: JsonObject, base: JsonObject, local: JsonObject, server: JsonObject): void {
+  mergeObjectKey(DYNAMIC_CONFIG_KEY, merged, base, local, server, (out, b, l, s) => {
+    setOrRemove(out, RULES_KEY, mergeList(own(b, RULES_KEY), own(l, RULES_KEY), own(s, RULES_KEY), mergeRule));
+  });
+}
+
+/** One rule held by both sides: each key by `mergeWatchPagesByKey`'s pick
+ * (its lists one value each), and its `tileStyle` by key. */
+function mergeRule(base: JsonObject, local: JsonObject, server: JsonObject): JsonObject {
   const merged = pickByKey(base, local, server, sameKeyValue);
-  if (childListKey !== undefined) {
-    setOrRemove(
-      merged,
-      childListKey,
-      mergeList(own(base, childListKey), own(local, childListKey), own(server, childListKey), undefined),
-    );
-  } else {
-    mergeSlideDirections(merged, base, local, server);
-    for (const unit of WATCH_PAGES_LIST_UNITS) mergeListUnit(unit, merged, base, local, server);
-  }
+  mergeObjectKey(TILE_STYLE_KEY, merged, base, local, server);
   return shareWhole(merged, server, local);
 }
 
@@ -708,6 +759,10 @@ const UUID_FORM = /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-
 const WATCH_INT_MIN = -(2 ** 31);
 const WATCH_INT_MAX = 2 ** 31 - 1;
 
+/** The types whose required keys must all be present, even those with a
+ * default (`DynamicPageConfig`'s eight keys). */
+const EVERY_REQUIRED_KEY_TYPES: ReadonlySet<string> = new Set(["dynamicPage"]);
+
 /** The color names older documents can hold (`page-keys.json` notes). */
 const COLOR_NAMES: ReadonlySet<string> = new Set(["yellow", "blue", "red", "green", "purple", "orange", "white"]);
 
@@ -764,16 +819,19 @@ function valueProblem(type: string, spec: ValueSpec, value: unknown, where: stri
  * `checkWatchPagesValues`, which names their elements. `nested` marks an
  * object reached through a key's `ref` (a music hub preset, a color rule):
  * there a required key with no `default` must be present, as the watch's
- * synthesized decoder needs it. */
+ * synthesized decoder needs it. In a smart page's `dynamicConfig` every
+ * required key must be present, defaults and all: its decoder is
+ * synthesized too, and reads none of them as absent. */
 function checkObjectValues(typeName: string, object: JsonObject, where: string, problems: string[], nested = false): void {
   const keys = VALUE_TYPES.types[typeName]?.keys;
   if (keys === undefined) return;
+  const everyRequired = EVERY_REQUIRED_KEY_TYPES.has(typeName);
   for (const [key, spec] of Object.entries(keys)) {
     if (key === PAGES_KEY && typeName === "document") continue;
     if (key === ITEMS_KEY && typeName === "page") continue;
     const value = present(own(object, key));
     if (value === undefined) {
-      if (nested && spec.required === true && !Object.hasOwn(spec, "default")) problems.push(`${where}: ${key} is missing.`);
+      if (nested && spec.required === true && (everyRequired || !Object.hasOwn(spec, "default"))) problems.push(`${where}: ${key} is missing.`);
       continue;
     }
     // `part` names an element after the key: ", entry 2".
@@ -821,10 +879,12 @@ function tileLabel(index: number, tile: JsonObject): string {
  * same in JSON, a whole number within the watch's 32 bit `Int`, a UUID key
  * in the 8-4-4-4-12 hex form, a color one the phone writes (`""` only where
  * the key says `empty`), each element of a list or map, each direction of a
- * slide map, and inside an object entry (a music hub preset) every required
- * key that has no default. Keys it does not know, and `null`, are left
- * alone, as the phone leaves them. Run over the whole document before a save, after
- * `checkWatchPages`.
+ * slide map, and inside an object entry (a music hub preset, a smart page's
+ * rule) every required key that has no default. A smart page's
+ * `dynamicConfig` must hold all eight of its keys, and its rules, their
+ * `tileStyle` included, are checked key by key like a tile. Keys it does not
+ * know, and `null`, are left alone, as the phone leaves them. Run over the
+ * whole document before a save, after `checkWatchPages`.
  */
 export function checkWatchPagesValues(document: unknown): string[] {
   if (!isJsonObject(document)) return [];

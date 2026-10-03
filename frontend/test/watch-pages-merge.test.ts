@@ -28,6 +28,18 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
+/** A smart page's config with all eight keys the decoder needs. */
+const FULL_DYNAMIC_CONFIG = {
+  liveUpdates: false,
+  pullToRefresh: true,
+  refreshOnAppear: false,
+  rules: [] as unknown[],
+  sortOrder: "domain",
+  tileColSpan: 4,
+  tileRowSpan: 3,
+  tileShowLabel: true,
+};
+
 /** A structured copy, to check after a merge that nothing changed. */
 function snapshot(value: unknown): unknown {
   return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
@@ -209,6 +221,100 @@ describe("order of a merged list", () => {
     expect(idsOf(out)).toEqual(["Q", "P"]);
     const p = (out.pages as JsonObject[])[1]!;
     expect((p.items as JsonObject[]).map((t) => t.id)).toEqual(["c", "b", "a", "d"]);
+  });
+});
+
+// ── smart pages ──────────────────────────────────────────────────────────
+
+describe("a smart page's dynamicConfig", () => {
+  const PAGE = "C52206FB-F7ED-4FB7-95F4-E6519A2865FC";
+  const R1 = "11111111-0000-4000-8000-000000000001";
+  const R2 = "22222222-0000-4000-8000-000000000002";
+  const R3 = "33333333-0000-4000-8000-000000000003";
+  type Rule = Record<string, unknown>;
+  const rule = (id: string, domain: string, extra: Rule = {}): Rule => ({
+    domain,
+    entityIds: [],
+    header: "label",
+    id,
+    invertActive: false,
+    mode: "all",
+    tileStyle: { color: "#FFCC00", icon: "lightbulb.fill" },
+    ...extra,
+  });
+  const doc = (rules: Rule[], config: Rule = {}, page: Rule = {}): WatchPagesDocument => ({
+    pages: [{ id: PAGE, name: "Active", items: [], ...page, dynamicConfig: { ...FULL_DYNAMIC_CONFIG, ...config, rules } }],
+  });
+  const configOf = (d: WatchPagesDocument) => (d.pages as JsonObject[])[0]!.dynamicConfig as JsonObject;
+  const rulesOf = (d: WatchPagesDocument) => configOf(d).rules as Rule[];
+
+  it("keeps edits to different rules on each side", () => {
+    const base = doc([rule(R1, "light"), rule(R2, "switch")]);
+    const phone = doc([rule(R1, "light", { invertActive: true }), rule(R2, "switch")]);
+    const server = doc([rule(R1, "light"), rule(R2, "switch", { header: "line" })]);
+    expect(rulesOf(merge(base, phone, server))).toEqual([rule(R1, "light", { invertActive: true }), rule(R2, "switch", { header: "line" })]);
+  });
+
+  it("keeps a rule each side added, the phone's after the server's", () => {
+    const base = doc([rule(R1, "light")]);
+    const phone = doc([rule(R1, "light"), rule(R2, "switch")]);
+    const server = doc([rule(R1, "light"), rule(R3, "fan")]);
+    expect(rulesOf(merge(base, phone, server)).map((r) => r.id)).toEqual([R1, R3, R2]);
+  });
+
+  it("keeps a rule one side deleted when the other styled it", () => {
+    const base = doc([rule(R1, "light"), rule(R2, "switch")]);
+    const phone = doc([rule(R1, "light")]);
+    const styled = rule(R2, "switch", { tileStyle: { color: "#FFCC00", icon: "switch.2", borderStyle: "line" } });
+    const server = doc([rule(R1, "light"), styled]);
+    expect(rulesOf(merge(base, phone, server))).toEqual([rule(R1, "light"), styled]);
+    // Left alone on the other side, the delete stands.
+    expect(rulesOf(merge(base, phone, base)).map((r) => r.id)).toEqual([R1]);
+  });
+
+  it("keeps the phone's order of the rules while the server edits one", () => {
+    const base = doc([rule(R1, "light"), rule(R2, "switch"), rule(R3, "fan")]);
+    const phone = doc([rule(R3, "fan"), rule(R1, "light"), rule(R2, "switch")]);
+    const server = doc([rule(R1, "light"), rule(R2, "switch", { headerLabel: "Plugs" }), rule(R3, "fan")]);
+    expect(rulesOf(merge(base, phone, server))).toEqual([rule(R3, "fan"), rule(R1, "light"), rule(R2, "switch", { headerLabel: "Plugs" })]);
+  });
+
+  it("merges a rule's tileStyle key by key", () => {
+    const base = doc([rule(R1, "light")]);
+    const phone = doc([rule(R1, "light", { tileStyle: { color: "#FF0000", icon: "lightbulb.fill" } })]);
+    const server = doc([rule(R1, "light", { tileStyle: { color: "#FFCC00", icon: "lightbulb.fill", colSpan: 6, rowSpan: 4 } })]);
+    expect(rulesOf(merge(base, phone, server))[0]!.tileStyle).toEqual({ color: "#FF0000", icon: "lightbulb.fill", colSpan: 6, rowSpan: 4 });
+  });
+
+  it("keeps a page key from one side and a rule edit from the other", () => {
+    const base = doc([rule(R1, "light")]);
+    const phone = doc([rule(R1, "light")], { liveUpdates: true }, { name: "Busy" });
+    const server = doc([rule(R1, "light", { deviceClassFilter: ["door"] })]);
+    const out = merge(base, phone, server);
+    expect(configOf(out)).toEqual({ ...FULL_DYNAMIC_CONFIG, liveUpdates: true, rules: [rule(R1, "light", { deviceClassFilter: ["door"] })] });
+    expect((out.pages as JsonObject[])[0]!.name).toBe("Busy");
+  });
+
+  it("gives the phone the resolved list when both resolved", () => {
+    const base = doc([rule(R1, "light")]);
+    const phone = doc([rule(R1, "light", { resolvedEntityIds: ["light.a", "light.b"] })]);
+    const server = doc([rule(R1, "light", { resolvedEntityIds: ["light.a", "light.c", "light.d"] })]);
+    expect(rulesOf(merge(base, phone, server))[0]!.resolvedEntityIds).toEqual(["light.a", "light.b"]);
+  });
+
+  it("takes a side whole when only that side changed, and one value when one side has none", () => {
+    const base = doc([rule(R1, "light")]);
+    const server = doc([rule(R1, "light", { header: "gap" })]);
+    const out = merge(base, base, server);
+    expect(out.pages).toBe(server.pages);
+    // The phone turned the page back into a normal one; the server's rule edit does not bring it back.
+    const off = { pages: [{ id: PAGE, name: "Active", items: [] }] };
+    expect((merge(base, off, server).pages as JsonObject[])[0]).toEqual({ id: PAGE, name: "Active", items: [] });
+    // Both converted the page: merged by key against nothing, so every key
+    // the phone holds is the phone's, and the rules of both stay.
+    const plain = { pages: [{ id: PAGE, name: "Active", items: [] }] };
+    const both = merge(plain, doc([rule(R1, "light")], { tileColSpan: 6 }), doc([rule(R2, "switch")], { sortOrder: "alphabetical" }));
+    expect(configOf(both)).toEqual({ ...FULL_DYNAMIC_CONFIG, tileColSpan: 6, rules: [rule(R2, "switch"), rule(R1, "light")] });
   });
 });
 
@@ -679,7 +785,7 @@ describe("checkWatchPagesValues", () => {
       'Page 1 ("Home"), tile 2 (camera.door): holdSlideActions holds the direction "sideways".',
     ]);
     expect(checkWatchPagesValues(withTile({}, { gridDensity: "huge" }))).toEqual(['Page 1 ("Home"): gridDensity holds "huge", which is not one of its choices.']);
-    expect(checkWatchPagesValues(withTile({}, { dynamicConfig: { sortOrder: "name" } }))).toEqual([
+    expect(checkWatchPagesValues(withTile({}, { dynamicConfig: { ...FULL_DYNAMIC_CONFIG, sortOrder: "name" } }))).toEqual([
       'Page 1 ("Home"): dynamicConfig: sortOrder holds "name", which is not one of its choices.',
     ]);
     // Absent and null are left alone, and so is a key the panel does not know.
@@ -708,8 +814,40 @@ describe("checkWatchPagesValues", () => {
     ]);
     expect(checkWatchPagesValues(withTile({ musicHubGroupPresets: [{ ...good, name: 3 }] }))).toEqual([`${where} 1: name is not text.`]);
     expect(checkWatchPagesValues(withTile({ musicHubGroupPresets: [{ ...good, speakerIds: "media_player.a" }] }))).toEqual([`${where} 1: speakerIds is not a list.`]);
-    // A required key with a default in the table may be left out.
-    expect(checkWatchPagesValues(withTile({}, { dynamicConfig: {} }))).toEqual([]);
+  });
+
+  it("needs all eight keys of a smart page's dynamicConfig, defaults and all", () => {
+    const where = 'Page 1 ("Home"): dynamicConfig';
+    expect(checkWatchPagesValues(withTile({}, { dynamicConfig: FULL_DYNAMIC_CONFIG }))).toEqual([]);
+    expect(checkWatchPagesValues(withTile({}, { dynamicConfig: {} })).sort()).toEqual(
+      Object.keys(FULL_DYNAMIC_CONFIG).map((key) => `${where}: ${key} is missing.`),
+    );
+    const { tileRowSpan: _dropped, ...missingOne } = FULL_DYNAMIC_CONFIG;
+    expect(checkWatchPagesValues(withTile({}, { dynamicConfig: missingOne }))).toEqual([`${where}: tileRowSpan is missing.`]);
+  });
+
+  it("checks a smart page's rules inside its dynamicConfig", () => {
+    const where = 'Page 1 ("Home"): dynamicConfig: rules, entry';
+    const rule = { id: "6F1C1E0A-0000-4000-8000-00000000000C", domain: "light", mode: "all", entityIds: [], invertActive: false, header: "label" };
+    const config = (rules: unknown[], extra: Record<string, unknown> = {}) => ({ dynamicConfig: { ...FULL_DYNAMIC_CONFIG, ...extra, rules } });
+    expect(checkWatchPagesValues(withTile({}, config([rule])))).toEqual([]);
+    // A rule without a domain, or with one that is not text.
+    expect(checkWatchPagesValues(withTile({}, config([rule, { ...rule, domain: undefined }])))).toEqual([`${where} 2: domain is missing.`]);
+    expect(checkWatchPagesValues(withTile({}, config([{ ...rule, domain: 3 }])))).toEqual([`${where} 1: domain is not text.`]);
+    // The batch 2 checks apply inside: an enum, a UUID, a tileStyle enum.
+    expect(checkWatchPagesValues(withTile({}, config([rule], { sortOrder: "byName" })))).toEqual([
+      'Page 1 ("Home"): dynamicConfig: sortOrder holds "byName", which is not one of its choices.',
+    ]);
+    expect(checkWatchPagesValues(withTile({}, config([{ ...rule, id: "rule-1" }])))).toEqual([`${where} 1: id holds "rule-1", which is not a UUID.`]);
+    expect(checkWatchPagesValues(withTile({}, config([{ ...rule, tileStyle: { borderStyle: "wavy", colSpan: 2.5 } }]))).sort()).toEqual([
+      `${where} 1: tileStyle: borderStyle holds "wavy", which is not one of its choices.`,
+      `${where} 1: tileStyle: colSpan is not a whole number.`,
+    ]);
+    expect(checkWatchPagesValues(withTile({}, config([{ ...rule, mode: "some", headerColor: "teal" }]))).sort()).toEqual([
+      `${where} 1: headerColor holds the color "teal".`,
+      `${where} 1: mode holds "some", which is not one of its choices.`,
+    ]);
+    expect(checkWatchPagesValues(withTile({}, config([{ ...rule, tileStyle: "big" }])))).toEqual([`${where} 1: tileStyle is not an object.`]);
   });
 
   it("holds a whole number to the watch's 32 bit Int", () => {
