@@ -1,6 +1,6 @@
 {
   "name": "Value label Pill on a sensor tile (Value Display)",
-  "source": "WristAssistant/Views/PageEditorView.swift:7028",
+  "source": "WristAssistant/Views/PageEditorView.swift:6975",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

@@ -1,6 +1,6 @@
 {
   "name": "Page animation speed",
-  "source": "WristAssistant/Views/PageEditorView.swift:16437",
+  "source": "WristAssistant/Views/PageEditorView.swift:16384",
   "page": {
     "backgroundBrightness": 0.6,
     "backgroundColor": "#000000",

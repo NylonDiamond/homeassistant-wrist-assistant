@@ -1,0 +1,1551 @@
+{
+  "version": 1,
+  "note": "Generated from the iPhone app's Swift code by WatchPagesSmartTables; do not edit. Regenerate tile-smart.json with TEST_RUNNER_WA_UPDATE_FIXTURES=1 ./scripts/test.sh WatchPagesSmartTables WatchPagesTablesTests in the app repository.",
+  "page": {
+    "keys": [
+      {
+        "key": "rules",
+        "default": []
+      },
+      {
+        "key": "tileColSpan",
+        "default": 4
+      },
+      {
+        "key": "tileRowSpan",
+        "default": 3
+      },
+      {
+        "key": "tileShowLabel",
+        "default": true
+      },
+      {
+        "key": "sortOrder",
+        "default": "domain"
+      },
+      {
+        "key": "liveUpdates",
+        "default": false
+      },
+      {
+        "key": "refreshOnAppear",
+        "default": false
+      },
+      {
+        "key": "pullToRefresh",
+        "default": true
+      }
+    ],
+    "writeAll": "Every write of dynamicConfig keeps all eight keys: the phone cannot read a dynamicConfig missing one.",
+    "convert": {
+      "asks": "Only when the page has tiles: a dialog with title, message (one or many), cancel and convert. An empty page converts at once.",
+      "writes": "dynamicConfig with the eight defaults when the page is not smart yet, items [] and groups []. Every other page key stays."
+    },
+    "disable": "dynamicConfig removed and nothing else, so the page is left empty. No dialog.",
+    "tileSizePresets": [
+      {
+        "name": "Small",
+        "cols": 2,
+        "rows": 2
+      },
+      {
+        "name": "Standard",
+        "cols": 4,
+        "rows": 3
+      },
+      {
+        "name": "Banner",
+        "cols": 4,
+        "rows": 2
+      },
+      {
+        "name": "Full Width",
+        "cols": 8,
+        "rows": 3
+      }
+    ],
+    "tileSizeRule": "A preset writes tileColSpan and tileRowSpan; a box writes one. Each is clamped to spanRange. A preset shows selected while both match.",
+    "spanRange": {
+      "min": 1,
+      "max": 12
+    },
+    "sortOrders": [
+      {
+        "value": "domain",
+        "label": "By Domain"
+      },
+      {
+        "value": "alphabetical",
+        "label": "Alphabetical"
+      }
+    ],
+    "showLabels": "tileShowLabel, the label switch of every tile a rule's style does not set.",
+    "switches": [
+      {
+        "key": "liveUpdates",
+        "label": "Live Updates",
+        "detail": "Real-time via background sync",
+        "shownWhen": "always"
+      },
+      {
+        "key": "refreshOnAppear",
+        "label": "Refresh on Page View",
+        "detail": "Fetch states when you open this page",
+        "shownWhen": "liveUpdates off"
+      },
+      {
+        "key": "pullToRefresh",
+        "label": "Pull to Refresh",
+        "detail": "Swipe down to manually refresh",
+        "shownWhen": "liveUpdates off"
+      }
+    ],
+    "hiddenSwitches": "A switch hidden by Live Updates keeps its value."
+  },
+  "domains": {
+    "list": [
+      {
+        "domain": "light",
+        "displayName": "Lights",
+        "icon": "lightbulb.fill",
+        "colorRole": "entityLight",
+        "activeWord": "on",
+        "invertedWord": "off",
+        "showWhen": "Show when off",
+        "playingOnly": false,
+        "maxValue": false,
+        "activeWhen": false,
+        "stateTask": true,
+        "deviceClasses": null
+      },
+      {
+        "domain": "switch",
+        "displayName": "Switches",
+        "icon": "switch.2",
+        "colorRole": "entitySwitch",
+        "activeWord": "on",
+        "invertedWord": "off",
+        "showWhen": "Show when off",
+        "playingOnly": false,
+        "maxValue": false,
+        "activeWhen": false,
+        "stateTask": false,
+        "deviceClasses": null
+      },
+      {
+        "domain": "fan",
+        "displayName": "Fans",
+        "icon": "fan.fill",
+        "colorRole": "entityFan",
+        "activeWord": "on",
+        "invertedWord": "off",
+        "showWhen": "Show when off",
+        "playingOnly": false,
+        "maxValue": false,
+        "activeWhen": false,
+        "stateTask": true,
+        "deviceClasses": null
+      },
+      {
+        "domain": "input_boolean",
+        "displayName": "Input Booleans",
+        "icon": "togglepower",
+        "colorRole": "entitySwitch",
+        "activeWord": "on",
+        "invertedWord": "off",
+        "showWhen": "Show when off",
+        "playingOnly": false,
+        "maxValue": false,
+        "activeWhen": false,
+        "stateTask": false,
+        "deviceClasses": null
+      },
+      {
+        "domain": "automation",
+        "displayName": "Automations",
+        "icon": "gearshape.2.fill",
+        "colorRole": "entityScript",
+        "activeWord": "on",
+        "invertedWord": "off",
+        "showWhen": "Show when off",
+        "playingOnly": false,
+        "maxValue": false,
+        "activeWhen": false,
+        "stateTask": true,
+        "deviceClasses": null
+      },
+      {
+        "domain": "cover",
+        "displayName": "Covers",
+        "icon": "blinds.vertical.open",
+        "colorRole": "entityCover",
+        "activeWord": "open",
+        "invertedWord": "closed",
+        "showWhen": "Show when closed",
+        "playingOnly": false,
+        "maxValue": false,
+        "activeWhen": false,
+        "stateTask": true,
+        "deviceClasses": [
+          {
+            "value": "garage",
+            "label": "Garage"
+          },
+          {
+            "value": "door",
+            "label": "Door"
+          },
+          {
+            "value": "window",
+            "label": "Window"
+          },
+          {
+            "value": "blind",
+            "label": "Blind"
+          },
+          {
+            "value": "curtain",
+            "label": "Curtain"
+          },
+          {
+            "value": "shade",
+            "label": "Shade"
+          },
+          {
+            "value": "shutter",
+            "label": "Shutter"
+          },
+          {
+            "value": "awning",
+            "label": "Awning"
+          },
+          {
+            "value": "gate",
+            "label": "Gate"
+          }
+        ]
+      },
+      {
+        "domain": "valve",
+        "displayName": "Valves",
+        "icon": "spigot.fill",
+        "colorRole": "entityCover",
+        "activeWord": "open",
+        "invertedWord": "closed",
+        "showWhen": "Show when closed",
+        "playingOnly": false,
+        "maxValue": false,
+        "activeWhen": false,
+        "stateTask": true,
+        "deviceClasses": null
+      },
+      {
+        "domain": "lock",
+        "displayName": "Locks",
+        "icon": "lock.fill",
+        "colorRole": "entityLock",
+        "activeWord": "unlocked",
+        "invertedWord": "locked",
+        "showWhen": "Show when locked",
+        "playingOnly": false,
+        "maxValue": false,
+        "activeWhen": false,
+        "stateTask": false,
+        "deviceClasses": null
+      },
+      {
+        "domain": "climate",
+        "displayName": "Climate",
+        "icon": "thermometer.medium",
+        "colorRole": "entityClimate",
+        "activeWord": "active",
+        "invertedWord": "inactive",
+        "showWhen": "Show when inactive",
+        "playingOnly": false,
+        "maxValue": false,
+        "activeWhen": false,
+        "stateTask": true,
+        "deviceClasses": null
+      },
+      {
+        "domain": "media_player",
+        "displayName": "Media Players",
+        "icon": "hifispeaker.fill",
+        "colorRole": "entityMediaPlayer",
+        "activeWord": "active",
+        "invertedWord": "inactive",
+        "showWhen": "Show when inactive",
+        "playingOnly": true,
+        "maxValue": false,
+        "activeWhen": false,
+        "stateTask": true,
+        "deviceClasses": null
+      },
+      {
+        "domain": "vacuum",
+        "displayName": "Vacuums",
+        "icon": "fan.floor.fill",
+        "colorRole": "entityVacuum",
+        "activeWord": "cleaning",
+        "invertedWord": "idle",
+        "showWhen": "Show when idle",
+        "playingOnly": false,
+        "maxValue": false,
+        "activeWhen": false,
+        "stateTask": true,
+        "deviceClasses": null
+      },
+      {
+        "domain": "humidifier",
+        "displayName": "Humidifiers",
+        "icon": "humidity.fill",
+        "colorRole": "entitySensor",
+        "activeWord": "on",
+        "invertedWord": "off",
+        "showWhen": "Show when off",
+        "playingOnly": false,
+        "maxValue": false,
+        "activeWhen": true,
+        "stateTask": false,
+        "deviceClasses": null
+      },
+      {
+        "domain": "water_heater",
+        "displayName": "Water Heaters",
+        "icon": "flame.fill",
+        "colorRole": "entityClimate",
+        "activeWord": "on",
+        "invertedWord": "off",
+        "showWhen": "Show when off",
+        "playingOnly": false,
+        "maxValue": false,
+        "activeWhen": true,
+        "stateTask": false,
+        "deviceClasses": null
+      },
+      {
+        "domain": "remote",
+        "displayName": "Remotes",
+        "icon": "av.remote.fill",
+        "colorRole": "entityRemote",
+        "activeWord": "on",
+        "invertedWord": "off",
+        "showWhen": "Show when off",
+        "playingOnly": false,
+        "maxValue": false,
+        "activeWhen": false,
+        "stateTask": true,
+        "deviceClasses": null
+      },
+      {
+        "domain": "siren",
+        "displayName": "Sirens",
+        "icon": "speaker.wave.3.fill",
+        "colorRole": "entityLock",
+        "activeWord": "on",
+        "invertedWord": "off",
+        "showWhen": "Show when off",
+        "playingOnly": false,
+        "maxValue": false,
+        "activeWhen": true,
+        "stateTask": false,
+        "deviceClasses": null
+      },
+      {
+        "domain": "binary_sensor",
+        "displayName": "Binary Sensors",
+        "icon": "sensor.fill",
+        "colorRole": "entitySensor",
+        "activeWord": "on",
+        "invertedWord": "off",
+        "showWhen": "Show when off",
+        "playingOnly": false,
+        "maxValue": false,
+        "activeWhen": true,
+        "stateTask": true,
+        "deviceClasses": [
+          {
+            "value": "door",
+            "label": "Door"
+          },
+          {
+            "value": "window",
+            "label": "Window"
+          },
+          {
+            "value": "opening",
+            "label": "Opening"
+          },
+          {
+            "value": "garage_door",
+            "label": "Garage"
+          },
+          {
+            "value": "lock",
+            "label": "Lock"
+          },
+          {
+            "value": "motion",
+            "label": "Motion"
+          },
+          {
+            "value": "moving",
+            "label": "Moving"
+          },
+          {
+            "value": "occupancy",
+            "label": "Occupancy"
+          },
+          {
+            "value": "presence",
+            "label": "Presence"
+          },
+          {
+            "value": "smoke",
+            "label": "Smoke"
+          },
+          {
+            "value": "gas",
+            "label": "Gas"
+          },
+          {
+            "value": "carbon_monoxide",
+            "label": "CO"
+          },
+          {
+            "value": "moisture",
+            "label": "Moisture"
+          },
+          {
+            "value": "safety",
+            "label": "Safety"
+          },
+          {
+            "value": "problem",
+            "label": "Problem"
+          },
+          {
+            "value": "tamper",
+            "label": "Tamper"
+          },
+          {
+            "value": "battery",
+            "label": "Low Battery"
+          },
+          {
+            "value": "battery_charging",
+            "label": "Charging"
+          },
+          {
+            "value": "plug",
+            "label": "Plug"
+          },
+          {
+            "value": "power",
+            "label": "Power"
+          },
+          {
+            "value": "heat",
+            "label": "Heat"
+          },
+          {
+            "value": "cold",
+            "label": "Cold"
+          },
+          {
+            "value": "light",
+            "label": "Light"
+          },
+          {
+            "value": "sound",
+            "label": "Sound"
+          },
+          {
+            "value": "vibration",
+            "label": "Vibration"
+          },
+          {
+            "value": "connectivity",
+            "label": "Connectivity"
+          },
+          {
+            "value": "running",
+            "label": "Running"
+          },
+          {
+            "value": "update",
+            "label": "Update"
+          }
+        ]
+      },
+      {
+        "domain": "sensor",
+        "displayName": "Sensors",
+        "icon": "chart.line.uptrend.xyaxis",
+        "colorRole": "entitySensor",
+        "activeWord": "",
+        "invertedWord": "not ",
+        "showWhen": null,
+        "playingOnly": false,
+        "maxValue": true,
+        "activeWhen": false,
+        "stateTask": true,
+        "deviceClasses": [
+          {
+            "value": "battery",
+            "label": "Battery"
+          },
+          {
+            "value": "temperature",
+            "label": "Temperature"
+          },
+          {
+            "value": "humidity",
+            "label": "Humidity"
+          },
+          {
+            "value": "power",
+            "label": "Power"
+          },
+          {
+            "value": "energy",
+            "label": "Energy"
+          },
+          {
+            "value": "illuminance",
+            "label": "Illuminance"
+          },
+          {
+            "value": "pressure",
+            "label": "Pressure"
+          },
+          {
+            "value": "voltage",
+            "label": "Voltage"
+          },
+          {
+            "value": "current",
+            "label": "Current"
+          },
+          {
+            "value": "co2",
+            "label": "CO₂"
+          },
+          {
+            "value": "pm25",
+            "label": "PM2.5"
+          },
+          {
+            "value": "signal_strength",
+            "label": "Signal"
+          },
+          {
+            "value": "aqi",
+            "label": "AQI"
+          }
+        ]
+      },
+      {
+        "domain": "alarm_control_panel",
+        "displayName": "Alarm Panels",
+        "icon": "shield.fill",
+        "colorRole": "entityLock",
+        "activeWord": "armed",
+        "invertedWord": "disarmed",
+        "showWhen": "Show when disarmed",
+        "playingOnly": false,
+        "maxValue": false,
+        "activeWhen": false,
+        "stateTask": true,
+        "deviceClasses": null
+      }
+    ],
+    "other": {
+      "displayName": "The domain in Foundation's capitalized.",
+      "icon": null,
+      "chipIcon": "questionmark.circle",
+      "colorRole": "entitySensor",
+      "activeWord": "on",
+      "invertedWord": "off",
+      "samples": [
+        {
+          "domain": "person",
+          "displayName": "Person"
+        },
+        {
+          "domain": "water_softener",
+          "displayName": "Water_Softener"
+        },
+        {
+          "domain": "zone",
+          "displayName": "Zone"
+        }
+      ]
+    },
+    "maxValueLabels": [
+      {
+        "filter": null,
+        "label": "Max value"
+      },
+      {
+        "filter": [],
+        "label": "Max value"
+      },
+      {
+        "filter": ["battery"],
+        "label": "Max value (%)"
+      },
+      {
+        "filter": ["temperature", "battery"],
+        "label": "Max value (°)"
+      },
+      {
+        "filter": ["humidity"],
+        "label": "Max value (%)"
+      },
+      {
+        "filter": ["moisture"],
+        "label": "Max value (%)"
+      },
+      {
+        "filter": ["power"],
+        "label": "Max value (W)"
+      },
+      {
+        "filter": ["illuminance"],
+        "label": "Max value (lx)"
+      },
+      {
+        "filter": ["pressure"],
+        "label": "Max value (hPa)"
+      },
+      {
+        "filter": ["voltage"],
+        "label": "Max value"
+      }
+    ],
+    "maxValueLabelRule": "Read from the first device class of the rule's filter only.",
+    "rows": {
+      "modes": [
+        {
+          "value": "all",
+          "label": "All"
+        },
+        {
+          "value": "specific",
+          "label": "Specific"
+        }
+      ],
+      "mode": "All or Specific. Nothing else changes; a switch to All resolves the rule.",
+      "all": "All shows the count badge and, while the list is absent or empty, Not resolved with a Resolve button.",
+      "specific": "Specific shows the pick count and a pick of the domain's entities, filtered by the rule's device classes when it has any. Save writes entityIds in pick order, a repeat dropped.",
+      "resolve": "An all rule's resolvedEntityIds: every entity id Home Assistant has with the prefix <domain>., sorted by code point; the device class filter is not applied. Written even when empty (the watch reads [] as none). When: the Resolve button, a switch to All, after an add (every all rule), and in the panel before a save for every all rule of a page the draft changed.",
+      "resolveSample": {
+        "states": [
+          "light.example_study",
+          "light.example_attic",
+          "switch.example_heater",
+          "binary_sensor.example_front_door",
+          "binary_sensor.example_back_door",
+          "sensor.example_phone_battery",
+          "sensor.example_light_level",
+          "media_player.example_den",
+          "lighting.example_strip"
+        ],
+        "domain": "light",
+        "ids": ["light.example_attic", "light.example_study"]
+      },
+      "badgeSamples": [
+        {
+          "mode": "all",
+          "resolvedEntityIds": null,
+          "entityIds": [],
+          "badge": null,
+          "notResolved": true
+        },
+        {
+          "mode": "all",
+          "resolvedEntityIds": [],
+          "entityIds": ["light.example_attic"],
+          "badge": null,
+          "notResolved": true
+        },
+        {
+          "mode": "all",
+          "resolvedEntityIds": ["light.example_attic", "light.example_study"],
+          "entityIds": [],
+          "badge": 2,
+          "notResolved": false
+        },
+        {
+          "mode": "specific",
+          "resolvedEntityIds": ["light.example_attic"],
+          "entityIds": [],
+          "badge": null,
+          "notResolved": false
+        },
+        {
+          "mode": "specific",
+          "resolvedEntityIds": null,
+          "entityIds": ["light.example_study"],
+          "badge": 1,
+          "notResolved": false
+        }
+      ],
+      "invert": "invertActive, always written; the switch shows for every domain with showWhen.",
+      "playingOnly": "mediaPlayerPlayingOnly, left out of the JSON when off.",
+      "deviceClass": "A chip removes its value when listed, else appends it (tap order); an empty list removes deviceClassFilter.",
+      "maxValue": "Trimmed text: empty removes maxNumericValue; a finite number is written; anything else is refused and the stored value stays. The box shows a whole number without a fraction.",
+      "maxValueSamples": [
+        {
+          "text": "20",
+          "result": {
+            "value": 20
+          }
+        },
+        {
+          "text": " 12.5 ",
+          "result": {
+            "value": 12.5
+          }
+        },
+        {
+          "text": "",
+          "result": "clear"
+        },
+        {
+          "text": "  ",
+          "result": "clear"
+        },
+        {
+          "text": "-3",
+          "result": {
+            "value": -3
+          }
+        },
+        {
+          "text": "1e2",
+          "result": {
+            "value": 100
+          }
+        },
+        {
+          "text": "abc",
+          "result": "refused"
+        },
+        {
+          "text": "1,5",
+          "result": "refused"
+        },
+        {
+          "text": "12a",
+          "result": "refused"
+        },
+        {
+          "text": "nan",
+          "result": "refused"
+        },
+        {
+          "text": "inf",
+          "result": "refused"
+        }
+      ],
+      "maxValueText": [
+        {
+          "value": null,
+          "text": ""
+        },
+        {
+          "value": 20,
+          "text": "20"
+        },
+        {
+          "value": 12.5,
+          "text": "12.5"
+        },
+        {
+          "value": -3,
+          "text": "-3"
+        },
+        {
+          "value": 0.1,
+          "text": "0.1"
+        },
+        {
+          "value": 100000,
+          "text": "100000"
+        }
+      ],
+      "activeWhen": "activeWhen, trimmed; empty removes it. Offered where activeWhen is true.",
+      "move": "Up and Down swap the rule with its neighbour; the selection follows.",
+      "delete": "The rule removed, no dialog. The selection stays at the index, else moves to the last rule, 0 when none is left.",
+      "deleteSamples": [
+        {
+          "count": 3,
+          "index": 0,
+          "selection": 0
+        },
+        {
+          "count": 3,
+          "index": 1,
+          "selection": 1
+        },
+        {
+          "count": 3,
+          "index": 2,
+          "selection": 1
+        },
+        {
+          "count": 1,
+          "index": 0,
+          "selection": 0
+        }
+      ],
+      "undo": "Every smart edit is one undo step; a text field is one step per editing session."
+    }
+  },
+  "presets": {
+    "list": [
+      {
+        "label": "Lights",
+        "icon": "lightbulb.fill",
+        "domain": "light",
+        "deviceClassFilter": null
+      },
+      {
+        "label": "Switches",
+        "icon": "switch.2",
+        "domain": "switch",
+        "deviceClassFilter": null
+      },
+      {
+        "label": "Fans",
+        "icon": "fan.fill",
+        "domain": "fan",
+        "deviceClassFilter": null
+      },
+      {
+        "label": "Covers",
+        "icon": "blinds.vertical.open",
+        "domain": "cover",
+        "deviceClassFilter": null
+      },
+      {
+        "label": "Locks",
+        "icon": "lock.fill",
+        "domain": "lock",
+        "deviceClassFilter": null
+      },
+      {
+        "label": "Climate",
+        "icon": "thermometer.medium",
+        "domain": "climate",
+        "deviceClassFilter": null
+      },
+      {
+        "label": "Doors",
+        "icon": "door.left.hand.open",
+        "domain": "binary_sensor",
+        "deviceClassFilter": ["door"]
+      },
+      {
+        "label": "Windows",
+        "icon": "window.horizontal",
+        "domain": "binary_sensor",
+        "deviceClassFilter": ["window"]
+      },
+      {
+        "label": "Openings",
+        "icon": "door.left.hand.open",
+        "domain": "binary_sensor",
+        "deviceClassFilter": ["door", "window", "opening", "garage_door"]
+      },
+      {
+        "label": "Garage Doors",
+        "icon": "door.garage.closed",
+        "domain": "cover",
+        "deviceClassFilter": ["garage"]
+      },
+      {
+        "label": "Motion",
+        "icon": "figure.walk.motion",
+        "domain": "binary_sensor",
+        "deviceClassFilter": ["motion"]
+      },
+      {
+        "label": "Occupancy",
+        "icon": "person.fill",
+        "domain": "binary_sensor",
+        "deviceClassFilter": ["occupancy", "presence"]
+      },
+      {
+        "label": "Smoke & Gas",
+        "icon": "smoke.fill",
+        "domain": "binary_sensor",
+        "deviceClassFilter": ["smoke", "gas", "carbon_monoxide"]
+      },
+      {
+        "label": "Batteries",
+        "icon": "battery.25percent",
+        "domain": "sensor",
+        "deviceClassFilter": ["battery"]
+      },
+      {
+        "label": "Temperatures",
+        "icon": "thermometer.medium",
+        "domain": "sensor",
+        "deviceClassFilter": ["temperature"]
+      },
+      {
+        "label": "Humidity",
+        "icon": "humidity.fill",
+        "domain": "sensor",
+        "deviceClassFilter": ["humidity"]
+      },
+      {
+        "label": "Input Booleans",
+        "icon": "togglepower",
+        "domain": "input_boolean",
+        "deviceClassFilter": null
+      },
+      {
+        "label": "Valves",
+        "icon": "spigot.fill",
+        "domain": "valve",
+        "deviceClassFilter": null
+      },
+      {
+        "label": "Alarm Panels",
+        "icon": "shield.fill",
+        "domain": "alarm_control_panel",
+        "deviceClassFilter": null
+      },
+      {
+        "label": "Media Players",
+        "icon": "hifispeaker.fill",
+        "domain": "media_player",
+        "deviceClassFilter": null
+      },
+      {
+        "label": "Vacuums",
+        "icon": "fan.floor.fill",
+        "domain": "vacuum",
+        "deviceClassFilter": null
+      },
+      {
+        "label": "Humidifiers",
+        "icon": "humidity.fill",
+        "domain": "humidifier",
+        "deviceClassFilter": null
+      },
+      {
+        "label": "Water Heaters",
+        "icon": "flame.fill",
+        "domain": "water_heater",
+        "deviceClassFilter": null
+      },
+      {
+        "label": "Remotes",
+        "icon": "av.remote.fill",
+        "domain": "remote",
+        "deviceClassFilter": null
+      },
+      {
+        "label": "Sirens",
+        "icon": "speaker.wave.3.fill",
+        "domain": "siren",
+        "deviceClassFilter": null
+      },
+      {
+        "label": "Automations",
+        "icon": "gearshape.2.fill",
+        "domain": "automation",
+        "deviceClassFilter": null
+      }
+    ],
+    "dropped": [
+      {
+        "label": "Persons",
+        "icon": "person.fill",
+        "domain": "person",
+        "deviceClassFilter": null
+      }
+    ],
+    "droppedRule": "A preset whose domain is not in domains.list is not offered: the watch cannot fill it.",
+    "added": "A preset is added while a rule has its domain and an equal deviceClassFilter, order included (a whole domain preset matches an absent filter). It shows checked and disabled. One domain can repeat with other filters.",
+    "match": "A rule's preset is the first one with its domain and an equal filter.",
+    "chip": "A rule chip names its preset, else the domain's displayName.",
+    "chipSamples": [
+      {
+        "domain": "binary_sensor",
+        "deviceClassFilter": ["door"],
+        "chip": "Doors"
+      },
+      {
+        "domain": "binary_sensor",
+        "deviceClassFilter": ["door", "motion"],
+        "chip": "Binary Sensors"
+      },
+      {
+        "domain": "person",
+        "deviceClassFilter": null,
+        "chip": "Person"
+      }
+    ],
+    "add": "Appends {id: a new upper case UUID, domain, mode: all, entityIds: [], deviceClassFilter: the preset's (absent for a whole domain), tileStyle: {color: the colorRole's hex for the page theme, icon: the preset's icon}, invertActive: false, header: label, headerLabel: the preset's label}, makes the page smart when it is not, then resolves every all rule.",
+    "addSample": {
+      "deviceClassFilter": ["door", "window", "opening", "garage_door"],
+      "domain": "binary_sensor",
+      "entityIds": [],
+      "header": "label",
+      "headerLabel": "Openings",
+      "id": "C3A0E000-0000-4000-8000-000000000803",
+      "invertActive": false,
+      "mode": "all",
+      "tileStyle": {
+        "color": "#9EC2E8",
+        "icon": "door.left.hand.open"
+      }
+    }
+  },
+  "header": {
+    "styles": [
+      {
+        "value": "none",
+        "label": "None"
+      },
+      {
+        "value": "gap",
+        "label": "Gap"
+      },
+      {
+        "value": "line",
+        "label": "Line"
+      },
+      {
+        "value": "label",
+        "label": "Label"
+      }
+    ],
+    "absent": "label",
+    "rule": "None draws nothing; Gap takes a row and draws nothing; Line and Label draw a header row. Label shows the label rows, Line and Label the glow.",
+    "label": "headerLabel as typed, placeholder the domain's displayName; empty removes it (the watch then draws the domain's displayName).",
+    "size": {
+      "min": 8,
+      "max": 20,
+      "step": 1,
+      "absent": 10
+    },
+    "sizeRule": "headerLabelSize, rounded to a whole number and clamped; shown as <n>pt.",
+    "glow": {
+      "min": 0,
+      "max": 1,
+      "step": 0.05
+    },
+    "glowRule": "headerGlow, rounded to the nearest step and clamped; 0 is left out of the JSON and shows Off, else <percent>%.",
+    "glowSamples": [
+      {
+        "value": 0,
+        "written": 0
+      },
+      {
+        "value": 0.02,
+        "written": 0
+      },
+      {
+        "value": 0.33,
+        "written": 0.35
+      },
+      {
+        "value": 0.5,
+        "written": 0.5
+      },
+      {
+        "value": 1,
+        "written": 1
+      },
+      {
+        "value": 1.4,
+        "written": 1
+      },
+      {
+        "value": -0.2,
+        "written": 0
+      }
+    ],
+    "color": "headerColor: a swatch of the page theme or a picked color; Default removes it, and the watch draws white."
+  },
+  "domainStyle": {
+    "sections": [
+      {
+        "section": "icon",
+        "keys": [
+          "icon",
+          "color",
+          "colorOpacity",
+          "backgroundPattern",
+          "patternOpacity",
+          "patternColor",
+          "patternScale",
+          "activeIconAnimationEnabled",
+          "iconTapAnimation"
+        ]
+      },
+      {
+        "section": "state",
+        "keys": [
+          "stateValueLabelStyle",
+          "stateBarStyle",
+          "stateBarColorStyle",
+          "stateBarBorder",
+          "decimalPlaces"
+        ]
+      },
+      {
+        "section": "text",
+        "keys": [
+          "showLabel",
+          "labelColorHex",
+          "labelFontSizeOverride",
+          "badgeFontSizeOverride",
+          "statusIconSizeOverride",
+          "labelFontWeight",
+          "labelFontDesign",
+          "labelShadow",
+          "iconShadow",
+          "statusTextShadow",
+          "stateBarShadow",
+          "showActivityStatus",
+          "usePersonPhoto"
+        ]
+      },
+      {
+        "section": "border",
+        "keys": [
+          "borderThickness",
+          "borderStyle",
+          "borderAnimation",
+          "borderAnimationSpeed",
+          "borderAnimationIntensity",
+          "borderAnimationSize",
+          "borderColor",
+          "borderLineStyle",
+          "borderGlow",
+          "effectActiveOnly",
+          "borderActiveOnly"
+        ]
+      },
+      {
+        "section": "action",
+        "keys": ["requiresConfirmation"]
+      },
+      {
+        "section": "size",
+        "keys": ["colSpan", "rowSpan", "iconSizeOverride"]
+      },
+      {
+        "section": "background",
+        "keys": [
+          "tileAnimation",
+          "animationSpeed",
+          "animationIntensity",
+          "animationSize",
+          "animationColor"
+        ]
+      },
+      {
+        "section": "overlay",
+        "keys": ["overlayStyle", "overlayColor", "overlaySpeed", "overlayIntensity", "overlaySize"]
+      }
+    ],
+    "keys": [
+      "icon",
+      "color",
+      "colorOpacity",
+      "backgroundPattern",
+      "patternOpacity",
+      "patternColor",
+      "patternScale",
+      "activeIconAnimationEnabled",
+      "iconTapAnimation",
+      "stateValueLabelStyle",
+      "stateBarStyle",
+      "stateBarColorStyle",
+      "stateBarBorder",
+      "decimalPlaces",
+      "showLabel",
+      "labelColorHex",
+      "labelFontSizeOverride",
+      "badgeFontSizeOverride",
+      "statusIconSizeOverride",
+      "labelFontWeight",
+      "labelFontDesign",
+      "labelShadow",
+      "iconShadow",
+      "statusTextShadow",
+      "stateBarShadow",
+      "showActivityStatus",
+      "usePersonPhoto",
+      "borderThickness",
+      "borderStyle",
+      "borderAnimation",
+      "borderAnimationSpeed",
+      "borderAnimationIntensity",
+      "borderAnimationSize",
+      "borderColor",
+      "borderLineStyle",
+      "borderGlow",
+      "effectActiveOnly",
+      "borderActiveOnly",
+      "requiresConfirmation",
+      "colSpan",
+      "rowSpan",
+      "iconSizeOverride",
+      "tileAnimation",
+      "animationSpeed",
+      "animationIntensity",
+      "animationSize",
+      "animationColor",
+      "overlayStyle",
+      "overlayColor",
+      "overlaySpeed",
+      "overlayIntensity",
+      "overlaySize"
+    ],
+    "rule": "Each key is a tile key of the same name; the watch stamps every set key onto each tile of the rule. An unset key draws the tile's own default, except showLabel, which falls back to the page's tileShowLabel.",
+    "standIn": {
+      "entityId": "{domain}.rule",
+      "tile": "The rule's tileStyle keys as the tile's keys; colSpan, rowSpan and showLabel from the page where the style has none.",
+      "write": "A setter runs on the stand-in tile. Every key in keys whose value changed is written into tileStyle, a removed one removed; a key outside keys is never written. An empty tileStyle is removed."
+    },
+    "sizePresets": [
+      {
+        "name": "XSmall",
+        "cols": 3,
+        "rows": 3
+      },
+      {
+        "name": "Small",
+        "cols": 4,
+        "rows": 4
+      },
+      {
+        "name": "Medium",
+        "cols": 6,
+        "rows": 4
+      },
+      {
+        "name": "Large",
+        "cols": 12,
+        "rows": 4
+      }
+    ],
+    "sizeRule": "A preset or the boxes write colSpan and rowSpan, clamped to page.spanRange.",
+    "pageSize": "Removes colSpan and rowSpan from tileStyle directly, so the page's tile size applies.",
+    "noRow": ["usePersonPhoto"]
+  },
+  "words": {
+    "convertTitle": "Switch to Smart Page?",
+    "convertMessageOne": "This will remove all 1 tile on this page. Smart pages manage entities automatically via domain rules.",
+    "convertMessageMany": "This will remove all {count} tiles on this page. Smart pages manage entities automatically via domain rules.",
+    "cancel": "Cancel",
+    "convert": "Convert",
+    "smartPage": "Smart Page",
+    "smartPageDetail": "Auto-show active entities",
+    "smartPageActive": "Smart Page Active",
+    "smartPageActiveDetail": "Entities are added automatically based on domain rules. Use the Rules task to configure which domains appear.",
+    "editRules": "Edit Rules",
+    "disable": "Disable",
+    "ruleCountOne": "1 rule",
+    "ruleCountMany": "{count} rules",
+    "addDomain": "Add Domain",
+    "add": "Add",
+    "pickerIntro": "Pick what to show. Each matching entity becomes its own tile. You can switch to hand-picked entities after adding.",
+    "selectDomain": "Select a domain above",
+    "resolving": "Resolving...",
+    "notResolved": "Not resolved",
+    "resolve": "Resolve",
+    "entitiesSelected": "{count} entities selected",
+    "showWhen": "Show when {state}",
+    "playingOnly": "Playing only",
+    "deviceClass": "Device Class",
+    "noLimit": "No limit",
+    "done": "Done",
+    "activeWhen": "Active when state is",
+    "updates": "Updates",
+    "updatesHelp": "How this page gets the latest entity states.",
+    "tileSize": "Tile Size",
+    "sizeSubtitle": "{cols}w × {rows}h",
+    "showLabels": "Show labels",
+    "sortOrder": "Sort order",
+    "pageSize": "Page size",
+    "style": "Style",
+    "labelText": "Label Text",
+    "editLabel": "Edit Label",
+    "textSize": "Text Size",
+    "points": "{size}pt",
+    "lineThickness": "Line Thickness",
+    "glow": "Glow",
+    "off": "Off",
+    "percent": "{value}%",
+    "color": "Color",
+    "colorDefault": "Default (white on the watch)",
+    "allOff": "All Off",
+    "domainOn": "{count} {name} On",
+    "active": "{count} Active",
+    "tracking": "Tracking {parts}",
+    "noEntities": "No entities configured",
+    "sharedDomain": "Two rules share {domain}. The watch draws every {domain} group with the first rule's header and style."
+  },
+  "resets": {
+    "rule": {
+      "keeps": ["id", "domain", "mode", "entityIds", "resolvedEntityIds", "deviceClassFilter"],
+      "removes": [
+        "headerColor",
+        "headerLabelSize",
+        "headerGlow",
+        "activeWhen",
+        "maxNumericValue",
+        "mediaPlayerPlayingOnly"
+      ],
+      "sets": {
+        "header": "label",
+        "invertActive": false
+      },
+      "tileStyle": "Replaced by {color: the colorRole's hex for the page theme, icon}: the icon of the preset matched by domain and filter, else of the domain's whole domain preset, else the domain's icon (none for an unknown domain).",
+      "headerLabel": "The label of that preset; removed when there is none.",
+      "samples": [
+        {
+          "rule": {
+            "activeWhen": "open",
+            "deviceClassFilter": ["door"],
+            "domain": "binary_sensor",
+            "entityIds": [],
+            "header": "line",
+            "headerColor": "#FF8800",
+            "headerGlow": 0.5,
+            "headerLabel": "Front",
+            "headerLabelSize": 14,
+            "id": "C3A0E000-0000-4000-8000-000000000802",
+            "invertActive": true,
+            "mode": "all",
+            "resolvedEntityIds": ["binary_sensor.example_back_door", "binary_sensor.example_front_door"],
+            "tileStyle": {
+              "borderStyle": "line",
+              "colSpan": 6,
+              "color": "#9EC2E8",
+              "icon": "door.sliding.left.hand.open",
+              "rowSpan": 4
+            }
+          },
+          "reset": {
+            "deviceClassFilter": ["door"],
+            "domain": "binary_sensor",
+            "entityIds": [],
+            "header": "label",
+            "headerLabel": "Doors",
+            "id": "C3A0E000-0000-4000-8000-000000000802",
+            "invertActive": false,
+            "mode": "all",
+            "resolvedEntityIds": ["binary_sensor.example_back_door", "binary_sensor.example_front_door"],
+            "tileStyle": {
+              "color": "#9EC2E8",
+              "icon": "door.left.hand.open"
+            }
+          }
+        },
+        {
+          "rule": {
+            "domain": "media_player",
+            "entityIds": [],
+            "header": "label",
+            "headerLabel": "Media Players",
+            "id": "C3A0E000-0000-4000-8000-000000000804",
+            "invertActive": false,
+            "maxNumericValue": 3,
+            "mediaPlayerPlayingOnly": true,
+            "mode": "all",
+            "tileStyle": {
+              "icon": "hifispeaker.fill"
+            }
+          },
+          "reset": {
+            "domain": "media_player",
+            "entityIds": [],
+            "header": "label",
+            "headerLabel": "Media Players",
+            "id": "C3A0E000-0000-4000-8000-000000000804",
+            "invertActive": false,
+            "mode": "all",
+            "tileStyle": {
+              "color": "#D057D9",
+              "icon": "hifispeaker.fill"
+            }
+          }
+        },
+        {
+          "rule": {
+            "deviceClassFilter": ["door", "motion"],
+            "domain": "binary_sensor",
+            "entityIds": [],
+            "header": "label",
+            "headerLabel": "Doors",
+            "id": "C3A0E000-0000-4000-8000-000000000805",
+            "invertActive": false,
+            "mode": "all",
+            "tileStyle": {
+              "color": "#9EC2E8",
+              "icon": "door.left.hand.open"
+            }
+          },
+          "reset": {
+            "deviceClassFilter": ["door", "motion"],
+            "domain": "binary_sensor",
+            "entityIds": [],
+            "header": "label",
+            "id": "C3A0E000-0000-4000-8000-000000000805",
+            "invertActive": false,
+            "mode": "all",
+            "tileStyle": {
+              "color": "#9EC2E8",
+              "icon": "sensor.fill"
+            }
+          }
+        },
+        {
+          "rule": {
+            "domain": "person",
+            "entityIds": [],
+            "header": "label",
+            "headerLabel": "People",
+            "id": "C3A0E000-0000-4000-8000-000000000809",
+            "invertActive": false,
+            "mode": "all"
+          },
+          "reset": {
+            "domain": "person",
+            "entityIds": [],
+            "header": "label",
+            "id": "C3A0E000-0000-4000-8000-000000000809",
+            "invertActive": false,
+            "mode": "all",
+            "tileStyle": {
+              "color": "#9EC2E8"
+            }
+          }
+        }
+      ]
+    },
+    "other": "No other smart edit has a reset; undo covers them."
+  },
+  "checks": {
+    "dynamicConfigRequired": [
+      "rules",
+      "tileColSpan",
+      "tileRowSpan",
+      "tileShowLabel",
+      "sortOrder",
+      "liveUpdates",
+      "refreshOnAppear",
+      "pullToRefresh"
+    ],
+    "ruleRequired": ["domain"],
+    "rule": "Before a save: a dynamicConfig missing any of dynamicConfigRequired, or a rule without domain, is refused; the value checks of page-keys.json apply inside.",
+    "sharedDomain": "A note, never a refusal, for each domain more than one rule names, in first rule order.",
+    "sharedDomainSample": {
+      "domains": ["binary_sensor", "light", "binary_sensor"],
+      "shared": ["binary_sensor"],
+      "notes": [
+        "Two rules share binary_sensor. The watch draws every binary_sensor group with the first rule's header and style."
+      ]
+    },
+    "title": "The watch's page title: allOff with no active entity; domainOn when exactly one rule has active entities (its count and displayName, an unknown domain capitalized); else active with the page's total.",
+    "titleSamples": [
+      {
+        "totalActive": 0,
+        "ruleCounts": [
+          {
+            "domain": "light",
+            "count": 0
+          }
+        ],
+        "title": "All Off"
+      },
+      {
+        "totalActive": 3,
+        "ruleCounts": [
+          {
+            "domain": "light",
+            "count": 3
+          },
+          {
+            "domain": "switch",
+            "count": 0
+          }
+        ],
+        "title": "3 Lights On"
+      },
+      {
+        "totalActive": 1,
+        "ruleCounts": [
+          {
+            "domain": "lock",
+            "count": 1
+          }
+        ],
+        "title": "1 Locks On"
+      },
+      {
+        "totalActive": 5,
+        "ruleCounts": [
+          {
+            "domain": "light",
+            "count": 3
+          },
+          {
+            "domain": "switch",
+            "count": 2
+          }
+        ],
+        "title": "5 Active"
+      },
+      {
+        "totalActive": 2,
+        "ruleCounts": [
+          {
+            "domain": "not_a_domain",
+            "count": 2
+          }
+        ],
+        "title": "2 Not_A_Domain On"
+      }
+    ],
+    "tracking": "The empty page's line: per rule with ids (resolvedEntityIds in All, entityIds in Specific), <count> <displayName in lower case> (an unknown domain as it is), joined; noEntities when none.",
+    "trackingSamples": [
+      {
+        "rules": [
+          {
+            "domain": "light",
+            "mode": "all",
+            "ids": ["light.example_attic", "light.example_study"]
+          },
+          {
+            "domain": "binary_sensor",
+            "mode": "all",
+            "ids": []
+          },
+          {
+            "domain": "not_a_domain",
+            "mode": "specific",
+            "ids": ["not_a_domain.example"]
+          }
+        ],
+        "words": "Tracking 2 lights, 1 not_a_domain"
+      },
+      {
+        "rules": [],
+        "words": "No entities configured"
+      }
+    ]
+  }
+}

@@ -1,6 +1,6 @@
 {
   "name": "Retarget a status page tile whose label is the old page's name",
-  "source": "WristAssistant/Views/PageEditor/Tabs/AddTabContent.swift:774",
+  "source": "WristAssistant/Views/PageEditor/Tabs/AddTabContent.swift:752",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

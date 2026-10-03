@@ -1,6 +1,6 @@
 {
   "name": "Status badge off on a media_player tile (Playback Status)",
-  "source": "WristAssistant/Views/PageEditorView.swift:7070",
+  "source": "WristAssistant/Views/PageEditorView.swift:7017",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

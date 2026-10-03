@@ -1,6 +1,6 @@
 {
   "name": "Removing the only color keeps usesStateIcons for the icons",
-  "source": "WristAssistant/Views/PageEditorView.swift:1307",
+  "source": "WristAssistant/Views/PageEditorView.swift:1310",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

@@ -1,6 +1,6 @@
 {
   "name": "Theme Neon Lagoon to Ember remaps role, swatch and gradient colors",
-  "source": "WristAssistant/Views/PageEditorView.swift:672",
+  "source": "WristAssistant/Views/PageEditorView.swift:675",
   "page": {
     "backgroundBrightness": 0.6,
     "backgroundColor": "#16245C",

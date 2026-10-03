@@ -1,6 +1,6 @@
 {
   "name": "Current temperature off on a climate tile (Temperature Display)",
-  "source": "WristAssistant/Views/PageEditorView.swift:7084",
+  "source": "WristAssistant/Views/PageEditorView.swift:7031",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

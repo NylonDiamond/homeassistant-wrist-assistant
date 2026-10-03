@@ -1,0 +1,59 @@
+{
+  "name": "Convert on an empty page keeps every page key",
+  "source": "WristAssistant/Views/PageEditor/SmartPageRules.swift:37",
+  "page": {
+    "backgroundBrightness": 0.6,
+    "backgroundColor": "#FFC145",
+    "complicationDisplayMode": "text",
+    "fullScreen": false,
+    "gridDensity": "standard",
+    "groups": [],
+    "hideFromSwitcher": false,
+    "id": "C3A0E000-0000-4000-8000-0000000007F0",
+    "isDeletable": true,
+    "isHidden": false,
+    "isSystemPage": false,
+    "items": [],
+    "name": "Active",
+    "pageTitleDisplayStyle": "none",
+    "pageTitleIcon": "house",
+    "pageTitleTextSize": "size10",
+    "switcherIcon": "bolt.fill",
+    "themeOverride": "neonLagoon",
+    "useGradientColors": false
+  },
+  "edit": {
+    "op": "smartConvert"
+  },
+  "expected": {
+    "backgroundBrightness": 0.6,
+    "backgroundColor": "#FFC145",
+    "complicationDisplayMode": "text",
+    "dynamicConfig": {
+      "liveUpdates": false,
+      "pullToRefresh": true,
+      "refreshOnAppear": false,
+      "rules": [],
+      "sortOrder": "domain",
+      "tileColSpan": 4,
+      "tileRowSpan": 3,
+      "tileShowLabel": true
+    },
+    "fullScreen": false,
+    "gridDensity": "standard",
+    "groups": [],
+    "hideFromSwitcher": false,
+    "id": "C3A0E000-0000-4000-8000-0000000007F0",
+    "isDeletable": true,
+    "isHidden": false,
+    "isSystemPage": false,
+    "items": [],
+    "name": "Active",
+    "pageTitleDisplayStyle": "none",
+    "pageTitleIcon": "house",
+    "pageTitleTextSize": "size10",
+    "switcherIcon": "bolt.fill",
+    "themeOverride": "neonLagoon",
+    "useGradientColors": false
+  }
+}

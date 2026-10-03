@@ -1,6 +1,6 @@
 {
   "name": "A smart page header's domain becomes custom",
-  "source": "WristAssistant/Views/PageEditorView.swift:12297",
+  "source": "WristAssistant/Views/PageEditorView.swift:12244",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

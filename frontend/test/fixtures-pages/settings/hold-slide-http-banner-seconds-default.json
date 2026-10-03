@@ -1,6 +1,6 @@
 {
   "name": "The banner back to the standard 3 seconds removes the entry",
-  "source": "WristAssistant/Views/PageEditorView.swift:7407",
+  "source": "WristAssistant/Views/PageEditorView.swift:7354",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

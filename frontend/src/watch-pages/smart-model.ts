@@ -33,6 +33,7 @@
 
 import type { HassEntityState } from "../ha-api.js";
 import pageKeys from "./page-keys.json";
+import tileSmart from "./tile-smart.json";
 import { type WatchEditOptions, findWatchPage, randomWatchId, sameWatchId } from "./edit.js";
 import { sameWatchPagesJson } from "./merge.js";
 import {
@@ -64,6 +65,12 @@ export interface WatchSmartDomain {
   activeWord: string;
   /** The word of "Show when <inverted>". */
   invertedWord: string;
+  /** The invert switch's label, undefined where the row has no switch. */
+  showWhen?: string;
+  /** Whether the rule row offers "Playing only". */
+  playingOnly: boolean;
+  /** Whether the rule row offers the max value box. */
+  maxValue: boolean;
   /** The device class chips, empty when the domain has none. */
   deviceClasses: { value: string; label: string }[];
   /** Whether the rule row offers "Active when state is". */
@@ -129,6 +136,9 @@ function listOrMap(value: unknown, keyName: string): JsonObject[] {
 }
 
 function choices(value: unknown): { value: string; label: string }[] {
+  if (Array.isArray(value) && value.every((v) => typeof v === "string")) {
+    return (value as string[]).map((v) => ({ value: v, label: watchCapitalized(v) }));
+  }
   return listOrMap(value, "value").flatMap((c) => {
     const v = str(c.value);
     if (v === undefined) return [];
@@ -138,12 +148,17 @@ function choices(value: unknown): { value: string; label: string }[] {
 
 function sizes(value: unknown): WatchSmartSizePreset[] {
   return objects(value).flatMap((s) => {
-    const name = str(s.name) ?? str(s.label);
-    const colSpan = s.colSpan ?? s.cols ?? s.columns;
-    const rowSpan = s.rowSpan ?? s.rows;
+    const name = str(s.name);
+    const colSpan = s.cols;
+    const rowSpan = s.rows;
     if (name === undefined || !Number.isInteger(colSpan) || !Number.isInteger(rowSpan)) return [];
     return [{ name, colSpan: colSpan as number, rowSpan: rowSpan as number }];
   });
+}
+
+/** A part of the table that is a list, or an object holding it as `list`. */
+function listed(value: unknown): unknown {
+  return isJsonObject(value) && Array.isArray(value.list) ? value.list : value;
 }
 
 /**
@@ -153,25 +168,29 @@ function sizes(value: unknown): WatchSmartSizePreset[] {
  */
 export function readWatchSmartTable(raw: unknown): WatchSmartTable {
   const t = isJsonObject(raw) ? raw : {};
-  const domains = listOrMap(t.domains, "domain").flatMap((d): WatchSmartDomain[] => {
+  const domains = listOrMap(listed(t.domains), "domain").flatMap((d): WatchSmartDomain[] => {
     const domain = str(d.domain);
     if (domain === undefined) return [];
+    const showWhen = str(d.showWhen);
     return [
       {
         domain,
         displayName: str(d.displayName) ?? watchCapitalized(domain),
         icon: str(d.icon) ?? "",
-        colorRole: str(d.colorRole) ?? str(d.role) ?? "",
-        activeWord: str(d.activeWord) ?? str(d.active) ?? "",
-        invertedWord: str(d.invertedWord) ?? str(d.inverted) ?? "",
-        deviceClasses: choices(d.deviceClasses ?? d.deviceClassOptions),
-        activeWhen: d.activeWhen === true || d.offersActiveWhen === true,
-        stateTask: d.stateTask === true || d.offersStateTask === true,
+        colorRole: str(d.colorRole) ?? "",
+        activeWord: str(d.activeWord) ?? "",
+        invertedWord: str(d.invertedWord) ?? "",
+        ...(showWhen !== undefined ? { showWhen } : {}),
+        playingOnly: d.playingOnly === true,
+        maxValue: d.maxValue === true,
+        deviceClasses: choices(d.deviceClasses),
+        activeWhen: d.activeWhen === true,
+        stateTask: d.stateTask === true,
       },
     ];
   });
-  const presets = objects(t.presets).flatMap((p): WatchSmartPreset[] => {
-    const domain = str(p.domain) ?? str(p.haDomain);
+  const presets = objects(listed(t.presets)).flatMap((p): WatchSmartPreset[] => {
+    const domain = str(p.domain);
     const label = str(p.label);
     if (domain === undefined || label === undefined) return [];
     const filter = p.deviceClassFilter;
@@ -185,18 +204,22 @@ export function readWatchSmartTable(raw: unknown): WatchSmartTable {
   return {
     domains,
     presets,
-    pageSizes: sizes(page.sizePresets ?? page.sizes),
-    styleSizes: sizes(style.sizePresets ?? style.sizes),
+    pageSizes: sizes(page.tileSizePresets),
+    styleSizes: sizes(style.sizePresets),
     headerStyles: choices(header.styles),
     words,
     raw: t,
   };
 }
 
-/** The table. Until `tile-smart.json` is in, an empty one: every reader
- * then falls back to the watch's own fallbacks. */
-// TODO(3f batch 3): read `tile-smart.json` here once it lands.
-export const WATCH_SMART: Readonly<WatchSmartTable> = readWatchSmartTable(undefined);
+/** The table, from `tile-smart.json`. */
+export const WATCH_SMART: Readonly<WatchSmartTable> = readWatchSmartTable(tileSmart);
+
+/** A word of the table with its `{name}` placeholders filled. */
+export function smartWord(name: string, values: Readonly<Record<string, string | number>> = {}, table: WatchSmartTable = WATCH_SMART): string {
+  const word = table.words[name] ?? "";
+  return word.replace(/\{(\w+)\}/g, (all, key: string) => (Object.hasOwn(values, key) ? String(values[key]) : all));
+}
 
 /** A domain's table entry, or undefined for a domain the watch cannot fill. */
 export function smartDomainInfo(domain: string, table: WatchSmartTable = WATCH_SMART): WatchSmartDomain | undefined {
@@ -612,13 +635,34 @@ export function setSmartSortOrder(document: WatchPagesDocument, pageId: string, 
   return editConfig(document, pageId, (c) => withValue(c, "sortOrder", order));
 }
 
-/** A tile size preset: both spans in one edit. */
-export function setSmartTileSize(document: WatchPagesDocument, pageId: string, colSpan: number, rowSpan: number): WatchPagesDocument {
-  const c = span(colSpan);
-  const r = span(rowSpan);
-  if (c === undefined || r === undefined) return document;
-  return editConfig(document, pageId, (config) => withValue(withValue(config, "tileColSpan", c), "tileRowSpan", r));
+/** The page's tile size: a preset writes both spans in one edit, a box
+ * one (the other undefined); each clamped as `setSmartTileColSpan`. */
+export function setSmartTileSize(
+  document: WatchPagesDocument,
+  pageId: string,
+  colSpan: number | undefined,
+  rowSpan: number | undefined,
+): WatchPagesDocument {
+  const c = colSpan === undefined ? undefined : span(colSpan);
+  const r = rowSpan === undefined ? undefined : span(rowSpan);
+  if ((colSpan !== undefined && c === undefined) || (rowSpan !== undefined && r === undefined)) return document;
+  return editConfig(document, pageId, (config) => {
+    let next = config;
+    if (c !== undefined) next = withValue(next, "tileColSpan", c);
+    if (r !== undefined) next = withValue(next, "tileRowSpan", r);
+    return next;
+  });
 }
+
+/** The Page card's switches and the sort order by key (the case files'
+ * `smartPageKey`). */
+export const WATCH_SMART_PAGE_SETTERS: Readonly<Record<string, (document: WatchPagesDocument, pageId: string, value: never) => WatchPagesDocument>> = {
+  liveUpdates: setSmartLiveUpdates,
+  refreshOnAppear: setSmartRefreshOnAppear,
+  pullToRefresh: setSmartPullToRefresh,
+  tileShowLabel: setSmartTileShowLabel,
+  sortOrder: setSmartSortOrder,
+};
 
 // ── resolve ──────────────────────────────────────────────────────────────
 
@@ -690,7 +734,8 @@ export function resolveSmartPagesBeforeSave(
  * (absent for a whole domain), `tileStyle` {color, icon} with the domain's
  * role color for the page theme (`colorHex`, passed in) and the preset's
  * icon, `headerLabel` the preset's label, `header` label, `invertActive`
- * false; then resolved from `states` when they are given.
+ * false; then, when `states` are given, every `all` rule of the page is
+ * resolved from them, as the phone does after an add.
  */
 export function addSmartRule(
   document: WatchPagesDocument,
@@ -703,7 +748,7 @@ export function addSmartRule(
   const color = normalizeWatchColor(colorHex, "tile");
   if (color === undefined || typeof preset.domain !== "string" || preset.domain === "") return document;
   const id = (options?.newId ?? randomWatchId)().toUpperCase();
-  let rule: JsonObject = sortedObject({
+  const rule: JsonObject = sortedObject({
     domain: preset.domain,
     entityIds: [],
     header: "label",
@@ -714,8 +759,14 @@ export function addSmartRule(
     tileStyle: sortedObject({ color, ...(preset.icon !== "" ? { icon: preset.icon } : {}) }),
     ...(preset.deviceClassFilter !== undefined ? { deviceClassFilter: preset.deviceClassFilter.slice() } : {}),
   });
-  if (states !== undefined) rule = resolved(rule, states);
-  return editConfig(document, pageId, (config) => withField(config, "rules", [...ruleList(config), encodeRule(rule)]));
+  return editConfig(document, pageId, (config) => {
+    const rules = [...ruleList(config), encodeRule(rule)].map((r) => {
+      if (states === undefined || !isJsonObject(r) || readSmartRule(r)?.mode !== "all") return r;
+      const next = resolved(r, states);
+      return next === r ? r : encodeRule(next);
+    });
+    return withField(config, "rules", rules);
+  });
 }
 
 /** Mode All or Specific. Set to All, the rule is resolved from `states`
@@ -734,10 +785,10 @@ export function setSmartRuleMode(
   });
 }
 
-/** A specific rule's picks, in pick order. */
+/** A specific rule's picks, in pick order, a repeat dropped. */
 export function setSmartRuleEntityIds(document: WatchPagesDocument, pageId: string, ruleId: string, ids: readonly string[]): WatchPagesDocument {
   if (!Array.isArray(ids) || !ids.every((id) => typeof id === "string")) return document;
-  return editRule(document, pageId, ruleId, (rule) => withValue(rule, "entityIds", ids.slice()));
+  return editRule(document, pageId, ruleId, (rule) => withValue(rule, "entityIds", [...new Set(ids)]));
 }
 
 /** "Show when <inverted>": `invertActive`, true or false. */
@@ -785,6 +836,30 @@ export function setSmartRuleMaxValue(document: WatchPagesDocument, pageId: strin
   return editRule(document, pageId, ruleId, (rule) => withOptional(rule, "maxNumericValue", n));
 }
 
+/** The max value box's caption, read from the first device class of the
+ * rule's filter ("Max value (%)" for battery), by the table's samples;
+ * "Max value" for any other. */
+export function smartMaxValueLabel(rule: WatchSmartRule, table: WatchSmartTable = WATCH_SMART): string {
+  const samples = objects(isJsonObject(table.raw.domains) ? table.raw.domains.maxValueLabels : undefined);
+  const first = rule.deviceClassFilter?.[0];
+  const label = (s: JsonObject) => str(s.label);
+  const plain = samples.find((s) => s.filter === null);
+  const match = first === undefined ? undefined : samples.find((s) => Array.isArray(s.filter) && s.filter[0] === first);
+  return (match && label(match)) ?? (plain && label(plain)) ?? "";
+}
+
+/** The count a rule row shows, undefined for none: the resolved list's in
+ * All, the picks' in Specific. */
+export function smartCountBadge(rule: WatchSmartRule): number | undefined {
+  const count = rule.mode === "all" ? (rule.resolvedEntityIds ?? []).length : rule.entityIds.length;
+  return count > 0 ? count : undefined;
+}
+
+/** "Not resolved": an `all` rule whose list is absent or empty. */
+export function smartRuleUnresolved(rule: WatchSmartRule): boolean {
+  return rule.mode === "all" && (rule.resolvedEntityIds ?? []).length === 0;
+}
+
 /** How the max value box shows a stored value: a whole number without a
  * fraction, "" when there is none. */
 export function smartMaxValueText(rule: WatchSmartRule): string {
@@ -804,29 +879,39 @@ export function setSmartRuleHeader(document: WatchPagesDocument, pageId: string,
   return editRule(document, pageId, ruleId, (rule) => withValue(rule, "header", style));
 }
 
-/** The header's label text: empty removes the key (the watch then draws
- * the domain's name). */
+/** The header's label text, as typed: empty removes the key (the watch then
+ * draws the domain's name). */
 export function setSmartRuleHeaderLabel(document: WatchPagesDocument, pageId: string, ruleId: string, text: string): WatchPagesDocument {
   if (typeof text !== "string") return document;
-  return editRule(document, pageId, ruleId, (rule) => withOptional(rule, "headerLabel", text.trim() === "" ? undefined : text));
+  return editRule(document, pageId, ruleId, (rule) => withOptional(rule, "headerLabel", text === "" ? undefined : text));
 }
 
-/** The header's text size: a whole number from 8 to 20 (rounded), refused
- * outside; `null` removes it (reads 10). */
+/** Swift's `rounded()`: half away from zero. */
+function swiftRounded(value: number): number {
+  return Math.sign(value) * Math.round(Math.abs(value));
+}
+
+/** The header's text size: rounded to a whole number and clamped to 8 to
+ * 20; `null` removes it (reads 10). */
 export function setSmartRuleHeaderSize(document: WatchPagesDocument, pageId: string, ruleId: string, size: number | null): WatchPagesDocument {
   let value: number | undefined;
   if (size !== null) {
     if (typeof size !== "number" || !Number.isFinite(size)) return document;
-    value = Math.round(size);
-    if (value < WATCH_SMART_HEADER_SIZE_RANGE.min || value > WATCH_SMART_HEADER_SIZE_RANGE.max) return document;
+    const { min, max } = WATCH_SMART_HEADER_SIZE_RANGE;
+    value = Math.min(max, Math.max(min, swiftRounded(size)));
   }
   return editRule(document, pageId, ruleId, (rule) => withOptional(rule, "headerLabelSize", value));
 }
 
-/** The header's glow, 0 to 1 (refused outside); 0 removes the key. */
+/** The glow's steps per unit: it moves in twentieths (0.05). */
+export const WATCH_SMART_GLOW_STEPS = 20;
+
+/** The header's glow: rounded to the nearest twentieth and clamped to 0 to
+ * 1; 0 removes the key. */
 export function setSmartRuleHeaderGlow(document: WatchPagesDocument, pageId: string, ruleId: string, glow: number): WatchPagesDocument {
-  if (typeof glow !== "number" || !Number.isFinite(glow) || glow < 0 || glow > 1) return document;
-  return editRule(document, pageId, ruleId, (rule) => withOptional(rule, "headerGlow", glow > 0 ? glow : undefined));
+  if (typeof glow !== "number" || !Number.isFinite(glow)) return document;
+  const stepped = Math.min(1, Math.max(0, swiftRounded(glow * WATCH_SMART_GLOW_STEPS) / WATCH_SMART_GLOW_STEPS));
+  return editRule(document, pageId, ruleId, (rule) => withOptional(rule, "headerGlow", stepped > 0 ? stepped : undefined));
 }
 
 /** The header's color, `#RRGGBB`; undefined (Default) removes the key, and
@@ -951,16 +1036,37 @@ export function smartStandInEntityId(domain: string): string {
   return `${domain}.rule`;
 }
 
+/** The stand-in tile of a rule: `{id: <rule id>, entityId: <domain>.rule}`
+ * with the page's spans and label switch, then each `tileStyle` key the
+ * watch reads over them, sorted. */
+function standInTileOf(rule: JsonObject, config: WatchSmartConfig | undefined): JsonObject {
+  const style = isJsonObject(rule.tileStyle) ? rule.tileStyle : {};
+  const d = WATCH_SMART_PAGE_DEFAULTS;
+  const tile: JsonObject = {
+    id: typeof rule.id === "string" ? rule.id : "",
+    entityId: smartStandInEntityId(typeof rule.domain === "string" ? rule.domain : ""),
+    colSpan: config?.tileColSpan ?? d.tileColSpan,
+    rowSpan: config?.tileRowSpan ?? d.tileRowSpan,
+    showLabel: config?.tileShowLabel ?? d.tileShowLabel,
+  };
+  for (const key of WATCH_DOMAIN_TILE_STYLE_KEYS) {
+    if (Object.hasOwn(style, key) && style[key] !== null && style[key] !== undefined) tile[key] = style[key];
+  }
+  return sortedObject(tile);
+}
+
 /**
  * A one page document whose only tile stands for a rule's style (`rule` as
- * stored, a view's `raw`), so the
- * tile settings sections can edit it with the tile setters: the tile is
- * `{id: <rule id>, entityId: "<domain>.rule"}` with each `tileStyle` key the
- * watch reads (`WATCH_DOMAIN_TILE_STYLE_KEYS`) as a tile key of the same
- * name, which is how the watch stamps them on its tiles. The stand-in page
- * is `{id: pageId, items: [tile]}` plus, when `page` is given, every key of
- * the real page but `items` and `dynamicConfig` (a smart page refuses every
- * tile setter).
+ * stored, a view's `raw`), so the tile settings sections can edit it with
+ * the tile setters. The tile is `{id: <rule id>, entityId:
+ * "<domain>.rule"}`, every tile setter reading the domain as its kind, with
+ * the page's `tileColSpan`, `tileRowSpan` and `tileShowLabel` as its spans
+ * and label switch, and each `tileStyle` key the watch reads
+ * (`WATCH_DOMAIN_TILE_STYLE_KEYS`) over them as a tile key of the same name,
+ * which is how the watch stamps them on its tiles. The stand-in page is
+ * `{id: pageId, items: [tile]}` plus, when the real `page` is given, every
+ * key of it but `items` and `dynamicConfig` (a smart page refuses every tile
+ * setter); its config gives the spans, else the defaults.
  *
  * The setters read nothing of the page beyond refusing smart and system
  * pages; the settings view reads the page for its colors: the swatches and
@@ -971,14 +1077,9 @@ export function smartStandInEntityId(domain: string): string {
  * use `setSmartRuleSize` and `setSmartRuleSpan` for a rule's spans instead.
  */
 export function smartStyleStandIn(rule: JsonObject, pageId: string, page?: WatchPage): WatchPagesDocument {
-  const raw = rule;
-  const style = isJsonObject(raw.tileStyle) ? raw.tileStyle : {};
-  const tile: JsonObject = { id: typeof raw.id === "string" ? raw.id : "", entityId: smartStandInEntityId(typeof raw.domain === "string" ? raw.domain : "") };
-  for (const key of WATCH_DOMAIN_TILE_STYLE_KEYS) {
-    if (Object.hasOwn(style, key) && style[key] !== null && style[key] !== undefined) tile[key] = style[key];
-  }
+  const config = page === undefined ? undefined : readSmartConfig(page);
   const standInPage: JsonObject = page === undefined ? {} : without(without(page, "items"), "dynamicConfig");
-  return { pages: [{ ...standInPage, id: pageId, items: [sortedObject(tile)] }] };
+  return { pages: [{ ...standInPage, id: pageId, items: [standInTileOf(rule, config)] }] };
 }
 
 /** The stand-in tile of a stand-in document. */
@@ -990,28 +1091,35 @@ export function smartStandInTile(standIn: WatchPagesDocument, pageId: string, ru
 }
 
 /**
- * Writes a tile setter's work on the stand-in back into the rule: each
- * `tileStyle` key the watch reads whose value on the stand-in tile in
- * `next` differs from the rule's is written, one the setter removed is
- * removed, and an emptied `tileStyle` is removed. Keys outside the list are
- * never written (a setter's `customLabel`, `stateIcons`, placement). The
- * document itself when nothing changed or the stand-in is gone.
+ * Writes a tile setter's work on the stand-in back into the rule: the
+ * stand-in is built again from the rule and the page in `document`, and
+ * each `tileStyle` key the watch reads whose value on the stand-in tile in
+ * `next` differs from it is written, one the setter removed is removed, and
+ * an emptied `tileStyle` is removed. So a span or the label switch the
+ * stand-in only carried from the page is written only once a setter
+ * changes it. Keys outside the list are never written (a setter's
+ * `customLabel`, `stateIcons`, placement). The document itself when nothing
+ * changed or the stand-in is gone.
  */
 export function applySmartStyleStandIn(document: WatchPagesDocument, pageId: string, ruleId: string, next: WatchPagesDocument): WatchPagesDocument {
-  const tile = smartStandInTile(next, pageId, ruleId);
-  if (tile === undefined) return document;
-  return editRule(document, pageId, ruleId, (rule) =>
-    withStyle(rule, (style) => {
+  const after = smartStandInTile(next, pageId, ruleId);
+  const page = listedPage(document, pageId);
+  if (after === undefined || page === undefined) return document;
+  const config = readSmartConfig(page);
+  const value = (tile: JsonObject, key: string) => (Object.hasOwn(tile, key) && tile[key] !== null ? tile[key] : undefined);
+  return editRule(document, pageId, ruleId, (rule) => {
+    const before = standInTileOf(rule, config);
+    return withStyle(rule, (style) => {
       let out = style;
       for (const key of WATCH_DOMAIN_TILE_STYLE_KEYS) {
-        const value = Object.hasOwn(tile, key) && tile[key] !== null ? tile[key] : undefined;
-        const now = Object.hasOwn(style, key) && style[key] !== null ? style[key] : undefined;
-        if (value === undefined ? now === undefined : sameValue(value, now)) continue;
-        out = withOptional(out, key, value);
+        const was = value(before, key);
+        const now = value(after, key);
+        if (now === undefined ? was === undefined : sameValue(now, was)) continue;
+        out = withOptional(out, key, now);
       }
       return out;
-    }),
-  );
+    });
+  });
 }
 
 // ── the fill ─────────────────────────────────────────────────────────────
@@ -1235,12 +1343,25 @@ export function smartPageLayout(config: WatchSmartConfig, groups: readonly Watch
   return items;
 }
 
+/** The title words from the counts: "All Off" with no active entity, "N
+ * <Domain> On" when exactly one rule has active entities (its count and
+ * domain name), else "N Active" with the page's total. */
+export function smartTitleWords(
+  totalActive: number,
+  ruleCounts: readonly { domain: string; count: number }[],
+  table: WatchSmartTable = WATCH_SMART,
+): string {
+  if (totalActive <= 0) return smartWord("allOff", {}, table);
+  const counted = ruleCounts.filter((c) => c.count > 0);
+  if (counted.length === 1) return smartWord("domainOn", { count: counted[0]!.count, name: smartDomainName(counted[0]!.domain, table) }, table);
+  return smartWord("active", { count: totalActive }, table);
+}
+
 /**
- * The watch's `dynamicPageTitle`: "All Off" when no entity is active, "N
- * <Domain> On" when exactly one rule has active entities among the ids it
- * counts (`smartEffectiveEntityIds`, by the active test alone), "N Active"
- * otherwise, N being every active entity of the groups. Unknown domains
- * are capitalized.
+ * The watch's `dynamicPageTitle` (`smartTitleWords`): the total is every
+ * active entity of the groups, and each rule's count is of the ids it
+ * counts (`smartEffectiveEntityIds`) by the active test alone, as the watch
+ * counts them.
  */
 export function smartPageTitle(
   config: WatchSmartConfig,
@@ -1248,14 +1369,12 @@ export function smartPageTitle(
   states: States | undefined,
   table: WatchSmartTable = WATCH_SMART,
 ): string {
-  const count = groups.reduce((sum, g) => sum + g.entityIds.length, 0);
-  if (count === 0) return "All Off";
-  const counts: { name: string; count: number }[] = [];
-  for (const rule of config.rules) {
-    const active = smartEffectiveEntityIds(rule).filter((id) => smartEntityActive(id, rule, states)).length;
-    if (active > 0) counts.push({ name: smartDomainName(rule.domain, table), count: active });
-  }
-  return counts.length === 1 ? `${counts[0]!.count} ${counts[0]!.name} On` : `${count} Active`;
+  const total = groups.reduce((sum, g) => sum + g.entityIds.length, 0);
+  const counts = config.rules.map((rule) => ({
+    domain: rule.domain,
+    count: smartEffectiveEntityIds(rule).filter((id) => smartEntityActive(id, rule, states)).length,
+  }));
+  return smartTitleWords(total, counts, table);
 }
 
 /** The watch's empty state line: "Tracking 47 lights, 12 switches" (each
@@ -1269,7 +1388,7 @@ export function smartTrackingWords(config: WatchSmartConfig, table: WatchSmartTa
     const name = smartDomainInfo(rule.domain, table)?.displayName.toLowerCase() ?? rule.domain;
     parts.push(`${count} ${name}`);
   }
-  return parts.length === 0 ? "No entities configured" : `Tracking ${parts.join(", ")}`;
+  return parts.length === 0 ? smartWord("noEntities", {}, table) : smartWord("tracking", { parts: parts.join(", ") }, table);
 }
 
 /** The page the watch draws for a smart page: its own keys, `items` the
@@ -1282,23 +1401,25 @@ export function smartSyntheticPage(page: WatchPage, states: States | undefined, 
   return { ...page, items: smartPageLayout(config, groups), switcherText: smartPageTitle(config, groups, states, table) };
 }
 
-/** The note for rules that share a domain (the watch draws every group of
- * the domain with the first rule's header and style), one sentence per
- * shared domain; undefined when no two rules share one. */
-export function smartDuplicateDomainNote(config: WatchSmartConfig, table: WatchSmartTable = WATCH_SMART): string | undefined {
+/** The domains more than one rule names, in first rule order. */
+export function smartSharedDomains(config: WatchSmartConfig): string[] {
   const seen = new Set<string>();
   const shared: string[] = [];
   for (const rule of config.rules) {
     if (seen.has(rule.domain) && !shared.includes(rule.domain)) shared.push(rule.domain);
     seen.add(rule.domain);
   }
+  return shared;
+}
+
+/** The note for rules that share a domain (the watch draws every group of
+ * the domain with the first rule's header and style), one sentence per
+ * shared domain, naming the domain as stored; undefined when no two rules
+ * share one. A note, never a refusal. */
+export function smartDuplicateDomainNote(config: WatchSmartConfig, table: WatchSmartTable = WATCH_SMART): string | undefined {
+  const shared = smartSharedDomains(config);
   if (shared.length === 0) return undefined;
-  return shared
-    .map((domain) => {
-      const name = smartDomainName(domain, table);
-      return `Two rules share ${name}. The watch draws every ${name} group with the first rule's header and style.`;
-    })
-    .join(" ");
+  return shared.map((domain) => smartWord("sharedDomain", { domain }, table)).join(" ");
 }
 
 /** Which rule drew a synthetic tile, by index in `config.rules`: the first

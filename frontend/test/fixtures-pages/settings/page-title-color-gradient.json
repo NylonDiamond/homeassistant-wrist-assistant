@@ -1,6 +1,6 @@
 {
   "name": "Title color in gradient mode",
-  "source": "WristAssistant/Views/PageEditorView.swift:15709",
+  "source": "WristAssistant/Views/PageEditorView.swift:15656",
   "page": {
     "backgroundBrightness": 0.6,
     "backgroundColor": "#000000",

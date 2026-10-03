@@ -1,14 +1,15 @@
-// Smart pages (part 3f batch 3): the readers, every writer of the Page card
-// and the Rules card, the stand-in tile for the per-domain style, the
-// resolve and the save step, and the watch's fill (active test, groups,
-// layout, title and words).
+// Smart pages (part 3f batch 3): the case files the phone wrote
+// (`fixtures-pages/settings/smart-*.json`) replayed through the writers, the
+// samples of `tile-smart.json`, and beyond them the readers, every writer of
+// the Page card and the Rules card, the stand-in tile for the per-domain
+// style, the resolve and the save step, and the watch's fill (active test,
+// groups, layout, title and words).
 //
-// TODO(3f batch 3): when `tile-smart.json` and the case files land
-// (`fixtures-pages/settings/smart-*.json`, `fixtures-pages/smart/fill-*.json`),
-// replay them here as `watch-pages-tile-settings.test.ts` replays the
-// settings cases, and set the floors: the writers covered and the case
-// files run.
+// TODO(3f batch 3): the fill cases (`fixtures-pages/smart/fill-*.json`) are
+// not written yet; replay them here when they land.
 
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { HassEntityState } from "../src/ha-api.js";
@@ -17,7 +18,9 @@ import { setWatchTileBorderStyle, resetWatchTileTask } from "../src/watch-pages/
 import { setWatchTileLabel, setWatchTileShowLabel } from "../src/watch-pages/tile-settings-model.js";
 import {
   WATCH_DOMAIN_TILE_STYLE_KEYS,
+  WATCH_SMART,
   WATCH_SMART_PAGE_DEFAULTS,
+  WATCH_SMART_PAGE_SETTERS,
   addSmartRule,
   applySmartStyleStandIn,
   convertToSmartPage,
@@ -52,7 +55,12 @@ import {
   setSmartTileSize,
   smartActiveGroups,
   smartConvertTileCount,
+  smartCountBadge,
   smartDuplicateDomainNote,
+  smartMaxValueLabel,
+  smartRuleUnresolved,
+  smartSharedDomains,
+  smartTitleWords,
   smartEntityActive,
   smartMaxValueText,
   smartPageLayout,
@@ -83,9 +91,10 @@ const R2 = "22222222-0000-4000-8000-000000000002";
 const R3 = "33333333-0000-4000-8000-000000000003";
 const NEW = "44444444-0000-4000-8000-000000000004";
 
-/** A table in the shape `tile-smart.json` is read in, small. */
+/** A table in the shape of `tile-smart.json`, small, with its words. */
 const TABLE = readWatchSmartTable({
-  domains: [
+  words: WATCH_SMART.raw.words,
+  domains: { list: [
     { domain: "light", displayName: "Lights", icon: "lightbulb.fill", colorRole: "entityLight", activeWord: "on", invertedWord: "off" },
     { domain: "switch", displayName: "Switches", icon: "switch.2", colorRole: "entitySwitch", activeWord: "on", invertedWord: "off" },
     {
@@ -100,14 +109,14 @@ const TABLE = readWatchSmartTable({
     },
     { domain: "sensor", displayName: "Sensors", icon: "chart.line.uptrend.xyaxis", colorRole: "entitySensor" },
     { domain: "media_player", displayName: "Media Players", icon: "hifispeaker.fill", colorRole: "entityMediaPlayer" },
-  ],
-  presets: [
-    { label: "Lights", icon: "lightbulb.fill", domain: "light" },
+  ] },
+  presets: { list: [
+    { label: "Lights", icon: "lightbulb.fill", domain: "light", deviceClassFilter: null },
     { label: "Doors", icon: "door.left.hand.open", domain: "binary_sensor", deviceClassFilter: ["door"] },
     { label: "Windows", icon: "window.horizontal", domain: "binary_sensor", deviceClassFilter: ["window"] },
-    { label: "Binary Sensors", icon: "sensor.fill", domain: "binary_sensor" },
+    { label: "Binary Sensors", icon: "sensor.fill", domain: "binary_sensor", deviceClassFilter: null },
     { label: "Batteries", icon: "battery.25percent", domain: "sensor", deviceClassFilter: ["battery"] },
-  ],
+  ] },
 });
 
 function deepFreeze<T>(value: T): T {
@@ -183,6 +192,139 @@ function view(r: Json): WatchSmartRule {
   return readSmartConfig({ dynamicConfig: { rules: [r] } })!.rules[0]!;
 }
 
+// ── the case files ───────────────────────────────────────────────────────
+
+/** A smart settings case: a whole page and one edit in, the whole page out. */
+interface SmartCase {
+  name: string;
+  source: string;
+  page: Json;
+  edit: Json & { op: string };
+  expected: Json;
+}
+
+const settingsDir = join(__dirname, "fixtures-pages", "settings");
+const smartFiles = existsSync(settingsDir)
+  ? readdirSync(settingsDir)
+      .filter((f) => f.startsWith("smart-") && f.endsWith(".json"))
+      .sort()
+  : [];
+
+/** Home Assistant's states for a case's list of entity ids. */
+function statesFromIds(ids: unknown): Record<string, HassEntityState> | undefined {
+  return Array.isArray(ids) ? statesOf(...ids.map((id) => state(String(id), "on"))) : undefined;
+}
+
+/** The ops a case file ran, for the floor. */
+const opsRun = new Set<string>();
+
+/** One case's edit on a document that holds its page. */
+function applySmartCase(document: WatchPagesDocument, c: SmartCase): WatchPagesDocument {
+  const e = c.edit;
+  const P = c.page.id as string;
+  const rules = ((c.page.dynamicConfig as Json | undefined)?.rules ?? []) as Json[];
+  const index = typeof e.ruleIndex === "number" ? e.ruleIndex : -1;
+  const R = (rules[index]?.id as string | undefined) ?? "";
+  opsRun.add(e.op);
+  switch (e.op) {
+    case "smartConvert":
+      return convertToSmartPage(document, P);
+    case "smartDisable":
+      return disableSmartPage(document, P);
+    case "smartAddRule": {
+      const preset = WATCH_SMART.presets.find((p) => p.label === e.preset);
+      if (preset === undefined) throw new Error(`no preset ${String(e.preset)}`);
+      return addSmartRule(document, P, preset, e.color as string, statesFromIds(e.states), { newId: () => e.id as string });
+    }
+    case "smartMode":
+      return setSmartRuleMode(document, P, R, e.value as string, statesFromIds(e.states));
+    case "smartEntityIds":
+      return setSmartRuleEntityIds(document, P, R, e.ids as string[]);
+    case "smartInvert":
+      return setSmartRuleInvert(document, P, R, e.value as boolean);
+    case "smartPlayingOnly":
+      return setSmartRulePlayingOnly(document, P, R, e.value as boolean);
+    case "smartDeviceClass":
+      return toggleSmartRuleDeviceClass(document, P, R, e.value as string);
+    case "smartMaxValue":
+      return setSmartRuleMaxValue(document, P, R, e.text as string);
+    case "smartActiveWhen":
+      return setSmartRuleActiveWhen(document, P, R, e.text as string);
+    case "smartHeader":
+      return setSmartRuleHeader(document, P, R, e.value as string);
+    case "smartHeaderLabel":
+      return setSmartRuleHeaderLabel(document, P, R, e.text as string);
+    case "smartHeaderSize":
+      return setSmartRuleHeaderSize(document, P, R, e.value as number);
+    case "smartHeaderGlow":
+      return setSmartRuleHeaderGlow(document, P, R, e.value as number);
+    case "smartHeaderColor":
+      return setSmartRuleHeaderColor(document, P, R, (e.value ?? undefined) as string | undefined);
+    case "smartResolve":
+      return withResolvedRule(document, P, R, statesFromIds(e.states));
+    case "smartMoveRule":
+      return moveSmartRule(document, P, R, index + (e.offset as number));
+    case "smartDeleteRule":
+      return deleteSmartRule(document, P, R);
+    case "smartResetRule":
+      return resetSmartRule(document, P, R, e.color as string);
+    case "smartPageKey": {
+      const setter = WATCH_SMART_PAGE_SETTERS[e.key as string];
+      if (setter === undefined) throw new Error(`no page key setter for ${String(e.key)}`);
+      return setter(document, P, e.value as never);
+    }
+    case "smartTileSize":
+      return setSmartTileSize(document, P, e.colSpan as number | undefined, e.rowSpan as number | undefined);
+    case "smartDomainStyle": {
+      const set = e.set as Json;
+      const keys = Object.keys(set).sort();
+      if (keys.join() === "colSpan,rowSpan" && set.colSpan === null && set.rowSpan === null) return setSmartRuleSize(document, P, R, undefined);
+      // As a tile setter would: the keys written on the stand-in tile.
+      const standIn = smartStyleStandIn(rules[index]!, P, c.page);
+      const tile = { ...smartStandInTile(standIn, P, R)! };
+      for (const key of keys) {
+        if (set[key] === null) delete tile[key];
+        else tile[key] = set[key];
+      }
+      const page = (standIn.pages as Json[])[0]!;
+      return applySmartStyleStandIn(document, P, R, { pages: [{ ...page, items: [tile] }] });
+    }
+    default:
+      throw new Error(`unknown op ${e.op}`);
+  }
+}
+
+describe("smart settings case files written by the phone", () => {
+  it("are all here", () => {
+    expect(smartFiles.length).toBeGreaterThanOrEqual(57);
+  });
+
+  for (const file of smartFiles) {
+    const c = JSON.parse(readFileSync(join(settingsDir, file), "utf8")) as SmartCase;
+    it(`${file}: ${c.name}`, () => {
+      const before = deepFreeze({
+        schemaVersion: 1,
+        pages: [{ id: SYSTEM, name: "System", isSystemPage: true, items: [] }, structuredClone(c.page), { id: OTHER, name: "Other", items: [] }],
+      }) as WatchPagesDocument;
+      const after = applySmartCase(before, c);
+      const page = pageOf(after);
+      expect(page).toEqual({ ...c.expected });
+      if (JSON.stringify(c.page) === JSON.stringify(c.expected)) {
+        expect(after).toBe(before);
+        return;
+      }
+      onlyPath(before, after);
+      // To the byte, as the phone encodes the page.
+      expect(JSON.stringify(page)).toBe(JSON.stringify({ ...c.expected }));
+    });
+  }
+
+  // After the cases above: every writer op of the batch ran at least once.
+  it("cover every writer", () => {
+    expect(opsRun.size).toBeGreaterThanOrEqual(22);
+  });
+});
+
 // ── readers ──────────────────────────────────────────────────────────────
 
 describe("readers", () => {
@@ -252,9 +394,14 @@ describe("readers", () => {
   it("reads the table with tolerance", () => {
     const empty = readWatchSmartTable(undefined);
     expect([empty.domains, empty.presets, empty.words]).toEqual([[], [], {}]);
-    const t = readWatchSmartTable({ domains: { fan: { displayName: "Fans" } }, presets: [{ label: "x" }, { label: "Fans", haDomain: "fan" }] });
-    expect(t.domains.map((d) => [d.domain, d.displayName])).toEqual([["fan", "Fans"]]);
+    const t = readWatchSmartTable({
+      domains: { list: [{ displayName: "No domain" }, { domain: "fan", displayName: "Fans", deviceClasses: null }] },
+      presets: { list: [{ label: "x" }, { label: "Fans", domain: "fan", deviceClassFilter: null }] },
+      page: { tileSizePresets: [{ name: "Small", cols: 2, rows: 2 }, { name: "Odd" }] },
+    });
+    expect(t.domains.map((d) => [d.domain, d.displayName, d.deviceClasses])).toEqual([["fan", "Fans", []]]);
     expect(t.presets).toEqual([{ label: "Fans", icon: "", domain: "fan" }]);
+    expect(t.pageSizes).toEqual([{ name: "Small", colSpan: 2, rowSpan: 2 }]);
     expect(TABLE.domains.find((d) => d.domain === "binary_sensor")!.deviceClasses).toEqual([
       { value: "door", label: "Door" },
       { value: "window", label: "Window" },
@@ -431,8 +578,8 @@ describe("rule writers", () => {
     expect(setSmartRuleMode(before, PAGE, NEW, "all")).toBe(before);
   });
 
-  it("writes the picks in pick order", () => {
-    const after = setSmartRuleEntityIds(base(), PAGE, R1.toLowerCase(), ["light.z", "light.a"]);
+  it("writes the picks in pick order, a repeat dropped", () => {
+    const after = setSmartRuleEntityIds(base(), PAGE, R1.toLowerCase(), ["light.z", "light.a", "light.z"]);
     expect(r(after).entityIds).toEqual(["light.z", "light.a"]);
     expect(setSmartRuleEntityIds(base(), PAGE, R1, [3 as never])).toEqual(base());
   });
@@ -486,19 +633,27 @@ describe("rule writers", () => {
     expect(r(setSmartRuleHeader(before, PAGE, R1, "gap")).header).toBe("gap");
     expect(setSmartRuleHeader(before, PAGE, R1, "box")).toBe(before);
 
-    const labelled = setSmartRuleHeaderLabel(before, PAGE, R1, "Upstairs");
-    expect(r(labelled).headerLabel).toBe("Upstairs");
+    // The label as typed; only an empty one removes it.
+    const labelled = setSmartRuleHeaderLabel(before, PAGE, R1, "Upstairs ");
+    expect(r(labelled).headerLabel).toBe("Upstairs ");
     expect(Object.hasOwn(r(setSmartRuleHeaderLabel(labelled, PAGE, R1, "")), "headerLabel")).toBe(false);
 
+    // The size rounded and clamped.
     expect(r(setSmartRuleHeaderSize(before, PAGE, R1, 14.4)).headerLabelSize).toBe(14);
-    expect(setSmartRuleHeaderSize(before, PAGE, R1, 30)).toBe(before);
+    expect(r(setSmartRuleHeaderSize(before, PAGE, R1, 26.4)).headerLabelSize).toBe(20);
+    expect(r(setSmartRuleHeaderSize(before, PAGE, R1, 2)).headerLabelSize).toBe(8);
+    expect(setSmartRuleHeaderSize(before, PAGE, R1, Number.NaN)).toBe(before);
     expect(Object.hasOwn(r(setSmartRuleHeaderSize(setSmartRuleHeaderSize(before, PAGE, R1, 12), PAGE, R1, null)), "headerLabelSize")).toBe(false);
 
+    // The glow in twentieths, clamped; 0 removes it.
     const glowing = setSmartRuleHeaderGlow(before, PAGE, R1, 0.5);
     expect(r(glowing).headerGlow).toBe(0.5);
+    expect(r(setSmartRuleHeaderGlow(before, PAGE, R1, 0.33)).headerGlow).toBe(0.35);
+    expect(r(setSmartRuleHeaderGlow(before, PAGE, R1, 1.4)).headerGlow).toBe(1);
     expect(Object.hasOwn(r(setSmartRuleHeaderGlow(glowing, PAGE, R1, 0)), "headerGlow")).toBe(false);
+    expect(Object.hasOwn(r(setSmartRuleHeaderGlow(glowing, PAGE, R1, -0.2)), "headerGlow")).toBe(false);
+    expect(Object.hasOwn(r(setSmartRuleHeaderGlow(glowing, PAGE, R1, 0.02)), "headerGlow")).toBe(false);
     expect(setSmartRuleHeaderGlow(before, PAGE, R1, 0)).toBe(before);
-    expect(setSmartRuleHeaderGlow(before, PAGE, R1, 1.5)).toBe(before);
 
     const colored = setSmartRuleHeaderColor(before, PAGE, R1, "ff9800");
     expect(r(colored).headerColor).toBe("#FF9800");
@@ -640,19 +795,24 @@ describe("the per-domain style through a stand-in tile", () => {
   const styled = rule(R1, "light", { tileStyle: { borderStyle: "line", color: "#FFCC00", icon: "lightbulb.fill", junk: 1 } });
   const page: WatchPage = { id: PAGE, name: "Active", themeOverride: "ocean", items: [], dynamicConfig: config([styled]) };
 
-  it("builds a one page document with the rule's style keys on a tile", () => {
-    const standIn = smartStyleStandIn(styled, PAGE, page);
+  it("builds a one page document: the page's spans and label switch, the rule's style over them", () => {
+    const standIn = smartStyleStandIn(styled, PAGE, { ...page, dynamicConfig: config([styled], { tileColSpan: 6, tileShowLabel: false }) });
     expect(standIn).toEqual({
       pages: [
         {
           id: PAGE,
           name: "Active",
           themeOverride: "ocean",
-          items: [{ borderStyle: "line", color: "#FFCC00", entityId: "light.rule", icon: "lightbulb.fill", id: R1 }],
+          items: [
+            { borderStyle: "line", colSpan: 6, color: "#FFCC00", entityId: "light.rule", icon: "lightbulb.fill", id: R1, rowSpan: 3, showLabel: false },
+          ],
         },
       ],
     });
     expect(smartStandInTile(standIn, PAGE, R1)?.entityId).toBe("light.rule");
+    // A style's own span wins; without a page, the defaults.
+    const sized = rule(R1, "light", { tileStyle: { rowSpan: 2 } });
+    expect(smartStandInTile(smartStyleStandIn(sized, PAGE), PAGE, R1)).toEqual({ colSpan: 4, entityId: "light.rule", id: R1, rowSpan: 2, showLabel: true });
   });
 
   it("writes back what a tile setter changed, and never a key outside the style", () => {
@@ -663,23 +823,36 @@ describe("the per-domain style through a stand-in tile", () => {
     next = setWatchTileShowLabel(next, PAGE, R1, false);
     const after = applySmartStyleStandIn(document, PAGE, R1, next);
     onlyPath(document, after);
+    // The spans the stand-in carried from the page are not written.
     expect(rulesOf(after)[0]!.tileStyle).toEqual({ borderStyle: "animate", color: "#FFCC00", icon: "lightbulb.fill", junk: 1, showLabel: false });
   });
 
-  it("removes a key the setter removed, and an emptied tileStyle", () => {
-    const only = rule(R1, "light", { tileStyle: { borderStyle: "animate", borderGlow: 0.5 } });
+  it("writes what a task reset changed and removes what it removed", () => {
+    const only = rule(R1, "light", { tileStyle: { borderStyle: "animate", borderColor: "#FF0000", borderGlow: 0.5 } });
     const document = smartDoc([only]);
-    const reset = resetWatchTileTask(smartStyleStandIn(only, PAGE), PAGE, R1, "border");
+    const reset = resetWatchTileTask(smartStyleStandIn(only, PAGE, pageOf(document)), PAGE, R1, "border");
     const after = applySmartStyleStandIn(document, PAGE, R1, reset);
-    const tile = smartStandInTile(reset, PAGE, R1)!;
-    const left = Object.fromEntries(WATCH_DOMAIN_TILE_STYLE_KEYS.filter((k) => Object.hasOwn(tile, k)).map((k) => [k, tile[k]]));
-    expect(rulesOf(after)[0]!.tileStyle ?? {}).toEqual(left);
+    expect(rulesOf(after)[0]!.tileStyle).toEqual({
+      borderActiveOnly: true,
+      borderAnimation: "none",
+      borderAnimationIntensity: 1,
+      borderAnimationSize: 1,
+      borderAnimationSpeed: 1,
+      borderGlow: 0,
+      borderLineStyle: "solid",
+      borderStyle: "none",
+      borderThickness: "extraThin",
+    });
+  });
+
+  it("removes an emptied tileStyle, and leaves the document alone when nothing changed", () => {
     const bare = smartDoc([rule(R1, "light", { tileStyle: { borderStyle: "line" } })]);
-    const cleared = smartStyleStandIn(rulesOf(bare)[0]!, PAGE);
-    const tileGone = { pages: [{ id: PAGE, items: [{ id: R1, entityId: "light.rule" }] }] };
-    expect(Object.hasOwn(rulesOf(applySmartStyleStandIn(bare, PAGE, R1, tileGone))[0]!, "tileStyle")).toBe(false);
-    // Unchanged, or no stand-in: the document as given.
-    expect(applySmartStyleStandIn(bare, PAGE, R1, cleared)).toBe(bare);
+    const standIn = smartStyleStandIn(rulesOf(bare)[0]!, PAGE, pageOf(bare));
+    const cleared = setWatchTileBorderStyle(standIn, PAGE, R1, "none");
+    expect(rulesOf(applySmartStyleStandIn(bare, PAGE, R1, cleared))[0]!.tileStyle).toEqual({ borderStyle: "none" });
+    const removed = { pages: [{ id: PAGE, items: [{ colSpan: 4, entityId: "light.rule", id: R1, rowSpan: 3, showLabel: true }] }] };
+    expect(Object.hasOwn(rulesOf(applySmartStyleStandIn(bare, PAGE, R1, removed))[0]!, "tileStyle")).toBe(false);
+    expect(applySmartStyleStandIn(bare, PAGE, R1, standIn)).toBe(bare);
     expect(applySmartStyleStandIn(bare, PAGE, R1, { pages: [] })).toBe(bare);
   });
 });
@@ -851,7 +1024,7 @@ describe("the layout", () => {
       { ruleIndex: 1, entityIds: ["binary_sensor.kitchen"] },
     ]);
     expect(items.map((i) => [i.customLabel ?? i.icon])).toEqual([["Doors"], ["door"], ["Doors"], ["door"]]);
-    expect(smartDuplicateDomainNote(c, TABLE)).toBe("Two rules share Binary Sensors. The watch draws every Binary Sensors group with the first rule's header and style.");
+    expect(smartDuplicateDomainNote(c, TABLE)).toBe("Two rules share binary_sensor. The watch draws every binary_sensor group with the first rule's header and style.");
     expect(smartDuplicateDomainNote(configOfRules([rule(R1, "light")]), TABLE)).toBeUndefined();
   });
 
@@ -903,5 +1076,120 @@ describe("the title and words", () => {
     expect(out.dynamicConfig).toBe(page.dynamicConfig);
     const plain: WatchPage = { id: PAGE, items: [] };
     expect(smartSyntheticPage(plain, states)).toBe(plain);
+  });
+});
+
+// ── the table's samples ──────────────────────────────────────────────────
+
+describe("tile-smart.json", () => {
+  const raw = WATCH_SMART.raw as Record<string, Json>;
+  const rows = (raw.domains as Json).rows as Json;
+  const smartPage = (rules: Json[]) => readSmartConfig({ dynamicConfig: config(rules) })!;
+
+  it("is read whole", () => {
+    expect(WATCH_SMART.domains.length).toBeGreaterThanOrEqual(18);
+    expect(WATCH_SMART.presets).toHaveLength(26);
+    expect(WATCH_SMART.presets.some((p) => p.domain === "person")).toBe(false);
+    expect(WATCH_SMART.presets.every((p) => WATCH_SMART.domains.some((d) => d.domain === p.domain))).toBe(true);
+    expect(WATCH_SMART.pageSizes.map((s) => [s.name, s.colSpan, s.rowSpan])).toEqual([
+      ["Small", 2, 2],
+      ["Standard", 4, 3],
+      ["Banner", 4, 2],
+      ["Full Width", 8, 3],
+    ]);
+    expect(WATCH_SMART.styleSizes.map((s) => s.name)).toEqual(["XSmall", "Small", "Medium", "Large"]);
+    expect(WATCH_SMART.headerStyles.map((s) => s.value)).toEqual(["none", "gap", "line", "label"]);
+  });
+
+  it("agrees with page-keys.json on the eight page keys and the style keys", () => {
+    const keys = (raw.page as Json).keys as { key: string; default: unknown }[];
+    expect(Object.fromEntries(keys.map((k) => [k.key, k.default]))).toEqual(WATCH_SMART_PAGE_DEFAULTS);
+    expect([...((raw.domainStyle as Json).keys as string[])].sort()).toEqual([...WATCH_DOMAIN_TILE_STYLE_KEYS].sort());
+    const checks = raw.checks as Json;
+    expect([...(checks.dynamicConfigRequired as string[])].sort()).toEqual(Object.keys(WATCH_SMART_PAGE_DEFAULTS));
+  });
+
+  it("names an unknown domain as Foundation capitalizes it", () => {
+    for (const s of (raw.domains as Json).other ? (((raw.domains as Json).other as Json).samples as Json[]) : []) {
+      expect(smartRuleName(view(rule(R1, s.domain as string)))).toBe(s.displayName);
+    }
+  });
+
+  it("reads the max value box as the samples do", () => {
+    for (const s of rows.maxValueSamples as Json[]) {
+      const before = smartDoc([rule(R1, "sensor", { maxNumericValue: 7 })]);
+      const after = setSmartRuleMaxValue(before, PAGE, R1, s.text as string);
+      const stored = rulesOf(after)[0]!.maxNumericValue;
+      if (s.result === "refused") expect(after, String(s.text)).toBe(before);
+      else if (s.result === "clear") expect(stored, String(s.text)).toBeUndefined();
+      else expect(stored, String(s.text)).toBe((s.result as Json).value);
+    }
+    for (const s of rows.maxValueText as Json[]) {
+      const r = s.value === null ? rule(R1, "sensor") : rule(R1, "sensor", { maxNumericValue: s.value });
+      expect(smartMaxValueText(view(r))).toBe(s.text);
+    }
+    for (const s of (raw.domains as Json).maxValueLabels as Json[]) {
+      const r = s.filter === null ? rule(R1, "sensor") : rule(R1, "sensor", { deviceClassFilter: s.filter });
+      expect(smartMaxValueLabel(view(r)), JSON.stringify(s.filter)).toBe(s.label);
+    }
+  });
+
+  it("resolves, badges and clamps a delete as the samples do", () => {
+    const sample = rows.resolveSample as Json;
+    expect(resolveSmartRule(statesFromIds(sample.states), sample.domain as string)).toEqual(sample.ids);
+    for (const s of rows.badgeSamples as Json[]) {
+      const r = view(rule(R1, "light", { mode: s.mode, entityIds: s.entityIds, ...(s.resolvedEntityIds === null ? {} : { resolvedEntityIds: s.resolvedEntityIds }) }));
+      expect(smartCountBadge(r) ?? null).toBe(s.badge);
+      expect(smartRuleUnresolved(r)).toBe(s.notResolved);
+    }
+    for (const s of rows.deleteSamples as Json[]) {
+      const ids = [R1, R2, R3].slice(0, s.count as number);
+      const deleted = deleteSmartRule(smartDoc(ids.map((id) => rule(id, "light"))), PAGE, ids[s.index as number]!);
+      const left = readSmartConfig(pageOf(deleted))!;
+      const selected = smartRuleAfterDelete(left, s.index as number);
+      expect(selected === undefined ? 0 : left.rules.findIndex((x) => x.id === selected)).toBe(s.selection);
+    }
+  });
+
+  it("names chips and writes the add and the reset as the samples do", () => {
+    const presets = raw.presets as Json;
+    for (const s of presets.chipSamples as Json[]) {
+      const r = rule(R1, s.domain as string, s.deviceClassFilter === null ? {} : { deviceClassFilter: s.deviceClassFilter });
+      expect(smartRuleName(view(r))).toBe(s.chip);
+    }
+    const added = presets.addSample as Json;
+    const preset = WATCH_SMART.presets.find((p) => p.label === added.headerLabel)!;
+    const after = addSmartRule(smartDoc([]), PAGE, preset, (added.tileStyle as Json).color as string, undefined, { newId: () => added.id as string });
+    expect(JSON.stringify(rulesOf(after)[0])).toBe(JSON.stringify(added));
+    for (const s of ((raw.resets as Json).rule as Json).samples as Json[]) {
+      const before = smartDoc([s.rule as Json]);
+      const color = ((s.reset as Json).tileStyle as Json).color as string;
+      const id = (s.rule as Json).id as string;
+      expect(JSON.stringify(rulesOf(resetSmartRule(before, PAGE, id, color))[0])).toBe(JSON.stringify(s.reset));
+    }
+  });
+
+  it("rounds the glow as the samples do", () => {
+    for (const s of (raw.header as Json).glowSamples as Json[]) {
+      const after = setSmartRuleHeaderGlow(smartDoc([rule(R1, "light")]), PAGE, R1, s.value as number);
+      expect(rulesOf(after)[0]!.headerGlow ?? 0, String(s.value)).toBe(s.written);
+    }
+  });
+
+  it("says the title, the tracking line and the shared domain note as the samples do", () => {
+    const checks = raw.checks as Json;
+    for (const s of checks.titleSamples as Json[]) {
+      expect(smartTitleWords(s.totalActive as number, s.ruleCounts as { domain: string; count: number }[])).toBe(s.title);
+    }
+    for (const s of checks.trackingSamples as Json[]) {
+      const rules = (s.rules as Json[]).map((r, i) =>
+        rule([R1, R2, R3][i]!, r.domain as string, r.mode === "all" ? { resolvedEntityIds: r.ids } : { mode: "specific", entityIds: r.ids }),
+      );
+      expect(smartTrackingWords(smartPage(rules))).toBe(s.words);
+    }
+    const shared = checks.sharedDomainSample as Json;
+    const sharedRules = (shared.domains as string[]).map((d, i) => rule([R1, R2, R3][i]!, d));
+    expect(smartSharedDomains(smartPage(sharedRules))).toEqual(shared.shared);
+    expect(smartDuplicateDomainNote(smartPage(sharedRules))).toBe((shared.notes as string[]).join(" "));
   });
 });

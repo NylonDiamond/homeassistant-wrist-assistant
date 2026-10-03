@@ -1,6 +1,6 @@
 {
   "name": "Icon size back to Auto",
-  "source": "WristAssistant/Views/PageEditorView.swift:6964",
+  "source": "WristAssistant/Views/PageEditorView.swift:6911",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

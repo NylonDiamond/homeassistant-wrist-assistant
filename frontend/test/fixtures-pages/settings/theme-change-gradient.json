@@ -1,6 +1,6 @@
 {
   "name": "The same on a gradient page; tile and effect colors are rebuilt as gradients",
-  "source": "WristAssistant/Views/PageEditorView.swift:672",
+  "source": "WristAssistant/Views/PageEditorView.swift:675",
   "page": {
     "backgroundBrightness": 0.6,
     "backgroundColor": "#16245C",

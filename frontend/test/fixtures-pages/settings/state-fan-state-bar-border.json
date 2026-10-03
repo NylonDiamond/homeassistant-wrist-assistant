@@ -1,6 +1,6 @@
 {
   "name": "Bar border on on a fan tile (State Bar)",
-  "source": "WristAssistant/Views/PageEditorView.swift:7049",
+  "source": "WristAssistant/Views/PageEditorView.swift:6996",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

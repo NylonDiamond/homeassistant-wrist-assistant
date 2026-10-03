@@ -1,6 +1,6 @@
 {
   "name": "The old action is gone: a label that is not empty stays",
-  "source": "WristAssistant/Views/PageEditor/Tabs/AddTabContent.swift:774",
+  "source": "WristAssistant/Views/PageEditor/Tabs/AddTabContent.swift:752",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

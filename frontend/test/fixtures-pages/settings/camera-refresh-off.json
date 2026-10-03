@@ -1,6 +1,6 @@
 {
   "name": "Never refresh this camera on page open",
-  "source": "WristAssistant/Views/PageEditorView.swift:9235",
+  "source": "WristAssistant/Views/PageEditorView.swift:9182",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

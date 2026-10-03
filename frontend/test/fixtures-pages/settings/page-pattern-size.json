@@ -1,6 +1,6 @@
 {
   "name": "Page pattern size",
-  "source": "WristAssistant/Views/PageEditorView.swift:16341",
+  "source": "WristAssistant/Views/PageEditorView.swift:16288",
   "page": {
     "backgroundBrightness": 0.8,
     "backgroundColor": "#101238",

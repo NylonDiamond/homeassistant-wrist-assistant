@@ -1,0 +1,98 @@
+{
+  "name": "Playing only off leaves the key out",
+  "source": "WristAssistant/Views/PageEditor/SmartPageRules.swift:263",
+  "page": {
+    "backgroundBrightness": 0.6,
+    "backgroundColor": "#000000",
+    "complicationDisplayMode": "text",
+    "dynamicConfig": {
+      "liveUpdates": false,
+      "pullToRefresh": true,
+      "refreshOnAppear": false,
+      "rules": [
+        {
+          "domain": "media_player",
+          "entityIds": [],
+          "header": "label",
+          "headerLabel": "Media Players",
+          "id": "C3A0E000-0000-4000-8000-000000000804",
+          "invertActive": false,
+          "maxNumericValue": 3,
+          "mediaPlayerPlayingOnly": true,
+          "mode": "all",
+          "tileStyle": {
+            "icon": "hifispeaker.fill"
+          }
+        }
+      ],
+      "sortOrder": "domain",
+      "tileColSpan": 4,
+      "tileRowSpan": 3,
+      "tileShowLabel": true
+    },
+    "fullScreen": false,
+    "gridDensity": "standard",
+    "groups": [],
+    "hideFromSwitcher": false,
+    "id": "C3A0E000-0000-4000-8000-0000000007F0",
+    "isDeletable": true,
+    "isHidden": false,
+    "isSystemPage": false,
+    "items": [],
+    "name": "Active",
+    "pageTitleDisplayStyle": "none",
+    "pageTitleIcon": "house",
+    "pageTitleTextSize": "size10",
+    "themeOverride": "neonLagoon",
+    "useGradientColors": false
+  },
+  "edit": {
+    "op": "smartPlayingOnly",
+    "ruleIndex": 0,
+    "value": false
+  },
+  "expected": {
+    "backgroundBrightness": 0.6,
+    "backgroundColor": "#000000",
+    "complicationDisplayMode": "text",
+    "dynamicConfig": {
+      "liveUpdates": false,
+      "pullToRefresh": true,
+      "refreshOnAppear": false,
+      "rules": [
+        {
+          "domain": "media_player",
+          "entityIds": [],
+          "header": "label",
+          "headerLabel": "Media Players",
+          "id": "C3A0E000-0000-4000-8000-000000000804",
+          "invertActive": false,
+          "maxNumericValue": 3,
+          "mode": "all",
+          "tileStyle": {
+            "icon": "hifispeaker.fill"
+          }
+        }
+      ],
+      "sortOrder": "domain",
+      "tileColSpan": 4,
+      "tileRowSpan": 3,
+      "tileShowLabel": true
+    },
+    "fullScreen": false,
+    "gridDensity": "standard",
+    "groups": [],
+    "hideFromSwitcher": false,
+    "id": "C3A0E000-0000-4000-8000-0000000007F0",
+    "isDeletable": true,
+    "isHidden": false,
+    "isSystemPage": false,
+    "items": [],
+    "name": "Active",
+    "pageTitleDisplayStyle": "none",
+    "pageTitleIcon": "house",
+    "pageTitleTextSize": "size10",
+    "themeOverride": "neonLagoon",
+    "useGradientColors": false
+  }
+}

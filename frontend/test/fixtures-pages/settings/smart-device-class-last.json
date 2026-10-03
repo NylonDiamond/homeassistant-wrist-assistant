@@ -1,0 +1,152 @@
+{
+  "name": "Removing the last class removes the filter",
+  "source": "WristAssistant/Views/PageEditor/SmartPageRules.swift:267",
+  "page": {
+    "backgroundBrightness": 0.6,
+    "backgroundColor": "#000000",
+    "complicationDisplayMode": "text",
+    "dynamicConfig": {
+      "liveUpdates": false,
+      "pullToRefresh": true,
+      "refreshOnAppear": false,
+      "rules": [
+        {
+          "domain": "light",
+          "entityIds": [],
+          "header": "label",
+          "headerLabel": "Lights",
+          "id": "C3A0E000-0000-4000-8000-000000000801",
+          "invertActive": false,
+          "mode": "all",
+          "resolvedEntityIds": ["light.example_attic", "light.example_study"],
+          "tileStyle": {
+            "color": "#FFC145",
+            "icon": "lightbulb.fill"
+          }
+        },
+        {
+          "deviceClassFilter": ["door"],
+          "domain": "binary_sensor",
+          "entityIds": [],
+          "header": "label",
+          "headerLabel": "Doors",
+          "id": "C3A0E000-0000-4000-8000-000000000802",
+          "invertActive": false,
+          "mode": "all",
+          "tileStyle": {
+            "color": "#9EC2E8",
+            "icon": "door.left.hand.open"
+          }
+        },
+        {
+          "domain": "media_player",
+          "entityIds": ["media_player.example_den"],
+          "header": "label",
+          "headerLabel": "Media Players",
+          "id": "C3A0E000-0000-4000-8000-000000000803",
+          "invertActive": false,
+          "mode": "specific",
+          "tileStyle": {
+            "color": "#D057D9",
+            "icon": "hifispeaker.fill"
+          }
+        }
+      ],
+      "sortOrder": "domain",
+      "tileColSpan": 4,
+      "tileRowSpan": 3,
+      "tileShowLabel": true
+    },
+    "fullScreen": false,
+    "gridDensity": "standard",
+    "groups": [],
+    "hideFromSwitcher": false,
+    "id": "C3A0E000-0000-4000-8000-0000000007F0",
+    "isDeletable": true,
+    "isHidden": false,
+    "isSystemPage": false,
+    "items": [],
+    "name": "Active",
+    "pageTitleDisplayStyle": "none",
+    "pageTitleIcon": "house",
+    "pageTitleTextSize": "size10",
+    "themeOverride": "neonLagoon",
+    "useGradientColors": false
+  },
+  "edit": {
+    "op": "smartDeviceClass",
+    "ruleIndex": 1,
+    "value": "door"
+  },
+  "expected": {
+    "backgroundBrightness": 0.6,
+    "backgroundColor": "#000000",
+    "complicationDisplayMode": "text",
+    "dynamicConfig": {
+      "liveUpdates": false,
+      "pullToRefresh": true,
+      "refreshOnAppear": false,
+      "rules": [
+        {
+          "domain": "light",
+          "entityIds": [],
+          "header": "label",
+          "headerLabel": "Lights",
+          "id": "C3A0E000-0000-4000-8000-000000000801",
+          "invertActive": false,
+          "mode": "all",
+          "resolvedEntityIds": ["light.example_attic", "light.example_study"],
+          "tileStyle": {
+            "color": "#FFC145",
+            "icon": "lightbulb.fill"
+          }
+        },
+        {
+          "domain": "binary_sensor",
+          "entityIds": [],
+          "header": "label",
+          "headerLabel": "Doors",
+          "id": "C3A0E000-0000-4000-8000-000000000802",
+          "invertActive": false,
+          "mode": "all",
+          "tileStyle": {
+            "color": "#9EC2E8",
+            "icon": "door.left.hand.open"
+          }
+        },
+        {
+          "domain": "media_player",
+          "entityIds": ["media_player.example_den"],
+          "header": "label",
+          "headerLabel": "Media Players",
+          "id": "C3A0E000-0000-4000-8000-000000000803",
+          "invertActive": false,
+          "mode": "specific",
+          "tileStyle": {
+            "color": "#D057D9",
+            "icon": "hifispeaker.fill"
+          }
+        }
+      ],
+      "sortOrder": "domain",
+      "tileColSpan": 4,
+      "tileRowSpan": 3,
+      "tileShowLabel": true
+    },
+    "fullScreen": false,
+    "gridDensity": "standard",
+    "groups": [],
+    "hideFromSwitcher": false,
+    "id": "C3A0E000-0000-4000-8000-0000000007F0",
+    "isDeletable": true,
+    "isHidden": false,
+    "isSystemPage": false,
+    "items": [],
+    "name": "Active",
+    "pageTitleDisplayStyle": "none",
+    "pageTitleIcon": "house",
+    "pageTitleTextSize": "size10",
+    "themeOverride": "neonLagoon",
+    "useGradientColors": false
+  }
+}

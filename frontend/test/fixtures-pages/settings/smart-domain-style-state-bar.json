@@ -1,0 +1,102 @@
+{
+  "name": "State bar Fill on a domain",
+  "source": "WristAssistant/Views/PageEditor/SmartPageRules.swift:477",
+  "page": {
+    "backgroundBrightness": 0.6,
+    "backgroundColor": "#000000",
+    "complicationDisplayMode": "text",
+    "dynamicConfig": {
+      "liveUpdates": false,
+      "pullToRefresh": true,
+      "refreshOnAppear": false,
+      "rules": [
+        {
+          "domain": "light",
+          "entityIds": [],
+          "header": "label",
+          "headerLabel": "Lights",
+          "id": "C3A0E000-0000-4000-8000-000000000801",
+          "invertActive": false,
+          "mode": "all",
+          "resolvedEntityIds": ["light.example_attic", "light.example_study"],
+          "tileStyle": {
+            "color": "#FFC145",
+            "icon": "lightbulb.fill"
+          }
+        }
+      ],
+      "sortOrder": "domain",
+      "tileColSpan": 4,
+      "tileRowSpan": 3,
+      "tileShowLabel": true
+    },
+    "fullScreen": false,
+    "gridDensity": "standard",
+    "groups": [],
+    "hideFromSwitcher": false,
+    "id": "C3A0E000-0000-4000-8000-0000000007F0",
+    "isDeletable": true,
+    "isHidden": false,
+    "isSystemPage": false,
+    "items": [],
+    "name": "Active",
+    "pageTitleDisplayStyle": "none",
+    "pageTitleIcon": "house",
+    "pageTitleTextSize": "size10",
+    "themeOverride": "neonLagoon",
+    "useGradientColors": false
+  },
+  "edit": {
+    "op": "smartDomainStyle",
+    "ruleIndex": 0,
+    "set": {
+      "stateBarStyle": "Fill"
+    }
+  },
+  "expected": {
+    "backgroundBrightness": 0.6,
+    "backgroundColor": "#000000",
+    "complicationDisplayMode": "text",
+    "dynamicConfig": {
+      "liveUpdates": false,
+      "pullToRefresh": true,
+      "refreshOnAppear": false,
+      "rules": [
+        {
+          "domain": "light",
+          "entityIds": [],
+          "header": "label",
+          "headerLabel": "Lights",
+          "id": "C3A0E000-0000-4000-8000-000000000801",
+          "invertActive": false,
+          "mode": "all",
+          "resolvedEntityIds": ["light.example_attic", "light.example_study"],
+          "tileStyle": {
+            "color": "#FFC145",
+            "icon": "lightbulb.fill",
+            "stateBarStyle": "Fill"
+          }
+        }
+      ],
+      "sortOrder": "domain",
+      "tileColSpan": 4,
+      "tileRowSpan": 3,
+      "tileShowLabel": true
+    },
+    "fullScreen": false,
+    "gridDensity": "standard",
+    "groups": [],
+    "hideFromSwitcher": false,
+    "id": "C3A0E000-0000-4000-8000-0000000007F0",
+    "isDeletable": true,
+    "isHidden": false,
+    "isSystemPage": false,
+    "items": [],
+    "name": "Active",
+    "pageTitleDisplayStyle": "none",
+    "pageTitleIcon": "house",
+    "pageTitleTextSize": "size10",
+    "themeOverride": "neonLagoon",
+    "useGradientColors": false
+  }
+}

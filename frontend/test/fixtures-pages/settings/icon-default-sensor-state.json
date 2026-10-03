@@ -1,6 +1,6 @@
 {
   "name": "A sensor's default icon follows its state",
-  "source": "WristAssistant/Views/PageEditorView.swift:2714",
+  "source": "WristAssistant/Views/PageEditorView.swift:2717",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

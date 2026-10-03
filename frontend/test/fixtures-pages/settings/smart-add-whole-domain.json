@@ -1,0 +1,96 @@
+{
+  "name": "Add Lights on a new smart page: the rule, then every all rule resolved",
+  "source": "WristAssistant/Views/PageEditor/SmartPageRules.swift:227",
+  "page": {
+    "backgroundBrightness": 0.6,
+    "backgroundColor": "#000000",
+    "complicationDisplayMode": "text",
+    "dynamicConfig": {
+      "liveUpdates": false,
+      "pullToRefresh": true,
+      "refreshOnAppear": false,
+      "rules": [],
+      "sortOrder": "domain",
+      "tileColSpan": 4,
+      "tileRowSpan": 3,
+      "tileShowLabel": true
+    },
+    "fullScreen": false,
+    "gridDensity": "standard",
+    "groups": [],
+    "hideFromSwitcher": false,
+    "id": "C3A0E000-0000-4000-8000-0000000007F0",
+    "isDeletable": true,
+    "isHidden": false,
+    "isSystemPage": false,
+    "items": [],
+    "name": "Active",
+    "pageTitleDisplayStyle": "none",
+    "pageTitleIcon": "house",
+    "pageTitleTextSize": "size10",
+    "themeOverride": "neonLagoon",
+    "useGradientColors": false
+  },
+  "edit": {
+    "op": "smartAddRule",
+    "preset": "Lights",
+    "id": "C3A0E000-0000-4000-8000-000000000801",
+    "color": "#FFC145",
+    "states": [
+      "light.example_study",
+      "light.example_attic",
+      "switch.example_heater",
+      "binary_sensor.example_front_door",
+      "binary_sensor.example_back_door",
+      "sensor.example_phone_battery",
+      "sensor.example_light_level",
+      "media_player.example_den",
+      "lighting.example_strip"
+    ]
+  },
+  "expected": {
+    "backgroundBrightness": 0.6,
+    "backgroundColor": "#000000",
+    "complicationDisplayMode": "text",
+    "dynamicConfig": {
+      "liveUpdates": false,
+      "pullToRefresh": true,
+      "refreshOnAppear": false,
+      "rules": [
+        {
+          "domain": "light",
+          "entityIds": [],
+          "header": "label",
+          "headerLabel": "Lights",
+          "id": "C3A0E000-0000-4000-8000-000000000801",
+          "invertActive": false,
+          "mode": "all",
+          "resolvedEntityIds": ["light.example_attic", "light.example_study"],
+          "tileStyle": {
+            "color": "#FFC145",
+            "icon": "lightbulb.fill"
+          }
+        }
+      ],
+      "sortOrder": "domain",
+      "tileColSpan": 4,
+      "tileRowSpan": 3,
+      "tileShowLabel": true
+    },
+    "fullScreen": false,
+    "gridDensity": "standard",
+    "groups": [],
+    "hideFromSwitcher": false,
+    "id": "C3A0E000-0000-4000-8000-0000000007F0",
+    "isDeletable": true,
+    "isHidden": false,
+    "isSystemPage": false,
+    "items": [],
+    "name": "Active",
+    "pageTitleDisplayStyle": "none",
+    "pageTitleIcon": "house",
+    "pageTitleTextSize": "size10",
+    "themeOverride": "neonLagoon",
+    "useGradientColors": false
+  }
+}

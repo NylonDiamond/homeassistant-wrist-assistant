@@ -1,6 +1,6 @@
 {
   "name": "Reset Background; pattern color and size stay",
-  "source": "WristAssistant/Views/PageEditorView.swift:2756",
+  "source": "WristAssistant/Views/PageEditorView.swift:2759",
   "tile": {
     "animationColor": "#47C4FF",
     "animationIntensity": 1.5,

@@ -1,6 +1,6 @@
 {
   "name": "The page's own theme again: no remap, the gradients are still rebuilt",
-  "source": "WristAssistant/Views/PageEditorView.swift:672",
+  "source": "WristAssistant/Views/PageEditorView.swift:675",
   "page": {
     "backgroundBrightness": 0.6,
     "backgroundColor": "#16245C",

@@ -1,0 +1,96 @@
+{
+  "name": "Add Sirens: a domain Home Assistant has none of resolves to []",
+  "source": "WristAssistant/Views/PageEditor/SmartPageRules.swift:227",
+  "page": {
+    "backgroundBrightness": 0.6,
+    "backgroundColor": "#000000",
+    "complicationDisplayMode": "text",
+    "dynamicConfig": {
+      "liveUpdates": false,
+      "pullToRefresh": true,
+      "refreshOnAppear": false,
+      "rules": [],
+      "sortOrder": "domain",
+      "tileColSpan": 4,
+      "tileRowSpan": 3,
+      "tileShowLabel": true
+    },
+    "fullScreen": false,
+    "gridDensity": "standard",
+    "groups": [],
+    "hideFromSwitcher": false,
+    "id": "C3A0E000-0000-4000-8000-0000000007F0",
+    "isDeletable": true,
+    "isHidden": false,
+    "isSystemPage": false,
+    "items": [],
+    "name": "Active",
+    "pageTitleDisplayStyle": "none",
+    "pageTitleIcon": "house",
+    "pageTitleTextSize": "size10",
+    "themeOverride": "neonLagoon",
+    "useGradientColors": false
+  },
+  "edit": {
+    "op": "smartAddRule",
+    "preset": "Sirens",
+    "id": "C3A0E000-0000-4000-8000-000000000804",
+    "color": "#FF9E4D",
+    "states": [
+      "light.example_study",
+      "light.example_attic",
+      "switch.example_heater",
+      "binary_sensor.example_front_door",
+      "binary_sensor.example_back_door",
+      "sensor.example_phone_battery",
+      "sensor.example_light_level",
+      "media_player.example_den",
+      "lighting.example_strip"
+    ]
+  },
+  "expected": {
+    "backgroundBrightness": 0.6,
+    "backgroundColor": "#000000",
+    "complicationDisplayMode": "text",
+    "dynamicConfig": {
+      "liveUpdates": false,
+      "pullToRefresh": true,
+      "refreshOnAppear": false,
+      "rules": [
+        {
+          "domain": "siren",
+          "entityIds": [],
+          "header": "label",
+          "headerLabel": "Sirens",
+          "id": "C3A0E000-0000-4000-8000-000000000804",
+          "invertActive": false,
+          "mode": "all",
+          "resolvedEntityIds": [],
+          "tileStyle": {
+            "color": "#FF9E4D",
+            "icon": "speaker.wave.3.fill"
+          }
+        }
+      ],
+      "sortOrder": "domain",
+      "tileColSpan": 4,
+      "tileRowSpan": 3,
+      "tileShowLabel": true
+    },
+    "fullScreen": false,
+    "gridDensity": "standard",
+    "groups": [],
+    "hideFromSwitcher": false,
+    "id": "C3A0E000-0000-4000-8000-0000000007F0",
+    "isDeletable": true,
+    "isHidden": false,
+    "isSystemPage": false,
+    "items": [],
+    "name": "Active",
+    "pageTitleDisplayStyle": "none",
+    "pageTitleIcon": "house",
+    "pageTitleTextSize": "size10",
+    "themeOverride": "neonLagoon",
+    "useGradientColors": false
+  }
+}

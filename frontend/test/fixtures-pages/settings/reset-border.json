@@ -1,6 +1,6 @@
 {
   "name": "Reset Border",
-  "source": "WristAssistant/Views/PageEditorView.swift:2737",
+  "source": "WristAssistant/Views/PageEditorView.swift:2740",
   "tile": {
     "animationColor": "#47C4FF",
     "animationIntensity": 1.5,
