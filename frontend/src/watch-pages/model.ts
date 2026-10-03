@@ -346,7 +346,7 @@ const DEFAULT_SYMBOLS: Readonly<Record<string, string>> = {
   status_page: "list.bullet.rectangle",
   http_action: "network",
   macro: "list.bullet",
-  template: "curlybraces",
+  template: "chevron.left.forwardslash.chevron.right",
   multicam: "video.fill",
   point_control: "hand.point.up.left.fill",
   music_hub: "music.note.house.fill",

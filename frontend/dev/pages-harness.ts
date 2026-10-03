@@ -53,6 +53,10 @@ const CMD = {
   historyEntry: `${WC}/history_entry`,
   restore: `${WC}/restore`,
   subscribe: `${WC}/subscribe`,
+  // Part 3f batch 2: the template renders and the two home wide calls.
+  render: "wrist_assistant/complications/render_values",
+  configEntries: "config_entries/get",
+  cloudStatus: "cloud/status",
 } as const;
 
 /** What a refusal rejects with: the `error` part of Home Assistant's result
@@ -712,6 +716,13 @@ const SPECIAL_STATES: readonly HassEntityState[] = [
   specialState("switch.robo_do_not_disturb", "off", { friendly_name: "Robo do not disturb" }),
   specialState("switch.robo_child_lock", "off", { friendly_name: "Robo child lock" }),
   specialState("sensor.robo_battery", "64", { friendly_name: "Robo battery", unit_of_measurement: "%", device_class: "battery" }),
+  // The music hub's speakers (part 3f batch 2): Music Assistant players with
+  // the grouping bit, one playing with album art, one idle.
+  specialState("media_player.kitchen_speaker", "playing", {
+    friendly_name: "Kitchen Speaker", media_title: "So What", media_artist: "Miles Davis", entity_picture: snapshotUrl("So What", 30, 300, 300),
+    supported_features: 524288 | 1 | 4 | 16384, mass_player_type: "player", group_members: [],
+  }),
+  specialState("media_player.office_speaker", "idle", { friendly_name: "Office Speaker", supported_features: 524288 | 1 | 4 | 16384, mass_player_type: "player", group_members: [] }),
 ];
 
 /** The devices the special tiles' settings read beyond the home's: the
@@ -750,7 +761,34 @@ const SPECIAL_SYMBOLS = [
   "exclamationmark.triangle", "battery.25", "battery.50", "battery.75", "battery.100", "leaf.fill", "flame", "flame.fill",
   "snowflake", "thermometer.variable", "power", "person", "person.fill", "shield", "shield.fill", "exclamationmark.shield",
   "shield.lefthalf.filled", "calendar", "cloud.sun.fill",
+  // Part 3f batch 2: the template tile's placeholder and the Home Status
+  // preset's icons, the music hub's.
+  "chevron.left.forwardslash.chevron.right", "lightbulb.fill", "lock.open.fill", "music.note.house", "music.note.house.fill",
 ];
+
+/** The Home Status preset's text, the phone's template add
+ * (`TemplatePreset.all` in `AppTileRules.swift`). */
+const HOME_STATUS_TEMPLATE = [
+  "[icon:lightbulb.fill] {{ states.light | selectattr('state','eq','on') | list | count }} lights on",
+  "[icon:lock.open.fill] {{ states.lock | selectattr('state','eq','unlocked') | list | count }} unlocked",
+  "[icon:person.fill] {{ states.person | selectattr('state','eq','home') | list | count }} home",
+].join("\n");
+
+/** A stand-in for `render_values`: each `{{ states.<domain> |
+ * selectattr('state','eq','<state>') | list | count }}` counted in the
+ * harness's states, any other expression "42", and a `{{` left open the
+ * syntax error Home Assistant gives. A blank template is refused, as there. */
+function renderStandIn(template: string): { ok: true; value: string } | { ok: false; error: string } {
+  if (template.trim() === "") return { ok: false, error: "empty template" };
+  const open = template.split("{{").length - 1;
+  if (open !== template.split("}}").length - 1) return { ok: false, error: "TemplateSyntaxError: unexpected 'end of template'" };
+  const value = template.replace(/\{\{(.*?)\}\}/gs, (_all, expression: string) => {
+    const m = /states\.(\w+)\s*\|\s*selectattr\('state'\s*,\s*'eq'\s*,\s*'([^']*)'\)\s*\|\s*list\s*\|\s*count/.exec(expression);
+    if (m === null) return "42";
+    return String(Object.values(states).filter((s) => s.entity_id.startsWith(`${m[1]}.`) && s.state === m[2]).length);
+  });
+  return { ok: true, value: value.trim() };
+}
 
 /** A page with one tile of each special kind, on Alex's watch. Each tile
  * starts from the first fixture tile, so it carries every key a tile the
@@ -783,6 +821,16 @@ function specialTilesPage(): Json | undefined {
     tile({ entityId: "person.sam", usePersonPhoto: false, gridCol: 4, gridRow: 15, colSpan: 4, rowSpan: 3 }),
     tile({ entityId: "calendar.family", icon: "calendar", gridCol: 8, gridRow: 15, colSpan: 2, rowSpan: 3 }),
     tile({ entityId: "weather.home", icon: "cloud.sun.fill", gridCol: 10, gridRow: 15, colSpan: 2, rowSpan: 3 }),
+    // Part 3f batch 2: a template tile as the phone adds it, rendered by the
+    // stand-in `render_values`, and a music hub whose kitchen speaker plays.
+    tile({
+      entityId: "template.5F3C1A00-0000-4000-8000-0000000000A1", icon: "chevron.left.forwardslash.chevron.right", color: "#CCD8E6",
+      customLabel: "Template", templateString: HOME_STATUS_TEMPLATE, gridCol: 0, gridRow: 18, colSpan: 6, rowSpan: 4,
+    }),
+    tile({
+      entityId: "music_hub.5F3C1A00-0000-4000-8000-0000000000A2", icon: "music.note.house", color: "#E89545", customLabel: "Music",
+      musicHubSpeakerIds: ["media_player.kitchen_speaker", "media_player.office_speaker"], showAlbumArt: true, gridCol: 6, gridRow: 18, colSpan: 6, rowSpan: 4,
+    }),
   ];
   return { ...clone(base), id: "5F3C1A00-0000-4000-8000-0000000000FF", name: "Special tiles", items };
 }
@@ -878,6 +926,9 @@ const SCHEMAS: Record<string, { fields: Record<string, FieldType>; admin: boolea
   [CMD.historyEntry]: { fields: { owner_watch_id: "str", kind: "str", revision: "int" }, admin: true },
   [CMD.restore]: { fields: { owner_watch_id: "str", kind: "str", revision: "int", base_revision: "int" }, admin: true },
   [CMD.subscribe]: { fields: { owner_watch_id: "str" }, admin: false },
+  [CMD.render]: { fields: { templates: "dict" }, admin: true },
+  [CMD.configEntries]: { fields: { domain: "str" }, admin: true },
+  [CMD.cloudStatus]: { fields: {}, admin: false },
 };
 
 function checkMessage(message: Json): void {
@@ -945,6 +996,15 @@ function answer(message: Json): unknown {
     }
     case CMD.restore:
       return { revision: store.restore(owner, message.kind, message.revision, message.base_revision).revision };
+    case CMD.render:
+      return { results: Object.fromEntries(Object.entries(message.templates as Json).map(([key, t]) => [key, renderStandIn(String(t))])) };
+    case CMD.configEntries:
+      // Music Assistant is set up; nothing else is asked.
+      return message.domain === "music_assistant"
+        ? [{ entry_id: "01HARNESSMUSICASSISTANT0", domain: "music_assistant", title: "Music Assistant", source: "zeroconf", state: "loaded", disabled_by: null }]
+        : [];
+    case CMD.cloudStatus:
+      return { logged_in: true, cloud: "connected", http_use_ssl: false };
     default:
       // A type with a schema but no answer here: a gap in the harness.
       return fail("unknown_command", "Unknown command.");

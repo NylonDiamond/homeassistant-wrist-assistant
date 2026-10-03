@@ -228,3 +228,44 @@ describe("a tile's library target", () => {
     expect(watchLibraryTileFallbackName("light.desk", catalog)).toBeUndefined();
   });
 });
+
+describe("the voice defaults (part 3f batch 2)", () => {
+  const voiceOf = (voice: unknown) => readWatchCatalog({ ...DOCUMENT, voice }).voice;
+
+  it("are unknown when the document has no voice object: a phone older than the key", () => {
+    const { voice: _voice, ...older } = DOCUMENT;
+    expect(readWatchCatalog(older).voice).toBeUndefined();
+    for (const junk of [null, "tts.cloud", 3, ["media_player.a"], true]) expect(voiceOf(junk), String(junk)).toBeUndefined();
+    expect(readWatchCatalog("junk").voice).toBeUndefined();
+  });
+
+  it("are none when the phone has none: an empty object", () => {
+    expect(voiceOf({})).toEqual({});
+  });
+
+  it("read the three fields as the phone writes them, speakers in stored order", () => {
+    expect(voiceOf({
+      defaultAssistAgentId: "conversation.openai",
+      defaultSpeakers: ["media_player.living_room", "media_player.kitchen"],
+      defaultTTSEngine: "tts.google_translate",
+    })).toEqual({
+      defaultAssistAgentId: "conversation.openai",
+      defaultSpeakers: ["media_player.living_room", "media_player.kitchen"],
+      defaultTTSEngine: "tts.google_translate",
+    });
+  });
+
+  it("keep each field only when typed right, and drop blank ones", () => {
+    expect(voiceOf({ defaultAssistAgentId: 7, defaultSpeakers: "media_player.a", defaultTTSEngine: { id: "x" } })).toEqual({});
+    expect(voiceOf({ defaultAssistAgentId: "  ", defaultTTSEngine: "" })).toEqual({});
+    expect(voiceOf({ defaultSpeakers: [3, "media_player.a", null, " ", "", "media_player.b", { id: "c" }] })).toEqual({ defaultSpeakers: ["media_player.a", "media_player.b"] });
+    expect(voiceOf({ defaultSpeakers: [1, "", null] })).toEqual({});
+    expect(voiceOf({ defaultTTSEngine: "tts.home_assistant_cloud", phrases: ["Hello"], watchSpeechRate: 1 })).toEqual({ defaultTTSEngine: "tts.home_assistant_cloud" });
+  });
+
+  it("come through a record with the lists, never touching them", () => {
+    const catalog = watchCatalogFromRecord(record({ document: { ...DOCUMENT, voice: { defaultTTSEngine: "tts.cloud" } } }))!;
+    expect(catalog.voice).toEqual({ defaultTTSEngine: "tts.cloud" });
+    expect(catalog.httpActions).toEqual(readWatchCatalog(DOCUMENT).httpActions);
+  });
+});

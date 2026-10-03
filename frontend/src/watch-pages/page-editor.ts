@@ -40,16 +40,31 @@ import { repeat } from "lit/directives/repeat.js";
 import {
   type HassLike,
   type OwnerSummary,
+  type RenderResult,
   type WatchConfigHistoryEntry,
   type WatchConfigRecord,
+  fetchCloudStatus,
+  fetchConfigEntries,
   fetchOwners,
   fetchWatchConfig,
   fetchWatchConfigHistory,
   fetchWatchConfigHistoryEntry,
+  renderTemplates,
   restoreWatchConfig,
   saveWatchConfig,
   subscribeWatchConfig,
 } from "../ha-api.js";
+import {
+  MUSIC_ASSISTANT_DOMAIN,
+  WATCH_TEMPLATE_DEBOUNCE_MS,
+  WATCH_TEMPLATE_REFRESH_MS,
+  type WatchHomeData,
+  watchCloudTTSAvailable,
+  watchHasConfigEntry,
+  watchMergedRenders,
+  watchTemplateRequests,
+  watchTemplateSignature,
+} from "./app-model.js";
 import { SCRUB_END, SCRUB_START } from "../editors.js";
 import { formStyles } from "../form-styles.js";
 import { peopleOf } from "../people.js";
@@ -436,6 +451,24 @@ export class WaPageEditor extends LitElement {
    * Camera task's Default words; the phone's defaults until it is read. */
   @state() private cameraRefresh: { on: boolean; debounce: string } = watchCameraRefreshDefaults(undefined);
   private behaviorSeq = 0;
+  /** What the element knows of the home beyond its states (part 3f batch
+   * 2): asked the first time a watch is opened and again after a reconnect.
+   * Each field undefined until in; a failed call keeps what was known. */
+  @state() private homeData: WatchHomeData = { musicAssistant: undefined, cloudTTS: undefined };
+  private homeDataAsked = false;
+  private musicSeq = 0;
+  private cloudSeq = 0;
+  /** The shown page's template tiles as Home Assistant renders them, by
+   * tile id. Never in the draft; cleared when another watch is opened. */
+  @state() private templateRenders: ReadonlyMap<string, RenderResult> = new Map();
+  /** The `(tile id, text)` set last asked about (`watchTemplateSignature`);
+   * a draw that finds another one asks again after the debounce. */
+  private templateSignature?: string;
+  /** Bumped by every render call: an answer that a newer call outran is
+   * dropped. */
+  private templateRun = 0;
+  private templateDebounce?: number;
+  private templateInterval?: number;
   @state() private loading = false;
   @state() private loadError?: string;
   @state() private history: WatchConfigHistoryEntry[] = [];
@@ -573,6 +606,7 @@ export class WaPageEditor extends LitElement {
     this.endScrub();
     this.endSubscription();
     this.stopPolling();
+    this.stopTemplates();
     this.loadSeq++;
     this.catalogSeq++;
     this.historySeq++;
@@ -624,6 +658,10 @@ export class WaPageEditor extends LitElement {
     void this.load(watchId, true);
     // A catalog the phone published while the socket was down sent no event.
     void this.loadCatalog(watchId);
+    // Music Assistant or the cloud may have come or gone meanwhile, and a
+    // template's entities moved without the preview hearing.
+    this.loadHomeData();
+    if (this.templateSignature !== undefined) this.scheduleTemplates(0);
   };
 
   /** Follow the save of the watch on screen to its end, whoever started it:
@@ -688,6 +726,9 @@ export class WaPageEditor extends LitElement {
     // The dragged number's field was drawn away (an undo, a merge, a folded
     // section): its drag can send no end any more.
     if (this.scrub.active && this.scrubHandle?.isConnected !== true) this.endScrub();
+    // The shown page's templates may have changed (an edit, an undo, a merge,
+    // another page picked): ask Home Assistant again after the debounce.
+    this.followTemplates();
     // Open each question once, when it is first drawn. Opening any closed
     // one on every draw reopened a question that was just answered: the
     // draw after the answer came before the dialog's own close event.
@@ -823,12 +864,99 @@ export class WaPageEditor extends LitElement {
       this.endScrub();
       // The modules' view state was about the other watch's tiles.
       this.uiState.clear();
+      // So were the template renders: the next draw asks for this watch's.
+      this.stopTemplates();
+      this.templateRenders = new Map();
       quiet = false;
     }
     this.startSubscription(watchId);
     void this.load(watchId, quiet);
     void this.loadCatalog(watchId);
     void this.loadBehavior(watchId);
+    if (!this.homeDataAsked && this.hass) {
+      this.homeDataAsked = true;
+      this.loadHomeData();
+    }
+  }
+
+  /** Ask Home Assistant what the whole home has: a Music Assistant entry,
+   * and whether its cloud can speak. Each call on its own, never in the
+   * way of anything: a failed one keeps what was known (undefined at
+   * first), and only the newest answer of each lands. */
+  private loadHomeData(): void {
+    const hass = this.hass;
+    if (!hass) return;
+    const music = ++this.musicSeq;
+    fetchConfigEntries(hass, MUSIC_ASSISTANT_DOMAIN).then(
+      (entries) => {
+        if (music === this.musicSeq) this.homeData = { ...this.homeData, musicAssistant: watchHasConfigEntry(entries, MUSIC_ASSISTANT_DOMAIN) };
+      },
+      () => undefined,
+    );
+    const cloud = ++this.cloudSeq;
+    fetchCloudStatus(hass).then(
+      (status) => {
+        if (cloud === this.cloudSeq) this.homeData = { ...this.homeData, cloudTTS: watchCloudTTSAvailable(status) };
+      },
+      () => undefined,
+    );
+  }
+
+  // ── template renders ───────────────────────────────────────────────────
+
+  /** After a draw: when the shown page's set of template tiles and texts is
+   * not the one last asked about, ask again after the debounce, and every
+   * 30 seconds from then (`panel.ts`'s `scheduleTemplates`). A page with no
+   * template stops the clock. */
+  private followTemplates(): void {
+    if (!this.isConnected || !this.hass) return;
+    const page = this.draft === undefined ? undefined : this.currentPage();
+    const requests = watchTemplateRequests(page);
+    const signature = watchTemplateSignature(requests);
+    if (signature === this.templateSignature) return;
+    this.templateSignature = signature;
+    if (Object.keys(requests).length === 0) {
+      this.stopTemplates(false);
+      return;
+    }
+    this.scheduleTemplates(WATCH_TEMPLATE_DEBOUNCE_MS);
+  }
+
+  private scheduleTemplates(delay: number): void {
+    if (this.templateDebounce !== undefined) window.clearTimeout(this.templateDebounce);
+    this.templateDebounce = window.setTimeout(() => void this.refreshTemplates(), delay);
+    if (this.templateInterval !== undefined) window.clearInterval(this.templateInterval);
+    this.templateInterval = window.setInterval(() => void this.refreshTemplates(), WATCH_TEMPLATE_REFRESH_MS);
+  }
+
+  /** Stop both clocks and drop any answer still out. `forget` also forgets
+   * the set last asked about, so the next draw asks afresh. */
+  private stopTemplates(forget = true): void {
+    if (this.templateDebounce !== undefined) window.clearTimeout(this.templateDebounce);
+    if (this.templateInterval !== undefined) window.clearInterval(this.templateInterval);
+    this.templateDebounce = undefined;
+    this.templateInterval = undefined;
+    this.templateRun++;
+    if (forget) this.templateSignature = undefined;
+  }
+
+  /** Render the shown page's templates now. A newer call drops this one's
+   * answer; a failed call keeps the last values. */
+  private async refreshTemplates(): Promise<void> {
+    this.templateDebounce = undefined;
+    const hass = this.hass;
+    if (!hass || !this.isConnected) return;
+    const run = ++this.templateRun;
+    const watchId = this.watchId;
+    const requests = watchTemplateRequests(this.draft === undefined ? undefined : this.currentPage());
+    if (Object.keys(requests).length === 0) return;
+    try {
+      const answer = await renderTemplates(hass, requests);
+      if (run !== this.templateRun || watchId !== this.watchId) return;
+      this.templateRenders = watchMergedRenders(this.templateRenders, answer);
+    } catch {
+      // Kept: a dropped socket is no news about the templates.
+    }
   }
 
   /** Read the watch's camera setting from its behavior document. A failed
@@ -1133,6 +1261,9 @@ export class WaPageEditor extends LitElement {
       // open is the one its next pick reads.
       catalog: () => this.catalog,
       cameraRefreshDefaults: () => this.cameraRefresh,
+      musicAssistant: () => this.homeData.musicAssistant,
+      cloudTTS: () => this.homeData.cloudTTS,
+      templateRenders: () => this.templateRenders,
       busy: busyNow,
     });
   }
@@ -2145,7 +2276,9 @@ export class WaPageEditor extends LitElement {
     const headers = !smart && watchPageHasHeader(page);
     const asOnWatch = headers && this.asOnWatch;
     const scale = this.narrow ? 1.25 : 1.5;
-    const input = { page, pages, screen: watchCase.screen, states: this.hass?.states, icons: this.icons, scale, catalog: this.catalog };
+    const input: WatchPagePreviewInput = {
+      page, pages, screen: watchCase.screen, states: this.hass?.states, icons: this.icons, scale, catalog: this.catalog, templates: this.templateRenders,
+    };
     this.stageScreen = watchCase.screen;
     const addOff = this.saving || asOnWatch;
     return html`<div class="pe-stage-head">

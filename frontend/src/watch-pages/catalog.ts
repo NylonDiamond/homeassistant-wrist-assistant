@@ -1,7 +1,9 @@
 // The iPhone's library as the page editor reads it: the `catalog` watch
 // config kind, which the phone publishes and nobody else writes. It names
 // every HTTP action, macro and status page a tile can point at (id, name and
-// a few flags), never a URL, header or body.
+// a few flags), never a URL, header or body. Since part 3f batch 2 it also
+// carries the phone's voice defaults (`voice`), which an assist or speak tile
+// falls back to.
 //
 // No DOM here. `<wa-page-editor>` reads the record beside the pages record,
 // keeps the reading on the element (never in the draft: it is never saved,
@@ -11,7 +13,8 @@
 //
 // The reader is forgiving: an element without a UUID string `id` and a string
 // `name` is skipped, and so is a second entry whose id differs only in case;
-// an unknown key is ignored, a flag of the wrong type reads as absent. Ids are
+// an unknown key is ignored, a flag of the wrong type reads as absent, and so
+// does a voice field of the wrong type or a blank one. Ids are
 // compared without regard to case, as the phone's `UUID(uuidString:)` reads
 // them.
 //
@@ -62,6 +65,18 @@ export type WatchLibraryKind = "httpAction" | "macro" | "statusPage";
 
 export type WatchCatalogEntry = WatchCatalogHTTPAction | WatchCatalogMacro | WatchCatalogStatusPage;
 
+/** The phone's voice defaults (part 3f batch 2): what an assist or speak
+ * tile with no voice of its own falls back to. Each field only when the
+ * phone has one; `{}` when it has none. */
+export interface WatchCatalogVoice {
+  /** The conversation agent's id (`conversation.<x>`). */
+  defaultAssistAgentId?: string;
+  /** Media player ids, in the phone's stored order. */
+  defaultSpeakers?: readonly string[];
+  /** The TTS engine's id. */
+  defaultTTSEngine?: string;
+}
+
 /** The catalog as read. Lists keep the phone's library order. */
 export interface WatchCatalog {
   /** The record's revision, for the live line: an event with another
@@ -72,6 +87,9 @@ export interface WatchCatalog {
   httpActions: readonly WatchCatalogHTTPAction[];
   macros: readonly WatchCatalogMacro[];
   statusPages: readonly WatchCatalogStatusPage[];
+  /** The phone's voice defaults. Undefined when the document has no `voice`
+   * object: a phone older than the key, which cannot say. Never saved. */
+  voice: WatchCatalogVoice | undefined;
 }
 
 /** The tile kind (`entityId` prefix before the dot) of each library kind. */
@@ -119,6 +137,24 @@ function withOptional<T extends object>(out: T, key: string, value: unknown): T 
   return out;
 }
 
+/** A string that is not blank, as stored; undefined otherwise. */
+function filled(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() !== "" ? value : undefined;
+}
+
+/** The `voice` object read: each field only when typed right. A speaker
+ * list keeps its strings that are not blank, in order, and is left out
+ * when none is left, as the phone leaves out an empty one. */
+function readVoice(value: Record<string, unknown>): WatchCatalogVoice {
+  const out: WatchCatalogVoice = {};
+  withOptional(out, "defaultAssistAgentId", filled(value.defaultAssistAgentId));
+  const speakers = Array.isArray(value.defaultSpeakers)
+    ? value.defaultSpeakers.filter((s): s is string => filled(s) !== undefined)
+    : [];
+  if (speakers.length > 0) out.defaultSpeakers = speakers;
+  return withOptional(out, "defaultTTSEngine", filled(value.defaultTTSEngine));
+}
+
 /**
  * The catalog document read into typed lists. `meta` carries the record's
  * revision and time. A document that is no object reads as an empty
@@ -146,6 +182,7 @@ export function readWatchCatalog(document: unknown, meta: { revision?: number; u
     httpActions,
     macros,
     statusPages,
+    voice: isJsonObject(doc.voice) ? readVoice(doc.voice) : undefined,
   };
 }
 

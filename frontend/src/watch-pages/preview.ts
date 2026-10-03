@@ -15,7 +15,7 @@
 // evenly rather than a layout of its own.
 
 import { css, html, nothing, svg, type TemplateResult } from "lit";
-import type { HassEntityState } from "../ha-api.js";
+import type { HassEntityState, RenderResult } from "../ha-api.js";
 import type { IconProvider } from "../renderer.js";
 import {
   type PlacedWatchTile,
@@ -45,6 +45,8 @@ import { WATCH_TILE_DEFAULTS, watchKindColor, watchThemeRoleColors } from "./til
 import { watchStateDomains, watchStylingTheme } from "./tile-styling.js";
 import { type WatchCatalog, watchLibraryTileFallbackName } from "./catalog.js";
 import { isWatchTvRemote, watchUsesPersonPhoto } from "./special-model.js";
+import { watchMusicHubActiveSpeaker, watchTemplateText } from "./app-model.js";
+import { templateIconColor, templateRichTextSegments } from "./rich-text.js";
 
 export interface WatchPagePreviewInput {
   page: WatchPage;
@@ -60,6 +62,10 @@ export interface WatchPagePreviewInput {
   /** The iPhone's library, which names a macro or status page tile with no
    * label of its own as the watch does. */
   catalog?: WatchCatalog;
+  /** The template tiles' renders by tile id (`render_values`), which a
+   * template tile draws as the watch does. A tile missing here has no
+   * answer yet and draws "...". */
+  templates?: ReadonlyMap<string, RenderResult>;
 }
 
 /** The name a tile draws: its own label, else for an HTTP action, macro or
@@ -241,6 +247,8 @@ const OFF_STATES: ReadonlySet<string> = new Set([
  * tile) is drawn on, so its styling shows. A remote, vacuum, climate,
  * person or alarm panel is on as its own watch tile says (`specialActive`). */
 export function watchTilePreviewActive(tile: WatchPageTile, states?: Readonly<Record<string, HassEntityState>>): boolean {
+  // A music hub is on while one of its speakers plays, pauses or idles.
+  if (tileKind(tileEntityId(tile)) === "music_hub") return watchMusicHubActiveSpeaker(tile, states) !== undefined;
   const entity = states?.[tileEntityId(tile)];
   if (entity === undefined) return true;
   const special = specialActive(tile, states!, entity);
@@ -267,6 +275,13 @@ const THEME_TOKENS: Readonly<Record<string, { warning: string; danger: string; a
   polar: { warning: "#D4B87A", danger: "#D47080", accent: "#8EC8E8", secondary: 0.74, tempWarm: "#B8A090", tempCool: "#70B0D0", tempNeutral: "#90A8B8" },
 };
 
+/** Each theme's semantic info color (`DS+Color.swift`), a webhook inbox
+ * tile's default. */
+const THEME_INFO: Readonly<Record<string, string>> = {
+  midnight: "#5CA9FF", sunrise: "#6EA7ED", forest: "#4FB2D2", sunnyBeachDay: "#4BBDE0", neonLagoon: "#7CC7FF",
+  softVintage: "#8F86A5", hyperPop: "#00BBF9", ember: "#7AA4D4", sakura: "#8AABE0", polar: "#8EC8E8",
+};
+
 /** A theme color for a special tile: `hex` at `alpha` (the secondary text
  * is white at the theme's opacity). */
 export interface WatchInk {
@@ -274,8 +289,9 @@ export interface WatchInk {
   alpha: number;
 }
 
-function themeInk(page: WatchPage | undefined, token: "warning" | "danger" | "accent" | "secondary" | "tempWarm" | "tempCool" | "tempNeutral" | `entity${string}`): WatchInk {
+function themeInk(page: WatchPage | undefined, token: "warning" | "danger" | "accent" | "secondary" | "info" | "tempWarm" | "tempCool" | "tempNeutral" | `entity${string}`): WatchInk {
   const theme = page === undefined ? WATCH_TILE_DEFAULTS.watchFallbackTheme : watchPageTheme(page);
+  if (token === "info") return { hex: THEME_INFO[theme] ?? THEME_INFO[WATCH_TILE_DEFAULTS.watchFallbackTheme] ?? THEME_INFO.midnight!, alpha: 1 };
   if (token.startsWith("entity")) {
     const role = watchThemeRoleColors(theme)[token];
     return { hex: role ?? "#FFFFFF", alpha: 1 };
@@ -427,6 +443,12 @@ export interface WatchSpecialLook {
   topLeft?: WatchSpecialBadge;
   topRight?: string;
   stateLine: boolean;
+  /** The name the tile shows in place of its own (a music hub's media
+   * title, a webhook inbox's topic). */
+  label?: string;
+  /** A music hub's album art, which fills the tile (fit) with the label in
+   * white over a dark band; the symbol is not drawn then. */
+  art?: string;
 }
 
 export function watchSpecialTileLook(
@@ -569,6 +591,42 @@ export function watchSpecialTileLook(
         active,
         topLeft: activity && entity !== undefined ? { kind: "text", lines: [ALARM_WORDS[a]!], ink: secondary, weight: 600, pill: false } : undefined,
         stateLine: false,
+      };
+    }
+    case "music_hub": {
+      // `SimpleMusicHubTile`: at rest its symbol and name; with a speaker
+      // playing, paused or idle, play or pause, the media title, a badge,
+      // and the album art when it is on (the default) and there is one.
+      const speaker = watchMusicHubActiveSpeaker(tile, states);
+      const custom = typeof tile.customLabel === "string" && tile.customLabel.trim() !== "" ? tile.customLabel : undefined;
+      const playing = speaker?.state === "playing";
+      return {
+        symbol: noIcon ? undefined : speaker !== undefined ? (playing ? "pause.fill" : "play.fill") : (typeof tile.icon === "string" ? tile.icon : "music.note.house"),
+        filled: true,
+        ink: ownInk(tile.color) ?? { hex: "#E89545", alpha: 1 },
+        opacity: 1,
+        active: speaker !== undefined,
+        topRight: activity && speaker !== undefined ? (playing ? "play.fill" : "pause.fill") : undefined,
+        stateLine: false,
+        label: speaker?.title ?? custom ?? "Music",
+        art: tile.showAlbumArt !== false ? speaker?.picture : undefined,
+      };
+    }
+    case "webhook_inbox": {
+      // `SimpleWebhookInboxTile`: its symbol (absent is the tray), the
+      // theme's info color, the label, else the topic, else "Inbox". The
+      // corner mark for an inbox not set up on the watch is the watch's to
+      // know.
+      const topic = tileTarget(entityId);
+      const custom = typeof tile.customLabel === "string" && tile.customLabel !== "" ? tile.customLabel : undefined;
+      return {
+        symbol: noIcon ? undefined : (ownIcon ?? "tray"),
+        filled: true,
+        ink: ownInk(tile.color) ?? themeInk(page, "info"),
+        opacity: 1,
+        active: true,
+        stateLine: false,
+        label: custom ?? (topic === "" || topic === "all" ? "Inbox" : `#${topic}`),
       };
     }
     default:
@@ -798,6 +856,117 @@ function cameraFace(tile: WatchPageTile, width: number, height: number, box: str
     y += h + border.spacing;
   }
   return html`<div class="wp-cam" style=${`${outer};background:${border.background}`} title=${hint ?? nothing}>${cells}${rim}</div>`;
+}
+
+/** A music hub's album art filling the tile (fit, as the watch draws it),
+ * under a band from clear to black over its lower half. */
+function albumArt(url: string): TemplateResult {
+  const css = `background-image:url("${url.replace(/["\\]/g, (c) => `\\${c}`)}")`;
+  return html`<span class="wp-art" role="img" aria-label="Album art" style=${css}></span><span class="wp-art-band"></span>`;
+}
+
+// ── templates ────────────────────────────────────────────────────────────
+
+/** The SF Symbol a template tile with no template shows, at 40%. */
+export const WATCH_TEMPLATE_PLACEHOLDER_SYMBOL = "chevron.left.forwardslash.chevron.right";
+
+/** What a template tile draws (`SimpleTemplateTile`, `TemplateTileOverlay`):
+ * no symbol, name or badge of its own, whatever its keys say. */
+export type WatchTemplateTileLook =
+  /** No template: the placeholder symbol at 40% in the tile's color. */
+  | { kind: "placeholder"; symbol: string; ink: string }
+  /** Home Assistant refused the template: a yellow warning triangle. */
+  | { kind: "error"; error: string }
+  /** The rendered text in the tile's color, five lines at most, centered
+   * when it is one line and leading otherwise. `pending` while the first
+   * answer is out ("..."). */
+  | { kind: "text"; text: string; multiLine: boolean; ink: string; pending: boolean };
+
+/** A template tile's look from its text and its render, if any. The tile's
+ * color is `color`, else the theme's sensor color. A text of white space
+ * alone is not asked about (Home Assistant refuses it); the watch renders
+ * it to nothing, so it draws as an empty line. */
+export function watchTemplateTileLook(tile: WatchPageTile, input: Pick<WatchPagePreviewInput, "templates" | "page">): WatchTemplateTileLook {
+  const ink = flatInk(tile.color, themeInk(input.page, "entitySensor").hex);
+  const text = watchTemplateText(tile);
+  if (text === "") return { kind: "placeholder", symbol: WATCH_TEMPLATE_PLACEHOLDER_SYMBOL, ink };
+  if (text.trim() === "") return { kind: "text", text: "", multiLine: false, ink, pending: false };
+  const result = typeof tile.id === "string" ? input.templates?.get(tile.id) : undefined;
+  if (result === undefined) return { kind: "text", text: "...", multiLine: false, ink, pending: true };
+  if (!result.ok) return { kind: "error", error: result.error };
+  return { kind: "text", text: result.value, multiLine: result.value.includes("\n"), ink, pending: false };
+}
+
+/** The watch's body size in points, which a template's text starts at. */
+const TEMPLATE_FONT_PT = 16;
+/** SwiftUI's `minimumScaleFactor(0.4)` on it. */
+const TEMPLATE_MIN_FONT_PT = TEMPLATE_FONT_PT * 0.4;
+
+/**
+ * The size a template's text is drawn at, in points: the body size, shrunk
+ * (to 40% at most) until the text fits the box in five lines, as SwiftUI
+ * wraps and then scales it. Widths are estimated (0.58 of the size a
+ * character, an icon a little over one size), which is close enough for a
+ * picture.
+ */
+export function watchTemplateFontSize(text: string, widthPt: number, heightPt: number): number {
+  const lines = text.split("\n").map((line) => {
+    let units = 0;
+    for (const segment of templateRichTextSegments(line)) units += segment.kind === "icon" ? 1.15 : [...segment.text].length * 0.58;
+    return units;
+  });
+  const w = Math.max(1, widthPt);
+  const h = Math.max(1, heightPt);
+  for (let size = TEMPLATE_FONT_PT; size > TEMPLATE_MIN_FONT_PT; size -= 0.4) {
+    const rows = lines.reduce((sum, units) => sum + Math.max(1, Math.ceil((units * size) / w)), 0);
+    if (rows <= 5 && Math.min(rows, 5) * size * 1.2 <= h) return Math.round(size * 10) / 10;
+  }
+  return TEMPLATE_MIN_FONT_PT;
+}
+
+/** The rendered text with its `[icon:]` markers drawn as symbols the size of
+ * the text, each in its own color or the text's. A symbol the provider does
+ * not know draws nothing, as `Image(systemName:)` does. */
+function richText(text: string, ink: string, px: number, icons: IconProvider | undefined): TemplateResult[] {
+  return templateRichTextSegments(text).map((segment) => {
+    if (segment.kind === "text") return html`${segment.text}`;
+    const own = segment.color === undefined ? undefined : templateIconColor(segment.color);
+    const glyph = icons?.render(segment.symbol, px, own?.hex ?? ink);
+    if (glyph === undefined) return html``;
+    const fade = own !== undefined && own.alpha < 1 ? `opacity:${own.alpha}` : "";
+    return html`<svg class="wp-tpl-icon" width=${px} height=${px} viewBox=${`0 0 ${px} ${px}`} style=${fade} aria-hidden="true">${glyph}</svg>`;
+  });
+}
+
+/** A template tile as the watch draws it: its ground, border, pattern and
+ * effect, and only the template's text (or the placeholder or the warning)
+ * inside. */
+function templateFace(tile: WatchPageTile, width: number, height: number, box: string, input: WatchPagePreviewInput, unit: number, s: number, hint: string | undefined): TemplateResult {
+  const radius = Math.min(TILE_RADIUS, width / 2, height / 2) * s;
+  const ground = tileGround(parseTileColor(tile.color), watchTileColorOpacity(tile));
+  const border = watchTileBorderStyle(tile, true, s, watchTileFallbackInk(tile, input.page));
+  const look = watchTemplateTileLook(tile, input);
+  const padX = 4 + Math.min(2, width / 8);
+  const padY = Math.min(TILE_PAD, height / 4);
+  let content: TemplateResult;
+  if (look.kind === "placeholder") {
+    const px = watchPreviewIconSize(tile, width, height, height < unit * 2.5) * s;
+    content = html`<span style="opacity:0.4;display:flex">${symbolMark(input.icons, look.symbol, px, look.ink)}</span>`;
+  } else if (look.kind === "error") {
+    content = html`<span title=${look.error} style="display:flex">${symbolMark(input.icons, "exclamationmark.triangle", 16 * s, "#FFCC00")}</span>`;
+  } else {
+    const size = watchTemplateFontSize(look.text, width - padX * 2, height - padY * 2) * s;
+    const style = [
+      `font-size:${size}px`, `color:${look.ink}`, `text-align:${look.multiLine ? "left" : "center"}`,
+      `text-shadow:0 0 ${4 * s}px ${rgba(look.ink, 0.3)}`,
+    ].join(";");
+    content = html`<span class="wp-tpl-text" style=${style}>${richText(look.text, look.ink, size, input.icons)}</span>`;
+  }
+  return html`<div class="wp-tile wp-tpl" title=${hint ?? nothing}
+    style=${`${box}border-radius:${radius}px;background:${ground};padding:${padY * s}px ${padX * s}px;${border}`}>
+    ${tileUnderlay(tile, input, true, height, s)}
+    ${content}
+  </div>`;
 }
 
 /** How full the state bar is, 0 to 1, from the entity's attributes, or
@@ -1205,7 +1374,11 @@ function tileFace(
   const cls = tileClass(entityId, input.states);
   const color = parseTileColor(tile.color);
   const ink = tileInkColor(color);
-  const label = watchPreviewTileLabel(tile, input);
+  const unknown = cls === "unknown";
+  // A remote, vacuum, mower, climate, person, alarm panel, music hub or
+  // webhook inbox: its own symbol, color, badges and name.
+  const look = unknown || cls === "divider" || cls === "spacer" ? undefined : watchSpecialTileLook(tile, input);
+  const label = look?.label ?? watchPreviewTileLabel(tile, input);
   const kindLabel = tileKindLabel(kind);
   const hint = [label, kindLabel, entityId].filter((t, i, all) => t !== "" && all.indexOf(t) === i).join(" · ");
 
@@ -1223,17 +1396,15 @@ function tileFace(
   }
 
   if (kind === "camera" || kind === "multicam") return cameraFace(tile, width, height, box, input, unit, s, titled ? hint : undefined);
+  if (kind === "template") return templateFace(tile, width, height, box, input, unit, s, titled ? hint : undefined);
 
-  const unknown = cls === "unknown";
   const radius = Math.min(TILE_RADIUS, width / 2, height / 2) * s;
   // A tile shorter than two and a half units has no room for a column, so its
   // symbol and words sit side by side.
   const compact = height < unit * 2.5;
   const symbolPt = watchPreviewIconSize(tile, width, height, compact);
-  // A remote, vacuum, mower, climate, person or alarm panel: its own
-  // symbol, color and badges.
-  const look = unknown ? undefined : watchSpecialTileLook(tile, input);
   const special = look === undefined ? undefined : specialBadges(tile, look, input, width, height, s);
+  const art = look?.art;
   // The reading of a tile whose value label the watch draws without a bar
   // (a sensor, a climate): hidden with Off, in a capsule with Pill.
   const readingStyle = unknown || watchStateDomains("bars").includes(kind) ? undefined : watchValueLabelStyle(tile);
@@ -1256,21 +1427,24 @@ function tileFace(
   const room = compact ? Infinity
     : height - padTop - Math.min(TILE_PAD, height / 4) - 3
       - (showLabel ? watchTileLabelFontSize(tile, width) * 1.15 + 3 : 0) - (state !== undefined ? 9 * 1.15 + 3 : 0);
-  return html`<div class="wp-tile ${compact ? "compact" : ""} ${unknown ? "unknown" : ""}"
+  return html`<div class="wp-tile ${compact ? "compact" : ""} ${unknown ? "unknown" : ""} ${art === undefined ? "" : "art"}"
     style=${`${box}border-radius:${radius}px;background:${ground};padding:${padTop * s}px ${Math.min(TILE_PAD + 1, width / 4) * s}px ${Math.min(TILE_PAD, height / 4) * s}px;gap:${3 * s}px;${border}`}
     title=${titled ? hint : nothing}>
     ${unknown ? nothing : tileUnderlay(tile, input, active, height, s)}
+    ${art === undefined ? nothing : albumArt(art)}
     ${unknown ? nothing : tileOverlay(tile, input, active, width, height, s)}
     ${special === undefined ? nothing : special.parts}
     ${value !== undefined
       ? html`<span class="wp-value" style=${`font-size:${(value.fontSize ?? symbolPt) * s}px;color:${value.color ?? "#FFFFFF"}${value.offsetY === 0 ? "" : `;transform:translateY(${value.offsetY * s}px)`}`}>—</span>`
-      : look !== undefined
-        ? specialSymbol(look, input.icons, symbolPt, room, s, tile.iconShadow === true)
-        : !unknown && watchTileHasNoIcon(tile)
-          ? nothing
-          : symbolMark(input.icons, unknown ? undefined : tileSymbol(tile), symbolPt * s, unknown ? "#8E8E93" : ink, tile.iconShadow === true)}
+      : art !== undefined
+        ? nothing
+        : look !== undefined
+          ? specialSymbol(look, input.icons, symbolPt, room, s, tile.iconShadow === true)
+          : !unknown && watchTileHasNoIcon(tile)
+            ? nothing
+            : symbolMark(input.icons, unknown ? undefined : tileSymbol(tile), symbolPt * s, unknown ? "#8E8E93" : ink, tile.iconShadow === true)}
     <span class="wp-words">
-      ${showLabel ? html`<span class="wp-label" style=${labelStyle(tile, width, s)}>${label}</span>` : nothing}
+      ${showLabel ? html`<span class="wp-label" style=${art === undefined ? labelStyle(tile, width, s) : `${labelStyle(tile, width, s)};color:#FFFFFF;text-shadow:0 ${s}px ${3 * s}px rgba(0, 0, 0, 0.9)`}>${label}</span>` : nothing}
       ${state === undefined ? nothing : html`<span class="wp-state ${readingStyle === "Pill" ? "pill" : ""}" style=${`font-size:${9 * s}px${readingStyle === "Pill" ? `;${pillStyle(s)}` : ""}`}>${state}</span>`}
     </span>
   </div>`;
@@ -1355,6 +1529,16 @@ export const watchPagePreviewStyles = css`
     overflow: hidden;
   }
   .wp-tile.compact { flex-direction: row; align-items: center; justify-content: flex-start; }
+  .wp-tile.art { justify-content: flex-end; }
+  .wp-art { position: absolute; inset: 0; border-radius: inherit; background-size: contain; background-position: center; background-repeat: no-repeat; pointer-events: none; }
+  .wp-art-band { position: absolute; left: 0; right: 0; bottom: 0; height: 50%; border-radius: inherit; background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.85)); pointer-events: none; }
+  .wp-tpl { justify-content: center; align-items: center; }
+  .wp-tpl-text {
+    position: relative; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 5; overflow: hidden;
+    width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.2;
+    font-family: ui-rounded, "SF Pro Rounded", "Nunito", system-ui, sans-serif; font-weight: 600;
+  }
+  .wp-tpl-icon { display: inline-block; vertical-align: -0.12em; }
   .wp-tile.unknown { outline: 1px dashed rgba(255, 255, 255, 0.3); outline-offset: -1px; }
   .wp-sym { display: block; flex: none; position: relative; }
   .wp-words { position: relative; }

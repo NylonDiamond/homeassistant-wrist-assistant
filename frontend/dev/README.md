@@ -81,6 +81,13 @@ ignored by git.
   loader is a stand-in: a stand-in snapshot's size comes from its data URL
   after 250 ms, so Detect camera ratio works with no network, and a camera
   with no snapshot does not load.
+  The page also ends with two app tiles (part 3f batch 2): a template tile
+  holding the Home Status preset, which a stand-in `render_values` renders
+  (each `states.<domain> | selectattr('state','eq','<x>') | list | count`
+  counted in the harness's states, any other expression "42", an unclosed
+  `{{` the syntax error), and a music hub whose kitchen speaker plays with
+  album art. `config_entries/get` lists a Music Assistant entry and
+  `cloud/status` says logged in and connected.
 - A stand-in symbol provider: a few dozen real SF Symbol names (the start of
   the picker's catalogue and every tile icon in the fixtures), each drawn as
   a plain mark. Its names arrive 600 ms after the page loads and the harness

@@ -12,7 +12,7 @@
 // No DOM here: the scrub bookkeeping below is plain state so it can be
 // tested.
 
-import type { HassLike } from "../ha-api.js";
+import type { HassLike, RenderResult } from "../ha-api.js";
 import type { IconProvider } from "../renderer.js";
 import type { SymbolBrowser } from "../symbols.js";
 import type { WatchCatalog } from "./catalog.js";
@@ -23,7 +23,8 @@ import type { WatchDeviceSiblings } from "./special-model.js";
 /** What both modules get. Built afresh for every draw; keep none of it across
  * draws except through `uiState`.
  *
- * `document`, `page`, `otherPages`, `catalog`, `busy` (and a tile host's `tile`) are
+ * `document`, `page`, `otherPages`, `catalog`, `busy`, the home's data and
+ * the template renders (and a tile host's `tile`) are
  * getters that read the draft every time they are read, never a copy taken at
  * the draw: one task can run two edits (a field's blur commit and then
  * another control's handler, a drag step after a merge, a script), and the
@@ -61,6 +62,22 @@ export interface WatchPagesEditorHost {
    * on page open, and the debounce), with the phone's defaults while there
    * is none: the words of the Camera task's Default. A getter. */
   readonly cameraRefreshDefaults: { on: boolean; debounce: string };
+  /** Whether Music Assistant has a config entry in this home, in any state
+   * (the phone's rule for the Music Hub add); undefined until the element's
+   * call is answered, and after a call that failed. Asked once for the home,
+   * and again after a reconnect. A getter. */
+  readonly musicAssistant: boolean | undefined;
+  /** Whether Home Assistant Cloud is logged in and connected, so `tts.cloud`
+   * is a voice engine; undefined until known or when the call failed (the
+   * phone then leaves `tts.cloud` out). A getter, asked as `musicAssistant`. */
+  readonly cloudTTS: boolean | undefined;
+  /** The shown page's template tiles rendered by Home Assistant
+   * (`render_values`, as the watch's `template` op renders them), by tile
+   * id: a value, or the error Home Assistant gave. A tile is missing until
+   * its first answer is in, and keeps its last answer while a newer one is
+   * out or after a call failed. Held by the element, never in the draft. A
+   * getter. */
+  readonly templateRenders: ReadonlyMap<string, RenderResult>;
   /** The entities on the same device as `entityId` in Home Assistant's
    * entity registry (registry order), for a remote's "Use <player>" and a
    * vacuum's discovery. Empty when the entity has no device. */

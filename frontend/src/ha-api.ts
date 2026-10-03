@@ -564,6 +564,43 @@ export async function renderTemplates(
   return reply.results;
 }
 
+/** One config entry as Home Assistant's `config_entries/get` lists it. Only
+ * the fields the panel reads are typed; the rest pass through. */
+export interface HassConfigEntry {
+  entry_id: string;
+  domain: string;
+  title?: string;
+  /** `loaded`, `setup_error`, `not_loaded` and the rest. */
+  state?: string;
+  disabled_by?: string | null;
+  [key: string]: unknown;
+}
+
+/** Home Assistant's own config entries of one integration, in any state.
+ * Asked by `domain` alone: adding `type_filter` hides entries Home
+ * Assistant files under another type (measured on 2026.9: Music Assistant's
+ * one entry came back only without it). Admin only. */
+export async function fetchConfigEntries(hass: HassLike, domain: string): Promise<HassConfigEntry[]> {
+  return hass.connection.sendMessagePromise<HassConfigEntry[]>({ type: "config_entries/get", domain });
+}
+
+/** Home Assistant Cloud's status as `cloud/status` answers it. Only the two
+ * fields the panel reads are typed: `logged_in`, and `cloud`, the link's
+ * state (`connected`, `connecting`, `disconnected`), which is there only
+ * while logged in. Everything else (account, preferences, certificates)
+ * passes through untouched and is never kept. */
+export interface HassCloudStatus {
+  logged_in: boolean;
+  cloud?: string;
+  [key: string]: unknown;
+}
+
+/** Ask Home Assistant Cloud's status. Rejects when the cloud integration is
+ * not loaded (`unknown_command`). */
+export async function fetchCloudStatus(hass: HassLike): Promise<HassCloudStatus> {
+  return hass.connection.sendMessagePromise<HassCloudStatus>({ type: "cloud/status" });
+}
+
 /** One recorder series per request key, for the preview's history charts.
  *
  * The browser could read HA's own history API and average the rows itself, but
