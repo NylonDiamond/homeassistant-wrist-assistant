@@ -1,6 +1,6 @@
 {
   "name": "Speech Volume Set + Restore",
-  "source": "WristAssistant/Views/PageEditor/AppTileRules.swift:262",
+  "source": "WristAssistant/Views/PageEditor/AppTileRules.swift:312",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

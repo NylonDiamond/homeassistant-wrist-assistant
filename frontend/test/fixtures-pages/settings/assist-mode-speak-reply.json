@@ -1,6 +1,6 @@
 {
   "name": "Assist Mode Speak Reply",
-  "source": "WristAssistant/Views/PageEditor/AppTileRules.swift:212",
+  "source": "WristAssistant/Views/PageEditor/AppTileRules.swift:262",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

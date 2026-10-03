@@ -52,6 +52,7 @@ import {
   type WatchPage,
   type WatchPageTile,
   type WatchPagesDocument,
+  WATCH_KIND_FALLBACK_LABELS,
   tileEntityId,
   tileKind,
   tileLabel,
@@ -586,6 +587,10 @@ export function watchLabelNote(tile: WatchPageTile): string {
   if (library === "httpAction") return "Leave it empty and the watch shows \"Action\".";
   if (library === "macro") return "Leave it empty to show the macro's name.";
   if (library === "statusPage") return "Leave it empty to show the status page's name.";
+  const kind = tileKind(tileEntityId(tile));
+  if (kind === "webhook_inbox") return "Leave it empty to show the topic, or \"Inbox\" for every topic.";
+  const fallback = WATCH_KIND_FALLBACK_LABELS[kind];
+  if (fallback !== undefined) return `Leave it empty and the watch shows "${fallback}".`;
   return "Leave it empty to show the name Home Assistant has.";
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "Line to label keeps the glow",
-  "source": "WristAssistant/Views/PageEditorView.swift:12290",
+  "source": "WristAssistant/Views/PageEditorView.swift:12297",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

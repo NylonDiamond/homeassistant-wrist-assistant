@@ -1,6 +1,6 @@
 // The step maths behind dragging a number field, on its title or its box.
 import { describe, expect, it } from "vitest";
-import { scrubStart, scrubUnit, scrubValue } from "../src/editors.js";
+import { commitClamped, scrubStart, scrubUnit, scrubValue } from "../src/editors.js";
 
 describe("scrubUnit", () => {
   it("uses the field's own step", () => {
@@ -43,5 +43,26 @@ describe("scrubStart", () => {
     expect(scrubStart(undefined, { min: 4 })).toBe(4);
     expect(scrubStart(undefined, { min: -10 })).toBe(0);
     expect(scrubStart(7, { min: 4 })).toBe(7);
+  });
+});
+
+describe("a slider's number box on commit", () => {
+  const commit = (typed: string) => {
+    const box = { value: typed };
+    const written: (number | undefined)[] = [];
+    commitClamped({ target: box as unknown as EventTarget }, (v) => written.push(v), { min: 0, max: 100 });
+    return { shown: box.value, written };
+  };
+
+  it("clamps a number outside the range, writes it and shows it", () => {
+    expect(commit("150")).toEqual({ shown: "100", written: [100] });
+    expect(commit("-3")).toEqual({ shown: "0", written: [0] });
+  });
+
+  it("leaves a number in range, an empty box and junk to the input event", () => {
+    expect(commit("42")).toEqual({ shown: "42", written: [] });
+    expect(commit("0")).toEqual({ shown: "0", written: [] });
+    expect(commit("")).toEqual({ shown: "", written: [] });
+    expect(commit("abc")).toEqual({ shown: "abc", written: [] });
   });
 });

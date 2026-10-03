@@ -1,6 +1,6 @@
 {
   "name": "Effect speed",
-  "source": "WristAssistant/Views/PageEditorView.swift:9502",
+  "source": "WristAssistant/Views/PageEditorView.swift:9509",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

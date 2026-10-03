@@ -1,6 +1,6 @@
 {
   "name": "Icon animation when tapped",
-  "source": "WristAssistant/Views/PageEditorView.swift:7223",
+  "source": "WristAssistant/Views/PageEditorView.swift:7226",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

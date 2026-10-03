@@ -1,6 +1,6 @@
 {
   "name": "Start Listening Immediately on writes true, never removes the key",
-  "source": "WristAssistant/Views/PageEditor/AppTileRules.swift:284",
+  "source": "WristAssistant/Views/PageEditor/AppTileRules.swift:334",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

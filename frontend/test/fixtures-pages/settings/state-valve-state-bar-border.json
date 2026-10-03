@@ -1,6 +1,6 @@
 {
   "name": "Bar border on on a valve tile (State Bar)",
-  "source": "WristAssistant/Views/PageEditorView.swift:7046",
+  "source": "WristAssistant/Views/PageEditorView.swift:7049",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

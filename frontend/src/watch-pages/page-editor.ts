@@ -40,7 +40,6 @@ import { repeat } from "lit/directives/repeat.js";
 import {
   type HassLike,
   type OwnerSummary,
-  type RenderResult,
   type WatchConfigHistoryEntry,
   type WatchConfigRecord,
   fetchCloudStatus,
@@ -59,6 +58,7 @@ import {
   WATCH_TEMPLATE_DEBOUNCE_MS,
   WATCH_TEMPLATE_REFRESH_MS,
   type WatchHomeData,
+  type WatchTemplateRender,
   watchCloudTTSAvailable,
   watchHasConfigEntry,
   watchMergedRenders,
@@ -464,8 +464,9 @@ export class WaPageEditor extends LitElement {
   private musicSeq = 0;
   private cloudSeq = 0;
   /** The shown page's template tiles as Home Assistant renders them, by
-   * tile id. Never in the draft; cleared when another watch is opened. */
-  @state() private templateRenders: ReadonlyMap<string, RenderResult> = new Map();
+   * tile id, each with the text it was asked for. Never in the draft;
+   * cleared when another watch is opened. */
+  @state() private templateRenders: ReadonlyMap<string, WatchTemplateRender> = new Map();
   /** The `(tile id, text)` set last asked about (`watchTemplateSignature`);
    * a draw that finds another one asks again after the debounce. */
   private templateSignature?: string;
@@ -963,7 +964,7 @@ export class WaPageEditor extends LitElement {
     try {
       const answer = await renderTemplates(hass, requests);
       if (run !== this.templateRun || watchId !== this.watchId) return;
-      this.templateRenders = watchMergedRenders(this.templateRenders, answer);
+      this.templateRenders = watchMergedRenders(this.templateRenders, requests, answer);
     } catch {
       // Kept: a dropped socket is no news about the templates.
     }
@@ -1329,7 +1330,7 @@ export class WaPageEditor extends LitElement {
     const draft = this.draft;
     if (!hass || watchId === undefined || !draft || !draft.dirty || draft.saving || this.gesture || this.rowDrag) return;
     if (anyway) this.closeAsk();
-    else if (watchSaveSpeakerWarning(draft.document, this.catalog?.voice) !== undefined) {
+    else if (watchSaveSpeakerWarning(draft.document, this.catalog?.voice, draft.base) !== undefined) {
       this.closeAsk();
       this.saveAsk = true;
       return;
@@ -2131,7 +2132,7 @@ export class WaPageEditor extends LitElement {
       ${this.renderBody(watches)}
       ${this.restoreAsk ? this.renderRestoreAsk(this.restoreAsk) : nothing}
       ${this.deleteAsk && draft ? this.renderDeleteAsk(this.deleteAsk, draft.document) : nothing}
-      ${this.saveAsk && draft ? this.renderSaveAsk(draft.document) : nothing}
+      ${this.saveAsk && draft ? this.renderSaveAsk(draft.document, draft.base) : nothing}
       ${this.addTileOpen ? this.renderAddTileDialog() : nothing}
     `;
   }
@@ -2714,12 +2715,12 @@ export class WaPageEditor extends LitElement {
     </dialog>`;
   }
 
-  /** The save question: the Speak and Assist tiles that will fall back to
-   * the default speakers, in the phone's words. An edit that fixes every
-   * tile while it is open leaves nothing to ask: the dialog then says so
-   * and still saves. */
-  private renderSaveAsk(document: WatchPagesDocument): TemplateResult {
-    const warning = watchSaveSpeakerWarning(document, this.catalog?.voice);
+  /** The save question: the Speak and Assist tiles on the pages changed
+   * since `base` that have no speakers, in the phone's words. An edit that
+   * fixes every tile while it is open leaves nothing to ask: the dialog then
+   * says so and still saves. */
+  private renderSaveAsk(document: WatchPagesDocument, base: WatchPagesDocument): TemplateResult {
+    const warning = watchSaveSpeakerWarning(document, this.catalog?.voice, base);
     const pages = watchPagesOf(document);
     const states = this.hass?.states;
     const speaker = (id: string) => {
@@ -2737,8 +2738,9 @@ export class WaPageEditor extends LitElement {
             return html`<li><b>${watchPageName(t.page)}</b>: ${tileKindLabel(tileKind(tileEntityId(t.tile)))}${label !== "" ? ` "${label}"` : ""}</li>`;
           })}</ul>
           ${warning.fallback.length > 0
-            ? html`<p class="pe-muted">Until then they use the iPhone's default speakers: ${warning.fallback.map(speaker).join(", ")}.</p>`
-            : nothing}`}
+            ? html`<p class="pe-muted">Until then Choose Speakers tiles use the iPhone's default speakers: ${warning.fallback.map(speaker).join(", ")}.</p>`
+            : nothing}
+          ${warning.chooseOnWatch !== undefined ? html`<p class="pe-muted">${warning.chooseOnWatch}</p>` : nothing}`}
       <div class="pe-ask-foot">
         <button class="pe-btn" @click=${() => this.closeAsk()}>${warning?.cancel ?? "Cancel"}</button>
         <button class="pe-btn pe-primary" @click=${() => void this.save(true)}>${warning?.saveAnyway ?? "Save"}</button>

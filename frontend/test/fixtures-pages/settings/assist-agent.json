@@ -1,6 +1,6 @@
 {
   "name": "A conversation agent, written trimmed",
-  "source": "WristAssistant/Views/PageEditor/AppTileRules.swift:249",
+  "source": "WristAssistant/Views/PageEditor/AppTileRules.swift:299",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

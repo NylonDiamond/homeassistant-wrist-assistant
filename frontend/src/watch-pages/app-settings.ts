@@ -20,6 +20,7 @@ import { checkField, segField, sliderField, textField } from "../editors.js";
 import { uiIcon } from "../ui-icons.js";
 import type { TileSettingsHost } from "./editor-host.js";
 import { tileEntityId } from "./model.js";
+import { watchTemplateRichText, watchTemplateTileLook } from "./preview.js";
 import { commit, linkButton, menuField, typed, typingField } from "./tile-settings.js";
 import {
   type WatchAppChoice,
@@ -167,7 +168,7 @@ export function renderInboxLine(host: TileSettingsHost): TemplateResult {
 function renderTemplate(host: TileSettingsHost): TemplateResult {
   const tile = host.tile;
   const text = watchTemplateText(tile);
-  const render = host.templateRenders.get(String(tile.id));
+  const look = watchTemplateTileLook(tile, { page: host.page, templates: host.templateRenders });
   // Each input writes at once, as typed; one visit to the field is one undo
   // step, as one opening of the phone's editor sheet is.
   const write = (e: Event) => {
@@ -175,10 +176,15 @@ function renderTemplate(host: TileSettingsHost): TemplateResult {
     commit(host, "template", (d) => setWatchTemplateText(d, ...at(host), value), { typing: true });
   };
   let result: TemplateResult;
+  // The rich text as the tile draws it (symbols, their colors, the tile's
+  // color, centered for one line), never the markup.
   if (text.trim() === "") result = html`<div class="hint">Empty: the tile shows its symbol.</div>`;
-  else if (render === undefined) result = html`<div class="hint">Rendering in Home Assistant…</div>`;
-  else if (render.ok) result = html`<pre class="ap-render" aria-label="Rendered">${render.value}</pre>`;
-  else result = html`<div class="hint warn" role="status">${render.error}</div>`;
+  else if (look.kind === "error") result = html`<div class="hint warn" role="status">${look.error}</div>`;
+  else if (look.kind !== "text" || look.pending) result = html`<div class="hint">Rendering in Home Assistant…</div>`;
+  else {
+    result = html`<div class="ap-render" role="img" aria-label=${`Rendered: ${look.text}`}
+      style=${`color:${look.ink};text-align:${look.multiLine ? "left" : "center"}`}>${watchTemplateRichText(look.text, look.ink, 14, host.icons)}</div>`;
+  }
   return html`
     <div class="ts-sub-h"><span>Examples</span></div>
     <div class="ts-chips">${A.template.presets.map((p) => {
@@ -266,7 +272,10 @@ function speakerChecklist(host: TileSettingsHost, label: string, key: WatchSpeak
     const next = on ? [...stored, id] : stored.filter((s) => s !== id);
     commit(host, key, (d) => setWatchVoiceSpeakers(d, ...at(host), key, next));
   };
-  const row = (c: WatchVoiceChoice) => checkField(c.missing ? `${c.entityId} (not found)` : c.name, stored.includes(c.entityId), (on) => toggle(c.entityId, on));
+  // An unavailable speaker is marked as the Music task marks it.
+  const name = (c: WatchVoiceChoice) =>
+    c.missing ? `${c.entityId} (not found)` : unavailable(host, c.entityId) ? `${c.name} (unavailable)` : c.name;
+  const row = (c: WatchVoiceChoice) => checkField(name(c), stored.includes(c.entityId), (on) => toggle(c.entityId, on));
   const announcing = list.filter((c) => c.announces);
   const others = all.filter((c) => !announcing.some((a) => a.entityId === c.entityId));
   return html`<div class="ts-sub-h"><span>${label}</span></div>
@@ -428,8 +437,10 @@ export const appSettingsStyles = css`
   .ap-text { align-items: flex-start; }
   .ap-text textarea { width: 100%; min-height: 96px; resize: vertical; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
     color: var(--wa-ink); background: var(--wa-field); border: 1px solid var(--wa-line); border-radius: 6px; padding: 6px 8px; box-sizing: border-box; }
-  .ap-render { margin: 2px 0 4px; padding: 6px 8px; border: 1px solid var(--wa-line); border-radius: 6px; background: var(--wa-field);
-    font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 140px; overflow: auto; }
+  .ap-render { margin: 2px 0 4px; padding: 8px 10px; border-radius: 10px; background: #000;
+    font: 600 14px/1.25 ui-rounded, "SF Pro Rounded", "Nunito", system-ui, sans-serif; white-space: pre-wrap; overflow-wrap: anywhere;
+    max-height: 140px; overflow: auto; }
+  .ap-render .wp-tpl-icon { display: inline-block; vertical-align: -0.12em; }
   .ap-row > span { min-width: 0; }
   .ap-list { display: flex; flex-direction: column; max-height: 220px; overflow: auto; padding: 2px 0; }
   .ap-group { font-size: 11px; font-weight: 600; color: var(--wa-muted); text-transform: uppercase; letter-spacing: .04em; padding: 6px 0 2px; }

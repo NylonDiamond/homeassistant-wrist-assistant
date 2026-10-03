@@ -1,0 +1,91 @@
+{
+  "name": "The server removed media_player.office from a music hub (it was in no preset, so the presets stayed as they were) while the phone toggled media_player.office into Downstairs: only the server changed musicHubSpeakerIds, so the presets are the server's and Downstairs never names the removed speaker; the phone's toggle is lost",
+  "base": {
+    "pages": [
+      {
+        "id": "6846643A-7CB5-4885-8BC6-DB3F8C798446",
+        "name": "Music",
+        "items": [
+          {
+            "id": "0375495E-8900-48F3-9605-941FEA69CA58",
+            "entityId": "music_hub.8F04AB71-3632-40F9-BDAD-193276C27066",
+            "musicHubSpeakerIds": ["media_player.kitchen", "media_player.living_room", "media_player.office"],
+            "musicHubGroupPresets": [
+              {
+                "id": "2594D354-FEFD-4E7B-9E51-00C319B2C7FE",
+                "name": "Downstairs",
+                "speakerIds": ["media_player.kitchen", "media_player.living_room"]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "phone": {
+    "pages": [
+      {
+        "id": "6846643A-7CB5-4885-8BC6-DB3F8C798446",
+        "name": "Music",
+        "items": [
+          {
+            "id": "0375495E-8900-48F3-9605-941FEA69CA58",
+            "entityId": "music_hub.8F04AB71-3632-40F9-BDAD-193276C27066",
+            "musicHubSpeakerIds": ["media_player.kitchen", "media_player.living_room", "media_player.office"],
+            "musicHubGroupPresets": [
+              {
+                "id": "2594D354-FEFD-4E7B-9E51-00C319B2C7FE",
+                "name": "Downstairs",
+                "speakerIds": ["media_player.kitchen", "media_player.living_room", "media_player.office"]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "server": {
+    "pages": [
+      {
+        "id": "6846643A-7CB5-4885-8BC6-DB3F8C798446",
+        "name": "Music",
+        "items": [
+          {
+            "id": "0375495E-8900-48F3-9605-941FEA69CA58",
+            "entityId": "music_hub.8F04AB71-3632-40F9-BDAD-193276C27066",
+            "musicHubSpeakerIds": ["media_player.kitchen", "media_player.living_room"],
+            "musicHubGroupPresets": [
+              {
+                "id": "2594D354-FEFD-4E7B-9E51-00C319B2C7FE",
+                "name": "Downstairs",
+                "speakerIds": ["media_player.kitchen", "media_player.living_room"]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "pages": [
+      {
+        "id": "6846643A-7CB5-4885-8BC6-DB3F8C798446",
+        "name": "Music",
+        "items": [
+          {
+            "id": "0375495E-8900-48F3-9605-941FEA69CA58",
+            "entityId": "music_hub.8F04AB71-3632-40F9-BDAD-193276C27066",
+            "musicHubSpeakerIds": ["media_player.kitchen", "media_player.living_room"],
+            "musicHubGroupPresets": [
+              {
+                "id": "2594D354-FEFD-4E7B-9E51-00C319B2C7FE",
+                "name": "Downstairs",
+                "speakerIds": ["media_player.kitchen", "media_player.living_room"]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

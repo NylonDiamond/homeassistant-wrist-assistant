@@ -61,7 +61,8 @@ interface MergeCase {
 
 describe("merge case files", () => {
   it("are read from the folder", () => {
-    expect(caseFiles.length).toBeGreaterThan(0);
+    // The count after the music hub cases, so a sync that drops some fails.
+    expect(caseFiles.length).toBeGreaterThanOrEqual(55);
   });
 
   for (const file of caseFiles) {
@@ -636,10 +637,22 @@ describe("checkWatchPages", () => {
 
 // ── value check ──────────────────────────────────────────────────────────
 
+const PAGE_UUID = "6F1C1E0A-0000-4000-8000-000000000001";
+
 describe("checkWatchPagesValues", () => {
   const withTile = (tile: JsonObject, page: JsonObject = {}) => ({
     schemaVersion: 1,
-    pages: [{ id: "P", name: "Home", ...page, items: [{ id: "T0", entityId: "light.a" }, { id: "T1", entityId: "camera.door", ...tile }] }],
+    pages: [
+      {
+        id: PAGE_UUID,
+        name: "Home",
+        ...page,
+        items: [
+          { id: "6F1C1E0A-0000-4000-8000-000000000002", entityId: "light.a" },
+          { id: "6F1C1E0A-0000-4000-8000-000000000003", entityId: "camera.door", ...tile },
+        ],
+      },
+    ],
   });
 
   it("refuses a strict enum value the watch does not know, by page, tile and key", () => {
@@ -673,6 +686,39 @@ describe("checkWatchPagesValues", () => {
     expect(checkWatchPagesValues(withTile({ cameraDisplayMode: null, futureKey: { any: 1 } }))).toEqual([]);
   });
 
+  it("refuses a UUID key that is not a UUID, in any case accepted", () => {
+    const where = 'Page 1 ("Home"), tile 2 (camera.door)';
+    expect(checkWatchPagesValues(withTile({ groupId: "not-a-uuid" }))).toEqual([`${where}: groupId holds "not-a-uuid", which is not a UUID.`]);
+    expect(checkWatchPagesValues(withTile({ groupId: "6f1c1e0a-0000-4000-8000-00000000000a" }))).toEqual([]);
+    expect(checkWatchPagesValues(withTile({ groupId: "6F1C1E0A00004000800000000000000A" }))).toEqual([`${where}: groupId holds "6F1C1E0A00004000800000000000000A", which is not a UUID.`]);
+    expect(checkWatchPagesValues({ pages: [{ id: "home", items: [] }] })).toEqual(['Page 1: id holds "home", which is not a UUID.']);
+  });
+
+  it("refuses a music hub preset missing a key the watch needs, or with a bad id", () => {
+    const where = 'Page 1 ("Home"), tile 2 (camera.door): musicHubGroupPresets, entry';
+    const good = { id: "6F1C1E0A-0000-4000-8000-00000000000B", name: "All", speakerIds: ["media_player.a"] };
+    expect(checkWatchPagesValues(withTile({ musicHubGroupPresets: [good] }))).toEqual([]);
+    expect(checkWatchPagesValues(withTile({ musicHubGroupPresets: [good, { ...good, id: "not-a-uuid" }] }))).toEqual([
+      `${where} 2: id holds "not-a-uuid", which is not a UUID.`,
+    ]);
+    expect(checkWatchPagesValues(withTile({ musicHubGroupPresets: [{ ...good, name: null }] }))).toEqual([`${where} 1: name is missing.`]);
+    expect(checkWatchPagesValues(withTile({ musicHubGroupPresets: [{ id: good.id }] }))).toEqual([
+      `${where} 1: name is missing.`,
+      `${where} 1: speakerIds is missing.`,
+    ]);
+    expect(checkWatchPagesValues(withTile({ musicHubGroupPresets: [{ ...good, name: 3 }] }))).toEqual([`${where} 1: name is not text.`]);
+    expect(checkWatchPagesValues(withTile({ musicHubGroupPresets: [{ ...good, speakerIds: "media_player.a" }] }))).toEqual([`${where} 1: speakerIds is not a list.`]);
+    // A required key with a default in the table may be left out.
+    expect(checkWatchPagesValues(withTile({}, { dynamicConfig: {} }))).toEqual([]);
+  });
+
+  it("holds a whole number to the watch's 32 bit Int", () => {
+    const where = 'Page 1 ("Home"), tile 2 (camera.door)';
+    expect(checkWatchPagesValues(withTile({ assistSpeechVolumePercent: 2 ** 31 - 1, colSpan: -(2 ** 31) }))).toEqual([]);
+    expect(checkWatchPagesValues(withTile({ assistSpeechVolumePercent: 2 ** 31 }))).toEqual([`${where}: assistSpeechVolumePercent is out of range for the watch.`]);
+    expect(checkWatchPagesValues(withTile({ colSpan: -(2 ** 31) - 1 }))).toEqual([`${where}: colSpan is out of range for the watch.`]);
+  });
+
   it("passes every page, tile and add the case files hold", () => {
     const root = join(__dirname, "fixtures-pages");
     const files = [
@@ -686,7 +732,7 @@ describe("checkWatchPagesValues", () => {
         const o = v as JsonObject;
         if (Array.isArray(o.pages)) documents.push(o);
         else if (Array.isArray(o.items) && typeof o.id === "string") documents.push({ pages: [o] });
-        else if (typeof o.entityId === "string" && typeof o.id === "string") documents.push({ pages: [{ id: "P", items: [o] }] });
+        else if (typeof o.entityId === "string" && typeof o.id === "string") documents.push({ pages: [{ id: PAGE_UUID, items: [o] }] });
         Object.values(o).forEach(collect);
       }
     };
@@ -800,6 +846,66 @@ describe("a tile's parallel lists", () => {
     const each = tileOf(merge(base, remote({ ...two, remoteLauncherLabels: ["Uno", "Two"] }), remote({ ...two, remoteLauncherLabels: ["One", "Dos"], remoteLauncherIcons: ["app.fill", "star"] })));
     expect(each.remoteLauncherLabels).toEqual(["Uno", "Dos"]);
     expect(each.remoteLauncherIcons).toEqual(["app.fill", "star"]);
+  });
+
+  describe("a music hub's speakers and presets", () => {
+    const hub = (speakers: string[], presets: JsonObject[] | undefined) =>
+      doc({ entityId: "music_hub.X", musicHubSpeakerIds: speakers, ...(presets === undefined ? {} : { musicHubGroupPresets: presets }) });
+    const preset = (name: string, speakerIds: string[]): JsonObject => ({ id: "11111111-2222-4333-8444-555555555555", name, speakerIds });
+    const speakersOf = (t: JsonObject) => t.musicHubSpeakerIds;
+    const presetsOf = (t: JsonObject) => t.musicHubGroupPresets;
+
+    it("gives the presets to the phone when it removed a speaker and the panel renamed a preset", () => {
+      const base = hub(["a", "b", "c"], [preset("Downstairs", ["a", "b"])]);
+      const local = hub(["a", "b", "c"], [preset("Ground floor", ["a", "b"])]);
+      const server = hub(["b", "c"], [preset("Downstairs", ["b"])]);
+      const out = tileOf(merge(base, local, server));
+      expect(speakersOf(out)).toEqual(["b", "c"]);
+      expect(presetsOf(out)).toEqual([preset("Downstairs", ["b"])]);
+    });
+
+    it("gives the presets to the phone when it removed a speaker and the panel toggled one in", () => {
+      const base = hub(["a", "b", "c"], [preset("All", ["a", "b"])]);
+      const local = hub(["a", "b", "c"], [preset("All", ["a", "b", "c"])]);
+      const server = hub(["a", "c"], [preset("All", ["a"])]);
+      const out = tileOf(merge(base, local, server));
+      expect(speakersOf(out)).toEqual(["a", "c"]);
+      expect(presetsOf(out)).toEqual([preset("All", ["a"])]);
+    });
+
+    it("gives the presets to the panel when it removed a speaker and the phone toggled that one in", () => {
+      const base = hub(["a", "b", "c"], [preset("All", ["a", "b"])]);
+      const local = hub(["a", "b"], [preset("All", ["a", "b"])]);
+      const server = hub(["a", "b", "c"], [preset("All", ["a", "b", "c"])]);
+      const out = tileOf(merge(base, local, server));
+      expect(speakersOf(out)).toEqual(["a", "b"]);
+      expect(presetsOf(out)).toEqual([preset("All", ["a", "b"])]);
+    });
+
+    it("gives the whole unit to the panel when both sides changed the speakers", () => {
+      const base = hub(["a", "b", "c"], [preset("All", ["a", "b"])]);
+      const local = hub(["b", "c"], [preset("All", ["b"])]);
+      const server = hub(["a", "b", "c", "d"], [preset("All", ["a", "b", "d"])]);
+      const out = tileOf(merge(base, local, server));
+      expect(speakersOf(out)).toEqual(["b", "c"]);
+      expect(presetsOf(out)).toEqual([preset("All", ["b"])]);
+      // The side that removed the last preset removes the key with it.
+      const gone = tileOf(merge(base, hub(["b", "c"], undefined), local));
+      expect(speakersOf(gone)).toEqual(["b", "c"]);
+      expect(out).toHaveProperty("musicHubGroupPresets");
+      expect(gone).not.toHaveProperty("musicHubGroupPresets");
+    });
+
+    it("merges the presets by key as before when neither side changed the speakers", () => {
+      const base = hub(["a", "b", "c"], [preset("All", ["a", "b"])]);
+      const local = hub(["a", "b", "c"], [preset("Ground floor", ["a", "b"])]);
+      const server = doc({ entityId: "music_hub.X", musicHubSpeakerIds: ["a", "b", "c"], musicHubGroupPresets: [preset("All", ["a", "b"])], showAlbumArt: false });
+      const out = tileOf(merge(base, local, server));
+      expect(presetsOf(out)).toEqual([preset("Ground floor", ["a", "b"])]);
+      expect(out.showAlbumArt).toBe(false);
+      const theirs = tileOf(merge(base, base, local));
+      expect(presetsOf(theirs)).toEqual([preset("Ground floor", ["a", "b"])]);
+    });
   });
 
   it("hands back a side's own list when the merged one is that list", () => {

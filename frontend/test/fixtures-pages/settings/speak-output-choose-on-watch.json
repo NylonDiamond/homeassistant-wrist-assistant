@@ -1,6 +1,6 @@
 {
   "name": "Speaker Choose on Watch",
-  "source": "WristAssistant/Views/PageEditor/AppTileRules.swift:225",
+  "source": "WristAssistant/Views/PageEditor/AppTileRules.swift:275",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

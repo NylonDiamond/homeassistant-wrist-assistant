@@ -1,6 +1,6 @@
 {
   "name": "Text shadow off on a valve tile (Position Display)",
-  "source": "WristAssistant/Views/PageEditorView.swift:7053",
+  "source": "WristAssistant/Views/PageEditorView.swift:7056",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

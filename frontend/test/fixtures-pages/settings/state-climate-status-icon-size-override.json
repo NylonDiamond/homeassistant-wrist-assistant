@@ -1,6 +1,6 @@
 {
   "name": "Status icon size 20 on a climate tile (HVAC Activity)",
-  "source": "WristAssistant/Views/PageEditorView.swift:7095",
+  "source": "WristAssistant/Views/PageEditorView.swift:7098",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

@@ -1,6 +1,6 @@
 {
   "name": "Status badge off on a climate tile (HVAC Activity)",
-  "source": "WristAssistant/Views/PageEditorView.swift:7067",
+  "source": "WristAssistant/Views/PageEditorView.swift:7070",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

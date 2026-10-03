@@ -15,19 +15,21 @@
 // evenly rather than a layout of its own.
 
 import { css, html, nothing, svg, type TemplateResult } from "lit";
-import type { HassEntityState, RenderResult } from "../ha-api.js";
+import type { HassEntityState } from "../ha-api.js";
 import type { IconProvider } from "../renderer.js";
 import {
   type PlacedWatchTile,
   type WatchPage,
   type WatchPageTile,
   type WatchTileColor,
+  WATCH_KIND_FALLBACK_LABELS,
   dividerParts,
   isSmartWatchPage,
   parseTileColor,
   smartDomainLabel,
   smartPageDomains,
   tileClass,
+  tileDrawsKindLine,
   tileEntityId,
   tileInkColor,
   tileKind,
@@ -45,7 +47,13 @@ import { WATCH_TILE_DEFAULTS, watchKindColor, watchThemeRoleColors } from "./til
 import { watchStateDomains, watchStylingTheme } from "./tile-styling.js";
 import { type WatchCatalog, watchLibraryTileFallbackName } from "./catalog.js";
 import { isWatchTvRemote, watchUsesPersonPhoto } from "./special-model.js";
-import { watchInboxLabel, watchMusicHubActiveSpeaker, watchTemplateText } from "./app-model.js";
+import {
+  type WatchTemplateRender,
+  watchInboxLabel,
+  watchMusicHubActiveSpeaker,
+  watchTemplateRender,
+  watchTemplateText,
+} from "./app-model.js";
 import { templateIconColor, templateRichTextSegments } from "./rich-text.js";
 
 export interface WatchPagePreviewInput {
@@ -62,10 +70,10 @@ export interface WatchPagePreviewInput {
   /** The iPhone's library, which names a macro or status page tile with no
    * label of its own as the watch does. */
   catalog?: WatchCatalog;
-  /** The template tiles' renders by tile id (`render_values`), which a
-   * template tile draws as the watch does. A tile missing here has no
-   * answer yet and draws "...". */
-  templates?: ReadonlyMap<string, RenderResult>;
+  /** The template tiles' renders by tile id (`render_values`), each with the
+   * text it was asked for, which a template tile draws as the watch does. A
+   * tile missing here, or whose render was for another text, draws "...". */
+  templates?: ReadonlyMap<string, WatchTemplateRender>;
 }
 
 /** The name a tile draws: its own label, else for an HTTP action, macro or
@@ -608,7 +616,7 @@ export function watchSpecialTileLook(
         active: speaker !== undefined,
         topRight: activity && speaker !== undefined ? (playing ? "play.fill" : "pause.fill") : undefined,
         stateLine: false,
-        label: speaker?.title ?? custom ?? "Music",
+        label: speaker?.title ?? custom ?? WATCH_KIND_FALLBACK_LABELS.music_hub!,
         art: tile.showAlbumArt !== false ? speaker?.picture : undefined,
       };
     }
@@ -890,7 +898,7 @@ export function watchTemplateTileLook(tile: WatchPageTile, input: Pick<WatchPage
   const text = watchTemplateText(tile);
   if (text === "") return { kind: "placeholder", symbol: WATCH_TEMPLATE_PLACEHOLDER_SYMBOL, ink };
   if (text.trim() === "") return { kind: "text", text: "", multiLine: false, ink, pending: false };
-  const result = typeof tile.id === "string" ? input.templates?.get(tile.id) : undefined;
+  const result = watchTemplateRender(input.templates, tile);
   if (result === undefined) return { kind: "text", text: "...", multiLine: false, ink, pending: true };
   if (!result.ok) return { kind: "error", error: result.error };
   return { kind: "text", text: result.value, multiLine: result.value.includes("\n"), ink, pending: false };
@@ -925,8 +933,9 @@ export function watchTemplateFontSize(text: string, widthPt: number, heightPt: n
 
 /** The rendered text with its `[icon:]` markers drawn as symbols the size of
  * the text, each in its own color or the text's. A symbol the provider does
- * not know draws nothing, as `Image(systemName:)` does. */
-function richText(text: string, ink: string, px: number, icons: IconProvider | undefined): TemplateResult[] {
+ * not know draws nothing, as `Image(systemName:)` does. The stage's
+ * template tile and the Template task's Preview both draw through it. */
+export function watchTemplateRichText(text: string, ink: string, px: number, icons: IconProvider | undefined): TemplateResult[] {
   return templateRichTextSegments(text).map((segment) => {
     if (segment.kind === "text") return html`${segment.text}`;
     const own = segment.color === undefined ? undefined : templateIconColor(segment.color);
@@ -959,7 +968,7 @@ function templateFace(tile: WatchPageTile, width: number, height: number, box: s
       `font-size:${size}px`, `color:${look.ink}`, `text-align:${look.multiLine ? "left" : "center"}`,
       `text-shadow:0 0 ${4 * s}px ${rgba(look.ink, 0.3)}`,
     ].join(";");
-    content = html`<span class="wp-tpl-text" style=${style}>${richText(look.text, look.ink, size, input.icons)}</span>`;
+    content = html`<span class="wp-tpl-text" style=${style}>${watchTemplateRichText(look.text, look.ink, size, input.icons)}</span>`;
   }
   return html`<div class="wp-tile wp-tpl" title=${hint ?? nothing}
     style=${`${box}border-radius:${radius}px;background:${ground};padding:${padY * s}px ${padX * s}px;${border}`}>
@@ -1407,7 +1416,13 @@ function tileFace(
   // The reading of a tile whose value label the watch draws without a bar
   // (a sensor, a climate): hidden with Off, in a capsule with Pill.
   const readingStyle = unknown || watchStateDomains("bars").includes(kind) ? undefined : watchValueLabelStyle(tile);
-  const reading = unknown ? kindLabel : cls === "virtual" ? kindLabel : stateWithDecimals(tile, tileStateText(tile, input.states), input);
+  // An app tile the watch draws with its name alone (assist, speak, point
+  // control) has no second line.
+  const reading = unknown
+    ? kindLabel
+    : cls === "virtual"
+      ? (tileDrawsKindLine(kind) ? kindLabel : undefined)
+      : stateWithDecimals(tile, tileStateText(tile, input.states), input);
   // Tile Value: the value in place of the symbol, the name under it or not,
   // and no line of the kind.
   const value = watchHTTPTileValueLook(tile);

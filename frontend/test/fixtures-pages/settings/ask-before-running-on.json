@@ -1,6 +1,6 @@
 {
   "name": "Ask before running on a light",
-  "source": "WristAssistant/Views/PageEditorView.swift:7287",
+  "source": "WristAssistant/Views/PageEditorView.swift:7290",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

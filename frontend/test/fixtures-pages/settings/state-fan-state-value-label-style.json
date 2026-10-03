@@ -1,6 +1,6 @@
 {
   "name": "Value label Pill on a fan tile (Speed Display)",
-  "source": "WristAssistant/Views/PageEditorView.swift:7025",
+  "source": "WristAssistant/Views/PageEditorView.swift:7028",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

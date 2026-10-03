@@ -7,13 +7,16 @@
 import { describe, expect, it } from "vitest";
 
 import type { HassEntityState } from "../src/ha-api.js";
+import tileAppTable from "../src/watch-pages/tile-app.json";
 import type { WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-pages/model.js";
 import { templateIconColor, templateRichTextSegments } from "../src/watch-pages/rich-text.js";
 import { watchTileKeyAccepts, watchTileKeySpec } from "../src/watch-pages/special-model.js";
 import {
   WATCH_APP,
   WATCH_APP_SETTING_KEYS,
+  WATCH_CHOOSE_ON_WATCH_WARNING_TEXT,
   addWatchMusicHubPreset,
+  renameWatchMusicHubPreset,
   setWatchAssistMode,
   setWatchMusicHubAlbumArt,
   setWatchTemplateText,
@@ -22,6 +25,7 @@ import {
   setWatchVoiceVolume,
   watchAgentDisplay,
   watchAssistTileMissingSpeakers,
+  watchCloudTTSAvailable,
   watchConversationAgents,
   watchEngineDisplay,
   watchInboxLabel,
@@ -82,6 +86,12 @@ describe("the save checks, on the table's samples", () => {
 
 describe("the voice lists, on the table's samples", () => {
   const sample = A.voice.lists.engineSample;
+
+  it("count Home Assistant Cloud as connected only as the table's samples say", () => {
+    const samples = tileAppTable.voice.lists.cloudSamples as { status: unknown; connected: boolean }[];
+    expect(samples.length).toBeGreaterThan(0);
+    for (const s of samples) expect(watchCloudTTSAvailable(s.status), JSON.stringify(s.status)).toBe(s.connected);
+  });
   const states = statesOf(sample.states.map((s) => state(s.entityId, s.friendlyName === null ? {} : { friendly_name: s.friendlyName })));
   const names = (list: { entityId: string; name: string }[]) => list.map(({ entityId, name }) => ({ entityId, name }));
 
@@ -211,6 +221,36 @@ describe("the save warning", () => {
     expect(w.fallback).toEqual(["media_player.lounge"]);
     expect([w.saveAnyway, w.cancel]).toEqual([A.checks.saveAnyway, A.checks.cancel]);
     expect(watchSaveSpeakerWarning(documentWith(pageOf([speak])))!.fallback).toEqual([]);
+    expect(w.chooseOnWatch).toBeUndefined();
+    expect(w.tiles.every((t) => !t.chooseOnWatch)).toBe(true);
+  });
+
+  it("asks only about the pages changed since the base", () => {
+    const kitchen: WatchPage = { id: "P2", name: "Kitchen", items: [{ ...speak, id: "S2" }] };
+    const base = documentWith(pageOf([speak]), kitchen);
+    // Nothing changed: no page to ask about.
+    expect(watchSaveSpeakerWarning(base, undefined, base)).toBeUndefined();
+    expect(watchSaveSpeakerWarning(structuredClone(base), undefined, base)).toBeUndefined();
+    // The kitchen was renamed: only its tile is asked about.
+    const renamed = documentWith(pageOf([speak]), { ...kitchen, name: "Cook" });
+    expect(watchSaveSpeakerWarning(renamed, undefined, base)!.tiles.map((t) => String(t.tile.id))).toEqual(["S2"]);
+    // A page the base does not hold counts as changed.
+    const added = documentWith(pageOf([speak]), kitchen, { id: "P9", name: "New", items: [{ ...assist }] });
+    expect(watchSaveSpeakerWarning(added, undefined, base)!.tiles.map((t) => `${t.kind}:${String(t.tile.id)}`)).toEqual(["assist:A1"]);
+    // Without a base, every page.
+    expect(watchSaveSpeakerWarning(base, undefined, null)!.tiles).toHaveLength(2);
+  });
+
+  it("names the default speakers only for Choose Speakers tiles, and says a Choose on Watch tile errors", () => {
+    const onWatch = { id: "S5", entityId: "speak_message.voice_hub", speakMessageOutputMode: "chooseEachTime" };
+    const voice = { defaultSpeakers: ["media_player.lounge"] };
+    const alone = watchSaveSpeakerWarning(documentWith(pageOf([onWatch])), voice)!;
+    expect(alone.tiles.map((t) => t.chooseOnWatch)).toEqual([true]);
+    expect(alone.fallback).toEqual([]);
+    expect(alone.chooseOnWatch).toBe(WATCH_CHOOSE_ON_WATCH_WARNING_TEXT);
+    const mixed = watchSaveSpeakerWarning(documentWith(pageOf([onWatch, assist])), voice)!;
+    expect(mixed.fallback).toEqual(["media_player.lounge"]);
+    expect(mixed.chooseOnWatch).toBe(WATCH_CHOOSE_ON_WATCH_WARNING_TEXT);
   });
 });
 
@@ -238,6 +278,11 @@ describe("refusals return the document as given", () => {
     const assistDoc = documentWith(pageOf([{ id: "A1", entityId: "assist.voice_hub" }]));
     expect(setWatchAssistMode(assistDoc, PAGE_ID, "A1", "speakOnly")).toBe(assistDoc);
     expect(setWatchVoiceVolume(assistDoc, PAGE_ID, "A1", "assistSpeechVolumePercent", Number.NaN)).toBe(assistDoc);
+  });
+
+  it("for a preset that is not an object, never rebuilt as a partial one", () => {
+    const junk = documentWith(pageOf([{ id: "M1", entityId: "music_hub.X", musicHubSpeakerIds: ["a", "b"], musicHubGroupPresets: ["junk"] }]));
+    expect(renameWatchMusicHubPreset(junk, PAGE_ID, "M1", 0, "X")).toBe(junk);
   });
 
   it("for Add Preset while its button is hidden: fewer than two speakers, or three presets", () => {

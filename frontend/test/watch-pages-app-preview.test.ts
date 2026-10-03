@@ -10,10 +10,12 @@ import { type HassEntityState, type HassLike, type RenderResult, fetchCloudStatu
 import type { IconProvider } from "../src/renderer.js";
 import {
   MUSIC_ASSISTANT_DOMAIN,
+  type WatchTemplateRender,
   watchCloudTTSAvailable,
   watchHasConfigEntry,
   watchMergedRenders,
   watchMusicHubActiveSpeaker,
+  watchTemplateRender,
   watchTemplateRequests,
   watchTemplateSignature,
 } from "../src/watch-pages/app-model.js";
@@ -123,17 +125,37 @@ describe("which templates the editor renders", () => {
     expect(watchTemplateSignature({ A: "x", C: "y" })).not.toBe(a);
   });
 
-  it("lays an answer over the last renders, keeping a tile it leaves out", () => {
-    const held = new Map<string, RenderResult>([["A", { ok: true, value: "1" }], ["B", { ok: true, value: "2" }]]);
-    const next = watchMergedRenders(held, { A: { ok: false, error: "UndefinedError: 'foo' is undefined" }, C: { ok: true, value: "3" } });
-    expect([...next]).toEqual([
-      ["A", { ok: false, error: "UndefinedError: 'foo' is undefined" }],
-      ["B", { ok: true, value: "2" }],
-      ["C", { ok: true, value: "3" }],
+  it("lays an answer over the last renders, keeping a tile it leaves out, each with its text", () => {
+    const held = new Map<string, WatchTemplateRender>([
+      ["A", { text: "a", result: { ok: true, value: "1" } }],
+      ["B", { text: "b", result: { ok: true, value: "2" } }],
     ]);
-    // The held map is never changed; junk in an answer is skipped.
-    expect(held.get("A")).toEqual({ ok: true, value: "1" });
-    expect([...watchMergedRenders(held, { A: { ok: true } as unknown as RenderResult, B: null as unknown as RenderResult })]).toEqual([...held]);
+    const next = watchMergedRenders(held, { A: "a2", C: "c" }, { A: { ok: false, error: "UndefinedError: 'foo' is undefined" }, C: { ok: true, value: "3" } });
+    expect([...next]).toEqual([
+      ["A", { text: "a2", result: { ok: false, error: "UndefinedError: 'foo' is undefined" } }],
+      ["B", { text: "b", result: { ok: true, value: "2" } }],
+      ["C", { text: "c", result: { ok: true, value: "3" } }],
+    ]);
+    // The held map is never changed; junk in an answer, and an answer for a
+    // tile that was not asked, are skipped.
+    expect(held.get("A")).toEqual({ text: "a", result: { ok: true, value: "1" } });
+    const requests = { A: "a", B: "b" };
+    expect([...watchMergedRenders(held, requests, { A: { ok: true } as unknown as RenderResult, B: null as unknown as RenderResult })]).toEqual([...held]);
+    expect([...watchMergedRenders(held, requests, { Z: { ok: true, value: "9" } })]).toEqual([...held]);
+  });
+
+  it("shows a render only while the tile's text is the one it was asked for", () => {
+    const renders = new Map<string, WatchTemplateRender>([["A", { text: "{{ 1 }}", result: { ok: true, value: "1" } }]]);
+    const tile = (templateString: string): WatchPageTile => ({ id: "A", entityId: "template.A", templateString });
+    expect(watchTemplateRender(renders, tile("{{ 1 }}"))).toEqual({ ok: true, value: "1" });
+    // Edited: the old value never shows under the new text, so the tile
+    // draws "..." until the new answer (or forever after a failed call).
+    expect(watchTemplateRender(renders, tile("{{ 2 }}"))).toBeUndefined();
+    expect(watchTemplateTileLook(tile("{{ 2 }}"), { page: pageOf(), templates: renders })).toMatchObject({ kind: "text", text: "...", pending: true });
+    // Typed back: the last value for that text shows again.
+    expect(watchTemplateTileLook(tile("{{ 1 }}"), { page: pageOf(), templates: renders })).toMatchObject({ text: "1", pending: false });
+    expect(watchTemplateRender(undefined, tile("{{ 1 }}"))).toBeUndefined();
+    expect(watchTemplateRender(renders, { entityId: "template.A", templateString: "{{ 1 }}" })).toBeUndefined();
   });
 });
 
@@ -159,11 +181,32 @@ const icons = (...names: string[]): IconProvider => ({
   names: () => names,
 });
 
+describe("the app tiles' names in the preview", () => {
+  const draw = (t: WatchPageTile) =>
+    text(renderWatchTileFace(t, { width: 90, height: 90 }, { page: pageOf(), pages: [], screen: { width: 198, height: 242 }, scale: 1 }, 21));
+
+  it("draws the watch's name and no second line for speak, assist and point control", () => {
+    const speak = draw({ id: "S", entityId: "speak_message.voice_hub" });
+    expect(speak).toContain(">Speak<");
+    expect(speak).not.toContain("Speak message");
+    expect(speak).not.toContain("wp-state");
+    const point = draw({ id: "P", entityId: "point_control.X" });
+    expect(point).toContain(">Point Control<");
+    expect(point).not.toContain("wp-state");
+    expect(draw({ id: "A", entityId: "assist.voice_hub" })).not.toContain("wp-state");
+  });
+
+  it("keeps the kind line of a page link and a macro", () => {
+    expect(draw({ id: "G", entityId: "page.X" })).toContain("wp-state");
+    expect(draw({ id: "M", entityId: "macro.X" })).toContain("wp-state");
+  });
+});
+
 describe("a template tile in the preview", () => {
   const page = pageOf();
   const sensor = watchThemeRoleColors("ember").entitySensor!;
   const tile = (extra: Record<string, unknown> = {}): WatchPageTile => ({ id: "T", entityId: "template.T", templateString: "{{ x }}", icon: "star", customLabel: "Mine", ...extra });
-  const renders = (result?: RenderResult) => new Map(result === undefined ? [] : [["T", result]]);
+  const renders = (result?: RenderResult) => new Map<string, WatchTemplateRender>(result === undefined ? [] : [["T", { text: "{{ x }}", result }]]);
   const face = (t: WatchPageTile, result?: RenderResult, provider?: IconProvider) =>
     text(renderWatchTileFace(t, { width: 90, height: 60 }, { page, pages: [], screen: { width: 198, height: 242 }, scale: 1, icons: provider, templates: renders(result) }, 21));
 

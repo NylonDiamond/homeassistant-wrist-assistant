@@ -1,6 +1,6 @@
 {
   "name": "A Reply Speaker edit removes a stored assistReplyOutputMode",
-  "source": "WristAssistant/Views/PageEditor/AppTileRules.swift:219",
+  "source": "WristAssistant/Views/PageEditor/AppTileRules.swift:269",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

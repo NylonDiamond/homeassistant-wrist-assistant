@@ -1,6 +1,6 @@
 {
   "name": "Another action for the same direction: only the target moves",
-  "source": "WristAssistant/Views/PageEditorView.swift:7364",
+  "source": "WristAssistant/Views/PageEditorView.swift:7367",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

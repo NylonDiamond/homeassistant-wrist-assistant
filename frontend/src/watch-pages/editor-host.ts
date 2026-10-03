@@ -12,9 +12,10 @@
 // No DOM here: the scrub bookkeeping below is plain state so it can be
 // tested.
 
-import type { HassLike, RenderResult } from "../ha-api.js";
+import type { HassLike } from "../ha-api.js";
 import type { IconProvider } from "../renderer.js";
 import type { SymbolBrowser } from "../symbols.js";
+import type { WatchTemplateRender } from "./app-model.js";
 import type { WatchCatalog } from "./catalog.js";
 import type { WatchPagesApplyOptions } from "./draft.js";
 import type { WatchPage, WatchPageTile, WatchPagesDocument } from "./model.js";
@@ -78,11 +79,12 @@ export interface WatchPagesEditorHost {
   readonly cloudTTS: boolean | undefined;
   /** The shown page's template tiles rendered by Home Assistant
    * (`render_values`, as the watch's `template` op renders them), by tile
-   * id: a value, or the error Home Assistant gave. A tile is missing until
-   * its first answer is in, and keeps its last answer while a newer one is
-   * out or after a call failed. Held by the element, never in the draft. A
-   * getter. */
-  readonly templateRenders: ReadonlyMap<string, RenderResult>;
+   * id: a value, or the error Home Assistant gave, with the text it was
+   * asked for. A tile is missing until its first answer is in, and keeps its
+   * last answer while a newer one is out or after a call failed; read it
+   * through `watchTemplateRender`, which shows it only for the same text.
+   * Held by the element, never in the draft. A getter. */
+  readonly templateRenders: ReadonlyMap<string, WatchTemplateRender>;
   /** The entities on the same device as `entityId` in Home Assistant's
    * entity registry (registry order), for a remote's "Use <player>" and a
    * vacuum's discovery. Empty when the entity has no device. */

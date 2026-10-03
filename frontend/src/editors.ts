@@ -839,6 +839,24 @@ interface NumberInputOptions {
   /** A small glyph inside the box before the number, such as the link that
    * says a part's size still follows the layer. */
   lead?: TemplateResult;
+  /** On commit (Enter or leaving the box), a number outside `min...max` is
+   * clamped into it, written, and shown in the box. While typing, `set`
+   * gets every number as before. */
+  clampOnCommit?: boolean;
+}
+
+/** The box's committed text clamped into `min...max`, written through `set`
+ * and put back in the box; nothing for an empty box, a non-number, or a
+ * number already in range (the input event wrote that one). */
+export function commitClamped(e: Pick<Event, "target">, set: (v: number | undefined) => void, opts: Pick<NumberInputOptions, "min" | "max">): void {
+  const box = e.target as HTMLInputElement;
+  if (box.value.trim() === "") return;
+  const n = Number(box.value);
+  if (Number.isNaN(n)) return;
+  const clamped = Math.min(opts.max ?? Infinity, Math.max(opts.min ?? -Infinity, n));
+  if (clamped === n) return;
+  box.value = String(clamped);
+  set(clamped);
 }
 
 /** The input half of `numberField`, for a field that draws its own title line. */
@@ -854,7 +872,8 @@ function numberInput(value: number | undefined, set: (v: number | undefined) => 
         }
         const n = Number(v);
         if (!Number.isNaN(n)) set(n);
-      })} />`;
+      })}
+      @change=${opts.clampOnCommit === true ? (e: Event) => commitClamped(e, set, opts) : nothing} />`;
   if (opts.unit === undefined && opts.lead === undefined) return input;
   return html`<span class=${opts.lead === undefined ? "num-box" : "num-box lead"} style=${`--wa-unit:${opts.unit?.length ?? 0}`}>${opts.lead === undefined
     ? nothing
@@ -980,8 +999,9 @@ function colorModeField<T extends string>(
  * A bounded number found by eye rather than typed: the number box with its
  * unit, a title that drags it, and a slim slider in front where the slider is
  * the quicker control (a turn, a crop). `range: false` leaves the slider out.
- * A typed number outside the range is ignored rather than clamped, so typing
- * 12 can pass through 1 without the box jumping.
+ * While typing, a number outside the range is ignored, so typing 12 can pass
+ * through 1 without the box jumping; on commit (Enter or leaving the box) it
+ * is clamped into the range, written, and shown clamped.
  */
 export function sliderField(
   label: string,
@@ -995,7 +1015,7 @@ export function sliderField(
     <div class="slider-row">
       ${opts.range === false ? nothing : html`<input type="range" min=${opts.min} max=${opts.max} step=${opts.step} .value=${String(value)} aria-label=${label}
         @input=${onInput((v) => { const n = Number(v); if (!Number.isNaN(n)) set(n); })} />`}
-      ${numberInput(value, typed, { step: opts.step, min: opts.min, max: opts.max, ariaLabel: label, ...(opts.unit === undefined ? {} : { unit: opts.unit }) })}
+      ${numberInput(value, typed, { step: opts.step, min: opts.min, max: opts.max, ariaLabel: label, clampOnCommit: true, ...(opts.unit === undefined ? {} : { unit: opts.unit }) })}
     </div></div>`;
 }
 

@@ -527,7 +527,7 @@ function applyPageCase(document: WatchPagesDocument, c: PageSettingsCase): Watch
 
 describe("settings case files written by the phone", () => {
   it("are all here", () => {
-    expect(files.length).toBeGreaterThanOrEqual(351);
+    expect(files.length).toBeGreaterThanOrEqual(416);
   });
 
   for (const file of files) {

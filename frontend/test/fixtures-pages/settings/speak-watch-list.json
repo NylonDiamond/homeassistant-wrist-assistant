@@ -1,6 +1,6 @@
 {
   "name": "Choose Watch List",
-  "source": "WristAssistant/Views/PageEditor/AppTileRules.swift:231",
+  "source": "WristAssistant/Views/PageEditor/AppTileRules.swift:281",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

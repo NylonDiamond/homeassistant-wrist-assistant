@@ -1,6 +1,6 @@
 {
   "name": "Effect intensity",
-  "source": "WristAssistant/Views/PageEditorView.swift:9506",
+  "source": "WristAssistant/Views/PageEditorView.swift:9513",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

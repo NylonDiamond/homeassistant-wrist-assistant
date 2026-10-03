@@ -412,7 +412,11 @@
       "presetsHeader": "Optional quick-pick buttons shown above speaker list on watch",
       "presets": "Speaker Presets",
       "presetCount": "{count} / {max}",
-      "addPreset": "Add Preset"
+      "addPreset": "Add Preset",
+      "presetName": "Name",
+      "presetNamePlaceholder": "Preset name",
+      "presetSpeakersOne": "1 speaker",
+      "presetSpeakersMany": "{count} speakers"
     },
     "musicAssistant": {
       "domain": "music_assistant",
@@ -466,6 +470,22 @@
       "Choose Speakers (assistTargetSpeakerIds), Voice Engine (assistTTSEngine), Speech Volume (assistSpeechVolumeMode) and Target Volume (assistSpeechVolumePercent, not in keepCurrent), only in Speak Reply with Choose Speakers.",
       "Voice Input: Start Listening Immediately (assistImmediateListen), always."
     ],
+    "words": {
+      "assistant": "Assistant",
+      "conversationAgent": "Conversation Agent",
+      "assistMode": "Assist Mode",
+      "replySpeaker": "Reply Speaker",
+      "chooseSpeakers": "Choose Speakers",
+      "chooseSpeakersHint": "Pick one or more Home Assistant speaker devices (including speaker groups) for this tile.",
+      "chooseSpeakersEmptyHint": "Pick at least one Home Assistant speaker device (or speaker group) for this tile.",
+      "voiceEngine": "Voice Engine",
+      "speechVolume": "Speech Volume",
+      "targetVolume": "Target Volume",
+      "voiceInput": "Voice Input",
+      "listen": "Start Listening Immediately",
+      "listenDetail": "Starts dictation capture right away after Assist asks for your command.",
+      "firstUseSetup": "First use setup: when the Apple Watch typing screen appears, tap the bottom-right button, choose Mic, then tap Done. After that, later taps will default to mic listening."
+    },
     "hiddenRows": "A hidden row keeps its key: leaving Speak Reply or Choose Speakers removes nothing.",
     "writtenKeys": [
       "assistAgentId",
@@ -477,8 +497,22 @@
       "assistSpeechVolumePercent",
       "assistImmediateListen"
     ],
-    "neverWritten": ["assistReplyOutputMode", "assistChooseListSpeakerIds", "assistAutoSendOnPause"],
-    "replyOutputMode": "A stored assistReplyOutputMode overrides Assist Mode and Reply Speaker on the watch. An Assist Mode edit, a Reply Speaker edit and Reset Data remove it.",
+    "neverWritten": ["assistChooseListSpeakerIds", "assistAutoSendOnPause"],
+    "removedBy": {
+      "assistReplyOutputMode": [
+        {
+          "op": "assistMode"
+        },
+        {
+          "op": "assistReplySpeaker"
+        },
+        {
+          "op": "reset",
+          "task": "data"
+        }
+      ]
+    },
+    "replyOutputMode": "A stored assistReplyOutputMode overrides Assist Mode and Reply Speaker on the watch. The edits in removedBy remove it; nothing sets it.",
     "listenAbsent": true,
     "agent": {
       "help": "Pick a conversation agent such as an LLM-backed assistant. Default uses Home Assistant's normal Assist route.",
@@ -524,6 +558,22 @@
       "Voice Engine (speakMessageTTSEngine), Speech Volume (speakMessageSpeechVolumeMode, short labels) and Target Volume (speakMessageSpeechVolumePercent, not in keepCurrent) in both speaker modes.",
       "Voice Input: Start Listening Immediately (speakMessageImmediateListen), always."
     ],
+    "words": {
+      "speaker": "Speaker",
+      "chooseSpeakers": "Choose Speakers",
+      "chooseSpeakersHint": "Pick one or more Home Assistant speaker devices for this tile.",
+      "chooseSpeakersEmptyHint": "Pick at least one Home Assistant speaker device for this tile.",
+      "speakersShownOnWatch": "Speakers Shown on Watch",
+      "chooseWatchList": "Choose Watch List",
+      "watchListHint": "Only these Home Assistant speaker devices appear in the watch picker for this tile.",
+      "voiceEngine": "Voice Engine",
+      "speechVolume": "Speech Volume",
+      "targetVolume": "Target Volume",
+      "voiceInput": "Voice Input",
+      "listen": "Start Listening Immediately",
+      "listenDetail": "Starts dictation capture right away when the tile opens.",
+      "firstUseSetup": "First use setup: when the Apple Watch typing screen appears, tap the bottom-right button, choose Mic, then tap Done. After that, later taps will default to mic listening."
+    },
     "warnings": {
       "chooseEachTimeEmptyList": "Choose at least one Home Assistant speaker to show on watch for this tile.",
       "chooseEachTimeNoEngine": "Set a voice engine for this tile. The watch will ask which Home speaker to use each time.",
@@ -744,6 +794,64 @@
           }
         ]
       },
+      "cloudRule": "Home Assistant Cloud counts as connected only when its status has logged_in exactly true and cloud exactly \"connected\". A failed call is not connected.",
+      "cloudSamples": [
+        {
+          "status": {
+            "logged_in": true,
+            "cloud": "connected"
+          },
+          "connected": true
+        },
+        {
+          "status": {
+            "logged_in": true,
+            "cloud": "connecting"
+          },
+          "connected": false
+        },
+        {
+          "status": {
+            "logged_in": true,
+            "cloud": "Connected"
+          },
+          "connected": false
+        },
+        {
+          "status": {
+            "logged_in": false,
+            "cloud": "connected"
+          },
+          "connected": false
+        },
+        {
+          "status": {
+            "logged_in": "true",
+            "cloud": "connected"
+          },
+          "connected": false
+        },
+        {
+          "status": {
+            "cloud": "connected"
+          },
+          "connected": false
+        },
+        {
+          "status": {
+            "logged_in": true
+          },
+          "connected": false
+        },
+        {
+          "status": {},
+          "connected": false
+        },
+        {
+          "status": null,
+          "connected": false
+        }
+      ],
       "speakers": "Every media_player: announce bit first, then by name ignoring case.",
       "announceBit": 1048576,
       "speakerSample": {

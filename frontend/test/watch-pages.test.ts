@@ -7,6 +7,8 @@ import { describe, expect, it } from "vitest";
 
 import type { HassEntityState } from "../src/ha-api.js";
 import { isWatchPagesRoute, watchPagesUrl } from "../src/watch-pages/hook.js";
+import WATCH_APP from "../src/watch-pages/tile-app.json";
+import tileDefaults from "../src/watch-pages/tile-defaults.json";
 import {
   type WatchPagesDocument,
   WATCH_GRID_TOP_INSET,
@@ -23,6 +25,7 @@ import {
   smartDomainLabel,
   smartPageDomains,
   tileClass,
+  tileDrawsKindLine,
   tileGeometry,
   tileInkColor,
   tileKind,
@@ -275,7 +278,27 @@ describe("labels and state", () => {
   it("names a page link after its page, and other virtual kinds by kind", () => {
     expect(tileLabel(tile("T3"), STATES, pages)).toBe("Küche ☕");
     expect(tileLabel(tile("T3"))).toBe("Go to page");
-    expect(tileLabel({ entityId: "music_hub.1" })).toBe("Music hub");
+    expect(tileLabel({ entityId: "macro.1" })).toBe("Macro");
+  });
+
+  it("names an app tile as the watch does, from the tables", () => {
+    const WATCH_TILE_DEFAULTS_LABELS = tileDefaults.label;
+    expect(tileLabel({ entityId: "speak_message.voice_hub" })).toBe(WATCH_TILE_DEFAULTS_LABELS.speak_message);
+    expect(tileLabel({ entityId: "speak_message.voice_hub" })).toBe("Speak");
+    expect(tileLabel({ entityId: "assist.voice_hub" })).toBe(WATCH_TILE_DEFAULTS_LABELS.assist);
+    expect(tileLabel({ entityId: "point_control.1" })).toBe(WATCH_APP.pointControl.add.customLabel);
+    expect(tileLabel({ entityId: "point_control.1" })).toBe("Point Control");
+    expect(tileLabel({ entityId: "music_hub.1" })).toBe(WATCH_APP.musicHub.add.customLabel);
+    expect(tileLabel({ entityId: "webhook_inbox.all" })).toBe("Inbox");
+    expect(tileLabel({ entityId: "webhook_inbox.alerts" })).toBe("#alerts");
+    expect(tileLabel({ entityId: "speak_message.voice_hub", customLabel: "Say" })).toBe("Say");
+  });
+
+  it("draws no kind line under assist, speak, point control and template tiles, and keeps it for the others", () => {
+    for (const kind of ["assist", "speak_message", "point_control", "template"]) expect(tileDrawsKindLine(kind), kind).toBe(false);
+    for (const kind of ["page", "show_page", "status_page", "http_action", "macro", "multicam", "music_hub", "webhook_inbox"]) {
+      expect(tileDrawsKindLine(kind), kind).toBe(true);
+    }
   });
 
   it("names a header after its domain unless it has a label", () => {

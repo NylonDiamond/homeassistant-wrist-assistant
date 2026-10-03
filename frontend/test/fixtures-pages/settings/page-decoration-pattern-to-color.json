@@ -1,6 +1,6 @@
 {
   "name": "Pattern to Color: the pattern goes, the page's color and brightness come back",
-  "source": "WristAssistant/Views/PageEditorView.swift:16004",
+  "source": "WristAssistant/Views/PageEditorView.swift:16011",
   "page": {
     "backgroundBrightness": 0.8,
     "backgroundColor": "#101238",

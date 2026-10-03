@@ -25,6 +25,7 @@ import type { HassEntityState, RenderResult } from "../ha-api.js";
 import tileApp from "./tile-app.json";
 import { type WatchEditOptions, randomWatchId } from "./edit.js";
 import { REMOVE, editTile, isBool, setKey, withKey, withoutKey } from "./tile-settings-model.js";
+import { sameWatchPagesJson } from "./merge.js";
 import {
   type WatchPage,
   type WatchPageTile,
@@ -34,6 +35,7 @@ import {
   tileEntityId,
   tileKind,
   tileTarget,
+  watchInboxFallbackLabel,
   watchPageId,
   watchPageTiles,
   watchPagesOf,
@@ -112,17 +114,39 @@ export function watchTemplateSignature(requests: Readonly<Record<string, string>
   return JSON.stringify(Object.keys(requests).sort().map((id) => [id, requests[id]]));
 }
 
-/** The renders after an answer: the earlier ones with the answer's laid
- * over them, so a tile the answer leaves out keeps its last value. */
+/** One template tile's render with the text it was asked for. */
+export interface WatchTemplateRender {
+  text: string;
+  result: RenderResult;
+}
+
+/** The renders after an answer to `requests`: the earlier ones with the
+ * answer's laid over them, each with the text it was asked for, so a tile
+ * the answer leaves out keeps its last value (shown only while its text is
+ * still that one). */
 export function watchMergedRenders(
-  held: ReadonlyMap<string, RenderResult>,
+  held: ReadonlyMap<string, WatchTemplateRender>,
+  requests: Readonly<Record<string, string>>,
   answer: Readonly<Record<string, RenderResult>>,
-): Map<string, RenderResult> {
+): Map<string, WatchTemplateRender> {
   const out = new Map(held);
   for (const [id, result] of Object.entries(answer)) {
-    if (isJsonObject(result) && (result.ok === true ? typeof result.value === "string" : result.ok === false)) out.set(id, result);
+    if (!Object.hasOwn(requests, id)) continue;
+    if (isJsonObject(result) && (result.ok === true ? typeof result.value === "string" : result.ok === false)) out.set(id, { text: requests[id]!, result });
   }
   return out;
+}
+
+/** A template tile's render for its text as it stands, as the watch shows
+ * the last value only for the same text: undefined when there is none, or
+ * when the last answer was for another text (the tile then draws "..."). */
+export function watchTemplateRender(
+  renders: ReadonlyMap<string, WatchTemplateRender> | undefined,
+  tile: WatchPageTile,
+): RenderResult | undefined {
+  if (typeof tile.id !== "string") return undefined;
+  const held = renders?.get(tile.id);
+  return held !== undefined && held.text === watchTemplateText(tile) ? held.result : undefined;
 }
 
 // ── music hub ────────────────────────────────────────────────────────────
@@ -432,8 +456,11 @@ function editPreset(
     const presets = presetsOf(tile);
     if (!isMusicHub(tile) || !index(at, presets.length)) return tile;
     const preset = presets[at];
+    // A preset that is not an object is left alone rather than rebuilt as a
+    // partial one the watch could not read.
+    if (!isJsonObject(preset)) return tile;
     const next = presets.slice();
-    next[at] = change(isJsonObject(preset) ? preset : {});
+    next[at] = change(preset);
     return withPresets(tile, next);
   });
 }
@@ -831,44 +858,88 @@ export interface WatchSpeakerWarningTile {
   kind: "speak" | "assist";
   page: WatchPage;
   tile: WatchPageTile;
+  /** A Speak tile in Choose on Watch: it has no fallback, the watch shows
+   * an error until its list holds a speaker. */
+  chooseOnWatch: boolean;
 }
 
+/** The save warning's line for Choose on Watch tiles, which never fall back
+ * to the default speakers (the watch says "No watch speaker list configured
+ * for this tile."). */
+export const WATCH_CHOOSE_ON_WATCH_WARNING_TEXT =
+  "A Speak tile set to Choose on Watch shows an error on the watch until speakers are listed for it.";
+
 /** What the save asks about before it sends: the tiles, the phone's
- * messages (Speak first, then Assist), and the default speakers they fall
- * back to when the catalog lists some. */
+ * messages (Speak first, then Assist), the default speakers the Choose
+ * Speakers tiles fall back to when the catalog lists some, and the line for
+ * Choose on Watch tiles. */
 export interface WatchSaveSpeakerWarning {
   title: string;
   messages: string[];
   tiles: WatchSpeakerWarningTile[];
-  /** The phone's default speakers, in its order; empty when it has none or
-   * the catalog cannot say. */
+  /** The phone's default speakers, in its order, which the listed Choose
+   * Speakers tiles fall back to; empty when it has none, the catalog cannot
+   * say, or every listed tile is a Choose on Watch one. */
   fallback: string[];
+  /** `WATCH_CHOOSE_ON_WATCH_WARNING_TEXT` when a listed tile is a Choose on
+   * Watch one. */
+  chooseOnWatch?: string;
   saveAnyway: string;
   cancel: string;
 }
 
+/** The pages a save warning looks at: every page that is new or differs
+ * from the page of the same id in `base`, as the phone checks the page it
+ * saves. Without a base, every page. */
+function changedWatchPages(document: WatchPagesDocument, base: WatchPagesDocument | null | undefined): WatchPage[] {
+  const pages = watchPagesOf(document);
+  if (base === null || base === undefined) return pages;
+  const before = new Map<string, WatchPage>();
+  for (const page of watchPagesOf(base)) {
+    const id = watchPageId(page);
+    if (id !== "" && !before.has(id)) before.set(id, page);
+  }
+  return pages.filter((page) => {
+    const old = before.get(watchPageId(page));
+    return old === undefined || (old !== page && !sameWatchPagesJson(old, page));
+  });
+}
+
 /**
- * The two checks over every tile of every page a person edits (a smart
- * page's tiles are made by its rules, and stand in for tiles elsewhere):
- * undefined when no tile trips them. A warning, never a refusal.
+ * The two checks over every tile of the pages a person edited since `base`
+ * (a smart page's tiles are made by its rules, and stand in for tiles
+ * elsewhere): undefined when no tile trips them. A page left as it was in
+ * `base` is never asked about, so a tile someone left that way does not ask
+ * on every later save. A warning, never a refusal.
  */
-export function watchSaveSpeakerWarning(document: WatchPagesDocument, voice?: { defaultSpeakers?: readonly string[] }): WatchSaveSpeakerWarning | undefined {
+export function watchSaveSpeakerWarning(
+  document: WatchPagesDocument,
+  voice?: { defaultSpeakers?: readonly string[] },
+  base?: WatchPagesDocument | null,
+): WatchSaveSpeakerWarning | undefined {
   const tiles: WatchSpeakerWarningTile[] = [];
+  const pages = changedWatchPages(document, base);
   for (const kind of ["speak", "assist"] as const) {
     const trips = kind === "speak" ? watchSpeakTileMissingSpeakers : watchAssistTileMissingSpeakers;
-    for (const page of watchPagesOf(document)) {
+    for (const page of pages) {
       if (isSmartWatchPage(page)) continue;
-      for (const tile of watchPageTiles(page)) if (trips(tile)) tiles.push({ kind, page, tile });
+      for (const tile of watchPageTiles(page)) {
+        if (!trips(tile)) continue;
+        const chooseOnWatch = kind === "speak" && watchSpeakSettings(tile).output === "chooseEachTime";
+        tiles.push({ kind, page, tile, chooseOnWatch });
+      }
     }
   }
   if (tiles.length === 0) return undefined;
   const count = (kind: "speak" | "assist") => tiles.filter((t) => t.kind === kind).length;
   const messages = (["speak", "assist"] as const).filter((k) => count(k) > 0).map((k) => watchMissingSpeakersMessage(k, count(k)));
+  const fallsBack = tiles.some((t) => !t.chooseOnWatch);
   return {
     title: A.checks.title,
     messages,
     tiles,
-    fallback: voice?.defaultSpeakers?.slice() ?? [],
+    fallback: fallsBack ? (voice?.defaultSpeakers?.slice() ?? []) : [],
+    ...(tiles.some((t) => t.chooseOnWatch) ? { chooseOnWatch: WATCH_CHOOSE_ON_WATCH_WARNING_TEXT } : {}),
     saveAnyway: A.checks.saveAnyway,
     cancel: A.checks.cancel,
   };
@@ -912,8 +983,7 @@ export function watchInboxTopicWords(entityId: string): string {
  * "#<topic>", else "Inbox". */
 export function watchInboxLabel(tile: WatchPageTile): string {
   if (typeof tile.customLabel === "string") return tile.customLabel;
-  const words = watchInboxTopicWords(tileEntityId(tile));
-  return words.startsWith("#") ? words : "Inbox";
+  return watchInboxFallbackLabel(tileEntityId(tile));
 }
 
 // ── the setters by key ───────────────────────────────────────────────────

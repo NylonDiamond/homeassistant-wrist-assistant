@@ -1,6 +1,6 @@
 {
   "name": "Speech Volume Set and Keep",
-  "source": "WristAssistant/Views/PageEditor/AppTileRules.swift:262",
+  "source": "WristAssistant/Views/PageEditor/AppTileRules.swift:312",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

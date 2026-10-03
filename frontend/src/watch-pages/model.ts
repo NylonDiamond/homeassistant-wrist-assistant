@@ -17,6 +17,8 @@
 // Plan: app repo docs/pages_in_home_assistant_step3.md.
 
 import type { HassEntityState } from "../ha-api.js";
+import tileApp from "./tile-app.json";
+import tileDefaults from "./tile-defaults.json";
 
 export type JsonObject = Record<string, unknown>;
 
@@ -240,6 +242,37 @@ const SMART_DOMAIN_LABELS: Readonly<Record<string, string>> = {
   alarm_control_panel: "Alarm panels",
 };
 
+/**
+ * The name the watch draws on an app tile with no label of its own, where
+ * it differs from the kind's name: "Assist" and "Speak" from
+ * `tile-defaults.json` `label`, "Point Control" and "Music" from the adds
+ * in `tile-app.json`. A webhook inbox is named by its topic
+ * (`watchInboxFallbackLabel`); a template draws no name.
+ */
+export const WATCH_KIND_FALLBACK_LABELS: Readonly<Record<string, string>> = {
+  assist: tileDefaults.label.assist,
+  speak_message: tileDefaults.label.speak_message,
+  point_control: tileApp.pointControl.add.customLabel,
+  music_hub: tileApp.musicHub.add.customLabel,
+};
+
+/** The name a webhook inbox tile with no label draws: "#<topic>", else
+ * "Inbox" for every topic. */
+export function watchInboxFallbackLabel(entityId: string): string {
+  const topic = tileTarget(entityId);
+  return topic === "" || topic === "all" ? "Inbox" : `#${topic}`;
+}
+
+/** The app kinds the watch draws with no second line under the name (no
+ * kind, no state): a template draws only its text. */
+const NO_KIND_LINE: ReadonlySet<string> = new Set(["assist", "speak_message", "point_control", "template"]);
+
+/** Whether the preview draws a virtual kind's name as a second line under
+ * the tile's name, as the watch does for a page link, a macro and the like. */
+export function tileDrawsKindLine(kind: string): boolean {
+  return !NO_KIND_LINE.has(kind);
+}
+
 export function isVirtualTileKind(kind: string): boolean {
   return Object.hasOwn(VIRTUAL_TILE_KINDS, kind);
 }
@@ -371,7 +404,9 @@ export function tileSymbol(tile: WatchPageTile): string | undefined {
  * A custom label first. Then, for an entity, its friendly name in Home
  * Assistant, else its entity id. A header with no label is named after its
  * domain, as the watch names it. A page link is named after the page it opens
- * when that page is in `pages`. Any other virtual kind is named by its kind.
+ * when that page is in `pages`. An app tile is named as the watch names it
+ * (`WATCH_KIND_FALLBACK_LABELS`, an inbox by its topic). Any other virtual
+ * kind is named by its kind.
  */
 export function tileLabel(
   tile: WatchPageTile,
@@ -391,7 +426,8 @@ export function tileLabel(
     const page = pages?.find((p) => watchPageId(p).toUpperCase() === target);
     if (page) return watchPageName(page);
   }
-  if (isVirtualTileKind(kind)) return tileKindLabel(kind);
+  if (kind === "webhook_inbox") return watchInboxFallbackLabel(entityId);
+  if (isVirtualTileKind(kind)) return WATCH_KIND_FALLBACK_LABELS[kind] ?? tileKindLabel(kind);
   const name = states?.[entityId]?.attributes?.friendly_name;
   if (typeof name === "string" && name.trim() !== "") return name.trim();
   return entityId;

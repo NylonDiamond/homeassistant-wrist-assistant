@@ -1,6 +1,6 @@
 {
   "name": "Clear State Overrides removes both maps and usesStateIcons",
-  "source": "WristAssistant/Views/PageEditorView.swift:6900",
+  "source": "WristAssistant/Views/PageEditorView.swift:6903",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

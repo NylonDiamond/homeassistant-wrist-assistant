@@ -1,6 +1,6 @@
 {
   "name": "Pattern None keeps opacity, size and color",
-  "source": "WristAssistant/Views/PageEditorView.swift:9478",
+  "source": "WristAssistant/Views/PageEditorView.swift:9485",
   "tile": {
     "animationIntensity": 1,
     "animationSize": 1,

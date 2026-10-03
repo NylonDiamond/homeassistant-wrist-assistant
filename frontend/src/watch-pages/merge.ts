@@ -226,9 +226,10 @@ export function mergeWatchPagesByKey(
  *   direction's action, targets and banner settings as one unit
  *   (`mergeSlideDirections`).
  * - A camera group's cameras with their per-camera lists and columns, a
- *   remote's four quick action lists, and a calendar tile's calendars with
- *   their colors merge as one unit each, keyed on the list the others follow
- *   (`mergeListUnit`), so the lists never come apart.
+ *   remote's four quick action lists, a calendar tile's calendars with their
+ *   colors, and a music hub's speakers with its presets merge as one unit
+ *   each, keyed on the list the others follow (`mergeListUnit`), so the
+ *   lists never come apart.
  * - A page or tile one side deleted is gone when the other side left it as it
  *   was in `base`, and stays, as the other side has it, when that side
  *   changed it.
@@ -406,8 +407,11 @@ export interface WatchPagesListUnit {
 /**
  * The camera group (the four per camera lists, the grid's columns, and
  * `entityId`, which turns from `multicam.` to `camera.` when a remove leaves
- * one camera), the quick actions, and the calendars (the primary moves when
- * it is removed, and each calendar's color).
+ * one camera), the quick actions, the calendars (the primary moves when it
+ * is removed, and each calendar's color), and the music hub's speakers (a
+ * removed speaker also leaves every preset, so the side that changed the
+ * speaker list decides the presets as one value; with the list unchanged the
+ * presets merge by key as before).
  */
 export const WATCH_PAGES_LIST_UNITS: readonly WatchPagesListUnit[] = [
   {
@@ -427,6 +431,12 @@ export const WATCH_PAGES_LIST_UNITS: readonly WatchPagesListUnit[] = [
     parallel: [],
     keyed: ["calendarSourceColors"],
     with: ["entityId"],
+  },
+  {
+    ids: "musicHubSpeakerIds",
+    parallel: [],
+    keyed: [],
+    with: ["musicHubGroupPresets"],
   },
 ];
 
@@ -679,6 +689,8 @@ interface ValueSpec {
   strict?: boolean;
   empty?: boolean;
   ref?: string;
+  required?: boolean;
+  default?: unknown;
 }
 
 const VALUE_TYPES = pageKeys as unknown as {
@@ -687,6 +699,14 @@ const VALUE_TYPES = pageKeys as unknown as {
 };
 
 const HEX = /^#?[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?$/;
+
+/** A UUID as Swift's `UUID(uuidString:)` reads it: 8-4-4-4-12 hex digits,
+ * any case. */
+const UUID_FORM = /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/;
+
+/** The range of the watch's `Int`, which is 32 bits there (arm64_32). */
+const WATCH_INT_MIN = -(2 ** 31);
+const WATCH_INT_MAX = 2 ** 31 - 1;
 
 /** The color names older documents can hold (`page-keys.json` notes). */
 const COLOR_NAMES: ReadonlySet<string> = new Set(["yellow", "blue", "red", "green", "purple", "orange", "white"]);
@@ -712,10 +732,13 @@ function valueProblem(type: string, spec: ValueSpec, value: unknown, where: stri
     case "number":
       return typeof value === "number" && Number.isFinite(value) ? undefined : "is not a number";
     case "int":
-      return Number.isInteger(value) ? undefined : "is not a whole number";
+      if (!Number.isInteger(value)) return "is not a whole number";
+      return (value as number) >= WATCH_INT_MIN && (value as number) <= WATCH_INT_MAX ? undefined : "is out of range for the watch";
+    case "uuid":
+      if (typeof value !== "string") return "is not text";
+      return UUID_FORM.test(value) ? undefined : `holds ${JSON.stringify(value)}, which is not a UUID`;
     case "string":
     case "symbol":
-    case "uuid":
     case "entity":
       return typeof value === "string" ? undefined : "is not text";
     case "color":
@@ -729,7 +752,7 @@ function valueProblem(type: string, spec: ValueSpec, value: unknown, where: stri
     }
     case "object":
       if (!isJsonObject(value)) return "is not an object";
-      if (spec.ref !== undefined) checkObjectValues(spec.ref, value, where, problems);
+      if (spec.ref !== undefined) checkObjectValues(spec.ref, value, where, problems, true);
       return undefined;
     default:
       return undefined;
@@ -738,15 +761,21 @@ function valueProblem(type: string, spec: ValueSpec, value: unknown, where: stri
 
 /** Every known key of an object of a `page-keys.json` type, into
  * `problems`. `where` names the object. Lists of pages and tiles are left to
- * `checkWatchPagesValues`, which names their elements. */
-function checkObjectValues(typeName: string, object: JsonObject, where: string, problems: string[]): void {
+ * `checkWatchPagesValues`, which names their elements. `nested` marks an
+ * object reached through a key's `ref` (a music hub preset, a color rule):
+ * there a required key with no `default` must be present, as the watch's
+ * synthesized decoder needs it. */
+function checkObjectValues(typeName: string, object: JsonObject, where: string, problems: string[], nested = false): void {
   const keys = VALUE_TYPES.types[typeName]?.keys;
   if (keys === undefined) return;
   for (const [key, spec] of Object.entries(keys)) {
     if (key === PAGES_KEY && typeName === "document") continue;
     if (key === ITEMS_KEY && typeName === "page") continue;
     const value = present(own(object, key));
-    if (value === undefined) continue;
+    if (value === undefined) {
+      if (nested && spec.required === true && !Object.hasOwn(spec, "default")) problems.push(`${where}: ${key} is missing.`);
+      continue;
+    }
     // `part` names an element after the key: ", entry 2".
     const check = (type: string, element: unknown, part: string): boolean => {
       const at = `${where}: ${key}${part}`;
@@ -788,11 +817,13 @@ function tileLabel(index: number, tile: JsonObject): string {
  * The values that would make the document unreadable on the phone and the
  * watch, in plain words naming the page, the tile and the key, or an empty
  * list. Every key `page-keys.json` knows is checked, at every depth, by its
- * type: a strict enum holds one of its choices, a bool, number, whole number
- * or text the same in JSON, a color one the phone writes (`""` only where
+ * type: a strict enum holds one of its choices, a bool, number or text the
+ * same in JSON, a whole number within the watch's 32 bit `Int`, a UUID key
+ * in the 8-4-4-4-12 hex form, a color one the phone writes (`""` only where
  * the key says `empty`), each element of a list or map, each direction of a
- * slide map. Keys it does not know, and `null`, are left alone, as the phone
- * leaves them. Run over the whole document before a save, after
+ * slide map, and inside an object entry (a music hub preset) every required
+ * key that has no default. Keys it does not know, and `null`, are left
+ * alone, as the phone leaves them. Run over the whole document before a save, after
  * `checkWatchPages`.
  */
 export function checkWatchPagesValues(document: unknown): string[] {
