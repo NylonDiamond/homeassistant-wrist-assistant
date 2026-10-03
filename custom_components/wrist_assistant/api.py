@@ -33,6 +33,10 @@ POLL_GAP_SECONDS = 10
 MAX_EVENTS_BUFFER = 5000
 MAX_EVENTS_PER_RESPONSE = 250
 SESSION_TTL = timedelta(minutes=5)
+# The watch config kinds the delta reply names, as `watch_config: {kind: rev}`.
+# The two a watch applies (WATCH_CONFIG_PANEL_KINDS in const.py). Never the
+# catalog, which only the phone and the panel read.
+DELTA_WATCH_CONFIG_KINDS = ("pages", "behavior")
 
 _LOGGER = logging.getLogger(__name__)
 _ATTR_DIFF_SENTINEL = object()
@@ -308,6 +312,15 @@ class DeltaCoordinator:
         # watch whose pull keeps failing waits out the poll window instead
         # of spinning on immediate empty replies.
         self._token_notified: dict[str, int] = {}
+        # Watch config rides the poll the same way: every reply with a body
+        # names the signer's pages and behavior revisions, and a save wakes
+        # the parked poll (see watch_config_changed). None until setup
+        # attaches the store (attach_watch_config_store).
+        self._watch_config_store: Any | None = None
+        # watch_id → the watch_config revisions its last reply with a body
+        # carried. A poll whose revisions moved since then is answered at once
+        # with an empty reply, once per change, like _token_notified.
+        self._watch_config_sent: dict[str, dict[str, int]] = {}
         self._unsub_state_changed = hass.bus.async_listen(
             EVENT_STATE_CHANGED, self._handle_state_changed
         )
@@ -395,6 +408,54 @@ class DeltaCoordinator:
         server = self.complications_token(watch_id)
         if server is not None:
             self._token_notified[watch_id] = server
+
+    # ── watch config on the poll ──────────────────────────────────────
+
+    @callback
+    def attach_watch_config_store(self, store: Any) -> None:
+        """Wire the watch config store in for reading: the signer's revisions
+        go out on every reply. The wake on a save is wired by setup, which
+        adds watch_config_changed as a store listener."""
+        self._watch_config_store = store
+
+    def watch_config_revisions(self, watch_id: str) -> dict[str, int] | None:
+        """The signer's own pages and behavior revisions, 0 for a kind it holds
+        no record of. None when no store is attached or this owner's file
+        could not be read: the reply then leaves the field out rather than
+        saying "no record", which would be wrong."""
+        store = self._watch_config_store
+        if store is None:
+            return None
+        try:
+            held = store.revisions(watch_id)
+        except Exception:  # noqa: BLE001 (an unreadable file must not fail the poll)
+            _LOGGER.debug("No watch config revisions for %s", watch_id, exc_info=True)
+            return None
+        return {kind: int(held.get(kind, 0)) for kind in DELTA_WATCH_CONFIG_KINDS}
+
+    def _watch_config_behind(self, watch_id: str) -> bool:
+        """True when the revisions moved since the last reply this watch was
+        handed with a body. A watch that has had no such reply yet is not
+        behind: its first one carries the field anyway."""
+        sent = self._watch_config_sent.get(watch_id)
+        if sent is None:
+            return False
+        current = self.watch_config_revisions(watch_id)
+        return current is not None and current != sent
+
+    @callback
+    def watch_config_changed(self, change: Any) -> None:
+        """Store listener: a pages or behavior save wakes that owner's parked
+        poll, which answers at once with the new revision.
+
+        Any saver counts (a panel save, a restore, a device's own put, a
+        forget or move). ``renotify`` stays False: it only re-arms the
+        complication token, which this change did not touch. An owner with no
+        parked poll is a no-op, as for every wake.
+        """
+        if change.kind not in DELTA_WATCH_CONFIG_KINDS:
+            return
+        self.wake_watch(change.owner_watch_id, renotify=False)
 
     @callback
     def async_add_session_listener(self, cb: callback) -> callback:
@@ -603,6 +664,11 @@ class DeltaCoordinator:
         as the watch's ack, and every reply with a body carries the owner's
         current token as ``complications_token`` so the watch can pull only
         when the two differ.
+
+        Every reply with a body also carries ``watch_config``: the signer's
+        pages and behavior revisions (0 for a kind with no record), so the
+        watch pulls a kind through ``watch_config_get`` when its revision is
+        above the one it applied.
         """
         self._last_poll_at[watch_id] = self.hass.loop.time()
         store = self._complication_store
@@ -629,6 +695,10 @@ class DeltaCoordinator:
             token = self.complications_token(watch_id)
             if token is not None:
                 body["complications_token"] = token
+            revisions = self.watch_config_revisions(watch_id)
+            if revisions is not None:
+                body["watch_config"] = revisions
+                self._watch_config_sent[watch_id] = revisions
         return status, body
 
     async def _handle_poll_inner(
@@ -856,9 +926,15 @@ class DeltaCoordinator:
         # A watch that is behind on its custom complications gets an empty
         # 200 instead of parking or probing: the wrapper stamps the current
         # token on it and the watch pulls. Once per token change, so a pull
-        # that keeps failing does not turn this into a tight loop.
-        if self._complications_behind(watch_id, applied_complications_token):
-            self._note_complications_notified(watch_id)
+        # that keeps failing does not turn this into a tight loop. A watch
+        # config save since this watch's last reply gets the same empty 200,
+        # once per change, since the wrapper records what each reply carried.
+        complications_behind = self._complications_behind(
+            watch_id, applied_complications_token
+        )
+        if complications_behind or self._watch_config_behind(watch_id):
+            if complications_behind:
+                self._note_complications_notified(watch_id)
             return 200, self._response_payload(
                 events=[],
                 next_cursor=next_cursor,
@@ -959,11 +1035,16 @@ class DeltaCoordinator:
                         include_summary=include_summary,
                         custom_entity_ids=custom_entity_ids,
                     )
-                # Woken by a complication commit (or a panel nudge) rather
-                # than an entity: nothing to deliver but the token, which the
-                # wrapper stamps on this empty reply.
-                if self._complications_behind(watch_id, applied_complications_token):
-                    self._note_complications_notified(watch_id)
+                # Woken by a complication commit (or a panel nudge) or a
+                # watch config save rather than an entity: nothing to deliver
+                # but the token and the revisions, which the wrapper stamps
+                # on this empty reply.
+                complications_behind = self._complications_behind(
+                    watch_id, applied_complications_token
+                )
+                if complications_behind or self._watch_config_behind(watch_id):
+                    if complications_behind:
+                        self._note_complications_notified(watch_id)
                     return 200, self._response_payload(
                         events=[],
                         next_cursor=next_cursor,
@@ -1399,6 +1480,9 @@ class DeltaCoordinator:
             # Forgetting this only costs the watch one extra "you are behind"
             # reply, which is what a watch back after five idle minutes wants.
             self._token_notified.pop(watch_id, None)
+            # The same for the watch config revisions: the next reply with a
+            # body carries them again and records them afresh.
+            self._watch_config_sent.pop(watch_id, None)
             # `handle_poll` stamps `_last_poll_at` before this runs, so a watch
             # polling again after a long idle arrives with a fresh stamp and a
             # session that is about to expire. Drop the stamp only when it is

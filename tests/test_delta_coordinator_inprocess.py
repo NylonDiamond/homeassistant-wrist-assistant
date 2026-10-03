@@ -13,6 +13,9 @@ Covered:
   410 loop).
 * Superseded poll: an older long-poll for the same watch that finishes after
   a newer one has started must not evict the newer poll's waiter.
+* Watch config on the poll: the signer's pages and behavior revisions on
+  every reply (0 with no record, never the catalog), and a save of either
+  kind waking the owner's parked poll through the store listener.
 """
 
 from __future__ import annotations
@@ -822,5 +825,374 @@ def test_buffer_builds_payloads_only_for_changes_a_watch_reads(coordinator) -> N
         first = built[0].payload
         await _poll(coord, since=c0, entities=[mine], timeout=0)
         assert built[0].payload is first
+
+    asyncio.run(run())
+
+
+# ── watch config on the poll ───────────────────────────────────────────────
+#
+# The real WatchConfigStore and the real const.py, loaded into the same stub
+# package as api.py, so the field, the 0 case and the wake are checked against
+# the store a running integration has, not a stand-in that could drift.
+
+_PKG_DIR = _API_PATH.parent
+
+
+class _NoDiskStore:
+    """``homeassistant.helpers.storage.Store`` with nothing behind it: these
+    tests read the store in memory only."""
+
+    def __init__(self, *_a: object, **_k: object) -> None:
+        pass
+
+    async def async_load(self):
+        return None
+
+    def async_delay_save(self, *_a: object, **_k: object) -> None:
+        pass
+
+    async def async_remove(self) -> None:
+        pass
+
+
+class _StoreHass:
+    """Only ``async_create_task``, which a forget uses to remove a file. The
+    file is not there, so the removal is closed unrun."""
+
+    def async_create_task(self, coro, name: str | None = None, **_k: object) -> None:
+        coro.close()
+
+
+def _load_into_test_pkg(name: str):
+    spec = importlib.util.spec_from_file_location(f"wa_test_pkg.{name}", _PKG_DIR / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[f"wa_test_pkg.{name}"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _watch_config_store():
+    """A loaded, empty WatchConfigStore. Call inside the coordinator fixture,
+    whose teardown drops every module loaded here."""
+    _stub("homeassistant.helpers.storage", Store=_NoDiskStore)
+    const = _load_into_test_pkg("const")
+    store_module = _load_into_test_pkg("watch_config_store")
+    store = store_module.WatchConfigStore(_StoreHass())
+    asyncio.run(store.async_load())
+    return store, const
+
+
+_HASH_1 = "1" * 64
+_HASH_2 = "2" * 64
+
+
+def _pages_doc(name: str = "Home") -> dict:
+    return {
+        "schemaVersion": 1,
+        "pages": [{"id": "6F1C2D0E-0000-4000-8000-000000000001", "name": name, "items": []}],
+    }
+
+
+def _device_put(store, kind: str, owner: str = "w1", *, base: int = 0, digest: str = _HASH_1):
+    document = {
+        "pages": _pages_doc(),
+        "behavior": {"wrapPages": True},
+        "catalog": {"macros": [{"id": "m1", "name": "Morning"}]},
+    }[kind]
+    return store.put(
+        owner, kind, document, document_hash=digest, base_revision=base, updated_by=owner
+    )
+
+
+def test_the_reply_names_the_signer_s_pages_and_behavior_revisions(coordinator) -> None:
+    module, hass, coord = coordinator
+    store, _const = _watch_config_store()
+    coord.attach_watch_config_store(store)
+    ent = "wrist_assistant.wc1"
+    hass.states.set(ent, "off")
+    _device_put(store, "pages")
+    _device_put(store, "pages", base=1, digest=_HASH_2)
+    _device_put(store, "behavior")
+    # Another owner's records never show on this watch's reply.
+    _device_put(store, "pages", owner="w2")
+    _device_put(store, "behavior", owner="w2")
+    _device_put(store, "behavior", owner="w2", base=1, digest=_HASH_2)
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent])
+        assert status == 200
+        assert body["watch_config"] == {"pages": 2, "behavior": 1}
+
+        status, body = await _poll(coord, watch_id="w2", entities=[ent])
+        assert body["watch_config"] == {"pages": 1, "behavior": 2}
+
+    asyncio.run(run())
+
+
+def test_an_owner_with_no_records_reads_zero_for_both(coordinator) -> None:
+    module, hass, coord = coordinator
+    store, _const = _watch_config_store()
+    coord.attach_watch_config_store(store)
+    ent = "wrist_assistant.wc2"
+    hass.states.set(ent, "off")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent])
+        assert status == 200
+        assert body["watch_config"] == {"pages": 0, "behavior": 0}
+
+        # One kind saved, the other still 0.
+        _device_put(store, "behavior")
+        status, body = await _poll(coord, entities=[ent])
+        assert body["watch_config"] == {"pages": 0, "behavior": 1}
+
+    asyncio.run(run())
+
+
+def test_the_catalog_is_never_named(coordinator) -> None:
+    module, hass, coord = coordinator
+    store, const = _watch_config_store()
+    coord.attach_watch_config_store(store)
+    ent = "wrist_assistant.wc3"
+    hass.states.set(ent, "off")
+    _device_put(store, "catalog")
+    _device_put(store, "pages")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent])
+        assert body["watch_config"] == {"pages": 1, "behavior": 0}
+        assert "catalog" not in body["watch_config"]
+
+    asyncio.run(run())
+    # The two kinds the reply names are the two the panel edits, which are
+    # the two a watch applies.
+    assert set(module.DELTA_WATCH_CONFIG_KINDS) == set(const.WATCH_CONFIG_PANEL_KINDS)
+
+
+def test_no_store_or_an_unreadable_owner_leaves_the_field_out(coordinator) -> None:
+    """0 means "no record". An owner whose file could not be read is not
+    that, so its reply carries no field rather than a wrong one, and the
+    poll itself still answers."""
+    module, hass, coord = coordinator
+    ent = "wrist_assistant.wc4"
+    hass.states.set(ent, "off")
+    store, _const = _watch_config_store()
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent])
+        assert status == 200 and "watch_config" not in body
+
+        coord.attach_watch_config_store(store)
+        store._failed_owners.add("w1")
+        status, body = await _poll(coord, entities=[ent])
+        assert status == 200 and "watch_config" not in body
+
+    asyncio.run(run())
+
+
+def test_a_save_wakes_the_owner_and_a_catalog_save_does_not(coordinator) -> None:
+    """The listener setup adds: every saver of pages or behavior wakes that
+    owner without re-arming the complication token, and a catalog save wakes
+    nobody."""
+    module, hass, coord = coordinator
+    store, _const = _watch_config_store()
+    coord.attach_watch_config_store(store)
+    woken: list[tuple[str, bool]] = []
+    coord.wake_watch = lambda watch_id, *, renotify=False: woken.append((watch_id, renotify))
+    store.async_add_listener(coord.watch_config_changed)
+
+    _device_put(store, "pages")
+    _device_put(store, "behavior", owner="w2")
+    assert woken == [("w1", False), ("w2", False)]
+
+    woken.clear()
+    _device_put(store, "catalog")
+    _device_put(store, "catalog", base=1, digest=_HASH_2)
+    assert woken == []
+
+    # The panel's own save and a restore wake the owner the same way.
+    store.panel_save("w1", "pages", _pages_doc("Renamed"), base_revision=1)
+    store.restore("w1", "pages", 1, base_revision=2)
+    assert woken == [("w1", False), ("w1", False)]
+
+    # A forget announces revision 0 for each kind it removed: the watch is
+    # woken for pages and behavior, never for the catalog.
+    woken.clear()
+    store.forget_owner("w1")
+    assert woken == [("w1", False)]
+
+
+def test_the_capability_is_registered_at_setup() -> None:
+    init = (_PKG_DIR / "__init__.py").read_text()
+    const = (_PKG_DIR / "const.py").read_text()
+    assert "register_capability(WATCH_CONFIG_DELTA_CAPABILITY)" in init
+    assert 'WATCH_CONFIG_DELTA_CAPABILITY = "watch_config_delta"' in const
+    # Setup wires the store in for the reply and the coordinator's listener
+    # for the wake; the store itself never learns about the coordinator.
+    assert "attach_watch_config_store(watch_config_store)" in init
+    assert "async_add_listener(coordinator.watch_config_changed)" in init
+    store_source = (_PKG_DIR / "watch_config_store.py").read_text()
+    assert "wake_watch" not in store_source and "DeltaCoordinator" not in store_source
+
+
+def test_the_capability_reaches_the_reply(coordinator) -> None:
+    module, hass, coord = coordinator
+    coord.register_capability("watch_config_delta")
+    ent = "wrist_assistant.wc5"
+    hass.states.set(ent, "off")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent])
+        assert "watch_config_delta" in body["capabilities"]
+        assert "watch_config_delta" in coord.capabilities
+
+    asyncio.run(run())
+
+
+def test_a_save_releases_the_parked_poll_with_the_new_revision(coordinator) -> None:
+    """Save at t; an empty reply carrying the new revision arrives well inside
+    a second, the waiter is gone, and the next poll parks normally."""
+    module, hass, coord = coordinator
+    store, _const = _watch_config_store()
+    coord.attach_watch_config_store(store)
+    store.async_add_listener(coord.watch_config_changed)
+    ent = "wrist_assistant.wc6"
+    hass.states.set(ent, "off")
+    _device_put(store, "pages")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent])
+        c0 = body["next_cursor"]
+        assert body["watch_config"] == {"pages": 1, "behavior": 0}
+
+        held = asyncio.create_task(_poll(coord, since=c0, entities=[ent], timeout=10))
+        await asyncio.sleep(0.05)
+        assert "w1" in coord._waiters
+
+        started = hass.loop.time()
+        store.panel_save("w1", "pages", _pages_doc("Renamed"), base_revision=1)
+        status, body = await asyncio.wait_for(held, timeout=2)
+        assert hass.loop.time() - started < 1.0
+        assert status == 200, body
+        assert body["events"] == []
+        assert body["watch_config"] == {"pages": 2, "behavior": 0}
+        assert "w1" not in coord._waiters
+
+        # Told once: the next poll parks and times out quietly.
+        status, body = await asyncio.wait_for(
+            _poll(coord, since=c0, entities=[ent], timeout=1), timeout=3
+        )
+        assert status == 204 and body is None
+
+    asyncio.run(run())
+
+
+def test_a_catalog_save_leaves_the_parked_poll_parked(coordinator) -> None:
+    module, hass, coord = coordinator
+    store, _const = _watch_config_store()
+    coord.attach_watch_config_store(store)
+    store.async_add_listener(coord.watch_config_changed)
+    ent = "wrist_assistant.wc7"
+    hass.states.set(ent, "off")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent])
+        c0 = body["next_cursor"]
+        held = asyncio.create_task(_poll(coord, since=c0, entities=[ent], timeout=1))
+        await asyncio.sleep(0.05)
+        _device_put(store, "catalog")
+        status, body = await asyncio.wait_for(held, timeout=3)
+        assert status == 204 and body is None
+
+    asyncio.run(run())
+
+
+def test_a_save_between_polls_is_answered_by_the_next_poll(coordinator) -> None:
+    """No poll was parked when the save landed (the watch was between two
+    requests): the wake was a no-op, so the next poll answers at once rather
+    than holding the news for a whole poll window."""
+    module, hass, coord = coordinator
+    store, _const = _watch_config_store()
+    coord.attach_watch_config_store(store)
+    store.async_add_listener(coord.watch_config_changed)
+    ent = "wrist_assistant.wc8"
+    hass.states.set(ent, "off")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent])
+        c0 = body["next_cursor"]
+        assert "w1" not in coord._waiters
+        _device_put(store, "behavior")
+
+        status, body = await asyncio.wait_for(
+            _poll(coord, since=c0, entities=[ent], timeout=10), timeout=1
+        )
+        assert status == 200 and body["events"] == []
+        assert body["watch_config"] == {"pages": 0, "behavior": 1}
+
+        # A probe from a watch that is behind gets the revision too.
+        _device_put(store, "behavior", base=1, digest=_HASH_2)
+        status, body = await asyncio.wait_for(
+            _poll(coord, since=c0, entities=[ent], timeout=0), timeout=1
+        )
+        assert status == 200 and body["watch_config"] == {"pages": 0, "behavior": 2}
+
+    asyncio.run(run())
+
+
+def test_a_watch_config_wake_does_not_re_arm_the_complication_token(coordinator) -> None:
+    """renotify=False: a watch already told about its complication token is
+    not told again because a page was saved. The reply that carries the new
+    revision is the only one."""
+    module, hass, coord = coordinator
+    complications = _FakeComplicationStore()
+    coord.attach_complication_store(complications)
+    store, _const = _watch_config_store()
+    coord.attach_watch_config_store(store)
+    store.async_add_listener(coord.watch_config_changed)
+    ent = "wrist_assistant.wc9"
+    hass.states.set(ent, "off")
+    _device_put(store, "pages")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent], complications_token=0)
+        c0 = body["next_cursor"]
+        complications.tokens["w1"] = 2
+        # Behind on complications: told once.
+        status, body = await _poll(coord, since=c0, entities=[ent], timeout=10, complications_token=0)
+        assert status == 200 and body["complications_token"] == 2
+        assert coord._token_notified["w1"] == 2
+
+        held = asyncio.create_task(
+            _poll(coord, since=c0, entities=[ent], timeout=10, complications_token=0)
+        )
+        await asyncio.sleep(0.05)
+        store.panel_save("w1", "pages", _pages_doc("Renamed"), base_revision=1)
+        status, body = await asyncio.wait_for(held, timeout=2)
+        assert status == 200 and body["watch_config"]["pages"] == 2
+        assert coord._token_notified["w1"] == 2
+
+        # Nothing new on either side: parks and times out.
+        status, body = await asyncio.wait_for(
+            _poll(coord, since=c0, entities=[ent], timeout=1, complications_token=0), timeout=3
+        )
+        assert status == 204
+
+    asyncio.run(run())
+
+
+def test_prune_forgets_what_a_watch_was_told(coordinator) -> None:
+    module, hass, coord = coordinator
+    store, _const = _watch_config_store()
+    coord.attach_watch_config_store(store)
+    ent = "wrist_assistant.wc10"
+    hass.states.set(ent, "off")
+
+    async def run() -> None:
+        await _poll(coord, entities=[ent])
+        assert "w1" in coord._watch_config_sent
+        coord._sessions["w1"].last_seen -= module.SESSION_TTL + timedelta(seconds=1)
+        coord._prune_sessions()
+        assert "w1" not in coord._watch_config_sent
 
     asyncio.run(run())

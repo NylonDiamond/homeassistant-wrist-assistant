@@ -51,6 +51,7 @@ from .const import (
     WA_HMAC_NONCE_TTL_SECONDS,
     WATCH_CONFIG_CAPABILITY,
     WATCH_CONFIG_CATALOG_CAPABILITY,
+    WATCH_CONFIG_DELTA_CAPABILITY,
     WATCH_CONFIG_LIVE_CAPABILITY,
     WATCH_CONFIG_REJECT_REPORT_CAPABILITY,
     WIDGET_SECRET_STORAGE_KEY,
@@ -756,6 +757,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # token on every reply, the watch's ack on every request, and a panel
     # save wakes the parked poll so the watch pulls at once.
     coordinator.attach_complication_store(complication_store)
+    # Watch config rides it too: the signer's pages and behavior revisions on
+    # every reply, and a save of either kind wakes that owner's parked poll so
+    # the watch pulls at once, with no phone in the path. The store only knows
+    # it has listeners; the coordinator's listener picks the two kinds and
+    # leaves the complication token alone (renotify=False).
+    coordinator.attach_watch_config_store(watch_config_store)
+    entry.async_on_unload(
+        watch_config_store.async_add_listener(coordinator.watch_config_changed)
+    )
 
     # Register server capabilities
     # HA-owned custom complications: iOS checks this before offering the
@@ -812,6 +822,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # status pages, published for the panel's tile picker. The phone sends it
     # only when it sees this, since an older integration refuses the kind.
     coordinator.register_capability(WATCH_CONFIG_CATALOG_CAPABILITY)
+    # `watch_config` on every delta reply and the wake on a save (attached
+    # above): the watch's trigger to pull its own pages and behavior.
+    coordinator.register_capability(WATCH_CONFIG_DELTA_CAPABILITY)
 
     runtime_data = WristAssistantData(
         coordinator=coordinator,

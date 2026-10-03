@@ -164,6 +164,12 @@ WATCH_CONFIG_REJECT_REPORT_CAPABILITY = "watch_config_reject_report"
 # publishes its library catalog only when it sees this: an older integration
 # would refuse the kind as invalid on every upload.
 WATCH_CONFIG_CATALOG_CAPABILITY = "watch_config_catalog"
+# What the integration advertises once every /v2/delta reply with a body names
+# the signer's own `watch_config: {"pages": rev, "behavior": rev}` (0 for a
+# kind with no record) and a save of either kind wakes that owner's parked
+# poll. The watch uses it as the trigger to pull; the pull itself is the
+# signed watch_config_get, gated on WATCH_CONFIG_CAPABILITY.
+WATCH_CONFIG_DELTA_CAPABILITY = "watch_config_delta"
 # Highest CustomComplicationConfig schemaVersion this integration can edit.
 # Must track `CustomComplicationConfig.currentSchemaVersion` in the app repo.
 # A newer document is displayed read-only and never re-saved.
