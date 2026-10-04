@@ -66,6 +66,8 @@ import { templateIconColor, templateRichTextSegments } from "./rich-text.js";
 import { renderWatchFrame } from "../watch-frame.js";
 import { readSmartConfig, smartRuleIndexForTile, smartSyntheticPage, smartTrackingWords, smartWord } from "./smart-model.js";
 
+export type WatchPreviewStateMode = "live" | "all-on";
+
 export interface WatchPagePreviewInput {
   page: WatchPage;
   /** Every page of the document, so a page link can be named after its page. */
@@ -73,6 +75,11 @@ export interface WatchPagePreviewInput {
   /** The watch's screen in points. */
   screen: { width: number; height: number };
   states?: Record<string, HassEntityState>;
+  /** Which states the tiles draw: Home Assistant's as they are ("live", the
+   * default), or each tile in a typical on state ("all-on",
+   * `watchAllOnStates`), so a page is seen as it looks lit whatever its
+   * entities are doing now. A smart page always draws live. */
+  stateMode?: WatchPreviewStateMode;
   /** The panel's symbol provider. Without one, tiles draw a dot for a symbol. */
   icons?: IconProvider;
   /** CSS pixels per point. */
@@ -2073,9 +2080,11 @@ function timerExtras(tile: WatchPageTile, input: WatchPagePreviewInput, widthPt:
     const w = Math.max(0, (widthPt - 12) * Math.min(1, Math.max(0, left / duration)));
     parts.push(html`<span class="wp-bar" style=${`top:${4 * s}px;right:${6 * s}px;height:${3 * s}px;width:${w * s}px;border-radius:${1.5 * s}px;background:${rgba(ink, 0.3)}`}></span>`);
   }
-  if (state === "active") {
+  // A timer with no time to read (the all-on picture's) counts nothing.
+  const countdown = state === "active" ? watchTimerRemainingText(entity) : undefined;
+  if (countdown !== undefined) {
     const r = Math.round(widthPt * 0.7 * s * 100) / 100;
-    parts.push(html`<span class="wp-timer" style=${`background:radial-gradient(circle ${r}px at 50% 50%, rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.21) ${r / 2}px, transparent ${r}px);font-size:${widthPt * 0.28 * s}px`}>${watchTimerRemainingText(entity) ?? ""}</span>`);
+    parts.push(html`<span class="wp-timer" style=${`background:radial-gradient(circle ${r}px at 50% 50%, rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.21) ${r / 2}px, transparent ${r}px);font-size:${widthPt * 0.28 * s}px`}>${countdown}</span>`);
   }
   return html`${parts}`;
 }
@@ -2638,6 +2647,91 @@ function withStub(tile: WatchPageTile, input: WatchPagePreviewInput): { input: W
   return { input: { ...input, states: { ...states, [entityId]: seeded } }, stub: true };
 }
 
+/** The word each kind with an on state takes in the all-on picture, for the
+ * kinds whose word is fixed. */
+const ALL_ON_WORDS: Readonly<Record<string, string>> = {
+  light: "on", switch: "on", input_boolean: "on", fan: "on", automation: "on", siren: "on", remote: "on",
+  cover: "open", valve: "open", lock: "locked", media_player: "playing", vacuum: "cleaning", lawn_mower: "mowing",
+  person: "home", timer: "active", climate: "heat", alarm_control_panel: "armed_home",
+};
+
+/**
+ * `real` (or nothing, for an entity Home Assistant has not reported) as a
+ * typical on state of its kind, which is what the watch draws lit: a light,
+ * switch, toggle, fan, automation, siren or remote on; a cover or valve open
+ * (at 100 when it has a position); a lock locked (its glowing look); a media
+ * player playing; a vacuum cleaning; a mower mowing; a person home; a timer
+ * running with no time to count; a climate in its own mode when it is on,
+ * else its first mode that is not off, else heat; an alarm panel armed as it
+ * is, else armed home. A light keeps its brightness and a fan its speed only
+ * while they are really on (an off light has none to show), and every other
+ * attribute (a player's volume, a climate's temperatures) is kept as it is.
+ * Undefined for a kind with no on state: a sensor, number, select, scene,
+ * button, script and the app's own tiles keep their real state.
+ */
+function allOnEntity(entityId: string, real: HassEntityState | undefined): HassEntityState | undefined {
+  const kind = tileKind(entityId);
+  if (!Object.hasOwn(ALL_ON_WORDS, kind)) return undefined;
+  const was = lower(real?.state);
+  const attributes: Record<string, unknown> = { ...(real?.attributes ?? {}) };
+  let state = ALL_ON_WORDS[kind]!;
+  switch (kind) {
+    case "light":
+    case "fan":
+      if (was !== "on") delete attributes[kind === "light" ? "brightness" : "percentage"];
+      break;
+    case "cover":
+    case "valve":
+      if (storedNumber(attributes.current_position) !== undefined) attributes.current_position = 100;
+      break;
+    case "timer":
+      // Nothing left to count, so no countdown, badge or bar.
+      delete attributes.remaining;
+      delete attributes.finishes_at;
+      delete attributes.duration;
+      break;
+    case "climate": {
+      const modes = Array.isArray(attributes.hvac_modes) ? attributes.hvac_modes.map(lower) : [];
+      state = was !== "off" && available(was) && was !== "" ? was : (modes.find((m) => m !== "off" && m !== "") ?? state);
+      break;
+    }
+    case "alarm_control_panel":
+      if (Object.hasOwn(ALARM_WORDS, was) && was !== "disarmed") state = was;
+      break;
+  }
+  return { last_changed: "", last_updated: "", ...real, entity_id: entityId, state, attributes };
+}
+
+/**
+ * `states` with a tile's entity in a typical on state (`allOnEntity`), and
+ * for a remote or a TV its media player too (playing, its volume kept), for
+ * the all-on picture. `states` itself when the tile has nothing to light: a
+ * kind with no on state, or an app tile.
+ */
+export function watchAllOnStates(tile: WatchPageTile, states: Readonly<Record<string, HassEntityState>> | undefined): Record<string, HassEntityState> | undefined {
+  const entityId = tileEntityId(tile);
+  const kind = tileKind(entityId);
+  const real = (id: string) => (states !== undefined && Object.hasOwn(states, id) ? states[id] : undefined);
+  const lit: Record<string, HassEntityState> = {};
+  const own = allOnEntity(entityId, real(entityId));
+  if (own !== undefined) lit[entityId] = own;
+  if (kind === "remote" || (kind === "media_player" && watchTileIsTvRemote(tile, states))) {
+    const playerId = watchRemotePlayerId(tile);
+    const player = real(playerId);
+    if (playerId !== entityId && player !== undefined) lit[playerId] = allOnEntity(playerId, player) ?? player;
+  }
+  if (Object.keys(lit).length === 0) return states;
+  return { ...states, ...lit };
+}
+
+/** `input` as a tile draws it: in the all-on picture, with that tile's
+ * entity lit (`watchAllOnStates`). */
+function withStateMode(tile: WatchPageTile, input: WatchPagePreviewInput): WatchPagePreviewInput {
+  if (input.stateMode !== "all-on") return input;
+  const states = watchAllOnStates(tile, input.states);
+  return states === input.states ? input : { ...input, states };
+}
+
 function tileFace(
   stored: WatchPageTile,
   width: number,
@@ -2650,7 +2744,7 @@ function tileFace(
 ): TemplateResult {
   // The tile as the watch receives it: colored, if it had no color.
   const tile = watchSyncedTile(stored, given.page);
-  const { input, stub } = withStub(tile, given);
+  const { input, stub } = withStub(tile, withStateMode(tile, given));
   const entityId = tileEntityId(tile);
   const kind = tileKind(entityId);
   const cls = tileClass(entityId, input.states);
@@ -2970,8 +3064,9 @@ export function renderWatchPagePreview(input: WatchPagePreviewInput): TemplateRe
   const width = screen.width * s;
   const name = watchPageName(page);
   if (isSmartWatchPage(page)) return renderSmartPreview(input);
-  // Tiles hidden while off are gone and the rest packed up, as on the watch.
-  const layout = watchPreviewLayout(watchReflowPage(page, input.states), screen);
+  // Tiles hidden while off are gone and the rest packed up, as on the watch;
+  // in the all-on picture every tile is on, so none is hidden.
+  const layout = watchPreviewLayout(watchReflowPage(page, input.stateMode === "all-on" ? undefined : input.states), screen);
   const scrolls = layout.height > screen.height + 0.5;
   return renderWatchFrame(screen, s, html`<div class="wp-screen" role="group" aria-label=${`Preview of ${name}`}
     style=${`width:${width}px;height:${layout.height * s}px;background:${watchScreenBackground(page, s, screen)}`}>
@@ -2991,7 +3086,9 @@ export function renderWatchPagePreview(input: WatchPagePreviewInput): TemplateRe
  * draws at 30% when the selected rule is of another domain. With no active entity, the
  * watch's empty state: "All Off" and what the page tracks.
  */
-function renderSmartPreview(input: WatchPagePreviewInput): TemplateResult {
+function renderSmartPreview(given: WatchPagePreviewInput): TemplateResult {
+  // A smart page is a picture of what is on now, so it is always live.
+  const input: WatchPagePreviewInput = given.stateMode === "all-on" ? { ...given, stateMode: "live" } : given;
   const s = input.scale ?? 1.5;
   const { page, screen } = input;
   const width = screen.width * s;

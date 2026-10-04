@@ -46,18 +46,23 @@ import { agoWords } from "../send-state.js";
 import { SymbolBrowser } from "../symbols.js";
 import { uiIcon } from "../ui-icons.js";
 import { type WatchCatalog, watchCatalogEventIsNews, watchCatalogFromRecord, watchCatalogReadMeansNone } from "../watch-pages/catalog.js";
+import {
+  configFootStatus,
+  configFootStyles,
+  copyConfigText,
+  openConfigDialogs,
+  renderConfigFoot,
+  renderConfigHistoryDialog,
+  renderConfigRawDialog,
+} from "../watch-pages/config-foot.js";
 import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/editor-host.js";
 import { watchFrameStyles } from "../watch-frame.js";
 import { isHiddenWatchPage, isJsonObject, isSmartWatchPage, isSystemWatchPage, watchPageId, watchPageName, watchPageTiles, watchPagesOf } from "../watch-pages/model.js";
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
 import {
-  COLLECTED_PILL_TEXT,
-  WAITING_HELP_TEXT,
   START_PHONE_FIRST_TEXT,
-  WAITING_PILL_TEXT,
   deliveryState,
   initialWatch,
-  rejectedNow,
   settingsWatches,
   watchName,
 } from "../watch-settings.js";
@@ -231,6 +236,14 @@ export class WaMenuEditor extends LitElement {
   @state() private restoreAsk?: RestoreAsk;
   @state() private restoring = false;
   @state() private starting = false;
+  /** The foot bar's History dialog is open (`config-foot.ts`). */
+  @state() private historyOpen = false;
+  /** The foot bar's Raw configuration dialog is open. */
+  @state() private rawOpen = false;
+  /** The raw JSON went to the clipboard since the dialog opened. */
+  @state() private rawCopied = false;
+  /** The foot bar's dialogs opened so far, each once. */
+  private readonly shownFootDialogs = new WeakSet<HTMLDialogElement>();
   @state() private ownList?: readonly OwnerSummary[];
   /** The editor's own width, for the previews' scale; 0 until measured. */
   @state() private hostWidth = 0;
@@ -334,6 +347,7 @@ export class WaMenuEditor extends LitElement {
       this.shownDialog = dialog;
       if (dialog && !dialog.open) dialog.showModal();
     }
+    openConfigDialogs(this.renderRoot, this.shownFootDialogs);
   }
 
   /** Measure the host, not the window: the Home Assistant sidebar changes
@@ -943,69 +957,53 @@ export class WaMenuEditor extends LitElement {
           <button class="pe-btn" @click=${() => { forgetWatchMenusDraft(id); this.requestUpdate(); }}>Discard the kept edits</button>` : nothing}
       </div>`;
     }
-    return html`<div class="me-grid">
-      <div class="me-main">
+    // The menus take the full width: the stored copy's facts and the
+    // earlier saves are in the foot bar now.
+    return html`<div class="me-main">
         ${renderMenus(host)}
       </div>
-      <aside class="pe-side">
-        ${this.renderState(record, draft.document)}
-        ${this.renderHistory(record, draft.dirty)}
-      </aside>
-    </div>`;
+      ${this.renderFoot(record, draft.document, draft.dirty)}`;
   }
 
-  private renderState(record: WatchConfigRecord, document: MenusDocument): TemplateResult {
-    const delivery = deliveryState(record);
-    const rejected = rejectedNow(record);
+  /** The stored copy's line, History and Raw configuration, pinned to the
+   * foot of the editor (`config-foot.ts`), with the two dialogs they open. */
+  private renderFoot(record: WatchConfigRecord, document: MenusDocument, dirty: boolean): TemplateResult {
     const budget = watchMenusBudget(document);
-    const when = ago(record.updated_at);
-    return html`<div class="pe-card pe-state">
-      <h3>Stored copy</h3>
-      <p><b>Revision ${record.revision}</b> · ${savedBy(record.updated_by)}${when ? ` ${when}` : ""}</p>
-      ${rejected
-        ? html`<p class="pe-pill err"><i aria-hidden="true"></i>The watch or the iPhone could not read this save</p>
-          <p class="pe-muted">${this.historyState === "unsupported" ? "Change the menus and save them again." : "Restore an earlier save below."}</p>`
-        : delivery === "delivered"
-        ? html`<p class="pe-pill ok" title=${`Revision ${record.revision} has been collected.`}><i aria-hidden="true"></i>${COLLECTED_PILL_TEXT}</p>`
-        : html`<p class="pe-pill warn"><i aria-hidden="true"></i>${WAITING_PILL_TEXT}</p>
-          <p class="pe-muted">${WAITING_HELP_TEXT}</p>`}
-      <p class=${budget.near ? "pe-warn" : "pe-muted"}>${kb(budget.size)} of the ${kb(budget.limit)} the watch takes${budget.near ? ". Close to the limit." : ""}</p>
-    </div>`;
-  }
-
-  private renderHistory(record: WatchConfigRecord, dirty: boolean): TemplateResult | typeof nothing {
-    if (this.historyState === "unsupported") return nothing;
-    const entries = this.history;
-    const rejected = rejectedNow(record);
-    let body: TemplateResult;
-    if (this.historyState === "loading") body = html`<p class="pe-muted">Loading…</p>`;
-    else if (this.historyState === "error") {
-      const id = this.watchId;
-      body = html`<p class="pe-muted">Could not load the earlier saves.</p>
-        ${id === undefined ? nothing : html`<button class="pe-btn" @click=${() => { this.historyState = "loading"; void this.loadHistory(id); }}>Try again</button>`}`;
-    } else if (entries.length === 0) body = html`<p class="pe-muted">No earlier saves yet.</p>`;
-    else {
-      const offer = rejected ? entries.find((e) => e.revision < record.revision)?.revision : undefined;
-      body = html`${dirty ? html`<p class="pe-muted">Save or discard your edits first.</p>` : nothing}
-        <ul class="pe-history">
-        ${entries.map((entry) => {
-          const current = entry.revision === record.revision;
-          const when = ago(entry.updated_at);
-          return html`<li class=${entry.revision === offer ? "offer" : ""}>
-            <span class="pe-h-text">
-              <b>Revision ${entry.revision}</b>
-              <span class="pe-muted">${savedBy(entry.updated_by)}${when ? ` ${when}` : ""} · ${kb(entry.size)}</span>
-            </span>
-            ${current
-              ? html`<span class="pe-badge">Current</span>`
-              : html`<button class="pe-btn ${entry.revision === offer ? "pe-primary" : ""}" ?disabled=${this.restoring || dirty}
-                  title=${dirty ? "Save or discard your edits first." : nothing}
-                  @click=${() => this.askRestore(entry)}>Restore</button>`}
-          </li>`;
-        })}
-      </ul>`;
-    }
-    return html`<div class="pe-card pe-past" tabindex="-1"><h3>Earlier saves</h3>${body}</div>`;
+    const status = configFootStatus({ record, size: budget.size, limit: budget.limit, noun: "menus", historyState: this.historyState });
+    const watchId = this.watchId;
+    return html`${renderConfigFoot({
+      status,
+      historyState: this.historyState,
+      historyOpen: this.historyOpen,
+      rawOpen: this.rawOpen,
+      onHistory: () => { this.historyOpen = true; },
+      onRaw: () => { this.rawCopied = false; this.rawOpen = true; },
+    })}
+    ${this.historyOpen ? renderConfigHistoryDialog({
+      noun: "menus",
+      record,
+      entries: this.history,
+      historyState: this.historyState,
+      dirty,
+      restoring: this.restoring,
+      onRetry: () => {
+        if (watchId === undefined) return;
+        this.historyState = "loading";
+        void this.loadHistory(watchId);
+      },
+      // The restore question takes over from the list.
+      onRestore: (entry) => { this.historyOpen = false; this.askRestore(entry); },
+      onClosed: () => { this.historyOpen = false; },
+    }) : nothing}
+    ${this.rawOpen ? renderConfigRawDialog({
+      noun: "menus",
+      document,
+      revision: record.revision,
+      dirty,
+      copied: this.rawCopied,
+      onCopy: (text) => { void copyConfigText(text).then((ok) => { this.rawCopied = ok; }); },
+      onClosed: () => { this.rawOpen = false; },
+    }) : nothing}`;
   }
 
   private renderRestoreAsk(ask: RestoreAsk): TemplateResult {
@@ -1026,13 +1024,18 @@ export class WaMenuEditor extends LitElement {
   }
 
   static override styles = [formStyles, css`
+    /* A column, so the foot bar (config-foot.ts) can take the space left
+       at the foot of a short editor; --cf-pad is the padding it reaches
+       through to sit edge to edge. */
     :host {
-      display: block;
+      display: flex;
+      flex-direction: column;
       flex: 1 1 auto;
       min-height: 0;
       overflow: auto;
       container-type: inline-size;
-      padding: 16px;
+      --cf-pad: 16px;
+      padding: var(--cf-pad);
       color: var(--wa-ink);
       background: var(--wa-bg);
       font-size: 14px;
@@ -1086,28 +1089,18 @@ export class WaMenuEditor extends LitElement {
       padding: 20px; border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg, 16px); background: var(--wa-card);
     }
 
-    .me-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 300px); gap: 14px; align-items: start; }
-    @container (max-width: 820px) { .me-grid { grid-template-columns: minmax(0, 1fr); } }
-    .me-main { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+    /* The menus, the full width, with the room above the foot bar. */
+    .me-main { display: flex; flex-direction: column; gap: 14px; min-width: 0; margin-bottom: 14px; }
     .pe-card {
       display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 14px;
       border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg, 16px); background: var(--wa-card);
     }
-    .pe-side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
     .pe-badge {
       display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600;
       color: var(--wa-muted); background: var(--wa-field); white-space: nowrap;
     }
 
-    .pe-state p { font-size: 13px; }
-    .pe-pill {
-      display: inline-flex; align-items: center; gap: 7px; align-self: flex-start;
-      padding: 3px 10px; border-radius: 999px; font-weight: 600;
-    }
-    .pe-pill > i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
-    .pe-pill.ok { color: var(--wa-green); background: color-mix(in srgb, var(--wa-green) 13%, transparent); }
-    .pe-pill.warn { color: var(--wa-amber); background: var(--wa-amber-bg); }
-    .pe-pill.err { color: var(--wa-need); background: color-mix(in srgb, var(--wa-need) 13%, transparent); }
+    /* The earlier saves, in the foot bar's History dialog. */
     .pe-history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
     .pe-history > li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--wa-line); }
     .pe-history > li:first-child { border-top: 0; }
@@ -1138,8 +1131,8 @@ export class WaMenuEditor extends LitElement {
     dialog.pe-ask p.pe-muted { font-size: 13px; }
     .pe-ask-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 6px; }
 
-    :host([narrow]) { padding: 12px; }
-  `, watchFrameStyles, menuViewStyles];
+    :host([narrow]) { --cf-pad: 12px; }
+  `, watchFrameStyles, menuViewStyles, configFootStyles];
 }
 
 if (!customElements.get("wa-menu-editor")) {

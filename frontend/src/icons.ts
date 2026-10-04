@@ -132,7 +132,7 @@ export class CupertinoIconProvider implements IconProvider {
     this.pending.add(name);
     Promise.resolve()
       .then(() => set.getIcon(name))
-      .then((res) => this.cache.set(name, res && res.path ? res : null))
+      .then((res) => this.cache.set(name, res && res.path ? { ...res, path: snapHalfCircleArcs(res.path) } : null))
       .catch(() => this.cache.set(name, null))
       .finally(() => {
         this.pending.delete(name);
@@ -144,6 +144,137 @@ export class CupertinoIconProvider implements IconProvider {
 /** One symbol as the build script writes it: the path data, then the viewBox. */
 type BundledIcon = [path: string, viewBox: string];
 
+/** How far short of its circle's diameter, in user units, half an arc's
+ * chord may fall and still be taken for a half circle. Two decimals put each
+ * end within 0.005 of where it was and the radius within 0.005 too, so a
+ * true half circle comes back up to about 0.015 short. */
+const ARC_SNAP = 0.015;
+
+const PATH_NUMBER = /[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/y;
+const PATH_ARGS: Readonly<Record<string, number>> = { m: 2, l: 2, t: 2, h: 1, v: 1, c: 6, s: 4, q: 4, a: 7, z: 0 };
+
+/**
+ * `d` with every arc that is a half circle drawn as one again.
+ *
+ * The symbol file was squeezed by svgo at two decimals, which turns a circle
+ * into two arcs between opposite points and rounds both. An arc whose chord
+ * is a hair short of its diameter has two centres, each `sqrt(r * shortfall)`
+ * off the chord's middle (SVG's own rule), so a rounding of 0.01 moves a
+ * circle of radius 8 by 0.4: a ring and the disc inside it stop sharing a
+ * centre, and the ring draws thick on one side and the gap closes
+ * (`button.programmable`, `record.circle` and every other ring, dot, cap and
+ * rounded end). Such an arc's radii are cut to just under half the chord,
+ * which SVG grows back to exactly half: the centre is the chord's middle,
+ * where the symbol had it. Every other arc, and everything else, is left as
+ * it was. A path this cannot read is returned unchanged.
+ */
+export function snapHalfCircleArcs(d: string): string {
+  const edits: { start: number; end: number; text: string }[] = [];
+  let i = 0;
+  let x = 0;
+  let y = 0;
+  let startX = 0;
+  let startY = 0;
+  let cmd = "";
+  const skip = () => {
+    while (i < d.length && /[\s,]/.test(d[i]!)) i++;
+  };
+  const number = (): { value: number; start: number; end: number } | undefined => {
+    skip();
+    PATH_NUMBER.lastIndex = i;
+    const m = PATH_NUMBER.exec(d);
+    if (!m) return undefined;
+    const start = i;
+    i += m[0].length;
+    return { value: Number(m[0]), start, end: i };
+  };
+  const flag = (): number | undefined => {
+    skip();
+    const c = d[i];
+    if (c !== "0" && c !== "1") return undefined;
+    i++;
+    return c === "1" ? 1 : 0;
+  };
+  while (true) {
+    skip();
+    if (i >= d.length) break;
+    const c = d[i]!;
+    if (/[A-Za-z]/.test(c)) {
+      if (!Object.hasOwn(PATH_ARGS, c.toLowerCase())) return d;
+      cmd = c;
+      i++;
+      if (c === "z" || c === "Z") {
+        x = startX;
+        y = startY;
+        continue;
+      }
+    } else if (cmd === "" || cmd === "z" || cmd === "Z") {
+      return d;
+    }
+    const lower = cmd.toLowerCase();
+    const rel = cmd === lower;
+    const ox = rel ? x : 0;
+    const oy = rel ? y : 0;
+    if (lower === "a") {
+      const rx = number();
+      const ry = number();
+      const rot = number();
+      const large = flag();
+      const sweep = flag();
+      const ex = number();
+      const ey = number();
+      if (!rx || !ry || !rot || large === undefined || sweep === undefined || !ex || !ey) return d;
+      const x2 = ox + ex.value;
+      const y2 = oy + ey.value;
+      const a = Math.abs(rx.value);
+      const b = Math.abs(ry.value);
+      if (a > 0 && b > 0) {
+        // SVG's radius check (F.6.6): above 1 the radii are grown to fit.
+        const phi = (rot.value * Math.PI) / 180;
+        const hx = (x - x2) / 2;
+        const hy = (y - y2) / 2;
+        const px = Math.cos(phi) * hx + Math.sin(phi) * hy;
+        const py = -Math.sin(phi) * hx + Math.cos(phi) * hy;
+        const fit = Math.sqrt((px * px) / (a * a) + (py * py) / (b * b));
+        if (fit < 1 && (1 - fit) * Math.max(a, b) <= ARC_SNAP) {
+          const cut = (r: number) => String(Math.floor(r * fit * 10000) / 10000);
+          edits.push({ start: rx.start, end: ry.end, text: ` ${cut(a)} ${cut(b)} ` });
+        }
+      }
+      x = x2;
+      y = y2;
+      continue;
+    }
+    const n = PATH_ARGS[lower]!;
+    const args: number[] = [];
+    for (let k = 0; k < n; k++) {
+      const v = number();
+      if (!v) return d;
+      args.push(v.value);
+    }
+    if (lower === "h") x = ox + args[0]!;
+    else if (lower === "v") y = oy + args[0]!;
+    else {
+      x = ox + args[n - 2]!;
+      y = oy + args[n - 1]!;
+    }
+    if (lower === "m") {
+      startX = x;
+      startY = y;
+      // Pairs after a move's first are lines.
+      cmd = rel ? "l" : "L";
+    }
+  }
+  if (edits.length === 0) return d;
+  let out = "";
+  let at = 0;
+  for (const e of edits) {
+    out += d.slice(at, e.start) + e.text;
+    at = e.end;
+  }
+  return out + d.slice(at);
+}
+
 /**
  * The symbols the integration ships, in one gzipped file served beside the
  * panel bundle.
@@ -154,6 +285,8 @@ type BundledIcon = [path: string, viewBox: string];
  */
 export class BundledIconProvider implements IconProvider {
   private icons = new Map<string, BundledIcon>();
+  /** The path each symbol is drawn with, by name, worked out on first use. */
+  private drawn = new Map<string, string>();
   private state: "idle" | "loading" | "loaded" = "idle";
 
   /** `file` and `digest` are arguments because two of these exist: the SF
@@ -186,11 +319,18 @@ export class BundledIconProvider implements IconProvider {
 
   render(symbol: string, size: number, colorHex: string): TemplateResult | undefined {
     this.load();
-    const icon = this.icons.get(symbol.trim());
+    const name = symbol.trim();
+    const icon = this.icons.get(name);
     if (!icon) return undefined;
+    // The half circles put back (`snapHalfCircleArcs`), once per symbol.
+    let d = this.drawn.get(name);
+    if (d === undefined) {
+      d = snapHalfCircleArcs(icon[0]);
+      this.drawn.set(name, d);
+    }
     const c = parseColor(colorHex) ?? { color: "#FFFFFF", opacity: 1 };
     return svg`<svg x="0" y="0" width=${size} height=${size} viewBox=${icon[1]}>
-      <path d=${icon[0]} fill=${c.color} fill-opacity=${c.opacity} /></svg>`;
+      <path d=${d} fill=${c.color} fill-opacity=${c.opacity} /></svg>`;
   }
 
   private load() {

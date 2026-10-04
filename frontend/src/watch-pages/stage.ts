@@ -11,6 +11,7 @@
 //
 // Plan: app repo docs/pages_in_home_assistant_step3.md ("3b build contract").
 
+import { browserStorage, type ColumnStorage } from "../column-split.js";
 import type { WatchCell, WatchRect } from "./edit.js";
 import { WATCH_GRID_COLUMNS, WATCH_GRID_SIDE_INSET, WATCH_GRID_SPACING } from "./model.js";
 
@@ -158,6 +159,30 @@ export function listDropIndex(middles: readonly number[], y: number): number {
   let index = 0;
   for (const middle of middles) if (y > middle) index++;
   return index;
+}
+
+/** Where the stage's Live switch is remembered: "1" on, "0" off. */
+export const STAGE_LIVE_KEY = "wrist-assistant-panel.pages.live.v1";
+
+/** Whether the stage draws Home Assistant's real states (Live on) rather
+ * than every tile lit: as last switched, off when never switched or when
+ * the browser keeps nothing. */
+export function loadStageLive(storage: ColumnStorage | undefined = browserStorage()): boolean {
+  try {
+    return storage?.getItem(STAGE_LIVE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/** Remember the Live switch for the next visit. A browser that keeps
+ * nothing just forgets it. */
+export function saveStageLive(on: boolean, storage: ColumnStorage | undefined = browserStorage()): void {
+  try {
+    storage?.setItem(STAGE_LIVE_KEY, on ? "1" : "0");
+  } catch {
+    // Private windows and full storage keep the switch for this visit only.
+  }
 }
 
 /** The index a row dragged from `from` takes in the list without itself,

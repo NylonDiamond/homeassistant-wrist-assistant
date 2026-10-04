@@ -79,23 +79,28 @@ import { agoWords } from "../send-state.js";
 import { SymbolBrowser } from "../symbols.js";
 import { uiIcon } from "../ui-icons.js";
 import {
-  COLLECTED_PILL_TEXT,
   PAGES_NO_RECORD_TEXT,
   PAGES_START_BUTTON,
   PAGES_START_CONFLICT_TEXT,
   PAGES_UNREADABLE_TEXT,
   PAIR_FIRST_TEXT,
   START_PHONE_FIRST_TEXT,
-  WAITING_HELP_TEXT,
-  WAITING_PILL_TEXT,
   deliveryState,
   initialWatch,
-  rejectedNow,
   settingsWatches,
   watchName,
   watchRecordUnreadable,
 } from "../watch-settings.js";
 import { addTileStyles, renderAddTile } from "./add-tile.js";
+import {
+  configFootStatus,
+  configFootStyles,
+  copyConfigText,
+  openConfigDialogs,
+  renderConfigFoot,
+  renderConfigHistoryDialog,
+  renderConfigRawDialog,
+} from "./config-foot.js";
 import { type WatchCatalog, watchCatalogEventIsNews, watchCatalogFromRecord, watchCatalogReadMeansNone } from "./catalog.js";
 import { type WatchPagesApplyOptions, type WatchPagesDraft, createWatchPages, saveWatchPagesDraft } from "./draft.js";
 import { type AddTileHost, type TileSettingsHost, type WatchPagesEditorHost, NO_ICONS, ScrubRun, extendHost, memoIconNames, watchKeysTypeText } from "./editor-host.js";
@@ -192,9 +197,11 @@ import {
   draggedCorner,
   listDropIndex,
   listMoveIndex,
+  loadStageLive,
   nearestCell,
   pastDragThreshold,
   rowsOnScreen,
+  saveStageLive,
   stageGrid,
   stageRows,
 } from "./stage.js";
@@ -540,10 +547,21 @@ export class WaPageEditor extends LitElement {
   /** Draw the page as the watch does, headers pulling the rows up. Read
    * only. */
   @state() private asOnWatch = false;
+  /** Draw the tiles in Home Assistant's real states (the Live switch);
+   * off, every tile is drawn lit. Remembered between visits. */
+  @state() private liveStates = loadStageLive();
   /** Why the last value typed in the tile card was refused. */
   @state() private fieldNote?: string;
   /** The Add tile dialog is open, over the selected page. */
   @state() private addTileOpen = false;
+  /** The foot bar's History dialog is open (`config-foot.ts`). */
+  @state() private historyOpen = false;
+  /** The foot bar's Raw configuration dialog is open. */
+  @state() private rawOpen = false;
+  /** The raw JSON went to the clipboard since the dialog opened. */
+  @state() private rawCopied = false;
+  /** The foot bar's dialogs opened so far, each once. */
+  private readonly shownFootDialogs = new WeakSet<HTMLDialogElement>();
 
   /** The side columns' widths as dragged (a preference, saved), and the
    * host's measured content width and height, which fit them and cap the
@@ -814,9 +832,10 @@ export class WaPageEditor extends LitElement {
       // only its first button.
       this.renderRoot.querySelector<HTMLElement>(".pe-menu")?.scrollIntoView({ block: "nearest" });
     }
+    openConfigDialogs(this.renderRoot, this.shownFootDialogs);
     if (this.focusHistory) {
       this.focusHistory = false;
-      this.renderRoot.querySelector<HTMLElement>(".pe-past")?.focus();
+      this.renderRoot.querySelector<HTMLElement>(".cf-history-btn")?.focus();
     }
     if (this.revealTile) {
       this.revealTile = false;
@@ -2361,14 +2380,76 @@ export class WaPageEditor extends LitElement {
       ${this.renderGutter("left")}
       <section class="pe-card pe-stage" aria-label="Page">
         ${page ? this.renderStage(page, watchPagesOf(document), owner) : html`<p class="pe-muted">${listed.length === 0 ? "Add a page to start." : "Pick a page."}</p>`}
+        ${page ? this.renderStageSettings(page) : nothing}
       </section>
       ${this.renderGutter("right")}
       <aside class="pe-side">
-        ${page && tile ? this.renderTileCard(page, tile, watchPagesOf(document)) : page ? html`${this.renderRulesCard(page)}${this.renderPageCard(page)}` : nothing}
-        ${this.renderState(record, document)}
-        ${this.renderHistory(record, draft.dirty)}
+        ${page && tile ? this.renderTileCard(page, tile, watchPagesOf(document)) : page ? this.renderNoTileCard(page) : nothing}
       </aside>
+    </div>
+    ${this.renderFoot(record, document, draft.dirty)}`;
+  }
+
+  /** Under the watch, in the stage card: the page's own settings, there
+   * whether or not a tile is selected. A smart page's rules come first. Two
+   * columns of fields once the stage is wide enough (`.pe-stage-settings`). */
+  private renderStageSettings(page: WatchPage): TemplateResult {
+    return html`<div class="pe-stage-settings">
+      ${this.renderRulesCard(page)}
+      ${this.renderPageCard(page)}
     </div>`;
+  }
+
+  /** The settings column with no tile selected. */
+  private renderNoTileCard(page: WatchPage): TemplateResult {
+    return html`<div class="pe-card pe-no-tile">
+      <h3>Tile</h3>
+      <p class="pe-muted">${isSmartWatchPage(page)
+        ? "A smart page fills itself from its rules, set under the watch."
+        : "Select a tile to edit it, or add one."}</p>
+    </div>`;
+  }
+
+  // ── the foot bar ───────────────────────────────────────────────────────
+
+  /** The stored copy's line, History and Raw configuration, pinned to the
+   * foot of the editor (`config-foot.ts`), with the two dialogs they open. */
+  private renderFoot(record: WatchConfigRecord, document: WatchPagesDocument, dirty: boolean): TemplateResult {
+    const status = configFootStatus({ record, size: sizeOf(document), limit: WATCH_SYNC_LIMIT_BYTES, noun: "pages", historyState: this.historyState });
+    const watchId = this.watchId;
+    return html`${renderConfigFoot({
+      status,
+      historyState: this.historyState,
+      historyOpen: this.historyOpen,
+      rawOpen: this.rawOpen,
+      onHistory: () => { this.historyOpen = true; },
+      onRaw: () => { this.rawCopied = false; this.rawOpen = true; },
+    })}
+    ${this.historyOpen ? renderConfigHistoryDialog({
+      noun: "pages",
+      record,
+      entries: this.history,
+      historyState: this.historyState,
+      dirty,
+      restoring: this.restoring,
+      onRetry: () => {
+        if (watchId === undefined) return;
+        this.historyState = "loading";
+        void this.loadHistory(watchId);
+      },
+      // The restore question takes over from the list.
+      onRestore: (entry) => { this.historyOpen = false; this.askRestore(entry); },
+      onClosed: () => { this.historyOpen = false; },
+    }) : nothing}
+    ${this.rawOpen ? renderConfigRawDialog({
+      noun: "pages",
+      document,
+      revision: record.revision,
+      dirty,
+      copied: this.rawCopied,
+      onCopy: (text) => { void copyConfigText(text).then((ok) => { this.rawCopied = ok; }); },
+      onClosed: () => { this.rawOpen = false; },
+    }) : nothing}`;
   }
 
   // ── the page list ──────────────────────────────────────────────────────
@@ -2459,6 +2540,9 @@ export class WaPageEditor extends LitElement {
       page, pages, screen: watchCase.screen, states: this.hass?.states, icons: this.icons, scale, catalog: this.catalog, templates: this.templateRenders,
       // The watch's own settings, for its page dots and its page title mode.
       behavior: this.behavior,
+      // Live off: every tile lit, as the page looks in use. A smart page is
+      // always live.
+      stateMode: this.liveStates ? "live" : "all-on",
     };
     if (config !== undefined) {
       // The selected rule's tiles draw full, the rest faint; a click on a
@@ -2479,6 +2563,11 @@ export class WaPageEditor extends LitElement {
           <span class="pe-muted">${facts.join(" · ")}</span>
         </div>
         <div class="pe-stage-acts">
+          ${smart ? nothing : html`<label class="pe-switch" title=${this.liveStates ? "Tiles show their real states from Home Assistant. Turn off to show every tile on." : "Every tile is shown on. Turn on to show the real states from Home Assistant."}>
+              <input type="checkbox" role="switch" .checked=${live(this.liveStates)}
+                @change=${(e: Event) => { this.liveStates = (e.target as HTMLInputElement).checked; saveStageLive(this.liveStates); }} />
+              <span>Live</span>
+            </label>`}
           ${headers ? html`<label class="pe-switch" title="Headers pull the rows below them up on the watch. Editing is off while this is on.">
               <input type="checkbox" role="switch" .checked=${live(this.asOnWatch)}
                 @change=${(e: Event) => { this.asOnWatch = (e.target as HTMLInputElement).checked; this.cancelGestures(); }} />
@@ -2736,21 +2825,27 @@ export class WaPageEditor extends LitElement {
       // A blank name or the same one changes nothing; the stored one shows.
       if (document !== undefined && !this.edit(setWatchPageName(document, id, text))) this.requestUpdate();
     };
+    // The name on one side and the switches on the other once the stage is
+    // wide; one column under it (`.pe-page-basics`).
     return html`<div class="pe-card pe-page-card">
       <h3>Page</h3>
-      <label class="pe-field wide"><span>Name</span>
-        <input type="text" .value=${live(this.fieldValue(key, stored))}
-          @input=${(e: Event) => this.onFieldInput(e, key, rename)}
-          @keydown=${(e: KeyboardEvent) => this.onFieldKeyDown(e, key, stored)}
-          @change=${() => this.commitTyping(key)}
-          @blur=${() => this.commitTyping(key)} /></label>
-      <label class="pe-switch">
-        <input type="checkbox" role="switch" .checked=${live(hidden)}
-          @change=${(e: Event) => this.setHidden(id, (e.target as HTMLInputElement).checked)} />
-        <span>Hidden on the watch</span>
-      </label>
-      ${smart ? nothing : html`<p class="pe-muted">${plural(tiles, "tile", "tiles")}, ${plural(rows, "row", "rows")}</p>`}
-      ${this.renderSmartRowsFor(page)}
+      <div class="pe-page-basics">
+        <label class="pe-field wide"><span>Name</span>
+          <input type="text" .value=${live(this.fieldValue(key, stored))}
+            @input=${(e: Event) => this.onFieldInput(e, key, rename)}
+            @keydown=${(e: KeyboardEvent) => this.onFieldKeyDown(e, key, stored)}
+            @change=${() => this.commitTyping(key)}
+            @blur=${() => this.commitTyping(key)} /></label>
+        <div class="pe-page-flags">
+          <label class="pe-switch">
+            <input type="checkbox" role="switch" .checked=${live(hidden)}
+              @change=${(e: Event) => this.setHidden(id, (e.target as HTMLInputElement).checked)} />
+            <span>Hidden on the watch</span>
+          </label>
+          ${smart ? nothing : html`<p class="pe-muted">${plural(tiles, "tile", "tiles")}, ${plural(rows, "row", "rows")}</p>`}
+          ${this.renderSmartRowsFor(page)}
+        </div>
+      </div>
       ${this.renderPageSettingsFor(page)}
       <button class="pe-btn pe-danger" @click=${() => this.askDelete(id)}>${uiIcon("delete")}<span>Delete page…</span></button>
     </div>`;
@@ -2770,70 +2865,11 @@ export class WaPageEditor extends LitElement {
     return host === undefined ? nothing : renderSmartPageRows(host);
   }
 
-  /** On a smart page, the Rules card where the Tile card would be. */
+  /** On a smart page, the Rules card, under the watch above the Page card. */
   private renderRulesCard(page: WatchPage): TemplateResult | typeof nothing {
     if (!isSmartWatchPage(page)) return nothing;
     const host = this.editorHost(page);
     return host === undefined ? nothing : renderSmartRulesCard(host);
-  }
-
-  /** Where the stored copy has got to: who saved it and when, whether a
-   * device has it, whether it could read it, and how big the pages are now. */
-  private renderState(record: WatchConfigRecord, document: WatchPagesDocument): TemplateResult {
-    const delivery = deliveryState(record);
-    const rejected = rejectedNow(record);
-    const size = sizeOf(document);
-    const share = size / WATCH_SYNC_LIMIT_BYTES;
-    const when = ago(record.updated_at);
-    return html`<div class="pe-card pe-state">
-      <h3>Stored copy</h3>
-      <p><b>Revision ${record.revision}</b> · ${savedBy(record.updated_by)}${when ? ` ${when}` : ""}</p>
-      ${rejected
-        ? html`<p class="pe-pill err"><i aria-hidden="true"></i>The watch or the iPhone could not read this save</p>
-          <p class="pe-muted">${this.historyState === "unsupported" ? "Change the pages and save them again." : "Restore an earlier save below."}</p>`
-        : delivery === "delivered"
-        ? html`<p class="pe-pill ok" title=${`Revision ${record.revision} has been collected.`}><i aria-hidden="true"></i>${COLLECTED_PILL_TEXT}</p>`
-        : html`<p class="pe-pill warn"><i aria-hidden="true"></i>${WAITING_PILL_TEXT}</p>
-          <p class="pe-muted">${WAITING_HELP_TEXT}</p>`}
-      <p class=${share > 0.8 ? "pe-warn" : "pe-muted"}>${kb(size)} of the ${kb(WATCH_SYNC_LIMIT_BYTES)} the watch takes${share > 0.8 ? ". Close to the limit." : ""}</p>
-    </div>`;
-  }
-
-  private renderHistory(record: WatchConfigRecord, dirty: boolean): TemplateResult | typeof nothing {
-    if (this.historyState === "unsupported") return nothing;
-    const entries = this.history;
-    const rejected = rejectedNow(record);
-    let body: TemplateResult;
-    if (this.historyState === "loading") body = html`<p class="pe-muted">Loading…</p>`;
-    else if (this.historyState === "error") {
-      const id = this.watchId;
-      body = html`<p class="pe-muted">Could not load the earlier saves.</p>
-        ${id === undefined ? nothing : html`<button class="pe-btn" @click=${() => { this.historyState = "loading"; void this.loadHistory(id); }}>Try again</button>`}`;
-    } else if (entries.length === 0) body = html`<p class="pe-muted">No earlier saves yet.</p>`;
-    else {
-      // The newest entry older than the copy on screen is the one to offer
-      // first when a device could not read that copy.
-      const offer = rejected ? entries.find((e) => e.revision < record.revision)?.revision : undefined;
-      body = html`${dirty ? html`<p class="pe-muted">Save or discard your edits first.</p>` : nothing}
-        <ul class="pe-history">
-        ${entries.map((entry) => {
-          const current = entry.revision === record.revision;
-          const when = ago(entry.updated_at);
-          return html`<li class=${entry.revision === offer ? "offer" : ""}>
-            <span class="pe-h-text">
-              <b>Revision ${entry.revision}</b>
-              <span class="pe-muted">${savedBy(entry.updated_by)}${when ? ` ${when}` : ""} · ${kb(entry.size)}</span>
-            </span>
-            ${current
-              ? html`<span class="pe-badge">Current</span>`
-              : html`<button class="pe-btn ${entry.revision === offer ? "pe-primary" : ""}" ?disabled=${this.restoring || dirty}
-                  title=${dirty ? "Save or discard your edits first." : nothing}
-                  @click=${() => this.askRestore(entry)}>Restore</button>`}
-          </li>`;
-        })}
-      </ul>`;
-    }
-    return html`<div class="pe-card pe-past" tabindex="-1"><h3>Earlier saves</h3>${body}</div>`;
   }
 
   // ── questions ──────────────────────────────────────────────────────────
@@ -2936,13 +2972,18 @@ export class WaPageEditor extends LitElement {
   // ties. The two modules' rules come last, so a module can size its own
   // parts of this element (its dialog, say) without outranking anything.
   static override styles = [formStyles, watchPagePreviewStyles, watchFrameStyles, css`
+    /* A column, so the foot bar (config-foot.ts) can take the space left
+       at the foot of a short editor; --cf-pad is the padding it reaches
+       through to sit edge to edge. */
     :host {
-      display: block;
+      display: flex;
+      flex-direction: column;
       flex: 1 1 auto;
       min-height: 0;
       overflow: auto;
       container-type: inline-size;
-      padding: 16px;
+      --cf-pad: 16px;
+      padding: var(--cf-pad);
       color: var(--wa-ink);
       background: var(--wa-bg);
       font-size: 14px;
@@ -3009,6 +3050,8 @@ export class WaPageEditor extends LitElement {
       column-gap: 3px;
       row-gap: 14px;
       align-items: start;
+      /* The room above the foot bar. */
+      margin-bottom: 14px;
     }
     .pe-gutter {
       align-self: stretch; cursor: col-resize; border-radius: 4px;
@@ -3022,11 +3065,13 @@ export class WaPageEditor extends LitElement {
     /* The page list and the cards stay in view while the stage scrolls the
        editor: each sticks to the top of the editor's own scroll box (the
        host, inside its padding) and, when taller than it, scrolls on its
-       own. --pe-view-h is the host's measured content height. The stage does
-       not stick: it scrolls with the editor as before. */
+       own. --pe-view-h is the host's measured content height, less what
+       the foot bar covers of it (36px, less the padding it sits in) and a
+       little air. The stage does not stick: it scrolls with the editor as
+       before. */
     .pe-pages, .pe-side {
       position: sticky; top: 0;
-      max-height: var(--pe-view-h, calc(100dvh - 120px));
+      max-height: calc(var(--pe-view-h, calc(100dvh - 120px)) - 30px);
       overflow-y: auto; overflow-x: hidden;
       scrollbar-width: thin;
     }
@@ -3114,8 +3159,30 @@ export class WaPageEditor extends LitElement {
        screen narrower than the watch drawn at this scale. */
     .pe-stage-body { display: flex; justify-content: center; padding: 14px 8px 10px; overflow-x: auto; overflow-y: hidden; }
     .pe-hint { font-size: 12px; }
+    /* Under the watch: the page's own settings, a smart page's rules first,
+       edge to edge under a hairline. The cards in it lose their own frame,
+       the stage card being theirs. A container, so the fields go two across
+       once the stage is about 700px wide, and stay one column under that. */
+    .pe-stage-settings {
+      container: pe-settings / inline-size;
+      display: flex; flex-direction: column;
+      margin: 6px -14px -14px; border-top: 1px solid var(--wa-line);
+    }
+    .pe-stage-settings > .pe-card { border: 0; border-radius: 0; background: none; }
+    .pe-stage-settings > .pe-card + .pe-card { border-top: 1px solid var(--wa-line); }
+    .pe-page-basics { display: flex; flex-direction: column; gap: 8px; }
+    .pe-page-flags { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+    @container pe-settings (min-width: 700px) {
+      .pe-page-basics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 28px; align-items: start; }
+      /* Level with the name's box, under its label. */
+      .pe-page-flags { padding-top: 24px; }
+      /* The sections flow down the first column, then the second, each
+         kept whole; folding one moves the rest up. */
+      .pe-page-card .ps-root { display: block; columns: 2; column-gap: 0; column-rule: 1px solid var(--wa-line); }
+      .pe-page-card .ps-root > .ts-sec { break-inside: avoid; }
+      .pe-page-card .ps-root > .ps-reset { column-span: all; }
+    }
     .pe-screen { overflow: visible; user-select: none; -webkit-user-select: none; }
-    .pe-past:focus { outline: none; }
     .pe-screen.saving .pe-tile, .pe-screen.saving .pe-handle, .pe-pages.saving .pe-grip, .pe-pages.saving .pe-page { cursor: progress; }
     .pe-screen:focus { outline: none; }
     /* The cells stay inside the screen's round bottom corners, and show only
@@ -3207,16 +3274,7 @@ export class WaPageEditor extends LitElement {
     .pe-chip.on { background: var(--wa-sel-bg); border-color: var(--wa-sel-ring); font-weight: 600; }
     .pe-chip:disabled { opacity: .55; cursor: default; }
 
-    .pe-state p { font-size: 13px; }
-    .pe-pill {
-      display: inline-flex; align-items: center; gap: 7px; align-self: flex-start;
-      padding: 3px 10px; border-radius: 999px; font-weight: 600;
-    }
-    .pe-pill > i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
-    .pe-pill.ok { color: var(--wa-green); background: color-mix(in srgb, var(--wa-green) 13%, transparent); }
-    .pe-pill.warn { color: var(--wa-amber); background: var(--wa-amber-bg); }
-    .pe-pill.err { color: var(--wa-need); background: color-mix(in srgb, var(--wa-need) 13%, transparent); }
-
+    /* The earlier saves, in the foot bar's History dialog. */
     .pe-history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
     .pe-history > li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--wa-line); }
     .pe-history > li:first-child { border-top: 0; }
@@ -3262,11 +3320,11 @@ export class WaPageEditor extends LitElement {
     .pe-ask-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
     .pe-ask-head > .pe-icon-btn { margin: -4px -6px 0 0; }
 
-    :host([narrow]) { padding: 12px; }
+    :host([narrow]) { --cf-pad: 12px; }
     @container (max-width: 820px) {
       .pe-hint { display: none; }
     }
-  `, tileSettingsStyles, specialSettingsStyles, appSettingsStyles, pageSettingsStyles, addTileStyles, smartSettingsStyles];
+  `, tileSettingsStyles, specialSettingsStyles, appSettingsStyles, pageSettingsStyles, addTileStyles, smartSettingsStyles, configFootStyles];
 }
 
 if (!customElements.get("wa-page-editor")) {
