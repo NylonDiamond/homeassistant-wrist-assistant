@@ -661,6 +661,9 @@ export class WaPageEditor extends LitElement {
   /** The tile whose Tiles row is under the pointer: the stage tints it, as
    * the complication editor tints a layer whose row is pointed at. */
   @state() private rowHoverTileId?: string;
+  /** The tile under the pointer on the stage: its Tiles row wears the accent
+   * outline (`.layer.peek`), so the list says which tile the pointer is on. */
+  @state() private stageHoverTileId?: string;
   /** The page strip's open popover: one section at a time, none when shut. */
   @state() private pageStripOpen?: WatchPageStripSection;
   /** The page the open popover belongs to: once another page is shown (a
@@ -1030,6 +1033,9 @@ export class WaPageEditor extends LitElement {
     if (this.rowHoverTileId !== undefined && (page === undefined || this.tileOn(page, this.rowHoverTileId) === undefined)) {
       this.rowHoverTileId = undefined;
     }
+    if (this.stageHoverTileId !== undefined && (page === undefined || this.tileOn(page, this.stageHoverTileId) === undefined)) {
+      this.stageHoverTileId = undefined;
+    }
     if (had !== undefined && this.selectedTileId === undefined) {
       // The tile went (an undo, a merge): its refusals and a drag on its
       // numbers go with it. Its fields are drawn away, so no blur is due.
@@ -1055,6 +1061,7 @@ export class WaPageEditor extends LitElement {
     this.selectedPageId = pageId;
     this.selectedTileId = undefined;
     this.rowHoverTileId = undefined;
+    this.stageHoverTileId = undefined;
     this.fieldNote = undefined;
   }
 
@@ -1064,6 +1071,14 @@ export class WaPageEditor extends LitElement {
     if (id === "") return;
     if (on) this.rowHoverTileId = id;
     else if (sameWatchId(id, this.rowHoverTileId)) this.rowHoverTileId = undefined;
+  }
+
+  /** The Tiles row's outline while its tile is pointed at on the stage
+   * (`stageHoverTileId`), the other way round from `peekTile`. */
+  private peekStageTile(id: string, on: boolean): void {
+    if (id === "") return;
+    if (on) this.stageHoverTileId = id;
+    else if (sameWatchId(id, this.stageHoverTileId)) this.stageHoverTileId = undefined;
   }
 
   private selectTile(tileId: string | undefined): void {
@@ -3021,6 +3036,9 @@ export class WaPageEditor extends LitElement {
     const label = watchPreviewTileLabel(tile, { states: this.hass?.states, pages, catalog: this.catalog }) || kindLabel;
     const rect = watchTileRect(tile);
     const selected = id !== "" && sameWatchId(id, this.selectedTileId);
+    // The row of the tile under the pointer on the stage: the chrome's accent
+    // outline, apart from the selection's fill.
+    const peek = id !== "" && sameWatchId(id, this.stageHoverTileId);
     const rules = tileHasStateRules(tile);
     const tap = tileHasTapAction(tile);
     const color = watchKindColor(entityId, watchAddThemeOf(page)) ?? SECTION_COLOR.content;
@@ -3031,7 +3049,7 @@ export class WaPageEditor extends LitElement {
       this.inspectorToTop = true;
     };
     const dupRefusal = id === "" ? "This tile cannot be copied." : this.duplicateRefusal(page, tile);
-    return html`<div class="layer pe-tile-row ${selected ? "hl" : ""} ${id === "" ? "dim" : ""}" data-row-tile=${id}
+    return html`<div class="layer pe-tile-row ${selected ? "hl" : ""} ${peek ? "peek" : ""} ${id === "" ? "dim" : ""}" data-row-tile=${id}
       style=${`--k:${color}`} role="listitem" tabindex=${id === "" ? "-1" : "0"} aria-current=${selected ? "true" : "false"}
       aria-label=${label !== kindLabel ? `${label}, ${kindLabel}` : kindLabel}
       title=${[label, kindLabel, entityId].filter((t, i, all) => t !== "" && all.indexOf(t) === i).join(" · ")}
@@ -3476,7 +3494,9 @@ export class WaPageEditor extends LitElement {
     const kindLabel = tileKindLabel(tileKind(tileEntityId(tile)));
     const label = watchPreviewTileLabel(tile, input);
     const selected = id !== "" && sameWatchId(id, this.selectedTileId);
-    const hovered = id !== "" && sameWatchId(id, this.rowHoverTileId);
+    // Tinted while its row, or the tile itself, is under the pointer; not
+    // while a tile is being dragged, when the ghosts say what will happen.
+    const hovered = id !== "" && move === undefined && (sameWatchId(id, this.rowHoverTileId) || sameWatchId(id, this.stageHoverTileId));
     const moving = move !== undefined && sameWatchId(id, move.tileId);
     const partner = move?.outcome?.kind === "swap" && sameWatchId(id, move.outcome.targetId);
     const shift = moving ? `transform:translate(${move.left - left}px, ${move.top - top}px);` : "";
@@ -3493,6 +3513,8 @@ export class WaPageEditor extends LitElement {
       aria-label=${label !== "" && label !== kindLabel ? `${label}, ${kindLabel}` : kindLabel} aria-pressed=${selected ? "true" : "false"}
       title=${[label, kindLabel, tileEntityId(tile), this.saving ? SAVING_TEXT : ""].filter((t, i, all) => t !== "" && all.indexOf(t) === i).join(" · ")}
       @pointerdown=${(e: PointerEvent) => this.onTilePointerDown(e, id)}
+      @pointerenter=${() => this.peekStageTile(id, true)}
+      @pointerleave=${() => this.peekStageTile(id, false)}
       @click=${(e: Event) => { e.stopPropagation(); this.selectTile(id); }}>${face}</button>`;
   }
 

@@ -922,6 +922,9 @@ describe("the watch's tile layout", () => {
     expect(drawn).toContain('class="wa-watch"');
     expect(drawn).toContain("--wf-radius:");
     expect(drawn).toContain("--wf-crown-top:");
+    // A slim glass border and a slimmer metal rim, not a fat case-coloured bezel.
+    expect(drawn).toContain("--wf-bezel:9px");
+    expect(drawn).toContain("--wf-rim:4px");
     expect(drawn.indexOf("wa-watch")).toBeLessThan(drawn.indexOf("wp-screen"));
   });
 });

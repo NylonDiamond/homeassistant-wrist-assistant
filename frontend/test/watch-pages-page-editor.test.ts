@@ -289,6 +289,27 @@ describe("the Tiles card", () => {
     expect(css).toContain("inset 0 0 0 1px");
   });
 
+  it("outlines the row of the tile under the pointer on the stage, and tints that tile", () => {
+    const { el, body } = editor();
+    const stageTile = (text: string, id: string) => {
+      const at = text.search(new RegExp(`data-tile=${id}\\s`));
+      return text.slice(text.lastIndexOf(`<button type="button" class="pe-tile`, at), text.indexOf("</button>", at));
+    };
+    expect(stageTile(body(), "T-RIGHT")).toContain("@pointerenter=");
+    expect(stageTile(body(), "T-RIGHT")).toContain("@pointerleave=");
+    const peek = el.peekStageTile as (id: string, on: boolean) => void;
+    peek.call(el, "T-RIGHT", true);
+    const text = body();
+    expect(tileRow(text, "T-RIGHT")).toMatch(/^<div class="layer pe-tile-row  peek /);
+    expect(tileRow(text, "T-LEFT")).not.toContain("peek");
+    expect(text).toMatch(/class="pe-tile [^"]*\bhov\b[^"]*"\s+data-tile=T-RIGHT/);
+    peek.call(el, "T-LEFT", false);
+    expect(el.stageHoverTileId).toBe("T-RIGHT");
+    peek.call(el, "T-RIGHT", false);
+    expect(el.stageHoverTileId).toBeUndefined();
+    expect(body()).not.toContain("peek");
+  });
+
   it("says a smart page fills itself instead of listing tiles", () => {
     const { el, body } = editor();
     const smart = { ...HALL, pages: [{ id: "P-SMART", name: "Lights on", dynamicConfig: { rules: [] } }] } as unknown as WatchPagesDocument;

@@ -1,11 +1,13 @@
-// The Apple Watch case drawn around a screen-sized box: a rounded case with a
-// bezel, the Digital Crown and the side button on the right. Shared by the
-// page editor and the menu editor so both previews look like the same watch.
+// The Apple Watch case drawn around a screen-sized box: the black glass
+// border around the screen, a thin metal rim outside it, the Digital Crown
+// and the side button on the right. Shared by the page editor and the menu
+// editor so both previews look like the same watch.
 //
 // Every size is a fraction of the screen width times `scale`, so the case
-// grows evenly with the screen it holds. The proportions follow the watch
-// icon in `shapeArt.ts` (screen inset about an eighth of the screen width,
-// crown a fifth of the way down the case) and the 46 mm watch's own corners.
+// grows evenly with the screen it holds. The proportions follow the newer
+// watches, whose screen runs nearly to the edge: a slim glass border and a
+// slimmer rim, the crown a fifth of the way down the case, and the 46 mm
+// watch's own corners. A fat case-coloured bezel read as an old watch.
 
 import { css, html, type TemplateResult } from "lit";
 
@@ -13,18 +15,24 @@ import { css, html, type TemplateResult } from "lit";
  * screen is 208 pt wide with corners near 30 pt). */
 export const WATCH_SCREEN_RADIUS_RATIO = 0.145;
 
-/** Bezel (case edge around the screen) as a fraction of the screen width. */
-export const WATCH_BEZEL_RATIO = 0.08;
+/** Bezel (the black glass border around the screen) as a fraction of the
+ * screen width. */
+export const WATCH_BEZEL_RATIO = 0.045;
+
+/** Rim (the metal case edge outside the glass) as a fraction of the screen
+ * width, never under two pixels. */
+export const WATCH_RIM_RATIO = 0.018;
 
 /** Digital Crown width as a fraction of the screen width. */
-export const WATCH_CROWN_RATIO = 0.055;
+export const WATCH_CROWN_RATIO = 0.05;
 
 /** Sizes in pixels for a screen `width` points wide drawn at `scale`. */
-export function watchFrameMetrics(width: number, scale: number): { radius: number; bezel: number; crown: number } {
+export function watchFrameMetrics(width: number, scale: number): { radius: number; bezel: number; rim: number; crown: number } {
   const px = width * scale;
   return {
     radius: Math.round(px * WATCH_SCREEN_RADIUS_RATIO),
     bezel: Math.round(px * WATCH_BEZEL_RATIO),
+    rim: Math.max(2, Math.round(px * WATCH_RIM_RATIO)),
     crown: Math.round(px * WATCH_CROWN_RATIO),
   };
 }
@@ -41,7 +49,7 @@ export function renderWatchFrame(
   label?: string,
 ): TemplateResult {
   const m = watchFrameMetrics(screen.width, scale);
-  const vars = [`--wf-radius:${m.radius}px`, `--wf-bezel:${m.bezel}px`, `--wf-crown:${m.crown}px`];
+  const vars = [`--wf-radius:${m.radius}px`, `--wf-bezel:${m.bezel}px`, `--wf-rim:${m.rim}px`, `--wf-crown:${m.crown}px`];
   if (screen.height !== undefined && screen.height > 0) {
     const caseHeight = screen.height * scale + m.bezel * 2;
     const at = (f: number) => `${Math.round(caseHeight * f * 100) / 100}px`;
@@ -51,29 +59,34 @@ export function renderWatchFrame(
 }
 
 /** The case's own rules. Add to a component's `styles` next to the preview
- * styles. The case colour is the panel's `--wa-art-case` token. */
+ * styles. The rim and the crown take the panel's `--wa-art-case` token; the
+ * glass border is near black in both skins, as the real one is. */
 export const watchFrameStyles = css`
   .wa-watch {
     position: relative;
     display: inline-block;
     flex: none;
     box-sizing: content-box;
-    padding: var(--wf-bezel, 16px);
-    margin-right: var(--wf-crown, 10px);
-    border-radius: calc(var(--wf-radius, 28px) + var(--wf-bezel, 16px));
+    padding: var(--wf-bezel, 9px);
+    /* The rim is drawn outside the box (a shadow), so the margins keep room
+       for it, and on the right for the crown as well. */
+    margin: var(--wf-rim, 3px) calc(var(--wf-rim, 3px) + var(--wf-crown, 10px)) var(--wf-rim, 3px) var(--wf-rim, 3px);
+    border-radius: calc(var(--wf-radius, 28px) + var(--wf-bezel, 9px));
+    /* The glass: black, with a faint sheen from the top left. */
     background:
-      linear-gradient(155deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0) 45%, rgba(0, 0, 0, 0.25)),
-      var(--wa-art-case, #2b2f3d);
+      linear-gradient(160deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0) 40%),
+      #07080c;
     box-shadow:
-      inset 0 0 0 1px rgba(255, 255, 255, 0.1),
-      inset 0 0 0 calc(var(--wf-bezel, 16px) - 2px) rgba(0, 0, 0, 0.18),
-      0 10px 28px rgba(0, 0, 0, 0.35);
+      inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+      0 0 0 var(--wf-rim, 3px) var(--wa-art-case, #2b2f3d),
+      0 0 0 calc(var(--wf-rim, 3px) + 1px) rgba(255, 255, 255, 0.1),
+      0 14px 34px rgba(0, 0, 0, 0.4);
   }
   .wa-watch::before,
   .wa-watch::after {
     content: "";
     position: absolute;
-    left: 100%;
+    left: calc(100% + var(--wf-rim, 3px));
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0) 50%, rgba(0, 0, 0, 0.25)),
       var(--wa-art-case, #2b2f3d);
