@@ -1,13 +1,14 @@
-// Smart pages in the side column (part 3f batch 3): the Page card's smart
-// rows (the Smart Page switch with the phone's convert question, Updates,
-// Tile Size, Show labels, Sort order), and the Rules card that stands where
-// the Tile card would: a chip per rule, the Add Domain dialog, the selected
-// rule's rows, its Header, and its per-domain style through the tile
-// settings sections.
+// Smart pages in the inspector (part 3f batch 3), as its section cards
+// (`sectionCard`, editor-chrome.ts) in the Rules color: the Smart Page
+// switch with the phone's convert question in the Page card, the Smart page
+// card (Updates, Tile Size, Show labels, Sort order), and the Rules cards: a
+// chip per rule, the Add Domain dialog and the selected rule's rows, then
+// its Header and its per-domain style through the tile settings' cards.
 //
-// `<wa-page-editor>` calls `renderSmartPageRows` from its Page card and
-// `renderSmartRulesCard` above it on a smart page, and puts
-// `smartSettingsStyles` in its sheet. Every edit goes through `commit` with a
+// `<wa-page-editor>` calls `renderSmartPageRows` from its Page card,
+// `renderSmartPageSection` after it and `renderSmartRulesCard` after the
+// page's own cards on a smart page, and puts `smartSettingsStyles` in its
+// sheet. Every edit goes through `commit` with a
 // writer of `smart-model.ts`, read against the document as it is when it
 // commits: each action is one undo step, a run of typing in one field one
 // step.
@@ -36,9 +37,11 @@
 import { css, html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
 import { checkField, colorField, numberField, segField, sliderField, textField } from "../editors.js";
+import { sectionCard } from "../editor-chrome.js";
+import { SECTION_COLOR } from "../kinds.js";
 import { uiIcon } from "../ui-icons.js";
 import { type TileSettingsHost, type WatchPagesEditorHost, extendHost } from "./editor-host.js";
-import { sectionOpen, setSectionOpen } from "./fold-memory.js";
+import { type FoldId, sectionOpen, setSectionOpen } from "./fold-memory.js";
 import type { WatchPagesApplyOptions } from "./draft.js";
 import { sameWatchId } from "./edit.js";
 import { type JsonObject, type WatchPage, type WatchPageTile, type WatchPagesDocument, isJsonObject, watchPagesOf } from "./model.js";
@@ -98,8 +101,16 @@ import {
   toggleSmartRuleDeviceClass,
   withResolvedRule,
 } from "./smart-model.js";
-import { commit, linkButton, menuField, reasonOf, renderTileSettings, swatchRow, typed, typedNumber, typingField } from "./tile-settings.js";
-import { watchColorEnds, watchColorRefusal, watchCustomBoxColor, watchDomainStyleSections, watchWholeRefusal } from "./tile-settings-options.js";
+import { commit, linkButton, menuField, reasonOf, renderTileSettings, swatchRow, tileSettingsFoldIds, typed, typedNumber, typingField } from "./tile-settings.js";
+import {
+  type WatchSectionBadge,
+  type WatchTileSettingsSection,
+  watchColorEnds,
+  watchColorRefusal,
+  watchCustomBoxColor,
+  watchDomainStyleSections,
+  watchWholeRefusal,
+} from "./tile-settings-options.js";
 import { watchAddThemeOf, watchThemeDisplayName, watchThemeRoleColors, watchThemeSwatches } from "./tile-new.js";
 
 /** Every `uiState` key of this module starts with this. */
@@ -317,8 +328,9 @@ export function smartConvertConfirmed(host: WatchPagesEditorHost, target?: Event
   endAsk(host, target);
 }
 
-/** The switch, and on a smart page its rows; the convert question when it
- * is open. */
+/** The switch and the line under it, in the Page card; the convert question
+ * when it is open. A smart page's own rows are the Smart page card
+ * (`renderSmartPageSection`). */
 export function renderSmartPageRows(host: WatchPagesEditorHost): TemplateResult {
   const config = readSmartConfig(host.page);
   const smart = config !== undefined;
@@ -329,8 +341,14 @@ export function renderSmartPageRows(host: WatchPagesEditorHost): TemplateResult 
       <span>${W("smartPage")}</span>
     </label>
     <p class="pe-muted sm-under">${config === undefined ? W("smartPageDetail") : `${W("smartPageActive")}: ${smartRuleCountWords(config.rules.length)}`}</p>
-    ${config === undefined ? nothing : renderSmartPageSection(host, config)}
     ${askOf(host) === "convert" ? renderConvertAsk(host) : nothing}`;
+}
+
+/** On a smart page, its Smart page card (Updates, Tile size, Show labels,
+ * Sort order); nothing on a page that is not one. */
+export function renderSmartPageSection(host: WatchPagesEditorHost): TemplateResult | typeof nothing {
+  const config = readSmartConfig(host.page);
+  return config === undefined ? nothing : smartPageCard(host, config);
 }
 
 function renderConvertAsk(host: WatchPagesEditorHost): TemplateResult {
@@ -351,28 +369,51 @@ function isOpen(host: WatchPagesEditorHost, section: string): boolean {
   return sectionOpen(host.uiState, KEY, section);
 }
 
-/** A folding section in the tile settings' look. */
+/** The badge of every smart page card: the Rules color of the complication
+ * editor's States card, since a rule is what decides what shows. */
+export const SMART_SECTION_BADGE: WatchSectionBadge = { color: SECTION_COLOR.states, icon: "states" };
+
+/** A folding card of this module, in the shared inspector look; its body
+ * drawn only while open, in a fieldset that switches every control off while
+ * a save is out. */
 function fold(host: WatchPagesEditorHost, section: string, title: string, summary: string, body: () => TemplateResult): TemplateResult {
   const open = isOpen(host, section);
-  const id = `sm-body-${section}`;
-  return html`<section class="ts-sec" data-open=${open ? "true" : "false"}>
-    <h4 class="ts-h">
-      <button type="button" class="ts-fold" aria-expanded=${open ? "true" : "false"} aria-controls=${open ? id : nothing}
-        @click=${() => { setSectionOpen(host.uiState, KEY, section, !open); host.requestUpdate(); }}>
-        <span class="ts-title">${title}</span>
-        ${open || summary === "" ? nothing : html`<span class="ts-sum">${summary}</span>`}
-        <span class="ts-chev">${uiIcon("chevron")}</span>
-      </button>
-    </h4>
-    ${open ? html`<fieldset class="ts-body sec-b" id=${id} ?disabled=${host.busy} aria-label=${title}>${body()}</fieldset>` : nothing}
-  </section>`;
+  return sectionCard({
+    color: SMART_SECTION_BADGE.color,
+    icon: uiIcon(SMART_SECTION_BADGE.icon),
+    title,
+    open,
+    onToggle: () => { setSectionOpen(host.uiState, KEY, section, !open); host.requestUpdate(); },
+    ...(open || summary === "" ? {} : { summary }),
+    id: `${KEY}:${section}`,
+  }, open ? html`<fieldset class="ts-body" id=${`sm-body-${section}`} ?disabled=${host.busy} aria-label=${title}>${body()}</fieldset>` : html``);
 }
 
-function renderSmartPageSection(host: WatchPagesEditorHost, config: WatchSmartConfig): TemplateResult {
+/** The tile sections a rule's style is drawn with. */
+function styleSections(rule: WatchSmartRule): WatchTileSettingsSection[] {
+  return watchDomainStyleSections(smartDomainInfo(rule.domain)?.stateTask === true);
+}
+
+/** The folds the inspector's Collapse all turns on a smart page: the Smart
+ * page and Rules cards, and the selected rule's Header and style cards. None
+ * on a page that is not smart. */
+export function smartFoldIds(host: WatchPagesEditorHost): FoldId[] {
+  const config = readSmartConfig(host.page);
+  if (config === undefined) return [];
+  const ids: FoldId[] = [{ module: KEY, section: "page" }, { module: KEY, section: "rules" }];
+  const index = smartSelectedRuleIndex(config, host.smartRuleId);
+  const rule = index === undefined ? undefined : config.rules[index];
+  if (rule !== undefined) {
+    ids.push({ module: KEY, section: "header" }, ...tileSettingsFoldIds(smartStyleHost(host, rule.id), styleSections(rule)));
+  }
+  return ids;
+}
+
+function smartPageCard(host: WatchPagesEditorHost, config: WatchSmartConfig): TemplateResult {
   const sh = pageScope(host);
   const P = host.pageId;
   const summary = `${W("sizeSubtitle", { cols: config.tileColSpan, rows: config.tileRowSpan })}, ${config.liveUpdates ? PAGE_SWITCHES[0]?.label ?? "" : SORT_ORDERS.find((o) => o.value === config.sortOrder)?.label ?? ""}`;
-  return html`<div class="ts-root sm-root">${fold(host, "page", W("smartPage"), summary, () => html`
+  return fold(host, "page", W("smartPage"), summary, () => html`
     <div class="ts-sub-h"><span>${W("updates")}</span></div>
     <div class="hint">${W("updatesHelp")}</div>
     ${PAGE_SWITCHES.filter((s) => s.always || !config.liveUpdates).map((s) => {
@@ -390,7 +431,7 @@ function renderSmartPageSection(host: WatchPagesEditorHost, config: WatchSmartCo
     ${spanBox(sh, "tileRowSpan", "Rows", config.tileRowSpan, (d, v) => (v === null ? d : setSmartTileRowSpan(d, P, v)))}
     ${checkField(W("showLabels"), config.tileShowLabel, (on) => commit(sh, "tileShowLabel", (d) => setSmartTileShowLabel(d, P, on)))}
     ${menuField(W("sortOrder"), { options: SORT_ORDERS, selected: config.sortOrder }, (v) => commit(sh, "sortOrder", (d) => setSmartSortOrder(d, P, v)))}
-  `)}</div>`;
+  `);
 }
 
 // ── the Rules card ───────────────────────────────────────────────────────
@@ -403,15 +444,30 @@ function ruleGlyph(host: WatchPagesEditorHost, rule: WatchSmartRule, size: numbe
   return host.icons.render(icon, size, ink) ?? nothing;
 }
 
-/** The Rules card of a smart page, or nothing for a page that is not one. */
+/**
+ * The Rules cards of a smart page, or nothing for a page that is not one:
+ * the Rules card (a chip per rule, Add Domain, the selected rule's heading
+ * and rows), then the selected rule's Header card and its style through the
+ * tile settings' cards, each a card of its own beside the others.
+ */
 export function renderSmartRulesCard(host: WatchPagesEditorHost): TemplateResult | typeof nothing {
   const config = readSmartConfig(host.page);
   if (config === undefined) return nothing;
   const index = smartSelectedRuleIndex(config, host.smartRuleId);
   const rule = index === undefined ? undefined : config.rules[index];
   const note = smartDuplicateDomainNote(config);
-  return html`<div class="pe-card sm-rules">
-    <h3>Rules</h3>
+  const open = isOpen(host, "rules");
+  // The strip and the rule's heading hold buttons, so this card's body is no
+  // fieldset; every one of them is off while a save is out by itself.
+  const rules = sectionCard({
+    color: SMART_SECTION_BADGE.color,
+    icon: uiIcon(SMART_SECTION_BADGE.icon),
+    title: "Rules",
+    open,
+    onToggle: () => { setSectionOpen(host.uiState, KEY, "rules", !open); host.requestUpdate(); },
+    ...(open ? {} : { summary: rule === undefined ? smartRuleCountWords(config.rules.length) : `${smartRuleCountWords(config.rules.length)}, ${smartRuleName(rule)}` }),
+    id: `${KEY}:rules`,
+  }, open ? html`<div class="sm-rules">
     ${note === undefined ? nothing : html`<p class="hint warn sm-note" role="note">${note}</p>`}
     <div class="sm-strip" role="group" aria-label="Rules">
       ${config.rules.map((r, i) => html`<button type="button" class="pe-chip sm-chip ${i === index ? "on" : ""}" aria-pressed=${i === index ? "true" : "false"}
@@ -421,9 +477,11 @@ export function renderSmartRulesCard(host: WatchPagesEditorHost): TemplateResult
     </div>
     ${rule === undefined || index === undefined
       ? html`<p class="pe-muted">${W("pickerIntro")}</p>`
-      : renderRule(host, config, rule, index)}
-    ${askOf(host) === "add" ? renderAddDomain(host, config) : nothing}
-  </div>`;
+      : renderRule(host, rule, index)}
+  </div>` : html``);
+  return html`${rules}
+    ${rule === undefined ? nothing : renderRuleCards(host, config, rule)}
+    ${askOf(host) === "add" ? renderAddDomain(host, config) : nothing}`;
 }
 
 /** A rule was deleted from its heading: the one now at its place is
@@ -434,7 +492,8 @@ export function smartRuleDeleted(host: WatchPagesEditorHost, ruleId: string, ind
   host.selectSmartRule(config === undefined ? undefined : smartRuleAfterDelete(config, index));
 }
 
-function renderRule(host: WatchPagesEditorHost, config: WatchSmartConfig, rule: WatchSmartRule, index: number): TemplateResult {
+/** The selected rule's heading and rows, in the Rules card. */
+function renderRule(host: WatchPagesEditorHost, rule: WatchSmartRule, index: number): TemplateResult {
   const rh = ruleScope(host, rule.id);
   const P = host.pageId;
   const R = rule.id;
@@ -458,13 +517,23 @@ function renderRule(host: WatchPagesEditorHost, config: WatchSmartConfig, rule: 
         ${actButton("Delete", `Delete ${name}. Undo brings it back.`, host.busy, () => smartRuleDeleted(host, R, index))}
       </span>
     </div>
-    <fieldset class="ts-body sec-b sm-body" ?disabled=${host.busy} aria-label=${name}>
+    <fieldset class="ts-body sm-body" ?disabled=${host.busy} aria-label=${name}>
       ${renderRuleRows(host, rh, rule)}
-    </fieldset>
-    <div class="ts-root sm-root">${fold(host, "header", "Header", headerSummary(rule), () => renderHeader(host, rh, rule))}</div>
-    <div class="sm-style">${renderTileSettings(smartStyleHost(host, R), {
-      sections: watchDomainStyleSections(smartDomainInfo(rule.domain)?.stateTask === true),
-      size: { summary: () => sizeSummary(config, rule), body: () => renderRuleSize(host, rh, config, rule) },
+    </fieldset>`;
+}
+
+/** The selected rule's Header card, then its style through the tile
+ * settings' cards, Size among them. */
+function renderRuleCards(host: WatchPagesEditorHost, config: WatchSmartConfig, rule: WatchSmartRule): TemplateResult {
+  const rh = ruleScope(host, rule.id);
+  return html`${fold(host, "header", "Header", headerSummary(rule), () => renderHeader(host, rh, rule))}
+    <div class="sm-style">${renderTileSettings(smartStyleHost(host, rule.id), {
+      sections: styleSections(rule),
+      size: {
+        summary: () => sizeSummary(config, rule),
+        body: () => renderRuleSize(host, rh, config, rule),
+        changed: () => rule.tileStyle?.colSpan !== undefined || rule.tileStyle?.rowSpan !== undefined,
+      },
     })}</div>`;
 }
 
@@ -670,8 +739,7 @@ function renderAddDomain(host: WatchPagesEditorHost, config: WatchSmartConfig): 
  * Prefix classes with `sm-`. */
 export const smartSettingsStyles = css`
   .sm-under { margin: -2px 0 6px; }
-  .sm-root { margin-top: 6px; }
-  .sm-style > .ts-root { margin-top: -4px; border-top: 0; }
+  .sm-rules { padding: 2px 0 0; }
   .sm-note { margin: 0 0 8px; }
   .sm-strip { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 8px; }
   .sm-chip { display: inline-flex; align-items: center; gap: 5px; }
@@ -687,7 +755,6 @@ export const smartSettingsStyles = css`
   .sm-badge { flex: none; }
   .sm-acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px 8px; margin-left: auto; }
   .sm-act:disabled { opacity: .4; cursor: default; }
-  fieldset.sm-body { margin: 0 -14px; }
   .sm-line { display: flex; align-items: center; gap: 8px; padding: 2px 0 6px calc(var(--wa-lab) + 8px); font-size: 12px; }
   .sm-warn { color: var(--wa-warn, #c47f00); font-weight: 600; }
   .sm-find { width: 100%; box-sizing: border-box; margin: 2px 0 4px; padding: 4px 8px; border: 1px solid var(--wa-line); border-radius: 6px;

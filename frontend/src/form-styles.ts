@@ -57,9 +57,9 @@ export const formButtonStyles = css`
        nothing to save and lit, with the unsaved halo, once there is, so the
        button, the dirty dot and the footer line all say "unsaved" the same
        way. */
-    header button.save { min-height: 28px; padding: 0 14px; }
-    header button.save:not(.dirty) { background: var(--wa-panel); color: var(--wa-muted); border-color: transparent; }
-    header button.save.dirty { box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning-color, #e0a100) 35%, transparent); }
+    header button.save, .wa-bar button.save { min-height: 28px; padding: 0 14px; }
+    header button.save:not(.dirty), .wa-bar button.save:not(.dirty) { background: var(--wa-panel); color: var(--wa-muted); border-color: transparent; }
+    header button.save.dirty, .wa-bar button.save.dirty { box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning-color, #e0a100) 35%, transparent); }
     button.danger { color: var(--error-color, #e5484d); border-color: color-mix(in srgb, var(--error-color, #e5484d) 45%, transparent); background: color-mix(in srgb, var(--error-color, #e5484d) 8%, transparent); }
     button.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--error-color, #e5484d) 16%, transparent); border-color: var(--error-color, #e5484d); }
     button.small { padding: 0 9px; font-size: 12px; min-height: 26px; border-radius: 8px; }

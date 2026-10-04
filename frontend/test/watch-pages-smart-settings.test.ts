@@ -9,7 +9,7 @@
 // edit with its undo step.
 
 import { describe, expect, it, vi } from "vitest";
-import { html } from "lit";
+import { html, nothing } from "lit";
 
 import type { HassEntityState } from "../src/ha-api.js";
 import type { IconProvider } from "../src/renderer.js";
@@ -23,7 +23,9 @@ import { renderWatchPagePreview } from "../src/watch-pages/preview.js";
 import { WATCH_SMART, readSmartConfig, smartWord } from "../src/watch-pages/smart-model.js";
 import {
   SMART_PRESET_ADDED_REASON,
+  SMART_SECTION_BADGE,
   renderSmartPageRows,
+  renderSmartPageSection,
   renderSmartRulesCard,
   smartDomainColorHex,
   smartSelectedRuleIndex,
@@ -257,33 +259,43 @@ describe("the Smart Page switch", () => {
 
 describe("the smart page rows", () => {
   it("show Refresh on Page View and Pull to Refresh only while Live Updates is off", () => {
-    const off = flatten(renderSmartPageRows(setup(smartPage([])).host));
+    const off = flatten(renderSmartPageSection(setup(smartPage([])).host));
     expect(off).toContain("Live Updates");
     expect(off).toContain("Real-time via background sync");
     expect(off).toContain("Refresh on Page View");
     expect(off).toContain("Pull to Refresh");
-    const on = flatten(renderSmartPageRows(setup(smartPage([], { liveUpdates: true })).host));
+    const on = flatten(renderSmartPageSection(setup(smartPage([], { liveUpdates: true })).host));
     expect(on).toContain("Live Updates");
     expect(on).not.toContain("Refresh on Page View");
     expect(on).not.toContain("Pull to Refresh");
   });
 
+  it("are their own Smart page card, not the switch's rows, and only on a smart page", () => {
+    const s = setup(smartPage([]));
+    expect(flatten(renderSmartPageRows(s.host))).not.toContain("Live Updates");
+    const card = flatten(renderSmartPageSection(s.host));
+    expect(card).toContain(`<section class="sec" data-sec=smart:page`);
+    expect(card).toContain(`--c:${SMART_SECTION_BADGE.color}`);
+    expect(card).toContain(`<h4>${W("smartPage")}`);
+    expect(renderSmartPageSection(setup(plainPage(1)).host)).toBe(nothing);
+  });
+
   it("write each switch, the size presets, the boxes, the labels and the sort order", () => {
     const s = setup(smartPage([]));
-    check(renderSmartPageRows(s.host), "Live Updates", true);
+    check(renderSmartPageSection(s.host), "Live Updates", true);
     expect(s.config()?.liveUpdates).toBe(true);
-    check(renderSmartPageRows(s.host), W("showLabels"), false);
+    check(renderSmartPageSection(s.host), W("showLabels"), false);
     expect(s.config()?.tileShowLabel).toBe(false);
-    const rows = flatten(renderSmartPageRows(s.host));
+    const rows = flatten(renderSmartPageSection(s.host));
     expect(rows).toMatch(/pe-chip on" aria-pressed=true title=4w × 3h\s+@click=>Standard/);
-    click(renderSmartPageRows(s.host), ">Small<");
+    click(renderSmartPageSection(s.host), ">Small<");
     expect([s.config()?.tileColSpan, s.config()?.tileRowSpan]).toEqual([2, 2]);
-    type(renderSmartPageRows(s.host), "Columns", "7");
+    type(renderSmartPageSection(s.host), "Columns", "7");
     expect(s.config()?.tileColSpan).toBe(7);
-    type(renderSmartPageRows(s.host), "Rows", "40");
+    type(renderSmartPageSection(s.host), "Rows", "40");
     expect(s.config()?.tileRowSpan).toBe(2);
-    expect(flatten(renderSmartPageRows(s.host))).toContain("Use a number from 1 to 12.");
-    pick(renderSmartPageRows(s.host), W("sortOrder"), "alphabetical");
+    expect(flatten(renderSmartPageSection(s.host))).toContain("Use a number from 1 to 12.");
+    pick(renderSmartPageSection(s.host), W("sortOrder"), "alphabetical");
     expect(s.config()?.sortOrder).toBe("alphabetical");
   });
 });
@@ -642,8 +654,8 @@ describe("a rule's style through the stand-in tile", () => {
   it("draws Size before Background with the domain presets and Page size", () => {
     const s = setup(smartPage([LIGHTS]));
     const card = flatten(renderSmartRulesCard(s.host));
-    expect(card.indexOf('<span class="ts-title">Size</span>')).toBeGreaterThan(-1);
-    expect(card.indexOf('<span class="ts-title">Size</span>')).toBeLessThan(card.indexOf('<span class="ts-title">Background</span>'));
+    expect(card.indexOf("<h4>Size")).toBeGreaterThan(-1);
+    expect(card.indexOf("<h4>Size")).toBeLessThan(card.indexOf("<h4>Background"));
     for (const p of WATCH_SMART.styleSizes) expect(card).toContain(`>${p.name}<`);
     click(renderSmartRulesCard(s.host), ">Medium<");
     expect([(s.rule(R1).tileStyle as JsonObject).colSpan, (s.rule(R1).tileStyle as JsonObject).rowSpan]).toEqual([6, 4]);
@@ -673,7 +685,7 @@ describe("the settings' folds", () => {
       expect(view().match(/data-open="?true/g)?.length).toBe(3);
       expect(flatten(renderSmartRulesCard(s.host))).not.toMatch(/data-open="?false/);
       expect(view()).toMatch(textBody);
-      click(renderTileSettings(style, { sections: ["state", "text", "border"] }), '<span class="ts-title">Text</span>');
+      click(renderTileSettings(style, { sections: ["state", "text", "border"] }), "<h4>Text");
       expect(view()).not.toMatch(textBody);
       // A reload: the editor's view state starts empty, the fold is still there.
       s.host.uiState.clear();

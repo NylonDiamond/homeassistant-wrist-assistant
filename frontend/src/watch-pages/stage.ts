@@ -185,6 +185,58 @@ export function saveStageLive(on: boolean, storage: ColumnStorage | undefined = 
   }
 }
 
+/** Where the stage's zoom is remembered: the scale the person stepped to, as
+ * a number, or nothing while it fits. */
+export const STAGE_ZOOM_KEY = "wrist-assistant-panel.pages.zoom.v1";
+
+/** The scales the zoom buttons step through, pixels per point. The tool
+ * strip shows each as a percent of the watch's own points: 100% to 200%. */
+export const STAGE_ZOOM_STEPS: readonly number[] = [1, 1.25, 1.5, 2];
+
+/** The scale that fits: 150%, or 125% on a narrow screen. */
+export function stageFitZoom(narrow: boolean): number {
+  return narrow ? 1.25 : 1.5;
+}
+
+/** The zoom as the tool strip says it: "150%". */
+export function stageZoomLabel(scale: number): string {
+  return `${Math.round(scale * 100)}%`;
+}
+
+/** One step in from `scale`, or `scale` when it is the largest already. A
+ * scale between two steps goes to the next one up. */
+export function stageZoomIn(scale: number): number {
+  return STAGE_ZOOM_STEPS.find((step) => step > scale + 1e-9) ?? scale;
+}
+
+/** One step out from `scale`, or `scale` when it is the smallest already. */
+export function stageZoomOut(scale: number): number {
+  return [...STAGE_ZOOM_STEPS].reverse().find((step) => step < scale - 1e-9) ?? scale;
+}
+
+/** The zoom the person stepped to last time, or undefined (fit) when there
+ * is none, it is not one of the steps, or the browser keeps nothing. */
+export function loadStageZoom(storage: ColumnStorage | undefined = browserStorage()): number | undefined {
+  try {
+    const raw = storage?.getItem(STAGE_ZOOM_KEY);
+    if (raw === null || raw === undefined || raw === "") return undefined;
+    const scale = Number(raw);
+    return STAGE_ZOOM_STEPS.includes(scale) ? scale : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Remember the zoom; undefined (fit) is kept as an empty value, so the next
+ * visit fits whatever width it opens at. */
+export function saveStageZoom(scale: number | undefined, storage: ColumnStorage | undefined = browserStorage()): void {
+  try {
+    storage?.setItem(STAGE_ZOOM_KEY, scale === undefined ? "" : String(scale));
+  } catch {
+    // Private windows and full storage keep the zoom for this visit only.
+  }
+}
+
 /** The index a row dragged from `from` takes in the list without itself,
  * for a drop at `drop` (as `listDropIndex` gives it). */
 export function listMoveIndex(from: number, drop: number): number {

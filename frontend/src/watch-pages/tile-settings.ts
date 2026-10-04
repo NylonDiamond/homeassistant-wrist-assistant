@@ -1,5 +1,7 @@
-// The selected tile's settings, in the side column's Tile card under the
-// place and size fields: icon and color, text, action, a header's look and a
+// The selected tile's settings, as the inspector's section cards under its
+// pinned Name card (`sectionCard`, editor-chrome.ts, the complication
+// editor's look): place and size (rows the page editor hands in), icon and
+// color, text, action, a header's look and a
 // page link's target (part 3c); styling (3d); and for an HTTP action, macro
 // or status page tile its target, the Request task and the Macro task, with
 // Run HTTP Action in hold and slide, from the iPhone's catalog on the host
@@ -13,8 +15,8 @@
 // each setting writes. The lists, defaults and sentences come from
 // `tile-settings-options.ts`.
 //
-// The rows are the panel's own (`editors.ts`), inside a `.sec-b` so they
-// take the inspector's compact look. They send an edit on every keystroke,
+// The rows are the panel's own (`editors.ts`), inside a card's `.sec-b` so
+// they take the inspector's compact look. They send an edit on every keystroke,
 // so the picture follows the typing; each field's edits share one coalesce
 // key, so a run of typing is one undo step. What is typed is also kept in
 // `uiState` while the field has focus: Home Assistant hands the element a new
@@ -31,6 +33,7 @@ import { css, html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
 import type { EntityRef } from "../model.js";
 import { checkField, colorField, entityField, numberField, segField, sliderField, symbolField, symbolNameSet, textField } from "../editors.js";
+import { sectionCard } from "../editor-chrome.js";
 import { uiIcon } from "../ui-icons.js";
 import {
   type WatchTileStylingTask,
@@ -72,12 +75,12 @@ import {
 import { watchDecimalOptions, watchStateEmptyText, watchStylingChoices, watchStylingLabel, watchStylingReset, watchStylingSlider } from "./tile-styling.js";
 import { watchPageSwatchTheme } from "./page-settings-model.js";
 import type { TileSettingsHost } from "./editor-host.js";
-import { sectionOpen, setSectionOpen } from "./fold-memory.js";
+import { type FoldId, sectionOpen, setSectionOpen } from "./fold-memory.js";
 import { forgetSpecialStatus, renderSpecial, specialSummary, watchSpecialSectionTitle } from "./special-settings.js";
 import { renderInboxLine } from "./app-settings.js";
 import { watchSpecialTask } from "./special-model.js";
 import { findWatchPage } from "./edit.js";
-import { type WatchPagesDocument, tileEntityId, tileKind, watchPageId, watchPageName, watchPagesOf } from "./model.js";
+import { type WatchPageTile, type WatchPagesDocument, tileEntityId, tileKind, watchPageId, watchPageName, watchPagesOf } from "./model.js";
 import {
   type WatchLibraryKind,
   WATCH_LIBRARY_WORDS,
@@ -171,7 +174,9 @@ import {
   WATCH_COLOR_MODES,
   WATCH_DEFAULT_CHOICE,
   WATCH_HTTP_REPLY_OFF,
+  WATCH_NAME_BADGE,
   WATCH_SKIP_CHOICES,
+  WATCH_TILE_SECTION_BADGES,
   WATCH_TILE_SETTINGS_SECTION_TITLES,
   isWatchStoredChoice,
   sameWatchColor,
@@ -505,14 +510,32 @@ export function watchTileDefaultColorEdit(host: TileSettingsHost): (d: WatchPage
 // ── sections ─────────────────────────────────────────────────────────────
 
 /** What a caller hands `renderTileSettings` beyond its host: the sections to
- * draw instead of the tile's own (a smart page rule's style), and the Size
- * section's rows, which only such a caller has. */
+ * draw instead of the tile's own (a smart page rule's style, or a page's tile
+ * with its Size first), and the Size section's rows, which only such a caller
+ * has, with whether they hold a value of their own (its changed dot). */
 export interface TileSettingsExtras {
   sections?: readonly WatchTileSettingsSection[];
-  size?: { summary: () => string; body: () => TemplateResult };
+  size?: { summary: () => string; body: () => TemplateResult; changed?: () => boolean };
 }
 
-/** The settings rows for `host.tile`, or nothing. */
+/** The sections a page's selected tile gets in the inspector: its place and
+ * size first, as the page editor hands those rows in, then the tile's own. */
+export function tileInspectorSections(host: TileSettingsHost): WatchTileSettingsSection[] {
+  return ["size", ...watchTileSettingsSections(host.tile, host.hass.states)];
+}
+
+/** Whether the section is the webhook inbox's one line rather than a card. */
+function inboxLine(host: TileSettingsHost, section: WatchTileSettingsSection): boolean {
+  return section === "special" && watchSpecialTask(host.tile, host.hass.states)?.task === "inbox";
+}
+
+/** The folds the inspector's Collapse all turns: each of the sections that is
+ * drawn as a card. */
+export function tileSettingsFoldIds(host: TileSettingsHost, sections: readonly WatchTileSettingsSection[]): FoldId[] {
+  return sections.filter((s) => !inboxLine(host, s)).map((section) => ({ module: KEY, section }));
+}
+
+/** The settings cards for `host.tile`, or nothing. */
 export function renderTileSettings(host: TileSettingsHost, extras: TileSettingsExtras = {}): TemplateResult | typeof nothing {
   const sections = (extras.sections ?? watchTileSettingsSections(host.tile, host.hass.states)).filter((s) => s !== "size" || extras.size !== undefined);
   if (sections.length === 0) return nothing;
@@ -525,24 +548,182 @@ export function renderTileSettings(host: TileSettingsHost, extras: TileSettingsE
 function renderSection(host: TileSettingsHost, section: WatchTileSettingsSection, extras: TileSettingsExtras): TemplateResult {
   // A webhook inbox has no task here (its topics live on the iPhone): one
   // line stands where the task would be (part 3f batch 2).
-  if (section === "special" && watchSpecialTask(host.tile, host.hass.states)?.task === "inbox") return renderInboxLine(host);
+  if (inboxLine(host, section)) return renderInboxLine(host);
   const open = isOpen(host, section);
-  const id = `ts-body-${section}`;
   const title = section === "special" ? watchSpecialSectionTitle(host) : WATCH_TILE_SETTINGS_SECTION_TITLES[section];
   const summary = open ? "" : section === "size" ? (extras.size?.summary() ?? "") : sectionSummary(host, section);
-  return html`<section class="ts-sec" data-open=${open ? "true" : "false"}>
-    <h4 class="ts-h">
-      <button type="button" class="ts-fold" aria-expanded=${open ? "true" : "false"} aria-controls=${open ? id : nothing}
-        @click=${() => toggle(host, section)}>
-        <span class="ts-title">${title}</span>
-        ${summary === "" ? nothing : html`<span class="ts-sum">${summary}</span>`}
-        <span class="ts-chev">${uiIcon("chevron")}</span>
-      </button>
-    </h4>
-    ${open
-      ? html`<fieldset class="ts-body sec-b" id=${id} ?disabled=${host.busy} aria-label=${title}>${section === "size" ? (extras.size?.body() ?? nothing) : sectionBody(host, section)}</fieldset>`
-      : nothing}
+  const badge = WATCH_TILE_SECTION_BADGES[section];
+  const changed = section === "size" ? extras.size?.changed?.() === true : watchTileSectionChanged(host, section);
+  // A fieldset only to switch every control off at once while a save is out.
+  // Drawn only while open: a body is work, and the Icon one can edit.
+  const body = open
+    ? html`<fieldset class="ts-body" id=${`ts-body-${section}`} ?disabled=${host.busy} aria-label=${title}>${section === "size" ? (extras.size?.body() ?? nothing) : sectionBody(host, section)}</fieldset>`
+    : html``;
+  return sectionCard({
+    color: badge.color,
+    icon: uiIcon(badge.icon),
+    title,
+    open,
+    onToggle: () => toggle(host, section),
+    ...(summary === "" ? {} : { summary }),
+    dot: changed,
+    id: `${KEY}:${section}`,
+  }, body);
+}
+
+// ── the changed dot ──────────────────────────────────────────────────────
+
+/** The tile keys each section edits, for the changed dot: the section reads
+ * as changed when what its rows read differs from what they would read with
+ * these keys gone. */
+const SECTION_KEYS: Readonly<Partial<Record<WatchTileSettingsSection, readonly string[]>>> = {
+  request: [
+    "httpResponseDisplay", "httpToastSeconds", "httpAutoRefreshInterval", "httpAutoRefreshOnOpen", "httpAutoRefreshOnPull",
+    "httpTileValueShowName", "httpTileValueFontSize", "httpTileValueLineLimit", "httpTileValueLineSpacing", "httpTileValueOffsetY",
+    "httpTileValueColorHex",
+  ],
+  macro: ["macroRunSilently", "macroCloseMode", "autoCloseMacroRun"],
+  // The icon and the color are compared to the kind's defaults instead.
+  icon: ["iconSizeOverride", "iconShadow", "dimWhenOff", "iconTapAnimation", "stateIcons", "stateColors"],
+  // The label is the Name card's, not this one's.
+  text: ["showLabel", "labelFontSizeOverride", "labelFontWeight", "labelFontDesign", "labelShadow", "labelColorHex"],
+  action: [
+    "singleTapAction", "holdSlideActions", "holdSlideTriggerTargets", "holdSlideHTTPActionTargets", "holdSlideHTTPActionShowBanner",
+    "holdSlideHTTPActionBannerSeconds", "requiresConfirmation", "hideWhenInactive", "automationSkipConditionOverride",
+  ],
+};
+
+/** Whether `read` gives the tile something other than it gives the same
+ * tile with `keys` removed: a stored value that is not the one the watch
+ * would use anyway. The iPhone app stores most keys at their defaults, so a
+ * key merely being there says nothing. */
+function readsOtherThanDefault(tile: WatchPageTile, keys: readonly string[], read: (tile: WatchPageTile) => unknown): boolean {
+  if (!keys.some((key) => Object.hasOwn(tile, key))) return false;
+  const bare: Record<string, unknown> = { ...tile };
+  for (const key of keys) delete bare[key];
+  return JSON.stringify(read(tile)) !== JSON.stringify(read(bare as WatchPageTile));
+}
+
+/** The label weight the iPhone app stores on every tile it saves. */
+const PHONE_DEFAULT_FONT_WEIGHT = "light";
+
+/** The label weight the watch reads with no key. */
+const ABSENT_FONT_WEIGHT = watchTileTextSettings({} as WatchPageTile).fontWeight;
+
+/** What each section's rows read, for `readsOtherThanDefault`. */
+const SECTION_READS: Readonly<Partial<Record<WatchTileSettingsSection, (tile: WatchPageTile) => unknown>>> = {
+  request: (t) => watchHTTPRequestSettings(t),
+  macro: (t) => watchMacroSettings(t),
+  icon: (t) => {
+    const s = watchTileIconSettings(t);
+    const map = (v: unknown) => (typeof v === "object" && v !== null && Object.keys(v).length > 0 ? v : undefined);
+    return [s.iconSize, s.iconShadow, s.dimWhenOff.value, s.tapAnimation, map(t.stateIcons), map(t.stateColors)];
+  },
+  text: (t) => {
+    const { label: _label, ...rest } = watchTileTextSettings(t);
+    // Every tile the iPhone app saves carries its own default weight, Light
+    // (all 94 tiles of the test fixtures), where an absent key reads Regular:
+    // both are a default, neither is a change.
+    return rest.fontWeight === PHONE_DEFAULT_FONT_WEIGHT ? { ...rest, fontWeight: ABSENT_FONT_WEIGHT } : rest;
+  },
+  action: (t) => {
+    const a = watchTileActionSettings(t);
+    const slides = ["holdSlideActions", "holdSlideTriggerTargets", "holdSlideHTTPActionTargets", "holdSlideHTTPActionShowBanner", "holdSlideHTTPActionBannerSeconds"]
+      .map((key) => t[key]);
+    return [watchSingleTapSettings(t).resolvedLabel, a.askBeforeRunning.value, a.hideWhenOff, a.skipConditions.value, slides];
+  },
+};
+
+/**
+ * Whether a section holds a value of the tile's own, which its card marks
+ * with the changed dot: one of its keys stored with a value that reads other
+ * than the key's absence would (`readsOtherThanDefault`). The icon and the
+ * color count only away from the kind's defaults (what Default writes, and
+ * what its chip shows as on); a header only away from a plain line with no
+ * glow in its default color; the styling tasks (State, Border, Background)
+ * while their Reset would change something (`taskModified`, what Reset is
+ * shown for). Opens, Target and a special task always hold a choice, and
+ * Size a place, and never show it.
+ */
+export function watchTileSectionChanged(host: TileSettingsHost, section: WatchTileSettingsSection): boolean {
+  const tile = host.tile;
+  const keys = SECTION_KEYS[section] ?? [];
+  const read = SECTION_READS[section];
+  const stored = read !== undefined && readsOtherThanDefault(tile, keys, read);
+  switch (section) {
+    case "request":
+    case "macro":
+    case "text":
+    case "action":
+      return stored;
+    case "icon": {
+      if (stored) return true;
+      const s = watchTileIconSettings(tile);
+      if (s.icon === undefined && s.color === undefined) return false;
+      const defaults = host.domainStyle === true ? { icon: undefined, color: undefined } : kindDefaults(host);
+      const ownIcon = s.icon !== undefined && (defaults.icon === undefined || s.icon !== defaults.icon);
+      const ownColor = s.color !== undefined && (defaults.color === undefined || !sameWatchColor(s.color, defaults.color));
+      return ownIcon || ownColor;
+    }
+    case "header": {
+      const h = watchHeaderSettings(tile);
+      if (h === undefined) return false;
+      const defaultColor = kindDefaults(host).color;
+      return h.style === "label" || h.label !== undefined || h.textSize !== undefined || watchGlowPercent(h.glow) > 0
+        || (h.color !== undefined && (defaultColor === undefined || !sameWatchColor(h.color, defaultColor)));
+    }
+    case "state":
+    case "border":
+    case "background":
+      return taskModified(host, section);
+    case "opens":
+    case "target":
+    case "special":
+    case "size":
+      return false;
+  }
+}
+
+// ── name ─────────────────────────────────────────────────────────────────
+
+/**
+ * The pinned Name card at the top of the inspector, a tile's or a page's:
+ * one header row with its badge, its title and the name's box, and under it
+ * an optional line. A div rather than a label round the row, as the
+ * complication editor's: a label hands its clicks to its first control.
+ */
+export function watchNameSection(input: TemplateResult, under: TemplateResult | typeof nothing = nothing): TemplateResult {
+  return html`<section class="sec name-sec" data-open="true" style=${`--c:${WATCH_NAME_BADGE.color}`}>
+    <div class="sec-h pinned">
+      <span class="swatch">${uiIcon(WATCH_NAME_BADGE.icon)}</span>
+      <h4>Name</h4>
+      ${input}
+    </div>
+    ${under === nothing ? nothing : html`<div class="sec-b ts-name-b">${under}</div>`}
   </section>`;
+}
+
+/**
+ * The tile's label as its Name card, for every tile with a Text section (a
+ * header's words are its Header's, a spacer has none), and never for a
+ * rule's style, whose tiles carry each entity's own name. Empty shows the
+ * name the watch falls back to and stores no label. Inside a `.ts-root`, so
+ * the editor lets the box go when the selection moves, as it does the
+ * settings' own fields.
+ */
+export function renderTileName(host: TileSettingsHost): TemplateResult | typeof nothing {
+  if (host.domainStyle === true || !watchTileSettingsSections(host.tile, host.hass.states).includes("text")) return nothing;
+  const tile = host.tile;
+  const fallback = watchTileFallbackName(tile, host.hass.states, watchPagesOf(host.document), host.catalog);
+  const label = typed(host, "label") ?? watchTileTextSettings(tile).label ?? "";
+  const set = (v: string) =>
+    commit(host, "label", (d) => setWatchTileLabel(d, host.pageId, host.tileId, v, { emptyRemoves: true }), { typing: true });
+  const entityId = tileEntityId(tile);
+  const input = typingField(host, "label", html`<input type="text" aria-label="Label" .value=${label} placeholder=${fallback}
+    ?disabled=${host.busy} @input=${(e: Event) => set((e.target as HTMLInputElement).value)} />`);
+  return html`<div class="ts-root ts-name-root">${watchNameSection(input, html`
+    <div class="hint keep">${watchLabelNote(tile)}</div>
+    ${entityId === "" ? nothing : html`<div class="ts-entity"><code>${entityId}</code></div>`}`)}</div>`;
 }
 
 /** What a folded section's heading says it holds. */
@@ -1001,8 +1182,6 @@ export function reasonOf(reason: string | undefined): { reason?: string } {
 function renderText(host: TileSettingsHost): TemplateResult {
   const tile = host.tile;
   const t = watchTileTextSettings(tile);
-  const fallback = watchTileFallbackName(tile, host.hass.states, watchPagesOf(host.document), host.catalog);
-  const label = typed(host, "label") ?? t.label ?? "";
   const fontSize = typedNumber(typed(host, "fontSize"), t.fontSize);
   const setFontSize = (v: number | undefined) =>
     commit(host, "fontSize", (d) => setWatchTileFontSize(d, host.pageId, host.tileId, v ?? null), { typing: true, ...(v === undefined ? {} : reasonOf(watchFontSizeRefusal(v))) });
@@ -1014,13 +1193,9 @@ function renderText(host: TileSettingsHost): TemplateResult {
     // switch goes back to what is stored.
     host.requestUpdate();
   };
-  // A rule's tiles each carry their entity's own name: no name row.
+  // The label itself is the Name card's (`renderTileName`); a rule's tiles
+  // each carry their entity's own name and have none.
   return html`
-    ${host.domainStyle === true
-      ? nothing
-      : html`${typingField(host, "label", textField("Label", label, (v) =>
-          commit(host, "label", (d) => setWatchTileLabel(d, host.pageId, host.tileId, v, { emptyRemoves: true }), { typing: true }), { placeholder: fallback }))}
-        <div class="hint ts-under">${watchLabelNote(tile)}</div>`}
     ${checkField("Show label", t.showLabel, (on) => commit(host, "showLabel", (d) => setWatchTileShowLabel(d, host.pageId, host.tileId, on)))}
     ${typingField(host, "fontSize", html`<div class="ts-with-link">
       ${numberField("Font size", fontSize, setFontSize, { step: 1, min: WATCH_FONT_SIZE_RANGE.min, max: WATCH_FONT_SIZE_RANGE.max, optional: true, placeholder: "Auto", unit: "pt" })}
@@ -1607,27 +1782,21 @@ function renderEffect(host: TileSettingsHost, g: ReturnType<typeof watchTileBack
 /** This module's rules, in the page editor's sheet after the shared form
  * rules and the editor's own. Prefix classes with `ts-`. */
 export const tileSettingsStyles = css`
-  .ts-root { display: flex; flex-direction: column; margin: 4px -14px 4px; border-top: 1px solid var(--wa-line); }
-  .ts-sec { border-bottom: 1px solid var(--wa-line); }
-  .ts-h { margin: 0; font: inherit; }
-  .ts-fold {
-    display: flex; align-items: center; gap: 8px; width: 100%; min-height: 38px; padding: 0 14px;
-    border: 0; background: none; color: var(--wa-ink); font: inherit; font-size: 12.5px; font-weight: 650;
-    text-align: left; cursor: pointer;
-  }
-  .ts-fold:hover { background: var(--wa-field); }
-  .ts-fold:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--wa-accent); }
-  .ts-title { flex: none; }
-  .ts-sum { flex: 1; min-width: 0; color: var(--wa-muted); font-size: 11.5px; font-weight: 500; text-align: right;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .ts-chev { flex: none; margin-left: auto; color: var(--wa-muted); opacity: .7; display: grid; place-items: center; transition: transform .15s ease-out; }
-  .ts-sum + .ts-chev { margin-left: 0; }
-  .ts-chev svg.ui-icon { width: 14px; height: 14px; }
-  .ts-sec[data-open="true"] .ts-chev { transform: rotate(180deg); }
+  /* The section cards are the shared inspector's (\`.sec\`, editor-chrome.ts);
+     this only stacks them. */
+  .ts-root { display: flex; flex-direction: column; }
+  /* The Name card's box takes the header's free width, its line sits under. */
+  .name-sec .sec-h > .ts-typing { flex: 1 1 auto; min-width: 0; display: flex; }
+  .name-sec .sec-h > .ts-typing > input { flex: 1 1 auto; width: 0; min-width: 0; }
+  .ts-name-b { display: flex; flex-direction: column; gap: 2px; }
+  .ts-name-b > .hint { margin: 0; }
+  .ts-entity { min-width: 0; font-size: 11.5px; color: var(--wa-muted); overflow-wrap: anywhere; }
+  /* The row under the last card: Delete tile. */
+  .ts-acts { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 0 0; }
   /* A fieldset only to switch every control off at once while a save is
      out; it draws nothing of its own. */
   fieldset.ts-body, fieldset.ts-plain { margin: 0; padding: 0; border: 0; min-width: 0; }
-  fieldset.ts-body { display: flex; flex-direction: column; gap: 2px; padding: 2px 14px 12px 14px; --wa-lab: 84px; }
+  fieldset.ts-body { display: flex; flex-direction: column; gap: 2px; padding: 2px 0 0; --wa-lab: 84px; }
   .ts-body .hint { margin: 0 0 4px; }
   .ts-body .hint.ts-under { padding-left: calc(var(--wa-lab) + 8px); margin-top: -2px; }
   .ts-nested .hint.ts-under { padding-left: calc(var(--wa-lab) + 8px); }

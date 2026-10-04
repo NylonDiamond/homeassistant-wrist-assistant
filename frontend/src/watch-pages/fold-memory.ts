@@ -58,11 +58,32 @@ export function sectionOpen(uiState: ReadonlyMap<string, unknown>, module: strin
 
 /** Open or fold the section, for this visit and the next. */
 export function setSectionOpen(uiState: Map<string, unknown>, module: string, section: string, open: boolean): void {
-  uiState.set(stateKey(module, section), open);
-  const id = `${module}:${section}`;
+  setSectionsOpen(uiState, [{ module, section }], open);
+}
+
+/** One section of one settings module, as the inspector's Collapse all
+ * names it. */
+export interface FoldId {
+  module: string;
+  section: string;
+}
+
+/** Whether any of the sections is open: what the inspector's head offers,
+ * Collapse all while one is, Expand all once none is. */
+export function anySectionOpen(uiState: ReadonlyMap<string, unknown>, ids: readonly FoldId[]): boolean {
+  return ids.some((id) => sectionOpen(uiState, id.module, id.section));
+}
+
+/** Open or fold every one of the sections, for this visit and the next, in
+ * one write of the stored folds. */
+export function setSectionsOpen(uiState: Map<string, unknown>, ids: readonly FoldId[], open: boolean): void {
   const closed = new Set(storedFolds());
-  if (open) closed.delete(id);
-  else closed.add(id);
+  for (const { module, section } of ids) {
+    uiState.set(stateKey(module, section), open);
+    const id = `${module}:${section}`;
+    if (open) closed.delete(id);
+    else closed.add(id);
+  }
   try {
     const store = storage();
     if (!store) return;

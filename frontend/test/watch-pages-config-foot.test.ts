@@ -152,33 +152,41 @@ describe("the page editor", () => {
     expect(text).toContain(">Raw configuration</button>");
     expect(text).not.toContain("Stored copy</h3>");
     expect(text).not.toContain("Earlier saves</h3>");
-    expect(text.indexOf("</aside>")).toBeLessThan(text.indexOf(`<footer class="cf-bar"`));
+    const inspector = text.indexOf(`<div class="column inspector card">`);
+    expect(inspector).toBeGreaterThan(-1);
+    expect(inspector).toBeLessThan(text.indexOf(`<footer class="cf-bar"`));
   });
 
-  it("draws the Page card under the watch, inside the stage card, and leaves the side column to the Tile card", () => {
+  it("draws the page's own cards in the inspector column with no tile selected, none of them under the watch", () => {
     const text = body();
-    const stage = text.indexOf(`class="pe-card pe-stage"`);
-    const settings = text.indexOf(`class="pe-stage-settings"`);
-    const pageCard = text.indexOf(`class="pe-card pe-page-card"`);
-    const side = text.indexOf(`<aside class="pe-side">`);
-    expect(stage).toBeGreaterThan(-1);
-    expect(text.indexOf(`class="pe-stage-body"`)).toBeGreaterThan(stage);
-    expect(settings).toBeGreaterThan(text.indexOf(`class="pe-stage-body"`));
-    expect(pageCard).toBeGreaterThan(settings);
-    expect(pageCard).toBeLessThan(text.indexOf("</section>", stage));
-    expect(side).toBeGreaterThan(pageCard);
-    const aside = text.slice(side, text.indexOf("</aside>"));
-    expect(aside).toContain("Select a tile to edit it, or add one.");
-    expect(aside).not.toContain("pe-page-card");
+    const canvas = text.indexOf(`<div class="column canvas">`);
+    const inspector = text.indexOf(`<div class="column inspector card">`);
+    expect(canvas).toBeGreaterThan(-1);
+    expect(inspector).toBeGreaterThan(canvas);
+    expect(text.slice(canvas, inspector)).not.toContain("Hidden on the watch");
+    expect(text.slice(canvas, inspector)).not.toContain(`class="sec name-sec"`);
+    const side = text.slice(inspector, text.indexOf(`<footer class="cf-bar"`));
+    expect(side).toContain(`<div class="insp-head">`);
+    expect(side).toContain(`>Page</span><span class="nm"`);
+    expect(side).toContain(`class="sec name-sec"`);
+    expect(side).toContain(`aria-label="Page name"`);
+    expect(side).toContain("Hidden on the watch");
+    expect(side).toContain("Select a tile to edit it, or add one.");
+    expect(side).toContain("Delete page…");
+    expect(side).not.toContain("pe-page-card");
   });
 
-  it("goes to two columns of fields only when the stage is wide", () => {
+  it("wears the complication editor's chrome, with no settings left under the watch", () => {
     const element = customElements.get("wa-page-editor") as unknown as { styles: unknown };
     const sheet = (s: unknown): string => (Array.isArray(s) ? s.map(sheet).join("\n") : String((s as { cssText?: string } | undefined)?.cssText ?? ""));
     const css = sheet(element.styles);
-    expect(css).toMatch(/\.pe-stage-settings\s*\{[^}]*container:\s*pe-settings\s*\/\s*inline-size/);
-    expect(css).toMatch(/@container pe-settings \(min-width: 700px\)\s*\{[^@]*\.pe-page-card \.ps-root \{[^}]*columns: 2/);
-    expect(css).toContain(".cf-bar");
+    for (const selector of [".wa-bar", ".layout {", ".card.lc", ".layer {", ".canvas-card", ".stage-tools", ".values-bar", ".cf-bar"]) {
+      expect(css, selector).toContain(selector);
+    }
+    expect(css).not.toContain(".pe-stage-settings");
+    const text = body();
+    expect(text).toContain(`<div class="layout pe-layout`);
+    expect(text).not.toContain("pe-stage-settings");
   });
 });
 
@@ -263,7 +271,47 @@ describe("the sticky top block", () => {
     return flat((el.render as () => unknown).call(el));
   }
 
-  for (const tag of ["wa-page-editor", "wa-menu-editor"] as const) {
+  /** The sticky block's rule and the host's, which both editors keep. */
+  function expectStickyBlock(tag: "wa-page-editor" | "wa-menu-editor"): void {
+    const css = styles(tag);
+    const block = rule(css, ".pe-top");
+    expect(block).toMatch(/position:\s*sticky/);
+    expect(block).toMatch(/top:\s*calc\(-1 \* var\(--cf-pad, 16px\)\)/);
+    expect(block).toMatch(/z-index:\s*7/);
+    expect(block).toMatch(/background:\s*var\(--wa-bg\)/);
+    expect(block).toMatch(/margin:\s*calc\(-1 \* var\(--cf-pad, 16px\)\) calc\(-1 \* var\(--cf-pad, 16px\)\) 0/);
+    // Above the foot bar's own layer, which the cards sit under.
+    expect(rule(css, ".cf-bar")).toMatch(/z-index:\s*6/);
+    expect(rule(css, ":host")).toMatch(/scroll-padding-top:\s*var\(--pe-top-h, 0px\)/);
+  }
+
+  it("wa-page-editor: draws its own top bar, the complication editor's, as the sticky block, edge to edge", () => {
+    const text = drawn("wa-page-editor", "wa-page-editor-sticky", false);
+    const top = text.indexOf(`<div class="pe-top">`);
+    expect(top).toBe(text.search(/\S/));
+    const bar = text.indexOf(`<div class="wa-bar `);
+    expect(bar).toBeGreaterThan(top);
+    // The old title line and toolbar are gone.
+    expect(text).not.toContain("Watch pages</h2>");
+    expect(text).not.toContain(`class="pe-tools"`);
+    // The bar closes inside the block: the body comes after it.
+    expect(text.indexOf(`class="pe-empty"`)).toBeGreaterThan(bar);
+    expectStickyBlock("wa-page-editor");
+  });
+
+  it("wa-page-editor: says when the stored copy was saved, beside Save, and Unsaved changes on it while dirty", () => {
+    const clean = drawn("wa-page-editor", "wa-page-editor-saved-clean", false);
+    expect(clean).toContain(">Saved 5 min ago</span>");
+    expect(clean.indexOf(">Save</button>")).toBeLessThan(clean.indexOf(">Saved 5 min ago<"));
+    expect(clean).toContain(`class="primary save "`);
+    expect(clean).not.toContain("Unsaved changes");
+    const dirty = drawn("wa-page-editor", "wa-page-editor-saved-dirty", true);
+    expect(dirty).toContain(`class="primary save dirty"`);
+    expect(dirty).toContain(`<span class="tb-saved" title=Unsaved changes>`);
+    expect(dirty).toContain(">Saved 5 min ago</span>");
+  });
+
+  for (const tag of ["wa-menu-editor"] as const) {
     it(`${tag}: wraps the title, the tabs and the toolbar in one sticky block, edge to edge`, () => {
       const text = drawn(tag, `${tag}-sticky`, false);
       const top = text.indexOf(`<div class="pe-top">`);
@@ -298,7 +346,7 @@ describe("the sticky top block", () => {
   }
 
   it("moves the page editor's sticky columns and the menu preview under the block", () => {
-    const pages = rule(styles("wa-page-editor"), ".pe-pages, .pe-side");
+    const pages = rule(styles("wa-page-editor"), ".pe-layout > .column.left, .pe-layout > .column.inspector");
     expect(pages).toContain("--pe-under-top: max(0px, calc(var(--pe-top-h, 0px) - var(--cf-pad, 16px)))");
     expect(pages).toMatch(/top:\s*var\(--pe-under-top\)/);
     expect(pages).toMatch(/max-height:\s*calc\(var\(--pe-view-h, calc\(100dvh - 120px\)\) - 30px - var\(--pe-under-top\)\)/);

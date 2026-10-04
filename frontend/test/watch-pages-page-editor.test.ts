@@ -1,11 +1,27 @@
 // The page editor element itself, where it can be read without a page: the
 // keys it leaves to a focused field, and the stage's tiles, which stand on
-// the page's own background rather than on a patch of its color.
+// the page's own background rather than on a patch of its color. Then the
+// complication editor's chrome it wears: the top bar, the Tiles card, the
+// canvas head with its watch chips, the Live strip and the zoom.
 
+import { html } from "lit";
 import { describe, expect, it } from "vitest";
 
+import type { HassLike, OwnerSummary, WatchConfigRecord } from "../src/ha-api.js";
+import { REFERENCE_CASE } from "../src/renderer.js";
 import { watchKeysTypeText } from "../src/watch-pages/editor-host.js";
+import { takeWatchPagesRecord } from "../src/watch-pages/kept.js";
+import type { WatchPagesDocument } from "../src/watch-pages/model.js";
 import "../src/watch-pages/page-editor.js";
+import {
+  STAGE_ZOOM_KEY,
+  loadStageZoom,
+  saveStageZoom,
+  stageFitZoom,
+  stageZoomIn,
+  stageZoomLabel,
+  stageZoomOut,
+} from "../src/watch-pages/stage.js";
 
 function sheet(): string {
   const element = customElements.get("wa-page-editor") as unknown as { styles: unknown };
@@ -38,5 +54,277 @@ describe("the stage", () => {
     expect(tile).toContain("position: absolute");
     expect(tile).toMatch(/background:\s*transparent/);
     expect(sheet()).not.toContain("--pe-base");
+  });
+});
+
+// ── the chrome ──────────────────────────────────────────────────────────
+
+/** A template flattened to its markup, values in place (a bound attribute
+ * comes out unquoted, a boolean as true or false). A `repeat()` is drawn
+ * with its own template, so its rows are there too. */
+const flat = (v: unknown): string => {
+  if (Array.isArray(v)) return v.map(flat).join("");
+  if (v !== null && typeof v === "object" && "strings" in v && "values" in v) {
+    const r = v as { strings: readonly string[]; values: unknown[] };
+    return r.strings.map((s, i) => s + (i < r.values.length ? flat(r.values[i]) : "")).join("");
+  }
+  if (v !== null && typeof v === "object" && "_$litDirective$" in v && "values" in v) {
+    const [items, second, third] = (v as { values: unknown[] }).values;
+    const draw = (third ?? second) as unknown;
+    if (Array.isArray(items) && typeof draw === "function") return items.map((item, i) => flat((draw as (x: unknown, i: number) => unknown)(item, i))).join("");
+    return "";
+  }
+  return typeof v === "string" || typeof v === "number" || typeof v === "boolean" ? String(v) : "";
+};
+
+/** One page whose tiles are stored out of reading order: Gap (row 6),
+ * Bottom (row 3), Right (row 0, column 6), Left (row 0, column 0). Left has
+ * state icons, Right a tap of its own; Gap is a spacer, which may repeat. */
+const HALL: WatchPagesDocument = {
+  schemaVersion: 1,
+  pages: [
+    {
+      id: "P-HALL", name: "Hall", items: [
+        { id: "T-GAP", entityId: "spacer.5A17E000-0000-4000-8000-0000000000AA", gridRow: 6, gridCol: 0, colSpan: 2, rowSpan: 2, showLabel: false },
+        { id: "T-BOTTOM", entityId: "light.bottom", customLabel: "Bottom", gridRow: 3, gridCol: 0, colSpan: 4, rowSpan: 3 },
+        { id: "T-RIGHT", entityId: "light.right", customLabel: "Right", gridRow: 0, gridCol: 6, colSpan: 6, rowSpan: 3, singleTapAction: "moreInfo" },
+        { id: "T-LEFT", entityId: "switch.left", customLabel: "Left", gridRow: 0, gridCol: 0, colSpan: 6, rowSpan: 3, stateIcons: { on: "bolt.fill" } },
+      ],
+    },
+    { id: "P-YARD", name: "Yard", items: [] },
+  ],
+} as unknown as WatchPagesDocument;
+
+const WATCHES = [
+  { owner_watch_id: "chrome-w1", device_name: "Jesse's Watch", device_kind: "watch", paired_iphone_name: null },
+  { owner_watch_id: "chrome-w2", device_name: "Chen's Watch", device_kind: "watch", paired_iphone_name: null },
+] as unknown as OwnerSummary[];
+
+let editors = 0;
+
+/** The editor with HALL open on the first watch, an administrator's hass,
+ * and the panel's Watch settings button handed in. */
+function editor(selectedTileId?: string) {
+  const watchId = `${WATCHES[0]!.owner_watch_id}-${++editors}`;
+  const owners = [{ ...WATCHES[0]!, owner_watch_id: watchId }, WATCHES[1]!] as OwnerSummary[];
+  const Ctor = customElements.get("wa-page-editor") as unknown as new () => Record<string, unknown>;
+  const el = new Ctor();
+  el.hass = {
+    user: { is_admin: true },
+    states: { "light.right": { entity_id: "light.right", state: "on", attributes: { friendly_name: "Right lamp" } } },
+  } as unknown as HassLike;
+  el.owners = owners;
+  el.watchId = watchId;
+  el.record = {
+    kind: "pages", revision: 4, hash: null, updated_at: new Date(Date.now() - 2 * 60_000).toISOString(), updated_by: "panel",
+    delivered_revision: 4, delivered_at: null, document: HALL,
+  } as unknown as WatchConfigRecord;
+  el.barActions = html`<button class="tb-btn tb-watch">Watch settings</button>`;
+  // The inspector's own markup is not what these tests read, and its field
+  // rows ask the document what has focus, which Node does not have.
+  el.renderInspector = () => html`<div class="insp-stub"></div>`;
+  takeWatchPagesRecord(watchId, HALL, 4);
+  el.selectedPageId = "P-HALL";
+  el.selectedTileId = selectedTileId;
+  return {
+    el,
+    owners,
+    whole: () => flat((el.render as () => unknown).call(el)),
+    body: () => flat((el.renderBody as (w: readonly OwnerSummary[]) => unknown).call(el, owners)),
+  };
+}
+
+/** The markup of the Tiles row for one tile. */
+function tileRow(text: string, id: string): string {
+  const at = text.search(new RegExp(`data-row-tile=${id}\\s`));
+  if (at < 0) return "";
+  const start = text.lastIndexOf(`<div class="layer pe-tile-row`, at);
+  const next = text.indexOf(`<div class="layer pe-tile-row`, at);
+  return text.slice(start, next < 0 ? undefined : next);
+}
+
+/** Where each tile's row is in the markup, in the order asked. */
+function rowPlaces(text: string, ids: readonly string[]): number[] {
+  return ids.map((id) => text.search(new RegExp(`data-row-tile=${id}\\s`)));
+}
+
+describe("the top bar", () => {
+  it("has the way back, Add page, the sync pill, ···, Save, when it was saved, Menus, Watch settings and the help", () => {
+    const text = editor().whole();
+    const bar = text.slice(text.indexOf(`<div class="wa-bar`), text.indexOf(`<div class="layout`));
+    const order = [
+      `class="tb-btn tb-back"`, `class="tb-btn tb-new"`, `class="tb-sync ok"`, `class="tb-btn tb-more"`,
+      `class="primary save `, `<span class="tb-saved"`, `class="tb-btn tb-menus"`, `class="tb-btn tb-watch"`, `class="help"`,
+    ];
+    for (const part of order) expect(bar, part).toContain(part);
+    const places = order.map((part) => bar.indexOf(part));
+    expect([...places].sort((a, b) => a - b)).toEqual(places);
+    expect(bar).toContain(">Complications</span>");
+    expect(bar).toContain(">Add page</span>");
+    expect(bar).toContain(">Collected</span>");
+    expect(bar).toContain(">Saved 2 min ago</span>");
+    expect(bar).toContain(">Menus</span>");
+    // Undo and Redo moved to the canvas head; the old toolbar is gone.
+    expect(bar).not.toContain(`aria-label="Undo"`);
+    expect(text).not.toContain(`class="pe-tools"`);
+  });
+
+  it("says Waiting while no device has collected the save, and opens the ··· menu with Discard edits", () => {
+    const { el, whole } = editor();
+    el.record = { ...(el.record as WatchConfigRecord), delivered_revision: 3 };
+    el.topMenuOpen = true;
+    const text = whole();
+    expect(text).toContain(`class="tb-sync warn"`);
+    expect(text).toContain(">Waiting to be collected</span>");
+    expect(text).toContain(">Discard edits</button>");
+  });
+});
+
+describe("the Tiles card", () => {
+  it("lists the page's tiles in reading order, row then column, with their badges", () => {
+    const text = editor().body();
+    const card = text.slice(text.indexOf(`class="card lc pe-tiles-card"`));
+    expect(card).toContain(`<span class="lc-title">Tiles</span>`);
+    const places = rowPlaces(card, ["T-LEFT", "T-RIGHT", "T-BOTTOM", "T-GAP"]);
+    expect(places.every((p) => p > -1)).toBe(true);
+    expect([...places].sort((a, b) => a - b)).toEqual(places);
+    expect(tileRow(card, "T-LEFT")).toContain(">rules</span>");
+    expect(tileRow(card, "T-LEFT")).toContain(`<span class="kind">Switch</span> · 6×3</small>`);
+    expect(tileRow(card, "T-RIGHT")).toContain(">action</span>");
+    expect(tileRow(card, "T-BOTTOM")).not.toContain("badge states");
+    expect(tileRow(card, "T-BOTTOM")).not.toContain("badge tap");
+    expect(tileRow(card, "T-BOTTOM")).toContain(" · 4×3</small>");
+    // Each row has its face in the thumb, and on hover Duplicate and Delete.
+    expect(tileRow(card, "T-BOTTOM")).toContain(`<span class="thumb pe-thumb"`);
+    expect(tileRow(card, "T-BOTTOM")).toContain(`aria-label=Duplicate Bottom`);
+    expect(tileRow(card, "T-BOTTOM")).toContain(`aria-label=Delete Bottom`);
+  });
+
+  it("lights the selected tile's row and no other", () => {
+    const text = editor("T-RIGHT").body();
+    expect(tileRow(text, "T-RIGHT")).toMatch(/^<div class="layer pe-tile-row hl /);
+    expect(tileRow(text, "T-LEFT")).toMatch(/^<div class="layer pe-tile-row  /);
+  });
+
+  it("says a smart page fills itself instead of listing tiles", () => {
+    const { el, body } = editor();
+    const smart = { ...HALL, pages: [{ id: "P-SMART", name: "Lights on", dynamicConfig: { rules: [] } }] } as unknown as WatchPagesDocument;
+    const watchId = el.watchId as string;
+    takeWatchPagesRecord(`${watchId}-smart`, smart, 1);
+    el.watchId = `${watchId}-smart`;
+    el.selectedPageId = "P-SMART";
+    const text = body();
+    const card = text.slice(text.indexOf(`class="card lc pe-tiles-card"`));
+    expect(card).toContain("A smart page fills itself.");
+    expect(card).not.toContain("pe-tile-row");
+  });
+
+  it("lists the pages in the Pages card, the open one lit", () => {
+    const text = editor().body();
+    const card = text.slice(text.indexOf(`class="card lc pe-pages-card`), text.indexOf(`class="card lc pe-tiles-card"`));
+    expect(card).toContain(">2 pages</span>");
+    expect(card).toMatch(/class="layer pe-page-row hl [^"]*"\s+data-page=P-HALL/);
+    expect(card).toMatch(/class="layer pe-page-row  [^"]*"\s+data-page=P-YARD/);
+  });
+});
+
+describe("the canvas head", () => {
+  it("shows the page's name to type over, a chip per watch with the open one lit, and the page's facts", () => {
+    const { body, owners } = editor();
+    const text = body();
+    const head = text.slice(text.indexOf(`<div class="cv-head">`), text.indexOf(`<div class="stage-area`));
+    expect(head).toContain(`class="tb-name-input"`);
+    expect(head).toContain(`.value=Hall`);
+    expect(head).toContain(`class="doc-chip on"`);
+    expect(head.match(/class="doc-chip /g)).toHaveLength(owners.length);
+    expect(head).toContain(">Jesse's Watch</span>");
+    expect(head).toContain(">Chen's Watch</span>");
+    expect(head).toContain(`4 tiles · 8 rows · ${REFERENCE_CASE.label}`);
+    expect(head).toContain(`aria-label="Undo"`);
+    expect(head).toContain(`aria-label="Redo"`);
+  });
+
+  it("offers Duplicate and Delete for the selected tile only, and Duplicate only where the copy may go", () => {
+    const head = (text: string) => text.slice(text.indexOf(`<div class="cv-head">`), text.indexOf(`<div class="stage-area`));
+    const none = head(editor().body());
+    expect(none).toContain(`?disabled=true title=Select a tile to duplicate it.`);
+    expect(none).toMatch(/<button class="cv-act icon danger" \?disabled=true/);
+    // A spacer may repeat on a page: it copies.
+    const gap = head(editor("T-GAP").body());
+    expect(gap).toContain(`?disabled=false title=Duplicate the selected tile`);
+    expect(gap).toMatch(/<button class="cv-act icon danger" \?disabled=false/);
+    // A page holds one tile per light: a second one has nowhere to go.
+    const light = head(editor("T-BOTTOM").body());
+    expect(light).toContain(`?disabled=true title=This page already has a tile for that entity.`);
+    expect(light).toContain(`title=Delete the selected tile (Delete or Backspace)`);
+  });
+
+  it("copies a spacer onto the page and selects the copy", () => {
+    const { el } = editor("T-GAP");
+    // Not in a document: there is no focused field to let go of.
+    el.leaveTile = () => undefined;
+    (el.duplicateTile as () => void).call(el);
+    const draft = (el as unknown as { draft: { document: WatchPagesDocument } }).draft;
+    const items = (draft.document.pages as { id: string; items: { id: string; entityId: string; gridRow: number }[] }[])[0]!.items;
+    expect(items).toHaveLength(5);
+    const copy = items[4]!;
+    expect(copy.id).not.toBe("T-GAP");
+    expect(copy.entityId).toMatch(/^spacer\./);
+    expect(copy.entityId).not.toBe(items[0]!.entityId);
+    expect(el.selectedTileId).toBe(copy.id);
+  });
+});
+
+describe("the Live strip", () => {
+  it("names the selected tile and its entity's state, or asks for a tile", () => {
+    expect(editor().body()).toContain("Select a tile to see its live state.");
+    const text = editor("T-RIGHT").body();
+    const strip = text.slice(text.indexOf(`<div class="values-foot">`));
+    expect(strip).toContain(`<div class="vchip vpill"`);
+    expect(strip).toContain(`<span class="val">on</span>`);
+  });
+});
+
+describe("the zoom", () => {
+  it("steps through 100% to 200%, fits at 150% or 125% narrow, and is remembered", () => {
+    expect(STAGE_ZOOM_KEY).toBe("wrist-assistant-panel.pages.zoom.v1");
+    expect(stageFitZoom(false)).toBe(1.5);
+    expect(stageFitZoom(true)).toBe(1.25);
+    expect(stageZoomIn(1.5)).toBe(2);
+    expect(stageZoomIn(2)).toBe(2);
+    expect(stageZoomOut(1.5)).toBe(1.25);
+    expect(stageZoomOut(1)).toBe(1);
+    expect(stageZoomIn(1.3)).toBe(1.5);
+    expect([1, 1.25, 1.5, 2].map(stageZoomLabel)).toEqual(["100%", "125%", "150%", "200%"]);
+    const store = new Map<string, string>();
+    const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => { store.set(k, v); } };
+    expect(loadStageZoom(storage)).toBeUndefined();
+    saveStageZoom(2, storage);
+    expect(store.get(STAGE_ZOOM_KEY)).toBe("2");
+    expect(loadStageZoom(storage)).toBe(2);
+    saveStageZoom(undefined, storage);
+    expect(loadStageZoom(storage)).toBeUndefined();
+    store.set(STAGE_ZOOM_KEY, "3");
+    expect(loadStageZoom(storage)).toBeUndefined();
+  });
+
+  it("changes the stage's scale from the strip's buttons, and Fit goes back", () => {
+    const { el, body } = editor();
+    const width = (scale: number) => `width:${REFERENCE_CASE.screen.width * scale}px;`;
+    let text = body();
+    expect(text).toContain(`aria-label=Zoom 150%. Back to fit`);
+    expect(text).toContain(">150%</button>");
+    expect(text).toContain(width(1.5));
+    const setZoom = el.setZoom as (scale: number | undefined) => void;
+    setZoom.call(el, stageZoomIn(1.5));
+    expect(el.zoom).toBe(2);
+    text = body();
+    expect(text).toContain(">200%</button>");
+    expect(text).toContain(width(2));
+    expect(text).toContain(`<button class="tb icon pe-zoom-in" ?disabled=true`);
+    expect(text).toContain(`<button class="tb icon pe-zoom-out" ?disabled=false`);
+    setZoom.call(el, undefined);
+    expect(el.zoom).toBeUndefined();
+    expect(body()).toContain(">150%</button>");
   });
 });

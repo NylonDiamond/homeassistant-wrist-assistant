@@ -4,7 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { FOLD_STORE_KEY, sectionOpen, setSectionOpen } from "../src/watch-pages/fold-memory.js";
+import { FOLD_STORE_KEY, type FoldId, anySectionOpen, sectionOpen, setSectionOpen, setSectionsOpen } from "../src/watch-pages/fold-memory.js";
 
 function memoryStorage() {
   const data: Record<string, string> = {};
@@ -82,5 +82,20 @@ describe("fold memory", () => {
     setSectionOpen(ui, "tile-settings", "action", false);
     expect(sectionOpen(ui, "tile-settings", "action")).toBe(false);
     expect(sectionOpen(new Map(), "tile-settings", "action")).toBe(true);
+  });
+
+  it("turns many sections at once for Collapse all, keeping folds of other modules", () => {
+    const ui = new Map<string, unknown>();
+    setSectionOpen(ui, "page-settings", "theme", false);
+    const ids: FoldId[] = [{ module: "tile-settings", section: "icon" }, { module: "tile-settings", section: "text" }];
+    expect(anySectionOpen(ui, ids)).toBe(true);
+    setSectionsOpen(ui, ids, false);
+    expect(anySectionOpen(ui, ids)).toBe(false);
+    expect(JSON.parse(storage.data[FOLD_STORE_KEY]!)).toEqual({ "page-settings:theme": true, "tile-settings:icon": true, "tile-settings:text": true });
+    setSectionOpen(ui, "tile-settings", "text", true);
+    expect(anySectionOpen(ui, ids)).toBe(true);
+    setSectionsOpen(ui, ids, true);
+    expect(JSON.parse(storage.data[FOLD_STORE_KEY]!)).toEqual({ "page-settings:theme": true });
+    expect(anySectionOpen(ui, [])).toBe(false);
   });
 });

@@ -60,6 +60,8 @@ import {
   watchPageName,
 } from "./model.js";
 import type { HassEntityState } from "../ha-api.js";
+import { SECTION_COLOR } from "../kinds.js";
+import type { UiIconName } from "../ui-icons.js";
 import { type WatchHTTPRefresh, WATCH_HTTP_REFRESH_SECONDS } from "./library-model.js";
 
 // ── sections ─────────────────────────────────────────────────────────────
@@ -77,8 +79,8 @@ export type WatchTileSettingsSection =
   | "text"
   | "border"
   | "action"
-  // A smart page rule's own tile size (part 3f batch 3): drawn only for a
-  // rule's style, whose host hands the section's rows in.
+  // A tile's place and size, and a smart page rule's own tile size (part 3f
+  // batch 3): drawn only when the caller hands the section's rows in.
   | "size"
   | "background";
 
@@ -98,6 +100,71 @@ export const WATCH_TILE_SETTINGS_SECTION_TITLES: Readonly<Record<WatchTileSettin
   size: "Size",
   background: "Background",
 };
+
+/** A section card's mark: the inspector color it is tinted with and the
+ * glyph in its badge. */
+export interface WatchSectionBadge {
+  color: string;
+  icon: UiIconName;
+}
+
+/**
+ * Each tile section's badge, in the complication editor's colors, so a card
+ * that does the same job looks the same in both editors: what the tile is
+ * about (its target, request, macro, header, special task) is Content, its
+ * look is Look, its words are Extras (teal), the per-state look is States,
+ * the tap is Tap and the place on the page is Position.
+ */
+export const WATCH_TILE_SECTION_BADGES: Readonly<Record<WatchTileSettingsSection, WatchSectionBadge>> = {
+  size: { color: SECTION_COLOR.position, icon: "place" },
+  opens: { color: SECTION_COLOR.content, icon: "content" },
+  target: { color: SECTION_COLOR.content, icon: "content" },
+  request: { color: SECTION_COLOR.content, icon: "content" },
+  macro: { color: SECTION_COLOR.content, icon: "content" },
+  header: { color: SECTION_COLOR.content, icon: "content" },
+  special: { color: SECTION_COLOR.content, icon: "content" },
+  icon: { color: SECTION_COLOR.look, icon: "look" },
+  background: { color: SECTION_COLOR.look, icon: "shape" },
+  border: { color: SECTION_COLOR.look, icon: "shape" },
+  text: { color: SECTION_COLOR.numbers, icon: "text" },
+  state: { color: SECTION_COLOR.states, icon: "states" },
+  action: { color: SECTION_COLOR.tap, icon: "tap" },
+};
+
+/** The pinned Name card's badge, a tile's and a page's alike. */
+export const WATCH_NAME_BADGE: WatchSectionBadge = { color: SECTION_COLOR.place, icon: "text" };
+
+/** The breadcrumb chip's color per tile kind: one hue per family of
+ * entity, so the chip reads before its word does. */
+const KIND_CHIP_COLORS: Readonly<Record<string, string>> = {
+  light: "#ffb300",
+  switch: "#26a69a",
+  input_boolean: "#26a69a",
+  fan: "#26a69a",
+  sensor: "#78909c",
+  binary_sensor: "#78909c",
+  cover: "#5c6bc0",
+  climate: "#ec407a",
+  water_heater: "#ec407a",
+  media_player: "#ab47bc",
+  scene: "#fb8c00",
+  script: "#43a047",
+  automation: "#43a047",
+  lock: "#c9a227",
+  page: "#5c6bc0",
+  show_page: "#5c6bc0",
+  macro: "#90a4ae",
+  http_action: "#90a4ae",
+  webhook_inbox: "#90a4ae",
+};
+
+/** Every kind the table does not name: a quiet grey. */
+const KIND_CHIP_OTHER = "#90a4ae";
+
+/** The breadcrumb chip's color for a tile kind (`tileKind`). */
+export function watchTileKindColor(kind: string): string {
+  return Object.hasOwn(KIND_CHIP_COLORS, kind) ? KIND_CHIP_COLORS[kind]! : KIND_CHIP_OTHER;
+}
 
 /** The tile sections that can hold a smart page rule's style (part 3f
  * batch 3), in the order they are drawn: no Opens, Target, Request, Macro,
