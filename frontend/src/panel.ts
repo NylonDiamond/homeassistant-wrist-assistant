@@ -3678,7 +3678,7 @@ export class WristAssistantPanel extends LitElement {
     .xfer-text {
       display: block; width: 100%; box-sizing: border-box; resize: vertical; white-space: pre; overflow: auto;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.45;
-      border-color: transparent; border-radius: 7px; background: var(--wa-field);
+      border-color: var(--wa-line-strong); border-radius: 7px; background: var(--wa-field);
     }
     .xfer-problem { white-space: pre-line; margin: 0; }
     .xfer-link { width: 100%; box-sizing: border-box; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
@@ -5472,7 +5472,7 @@ export class WristAssistantPanel extends LitElement {
     .band-row.hit .le, .band-row.hit .else { color: var(--wa-val); font-weight: 700; }
     .band-row input.band-up {
       width: 100%; min-width: 0; height: 26px; min-height: 26px; padding: 0 6px; border-radius: 6px;
-      border: 1px solid transparent; background-color: var(--wa-field); box-shadow: none;
+      border: 1px solid var(--wa-line-strong); background-color: var(--wa-field); box-shadow: none;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; font-variant-numeric: tabular-nums;
       -moz-appearance: textfield; appearance: textfield;
     }
@@ -5511,9 +5511,9 @@ export class WristAssistantPanel extends LitElement {
     .xy { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 6px; min-width: 0; }
     label.pf {
       position: relative; display: flex; align-items: center; height: 26px; min-width: 0;
-      border-radius: 6px; border: 1px solid transparent; background: var(--wa-field);
+      border-radius: 6px; border: 1px solid var(--wa-line-strong); background: var(--wa-field);
     }
-    label.pf:hover { border-color: var(--wa-line-strong); }
+    label.pf:hover { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
     label.pf:focus-within { border-color: var(--c, var(--wa-accent)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c, var(--wa-accent)) 28%, transparent); }
     label.pf .pl {
       flex: none; width: 22px; align-self: stretch; display: grid; place-items: center;
@@ -5566,9 +5566,9 @@ export class WristAssistantPanel extends LitElement {
        below it: 26px, 12px text and the same soft fill. */
     .sec-b .field.value-chip-field:not(.compact) > button.value-chip {
       min-height: 26px; padding: 2px 8px; font-size: 12px; border-radius: 6px;
-      border-color: transparent; background: var(--wa-field);
+      border-color: var(--wa-line-strong); background: var(--wa-field);
     }
-    .sec-b .field.value-chip-field:not(.compact) > button.value-chip:hover { border-color: var(--wa-line-strong); }
+    .sec-b .field.value-chip-field:not(.compact) > button.value-chip:hover { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
     .value-pop {
       position: fixed; inset: auto; margin: 0; width: min(430px, calc(100vw - 16px));
       max-height: 70vh; overflow: auto; padding: 10px 14px 14px;

@@ -49,7 +49,9 @@ export const formButtonStyles = css`
       border: 1px solid transparent; background: var(--wa-field); color: var(--wa-ink);
       transition: background-color .12s ease-out, border-color .12s ease-out, box-shadow .12s ease-out;
     }
-    .toolbar button:hover:not(:disabled), button.small:hover:not(:disabled) { border-color: transparent; background: var(--wa-hover); }
+    .toolbar button:hover:not(:disabled) { border-color: transparent; background: var(--wa-hover); }
+    button.small:hover:not(:disabled) { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); background: var(--wa-hover); }
+    button.small:where(:not(.primary, .danger)) { border-color: var(--wa-line-strong); }
     .toolbar button:focus-visible, button.primary:focus-visible, button.small:focus-visible, button.danger:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .toolbar button:disabled, button:disabled { opacity: .45; cursor: default; }
     button.primary { background: var(--wa-primary-bg); color: var(--wa-primary-ink); border-color: transparent; font-weight: 600; }
@@ -189,7 +191,7 @@ export const formSegStyles = css`
        pictures are, and how much each row says. */
     .seg {
       display: inline-flex; flex: none; height: 24px; padding: 2px; gap: 2px; border: 0;
-      border-radius: 6px; background: var(--wa-field); box-shadow: none;
+      border-radius: 6px; background: var(--wa-field); box-shadow: inset 0 0 0 1px var(--wa-line-strong);
     }
     .seg button {
       font: inherit; font-size: 11px; font-weight: 600; letter-spacing: .02em; line-height: 1;
@@ -205,7 +207,7 @@ export const formSegStyles = css`
        shows them all, the way a dropdown never can. Buttons share the width
        evenly and clip a label rather than wrap it, so a row never grows a
        second line. The lit choice is a raised grey, never a hue. */
-    .seg.wide { display: flex; width: 100%; min-width: 0; height: 28px; border-radius: 6px; background: var(--wa-field); box-shadow: none; }
+    .seg.wide { display: flex; width: 100%; min-width: 0; height: 28px; border-radius: 6px; background: var(--wa-field); box-shadow: inset 0 0 0 1px var(--wa-line-strong); }
     .seg.wide button {
       flex: 1 1 0; min-width: 0; padding: 0 4px; border-radius: 5px;
       font-size: 12px; font-weight: 500; letter-spacing: 0; line-height: 24px;
@@ -314,9 +316,9 @@ export const formFieldStyles = css`
     .color-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
     .color-box {
       flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 0 0 6px;
-      border-radius: 6px; border: 1px solid transparent; background: var(--wa-field);
+      border-radius: 6px; border: 1px solid var(--wa-line-strong); background: var(--wa-field);
     }
-    .color-box:hover { border-color: var(--wa-line-strong); }
+    .color-box:hover { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
     .color-box:focus-within { border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
     .color-box:has(input:disabled) { opacity: .5; }
     .color-swatch {

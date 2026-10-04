@@ -1179,7 +1179,7 @@ const valuesFootRun = css`
     }
     .vchip.vpill {
       display: flex; align-items: center; gap: 8px; flex: none; width: auto; height: 28px; padding: 0 10px; border-radius: 6px;
-      background: var(--wa-field); border: 1px solid transparent; font-size: 13px; color: var(--wa-ink); cursor: default;
+      background: var(--wa-field); border: 1px solid var(--wa-line-strong); font-size: 13px; color: var(--wa-ink); cursor: default;
       /* The slider's knob ring is the row it sits on. */
       --wa-range-ring: var(--wa-field);
     }
@@ -1396,7 +1396,7 @@ const sectionCardTailRun = css`
     .name-sec .sec-h .swatch { display: none; }
     .name-sec .sec-h input[type=text] {
       flex: 1 1 auto; width: 0; min-width: 0; height: 28px; min-height: 28px; padding: 0 10px; font-size: 13px;
-      border-radius: 6px; border-color: transparent; background-color: var(--wa-field);
+      border-radius: 6px; border-color: var(--wa-line-strong); background-color: var(--wa-field);
     }
     .name-sec .sec-h input[type=text]:focus-visible { border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
     /* Each card's "?": quiet until the header is hovered, lit while its help
