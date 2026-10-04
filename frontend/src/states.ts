@@ -610,6 +610,28 @@ export function whenText(c: Comparison, describe: (v: Value) => string = plainVa
   }
 }
 
+/**
+ * A state's test as the short phrase a simple Rules row reads as at a glance:
+ * "> 76 °F", "≤ 20", "20 to 30 %", "is heat", "is on". A threshold is a sign
+ * rather than words, since the row has one line and the sign is what a reader
+ * scans for. `unit` follows a number only (never "is heat °F"), and is left off
+ * when the caller does not know it; `operand` writes a right-hand side.
+ */
+export function glanceTest(c: Comparison, operand: (v: Value) => string, unit = ""): string {
+  const lhs = () => operand(c.value ?? literal(""));
+  const u = unit === "" ? "" : ` ${unit}`;
+  switch (c.kind) {
+    case "lessThan": return `< ${lhs()}${u}`;
+    case "lessOrEqual": return `≤ ${lhs()}${u}`;
+    case "greaterThan": return `> ${lhs()}${u}`;
+    case "greaterOrEqual": return `≥ ${lhs()}${u}`;
+    case "between": return `${lhs()} to ${operand(c.upper ?? literal(""))}${u}`;
+    case "equals": return `is ${lhs()}`;
+    case "notEquals": return `is not ${lhs()}`;
+    default: return whenText(c, operand);
+  }
+}
+
 // ── defaults ──────────────────────────────────────────────────────────────
 
 /**

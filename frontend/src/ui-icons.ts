@@ -16,7 +16,8 @@ export type UiIconName =
   | "lock" | "unlock" | "folder" | "ungroup" | "watch" | "phone"
   | "compact" | "expanded" | "grid" | "search" | "undo" | "redo" | "expand" | "left" | "right"
   | "braces" | "link" | "info" | "globe" | "download" | "check" | "arrow" | "paste" | "guides"
-  | "checklist" | "home" | "more" | "thumbSmall" | "thumbMedium" | "thumbLarge" | "menu" | "note";
+  | "checklist" | "home" | "more" | "thumbSmall" | "thumbMedium" | "thumbLarge" | "menu" | "note"
+  | "alignLeft" | "alignCenterX" | "alignRight" | "alignTop" | "alignCenterY" | "alignBottom" | "alignCenter";
 
 function shape(name: UiIconName) {
   switch (name) {
@@ -195,6 +196,23 @@ function shape(name: UiIconName) {
       return svg`<rect x="3" y="6.5" width="10" height="11" rx="2" /><path d="M16.5 12H21" />`;
     case "thumbLarge":
       return svg`<rect x="3" y="4" width="14" height="16" rx="2.5" /><path d="M19.5 12H21" />`;
+    // The Position card's align buttons: a rule for the edge or the middle
+    // being lined up to, and two bars of different lengths lined up on it.
+    case "alignLeft":
+      return svg`<path d="M4 3V21" /><rect x="8" y="6" width="11" height="4" rx="1" /><rect x="8" y="14" width="6" height="4" rx="1" />`;
+    case "alignCenterX":
+      return svg`<path d="M12 3V6M12 10V14M12 18V21" /><rect x="5" y="6" width="14" height="4" rx="1" /><rect x="8" y="14" width="8" height="4" rx="1" />`;
+    case "alignRight":
+      return svg`<path d="M20 3V21" /><rect x="5" y="6" width="11" height="4" rx="1" /><rect x="10" y="14" width="6" height="4" rx="1" />`;
+    case "alignTop":
+      return svg`<path d="M3 4H21" /><rect x="6" y="8" width="4" height="11" rx="1" /><rect x="14" y="8" width="4" height="6" rx="1" />`;
+    case "alignCenterY":
+      return svg`<path d="M3 12H6M10 12H14M18 12H21" /><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="8" width="4" height="8" rx="1" />`;
+    case "alignBottom":
+      return svg`<path d="M3 20H21" /><rect x="6" y="5" width="4" height="11" rx="1" /><rect x="14" y="10" width="4" height="6" rx="1" />`;
+    // The middle both ways: a box with the two middle lines poking out of it.
+    case "alignCenter":
+      return svg`<rect x="7" y="7" width="10" height="10" rx="1.5" /><path d="M12 3V7M12 17V21M3 12H7M17 12H21" />`;
     // More choices behind a menu.
     case "more":
       return svg`<circle cx="6" cy="12" r="1.3" /><circle cx="12" cy="12" r="1.3" /><circle cx="18" cy="12" r="1.3" />`;

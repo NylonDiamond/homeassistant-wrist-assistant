@@ -332,6 +332,7 @@ import {
   cellChange,
   comparisonGroups,
   freshShape,
+  glanceTest,
   isNumberish,
   isNumericComparison,
   moveStateRow,
@@ -373,7 +374,7 @@ import type { HassEntityState, HassLike } from "./ha-api.js";
 import { MIN_ZOOM, familyTitle, type IconProvider } from "./renderer.js";
 import { IMAGE_UPLOAD_ACCEPT, encodeInlinePicture, formatKiB } from "./inline-image.js";
 import { CURATED_SYMBOLS, MDI_PREFIX, SYMBOL_CATEGORIES, SymbolBrowser, searchSymbols, type SymbolPack } from "./symbols.js";
-import { centerFrame, isCentered, typedFrame, type CenterAxis } from "./interact.js";
+import { alignFrame, centerFrame, isAligned, isCentered, typedFrame, type AlignEdge, type CenterAxis } from "./interact.js";
 import {
   DESIGN_BOX,
   CUSTOM_SVG_SYMBOL,
@@ -1023,6 +1024,33 @@ export function sliderField(
         @input=${onInput((v) => { const n = Number(v); if (!Number.isNaN(n)) set(n); })} />`}
       ${numberInput(value, typed, { step: opts.step, min: opts.min, max: opts.max, ariaLabel: label, clampOnCommit: true, ...(opts.unit === undefined ? {} : { unit: opts.unit }) })}
     </div></div>`;
+}
+
+/** A stored fraction (0 to 1) as the percent its box shows. One decimal, so
+ * an odd stored value such as 0.333 still reads back as 33.3 rather than as a
+ * rounded number that would be written over it on the next drag. */
+export function fractionToPercent(v: number): number {
+  return Math.round(v * 1000) / 10;
+}
+
+/** A percent typed or slid in, back as the fraction the document stores,
+ * cleared of float dust (33.3 is 0.333, not 0.33299999999999996). */
+export function percentToFraction(p: number): number {
+  return Math.round(p * 100) / 10000;
+}
+
+/**
+ * A `sliderField` for a setting stored as a fraction from 0 to 1, such as an
+ * opacity, shown and typed as a percent: the box reads "100" with a faint
+ * "%", and 50 in the box stores 0.5. The slider covers the same range as
+ * before, and `step` and `def` are given as fractions, the way the setting is
+ * stored.
+ */
+export function percentSliderField(label: string, value: number, set: (v: number) => void, opts: { step: number; def: number }) {
+  return sliderField(label, fractionToPercent(value), (p) => set(percentToFraction(p)), {
+    min: 0, max: 100, step: fractionToPercent(opts.step), def: fractionToPercent(opts.def), unit: "%",
+    format: (p) => `${Math.round(p)}%`,
+  });
 }
 
 /** A switch as a row like any other: its title in the label column, the switch
@@ -2844,7 +2872,7 @@ export function valueEditor(host: EditorHost, value: Value, set: (v: Value) => v
   // typed-in number or a template is the author's own words and stays ink.
   const namesEntity = "entityId" in value.kind;
   // A chip on a stand-in is ringed like a stand-in's entity field, so a click
-  // on its layer can point at it (a rule's "Testing" is where a day and night
+  // on its layer can point at it (a rule's "Looks at" is where a day and night
   // design reads the sun).
   const slot = "entityId" in value.kind && isPlaceholderId(value.kind.entityId);
   return html`<div class="field value-chip-field ${opts.compact ? "compact" : ""}">
@@ -6497,7 +6525,7 @@ export function placementCard(host: EditorHost, el: CElement, family: FamilyKind
         ${frameLetterField("Y", "Top", f.y, (v) => setFrame({ y: v }, "y"), -100, 100)}
       </div>
     </div>
-    ${lineUpField(host, el, family, f, ["across", "down", "both"])}
+    ${lineUpField(host, el, family, f, "both")}
     </div>`
     // The threshold settles only the height, so a label beside it keeps its own X.
     : !chartAnchorIsColumn(anchor.at) ? html`
@@ -6507,7 +6535,7 @@ export function placementCard(host: EditorHost, el: CElement, family: FamilyKind
         ${frameLetterField("X", "Left", f.x, (v) => setFrame({ x: v }, "x"), -100, 100)}
       </div>
     </div>
-    ${lineUpField(host, el, family, f, ["across"])}
+    ${lineUpField(host, el, family, f, "across")}
     </div>`
     : nothing}
     <div class="field xy-field"><span>Size</span>
@@ -6527,31 +6555,91 @@ export function placementCard(host: EditorHost, el: CElement, family: FamilyKind
       } : {}) });
 }
 
-const CENTER_LABELS: Record<CenterAxis, { label: string; title: string }> = {
-  across: { label: "Center across", title: "Move this layer to the middle of the face, left to right" },
-  down: { label: "Center up and down", title: "Move this layer to the middle of the face, top to bottom" },
-  both: { label: "Center", title: "Move this layer to the middle of the face" },
-};
+/** One of the Position card's align buttons: what it does to the frame, its
+ * glyph, the name a screen reader reads, and the hover hint. */
+export interface AlignButton {
+  /** A short id, which is also the undo key's tail. */
+  id: string;
+  move: { edge: AlignEdge } | { axis: CenterAxis };
+  icon: UiIconName;
+  ariaLabel: string;
+  hint: string;
+}
 
 /**
- * The Position card's shortcuts: centre the layer on the face, and copy its
+ * The align buttons in their groups: across (left, middle, right), then up and
+ * down (top, middle, bottom), then the middle both ways. Each moves the one
+ * layer the inspector is showing, on the shape on screen, and lines up its own
+ * box against the whole face: the complication, or for a layer of a list's row
+ * the row it is designed in. A pick of several layers has no Position card, so
+ * there is never more than one layer to move.
+ *
+ * `free` is which way the layer may move: "across" for a layer whose chart
+ * anchor settles its height, which keeps only the first group.
+ */
+export function alignButtons(free: "both" | "across", where: "complication" | "row"): AlignButton[][] {
+  const to = `the ${where}`;
+  const across: AlignButton[] = [
+    { id: "left", move: { edge: "left" }, icon: "alignLeft", ariaLabel: `Align left to ${to}`,
+      hint: `Align left: move this layer to the left edge of ${to}` },
+    { id: "center-across", move: { axis: "across" }, icon: "alignCenterX", ariaLabel: `Center across ${to}`,
+      hint: `Center across: move this layer to the middle of ${to}, left to right` },
+    { id: "right", move: { edge: "right" }, icon: "alignRight", ariaLabel: `Align right to ${to}`,
+      hint: `Align right: move this layer to the right edge of ${to}` },
+  ];
+  if (free === "across") return [across];
+  return [
+    across,
+    [
+      { id: "top", move: { edge: "top" }, icon: "alignTop", ariaLabel: `Align top to ${to}`,
+        hint: `Align top: move this layer to the top edge of ${to}` },
+      { id: "center-down", move: { axis: "down" }, icon: "alignCenterY", ariaLabel: `Center up and down in ${to}`,
+        hint: `Center up and down: move this layer to the middle of ${to}, top to bottom` },
+      { id: "bottom", move: { edge: "bottom" }, icon: "alignBottom", ariaLabel: `Align bottom to ${to}`,
+        hint: `Align bottom: move this layer to the bottom edge of ${to}` },
+    ],
+    [
+      { id: "center-both", move: { axis: "both" }, icon: "alignCenter", ariaLabel: `Center in ${to}`,
+        hint: `Center: move this layer to the middle of ${to}, both ways` },
+    ],
+  ];
+}
+
+/** Where an align button puts a frame. */
+export function alignedFrame(f: NormalizedFrame, move: AlignButton["move"]): NormalizedFrame {
+  return "edge" in move ? alignFrame(f, move.edge) : centerFrame(f, move.axis);
+}
+
+/** Whether a frame is already where an align button would put it. */
+function alreadyAligned(f: NormalizedFrame, move: AlignButton["move"]): boolean {
+  return "edge" in move ? isAligned(f, move.edge) : isCentered(f, move.axis);
+}
+
+/**
+ * The Position card's shortcuts: line the layer up with the face, and copy its
  * position onto another layer. Copy and paste carry X, Y, W, H and rotation,
  * on the shape on screen only, and reach a layer on another shape or in
  * another complication, which is how the same spot is repeated on Circular and
  * Corner without typing the numbers twice. An anchored layer takes only the
- * axes its anchor leaves free, so it gets centring across and no paste.
+ * axes its anchor leaves free, so it gets the across group and no paste.
  */
-function lineUpField(host: EditorHost, el: CElement, family: FamilyKind, f: NormalizedFrame, axes: CenterAxis[]): TemplateResult {
+function lineUpField(host: EditorHost, el: CElement, family: FamilyKind, f: NormalizedFrame, free: "both" | "across"): TemplateResult {
   const id = el.payload.id;
   const setWhole = (frame: NormalizedFrame, k: string) => host.update((c) => setPlacement(c, family, id, { frame }), `el-${id}-${k}-${family}`);
   const copied = host.copiedPosition;
   const anchored = el.payload.chartAnchor !== undefined;
   const copiedHere = copied !== undefined && copied.family === family && same(copied.frame, f);
-  return html`<div class="field list-field"><span>Line up</span>
-    <div class="chips">
-      ${axes.map((axis) => html`<button class="small" title=${CENTER_LABELS[axis].title}
-        ?disabled=${isCentered(f, axis)}
-        @click=${() => setWhole(centerFrame(f, axis), `center-${axis}`)}>${CENTER_LABELS[axis].label}</button>`)}
+  const where = listOwning(host.config, id) ? "row" : "complication";
+  const groups = alignButtons(free, where);
+  return html`<div class="align-field">
+    <div class="align-head"><span>Align</span><span class="align-to">to the ${where}</span></div>
+    <div class="align-row" role="group" aria-label=${`Align to the ${where}`}>
+      ${groups.map((group, g) => html`${g === 0 ? nothing : html`<span class="align-sep" aria-hidden="true"></span>`}${group.map((b) => {
+        const there = alreadyAligned(f, b.move);
+        return html`<button type="button" class="align" aria-label=${b.ariaLabel}
+          title=${there ? `${b.hint}. It is there already.` : b.hint} ?disabled=${there}
+          @click=${() => setWhole(alignedFrame(f, b.move), `align-${b.id}`)}>${uiIcon(b.icon)}</button>`;
+      })}`)}
     </div>
   </div>
   ${anchored ? nothing : html`<div class="field list-field"><span>Copy</span>
@@ -8685,7 +8773,7 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
       : nothing}
     ${card(host, "states", "Rules", statesEditor(host, el.payload.rules, el.kind,
       (c) => c.elements.find((e) => e.payload.id === id)?.payload.rules, `rules-${id}`, tested, textParts,
-      { colorByValue: colorsByValue(el) }),
+      { colorByValue: colorsByValue(el), ownColor: (el.payload as { colorSlot?: { baseColorHex?: string } }).colorSlot?.baseColorHex }),
       { color: SECTION_COLOR.states, icon: "states", summary: statesCardSummary(el.payload.rules),
         ...statesAddAction(host, el.payload.rules, el.kind,
           (c) => c.elements.find((e) => e.payload.id === id)?.payload.rules, `rules-${id}`, tested, textParts,
@@ -8837,10 +8925,10 @@ function layerLookFields(
     && shadow.dx === 0 && shadow.dy === 0 && shadow.radius > 0 && el.payload.fontSize < 10;
   return html`
     <div class="fgroup">
-    ${sliderField("Opacity", p.opacity ?? 1, (v) => upd((e) => {
+    ${percentSliderField("Opacity", p.opacity ?? 1, (v) => upd((e) => {
       const n = clampLayerOpacity(v);
       if (n === 1) delete e.payload.opacity; else e.payload.opacity = n;
-    }, "opacity"), { min: 0, max: 1, step: 0.05, def: 1, format: (v) => `${Math.round(v * 100)}%` })}
+    }, "opacity"), { step: 0.05, def: 1 })}
     ${checkField("Shadow", shadow !== undefined, (v) => upd((e) => {
       if (v) e.payload.shadow = { ...SHADOW_DEFAULT }; else delete e.payload.shadow;
     }, "shadow-on"), false)}
@@ -10521,16 +10609,21 @@ function changeBody(host: EditorHost, ch: StyleChange, upd: (m: (c: StyleChange)
       });
     }
   } else if (payload === "number") {
-    const opts = ch.kind === "setOpacity" ? { step: 0.05, min: 0, max: 1 }
-      : ch.kind === "setRotation" ? { step: 1, unit: "°" }
-      : ch.kind === "setFontSize" || ch.kind === "setBorderWidth" ? { step: 0.5, min: 0, unit: "pt" }
-      : { step: 0.5, min: 0 };
-    const label = ch.kind === "setOpacity" ? "Opacity (0 to 1)"
-      : ch.kind === "setRotation" ? "Angle"
-      : ch.kind === "setFontSize" ? "Size"
-      : ch.kind === "setBorderWidth" ? "Width"
-      : "Value";
-    body = numberField(label, ch.number ?? 0, (n) => upd((c) => { c.number = n ?? 0; }, "number"), opts);
+    // Opacity is stored from 0 to 1 and shown as a percent, the way the
+    // layer's own Opacity row shows it.
+    if (ch.kind === "setOpacity") {
+      body = numberField("Opacity", fractionToPercent(ch.number ?? 0), (n) => upd((c) => { c.number = percentToFraction(n ?? 0); }, "number"),
+        { step: 5, min: 0, max: 100, unit: "%", clampOnCommit: true });
+    } else {
+      const opts = ch.kind === "setRotation" ? { step: 1, unit: "°" }
+        : ch.kind === "setFontSize" || ch.kind === "setBorderWidth" ? { step: 0.5, min: 0, unit: "pt" }
+        : { step: 0.5, min: 0 };
+      const label = ch.kind === "setRotation" ? "Angle"
+        : ch.kind === "setFontSize" ? "Size"
+        : ch.kind === "setBorderWidth" ? "Width"
+        : "Value";
+      body = numberField(label, ch.number ?? 0, (n) => upd((c) => { c.number = n ?? 0; }, "number"), opts);
+    }
   } else if (payload === "weight") {
     body = segField("Weight", ch.weight ?? "regular", FONT_WEIGHTS, (w) => upd((c) => { c.weight = w; }));
   } else if (payload === "design") {
@@ -10586,6 +10679,10 @@ export interface StatesEditorOptions {
   /** The layer's color follows its own band table, so Color is not offered
    * as a column and one already in the table is flagged as drawing nothing. */
   colorByValue?: boolean;
+  /** The layer's own color, for the swatch on the quiet "Otherwise →
+   * Original" line when the states change the color and no Otherwise row
+   * says what happens when none of them match. */
+  ownColor?: string;
 }
 
 export function statesEditor(
@@ -10707,6 +10804,31 @@ function addPlannedRow(rs: Rule[], plan: Pick<StatesPlan, "tested" | "resolved" 
 }
 
 /**
+ * Add a state and open it. A simple Rules row opens by holding the previews on
+ * it, so the one new row is held, which is what puts its comparison and its
+ * changes on screen to be filled in. A fresh table that starts with several
+ * rows opens none of them: they arrive filled in, and their lines already say
+ * what each one does.
+ */
+function addPlannedRowAndOpen(
+  host: EditorHost,
+  locate: (cfg: CustomComplicationConfig) => Rule[] | undefined,
+  plan: Parameters<typeof addPlannedRow>[1],
+): void {
+  let opened: { ruleId: string; caseId: string } | undefined;
+  host.update((c) => {
+    const rs = locate(c);
+    if (!rs) return;
+    const before = new Set(rs[0]?.cases.map((x) => x.id) ?? []);
+    addPlannedRow(rs, plan);
+    const rule = rs[0];
+    const added = rule?.cases.filter((x) => !before.has(x.id)) ?? [];
+    opened = rule && added.length === 1 ? { ruleId: rule.id, caseId: added[0]!.id } : undefined;
+  });
+  if (opened) host.setForced(opened.ruleId, { caseId: opened.caseId });
+}
+
+/**
  * The "Add" in a folded States card's header: it opens the card and adds a
  * state, the same row the table's own Add a state makes. Nothing when the
  * rules are past what a table can show, since there is no table to add a row
@@ -10731,7 +10853,7 @@ export function statesAddAction(
       title: `Add a state: when the value matches, this ${target === "layout" ? "shape" : "layer"} changes how it looks`,
       run: () => {
         pendingPartTargets.delete(key);
-        host.update((c) => { const rs = locate(c); if (rs) addPlannedRow(rs, plan); });
+        addPlannedRowAndOpen(host, locate, plan);
       },
     },
   };
@@ -10783,14 +10905,21 @@ function statesTable(
 
   const addRow = () => {
     pendingPartTargets.delete(key);
-    upd((rs) => addPlannedRow(rs, plan));
+    addPlannedRowAndOpen(host, locate, plan);
   };
+
+  // What each line names as the thing it looks at, and the unit its numbers
+  // are in when the tested value says.
+  const ctx = describeContext(host);
+  const lookedAt = tested === undefined ? "Value" : glanceName(tested, ctx);
+  const unit = testedUnit(host, tested);
 
   const rowOptions = { offered, colorIgnored, forPart, target };
   const rows = table.rows.map((row, i) => statesRow(host, {
     ...rowOptions,
     key: `${key}-${row.caseId}`,
-    label: whenText(row.comparison, (v) => describeValue(v, describeContext(host))),
+    label: whenText(row.comparison, glanceOperand(ctx)),
+    glance: { name: lookedAt, test: glanceTest(row.comparison, glanceOperand(ctx), operandsFixed(row.comparison) ? unit : "") },
     changes: row.changes,
     live: live === row.caseId,
     forced: isForced(row.caseId),
@@ -10808,20 +10937,33 @@ function statesTable(
     acts: html`
       <button class="icon" title="Move up" ?disabled=${i === 0} @click=${() => upd((rs) => moveStateRow(rs, i, i - 1))}>${uiIcon("up")}</button>
       <button class="icon" title="Move down" ?disabled=${i === table.rows.length - 1} @click=${() => upd((rs) => moveStateRow(rs, i, i + 1))}>${uiIcon("down")}</button>
-      <button class="icon danger" title="Delete this state" @click=${() => upd((rs) => removeStateRow(rs, row.caseId))}>${uiIcon("delete")}</button>`,
+      <button class="icon danger" title="Delete this state" @click=${() => {
+        // The row is open because the previews are held on it, and a hold on
+        // a state that is gone would hold on nothing.
+        if (rule && isForced(row.caseId)) host.setForced(rule.id, "live");
+        upd((rs) => removeStateRow(rs, row.caseId));
+      }}>${uiIcon("delete")}</button>`,
   }));
 
-  const otherwiseRow = table.otherwise === undefined ? nothing : statesRow(host, {
+  // With no Otherwise row the layer keeps its own look when no state matches.
+  // The quiet dashed line says so, so the list reads to its end.
+  const fallback = table.otherwise !== undefined || table.rows.length === 0 ? nothing
+    : statesFallbackLine(target, table.columns.includes("color") && !colorIgnored ? options.ownColor : undefined);
+
+  const otherwiseRow = table.otherwise === undefined ? fallback : statesRow(host, {
     ...rowOptions,
     key: `${key}-otherwise`,
     label: OTHERWISE_LABEL,
+    glance: { name: OTHERWISE_LABEL },
     changes: table.otherwise,
     live: live === "otherwise",
     forced: isForced("otherwise"),
     onForce: () => force("otherwise"),
-    when: html`<span class="when-otherwise">${OTHERWISE_LABEL}</span>`,
     updChanges: (m, k) => upd((rs) => { const o = rs[0]?.otherwise; if (o) m(o); }, k),
-    acts: html`<button class="icon" title=${`Remove the ${OTHERWISE_LABEL} row`} @click=${() => upd((rs) => setOtherwise(rs, false))}>${uiIcon("close")}</button>`,
+    acts: html`<button class="icon" title=${`Remove the ${OTHERWISE_LABEL} row`} @click=${() => {
+      if (rule && isForced("otherwise")) host.setForced(rule.id, "live");
+      upd((rs) => setOtherwise(rs, false));
+    }}>${uiIcon("close")}</button>`,
   });
 
   // The bar over a number table: one piece per band, in the color of the row
@@ -10853,24 +10995,13 @@ function statesTable(
   return html`
     <div class="states">
       ${editorSwitch(key, "table", { ok: true, table })}
-      ${valueEditor(host, tested ?? literal(""), setTested, { label: "Testing", showResolved: true, key: `${key}-lhs` })}
+      ${valueEditor(host, tested ?? literal(""), setTested, { label: "Looks at", showResolved: true, key: `${key}-lhs` })}
       ${tested === undefined ? html`<div class="hint keep">Choose what these states look at.</div>` : nothing}
       ${parts === undefined ? nothing : partTargetField(parts, partId, describeContext(host), setPart)}
       ${bar}
-      <div class="states-scroll"><table class="states-table">
-        <thead>
-          <tr>
-            <th class="when">When</th>
-            <th>Then</th>
-            <th class="acts"></th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows}
-          ${otherwiseRow}
-          ${fresh ? html`<tr><td class="empty-row" colspan="3">${statesEmptyText(target)}${tested === undefined ? nothing : html` ${startText(shape, resolved)}`}</td></tr>` : nothing}
-        </tbody>
-      </table></div>
+      ${fresh
+        ? html`<div class="states-empty">${statesEmptyText(target)}${tested === undefined ? nothing : html` ${startText(shape, resolved)}`}</div>`
+        : html`<div class="state-list">${rows}${otherwiseRow}</div>`}
       ${partIgnores.length === 0 ? nothing : html`<div class="hint warn">${forPart === "icon" ? "An icon part" : "A part"} ignores ${joinWords(partIgnores.map((p) => PROPERTY_LABELS[p]))}. Pick Whole text to use ${partIgnores.length === 1 ? "it" : "them"}.</div>`}
       ${!colorIgnored ? nothing : html`<div class="hint warn">Color is set by value above, so a Color change here draws nothing. Switch Color to One color to use it, or remove the change.</div>`}
       ${!pendingStatesFill.has(key) ? nothing : html`<div class="hint warn confirm-row">
@@ -10897,8 +11028,90 @@ function statesTable(
       <div class="hint">${numberMode
         ? "States are checked top to bottom and the first match wins, so each band only has to say where it ends."
         : "States are checked top to bottom and the first match wins. Otherwise applies when none of them do."}</div>
-      <div class="hint">Click a row to hold the previews on it, and again to go back to live.</div>
+      <div class="hint">Click a state to change it. While it is open the previews show that state; click it again to go back to live.</div>
     </div>`;
+}
+
+/** What a Rules line names as the thing its states look at: an entity's name,
+ * a shared value's name, without the format words the value chip adds. */
+function glanceName(v: Value, ctx: DescribeContext): string {
+  return describeValueBody(v, ctx);
+}
+
+/** A comparison's other side as a Rules line writes it: a typed number or
+ * word as it is, anything else (an entity, a template) in words. */
+function glanceOperand(ctx: DescribeContext): (v: Value) => string {
+  return (v) => v.kind.kind === "literal" ? (v.kind.value.trim() || "?") : describeValueBody(v, ctx);
+}
+
+/** Whether every number the comparison names is typed in. Only then does the
+ * line put the unit after it: "< 20 °F", never "< Outside °F". */
+function operandsFixed(c: Comparison): boolean {
+  const fixed = (v: Value | undefined) => v === undefined || v.kind.kind === "literal";
+  return fixed(c.value) && (c.kind !== "between" || fixed(c.upper));
+}
+
+/** The unit the tested value reads in, when Home Assistant says: an entity's
+ * `unit_of_measurement`, or that of the entity a shared value reads. Empty
+ * when nobody says, and the line then shows the bare number. */
+export function testedUnit(host: Pick<EditorHost, "hass" | "config">, v: Value | undefined, depth = 0): string {
+  if (v === undefined) return "";
+  const k = v.kind;
+  if (k.kind === "entityState") {
+    const u = host.hass?.states?.[k.entityId]?.attributes?.unit_of_measurement;
+    return typeof u === "string" ? u : "";
+  }
+  if (k.kind === "named" && depth === 0) {
+    return testedUnit(host, host.config.values.find((n) => n.id === k.id)?.value, 1);
+  }
+  return "";
+}
+
+/** The last line of a simple Rules list while there is no Otherwise row:
+ * dashed and quiet, "Otherwise → Original", with the layer's own color when
+ * the states change the color. Nothing to click: Add otherwise is how it
+ * becomes a row of its own. */
+function statesFallbackLine(target: RuleTarget, ownColor: string | undefined): TemplateResult {
+  const what = target === "layout" ? "shape" : "layer";
+  const hex = ownColor !== undefined && /^#[0-9a-fA-F]{6,8}$/.test(ownColor) ? ownColor : undefined;
+  return html`<div class="state-line fallback" title=${`When no state above matches, this ${what} keeps its own look`}>
+    <span class="sl-when"><span class="sl-name">${OTHERWISE_LABEL}</span></span>
+    <span class="sl-arrow" aria-hidden="true">→</span>
+    <span class="sl-then">${hex ? html`<i class="sl-dot" style=${`background:${hex}`}></i>` : nothing}Original</span>
+  </div>`;
+}
+
+/**
+ * What a state changes, as the right half of its line: "● Orange",
+ * "Hidden", "Size 22". The color of the layer itself is a dot and a color
+ * name with no "Color" before it, since the dot says that; every other change
+ * is its setting and its value. Several changes are joined with commas, and
+ * the line clips what does not fit.
+ */
+function glanceChanges(host: EditorHost, changes: StyleChange[]): TemplateResult {
+  const set = COLUMN_ORDER.flatMap((p) => {
+    const ch = cellChange(changes, p);
+    return ch ? [[p, ch] as const] : [];
+  });
+  if (set.length === 0) return html`<span class="sl-none">No change</span>`;
+  return html`${set.map(([p, ch], i) => html`${i === 0 ? nothing : ", "}${glanceChange(host, p, ch)}`)}`;
+}
+
+function glanceChange(host: EditorHost, property: StyleProperty, ch: StyleChange): TemplateResult {
+  if (ch.kind === "hide") return html`Hidden`;
+  if (ch.kind === "show") return html`Shown`;
+  const v = ch.value ?? literal("");
+  const fixed = v.kind.kind === "literal" ? v.kind.value : undefined;
+  const name = property === "color" || property === "icon" ? nothing : html`<span class="sl-prop">${PROPERTY_LABELS[property]}</span> `;
+  if (COLOR_KINDS.includes(ch.kind)) {
+    const hex = fixed && /^#[0-9a-fA-F]{6,8}$/.test(fixed) ? fixed : undefined;
+    const words = hex ? colorWords(hex) : describeValue(v, describeContext(host));
+    return html`${name}${hex ? html`<i class="sl-dot" style=${`background:${hex}`}></i>` : nothing}${hex && !words.startsWith("#") ? words.charAt(0).toUpperCase() + words.slice(1) : words}`;
+  }
+  if (ch.kind === "setIcon" && fixed) {
+    return html`<span class="sl-glyph">${host.icons.render(fixed, 14, "#FFFFFF") ?? nothing}</span>${fixed}`;
+  }
+  return html`${name}${cellValue(host, ch)}`;
 }
 
 /** The last row's name, the same word the Advanced editor and the document
@@ -10957,6 +11170,9 @@ function changeMenu(key: string, spare: readonly StyleProperty[], add: (p: Style
 interface StatesRowOptions {
   key: string;
   label: string;
+  /** The row's one line: what it looks at and its test ("State", "> 76
+   * °F"), or the name alone for Otherwise. */
+  glance: { name: string; test?: string };
   /** The settings this row's "+ Change" can add. */
   offered: readonly StyleProperty[];
   /** A Color change here draws nothing, so its chip says so. */
@@ -10968,22 +11184,29 @@ interface StatesRowOptions {
   live: boolean;
   forced: boolean;
   onForce: () => void;
-  when: TemplateResult;
+  /** The comparison and its value, in the open state. None for Otherwise. */
+  when?: TemplateResult;
   updChanges: (m: (list: StyleChange[]) => void, k?: string) => void;
   acts: TemplateResult;
 }
 
-/** Whether a click landed on something that handles its own clicks, so the row
- * does not also treat it as "preview this state". */
+/** Whether a click landed on something that handles its own clicks, so the
+ * row around it does not also act on it. */
 function onControl(e: Event): boolean {
   const el = e.target as HTMLElement | null;
   return !!el?.closest?.("input, select, textarea, button, label, [popover]");
 }
 
 /**
- * One row: its When, then a chip per setting it changes and a "+ Change" for
- * one more. A row with no chips changes nothing and says so, so the table
- * never shows a grid of empty cells.
+ * One state, read at a glance and opened to edit.
+ *
+ * Shut, it is one line: what it looks at, its test, an arrow, and what it
+ * changes ("State > 76 °F → ● Orange"). A click opens it, and opening a state
+ * is holding the previews on it, so the face shows the state being edited;
+ * another click shuts it and the previews go back to live, the same toggle a
+ * row was before it had a line. Open, it shows everything a row always had:
+ * the comparison and its value, a chip per setting it changes with a
+ * "+ Change" for one more, and the buttons that move and delete it.
  */
 function statesRow(host: EditorHost, o: StatesRowOptions): TemplateResult {
   const set = COLUMN_ORDER.filter((p) => cellChange(o.changes, p) !== undefined);
@@ -10992,23 +11215,33 @@ function statesRow(host: EditorHost, o: StatesRowOptions): TemplateResult {
     o.updChanges((list) => { list.push(newStyleChange(PROPERTY_CHANGE_KIND[p])); });
     openPopoverSoon(node, popoverId(`${o.key}-${p}`));
   };
-  return html`<tr class="state-row ${o.live ? "live" : ""} ${o.forced ? "forced" : ""}"
-    title=${`${o.label}. Click to hold the previews on this state.`}
-    @click=${(e: Event) => { if (!onControl(e)) o.onForce(); }}>
-    <td class="when">
-      <span class="row-flag" title=${o.forced ? "The previews are held on this state" : o.live ? "This state matches right now" : ""}>${o.forced ? "◉" : o.live ? "●" : ""}</span>
-      ${o.when}
-    </td>
-    <td class="then"><span class="then-chips">
-      ${set.length === 0 ? html`<span class="no-change">No change</span>` : nothing}
-      ${set.map((p) => statesChip(host, p, o.changes, o.updChanges, `${o.key}-${p}`, {
-        ignored: (p === "color" && o.colorIgnored) || (o.forPart !== false && !aimReads(o.target, o.forPart, p)),
-        sfOnly: o.forPart === "icon",
-      }))}
-      ${spare.length === 0 ? nothing : changeMenu(o.key, spare, add)}
-    </span></td>
-    <td class="acts">${o.acts}</td>
-  </tr>`;
+  const open = o.forced;
+  return html`<div class="state-item ${o.live ? "live" : ""} ${open ? "open" : ""}">
+    <button type="button" class="state-line" aria-expanded=${open ? "true" : "false"}
+      title=${open
+        ? `${o.label}. The previews are held on this state. Click to close it and go back to live.`
+        : `${o.label}. Click to change it and hold the previews on it.`}
+      @click=${() => o.onForce()}>
+      <span class="row-flag" title=${o.live ? "This state matches right now" : nothing}>${o.live ? "●" : ""}</span>
+      <span class="sl-when"><span class="sl-name">${o.glance.name}</span>${o.glance.test === undefined ? nothing
+        : html`<span class="sl-test">${o.glance.test}</span>`}</span>
+      <span class="sl-arrow" aria-hidden="true">→</span>
+      <span class="sl-then">${glanceChanges(host, o.changes)}</span>
+      <span class="sl-chev" aria-hidden="true">${uiIcon("chevron")}</span>
+    </button>
+    ${open ? html`<div class="state-edit">
+      ${o.when === undefined ? nothing : html`<div class="se-row"><span class="se-lab">When</span>${o.when}</div>`}
+      <div class="se-row"><span class="se-lab">Changes</span><span class="then-chips">
+        ${set.length === 0 ? html`<span class="no-change">No change</span>` : nothing}
+        ${set.map((p) => statesChip(host, p, o.changes, o.updChanges, `${o.key}-${p}`, {
+          ignored: (p === "color" && o.colorIgnored) || (o.forPart !== false && !aimReads(o.target, o.forPart, p)),
+          sfOnly: o.forPart === "icon",
+        }))}
+        ${spare.length === 0 ? nothing : changeMenu(o.key, spare, add)}
+      </span></div>
+      <div class="se-acts">${o.acts}</div>
+    </div>` : nothing}
+  </div>`;
 }
 
 /** One chip: a setting this state changes, with its form a click away. */
@@ -11078,11 +11311,18 @@ function cellSummary(host: EditorHost, ch: StyleChange, property?: StyleProperty
   return html`${name}${cellValue(host, ch)}`;
 }
 
+/** A number a change sets, as a chip shows it. Opacity is stored from 0 to 1
+ * and read as a percent, the way its Opacity box shows it. */
+function changeNumberWords(ch: StyleChange): string {
+  const n = ch.number ?? 0;
+  return ch.kind === "setOpacity" ? `${fractionToPercent(n)}%` : String(n);
+}
+
 function cellValue(host: EditorHost, ch: StyleChange): TemplateResult {
   if (ch.kind === "hide") return html`<span class="cell-word">Hidden</span>`;
   if (ch.kind === "show") return html`<span class="cell-word">Shown</span>`;
   const payload = styleChangePayload(ch.kind);
-  if (payload === "number") return html`<span class="cell-word mono">${ch.number ?? 0}</span>`;
+  if (payload === "number") return html`<span class="cell-word mono">${changeNumberWords(ch)}</span>`;
   if (payload === "weight") return html`<span class="cell-word">${FONT_WEIGHTS.find(([w]) => w === (ch.weight ?? "regular"))?.[1]}</span>`;
   if (payload === "design") return html`<span class="cell-word">${FONT_DESIGNS.find(([d]) => d === (ch.design ?? "default"))?.[1]}</span>`;
   if (payload === "width") return html`<span class="cell-word">${FONT_WIDTHS.find(([w]) => w === (ch.width ?? "standard"))?.[1]}</span>`;

@@ -1118,20 +1118,25 @@ const valuesFootRun = css`
     .values-foot {
       display: flex; flex: none; min-width: 0; padding: 0 12px 12px; container: vfoot / inline-size;
     }
-    /* A head row (Live at one end, Back to live at the other) over one value
-       per row: the name on the left, its control on the right. */
+    /* A head row over one value per row: the name on the left, its control
+       on the right. The head is Live (a green dot and the word) or Testing
+       (an amber dot, the value tried, what the device still shows, and Reset
+       to live at the far end), never both at once. */
     .values-bar {
       display: flex; flex: 1; flex-direction: column; gap: 6px; min-width: 0; padding: 8px 10px;
       border-radius: 9px; background: var(--wa-float-bg); border: 1px solid var(--wa-float-line); box-shadow: var(--wa-float-shadow);
     }
-    .vb-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 24px; padding-left: 6px; }
+    .vb-head { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 24px; padding-left: 6px; }
     .vb-state {
-      display: inline-flex; align-items: center; gap: 6px; flex: none;
-      font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--wa-muted);
+      display: inline-flex; align-items: center; gap: 8px; flex: none; max-width: 60%; min-width: 0; white-space: nowrap;
+      font-size: 12px; font-weight: 700; color: var(--wa-muted);
     }
-    .vb-dot { width: 8px; height: 8px; border-radius: 4px; background: var(--wa-live); }
+    .vb-state .vb-words { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .vb-dot { flex: none; width: 8px; height: 8px; border-radius: 4px; background: var(--wa-live); }
     .values-bar.testing .vb-state { color: var(--wa-testing); }
     .values-bar.testing .vb-dot { background: var(--wa-testing); }
+    .vb-note { flex: 1 1 auto; min-width: 0; font-size: 12px; color: var(--wa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .vb-head > button.vb-live { margin-left: auto; }
     .vb-empty { min-width: 0; padding: 0 6px; font-size: 11.5px; color: var(--wa-muted); }
     /* Past seven rows (30 px each, 4 px gaps), or 40% of the window, the rest
        scrolls down. */
@@ -1182,12 +1187,15 @@ const valuesFootRun = css`
     button.vb-live:hover:not(:disabled) { color: var(--wa-ink); background: var(--wa-hover); }
     button.vb-live:disabled { opacity: .45; cursor: default; }
     button.vb-live:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    /* A phone-width stage has no room for a name beside a control: Live, the
-       values and Back to live share one row that scrolls sideways. */
+    /* A phone-width stage has no room for a name beside a control: Live or
+       Testing, the values and Reset to live share one row that scrolls
+       sideways. The line about what the device still shows goes; the amber
+       head and the amber values already say a value is being tried. */
     @container vfoot (max-width: 520px) {
       .values-bar { flex-direction: row; align-items: center; gap: 10px; padding: 4px 8px 4px 14px; }
       .vb-head { display: contents; }
       .vb-state { order: 0; }
+      .vb-note { display: none; }
       .vb-pills, .vb-empty { order: 1; }
       button.vb-live { order: 2; }
       .vb-pills { flex: 1; flex-direction: row; max-height: none; padding: 2px 0; overflow-x: auto; overflow-y: hidden; }
@@ -1396,6 +1404,24 @@ const sectionCardTailRun = css`
     .more-fold { margin: 6px -10px 0; padding: 0 10px; border-top: 1px solid var(--wa-line); }
     .more-body { padding-top: 6px; }
     .more-body > .hint { margin: 2px 0 6px var(--wa-col); }
+    /* The Position card's align buttons: a head line ("Align" at one end,
+       what they line up to at the other) over one row of small glyph
+       buttons, a thin rule between the across group and the up and down
+       one. The buttons share the row evenly, so seven still fit a 328px
+       inspector at about 34px each. */
+    .align-field { display: flex; flex-direction: column; gap: 6px; padding: 3px 0; min-width: 0; }
+    .align-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--wa-muted); }
+    .align-head .align-to { white-space: nowrap; }
+    .align-row { display: flex; align-items: stretch; gap: 4px; min-width: 0; }
+    .align-row button.align {
+      flex: 1 1 0; min-width: 0; height: 26px; padding: 0; border: 0; border-radius: 6px; cursor: pointer;
+      display: grid; place-items: center; background: var(--wa-field); color: var(--wa-ink);
+      transition: background-color .12s ease-out;
+    }
+    .align-row button.align:hover:not(:disabled) { background: var(--wa-hover); }
+    .align-row button.align:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .align-row button.align svg.ui-icon { width: 15px; height: 15px; }
+    .align-row .align-sep { flex: none; width: 1px; margin: 4px 2px; background: var(--wa-line); }
 `;
 
 /** Every run, for panel.ts, which puts each one back at the place in its

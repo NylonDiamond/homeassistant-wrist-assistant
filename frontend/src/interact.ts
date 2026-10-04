@@ -443,6 +443,32 @@ export function isCentered(frame: NormalizedFrame, axis: CenterAxis): boolean {
   return next.x === frame.x && next.y === frame.y;
 }
 
+/** Which edge of the face the Position card's align buttons put a layer on. */
+export type AlignEdge = "left" | "right" | "top" | "bottom";
+
+/**
+ * A frame moved flush to one edge of the face. Only the one coordinate
+ * changes: Left puts X at 0, Right puts the frame's right side on the face's
+ * right side, and Top and Bottom do the same up and down. Size and turn stay,
+ * and the frame's own box is what lines up, the same box the centre buttons
+ * use, so a turned layer lines up by its unturned box.
+ */
+export function alignFrame(frame: NormalizedFrame, edge: AlignEdge): NormalizedFrame {
+  switch (edge) {
+    case "left": return clampFrame({ ...frame, x: 0 });
+    case "right": return clampFrame({ ...frame, x: round3(1 - frame.width) });
+    case "top": return clampFrame({ ...frame, y: 0 });
+    case "bottom": return clampFrame({ ...frame, y: round3(1 - frame.height) });
+  }
+}
+
+/** Whether a frame already sits on that edge, to the three decimals the wire
+ * carries. */
+export function isAligned(frame: NormalizedFrame, edge: AlignEdge): boolean {
+  const next = alignFrame(frame, edge);
+  return next.x === frame.x && next.y === frame.y;
+}
+
 function clampFrame(f: NormalizedFrame): NormalizedFrame {
   const x = Math.min(1 - KEEP_VISIBLE, Math.max(-f.width + KEEP_VISIBLE, f.x));
   const y = Math.min(1 - KEEP_VISIBLE, Math.max(-f.height + KEEP_VISIBLE, f.y));

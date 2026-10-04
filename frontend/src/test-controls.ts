@@ -143,3 +143,42 @@ export function testControlFor(entityId: string, s: HassEntityState | undefined,
   const step = ownStep !== undefined && ownStep > 0 ? ownStep : stepOf(s?.state);
   return { kind: "number", min, max, step };
 }
+
+/** One value under test, as the values bar's head words it: what is being
+ * tried, with its unit, and what the device still reads. */
+export interface TriedValue {
+  shown: string;
+  live: string;
+  /** A shared value, whose real reading is its saved one rather than a
+   * live entity state. */
+  shared?: boolean;
+}
+
+/**
+ * The values bar's head: whether the face is drawn from the house or from
+ * values set here, and in words that cannot be mistaken for each other.
+ *
+ * Live is the plain mode and has no reset to offer. Testing names the value
+ * being tried ("Testing: 80 °F") and says what the device still shows, since
+ * nothing tried here is saved or sent; with several values tried it only
+ * counts them, as there is no single live value to quote. `device` is the
+ * device word ("watch", "iPhone"), or undefined for a design on no device,
+ * where nothing is showing it.
+ */
+export function testingWords(tried: readonly TriedValue[], device: string | undefined): { mode: "live" | "testing"; heading: string; note?: string } {
+  if (tried.length === 0) return { mode: "live", heading: "Live" };
+  if (tried.length > 1) {
+    return {
+      mode: "testing",
+      heading: `Testing ${tried.length} values`,
+      note: device === undefined ? "Nothing tried here is saved" : `The ${device} still shows the live values`,
+    };
+  }
+  const one = tried[0]!;
+  const kind = one.shared ? "saved" : "live";
+  return {
+    mode: "testing",
+    heading: `Testing: ${one.shown}`,
+    note: device === undefined ? `The ${kind} value is ${one.live}` : `The ${device} still shows the ${kind} value, ${one.live}`,
+  };
+}

@@ -137,7 +137,7 @@ import {
 } from "./model.js";
 import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
-import { SHARED_TEST_PREFIX, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues } from "./test-controls.js";
+import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
 import { type SendState, agoWords, describeHomeSync, describeSend, homeSync, sendState, sendWaitMs } from "./send-state.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
 import {
@@ -5510,39 +5510,58 @@ export class WristAssistantPanel extends LitElement {
     .pop-head { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 2px; position: sticky; top: -10px; background: inherit; padding: 4px 0; }
     .pop-head .spacer { flex: 1; }
 
-    /* States table: one rule as rows. A two-state light is two lines, so the
-       row has to stay one line: every control in it is sized to the text it
-       holds rather than to the column. */
-    /* The table scrolls sideways inside its card when a narrow inspector
-       cannot fit its columns, rather than running past the card's edge. */
-    .states-scroll { overflow-x: auto; margin: 8px 0 4px; }
-    .states-table { width: 100%; border-collapse: collapse; margin: 0; font-size: 13px; }
-    .states-table th {
-      text-align: left; font-weight: 500; font-size: 12px;
-      opacity: .6; padding: 2px 6px; border-bottom: 1px solid var(--wa-line); white-space: nowrap;
+    /* A simple Rules list: one line per state, read at a glance ("State
+       > 76 °F → ● Orange"), each a button that opens the state's controls
+       under it. The line never wraps: the name gives way first, then what
+       the state changes, and the test and the arrow never do. */
+    .state-list { display: flex; flex-direction: column; gap: 4px; margin: 8px 0 4px; min-width: 0; }
+    .state-item { min-width: 0; border-radius: 6px; background: var(--wa-field); }
+    .state-item.open { box-shadow: inset 0 0 0 1px var(--wa-line-strong); }
+    .state-line {
+      display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0; height: 28px; padding: 0 6px 0 4px;
+      font: inherit; font-size: 12px; font-weight: 500; text-align: left; color: var(--wa-ink);
+      border: 0; border-radius: 6px; background: transparent; cursor: pointer; box-sizing: border-box;
     }
-    .states-table th button.icon { opacity: 0; width: 18px; height: 18px; }
-    /* A title with its remove button beside it sits on the same line as a
-       title alone, so the header reads as one row. */
-    .states-table th { height: 24px; vertical-align: middle; }
-    .states-table th > :is(span, button) { vertical-align: middle; }
-    .states-table th:hover button.icon, .states-table th button.icon:focus-visible { opacity: .7; }
-    .states-table th.acts { width: 1%; }
-    .states-table td { padding: 3px 6px; border-bottom: 1px solid color-mix(in srgb, var(--wa-line) 55%, transparent); vertical-align: middle; }
-    .states-table tbody tr:last-child td { border-bottom: none; }
-    .states-table td.empty-row { opacity: .6; padding: 12px 6px; border-bottom: none; }
-    .states-table tr.state-row { cursor: pointer; }
-    .states-table tr.state-row:hover td { background: var(--wa-panel); }
-    .states-table tr.state-row.forced td { background: var(--wa-panel); }
-    .states-table tr.state-row.forced td { background: color-mix(in srgb, var(--wa-rule-tone) 14%, transparent); }
-    /* When shrinks to its controls, so the first setting's column and its
-       header start right after it rather than far across the table. */
-    .states-table :is(th, td).when { width: 1%; white-space: nowrap; }
-    .states-table td.acts { width: 1%; white-space: nowrap; }
-    .states-table td.acts button.icon { opacity: 0; }
-    .states-table tr:hover td.acts button.icon, .states-table td.acts button.icon:focus-visible { opacity: .8; }
-    .row-flag { display: inline-block; width: 12px; color: var(--success-color, #43a047); font-size: 11px; }
-    tr.forced .row-flag { color: color-mix(in srgb, var(--wa-rule-tone) 70%, var(--wa-ink)); }
+    button.state-line:hover { background: var(--wa-hover); }
+    button.state-line:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    /* Open is held: the line wears the held tint the previews follow. */
+    .state-item.open > .state-line { background: color-mix(in srgb, var(--wa-rule-tone) 14%, transparent); border-radius: 6px 6px 0 0; }
+    .state-line .sl-when { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 5px; overflow: hidden; }
+    .state-line .sl-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .state-line .sl-test {
+      flex: 0 0 auto; max-width: 75%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; font-variant-numeric: tabular-nums;
+    }
+    .state-line .sl-arrow { flex: none; color: var(--wa-muted); }
+    .state-line .sl-then { flex: 0 1 auto; max-width: 48%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .state-line .sl-prop, .state-line .sl-none { color: var(--wa-muted); }
+    .state-line .sl-none { font-style: italic; }
+    .state-line .sl-dot {
+      display: inline-block; width: 12px; height: 12px; margin-right: 5px; border-radius: 50%; vertical-align: -2px;
+      box-shadow: inset 0 0 0 1px rgba(128,128,128,.45);
+    }
+    .state-line .sl-glyph { display: inline-block; width: 14px; height: 14px; margin-right: 4px; vertical-align: -2px; }
+    .state-line .sl-glyph svg { display: block; width: 14px; height: 14px; }
+    .state-line .sl-glyph path { fill: currentColor; }
+    .state-line .sl-chev { flex: none; display: grid; place-items: center; color: var(--wa-muted); opacity: .7; transform: rotate(-90deg); transition: transform .15s ease-out; }
+    .state-line .sl-chev svg { width: 12px; height: 12px; }
+    .state-item.open .sl-chev { transform: none; }
+    /* With no Otherwise row: what happens when no state matches, quiet and
+       dashed, and nothing to click. */
+    /* Its words start where a row's name does: past the 4px pad, the 10px
+       flag and the 6px gap, less its own 1px border. */
+    .state-line.fallback { border: 1px dashed var(--wa-line-strong); color: var(--wa-muted); cursor: default; padding-left: 19px; }
+    .state-line.fallback .sl-then { color: var(--wa-muted); }
+    /* An open state: the comparison, the changes and the buttons that move
+       and delete it, each a row with its title on the left. */
+    .state-edit { display: flex; flex-direction: column; gap: 6px; padding: 6px 8px 6px; }
+    .state-edit .se-row { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+    .state-edit .se-lab { flex: none; width: 54px; padding-top: 5px; font-size: 12px; color: var(--wa-muted); }
+    .state-edit .when-cell { display: flex; flex-wrap: wrap; row-gap: 4px; min-width: 0; }
+    .state-edit .then-chips { display: flex; flex: 1 1 auto; min-width: 0; }
+    .state-edit .se-acts { display: flex; justify-content: flex-end; gap: 2px; }
+    .states-empty { color: var(--wa-muted); font-size: 12px; line-height: 1.45; padding: 10px 2px 4px; }
+    .row-flag { display: inline-block; flex: none; width: 10px; text-align: center; color: var(--success-color, #43a047); font-size: 10px; }
     /* A row reads as one sentence of controls, drawn the way the band rows
        above a chart draw theirs: the comparison is a chip with a chevron, the
        number a quiet mono box, and a set cell the same box again. */
@@ -5557,7 +5576,6 @@ export class WristAssistantPanel extends LitElement {
     }
     .when-cell select.when-op:hover { border-color: var(--wa-line-strong); }
     .when-and { color: var(--wa-muted); font-size: 12px; }
-    .when-otherwise { display: inline-block; padding-left: 8px; line-height: 26px; color: var(--wa-muted); font-style: italic; }
     .rhs { display: inline-flex; align-items: center; gap: 2px; }
     .rhs .value-chip-field { margin: 0; }
     input.cellin {
@@ -9333,7 +9351,7 @@ export class WristAssistantPanel extends LitElement {
       ["Rules", "Rows that test a value, like is on or is greater than, each with the changes it makes: icon, text, color, visibility and more. Rows are checked top to bottom and the first match wins. Otherwise applies when none match. Advanced lets a rule check several things at once."],
       ["Shape rules", "The same card, on the shape itself."],
       ["Shared values", "Like a variable: set it once in the Shared values card, under the Layers card, and every layer that reads it follows. On a layer, set Source to Shared value, or click Make shared."],
-      ["Values on the watch", "Every entity and shared value the complication reads, with its live reading. Slide, pick or type another value to watch the preview and the states react. Nothing is saved, and Live or Back to live returns to the real reading."],
+      ["Values on the watch", "Every entity and shared value the complication reads, with its live reading. Slide, pick or type another value to watch the preview and the states react. The bar then reads Testing, in amber, while the watch keeps showing the live value. Nothing is saved, and Reset to live returns to the real reading."],
     ];
     const saving: [string, string][] = [
       ["Save", `Writes the complication to Home Assistant (${m}S). It is dimmed while there is nothing to save. Only an administrator can save. Nothing saves by itself.`],
@@ -19090,24 +19108,29 @@ export class WristAssistantPanel extends LitElement {
     const ids = reads.entityIds.filter((id) => compiledIds.has(id));
     const named = new Set(reads.namedIds);
     const shared = testableSharedValues(cfg).filter((n) => named.has(n.id));
-    const testing = this.testValues.size > 0;
-    const title = isLibraryOwner(this.selectedOwner) ? "Values it reads" : `Values on the ${this.deviceWord}`;
+    const shelved = isLibraryOwner(this.selectedOwner);
+    const title = shelved ? "Values it reads" : `Values on the ${this.deviceWord}`;
     // One floating panel at the foot of the stage, the same family as the
-    // toolbar over it. Its head reads Live until any value is overridden, then
-    // Testing, with Back to live at the other end. Each value is a row that
-    // keeps its own slider, picker or box. A phone-width stage folds the head
-    // into one sideways row with the values (see the vfoot container rule).
-    // The reset slot is kept while live, so every control ends at one edge.
+    // toolbar over it. Its head is one of two modes and never both: Live, a
+    // green dot and the word, with nothing to reset; or Testing, an amber dot,
+    // the value being tried, what the device still shows, and Reset to live.
+    // Each value is a row that keeps its own slider, picker or box. A
+    // phone-width stage folds the head into one sideways row with the values
+    // (see the vfoot container rule). The reset slot is kept while live, so
+    // every control ends at one edge.
+    const head = testingWords([...this.testValues].map(([key, v]) => this.triedValue(key, v)), shelved ? undefined : this.deviceWord);
+    const testing = head.mode === "testing";
     const resetSlot = html`<span class="live-reset-slot" aria-hidden="true"></span>`;
     return html`<div class="values-foot"><div class="values-bar ${testing ? "testing" : ""}" role="group" aria-label=${title}>
       <div class="vb-head">
         <span class="vb-state" title=${testing
-          ? "Testing: the face is drawn with the values you set here. Nothing is saved."
+          ? "Testing: the face is drawn with the values you set here. Nothing is saved or sent."
           : "Live: the face is drawn with what the house says right now. Slide, pick or type a value to try another."}>
-          <i class="vb-dot" aria-hidden="true"></i>${testing ? "Testing" : "Live"}</span>
-        <button type="button" class="vb-live" ?disabled=${!testing}
-          title=${testing ? "Drop every value you set here and draw the face from the house again" : "Already live"}
-          @click=${() => { this.editingValue = undefined; this.applyTestValues(new Map()); }}>Back to live</button>
+          <i class="vb-dot" aria-hidden="true"></i><span class="vb-words">${head.heading}</span></span>
+        ${testing ? html`<span class="vb-note" title=${head.note ?? ""}>${head.note}</span>
+          <button type="button" class="vb-live"
+            title="Drop every value you set here and draw the face from the house again"
+            @click=${() => { this.editingValue = undefined; this.applyTestValues(new Map()); }}>Reset to live</button>` : nothing}
       </div>
       ${ids.length === 0 && shared.length === 0 ? html`<span class="vb-empty">${this.inControlView
         ? "The control reads no entity yet. Point its target, title or value line at one."
@@ -19125,7 +19148,7 @@ export class WristAssistantPanel extends LitElement {
             <span class="vp-icon">${domainIcon(id.split(".")[0] ?? "")}</span><b>${name}</b>
             ${this.renderTestControl(id, name, s, override, unit, live)}
             ${override !== undefined
-              ? html`<button type="button" class="live-reset" title=${`Back to the live value: ${live}`} aria-label=${`Back to the live value of ${name}`}
+              ? html`<button type="button" class="live-reset" title=${`Reset to the live value: ${live}`} aria-label=${`Reset ${name} to its live value`}
                   @click=${() => this.setTestValue(id, undefined)}>${uiIcon("reset")}</button>`
               : resetSlot}
           </div>`;
@@ -19145,13 +19168,26 @@ export class WristAssistantPanel extends LitElement {
             <span class="vtag" title="A shared value. Trying one here is not saved; change it in Shared values to keep it.">shared</span>
             ${this.renderTestControl(key, name, s, override, "", live)}
             ${override !== undefined
-              ? html`<button type="button" class="live-reset" title=${`Back to the saved value: ${live}`} aria-label=${`Back to the saved value of ${name}`}
+              ? html`<button type="button" class="live-reset" title=${`Reset to the saved value: ${live}`} aria-label=${`Reset ${name} to its saved value`}
                   @click=${() => this.setTestValue(key, undefined)}>${uiIcon("reset")}</button>`
               : resetSlot}
           </div>`;
         })}
       </div>`}
     </div></div>`;
+  }
+
+  /** One value under test, for the values bar's head: what is tried, with
+   * the entity's unit, and what the device still reads. Worked out from the
+   * key alone, so a value tried on another shape's view still counts. */
+  private triedValue(key: string, tried: string): TriedValue {
+    if (key.startsWith(SHARED_TEST_PREFIX)) {
+      const raw = this.sharedRaw(key.slice(SHARED_TEST_PREFIX.length)) ?? "";
+      return { shown: tried, live: raw === "" ? "empty" : raw, shared: true };
+    }
+    const s = this.hass.states[key];
+    const unit = typeof s?.attributes.unit_of_measurement === "string" ? ` ${s.attributes.unit_of_measurement}` : "";
+    return { shown: `${tried}${unit}`, live: s ? `${s.state}${unit}` : "not in Home Assistant" };
   }
 
   /**
