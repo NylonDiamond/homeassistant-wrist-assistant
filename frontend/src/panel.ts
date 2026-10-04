@@ -2596,14 +2596,14 @@ export class WristAssistantPanel extends LitElement {
     }
     .pk-tab:hover { color: var(--wa-ink); }
     .pk-tab:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 7px 7px 0 0; }
-    .pk-tab.on { color: var(--wa-ink); font-weight: 700; border-bottom-color: var(--pk-person, var(--wa-accent)); }
+    .pk-tab.on { color: var(--wa-ink); font-weight: 600; border-bottom-color: var(--pk-person, var(--wa-ink)); }
     .pk-tab svg { width: 15px; height: 15px; }
     /* The glyph and the count wear the color; the name stays ink, so a row of
        eight tabs is not eight colors of text. One person's watch and one
        person's iPhone are the same color, which is what makes the row read as
        people rather than as devices. */
-    .pk-tab-glyph { display: inline-flex; flex: none; color: var(--pk-person, var(--wa-accent)); }
-    .pk-tab-count { font-size: 11.5px; font-weight: 400; opacity: .8; color: var(--pk-person, var(--wa-accent)); }
+    .pk-tab-glyph { display: inline-flex; flex: none; color: var(--pk-person, var(--wa-muted)); }
+    .pk-tab-count { font-size: 11.5px; font-weight: 400; color: var(--wa-muted); }
     /* One shape at a time, in the head beside the search. A menu rather than
        a chip each: eight pills for a question most visits never ask. */
     .pk-shape { display: inline-flex; align-items: center; gap: 6px; flex: none; }
@@ -2624,13 +2624,13 @@ export class WristAssistantPanel extends LitElement {
        the grid's floor empty instead; the eye stays where the tabs are. */
     dialog.pk-dialog {
       width: min(1400px, 100vw - 48px); height: calc(100dvh - 48px); padding: 0;
-      border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg);
+      border: 1px solid var(--wa-frame); border-radius: var(--wa-r-lg);
       background: var(--wa-card); color: var(--wa-ink); box-shadow: var(--wa-shadow-pop);
       display: flex; flex-direction: column; overflow: hidden;
     }
-    dialog.pk-dialog::backdrop { background: rgba(0,0,0,.45); }
+    dialog.pk-dialog::backdrop { background: rgba(0,0,0,.6); }
     .pk-head { display: flex; align-items: center; gap: 12px; flex: none; padding: 12px 12px 12px 18px; border-bottom: 1px solid var(--wa-line); }
-    .pk-head h2 { margin: 0; flex: 1; min-width: 0; font-size: 17px; font-weight: 700; }
+    .pk-head h2 { margin: 0; flex: 1; min-width: 0; font-size: 16px; font-weight: 600; }
     /* How many the home holds, beside the title: the tabs say how they are
        split up, and this says how many there are to split. */
     .pk-head-count { font-size: 14px; font-weight: 400; color: var(--wa-muted); margin-left: 6px; }
@@ -2641,8 +2641,9 @@ export class WristAssistantPanel extends LitElement {
     .pk-card-crop svg svg.complication { width: auto; height: auto; max-width: none; max-height: none; border-radius: 0; overflow: visible; }
     .pk-search {
       display: flex; align-items: center; gap: 8px; flex: none; width: 260px; max-width: 45vw;
-      padding: 6px 10px; border-radius: var(--wa-r-md); border: 1px solid var(--wa-line); background: var(--wa-panel);
+      height: 28px; box-sizing: border-box; padding: 0 10px; border-radius: 6px; border: 1px solid var(--wa-line-strong); background: var(--wa-field);
     }
+    .pk-search:hover { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
     .pk-search:focus-within { border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
     .pk-search svg { width: 14px; height: 14px; flex: none; color: var(--wa-muted); }
     /* No border of its own: the label around it is the field, so the icon and
@@ -2658,7 +2659,10 @@ export class WristAssistantPanel extends LitElement {
     }
     /* The grid sits on the panel color rather than the card color, so a
        white card reads as a card and not as a rule drawn round some text. */
-    .pk-body { flex: 1; min-height: 0; overflow: auto; padding: 14px 18px; background: var(--wa-panel); }
+    .pk-body {
+      flex: 1; min-height: 0; overflow: auto; padding: 14px 18px; background: var(--wa-bg);
+      scrollbar-width: thin; scrollbar-color: var(--wa-line-strong) transparent;
+    }
     /* One device per block on the All tab, with room between them: the gap is
        what makes the headings read as headings rather than as captions under
        the grid above. */
@@ -2677,9 +2681,9 @@ export class WristAssistantPanel extends LitElement {
     .pk-band { display: block; }
     .pk-band + .pk-band, .pk-band + .pk-sec, .pk-sec + .pk-band { margin-top: 18px; }
     .pk-band-top { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; }
-    .pk-band-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--pk-person, var(--wa-accent)); }
-    .pk-band-name { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .09em; color: var(--wa-muted); }
-    .pk-band-count { font-size: 11px; font-weight: 600; color: var(--pk-person, var(--wa-accent)); opacity: .9; }
+    .pk-band-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--pk-person, var(--wa-muted)); }
+    .pk-band-name { font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: .09em; color: var(--wa-ink); }
+    .pk-band-count { font-size: 11px; font-weight: 500; color: var(--wa-muted); }
     .pk-band-rule { flex: 1; height: 1px; min-width: 12px; background: var(--wa-line); }
     .pk-band-body { display: flex; flex-direction: column; gap: 10px; }
     .pk-band.shut .pk-band-top { margin-bottom: 0; }
@@ -2689,7 +2693,7 @@ export class WristAssistantPanel extends LitElement {
       display: flex; align-items: center; gap: 9px; min-width: 0; flex: none;
       font: inherit; color: inherit; background: transparent; border: 0; padding: 2px 0; cursor: pointer; text-align: left;
     }
-    .pk-fold-btn:hover .pk-sec-name, .pk-fold-btn:hover .pk-band-name { color: var(--wa-accent); }
+    .pk-fold-btn:hover .pk-fold { color: var(--wa-ink); }
     .pk-fold-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 6px; }
     /* Down while the block is open, pointing at what it holds; round to the
        right while it is folded, pointing at what opening it would show. The
@@ -2707,19 +2711,20 @@ export class WristAssistantPanel extends LitElement {
        nobody's keeps the accent, so the shelf is still a surface of its own. */
     .pk-sec {
       display: flex; flex-direction: column; min-width: 0;
-      border: 1px solid var(--wa-line); border-radius: 12px;
-      background: color-mix(in srgb, var(--pk-person, var(--wa-accent)) 9%, var(--wa-panel));
+      --c: var(--pk-person, var(--wa-muted)); --lo-fill: var(--wa-card); --lo-mid: var(--wa-card-mid);
+      border-radius: var(--wa-lc-r);
+      ${litOutline}
     }
     .pk-sec + .pk-sec { margin-top: 10px; }
     /* A hairline under the heading and nothing else: the fill is already
        shared, so the line is all that has to say where the cards start. */
     .pk-sec-top {
-      display: flex; align-items: baseline; gap: 10px; min-width: 0; padding: 7px 12px;
-      border-bottom: 1px solid var(--wa-line);
+      display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 38px; box-sizing: border-box; padding: 5px 10px;
+      border-bottom: 0;
     }
     .pk-sec.shut .pk-sec-top { border-bottom: 0; }
-    .pk-sec-body { padding: 10px; min-width: 0; }
-    .pk-sec-head { display: flex; align-items: center; gap: 9px; margin: 0; font-size: 13px; font-weight: 700; flex: none; }
+    .pk-sec-body { padding: 0 10px 10px; min-width: 0; }
+    .pk-sec-head { display: flex; align-items: center; gap: 9px; margin: 0; font-size: 12px; font-weight: 500; letter-spacing: .09em; text-transform: uppercase; flex: none; }
     /* One shape per box inside a device's box, named on a line of its own over
        the cards. The name was stood on its end in a gutter for a while, which
        saved the line but read as a spine bolted to the side of the grid. The
@@ -2733,25 +2738,29 @@ export class WristAssistantPanel extends LitElement {
        plain ground rather than borrowing somebody else's. */
     .pk-box {
       display: flex; flex-direction: column; min-width: 0; padding: 8px 10px 10px;
-      border: 1px solid var(--wa-line); border-radius: 10px;
-      background: color-mix(in srgb, var(--pk-shape, transparent) 10%,
-        color-mix(in srgb, var(--wa-card) 45%, var(--wa-panel)));
+      border: 1px solid var(--wa-line-strong); border-radius: 8px;
+      background: var(--wa-bg);
     }
     .pk-box-top { display: flex; align-items: center; gap: 7px; min-width: 0; margin: 0 0 8px 2px; }
     /* The label takes the hue at full strength: the wash alone is too faint to
        learn a shape's colour from, and the two together teach it in one look. */
     .pk-box-name {
-      font-size: 10.5px; font-weight: 700; letter-spacing: .11em; text-transform: uppercase;
-      color: var(--pk-shape, var(--wa-muted)); white-space: nowrap;
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 10.5px; font-weight: 500; letter-spacing: .11em; text-transform: uppercase;
+      color: var(--wa-ink); white-space: nowrap;
     }
+    .pk-box-name::before { content: ""; width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--pk-shape, var(--wa-muted)); }
     .pk-box-count { font-size: 10.5px; font-weight: 600; color: var(--wa-muted); opacity: .65; }
     .pk-box-pick { flex: none; margin: 0; accent-color: var(--wa-accent); }
     /* The person's own color, the same one their tabs wear, so the All tab's
        headings and the row of tabs agree about whose is whose. */
-    .pk-sec-glyph { display: inline-flex; flex: none; color: var(--pk-person, var(--wa-accent)); }
-    .pk-sec-glyph svg { width: 16px; height: 16px; }
+    .pk-sec-glyph {
+      display: inline-grid; place-items: center; flex: none; width: 20px; height: 20px; border-radius: 6px;
+      background: var(--pk-person, var(--wa-muted)); color: var(--wa-chip-ink);
+    }
+    .pk-sec-glyph svg { width: 13px; height: 13px; }
     .pk-sec-name { color: var(--wa-ink); }
-    .pk-sec-count { font-size: 12px; font-weight: 400; color: var(--pk-person, var(--wa-accent)); opacity: .8; }
+    .pk-sec-count { font-size: 12px; font-weight: 400; letter-spacing: 0; color: var(--wa-muted); }
     /* What Unassigned is, said where it is rather than in a tooltip: nobody
        duplicates a design into it without being told what it is for. */
     .pk-sec-note {
@@ -2793,13 +2802,15 @@ export class WristAssistantPanel extends LitElement {
     .pk-dialog.bare .pk-band-body { gap: 8px; }
     .pk-card {
       position: relative; z-index: 1; display: flex; flex-direction: column; min-width: 0;
-      padding: 12px; border-radius: 12px; border: 1px solid var(--wa-line); background: var(--wa-card);
+      padding: 10px; border-radius: 8px; border: 1px solid var(--wa-line-strong); background: var(--wa-card);
+      transition: border-color .12s ease-out;
     }
+    .pk-card:hover { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
     /* The card with the "Devices" menu open climbs over its neighbours,
        since the menu is absolute inside it and the grid would otherwise clip
        it under the next card along. */
     .pk-card.over { z-index: 3; }
-    .pk-card[aria-current="true"] { border-color: var(--wa-accent); box-shadow: 0 0 0 3px var(--wa-sel-ring); }
+    .pk-card[aria-current="true"] { border-color: var(--wa-ink); box-shadow: 0 0 0 1px var(--wa-ink); }
     /* Hidden designs stay in the grid, quieter. They used to fold away under a
        "Hidden (3)" heading, which is a second list to remember in a surface
        whose whole point is that there is one. */
@@ -2811,7 +2822,7 @@ export class WristAssistantPanel extends LitElement {
        wears the same ring the open one does so the two read alike. */
     .pk-card-acts.away { display: none; }
     .pk-card.picking { cursor: pointer; }
-    .pk-card.picked { border-color: var(--wa-accent); box-shadow: 0 0 0 3px var(--wa-sel-ring); }
+    .pk-card.picked { border-color: var(--wa-ink); box-shadow: 0 0 0 1px var(--wa-ink); }
     .pk-card-pick { flex: none; margin: 0; accent-color: var(--wa-accent); }
     /* Every other checkbox in the panel is a switch, because every other one
        turns a setting on. These do not: they say which of thirty cards this
@@ -2890,28 +2901,29 @@ export class WristAssistantPanel extends LitElement {
     .pk-bar-done svg { width: 14px; height: 14px; }
     .pk-pick-btn {
       display: inline-flex; align-items: center; gap: 6px; flex: none; font: inherit; font-size: 12.5px;
-      padding: 6px 10px; border-radius: var(--wa-r-md); border: 1px solid var(--wa-line);
-      background: var(--wa-panel); color: var(--wa-ink); cursor: pointer;
+      height: 28px; box-sizing: border-box; padding: 0 10px; border-radius: 6px; border: 1px solid var(--wa-line-strong);
+      background: var(--wa-field); color: var(--wa-ink); cursor: pointer; font-weight: 600;
     }
+    .pk-pick-btn:hover { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
     .pk-pick-btn svg { width: 14px; height: 14px; }
-    .pk-pick-btn.on { border-color: var(--wa-accent); color: var(--wa-accent); }
+    .pk-pick-btn.on { border-color: transparent; background: var(--wa-seg-on); color: var(--wa-ink); }
     /* Two ways of drawing a card, both on the head with the one in use lit.
        A single button that swapped its own label made the reader work out
        whether the word on it was the state or the offer; a pair says which
        it is on and what the other one would be, and is one press either way. */
     .pk-seg {
-      display: inline-flex; flex: none; gap: 2px; padding: 2px;
-      border: 1px solid var(--wa-line); border-radius: var(--wa-r-md); background: var(--wa-panel);
+      display: inline-flex; flex: none; gap: 2px; padding: 2px; height: 28px; box-sizing: border-box;
+      border: 1px solid var(--wa-line-strong); border-radius: 6px; background: var(--wa-field);
     }
     .pk-seg-btn {
       display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 12.5px;
-      padding: 4px 9px; border: 0; border-radius: calc(var(--wa-r-md) - 3px);
+      padding: 0 9px; border: 0; border-radius: 4px; font-weight: 600;
       background: transparent; color: var(--wa-muted); cursor: pointer;
       transition: background .12s ease, color .12s ease;
     }
     .pk-seg-btn svg { width: 14px; height: 14px; }
     .pk-seg-btn:hover { color: var(--wa-ink); }
-    .pk-seg-btn.on { background: color-mix(in srgb, var(--wa-accent) 18%, var(--wa-card)); color: var(--wa-ink); }
+    .pk-seg-btn.on { background: var(--wa-seg-on); color: var(--wa-ink); }
     .pk-seg-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .pk-tag {
       flex: none; font-size: 10px; color: var(--wa-muted); cursor: help;
@@ -2931,13 +2943,13 @@ export class WristAssistantPanel extends LitElement {
        what keeps it from disappearing into the dark skin. */
     .pk-card-crop {
       display: flex; align-items: center; justify-content: center; overflow: hidden;
-      aspect-ratio: 86 / 48; border-radius: 10px; background: #000; box-shadow: inset 0 0 0 1px rgba(255,255,255,.1);
+      aspect-ratio: 86 / 48; border-radius: 6px; background: #000; box-shadow: inset 0 0 0 1px rgba(255,255,255,.1);
     }
     /* In the Shape view the well is the shape rather than a window onto a
        device, so each card sets its own aspect ratio inline. The one here
        is only the fallback for a control and for a shape whose device has no
        slot for it, both of which keep their device picture. */
-    .pk-card-crop.bare { border-radius: 8px; }
+    .pk-card-crop.bare { border-radius: 6px; }
     .pk-card-crop > svg.pk-crop { display: block; width: 100%; height: 100%; }
     /* A design that is only a Control Center control has its tile as the whole
        picture: it sits on neither screen, so there is no device to crop. The
@@ -2960,7 +2972,7 @@ export class WristAssistantPanel extends LitElement {
     /* The picture, and the Devices menu when it is open over it. */
     .pk-card-pic { position: relative; min-width: 0; }
     .pk-card-name {
-      flex: 1; min-width: 0; text-align: left; font: inherit; font-size: 13px; font-weight: 700;
+      flex: 1; min-width: 0; text-align: left; font: inherit; font-size: 13px; font-weight: 600;
       color: inherit; background: transparent; border: 0; padding: 0; cursor: pointer;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
@@ -3058,6 +3070,16 @@ export class WristAssistantPanel extends LitElement {
       display: flex; align-items: center; gap: 10px; flex: none; padding: 12px 18px;
       border-top: 1px solid var(--wa-line); background: var(--wa-card);
     }
+    .pk-foot .new-btn {
+      --c: var(--wa-line-strong); --lo-fill: var(--wa-card);
+      height: 28px; min-height: 28px; padding: 0 11px; border-radius: 6px; font-size: 13px; font-weight: 600; color: var(--wa-ink);
+      background: var(--lo-fill); border: 1px solid color-mix(in srgb, var(--c) 60%, var(--wa-card)); filter: none;
+    }
+    .pk-foot .new-btn.pk-backup { border-color: var(--wa-line-strong); }
+    .pk-foot .new-btn.pk-import { --c: var(--wa-hue-purple); }
+    .pk-foot .new-btn.pk-new { --c: var(--wa-hue-green); }
+    .pk-foot .new-btn:hover:not(:disabled) { --lo-fill: var(--wa-hover); filter: none; }
+    .pk-foot .new-btn svg { width: 13px; height: 13px; }
     .pk-foot-hint { flex: 1; min-width: 0; font-size: 12px; color: var(--wa-muted); }
     /* What the last write said, in the hint's place: the panel's own banner
        is behind the backdrop while this dialog is up. */
@@ -11851,15 +11873,15 @@ export class WristAssistantPanel extends LitElement {
         : html`<span class="pk-foot-said ${this.saveError ? "err" : ""}">${said}</span>
           <button type="button" class="ghost small"
             @click=${() => { this.saveError = undefined; this.copyStatus = undefined; this.copyOpen = undefined; }}>Dismiss</button>`}
-      <button type="button" class="new-btn" ?disabled=${this.backingUp}
+      <button type="button" class="new-btn pk-backup" ?disabled=${this.backingUp}
         title="Save every complication in this home to one file"
         @click=${() => void this.backupAll()}>${uiIcon("download")}<span>${this.backingUp ? "Backing up…" : "Back up all"}</span></button>
-      <button type="button" class="new-btn" ?disabled=${full || this.ownerBusy}
+      <button type="button" class="new-btn pk-import" ?disabled=${full || this.ownerBusy}
         title=${full ? `${where} has no free slot. Delete a complication first.` : "Paste a complication somebody shared"}
         @click=${() => this.importFromPicker()}><span>Import</span></button>
-      <button type="button" class="new-btn primary" ?disabled=${full || this.ownerBusy}
+      <button type="button" class="new-btn pk-new" ?disabled=${full || this.ownerBusy}
         title=${full ? `${where} has no free slot. Delete a complication first.` : "Make a new complication"}
-        @click=${() => this.newFromPicker()}>${uiIcon("plus")}<span>New</span></button>
+        @click=${() => this.newFromPicker()}>${uiIcon("plus")}<span>New complication</span></button>
     </div>`;
   }
 
