@@ -575,13 +575,9 @@ export function pastedFrame(copied: CopiedPosition, to: FamilyKind, kind: CEleme
 /** Every card id the inspector can show, for "Open all". */
 export const ALL_SECTIONS = ["content", "look", "numbers", "row", "level", "timestamp", "tappable", "states", "placement", "corner", "home", "placements", "shape", "symbol"] as const;
 
-/**
- * The cards Collapse all leaves open: what a layer shows and how it looks.
- * A picture's Look card is its Picture card, and a shape's own card is its
- * Look, so the same two ids serve every selection. Every other card folds to
- * its one-line summary in the header.
- */
-export const DEFAULT_SECTIONS: readonly string[] = ["content", "look"];
+/** The cards Collapse all leaves open: none. Every card folds to its
+ * one-line summary in the header. */
+export const DEFAULT_SECTIONS: readonly string[] = [];
 
 /** The open set a new selection starts from: every card, so nothing is hidden
  * until the reader folds it. */
@@ -594,8 +590,8 @@ export function collapsedSections(): Set<string> {
   return new Set(DEFAULT_SECTIONS);
 }
 
-/** Whether any card beyond Content and Look is open, which is when the
- * inspector's header offers Collapse all rather than Open all. An id with a
+/** Whether any card is open, which is when the inspector's header offers
+ * Collapse all rather than Open all. An id with a
  * colon is not a card (an old More line's entry) and does not count. */
 export function moreThanDefaultOpen(open: ReadonlySet<string>): boolean {
   return [...open].some((id) => !id.includes(":") && !DEFAULT_SECTIONS.includes(id));

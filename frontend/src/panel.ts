@@ -19535,7 +19535,7 @@ export class WristAssistantPanel extends LitElement {
     } else {
       body = familyEditor(host, this.activeFamily);
     }
-    // Collapse all folds back to Content and Look; Open all opens every card.
+    // Collapse all folds every card; Open all opens every card.
     // A card's own More line keeps its state either way.
     const extra = moreThanDefaultOpen(this.openSections);
     const moreLines = [...this.openSections].filter((id) => id.includes(":"));

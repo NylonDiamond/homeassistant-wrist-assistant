@@ -96,9 +96,9 @@ function withLayer<K extends CElement["kind"]>(kind: K, tweak: (el: Extract<CEle
 }
 
 describe("the cards a new selection opens", () => {
-  it("is every card, and Collapse all keeps only Content and Look", () => {
+  it("is every card, and Collapse all keeps none", () => {
     expect([...defaultOpenSections()].sort()).toEqual([...ALL_SECTIONS].sort());
-    expect([...collapsedSections()].sort()).toEqual(["content", "look"]);
+    expect([...collapsedSections()]).toEqual([]);
     expect(DEFAULT_SECTIONS.every((id) => (ALL_SECTIONS as readonly string[]).includes(id))).toBe(true);
   });
 
@@ -111,14 +111,13 @@ describe("the cards a new selection opens", () => {
     expect(markup).toContain("states-add");
   });
 
-  it("draws Content and Look open and every other card folded to its summary after Collapse all", () => {
+  it("draws every card folded to its summary after Collapse all", () => {
     const { cfg, el } = withLayer("text");
     const markup = flatten(layerEditor({ ...host(cfg), openSections: collapsedSections() }, el, "rectangular"));
-    // Look is open: its first row is there.
-    expect(markup).toContain("Font size");
-    expect(markup).toContain("Typeface");
-    // Position, States and Tap are folded: their rows are not drawn, their
-    // summaries are.
+    // Look, Position, States and Tap are folded: their rows are not drawn,
+    // their summaries are.
+    expect(markup).not.toContain("Font size");
+    expect(markup).not.toContain("Typeface");
     expect(markup).not.toContain("Rotation");
     expect(markup).not.toContain("states-add");
     expect(markup).toContain("X 25% Y 25% · 50 × 50");
@@ -126,13 +125,13 @@ describe("the cards a new selection opens", () => {
     expect(markup).toContain(">off<");
   });
 
-  it("offers Collapse all only while a card past the default two is open", () => {
+  it("offers Collapse all while any card is open", () => {
     expect(moreThanDefaultOpen(defaultOpenSections())).toBe(true);
     expect(moreThanDefaultOpen(collapsedSections())).toBe(false);
-    expect(moreThanDefaultOpen(new Set(["content"]))).toBe(false);
+    expect(moreThanDefaultOpen(new Set(["content"]))).toBe(true);
     expect(moreThanDefaultOpen(new Set(["content", "look", "states"]))).toBe(true);
     // A More line is not a card.
-    expect(moreThanDefaultOpen(new Set(["content", "look", "look:more"]))).toBe(false);
+    expect(moreThanDefaultOpen(new Set(["look:more"]))).toBe(false);
   });
 
   it("gives a folded Rules card an Add that opens it and adds a state", () => {
@@ -198,7 +197,7 @@ describe("the less used rows in a Look card", () => {
   // card can put a stray Opacity row in the markup.
   it("shows every row of a text layer, with no More line to open", () => {
     const { cfg, el } = withLayer("text");
-    const markup = flatten(layerEditor(host(cfg, { openSections: collapsedSections() }), el, "rectangular"));
+    const markup = flatten(layerEditor(host(cfg, { openSections: new Set(["content", "look"]) }), el, "rectangular"));
     expect(markup).not.toContain("more-line");
     expect(markup).toContain("Mono digits");
     expect(markup).toContain(">Opacity<");
@@ -208,7 +207,7 @@ describe("the less used rows in a Look card", () => {
 
   it("shows a shape's gradient and opacity", () => {
     const { cfg, el } = withLayer("shape");
-    const markup = flatten(layerEditor(host(cfg, { openSections: collapsedSections() }), el, "rectangular"));
+    const markup = flatten(layerEditor(host(cfg, { openSections: new Set(["content", "look"]) }), el, "rectangular"));
     expect(markup).toContain("Gradient");
     expect(markup).toContain(">Opacity<");
   });
@@ -216,7 +215,7 @@ describe("the less used rows in a Look card", () => {
   it("offers one Rectangle with a corner radius, for both rectangle kinds", () => {
     for (const kind of ["rectangle", "roundedRectangle"] as const) {
       const { cfg, el } = withLayer("shape", (s) => { s.payload.kind = kind; });
-      const markup = flatten(layerEditor(host(cfg, { openSections: collapsedSections() }), el, "rectangular"));
+      const markup = flatten(layerEditor(host(cfg, { openSections: new Set(["content", "look"]) }), el, "rectangular"));
       expect(markup).toContain(">Rectangle<");
       expect(markup).not.toContain(">Rounded<");
       expect(markup).toContain("Corner radius");
