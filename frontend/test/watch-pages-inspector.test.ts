@@ -427,6 +427,60 @@ describe("the inspector with no tile", () => {
   });
 });
 
+describe("the inspector with several tiles picked", () => {
+  /** The hall with both tiles picked by Cmd+A. */
+  function pickedHall(): Editor {
+    // Picking lets the single tile go, which ends a drag on its numbers at
+    // the window.
+    vi.stubGlobal("window", { addEventListener() {}, removeEventListener() {} });
+    const el = editor(hallPage(), DIMMER);
+    el.onKeyDown({ key: "a", defaultPrevented: false, metaKey: true, ctrlKey: false, altKey: false, shiftKey: false,
+      composedPath: () => [el], preventDefault() {} });
+    return el;
+  }
+
+  it("is one card naming the picked tiles, with Duplicate and Delete for all of them", () => {
+    const el = pickedHall();
+    expect([...(el.multi as ReadonlySet<string>)]).toEqual([DIMMER, SPACER]);
+    const text = flat(inspector(el));
+    const head = text.slice(text.indexOf(`<div class="insp-head">`), text.indexOf(`<div class="insp-body">`));
+    expect(head).toMatch(/<button class="root" title="Edit the page"[^>]*>Hall<\/button><span class="sep">›<\/span><span class="kchip"[^>]*>2 tiles<\/span>/);
+    expect(head).not.toContain("Collapse all");
+    expect(cards(text)).toHaveLength(1);
+    const picked = card(text, "2 tiles picked");
+    // Each picked tile, in reading order, with its face, name and kind.
+    const rows = [...picked.matchAll(/data-picked-tile=([^\s>]+)/g)].map((m) => m[1]);
+    expect(rows).toEqual([DIMMER, SPACER]);
+    expect(picked).toContain(`<span class="thumb pe-thumb"`);
+    expect(picked).toContain(`<span class="nm-t">Smart Plug Dimmer</span></b><small><span class="kind">Light</span>`);
+    expect(picked).toContain(`<span class="kind">Spacer</span>`);
+    // A second light has nowhere to go; the spacer copies.
+    expect(picked).toMatch(/class="pe-btn pe-picked-dup" \?disabled=false title=1 tile of 2 can be copied here; the rest cannot\./);
+    expect(picked).toContain("<span>Duplicate 2 tiles</span>");
+    expect(picked).toMatch(/class="pe-btn pe-danger pe-picked-del" \?disabled=false/);
+    expect(picked).toContain("<span>Delete 2 tiles</span>");
+    // None of the single tile's cards.
+    expect(text).not.toContain("<h4>Name");
+    expect(text).not.toContain("<h4>Size");
+  });
+
+  it("deletes both from its Delete, and goes back to the page from the crumb", () => {
+    const el = pickedHall();
+    click(inspector(el), `title="Edit the page"`);
+    expect(el.selectedTileId).toBeUndefined();
+    expect((el.multi as ReadonlySet<string>).size).toBe(0);
+    // Both buttons are in the card's own template: the click after the
+    // Delete button's class is its own.
+    const again = pickedHall();
+    // Node has no CSS.escape to look a tile's button up by.
+    again.tileButton = () => null;
+    const t =templates(inspector(again)).find((c) => c.strings.some((s) => s.includes("pe-picked-del")))!;
+    const at = t.strings.findIndex((s, i) => s.trimEnd().endsWith("@click=") && t.strings.slice(0, i + 1).join("").includes("pe-picked-del"));
+    (t.values[at] as () => void)();
+    expect(again.currentPage()!.items).toEqual([]);
+  });
+});
+
 describe("the page strip", () => {
   it("reads Page settings: Hidden, the three chips Theme, Background and Title, then Smart Page, a hairline between each", () => {
     const text = flat(strip(editor(hallPage())));

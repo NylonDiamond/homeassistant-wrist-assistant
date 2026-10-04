@@ -128,6 +128,7 @@ import {
   WATCH_EDITOR_MAX_ROWS,
   WATCH_TILE_SIZE_PRESETS,
   addWatchPage,
+  canNudgeWatchTile,
   deleteWatchPage,
   deleteWatchTile,
   dropWatchTile,
@@ -660,6 +661,11 @@ export class WaPageEditor extends LitElement {
 
   @state() private selectedPageId?: string;
   @state() private selectedTileId?: string;
+  /** The tiles picked together (Cmd or Ctrl-click, Shift-click, Select all),
+   * the complication editor's `multi`: two or more ids on the shown page, with
+   * `selectedTileId` among them as the primary (the last one clicked, and the
+   * anchor of a Shift range). Empty for a single selection or none. */
+  @state() private multi: ReadonlySet<string> = new Set();
   /** The tile whose Tiles row is under the pointer: the stage tints it, as
    * the complication editor tints a layer whose row is pointed at. */
   @state() private rowHoverTileId?: string;
@@ -1044,6 +1050,7 @@ export class WaPageEditor extends LitElement {
     if (this.selectedTileId !== undefined && (page === undefined || this.tileOn(page, this.selectedTileId) === undefined)) {
       this.selectedTileId = undefined;
     }
+    this.reconcilePick(page);
     // A row that goes away (a delete, an undo) takes its pointerleave with it.
     if (this.rowHoverTileId !== undefined && (page === undefined || this.tileOn(page, this.rowHoverTileId) === undefined)) {
       this.rowHoverTileId = undefined;
@@ -1058,6 +1065,123 @@ export class WaPageEditor extends LitElement {
       this.endScrub();
     }
     keepWatchPagesSelection(this.watchId, { pageId: this.selectedPageId, tileId: this.selectedTileId });
+  }
+
+  /** Keep a pick of several tiles on tiles the shown page still has (an
+   * undo, a merge, a delete took some away): two or more left stay picked,
+   * the primary moving to the last of them when it went; one left is a plain
+   * selection of it; none, nothing. */
+  private reconcilePick(page: WatchPage | undefined): void {
+    if (this.multi.size === 0) return;
+    const kept = page === undefined ? [] : [...this.multi].filter((id) => this.tileOn(page, id) !== undefined);
+    const primaryKept = kept.some((id) => sameWatchId(id, this.selectedTileId));
+    if (kept.length === this.multi.size && primaryKept) return;
+    if (kept.length >= 2) {
+      if (!primaryKept) this.selectedTileId = kept[kept.length - 1];
+      this.multi = new Set(kept);
+      return;
+    }
+    this.multi = new Set();
+    this.selectedTileId = kept[0];
+  }
+
+  /** Whether a tile is picked: one of a pick of several, or the selected one. */
+  private isPicked(id: string): boolean {
+    if (id === "") return false;
+    if (this.multi.size === 0) return sameWatchId(id, this.selectedTileId);
+    for (const picked of this.multi) if (sameWatchId(picked, id)) return true;
+    return false;
+  }
+
+  /** Whether several tiles are picked together. */
+  private get multiPicked(): boolean {
+    return this.multi.size >= 2;
+  }
+
+  /** The page's tile ids in reading order, each once; tiles with no id are
+   * left out, since no edit can name them. */
+  private readingIds(page: WatchPage): string[] {
+    const seen = new Set<string>();
+    const ids: string[] = [];
+    for (const tile of tilesInReadingOrder(page)) {
+      const id = tileIdOf(tile);
+      if (id === "" || seen.has(id.toUpperCase())) continue;
+      seen.add(id.toUpperCase());
+      ids.push(id);
+    }
+    return ids;
+  }
+
+  /** The picked tiles' ids in reading order: the pick of several, else the
+   * selected tile, else none. */
+  private pickedIds(page: WatchPage | undefined = this.currentPage()): string[] {
+    if (page === undefined) return [];
+    if (this.multi.size === 0) {
+      const id = this.selectedTileId;
+      return id !== undefined && this.tileOn(page, id) !== undefined ? [id] : [];
+    }
+    return this.readingIds(page).filter((id) => this.isPicked(id));
+  }
+
+  /** Pick these tiles, `primary` the selected one among them. Two or more
+   * are a pick of several; one is a plain selection of it; none, nothing. */
+  private setPick(ids: readonly string[], primary: string | undefined): void {
+    if (ids.length < 2) {
+      this.selectTile(ids[0]);
+      return;
+    }
+    // The single tile's cards make way for the pick's card: a field still
+    // holding text there commits first.
+    if (!this.multiPicked) this.leaveTile();
+    this.selectedTileId = primary !== undefined && ids.some((id) => sameWatchId(id, primary)) ? primary : ids[ids.length - 1];
+    this.multi = new Set(ids);
+    this.fieldNote = undefined;
+  }
+
+  /**
+   * A click on a tile, on the stage or its Tiles row, as the complication
+   * editor's `clickRow`. Shift picks every tile in reading order from the
+   * selected one (the anchor, which stays the anchor) to this one. Cmd or
+   * Ctrl adds this tile to the pick or takes it out. A plain click selects
+   * this tile alone.
+   */
+  private clickTile(id: string, e: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }): void {
+    const page = this.currentPage();
+    if (id === "" || page === undefined) return;
+    const toggle = e.metaKey || e.ctrlKey;
+    if (e.shiftKey && !toggle) {
+      const order = this.readingIds(page);
+      const anchor = this.selectedTileId !== undefined && this.tileOn(page, this.selectedTileId) !== undefined ? this.selectedTileId : id;
+      const from = order.findIndex((t) => sameWatchId(t, anchor));
+      const to = order.findIndex((t) => sameWatchId(t, id));
+      if (from < 0 || to < 0) {
+        this.selectTile(id);
+        return;
+      }
+      this.setPick(order.slice(Math.min(from, to), Math.max(from, to) + 1), anchor);
+      return;
+    }
+    if (toggle) {
+      const picked = this.pickedIds(page);
+      const had = picked.some((t) => sameWatchId(t, id));
+      const next = had ? picked.filter((t) => !sameWatchId(t, id)) : [...picked, id];
+      // Added, it is the primary; taken out, the primary stays unless it was
+      // the one taken out.
+      const primary = !had ? id : sameWatchId(id, this.selectedTileId) ? next[next.length - 1] : this.selectedTileId;
+      this.setPick(next, primary);
+      return;
+    }
+    this.selectTile(id);
+  }
+
+  /** Cmd or Ctrl+A, and Select all tiles in the ··· menu: every tile on the
+   * shown page. One tile is a plain selection of it; none, nothing. */
+  private selectAll(): void {
+    const page = this.currentPage();
+    if (page === undefined || isSmartWatchPage(page)) return;
+    const ids = this.readingIds(page);
+    if (ids.length === 0) return;
+    this.setPick(ids, this.selectedTileId ?? ids[0]);
   }
 
   private currentPage(): WatchPage | undefined {
@@ -1075,6 +1199,7 @@ export class WaPageEditor extends LitElement {
     this.closePageStrip();
     this.selectedPageId = pageId;
     this.selectedTileId = undefined;
+    if (this.multi.size > 0) this.multi = new Set();
     this.rowHoverTileId = undefined;
     this.stageHoverTileId = undefined;
     this.fieldNote = undefined;
@@ -1096,8 +1221,11 @@ export class WaPageEditor extends LitElement {
     else if (sameWatchId(id, this.stageHoverTileId)) this.stageHoverTileId = undefined;
   }
 
+  /** Select one tile, or none; a pick of several collapses to it. */
   private selectTile(tileId: string | undefined): void {
-    if (tileId === this.selectedTileId) return;
+    const wasMulti = this.multi.size > 0;
+    if (wasMulti) this.multi = new Set();
+    if (tileId === this.selectedTileId && !wasMulti) return;
     this.leaveTile();
     this.selectedTileId = tileId;
     this.fieldNote = undefined;
@@ -1168,6 +1296,7 @@ export class WaPageEditor extends LitElement {
       const selection = keptWatchPagesSelection(watchId);
       this.selectedPageId = selection.pageId;
       this.selectedTileId = selection.tileId;
+      this.multi = new Set();
       this.renaming = undefined;
       this.menuPageId = undefined;
       this.closePageStrip();
@@ -1780,23 +1909,66 @@ export class WaPageEditor extends LitElement {
 
   // ── tiles ──────────────────────────────────────────────────────────────
 
+  /** Move the selected tile one step, or every picked tile together. */
   private nudge(direction: WatchNudgeDirection): void {
     const document = this.draft?.document;
     const pageId = this.selectedPageId;
     const tileId = this.selectedTileId;
     if (document === undefined || pageId === undefined || tileId === undefined) return;
+    if (this.multiPicked) {
+      const page = this.currentPage();
+      const next = page === undefined ? undefined : this.nudgeAll(document, pageId, page, this.pickedIds(page), direction);
+      if (next !== undefined && this.edit(next)) this.revealTile = true;
+      return;
+    }
     if (this.edit(nudgeWatchTile(document, pageId, tileId, direction))) this.revealTile = true;
   }
 
-  /** Delete the selected tile, or the one a Tiles row names. */
-  private deleteTile(tileId = this.selectedTileId): void {
+  /** Every picked tile one step, all or nothing: the document with all of
+   * them moved, or undefined when any one of them cannot go. The tile
+   * furthest along the way goes first (moving down, the bottom-most), so no
+   * picked tile is in the way of one behind it, and none swaps with another
+   * picked one. */
+  private nudgeAll(document: WatchPagesDocument, pageId: string, page: WatchPage, ids: readonly string[], direction: WatchNudgeDirection): WatchPagesDocument | undefined {
+    const lead = (id: string): number => {
+      const tile = this.tileOn(page, id);
+      if (tile === undefined) return 0;
+      const r = watchTileRect(tile);
+      if (direction === "down") return r.row + r.rowSpan;
+      if (direction === "up") return -r.row;
+      if (direction === "right") return r.col + r.colSpan;
+      return -r.col;
+    };
+    let work = document;
+    for (const id of [...ids].sort((a, b) => lead(b) - lead(a))) {
+      if (!canNudgeWatchTile(work, pageId, id, direction)) return undefined;
+      work = nudgeWatchTile(work, pageId, id, direction);
+    }
+    return work;
+  }
+
+  /** Delete the one tile a Tiles row names, or else every picked tile, in
+   * one edit (one undo step). */
+  private deleteTile(tileId?: string): void {
     const document = this.draft?.document;
     const pageId = this.selectedPageId;
-    if (document === undefined || pageId === undefined || tileId === undefined) return;
-    const hadFocus = this.tileButton(tileId)?.matches(":focus") ?? false;
-    if (this.edit(deleteWatchTile(document, pageId, tileId)) && hadFocus) {
+    if (document === undefined || pageId === undefined) return;
+    const ids = tileId !== undefined ? [tileId] : this.pickedIds();
+    if (ids.length === 0) return;
+    const hadFocus = ids.some((id) => this.tileButton(id)?.matches(":focus") ?? false);
+    let next = document;
+    for (const id of ids) next = deleteWatchTile(next, pageId, id);
+    if (this.edit(next) && hadFocus) {
       void this.updateComplete.then(() => this.renderRoot.querySelector<HTMLElement>(".pe-screen")?.focus());
     }
+  }
+
+  /** How many of these tiles may be copied onto their page now. */
+  private copyableCount(page: WatchPage, ids: readonly string[]): number {
+    return ids.filter((id) => {
+      const tile = this.tileOn(page, id);
+      return tile !== undefined && this.duplicateRefusal(page, tile) === undefined;
+    }).length;
   }
 
   /** Why a tile cannot be copied onto its own page, or undefined when it
@@ -1813,8 +1985,14 @@ export class WaPageEditor extends LitElement {
   }
 
   /** Copy a tile onto its page, at the first free place for its size, and
-   * select the copy. */
-  private duplicateTile(tileId = this.selectedTileId): void {
+   * select the copy. With no tile named and several picked, every picked
+   * tile that may be copied, in one edit, and the copies are picked. */
+  private duplicateTile(tileId?: string): void {
+    if (tileId === undefined && this.multiPicked) {
+      this.duplicatePicked();
+      return;
+    }
+    tileId ??= this.selectedTileId;
     const document = this.draft?.document;
     const page = this.currentPage();
     const tile = page === undefined || tileId === undefined ? undefined : this.tileOn(page, tileId);
@@ -1822,6 +2000,30 @@ export class WaPageEditor extends LitElement {
     const copy = duplicateOf(tile);
     if (!this.edit(addWatchTile(document, watchPageId(page), copy))) return;
     this.selectTile(copy.id as string);
+    this.revealTile = true;
+  }
+
+  /** Copy every picked tile that may be copied, in reading order, each at
+   * the first free place, as one edit; then pick the copies. A tile refused
+   * (`duplicateRefusal`) is left out and the rest still go. */
+  private duplicatePicked(): void {
+    const document = this.draft?.document;
+    const page = this.currentPage();
+    if (document === undefined || page === undefined) return;
+    const pageId = watchPageId(page);
+    let next = document;
+    const copies: string[] = [];
+    for (const id of this.pickedIds(page)) {
+      const tile = this.tileOn(page, id);
+      if (tile === undefined || this.duplicateRefusal(page, tile) !== undefined) continue;
+      const copy = duplicateOf(tile);
+      const added = addWatchTile(next, pageId, copy);
+      if (added === next) continue;
+      next = added;
+      copies.push(copy.id as string);
+    }
+    if (copies.length === 0 || !this.edit(next)) return;
+    this.setPick(copies, copies[copies.length - 1]);
     this.revealTile = true;
   }
 
@@ -1995,6 +2197,16 @@ export class WaPageEditor extends LitElement {
       if (!dragging) this.redo();
       return;
     }
+    // Cmd or Ctrl+A picks every tile on the page, from anywhere in the editor
+    // but a text field; while Watch view draws the page, the browser keeps it.
+    if (mod && !e.altKey && !e.shiftKey && key === "a" && !dragging && !this.editingOff()) {
+      const page = this.currentPage();
+      if (page !== undefined && !isSmartWatchPage(page)) {
+        e.preventDefault();
+        this.selectAll();
+        return;
+      }
+    }
     if (mod || e.altKey || dragging) return;
     const onStage = path.some((n) => n instanceof HTMLElement && n.classList.contains("pe-screen"));
     if (!onStage && !nothingFocused()) return;
@@ -2113,12 +2325,17 @@ export class WaPageEditor extends LitElement {
    * none`); on any other tile it scrolls the page, and a tap selects. */
   private onTilePointerDown(e: PointerEvent, tileId: string): void {
     if (e.button !== 0 || !e.isPrimary || this.gesture || this.editingOff()) return;
+    // Shift, Cmd or Ctrl held: no drag, the click picks (`clickTile`).
+    if (e.metaKey || e.ctrlKey || e.shiftKey) return;
     // No drag while a save is out: a conflict merges under the save, and a
     // drag that ended on the old base would put the merged tiles back.
     if (this.saving) return;
     const draft = this.draft;
     if (draft === undefined) return;
-    const selected = sameWatchId(tileId, this.selectedTileId);
+    // A plain press collapses a pick of several to this tile, as a plain
+    // click does, and drags it alone; a finger drags only a tile selected on
+    // its own.
+    const selected = sameWatchId(tileId, this.selectedTileId) && !this.multiPicked;
     if (e.pointerType === "touch" && !selected) return;
     const page = this.currentPage();
     const tile = page === undefined ? undefined : this.tileOn(page, tileId);
@@ -2623,17 +2840,24 @@ export class WaPageEditor extends LitElement {
     return this.watchId !== undefined && record !== undefined && record.revision <= 0 && !watchRecordUnreadable(record, asWatchPagesDocument);
   }
 
-  /** The ··· menu: Discard edits, and Start with an empty page while that
-   * applies. */
+  /** The ··· menu: Select all tiles, Discard edits, and Start with an empty
+   * page while that applies. */
   private renderTopMenu(draft: WatchPagesDraft | undefined): TemplateResult | typeof nothing {
     const start = this.canStart();
     if (draft === undefined && !start) return nothing;
     const open = this.topMenuOpen;
     const run = (fn: () => void) => () => { this.topMenuOpen = false; fn(); };
+    // Select all needs two tiles to make a pick of several, and a page drawn
+    // to edit.
+    const page = open && draft ? this.currentPage() : undefined;
+    const selectable = page === undefined || isSmartWatchPage(page) || this.editingOff(page) ? 0 : this.readingIds(page).length;
     return html`<span class="side-menu pe-top-menu">
       <button class="tb-btn tb-more" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"} aria-label="More actions" title="More"
         @click=${() => { this.topMenuOpen = !open; }}>···</button>
       ${open ? html`<div class="pop-menu side-pop" role="menu" aria-label="More actions">
+        ${draft ? html`<button class="row pe-select-all" role="menuitem" ?disabled=${selectable < 2}
+          title=${`Pick every tile on this page (${MOD}A)`}
+          @click=${run(() => this.selectAll())}>Select all tiles</button>` : nothing}
         ${draft ? html`<button class="row" role="menuitem" ?disabled=${!draft.dirty || this.saving}
           title="Go back to the copy Home Assistant holds. Undo brings the edits back."
           @click=${run(() => this.discard())}>Discard edits</button>` : nothing}
@@ -3054,29 +3278,32 @@ export class WaPageEditor extends LitElement {
     const kindLabel = tileKindLabel(tileKind(entityId));
     const label = watchPreviewTileLabel(tile, { states: this.previewStates(), pages, catalog: this.catalog }) || kindLabel;
     const rect = watchTileRect(tile);
-    const selected = id !== "" && sameWatchId(id, this.selectedTileId);
+    // Lit while picked, alone or with others; `aria-current` is the primary's.
+    const picked = this.isPicked(id);
+    const primary = id !== "" && sameWatchId(id, this.selectedTileId);
+    const inMulti = picked && this.multiPicked;
     // The row of the tile under the pointer on the stage: the chrome's accent
     // outline, apart from the selection's fill.
     const peek = id !== "" && sameWatchId(id, this.stageHoverTileId);
     const rules = tileHasStateRules(tile);
     const tap = tileHasTapAction(tile);
     const color = watchKindColor(entityId, watchAddThemeOf(page)) ?? SECTION_COLOR.content;
-    const pick = () => {
+    const pick = (e: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }) => {
       if (id === "") return;
-      this.selectTile(id);
+      this.clickTile(id, e);
       this.revealTile = true;
       this.inspectorToTop = true;
     };
     const dupRefusal = id === "" ? "This tile cannot be copied." : this.duplicateRefusal(page, tile);
-    return html`<div class="layer pe-tile-row ${selected ? "hl" : ""} ${peek ? "peek" : ""} ${id === "" ? "dim" : ""}" data-row-tile=${id}
-      style=${`--k:${color}`} role="listitem" tabindex=${id === "" ? "-1" : "0"} aria-current=${selected ? "true" : "false"}
+    return html`<div class="layer pe-tile-row ${picked ? "hl" : ""} ${peek ? "peek" : ""} ${id === "" ? "dim" : ""} ${inMulti ? "multi" : ""}" data-row-tile=${id}
+      style=${`--k:${color}`} role="listitem" tabindex=${id === "" ? "-1" : "0"} aria-current=${primary ? "true" : "false"}
       aria-label=${label !== kindLabel ? `${label}, ${kindLabel}` : kindLabel}
       title=${[label, kindLabel, entityId].filter((t, i, all) => t !== "" && all.indexOf(t) === i).join(" · ")}
-      @click=${(e: Event) => { if (!pressedRowControl(e)) pick(); }}
+      @click=${(e: MouseEvent) => { if (!pressedRowControl(e)) pick(e); }}
       @keydown=${(e: KeyboardEvent) => {
         if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
         e.preventDefault();
-        pick();
+        pick(e);
       }}
       @pointerenter=${() => this.peekTile(id, true)}
       @pointerleave=${() => this.peekTile(id, false)}>
@@ -3275,7 +3502,14 @@ export class WaPageEditor extends LitElement {
     const stored = watchPageName(page);
     const draft = this.draft;
     const off = this.busy || this.editingOff(page);
-    const dupRefusal = tile === undefined ? "Select a tile to duplicate it." : this.duplicateRefusal(page, tile);
+    // With several picked, both act on all of them and say how many.
+    const picked = this.multiPicked ? this.pickedIds(page) : [];
+    const many = picked.length >= 2 ? `${picked.length} tiles` : undefined;
+    const dupRefusal = many !== undefined
+      ? (this.copyableCount(page, picked) > 0 ? undefined : "None of these tiles can be copied here.")
+      : tile === undefined ? "Select a tile to duplicate it." : this.duplicateRefusal(page, tile);
+    const dupLabel = many !== undefined ? `Duplicate ${many}` : "Duplicate the selected tile";
+    const delLabel = many !== undefined ? `Delete ${many}` : "Delete the selected tile";
     const current = watches.find((w) => w.owner_watch_id === this.watchId);
     const commit = (input: HTMLInputElement): void => {
       const document = this.draft?.document;
@@ -3304,10 +3538,10 @@ export class WaPageEditor extends LitElement {
         <button class="cv-act icon undo" ?disabled=${!draft?.canRedo} title=${IS_MAC ? "Redo (⇧⌘Z)" : "Redo (Ctrl+Y)"} aria-label="Redo"
           @click=${() => this.redo()}>${uiIcon("redo")}</button>
         <span class="cv-div" aria-hidden="true"></span>
-        <button class="cv-act icon" ?disabled=${dupRefusal !== undefined} title=${dupRefusal ?? "Duplicate the selected tile"} aria-label="Duplicate the selected tile"
+        <button class="cv-act icon" ?disabled=${dupRefusal !== undefined} title=${dupRefusal ?? dupLabel} aria-label=${dupLabel}
           @click=${() => this.duplicateTile()}>${uiIcon("duplicate")}</button>
         <button class="cv-act icon danger" ?disabled=${tile === undefined || off}
-          title=${tile === undefined ? "Select a tile to delete it." : "Delete the selected tile (Delete or Backspace)"} aria-label="Delete the selected tile"
+          title=${tile === undefined ? "Select a tile to delete it." : `${delLabel} (Delete or Backspace)`} aria-label=${delLabel}
           @click=${() => this.deleteTile()}>${uiIcon("delete")}</button>
       </span>
     </div>`;
@@ -3455,7 +3689,9 @@ export class WaPageEditor extends LitElement {
    * Nothing is saved. */
   private renderLiveStrip(page: WatchPage, tile: WatchPageTile | undefined): TemplateResult {
     let body: TemplateResult;
-    if (tile === undefined) body = html`<span class="vb-empty">Select a tile to try its states here.</span>`;
+    const picked = this.multiPicked ? this.pickedIds(page).length : 0;
+    if (picked >= 2) body = html`<span class="vb-empty">${picked} tiles picked. Pick one to try its states.</span>`;
+    else if (tile === undefined) body = html`<span class="vb-empty">Select a tile to try its states here.</span>`;
     else {
       const entityId = tileEntityId(tile);
       const real = entityId === "" ? undefined : this.hass?.states?.[entityId];
@@ -3600,7 +3836,8 @@ export class WaPageEditor extends LitElement {
       seen.add(key);
       return key;
     };
-    const selectedPlaced = selected === undefined ? undefined : layout.tiles.find((t) => sameWatchId(t.tile.id, selected));
+    // The handles are a single tile's: a pick of several is ringed, not sized.
+    const selectedPlaced = selected === undefined || this.multiPicked ? undefined : layout.tiles.find((t) => sameWatchId(t.tile.id, selected));
     const selBox = resize?.preview
       ? cellRectPx(grid, resize.preview.rect)
       : selectedPlaced && !move
@@ -3647,7 +3884,10 @@ export class WaPageEditor extends LitElement {
     const height = box0?.height ?? placed.height * s;
     const kindLabel = tileKindLabel(tileKind(tileEntityId(tile)));
     const label = watchPreviewTileLabel(tile, input);
-    const selected = id !== "" && sameWatchId(id, this.selectedTileId);
+    // Every picked tile wears the ring; one of a pick of several also takes
+    // `multi`, which leaves a finger free to scroll from it.
+    const selected = this.isPicked(id);
+    const inMulti = selected && this.multiPicked;
     // Tinted while its row, or the tile itself, is under the pointer; not
     // while a tile is being dragged, when the ghosts say what will happen.
     const hovered = id !== "" && move === undefined && (sameWatchId(id, this.rowHoverTileId) || sameWatchId(id, this.stageHoverTileId));
@@ -3662,14 +3902,14 @@ export class WaPageEditor extends LitElement {
     // A tile with no id cannot be named by an edit; it is drawn and left be.
     if (id === "") return html`<div class="pe-tile fixed ${tileKind(tileEntityId(tile)) === "spacer" ? "spacer" : ""}" style=${box} aria-hidden="true">${face}</div>`;
     const spacer = tileKind(tileEntityId(tile)) === "spacer";
-    return html`<button type="button" class="pe-tile ${spacer ? "spacer" : ""} ${selected ? "sel" : ""} ${hovered ? "hov" : ""} ${moving ? "moving" : ""} ${partner ? "partner" : ""}"
+    return html`<button type="button" class="pe-tile ${spacer ? "spacer" : ""} ${selected ? "sel" : ""} ${hovered ? "hov" : ""} ${moving ? "moving" : ""} ${partner ? "partner" : ""} ${inMulti ? "multi" : ""}"
       data-tile=${id} style=${box}
       aria-label=${label !== "" && label !== kindLabel ? `${label}, ${kindLabel}` : kindLabel} aria-pressed=${selected ? "true" : "false"}
       title=${[label, kindLabel, tileEntityId(tile), this.saving ? SAVING_TEXT : ""].filter((t, i, all) => t !== "" && all.indexOf(t) === i).join(" · ")}
       @pointerdown=${(e: PointerEvent) => this.onTilePointerDown(e, id)}
       @pointerenter=${() => this.peekStageTile(id, true)}
       @pointerleave=${() => this.peekStageTile(id, false)}
-      @click=${(e: Event) => { e.stopPropagation(); this.selectTile(id); }}>${face}</button>`;
+      @click=${(e: MouseEvent) => { e.stopPropagation(); this.clickTile(id, e); }}>${face}</button>`;
   }
 
   /** Where a drop would put the tile: the target place, green for a move,
@@ -3704,9 +3944,17 @@ export class WaPageEditor extends LitElement {
    * are (the page strip over the watch) and Delete page.
    */
   private renderInspector(page: WatchPage, tile: WatchPageTile | undefined, pages: readonly WatchPage[]): TemplateResult {
+    const name = watchPageName(page);
+    const picked = this.multiPicked ? this.pickedIds(page) : [];
+    if (picked.length >= 2) {
+      return html`
+        <div class="insp-head">
+          <div class="crumbs"><button class="root" title="Edit the page" @click=${() => this.selectTile(undefined)}>${name}</button><span class="sep">›</span><span class="kchip" style=${`--k:${WATCH_PAGE_CHIP_COLOR}`}>${picked.length} tiles</span></div>
+        </div>
+        <div class="insp-body">${this.renderPickedCard(page, picked, pages)}</div>`;
+    }
     const host = this.editorHost(page);
     const tileHost = tile === undefined ? undefined : this.tileSettingsHost(page, tile);
-    const name = watchPageName(page);
     let crumbs: TemplateResult;
     if (tile === undefined) {
       crumbs = html`<div class="crumbs"><span class="kchip" style=${`--k:${WATCH_PAGE_CHIP_COLOR}`}>${isSmartWatchPage(page) ? "Smart page" : "Page"}</span><span class="nm" title=${name}>${name}</span></div>`;
@@ -3734,6 +3982,54 @@ export class WaPageEditor extends LitElement {
             <div class="ps-acts"><button class="pe-btn pe-danger" @click=${() => this.askDelete(id)}>${uiIcon("delete")}<span>Delete page…</span></button></div>`
           : this.renderTileCard(page, tile)}
       </div>`;
+  }
+
+  /**
+   * The inspector with several tiles picked, the complication editor's
+   * `multiEditor`: one card naming the picked tiles in reading order, each
+   * with its face, name and kind, then Duplicate and Delete for all of them.
+   * A tile's own settings are one tile at a time.
+   */
+  private renderPickedCard(page: WatchPage, ids: readonly string[], pages: readonly WatchPage[]): TemplateResult {
+    const n = ids.length;
+    const off = this.busy || this.editingOff(page);
+    const copyable = this.copyableCount(page, ids);
+    const owner = this.watches.find((w) => w.owner_watch_id === this.watchId);
+    const screen = this.screenOf(owner);
+    const layout = watchPreviewLayout(page, screen, { flat: true });
+    const states = this.previewStates();
+    const rows = ids.flatMap((id) => {
+      const tile = this.tileOn(page, id);
+      if (tile === undefined) return [];
+      const entityId = tileEntityId(tile);
+      const kindLabel = tileKindLabel(tileKind(entityId));
+      const label = watchPreviewTileLabel(tile, { states, pages, catalog: this.catalog }) || kindLabel;
+      const placed = layout.tiles.find((t) => t.tile === tile) ?? layout.tiles.find((t) => sameWatchId(tileIdOf(t.tile), id));
+      const color = watchKindColor(entityId, watchAddThemeOf(page)) ?? SECTION_COLOR.content;
+      return [html`<div class="layer pe-picked-row" style=${`--k:${color}`} role="listitem" data-picked-tile=${id}>
+        <span class="grip" aria-hidden="true"></span>
+        ${this.renderTileThumb(page, tile, pages, screen, placed, layout.unit)}
+        <span class="name"><b><span class="nm-t">${label}</span></b><small><span class="kind">${kindLabel}</span></small></span>
+      </div>`];
+    });
+    const dupTitle = copyable === 0 ? "None of these tiles can be copied here."
+      : copyable < n ? `${plural(copyable, "tile", "tiles")} of ${n} can be copied here; the rest cannot.` : `Duplicate ${n} tiles`;
+    return html`<section class="sec pe-picked" data-open="true" data-help="on" style="--c: var(--wa-accent)">
+      <div class="sec-h pinned">
+        <span class="swatch">${uiIcon("layers")}</span>
+        <span class="tt"><h4>${n} tiles picked</h4></span>
+      </div>
+      <div class="sec-b">
+        <div class="layers pe-picked-list" role="list" aria-label="Picked tiles" style=${`--thumb-w: ${THUMB_W}px; --thumb-h: ${THUMB_H}px`}>${rows}</div>
+        <div class="pe-picked-acts">
+          <button class="pe-btn pe-picked-dup" ?disabled=${copyable === 0} title=${dupTitle} @click=${() => this.duplicateTile()}>
+            ${uiIcon("duplicate")}<span>Duplicate ${n} tiles</span></button>
+          <button class="pe-btn pe-danger pe-picked-del" ?disabled=${off} title=${this.saving ? SAVING_TEXT : "Delete or Backspace"} @click=${() => this.deleteTile()}>
+            ${uiIcon("delete")}<span>Delete ${n} tiles</span></button>
+        </div>
+        <p class="hint">${IS_MAC ? "⌘" : "Ctrl"}-click a tile to add it or take it out, Shift-click to pick a run. Click one on its own to edit it alone.</p>
+      </div>
+    </section>`;
   }
 
   /**
@@ -4297,6 +4593,21 @@ export class WaPageEditor extends LitElement {
     .pe-tile:focus-visible { outline: none; box-shadow: 0 0 0 2px #000, 0 0 0 4px var(--pe-mark); }
     .pe-tile.sel { touch-action: none; box-shadow: 0 0 0 2px var(--pe-mark); z-index: 2; }
     .pe-tile.sel:focus-visible { box-shadow: 0 0 0 2px var(--pe-mark), 0 0 0 4px #000, 0 0 0 6px var(--pe-mark); }
+    /* One of a pick of several: ringed, but a finger drags only a tile
+       selected on its own, so it scrolls the page from here. */
+    .pe-tile.sel.multi { touch-action: manipulation; }
+    /* A Tiles row in a pick of several: lit exactly like the selected row,
+       the complication editor's .layer.multi, so every picked row reads as
+       selected. */
+    .pe-tile-row.multi {
+      background: color-mix(in srgb, var(--wa-accent) 30%, var(--wa-card));
+      box-shadow: inset 0 0 0 2px var(--wa-accent);
+    }
+    /* The inspector's card for a pick of several: the picked tiles as rows
+       (no buttons of their own), then Duplicate and Delete for all. */
+    .pe-picked-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+    .pe-picked-list > .layer { cursor: default; }
+    .pe-picked-acts { display: flex; flex-wrap: wrap; gap: 6px; }
     /* The tile whose Tiles row is pointed at: a solid tint and a thin ring,
        the complication editor's hover on a layer, so it never reads as the
        selection's ring when the pointer rests on the selected tile's row. */

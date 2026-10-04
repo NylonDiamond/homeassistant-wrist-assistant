@@ -5,7 +5,7 @@
 // canvas head with its watch chips, the Live strip and the zoom.
 
 import { html } from "lit";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { HassLike, OwnerSummary, WatchConfigRecord } from "../src/ha-api.js";
 import { REFERENCE_CASE } from "../src/renderer.js";
@@ -440,6 +440,226 @@ describe("a click on a row", () => {
     const row = node("DIV", "layer", "pe-page-row", "hl");
     rowOf(el, owners, "page", "P-HALL")(clickOn(row, [node("SPAN", "nm-t"), node("B"), node("SPAN", "name")]));
     expect(el.selectedPageId).toBe("P-HALL");
+    expect(el.selectedTileId).toBeUndefined();
+  });
+});
+
+// ── picking several tiles ───────────────────────────────────────────────
+
+describe("picking several tiles", () => {
+  type Mods = { shiftKey?: boolean; metaKey?: boolean; ctrlKey?: boolean };
+  type Draft = { document: WatchPagesDocument; canUndo: boolean; undo(): boolean };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** The editor, with no focused field to let go of and a stand-in render
+   * root, and its clicks and keys. A selection that goes ends a drag on a
+   * number at the window, and a key asks whether it was typed in a field. */
+  function picker(selectedTileId?: string) {
+    vi.stubGlobal("window", { addEventListener() {}, removeEventListener() {} });
+    const Element = ((globalThis as { HTMLElement?: unknown }).HTMLElement ?? class {}) as new () => object;
+    vi.stubGlobal("HTMLElement", Element);
+    vi.stubGlobal("HTMLInputElement", (globalThis as { HTMLInputElement?: unknown }).HTMLInputElement ?? class extends Element {});
+    vi.stubGlobal("document", { activeElement: null });
+    const made = editor(selectedTileId);
+    const { el } = made;
+    el.leaveTile = () => undefined;
+    el.renderRoot = { activeElement: null, querySelector: () => null };
+    // Node has no CSS.escape to look a tile's button up by.
+    el.tileButton = () => null;
+    return {
+      ...made,
+      click: (id: string, mods: Mods = {}) =>
+        (el.clickTile as (i: string, e: Required<Mods>) => void).call(el, id, { shiftKey: false, metaKey: false, ctrlKey: false, ...mods }),
+      picked: () => [...(el.multi as ReadonlySet<string>)],
+      draft: () => (el as unknown as { draft: Draft }).draft,
+      ids: () => ((el as unknown as { draft: Draft }).draft.document.pages as { items: { id: string }[] }[])[0]!.items.map((t) => t.id),
+      call: (name: string, ...args: unknown[]) => (el[name] as (...a: unknown[]) => unknown).call(el, ...args),
+    };
+  }
+
+  /** The stage's button for one tile, up to its face. */
+  const stageTile = (text: string, id: string) => {
+    const at = text.search(new RegExp(`data-tile=${id}\\s`));
+    return text.slice(text.lastIndexOf(`<button type="button" class="pe-tile`, at), text.indexOf("</button>", at));
+  };
+
+  it("adds a tile with Cmd or Ctrl-click, takes it out again, and collapses to one", () => {
+    const { el, click, picked } = picker("T-LEFT");
+    click("T-BOTTOM", { metaKey: true });
+    expect(picked()).toEqual(["T-LEFT", "T-BOTTOM"]);
+    expect(el.selectedTileId).toBe("T-BOTTOM");
+    click("T-RIGHT", { ctrlKey: true });
+    expect(picked()).toEqual(["T-LEFT", "T-BOTTOM", "T-RIGHT"]);
+    expect(el.selectedTileId).toBe("T-RIGHT");
+    // The primary taken out: the last picked in reading order takes over.
+    click("T-RIGHT", { metaKey: true });
+    expect(picked()).toEqual(["T-LEFT", "T-BOTTOM"]);
+    expect(el.selectedTileId).toBe("T-BOTTOM");
+    // Down to one: a plain selection of it.
+    click("T-LEFT", { metaKey: true });
+    expect(picked()).toEqual([]);
+    expect(el.selectedTileId).toBe("T-BOTTOM");
+    // Down to none.
+    click("T-BOTTOM", { metaKey: true });
+    expect(el.selectedTileId).toBeUndefined();
+    // From nothing, Cmd-click selects the one.
+    click("T-GAP", { metaKey: true });
+    expect(picked()).toEqual([]);
+    expect(el.selectedTileId).toBe("T-GAP");
+  });
+
+  it("picks a run in reading order with Shift-click, from the anchor, and a plain click collapses it", () => {
+    const { el, click, picked } = picker("T-RIGHT");
+    click("T-GAP", { shiftKey: true });
+    expect(picked()).toEqual(["T-RIGHT", "T-BOTTOM", "T-GAP"]);
+    expect(el.selectedTileId).toBe("T-RIGHT");
+    // The anchor stays: a Shift-click the other way runs from it again.
+    click("T-LEFT", { shiftKey: true });
+    expect(picked()).toEqual(["T-LEFT", "T-RIGHT"]);
+    expect(el.selectedTileId).toBe("T-RIGHT");
+    click("T-BOTTOM");
+    expect(picked()).toEqual([]);
+    expect(el.selectedTileId).toBe("T-BOTTOM");
+    // With nothing selected, Shift-click selects the one clicked.
+    const other = picker();
+    other.click("T-BOTTOM", { shiftKey: true });
+    expect(other.el.selectedTileId).toBe("T-BOTTOM");
+    expect(other.picked()).toEqual([]);
+  });
+
+  it("picks every tile with Select all and with Cmd or Ctrl+A, not from a text field", () => {
+    const { el, picked, call } = picker();
+    call("selectAll");
+    expect(picked()).toEqual(["T-LEFT", "T-RIGHT", "T-BOTTOM", "T-GAP"]);
+    call("selectTile", undefined);
+    expect(picked()).toEqual([]);
+    let prevented = 0;
+    const key = (mods: Mods, from: unknown = el) => ({ key: "a", defaultPrevented: false, altKey: false, shiftKey: false, metaKey: false, ctrlKey: false, ...mods,
+      composedPath: () => [from, el], preventDefault: () => { prevented++; } });
+    // In a text field Cmd+A is the field's own.
+    const Input = (globalThis as unknown as { HTMLInputElement: new () => object }).HTMLInputElement;
+    call("onKeyDown", key({ metaKey: true }, Object.assign(new Input(), { tagName: "INPUT", type: "text", isContentEditable: false })));
+    expect(picked()).toEqual([]);
+    expect(prevented).toBe(0);
+    call("onKeyDown", key({ metaKey: true }));
+    expect(picked()).toHaveLength(4);
+    expect(prevented).toBe(1);
+    call("selectTile", undefined);
+    call("onKeyDown", key({ ctrlKey: true }));
+    expect(picked()).toHaveLength(4);
+    // A plain "a" picks nothing.
+    call("selectTile", undefined);
+    call("onKeyDown", key({}));
+    expect(picked()).toEqual([]);
+    expect(prevented).toBe(2);
+    // An empty page has nothing to pick.
+    el.selectedPageId = "P-YARD";
+    call("selectAll");
+    expect(picked()).toEqual([]);
+    expect(el.selectedTileId).toBeUndefined();
+  });
+
+  it("lights every picked row and rings every picked tile, with no resize handles", () => {
+    const { el, body, click } = picker("T-RIGHT");
+    expect(body()).toContain(`<div class="pe-sel `);
+    click("T-BOTTOM", { metaKey: true });
+    const text = body();
+    for (const id of ["T-RIGHT", "T-BOTTOM"]) {
+      expect(tileRow(text, id), id).toMatch(/^<div class="layer pe-tile-row hl [^"]*\bmulti"/);
+      expect(stageTile(text, id), id).toMatch(/class="pe-tile [^"]*\bsel\b[^"]*\bmulti"/);
+      expect(stageTile(text, id), id).toContain("aria-pressed=true");
+    }
+    for (const id of ["T-LEFT", "T-GAP"]) {
+      expect(tileRow(text, id), id).toMatch(/^<div class="layer pe-tile-row  /);
+      expect(tileRow(text, id), id).not.toMatch(/^<div class="[^"]*\bmulti\b/);
+      expect(stageTile(text, id), id).not.toMatch(/\bsel\b/);
+    }
+    // Only the primary is the current row.
+    expect(tileRow(text, "T-BOTTOM")).toContain("aria-current=true");
+    expect(tileRow(text, "T-RIGHT")).toContain("aria-current=false");
+    expect(text).not.toContain(`<div class="pe-sel `);
+    // The canvas head's buttons and the Live strip speak of both.
+    expect(text).toContain("aria-label=Duplicate 2 tiles");
+    expect(text).toContain("title=Delete 2 tiles (Delete or Backspace)");
+    expect(text).toContain(`<span class="vb-empty">2 tiles picked. Pick one to try its states.</span>`);
+    // A press on the screen lets them all go.
+    el.selectedTileId = "T-BOTTOM";
+    (el.selectTile as (id: string | undefined) => void).call(el, undefined);
+    expect((el.multi as ReadonlySet<string>).size).toBe(0);
+    // The picked row's lit look is the complication editor's.
+    const css = rule(sheet(), ".pe-tile-row.multi");
+    expect(css).toContain("box-shadow: inset 0 0 0 2px var(--wa-accent)");
+  });
+
+  it("deletes every picked tile in one undo step", () => {
+    const { el, click, draft, ids, call } = picker("T-LEFT");
+    click("T-BOTTOM", { metaKey: true });
+    expect(draft().canUndo).toBe(false);
+    call("deleteTile");
+    expect(ids()).toEqual(["T-GAP", "T-RIGHT"]);
+    call("reconcileSelection");
+    expect((el.multi as ReadonlySet<string>).size).toBe(0);
+    expect(el.selectedTileId).toBeUndefined();
+    expect(draft().canUndo).toBe(true);
+    draft().undo();
+    expect(ids()).toEqual(["T-GAP", "T-BOTTOM", "T-RIGHT", "T-LEFT"]);
+    expect(draft().canUndo).toBe(false);
+  });
+
+  it("copies the picked tiles that may be copied, in one step, and picks the copies", () => {
+    const { el, click, draft, ids, call } = picker("T-GAP");
+    // A second light has nowhere to go; the spacer copies.
+    click("T-BOTTOM", { metaKey: true });
+    call("duplicateTile");
+    expect(ids()).toHaveLength(5);
+    const copy = ids()[4]!;
+    expect(copy).not.toBe("T-GAP");
+    expect(el.selectedTileId).toBe(copy);
+    expect((el.multi as ReadonlySet<string>).size).toBe(0);
+    draft().undo();
+    expect(ids()).toHaveLength(4);
+    expect(draft().canUndo).toBe(false);
+  });
+
+  it("moves every picked tile one step, all or nothing", () => {
+    const { click, draft, call } = picker("T-BOTTOM");
+    const rows = () => Object.fromEntries((draft().document.pages as { items: { id: string; gridRow: number }[] }[])[0]!.items.map((t) => [t.id, t.gridRow]));
+    // The Gap sits right under Bottom: it goes first, so the two do not swap.
+    click("T-GAP", { metaKey: true });
+    call("nudge", "down");
+    expect(rows()).toEqual({ "T-GAP": 7, "T-BOTTOM": 4, "T-RIGHT": 0, "T-LEFT": 0 });
+    draft().undo();
+    expect(draft().canUndo).toBe(false);
+    // Left is at the top already, so Bottom does not move up either.
+    click("T-LEFT");
+    click("T-BOTTOM", { metaKey: true });
+    const before = draft().document;
+    call("nudge", "up");
+    expect(draft().document).toBe(before);
+    expect(draft().canUndo).toBe(false);
+  });
+
+  it("offers Select all tiles in the ··· menu while the page has two tiles or more", () => {
+    const { el, whole } = picker();
+    el.topMenuOpen = true;
+    expect(whole()).toMatch(/<button class="row pe-select-all" role="menuitem" \?disabled=false[^>]*>Select all tiles<\/button>/);
+    el.selectedPageId = "P-YARD";
+    expect(whole()).toMatch(/<button class="row pe-select-all" role="menuitem" \?disabled=true/);
+  });
+
+  it("drops a picked tile that went away, and lets the pick go with another page", () => {
+    const { el, click, call, picked } = picker("T-LEFT");
+    click("T-BOTTOM", { metaKey: true });
+    click("T-GAP", { metaKey: true });
+    call("deleteTile", "T-GAP");
+    call("reconcileSelection");
+    expect(picked()).toEqual(["T-LEFT", "T-BOTTOM"]);
+    expect(el.selectedTileId).toBe("T-BOTTOM");
+    call("selectPage", "P-YARD");
+    expect(picked()).toEqual([]);
     expect(el.selectedTileId).toBeUndefined();
   });
 });
