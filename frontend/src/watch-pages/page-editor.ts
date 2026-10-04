@@ -219,16 +219,18 @@ import {
   watchPageThemeDot,
 } from "./page-settings.js";
 import { watchPageSettings } from "./page-settings-model.js";
-import { watchTileKindColor } from "./tile-settings-options.js";
+import { type WatchSectionBadge, watchTileKindColor } from "./tile-settings-options.js";
 import { type FoldId, anySectionOpen, setSectionsOpen } from "./fold-memory.js";
 import { specialSettingsStyles } from "./special-settings.js";
 import { watchCameraRefreshDefaults, watchDeviceSiblings, watchObjectName } from "./special-model.js";
 import { readSmartConfig, resolveSmartPagesBeforeSave } from "./smart-model.js";
 import {
+  SMART_SECTION_BADGE,
   renderSmartPageBody,
-  renderSmartPageRows,
+  renderSmartPageSwitch,
   renderSmartRulesCard,
   smartFoldIds,
+  smartRuleCountWords,
   smartSelectedRuleIndex,
   smartSettingsStyles,
   smartStageFacts,
@@ -3216,61 +3218,76 @@ export class WaPageEditor extends LitElement {
     // The chips read the page alone; the rows in a popover edit through the
     // host, which waits for Home Assistant.
     const host = this.editorHost(page);
-    const smart = isSmartWatchPage(page);
-    const value = (section: WatchPageStripSection): string => section === "page"
-      ? `${isHiddenWatchPage(page) ? "Hidden" : "Shown"}${smart ? ", Smart" : ""}`
-      : pageSettingSummary(page, section);
-    const sections: WatchPageStripSection[] = ["page", "theme", "background", "title", "switcher"];
+    const id = watchPageId(page);
+    const config = readSmartConfig(page);
+    // The smart page's own rows (Updates, Tile size, Show labels, Sort
+    // order) get a chip on a smart page only; the Smart Page switch itself
+    // stands in the strip with Hidden on the watch.
+    const smartChip = config === undefined ? nothing : this.renderPageChip({
+      section: "page",
+      title: "Smart page",
+      label: "Smart",
+      badge: SMART_SECTION_BADGE,
+      value: smartRuleCountWords(config.rules.length),
+      dot: false,
+      body: () => (host === undefined ? nothing : renderSmartPageBody(host)),
+    });
+    const sections: Exclude<WatchPageStripSection, "page">[] = ["theme", "background", "title", "switcher"];
     return html`<div class="pe-pstrip" role="toolbar" aria-label="Page settings">
-      ${sections.map((section) => this.renderPageChip(host, page, section, value(section)))}
+      ${smartChip}
+      ${sections.map((section) => this.renderPageChip({
+        section,
+        title: WATCH_PAGE_SECTION_TITLES[section],
+        label: WATCH_PAGE_CHIP_LABELS[section],
+        badge: WATCH_PAGE_SECTION_BADGES[section],
+        value: pageSettingSummary(page, section),
+        dot: watchPageSectionChanged(page, section),
+        body: () => (host === undefined ? nothing : renderPageSettingBody(host, section)),
+        ...(section === "theme" ? { theme: watchPageSettings(page).theme } : {}),
+      }))}
+      <span class="pe-pstrip-sep" aria-hidden="true"></span>
+      <div class="pe-pstrip-tog" role="group" aria-label="Page switches">
+        <label class="pe-switch" title="Hidden pages stay in the document but the watch does not show them.">
+          <input type="checkbox" role="switch" .checked=${live(isHiddenWatchPage(page))} ?disabled=${this.busy}
+            @change=${(e: Event) => this.setHidden(id, (e.target as HTMLInputElement).checked)} />
+          <span>Hidden on the watch</span>
+        </label>
+        ${host === undefined ? nothing : renderSmartPageSwitch(host)}
+      </div>
       ${host === undefined ? nothing : renderPageReset(host)}
     </div>`;
   }
 
   /** One chip of the page strip and, while it is open, its popover: a head
-   * line with the section's name and changed dot, over the section's rows. */
-  private renderPageChip(host: WatchPagesEditorHost | undefined, page: WatchPage, section: WatchPageStripSection, value: string): TemplateResult {
+   * line with the section's name and changed dot, over the section's rows.
+   * With `theme` the chip's swatch is the theme's own dot, as in the
+   * popover, in place of the section's icon. */
+  private renderPageChip(chip: {
+    section: WatchPageStripSection;
+    title: string;
+    label: string;
+    badge: WatchSectionBadge;
+    value: string;
+    dot: boolean;
+    body: () => TemplateResult | typeof nothing;
+    theme?: string;
+  }): TemplateResult {
+    const { section, title, label, badge, value } = chip;
     const open = this.pageStripOpen === section;
-    const badge = WATCH_PAGE_SECTION_BADGES[section];
-    const title = WATCH_PAGE_SECTION_TITLES[section];
-    const dot = watchPageSectionChanged(page, section) ? html`<span class="pe-pchip-dot" aria-hidden="true"></span>` : nothing;
-    // The theme's chip shows the theme itself, as its dot in the popover.
-    const swatch = section === "theme"
-      ? html`<span class="pe-pchip-sw pe-pchip-theme" style=${watchPageThemeDot(watchPageSettings(page).theme)} aria-hidden="true"></span>`
+    const dot = chip.dot ? html`<span class="pe-pchip-dot" aria-hidden="true"></span>` : nothing;
+    const swatch = chip.theme !== undefined
+      ? html`<span class="pe-pchip-sw pe-pchip-theme" style=${watchPageThemeDot(chip.theme)} aria-hidden="true"></span>`
       : html`<span class="pe-pchip-sw" aria-hidden="true">${uiIcon(badge.icon)}</span>`;
     return html`<div class="pe-pstrip-item" style=${`--k:${badge.color}`}>
       <button type="button" class="pe-pchip" data-section=${section} aria-haspopup="dialog" aria-expanded=${open ? "true" : "false"}
         title=${`${title}: ${value}`} @click=${() => this.togglePageStrip(section)}>
-        ${swatch}<span class="pe-pchip-l">${WATCH_PAGE_CHIP_LABELS[section]}</span>${dot}<span class="pe-pchip-v">${value}</span><span class="pe-pchip-chev" aria-hidden="true">▾</span>
+        ${swatch}<span class="pe-pchip-l">${label}</span>${dot}<span class="pe-pchip-v">${value}</span><span class="pe-pchip-chev" aria-hidden="true">▾</span>
       </button>
       ${open ? html`<div class="pop-menu pe-ppop" role="dialog" aria-label=${title}>
         <div class="pe-ppop-h"><span>${title}</span>${dot}</div>
-        <div class="sec-b pe-ppop-b">${this.renderPageStripBody(host, page, section)}</div>
+        <div class="sec-b pe-ppop-b">${chip.body()}</div>
       </div>` : nothing}
     </div>`;
-  }
-
-  /**
-   * A popover's rows. Page holds the page's own switches: Hidden on the
-   * watch, the tile and row count, the Smart Page switch, and on a smart
-   * page its own rows (`smart-settings.ts`). The rest are the page settings'
-   * sections (`page-settings.ts`); a smart page has those too, as the watch
-   * draws them over its fill.
-   */
-  private renderPageStripBody(host: WatchPagesEditorHost | undefined, page: WatchPage, section: WatchPageStripSection): TemplateResult | typeof nothing {
-    if (section !== "page") return host === undefined ? nothing : renderPageSettingBody(host, section);
-    const id = watchPageId(page);
-    const facts = `${plural(watchPageTiles(page).length, "tile", "tiles")}, ${plural(watchPageExtent(page), "row", "rows")}`;
-    return html`<div class="ps-page-b">
-        <label class="pe-switch">
-          <input type="checkbox" role="switch" .checked=${live(isHiddenWatchPage(page))}
-            @change=${(e: Event) => this.setHidden(id, (e.target as HTMLInputElement).checked)} />
-          <span>Hidden on the watch</span>
-        </label>
-        ${isSmartWatchPage(page) ? nothing : html`<p class="pe-muted">${facts}</p>`}
-        ${host === undefined ? nothing : renderSmartPageRows(host)}
-      </div>
-      ${host === undefined ? nothing : renderSmartPageBody(host)}`;
   }
 
   /** The floating tool strip over the stage, the complication editor's:
@@ -3913,6 +3930,10 @@ export class WaPageEditor extends LitElement {
       padding: 8px 12px; border-bottom: 1px solid var(--wa-line); background: var(--wa-card);
     }
     .pe-pstrip-item { position: relative; min-width: 0; }
+    /* The two switches after the chips, past a thin bar. */
+    .pe-pstrip-sep { flex: none; width: 1px; height: 18px; margin: 0 4px; background: var(--wa-line); }
+    .pe-pstrip-tog { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; min-width: 0; }
+    .pe-pstrip-tog .pe-switch { font-size: 12px; white-space: nowrap; }
     button.pe-pchip {
       display: inline-flex; align-items: center; gap: 6px; height: 28px; max-width: 100%; padding: 0 8px 0 4px;
       border: 0; border-radius: 999px; background: var(--wa-panel); box-shadow: inset 0 0 0 1px var(--wa-line);

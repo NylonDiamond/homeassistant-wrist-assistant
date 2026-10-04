@@ -405,11 +405,10 @@ describe("the inspector with no tile", () => {
 });
 
 describe("the page strip", () => {
-  it("is a toolbar of five chips, Page, Theme, Background, Title and Switcher, each saying what the page has", () => {
+  it("is a toolbar of four chips, Theme, Background, Title and Switcher, each saying what the page has, then the two switches", () => {
     const text = flat(strip(editor(hallPage())));
     expect(text).toMatch(/^<div class="pe-pstrip" role="toolbar" aria-label="Page settings">/);
     expect(chips(text).map(({ label, value }) => [label, value])).toEqual([
-      ["Page", "Shown"],
       ["Theme", watchThemeDisplayName("neonLagoon")],
       ["Background", "None"],
       ["Title", "Hidden"],
@@ -419,22 +418,41 @@ describe("the page strip", () => {
       expect(item).toContain(`aria-haspopup="dialog" aria-expanded=false`);
       expect(item).toContain(`<span class="pe-pchip-chev" aria-hidden="true">▾</span>`);
     }
+    // The switches stand in the strip itself, past a bar, not in a popover.
+    const switches = text.slice(text.indexOf(`<div class="pe-pstrip-tog"`));
+    expect(text.indexOf(`<span class="pe-pstrip-sep"`)).toBeGreaterThan(text.lastIndexOf(`<div class="pe-pstrip-item"`));
+    expect(switches).toContain("Hidden on the watch");
+    expect(switches).toContain("Smart Page");
+    expect(switches).not.toContain("tiles, ");
     // Nothing open yet.
     expect(text).not.toContain("pe-ppop");
   });
 
-  it("reads a hidden smart page, a title style and a gradient theme in its values", () => {
+  it("adds a Smart chip first on a smart page, counting its rules, with the smart page's own rows", () => {
     const smart = { ...smartHall(), isHidden: true } as unknown as WatchPage;
-    expect(chips(flat(strip(editor(smart))))[0]!.value).toBe("Hidden, Smart");
+    const el = editor(smart);
+    const list = chips(flat(strip(el)));
+    expect(list.map(({ label }) => label)).toEqual(["Smart", "Theme", "Background", "Title", "Switcher"]);
+    expect(list[0]!.value).toMatch(/rule/);
+    expect(list[0]!.item).toContain(`style=--k:${SMART_SECTION_BADGE.color}`);
+    click(strip(el), "data-section=page");
+    const rows = chips(flat(strip(el)))[0]!.item;
+    expect(rows).toContain(`<div class="pop-menu pe-ppop" role="dialog" aria-label=Smart page>`);
+    expect(rows).toContain(`id="sm-body-page"`);
+    expect(rows).toContain("Live Updates");
+    // A plain page has no Smart chip.
+    expect(flat(strip(editor(hallPage())))).not.toContain("data-section=page");
+  });
+
+  it("reads a title style and a gradient theme in its values", () => {
     const styled = chips(flat(strip(editor(hallPage({ pageTitleDisplayStyle: "glass", useGradientColors: true })))));
-    expect(styled[1]!.value).toBe(`${watchThemeDisplayName("neonLagoon")}, gradient`);
-    expect(styled[3]!.value).toBe("Glass");
+    expect(styled[0]!.value).toBe(`${watchThemeDisplayName("neonLagoon")}, gradient`);
+    expect(styled[2]!.value).toBe("Glass");
   });
 
   it("badges each chip in its section's color: an icon, and the theme's own dot on Theme", () => {
     const text = flat(strip(editor(hallPage())));
     const expected: [keyof typeof WATCH_PAGE_SECTION_BADGES, string, Parameters<typeof uiIcon>[0]][] = [
-      ["page", SECTION_COLOR.content, "content"],
       ["theme", SECTION_COLOR.look, "look"],
       ["background", SECTION_COLOR.look, "shape"],
       ["title", SECTION_COLOR.numbers, "text"],
@@ -459,7 +477,7 @@ describe("the page strip", () => {
     expect(el.pageStripOpen).toBe("background");
     let text = flat(strip(el));
     expect(text.match(/class="pop-menu pe-ppop"/g)?.length).toBe(1);
-    const background = chips(text)[2]!.item;
+    const background = chips(text)[1]!.item;
     expect(background).toContain(`aria-expanded=true`);
     expect(background).toContain(`<div class="pop-menu pe-ppop" role="dialog" aria-label=Background>`);
     expect(background).toContain(`<fieldset class="ts-body" id=ps-body-background`);
@@ -468,28 +486,12 @@ describe("the page strip", () => {
     click(strip(el), "data-section=theme");
     text = flat(strip(el));
     expect(text.match(/class="pop-menu pe-ppop"/g)?.length).toBe(1);
-    expect(chips(text)[1]!.item).toContain(`aria-label="Page theme"`);
-    expect(chips(text)[2]!.item).not.toContain("pe-ppop");
+    expect(chips(text)[0]!.item).toContain(`aria-label="Page theme"`);
+    expect(chips(text)[1]!.item).not.toContain("pe-ppop");
     // The same chip again shuts it.
     click(strip(el), "data-section=theme");
     expect(el.pageStripOpen).toBeUndefined();
     expect(flat(strip(el))).not.toContain("pe-ppop");
-  });
-
-  it("holds the page's switches, its facts and the Smart Page switch in the Page popover, and a smart page's rows", () => {
-    const el = editor(hallPage());
-    click(strip(el), "data-section=page");
-    const page = chips(flat(strip(el)))[0]!.item;
-    expect(page).toContain("Hidden on the watch");
-    expect(page).toContain("2 tiles, 4 rows");
-    expect(page).toContain("Smart Page");
-    expect(page).not.toContain("sm-body-page");
-    const smart = editor(smartHall());
-    click(strip(smart), "data-section=page");
-    const rows = chips(flat(strip(smart)))[0]!.item;
-    expect(rows).toContain(`id="sm-body-page"`);
-    expect(rows).toContain("Live Updates");
-    expect(rows).not.toMatch(/\d tiles?, \d rows?/);
   });
 
   it("shuts on Escape and on a press outside it, not on one in it or on its chip", () => {
@@ -573,14 +575,14 @@ describe("the changed dot", () => {
   it("is drawn on the page strip's chip, after its label, and in its popover's head", () => {
     const dot = `<span class="pe-pchip-l">Switcher</span><span class="pe-pchip-dot" aria-hidden="true"></span>`;
     const switcher = chips(flat(strip(editor(hallPage({ switcherText: "Hall" })))));
-    expect(switcher[4]!.item).toContain(dot);
+    expect(switcher[3]!.item).toContain(dot);
     expect(switcher.filter((c) => c.item.includes("pe-pchip-dot")).map((c) => c.label)).toEqual(["Switcher"]);
     // Theme: not for the watch's fallback theme, yes for another.
-    expect(chips(flat(strip(editor(hallPage()))))[1]!.item).not.toContain("pe-pchip-dot");
+    expect(chips(flat(strip(editor(hallPage()))))[0]!.item).not.toContain("pe-pchip-dot");
     const el = editor(hallPage({ themeOverride: "ember" }));
-    expect(chips(flat(strip(el)))[1]!.item).toContain(`<span class="pe-pchip-l">Theme</span><span class="pe-pchip-dot"`);
+    expect(chips(flat(strip(el)))[0]!.item).toContain(`<span class="pe-pchip-l">Theme</span><span class="pe-pchip-dot"`);
     click(strip(el), "data-section=theme");
-    expect(chips(flat(strip(el)))[1]!.item).toContain(`<div class="pe-ppop-h"><span>Theme</span><span class="pe-pchip-dot" aria-hidden="true"></span></div>`);
+    expect(chips(flat(strip(el)))[0]!.item).toContain(`<div class="pe-ppop-h"><span>Theme</span><span class="pe-pchip-dot" aria-hidden="true"></span></div>`);
   });
 
   it("the page's switcher and theme: not for stored defaults, yes for a value of the page's own", () => {

@@ -334,14 +334,21 @@ export function smartConvertConfirmed(host: WatchPagesEditorHost, target?: Event
  * (`renderSmartPageBody`). */
 export function renderSmartPageRows(host: WatchPagesEditorHost): TemplateResult {
   const config = readSmartConfig(host.page);
-  const smart = config !== undefined;
+  return html`
+    ${renderSmartPageSwitch(host)}
+    <p class="pe-muted sm-under">${config === undefined ? W("smartPageDetail") : `${W("smartPageActive")}: ${smartRuleCountWords(config.rules.length)}`}</p>`;
+}
+
+/** The Smart Page switch alone, with the convert question while it is
+ * asked: the page strip draws it beside Hidden on the watch. */
+export function renderSmartPageSwitch(host: WatchPagesEditorHost): TemplateResult {
+  const smart = readSmartConfig(host.page) !== undefined;
   return html`
     <label class="pe-switch sm-switch" title=${W("smartPageDetail")}>
       <input type="checkbox" role="switch" .checked=${live(smart)} ?disabled=${host.busy}
         @change=${(e: Event) => smartSwitchPressed(host, (e.target as HTMLInputElement).checked)} />
       <span>${W("smartPage")}</span>
     </label>
-    <p class="pe-muted sm-under">${config === undefined ? W("smartPageDetail") : `${W("smartPageActive")}: ${smartRuleCountWords(config.rules.length)}`}</p>
     ${askOf(host) === "convert" ? renderConvertAsk(host) : nothing}`;
 }
 
