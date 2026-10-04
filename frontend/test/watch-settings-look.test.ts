@@ -327,7 +327,7 @@ describe("the tiles' look", () => {
   it("outlines every tile and lifts the picked one to a raised grey with the brighter line", () => {
     const tile = tileRules.find((r) => r.selector === "button.ws-tile")!.body;
     expect(tile).toContain("border: 1px solid var(--wa-line-strong)");
-    expect(tile).toContain("border-radius: 8px");
+    expect(tile).toContain("border-radius: 6px");
     expect(tile).toContain("--ws-tile-bg: var(--wa-field)");
     const on = tileRules.find((r) => r.selector === "button.ws-tile.on")!.body;
     expect(on).toContain("--ws-tile-bg: var(--wa-seg-on)");

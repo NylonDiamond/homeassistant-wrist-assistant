@@ -663,8 +663,7 @@ export class WatchSettings implements ReactiveController {
     const cols = n <= 5 ? n : Math.ceil(n / 2);
     const narrow = n >= 5 ? 3 : n;
     return html`<div class="ws-tile-row" data-key=${setting.key}>
-      <div class="ws-head">${this.glyph("ws-ic", settingIcon(setting), 14)}${settingTitle(setting.label, value, def, (v) => set(v), name)}</div>
-      ${setting.help ? html`<div class="hint">${setting.help}</div>` : nothing}
+      <div class="ws-head">${this.glyph("ws-ic", settingIcon(setting), 14)}${settingTitle(setting.label, value, def, (v) => set(v), name)}${setting.help ? html`<div class="hint">${setting.help}</div>` : nothing}</div>
       <div class="ws-tiles" role="group" aria-label=${setting.label} data-n=${n} style=${`--cols:${cols};--cols-narrow:${narrow}`}>
         ${tiles.map((t) => this.renderTile(t, set))}
       </div>
@@ -835,27 +834,27 @@ export const watchSettingsStyles = css`
   .ws-row > .field > span:first-child { padding-left: 21px; }
   /* A row of tiles stacks: the icon and title on one line, the help under
      them where the title starts, the tiles under that at full width. */
-  .ws-tile-row { padding: 3px 0 4px; }
-  .ws-head { position: relative; display: flex; align-items: center; gap: 7px; min-height: 24px; }
-  .ws-head > span:not(.ws-ic) { min-width: 0; color: var(--wa-label, var(--wa-muted)); font-size: 12px; line-height: 1.25; overflow-wrap: break-word; }
+  .ws-tile-row { padding: 1px 0 3px; }
+  .ws-head { position: relative; display: flex; align-items: center; gap: 7px; min-height: 22px; }
+  .ws-head > span:not(.ws-ic) { flex: none; max-width: 100%; min-width: 0; color: var(--wa-label, var(--wa-muted)); font-size: 12px; line-height: 1.25; overflow-wrap: break-word; }
   .ws-head > span.changed { color: var(--wa-ink); }
   .ws-head button.reset-dot { top: 50%; margin-top: -2.5px; }
-  .ws-tile-row > .hint { margin: 0 0 2px 21px; }
+  .ws-head > .hint { flex: 1 1 0; min-width: 0; margin: 0 0 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* The tiles: equal columns, five at most to a line, three on a narrow
      dialog. Neutral like every control here: a hairline at rest that
      brightens under the pointer, and the picked one a raised grey with ink
      words and the brighter line. No hue. */
   .ws-tiles {
-    display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); gap: 6px; margin-top: 6px;
+    display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); gap: 4px; margin-top: 2px;
   }
   @container xfer (max-width: 440px) {
     .ws-tiles { grid-template-columns: repeat(var(--cols-narrow, 3), minmax(0, 1fr)); }
   }
   button.ws-tile {
     --ws-tile-bg: var(--wa-field);
-    font: inherit; min-width: 0; min-height: 54px; margin: 0; padding: 6px 4px 5px; cursor: pointer;
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
-    border: 1px solid var(--wa-line-strong); border-radius: 8px; background: var(--ws-tile-bg); color: var(--wa-label);
+    font: inherit; min-width: 0; min-height: 30px; margin: 0; padding: 3px 6px; cursor: pointer;
+    display: grid; grid-template-columns: auto minmax(0, auto); align-items: center; justify-content: center; column-gap: 6px; row-gap: 0;
+    border: 1px solid var(--wa-line-strong); border-radius: 6px; background: var(--ws-tile-bg); color: var(--wa-label);
     transition: border-color .12s ease-out, background-color .12s ease-out, color .12s ease-out;
   }
   button.ws-tile:hover:not(:disabled) { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); color: var(--wa-ink); }
@@ -865,15 +864,16 @@ export const watchSettingsStyles = css`
   }
   button.ws-tile:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   button.ws-tile:disabled { opacity: .45; cursor: default; }
-  .ws-tile-glyph { height: 20px; min-width: 16px; display: grid; place-items: center; color: var(--wa-muted); }
+  .ws-tile-glyph { grid-row: 1 / span 2; height: 20px; min-width: 16px; display: grid; place-items: center; color: var(--wa-muted); }
+  .ws-tile-name:last-child { grid-row: 1 / span 2; }
   .ws-tile-glyph svg { height: 16px; width: auto; max-width: 100%; }
-  .ws-tile-glyph svg.ws-pv { width: 36px; height: 20px; }
+  .ws-tile-glyph svg.ws-pv { width: 32px; height: 18px; }
   button.ws-tile.on .ws-tile-glyph { color: var(--wa-ink); }
-  .ws-tile-name { max-width: 100%; font-size: 11.5px; font-weight: 500; line-height: 1.2; text-align: center; overflow-wrap: anywhere; }
+  .ws-tile-name { max-width: 100%; font-size: 11.5px; font-weight: 500; line-height: 1.2; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   button.ws-tile.on .ws-tile-name { font-weight: 600; }
   .ws-tile-detail {
     max-width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; line-height: 1.2;
-    color: var(--wa-muted); text-align: center; overflow-wrap: anywhere;
+    grid-column: 2; color: var(--wa-muted); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   button.ws-tile.on .ws-tile-detail { color: var(--wa-label); }
   .ws-body > .ws-note { display: flex; align-items: center; gap: 10px; }
