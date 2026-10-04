@@ -23,9 +23,8 @@ import { renderWatchPagePreview } from "../src/watch-pages/preview.js";
 import { WATCH_SMART, readSmartConfig, smartWord } from "../src/watch-pages/smart-model.js";
 import {
   SMART_PRESET_ADDED_REASON,
-  SMART_SECTION_BADGE,
   renderSmartPageRows,
-  renderSmartPageSection,
+  renderSmartPageBody,
   renderSmartRulesCard,
   smartDomainColorHex,
   smartSelectedRuleIndex,
@@ -259,43 +258,42 @@ describe("the Smart Page switch", () => {
 
 describe("the smart page rows", () => {
   it("show Refresh on Page View and Pull to Refresh only while Live Updates is off", () => {
-    const off = flatten(renderSmartPageSection(setup(smartPage([])).host));
+    const off = flatten(renderSmartPageBody(setup(smartPage([])).host));
     expect(off).toContain("Live Updates");
     expect(off).toContain("Real-time via background sync");
     expect(off).toContain("Refresh on Page View");
     expect(off).toContain("Pull to Refresh");
-    const on = flatten(renderSmartPageSection(setup(smartPage([], { liveUpdates: true })).host));
+    const on = flatten(renderSmartPageBody(setup(smartPage([], { liveUpdates: true })).host));
     expect(on).toContain("Live Updates");
     expect(on).not.toContain("Refresh on Page View");
     expect(on).not.toContain("Pull to Refresh");
   });
 
-  it("are their own Smart page card, not the switch's rows, and only on a smart page", () => {
+  it("are a body of their own, not the switch's rows, and only on a smart page", () => {
     const s = setup(smartPage([]));
     expect(flatten(renderSmartPageRows(s.host))).not.toContain("Live Updates");
-    const card = flatten(renderSmartPageSection(s.host));
-    expect(card).toContain(`<section class="sec" data-sec=smart:page`);
-    expect(card).toContain(`--c:${SMART_SECTION_BADGE.color}`);
-    expect(card).toContain(`<h4>${W("smartPage")}`);
-    expect(renderSmartPageSection(setup(plainPage(1)).host)).toBe(nothing);
+    const body = flatten(renderSmartPageBody(s.host));
+    expect(body).toMatch(/^<fieldset class="ts-body" id="sm-body-page" \?disabled=false aria-label=Smart Page>/);
+    expect(body).not.toContain("<section");
+    expect(renderSmartPageBody(setup(plainPage(1)).host)).toBe(nothing);
   });
 
   it("write each switch, the size presets, the boxes, the labels and the sort order", () => {
     const s = setup(smartPage([]));
-    check(renderSmartPageSection(s.host), "Live Updates", true);
+    check(renderSmartPageBody(s.host), "Live Updates", true);
     expect(s.config()?.liveUpdates).toBe(true);
-    check(renderSmartPageSection(s.host), W("showLabels"), false);
+    check(renderSmartPageBody(s.host), W("showLabels"), false);
     expect(s.config()?.tileShowLabel).toBe(false);
-    const rows = flatten(renderSmartPageSection(s.host));
+    const rows = flatten(renderSmartPageBody(s.host));
     expect(rows).toMatch(/pe-chip on" aria-pressed=true title=4w × 3h\s+@click=>Standard/);
-    click(renderSmartPageSection(s.host), ">Small<");
+    click(renderSmartPageBody(s.host), ">Small<");
     expect([s.config()?.tileColSpan, s.config()?.tileRowSpan]).toEqual([2, 2]);
-    type(renderSmartPageSection(s.host), "Columns", "7");
+    type(renderSmartPageBody(s.host), "Columns", "7");
     expect(s.config()?.tileColSpan).toBe(7);
-    type(renderSmartPageSection(s.host), "Rows", "40");
+    type(renderSmartPageBody(s.host), "Rows", "40");
     expect(s.config()?.tileRowSpan).toBe(2);
-    expect(flatten(renderSmartPageSection(s.host))).toContain("Use a number from 1 to 12.");
-    pick(renderSmartPageSection(s.host), W("sortOrder"), "alphabetical");
+    expect(flatten(renderSmartPageBody(s.host))).toContain("Use a number from 1 to 12.");
+    pick(renderSmartPageBody(s.host), W("sortOrder"), "alphabetical");
     expect(s.config()?.sortOrder).toBe("alphabetical");
   });
 });

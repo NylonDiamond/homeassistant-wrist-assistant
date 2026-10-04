@@ -419,7 +419,11 @@ describe("the canvas head", () => {
   it("reads page / watch / facts: the page's name to type over, the open watch's name as words, no watch chips", () => {
     const { body } = editor();
     const text = body();
-    const head = text.slice(text.indexOf(`<div class="cv-head">`), text.indexOf(`<div class="stage-area`));
+    // The head ends where the page strip starts, and the stage follows it.
+    const strip = text.indexOf(`<div class="pe-pstrip"`);
+    expect(strip).toBeGreaterThan(text.indexOf(`<div class="cv-head">`));
+    expect(text.indexOf(`<div class="stage-area`)).toBeGreaterThan(strip);
+    const head = text.slice(text.indexOf(`<div class="cv-head">`), strip);
     expect(head).toContain(`class="tb-name-input"`);
     expect(head).toContain(`.value=Hall`);
     expect(head).not.toContain("doc-chip");
@@ -433,7 +437,7 @@ describe("the canvas head", () => {
   });
 
   it("offers Duplicate and Delete for the selected tile only, and Duplicate only where the copy may go", () => {
-    const head = (text: string) => text.slice(text.indexOf(`<div class="cv-head">`), text.indexOf(`<div class="stage-area`));
+    const head = (text: string) => text.slice(text.indexOf(`<div class="cv-head">`), text.indexOf(`<div class="pe-pstrip"`));
     const none = head(editor().body());
     expect(none).toContain(`?disabled=true title=Select a tile to duplicate it.`);
     expect(none).toMatch(/<button class="cv-act icon danger" \?disabled=true/);

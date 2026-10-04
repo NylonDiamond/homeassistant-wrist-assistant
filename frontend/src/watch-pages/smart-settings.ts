@@ -1,13 +1,14 @@
-// Smart pages in the inspector (part 3f batch 3), as its section cards
-// (`sectionCard`, editor-chrome.ts) in the Rules color: the Smart Page
-// switch with the phone's convert question in the Page card, the Smart page
-// card (Updates, Tile Size, Show labels, Sort order), and the Rules cards: a
-// chip per rule, the Add Domain dialog and the selected rule's rows, then
-// its Header and its per-domain style through the tile settings' cards.
+// Smart pages in the page editor (part 3f batch 3): the Smart Page switch
+// with the phone's convert question and a smart page's own rows (Updates,
+// Tile Size, Show labels, Sort order) in the page strip's Page popover, and
+// the inspector's Rules cards (`sectionCard`, editor-chrome.ts) in the Rules
+// color: a chip per rule, the Add Domain dialog and the selected rule's
+// rows, then its Header and its per-domain style through the tile settings'
+// cards.
 //
-// `<wa-page-editor>` calls `renderSmartPageRows` from its Page card,
-// `renderSmartPageSection` after it and `renderSmartRulesCard` after the
-// page's own cards on a smart page, and puts `smartSettingsStyles` in its
+// `<wa-page-editor>` calls `renderSmartPageRows` and `renderSmartPageBody`
+// from its Page popover and `renderSmartRulesCard` from the inspector on a
+// smart page, and puts `smartSettingsStyles` in its
 // sheet. Every edit goes through `commit` with a
 // writer of `smart-model.ts`, read against the document as it is when it
 // commits: each action is one undo step, a run of typing in one field one
@@ -294,7 +295,7 @@ function endAsk(host: WatchPagesEditorHost, target?: EventTarget | null): void {
   host.requestUpdate();
 }
 
-// ── the Page card's smart rows ───────────────────────────────────────────
+// ── the Page popover's smart rows ────────────────────────────────────────
 
 /**
  * The Smart Page switch was pressed. Off makes the page a normal one at
@@ -328,9 +329,9 @@ export function smartConvertConfirmed(host: WatchPagesEditorHost, target?: Event
   endAsk(host, target);
 }
 
-/** The switch and the line under it, in the Page card; the convert question
- * when it is open. A smart page's own rows are the Smart page card
- * (`renderSmartPageSection`). */
+/** The switch and the line under it, in the page strip's Page popover; the
+ * convert question when it is open. A smart page's own rows follow them there
+ * (`renderSmartPageBody`). */
 export function renderSmartPageRows(host: WatchPagesEditorHost): TemplateResult {
   const config = readSmartConfig(host.page);
   const smart = config !== undefined;
@@ -344,11 +345,13 @@ export function renderSmartPageRows(host: WatchPagesEditorHost): TemplateResult 
     ${askOf(host) === "convert" ? renderConvertAsk(host) : nothing}`;
 }
 
-/** On a smart page, its Smart page card (Updates, Tile size, Show labels,
- * Sort order); nothing on a page that is not one. */
-export function renderSmartPageSection(host: WatchPagesEditorHost): TemplateResult | typeof nothing {
+/** On a smart page, its own rows (Updates, Tile size, Show labels, Sort
+ * order) in a fieldset that switches every control off while a save is out,
+ * for the page strip's Page popover; nothing on a page that is not one. */
+export function renderSmartPageBody(host: WatchPagesEditorHost): TemplateResult | typeof nothing {
   const config = readSmartConfig(host.page);
-  return config === undefined ? nothing : smartPageCard(host, config);
+  if (config === undefined) return nothing;
+  return html`<fieldset class="ts-body" id="sm-body-page" ?disabled=${host.busy} aria-label=${W("smartPage")}>${smartPageRows(host, config)}</fieldset>`;
 }
 
 function renderConvertAsk(host: WatchPagesEditorHost): TemplateResult {
@@ -394,13 +397,13 @@ function styleSections(rule: WatchSmartRule): WatchTileSettingsSection[] {
   return watchDomainStyleSections(smartDomainInfo(rule.domain)?.stateTask === true);
 }
 
-/** The folds the inspector's Collapse all turns on a smart page: the Smart
- * page and Rules cards, and the selected rule's Header and style cards. None
- * on a page that is not smart. */
+/** The folds the inspector's Collapse all turns on a smart page: the Rules
+ * card, and the selected rule's Header and style cards. None on a page that
+ * is not smart. */
 export function smartFoldIds(host: WatchPagesEditorHost): FoldId[] {
   const config = readSmartConfig(host.page);
   if (config === undefined) return [];
-  const ids: FoldId[] = [{ module: KEY, section: "page" }, { module: KEY, section: "rules" }];
+  const ids: FoldId[] = [{ module: KEY, section: "rules" }];
   const index = smartSelectedRuleIndex(config, host.smartRuleId);
   const rule = index === undefined ? undefined : config.rules[index];
   if (rule !== undefined) {
@@ -409,11 +412,10 @@ export function smartFoldIds(host: WatchPagesEditorHost): FoldId[] {
   return ids;
 }
 
-function smartPageCard(host: WatchPagesEditorHost, config: WatchSmartConfig): TemplateResult {
+function smartPageRows(host: WatchPagesEditorHost, config: WatchSmartConfig): TemplateResult {
   const sh = pageScope(host);
   const P = host.pageId;
-  const summary = `${W("sizeSubtitle", { cols: config.tileColSpan, rows: config.tileRowSpan })}, ${config.liveUpdates ? PAGE_SWITCHES[0]?.label ?? "" : SORT_ORDERS.find((o) => o.value === config.sortOrder)?.label ?? ""}`;
-  return fold(host, "page", W("smartPage"), summary, () => html`
+  return html`
     <div class="ts-sub-h"><span>${W("updates")}</span></div>
     <div class="hint">${W("updatesHelp")}</div>
     ${PAGE_SWITCHES.filter((s) => s.always || !config.liveUpdates).map((s) => {
@@ -431,7 +433,7 @@ function smartPageCard(host: WatchPagesEditorHost, config: WatchSmartConfig): Te
     ${spanBox(sh, "tileRowSpan", "Rows", config.tileRowSpan, (d, v) => (v === null ? d : setSmartTileRowSpan(d, P, v)))}
     ${checkField(W("showLabels"), config.tileShowLabel, (on) => commit(sh, "tileShowLabel", (d) => setSmartTileShowLabel(d, P, on)))}
     ${menuField(W("sortOrder"), { options: SORT_ORDERS, selected: config.sortOrder }, (v) => commit(sh, "sortOrder", (d) => setSmartSortOrder(d, P, v)))}
-  `);
+  `;
 }
 
 // ── the Rules card ───────────────────────────────────────────────────────

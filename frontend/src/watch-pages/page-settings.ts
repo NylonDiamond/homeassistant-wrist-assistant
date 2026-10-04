@@ -1,25 +1,22 @@
-// The selected page's styling, as the inspector's section cards when no tile
-// is selected (`sectionCard`, editor-chrome.ts): the theme strip with its
-// role colors and the Solid or Gradient switch, the background decoration
-// (one at a time, as the phone's Page task), the page title, the page
-// switcher, and Reset (part 3d). The editor's own Page card (its switches)
-// folds and is marked the same way, through `renderPageSection`.
+// The selected page's styling, drawn in the page strip over the watch: the
+// theme strip with its role colors and the Solid or Gradient switch, the
+// background decoration (one at a time, as the phone's Page task), the page
+// title, the page switcher, and Reset (part 3d). Each is one chip of the
+// strip, and its chip opens a popover holding the section's body.
 //
-// `<wa-page-editor>` calls `renderPageSettings` from its inspector. The
-// fields are the tile settings' own (`tile-settings.ts`), under a scope of
-// the page so their typed text and refusals never mix with a tile's. Every
-// edit goes through the setters of `page-settings-model.ts` and reads the
-// document at the moment it commits.
+// `<wa-page-editor>` draws the strip itself and asks this module for each
+// section's words (`pageSettingSummary`), its body (`renderPageSettingBody`)
+// and Reset page (`renderPageReset`). The fields are the tile settings' own
+// (`tile-settings.ts`), under a scope of the page so their typed text and
+// refusals never mix with a tile's. Every edit goes through the setters of
+// `page-settings-model.ts` and reads the document at the moment it commits.
 //
 // Plan: app repo docs/pages_in_home_assistant_step3.md ("3d build contract").
 
 import { css, html, nothing, type TemplateResult } from "lit";
 import { checkField, colorField, segField, sliderField, symbolField, symbolNameSet, textField } from "../editors.js";
-import { sectionCard } from "../editor-chrome.js";
 import { SECTION_COLOR } from "../kinds.js";
-import { uiIcon } from "../ui-icons.js";
 import { type TileSettingsHost, type WatchPagesEditorHost, extendHost } from "./editor-host.js";
-import { type FoldId, sectionOpen, setSectionOpen } from "./fold-memory.js";
 import { type WatchPage, type WatchPageTile, type WatchPagesDocument, isHiddenWatchPage } from "./model.js";
 import {
   type WatchPageDecoration,
@@ -68,18 +65,27 @@ import {
 } from "./tile-settings-options.js";
 import { watchStorageIconName } from "./tile-settings-model.js";
 import { watchGradientOf, watchThemeDisplayName } from "./tile-new.js";
-import { watchPageRoleSwatches, watchPatternSwatches, watchStylingReset, watchStylingSlider, watchStylingTheme, watchTitleSwatches } from "./tile-styling.js";
+import {
+  watchPageRoleSwatches,
+  watchPatternSwatches,
+  watchStylingLabel,
+  watchStylingReset,
+  watchStylingSlider,
+  watchStylingTheme,
+  watchTitleSwatches,
+} from "./tile-styling.js";
 
 const KEY = "page-settings";
 
-type Section = "theme" | "background" | "title" | "switcher";
+/** This module's sections, each a chip of the page strip. */
+export type WatchPageSettingSection = "theme" | "background" | "title" | "switcher";
 
-/** The page's own cards in the inspector with no tile selected, in the
- * order drawn: the page editor's Page card (its switches and facts), then
- * this module's. */
-export type WatchPageInspectorSection = "page" | Section;
+/** The page strip's chips, in the order drawn: the page editor's Page chip
+ * (its switches and facts), then this module's. */
+export type WatchPageStripSection = "page" | WatchPageSettingSection;
 
-const SECTION_TITLES: Readonly<Record<WatchPageInspectorSection, string>> = {
+/** Each section's full name: its popover's title and its chip's tooltip. */
+export const WATCH_PAGE_SECTION_TITLES: Readonly<Record<WatchPageStripSection, string>> = {
   page: "Page",
   theme: "Theme",
   background: "Background",
@@ -87,10 +93,19 @@ const SECTION_TITLES: Readonly<Record<WatchPageInspectorSection, string>> = {
   switcher: "In the page switcher",
 };
 
-/** Each page card's badge, in the complication editor's colors: the page's
+/** Each section's chip word, short so the five fit one row over the watch. */
+export const WATCH_PAGE_CHIP_LABELS: Readonly<Record<WatchPageStripSection, string>> = {
+  page: "Page",
+  theme: "Theme",
+  background: "Background",
+  title: "Title",
+  switcher: "Switcher",
+};
+
+/** Each section's badge, in the complication editor's colors: the page's
  * switches and how it shows in the switcher are Content, its theme and
  * background are Look, its title is Extras (teal). */
-export const WATCH_PAGE_SECTION_BADGES: Readonly<Record<WatchPageInspectorSection, WatchSectionBadge>> = {
+export const WATCH_PAGE_SECTION_BADGES: Readonly<Record<WatchPageStripSection, WatchSectionBadge>> = {
   page: { color: SECTION_COLOR.content, icon: "content" },
   theme: { color: SECTION_COLOR.look, icon: "look" },
   background: { color: SECTION_COLOR.look, icon: "shape" },
@@ -121,8 +136,8 @@ function readsOtherThanDefault(page: WatchPage, keys: readonly string[], read: (
 }
 
 /**
- * Whether a page card holds a value of the page's own, which the card marks
- * with the changed dot: Page while the page is hidden on the watch; Theme
+ * Whether a page section holds a value of the page's own, which its chip
+ * marks with the changed dot: Page while the page is hidden on the watch; Theme
  * and the switcher while one of their keys reads other than its absence
  * would (a theme other than the watch's fallback, gradient colors on, a
  * switcher name, icon, color, mode or hiding); Background and Page title
@@ -130,7 +145,7 @@ function readsOtherThanDefault(page: WatchPage, keys: readonly string[], read: (
  * shown for (an absent background brightness reads 0 where the phone's
  * default is 0.6, so absence is no measure there).
  */
-export function watchPageSectionChanged(page: WatchPage, section: WatchPageInspectorSection): boolean {
+export function watchPageSectionChanged(page: WatchPage, section: WatchPageStripSection): boolean {
   const resetChanges = (prefix: string): boolean =>
     Object.entries(watchStylingReset("page")).some(([key, value]) => {
       if (!key.startsWith(prefix) || IMAGE_KEY.test(key) || !Object.hasOwn(page, key)) return false;
@@ -156,38 +171,6 @@ export function watchPageSectionChanged(page: WatchPage, section: WatchPageInspe
   }
 }
 
-/** The folds the inspector's Collapse all turns with no tile selected:
- * the Page card and this module's. */
-export function pageSettingsFoldIds(): FoldId[] {
-  return (["page", "theme", "background", "title", "switcher"] as const).map((section) => ({ module: KEY, section }));
-}
-
-/** One page card through the shared section card; its body drawn only
- * while open. */
-function pageCard(host: WatchPagesEditorHost, section: WatchPageInspectorSection, summary: string, body: () => TemplateResult): TemplateResult {
-  const open = isOpen(host, section);
-  const badge = WATCH_PAGE_SECTION_BADGES[section];
-  return sectionCard({
-    color: badge.color,
-    icon: uiIcon(badge.icon),
-    title: SECTION_TITLES[section],
-    open,
-    onToggle: () => toggle(host, section),
-    ...(open || summary === "" ? {} : { summary }),
-    dot: watchPageSectionChanged(host.page, section),
-    id: `${KEY}:${section}`,
-  }, open ? body() : html``);
-}
-
-/**
- * The Page card: the page editor's rows for the page itself (Hidden on the
- * watch, the Smart Page switch, the tile and row count) in the shared card,
- * folding as this module's do. `summary` is what it says while folded.
- */
-export function renderPageSection(host: WatchPagesEditorHost, summary: string, body: TemplateResult): TemplateResult {
-  return pageCard(host, "page", summary, () => html`<div class="ps-page-b">${body}</div>`);
-}
-
 /** The decorations a person can pick here, in the phone's order. Image is
  * set on the phone only. */
 const DECORATION_CHOICES: readonly [WatchPageDecoration, string][] = [
@@ -205,48 +188,54 @@ function scoped(host: WatchPagesEditorHost): TileSettingsHost {
   return extendHost(host, { tileId: () => `page-${host.pageId}`, tile: () => NO_TILE });
 }
 
-/** Open unless folded, this visit or an earlier one (`fold-memory.ts`). */
-function isOpen(host: WatchPagesEditorHost, section: WatchPageInspectorSection): boolean {
-  return sectionOpen(host.uiState, KEY, section);
-}
-
-function toggle(host: WatchPagesEditorHost, section: WatchPageInspectorSection): void {
-  setSectionOpen(host.uiState, KEY, section, !isOpen(host, section));
-  host.requestUpdate();
-}
-
-/** The page's styling cards for `host.page`: Theme, Background, Page title
- * and In the page switcher, then Reset page while it would change
- * something. */
-export function renderPageSettings(host: WatchPagesEditorHost): TemplateResult {
+/**
+ * One section's body for `host.page`, as its popover in the page strip
+ * holds it: a fieldset that switches every control off while a save is out.
+ * Typed text left over from a field no longer drawn is dropped first, as
+ * every draw of the page's fields does.
+ */
+export function renderPageSettingBody(host: WatchPagesEditorHost, section: WatchPageSettingSection): TemplateResult {
   const sh = scoped(host);
   dropStaleTyping(sh);
-  const sections: Section[] = ["theme", "background", "title", "switcher"];
-  return html`<div class="ts-root ps-root">
-    ${sections.map((section) => pageCard(host, section, summary(host, section),
-      () => html`<fieldset class="ts-body" id=${`ps-body-${section}`} ?disabled=${host.busy} aria-label=${SECTION_TITLES[section]}>${body(sh, section)}</fieldset>`))}
-    ${watchPageModified(host.document, host.pageId)
-      ? html`<div class="ps-reset">${linkButton("Reset page", "The background and title back as the iPhone app's reset puts them. The theme stays.", () =>
-          commit(sh, "reset", (d) => resetWatchPage(d, host.pageId, { keepImage: true })))}</div>`
-      : nothing}
-  </div>`;
+  return html`<fieldset class="ts-body" id=${`ps-body-${section}`} ?disabled=${host.busy} aria-label=${WATCH_PAGE_SECTION_TITLES[section]}>${body(sh, section)}</fieldset>`;
 }
 
-function summary(host: WatchPagesEditorHost, section: Section): string {
-  const s = watchPageSettings(host.page);
+/** Reset page while it would change something, else nothing: the
+ * background and title back as the phone's reset puts them. */
+export function renderPageReset(host: WatchPagesEditorHost): TemplateResult | typeof nothing {
+  if (!watchPageModified(host.document, host.pageId)) return nothing;
+  const sh = scoped(host);
+  return html`<span class="ps-reset">${linkButton("Reset page", "The background and title back as the iPhone app's reset puts them. The theme stays.", () =>
+    commit(sh, "reset", (d) => resetWatchPage(d, host.pageId, { keepImage: true })))}</span>`;
+}
+
+/** What a section is set to now, in a word or two: its chip's value. */
+export function pageSettingSummary(page: WatchPage, section: WatchPageSettingSection): string {
+  const s = watchPageSettings(page);
   switch (section) {
     case "theme":
       return `${watchThemeDisplayName(s.theme)}${s.gradient ? ", gradient" : ""}`;
     case "background":
       return DECORATION_CHOICES.find(([d]) => d === s.decoration)?.[1] ?? (s.decoration === "image" ? "Image" : "");
     case "title":
-      return s.titleStyle === "none" ? "Hidden" : s.titleStyle;
+      return s.titleStyle === "none" ? "Hidden" : watchStylingLabel("pageTitleDisplayStyle", s.titleStyle);
     case "switcher":
       return s.hideFromSwitcher ? "Hidden" : s.switcherText ?? (s.switcherDisplayMode === "icon" ? "Icon" : "Shown");
   }
 }
 
-function body(sh: TileSettingsHost, section: Section): TemplateResult {
+/** A theme's dot (`.ps-theme`): its first and fifth role colors in a ring
+ * around its page background, as the custom properties the dot reads. */
+export function watchPageThemeDot(theme: string): string {
+  const r = watchStylingTheme(theme)?.roles ?? {};
+  const swatches = watchPageRoleSwatches();
+  const a = r[swatches[0]?.role ?? ""] ?? "#888888";
+  const b = r[swatches[4]?.role ?? ""] ?? a;
+  const ground = watchStylingTheme(theme)?.pageDefaultBackground ?? "#000000";
+  return `--ps-a:${a};--ps-b:${b};--ps-g:${ground}`;
+}
+
+function body(sh: TileSettingsHost, section: WatchPageSettingSection): TemplateResult {
   switch (section) {
     case "theme":
       return renderTheme(sh);
@@ -268,14 +257,9 @@ function renderTheme(sh: TileSettingsHost): TemplateResult {
     <div class="ps-themes" role="radiogroup" aria-label="Page theme">
       ${watchPageThemes().map((theme) => {
         const on = theme === s.theme;
-        const r = watchStylingTheme(theme)?.roles ?? {};
-        const swatches = watchPageRoleSwatches();
-        const a = r[swatches[0]?.role ?? ""] ?? "#888888";
-        const b = r[swatches[4]?.role ?? ""] ?? a;
-        const ground = watchStylingTheme(theme)?.pageDefaultBackground ?? "#000000";
         const name = watchThemeDisplayName(theme);
         return html`<button type="button" role="radio" class="ps-theme ${on ? "on" : ""}" aria-checked=${on ? "true" : "false"} title=${name} aria-label=${name}
-          style=${`--ps-a:${a};--ps-b:${b};--ps-g:${ground}`}
+          style=${watchPageThemeDot(theme)}
           @click=${() => commit(sh, "theme", (d) => setWatchPageTheme(d, sh.pageId, theme))}></button>`;
       })}
     </div>
@@ -539,7 +523,7 @@ function renderSwitcher(sh: TileSettingsHost): TemplateResult {
 /** This module's rules, after the tile settings' in the page editor's
  * sheet. */
 export const pageSettingsStyles = css`
-  /* The Page card's rows: switches and facts, left aligned. */
+  /* The Page popover's rows: switches and facts, left aligned. */
   .ps-page-b { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 4px 0 2px; }
   /* The row under the last card: Delete page. */
   .ps-acts { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 0 0; }
@@ -556,5 +540,6 @@ export const pageSettingsStyles = css`
   .ps-roles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px 6px; padding: 2px 0 8px; }
   .ps-role { display: flex; flex-direction: column; align-items: stretch; gap: 2px; font-size: 9.5px; color: var(--wa-muted); text-align: center; min-width: 0; }
   .ps-role-sw { height: 14px; border-radius: 4px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .15); }
-  .ps-reset { padding: 8px 0 0; }
+  /* Reset page, at the end of the page strip's row of chips. */
+  .ps-reset { display: inline-flex; align-items: center; min-height: 28px; padding: 0 4px; }
 `;

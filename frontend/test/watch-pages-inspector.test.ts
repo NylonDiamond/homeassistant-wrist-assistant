@@ -1,11 +1,12 @@
 // The page editor's inspector column, the complication editor's: the sticky
 // head with the breadcrumb (the page, the selected tile's kind chip and
 // name) and Collapse all, the pinned Name card, and the section cards with
-// their badges and changed dots, for a tile and for the page itself.
+// their badges and changed dots for a tile. Then the page strip over the
+// watch, which holds the page's own settings as chips and popovers.
 //
-// No DOM: the element's `renderInspector` is drawn to its Lit templates and
-// read as text, and its buttons are pressed by calling the handler the
-// template holds for them.
+// No DOM: the element's `renderInspector` and `renderPageStrip` are drawn to
+// their Lit templates and read as text, and their buttons are pressed by
+// calling the handler the template holds for them.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -17,7 +18,9 @@ import { FOLD_STORE_KEY } from "../src/watch-pages/fold-memory.js";
 import { takeWatchPagesRecord } from "../src/watch-pages/kept.js";
 import type { WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-pages/model.js";
 import { WATCH_PAGE_CHIP_COLOR, WATCH_PAGE_SECTION_BADGES, watchPageSectionChanged } from "../src/watch-pages/page-settings.js";
+import { resetWatchPage } from "../src/watch-pages/page-settings-model.js";
 import { SMART_SECTION_BADGE } from "../src/watch-pages/smart-settings.js";
+import { watchThemeDisplayName } from "../src/watch-pages/tile-new.js";
 import { watchTileSectionChanged } from "../src/watch-pages/tile-settings.js";
 import {
   WATCH_NAME_BADGE,
@@ -139,6 +142,10 @@ const STATES = {
 
 type Editor = Record<string, unknown> & {
   renderInspector(page: WatchPage, tile: WatchPageTile | undefined, pages: readonly WatchPage[]): unknown;
+  renderPageStrip(page: WatchPage): unknown;
+  onKeyDown(e: unknown): void;
+  onWindowPointerDown(e: unknown): void;
+  pageStripOpen?: string;
   tileSettingsHost(page: WatchPage, tile: WatchPageTile): TileSettingsHost | undefined;
   currentPage(): WatchPage | undefined;
   selectedTileId?: string;
@@ -173,6 +180,26 @@ function inspector(el: Editor): unknown {
   const page = el.currentPage()!;
   const tile = el.selectedTileId === undefined ? undefined : (page.items as WatchPageTile[]).find((t) => t.id === el.selectedTileId);
   return el.renderInspector(page, tile, [page]);
+}
+
+/** The page strip over the watch, as drawn now. */
+function strip(el: Editor): unknown {
+  return el.renderPageStrip(el.currentPage()!);
+}
+
+/** Each chip of a strip's markup, from its item on: its label and value. */
+function chips(text: string): { label: string; value: string; item: string }[] {
+  return text.split(/(?=<div class="pe-pstrip-item")/).filter((c) => c.startsWith(`<div class="pe-pstrip-item"`)).map((item) => ({
+    label: /<span class="pe-pchip-l">([^<]*)</.exec(item)?.[1] ?? "",
+    value: /<span class="pe-pchip-v">([^<]*)</.exec(item)?.[1] ?? "",
+    item,
+  }));
+}
+
+/** An element on a press's path, of the classes given. */
+function onPath(...classes: string[]): unknown {
+  const node = new (globalThis as unknown as { HTMLElement: new () => object }).HTMLElement();
+  return Object.assign(node, { tagName: "DIV", classList: { contains: (c: string) => classes.includes(c) } });
 }
 
 function memoryStorage() {
@@ -216,45 +243,15 @@ describe("the breadcrumb", () => {
     const text = flat(inspector(el));
     expect(text).toContain(`<span class="kchip" style=--k:${WATCH_PAGE_CHIP_COLOR}>Page</span><span class="nm" title=Hall>Hall</span>`);
     expect(text).not.toContain(`class="root"`);
-    expect(text).toContain("<h4>Theme");
+    expect(text).toContain("The page's own settings are above the watch.");
   });
 
-  it("has a Page | Tile switch, Tile on while a tile is selected", () => {
-    const text = flat(inspector(editor(hallPage(), DIMMER)));
-    const head = text.slice(text.indexOf(`<div class="insp-head">`), text.indexOf(`<div class="insp-body">`));
-    expect(head.indexOf(`class="seg insp-tabs"`)).toBeLessThan(head.indexOf(`class="crumbs"`));
-    expect(head).toMatch(/role="tab" class= aria-selected=false[\s\S]*>Page<\/button>/);
-    expect(head).toMatch(/role="tab" class=on aria-selected=true[\s\S]*>Tile<\/button>/);
-  });
-
-  it("goes to the page's own cards from the Page tab", () => {
-    vi.stubGlobal("window", { addEventListener() {}, removeEventListener() {} });
-    const el = editor(hallPage(), DIMMER);
-    click(inspector(el), `title="The page's own settings"`);
-    expect(el.selectedTileId).toBeUndefined();
-    const text = flat(inspector(el));
-    expect(text).toMatch(/role="tab" class=on aria-selected=true[\s\S]*>Page<\/button>/);
-    expect(text).toContain("<h4>Theme");
-  });
-
-  it("comes back to the tile picked last from the Tile tab, else the first", () => {
-    vi.stubGlobal("window", { addEventListener() {}, removeEventListener() {} });
-    const el = editor(hallPage());
-    // Nothing picked yet: Tile opens the page's first tile.
-    click(inspector(el), "title=The tile picked last");
-    expect(el.selectedTileId).toBe(DIMMER);
-    // Pick the spacer, go back to the page, and Tile returns to the spacer.
-    const pick = el as unknown as { selectTile(id: string | undefined): void };
-    pick.selectTile(SPACER);
-    pick.selectTile(undefined);
-    click(inspector(el), "title=The tile picked last");
-    expect(el.selectedTileId).toBe(SPACER);
-  });
-
-  it("turns the Tile tab off on a page with no tiles", () => {
-    const page = { ...hallPage(), items: [] } as unknown as WatchPage;
-    const text = flat(inspector(editor(page)));
-    expect(text).toMatch(/aria-selected=false\s+\?disabled=true title=Add a tile first/);
+  it("has no Page | Tile switch: the page's settings are in the strip over the watch", () => {
+    for (const tile of [DIMMER, undefined]) {
+      const text = flat(inspector(editor(hallPage(), tile)));
+      expect(text).not.toContain("insp-tabs");
+      expect(text).not.toContain(`role="tab"`);
+    }
   });
 
   it("gives each family of tile its own chip color, grey for the rest", () => {
@@ -302,12 +299,18 @@ describe("Collapse all", () => {
     expect(text).toContain(">Collapse all</button>");
   });
 
-  it("turns the page's cards with no tile selected", () => {
-    const el = editor(hallPage());
+  it("is not there with no tile selected on a page that is not smart: nothing folds", () => {
+    expect(flat(inspector(editor(hallPage())))).not.toContain("Collapse all");
+  });
+
+  it("turns only the smart page's cards with no tile selected", () => {
+    const el = editor(smartHall());
     click(inspector(el), ">Collapse all<");
-    expect(JSON.parse(storage.data[FOLD_STORE_KEY]!)).toEqual(Object.fromEntries(
-      ["background", "page", "switcher", "theme", "title"].map((s) => [`page-settings:${s}`, true]),
-    ));
+    const folded = Object.keys(JSON.parse(storage.data[FOLD_STORE_KEY]!));
+    expect(folded).toContain("smart:rules");
+    expect(folded).toContain("smart:header");
+    expect(folded.some((k) => k.startsWith("page-settings:"))).toBe(false);
+    expect(folded).not.toContain("smart:page");
   });
 });
 
@@ -375,49 +378,156 @@ describe("the tile's cards", () => {
   });
 });
 
-describe("the page's cards", () => {
-  it("are Name, Page, Theme, Background, Page title and the switcher, then the line and Delete page", () => {
+describe("the inspector with no tile", () => {
+  it("holds none of the page's settings: the line pointing at the strip, then Delete page", () => {
     const text = flat(inspector(editor(hallPage())));
     const body = text.slice(text.indexOf(`<div class="insp-body">`));
-    expect([...body.matchAll(/<h4>([^<]+)/g)].map((m) => m[1])).toEqual(["Name", "Page", "Theme", "Background", "Page title", "In the page switcher"]);
-    expect(card(body, "Name")).toContain(`aria-label="Page name"`);
-    const page = card(body, "Page");
-    expect(page).toContain("Hidden on the watch");
-    expect(page).toContain("Smart Page");
-    expect(page).toContain("2 tiles, 4 rows");
-    expect(body).toContain("Select a tile to edit it, or add one.");
-    expect(body.indexOf("Delete page…")).toBeGreaterThan(body.indexOf("<h4>In the page switcher"));
+    expect(body).not.toContain("<h4>");
+    expect(body).not.toContain("Theme");
+    expect(body).not.toContain(`aria-label="Page name"`);
+    expect(body).not.toContain("Hidden on the watch");
+    expect(body).toContain("Select a tile to edit it, or add one. The page's own settings are above the watch.");
+    expect(body.indexOf("Delete page…")).toBeGreaterThan(body.indexOf("above the watch"));
   });
 
-  it("badge each card", () => {
-    const text = flat(inspector(editor(hallPage())));
-    expect(card(text, "Name")).toContain(`--c:${SECTION_COLOR.place}`);
-    const expected: [string, keyof typeof WATCH_PAGE_SECTION_BADGES, string, Parameters<typeof uiIcon>[0]][] = [
-      ["Page", "page", SECTION_COLOR.content, "content"],
-      ["Theme", "theme", SECTION_COLOR.look, "look"],
-      ["Background", "background", SECTION_COLOR.look, "shape"],
-      ["Page title", "title", SECTION_COLOR.numbers, "text"],
-      ["In the page switcher", "switcher", SECTION_COLOR.content, "watch"],
-    ];
-    for (const [title, key, color, icon] of expected) {
-      expect(WATCH_PAGE_SECTION_BADGES[key]).toEqual({ color, icon });
-      expect(card(text, title), title).toContain(`--c:${color}`);
-      expect(card(text, title), title).toContain(swatch(icon));
-    }
-  });
-
-  it("on a smart page add the Smart page and Rules cards in the Rules color, and the rule's own", () => {
+  it("on a smart page holds the Rules cards in the Rules color, and the rule's own", () => {
     const text = flat(inspector(editor(smartHall())));
     expect(text).toContain(`>Smart page</span><span class="nm" title=Hall>Hall</span>`);
     const titles = [...text.matchAll(/<h4>([^<]+)/g)].map((m) => m[1]);
-    expect(titles.slice(0, 7)).toEqual(["Name", "Page", "Smart Page", "Theme", "Background", "Page title", "In the page switcher"]);
-    expect(titles.slice(7)).toEqual(["Rules", "Header", "Icon and color", "State", "Text", "Border", "Action", "Size", "Background"]);
-    for (const title of ["Smart Page", "Rules", "Header"]) {
+    expect(titles).toEqual(["Rules", "Header", "Icon and color", "State", "Text", "Border", "Action", "Size", "Background"]);
+    for (const title of ["Rules", "Header"]) {
       expect(card(text, title), title).toContain(`--c:${SMART_SECTION_BADGE.color}`);
       expect(card(text, title), title).toContain(swatch("states"));
     }
-    expect(text).not.toMatch(/\d tiles?, \d rows?/);
-    expect(text).toContain("A smart page fills itself from its rules");
+    expect(text).toContain("A smart page fills itself from its rules, set above.");
+    expect(text).not.toContain("above the watch");
+  });
+});
+
+describe("the page strip", () => {
+  it("is a toolbar of five chips, Page, Theme, Background, Title and Switcher, each saying what the page has", () => {
+    const text = flat(strip(editor(hallPage())));
+    expect(text).toMatch(/^<div class="pe-pstrip" role="toolbar" aria-label="Page settings">/);
+    expect(chips(text).map(({ label, value }) => [label, value])).toEqual([
+      ["Page", "Shown"],
+      ["Theme", watchThemeDisplayName("neonLagoon")],
+      ["Background", "None"],
+      ["Title", "Hidden"],
+      ["Switcher", "Shown"],
+    ]);
+    for (const { item } of chips(text)) {
+      expect(item).toContain(`aria-haspopup="dialog" aria-expanded=false`);
+      expect(item).toContain(`<span class="pe-pchip-chev" aria-hidden="true">▾</span>`);
+    }
+    // Nothing open yet.
+    expect(text).not.toContain("pe-ppop");
+  });
+
+  it("reads a hidden smart page, a title style and a gradient theme in its values", () => {
+    const smart = { ...smartHall(), isHidden: true } as unknown as WatchPage;
+    expect(chips(flat(strip(editor(smart))))[0]!.value).toBe("Hidden, Smart");
+    const styled = chips(flat(strip(editor(hallPage({ pageTitleDisplayStyle: "glass", useGradientColors: true })))));
+    expect(styled[1]!.value).toBe(`${watchThemeDisplayName("neonLagoon")}, gradient`);
+    expect(styled[3]!.value).toBe("Glass");
+  });
+
+  it("badges each chip in its section's color: an icon, and the theme's own dot on Theme", () => {
+    const text = flat(strip(editor(hallPage())));
+    const expected: [keyof typeof WATCH_PAGE_SECTION_BADGES, string, Parameters<typeof uiIcon>[0]][] = [
+      ["page", SECTION_COLOR.content, "content"],
+      ["theme", SECTION_COLOR.look, "look"],
+      ["background", SECTION_COLOR.look, "shape"],
+      ["title", SECTION_COLOR.numbers, "text"],
+      ["switcher", SECTION_COLOR.content, "watch"],
+    ];
+    const items = chips(text);
+    expected.forEach(([key, color, icon], i) => {
+      expect(WATCH_PAGE_SECTION_BADGES[key]).toEqual({ color, icon });
+      const item = items[i]!.item;
+      expect(item, key).toContain(`style=--k:${color}`);
+      if (key === "theme") {
+        expect(item).toMatch(/class="pe-pchip-sw pe-pchip-theme" style=--ps-a:[^;]+;--ps-b:[^;]+;--ps-g:/);
+      } else {
+        expect(item, key).toContain(`<span class="pe-pchip-sw" aria-hidden="true">${flat(uiIcon(icon))}</span>`);
+      }
+    });
+  });
+
+  it("opens one popover at a time under the chip pressed, holding the section's own rows", () => {
+    const el = editor(hallPage());
+    click(strip(el), "data-section=background");
+    expect(el.pageStripOpen).toBe("background");
+    let text = flat(strip(el));
+    expect(text.match(/class="pop-menu pe-ppop"/g)?.length).toBe(1);
+    const background = chips(text)[2]!.item;
+    expect(background).toContain(`aria-expanded=true`);
+    expect(background).toContain(`<div class="pop-menu pe-ppop" role="dialog" aria-label=Background>`);
+    expect(background).toContain(`<fieldset class="ts-body" id=ps-body-background`);
+    expect(background).toContain("Decoration");
+    // Another chip moves the popover there.
+    click(strip(el), "data-section=theme");
+    text = flat(strip(el));
+    expect(text.match(/class="pop-menu pe-ppop"/g)?.length).toBe(1);
+    expect(chips(text)[1]!.item).toContain(`aria-label="Page theme"`);
+    expect(chips(text)[2]!.item).not.toContain("pe-ppop");
+    // The same chip again shuts it.
+    click(strip(el), "data-section=theme");
+    expect(el.pageStripOpen).toBeUndefined();
+    expect(flat(strip(el))).not.toContain("pe-ppop");
+  });
+
+  it("holds the page's switches, its facts and the Smart Page switch in the Page popover, and a smart page's rows", () => {
+    const el = editor(hallPage());
+    click(strip(el), "data-section=page");
+    const page = chips(flat(strip(el)))[0]!.item;
+    expect(page).toContain("Hidden on the watch");
+    expect(page).toContain("2 tiles, 4 rows");
+    expect(page).toContain("Smart Page");
+    expect(page).not.toContain("sm-body-page");
+    const smart = editor(smartHall());
+    click(strip(smart), "data-section=page");
+    const rows = chips(flat(strip(smart)))[0]!.item;
+    expect(rows).toContain(`id="sm-body-page"`);
+    expect(rows).toContain("Live Updates");
+    expect(rows).not.toMatch(/\d tiles?, \d rows?/);
+  });
+
+  it("shuts on Escape and on a press outside it, not on one in it or on its chip", () => {
+    const el = editor(hallPage());
+    const escape = { key: "Escape", defaultPrevented: false, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false,
+      composedPath: () => [el], preventDefault() {} };
+    click(strip(el), "data-section=title");
+    el.onKeyDown(escape);
+    expect(el.pageStripOpen).toBeUndefined();
+
+    click(strip(el), "data-section=title");
+    el.onWindowPointerDown({ composedPath: () => [onPath("ts-body"), onPath("pe-pstrip-item")] });
+    expect(el.pageStripOpen).toBe("title");
+    el.onWindowPointerDown({ composedPath: () => [onPath("sym-browse")] });
+    expect(el.pageStripOpen).toBe("title");
+    el.onWindowPointerDown({ composedPath: () => [Object.assign(onPath() as object, { tagName: "DIALOG" })] });
+    expect(el.pageStripOpen).toBe("title");
+    el.onWindowPointerDown({ composedPath: () => [onPath("pe-screen")] });
+    expect(el.pageStripOpen).toBeUndefined();
+  });
+
+  it("shuts when another page is picked", () => {
+    vi.stubGlobal("window", { addEventListener() {}, removeEventListener() {} });
+    const el = editor(hallPage());
+    click(strip(el), "data-section=switcher");
+    (el as unknown as { selectPage(id: string): void }).selectPage("C3A0E000-0000-4000-8000-0000000000B2");
+    expect(el.pageStripOpen).toBeUndefined();
+  });
+
+  it("ends with Reset page only while the page holds something a reset would change", () => {
+    // The page as the phone's reset leaves it: nothing to reset.
+    const reset = resetWatchPage({ schemaVersion: 1, pages: [hallPage()] } as unknown as WatchPagesDocument, PAGE, { keepImage: true });
+    const untouched = (reset as unknown as { pages: WatchPage[] }).pages[0]!;
+    expect(flat(strip(editor(untouched)))).not.toContain("Reset page");
+    const text = flat(strip(editor(hallPage({ pageTitleDisplayStyle: "glass" }))));
+    expect(text).toContain(`<span class="ps-reset">`);
+    expect(text).toContain(">Reset page</button>");
+    expect(text.indexOf("Reset page")).toBeGreaterThan(text.lastIndexOf(`<div class="pe-pstrip-item"`));
   });
 });
 
@@ -458,9 +568,19 @@ describe("the changed dot", () => {
     const text = flat(inspector(editor(hallPage({ items: [bold] }), DIMMER)));
     expect(card(text, "Text")).toContain(`<h4>Text<span class="sec-dot"`);
     expect(card(text, "Icon and color")).not.toContain("sec-dot");
-    const page = flat(inspector(editor(hallPage({ switcherText: "Hall" }))));
-    expect(card(page, "In the page switcher")).toContain("sec-dot");
-    expect(card(page, "Theme")).not.toContain("sec-dot");
+  });
+
+  it("is drawn on the page strip's chip, after its label, and in its popover's head", () => {
+    const dot = `<span class="pe-pchip-l">Switcher</span><span class="pe-pchip-dot" aria-hidden="true"></span>`;
+    const switcher = chips(flat(strip(editor(hallPage({ switcherText: "Hall" })))));
+    expect(switcher[4]!.item).toContain(dot);
+    expect(switcher.filter((c) => c.item.includes("pe-pchip-dot")).map((c) => c.label)).toEqual(["Switcher"]);
+    // Theme: not for the watch's fallback theme, yes for another.
+    expect(chips(flat(strip(editor(hallPage()))))[1]!.item).not.toContain("pe-pchip-dot");
+    const el = editor(hallPage({ themeOverride: "ember" }));
+    expect(chips(flat(strip(el)))[1]!.item).toContain(`<span class="pe-pchip-l">Theme</span><span class="pe-pchip-dot"`);
+    click(strip(el), "data-section=theme");
+    expect(chips(flat(strip(el)))[1]!.item).toContain(`<div class="pe-ppop-h"><span>Theme</span><span class="pe-pchip-dot" aria-hidden="true"></span></div>`);
   });
 
   it("the page's switcher and theme: not for stored defaults, yes for a value of the page's own", () => {

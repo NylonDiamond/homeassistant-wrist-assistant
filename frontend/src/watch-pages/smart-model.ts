@@ -3,7 +3,7 @@
 //
 // Four parts. The readers: typed views over the raw `dynamicConfig` and its
 // rules that read a missing or mistyped key as the decoder's default. The
-// writers of the Page card's smart rows and the Rules card (convert, disable,
+// writers of the Page popover's smart rows and the Rules card (convert, disable,
 // the page keys, add, every rule row, the header, resolve, move, delete,
 // reset), and the stand-in tile through which the tile settings sections
 // edit a rule's `tileStyle`. The fill: the watch's active test per domain,
@@ -654,7 +654,7 @@ export function setSmartTileSize(
   });
 }
 
-/** The Page card's switches and the sort order by key (the case files'
+/** The smart page's switches and the sort order by key (the case files'
  * `smartPageKey`). */
 export const WATCH_SMART_PAGE_SETTERS: Readonly<Record<string, (document: WatchPagesDocument, pageId: string, value: never) => WatchPagesDocument>> = {
   liveUpdates: setSmartLiveUpdates,
