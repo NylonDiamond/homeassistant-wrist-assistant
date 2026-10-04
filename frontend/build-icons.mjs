@@ -67,6 +67,9 @@ const svgoConfig = {
 
 const PATH_RE = /<path[^>]*\bd="([^"]+)"/g;
 const VIEWBOX_RE = /viewBox="([^"]+)"/;
+const NUMBER = String.raw`-?(?:\d+\.?\d*|\.\d+)(?:e-?\d+)?`;
+const LEADING_MOVE_RE = new RegExp(String.raw`^m\s*(${NUMBER})[\s,]*(${NUMBER})\s*(?=([-.\d])?)`);
+const absoluteMove = (_all, x, y, more) => `M${x}${y.startsWith("-") ? "" : " "}${y}${more === undefined ? "" : "l"}`;
 
 const icons = {};
 const skipped = [];
@@ -77,7 +80,11 @@ for (const file of readdirSync(src).sort()) {
   if (only && !only.has(name)) continue;
 
   const optimized = optimize(readFileSync(join(src, file), "utf8"), svgoConfig).data;
-  const paths = [...optimized.matchAll(PATH_RE)].map((m) => m[1]);
+  // A path may open with a lowercase `m`, which is absolute only because it
+  // comes first. Joined behind another path it would turn relative and move
+  // the whole piece, so every piece opens with `M`. The points that follow a
+  // leading `m` without a letter are relative lines, hence the `l`.
+  const paths = [...optimized.matchAll(PATH_RE)].map((m) => m[1].replace(LEADING_MOVE_RE, absoluteMove));
   const viewBox = VIEWBOX_RE.exec(optimized)?.[1];
   if (paths.length === 0 || !viewBox) {
     skipped.push(name);
