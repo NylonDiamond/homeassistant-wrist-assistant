@@ -388,6 +388,15 @@ describe("a click on a row", () => {
     expect(el.selectedPageId).toBe("P-YARD");
     expect(el.selectedTileId).toBeUndefined();
   });
+
+  it("on the open page's own row lets the tile go, so the page's cards show", () => {
+    const { el, owners } = editor("T-LEFT");
+    el.leaveTile = () => undefined;
+    const row = node("DIV", "layer", "pe-page-row", "hl");
+    rowOf(el, owners, "page", "P-HALL")(clickOn(row, [node("SPAN", "nm-t"), node("B"), node("SPAN", "name")]));
+    expect(el.selectedPageId).toBe("P-HALL");
+    expect(el.selectedTileId).toBeUndefined();
+  });
 });
 
 describe("the stacked layout", () => {

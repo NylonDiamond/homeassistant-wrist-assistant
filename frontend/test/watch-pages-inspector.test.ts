@@ -219,6 +219,44 @@ describe("the breadcrumb", () => {
     expect(text).toContain("<h4>Theme");
   });
 
+  it("has a Page | Tile switch, Tile on while a tile is selected", () => {
+    const text = flat(inspector(editor(hallPage(), DIMMER)));
+    const head = text.slice(text.indexOf(`<div class="insp-head">`), text.indexOf(`<div class="insp-body">`));
+    expect(head.indexOf(`class="seg insp-tabs"`)).toBeLessThan(head.indexOf(`class="crumbs"`));
+    expect(head).toMatch(/role="tab" class= aria-selected=false[\s\S]*>Page<\/button>/);
+    expect(head).toMatch(/role="tab" class=on aria-selected=true[\s\S]*>Tile<\/button>/);
+  });
+
+  it("goes to the page's own cards from the Page tab", () => {
+    vi.stubGlobal("window", { addEventListener() {}, removeEventListener() {} });
+    const el = editor(hallPage(), DIMMER);
+    click(inspector(el), `title="The page's own settings"`);
+    expect(el.selectedTileId).toBeUndefined();
+    const text = flat(inspector(el));
+    expect(text).toMatch(/role="tab" class=on aria-selected=true[\s\S]*>Page<\/button>/);
+    expect(text).toContain("<h4>Theme");
+  });
+
+  it("comes back to the tile picked last from the Tile tab, else the first", () => {
+    vi.stubGlobal("window", { addEventListener() {}, removeEventListener() {} });
+    const el = editor(hallPage());
+    // Nothing picked yet: Tile opens the page's first tile.
+    click(inspector(el), "title=The tile picked last");
+    expect(el.selectedTileId).toBe(DIMMER);
+    // Pick the spacer, go back to the page, and Tile returns to the spacer.
+    const pick = el as unknown as { selectTile(id: string | undefined): void };
+    pick.selectTile(SPACER);
+    pick.selectTile(undefined);
+    click(inspector(el), "title=The tile picked last");
+    expect(el.selectedTileId).toBe(SPACER);
+  });
+
+  it("turns the Tile tab off on a page with no tiles", () => {
+    const page = { ...hallPage(), items: [] } as unknown as WatchPage;
+    const text = flat(inspector(editor(page)));
+    expect(text).toMatch(/aria-selected=false\s+\?disabled=true title=Add a tile first/);
+  });
+
   it("gives each family of tile its own chip color, grey for the rest", () => {
     expect(watchTileKindColor("light")).not.toBe(watchTileKindColor("switch"));
     expect(watchTileKindColor("script")).toBe(watchTileKindColor("automation"));

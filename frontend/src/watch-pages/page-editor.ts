@@ -644,6 +644,8 @@ export class WaPageEditor extends LitElement {
 
   @state() private selectedPageId?: string;
   @state() private selectedTileId?: string;
+  /** The tile picked last, for the inspector's Tile tab to come back to. */
+  private lastTileId?: string;
   /** The selected rule of a smart page (`WatchPagesEditorHost.smartRuleId`). */
   @state() private selectedSmartRuleId?: string;
   @state() private renaming?: { pageId: string; value: string };
@@ -1030,6 +1032,7 @@ export class WaPageEditor extends LitElement {
     if (tileId === this.selectedTileId) return;
     this.leaveTile();
     this.selectedTileId = tileId;
+    if (tileId !== undefined) this.lastTileId = tileId;
     this.fieldNote = undefined;
   }
 
@@ -2834,7 +2837,7 @@ export class WaPageEditor extends LitElement {
     return html`<div class="layer pe-page-row ${on ? "hl" : ""} ${hidden ? "dim" : ""} ${dragging ? "pe-dragging" : ""} ${menu ? "menu-open" : ""}"
       data-page=${id} role="listitem" tabindex="0" aria-current=${on ? "true" : "false"} aria-label=${name}
       title=${this.saving ? `${SAVING_TEXT} Double click to rename.` : "Double click to rename. Drag, or Alt and the arrow keys, to move the page."}
-      @click=${(e: Event) => { if (!own(e)) this.selectPage(id); }}
+      @click=${(e: Event) => { if (own(e)) return; if (on) this.selectTile(undefined); else this.selectPage(id); }}
       @dblclick=${(e: Event) => { if (!own(e)) this.startRename(id); }}
       @keydown=${(e: KeyboardEvent) => this.onRowKeyDown(e, id, index, count)}
       @pointerdown=${(e: PointerEvent) => this.onRowPointerDown(e, id, index)}>
@@ -3367,8 +3370,22 @@ export class WaPageEditor extends LitElement {
       : (tileHost === undefined ? [] : tileSettingsFoldIds(tileHost, tileInspectorSections(tileHost)));
     const anyOpen = anySectionOpen(this.uiState, folds);
     const id = watchPageId(page);
+    // The Page | Tile switch: the plain door to the page's own cards, which
+    // otherwise need a press on the stage's empty space. Tile goes back to
+    // the tile picked last on this page, else its first; with no tile on
+    // the page it is off.
+    const tiles = watchPageTiles(page);
+    const back = tile !== undefined ? undefined : (tiles.find((t) => sameWatchId(tileIdOf(t), this.lastTileId)) ?? tiles[0]);
+    const tileTitle = tile !== undefined ? "The selected tile" : back === undefined ? "Add a tile first" : "The tile picked last";
+    const pageTab = html`<button type="button" role="tab" class=${tile === undefined ? "on" : ""} aria-selected=${tile === undefined ? "true" : "false"}
+          title="The page's own settings" @click=${() => this.selectTile(undefined)}>Page</button>`;
+    const tileTab = html`<button type="button" role="tab" class=${tile === undefined ? "" : "on"} aria-selected=${tile === undefined ? "false" : "true"}
+          ?disabled=${tile === undefined && back === undefined} title=${tileTitle}
+          @click=${() => { if (back !== undefined) this.selectTile(tileIdOf(back)); }}>Tile</button>`;
+    const tabs = html`<div class="seg insp-tabs" role="tablist" aria-label="Edit">${pageTab}${tileTab}</div>`;
     return html`
       <div class="insp-head">
+        ${tabs}
         ${crumbs}
         ${folds.length === 0 ? nothing : html`<button class="expand" @click=${() => { setSectionsOpen(this.uiState, folds, !anyOpen); this.requestUpdate(); }}>${anyOpen ? "Collapse all" : "Expand all"}</button>`}
       </div>
@@ -3709,6 +3726,10 @@ export class WaPageEditor extends LitElement {
       /* The room above the foot bar. */
       margin-bottom: 14px;
     }
+    /* The inspector's Page | Tile switch, first in its head. */
+    .insp-head .insp-tabs { flex: none; }
+    .insp-head .insp-tabs button { padding: 0 9px; }
+    .insp-head .insp-tabs button:disabled, .insp-head .insp-tabs button:disabled:hover { color: var(--wa-muted); opacity: .38; cursor: not-allowed; }
     /* The Pages and Tiles cards and the inspector stay in view while the
        stage scrolls the editor: each sticks just under the sticky top block
        (the host's scroll box, inside its padding, starts --cf-pad down; the
