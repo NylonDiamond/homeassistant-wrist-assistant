@@ -311,47 +311,39 @@ describe("the sticky top block", () => {
     expect(dirty).toContain(">Saved 5 min ago</span>");
   });
 
-  for (const tag of ["wa-menu-editor"] as const) {
-    it(`${tag}: wraps the title, the tabs and the toolbar in one sticky block, edge to edge`, () => {
-      const text = drawn(tag, `${tag}-sticky`, false);
-      const top = text.indexOf(`<div class="pe-top">`);
-      expect(top).toBe(text.search(/\S/));
-      expect(text.indexOf(`<div class="pe-head">`)).toBeGreaterThan(top);
-      const tools = text.indexOf(`class="pe-tools"`);
-      expect(tools).toBeGreaterThan(text.indexOf(`<div class="pe-head">`));
-      // The toolbar closes inside the block: the body comes after both.
-      expect(text.indexOf(`class="pe-empty"`)).toBeGreaterThan(tools);
+  it("wa-menu-editor: draws its own top bar, the complication editor's, as the sticky block, edge to edge", () => {
+    const text = drawn("wa-menu-editor", "wa-menu-editor-sticky", false);
+    const top = text.indexOf(`<div class="pe-top">`);
+    expect(top).toBe(text.search(/\S/));
+    const bar = text.indexOf(`<div class="wa-bar `);
+    expect(bar).toBeGreaterThan(top);
+    // The old title line and toolbar are gone.
+    expect(text).not.toContain("Watch menus</h2>");
+    expect(text).not.toContain(`class="pe-tools"`);
+    expect(text).not.toContain(`class="pe-head"`);
+    // The bar closes inside the block: the body comes after it.
+    expect(text.indexOf(`class="pe-empty"`)).toBeGreaterThan(bar);
+    expectStickyBlock("wa-menu-editor");
+  });
 
-      const css = styles(tag);
-      const block = rule(css, ".pe-top");
-      expect(block).toMatch(/position:\s*sticky/);
-      expect(block).toMatch(/top:\s*calc\(-1 \* var\(--cf-pad, 16px\)\)/);
-      expect(block).toMatch(/z-index:\s*7/);
-      expect(block).toMatch(/background:\s*var\(--wa-bg\)/);
-      expect(block).toMatch(/margin:\s*calc\(-1 \* var\(--cf-pad, 16px\)\) calc\(-1 \* var\(--cf-pad, 16px\)\) 0/);
-      // Above the foot bar's own layer, which the cards sit under.
-      expect(rule(css, ".cf-bar")).toMatch(/z-index:\s*6/);
-      expect(rule(css, ":host")).toMatch(/scroll-padding-top:\s*var\(--pe-top-h, 0px\)/);
-    });
+  it("wa-menu-editor: says when the stored copy was saved, beside Save, and Unsaved changes on it while dirty", () => {
+    const clean = drawn("wa-menu-editor", "wa-menu-editor-saved-clean", false);
+    expect(clean).toContain(">Saved 5 min ago</span>");
+    expect(clean.indexOf(">Save</button>")).toBeLessThan(clean.indexOf(">Saved 5 min ago<"));
+    expect(clean).toContain(`class="primary save "`);
+    expect(clean).not.toContain("Unsaved changes");
+    const dirty = drawn("wa-menu-editor", "wa-menu-editor-saved-dirty", true);
+    expect(dirty).toContain(`class="primary save dirty"`);
+    expect(dirty).toContain(`<span class="tb-saved" title=Unsaved changes>`);
+    expect(dirty).toContain(">Saved 5 min ago</span>");
+  });
 
-    it(`${tag}: says when the stored copy was saved, left of Discard, beside Unsaved changes`, () => {
-      const clean = drawn(tag, `${tag}-saved-clean`, false);
-      expect(clean).toContain(">Saved 5 min ago</span>");
-      expect(clean.indexOf(">Saved 5 min ago<")).toBeLessThan(clean.indexOf(">Discard</button>"));
-      expect(clean).not.toContain("Unsaved changes");
-      const dirty = drawn(tag, `${tag}-saved-dirty`, true);
-      expect(dirty).toContain("Unsaved changes");
-      expect(dirty).toContain(">Saved 5 min ago</span>");
-    });
-  }
-
-  it("moves the page editor's sticky columns and the menu preview under the block", () => {
-    const pages = rule(styles("wa-page-editor"), ".pe-layout > .column.left, .pe-layout > .column.inspector");
-    expect(pages).toContain("--pe-under-top: max(0px, calc(var(--pe-top-h, 0px) - var(--cf-pad, 16px)))");
-    expect(pages).toMatch(/top:\s*var\(--pe-under-top\)/);
-    expect(pages).toMatch(/max-height:\s*calc\(var\(--pe-view-h, calc\(100dvh - 120px\)\) - 30px - var\(--pe-under-top\)\)/);
-    const preview = rule(styles("wa-menu-editor"), ".me-preview");
-    expect(preview).toMatch(/position:\s*sticky/);
-    expect(preview).toContain("top: max(0px, calc(var(--pe-top-h, 0px) - var(--cf-pad, 16px)))");
+  it("moves both editors' sticky side columns under the block", () => {
+    for (const tag of ["wa-page-editor", "wa-menu-editor"] as const) {
+      const columns = rule(styles(tag), ".pe-layout > .column.left, .pe-layout > .column.inspector");
+      expect(columns, tag).toContain("--pe-under-top: max(0px, calc(var(--pe-top-h, 0px) - var(--cf-pad, 16px)))");
+      expect(columns, tag).toMatch(/top:\s*var\(--pe-under-top\)/);
+      expect(columns, tag).toMatch(/max-height:\s*calc\(var\(--pe-view-h, calc\(100dvh - 120px\)\) - 30px - var\(--pe-under-top\)\)/);
+    }
   });
 });

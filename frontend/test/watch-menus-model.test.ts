@@ -373,13 +373,13 @@ describe("the ring", () => {
     expect(watchMenuRingPoint("middle")).toBeUndefined();
   });
 
-  it("selects the picked slot while it is there, else the first around the ring", () => {
+  it("selects the picked slot while it is there, else none, so the menu's own settings show", () => {
     const uiState = new Map<string, unknown>();
-    expect(selectedMenuSlot({ document: DEFAULTS, uiState }, ANYWHERE)?.position).toBe("topLeft");
+    expect(selectedMenuSlot({ document: DEFAULTS, uiState }, ANYWHERE)).toBeUndefined();
     uiState.set("me:sel:anywhere", "3e4d0000-0000-4000-8000-000000000005");
     expect(selectedMenuSlot({ document: DEFAULTS, uiState }, ANYWHERE)?.position).toBe("rightCenter");
     uiState.set("me:sel:anywhere", "gone");
-    expect(selectedMenuSlot({ document: DEFAULTS, uiState }, ANYWHERE)?.position).toBe("topLeft");
+    expect(selectedMenuSlot({ document: DEFAULTS, uiState }, ANYWHERE)).toBeUndefined();
   });
 });
 

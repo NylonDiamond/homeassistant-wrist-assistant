@@ -1,7 +1,8 @@
 // The panel's way into the menu editor, kept out of `panel.ts`: the route it
-// answers to, the top bar's button, the bar shown over the editor, and the
-// one `import()` that loads the editor's own chunk. The same pattern as the
-// page editor's (`watch-pages/hook.ts`).
+// answers to, the top bar's button, what the editor's own top bar is handed
+// from the panel (the way back, the Home Assistant menu, Watch settings), and
+// the one `import()` that loads the editor's own chunk. The same pattern as
+// the page editor's (`watch-pages/hook.ts`).
 //
 // The editor lives on a sub-path of the panel, `/wrist-assistant/menus`, and
 // `/menus/<owner_watch_id>` opens it on one watch, as the iPhone app's "Open
@@ -51,6 +52,23 @@ export function watchMenusUrl(route: PanelRoute | undefined, menus: boolean, pat
 export function navigateWatchMenus(route: PanelRoute | undefined, menus: boolean): void {
   const url = watchMenusUrl(route, menus, window.location.pathname);
   if (url === "" || url === window.location.pathname) return;
+  history.pushState(null, "", url);
+  window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
+}
+
+/** The help page the editor's "?" opens. */
+export const WATCH_MENUS_HELP_URL = "https://docs.wrist-assistant.com/watch-app/quick-menu-editor/";
+
+/** The page editor's sub-path. The same as `WATCH_PAGES_PATH`, written out
+ * here so the two hooks do not import each other (a test holds them equal). */
+export const PAGES_PATH_FROM_MENUS = "/pages";
+
+/** From the menu editor to the page editor: the panel's own address (the
+ * route's prefix, else the address bar less `/menus`) with `/pages`, the way
+ * the panel's own Pages button goes. */
+export function navigatePagesFromMenus(route: PanelRoute | undefined): void {
+  const url = `${watchMenusUrl(route, false, window.location.pathname)}${PAGES_PATH_FROM_MENUS}`;
+  if (url === window.location.pathname) return;
   history.pushState(null, "", url);
   window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
 }
@@ -109,33 +127,39 @@ export interface WatchMenusViewInput {
   narrow: boolean;
   icons: IconProvider;
   iconsTick: number;
+  /** Whether the bar offers Home Assistant's menu, as the panel's own does on
+   * a phone or with the sidebar hidden. */
   menu: boolean;
   onMenu: () => void;
   onBack: () => void;
+  /** To the page editor. Without it the editor goes there from the address
+   * bar (`navigatePagesFromMenus`). */
+  onPages?: () => void;
+  /** Buttons for the right of the bar: the panel's Watch settings. */
   actions: TemplateResult | typeof nothing;
+  /** Dialogs the bar's buttons open. */
   dialogs: TemplateResult | typeof nothing;
   onLoaded: () => void;
 }
 
-/** The whole panel while the route is `/menus`: a bar with the way back, and
- * the editor under it. */
+/** The whole panel while the route is `/menus`: the editor, which draws its
+ * own top bar (the complication editor's, `editor-chrome.ts`) with the way
+ * back, the Home Assistant menu and the panel's Watch settings button handed
+ * in here. The dialogs that button opens stay the panel's, drawn beside it.
+ * Until the chunk is in, a plain line with the way back stands in. */
 export function renderWatchMenusView(input: WatchMenusViewInput): TemplateResult {
   const ready = customElements.get("wa-menu-editor") !== undefined;
   if (!ready && !loadFailed) void loadMenuEditor().then(input.onLoaded, input.onLoaded);
-  return html`<header class="wp-bar">
-      ${input.menu ? html`<button class="icon tb-icon tb-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
-        @click=${input.onMenu}>${uiIcon("menu")}</button>` : nothing}
-      <button class="tb-btn tb-back" title="Back to complications" @click=${input.onBack}>${uiIcon("left")}<span>Complications</span></button>
-      <span class="spacer"></span>
-      ${input.actions}
-    </header>
-    ${input.dialogs}
+  return html`${input.dialogs}
     ${ready
       ? html`<wa-menu-editor .hass=${input.hass} .owners=${input.owners} .ownerId=${input.ownerId}
-          .icons=${input.icons} .iconsTick=${input.iconsTick} ?narrow=${input.narrow}></wa-menu-editor>`
-      : html`<div class="wp-loading">${loadFailed
-          ? html`<span>The menu editor did not load. Reload the page to try again.</span>`
-          : "Loading…"}</div>`}`;
+          .icons=${input.icons} .iconsTick=${input.iconsTick} ?narrow=${input.narrow}
+          .haMenu=${input.menu} .onHaMenu=${input.onMenu} .onBack=${input.onBack} .onPages=${input.onPages}
+          .barActions=${input.actions}></wa-menu-editor>`
+      : html`<div class="wp-loading">
+          <button class="tb-btn tb-back" title="Back to complications" @click=${input.onBack}>${uiIcon("left")}<span>Complications</span></button>
+          ${loadFailed ? html`<span>The menu editor did not load. Reload the page to try again.</span>` : html`<span>Loading…</span>`}
+        </div>`}`;
 }
 
 /** The button's look, added to the panel's sheet beside the page editor's. */

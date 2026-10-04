@@ -228,6 +228,125 @@ describe("the Tiles card", () => {
   });
 });
 
+// ── clicks on the rows ──────────────────────────────────────────────────
+
+interface Tpl { strings: readonly string[]; values: unknown[] }
+
+/** The first template in a drawn tree that `match` picks, `repeat()` rows
+ * included. */
+function findTemplate(v: unknown, match: (t: Tpl) => boolean): Tpl | undefined {
+  if (Array.isArray(v)) {
+    for (const item of v) {
+      const found = findTemplate(item, match);
+      if (found) return found;
+    }
+    return undefined;
+  }
+  if (v === null || typeof v !== "object") return undefined;
+  if ("strings" in v && "values" in v) {
+    const t = v as Tpl;
+    if (match(t)) return t;
+    return findTemplate(t.values, match);
+  }
+  if ("_$litDirective$" in v && "values" in v) {
+    const [items, second, third] = (v as { values: unknown[] }).values;
+    const draw = (third ?? second) as unknown;
+    if (Array.isArray(items) && typeof draw === "function") return findTemplate(items.map((item, i) => (draw as (x: unknown, i: number) => unknown)(item, i)), match);
+  }
+  return undefined;
+}
+
+/** The listener a template binds to `event` on its outer element. */
+function listener(t: Tpl, event: string): (e: Event) => void {
+  const at = t.strings.findIndex((s) => s.trimEnd().endsWith(`@${event}=`));
+  expect(at, `@${event} bound`).toBeGreaterThan(-1);
+  return t.values[at] as (e: Event) => void;
+}
+
+/** A node of the composed path, as the row's listener reads it. */
+const node = (tagName: string, ...classes: string[]) => ({ tagName, classList: { contains: (c: string) => classes.includes(c) } });
+
+/** A click as the browser hands it to the row: its path runs from what was
+ * pressed up through the row to the list. */
+function clickOn(row: object, inside: object[]): Event {
+  const path = [...inside, row, node("DIV", "layers"), node("SECTION", "card")];
+  return { type: "click", target: path[0], currentTarget: row, composedPath: () => path } as unknown as Event;
+}
+
+describe("a click on a row", () => {
+  /** The drawn row for one tile, or one page, and its click listener. */
+  function rowOf(el: Record<string, unknown>, owners: readonly OwnerSummary[], kind: "tile" | "page", id: string) {
+    const drawn = (el.renderBody as (w: readonly OwnerSummary[]) => unknown).call(el, owners);
+    const lead = kind === "tile" ? `<div class="layer pe-tile-row` : `<div class="layer pe-page-row`;
+    const attr = kind === "tile" ? "data-row-tile=" : "data-page=";
+    const t = findTemplate(drawn, (c) => c.strings[0]!.includes(lead) && c.values[c.strings.findIndex((s) => s.trimEnd().endsWith(attr))] === id);
+    expect(t, `${kind} row ${id}`).toBeDefined();
+    return listener(t!, "click");
+  }
+
+  it("on a Tiles row's name selects that tile", () => {
+    const { el, owners } = editor();
+    // Not in a document: there is no focused field to let go of.
+    el.leaveTile = () => undefined;
+    expect(el.selectedTileId).toBeUndefined();
+    const row = node("DIV", "layer", "pe-tile-row");
+    rowOf(el, owners, "tile", "T-RIGHT")(clickOn(row, [node("SPAN", "nm-t"), node("B"), node("SPAN", "name")]));
+    expect(el.selectedTileId).toBe("T-RIGHT");
+    // The thumb and the kind line select too.
+    rowOf(el, owners, "tile", "T-LEFT")(clickOn(row, [node("SPAN", "thumb", "pe-thumb")]));
+    expect(el.selectedTileId).toBe("T-LEFT");
+    rowOf(el, owners, "tile", "T-BOTTOM")(clickOn(row, [node("SPAN", "kind"), node("SMALL"), node("SPAN", "name")]));
+    expect(el.selectedTileId).toBe("T-BOTTOM");
+  });
+
+  it("on a Tiles row's own Duplicate or Delete does not select it", () => {
+    const { el, owners } = editor("T-LEFT");
+    el.leaveTile = () => undefined;
+    const row = node("DIV", "layer", "pe-tile-row");
+    rowOf(el, owners, "tile", "T-RIGHT")(clickOn(row, [node("svg", "ui-icon"), node("BUTTON", "icon"), node("SPAN", "acts"), node("SPAN", "right")]));
+    expect(el.selectedTileId).toBe("T-LEFT");
+  });
+
+  it("is the row's even inside a button around the list", () => {
+    // Only what lies between the press and the row counts: a button outside
+    // the row never swallows its click.
+    const { el, owners } = editor();
+    el.leaveTile = () => undefined;
+    const row = node("DIV", "layer", "pe-tile-row");
+    const e = clickOn(row, [node("B"), node("SPAN", "name")]);
+    const path = [...e.composedPath(), node("BUTTON", "outer")];
+    rowOf(el, owners, "tile", "T-GAP")({ ...e, composedPath: () => path } as unknown as Event);
+    expect(el.selectedTileId).toBe("T-GAP");
+  });
+
+  it("on a Pages row's name opens that page, and not from its buttons", () => {
+    const { el, owners } = editor("T-LEFT");
+    el.leaveTile = () => undefined;
+    const row = node("DIV", "layer", "pe-page-row");
+    rowOf(el, owners, "page", "P-YARD")(clickOn(row, [node("BUTTON", "icon", "pe-more"), node("SPAN", "acts")]));
+    expect(el.selectedPageId).toBe("P-HALL");
+    rowOf(el, owners, "page", "P-YARD")(clickOn(row, [node("SPAN", "nm-t"), node("B"), node("SPAN", "name")]));
+    expect(el.selectedPageId).toBe("P-YARD");
+    expect(el.selectedTileId).toBeUndefined();
+  });
+});
+
+describe("the stacked layout", () => {
+  it("sticks no column, so the inspector never slides over the Tiles card", () => {
+    const css = sheet();
+    const stacked = rule(css, ".layout.pe-layout.cols-1 > .column.left, .layout.pe-layout.cols-1 > .column.canvas, .layout.pe-layout.cols-1 > .column.inspector");
+    expect(stacked).toMatch(/position:\s*static/);
+    expect(stacked).toMatch(/max-height:\s*none/);
+    // The container query's reset is as strong as the sticky rule it undoes,
+    // and comes after it.
+    const sticky = css.indexOf(".pe-layout > .column.left, .pe-layout > .column.inspector {");
+    const reset = css.indexOf(".pe-layout > .column.left, .pe-layout > .column.canvas, .pe-layout > .column.inspector {");
+    expect(sticky).toBeGreaterThan(-1);
+    expect(reset).toBeGreaterThan(sticky);
+    expect(editor().body()).toContain(`<div class="layout pe-layout cols-3"`);
+  });
+});
+
 describe("the canvas head", () => {
   it("shows the page's name to type over, a chip per watch with the open one lit, and the page's facts", () => {
     const { body, owners } = editor();

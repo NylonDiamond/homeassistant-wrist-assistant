@@ -3,8 +3,15 @@
 // its style, the Entity quick menu with each entity's own menu, and the page
 // switcher's style.
 //
+// It wears the complication editor's chrome (`editor-chrome.ts`) the way the
+// page editor does: the top bar, then three columns with drag gutters (the
+// Menus and Slots cards, the canvas with the shown menu on the watch, and the
+// inspector), and the foot bar. One menu at a time is in the canvas, picked
+// in the Menus card, as the complication editor shows one page. The views
+// are `menu-view.ts`.
+//
 // The host pattern of the page editor (`watch-pages/page-editor.ts`): watch
-// tabs from the owners list, the record read with `watch_config/get` and kept
+// chips from the owners list, the record read with `watch_config/get` and kept
 // as raw JSON in a draft (`draft.ts`) with undo and redo, a save through
 // `watch_config/save` that merges when the iPhone saved too, the earlier saves
 // with restore, the delivery check, and the size budget. The `catalog`,
@@ -24,6 +31,16 @@
 
 import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
+import { type ColumnWidths, beginColumnDrag, fitColumnWidths, loadColumnWidths, saveColumnWidths } from "../column-split.js";
+import {
+  canvasStyles,
+  chromeTokens,
+  columnStyles,
+  inspectorStyles,
+  leftCardStyles,
+  rowListStyles,
+  topBarStyles,
+} from "../editor-chrome.js";
 import { SCRUB_END, SCRUB_START } from "../editors.js";
 import { formStyles } from "../form-styles.js";
 import {
@@ -61,6 +78,7 @@ import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/edito
 import { watchFrameStyles } from "../watch-frame.js";
 import { isHiddenWatchPage, isJsonObject, isSmartWatchPage, isSystemWatchPage, watchPageId, watchPageName, watchPageTiles, watchPagesOf } from "../watch-pages/model.js";
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
+import { stageFitZoom, stageZoomIn, stageZoomLabel, stageZoomOut } from "../watch-pages/stage.js";
 import {
   START_PHONE_FIRST_TEXT,
   deliveryState,
@@ -78,8 +96,24 @@ import {
   startWatchMenus,
   takeWatchMenusRecord,
 } from "./draft.js";
-import { registerWatchMenusDrafts } from "./hook.js";
-import { type MenuSwitcherPage, type MenusScreen, type MenusViewHost, menuViewStyles, menusPreviewScale, renderMenus } from "./menu-view.js";
+import { WATCH_MENUS_HELP_URL, navigatePagesFromMenus, navigateWatchMenus, registerWatchMenusDrafts } from "./hook.js";
+import {
+  type MenuSwitcherPage,
+  type MenusScreen,
+  type MenusViewHost,
+  deselectMenuSlot,
+  loadMenusZoom,
+  menuSectionLabel,
+  menuStageFacts,
+  menuStageHint,
+  menuViewStyles,
+  renderMenuInspector,
+  renderMenuScreen,
+  renderMenusCard,
+  renderSlotsCard,
+  saveMenusZoom,
+  shownMenu,
+} from "./menu-view.js";
 import {
   type MenuTargets,
   type MenusDocument,
@@ -113,6 +147,18 @@ const DELIVERY_POLL_MS = 15_000;
 
 const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const MOD = IS_MAC ? "⌘" : "Ctrl+";
+
+/** The Menus and Slots column and the inspector, each widened by dragging
+ * the gutter beside it, with the page editor's limits and defaults. */
+const ME_COLUMNS = { min: 200, max: 720, middleMin: 320 } as const;
+const ME_COLUMNS_DEFAULT: ColumnWidths = { left: 280, right: 320 };
+export const ME_COLUMNS_KEY = "wrist-assistant-panel.menus.columns.v1";
+/** The grid's own cost beside its three columns, CSS px: two 8px gutters and
+ * the 2px gap on each side of each. */
+const ME_GRID_CHROME = 2 * 8 + 4 * 2;
+/** At or below this content width the columns stack and the top bar takes
+ * two rows (the `@container` rules on `.layout.pe-layout` say the same). */
+const ME_STACK_WIDTH = 820;
 
 type Note = WatchPagesNote;
 type HistoryState = "loading" | "ready" | "error" | "unsupported";
@@ -218,6 +264,17 @@ export class WaMenuEditor extends LitElement {
   @property({ type: Boolean, reflect: true }) narrow = false;
   @property({ attribute: false }) icons?: IconProvider;
   @property({ attribute: false }) iconsTick = 0;
+  /** The top bar offers Home Assistant's menu, as the panel's own bar does on
+   * a phone or with the sidebar hidden (`hook.ts`). */
+  @property({ attribute: false }) haMenu = false;
+  @property({ attribute: false }) onHaMenu?: () => void;
+  /** Back to the complication editor. Without it, the address less `/menus`. */
+  @property({ attribute: false }) onBack?: () => void;
+  /** To the page editor. Without it, the address's `/menus` made `/pages`. */
+  @property({ attribute: false }) onPages?: () => void;
+  /** The panel's own buttons for the bar's right end: Watch settings, whose
+   * dialog the panel draws. */
+  @property({ attribute: false }) barActions: TemplateResult | typeof nothing = nothing;
 
   @state() private watchId?: string;
   @state() private record?: WatchConfigRecord;
@@ -247,13 +304,22 @@ export class WaMenuEditor extends LitElement {
   /** The foot bar's dialogs opened so far, each once. */
   private readonly shownFootDialogs = new WeakSet<HTMLDialogElement>();
   @state() private ownList?: readonly OwnerSummary[];
-  /** The editor's own width, for the previews' scale; 0 until measured. */
+  /** The top bar's ··· menu is open. */
+  @state() private topMenuOpen = false;
+  /** The stage's scale as stepped with the zoom buttons, undefined while it
+   * fits (`stageFitZoom`). Remembered between visits (`MENUS_ZOOM_KEY`). */
+  @state() private zoom = loadMenusZoom();
+  /** The side columns' widths as dragged (a preference, saved), and the
+   * host's measured content width and height, which fit them and cap the
+   * self-scrolling columns. Zero before the first measurement. */
+  @state() private columns: ColumnWidths = { ...ME_COLUMNS_DEFAULT };
   @state() private hostWidth = 0;
+  @state() private hostHeight = 0;
   private ownListAsked = false;
   private sizeObserver?: ResizeObserver;
-  /** The sticky block at the top (title, tabs, toolbar) the observer
+  /** The sticky block at the top (the bar and a note under it) the observer
    * measures, and its height, written to `--pe-top-h` on the host for the
-   * sticky preview under it. */
+   * sticky columns under it. */
   private observedTop?: HTMLElement;
   private topHeight = 0;
   /** Draws again while the toolbar says "Saved 3 min ago". */
@@ -306,6 +372,8 @@ export class WaMenuEditor extends LitElement {
   override connectedCallback(): void {
     super.connectedCallback();
     window.addEventListener("keydown", this.onKeyDown);
+    window.addEventListener("pointerdown", this.onWindowPointerDown, true);
+    this.columns = loadColumnWidths(ME_COLUMNS_KEY, ME_COLUMNS_DEFAULT, ME_COLUMNS);
     this.watchSize();
     this.listenForReconnect();
     if (this.watchId !== undefined) this.openWatch(this.watchId, true);
@@ -314,6 +382,7 @@ export class WaMenuEditor extends LitElement {
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     window.removeEventListener("keydown", this.onKeyDown);
+    window.removeEventListener("pointerdown", this.onWindowPointerDown, true);
     this.sizeObserver?.disconnect();
     this.observedTop = undefined;
     this.stopListeningForReconnect();
@@ -363,8 +432,9 @@ export class WaMenuEditor extends LitElement {
   }
 
   /** Measure the host, not the window: the Home Assistant sidebar changes
-   * the editor's width without changing the window's. The sticky top block
-   * is measured by the same observer. */
+   * the editor's width without changing the window's. Its height caps the
+   * side columns, which scroll on their own past it. The sticky top block is
+   * measured by the same observer. */
   private watchSize(): void {
     if (typeof ResizeObserver === "undefined") return;
     this.sizeObserver ??= new ResizeObserver((entries) => {
@@ -375,6 +445,7 @@ export class WaMenuEditor extends LitElement {
         }
         const box = entry.contentRect;
         if (Math.abs(box.width - this.hostWidth) >= 1) this.hostWidth = box.width;
+        if (Math.abs(box.height - this.hostHeight) >= 1) this.hostHeight = box.height;
       }
     });
     this.sizeObserver.observe(this);
@@ -746,7 +817,7 @@ export class WaMenuEditor extends LitElement {
       symbols: this.symbols,
       uiState: this.uiState,
       screen: this.screen(),
-      scale: menusPreviewScale(this.hostWidth, this.narrow),
+      scale: this.stageScale,
       switcherPages: this.switcherPages,
       get document() { return draft.document; },
       get targets() { return self.targets(); },
@@ -900,6 +971,12 @@ export class WaMenuEditor extends LitElement {
       void this.save();
       return;
     }
+    if (e.key === "Escape" && this.topMenuOpen) {
+      e.preventDefault();
+      this.topMenuOpen = false;
+      void this.updateComplete.then(() => this.renderRoot.querySelector<HTMLElement>(".wa-bar .tb-more")?.focus());
+      return;
+    }
     if (isTextField(path[0])) return;
     if (mod && !e.altKey && key === "z") {
       e.preventDefault();
@@ -910,25 +987,31 @@ export class WaMenuEditor extends LitElement {
     if (e.ctrlKey && !e.metaKey && !e.altKey && key === "y") {
       e.preventDefault();
       this.redo();
+      return;
     }
+    // Escape lets go of the selected slot, back to the menu's own settings,
+    // as it lets go of a tile in the page editor.
+    if (e.key === "Escape" && !mod && !e.altKey) {
+      const host = this.viewHost();
+      if (host !== undefined && deselectMenuSlot(host)) e.preventDefault();
+    }
+  };
+
+  /** A press anywhere outside the top bar's open ··· menu closes it. */
+  private onWindowPointerDown = (e: PointerEvent): void => {
+    if (!this.topMenuOpen) return;
+    const within = e.composedPath().some((n) => n instanceof HTMLElement && n.classList.contains("pe-top-menu"));
+    if (!within) this.topMenuOpen = false;
   };
 
   // ── drawing ────────────────────────────────────────────────────────────
 
   override render(): TemplateResult {
     const watches = this.watches;
-    const only = watches.length === 1 ? watches[0] : undefined;
     const draft = this.draft;
     return html`
       <div class="pe-top">
-        <div class="pe-head">
-          <div class="pe-title">
-            <h2>Watch menus</h2>
-            <span>${only ? `${watchName(only, watches)}. ` : ""}The Anywhere menu, the Entity quick menu and the page switcher. A save reaches the watch the next time it checks, or through the iPhone.</span>
-          </div>
-          ${watches.length > 1 ? this.renderTabs(watches) : nothing}
-        </div>
-        ${draft && !this.unsupported ? this.renderToolbar(draft) : nothing}
+        ${this.renderTopBar(draft)}
         ${this.note ? html`<div class="pe-note ${this.note.kind}" role="status"><span>${this.note.text}</span>
           <button class="pe-link" @click=${() => { this.note = undefined; }}>Dismiss</button></div>` : nothing}
       </div>
@@ -937,38 +1020,197 @@ export class WaMenuEditor extends LitElement {
     `;
   }
 
-  private renderToolbar(draft: WatchMenusDraft): TemplateResult {
-    const dirty = draft.dirty;
-    const stateText = this.saving ? "Saving…" : dirty ? "Unsaved changes" : "";
-    return html`<div class="pe-tools" role="toolbar" aria-label="Edits">
-      <button class="pe-btn pe-icon-only" title=${`Undo (${MOD}Z)`} aria-label="Undo" ?disabled=${!draft.canUndo}
-        @click=${() => this.undo()}>${uiIcon("undo")}</button>
-      <button class="pe-btn pe-icon-only" title=${IS_MAC ? "Redo (⇧⌘Z)" : "Redo (Ctrl+Y)"} aria-label="Redo" ?disabled=${!draft.canRedo}
-        @click=${() => this.redo()}>${uiIcon("redo")}</button>
-      <span class="pe-state-text" aria-live="polite">${stateText}</span>
-      <span class="pe-tools-gap"></span>
-      ${renderConfigSaved(this.record)}
-      <button class="pe-btn" title="Go back to the copy Home Assistant holds. Undo brings the edits back." ?disabled=${!dirty || this.saving}
-        @click=${() => this.discard()}>Discard</button>
-      <button class="pe-btn pe-primary" title=${`Save (${MOD}S)`} ?disabled=${!dirty || this.saving}
-        @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
+  /** Whether the editor is one column: the measured width, or Home
+   * Assistant saying it is a phone. Before the first measurement it is not. */
+  private get stacked(): boolean {
+    return this.narrow || (this.hostWidth > 0 && this.hostWidth <= ME_STACK_WIDTH);
+  }
+
+  /**
+   * The top bar, the page editor's and the complication editor's: the way
+   * back at the left; then where the stored copy has got to, the ··· menu,
+   * Save with when the copy was saved, Pages, Watch settings and the help at
+   * the right. Undo, Redo and the watch chips are in the canvas head. Two
+   * rows when stacked.
+   */
+  private renderTopBar(draft: WatchMenusDraft | undefined): TemplateResult {
+    const editing = draft !== undefined && !this.unsupported;
+    const dirty = editing && draft.dirty;
+    const admin = this.hass?.user?.is_admin === true;
+    return html`<div class="wa-bar ${this.stacked ? "stacked" : ""}" role="toolbar" aria-label="Watch menus">
+      ${this.haMenu ? html`<button class="icon tb-icon tb-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
+        @click=${() => this.onHaMenu?.()}>${uiIcon("menu")}</button>` : nothing}
+      <button class="tb-btn tb-back" title="Back to complications"
+        @click=${() => (this.onBack ? this.onBack() : navigateWatchMenus(undefined, false))}>${uiIcon("left")}<span>Complications</span></button>
+      <span class="spacer"></span>
+      ${this.renderSyncPill(editing ? draft : undefined)}
+      ${this.renderTopMenu(editing ? draft : undefined)}
+      ${editing ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
+          title=${dirty ? `Save (${MOD}S). A save reaches the watch the next time it checks, or through the iPhone.` : `Nothing to save (${MOD}S)`}
+          @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
+        <span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record)}</span>` : nothing}
+      ${admin ? html`<button class="tb-btn tb-pages" title="The watch's pages, as Home Assistant keeps them"
+        @click=${() => (this.onPages ? this.onPages() : navigatePagesFromMenus(undefined))}>${uiIcon("pages")}<span>Pages</span></button>` : nothing}
+      ${this.barActions}
+      <button class="help" title="Help: the quick menu editor" aria-label="Help"
+        @click=${() => window.open(WATCH_MENUS_HELP_URL, "_blank", "noopener")}>?</button>
     </div>`;
   }
 
-  private renderTabs(watches: readonly OwnerSummary[]): TemplateResult {
+  /** Where the stored copy has got to, as the complication editor's sync
+   * pill: green once a device collected it, amber otherwise. The same facts
+   * as the foot bar's line (`configFootStatus`). */
+  private renderSyncPill(draft: WatchMenusDraft | undefined): TemplateResult | typeof nothing {
+    const record = this.record;
+    if (record === undefined || record.revision <= 0 || this.unsupported) return nothing;
+    const budget = draft === undefined ? { size: 0, limit: 1 } : watchMenusBudget(draft.document);
+    const status = configFootStatus({ record, size: budget.size, limit: budget.limit, noun: "menus", historyState: this.historyState });
+    return html`<span class="tb-sync ${status.tone === "ok" ? "ok" : "warn"}" title=${`${status.state}. ${status.help}`}>
+      <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${status.state}</span>
+    </span>`;
+  }
+
+  /** The "Start with the defaults" flow applies: Home Assistant holds no
+   * menus for this watch, and the integration keeps them. */
+  private canStart(): boolean {
+    const record = this.record;
+    return this.watchId !== undefined && record !== undefined && record.revision <= 0 && !this.unsupported;
+  }
+
+  /** The ··· menu: Discard edits, and Start with the defaults while that
+   * applies. */
+  private renderTopMenu(draft: WatchMenusDraft | undefined): TemplateResult | typeof nothing {
+    const start = this.canStart();
+    if (draft === undefined && !start) return nothing;
+    const open = this.topMenuOpen;
+    const run = (fn: () => void) => () => { this.topMenuOpen = false; fn(); };
+    return html`<span class="side-menu pe-top-menu">
+      <button class="tb-btn tb-more" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"} aria-label="More actions" title="More"
+        @click=${() => { this.topMenuOpen = !open; }}>···</button>
+      ${open ? html`<div class="pop-menu side-pop" role="menu" aria-label="More actions">
+        ${draft ? html`<button class="row" role="menuitem" ?disabled=${!draft.dirty || this.saving}
+          title="Go back to the copy Home Assistant holds. Undo brings the edits back."
+          @click=${run(() => this.discard())}>Discard edits</button>` : nothing}
+        ${start ? html`<button class="row" role="menuitem" ?disabled=${this.starting}
+          @click=${run(() => void this.startWithDefaults())}>${WATCH_MENUS_START_BUTTON}</button>` : nothing}
+      </div>` : nothing}
+    </span>`;
+  }
+
+  /** The watch tabs, in the canvas head: one chip per watch, the glyph in
+   * its person's color, the open one lit. */
+  private renderWatchChips(watches: readonly OwnerSummary[]): TemplateResult {
     const people = peopleOf(this.owners.length > 0 ? this.owners : (this.ownList ?? []));
-    return html`<div class="pe-tabs" role="tablist" aria-label="Watches">
+    return html`<span class="doc-on pe-watches" role="tablist" aria-label="Watches">
       ${watches.map((w) => {
         const index = people.findIndex((p) => p.owners.some((o) => o.owner_watch_id === w.owner_watch_id));
         const color = personColorVar(index);
         const on = w.owner_watch_id === this.watchId;
-        return html`<button type="button" role="tab" class="pe-tab ${on ? "on" : ""}" aria-selected=${on ? "true" : "false"}
-          style=${color ? `--pe-person: ${color}` : nothing}
+        return html`<button type="button" role="tab" class="doc-chip ${on ? "on" : ""}" aria-selected=${on ? "true" : "false"}
+          style=${color ? `--pe-person: ${color}` : nothing} title=${on ? "The watch shown" : "Show this watch's menus"}
           @click=${() => { if (!on) this.openWatch(w.owner_watch_id); }}>
-          <span class="pe-tab-glyph" aria-hidden="true">${uiIcon("watch")}</span>
-          <span class="pe-tab-name">${watchName(w, watches)}</span>
+          <span class="pe-chip-glyph" aria-hidden="true">${uiIcon("watch")}</span>
+          <span class="doc-chip-name">${watchName(w, watches)}</span>
         </button>`;
       })}
+    </span>`;
+  }
+
+  // ── the columns ────────────────────────────────────────────────────────
+
+  /** The side widths the grid can afford right now. */
+  private fittedColumns(): ColumnWidths {
+    if (this.hostWidth > 0 && this.hostWidth <= ME_STACK_WIDTH) return this.columns;
+    return fitColumnWidths(this.hostWidth - ME_GRID_CHROME, this.columns, ME_COLUMNS);
+  }
+
+  private renderGutter(side: "left" | "right"): TemplateResult {
+    return html`<div class="gutter ${side}" role="separator" aria-orientation="vertical"
+      aria-label=${side === "left" ? "Resize the menus and slots column" : "Resize the settings column"}
+      title="Drag to resize. Double-click to reset."
+      @pointerdown=${(e: PointerEvent) => {
+        // Drag from the width on screen, not the stored preference.
+        const shown = this.fittedColumns();
+        beginColumnDrag(e, {
+          side,
+          base: side === "left" ? shown.left : shown.right,
+          limits: ME_COLUMNS,
+          onWidth: (width) => { this.columns = { ...this.columns, [side]: width }; },
+          onEnd: () => saveColumnWidths(ME_COLUMNS_KEY, this.columns),
+        });
+      }}
+      @dblclick=${() => {
+        this.columns = { ...this.columns, [side]: ME_COLUMNS_DEFAULT[side] };
+        saveColumnWidths(ME_COLUMNS_KEY, this.columns);
+      }}></div>`;
+  }
+
+  // ── the stage ──────────────────────────────────────────────────────────
+
+  /** The stage's scale now: as stepped, else the page editor's fit for the
+   * width. */
+  private get stageScale(): number {
+    return this.zoom ?? stageFitZoom(this.narrow || this.stacked);
+  }
+
+  private setZoom(scale: number | undefined): void {
+    this.zoom = scale;
+    saveMenusZoom(scale);
+  }
+
+  /**
+   * The canvas card: the head (the shown menu's name, the watch chips, the
+   * menu's facts and the watch's size, then Undo and Redo), the dotted stage
+   * with the floating tool strip over the watch, and the hint under it.
+   * Menus have no live state, so there is no Live strip.
+   */
+  private renderStage(host: MenusViewHost, watches: readonly OwnerSummary[]): TemplateResult {
+    const owner = watches.find((w) => w.owner_watch_id === this.watchId);
+    const found = caseForScreenSize(owner?.screen_size);
+    const watchCase = found ?? REFERENCE_CASE;
+    const facts = [...menuStageFacts(host), watchCase.label];
+    const draft = this.draft;
+    const name = menuSectionLabel(shownMenu(host));
+    return html`<div class="card canvas-card me-canvas" aria-label="Menu">
+      <div class="cv-head">
+        <span class="cv-title" title=${name}>${name}</span>
+        ${watches.length > 0 ? html`<span class="cv-part cv-where"><span class="cv-slash" aria-hidden="true">/</span>
+          <span class="cv-devices">${this.renderWatchChips(watches)}</span></span>` : nothing}
+        <span class="cv-part cv-what"><span class="cv-slash" aria-hidden="true">/</span>
+          <span class="cv-shape" title=${found === undefined ? `${watchCase.label}, this watch's size is not known` : facts.join(" · ")}><span class="fam">${facts.join(" · ")}</span></span></span>
+        <span class="cv-acts">
+          <button class="cv-act icon undo" ?disabled=${!draft?.canUndo} title=${`Undo (${MOD}Z)`} aria-label="Undo"
+            @click=${() => this.undo()}>${uiIcon("undo")}</button>
+          <button class="cv-act icon undo" ?disabled=${!draft?.canRedo} title=${IS_MAC ? "Redo (⇧⌘Z)" : "Redo (Ctrl+Y)"} aria-label="Redo"
+            @click=${() => this.redo()}>${uiIcon("redo")}</button>
+        </span>
+      </div>
+      <div class="stage-area me-stage-area">
+        ${this.renderStageTools(watchCase.label)}
+        <div class="me-stage-body">${renderMenuScreen(host)}</div>
+        <div class="under"><span class="tail">${menuStageHint(host)}</span></div>
+      </div>
+    </div>`;
+  }
+
+  /** The floating tool strip over the stage, the page editor's: the watch's
+   * size (read only) and the zoom. */
+  private renderStageTools(caseLabel: string): TemplateResult {
+    const scale = this.stageScale;
+    const fit = stageFitZoom(this.narrow || this.stacked);
+    return html`<div class="stage-tools" role="toolbar" aria-label="Stage tools">
+      <button class="tb me-case" aria-disabled="true" tabindex="-1" title=${`This watch's screen, ${caseLabel}.`}>
+        ${uiIcon("watch")}<span class="word keep">${caseLabel}</span></button>
+      <span class="tb-sep" aria-hidden="true"></span>
+      <span class="tb-zoom" role="group" aria-label="Zoom">
+        <button class="tb icon me-zoom-out" ?disabled=${scale <= stageZoomOut(scale)} aria-label="Zoom out" title="Zoom out"
+          @click=${() => this.setZoom(stageZoomOut(scale))}>−</button>
+        <button class="tb pct" aria-label=${`Zoom ${stageZoomLabel(scale)}. Back to fit`}
+          title=${`The watch at ${stageZoomLabel(scale)} of its own points. Click to fit it again (${stageZoomLabel(fit)}).`}
+          @click=${() => this.setZoom(undefined)}>${stageZoomLabel(scale)}</button>
+        <button class="tb icon me-zoom-in" ?disabled=${scale >= stageZoomIn(scale)} aria-label="Zoom in" title="Zoom in"
+          @click=${() => this.setZoom(stageZoomIn(scale))}>+</button>
+      </span>
     </div>`;
   }
 
@@ -1000,12 +1242,27 @@ export class WaMenuEditor extends LitElement {
           <button class="pe-btn" @click=${() => { forgetWatchMenusDraft(id); this.requestUpdate(); }}>Discard the kept edits</button>` : nothing}
       </div>`;
     }
-    // The menus take the full width: the stored copy's facts and the
-    // earlier saves are in the foot bar now.
-    return html`<div class="me-main">
-        ${renderMenus(host)}
+    const fit = this.fittedColumns();
+    const view = this.hostHeight > 0 ? `--pe-view-h:${this.hostHeight}px;` : "";
+    // The complication editor's three columns (`editor-chrome.ts`), as the
+    // page editor lays them out: the Menus and Slots cards, the canvas card,
+    // and the inspector, with a drag gutter between each pair. The editor
+    // scrolls as a whole and the side columns stick under the top bar.
+    return html`<div class="layout pe-layout ${this.stacked ? "cols-1" : "cols-3"}" style=${`--wa-left:${fit.left}px;--wa-right:${fit.right}px;${view}`}>
+      <div class="column left">
+        ${renderMenusCard(host)}
+        ${renderSlotsCard(host)}
       </div>
-      ${this.renderFoot(record, draft.document, draft.dirty)}`;
+      ${this.renderGutter("left")}
+      <div class="column canvas">
+        ${this.renderStage(host, watches)}
+      </div>
+      ${this.renderGutter("right")}
+      <div class="column inspector card">
+        ${renderMenuInspector(host)}
+      </div>
+    </div>
+    ${this.renderFoot(record, draft.document, draft.dirty)}`;
   }
 
   /** The stored copy's line, History and Raw configuration, pinned to the
@@ -1066,7 +1323,7 @@ export class WaMenuEditor extends LitElement {
     </dialog>`;
   }
 
-  static override styles = [formStyles, css`
+  static override styles = [formStyles, chromeTokens, topBarStyles, columnStyles, leftCardStyles, rowListStyles, canvasStyles, inspectorStyles, watchFrameStyles, css`
     /* A column, so the foot bar (config-foot.ts) can take the space left
        at the foot of a short editor; --cf-pad is the padding it reaches
        through to sit edge to edge. */
@@ -1089,49 +1346,35 @@ export class WaMenuEditor extends LitElement {
     svg.ui-icon { width: 14px; height: 14px; display: block; flex: none; }
     h2, h3, h4, p { margin: 0; }
 
-    /* The title, the watch tabs and the toolbar stay at the top of the
-       editor, as in the page editor: one block, sticky to the host's top
-       edge and edge to edge, on the host's own background so the menus
-       scroll under it. A column, so the toolbar's bottom margin stays inside
-       and covered. The dialogs are modal, in the top layer, above it. Its
-       measured height is --pe-top-h on the host, which moves the sticky
-       watch preview (menu-view.ts) down under it. */
+    /* The top bar, and a note under it while there is one, stay at the top
+       of the editor, as in the page editor: one block, sticky to the host's
+       top edge and edge to edge as the foot bar is at the bottom, on the
+       host's own background so the editor scrolls under it. Above the cards
+       and their menus; the dialogs are modal, in the top layer, above it.
+       Its measured height is --pe-top-h on the host (measureTop), which the
+       sticky side columns stand under. */
     .pe-top {
       flex: none; display: flex; flex-direction: column;
       position: sticky; top: calc(-1 * var(--cf-pad, 16px)); z-index: 7;
       margin: calc(-1 * var(--cf-pad, 16px)) calc(-1 * var(--cf-pad, 16px)) 0;
-      padding: var(--cf-pad, 16px) var(--cf-pad, 16px) 0;
+      padding: 0 0 10px;
       background: var(--wa-bg);
     }
-    h2 { font-size: 20px; font-weight: 650; }
     h3 { font-size: 13px; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: var(--wa-muted); }
+    /* The browser's own monospace, not the shared sheet's family. */
     code { font-family: monospace; font-size: 12px; overflow-wrap: anywhere; }
     .pe-muted { color: var(--wa-muted); font-size: 13px; }
     .pe-warn { color: var(--wa-amber); font-size: 13px; font-weight: 600; }
 
-    .pe-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 24px; margin-bottom: 12px; }
-    .pe-title { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 280px; }
-    .pe-title > span { color: var(--wa-muted); font-size: 13px; }
-
-    .pe-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
-    .pe-tab {
-      display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px;
-      border: 1px solid var(--wa-line); border-radius: 999px; background: var(--wa-card);
-      color: var(--wa-ink); font: inherit; font-size: 13px; cursor: pointer;
-    }
-    .pe-tab:hover { border-color: var(--wa-line-strong); }
-    .pe-tab:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    .pe-tab.on { background: var(--wa-sel-bg); border-color: var(--wa-sel-ring); font-weight: 600; }
-    .pe-tab-glyph { color: var(--pe-person, var(--wa-muted)); }
-
-    .pe-tools {
-      display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 12px; padding: 8px 10px;
-      border: 1px solid var(--wa-line); border-radius: var(--wa-r-md, 12px); background: var(--wa-card);
-    }
-    .pe-tools-gap { flex: 1; }
-    .pe-state-text { margin-left: 6px; color: var(--wa-amber); font-size: 13px; font-weight: 600; }
-    .pe-btn.pe-icon-only { display: inline-flex; align-items: center; justify-content: center; width: 32px; padding: 0; }
-    .pe-btn.pe-icon-only svg.ui-icon { width: 16px; height: 16px; }
+    /* The bar's buttons with a glyph and words (the way back, Pages, the
+       panel's Watch settings) on one line, as the panel's own bar draws them. */
+    .wa-bar button.tb-btn:has(> svg.ui-icon) { display: inline-flex; align-items: center; gap: 6px; padding: 0 11px 0 9px; }
+    .wa-bar button.tb-btn svg.ui-icon { width: 14px; height: 14px; }
+    .wa-bar button.tb-btn:disabled, .wa-bar button.primary.save:disabled { opacity: .45; cursor: default; }
+    .wa-bar .tb-saved .cf-saved { margin: 0; font-size: inherit; color: inherit; }
+    .wa-bar .pop-menu .row:disabled { opacity: .5; cursor: default; }
+    .wa-bar .pop-menu .row:disabled:hover { background: transparent; }
+    .pe-top > .pe-note { margin: 10px var(--cf-pad, 16px) 0; }
 
     .pe-note {
       display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding: 10px 12px;
@@ -1149,12 +1392,74 @@ export class WaMenuEditor extends LitElement {
       padding: 20px; border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg, 16px); background: var(--wa-card);
     }
 
-    /* The menus, the full width, with the room above the foot bar. */
-    .me-main { display: flex; flex-direction: column; gap: 14px; min-width: 0; margin-bottom: 14px; }
-    .pe-card {
-      display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 14px;
-      border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg, 16px); background: var(--wa-card);
+    /* The complication editor's three columns (editor-chrome.ts), laid out
+       as the page editor lays them: the editor scrolls as a whole, the stage
+       with it, and the side widths come in as custom properties already
+       fitted to the measured host width (fitColumnWidths). */
+    .layout.pe-layout {
+      flex: none; min-height: auto; overflow: visible; align-items: start; padding: 0;
+      /* The room above the foot bar. */
+      margin-bottom: 14px;
     }
+    /* The Menus and Slots cards and the inspector stay in view while the
+       editor scrolls: each sticks just under the sticky top block (the
+       host's scroll box, inside its padding, starts --cf-pad down; the block
+       reaches --pe-top-h down from the edge) and, when taller than the room
+       left, scrolls on its own. --pe-view-h is the host's measured content
+       height, less what the top block covers past the padding, what the foot
+       bar covers and a little air. */
+    .pe-layout > .column.left, .pe-layout > .column.inspector {
+      --pe-under-top: max(0px, calc(var(--pe-top-h, 0px) - var(--cf-pad, 16px)));
+      position: sticky; top: var(--pe-under-top);
+      max-height: calc(var(--pe-view-h, calc(100dvh - 120px)) - 30px - var(--pe-under-top));
+      overflow-y: auto; overflow-x: hidden;
+    }
+    .pe-layout > .column.left { display: flex; flex-direction: column; gap: 8px; scrollbar-gutter: auto; }
+    .pe-layout > .column.left > .card { flex: none; }
+    .pe-layout > .column.canvas { overflow: visible; min-height: auto; }
+    /* One column under 820px, the complication editor's order: the menu on
+       the watch, the settings, then the lists. */
+    @container (max-width: 820px) {
+      .layout.pe-layout { grid-template-columns: minmax(0, 1fr); }
+      .pe-layout > .gutter { display: none; }
+      .pe-layout > .column { grid-column: auto; position: static; max-height: none; overflow: visible; }
+      .pe-layout > .column.canvas { order: 1; }
+      .pe-layout > .column.inspector { order: 2; }
+      .pe-layout > .column.left { order: 3; }
+    }
+
+    /* The canvas card: the head, the dotted stage and its tool strip. The
+       stage is the watch at a set scale, not a fitted box: it grows with
+       the zoom and the editor scrolls. */
+    .column.canvas > .card.canvas-card.me-canvas { min-height: 0; flex: none; }
+    /* The shown menu's name: read, not typed. */
+    .cv-head .cv-title { flex: 0 1 auto; min-width: 0; font-size: 14px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* The watch tabs, as the head's device chips: the open one lit. */
+    .cv-head .doc-chip { display: inline-flex; align-items: center; cursor: pointer; font-family: inherit; }
+    .cv-head .doc-chip:hover:not(.on) { border-color: var(--wa-line-strong); }
+    .cv-head .doc-chip:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .cv-head .doc-chip.on {
+      font-weight: 650; background: color-mix(in srgb, var(--wa-accent) 16%, var(--wa-chip-bg, var(--wa-panel)));
+      border-color: color-mix(in srgb, var(--wa-accent) 55%, transparent);
+    }
+    .pe-chip-glyph { display: inline-flex; flex: none; color: var(--pe-person, var(--wa-muted)); }
+    .pe-chip-glyph svg.ui-icon { width: 13px; height: 13px; }
+    .me-stage-area { position: relative; padding: 64px 12px 12px; gap: 10px; }
+    @container (max-width: 460px) {
+      .me-stage-area { padding-top: 92px; }
+    }
+    /* The picture keeps its size and the stage scrolls sideways under it on
+       a screen narrower than the watch drawn at this scale. */
+    .me-stage-body { display: flex; justify-content: center; padding: 0 4px 4px; overflow-x: auto; overflow-y: hidden; }
+    .me-stage-area > .under {
+      display: flex; flex-direction: column; gap: 4px; align-self: center; max-width: 460px; text-align: center;
+      font-size: 11.5px; font-weight: 400; line-height: 15px; color: var(--wa-hint, var(--wa-muted));
+    }
+    /* The watch's size is a fact, not a menu. */
+    .stage-tools button.tb.me-case { cursor: default; }
+    .stage-tools button.tb.me-case:hover { background: transparent; }
+    .stage-tools button.tb.me-case > svg.ui-icon { width: 14px; height: 14px; }
+
     .pe-badge {
       display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600;
       color: var(--wa-muted); background: var(--wa-field); white-space: nowrap;
@@ -1178,7 +1483,9 @@ export class WaMenuEditor extends LitElement {
     .pe-btn:disabled { opacity: .55; cursor: default; }
     .pe-btn.pe-primary { border-color: transparent; background: var(--wa-primary-bg); color: var(--wa-primary-ink); }
     .pe-btn.pe-primary:hover:not(:disabled) { background: var(--wa-primary-bg); filter: brightness(1.1); }
-    .pe-btn.pe-danger { color: var(--wa-need); }
+    /* Not "primary" and "danger": the shared sheet's button.primary and
+       button.danger outrank .pe-btn and would restyle these. */
+    .pe-btn.pe-danger { color: var(--wa-need); align-self: flex-start; }
 
     dialog.pe-ask {
       width: min(460px, calc(100vw - 32px)); padding: 20px; border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg, 16px);
@@ -1192,7 +1499,7 @@ export class WaMenuEditor extends LitElement {
     .pe-ask-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 6px; }
 
     :host([narrow]) { --cf-pad: 12px; }
-  `, watchFrameStyles, menuViewStyles, configFootStyles];
+  `, menuViewStyles, configFootStyles];
 }
 
 if (!customElements.get("wa-menu-editor")) {

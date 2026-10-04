@@ -308,6 +308,23 @@ function tileHasTapAction(tile: WatchPageTile): boolean {
   return typeof tile.singleTapAction === "string" && tile.singleTapAction !== "";
 }
 
+/** Whether a click on a list row came from one of the row's own controls (a
+ * button, a field, its open menu) rather than the row itself. Only what lies
+ * between the press and the row counts, read from the event's path, so a
+ * button or menu somewhere around the list never swallows the row's click,
+ * and no `instanceof` check can fail on an element from another realm. */
+function pressedRowControl(e: Event): boolean {
+  const path = e.composedPath();
+  const row = path.indexOf(e.currentTarget as EventTarget);
+  for (const node of row < 0 ? [] : path.slice(0, row)) {
+    const el = node as Partial<Element>;
+    const tag = typeof el.tagName === "string" ? el.tagName.toUpperCase() : "";
+    if (tag === "BUTTON" || tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return true;
+    if (el.classList?.contains("pe-menu") === true) return true;
+  }
+  return false;
+}
+
 /** The page's tiles in reading order: by row, then by column. */
 function tilesInReadingOrder(page: WatchPage): WatchPageTile[] {
   return watchPageTiles(page)
@@ -2051,9 +2068,10 @@ export class WaPageEditor extends LitElement {
    * never a drag. */
   private onRowPointerDown(e: PointerEvent, pageId: string, index: number): void {
     if (e.button !== 0 || !e.isPrimary || this.rowDrag || this.gesture) return;
-    const target = e.target instanceof Element ? e.target : undefined;
-    if (target?.closest("button, input, .pe-menu") != null) return;
-    const grip = target?.closest(".grip") != null;
+    if (pressedRowControl(e)) return;
+    const row = e.currentTarget as EventTarget;
+    const path = e.composedPath();
+    const grip = path.slice(0, Math.max(0, path.indexOf(row))).some((n) => (n as Partial<Element>).classList?.contains("grip") === true);
     // A finger drags a row by its grip only, so the list still scrolls.
     if (!grip && e.pointerType === "touch") return;
     if (grip) e.preventDefault();
@@ -2785,7 +2803,7 @@ export class WaPageEditor extends LitElement {
     const renaming = this.renaming !== undefined && sameWatchId(this.renaming.pageId, id) ? this.renaming : undefined;
     const menu = this.menuPageId !== undefined && sameWatchId(this.menuPageId, id);
     const dragging = this.rowDrag?.started === true && sameWatchId(this.rowDrag.pageId, id);
-    const own = (e: Event) => e.target instanceof Element && e.target.closest("button, input, .pe-menu") !== null;
+    const own = pressedRowControl;
     const detail = smart ? "Smart page" : `${plural(tiles, "tile", "tiles")} · ${plural(watchPageExtent(page), "row", "rows")}`;
     return html`<div class="layer pe-page-row ${on ? "hl" : ""} ${hidden ? "dim" : ""} ${dragging ? "pe-dragging" : ""} ${menu ? "menu-open" : ""}"
       data-page=${id} role="listitem" tabindex="0" aria-current=${on ? "true" : "false"} aria-label=${name}
@@ -2914,7 +2932,7 @@ export class WaPageEditor extends LitElement {
       style=${`--k:${color}`} role="listitem" tabindex=${id === "" ? "-1" : "0"} aria-current=${selected ? "true" : "false"}
       aria-label=${label !== kindLabel ? `${label}, ${kindLabel}` : kindLabel}
       title=${[label, kindLabel, entityId].filter((t, i, all) => t !== "" && all.indexOf(t) === i).join(" · ")}
-      @click=${(e: Event) => { if (!(e.target instanceof Element && e.target.closest("button"))) pick(); }}
+      @click=${(e: Event) => { if (!pressedRowControl(e)) pick(); }}
       @keydown=${(e: KeyboardEvent) => {
         if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
         e.preventDefault();
@@ -3681,14 +3699,24 @@ export class WaPageEditor extends LitElement {
     .pe-layout > .column.left > .card { flex: none; }
     .pe-layout > .column.canvas { overflow: visible; min-height: auto; }
     /* One column under 820px, the complication editor's order: the page and
-       its tiles, the settings, then the lists. */
+       its tiles, the settings, then the lists. Nothing sticks there: a sticky
+       inspector slid over the Tiles card under it and took its clicks. The
+       selectors are as strong as the sticky rule's, so they win; .cols-1 is
+       the same width as the element measures it. */
     @container (max-width: 820px) {
       .layout.pe-layout { grid-template-columns: minmax(0, 1fr); }
       .pe-layout > .gutter { display: none; }
-      .pe-layout > .column { grid-column: auto; position: static; max-height: none; overflow: visible; }
+      .pe-layout > .column.left, .pe-layout > .column.canvas, .pe-layout > .column.inspector {
+        grid-column: auto; position: static; max-height: none; overflow: visible;
+      }
       .pe-layout > .column.canvas { order: 1; }
       .pe-layout > .column.inspector { order: 2; }
       .pe-layout > .column.left { order: 3; }
+    }
+    .layout.pe-layout.cols-1 { grid-template-columns: minmax(0, 1fr); }
+    .layout.pe-layout.cols-1 > .gutter { display: none; }
+    .layout.pe-layout.cols-1 > .column.left, .layout.pe-layout.cols-1 > .column.canvas, .layout.pe-layout.cols-1 > .column.inspector {
+      grid-column: auto; position: static; max-height: none; overflow: visible;
     }
 
     /* The Pages and Tiles cards: the complication editor's Pages and Layers
