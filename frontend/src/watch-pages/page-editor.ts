@@ -4164,7 +4164,9 @@ export class WaPageEditor extends LitElement {
       border: 1px solid var(--wa-line-strong); box-shadow: var(--wa-shadow-pop);
       opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .08s ease-out;
     }
-    .pe-tip:hover::after, .pe-tip:focus-within::after { opacity: 1; visibility: visible; }
+    /* Under the pointer, or reached by keyboard. Not after a click: the
+       switch keeps focus then, and the hint stayed up until a click away. */
+    .pe-tip:hover::after, .pe-tip:has(:focus-visible)::after { opacity: 1; visibility: visible; }
     button.pe-pchip {
       display: inline-flex; align-items: center; gap: 6px; height: 28px; max-width: 100%; padding: 0 8px 0 4px;
       border: 0; border-radius: 999px; background: var(--wa-panel); box-shadow: inset 0 0 0 1px var(--wa-line);
