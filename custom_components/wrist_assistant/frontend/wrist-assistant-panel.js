@@ -4207,7 +4207,7 @@ import{a as gi,b as Qo,c as el,d as tl,e as il,f as nl,g as Fr,h as Ec,i as Or,m
           <span class="swatch">${y("pages")}</span><span class="lc-title">Pages</span><span class="lc-sub">just one</span>
           <span class="spacer"></span>
           <button class="lc-btn" title="Start a second page. What is here now becomes page 1, and a new empty page 2 opens for you to draw on."
-            @click=${()=>{let l=1;this.mutate(d=>{l=ro(d)}),this.showPage(l)}}>${y("plus")}<span>Add a page</span></button>
+            @click=${()=>{let l=1;this.mutate(d=>{l=ro(d)}),this.showPage(l)}}>${y("plus")}<span>Add page</span></button>
         </div>
       </div>`;let n=Je(e),a=n.count>=Js,s=t&&!io(e);return c`<div class="card pages-card lc">
       <div class="lc-head">
@@ -4217,7 +4217,7 @@ import{a as gi,b as Qo,c as el,d as tl,e as il,f as nl,g as Fr,h as Ec,i as Or,m
         <span class="spacer"></span>
         ${t?c`<button class="lc-btn" ?disabled=${a} aria-label="Add a page"
           title=${a?"Four pages is the most a complication can have.":"Add an empty page after the last one."}
-          @click=${()=>{let l;this.mutate(d=>{l=ao(d)}),l!==void 0&&this.showPage(l)}}>${y("plus")}<span>Add</span></button>`:u}
+          @click=${()=>{let l;this.mutate(d=>{l=ao(d)}),l!==void 0&&this.showPage(l)}}>${y("plus")}<span>Add page</span></button>`:u}
       </div>
       <div class="page-tiles" role="group" aria-label="Page the canvas and the list are showing">${this.renderPageTiles(e,t)}</div>
       ${s?c`<div class="lc-note warn">

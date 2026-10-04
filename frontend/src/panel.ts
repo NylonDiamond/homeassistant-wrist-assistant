@@ -8877,7 +8877,7 @@ export class WristAssistantPanel extends LitElement {
           <span class="swatch">${uiIcon("pages")}</span><span class="lc-title">Pages</span><span class="lc-sub">just one</span>
           <span class="spacer"></span>
           <button class="lc-btn" title="Start a second page. What is here now becomes page 1, and a new empty page 2 opens for you to draw on."
-            @click=${() => { let page = 1; this.mutate((c) => { page = startPages(c); }); this.showPage(page); }}>${uiIcon("plus")}<span>Add a page</span></button>
+            @click=${() => { let page = 1; this.mutate((c) => { page = startPages(c); }); this.showPage(page); }}>${uiIcon("plus")}<span>Add page</span></button>
         </div>
       </div>`;
     }
@@ -8892,7 +8892,7 @@ export class WristAssistantPanel extends LitElement {
         <span class="spacer"></span>
         ${edit ? html`<button class="lc-btn" ?disabled=${full} aria-label="Add a page"
           title=${full ? "Four pages is the most a complication can have." : "Add an empty page after the last one."}
-          @click=${() => { let page: number | undefined; this.mutate((c) => { page = addPage(c); }); if (page !== undefined) this.showPage(page); }}>${uiIcon("plus")}<span>Add</span></button>` : nothing}
+          @click=${() => { let page: number | undefined; this.mutate((c) => { page = addPage(c); }); if (page !== undefined) this.showPage(page); }}>${uiIcon("plus")}<span>Add page</span></button>` : nothing}
       </div>
       <div class="page-tiles" role="group" aria-label="Page the canvas and the list are showing">${this.renderPageTiles(cfg, edit)}</div>
       ${stuck ? html`<div class="lc-note warn">
