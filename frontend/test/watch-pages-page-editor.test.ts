@@ -512,47 +512,100 @@ describe("the canvas head", () => {
   });
 });
 
+/** The state chips in a strip's markup, in order: each one's word and
+ * whether it is the kept one. */
+function stateChips(strip: string): { word: string; on: boolean }[] {
+  return [...strip.matchAll(/<button type="button" class="pe-state-chip (on)?"[^>]*>([^<]*)/g)].map((m) => ({ word: m[2]!, on: m[1] !== undefined }));
+}
+
 describe("the Live strip", () => {
-  it("names the selected tile and its entity's state, or asks for a tile", () => {
-    expect(editor().body()).toContain("Select a tile to see its live state.");
-    const text = editor("T-RIGHT").body();
-    const strip = text.slice(text.indexOf(`<div class="values-foot">`));
+  const stripOf = (text: string): string => text.slice(text.indexOf(`<div class="values-foot">`));
+
+  it("names the selected tile and lays out its entity's states, or asks for a tile", () => {
+    expect(editor().body()).toContain("Select a tile to try its states here.");
+    const strip = stripOf(editor("T-RIGHT").body());
     expect(strip).toContain(`<div class="vchip vpill`);
     expect(strip).toContain(`<b>Right</b>`);
-    // A light's state is a picker, its live state chosen.
-    expect(strip).toContain(`<option value=on ?selected=true>on</option>`);
+    // A light's states, every one a chip in a row, none kept.
+    expect(stateChips(strip)).toEqual(["on", "off", "unavailable", "unknown"].map((word) => ({ word, on: false })));
+    expect(strip).not.toContain("<select");
+    // Home Assistant's state now is marked.
+    expect(strip).toMatch(/title=Home Assistant's state now[^>]*>on<i class="pe-state-live"/);
+    expect(strip).toContain(`<span class="live-reset-slot"`);
+    // No Live, All on or Testing word, and no button to switch them.
+    for (const gone of ["vb-live", "vb-head", "All on", "Show live", "Show all on", "Back to live", "Testing"]) expect(strip, gone).not.toContain(gone);
     // A spacer has no entity to try a state on.
-    const gap = editor("T-GAP").body();
-    expect(gap.slice(gap.indexOf(`<div class="values-foot">`))).toContain(`<span class="val">No entity</span>`);
+    expect(stripOf(editor("T-GAP").body())).toContain(`<span class="val">No entity</span>`);
   });
-});
 
-describe("the live strip", () => {
-  it("tries a state for the selected tile's entity in the previews, never in Home Assistant's", () => {
+  it("previews a hovered state, keeps a clicked one, never in Home Assistant's states, and leaves Live preview alone", () => {
     const { el, body } = editor("T-RIGHT");
+    el.liveStates = false;
     const setTestValue = (id: string, value: string | undefined) => (el.setTestValue as (i: string, v: string | undefined) => void).call(el, id, value);
     const previewStates = () => (el.previewStates as () => Record<string, { state: string }>).call(el);
-    const strip = (): string => { const text = body(); return text.slice(text.indexOf(`<div class="values-foot">`)); };
-    const before = strip();
-    expect(before).toContain(`class="vchip vpill ctl `);
-    expect(before).toContain(`test-ctl`);
-    expect(before).not.toContain("Testing");
+    const testedIds = () => (el.testedIds as () => ReadonlySet<string> | undefined).call(el);
+    const strip = (): string => stripOf(body());
+    expect(strip()).toContain(`class="vchip vpill ctl pe-states "`);
+    expect(testedIds()).toBeUndefined();
 
     setTestValue("light.right", "off");
     const after = strip();
-    expect(after).toContain("Testing");
-    expect(after).toContain("Back to live");
-    expect(after).toContain(`class="values-bar testing"`);
-    expect(after).toContain(`class="vchip vpill ctl testing"`);
-    expect(after).toContain(`class="live-reset"`);
-    expect(el.liveStates).toBe(true);
+    expect(stateChips(after).filter((c) => c.on).map((c) => c.word)).toEqual(["off"]);
+    expect(after).toContain(`class="vchip vpill ctl pe-states testing"`);
+    expect(after).toContain(`<button type="button" class="live-reset" title="Back to Home Assistant's state"`);
+    expect(el.liveStates).toBe(false);
     expect(previewStates()["light.right"]!.state).toBe("off");
+    expect([...testedIds()!]).toEqual(["light.right"]);
     expect((el.hass as HassLike).states["light.right"]!.state).toBe("on");
+
+    // The chip under the pointer draws over the kept one, and goes with it.
+    el.hoverState = { entityId: "light.right", state: "unavailable" };
+    expect(previewStates()["light.right"]!.state).toBe("unavailable");
+    expect((el.testStates as Map<string, string>).get("light.right")).toBe("off");
+    el.hoverState = undefined;
+    expect(previewStates()["light.right"]!.state).toBe("off");
 
     setTestValue("light.right", undefined);
     expect((el.testStates as Map<string, string>).size).toBe(0);
     expect(previewStates()).toBe((el.hass as HassLike).states);
-    expect(strip()).not.toContain("Testing");
+    expect(strip()).not.toContain(`class="live-reset"`);
+    expect(el.liveStates).toBe(false);
+  });
+
+  it("keeps Home Assistant's own state as a test only while Live preview is off, where it would draw lit", () => {
+    const { el } = editor("T-RIGHT");
+    const setTestValue = (id: string, value: string | undefined) => (el.setTestValue as (i: string, v: string | undefined) => void).call(el, id, value);
+    el.liveStates = true;
+    setTestValue("light.right", "on");
+    expect((el.testStates as Map<string, string>).size).toBe(0);
+    el.liveStates = false;
+    setTestValue("light.right", "on");
+    expect((el.testStates as Map<string, string>).get("light.right")).toBe("on");
+  });
+});
+
+describe("the Live preview switch", () => {
+  const tools = (text: string): string => text.slice(text.indexOf(`<div class="stage-tools"`), text.indexOf(`<div class="pe-stage-body">`));
+
+  it("is a switch over the stage with an instant hint, off by default, saying what off draws", () => {
+    const { el, body } = editor();
+    el.liveStates = false;
+    const off = tools(body());
+    expect(off).toContain(`<label class="pe-switch pe-live pe-tip"`);
+    expect(off).toMatch(/data-tip=Live preview: off\.[^>]*everything active/);
+    expect(off).toContain(`<input type="checkbox" role="switch"`);
+    expect(off).toContain("Live preview</span>");
+    expect(off).not.toContain("pe-live-dot");
+    expect(off).not.toContain(`class="tb pe-live`);
+    el.liveStates = true;
+    expect(tools(body())).toMatch(/data-tip=Live preview: on\. The tiles are drawn with Home Assistant's real states/);
+  });
+
+  it("lets its hint hang below the tool strip", () => {
+    const css = sheet();
+    expect(rule(css, ".pe-stage-area > .stage-tools")).toContain("overflow: visible");
+    expect(css).toMatch(/\.pe-state-chips\s*\{[^}]*flex-wrap: wrap/);
+    expect(css).toMatch(/button\.pe-state-chip\.on\s*\{[^}]*var\(--wa-testing\) 18%/);
   });
 });
 

@@ -88,7 +88,7 @@ import { personColorVar } from "../pickerRows.js";
 import { type IconProvider, REFERENCE_CASE, caseForScreenSize } from "../renderer.js";
 import { agoWords } from "../send-state.js";
 import { SymbolBrowser } from "../symbols.js";
-import { testControlFor } from "../test-controls.js";
+import { type TestControl, testControlFor } from "../test-controls.js";
 import { uiIcon } from "../ui-icons.js";
 import {
   PAGES_NO_RECORD_TEXT,
@@ -689,9 +689,13 @@ export class WaPageEditor extends LitElement {
    * off, every tile is drawn lit. Remembered between visits. */
   @state() private liveStates = loadStageLive();
   /** Test states typed or picked in the Live strip, entity id to state: the
-   * previews draw as if Home Assistant said so. Never saved, not part of
-   * undo, dropped with Live off or another watch. */
+   * previews draw as if Home Assistant said so, Live or all on. Never saved,
+   * not part of undo, dropped with another watch. */
   @state() private testStates = new Map<string, string>();
+  /** The state chip the pointer rests on (or that holds focus) in the Live
+   * strip: the previews draw its entity in that state, over any pinned test
+   * state, until the pointer leaves. */
+  @state() private hoverState?: { entityId: string; state: string };
   /** The entity whose test value is being typed in the Live strip. */
   @state() private editingValue?: string;
   /** The stage's scale as stepped with the zoom buttons, undefined while it
@@ -1177,6 +1181,7 @@ export class WaPageEditor extends LitElement {
       this.templateRenders = new Map();
       // Test states were tried on the other watch's tiles.
       this.testStates = new Map();
+      this.hoverState = undefined;
       this.editingValue = undefined;
       quiet = false;
     }
@@ -2874,7 +2879,7 @@ export class WaPageEditor extends LitElement {
   private previewInput(page: WatchPage, pages: readonly WatchPage[], screen: { width: number; height: number }, scale: number): WatchPagePreviewInput {
     return {
       page, pages, screen, states: this.previewStates(), icons: this.icons, scale, catalog: this.catalog, templates: this.templateRenders,
-      behavior: this.behavior, stateMode: this.liveStates ? "live" : "all-on",
+      behavior: this.behavior, stateMode: this.liveStates ? "live" : "all-on", testedIds: this.testedIds(),
     };
   }
 
@@ -3130,24 +3135,25 @@ export class WaPageEditor extends LitElement {
     this.cancelGestures();
   }
 
+  /** The Live preview switch: Home Assistant's real states, or every tile
+   * drawn on. A state tried in the Live strip shows either way. */
   private setLive(on: boolean): void {
     this.liveStates = on;
     saveStageLive(on);
-    if (!on) {
-      // All on draws every tile lit; a test state has nothing to show there.
-      this.testStates = new Map();
-      this.editingValue = undefined;
-    }
   }
 
   /** Home Assistant's states as the previews draw them: the real ones, with
-   * each test state from the Live strip standing in for its entity's. The
-   * tile settings read `this.hass` itself, never this. */
+   * each test state from the Live strip standing in for its entity's, and the
+   * state chip under the pointer over those. The tile settings read
+   * `this.hass` itself, never this. */
   private previewStates(): Record<string, HassEntityState> | undefined {
     const states = this.hass?.states;
-    if (this.testStates.size === 0) return states;
+    const hover = this.hoverState;
+    if (this.testStates.size === 0 && hover === undefined) return states;
     const out: Record<string, HassEntityState> = { ...states };
-    for (const [id, value] of this.testStates) {
+    const tried: [string, string][] = [...this.testStates];
+    if (hover !== undefined) tried.push([hover.entityId, hover.state]);
+    for (const [id, value] of tried) {
       const entity = states?.[id];
       out[id] = entity !== undefined
         ? { ...entity, state: value }
@@ -3156,15 +3162,25 @@ export class WaPageEditor extends LitElement {
     return out;
   }
 
+  /** The entities `previewStates` draws in a tried state (pinned or under
+   * the pointer), which the all-on picture leaves as tried. */
+  private testedIds(): ReadonlySet<string> | undefined {
+    const hover = this.hoverState?.entityId;
+    if (this.testStates.size === 0 && hover === undefined) return undefined;
+    const ids = new Set(this.testStates.keys());
+    if (hover !== undefined) ids.add(hover);
+    return ids;
+  }
+
   /** Try a state for one entity in the previews, or go back to its live
-   * state with undefined, an empty value or the live state itself. A test
-   * state only shows while the stage is Live, so it turns Live on. */
+   * state with undefined or an empty value. It shows whether Live preview is
+   * on or off. With Live preview on, the live state itself is no test; off,
+   * the tile would draw lit without it, so it stays. */
   private setTestValue(id: string, raw: string | undefined): void {
     const v = raw?.trim() ?? "";
     const next = new Map(this.testStates);
-    if (v === "" || v === this.hass?.states?.[id]?.state) next.delete(id);
+    if (v === "" || (this.liveStates && v === this.hass?.states?.[id]?.state)) next.delete(id);
     else next.set(id, v);
-    if (next.size > 0 && !this.liveStates) this.setLive(true);
     this.testStates = next;
   }
 
@@ -3205,9 +3221,10 @@ export class WaPageEditor extends LitElement {
       page, pages, screen: watchCase.screen, states, icons: this.icons, scale, catalog: this.catalog, templates: this.templateRenders,
       // The watch's own settings, for its page dots and its page title mode.
       behavior: this.behavior,
-      // Live off: every tile lit, as the page looks in use. A smart page is
-      // always live.
+      // Live off: every tile lit, as the page looks in use, but for a state
+      // being tried in the Live strip. A smart page is always live.
       stateMode: this.liveStates ? "live" : "all-on",
+      testedIds: this.testedIds(),
     };
     if (config !== undefined) {
       // The selected rule's tiles draw full, the rest faint; a click on a
@@ -3239,7 +3256,7 @@ export class WaPageEditor extends LitElement {
           ${hint !== undefined ? html`<span class="tail ${tiles > 0 && !asOnWatch ? "pe-hint" : ""}">${hint}</span>` : nothing}
         </div>` : nothing}
       </div>
-      ${this.renderLiveStrip(page, tile, smart)}
+      ${this.renderLiveStrip(page, tile)}
     </div>`;
   }
 
@@ -3394,16 +3411,22 @@ export class WaPageEditor extends LitElement {
   }
 
   /** The floating tool strip over the stage, the complication editor's:
-   * Live, the watch's size and its screen color (read only), Watch view on a
+   * the Live preview switch (with an instant hint saying what off and on
+   * draw), the watch's size and its screen color (read only), Watch view on a
    * page with headers, and the zoom. */
   private renderStageTools(page: WatchPage, caseLabel: string, headers: boolean, smart: boolean): TemplateResult {
     const sep = html`<span class="tb-sep" aria-hidden="true"></span>`;
     const scale = this.stageScale;
     const fit = stageFitZoom(this.narrow || this.stacked);
     return html`<div class="stage-tools" role="toolbar" aria-label="Stage tools">
-      ${smart ? nothing : html`<button class="tb pe-live ${this.liveStates ? "lit" : ""}" aria-pressed=${this.liveStates ? "true" : "false"}
-          title=${this.liveStates ? "Tiles show their real states from Home Assistant. Click to show every tile on." : "Every tile is shown on. Click to show the real states from Home Assistant."}
-          @click=${() => this.setLive(!this.liveStates)}><i class="tb-dot pe-live-dot" aria-hidden="true"></i><span class="word">Live</span></button>
+      ${smart ? nothing : html`<label class="pe-switch pe-live pe-tip"
+          data-tip=${this.liveStates
+            ? "Live preview: on. The tiles are drawn with Home Assistant's real states. Turn it off to draw every tile on."
+            : "Live preview: off. Every tile is drawn on, as the page looks with everything active. Turn it on to draw the tiles with Home Assistant's real states."}>
+          <input type="checkbox" role="switch" .checked=${live(this.liveStates)}
+            @change=${(e: Event) => this.setLive((e.target as HTMLInputElement).checked)} />
+          <span class="word keep">Live preview</span>
+        </label>
         ${sep}`}
       <button class="tb pe-case" aria-disabled="true" tabindex="-1" title=${`This watch's screen, ${caseLabel}. The page's background color beside it.`}>
         ${uiIcon("watch")}<span class="word keep">${caseLabel}</span><i class="tint-dot" style=${`--sw:${watchScreenColor(page)}`}></i></button>
@@ -3423,17 +3446,16 @@ export class WaPageEditor extends LitElement {
     </div>`;
   }
 
-  /** The Live strip under the stage, the complication editor's values bar:
-   * whether the tiles show Home Assistant's states or every tile on, with a
-   * switch between the two, and the selected tile's entity with its state.
-   * A state picked, slid or typed there is tried in the previews (the stage,
-   * the tile pictures and the rows) as if Home Assistant said so; the head
-   * then reads Testing, with Back to live. Nothing is saved. */
-  private renderLiveStrip(page: WatchPage, tile: WatchPageTile | undefined, smart: boolean): TemplateResult {
-    const on = smart || this.liveStates;
-    const testing = this.testStates.size > 0;
+  /** The Live strip under the stage, the complication editor's values bar,
+   * for trying the selected tile's states: its name, then each state its
+   * entity can take as a chip (a slider or a typed reading for a number or
+   * free text), then a reset while one is kept. The chip under the pointer
+   * shows in the previews (the stage, the tile pictures and the rows) as if
+   * Home Assistant said so; a click keeps it there until clicked again.
+   * Nothing is saved. */
+  private renderLiveStrip(page: WatchPage, tile: WatchPageTile | undefined): TemplateResult {
     let body: TemplateResult;
-    if (tile === undefined) body = html`<span class="vb-empty">Select a tile to see its live state.</span>`;
+    if (tile === undefined) body = html`<span class="vb-empty">Select a tile to try its states here.</span>`;
     else {
       const entityId = tileEntityId(tile);
       const real = entityId === "" ? undefined : this.hass?.states?.[entityId];
@@ -3453,41 +3475,61 @@ export class WaPageEditor extends LitElement {
       } else {
         const live = real !== undefined ? `${real.state}${unit}` : "Not in Home Assistant";
         const override = this.testStates.get(entityId);
-        body = html`<div class="vb-pills"><div class="vchip vpill ctl ${override !== undefined ? "testing" : ""}" style=${`--k:${color}`}
-          title=${override !== undefined ? `Live state: ${live}` : entityId}>
+        const control = testControlFor(entityId, real, override);
+        body = html`<div class="vb-pills"><div class="vchip vpill ctl ${control.kind === "choice" ? "pe-states" : ""} ${override !== undefined ? "testing" : ""}"
+          style=${`--k:${color}`} title=${override !== undefined ? `Home Assistant's state now: ${live}` : entityId}>
           ${icon}
-          ${this.renderTestControl(entityId, label, real, override, unit, live)}
+          ${control.kind === "choice"
+            ? this.renderStateChips(entityId, label, control.options, real?.state, override)
+            : this.renderTestControl(entityId, label, real, override, unit, live, control)}
           ${override !== undefined
-            ? html`<button type="button" class="live-reset" title=${`Back to the live state: ${live}`} aria-label=${`Back to the live state of ${label}`}
-                @click=${() => this.setTestValue(entityId, undefined)}>${uiIcon("reset")}</button>`
+            ? html`<button type="button" class="live-reset" title="Back to Home Assistant's state" aria-label=${`Back to Home Assistant's state for ${label}`}
+                @click=${() => { this.editingValue = undefined; this.setTestValue(entityId, undefined); }}>${uiIcon("reset")}</button>`
             : html`<span class="live-reset-slot" aria-hidden="true"></span>`}
         </div></div>`;
       }
     }
-    const word = testing ? "Testing" : on ? "Live" : "All on";
-    const stateTitle = testing ? "Testing: the tiles are drawn with the states you set here. Nothing is saved."
-      : on ? "Live: the tiles are drawn with what Home Assistant says right now. Pick, slide or type a state to try another."
-      : "All on: every tile is drawn on, as the page looks in use.";
-    // While testing, the button drops the test states and stays Live; a
-    // smart page is always live, so it has no button otherwise.
-    const button = testing
-      ? html`<button type="button" class="vb-live" title="Drop every state you set here and draw the tiles from Home Assistant again"
-          @click=${() => { this.editingValue = undefined; this.testStates = new Map(); }}>Back to live</button>`
-      : smart ? nothing
-      : html`<button type="button" class="vb-live" @click=${() => this.setLive(!this.liveStates)}
-          title=${on ? "Draw every tile on" : "Draw the tiles with Home Assistant's states"}>${on ? "Show all on" : "Show live"}</button>`;
-    return html`<div class="values-foot"><div class="values-bar ${testing ? "testing" : on ? "" : "pe-all-on"}" role="group" aria-label="Live state">
-      <div class="vb-head">
-        <span class="vb-state" title=${stateTitle}><i class="vb-dot" aria-hidden="true"></i>${word}</span>
-        ${button}
-      </div>
-      ${body}
-    </div></div>`;
+    return html`<div class="values-foot"><div class="values-bar" role="group" aria-label="Try the tile's states">${body}</div></div>`;
   }
 
-  /** The control for the selected tile's test state, the complication
-   * editor's: a picker for a state with a known set of words, a slider and
-   * its reading for a number, and a reading that opens a box for the rest. */
+  /** Every state an entity with a known set of words can take, as a row of
+   * chips. The chip the pointer rests on (or that holds focus) shows in the
+   * previews while it is there; a click keeps it, and a click on the kept
+   * chip lets it go. A dot marks Home Assistant's state now. */
+  private renderStateChips(
+    id: string,
+    name: string,
+    options: readonly string[],
+    real: string | undefined,
+    pinned: string | undefined,
+  ): TemplateResult {
+    const show = (state: string): void => { this.hoverState = { entityId: id, state }; };
+    const hide = (state: string): void => {
+      if (this.hoverState?.entityId === id && this.hoverState.state === state) this.hoverState = undefined;
+    };
+    const pick = (state: string): void => {
+      if (state === pinned) {
+        this.setTestValue(id, undefined);
+        this.hoverState = undefined;
+      } else this.setTestValue(id, state);
+    };
+    return html`<div class="pe-state-chips" role="group" aria-label=${`States to try for ${name}`}>
+      ${options.map((o) => {
+        const isLive = o === real;
+        const on = o === pinned;
+        const title = on ? `Kept in the preview. Click to go back to Home Assistant's state.`
+          : isLive ? "Home Assistant's state now"
+          : "Point here to preview this state, click to keep it";
+        return html`<button type="button" class="pe-state-chip ${on ? "on" : ""}" aria-pressed=${on ? "true" : "false"} title=${title}
+          @pointerenter=${() => show(o)} @pointerleave=${() => hide(o)} @focus=${() => show(o)} @blur=${() => hide(o)}
+          @click=${() => pick(o)}>${o}${isLive ? html`<i class="pe-state-live" aria-hidden="true"></i>` : nothing}</button>`;
+      })}
+    </div>`;
+  }
+
+  /** The control for the selected tile's test state when its entity has no
+   * known set of words, the complication editor's: a slider and its reading
+   * for a number, and a reading that opens a box for the rest. */
   private renderTestControl(
     id: string,
     name: string,
@@ -3495,14 +3537,9 @@ export class WaPageEditor extends LitElement {
     override: string | undefined,
     unit: string,
     live: string,
+    control: Exclude<TestControl, { kind: "choice" }>,
   ): TemplateResult {
     const shown = override ?? s?.state ?? "";
-    const control = testControlFor(id, s, override);
-    if (control.kind === "choice") {
-      return html`<span class="test-ctl"><select aria-label=${`Test state for ${name}`} @change=${(e: Event) => this.setTestValue(id, (e.target as HTMLSelectElement).value)}>
-        ${control.options.map((o) => html`<option value=${o} ?selected=${o === shown}>${o}</option>`)}
-      </select></span>`;
-    }
     const reading = this.editingValue === id
       ? html`<input type="text" .value=${shown} aria-label=${`Test state for ${name}`}
           @keydown=${(e: KeyboardEvent) => {
@@ -4197,9 +4234,11 @@ export class WaPageEditor extends LitElement {
     .stage-tools button.tb.pe-case { cursor: default; }
     .stage-tools button.tb.pe-case:hover { background: transparent; }
     .stage-tools button.tb.pe-case > svg.ui-icon { width: 14px; height: 14px; }
-    .stage-tools .pe-live-dot { margin-left: 0; background: var(--wa-muted); }
-    .stage-tools button.tb.pe-live.lit .pe-live-dot { background: var(--wa-live, #2f9e6a); }
-    .values-bar.pe-all-on .vb-dot { background: var(--wa-muted); box-shadow: none; }
+    /* The tool strip lets the Live preview switch's hint hang below it, over
+       the stage and its tiles. */
+    .pe-stage-area > .stage-tools { overflow: visible; z-index: 8; }
+    /* The Live preview switch, sized as the strip's button words. */
+    .stage-tools .pe-switch.pe-live { gap: 7px; height: 26px; padding: 0 8px; font-size: 11.5px; font-weight: 500; white-space: nowrap; }
     .vchip.vpill .val {
       flex: none; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       font-weight: 700; font-variant-numeric: tabular-nums; color: var(--wa-ink);
@@ -4210,8 +4249,23 @@ export class WaPageEditor extends LitElement {
        complication editor's values row lays it out (editor-chrome sizes it). */
     .vchip.vpill .test-ctl { display: flex; align-items: center; min-width: 0; }
     .vchip.vpill .test-ctl input[type=range] { margin: 0; accent-color: var(--wa-testing); cursor: pointer; }
-    .vchip.vpill .test-ctl select { min-width: 0; max-width: 100%; font: inherit; border-radius: 6px; cursor: pointer; }
     .vchip.vpill button.val { background: none; border: 0; padding: 0; cursor: text; }
+    /* A state with a known set of words: the name, then every state as a
+       chip in a row that wraps, the pill growing to hold it. */
+    .vchip.vpill.pe-states { height: auto; min-height: 30px; padding-top: 4px; padding-bottom: 4px; }
+    .vchip.vpill.pe-states b { flex: 0 1 auto; max-width: 180px; }
+    .pe-state-chips { display: flex; flex: 1 1 auto; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+    button.pe-state-chip {
+      display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border: 1px solid var(--wa-line-strong); border-radius: 999px;
+      background: var(--wa-card); color: var(--wa-ink); font: inherit; font-size: 11.5px; white-space: nowrap; cursor: pointer;
+    }
+    button.pe-state-chip:hover { background: var(--wa-panel); }
+    button.pe-state-chip:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    button.pe-state-chip.on {
+      background: color-mix(in srgb, var(--wa-testing) 18%, transparent); border-color: var(--wa-testing); color: var(--wa-testing); font-weight: 600;
+    }
+    /* Home Assistant's state now. */
+    .pe-state-live { display: block; flex: none; width: 5px; height: 5px; border-radius: 50%; background: var(--wa-live, #2f9e6a); }
     .pe-screen { overflow: visible; user-select: none; -webkit-user-select: none; }
     .pe-screen.saving .pe-tile, .pe-screen.saving .pe-handle { cursor: progress; }
     .pe-screen:focus { outline: none; }

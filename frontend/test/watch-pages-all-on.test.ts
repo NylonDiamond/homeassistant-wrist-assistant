@@ -137,6 +137,20 @@ describe("the all-on picture", () => {
     expect(text(renderWatchTileFace(t, { width: 90, height: 90 }, input([t], states), 15))).toMatch(/class="wp-tile off/);
   });
 
+  it("leaves an entity whose state is being tried as tried: the test state wins over the lit one", () => {
+    const t = tile("switch.fan");
+    expect(watchAllOnStates(t, states, new Set(["switch.fan"]))).toBe(states);
+    expect(watchAllOnStates(t, states, new Set(["light.lamp"]))!["switch.fan"]!.state).toBe("on");
+    const tried = { ...input([t], states, "all-on"), testedIds: new Set(["switch.fan"]) };
+    expect(text(renderWatchTileFace(t, { width: 90, height: 90 }, tried, 15))).toMatch(/class="wp-tile off/);
+    // A remote's media player being tried stays as tried too.
+    const remote = tile("remote.living_room");
+    const both = statesOf(entity("remote.living_room", "off"), entity("media_player.living_room", "standby"));
+    const lit = watchAllOnStates(remote, both, new Set(["media_player.living_room"]))!;
+    expect(lit["remote.living_room"]!.state).toBe("on");
+    expect(lit["media_player.living_room"]!.state).toBe("standby");
+  });
+
   it("shows a tile hidden while off, in the read only preview too", () => {
     const hidden = tile("light.lamp", { hideWhenInactive: true, customLabel: "Hidden lamp" });
     const other = tile("switch.fan", { id: "B", gridRow: 4 });

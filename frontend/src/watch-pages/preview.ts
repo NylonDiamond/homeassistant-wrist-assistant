@@ -80,6 +80,10 @@ export interface WatchPagePreviewInput {
    * `watchAllOnStates`), so a page is seen as it looks lit whatever its
    * entities are doing now. A smart page always draws live. */
   stateMode?: WatchPreviewStateMode;
+  /** Entities whose state in `states` is one being tried in the page
+   * editor's Live strip. The all-on picture leaves them as `states` has them,
+   * so the state tried wins over the lit one. */
+  testedIds?: ReadonlySet<string>;
   /** The panel's symbol provider. Without one, tiles draw a dot for a symbol. */
   icons?: IconProvider;
   /** CSS pixels per point. */
@@ -2706,29 +2710,34 @@ function allOnEntity(entityId: string, real: HassEntityState | undefined): HassE
  * `states` with a tile's entity in a typical on state (`allOnEntity`), and
  * for a remote or a TV its media player too (playing, its volume kept), for
  * the all-on picture. `states` itself when the tile has nothing to light: a
- * kind with no on state, or an app tile.
+ * kind with no on state, or an app tile. An entity in `tested` keeps the state
+ * `states` gives it, the one being tried in the page editor's Live strip.
  */
-export function watchAllOnStates(tile: WatchPageTile, states: Readonly<Record<string, HassEntityState>> | undefined): Record<string, HassEntityState> | undefined {
+export function watchAllOnStates(
+  tile: WatchPageTile,
+  states: Readonly<Record<string, HassEntityState>> | undefined,
+  tested?: ReadonlySet<string>,
+): Record<string, HassEntityState> | undefined {
   const entityId = tileEntityId(tile);
   const kind = tileKind(entityId);
   const real = (id: string) => (states !== undefined && Object.hasOwn(states, id) ? states[id] : undefined);
   const lit: Record<string, HassEntityState> = {};
-  const own = allOnEntity(entityId, real(entityId));
+  const own = tested?.has(entityId) ? undefined : allOnEntity(entityId, real(entityId));
   if (own !== undefined) lit[entityId] = own;
   if (kind === "remote" || (kind === "media_player" && watchTileIsTvRemote(tile, states))) {
     const playerId = watchRemotePlayerId(tile);
     const player = real(playerId);
-    if (playerId !== entityId && player !== undefined) lit[playerId] = allOnEntity(playerId, player) ?? player;
+    if (playerId !== entityId && player !== undefined && !tested?.has(playerId)) lit[playerId] = allOnEntity(playerId, player) ?? player;
   }
   if (Object.keys(lit).length === 0) return states;
   return { ...states, ...lit };
 }
 
 /** `input` as a tile draws it: in the all-on picture, with that tile's
- * entity lit (`watchAllOnStates`). */
+ * entity lit (`watchAllOnStates`), unless its state is being tried. */
 function withStateMode(tile: WatchPageTile, input: WatchPagePreviewInput): WatchPagePreviewInput {
   if (input.stateMode !== "all-on") return input;
-  const states = watchAllOnStates(tile, input.states);
+  const states = watchAllOnStates(tile, input.states, input.testedIds);
   return states === input.states ? input : { ...input, states };
 }
 
