@@ -324,17 +324,16 @@ describe("the tiles' look", () => {
     }
   });
 
-  it("outlines every tile and lifts the picked one to a raised grey with the brighter line", () => {
+  it("outlines the strip of choices and lifts the picked one to a raised grey with the brighter line", () => {
+    const strip = tileRules.find((r) => r.selector === ".ws-tiles")!.body;
+    expect(strip).toContain("border: 1px solid var(--wa-line-strong)");
+    expect(strip).toContain("border-radius: 8px");
     const tile = tileRules.find((r) => r.selector === "button.ws-tile")!.body;
-    expect(tile).toContain("border: 1px solid var(--wa-line-strong)");
-    expect(tile).toContain("border-radius: 6px");
     expect(tile).toContain("--ws-tile-bg: var(--wa-field)");
     const on = tileRules.find((r) => r.selector === "button.ws-tile.on")!.body;
     expect(on).toContain("--ws-tile-bg: var(--wa-seg-on)");
     expect(on).toContain("color: var(--wa-ink)");
-    expect(on).toContain("border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card))");
-    const hover = tileRules.find((r) => r.selector === "button.ws-tile:hover:not(:disabled)")!.body;
-    expect(hover).toContain("border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card))");
+    expect(on).toContain("box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card))");
   });
 });
 

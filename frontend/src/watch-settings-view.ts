@@ -593,7 +593,7 @@ export class WatchSettings implements ReactiveController {
     const helpLabel = help ? `Hide the help in ${section.title}` : `Show help for ${section.title}`;
     const runs = sectionRuns(section, values);
     return html`<section class="sec" data-sec=${`ws-${section.id}`} data-open="true" data-help=${help ? "on" : "off"}
-      style=${look ? `--c:${look.color}` : nothing}>
+      style=${look ? `--c:${look.color};--ws-hue:${look.color}` : nothing}>
       <div class="sec-h pinned">
         <span class="swatch">${uiIcon(look?.icon ?? "content")}</span>
         <span class="tt"><h4>${section.title}</h4></span>
@@ -626,7 +626,7 @@ export class WatchSettings implements ReactiveController {
     const helpLine = setting.help ? html`<div class="hint">${setting.help}</div>` : nothing;
     if (usesTiles(setting)) return this.renderTiles(setting, String(value), set);
     const row = (field: TemplateResult) => html`<div class="ws-row" data-key=${setting.key}>
-      ${this.glyph("ws-ic", settingIcon(setting), 14)}${field}</div>${helpLine}`;
+      ${this.glyph("ws-ic", settingIcon(setting), 14)}${field}${helpLine}</div>`;
     switch (setting.type) {
       case "bool":
         return row(checkField(setting.label, value === true, set, setting.default === true));
@@ -820,53 +820,69 @@ export const watchSettingsStyles = css`
   @container xfer (max-width: 440px) {
     .ws-body .sec { --wa-lab: 122px; --wa-col: 130px; }
   }
-  /* Each setting's icon: a fixed box in front of its title, muted like the
-     title, kept the same size before and after the symbol file arrives. The
-     symbol provider paints white; the box's color wins here. */
-  .ws-body .ws-ic { width: 14px; height: 14px; flex: none; display: grid; place-items: center; color: var(--wa-muted); pointer-events: none; }
+  /* Each setting's icon: a small chip in its card's hue, the one place a
+     setting carries color. A fixed box, so a row does not move when the
+     symbol file arrives. The symbol provider paints white; the chip's color
+     wins here. */
+  .ws-body .ws-ic {
+    width: 22px; height: 22px; flex: none; display: grid; place-items: center; border-radius: 6px; pointer-events: none;
+    color: var(--ws-hue, var(--wa-muted)); background: color-mix(in srgb, var(--ws-hue, var(--wa-muted)) 15%, transparent);
+  }
   .ws-body :is(.ws-ic, .ws-tile-glyph) svg { display: block; overflow: visible; }
-  .ws-body .ws-ic svg { width: 14px; height: 14px; }
+  .ws-body .ws-ic svg { width: 13px; height: 13px; }
   .ws-body :is(.ws-ic, .ws-tile-glyph) svg:not(.ws-pv) path { fill: currentColor; fill-opacity: 1; }
-  /* A row drawn by the panel's own field: the icon sits in the title column,
-     level with the title, which moves over to make room for it. */
-  .ws-row { position: relative; }
-  .ws-row > .ws-ic { position: absolute; left: 0; top: 8px; z-index: 1; }
-  .ws-row > .field > span:first-child { padding-left: 21px; }
-  /* A row of tiles stacks: the icon and title on one line, the help under
-     them where the title starts, the tiles under that at full width. */
-  .ws-tile-row { padding: 1px 0 3px; }
-  .ws-head { position: relative; display: flex; align-items: center; gap: 7px; min-height: 22px; }
-  .ws-head > span:not(.ws-ic) { flex: none; max-width: 100%; min-width: 0; color: var(--wa-label, var(--wa-muted)); font-size: 12px; line-height: 1.25; overflow-wrap: break-word; }
-  .ws-head > span.changed { color: var(--wa-ink); }
+  /* Settings are a list: a hairline between each, none over the first. */
+  .ws-body :is(.sec-b, .fgroup) > :is(.ws-row, .ws-tile-row) { padding: 7px 0; border-top: 1px solid var(--wa-line); }
+  .ws-body :is(.sec-b, .fgroup) > :is(.ws-row, .ws-tile-row):first-child { border-top: 0; padding-top: 3px; }
+  .ws-body .sec-b > :is(.ws-row, .ws-tile-row):last-child { padding-bottom: 2px; }
+  .ws-body .fgroup { margin: 0 -8px 8px; padding: 2px 8px; }
+  .ws-body .fgroup > :last-child { padding-bottom: 5px; }
+  /* Help reads as a quiet second line, upright. */
+  .ws-body .sec[data-help] > .sec-b :is(.ws-row, .ws-head) > .hint { padding: 0; margin: 0; font-style: normal; font-size: 11.5px; line-height: 1.35; color: var(--wa-muted); }
+  /* A row drawn by the panel's own field: the chip, then the title with its
+     help under it, and the control at the right edge. */
+  .ws-row { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; column-gap: 9px; align-items: center; }
+  .ws-row > .ws-ic { grid-column: 1; grid-row: 1 / span 2; align-self: start; }
+  .ws-row > .field { display: contents; }
+  .ws-row > .field > :first-child { grid-column: 2; grid-row: 1; color: var(--wa-ink); font-size: 12.5px; font-weight: 500; }
+  .ws-row > .field > :not(:first-child) { grid-column: 3; grid-row: 1 / span 2; width: 250px; max-width: 44cqw; box-sizing: border-box; justify-self: end; }
+  .ws-row > .field.check > input { width: auto; max-width: none; }
+  .ws-row > .hint { grid-column: 2; grid-row: 2; }
+  .ws-row > :not(.ws-ic, .hint, .field) { grid-column: 2 / -1; min-width: 0; }
+  /* A row of tiles: the chip, title and help on one line, the strip of
+     choices under them, starting where the title starts. */
+  .ws-head { position: relative; display: flex; align-items: center; gap: 9px; min-height: 22px; }
+  .ws-head > span:not(.ws-ic) { flex: none; max-width: 100%; min-width: 0; color: var(--wa-ink); font-size: 12.5px; font-weight: 500; line-height: 1.25; overflow-wrap: break-word; }
   .ws-head button.reset-dot { top: 50%; margin-top: -2.5px; }
-  .ws-head > .hint { flex: 1 1 0; min-width: 0; margin: 0 0 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  /* The tiles: equal columns, five at most to a line, three on a narrow
-     dialog. Neutral like every control here: a hairline at rest that
-     brightens under the pointer, and the picked one a raised grey with ink
-     words and the brighter line. No hue. */
+  .ws-body .sec[data-help] > .sec-b .ws-head > .hint { flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* The choices are one strip: a single outline with hairlines between the
+     choices, the picked one a raised grey with the brighter line. Neutral, no
+     hue. Five at most to a line, three on a narrow dialog. */
   .ws-tiles {
-    display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); gap: 4px; margin-top: 2px;
+    display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); gap: 1px; margin: 6px 0 0 31px;
+    border: 1px solid var(--wa-line-strong); border-radius: 8px; overflow: hidden; background: var(--wa-line-strong);
   }
   @container xfer (max-width: 440px) {
-    .ws-tiles { grid-template-columns: repeat(var(--cols-narrow, 3), minmax(0, 1fr)); }
+    .ws-tiles { grid-template-columns: repeat(var(--cols-narrow, 3), minmax(0, 1fr)); margin-left: 0; }
+    .ws-row > .field > :not(:first-child) { width: 150px; }
   }
   button.ws-tile {
     --ws-tile-bg: var(--wa-field);
-    font: inherit; min-width: 0; min-height: 30px; margin: 0; padding: 3px 6px; cursor: pointer;
-    display: grid; grid-template-columns: auto minmax(0, auto); align-items: center; justify-content: center; column-gap: 6px; row-gap: 0;
-    border: 1px solid var(--wa-line-strong); border-radius: 6px; background: var(--ws-tile-bg); color: var(--wa-label);
-    transition: border-color .12s ease-out, background-color .12s ease-out, color .12s ease-out;
+    font: inherit; min-width: 0; min-height: 32px; margin: 0; padding: 3px 6px; cursor: pointer;
+    display: grid; grid-template-columns: auto minmax(0, auto); align-items: center; justify-content: center; column-gap: 7px; row-gap: 0;
+    border: 0; border-radius: 0; background: var(--ws-tile-bg); color: var(--wa-label);
+    transition: background-color .12s ease-out, color .12s ease-out;
   }
-  button.ws-tile:hover:not(:disabled) { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); color: var(--wa-ink); }
+  button.ws-tile:hover:not(:disabled) { --ws-tile-bg: color-mix(in srgb, var(--wa-ink) 6%, var(--wa-field)); color: var(--wa-ink); }
   button.ws-tile.on {
     --ws-tile-bg: var(--wa-seg-on);
-    color: var(--wa-ink); border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); box-shadow: var(--wa-seg-shadow);
+    color: var(--wa-ink); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card));
   }
-  button.ws-tile:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  button.ws-tile:focus-visible { outline: none; box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--wa-ink) 60%, transparent); }
   button.ws-tile:disabled { opacity: .45; cursor: default; }
   .ws-tile-glyph { grid-row: 1 / span 2; height: 20px; min-width: 16px; display: grid; place-items: center; color: var(--wa-muted); }
   .ws-tile-name:last-child { grid-row: 1 / span 2; }
-  .ws-tile-glyph svg { height: 16px; width: auto; max-width: 100%; }
+  .ws-tile-glyph svg { height: 15px; width: auto; max-width: 100%; }
   .ws-tile-glyph svg.ws-pv { width: 32px; height: 18px; }
   button.ws-tile.on .ws-tile-glyph { color: var(--wa-ink); }
   .ws-tile-name { max-width: 100%; font-size: 11.5px; font-weight: 500; line-height: 1.2; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
