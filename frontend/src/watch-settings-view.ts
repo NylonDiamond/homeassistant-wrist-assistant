@@ -15,7 +15,7 @@
 // then and turns the pill green once a device has it.
 
 import { css, html, nothing, type ReactiveController, type ReactiveControllerHost, type TemplateResult } from "lit";
-import { checkField, colorField, entityField, entityRefFor, segField, selectField } from "./editors.js";
+import { checkField, colorField, entityField, entityRefFor, selectField, settingTitle } from "./editors.js";
 import {
   type HassLike,
   type OwnerSummary,
@@ -29,6 +29,7 @@ import {
 import { SECTION_COLOR } from "./kinds.js";
 import { peopleOf } from "./people.js";
 import { personColorVar } from "./pickerRows.js";
+import type { IconProvider } from "./renderer.js";
 import { agoWords } from "./send-state.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
 import {
@@ -72,6 +73,7 @@ import {
   watchRecordUnreadable,
   withEdit,
 } from "./watch-settings.js";
+import { type TileChoice, optionPreview, settingIcon, tileChoices, usesTiles } from "./watch-settings-look.js";
 
 /** How often an open dialog asks whether a device has collected a save. */
 const DELIVERY_POLL_MS = 15_000;
@@ -146,7 +148,13 @@ export class WatchSettings implements ReactiveController {
    * dialog was shut leaves the next visit's card alone. */
   private visit = 0;
 
-  constructor(private readonly host: PanelHost, private readonly refreshOwners?: RefreshOwners) {
+  /** `icons` is the panel's symbol provider, asked on every draw: it loads
+   * its file on first use and wakes the panel when it can draw more. */
+  constructor(
+    private readonly host: PanelHost,
+    private readonly refreshOwners?: RefreshOwners,
+    private readonly icons?: () => IconProvider | undefined,
+  ) {
     host.addController(this);
   }
 
@@ -600,33 +608,78 @@ export class WatchSettings implements ReactiveController {
     </section>`;
   }
 
-  /** One setting with the panel's own field for its kind, and its help line
-   * under it. Every field offers the reset dot back to the watch's default. */
+  /** An SF Symbol in a box of fixed size, so a row does not move when the
+   * symbol file arrives after the first draw. Drawn in the box's own color:
+   * the provider paints white, and the sheet repaints its path. */
+  private glyph(cls: string, name: string, size: number) {
+    const drawn = this.icons?.()?.render(name, size, "#FFFFFF");
+    return html`<span class=${cls} aria-hidden="true">${drawn ?? nothing}</span>`;
+  }
+
+  /** One setting with the panel's own field for its kind, its icon beside its
+   * title, and its help line under it. Every field offers the reset dot back
+   * to the watch's default. The help line stays the row's sibling, so a box
+   * of dependents holds the same rows it always did. */
   private renderRow(hass: HassLike, setting: CatalogSetting, values: ReadonlyMap<string, SettingValue>) {
     const value = values.get(setting.key) ?? settingValue(setting, undefined);
     const set = (v: SettingValue) => this.edit(setting, v);
     const helpLine = setting.help ? html`<div class="hint">${setting.help}</div>` : nothing;
+    if (usesTiles(setting)) return this.renderTiles(setting, String(value), set);
+    const row = (field: TemplateResult) => html`<div class="ws-row" data-key=${setting.key}>
+      ${this.glyph("ws-ic", settingIcon(setting), 14)}${field}</div>${helpLine}`;
     switch (setting.type) {
       case "bool":
-        return html`${checkField(setting.label, value === true, set, setting.default === true)}${helpLine}`;
+        return row(checkField(setting.label, value === true, set, setting.default === true));
       case "color":
-        return html`${colorField(setting.label, String(value), (v) => { if (v !== undefined) set(v); }, false, String(setting.default))}${helpLine}`;
+        return row(colorField(setting.label, String(value), (v) => { if (v !== undefined) set(v); }, false, String(setting.default)));
       case "entity": {
         const id = String(value);
         const ref = id === "" ? { entityId: "", displayName: "", domain: "" } : entityRefFor(hass, id);
-        return html`${entityField({ hass }, setting.label, ref, (next) => set(next.entityId),
-          `ws:${this.ownerId ?? ""}:${setting.key}`, setting.domain === undefined ? {} : { domain: setting.domain })}${helpLine}`;
+        return row(entityField({ hass }, setting.label, ref, (next) => set(next.entityId),
+          `ws:${this.ownerId ?? ""}:${setting.key}`, setting.domain === undefined ? {} : { domain: setting.domain }));
       }
       case "enum": {
+        // More choices than tiles fit: the panel's menu.
         const options = optionsFor(setting, value).map((o): [string, string] => [o.value, o.label]);
-        const def = String(setting.default);
-        // The panel's own rule: up to four choices as a row of buttons, a
-        // longer list as a menu.
-        return html`${options.length <= 4
-          ? segField(setting.label, String(value), options, (v) => set(v), { def })
-          : selectField(setting.label, String(value), options, (v) => set(v), { def })}${helpLine}`;
+        return row(selectField(setting.label, String(value), options, (v) => set(v), { def: String(setting.default) }));
       }
     }
+  }
+
+  /**
+   * A choice of up to five as a row of tiles, the way the iPhone app draws
+   * it: each an icon or a small picture, the choice's name and its detail. The
+   * row stacks: the title and its help on top, the tiles under them at full
+   * width, all the same width, wrapping on a narrow dialog.
+   */
+  private renderTiles(setting: CatalogSetting, value: string, set: (v: SettingValue) => void) {
+    const options = optionsFor(setting, value);
+    const tiles = tileChoices(setting, options, value);
+    const def = String(setting.default);
+    const name = (v: string) => options.find((o) => o.value === v)?.label ?? v;
+    const n = tiles.length;
+    // Up to five side by side; on a narrow dialog five or more go three to a
+    // line. A sixth (a stored value the catalog does not list) halves the row.
+    const cols = n <= 5 ? n : Math.ceil(n / 2);
+    const narrow = n >= 5 ? 3 : n;
+    return html`<div class="ws-tile-row" data-key=${setting.key}>
+      <div class="ws-head">${this.glyph("ws-ic", settingIcon(setting), 14)}${settingTitle(setting.label, value, def, (v) => set(v), name)}</div>
+      ${setting.help ? html`<div class="hint">${setting.help}</div>` : nothing}
+      <div class="ws-tiles" role="group" aria-label=${setting.label} data-n=${n} style=${`--cols:${cols};--cols-narrow:${narrow}`}>
+        ${tiles.map((t) => this.renderTile(t, set))}
+      </div>
+    </div>`;
+  }
+
+  private renderTile(tile: TileChoice, set: (v: SettingValue) => void) {
+    return html`<button type="button" class="ws-tile ${tile.on ? "on" : ""}" aria-pressed=${tile.on ? "true" : "false"}
+      title=${tile.title ?? nothing} @click=${() => { if (!tile.on) set(tile.value); }}>
+      ${tile.preview === undefined
+        ? this.glyph("ws-tile-glyph", tile.icon, 16)
+        : html`<span class="ws-tile-glyph" aria-hidden="true">${optionPreview(tile.preview, tile.value)}</span>`}
+      <span class="ws-tile-name">${tile.name}</span>
+      ${tile.detail === undefined ? nothing : html`<span class="ws-tile-detail">${tile.detail}</span>`}
+    </button>`;
   }
 
   /** The last card: pairing a watch that has no iPhone, by the code it shows.
@@ -760,14 +813,69 @@ export const watchSettingsStyles = css`
     dialog.ws-dialog { width: calc(100vw - 16px); height: calc(100dvh - 16px); }
   }
   /* The cards sit closer than the dialog's usual blocks, and the title column
-     is wider than the inspector's: these titles are whole phrases. The help
-     column is set again beside it, because the panel's is worked out from the
-     panel's own title width. */
-  .ws-body { --wa-lab: 156px; --wa-col: 164px; gap: 8px; }
+     is wider than the inspector's: these titles are whole phrases with an
+     icon in front. The help column is set again beside it, because the
+     panel's is worked out from the panel's own title width. */
+  .ws-body { --wa-lab: 172px; --wa-col: 180px; gap: 8px; }
   .ws-body > .sec { margin: 0; }
   @container xfer (max-width: 440px) {
-    .ws-body .sec { --wa-lab: 104px; --wa-col: 112px; }
+    .ws-body .sec { --wa-lab: 122px; --wa-col: 130px; }
   }
+  /* Each setting's icon: a fixed box in front of its title, muted like the
+     title, kept the same size before and after the symbol file arrives. The
+     symbol provider paints white; the box's color wins here. */
+  .ws-body .ws-ic { width: 14px; height: 14px; flex: none; display: grid; place-items: center; color: var(--wa-muted); pointer-events: none; }
+  .ws-body :is(.ws-ic, .ws-tile-glyph) svg { display: block; overflow: visible; }
+  .ws-body .ws-ic svg { width: 14px; height: 14px; }
+  .ws-body :is(.ws-ic, .ws-tile-glyph) svg:not(.ws-pv) path { fill: currentColor; fill-opacity: 1; }
+  /* A row drawn by the panel's own field: the icon sits in the title column,
+     level with the title, which moves over to make room for it. */
+  .ws-row { position: relative; }
+  .ws-row > .ws-ic { position: absolute; left: 0; top: 8px; z-index: 1; }
+  .ws-row > .field > span:first-child { padding-left: 21px; }
+  /* A row of tiles stacks: the icon and title on one line, the help under
+     them where the title starts, the tiles under that at full width. */
+  .ws-tile-row { padding: 3px 0 4px; }
+  .ws-head { position: relative; display: flex; align-items: center; gap: 7px; min-height: 24px; }
+  .ws-head > span:not(.ws-ic) { min-width: 0; color: var(--wa-label, var(--wa-muted)); font-size: 12px; line-height: 1.25; overflow-wrap: break-word; }
+  .ws-head > span.changed { color: var(--wa-ink); }
+  .ws-head button.reset-dot { top: 50%; margin-top: -2.5px; }
+  .ws-tile-row > .hint { margin: 0 0 2px 21px; }
+  /* The tiles: equal columns, five at most to a line, three on a narrow
+     dialog. Neutral like every control here: a hairline at rest that
+     brightens under the pointer, and the picked one a raised grey with ink
+     words and the brighter line. No hue. */
+  .ws-tiles {
+    display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); gap: 6px; margin-top: 6px;
+  }
+  @container xfer (max-width: 440px) {
+    .ws-tiles { grid-template-columns: repeat(var(--cols-narrow, 3), minmax(0, 1fr)); }
+  }
+  button.ws-tile {
+    --ws-tile-bg: var(--wa-field);
+    font: inherit; min-width: 0; min-height: 54px; margin: 0; padding: 6px 4px 5px; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    border: 1px solid var(--wa-line-strong); border-radius: 8px; background: var(--ws-tile-bg); color: var(--wa-label);
+    transition: border-color .12s ease-out, background-color .12s ease-out, color .12s ease-out;
+  }
+  button.ws-tile:hover:not(:disabled) { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); color: var(--wa-ink); }
+  button.ws-tile.on {
+    --ws-tile-bg: var(--wa-seg-on);
+    color: var(--wa-ink); border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); box-shadow: var(--wa-seg-shadow);
+  }
+  button.ws-tile:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  button.ws-tile:disabled { opacity: .45; cursor: default; }
+  .ws-tile-glyph { height: 20px; min-width: 16px; display: grid; place-items: center; color: var(--wa-muted); }
+  .ws-tile-glyph svg { height: 16px; width: auto; max-width: 100%; }
+  .ws-tile-glyph svg.ws-pv { width: 36px; height: 20px; }
+  button.ws-tile.on .ws-tile-glyph { color: var(--wa-ink); }
+  .ws-tile-name { max-width: 100%; font-size: 11.5px; font-weight: 500; line-height: 1.2; text-align: center; overflow-wrap: anywhere; }
+  button.ws-tile.on .ws-tile-name { font-weight: 600; }
+  .ws-tile-detail {
+    max-width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; line-height: 1.2;
+    color: var(--wa-muted); text-align: center; overflow-wrap: anywhere;
+  }
+  button.ws-tile.on .ws-tile-detail { color: var(--wa-label); }
   .ws-body > .ws-note { display: flex; align-items: center; gap: 10px; }
   .ws-body > .ws-note > span { flex: 1; min-width: 0; }
   .ws-body > button.ws-retry, .ws-body > button.ws-start { align-self: flex-start; }

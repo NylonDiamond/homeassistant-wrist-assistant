@@ -1407,11 +1407,12 @@ export class WristAssistantPanel extends LitElement {
   @property({ attribute: false }) route?: PanelRoute;
 
   /** The Watch settings dialog, opened from the top bar. A watch paired from
-   * it is picked up by the panel's full owners load. */
+   * it is picked up by the panel's full owners load. It draws its setting
+   * icons with the panel's own symbols. */
   private watchSettings = new WatchSettings(this, async () => {
     await this.loadOwners();
     return this.owners;
-  });
+  }, () => this.icons);
 
   /** Side column widths in px, dragged by the gutters and kept per browser.
    * These are the widths the user asked for; columnFit() decides how much of

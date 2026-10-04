@@ -651,6 +651,13 @@ function fieldLabel(label: string, back?: ResetTo, scrub?: (e: PointerEvent) => 
     @pointerdown=${scrub ?? nothing}>${label}${btn}</span>`;
 }
 
+/** A setting's title with its reset dot back to `def`, for a row its caller
+ * lays out itself (Watch settings' tiles). The same title and dot every field
+ * here draws. */
+export function settingTitle<T>(label: string, value: T, def: T | undefined, set: (v: T) => void, show?: (v: T) => string) {
+  return fieldLabel(label, backTo(value, def, set, show));
+}
+
 /** Sent by a number field's title as a drag starts and ends, so the panel can
  * hold the whole drag as one undo step however many edits it makes. */
 export const SCRUB_START = "wa-scrub-start";
