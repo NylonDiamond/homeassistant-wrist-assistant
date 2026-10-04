@@ -406,9 +406,9 @@ describe("the inspector with no tile", () => {
 });
 
 describe("the page strip", () => {
-  it("is a toolbar of three chips, Theme, Background and Title, each saying what the page has, then the two switches", () => {
+  it("reads Page settings: Hidden, the three chips Theme, Background and Title, then Smart Page, a hairline between each", () => {
     const text = flat(strip(editor(hallPage())));
-    expect(text).toMatch(/^<div class="pe-pstrip" role="toolbar" aria-label="Page settings">/);
+    expect(text).toMatch(/^<div class="pe-pstrip" role="toolbar" aria-label="Page settings">\s*<span class="pe-pstrip-label">Page settings:<\/span>/);
     expect(chips(text).map(({ label, value }) => [label, value])).toEqual([
       ["Theme", watchThemeDisplayName("neonLagoon")],
       ["Background", "None"],
@@ -421,25 +421,30 @@ describe("the page strip", () => {
       expect(item).toContain(`aria-haspopup="dialog" aria-expanded=false`);
       expect(item).toContain(`<span class="pe-pchip-chev" aria-hidden="true">▾</span>`);
     }
-    // The switches stand in the strip itself, past a bar, not in a popover.
-    const switches = text.slice(text.indexOf(`<div class="pe-pstrip-tog"`));
-    expect(text.indexOf(`<span class="pe-pstrip-sep"`)).toBeGreaterThan(text.lastIndexOf(`<div class="pe-pstrip-item"`));
-    expect(switches).toContain("Hidden on the watch");
-    expect(switches).toContain("Smart Page");
-    expect(switches).not.toContain("tiles, ");
+    // Hidden first, its reason on hover; Smart Page last; four hairlines
+    // between the five options; nothing in a popover.
+    const hidden = text.indexOf(">Hidden</span>");
+    const smart = text.indexOf("Smart Page");
+    expect(hidden).toBeGreaterThan(-1);
+    expect(hidden).toBeLessThan(text.indexOf(`<div class="pe-pstrip-item"`));
+    expect(smart).toBeGreaterThan(text.lastIndexOf(`<div class="pe-pstrip-item"`));
+    expect(text.slice(0, hidden)).toContain("the watch does not show it");
+    expect(text.match(/<span class="pe-pstrip-sep"/g)?.length).toBe(4);
+    expect(text).not.toContain("Hidden on the watch");
+    expect(text).not.toContain("tiles, ");
     // Nothing open yet.
     expect(text).not.toContain("pe-ppop");
   });
 
-  it("adds a Smart chip first on a smart page, counting its rules, with the smart page's own rows", () => {
+  it("adds a Smart chip last on a smart page, counting its rules, with the smart page's own rows", () => {
     const smart = { ...smartHall(), isHidden: true } as unknown as WatchPage;
     const el = editor(smart);
     const list = chips(flat(strip(el)));
-    expect(list.map(({ label }) => label)).toEqual(["Smart", "Theme", "Background", "Title"]);
-    expect(list[0]!.value).toMatch(/rule/);
-    expect(list[0]!.item).toContain(`style=--k:${SMART_SECTION_BADGE.color}`);
+    expect(list.map(({ label }) => label)).toEqual(["Theme", "Background", "Title", "Smart"]);
+    expect(list[3]!.value).toMatch(/rule/);
+    expect(list[3]!.item).toContain(`style=--k:${SMART_SECTION_BADGE.color}`);
     click(strip(el), "data-section=page");
-    const rows = chips(flat(strip(el)))[0]!.item;
+    const rows = chips(flat(strip(el)))[3]!.item;
     expect(rows).toContain(`<div class="pop-menu pe-ppop" role="dialog" aria-label=Smart page>`);
     expect(rows).toContain(`id="sm-body-page"`);
     expect(rows).toContain("Live Updates");

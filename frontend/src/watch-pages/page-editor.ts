@@ -3234,9 +3234,18 @@ export class WaPageEditor extends LitElement {
       body: () => (host === undefined ? nothing : renderSmartPageBody(host)),
     });
     const sections: Exclude<WatchPageStripSection, "page">[] = ["theme", "background", "title"];
-    return html`<div class="pe-pstrip" role="toolbar" aria-label="Page settings">
-      ${smartChip}
-      ${sections.map((section) => this.renderPageChip({
+    // The strip reads "Page settings:" then its options, a hairline between
+    // each: Hidden first, the chips, then the Smart Page switch (a mode
+    // change, so last) and on a smart page its chip.
+    const hidden = html`<label class="pe-switch pe-pstrip-tog"
+        title="Hidden: the page stays in the document, but the watch does not show it. Turn it off to show the page again.">
+        <input type="checkbox" role="switch" .checked=${live(isHiddenWatchPage(page))} ?disabled=${this.busy}
+          @change=${(e: Event) => this.setHidden(id, (e.target as HTMLInputElement).checked)} />
+        <span>Hidden</span>
+      </label>`;
+    const items: TemplateResult[] = [
+      hidden,
+      ...sections.map((section) => this.renderPageChip({
         section,
         title: WATCH_PAGE_SECTION_TITLES[section],
         label: WATCH_PAGE_CHIP_LABELS[section],
@@ -3245,16 +3254,14 @@ export class WaPageEditor extends LitElement {
         dot: watchPageSectionChanged(page, section),
         body: () => (host === undefined ? nothing : renderPageSettingBody(host, section)),
         ...(section === "theme" ? { theme: watchPageSettings(page).theme } : {}),
-      }))}
-      <span class="pe-pstrip-sep" aria-hidden="true"></span>
-      <div class="pe-pstrip-tog" role="group" aria-label="Page switches">
-        <label class="pe-switch" title="Hidden pages stay in the document but the watch does not show them.">
-          <input type="checkbox" role="switch" .checked=${live(isHiddenWatchPage(page))} ?disabled=${this.busy}
-            @change=${(e: Event) => this.setHidden(id, (e.target as HTMLInputElement).checked)} />
-          <span>Hidden on the watch</span>
-        </label>
-        ${host === undefined ? nothing : renderSmartPageSwitch(host)}
-      </div>
+      })),
+    ];
+    if (host !== undefined) items.push(html`<span class="pe-pstrip-tog">${renderSmartPageSwitch(host)}</span>`);
+    if (smartChip !== nothing) items.push(smartChip as TemplateResult);
+    const sep = html`<span class="pe-pstrip-sep" aria-hidden="true"></span>`;
+    return html`<div class="pe-pstrip" role="toolbar" aria-label="Page settings">
+      <span class="pe-pstrip-label">Page settings:</span>
+      ${items.map((item, i) => (i === 0 ? item : html`${sep}${item}`))}
       ${host === undefined ? nothing : renderPageReset(host)}
     </div>`;
   }
@@ -3931,10 +3938,11 @@ export class WaPageEditor extends LitElement {
       padding: 8px 12px; border-bottom: 1px solid var(--wa-line); background: var(--wa-card);
     }
     .pe-pstrip-item { position: relative; min-width: 0; }
-    /* The two switches after the chips, past a thin bar. */
-    .pe-pstrip-sep { flex: none; width: 1px; height: 18px; margin: 0 4px; background: var(--wa-line); }
-    .pe-pstrip-tog { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; min-width: 0; }
-    .pe-pstrip-tog .pe-switch { font-size: 12px; white-space: nowrap; }
+    /* "Page settings:" leads the strip; a hairline stands between each option. */
+    .pe-pstrip-label { flex: none; font-size: 11.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--wa-muted); margin-right: 4px; }
+    .pe-pstrip-sep { flex: none; width: 1px; height: 18px; margin: 0 2px; background: var(--wa-line); }
+    .pe-pstrip-tog { display: inline-flex; align-items: center; min-width: 0; padding: 0 4px; }
+    .pe-pstrip-tog.pe-switch, .pe-pstrip-tog .pe-switch { font-size: 12px; white-space: nowrap; }
     button.pe-pchip {
       display: inline-flex; align-items: center; gap: 6px; height: 28px; max-width: 100%; padding: 0 8px 0 4px;
       border: 0; border-radius: 999px; background: var(--wa-panel); box-shadow: inset 0 0 0 1px var(--wa-line);
