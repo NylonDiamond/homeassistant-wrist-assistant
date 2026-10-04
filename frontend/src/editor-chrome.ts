@@ -816,13 +816,14 @@ const sharedValueRowsRun = css`
     .values-list .datum.svr:is(:hover, :focus-within) .svr-end button.icon { opacity: .7; pointer-events: auto; }
     .values-list .datum.svr .svr-end button.icon:hover:not(:disabled), .values-list .datum.svr .svr-end button.icon:focus-visible { opacity: 1; }
     /* The Shared values card: one line under the Layers card, the list
-       unfolding under it. The list scrolls inside the card, at 40% of the
-       window or the height its top edge was dragged to. */
+       unfolding under it. The list is as tall as its rows, up to a third
+       of the window, and scrolls past that. A drag of the top edge sets its
+       height until another complication opens. */
     .sv-card { position: relative; }
     .sv-card .lc-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     .sv-card button.lc-help.on { color: var(--wa-ink); border-color: var(--wa-line-strong); background: var(--wa-raise); }
     .sv-body {
-      max-height: 40vh; overflow-y: auto; padding: 0 10px 10px; display: flex; flex-direction: column; gap: 6px;
+      max-height: 33vh; overflow-y: auto; padding: 0 10px 10px; display: flex; flex-direction: column; gap: 6px;
       scrollbar-width: thin; scrollbar-color: var(--wa-line-strong) transparent;
     }
     .sv-none { font-size: 12px; color: var(--wa-muted); padding: 2px 4px; }

@@ -6018,7 +6018,7 @@ export class WristAssistantPanel extends LitElement {
     try {
       const raw = window.localStorage.getItem(LIST_STORE_KEY);
       if (!raw) return;
-      const saved = JSON.parse(raw) as { thumbStep?: unknown; detail?: unknown; pickerDevice?: unknown; pickerShut?: unknown; pickerBare?: unknown; svHeight?: unknown };
+      const saved = JSON.parse(raw) as { thumbStep?: unknown; detail?: unknown; pickerDevice?: unknown; pickerShut?: unknown; pickerBare?: unknown };
       if (saved.thumbStep === 0 || saved.thumbStep === 1 || saved.thumbStep === 2) this.thumbStep = saved.thumbStep;
       if (saved.detail === "compact" || saved.detail === "expanded") this.layerDetail = saved.detail;
       // The owner it names is checked when the tabs are drawn, not here: the
@@ -6029,7 +6029,6 @@ export class WristAssistantPanel extends LitElement {
       if (typeof saved.pickerDevice === "string") this.pickerDevice = saved.pickerDevice;
       if (Array.isArray(saved.pickerShut)) this.pickerShut = saved.pickerShut.filter((k): k is string => typeof k === "string");
       if (typeof saved.pickerBare === "boolean") this.pickerBare = saved.pickerBare;
-      if (typeof saved.svHeight === "number" && Number.isFinite(saved.svHeight)) this.svHeight = Math.max(SV_MIN_H, saved.svHeight);
     } catch {
       /* A browser with storage off keeps the defaults. */
     }
@@ -6039,7 +6038,7 @@ export class WristAssistantPanel extends LitElement {
     try {
       window.localStorage.setItem(LIST_STORE_KEY, JSON.stringify({
         thumbStep: this.thumbStep, detail: this.layerDetail, pickerDevice: this.pickerDevice,
-        pickerShut: this.pickerShut, pickerBare: this.pickerBare, svHeight: this.svHeight,
+        pickerShut: this.pickerShut, pickerBare: this.pickerBare,
       }));
     } catch {
       /* Storage off: the choice still holds for this visit. */
@@ -6908,6 +6907,9 @@ export class WristAssistantPanel extends LitElement {
     this.inspect = { kind: "general" };
     try {
       this.draft = new Draft(parseConfig(record.document), record.revision);
+      // A dragged Shared values height is for the complication it was dragged
+      // on. The next one opens at the height of its own list.
+      this.svHeight = undefined;
       this.savedName = String(record.document?.name ?? "");
       const schema = Number(record.document?.schemaVersion ?? 0);
       const unknown = auditUnknownKeys(record.document);
@@ -6944,6 +6946,9 @@ export class WristAssistantPanel extends LitElement {
     this.inspect = { kind: "general" };
     this.savedName = undefined;
     this.draft = new Draft(config, null);
+    // A dragged Shared values height is for the complication it was dragged
+    // on. The next one opens at the height of its own list.
+    this.svHeight = undefined;
     // The new document exists only in this tab, even before its first edit.
     this.draft.markDirty();
     this.recompile();
