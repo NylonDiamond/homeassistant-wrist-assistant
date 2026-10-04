@@ -838,15 +838,15 @@ export const watchSettingsStyles = css`
   .ws-body .fgroup { margin: 0 -8px 8px; padding: 2px 8px; }
   .ws-body .fgroup > :last-child { padding-bottom: 5px; }
   /* Help reads as a quiet second line, upright. */
-  .ws-body .sec[data-help] > .sec-b :is(.ws-row, .ws-head) > .hint { padding: 0; margin: 0; font-style: normal; font-size: 11.5px; line-height: 1.35; color: var(--wa-muted); }
+  .ws-body .sec[data-help] > .sec-b :is(.ws-row, .ws-head) > .hint { padding: 0; margin: 0; font-style: normal !important; font-size: 11.5px; line-height: 1.35; color: var(--wa-muted); }
   /* A row drawn by the panel's own field: the chip, then the title with its
      help under it, and the control at the right edge. */
   .ws-row { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; column-gap: 9px; align-items: center; }
   .ws-row > .ws-ic { grid-column: 1; grid-row: 1 / span 2; align-self: start; }
   .ws-row > .field { display: contents; }
   .ws-row > .field > :first-child { grid-column: 2; grid-row: 1; color: var(--wa-ink); font-size: 12.5px; font-weight: 500; }
-  .ws-row > .field > :not(:first-child) { grid-column: 3; grid-row: 1 / span 2; width: 250px; max-width: 44cqw; box-sizing: border-box; justify-self: end; }
-  .ws-row > .field.check > input { width: auto; max-width: none; }
+  .ws-row > .field > :not(:first-child) { grid-column: 3; grid-row: 1 / span 2; justify-self: end; }
+  .ws-row > .field:not(.check) > :not(:first-child) { width: 250px; max-width: 44cqw; box-sizing: border-box; }
   .ws-row > .hint { grid-column: 2; grid-row: 2; }
   .ws-row > :not(.ws-ic, .hint, .field) { grid-column: 2 / -1; min-width: 0; }
   /* A row of tiles: the chip, title and help on one line, the strip of
@@ -864,7 +864,7 @@ export const watchSettingsStyles = css`
   }
   @container xfer (max-width: 440px) {
     .ws-tiles { grid-template-columns: repeat(var(--cols-narrow, 3), minmax(0, 1fr)); margin-left: 0; }
-    .ws-row > .field > :not(:first-child) { width: 150px; }
+    .ws-row > .field:not(.check) > :not(:first-child) { width: 150px; }
   }
   button.ws-tile {
     --ws-tile-bg: var(--wa-field);
