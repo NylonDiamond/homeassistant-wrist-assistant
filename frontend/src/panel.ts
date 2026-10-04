@@ -5626,10 +5626,10 @@ export class WristAssistantPanel extends LitElement {
     .rhs .value-chip-field { margin: 0; }
     input.cellin {
       font: inherit; font-size: 12px; width: 90px; height: 26px; min-height: 26px; padding: 0 6px; border-radius: 6px;
-      border: 1px solid transparent; background: var(--wa-field); color: inherit; box-shadow: none;
+      border: 1px solid var(--wa-line-strong); background: var(--wa-field); color: inherit; box-shadow: none;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums;
     }
-    input.cellin:hover:not(:disabled) { border-color: var(--wa-line-strong); }
+    input.cellin:hover:not(:disabled) { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
     input.cellin.num { width: 64px; -moz-appearance: textfield; appearance: textfield; }
     input.cellin.num::-webkit-inner-spin-button, input.cellin.num::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     button.more { width: 22px; height: 22px; opacity: .45; }
@@ -5638,10 +5638,10 @@ export class WristAssistantPanel extends LitElement {
     button.cell {
       display: inline-flex; align-items: center; gap: 6px; max-width: 190px; height: 26px;
       font: inherit; font-size: 12px; font-weight: 500; text-align: left; padding: 0 8px; border-radius: 6px;
-      border: 1px solid transparent; background: transparent; color: inherit; cursor: pointer;
+      border: 1px solid var(--wa-line-strong); background: transparent; color: inherit; cursor: pointer;
     }
     button.cell.filled { background: var(--wa-field); }
-    button.cell:hover { border-color: var(--wa-line-strong); }
+    button.cell:hover { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
     button.cell .cell-word.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; }
     /* A chip names its setting quietly and its value in ink, so a row of
        chips reads "Color red, Opacity 0.5" at a glance. */
