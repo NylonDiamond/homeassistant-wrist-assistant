@@ -1007,7 +1007,7 @@ const stageRun = css`
     .stage-wrap.first-run { min-height: 540px; }
     .stage-wrap > .stage {
       position: absolute; inset: 0; display: flex; flex-direction: column; align-items: stretch; gap: 12px;
-      padding: 18px 24px 16px; overflow: auto; background: none; container-type: normal;
+      padding: 2px 24px 16px; overflow: auto; background: none; container-type: normal;
       /* A face zoomed past the stage still pans with the wheel and the
          trackpad, but no bar is drawn: the stage's right edge is the card's,
          and a bar there stood between the canvas and the inspector. At Fit
@@ -1054,7 +1054,9 @@ const stageRun = css`
     }
     .stage-page { position: absolute; top: 25px; left: 16px; z-index: 3; font-size: 11px; color: var(--wa-hint); pointer-events: none; }
     .stage-tools {
-      position: sticky; top: 0; left: 0; right: 0; z-index: 5; flex: none; box-sizing: border-box;
+      /* It rides in the face's own column, just over the face. The margin
+         keeps it clear of the selection's name over the face's corner. */
+      position: sticky; top: 0; left: 0; right: 0; z-index: 5; flex: none; box-sizing: border-box; margin-bottom: 16px;
       display: flex; align-items: center; gap: 2px; height: 34px; padding: 0 4px; max-width: calc(100cqw - 24px);
       border-radius: 8px; background: var(--wa-float-bg); border: 1px solid var(--wa-line-strong); box-shadow: var(--wa-float-shadow);
     }

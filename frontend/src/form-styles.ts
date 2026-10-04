@@ -230,7 +230,7 @@ export const formResetDotStyles = css`
     /* The dot wears the hue of the card it is in (--wa-sec, which a section
        card sets), one of the three places a card's hue shows. */
     button.reset-dot {
-      position: absolute; left: -9px; top: 12px; width: 6px; height: 6px; margin: 0; padding: 0;
+      position: absolute; left: -7px; top: 12.5px; width: 5px; height: 5px; margin: 0; padding: 0;
       border: 0; border-radius: 50%; background: var(--wa-sec, var(--wa-accent)); cursor: pointer; flex: none;
     }
     button.reset-dot::after { content: ""; position: absolute; inset: -7px; }
