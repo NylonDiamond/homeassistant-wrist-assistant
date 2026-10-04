@@ -5,7 +5,8 @@
 import { describe, expect, it } from "vitest";
 
 import { type WatchRect, listedWatchPages, moveWatchPage, watchResizeHandleRect } from "../src/watch-pages/edit.js";
-import { WATCH_GRID_TOP_INSET, watchPageHasHeader, watchPageLayout } from "../src/watch-pages/model.js";
+import { WATCH_GRID_SIDE_INSET, WATCH_GRID_TOP_INSET, watchPageHasHeader, watchPageLayout } from "../src/watch-pages/model.js";
+import { watchPreviewLayout } from "../src/watch-pages/preview.js";
 import {
   STAGE_SPARE_ROWS,
   autoScrollStep,
@@ -23,20 +24,25 @@ import {
   stageRows,
 } from "../src/watch-pages/stage.js";
 
-// A 208 point screen: 12 units of 15.5 points, 2 points apart, a step of 17.5.
+// A 208 point screen: the watch's 2 point side safe area each side leaves
+// 204, so 12 units of 15.17 points, 2 points apart, a step of 17.17, the
+// first column 2 points in.
 const SCREEN = { width: 208, height: 248 };
+const UNIT = (204 - 22) / 12;
 
 describe("the stage grid", () => {
-  it("scales the watch's units and the top inset", () => {
+  it("scales the watch's units, the side safe area and the top inset", () => {
     const grid = stageGrid(208, WATCH_GRID_TOP_INSET, 2);
-    expect(grid.unit).toBeCloseTo(31);
+    expect(WATCH_GRID_SIDE_INSET).toBe(2);
+    expect(grid.unit).toBeCloseTo(UNIT * 2);
     expect(grid.spacing).toBe(4);
-    expect(grid.step).toBeCloseTo(35);
+    expect(grid.step).toBeCloseTo((UNIT + 2) * 2);
     expect(grid.top).toBe(68);
+    expect(grid.left).toBe(4);
     expect(grid.scale).toBe(2);
   });
 
-  it("puts a rectangle of cells where the flat layout puts the tile", () => {
+  it("puts a rectangle of cells where the preview (and the watch) puts the tile", () => {
     const grid = stageGrid(208, WATCH_GRID_TOP_INSET, 1.5);
     const page = {
       items: [
@@ -44,34 +50,58 @@ describe("the stage grid", () => {
         { id: "B", entityId: "light.a", gridCol: 3, gridRow: 5, colSpan: 4, rowSpan: 2 },
       ],
     };
-    const layout = watchPageLayout(page, SCREEN, { flat: true });
+    const layout = watchPreviewLayout(page, SCREEN, { flat: true });
     const b = layout.tiles[1]!;
     const px = cellRectPx(grid, { col: 3, row: 5, colSpan: 4, rowSpan: 2 });
     expect(px.left).toBeCloseTo(b.x * 1.5);
     expect(px.top).toBeCloseTo(grid.top + b.y * 1.5);
     expect(px.width).toBeCloseTo(b.width * 1.5);
     expect(px.height).toBeCloseTo(b.height * 1.5);
-    // A full width rectangle spans the screen exactly.
-    expect(cellRectPx(grid, { col: 0, row: 0, colSpan: 12, rowSpan: 1 }).width).toBeCloseTo(208 * 1.5);
+    // The flat layout pulls nothing up at the header.
+    expect(b.y).toBeCloseTo(5 * (UNIT + 2));
+    // A full width rectangle spans the screen less the side safe area.
+    const full = cellRectPx(grid, { col: 0, row: 0, colSpan: 12, rowSpan: 1 });
+    expect(full.left).toBe(3);
+    expect(full.width).toBeCloseTo(204 * 1.5);
+  });
+
+  it("draws every tile of a page without headers at the preview's pixel, on every watch size", () => {
+    for (const screen of [{ width: 162, height: 197 }, { width: 187, height: 223 }, { width: 208, height: 248 }, { width: 211, height: 257 }]) {
+      for (const s of [1.25, 1.5, 2]) {
+        const grid = stageGrid(screen.width, WATCH_GRID_TOP_INSET, s);
+        const items = [0, 1, 5, 11].map((col, i) => ({ id: `T${i}`, entityId: "light.a", gridCol: col, gridRow: i * 2, colSpan: 12 - col, rowSpan: 2 }));
+        const preview = watchPreviewLayout({ items }, screen);
+        for (const placed of preview.tiles) {
+          const px = cellRectPx(grid, { col: items[placed.index]!.gridCol, row: items[placed.index]!.gridRow, colSpan: items[placed.index]!.colSpan, rowSpan: 2 });
+          expect(px.left).toBeCloseTo(placed.x * s);
+          expect(px.top).toBeCloseTo((preview.topInset + placed.y) * s);
+          expect(px.width).toBeCloseTo(placed.width * s);
+        }
+      }
+    }
   });
 
   it("finds the cell a point is in, the gap after a cell counting as that cell", () => {
     const grid = stageGrid(208, 0, 1);
-    expect(cellAtPx(grid, 0, 0)).toEqual({ col: 0, row: 0 });
-    expect(cellAtPx(grid, 16, 16)).toEqual({ col: 0, row: 0 });
-    expect(cellAtPx(grid, 17.6, 35.1)).toEqual({ col: 1, row: 2 });
-    // Outside the grid: a cell no tile covers.
+    expect(cellAtPx(grid, 2, 0)).toEqual({ col: 0, row: 0 });
+    expect(cellAtPx(grid, 18, 16)).toEqual({ col: 0, row: 0 });
+    expect(cellAtPx(grid, 19.3, 35)).toEqual({ col: 1, row: 2 });
+    // In the side safe area or above the grid: a cell no tile covers.
+    expect(cellAtPx(grid, 1, 0)).toEqual({ col: -1, row: 0 });
     expect(cellAtPx(grid, -3, -3)).toEqual({ col: -1, row: -1 });
     const inset = stageGrid(208, WATCH_GRID_TOP_INSET, 1);
-    expect(cellAtPx(inset, 1, WATCH_GRID_TOP_INSET + 1)).toEqual({ col: 0, row: 0 });
-    expect(cellAtPx(inset, 1, 10).row).toBe(-2);
+    expect(cellAtPx(inset, 3, WATCH_GRID_TOP_INSET + 1)).toEqual({ col: 0, row: 0 });
+    expect(cellAtPx(inset, 3, 10).row).toBe(-2);
   });
 
   it("takes the cell nearest a dragged corner and keeps the tile inside the grid", () => {
     const grid = stageGrid(208, WATCH_GRID_TOP_INSET, 1.5);
     const step = grid.step;
-    expect(nearestCell(grid, 2 * step + 0.4 * step, grid.top + 3 * step - 0.4 * step, 4)).toEqual({ col: 2, row: 3 });
-    expect(nearestCell(grid, 2 * step + 0.6 * step, grid.top + 3 * step + 0.6 * step, 4)).toEqual({ col: 3, row: 4 });
+    const x0 = grid.left;
+    expect(nearestCell(grid, x0 + 2 * step + 0.4 * step, grid.top + 3 * step - 0.4 * step, 4)).toEqual({ col: 2, row: 3 });
+    expect(nearestCell(grid, x0 + 2 * step + 0.6 * step, grid.top + 3 * step + 0.6 * step, 4)).toEqual({ col: 3, row: 4 });
+    // A tile dropped flush with the screen's left edge still lands in column 0.
+    expect(nearestCell(grid, 0, grid.top, 4)).toEqual({ col: 0, row: 0 });
     // Past the right edge: a 4 column tile starts no later than column 8.
     expect(nearestCell(grid, 11 * step, grid.top, 4)).toEqual({ col: 8, row: 0 });
     // Above the grid and left of it: row 0, column 0.
@@ -86,7 +116,7 @@ describe("the stage grid", () => {
 
   it("gives a handle's drag in cells for watchResizeHandleRect to round", () => {
     const grid = stageGrid(208, WATCH_GRID_TOP_INSET, 2);
-    const delta = cellDelta(grid, 35 * 1.4, -35 * 0.6);
+    const delta = cellDelta(grid, grid.step * 1.4, -grid.step * 0.6);
     expect(delta.cols).toBeCloseTo(1.4);
     expect(delta.rows).toBeCloseTo(-0.6);
     const start: WatchRect = { col: 2, row: 2, colSpan: 4, rowSpan: 4 };
@@ -123,7 +153,7 @@ describe("auto scroll", () => {
 describe("the rows the stage draws", () => {
   it("counts the whole rows on a screen", () => {
     const grid = stageGrid(208, WATCH_GRID_TOP_INSET, 1);
-    // (248 - 34 + 2) / 17.5 = 12.3
+    // (248 - 34 + 2) / 17.17 = 12.6
     expect(rowsOnScreen(grid, 248)).toBe(12);
     expect(rowsOnScreen(stageGrid(208, 0, 1.5), 248 * 1.5)).toBe(14);
     expect(rowsOnScreen(grid, 10)).toBe(1);
@@ -141,10 +171,11 @@ describe("the rows the stage draws", () => {
     const grid = stageGrid(208, 0, 1);
     const square = cellsPath(grid, 2, 0);
     expect(square.match(/M/g)).toHaveLength(24);
-    expect(square.startsWith("M0 0h15.5v15.5h-15.5z")).toBe(true);
+    // Column 0 starts 2 points in, past the side safe area.
+    expect(square.startsWith("M2 0h15.17v15.17h-15.17z")).toBe(true);
     const round = cellsPath(grid, 1, 3);
     expect(round.match(/M/g)).toHaveLength(12);
-    expect(round.startsWith("M3 0h9.5a3 3 0 0 1 3 3v9.5")).toBe(true);
+    expect(round.startsWith("M5 0h9.17a3 3 0 0 1 3 3v9.17")).toBe(true);
     expect(cellsPath(grid, 0, 3)).toBe("");
   });
 });

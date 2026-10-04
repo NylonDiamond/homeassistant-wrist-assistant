@@ -208,7 +208,8 @@ describe("the app tiles' names in the preview", () => {
 
 describe("a template tile in the preview", () => {
   const page = pageOf();
-  const sensor = watchThemeRoleColors("ember").entitySensor!;
+  // The page is ember; a tile's own default is sunnyBeachDay's all the same.
+  const sensor = watchThemeRoleColors("sunnyBeachDay").entitySensor!;
   const tile = (extra: Record<string, unknown> = {}): WatchPageTile => ({ id: "T", entityId: "template.T", templateString: "{{ x }}", icon: "star", customLabel: "Mine", ...extra });
   const renders = (result?: RenderResult) => new Map<string, WatchTemplateRender>(result === undefined ? [] : [["T", { text: "{{ x }}", result }]]);
   const face = (t: WatchPageTile, result?: RenderResult, provider?: IconProvider) =>
@@ -220,7 +221,8 @@ describe("a template tile in the preview", () => {
     expect(watchTemplateTileLook(tile({ templateString: "" }), { page })).toEqual({ kind: "placeholder", symbol: WATCH_TEMPLATE_PLACEHOLDER_SYMBOL, ink: sensor });
     const drawn = face(tile({ templateString: "" }), undefined, icons(WATCH_TEMPLATE_PLACEHOLDER_SYMBOL, "star"));
     expect(drawn).toContain("opacity:0.4");
-    expect(drawn).toContain(`${WATCH_TEMPLATE_PLACEHOLDER_SYMBOL} ${sensor}`);
+    // Drawn, the tile has the color the sync rules give a template: white.
+    expect(drawn).toContain(`${WATCH_TEMPLATE_PLACEHOLDER_SYMBOL} #FFFFFF`);
     // Never its own icon or label.
     expect(drawn).not.toContain("star");
     expect(drawn).not.toContain("Mine");
@@ -236,7 +238,7 @@ describe("a template tile in the preview", () => {
     const drawn = face(tile(), { ok: true, value: "21 lights" });
     expect(drawn).toContain("21 lights");
     expect(drawn).toContain("text-align:center");
-    expect(drawn).toContain(`color:${sensor}`);
+    expect(drawn).toContain("color:#FFFFFF");
     expect(drawn).not.toContain("Mine");
     expect(face(tile(), { ok: true, value: "A\nB" })).toContain("text-align:left");
   });
@@ -256,7 +258,7 @@ describe("a template tile in the preview", () => {
   it("draws each [icon:] marker as a symbol in its own color or the text's", () => {
     const drawn = face(tile(), { ok: true, value: "[icon:lightbulb.fill color:yellow] 20 on [icon:power] [icon:nope color:red]" }, icons("lightbulb.fill", "power"));
     expect(drawn).toContain("lightbulb.fill #FFCC00");
-    expect(drawn).toContain(`power ${sensor}`);
+    expect(drawn).toContain("power #FFFFFF");
     expect(drawn).toContain(" 20 on ");
     expect(drawn).not.toContain("nope");
     expect(drawn).not.toContain("[icon:");
@@ -333,8 +335,8 @@ describe("a webhook inbox tile in the preview", () => {
   const page = pageOf();
   const look = (t: WatchPageTile) => watchSpecialTileLook(t, { page });
 
-  it("draws its tray in the theme's info color, named after its topic", () => {
-    expect(look({ id: "W", entityId: "webhook_inbox.all" })).toMatchObject({ symbol: "tray", filled: true, ink: { hex: "#7AA4D4", alpha: 1 }, label: "Inbox", active: true });
+  it("draws its tray in the info color (sunnyBeachDay's, whatever the page's theme), named after its topic", () => {
+    expect(look({ id: "W", entityId: "webhook_inbox.all" })).toMatchObject({ symbol: "tray", filled: true, ink: { hex: "#4BBDE0", alpha: 1 }, label: "Inbox", active: true });
     expect(look({ id: "W", entityId: "webhook_inbox.alerts" })?.label).toBe("#alerts");
     expect(look({ id: "W", entityId: "webhook_inbox." })?.label).toBe("Inbox");
     expect(look({ id: "W", entityId: "webhook_inbox.alerts", customLabel: "Door" })?.label).toBe("Door");

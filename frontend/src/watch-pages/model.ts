@@ -70,6 +70,11 @@ export const WATCH_GRID_SPACING = 2;
 /** Points the grid starts below the top of the screen, for the clock, unless
  * the page is full screen. `WatchScreenMetrics.gridTopInset` in the app. */
 export const WATCH_GRID_TOP_INSET = 34;
+/** Points the grid keeps clear on each side: the watch's side safe area,
+ * which the grid's `GeometryReader` does not ignore (`InteractiveGrid.gridBase`
+ * ignores only the top), so the 12 columns share the screen less twice this.
+ * Measured on the 46 mm simulator: tiles span 2 to 206 of 208 points. */
+export const WATCH_GRID_SIDE_INSET = 2;
 /** The most the phone sends the watch in one sync, before compression. A
  * document near this will not reach the watch whole. */
 export const WATCH_SYNC_LIMIT_BYTES = 250_000;

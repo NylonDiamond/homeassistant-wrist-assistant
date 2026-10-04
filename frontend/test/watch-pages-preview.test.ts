@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import type { WatchPage, WatchPageTile } from "../src/watch-pages/model.js";
 import type { HassEntityState } from "../src/ha-api.js";
 import type { IconProvider } from "../src/renderer.js";
-import { WATCH_TILE_DEFAULTS, watchThemeRoleColors } from "../src/watch-pages/tile-new.js";
+import { watchThemeRoleColors } from "../src/watch-pages/tile-new.js";
 import {
   renderWatchTileFace,
   watchSpacerStyle,
@@ -21,7 +21,7 @@ import {
   watchPatternLayers,
   watchScreenBackground,
   watchScreenColor,
-  watchTileBorderStyle,
+  watchTileBorder,
   watchTilePreviewActive,
   watchTileStatePercent,
   watchAutoLabelFontSize,
@@ -61,10 +61,17 @@ import {
   watchTileLabelShown,
   watchTileStyleActive,
   watchTimerText,
+  watchBorderContentPadding,
+  watchGearCentre,
+  watchSaturate,
 } from "../src/watch-pages/preview.js";
 import { watchStylingTheme } from "../src/watch-pages/tile-styling.js";
 
 const tile = (extra: Record<string, unknown> = {}): WatchPageTile => ({ id: "T1", entityId: "light.desk", ...extra });
+
+/** The SVG inside every `data:image/svg+xml` URL in some CSS, decoded. */
+const svgIn = (cssText: string | undefined): string =>
+  [...(cssText ?? "").matchAll(/data:image\/svg\+xml,([^")]*)/g)].map((m) => decodeURIComponent(m[1]!)).join("\n");
 
 describe("label size", () => {
   it("follows the watch's steps by width", () => {
@@ -172,17 +179,33 @@ describe("borders", () => {
   });
 
   it("draw the line style and the glow, in the border color else the tile's", () => {
-    const line = watchTileBorderStyle(tile({ color: "#FF0000", borderStyle: "line", borderThickness: "medium", borderLineStyle: "dashed", borderGlow: 0.5 }), true, 2);
-    expect(line).toContain("border:6px dashed #FF0000");
-    expect(line).toContain("box-shadow:");
-    expect(watchTileBorderStyle(tile({ borderStyle: "line", borderColor: "#00FF00", borderLineStyle: "dotted" }), true, 1)).toContain("dotted #00FF00");
-    expect(watchTileBorderStyle(tile({ borderStyle: "none" }), true, 1)).toBe("");
+    const line = watchTileBorder(tile({ color: "#FF0000", borderStyle: "line", borderThickness: "medium", borderLineStyle: "dashed", borderGlow: 0.5 }), true)!;
+    expect(line).toMatchObject({ width: 3, paint: { kind: "flat", css: "#FF0000" }, dash: [6, 4], glowInk: "#FF0000", animated: false });
+    // Four wider strokes under the line at 0.15, 0.25, 0.4 and 0.7 of the glow.
+    expect(line.glow).toEqual([{ width: 11, alpha: 0.075 }, { width: 8, alpha: 0.125 }, { width: 6, alpha: 0.2 }, { width: 4, alpha: 0.35 }]);
+    expect(watchTileBorder(tile({ borderStyle: "line", borderColor: "#00FF00", borderLineStyle: "dotted" }), true)).toMatchObject({ paint: { css: "#00FF00" }, dash: [2, 2] });
+    expect(watchTileBorder(tile({ borderStyle: "line", color: "GRADIENT|#112233|#445566" }), true)!.paint).toEqual({ kind: "gradient", from: "#112233", to: "#445566" });
+    expect(watchTileBorder(tile({ borderStyle: "line", borderColor: "#RAINBOW" }), true)!.paint).toEqual({ kind: "rainbow" });
+    expect(watchTileBorder(tile({ borderStyle: "none" }), true)).toBeUndefined();
+  });
+
+  it("stroke on the tile's edge, so the tile clips half of it, and pad the symbol and name", () => {
+    const t = tile({ color: "#FF0000", borderStyle: "line", borderThickness: "medium", borderLineStyle: "dashed" });
+    const drawn = text(renderWatchTileFace(t, { width: 60, height: 60 }, { page: { id: "P", name: "P", items: [] }, pages: [], screen: { width: 208, height: 248 }, scale: 2 }, 21));
+    expect(drawn).toContain('class="wp-rim"');
+    expect(drawn).toMatch(/<rect x="0" y="0" width=120 height=120 rx=16 fill="none" stroke=#FF0000 stroke-width=6 stroke-linecap="round" stroke-dasharray=12 8 \/>/);
+    // Medium pads 2 points: the symbol's box and the name move in.
+    expect(drawn).toContain("inset:4px");
+    expect(drawn).toContain("bottom:12px;left:4px;right:4px");
+    expect([undefined, "none", "extraThin", "thin", "medium", "thick", "auto"].map((t) => watchBorderContentPadding(tile({ borderStyle: "line", borderThickness: t })))).toEqual([0, 0, 0, 1, 2, 4, 1]);
+    expect(watchBorderContentPadding(tile({ borderThickness: "thick" }))).toBe(0);
   });
 
   it("honor only when on with the picture's state", () => {
     const t = tile({ borderStyle: "line", color: "#FF0000" });
-    expect(watchTileBorderStyle(t, false, 1)).toBe("");
-    expect(watchTileBorderStyle({ ...t, borderActiveOnly: false }, false, 1)).toContain("rgba(255, 255, 255, 0.13)");
+    expect(watchTileBorder(t, false)).toBeUndefined();
+    // Off, the theme's hairline (white at 0.13) at 0.72.
+    expect(watchTileBorder({ ...t, borderActiveOnly: false }, false)!.paint).toEqual({ kind: "flat", css: "rgba(255, 255, 255, 0.094)" });
     expect(watchTilePreviewActive(t, state("light.desk", "off"))).toBe(false);
     expect(watchTilePreviewActive(t, state("light.desk", "on"))).toBe(true);
     expect(watchTilePreviewActive(t)).toBe(true);
@@ -191,9 +214,40 @@ describe("borders", () => {
 
 describe("patterns and the state bar", () => {
   it("draw a pattern in its color at its opacity times the pattern's own", () => {
-    expect(watchPatternLayers("stripes", "#FFFFFF", 1, 1)[0]).toContain("rgba(255, 255, 255, 0.2)");
-    expect(watchPatternLayers("grid", "#FFFFFF", 0.5, 1)).toHaveLength(2);
-    expect(watchPatternLayers("hexagons", "#FF0000", 1, 1)[0]).toContain("rgba(255, 0, 0, 0.15)");
+    const svgOf = svgIn;
+    expect(svgOf(watchPatternLayers("stripes", "#FFFFFF", 1, 1)[0])).toContain('stroke="#FFFFFF" stroke-opacity="0.2" stroke-width="2"');
+    expect(watchPatternLayers("grid", "#FFFFFF", 0.5, 1)).toHaveLength(1);
+    expect(svgOf(watchPatternLayers("grid", "#FFFFFF", 0.5, 1)[0])).toContain('stroke-opacity="0.075" stroke-width="1"');
+    expect(svgOf(watchPatternLayers("hexagons", "#FF0000", 1, 1)[0])).toContain('stroke="#FF0000" stroke-opacity="0.15"');
+    expect(svgOf(watchPatternLayers("diamond", "#FFFFFF", 0.5, 2)[0])).toMatch(/viewBox="0 0 10 10".*stroke-width="1.5"/);
+    expect(watchPatternLayers("diamond", "#FFFFFF", 0.5, 2)[0]).toContain("0 0 / 20px 20px repeat");
+    // An unknown pattern, and one drawn across the view without its size, is a wash.
+    expect(watchPatternLayers("unknownThing", "#FF0000", 1, 1)[0]).toBe("linear-gradient(rgba(255, 0, 0, 0.15), rgba(255, 0, 0, 0.15))");
+    expect(watchPatternLayers("sunburst", "#FF0000", 1, 1)[0]).toBe("linear-gradient(rgba(255, 0, 0, 0.2), rgba(255, 0, 0, 0.2))");
+  });
+
+  it("draw each pattern with the watch's geometry", () => {
+    const svgOf = svgIn;
+    // Stripes and crosshatch run through the view's centre.
+    expect(watchPatternLayers("stripes", "#FFFFFF", 1, 2, { width: 100, height: 60 })[0]).toContain("50px 30px / 22.627px 22.627px");
+    expect(svgOf(watchPatternLayers("horizontalLines", "#FFFFFF", 1, 1)[0])).toContain('<line x1="0" y1="4" x2="8" y2="4"');
+    expect(svgOf(watchPatternLayers("dots", "#FFFFFF", 1, 1)[0])).toContain('<circle cx="4" cy="4" r="1.5"');
+    expect(svgOf(watchPatternLayers("checkerboard", "#FFFFFF", 1, 1)[0])).toContain("M0 0h6v6H0zM6 6h6v6H6z");
+    expect(svgOf(watchPatternLayers("waves", "#FFFFFF", 1, 1)[0])).toContain("M0 0L2 2.83L4 4L6 2.83L8 0");
+    expect(svgOf(watchPatternLayers("zigzag", "#FFFFFF", 1, 1)[0])).toContain("M0 4L4 0L8 8L12 0L16 8");
+    expect(svgOf(watchPatternLayers("triangles", "#FFFFFF", 1, 1)[0])).toContain('width="12" height="20.78"');
+    expect(svgOf(watchPatternLayers("hexagons", "#FFFFFF", 1, 1)[0])).toContain('width="30" height="17.32"');
+    const sun = svgOf(watchPatternLayers("sunburst", "#FFFFFF", 1, 1, { width: 100, height: 60 })[0]);
+    expect(sun.match(/<line /g)).toHaveLength(16);
+    const rings = svgOf(watchPatternLayers("concentric", "#FFFFFF", 1, 1, { width: 100, height: 60 })[0]);
+    // Every 8 out to half the diagonal (58.3): 8 rings.
+    expect(rings.match(/<circle /g)).toHaveLength(8);
+    // The seeded noise: 40 dots per 1000 square points, the same every time.
+    const noise = svgOf(watchPatternLayers("noise", "#FFFFFF", 1, 1, { width: 100, height: 60 })[0]);
+    expect(noise.match(/<circle /g)).toHaveLength(240);
+    expect(noise).toBe(svgOf(watchPatternLayers("noise", "#FFFFFF", 1, 1, { width: 100, height: 60 })[0]));
+    expect(watchPatternLayers("vignette", "#FFFFFF", 1, 1, { width: 100, height: 60 })[0]).toContain("circle 70px,");
+    expect(watchPatternLayers("cornerGlow", "#FFFFFF", 1, 1, { width: 100, height: 60 })[0]).toContain("circle 120px at 0% 100%");
   });
 
   it("read how full the bar is from the entity", () => {
@@ -255,29 +309,34 @@ describe("tiles as the watch draws them", () => {
     expect(value).toContain(">50%<");
   });
 
-  it("multiply the fill, the border and the pattern by colorOpacity", () => {
+  it("multiply the fill and the border by colorOpacity, and not the pattern", () => {
     const t = { id: "T", entityId: "light.desk", color: "#FF0000", colorOpacity: 0.5, borderStyle: "line", borderActiveOnly: false, backgroundPattern: "stripes", patternOpacity: 1 };
     const drawn = face(t);
-    // Lit: the color at 0.52 times 0.5.
-    expect(drawn).toContain("rgba(255, 0, 0, 0.26)");
+    // Lit: the color, at saturation 0.92, at 0.52 times 0.5.
+    expect(drawn).toContain("rgba(239, 4, 4, 0.26)");
     expect(drawn).toContain("rgba(255, 255, 255, 0.16)");
-    expect(drawn).toContain("solid rgba(255, 0, 0, 0.5)");
-    expect(drawn).toContain("rgba(115, 115, 115, 0.1)");
+    expect(drawn).toContain("stroke=rgba(255, 0, 0, 0.5)");
+    // The pattern's gray at its own 0.2, whatever the color's opacity.
+    expect(svgIn(drawn)).toContain('stroke="#737373" stroke-opacity="0.2"');
   });
 
   it("draw Animate with no animation as a plain line, no glow", () => {
-    expect(watchTileBorderStyle(tile({ borderStyle: "animate", color: "#FF0000" }), true, 1)).not.toContain("box-shadow");
-    expect(watchTileBorderStyle(tile({ borderStyle: "animate", borderAnimation: "none", color: "#FF0000" }), true, 1)).toBe("border:0.75px solid #FF0000");
-    expect(watchTileBorderStyle(tile({ borderStyle: "animate", borderAnimation: "chase", color: "#FF0000" }), true, 1)).toContain("box-shadow");
+    expect(watchTileBorder(tile({ borderStyle: "animate", color: "#FF0000" }), true)).toMatchObject({ animated: false, glow: [] });
+    expect(watchTileBorder(tile({ borderStyle: "animate", borderAnimation: "none", color: "#FF0000" }), true)).toEqual({ width: 0.75, paint: { kind: "flat", css: "#FF0000" }, dash: undefined, glow: [], glowInk: "#FF0000", animated: false });
+    expect(watchTileBorder(tile({ borderStyle: "animate", borderAnimation: "chase", color: "#FF0000" }), true)).toMatchObject({ animated: true });
   });
 
-  it("draw the border and the bar of a tile with no color in its kind's theme color", () => {
-    const light = watchThemeRoleColors("ember").entityLight!;
+  it("draw the border and the bar of a tile with no color in its kind's color in the page's theme", () => {
+    // A tile view's own fallback is sunnyBeachDay (the watch never applies a
+    // theme to its tiles' colors), but no tile reaches a view without a
+    // color: the sync rules give it its kind's color in its page's theme.
+    const fallback = watchThemeRoleColors("sunnyBeachDay").entityLight!;
     const t = { id: "T", entityId: "light.desk", borderStyle: "line", borderActiveOnly: false, stateBarStyle: "Top" };
-    expect(watchTileFallbackInk(t, page())).toBe(light);
-    expect(watchTileFallbackInk(t, page({ themeOverride: undefined }))).toBe(watchThemeRoleColors(WATCH_TILE_DEFAULTS.watchFallbackTheme).entityLight);
+    expect(watchTileFallbackInk(t, page())).toBe(fallback);
+    expect(watchTileFallbackInk(t, page({ themeOverride: undefined }))).toBe(fallback);
+    const light = watchThemeRoleColors("ember").entityLight!;
     const drawn = face(t, state("light.desk", "on", { brightness: 255 }));
-    expect(drawn).toContain(`solid ${light}`);
+    expect(drawn).toContain(`stroke=${light}`);
     const n = parseInt(light.slice(1), 16);
     expect(drawn).toContain(`rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, 0.3)`);
     expect(drawn).not.toContain("solid #FFFFFF");
@@ -297,9 +356,26 @@ describe("the page", () => {
     expect(watchScreenColor(page)).toBe(watchStylingTheme("ember")!.pageDefaultBackground);
     expect(watchScreenColor({ ...page, backgroundColor: "#112233" })).toBe("rgba(17, 34, 51, 1)");
     const bg = watchScreenBackground({ ...page, backgroundColor: "GRADIENT|#112233|#445566", backgroundPattern: "dots", backgroundBrightness: 0.6 });
-    expect(bg).toContain("linear-gradient(135deg, #112233, #445566)");
+    expect(bg).toContain("linear-gradient(to bottom right, #112233, #445566)");
     expect(bg).toContain("rgba(0, 0, 0, 0.4)");
-    expect(bg).toContain("radial-gradient(circle");
+    expect(bg).toContain("data:image/svg+xml");
+    // With the screen's size, along its diagonal in points.
+    expect(watchScreenBackground({ ...page, backgroundColor: "GRADIENT|#112233|#445566" }, 1, { width: 208, height: 248 })).toContain("linear-gradient(140.01deg, #112233, #445566)");
+  });
+
+  it("draws a theme's own layered background when the page has no color", () => {
+    const base = watchStylingTheme("ember")!.pageDefaultBackground;
+    const bg = watchScreenBackground({ id: "P", name: "P", items: [], themeOverride: "ember", backgroundBrightness: 1 }, 2, { width: 208, height: 248 });
+    // The glow from the bottom out to 150 points, the wash from the bottom
+    // left corner, then the base.
+    expect(bg).toBe(`radial-gradient(circle 300px at 50% 100%, rgba(232, 163, 61, 0.12), transparent), linear-gradient(39.99deg, rgba(232, 81, 47, 0.18), rgba(184, 114, 58, 0.14), transparent), linear-gradient(${base}, ${base})`);
+    expect(watchScreenBackground({ id: "P", name: "P", items: [], themeOverride: "hyperPop", backgroundBrightness: 1 })).toContain("rgba(241, 91, 181, 0.22))");
+  });
+
+  it("puts the page's pattern over its veil and under its animated overlay", () => {
+    const bg = watchScreenBackground({ id: "P", name: "P", items: [], backgroundColor: "#000000", backgroundPattern: "grid", backgroundOverlay: "aurora", backgroundBrightness: 0.6 });
+    expect(bg.indexOf("radial-gradient(ellipse")).toBeLessThan(bg.indexOf("data:image/svg+xml"));
+    expect(bg.indexOf("data:image/svg+xml")).toBeLessThan(bg.indexOf("rgba(0, 0, 0, 0.4)"));
   });
 
   it("draws the title with its size and icon, not with style none or full screen", () => {
@@ -316,7 +392,8 @@ describe("the page", () => {
 // ── special tiles (part 3f) ──────────────────────────────────────────────
 
 describe("special tiles as their own watch views draw them", () => {
-  const ember = watchThemeRoleColors("ember");
+  // The page is ember; the tiles' own colors are sunnyBeachDay all the same.
+  const sunny = watchThemeRoleColors("sunnyBeachDay");
   const page: WatchPage = { id: "P", name: "P", items: [], themeOverride: "ember" };
   const look = (t: WatchPageTile, states?: Record<string, HassEntityState>) => watchSpecialTileLook(t, { page, states });
   const many = (...parts: Record<string, HassEntityState>[]) => Object.assign({}, ...parts) as Record<string, HassEntityState>;
@@ -346,8 +423,9 @@ describe("special tiles as their own watch views draw them", () => {
       const states = many(state("remote.living_room_apple_tv", "on"), player("playing"));
       const l = look(remote, states)!;
       expect(l.topRight).toBe("play.fill");
-      expect(l.topLeft).toEqual({ kind: "text", lines: ["42%"], ink: { hex: "#FFFFFF", alpha: 0.62 }, weight: 500, pill: false });
-      expect(l.ink).toEqual({ hex: ember.entityRemote, alpha: 1 });
+      // A point higher than the badge padding, in the secondary color.
+      expect(l.topLeft).toEqual({ kind: "text", lines: ["42%"], ink: { hex: "#EBEBF5", alpha: 0.6 }, weight: 500, pill: false, dy: -1 });
+      expect(l.ink).toEqual({ hex: sunny.entityRemote, alpha: 1 });
       expect(look(remote, many(state("remote.living_room_apple_tv", "on"), player("paused")))!.topRight).toBe("pause.fill");
       expect(look(remote, many(state("remote.living_room_apple_tv", "on"), player("idle")))!.topRight).toBe("pause.fill");
       const off = look(remote, many(state("remote.living_room_apple_tv", "on"), player("off")))!;
@@ -394,11 +472,18 @@ describe("special tiles as their own watch views draw them", () => {
       expect(drawn).toContain("wp-cam icon");
       expect(drawn).toContain("Front");
       expect(drawn).toContain("color:#FFFFFF");
-      const n = parseInt(ember.entityCamera!.slice(1), 16);
-      expect(drawn).toContain(`inset 0 0 0 2px rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, 0.6)`);
+      // The rim is stroked after the clip, so half of it lies outside. The
+      // tile has no color, so it draws in the camera color of its page's
+      // theme, as the sync rules color it.
+      const n = parseInt(watchThemeRoleColors("ember").entityCamera!.slice(1), 16);
+      const rim = `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, 0.6)`;
+      expect(drawn).toContain(`inset 0 0 0 1px ${rim}`);
+      expect(drawn).toContain(`box-shadow:0 0 0 1px ${rim}`);
       expect(drawn).not.toContain("wp-snap");
       expect(drawn).not.toContain("wp-tile");
-      expect(face({ ...cam, color: "#00FF00" }, picture)).toContain("inset 0 0 0 0.75px rgba(0, 255, 0, 0.6)");
+      expect(face({ ...cam, color: "#00FF00" }, picture)).toContain("inset 0 0 0 0.38px rgba(0, 255, 0, 0.6)");
+      // The symbol's glow in its color at 0.4, radius 8.
+      expect(face({ ...cam, color: "#00FF00" }, picture)).toContain("drop-shadow(0 0 8px rgba(0, 255, 0, 0.4))");
       expect(face(cam, picture, undefined, icons("video"))).toContain("<title>video</title>");
     });
 
@@ -407,7 +492,7 @@ describe("special tiles as their own watch views draw them", () => {
       const fit = face(preview, picture);
       expect(fit).toContain('background-image:url("/api/camera_proxy/camera.front_door?token=t")');
       expect(fit).toContain("background-size:contain;background-position:50% 50%");
-      expect(fit).toContain("inset 0 0 0 1px rgba(0, 255, 0, 0.3)");
+      expect(fit).toContain("inset 0 0 0 0.5px rgba(0, 255, 0, 0.3)");
       expect(fit).not.toContain("Front");
       const fill = face({ ...preview, cameraFillMode: "fill", cameraFillOffsetX: 1, cameraFillOffsetY: -0.5 }, picture);
       expect(fill).toContain("background-size:cover;background-position:calc(50% - 30px) calc(50% + 15px)");
@@ -490,11 +575,11 @@ describe("special tiles as their own watch views draw them", () => {
     const vac = { id: "V", entityId: "vacuum.robo" };
 
     it("picks the symbol and color by state, the tile's own symbol first", () => {
-      expect(look(vac, state("vacuum.robo", "docked"))).toMatchObject({ symbol: "house", ink: { hex: "#FFFFFF", alpha: 0.74 }, active: false, topRight: undefined });
-      expect(look(vac, state("vacuum.robo", "cleaning"))).toMatchObject({ symbol: "hurricane", ink: { hex: ember.entityVacuum }, active: true, topRight: "play.fill" });
+      expect(look(vac, state("vacuum.robo", "docked"))).toMatchObject({ symbol: "house", ink: { hex: "#FFFFFF", alpha: 0.7 }, active: false, topRight: undefined });
+      expect(look(vac, state("vacuum.robo", "cleaning"))).toMatchObject({ symbol: "hurricane", ink: { hex: sunny.entityVacuum }, active: true, topRight: "play.fill" });
       expect(look(vac, state("vacuum.robo", "returning"))).toMatchObject({ symbol: "arrow.uturn.backward", topRight: "arrow.uturn.backward" });
       expect(look(vac, state("vacuum.robo", "paused"))).toMatchObject({ symbol: "pause.fill", topRight: "pause.fill" });
-      expect(look(vac, state("vacuum.robo", "error"))).toMatchObject({ symbol: "exclamationmark.triangle", ink: { hex: "#E8512F" }, topRight: "exclamationmark.triangle" });
+      expect(look(vac, state("vacuum.robo", "error"))).toMatchObject({ symbol: "exclamationmark.triangle", ink: { hex: "#E76F51" }, topRight: "exclamationmark.triangle" });
       expect(look(vac, state("vacuum.robo", "idle"))!.symbol).toBe("hurricane");
       expect(look({ ...vac, icon: "fan" }, state("vacuum.robo", "docked"))!.symbol).toBe("fan");
       expect(look({ ...vac, icon: "" }, state("vacuum.robo", "docked"))!.symbol).toBeUndefined();
@@ -504,7 +589,7 @@ describe("special tiles as their own watch views draw them", () => {
     it("shows the battery top left by quarter, red under 20 and orange under 40", () => {
       expect(look(vac, state("vacuum.robo", "docked", { battery_level: 15 }))!.topLeft).toEqual({ kind: "battery", level: 15, symbol: "battery.25", ink: { hex: "#FF3B30", alpha: 1 } });
       expect(look(vac, state("vacuum.robo", "docked", { battery_level: 35 }))!.topLeft).toMatchObject({ symbol: "battery.50", ink: { hex: "#FF9500" } });
-      expect(look(vac, state("vacuum.robo", "docked", { battery_level: 60 }))!.topLeft).toMatchObject({ symbol: "battery.75", ink: { hex: "#FFFFFF", alpha: 0.62 } });
+      expect(look(vac, state("vacuum.robo", "docked", { battery_level: 60 }))!.topLeft).toMatchObject({ symbol: "battery.75", ink: { hex: "#EBEBF5", alpha: 0.6 } });
       expect(watchBatteryBadge(75).symbol).toBe("battery.100");
       expect(look({ ...vac, showBatteryOnTile: false }, state("vacuum.robo", "docked", { battery_level: 60 }))!.topLeft).toBeUndefined();
       expect(look({ ...vac, vacuumBatteryEntityId: "sensor.robo_battery" }, many(state("vacuum.robo", "docked"), state("sensor.robo_battery", "50")))!.topLeft).toBeUndefined();
@@ -538,11 +623,11 @@ describe("special tiles as their own watch views draw them", () => {
     const at = (mode: string, attrs: Record<string, unknown> = {}) => state("climate.hall", mode, { temperature: 21, current_temperature: 20.4, ...attrs });
 
     it("picks the symbol and color by mode", () => {
-      expect(look(hall, at("heat"))).toMatchObject({ symbol: "flame", filled: true, ink: { hex: "#E88A30" }, opacity: 1, active: true });
-      expect(look(hall, at("cool"))).toMatchObject({ symbol: "snowflake", ink: { hex: "#A08070" } });
-      expect(look(hall, at("auto"))).toMatchObject({ symbol: "thermometer.variable", ink: { hex: "#B8A090" } });
-      expect(look(hall, at("dry"))).toMatchObject({ symbol: "drop.degreesign", ink: { hex: ember.entityClimate } });
-      expect(look(hall, at("fan_only"))).toMatchObject({ symbol: "fan", ink: { hex: ember.entityFan } });
+      expect(look(hall, at("heat"))).toMatchObject({ symbol: "flame", filled: true, ink: { hex: "#F4A261" }, opacity: 1, active: true });
+      expect(look(hall, at("cool"))).toMatchObject({ symbol: "snowflake", ink: { hex: "#4DBFE0" } });
+      expect(look(hall, at("auto"))).toMatchObject({ symbol: "thermometer.variable", ink: { hex: "#88B6C9" } });
+      expect(look(hall, at("dry"))).toMatchObject({ symbol: "drop.degreesign", ink: { hex: sunny.entityClimate } });
+      expect(look(hall, at("fan_only"))).toMatchObject({ symbol: "fan", ink: { hex: sunny.entityFan } });
       expect(look(hall, at("off"))).toMatchObject({ symbol: "power", filled: false, opacity: 0.85, active: false });
       expect(look({ ...hall, icon: "thermometer" }, at("heat"))!.symbol).toBe("thermometer");
       expect(look({ ...hall, color: "#00FF00" }, at("heat"))!.ink.hex).toBe("#00FF00");
@@ -560,7 +645,8 @@ describe("special tiles as their own watch views draw them", () => {
       expect(look({ ...hall, stateValueLabelStyle: "Pill" }, at("heat"))!.topLeft).toMatchObject({ pill: true });
       expect(watchClimateTemperature(20.44, 0.1)).toBe("20.4°");
       const drawn = face(hall, at("heat"));
-      expect(drawn).toContain("<span>21°</span><span>20°</span>");
+      // The target in the secondary color, the room's temperature in white at 0.85.
+      expect(drawn).toContain("<span style=color:rgba(235, 235, 245, 0.6)>21°</span><span style=color:rgba(255, 255, 255, 0.85)>20°</span>");
       expect(drawn).not.toContain("wp-state");
       expect(face({ ...hall, stateValueLabelStyle: "Pill" }, at("heat"))).toContain("border-radius:999px");
     });
@@ -579,7 +665,7 @@ describe("special tiles as their own watch views draw them", () => {
       const styled = { ...hall, icon: "thermometer", usesStateIcons: true, stateIcons: { heat: "sun.max" }, stateColors: { heat: "#00FF00", off: "#0000FF" } };
       expect(look(styled, at("heat"))).toMatchObject({ symbol: "sun.max", filled: false, ink: { hex: "#00FF00" } });
       expect(look(styled, at("off"))).toMatchObject({ symbol: "thermometer", ink: { hex: "#0000FF" } });
-      expect(look({ ...styled, usesStateIcons: undefined }, at("heat"))).toMatchObject({ symbol: "thermometer", ink: { hex: "#E88A30" } });
+      expect(look({ ...styled, usesStateIcons: undefined }, at("heat"))).toMatchObject({ symbol: "thermometer", ink: { hex: "#F4A261" } });
       expect(watchTileStateKey(styled, "unknown")).toBe("unavailable");
       expect(watchTileStateKey(styled, "HEAT")).toBe("heat");
       expect(watchTileStateKey(hall, "heat")).toBeUndefined();
@@ -611,7 +697,7 @@ describe("special tiles as their own watch views draw them", () => {
     });
 
     it("draws the symbol in its color, dimmed away from home", () => {
-      expect(look({ ...alex, usePersonPhoto: false }, at("home"))).toMatchObject({ symbol: "person", filled: true, opacity: 1, ink: { hex: ember.entityPerson }, active: true });
+      expect(look({ ...alex, usePersonPhoto: false }, at("home"))).toMatchObject({ symbol: "person", filled: true, opacity: 1, ink: { hex: sunny.entityPerson }, active: true });
       expect(look({ ...alex, usePersonPhoto: false }, at("not_home"))).toMatchObject({ opacity: 0.6, active: false });
       expect(look({ ...alex, usePersonPhoto: false, dimWhenOff: false }, at("not_home"))!.opacity).toBe(1);
       expect(look({ ...alex, usesStateIcons: true, stateIcons: { not_home: "car" } }, at("not_home"))).toMatchObject({ symbol: "car", filled: false });
@@ -635,22 +721,22 @@ describe("special tiles as their own watch views draw them", () => {
     it("picks the symbol, color and state word by state", () => {
       const cases: [string, string, string, string][] = [
         ["disarmed", "shield", "#FFFFFF", "OFF"],
-        ["armed_home", "shield", "#E8A33D", "HOME"],
-        ["armed_away", "shield", "#E8512F", "AWAY"],
+        ["armed_home", "shield", "#E9C46A", "HOME"],
+        ["armed_away", "shield", "#E76F51", "AWAY"],
         ["armed_night", "shield", "#BF5AF2", "NIGHT"],
-        ["armed_vacation", "shield", "#E8A33D", "VACATION"],
-        ["armed_custom_bypass", "shield", "#E8A33D", "CUSTOM"],
-        ["pending", "shield.lefthalf.filled", "#E8512F", "PENDING"],
-        ["arming", "shield.lefthalf.filled", "#E8512F", "ARMING"],
-        ["disarming", "shield.lefthalf.filled", "#E8512F", "DISARMING"],
-        ["triggered", "exclamationmark.shield", "#E8512F", "ALERT"],
+        ["armed_vacation", "shield", "#E9C46A", "VACATION"],
+        ["armed_custom_bypass", "shield", "#E9C46A", "CUSTOM"],
+        ["pending", "shield.lefthalf.filled", "#2EC4B6", "PENDING"],
+        ["arming", "shield.lefthalf.filled", "#2EC4B6", "ARMING"],
+        ["disarming", "shield.lefthalf.filled", "#2EC4B6", "DISARMING"],
+        ["triggered", "exclamationmark.shield", "#E76F51", "ALERT"],
         ["weird", "shield", "#FFFFFF", "OFF"],
       ];
       for (const [value, symbol, hex, word] of cases) {
         const l = look(panel, at(value))!;
         expect([l.symbol, l.ink.hex, l.topLeft?.kind === "text" ? l.topLeft.lines[0] : undefined], value).toEqual([symbol, hex, word]);
       }
-      expect(look(panel, at("disarmed"))!.ink.alpha).toBe(0.74);
+      expect(look(panel, at("disarmed"))!.ink.alpha).toBe(0.7);
       expect(look(panel, at("disarmed"))!.active).toBe(false);
       expect(look(panel, at("arming"))!.active).toBe(true);
       expect(look(panel, at("triggered"))!.topLeft).toMatchObject({ weight: 600 });
@@ -773,14 +859,22 @@ describe("the watch's tile layout", () => {
   });
 
   it("fills a lit tile in its color with the sheen and leaves an unlit one near clear and desaturated", () => {
+    // Lit: the color at saturation 0.92 and 0.52 over the material, which
+    // darkens what is behind it (black at 0.62 times 0.8).
     const lit = watchTileFill({ kind: "solid", hex: "#FF0000", opacity: 1 }, "#FFFFFF", true);
-    expect(lit).toContain("rgba(255, 0, 0, 0.52)");
+    expect(lit).toContain("rgba(239, 4, 4, 0.52)");
     expect(lit).toContain("rgba(255, 255, 255, 0.32)");
-    expect(watchTileFill(undefined, "#00FF00", true)).toContain("rgba(0, 255, 0, 0.52)");
+    expect(lit).toContain("rgba(0, 0, 0, 0.496)");
+    expect(watchTileFill(undefined, "#00FF00", true)).toContain("rgba(15, 249, 15, 0.52)");
     const off = watchTileFill({ kind: "solid", hex: "#FF0000", opacity: 1 }, "#FFFFFF", false);
     expect(off).toContain("rgba(255, 0, 0, 0.025)");
     expect(off).toContain("rgba(142, 142, 147, 0.06)");
+    expect(off).toContain("rgba(0, 0, 0, 0.24)");
     expect(off).not.toContain("0.52");
+    // A gradient is its mesh, the rainbow a gradient along the tile's diagonal.
+    expect(watchTileFill({ kind: "gradient", from: "#112233", to: "#445566" }, "#FFFFFF", true)).toContain("linear-gradient(to bottom right, rgba(");
+    expect(watchTileFill({ kind: "rainbow" }, "#FFFFFF", true, 1, { width: 100, height: 50 })).toContain("linear-gradient(116.57deg, rgba(255, 69, 58, 0.42)");
+    expect(watchSaturate("#FF0000", 0.92)).toBe("#ef0404");
     const drawn = face(tile({ color: "#FF0000" }), state("light.desk", "off"));
     expect(drawn).toContain("filter:saturate(0.5) brightness(0.94)");
     expect(drawn).toContain("wp-tile off");
@@ -790,24 +884,35 @@ describe("the watch's tile layout", () => {
 
   it("draws the symbol filled, faded and glowing as each kind does", () => {
     expect(watchTileIconTreatment(tile(), state("light.desk", "off"))).toEqual({ filled: false, opacity: 0.68, glow: undefined });
-    expect(watchTileIconTreatment(tile(), state("light.desk", "on"))).toEqual({ filled: true, opacity: 1, glow: "lit" });
+    // A light glows only with its active icon animation on, which it is
+    // not by default.
+    expect(watchTileIconTreatment(tile(), state("light.desk", "on"))).toEqual({ filled: true, opacity: 1, glow: undefined });
+    expect(watchTileIconTreatment(tile({ activeIconAnimationEnabled: true }), state("light.desk", "on"))).toEqual({ filled: true, opacity: 1, glow: "lit" });
+    // A sensor's soft shadow only while it is available.
+    expect(watchTileIconTreatment({ id: "S", entityId: "sensor.x" }, state("sensor.x", "21")).glow).toBe("soft");
+    expect(watchTileIconTreatment({ id: "S", entityId: "sensor.x" }, state("sensor.x", "unknown")).glow).toBeUndefined();
     expect(watchTileIconTreatment(tile({ dimWhenOff: false }), state("light.desk", "off")).opacity).toBe(1);
     expect(watchTileIconTreatment({ id: "S", entityId: "switch.x" }, state("switch.x", "off"))).toEqual({ filled: false, opacity: 0.85, glow: undefined });
     expect(watchTileIconTreatment({ id: "L", entityId: "lock.x" }, state("lock.x", "unlocked"))).toEqual({ filled: true, opacity: 0.6, glow: undefined });
     expect(watchTileIconTreatment({ id: "S", entityId: "scene.x" }, state("scene.x", "scening"))).toEqual({ filled: true, opacity: 1, glow: "soft" });
     expect(watchTileIconTreatment({ id: "S", entityId: "sensor.x" }, state("sensor.x", "unavailable")).opacity).toBe(0.5);
-    expect(face(tile(), state("light.desk", "on"))).toContain("drop-shadow(0 0 5.83px");
+    expect(face(tile({ activeIconAnimationEnabled: true }), state("light.desk", "on"))).toContain("drop-shadow(0 0 5.83px");
+    expect(face(tile(), state("light.desk", "on"))).not.toContain("drop-shadow(0 0 5.83px");
   });
 
-  it("puts the clock where the device's clock is, bold, with the settings gear left of it", () => {
-    expect(watchStatusClock({ width: 208, height: 248 })).toEqual({ centreY: 25.5, leftFromTrailing: 53.5 });
-    expect(watchStatusClock({ width: 199, height: 243 })).toEqual({ centreY: 23, leftFromTrailing: 51 });
-    expect(watchClockFontSize(208)).toBe(20);
+  it("puts the clock where the device's clock is and the settings gear where the app parks it", () => {
+    expect(watchStatusClock({ width: 208, height: 248 })).toEqual({ centreY: 25.5, leftFromTrailing: 53.5, rightMargin: 16.5 });
+    expect(watchStatusClock({ width: 199, height: 243 })).toEqual({ centreY: 23, leftFromTrailing: 51, rightMargin: 14 });
+    // The same size on every watch.
+    expect(watchClockFontSize(208)).toBe(16);
+    expect(watchClockFontSize(162)).toBe(16);
     const clock = text(renderWatchClock({ width: 208, height: 248 }, 1, 34, undefined));
-    expect(clock).toContain("top:25.5px");
-    expect(clock).toContain("right:16px");
-    expect(clock).toContain("font-size:20px");
-    expect(clock).toContain("wp-gear");
+    // The digits end at the right margin, less the figure's own side room.
+    expect(clock).toContain("right:15.5px;top:25.5px;font-size:16px");
+    // The gear's 26 point box: 2 in from the edge, leftFromTrailing less 4.5.
+    expect(watchGearCentre({ width: 208, height: 248 })).toEqual({ x: 144, y: 25.5 });
+    expect(watchGearCentre({ width: 162, height: 197 })).toEqual({ x: 105, y: 15 });
+    expect(clock).toContain("left:131px;top:12.5px;width:26px;height:26px");
     expect(clock.indexOf("wp-gear")).toBeLessThan(clock.indexOf("10:09"));
     expect(text(renderWatchClock({ width: 208, height: 248 }, 1, 0, undefined))).toBe("");
   });

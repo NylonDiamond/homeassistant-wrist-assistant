@@ -1,15 +1,18 @@
 // The arithmetic under the page editor's pointer gestures, without any DOM.
 //
-// The editing stage draws a page on a flat grid (`watchPageLayout` with
-// `flat`): 12 columns of square units 2 points apart, rows one step below the
-// last, starting `topInset` points below the top of the screen. Every number
+// The editing stage draws a page on a flat grid (`watchPreviewLayout` with
+// `flat`): 12 columns of square units 2 points apart across the screen less
+// the watch's side safe area (`WATCH_GRID_SIDE_INSET` each side), so a tile
+// sits at the same pixel as in the preview and on the watch; rows one step
+// below the last, starting `topInset` points below the top of the screen.
+// Every number
 // here is in CSS pixels, the points times the scale the stage is drawn at, so
 // the view hands in what it measured and gets cells back.
 //
 // Plan: app repo docs/pages_in_home_assistant_step3.md ("3b build contract").
 
 import type { WatchCell, WatchRect } from "./edit.js";
-import { WATCH_GRID_COLUMNS, WATCH_GRID_SPACING } from "./model.js";
+import { WATCH_GRID_COLUMNS, WATCH_GRID_SIDE_INSET, WATCH_GRID_SPACING } from "./model.js";
 
 const COLUMNS = WATCH_GRID_COLUMNS;
 
@@ -33,20 +36,24 @@ export interface StageGrid {
   step: number;
   /** From the top of the screen to row 0. */
   top: number;
+  /** From the left of the screen to column 0: the side safe area. */
+  left: number;
 }
 
 /** The grid of a screen `screenWidth` points wide whose rows start `topInset`
- * points down, drawn at `scale` pixels per point. */
+ * points down, drawn at `scale` pixels per point: the 12 columns share the
+ * screen less the side safe area on each side, and start that far in. */
 export function stageGrid(screenWidth: number, topInset: number, scale: number): StageGrid {
   const spacing = WATCH_GRID_SPACING * scale;
-  const unit = ((screenWidth - (COLUMNS - 1) * WATCH_GRID_SPACING) / COLUMNS) * scale;
-  return { scale, unit, spacing, step: unit + spacing, top: topInset * scale };
+  const usable = Math.max(1, screenWidth - WATCH_GRID_SIDE_INSET * 2);
+  const unit = ((usable - (COLUMNS - 1) * WATCH_GRID_SPACING) / COLUMNS) * scale;
+  return { scale, unit, spacing, step: unit + spacing, top: topInset * scale, left: WATCH_GRID_SIDE_INSET * scale };
 }
 
 /** Where a rectangle of cells sits, in pixels from the screen's top left. */
 export function cellRectPx(grid: StageGrid, rect: WatchRect): { left: number; top: number; width: number; height: number } {
   return {
-    left: rect.col * grid.step,
+    left: grid.left + rect.col * grid.step,
     top: grid.top + rect.row * grid.step,
     width: rect.colSpan * grid.unit + (rect.colSpan - 1) * grid.spacing,
     height: rect.rowSpan * grid.unit + (rect.rowSpan - 1) * grid.spacing,
@@ -57,7 +64,7 @@ export function cellRectPx(grid: StageGrid, rect: WatchRect): { left: number; to
  * cell. Nothing is clamped: a point above row 0 or beside the grid gives a
  * cell no tile covers. */
 export function cellAtPx(grid: StageGrid, x: number, y: number): WatchCell {
-  return { col: Math.floor(x / grid.step), row: Math.floor((y - grid.top) / grid.step) };
+  return { col: Math.floor((x - grid.left) / grid.step), row: Math.floor((y - grid.top) / grid.step) };
 }
 
 /** The cell nearest a dragged tile's top left corner, kept inside the grid
@@ -65,7 +72,7 @@ export function cellAtPx(grid: StageGrid, x: number, y: number): WatchCell {
  * `12 - colSpan`. */
 export function nearestCell(grid: StageGrid, left: number, top: number, colSpan: number): WatchCell {
   const span = Math.max(1, Math.min(COLUMNS, Math.trunc(colSpan)));
-  const col = Math.round(left / grid.step);
+  const col = Math.round((left - grid.left) / grid.step);
   const row = Math.round((top - grid.top) / grid.step);
   return { col: Math.max(0, Math.min(COLUMNS - span, col)), row: Math.max(0, row) };
 }
@@ -118,7 +125,8 @@ export function stageRows(extent: number, onScreen: number, reach = 0): number {
 }
 
 /** The empty cells of `rows` rows as one SVG path, each a square with
- * corners of `radius` pixels, with row 0 at y 0. One path rather than a
+ * corners of `radius` pixels, with row 0 at y 0 and column 0 at the grid's
+ * `left`, so the path is drawn from the screen's left edge. One path rather than a
  * pattern, whose `url(#id)` is not found the same way in every browser inside
  * a shadow root. */
 export function cellsPath(grid: StageGrid, rows: number, radius: number): string {
@@ -129,7 +137,7 @@ export function cellsPath(grid: StageGrid, rows: number, radius: number): string
   const parts: string[] = [];
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < COLUMNS; col++) {
-      const x = col * grid.step;
+      const x = grid.left + col * grid.step;
       const y = row * grid.step;
       parts.push(
         r === 0

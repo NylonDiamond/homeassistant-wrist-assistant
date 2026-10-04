@@ -156,7 +156,6 @@ import {
   watchPageExtent,
   watchPageHasHeader,
   watchPageId,
-  watchPageLayout,
   watchPageName,
   watchPageTiles,
   watchPagesOf,
@@ -173,7 +172,7 @@ import {
   renderWatchPageTitle,
   watchScreenBackground,
 } from "./preview.js";
-import { renderWatchClock, watchTileCornerRadius } from "./preview.js";
+import { renderWatchClock, watchPreviewLayout, watchTileCornerRadius } from "./preview.js";
 import { renderWatchFrame, watchFrameStyles } from "../watch-frame.js";
 import { type WatchPagesNote, watchCommandError, watchPagesSaveNote } from "./save-note.js";
 import { forgetTileSettingsNotes, renderTileSettings, tileSettingsStyles } from "./tile-settings.js";
@@ -2458,6 +2457,8 @@ export class WaPageEditor extends LitElement {
     const scale = this.narrow ? 1.25 : 1.5;
     const input: WatchPagePreviewInput = {
       page, pages, screen: watchCase.screen, states: this.hass?.states, icons: this.icons, scale, catalog: this.catalog, templates: this.templateRenders,
+      // The watch's own settings, for its page dots and its page title mode.
+      behavior: this.behavior,
     };
     if (config !== undefined) {
       // The selected rule's tiles draw full, the rest faint; a click on a
@@ -2527,7 +2528,9 @@ export class WaPageEditor extends LitElement {
     input: WatchPagePreviewInput,
   ): TemplateResult {
     const { s, screen, move, resize, shown, grid, rows, gridHeight, height } = this.editStage(page, input);
-    const layout = watchPageLayout(shown, screen, { flat: true });
+    // The preview's own layout on the flat grid: the same side safe area and
+    // unit as the watch, so each tile sits where `cellRectPx` puts its cells.
+    const layout = watchPreviewLayout(shown, screen, { flat: true });
     const width = screen.width * s;
     const selected = this.selectedTileId;
     const seen = new Set<string>();
@@ -2545,10 +2548,10 @@ export class WaPageEditor extends LitElement {
         : undefined;
     // The grid's cells show only while a tile is moved or resized.
     return renderWatchFrame(screen, s, html`<div class="wp-screen pe-screen ${this.saving ? "saving" : ""} ${move || resize ? "moving" : ""}" tabindex="-1" role="group" aria-label=${`Layout of ${watchPageName(page)}`}
-      style=${`width:${width}px;height:${height}px;background:${watchScreenBackground(shown, s)}`}
+      style=${`width:${width}px;height:${height}px;background:${watchScreenBackground(shown, s, screen)}`}
       @click=${() => this.selectTile(undefined)}>
       ${renderWatchClock(screen, s, layout.topInset, input.icons)}
-      ${renderWatchPageTitle(shown, s, layout.topInset, input.icons)}
+      ${renderWatchPageTitle(shown, s, layout.topInset, input.icons, input.behavior)}
       <svg class="pe-cells" width=${width} height=${gridHeight} viewBox=${`0 0 ${width} ${gridHeight}`}
         style=${`top:${grid.top}px`} aria-hidden="true"><path d=${cellsPath(grid, rows, 3 * s)} /></svg>
       ${height > screen.height * s + 0.5 ? renderWatchScreenFold(screen.height * s) : nothing}
