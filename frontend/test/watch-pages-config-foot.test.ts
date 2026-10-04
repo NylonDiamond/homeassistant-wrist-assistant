@@ -4,22 +4,29 @@
 // check the bar is there and the Page card sits under the watch, in the
 // stage card, with the settings column holding only the Tile card.
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { OwnerSummary, WatchConfigHistoryEntry, WatchConfigRecord } from "../src/ha-api.js";
 import {
   REJECTED_TEXT,
+  SAVED_TICK_MS,
+  SavedAgoTicker,
   configFootStatus,
   configRawText,
+  configSavedText,
   renderConfigFoot,
   renderConfigHistoryDialog,
   renderConfigRawDialog,
+  renderConfigSaved,
 } from "../src/watch-pages/config-foot.js";
 import { takeWatchPagesRecord } from "../src/watch-pages/kept.js";
 import type { WatchPagesDocument } from "../src/watch-pages/model.js";
 import "../src/watch-pages/page-editor.js";
+import { takeWatchMenusRecord } from "../src/watch-menus/draft.js";
+import type { MenusDocument } from "../src/watch-menus/model.js";
+import "../src/watch-menus/menu-editor.js";
 import { COLLECTED_PILL_TEXT, WAITING_HELP_TEXT, WAITING_PILL_TEXT } from "../src/watch-settings.js";
 
 /** A template flattened to its markup, values in place (a bound attribute
@@ -172,5 +179,131 @@ describe("the page editor", () => {
     expect(css).toMatch(/\.pe-stage-settings\s*\{[^}]*container:\s*pe-settings\s*\/\s*inline-size/);
     expect(css).toMatch(/@container pe-settings \(min-width: 700px\)\s*\{[^@]*\.pe-page-card \.ps-root \{[^}]*columns: 2/);
     expect(css).toContain(".cf-bar");
+  });
+});
+
+describe("the toolbar's saved fact", () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("reads the stored copy's time, the same the foot bar reads", () => {
+    expect(configSavedText(record(), NOW)).toBe("Saved 5 min ago");
+    expect(configSavedText(record({ updated_at: "2026-10-03T11:59:30Z" }), NOW)).toBe("Saved just now");
+    expect(configSavedText(record({ updated_at: null }), NOW)).toBe("Saved");
+    expect(configSavedText(record({ revision: 0 }), NOW)).toBe("");
+    expect(configSavedText(undefined, NOW)).toBe("");
+    // The foot bar's line for the same record says the same time.
+    expect(foot(record())).toContain("5 min ago");
+    const span = flat(renderConfigSaved(record(), NOW));
+    expect(span).toContain(`<span class="cf-saved"`);
+    expect(span).toContain(">Saved 5 min ago</span>");
+    expect(flat(renderConfigSaved(undefined, NOW))).toBe("");
+  });
+
+  it("draws its host again while shown and connected, and stops otherwise", () => {
+    vi.useFakeTimers();
+    const host = { addController: vi.fn(), requestUpdate: vi.fn(), removeController: vi.fn(), updateComplete: Promise.resolve(true) };
+    const ticker = new SavedAgoTicker(host);
+    expect(host.addController).toHaveBeenCalledWith(ticker);
+    ticker.show(true);
+    expect(ticker.running).toBe(false);
+    ticker.hostConnected();
+    expect(ticker.running).toBe(true);
+    vi.advanceTimersByTime(SAVED_TICK_MS);
+    expect(host.requestUpdate).toHaveBeenCalledTimes(1);
+    expect(SAVED_TICK_MS).toBeLessThanOrEqual(60_000);
+    ticker.show(false);
+    expect(ticker.running).toBe(false);
+    vi.advanceTimersByTime(SAVED_TICK_MS * 3);
+    expect(host.requestUpdate).toHaveBeenCalledTimes(1);
+    ticker.show(true);
+    ticker.hostDisconnected();
+    expect(ticker.running).toBe(false);
+    // Back in the tree with the fact still shown: it runs again.
+    ticker.hostConnected();
+    expect(ticker.running).toBe(true);
+    ticker.hostDisconnected();
+  });
+});
+
+describe("the sticky top block", () => {
+  const pagesDocument = JSON.parse(readFileSync(join(__dirname, "fixtures-pages", "05-pages.json"), "utf8")) as WatchPagesDocument;
+  const menusDocument = JSON.parse(readFileSync(join(__dirname, "fixtures-menus", "01-defaults.json"), "utf8")) as MenusDocument;
+  const fiveMinutesAgo = () => new Date(Date.now() - 5 * 60_000).toISOString();
+
+  function styles(tag: "wa-page-editor" | "wa-menu-editor"): string {
+    const element = customElements.get(tag) as unknown as { styles: unknown };
+    const sheet = (s: unknown): string => (Array.isArray(s) ? s.map(sheet).join("\n") : String((s as { cssText?: string } | undefined)?.cssText ?? ""));
+    return sheet(element.styles);
+  }
+
+  /** The declarations of the first rule whose selector is exactly `selector`. */
+  function rule(css: string, selector: string): string {
+    const at = css.search(new RegExp(`(^|[}\\s])${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{`));
+    if (at < 0) return "";
+    const open = css.indexOf("{", at);
+    return css.slice(open + 1, css.indexOf("}", open));
+  }
+
+  /** The whole element drawn with a stored copy open, as markup. With no
+   * owners passed the body is the short "no watch" line, so the markup is
+   * the top block and little else. */
+  function drawn(tag: "wa-page-editor" | "wa-menu-editor", watchId: string, dirty: boolean): string {
+    const Ctor = customElements.get(tag) as unknown as new () => Record<string, unknown>;
+    const el = new Ctor();
+    el.watchId = watchId;
+    if (tag === "wa-page-editor") {
+      el.record = record({ updated_at: fiveMinutesAgo() });
+      const { draft } = takeWatchPagesRecord(watchId, pagesDocument, 7);
+      if (dirty) draft.apply({ ...pagesDocument, pages: [...(pagesDocument.pages as unknown[]), { id: "added", name: "Added" }] } as WatchPagesDocument);
+    } else {
+      el.record = record({ kind: "menus", updated_at: fiveMinutesAgo() });
+      const { draft } = takeWatchMenusRecord(watchId, menusDocument, 7);
+      if (dirty) draft.apply({ ...menusDocument, extraForTest: true });
+    }
+    return flat((el.render as () => unknown).call(el));
+  }
+
+  for (const tag of ["wa-page-editor", "wa-menu-editor"] as const) {
+    it(`${tag}: wraps the title, the tabs and the toolbar in one sticky block, edge to edge`, () => {
+      const text = drawn(tag, `${tag}-sticky`, false);
+      const top = text.indexOf(`<div class="pe-top">`);
+      expect(top).toBe(text.search(/\S/));
+      expect(text.indexOf(`<div class="pe-head">`)).toBeGreaterThan(top);
+      const tools = text.indexOf(`class="pe-tools"`);
+      expect(tools).toBeGreaterThan(text.indexOf(`<div class="pe-head">`));
+      // The toolbar closes inside the block: the body comes after both.
+      expect(text.indexOf(`class="pe-empty"`)).toBeGreaterThan(tools);
+
+      const css = styles(tag);
+      const block = rule(css, ".pe-top");
+      expect(block).toMatch(/position:\s*sticky/);
+      expect(block).toMatch(/top:\s*calc\(-1 \* var\(--cf-pad, 16px\)\)/);
+      expect(block).toMatch(/z-index:\s*7/);
+      expect(block).toMatch(/background:\s*var\(--wa-bg\)/);
+      expect(block).toMatch(/margin:\s*calc\(-1 \* var\(--cf-pad, 16px\)\) calc\(-1 \* var\(--cf-pad, 16px\)\) 0/);
+      // Above the foot bar's own layer, which the cards sit under.
+      expect(rule(css, ".cf-bar")).toMatch(/z-index:\s*6/);
+      expect(rule(css, ":host")).toMatch(/scroll-padding-top:\s*var\(--pe-top-h, 0px\)/);
+    });
+
+    it(`${tag}: says when the stored copy was saved, left of Discard, beside Unsaved changes`, () => {
+      const clean = drawn(tag, `${tag}-saved-clean`, false);
+      expect(clean).toContain(">Saved 5 min ago</span>");
+      expect(clean.indexOf(">Saved 5 min ago<")).toBeLessThan(clean.indexOf(">Discard</button>"));
+      expect(clean).not.toContain("Unsaved changes");
+      const dirty = drawn(tag, `${tag}-saved-dirty`, true);
+      expect(dirty).toContain("Unsaved changes");
+      expect(dirty).toContain(">Saved 5 min ago</span>");
+    });
+  }
+
+  it("moves the page editor's sticky columns and the menu preview under the block", () => {
+    const pages = rule(styles("wa-page-editor"), ".pe-pages, .pe-side");
+    expect(pages).toContain("--pe-under-top: max(0px, calc(var(--pe-top-h, 0px) - var(--cf-pad, 16px)))");
+    expect(pages).toMatch(/top:\s*var\(--pe-under-top\)/);
+    expect(pages).toMatch(/max-height:\s*calc\(var\(--pe-view-h, calc\(100dvh - 120px\)\) - 30px - var\(--pe-under-top\)\)/);
+    const preview = rule(styles("wa-menu-editor"), ".me-preview");
+    expect(preview).toMatch(/position:\s*sticky/);
+    expect(preview).toContain("top: max(0px, calc(var(--pe-top-h, 0px) - var(--cf-pad, 16px)))");
   });
 });

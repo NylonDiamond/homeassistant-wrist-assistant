@@ -168,8 +168,7 @@ describe("the page editor's Start", () => {
     const pages = (saves[0]!.document as { pages: { id: string }[] }).pages;
     expect(pages).toHaveLength(1);
     expect(el.selectedPageId).toBe(pages[0]!.id);
-    expect(el.note).toMatchObject({ kind: "ok" });
-    expect(el.note!.text).toContain("revision 1");
+    expect(el.note).toEqual({ kind: "ok", text: "Started with an empty page. The watch picks it up the next time it checks." });
     expect(el.record?.revision).toBe(1);
     expect(el.draft?.revision).toBe(1);
     expect(findWatchPage(el.draft!.document, pages[0]!.id)).toBeDefined();
@@ -265,8 +264,7 @@ describe("Watch settings' Start", () => {
     expect(saves).toHaveLength(1);
     expect(saves[0]).toMatchObject({ kind: "behavior", base_revision: 0, document: watchBehaviorDefaults() });
     expect(inside.record?.revision).toBe(1);
-    expect(inside.note).toMatchObject({ kind: "note" });
-    expect(inside.note!.text).toContain("revision 1");
+    expect(inside.note).toEqual({ kind: "note", text: "Started with the defaults. The watch picks them up the next time it checks." });
     const shown = text();
     expect(shown).not.toContain(SETTINGS_START_BUTTON);
     for (const section of WATCH_SETTINGS_CATALOG.sections) expect(shown).toContain(section.title);

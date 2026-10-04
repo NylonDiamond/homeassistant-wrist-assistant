@@ -159,7 +159,11 @@ describe("a save", () => {
     expect(bases).toEqual([2, 3]);
     expect((last!.pageSwitcher as JsonObject).selectedScale).toBe(1.4);
     expect((last!.quickAction as JsonObject).showIconBubble).toBe(true);
-    expect(watchMenusSaveNote(result).text).toBe("Saved. Changes from the iPhone were merged in.");
+    expect(watchMenusSaveNote(result)?.text).toBe("Saved. Changes from the iPhone were merged in.");
+  });
+
+  it("says nothing after a plain save: the toolbar's Saved just now does", () => {
+    expect(watchMenusSaveNote({ ok: true, revision: 4, merged: false })).toBeUndefined();
   });
 
   it("says when the iPhone changed the same section and the draft's version replaced it", async () => {
@@ -176,7 +180,7 @@ describe("a save", () => {
     expect(result).toMatchObject({ ok: true, revision: 4, merged: true, replaced: ["quickAction", "pageSwitcher"] });
     expect(watchMenusSaveNote(result)).toEqual({
       kind: "warn",
-      text: "Saved as revision 4. The iPhone also changed the Anywhere menu and the page switcher. Your versions replaced them.",
+      text: "Saved. The iPhone also changed the Anywhere menu and the page switcher. Your versions replaced them.",
     });
     expect(watchMenusReplacedText(["quickAction"])).toBe("The iPhone also changed the Anywhere menu. Your version replaced it.");
     expect(watchMenusReplacedText(["entityRadial"])).toBe("The iPhone also changed the Entity quick menu. Your version replaced it.");
@@ -219,7 +223,7 @@ describe("a save", () => {
     expect(result).toMatchObject({ ok: false, code: "conflict" });
     expect(calls).toBe(WATCH_MENUS_SAVE_ATTEMPTS);
     expect(draft.dirty).toBe(true);
-    expect(watchMenusSaveNote(result).kind).toBe("warn");
+    expect(watchMenusSaveNote(result)?.kind).toBe("warn");
   });
 
   it("is not sent when the shape check fails, and runs once at a time", async () => {
@@ -228,7 +232,7 @@ describe("a save", () => {
     const io = { save: async () => ({ revision: 3 }), fetch: async () => ({ revision: 2, document: DEFAULTS }) };
     const result = await saveWatchMenusDraft(draft, io);
     expect(result).toMatchObject({ ok: false, code: "invalid" });
-    expect(watchMenusSaveNote(result).text).toMatch(/^Not saved\. Something in the menus is not right/);
+    expect(watchMenusSaveNote(result)?.text).toMatch(/^Not saved\. Something in the menus is not right/);
 
     const ok = new WatchMenusDraft(DEFAULTS, 2);
     ok.apply(style(DEFAULTS, "showIconBubble", true));

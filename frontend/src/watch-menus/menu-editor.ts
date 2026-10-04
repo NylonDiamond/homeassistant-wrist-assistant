@@ -47,6 +47,7 @@ import { SymbolBrowser } from "../symbols.js";
 import { uiIcon } from "../ui-icons.js";
 import { type WatchCatalog, watchCatalogEventIsNews, watchCatalogFromRecord, watchCatalogReadMeansNone } from "../watch-pages/catalog.js";
 import {
+  SavedAgoTicker,
   configFootStatus,
   configFootStyles,
   copyConfigText,
@@ -54,6 +55,7 @@ import {
   renderConfigFoot,
   renderConfigHistoryDialog,
   renderConfigRawDialog,
+  renderConfigSaved,
 } from "../watch-pages/config-foot.js";
 import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/editor-host.js";
 import { watchFrameStyles } from "../watch-frame.js";
@@ -249,6 +251,13 @@ export class WaMenuEditor extends LitElement {
   @state() private hostWidth = 0;
   private ownListAsked = false;
   private sizeObserver?: ResizeObserver;
+  /** The sticky block at the top (title, tabs, toolbar) the observer
+   * measures, and its height, written to `--pe-top-h` on the host for the
+   * sticky preview under it. */
+  private observedTop?: HTMLElement;
+  private topHeight = 0;
+  /** Draws again while the toolbar says "Saved 3 min ago". */
+  private readonly savedTicker = new SavedAgoTicker(this);
 
   private readonly symbols = new SymbolBrowser(() => this.requestUpdate());
   private readonly uiState = new Map<string, unknown>();
@@ -306,6 +315,7 @@ export class WaMenuEditor extends LitElement {
     super.disconnectedCallback();
     window.removeEventListener("keydown", this.onKeyDown);
     this.sizeObserver?.disconnect();
+    this.observedTop = undefined;
     this.stopListeningForReconnect();
     this.reloadPending = false;
     this.endScrub();
@@ -348,17 +358,47 @@ export class WaMenuEditor extends LitElement {
       if (dialog && !dialog.open) dialog.showModal();
     }
     openConfigDialogs(this.renderRoot, this.shownFootDialogs);
+    this.observeTop();
+    this.savedTicker.show(this.renderRoot.querySelector(".cf-saved") !== null);
   }
 
   /** Measure the host, not the window: the Home Assistant sidebar changes
-   * the editor's width without changing the window's. */
+   * the editor's width without changing the window's. The sticky top block
+   * is measured by the same observer. */
   private watchSize(): void {
     if (typeof ResizeObserver === "undefined") return;
     this.sizeObserver ??= new ResizeObserver((entries) => {
-      const box = entries[0]?.contentRect;
-      if (box && Math.abs(box.width - this.hostWidth) >= 1) this.hostWidth = box.width;
+      for (const entry of entries) {
+        if (entry.target !== this) {
+          this.measureTop(entry.target as HTMLElement);
+          continue;
+        }
+        const box = entry.contentRect;
+        if (Math.abs(box.width - this.hostWidth) >= 1) this.hostWidth = box.width;
+      }
     });
     this.sizeObserver.observe(this);
+    this.observeTop();
+  }
+
+  /** Watch the sticky top block's height; after every draw, since a
+   * reconnect starts the observer over. Nothing to do for the same block. */
+  private observeTop(): void {
+    const observer = this.sizeObserver;
+    if (observer === undefined) return;
+    const top = this.renderRoot?.querySelector<HTMLElement>(".pe-top") ?? undefined;
+    if (top === this.observedTop) return;
+    if (this.observedTop !== undefined) observer.unobserve(this.observedTop);
+    this.observedTop = top;
+    if (top !== undefined) observer.observe(top);
+  }
+
+  /** The top block's whole height onto the host, for CSS: no draw follows. */
+  private measureTop(top: HTMLElement): void {
+    const height = top.offsetHeight;
+    if (height === this.topHeight) return;
+    this.topHeight = height;
+    this.style.setProperty("--pe-top-h", `${height}px`);
   }
 
   private listenForReconnect(): void {
@@ -778,7 +818,7 @@ export class WaMenuEditor extends LitElement {
     this.starting = false;
     if (watchId !== this.watchId) return;
     if (result.ok) {
-      this.note = { kind: "ok", text: `Started with the defaults, saved as revision ${result.revision}. The watch picks them up the next time it checks.` };
+      this.note = { kind: "ok", text: "Started with the defaults. The watch picks them up the next time it checks." };
     } else if (result.code === "no_record") {
       this.note = { kind: "warn", text: `${WATCH_MENUS_PAIR_FIRST_TEXT} Watch settings has Pair a watch.` };
       return;
@@ -825,7 +865,7 @@ export class WaMenuEditor extends LitElement {
     let note: Note;
     try {
       const reply = await restoreWatchConfig(hass, watchId, "menus", ask.entry.revision, ask.baseRevision);
-      note = { kind: "ok", text: `Revision ${ask.entry.revision} is back, saved as revision ${reply.revision}.` };
+      note = { kind: "ok", text: `Revision ${ask.entry.revision} is back.` };
       if (watchId === this.watchId) this.restartDraft = { watchId, revision: reply.revision };
       else if (!(keptWatchMenusDraft(watchId)?.dirty ?? false)) forgetWatchMenusDraft(watchId);
     } catch (err) {
@@ -880,16 +920,18 @@ export class WaMenuEditor extends LitElement {
     const only = watches.length === 1 ? watches[0] : undefined;
     const draft = this.draft;
     return html`
-      <div class="pe-head">
-        <div class="pe-title">
-          <h2>Watch menus</h2>
-          <span>${only ? `${watchName(only, watches)}. ` : ""}The Anywhere menu, the Entity quick menu and the page switcher. A save reaches the watch the next time it checks, or through the iPhone.</span>
+      <div class="pe-top">
+        <div class="pe-head">
+          <div class="pe-title">
+            <h2>Watch menus</h2>
+            <span>${only ? `${watchName(only, watches)}. ` : ""}The Anywhere menu, the Entity quick menu and the page switcher. A save reaches the watch the next time it checks, or through the iPhone.</span>
+          </div>
+          ${watches.length > 1 ? this.renderTabs(watches) : nothing}
         </div>
-        ${watches.length > 1 ? this.renderTabs(watches) : nothing}
+        ${draft && !this.unsupported ? this.renderToolbar(draft) : nothing}
+        ${this.note ? html`<div class="pe-note ${this.note.kind}" role="status"><span>${this.note.text}</span>
+          <button class="pe-link" @click=${() => { this.note = undefined; }}>Dismiss</button></div>` : nothing}
       </div>
-      ${draft && !this.unsupported ? this.renderToolbar(draft) : nothing}
-      ${this.note ? html`<div class="pe-note ${this.note.kind}" role="status"><span>${this.note.text}</span>
-        <button class="pe-link" @click=${() => { this.note = undefined; }}>Dismiss</button></div>` : nothing}
       ${this.renderBody(watches)}
       ${this.restoreAsk ? this.renderRestoreAsk(this.restoreAsk) : nothing}
     `;
@@ -905,6 +947,7 @@ export class WaMenuEditor extends LitElement {
         @click=${() => this.redo()}>${uiIcon("redo")}</button>
       <span class="pe-state-text" aria-live="polite">${stateText}</span>
       <span class="pe-tools-gap"></span>
+      ${renderConfigSaved(this.record)}
       <button class="pe-btn" title="Go back to the copy Home Assistant holds. Undo brings the edits back." ?disabled=${!dirty || this.saving}
         @click=${() => this.discard()}>Discard</button>
       <button class="pe-btn pe-primary" title=${`Save (${MOD}S)`} ?disabled=${!dirty || this.saving}
@@ -1036,6 +1079,8 @@ export class WaMenuEditor extends LitElement {
       container-type: inline-size;
       --cf-pad: 16px;
       padding: var(--cf-pad);
+      /* A field brought into view lands under the sticky top. */
+      scroll-padding-top: var(--pe-top-h, 0px);
       color: var(--wa-ink);
       background: var(--wa-bg);
       font-size: 14px;
@@ -1043,6 +1088,21 @@ export class WaMenuEditor extends LitElement {
     * { box-sizing: border-box; }
     svg.ui-icon { width: 14px; height: 14px; display: block; flex: none; }
     h2, h3, h4, p { margin: 0; }
+
+    /* The title, the watch tabs and the toolbar stay at the top of the
+       editor, as in the page editor: one block, sticky to the host's top
+       edge and edge to edge, on the host's own background so the menus
+       scroll under it. A column, so the toolbar's bottom margin stays inside
+       and covered. The dialogs are modal, in the top layer, above it. Its
+       measured height is --pe-top-h on the host, which moves the sticky
+       watch preview (menu-view.ts) down under it. */
+    .pe-top {
+      flex: none; display: flex; flex-direction: column;
+      position: sticky; top: calc(-1 * var(--cf-pad, 16px)); z-index: 7;
+      margin: calc(-1 * var(--cf-pad, 16px)) calc(-1 * var(--cf-pad, 16px)) 0;
+      padding: var(--cf-pad, 16px) var(--cf-pad, 16px) 0;
+      background: var(--wa-bg);
+    }
     h2 { font-size: 20px; font-weight: 650; }
     h3 { font-size: 13px; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: var(--wa-muted); }
     code { font-family: monospace; font-size: 12px; overflow-wrap: anywhere; }

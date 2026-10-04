@@ -93,6 +93,7 @@ import {
 } from "../watch-settings.js";
 import { addTileStyles, renderAddTile } from "./add-tile.js";
 import {
+  SavedAgoTicker,
   configFootStatus,
   configFootStyles,
   copyConfigText,
@@ -100,6 +101,7 @@ import {
   renderConfigFoot,
   renderConfigHistoryDialog,
   renderConfigRawDialog,
+  renderConfigSaved,
 } from "./config-foot.js";
 import { type WatchCatalog, watchCatalogEventIsNews, watchCatalogFromRecord, watchCatalogReadMeansNone } from "./catalog.js";
 import { type WatchPagesApplyOptions, type WatchPagesDraft, createWatchPages, saveWatchPagesDraft } from "./draft.js";
@@ -570,6 +572,13 @@ export class WaPageEditor extends LitElement {
   @state() private hostWidth = 0;
   @state() private hostHeight = 0;
   private sizeObserver?: ResizeObserver;
+  /** The sticky block at the top (title, tabs, toolbar) the observer
+   * measures, and its height: written to `--pe-top-h` on the host for the
+   * sticky columns under it, and kept here for the drag's auto-scroll. */
+  private observedTop?: HTMLElement;
+  private topHeight = 0;
+  /** Draws again while the toolbar says "Saved 3 min ago". */
+  private readonly savedTicker = new SavedAgoTicker(this);
 
   /** The symbol grids' state (open, searched, recent) for the modules'
    * symbol fields. Not the panel's: its changes must draw this element. */
@@ -677,6 +686,7 @@ export class WaPageEditor extends LitElement {
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("pointerdown", this.onWindowPointerDown, true);
     this.sizeObserver?.disconnect();
+    this.observedTop = undefined;
     this.stopListeningForReconnect();
     this.reloadPending = false;
     this.cancelGestures();
@@ -833,6 +843,8 @@ export class WaPageEditor extends LitElement {
       this.renderRoot.querySelector<HTMLElement>(".pe-menu")?.scrollIntoView({ block: "nearest" });
     }
     openConfigDialogs(this.renderRoot, this.shownFootDialogs);
+    this.observeTop();
+    this.savedTicker.show(this.renderRoot.querySelector(".cf-saved") !== null);
     if (this.focusHistory) {
       this.focusHistory = false;
       this.renderRoot.querySelector<HTMLElement>(".cf-history-btn")?.focus();
@@ -2111,7 +2123,10 @@ export class WaPageEditor extends LitElement {
       if (!box) return;
       const whole = box === document.scrollingElement;
       const rect = whole ? { top: 0, bottom: window.innerHeight } : box.getBoundingClientRect();
-      const step = autoScrollStep(g.clientY, Math.max(0, rect.top), Math.min(window.innerHeight, rect.bottom));
+      // The sticky top block covers the top of the editor's own box: the
+      // edge to scroll up from is under it.
+      const covered = box === this ? this.topHeight : 0;
+      const step = autoScrollStep(g.clientY, Math.max(0, rect.top + covered), Math.min(window.innerHeight, rect.bottom));
       if (step === 0) return;
       const before = box.scrollTop;
       box.scrollTop += step;
@@ -2161,7 +2176,7 @@ export class WaPageEditor extends LitElement {
       const reply = await restoreWatchConfig(hass, watchId, "pages", ask.entry.revision, ask.baseRevision);
       note = {
         kind: "ok",
-        text: `Revision ${ask.entry.revision} is back, saved as revision ${reply.revision}. The watch picks it up the next time it checks, or the iPhone passes it on.`,
+        text: `Revision ${ask.entry.revision} is back. The watch picks it up the next time it checks, or the iPhone passes it on.`,
       };
       if (watchId === this.watchId) {
         this.restartDraft = { watchId, revision: reply.revision };
@@ -2211,7 +2226,7 @@ export class WaPageEditor extends LitElement {
     this.starting = false;
     if (watchId !== this.watchId) return;
     if (result.ok) {
-      this.note = { kind: "ok", text: `Started with an empty page, saved as revision ${result.revision}. The watch picks it up the next time it checks.` };
+      this.note = { kind: "ok", text: "Started with an empty page. The watch picks it up the next time it checks." };
       this.selectedPageId = result.pageId;
       this.selectedTileId = undefined;
     } else if (result.code === "no_record") {
@@ -2233,16 +2248,18 @@ export class WaPageEditor extends LitElement {
     const only = watches.length === 1 ? watches[0] : undefined;
     const draft = this.draft;
     return html`
-      <div class="pe-head">
-        <div class="pe-title">
-          <h2>Watch pages</h2>
-          <span>${only ? `${watchName(only, watches)}. ` : ""}A save reaches the watch the next time it checks, or through the iPhone.</span>
+      <div class="pe-top">
+        <div class="pe-head">
+          <div class="pe-title">
+            <h2>Watch pages</h2>
+            <span>${only ? `${watchName(only, watches)}. ` : ""}A save reaches the watch the next time it checks, or through the iPhone.</span>
+          </div>
+          ${watches.length > 1 ? this.renderTabs(watches) : nothing}
         </div>
-        ${watches.length > 1 ? this.renderTabs(watches) : nothing}
+        ${draft ? this.renderToolbar(draft) : nothing}
+        ${this.note ? html`<div class="pe-note ${this.note.kind}" role="status"><span>${this.note.text}</span>
+          <button class="pe-link" @click=${() => { this.note = undefined; }}>Dismiss</button></div>` : nothing}
       </div>
-      ${draft ? this.renderToolbar(draft) : nothing}
-      ${this.note ? html`<div class="pe-note ${this.note.kind}" role="status"><span>${this.note.text}</span>
-        <button class="pe-link" @click=${() => { this.note = undefined; }}>Dismiss</button></div>` : nothing}
       ${this.renderBody(watches)}
       ${this.restoreAsk ? this.renderRestoreAsk(this.restoreAsk) : nothing}
       ${this.deleteAsk && draft ? this.renderDeleteAsk(this.deleteAsk, draft.document) : nothing}
@@ -2261,6 +2278,7 @@ export class WaPageEditor extends LitElement {
         @click=${() => this.redo()}>${uiIcon("redo")}</button>
       <span class="pe-state-text" aria-live="polite">${stateText}</span>
       <span class="pe-tools-gap"></span>
+      ${renderConfigSaved(this.record)}
       <button class="pe-btn" title="Go back to the copy Home Assistant holds. Undo brings the edits back." ?disabled=${!dirty || this.saving}
         @click=${() => this.discard()}>Discard</button>
       <button class="pe-btn pe-primary" title=${`Save (${MOD}S)`} ?disabled=${!dirty || this.saving}
@@ -2294,14 +2312,42 @@ export class WaPageEditor extends LitElement {
   private watchSize(): void {
     if (typeof ResizeObserver === "undefined") return;
     this.sizeObserver ??= new ResizeObserver((entries) => {
-      const box = entries[0]?.contentRect;
-      if (!box) return;
-      if (Math.abs(box.width - this.hostWidth) >= 1) this.hostWidth = box.width;
-      // The content box: a sticky column stops at the host's padding, so
-      // this is the height it can have on screen.
-      if (Math.abs(box.height - this.hostHeight) >= 1) this.hostHeight = box.height;
+      for (const entry of entries) {
+        if (entry.target !== this) {
+          this.measureTop(entry.target as HTMLElement);
+          continue;
+        }
+        const box = entry.contentRect;
+        if (Math.abs(box.width - this.hostWidth) >= 1) this.hostWidth = box.width;
+        // The content box: a sticky column stops at the host's padding, so
+        // this is the height it can have on screen.
+        if (Math.abs(box.height - this.hostHeight) >= 1) this.hostHeight = box.height;
+      }
     });
     this.sizeObserver.observe(this);
+    this.observeTop();
+  }
+
+  /** Watch the sticky top block's height too. It is drawn once and kept, but
+   * a reconnect starts the observer over, so this runs after every draw and
+   * does nothing when the same block is watched already. */
+  private observeTop(): void {
+    const observer = this.sizeObserver;
+    if (observer === undefined) return;
+    const top = this.renderRoot?.querySelector<HTMLElement>(".pe-top") ?? undefined;
+    if (top === this.observedTop) return;
+    if (this.observedTop !== undefined) observer.unobserve(this.observedTop);
+    this.observedTop = top;
+    if (top !== undefined) observer.observe(top);
+  }
+
+  /** The top block's whole height, edge to edge, onto the host: no draw
+   * follows, the sticky columns read it straight from CSS. */
+  private measureTop(top: HTMLElement): void {
+    const height = top.offsetHeight;
+    if (height === this.topHeight) return;
+    this.topHeight = height;
+    this.style.setProperty("--pe-top-h", `${height}px`);
   }
 
   /** The side widths the grid can afford right now. */
@@ -2984,6 +3030,8 @@ export class WaPageEditor extends LitElement {
       container-type: inline-size;
       --cf-pad: 16px;
       padding: var(--cf-pad);
+      /* A tile or field brought into view lands under the sticky top. */
+      scroll-padding-top: var(--pe-top-h, 0px);
       color: var(--wa-ink);
       background: var(--wa-bg);
       font-size: 14px;
@@ -2991,6 +3039,21 @@ export class WaPageEditor extends LitElement {
     * { box-sizing: border-box; }
     svg.ui-icon { width: 14px; height: 14px; display: block; flex: none; }
     h2, h3, p { margin: 0; }
+
+    /* The title, the watch tabs and the toolbar stay at the top of the
+       editor: one block, sticky to the host's top edge and edge to edge as
+       the foot bar is at the bottom, on the host's own background so the
+       editor scrolls under it. A column, so the toolbar's bottom margin stays
+       inside and covered. Above the cards and their menus; the dialogs are
+       modal, in the top layer, above it. Its measured height is --pe-top-h
+       on the host (measureTop). */
+    .pe-top {
+      flex: none; display: flex; flex-direction: column;
+      position: sticky; top: calc(-1 * var(--cf-pad, 16px)); z-index: 7;
+      margin: calc(-1 * var(--cf-pad, 16px)) calc(-1 * var(--cf-pad, 16px)) 0;
+      padding: var(--cf-pad, 16px) var(--cf-pad, 16px) 0;
+      background: var(--wa-bg);
+    }
     h2 { font-size: 20px; font-weight: 650; }
     h3 { font-size: 13px; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: var(--wa-muted); }
     /* The browser's own monospace, not the shared sheet's family. */
@@ -3063,15 +3126,17 @@ export class WaPageEditor extends LitElement {
     }
     .pe-gutter:hover::after, .pe-gutter.dragging::after { background: var(--wa-accent); opacity: 1; }
     /* The page list and the cards stay in view while the stage scrolls the
-       editor: each sticks to the top of the editor's own scroll box (the
-       host, inside its padding) and, when taller than it, scrolls on its
-       own. --pe-view-h is the host's measured content height, less what
-       the foot bar covers of it (36px, less the padding it sits in) and a
-       little air. The stage does not stick: it scrolls with the editor as
-       before. */
+       editor: each sticks just under the sticky top block (the host's
+       scroll box, inside its padding, starts --cf-pad down; the block
+       reaches --pe-top-h down from the edge) and, when taller than the room
+       left, scrolls on its own. --pe-view-h is the host's measured content
+       height, less what the top block covers past the padding, what the
+       foot bar covers (36px, less the padding it sits in) and a little air.
+       The stage does not stick: it scrolls with the editor as before. */
     .pe-pages, .pe-side {
-      position: sticky; top: 0;
-      max-height: calc(var(--pe-view-h, calc(100dvh - 120px)) - 30px);
+      --pe-under-top: max(0px, calc(var(--pe-top-h, 0px) - var(--cf-pad, 16px)));
+      position: sticky; top: var(--pe-under-top);
+      max-height: calc(var(--pe-view-h, calc(100dvh - 120px)) - 30px - var(--pe-under-top));
       overflow-y: auto; overflow-x: hidden;
       scrollbar-width: thin;
     }

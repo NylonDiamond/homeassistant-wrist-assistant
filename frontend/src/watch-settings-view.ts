@@ -286,7 +286,7 @@ export class WatchSettings implements ReactiveController {
       return;
     }
     if (result.ok) {
-      this.note = { kind: "note", text: `Started with the defaults, saved as revision ${result.revision}. The watch picks them up the next time it checks.` };
+      this.note = { kind: "note", text: "Started with the defaults. The watch picks them up the next time it checks." };
     } else if (result.code === "no_record") {
       this.note = { kind: "warn", text: SETTINGS_PAIR_FIRST_TEXT };
       this.changed();

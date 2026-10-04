@@ -790,7 +790,12 @@ export const menuViewStyles = css`
     grid-template-columns: auto minmax(300px, 360px) minmax(280px, 1fr);
     grid-template-areas: "preview list form";
   }
-  .me-preview { grid-area: preview; position: sticky; top: 0; padding-top: 2px; }
+  /* Sticks under the editor's sticky top block (--pe-top-h from the edge,
+     the scroll box starting --cf-pad down). */
+  .me-preview {
+    grid-area: preview; position: sticky; padding-top: 2px;
+    top: max(0px, calc(var(--pe-top-h, 0px) - var(--cf-pad, 16px)));
+  }
   .me-listcol, .me-formcol { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
   .me-listcol { grid-area: list; }
   .me-listcol .me-mode, .me-listcol fieldset.me-pick { --wa-lab: 92px; }

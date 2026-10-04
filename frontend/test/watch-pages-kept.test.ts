@@ -147,28 +147,28 @@ describe("the leave guard's probe", () => {
 describe("the words after a save", () => {
   const base = { revision: 5, merged: false };
 
-  it("says a save landed, and when the iPhone's changes were merged in", () => {
-    expect(watchPagesSaveNote({ ...base, ok: true })).toEqual({ kind: "ok", text: "Saved as revision 5." });
-    expect(watchPagesSaveNote({ ...base, ok: true, merged: true }).text).toBe("Saved. Changes from the iPhone were merged in.");
+  it("says nothing after a plain save (the toolbar's Saved just now does), and says when the iPhone's changes were merged in", () => {
+    expect(watchPagesSaveNote({ ...base, ok: true })).toBeUndefined();
+    expect(watchPagesSaveNote({ ...base, ok: true, merged: true })?.text).toBe("Saved. Changes from the iPhone were merged in.");
   });
 
   it("names every way a save can fail in plain words", () => {
-    expect(watchPagesSaveNote({ ...base, ok: false, code: "conflict" }).text).toMatch(/kept changing on the iPhone/);
-    expect(watchPagesSaveNote({ ...base, ok: false, code: "no_record" }).text).toBe(
+    expect(watchPagesSaveNote({ ...base, ok: false, code: "conflict" })?.text).toMatch(/kept changing on the iPhone/);
+    expect(watchPagesSaveNote({ ...base, ok: false, code: "no_record" })?.text).toBe(
       "Not saved. Home Assistant no longer holds pages for this watch. Start with an empty page again, or let the iPhone send its pages.",
     );
-    expect(watchPagesSaveNote({ ...base, ok: false, code: "unavailable" }).kind).toBe("warn");
-    expect(watchPagesSaveNote({ ...base, ok: false, code: "invalid", problems: ["Page 1 has no id."] }).text)
+    expect(watchPagesSaveNote({ ...base, ok: false, code: "unavailable" })?.kind).toBe("warn");
+    expect(watchPagesSaveNote({ ...base, ok: false, code: "invalid", problems: ["Page 1 has no id."] })?.text)
       .toBe("Not saved. Something in the pages is not right: Page 1 has no id.");
-    expect(watchPagesSaveNote({ ...base, ok: false, code: "invalid", message: "bad shape" }).text)
+    expect(watchPagesSaveNote({ ...base, ok: false, code: "invalid", message: "bad shape" })?.text)
       .toBe("Not saved. Home Assistant refused the pages: bad shape");
-    expect(watchPagesSaveNote({ ...base, ok: false, code: "unknown", message: "socket closed" }).text).toBe("Not saved: socket closed");
-    expect(watchPagesSaveNote({ ...base, ok: false, code: "unknown" }).text).toBe("Not saved.");
-    expect(watchPagesSaveNote({ ...base, ok: false, code: "busy" }).text).toMatch(/Already saving/);
+    expect(watchPagesSaveNote({ ...base, ok: false, code: "unknown", message: "socket closed" })?.text).toBe("Not saved: socket closed");
+    expect(watchPagesSaveNote({ ...base, ok: false, code: "unknown" })?.text).toBe("Not saved.");
+    expect(watchPagesSaveNote({ ...base, ok: false, code: "busy" })?.text).toMatch(/Already saving/);
   });
 
   it("says when the iPhone had saved the same changes, so nothing was sent", () => {
-    expect(watchPagesSaveNote({ ...base, ok: true, merged: true, alreadySaved: true }).text).toBe(
+    expect(watchPagesSaveNote({ ...base, ok: true, merged: true, alreadySaved: true })?.text).toBe(
       "Nothing left to save. The iPhone saved the same changes, as revision 5.",
     );
   });
@@ -176,7 +176,8 @@ describe("the words after a save", () => {
   it("never breaks a sentence with a dash", () => {
     const codes = ["conflict", "no_record", "invalid", "unavailable", "busy", "other"];
     for (const code of codes) {
-      const { text } = watchPagesSaveNote({ ...base, ok: false, code, message: "x" });
+      const text = watchPagesSaveNote({ ...base, ok: false, code, message: "x" })?.text;
+      expect(text).toBeDefined();
       expect(text).not.toMatch(/ - |–|—/);
     }
   });

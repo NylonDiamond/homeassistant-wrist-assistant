@@ -17,16 +17,16 @@ export function watchMenusReplacedText(sections: readonly WatchMenusSection[]): 
   return `The iPhone also changed ${list}. ${names.length === 1 ? "Your version replaced it." : "Your versions replaced them."}`;
 }
 
-export function watchMenusSaveNote(result: WatchMenusSaveResult): WatchPagesNote {
+/** The note after a save, or none: a plain save that went through says
+ * nothing, since the toolbar's "Saved just now" already does. */
+export function watchMenusSaveNote(result: WatchMenusSaveResult): WatchPagesNote | undefined {
   if (result.ok) {
     if (result.alreadySaved === true) {
       return { kind: "ok", text: `Nothing left to save. The iPhone saved the same changes, as revision ${result.revision}.` };
     }
     const replaced = result.replaced ?? [];
-    if (replaced.length > 0) return { kind: "warn", text: `Saved as revision ${result.revision}. ${watchMenusReplacedText(replaced)}` };
-    return result.merged
-      ? { kind: "ok", text: "Saved. Changes from the iPhone were merged in." }
-      : { kind: "ok", text: `Saved as revision ${result.revision}.` };
+    if (replaced.length > 0) return { kind: "warn", text: `Saved. ${watchMenusReplacedText(replaced)}` };
+    return result.merged ? { kind: "ok", text: "Saved. Changes from the iPhone were merged in." } : undefined;
   }
   const message = (result.message ?? "").trim();
   switch (result.code) {

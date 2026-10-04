@@ -33,14 +33,15 @@ export function watchCommandError(err: unknown): { code?: string; message: strin
   return code === undefined ? { message } : { code, message };
 }
 
-export function watchPagesSaveNote(result: WatchPagesSaveResult): WatchPagesNote {
+/** The note after a save, or none: a plain save that went through says
+ * nothing, since the toolbar's "Saved just now" already does. A note is
+ * there only when it tells something more. */
+export function watchPagesSaveNote(result: WatchPagesSaveResult): WatchPagesNote | undefined {
   if (result.ok) {
     if (result.alreadySaved === true) {
       return { kind: "ok", text: `Nothing left to save. The iPhone saved the same changes, as revision ${result.revision}.` };
     }
-    return result.merged
-      ? { kind: "ok", text: "Saved. Changes from the iPhone were merged in." }
-      : { kind: "ok", text: `Saved as revision ${result.revision}.` };
+    return result.merged ? { kind: "ok", text: "Saved. Changes from the iPhone were merged in." } : undefined;
   }
   const message = (result.message ?? "").trim();
   switch (result.code) {

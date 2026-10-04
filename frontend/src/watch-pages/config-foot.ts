@@ -10,11 +10,14 @@
 // open document as JSON, read only with a Copy button, as the complication
 // editor's raw view is read only.
 //
+// The toolbar's "Saved 3 min ago" is here too, read from the same stored
+// copy, with the small timer that keeps it true (`SavedAgoTicker`).
+//
 // Pure functions of their input, so a test can flatten what they draw. Both
 // editors put `configFootStyles` in their sheets and open the dialogs with
 // `openConfigDialogs` from `updated()`.
 
-import { css, html, nothing, type TemplateResult } from "lit";
+import { type ReactiveController, type ReactiveControllerHost, css, html, nothing, type TemplateResult } from "lit";
 
 import type { WatchConfigHistoryEntry, WatchConfigRecord } from "../ha-api.js";
 import { agoWords } from "../send-state.js";
@@ -85,6 +88,75 @@ export function configFootStatus(i: {
     return { tone: "ok", revision, state: COLLECTED_PILL_TEXT, help: `Revision ${record.revision} has been collected.`, size, near };
   }
   return { tone: "warn", revision, state: WAITING_PILL_TEXT, help: WAITING_HELP_TEXT, size, near };
+}
+
+/** The toolbar's quiet fact about the stored copy, left of Discard: "Saved
+ * 3 min ago", "Saved just now". It reads the same `updated_at` as the foot
+ * bar's line, so the two always agree. Empty when there is no stored copy;
+ * plain "Saved" for a time that will not parse. A plain save that went
+ * through says nothing else: this is how it shows. */
+export function configSavedText(record: WatchConfigRecord | undefined, now: number = Date.now()): string {
+  if (record === undefined || record.revision <= 0) return "";
+  const when = ago(record.updated_at, now);
+  return when ? `Saved ${when}` : "Saved";
+}
+
+/** The fact as a muted span, the whole stamp in its title. */
+export function renderConfigSaved(record: WatchConfigRecord | undefined, now: number = Date.now()): TemplateResult | typeof nothing {
+  const text = configSavedText(record, now);
+  if (record === undefined || text === "") return nothing;
+  const at = record.updated_at ? Date.parse(record.updated_at) : NaN;
+  const stamp = Number.isNaN(at) ? "" : `, ${new Date(at).toLocaleString()}`;
+  return html`<span class="cf-saved" title=${`Revision ${record.revision}, ${savedByWords(record.updated_by)}${stamp}`}>${text}</span>`;
+}
+
+/** How often a shown "Saved 3 min ago" is drawn again: twice a minute, so
+ * it is never a minute behind. */
+export const SAVED_TICK_MS = 30_000;
+
+/**
+ * Draws its host again every `SAVED_TICK_MS` while the saved fact is shown,
+ * so "Saved just now" turns into "Saved 1 min ago" without an edit. The host
+ * says whether the fact is shown after each draw (`show`); the timer stops
+ * when it is not, and while the host is out of the tree.
+ */
+export class SavedAgoTicker implements ReactiveController {
+  private wanted = false;
+  private connected = false;
+  private timer?: ReturnType<typeof setInterval>;
+
+  constructor(private readonly host: ReactiveControllerHost) {
+    host.addController(this);
+  }
+
+  show(on: boolean): void {
+    this.wanted = on;
+    this.sync();
+  }
+
+  /** The timer runs now. For tests. */
+  get running(): boolean {
+    return this.timer !== undefined;
+  }
+
+  hostConnected(): void {
+    this.connected = true;
+    this.sync();
+  }
+
+  hostDisconnected(): void {
+    this.connected = false;
+    this.sync();
+  }
+
+  private sync(): void {
+    const run = this.wanted && this.connected;
+    if (run && this.timer === undefined) this.timer = setInterval(() => this.host.requestUpdate(), SAVED_TICK_MS);
+    else if (!run && this.timer !== undefined) {
+      clearInterval(this.timer);
+      this.timer = undefined;
+    }
+  }
 }
 
 export interface ConfigFootInput {
@@ -281,6 +353,8 @@ export const configFootStyles = css`
   @container (max-width: 560px) {
     .cf-size { display: none; }
   }
+  /* The toolbar's "Saved 3 min ago", left of Discard. */
+  .cf-saved { margin-right: 4px; color: var(--wa-muted); font-size: 13px; white-space: nowrap; }
 
   dialog.cf-dialog {
     width: min(560px, calc(100vw - 32px)); max-height: min(80vh, 720px); padding: 20px;
