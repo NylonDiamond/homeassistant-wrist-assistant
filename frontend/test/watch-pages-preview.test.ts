@@ -47,6 +47,20 @@ import {
   watchSpecialTileLook,
   watchTileIsTvRemote,
   watchTileStateKey,
+  renderWatchClock,
+  renderWatchPagePreview,
+  watchClockFontSize,
+  watchIconVerticalOffset,
+  watchLabelBottomPadding,
+  watchSensorValueText,
+  watchStatusClock,
+  watchTileBadge,
+  watchTileCornerRadius,
+  watchTileFill,
+  watchTileIconTreatment,
+  watchTileLabelShown,
+  watchTileStyleActive,
+  watchTimerText,
 } from "../src/watch-pages/preview.js";
 import { watchStylingTheme } from "../src/watch-pages/tile-styling.js";
 
@@ -83,11 +97,15 @@ describe("icon size", () => {
     expect(watchTileIconSize(tile({ iconSizeOverride: 2 }), w, h)).toBe(8);
   });
 
-  it("draws an own size in proportion to the picture's automatic size", () => {
-    const auto = watchPreviewIconSize(tile(), w, h, false);
-    expect(auto).toBeCloseTo(Math.min(24, h * 0.3));
-    expect(watchPreviewIconSize(tile({ iconSizeOverride: 36 }), w, h, false)).toBeCloseTo(auto);
-    expect(watchPreviewIconSize(tile({ iconSizeOverride: 18 }), w, h, false)).toBeCloseTo(auto / 2);
+  it("draws the watch's own size in the picture", () => {
+    expect(watchPreviewIconSize(tile(), w, h)).toBe(watchTileIconSize(tile(), w, h));
+    expect(watchPreviewIconSize(tile({ iconSizeOverride: 18 }), w, h)).toBe(18);
+    // Width 0.64 and height 0.54 with a label, 0.7 and 0.68 without.
+    expect(watchTileIconSize(tile(), 40, 40)).toBeCloseTo(Math.min(40 * 0.64, 40 * 0.54));
+    expect(watchTileIconSize(tile(), 40, 34)).toBeCloseTo(Math.min(40 * 0.7, 34 * 0.68));
+    expect(watchTileIconSize(tile(), 200, 200)).toBe(36);
+    expect(watchTileIconSize(tile(), 200, 30)).toBeCloseTo(30 * 0.68);
+    expect(watchTileIconSize(tile({ showLabel: false }), 200, 200)).toBe(40);
   });
 
   it("knows No icon from an absent icon", () => {
@@ -210,34 +228,39 @@ describe("tiles as the watch draws them", () => {
     expect(watchSpacerStyle({ id: "S", entityId: "spacer.A", color: "#FF0000", colorOpacity: 0.5 }, 1)).toContain("rgba(255, 0, 0, 0.4)");
   });
 
-  it("honor the value label style on a sensor, a counter and a binary sensor", () => {
+  it("honor the value label style on a sensor, a counter and a binary sensor, as a badge top left", () => {
     const sensor = state("sensor.temp", "21.53", { unit_of_measurement: "°C" });
     const t = { id: "T", entityId: "sensor.temp" };
-    expect(face(t, sensor)).toContain("21.5 °C");
+    expect(face(t, sensor)).toContain("21.5°C");
+    expect(face(t, sensor)).toContain('class="wp-badge"');
+    expect(face(t, sensor)).not.toContain("wp-state");
     expect(face({ ...t, stateValueLabelStyle: "Off" }, sensor)).not.toContain("21.5");
     const pill = face({ ...t, stateValueLabelStyle: "Pill" }, sensor);
-    expect(pill).toContain("21.5 °C");
+    expect(pill).toContain("21.5°C");
     expect(pill).toContain("border-radius:999px");
     expect(face(t, sensor)).not.toContain("border-radius:999px");
     for (const [entityId, value] of [["counter.cups", "4"], ["binary_sensor.door", "on"]] as const) {
       const states = state(entityId, value, { current_temperature: 20, temperature: 21 });
-      expect(face({ id: "T", entityId }, states), entityId).toContain("wp-state");
-      expect(face({ id: "T", entityId, stateValueLabelStyle: "Off" }, states), entityId).not.toContain("wp-state");
+      expect(face({ id: "T", entityId }, states), entityId).toContain("wp-badge");
+      expect(face({ id: "T", entityId, stateValueLabelStyle: "Off" }, states), entityId).not.toContain("wp-badge");
       expect(face({ id: "T", entityId, stateValueLabelStyle: "Pill" }, states), entityId).toContain("border-radius:999px");
     }
   });
 
   it("put a bar tile's value label top left", () => {
     const drawn = face({ id: "T", entityId: "light.desk", color: "#FF0000" }, state("light.desk", "on", { brightness: 128 }));
-    const value = drawn.slice(drawn.indexOf("wp-value"));
+    const value = drawn.slice(drawn.indexOf("wp-badge"));
     expect(value).toMatch(/top:8px;left:6px/);
     expect(value).not.toMatch(/right:/);
+    expect(value).toContain(">50%<");
   });
 
   it("multiply the fill, the border and the pattern by colorOpacity", () => {
     const t = { id: "T", entityId: "light.desk", color: "#FF0000", colorOpacity: 0.5, borderStyle: "line", borderActiveOnly: false, backgroundPattern: "stripes", patternOpacity: 1 };
     const drawn = face(t);
-    expect(drawn).toContain("background:rgba(255, 0, 0, 0.15)");
+    // Lit: the color at 0.52 times 0.5.
+    expect(drawn).toContain("rgba(255, 0, 0, 0.26)");
+    expect(drawn).toContain("rgba(255, 255, 255, 0.16)");
     expect(drawn).toContain("solid rgba(255, 0, 0, 0.5)");
     expect(drawn).toContain("rgba(115, 115, 115, 0.1)");
   });
@@ -325,7 +348,6 @@ describe("special tiles as their own watch views draw them", () => {
       expect(l.topRight).toBe("play.fill");
       expect(l.topLeft).toEqual({ kind: "text", lines: ["42%"], ink: { hex: "#FFFFFF", alpha: 0.62 }, weight: 500, pill: false });
       expect(l.ink).toEqual({ hex: ember.entityRemote, alpha: 1 });
-      expect(l.stateLine).toBe(false);
       expect(look(remote, many(state("remote.living_room_apple_tv", "on"), player("paused")))!.topRight).toBe("pause.fill");
       expect(look(remote, many(state("remote.living_room_apple_tv", "on"), player("idle")))!.topRight).toBe("pause.fill");
       const off = look(remote, many(state("remote.living_room_apple_tv", "on"), player("off")))!;
@@ -498,13 +520,16 @@ describe("special tiles as their own watch views draw them", () => {
 
     it("is the plain sensor tile with the battery top left and its status top right", () => {
       const states = many(state("lawn_mower.lawny", "mowing"), state("sensor.lawny_battery", "55"));
-      expect(look(mower, states)).toMatchObject({ symbol: "leaf.fill", ink: { hex: "#34C759" }, topRight: "play.fill", topLeft: { symbol: "battery.75", level: 55 }, stateLine: true });
+      expect(look(mower, states)).toMatchObject({ symbol: "leaf.fill", ink: { hex: "#34C759" }, topRight: "play.fill", topLeft: { symbol: "battery.75", level: 55 } });
       expect(look({ ...mower, mowerBatteryEntityId: "sensor.other" }, many(states, state("sensor.other", "12.7")))!.topLeft).toMatchObject({ level: 12, symbol: "battery.25" });
       expect(look({ ...mower, showBatteryOnTile: false }, states)!.topLeft).toBeUndefined();
       expect(look(mower, state("lawn_mower.lawny", "docked"))).toMatchObject({ topLeft: undefined, topRight: undefined });
       expect(look(mower, state("lawn_mower.lawny", "returning"))!.topRight).toBe("arrow.uturn.backward");
       expect(look({ ...mower, icon: "leaf", color: "#123456" }, states)).toMatchObject({ symbol: "leaf", ink: { hex: "#123456" } });
-      expect(face(mower, states)).toContain("wp-state");
+      // The battery is its only reading: no line of state under the name.
+      const drawn = face(mower, states);
+      expect(drawn).toContain("<span>55</span>");
+      expect(drawn).not.toContain("Mowing");
     });
   });
 
@@ -644,6 +669,154 @@ describe("special tiles as their own watch views draw them", () => {
   it("leaves calendar and weather the plain tile", () => {
     expect(look({ id: "C", entityId: "calendar.family" }, state("calendar.family", "off"))).toBeUndefined();
     expect(look({ id: "W", entityId: "weather.home" }, state("weather.home", "sunny"))).toBeUndefined();
-    expect(face({ id: "W", entityId: "weather.home" }, state("weather.home", "sunny"))).toContain("wp-state");
+    // Outside the value label domains: a symbol and a name, no reading.
+    const drawn = face({ id: "W", entityId: "weather.home" }, state("weather.home", "sunny"));
+    expect(drawn).not.toContain("wp-badge");
+    expect(drawn).not.toMatch(/sunny/i);
+  });
+});
+
+// ── a tile laid out as the watch lays it out ─────────────────────────────
+
+describe("the watch's tile layout", () => {
+  const page: WatchPage = { id: "P", name: "P", items: [], themeOverride: "ember" };
+  const face = (t: WatchPageTile, states?: Record<string, HassEntityState>, size = { width: 60, height: 60 }) =>
+    text(renderWatchTileFace(t, size, { page, pages: [], screen: { width: 208, height: 248 }, states, scale: 1 }, 21));
+
+  it("rounds the corners 4, 5, 6 or 8 by the smaller side", () => {
+    expect([24.9, 25, 39.9, 40, 59.9, 60, 200].map((side) => watchTileCornerRadius(200, side))).toEqual([4, 5, 5, 6, 6, 8, 8]);
+    expect(watchTileCornerRadius(30, 200)).toBe(5);
+    expect(face(tile(), undefined, { width: 60, height: 30 })).toContain("border-radius:5px");
+    expect(face(tile(), undefined, { width: 100, height: 100 })).toContain("border-radius:8px");
+  });
+
+  it("hides the name under 35 points tall and when it is turned off", () => {
+    expect(watchTileLabelShown(tile(), 34.9)).toBe(false);
+    expect(watchTileLabelShown(tile(), 35)).toBe(true);
+    expect(watchTileLabelShown(tile({ showLabel: false }), 80)).toBe(false);
+    expect(face(tile({ customLabel: "Desk" }), undefined, { width: 60, height: 34 })).not.toContain("wp-label");
+    expect(face(tile({ customLabel: "Desk" }), undefined, { width: 60, height: 35 })).toContain(">Desk<");
+  });
+
+  it("sets the name's gap and lifts the symbol by the tile's height", () => {
+    expect([34, 49, 69, 70].map(watchLabelBottomPadding)).toEqual([1, 3, 4, 5]);
+    expect([40, 60, 80].map((h) => watchIconVerticalOffset(tile(), h))).toEqual([-2, -3, -4]);
+    expect(watchIconVerticalOffset(tile(), 30)).toBe(0);
+    expect(watchIconVerticalOffset(tile({ showLabel: false }), 80)).toBe(0);
+    const drawn = face(tile({ customLabel: "Desk" }), undefined, { width: 60, height: 60 });
+    expect(drawn).toContain("transform:translateY(-3px)");
+    expect(drawn).toContain("bottom:4px");
+  });
+
+  it("draws the symbol at the watch's size, centred", () => {
+    // 60 by 60 with a name: min(60 * 0.64, 60 * 0.54) = 32.4.
+    expect(face(tile())).toMatch(/width=32\.4\d* /);
+    expect(face(tile(), undefined, { width: 60, height: 30 })).toMatch(/width=20\.4\d* /);
+  });
+
+  it("writes each kind's badge as its watch view does, and none for the rest", () => {
+    const badge = (t: WatchPageTile, states: Record<string, HassEntityState>, w = 60, h = 60) => watchTileBadge(t, { states }, w, h);
+    expect(badge(tile(), state("light.desk", "off"))).toEqual({ text: "OFF", weight: 600, pill: false, top: 8 });
+    expect(badge(tile(), state("light.desk", "on", { brightness: 128 }))).toMatchObject({ text: "50%", weight: 500 });
+    expect(badge(tile(), state("light.desk", "on"))).toBeUndefined();
+    expect(badge(tile({ stateBarStyle: "Fill" }), state("light.desk", "off"))!.top).toBe(6);
+    expect(badge(tile({ stateValueLabelStyle: "Off" }), state("light.desk", "off"))).toBeUndefined();
+    const cover = { id: "C", entityId: "cover.blind" };
+    expect([0, 40, 100].map((p) => badge(cover, state("cover.blind", "open", { current_position: p }))!.text)).toEqual(["Closed", "40%", "Open"]);
+    expect(badge(cover, state("cover.blind", "opening"))!.text).toBe("Opening");
+    expect(badge(cover, state("cover.blind", "unavailable"))).toBeUndefined();
+    expect(badge({ ...cover, stateBarStyle: "Fill" }, state("cover.blind", "closed"))!.top).toBe(5);
+    expect(badge({ id: "F", entityId: "fan.ceiling" }, state("fan.ceiling", "on", { percentage: 33 }))!.text).toBe("33%");
+    expect(badge({ id: "F", entityId: "fan.ceiling" }, state("fan.ceiling", "off", { percentage: 33 }))).toBeUndefined();
+    expect(badge({ id: "M", entityId: "media_player.den" }, state("media_player.den", "paused", { volume_level: 0.257 }))!.text).toBe("25%");
+    expect(badge({ id: "M", entityId: "media_player.den" }, state("media_player.den", "off", { volume_level: 0.2 }))).toBeUndefined();
+    expect(badge({ id: "A", entityId: "automation.lights" }, state("automation.lights", "off"))).toEqual({ text: "OFF", weight: 600, pill: false, top: 6 });
+    expect(badge({ id: "A", entityId: "automation.lights", showActivityStatus: false }, state("automation.lights", "on"))).toBeUndefined();
+    expect(badge({ id: "T", entityId: "timer.tea" }, state("timer.tea", "active", { remaining: "0:04:05" }))).toMatchObject({ text: "4:05", top: 8 });
+    expect(badge({ id: "T", entityId: "timer.tea" }, state("timer.tea", "idle", { remaining: "0:04:05" }))).toBeUndefined();
+    expect(badge({ id: "N", entityId: "counter.cups" }, state("counter.cups", "4"))!.text).toBe("4");
+    expect(badge({ id: "B", entityId: "binary_sensor.door" }, state("binary_sensor.door", "on", { device_class: "door" }))!.text).toBe("Open");
+    expect(badge({ id: "S", entityId: "sensor.temp" }, state("sensor.temp", "unavailable"))).toBeUndefined();
+    for (const [entityId, value] of [["switch.fan", "off"], ["lock.door", "unlocked"], ["scene.night", "scening"], ["input_boolean.guest", "off"]] as const) {
+      expect(badge({ id: "X", entityId }, state(entityId, value)), entityId).toBeUndefined();
+    }
+    expect(face(tile(), state("light.desk", "off"))).toContain(">OFF<");
+  });
+
+  it("formats a sensor's value as the watch does", () => {
+    expect(watchSensorValueText("21.53", "°C", undefined, undefined)).toBe("21.5°C");
+    expect(watchSensorValueText("4.05", "kWh", undefined, 1)).toBe("4.1 kWh");
+    expect(watchSensorValueText("12.50", "%", undefined, 2)).toBe("12.5%");
+    expect(watchSensorValueText("7", "", undefined, 0)).toBe("7");
+    expect(watchSensorValueText("-0.04", undefined, undefined, 1)).toBe("0");
+    expect(watchSensorValueText("Cloudy", "x", undefined, 1)).toBe("Cloudyx");
+    expect(watchSensorValueText("off", undefined, "moisture", 1)).toBe("Dry");
+    expect(watchSensorValueText("on", undefined, "weird", 1)).toBe("On");
+    expect(watchSensorValueText("idle", undefined, undefined, 1)).toBe("idle");
+    expect(watchTimerText("1:02:03")).toBe("1:02:03");
+    expect(watchTimerText("0:00:00")).toBe("--:--");
+    expect(watchTimerText(undefined)).toBeUndefined();
+  });
+
+  it("lights the glass as each watch view hands isActive to its style", () => {
+    expect(watchTileStyleActive(tile(), state("light.desk", "off"))).toBe(false);
+    expect(watchTileStyleActive(tile(), state("light.desk", "on"))).toBe(true);
+    expect(watchTileStyleActive({ id: "L", entityId: "lock.door" }, state("lock.door", "unlocked"))).toBe(true);
+    expect(watchTileStyleActive({ id: "C", entityId: "cover.blind" }, state("cover.blind", "closed"))).toBe(true);
+    expect(watchTileStyleActive({ id: "S", entityId: "sensor.t" }, state("sensor.t", "unavailable"))).toBe(false);
+    expect(watchTileStyleActive({ id: "S", entityId: "binary_sensor.d" }, state("binary_sensor.d", "off"))).toBe(true);
+    expect(watchTileStyleActive({ id: "M", entityId: "media_player.den" }, state("media_player.den", "idle"))).toBe(true);
+    expect(watchTileStyleActive({ id: "M", entityId: "media_player.den" }, state("media_player.den", "off"))).toBe(false);
+    expect(watchTileStyleActive({ id: "A", entityId: "automation.x" }, state("automation.x", "off"))).toBe(false);
+    expect(watchTileStyleActive({ id: "P", entityId: "point_control.X" })).toBe(false);
+    expect(watchTileStyleActive(tile())).toBe(true);
+  });
+
+  it("fills a lit tile in its color with the sheen and leaves an unlit one near clear and desaturated", () => {
+    const lit = watchTileFill({ kind: "solid", hex: "#FF0000", opacity: 1 }, "#FFFFFF", true);
+    expect(lit).toContain("rgba(255, 0, 0, 0.52)");
+    expect(lit).toContain("rgba(255, 255, 255, 0.32)");
+    expect(watchTileFill(undefined, "#00FF00", true)).toContain("rgba(0, 255, 0, 0.52)");
+    const off = watchTileFill({ kind: "solid", hex: "#FF0000", opacity: 1 }, "#FFFFFF", false);
+    expect(off).toContain("rgba(255, 0, 0, 0.025)");
+    expect(off).toContain("rgba(142, 142, 147, 0.06)");
+    expect(off).not.toContain("0.52");
+    const drawn = face(tile({ color: "#FF0000" }), state("light.desk", "off"));
+    expect(drawn).toContain("filter:saturate(0.5) brightness(0.94)");
+    expect(drawn).toContain("wp-tile off");
+    expect(face(tile({ color: "#FF0000", dimWhenOff: false }), state("light.desk", "off"))).not.toContain("saturate");
+    expect(face(tile({ color: "#FF0000" }), state("light.desk", "on"))).not.toContain("saturate");
+  });
+
+  it("draws the symbol filled, faded and glowing as each kind does", () => {
+    expect(watchTileIconTreatment(tile(), state("light.desk", "off"))).toEqual({ filled: false, opacity: 0.68, glow: undefined });
+    expect(watchTileIconTreatment(tile(), state("light.desk", "on"))).toEqual({ filled: true, opacity: 1, glow: "lit" });
+    expect(watchTileIconTreatment(tile({ dimWhenOff: false }), state("light.desk", "off")).opacity).toBe(1);
+    expect(watchTileIconTreatment({ id: "S", entityId: "switch.x" }, state("switch.x", "off"))).toEqual({ filled: false, opacity: 0.85, glow: undefined });
+    expect(watchTileIconTreatment({ id: "L", entityId: "lock.x" }, state("lock.x", "unlocked"))).toEqual({ filled: true, opacity: 0.6, glow: undefined });
+    expect(watchTileIconTreatment({ id: "S", entityId: "scene.x" }, state("scene.x", "scening"))).toEqual({ filled: true, opacity: 1, glow: "soft" });
+    expect(watchTileIconTreatment({ id: "S", entityId: "sensor.x" }, state("sensor.x", "unavailable")).opacity).toBe(0.5);
+    expect(face(tile(), state("light.desk", "on"))).toContain("drop-shadow(0 0 5.83px");
+  });
+
+  it("puts the clock where the device's clock is, bold, with the settings gear left of it", () => {
+    expect(watchStatusClock({ width: 208, height: 248 })).toEqual({ centreY: 25.5, leftFromTrailing: 53.5 });
+    expect(watchStatusClock({ width: 199, height: 243 })).toEqual({ centreY: 23, leftFromTrailing: 51 });
+    expect(watchClockFontSize(208)).toBe(20);
+    const clock = text(renderWatchClock({ width: 208, height: 248 }, 1, 34, undefined));
+    expect(clock).toContain("top:25.5px");
+    expect(clock).toContain("right:16px");
+    expect(clock).toContain("font-size:20px");
+    expect(clock).toContain("wp-gear");
+    expect(clock.indexOf("wp-gear")).toBeLessThan(clock.indexOf("10:09"));
+    expect(text(renderWatchClock({ width: 208, height: 248 }, 1, 0, undefined))).toBe("");
+  });
+
+  it("draws the page inside the watch's case", () => {
+    const drawn = text(renderWatchPagePreview({ page: { ...page, items: [tile()] }, pages: [], screen: { width: 208, height: 248 }, scale: 1 }));
+    expect(drawn).toContain('class="wa-watch"');
+    expect(drawn).toContain("--wf-radius:");
+    expect(drawn).toContain("--wf-crown-top:");
+    expect(drawn.indexOf("wa-watch")).toBeLessThan(drawn.indexOf("wp-screen"));
   });
 });

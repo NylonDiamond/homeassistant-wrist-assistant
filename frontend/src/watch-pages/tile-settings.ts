@@ -72,6 +72,7 @@ import {
 import { watchDecimalOptions, watchStateEmptyText, watchStylingChoices, watchStylingLabel, watchStylingReset, watchStylingSlider } from "./tile-styling.js";
 import { watchPageSwatchTheme } from "./page-settings-model.js";
 import type { TileSettingsHost } from "./editor-host.js";
+import { sectionOpen, setSectionOpen } from "./fold-memory.js";
 import { forgetSpecialStatus, renderSpecial, specialSummary, watchSpecialSectionTitle } from "./special-settings.js";
 import { renderInboxLine } from "./app-settings.js";
 import { watchSpecialTask } from "./special-model.js";
@@ -221,34 +222,17 @@ import {
 /** Every `uiState` key of this module starts with this. */
 const KEY = "tile-settings";
 
-/** Sections open when first seen. The rest start folded, so the card opens
- * on what a person changes most. Kept by section, not by tile: a person who
- * folds Action keeps it folded from tile to tile. */
-const OPEN_AT_FIRST: Readonly<Record<WatchTileSettingsSection, boolean>> = {
-  opens: true,
-  target: true,
-  request: false,
-  macro: false,
-  header: true,
-  special: true,
-  icon: true,
-  state: false,
-  text: false,
-  border: false,
-  action: false,
-  size: true,
-  background: false,
-};
-
 // ── state kept between draws ─────────────────────────────────────────────
 
+/** Every section starts open, so the controls are in view without a click.
+ * A fold is kept by section, not by tile (a person who folds Action keeps it
+ * folded from tile to tile), and across reloads (`fold-memory.ts`). */
 function isOpen(host: TileSettingsHost, section: WatchTileSettingsSection): boolean {
-  const stored = host.uiState.get(`${KEY}:open:${section}`);
-  return typeof stored === "boolean" ? stored : OPEN_AT_FIRST[section];
+  return sectionOpen(host.uiState, KEY, section);
 }
 
 function toggle(host: TileSettingsHost, section: WatchTileSettingsSection): void {
-  host.uiState.set(`${KEY}:open:${section}`, !isOpen(host, section));
+  setSectionOpen(host.uiState, KEY, section, !isOpen(host, section));
   host.requestUpdate();
 }
 

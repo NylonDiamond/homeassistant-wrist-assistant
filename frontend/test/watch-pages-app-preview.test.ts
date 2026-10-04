@@ -196,9 +196,13 @@ describe("the app tiles' names in the preview", () => {
     expect(draw({ id: "A", entityId: "assist.voice_hub" })).not.toContain("wp-state");
   });
 
-  it("keeps the kind line of a page link and a macro", () => {
-    expect(draw({ id: "G", entityId: "page.X" })).toContain("wp-state");
-    expect(draw({ id: "M", entityId: "macro.X" })).toContain("wp-state");
+  it("draws a page link and a macro with their name alone, as the watch does", () => {
+    for (const entityId of ["page.X", "macro.X"]) {
+      const drawn = draw({ id: "G", entityId });
+      expect(drawn.match(/class="wp-label"/g), entityId).toHaveLength(1);
+      expect(drawn, entityId).not.toContain("wp-state");
+      expect(drawn, entityId).not.toContain("wp-badge");
+    }
   });
 });
 

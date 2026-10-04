@@ -8,7 +8,7 @@
 // with a stand-in event. The host is a real draft, so every press is an
 // edit with its undo step.
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { html } from "lit";
 
 import type { HassEntityState } from "../src/ha-api.js";
@@ -650,6 +650,44 @@ describe("a rule's style through the stand-in tile", () => {
     click(renderSmartRulesCard(s.host), `>${W("pageSize")}<`);
     expect(Object.hasOwn(s.rule(R1).tileStyle as JsonObject, "colSpan")).toBe(false);
     expect(Object.hasOwn(s.rule(R1).tileStyle as JsonObject, "rowSpan")).toBe(false);
+  });
+});
+
+// ── folds ────────────────────────────────────────────────────────────────
+
+describe("the settings' folds", () => {
+  it("start open, and a fold of a style section survives a reload", () => {
+    const data: Record<string, string> = {};
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => (Object.hasOwn(data, key) ? data[key]! : null),
+      setItem: (key: string, value: string) => { data[key] = value; },
+      removeItem: (key: string) => { delete data[key]; },
+    });
+    try {
+      const s = setup(smartPage([LIGHTS]));
+      const style = smartStyleHost(s.host, R1);
+      const view = () => flatten(renderTileSettings(style, { sections: ["state", "text", "border"] }));
+      const textBody = /id="?ts-body-text/;
+      // Nothing folded yet: every section draws its rows, here and in the
+      // Rules card.
+      expect(view().match(/data-open="?true/g)?.length).toBe(3);
+      expect(flatten(renderSmartRulesCard(s.host))).not.toMatch(/data-open="?false/);
+      expect(view()).toMatch(textBody);
+      click(renderTileSettings(style, { sections: ["state", "text", "border"] }), '<span class="ts-title">Text</span>');
+      expect(view()).not.toMatch(textBody);
+      // A reload: the editor's view state starts empty, the fold is still there.
+      s.host.uiState.clear();
+      expect(view()).not.toMatch(textBody);
+      expect(view().match(/data-open="?true/g)?.length).toBe(2);
+      expect(view()).toMatch(/id="?ts-body-state/);
+      // The Rules card draws the same style sections: Text is folded there
+      // too, and the card's own Header fold is still open.
+      const card = flatten(renderSmartRulesCard(s.host));
+      expect(card).toMatch(/id="?sm-body-header/);
+      expect(card).not.toMatch(textBody);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

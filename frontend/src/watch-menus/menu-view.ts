@@ -1,7 +1,9 @@
 // The menu editor's sections, drawn from a host: the Anywhere menu with its
 // Style, the Entity quick menu with its per-entity menus, and the page
-// switcher. `<wa-menu-editor>` owns the draft and hands a host in on every
-// draw; nothing here keeps state of its own beyond `uiState`.
+// switcher. All three stack on one page, each with a watch-shaped preview on
+// the left and its slots and settings on the right. `<wa-menu-editor>` owns
+// the draft and hands a host in on every draw; nothing here keeps state of its
+// own beyond `uiState`.
 //
 // Every edit is a setter of `model.ts` applied to the document as it is at
 // the moment the edit commits (`host.edit`), never to the one drawn: one task
@@ -21,6 +23,7 @@ import type { EntityRef } from "../model.js";
 import type { IconProvider } from "../renderer.js";
 import type { SymbolBrowser } from "../symbols.js";
 import { uiIcon } from "../ui-icons.js";
+import { renderWatchFrame } from "../watch-frame.js";
 import type { JsonObject } from "../watch-pages/model.js";
 import {
   ANYWHERE,
@@ -94,6 +97,11 @@ export interface MenusViewHost {
   /** A save is out: every field is drawn off and every edit refused. */
   readonly busy: boolean;
   readonly uiState: Map<string, unknown>;
+  /** The watch's screen in points: the owner's reported size, else the
+   * 46 mm reference. */
+  readonly screen: MenusScreen;
+  /** The pages the watch's page switcher shows, in its order. */
+  readonly switcherPages: readonly MenuSwitcherPage[];
   /** Apply `change` to the document as it is now: one undo step, or with
    * `coalesce` a step the next edits with the same key replace. */
   edit(change: (document: MenusDocument) => MenusDocument, coalesce?: string): boolean;
@@ -101,13 +109,61 @@ export interface MenusViewHost {
   requestUpdate(): void;
 }
 
-export type MenusTab = "anywhere" | "entity" | "switcher";
+export type MenusSection = "anywhere" | "entity" | "switcher";
 
-export const MENUS_TABS: readonly [MenusTab, string][] = [
+/** The three sections, top to bottom, with their headings. */
+export const MENUS_SECTIONS: readonly [MenusSection, string][] = [
   ["anywhere", "Anywhere menu"],
   ["entity", "Entity quick menu"],
   ["switcher", "Page switcher"],
 ];
+
+/** A watch screen's size in points. */
+export interface MenusScreen {
+  readonly width: number;
+  readonly height: number;
+}
+
+/** A page as the watch's page switcher draws it: its switcher text (absent
+ * when the page shows as an icon), its icon and its color. */
+export interface MenuSwitcherPage {
+  readonly id: string;
+  readonly name: string;
+  readonly text?: string;
+  readonly icon: string;
+  readonly color: string;
+}
+
+/** Points to pixels for the previews: the 46 mm screen (208 pt) draws about
+ * 218 px wide, near the old 220 px ring. */
+export const MENUS_PREVIEW_SCALE = 1.05;
+
+/** The ring's radius as a share of the screen's shorter side. */
+const RING_RADIUS = 0.36;
+
+/**
+ * Where a point of the unit square of `watchMenuRingPoint` lands on a screen
+ * of `screen`'s proportions, as shares of its width and height: the square is
+ * the screen's shorter side, centred, so the ring stays round on a screen
+ * taller than it is wide.
+ */
+export function menuScreenPoint(screen: MenusScreen, point: { x: number; y: number }): { x: number; y: number } {
+  const side = Math.min(screen.width, screen.height);
+  const round = (n: number) => Math.round(n * 10000) / 10000;
+  return {
+    x: round(0.5 + ((point.x - 0.5) * side) / screen.width),
+    y: round(0.5 + ((point.y - 0.5) * side) / screen.height),
+  };
+}
+
+/** Where page `index` of `count` sits around the switcher's ring, in the
+ * unit square: the first at top centre, the rest spread evenly
+ * counterclockwise, as the watch places them. */
+export function switcherRingPoint(index: number, count: number, radius = RING_RADIUS): { x: number; y: number } {
+  const angle = ((270 - (index * 360) / Math.max(1, count)) * Math.PI) / 180;
+  const round = (n: number) => Math.round(n * 10000) / 10000;
+  return { x: round(0.5 + radius * Math.cos(angle)), y: round(0.5 + radius * Math.sin(angle)) };
+}
 
 export const SWITCHER_LINE = "Each page's icon, color and name are set in that page's settings.";
 
@@ -198,12 +254,45 @@ function addAt(host: MenusViewHost, ref: MenuListRef, position?: string): void {
   if (added !== undefined) select(host, ref, added);
 }
 
-// ── the ring and the list ────────────────────────────────────────────────
+// ── the watch screen, the ring and the list ──────────────────────────────
+
+/** A point of the unit square placed on the screen, as a style. */
+function screenStyle(screen: MenusScreen, point: { x: number; y: number }): string {
+  const at = menuScreenPoint(screen, point);
+  return `left:${at.x * 100}%;top:${at.y * 100}%`;
+}
 
 /** Where a dot sits on the ring preview, as a style. */
-function pointStyle(position: string, radius?: number): string | undefined {
-  const point = watchMenuRingPoint(position, radius);
-  return point === undefined ? undefined : `left:${point.x * 100}%;top:${point.y * 100}%`;
+function pointStyle(screen: MenusScreen, position: string, radius?: number): string | undefined {
+  const point = watchMenuRingPoint(position, radius ?? RING_RADIUS);
+  return point === undefined ? undefined : screenStyle(screen, point);
+}
+
+/**
+ * The watch screen in its case, at the screen's real proportions: black, a
+ * dashed guide ring around the centre, a centre dot where the finger rests,
+ * and `content` over them (dots placed in shares of the screen).
+ */
+function renderScreen(host: MenusViewHost, label: string, content: unknown): TemplateResult {
+  const { width, height } = host.screen;
+  const side = Math.min(width, height);
+  const box = html`<div class="me-screen" role="group" aria-label=${label}
+    style=${`width:${Math.round(width * MENUS_PREVIEW_SCALE)}px;height:${Math.round(height * MENUS_PREVIEW_SCALE)}px`}>
+    <svg class="me-screen-bg" viewBox=${`0 0 ${width} ${height}`} aria-hidden="true">
+      <circle cx=${width / 2} cy=${height / 2} r=${side * RING_RADIUS} class="me-track"></circle>
+      <circle cx=${width / 2} cy=${height / 2} r=${side * 0.05} class="me-center"></circle>
+    </svg>
+    ${content}
+  </div>`;
+  return renderWatchFrame({ width }, MENUS_PREVIEW_SCALE, box, label);
+}
+
+/** A section's two columns: the watch preview, then the slots and settings. */
+function renderSplit(preview: TemplateResult, side: unknown): TemplateResult {
+  return html`<div class="me-split">
+    <div class="me-preview">${preview}</div>
+    <div class="me-side">${side}</div>
+  </div>`;
 }
 
 /**
@@ -215,7 +304,8 @@ function pointStyle(position: string, radius?: number): string | undefined {
  * of the list's own carries a count of the list's slots there (the phone's
  * climate defaults put two at top center).
  */
-function renderRing(host: MenusViewHost, ref: MenuListRef, selected: JsonObject | undefined): TemplateResult {
+function renderRing(host: MenusViewHost, ref: MenuListRef, selected: JsonObject | undefined, label: string): TemplateResult {
+  const screen = host.screen;
   const slots = watchMenuSlots(host.document, ref);
   const inherited = watchMenuInheritedSlots(host.document, ref);
   const free = new Set(watchMenuFreePositions(host.document, ref));
@@ -229,14 +319,8 @@ function renderRing(host: MenusViewHost, ref: MenuListRef, selected: JsonObject 
       title=${label} aria-label=${label} aria-pressed=${on ? "true" : "false"} @click=${() => select(host, ref, id)}>
       ${glyph(host, look.icon, extra === "" ? 16 : 12, look.color)}${count > 1 ? html`<span class="me-count" aria-hidden="true">${count}</span>` : nothing}</button>`;
   };
-  return html`<div class="me-ring" role="group" aria-label="The menu around the finger">
-    <svg class="me-ring-bg" viewBox="0 0 100 100" aria-hidden="true">
-      <circle cx="50" cy="50" r="49" class="me-face"></circle>
-      <circle cx="50" cy="50" r="36" class="me-track"></circle>
-      <circle cx="50" cy="50" r="5" class="me-center"></circle>
-    </svg>
-    ${watchMenuPositions().map((position) => {
-      const style = pointStyle(position);
+  return renderScreen(host, `${label} on the watch`, watchMenuPositions().map((position) => {
+      const style = pointStyle(screen, position);
       if (style === undefined) return nothing;
       const here = slots.filter((s) => s.position === position);
       const shown = here.find((s) => s.isVisible !== false);
@@ -257,10 +341,27 @@ function renderRing(host: MenusViewHost, ref: MenuListRef, selected: JsonObject 
       } else {
         dot = nothing;
       }
-      const inner = second === undefined ? undefined : pointStyle(position, 0.2);
+      const inner = second === undefined ? undefined : pointStyle(screen, position, 0.2);
       return html`${dot}${second === undefined || inner === undefined ? nothing : ownDot(second, position, inner, "two", 0)}`;
-    })}
-  </div>`;
+    }));
+}
+
+/** The page switcher as the watch draws it: each page the switcher shows,
+ * spread around the ring from top centre, by its switcher text in its color,
+ * or by its icon. The pages are set on the pages screen, so nothing here is a
+ * button. */
+function renderSwitcherScreen(host: MenusViewHost): TemplateResult {
+  const pages = host.switcherPages;
+  const screen = host.screen;
+  const content = pages.length === 0
+    ? html`<p class="me-screen-note">No pages in the switcher yet.</p>`
+    : pages.map((page, i) => {
+      const style = `${screenStyle(screen, switcherRingPoint(i, pages.length))};--c:${page.color}`;
+      return page.text === undefined
+        ? html`<span class="me-dot me-page-dot" style=${style} title=${page.name}>${glyph(host, page.icon, 15, page.color)}</span>`
+        : html`<span class="me-page" style=${style} title=${page.name}>${page.text}</span>`;
+    });
+  return renderScreen(host, "Page switcher on the watch", content);
 }
 
 function renderList(host: MenusViewHost, ref: MenuListRef, selected: JsonObject | undefined): TemplateResult {
@@ -479,14 +580,14 @@ function renderSlotEditor(host: MenusViewHost, ref: MenuListRef, slot: JsonObjec
   </fieldset>`;
 }
 
-/** A list's ring, its rows and the selected slot's settings. */
-function renderSlots(host: MenusViewHost, ref: MenuListRef): TemplateResult {
+/** A list's ring on the watch on the left; on the right `before`, the list's
+ * rows, the selected slot's settings and `after`. */
+function renderSlots(host: MenusViewHost, ref: MenuListRef, label: string, before: unknown = nothing, after: unknown = nothing): TemplateResult {
   const selected = selectedMenuSlot(host, ref);
-  return html`<div class="me-slots">
-      ${renderRing(host, ref, selected)}
-      ${renderList(host, ref, selected)}
-    </div>
-    ${selected === undefined ? nothing : renderSlotEditor(host, ref, selected)}`;
+  return renderSplit(renderRing(host, ref, selected, label), html`${before}
+    ${renderList(host, ref, selected)}
+    ${selected === undefined ? nothing : renderSlotEditor(host, ref, selected)}
+    ${after}`);
 }
 
 // ── style ────────────────────────────────────────────────────────────────
@@ -538,16 +639,25 @@ function renderStyle(host: MenusViewHost, section: MenuStyleSection): TemplateRe
 
 // ── the sections ─────────────────────────────────────────────────────────
 
+/** All three sections, top to bottom on one page. */
+export function renderMenus(host: MenusViewHost): TemplateResult {
+  return html`${renderAnywhereMenu(host)}${renderEntityMenu(host)}${renderPageSwitcher(host)}`;
+}
+
+/** A section's card: its heading and line, then `body`. */
+function renderSection(id: MenusSection, line: unknown, body: unknown): TemplateResult {
+  const title = MENUS_SECTIONS.find(([s]) => s === id)?.[1] ?? id;
+  return html`<section class="pe-card me-card" id=${`me-${id}`} aria-labelledby=${`me-${id}-title`}>
+    <h3 id=${`me-${id}-title`}>${title}</h3>
+    <p class="pe-muted">${line}</p>
+    ${body}
+  </section>`;
+}
+
 export function renderAnywhereMenu(host: MenusViewHost): TemplateResult {
-  return html`<section class="pe-card me-card" aria-label="Anywhere menu">
-      <h3>Anywhere menu</h3>
-      <p class="pe-muted">Opens on any screen. Each place around the ring holds one slot.</p>
-      ${renderSlots(host, ANYWHERE)}
-    </section>
-    <section class="pe-card me-card" aria-label="Style">
-      <h3>Style</h3>
-      ${renderStyle(host, "quickAction")}
-    </section>`;
+  return renderSection("anywhere", "Opens on any screen. Each place around the ring holds one slot.",
+    renderSlots(host, ANYWHERE, "Anywhere menu", nothing, html`<h4 class="me-sub me-style-head">Style</h4>
+      ${renderStyle(host, "quickAction")}`));
 }
 
 const ENTITY_MODE_KEY = "me:er:mode";
@@ -572,21 +682,19 @@ export function renderEntityMenu(host: MenusViewHost): TemplateResult {
     host.uiState.set(ENTITY_MODE_KEY, v);
     host.requestUpdate();
   };
-  return html`<section class="pe-card me-card" aria-label="Entity quick menu">
-    <h3>Entity quick menu</h3>
-    <p class="pe-muted">Opens over a tile. Each type of entity has its own menu, and an entity can have a menu of its own.</p>
-    <div class="sec-b me-mode">${segField("Edit", mode, [["domain", "By type"], ["entity", "By entity"]] as ["domain" | "entity", string][], (v) => setMode(v))}</div>
-    ${mode === "domain" ? renderByDomain(host) : renderByEntity(host)}
-  </section>`;
+  const modeRow = html`<div class="sec-b me-mode">${segField("Edit", mode, [["domain", "By type"], ["entity", "By entity"]] as ["domain" | "entity", string][], (v) => setMode(v))}</div>`;
+  return renderSection("entity", "Opens over a tile. Each type of entity has its own menu, and an entity can have a menu of its own.",
+    mode === "domain" ? renderByDomain(host, modeRow) : renderByEntity(host, modeRow));
 }
 
-function renderByDomain(host: MenusViewHost): TemplateResult {
+function renderByDomain(host: MenusViewHost, modeRow: TemplateResult): TemplateResult {
   const domain = shownDomain(host);
   const info = watchMenuDomain(domain);
   const sharing = watchMenuDomainsSharing(domain);
   const ref: MenuListRef = { list: "domain", domain };
   const choices: [string, string][] = watchMenuDomains().map((d) => [d.domain, d.label]);
-  return html`<fieldset class="sec-b me-pick" ?disabled=${host.busy}>
+  return renderSlots(host, ref, `${info?.label ?? domain} menu`, html`${modeRow}
+    <fieldset class="sec-b me-pick" ?disabled=${host.busy}>
       ${selectField("Type", domain, choices, (v) => {
         host.uiState.set(ENTITY_DOMAIN_KEY, v);
         host.requestUpdate();
@@ -594,11 +702,10 @@ function renderByDomain(host: MenusViewHost): TemplateResult {
       ${sharing.length > 0 ? html`<div class="hint ts-under">The same menu as ${sharing.map((d) => d.label).join(", ")}.</div>` : nothing}
       ${info?.inheritKey ? html`${checkField("Add the All slots", watchMenuInherits(host.document, domain), (v) => host.edit((d) => setWatchMenuInherits(d, domain, v)), false)}
         <div class="hint ts-under">The All menu's slots fill the places this menu leaves free.</div>` : nothing}
-    </fieldset>
-    ${renderSlots(host, ref)}`;
+    </fieldset>`);
 }
 
-function renderByEntity(host: MenusViewHost): TemplateResult {
+function renderByEntity(host: MenusViewHost, modeRow: TemplateResult): TemplateResult {
   const ids = watchMenuOverrideIds(host.document);
   const shown = shownEntity(host);
   const add = (ref: EntityRef) => {
@@ -609,7 +716,7 @@ function renderByEntity(host: MenusViewHost): TemplateResult {
     host.uiState.set(ENTITY_ADD_KEY, (Number(host.uiState.get(ENTITY_ADD_KEY) ?? 0) || 0) + 1);
     host.requestUpdate();
   };
-  return html`<div class="me-entities">
+  const picker = html`${modeRow}<div class="me-entities">
       ${ids.length === 0 ? html`<p class="pe-muted">No entity has a menu of its own. Add one below: it starts as a copy of its type's menu.</p>` : nothing}
       ${ids.map((entityId) => {
         const on = entityId === shown;
@@ -624,31 +731,46 @@ function renderByEntity(host: MenusViewHost): TemplateResult {
       <fieldset class="sec-b ts-stack" ?disabled=${host.busy}>
         ${entityField({ hass: host.hass }, "Add an entity", refOf(host.hass, ""), add, `me:er:add:${String(host.uiState.get(ENTITY_ADD_KEY) ?? 0)}`, { clearable: false })}
       </fieldset>
-    </div>
-    ${shown === undefined ? nothing : html`<h4 class="me-sub">${nameOf(host.hass, shown)}</h4>
-      ${renderSlots(host, { list: "entity", entityId: shown })}`}`;
+    </div>`;
+  if (shown === undefined) {
+    return renderSplit(renderScreen(host, "Entity quick menu on the watch", html`<p class="me-screen-note">Add an entity to edit its menu.</p>`), picker);
+  }
+  const name = nameOf(host.hass, shown);
+  return renderSlots(host, { list: "entity", entityId: shown }, `${name} menu`, html`${picker}<h4 class="me-sub">${name}</h4>`);
 }
 
 export function renderPageSwitcher(host: MenusViewHost): TemplateResult {
-  return html`<section class="pe-card me-card" aria-label="Page switcher">
-    <h3>Page switcher</h3>
-    <p class="pe-muted">${SWITCHER_LINE}</p>
-    ${renderStyle(host, "pageSwitcher")}
-  </section>`;
+  return renderSection("switcher", SWITCHER_LINE, renderSplit(renderSwitcherScreen(host), renderStyle(host, "pageSwitcher")));
 }
 
 /** The sections' rules, after the panel's form rules in the editor's sheet. */
 export const menuViewStyles = css`
-  .me-card { gap: 10px; }
+  .me-card { gap: 10px; container: me-card / inline-size; }
   .me-sub { margin: 4px 0 0; font-size: 13px; font-weight: 650; }
+  .me-style-head { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--wa-line); }
   .me-gap { flex: 1; }
-  .me-slots { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 14px; align-items: start; }
-  @container (max-width: 560px) { .me-slots { grid-template-columns: minmax(0, 1fr); } }
-  .me-ring { position: relative; width: 220px; max-width: 100%; aspect-ratio: 1; }
-  .me-ring-bg { position: absolute; inset: 0; width: 100%; height: 100%; }
-  .me-face { fill: #000; stroke: var(--wa-line); stroke-width: .6; }
-  .me-track { fill: none; stroke: rgba(255, 255, 255, .12); stroke-width: .5; stroke-dasharray: 1.5 1.5; }
+  .me-split { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px; align-items: start; }
+  .me-preview { position: sticky; top: 0; padding-top: 2px; }
+  .me-side { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  @container me-card (max-width: 620px) {
+    .me-split { grid-template-columns: minmax(0, 1fr); }
+    .me-preview { position: static; justify-self: center; }
+  }
+  .me-screen { position: relative; flex: none; background: #000; }
+  .me-screen-bg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .me-track { fill: none; stroke: rgba(255, 255, 255, .14); stroke-width: 1; stroke-dasharray: 3 3; }
   .me-center { fill: rgba(255, 255, 255, .35); }
+  .me-screen-note {
+    position: absolute; left: 14px; right: 14px; top: 62%; margin: 0;
+    color: rgba(255, 255, 255, .6); font-size: 12px; line-height: 1.3; text-align: center;
+  }
+  .me-page {
+    position: absolute; transform: translate(-50%, -50%); max-width: 72px; padding: 2px 7px;
+    border: 1px solid var(--c, rgba(255, 255, 255, .3)); border-radius: 999px;
+    background: color-mix(in srgb, var(--c, #888) 22%, #000); color: #fff;
+    font-size: 10px; font-weight: 600; line-height: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .me-dot.me-page-dot { width: 30px; height: 30px; cursor: default; }
   .me-dot {
     position: absolute; width: 38px; height: 38px; margin: 0; padding: 0; transform: translate(-50%, -50%);
     display: grid; place-items: center; border-radius: 50%; border: 1.5px solid var(--c, rgba(255, 255, 255, .3));

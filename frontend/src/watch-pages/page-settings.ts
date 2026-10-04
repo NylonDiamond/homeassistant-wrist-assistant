@@ -15,6 +15,7 @@ import { css, html, nothing, type TemplateResult } from "lit";
 import { checkField, colorField, segField, sliderField, symbolField, symbolNameSet, textField } from "../editors.js";
 import { uiIcon } from "../ui-icons.js";
 import { type TileSettingsHost, type WatchPagesEditorHost, extendHost } from "./editor-host.js";
+import { sectionOpen, setSectionOpen } from "./fold-memory.js";
 import type { WatchPageTile, WatchPagesDocument } from "./model.js";
 import {
   type WatchPageDecoration,
@@ -68,7 +69,6 @@ const SECTION_TITLES: Readonly<Record<Section, string>> = {
   title: "Page title",
   switcher: "In the page switcher",
 };
-const OPEN_AT_FIRST: Readonly<Record<Section, boolean>> = { theme: true, background: true, title: false, switcher: false };
 
 /** The decorations a person can pick here, in the phone's order. Image is
  * set on the phone only. */
@@ -87,13 +87,13 @@ function scoped(host: WatchPagesEditorHost): TileSettingsHost {
   return extendHost(host, { tileId: () => `page-${host.pageId}`, tile: () => NO_TILE });
 }
 
+/** Open unless folded, this visit or an earlier one (`fold-memory.ts`). */
 function isOpen(host: WatchPagesEditorHost, section: Section): boolean {
-  const stored = host.uiState.get(`${KEY}:open:${section}`);
-  return typeof stored === "boolean" ? stored : OPEN_AT_FIRST[section];
+  return sectionOpen(host.uiState, KEY, section);
 }
 
 function toggle(host: WatchPagesEditorHost, section: Section): void {
-  host.uiState.set(`${KEY}:open:${section}`, !isOpen(host, section));
+  setSectionOpen(host.uiState, KEY, section, !isOpen(host, section));
   host.requestUpdate();
 }
 

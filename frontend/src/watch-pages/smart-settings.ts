@@ -38,6 +38,7 @@ import { live } from "lit/directives/live.js";
 import { checkField, colorField, numberField, segField, sliderField, textField } from "../editors.js";
 import { uiIcon } from "../ui-icons.js";
 import { type TileSettingsHost, type WatchPagesEditorHost, extendHost } from "./editor-host.js";
+import { sectionOpen, setSectionOpen } from "./fold-memory.js";
 import type { WatchPagesApplyOptions } from "./draft.js";
 import { sameWatchId } from "./edit.js";
 import { type JsonObject, type WatchPage, type WatchPageTile, type WatchPagesDocument, isJsonObject, watchPagesOf } from "./model.js";
@@ -345,9 +346,9 @@ function renderConvertAsk(host: WatchPagesEditorHost): TemplateResult {
   </dialog>`;
 }
 
-function isOpen(host: WatchPagesEditorHost, section: string, first = true): boolean {
-  const stored = host.uiState.get(`${KEY}:open:${section}`);
-  return typeof stored === "boolean" ? stored : first;
+/** Open unless folded, this visit or an earlier one (`fold-memory.ts`). */
+function isOpen(host: WatchPagesEditorHost, section: string): boolean {
+  return sectionOpen(host.uiState, KEY, section);
 }
 
 /** A folding section in the tile settings' look. */
@@ -357,7 +358,7 @@ function fold(host: WatchPagesEditorHost, section: string, title: string, summar
   return html`<section class="ts-sec" data-open=${open ? "true" : "false"}>
     <h4 class="ts-h">
       <button type="button" class="ts-fold" aria-expanded=${open ? "true" : "false"} aria-controls=${open ? id : nothing}
-        @click=${() => { host.uiState.set(`${KEY}:open:${section}`, !open); host.requestUpdate(); }}>
+        @click=${() => { setSectionOpen(host.uiState, KEY, section, !open); host.requestUpdate(); }}>
         <span class="ts-title">${title}</span>
         ${open || summary === "" ? nothing : html`<span class="ts-sum">${summary}</span>`}
         <span class="ts-chev">${uiIcon("chevron")}</span>

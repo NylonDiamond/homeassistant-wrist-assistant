@@ -10,7 +10,7 @@ import { join } from "node:path";
 import type { JsonObject } from "../src/watch-pages/model.js";
 import { isWatchMenusRoute, navigateWatchMenus, watchMenusRouteOwner, watchMenusUrl } from "../src/watch-menus/hook.js";
 import { watchMenuPageTargets, watchMenusSummary } from "../src/watch-menus/menu-editor.js";
-import { MENUS_TABS, SWITCHER_LINE, selectedMenuSlot } from "../src/watch-menus/menu-view.js";
+import { MENUS_SECTIONS, SWITCHER_LINE, selectedMenuSlot } from "../src/watch-menus/menu-view.js";
 import {
   ANYWHERE,
   MENU_ACTIONS,
@@ -542,7 +542,7 @@ describe("pickers' names", () => {
   });
 
   it("names the three sections in the phone's words", () => {
-    expect(MENUS_TABS.map(([, label]) => label)).toEqual(["Anywhere menu", "Entity quick menu", "Page switcher"]);
+    expect(MENUS_SECTIONS.map(([, label]) => label)).toEqual(["Anywhere menu", "Entity quick menu", "Page switcher"]);
     expect(SWITCHER_LINE).not.toMatch(new RegExp(" - |\\u2013|\\u2014"));
   });
 });

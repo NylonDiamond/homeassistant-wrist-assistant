@@ -41,13 +41,14 @@ import {
 } from "../ha-api.js";
 import { peopleOf } from "../people.js";
 import { personColorVar } from "../pickerRows.js";
-import type { IconProvider } from "../renderer.js";
+import { type IconProvider, REFERENCE_CASE, caseForScreenSize } from "../renderer.js";
 import { agoWords } from "../send-state.js";
 import { SymbolBrowser } from "../symbols.js";
 import { uiIcon } from "../ui-icons.js";
 import { type WatchCatalog, watchCatalogEventIsNews, watchCatalogFromRecord, watchCatalogReadMeansNone } from "../watch-pages/catalog.js";
 import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/editor-host.js";
-import { isJsonObject, isSystemWatchPage, watchPageId, watchPageName, watchPagesOf } from "../watch-pages/model.js";
+import { watchFrameStyles } from "../watch-frame.js";
+import { isHiddenWatchPage, isJsonObject, isSmartWatchPage, isSystemWatchPage, watchPageId, watchPageName, watchPageTiles, watchPagesOf } from "../watch-pages/model.js";
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
 import {
   COLLECTED_PILL_TEXT,
@@ -71,7 +72,7 @@ import {
   takeWatchMenusRecord,
 } from "./draft.js";
 import { registerWatchMenusDrafts } from "./hook.js";
-import { MENUS_TABS, type MenusTab, type MenusViewHost, menuViewStyles, renderAnywhereMenu, renderEntityMenu, renderPageSwitcher } from "./menu-view.js";
+import { type MenuSwitcherPage, type MenusScreen, type MenusViewHost, menuViewStyles, renderMenus } from "./menu-view.js";
 import {
   type MenuTargets,
   type MenusDocument,
@@ -167,6 +168,33 @@ export function watchMenuPageTargets(document: unknown): { id: string; name: str
     .map((p) => ({ id: watchPageId(p), name: watchPageName(p) }));
 }
 
+/** The colors the watch's page switcher gives a page with no switcher color
+ * of its own, by its place in the switcher (`PageSwitcherOverlay.swift`). */
+export const WATCH_SWITCHER_COLORS: readonly string[] = ["#8FA8C4", "#9CB6A6", "#C8AE8E", "#A5B7CF", "#D8A3A0", "#A8BED5", "#CCD8E6", "#D8A3A0"];
+
+function filled(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() !== "" ? value : undefined;
+}
+
+/** The pages the watch's page switcher shows, from the pages record, as it
+ * draws them: every page not hidden, not a system page and not left out of
+ * the switcher, in watch order; by its switcher text (else its name) or, set
+ * to icon, by its switcher icon (else its first tile's, else the watch's
+ * stand-in); in its switcher color, else the switcher's color for its
+ * place. */
+export function watchSwitcherPages(document: unknown): MenuSwitcherPage[] {
+  if (!isJsonObject(document)) return [];
+  return watchPagesOf(document)
+    .filter((p) => !isHiddenWatchPage(p) && !isSystemWatchPage(p) && p.hideFromSwitcher !== true)
+    .map((p, i) => {
+      const name = watchPageName(p);
+      const icon = filled(p.switcherIcon) ?? filled(watchPageTiles(p)[0]?.icon) ?? (isSmartWatchPage(p) ? "bolt.fill" : "square.grid.2x2.fill");
+      const color = filled(p.switcherColor) ?? WATCH_SWITCHER_COLORS[i % WATCH_SWITCHER_COLORS.length]!;
+      const text = p.switcherDisplayMode === "icon" ? undefined : filled(p.switcherText) ?? name;
+      return { id: watchPageId(p), name, icon, color, ...(text === undefined ? {} : { text }) };
+    });
+}
+
 /** A restore's one line: how many slots each menu holds. */
 export function watchMenusSummary(document: unknown): string {
   const doc = asWatchMenusDocument(document) ?? {};
@@ -190,6 +218,8 @@ export class WaMenuEditor extends LitElement {
   @state() private unsupported = false;
   @state() private catalog?: WatchCatalog;
   @state() private pages: { id: string; name: string }[] = [];
+  /** The pages the watch's page switcher shows, for its preview. */
+  @state() private switcherPages: MenuSwitcherPage[] = [];
   /** The watch's behavior settings, read only. The Entity quick menu's
    * gestures live there; batch 1 shows none of them. */
   @state() private behavior?: Readonly<Record<string, unknown>>;
@@ -202,7 +232,6 @@ export class WaMenuEditor extends LitElement {
   @state() private restoring = false;
   @state() private starting = false;
   @state() private ownList?: readonly OwnerSummary[];
-  @state() private tab: MenusTab = "anywhere";
   private ownListAsked = false;
 
   private readonly symbols = new SymbolBrowser(() => this.requestUpdate());
@@ -357,6 +386,7 @@ export class WaMenuEditor extends LitElement {
       this.catalog = undefined;
       this.catalogSeq++;
       this.pages = [];
+      this.switcherPages = [];
       this.pagesSeq++;
       this.behavior = undefined;
       this.behaviorSeq++;
@@ -396,6 +426,7 @@ export class WaMenuEditor extends LitElement {
       const record = await fetchWatchConfig(hass, watchId, "pages");
       if (seq !== this.pagesSeq || watchId !== this.watchId) return;
       this.pages = record.revision > 0 ? watchMenuPageTargets(record.document) : [];
+      this.switcherPages = record.revision > 0 ? watchSwitcherPages(record.document) : [];
     } catch {
       // A failed read keeps the names shown: the picker still saves ids.
     }
@@ -627,6 +658,13 @@ export class WaMenuEditor extends LitElement {
     };
   }
 
+  /** The open watch's screen in points, as the page editor finds it: the
+   * size the watch reported, else the 46 mm reference. */
+  private screen(): MenusScreen {
+    const owner = this.watches.find((w) => w.owner_watch_id === this.watchId);
+    return (caseForScreenSize(owner?.screen_size) ?? REFERENCE_CASE).screen;
+  }
+
   private viewHost(): MenusViewHost | undefined {
     const draft = this.draft;
     const hass = this.hass;
@@ -637,6 +675,8 @@ export class WaMenuEditor extends LitElement {
       icons: this.memoIcons(),
       symbols: this.symbols,
       uiState: this.uiState,
+      screen: this.screen(),
+      switcherPages: this.switcherPages,
       get document() { return draft.document; },
       get targets() { return self.targets(); },
       get catalogKnown() { return self.catalog !== undefined; },
@@ -888,14 +928,7 @@ export class WaMenuEditor extends LitElement {
     }
     return html`<div class="me-grid">
       <div class="me-main">
-        <div class="pe-tabs me-sections" role="tablist" aria-label="Menus">
-          ${MENUS_TABS.map(([tab, label]) => {
-            const on = this.tab === tab;
-            return html`<button type="button" role="tab" class="pe-tab ${on ? "on" : ""}" aria-selected=${on ? "true" : "false"}
-              @click=${() => { this.tab = tab; }}>${label}</button>`;
-          })}
-        </div>
-        ${this.tab === "anywhere" ? renderAnywhereMenu(host) : this.tab === "entity" ? renderEntityMenu(host) : renderPageSwitcher(host)}
+        ${renderMenus(host)}
       </div>
       <aside class="pe-side">
         ${this.renderState(record, draft.document)}
@@ -1089,7 +1122,7 @@ export class WaMenuEditor extends LitElement {
     .pe-ask-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 6px; }
 
     :host([narrow]) { padding: 12px; }
-  `, menuViewStyles];
+  `, watchFrameStyles, menuViewStyles];
 }
 
 if (!customElements.get("wa-menu-editor")) {

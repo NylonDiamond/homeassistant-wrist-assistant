@@ -70,6 +70,7 @@ import {
 } from "./app-model.js";
 import { appSettingsStyles } from "./app-settings.js";
 import { SCRUB_END, SCRUB_START } from "../editors.js";
+import { type ColumnWidths, beginColumnDrag, fitColumnWidths, loadColumnWidths, saveColumnWidths } from "../column-split.js";
 import { formStyles } from "../form-styles.js";
 import { peopleOf } from "../people.js";
 import { personColorVar } from "../pickerRows.js";
@@ -172,6 +173,8 @@ import {
   renderWatchPageTitle,
   watchScreenBackground,
 } from "./preview.js";
+import { renderWatchClock, watchTileCornerRadius } from "./preview.js";
+import { renderWatchFrame, watchFrameStyles } from "../watch-frame.js";
 import { type WatchPagesNote, watchCommandError, watchPagesSaveNote } from "./save-note.js";
 import { forgetTileSettingsNotes, renderTileSettings, tileSettingsStyles } from "./tile-settings.js";
 import { pageSettingsStyles, renderPageSettings } from "./page-settings.js";
@@ -223,6 +226,19 @@ const SCRUB_HELD_KEYS: ReadonlySet<string> = new Set(["Escape", "Delete", "Backs
 
 const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const MOD = IS_MAC ? "⌘" : "Ctrl+";
+
+/** The page list and the cards column, each widened by dragging the gutter
+ * beside it, as the complication editor's columns are. */
+const PE_COLUMNS = { min: 200, max: 720, middleMin: 320 } as const;
+const PE_COLUMNS_DEFAULT: ColumnWidths = { left: 250, right: 300 };
+const PE_COLUMNS_KEY = "wrist-assistant-panel.pages.columns.v1";
+/** The grid's own cost beside its three columns, CSS px: two 8px gutters and
+ * a 3px gap on each side of each. The host's padding is outside the width
+ * measured. */
+const PE_GRID_CHROME = 2 * 8 + 4 * 3;
+/** At or below this content width the columns stack (the `@container` rule
+ * on `.pe-grid` says the same). */
+const PE_STACK_WIDTH = 820;
 
 type Note = WatchPagesNote;
 
@@ -530,6 +546,14 @@ export class WaPageEditor extends LitElement {
   /** The Add tile dialog is open, over the selected page. */
   @state() private addTileOpen = false;
 
+  /** The side columns' widths as dragged (a preference, saved), and the
+   * host's measured content width and height, which fit them and cap the
+   * self-scrolling columns. Zero before the first measurement. */
+  @state() private columns: ColumnWidths = { ...PE_COLUMNS_DEFAULT };
+  @state() private hostWidth = 0;
+  @state() private hostHeight = 0;
+  private sizeObserver?: ResizeObserver;
+
   /** The symbol grids' state (open, searched, recent) for the modules'
    * symbol fields. Not the panel's: its changes must draw this element. */
   private readonly symbols = new SymbolBrowser(() => this.requestUpdate());
@@ -624,6 +648,8 @@ export class WaPageEditor extends LitElement {
     super.connectedCallback();
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("pointerdown", this.onWindowPointerDown, true);
+    this.columns = loadColumnWidths(PE_COLUMNS_KEY, PE_COLUMNS_DEFAULT, PE_COLUMNS);
+    this.watchSize();
     this.listenForReconnect();
     // Back in the tree after a visit elsewhere: the record may have moved.
     if (this.watchId !== undefined) this.openWatch(this.watchId, true);
@@ -633,6 +659,7 @@ export class WaPageEditor extends LitElement {
     super.disconnectedCallback();
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("pointerdown", this.onWindowPointerDown, true);
+    this.sizeObserver?.disconnect();
     this.stopListeningForReconnect();
     this.reloadPending = false;
     this.cancelGestures();
@@ -784,6 +811,9 @@ export class WaPageEditor extends LitElement {
     if (this.focusMenu) {
       this.focusMenu = false;
       this.renderRoot.querySelector<HTMLElement>(".pe-menu button:not(:disabled)")?.focus();
+      // The page list scrolls on its own: bring the whole menu into it, not
+      // only its first button.
+      this.renderRoot.querySelector<HTMLElement>(".pe-menu")?.scrollIntoView({ block: "nearest" });
     }
     if (this.focusHistory) {
       this.focusHistory = false;
@@ -2238,6 +2268,51 @@ export class WaPageEditor extends LitElement {
     </div>`;
   }
 
+  // ── the columns ────────────────────────────────────────────────────────
+
+  /** Measure the host, not the window: the Home Assistant sidebar changes
+   * the editor's width without changing the window's. Its height caps the
+   * page list and the cards, which scroll on their own past it. */
+  private watchSize(): void {
+    if (typeof ResizeObserver === "undefined") return;
+    this.sizeObserver ??= new ResizeObserver((entries) => {
+      const box = entries[0]?.contentRect;
+      if (!box) return;
+      if (Math.abs(box.width - this.hostWidth) >= 1) this.hostWidth = box.width;
+      // The content box: a sticky column stops at the host's padding, so
+      // this is the height it can have on screen.
+      if (Math.abs(box.height - this.hostHeight) >= 1) this.hostHeight = box.height;
+    });
+    this.sizeObserver.observe(this);
+  }
+
+  /** The side widths the grid can afford right now. */
+  private fittedColumns(): ColumnWidths {
+    if (this.hostWidth > 0 && this.hostWidth <= PE_STACK_WIDTH) return this.columns;
+    return fitColumnWidths(this.hostWidth - PE_GRID_CHROME, this.columns, PE_COLUMNS);
+  }
+
+  private renderGutter(side: "left" | "right"): TemplateResult {
+    return html`<div class="pe-gutter ${side}" role="separator" aria-orientation="vertical"
+      aria-label=${side === "left" ? "Resize the page list" : "Resize the settings column"}
+      title="Drag to resize. Double-click to reset."
+      @pointerdown=${(e: PointerEvent) => {
+        // Drag from the width on screen, not the stored preference.
+        const shown = this.fittedColumns();
+        beginColumnDrag(e, {
+          side,
+          base: side === "left" ? shown.left : shown.right,
+          limits: PE_COLUMNS,
+          onWidth: (width) => { this.columns = { ...this.columns, [side]: width }; },
+          onEnd: () => saveColumnWidths(PE_COLUMNS_KEY, this.columns),
+        });
+      }}
+      @dblclick=${() => {
+        this.columns = { ...this.columns, [side]: PE_COLUMNS_DEFAULT[side] };
+        saveColumnWidths(PE_COLUMNS_KEY, this.columns);
+      }}></div>`;
+  }
+
   private renderBody(watches: readonly OwnerSummary[]): TemplateResult {
     if (watches.length === 0) {
       const waiting = this.owners.length === 0 && this.ownList === undefined;
@@ -2280,11 +2355,15 @@ export class WaPageEditor extends LitElement {
     const page = this.currentPage();
     const owner = watches.find((w) => w.owner_watch_id === this.watchId);
     const tile = page === undefined || this.selectedTileId === undefined ? undefined : this.tileOn(page, this.selectedTileId);
-    return html`<div class="pe-grid">
+    const fit = this.fittedColumns();
+    const view = this.hostHeight > 0 ? `--pe-view-h:${this.hostHeight}px;` : "";
+    return html`<div class="pe-grid" style=${`--pe-left:${fit.left}px;--pe-right:${fit.right}px;${view}`}>
       ${this.renderPageList(listed)}
+      ${this.renderGutter("left")}
       <section class="pe-card pe-stage" aria-label="Page">
         ${page ? this.renderStage(page, watchPagesOf(document), owner) : html`<p class="pe-muted">${listed.length === 0 ? "Add a page to start." : "Pick a page."}</p>`}
       </section>
+      ${this.renderGutter("right")}
       <aside class="pe-side">
         ${page && tile ? this.renderTileCard(page, tile, watchPagesOf(document)) : page ? html`${this.renderRulesCard(page)}${this.renderPageCard(page)}` : nothing}
         ${this.renderState(record, document)}
@@ -2464,10 +2543,11 @@ export class WaPageEditor extends LitElement {
       : selectedPlaced && !move
         ? cellRectPx(grid, drawnRect(watchTileRect(selectedPlaced.tile)))
         : undefined;
-    return html`<div class="wp-screen pe-screen ${this.saving ? "saving" : ""}" tabindex="-1" role="group" aria-label=${`Layout of ${watchPageName(page)}`}
+    // The grid's cells show only while a tile is moved or resized.
+    return renderWatchFrame(screen, s, html`<div class="wp-screen pe-screen ${this.saving ? "saving" : ""} ${move || resize ? "moving" : ""}" tabindex="-1" role="group" aria-label=${`Layout of ${watchPageName(page)}`}
       style=${`width:${width}px;height:${height}px;background:${watchScreenBackground(shown, s)}`}
       @click=${() => this.selectTile(undefined)}>
-      ${layout.topInset > 0 ? html`<span class="wp-clock" style=${`font-size:${13 * s}px;height:${layout.topInset * s}px;padding-right:${12 * s}px`}>10:09</span>` : nothing}
+      ${renderWatchClock(screen, s, layout.topInset, input.icons)}
       ${renderWatchPageTitle(shown, s, layout.topInset, input.icons)}
       <svg class="pe-cells" width=${width} height=${gridHeight} viewBox=${`0 0 ${width} ${gridHeight}`}
         style=${`top:${grid.top}px`} aria-hidden="true"><path d=${cellsPath(grid, rows, 3 * s)} /></svg>
@@ -2480,7 +2560,7 @@ export class WaPageEditor extends LitElement {
             @pointerdown=${(e: PointerEvent) => this.onHandlePointerDown(e, h)}
             @click=${(e: Event) => e.stopPropagation()}></span>`)}
         </div>` : nothing}
-    </div>`;
+    </div>`, `Watch showing ${watchPageName(page)}`);
   }
 
   private renderStageTile(
@@ -2509,8 +2589,9 @@ export class WaPageEditor extends LitElement {
     const partner = move?.outcome?.kind === "swap" && sameWatchId(id, move.outcome.targetId);
     const shift = moving ? `transform:translate(${move.left - left}px, ${move.top - top}px);` : "";
     const face = renderWatchTileFace(tile, { width: width / s, height: height / s }, input, unit);
-    // The ring of a selected tile follows the tile's own corners.
-    const radius = Math.min(16, placed.width / 2, placed.height / 2) * s;
+    // The ring of a selected tile follows the tile's own corners, which are
+    // the watch's (`watchTileCornerRadius`).
+    const radius = watchTileCornerRadius(width / s, height / s) * s;
     const box = `left:${left}px;top:${top}px;width:${width}px;height:${height}px;border-radius:${radius}px;${shift}`;
     // A tile with no id cannot be named by an edit; it is drawn and left be.
     if (id === "") return html`<div class="pe-tile fixed ${tileKind(tileEntityId(tile)) === "spacer" ? "spacer" : ""}" style=${box} aria-hidden="true">${face}</div>`;
@@ -2851,7 +2932,7 @@ export class WaPageEditor extends LitElement {
   // they do in the panel; this element's own rules come after and win the
   // ties. The two modules' rules come last, so a module can size its own
   // parts of this element (its dialog, say) without outranking anything.
-  static override styles = [formStyles, watchPagePreviewStyles, css`
+  static override styles = [formStyles, watchPagePreviewStyles, watchFrameStyles, css`
     :host {
       display: block;
       flex: 1 1 auto;
@@ -2913,16 +2994,45 @@ export class WaPageEditor extends LitElement {
       padding: 20px; border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg, 16px); background: var(--wa-card);
     }
 
-    /* Three columns when there is room: the pages, the picture, the cards.
-       One column, in that order, when there is not. */
+    /* Three columns when there is room: the pages, the picture, the cards,
+       with a draggable gutter between each pair. The side widths come in as
+       custom properties already fitted to the measured host width (see
+       fitColumnWidths). The 8px gutters and a 3px gap each side of them make
+       the 14px between the cards. One column, in that order, when there is
+       not room, with no gutters. */
     .pe-grid {
       display: grid;
-      grid-template-columns: minmax(200px, 250px) minmax(0, 1fr) minmax(240px, 300px);
-      gap: 14px;
+      grid-template-columns: var(--pe-left, 250px) 8px minmax(0, 1fr) 8px var(--pe-right, 300px);
+      column-gap: 3px;
+      row-gap: 14px;
       align-items: start;
     }
+    .pe-gutter {
+      align-self: stretch; cursor: col-resize; border-radius: 4px;
+      background: transparent; position: relative; touch-action: none;
+    }
+    .pe-gutter::after {
+      content: ""; position: absolute; inset: 0 3px; border-radius: 2px;
+      background: var(--wa-line); opacity: 0; transition: opacity .12s ease-out;
+    }
+    .pe-gutter:hover::after, .pe-gutter.dragging::after { background: var(--wa-accent); opacity: 1; }
+    /* The page list and the cards stay in view while the stage scrolls the
+       editor: each sticks to the top of the editor's own scroll box (the
+       host, inside its padding) and, when taller than it, scrolls on its
+       own. --pe-view-h is the host's measured content height. The stage does
+       not stick: it scrolls with the editor as before. */
+    .pe-pages, .pe-side {
+      position: sticky; top: 0;
+      max-height: var(--pe-view-h, calc(100dvh - 120px));
+      overflow-y: auto; overflow-x: hidden;
+      scrollbar-width: thin;
+    }
+    .pe-side { scrollbar-gutter: stable; }
+    .pe-pages > *, .pe-side > * { flex-shrink: 0; }
     @container (max-width: 820px) {
       .pe-grid { grid-template-columns: minmax(0, 1fr); }
+      .pe-gutter { display: none; }
+      .pe-pages, .pe-side { position: static; max-height: none; overflow: visible; }
     }
     .pe-card {
       display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 14px;
@@ -3005,8 +3115,13 @@ export class WaPageEditor extends LitElement {
     .pe-past:focus { outline: none; }
     .pe-screen.saving .pe-tile, .pe-screen.saving .pe-handle, .pe-pages.saving .pe-grip, .pe-pages.saving .pe-page { cursor: progress; }
     .pe-screen:focus { outline: none; }
-    /* The cells stay inside the screen's round bottom corners. */
-    .pe-cells { position: absolute; left: 0; pointer-events: none; clip-path: inset(0 round 0 0 28px 28px); }
+    /* The cells stay inside the screen's round bottom corners, and show only
+       while a tile is moved or resized. */
+    .pe-cells {
+      position: absolute; left: 0; pointer-events: none; clip-path: inset(0 round 0 0 var(--wf-radius, 28px) var(--wf-radius, 28px));
+      opacity: 0; transition: opacity .12s;
+    }
+    .pe-screen.moving .pe-cells { opacity: 1; }
     .pe-cells > path { fill: rgba(255, 255, 255, 0.07); }
     /* The marks drawn on the watch's screen (selection, handles, swap) are a
        light form of the accent: the screen is black in both skins, where the
@@ -3014,28 +3129,26 @@ export class WaPageEditor extends LitElement {
     .pe-screen { --pe-mark: color-mix(in srgb, var(--wa-accent) 55%, #fff); --pe-edge: rgba(255, 255, 255, 0.16); }
     /* A tile has no ground of its own: the screen draws the page's
        background (color, brightness, pattern) under it, as the watch does,
-       and the face draws the tile. A hairline edge keeps a faint tint
-       reading as a tile rather than as words on the grid, and a spacer the
-       watch draws next to nothing of findable. */
+       and the face draws the tile, with no edge of the editor's own, so an
+       unlit tile reads as faintly as it does on the watch. */
     .pe-tile {
-      position: absolute; display: block; margin: 0; padding: 0; border: 0; border-radius: 10px;
+      position: absolute; display: block; margin: 0; padding: 0; border: 0; border-radius: 6px;
       background: transparent;
-      box-shadow: inset 0 0 0 1px var(--pe-edge);
       color: inherit; font: inherit; text-align: left; cursor: grab;
       touch-action: manipulation;
     }
     .pe-tile.fixed { pointer-events: none; }
-    .pe-tile:focus-visible { outline: none; box-shadow: inset 0 0 0 1px var(--pe-edge), 0 0 0 2px #000, 0 0 0 4px var(--pe-mark); }
-    .pe-tile.sel { touch-action: none; box-shadow: inset 0 0 0 1px var(--pe-edge), 0 0 0 2px var(--pe-mark); z-index: 2; }
-    .pe-tile.sel:focus-visible { box-shadow: inset 0 0 0 1px var(--pe-edge), 0 0 0 2px var(--pe-mark), 0 0 0 4px #000, 0 0 0 6px var(--pe-mark); }
+    .pe-tile:focus-visible { outline: none; box-shadow: 0 0 0 2px #000, 0 0 0 4px var(--pe-mark); }
+    .pe-tile.sel { touch-action: none; box-shadow: 0 0 0 2px var(--pe-mark); z-index: 2; }
+    .pe-tile.sel:focus-visible { box-shadow: 0 0 0 2px var(--pe-mark), 0 0 0 4px #000, 0 0 0 6px var(--pe-mark); }
     .pe-tile.moving { z-index: 4; opacity: .9; cursor: grabbing; box-shadow: 0 8px 22px rgba(0, 0, 0, .6), 0 0 0 2px var(--pe-mark); }
     .pe-tile.partner { opacity: .6; box-shadow: 0 0 0 2px var(--pe-mark); }
-    .pe-ghost { position: absolute; z-index: 3; border-radius: 10px; pointer-events: none; border: 2px dashed; }
+    .pe-ghost { position: absolute; z-index: 3; border-radius: 6px; pointer-events: none; border: 2px dashed; }
     .pe-ghost.ok { border-color: #34c759; background: rgba(52, 199, 89, .16); }
     .pe-ghost.swap { border-color: var(--pe-mark); background: color-mix(in srgb, var(--pe-mark) 20%, transparent); }
     .pe-ghost.swap-to { border-color: var(--pe-mark); border-style: dotted; background: color-mix(in srgb, var(--pe-mark) 10%, transparent); }
     .pe-ghost.no { border-color: #ff6b6b; background: rgba(255, 107, 107, .16); }
-    .pe-sel { position: absolute; z-index: 3; border-radius: 10px; pointer-events: none; }
+    .pe-sel { position: absolute; z-index: 3; border-radius: 6px; pointer-events: none; }
     .pe-fold-text { font-size: 12px; }
     .pe-sel.no { outline: 2px dashed #ff6b6b; outline-offset: 2px; background: rgba(255, 107, 107, .14); }
     /* Filled grab points straddling the outline, half in and half out, so
