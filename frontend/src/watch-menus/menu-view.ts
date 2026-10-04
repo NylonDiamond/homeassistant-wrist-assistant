@@ -2,11 +2,12 @@
 // chrome (`editor-chrome.ts`) as the page editor wears it: the Menus card,
 // which picks the menu the canvas and the inspector show (the Anywhere menu,
 // the Entity quick menu, the page switcher); the Slots card, that menu's
-// slots (or the switcher's pages, read only); the watch preview the canvas
-// draws; and the inspector, a slot's Name, Slot and Look cards or, with no
-// slot selected, the menu's own settings. `<wa-menu-editor>` owns the draft
-// and hands a host in on every draw; nothing here keeps state of its own
-// beyond `uiState`.
+// slots (or the switcher's pages, one picked at a time); the watch preview
+// the canvas draws; and the inspector, a slot's Name, Slot and Look cards, a
+// picked page's switcher settings, or with neither selected the menu's own
+// settings. `<wa-menu-editor>` owns the drafts (the menus and, for a page's
+// switcher settings, the pages) and hands a host in on every draw; nothing
+// here keeps state of its own beyond `uiState`.
 //
 // Every edit is a setter of `model.ts` applied to the document as it is at
 // the moment the edit commits (`host.edit`), never to the one drawn: one task
@@ -33,6 +34,13 @@ import { renderWatchFrame } from "../watch-frame.js";
 import { type FoldId, anySectionOpen, sectionOpen, setSectionOpen, setSectionsOpen } from "../watch-pages/fold-memory.js";
 import type { JsonObject } from "../watch-pages/model.js";
 import { STAGE_ZOOM_STEPS } from "../watch-pages/stage.js";
+import {
+  SWITCHER_SECTION_TITLE,
+  type SwitcherSettingsHost,
+  renderSwitcherSettings,
+  switcherSettingsSummary,
+  watchPageSwitcherChanged,
+} from "../watch-pages/switcher-settings.js";
 import {
   ANYWHERE,
   MENU_ACTIONS,
@@ -113,6 +121,13 @@ export interface MenusViewHost {
   readonly scale: number;
   /** The pages the watch's page switcher shows, in its order. */
   readonly switcherPages: readonly MenuSwitcherPage[];
+  /** Every page the switcher could show, in watch order: those it shows and
+   * those left out of it (`hidden`), so a page left out can be shown again.
+   * Without it, the pages it shows. */
+  readonly switcherRows?: readonly MenuSwitcherRow[];
+  /** The host of a page's switcher settings, editing the pages draft;
+   * undefined while there is no pages draft or no such page. */
+  switcherSettings?(pageId: string): SwitcherSettingsHost | undefined;
   /** Apply `change` to the document as it is now: one undo step, or with
    * `coalesce` a step the next edits with the same key replace. */
   edit(change: (document: MenusDocument) => MenusDocument, coalesce?: string): boolean;
@@ -129,7 +144,10 @@ export const MENUS_SECTIONS: readonly [MenusSection, string][] = [
   ["switcher", "Page switcher"],
 ];
 
-export const SWITCHER_LINE = "Each page's icon, color and name are set in that page's settings.";
+export const SWITCHER_LINE = "Each page's icon, color and name are set here: pick a page in the Pages card.";
+
+/** The note under the switcher's Style card while no page is picked. */
+export const SWITCHER_PICK_NOTE = "Pick a page in the Pages card to set how it shows here.";
 
 /** What each menu is, one line: the Menus row's tooltip and the inspector's
  * note over the menu's own settings. */
@@ -159,6 +177,13 @@ export interface MenuSwitcherPage {
   readonly text?: string;
   readonly icon: string;
   readonly color: string;
+}
+
+/** A row of the switcher's Pages card: a page the switcher could show, and
+ * whether it is left out of it. A page left out has no place in the
+ * switcher, so no color by place either. */
+export interface MenuSwitcherRow extends MenuSwitcherPage {
+  readonly hidden: boolean;
 }
 
 /** The ring's radius as a share of the screen's shorter side. */
@@ -224,7 +249,7 @@ export function saveMenusZoom(scale: number | undefined, storage: ColumnStorage 
 // ── the inspector's badges ───────────────────────────────────────────────
 
 /** A card of the inspector. */
-export type MenuInspectorSection = "name" | "slot" | "look" | "menu" | "style";
+export type MenuInspectorSection = "name" | "slot" | "look" | "menu" | "style" | "switcherPage";
 
 /** A section card's mark: the color it is tinted with and the glyph in its
  * badge. */
@@ -237,7 +262,9 @@ export interface MenuSectionBadge {
  * Each inspector card's badge, in the complication editor's colors as the
  * page editor's tile cards have them (`WATCH_TILE_SECTION_BADGES`): the Name
  * card is Place grey, what a slot does and which list a menu shows are
- * Content blue, and how a slot or a menu looks is Look purple.
+ * Content blue, and how a slot or a menu looks is Look purple. A page's
+ * place in the switcher is Content, with the watch glyph, as its chip was in
+ * the page editor's strip.
  */
 export const MENU_SECTION_BADGES: Readonly<Record<MenuInspectorSection, MenuSectionBadge>> = {
   name: { color: SECTION_COLOR.place, icon: "text" },
@@ -245,10 +272,16 @@ export const MENU_SECTION_BADGES: Readonly<Record<MenuInspectorSection, MenuSect
   look: { color: SECTION_COLOR.look, icon: "look" },
   menu: { color: SECTION_COLOR.content, icon: "content" },
   style: { color: SECTION_COLOR.look, icon: "look" },
+  switcherPage: { color: SECTION_COLOR.content, icon: "watch" },
 };
 
 /** The breadcrumb chip of a menu: the Menus card's hue. */
 export const MENU_CHIP_COLOR = "#26a69a";
+
+/** The breadcrumb chip of a page: the page editor's (`WATCH_PAGE_CHIP_COLOR`
+ * in `page-settings.ts`, which this chunk does not import: it would bring
+ * the page editor's views along). */
+export const MENU_PAGE_CHIP_COLOR = SECTION_COLOR.complication;
 
 /** The fold memory's module for the inspector's cards (`fold-memory.ts`). */
 const FOLD_MODULE = "menu-editor";
@@ -366,9 +399,45 @@ export function shownMenu(host: Pick<MenusViewHost, "uiState">): MenusSection {
   return stored === "entity" || stored === "switcher" ? stored : "anywhere";
 }
 
+/** Show `menu`. Another menu than the one shown lets go of the switcher's
+ * picked page. */
 export function selectMenu(host: Pick<MenusViewHost, "uiState" | "requestUpdate">, menu: MenusSection): void {
+  if (menu !== shownMenu(host)) host.uiState.delete(SWITCHER_PAGE_KEY);
   host.uiState.set(MENU_KEY, menu);
   host.requestUpdate();
+}
+
+const SWITCHER_PAGE_KEY = "me:sw:page";
+
+type SwitcherState = Pick<MenusViewHost, "uiState" | "switcherPages" | "switcherRows">;
+
+/** The Pages card's rows: every page the switcher could show. */
+function switcherRows(host: Pick<MenusViewHost, "switcherPages" | "switcherRows">): readonly MenuSwitcherRow[] {
+  return host.switcherRows ?? host.switcherPages.map((p) => ({ ...p, hidden: false }));
+}
+
+/** The page picked in the switcher's Pages card, while the switcher is shown
+ * and the page is still one of its rows. */
+export function selectedSwitcherPage(host: SwitcherState): MenuSwitcherRow | undefined {
+  if (shownMenu(host) !== "switcher") return undefined;
+  const stored = host.uiState.get(SWITCHER_PAGE_KEY);
+  if (typeof stored !== "string") return undefined;
+  return switcherRows(host).find((p) => sameId(p.id, stored));
+}
+
+/** Pick a page in the switcher's Pages card, or none (back to the
+ * switcher's own style). */
+export function selectSwitcherPage(host: Pick<MenusViewHost, "uiState" | "requestUpdate">, id: string | undefined): void {
+  if (id === undefined) host.uiState.delete(SWITCHER_PAGE_KEY);
+  else host.uiState.set(SWITCHER_PAGE_KEY, id);
+  host.requestUpdate();
+}
+
+/** The picked page's switcher settings host, when there is a page picked and
+ * a pages draft to edit it in. */
+export function selectedSwitcherSettings(host: SwitcherState & Pick<MenusViewHost, "switcherSettings">): SwitcherSettingsHost | undefined {
+  const page = selectedSwitcherPage(host);
+  return page === undefined ? undefined : host.switcherSettings?.(page.id);
 }
 
 export function menuSectionLabel(menu: MenusSection): string {
@@ -437,9 +506,13 @@ function select(host: Pick<MenusViewHost, "uiState" | "requestUpdate">, ref: Men
   host.requestUpdate();
 }
 
-/** Let go of the shown list's selected slot, back to the menu's own
- * settings. Whether there was one. */
-export function deselectMenuSlot(host: Pick<MenusViewHost, "uiState" | "document" | "requestUpdate">): boolean {
+/** Let go of the shown list's selected slot, or the switcher's picked page,
+ * back to the menu's own settings. Whether there was one. */
+export function deselectMenuSlot(host: Pick<MenusViewHost, "uiState" | "document" | "requestUpdate" | "switcherPages" | "switcherRows">): boolean {
+  if (selectedSwitcherPage(host) !== undefined) {
+    selectSwitcherPage(host, undefined);
+    return true;
+  }
   const ref = shownMenuList(host);
   if (ref === undefined || selectedMenuSlot(host, ref) === undefined) return false;
   select(host, ref, undefined);
@@ -578,34 +651,54 @@ function entityFilter(host: MenusViewHost, ref: MenuListRef | undefined, selecte
 }
 
 /** How a page shows in the switcher, in words. */
-function shownAs(page: MenuSwitcherPage): string {
+function shownAs(page: MenuSwitcherRow): string {
+  if (page.hidden) return "Not in the switcher";
   return page.text === undefined ? "Shown as its icon" : page.text === page.name ? "Shown by name" : `Shown as ${page.text}`;
 }
 
-/** The page switcher's pages, read only: they are set on the pages screen. */
+function switcherPageRow(host: MenusViewHost, page: MenuSwitcherRow, selected: MenuSwitcherRow | undefined): TemplateResult {
+  const on = selected !== undefined && sameId(selected.id, page.id);
+  const detail = shownAs(page);
+  const pick = () => selectSwitcherPage(host, page.id);
+  return html`<div class="layer me-page-row ${on ? "hl" : ""} ${page.hidden ? "dim" : ""}" data-page=${page.id} style=${`--k:${page.color}`}
+    role="listitem" tabindex="0" aria-current=${on ? "true" : "false"} aria-label=${page.name}
+    title=${`${page.name} · ${detail}`}
+    @click=${(e: Event) => { if (!(e.target instanceof Element && e.target.closest("button"))) pick(); }}
+    @keydown=${(e: KeyboardEvent) => {
+      if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+      e.preventDefault();
+      pick();
+    }}>
+    <span class="grip" aria-hidden="true"></span>
+    ${slotThumb(host, page.icon, page.color)}
+    <span class="name"><b><span class="nm-t">${page.name}</span></b><small>${detail}</small></span>
+    <span class="right"><span class="badges">${page.hidden ? html`<span class="badge">hidden</span>` : nothing}</span></span>
+  </div>`;
+}
+
+/** The page switcher's Pages card: every page the switcher could show, in
+ * watch order, those left out of it dimmed with a badge so they can be shown
+ * again. A row picks the page whose switcher settings the inspector shows. */
 function renderSwitcherPagesCard(host: MenusViewHost): TemplateResult {
-  const pages = host.switcherPages;
+  const pages = switcherRows(host);
+  const selected = selectedSwitcherPage(host);
+  const left = pages.filter((p) => p.hidden).length;
   return html`<section class="card lc me-slots-card" aria-label="Pages"
     style=${`--c: var(--wa-lc-layers, #4a7fe8); --thumb-w: ${THUMB_W}px; --thumb-h: ${THUMB_H}px`}>
     <div class="lc-head">
       <span class="swatch">${uiIcon("pages")}</span><span class="lc-title">Pages</span>
-      <span class="lc-sub">${plural(pages.length, "page", "pages")}, read only</span>
+      <span class="lc-sub">${plural(pages.length, "page", "pages")}${left === 0 ? "" : `, ${left} hidden`}</span>
     </div>
     ${pages.length === 0
       ? html`<div class="lc-note">No page shows in the switcher.</div>`
-      : html`<div class="layers me-page-list" role="list">${pages.map((page) => html`<div class="layer me-page-row" role="listitem" title=${page.name}>
-          <span class="grip" aria-hidden="true"></span>
-          ${slotThumb(host, page.icon, page.color)}
-          <span class="name"><b><span class="nm-t">${page.name}</span></b><small>${shownAs(page)}</small></span>
-          <span class="right"></span>
-        </div>`)}</div>`}
+      : html`<div class="layers me-page-list" role="list">${pages.map((page) => switcherPageRow(host, page, selected))}</div>`}
   </section>`;
 }
 
 /** The Slots card: the shown menu's slots around the ring, in ring order,
  * each with its icon in its color, its name over its place and action, and
  * on hover Remove; + Add puts one at the first free place. For the page
- * switcher, its pages, read only. */
+ * switcher, its pages, one picked at a time. */
 export function renderSlotsCard(host: MenusViewHost): TemplateResult {
   const menu = shownMenu(host);
   if (menu === "switcher") return renderSwitcherPagesCard(host);
@@ -726,18 +819,21 @@ function renderRing(host: MenusViewHost, ref: MenuListRef, selected: JsonObject 
 
 /** The page switcher as the watch draws it: each page the switcher shows,
  * spread around the ring from top centre, by its switcher text in its color,
- * or by its icon. The pages are set on the pages screen, so nothing here is a
- * button. */
+ * or by its icon, the page picked in the Pages card lit. A page is picked in
+ * that card, so nothing here is a button. A page left out of the switcher is
+ * not drawn. */
 function renderSwitcherScreen(host: MenusViewHost): TemplateResult {
   const pages = host.switcherPages;
   const screen = host.screen;
+  const picked = selectedSwitcherPage(host);
   const content = pages.length === 0
     ? html`<p class="me-screen-note">No pages in the switcher yet.</p>`
     : pages.map((page, i) => {
       const style = `${screenStyle(screen, switcherRingPoint(i, pages.length))};--c:${page.color}`;
+      const on = picked !== undefined && sameId(picked.id, page.id) ? "on" : "";
       return page.text === undefined
-        ? html`<span class="me-dot me-page-dot" style=${style} title=${page.name}>${glyph(host, page.icon, dotGlyph(host, 14), page.color)}</span>`
-        : html`<span class="me-page" style=${style} title=${page.name}>${page.text}</span>`;
+        ? html`<span class="me-dot me-page-dot ${on}" style=${style} title=${page.name}>${glyph(host, page.icon, dotGlyph(host, 14), page.color)}</span>`
+        : html`<span class="me-page ${on}" style=${style} title=${page.name}>${page.text}</span>`;
     });
   return renderScreen(host, "Page switcher on the watch", content);
 }
@@ -782,7 +878,8 @@ function toggle(host: Pick<MenusViewHost, "uiState" | "requestUpdate">, section:
 }
 
 /** The cards drawn now that fold, for the inspector's Collapse all. */
-export function menuInspectorFolds(host: ViewState): FoldId[] {
+export function menuInspectorFolds(host: ViewState & SwitcherState & Pick<MenusViewHost, "switcherSettings">): FoldId[] {
+  if (selectedSwitcherSettings(host) !== undefined) return [{ module: FOLD_MODULE, section: "switcher-page" }];
   const ref = shownMenuList(host);
   if (ref !== undefined && selectedMenuSlot(host, ref) !== undefined) {
     return [{ module: FOLD_MODULE, section: "slot" }, { module: FOLD_MODULE, section: "look" }];
@@ -818,9 +915,11 @@ function card(
  * The inspector: a sticky head with the breadcrumb (the menu, then with a
  * slot selected the slot's chip in its color and its name; the menu's name
  * is the way back to its own settings) and Collapse all, then the cards. A
- * selected slot has its Name, Slot and Look cards and Remove; with none, the
- * menu's own: the Anywhere menu's and the page switcher's Style, the Entity
- * quick menu's Menu (which type or entity it shows).
+ * selected slot has its Name, Slot and Look cards and Remove; a page picked
+ * in the switcher's Pages card has its "In the page switcher" card (the crumb
+ * "Page switcher" is the way back); with neither, the menu's own: the
+ * Anywhere menu's and the page switcher's Style, the Entity quick menu's
+ * Menu (which type or entity it shows).
  */
 export function renderMenuInspector(host: MenusViewHost): TemplateResult {
   const menu = shownMenu(host);
@@ -829,20 +928,35 @@ export function renderMenuInspector(host: MenusViewHost): TemplateResult {
   const slot = ref === undefined ? undefined : selectedMenuSlot(host, ref);
   const folds = menuInspectorFolds(host);
   const anyOpen = anySectionOpen(host.uiState, folds);
+  const picked = selectedSwitcherPage(host);
+  const settings = selectedSwitcherSettings(host);
   let crumbs: TemplateResult;
-  if (slot === undefined || ref === undefined) {
+  let body: TemplateResult;
+  if (picked !== undefined && settings !== undefined) {
+    crumbs = html`<div class="crumbs"><button class="root" title="The switcher's own style" @click=${() => selectSwitcherPage(host, undefined)}>${label}</button><span class="sep">›</span><span class="kchip" style=${`--k:${MENU_PAGE_CHIP_COLOR}`}>Page</span><span class="nm" title=${picked.name}>${picked.name}</span></div>`;
+    body = renderSwitcherPageCard(host, settings);
+  } else if (slot === undefined || ref === undefined) {
     crumbs = html`<div class="crumbs"><span class="kchip" style=${`--k:${MENU_CHIP_COLOR}`}>Menu</span><span class="nm" title=${label}>${label}</span></div>`;
+    body = renderMenuSettings(host, menu);
   } else {
     const name = menuSlotName(host, slot);
     crumbs = html`<div class="crumbs"><button class="root" title="Edit the menu" @click=${() => select(host, ref, undefined)}>${label}</button><span class="sep">›</span><span class="kchip" style=${`--k:${slotLook(slot).color}`}>Slot</span><span class="nm" title=${name}>${name}</span></div>`;
+    body = renderSlotInspector(host, ref, slot);
   }
   return html`<div class="insp-head">
       ${crumbs}
       <button class="expand" @click=${() => { setSectionsOpen(host.uiState, folds, !anyOpen); host.requestUpdate(); }}>${anyOpen ? "Collapse all" : "Expand all"}</button>
     </div>
-    <div class="insp-body">
-      ${slot !== undefined && ref !== undefined ? renderSlotInspector(host, ref, slot) : renderMenuSettings(host, menu)}
-    </div>`;
+    <div class="insp-body">${body}</div>`;
+}
+
+/** The picked page's one card: how it shows in the switcher, its rows in a
+ * fieldset that switches every control off while a save is out. */
+function renderSwitcherPageCard(host: MenusViewHost, settings: SwitcherSettingsHost): TemplateResult {
+  const page = settings.page;
+  return card(host, "switcherPage", "switcher-page", SWITCHER_SECTION_TITLE,
+    html`<fieldset class="ts-body me-body" ?disabled=${host.busy} aria-label=${SWITCHER_SECTION_TITLE}>${renderSwitcherSettings(settings)}</fieldset>`,
+    { summary: switcherSettingsSummary(page), dot: watchPageSwitcherChanged(page) });
 }
 
 // ── a slot's cards ───────────────────────────────────────────────────────
@@ -1191,7 +1305,7 @@ function renderMenuSettings(host: MenusViewHost, menu: MenusSection): TemplateRe
     : menu === "switcher" ? renderStyleCard(host, "pageSwitcher", "style-switcher")
     : renderEntityMenuCard(host);
   return html`<p class="me-menu-note">${MENU_LINES[menu]}</p>${cards}
-    ${menu === "switcher" ? nothing : html`<p class="me-menu-note me-pick-note">Select a slot to edit it, or add one.</p>`}`;
+    <p class="me-menu-note me-pick-note">${menu === "switcher" ? SWITCHER_PICK_NOTE : "Select a slot to edit it, or add one."}</p>`;
 }
 
 /** The views' rules, after the shared chrome and the editor's own in the
@@ -1202,8 +1316,6 @@ export const menuViewStyles = css`
   .me-menus-card > .lc-note, .me-slots-card > .lc-note { margin: 8px 12px; color: var(--wa-muted); }
   .me-menus-card .lc-head, .me-slots-card .lc-head { border-bottom: 1px solid color-mix(in srgb, var(--c) 24%, var(--wa-card)); }
   .me-slots-card > .lc-filter { border-bottom-color: color-mix(in srgb, var(--c) 18%, var(--wa-card)); }
-  .me-page-row { cursor: default; }
-  .me-page-row:hover { background: color-mix(in srgb, var(--wa-panel) 60%, var(--wa-card)); box-shadow: inset 0 0 0 1px var(--wa-line); }
   .layer .acts button.icon { display: inline-grid; place-items: center; padding: 0; }
   .layer .acts button.icon:disabled { opacity: .35; cursor: default; }
   /* A slot's or a page's icon in its color, on the black well. */
@@ -1244,7 +1356,7 @@ export const menuViewStyles = css`
   /* The marks on the black screen are a light form of the accent, as the
      page editor's are: the light skin's own accent is too dark there. */
   .me-screen { --me-mark: color-mix(in srgb, var(--wa-accent) 55%, #fff); }
-  .me-dot.on { box-shadow: 0 0 0 2px #000, 0 0 0 4px var(--me-mark); }
+  .me-dot.on, .me-page.on { box-shadow: 0 0 0 2px #000, 0 0 0 4px var(--me-mark); }
   .me-dot:focus-visible { outline: none; box-shadow: 0 0 0 2px #000, 0 0 0 4px var(--me-mark), var(--wa-ring); }
   .me-dot.off { opacity: .4; }
   .me-dot.two { width: calc(23px * var(--me-s, 1)); height: calc(23px * var(--me-s, 1)); border-width: 1px; z-index: 1; }
@@ -1292,6 +1404,8 @@ export const menuViewStyles = css`
   .pe-chip:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .hint.ts-under { padding-left: calc(var(--wa-lab) + 8px); margin-top: -2px; }
   .ts-after { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 6px calc(var(--wa-lab) + 8px); }
+  /* A picked page's Automatic icon chip, as the page editor drew it. */
+  .ts-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 6px; }
   .ts-swatch-row { padding: 2px 0 4px calc(var(--wa-lab) + 8px); }
   .ts-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
   .ts-swatch {

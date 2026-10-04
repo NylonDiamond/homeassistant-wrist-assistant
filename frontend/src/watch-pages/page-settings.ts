@@ -1,8 +1,10 @@
 // The selected page's styling, drawn in the page strip over the watch: the
 // theme strip with its role colors and the Solid or Gradient switch, the
 // background decoration (one at a time, as the phone's Page task), the page
-// title, the page switcher, and Reset (part 3d). Each is one chip of the
-// strip, and its chip opens a popover holding the section's body.
+// title, and Reset (part 3d). Each is one chip of the strip, and its chip
+// opens a popover holding the section's body. How the page shows in the page
+// switcher is set in the menu editor (`switcher-settings.ts`), beside the
+// switcher's own look, as on the iPhone.
 //
 // `<wa-page-editor>` draws the strip itself and asks this module for each
 // section's words (`pageSettingSummary`), its body (`renderPageSettingBody`)
@@ -14,20 +16,14 @@
 // Plan: app repo docs/pages_in_home_assistant_step3.md ("3d build contract").
 
 import { css, html, nothing, type TemplateResult } from "lit";
-import { checkField, colorField, segField, sliderField, symbolField, symbolNameSet, textField } from "../editors.js";
+import { colorField, segField, sliderField, symbolField, symbolNameSet } from "../editors.js";
 import { SECTION_COLOR } from "../kinds.js";
 import { type TileSettingsHost, type WatchPagesEditorHost, extendHost } from "./editor-host.js";
 import { type WatchPage, type WatchPageTile, type WatchPagesDocument, isHiddenWatchPage } from "./model.js";
 import {
   type WatchPageDecoration,
   type WatchPageDecorationMemory,
-  WATCH_PAGE_SWITCHER_MODES,
   resetWatchPage,
-  setWatchPageHideFromSwitcher,
-  setWatchPageSwitcherColor,
-  setWatchPageSwitcherDisplayMode,
-  setWatchPageSwitcherIcon,
-  setWatchPageSwitcherText,
   selectWatchPageDecoration,
   setWatchPageBackgroundColor,
   setWatchPageColorMode,
@@ -50,6 +46,7 @@ import {
   watchPageDecoration,
   watchPageDecorationMemory,
   watchPageModified,
+  watchPageReadsOtherThanDefault,
   watchPageSettings,
   watchPageSwatchTheme,
   watchPageThemes,
@@ -78,7 +75,7 @@ import {
 const KEY = "page-settings";
 
 /** This module's sections, each a chip of the page strip. */
-export type WatchPageSettingSection = "theme" | "background" | "title" | "switcher";
+export type WatchPageSettingSection = "theme" | "background" | "title";
 
 /** The page strip's chips, in the order drawn: the page editor's Page chip
  * (its switches and facts), then this module's. */
@@ -90,57 +87,40 @@ export const WATCH_PAGE_SECTION_TITLES: Readonly<Record<WatchPageStripSection, s
   theme: "Theme",
   background: "Background",
   title: "Page title",
-  switcher: "In the page switcher",
 };
 
-/** Each section's chip word, short so the five fit one row over the watch. */
+/** Each section's chip word, short so the chips fit one row over the watch. */
 export const WATCH_PAGE_CHIP_LABELS: Readonly<Record<WatchPageStripSection, string>> = {
   page: "Page",
   theme: "Theme",
   background: "Background",
   title: "Title",
-  switcher: "Switcher",
 };
 
 /** Each section's badge, in the complication editor's colors: the page's
- * switches and how it shows in the switcher are Content, its theme and
- * background are Look, its title is Extras (teal). */
+ * switches are Content, its theme and background are Look, its title is
+ * Extras (teal). */
 export const WATCH_PAGE_SECTION_BADGES: Readonly<Record<WatchPageStripSection, WatchSectionBadge>> = {
   page: { color: SECTION_COLOR.content, icon: "content" },
   theme: { color: SECTION_COLOR.look, icon: "look" },
   background: { color: SECTION_COLOR.look, icon: "shape" },
   title: { color: SECTION_COLOR.numbers, icon: "text" },
-  switcher: { color: SECTION_COLOR.content, icon: "watch" },
 };
 
 /** The breadcrumb chip's color for the page itself, the complication's in
  * the complication editor. */
 export const WATCH_PAGE_CHIP_COLOR = SECTION_COLOR.complication;
 
-/** The keys of the page's switcher card. */
-const SWITCHER_KEYS = ["switcherIcon", "switcherColor", "switcherText", "switcherDisplayMode", "hideFromSwitcher"] as const;
-
 /** The background keys Reset Page writes or removes, the image's aside (the
  * phone sets those). */
 const IMAGE_KEY = /^backgroundImage/;
 
-/** Whether `read` gives the page something other than it gives the same
- * page with `keys` removed. The iPhone app stores most keys at their
- * defaults (`hideFromSwitcher: false`, the theme it would fall back to), so
- * a key merely being there says nothing. */
-function readsOtherThanDefault(page: WatchPage, keys: readonly string[], read: (page: WatchPage) => unknown): boolean {
-  if (!keys.some((key) => Object.hasOwn(page, key))) return false;
-  const bare: Record<string, unknown> = { ...page };
-  for (const key of keys) delete bare[key];
-  return JSON.stringify(read(page)) !== JSON.stringify(read(bare as WatchPage));
-}
-
 /**
  * Whether a page section holds a value of the page's own, which its chip
- * marks with the changed dot: Page while the page is hidden on the watch; Theme
- * and the switcher while one of their keys reads other than its absence
- * would (a theme other than the watch's fallback, gradient colors on, a
- * switcher name, icon, color, mode or hiding); Background and Page title
+ * marks with the changed dot: Page while the page is hidden on the watch;
+ * Theme while one of its keys reads other than its absence would (a theme
+ * other than the watch's fallback, gradient colors on); Background and Page
+ * title
  * while Reset Page would change one of their keys, as its own Reset is
  * shown for (an absent background brightness reads 0 where the phone's
  * default is 0.6, so absence is no measure there).
@@ -155,7 +135,7 @@ export function watchPageSectionChanged(page: WatchPage, section: WatchPageStrip
     case "page":
       return isHiddenWatchPage(page);
     case "theme":
-      return readsOtherThanDefault(page, ["themeOverride", "useGradientColors"], (p) => {
+      return watchPageReadsOtherThanDefault(page, ["themeOverride", "useGradientColors"], (p) => {
         const s = watchPageSettings(p);
         return [s.theme, s.gradient];
       });
@@ -163,11 +143,6 @@ export function watchPageSectionChanged(page: WatchPage, section: WatchPageStrip
       return resetChanges("background");
     case "title":
       return resetChanges("pageTitle");
-    case "switcher":
-      return readsOtherThanDefault(page, SWITCHER_KEYS, (p) => {
-        const s = watchPageSettings(p);
-        return [s.switcherIcon, s.switcherColor, s.switcherText, s.switcherDisplayMode ?? "text", s.hideFromSwitcher];
-      });
   }
 }
 
@@ -219,8 +194,6 @@ export function pageSettingSummary(page: WatchPage, section: WatchPageSettingSec
       return DECORATION_CHOICES.find(([d]) => d === s.decoration)?.[1] ?? (s.decoration === "image" ? "Image" : "");
     case "title":
       return s.titleStyle === "none" ? "Hidden" : watchStylingLabel("pageTitleDisplayStyle", s.titleStyle);
-    case "switcher":
-      return s.hideFromSwitcher ? "Hidden" : s.switcherText ?? (s.switcherDisplayMode === "icon" ? "Icon" : "Shown");
   }
 }
 
@@ -243,8 +216,6 @@ function body(sh: TileSettingsHost, section: WatchPageSettingSection): TemplateR
       return renderBackground(sh);
     case "title":
       return renderTitle(sh);
-    case "switcher":
-      return renderSwitcher(sh);
   }
 }
 
@@ -489,35 +460,6 @@ function renderTitle(sh: TileSettingsHost): TemplateResult {
       })}
       ${s.titleColor === undefined ? html`<div class="hint ts-under">None set: the theme's title color.</div>` : nothing}
       ${s.fullScreen ? html`<div class="hint warn">Full screen is on (set on the iPhone): the watch hides the title.</div>` : nothing}`}`;
-}
-
-// ── the page switcher ────────────────────────────────────────────────────
-
-/** How the page shows in the watch's page switcher: hidden or not, as text
- * or an icon, its name, icon and color there. Each left empty is chosen by
- * the watch, as on the iPhone. The switcher's own look is in the menu
- * editor. */
-function renderSwitcher(sh: TileSettingsHost): TemplateResult {
-  const s = watchPageSettings(sh.page);
-  const mode = s.switcherDisplayMode ?? "text";
-  const modes = WATCH_PAGE_SWITCHER_MODES.map((m) => [m, m === "icon" ? "Icon" : "Name"] as [string, string]);
-  const name = typeof sh.page.name === "string" ? sh.page.name : "";
-  const setIcon = (value: string) => commit(sh, "switcherIcon", (d) => setWatchPageSwitcherIcon(d, sh.pageId, value), { typing: true });
-  const setColor = (value: string | undefined) => commit(sh, "switcherColor", (d) => setWatchPageSwitcherColor(d, sh.pageId, value), { typing: true });
-  return html`
-    ${checkField("Hidden", s.hideFromSwitcher, (v) => commit(sh, "hideFromSwitcher", (d) => setWatchPageHideFromSwitcher(d, sh.pageId, v)), false)}
-    ${s.hideFromSwitcher ? html`<div class="hint ts-under">The page stays on the watch. Only the switcher leaves it out.</div>` : nothing}
-    ${segField("Show as", modes.some(([m]) => m === mode) ? mode : "text", modes, (v) =>
-      commit(sh, "switcherDisplayMode", (d) => setWatchPageSwitcherDisplayMode(d, sh.pageId, v)))}
-    ${typingField(sh, "switcherText", textField("Name", typed(sh, "switcherText") ?? s.switcherText ?? "", (v) =>
-      commit(sh, "switcherText", (d) => setWatchPageSwitcherText(d, sh.pageId, v), { typing: true }), { placeholder: name }))}
-    <div class="ts-chips" role="group" aria-label="Switcher icon">
-      <button type="button" class="pe-chip ${s.switcherIcon === undefined ? "on" : ""}" aria-pressed=${s.switcherIcon === undefined ? "true" : "false"}
-        title="The watch picks one from the page's first tile" @click=${() => commit(sh, "switcherIcon", (d) => setWatchPageSwitcherIcon(d, sh.pageId, ""))}>Automatic icon</button>
-    </div>
-    ${typingField(sh, "switcherIcon", symbolField({ icons: sh.icons, symbols: sh.symbols }, typed(sh, "switcherIcon") ?? s.switcherIcon ?? "", setIcon, "pe:ps:switcher-icon", undefined, "Icon", false))}
-    ${typingField(sh, "switcherColor", html`<div class="ts-no-alpha">${colorField("Color", typed(sh, "switcherColor") ?? s.switcherColor, setColor, true, null, { switchOn: s.switcherColor !== undefined })}</div>`)}
-    <div class="hint ts-under">Left empty, the watch shows the page's name and picks the icon and color itself. The switcher's own look is under Menus.</div>`;
 }
 
 /** This module's rules, after the tile settings' in the page editor's

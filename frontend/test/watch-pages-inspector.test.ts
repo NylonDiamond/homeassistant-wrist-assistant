@@ -20,6 +20,7 @@ import type { WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-
 import { WATCH_PAGE_CHIP_COLOR, WATCH_PAGE_SECTION_BADGES, watchPageSectionChanged } from "../src/watch-pages/page-settings.js";
 import { resetWatchPage } from "../src/watch-pages/page-settings-model.js";
 import { SMART_SECTION_BADGE } from "../src/watch-pages/smart-settings.js";
+import { watchPageSwitcherChanged } from "../src/watch-pages/switcher-settings.js";
 import { watchThemeDisplayName } from "../src/watch-pages/tile-new.js";
 import { watchTileSectionChanged } from "../src/watch-pages/tile-settings.js";
 import {
@@ -405,15 +406,17 @@ describe("the inspector with no tile", () => {
 });
 
 describe("the page strip", () => {
-  it("is a toolbar of four chips, Theme, Background, Title and Switcher, each saying what the page has, then the two switches", () => {
+  it("is a toolbar of three chips, Theme, Background and Title, each saying what the page has, then the two switches", () => {
     const text = flat(strip(editor(hallPage())));
     expect(text).toMatch(/^<div class="pe-pstrip" role="toolbar" aria-label="Page settings">/);
     expect(chips(text).map(({ label, value }) => [label, value])).toEqual([
       ["Theme", watchThemeDisplayName("neonLagoon")],
       ["Background", "None"],
       ["Title", "Hidden"],
-      ["Switcher", "Shown"],
     ]);
+    // How the page shows in the page switcher is set in the menu editor.
+    expect(text).not.toContain("data-section=switcher");
+    expect(text).not.toContain("Switcher");
     for (const { item } of chips(text)) {
       expect(item).toContain(`aria-haspopup="dialog" aria-expanded=false`);
       expect(item).toContain(`<span class="pe-pchip-chev" aria-hidden="true">▾</span>`);
@@ -432,7 +435,7 @@ describe("the page strip", () => {
     const smart = { ...smartHall(), isHidden: true } as unknown as WatchPage;
     const el = editor(smart);
     const list = chips(flat(strip(el)));
-    expect(list.map(({ label }) => label)).toEqual(["Smart", "Theme", "Background", "Title", "Switcher"]);
+    expect(list.map(({ label }) => label)).toEqual(["Smart", "Theme", "Background", "Title"]);
     expect(list[0]!.value).toMatch(/rule/);
     expect(list[0]!.item).toContain(`style=--k:${SMART_SECTION_BADGE.color}`);
     click(strip(el), "data-section=page");
@@ -456,8 +459,8 @@ describe("the page strip", () => {
       ["theme", SECTION_COLOR.look, "look"],
       ["background", SECTION_COLOR.look, "shape"],
       ["title", SECTION_COLOR.numbers, "text"],
-      ["switcher", SECTION_COLOR.content, "watch"],
     ];
+    expect(Object.keys(WATCH_PAGE_SECTION_BADGES)).toEqual(["page", "theme", "background", "title"]);
     const items = chips(text);
     expected.forEach(([key, color, icon], i) => {
       expect(WATCH_PAGE_SECTION_BADGES[key]).toEqual({ color, icon });
@@ -516,7 +519,7 @@ describe("the page strip", () => {
   it("shuts when another page is picked", () => {
     vi.stubGlobal("window", { addEventListener() {}, removeEventListener() {} });
     const el = editor(hallPage());
-    click(strip(el), "data-section=switcher");
+    click(strip(el), "data-section=title");
     (el as unknown as { selectPage(id: string): void }).selectPage("C3A0E000-0000-4000-8000-0000000000B2");
     expect(el.pageStripOpen).toBeUndefined();
   });
@@ -573,10 +576,13 @@ describe("the changed dot", () => {
   });
 
   it("is drawn on the page strip's chip, after its label, and in its popover's head", () => {
-    const dot = `<span class="pe-pchip-l">Switcher</span><span class="pe-pchip-dot" aria-hidden="true"></span>`;
-    const switcher = chips(flat(strip(editor(hallPage({ switcherText: "Hall" })))));
-    expect(switcher[3]!.item).toContain(dot);
-    expect(switcher.filter((c) => c.item.includes("pe-pchip-dot")).map((c) => c.label)).toEqual(["Switcher"]);
+    const dot = `<span class="pe-pchip-l">Title</span><span class="pe-pchip-dot" aria-hidden="true"></span>`;
+    const titled = chips(flat(strip(editor(hallPage({ pageTitleDisplayStyle: "glass" })))));
+    expect(titled[2]!.item).toContain(dot);
+    expect(titled.filter((c) => c.item.includes("pe-pchip-dot")).map((c) => c.label)).toEqual(["Title"]);
+    // A switcher value of the page's own marks no chip: it is the menu
+    // editor's now (`watchPageSwitcherChanged`).
+    expect(flat(strip(editor(hallPage({ switcherText: "Hall" }))))).not.toContain("pe-pchip-dot");
     // Theme: not for the watch's fallback theme, yes for another.
     expect(chips(flat(strip(editor(hallPage()))))[0]!.item).not.toContain("pe-pchip-dot");
     const el = editor(hallPage({ themeOverride: "ember" }));
@@ -586,9 +592,10 @@ describe("the changed dot", () => {
   });
 
   it("the page's switcher and theme: not for stored defaults, yes for a value of the page's own", () => {
-    expect(watchPageSectionChanged(hallPage(), "switcher")).toBe(false);
-    expect(watchPageSectionChanged(hallPage({ switcherText: "Hall" }), "switcher")).toBe(true);
-    expect(watchPageSectionChanged(hallPage({ hideFromSwitcher: true }), "switcher")).toBe(true);
+    expect(watchPageSwitcherChanged(hallPage())).toBe(false);
+    expect(watchPageSwitcherChanged(hallPage({ switcherText: "Hall" }))).toBe(true);
+    expect(watchPageSwitcherChanged(hallPage({ hideFromSwitcher: true }))).toBe(true);
+    expect(watchPageSectionChanged(hallPage(), "theme")).toBe(false);
     expect(watchPageSectionChanged(hallPage({ useGradientColors: true }), "theme")).toBe(true);
     expect(watchPageSectionChanged(hallPage(), "page")).toBe(false);
     expect(watchPageSectionChanged(hallPage({ isHidden: true }), "page")).toBe(true);

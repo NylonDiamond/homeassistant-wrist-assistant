@@ -6,7 +6,7 @@
 // and the page switcher drawn from the pages record.
 
 import { html } from "lit";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -15,16 +15,26 @@ import { SECTION_COLOR } from "../src/kinds.js";
 import { REFERENCE_CASE } from "../src/renderer.js";
 import { SymbolBrowser } from "../src/symbols.js";
 import { takeWatchMenusRecord } from "../src/watch-menus/draft.js";
-import { PAGES_PATH_FROM_MENUS, WATCH_MENUS_HELP_URL } from "../src/watch-menus/hook.js";
-import { ME_COLUMNS_KEY, WATCH_SWITCHER_COLORS, watchSwitcherPages } from "../src/watch-menus/menu-editor.js";
+import { PAGES_PATH_FROM_MENUS, WATCH_MENUS_HELP_URL, dropWatchMenusDrafts, watchMenusDirty } from "../src/watch-menus/hook.js";
+import {
+  ME_COLUMNS_KEY,
+  WATCH_SWITCHER_COLORS,
+  WATCH_SWITCHER_LEFT_OUT_COLOR,
+  joinSaveNotes,
+  watchSwitcherPages,
+  watchSwitcherRows,
+} from "../src/watch-menus/menu-editor.js";
 import {
   MENUS_SECTIONS,
   MENUS_ZOOM_KEY,
   MENU_CHIP_COLOR,
+  MENU_PAGE_CHIP_COLOR,
   MENU_SECTION_BADGES,
   MENU_STAGE_HINT,
   type MenuSwitcherPage,
   type MenusViewHost,
+  SWITCHER_LINE,
+  SWITCHER_PICK_NOTE,
   deselectMenuSlot,
   loadMenusZoom,
   menuScreenPoint,
@@ -37,6 +47,8 @@ import {
   renderSlotsCard,
   saveMenusZoom,
   selectMenu,
+  selectSwitcherPage,
+  selectedSwitcherPage,
   shownMenu,
   switcherRingPoint,
 } from "../src/watch-menus/menu-view.js";
@@ -49,8 +61,15 @@ import {
   watchMenuRingPoint,
   watchMenuSlots,
 } from "../src/watch-menus/model.js";
+import { WatchPagesDraft } from "../src/watch-pages/draft.js";
+import { findWatchPage } from "../src/watch-pages/edit.js";
 import { WATCH_PAGES_PATH } from "../src/watch-pages/hook.js";
+import { takeWatchPagesRecord } from "../src/watch-pages/kept.js";
+import type { WatchPagesDocument } from "../src/watch-pages/model.js";
+import { WATCH_PAGE_CHIP_COLOR } from "../src/watch-pages/page-settings.js";
+import { setWatchPageHideFromSwitcher, setWatchPageSwitcherText } from "../src/watch-pages/page-settings-model.js";
 import { STAGE_ZOOM_KEY } from "../src/watch-pages/stage.js";
+import type { SwitcherSettingsHost } from "../src/watch-pages/switcher-settings.js";
 
 const DEFAULTS = JSON.parse(readFileSync(join(__dirname, "fixtures-menus", "01-defaults.json"), "utf8")) as MenusDocument;
 const ANYWHERE_COUNT = watchMenuSlots(DEFAULTS, ANYWHERE).length;
@@ -169,7 +188,7 @@ describe("the Slots card", () => {
     expect(flat(renderMenuScreen(h))).toMatch(/class="me-dot  on "/);
   });
 
-  it("says which list the Entity quick menu shows, and lists the switcher's pages read only", () => {
+  it("says which list the Entity quick menu shows, and lists the switcher's pages with no Add", () => {
     const h = host(DEFAULTS, [KITCHEN]);
     selectMenu(h, "entity");
     const entity = flat(renderSlotsCard(h));
@@ -225,6 +244,7 @@ describe("the inspector", () => {
       look: { color: SECTION_COLOR.look, icon: "look" },
       menu: { color: SECTION_COLOR.content, icon: "content" },
       style: { color: SECTION_COLOR.look, icon: "look" },
+      switcherPage: { color: SECTION_COLOR.content, icon: "watch" },
     });
     const h = host(DEFAULTS);
     h.uiState.set("me:sel:anywhere", REFRESH);
@@ -458,7 +478,7 @@ describe("the watch screen", () => {
     selectMenu(h, "switcher");
     const out = flat(renderMenuScreen(h));
     expect(out).toContain("title=Kitchen>Kitchen</span>");
-    expect(out).toContain('class="me-dot me-page-dot"');
+    expect(out).toContain('class="me-dot me-page-dot ');
     const none = host(DEFAULTS);
     selectMenu(none, "switcher");
     expect(flat(renderMenuScreen(none))).toContain("No pages in the switcher yet.");
@@ -504,5 +524,308 @@ describe("the page switcher's pages", () => {
       { id: "7", name: "Untitled page", text: "Untitled page", icon: "square.grid.2x2.fill", color: WATCH_SWITCHER_COLORS[3] },
     ]);
     expect(watchSwitcherPages(undefined)).toEqual([]);
+  });
+});
+
+// ── a page's switcher settings ───────────────────────────────────────────
+
+const PAGES = JSON.parse(readFileSync(join(__dirname, "fixtures-pages", "05-pages.json"), "utf8")) as WatchPagesDocument;
+/** The fixture's first page, its Living room, and its Guest page, which is
+ * hidden on the watch and so never in the switcher. */
+const HOME = "5A17E000-0000-4000-8000-00000000000A";
+const LIVING = "5A17E000-0000-4000-8000-00000000000C";
+const GUEST = "5A17E000-0000-4000-8000-00000000000D";
+
+interface Tpl {
+  strings: readonly string[];
+  values: unknown[];
+}
+
+function templates(node: unknown, out: Tpl[] = []): Tpl[] {
+  if (Array.isArray(node)) for (const n of node) templates(n, out);
+  else if (node !== null && typeof node === "object" && "strings" in node && "values" in node) {
+    const t = node as Tpl;
+    out.push(t);
+    for (const v of t.values) templates(v, out);
+  }
+  return out;
+}
+
+/** The `event` handler of the smallest template whose text holds `marker`
+ * and binds that event to a function itself. */
+function handler(root: unknown, marker: string, event: "click" | "change" | "keydown"): (e: unknown) => void {
+  const found = templates(root)
+    .map((t) => {
+      let text = "";
+      let fn: unknown;
+      t.strings.forEach((part, i) => {
+        text += part;
+        if (i >= t.values.length) return;
+        const v = t.values[i];
+        if (typeof v === "function" && part.trimEnd().endsWith(`@${event}=`)) fn ??= v;
+        text += flat(v);
+      });
+      return { text, fn };
+    })
+    .filter((c) => c.text.includes(marker) && c.fn !== undefined)
+    .sort((a, b) => a.text.length - b.text.length);
+  if (found.length === 0) throw new Error(`no @${event} handler near ${marker}`);
+  return found[0]!.fn as (e: unknown) => void;
+}
+
+/** A view host as the element builds one, over a page draft: the switcher's
+ * pages and rows read from the draft on every read, and a page's switcher
+ * settings editing it. */
+function switcherView(pages: WatchPagesDocument) {
+  const draft = new WatchPagesDraft(pages, 3);
+  const h = host(DEFAULTS) as MenusViewHost & Record<string, unknown>;
+  Object.defineProperties(h, {
+    switcherPages: { get: () => watchSwitcherPages(draft.document) },
+    switcherRows: { get: () => watchSwitcherRows(draft.document) },
+  });
+  h.switcherSettings = (pageId: string): SwitcherSettingsHost | undefined => findWatchPage(draft.document, pageId) === undefined ? undefined : {
+    pageId,
+    icons: NO_ICONS,
+    symbols: h.symbols,
+    uiState: h.uiState,
+    get page() { return findWatchPage(draft.document, pageId)!; },
+    busy: false,
+    edit: (change, opts) => { draft.apply(change(draft.document), opts?.typing === true ? { coalesce: "t" } : undefined); },
+    endCoalesce: () => draft.endCoalesce(),
+    requestUpdate: () => undefined,
+  };
+  selectMenu(h, "switcher");
+  return { h: h as MenusViewHost, draft };
+}
+
+describe("the switcher's Pages card", () => {
+  it("lists every page the switcher could show, those left out dimmed with a badge, and the ring leaves them out", () => {
+    const { h } = switcherView(setWatchPageHideFromSwitcher(PAGES, LIVING, true));
+    const text = flat(renderSlotsCard(h));
+    expect(text).toContain(`<span class="lc-title">Pages</span>`);
+    expect(text).not.toContain("read only");
+    expect(text).toContain(`<span class="lc-sub">4 pages, 1 hidden</span>`);
+    expect(count(text, `<div class="layer me-page-row`)).toBe(4);
+    const living = row(text, "data-page", LIVING, "me-page-row");
+    expect(living).toMatch(/^<div class="layer me-page-row  dim"/);
+    expect(living).toContain(`<span class="badge">hidden</span>`);
+    expect(living).toContain("<small>Not in the switcher</small>");
+    expect(living).toContain(`--k:${WATCH_SWITCHER_LEFT_OUT_COLOR}`);
+    const home = row(text, "data-page", HOME, "me-page-row");
+    expect(home).toMatch(/^<div class="layer me-page-row  "/);
+    expect(home).not.toContain(">hidden</span>");
+    expect(home).toContain(`role="listitem" tabindex="0" aria-current=false`);
+    // A page hidden on the watch is not the switcher's at all.
+    expect(text).not.toContain(GUEST);
+    // In watch order: Home before Living room.
+    expect(text.indexOf(HOME)).toBeLessThan(text.indexOf(LIVING));
+    // The watch draws only the pages it shows.
+    expect(h.switcherPages.map((p) => p.id)).not.toContain(LIVING);
+    expect(flat(renderMenuScreen(h))).not.toContain("title=Living room");
+  });
+
+  it("picks a row with a click or Enter, lights it here and on the watch, and lets go when another menu is shown", () => {
+    const { h } = switcherView(PAGES);
+    expect(selectedSwitcherPage(h)).toBeUndefined();
+    const key = { key: "Enter", target: "row", currentTarget: "row", preventDefault() {} };
+    handler(renderSlotsCard(h), `data-page=${LIVING}`, "keydown")(key);
+    expect(selectedSwitcherPage(h)?.id).toBe(LIVING);
+    const text = flat(renderSlotsCard(h));
+    expect(row(text, "data-page", LIVING, "me-page-row")).toMatch(/^<div class="layer me-page-row hl /);
+    expect(row(text, "data-page", LIVING, "me-page-row")).toContain("aria-current=true");
+    expect(row(text, "data-page", HOME, "me-page-row")).toMatch(/^<div class="layer me-page-row  /);
+    expect(flat(renderMenuScreen(h))).toMatch(/class="me-page on" style=[^>]*title=Living room>/);
+    selectMenu(h, "anywhere");
+    selectMenu(h, "switcher");
+    expect(selectedSwitcherPage(h)).toBeUndefined();
+  });
+});
+
+describe("the inspector for a picked page", () => {
+  it("shows the switcher's Style with a note while no page is picked", () => {
+    const { h } = switcherView(PAGES);
+    const text = flat(renderMenuInspector(h));
+    expect(text).toContain("data-sec=menu-editor:style-switcher");
+    expect(text).toContain(`<p class="me-menu-note me-pick-note">${SWITCHER_PICK_NOTE}</p>`);
+    expect(text.indexOf(SWITCHER_PICK_NOTE)).toBeGreaterThan(text.indexOf("data-sec=menu-editor:style-switcher"));
+    expect(text).not.toContain("switcher-page");
+    expect(SWITCHER_LINE).toBe("Each page's icon, color and name are set here: pick a page in the Pages card.");
+    expect(SWITCHER_PICK_NOTE).not.toMatch(/ - |\u2013|\u2014/);
+  });
+
+  it("crumbs Page switcher › PAGE › name over the page's one card, which edits the page draft", () => {
+    const { h, draft } = switcherView(PAGES);
+    selectSwitcherPage(h, HOME);
+    let text = flat(renderMenuInspector(h));
+    const head = text.slice(text.indexOf(`<div class="insp-head">`), text.indexOf(`<div class="insp-body">`));
+    expect(head).toContain(`<button class="root" title="The switcher's own style"`);
+    expect(head).toContain(`>Page switcher</button><span class="sep">›</span><span class="kchip" style=--k:${MENU_PAGE_CHIP_COLOR}>Page</span><span class="nm" title=Home>Home</span>`);
+    expect(MENU_PAGE_CHIP_COLOR).toBe(WATCH_PAGE_CHIP_COLOR);
+    expect(text).toMatch(new RegExp(`<section class="sec" data-sec=menu-editor:switcher-page data-open=true data-help="on" style=--c:${SECTION_COLOR.content}>`));
+    expect(text).toContain("<h4>In the page switcher</h4>");
+    expect(text).toContain(`<span class="sum">Shown</span>`);
+    expect(text).toContain(`<fieldset class="ts-body me-body" ?disabled=false`);
+    for (const label of [">Hidden<", ">Show as<", ">Name<", "Automatic icon", ">Color<"]) expect(text, label).toContain(label);
+    expect(text).not.toContain("style-switcher");
+    // Its rows edit the page draft, and the card and the list follow.
+    handler(renderMenuInspector(h), ">Hidden<", "change")({ target: { checked: true } });
+    expect(findWatchPage(draft.document, HOME)?.hideFromSwitcher).toBe(true);
+    text = flat(renderMenuInspector(h));
+    expect(text).toContain(`<h4>In the page switcher<span class="sec-dot" aria-hidden="true"></span></h4><span class="sum">Hidden</span>`);
+    expect(row(flat(renderSlotsCard(h)), "data-page", HOME, "me-page-row")).toContain(`<span class="badge">hidden</span>`);
+    // Collapse all folds the one card.
+    handler(renderMenuInspector(h), "Collapse all", "click")({});
+    expect(flat(renderMenuInspector(h))).toContain("data-sec=menu-editor:switcher-page data-open=false");
+    // The crumb's root, or Escape, goes back to the switcher's Style.
+    expect(deselectMenuSlot(h)).toBe(true);
+    expect(flat(renderMenuInspector(h))).toContain("data-sec=menu-editor:style-switcher");
+    expect(deselectMenuSlot(h)).toBe(false);
+  });
+
+  it("shows the Style while there is no page draft to edit in", () => {
+    const h = host(DEFAULTS, [KITCHEN]);
+    selectMenu(h, "switcher");
+    selectSwitcherPage(h, "a");
+    expect(selectedSwitcherPage(h)?.id).toBe("a");
+    expect(flat(renderMenuInspector(h))).toContain("data-sec=menu-editor:style-switcher");
+  });
+});
+
+describe("the switcher's rows", () => {
+  it("are every page the switcher could show, those left out marked, colored by place among the shown", () => {
+    const doc = setWatchPageHideFromSwitcher(PAGES, HOME, true);
+    const rows = watchSwitcherRows(doc);
+    expect(rows.map((r) => [r.id, r.hidden])).toEqual([
+      [HOME, true],
+      ["5A17E000-0000-4000-8000-00000000000B", false],
+      [LIVING, false],
+      ["5A17E000-0000-4000-8000-00000000000E", false],
+    ]);
+    expect(rows[0]!.color).toBe(WATCH_SWITCHER_LEFT_OUT_COLOR);
+    // The first shown page takes the first color, as on the watch, and the
+    // pages the watch draws are the rows not left out.
+    const { hidden: _, ...first } = rows[1]!;
+    expect(first.color).toBe(WATCH_SWITCHER_COLORS[0]);
+    expect(watchSwitcherPages(doc)[0]).toEqual(first);
+    expect(watchSwitcherPages(doc)).toHaveLength(3);
+  });
+});
+
+// ── the element's two drafts ─────────────────────────────────────────────
+
+describe("the element with a page draft", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** The editor with the pages record read into a page draft, and a hass
+   * whose connection records every command and saves at revision 9. */
+  function withPages() {
+    const e = editor();
+    const watchId = e.el.watchId as string;
+    const sent: Record<string, unknown>[] = [];
+    e.el.hass = {
+      user: { is_admin: true },
+      states: {},
+      connection: {
+        sendMessagePromise: async (message: Record<string, unknown>) => {
+          sent.push(message);
+          if (String(message.type).endsWith("/save")) return { revision: 9 };
+          throw Object.assign(new Error("not here"), { code: "unknown_command" });
+        },
+      },
+    } as unknown as HassLike;
+    e.el.pagesRecord = { revision: 3, document: PAGES };
+    const { draft: pages } = takeWatchPagesRecord(watchId, PAGES, 3);
+    vi.stubGlobal("window", { addEventListener() {}, removeEventListener() {}, setTimeout, clearTimeout });
+    return { ...e, watchId, sent, pages };
+  }
+
+  const call = (el: Record<string, unknown>, name: string) => (el[name] as () => unknown).call(el);
+
+  it("counts a page edit as unsaved: Save lit, Unsaved changes, Discard edits on, and the panel's guard", () => {
+    dropWatchMenusDrafts();
+    expect(watchMenusDirty()).toBe(false);
+    const { el, whole, pages } = withPages();
+    expect(whole()).toContain(`class="primary save "`);
+    pages.apply(setWatchPageSwitcherText(PAGES, HOME, "Front"));
+    el.topMenuOpen = true;
+    const text = whole();
+    expect(text).toContain(`class="primary save dirty"`);
+    expect(text).toContain(`<span class="tb-saved" title=Unsaved changes>`);
+    expect(text).toMatch(/<button class="row" role="menuitem" \?disabled=false\s+title="Go back to the copy Home Assistant holds/);
+    expect(watchMenusDirty()).toBe(true);
+    // Leaving the panel anyway drops the page draft too.
+    dropWatchMenusDrafts();
+    expect(watchMenusDirty()).toBe(false);
+  });
+
+  it("shows a page draft's edit in the switcher at once", () => {
+    const { el, body, pages } = withPages();
+    (el.uiState as Map<string, unknown>).set("me:menu", "switcher");
+    pages.apply(setWatchPageSwitcherText(PAGES, HOME, "Front"));
+    const text = body();
+    expect(text).toContain("title=Home>Front</span>");
+    expect(text).toContain("<small>Shown as Front</small>");
+  });
+
+  it("saves only the pages when only they hold edits", async () => {
+    const { el, sent, pages } = withPages();
+    pages.apply(setWatchPageSwitcherText(PAGES, HOME, "Front"));
+    await call(el, "save");
+    const saves = sent.filter((m) => String(m.type).endsWith("/save"));
+    expect(saves.map((m) => m.kind)).toEqual(["pages"]);
+    expect(saves[0]!.base_revision).toBe(3);
+    expect(findWatchPage(saves[0]!.document as WatchPagesDocument, HOME)?.switcherText).toBe("Front");
+    expect(pages.dirty).toBe(false);
+    expect(pages.revision).toBe(9);
+  });
+
+  it("saves the menus and then the pages when both hold edits", async () => {
+    const { el, sent, pages, watchId } = withPages();
+    const menus = takeWatchMenusRecord(watchId, DEFAULTS, 4).draft;
+    menus.apply(setWatchMenuStyle(DEFAULTS, "pageSwitcher", "selectedScale", 1.3));
+    pages.apply(setWatchPageSwitcherText(PAGES, HOME, "Front"));
+    await call(el, "save");
+    expect(sent.filter((m) => String(m.type).endsWith("/save")).map((m) => m.kind)).toEqual(["menus", "pages"]);
+    expect(menus.dirty).toBe(false);
+    expect(pages.dirty).toBe(false);
+  });
+
+  it("discards both drafts", () => {
+    const { el, pages, watchId } = withPages();
+    const menus = takeWatchMenusRecord(watchId, DEFAULTS, 4).draft;
+    menus.apply(setWatchMenuStyle(DEFAULTS, "pageSwitcher", "selectedScale", 1.3));
+    pages.apply(setWatchPageSwitcherText(PAGES, HOME, "Front"));
+    call(el, "discard");
+    expect(menus.dirty).toBe(false);
+    expect(pages.dirty).toBe(false);
+    expect((el.note as { text: string }).text).toBe("Edits discarded. Undo brings them back.");
+  });
+
+  it("undoes the pages while a page is picked in the switcher, else the menus", () => {
+    const { el, pages, watchId } = withPages();
+    const menus = takeWatchMenusRecord(watchId, DEFAULTS, 4).draft;
+    menus.apply(setWatchMenuStyle(DEFAULTS, "pageSwitcher", "selectedScale", 1.3));
+    pages.apply(setWatchPageSwitcherText(PAGES, HOME, "Front"));
+    const ui = el.uiState as Map<string, unknown>;
+    ui.set("me:menu", "switcher");
+    ui.set("me:sw:page", HOME);
+    call(el, "undo");
+    expect(pages.dirty).toBe(false);
+    expect(menus.dirty).toBe(true);
+    ui.delete("me:sw:page");
+    call(el, "undo");
+    expect(menus.dirty).toBe(false);
+  });
+});
+
+describe("the note after saving both", () => {
+  it("joins the two notes, once when they say the same, in the graver kind", () => {
+    expect(joinSaveNotes(undefined, undefined)).toBeUndefined();
+    expect(joinSaveNotes({ kind: "ok", text: "A." }, undefined)).toEqual({ kind: "ok", text: "A." });
+    expect(joinSaveNotes(undefined, { kind: "warn", text: "B." })).toEqual({ kind: "warn", text: "B." });
+    expect(joinSaveNotes({ kind: "ok", text: "A." }, { kind: "err", text: "B." })).toEqual({ kind: "err", text: "A. B." });
+    expect(joinSaveNotes({ kind: "ok", text: "Same." }, { kind: "ok", text: "Same." })).toEqual({ kind: "ok", text: "Same." });
   });
 });

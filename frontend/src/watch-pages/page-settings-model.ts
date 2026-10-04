@@ -791,3 +791,14 @@ export function watchPageSettings(page: WatchPage): WatchPageSettings {
     hideFromSwitcher: page.hideFromSwitcher === true,
   };
 }
+
+/** Whether `read` gives the page something other than it gives the same
+ * page with `keys` removed: a changed dot's measure. The iPhone app stores
+ * most keys at their defaults (`hideFromSwitcher: false`, the theme it would
+ * fall back to), so a key merely being there says nothing. */
+export function watchPageReadsOtherThanDefault(page: WatchPage, keys: readonly string[], read: (page: WatchPage) => unknown): boolean {
+  if (!keys.some((key) => Object.hasOwn(page, key))) return false;
+  const bare: Record<string, unknown> = { ...page };
+  for (const key of keys) delete bare[key];
+  return JSON.stringify(read(page)) !== JSON.stringify(read(bare as WatchPage));
+}

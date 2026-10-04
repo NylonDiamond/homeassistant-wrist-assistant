@@ -1,4 +1,4 @@
-// A page's five keys for the page switcher, in the page settings' group "In
+// A page's five keys for the page switcher, in the menu editor's card "In
 // the page switcher": hidden or not, text or icon, the name, the icon and the
 // color there. Each absent reads as the watch's own pick; the setters write
 // them as the phone does and every other key stays.

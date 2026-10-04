@@ -3208,8 +3208,9 @@ export class WaPageEditor extends LitElement {
 
   /**
    * The page strip under the canvas head: the page's own settings, one chip
-   * each (Page, Theme, Background, Title, Switcher) saying what the page has
-   * now, with the changed dot while it holds a value of its own. A chip opens
+   * each (Smart on a smart page, Theme, Background, Title) saying what the
+   * page has now, with the changed dot while it holds a value of its own. How
+   * the page shows in the page switcher is set in the menu editor. A chip opens
    * a popover under it with that section's rows, one popover at a time, so
    * the page's settings are in reach whatever the inspector shows. Reset page
    * ends the row while it would change something.
@@ -3232,7 +3233,7 @@ export class WaPageEditor extends LitElement {
       dot: false,
       body: () => (host === undefined ? nothing : renderSmartPageBody(host)),
     });
-    const sections: Exclude<WatchPageStripSection, "page">[] = ["theme", "background", "title", "switcher"];
+    const sections: Exclude<WatchPageStripSection, "page">[] = ["theme", "background", "title"];
     return html`<div class="pe-pstrip" role="toolbar" aria-label="Page settings">
       ${smartChip}
       ${sections.map((section) => this.renderPageChip({
