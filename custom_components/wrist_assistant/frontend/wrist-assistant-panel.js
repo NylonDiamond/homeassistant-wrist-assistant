@@ -5409,7 +5409,7 @@ import{a as gi,b as Qo,c as el,d as tl,e as il,f as nl,g as Fr,h as Ec,i as Or,m
         ${this.renderLayersViewButtons()}
         ${t?c`<button class="lc-btn pri add-open" aria-haspopup="dialog" aria-expanded=${this.addSheet?"true":"false"}
           title="Add a layer, a preset or a saved part (/)"
-          @click=${R=>this.toggleAddSheet(R.currentTarget)}>${y("plus")}<span>Add</span></button>`:u}
+          @click=${R=>this.toggleAddSheet(R.currentTarget)}>${y("plus")}<span>Add layer</span></button>`:u}
       </div>
       ${L>=2&&t?c`<div class="group-cta"><span>${L} layers picked</span><span class="spacer"></span>
             <button class="small primary" title=${`Group (${Ae}G)`} @click=${()=>this.groupPicked()}>Group them</button>
@@ -5793,7 +5793,7 @@ import{a as gi,b as Qo,c as el,d as tl,e as il,f as nl,g as Fr,h as Ec,i as Or,m
           @click=${()=>{this.sharedHelp=!this.sharedHelp,this.sharedHelp&&(this.sharedOpen=!0)}}>?</button>
         <span class="lc-sub" title=${s}>${t.length===0?"set once, read by many layers":`${t.length} \xB7 set once, read by many layers`}</span>
         <span class="spacer"></span>
-        ${this.canEdit?c`<button class="lc-btn" title="Add a shared value" aria-label="Add a shared value" @click=${n}>${y("plus")}<span>Add</span></button>`:u}
+        ${this.canEdit?c`<button class="lc-btn" title="Add a shared value" aria-label="Add a shared value" @click=${n}>${y("plus")}<span>Add value</span></button>`:u}
         ${t.length>0?c`<button class="lc-ghost sm" aria-expanded=${i?"true":"false"}
           title=${i?"Fold the shared values away":"Show the shared values"} @click=${a}>${i?"Close":"Open"}</button>`:u}
       </div>

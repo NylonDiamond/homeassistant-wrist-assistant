@@ -17322,7 +17322,7 @@ export class WristAssistantPanel extends LitElement {
         ${this.renderLayersViewButtons()}
         ${edit ? html`<button class="lc-btn pri add-open" aria-haspopup="dialog" aria-expanded=${this.addSheet ? "true" : "false"}
           title="Add a layer, a preset or a saved part (/)"
-          @click=${(e: Event) => this.toggleAddSheet(e.currentTarget as HTMLElement)}>${uiIcon("plus")}<span>Add</span></button>` : nothing}
+          @click=${(e: Event) => this.toggleAddSheet(e.currentTarget as HTMLElement)}>${uiIcon("plus")}<span>Add layer</span></button>` : nothing}
       </div>
       ${pickedCount >= 2 && edit
         ? html`<div class="group-cta"><span>${pickedCount} layers picked</span><span class="spacer"></span>
@@ -18818,7 +18818,7 @@ export class WristAssistantPanel extends LitElement {
           @click=${() => { this.sharedHelp = !this.sharedHelp; if (this.sharedHelp) this.sharedOpen = true; }}>?</button>
         <span class="lc-sub" title=${explain}>${values.length === 0 ? "set once, read by many layers" : `${values.length} · set once, read by many layers`}</span>
         <span class="spacer"></span>
-        ${this.canEdit ? html`<button class="lc-btn" title="Add a shared value" aria-label="Add a shared value" @click=${addValue}>${uiIcon("plus")}<span>Add</span></button>` : nothing}
+        ${this.canEdit ? html`<button class="lc-btn" title="Add a shared value" aria-label="Add a shared value" @click=${addValue}>${uiIcon("plus")}<span>Add value</span></button>` : nothing}
         ${values.length > 0 ? html`<button class="lc-ghost sm" aria-expanded=${expanded ? "true" : "false"}
           title=${expanded ? "Fold the shared values away" : "Show the shared values"} @click=${toggle}>${expanded ? "Close" : "Open"}</button>` : nothing}
       </div>
