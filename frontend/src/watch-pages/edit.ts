@@ -1100,6 +1100,77 @@ export function canNudgeWatchTile(
   return work.tiles.some(moved) && !movedPastEnd(work);
 }
 
+// ── move several ─────────────────────────────────────────────────────────
+
+/** Shift every tile these ids name by the same columns and rows, in the
+ * work, when all of them may go: each stays inside the 12 columns and rows 0
+ * to 200, and none lands on a tile that is not one of them. Picked tiles may
+ * take each other's old places, since they move together. Whether it was
+ * done; a refusal leaves the work as it was. */
+function shiftTiles(work: Work, ids: readonly string[], dcols: number, drows: number): boolean {
+  if (!Number.isInteger(dcols) || !Number.isInteger(drows)) return false;
+  const keys = new Set<string>();
+  for (const id of ids) {
+    const key = idKey(id);
+    if (key === undefined) return false;
+    keys.add(key);
+  }
+  if (keys.size === 0) return false;
+  for (const key of keys) if (!work.tiles.some((t) => t.key === key)) return false;
+  const group = work.tiles.filter((t) => keys.has(t.key));
+  const others = work.tiles.filter((t) => !keys.has(t.key));
+  const targets = group.map((t) => ({ row: t.row + drows, col: t.col + dcols, colSpan: t.colSpan, rowSpan: t.rowSpan }));
+  for (const r of targets) {
+    if (r.row < 0 || r.col < 0 || r.col + r.colSpan > COLUMNS || !withinPage(r)) return false;
+    if (others.some((t) => overlaps(r, t))) return false;
+  }
+  group.forEach((t, i) => {
+    t.row = targets[i]!.row;
+    t.col = targets[i]!.col;
+  });
+  return true;
+}
+
+/**
+ * Move several tiles together by the same columns and rows, keeping their
+ * shape and order: a drag or an arrow key on a pick of several. All or
+ * nothing: undefined when any one of them would leave the 12 columns, go
+ * above row 0 or end past row 200, or land on a tile that is not one of
+ * them, or when an id is not on the page (or the page is a smart or system
+ * page). Nothing else ever moves, and nothing swaps. A delta of none is the
+ * document itself. The panel then repairs the groups of the moved tiles.
+ */
+export function moveWatchTilesBy(
+  document: WatchPagesDocument,
+  pageId: string,
+  ids: readonly string[],
+  dcols: number,
+  drows: number,
+  options?: WatchEditOptions,
+): WatchPagesDocument | undefined {
+  const slot = tileSlot(document, pageId);
+  if (slot === undefined) return undefined;
+  const work = openWork(slot.page);
+  if (!shiftTiles(work, ids, dcols, drows)) return undefined;
+  if (dcols === 0 && drows === 0) return document;
+  repairMovedGroups(work, options);
+  return withPage(document, slot, closeWork(work));
+}
+
+/** Whether `moveWatchTilesBy` would move the tiles: allowed, and a delta of
+ * more than none. */
+export function canMoveWatchTilesBy(
+  document: WatchPagesDocument,
+  pageId: string,
+  ids: readonly string[],
+  dcols: number,
+  drows: number,
+): boolean {
+  if (dcols === 0 && drows === 0) return false;
+  const slot = tileSlot(document, pageId);
+  return slot !== undefined && shiftTiles(openWork(slot.page), ids, dcols, drows);
+}
+
 // ── resize ───────────────────────────────────────────────────────────────
 
 export type WatchResizeHandle = "left" | "right" | "top" | "bottom" | "bottomRight";

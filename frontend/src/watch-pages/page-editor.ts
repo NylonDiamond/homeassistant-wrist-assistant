@@ -128,13 +128,14 @@ import {
   WATCH_EDITOR_MAX_ROWS,
   WATCH_TILE_SIZE_PRESETS,
   addWatchPage,
-  canNudgeWatchTile,
+  canMoveWatchTilesBy,
   deleteWatchPage,
   deleteWatchTile,
   dropWatchTile,
   findWatchPage,
   listedWatchPages,
   moveWatchPage,
+  moveWatchTilesBy,
   nudgeWatchTile,
   previewWatchTileResize,
   randomWatchId,
@@ -163,6 +164,7 @@ import {
   type WatchPage,
   type WatchPageTile,
   type WatchPagesDocument,
+  WATCH_GRID_COLUMNS,
   WATCH_GRID_TOP_INSET,
   WATCH_SYNC_LIMIT_BYTES,
   asWatchPagesDocument,
@@ -427,6 +429,17 @@ interface MoveGesture extends GestureBase {
   cell?: WatchCell;
   pointerTileId?: string;
   outcome?: WatchDropOutcome;
+  /** A pick of several dragged by one of them: every picked tile with its
+   * place when the press began, the grabbed one among them. They all move by
+   * the grabbed tile's columns and rows, never swap, and go all or nothing
+   * (`moveWatchTilesBy`). Absent for a tile dragged alone. */
+  group?: { id: string; rect: WatchRect }[];
+}
+
+/** How far a drag moves the grabbed tile, in columns and rows: from its
+ * place when the press began to the cell it is aimed at. */
+function moveDelta(move: MoveGesture, cell: WatchCell): { dcols: number; drows: number } {
+  return { dcols: cell.col - move.rect.col, drows: cell.row - move.rect.row };
 }
 
 interface ResizeGesture extends GestureBase {
@@ -774,6 +787,10 @@ export class WaPageEditor extends LitElement {
   private focusMenu = false;
   private focusHistory = false;
   private revealTile = false;
+  /** A pick of several was just dragged: the click the browser sends after
+   * the pointer up is no plain click, and must not collapse the pick. Cleared
+   * by that click, the next press, or the next task. */
+  private swallowTileClick = false;
   /** A tile was picked from the Tiles list: the inspector starts at its top. */
   private inspectorToTop = false;
   /** The watch's screen in points, as last drawn, for the pointer arithmetic. */
@@ -1917,34 +1934,21 @@ export class WaPageEditor extends LitElement {
     if (document === undefined || pageId === undefined || tileId === undefined) return;
     if (this.multiPicked) {
       const page = this.currentPage();
-      const next = page === undefined ? undefined : this.nudgeAll(document, pageId, page, this.pickedIds(page), direction);
+      const next = page === undefined ? undefined : this.nudgeAll(document, pageId, this.pickedIds(page), direction);
       if (next !== undefined && this.edit(next)) this.revealTile = true;
       return;
     }
     if (this.edit(nudgeWatchTile(document, pageId, tileId, direction))) this.revealTile = true;
   }
 
-  /** Every picked tile one step, all or nothing: the document with all of
-   * them moved, or undefined when any one of them cannot go. The tile
-   * furthest along the way goes first (moving down, the bottom-most), so no
-   * picked tile is in the way of one behind it, and none swaps with another
-   * picked one. */
-  private nudgeAll(document: WatchPagesDocument, pageId: string, page: WatchPage, ids: readonly string[], direction: WatchNudgeDirection): WatchPagesDocument | undefined {
-    const lead = (id: string): number => {
-      const tile = this.tileOn(page, id);
-      if (tile === undefined) return 0;
-      const r = watchTileRect(tile);
-      if (direction === "down") return r.row + r.rowSpan;
-      if (direction === "up") return -r.row;
-      if (direction === "right") return r.col + r.colSpan;
-      return -r.col;
-    };
-    let work = document;
-    for (const id of [...ids].sort((a, b) => lead(b) - lead(a))) {
-      if (!canNudgeWatchTile(work, pageId, id, direction)) return undefined;
-      work = nudgeWatchTile(work, pageId, id, direction);
-    }
-    return work;
+  /** Every picked tile one step, all or nothing (`moveWatchTilesBy`): the
+   * document with all of them moved, or undefined when any one of them cannot
+   * go. They move together, so a picked tile is never in the way of another
+   * picked one, and none swaps with a tile that is not picked. */
+  private nudgeAll(document: WatchPagesDocument, pageId: string, ids: readonly string[], direction: WatchNudgeDirection): WatchPagesDocument | undefined {
+    const dcols = direction === "left" ? -1 : direction === "right" ? 1 : 0;
+    const drows = direction === "up" ? -1 : direction === "down" ? 1 : 0;
+    return moveWatchTilesBy(document, pageId, ids, dcols, drows);
   }
 
   /** Delete the one tile a Tiles row names, or else every picked tile, in
@@ -2320,8 +2324,9 @@ export class WaPageEditor extends LitElement {
     }
   }
 
-  /** A press on a tile. A mouse or a pen selects it and may drag it at once.
-   * A finger drags only the selected tile (the only one with `touch-action:
+  /** A press on a tile. A mouse or a pen selects it and may drag it at once;
+   * pressed on one of a pick of several, it drags the whole pick. A finger
+   * drags only a selected or picked tile (the only ones with `touch-action:
    * none`); on any other tile it scrolls the page, and a tap selects. */
   private onTilePointerDown(e: PointerEvent, tileId: string): void {
     if (e.button !== 0 || !e.isPrimary || this.gesture || this.editingOff()) return;
@@ -2332,16 +2337,25 @@ export class WaPageEditor extends LitElement {
     if (this.saving) return;
     const draft = this.draft;
     if (draft === undefined) return;
-    // A plain press collapses a pick of several to this tile, as a plain
-    // click does, and drags it alone; a finger drags only a tile selected on
-    // its own.
-    const selected = sameWatchId(tileId, this.selectedTileId) && !this.multiPicked;
+    this.swallowTileClick = false;
+    // A plain press on one of a pick of several keeps the pick and drags all
+    // of it (a click without a drag still collapses it, in `clickTile`); on a
+    // tile outside the pick it collapses to that tile, as a plain click does,
+    // and drags it alone. A finger drags only a picked tile.
+    const group = this.multiPicked && this.isPicked(tileId);
+    const selected = group || (sameWatchId(tileId, this.selectedTileId) && !this.multiPicked);
     if (e.pointerType === "touch" && !selected) return;
     const page = this.currentPage();
     const tile = page === undefined ? undefined : this.tileOn(page, tileId);
     const button = e.currentTarget as HTMLElement;
     if (page === undefined || tile === undefined) return;
     if (!selected) this.selectTile(tileId);
+    const members = group
+      ? this.pickedIds(page).flatMap((id) => {
+        const t = this.tileOn(page, id);
+        return t === undefined ? [] : [{ id, rect: watchTileRect(t) }];
+      })
+      : [];
     const box = button.getBoundingClientRect();
     const screen = this.screenEl()?.getBoundingClientRect();
     this.gesture = {
@@ -2360,6 +2374,7 @@ export class WaPageEditor extends LitElement {
       top: screen ? box.top - screen.top : 0,
       captured: this.capture(button, e.pointerId),
       baseVersion: draft.baseVersion,
+      ...(members.length >= 2 ? { group: members } : {}),
     };
     this.armWindow();
   }
@@ -2482,6 +2497,12 @@ export class WaPageEditor extends LitElement {
     if (g && e.pointerId === g.pointerId) {
       if (this.baseMoved(g.baseVersion)) return;
       this.endGesture();
+      if (g.started && g.kind === "move" && g.group !== undefined) {
+        // The click after this pointer up lands on a picked tile; it is the
+        // drag's, not a plain click that would collapse the pick.
+        this.swallowTileClick = true;
+        setTimeout(() => { this.swallowTileClick = false; }, 0);
+      }
       if (g.started) this.finishGesture(g);
       this.flushPending();
       return;
@@ -2522,6 +2543,13 @@ export class WaPageEditor extends LitElement {
       // No deeper than the phone's editor draws, however long the auto
       // scroll runs.
       g.cell = { ...cell, row: Math.min(cell.row, Math.max(0, WATCH_EDITOR_MAX_ROWS - g.rect.rowSpan)) };
+      if (g.group !== undefined) {
+        // A pick of several moves by the grabbed tile's delta; it never swaps.
+        g.pointerTileId = undefined;
+        g.outcome = this.groupDropOutcome(g, g.cell);
+        this.requestUpdate();
+        return;
+      }
       const under = watchTileAtCell(page, cellAtPx(grid, local.x, local.y));
       const underId = under === undefined ? "" : tileIdOf(under);
       g.pointerTileId = underId !== "" && !sameWatchId(underId, g.tileId) ? underId : undefined;
@@ -2542,6 +2570,10 @@ export class WaPageEditor extends LitElement {
     if (document === undefined) return;
     if (g.kind === "move") {
       if (g.cell === undefined || g.outcome === undefined) return;
+      if (g.group !== undefined) {
+        this.finishGroupMove(document, g, g.cell, g.group);
+        return;
+      }
       if (g.outcome.kind === "move" || g.outcome.kind === "swap") {
         this.edit(dropWatchTile(document, g.pageId, g.tileId, g.cell, g.pointerTileId));
       } else if (g.outcome.kind === "none" && g.cell.row + g.rect.rowSpan > WATCH_EDITOR_MAX_ROWS) {
@@ -2560,6 +2592,36 @@ export class WaPageEditor extends LitElement {
       return;
     }
     this.edit(resizeWatchTile(document, g.pageId, g.tileId, g.rect, { baseline: g.basePage }));
+  }
+
+  /** What dropping a pick of several would do: `same` with no delta, `move`
+   * when every picked tile may go (`canMoveWatchTilesBy`), else `none`. Never
+   * a swap. `cell` is the grabbed tile's target. */
+  private groupDropOutcome(g: MoveGesture, cell: WatchCell): WatchDropOutcome {
+    const { dcols, drows } = moveDelta(g, cell);
+    if (dcols === 0 && drows === 0) return { kind: "same", cell };
+    const document = this.draft?.document;
+    const ids = (g.group ?? []).map((m) => m.id);
+    const ok = document !== undefined && canMoveWatchTilesBy(document, g.pageId, ids, dcols, drows);
+    return { kind: ok ? "move" : "none", cell };
+  }
+
+  /** Drop a pick of several: every picked tile moved by the grabbed tile's
+   * delta, in one edit (one undo step). The pick stays, the grabbed tile its
+   * primary, brought into view. A refused drop changes nothing. */
+  private finishGroupMove(document: WatchPagesDocument, g: MoveGesture, cell: WatchCell, group: readonly { id: string; rect: WatchRect }[]): void {
+    const { dcols, drows } = moveDelta(g, cell);
+    if (dcols === 0 && drows === 0) return;
+    const next = moveWatchTilesBy(document, g.pageId, group.map((m) => m.id), dcols, drows);
+    if (next === undefined) {
+      if (group.some((m) => m.rect.row + drows + m.rect.rowSpan > WATCH_EDITOR_MAX_ROWS)) {
+        this.refuse(`${PAGE_END_TEXT} These tiles cannot go that far down.`);
+      }
+      return;
+    }
+    if (!this.edit(next)) return;
+    if (this.isPicked(g.tileId)) this.selectedTileId = g.tileId;
+    this.revealTile = true;
   }
 
   private endGesture(): void {
@@ -3810,7 +3872,10 @@ export class WaPageEditor extends LitElement {
     const shown = resize?.preview?.page ?? page;
     const topInset = page.fullScreen === true ? 0 : WATCH_GRID_TOP_INSET;
     const grid = stageGrid(screen.width, topInset, s);
-    const reach = move?.cell ? move.cell.row + move.rect.rowSpan : resize?.preview ? resize.preview.rect.row + resize.preview.rect.rowSpan : 0;
+    // A pick of several reaches as deep as its lowest tile moved.
+    const reach = move?.cell && move.group !== undefined
+      ? Math.max(...move.group.map((m) => m.rect.row + moveDelta(move, move.cell!).drows + m.rect.rowSpan))
+      : move?.cell ? move.cell.row + move.rect.rowSpan : resize?.preview ? resize.preview.rect.row + resize.preview.rect.rowSpan : 0;
     // Never more rows than an edit may reach: a tile stored past the last
     // row would otherwise draw a million of them.
     const rows = Math.min(WATCH_EDITOR_MAX_ROWS, stageRows(watchPageExtent(shown), rowsOnScreen(grid, screen.height * s), reach));
@@ -3885,15 +3950,24 @@ export class WaPageEditor extends LitElement {
     const kindLabel = tileKindLabel(tileKind(tileEntityId(tile)));
     const label = watchPreviewTileLabel(tile, input);
     // Every picked tile wears the ring; one of a pick of several also takes
-    // `multi`, which leaves a finger free to scroll from it.
+    // `multi`.
     const selected = this.isPicked(id);
     const inMulti = selected && this.multiPicked;
     // Tinted while its row, or the tile itself, is under the pointer; not
     // while a tile is being dragged, when the ghosts say what will happen.
     const hovered = id !== "" && move === undefined && (sameWatchId(id, this.rowHoverTileId) || sameWatchId(id, this.stageHoverTileId));
-    const moving = move !== undefined && sameWatchId(id, move.tileId);
+    const grabbed = move !== undefined && sameWatchId(id, move.tileId);
+    // A pick of several follows the pointer together: each picked tile
+    // shifts as far as the grabbed one has from its own place.
+    const follower = !grabbed && move?.group !== undefined && id !== "" && move.group.some((m) => sameWatchId(m.id, id));
+    const moving = grabbed || follower;
     const partner = move?.outcome?.kind === "swap" && sameWatchId(id, move.outcome.targetId);
-    const shift = moving ? `transform:translate(${move.left - left}px, ${move.top - top}px);` : "";
+    let shift = "";
+    if (grabbed) shift = `transform:translate(${move.left - left}px, ${move.top - top}px);`;
+    else if (follower) {
+      const from = cellRectPx(grid, drawnRect(move.rect));
+      shift = `transform:translate(${move.left - from.left}px, ${move.top - from.top}px);`;
+    }
     const face = renderWatchTileFace(tile, { width: width / s, height: height / s }, input, unit);
     // The ring of a selected tile follows the tile's own corners, which are
     // the watch's (`watchTileCornerRadius`).
@@ -3909,7 +3983,14 @@ export class WaPageEditor extends LitElement {
       @pointerdown=${(e: PointerEvent) => this.onTilePointerDown(e, id)}
       @pointerenter=${() => this.peekStageTile(id, true)}
       @pointerleave=${() => this.peekStageTile(id, false)}
-      @click=${(e: MouseEvent) => { e.stopPropagation(); this.clickTile(id, e); }}>${face}</button>`;
+      @click=${(e: MouseEvent) => {
+        e.stopPropagation();
+        if (this.swallowTileClick) {
+          this.swallowTileClick = false;
+          return;
+        }
+        this.clickTile(id, e);
+      }}>${face}</button>`;
   }
 
   /** Where a drop would put the tile: the target place, green for a move,
@@ -3917,10 +3998,21 @@ export class WaPageEditor extends LitElement {
   private renderMoveGhosts(move: MoveGesture, page: WatchPage, grid: StageGrid): TemplateResult | typeof nothing {
     const outcome = move.outcome;
     if (outcome === undefined || outcome.kind === "same") return nothing;
-    const at = cellRectPx(grid, { ...outcome.cell, colSpan: move.rect.colSpan, rowSpan: move.rect.rowSpan });
     const box = (b: { left: number; top: number; width: number; height: number }) =>
       `left:${b.left}px;top:${b.top}px;width:${b.width}px;height:${b.height}px`;
     const kind = outcome.kind === "none" ? "no" : outcome.kind === "swap" ? "swap" : "ok";
+    if (move.group !== undefined) {
+      // One ghost per picked tile, at its own place moved by the grabbed
+      // tile's delta; held inside the columns, so a refused aim off the side
+      // never widens the card.
+      const { dcols, drows } = moveDelta(move, outcome.cell);
+      return html`${move.group.map((m) => {
+        const col = Math.max(0, Math.min(WATCH_GRID_COLUMNS - m.rect.colSpan, m.rect.col + dcols));
+        const row = Math.max(0, m.rect.row + drows);
+        return html`<div class="pe-ghost ${kind}" data-ghost-tile=${m.id} style=${box(cellRectPx(grid, { col, row, colSpan: m.rect.colSpan, rowSpan: m.rect.rowSpan }))}></div>`;
+      })}`;
+    }
+    const at = cellRectPx(grid, { ...outcome.cell, colSpan: move.rect.colSpan, rowSpan: move.rect.rowSpan });
     let partner: TemplateResult | typeof nothing = nothing;
     if (outcome.kind === "swap") {
       const other = this.tileOn(page, outcome.targetId);
@@ -4027,7 +4119,7 @@ export class WaPageEditor extends LitElement {
           <button class="pe-btn pe-danger pe-picked-del" ?disabled=${off} title=${this.saving ? SAVING_TEXT : "Delete or Backspace"} @click=${() => this.deleteTile()}>
             ${uiIcon("delete")}<span>Delete ${n} tiles</span></button>
         </div>
-        <p class="hint">${IS_MAC ? "⌘" : "Ctrl"}-click a tile to add it or take it out, Shift-click to pick a run. Click one on its own to edit it alone.</p>
+        <p class="hint">${IS_MAC ? "⌘" : "Ctrl"}-click a tile to add it or take it out, Shift-click to pick a run. Drag one to move them all together. Click one on its own to edit it alone.</p>
       </div>
     </section>`;
   }
@@ -4593,9 +4685,6 @@ export class WaPageEditor extends LitElement {
     .pe-tile:focus-visible { outline: none; box-shadow: 0 0 0 2px #000, 0 0 0 4px var(--pe-mark); }
     .pe-tile.sel { touch-action: none; box-shadow: 0 0 0 2px var(--pe-mark); z-index: 2; }
     .pe-tile.sel:focus-visible { box-shadow: 0 0 0 2px var(--pe-mark), 0 0 0 4px #000, 0 0 0 6px var(--pe-mark); }
-    /* One of a pick of several: ringed, but a finger drags only a tile
-       selected on its own, so it scrolls the page from here. */
-    .pe-tile.sel.multi { touch-action: manipulation; }
     /* A Tiles row in a pick of several: lit exactly like the selected row,
        the complication editor's .layer.multi, so every picked row reads as
        selected. */

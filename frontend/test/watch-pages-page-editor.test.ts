@@ -642,6 +642,129 @@ describe("picking several tiles", () => {
     expect(draft().canUndo).toBe(false);
   });
 
+  describe("dragged by one of them", () => {
+    type Rect = { col: number; row: number; colSpan: number; rowSpan: number };
+    type Move = {
+      tileId: string; started: boolean; left: number; top: number; rect: Rect;
+      cell?: { col: number; row: number }; outcome?: { kind: string };
+      group?: { id: string; rect: Rect }[];
+    };
+
+    /** The picker, with no screen to measure and no pointer to capture, and a
+     * plain press on a tile. */
+    function dragger(selectedTileId?: string) {
+      const made = picker(selectedTileId);
+      const { el } = made;
+      el.screenEl = () => null;
+      el.capture = () => undefined;
+      const press = (id: string, pointerType = "mouse") =>
+        made.call("onTilePointerDown", {
+          button: 0, isPrimary: true, metaKey: false, ctrlKey: false, shiftKey: false, pointerType, pointerId: 7, clientX: 5, clientY: 5,
+          currentTarget: { getBoundingClientRect: () => ({ left: 0, top: 0 }) },
+        }, id);
+      const gesture = () => el.gesture as Move | undefined;
+      /** The pointer has travelled: the grabbed tile is aimed at `cell`. */
+      const aim = (cell: { col: number; row: number }) => {
+        const g = gesture()!;
+        g.started = true;
+        g.cell = cell;
+        g.outcome = made.call("groupDropOutcome", g, cell) as Move["outcome"];
+        return g;
+      };
+      const rows = () => Object.fromEntries((made.draft().document.pages as { items: { id: string; gridRow: number; gridCol: number }[] }[])[0]!.items.map((t) => [t.id, `${t.gridCol},${t.gridRow}`]));
+      return { ...made, press, gesture, aim, rows };
+    }
+
+    it("keeps the pick on a plain press of a picked tile and takes every picked tile along", () => {
+      const { el, call, press, gesture, picked } = dragger();
+      call("selectAll");
+      press("T-BOTTOM");
+      expect(picked()).toEqual(["T-LEFT", "T-RIGHT", "T-BOTTOM", "T-GAP"]);
+      const g = gesture()!;
+      expect(g.tileId).toBe("T-BOTTOM");
+      expect(g.group).toEqual([
+        { id: "T-LEFT", rect: { col: 0, row: 0, colSpan: 6, rowSpan: 3 } },
+        { id: "T-RIGHT", rect: { col: 6, row: 0, colSpan: 6, rowSpan: 3 } },
+        { id: "T-BOTTOM", rect: { col: 0, row: 3, colSpan: 4, rowSpan: 3 } },
+        { id: "T-GAP", rect: { col: 0, row: 6, colSpan: 2, rowSpan: 2 } },
+      ]);
+      call("endGesture");
+      // A press on a tile outside the pick lets the pick go and drags it alone.
+      call("selectTile", undefined);
+      call("selectTile", "T-LEFT");
+      (el.clickTile as (i: string, e: object) => void).call(el, "T-RIGHT", { shiftKey: false, metaKey: true, ctrlKey: false });
+      press("T-GAP");
+      expect(picked()).toEqual([]);
+      expect(el.selectedTileId).toBe("T-GAP");
+      expect(gesture()!.group).toBeUndefined();
+      call("endGesture");
+    });
+
+    it("lets a finger drag a picked tile, and not one outside the pick", () => {
+      const { el, call, press, gesture } = dragger("T-LEFT");
+      (el.clickTile as (i: string, e: object) => void).call(el, "T-RIGHT", { shiftKey: false, metaKey: true, ctrlKey: false });
+      press("T-BOTTOM", "touch");
+      expect(gesture()).toBeUndefined();
+      press("T-LEFT", "touch");
+      expect(gesture()!.group?.map((m) => m.id)).toEqual(["T-LEFT", "T-RIGHT"]);
+      call("endGesture");
+      // A picked tile no longer leaves a finger to scroll.
+      expect(sheet()).not.toMatch(/\.pe-tile\.sel\.multi\s*\{[^}]*touch-action/);
+    });
+
+    it("moves every picked tile by the grabbed tile's delta, with a ghost for each, in one undo step", () => {
+      const { el, body, call, press, aim, rows, picked, draft } = dragger();
+      call("selectAll");
+      press("T-LEFT");
+      // No delta yet: the same place, no ghosts.
+      expect(aim({ col: 0, row: 0 }).outcome!.kind).toBe("same");
+      const g = aim({ col: 0, row: 2 });
+      expect(g.outcome!.kind).toBe("move");
+      g.left = 0;
+      g.top = 40;
+      const text = body();
+      expect(text.match(/class="pe-ghost ok"/g)).toHaveLength(4);
+      for (const id of ["T-LEFT", "T-RIGHT", "T-BOTTOM", "T-GAP"]) expect(text, id).toMatch(new RegExp(`class="pe-ghost ok" data-ghost-tile=${id} `));
+      // Every picked tile follows the pointer by the same shift.
+      const shifts = ["T-LEFT", "T-RIGHT", "T-BOTTOM", "T-GAP"].map((id) => {
+        const button = stageTile(text, id);
+        expect(button, id).toMatch(/class="pe-tile [^"]*\bmoving\b/);
+        return /transform:translate\(([^)]*)\)/.exec(button)?.[1];
+      });
+      expect(shifts[0]).toBeDefined();
+      expect(new Set(shifts).size).toBe(1);
+      expect(draft().canUndo).toBe(false);
+      call("onPointerUp", { pointerId: 7 });
+      expect(rows()).toEqual({ "T-GAP": "0,8", "T-BOTTOM": "0,5", "T-RIGHT": "6,2", "T-LEFT": "0,2" });
+      // The pick stays, the grabbed tile its primary; the click the drag ends
+      // with is swallowed, so it does not collapse the pick.
+      call("reconcileSelection");
+      expect(picked()).toEqual(["T-LEFT", "T-RIGHT", "T-BOTTOM", "T-GAP"]);
+      expect(el.selectedTileId).toBe("T-LEFT");
+      expect(el.swallowTileClick).toBe(true);
+      draft().undo();
+      expect(rows()).toEqual({ "T-GAP": "0,6", "T-BOTTOM": "0,3", "T-RIGHT": "6,0", "T-LEFT": "0,0" });
+      expect(draft().canUndo).toBe(false);
+    });
+
+    it("refuses a drop where a picked tile would land on one outside the pick, keeping the pick", () => {
+      const { el, body, call, press, aim, picked, draft } = dragger("T-LEFT");
+      (el.clickTile as (i: string, e: object) => void).call(el, "T-RIGHT", { shiftKey: false, metaKey: true, ctrlKey: false });
+      press("T-RIGHT");
+      // One row down puts Left on Bottom: nothing goes, and nothing swaps.
+      const g = aim({ col: 6, row: 1 });
+      expect(g.outcome!.kind).toBe("none");
+      const text = body();
+      expect(text.match(/class="pe-ghost no"/g)).toHaveLength(2);
+      expect(text).not.toContain("pe-ghost swap");
+      const before = draft().document;
+      call("onPointerUp", { pointerId: 7 });
+      expect(draft().document).toBe(before);
+      expect(picked()).toEqual(["T-LEFT", "T-RIGHT"]);
+      expect(el.selectedTileId).toBe("T-RIGHT");
+    });
+  });
+
   it("offers Select all tiles in the ··· menu while the page has two tiles or more", () => {
     const { el, whole } = picker();
     el.topMenuOpen = true;

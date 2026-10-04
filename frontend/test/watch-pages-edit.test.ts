@@ -12,6 +12,7 @@ import {
   type WatchRect,
   WATCH_TILE_SIZE_PRESETS,
   addWatchPage,
+  canMoveWatchTilesBy,
   canNudgeWatchTile,
   canPlaceWatchTile,
   deleteWatchPage,
@@ -21,6 +22,7 @@ import {
   firstFreeWatchCell,
   listedWatchPages,
   moveWatchPage,
+  moveWatchTilesBy,
   newWatchPage,
   newWatchPageName,
   nudgeWatchTile,
@@ -533,6 +535,63 @@ describe("nudge", () => {
   it("moves a header that is not full width one cell, like any tile", () => {
     const d = doc(page(P1, [tile("H", 0, 2, 6, 1, { entityId: "divider.line.custom" }), tile("A", 0, 0, 6, 2)]));
     expect(layout(nudgeWatchTile(d, P1, "H", "down"), P1)).toEqual(["H 0,3 6x1", "A 0,0 6x2"]);
+  });
+});
+
+describe("move several", () => {
+  it("moves every named tile by the same columns and rows, keeping their shape", () => {
+    const d = doc(page(P1, [tile("A", 0, 0, 6, 3), tile("B", 6, 0, 6, 3), tile("C", 0, 3, 4, 2), tile("X", 8, 8, 4, 2)]));
+    // Make room at the top: the three go down four rows together.
+    const after = moveWatchTilesBy(d, P1, ["A", "b", "C"], 0, 4)!;
+    expect(layout(after, P1)).toEqual(["A 0,4 6x3", "B 6,4 6x3", "C 0,7 4x2", "X 8,8 4x2"]);
+    onlyChanged(d, after, P1, ["A", "B", "C"]);
+    expect(canMoveWatchTilesBy(d, P1, ["A", "B", "C"], 0, 4)).toBe(true);
+    // Sideways and down at once, and back.
+    const column = doc(page(P1, [tile("A", 0, 0, 4, 3), tile("B", 0, 3, 4, 2)]));
+    const moved = moveWatchTilesBy(column, P1, ["A", "B"], 3, 1)!;
+    expect(layout(moved, P1)).toEqual(["A 3,1 4x3", "B 3,4 4x2"]);
+    expect(layout(moveWatchTilesBy(moved, P1, ["A", "B"], -3, -1)!, P1)).toEqual(["A 0,0 4x3", "B 0,3 4x2"]);
+  });
+
+  it("is refused when one would land on a tile not named", () => {
+    const d = doc(page(P1, [tile("A", 0, 0, 6, 3), tile("B", 6, 0, 6, 3), tile("X", 0, 4, 4, 2)]));
+    // A going down two rows would cover X, so B does not go either.
+    expect(moveWatchTilesBy(d, P1, ["A", "B"], 0, 2)).toBeUndefined();
+    expect(canMoveWatchTilesBy(d, P1, ["A", "B"], 0, 2)).toBe(false);
+    // One row down is clear of X.
+    expect(layout(moveWatchTilesBy(d, P1, ["A", "B"], 0, 1)!, P1)).toEqual(["A 0,1 6x3", "B 6,1 6x3", "X 0,4 4x2"]);
+  });
+
+  it("is refused past the last column, above the first row and past row 200", () => {
+    const d = doc(page(P1, [tile("A", 0, 0, 4, 3), tile("B", 6, 5, 6, 3)]));
+    expect(moveWatchTilesBy(d, P1, ["A", "B"], 1, 0)).toBeUndefined();
+    expect(moveWatchTilesBy(d, P1, ["A", "B"], -1, 0)).toBeUndefined();
+    expect(moveWatchTilesBy(d, P1, ["A", "B"], 0, -1)).toBeUndefined();
+    // B, five rows down and three high, ends on row 200 after 192 more.
+    expect(moveWatchTilesBy(d, P1, ["A", "B"], 0, 193)).toBeUndefined();
+    expect(layout(moveWatchTilesBy(d, P1, ["A", "B"], 0, 192)!, P1)).toEqual(["A 0,192 4x3", "B 6,197 6x3"]);
+    expect(canMoveWatchTilesBy(d, P1, ["A", "B"], 1, 0)).toBe(false);
+  });
+
+  it("moves two tiles onto each other's old places, since they go together", () => {
+    // A over B in one column: down three rows puts A where B was.
+    const d = doc(page(P1, [tile("A", 0, 0, 4, 3), tile("B", 0, 3, 4, 3)]));
+    expect(layout(moveWatchTilesBy(d, P1, ["A", "B"], 0, 3)!, P1)).toEqual(["A 0,3 4x3", "B 0,6 4x3"]);
+    // Side by side, one step right: B moves off the place A takes.
+    const side = doc(page(P1, [tile("A", 0, 0, 4, 3), tile("B", 4, 0, 4, 3)]));
+    expect(layout(moveWatchTilesBy(side, P1, ["B", "A"], 1, 0)!, P1)).toEqual(["A 1,0 4x3", "B 5,0 4x3"]);
+  });
+
+  it("is the document itself for no delta, and refused for an unknown tile or a smart page", () => {
+    const d = doc(page(P1, [tile("A", 0, 0, 4, 3), tile("B", 4, 0, 4, 3)]));
+    expect(moveWatchTilesBy(d, P1, ["A", "B"], 0, 0)).toBe(d);
+    expect(canMoveWatchTilesBy(d, P1, ["A", "B"], 0, 0)).toBe(false);
+    expect(moveWatchTilesBy(d, P1, ["A", "NOPE"], 0, 1)).toBeUndefined();
+    expect(moveWatchTilesBy(d, P1, [], 0, 1)).toBeUndefined();
+    expect(moveWatchTilesBy(d, P1, ["A"], 0.5, 0)).toBeUndefined();
+    const smart = doc(page(SMART, [tile("A", 0, 0, 4, 3)], { dynamicConfig: { rules: [] } }));
+    expect(isSmartWatchPage(pageOf(smart, SMART))).toBe(true);
+    expect(moveWatchTilesBy(smart, SMART, ["A"], 0, 1)).toBeUndefined();
   });
 });
 
