@@ -3943,7 +3943,7 @@ export class WaPageEditor extends LitElement {
        taller than the room. Above the stage's tool strip (z-index 5). */
     .pop-menu.pe-ppop {
       left: 0; right: auto; z-index: 20; display: block; padding: 0; gap: 0;
-      width: min(340px, calc(100vw - 32px)); max-height: min(70vh, 560px); overflow: auto; overscroll-behavior: contain;
+      width: min(400px, calc(100vw - 32px)); max-height: min(70vh, 560px); overflow: auto; overscroll-behavior: contain;
       font-size: 13px; cursor: default;
     }
     .pe-ppop-h {
