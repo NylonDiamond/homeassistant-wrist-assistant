@@ -8920,11 +8920,11 @@ function layerLookFields(
   const smallGlow = el.kind === "text" && shadow !== undefined
     && shadow.dx === 0 && shadow.dy === 0 && shadow.radius > 0 && el.payload.fontSize < 10;
   return html`
-    <div class="fgroup">
     ${percentSliderField("Opacity", p.opacity ?? 1, (v) => upd((e) => {
       const n = clampLayerOpacity(v);
       if (n === 1) delete e.payload.opacity; else e.payload.opacity = n;
     }, "opacity"), { step: 0.05, def: 1 })}
+    <div class="fgroup">
     ${checkField("Shadow", shadow !== undefined, (v) => upd((e) => {
       if (v) e.payload.shadow = { ...SHADOW_DEFAULT }; else delete e.payload.shadow;
     }, "shadow-on"), false)}

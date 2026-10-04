@@ -1347,6 +1347,9 @@ const sectionCardRun = css`
       background: color-mix(in srgb, var(--c, var(--wa-accent)) 3%, transparent);
       box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c, var(--wa-accent)) 20%, transparent);
     }
+    /* A group that holds one row has nothing to hold together (a switch that
+       is off, a choice set to None), so it draws no box and sits as a plain row. */
+    .fgroup:not(:has(> * + *)) { margin-top: 0; margin-bottom: 0; padding-top: 0; padding-bottom: 0; background: none; box-shadow: none; }
     .fgroup > .hint { margin: 2px 0 6px; }
     .fgroup > .hint:last-child { margin-bottom: 4px; }
     .fgroup button.reset-dot { left: -6px; }
