@@ -613,7 +613,7 @@ const leftCardsRun = css`
       ${plainOutline}
     }
     button.lc-btn:hover:not(:disabled) { --lo-fill: var(--wa-hover); ${plainOutline} }
-    button.lc-ghost { background: transparent; border-color: transparent; color: var(--wa-muted); padding: 0 7px; letter-spacing: .04em; }
+    button.lc-ghost { background: transparent; border-color: var(--wa-line-strong); color: var(--wa-muted); padding: 0 7px; letter-spacing: .04em; }
     button.lc-ghost.sm { height: 24px; font-size: 11px; }
     /* The Rows and Pictures buttons: a glyph showing the view on, and the
        setting's name in small type under it. The word never changes, so the
@@ -624,7 +624,7 @@ const leftCardsRun = css`
     /* A ghost that still reads as a button: Save to parts sits on a line of
        plain text, where a bare label was easy to miss. */
     button.lc-ghost.outline { border-color: var(--wa-line-strong); color: var(--wa-ink); }
-    button.lc-ghost:hover:not(:disabled) { background: var(--wa-panel); color: var(--wa-ink); }
+    button.lc-ghost:hover:not(:disabled) { background: var(--wa-panel); color: var(--wa-ink); border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
     button.lc-ghost[aria-pressed="true"], button.lc-ghost[aria-expanded="true"] { color: var(--wa-ink); background: var(--wa-raise); }
     button.lc-btn:focus-visible, button.lc-ghost:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     button.lc-btn:disabled, button.lc-ghost:disabled { opacity: .45; cursor: default; }
