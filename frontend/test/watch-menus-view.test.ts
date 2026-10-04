@@ -15,6 +15,7 @@ import {
   type MenuSwitcherPage,
   type MenusViewHost,
   menuScreenPoint,
+  menusPreviewScale,
   renderMenus,
   switcherRingPoint,
 } from "../src/watch-menus/menu-view.js";
@@ -35,7 +36,7 @@ const flat = (v: unknown): string => {
 
 const NO_ICONS = { render: () => undefined, available: () => false, names: () => [] } as unknown as IconProvider;
 
-function host(document: MenusDocument, switcherPages: readonly MenuSwitcherPage[] = []): MenusViewHost {
+function host(document: MenusDocument, switcherPages: readonly MenuSwitcherPage[] = [], scale = 1.5): MenusViewHost {
   return {
     hass: { states: {} } as unknown as HassLike,
     icons: NO_ICONS,
@@ -46,6 +47,7 @@ function host(document: MenusDocument, switcherPages: readonly MenuSwitcherPage[
     busy: false,
     uiState: new Map(),
     screen: { width: 208, height: 248 },
+    scale,
     switcherPages,
     edit: () => false,
     endCoalesce: () => undefined,
@@ -77,9 +79,40 @@ describe("the menus page", () => {
     // The Anywhere menu keeps its slot list, its slot editor and its Style.
     expect(out).toContain("Add slot");
     expect(out).toContain(">Style</h4>");
-    // The screen is drawn at the watch's proportions, 208 by 248 points.
-    expect(out).toContain("width:218px;height:260px");
+    // The screen is drawn at the watch's proportions, 208 by 248 points, at
+    // the page editor's scale, and the dots follow that scale.
+    expect(out).toContain("width:312px;height:372px;--me-s:1.5");
     expect(out).toContain("viewBox=0 0 208 248");
+    expect(flat(renderMenus(host(DEFAULTS, [], 1.25)))).toContain("width:260px;height:310px;--me-s:1.25");
+  });
+
+  it("lays each section out in three columns: watch, list, settings", () => {
+    const out = flat(renderMenus(host(DEFAULTS, [{ id: "a", name: "Kitchen", text: "Kitchen", icon: "house", color: "#FF0000" }])));
+    expect(count(out, 'class="me-preview"')).toBe(3);
+    expect(count(out, 'class="me-listcol"')).toBe(3);
+    expect(count(out, 'class="me-formcol "')).toBe(3);
+    const columns = (id: string) => {
+      const section = out.slice(out.indexOf(`id=me-${id} `));
+      const end = section.indexOf("</section>");
+      const list = section.indexOf('class="me-listcol"');
+      const form = section.indexOf('class="me-formcol ');
+      return { list: section.slice(list, form), form: section.slice(form, end) };
+    };
+    // The Anywhere menu's Style sits under the slot's settings, not the list.
+    const anywhere = columns("anywhere");
+    expect(anywhere.list).toContain("Add slot");
+    expect(anywhere.form).toContain(">Style</h4>");
+    expect(anywhere.form).toContain('class="me-slot sec-b"');
+    // The Entity quick menu's pickers sit above its list.
+    const entity = columns("entity");
+    expect(entity.list).toContain("By type");
+    expect(entity.list).toContain(">Type<");
+    expect(entity.list.indexOf(">Type<")).toBeLessThan(entity.list.indexOf("Add slot"));
+    // The page switcher lists its pages, its Glow and Selected Scale on the right.
+    const switcher = columns("switcher");
+    expect(switcher.list).toContain("Kitchen");
+    expect(switcher.form).toContain("Glow");
+    expect(switcher.form).toContain("Selected Scale");
   });
 
   it("lists the page switcher's pages on its screen, or says there are none", () => {
@@ -95,6 +128,14 @@ describe("the menus page", () => {
 });
 
 describe("the watch screen", () => {
+  it("draws at the page editor's scale, smaller under 1100 px", () => {
+    expect(menusPreviewScale(1500, false)).toBe(1.5);
+    expect(menusPreviewScale(1099, false)).toBe(1.25);
+    expect(menusPreviewScale(1100, true)).toBe(1.5);
+    expect(menusPreviewScale(0, false)).toBe(1.5);
+    expect(menusPreviewScale(0, true)).toBe(1.25);
+  });
+
   it("keeps the ring round on a screen taller than wide", () => {
     const screen = { width: 208, height: 248 };
     const top = menuScreenPoint(screen, watchMenuRingPoint("topCenter")!);

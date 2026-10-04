@@ -72,7 +72,7 @@ import {
   takeWatchMenusRecord,
 } from "./draft.js";
 import { registerWatchMenusDrafts } from "./hook.js";
-import { type MenuSwitcherPage, type MenusScreen, type MenusViewHost, menuViewStyles, renderMenus } from "./menu-view.js";
+import { type MenuSwitcherPage, type MenusScreen, type MenusViewHost, menuViewStyles, menusPreviewScale, renderMenus } from "./menu-view.js";
 import {
   type MenuTargets,
   type MenusDocument,
@@ -232,7 +232,10 @@ export class WaMenuEditor extends LitElement {
   @state() private restoring = false;
   @state() private starting = false;
   @state() private ownList?: readonly OwnerSummary[];
+  /** The editor's own width, for the previews' scale; 0 until measured. */
+  @state() private hostWidth = 0;
   private ownListAsked = false;
+  private sizeObserver?: ResizeObserver;
 
   private readonly symbols = new SymbolBrowser(() => this.requestUpdate());
   private readonly uiState = new Map<string, unknown>();
@@ -281,6 +284,7 @@ export class WaMenuEditor extends LitElement {
   override connectedCallback(): void {
     super.connectedCallback();
     window.addEventListener("keydown", this.onKeyDown);
+    this.watchSize();
     this.listenForReconnect();
     if (this.watchId !== undefined) this.openWatch(this.watchId, true);
   }
@@ -288,6 +292,7 @@ export class WaMenuEditor extends LitElement {
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     window.removeEventListener("keydown", this.onKeyDown);
+    this.sizeObserver?.disconnect();
     this.stopListeningForReconnect();
     this.reloadPending = false;
     this.endScrub();
@@ -329,6 +334,17 @@ export class WaMenuEditor extends LitElement {
       this.shownDialog = dialog;
       if (dialog && !dialog.open) dialog.showModal();
     }
+  }
+
+  /** Measure the host, not the window: the Home Assistant sidebar changes
+   * the editor's width without changing the window's. */
+  private watchSize(): void {
+    if (typeof ResizeObserver === "undefined") return;
+    this.sizeObserver ??= new ResizeObserver((entries) => {
+      const box = entries[0]?.contentRect;
+      if (box && Math.abs(box.width - this.hostWidth) >= 1) this.hostWidth = box.width;
+    });
+    this.sizeObserver.observe(this);
   }
 
   private listenForReconnect(): void {
@@ -676,6 +692,7 @@ export class WaMenuEditor extends LitElement {
       symbols: this.symbols,
       uiState: this.uiState,
       screen: this.screen(),
+      scale: menusPreviewScale(this.hostWidth, this.narrow),
       switcherPages: this.switcherPages,
       get document() { return draft.document; },
       get targets() { return self.targets(); },

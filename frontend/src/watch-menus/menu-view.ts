@@ -100,6 +100,8 @@ export interface MenusViewHost {
   /** The watch's screen in points: the owner's reported size, else the
    * 46 mm reference. */
   readonly screen: MenusScreen;
+  /** Points to pixels for the previews (`menusPreviewScale`). */
+  readonly scale: number;
   /** The pages the watch's page switcher shows, in its order. */
   readonly switcherPages: readonly MenuSwitcherPage[];
   /** Apply `change` to the document as it is now: one undo step, or with
@@ -134,9 +136,16 @@ export interface MenuSwitcherPage {
   readonly color: string;
 }
 
-/** Points to pixels for the previews: the 46 mm screen (208 pt) draws about
- * 218 px wide, near the old 220 px ring. */
-export const MENUS_PREVIEW_SCALE = 1.05;
+/** Below this editor width the previews draw smaller. */
+export const MENUS_COMPACT_WIDTH = 1100;
+
+/** Points to pixels for the previews, the page editor's scale: 1.5, or 1.25
+ * when the editor is narrower than `MENUS_COMPACT_WIDTH` (or, not measured
+ * yet, Home Assistant calls it narrow). */
+export function menusPreviewScale(width: number, narrow: boolean): number {
+  if (width > 0) return width < MENUS_COMPACT_WIDTH ? 1.25 : 1.5;
+  return narrow ? 1.25 : 1.5;
+}
 
 /** The ring's radius as a share of the screen's shorter side. */
 const RING_RADIUS = 0.36;
@@ -271,27 +280,37 @@ function pointStyle(screen: MenusScreen, position: string, radius?: number): str
 /**
  * The watch screen in its case, at the screen's real proportions: black, a
  * dashed guide ring around the centre, a centre dot where the finger rests,
- * and `content` over them (dots placed in shares of the screen).
+ * and `content` over them (dots placed in shares of the screen). The dots'
+ * sizes follow the scale through `--me-s`.
  */
 function renderScreen(host: MenusViewHost, label: string, content: unknown): TemplateResult {
   const { width, height } = host.screen;
+  const scale = host.scale;
   const side = Math.min(width, height);
   const box = html`<div class="me-screen" role="group" aria-label=${label}
-    style=${`width:${Math.round(width * MENUS_PREVIEW_SCALE)}px;height:${Math.round(height * MENUS_PREVIEW_SCALE)}px`}>
+    style=${`width:${Math.round(width * scale)}px;height:${Math.round(height * scale)}px;--me-s:${scale}`}>
     <svg class="me-screen-bg" viewBox=${`0 0 ${width} ${height}`} aria-hidden="true">
       <circle cx=${width / 2} cy=${height / 2} r=${side * RING_RADIUS} class="me-track"></circle>
       <circle cx=${width / 2} cy=${height / 2} r=${side * 0.05} class="me-center"></circle>
     </svg>
     ${content}
   </div>`;
-  return renderWatchFrame({ width }, MENUS_PREVIEW_SCALE, box, label);
+  return renderWatchFrame({ width, height }, scale, box, label);
 }
 
-/** A section's two columns: the watch preview, then the slots and settings. */
-function renderSplit(preview: TemplateResult, side: unknown): TemplateResult {
+/** A glyph's size in pixels on the preview: `points` at the preview's scale. */
+function dotGlyph(host: MenusViewHost, points: number): number {
+  return Math.round(points * host.scale);
+}
+
+/** A section's three columns: the watch preview; the list with what picks
+ * it; the selected item's settings and the section's style. The sheet folds
+ * them to two columns, then one, as the card narrows. */
+function renderSplit(preview: TemplateResult, list: unknown, form: unknown): TemplateResult {
   return html`<div class="me-split">
     <div class="me-preview">${preview}</div>
-    <div class="me-side">${side}</div>
+    <div class="me-listcol">${list}</div>
+    <div class="me-formcol ${form === nothing ? "empty" : ""}">${form}</div>
   </div>`;
 }
 
@@ -317,7 +336,7 @@ function renderRing(host: MenusViewHost, ref: MenuListRef, selected: JsonObject 
     const label = `${watchMenuPositionLabel(position)}: ${watchMenuActionLabel(slotActionType(slot))}${slot.isVisible === false ? ", hidden" : ""}`;
     return html`<button type="button" class="me-dot ${extra} ${on ? "on" : ""} ${slot.isVisible === false ? "off" : ""}" style=${`${style};--c:${look.color}`}
       title=${label} aria-label=${label} aria-pressed=${on ? "true" : "false"} @click=${() => select(host, ref, id)}>
-      ${glyph(host, look.icon, extra === "" ? 16 : 12, look.color)}${count > 1 ? html`<span class="me-count" aria-hidden="true">${count}</span>` : nothing}</button>`;
+      ${glyph(host, look.icon, dotGlyph(host, extra === "" ? 15 : 11), look.color)}${count > 1 ? html`<span class="me-count" aria-hidden="true">${count}</span>` : nothing}</button>`;
   };
   return renderScreen(host, `${label} on the watch`, watchMenuPositions().map((position) => {
       const style = pointStyle(screen, position);
@@ -333,7 +352,7 @@ function renderRing(host: MenusViewHost, ref: MenuListRef, selected: JsonObject 
       } else if (shared !== undefined) {
         const look = slotLook(shared);
         dot = html`<span class="me-dot inh" style=${`${style};--c:${look.color}`} title=${`${watchMenuPositionLabel(position)}: ${watchMenuActionLabel(slotActionType(shared))}, from All`}>
-          ${glyph(host, look.icon, 14, look.color)}</span>`;
+          ${glyph(host, look.icon, dotGlyph(host, 13), look.color)}</span>`;
       } else if (free.has(position)) {
         dot = html`<button type="button" class="me-dot free" style=${style} ?disabled=${host.busy}
           title=${`Add a slot at ${watchMenuPositionLabel(position)}`} aria-label=${`Add a slot at ${watchMenuPositionLabel(position)}`}
@@ -358,10 +377,24 @@ function renderSwitcherScreen(host: MenusViewHost): TemplateResult {
     : pages.map((page, i) => {
       const style = `${screenStyle(screen, switcherRingPoint(i, pages.length))};--c:${page.color}`;
       return page.text === undefined
-        ? html`<span class="me-dot me-page-dot" style=${style} title=${page.name}>${glyph(host, page.icon, 15, page.color)}</span>`
+        ? html`<span class="me-dot me-page-dot" style=${style} title=${page.name}>${glyph(host, page.icon, dotGlyph(host, 14), page.color)}</span>`
         : html`<span class="me-page" style=${style} title=${page.name}>${page.text}</span>`;
     });
   return renderScreen(host, "Page switcher on the watch", content);
+}
+
+/** The switcher's pages as a list, read only: how each shows there. */
+function renderSwitcherList(host: MenusViewHost): TemplateResult {
+  const pages = host.switcherPages;
+  return html`<div class="me-list">
+    ${pages.length === 0 ? html`<p class="pe-muted">No page shows in the switcher.</p>` : pages.map((page) => html`<div class="me-row me-row-static">
+      <span class="me-row-glyph" style=${`--c:${page.color}`}>${glyph(host, page.icon, 15, page.color)}</span>
+      <span class="me-row-text">
+        <b>${page.name}</b>
+        <span>${page.text === undefined ? "Shown as its icon" : page.text === page.name ? "Shown by name" : `Shown as ${page.text}`}</span>
+      </span>
+    </div>`)}
+  </div>`;
 }
 
 function renderList(host: MenusViewHost, ref: MenuListRef, selected: JsonObject | undefined): TemplateResult {
@@ -580,14 +613,13 @@ function renderSlotEditor(host: MenusViewHost, ref: MenuListRef, slot: JsonObjec
   </fieldset>`;
 }
 
-/** A list's ring on the watch on the left; on the right `before`, the list's
- * rows, the selected slot's settings and `after`. */
+/** A list's ring on the watch; `before` and the list's rows; the selected
+ * slot's settings and `after`. */
 function renderSlots(host: MenusViewHost, ref: MenuListRef, label: string, before: unknown = nothing, after: unknown = nothing): TemplateResult {
   const selected = selectedMenuSlot(host, ref);
-  return renderSplit(renderRing(host, ref, selected, label), html`${before}
-    ${renderList(host, ref, selected)}
-    ${selected === undefined ? nothing : renderSlotEditor(host, ref, selected)}
-    ${after}`);
+  return renderSplit(renderRing(host, ref, selected, label),
+    html`${before}${renderList(host, ref, selected)}`,
+    html`${selected === undefined ? nothing : renderSlotEditor(host, ref, selected)}${after}`);
 }
 
 // ── style ────────────────────────────────────────────────────────────────
@@ -733,14 +765,15 @@ function renderByEntity(host: MenusViewHost, modeRow: TemplateResult): TemplateR
       </fieldset>
     </div>`;
   if (shown === undefined) {
-    return renderSplit(renderScreen(host, "Entity quick menu on the watch", html`<p class="me-screen-note">Add an entity to edit its menu.</p>`), picker);
+    return renderSplit(renderScreen(host, "Entity quick menu on the watch", html`<p class="me-screen-note">Add an entity to edit its menu.</p>`), picker, nothing);
   }
   const name = nameOf(host.hass, shown);
   return renderSlots(host, { list: "entity", entityId: shown }, `${name} menu`, html`${picker}<h4 class="me-sub">${name}</h4>`);
 }
 
 export function renderPageSwitcher(host: MenusViewHost): TemplateResult {
-  return renderSection("switcher", SWITCHER_LINE, renderSplit(renderSwitcherScreen(host), renderStyle(host, "pageSwitcher")));
+  return renderSection("switcher", SWITCHER_LINE,
+    renderSplit(renderSwitcherScreen(host), renderSwitcherList(host), html`<h4 class="me-sub">Style</h4>${renderStyle(host, "pageSwitcher")}`));
 }
 
 /** The sections' rules, after the panel's form rules in the editor's sheet. */
@@ -749,12 +782,30 @@ export const menuViewStyles = css`
   .me-sub { margin: 4px 0 0; font-size: 13px; font-weight: 650; }
   .me-style-head { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--wa-line); }
   .me-gap { flex: 1; }
-  .me-split { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px; align-items: start; }
-  .me-preview { position: sticky; top: 0; padding-top: 2px; }
-  .me-side { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  /* Three columns: the watch, the list, the selected slot's settings. Two
+     below 1020 px (the watch beside the list over the settings; three need
+     about 1003 px with the watch at 1.5), one below 620 px. */
+  .me-split {
+    display: grid; gap: 16px 22px; align-items: start;
+    grid-template-columns: auto minmax(300px, 360px) minmax(280px, 1fr);
+    grid-template-areas: "preview list form";
+  }
+  .me-preview { grid-area: preview; position: sticky; top: 0; padding-top: 2px; }
+  .me-listcol, .me-formcol { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .me-listcol { grid-area: list; }
+  .me-listcol .me-mode, .me-listcol fieldset.me-pick { --wa-lab: 92px; }
+  .me-formcol { grid-area: form; max-width: 560px; }
+  .me-formcol.empty { display: none; }
+  .me-formcol fieldset.me-slot { padding-top: 0; border-top: 0; }
+  @container me-card (max-width: 1020px) {
+    .me-split { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "preview list" "preview form"; }
+    .me-listcol { max-width: 420px; }
+    .me-formcol { padding-top: 12px; border-top: 1px solid var(--wa-line); }
+  }
   @container me-card (max-width: 620px) {
-    .me-split { grid-template-columns: minmax(0, 1fr); }
+    .me-split { grid-template-columns: minmax(0, 1fr); grid-template-areas: "preview" "list" "form"; }
     .me-preview { position: static; justify-self: center; }
+    .me-listcol { max-width: none; }
   }
   .me-screen { position: relative; flex: none; background: #000; }
   .me-screen-bg { position: absolute; inset: 0; width: 100%; height: 100%; }
@@ -764,15 +815,19 @@ export const menuViewStyles = css`
     position: absolute; left: 14px; right: 14px; top: 62%; margin: 0;
     color: rgba(255, 255, 255, .6); font-size: 12px; line-height: 1.3; text-align: center;
   }
+  /* Sizes on the screen are points times the preview's scale, --me-s. */
   .me-page {
-    position: absolute; transform: translate(-50%, -50%); max-width: 72px; padding: 2px 7px;
+    position: absolute; transform: translate(-50%, -50%); max-width: calc(68px * var(--me-s, 1));
+    padding: calc(2px * var(--me-s, 1)) calc(6px * var(--me-s, 1));
     border: 1px solid var(--c, rgba(255, 255, 255, .3)); border-radius: 999px;
     background: color-mix(in srgb, var(--c, #888) 22%, #000); color: #fff;
-    font-size: 10px; font-weight: 600; line-height: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font-size: calc(9.5px * var(--me-s, 1)); font-weight: 600; line-height: 1.35;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .me-dot.me-page-dot { width: 30px; height: 30px; cursor: default; }
+  .me-dot.me-page-dot { width: calc(28px * var(--me-s, 1)); height: calc(28px * var(--me-s, 1)); cursor: default; }
   .me-dot {
-    position: absolute; width: 38px; height: 38px; margin: 0; padding: 0; transform: translate(-50%, -50%);
+    position: absolute; width: calc(36px * var(--me-s, 1)); height: calc(36px * var(--me-s, 1));
+    margin: 0; padding: 0; transform: translate(-50%, -50%);
     display: grid; place-items: center; border-radius: 50%; border: 1.5px solid var(--c, rgba(255, 255, 255, .3));
     background: color-mix(in srgb, var(--c, #888) 22%, #000); color: #fff; cursor: pointer;
   }
@@ -780,15 +835,18 @@ export const menuViewStyles = css`
   .me-dot.on { box-shadow: 0 0 0 2px #000, 0 0 0 4px var(--wa-accent); }
   .me-dot:focus-visible { outline: none; box-shadow: 0 0 0 2px #000, 0 0 0 4px var(--wa-accent), var(--wa-ring); }
   .me-dot.off { opacity: .4; }
-  .me-dot.two { width: 24px; height: 24px; border-width: 1px; z-index: 1; }
+  .me-dot.two { width: calc(23px * var(--me-s, 1)); height: calc(23px * var(--me-s, 1)); border-width: 1px; z-index: 1; }
   .me-count {
     position: absolute; top: -5px; right: -5px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px;
     background: var(--wa-accent); color: #000; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
   }
-  .me-dot.inh { opacity: .45; border-style: dashed; cursor: default; width: 30px; height: 30px; }
-  .me-dot.free { border: 1.5px dashed rgba(255, 255, 255, .28); background: transparent; color: rgba(255, 255, 255, .55); width: 30px; height: 30px; }
+  .me-dot.inh { opacity: .45; border-style: dashed; cursor: default; width: calc(28px * var(--me-s, 1)); height: calc(28px * var(--me-s, 1)); }
+  .me-dot.free {
+    border: 1.5px dashed rgba(255, 255, 255, .28); background: transparent; color: rgba(255, 255, 255, .55);
+    width: calc(28px * var(--me-s, 1)); height: calc(28px * var(--me-s, 1));
+  }
   .me-dot.free:hover:not(:disabled) { color: #fff; border-color: rgba(255, 255, 255, .6); }
-  .me-dot.free svg.ui-icon { width: 14px; height: 14px; }
+  .me-dot.free svg.ui-icon { width: calc(13px * var(--me-s, 1)); height: calc(13px * var(--me-s, 1)); }
   .me-glyph-dot { width: 10px; height: 10px; border-radius: 50%; }
   .me-list { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .me-row {
@@ -799,6 +857,8 @@ export const menuViewStyles = css`
   .me-row.on { background: var(--wa-sel-bg); border-color: var(--wa-sel-ring); }
   .me-row.off .me-row-text b { color: var(--wa-muted); }
   .me-row:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .me-row.me-row-static { cursor: default; }
+  .me-row.me-row-static:hover { background: none; }
   .me-row-glyph, .me-slot-glyph {
     flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
     background: color-mix(in srgb, var(--c, #888) 22%, #000); border: 1px solid var(--c, transparent);
