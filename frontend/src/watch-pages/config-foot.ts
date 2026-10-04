@@ -329,8 +329,8 @@ export const configFootStyles = css`
     display: flex; align-items: center; gap: 8px; min-height: 36px;
     margin: auto calc(-1 * var(--cf-pad, 16px)) calc(-1 * var(--cf-pad, 16px));
     padding: 0 calc(var(--cf-pad, 16px) - 8px) 0 var(--cf-pad, 16px);
-    background: var(--wa-card); border-top: 1px solid var(--wa-line);
-    font-size: 11.5px; color: var(--wa-muted);
+    background: var(--wa-top, var(--wa-card)); border-top: 1px solid var(--wa-line);
+    font-size: 12px; color: var(--wa-muted);
   }
   .cf-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--wa-muted); }
   .cf-dot.ok { background: var(--success-color, var(--wa-green, #3dd68c)); }
@@ -344,12 +344,12 @@ export const configFootStyles = css`
   .cf-size { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cf-size.near { color: var(--warning-color, var(--wa-amber, #ffa600)); font-weight: 600; }
   .cf-btn {
-    flex: none; font: inherit; font-size: 11.5px; font-weight: 500; color: var(--wa-muted); cursor: pointer;
-    background: transparent; border: 0; padding: 0 8px; min-height: 24px; border-radius: 7px;
+    flex: none; font: inherit; font-size: 12px; font-weight: 400; color: var(--wa-soft, var(--wa-muted)); cursor: pointer;
+    background: transparent; border: 0; padding: 0 8px; min-height: 24px; border-radius: 6px;
   }
   .cf-btn:hover, .cf-btn[aria-expanded="true"] { background: var(--wa-panel); color: var(--wa-ink); }
   .cf-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .cf-btn.lit { color: var(--wa-accent); font-weight: 650; }
+  .cf-btn.lit { color: var(--wa-ink); font-weight: 600; }
   @container (max-width: 560px) {
     .cf-size { display: none; }
   }

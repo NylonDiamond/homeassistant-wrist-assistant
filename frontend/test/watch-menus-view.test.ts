@@ -250,8 +250,10 @@ describe("the inspector", () => {
     h.uiState.set("me:sel:anywhere", REFRESH);
     const text = flat(renderMenuInspector(h));
     const card = (id: string) => text.slice(text.lastIndexOf("<section", text.indexOf(`data-sec=menu-editor:${id}`)));
-    expect(card("slot")).toMatch(new RegExp(`^<section class="sec" data-sec=menu-editor:slot data-open=true data-help="on" style=--c:${SECTION_COLOR.content}`));
-    expect(card("look")).toMatch(new RegExp(`^<section class="sec" data-sec=menu-editor:look data-open=true data-help="on" style=--c:${SECTION_COLOR.look}`));
+    // The colors are token names, var(...), which a pattern would read as a
+    // group, so the openings are compared as plain text.
+    expect(card("slot").startsWith(`<section class="sec" data-sec=menu-editor:slot data-open=true data-help="on" style=--c:${SECTION_COLOR.content}`)).toBe(true);
+    expect(card("look").startsWith(`<section class="sec" data-sec=menu-editor:look data-open=true data-help="on" style=--c:${SECTION_COLOR.look}`)).toBe(true);
     expect(text).toContain(`<section class="sec name-sec" data-open="true" style=--c:${SECTION_COLOR.place}>`);
   });
 
@@ -661,7 +663,7 @@ describe("the inspector for a picked page", () => {
     expect(head).toContain(`<button class="root" title="The switcher's own style"`);
     expect(head).toContain(`>Page switcher</button><span class="sep">›</span><span class="kchip" style=--k:${MENU_PAGE_CHIP_COLOR}>Page</span><span class="nm" title=Home>Home</span>`);
     expect(MENU_PAGE_CHIP_COLOR).toBe(WATCH_PAGE_CHIP_COLOR);
-    expect(text).toMatch(new RegExp(`<section class="sec" data-sec=menu-editor:switcher-page data-open=true data-help="on" style=--c:${SECTION_COLOR.content}>`));
+    expect(text).toContain(`<section class="sec" data-sec=menu-editor:switcher-page data-open=true data-help="on" style=--c:${SECTION_COLOR.content}>`);
     expect(text).toContain("<h4>In the page switcher</h4>");
     expect(text).toContain(`<span class="sum">Shown</span>`);
     expect(text).toContain(`<fieldset class="ts-body me-body" ?disabled=false`);

@@ -1314,8 +1314,7 @@ export const menuViewStyles = css`
   /* The Menus and Slots cards: the page editor's Pages and Tiles cards. */
   .me-menus-card > .layers, .me-slots-card > .layers { padding: 6px 8px 8px; overflow: visible; }
   .me-menus-card > .lc-note, .me-slots-card > .lc-note { margin: 8px 12px; color: var(--wa-muted); }
-  .me-menus-card .lc-head, .me-slots-card .lc-head { border-bottom: 1px solid color-mix(in srgb, var(--c) 24%, var(--wa-card)); }
-  .me-slots-card > .lc-filter { border-bottom-color: color-mix(in srgb, var(--c) 18%, var(--wa-card)); }
+  .me-slots-card > .lc-filter { border-bottom: 0; }
   .layer .acts button.icon { display: inline-grid; place-items: center; padding: 0; }
   .layer .acts button.icon:disabled { opacity: .35; cursor: default; }
   /* A slot's or a page's icon in its color, on the black well. */
@@ -1385,7 +1384,7 @@ export const menuViewStyles = css`
   }
   .me-acts { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 0 0; }
   .me-readonly { font-size: 12px; color: var(--wa-muted); }
-  .me-show-for { margin-top: 6px; border-top: 1px solid color-mix(in srgb, var(--c, var(--wa-line)) 18%, transparent); padding-top: 6px; }
+  .me-show-for { margin-top: 6px; border-top: 1px solid var(--wa-line); padding-top: 6px; }
   .me-show-for > summary { display: flex; gap: 8px; align-items: baseline; cursor: pointer; font-size: 12px; color: var(--wa-muted); padding: 4px 0; }
   .me-show-for > summary b { color: var(--wa-ink); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .me-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0; }

@@ -24,34 +24,52 @@
 // Dark mode: an element rendered inside the panel cannot see the panel's
 // `[dark]` attribute, so a `:host([dark])` rule in its own sheet never
 // matches, and a rule that set the light value on `.wa-chrome` would shadow
-// the dark one it inherits. So the panel's `:host([dark])` publishes each
-// dark value under a private `--wa-dark-*` name (`chromeDarkValues`, which
-// panel.ts puts inside its own dark block), and every rule here that differs
-// in the dark skin reads `var(--wa-dark-x, <light value>)`: the tokens on
-// `.wa-chrome` and `.canvas-card`, and the row rules (the clear thumb, the
-// tap and states badges, the tap strip). Inside the dark panel the private
-// name is inherited and wins; anywhere else it is unset and the light value
-// is used. No run here may select on the dark attribute itself; a test
-// holds that.
+// the dark one it inherits. Most chrome colors are therefore the panel's own
+// skin tokens (`--wa-card`, `--wa-field`, the `--wa-hue-*` palette and the
+// rest), which the panel sets for both skins on its host. A value with no
+// such token goes through a private `--wa-dark-*` name instead
+// (`chromeDarkValues`, which panel.ts puts inside its own dark block), read
+// as `var(--wa-dark-x, <light value>)`: today only the clear thumb's
+// checkerboard. Inside the dark panel the private name is inherited and
+// wins; anywhere else it is unset and the light value is used. No run here
+// may select on the dark attribute itself; a test holds that.
 
 import { type TemplateResult, css, html, nothing, unsafeCSS } from "lit";
-import { SECTION_COLOR } from "./kinds.js";
+import { LEFT_CARD_COLOR } from "./kinds.js";
 import { uiIcon } from "./ui-icons.js";
+
+/**
+ * The lit outline every colored card and outlined button wears: a 1.5px
+ * border drawn as a gradient, bright at the top left in the element's own
+ * `--c`, fading through a neutral hairline (`--lo-mid`) and catching a little
+ * of the hue again at the bottom right. The fill (`--lo-fill`) is the surface
+ * the element stands for, painted inside the border so the gradient shows only
+ * as the border. A rule that uses it sets `--c`, `--lo-fill` and `--lo-mid`.
+ *
+ * One recipe, written once, so a card and a button can never drift apart.
+ */
+export const litOutline = css`
+      background:
+        linear-gradient(var(--lo-fill), var(--lo-fill)) padding-box,
+        linear-gradient(140deg, var(--c) 0%, color-mix(in srgb, var(--c) 33%, transparent) 30%,
+          var(--lo-mid) 62%, color-mix(in srgb, var(--c) 25%, transparent) 100%) border-box;
+      border: 1.5px solid transparent;
+`;
 
 /** The top bar, as the panel's sheet has it at the head. A bare `header`
  * selector always has a `.wa-bar` twin in the same list, so an element that
  * draws its bar in a `div.wa-bar` gets the same look. Selector lists, not
  * `:is()`, so each selector keeps the specificity it had. */
 const topBarRun = css`
-    /* The header sits on the page rather than on a card of its own, with one
-       hairline under it to part it from the columns. */
+    /* The header is a bar of its own: a step darker than the cards, one
+       hairline under it, and a small gap before the columns. */
     header, .wa-bar {
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 0 12px;
-      min-height: 54px;
-      background: var(--wa-bg);
+      padding: 0 8px;
+      min-height: 46px;
+      background: var(--wa-top);
       color: var(--wa-ink);
       flex-wrap: wrap;
       position: relative;
@@ -60,12 +78,21 @@ const topBarRun = css`
     }
     header .spacer, .wa-bar .spacer { flex: 1; }
     .toolbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-    /* Top bar: Browse, New, Import and Share at the left, then sync, ···,
-       Save and its caption, and the help. */
-    header, .wa-bar { gap: 10px; min-height: 50px; border-bottom: 1px solid var(--wa-line); }
-    .picker > button.tb-browse { min-width: 0; max-width: none; height: 30px; gap: 7px; padding: 0 8px 0 10px; font-size: 12.5px; font-weight: 600; }
+    /* Top bar: Browse, a divider, New, Import and Share at the left, then
+       sync, ···, Save and its caption, the editor switches and the help. */
+    header, .wa-bar { gap: 6px; min-height: 46px; border-bottom: 1px solid var(--wa-line); margin-bottom: 6px; }
+    .picker > button.tb-browse {
+      --c: var(--wa-hue-blue); --lo-fill: var(--wa-card); --lo-mid: var(--wa-go-mid);
+      min-width: 0; max-width: none; height: 28px; gap: 7px; padding: 0 9px 0 10px; font-size: 13px; font-weight: 600;
+      border-radius: 6px; box-shadow: none;
+      ${litOutline}
+    }
+    .picker > button.tb-browse:hover { --lo-fill: var(--wa-hover); box-shadow: none; }
+    .picker > button.tb-browse:focus-visible { box-shadow: var(--wa-ring); }
     .picker > button.tb-browse svg { width: 14px; height: 14px; }
     .tb-browse .tb-browse-l { color: var(--wa-ink); }
+    /* The hairline between Browse and the buttons that make a new one. */
+    .tb-div { width: 1px; height: 18px; margin: 0 4px; flex: none; background: var(--wa-line-strong); }
     .tb-name {
       display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 8px; min-width: 0;
       border-radius: 7px; border: 1px solid transparent; cursor: text;
@@ -88,52 +115,46 @@ const topBarRun = css`
     }
     header button.icon.tb-icon, .wa-bar button.icon.tb-icon { width: 30px; height: 30px; }
     header button.icon.tb-icon svg.ui-icon, .wa-bar button.icon.tb-icon svg.ui-icon { width: 16px; height: 16px; }
+    /* Where the home has got to: a dot and its words in the dot's color,
+       with no pill round them. */
     .tb-sync {
-      display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px 0 8px; min-width: 0; max-width: 380px;
-      border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; overflow: hidden; border: 1px solid transparent;
+      display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 4px; min-width: 0; max-width: 380px;
+      border-radius: 6px; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; border: 0; background: none;
     }
-    .tb-sync .tb-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: currentColor; }
+    .tb-sync .tb-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: currentColor; }
     .tb-sync-l { overflow: hidden; text-overflow: ellipsis; }
     .tb-sync-n { flex: none; font-weight: 500; color: var(--wa-muted); }
-    .tb-sync.ok { color: var(--wa-green); background: color-mix(in srgb, var(--wa-green) 12%, transparent); border-color: color-mix(in srgb, var(--wa-green) 35%, transparent); }
-    .tb-sync.warn { color: var(--wa-amber); background: var(--wa-amber-bg); border-color: var(--wa-amber-line); }
-    .tb-sync.quiet { color: var(--wa-muted); background: var(--wa-panel); }
+    .tb-sync.ok { color: var(--wa-green); }
+    .tb-sync.warn { color: var(--wa-amber); }
+    .tb-sync.quiet { color: var(--wa-muted); }
     .tb-sync.sending .tb-dot { animation: wa-pulse 1.2s ease-in-out infinite; }
     @keyframes wa-pulse { 50% { opacity: .3; } }
     @media (prefers-reduced-motion: reduce) { .tb-sync.sending .tb-dot { animation: none; } }
     button.tb-btn {
-      font: inherit; font-size: 12.5px; font-weight: 600; height: 30px; padding: 0 11px; border-radius: 8px; cursor: pointer; flex: none;
-      border: 1px solid var(--wa-line); background: var(--wa-card); color: var(--wa-ink); white-space: nowrap;
+      font: inherit; font-size: 13px; font-weight: 600; height: 28px; padding: 0 11px; border-radius: 6px; cursor: pointer; flex: none;
+      border: 0; background: var(--wa-card); color: var(--wa-ink); white-space: nowrap;
     }
-    button.tb-btn:hover:not(:disabled) { border-color: var(--wa-line-strong); background: var(--wa-panel); }
+    button.tb-btn:hover:not(:disabled) { background: var(--wa-hover); }
     button.tb-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     button.tb-btn.tb-more { padding: 0 9px; letter-spacing: .08em; }
-    /* New wears the same fill and plus as the picker's own New, so the two
-       read as one button in two places. */
-    button.tb-btn.tb-new {
-      display: inline-flex; align-items: center; gap: 5px; padding: 0 11px 0 9px;
-      border-color: transparent; background: var(--wa-primary-bg); color: var(--wa-primary-ink);
-    }
-    button.tb-btn.tb-new:hover:not(:disabled) { border-color: transparent; background: var(--wa-primary-bg); filter: brightness(1.1); }
+    /* New, Import and Share wear the lit outline, each in its own hue, with
+       no fill of color: green to make one, purple to bring one in, yellow to
+       send one out. Browse, before them, is blue. */
+    button.tb-btn.tb-new { --c: var(--wa-hue-green); display: inline-flex; align-items: center; gap: 5px; padding: 0 11px 0 9px; }
     button.tb-btn.tb-new svg { width: 13px; height: 13px; }
-    /* Import and Share each carry a faint hue of their own, so the row of
-       four is told apart at a glance without a second loud button beside
-       New. The words are the hue pulled toward the ink, which keeps them
-       readable on both skins. */
-    button.tb-btn.tb-import { --tb-hue: #4a8cff; }
-    button.tb-btn.tb-share { --tb-hue: var(--wa-green); }
-    button.tb-btn.tb-import, button.tb-btn.tb-share {
-      color: color-mix(in srgb, var(--tb-hue) 70%, var(--wa-ink));
-      background: color-mix(in srgb, var(--tb-hue) 10%, var(--wa-card));
-      border-color: color-mix(in srgb, var(--tb-hue) 28%, transparent);
+    button.tb-btn.tb-import { --c: var(--wa-hue-purple); }
+    button.tb-btn.tb-share { --c: var(--wa-hue-yellow); }
+    button.tb-btn.tb-new, button.tb-btn.tb-import, button.tb-btn.tb-share {
+      --lo-fill: var(--wa-card); --lo-mid: var(--wa-go-mid);
+      ${litOutline}
     }
-    button.tb-btn.tb-import:hover:not(:disabled), button.tb-btn.tb-share:hover:not(:disabled) {
-      background: color-mix(in srgb, var(--tb-hue) 18%, var(--wa-card));
-      border-color: color-mix(in srgb, var(--tb-hue) 45%, transparent);
+    button.tb-btn.tb-new:hover:not(:disabled), button.tb-btn.tb-import:hover:not(:disabled), button.tb-btn.tb-share:hover:not(:disabled) {
+      --lo-fill: var(--wa-hover);
+      ${litOutline}
     }
-    .tb-saved { font-size: 11.5px; color: var(--wa-muted); white-space: nowrap; }
-    header.stacked .tb-saved, header.stacked .tb-pen,
-    .wa-bar.stacked .tb-saved, .wa-bar.stacked .tb-pen { display: none; }
+    .tb-saved { font-size: 12px; color: var(--wa-muted); white-space: nowrap; padding: 0 4px; }
+    header.stacked .tb-saved, header.stacked .tb-pen, header.stacked > .tb-div,
+    .wa-bar.stacked .tb-saved, .wa-bar.stacked .tb-pen, .wa-bar.stacked > .tb-div { display: none; }
     /* Stacked (a phone, or a narrow window), the bar is two tidy rows rather
        than three ragged ones: what is done to the draft on top (Browse, undo,
        redo, Save, help), and where it has got to underneath (the sync pill,
@@ -179,12 +200,12 @@ const pickerRun = css`
 /** The round "?" at the end of the top bar. */
 const helpButtonRun = css`
     button.help {
-      font: inherit; font-size: 14px; font-weight: 600; width: 30px; height: 30px; border-radius: 50%; cursor: pointer;
+      font: inherit; font-size: 13px; font-weight: 600; width: 28px; height: 28px; border-radius: 50%; cursor: pointer;
       display: inline-grid; place-items: center; padding: 0;
-      border: 1px solid var(--wa-line); background: var(--wa-raised); color: var(--wa-muted);
-      transition: background-color .12s ease-out, border-color .12s ease-out, color .12s ease-out;
+      border: 0; background: var(--wa-card); color: var(--wa-ink);
+      transition: background-color .12s ease-out, color .12s ease-out;
     }
-    button.help:hover { border-color: var(--wa-line-strong); background: var(--wa-panel); color: var(--wa-ink); }
+    button.help:hover { background: var(--wa-hover); color: var(--wa-ink); }
     button.help:focus-visible { outline: none; box-shadow: var(--wa-ring); }
 `;
 
@@ -197,12 +218,13 @@ const columnsRun = css`
     .layout {
       display: grid;
       grid-template-columns: var(--wa-left, 300px) 8px minmax(0, 1fr) 8px var(--wa-right, 360px);
-      /* The 8px drag gutters are the space between the columns. An 8px gap
-         on each side of them as well left about 24px between cards, which
-         read as three loose panels rather than one editor (Jesse, 2026-09-24). */
-      column-gap: 2px;
-      row-gap: 8px;
-      padding: 4px 12px 10px;
+      /* The 8px drag gutters are the space between the columns, with no gap
+         beside them: an 8px gap on each side as well left about 24px between
+         cards, which read as three loose panels rather than one editor
+         (Jesse, 2026-09-24). The cards stand on the page ground itself. */
+      column-gap: 0;
+      row-gap: 6px;
+      padding: 0 6px;
       /* The editor is exactly one viewport tall: the grid takes whatever the
          header and the footer leave, and each column scrolls inside it. A long
          inspector used to stretch the page, which pushed the two lists under
@@ -237,7 +259,7 @@ const columnsRun = css`
        The attributes are set by the ScrollFades helper on scroll and on
        resize; in the stacked modes the boxes never scroll, so they never
        arrive and the fades never draw. */
-    .column.inspector { --wa-fade: var(--wa-card); --wa-fade-gap: 0px; }
+    .column.inspector { --wa-fade: var(--wa-bg); --wa-fade-gap: 0px; }
     /* The fade gap is the list's own row gap, so the two zero-height fade
        pieces take up no room at either end. At 2px against a 4px gap they
        left a 2px strip over the Background tray. */
@@ -269,10 +291,6 @@ const columnsRun = css`
     .layout.cols-1 .column.left, .layout.cols-1 .column.canvas, .layout.cols-1 .column.inspector,
     .layout.cols-2 .column.inspector { overflow: visible; min-height: auto; }
     .layout.cols-1 .column.left .card.layers-card { flex: none; }
-    /* The status line sits at the end of the inspector, not pinned over the
-       page: stacked, the column is not a scroll box of its own, so a sticky
-       foot floated over the face and the cards on every screen of a phone. */
-    .layout.cols-1 .column.inspector > .foot { position: static; }
     .layout.cols-1 .layers { overflow: visible; }
     /* Stacked, the three columns become one page, and the page is read top to
        bottom rather than left to right. In column order that page opened with
@@ -315,53 +333,54 @@ const rowsRun = css`
       display: flex; flex-direction: column; gap: 4px; flex: 0 1 auto; min-height: 0;
       overflow-y: auto; overflow-x: hidden; scrollbar-width: thin;
     }
-    /* Every row is its own box: a ground and a hairline edge. Rows with no
-       outline ran together, and a list of twenty with pictures in them read as
-       one field of text where the eye had to find each row's start for itself.
-       The selection still speaks louder, because its wash and its ring both
-       land on top of these. */
+    /* Every row is its own box: a field-grey ground one step off the card,
+       with no edge. The gap between rows is what parts them, and the
+       selection speaks louder, in its own blue. */
     .layer {
       display: grid; grid-template-columns: 0 var(--thumb-w) minmax(0, 1fr) auto; align-items: center; gap: 8px;
-      min-height: 46px; padding: 0 6px 0 4px; border-radius: var(--wa-r-sm);
+      min-height: 44px; padding: 0 6px 0 4px; border-radius: var(--wa-r-sm);
       /* The list is a scrolling flex column: without this, expanded rows
          shrink to their minimum and their lines pile on top of each other. */
       flex: none;
       border: 0 solid transparent; background-clip: padding-box;
-      background: color-mix(in srgb, var(--wa-panel) 60%, var(--wa-card));
-      box-shadow: inset 0 0 0 1px var(--wa-line);
+      background: var(--wa-field);
+      box-shadow: none;
       cursor: pointer; user-select: none; position: relative; font-size: 13px;
       /* Hover and selection change at once; only the drop slot animates. */
       transition: border-top-width .1s ease-out, border-bottom-width .1s ease-out;
     }
     /* A group's members wear the same ground as every other row: the group's
        box already says they are nested (Jesse, 2026-09-24). */
-    .layer:hover { background: var(--wa-panel); box-shadow: inset 0 0 0 1px var(--wa-line-strong); }
-    /* The row under the pointer, which the preview is showing: an accent
+    .layer:hover { background: var(--wa-hover); box-shadow: none; }
+    /* The row under the pointer, which the preview is showing: the picked
        outline only. The fill stays for the real selection below. */
-    .layer.peek { box-shadow: inset 0 0 0 1px var(--wa-accent); }
+    .layer.peek { box-shadow: inset 0 0 0 1px var(--wa-pick-line); }
     /* The face hover's row: one ring for the whole list, sliding from row to
        row and fading out where it stands when the hover ends. */
     .layers { position: relative; }
     .face-ring {
       position: absolute; top: 0; left: 0; z-index: 3; pointer-events: none; opacity: 0;
-      box-shadow: inset 0 0 0 1.5px var(--wa-accent), 0 0 0 3px color-mix(in srgb, var(--wa-accent) 18%, transparent);
+      box-shadow: inset 0 0 0 1.5px var(--wa-pick-line), 0 0 0 3px color-mix(in srgb, var(--wa-pick-line) 18%, transparent);
       transition: transform .16s cubic-bezier(.2, .8, .2, 1), width .16s cubic-bezier(.2, .8, .2, 1), height .16s cubic-bezier(.2, .8, .2, 1), opacity .22s ease-out;
     }
     .face-ring.on { opacity: 1; transition-duration: .16s, .16s, .16s, .1s; }
     .face-ring.jump { transition: none; }
     @media (prefers-reduced-motion: reduce) { .face-ring { transition: opacity .1s linear; } }
-    /* The selected row: a strong accent wash and a full-weight accent ring,
-       the same wherever a row is selected, so eight kind colors and the group
-       boxes' hues never fight the selection. */
+    /* The selected row: a deep blue ground, a thin blue edge, ink text and
+       pale blue row buttons, the same wherever a row is selected, so the
+       kinds' colors and the group boxes never fight the selection. */
     .layer.hl {
-      background: color-mix(in srgb, var(--wa-accent) 30%, var(--wa-card));
-      box-shadow: inset 0 0 0 2px var(--wa-accent);
+      background: var(--wa-pick-bg); color: var(--wa-ink);
+      box-shadow: inset 0 0 0 1px var(--wa-pick-line);
     }
+    .layer.hl .name b { font-weight: 700; }
+    .layer.hl .name small { color: var(--wa-ink); }
+    .layer.hl .acts button.icon { color: var(--wa-pick-ink); opacity: 1; }
     .layer:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    .layer.lit { background: var(--wa-sel-bg); box-shadow: inset 0 0 0 2px var(--wa-accent); }
-    /* A member of the selected group: lit in the folder's color, without
-       the selected row's ring, so the group reads as one block. */
-    .layer.held { background: color-mix(in srgb, ${unsafeCSS(SECTION_COLOR.group)} 12%, var(--wa-panel)); }
+    .layer.lit { background: var(--wa-sel-bg); box-shadow: inset 0 0 0 1px var(--wa-pick-line); }
+    /* A member of the selected group: a faint wash of the selection, without
+       its edge, so the group reads as one block. */
+    .layer.held { background: color-mix(in srgb, var(--wa-pick-bg) 55%, var(--wa-field)); }
     /* The drag grips are gone: the whole row drags, and one line under the
        Layers header says so. The grip keeps a zero-width column so the rest
        of the row's grid stays as it was. */
@@ -370,7 +389,7 @@ const rowsRun = css`
        black well is the picture's frame, so an empty thumb still reads as a
        slot rather than a hole. */
     .layer .thumb {
-      width: var(--thumb-w); height: var(--thumb-h); border-radius: 4px; overflow: hidden; flex: none;
+      width: var(--thumb-w); height: var(--thumb-h); border-radius: 5px; overflow: hidden; flex: none;
       background: #000; border: 0; box-sizing: border-box; display: block;
     }
     .layer .thumb svg { display: block; width: 100%; height: 100%; }
@@ -389,22 +408,36 @@ const rowsRun = css`
     .layer .thumb.clear > svg { background: none; }
     .layer.dim .thumb { opacity: .6; }
     .layer .name { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
-    .layer .name b { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
+    .layer .name b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
     .layer .name .glyph { display: inline-grid; place-items: center; width: 18px; height: 18px; flex: none; }
     .layer .name .glyph svg { width: 16px; height: 16px; display: block; }
-    .layer .name small { color: var(--wa-muted); font-size: 11.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .layer .name small { color: var(--wa-muted); font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .layer .name small .val-tok { color: var(--wa-val); }
-    .layer .kind { font-size: 11.5px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--wa-muted); }
+    .layer .kind { font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--wa-muted); }
     .layer.dim .name b { opacity: .55; }
     .layer .right { display: flex; align-items: center; gap: 2px; }
     .layer .badges { display: inline-flex; gap: 4px; }
     .badge {
-      display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: 4px;
-      font-size: 10.5px; font-weight: 700; letter-spacing: .02em; white-space: nowrap;
+      display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 6px;
+      font-size: 11px; font-weight: 600; letter-spacing: 0; white-space: nowrap;
       background: color-mix(in srgb, var(--wa-ink) 8%, transparent); color: var(--wa-muted);
     }
-    .badge.tap { color: var(--wa-dark-badge-tap, #c2185b); background: var(--wa-dark-badge-tap-bg, rgba(236,64,122,.14)); }
-    .badge.states { color: var(--wa-dark-badge-states, #bf360c); background: var(--wa-dark-badge-states-bg, rgba(255,112,67,.18)); }
+    .badge.tap { color: var(--wa-hue-red); background: color-mix(in srgb, var(--wa-hue-red) 14%, transparent); }
+    /* A layer with rules: the Rules card's yellow, as a lit outline with
+       yellow words and no fill, so it sits on any row ground, the picked
+       blue one included. The outline is a masked layer of its own for that
+       reason: there is no one fill it could be painted inside. */
+    .badge.states {
+      position: relative; color: var(--wa-hue-yellow); background: none;
+    }
+    .badge.states::before {
+      content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1.5px; pointer-events: none;
+      background: linear-gradient(140deg, var(--wa-hue-yellow) 0%, color-mix(in srgb, var(--wa-hue-yellow) 33%, transparent) 30%,
+        var(--wa-go-mid) 62%, color-mix(in srgb, var(--wa-hue-yellow) 25%, transparent) 100%);
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+    }
     /* Outlined, so it never reads as one more filled tag beside tap and
        states: it is a job, and a click opens it. */
     .badge.need {
@@ -430,51 +463,45 @@ const rowsTailRun = css`
        still shows around it. With the tap selected (tapsel) the strip wears
        the selection in pink and the top part goes back to rest. */
     .layer.with-tap {
-      grid-template-rows: minmax(48px, auto) auto; row-gap: 0; padding-bottom: 0;
+      grid-template-rows: minmax(44px, auto) auto; row-gap: 0; padding-bottom: 0;
     }
     .tap-strip {
-      --tp: var(--wa-dark-tap-strip, #c2185b);
-      grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; min-width: 0;
-      height: 22px; margin: 0 -4px 2px -2px; padding: 0 4px 0 21px;
-      border-top: 1px solid var(--wa-line);
-      border-radius: 0 0 calc(var(--wa-r-sm) - 2px) calc(var(--wa-r-sm) - 2px);
-      font-size: 11.5px; font-weight: 600; color: var(--tp);
-      background: color-mix(in srgb, var(--tp) var(--wa-dark-tap-strip-wash, 9%), transparent);
+      --tp: var(--wa-hue-red);
+      grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; min-width: 0;
+      height: 24px; margin: 0 -6px 0 -4px; padding: 0 6px 0 9px;
+      border-top: 0;
+      border-radius: 0 0 var(--wa-r-sm) var(--wa-r-sm);
+      font-size: 13px; font-weight: 600; color: var(--tp);
+      background: color-mix(in srgb, var(--tp) 9%, var(--wa-field));
     }
-    /* The strip sits 2px inside the row's edges so the row's ring shows round
-       it, but a pointer coming up from below met those 2px first and lit the
-       layer before its tap. The strip's hit area reaches the edges. */
+    /* The strip runs to the row's edges, so its hit area is the strip. */
     .tap-strip { position: relative; }
-    .tap-strip::after { content: ""; position: absolute; inset: 0 -2px -2px -2px; }
-    /* The dark skin's hover wash is the resting one: its old dark rule
-       outranked this one, so a hovered strip never changed there, and the
-       token keeps it that way. */
-    .tap-strip:hover { background: color-mix(in srgb, var(--tp) var(--wa-dark-tap-strip-hover, 20%), transparent); }
+    .tap-strip::after { content: ""; position: absolute; inset: 0; }
+    .tap-strip:hover { background: color-mix(in srgb, var(--tp) 16%, var(--wa-field)); }
     .tap-strip:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .layer.tapsel {
-      background: color-mix(in srgb, var(--wa-panel) 60%, var(--wa-card));
-      box-shadow: inset 0 0 0 1px var(--wa-line-strong);
+      background: var(--wa-field);
+      box-shadow: none;
     }
     .layer.tapsel .tap-strip {
-      background: color-mix(in srgb, var(--tp) 26%, transparent);
-      box-shadow: inset 0 0 0 2px var(--tp); border-top-color: transparent;
+      background: var(--wa-pick-bg);
+      box-shadow: inset 0 0 0 1px var(--wa-pick-line); border-top-color: transparent;
     }
     .layer.dim .tap-strip { opacity: .55; }
     /* The layer selected, not its tap: only the top part wears the selection.
        The row itself goes back to rest and a layer behind the content (the
-       isolation keeps it above the row's own ground) draws the wash and ring
-       down to the strip's hairline, which sits 24px up from the bottom (the
-       strip's 22px and its 2px margin). */
+       isolation keeps it above the row's own ground) draws the ground and
+       edge down to the top of the strip, which is 24px tall. */
     .layer.with-tap { isolation: isolate; }
     .layer.with-tap.hl:not(.tapsel) {
-      background: color-mix(in srgb, var(--wa-panel) 60%, var(--wa-card));
-      box-shadow: inset 0 0 0 1px var(--wa-line);
+      background: var(--wa-field);
+      box-shadow: none;
     }
     .layer.with-tap.hl:not(.tapsel)::before {
       content: ""; position: absolute; left: 0; right: 0; top: 0; bottom: 24px; z-index: -1; pointer-events: none;
       border-radius: var(--wa-r-sm) var(--wa-r-sm) 0 0;
-      background: color-mix(in srgb, var(--wa-accent) 30%, var(--wa-card));
-      box-shadow: inset 0 0 0 2px var(--wa-accent);
+      background: var(--wa-pick-bg);
+      box-shadow: inset 0 0 0 1px var(--wa-pick-line);
     }
     .tap-strip .tap-glyph { display: grid; place-items: center; flex: none; }
     .tap-strip .tap-glyph svg { width: 13px; height: 13px; }
@@ -505,7 +532,7 @@ const rowsTailRun = css`
     .layer:hover:has(.acts) .badges,
     .layer:focus-visible:has(.acts) .badges,
     .layer:has(.acts :focus-visible) .badges { display: none; }
-    .layer .acts button.icon { width: 24px; height: 24px; }
+    .layer .acts button.icon { width: 26px; height: 26px; border-radius: 50%; }
     .layer .acts svg.ui-icon { width: 15px; height: 15px; }
     /* The row being dragged leaves the list. The slot opening under the
        pointer already says where the layer is going, so a ghost of it left
@@ -526,7 +553,7 @@ const rowsTailRun = css`
        the darker full-bleed tray it used to sit in read as a different kind
        of thing from the layers (Jesse, 2026-09-24). */
     .pinned-set {
-      flex: none; margin: 6px 0 0; padding: 6px 8px 8px; border-top: 1px solid var(--wa-line);
+      flex: none; margin: 6px 10px 0; padding: 6px 0 10px; border-top: 1px solid var(--wa-line);
       display: flex; flex-direction: column; gap: 4px;
     }
     /* Inline has no stack above its rows, so they sit at the foot of the card,
@@ -539,29 +566,29 @@ const rowsTailRun = css`
  * buttons, the page tiles, the help "?", the note and the filter line. The
  * card hues are tokens (`--wa-lc-*`, in `chromeTokens`). */
 const leftCardsRun = css`
-    /* Left column cards: Pages and Layers. One 40px header line each, each
-       tinted with its own color and marked with a small swatch icon, the way
-       the inspector's sections are; the one filled button is + Add. */
+    /* Left column cards: Pages, Layers and Shared values. Each wears its hue
+       in three places only: the lit outline, the filled chip behind its title
+       glyph, and nothing else in it. The fill is the plain card. */
     .card.lc {
-      --c: var(--wa-accent); padding: 0; border-radius: var(--wa-lc-r);
-      background: color-mix(in srgb, var(--c) 7%, var(--wa-card));
-      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 30%, var(--wa-card));
+      --c: var(--wa-accent); --lo-fill: var(--wa-card); --lo-mid: var(--wa-card-mid);
+      padding: 0; border-radius: var(--wa-lc-r); box-shadow: none;
+      ${litOutline}
     }
     .card.pages-card { --c: var(--wa-lc-pages); }
     .card.layers-card { --c: var(--wa-lc-layers); }
     .card.sv-card { --c: var(--wa-lc-values); }
     .lc-head .swatch {
       width: 18px; height: 18px; border-radius: 5px; border: 0; flex: none; display: grid; place-items: center;
-      background: color-mix(in srgb, var(--c) 22%, transparent); color: var(--c);
+      background: var(--c); color: var(--wa-chip-ink);
     }
-    .lc-head .swatch svg.ui-icon { width: 11px; height: 11px; }
+    .lc-head .swatch svg.ui-icon { width: 11px; height: 11px; stroke-width: 2.6; }
     .lc-head {
-      display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; min-height: 40px; padding: 6px 8px 6px 12px;
+      display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; min-height: 40px; padding: 6px 8px 6px 10px;
     }
-    .layers-card .lc-head { border-bottom: 1px solid color-mix(in srgb, var(--c) 24%, var(--wa-card)); }
     .lc-head .spacer { flex: 1; }
-    .lc-title { font-size: 13px; font-weight: 600; color: var(--wa-ink); }
-    .lc-sub { font-size: 11px; font-weight: 400; color: var(--wa-muted); white-space: nowrap; }
+    /* A card's title: small capitals, the same as the inspector's. */
+    .lc-title { font-size: 12px; font-weight: 500; letter-spacing: .09em; text-transform: uppercase; color: var(--wa-ink); }
+    .lc-sub { font-size: 12px; font-weight: 400; color: var(--wa-muted); white-space: nowrap; }
     .lc-sub b { color: var(--wa-ink); font-weight: 600; }
     /* The Pages line never wraps: the page buttons, + and ··· keep their row
        and the note beside the title gives way first. */
@@ -570,13 +597,20 @@ const leftCardsRun = css`
     .pages-card .lc-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     .pages-card .lc-head .spacer { min-width: 0; }
     button.lc-btn, button.lc-ghost {
-      font: inherit; font-size: 11.5px; font-weight: 600; line-height: 1; cursor: pointer; flex: none; white-space: nowrap;
-      display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px; border-radius: 7px;
+      font: inherit; font-size: 13px; font-weight: 600; line-height: 1; cursor: pointer; flex: none; white-space: nowrap;
+      display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px; border-radius: 6px;
       border: 1px solid var(--wa-line); background: var(--wa-panel); color: var(--wa-ink);
     }
     button.lc-btn svg.ui-icon, button.lc-ghost svg.ui-icon { width: 13px; height: 13px; }
-    button.lc-btn.pri { background: var(--wa-accent); border-color: transparent; color: var(--wa-accent-ink); }
-    button.lc-btn.pri:hover:not(:disabled) { filter: brightness(1.08); }
+    /* A card's button (Add, Add a page, Done): the lit outline in green with
+       no fill of color, on the field grey. The card's own hue stays on the
+       card. */
+    button.lc-btn, button.lc-btn.pri {
+      --c: var(--wa-hue-green); --lo-fill: var(--wa-field); --lo-mid: var(--wa-go-mid);
+      height: 24px; color: var(--wa-ink);
+      ${litOutline}
+    }
+    button.lc-btn:hover:not(:disabled) { --lo-fill: var(--wa-hover); ${litOutline} }
     button.lc-ghost { background: transparent; border-color: transparent; color: var(--wa-muted); padding: 0 7px; letter-spacing: .04em; }
     button.lc-ghost.sm { height: 24px; font-size: 11px; }
     /* The Rows and Pictures buttons: a glyph showing the view on, and the
@@ -588,20 +622,18 @@ const leftCardsRun = css`
     /* A ghost that still reads as a button: Save to parts sits on a line of
        plain text, where a bare label was easy to miss. */
     button.lc-ghost.outline { border-color: var(--wa-line-strong); color: var(--wa-ink); }
-    button.lc-btn:hover:not(:disabled):not(.pri), button.lc-ghost:hover:not(:disabled) { background: var(--wa-panel); color: var(--wa-ink); border-color: var(--wa-line); }
-    button.lc-ghost[aria-pressed="true"], button.lc-ghost[aria-expanded="true"] { color: var(--wa-ink); background: var(--wa-panel); }
+    button.lc-ghost:hover:not(:disabled) { background: var(--wa-panel); color: var(--wa-ink); }
+    button.lc-ghost[aria-pressed="true"], button.lc-ghost[aria-expanded="true"] { color: var(--wa-ink); background: var(--wa-raise); }
     button.lc-btn:focus-visible, button.lc-ghost:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     button.lc-btn:disabled, button.lc-ghost:disabled { opacity: .45; cursor: default; }
-    /* The page picker: one segmented control, the showing page raised. */
     /* The page tiles under the Pages header: one per page, the one showing
-       lit in the card's color, each with its own trash can. */
-    .pages-card .lc-head { border-bottom: 1px solid color-mix(in srgb, var(--c) 24%, var(--wa-card)); }
-    .page-tiles { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 12px 2px; }
+       raised in neutral grey, each with its own trash can. */
+    .page-tiles { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 10px 2px; }
     .page-tile {
       display: inline-flex; align-items: stretch; height: 40px; flex: 1 1 96px; min-width: 96px; max-width: 170px;
-      border-radius: 9px; overflow: hidden; background: var(--wa-input); box-shadow: inset 0 0 0 1px var(--wa-line);
+      border-radius: 7px; overflow: hidden; background: var(--wa-field); box-shadow: none;
     }
-    .page-tile.on { background: color-mix(in srgb, var(--c) 16%, var(--wa-card)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 55%, transparent); }
+    .page-tile.on { background: var(--wa-raise); box-shadow: none; }
     .page-tile .page-pick {
       flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px;
       padding: 0 10px; border: 0; background: transparent; color: var(--wa-muted); font: inherit; cursor: pointer; text-align: left;
@@ -609,7 +641,7 @@ const leftCardsRun = css`
     .page-tile .page-pick b { font-size: 12px; font-weight: 650; color: var(--wa-ink); white-space: nowrap; }
     .page-tile .page-pick span { font-size: 10.5px; white-space: nowrap; }
     .page-tile .page-pick:hover { background: color-mix(in srgb, var(--wa-ink) 5%, transparent); }
-    .page-tile .page-pick:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--c); }
+    .page-tile .page-pick:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--wa-accent); }
     .page-tile .page-trash {
       flex: none; width: 26px; border: 0; border-left: 1px solid color-mix(in srgb, var(--wa-line) 70%, transparent);
       background: transparent; color: var(--wa-muted); opacity: .7; cursor: pointer; display: grid; place-items: center; font: inherit;
@@ -634,7 +666,7 @@ const leftCardsRun = css`
     .pages-card .lc-note { margin: 8px 12px 0; }
     .pages-card .page-tour-bar { margin: 0 12px 10px; }
     /* The Layers card's filter line, and the rows under it. */
-    .lc-filter { display: flex; align-items: center; gap: 6px; min-height: 32px; padding: 3px 8px 3px 12px; border-bottom: 1px solid var(--wa-line); }
+    .lc-filter { display: flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 10px; }
     .lc-filter .lc-sub { white-space: normal; }
     .lc-filter button.lc-ghost { margin-left: auto; }
     .lc-filter button.lc-ghost + button.lc-ghost { margin-left: 0; }
@@ -643,14 +675,14 @@ const leftCardsRun = css`
 /** The left cards, continued: the drag note on the filter line, and what
  * sits inside the Layers card around its list. */
 const leftCardsTailRun = css`
-    .lc-filter .lc-drag { font-size: 11px; color: var(--wa-muted); opacity: .8; white-space: nowrap; }
+    .lc-filter .lc-drag { font-size: 12px; color: var(--wa-muted); white-space: nowrap; }
     .lc-filter .lc-sub + .lc-drag::before { content: "·"; margin-right: 6px; }
-    .layers-card > .group-cta { margin: 6px 8px 0; }
+    .layers-card > .group-cta { margin: 6px 10px 0; }
     .layers-card > .hint { margin: 6px 10px 0; }
     .layers-card > .lc-empty { margin: 0; padding: 24px 16px; text-align: center; font-size: 12px; line-height: 1.5; color: var(--wa-muted); }
-    .layers-card > .layers { padding: 6px 8px 0; }
+    .layers-card > .layers { padding: 4px 10px 0; }
     .layers-sec {
-      flex: none; margin: 6px 2px 0; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--wa-muted);
+      flex: none; margin: 6px 2px 0; font-size: 11px; font-weight: 500; letter-spacing: .09em; text-transform: uppercase; color: var(--wa-muted);
     }
     .layers-sec:first-child { margin-top: 0; }
 `;
@@ -690,12 +722,17 @@ const canvasColumnRun = css`
     /* No reserved scrollbar gutter: the canvas fills its column and almost
        never scrolls, and the 11px it kept free doubled the gap before the
        inspector. A window short enough to scroll it gets the bar then. */
-    .column.canvas { display: flex; flex-direction: column; gap: 8px; scrollbar-gutter: auto; }
+    .column.canvas { display: flex; flex-direction: column; gap: 6px; scrollbar-gutter: auto; }
     /* The bar and the two lists keep their own height; the face takes what is
-       left, so the lists under it are on screen without scrolling. */
+       left, so the lists under it are on screen without scrolling. The card
+       is the canvas well: a step darker than the page's cards, with a faint
+       dot grid, so the face reads as sitting on a drawing surface. */
     .column.canvas > .card.canvas-card {
       padding: 0; overflow: hidden; flex: 1 1 auto; min-height: 260px;
       display: flex; flex-direction: column;
+      border-radius: var(--wa-lc-r);
+      background: radial-gradient(var(--wa-well-dot) 1px, transparent 1.2px) 0 0 / 14px 14px, var(--wa-well);
+      box-shadow: inset 0 0 0 1px var(--wa-well-line);
     }
 `;
 
@@ -735,23 +772,23 @@ const sharedValueRowsRun = css`
        value it reads now, and how many layers read it. The same ground and
        hairline as a Layers row. */
     .values-list .datum.svr {
-      display: grid; grid-template-columns: 28px minmax(0, 1fr) auto auto; align-items: center; gap: 10px;
-      min-height: 44px; padding: 5px 6px 5px 8px; border-radius: var(--wa-r-sm);
-      background: color-mix(in srgb, var(--wa-panel) 60%, var(--wa-card)); box-shadow: inset 0 0 0 1px var(--wa-line);
+      display: grid; grid-template-columns: 22px minmax(0, 1fr) auto auto; align-items: center; gap: 10px;
+      min-height: 40px; padding: 4px 6px 4px 10px; border-radius: var(--wa-r-sm);
+      background: var(--wa-field); box-shadow: none;
       transition: box-shadow .12s ease-out, background-color .12s ease-out;
     }
-    .values-list .datum.svr:hover { background: var(--wa-panel); box-shadow: inset 0 0 0 1px var(--wa-line-strong); }
-    /* Open: the same tint the inspector gives its complication section. */
-    .values-list .datum.hl { box-shadow: inset 0 0 0 1px var(--c); background: color-mix(in srgb, var(--c) 10%, var(--wa-card)); }
-    /* Read by the selected layer: filled, as the selected layer row is. Read
-       by the layer the pointer rests on over the face: an outline only. */
-    .values-list .datum.sel { background: color-mix(in srgb, var(--c) 45%, var(--wa-card)); box-shadow: inset 0 0 0 2px var(--c); }
-    .values-list .datum.peek:not(.sel):not(.hl) { box-shadow: inset 0 0 0 1.5px var(--c); }
+    .values-list .datum.svr:hover { background: var(--wa-hover); box-shadow: none; }
+    /* Open, and read by the selected layer: the picked row's blue, filled
+       for the one read by the selection and an edge for the open one. Read
+       by the layer the pointer rests on over the face: an edge only. */
+    .values-list .datum.hl { box-shadow: inset 0 0 0 1px var(--wa-pick-line); background: var(--wa-field); }
+    .values-list .datum.sel { background: var(--wa-pick-bg); box-shadow: inset 0 0 0 1px var(--wa-pick-line); }
+    .values-list .datum.peek:not(.sel):not(.hl) { box-shadow: inset 0 0 0 1px var(--wa-pick-line); }
     .svr-ico {
-      width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center;
-      background: color-mix(in srgb, var(--c) 20%, transparent); color: color-mix(in srgb, var(--c) 55%, var(--wa-ink));
+      width: 22px; height: 28px; display: grid; place-items: center;
+      background: none; color: var(--c);
     }
-    .svr-ico svg { width: 15px; height: 15px; }
+    .svr-ico svg { width: 18px; height: 18px; }
     .svr-ico.need { background: color-mix(in srgb, var(--wa-need) 14%, transparent); color: var(--wa-need); }
     .svr-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
     .svr-text .nm { font-size: 13px; font-weight: 600; color: var(--wa-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -761,14 +798,14 @@ const sharedValueRowsRun = css`
     .svr-src .svr-id { flex: 0 1000 auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; }
     .svr-src .svr-need { flex: none; color: var(--wa-need); font-weight: 600; }
     .svr-now {
-      max-width: 120px; padding: 2px 7px; border-radius: 6px; overflow: hidden; text-overflow: ellipsis; white-space: pre;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; font-weight: 600;
-      color: var(--wa-val); background: color-mix(in srgb, var(--wa-val) 12%, transparent);
+      max-width: 120px; padding: 2px 0; overflow: hidden; text-overflow: ellipsis; white-space: pre;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; font-weight: 500;
+      color: var(--wa-val); background: none;
     }
     .svr-now.none { font-family: inherit; font-weight: 500; font-style: italic; color: var(--wa-muted); background: transparent; }
     .svr-uses {
-      min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; display: grid; place-items: center;
-      font-size: 10.5px; font-weight: 700; color: var(--wa-muted); background: color-mix(in srgb, var(--wa-ink) 7%, transparent);
+      min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; display: grid; place-items: center;
+      font-size: 12px; font-weight: 500; color: var(--wa-ink); background: var(--wa-raise);
     }
     .svr-end { display: grid; place-items: center; min-width: 28px; }
     .svr-end > * { grid-area: 1 / 1; }
@@ -780,19 +817,18 @@ const sharedValueRowsRun = css`
        unfolding under it. The list scrolls inside the card, at 40% of the
        window or the height its top edge was dragged to. */
     .sv-card { position: relative; }
-    .sv-card.open .lc-head { border-bottom: 1px solid color-mix(in srgb, var(--c) 24%, var(--wa-card)); }
     .sv-card .lc-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-    .sv-card button.lc-help.on { color: var(--wa-ink); border-color: var(--c); background: color-mix(in srgb, var(--c) 20%, transparent); }
+    .sv-card button.lc-help.on { color: var(--wa-ink); border-color: var(--wa-line-strong); background: var(--wa-raise); }
     .sv-body {
-      max-height: 40vh; overflow-y: auto; padding: 8px 8px 10px; display: flex; flex-direction: column; gap: 6px;
-      scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--c) 55%, var(--wa-card)) transparent;
+      max-height: 40vh; overflow-y: auto; padding: 0 10px 10px; display: flex; flex-direction: column; gap: 6px;
+      scrollbar-width: thin; scrollbar-color: var(--wa-line-strong) transparent;
     }
     .sv-none { font-size: 12px; color: var(--wa-muted); padding: 2px 4px; }
     /* The resize edge: the gap above the card. A short bar shows on hover. */
-    .sv-grip { position: absolute; left: 0; right: 0; top: -8px; height: 12px; cursor: row-resize; z-index: 5; touch-action: none; }
+    .sv-grip { position: absolute; left: 0; right: 0; top: -7px; height: 10px; cursor: row-resize; z-index: 5; touch-action: none; }
     .sv-grip::after {
-      content: ""; position: absolute; left: 50%; top: 4px; width: 36px; height: 4px; margin-left: -18px; border-radius: 2px;
-      background: var(--c); opacity: 0; transition: opacity .12s ease-out;
+      content: ""; position: absolute; left: 50%; top: 3px; width: 36px; height: 4px; margin-left: -18px; border-radius: 2px;
+      background: var(--wa-accent); opacity: 0; transition: opacity .12s ease-out;
     }
     .sv-grip:hover::after, .sv-grip.dragging::after { opacity: .8; }
     .layout.cols-1 .sv-body { max-height: none; overflow: visible; }
@@ -804,53 +840,36 @@ const sharedValueRowsRun = css`
  * rule that reads one gives its light value as the fallback. See the note at
  * the top of this file. */
 export const chromeDarkValues = css`
-      /* The canvas card's tokens (chromeTokens). */
-      --wa-dark-float-bg: rgba(21,26,46,.92);
-      --wa-dark-float-line: #262c4a;
-      --wa-dark-float-shadow: 0 8px 24px rgba(0,0,0,.45);
-      --wa-dark-float-sep: #2a3154;
-      --wa-dark-hint: #6b7190;
-      --wa-dark-chip-bg: #151a2e;
-      --wa-dark-chip-line: #232946;
-      --wa-dark-live: #3fbf7f;
-      --wa-dark-testing: #f2c063;
       /* A see-through Background's checkerboard (.layer .thumb.clear). */
       --wa-dark-check-a: #2a2a2e;
       --wa-dark-check-b: #1a1a1d;
-      /* The tap and states badges, in the kinds' own hues. */
-      --wa-dark-badge-tap: var(--wa-tap);
-      --wa-dark-badge-tap-bg: color-mix(in srgb, var(--wa-tap) 22%, transparent);
-      --wa-dark-badge-states: var(--wa-states);
-      --wa-dark-badge-states-bg: color-mix(in srgb, var(--wa-states) 22%, transparent);
-      /* The attached tap strip: its hue, its wash, and the same wash under
-         the pointer. */
-      --wa-dark-tap-strip: var(--wa-tap);
-      --wa-dark-tap-strip-wash: 13%;
-      --wa-dark-tap-strip-hover: 13%;
 `;
 
 /** The chrome's own tokens. See the note at the top of this file for how
- * the dark values reach an element inside the panel. */
+ * the dark values reach an element inside the panel. Most of them are the
+ * panel's skin tokens under a name of their own, which the panel already sets
+ * for both skins, so an element inside it inherits the right one either way. */
 export const chromeTokens = css`
-    /* Canvas column: quiet header, floating toolbar, zoomable stage, values bar, first run. */
-    /* The left cards' hues, the same in both skins. */
+    /* Canvas column: quiet header, tool strip, zoomable stage, values bar, first run. */
+    /* The left cards' hues: Pages blue, Layers green, Shared values red
+       (LEFT_CARD_COLOR in kinds.ts), from the palette the panel sets. */
     :host, .wa-chrome {
-      --wa-lc-pages: #26a69a;
-      --wa-lc-layers: #4a7fe8;
-      --wa-lc-values: #b03e62;
+      --wa-lc-pages: ${unsafeCSS(LEFT_CARD_COLOR.pages)};
+      --wa-lc-layers: ${unsafeCSS(LEFT_CARD_COLOR.layers)};
+      --wa-lc-values: ${unsafeCSS(LEFT_CARD_COLOR.values)};
     }
     .wa-chrome, .canvas-card {
-      --wa-float-bg: var(--wa-dark-float-bg, color-mix(in srgb, var(--wa-raised) 94%, transparent));
-      --wa-float-line: var(--wa-dark-float-line, var(--wa-line-strong));
-      --wa-float-shadow: var(--wa-dark-float-shadow, 0 6px 18px rgba(0,0,0,.14));
-      --wa-float-sep: var(--wa-dark-float-sep, var(--wa-line-strong));
-      --wa-hint: var(--wa-dark-hint, var(--wa-muted));
-      --wa-chip-bg: var(--wa-dark-chip-bg, var(--wa-panel));
-      --wa-chip-line: var(--wa-dark-chip-line, var(--wa-line));
-      --wa-live: var(--wa-dark-live, #2f9e6a);
-      --wa-testing: var(--wa-dark-testing, #b7791f);
+      --wa-float-bg: var(--wa-card);
+      --wa-float-line: var(--wa-line);
+      --wa-float-shadow: none;
+      --wa-float-sep: var(--wa-line-strong);
+      --wa-hint: var(--wa-muted);
+      --wa-chip-bg: var(--wa-card);
+      --wa-chip-line: transparent;
+      --wa-live: var(--wa-hue-green);
+      --wa-testing: var(--wa-hue-orange);
       /* On the black face, in either skin. */
-      --wa-face-muted: #8b91ad;
+      --wa-face-muted: #8e8e93;
     }
 `;
 
@@ -866,27 +885,35 @@ const canvasHeadRun = css`
        moves down to a second line whole, slash and all. The actions keep to
        the right edge of whichever line they land on. */
     .cv-head {
-      display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; row-gap: 6px;
-      min-height: 48px; padding: 9px 16px; box-sizing: border-box; flex: none; min-width: 0;
-      border-bottom: 1px solid var(--wa-line);
+      display: flex; flex-wrap: wrap; align-items: center; column-gap: 10px; row-gap: 6px;
+      min-height: 44px; padding: 8px 10px; box-sizing: border-box; flex: none; min-width: 0;
+      border-bottom: 0;
     }
-    .cv-part { display: inline-flex; align-items: center; gap: 12px; flex: 0 1 auto; min-width: 0; }
-    .cv-acts { display: inline-flex; align-items: center; gap: 12px; flex: none; margin-left: auto; }
+    .cv-part { display: inline-flex; align-items: center; gap: 10px; flex: 0 1 auto; min-width: 0; }
+    .cv-acts { display: inline-flex; align-items: center; gap: 6px; flex: none; margin-left: auto; }
     .cv-head .tb-name { flex: 0 1 auto; margin-left: -8px; }
     .cv-slash { flex: none; color: var(--wa-line-strong); }
     /* The whole-complication actions: quiet outlined buttons that read as one
        set with the device chips beside them. Delete goes red, and while it is
        armed the choices stand in its place. */
     button.cv-act {
-      display: inline-flex; align-items: center; gap: 4px; flex: none; height: 28px; padding: 0 10px; border-radius: 7px; cursor: pointer;
-      font: inherit; font-size: 12px; font-weight: 600; white-space: nowrap;
-      border: 1px solid var(--wa-line); background: transparent; color: var(--wa-ink);
+      display: inline-flex; align-items: center; gap: 4px; flex: none; height: 26px; padding: 0 10px; border-radius: 6px; cursor: pointer;
+      font: inherit; font-size: 13px; font-weight: 500; white-space: nowrap;
+      border: 0; background: var(--wa-card); color: var(--wa-ink);
     }
-    button.cv-act:hover:not(:disabled), button.cv-act[aria-expanded="true"] { background: color-mix(in srgb, var(--wa-ink) 8%, transparent); border-color: var(--wa-line-strong); }
+    button.cv-act:hover:not(:disabled), button.cv-act[aria-expanded="true"] { background: var(--wa-hover); }
     button.cv-act:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     button.cv-act:disabled { opacity: .45; cursor: default; }
-    button.cv-act.danger { color: #FF453A; }
-    button.cv-act.danger:hover:not(:disabled) { background: color-mix(in srgb, #FF453A 14%, transparent); border-color: color-mix(in srgb, #FF453A 40%, transparent); }
+    button.cv-act.danger { color: var(--wa-hue-red); }
+    button.cv-act.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--wa-hue-red) 14%, var(--wa-card)); }
+    /* Add to a device makes something, so it wears the green lit outline the
+       other Add buttons do. */
+    .add-tool > button.cv-act {
+      --c: var(--wa-hue-green); --lo-fill: var(--wa-card); --lo-mid: var(--wa-go-mid);
+      height: 24px; padding: 0 9px;
+      ${litOutline}
+    }
+    .add-tool > button.cv-act:hover:not(:disabled), .add-tool > button.cv-act[aria-expanded="true"] { --lo-fill: var(--wa-hover); ${litOutline} }
     button.cv-act .caret { display: inline-flex; margin-right: -3px; color: var(--wa-hint); }
     button.cv-act .caret svg { width: 11px; height: 11px; }
 `;
@@ -894,12 +921,11 @@ const canvasHeadRun = css`
 /** The canvas card's head, continued: icon actions, undo, the dividers,
  * the device chips and the narrow fold. */
 const canvasHeadTailRun = css`
-    button.cv-act.icon { width: 30px; padding: 0; justify-content: center; }
+    button.cv-act.icon { width: 26px; padding: 0; justify-content: center; }
     button.cv-act.icon svg.ui-icon { width: 15px; height: 15px; }
-    /* Undo and redo light up amber while there is a step to take. */
-    button.cv-act.undo:not(:disabled) { color: var(--wa-amber); border-color: var(--wa-amber-line); }
-    button.cv-act.undo:hover:not(:disabled) { background: var(--wa-amber-bg); border-color: var(--wa-amber-line); }
-    button.cv-act.undo:disabled { opacity: .35; }
+    /* Undo and redo are ink while there is a step to take, and faint when
+       there is none. */
+    button.cv-act.undo:disabled { opacity: 1; color: var(--wa-faint); }
     .cv-del { display: inline-flex; align-items: center; gap: 6px; flex: none; }
     /* Hairlines part the head's groups: the devices, the actions, Delete,
        and the ··· menu. */
@@ -921,17 +947,17 @@ const canvasHeadTailRun = css`
     .cv-head .doc-on { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; row-gap: 6px; flex: 0 1 auto; min-width: 0; }
     .cv-head .cv-devices { flex-wrap: wrap; row-gap: 6px; }
     .cv-head .doc-chip {
-      height: 26px; gap: 7px; padding: 0 10px 0 8px; border-radius: 13px; min-width: 0; flex: 0 1 auto;
+      height: 28px; gap: 8px; padding: 0 8px 0 10px; border-radius: 6px; min-width: 0; flex: 0 1 auto;
       background: var(--wa-chip-bg); border: 1px solid var(--wa-chip-line);
-      font-size: 11.5px; font-weight: 500; color: var(--wa-ink);
+      font-size: 13px; font-weight: 500; color: var(--wa-ink);
     }
     .cv-head .doc-chip > svg { width: 13px; height: 13px; flex: none; }
     .cv-head .doc-chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     /* The x that takes the design off a device is always there, quiet, and
        goes red only under the pointer or while it is armed. */
     .cv-head .doc-chip button.doc-trash {
-      width: 18px; height: 18px; margin: 0 -4px 0 0; align-self: center; border: 0; border-radius: 9px;
-      background: transparent; color: var(--wa-muted); opacity: .7; overflow: hidden; cursor: pointer;
+      width: 18px; height: 18px; margin: 0; align-self: center; border: 0; border-radius: 9px;
+      background: var(--wa-raise); color: var(--wa-ink); opacity: .85; overflow: hidden; cursor: pointer;
       transition: opacity .12s ease-out;
     }
     .cv-head .doc-chip button.doc-trash:hover:not(:disabled), .cv-head .doc-chip button.doc-trash:focus-visible { opacity: 1; color: #FF453A; background: color-mix(in srgb, #FF453A 16%, transparent); }
@@ -959,11 +985,10 @@ const stageRun = css`
     /* The stage: the dotted surface, the zoomable face on it, and the values
        bar at its foot. The face's Fit size comes from the stage-wrap's own
        box, through container units, so no script measures anything. */
+    /* The dot grid is the canvas card's own, so the stage adds nothing. */
     .stage-area {
       flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
-      background:
-        radial-gradient(ellipse at 50% 35%, color-mix(in srgb, var(--wa-accent) 10%, transparent) 0, transparent 65%),
-        radial-gradient(color-mix(in srgb, var(--wa-ink) 9%, transparent) 1px, transparent 1px) 0 0 / 18px 18px;
+      background: none;
     }
     .stage-wrap { position: relative; flex: 1 1 auto; min-height: 300px; container-type: size; }
     .stage-wrap.first-run { min-height: 540px; }
@@ -986,12 +1011,16 @@ const stageRun = css`
        drawing app names a frame. Left, not centred, so it stays clear of the
        floating toolbar when the face reaches the top of the stage. */
     .face-label {
-      position: absolute; left: 0; bottom: calc(100% + 5px); max-width: 100%; z-index: 2;
-      display: flex; align-items: center; gap: 5px; font-size: 11px; line-height: 14px;
+      position: absolute; left: 0; bottom: calc(100% + 6px); max-width: 100%; z-index: 2;
+      display: flex; align-items: center; gap: 8px; font-size: 12px; line-height: 18px;
       color: var(--wa-hint); white-space: nowrap; overflow: hidden; pointer-events: none;
     }
-    .face-label .fl-kind { flex: none; color: var(--k, var(--wa-hint)); font-size: 9.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
-    .face-label .fl-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--wa-ink); font-weight: 500; }
+    /* The kind as a neutral pill: what it is matters, not a color for it. */
+    .face-label .fl-kind {
+      flex: none; padding: 0 8px; border-radius: 6px; font-size: 11px; font-weight: 600;
+      color: var(--wa-soft); background: var(--wa-field); box-shadow: inset 0 0 0 1px var(--wa-line-strong);
+    }
+    .face-label .fl-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--wa-ink); font-weight: 600; }
     .face-label .fl-group { min-width: 0; flex: 0 1 auto; display: inline-flex; align-items: center; gap: 3px; overflow: hidden; text-overflow: ellipsis; }
     .face-label .fl-sep { flex: none; opacity: .6; }
     .face-label .fl-lock { display: inline-flex; flex: none; font-size: 10px; }
@@ -1006,19 +1035,20 @@ const stageRun = css`
     .stage-page { position: absolute; top: 25px; left: 16px; z-index: 3; font-size: 11px; color: var(--wa-hint); pointer-events: none; }
     .stage-tools {
       position: absolute; top: 14px; left: 50%; transform: translateX(-50%); z-index: 5;
-      display: flex; align-items: center; gap: 2px; height: 36px; padding: 0 6px; max-width: calc(100% - 24px);
-      border-radius: 10px; background: var(--wa-float-bg); border: 1px solid var(--wa-float-line); box-shadow: var(--wa-float-shadow);
+      display: flex; align-items: center; gap: 2px; height: 34px; padding: 0 4px; max-width: calc(100% - 24px);
+      border-radius: 7px; background: var(--wa-float-bg); border: 1px solid transparent; box-shadow: var(--wa-float-shadow);
     }
     button.tb {
-      display: inline-flex; align-items: center; gap: 7px; flex: none; height: 26px; padding: 0 8px; border-radius: 7px;
+      display: inline-flex; align-items: center; gap: 7px; flex: none; height: 26px; padding: 0 10px; border-radius: 6px;
       border: 1px solid transparent; background: transparent; color: var(--wa-ink); cursor: pointer;
-      font: inherit; font-size: 11.5px; font-weight: 500; white-space: nowrap;
+      font: inherit; font-size: 13px; font-weight: 500; white-space: nowrap;
     }
-    button.tb:hover:not(:disabled) { background: color-mix(in srgb, var(--wa-ink) 8%, transparent); }
+    button.tb:hover:not(:disabled) { background: var(--wa-hover); }
     button.tb:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     button.tb:disabled { opacity: .4; cursor: default; }
-    button.tb.on { background: color-mix(in srgb, var(--wa-accent) 26%, transparent); border-color: color-mix(in srgb, var(--wa-accent) 60%, transparent); }
-    button.tb.lit { color: color-mix(in srgb, var(--wa-accent) 55%, var(--wa-ink)); }
+    /* A tool that is on: ink on paper, the loudest thing in the strip. */
+    button.tb.on, button.tb.on:hover:not(:disabled) { background: var(--wa-on-bg); color: var(--wa-on-ink); border-color: transparent; font-weight: 600; }
+    button.tb.lit { color: var(--wa-ink); font-weight: 600; }
 `;
 
 /** A toolbar button's glyph, caret and tint dot, and the toolbar's menus. */
@@ -1068,12 +1098,12 @@ const stageToolsTailRun = css`
     .snap-menu { min-width: 220px; }
     .pop-menu .row.snap-row { display: flex; align-items: center; gap: 10px; }
     .snap-row .tog {
-      position: relative; display: inline-block; flex: none; width: 26px; height: 14px; border-radius: 7px; background: var(--wa-line-strong);
+      position: relative; display: inline-block; flex: none; width: 26px; height: 14px; border-radius: 7px; background: var(--wa-switch-off);
     }
-    .snap-row .tog.on { background: var(--wa-accent); }
+    .snap-row .tog.on { background: var(--wa-switch-on); }
     .snap-row .tog i { position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 5px; background: #fff; transition: left .12s ease-out; }
     .snap-row .tog.on i { left: 14px; }
-    .snap-steps { display: flex; gap: 2px; margin: 0 6px 4px 46px; padding: 2px; border-radius: 7px; background: var(--wa-panel); }
+    .snap-steps { display: flex; gap: 2px; margin: 0 6px 4px 46px; padding: 2px; border-radius: 6px; background: var(--wa-field); }
     .snap-steps button {
       flex: 1; padding: 3px 6px; border: 0; border-radius: 5px; background: transparent; color: var(--wa-muted); cursor: pointer;
       font: inherit; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
@@ -1086,22 +1116,22 @@ const stageToolsTailRun = css`
 const valuesFootRun = css`
     /* The values bar, the same floating family as the toolbar. */
     .values-foot {
-      display: flex; flex: none; min-width: 0; padding: 0 16px 14px; container: vfoot / inline-size;
+      display: flex; flex: none; min-width: 0; padding: 0 12px 12px; container: vfoot / inline-size;
     }
     /* A head row (Live at one end, Back to live at the other) over one value
        per row: the name on the left, its control on the right. */
     .values-bar {
-      display: flex; flex: 1; flex-direction: column; gap: 6px; min-width: 0; padding: 6px 8px 8px;
-      border-radius: 12px; background: var(--wa-float-bg); border: 1px solid var(--wa-float-line); box-shadow: var(--wa-float-shadow);
+      display: flex; flex: 1; flex-direction: column; gap: 6px; min-width: 0; padding: 8px 10px;
+      border-radius: 9px; background: var(--wa-float-bg); border: 1px solid var(--wa-float-line); box-shadow: var(--wa-float-shadow);
     }
     .vb-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 24px; padding-left: 6px; }
     .vb-state {
       display: inline-flex; align-items: center; gap: 6px; flex: none;
       font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--wa-muted);
     }
-    .vb-dot { width: 6px; height: 6px; border-radius: 3px; background: var(--wa-live); box-shadow: 0 0 6px var(--wa-live); }
+    .vb-dot { width: 8px; height: 8px; border-radius: 4px; background: var(--wa-live); }
     .values-bar.testing .vb-state { color: var(--wa-testing); }
-    .values-bar.testing .vb-dot { background: var(--wa-testing); box-shadow: 0 0 6px var(--wa-testing); }
+    .values-bar.testing .vb-dot { background: var(--wa-testing); }
     .vb-empty { min-width: 0; padding: 0 6px; font-size: 11.5px; color: var(--wa-muted); }
     /* Past seven rows (30 px each, 4 px gaps), or 40% of the window, the rest
        scrolls down. */
@@ -1110,8 +1140,10 @@ const valuesFootRun = css`
       max-height: min(40vh, 236px); overflow-y: auto; scrollbar-width: thin;
     }
     .vchip.vpill {
-      display: flex; align-items: center; gap: 8px; flex: none; width: auto; height: 30px; padding: 0 10px; border-radius: 8px;
-      background: var(--wa-chip-bg); border: 1px solid var(--wa-chip-line); font-size: 11.5px; color: var(--wa-ink); cursor: default;
+      display: flex; align-items: center; gap: 8px; flex: none; width: auto; height: 28px; padding: 0 10px; border-radius: 6px;
+      background: var(--wa-field); border: 1px solid transparent; font-size: 13px; color: var(--wa-ink); cursor: default;
+      /* The slider's knob ring is the row it sits on. */
+      --wa-range-ring: var(--wa-field);
     }
     .vpill .vp-icon { display: inline-flex; flex: none; color: var(--k); }
     .vpill .vp-icon svg { width: 13px; height: 13px; }
@@ -1119,10 +1151,11 @@ const valuesFootRun = css`
     /* Every control sits in one column of the same width, so the sliders,
        pickers and readings line up down the rows. */
     .vchip.vpill .test-ctl { flex: none; width: 260px; justify-content: flex-end; gap: 10px; }
-    .vchip.vpill .test-ctl input[type=range] { flex: 1 1 auto; min-width: 64px; height: 14px; }
+    .vchip.vpill .test-ctl input[type=range] { flex: 1 1 auto; min-width: 64px; height: 18px; --wa-range-track: var(--wa-raise); }
+    .vchip.vpill.testing .test-ctl input[type=range] { --wa-range-fill: var(--wa-testing); }
     .vpill .test-ctl .val, .vpill .test-ctl input[type=text] { order: -1; }
     .vchip.vpill button.val {
-      flex: none; min-width: 64px; text-align: right; color: var(--wa-ink); font-family: inherit; font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums;
+      flex: none; min-width: 64px; text-align: right; color: var(--wa-ink); font-family: inherit; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums;
     }
     .vchip.vpill.testing { box-shadow: none; border-color: var(--wa-testing); }
     .vchip.vpill.testing button.val { color: var(--wa-testing); }
@@ -1143,10 +1176,10 @@ const valuesFootRun = css`
     .vpill button.live-reset svg { width: 13px; height: 13px; }
     .vpill .live-reset-slot { flex: none; width: 13px; }
     button.vb-live {
-      flex: none; height: 24px; padding: 0 8px; border: 1px solid transparent; border-radius: 7px; cursor: pointer;
-      font: inherit; font-size: 11px; font-weight: 600; white-space: nowrap; background: transparent; color: var(--wa-muted);
+      flex: none; height: 22px; padding: 0 9px; border: 1px solid var(--wa-line-strong); border-radius: 6px; cursor: pointer;
+      font: inherit; font-size: 12px; font-weight: 600; white-space: nowrap; background: var(--wa-field); color: var(--wa-ink);
     }
-    button.vb-live:hover:not(:disabled) { color: var(--wa-ink); background: color-mix(in srgb, var(--wa-ink) 8%, transparent); }
+    button.vb-live:hover:not(:disabled) { color: var(--wa-ink); background: var(--wa-hover); }
     button.vb-live:disabled { opacity: .45; cursor: default; }
     button.vb-live:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     /* A phone-width stage has no room for a name beside a control: Live, the
@@ -1171,78 +1204,91 @@ const valuesFootRun = css`
 /** The inspector column and its head: the breadcrumb and the expand
  * button. */
 const inspectorHeadRun = css`
-    /* The inspector: crumbs on top, then one card per section of the thing
-       selected, tinted by what it is. */
-    /* The column is a flex column so the footer row can sit at its foot on a
-       short inspector and stick there on a long one. No top or bottom
-       padding: the head and the footer are edge to edge bars, and a sticky
-       bar in a padded scroll box leaves a strip for the rows to show through. */
-    .column.inspector { padding: 0 12px; container: insp / inline-size; display: flex; flex-direction: column; }
+    /* The inspector: the head in a card of its own, then one card per
+       section of the thing selected, each standing on the page ground. */
+    /* The column is a flex column so the body can take what is left. It has
+       no card of its own and no side padding: the cards are its edges. */
+    .column.inspector { padding: 0; container: insp / inline-size; display: flex; flex-direction: column; }
+    .column.inspector.card { background: none; box-shadow: none; border-radius: 0; }
     .column.inspector > .insp-body { flex: 1 0 auto; }
-    /* The head: one 40px bar with the breadcrumb and one ghost button. */
+    /* The head: the breadcrumb, the kind and the name, and one quiet button,
+       in a card with a grey edge. It sticks to the top of the column, and its
+       outline in the page color covers the gap under it, so the cards scroll
+       away under a clean edge. */
     .insp-head {
-      display: flex; align-items: center; gap: 8px; min-height: 40px; margin: 0 -12px 4px; padding: 0 8px 0 12px;
-      position: sticky; top: 0; background: var(--wa-card); z-index: 5; border-bottom: 1px solid var(--wa-line);
+      display: flex; align-items: center; gap: 8px; min-height: 36px; margin: 0; padding: 4px 6px 4px 10px;
+      position: sticky; top: 0; z-index: 5; font-size: 13px;
+      background: var(--wa-card); border: 1px solid var(--wa-frame); border-radius: var(--wa-lc-r);
+      outline: 6px solid var(--wa-bg);
     }
     /* The breadcrumb stays one line: the complication's name gives way first,
        then the layer's name, and the kind chip never does. */
-    .crumbs { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--wa-muted); white-space: nowrap; }
-    .crumbs button { font: inherit; font-size: 12px; font-weight: 400; background: transparent; border: 0; padding: 3px 4px; margin: 0 -2px; border-radius: 5px; color: var(--wa-muted); cursor: pointer; min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .crumbs { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--wa-muted); white-space: nowrap; }
+    .crumbs button { font: inherit; font-size: 13px; font-weight: 400; background: transparent; border: 0; padding: 3px 4px; margin: 0 -2px; border-radius: 5px; color: var(--wa-muted); cursor: pointer; min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .crumbs button:hover { background: var(--wa-panel); color: var(--wa-ink); }
     .crumbs .sep { opacity: .6; flex: none; }
     .crumbs .nm { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; font-weight: 600; color: var(--wa-ink); }
+    /* The kind as a neutral pill, the same one that names it over the face. */
     .crumbs .kchip {
-      flex: none; display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px;
-      font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
-      background: color-mix(in srgb, var(--k) 26%, transparent); color: color-mix(in srgb, var(--k) 45%, var(--wa-ink));
+      flex: none; display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 6px;
+      font-size: 11px; font-weight: 600; letter-spacing: 0; text-transform: none;
+      background: var(--wa-field); color: var(--wa-soft); box-shadow: inset 0 0 0 1px var(--wa-line-strong);
     }
     .insp-head .expand {
-      flex: none; margin-left: auto; font: inherit; font-size: 11.5px; font-weight: 500; color: var(--wa-muted); cursor: pointer;
-      background: transparent; border: 0; padding: 0 8px; min-height: 24px; border-radius: 7px;
+      flex: none; margin-left: auto; font: inherit; font-size: 13px; font-weight: 400; color: var(--wa-muted); cursor: pointer;
+      background: transparent; border: 0; padding: 0 6px; min-height: 24px; border-radius: 6px;
     }
     .insp-head .expand:hover { background: var(--wa-panel); color: var(--wa-ink); }
-    .insp-body { padding: 0 0 24px; }
+    .insp-body { padding: 0 0 12px; }
 `;
 
 /** The inspector's section cards (`.sec`): the box, its header, the body,
  * the hairline groups, and where non-row content and list rows sit. */
 const sectionCardRun = css`
-    /* One tinted box per subject, in the section's color, so each card reads
-       as its own thing: a 36px header with a small mark, then a body of
-       label-left rows. The header's hover runs to the box's edges while the
-       rows keep the box's padding. */
+    /* One card per subject, each wearing its section's hue in three places
+       only: the lit outline, the filled chip behind the title glyph, and the
+       changed dot. The fill is the plain card and everything in the body is
+       neutral: the body sets --c back to the neutral accent, and keeps the
+       hue under --wa-sec for the changed dots beside its rows. A 36px header,
+       then a body of label-left rows. The header's hover runs to the box's
+       edges while the rows keep the box's padding. */
     .sec {
-      --c: var(--wa-accent);
-      margin: 6px 0 0; padding: 0 12px; border-radius: 9px; overflow: hidden;
-      background: color-mix(in srgb, var(--c) 7%, var(--wa-card));
-      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 24%, var(--wa-card));
+      --c: var(--wa-accent); --lo-fill: var(--wa-card); --lo-mid: var(--wa-card-mid);
+      --wa-sec: var(--c);
+      margin: 6px 0 0; padding: 0 10px; border-radius: var(--wa-lc-r); overflow: hidden;
+      ${litOutline}
+      box-shadow: none;
     }
-    .sec[data-open="true"] { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 40%, var(--wa-card)); }
+    .sec-b { --c: var(--wa-accent); }
     /* A card lit for a moment: where the panel has just sent the eye. */
     .sec.lit { animation: wa-sec-lit 1.6s ease-out 2; }
     @keyframes wa-sec-lit {
-      0%, 100% { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 40%, var(--wa-card)); }
-      30% { box-shadow: inset 0 0 0 2px var(--c), 0 0 0 3px color-mix(in srgb, var(--c) 30%, transparent); }
+      0%, 100% { box-shadow: 0 0 0 0 transparent; }
+      30% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 35%, transparent); }
     }
-    @media (prefers-reduced-motion: reduce) { .sec.lit { animation: none; box-shadow: inset 0 0 0 2px var(--c); } }
+    @media (prefers-reduced-motion: reduce) { .sec.lit { animation: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--c) 45%, transparent); } }
     .sec-h {
-      display: flex; align-items: center; gap: 8px; height: 36px; margin: 0 -12px; padding: 0 6px 0 12px;
+      display: flex; align-items: center; gap: 8px; height: 36px; margin: 0 -10px; padding: 0 6px 0 10px;
       cursor: pointer; user-select: none; transition: background-color .12s ease-out;
     }
-    .sec-h:hover { background: color-mix(in srgb, var(--c) 10%, transparent); }
+    .sec-h:hover { background: color-mix(in srgb, var(--wa-ink) 4%, transparent); }
     .sec-h.pinned { cursor: default; }
     .sec-h.pinned:hover { background: transparent; }
-    .sec-h:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--c); }
+    .sec-h:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--wa-accent); }
     :is(.sec-h, .xfer-callout) .swatch {
       width: 18px; height: 18px; border-radius: 5px; border: 0; flex: none; display: grid; place-items: center;
-      background: color-mix(in srgb, var(--c) 22%, transparent); color: var(--c);
+      background: var(--c); color: var(--wa-chip-ink);
     }
-    :is(.sec-h, .xfer-callout) .swatch svg { width: 11px; height: 11px; stroke-width: 2.2; }
+    :is(.sec-h, .xfer-callout) .swatch svg { width: 11px; height: 11px; stroke-width: 2.6; }
     /* Title and summary on one line: the summary is what the card says while
-       it is shut, so it belongs beside the title, not under it. */
+       it is shut, so it belongs beside the title, not under it. The title is
+       set in small capitals. */
     .sec-h .tt { display: flex; flex-direction: row; align-items: center; gap: 8px; min-width: 0; flex: 1; }
-    .sec-h h4 { margin: 0; flex: none; font-size: 12.5px; font-weight: 650; letter-spacing: 0; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
-    .sec-h .sum { margin-left: auto; min-width: 0; color: var(--wa-muted); font-size: 11.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sec-h h4 {
+      margin: 0; flex: none; font-size: 12px; font-weight: 500; letter-spacing: .09em; text-transform: uppercase;
+      display: flex; align-items: center; gap: 8px; white-space: nowrap;
+    }
+    .sec-h .sum { margin-left: auto; min-width: 0; color: var(--wa-muted); font-size: 12px; font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     /* An open card shows its rows, so the summary would only repeat them. A
        pinned card is always open and keeps its summary as a subtitle. */
     .sec[data-open="true"] .sec-h:not(.pinned) .sum { display: none; }
@@ -1293,19 +1339,25 @@ const sectionCardRun = css`
  * each card's "?" and the help it shows, the header's Add, and the fold of
  * less used rows. Comes after the reset dot's own rules. */
 const sectionCardTailRun = css`
-    .sec-h h4 button.reset-dot { position: relative; left: auto; top: auto; }
+    /* The changed dot beside a card's title wears the card's hue: one of the
+       three places it shows. */
+    .sec-h h4 button.reset-dot { position: relative; left: auto; top: auto; width: 7px; height: 7px; background: var(--c); }
     /* The changed mark sectionCard() draws in a title: the reset dot's look,
        for a card that has no reset to offer. */
-    .sec-h h4 .sec-dot { display: block; width: 6px; height: 6px; border-radius: 50%; background: var(--wa-accent); flex: none; }
-    /* A layer's name: one header row with the input in place of the summary.
-       The title never wraps and the input takes what width is left, down to
-       nothing, so the row stays one line in the narrowest column. */
-    .name-sec .sec-h { gap: 8px; }
+    .sec-h h4 .sec-dot { display: block; width: 7px; height: 7px; border-radius: 50%; background: var(--c); flex: none; }
+    /* A layer's name: one header row with the input in place of the summary,
+       in a plain card with a grey edge rather than a lit one, since a name
+       is not a section. The title never wraps and the input takes what
+       width is left, down to nothing, so the row stays one line in the
+       narrowest column. */
+    .sec.name-sec { background: var(--wa-card); border: 1px solid var(--wa-line); }
+    .name-sec .sec-h { gap: 10px; height: 42px; }
+    .name-sec .sec-h .swatch { display: none; }
     .name-sec .sec-h input[type=text] {
-      flex: 1 1 auto; width: 0; min-width: 0; height: 26px; min-height: 26px; padding: 0 8px; font-size: 12px;
+      flex: 1 1 auto; width: 0; min-width: 0; height: 28px; min-height: 28px; padding: 0 10px; font-size: 13px;
       border-radius: 6px; border-color: transparent; background-color: var(--wa-field);
     }
-    .name-sec .sec-h input[type=text]:focus-visible { border-color: var(--c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 28%, transparent); }
+    .name-sec .sec-h input[type=text]:focus-visible { border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
     /* Each card's "?": quiet until the header is hovered, lit while its help
        is showing. A touch screen has no hover, so there it always shows. */
     button.sec-help {
@@ -1317,7 +1369,7 @@ const sectionCardTailRun = css`
     .sec-h:hover button.sec-help, button.sec-help:focus-visible, button.sec-help.on { opacity: 1; }
     button.sec-help:hover { color: var(--wa-ink); border-color: var(--wa-muted); }
     button.sec-help:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    button.sec-help.on { color: var(--wa-accent-ink); background: var(--wa-accent); border-color: transparent; }
+    button.sec-help.on { color: var(--wa-ink); background: var(--wa-raise); border-color: transparent; }
     @media (hover: none) { button.sec-help { opacity: 1; } }
     /* Help text waits behind that "?". A plain hint shows only while its
        card's help is on; a warning, an error, or a hint marked keep (a status,
@@ -1332,9 +1384,16 @@ const sectionCardTailRun = css`
     /* An open card with no help text in it has nothing for its "?" to show. */
     .sec[data-open="true"][data-help="off"]:not(:has(> .sec-b .hint:not(.warn):not(.err):not(.keep):not(.value-pop .hint))) button.sec-help { display: none; }
     /* Inspector: header Add, a card's less used rows, paired rows, how-to card, footer. */
-    .sec-h button.sec-act { flex: none; min-height: 22px; padding: 0 8px 0 6px; font-size: 11px; gap: 3px; }
+    /* A shut card's Add, such as Rules': it makes something, so it wears the
+       green lit outline every Add button does. */
+    .sec-h button.sec-act {
+      --c: var(--wa-hue-green); --lo-fill: var(--wa-card); --lo-mid: var(--wa-go-mid);
+      flex: none; min-height: 22px; padding: 0 8px 0 6px; font-size: 12px; gap: 3px; border-radius: 6px;
+      ${litOutline}
+    }
+    .sec-h button.sec-act:hover:not(:disabled) { --lo-fill: var(--wa-hover); ${litOutline} }
     .sec-h button.sec-act svg.ui-icon { width: 11px; height: 11px; }
-    .more-fold { margin: 6px -12px 0; padding: 0 12px; border-top: 1px solid color-mix(in srgb, var(--c, var(--wa-accent)) 18%, transparent); }
+    .more-fold { margin: 6px -10px 0; padding: 0 10px; border-top: 1px solid var(--wa-line); }
     .more-body { padding-top: 6px; }
     .more-body > .hint { margin: 2px 0 6px var(--wa-col); }
 `;

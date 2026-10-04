@@ -3237,8 +3237,9 @@ export function spotlightBoxes(elements: readonly ResolvedElement[], design: Can
     });
 }
 
-/** Everything but the named layers pushed back under a dark veil, with an
- * accent ring round each one. `transform` maps design points into the SVG. */
+/** Everything but the named layers pushed back under a dark veil, with a
+ * blue ring round each one, the selection's own color. `transform` maps
+ * design points into the SVG. */
 function spotlight(elements: readonly ResolvedElement[], design: CanvasSize, ids: readonly string[] | undefined,
   maskId: string, width: number, height: number, transform: string) {
   if (ids === undefined || ids.length === 0) return nothing;
@@ -3249,7 +3250,7 @@ function spotlight(elements: readonly ResolvedElement[], design: CanvasSize, ids
     return attrs === "hole"
       ? svg`<rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} rx="2" fill="#000000" transform=${turn} />`
       : svg`<rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} rx="2" fill="none" transform=${turn}
-          style="stroke: var(--wa-accent, #7b6cff)" stroke-width="2" vector-effect="non-scaling-stroke" />`;
+          style="stroke: var(--wa-hue-blue, #5e9beb)" stroke-width="2" vector-effect="non-scaling-stroke" />`;
   };
   return svg`<g class="spotlight" pointer-events="none">
     <defs><mask id=${maskId} maskUnits="userSpaceOnUse" x="0" y="0" width=${width} height=${height}>

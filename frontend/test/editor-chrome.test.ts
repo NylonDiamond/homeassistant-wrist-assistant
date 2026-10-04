@@ -13,10 +13,12 @@ import {
   columnStyles,
   inspectorStyles,
   leftCardStyles,
+  litOutline,
   rowListStyles,
   sectionCard,
   topBarStyles,
 } from "../src/editor-chrome.js";
+import { LEFT_CARD_COLOR } from "../src/kinds.js";
 import { type EditorHost, card } from "../src/editors.js";
 import { uiIcon } from "../src/ui-icons.js";
 
@@ -76,21 +78,46 @@ describe("the chrome sheets", () => {
     });
   }
 
-  it("names each left card's hue as a token, not a literal", () => {
+  it("names each left card's hue as a palette token, not a literal", () => {
     expect(leftCardStyles.cssText).toContain(".card.pages-card { --c: var(--wa-lc-pages); }");
-    expect(chromeTokens.cssText).toContain("--wa-lc-pages: #26a69a;");
-    expect(chromeTokens.cssText).toContain("--wa-lc-layers: #4a7fe8;");
-    expect(chromeTokens.cssText).toContain("--wa-lc-values: #b03e62;");
+    expect(chromeTokens.cssText).toContain(`--wa-lc-pages: ${LEFT_CARD_COLOR.pages};`);
+    expect(chromeTokens.cssText).toContain(`--wa-lc-layers: ${LEFT_CARD_COLOR.layers};`);
+    expect(chromeTokens.cssText).toContain(`--wa-lc-values: ${LEFT_CARD_COLOR.values};`);
+    expect(LEFT_CARD_COLOR).toEqual({ pages: "var(--wa-hue-blue)", layers: "var(--wa-hue-green)", values: "var(--wa-hue-red)" });
   });
 
   it("lets a child element inherit the dark values instead of shadowing them", () => {
-    // The light value is only the fallback; the dark one comes down from the
-    // panel's host under a private name.
-    expect(chromeTokens.cssText).toContain("--wa-float-bg: var(--wa-dark-float-bg,");
-    expect(chromeDarkValues.cssText).toContain("--wa-dark-float-bg: rgba(21,26,46,.92);");
+    // Most chrome colors are the panel's skin tokens, which the panel sets
+    // for both skins and a child inherits. What has no token comes down from
+    // the panel's dark host under a private name, the light value only the
+    // fallback.
+    expect(chromeTokens.cssText).toContain("--wa-float-bg: var(--wa-card);");
+    expect(chromeDarkValues.cssText).toContain("--wa-dark-check-a: #2a2a2e;");
     expect(rowListStyles.cssText).toContain("repeating-conic-gradient(var(--wa-dark-check-a, #d8d8de) 0% 25%, var(--wa-dark-check-b, #f2f2f5) 0% 50%)");
-    expect(rowListStyles.cssText).toContain(".badge.tap { color: var(--wa-dark-badge-tap, #c2185b);");
-    expect(rowListStyles.cssText).toContain("--tp: var(--wa-dark-tap-strip, #c2185b);");
+    expect(rowListStyles.cssText).toContain(".badge.tap { color: var(--wa-hue-red);");
+    expect(rowListStyles.cssText).toContain("--tp: var(--wa-hue-red);");
+  });
+
+  it("draws every colored card and outlined button with the one lit outline", () => {
+    expect(litOutline.cssText).toContain("linear-gradient(140deg, var(--c) 0%, color-mix(in srgb, var(--c) 33%, transparent) 30%");
+    expect(litOutline.cssText).toContain("border: 1.5px solid transparent;");
+    for (const [name, sheet, selector] of [
+      ["sectionCard", chromeRuns.sectionCard, ".sec {"],
+      ["leftCards", chromeRuns.leftCards, ".card.lc {"],
+      ["topBar", chromeRuns.topBar, "button.tb-btn.tb-new, button.tb-btn.tb-import, button.tb-btn.tb-share {"],
+    ] as const) {
+      const text = sheet.cssText;
+      const rule = text.slice(text.indexOf(selector), text.indexOf("}", text.indexOf(selector)));
+      expect(rule, name).toContain("linear-gradient(140deg, var(--c)");
+    }
+  });
+
+  it("keeps a card's hue off everything inside it", () => {
+    // The body puts --c back to the neutral accent; the hue stays on the
+    // outline, the title chip and the changed dot.
+    expect(chromeRuns.sectionCard.cssText).toContain(".sec-b { --c: var(--wa-accent); }");
+    expect(chromeRuns.sectionCard.cssText).toMatch(/\.swatch \{[^}]*background: var\(--c\); color: var\(--wa-chip-ink\);/);
+    expect(chromeRuns.sectionCardTail.cssText).toContain(".sec-h h4 .sec-dot { display: block; width: 7px; height: 7px; border-radius: 50%; background: var(--c);");
   });
 
   it("never selects on the dark attribute, which a child element cannot see", () => {

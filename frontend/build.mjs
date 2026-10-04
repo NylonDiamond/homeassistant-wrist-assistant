@@ -11,14 +11,31 @@
 // folder holds exactly what the entry names and CI can tell a stale or missing
 // chunk from a fresh one. Deleting after rather than before means a failed
 // rebuild in watch mode leaves the last good set in place.
+//
+// The UI font, Geist, is copied out of @fontsource-variable/geist into
+// `fonts/` beside the entry, with its licence, so the panel loads it from the
+// integration's own static path and never from another host. Only the two
+// Latin files are copied: src/font.ts names exactly these and declares them.
 import * as esbuild from "esbuild";
-import { readFileSync, readdirSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
 const watch = process.argv.includes("--watch");
 const outdir = "../custom_components/wrist_assistant/frontend";
 const chunkDir = join(outdir, "chunks");
 const entryName = "wrist-assistant-panel";
+
+const fontPackage = "node_modules/@fontsource-variable/geist";
+const fontDir = join(outdir, "fonts");
+const fontFiles = ["geist-latin-wght-normal.woff2", "geist-latin-ext-wght-normal.woff2"];
+
+function copyFont() {
+  mkdirSync(fontDir, { recursive: true });
+  for (const name of fontFiles) copyFileSync(join(fontPackage, "files", name), join(fontDir, name));
+  copyFileSync(join(fontPackage, "LICENSE"), join(fontDir, "LICENSE-geist.txt"));
+}
+
+copyFont();
 
 /** `import.meta.url` is where a module was served from. In the entry that is
  * the folder the symbol files sit in (`icons.ts` fetches them beside it); in

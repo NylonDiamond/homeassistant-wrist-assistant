@@ -204,11 +204,12 @@ import { STACK_FLAT, STACK_HOME, sheetUnits, stackRigStyle, turnStack, zoomStack
 import { type DeviceKind, type DeviceOwnerLike, LIBRARY_OWNER_ID, deviceKindOf, deviceNoun, deviceSupportsShapes, isLibraryOwner, ownerSupportsControls, updateDeviceMessage } from "./version.js";
 import { type SplitNotice, autoSplitShapes, editBlockedBySplitGate, ownerCanSplit } from "./splitShapes.js";
 import { makeIconProvider } from "./icons.js";
+import { installUiFont } from "./font.js";
 import { makeImageSizeProvider } from "./image-sizes.js";
 import { SymbolBrowser } from "./symbols.js";
 import { Draft, type LayerNamer, saveRefusal } from "./draft.js";
 import { ScrollFades } from "./scroll-fade.js";
-import { chromeDarkValues, chromeRuns, chromeTokens } from "./editor-chrome.js";
+import { chromeDarkValues, chromeRuns, chromeTokens, litOutline } from "./editor-chrome.js";
 import { statesSummary } from "./states.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
 import { elementSize, isHiddenDocument, smallestSize, withHidden, type Placement } from "./model.js";
@@ -407,6 +408,7 @@ import {
   formResetDotStyles,
   formRowStyles,
   formSegStyles,
+  rangeFill,
 } from "./form-styles.js";
 import { type PanelRoute, dropWatchPagesDrafts, isWatchPagesRoute, navigateWatchPages, renderWatchPagesButton, renderWatchPagesView, watchPagesDirty, watchPagesHookStyles, watchPagesRouteOwner } from "./watch-pages/hook.js";
 import { dropWatchMenusDrafts, isWatchMenusRoute, navigateWatchMenus, renderWatchMenusButton, renderWatchMenusView, watchMenusDirty, watchMenusHookStyles, watchMenusRouteOwner } from "./watch-menus/hook.js";
@@ -2270,8 +2272,12 @@ export class WristAssistantPanel extends LitElement {
          HA toolbar), so take it from the viewport instead. */
       height: 100vh;
       height: 100dvh;
-      font-family: var(--paper-font-body1_-_font-family, -apple-system, BlinkMacSystemFont, "Inter", Roboto, sans-serif);
-      font-size: 14px;
+      /* Geist, served from the integration's own folder (see font.ts), and
+         the system's UI font while it loads or if it never does. Code and
+         entity ids keep the system mono stack. */
+      --wa-font: "WA Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      font-family: var(--wa-font);
+      font-size: 13px;
       /* Colors the whole editor shares: one per layer kind, one per section
          that is not about a kind. Set once so a badge, a bar and a card agree. */
       --wa-text: ${unsafeCSS(KIND_COLOR.text)};
@@ -2280,44 +2286,91 @@ export class WristAssistantPanel extends LitElement {
       --wa-shape: ${unsafeCSS(KIND_COLOR.shape)};
       --wa-image: ${unsafeCSS(KIND_COLOR.image)};
       --wa-tap: ${unsafeCSS(KIND_COLOR.tap)};
-      --wa-states: ${unsafeCSS(SECTION_COLOR.states)};
+      /* The testing color: a value being tried in place of the live one. */
+      --wa-states: var(--wa-hue-orange);
       --wa-place: ${unsafeCSS(SECTION_COLOR.place)};
       /* Something the author still has to do: a slot with no entity. */
       --wa-need: var(--error-color, #db4437);
-      /* The skin. Light follows the Home Assistant theme it sits in; the dark
-         block below replaces these with the editor's own deep palette. The
-         rest of the sheet only ever reads these names, so the two skins can
-         never drift apart in anything but color. */
-      --wa-bg: var(--primary-background-color, #f3f1ec);
-      --wa-card: var(--card-background-color, #ffffff);
-      --wa-panel: var(--secondary-background-color, #f6f4ef);
-      --wa-raised: #faf9f6;
-      --wa-input: #ffffff;
-      --wa-line: var(--divider-color, #e4e0d7);
-      --wa-line-strong: #cfc9bd;
-      --wa-ink: var(--primary-text-color, #201d19);
-      --wa-muted: var(--secondary-text-color, #7d766c);
-      --wa-accent: var(--primary-color, #3d5bd9);
-      --wa-accent-ink: #fff;
-      /* The one filled button on screen. Ink on paper in the light skin, where
-         a saturated fill fights the tinted cards; the accent in the dark one,
-         where ink is the ground. */
+      /* The palette the cards wear (SECTION_COLOR in kinds.ts names them).
+         A hue only ever shows on a card's outline, the chip behind its title
+         glyph and its changed dot, plus the few outlined buttons and pills
+         that carry one. Light shades are deep enough to read as text on a
+         white card; the dark block lifts them. Purple is Import's alone. */
+      --wa-hue-blue: #2f6ccc;
+      --wa-hue-green: #1d8455;
+      --wa-hue-orange: #a55500;
+      --wa-hue-yellow: #7a6000;
+      --wa-hue-pink: #c23a62;
+      --wa-hue-red: #c4392c;
+      --wa-hue-purple: #7350d6;
+      --wa-hue-grey: #8e8e93;
+      /* The glyph on a filled title chip: white on the light skin's deep
+         hues, black on the dark skin's bright ones. */
+      --wa-chip-ink: #ffffff;
+      /* The skin: neutral greys, the same names in both themes. The dark
+         block below sets the dark values. The rest of the sheet only ever
+         reads these names, so the two skins can never drift apart in
+         anything but color. */
+      --wa-bg: #f2f2f4;
+      --wa-card: #ffffff;
+      /* Fields, rows and chips: one step off the card. */
+      --wa-panel: #efeff1;
+      --wa-raised: #fafafb;
+      --wa-input: #efeff1;
+      /* One step further, under the pointer. */
+      --wa-hover: #e6e6e9;
+      /* A picked neutral: a page tile that is showing, a lit menu row. */
+      --wa-raise: #dedee2;
+      --wa-line: #e2e2e6;
+      --wa-line-strong: #cacacf;
+      /* The quiet frame round the inspector's head and the Name card. */
+      --wa-frame: #d8d8dc;
+      /* The hairline between the two lit ends of a card's outline, and of an
+         outlined button's. */
+      --wa-card-mid: #e2e2e6;
+      --wa-go-mid: #d1d1d6;
+      --wa-ink: #1c1c1e;
+      --wa-soft: #3a3a3c;
+      --wa-muted: #6c6c70;
+      --wa-faint: #8e8e93;
+      /* The top bar and the status bar under the columns. */
+      --wa-top: #ffffff;
+      /* The canvas well and its dot grid. */
+      --wa-well: #e9e9ec;
+      --wa-well-dot: #d0d0d5;
+      --wa-well-line: #dcdce0;
+      /* Neutral where the old skin had a hue: focus, a lit choice, a link. */
+      --wa-accent: #48484a;
+      --wa-accent-ink: #ffffff;
+      /* The one filled button on screen: ink on paper, in both skins. */
       --wa-primary-bg: var(--wa-ink);
-      --wa-primary-ink: #fff;
-      /* A selected row: a cool wash rather than the kind color, so a list of
-         eight kinds still has one obvious "you are here". */
-      --wa-sel-bg: #edf0fb;
-      --wa-sel-ring: #c5cef2;
+      --wa-primary-ink: #ffffff;
+      /* A choice that is on in a tool strip: ink on paper, like Snap. */
+      --wa-on-bg: var(--wa-ink);
+      --wa-on-ink: #ffffff;
+      /* Switches, sliders and segmented controls: grey, never a hue. */
+      --wa-switch-on: #636366;
+      --wa-switch-off: #d1d1d6;
+      --wa-range-fill: #636366;
+      --wa-range-track: #dcdce0;
+      --wa-range-outline: #aeaeb2;
+      --wa-seg-shadow: 0 1px 2px rgba(0,0,0,.14);
+      /* The picked layer row, and anything else that says "you are here":
+         one quiet blue, the same as the selection on the face. */
+      --wa-pick-bg: #e3ecfa;
+      --wa-pick-line: #3f6fb5;
+      --wa-pick-ink: #2c5592;
+      --wa-sel-bg: var(--wa-pick-bg);
+      --wa-sel-ring: color-mix(in srgb, var(--wa-pick-line) 45%, transparent);
       /* Inspector rows: a fixed title column, so every control starts at the
-         same x, and one soft fill for the boxes in them. The fill is ink at
-         low strength, so it suits both skins without a second value. The lit
-         button of a segmented control sits a step above that fill. */
+         same x, and one soft fill for the boxes in them. The lit button of a
+         segmented control sits a step above that fill. */
       --wa-lab: 88px;
       /* Where a card's controls start: past the title column. A narrow
          inspector stacks titles over controls and sets this to 0. */
       --wa-col: calc(var(--wa-lab) + 8px);
-      --wa-field: color-mix(in srgb, var(--wa-ink) 5.5%, transparent);
-      --wa-seg-on: var(--wa-card);
+      --wa-field: var(--wa-panel);
+      --wa-seg-on: #ffffff;
       /* Two colors for the things that come out of Home Assistant rather
          than out of this editor: the entity a layer names, and the value it
          is reading right now. They are the same two colors in the search
@@ -2334,16 +2387,16 @@ export class WristAssistantPanel extends LitElement {
          is drawn in currentColor, so picking a card lights the slot alone.
          A screen is dark in both themes, the way Apple's own pickers draw one:
          a white rectangle reads as a piece of paper. */
-      --wa-art-case: #cfc9bd;
-      --wa-art-screen: #26241f;
-      --wa-art-dim: #45413a;
-      --wa-art-clock: #5d584f;
-      --wa-art-dock: #322f2a;
-      --wa-art-blur: #2f2c27;
+      --wa-art-case: #d1d1d6;
+      --wa-art-screen: #1c1c1e;
+      --wa-art-dim: #3a3a3c;
+      --wa-art-clock: #545458;
+      --wa-art-dock: #2c2c2e;
+      --wa-art-blur: #2a2a2c;
       /* A slot a design does not fill, on a picker card's drawings. Lighter
          than the screen and darker than the furniture, so an unlit slot is a
          place that is empty rather than a shape nobody can see. */
-      --wa-art-off: #3a372f;
+      --wa-art-off: #38383a;
       /* One color per person in the picker, handed out by their place in the
          household list. Six hues far enough apart to be told apart at the
          size of a tab glyph, each dark enough here to clear 4.5:1 on a white
@@ -2377,9 +2430,9 @@ export class WristAssistantPanel extends LitElement {
       --wa-shape-medium: #c2410c;
       --wa-shape-large: #a21caf;
       --wa-shape-xlarge: #4338ca;
-      --wa-r-sm: 8px;
-      --wa-r-md: 12px;
-      --wa-r-lg: 16px;
+      --wa-r-sm: 7px;
+      --wa-r-md: 10px;
+      --wa-r-lg: 14px;
       /* The left column's cards and the Add sheet. */
       --wa-lc-r: 10px;
       /* Two states the top bar's sync pill and the Pages card's note say in
@@ -2394,43 +2447,73 @@ export class WristAssistantPanel extends LitElement {
       --wa-rule-else: #7c3aed;
       --wa-amber-bg: color-mix(in srgb, var(--wa-amber) 12%, transparent);
       --wa-amber-line: color-mix(in srgb, var(--wa-amber) 35%, transparent);
-      --wa-shadow-pop: 0 12px 36px rgba(0,0,0,.28);
-      --wa-ring: 0 0 0 3px color-mix(in srgb, var(--wa-accent) 28%, transparent);
+      --wa-shadow-pop: 0 12px 36px rgba(0,0,0,.22);
+      --wa-ring: 0 0 0 3px color-mix(in srgb, var(--wa-accent) 30%, transparent);
       color: var(--wa-ink);
       background: var(--wa-bg);
     }
-    /* The 2026 skin: near-black navy ground, cards a step up, hairlines made
-       of light rather than grey, and a violet accent for the one thing on
-       screen you are meant to press. Only colors change here. */
+    /* The dark skin, the watch's own: a black ground, cards one step up,
+       fields one step more, neutral greys for every control, and a hue only
+       on a card's outline, its title chip and its changed dot. Only colors
+       change here. */
     :host([dark]) {
       --wa-need: #ff6b6b;
-      --wa-bg: #0b0d14;
-      --wa-card: #12141d;
-      --wa-panel: #1a1d28;
-      --wa-raised: #171a24;
-      --wa-input: #0e1017;
-      --wa-line: rgba(255,255,255,.08);
-      --wa-line-strong: rgba(255,255,255,.16);
-      --wa-ink: #eceef5;
-      --wa-muted: #8d92a6;
-      --wa-accent: #7b6cff;
-      --wa-accent-ink: #fff;
-      --wa-primary-bg: var(--wa-accent);
-      --wa-primary-ink: var(--wa-accent-ink);
-      --wa-sel-bg: color-mix(in srgb, var(--wa-accent) 18%, var(--wa-card));
-      --wa-sel-ring: color-mix(in srgb, var(--wa-accent) 45%, transparent);
-      --wa-seg-on: #2b2f3d;
+      --wa-hue-blue: #5e9beb;
+      --wa-hue-green: #4cc38a;
+      --wa-hue-orange: #f0a23b;
+      --wa-hue-yellow: #e8c547;
+      --wa-hue-pink: #ec7a93;
+      --wa-hue-red: #f0766a;
+      --wa-hue-purple: #a78bfa;
+      --wa-hue-grey: #8a8a8f;
+      --wa-chip-ink: #000000;
+      --wa-bg: #000000;
+      --wa-card: #161617;
+      --wa-panel: #222224;
+      --wa-raised: #1c1c1e;
+      --wa-input: #222224;
+      --wa-hover: #2a2a2d;
+      --wa-raise: #3a3a3d;
+      --wa-line: #2a2a2d;
+      --wa-line-strong: #3a3a3d;
+      --wa-frame: #333336;
+      --wa-card-mid: #2a2a2d;
+      --wa-go-mid: #3a3a3d;
+      --wa-ink: #ffffff;
+      --wa-soft: #c7c7cc;
+      --wa-muted: #8a8a8f;
+      --wa-faint: #6e6e73;
+      --wa-top: #0e0e0f;
+      --wa-well: #0b0b0c;
+      --wa-well-dot: #242427;
+      --wa-well-line: #1e1e20;
+      --wa-accent: #aeaeb2;
+      --wa-accent-ink: #000000;
+      --wa-primary-bg: #ffffff;
+      --wa-primary-ink: #000000;
+      --wa-on-bg: #ffffff;
+      --wa-on-ink: #000000;
+      --wa-switch-on: #aeaeb2;
+      --wa-switch-off: #333336;
+      --wa-range-fill: #d0d0d4;
+      --wa-range-track: #2a2a2d;
+      --wa-range-outline: #aeaeb2;
+      --wa-seg-shadow: none;
+      --wa-pick-bg: #17243a;
+      --wa-pick-line: #3f6fb5;
+      --wa-pick-ink: #bfd6f7;
+      --wa-seg-on: #4a4a4e;
       --wa-ent: #5fd4c4;
-      --wa-val: #ffc45c;
+      --wa-val: #e8c547;
       --wa-ent-bg: color-mix(in srgb, var(--wa-ent) 14%, transparent);
       --wa-val-bg: color-mix(in srgb, var(--wa-val) 16%, transparent);
-      --wa-art-case: #2b2f3d;
-      --wa-art-screen: #05060a;
-      --wa-art-dim: #232734;
-      --wa-art-clock: #3a3f52;
-      --wa-art-dock: #14161f;
-      --wa-art-blur: #0f1119;
-      --wa-art-off: #1b1f2b;
+      --wa-art-case: #2c2c2e;
+      --wa-art-screen: #000000;
+      --wa-art-dim: #1c1c1e;
+      --wa-art-clock: #3a3a3c;
+      --wa-art-dock: #141415;
+      --wa-art-blur: #0f0f10;
+      --wa-art-off: #1c1c1e;
       /* The same six hues, lifted for the dark ground. */
       --wa-person-1: #a78bfa;
       --wa-person-2: #5eead4;
@@ -2448,15 +2531,16 @@ export class WristAssistantPanel extends LitElement {
       --wa-shape-medium: #fb923c;
       --wa-shape-large: #e879f9;
       --wa-shape-xlarge: #818cf8;
-      --wa-green: #3fbf7f;
-      --wa-amber: #f2c063;
+      --wa-green: #4cc38a;
+      --wa-amber: #f0a23b;
       --wa-rule-if: #60a5fa;
       --wa-rule-preset: #5fd4c4;
       --wa-rule-then: #3fbf7f;
       --wa-rule-else: #a78bfa;
-      --wa-shadow-pop: 0 16px 48px rgba(0,0,0,.6);
+      --wa-shadow-pop: 0 16px 48px rgba(0,0,0,.7);
+      --wa-ring: 0 0 0 2px color-mix(in srgb, var(--wa-accent) 55%, transparent);
       color-scheme: dark;
-      scrollbar-color: rgba(255,255,255,.14) transparent;
+      scrollbar-color: rgba(255,255,255,.16) transparent;
       /* The chrome's dark values under private names, for the shared rules
          in editor-chrome.ts and for every editor drawn inside this one,
          whose own sheets cannot see this attribute. */
@@ -3625,7 +3709,7 @@ export class WristAssistantPanel extends LitElement {
        row follows the last layer, and stays in sight once the rows scroll. */
     /* It never scrolls itself (the Layers list scrolls inside it), so it
        keeps no scrollbar gutter: that was more empty space before the canvas. */
-    .column.left { display: flex; flex-direction: column; gap: 10px; overflow: hidden; scrollbar-gutter: auto; }
+    .column.left { display: flex; flex-direction: column; gap: 6px; overflow: hidden; scrollbar-gutter: auto; }
     .column.left .card { flex: none; }
     /* A basis of 0 rather than auto: with auto the rows of a long design
        count as the card's size. The third is a floor, not a share. */
@@ -3900,8 +3984,8 @@ export class WristAssistantPanel extends LitElement {
     /* Picked with Cmd/Ctrl-click: lit exactly like the selected row, so every
        picked row reads as selected, not just the one clicked first. */
     .layer.multi {
-      background: color-mix(in srgb, var(--wa-accent) 30%, var(--wa-card));
-      box-shadow: inset 0 0 0 2px var(--wa-accent);
+      background: var(--wa-pick-bg);
+      box-shadow: inset 0 0 0 1px var(--wa-pick-line);
     }
     /* A folder row: the chevron folds it, the lock says whether it moves as
        one, and its members sit indented under a guide line. */
@@ -3922,7 +4006,7 @@ export class WristAssistantPanel extends LitElement {
     /* A folder shows a folder where a layer shows its picture. */
     .layer.group .folder { display: grid; place-items: center; width: var(--thumb-w); color: var(--wa-muted); }
     .layer.group .folder svg { width: 17px; height: 17px; }
-    .layer.group.drop-into { box-shadow: inset 0 0 0 2px var(--wa-accent); }
+    .layer.group.drop-into { box-shadow: inset 0 0 0 2px var(--wa-pick-line); }
     .layer .lockbtn { width: 24px; height: 24px; opacity: .55; }
     .layer .lockbtn svg.ui-icon { width: 15px; height: 15px; }
     .layer .lockbtn.on { opacity: 1; color: ${unsafeCSS(SECTION_COLOR.locked)}; }
@@ -3946,8 +4030,8 @@ export class WristAssistantPanel extends LitElement {
     }
     /* A folder row has no card of its own to outline, so a peek at it (its
        row, or the group under the pointer on the face) rings the whole box. */
-    .group-box:has(> .layer.group.peek) { outline: 1px solid var(--wa-accent); outline-offset: -1px; }
-    .group-box:has(> .layer.group.hl) { outline: 2px solid var(--wa-accent); outline-offset: -1px; }
+    .group-box:has(> .layer.group.peek) { outline: 1px solid var(--wa-pick-line); outline-offset: -1px; }
+    .group-box:has(> .layer.group.hl) { outline: 1px solid var(--wa-pick-line); outline-offset: -1px; }
     /* The folder row is the box's header, not a card of its own, until it is
        hovered, selected, lit or a drop target. */
     .group-box > .layer.group:not(.hl):not(.lit):not(.held):not(.drop-into):not(:hover) {
@@ -4087,15 +4171,13 @@ export class WristAssistantPanel extends LitElement {
     }
 
     /* The start page: the panel's front door while nothing is open. The same
-       work surface as the stage (dot grid, accent glow), with the content in
+       work surface as the stage (the well's dot grid), with the content in
        one column that reads top to bottom: what this is, what the home has,
        what to start. */
     .start {
       flex: 1 1 auto; min-height: 0; overflow: auto;
       padding: clamp(20px, 5vh, 56px) clamp(16px, 4vw, 48px) 48px;
-      background:
-        radial-gradient(ellipse 60% 50% at 70% 0%, color-mix(in srgb, var(--wa-accent) 16%, transparent) 0, transparent 70%),
-        radial-gradient(color-mix(in srgb, var(--wa-ink) 9%, transparent) 1px, transparent 1px) 0 0 / 18px 18px;
+      background: radial-gradient(var(--wa-well-dot) 1px, transparent 1.2px) 0 0 / 14px 14px, var(--wa-well);
     }
     .start-wrap { width: min(1180px, 100%); margin: 0 auto; display: flex; flex-direction: column; gap: 36px; }
     /* The hero: words on the left, a fan of lit devices on the right. */
@@ -4103,13 +4185,8 @@ export class WristAssistantPanel extends LitElement {
       display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); align-items: center; gap: 32px;
       padding: clamp(28px, 4vw, 48px) clamp(28px, 4vw, 52px);
       border-radius: 24px; position: relative; overflow: hidden;
-      background:
-        linear-gradient(135deg, color-mix(in srgb, var(--wa-accent) 14%, var(--wa-card)) 0%, var(--wa-card) 55%, color-mix(in srgb, var(--wa-accent) 6%, var(--wa-card)) 100%);
-      box-shadow: 0 0 0 1px var(--wa-line), 0 30px 80px -30px color-mix(in srgb, var(--wa-accent) 45%, transparent);
-    }
-    .start-hero::before {
-      content: ""; position: absolute; inset: 0; pointer-events: none;
-      background: radial-gradient(ellipse 50% 70% at 85% 50%, color-mix(in srgb, var(--wa-accent) 22%, transparent) 0, transparent 70%);
+      background: var(--wa-card);
+      box-shadow: 0 0 0 1px var(--wa-line);
     }
     .start-hero-text { position: relative; min-width: 0; }
     .start-eyebrow {
@@ -4127,17 +4204,12 @@ export class WristAssistantPanel extends LitElement {
     .start-acts { display: flex; flex-wrap: wrap; gap: 10px; }
     .start-acts button { display: inline-flex; align-items: center; gap: 7px; height: 40px; padding: 0 18px; border-radius: 12px; font-size: 14px; }
     .start-acts button svg { width: 15px; height: 15px; }
-    .start-acts button.primary { box-shadow: 0 8px 24px -8px color-mix(in srgb, var(--wa-accent) 70%, transparent); }
     .start-acts button.ghost { background: color-mix(in srgb, var(--wa-ink) 5%, transparent); }
     /* Four devices, lit, fanned out the way a hand of cards is. Pure
        decoration: the same drawings the New dialog picks a shape with, drawn
        big enough to say "watch face" from across the room. */
     .start-show { position: relative; height: 250px; min-width: 0; }
-    .start-show-glow {
-      position: absolute; left: 50%; top: 50%; width: 320px; height: 220px; transform: translate(-50%, -50%);
-      border-radius: 50%; filter: blur(48px);
-      background: color-mix(in srgb, var(--wa-accent) 32%, transparent);
-    }
+    .start-show-glow { display: none; }
     .start-tile {
       position: absolute; left: 50%; top: 50%; display: grid; place-items: center;
       width: 120px; height: 150px; border-radius: 20px;
@@ -4279,7 +4351,7 @@ export class WristAssistantPanel extends LitElement {
     .doc-chip {
       display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 0 0 9px;
       border-radius: 999px; font-size: 11.5px; font-weight: 600; overflow: hidden;
-      background: color-mix(in srgb, var(--wa-accent) 22%, var(--wa-card));
+      background: var(--wa-card);
       border: 1px solid transparent; color: var(--wa-ink); white-space: nowrap;
     }
     .doc-chip > svg { width: 13px; height: 13px; opacity: .85; }
@@ -4360,9 +4432,9 @@ export class WristAssistantPanel extends LitElement {
     }
     .shape-seg button.tab:hover:not(:disabled) { border-color: var(--wa-line-strong); color: var(--wa-ink); }
     .shape-seg button.tab[aria-pressed="true"] {
-      background: color-mix(in srgb, var(--wa-accent) 22%, var(--wa-card));
+      background: var(--wa-seg-on);
       border-color: transparent; color: var(--wa-ink); font-weight: 700;
-      box-shadow: 0 0 0 2px var(--wa-accent), 0 1px 4px rgba(0,0,0,.22);
+      box-shadow: var(--wa-seg-shadow);
     }
     .canvas-bar .hint { margin: 0; }
     .tab-wrap { position: relative; display: inline-flex; align-items: center; }
@@ -4431,10 +4503,10 @@ export class WristAssistantPanel extends LitElement {
     .row-strip .row-strip-text { flex: 1 1 200px; min-width: 0; }
     .row-strip button {
       font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; flex: none;
-      height: 28px; padding: 0 14px; border-radius: 8px; border: 0;
-      background: var(--wa-accent); color: var(--wa-accent-ink);
+      height: 28px; padding: 0 14px; border-radius: 6px; border: 0;
+      background: var(--wa-primary-bg); color: var(--wa-primary-ink);
     }
-    .row-strip button:hover { filter: brightness(1.06); }
+    .row-strip button:hover { filter: brightness(.92); }
     .row-strip button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .panel-title button.help { flex: none; }
     /* The tour's progress, under the Pages row: one thin bar, filled by a CSS
@@ -4459,15 +4531,14 @@ export class WristAssistantPanel extends LitElement {
       .over button.pick .glyph { margin: 0; }
       .over .grid-tool.on button.pick { padding-right: 0; }
     }
-    /* With snapping on, the button and its size read as one accent pill. */
-    /* With the grid on, the switch and its size read as one accent pill. */
+    /* With the grid on, the switch and its size read as one lit pill. */
     .grid-tool { display: inline-flex; align-items: center; position: relative; }
-    .grid-tool.on button.pick { border-radius: 8px 0 0 8px; padding-right: 8px; }
+    .grid-tool.on button.pick { border-radius: 6px 0 0 6px; padding-right: 8px; }
     button.grid-step {
-      height: 30px; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
-      border: 0; border-left: 1px solid color-mix(in srgb, var(--wa-accent-ink) 30%, transparent);
-      background-color: color-mix(in srgb, var(--wa-accent) 82%, #000); color: var(--wa-accent-ink);
-      padding: 0 6px 0 8px; border-radius: 0 8px 8px 0; display: inline-flex; align-items: center; gap: 3px; font-variant-numeric: tabular-nums;
+      height: 26px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+      border: 0; border-left: 1px solid color-mix(in srgb, var(--wa-on-ink) 25%, transparent);
+      background-color: color-mix(in srgb, var(--wa-on-bg) 86%, var(--wa-on-ink)); color: var(--wa-on-ink);
+      padding: 0 6px 0 8px; border-radius: 0 6px 6px 0; display: inline-flex; align-items: center; gap: 3px; font-variant-numeric: tabular-nums;
     }
     button.grid-step svg { width: 12px; height: 12px; opacity: .8; }
     button.grid-step:focus-visible { outline: none; box-shadow: var(--wa-ring); }
@@ -4490,18 +4561,19 @@ export class WristAssistantPanel extends LitElement {
     .canvas-bar label { display: inline-flex; align-items: center; gap: 8px; color: var(--wa-muted); }
     .canvas-bar label select { color: var(--wa-ink); font-weight: 500; }
     button.pick {
-      font: inherit; font-size: 12.5px; font-weight: 600; padding: 0 10px; height: 30px; border-radius: 8px; cursor: pointer;
+      font: inherit; font-size: 13px; font-weight: 500; padding: 0 10px; height: 26px; border-radius: 6px; cursor: pointer;
       display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
-      border: 1px solid transparent; background: transparent; color: var(--wa-muted);
+      border: 1px solid transparent; background: transparent; color: var(--wa-ink);
       transition: background-color .12s ease-out, color .12s ease-out;
     }
-    button.pick:hover:not(:disabled) { background: var(--wa-panel); color: var(--wa-ink); }
+    button.pick:hover:not(:disabled) { background: var(--wa-hover); color: var(--wa-ink); }
     button.pick:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    button.pick.on { background: var(--wa-accent); color: var(--wa-accent-ink); }
+    /* A tool that is on: ink on paper, the loudest thing in the strip. */
+    button.pick.on, button.pick.on:hover:not(:disabled) { background: var(--wa-on-bg); color: var(--wa-on-ink); font-weight: 600; }
     button.pick.only-icon { width: 30px; padding: 0; justify-content: center; }
     button.pick .glyph { font-size: 13px; line-height: 1; }
-    /* The stage: a faint dot grid under a soft accent glow, so the watch face
-       sits on a work surface rather than on the card. */
+    /* The stage: the canvas well's own dot grid, so the watch face sits on a
+       work surface rather than on the card. */
     .stage {
       /* One column that can be narrower than its widest child. Left to size
          itself, the column took the tool row's max-content width, and on a
@@ -4510,9 +4582,7 @@ export class WristAssistantPanel extends LitElement {
       display: grid; grid-template-columns: minmax(0, 1fr);
       justify-items: center; align-content: center; gap: 20px; padding: 20px; flex: 1 1 auto; min-height: 0; overflow: auto;
       container-type: inline-size;
-      background:
-        radial-gradient(ellipse at 50% 35%, color-mix(in srgb, var(--wa-accent) 10%, transparent) 0, transparent 65%),
-        radial-gradient(color-mix(in srgb, var(--wa-ink) 9%, transparent) 1px, transparent 1px) 0 0 / 18px 18px;
+      background: radial-gradient(var(--wa-well-dot) 1px, transparent 1.2px) 0 0 / 14px 14px, var(--wa-well);
     }
     .preview { text-align: center; position: relative; width: 100%; min-width: 0; }
     .preview svg {
@@ -4600,9 +4670,9 @@ export class WristAssistantPanel extends LitElement {
        tinted panels on one side and plain ones on the other. The color comes
        from the card's own --c. */
     .card.tinted {
-      --c: var(--wa-accent);
-      background: color-mix(in srgb, var(--c) 7%, var(--wa-card));
-      box-shadow: 0 0 0 1px color-mix(in srgb, var(--c) 24%, var(--wa-card));
+      --c: var(--wa-accent); --lo-fill: var(--wa-card); --lo-mid: var(--wa-card-mid);
+      box-shadow: none;
+      ${litOutline}
     }
     /* One value, one 30px white line: name, then what it reads. */
     .vrow {
@@ -4615,10 +4685,10 @@ export class WristAssistantPanel extends LitElement {
     /* A card title opens with a tinted mark, the same one the inspector's
        cards wear, so every column speaks the same language. */
     .panel-title .swatch {
-      width: 22px; height: 22px; border-radius: 6px; flex: none; display: grid; place-items: center;
-      background: var(--c, var(--wa-accent)); border: 0; color: #fff;
+      width: 18px; height: 18px; border-radius: 5px; flex: none; display: grid; place-items: center;
+      background: var(--c, var(--wa-accent)); border: 0; color: var(--wa-chip-ink);
     }
-    .panel-title .swatch svg { width: 13px; height: 13px; stroke-width: 2.4; }
+    .panel-title .swatch svg { width: 11px; height: 11px; stroke-width: 2.6; }
     /* The complication card's Flash row: the switch, then the color it
        flashes, or the word Off. */
     .flash-row { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 26px; }
@@ -4642,12 +4712,12 @@ export class WristAssistantPanel extends LitElement {
        editor its body, one ring round both. */
     .values-list .vitem.open {
       display: flex; flex-direction: column; border-radius: var(--wa-r-sm);
-      background: color-mix(in srgb, var(--c) 6%, var(--wa-card));
-      box-shadow: inset 0 0 0 1.5px var(--c);
+      background: var(--wa-card);
+      box-shadow: inset 0 0 0 1px var(--wa-pick-line);
     }
     .values-list .vitem.open > .datum.hl {
-      border-radius: var(--wa-r-sm) var(--wa-r-sm) 0 0; box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--c) 40%, transparent);
-      background: color-mix(in srgb, var(--c) 18%, var(--wa-card));
+      border-radius: var(--wa-r-sm) var(--wa-r-sm) 0 0; box-shadow: inset 0 -1px 0 var(--wa-line);
+      background: var(--wa-pick-bg);
     }
     .values-list .value-open {
       display: flex; flex-direction: column; gap: 6px; padding: 10px 12px 12px;
@@ -4700,7 +4770,7 @@ export class WristAssistantPanel extends LitElement {
        text. The row is no longer a button, so it drops the pointer. */
     .vchip.ctl { cursor: default; }
     .vchip .test-ctl { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex: 0 1 50%; min-width: 0; }
-    .vchip .test-ctl input[type=range] { flex: 1 1 auto; min-width: 60px; height: 16px; margin: 0; accent-color: var(--wa-states); cursor: pointer; }
+    .vchip .test-ctl input[type=range] { flex: 1 1 auto; min-width: 60px; height: 18px; margin: 0; cursor: pointer; }
     .vchip .test-ctl select { min-width: 0; max-width: 100%; font: inherit; font-size: 12px; min-height: 24px; padding: 2px 6px; border-radius: 6px; cursor: pointer; }
     .vchip button.val { background: none; border: 0; padding: 0; cursor: text; min-width: 56px; text-align: right; }
     .vchip button.live-reset { flex: none; }
@@ -4738,7 +4808,7 @@ export class WristAssistantPanel extends LitElement {
     .cm-seg button:hover:not(:disabled):not(.on) { background: color-mix(in srgb, var(--wa-ink) 8%, transparent); color: var(--wa-ink); }
     .cm-seg button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .cm-seg button:disabled { opacity: .5; cursor: default; }
-    .cm-seg button.on { background: var(--wa-accent); border-color: var(--wa-accent); color: var(--wa-accent-ink); }
+    .cm-seg button.on { background: var(--wa-on-bg); border-color: var(--wa-on-bg); color: var(--wa-on-ink); }
     .cm-seg button.on small { opacity: .85; }
   `, chromeRuns.stageTools, css`
     /* The face pinned under the top bar on a phone (renderMiniFace). The dock
@@ -4829,29 +4899,30 @@ export class WristAssistantPanel extends LitElement {
     .how-card b { color: var(--wa-ink); }
     .how-card ol { margin: 2px 0 4px; padding-left: 18px; }
     .how-card a { color: var(--wa-accent); }
-    /* Status and the raw document: one 36px row at the foot of the column,
-       with Raw configuration opening the rest above it. */
+    /* Status and the raw document: one thin bar pinned across the foot of the
+       editor, the same dark as the top bar, with Raw configuration opening
+       the rest above it. The columns take whatever height it leaves. */
     .foot {
-      flex: none; position: sticky; bottom: 0; z-index: 6; margin: auto -12px 0;
-      background: var(--wa-card); border-top: 1px solid var(--wa-line);
+      flex: none; position: relative; z-index: 6; margin-top: 6px;
+      background: var(--wa-top); border-top: 1px solid var(--wa-line);
     }
-    .foot-row { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 8px 0 12px; font-size: 11.5px; color: var(--wa-muted); }
+    .foot-row { display: flex; align-items: center; gap: 14px; height: 26px; padding: 0 10px; font-size: 12px; color: var(--wa-muted); }
     .foot-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--wa-muted); opacity: .7; }
-    .foot-dot.ok { background: var(--success-color, #3dd68c); opacity: 1; }
-    .foot-dot.warn { background: var(--warning-color, #ffa600); opacity: 1; }
+    .foot-dot.ok { background: var(--wa-green); opacity: 1; }
+    .foot-dot.warn { background: var(--wa-amber); opacity: 1; }
     .foot-dot.err { background: var(--error-color, #db4437); opacity: 1; }
     /* Same color on the words as on the dot, so the footer agrees with the
        header's Save button about there being work to save. */
-    .foot-dot.warn + .foot-text { color: var(--warning-color, #ffa600); }
+    .foot-dot.warn + .foot-text { color: var(--wa-amber); }
     .foot-dot.err + .foot-text { color: var(--error-color, #db4437); }
     .foot-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .foot-raw {
-      flex: none; font: inherit; font-size: 11.5px; font-weight: 500; color: var(--wa-muted); cursor: pointer;
-      background: transparent; border: 0; padding: 0 8px; min-height: 24px; border-radius: 7px;
+      flex: none; font: inherit; font-size: 12px; font-weight: 400; color: var(--wa-soft); cursor: pointer;
+      background: transparent; border: 0; padding: 0 4px; min-height: 20px; border-radius: 5px;
     }
-    .foot-raw:hover, .foot[data-open="true"] .foot-raw { background: var(--wa-panel); color: var(--wa-ink); }
+    .foot-raw:hover, .foot[data-open="true"] .foot-raw[aria-expanded="true"] { color: var(--wa-ink); text-decoration: underline; text-underline-offset: 2px; }
     .foot-raw:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    .foot-raw:disabled { opacity: .4; cursor: default; background: transparent; color: var(--wa-muted); }
+    .foot-raw:disabled { opacity: .4; cursor: default; background: transparent; color: var(--wa-muted); text-decoration: none; }
     .foot-body { padding: 10px 12px 4px; max-height: 40vh; overflow: auto; border-bottom: 1px solid var(--wa-line); }
     .foot-body .hint { margin: 8px 0; }
     .foot-body pre { font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -4873,7 +4944,7 @@ export class WristAssistantPanel extends LitElement {
       margin: 6px 0 4px; padding: 8px; border-radius: 9px; background: var(--wa-field); min-height: 74px; box-sizing: border-box;
     }
     .xprev .well {
-      --k: var(--primary-color, #7c6cf0);
+      --k: var(--wa-hue-blue);
       display: block; aspect-ratio: 120 / 46; border-radius: 7px; overflow: hidden; background: #000;
       border: 1px solid var(--wa-line-strong); box-sizing: border-box;
     }
@@ -4894,7 +4965,7 @@ export class WristAssistantPanel extends LitElement {
     /* A row opens in place: the header stays the same button-like strip, and the
        body holds that layer's main settings under it, inside the same border. */
     .chart-numbers details.num-item { flex: 1; min-width: 0; border-radius: 8px; border: 1px solid var(--wa-line-strong); background: var(--wa-panel); }
-    .chart-numbers details.num-item:hover { border-color: color-mix(in srgb, var(--primary-color, #7c6cf0) 60%, transparent); }
+    .chart-numbers details.num-item:hover { border-color: var(--wa-line-strong); }
     .chart-numbers details.num-item > summary { list-style: none; }
     .chart-numbers details.num-item > summary::-webkit-details-marker { display: none; }
     .chart-numbers details.num-item .chev { margin-left: auto; flex: none; color: var(--wa-muted); opacity: .6; transition: transform .15s ease-out; }
@@ -4943,7 +5014,7 @@ export class WristAssistantPanel extends LitElement {
     button.xtog svg { width: 12px; height: 12px; display: block; }
     button.xtog:hover { color: var(--wa-ink); border-color: var(--wa-muted); }
     button.xtog:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    button.xtog.on { border: 1px solid transparent; background: var(--primary-color, #7c6cf0); color: #fff; }
+    button.xtog.on { border: 1px solid transparent; background: var(--wa-seg-on); color: var(--wa-ink); }
     button.xtog:disabled { opacity: .35; cursor: not-allowed; }
     button.xtog:disabled:hover { color: var(--wa-muted); border-color: var(--wa-line-strong); }    dialog.preset-dialog {
       width: min(620px, calc(100vw - 32px)); padding: 16px 18px 18px;
@@ -5028,9 +5099,7 @@ export class WristAssistantPanel extends LitElement {
     }
     .zoom-stage {
       flex: 1 1 auto; min-height: 0; display: grid; place-items: center; padding: 16px;
-      background:
-        radial-gradient(ellipse at 50% 35%, color-mix(in srgb, var(--wa-accent) 10%, transparent) 0, transparent 65%),
-        radial-gradient(color-mix(in srgb, var(--wa-ink) 9%, transparent) 1px, transparent 1px) 0 0 / 18px 18px;
+      background: radial-gradient(var(--wa-well-dot) 1px, transparent 1.2px) 0 0 / 14px 14px, var(--wa-well);
     }
     .zoom-stage .preview svg,
     .zoom-stage .preview.rectangular svg,
@@ -5046,17 +5115,15 @@ export class WristAssistantPanel extends LitElement {
        sheet sits in it at its own height (--u steps of --k face widths). */
     .stack-title { font-size: 13px; font-weight: 700; color: var(--wa-ink); flex: none; }
     .zoom-bar .stack-name { position: static; transform: none; margin: 0; min-width: 0; overflow: hidden; font-size: 12.5px; line-height: 16px; }
-    .zoom-bar .stack-name .fl-kind { font-size: 10.5px; }
+    .zoom-bar .stack-name .fl-kind { font-size: 11px; }
     .stack-name .fl-count { color: var(--wa-muted); }
     .stack-spread-label { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--wa-muted); flex: none; }
-    .stack-spread { width: 120px; accent-color: var(--wa-accent); }
+    .stack-spread { width: 120px; }
     .stack-stage {
       position: relative; flex: 1 1 auto; min-height: 0; display: grid; place-items: center; overflow: hidden;
       perspective: 2400px; cursor: grab; touch-action: none; user-select: none; outline: none;
       --fw: min(40vw, calc(52dvh * var(--wa-ratio, 1)));
-      background:
-        radial-gradient(ellipse at 50% 45%, color-mix(in srgb, var(--wa-accent) 12%, transparent) 0, transparent 60%),
-        radial-gradient(color-mix(in srgb, var(--wa-ink) 7%, transparent) 1px, transparent 1px) 0 0 / 18px 18px;
+      background: radial-gradient(var(--wa-well-dot) 1px, transparent 1.2px) 0 0 / 14px 14px, var(--wa-well);
     }
     .stack-stage:focus-visible { box-shadow: inset var(--wa-ring); }
     .stack-stage.dragging { cursor: grabbing; }
@@ -5165,7 +5232,7 @@ export class WristAssistantPanel extends LitElement {
     .datum + .datum { box-shadow: inset 0 1px 0 var(--wa-line); }
     .datum:hover, .datum.hl { box-shadow: none; }
     .datum:hover { background: var(--wa-panel); }
-    .datum.hl { background: color-mix(in srgb, var(--wa-accent) 14%, transparent); }
+    .datum.hl { background: var(--wa-pick-bg); }
     .datum .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .datum .meta { font-size: 12px; opacity: .7; }
     .branches { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -5173,7 +5240,7 @@ export class WristAssistantPanel extends LitElement {
       font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 999px;
       border: 1px solid var(--wa-line); background: transparent; color: inherit; cursor: pointer;
     }
-    .branches button.active { background: var(--wa-accent); color: var(--wa-accent-ink); border-color: transparent; }
+    .branches button.active { background: var(--wa-seg-on); color: var(--wa-ink); border-color: transparent; }
     .rules .branches button.active { background: color-mix(in srgb, var(--wa-rule-tone) 55%, var(--wa-panel)); color: var(--wa-ink); }
     .branches button.live-match { border-color: var(--success-color, #43a047); }
     pre { font-size: 11px; white-space: pre-wrap; word-break: break-all; max-height: 400px; overflow: auto; background: var(--wa-panel); padding: 8px; border-radius: 6px; }
@@ -5252,17 +5319,18 @@ export class WristAssistantPanel extends LitElement {
     .rbody > .hint { margin-left: var(--wa-col); }
     .rempty { color: var(--wa-muted); font-size: 12.5px; font-style: italic; padding: 4px 2px; }
     .radd { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 2px; }
-    /* The add pills take the colour of the card they sit in: coral inside
-       States, the accent elsewhere. */
+    /* The add pills wear the lit outline every Add button does, in the hue of
+       what they add, with ink words and no fill of color. Add a state is
+       green, like every other Add. */
     /* Both rule editors, Simple and Advanced, wear a quieter coral than the
        section badge: the full strength on every box and button was loud. */
     .states, .rules { --wa-rule-tone: color-mix(in srgb, var(--wa-states) 55%, var(--wa-muted)); --pill-tint: var(--wa-rule-tone); }
     button.small.pill {
-      height: 30px; min-height: 30px; padding: 0 14px 0 10px; border-radius: 999px; font-weight: 600;
-      color: var(--pill-tint, var(--wa-accent)); border-color: transparent;
-      background: color-mix(in srgb, var(--pill-tint, var(--wa-accent)) 16%, transparent);
+      --c: var(--pill-tint, var(--wa-hue-green)); --lo-fill: var(--wa-field); --lo-mid: var(--wa-go-mid);
+      height: 28px; min-height: 28px; padding: 0 12px 0 9px; border-radius: 6px; font-weight: 600; color: var(--wa-ink);
+      ${litOutline}
     }
-    button.small.pill:hover:not(:disabled) { border-color: transparent; background: color-mix(in srgb, var(--pill-tint, var(--wa-accent)) 26%, transparent); }
+    button.small.pill:hover:not(:disabled) { --lo-fill: var(--wa-hover); ${litOutline} }
     button.small.pill svg { width: 14px; height: 14px; }
     /* Each add button in the rules editor has its own color, and they are a
        size smaller than elsewhere so the rows stay tight. */
@@ -5271,7 +5339,7 @@ export class WristAssistantPanel extends LitElement {
     .rules button.pill.add-test { --pill-tint: var(--wa-rule-if); }
     :is(.rules, .states) button.pill.add-preset { --pill-tint: var(--wa-rule-preset); }
     .rules button.pill.add-change { --pill-tint: var(--wa-rule-then); }
-    :is(.rules, .states) button.pill.add-case { --pill-tint: var(--wa-rule-tone); }
+    :is(.rules, .states) button.pill.add-case { --pill-tint: var(--wa-hue-green); }
     :is(.rules, .states) button.pill.add-else { --pill-tint: var(--wa-rule-else); }
     .rules button.pill.add-rule { --pill-tint: var(--wa-muted); color: var(--wa-ink); }
     .chip-menu button.danger { color: var(--error-color, #e5484d); border: none; background: transparent; }
@@ -5401,7 +5469,7 @@ export class WristAssistantPanel extends LitElement {
     .chip.ent { border-color: transparent; background: var(--wa-ent-bg); color: var(--wa-ent); }
     .chip.val { border-color: transparent; background: var(--wa-val-bg); color: var(--wa-val); }
     button.chip { font: inherit; font-size: 12px; background: transparent; color: inherit; cursor: pointer; }
-    button.chip.active { background: var(--wa-accent); color: var(--wa-accent-ink); border-color: transparent; }
+    button.chip.active { background: var(--wa-seg-on); color: var(--wa-ink); border-color: transparent; }
     .chip-add { font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px dashed var(--wa-line); background: transparent; color: inherit; cursor: pointer; }
     .value-editor { margin: 0; }
 
@@ -5731,6 +5799,9 @@ export class WristAssistantPanel extends LitElement {
 
   override connectedCallback() {
     super.connectedCallback();
+    // Beside the bundle, wherever it was served from, the same way the
+    // symbol files are found. Only the entry may read import.meta.
+    installUiFont(this.ownerDocument, import.meta.url);
     this.clearLegacyPickerHidden();
     this.loadColumnWidths();
     this.loadListView();
@@ -8951,6 +9022,7 @@ export class WristAssistantPanel extends LitElement {
         <span class="spacer"></span>
         <label class="stack-spread-label">Spread
           <input class="stack-spread" type="range" min="0" max="1" step="0.01" .value=${String(this.stackView.spread)}
+            style=${rangeFill(this.stackView.spread, 0, 1)}
             @input=${(e: Event) => { this.stackView = { ...this.stackView, spread: Number((e.target as HTMLInputElement).value) }; this.applyStackView(); }} />
         </label>
         <button class="pick" title="Back to the starting angle" @click=${() => this.easeStack(STACK_HOME)}>Reset</button>
@@ -10290,8 +10362,7 @@ export class WristAssistantPanel extends LitElement {
       ${this.watchSupported && !this.draft
         // Nothing open: the side columns have nothing to hold, so the stage
         // takes the whole width rather than sitting between two blank panels.
-        ? html`<div class="layout bare"><div class="column canvas">${this.renderBanners()}${this.renderCanvas()}</div></div>
-          ${this.renderFooter()}`
+        ? html`<div class="layout bare"><div class="column canvas">${this.renderBanners()}${this.renderCanvas()}</div></div>`
         : this.watchSupported
         ? html`${fit.columns === 1 ? this.renderMiniFace() : nothing}<div class="layout cols-${fit.columns}"
               style="--wa-left:${fit.left}px;--wa-right:${fit.right}px">
@@ -10301,9 +10372,10 @@ export class WristAssistantPanel extends LitElement {
             ${this.renderGutter("left")}
             <div class="column canvas">${this.renderBanners()}${this.renderCanvas()}</div>
             ${this.renderGutter("right")}
-            <div class="column inspector card ${this.slotViaValueOnly() ? "slot-via-value" : ""}">${this.renderInspector()}${this.renderFooter()}</div>
+            <div class="column inspector card ${this.slotViaValueOnly() ? "slot-via-value" : ""}">${this.renderInspector()}</div>
           </div>`
-        : this.renderWatchGate()}`;
+        : this.renderWatchGate()}
+      ${this.watchSupported ? this.renderFooter() : nothing}`;
   }
 
   /**
@@ -10341,6 +10413,7 @@ export class WristAssistantPanel extends LitElement {
       ${menu ? html`<button class="icon tb-icon tb-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
         @click=${() => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true }))}>${uiIcon("menu")}</button>` : nothing}
       ${this.renderPicker()}
+      ${this.hass.user?.is_admin || d ? html`<span class="tb-div" aria-hidden="true"></span>` : nothing}
       ${this.renderNewButton()}
       ${this.renderImportButton()}
       ${d ? this.renderShareButton() : nothing}
@@ -10472,7 +10545,7 @@ export class WristAssistantPanel extends LitElement {
     const where = isLibraryOwner(this.selectedOwner) ? UNASSIGNED_LABEL : this.deviceWord;
     return html`<button class="tb-btn tb-new" aria-haspopup="dialog" ?disabled=${full || this.ownerBusy}
       title=${full ? `${where} is full. ${capFirst(this.placePhrase)} has no free slot. Delete a complication first.` : "Make a new complication"}
-      @click=${() => this.openNewDialog()}>${uiIcon("plus")}<span>New</span></button>`;
+      @click=${() => this.openNewDialog()}>${uiIcon("plus")}<span>New complication</span></button>`;
   }
 
   /** Import, beside New, for an administrator. A full device keeps the
@@ -11302,7 +11375,7 @@ export class WristAssistantPanel extends LitElement {
       <button id="wa-picker" class="pk-open tb-browse" aria-haspopup="dialog" aria-expanded=${this.pickerOpen ? "true" : "false"}
         title="Browse all complications" aria-label="Browse all complications"
         @click=${() => this.pickerOpen ? this.togglePicker(false) : this.browseAll()}>
-        ${uiIcon("compact")}<span class="tb-browse-l">Browse</span>${uiIcon("chevron")}
+        ${uiIcon("compact")}<span class="tb-browse-l">Browse complications</span>${uiIcon("chevron")}
       </button>
       ${this.pickerOpen ? this.renderPickerDialog() : nothing}
     </div>`;
@@ -19106,6 +19179,7 @@ export class WristAssistantPanel extends LitElement {
     const at = shown.trim() !== "" && Number.isFinite(n) ? n : control.min;
     return html`<span class="test-ctl">
       <input type="range" min=${control.min} max=${control.max} step=${control.step} .value=${String(at)}
+        style=${rangeFill(at, control.min, control.max)}
         aria-label=${`Slide the test value for ${name}`}
         @input=${(e: Event) => this.setTestValue(id, (e.target as HTMLInputElement).value, `test-${id}`)}
         @change=${() => this.draft?.endGesture()} />
@@ -19458,9 +19532,10 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * Status and the raw document, as one row at the foot of the inspector.
+   * Status and the raw document, as one thin bar across the foot of the
+   * editor, under all three columns.
    *
-   * Neither is part of authoring, so neither earns a card. The row says the
+   * Neither is part of authoring, so neither earns a card. The bar says the
    * one thing worth a glance, which is whether the work is saved. History
    * opens the earlier saves, and Raw configuration opens the rest above it.
    */

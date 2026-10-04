@@ -81,7 +81,7 @@ import {
   rowListStyles,
   topBarStyles,
 } from "../editor-chrome.js";
-import { formStyles } from "../form-styles.js";
+import { formStyles, rangeFill } from "../form-styles.js";
 import { SECTION_COLOR } from "../kinds.js";
 import { peopleOf } from "../people.js";
 import { personColorVar } from "../pickerRows.js";
@@ -3852,6 +3852,7 @@ export class WaPageEditor extends LitElement {
     const at = shown.trim() !== "" && Number.isFinite(n) ? n : control.min;
     return html`<span class="test-ctl">
       <input type="range" min=${control.min} max=${control.max} step=${control.step} .value=${String(at)}
+        style=${rangeFill(at, control.min, control.max)}
         aria-label=${`Slide the test state for ${name}`}
         @input=${(e: Event) => this.setTestValue(id, (e.target as HTMLInputElement).value)} />
       ${reading}

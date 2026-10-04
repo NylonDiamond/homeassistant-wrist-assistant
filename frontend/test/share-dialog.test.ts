@@ -133,6 +133,6 @@ describe("spotlight", () => {
     const lit = flatten(renderLayout(layout, { icons: noIcons, spotlightIds: [left] }));
     expect(lit).toContain("class=\"spotlight\"");
     expect(lit).toContain("<mask");
-    expect(lit).toContain("var(--wa-accent");
+    expect(lit).toContain("var(--wa-hue-blue");
   });
 });

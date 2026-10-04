@@ -411,6 +411,7 @@ import {
 } from "./extra-previews.js";
 import { type ChartColorRow, chartColorRows } from "./chart-colors.js";
 import { KIND_LABEL, SECTION_COLOR } from "./kinds.js";
+import { rangeFill } from "./form-styles.js";
 import { domainIcon, domainLabel, isActiveState } from "./domain-icons.js";
 
 /** A stand-in's name and the places it is used, for its entity fields. */
@@ -1018,6 +1019,7 @@ export function sliderField(
   return html`<div class="field slider num">${fieldLabel(label, backTo(value, opts.def, set, show), scrubber(value, set, opts))}
     <div class="slider-row">
       ${opts.range === false ? nothing : html`<input type="range" min=${opts.min} max=${opts.max} step=${opts.step} .value=${String(value)} aria-label=${label}
+        style=${rangeFill(value, opts.min, opts.max)}
         @input=${onInput((v) => { const n = Number(v); if (!Number.isNaN(n)) set(n); })} />`}
       ${numberInput(value, typed, { step: opts.step, min: opts.min, max: opts.max, ariaLabel: label, clampOnCommit: true, ...(opts.unit === undefined ? {} : { unit: opts.unit }) })}
     </div></div>`;
@@ -9706,7 +9708,7 @@ function familyCards(host: EditorHost, family: FamilyKind): TemplateResult {
       <div class="hint">The tile is drawn edge to edge: this color fills every point of it, and the design is laid out inside the ${familyTitle(family)} box.</div>
       <div class="hint keep">iOS 18 lets a user tint the whole Home Screen. The system then drops the background and draws the design in two tones, so check that it still reads without its colors.</div>
       ${familyNote(family) ? html`<div class="hint keep">${familyTitle(family)} needs ${familyNote(family)}. An iPhone on an older version is not offered this size when adding a widget, and every other size still draws.</div>` : nothing}`,
-      { color: SECTION_COLOR.look, icon: "shape", summary: bg,
+      { color: SECTION_COLOR.home, icon: "shape", summary: bg,
         ...(layout.backgroundColorHex !== undefined || layout.backgroundFill !== undefined
           ? { reset: () => upd((l) => { delete l.backgroundColorHex; delete l.backgroundFill; }, "reset-home") } : {}) }) : nothing}
     ${family === "corner" ? card(host, "corner", "Corner content", cornerEditor(host, layout, upd),

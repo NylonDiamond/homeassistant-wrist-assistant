@@ -48,23 +48,39 @@ export const KIND_LABEL: Record<LayerKind, string> = {
 export const KIND_ORDER: readonly LayerKind[] = ["text", "icon", "gauge", "chart", "timeline", "list", "shape", "image", "tap"];
 
 /**
- * One color per inspector card, the same on every kind of layer, so Content,
- * Look, Numbers, States, Position and Tap never share a tint. The hues are
- * spread round the wheel and the order on screen alternates warm and cool, so
- * two cards next to each other are never neighbours on the wheel. Numbers
- * (charts only) and Timestamp (pictures only) share teal, since no layer has
- * both.
+ * One color per inspector card, the same on every kind of layer, and the one
+ * place that says which card wears which. A card's color shows in three places
+ * only: its outline, the chip behind its title glyph, and the dot that marks a
+ * changed setting. Everything inside the card is neutral.
+ *
+ * The values name the panel's palette tokens (`--wa-hue-*`), not colors, so
+ * the light and dark skins can each set a shade that reads on their ground.
+ * On screen a layer's cards run Content, Look, Extras or Fill by value,
+ * Rules, Position, Tap: blue, green, orange, yellow, pink, red, so two cards
+ * next to each other never share a hue. Purple is kept for Import alone.
  */
 export const SECTION_COLOR = {
-  content: "#4a7fe8",
-  look: "#a15fe0",
-  numbers: "#26a69a",
-  position: "#66bb6a",
-  states: "#ff7043",
-  tap: KIND_COLOR.tap,
-  place: "#78909c",
-  complication: "#5c6bc0",
-  group: "#90a4ae",
+  content: "var(--wa-hue-blue)",
+  look: "var(--wa-hue-green)",
+  /** Extras, Row, Fill by value and Timestamp: no layer has two of them. */
+  numbers: "var(--wa-hue-orange)",
+  position: "var(--wa-hue-pink)",
+  states: "var(--wa-hue-yellow)",
+  tap: "var(--wa-hue-red)",
+  /** The Home Screen card, between a shape's Look and its Rules. */
+  home: "var(--wa-hue-blue)",
+  /** A layer's name and other cards about no section: neutral. */
+  place: "var(--wa-hue-grey)",
+  complication: "var(--wa-hue-blue)",
+  group: "var(--wa-hue-green)",
   /** A locked group reads in red, so it stands out from the rest of the list. */
-  locked: "#e53935",
+  locked: "var(--wa-hue-red)",
+} as const;
+
+/** The left column's cards, from the same palette: Pages blue, Layers green,
+ * Shared values red. */
+export const LEFT_CARD_COLOR = {
+  pages: "var(--wa-hue-blue)",
+  layers: "var(--wa-hue-green)",
+  values: "var(--wa-hue-red)",
 } as const;

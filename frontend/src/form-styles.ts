@@ -27,19 +27,29 @@
 
 import { css, type CSSResultGroup } from "lit";
 
+/** How far along its track a slider's value is, as the `--p` the slider rule
+ * fills the track to: written in the slider's `style`, since a sheet has no
+ * way to read an input's value. */
+export function rangeFill(value: number, min: number, max: number): string {
+  const span = max - min;
+  const at = span > 0 && Number.isFinite(value) ? (value - min) / span : 0;
+  return `--p:${Math.round(Math.max(0, Math.min(1, at)) * 1000) / 10}%`;
+}
+
 /** Buttons (primary, small, danger, ghost, icon), the UI glyph size, and the
  * native controls: select, the text and number boxes, the checkbox drawn as
  * a switch, range and color. The header's Save and the chart's Extras
  * switch sit among them in the panel's sheet and came along with them. */
 export const formButtonStyles = css`
-    /* Buttons: one quiet shape everywhere, the accent fill kept for the single
-       action that matters, and a soft ring on focus instead of a hard outline. */
+    /* Buttons: one quiet neutral shape everywhere, the ink fill kept for the
+       single action that matters, and a soft ring on focus instead of a hard
+       outline. No button is filled with a hue. */
     .toolbar button, button.primary, button.small, button.danger {
-      font: inherit; font-size: 12.5px; font-weight: 600; padding: 0 11px; min-height: 30px; border-radius: 8px; cursor: pointer;
-      border: 1px solid var(--wa-line); background: var(--wa-card); color: var(--wa-ink);
+      font: inherit; font-size: 13px; font-weight: 600; padding: 0 11px; min-height: 28px; border-radius: 6px; cursor: pointer;
+      border: 1px solid transparent; background: var(--wa-field); color: var(--wa-ink);
       transition: background-color .12s ease-out, border-color .12s ease-out, box-shadow .12s ease-out;
     }
-    .toolbar button:hover:not(:disabled), button.small:hover:not(:disabled) { border-color: var(--wa-line-strong); background: var(--wa-panel); }
+    .toolbar button:hover:not(:disabled), button.small:hover:not(:disabled) { border-color: transparent; background: var(--wa-hover); }
     .toolbar button:focus-visible, button.primary:focus-visible, button.small:focus-visible, button.danger:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .toolbar button:disabled, button:disabled { opacity: .45; cursor: default; }
     button.primary { background: var(--wa-primary-bg); color: var(--wa-primary-ink); border-color: transparent; font-weight: 600; }
@@ -57,12 +67,12 @@ export const formButtonStyles = css`
        nothing to save and lit, with the unsaved halo, once there is, so the
        button, the dirty dot and the footer line all say "unsaved" the same
        way. */
-    header button.save, .wa-bar button.save { min-height: 28px; padding: 0 14px; }
-    header button.save:not(.dirty), .wa-bar button.save:not(.dirty) { background: var(--wa-panel); color: var(--wa-muted); border-color: transparent; }
+    header button.save, .wa-bar button.save { min-height: 28px; height: 28px; padding: 0 12px; }
+    header button.save:not(.dirty), .wa-bar button.save:not(.dirty) { background: var(--wa-card); color: var(--wa-faint); border-color: transparent; opacity: 1; }
     header button.save.dirty, .wa-bar button.save.dirty { box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning-color, #e0a100) 35%, transparent); }
     button.danger { color: var(--error-color, #e5484d); border-color: color-mix(in srgb, var(--error-color, #e5484d) 45%, transparent); background: color-mix(in srgb, var(--error-color, #e5484d) 8%, transparent); }
     button.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--error-color, #e5484d) 16%, transparent); border-color: var(--error-color, #e5484d); }
-    button.small { padding: 0 9px; font-size: 12px; min-height: 26px; border-radius: 8px; }
+    button.small { padding: 0 9px; font-size: 13px; min-height: 26px; border-radius: 6px; }
     /* An icon and its words on one line. Without this the icon, drawn as a
        block, sits on a line of its own above the words. */
     button.small:has(> svg.ui-icon) { display: inline-flex; align-items: center; gap: 5px; }
@@ -70,8 +80,7 @@ export const formButtonStyles = css`
     /* An Extras switch whose layer is already on the chart: pressed, not greyed.
        Clicking it again takes the layer off. */
     .adders button.small.on, .adders button.small.on:disabled { display: inline-flex; align-items: center; gap: 5px; opacity: 1;
-      color: var(--primary-color, #7c6cf0); border-color: color-mix(in srgb, var(--primary-color, #7c6cf0) 45%, transparent);
-      background: color-mix(in srgb, var(--primary-color, #7c6cf0) 12%, transparent); }
+      color: var(--wa-ink); border-color: var(--wa-line-strong); background: var(--wa-raise); }
     button.icon {
       font: inherit; border: none; background: none; cursor: pointer; color: var(--wa-muted);
       display: inline-flex; align-items: center; justify-content: center;
@@ -83,22 +92,22 @@ export const formButtonStyles = css`
     button.icon.danger:hover:not(:disabled) { color: var(--error-color, #e5484d); background: color-mix(in srgb, var(--error-color, #e5484d) 14%, transparent); }
     svg.ui-icon { width: 15px; height: 15px; display: block; }
 
-    /* Native controls: the same dark well, hairline and focus ring as the
-       buttons, so a select in the header and a number field in the inspector
-       read as one family. */
+    /* Native controls: one borderless field-grey well, a hairline only under
+       the pointer and a neutral ring on focus, so a select in the header and
+       a number field in the inspector read as one family. */
     select {
-      font: inherit; font-size: 13px; font-weight: 500; color: var(--wa-ink); cursor: pointer; height: 30px;
-      padding: 0 26px 0 10px; border-radius: 7px; border: 1px solid var(--wa-line); background-color: var(--wa-input);
+      font: inherit; font-size: 13px; font-weight: 500; color: var(--wa-ink); cursor: pointer; height: 28px;
+      padding: 0 26px 0 10px; border-radius: 6px; border: 1px solid transparent; background-color: var(--wa-input);
       appearance: none; -webkit-appearance: none;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238d92a6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-      background-repeat: no-repeat; background-position: right 8px center; background-size: 14px;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a8a8f' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 8px center; background-size: 12px;
       transition: border-color .12s ease-out, box-shadow .12s ease-out;
     }
     select:hover:not(:disabled) { border-color: var(--wa-line-strong); }
     select:focus-visible { outline: none; border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
     input[type=text], input[type=number], input[type=search], input[type=url], textarea {
-      font: inherit; font-size: 13px; font-weight: 500; color: var(--wa-ink); min-height: 30px;
-      padding: 5px 10px; border-radius: 7px; border: 1px solid var(--wa-line); background: var(--wa-input);
+      font: inherit; font-size: 13px; font-weight: 500; color: var(--wa-ink); min-height: 28px;
+      padding: 4px 10px; border-radius: 6px; border: 1px solid transparent; background: var(--wa-input);
       transition: border-color .12s ease-out, box-shadow .12s ease-out;
     }
     input[type=text]:hover:not(:disabled), input[type=number]:hover:not(:disabled), textarea:hover:not(:disabled) { border-color: var(--wa-line-strong); }
@@ -114,25 +123,51 @@ export const formButtonStyles = css`
       background: color-mix(in srgb, var(--wa-accent) 8%, var(--wa-input));
     }
     input.needs:focus-visible, textarea.needs:focus-visible { border-style: solid; }
-    /* Every checkbox is a switch: a pill that slides, tinted by the section
-       it sits in, since a tick box is the one control that still looked like
-       a form from 2009. */
+    /* Every checkbox is a switch: a pill that slides, since a tick box is the
+       one control that still looked like a form from 2009. Grey in every
+       card, never the card's hue: light grey when on, dark grey when off,
+       with a white knob either way. */
     input[type=checkbox] {
       appearance: none; -webkit-appearance: none; margin: 0; cursor: pointer; flex: none;
       width: 32px; height: 18px; border-radius: 999px; position: relative;
-      background: color-mix(in srgb, var(--wa-ink) 16%, transparent); border: 0;
+      background: var(--wa-switch-off); border: 0;
       transition: background-color .15s ease-out, border-color .15s ease-out;
     }
     input[type=checkbox]::after {
       content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%;
-      background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.35); transition: transform .15s ease-out;
+      background: #fff; box-shadow: var(--wa-seg-shadow); transition: transform .15s ease-out;
     }
-    input[type=checkbox]:checked { background: var(--c, var(--wa-accent)); border-color: transparent; }
+    input[type=checkbox]:checked { background: var(--wa-switch-on); border-color: transparent; }
     input[type=checkbox]:checked::after { transform: translateX(14px); }
     input[type=checkbox]:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     input[type=checkbox]:disabled { opacity: .45; cursor: default; }
-    input[type=range] { accent-color: var(--c, var(--wa-accent)); }
-    input[type=color] { border: 1px solid var(--wa-line); border-radius: 8px; background: var(--wa-input); padding: 2px; cursor: pointer; }
+    /* A slider: a thin grey track filled to the value in a lighter grey, and
+       a white knob with a ring of the ground it sits on and a thin grey edge.
+       The fill needs the value as a percent in --p, which the slider's own
+       markup writes; Firefox draws it from the value itself. */
+    input[type=range] {
+      -webkit-appearance: none; appearance: none; height: 18px; margin: 0; padding: 0; cursor: pointer;
+      background: transparent; accent-color: var(--wa-range-fill);
+    }
+    input[type=range]::-webkit-slider-runnable-track {
+      height: 6px; border-radius: 3px;
+      background: linear-gradient(var(--wa-range-fill), var(--wa-range-fill)) 0 0 / var(--p, 0%) 100% no-repeat, var(--wa-range-track);
+    }
+    input[type=range]::-moz-range-track { height: 6px; border-radius: 3px; background: var(--wa-range-track); }
+    input[type=range]::-moz-range-progress { height: 6px; border-radius: 3px; background: var(--wa-range-fill); }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none; box-sizing: border-box; width: 18px; height: 18px; margin-top: -6px; border-radius: 50%;
+      background: #fff; border: 2px solid var(--wa-range-ring, var(--wa-card)); box-shadow: 0 0 0 1.5px var(--wa-range-outline);
+    }
+    input[type=range]::-moz-range-thumb {
+      box-sizing: border-box; width: 18px; height: 18px; border-radius: 50%;
+      background: #fff; border: 2px solid var(--wa-range-ring, var(--wa-card)); box-shadow: 0 0 0 1.5px var(--wa-range-outline);
+    }
+    input[type=range]:focus-visible { outline: none; }
+    input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 1.5px var(--wa-range-outline), 0 0 0 4px color-mix(in srgb, var(--wa-accent) 40%, transparent); }
+    input[type=range]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 1.5px var(--wa-range-outline), 0 0 0 4px color-mix(in srgb, var(--wa-accent) 40%, transparent); }
+    input[type=range]:disabled { opacity: .45; cursor: default; }
+    input[type=color] { border: 1px solid var(--wa-line); border-radius: 6px; background: var(--wa-input); padding: 2px; cursor: pointer; }
 `;
 
 /** The segmented control, small and form sized (`segField`). */
@@ -141,7 +176,7 @@ export const formSegStyles = css`
        pictures are, and how much each row says. */
     .seg {
       display: inline-flex; flex: none; height: 24px; padding: 2px; gap: 2px; border: 0;
-      border-radius: 7px; background: var(--wa-panel); box-shadow: inset 0 0 0 1px var(--wa-line);
+      border-radius: 6px; background: var(--wa-field); box-shadow: none;
     }
     .seg button {
       font: inherit; font-size: 11px; font-weight: 600; letter-spacing: .02em; line-height: 1;
@@ -150,23 +185,24 @@ export const formSegStyles = css`
       transition: color .12s ease-out, background-color .12s ease-out, box-shadow .12s ease-out;
     }
     .seg button:hover { color: var(--wa-ink); }
-    .seg button.on { color: var(--wa-ink); background: var(--wa-card); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+    .seg button.on { color: var(--wa-ink); background: var(--wa-seg-on); box-shadow: var(--wa-seg-shadow); }
     .seg button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .seg button svg.ui-icon { width: 13px; height: 13px; }
     /* The form-sized segmented control: a setting with two to four choices
        shows them all, the way a dropdown never can. Buttons share the width
        evenly and clip a label rather than wrap it, so a row never grows a
-       second line, and the tint takes the section's color where there is one. */
-    .seg.wide { display: flex; width: 100%; min-width: 0; height: 24px; border-radius: 6px; background: var(--wa-field); box-shadow: none; }
+       second line. The lit choice is a raised grey, never a hue. */
+    .seg.wide { display: flex; width: 100%; min-width: 0; height: 28px; border-radius: 6px; background: var(--wa-field); box-shadow: none; }
     .seg.wide button {
-      flex: 1 1 0; min-width: 0; padding: 0 4px; border-radius: 4px;
-      font-size: 11.5px; font-weight: 500; letter-spacing: 0; line-height: 20px;
+      flex: 1 1 0; min-width: 0; padding: 0 4px; border-radius: 5px;
+      font-size: 12px; font-weight: 500; letter-spacing: 0; line-height: 24px;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; text-align: center;
+      color: var(--wa-ink);
     }
-    .seg.wide button.on { color: var(--wa-ink); background: var(--wa-seg-on); box-shadow: 0 1px 1.5px rgba(0,0,0,.22); }
+    .seg.wide button.on { color: var(--wa-ink); font-weight: 600; background: var(--wa-seg-on); box-shadow: var(--wa-seg-shadow); }
     /* The choice a setting falls back to while it has none of its own. */
     .seg.wide button.inh { color: var(--wa-ink); outline: 1px dashed var(--wa-muted); outline-offset: -3px; }
-    .seg.wide button:focus-visible { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--c, var(--wa-accent)) 60%, transparent); }
+    .seg.wide button:focus-visible { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--wa-accent) 60%, transparent); }
     .seg.wide button:disabled, .seg.wide button:disabled:hover { color: var(--wa-muted); opacity: .38; cursor: not-allowed; }
     .field.seg-field { align-items: center; }
 `;
@@ -178,12 +214,14 @@ export const formResetDotStyles = css`
        It is drawn only while something is away from its default, so the dots
        are the list of what someone changed. The pseudo-element widens the hit
        area without widening the dot. */
+    /* The dot wears the hue of the card it is in (--wa-sec, which a section
+       card sets), one of the three places a card's hue shows. */
     button.reset-dot {
       position: absolute; left: -9px; top: 12px; width: 6px; height: 6px; margin: 0; padding: 0;
-      border: 0; border-radius: 50%; background: var(--wa-accent); cursor: pointer; flex: none;
+      border: 0; border-radius: 50%; background: var(--wa-sec, var(--wa-accent)); cursor: pointer; flex: none;
     }
     button.reset-dot::after { content: ""; position: absolute; inset: -7px; }
-    button.reset-dot:hover, button.reset-dot:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--wa-accent) 32%, transparent); }
+    button.reset-dot:hover, button.reset-dot:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--wa-sec, var(--wa-accent)) 32%, transparent); }
 `;
 
 /** A button drawn as a link (Browse symbols). */
@@ -217,7 +255,7 @@ export const formFieldStyles = css`
     /* The controls in an inspector row: 26px, 12px text, a soft fill and no
        ring until hovered, so a card of twenty rows is not twenty boxes. */
     :is(.sec-b, .value-pop) .field :is(input[type=text], input[type=number], input[type=time], select) {
-      height: 26px; min-height: 26px; padding: 0 8px; font-size: 12px; border-radius: 6px;
+      height: 28px; min-height: 28px; padding: 0 9px; font-size: 13px; border-radius: 6px;
       border-color: transparent; background-color: var(--wa-field);
     }
     :is(.sec-b, .value-pop) .field select { padding-right: 22px; background-position: right 6px center; background-size: 12px; }
@@ -226,8 +264,8 @@ export const formFieldStyles = css`
     :is(.sec-b, .value-pop) .field input[type=number]::-webkit-inner-spin-button,
     :is(.sec-b, .value-pop) .field input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     :is(.sec-b, .value-pop) .field .ent-box input { padding-left: 28px; padding-right: 26px; }
-    /* Inside a tinted section the focus ring takes the section's color. */
-    .field input:focus-visible, .field select:focus-visible, .field textarea:focus-visible { border-color: var(--c, var(--wa-accent)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c, var(--wa-accent)) 28%, transparent); }
+    /* Focus is neutral, in a section card as anywhere else. */
+    .field input:focus-visible, .field select:focus-visible, .field textarea:focus-visible { border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
     .field:has(> textarea) { align-items: start; }
     .field:has(> textarea) > span { padding-top: 6px; }
     .field .mono, code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
@@ -243,7 +281,7 @@ export const formFieldStyles = css`
     .num-box.lead input[type=number],
     :is(.sec-b, .value-pop) .field .num-box.lead input[type=number] { padding-left: 24px; }
     .field.slider .slider-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
-    .field.slider input[type=range] { flex: 1; min-width: 50px; height: 16px; margin: 0; }
+    .field.slider input[type=range] { flex: 1; min-width: 50px; height: 18px; margin: 0; }
     .field.slider .slider-row > :is(.num-box, input[type=number]) { flex: none; width: 66px; }
     .field.slider .slider-row > :is(.num-box, input[type=number]):only-child { flex: 1; width: auto; }
     /* A switch is a row like any other: title left, switch at the start of
@@ -262,14 +300,14 @@ export const formFieldStyles = css`
     /* A color is one box: swatch, hex, and opacity in percent. */
     .color-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
     .color-box {
-      flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 0 0 5px;
+      flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 0 0 6px;
       border-radius: 6px; border: 1px solid transparent; background: var(--wa-field);
     }
     .color-box:hover { border-color: var(--wa-line-strong); }
-    .color-box:focus-within { border-color: var(--c, var(--wa-accent)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c, var(--wa-accent)) 28%, transparent); }
+    .color-box:focus-within { border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
     .color-box:has(input:disabled) { opacity: .5; }
     .color-swatch {
-      position: relative; flex: none; width: 16px; height: 16px; border-radius: 4px; overflow: hidden; cursor: pointer;
+      position: relative; flex: none; width: 18px; height: 18px; border-radius: 50%; overflow: hidden; cursor: pointer;
       background: linear-gradient(var(--sw), var(--sw)), repeating-conic-gradient(#c8c8c8 0 25%, #fff 0 50%) 0 0 / 8px 8px;
       box-shadow: inset 0 0 0 1px rgba(128,128,128,.45);
     }
@@ -344,12 +382,12 @@ export const formRowStyles = css`
       .sec-b .field.gauge-end:not(.value-pop *) > :not(.gauge-end-head) { grid-column: 1 / -1; grid-row: 2; }
       .sec-b .readout-v { padding-top: 0; }
       /* Choices wrap onto a second line rather than clip to "A…". */
-      .sec-b .seg.wide { height: auto; min-height: 24px; flex-wrap: wrap; }
+      .sec-b .seg.wide { height: auto; min-height: 28px; flex-wrap: wrap; }
       .sec-b .seg.wide button { flex: 1 0 auto; text-overflow: clip; }
       .sec-b .pair-row { flex-wrap: wrap; row-gap: 4px; }
       .sec-b .pair-row > .seg.wide:first-of-type { flex: 1 1 100%; }
     }
-    .hint { font-size: 11.5px; line-height: 1.45; color: var(--wa-muted); margin: 4px 0; }
+    .hint { font-size: 12px; line-height: 1.45; color: var(--wa-muted); margin: 4px 0; }
     .hint.warn { color: var(--wa-ink); }
     /* The one hint that is colored: a timed refresh is spending the redraw
        budget a tap on the face also needs, which is worth noticing. */
@@ -424,7 +462,7 @@ export const formEntityStyles = css`
        row is the edit target; the x beside it removes the entity. */
     .ent-anchor { position: relative; min-width: 0; }
     .ent-chosen {
-      display: flex; align-items: center; height: 26px; min-width: 0; border-radius: 6px;
+      display: flex; align-items: center; height: 28px; min-width: 0; border-radius: 6px;
       background: var(--wa-field); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ent) 22%, transparent);
     }
     .ent-chosen:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ent) 50%, transparent); }
@@ -448,7 +486,7 @@ export const formEntityStyles = css`
     button.ent-clear svg { width: 12px; height: 12px; display: block; }
 
     .entity-results {
-      border: 1px solid var(--wa-line); border-radius: 12px; margin-top: 6px; max-height: 340px; overflow: auto;
+      border: 1px solid var(--wa-line); border-radius: 10px; margin-top: 6px; max-height: 340px; overflow: auto;
       background: var(--wa-raised); padding: 4px; box-shadow: 0 10px 28px rgba(0,0,0,.22);
     }
     /* In an inspector card the list floats over the rows under the box, like
