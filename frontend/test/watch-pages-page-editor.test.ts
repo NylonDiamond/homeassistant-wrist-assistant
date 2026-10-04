@@ -265,6 +265,30 @@ describe("the Tiles card", () => {
     expect(tileRow(text, "T-LEFT")).toMatch(/^<div class="layer pe-tile-row  /);
   });
 
+  it("tints the tile on the stage while its row is pointed at, as the complication editor's layers do", () => {
+    const { el, body } = editor();
+    const row = tileRow(body(), "T-RIGHT");
+    expect(row).toContain("@pointerenter=");
+    expect(row).toContain("@pointerleave=");
+    const peek = el.peekTile as (id: string, on: boolean) => void;
+    peek.call(el, "T-RIGHT", true);
+    expect(el.rowHoverTileId).toBe("T-RIGHT");
+    const text = body();
+    expect(text).toMatch(/class="pe-tile [^"]*\bhov\b[^"]*"\s+data-tile=T-RIGHT/);
+    expect(text).not.toMatch(/class="pe-tile [^"]*\bhov\b[^"]*"\s+data-tile=T-LEFT/);
+    // Another row's leave does not take the tint away; its own does.
+    peek.call(el, "T-LEFT", false);
+    expect(el.rowHoverTileId).toBe("T-RIGHT");
+    peek.call(el, "T-RIGHT", false);
+    expect(el.rowHoverTileId).toBeUndefined();
+    expect(body()).not.toMatch(/\bhov\b/);
+    // The tint is a solid fill and a thin ring, apart from the selection's ring.
+    const css = rule(sheet(), ".pe-tile.hov::after");
+    expect(css).toContain("inset: 0");
+    expect(css).toContain("22%");
+    expect(css).toContain("inset 0 0 0 1px");
+  });
+
   it("says a smart page fills itself instead of listing tiles", () => {
     const { el, body } = editor();
     const smart = { ...HALL, pages: [{ id: "P-SMART", name: "Lights on", dynamicConfig: { rules: [] } }] } as unknown as WatchPagesDocument;

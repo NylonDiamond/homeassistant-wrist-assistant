@@ -658,6 +658,9 @@ export class WaPageEditor extends LitElement {
 
   @state() private selectedPageId?: string;
   @state() private selectedTileId?: string;
+  /** The tile whose Tiles row is under the pointer: the stage tints it, as
+   * the complication editor tints a layer whose row is pointed at. */
+  @state() private rowHoverTileId?: string;
   /** The page strip's open popover: one section at a time, none when shut. */
   @state() private pageStripOpen?: WatchPageStripSection;
   /** The page the open popover belongs to: once another page is shown (a
@@ -1023,6 +1026,10 @@ export class WaPageEditor extends LitElement {
     if (this.selectedTileId !== undefined && (page === undefined || this.tileOn(page, this.selectedTileId) === undefined)) {
       this.selectedTileId = undefined;
     }
+    // A row that goes away (a delete, an undo) takes its pointerleave with it.
+    if (this.rowHoverTileId !== undefined && (page === undefined || this.tileOn(page, this.rowHoverTileId) === undefined)) {
+      this.rowHoverTileId = undefined;
+    }
     if (had !== undefined && this.selectedTileId === undefined) {
       // The tile went (an undo, a merge): its refusals and a drag on its
       // numbers go with it. Its fields are drawn away, so no blur is due.
@@ -1047,7 +1054,16 @@ export class WaPageEditor extends LitElement {
     this.closePageStrip();
     this.selectedPageId = pageId;
     this.selectedTileId = undefined;
+    this.rowHoverTileId = undefined;
     this.fieldNote = undefined;
+  }
+
+  /** The stage's tint on a tile while its Tiles row is pointed at
+   * (`rowHoverTileId`). Another row's leave does not take it away. */
+  private peekTile(id: string, on: boolean): void {
+    if (id === "") return;
+    if (on) this.rowHoverTileId = id;
+    else if (sameWatchId(id, this.rowHoverTileId)) this.rowHoverTileId = undefined;
   }
 
   private selectTile(tileId: string | undefined): void {
@@ -2941,7 +2957,8 @@ export class WaPageEditor extends LitElement {
   /** The Tiles card, the complication editor's Layers card: the shown page's
    * tiles in reading order (by row, then column), each with its face, its
    * label over its kind and size, and badges for state rules and a tap of its
-   * own. A row selects its tile; on hover it copies or deletes it. */
+   * own. A row selects its tile; on hover it copies or deletes it, and the
+   * stage tints the tile while the pointer is on its row. */
   private renderTileList(page: WatchPage | undefined, pages: readonly WatchPage[], owner: OwnerSummary | undefined): TemplateResult {
     const smart = page !== undefined && isSmartWatchPage(page);
     const off = page === undefined || this.saving || this.editingOff(page);
@@ -3023,7 +3040,9 @@ export class WaPageEditor extends LitElement {
         if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
         e.preventDefault();
         pick();
-      }}>
+      }}
+      @pointerenter=${() => this.peekTile(id, true)}
+      @pointerleave=${() => this.peekTile(id, false)}>
       <span class="grip" aria-hidden="true"></span>
       ${this.renderTileThumb(page, tile, pages, screen, placed, unit)}
       <span class="name">
@@ -3457,6 +3476,7 @@ export class WaPageEditor extends LitElement {
     const kindLabel = tileKindLabel(tileKind(tileEntityId(tile)));
     const label = watchPreviewTileLabel(tile, input);
     const selected = id !== "" && sameWatchId(id, this.selectedTileId);
+    const hovered = id !== "" && sameWatchId(id, this.rowHoverTileId);
     const moving = move !== undefined && sameWatchId(id, move.tileId);
     const partner = move?.outcome?.kind === "swap" && sameWatchId(id, move.outcome.targetId);
     const shift = moving ? `transform:translate(${move.left - left}px, ${move.top - top}px);` : "";
@@ -3468,7 +3488,7 @@ export class WaPageEditor extends LitElement {
     // A tile with no id cannot be named by an edit; it is drawn and left be.
     if (id === "") return html`<div class="pe-tile fixed ${tileKind(tileEntityId(tile)) === "spacer" ? "spacer" : ""}" style=${box} aria-hidden="true">${face}</div>`;
     const spacer = tileKind(tileEntityId(tile)) === "spacer";
-    return html`<button type="button" class="pe-tile ${spacer ? "spacer" : ""} ${selected ? "sel" : ""} ${moving ? "moving" : ""} ${partner ? "partner" : ""}"
+    return html`<button type="button" class="pe-tile ${spacer ? "spacer" : ""} ${selected ? "sel" : ""} ${hovered ? "hov" : ""} ${moving ? "moving" : ""} ${partner ? "partner" : ""}"
       data-tile=${id} style=${box}
       aria-label=${label !== "" && label !== kindLabel ? `${label}, ${kindLabel}` : kindLabel} aria-pressed=${selected ? "true" : "false"}
       title=${[label, kindLabel, tileEntityId(tile), this.saving ? SAVING_TEXT : ""].filter((t, i, all) => t !== "" && all.indexOf(t) === i).join(" · ")}
@@ -4066,6 +4086,14 @@ export class WaPageEditor extends LitElement {
     .pe-tile:focus-visible { outline: none; box-shadow: 0 0 0 2px #000, 0 0 0 4px var(--pe-mark); }
     .pe-tile.sel { touch-action: none; box-shadow: 0 0 0 2px var(--pe-mark); z-index: 2; }
     .pe-tile.sel:focus-visible { box-shadow: 0 0 0 2px var(--pe-mark), 0 0 0 4px #000, 0 0 0 6px var(--pe-mark); }
+    /* The tile whose Tiles row is pointed at: a solid tint and a thin ring,
+       the complication editor's hover on a layer, so it never reads as the
+       selection's ring when the pointer rests on the selected tile's row. */
+    .pe-tile.hov::after {
+      content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+      background: color-mix(in srgb, var(--pe-mark) 22%, transparent);
+      box-shadow: inset 0 0 0 1px var(--pe-mark);
+    }
     .pe-tile.moving { z-index: 4; opacity: .9; cursor: grabbing; box-shadow: 0 8px 22px rgba(0, 0, 0, .6), 0 0 0 2px var(--pe-mark); }
     .pe-tile.partner { opacity: .6; box-shadow: 0 0 0 2px var(--pe-mark); }
     .pe-ghost { position: absolute; z-index: 3; border-radius: 6px; pointer-events: none; border: 2px dashed; }
