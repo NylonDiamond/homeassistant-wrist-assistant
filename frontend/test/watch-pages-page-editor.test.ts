@@ -149,11 +149,11 @@ function rowPlaces(text: string, ids: readonly string[]): number[] {
 }
 
 describe("the top bar", () => {
-  it("has the way back, Add page, the sync pill, ···, Save, when it was saved, Menus, Watch settings and the help", () => {
+  it("has the way back, Add page, the watch picker, the sync pill, ···, Save, when it was saved, Menus, Watch settings and the help", () => {
     const text = editor().whole();
     const bar = text.slice(text.indexOf(`<div class="wa-bar`), text.indexOf(`<div class="layout`));
     const order = [
-      `class="tb-btn tb-back"`, `class="tb-btn tb-new"`, `class="tb-sync ok"`, `class="tb-btn tb-more"`,
+      `class="tb-btn tb-back"`, `class="tb-btn tb-new"`, `<div class="picker pe-watch-picker">`, `class="tb-sync ok"`, `class="tb-btn tb-more"`,
       `class="primary save `, `<span class="tb-saved"`, `class="tb-btn tb-menus"`, `class="tb-btn tb-watch"`, `class="help"`,
     ];
     for (const part of order) expect(bar, part).toContain(part);
@@ -177,6 +177,65 @@ describe("the top bar", () => {
     expect(text).toContain(`class="tb-sync warn"`);
     expect(text).toContain(">Waiting to be collected</span>");
     expect(text).toContain(">Discard edits</button>");
+  });
+});
+
+describe("the watch picker", () => {
+  /** The markup from the bar on. */
+  const barOf = (text: string) => text.slice(text.indexOf(`<div class="wa-bar`));
+
+  it("names the open watch with its glyph and a caret, and lists every watch with a check on the open one", () => {
+    const { el, whole } = editor();
+    let bar = barOf(whole());
+    const button = bar.slice(bar.indexOf(`class="tb-browse pe-watch-open"`), bar.indexOf("</button>", bar.indexOf(`class="tb-browse pe-watch-open"`)));
+    expect(button).toContain(`class="pe-chip-glyph"`);
+    expect(button).toContain(`<span class="tb-browse-l">Jesse's Watch</span>`);
+    expect(button).toContain(`aria-expanded=false`);
+    expect(bar).not.toContain(`class="pop-menu pe-watch-menu"`);
+    el.watchMenuOpen = true;
+    bar = barOf(whole());
+    const menu = bar.slice(bar.indexOf(`class="pop-menu pe-watch-menu"`));
+    expect(menu.match(/class="row pe-watch-row"/g)).toHaveLength(2);
+    expect(menu).toContain(`<span class="pe-watch-name">Jesse's Watch</span><span class="pe-watch-check">`);
+    expect(menu).toContain(`<span class="pe-watch-name">Chen's Watch</span>\n`);
+    expect(menu).toMatch(/aria-checked=true data-watch=chrome-w1-\d+/);
+    expect(menu).toMatch(/aria-checked=false data-watch=chrome-w2/);
+  });
+
+  it("opens the picked watch and closes the menu; the open one changes nothing", () => {
+    const { el, owners, whole } = editor();
+    const opened: string[] = [];
+    el.openWatch = (id: string) => { opened.push(id); };
+    el.watchMenuOpen = true;
+    const drawn = (el.render as () => unknown).call(el);
+    const row = (id: string) => findTemplate(drawn, (t) => t.strings[0]!.includes(`<button class="row pe-watch-row"`) && t.values.includes(id));
+    listener(row(owners[0]!.owner_watch_id)!, "click")({} as Event);
+    expect(opened).toEqual([]);
+    expect(el.watchMenuOpen).toBe(false);
+    el.watchMenuOpen = true;
+    listener(row("chrome-w2")!, "click")({} as Event);
+    expect(opened).toEqual(["chrome-w2"]);
+    expect(el.watchMenuOpen).toBe(false);
+    expect(whole()).not.toContain(`class="pop-menu pe-watch-menu"`);
+  });
+
+  it("is there with no pages, while loading and with no record, and not with one watch", () => {
+    const { el, whole } = editor();
+    // A watch with no pages yet: only the empty card under the bar.
+    el.record = { ...(el.record as WatchConfigRecord), revision: 0, document: null };
+    let text = whole();
+    expect(text).toContain("No pages from this watch yet.");
+    expect(text).toContain(`<div class="picker pe-watch-picker">`);
+    el.loading = true;
+    text = whole();
+    expect(text).toContain(`class="pe-empty">Loading…`);
+    expect(text).toContain(`<div class="picker pe-watch-picker">`);
+    el.loading = false;
+    el.loadError = "unknown_command";
+    expect(whole()).toContain(`<div class="picker pe-watch-picker">`);
+    el.loadError = undefined;
+    el.owners = [(el.owners as OwnerSummary[])[0]!];
+    expect(whole()).not.toContain("pe-watch-picker");
   });
 });
 
@@ -348,17 +407,18 @@ describe("the stacked layout", () => {
 });
 
 describe("the canvas head", () => {
-  it("shows the page's name to type over, a chip per watch with the open one lit, and the page's facts", () => {
-    const { body, owners } = editor();
+  it("reads page / watch / facts: the page's name to type over, the open watch's name as words, no watch chips", () => {
+    const { body } = editor();
     const text = body();
     const head = text.slice(text.indexOf(`<div class="cv-head">`), text.indexOf(`<div class="stage-area`));
     expect(head).toContain(`class="tb-name-input"`);
     expect(head).toContain(`.value=Hall`);
-    expect(head).toContain(`class="doc-chip on"`);
-    expect(head.match(/class="doc-chip /g)).toHaveLength(owners.length);
-    expect(head).toContain(">Jesse's Watch</span>");
-    expect(head).toContain(">Chen's Watch</span>");
+    expect(head).not.toContain("doc-chip");
+    expect(head).toContain(`<span class="cv-shape pe-watch-crumb">Jesse's Watch</span>`);
+    expect(head).not.toContain("Chen's Watch");
     expect(head).toContain(`4 tiles · 8 rows · ${REFERENCE_CASE.label}`);
+    const parts = [".value=Hall", "pe-watch-crumb", "4 tiles · 8 rows"].map((p) => head.indexOf(p));
+    expect([...parts].sort((a, b) => a - b)).toEqual(parts);
     expect(head).toContain(`aria-label="Undo"`);
     expect(head).toContain(`aria-label="Redo"`);
   });

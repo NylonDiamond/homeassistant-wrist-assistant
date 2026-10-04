@@ -306,6 +306,8 @@ export class WaMenuEditor extends LitElement {
   @state() private ownList?: readonly OwnerSummary[];
   /** The top bar's ··· menu is open. */
   @state() private topMenuOpen = false;
+  /** The top bar's watch picker is open. */
+  @state() private watchMenuOpen = false;
   /** The stage's scale as stepped with the zoom buttons, undefined while it
    * fits (`stageFitZoom`). Remembered between visits (`MENUS_ZOOM_KEY`). */
   @state() private zoom = loadMenusZoom();
@@ -977,6 +979,12 @@ export class WaMenuEditor extends LitElement {
       void this.updateComplete.then(() => this.renderRoot.querySelector<HTMLElement>(".wa-bar .tb-more")?.focus());
       return;
     }
+    if (e.key === "Escape" && this.watchMenuOpen) {
+      e.preventDefault();
+      this.watchMenuOpen = false;
+      void this.updateComplete.then(() => this.renderRoot.querySelector<HTMLElement>(".wa-bar .me-watch-btn")?.focus());
+      return;
+    }
     if (isTextField(path[0])) return;
     if (mod && !e.altKey && key === "z") {
       e.preventDefault();
@@ -997,11 +1005,14 @@ export class WaMenuEditor extends LitElement {
     }
   };
 
-  /** A press anywhere outside the top bar's open ··· menu closes it. */
+  /** A press anywhere outside an open menu of the top bar (the ··· menu, the
+   * watch picker) closes it. */
   private onWindowPointerDown = (e: PointerEvent): void => {
-    if (!this.topMenuOpen) return;
-    const within = e.composedPath().some((n) => n instanceof HTMLElement && n.classList.contains("pe-top-menu"));
-    if (!within) this.topMenuOpen = false;
+    if (!this.topMenuOpen && !this.watchMenuOpen) return;
+    const path = e.composedPath();
+    const within = (name: string) => path.some((n) => n instanceof HTMLElement && n.classList.contains(name));
+    if (this.topMenuOpen && !within("pe-top-menu")) this.topMenuOpen = false;
+    if (this.watchMenuOpen && !within("me-watch-picker")) this.watchMenuOpen = false;
   };
 
   // ── drawing ────────────────────────────────────────────────────────────
@@ -1011,7 +1022,7 @@ export class WaMenuEditor extends LitElement {
     const draft = this.draft;
     return html`
       <div class="pe-top">
-        ${this.renderTopBar(draft)}
+        ${this.renderTopBar(draft, watches)}
         ${this.note ? html`<div class="pe-note ${this.note.kind}" role="status"><span>${this.note.text}</span>
           <button class="pe-link" @click=${() => { this.note = undefined; }}>Dismiss</button></div>` : nothing}
       </div>
@@ -1028,12 +1039,12 @@ export class WaMenuEditor extends LitElement {
 
   /**
    * The top bar, the page editor's and the complication editor's: the way
-   * back at the left; then where the stored copy has got to, the ··· menu,
-   * Save with when the copy was saved, Pages, Watch settings and the help at
-   * the right. Undo, Redo and the watch chips are in the canvas head. Two
-   * rows when stacked.
+   * back at the left; then the watch picker (with more than one watch),
+   * where the stored copy has got to, the ··· menu, Save with when the copy
+   * was saved, Pages, Watch settings and the help at the right. Undo and
+   * Redo are in the canvas head. Two rows when stacked.
    */
-  private renderTopBar(draft: WatchMenusDraft | undefined): TemplateResult {
+  private renderTopBar(draft: WatchMenusDraft | undefined, watches: readonly OwnerSummary[]): TemplateResult {
     const editing = draft !== undefined && !this.unsupported;
     const dirty = editing && draft.dirty;
     const admin = this.hass?.user?.is_admin === true;
@@ -1043,6 +1054,7 @@ export class WaMenuEditor extends LitElement {
       <button class="tb-btn tb-back" title="Back to complications"
         @click=${() => (this.onBack ? this.onBack() : navigateWatchMenus(undefined, false))}>${uiIcon("left")}<span>Complications</span></button>
       <span class="spacer"></span>
+      ${this.renderWatchPicker(watches)}
       ${this.renderSyncPill(editing ? draft : undefined)}
       ${this.renderTopMenu(editing ? draft : undefined)}
       ${editing ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
@@ -1097,22 +1109,43 @@ export class WaMenuEditor extends LitElement {
     </span>`;
   }
 
-  /** The watch tabs, in the canvas head: one chip per watch, the glyph in
-   * its person's color, the open one lit. */
-  private renderWatchChips(watches: readonly OwnerSummary[]): TemplateResult {
+  /** A watch's person color, for its glyph. */
+  private personColor(watchId: string): string | undefined {
     const people = peopleOf(this.owners.length > 0 ? this.owners : (this.ownList ?? []));
-    return html`<span class="doc-on pe-watches" role="tablist" aria-label="Watches">
-      ${watches.map((w) => {
-        const index = people.findIndex((p) => p.owners.some((o) => o.owner_watch_id === w.owner_watch_id));
-        const color = personColorVar(index);
-        const on = w.owner_watch_id === this.watchId;
-        return html`<button type="button" role="tab" class="doc-chip ${on ? "on" : ""}" aria-selected=${on ? "true" : "false"}
-          style=${color ? `--pe-person: ${color}` : nothing} title=${on ? "The watch shown" : "Show this watch's menus"}
-          @click=${() => { if (!on) this.openWatch(w.owner_watch_id); }}>
-          <span class="pe-chip-glyph" aria-hidden="true">${uiIcon("watch")}</span>
-          <span class="doc-chip-name">${watchName(w, watches)}</span>
-        </button>`;
-      })}
+    return personColorVar(people.findIndex((p) => p.owners.some((o) => o.owner_watch_id === watchId)));
+  }
+
+  /**
+   * The watch picker, the complication editor's Browse picker: the shown
+   * watch's glyph in its person's color, its name and a caret, opening a
+   * menu of every watch with a check on the shown one. Drawn whenever there
+   * is more than one watch, in every state of the body, so a watch with no
+   * menus yet (only the empty card) can still be switched away from.
+   */
+  private renderWatchPicker(watches: readonly OwnerSummary[]): TemplateResult | typeof nothing {
+    if (watches.length < 2) return nothing;
+    const current = watches.find((w) => w.owner_watch_id === this.watchId);
+    const open = this.watchMenuOpen;
+    const glyph = (id: string | undefined) => {
+      const color = id === undefined ? undefined : this.personColor(id);
+      return html`<span class="pe-chip-glyph" style=${color ? `--pe-person: ${color}` : nothing} aria-hidden="true">${uiIcon("watch")}</span>`;
+    };
+    return html`<span class="picker me-watch-picker">
+      <button type="button" class="tb-browse me-watch-btn" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"}
+        title="Choose the watch whose menus are shown" @click=${() => { this.watchMenuOpen = !open; }}>
+        ${glyph(current?.owner_watch_id)}<span class="tb-browse-l">${current ? watchName(current, watches) : "Choose a watch"}</span>
+        <span class="me-caret" aria-hidden="true">${uiIcon("chevron")}</span>
+      </button>
+      ${open ? html`<div class="pop-menu me-watch-menu" role="menu" aria-label="Watches">
+        ${watches.map((w) => {
+          const on = w.owner_watch_id === this.watchId;
+          return html`<button type="button" class="row me-watch-row" role="menuitemradio" aria-checked=${on ? "true" : "false"}
+            @click=${() => { this.watchMenuOpen = false; if (!on) this.openWatch(w.owner_watch_id); }}>
+            ${glyph(w.owner_watch_id)}<span class="me-watch-name">${watchName(w, watches)}</span>
+            <span class="me-watch-check" aria-hidden="true">${on ? uiIcon("check") : nothing}</span>
+          </button>`;
+        })}
+      </div>` : nothing}
     </span>`;
   }
 
@@ -1159,8 +1192,9 @@ export class WaMenuEditor extends LitElement {
   }
 
   /**
-   * The canvas card: the head (the shown menu's name, the watch chips, the
-   * menu's facts and the watch's size, then Undo and Redo), the dotted stage
+   * The canvas card: the head (the shown menu's name, the watch's name as
+   * text (the picker that changes it is in the top bar), the menu's facts
+   * and the watch's size, then Undo and Redo), the dotted stage
    * with the floating tool strip over the watch, and the hint under it.
    * Menus have no live state, so there is no Live strip.
    */
@@ -1174,8 +1208,8 @@ export class WaMenuEditor extends LitElement {
     return html`<div class="card canvas-card me-canvas" aria-label="Menu">
       <div class="cv-head">
         <span class="cv-title" title=${name}>${name}</span>
-        ${watches.length > 0 ? html`<span class="cv-part cv-where"><span class="cv-slash" aria-hidden="true">/</span>
-          <span class="cv-devices">${this.renderWatchChips(watches)}</span></span>` : nothing}
+        ${owner !== undefined ? html`<span class="cv-part cv-where"><span class="cv-slash" aria-hidden="true">/</span>
+          <span class="cv-watch">${watchName(owner, watches)}</span></span>` : nothing}
         <span class="cv-part cv-what"><span class="cv-slash" aria-hidden="true">/</span>
           <span class="cv-shape" title=${found === undefined ? `${watchCase.label}, this watch's size is not known` : facts.join(" · ")}><span class="fam">${facts.join(" · ")}</span></span></span>
         <span class="cv-acts">
@@ -1434,16 +1468,23 @@ export class WaMenuEditor extends LitElement {
     .column.canvas > .card.canvas-card.me-canvas { min-height: 0; flex: none; }
     /* The shown menu's name: read, not typed. */
     .cv-head .cv-title { flex: 0 1 auto; min-width: 0; font-size: 14px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    /* The watch tabs, as the head's device chips: the open one lit. */
-    .cv-head .doc-chip { display: inline-flex; align-items: center; cursor: pointer; font-family: inherit; }
-    .cv-head .doc-chip:hover:not(.on) { border-color: var(--wa-line-strong); }
-    .cv-head .doc-chip:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    .cv-head .doc-chip.on {
-      font-weight: 650; background: color-mix(in srgb, var(--wa-accent) 16%, var(--wa-chip-bg, var(--wa-panel)));
-      border-color: color-mix(in srgb, var(--wa-accent) 55%, transparent);
-    }
+    /* The shown watch's name in the head: a fact; the picker is in the bar. */
+    .cv-head .cv-watch { min-width: 0; font-size: 12.5px; font-weight: 500; color: var(--wa-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* The watch picker, the complication editor's Browse picker: its glyph
+       in the watch's person color, the name, a caret; the menu lists every
+       watch with a check on the shown one. */
     .pe-chip-glyph { display: inline-flex; flex: none; color: var(--pe-person, var(--wa-muted)); }
     .pe-chip-glyph svg.ui-icon { width: 13px; height: 13px; }
+    .picker > button.me-watch-btn { max-width: 260px; }
+    .me-watch-btn .tb-browse-l { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .me-watch-btn .me-caret { display: inline-flex; flex: none; color: var(--wa-muted); }
+    .picker > button.me-watch-btn .me-caret svg { width: 11px; height: 11px; }
+    .pop-menu.me-watch-menu { left: 0; right: auto; min-width: 220px; }
+    .me-watch-menu .row.me-watch-row { display: flex; align-items: center; gap: 8px; }
+    .me-watch-row .me-watch-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .me-watch-row[aria-checked="true"] { font-weight: 700; }
+    .me-watch-check { display: inline-flex; flex: none; width: 14px; color: var(--wa-accent); }
+    .me-watch-check svg.ui-icon { width: 14px; height: 14px; }
     .me-stage-area { position: relative; padding: 64px 12px 12px; gap: 10px; }
     @container (max-width: 460px) {
       .me-stage-area { padding-top: 92px; }

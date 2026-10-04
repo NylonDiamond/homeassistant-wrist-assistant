@@ -300,7 +300,7 @@ describe("the top bar", () => {
     const text = editor().whole();
     const bar = text.slice(text.indexOf(`<div class="wa-bar`), text.indexOf(`<div class="layout`));
     const order = [
-      `class="tb-btn tb-back"`, `class="tb-sync ok"`, `class="tb-btn tb-more"`,
+      `class="tb-btn tb-back"`, `class="picker me-watch-picker"`, `class="tb-sync ok"`, `class="tb-btn tb-more"`,
       `class="primary save `, `<span class="tb-saved"`, `class="tb-btn tb-pages"`, `class="tb-btn tb-watch"`, `class="help"`,
     ];
     for (const part of order) expect(bar, part).toContain(part);
@@ -329,6 +329,40 @@ describe("the top bar", () => {
     expect(text).toContain(">Discard edits</button>");
   });
 
+  it("picks the watch from the bar: the shown one's name, and a menu of every watch with a check on it", () => {
+    const { el, whole } = editor();
+    let text = whole();
+    const picker = (t: string) => t.slice(t.indexOf(`<span class="picker me-watch-picker">`), t.indexOf(`class="tb-sync`));
+    expect(picker(text)).toContain(`<span class="tb-browse-l">Jesse's Watch</span>`);
+    expect(picker(text)).toContain(`aria-expanded=false`);
+    expect(picker(text)).not.toContain("me-watch-menu");
+    el.watchMenuOpen = true;
+    text = whole();
+    const menu = picker(text);
+    expect(menu).toContain(`aria-expanded=true`);
+    expect(count(menu, `class="row me-watch-row"`)).toBe(2);
+    expect(menu).toMatch(/aria-checked=true\s+@click=>\s*<span class="pe-chip-glyph"[^]*?>Jesse's Watch<\/span>\s*<span class="me-watch-check" aria-hidden="true"><svg/);
+    expect(menu).toMatch(/aria-checked=false\s+@click=>\s*<span class="pe-chip-glyph"[^]*?>Chen's Watch<\/span>\s*<span class="me-watch-check" aria-hidden="true"><\/span>/);
+  });
+
+  it("shows the picker in every state of the body, and not for a single watch", () => {
+    const bar = (t: string) => t.slice(t.indexOf(`<div class="wa-bar`), t.indexOf(`</div>`, t.indexOf(`class="help"`)));
+    // No menus yet: only the empty card, and the picker is the way out.
+    expect(bar(editor(0).whole())).toContain(`class="picker me-watch-picker"`);
+    const loading = editor();
+    loading.el.loading = true;
+    expect(loading.whole()).toContain(`class="picker me-watch-picker"`);
+    const unsupported = editor();
+    unsupported.el.unsupported = true;
+    expect(unsupported.whole()).toContain(`class="picker me-watch-picker"`);
+    const failed = editor();
+    failed.el.loadError = "boom";
+    expect(failed.whole()).toContain(`class="picker me-watch-picker"`);
+    const single = editor();
+    single.el.owners = [(single.owners as OwnerSummary[])[0]!];
+    expect(single.whole()).not.toContain("me-watch-picker");
+  });
+
   it("offers Start with the defaults in the ··· menu for a watch with no menus yet", () => {
     const { el, whole } = editor(0);
     el.topMenuOpen = true;
@@ -342,17 +376,21 @@ describe("the top bar", () => {
 });
 
 describe("the canvas", () => {
-  it("shows the menu's name as text, a chip per watch with the open one lit, the facts, and Undo and Redo", () => {
-    const { body, owners } = editor();
+  it("reads menu / watch / facts as text, with Undo and Redo, and no watch chips", () => {
+    const { body } = editor();
     const text = body();
     const head = text.slice(text.indexOf(`<div class="cv-head">`), text.indexOf(`<div class="stage-area`));
     expect(head).toContain(`<span class="cv-title" title=Anywhere menu>Anywhere menu</span>`);
     expect(head).not.toContain("tb-name-input");
-    expect(head).toContain(`class="doc-chip on"`);
-    expect(head.match(/class="doc-chip /g)).toHaveLength(owners.length);
-    expect(head).toContain(">Jesse's Watch</span>");
-    expect(head).toContain(">Chen's Watch</span>");
-    expect(head).toContain(`${ANYWHERE_COUNT} slots · ${REFERENCE_CASE.label}`);
+    expect(head).not.toContain("doc-chip");
+    expect(head).not.toContain("Chen's Watch");
+    // "Anywhere menu / Jesse's Watch / 8 slots · 46 mm", in that order.
+    const title = head.indexOf(">Anywhere menu</span>");
+    const watch = head.indexOf(`<span class="cv-watch">Jesse's Watch</span>`);
+    const facts = head.indexOf(`${ANYWHERE_COUNT} slots · ${REFERENCE_CASE.label}`);
+    expect(title).toBeGreaterThan(-1);
+    expect(watch).toBeGreaterThan(title);
+    expect(facts).toBeGreaterThan(watch);
     expect(head).toContain(`aria-label="Undo"`);
     expect(head).toContain(`aria-label="Redo"`);
     // The hint under the watch, and no Live strip: menus have no live state.
