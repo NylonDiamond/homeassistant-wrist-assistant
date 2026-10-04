@@ -17753,7 +17753,34 @@ export class WristAssistantPanel extends LitElement {
         @click=${() => { this.layerDetail = expanded ? "compact" : "expanded"; this.saveListView(); }}>${uiIcon(expanded ? "expanded" : "compact")}<span class="lc-view-word">Rows</span></button>
       <button class="lc-ghost lc-view" aria-label=${`Preview size: ${THUMB_STEP_TITLE[step]}`}
         title=${`Preview size: ${THUMB_STEP_TITLE[step]}. Click for ${THUMB_STEP_TITLE[next]}.`}
-        @click=${() => { this.thumbStep = next; this.saveListView(); }}>${uiIcon(THUMB_STEP_ICON[step])}<span class="lc-view-word">Preview</span></button>`;
+        @click=${() => { this.thumbStep = next; this.saveListView(); }}>${uiIcon(THUMB_STEP_ICON[step])}<span class="lc-view-word">Preview</span></button>
+      ${this.renderFoldAllButton()}`;
+  }
+
+  /** Every group and every list with a row of its own: what the Layers list
+   * can fold. */
+  private foldableIds(): string[] {
+    const cfg = this.draft?.config;
+    if (!cfg) return [];
+    return [
+      ...(cfg.groups ?? []).map((g) => g.id),
+      ...cfg.elements.filter((el) => el.kind === "list" && el.payload.template.length > 0).map((el) => el.payload.id),
+    ];
+  }
+
+  /** Fold every group and list in the Layers list, or open them all again
+   * once none is open. Nothing is drawn when the list has nothing to fold. */
+  private renderFoldAllButton() {
+    const ids = this.foldableIds();
+    if (ids.length === 0) return nothing;
+    const anyOpen = ids.some((id) => !this.collapsed.has(id));
+    return html`<button class="lc-ghost lc-view" aria-label=${anyOpen ? "Collapse all groups" : "Expand all groups"}
+      title=${anyOpen ? "Collapse every group and list" : "Expand every group and list"}
+      @click=${() => {
+        const next = new Set(this.collapsed);
+        for (const id of ids) { if (anyOpen) next.add(id); else next.delete(id); }
+        this.setCollapsed(next);
+      }}>${uiIcon(anyOpen ? "foldAll" : "unfoldAll")}<span class="lc-view-word">${anyOpen ? "Collapse" : "Expand"}</span></button>`;
   }
 
   /** The Layers card while Inline is the shape being edited.

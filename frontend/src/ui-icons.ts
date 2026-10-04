@@ -14,7 +14,7 @@ export type UiIconName =
   | "text" | "icon" | "gauge" | "chart" | "timeline" | "list" | "shape" | "image" | "tap" | "chartTimes" | "chartDots" | "chartGrid" | "imageTime"
   | "grip" | "chevron" | "content" | "look" | "clock" | "states" | "place" | "layers" | "pages" | "radial" | "plus"
   | "lock" | "unlock" | "folder" | "ungroup" | "watch" | "phone"
-  | "compact" | "expanded" | "grid" | "search" | "undo" | "redo" | "expand" | "left" | "right"
+  | "compact" | "expanded" | "foldAll" | "unfoldAll" | "grid" | "search" | "undo" | "redo" | "expand" | "left" | "right"
   | "braces" | "link" | "info" | "globe" | "download" | "check" | "arrow" | "paste" | "guides"
   | "checklist" | "home" | "more" | "thumbSmall" | "thumbMedium" | "thumbLarge" | "menu" | "note"
   | "alignLeft" | "alignCenterX" | "alignRight" | "alignTop" | "alignCenterY" | "alignBottom" | "alignCenter";
@@ -123,6 +123,12 @@ function shape(name: UiIconName) {
     case "phone":
       return svg`<rect x="6" y="2.5" width="12" height="19" rx="3" /><path d="M10.5 5.5H13.5" />`;
     // The Layers list's row-detail switch: tight lines against taller cards.
+    // The Layers list's fold switch: arrows that close on a line, and arrows
+    // that leave it.
+    case "foldAll":
+      return svg`<path d="M4 12H20M8.5 3.5L12 7L15.5 3.5M8.5 20.5L12 17L15.5 20.5" />`;
+    case "unfoldAll":
+      return svg`<path d="M4 12H20M8.5 7L12 3.5L15.5 7M8.5 17L12 20.5L15.5 17" />`;
     case "compact":
       return svg`<path d="M4 6.5H20M4 12H20M4 17.5H20" />`;
     case "expanded":
