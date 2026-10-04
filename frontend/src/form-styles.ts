@@ -200,7 +200,7 @@ export const formSegStyles = css`
       transition: color .12s ease-out, background-color .12s ease-out, box-shadow .12s ease-out;
     }
     .seg button:hover { color: var(--wa-ink); }
-    .seg button.on { color: var(--wa-ink); background: var(--wa-seg-on); box-shadow: var(--wa-seg-shadow); }
+    .seg button.on { color: var(--wa-ink); background: var(--wa-seg-on); box-shadow: var(--wa-seg-shadow); outline: 1px solid color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); outline-offset: -1px; }
     .seg button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     .seg button svg.ui-icon { width: 13px; height: 13px; }
     /* The form-sized segmented control: a setting with two to four choices
@@ -214,7 +214,7 @@ export const formSegStyles = css`
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; text-align: center;
       color: var(--wa-ink);
     }
-    .seg.wide button.on { color: var(--wa-ink); font-weight: 600; background: var(--wa-seg-on); box-shadow: var(--wa-seg-shadow); }
+    .seg.wide button.on { color: var(--wa-ink); font-weight: 600; background: var(--wa-seg-on); box-shadow: var(--wa-seg-shadow); outline: 1px solid color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); outline-offset: -1px; }
     /* The choice a setting falls back to while it has none of its own. */
     .seg.wide button.inh { color: var(--wa-ink); outline: 1px dashed var(--wa-muted); outline-offset: -3px; }
     .seg.wide button:focus-visible { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--wa-accent) 60%, transparent); }
