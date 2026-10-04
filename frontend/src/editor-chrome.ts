@@ -165,8 +165,7 @@ const topBarRun = css`
     /* Stacked (a phone, or a narrow window), the bar is two tidy rows rather
        than three ragged ones: what is done to the draft on top (Browse, undo,
        redo, Save, help), and where it has got to underneath (the sync pill,
-       Share, ···). The pill takes what the row leaves and cuts its note
-       short, never its label. The empty ::after is the line break: a full
+       Share, ···). The pill keeps its words whole. The empty ::after is the line break: a full
        width item of no height, so the rows carry their own margins instead
        of a row gap that would count it twice. */
     header.stacked, .wa-bar.stacked { row-gap: 0; padding-block: 4px; }
@@ -174,7 +173,9 @@ const topBarRun = css`
     header.stacked::after, .wa-bar.stacked::after { content: ""; order: 1; flex: 0 0 100%; height: 0; margin: 0; }
     header.stacked > .tb-sync, header.stacked > button.tb-btn:not(.tb-more), header.stacked > .side-menu,
     .wa-bar.stacked > .tb-sync, .wa-bar.stacked > button.tb-btn:not(.tb-more), .wa-bar.stacked > .side-menu { order: 2; }
-    header.stacked > .tb-sync, .wa-bar.stacked > .tb-sync { flex: 1 1 0; max-width: none; }
+    /* The pill never shrinks under its words: when the row is too full it
+       takes a row of its own, and only past a whole row is its note cut. */
+    header.stacked > .tb-sync, .wa-bar.stacked > .tb-sync { flex: 1 0 auto; max-width: 100%; }
     header.stacked .tb-sync-l, .wa-bar.stacked .tb-sync-l { flex: none; }
     header.stacked .tb-sync-n, .wa-bar.stacked .tb-sync-n { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     /* Home Assistant's own menu, which a phone hides behind this button. */
@@ -679,6 +680,15 @@ const leftCardsRun = css`
 const leftCardsTailRun = css`
     .lc-filter .lc-drag { font-size: 12px; color: var(--wa-muted); white-space: nowrap; }
     .lc-filter .lc-sub + .lc-drag::before { content: "·"; margin-right: 6px; }
+    /* The card is a column whose list takes what is left. Its header and its
+       count line keep their own height, however many rows they wrap to in a
+       narrow column, or the list would squash them and draw over them. */
+    .layers-card > :is(.lc-head, .lc-filter, .group-cta) { flex: none; }
+    .lc-filter .lc-sub { white-space: nowrap; }
+    /* A narrow column: the notes go, so the buttons keep one row longer. */
+    @container layers (max-width: 380px) {
+      .layers-card > .lc-head .lc-sub, .lc-filter .lc-drag { display: none; }
+    }
     .layers-card > .group-cta { margin: 6px 10px 0; }
     .layers-card > .hint { margin: 6px 10px 0; }
     .layers-card > .lc-empty { margin: 0; padding: 24px 16px; text-align: center; font-size: 12px; line-height: 1.5; color: var(--wa-muted); }
@@ -889,8 +899,9 @@ const canvasHeadRun = css`
        the right edge of whichever line they land on. */
     .cv-head {
       display: flex; flex-wrap: wrap; align-items: center; column-gap: 10px; row-gap: 6px;
-      min-height: 44px; padding: 8px 10px; box-sizing: border-box; flex: none; min-width: 0;
-      border-bottom: 0;
+      min-height: 44px; padding: 7px 10px; box-sizing: border-box; flex: none; min-width: 0;
+      /* A container of its own, the same as the inspector's head. */
+      margin: 6px 6px 0; background: var(--wa-card); border: 1px solid var(--wa-frame); border-radius: var(--wa-lc-r);
     }
     .cv-part { display: inline-flex; align-items: center; gap: 10px; flex: 0 1 auto; min-width: 0; }
     .cv-acts { display: inline-flex; align-items: center; gap: 6px; flex: none; margin-left: auto; }
