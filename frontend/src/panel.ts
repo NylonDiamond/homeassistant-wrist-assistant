@@ -5385,6 +5385,9 @@ export class WristAssistantPanel extends LitElement {
     .rules button.small.pill:hover:not(:disabled) { --lo-fill: color-mix(in srgb, var(--c) 26%, var(--wa-card)); }
     .rules button.small.pill.add-rule { --lo-fill: var(--wa-rl-chip); }
     .rules button.small.pill.add-rule:hover:not(:disabled) { --lo-fill: var(--wa-rl-chip-hover); }
+    /* In the rules editor the add buttons are plain fills with no outline:
+       the boxes around them already carry the lines. */
+    .rules button.small.pill, .rules button.small.pill:hover:not(:disabled) { background: var(--lo-fill); border-color: transparent; }
     .chip-menu button.danger { color: var(--error-color, #e5484d); border: none; background: transparent; }
     .chip-menu button.danger:hover { background: color-mix(in srgb, var(--error-color, #e5484d) 12%, transparent); }
     .chip-menu button:disabled { opacity: .4; cursor: default; }

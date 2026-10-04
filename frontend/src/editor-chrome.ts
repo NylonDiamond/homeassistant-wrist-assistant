@@ -85,7 +85,7 @@ const topBarRun = css`
       --c: var(--wa-hue-blue); --lo-fill: var(--wa-card); --lo-mid: var(--wa-go-mid);
       min-width: 0; max-width: none; height: 28px; gap: 7px; padding: 0 9px 0 10px; font-size: 13px; font-weight: 600;
       border-radius: 6px; box-shadow: none;
-      ${litOutline}
+      background: var(--lo-fill); border: 1px solid color-mix(in srgb, var(--c) 60%, var(--wa-card));
     }
     .picker > button.tb-browse:hover { --lo-fill: var(--wa-hover); box-shadow: none; }
     .picker > button.tb-browse:focus-visible { box-shadow: var(--wa-ring); }
@@ -145,12 +145,12 @@ const topBarRun = css`
     button.tb-btn.tb-import { --c: var(--wa-hue-purple); }
     button.tb-btn.tb-share { --c: var(--wa-hue-yellow); }
     button.tb-btn.tb-new, button.tb-btn.tb-import, button.tb-btn.tb-share {
-      --lo-fill: var(--wa-card); --lo-mid: var(--wa-go-mid);
-      ${litOutline}
+      --lo-fill: var(--wa-card);
+      background: var(--lo-fill); border: 1px solid color-mix(in srgb, var(--c) 60%, var(--wa-card));
     }
     button.tb-btn.tb-new:hover:not(:disabled), button.tb-btn.tb-import:hover:not(:disabled), button.tb-btn.tb-share:hover:not(:disabled) {
       --lo-fill: var(--wa-hover);
-      ${litOutline}
+      background: var(--lo-fill);
     }
     .tb-saved { font-size: 12px; color: var(--wa-muted); white-space: nowrap; padding: 0 4px; }
     header.stacked .tb-saved, header.stacked .tb-pen, header.stacked > .tb-div,
@@ -430,21 +430,9 @@ const rowsRun = css`
       background: color-mix(in srgb, var(--wa-ink) 8%, transparent); color: var(--wa-muted);
     }
     .badge.tap { color: var(--wa-hue-red); background: color-mix(in srgb, var(--wa-hue-red) 14%, transparent); }
-    /* A layer with rules: the Rules card's yellow, as a lit outline with
-       yellow words and no fill, so it sits on any row ground, the picked
-       blue one included. The outline is a masked layer of its own for that
-       reason: there is no one fill it could be painted inside. */
-    .badge.states {
-      position: relative; color: var(--wa-hue-yellow); background: none;
-    }
-    .badge.states::before {
-      content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1.5px; pointer-events: none;
-      background: linear-gradient(140deg, var(--wa-hue-yellow) 0%, color-mix(in srgb, var(--wa-hue-yellow) 33%, transparent) 30%,
-        var(--wa-go-mid) 62%, color-mix(in srgb, var(--wa-hue-yellow) 25%, transparent) 100%);
-      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-      -webkit-mask-composite: xor;
-      mask-composite: exclude;
-    }
+    /* A layer with rules: the Rules card's yellow as a quiet fill with yellow
+       words and no outline, the same shape as the tap badge. */
+    .badge.states { color: var(--wa-hue-yellow); background: color-mix(in srgb, var(--wa-hue-yellow) 14%, transparent); }
     /* Outlined, so it never reads as one more filled tag beside tap and
        states: it is a job, and a click opens it. */
     .badge.need {

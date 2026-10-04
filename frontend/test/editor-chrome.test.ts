@@ -98,18 +98,29 @@ describe("the chrome sheets", () => {
     expect(rowListStyles.cssText).toContain("--tp: var(--wa-hue-red);");
   });
 
-  it("draws every colored card and outlined button with the one lit outline", () => {
+  it("draws every colored card with the one lit outline", () => {
     expect(litOutline.cssText).toContain("linear-gradient(140deg, var(--c) 0%, color-mix(in srgb, var(--c) 33%, transparent) 30%");
     expect(litOutline.cssText).toContain("border: 1.5px solid transparent;");
     for (const [name, sheet, selector] of [
       ["sectionCard", chromeRuns.sectionCard, ".sec {"],
       ["leftCards", chromeRuns.leftCards, ".card.lc {"],
-      ["topBar", chromeRuns.topBar, "button.tb-btn.tb-new, button.tb-btn.tb-import, button.tb-btn.tb-share {"],
     ] as const) {
       const text = sheet.cssText;
       const rule = text.slice(text.indexOf(selector), text.indexOf("}", text.indexOf(selector)));
       expect(rule, name).toContain("linear-gradient(140deg, var(--c)");
     }
+  });
+
+  it("gives the top bar buttons a plain outline in their own hue, and rule badges a plain fill", () => {
+    const bar = chromeRuns.topBar.cssText;
+    for (const selector of [".picker > button.tb-browse {", "button.tb-btn.tb-new, button.tb-btn.tb-import, button.tb-btn.tb-share {"]) {
+      const rule = bar.slice(bar.indexOf(selector), bar.indexOf("}", bar.indexOf(selector)));
+      expect(rule, selector).toContain("border: 1px solid color-mix(in srgb, var(--c) 60%, var(--wa-card));");
+      expect(rule, selector).not.toContain("linear-gradient");
+    }
+    const all = Object.values(chromeRuns).map((sheet) => sheet.cssText).join("\n");
+    expect(all).toContain(".badge.states { color: var(--wa-hue-yellow); background: color-mix(in srgb, var(--wa-hue-yellow) 14%, transparent); }");
+    expect(all).not.toContain(".badge.states::before");
   });
 
   it("keeps a card's hue off everything inside it", () => {
