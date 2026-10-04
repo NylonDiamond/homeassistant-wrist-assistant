@@ -429,6 +429,10 @@ describe("the page strip", () => {
     expect(hidden).toBeLessThan(text.indexOf(`<div class="pe-pstrip-item"`));
     expect(smart).toBeGreaterThan(text.lastIndexOf(`<div class="pe-pstrip-item"`));
     expect(text.slice(0, hidden)).toContain("the watch does not show it");
+    // Both switches carry an instant hint (`data-tip`), no native tooltip.
+    expect(text).toMatch(/class="pe-switch pe-pstrip-tog pe-tip"\s+data-tip="Hidden: /);
+    expect(text).toMatch(/class="pe-pstrip-tog pe-tip"\s+data-tip="Smart Page: /);
+    expect(text).not.toContain(`title=Auto-show active entities`);
     expect(text.match(/<span class="pe-pstrip-sep"/g)?.length).toBe(4);
     expect(text).not.toContain("Hidden on the watch");
     expect(text).not.toContain("tiles, ");

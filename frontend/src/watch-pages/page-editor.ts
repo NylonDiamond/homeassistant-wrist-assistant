@@ -3237,8 +3237,10 @@ export class WaPageEditor extends LitElement {
     // The strip reads "Page settings:" then its options, a hairline between
     // each: Hidden first, the chips, then the Smart Page switch (a mode
     // change, so last) and on a smart page its chip.
-    const hidden = html`<label class="pe-switch pe-pstrip-tog"
-        title="Hidden: the page stays in the document, but the watch does not show it. Turn it off to show the page again.">
+    // The two switches explain themselves the moment the pointer is on
+    // them (`.pe-tip`), not after the native tooltip's wait.
+    const hidden = html`<label class="pe-switch pe-pstrip-tog pe-tip"
+        data-tip="Hidden: the page stays in the document, but the watch does not show it. Turn it off to show the page again.">
         <input type="checkbox" role="switch" .checked=${live(isHiddenWatchPage(page))} ?disabled=${this.busy}
           @change=${(e: Event) => this.setHidden(id, (e.target as HTMLInputElement).checked)} />
         <span>Hidden</span>
@@ -3256,7 +3258,10 @@ export class WaPageEditor extends LitElement {
         ...(section === "theme" ? { theme: watchPageSettings(page).theme } : {}),
       })),
     ];
-    if (host !== undefined) items.push(html`<span class="pe-pstrip-tog">${renderSmartPageSwitch(host)}</span>`);
+    if (host !== undefined) {
+      items.push(html`<span class="pe-pstrip-tog pe-tip"
+        data-tip="Smart Page: the page fills itself from its rules with the entities that are on right now. Turning it on replaces the page's tiles with rules.">${renderSmartPageSwitch(host, { tip: true })}</span>`);
+    }
     if (smartChip !== nothing) items.push(smartChip as TemplateResult);
     const sep = html`<span class="pe-pstrip-sep" aria-hidden="true"></span>`;
     return html`<div class="pe-pstrip" role="toolbar" aria-label="Page settings">
@@ -3943,6 +3948,17 @@ export class WaPageEditor extends LitElement {
     .pe-pstrip-sep { flex: none; width: 1px; height: 18px; margin: 0 2px; background: var(--wa-line); }
     .pe-pstrip-tog { display: inline-flex; align-items: center; min-width: 0; padding: 0 4px; }
     .pe-pstrip-tog.pe-switch, .pe-pstrip-tog .pe-switch { font-size: 12px; white-space: nowrap; }
+    /* An instant hint under a strip switch, from its data-tip, shown the
+       moment the pointer is on it or it holds focus. */
+    .pe-tip { position: relative; }
+    .pe-tip::after {
+      content: attr(data-tip); position: absolute; top: calc(100% + 6px); left: 0; z-index: 30;
+      width: max-content; max-width: 280px; white-space: normal; padding: 6px 9px; border-radius: 7px;
+      font-size: 11.5px; font-weight: 400; line-height: 1.35; color: var(--wa-ink); background: var(--wa-card);
+      border: 1px solid var(--wa-line-strong); box-shadow: var(--wa-shadow-pop);
+      opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .08s ease-out;
+    }
+    .pe-tip:hover::after, .pe-tip:focus-within::after { opacity: 1; visibility: visible; }
     button.pe-pchip {
       display: inline-flex; align-items: center; gap: 6px; height: 28px; max-width: 100%; padding: 0 8px 0 4px;
       border: 0; border-radius: 999px; background: var(--wa-panel); box-shadow: inset 0 0 0 1px var(--wa-line);

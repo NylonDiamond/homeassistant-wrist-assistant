@@ -340,11 +340,12 @@ export function renderSmartPageRows(host: WatchPagesEditorHost): TemplateResult 
 }
 
 /** The Smart Page switch alone, with the convert question while it is
- * asked: the page strip draws it beside Hidden on the watch. */
-export function renderSmartPageSwitch(host: WatchPagesEditorHost): TemplateResult {
+ * asked: the page strip draws it beside Hidden. With `tip`, the strip's
+ * own instant hint stands in for the native tooltip, so none is set here. */
+export function renderSmartPageSwitch(host: WatchPagesEditorHost, opts: { tip?: boolean } = {}): TemplateResult {
   const smart = readSmartConfig(host.page) !== undefined;
   return html`
-    <label class="pe-switch sm-switch" title=${W("smartPageDetail")}>
+    <label class="pe-switch sm-switch" title=${opts.tip === true ? nothing : W("smartPageDetail")}>
       <input type="checkbox" role="switch" .checked=${live(smart)} ?disabled=${host.busy}
         @change=${(e: Event) => smartSwitchPressed(host, (e.target as HTMLInputElement).checked)} />
       <span>${W("smartPage")}</span>
