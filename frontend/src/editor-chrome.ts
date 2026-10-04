@@ -56,6 +56,13 @@ export const litOutline = css`
       border: 1.5px solid transparent;
 `;
 
+/** A button's outline: one plain pixel in its own `--c`, softened toward the
+ * card, around its `--lo-fill`. Cards keep the lit outline; buttons wear this. */
+export const plainOutline = css`
+      background: var(--lo-fill);
+      border: 1px solid color-mix(in srgb, var(--c) 60%, var(--wa-card));
+`;
+
 /** The top bar, as the panel's sheet has it at the head. A bare `header`
  * selector always has a `.wa-bar` twin in the same list, so an element that
  * draws its bar in a `div.wa-bar` gets the same look. Selector lists, not
@@ -85,7 +92,7 @@ const topBarRun = css`
       --c: var(--wa-hue-blue); --lo-fill: var(--wa-card); --lo-mid: var(--wa-go-mid);
       min-width: 0; max-width: none; height: 28px; gap: 7px; padding: 0 9px 0 10px; font-size: 13px; font-weight: 600;
       border-radius: 6px; box-shadow: none;
-      background: var(--lo-fill); border: 1px solid color-mix(in srgb, var(--c) 60%, var(--wa-card));
+      ${plainOutline}
     }
     .picker > button.tb-browse:hover { --lo-fill: var(--wa-hover); box-shadow: none; }
     .picker > button.tb-browse:focus-visible { box-shadow: var(--wa-ring); }
@@ -603,9 +610,9 @@ const leftCardsRun = css`
     button.lc-btn, button.lc-btn.pri {
       --c: var(--wa-hue-green); --lo-fill: var(--wa-field); --lo-mid: var(--wa-go-mid);
       height: 24px; color: var(--wa-ink);
-      ${litOutline}
+      ${plainOutline}
     }
-    button.lc-btn:hover:not(:disabled) { --lo-fill: var(--wa-hover); ${litOutline} }
+    button.lc-btn:hover:not(:disabled) { --lo-fill: var(--wa-hover); ${plainOutline} }
     button.lc-ghost { background: transparent; border-color: transparent; color: var(--wa-muted); padding: 0 7px; letter-spacing: .04em; }
     button.lc-ghost.sm { height: 24px; font-size: 11px; }
     /* The Rows and Pictures buttons: a glyph showing the view on, and the
@@ -906,9 +913,9 @@ const canvasHeadRun = css`
     .add-tool > button.cv-act {
       --c: var(--wa-hue-green); --lo-fill: var(--wa-card); --lo-mid: var(--wa-go-mid);
       height: 24px; padding: 0 9px;
-      ${litOutline}
+      ${plainOutline}
     }
-    .add-tool > button.cv-act:hover:not(:disabled), .add-tool > button.cv-act[aria-expanded="true"] { --lo-fill: var(--wa-hover); ${litOutline} }
+    .add-tool > button.cv-act:hover:not(:disabled), .add-tool > button.cv-act[aria-expanded="true"] { --lo-fill: var(--wa-hover); ${plainOutline} }
     button.cv-act .caret { display: inline-flex; margin-right: -3px; color: var(--wa-hint); }
     button.cv-act .caret svg { width: 11px; height: 11px; }
 `;
@@ -1410,9 +1417,9 @@ const sectionCardTailRun = css`
     .sec-h button.sec-act {
       --c: var(--wa-hue-green); --lo-fill: var(--wa-card); --lo-mid: var(--wa-go-mid);
       flex: none; min-height: 22px; padding: 0 8px 0 6px; font-size: 12px; gap: 3px; border-radius: 6px;
-      ${litOutline}
+      ${plainOutline}
     }
-    .sec-h button.sec-act:hover:not(:disabled) { --lo-fill: var(--wa-hover); ${litOutline} }
+    .sec-h button.sec-act:hover:not(:disabled) { --lo-fill: var(--wa-hover); ${plainOutline} }
     .sec-h button.sec-act svg.ui-icon { width: 11px; height: 11px; }
     .more-fold { margin: 6px -10px 0; padding: 0 10px; border-top: 1px solid var(--wa-line); }
     .more-body { padding-top: 6px; }

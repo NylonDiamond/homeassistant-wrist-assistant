@@ -209,7 +209,7 @@ import { makeImageSizeProvider } from "./image-sizes.js";
 import { SymbolBrowser } from "./symbols.js";
 import { Draft, type LayerNamer, saveRefusal } from "./draft.js";
 import { ScrollFades } from "./scroll-fade.js";
-import { chromeDarkValues, chromeRuns, chromeTokens, litOutline } from "./editor-chrome.js";
+import { chromeDarkValues, chromeRuns, chromeTokens, litOutline, plainOutline } from "./editor-chrome.js";
 import { statesSummary } from "./states.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
 import { elementSize, isHiddenDocument, smallestSize, withHidden, type Placement } from "./model.js";
@@ -5363,9 +5363,9 @@ export class WristAssistantPanel extends LitElement {
     button.small.pill {
       --c: var(--pill-tint, var(--wa-hue-green)); --lo-fill: var(--wa-field); --lo-mid: var(--wa-go-mid);
       height: 28px; min-height: 28px; padding: 0 12px 0 9px; border-radius: 6px; font-weight: 600; color: var(--wa-ink);
-      ${litOutline}
+      ${plainOutline}
     }
-    button.small.pill:hover:not(:disabled) { --lo-fill: var(--wa-hover); ${litOutline} }
+    button.small.pill:hover:not(:disabled) { --lo-fill: var(--wa-hover); ${plainOutline} }
     button.small.pill svg { width: 14px; height: 14px; }
     /* Each add button in the rules editor has its own color, and they are a
        size smaller than elsewhere so the rows stay tight. */
