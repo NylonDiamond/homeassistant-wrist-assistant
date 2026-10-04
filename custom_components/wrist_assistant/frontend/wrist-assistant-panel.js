@@ -539,8 +539,8 @@ import{a as mi,b as al,c as rl,d as sl,e as ol,f as ll,g as Nr,h as Lc,i as Hr,m
   }
   button.ws-tile:hover:not(:disabled) { --ws-tile-bg: color-mix(in srgb, var(--wa-ink) 6%, var(--wa-field)); color: var(--wa-ink); }
   button.ws-tile.on {
-    --ws-tile-bg: var(--wa-seg-on);
-    color: var(--wa-ink); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card));
+    --ws-tile-bg: color-mix(in srgb, var(--ws-hue, var(--wa-ink)) 16%, var(--wa-seg-on));
+    color: var(--wa-ink); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ws-hue, var(--wa-ink)) 45%, var(--wa-seg-on));
   }
   button.ws-tile:focus-visible { outline: none; box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--wa-ink) 60%, transparent); }
   button.ws-tile:disabled { opacity: .45; cursor: default; }
@@ -548,12 +548,12 @@ import{a as mi,b as al,c as rl,d as sl,e as ol,f as ll,g as Nr,h as Lc,i as Hr,m
   .ws-tile-name:last-child { grid-row: 1 / span 2; }
   .ws-tile-glyph svg { height: 15px; width: auto; max-width: 100%; }
   .ws-tile-glyph svg.ws-pv { width: 32px; height: 18px; }
-  button.ws-tile.on .ws-tile-glyph { color: var(--wa-ink); }
+  button.ws-tile.on .ws-tile-glyph { color: color-mix(in srgb, var(--ws-hue, var(--wa-ink)) 55%, var(--wa-ink)); }
   .ws-tile-name { max-width: 100%; font-size: 11.5px; font-weight: 500; line-height: 1.2; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   button.ws-tile.on .ws-tile-name { font-weight: 600; }
   .ws-tile-detail {
     max-width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; line-height: 1.2;
-    grid-column: 2; color: var(--wa-muted); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    grid-column: 2; color: var(--wa-muted); text-align: left; overflow-wrap: break-word;
   }
   button.ws-tile.on .ws-tile-detail { color: var(--wa-label); }
   .ws-body > .ws-note { display: flex; align-items: center; gap: 10px; }

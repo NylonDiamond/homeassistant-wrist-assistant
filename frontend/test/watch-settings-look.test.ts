@@ -331,9 +331,9 @@ describe("the tiles' look", () => {
     const tile = tileRules.find((r) => r.selector === "button.ws-tile")!.body;
     expect(tile).toContain("--ws-tile-bg: var(--wa-field)");
     const on = tileRules.find((r) => r.selector === "button.ws-tile.on")!.body;
-    expect(on).toContain("--ws-tile-bg: var(--wa-seg-on)");
+    expect(on).toContain("--ws-tile-bg: color-mix(in srgb, var(--ws-hue, var(--wa-ink)) 16%, var(--wa-seg-on))");
     expect(on).toContain("color: var(--wa-ink)");
-    expect(on).toContain("box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card))");
+    expect(on).toContain("box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ws-hue, var(--wa-ink)) 45%, var(--wa-seg-on))");
   });
 });
 
