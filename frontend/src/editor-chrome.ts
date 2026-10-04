@@ -267,6 +267,13 @@ const columnsRun = css`
     /* A corner in curved text mode: the layers stay editable, but read as off. */
     .layers.skipped { opacity: .45; }
     .column.canvas { --wa-fade: var(--wa-bg); --wa-fade-gap: 8px; }
+    /* No scroll bar is ever drawn between the canvas and the inspector. The
+       canvas column still scrolls (wheel, trackpad, keys) when a short window
+       leaves it less room than its card's floor, and the edge fades above say
+       so; the bar itself sat in the gap beside the inspector's own. The
+       stage inside it gets the same treatment in the canvas sheet. */
+    .column.canvas { scrollbar-width: none; }
+    .column.canvas::-webkit-scrollbar { display: none; width: 0; height: 0; }
     .column.inspector::before, .column.inspector::after,
     .layers::before, .layers::after,
     .column.canvas::before, .column.canvas::after {
@@ -952,6 +959,17 @@ const canvasHeadTailRun = css`
       font-size: 13px; font-weight: 500; color: var(--wa-ink);
     }
     .cv-head .doc-chip > svg { width: 13px; height: 13px; flex: none; }
+    /* A device chip wears its person's color, the one Browse gives that
+       person's tabs and sections (placeColorVar), so a device is one color
+       everywhere: a low wash of it over the card and a thin edge of it. The
+       glyph is the hue pulled a quarter toward the ink, the name is ink.
+       Unassigned is nobody's, so it stays a plain card with a visible edge. */
+    .cv-head .doc-chip.hued {
+      background: color-mix(in srgb, var(--chip-c) 18%, var(--wa-card));
+      border-color: color-mix(in srgb, var(--chip-c) 60%, var(--wa-card));
+    }
+    .cv-head .doc-chip.hued > svg { color: color-mix(in srgb, var(--chip-c) 75%, var(--wa-ink)); opacity: 1; }
+    .cv-head .doc-chip:not(.hued) { border-color: var(--wa-line-strong); }
     .cv-head .doc-chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     /* The x that takes the design off a device is always there, quiet, and
        goes red only under the pointer or while it is armed. */
@@ -995,7 +1013,14 @@ const stageRun = css`
     .stage-wrap > .stage {
       position: absolute; inset: 0; display: flex; flex-direction: column; align-items: stretch; gap: 12px;
       padding: 64px 24px 16px; overflow: auto; background: none; container-type: normal;
+      /* A face zoomed past the stage still pans with the wheel and the
+         trackpad, but no bar is drawn: the stage's right edge is the card's,
+         and a bar there stood between the canvas and the inspector. At Fit
+         the face no longer overruns the stage (stageReserve counts the hint's
+         three lines and the gap over it). */
+      scrollbar-width: none;
     }
+    .stage-wrap > .stage::-webkit-scrollbar { display: none; width: 0; height: 0; }
     .stage-wrap > .stage.control-stage { align-items: center; justify-content: center; padding-top: 24px; }
     .stage-wrap .row-strip { align-self: center; flex: none; }
     /* Auto margins centre the face both ways and never push it past the

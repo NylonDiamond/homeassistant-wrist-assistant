@@ -14,6 +14,7 @@ import {
   isShelvedRow,
   personColorVar,
   personIndex,
+  placeColorVar,
   pickerListRows,
   pickerBands,
   pickerSections,
@@ -360,6 +361,18 @@ describe("personIndex", () => {
     expect(personColorVar(personIndex(people, "p1"))).toBe("var(--wa-person-1)");
     expect(personColorVar(personIndex(people, "w1"))).toBe("var(--wa-person-2)");
     expect(personColorVar(personIndex(people, LIBRARY_OWNER_ID))).toBeUndefined();
+  });
+
+  // The device chips in the canvas head wear the same color as that person's
+  // tabs, so one device is one color everywhere. A device in the home but
+  // nobody's gets its kind's hue; Unassigned stays plain.
+  it("colors a device chip with its person's color, its kind's hue, or nothing", () => {
+    expect(placeColorVar(people, "w2", "watch")).toBe("var(--wa-person-1)");
+    expect(placeColorVar(people, "p1", "iphone")).toBe("var(--wa-person-1)");
+    expect(placeColorVar(people, "w1", "watch")).toBe("var(--wa-person-2)");
+    expect(placeColorVar(people, "lost-phone", "iphone")).toBe("var(--wa-hue-blue)");
+    expect(placeColorVar(people, "lost-watch", "watch")).toBe("var(--wa-hue-green)");
+    expect(placeColorVar(people, LIBRARY_OWNER_ID, "library")).toBeUndefined();
   });
 
   // A household bigger than the palette starts it again rather than leaving

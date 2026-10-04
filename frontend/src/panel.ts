@@ -226,6 +226,7 @@ import {
   isShelvedRow,
   personColorVar,
   personIndex,
+  placeColorVar,
   pickerBands,
   pickerListRows,
   rowKeyFor,
@@ -5241,8 +5242,19 @@ export class WristAssistantPanel extends LitElement {
       border: 1px solid var(--wa-line); background: transparent; color: inherit; cursor: pointer;
     }
     .branches button.active { background: var(--wa-seg-on); color: var(--wa-ink); border-color: transparent; }
-    .rules .branches button.active { background: color-mix(in srgb, var(--wa-rule-tone) 55%, var(--wa-panel)); color: var(--wa-ink); }
     .branches button.live-match { border-color: var(--success-color, #43a047); }
+    /* The Preview chips read as buttons: a raised grey fill and a visible
+       edge rather than a hairline on the box's own ground. The picked one
+       takes the rules' coral, and the case that holds right now keeps its
+       green edge. */
+    .rules .branches button {
+      font-weight: 600; padding: 3px 10px; color: var(--wa-ink);
+      background: var(--wa-rl-chip); border-color: var(--wa-rl-row-edge);
+    }
+    .rules .branches button:hover:not(.active) { background: var(--wa-rl-chip-hover); }
+    .rules .branches button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .rules .branches button.active { background: color-mix(in srgb, var(--wa-rule-tone) 55%, var(--wa-panel)); color: var(--wa-ink); border-color: transparent; }
+    .rules .branches button.live-match { border-color: var(--wa-hue-green); }
     pre { font-size: 11px; white-space: pre-wrap; word-break: break-all; max-height: 400px; overflow: auto; background: var(--wa-panel); padding: 8px; border-radius: 6px; }
   `, formLinkStyles, css`
     /* The Advanced editor, laid out the way Home Assistant lays out an
@@ -5250,24 +5262,41 @@ export class WristAssistantPanel extends LitElement {
        says what it does in a sentence, a menu on the row, and a pill to add
        one more. A row opens in place to be edited. */
     .rules { margin-top: 4px; display: flex; flex-direction: column; gap: 8px; }
-    /* Three levels of box, each one lighter than the one around it: a rule
-       holds its cases, a case holds an If part and a Then part, and each
-       part holds rows. The rails on the left of the parts are what say "these
+    /* Three levels of box, each one a step further from the card than the
+       one around it (lighter in the dark skin, darker in the light one, since
+       each step is more ink over the card): a rule holds its cases, a case
+       holds an If part and a Then part, and each part holds rows. The rule
+       and the cases have a 1.5px edge that reads at a glance, grey unless it
+       means something; the rails on the left of the parts are what say "these
        belong together". */
+    .rules {
+      --wa-rl-rule: color-mix(in srgb, var(--wa-ink) 3%, var(--wa-card));
+      --wa-rl-case: color-mix(in srgb, var(--wa-ink) 7%, var(--wa-card));
+      --wa-rl-row: color-mix(in srgb, var(--wa-ink) 11%, var(--wa-card));
+      --wa-rl-row-hover: color-mix(in srgb, var(--wa-ink) 15%, var(--wa-card));
+      --wa-rl-chip: color-mix(in srgb, var(--wa-ink) 12%, var(--wa-card));
+      --wa-rl-chip-hover: color-mix(in srgb, var(--wa-ink) 18%, var(--wa-card));
+      --wa-rl-edge: color-mix(in srgb, var(--wa-ink) 38%, var(--wa-card));
+      --wa-rl-row-edge: color-mix(in srgb, var(--wa-ink) 20%, var(--wa-card));
+    }
     .rule {
-      border: 1px solid color-mix(in srgb, var(--wa-rule-tone) 30%, var(--wa-line)); border-radius: 12px; padding: 6px 10px 8px;
-      background: color-mix(in srgb, var(--wa-rule-tone) 4%, transparent);
+      border: 1.5px solid color-mix(in srgb, var(--wa-rule-tone) 55%, var(--wa-rl-edge)); border-radius: 12px; padding: 6px 10px 8px;
+      background: var(--wa-rl-rule);
+      /* Secondary words inside a rule (a row's setting name, the field
+         labels, the hints) on these grounds: the skin's muted grey fell under
+         4.5:1 on the row fill, so here it is a step nearer the ink. */
+      --wa-muted: color-mix(in srgb, var(--wa-soft) 70%, var(--wa-faint));
     }
     /* The Simple or Advanced switch at the top of the card, on its own line. */
     .editor-switch { margin: 0 0 10px; }
     .editor-switch > .seg.wide { height: 28px; border-radius: 8px; }
     .editor-switch > .hint { margin-top: 4px; }
     .case {
-      border: 1px solid color-mix(in srgb, var(--wa-rule-tone) 15%, var(--wa-line)); border-radius: 10px; padding: 4px 10px 8px; margin-top: 8px;
-      background: var(--wa-panel);
+      border: 1.5px solid var(--wa-rl-edge); border-radius: 10px; padding: 4px 10px 8px; margin-top: 8px;
+      background: var(--wa-rl-case);
     }
-    .case.match { border-color: color-mix(in srgb, var(--success-color, #43a047) 60%, var(--wa-line)); }
-    .case.otherwise { border-color: color-mix(in srgb, var(--wa-rule-else) 40%, var(--wa-line)); }
+    .case.match { border-color: var(--wa-hue-green); }
+    .case.otherwise { border-color: color-mix(in srgb, var(--wa-rule-else) 80%, var(--wa-rl-edge)); }
     .rule > .rsect, .case > .rsect { margin: 0; }
     .rule > .field { margin-top: 4px; }
     /* If is blue and Then is green, rail, label and add buttons alike, so the
@@ -5275,8 +5304,14 @@ export class WristAssistantPanel extends LitElement {
     .rpart { --rpart: var(--wa-rule-if); margin-top: 4px; padding-left: 10px; border-left: 3px solid color-mix(in srgb, var(--rpart) 60%, transparent); }
     .rpart.then { --rpart: var(--wa-rule-then); }
     .case.otherwise .rpart.then { border-left-color: color-mix(in srgb, var(--wa-rule-else) 60%, transparent); }
-    .rlabel { font-size: 10.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--rpart, var(--wa-states)); margin: 2px 0 0; }
-    .case.otherwise .rlabel { color: var(--wa-rule-else); }
+    /* The part's hue pulled a quarter of the way to the ink, which darkens it
+       on the light skin and lifts it on the dark one, so IF, THEN and WHEN NO
+       CASE MATCHES clear 4.5:1 on the case's ground in both. */
+    .rlabel {
+      font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; margin: 2px 0 0;
+      color: color-mix(in srgb, var(--rpart, var(--wa-states)) 75%, var(--wa-ink));
+    }
+    .case.otherwise .rlabel { color: color-mix(in srgb, var(--wa-rule-else) 75%, var(--wa-ink)); }
     .rpart .radd { margin-bottom: 2px; }
     .rule > .radd { margin: 8px 0 0; }
     .rsect { display: flex; align-items: center; gap: 8px; min-height: 24px; margin: 10px 0 2px; }
@@ -5286,18 +5321,18 @@ export class WristAssistantPanel extends LitElement {
     .rsect .spacer { flex: 1; }
     .rsect button.icon { opacity: .55; }
     .rsect button.icon:hover, .rsect button.icon:focus-visible { opacity: 1; }
-    .rnote { font-weight: 400; font-size: 12px; color: var(--success-color, #43a047); }
+    .rnote { font-weight: 500; font-size: 12px; color: color-mix(in srgb, var(--wa-hue-green) 80%, var(--wa-ink)); }
     .seg.join { height: 26px; }
     .rcard {
-      border: 1px solid var(--wa-line); border-radius: 8px; background: var(--wa-field);
+      border: 1px solid var(--wa-rl-row-edge); border-radius: 8px; background: var(--wa-rl-row);
       margin: 4px 0;
     }
-    .rcard.open { border-color: var(--wa-line-strong); }
+    .rcard.open { border-color: var(--wa-rl-edge); }
     .rrow {
       display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 2px 2px 2px 10px;
-      border-radius: 8px; cursor: pointer; outline: none;
+      border-radius: 8px; cursor: pointer; outline: none; color: var(--wa-ink);
     }
-    .rrow:hover { background: color-mix(in srgb, var(--wa-ink) 4%, transparent); }
+    .rrow:hover { background: var(--wa-rl-row-hover); }
     .rrow:focus-visible { box-shadow: var(--wa-ring); }
     .rcard.open > .rrow { border-radius: 8px 8px 0 0; }
     .ric { display: inline-flex; flex: none; color: var(--wa-muted); }
@@ -5315,7 +5350,7 @@ export class WristAssistantPanel extends LitElement {
     .racts button.icon { opacity: .6; }
     .racts button.icon:hover:not(:disabled), .racts button.icon:focus-visible { opacity: 1; }
     .racts button.icon:disabled { opacity: .2; }
-    .rbody { padding: 6px 10px 8px; border-top: 1px solid var(--wa-line); }
+    .rbody { padding: 6px 10px 8px; border-top: 1px solid var(--wa-rl-row-edge); }
     .rbody > .hint { margin-left: var(--wa-col); }
     .rempty { color: var(--wa-muted); font-size: 12.5px; font-style: italic; padding: 4px 2px; }
     .radd { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 2px; }
@@ -5342,6 +5377,14 @@ export class WristAssistantPanel extends LitElement {
     :is(.rules, .states) button.pill.add-case { --pill-tint: var(--wa-hue-green); }
     :is(.rules, .states) button.pill.add-else { --pill-tint: var(--wa-rule-else); }
     .rules button.pill.add-rule { --pill-tint: var(--wa-muted); color: var(--wa-ink); }
+    /* In the Advanced editor the add pills are filled, not only outlined: a
+       quiet wash of their own hue over the card, so on the nested grounds
+       they read as buttons and not as one more box. Add a rule, which has no
+       hue of its own, is a raised grey. The words stay ink. */
+    .rules button.small.pill { --lo-fill: color-mix(in srgb, var(--c) 16%, var(--wa-card)); color: var(--wa-ink); }
+    .rules button.small.pill:hover:not(:disabled) { --lo-fill: color-mix(in srgb, var(--c) 26%, var(--wa-card)); }
+    .rules button.small.pill.add-rule { --lo-fill: var(--wa-rl-chip); }
+    .rules button.small.pill.add-rule:hover:not(:disabled) { --lo-fill: var(--wa-rl-chip-hover); }
     .chip-menu button.danger { color: var(--error-color, #e5484d); border: none; background: transparent; }
     .chip-menu button.danger:hover { background: color-mix(in srgb, var(--error-color, #e5484d) 12%, transparent); }
     .chip-menu button:disabled { opacity: .4; cursor: default; }
@@ -18947,7 +18990,9 @@ export class WristAssistantPanel extends LitElement {
     const ask = `Press again to take it off ${label}.`;
     // The Unassigned chip has no x: there is nowhere further to take it off to.
     const mayEdit = this.canEdit && this.hass.user?.is_admin === true && target.kind !== "library";
-    return html`<span class="doc-chip" aria-current=${here ? "true" : nothing}>
+    const hue = placeColorVar(this.pickerPeople(peopleOf(this.owners)), target.ownerId, target.kind);
+    return html`<span class="doc-chip ${hue ? "hued" : ""}" aria-current=${here ? "true" : nothing}
+      style=${hue ? `--chip-c: ${hue}` : nothing}>
       ${uiIcon(icon)}<span class="doc-chip-name">${label}</span>
       ${mayEdit ? html`<button type="button" class="doc-trash ${armed ? "armed" : ""}"
         ?disabled=${this.saving || stuck !== undefined}

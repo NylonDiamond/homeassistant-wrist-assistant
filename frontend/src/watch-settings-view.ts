@@ -721,7 +721,7 @@ export class WatchSettings implements ReactiveController {
         : this.renderDelivery(record)}
       <span class="spacer"></span>
       <button class="small" @click=${() => this.guard("Discard and close", () => this.close())}>Close</button>
-      <button class="primary" ?disabled=${!canSave}
+      <button class="primary save ${changes > 0 ? "dirty" : ""}" ?disabled=${!canSave}
         title=${changes > 0 ? "Save these settings for the watch to pick up" : "Nothing to save"}
         @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
     </div>`;

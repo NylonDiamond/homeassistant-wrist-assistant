@@ -64,12 +64,23 @@ export const formButtonStyles = css`
     button.ghost:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     button.ghost.danger { color: var(--error-color, #b42318); background: transparent; border-color: transparent; }
     /* Save is the header's one call to action. It is quiet while there is
-       nothing to save and lit, with the unsaved halo, once there is, so the
-       button, the dirty dot and the footer line all say "unsaved" the same
-       way. */
+       nothing to save. Once there is something and it can be saved, it is
+       solid palette green with a soft, still green glow, so it is the one
+       thing in the bar asking to be pressed. The words are --wa-chip-ink,
+       white on the light skin's deep green and black on the dark skin's
+       bright one, which clears 4.5:1 in both. Unsaved but not savable yet
+       (no slot, a refusal, mid-save) keeps the amber halo it had. The
+       Watch settings dialog's Save carries the same two classes and so the
+       same green, through the unscoped rule. */
     header button.save, .wa-bar button.save { min-height: 28px; height: 28px; padding: 0 12px; }
     header button.save:not(.dirty), .wa-bar button.save:not(.dirty) { background: var(--wa-card); color: var(--wa-faint); border-color: transparent; opacity: 1; }
     header button.save.dirty, .wa-bar button.save.dirty { box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning-color, #e0a100) 35%, transparent); }
+    button.primary.save.dirty:not(:disabled) {
+      --wa-save-glow: 0 0 0 1px color-mix(in srgb, var(--wa-hue-green) 45%, transparent), 0 0 12px 1px color-mix(in srgb, var(--wa-hue-green) 40%, transparent);
+      background: var(--wa-hue-green); color: var(--wa-chip-ink); border-color: transparent; box-shadow: var(--wa-save-glow);
+    }
+    button.primary.save.dirty:not(:disabled):hover { background: color-mix(in srgb, var(--wa-hue-green) 88%, var(--wa-ink)); }
+    button.primary.save.dirty:not(:disabled):focus-visible { box-shadow: var(--wa-ring), var(--wa-save-glow); }
     button.danger { color: var(--error-color, #e5484d); border-color: color-mix(in srgb, var(--error-color, #e5484d) 45%, transparent); background: color-mix(in srgb, var(--error-color, #e5484d) 8%, transparent); }
     button.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--error-color, #e5484d) 16%, transparent); border-color: var(--error-color, #e5484d); }
     button.small { padding: 0 9px; font-size: 13px; min-height: 26px; border-radius: 6px; }

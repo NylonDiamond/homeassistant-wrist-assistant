@@ -72,14 +72,28 @@ export function zoomLabel(zoom: number): string {
   return Math.abs(zoom - ZOOM_FIT) < 1e-6 ? "Fit" : `${Math.round(zoom * 100)}%`;
 }
 
+/** The stage's box, as the canvas sheet draws it (`.stage-wrap > .stage` and
+ * `.stage-face > .under` in editor-chrome.ts). Change them together. */
+export const STAGE_PAD_TOP = 64;
+export const STAGE_PAD_BOTTOM = 16;
+export const STAGE_GAP = 12;
+export const STAGE_HINT_HEIGHT = 45;
+
 /**
  * The height the stage keeps for things other than the face, in CSS px: the
  * floating toolbar over it, the hint under it, and, when they are there, the
  * row designer's banner, the corner's Curved text or Layers switch and the
  * first-run tiles. The face's Fit size is what is left.
+ *
+ * The plain reserve is the stage's own box: its 64px top padding (where the
+ * toolbar floats), the 12px gap over the hint, the hint's fixed three lines
+ * (STAGE_HINT_HEIGHT) and the 16px bottom padding. The hint used to be counted
+ * at 44px with no gap, a line short, so a face bound by the stage's height
+ * overran it by 13px and the stage drew a scroll bar beside the inspector.
  */
 export function stageReserve(opts: { rowStrip?: boolean; firstRun?: boolean; modeRow?: boolean } = {}): number {
-  return 64 + 44 + 16 + (opts.rowStrip ? 60 : 0) + (opts.modeRow ? 64 : 0) + (opts.firstRun ? 230 : 0);
+  return STAGE_PAD_TOP + STAGE_GAP + STAGE_HINT_HEIGHT + STAGE_PAD_BOTTOM
+    + (opts.rowStrip ? 60 : 0) + (opts.modeRow ? 64 : 0) + (opts.firstRun ? 230 : 0);
 }
 
 /** What one first-run tile does: add one blank layer, or open the Add sheet on

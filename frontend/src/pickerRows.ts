@@ -350,6 +350,18 @@ export function personColorVar(index: number): string | undefined {
   return `var(--wa-person-${(index % PERSON_COLORS) + 1})`;
 }
 
+/**
+ * The color of a device's chip in the canvas head: its person's color, the
+ * one that person's tabs and sections wear in Browse, so a device is the same
+ * color everywhere. A device that is in the home but nobody's (an orphan has
+ * no person) falls back to a hue for its kind, blue for an iPhone and green
+ * for a watch. Unassigned belongs to the whole home and stays uncolored.
+ */
+export function placeColorVar(people: readonly PickerPerson[], ownerId: string, kind: DeviceKind): string | undefined {
+  if (kind === "library") return undefined;
+  return personColorVar(personIndex(people, ownerId)) ?? (kind === "iphone" ? "var(--wa-hue-blue)" : "var(--wa-hue-green)");
+}
+
 // ── shape groups and person bands ─────────────────────────────────────────
 //
 // One device's block used to be one flat grid of every shape that device

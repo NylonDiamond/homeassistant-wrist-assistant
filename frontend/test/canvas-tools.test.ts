@@ -5,9 +5,11 @@
 
 import { describe, expect, it, vi } from "vitest";
 import {
-  FIRST_RUN_TILES, ZOOM_FIT, ZOOM_MAX, ZOOM_MIN, ZOOM_STEPS, anySnap, pickGridStep, runFirstRunTile, slotWord,
-  snapSwitchOn, stageReserve, toggleSnap, zoomIn, zoomLabel, zoomOut, type SnapFlags,
+  FIRST_RUN_TILES, STAGE_GAP, STAGE_HINT_HEIGHT, STAGE_PAD_BOTTOM, STAGE_PAD_TOP, ZOOM_FIT, ZOOM_MAX, ZOOM_MIN, ZOOM_STEPS,
+  anySnap, pickGridStep, runFirstRunTile, slotWord, snapSwitchOn, stageReserve, toggleSnap, zoomIn, zoomLabel, zoomOut,
+  type SnapFlags,
 } from "../src/canvas-tools.js";
+import { canvasStyles } from "../src/editor-chrome.js";
 import { GRID_STEPS } from "../src/interact.js";
 
 const flags = (over: Partial<SnapFlags> = {}): SnapFlags =>
@@ -91,6 +93,18 @@ describe("zoom", () => {
     expect(stageReserve({ rowStrip: true })).toBeGreaterThan(plain);
     expect(stageReserve({ firstRun: true })).toBeGreaterThan(plain);
     expect(stageReserve({ modeRow: true })).toBeGreaterThan(plain);
+  });
+
+  // The face's Fit height is the stage less this reserve, so the reserve has
+  // to be the whole of what the stage draws besides the face, or a face bound
+  // by height overruns the stage and it grows a scroll bar.
+  it("reserves the stage's whole box besides the face, hint and gap included", () => {
+    expect(stageReserve()).toBe(STAGE_PAD_TOP + STAGE_GAP + STAGE_HINT_HEIGHT + STAGE_PAD_BOTTOM);
+    expect(stageReserve()).toBe(137);
+    const css = canvasStyles.cssText;
+    expect(css).toContain(`padding: ${STAGE_PAD_TOP}px 24px ${STAGE_PAD_BOTTOM}px;`);
+    expect(css).toMatch(new RegExp(`\\.stage-face \\{[^}]*gap: ${STAGE_GAP}px;`));
+    expect(css).toMatch(new RegExp(`\\.stage-face > \\.under \\{[^}]*min-height: ${STAGE_HINT_HEIGHT}px;`));
   });
 });
 
