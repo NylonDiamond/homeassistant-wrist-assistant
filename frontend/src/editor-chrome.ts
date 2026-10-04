@@ -139,9 +139,9 @@ const topBarRun = css`
     @media (prefers-reduced-motion: reduce) { .tb-sync.sending .tb-dot { animation: none; } }
     button.tb-btn {
       font: inherit; font-size: 13px; font-weight: 600; height: 28px; padding: 0 11px; border-radius: 6px; cursor: pointer; flex: none;
-      border: 0; background: var(--wa-card); color: var(--wa-ink); white-space: nowrap;
+      border: 1px solid var(--wa-line-strong); background: var(--wa-card); color: var(--wa-ink); white-space: nowrap;
     }
-    button.tb-btn:hover:not(:disabled) { background: var(--wa-hover); }
+    button.tb-btn:hover:not(:disabled) { background: var(--wa-hover); border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
     button.tb-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
     button.tb-btn.tb-more { padding: 0 9px; letter-spacing: .08em; }
     /* New, Import and Share wear the lit outline, each in its own hue, with
@@ -1007,7 +1007,7 @@ const stageRun = css`
     .stage-wrap.first-run { min-height: 540px; }
     .stage-wrap > .stage {
       position: absolute; inset: 0; display: flex; flex-direction: column; align-items: stretch; gap: 12px;
-      padding: 64px 24px 16px; overflow: auto; background: none; container-type: normal;
+      padding: 18px 24px 16px; overflow: auto; background: none; container-type: normal;
       /* A face zoomed past the stage still pans with the wheel and the
          trackpad, but no bar is drawn: the stage's right edge is the card's,
          and a bar there stood between the canvas and the inspector. At Fit
@@ -1049,14 +1049,14 @@ const stageRun = css`
        from the top. The face is centred together with the hint, so a hint that
        grew from one line to two when a layer was selected pushed the face up. */
     .stage-face > .under {
-      max-width: 460px; font-size: 11px; font-weight: 400; color: var(--wa-hint);
+      max-width: 460px; font-size: 12px; font-weight: 400; color: var(--wa-label, var(--wa-muted));
       line-height: 15px; min-height: 45px; align-items: flex-start; align-content: flex-start;
     }
     .stage-page { position: absolute; top: 25px; left: 16px; z-index: 3; font-size: 11px; color: var(--wa-hint); pointer-events: none; }
     .stage-tools {
-      position: absolute; top: 14px; left: 50%; transform: translateX(-50%); z-index: 5;
-      display: flex; align-items: center; gap: 2px; height: 34px; padding: 0 4px; max-width: calc(100% - 24px);
-      border-radius: 7px; background: var(--wa-float-bg); border: 1px solid transparent; box-shadow: var(--wa-float-shadow);
+      position: sticky; top: 0; left: 0; right: 0; z-index: 5; flex: none; box-sizing: border-box;
+      display: flex; align-items: center; gap: 2px; height: 34px; padding: 0 4px; max-width: calc(100cqw - 24px);
+      border-radius: 8px; background: var(--wa-float-bg); border: 1px solid var(--wa-line-strong); box-shadow: var(--wa-float-shadow);
     }
     button.tb {
       display: inline-flex; align-items: center; gap: 7px; flex: none; height: 26px; padding: 0 10px; border-radius: 6px;
@@ -1112,7 +1112,6 @@ const stageToolsTailRun = css`
     @container (max-width: 460px) {
       .stage-tools { flex-wrap: wrap; justify-content: center; height: auto; padding: 4px; row-gap: 2px; width: max-content; }
       .stage-tools .tb-sep { display: none; }
-      .stage-wrap > .stage { padding-top: 92px; }
       .stage-page { top: auto; bottom: 8px; }
     }
     .snap-menu { min-width: 220px; }
@@ -1430,18 +1429,19 @@ const sectionCardTailRun = css`
        one. The buttons share the row evenly, so seven still fit a 328px
        inspector at about 34px each. */
     .align-field { display: flex; flex-direction: column; gap: 6px; padding: 3px 0; min-width: 0; }
-    .align-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--wa-muted); }
+    .align-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--wa-label, var(--wa-muted)); }
+    .align-head .align-to { color: var(--wa-muted); }
     .align-head .align-to { white-space: nowrap; }
-    .align-row { display: flex; align-items: stretch; gap: 4px; min-width: 0; }
+    .align-row { display: flex; align-items: stretch; gap: 4px; min-width: 0; margin-left: var(--wa-col); }
     .align-row button.align {
-      flex: 1 1 0; min-width: 0; height: 26px; padding: 0; border: 0; border-radius: 6px; cursor: pointer;
+      flex: 0 1 34px; min-width: 0; height: 28px; padding: 0; border: 1px solid var(--wa-line-strong); border-radius: 6px; cursor: pointer;
       display: grid; place-items: center; background: var(--wa-field); color: var(--wa-ink);
-      transition: background-color .12s ease-out;
+      transition: background-color .12s ease-out, border-color .12s ease-out;
     }
-    .align-row button.align:hover:not(:disabled) { background: var(--wa-hover); }
+    .align-row button.align:hover:not(:disabled) { background: var(--wa-hover); border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
     .align-row button.align:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    .align-row button.align svg.ui-icon { width: 15px; height: 15px; }
-    .align-row .align-sep { flex: none; width: 1px; margin: 4px 2px; background: var(--wa-line); }
+    .align-row button.align svg.ui-icon { width: 17px; height: 17px; }
+    .align-row .align-sep { flex: none; width: 1px; margin: 4px 5px; background: var(--wa-line-strong); }
 `;
 
 /** Every run, for panel.ts, which puts each one back at the place in its

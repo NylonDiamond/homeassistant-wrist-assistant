@@ -1046,9 +1046,9 @@ export function percentToFraction(p: number): number {
  * before, and `step` and `def` are given as fractions, the way the setting is
  * stored.
  */
-export function percentSliderField(label: string, value: number, set: (v: number) => void, opts: { step: number; def: number }) {
+export function percentSliderField(label: string, value: number, set: (v: number) => void, opts: { step: number; def: number; min?: number }) {
   return sliderField(label, fractionToPercent(value), (p) => set(percentToFraction(p)), {
-    min: 0, max: 100, step: fractionToPercent(opts.step), def: fractionToPercent(opts.def), unit: "%",
+    min: fractionToPercent(opts.min ?? 0), max: 100, step: fractionToPercent(opts.step), def: fractionToPercent(opts.def), unit: "%",
     format: (p) => `${Math.round(p)}%`,
   });
 }
@@ -6644,9 +6644,9 @@ function lineUpField(host: EditorHost, el: CElement, family: FamilyKind, f: Norm
   </div>
   ${anchored ? nothing : html`<div class="field list-field"><span>Copy</span>
     <div class="chips">
-      <button class="small" title="Copy this layer's X, Y, W, H and rotation, to paste onto another layer"
+      <button class="small lined" title="Copy this layer's X, Y, W, H and rotation, to paste onto another layer"
         @click=${() => host.copyPosition({ frame: { ...f }, family })}>${copiedHere ? "Copied" : "Copy position"}</button>
-      <button class="small" ?disabled=${copied === undefined || copiedHere}
+      <button class="small lined" ?disabled=${copied === undefined || copiedHere}
         title=${copied === undefined
           ? "Copy a position from a layer first"
           : copied.family === family || (family !== "rectangular" && copied.family !== "rectangular")
@@ -7773,11 +7773,11 @@ export function layerEditor(host: EditorHost, el: CElement, family: FamilyKind, 
           const p = (e as typeof el).payload;
           if (v === "1") delete p.lineLimit; else p.lineLimit = Number(v);
         }), { def: "1" })}
-        ${sliderField("Shrink to fit", el.payload.minimumScale ?? TEXT_MIN_SCALE, (v) => upd((e) => {
+        ${percentSliderField("Shrink to fit", el.payload.minimumScale ?? TEXT_MIN_SCALE, (v) => upd((e) => {
           const p = (e as typeof el).payload;
           const n = clampMinimumScale(v);
           if (n === TEXT_MIN_SCALE) delete p.minimumScale; else p.minimumScale = n;
-        }, "minscale"), { min: TEXT_MIN_SCALE, max: 1, step: 0.05, def: TEXT_MIN_SCALE, format: (v) => `${Math.round(v * 100)}%` })}
+        }, "minscale"), { min: TEXT_MIN_SCALE, step: 0.05, def: TEXT_MIN_SCALE })}
         <div class="hint">How small the text may go to fit its box before it is cut off with an ellipsis.
           100% never shrinks.</div>`;
       lookMore = [

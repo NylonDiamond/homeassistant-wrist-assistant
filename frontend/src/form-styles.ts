@@ -73,7 +73,7 @@ export const formButtonStyles = css`
        Watch settings dialog's Save carries the same two classes and so the
        same green, through the unscoped rule. */
     header button.save, .wa-bar button.save { min-height: 28px; height: 28px; padding: 0 12px; }
-    header button.save:not(.dirty), .wa-bar button.save:not(.dirty) { background: var(--wa-card); color: var(--wa-faint); border-color: transparent; opacity: 1; }
+    header button.save:not(.dirty), .wa-bar button.save:not(.dirty) { background: var(--wa-card); color: var(--wa-faint); border-color: var(--wa-line-strong); opacity: 1; }
     header button.save.dirty, .wa-bar button.save.dirty { box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning-color, #e0a100) 35%, transparent); }
     button.primary.save.dirty:not(:disabled) {
       --wa-save-glow: 0 0 0 1px color-mix(in srgb, var(--wa-hue-green) 45%, transparent), 0 0 12px 1px color-mix(in srgb, var(--wa-hue-green) 40%, transparent);
@@ -84,6 +84,8 @@ export const formButtonStyles = css`
     button.danger { color: var(--error-color, #e5484d); border-color: color-mix(in srgb, var(--error-color, #e5484d) 45%, transparent); background: color-mix(in srgb, var(--error-color, #e5484d) 8%, transparent); }
     button.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--error-color, #e5484d) 16%, transparent); border-color: var(--error-color, #e5484d); }
     button.small { padding: 0 9px; font-size: 13px; min-height: 26px; border-radius: 6px; }
+    button.small.lined { border-color: var(--wa-line-strong); }
+    button.small.lined:hover:not(:disabled) { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
     /* An icon and its words on one line. Without this the icon, drawn as a
        block, sits on a line of its own above the words. */
     button.small:has(> svg.ui-icon) { display: inline-flex; align-items: center; gap: 5px; }
@@ -118,10 +120,10 @@ export const formButtonStyles = css`
     select:focus-visible { outline: none; border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
     input[type=text], input[type=number], input[type=search], input[type=url], textarea {
       font: inherit; font-size: 13px; font-weight: 500; color: var(--wa-ink); min-height: 28px;
-      padding: 4px 10px; border-radius: 6px; border: 1px solid transparent; background: var(--wa-input);
+      padding: 4px 10px; border-radius: 6px; border: 1px solid var(--wa-line-strong); background: var(--wa-input);
       transition: border-color .12s ease-out, box-shadow .12s ease-out;
     }
-    input[type=text]:hover:not(:disabled), input[type=number]:hover:not(:disabled), textarea:hover:not(:disabled) { border-color: var(--wa-line-strong); }
+    input[type=text]:hover:not(:disabled), input[type=number]:hover:not(:disabled), textarea:hover:not(:disabled) { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
     input[type=text]:focus-visible, input[type=number]:focus-visible, input[type=search]:focus-visible, textarea:focus-visible { outline: none; border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
     input::placeholder, textarea::placeholder { color: color-mix(in srgb, var(--wa-muted) 70%, transparent); }
     /* A box that is the one thing left to do. An empty Custom SVG layer draws
@@ -254,7 +256,7 @@ export const formFieldStyles = css`
       position: relative; display: grid; grid-template-columns: var(--wa-lab) minmax(0, 1fr); align-items: center;
       gap: 4px 8px; min-height: 30px; margin: 0; font-size: 12px;
     }
-    .field > span { color: var(--wa-muted); font-size: 12px; line-height: 1.25; min-width: 0; overflow-wrap: break-word; }
+    .field > span { color: var(--wa-label, var(--wa-muted)); font-size: 12px; line-height: 1.25; min-width: 0; overflow-wrap: break-word; }
     .field > span.changed { color: var(--wa-ink); }
     /* A number's title drags the number. */
     .field > span.scrub { cursor: ew-resize; user-select: none; -webkit-user-select: none; touch-action: none; }
@@ -267,10 +269,10 @@ export const formFieldStyles = css`
        ring until hovered, so a card of twenty rows is not twenty boxes. */
     :is(.sec-b, .value-pop) .field :is(input[type=text], input[type=number], input[type=time], select) {
       height: 28px; min-height: 28px; padding: 0 9px; font-size: 13px; border-radius: 6px;
-      border-color: transparent; background-color: var(--wa-field);
+      border-color: var(--wa-line-strong); background-color: var(--wa-field);
     }
-    :is(.sec-b, .value-pop) .field select { border-color: var(--wa-line-strong); padding-right: 22px; background-position: right 6px center; background-size: 12px; }
-    :is(.sec-b, .value-pop) .field textarea { font-size: 12px; padding: 5px 8px; border-radius: 6px; border-color: transparent; background: var(--wa-field); }
+    :is(.sec-b, .value-pop) .field select { padding-right: 22px; background-position: right 6px center; background-size: 12px; }
+    :is(.sec-b, .value-pop) .field textarea { font-size: 12px; padding: 5px 8px; border-radius: 6px; border-color: var(--wa-line-strong); background: var(--wa-field); }
     :is(.sec-b, .value-pop) .field input[type=number] { -moz-appearance: textfield; appearance: textfield; }
     :is(.sec-b, .value-pop) .field input[type=number]::-webkit-inner-spin-button,
     :is(.sec-b, .value-pop) .field input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
@@ -361,7 +363,7 @@ export const formRowStyles = css`
     .pair-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
     .pair-row > .seg.wide:first-of-type { flex: 1 1 auto; width: auto; }
     .pair-row > .seg.wide:last-of-type { flex: 0 0 64px; width: 64px; }
-    .pair-row > span { position: relative; flex: none; padding-left: 8px; color: var(--wa-muted); font-size: 12px; }
+    .pair-row > span { position: relative; flex: none; padding-left: 8px; color: var(--wa-label, var(--wa-muted)); font-size: 12px; }
     .pair-row > span.changed { color: var(--wa-ink); }
     .pair-row > span button.reset-dot { left: -2px; top: 50%; margin-top: -3px; }
     /* A gauge's Min or Max: the title, then the one control the Number or

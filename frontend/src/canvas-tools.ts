@@ -74,7 +74,9 @@ export function zoomLabel(zoom: number): string {
 
 /** The stage's box, as the canvas sheet draws it (`.stage-wrap > .stage` and
  * `.stage-face > .under` in editor-chrome.ts). Change them together. */
-export const STAGE_PAD_TOP = 64;
+export const STAGE_PAD_TOP = 18;
+/** The toolbar that rides over the face (`.stage-tools`). */
+export const STAGE_TOOLS_HEIGHT = 34;
 export const STAGE_PAD_BOTTOM = 16;
 export const STAGE_GAP = 12;
 export const STAGE_HINT_HEIGHT = 45;
@@ -85,14 +87,15 @@ export const STAGE_HINT_HEIGHT = 45;
  * row designer's banner, the corner's Curved text or Layers switch and the
  * first-run tiles. The face's Fit size is what is left.
  *
- * The plain reserve is the stage's own box: its 64px top padding (where the
- * toolbar floats), the 12px gap over the hint, the hint's fixed three lines
+ * The plain reserve is the stage's own box: 64px over the face (18px of top
+ * padding, the 34px toolbar that rides over the face and the 12px gap under
+ * it), the 12px gap over the hint, the hint's fixed three lines
  * (STAGE_HINT_HEIGHT) and the 16px bottom padding. The hint used to be counted
  * at 44px with no gap, a line short, so a face bound by the stage's height
  * overran it by 13px and the stage drew a scroll bar beside the inspector.
  */
 export function stageReserve(opts: { rowStrip?: boolean; firstRun?: boolean; modeRow?: boolean } = {}): number {
-  return STAGE_PAD_TOP + STAGE_GAP + STAGE_HINT_HEIGHT + STAGE_PAD_BOTTOM
+  return STAGE_PAD_TOP + STAGE_TOOLS_HEIGHT + STAGE_GAP + STAGE_GAP + STAGE_HINT_HEIGHT + STAGE_PAD_BOTTOM
     + (opts.rowStrip ? 60 : 0) + (opts.modeRow ? 64 : 0) + (opts.firstRun ? 230 : 0);
 }
 

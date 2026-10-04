@@ -5,7 +5,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import {
-  FIRST_RUN_TILES, STAGE_GAP, STAGE_HINT_HEIGHT, STAGE_PAD_BOTTOM, STAGE_PAD_TOP, ZOOM_FIT, ZOOM_MAX, ZOOM_MIN, ZOOM_STEPS,
+  FIRST_RUN_TILES, STAGE_GAP, STAGE_HINT_HEIGHT, STAGE_PAD_BOTTOM, STAGE_PAD_TOP, STAGE_TOOLS_HEIGHT, ZOOM_FIT, ZOOM_MAX, ZOOM_MIN, ZOOM_STEPS,
   anySnap, pickGridStep, runFirstRunTile, slotWord, snapSwitchOn, stageReserve, toggleSnap, zoomIn, zoomLabel, zoomOut,
   type SnapFlags,
 } from "../src/canvas-tools.js";
@@ -99,11 +99,13 @@ describe("zoom", () => {
   // to be the whole of what the stage draws besides the face, or a face bound
   // by height overruns the stage and it grows a scroll bar.
   it("reserves the stage's whole box besides the face, hint and gap included", () => {
-    expect(stageReserve()).toBe(STAGE_PAD_TOP + STAGE_GAP + STAGE_HINT_HEIGHT + STAGE_PAD_BOTTOM);
+    expect(stageReserve()).toBe(STAGE_PAD_TOP + STAGE_TOOLS_HEIGHT + STAGE_GAP + STAGE_GAP + STAGE_HINT_HEIGHT + STAGE_PAD_BOTTOM);
     expect(stageReserve()).toBe(137);
     const css = canvasStyles.cssText;
     expect(css).toContain(`padding: ${STAGE_PAD_TOP}px 24px ${STAGE_PAD_BOTTOM}px;`);
     expect(css).toMatch(new RegExp(`\\.stage-face \\{[^}]*gap: ${STAGE_GAP}px;`));
+    // The toolbar is in the face's own column, so it sits just over the face.
+    expect(css).toMatch(new RegExp(`\\.stage-tools \\{[^}]*position: sticky;[^}]*height: ${STAGE_TOOLS_HEIGHT}px;`));
     expect(css).toMatch(new RegExp(`\\.stage-face > \\.under \\{[^}]*min-height: ${STAGE_HINT_HEIGHT}px;`));
   });
 });

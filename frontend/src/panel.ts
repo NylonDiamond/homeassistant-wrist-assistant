@@ -2333,6 +2333,7 @@ export class WristAssistantPanel extends LitElement {
       --wa-ink: #1c1c1e;
       --wa-soft: #3a3a3c;
       --wa-muted: #6c6c70;
+      --wa-label: #55555a;
       --wa-faint: #8e8e93;
       /* The top bar and the status bar under the columns. */
       --wa-top: #ffffff;
@@ -2483,6 +2484,7 @@ export class WristAssistantPanel extends LitElement {
       --wa-ink: #ffffff;
       --wa-soft: #c7c7cc;
       --wa-muted: #8a8a8f;
+      --wa-label: #a6a6ab;
       --wa-faint: #6e6e73;
       --wa-top: #0e0e0f;
       --wa-well: #0b0b0c;
@@ -18184,11 +18186,11 @@ export class WristAssistantPanel extends LitElement {
         <div class="stage-area">
           <div class="stage-wrap ${tiles ? "first-run" : ""}"
             style=${`--wa-ratio:${ratio};--wa-reserve:${reserve}px;--wa-zoom:${this.canvasZoom}`}>
-            ${this.renderStageTools(family, deviceCase)}
             ${paged ? html`<span class="stage-page">Page ${this.shownPage()} of ${pagesSpecOf(cfg).count}</span>` : nothing}
             <div class="stage" @pointerdown=${(e: PointerEvent) => this.onStagePointerDown(e)}>
               ${this.renderRowStrip()}
               <div class="stage-face">
+                ${this.renderStageTools(family, deviceCase)}
                 ${modeRow ? this.renderCornerModeSwitch() : nothing}
                 ${drawable
                   ? this.renderBigPreview(family, layouts, deviceCase, firstRun ? this.renderFirstRunNote(family) : undefined)
