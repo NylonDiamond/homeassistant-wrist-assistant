@@ -40,6 +40,7 @@ import { property, state } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
 import { repeat } from "lit/directives/repeat.js";
 import {
+  type HassEntityState,
   type HassLike,
   type OwnerSummary,
   type WatchConfigHistoryEntry,
@@ -87,6 +88,7 @@ import { personColorVar } from "../pickerRows.js";
 import { type IconProvider, REFERENCE_CASE, caseForScreenSize } from "../renderer.js";
 import { agoWords } from "../send-state.js";
 import { SymbolBrowser } from "../symbols.js";
+import { testControlFor } from "../test-controls.js";
 import { uiIcon } from "../ui-icons.js";
 import {
   PAGES_NO_RECORD_TEXT,
@@ -686,6 +688,12 @@ export class WaPageEditor extends LitElement {
   /** Draw the tiles in Home Assistant's real states (the Live switch);
    * off, every tile is drawn lit. Remembered between visits. */
   @state() private liveStates = loadStageLive();
+  /** Test states typed or picked in the Live strip, entity id to state: the
+   * previews draw as if Home Assistant said so. Never saved, not part of
+   * undo, dropped with Live off or another watch. */
+  @state() private testStates = new Map<string, string>();
+  /** The entity whose test value is being typed in the Live strip. */
+  @state() private editingValue?: string;
   /** The stage's scale as stepped with the zoom buttons, undefined while it
    * fits (`stageFitZoom`). Remembered between visits. */
   @state() private zoom = loadStageZoom();
@@ -695,6 +703,9 @@ export class WaPageEditor extends LitElement {
   @state() private watchMenuOpen = false;
   /** Why the last value typed in the tile card was refused. */
   @state() private fieldNote?: string;
+  /** The Size card's Column, Row, Width and Height boxes, folded under the
+   * size presets until asked for (or while a typed number was refused). */
+  @state() private sizeFieldsOpen = false;
   /** The Add tile dialog is open, over the selected page. */
   @state() private addTileOpen = false;
   /** The foot bar's History dialog is open (`config-foot.ts`). */
@@ -1164,6 +1175,9 @@ export class WaPageEditor extends LitElement {
       // So were the template renders: the next draw asks for this watch's.
       this.stopTemplates();
       this.templateRenders = new Map();
+      // Test states were tried on the other watch's tiles.
+      this.testStates = new Map();
+      this.editingValue = undefined;
       quiet = false;
     }
     this.startSubscription(watchId);
@@ -2859,7 +2873,7 @@ export class WaPageEditor extends LitElement {
    * states, symbols and renders. */
   private previewInput(page: WatchPage, pages: readonly WatchPage[], screen: { width: number; height: number }, scale: number): WatchPagePreviewInput {
     return {
-      page, pages, screen, states: this.hass?.states, icons: this.icons, scale, catalog: this.catalog, templates: this.templateRenders,
+      page, pages, screen, states: this.previewStates(), icons: this.icons, scale, catalog: this.catalog, templates: this.templateRenders,
       behavior: this.behavior, stateMode: this.liveStates ? "live" : "all-on",
     };
   }
@@ -3033,7 +3047,7 @@ export class WaPageEditor extends LitElement {
     const id = tileIdOf(tile);
     const entityId = tileEntityId(tile);
     const kindLabel = tileKindLabel(tileKind(entityId));
-    const label = watchPreviewTileLabel(tile, { states: this.hass?.states, pages, catalog: this.catalog }) || kindLabel;
+    const label = watchPreviewTileLabel(tile, { states: this.previewStates(), pages, catalog: this.catalog }) || kindLabel;
     const rect = watchTileRect(tile);
     const selected = id !== "" && sameWatchId(id, this.selectedTileId);
     // The row of the tile under the pointer on the stage: the chrome's accent
@@ -3119,6 +3133,44 @@ export class WaPageEditor extends LitElement {
   private setLive(on: boolean): void {
     this.liveStates = on;
     saveStageLive(on);
+    if (!on) {
+      // All on draws every tile lit; a test state has nothing to show there.
+      this.testStates = new Map();
+      this.editingValue = undefined;
+    }
+  }
+
+  /** Home Assistant's states as the previews draw them: the real ones, with
+   * each test state from the Live strip standing in for its entity's. The
+   * tile settings read `this.hass` itself, never this. */
+  private previewStates(): Record<string, HassEntityState> | undefined {
+    const states = this.hass?.states;
+    if (this.testStates.size === 0) return states;
+    const out: Record<string, HassEntityState> = { ...states };
+    for (const [id, value] of this.testStates) {
+      const entity = states?.[id];
+      out[id] = entity !== undefined
+        ? { ...entity, state: value }
+        : { entity_id: id, state: value, attributes: {}, last_changed: "", last_updated: "" };
+    }
+    return out;
+  }
+
+  /** Try a state for one entity in the previews, or go back to its live
+   * state with undefined, an empty value or the live state itself. A test
+   * state only shows while the stage is Live, so it turns Live on. */
+  private setTestValue(id: string, raw: string | undefined): void {
+    const v = raw?.trim() ?? "";
+    const next = new Map(this.testStates);
+    if (v === "" || v === this.hass?.states?.[id]?.state) next.delete(id);
+    else next.set(id, v);
+    if (next.size > 0 && !this.liveStates) this.setLive(true);
+    this.testStates = next;
+  }
+
+  private commitTestValue(id: string, raw: string): void {
+    this.editingValue = undefined;
+    this.setTestValue(id, raw);
   }
 
   /**
@@ -3142,14 +3194,15 @@ export class WaPageEditor extends LitElement {
     const rows = watchPageExtent(page);
     const config = readSmartConfig(page);
     // A smart page names itself as the watch does, from its fill.
-    const facts = smartStageFacts(page, this.hass?.states) ?? [plural(tiles, "tile", "tiles"), plural(rows, "row", "rows")];
+    const states = this.previewStates();
+    const facts = smartStageFacts(page, states) ?? [plural(tiles, "tile", "tiles"), plural(rows, "row", "rows")];
     facts.push(watchCase.label);
     if (isHiddenWatchPage(page)) facts.push("hidden on the watch");
     const headers = !smart && watchPageHasHeader(page);
     const asOnWatch = headers && this.asOnWatch;
     const scale = this.stageScale;
     const input: WatchPagePreviewInput = {
-      page, pages, screen: watchCase.screen, states: this.hass?.states, icons: this.icons, scale, catalog: this.catalog, templates: this.templateRenders,
+      page, pages, screen: watchCase.screen, states, icons: this.icons, scale, catalog: this.catalog, templates: this.templateRenders,
       // The watch's own settings, for its page dots and its page title mode.
       behavior: this.behavior,
       // Live off: every tile lit, as the page looks in use. A smart page is
@@ -3372,38 +3425,102 @@ export class WaPageEditor extends LitElement {
 
   /** The Live strip under the stage, the complication editor's values bar:
    * whether the tiles show Home Assistant's states or every tile on, with a
-   * switch between the two, and the selected tile's entity as it is now. */
+   * switch between the two, and the selected tile's entity with its state.
+   * A state picked, slid or typed there is tried in the previews (the stage,
+   * the tile pictures and the rows) as if Home Assistant said so; the head
+   * then reads Testing, with Back to live. Nothing is saved. */
   private renderLiveStrip(page: WatchPage, tile: WatchPageTile | undefined, smart: boolean): TemplateResult {
     const on = smart || this.liveStates;
+    const testing = this.testStates.size > 0;
     let body: TemplateResult;
     if (tile === undefined) body = html`<span class="vb-empty">Select a tile to see its live state.</span>`;
     else {
       const entityId = tileEntityId(tile);
-      const entity = entityId === "" ? undefined : this.hass?.states?.[entityId];
+      const real = entityId === "" ? undefined : this.hass?.states?.[entityId];
+      const states = this.previewStates();
+      const entity = entityId === "" ? undefined : states?.[entityId];
       const color = watchKindColor(entityId, watchAddThemeOf(page)) ?? SECTION_COLOR.content;
       const symbol = watchTileSymbol(tile, entity);
       const glyph = symbol === undefined ? undefined : this.memoIcons().render(symbol, 13, color);
-      const label = watchPreviewTileLabel(tile, { states: this.hass?.states, pages: this.draft === undefined ? [] : watchPagesOf(this.draft.document), catalog: this.catalog })
+      const label = watchPreviewTileLabel(tile, { states, pages: this.draft === undefined ? [] : watchPagesOf(this.draft.document), catalog: this.catalog })
         || tileKindLabel(tileKind(entityId));
-      const unit = typeof entity?.attributes?.unit_of_measurement === "string" ? ` ${entity.attributes.unit_of_measurement}` : "";
-      const value = entity !== undefined ? `${entity.state}${unit}`
-        : entityId === "" || isVirtualTileKind(tileKind(entityId)) ? "No entity"
-        : "Not in Home Assistant";
-      body = html`<div class="vb-pills"><div class="vchip vpill" style=${`--k:${color}`} title=${entityId}>
-        <span class="vp-icon">${glyph ?? uiIcon("states")}</span><b>${label}</b>
-        <span class="val">${value}</span>
-      </div></div>`;
+      const unit = typeof real?.attributes?.unit_of_measurement === "string" ? ` ${real.attributes.unit_of_measurement}` : "";
+      const icon = html`<span class="vp-icon">${glyph ?? uiIcon("states")}</span><b>${label}</b>`;
+      if (entityId === "" || isVirtualTileKind(tileKind(entityId))) {
+        body = html`<div class="vb-pills"><div class="vchip vpill" style=${`--k:${color}`} title=${entityId}>
+          ${icon}<span class="val">No entity</span>
+        </div></div>`;
+      } else {
+        const live = real !== undefined ? `${real.state}${unit}` : "Not in Home Assistant";
+        const override = this.testStates.get(entityId);
+        body = html`<div class="vb-pills"><div class="vchip vpill ctl ${override !== undefined ? "testing" : ""}" style=${`--k:${color}`}
+          title=${override !== undefined ? `Live state: ${live}` : entityId}>
+          ${icon}
+          ${this.renderTestControl(entityId, label, real, override, unit, live)}
+          ${override !== undefined
+            ? html`<button type="button" class="live-reset" title=${`Back to the live state: ${live}`} aria-label=${`Back to the live state of ${label}`}
+                @click=${() => this.setTestValue(entityId, undefined)}>${uiIcon("reset")}</button>`
+            : html`<span class="live-reset-slot" aria-hidden="true"></span>`}
+        </div></div>`;
+      }
     }
-    return html`<div class="values-foot"><div class="values-bar ${on ? "" : "pe-all-on"}" role="group" aria-label="Live state">
+    const word = testing ? "Testing" : on ? "Live" : "All on";
+    const stateTitle = testing ? "Testing: the tiles are drawn with the states you set here. Nothing is saved."
+      : on ? "Live: the tiles are drawn with what Home Assistant says right now. Pick, slide or type a state to try another."
+      : "All on: every tile is drawn on, as the page looks in use.";
+    // While testing, the button drops the test states and stays Live; a
+    // smart page is always live, so it has no button otherwise.
+    const button = testing
+      ? html`<button type="button" class="vb-live" title="Drop every state you set here and draw the tiles from Home Assistant again"
+          @click=${() => { this.editingValue = undefined; this.testStates = new Map(); }}>Back to live</button>`
+      : smart ? nothing
+      : html`<button type="button" class="vb-live" @click=${() => this.setLive(!this.liveStates)}
+          title=${on ? "Draw every tile on" : "Draw the tiles with Home Assistant's states"}>${on ? "Show all on" : "Show live"}</button>`;
+    return html`<div class="values-foot"><div class="values-bar ${testing ? "testing" : on ? "" : "pe-all-on"}" role="group" aria-label="Live state">
       <div class="vb-head">
-        <span class="vb-state" title=${on
-          ? "Live: the tiles are drawn with what Home Assistant says right now."
-          : "All on: every tile is drawn on, as the page looks in use."}><i class="vb-dot" aria-hidden="true"></i>${on ? "Live" : "All on"}</span>
-        ${smart ? nothing : html`<button type="button" class="vb-live" @click=${() => this.setLive(!this.liveStates)}
-          title=${on ? "Draw every tile on" : "Draw the tiles with Home Assistant's states"}>${on ? "Show all on" : "Show live"}</button>`}
+        <span class="vb-state" title=${stateTitle}><i class="vb-dot" aria-hidden="true"></i>${word}</span>
+        ${button}
       </div>
       ${body}
     </div></div>`;
+  }
+
+  /** The control for the selected tile's test state, the complication
+   * editor's: a picker for a state with a known set of words, a slider and
+   * its reading for a number, and a reading that opens a box for the rest. */
+  private renderTestControl(
+    id: string,
+    name: string,
+    s: HassEntityState | undefined,
+    override: string | undefined,
+    unit: string,
+    live: string,
+  ): TemplateResult {
+    const shown = override ?? s?.state ?? "";
+    const control = testControlFor(id, s, override);
+    if (control.kind === "choice") {
+      return html`<span class="test-ctl"><select aria-label=${`Test state for ${name}`} @change=${(e: Event) => this.setTestValue(id, (e.target as HTMLSelectElement).value)}>
+        ${control.options.map((o) => html`<option value=${o} ?selected=${o === shown}>${o}</option>`)}
+      </select></span>`;
+    }
+    const reading = this.editingValue === id
+      ? html`<input type="text" .value=${shown} aria-label=${`Test state for ${name}`}
+          @keydown=${(e: KeyboardEvent) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+            if (e.key === "Escape") { e.stopPropagation(); this.editingValue = undefined; }
+          }}
+          @blur=${(e: FocusEvent) => { if (this.editingValue === id) this.commitTestValue(id, (e.target as HTMLInputElement).value); }} />`
+      : html`<button type="button" class="val" title="Click to type a state"
+          @click=${() => { this.editingValue = id; void this.updateComplete.then(() => this.renderRoot.querySelector<HTMLInputElement>(".vchip input[type=text]")?.focus()); }}>${override !== undefined ? `${override}${unit}` : live}</button>`;
+    if (control.kind === "text") return html`<span class="test-ctl">${reading}</span>`;
+    const n = Number(shown);
+    const at = shown.trim() !== "" && Number.isFinite(n) ? n : control.min;
+    return html`<span class="test-ctl">
+      <input type="range" min=${control.min} max=${control.max} step=${control.step} .value=${String(at)}
+        aria-label=${`Slide the test state for ${name}`}
+        @input=${(e: Event) => this.setTestValue(id, (e.target as HTMLInputElement).value)} />
+      ${reading}
+    </span>`;
   }
 
   /** The page on a flat grid, with every tile a button. While a handle is
@@ -3604,16 +3721,13 @@ export class WaPageEditor extends LitElement {
           @change=${() => this.commitTyping(key)}
           @blur=${() => this.commitTyping(key)} /></label>`;
     };
+    // The presets first; the four boxes fold under them, opened by the
+    // line that names where the tile is, and on their own while a typed
+    // number was refused, so the note is never about boxes that are hidden.
+    const fieldsOpen = this.sizeFieldsOpen || this.fieldNote !== undefined;
     const size = {
       summary: () => `${rect.colSpan}×${rect.rowSpan}`,
       body: () => html`
-        <div class="pe-fields">
-          ${field("Column", rect.col + 1, 1, 12 - rect.colSpan + 1, (v) => this.placeTile(v, rect.row + 1))}
-          ${field("Row", rect.row + 1, 1, WATCH_EDITOR_MAX_ROWS - rect.rowSpan + 1, (v) => this.placeTile(rect.col + 1, v))}
-          ${field("Width", rect.colSpan, 1, 12, (v) => this.sizeTile(v, rect.rowSpan))}
-          ${field("Height", rect.rowSpan, 1, WATCH_EDITOR_MAX_ROWS - rect.row, (v) => this.sizeTile(rect.colSpan, v))}
-        </div>
-        ${this.fieldNote ? html`<p class="pe-warn" role="status">${this.fieldNote}</p>` : nothing}
         <div class="pe-presets" role="group" aria-label="Size">
           ${WATCH_TILE_SIZE_PRESETS.map((p) => {
             const on = rect.colSpan === p.colSpan && rect.rowSpan === p.rowSpan;
@@ -3621,7 +3735,20 @@ export class WaPageEditor extends LitElement {
               title=${`${p.colSpan} columns by ${p.rowSpan} rows`}
               @click=${() => this.sizeTile(p.colSpan, p.rowSpan)}>${p.name}</button>`;
           })}
-        </div>`,
+        </div>
+        <button type="button" class="pe-size-more" aria-expanded=${fieldsOpen ? "true" : "false"} aria-controls="pe-size-fields"
+          title=${fieldsOpen ? "Hide the column, row, width and height boxes" : "Type the column, row, width and height"}
+          @click=${() => { this.sizeFieldsOpen = !fieldsOpen; }}>
+          <span class="pe-size-chev" aria-hidden="true">${fieldsOpen ? "▾" : "▸"}</span>
+          <span>Column ${rect.col + 1}, row ${rect.row + 1} · ${rect.colSpan}×${rect.rowSpan}</span>
+        </button>
+        ${fieldsOpen ? html`<div class="pe-fields" id="pe-size-fields">
+          ${field("Column", rect.col + 1, 1, 12 - rect.colSpan + 1, (v) => this.placeTile(v, rect.row + 1))}
+          ${field("Row", rect.row + 1, 1, WATCH_EDITOR_MAX_ROWS - rect.rowSpan + 1, (v) => this.placeTile(rect.col + 1, v))}
+          ${field("Width", rect.colSpan, 1, 12, (v) => this.sizeTile(v, rect.rowSpan))}
+          ${field("Height", rect.rowSpan, 1, WATCH_EDITOR_MAX_ROWS - rect.row, (v) => this.sizeTile(rect.colSpan, v))}
+        </div>` : nothing}
+        ${this.fieldNote ? html`<p class="pe-warn" role="status">${this.fieldNote}</p>` : nothing}`,
     };
     const host = this.tileSettingsHost(page, tile);
     return html`
@@ -4079,6 +4206,12 @@ export class WaPageEditor extends LitElement {
     }
     .vchip.vpill b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .vpill .vp-icon > svg { width: 13px; height: 13px; }
+    /* The test state's control at the end of the Live strip's chip, as the
+       complication editor's values row lays it out (editor-chrome sizes it). */
+    .vchip.vpill .test-ctl { display: flex; align-items: center; min-width: 0; }
+    .vchip.vpill .test-ctl input[type=range] { margin: 0; accent-color: var(--wa-testing); cursor: pointer; }
+    .vchip.vpill .test-ctl select { min-width: 0; max-width: 100%; font: inherit; border-radius: 6px; cursor: pointer; }
+    .vchip.vpill button.val { background: none; border: 0; padding: 0; cursor: text; }
     .pe-screen { overflow: visible; user-select: none; -webkit-user-select: none; }
     .pe-screen.saving .pe-tile, .pe-screen.saving .pe-handle { cursor: progress; }
     .pe-screen:focus { outline: none; }
@@ -4169,6 +4302,16 @@ export class WaPageEditor extends LitElement {
     .pe-field > input:focus:not(:disabled) { outline: none; box-shadow: var(--wa-ring); border-color: var(--wa-sel-ring); }
     .pe-field > input:disabled { opacity: .55; }
     .pe-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+    /* The line under the presets that opens the four boxes: where the tile
+       is, with a disclosure arrow, as a row of text rather than a button. */
+    .pe-size-more {
+      display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; margin-top: 6px; padding: 2px 4px 2px 0;
+      border: 0; border-radius: 6px; background: transparent; color: var(--wa-muted); font: inherit; font-size: 12px; cursor: pointer;
+    }
+    .pe-size-more:hover { color: var(--wa-ink); }
+    .pe-size-more:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+    .pe-size-more[aria-expanded="true"] { color: var(--wa-ink); }
+    .pe-size-chev { width: 10px; font-size: 10px; text-align: center; }
     .pe-chip {
       min-height: 28px; padding: 0 10px; border: 1px solid var(--wa-line-strong); border-radius: 999px;
       background: var(--wa-card); color: var(--wa-ink); font: inherit; font-size: 12px; cursor: pointer;

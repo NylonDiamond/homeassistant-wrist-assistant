@@ -517,8 +517,42 @@ describe("the Live strip", () => {
     expect(editor().body()).toContain("Select a tile to see its live state.");
     const text = editor("T-RIGHT").body();
     const strip = text.slice(text.indexOf(`<div class="values-foot">`));
-    expect(strip).toContain(`<div class="vchip vpill"`);
-    expect(strip).toContain(`<span class="val">on</span>`);
+    expect(strip).toContain(`<div class="vchip vpill`);
+    expect(strip).toContain(`<b>Right</b>`);
+    // A light's state is a picker, its live state chosen.
+    expect(strip).toContain(`<option value=on ?selected=true>on</option>`);
+    // A spacer has no entity to try a state on.
+    const gap = editor("T-GAP").body();
+    expect(gap.slice(gap.indexOf(`<div class="values-foot">`))).toContain(`<span class="val">No entity</span>`);
+  });
+});
+
+describe("the live strip", () => {
+  it("tries a state for the selected tile's entity in the previews, never in Home Assistant's", () => {
+    const { el, body } = editor("T-RIGHT");
+    const setTestValue = (id: string, value: string | undefined) => (el.setTestValue as (i: string, v: string | undefined) => void).call(el, id, value);
+    const previewStates = () => (el.previewStates as () => Record<string, { state: string }>).call(el);
+    const strip = (): string => { const text = body(); return text.slice(text.indexOf(`<div class="values-foot">`)); };
+    const before = strip();
+    expect(before).toContain(`class="vchip vpill ctl `);
+    expect(before).toContain(`test-ctl`);
+    expect(before).not.toContain("Testing");
+
+    setTestValue("light.right", "off");
+    const after = strip();
+    expect(after).toContain("Testing");
+    expect(after).toContain("Back to live");
+    expect(after).toContain(`class="values-bar testing"`);
+    expect(after).toContain(`class="vchip vpill ctl testing"`);
+    expect(after).toContain(`class="live-reset"`);
+    expect(el.liveStates).toBe(true);
+    expect(previewStates()["light.right"]!.state).toBe("off");
+    expect((el.hass as HassLike).states["light.right"]!.state).toBe("on");
+
+    setTestValue("light.right", undefined);
+    expect((el.testStates as Map<string, string>).size).toBe(0);
+    expect(previewStates()).toBe((el.hass as HassLike).states);
+    expect(strip()).not.toContain("Testing");
   });
 });
 

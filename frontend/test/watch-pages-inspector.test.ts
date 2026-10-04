@@ -329,8 +329,30 @@ describe("the tile's cards", () => {
     expect(name).toContain("light.smart_plug_dimmer");
     // The label is the Name card's alone.
     expect(card(body, "Text")).not.toContain(`aria-label="Label"`);
-    expect(card(body, "Size")).toContain(`class="pe-fields"`);
+    // The Size card: the presets, then the boxes folded under a line that
+    // says where the tile is.
+    const size = card(body, "Size");
+    expect(size).toContain(`class="pe-presets"`);
+    expect(size).toContain(`class="pe-size-more" aria-expanded=false`);
+    expect(size).not.toContain(`class="pe-fields"`);
+    expect(size.indexOf("pe-presets")).toBeLessThan(size.indexOf("pe-size-more"));
     expect(body).toContain("Delete tile");
+  });
+
+  it("opens the Size card's boxes on the line under the presets, and on their own while a typed number was refused", () => {
+    const el = editor(hallPage(), DIMMER);
+    el.sizeFieldsOpen = true;
+    let size = card(flat(inspector(el)), "Size");
+    expect(size).toContain(`class="pe-size-more" aria-expanded=true`);
+    expect(size).toContain(`class="pe-fields" id="pe-size-fields"`);
+    for (const name of ["Column", "Row", "Width", "Height"]) expect(size).toContain(`<span>${name}</span>`);
+    expect(size.indexOf("pe-size-more")).toBeLessThan(size.indexOf("pe-fields"));
+    el.sizeFieldsOpen = false;
+    el.fieldNote = "That does not fit.";
+    size = card(flat(inspector(el)), "Size");
+    expect(size).toContain(`class="pe-fields" id="pe-size-fields"`);
+    expect(size).toContain("That does not fit.");
+    expect(size.indexOf("pe-fields")).toBeLessThan(size.indexOf("pe-warn"));
   });
 
   it("badge each card in the complication editor's colors and glyphs", () => {

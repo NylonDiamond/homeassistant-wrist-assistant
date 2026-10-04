@@ -443,6 +443,12 @@ export const appSettingsStyles = css`
   .ap-render .wp-tpl-icon { display: inline-block; vertical-align: -0.12em; }
   .ap-row > span { min-width: 0; }
   .ap-list { display: flex; flex-direction: column; max-height: 220px; overflow: auto; padding: 2px 0; }
+  /* A row keeps its own height in the scrolling list, and a speaker's name
+     runs the row's width with its switch at the end: in the label column the
+     long names wrapped over each other. */
+  .ap-list > * { flex: none; }
+  .ap-list .field.check { grid-template-columns: minmax(0, 1fr) auto; min-height: 28px; }
+  .ap-list .field.check > span { color: var(--wa-ink); }
   .ap-group { font-size: 11px; font-weight: 600; color: var(--wa-muted); text-transform: uppercase; letter-spacing: .04em; padding: 6px 0 2px; }
   .ap-read b { font-weight: 600; }
   .ap-unset select { color: var(--wa-warn, #c47f00); }
