@@ -103,18 +103,18 @@ export const formButtonStyles = css`
     button.icon.danger:hover:not(:disabled) { color: var(--error-color, #e5484d); background: color-mix(in srgb, var(--error-color, #e5484d) 14%, transparent); }
     svg.ui-icon { width: 15px; height: 15px; display: block; }
 
-    /* Native controls: one borderless field-grey well, a hairline only under
-       the pointer and a neutral ring on focus, so a select in the header and
+    /* Native controls: one field-grey well; a select wears a hairline so it reads
+       as a box that opens, brighter under the pointer, with a neutral ring on focus, so a select in the header and
        a number field in the inspector read as one family. */
     select {
       font: inherit; font-size: 13px; font-weight: 500; color: var(--wa-ink); cursor: pointer; height: 28px;
-      padding: 0 26px 0 10px; border-radius: 6px; border: 1px solid transparent; background-color: var(--wa-input);
+      padding: 0 26px 0 10px; border-radius: 6px; border: 1px solid var(--wa-line-strong); background-color: var(--wa-input);
       appearance: none; -webkit-appearance: none;
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a8a8f' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
       background-repeat: no-repeat; background-position: right 8px center; background-size: 12px;
       transition: border-color .12s ease-out, box-shadow .12s ease-out;
     }
-    select:hover:not(:disabled) { border-color: var(--wa-line-strong); }
+    select:hover:not(:disabled) { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
     select:focus-visible { outline: none; border-color: var(--wa-accent); box-shadow: var(--wa-ring); }
     input[type=text], input[type=number], input[type=search], input[type=url], textarea {
       font: inherit; font-size: 13px; font-weight: 500; color: var(--wa-ink); min-height: 28px;
@@ -269,7 +269,7 @@ export const formFieldStyles = css`
       height: 28px; min-height: 28px; padding: 0 9px; font-size: 13px; border-radius: 6px;
       border-color: transparent; background-color: var(--wa-field);
     }
-    :is(.sec-b, .value-pop) .field select { padding-right: 22px; background-position: right 6px center; background-size: 12px; }
+    :is(.sec-b, .value-pop) .field select { border-color: var(--wa-line-strong); padding-right: 22px; background-position: right 6px center; background-size: 12px; }
     :is(.sec-b, .value-pop) .field textarea { font-size: 12px; padding: 5px 8px; border-radius: 6px; border-color: transparent; background: var(--wa-field); }
     :is(.sec-b, .value-pop) .field input[type=number] { -moz-appearance: textfield; appearance: textfield; }
     :is(.sec-b, .value-pop) .field input[type=number]::-webkit-inner-spin-button,

@@ -5614,13 +5614,13 @@ export class WristAssistantPanel extends LitElement {
     .when-cell { display: inline-flex; align-items: center; gap: 6px; }
     .when-cell select.when-op {
       font: inherit; font-size: 12px; font-weight: 500; height: 26px; padding: 0 22px 0 8px; border-radius: 6px;
-      border: 1px solid transparent; background-color: var(--wa-field); color: inherit;
+      border: 1px solid var(--wa-line-strong); background-color: var(--wa-field); color: inherit;
       background-size: 12px; background-position: right 5px center;
       /* Sized for its longest common label rather than its longest option, so
          the chip hugs "Greater than" instead of stretching for "Is unavailable". */
       width: 118px; text-overflow: ellipsis;
     }
-    .when-cell select.when-op:hover { border-color: var(--wa-line-strong); }
+    .when-cell select.when-op:hover { border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card)); }
     .when-and { color: var(--wa-muted); font-size: 12px; }
     .rhs { display: inline-flex; align-items: center; gap: 2px; }
     .rhs .value-chip-field { margin: 0; }
