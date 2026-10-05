@@ -337,6 +337,14 @@ class DeltaCoordinator:
         # carries `voices_hash` (see handle_poll). None until setup attaches
         # it (attach_watch_voices_store).
         self._watch_voices_store: Any | None = None
+        # The home's HTTP action library rides the poll too: every reply with
+        # a body names its revision as `http_actions`, and a save or a
+        # hand-over wakes every parked poll (see http_actions_changed). None
+        # until setup attaches the store (attach_http_actions_store).
+        self._http_actions_store: Any | None = None
+        # watch_id → the library revision its last reply with a body carried,
+        # kept like _watch_config_sent so a woken poll can tell news.
+        self._http_actions_sent: dict[str, int] = {}
         self._unsub_state_changed = hass.bus.async_listen(
             EVENT_STATE_CHANGED, self._handle_state_changed
         )
@@ -488,6 +496,55 @@ class DeltaCoordinator:
         if change.kind not in DELTA_WATCH_CONFIG_KINDS:
             return
         self.wake_watch(change.owner_watch_id, renotify=False)
+
+    # ── the home's HTTP action library on the poll ────────────────────
+
+    @callback
+    def attach_http_actions_store(self, store: Any) -> None:
+        """Wire the HTTP action library in for reading: its revision goes out
+        on every reply. The wake on a change is wired by setup, which adds
+        http_actions_changed as a store listener."""
+        self._http_actions_store = store
+
+    def http_actions_revision(self) -> int | None:
+        """The library's revision, 0 for none yet. None when no store is
+        attached or its file could not be read: the reply then leaves the
+        field out."""
+        store = self._http_actions_store
+        if store is None or not store.available:
+            return None
+        return int(store.revision)
+
+    def _http_actions_behind(self, watch_id: str) -> bool:
+        """True when the library moved since the last reply this watch was
+        handed with a body (or the baseline noted before it parked)."""
+        sent = self._http_actions_sent.get(watch_id)
+        if sent is None:
+            return False
+        current = self.http_actions_revision()
+        return current is not None and current != sent
+
+    def _config_behind(self, watch_id: str) -> bool:
+        """The watch's own config or the home's library moved since it was
+        last told: either earns an empty reply carrying the new numbers."""
+        return self._watch_config_behind(watch_id) or self._http_actions_behind(watch_id)
+
+    def _note_config_baseline(self, watch_id: str) -> None:
+        """_note_watch_config_baseline, and the same for the library."""
+        self._note_watch_config_baseline(watch_id)
+        if watch_id not in self._http_actions_sent:
+            current = self.http_actions_revision()
+            if current is not None:
+                self._http_actions_sent[watch_id] = current
+
+    @callback
+    def http_actions_changed(self, _revision: int) -> None:
+        """Store listener: the library is the home's, so a change wakes every
+        parked poll, each of which answers at once with the new revision.
+        Waking leaves the waiters in place: the polls deliver, they are not
+        superseded."""
+        for watch_id in list(self._waiters):
+            self.wake_watch(watch_id, renotify=False)
 
     # ── the watch's voice list on the poll ────────────────────────────
 
@@ -755,6 +812,10 @@ class DeltaCoordinator:
             if revisions is not None:
                 body["watch_config"] = revisions
                 self._watch_config_sent[watch_id] = revisions
+            library_revision = self.http_actions_revision()
+            if library_revision is not None:
+                body["http_actions"] = library_revision
+                self._http_actions_sent[watch_id] = library_revision
             if self._voices_wanted(watch_id, voices_hash):
                 body["voices_wanted"] = True
         return status, body
@@ -985,12 +1046,13 @@ class DeltaCoordinator:
         # 200 instead of parking or probing: the wrapper stamps the current
         # token on it and the watch pulls. Once per token change, so a pull
         # that keeps failing does not turn this into a tight loop. A watch
-        # config save since this watch's last reply gets the same empty 200,
-        # once per change, since the wrapper records what each reply carried.
+        # config save (or a change to the home's HTTP action library) since
+        # this watch's last reply gets the same empty 200, once per change,
+        # since the wrapper records what each reply carried.
         complications_behind = self._complications_behind(
             watch_id, applied_complications_token
         )
-        if complications_behind or self._watch_config_behind(watch_id):
+        if complications_behind or self._config_behind(watch_id):
             if complications_behind:
                 self._note_complications_notified(watch_id)
             return 200, self._response_payload(
@@ -1005,7 +1067,7 @@ class DeltaCoordinator:
             )
         # Not behind. Before probing or parking, make sure there is something
         # recorded for a later save to be compared against.
-        self._note_watch_config_baseline(watch_id)
+        self._note_config_baseline(watch_id)
         if timeout <= 0:
             return quiet_reply(next_cursor)
 
@@ -1097,13 +1159,14 @@ class DeltaCoordinator:
                         custom_entity_ids=custom_entity_ids,
                     )
                 # Woken by a complication commit (or a panel nudge) or a
-                # watch config save rather than an entity: nothing to deliver
+                # watch config save or an HTTP action library change rather
+                # than an entity: nothing to deliver
                 # but the token and the revisions, which the wrapper stamps
                 # on this empty reply.
                 complications_behind = self._complications_behind(
                     watch_id, applied_complications_token
                 )
-                if complications_behind or self._watch_config_behind(watch_id):
+                if complications_behind or self._config_behind(watch_id):
                     if complications_behind:
                         self._note_complications_notified(watch_id)
                     return 200, self._response_payload(
@@ -1544,6 +1607,7 @@ class DeltaCoordinator:
             # The same for the watch config revisions: the next reply with a
             # body carries them again and records them afresh.
             self._watch_config_sent.pop(watch_id, None)
+            self._http_actions_sent.pop(watch_id, None)
             # `handle_poll` stamps `_last_poll_at` before this runs, so a watch
             # polling again after a long idle arrives with a fresh stamp and a
             # session that is about to expire. Drop the stamp only when it is
