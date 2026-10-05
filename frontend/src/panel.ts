@@ -140,7 +140,7 @@ import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
 import { type SendState, agoWords, describeHomeSync, describeSend, deviceSyncLabel, homeSync, sendState, sendWaitMs } from "./send-state.js";
-import { homeDeviceRows, homeDevices, homeStyles } from "./home.js";
+import { type HomeDeviceRow, devicesPopPlace, homeDeviceRows, homeDevices, homeStyles } from "./home.js";
 import { type WatchAppSync, readWatchAppSync, summaryUnknown, summaryWatchAppSyncs, waitingForText, watchAppSyncKey } from "./watch-app-sync.js";
 import { type PickerForm, type TabMemory, browseAllTab, listPageEscape, listPageLead, listPageShown, listPageState, listPageStyles, listsReady, pickTab, pickerSurfaceClass, restoreTab } from "./list-page.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
@@ -5963,6 +5963,8 @@ export class WristAssistantPanel extends LitElement {
     window.addEventListener("focusin", this.sharedValueFocus);
     this.touchChanged();
     this.touchQuery?.addEventListener("change", this.touchChanged);
+    this.addEventListener("mouseover", this.devicesPopOver);
+    this.addEventListener("mouseout", this.devicesPopOut);
     this.addEventListener(SCRUB_START, this.scrubStart);
     this.addEventListener(SCRUB_END, this.scrubEnd);
     window.addEventListener("hashchange", this.takeShareLink);
@@ -6212,6 +6214,10 @@ export class WristAssistantPanel extends LitElement {
     window.removeEventListener("pointercancel", this.pressEnd, { capture: true });
     window.removeEventListener("click", this.sharedValueOutside, { capture: true });
     window.removeEventListener("click", this.leaveGuard, { capture: true });
+    this.removeEventListener("mouseover", this.devicesPopOver);
+    this.removeEventListener("mouseout", this.devicesPopOut);
+    window.clearTimeout(this.devicesPopTimer);
+    this.devicesPop = undefined;
     window.removeEventListener("focusin", this.sharedValueFocus);
     window.removeEventListener("pointerdown", this.addSheetOutside, { capture: true });
     window.removeEventListener("pointerdown", this.sideMenuOutside, { capture: true });
@@ -10669,7 +10675,78 @@ export class WristAssistantPanel extends LitElement {
       onTab: (tab) => this.openTab(tab),
       watch: this.sharedWatch,
     });
-    return html`${bar}${this.renderTab()}`;
+    return html`${bar}${this.renderTab()}${this.renderDevicesPop()}`;
+  }
+
+  // ── every device's sync, on hover of a sync pill ─────────────────────
+
+  /** Where the hover card stands, while it is up. */
+  @state() private devicesPop?: { left: number; top?: number; bottom?: number };
+  private devicesPopTimer?: number;
+
+  /** A sync pill of any screen (`.tb-sync`), or a line that asks for the
+   * card by `data-devices-pop`, under the pointer. The screens are elements
+   * of their own, so the pill is found on the event's path. */
+  private devicesPopTarget(e: Event): HTMLElement | undefined {
+    for (const n of e.composedPath()) {
+      if (n === this) break;
+      if (n instanceof HTMLElement && (n.classList.contains("tb-sync") || n.dataset.devicesPop !== undefined)) return n;
+    }
+    return undefined;
+  }
+
+  private devicesPopOver = (e: MouseEvent) => {
+    if (e.composedPath().some((n) => n instanceof HTMLElement && n.classList.contains("devices-pop"))) {
+      window.clearTimeout(this.devicesPopTimer);
+      return;
+    }
+    const target = this.devicesPopTarget(e);
+    if (target === undefined) return;
+    window.clearTimeout(this.devicesPopTimer);
+    // The card says more than the pill's own hover text, which would only
+    // come up over it.
+    if (target.title !== "") {
+      target.setAttribute("aria-label", target.title);
+      target.removeAttribute("title");
+    }
+    if (this.devicesPop !== undefined) return;
+    this.devicesPopTimer = window.setTimeout(() => {
+      if (!target.isConnected) return;
+      this.devicesPop = devicesPopPlace(target.getBoundingClientRect(), window.innerWidth, window.innerHeight);
+      void this.loadWatchAppSync(true);
+    }, 180);
+  };
+
+  private devicesPopOut = (e: MouseEvent) => {
+    const from = this.devicesPopTarget(e) !== undefined
+      || e.composedPath().some((n) => n instanceof HTMLElement && n.classList.contains("devices-pop"));
+    if (!from) return;
+    window.clearTimeout(this.devicesPopTimer);
+    this.devicesPopTimer = window.setTimeout(() => { this.devicesPop = undefined; }, 220);
+  };
+
+  private renderDevicesPop() {
+    const at = this.devicesPop;
+    if (at === undefined) return nothing;
+    const admin = this.hass.user?.is_admin === true;
+    const devices = homeDeviceRows(this.homeDevices(), admin ? this.watchAppSyncs : new Map());
+    const waiting = devices.filter((d) => d.sync === "waiting").length;
+    return html`<div class="devices-pop" role="tooltip"
+      style=${`left:${at.left}px;${at.top !== undefined ? `top:${at.top}px` : `bottom:${at.bottom}px`}`}>
+      <div class="devices-pop-head"><span class="home-title">Devices</span>
+        <span class="home-sub">${devices.length === 0 ? "" : waiting === 0 ? "Every device has your changes" : `${waiting} of ${devices.length} waiting`}</span></div>
+      ${devices.length === 0 ? html`<p class="home-empty">No watch or iPhone has connected yet.</p>` : this.renderDeviceRows(devices)}
+      ${devices.length === 0 ? nothing : html`<p class="home-small">A device collects its changes the next time its app is open.</p>`}
+    </div>`;
+  }
+
+  private renderDeviceRows(devices: readonly HomeDeviceRow[]) {
+    return html`<ul class="home-devices">${devices.map((d) => html`<li class="home-device ${d.sync}">
+      <i class="home-dot" aria-hidden="true"></i>
+      <span class="home-device-name">${uiIcon(d.kind === "iphone" ? "phone" : "watch")}<span class="home-device-label">${d.name}</span></span>
+      <span class="home-device-sync">${deviceSyncLabel(d.sync)}${d.waitingFor.length === 0 ? nothing
+        : html`<span class="home-device-why"> · ${waitingForText(d.waitingFor)}</span>`}</span>
+    </li>`)}</ul>`;
   }
 
   /** A tab pressed in the bar. The tab already on screen stays as it is, so
@@ -18758,12 +18835,7 @@ export class WristAssistantPanel extends LitElement {
             <span class="home-sub">Watches and phones that get your changes</span>
             ${devices.length === 0
               ? html`<p class="home-empty">${this.linkReady ? "No watch or iPhone has connected to this Home Assistant yet." : "Loading…"}</p>`
-              : html`<ul class="home-devices">${devices.map((d) => html`<li class="home-device ${d.sync}">
-                  <i class="home-dot" aria-hidden="true"></i>
-                  <span class="home-device-name">${uiIcon(d.kind === "iphone" ? "phone" : "watch")}<span class="home-device-label">${d.name}</span></span>
-                  <span class="home-device-sync">${deviceSyncLabel(d.sync)}${d.waitingFor.length === 0 ? nothing
-                    : html`<span class="home-device-why"> · ${waitingForText(d.waitingFor)}</span>`}</span>
-                </li>`)}</ul>`}
+              : this.renderDeviceRows(devices)}
             ${devices.length === 0 ? nothing : html`<p class="home-small">${admin
               ? "Synced, Waiting and Nothing waiting cover complications and widgets, and on a watch also its pages, menus, settings and the rest of the watch app."
               : "Synced, Waiting and Nothing waiting cover complications and widgets."}</p>`}

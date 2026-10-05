@@ -674,7 +674,7 @@ export class WaHttpActionsEditor extends LitElement {
     return html`<div class="ha-foot" role="status">
       <i class="ha-foot-dot ${record.revision <= 0 ? "" : waiting.length === 0 ? "ok" : "warn"}" aria-hidden="true"></i>
       <span>${stored}</span>
-      ${waiting.length === 0 ? nothing : html`<span class="pe-muted">Waiting for ${waiting.join(", ")}.</span>`}
+      ${waiting.length === 0 ? nothing : html`<span class="pe-muted" data-devices-pop>Waiting for ${waiting.join(", ")}.</span>`}
       <span class="spacer"></span>
       <span class="pe-muted ${budget.near ? "ha-near" : ""}">${kb(budget.size)} of ${kb(budget.limit)}</span>
     </div>`;

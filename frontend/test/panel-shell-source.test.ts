@@ -22,7 +22,7 @@ describe("the panel's shell wiring", () => {
   it("draws the tab bar above whatever the tab draws", () => {
     const render = method("  override render() {");
     expect(render).toContain("renderTabBar(");
-    expect(render).toContain("html`${bar}${this.renderTab()}`");
+    expect(render).toContain("html`${bar}${this.renderTab()}${this.renderDevicesPop()}`");
   });
 
   it("draws Home on Home, before any watch screen or the complication editor", () => {
