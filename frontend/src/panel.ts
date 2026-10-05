@@ -140,7 +140,7 @@ import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
 import { type SendState, agoWords, describeHomeSync, describeSend, deviceSyncLabel, homeSync, sendState, sendWaitMs } from "./send-state.js";
-import { type HomeDeviceRow, devicesPopPlace, homeDeviceRows, homeDevices, homeStyles } from "./home.js";
+import { type HomeDeviceRow, devicesPopKeeps, devicesPopPlace, homeDeviceRows, homeDevices, homeStyles } from "./home.js";
 import { type WatchAppSync, readWatchAppSync, summaryUnknown, summaryWatchAppSyncs, waitingForText, watchAppSyncKey } from "./watch-app-sync.js";
 import { type PickerForm, type TabMemory, browseAllTab, listPageEscape, listPageLead, listPageShown, listPageState, listPageStyles, listsReady, pickTab, pickerSurfaceClass, restoreTab } from "./list-page.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
@@ -5964,7 +5964,7 @@ export class WristAssistantPanel extends LitElement {
     this.touchChanged();
     this.touchQuery?.addEventListener("change", this.touchChanged);
     this.addEventListener("mouseover", this.devicesPopOver);
-    this.addEventListener("mouseout", this.devicesPopOut);
+    this.addEventListener("mousemove", this.devicesPopTrack);
     this.addEventListener(SCRUB_START, this.scrubStart);
     this.addEventListener(SCRUB_END, this.scrubEnd);
     window.addEventListener("hashchange", this.takeShareLink);
@@ -6215,9 +6215,8 @@ export class WristAssistantPanel extends LitElement {
     window.removeEventListener("click", this.sharedValueOutside, { capture: true });
     window.removeEventListener("click", this.leaveGuard, { capture: true });
     this.removeEventListener("mouseover", this.devicesPopOver);
-    this.removeEventListener("mouseout", this.devicesPopOut);
-    window.clearTimeout(this.devicesPopTimer);
-    this.devicesPop = undefined;
+    this.removeEventListener("mousemove", this.devicesPopTrack);
+    this.closeDevicesPop();
     window.removeEventListener("focusin", this.sharedValueFocus);
     window.removeEventListener("pointerdown", this.addSheetOutside, { capture: true });
     window.removeEventListener("pointerdown", this.sideMenuOutside, { capture: true });
@@ -6386,6 +6385,7 @@ export class WristAssistantPanel extends LitElement {
     // Forward moves without a press, so the move itself shuts it and drops its
     // outside-press listener.
     if (changed.has("route")) this.toggleWatchRowMenu(false);
+    if (changed.has("route") && this.devicesPop !== undefined) this.closeDevicesPop();
     // The Settings page follows the row's shared watch on every draw, and
     // reads again on the way back to it. Not before the device list is in,
     // so a home with watches never shows the "no watch" card first. Any
@@ -10697,13 +10697,8 @@ export class WristAssistantPanel extends LitElement {
   }
 
   private devicesPopOver = (e: MouseEvent) => {
-    if (e.composedPath().some((n) => n instanceof HTMLElement && n.classList.contains("devices-pop"))) {
-      window.clearTimeout(this.devicesPopTimer);
-      return;
-    }
     const target = this.devicesPopTarget(e);
     if (target === undefined) return;
-    window.clearTimeout(this.devicesPopTimer);
     // The card says more than the pill's own hover text, which would only
     // come up over it.
     if (target.title !== "") {
@@ -10711,23 +10706,78 @@ export class WristAssistantPanel extends LitElement {
       target.removeAttribute("title");
     }
     if (this.devicesPop !== undefined && this.devicesPopFor === target) return;
-    // Already up for another pill: move at once. Else wait a moment, so a
-    // pointer only passing over opens nothing.
+    window.clearTimeout(this.devicesPopTimer);
+    // Already up for another pill: move at once. Else wait a moment, and
+    // open only if the pointer is still on the pill, so one only passing
+    // over opens nothing.
+    const x = e.clientX;
+    const y = e.clientY;
+    this.devicesPopAt = { x, y };
     this.devicesPopTimer = window.setTimeout(() => {
-      if (!target.isConnected) return;
-      this.devicesPopFor = target;
-      this.devicesPop = devicesPopPlace(target.getBoundingClientRect(), window.innerWidth, window.innerHeight);
-      void this.loadWatchAppSync(true);
+      const r = target.getBoundingClientRect();
+      const at = this.devicesPopAt ?? { x, y };
+      if (!target.isConnected || at.x < r.left - 2 || at.x > r.right + 2 || at.y < r.top - 2 || at.y > r.bottom + 2) return;
+      this.openDevicesPop(target);
     }, this.devicesPop !== undefined ? 0 : 180);
   };
 
-  private devicesPopOut = (e: MouseEvent) => {
-    const from = this.devicesPopTarget(e) !== undefined
-      || e.composedPath().some((n) => n instanceof HTMLElement && n.classList.contains("devices-pop"));
-    if (!from) return;
-    window.clearTimeout(this.devicesPopTimer);
-    this.devicesPopTimer = window.setTimeout(() => { this.devicesPop = undefined; }, 220);
+  /** Where the pointer was last seen while a pill waits to open its card. */
+  private devicesPopAt?: { x: number; y: number };
+  private devicesPopTrack = (e: MouseEvent) => { this.devicesPopAt = { x: e.clientX, y: e.clientY }; };
+
+  /**
+   * While the card is up, every move of the pointer is asked one thing: is
+   * it still on the pill, on the card, or between the two. Anywhere else,
+   * the card goes. Asked of the pointer's place and not of `mouseout`,
+   * which never comes when the pill is redrawn or taken away under the
+   * pointer, and then the card stayed up for good.
+   */
+  private devicesPopMove = (e: PointerEvent | MouseEvent) => {
+    if (this.devicesPop === undefined) return;
+    const card = this.renderRoot.querySelector<HTMLElement>(".devices-pop");
+    const pill = this.devicesPopFor;
+    const keep = card !== null && pill?.isConnected === true
+      && devicesPopKeeps({ x: e.clientX, y: e.clientY }, pill.getBoundingClientRect(), card.getBoundingClientRect());
+    if (keep) {
+      window.clearTimeout(this.devicesPopHide);
+      this.devicesPopHide = undefined;
+    } else if (this.devicesPopHide === undefined) {
+      this.devicesPopHide = window.setTimeout(this.closeDevicesPop, 160);
+    }
   };
+
+  private devicesPopHide?: number;
+
+  private closeDevicesPop = () => {
+    window.clearTimeout(this.devicesPopTimer);
+    window.clearTimeout(this.devicesPopHide);
+    this.devicesPopHide = undefined;
+    this.devicesPop = undefined;
+    this.devicesPopFor = undefined;
+    window.removeEventListener("pointermove", this.devicesPopMove, { capture: true });
+    window.removeEventListener("pointerdown", this.devicesPopPress, { capture: true });
+    window.removeEventListener("scroll", this.closeDevicesPop, { capture: true });
+    window.removeEventListener("keydown", this.closeDevicesPop, { capture: true });
+    window.removeEventListener("blur", this.closeDevicesPop);
+  };
+
+  /** A press anywhere but on the card closes it. */
+  private devicesPopPress = (e: PointerEvent) => {
+    if (!e.composedPath().some((n) => n instanceof HTMLElement && n.classList.contains("devices-pop"))) this.closeDevicesPop();
+  };
+
+  private openDevicesPop(target: HTMLElement) {
+    this.devicesPopFor = target;
+    this.devicesPop = devicesPopPlace(target.getBoundingClientRect(), window.innerWidth, window.innerHeight);
+    window.clearTimeout(this.devicesPopHide);
+    this.devicesPopHide = undefined;
+    window.addEventListener("pointermove", this.devicesPopMove, { capture: true });
+    window.addEventListener("pointerdown", this.devicesPopPress, { capture: true });
+    window.addEventListener("scroll", this.closeDevicesPop, { capture: true });
+    window.addEventListener("keydown", this.closeDevicesPop, { capture: true });
+    window.addEventListener("blur", this.closeDevicesPop);
+    void this.loadWatchAppSync(true);
+  }
 
   private renderDevicesPop() {
     const at = this.devicesPop;

@@ -85,6 +85,21 @@ export function devicesPopPlace(
   return under ? { left, top: Math.round(rect.bottom + POP_GAP) } : { left, bottom: Math.round(height - rect.top + POP_GAP) };
 }
 
+type Box = Pick<DOMRect, "left" | "right" | "top" | "bottom">;
+
+/** Whether a pointer at `point` keeps the hover card up: on the pill, on
+ * the card, or in the gap between them (the strip that joins the two, as
+ * wide as both), each with a few pixels of grace. */
+export function devicesPopKeeps(point: { x: number; y: number }, pill: Box, card: Box): boolean {
+  const inside = (b: Box, grace: number) => point.x >= b.left - grace && point.x <= b.right + grace && point.y >= b.top - grace && point.y <= b.bottom + grace;
+  if (inside(pill, 4) || inside(card, 4)) return true;
+  const between: Box = {
+    left: Math.min(pill.left, card.left), right: Math.max(pill.right, card.right),
+    top: Math.min(pill.bottom, card.bottom), bottom: Math.max(pill.top, card.top),
+  };
+  return between.top <= between.bottom && inside(between, 0);
+}
+
 /**
  * Home's look, added to the panel's sheet. Black ground, graphite cards,
  * neutral controls each with a one pixel outline. A section's hue shows in
