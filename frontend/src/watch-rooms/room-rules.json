@@ -1,0 +1,1188 @@
+{
+  "version": 1,
+  "note": "Generated from the iPhone app's Swift code by RoomRulesTableTests; do not edit. Regenerate room-rules.json with TEST_RUNNER_WA_UPDATE_FIXTURES=1 ./scripts/test.sh RoomRulesTableTests in the app repository.",
+  "keys": {
+    "sensor": "roomQuickJumpSourceEntityId",
+    "fallback": "roomQuickJumpFallbackPageId",
+    "mappings": "roomQuickJumpMappings",
+    "autoSwitch": "roomAutoSwitchEnabled",
+    "legacyQuickJump": "roomQuickJumpEnabled",
+    "zones": "pointControlRoomMappingsJSON",
+    "topSectionDoubleTap": "topSectionDoubleTapAction",
+    "handGesture": "handGestureAction",
+    "tapToToggle": "pointControlTapToToggle",
+    "liveTile": "pointControlLiveTile"
+  },
+  "normalize": {
+    "rule": "Lower case; _ and - as spaces; anything but a-z, 0-9 and space as a space; runs of spaces as one, none at either end.",
+    "cases": [
+      {
+        "input": "Living Room",
+        "key": "living room"
+      },
+      {
+        "input": "living_room",
+        "key": "living room"
+      },
+      {
+        "input": "Living-Room",
+        "key": "living room"
+      },
+      {
+        "input": "  Kitchen  ",
+        "key": "kitchen"
+      },
+      {
+        "input": "Kids' Room",
+        "key": "kids room"
+      },
+      {
+        "input": "ROOM__3",
+        "key": "room 3"
+      },
+      {
+        "input": "Room 2",
+        "key": "room 2"
+      },
+      {
+        "input": "Office/Study",
+        "key": "office study"
+      },
+      {
+        "input": "1st floor",
+        "key": "1st floor"
+      },
+      {
+        "input": "a\tb",
+        "key": "a b"
+      },
+      {
+        "input": "Café",
+        "key": "caf"
+      },
+      {
+        "input": "Büro",
+        "key": "b ro"
+      },
+      {
+        "input": "İstanbul",
+        "key": "i stanbul"
+      },
+      {
+        "input": "日本",
+        "key": ""
+      },
+      {
+        "input": "Ｌｉｖｉｎｇ",
+        "key": ""
+      },
+      {
+        "input": "",
+        "key": ""
+      },
+      {
+        "input": "___",
+        "key": ""
+      },
+      {
+        "input": "--",
+        "key": ""
+      },
+      {
+        "input": "kitchen.",
+        "key": "kitchen"
+      },
+      {
+        "input": "Master Bedroom (Upstairs)",
+        "key": "master bedroom upstairs"
+      }
+    ]
+  },
+  "roomValue": {
+    "notRoom": [
+      "unknown",
+      "unavailable",
+      "none",
+      "null",
+      "on",
+      "off",
+      "true",
+      "false",
+      "home",
+      "not_home",
+      "away"
+    ],
+    "rule": "Trimmed, not empty, not one of notRoom (compared lower case), not a number as Swift's Double reads one (nan, inf, infinity and hex floats included), and with a letter in it.",
+    "source": "The watch reads a person's room from its state only. Any other sensor gives its state, or, when that is not a room, its location_name attribute.",
+    "attribute": "location_name",
+    "cases": [
+      {
+        "input": "Kitchen",
+        "room": true
+      },
+      {
+        "input": "living_room",
+        "room": true
+      },
+      {
+        "input": "unknown",
+        "room": false
+      },
+      {
+        "input": "Unavailable",
+        "room": false
+      },
+      {
+        "input": " on ",
+        "room": false
+      },
+      {
+        "input": "OFF",
+        "room": false
+      },
+      {
+        "input": "home",
+        "room": false
+      },
+      {
+        "input": "not_home",
+        "room": false
+      },
+      {
+        "input": "Away",
+        "room": false
+      },
+      {
+        "input": "none",
+        "room": false
+      },
+      {
+        "input": "NULL",
+        "room": false
+      },
+      {
+        "input": "true",
+        "room": false
+      },
+      {
+        "input": "42",
+        "room": false
+      },
+      {
+        "input": "3.5",
+        "room": false
+      },
+      {
+        "input": "-1",
+        "room": false
+      },
+      {
+        "input": "1e3",
+        "room": false
+      },
+      {
+        "input": "1E3",
+        "room": false
+      },
+      {
+        "input": "nan",
+        "room": false
+      },
+      {
+        "input": "NaN",
+        "room": false
+      },
+      {
+        "input": "inf",
+        "room": false
+      },
+      {
+        "input": "-Infinity",
+        "room": false
+      },
+      {
+        "input": "0x1F",
+        "room": false
+      },
+      {
+        "input": "0x1p3",
+        "room": false
+      },
+      {
+        "input": "+5",
+        "room": false
+      },
+      {
+        "input": ".5",
+        "room": false
+      },
+      {
+        "input": "",
+        "room": false
+      },
+      {
+        "input": "   ",
+        "room": false
+      },
+      {
+        "input": "!!",
+        "room": false
+      },
+      {
+        "input": "2nd floor",
+        "room": true
+      },
+      {
+        "input": "Büro",
+        "room": true
+      },
+      {
+        "input": "日本",
+        "room": true
+      },
+      {
+        "input": "e",
+        "room": true
+      },
+      {
+        "input": "Home Office",
+        "room": true
+      }
+    ]
+  },
+  "switching": {
+    "keys": [
+      "roomQuickJumpSourceEntityId",
+      "roomQuickJumpEnabled",
+      "roomAutoSwitchEnabled",
+      "topSectionDoubleTapAction",
+      "handGestureAction"
+    ],
+    "triggers": [
+      {
+        "value": "Automatic",
+        "label": "Automatic",
+        "help": "Switches when your room sensor detects a new room. Uses more battery."
+      },
+      {
+        "value": "Double-Tap Top",
+        "label": "Double-Tap Top",
+        "help": "Double-tap the page title or top area to switch."
+      },
+      {
+        "value": "Double Pinch",
+        "label": "Double Pinch",
+        "help": "Double pinch gesture to switch rooms"
+      }
+    ],
+    "absent": {
+      "handGestureAction": "Refresh"
+    },
+    "rule": "Picking a room sensor writes only roomQuickJumpSourceEntityId. Switch Pages by Room on is Double-Tap Top. When nothing is on, the trigger shown is Double-Tap Top.",
+    "cases": [
+      {
+        "op": {
+          "switch": true
+        },
+        "before": {},
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": false,
+          "topSectionDoubleTapAction": "Room Jump",
+          "handGestureAction": "Refresh"
+        }
+      },
+      {
+        "op": {
+          "switch": true
+        },
+        "before": {
+          "topSectionDoubleTapAction": "Room Jump"
+        },
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": false,
+          "topSectionDoubleTapAction": "Room Jump",
+          "handGestureAction": "Refresh"
+        }
+      },
+      {
+        "op": {
+          "switch": true
+        },
+        "before": {
+          "roomAutoSwitchEnabled": false,
+          "handGestureAction": "Room Jump"
+        },
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": false,
+          "topSectionDoubleTapAction": "Room Jump",
+          "handGestureAction": "Refresh"
+        }
+      },
+      {
+        "op": {
+          "switch": true
+        },
+        "before": {
+          "topSectionDoubleTapAction": "Activate Scene",
+          "handGestureAction": "Next Page"
+        },
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": false,
+          "topSectionDoubleTapAction": "Room Jump",
+          "handGestureAction": "Refresh"
+        }
+      },
+      {
+        "op": {
+          "switch": true
+        },
+        "before": {
+          "roomQuickJumpEnabled": true,
+          "topSectionDoubleTapAction": "Disabled"
+        },
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": false,
+          "topSectionDoubleTapAction": "Room Jump",
+          "handGestureAction": "Refresh"
+        }
+      },
+      {
+        "op": {
+          "switch": true
+        },
+        "before": {
+          "roomQuickJumpSourceEntityId": "sensor.watch_area",
+          "roomQuickJumpEnabled": true,
+          "roomAutoSwitchEnabled": true,
+          "topSectionDoubleTapAction": "Room Jump",
+          "handGestureAction": "Room Jump"
+        },
+        "after": {
+          "roomQuickJumpSourceEntityId": "sensor.watch_area",
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": false,
+          "topSectionDoubleTapAction": "Room Jump",
+          "handGestureAction": "Refresh"
+        }
+      },
+      {
+        "op": {
+          "switch": false
+        },
+        "before": {},
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": false
+        }
+      },
+      {
+        "op": {
+          "switch": false
+        },
+        "before": {
+          "topSectionDoubleTapAction": "Room Jump"
+        },
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": false,
+          "topSectionDoubleTapAction": "Disabled"
+        }
+      },
+      {
+        "op": {
+          "switch": false
+        },
+        "before": {
+          "roomAutoSwitchEnabled": false,
+          "handGestureAction": "Room Jump"
+        },
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": false,
+          "handGestureAction": "Refresh"
+        }
+      },
+      {
+        "op": {
+          "switch": false
+        },
+        "before": {
+          "topSectionDoubleTapAction": "Activate Scene",
+          "handGestureAction": "Next Page"
+        },
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": false,
+          "topSectionDoubleTapAction": "Activate Scene",
+          "handGestureAction": "Next Page"
+        }
+      },
+      {
+        "op": {
+          "switch": false
+        },
+        "before": {
+          "roomQuickJumpEnabled": true,
+          "topSectionDoubleTapAction": "Disabled"
+        },
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": false,
+          "topSectionDoubleTapAction": "Disabled"
+        }
+      },
+      {
+        "op": {
+          "switch": false
+        },
+        "before": {
+          "roomQuickJumpSourceEntityId": "sensor.watch_area",
+          "roomQuickJumpEnabled": true,
+          "roomAutoSwitchEnabled": true,
+          "topSectionDoubleTapAction": "Room Jump",
+          "handGestureAction": "Room Jump"
+        },
+        "after": {
+          "roomQuickJumpSourceEntityId": "sensor.watch_area",
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": false,
+          "topSectionDoubleTapAction": "Disabled",
+          "handGestureAction": "Refresh"
+        }
+      },
+      {
+        "op": {
+          "trigger": "Automatic"
+        },
+        "before": {},
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": true,
+          "handGestureAction": "Refresh"
+        }
+      },
+      {
+        "op": {
+          "trigger": "Automatic"
+        },
+        "before": {
+          "topSectionDoubleTapAction": "Room Jump"
+        },
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": true,
+          "topSectionDoubleTapAction": "Disabled",
+          "handGestureAction": "Refresh"
+        }
+      },
+      {
+        "op": {
+          "trigger": "Automatic"
+        },
+        "before": {
+          "roomAutoSwitchEnabled": false,
+          "handGestureAction": "Room Jump"
+        },
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": true,
+          "handGestureAction": "Refresh"
+        }
+      },
+      {
+        "op": {
+          "trigger": "Automatic"
+        },
+        "before": {
+          "topSectionDoubleTapAction": "Activate Scene",
+          "handGestureAction": "Next Page"
+        },
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": true,
+          "topSectionDoubleTapAction": "Activate Scene",
+          "handGestureAction": "Refresh"
+        }
+      },
+      {
+        "op": {
+          "trigger": "Automatic"
+        },
+        "before": {
+          "roomQuickJumpEnabled": true,
+          "topSectionDoubleTapAction": "Disabled"
+        },
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": true,
+          "topSectionDoubleTapAction": "Disabled",
+          "handGestureAction": "Refresh"
+        }
+      },
+      {
+        "op": {
+          "trigger": "Automatic"
+        },
+        "before": {
+          "roomQuickJumpSourceEntityId": "sensor.watch_area",
+          "roomQuickJumpEnabled": true,
+          "roomAutoSwitchEnabled": true,
+          "topSectionDoubleTapAction": "Room Jump",
+          "handGestureAction": "Room Jump"
+        },
+        "after": {
+          "roomQuickJumpSourceEntityId": "sensor.watch_area",
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": true,
+          "topSectionDoubleTapAction": "Disabled",
+          "handGestureAction": "Refresh"
+        }
+      },
+      {
+        "op": {
+          "trigger": "Double-Tap Top"
+        },
+        "before": {},
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": false,
+          "topSectionDoubleTapAction": "Room Jump",
+          "handGestureAction": "Refresh"
+        }
+      },
+      {
+        "op": {
+          "trigger": "Double-Tap Top"
+        },
+        "before": {
+          "topSectionDoubleTapAction": "Room Jump"
+        },
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": false,
+          "topSectionDoubleTapAction": "Room Jump",
+          "handGestureAction": "Refresh"
+        }
+      },
+      {
+        "op": {
+          "trigger": "Double-Tap Top"
+        },
+        "before": {
+          "roomAutoSwitchEnabled": false,
+          "handGestureAction": "Room Jump"
+        },
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": false,
+          "topSectionDoubleTapAction": "Room Jump",
+          "handGestureAction": "Refresh"
+        }
+      },
+      {
+        "op": {
+          "trigger": "Double-Tap Top"
+        },
+        "before": {
+          "topSectionDoubleTapAction": "Activate Scene",
+          "handGestureAction": "Next Page"
+        },
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": false,
+          "topSectionDoubleTapAction": "Room Jump",
+          "handGestureAction": "Refresh"
+        }
+      },
+      {
+        "op": {
+          "trigger": "Double-Tap Top"
+        },
+        "before": {
+          "roomQuickJumpEnabled": true,
+          "topSectionDoubleTapAction": "Disabled"
+        },
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": false,
+          "topSectionDoubleTapAction": "Room Jump",
+          "handGestureAction": "Refresh"
+        }
+      },
+      {
+        "op": {
+          "trigger": "Double-Tap Top"
+        },
+        "before": {
+          "roomQuickJumpSourceEntityId": "sensor.watch_area",
+          "roomQuickJumpEnabled": true,
+          "roomAutoSwitchEnabled": true,
+          "topSectionDoubleTapAction": "Room Jump",
+          "handGestureAction": "Room Jump"
+        },
+        "after": {
+          "roomQuickJumpSourceEntityId": "sensor.watch_area",
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": false,
+          "topSectionDoubleTapAction": "Room Jump",
+          "handGestureAction": "Refresh"
+        }
+      },
+      {
+        "op": {
+          "trigger": "Double Pinch"
+        },
+        "before": {},
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": false,
+          "handGestureAction": "Room Jump"
+        }
+      },
+      {
+        "op": {
+          "trigger": "Double Pinch"
+        },
+        "before": {
+          "topSectionDoubleTapAction": "Room Jump"
+        },
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": false,
+          "topSectionDoubleTapAction": "Disabled",
+          "handGestureAction": "Room Jump"
+        }
+      },
+      {
+        "op": {
+          "trigger": "Double Pinch"
+        },
+        "before": {
+          "roomAutoSwitchEnabled": false,
+          "handGestureAction": "Room Jump"
+        },
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": false,
+          "handGestureAction": "Room Jump"
+        }
+      },
+      {
+        "op": {
+          "trigger": "Double Pinch"
+        },
+        "before": {
+          "topSectionDoubleTapAction": "Activate Scene",
+          "handGestureAction": "Next Page"
+        },
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": false,
+          "topSectionDoubleTapAction": "Activate Scene",
+          "handGestureAction": "Room Jump"
+        }
+      },
+      {
+        "op": {
+          "trigger": "Double Pinch"
+        },
+        "before": {
+          "roomQuickJumpEnabled": true,
+          "topSectionDoubleTapAction": "Disabled"
+        },
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": false,
+          "topSectionDoubleTapAction": "Disabled",
+          "handGestureAction": "Room Jump"
+        }
+      },
+      {
+        "op": {
+          "trigger": "Double Pinch"
+        },
+        "before": {
+          "roomQuickJumpSourceEntityId": "sensor.watch_area",
+          "roomQuickJumpEnabled": true,
+          "roomAutoSwitchEnabled": true,
+          "topSectionDoubleTapAction": "Room Jump",
+          "handGestureAction": "Room Jump"
+        },
+        "after": {
+          "roomQuickJumpSourceEntityId": "sensor.watch_area",
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": false,
+          "topSectionDoubleTapAction": "Disabled",
+          "handGestureAction": "Room Jump"
+        }
+      },
+      {
+        "op": {
+          "clearSensor": true
+        },
+        "before": {},
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": false
+        }
+      },
+      {
+        "op": {
+          "clearSensor": true
+        },
+        "before": {
+          "topSectionDoubleTapAction": "Room Jump"
+        },
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": false,
+          "topSectionDoubleTapAction": "Disabled"
+        }
+      },
+      {
+        "op": {
+          "clearSensor": true
+        },
+        "before": {
+          "roomAutoSwitchEnabled": false,
+          "handGestureAction": "Room Jump"
+        },
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": false,
+          "handGestureAction": "Refresh"
+        }
+      },
+      {
+        "op": {
+          "clearSensor": true
+        },
+        "before": {
+          "topSectionDoubleTapAction": "Activate Scene",
+          "handGestureAction": "Next Page"
+        },
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": false,
+          "topSectionDoubleTapAction": "Activate Scene",
+          "handGestureAction": "Next Page"
+        }
+      },
+      {
+        "op": {
+          "clearSensor": true
+        },
+        "before": {
+          "roomQuickJumpEnabled": true,
+          "topSectionDoubleTapAction": "Disabled"
+        },
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": false,
+          "topSectionDoubleTapAction": "Disabled"
+        }
+      },
+      {
+        "op": {
+          "clearSensor": true
+        },
+        "before": {
+          "roomQuickJumpSourceEntityId": "sensor.watch_area",
+          "roomQuickJumpEnabled": true,
+          "roomAutoSwitchEnabled": true,
+          "topSectionDoubleTapAction": "Room Jump",
+          "handGestureAction": "Room Jump"
+        },
+        "after": {
+          "roomQuickJumpEnabled": false,
+          "roomAutoSwitchEnabled": false,
+          "topSectionDoubleTapAction": "Disabled",
+          "handGestureAction": "Refresh"
+        }
+      }
+    ],
+    "readCases": [
+      {
+        "document": {},
+        "on": false,
+        "trigger": "Double-Tap Top"
+      },
+      {
+        "document": {
+          "topSectionDoubleTapAction": "Room Jump"
+        },
+        "on": true,
+        "trigger": "Double-Tap Top"
+      },
+      {
+        "document": {
+          "roomAutoSwitchEnabled": false,
+          "handGestureAction": "Room Jump"
+        },
+        "on": true,
+        "trigger": "Double Pinch"
+      },
+      {
+        "document": {
+          "topSectionDoubleTapAction": "Activate Scene",
+          "handGestureAction": "Next Page"
+        },
+        "on": false,
+        "trigger": "Double-Tap Top"
+      },
+      {
+        "document": {
+          "roomQuickJumpEnabled": true,
+          "topSectionDoubleTapAction": "Disabled"
+        },
+        "on": true,
+        "trigger": "Double-Tap Top"
+      },
+      {
+        "document": {
+          "roomQuickJumpSourceEntityId": "sensor.watch_area",
+          "roomQuickJumpEnabled": true,
+          "roomAutoSwitchEnabled": true,
+          "topSectionDoubleTapAction": "Room Jump",
+          "handGestureAction": "Room Jump"
+        },
+        "on": true,
+        "trigger": "Automatic"
+      }
+    ]
+  },
+  "fallback": {
+    "stay": "__stay__",
+    "firstAvailable": null,
+    "watchFallbackNames": ["favorites", "nearby", "home"],
+    "rule": "Stay on current page stores the sentinel; First available page stores no key, and the watch then takes a page whose normalized name is one of watchFallbackNames, else the first page. A page id is a page's id as stored. The pages offered are the listed pages that are neither system nor hidden pages."
+  },
+  "mappings": {
+    "rule": "roomQuickJumpMappings maps a normalized room name to a page id. A room set to no page has no key, and an empty mapping is no key at all. The watch normalizes every key before it compares, and also takes a key that contains the room or is contained by it."
+  },
+  "pointControl": {
+    "domains": [
+      {
+        "domain": "light",
+        "label": "Light"
+      },
+      {
+        "domain": "switch",
+        "label": "Switch"
+      },
+      {
+        "domain": "fan",
+        "label": "Fan"
+      },
+      {
+        "domain": "cover",
+        "label": "Cover"
+      },
+      {
+        "domain": "scene",
+        "label": "Scene"
+      },
+      {
+        "domain": "script",
+        "label": "Script"
+      },
+      {
+        "domain": "climate",
+        "label": "Climate"
+      },
+      {
+        "domain": "media_player",
+        "label": "Player"
+      },
+      {
+        "domain": "lock",
+        "label": "Lock"
+      },
+      {
+        "domain": "input_boolean",
+        "label": "Toggle"
+      }
+    ],
+    "heading": {
+      "min": 0,
+      "max": 359,
+      "rule": "Degrees clockwise from north. The phone captures headings from the watch compass, snapped to 5; the panel takes a typed or dialled whole degree."
+    },
+    "newTarget": "A target added on the phone starts at heading 0 with the entity's friendly name from its id as the label.",
+    "switches": [
+      {
+        "key": "pointControlTapToToggle",
+        "label": "Tap to Toggle",
+        "onDetail": "Tap immediately toggles the aimed entity",
+        "offDetail": "Tap opens the point control overlay",
+        "absent": false
+      },
+      {
+        "key": "pointControlLiveTile",
+        "label": "Live Point Control Tile",
+        "onDetail": "Show live needle and aimed entity on grid tile",
+        "offDetail": "Show live needle and aimed entity on grid tile",
+        "absent": false
+      }
+    ]
+  },
+  "zones": {
+    "cleanCases": [
+      {
+        "input": {
+          "kitchen": []
+        },
+        "output": null
+      },
+      {
+        "input": {
+          "den": [
+            {
+              "entityId": "light.a",
+              "centerHeading": 0
+            }
+          ],
+          "kitchen": []
+        },
+        "output": {
+          "den": [
+            {
+              "entityId": "light.a",
+              "centerHeading": 0
+            }
+          ],
+          "kitchen": []
+        }
+      },
+      {
+        "input": {
+          "den": [
+            {
+              "entityId": " ",
+              "centerHeading": 0
+            }
+          ]
+        },
+        "output": null
+      },
+      {
+        "input": {
+          "den": [
+            {
+              "entityId": " ",
+              "centerHeading": 0
+            },
+            {
+              "entityId": "light.a",
+              "centerHeading": 10
+            }
+          ],
+          "hall": [
+            {
+              "entityId": "",
+              "centerHeading": 0
+            }
+          ]
+        },
+        "output": {
+          "den": [
+            {
+              "entityId": " ",
+              "centerHeading": 0
+            },
+            {
+              "entityId": "light.a",
+              "centerHeading": 10
+            }
+          ]
+        }
+      },
+      {
+        "input": {
+          "living room": [
+            {
+              "entityId": "light.tv",
+              "centerHeading": 90,
+              "label": "TV"
+            },
+            {
+              "entityId": "switch.fan",
+              "centerHeading": 180
+            }
+          ]
+        },
+        "output": {
+          "living room": [
+            {
+              "entityId": "light.tv",
+              "centerHeading": 90,
+              "label": "TV"
+            },
+            {
+              "entityId": "switch.fan",
+              "centerHeading": 180
+            }
+          ]
+        }
+      }
+    ],
+    "encodeCases": [
+      {
+        "rooms": {
+          "living room": [
+            {
+              "entityId": "light.tv_backlight",
+              "centerHeading": 90,
+              "label": "TV / Lamp"
+            },
+            {
+              "entityId": "switch.fan",
+              "centerHeading": 272.5
+            }
+          ]
+        },
+        "parsed": {
+          "living room": [
+            {
+              "centerHeading": 90,
+              "entityId": "light.tv_backlight",
+              "label": "TV / Lamp"
+            },
+            {
+              "centerHeading": 272.5,
+              "entityId": "switch.fan"
+            }
+          ]
+        },
+        "slashEscaped": true
+      },
+      {
+        "rooms": {
+          "kitchen": [
+            {
+              "entityId": "light.kitchen",
+              "centerHeading": 0
+            }
+          ]
+        },
+        "parsed": {
+          "kitchen": [
+            {
+              "centerHeading": 0,
+              "entityId": "light.kitchen"
+            }
+          ]
+        },
+        "slashEscaped": false
+      },
+      {
+        "rooms": {
+          "den": []
+        },
+        "parsed": {
+          "den": []
+        },
+        "slashEscaped": false
+      },
+      {
+        "rooms": {
+          "büro": [
+            {
+              "entityId": "light.büro",
+              "centerHeading": 359,
+              "label": "Schreibtisch \"neu\""
+            }
+          ]
+        },
+        "parsed": {
+          "büro": [
+            {
+              "centerHeading": 359,
+              "entityId": "light.büro",
+              "label": "Schreibtisch \"neu\""
+            }
+          ]
+        },
+        "slashEscaped": false
+      }
+    ],
+    "decodeCases": [
+      {
+        "json": "{\"kitchen\":[{\"entityId\":\"light.a\",\"centerHeading\":0}],\"living room\":[{\"entityId\":\"light.b\",\"centerHeading\":359.5,\"label\":\"Lamp\"}]}",
+        "rooms": {
+          "kitchen": [
+            {
+              "entityId": "light.a",
+              "centerHeading": 0
+            }
+          ],
+          "living room": [
+            {
+              "entityId": "light.b",
+              "centerHeading": 359.5,
+              "label": "Lamp"
+            }
+          ]
+        }
+      },
+      {
+        "json": "{\"den\":[{\"entityId\":\"light.a\",\"centerHeading\":45,\"label\":\"A\",\"extra\":1}]}",
+        "rooms": {
+          "den": [
+            {
+              "entityId": "light.a",
+              "centerHeading": 45,
+              "label": "A"
+            }
+          ]
+        }
+      },
+      {
+        "json": "{\"den\":[{\"entityId\":\"light.a\",\"centerHeading\":45,\"label\":null}]}",
+        "rooms": {
+          "den": [
+            {
+              "entityId": "light.a",
+              "centerHeading": 45
+            }
+          ]
+        }
+      },
+      {
+        "json": "{\"den\":[]}",
+        "rooms": {
+          "den": []
+        }
+      },
+      {
+        "json": "{\"den\":[{\"entityId\":\"light.a\"}]}",
+        "rooms": {}
+      },
+      {
+        "json": "{\"den\":[{\"entityId\":\"light.a\",\"centerHeading\":\"45\"}]}",
+        "rooms": {}
+      },
+      {
+        "json": "{\"den\":[{\"entityId\":\"light.a\",\"centerHeading\":45}],\"hall\":{\"entityId\":\"light.b\"}}",
+        "rooms": {}
+      },
+      {
+        "json": "[]",
+        "rooms": {}
+      },
+      {
+        "json": "not json",
+        "rooms": {}
+      },
+      {
+        "json": "",
+        "rooms": {}
+      }
+    ]
+  }
+}
