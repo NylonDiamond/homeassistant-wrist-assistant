@@ -98,6 +98,7 @@ import {
   watchTriggerModes,
   watchTriggerTargetDomains,
 } from "./model.js";
+import { type MenuVoiceContext, menuSlotHasVoice, menuSlotVoiceChanged, menuSlotVoiceSummary, renderSlotVoiceBody } from "./slot-voice.js";
 
 /** What the views are handed on every draw. `document`, `targets` and
  * `busy` are read live. */
@@ -111,6 +112,9 @@ export interface MenusViewHost {
   /** Whether the iPhone has published its library (HTTP actions, status
    * pages) here. */
   readonly catalogKnown: boolean;
+  /** The watch's voice settings as the slot editors read them: the phrases
+   * and the defaults. Absent where nothing loaded them (a test). */
+  readonly voice?: MenuVoiceContext | undefined;
   /** A save is out: every field is drawn off and every edit refused. */
   readonly busy: boolean;
   readonly uiState: Map<string, unknown>;
@@ -351,7 +355,7 @@ function targetText(host: Pick<MenusViewHost, "hass" | "targets">, slot: JsonObj
     if (p.target === "page") return host.targets.pages.find((t) => sameId(t.id, value))?.name ?? "A page not in the pages";
     if (p.target === "statusPage") return host.targets.statusPages.find((t) => sameId(t.id, value))?.name ?? "A status page";
     if (p.target === "httpAction") return host.targets.httpActions.find((t) => sameId(t.id, value))?.name ?? "An HTTP action";
-    if (p.target === "ttsPhrase") return "A phrase";
+    if (p.target === "ttsPhrase") return (host.targets.phrases ?? []).find((t) => sameId(t.id, value))?.name ?? "A phrase that is gone";
   }
   return undefined;
 }
@@ -881,8 +885,13 @@ function toggle(host: Pick<MenusViewHost, "uiState" | "requestUpdate">, section:
 export function menuInspectorFolds(host: ViewState & SwitcherState & Pick<MenusViewHost, "switcherSettings">): FoldId[] {
   if (selectedSwitcherSettings(host) !== undefined) return [{ module: FOLD_MODULE, section: "switcher-page" }];
   const ref = shownMenuList(host);
-  if (ref !== undefined && selectedMenuSlot(host, ref) !== undefined) {
-    return [{ module: FOLD_MODULE, section: "slot" }, { module: FOLD_MODULE, section: "look" }];
+  const picked = ref === undefined ? undefined : selectedMenuSlot(host, ref);
+  if (picked !== undefined) {
+    return [
+      { module: FOLD_MODULE, section: "slot" },
+      ...(menuSlotHasVoice(picked) ? [{ module: FOLD_MODULE, section: "voice" }] : []),
+      { module: FOLD_MODULE, section: "look" },
+    ];
   }
   const menu = shownMenu(host);
   return [{ module: FOLD_MODULE, section: menu === "entity" ? "menu" : `style-${menu}` }];
@@ -1006,17 +1015,20 @@ function targetSelect(host: MenusViewHost, ref: MenuListRef, slot: JsonObject, r
   const id = watchMenuSlotId(slot);
   const value = slotAction(slot)[spec.key];
   const stored = typeof value === "string" ? value : "";
-  const list = spec.target === "page" ? host.targets.pages : spec.target === "statusPage" ? host.targets.statusPages : host.targets.httpActions;
+  const list = spec.target === "page" ? host.targets.pages : spec.target === "statusPage" ? host.targets.statusPages
+    : spec.target === "ttsPhrase" ? (host.targets.phrases ?? []) : host.targets.httpActions;
   const known = stored === "" || list.some((t) => sameId(t.id, stored));
   const set = (v: string) => host.edit((d) => setWatchMenuActionKey(d, ref, id, spec.key, v === "" ? undefined : v));
-  const missing = spec.target === "page" ? "A page that is gone" : "Not on the iPhone";
+  const missing = spec.target === "page" ? "A page that is gone" : spec.target === "ttsPhrase" ? "A phrase that is gone" : "Not on the iPhone";
   return html`<label class="field"><span>${payloadLabel(raw, spec)}</span>
     <select .value=${live(list.find((t) => sameId(t.id, stored))?.id ?? stored)} @change=${(e: Event) => set((e.target as HTMLSelectElement).value)}>
       ${spec.required === true ? nothing : html`<option value="" ?selected=${stored === ""}>None</option>`}
       ${known ? nothing : html`<option value=${stored} selected>${missing}</option>`}
       ${list.map((t) => html`<option value=${t.id} ?selected=${sameId(t.id, stored)}>${t.name}</option>`)}
     </select></label>
-    ${spec.target !== "page" && !host.catalogKnown
+    ${spec.target === "ttsPhrase"
+      ? (host.voice?.phrases === undefined ? html`<div class="hint ts-under">No voice settings from this watch yet. Add phrases in Voice.</div>` : nothing)
+      : spec.target !== "page" && !host.catalogKnown
       ? html`<div class="hint ts-under">Open the iPhone app to list its HTTP actions and status pages here.</div>`
       : nothing}`;
 }
@@ -1036,9 +1048,6 @@ function payloadField(host: MenusViewHost, ref: MenuListRef, slot: JsonObject, r
         ${entityId === "" ? html`<div class="hint keep">Pick what it runs. A slot left without one is dropped when you save.</div>` : nothing}`;
     }
     case "uuid":
-      if (spec.target === "ttsPhrase") {
-        return html`<div class="field"><span>${label}</span><span class="me-readonly">${typeof value === "string" ? "Set on the iPhone" : "None"}</span></div>`;
-      }
       return targetSelect(host, ref, slot, raw, spec);
     case "enum": {
       if (spec.key === "triggerMode") {
@@ -1167,8 +1176,12 @@ function renderSlotInspector(host: MenusViewHost, ref: MenuListRef, slot: JsonOb
     <div class="ts-no-alpha">${colorField("Color", typeof slot.color === "string" ? slot.color : undefined,
       (v) => { if (v !== undefined) host.edit((d) => setWatchMenuSlotColor(d, ref, id, v), `slot:${id}:color`); }, false, def?.color)}</div>
   </fieldset>`;
+  const voiceBody = renderSlotVoiceBody(host, ref, slot);
   return html`${renderNameCard(host, slot)}
     ${card(host, "slot", "slot", "Slot", slotBody, { summary: menuSlotDetail(slot), dot: menuSlotChanged(slot, ref) })}
+    ${voiceBody === undefined ? nothing : card(host, "slot", "voice", "Voice",
+      html`<fieldset class="me-body me-voice" ?disabled=${host.busy} aria-label="Voice">${voiceBody}</fieldset>`,
+      { summary: menuSlotVoiceSummary(host, slot), dot: menuSlotVoiceChanged(slot) })}
     ${card(host, "look", "look", "Look", lookBody, { summary: look.icon, dot: menuSlotLookChanged(slot) })}
     <div class="me-acts">
       <button type="button" class="pe-btn pe-danger" ?disabled=${host.busy} title="Remove this slot from the menu"
@@ -1384,6 +1397,9 @@ export const menuViewStyles = css`
   }
   .me-acts { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 0 0; }
   .me-readonly { font-size: 12px; color: var(--wa-muted); }
+  .me-sub-h { margin: 8px 0 2px; font-size: 12px; font-weight: 600; color: var(--wa-muted); }
+  .me-voice-list { display: flex; flex-direction: column; margin-bottom: 2px; }
+  .me-body .hint.warn { color: var(--wa-amber); }
   .me-show-for { margin-top: 6px; border-top: 1px solid var(--wa-line); padding-top: 6px; }
   .me-show-for > summary { display: flex; gap: 8px; align-items: baseline; cursor: pointer; font-size: 12px; color: var(--wa-muted); padding: 4px 0; }
   .me-show-for > summary b { color: var(--wa-ink); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
