@@ -1183,9 +1183,13 @@ def merge_hand_over(
     * A global whose key is not stored is added. The same key with the same
       value is dropped. The same key with another value is added as
       ``<key>_2`` (or ``_3`` and on, the first that no stored or incoming
-      global uses), and every ``{{key}}`` in the incoming actions that are
-      added is rewritten to the new name, so each action keeps the value it
-      was written against.
+      global and no stored action's variable uses), and every ``{{key}}`` in
+      the incoming actions that are added is rewritten to the new name, so
+      each action keeps the value it was written against.
+    * A global whose key is the key of a variable of a stored action clashes
+      too, and is renamed the same way. Added under that key it would fill
+      the stored action's token raw in place of the escaped value a person
+      types, which is a change to a stored action.
 
     ``incoming`` must already have passed :func:`validate_document`.
     """
@@ -1199,20 +1203,31 @@ def merge_hand_over(
         for g in merged["globalVariables"]
         if isinstance(g, dict)
     }
-    taken = set(stored_globals) | {
-        trim(_string(g.get("key")))
-        for g in incoming.get("globalVariables", [])
-        if isinstance(g, dict)
+    stored_variable_keys = {
+        trim(variable.key)
+        for raw in merged["actions"]
+        if isinstance(raw, dict)
+        for variable in Action.read(raw).variables
     }
+    stored_variable_keys.discard("")
+    taken = (
+        set(stored_globals)
+        | stored_variable_keys
+        | {
+            trim(_string(g.get("key")))
+            for g in incoming.get("globalVariables", [])
+            if isinstance(g, dict)
+        }
+    )
     global_ids = {_string(g.get("id")).upper() for g in merged["globalVariables"] if isinstance(g, dict)}
     renames: dict[str, str] = {}
     for raw in incoming.get("globalVariables", []):
         key = trim(_string(raw.get("key")))
         value = _string(raw.get("value"))
         entry = dict(raw)
-        if key in stored_globals:
-            if stored_globals[key] == value:
-                continue
+        if key in stored_globals and stored_globals[key] == value:
+            continue
+        if key in stored_globals or key in stored_variable_keys:
             suffix = 2
             while f"{key}_{suffix}" in taken:
                 suffix += 1

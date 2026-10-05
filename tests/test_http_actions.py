@@ -561,6 +561,52 @@ def test_globals_are_added_dropped_or_renamed_and_tokens_follow() -> None:
     assert ha.build_request(merged, ID_B, {}).url == "http://a/x/two"
 
 
+def test_a_global_named_like_a_stored_variable_is_renamed_and_the_prompt_stays() -> None:
+    stored = library(
+        action(
+            url="https://api.example.com/x?q={{city}}",
+            bodyContentType="json",
+            body='{"city":"{{city}}"}',
+            headers=[header("Authorization", "Bearer {{token}}")],
+            variables=[variable("city", prompt="City")],
+        ),
+        globals_=[{"id": "S1", "key": "token", "value": "SECRET"}],
+    )
+    injected = 'x","admin":true,"y":"'
+    incoming = library(
+        action(id=ID_B, url="https://phone.example/{{city}}"),
+        globals_=[{"id": "P1", "key": "city", "value": injected}],
+    )
+    ha.validate_document(incoming)
+    merged, added, changed = ha.merge_hand_over(stored, incoming)
+    assert (added, changed) == (1, True)
+    assert [(g["key"], g["value"]) for g in merged["globalVariables"]] == [
+        ("token", "SECRET"),
+        ("city_2", injected),
+    ]
+    # The stored action still asks for its city and escapes it.
+    assert merged["actions"][0] == stored["actions"][0]
+    listed = ha.public_list(merged)["actions"]
+    assert [v["key"] for v in listed[0]["variables"]] == ["city"]
+    request = ha.build_request(merged, ID_A, {"city": "Paris"})
+    assert request.url == "https://api.example.com/x?q=Paris"
+    assert request.body == b'{"city":"Paris"}'
+    # The added action keeps the value it was written against.
+    assert merged["actions"][1]["url"] == "https://phone.example/{{city_2}}"
+    ha.validate_document(merged)
+
+
+def test_a_renamed_global_skips_a_stored_variable_key() -> None:
+    stored = library(
+        action(url="https://a.example/{{k_2}}", variables=[variable("k_2")]),
+        globals_=[{"id": "S1", "key": "k", "value": "one"}],
+    )
+    incoming = library(globals_=[{"id": "P1", "key": "k", "value": "two"}])
+    merged, _added, _changed = ha.merge_hand_over(stored, incoming)
+    assert [g["key"] for g in merged["globalVariables"]] == ["k", "k_3"]
+    assert [v["key"] for v in ha.public_list(merged)["actions"][0]["variables"]] == ["k_2"]
+
+
 def test_a_hand_over_of_what_is_stored_changes_nothing() -> None:
     stored = library(action(), globals_=[{"id": "G", "key": "k", "value": "v"}])
     merged, added, changed = ha.merge_hand_over(stored, json.loads(json.dumps(stored)))
