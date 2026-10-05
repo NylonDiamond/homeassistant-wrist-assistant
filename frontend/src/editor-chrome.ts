@@ -277,16 +277,40 @@ const columnsRun = css`
     /* A corner's Bezel and Curved text rows, over its layers: the bezel is the
        outermost part of the corner and the curved text sits in front. */
     .corner-set { flex: none; display: flex; flex-direction: column; gap: 4px; padding: 4px 10px 0; }
-    /* What fills the inside of a corner: Curved text or Layers, a two-part
-       toggle under the Bezel row, since the watch shows one and never both. */
-    .corner-main { display: flex; flex-direction: column; gap: 3px; padding: 6px 4px 2px; }
-    .corner-main .cm-row { display: flex; align-items: center; gap: 10px; }
-    .corner-main .cm-label { flex: none; font-size: 12px; color: var(--wa-muted); }
-    .corner-main .seg.wide { flex: 1 1 auto; min-width: 0; }
-    .corner-main .cm-note { font-size: 11px; color: var(--wa-muted); }
-    .corner-set .skip-note { font-size: 11px; color: var(--wa-muted); padding: 2px 4px 0; text-align: center; }
     .corner-set .layer .grip { cursor: default; }
-    .corner-set .thumb svg { width: 100%; height: 100%; display: block; }
+    .corner-set .thumb svg, .corner-split .thumb svg { width: 100%; height: 100%; display: block; }
+    /* What fills the inside of a corner, under a hairline below the Bezel row:
+       Curved text on the left, Layers on the right, "or" on the line between.
+       The watch shows one and never both; the side not picked is dimmed. */
+    .corner-split {
+      display: grid; grid-template-columns: minmax(0, 1fr) 22px minmax(0, 1fr);
+      margin: 8px 10px 0; padding-top: 8px; border-top: 1px solid var(--wa-line); flex: 0 1 auto; min-height: 0;
+    }
+    .cs-col { display: flex; flex-direction: column; gap: 4px; min-width: 0; min-height: 0; }
+    .cs-col.off > :not(.cs-head) { opacity: .45; }
+    .cs-col > .layers { padding: 0; }
+    .cs-or { position: relative; display: flex; align-items: center; justify-content: center; }
+    .cs-or::before { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; border-left: 1px solid var(--wa-line); }
+    .cs-or span { position: relative; padding: 3px 0; background: var(--wa-card); font-size: 10px; color: var(--wa-muted); }
+    .cs-head {
+      display: flex; align-items: center; gap: 6px; padding: 2px 4px 4px; border: 0; background: none;
+      font: inherit; font-size: 12px; font-weight: 600; color: var(--wa-muted); text-align: left; cursor: pointer;
+    }
+    .cs-head:hover:not(:disabled):not(.on) { color: var(--wa-ink); }
+    .cs-head:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 6px; }
+    .cs-head.on { color: var(--wa-ink); cursor: default; }
+    .cs-dot { flex: none; box-sizing: border-box; width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid currentColor; }
+    .cs-head.on .cs-dot { border-color: var(--wa-ink); background: radial-gradient(circle, var(--wa-ink) 0 2.5px, transparent 3px); }
+    .cs-empty {
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 72px; padding: 8px;
+      border: 1px dashed var(--wa-line-strong); border-radius: var(--wa-r-sm); background: none;
+      font: inherit; font-size: 11px; color: var(--wa-muted); text-align: center; cursor: pointer;
+    }
+    .cs-empty:hover:not(:disabled) { color: var(--wa-ink); border-color: var(--wa-ink); }
+    .cs-empty:disabled { cursor: default; }
+    .cs-pic { display: block; width: 40px; height: 30px; }
+    .cs-pic svg { display: block; width: 100%; height: 100%; }
+    .cs-pic.bulb { width: 26px; height: 26px; }
     .column.canvas { --wa-fade: var(--wa-bg); --wa-fade-gap: 8px; }
     /* No scroll bar is ever drawn between the canvas and the inspector. The
        canvas column still scrolls (wheel, trackpad, keys) when a short window

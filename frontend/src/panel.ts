@@ -8636,16 +8636,14 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * The top of a corner's Layers list: the Bezel row (the label or gauge on
-   * the outer edge), then the toggle for what fills the inside, Curved text or
-   * Layers, since the watch shows one and never both. With Curved text picked
-   * its own row follows, and the layers under it are dimmed with a short line
-   * saying the watch skips them. Each row selects like a layer and opens its
-   * own settings.
+   * A corner's Layers list: the Bezel row (the label or gauge on the outer
+   * edge), then the split for what fills the inside, Curved text or Layers,
+   * with `list` (the layer rows) as its right side. Each row selects like a
+   * layer and opens its own settings. Any other shape gets `list` alone.
    */
-  private renderCornerRows(cfg: CustomComplicationConfig, face: ResolvedLayout | undefined, curved: boolean, layerCount: number, edit: boolean) {
+  private renderCornerRows(cfg: CustomComplicationConfig, face: ResolvedLayout | undefined, curved: boolean, layerCount: number, edit: boolean, list: TemplateResult) {
     const layout = this.activeFamily === "corner" ? cfg.perFamily.corner : undefined;
-    if (!layout) return nothing;
+    if (!layout) return list;
     const shown = this.inspect.kind;
     const enter = (kind: "cornerText" | "bezel") => (e: KeyboardEvent) => { if (e.key === "Enter") this.selectCornerPart(kind); };
     const bezel = layout.bezelGauge
@@ -8660,9 +8658,6 @@ export class WristAssistantPanel extends LitElement {
       ${layout.bezelGauge
         ? svg`<path d=${arc} fill="none" stroke=${stops[0] ?? "#34C759"} stroke-width="4" stroke-linecap="round" stroke-dasharray="20 100" />`
         : layout.bezelText ? svg`<path d=${arc} fill="none" stroke="#fff" stroke-width="1.5" stroke-dasharray="2 3" />` : nothing}</svg>`;
-    const textPic = html`<svg viewBox="0 0 40 30" aria-hidden="true">
-      <text x="20" y="20" text-anchor="middle" font-size="13" font-weight="700" fill=${layout.curvedColorHex ?? "#FFFFFF"}
-        transform="rotate(-28 20 16)" font-family="-apple-system, 'SF Pro Rounded', Helvetica, Arial, sans-serif">Aa</text></svg>`;
     return html`<div class="corner-set" @pointerleave=${(e: PointerEvent) => this.leaveList(e)}>
       <div class="layer ${shown === "bezel" ? "hl" : ""}" style=${`--k:${SECTION_COLOR.content}`} tabindex="0"
         title="The label or gauge on the corner's outer edge. Click to edit it."
@@ -8671,28 +8666,59 @@ export class WristAssistantPanel extends LitElement {
         <span class="thumb">${bezelPic}</span>
         <span class="name"><b>Bezel</b><small>${bezel}</small></span>
       </div>
-      <div class="corner-main">
-        <div class="cm-row">
-          <span class="cm-label">Inside the corner</span>
-          <div class="seg wide" role="radiogroup" aria-label="Inside the corner">
-            <button type="button" role="radio" class=${curved ? "on" : ""} aria-checked=${curved ? "true" : "false"} ?disabled=${!edit}
-              title="Big text the watch bends along the edge, like the Weather corner"
-              @click=${() => { if (!curved) this.addCurvedText(); }}>Curved text</button>
-            <button type="button" role="radio" class=${curved ? "" : "on"} aria-checked=${curved ? "false" : "true"} ?disabled=${!edit}
-              title="A small circle you fill with layers, like every other shape"
-              @click=${() => { if (curved) this.removeCurvedText(); }}>Layers</button>
-          </div>
-        </div>
-        <div class="cm-note">Pick one. The watch shows curved text or layers, never both.</div>
+    </div>
+    ${this.renderCornerSplit(face, layout.curvedColorHex, curved, layerCount, edit, list, shown === "cornerText", enter("cornerText"))}`;
+  }
+
+  /**
+   * Under a corner's Bezel row, between two hairlines: what fills the inside,
+   * as two columns with "or" on the line between them. Curved text on the
+   * left, Layers on the right. The watch shows one and never both, so each
+   * column head is a radio, and the column not picked is dimmed but still
+   * editable. An empty side shows a picture of what it would hold.
+   */
+  private renderCornerSplit(face: ResolvedLayout | undefined, color: string | undefined, curved: boolean, layerCount: number,
+    edit: boolean, list: TemplateResult, textPicked: boolean, onKey: (e: KeyboardEvent) => void) {
+    const pick = (toCurved: boolean) => {
+      if (!edit || toCurved === curved) return;
+      if (toCurved) this.addCurvedText(); else this.removeCurvedText();
+    };
+    const head = (toCurved: boolean, word: string, title: string) => {
+      const on = toCurved === curved;
+      return html`<button type="button" class="cs-head ${on ? "on" : ""}" role="radio" aria-checked=${on ? "true" : "false"}
+        ?disabled=${!edit && !on} title=${title} @click=${() => pick(toCurved)}><span class="cs-dot" aria-hidden="true"></span>${word}</button>`;
+    };
+    const textPic = html`<svg viewBox="0 0 40 30" aria-hidden="true">
+      <text x="20" y="20" text-anchor="middle" font-size="13" font-weight="700" fill=${color ?? "#FFFFFF"}
+        transform="rotate(-28 20 16)" font-family="-apple-system, 'SF Pro Rounded', Helvetica, Arial, sans-serif">Aa</text></svg>`;
+    const bulb = html`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1.1 2V16h5v-.2c.1-.8.5-1.5 1.1-2A6 6 0 0 0 12 3Z" /></svg>`;
+    const left = curved
+      ? html`<div class="layer ${textPicked ? "hl" : ""}" style=${`--k:${SECTION_COLOR.content}`} tabindex="0"
+          title="Big text the watch bends along the corner. Click to edit it."
+          @click=${() => this.selectCornerPart("cornerText")} @keydown=${onKey}>
+          <span class="grip" aria-hidden="true"></span>
+          <span class="thumb">${textPic}</span>
+          <span class="name"><b>Curved text</b><small>${face?.curvedText ? `"${face.curvedText}"` : "--"}</small></span>
+        </div>`
+      : html`<button type="button" class="cs-empty" ?disabled=${!edit} title="Pick curved text: big text along the edge"
+          @click=${() => pick(true)}><span class="cs-pic">${textPic}</span><span>Big text along the edge</span></button>`;
+    const right = layerCount > 0
+      ? list
+      : html`<button type="button" class="cs-empty" ?disabled=${!edit}
+          title=${curved ? "Pick layers: anything, in a small circle" : "Add a layer"}
+          @click=${(e: Event) => { if (curved) pick(false); else this.toggleAddSheet(e.currentTarget as HTMLElement); }}>
+          <span class="cs-pic bulb">${bulb}</span><span>${curved ? "Anything, in a small circle" : "Add a layer"}</span></button>`;
+    return html`<div class="corner-split" role="radiogroup" aria-label="Inside the corner: curved text or layers">
+      <div class="cs-col ${curved ? "" : "off"}">
+        ${head(true, "Curved text", "Big text the watch bends along the edge, like the Weather corner")}
+        ${left}
       </div>
-      ${curved ? html`<div class="layer ${shown === "cornerText" ? "hl" : ""}" style=${`--k:${SECTION_COLOR.content}`} tabindex="0"
-        title="Big text the watch bends along the corner, in place of the layers. Click to edit it."
-        @click=${() => this.selectCornerPart("cornerText")} @keydown=${enter("cornerText")}>
-        <span class="grip" aria-hidden="true"></span>
-        <span class="thumb">${textPic}</span>
-        <span class="name"><b>Curved text</b><small>${face?.curvedText ? `"${face.curvedText}"` : "--"}</small></span>
+      <div class="cs-or" aria-hidden="true"><span>or</span></div>
+      <div class="cs-col ${curved ? "off" : ""}">
+        ${head(false, "Layers", "A small circle you fill with layers, like every other shape")}
+        ${right}
       </div>
-      ${layerCount > 0 ? html`<div class="skip-note">The watch skips ${layerCount === 1 ? "this layer" : "these layers"} while Curved text is picked.</div>` : nothing}` : nothing}
     </div>`;
   }
 
@@ -17403,17 +17429,22 @@ export class WristAssistantPanel extends LitElement {
       ${pickedCount < 2 && selectedCount === 0 && cfg.elements.length >= 2 && edit && !cfg.groups?.length
           ? html`<div class="hint">${MULTI_KEY}-click layers here or on the preview, or shift-click a range of rows, then group them so a finished part moves as one. The <b>?</b> button in the header lists every key and mouse trick.</div>`
           : nothing}
-      ${this.renderCornerRows(cfg, resolved, curved, shapeRows.length, edit)}
-      ${shapeRows.length === 0 && !curved ? html`<div class="empty lc-empty">Nothing here yet.<br>Layers you add show in this list, top first.</div>` : nothing}
+      ${family === "corner" ? nothing : shapeRows.length === 0 ? html`<div class="empty lc-empty">Nothing here yet.<br>Layers you add show in this list, top first.</div>` : nothing}
       ${!all && body.length === 0 && shapeRows.length > 0 && paged
         // The shape has layers, they are all on other pages. The empty line
         // above is for a shape with nothing at all and would be a lie here.
         ? html`<div class="hint">Nothing is on page ${this.page} yet. Layers you add now go on it.</div>`
         : nothing}
-      <div class="layers ${curved ? "skipped" : ""}" @pointerleave=${(e: PointerEvent) => this.leaveList(e)}>
-      ${body}
-      <div class="face-ring" aria-hidden="true"></div>
-      </div>
+      ${family === "corner"
+        // A corner's layers are one side of its split: curved text or layers.
+        ? this.renderCornerRows(cfg, resolved, curved, shapeRows.length, edit, html`<div class="layers ${curved ? "skipped" : ""}" @pointerleave=${(e: PointerEvent) => this.leaveList(e)}>
+            ${body}
+            <div class="face-ring" aria-hidden="true"></div>
+          </div>`)
+        : html`<div class="layers" @pointerleave=${(e: PointerEvent) => this.leaveList(e)}>
+            ${body}
+            <div class="face-ring" aria-hidden="true"></div>
+          </div>`}
       <div class="pinned-set" @pointerleave=${(e: PointerEvent) => this.leaveList(e)}>
       <div class="layer pinned ground with-tap ${peekCls({ kind: "family" })} ${shapeHl && tapShown(GROUND_TAP) ? "tapsel" : ""} ${shapeHl ? "hl" : ""}" style=${`--k:${SECTION_COLOR.place}`} tabindex="0"
         title="The shape's background and border, and what a tap anywhere else does. Always the bottom layer. Click to edit it."
