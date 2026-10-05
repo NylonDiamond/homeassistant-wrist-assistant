@@ -123,17 +123,17 @@ export function renderWatchRow(input: WatchRowInput): TemplateResult {
 
 function renderWatchSlot(input: WatchRowInput, slot: WatchRowSlot, choices: readonly WatchRowChoice[]) {
   if (slot === "loading") {
-    return html`<span class="wa-wr-watch"><span class="wa-wr-k">Watch</span><span class="wa-wr-wait">Loading…</span></span>`;
+    return html`<span class="wa-wr-watch"><span class="wa-wr-chip" aria-hidden="true">${uiIcon("watch")}</span><span class="wa-wr-k">Watch</span><span class="wa-wr-wait">Loading…</span></span>`;
   }
   if (slot === "none") {
-    if (!input.admin) return html`<span class="wa-wr-watch"><span class="wa-wr-k">Watch</span><span class="wa-wr-wait">None yet</span></span>`;
+    if (!input.admin) return html`<span class="wa-wr-watch"><span class="wa-wr-chip" aria-hidden="true">${uiIcon("watch")}</span><span class="wa-wr-k">Watch</span><span class="wa-wr-wait">None yet</span></span>`;
     const settings = watchRowSettingsLink(input.route, undefined);
     return html`<button type="button" class="wa-wr-pair" title="Opens Settings, where a watch pairs with a code"
       @click=${() => { if (!settings.on) input.onGo(settings.path); }}>${uiIcon("watch")}<span>Pair a watch</span></button>`;
   }
   const current = choices.find((c) => c.on) ?? choices[0]!;
   if (slot === "one") {
-    return html`<span class="wa-wr-watch"><span class="wa-wr-k">Watch</span><b class="wa-wr-name">${current.name}</b></span>`;
+    return html`<span class="wa-wr-watch"><span class="wa-wr-chip" aria-hidden="true">${uiIcon("watch")}</span><span class="wa-wr-k">Watch</span><b class="wa-wr-name">${current.name}</b></span>`;
   }
   const open = input.menuOpen;
   return html`<span class="wa-wr-picker" @keydown=${(e: KeyboardEvent) => {
@@ -142,7 +142,7 @@ function renderWatchSlot(input: WatchRowInput, slot: WatchRowSlot, choices: read
     <button type="button" class="wa-wr-open" aria-haspopup="menu" aria-expanded=${open ? "true" : "false"}
       title="Pick the watch to set up" aria-label=${`Watch: ${current.name}. Pick another`}
       @click=${() => input.onMenu(!open)}>
-      <span class="wa-wr-k">Watch</span><b class="wa-wr-name">${current.name}</b>${uiIcon("chevron")}
+      <span class="wa-wr-chip" aria-hidden="true">${uiIcon("watch")}</span><span class="wa-wr-k">Watch</span><b class="wa-wr-name">${current.name}</b>${uiIcon("chevron")}
     </button>
     ${open ? html`<div class="wa-wr-menu" role="menu" aria-label="Watches">
       <div class="wa-wr-menu-h">You are editing</div>
@@ -168,20 +168,37 @@ export const watchRowStyles = css`
     background: var(--wa-top); color: var(--wa-ink); border-bottom: 1px solid var(--wa-line);
     position: relative; z-index: 20;
   }
-  .wa-wr-watch { display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; padding: 0 2px; }
-  .wa-wr-k { font-size: 12px; color: var(--wa-muted); }
-  .wa-wr-name { font-size: 13px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Which watch is being set up is the first thing to read on this row: it
+     carries the Watch app's color on its chip and its outline, a larger
+     name, and a rule between it and the screens. The screens stay neutral. */
+  .wa-wr-watch {
+    display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; height: 32px; box-sizing: border-box;
+    padding: 0 10px 0 6px; line-height: 30px; border-radius: 6px; border: 1px solid var(--wa-line-strong);
+  }
+  .wa-wr-watch, .wa-wr-picker { margin-right: 2px; }
+  .wa-wr-watch::after, .wa-wr-picker::after {
+    content: ""; position: absolute; right: -9px; top: 4px; bottom: 4px; width: 1px; background: var(--wa-line-strong);
+  }
+  .wa-wr-watch { position: relative; }
+  span.wa-wr-chip {
+    display: inline-flex; align-items: center; justify-content: center; align-self: center; flex: none;
+    width: 20px; height: 20px; border-radius: 5px;
+    color: var(--wa-hue-blue); background: color-mix(in srgb, var(--wa-hue-blue) 20%, transparent);
+  }
+  .wa-wr-k { font-size: 12px; color: var(--wa-label); }
+  .wa-wr-name { font-size: 14px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .wa-wr-wait { font-size: 13px; color: var(--wa-muted); }
   .wa-wr-picker { position: relative; display: inline-flex; min-width: 0; }
   button.wa-wr-open, button.wa-wr-pair {
-    display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; max-width: 100%;
+    display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; max-width: 100%;
     border-radius: 6px; font: inherit; cursor: pointer; color: var(--wa-ink);
     background: var(--wa-field); border: 1px solid var(--wa-line-strong);
   }
-  button.wa-wr-open { align-items: baseline; padding-top: 0; line-height: 28px; }
+  button.wa-wr-open { align-items: baseline; padding: 0 10px 0 6px; line-height: 30px; border-color: var(--wa-hue-blue); }
   button.wa-wr-open:hover, button.wa-wr-pair:hover { background: var(--wa-hover); }
   button.wa-wr-open:focus-visible, button.wa-wr-pair:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  button.wa-wr-open svg.ui-icon { width: 12px; height: 12px; align-self: center; color: var(--wa-muted); }
+  button.wa-wr-open svg.ui-icon { width: 12px; height: 12px; align-self: center; color: var(--wa-ink); }
+  span.wa-wr-chip svg.ui-icon { width: 13px; height: 13px; color: inherit; }
   button.wa-wr-pair { font-size: 13px; font-weight: 600; }
   button.wa-wr-pair svg.ui-icon { width: 14px; height: 14px; }
   .wa-wr-menu {

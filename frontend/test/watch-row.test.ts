@@ -182,7 +182,7 @@ describe("the row as drawn", () => {
 
   it("names a lone watch plainly, with no menu", () => {
     const { text } = row({ owners: [OWNERS[0]!, OWNERS[1]!] });
-    expect(text).toContain(`<span class="wa-wr-watch"><span class="wa-wr-k">Watch</span><b class="wa-wr-name">Jesse's Watch</b></span>`);
+    expect(text).toContain(`<span class="wa-wr-k">Watch</span><b class="wa-wr-name">Jesse's Watch</b></span>`);
     expect(text).not.toContain("wa-wr-open");
     expect(text).not.toContain("wa-wr-picker");
   });
@@ -238,8 +238,16 @@ describe("the row's look", () => {
     expect(text).not.toMatch(/rgba?\(/);
     expect(text).not.toContain("[dark]");
     expect(text).not.toContain("purple");
-    expect(text).not.toContain("--wa-hue");
     expect(text).not.toContain("gradient");
+  });
+
+  it("colors only the watch's chip and its picker's outline, in the Watch app's blue", () => {
+    const hued = text.split("\n").filter((line) => line.includes("--wa-hue"));
+    expect(hued.length).toBe(2);
+    for (const line of hued) expect(line).toContain("var(--wa-hue-blue)");
+    expect(hued.some((line) => line.includes("button.wa-wr-open {") && line.includes("border-color: var(--wa-hue-blue)"))).toBe(true);
+    expect(rule("span.wa-wr-chip {")).toContain("var(--wa-hue-blue)");
+    expect(rule("a.wa-wr-link, button.wa-wr-link {")).not.toContain("--wa-hue");
   });
 
   it("outlines every control with one pixel", () => {
