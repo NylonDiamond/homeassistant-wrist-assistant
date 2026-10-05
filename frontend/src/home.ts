@@ -7,6 +7,7 @@ import { litOutline } from "./editor-chrome.js";
 import type { OwnerSummary } from "./ha-api.js";
 import { type DeviceSync, type HomeDevice, deviceSync } from "./send-state.js";
 import { type DeviceKind, deviceKindOf } from "./version.js";
+import { type WatchAppSync, deviceVerdict } from "./watch-app-sync.js";
 
 /** A home device as the sync rule reads it, with the id it came from. */
 export interface IdHomeDevice extends HomeDevice {
@@ -41,20 +42,26 @@ export interface HomeDeviceRow {
   id: string;
   name: string;
   kind: Exclude<DeviceKind, "library">;
+  /** The worse of its complications and, on a watch, its watch app. */
   sync: DeviceSync;
+  /** What it is waiting for, empty unless `sync` is waiting. */
+  waitingFor: string[];
 }
 
 /** The Devices card's rows: every device the sync rule asks (the Library and
  * orphans left out), watches first and then phones, each group in the
- * order given. */
-export function homeDeviceRows(devices: readonly IdHomeDevice[]): HomeDeviceRow[] {
+ * order given. A watch with a watch app reading in `watchApp` takes the
+ * worse of that and its complications (`deviceVerdict`); every other device
+ * is judged on its complications alone. */
+export function homeDeviceRows(devices: readonly IdHomeDevice[], watchApp: ReadonlyMap<string, WatchAppSync> = new Map()): HomeDeviceRow[] {
   const rows: HomeDeviceRow[] = [];
   for (const d of devices) {
-    const sync = deviceSync(d);
-    if (sync === undefined) continue;
+    const complications = deviceSync(d);
+    if (complications === undefined) continue;
     const kind = deviceKindOf({ owner_watch_id: d.id, device_kind: d.kind });
     if (kind === "library") continue;
-    rows.push({ id: d.id, name: d.name, kind, sync });
+    const { sync, waitingFor } = deviceVerdict(complications, kind === "watch" ? watchApp.get(d.id) : undefined);
+    rows.push({ id: d.id, name: d.name, kind, sync, waitingFor });
   }
   return [...rows.filter((r) => r.kind === "watch"), ...rows.filter((r) => r.kind === "iphone")];
 }
@@ -128,8 +135,10 @@ export const homeStyles = css`
      bare text of a flex row. */
   .home-device-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .home-device-name svg.ui-icon { width: 13px; height: 13px; flex: none; color: var(--wa-muted); }
-  .home-device-sync { flex: none; font-size: 12.5px; color: var(--wa-muted); }
+  .home-device-sync { flex: 0 1 auto; min-width: 0; max-width: 60%; font-size: 12.5px; color: var(--wa-muted); text-align: right; overflow-wrap: anywhere; }
   .home-device.waiting .home-device-sync { color: var(--wa-amber); }
+  /* What a waiting device waits for, after the word, in the quiet ink. */
+  .home-device.waiting .home-device-why { color: var(--wa-muted); font-weight: 400; }
   .home-small { margin: 0; font-size: 11.5px; color: var(--wa-muted); }
   .home-empty { margin: 0; font-size: 13px; color: var(--wa-muted); }
   @media (max-width: 900px) {

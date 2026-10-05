@@ -22,6 +22,7 @@ import {
   moveOwner,
   nudgeWatch,
   fetchWatchStatus,
+  fetchWatchConfig,
   type SaveHistoryEntry,
   fetchSaveHistory,
   fetchSaveHistoryEntry,
@@ -138,6 +139,7 @@ import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
 import { type SendState, agoWords, describeHomeSync, describeSend, deviceSyncLabel, homeSync, sendState, sendWaitMs } from "./send-state.js";
 import { homeDeviceRows, homeDevices, homeStyles } from "./home.js";
+import { type WatchAppSync, readWatchAppSync, waitingForText, watchAppSyncKey } from "./watch-app-sync.js";
 import { type PickerForm, type TabMemory, browseAllTab, listPageEscape, listPageLead, listPageShown, listPageState, listPageStyles, listsReady, pickTab, pickerSurfaceClass, restoreTab } from "./list-page.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
 import {
@@ -1437,6 +1439,14 @@ export class WristAssistantPanel extends LitElement {
   @state() private watchPick?: string;
   /** The Watch app row's menu of watches is open. */
   @state() private watchRowMenu = false;
+  /** Each watch's watch app records, as Home last read them
+   * (`watch-app-sync.ts`), by watch. Read on the way into Home. */
+  @state() private watchAppSyncs: ReadonlyMap<string, WatchAppSync> = new Map();
+  /** The watches the last read was for, so a fresh owners list with the same
+   * watches reads nothing again. */
+  private watchAppSyncFor?: string;
+  /** Bumped by every read, so an older reply never lands over a newer one. */
+  private watchAppSyncRun = 0;
 
   /** Side column widths in px, dragged by the gutters and kept per browser.
    * These are the widths the user asked for; columnFit() decides how much of
@@ -6320,7 +6330,12 @@ export class WristAssistantPanel extends LitElement {
     if (changed.has("route") && tabOfRoute(this.route) === "home" && changed.get("route") !== undefined
       && tabOfRoute(changed.get("route") as PanelRoute | undefined) !== "home" && this.owners.length > 0) {
       void this.loadOtherLists();
+      void this.loadWatchAppSync(true);
     }
+    // Home's Devices card also says whether each watch has watch app records
+    // still to collect: read once the devices are known, and again whenever
+    // the watches themselves change.
+    if (changed.has("owners") && tabOfRoute(this.route) === "home") void this.loadWatchAppSync(false);
     if (changed.has("faceHover")) {
       if (this.faceHover) {
         window.clearTimeout(this.listFaceTimer);
@@ -10920,6 +10935,30 @@ export class WristAssistantPanel extends LitElement {
     return html`<span class="tb-sync ${s.kind === "synced" ? "ok" : "warn"}" title=${d.title}>
       <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${d.label}</span>
     </span>`;
+  }
+
+  /**
+   * Read where each watch's watch app records have got to, for Home's
+   * Devices card. One read per kind per watch, side by side
+   * (`readWatchAppSync`): there is no summary command. Only an
+   * administrator can read the records, so anyone else's card stays on
+   * complications alone. Without `again`, nothing is read when the same
+   * watches were read already.
+   */
+  private async loadWatchAppSync(again: boolean) {
+    if (this.hass?.user?.is_admin !== true) return;
+    const watches = settingsWatches(this.owners).map((w) => w.owner_watch_id);
+    const key = watchAppSyncKey(watches);
+    if (!again && key === this.watchAppSyncFor) return;
+    this.watchAppSyncFor = key;
+    const run = ++this.watchAppSyncRun;
+    const hass = this.hass;
+    const read = await Promise.all(watches.map(async (id) =>
+      [id, await readWatchAppSync((kind) => fetchWatchConfig(hass, id, kind))] as const));
+    if (run !== this.watchAppSyncRun) return;
+    const next = new Map<string, WatchAppSync>();
+    for (const [id, sync] of read) if (sync !== undefined) next.set(id, sync);
+    this.watchAppSyncs = next;
   }
 
   /** Every owner as the sync rule reads it, named the way the pill and
@@ -18551,16 +18590,18 @@ export class WristAssistantPanel extends LitElement {
    * card that opens Watch settings, where the first watch is paired.
    * Complications and widgets has how many there are (the count the list
    * gives), New, Browse all, Import and the online gallery. Devices has each
-   * device, Synced or Waiting (or Nothing to send, for one that owns nothing
-   * and never synced), by the rule the header pill uses for the whole home;
-   * that rule reads the complication store only, and the card says so.
+   * device, Synced or Waiting (or Nothing waiting, for one that has nothing
+   * to pick up and never synced). A phone's word is the header pill's rule
+   * for its complications; a watch's is the worse of that and its watch app
+   * records (`deviceVerdict`), which only an administrator can read. A
+   * waiting row says what for, and the small print says what is counted.
    * Under them, the recent designs, which open on the Complications tab.
    */
   private renderHome() {
     const admin = this.hass.user?.is_admin === true;
     const total = this.pickerRows().filter((row) => row.open.item.kind === "record").length;
     const full = this.freeSlot() < 0;
-    const devices = homeDeviceRows(this.homeDevices());
+    const devices = homeDeviceRows(this.homeDevices(), admin ? this.watchAppSyncs : new Map());
     const recent = this.startRecent();
     const toComplications = () => this.goTo(COMPLICATIONS_PATH);
     return html`${this.watchSettings.render(this.hass, this.owners)}
@@ -18608,9 +18649,12 @@ export class WristAssistantPanel extends LitElement {
               : html`<ul class="home-devices">${devices.map((d) => html`<li class="home-device ${d.sync}">
                   <i class="home-dot" aria-hidden="true"></i>
                   <span class="home-device-name">${uiIcon(d.kind === "iphone" ? "phone" : "watch")}<span class="home-device-label">${d.name}</span></span>
-                  <span class="home-device-sync">${deviceSyncLabel(d.sync)}</span>
+                  <span class="home-device-sync">${deviceSyncLabel(d.sync)}${d.waitingFor.length === 0 ? nothing
+                    : html`<span class="home-device-why"> · ${waitingForText(d.waitingFor)}</span>`}</span>
                 </li>`)}</ul>`}
-            ${devices.length === 0 ? nothing : html`<p class="home-small">Synced, Waiting and Nothing to send are about complications and widgets only.</p>`}
+            ${devices.length === 0 ? nothing : html`<p class="home-small">${admin
+              ? "Synced, Waiting and Nothing waiting cover complications and widgets, and on a watch also its pages, menus, settings and the rest of the watch app."
+              : "Synced, Waiting and Nothing waiting cover complications and widgets."}</p>`}
             ${admin ? html`<div class="home-acts">
               <button class="home-btn home-watch-settings" aria-haspopup="dialog"
                 title="How the watch behaves: gestures, pages, cameras and connection"
