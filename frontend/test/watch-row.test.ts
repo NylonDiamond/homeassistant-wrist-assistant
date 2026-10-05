@@ -72,6 +72,7 @@ function row(over: Partial<WatchRowInput> = {}) {
     loaded: true,
     menuOpen: false,
     settingsOpen: false,
+    admin: true,
     onMenu: (open) => calls.push(`menu:${open}`),
     onPick: (id) => calls.push(`pick:${id}`),
     onGo: (path) => calls.push(`go:${path}`),
@@ -205,6 +206,16 @@ describe("the row as drawn", () => {
     expect(text).toContain("Loading…");
     expect(text).not.toContain("Pair a watch");
     expect(text).toContain(">Pages</a>");
+  });
+
+  it("offers neither Settings nor pairing to anyone but an administrator", () => {
+    const some = row({ admin: false }).text;
+    expect(some).toContain(">Pages</a>");
+    expect(some).not.toContain("Settings</button>");
+    const none = row({ admin: false, owners: [OWNERS[1]!], watch: undefined }).text;
+    expect(none).not.toContain("Pair a watch");
+    expect(none).not.toContain(WATCH_ROW_NONE_NOTE);
+    expect(none).toContain(">None yet</span>");
   });
 
   it("marks Settings while Watch settings is open", () => {

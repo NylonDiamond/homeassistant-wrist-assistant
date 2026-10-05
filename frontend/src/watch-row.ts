@@ -84,6 +84,9 @@ export interface WatchRowInput {
   menuOpen: boolean;
   /** Whether Watch settings is open, to mark its item. */
   settingsOpen: boolean;
+  /** Settings and pairing are an administrator's, as every command in them
+   * is; anyone else who lands on a watch screen gets the row without them. */
+  admin: boolean;
   onMenu: (open: boolean) => void;
   onPick: (watchId: string) => void;
   /** A screen link pressed: its path inside the panel. */
@@ -98,7 +101,7 @@ export function renderWatchRow(input: WatchRowInput): TemplateResult {
   const href = (path: string) => panelUrl(input.route, path, globalThis.location?.pathname ?? "");
   return html`<nav class="wa-watchrow" aria-label="Watch app">
     ${renderWatchSlot(input, slot, choices)}
-    ${slot === "none" ? html`<span class="wa-wr-note">${WATCH_ROW_NONE_NOTE}</span>` : nothing}
+    ${slot === "none" && input.admin ? html`<span class="wa-wr-note">${WATCH_ROW_NONE_NOTE}</span>` : nothing}
     <span class="wa-wr-links">
       ${slot === "none" ? nothing : watchRowLinks(input.route, input.watch).map((link) => html`<a class="wa-wr-link ${link.on ? "on" : ""}"
         href=${href(link.path)} aria-current=${link.on ? "page" : "false"}
@@ -107,10 +110,10 @@ export function renderWatchRow(input: WatchRowInput): TemplateResult {
           e.preventDefault();
           if (!link.on) input.onGo(link.path);
         }}>${link.screen.label}</a>`)}
-      <button type="button" class="wa-wr-link wa-wr-settings ${input.settingsOpen ? "on" : ""}" aria-haspopup="dialog"
+      ${input.admin ? html`<button type="button" class="wa-wr-link wa-wr-settings ${input.settingsOpen ? "on" : ""}" aria-haspopup="dialog"
         aria-expanded=${input.settingsOpen ? "true" : "false"}
         title="How the watch behaves: gestures, pages, cameras and connection"
-        @click=${() => input.onSettings()}>Settings</button>
+        @click=${() => input.onSettings()}>Settings</button>` : nothing}
     </span>
   </nav>`;
 }
@@ -120,6 +123,7 @@ function renderWatchSlot(input: WatchRowInput, slot: WatchRowSlot, choices: read
     return html`<span class="wa-wr-watch"><span class="wa-wr-k">Watch</span><span class="wa-wr-wait">Loading…</span></span>`;
   }
   if (slot === "none") {
+    if (!input.admin) return html`<span class="wa-wr-watch"><span class="wa-wr-k">Watch</span><span class="wa-wr-wait">None yet</span></span>`;
     return html`<button type="button" class="wa-wr-pair" aria-haspopup="dialog" title="Opens Watch settings, where a watch pairs with a code"
       @click=${() => input.onSettings()}>${uiIcon("watch")}<span>Pair a watch</span></button>`;
   }

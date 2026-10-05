@@ -413,16 +413,18 @@ import {
   formSegStyles,
   rangeFill,
 } from "./form-styles.js";
-import { type PanelRoute, dropWatchPagesDrafts, isWatchPagesRoute, renderWatchPagesView, watchPagesDirty, watchPagesHookStyles, watchPagesRouteOwner } from "./watch-pages/hook.js";
-import { dropWatchMenusDrafts, isWatchMenusRoute, renderWatchMenusView, watchMenusDirty, watchMenusHookStyles, watchMenusRouteOwner } from "./watch-menus/hook.js";
-import { dropWatchVoiceDrafts, isWatchVoiceRoute, renderWatchVoiceView, watchVoiceDirty, watchVoiceHookStyles, watchVoiceRouteOwner } from "./watch-voice/hook.js";
-import { dropWatchStatusPagesDrafts, isWatchStatusPagesRoute, renderWatchStatusPagesView, watchStatusPagesDirty, watchStatusPagesHookStyles, watchStatusPagesRouteOwner } from "./watch-status-pages/hook.js";
-import { dropWatchControlCenterDrafts, isWatchControlCenterRoute, renderWatchControlCenterView, watchControlCenterDirty, watchControlCenterHookStyles, watchControlCenterRouteOwner } from "./watch-control-center/hook.js";
-import { dropWatchRoomsDrafts, isWatchRoomsRoute, renderWatchRoomsView, watchRoomsDirty, watchRoomsHookStyles, watchRoomsRouteOwner } from "./watch-rooms/hook.js";
+import { type PanelRoute, dropWatchPagesDrafts, isWatchPagesRoute, renderWatchPagesView, watchPagesDirty, watchPagesHookStyles } from "./watch-pages/hook.js";
+import { dropWatchMenusDrafts, isWatchMenusRoute, renderWatchMenusView, watchMenusDirty, watchMenusHookStyles } from "./watch-menus/hook.js";
+import { dropWatchVoiceDrafts, isWatchVoiceRoute, renderWatchVoiceView, watchVoiceDirty, watchVoiceHookStyles } from "./watch-voice/hook.js";
+import { dropWatchStatusPagesDrafts, isWatchStatusPagesRoute, renderWatchStatusPagesView, watchStatusPagesDirty, watchStatusPagesHookStyles } from "./watch-status-pages/hook.js";
+import { dropWatchControlCenterDrafts, isWatchControlCenterRoute, renderWatchControlCenterView, watchControlCenterDirty, watchControlCenterHookStyles } from "./watch-control-center/hook.js";
+import { dropWatchRoomsDrafts, isWatchRoomsRoute, renderWatchRoomsView, watchRoomsDirty, watchRoomsHookStyles } from "./watch-rooms/hook.js";
 import {
   COMPLICATIONS_PATH, type PanelTab, WATCH_SCREENS, editorKeysLive, isPlainClick, landingPath, navigatePanel,
-  panelUrl, renderTabBar, shellStyles, tabOfRoute, tabPath, watchScreenPath,
+  panelUrl, renderTabBar, shellStyles, tabOfRoute, tabPath, watchScreenOf, watchScreenPath,
 } from "./shell.js";
+import { adoptRouteWatch, loadWatchPick, resolveWatchPick, saveWatchPick, watchRouteOwner } from "./watch-pick.js";
+import { renderWatchRow, watchRowStyles } from "./watch-row.js";
 import {
   FIRST_RUN_TILES, ZOOM_FIT, ZOOM_MAX, ZOOM_MIN, anySnap, pickGridStep, runFirstRunTile, slotWord, snapSwitchOn,
   stageReserve, toggleSnap, zoomIn, zoomLabel, zoomOut, type FirstRunTile, type SnapFlags, type SnapSwitch,
@@ -1419,13 +1421,21 @@ export class WristAssistantPanel extends LitElement {
    * `/menus` the menu editor (`watch-menus/hook.ts`). */
   @property({ attribute: false }) route?: PanelRoute;
 
-  /** The Watch settings dialog, opened from the top bar. A watch paired from
-   * it is picked up by the panel's full owners load. It draws its setting
-   * icons with the panel's own symbols. */
+  /** The Watch settings dialog, opened from the Watch app row and from Home.
+   * A watch paired from it is picked up by the panel's full owners load and
+   * becomes the Watch app's shared watch. It draws its setting icons with
+   * the panel's own symbols. */
   private watchSettings = new WatchSettings(this, async () => {
     await this.loadOwners();
     return this.owners;
-  }, () => this.icons);
+  }, () => this.icons, (watchId) => this.pickWatch(watchId));
+
+  /** The Watch app's shared watch as last picked, remembered per browser
+   * (`watch-pick.ts`). Never the complications device: `sharedWatch` works
+   * out the watch on screen from this, the address and today's choice. */
+  @state() private watchPick?: string;
+  /** The Watch app row's menu of watches is open. */
+  @state() private watchRowMenu = false;
 
   /** Side column widths in px, dragged by the gutters and kept per browser.
    * These are the widths the user asked for; columnFit() decides how much of
@@ -5865,7 +5875,7 @@ export class WristAssistantPanel extends LitElement {
 
   `, formEntityStyles, css`
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .ent-box.needs { animation: none; } }
-  `, watchSettingsStyles, watchPagesHookStyles, watchMenusHookStyles, watchVoiceHookStyles, watchStatusPagesHookStyles, watchControlCenterHookStyles, watchRoomsHookStyles, shellStyles, homeStyles];
+  `, watchSettingsStyles, watchPagesHookStyles, watchMenusHookStyles, watchVoiceHookStyles, watchStatusPagesHookStyles, watchControlCenterHookStyles, watchRoomsHookStyles, shellStyles, homeStyles, watchRowStyles];
 
   // ── lifecycle ─────────────────────────────────────────────────────────
 
@@ -5894,6 +5904,7 @@ export class WristAssistantPanel extends LitElement {
     this.loadCollapsed();
     this.loadGrid();
     this.loadOpen();
+    this.watchPick = loadWatchPick(() => window.localStorage);
     this.sizeObserver.observe(this);
     window.addEventListener("keydown", this.keyHandler);
     window.addEventListener("keyup", this.keyUpHandler);
@@ -6159,6 +6170,7 @@ export class WristAssistantPanel extends LitElement {
     window.removeEventListener("focusin", this.sharedValueFocus);
     window.removeEventListener("pointerdown", this.addSheetOutside, { capture: true });
     window.removeEventListener("pointerdown", this.sideMenuOutside, { capture: true });
+    window.removeEventListener("pointerdown", this.watchRowOutside, { capture: true });
     this.removeEventListener(SCRUB_START, this.scrubStart);
     this.removeEventListener(SCRUB_END, this.scrubEnd);
     window.removeEventListener("hashchange", this.takeShareLink);
@@ -6256,6 +6268,13 @@ export class WristAssistantPanel extends LitElement {
       this.landed = true;
       const to = landingPath(this.route, { restoring: this.restoreOpen !== undefined, shareLink: this.pendingLink !== undefined });
       if (to !== undefined) this.goTo(to, true);
+    }
+    // A watch the address names (a link from the iPhone app, a bookmark, a
+    // screen link in the row) becomes the Watch app's remembered watch, once
+    // the device list does not say it is no watch of this home.
+    if (changed.has("route") || changed.has("owners")) {
+      const next = adoptRouteWatch(this.watchPick, watchRouteOwner(this.route), settingsWatches(this.owners));
+      if (next !== undefined && next !== this.watchPick) this.rememberWatch(next);
     }
     // Home counts every device's complications, so coming back to it reads
     // the other devices' lists again, the way opening the list does.
@@ -10501,15 +10520,90 @@ export class WristAssistantPanel extends LitElement {
       menu: this.narrow || this.hass.dockedSidebar === "always_hidden",
       onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
       onTab: (tab) => this.openTab(tab),
+      watch: this.sharedWatch,
     });
     return html`${bar}${this.renderTab()}`;
   }
 
   /** A tab pressed in the bar. The tab already on screen stays as it is, so
-   * pressing Watch app on Menus does not throw the person back to Pages. */
+   * pressing Watch app on Menus does not throw the person back to Pages. The
+   * Watch app opens on Pages for the shared watch. */
   private openTab(tab: PanelTab) {
     if (tab === tabOfRoute(this.route)) return;
-    this.goTo(tabPath(tab));
+    this.goTo(tabPath(tab, this.sharedWatch));
+  }
+
+  // ── the Watch app's shared watch ──────────────────────────────────────
+
+  /**
+   * The one watch every watch screen and the row's Settings are about: the
+   * address's, else the remembered pick, else today's choice
+   * (`resolveWatchPick`). The complications device only stands in for it
+   * when nothing else is known; picking a complication never moves it.
+   */
+  private get sharedWatch(): string | undefined {
+    return resolveWatchPick(settingsWatches(this.owners), {
+      route: watchRouteOwner(this.route),
+      saved: this.watchPick,
+      fallback: this.ownerId,
+    });
+  }
+
+  /** Remember the shared watch, for this visit and the next. */
+  private rememberWatch(watchId: string) {
+    this.watchPick = watchId;
+    saveWatchPick(() => window.localStorage, watchId);
+  }
+
+  /**
+   * Make a watch the shared one: picked in the row, or just paired in Watch
+   * settings. On a watch screen the address follows, rewritten in place (a
+   * step Back would only undo the pick), so the screen, its links and a
+   * reload all agree; the screen follows its new `ownerId` and keeps every
+   * watch's draft as it was.
+   */
+  private pickWatch(watchId: string) {
+    this.toggleWatchRowMenu(false);
+    this.rememberWatch(watchId);
+    const screen = watchScreenOf(this.route);
+    if (screen !== undefined && watchRouteOwner(this.route) !== watchId) this.goTo(watchScreenPath(screen, watchId), true);
+  }
+
+  /** Watch settings on the shared watch, from the row: the row owns the
+   * watch, so the dialog shows no tabs of its own. */
+  private openWatchSettings() {
+    this.toggleWatchRowMenu(false);
+    this.watchSettings.show(this.hass, this.owners, this.sharedWatch, { shell: true });
+  }
+
+  private toggleWatchRowMenu(open: boolean) {
+    if (open === this.watchRowMenu) return;
+    this.watchRowMenu = open;
+    if (open) window.addEventListener("pointerdown", this.watchRowOutside, { capture: true });
+    else window.removeEventListener("pointerdown", this.watchRowOutside, { capture: true });
+  }
+
+  /** A press outside the row's watch menu closes it. */
+  private watchRowOutside = (e: PointerEvent) => {
+    const inside = e.composedPath().some((n) => n instanceof HTMLElement && n.classList.contains("wa-wr-picker"));
+    if (!inside) this.toggleWatchRowMenu(false);
+  };
+
+  /** A watch screen under the Watch app row. */
+  private withWatchRow(view: TemplateResult) {
+    return html`${renderWatchRow({
+      route: this.route,
+      owners: this.owners,
+      watch: this.sharedWatch,
+      loaded: this.linkReady || this.owners.length > 0,
+      menuOpen: this.watchRowMenu,
+      settingsOpen: this.watchSettings.shown,
+      admin: this.hass.user?.is_admin === true,
+      onMenu: (open) => this.toggleWatchRowMenu(open),
+      onPick: (watchId) => this.pickWatch(watchId),
+      onGo: (path) => { this.toggleWatchRowMenu(false); this.goTo(path); },
+      onSettings: () => this.openWatchSettings(),
+    })}${view}`;
   }
 
   /**
@@ -10526,81 +10620,93 @@ export class WristAssistantPanel extends LitElement {
 
   private renderTab() {
     if (tabOfRoute(this.route) === "home") return this.renderHome();
+    // Every watch screen sits under the Watch app row, which owns the watch:
+    // each is handed the shared watch (the address's, when it names one) and
+    // follows it, and leaves its own picker, its way back and its links to
+    // the other screens to the row. Its Watch settings button is the row's
+    // Settings.
     // The page editor takes the panel's place. An open draft stays as it is
     // under it, and the leave guards still cover it.
     // A link to `/pages/<owner_watch_id>` opens it on that watch.
+    const watch = this.sharedWatch;
     if (isWatchPagesRoute(this.route)) {
-      return renderWatchPagesView({
-        hass: this.hass, owners: this.owners, ownerId: watchPagesRouteOwner(this.route) ?? this.ownerId, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
+      return this.withWatchRow(renderWatchPagesView({
+        hass: this.hass, owners: this.owners, ownerId: watch, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
         menu: false,
         onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
         onBack: () => this.goTo(COMPLICATIONS_PATH),
-        actions: this.watchSettings.renderButton(this.hass, this.owners, this.ownerId),
+        actions: nothing,
+        shell: true,
         dialogs: this.watchSettings.render(this.hass, this.owners),
         onLoaded: () => this.requestUpdate(),
-      });
+      }));
     }
     // The menu editor likewise, on `/menus` and `/menus/<owner_watch_id>`.
     if (isWatchMenusRoute(this.route)) {
-      return renderWatchMenusView({
-        hass: this.hass, owners: this.owners, ownerId: watchMenusRouteOwner(this.route) ?? this.ownerId, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
+      return this.withWatchRow(renderWatchMenusView({
+        hass: this.hass, owners: this.owners, ownerId: watch, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
         menu: false,
         onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
         onBack: () => this.goTo(COMPLICATIONS_PATH),
-        actions: this.watchSettings.renderButton(this.hass, this.owners, this.ownerId),
+        actions: nothing,
+        shell: true,
         dialogs: this.watchSettings.render(this.hass, this.owners),
         onLoaded: () => this.requestUpdate(),
-      });
+      }));
     }
     // The voice editor likewise, on `/voice` and `/voice/<owner_watch_id>`.
     if (isWatchVoiceRoute(this.route)) {
-      return renderWatchVoiceView({
-        hass: this.hass, owners: this.owners, ownerId: watchVoiceRouteOwner(this.route) ?? this.ownerId, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
+      return this.withWatchRow(renderWatchVoiceView({
+        hass: this.hass, owners: this.owners, ownerId: watch, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
         menu: false,
         onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
         onBack: () => this.goTo(COMPLICATIONS_PATH),
-        actions: this.watchSettings.renderButton(this.hass, this.owners, this.ownerId),
+        actions: nothing,
+        shell: true,
         dialogs: this.watchSettings.render(this.hass, this.owners),
         onLoaded: () => this.requestUpdate(),
-      });
+      }));
     }
     // The status page editor likewise, on `/status-pages` and
     // `/status-pages/<owner_watch_id>`.
     if (isWatchStatusPagesRoute(this.route)) {
-      return renderWatchStatusPagesView({
-        hass: this.hass, owners: this.owners, ownerId: watchStatusPagesRouteOwner(this.route) ?? this.ownerId, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
+      return this.withWatchRow(renderWatchStatusPagesView({
+        hass: this.hass, owners: this.owners, ownerId: watch, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
         menu: false,
         onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
         onBack: () => this.goTo(COMPLICATIONS_PATH),
-        actions: this.watchSettings.renderButton(this.hass, this.owners, this.ownerId),
+        actions: nothing,
+        shell: true,
         dialogs: this.watchSettings.render(this.hass, this.owners),
         onLoaded: () => this.requestUpdate(),
-      });
+      }));
     }
     // The Control Center editor likewise, on `/control-center` and
     // `/control-center/<owner_watch_id>`.
     if (isWatchControlCenterRoute(this.route)) {
-      return renderWatchControlCenterView({
-        hass: this.hass, owners: this.owners, ownerId: watchControlCenterRouteOwner(this.route) ?? this.ownerId, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
+      return this.withWatchRow(renderWatchControlCenterView({
+        hass: this.hass, owners: this.owners, ownerId: watch, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
         menu: false,
         onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
         onBack: () => this.goTo(COMPLICATIONS_PATH),
-        actions: this.watchSettings.renderButton(this.hass, this.owners, this.ownerId),
+        actions: nothing,
+        shell: true,
         dialogs: this.watchSettings.render(this.hass, this.owners),
         onLoaded: () => this.requestUpdate(),
-      });
+      }));
     }
     // The Rooms editor likewise, on `/rooms` and `/rooms/<owner_watch_id>`.
     if (isWatchRoomsRoute(this.route)) {
-      return renderWatchRoomsView({
-        hass: this.hass, owners: this.owners, ownerId: watchRoomsRouteOwner(this.route) ?? this.ownerId, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
+      return this.withWatchRow(renderWatchRoomsView({
+        hass: this.hass, owners: this.owners, ownerId: watch, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
         menu: false,
         onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
         onBack: () => this.goTo(COMPLICATIONS_PATH),
-        actions: this.watchSettings.renderButton(this.hass, this.owners, this.ownerId),
+        actions: nothing,
+        shell: true,
         dialogs: this.watchSettings.render(this.hass, this.owners),
         onLoaded: () => this.requestUpdate(),
-      });
+      }));
     }
     const d = this.draft;
     // A complication that was never saved is work to save as it stands: its
@@ -18242,7 +18348,7 @@ export class WristAssistantPanel extends LitElement {
             ${admin ? html`<div class="home-acts">
               <button class="home-btn home-watch-settings" aria-haspopup="dialog"
                 title="How the watch behaves: gestures, pages, cameras and connection"
-                @click=${() => this.watchSettings.show(this.hass, this.owners, this.ownerId)}>${uiIcon("watch")}<span>Watch settings</span></button>
+                @click=${() => this.watchSettings.show(this.hass, this.owners, this.sharedWatch)}>${uiIcon("watch")}<span>Watch settings</span></button>
             </div>` : nothing}
           </section>
         </div>
@@ -18256,12 +18362,14 @@ export class WristAssistantPanel extends LitElement {
       </div></div>`;
   }
 
-  /** Home's Watch app card: a door to each screen, or, with no watch yet,
-   * the way to pair one. Nothing while the devices are still loading, so the
-   * pairing card never flashes up in a home that has a watch. */
+  /** Home's Watch app card: a door to each screen on the shared watch, or,
+   * with no watch yet, the way to pair one. Nothing while the devices are
+   * still loading, so the pairing card never flashes up in a home that has a
+   * watch. */
   private renderHomeWatch() {
     if (!this.linkReady && this.owners.length === 0) return nothing;
     const watches = settingsWatches(this.owners);
+    const watch = this.sharedWatch;
     const href = (path: string) => panelUrl(this.route, path, window.location.pathname);
     return html`<section class="home-card watch">
       <div class="home-card-head">
@@ -18279,7 +18387,7 @@ export class WristAssistantPanel extends LitElement {
             </button>
           </div>`
         : html`<div class="home-screens">${WATCH_SCREENS.map((screen) => {
-            const path = watchScreenPath(screen);
+            const path = watchScreenPath(screen, watch);
             return html`<a class="home-screen" href=${href(path)}
               @click=${(e: MouseEvent) => {
                 if (!isPlainClick(e)) return;
