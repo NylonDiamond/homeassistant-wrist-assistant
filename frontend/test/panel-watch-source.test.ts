@@ -80,6 +80,10 @@ describe("the watch screens under the row", () => {
     expect(method("  private toggleWatchRowMenu(")).toContain(`window.addEventListener("pointerdown", this.watchRowOutside, { capture: true })`);
     expect(method("  override disconnectedCallback() {")).toContain(`window.removeEventListener("pointerdown", this.watchRowOutside, { capture: true });`);
   });
+
+  it("closes the row's watch menu on any move, Back and Forward included, which bring no press", () => {
+    expect(method("  protected override willUpdate(changed")).toContain(`if (changed.has("route")) this.toggleWatchRowMenu(false);`);
+  });
 });
 
 describe("links into the Watch app carry the shared watch", () => {

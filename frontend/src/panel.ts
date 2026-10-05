@@ -6298,6 +6298,10 @@ export class WristAssistantPanel extends LitElement {
       else if (was && !now) this.leaveListPage();
       if (this.pickerOpen && tabOfRoute(this.route) !== "complications") this.pickerClosed();
     }
+    // The row's watch menu belongs to the screen it was opened on. Back or
+    // Forward moves without a press, so the move itself shuts it and drops its
+    // outside-press listener.
+    if (changed.has("route")) this.toggleWatchRowMenu(false);
     // A watch the address names (a link from the iPhone app, a bookmark, a
     // screen link in the row) becomes the Watch app's remembered watch, once
     // the device list is in and lists it as a watch of this home. On a first
