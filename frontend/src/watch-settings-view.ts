@@ -13,9 +13,16 @@
 // with no record yet gets one from "Start with the defaults". There is no
 // live line, so while a save waits the dialog asks the store again now and
 // then and turns the pill green once a device has it.
+//
+// The watch's notification style (kind `notification_style`) is a second
+// record shown in the same dialog, as the Notifications, Sounds and Wrist
+// Webhooks cards after the behavior ones. It loads with `behavior`, and the
+// one Save sends whichever of the two changed, each over its own revision.
+// Its thinking is in `watch-notification-style/model.ts`.
 
 import { css, html, nothing, type ReactiveController, type ReactiveControllerHost, type TemplateResult } from "lit";
-import { checkField, colorField, entityField, entityRefFor, selectField, settingTitle } from "./editors.js";
+import { live } from "lit/directives/live.js";
+import { checkField, colorField, entityField, entityRefFor, percentSliderField, selectField, settingTitle } from "./editors.js";
 import {
   type HassLike,
   type OwnerSummary,
@@ -74,6 +81,34 @@ import {
   withEdit,
 } from "./watch-settings.js";
 import { type TileChoice, optionPreview, settingIcon, tileChoices, usesTiles } from "./watch-settings-look.js";
+import {
+  type StyleRow,
+  type StyleSection,
+  type StyleValue,
+  NOTIFICATION_STYLE_KIND,
+  NOTIFICATION_STYLE_SECTIONS,
+  STYLE_NO_RECORD_TEXT,
+  STYLE_NO_RECORD_TITLE,
+  STYLE_START_BUTTON,
+  STYLE_START_CONFLICT_TEXT,
+  STYLE_UNREADABLE_TEXT,
+  VOLUME,
+  notificationStyleReadMeansUnsupported,
+  readStyleDocument,
+  saveNotificationStyle,
+  soundChoices,
+  soundValueText,
+  startNotificationStyle,
+  styleDirtyKeys,
+  styleFormValues,
+  styleOptionsFor,
+  styleRuns,
+  styleTileChoices,
+  styleUsesTiles,
+  volumeText,
+  withStyleEdit,
+} from "./watch-notification-style/model.js";
+import { notificationPreview, notificationPreviewStyles } from "./watch-notification-style/preview.js";
 
 /** How often an open dialog asks whether a device has collected a save. */
 const DELIVERY_POLL_MS = 15_000;
@@ -84,6 +119,13 @@ const SECTION_LOOK: Record<string, { icon: UiIconName; color: string }> = {
   interaction: { icon: "tap", color: SECTION_COLOR.tap },
   navigation: { icon: "pages", color: SECTION_COLOR.numbers },
   camera: { icon: "image", color: SECTION_COLOR.look },
+};
+
+/** The notification style's cards, after the behavior ones. */
+const STYLE_LOOK: Record<StyleSection["id"], { icon: UiIconName; color: string }> = {
+  notifications: { icon: "note", color: SECTION_COLOR.position },
+  sounds: { icon: "states", color: "var(--wa-hue-purple)" },
+  wristWebhooks: { icon: "link", color: SECTION_COLOR.states },
 };
 
 /** The pairing card's mark and tint. */
@@ -131,6 +173,14 @@ export class WatchSettings implements ReactiveController {
   private saving = false;
   /** "Start with the defaults" is out. */
   private starting = false;
+  /** The notification style record, beside `record`. */
+  private styleRecord?: WatchConfigRecord;
+  private styleEdits: ReadonlyMap<string, StyleValue> = new Map();
+  /** The integration does not keep the kind: its cards are left out. */
+  private styleUnsupported = false;
+  private styleError?: string;
+  /** The notification style's "Start with the defaults" is out. */
+  private styleStarting = false;
   private note?: Note;
   private confirm?: Confirm;
   /** Sections whose help is hidden. Help starts shown: this is a form people
@@ -195,6 +245,7 @@ export class WatchSettings implements ReactiveController {
       this.record = undefined;
       this.loadError = undefined;
       this.loading = false;
+      this.clearStyle();
     }
     this.changed();
     if (id !== undefined) void this.load(id);
@@ -210,8 +261,24 @@ export class WatchSettings implements ReactiveController {
     this.loading = true;
     this.loadError = undefined;
     if (!keepNote) this.note = undefined;
+    this.clearStyle();
     this.stopPolling();
     this.changed();
+    await Promise.all([this.readBehavior(hass, ownerId, seq), this.readStyle(hass, ownerId, seq)]);
+    if (seq !== this.loadSeq) return;
+    this.loading = false;
+    this.pollIfWaiting();
+    this.changed();
+  }
+
+  private clearStyle(): void {
+    this.styleRecord = undefined;
+    this.styleEdits = new Map();
+    this.styleUnsupported = false;
+    this.styleError = undefined;
+  }
+
+  private async readBehavior(hass: HassLike, ownerId: string, seq: number): Promise<void> {
     try {
       const record = await fetchWatchConfig(hass, ownerId, "behavior");
       if (seq !== this.loadSeq) return;
@@ -220,24 +287,91 @@ export class WatchSettings implements ReactiveController {
       if (seq !== this.loadSeq) return;
       this.loadError = errText(err);
     }
-    this.loading = false;
-    this.pollIfWaiting();
+  }
+
+  /** The notification style, read beside the behavior. An integration that
+   * does not keep the kind leaves its cards out; any other failure is said in
+   * their place. */
+  private async readStyle(hass: HassLike, ownerId: string, seq: number): Promise<void> {
+    try {
+      const record = await fetchWatchConfig(hass, ownerId, NOTIFICATION_STYLE_KIND);
+      if (seq !== this.loadSeq) return;
+      this.styleRecord = record;
+    } catch (err) {
+      if (seq !== this.loadSeq) return;
+      if (notificationStyleReadMeansUnsupported(err)) this.styleUnsupported = true;
+      else this.styleError = errText(err);
+    }
+  }
+
+  /** Read one record again, leaving the other and its edits alone: after a
+   * conflict, a refusal or a start. This record's edits are dropped. */
+  private async reread(kind: "behavior" | "style", ownerId: string): Promise<void> {
+    const hass = this.hass;
+    if (!hass || ownerId !== this.ownerId) return;
+    const seq = this.loadSeq;
+    if (kind === "behavior") {
+      this.loadError = undefined;
+      await this.readBehavior(hass, ownerId, seq);
+      if (seq === this.loadSeq) this.edits = new Map();
+    } else {
+      this.styleError = undefined;
+      this.styleUnsupported = false;
+      await this.readStyle(hass, ownerId, seq);
+      if (seq === this.loadSeq) this.styleEdits = new Map();
+    }
     this.changed();
   }
 
+  /** The notification style document shown, when there is one to edit. */
+  private get styleDocument(): Record<string, unknown> | undefined {
+    const record = this.styleRecord;
+    return record !== undefined && record.revision > 0 ? readStyleDocument(record.document) : undefined;
+  }
+
+  private get behaviorChanges(): number {
+    return dirtyKeys(this.record?.document, this.edits).length;
+  }
+
+  private get styleChanges(): number {
+    return styleDirtyKeys(this.styleDocument, this.styleEdits).length;
+  }
+
+  /** One Save for both records: each that changed is sent over its own
+   * revision, side by side, and each ends in its own way. A conflict on one
+   * never costs the other its save or its edits. */
   private async save(): Promise<void> {
     const hass = this.hass;
     const ownerId = this.ownerId;
-    const record = this.record;
-    if (!hass || ownerId === undefined || record?.document === undefined || this.saving) return;
-    if (dirtyKeys(record.document, this.edits).length === 0) return;
-    const document = buildSaveDocument(record.document, this.edits);
+    if (!hass || ownerId === undefined || this.saving) return;
+    const behavior = this.record?.document !== undefined && this.behaviorChanges > 0;
+    const style = this.styleDocument !== undefined && this.styleChanges > 0;
+    if (!behavior && !style) return;
     this.saving = true;
     this.note = undefined;
     this.changed();
     try {
-      const reply = await saveWatchConfig(hass, ownerId, "behavior", record.revision, document);
+      const notes = await Promise.all([
+        behavior ? this.saveBehavior(hass, ownerId) : undefined,
+        style ? this.saveStyle(hass, ownerId) : undefined,
+      ]);
       if (ownerId !== this.ownerId || !this.open) return;
+      this.note = joinNotes(notes);
+      this.pollIfWaiting();
+    } finally {
+      this.saving = false;
+      this.changed();
+    }
+  }
+
+  private async saveBehavior(hass: HassLike, ownerId: string): Promise<Note | undefined> {
+    const record = this.record;
+    if (record?.document === undefined) return undefined;
+    const edits = this.edits;
+    const document = buildSaveDocument(record.document, edits);
+    try {
+      const reply = await saveWatchConfig(hass, ownerId, "behavior", record.revision, document);
+      if (ownerId !== this.ownerId || !this.open) return undefined;
       // The store keeps the document as sent, so what was sent is the new
       // revision. Delivery stays where it was: no device has seen it yet.
       this.record = {
@@ -247,28 +381,60 @@ export class WatchSettings implements ReactiveController {
         updated_by: "panel",
         document,
       };
-      this.edits = new Map();
-      this.pollIfWaiting();
+      if (this.edits === edits) this.edits = new Map();
+      return undefined;
     } catch (err) {
-      if (ownerId !== this.ownerId || !this.open) return;
+      if (ownerId !== this.ownerId || !this.open) return undefined;
       const code = errorCode(err);
       if (code === "conflict") {
         const stored = conflictRevision(err);
-        await this.load(ownerId, true);
-        this.note = {
+        await this.reread("behavior", ownerId);
+        return {
           kind: "warn",
           text: `Your changes were not saved. These settings changed somewhere else${stored === undefined ? "" : ` (now revision ${stored})`}, so the newest copy is shown. Make your changes again on top of it.`,
         };
-      } else if (code === "no_record") {
-        await this.load(ownerId, true);
-        this.note = { kind: "warn", text: "Your changes were not saved. Home Assistant no longer holds settings for this watch. Start with the defaults again, or let the iPhone send its settings." };
-      } else {
-        this.note = { kind: "err", text: `Could not save: ${errText(err)}` };
       }
-    } finally {
-      this.saving = false;
-      this.changed();
+      if (code === "no_record") {
+        await this.reread("behavior", ownerId);
+        return { kind: "warn", text: "Your changes were not saved. Home Assistant no longer holds settings for this watch. Start with the defaults again, or let the iPhone send its settings." };
+      }
+      return { kind: "err", text: `Could not save: ${errText(err)}` };
     }
+  }
+
+  /** The notification style's save: a conflict reads the newer copy and
+   * lays these edits over it key by key, then sends again. */
+  private async saveStyle(hass: HassLike, ownerId: string): Promise<Note | undefined> {
+    const record = this.styleRecord;
+    const document = this.styleDocument;
+    if (record === undefined || document === undefined) return undefined;
+    const edits = this.styleEdits;
+    const result = await saveNotificationStyle({
+      save: (base, doc) => saveWatchConfig(hass, ownerId, NOTIFICATION_STYLE_KIND, base, doc),
+      fetch: () => fetchWatchConfig(hass, ownerId, NOTIFICATION_STYLE_KIND),
+    }, { revision: record.revision, document }, edits);
+    if (ownerId !== this.ownerId || !this.open) return undefined;
+    if (result.ok) {
+      const base = result.fresh ?? record;
+      this.styleRecord = result.alreadySaved
+        ? base
+        : { ...base, revision: result.revision, updated_at: new Date().toISOString(), updated_by: "panel", document: result.document };
+      if (this.styleEdits === edits) this.styleEdits = new Map();
+      if (result.alreadySaved) return { kind: "note", text: "The notification style already had these changes, so there was nothing to save." };
+      return result.merged ? { kind: "note", text: "Notification style saved. Changes made elsewhere meanwhile were kept." } : undefined;
+    }
+    // The newest copy read is shown, and the edits stay on top of it for the
+    // next Save.
+    if (result.fresh !== undefined) this.styleRecord = result.fresh;
+    if (result.code === "conflict") {
+      return { kind: "warn", text: "The notification style was not saved: it kept changing elsewhere. Your changes are kept, so try Save again in a moment." };
+    }
+    if (result.code === "no_record") {
+      if (result.fresh === undefined) await this.reread("style", ownerId);
+      else this.styleEdits = new Map();
+      return { kind: "warn", text: "The notification style was not saved. Home Assistant no longer holds one for this watch. Start with the defaults again, or let the iPhone send its own." };
+    }
+    return { kind: "err", text: `Could not save the notification style: ${result.message}` };
   }
 
   /**
@@ -306,7 +472,45 @@ export class WatchSettings implements ReactiveController {
       this.changed();
       return;
     }
-    await this.load(ownerId, true);
+    await this.reread("behavior", ownerId);
+    this.pollIfWaiting();
+  }
+
+  /**
+   * The notification style's "Start with the defaults": the app's fresh
+   * install document (`01-defaults.json`) saved over revision 0, then read
+   * back. The behavior record and its edits are left alone.
+   */
+  private async startStyle(): Promise<void> {
+    const hass = this.hass;
+    const ownerId = this.ownerId;
+    const record = this.styleRecord;
+    if (!hass || ownerId === undefined || this.styleStarting || this.saving) return;
+    if (record !== undefined && record.revision > 0) return;
+    this.styleStarting = true;
+    this.note = undefined;
+    this.changed();
+    const result = await startNotificationStyle((base, document) => saveWatchConfig(hass, ownerId, NOTIFICATION_STYLE_KIND, base, document));
+    this.styleStarting = false;
+    if (ownerId !== this.ownerId || !this.open) {
+      this.changed();
+      return;
+    }
+    if (result.ok) {
+      this.note = { kind: "note", text: "Started the notification style with the defaults. The watch picks it up the next time it checks." };
+    } else if (result.code === "no_record") {
+      this.note = { kind: "warn", text: SETTINGS_PAIR_FIRST_TEXT };
+      this.changed();
+      return;
+    } else if (result.code === "conflict") {
+      this.note = { kind: "warn", text: STYLE_START_CONFLICT_TEXT };
+    } else {
+      this.note = { kind: "err", text: `Could not start: ${result.message}` };
+      this.changed();
+      return;
+    }
+    await this.reread("style", ownerId);
+    this.pollIfWaiting();
   }
 
   /**
@@ -318,7 +522,8 @@ export class WatchSettings implements ReactiveController {
    */
   private pollIfWaiting(): void {
     this.stopPolling();
-    if (!this.open || deliveryState(this.record) !== "waiting") return;
+    if (!this.open) return;
+    if (deliveryState(this.record) !== "waiting" && deliveryState(this.styleRecord) !== "waiting") return;
     this.pollTimer = window.setTimeout(() => void this.poll(), DELIVERY_POLL_MS);
   }
 
@@ -326,21 +531,39 @@ export class WatchSettings implements ReactiveController {
     this.pollTimer = undefined;
     const hass = this.hass;
     const ownerId = this.ownerId;
-    const shown = this.record;
-    if (!hass || ownerId === undefined || shown === undefined || !this.open) return;
+    if (!hass || ownerId === undefined || !this.open) return;
+    await Promise.all([
+      deliveryState(this.record) === "waiting" ? this.freshen(hass, ownerId, "behavior") : undefined,
+      deliveryState(this.styleRecord) === "waiting" ? this.freshen(hass, ownerId, "style") : undefined,
+    ]);
+    this.pollIfWaiting();
+  }
+
+  /** One record's check while it waits: only the delivery fields are taken
+   * while the revision is the one shown. A newer revision means someone else
+   * wrote since, and with no edits in that record it replaces what is shown. */
+  private async freshen(hass: HassLike, ownerId: string, which: "behavior" | "style"): Promise<void> {
+    const shown = which === "behavior" ? this.record : this.styleRecord;
+    if (shown === undefined) return;
     try {
-      const fresh = await fetchWatchConfig(hass, ownerId, "behavior");
-      if (ownerId !== this.ownerId || this.record !== shown || !this.open) return;
+      const fresh = await fetchWatchConfig(hass, ownerId, which === "behavior" ? "behavior" : NOTIFICATION_STYLE_KIND);
+      const now = which === "behavior" ? this.record : this.styleRecord;
+      if (ownerId !== this.ownerId || now !== shown || !this.open) return;
+      const edits = which === "behavior" ? this.edits : this.styleEdits;
+      let next: WatchConfigRecord | undefined;
       if (fresh.revision === shown.revision) {
-        this.record = { ...shown, delivered_revision: fresh.delivered_revision, delivered_at: fresh.delivered_at };
-      } else if (this.edits.size === 0 && !this.saving) {
-        this.record = fresh;
+        next = { ...shown, delivered_revision: fresh.delivered_revision, delivered_at: fresh.delivered_at };
+      } else if (edits.size === 0 && !this.saving) {
+        next = fresh;
+      }
+      if (next !== undefined) {
+        if (which === "behavior") this.record = next;
+        else this.styleRecord = next;
       }
       this.changed();
     } catch {
       // A missed check is not news: the next one, or reopening, will tell.
     }
-    this.pollIfWaiting();
   }
 
   private stopPolling(): void {
@@ -351,7 +574,7 @@ export class WatchSettings implements ReactiveController {
   // ── closing and switching, which may cost edits ────────────────────────
 
   private get dirty(): boolean {
-    return dirtyKeys(this.record?.document, this.edits).length > 0;
+    return this.behaviorChanges > 0 || this.styleChanges > 0;
   }
 
   /** Run `then` now, or once the foot has asked about the unsaved edits. */
@@ -372,6 +595,7 @@ export class WatchSettings implements ReactiveController {
     this.stopPolling();
     this.record = undefined;
     this.edits = new Map();
+    this.clearStyle();
     this.confirm = undefined;
     this.note = undefined;
     this.visit++;
@@ -478,6 +702,12 @@ export class WatchSettings implements ReactiveController {
     this.changed();
   }
 
+  private editStyle(row: StyleRow, value: StyleValue): void {
+    this.styleEdits = withStyleEdit(this.styleEdits, this.styleDocument, row, value);
+    this.confirm = undefined;
+    this.changed();
+  }
+
   private toggleHelp(sectionId: string): void {
     const next = new Set(this.helpOff);
     if (next.has(sectionId)) next.delete(sectionId);
@@ -530,11 +760,13 @@ export class WatchSettings implements ReactiveController {
   /** Under the title: which watch, and which revision of its settings. */
   private headLine(name: string): string {
     const r = this.record;
-    if (r === undefined || r.revision <= 0) return name;
+    const s = this.styleRecord;
+    const style = s !== undefined && s.revision > 0 ? ` · notification style revision ${s.revision}` : "";
+    if (r === undefined || r.revision <= 0) return `${name}${style}`;
     const by = savedByWords(r.updated_by);
     const at = r.updated_at ? Date.parse(r.updated_at) : NaN;
     const when = Number.isNaN(at) ? "" : ` ${agoWords(Math.max(0, (Date.now() - at) / 1000))}`;
-    return `${name} · revision ${r.revision}, ${by}${when}`;
+    return `${name} · revision ${r.revision}, ${by}${when}${style}`;
   }
 
   /** One tab per watch, as the picker draws its device tabs: the watch
@@ -559,6 +791,12 @@ export class WatchSettings implements ReactiveController {
 
   private renderBody(hass: HassLike) {
     if (this.loading) return html`<div class="empty">Loading…</div>`;
+    if (this.ownerId === undefined) return this.renderBehavior(hass);
+    return html`${this.renderBehavior(hass)}${this.renderStyle()}`;
+  }
+
+  /** The behavior settings' cards, or what stands in for them. */
+  private renderBehavior(hass: HassLike) {
     if (this.loadError !== undefined) {
       const id = this.ownerId;
       return html`<div class="xf-lead warn">${uiIcon("info")}<span>Could not read this watch's settings: ${this.loadError}</span></div>
@@ -654,23 +892,32 @@ export class WatchSettings implements ReactiveController {
    */
   private renderTiles(setting: CatalogSetting, value: string, set: (v: SettingValue) => void) {
     const options = optionsFor(setting, value);
-    const tiles = tileChoices(setting, options, value);
-    const def = String(setting.default);
     const name = (v: string) => options.find((o) => o.value === v)?.label ?? v;
-    const n = tiles.length;
+    return this.renderTileRow({
+      key: setting.key, label: setting.label, icon: settingIcon(setting), help: setting.help,
+      value, def: String(setting.default), name, tiles: tileChoices(setting, options, value),
+    }, set);
+  }
+
+  /** The tile row both records' choices of up to five are drawn as. */
+  private renderTileRow(
+    row: { key: string; label: string; icon: string; help?: string | undefined; value: string; def: string; name: (v: string) => string; tiles: TileChoice[] },
+    set: (v: string) => void,
+  ) {
+    const n = row.tiles.length;
     // Up to five side by side; on a narrow dialog five or more go three to a
     // line. A sixth (a stored value the catalog does not list) halves the row.
     const cols = n <= 5 ? n : Math.ceil(n / 2);
     const narrow = n >= 5 ? 3 : n;
-    return html`<div class="ws-tile-row" data-key=${setting.key}>
-      <div class="ws-head">${this.glyph("ws-ic", settingIcon(setting), 14)}${settingTitle(setting.label, value, def, (v) => set(v), name)}${setting.help ? html`<div class="hint">${setting.help}</div>` : nothing}</div>
-      <div class="ws-tiles" role="group" aria-label=${setting.label} data-n=${n} style=${`--cols:${cols};--cols-narrow:${narrow}`}>
-        ${tiles.map((t) => this.renderTile(t, set))}
+    return html`<div class="ws-tile-row" data-key=${row.key}>
+      <div class="ws-head">${this.glyph("ws-ic", row.icon, 14)}${settingTitle(row.label, row.value, row.def, (v) => set(v), row.name)}${row.help ? html`<div class="hint">${row.help}</div>` : nothing}</div>
+      <div class="ws-tiles" role="group" aria-label=${row.label} data-n=${n} style=${`--cols:${cols};--cols-narrow:${narrow}`}>
+        ${row.tiles.map((t) => this.renderTile(t, set))}
       </div>
     </div>`;
   }
 
-  private renderTile(tile: TileChoice, set: (v: SettingValue) => void) {
+  private renderTile(tile: TileChoice, set: (v: string) => void) {
     return html`<button type="button" class="ws-tile ${tile.on ? "on" : ""}" aria-pressed=${tile.on ? "true" : "false"}
       title=${tile.title ?? nothing} @click=${() => { if (!tile.on) set(tile.value); }}>
       ${tile.preview === undefined
@@ -679,6 +926,138 @@ export class WatchSettings implements ReactiveController {
       <span class="ws-tile-name">${tile.name}</span>
       ${tile.detail === undefined ? nothing : html`<span class="ws-tile-detail">${tile.detail}</span>`}
     </button>`;
+  }
+
+  // ── the notification style's cards ─────────────────────────────────────
+
+  /** The Notifications, Sounds and Wrist Webhooks cards; one card in their
+   * place while there is no record yet; nothing at all on an integration
+   * that does not keep the kind. */
+  private renderStyle() {
+    if (this.styleUnsupported) return nothing;
+    const id = this.ownerId;
+    if (this.styleError !== undefined) {
+      return this.renderStyleCard(html`<div class="xf-lead warn">${uiIcon("info")}<span>Could not read this watch's notification style: ${this.styleError}</span></div>
+        ${id === undefined ? nothing : html`<button class="small ns-retry" @click=${() => void this.reread("style", id)}>Try again</button>`}`);
+    }
+    const record = this.styleRecord;
+    if (record === undefined) return nothing;
+    if (watchRecordUnreadable(record, readStyleDocument)) {
+      return this.renderStyleCard(html`<div class="xf-lead warn">${uiIcon("info")}<span>${STYLE_UNREADABLE_TEXT}</span></div>`);
+    }
+    const document = this.styleDocument;
+    if (document === undefined) {
+      return this.renderStyleCard(html`<div class="xf-lead">${uiIcon("info")}<span><b>${STYLE_NO_RECORD_TITLE}</b> ${STYLE_NO_RECORD_TEXT}</span></div>
+        <button class="small primary ns-start" ?disabled=${this.styleStarting || this.saving}
+          title="Save the app's default notification style as this watch's first copy"
+          @click=${() => void this.startStyle()}>${this.styleStarting ? "Starting…" : STYLE_START_BUTTON}</button>
+        <div class="hint ws-start-hint">${START_PHONE_FIRST_TEXT}</div>`);
+    }
+    const values = styleFormValues(document, this.styleEdits);
+    return html`${NOTIFICATION_STYLE_SECTIONS.map((section) => this.renderStyleSection(section, values))}`;
+  }
+
+  /** The one card that stands in for the three. */
+  private renderStyleCard(body: TemplateResult) {
+    const look = STYLE_LOOK.notifications;
+    return html`<section class="sec ns-card" data-sec="ws-notification-style" data-open="true" data-help="on" style=${`--c:${look.color};--ws-hue:${look.color}`}>
+      <div class="sec-h pinned">
+        <span class="swatch">${uiIcon(look.icon)}</span>
+        <span class="tt"><h4>Notifications and sounds</h4></span>
+      </div>
+      <div class="sec-b">${body}</div>
+    </section>`;
+  }
+
+  private renderStyleSection(section: StyleSection, values: ReadonlyMap<string, StyleValue>) {
+    const look = STYLE_LOOK[section.id];
+    const helpKey = `ns-${section.id}`;
+    const help = !this.helpOff.has(helpKey);
+    const helpLabel = help ? `Hide the help in ${section.title}` : `Show help for ${section.title}`;
+    return html`<section class="sec" data-sec=${`ws-${section.id}`} data-open="true" data-help=${help ? "on" : "off"}
+      style=${`--c:${look.color};--ws-hue:${look.color}`}>
+      <div class="sec-h pinned">
+        <span class="swatch">${uiIcon(look.icon)}</span>
+        <span class="tt"><h4>${section.title}</h4></span>
+        <button type="button" class="sec-help ${help ? "on" : ""}" aria-pressed=${help ? "true" : "false"} title=${helpLabel} aria-label=${helpLabel}
+          @click=${() => this.toggleHelp(helpKey)}>?</button>
+      </div>
+      <div class="sec-b">
+        ${section.id === "notifications"
+          ? notificationPreview(values, (name, size, color) => this.icons?.()?.render(name, size, color))
+          : nothing}
+        ${section.groups.map((group) => {
+          const runs = styleRuns(group, values);
+          if (runs.length === 0) return nothing;
+          return html`<div class="ws-group">${group.label}</div>
+            ${runs.map((run) => html`${this.renderStyleRow(run.row, values)}${run.dependents.length === 0
+              ? nothing
+              : html`<div class="fgroup">${run.dependents.map((r) => this.renderStyleRow(r, values))}</div>`}`)}`;
+        })}
+      </div>
+    </section>`;
+  }
+
+  /** One notification style row, in the same dress as the behavior rows. */
+  private renderStyleRow(row: StyleRow, values: ReadonlyMap<string, StyleValue>) {
+    const value = values.get(row.key) ?? row.default;
+    const set = (v: StyleValue) => this.editStyle(row, v);
+    const helpLine = row.help ? html`<div class="hint">${row.help}</div>` : nothing;
+    if (styleUsesTiles(row)) {
+      const options = styleOptionsFor(row, value);
+      return this.renderTileRow({
+        key: row.key, label: row.label, icon: row.icon, help: row.help,
+        value: String(value), def: String(row.resetTo),
+        name: (v) => options.find((o) => o.value === v)?.label ?? v,
+        tiles: styleTileChoices(row, value),
+      }, set);
+    }
+    const wrap = (field: TemplateResult, extra: TemplateResult | typeof nothing = nothing, hint: TemplateResult | typeof nothing = helpLine) =>
+      html`<div class="ws-row" data-key=${row.key}>${this.glyph("ws-ic", row.icon, 14)}${field}${extra}${hint}</div>`;
+    switch (row.type) {
+      case "bool":
+        return wrap(checkField(row.label, value === true, set, row.resetTo === true));
+      case "enum": {
+        const options = styleOptionsFor(row, value).map((o): [string, string] => [o.value, o.label]);
+        return wrap(selectField(row.label, String(value), options, (v) => set(v), { def: String(row.resetTo) }));
+      }
+      case "number": {
+        const volume = typeof value === "number" ? value : Number(row.default);
+        const silent = volumeText(volume) === "Silent";
+        return wrap(
+          percentSliderField(row.label, volume, (v) => set(v), { step: VOLUME.step, def: Number(row.resetTo), min: VOLUME.min }),
+          this.renderVolumePresets(volume, set),
+          silent ? html`<div class="hint">Silent: the watch plays no sounds at all.</div>` : helpLine,
+        );
+      }
+      case "sound":
+        return wrap(this.soundField(row, String(value), set));
+    }
+  }
+
+  /** The phone's four volume presets under the slider, the one that matches
+   * lit. Silent is anything at or below the phone's silent level. */
+  private renderVolumePresets(volume: number, set: (v: StyleValue) => void) {
+    const silent = volumeText(volume) === "Silent";
+    return html`<div class="seg wide ns-presets" role="radiogroup" aria-label="Volume presets">
+      ${VOLUME.presets.map((p) => {
+        const on = p.value <= VOLUME.silentBelow ? silent : !silent && Math.abs(volume - p.value) < 0.001;
+        return html`<button type="button" role="radio" aria-checked=${on ? "true" : "false"} class=${on ? "on" : ""}
+          @click=${() => { if (!on) set(p.value); }}>${p.label}</button>`;
+      })}
+    </div>`;
+  }
+
+  /** A sound as a menu: "Default" and "None" first, then the phone's Short
+   * and Longer lists. No preview: the panel plays nothing. */
+  private soundField(row: StyleRow, value: string, set: (v: StyleValue) => void) {
+    const choices = soundChoices(row, value);
+    const option = (o: { value: string; label: string }) => html`<option value=${o.value} ?selected=${o.value === value}>${o.label}</option>`;
+    return html`<label class="field">${settingTitle(row.label, value, String(row.resetTo), (v: string) => set(v), (v) => soundValueText(row, v))}
+      <select .value=${live(value)} @change=${(e: Event) => set((e.target as HTMLSelectElement).value)}>
+        ${choices.lead.map(option)}
+        ${choices.groups.map((g) => html`<optgroup label=${g.label}>${g.options.map(option)}</optgroup>`)}
+      </select></label>`;
   }
 
   /** The last card: pairing a watch that has no iPhone, by the code it shows.
@@ -762,15 +1141,19 @@ export class WatchSettings implements ReactiveController {
         <button class="primary" @click=${() => { this.confirm = undefined; confirm.run(); }}>${confirm.label}</button>
       </div>`;
     }
-    const record = this.record;
-    const changes = dirtyKeys(record?.document, this.edits).length;
+    const behaviorChanges = this.behaviorChanges;
+    const styleChanges = this.styleChanges;
+    const changes = behaviorChanges + styleChanges;
     // A watch with no record is created by "Start with the defaults" in the
-    // body; Save sends edits to a record that exists.
-    const canSave = changes > 0 && !this.saving && !this.starting && record?.document !== undefined;
+    // body; Save sends edits to a record that exists. Both records save under
+    // the one button.
+    const canSave = changes > 0 && !this.saving && !this.starting && !this.styleStarting
+      && (behaviorChanges === 0 || this.record?.document !== undefined)
+      && (styleChanges === 0 || this.styleDocument !== undefined);
     return html`<div class="xfer-foot">
       ${changes > 0
         ? html`<span class="xf-sub">${changes} unsaved ${changes === 1 ? "change" : "changes"}</span>`
-        : this.renderDelivery(record)}
+        : this.renderDelivery()}
       <span class="spacer"></span>
       <button class="small" @click=${() => this.guard("Discard and close", () => this.close())}>Close</button>
       <button class="primary save ${changes > 0 ? "dirty" : ""}" ?disabled=${!canSave}
@@ -780,16 +1163,26 @@ export class WatchSettings implements ReactiveController {
   }
 
   /** The header's sync pill, saying whether a device has collected the
-   * revision shown: green once one has, amber while a save waits. */
-  private renderDelivery(record: WatchConfigRecord | undefined) {
-    const state = deliveryState(record);
-    if (state === "none" || record === undefined) return nothing;
-    if (state === "delivered") {
-      return html`<span class="tb-sync ok" title=${`Revision ${record.revision} has been collected.`}>
+   * revisions shown, the settings' and the notification style's: green once
+   * every one held has been, amber while a save of either waits. */
+  private renderDelivery() {
+    const held = [
+      { what: "Settings", record: this.record },
+      { what: "Notification style", record: this.styleUnsupported ? undefined : this.styleRecord },
+    ].flatMap(({ what, record }) => {
+      const state = deliveryState(record);
+      return state === "none" || record === undefined ? [] : [{ what, revision: record.revision, state }];
+    });
+    if (held.length === 0) return nothing;
+    const waiting = held.filter((h) => h.state === "waiting");
+    if (waiting.length === 0) {
+      const title = held.map((h) => `${h.what} revision ${h.revision} has been collected.`).join(" ");
+      return html`<span class="tb-sync ok" title=${title}>
         <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${COLLECTED_PILL_TEXT}</span>
       </span>`;
     }
-    return html`<span class="tb-sync warn sending" title=${`Saved as revision ${record.revision}. ${WAITING_HELP_TEXT}`}>
+    const title = `${waiting.map((h) => `${h.what} saved as revision ${h.revision}.`).join(" ")} ${WAITING_HELP_TEXT}`;
+    return html`<span class="tb-sync warn sending" title=${title}>
       <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${WAITING_PILL_TEXT}</span>
     </span>`;
   }
@@ -797,6 +1190,16 @@ export class WatchSettings implements ReactiveController {
 
 function errText(err: unknown): string {
   return String((err as { message?: string })?.message ?? err);
+}
+
+/** The two saves' notes as one: their words side by side, at the graver of
+ * their two kinds. None when neither had anything to say. */
+function joinNotes(notes: readonly (Note | undefined)[]): Note | undefined {
+  const said = notes.filter((n): n is Note => n !== undefined);
+  if (said.length <= 1) return said[0];
+  const rank = { note: 0, warn: 1, err: 2 } as const;
+  const kind = said.reduce<Note["kind"]>((k, n) => (rank[n.kind] > rank[k] ? n.kind : k), "note");
+  return { kind, text: said.map((n) => n.text).join(" ") };
 }
 
 /** The dialog's own rules, added to the panel's sheet. Everything else it
@@ -906,4 +1309,14 @@ export const watchSettingsStyles = css`
   .ws-body .ws-pair .field input.ws-pair-code { flex: 0 1 112px; width: 112px; letter-spacing: .14em; text-transform: uppercase; }
   .ws-pair-row > button.small { flex: none; }
   .ws-pair .readout-v.ws-pair-watch { color: var(--wa-ink); }
+  /* The notification style's cards: the phone's groups as small headings
+     between the rows, the volume presets under the slider. */
+  .ws-body .sec-b > .ws-group {
+    margin: 8px 0 1px; font-size: 10.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--wa-muted);
+  }
+  .ws-body .sec-b > .ws-group:first-child, .ws-body .sec-b > .ns-pv + .ws-group { margin-top: 2px; }
+  .ws-body .sec-b > .ws-group + :is(.ws-row, .ws-tile-row) { border-top: 0; padding-top: 3px; }
+  .ws-row > .ns-presets { margin: 6px 0 0; }
+  .ws-body > .sec .ns-start, .ws-body > .sec .ns-retry { align-self: flex-start; }
+  ${notificationPreviewStyles}
 `;
