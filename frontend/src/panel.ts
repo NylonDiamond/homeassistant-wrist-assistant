@@ -6298,6 +6298,11 @@ export class WristAssistantPanel extends LitElement {
       else if (was && !now) this.leaveListPage();
       if (this.pickerOpen && tabOfRoute(this.route) !== "complications") this.pickerClosed();
     }
+    // The Complications tab's other dialogs, menus and sheets go the same
+    // way: a move off the tab (Back included, which brings no press) takes
+    // their elements away without their close handlers, so each is shut in
+    // state here instead.
+    if (changed.has("route") && tabOfRoute(this.route) !== "complications") this.complicationsSurfacesGone();
     // The row's watch menu belongs to the screen it was opened on. Back or
     // Forward moves without a press, so the move itself shuts it and drops its
     // outside-press listener.
@@ -13875,6 +13880,41 @@ export class WristAssistantPanel extends LitElement {
       if (!dialog.open) dialog.showModal();
       dialog.querySelector<HTMLInputElement>("input[type=text]")?.focus();
     });
+  }
+
+  /**
+   * Everything the Complications tab draws over itself, shut in state once
+   * the route has left the tab: the element is about to go from the tree, so
+   * its own `close` handler never runs. Each runs the reset its own close
+   * path runs (`importClosed`, `historyClosed`, `closeStack`, `closeDemo`,
+   * `closeAddSheet`), so no flag stays set, no timer or fetch is left
+   * waiting, and no window listener is left behind. Nothing here touches the
+   * DOM: a dialog drawn no more needs no `close()`.
+   */
+  private complicationsSurfacesGone() {
+    if (this.helpOpen) this.helpOpen = false;
+    if (this.newOpen) this.newOpen = false;
+    if (this.dupOpen) this.dupOpen = false;
+    if (this.confirmDelete) this.confirmDelete = false;
+    if (this.shareOpen || this.galleryOpen) {
+      this.shareOpen = false;
+      this.galleryOpen = false;
+      this.pointAtRow([], undefined, () => undefined);
+    }
+    if (this.importOpen) this.importClosed();
+    if (this.slotsOpen) this.slotsOpen = false;
+    if (this.historyOpen) this.historyClosed();
+    if (this.savePartOpen) this.savePartOpen = false;
+    if (this.presetKind !== undefined || this.presetEntity !== undefined) {
+      this.presetKind = undefined;
+      this.presetEntity = undefined;
+    }
+    if (this.zoomed) this.zoomed = false;
+    if (this.stacked) this.closeStack();
+    if (this.demoing) this.closeDemo();
+    if (this.addSheet !== undefined) this.closeAddSheet();
+    if (this.sideMenu !== undefined) this.toggleSideMenu(this.sideMenu, false);
+    if (this.openMenu !== undefined) this.toggleMenu(this.openMenu, false);
   }
 
   private closeNewDialog() {
