@@ -606,6 +606,10 @@ def ws_forget_device(
     # The watch config (its pages, in step 1) belongs to the device alone, so
     # unlike a design it has nowhere to move to and is deleted.
     watch_config_removed = domain_data.watch_config_store.forget_owner(watch_id)
+    # So is the voice list it reported, which describes that watch alone.
+    voices_store = getattr(domain_data, "watch_voices_store", None)
+    if voices_store is not None:
+        voices_store.forget(watch_id)
 
     # Removing the store entry strips the device's entities on the next
     # listener pass, but the device registry record itself would linger as an

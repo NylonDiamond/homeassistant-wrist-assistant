@@ -35,13 +35,14 @@ _PAIRING_MODULE = _PKG / "pairing_ws.py"
 
 # The Watch settings view's and the page editor's commands. Admin-only like
 # every other: history_entry hands out a whole past document, and restore
-# writes one.
+# writes one. The voice list read is the panel's too.
 _WATCH_CONFIG_ADMIN_ONLY = {
     "ws_watch_config_get",
     "ws_watch_config_save",
     "ws_watch_config_history",
     "ws_watch_config_history_entry",
     "ws_watch_config_restore",
+    "ws_watch_voices_get",
 }
 
 # Confirming a pairing code writes a device secret bound to the confirming

@@ -25,6 +25,11 @@ Commands:
     wrist_assistant/watch_config/restore        {owner_watch_id, kind, revision,
                                                  base_revision}
     wrist_assistant/watch_config/subscribe      {owner_watch_id}   (not admin)
+    wrist_assistant/watch_voices/get            {watch_id}
+
+``watch_voices/get`` is the voice list a watch reported over the signed
+``watch_voices_put`` (see ``watch_voices_store.py``), for the panel's Watch
+voice picker. It is not a watch config record and has no revision.
 
 Every refusal is a WebSocket error with the store's code: ``invalid``,
 ``unavailable``, ``no_record``, ``conflict`` or ``not_found``. A conflict's
@@ -36,7 +41,7 @@ and message.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
 from homeassistant.components import websocket_api
@@ -50,6 +55,9 @@ from .watch_config_store import (
     WatchConfigStoreError,
 )
 
+if TYPE_CHECKING:
+    from .watch_voices_store import WatchVoicesStore
+
 _LOGGER = logging.getLogger(__name__)
 
 _CMD_GET = f"{DOMAIN}/watch_config/get"
@@ -58,6 +66,7 @@ _CMD_HISTORY = f"{DOMAIN}/watch_config/history"
 _CMD_HISTORY_ENTRY = f"{DOMAIN}/watch_config/history_entry"
 _CMD_RESTORE = f"{DOMAIN}/watch_config/restore"
 _CMD_SUBSCRIBE = f"{DOMAIN}/watch_config/subscribe"
+_CMD_VOICES_GET = f"{DOMAIN}/watch_voices/get"
 
 
 def _store(hass: HomeAssistant) -> WatchConfigStore | None:
@@ -65,6 +74,13 @@ def _store(hass: HomeAssistant) -> WatchConfigStore | None:
     if domain_data is None:
         return None
     return getattr(domain_data, "watch_config_store", None)
+
+
+def _voices_store(hass: HomeAssistant) -> WatchVoicesStore | None:
+    domain_data = hass.data.get(DOMAIN)
+    if domain_data is None:
+        return None
+    return getattr(domain_data, "watch_voices_store", None)
 
 
 @callback
@@ -75,6 +91,7 @@ def async_register_watch_config_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_watch_config_history_entry)
     websocket_api.async_register_command(hass, ws_watch_config_restore)
     websocket_api.async_register_command(hass, ws_watch_config_subscribe)
+    websocket_api.async_register_command(hass, ws_watch_voices_get)
 
 
 @websocket_api.require_admin
@@ -377,3 +394,37 @@ def ws_watch_config_subscribe(
 
     connection.subscriptions[msg["id"]] = store.async_add_listener(_on_change)
     connection.send_result(msg["id"], {"revisions": revisions})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_VOICES_GET,
+        vol.Required("watch_id"): str,
+    }
+)
+@callback
+def ws_watch_voices_get(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """The speech voices one watch has installed, as it last reported them.
+
+    Result: {"voices": [{"id", "name", "language", "quality"}, ...],
+             "updated_at": <ISO time> | null}
+
+    Sorted by id. An empty list with a null time when the watch has sent
+    none yet: one that predates the watch_voices capability, or one that has
+    not polled since. The panel's picker groups the list by language and
+    offers "System voice" for no choice. Admin only, like every panel read.
+    """
+    store = _voices_store(hass)
+    if store is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    entry = store.get(msg["watch_id"])
+    if entry is None:
+        connection.send_result(msg["id"], {"voices": [], "updated_at": None})
+        return
+    connection.send_result(
+        msg["id"], {"voices": list(entry.voices), "updated_at": entry.updated_at}
+    )

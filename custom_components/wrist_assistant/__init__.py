@@ -59,6 +59,7 @@ from .const import (
     WATCH_CONFIG_STATUS_PAGES_CAPABILITY,
     WATCH_CONFIG_VOICE_CAPABILITY,
     WATCH_PAIRING_CAPABILITY,
+    WATCH_VOICES_CAPABILITY,
     WIDGET_SECRET_STORAGE_KEY,
     WIDGET_SECRET_STORAGE_VERSION,
     WristAssistantConfigEntry,
@@ -72,6 +73,7 @@ from .snapshot_crop_store import SnapshotCropStore
 from .snapshot_stream_store import SnapshotStreamStore
 from .watch_config_store import WatchConfigStore
 from .watch_config_ws import async_register_watch_config_commands
+from .watch_voices_store import WatchVoicesStore
 from .notifications import NotificationTokenStore, TokenEntry
 from .v1_api_views import (
     MusicAssistantPlayersView,
@@ -782,6 +784,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     entry.async_on_unload(
         watch_config_store.async_add_listener(coordinator.watch_config_changed)
     )
+    # Each watch's installed speech voices, for the panel's Watch voice
+    # picker. The poll asks a watch for its list when the hash it reports is
+    # not the stored one; an unreadable file is logged and starts empty.
+    watch_voices_store = WatchVoicesStore(hass)
+    await watch_voices_store.async_load()
+    coordinator.attach_watch_voices_store(watch_voices_store)
 
     # Register server capabilities
     # HA-owned custom complications: iOS checks this before offering the
@@ -856,6 +864,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # above): the watch's trigger to pull its own pages, behavior, menus,
     # voice, notification style and status pages.
     coordinator.register_capability(WATCH_CONFIG_DELTA_CAPABILITY)
+    # The watch's voice list (watch_voices_store.py): `voices_hash` read on
+    # every poll, `voices_wanted` on the reply, and the watch_voices_put op.
+    # The watch reports its voices only when it sees this.
+    coordinator.register_capability(WATCH_VOICES_CAPABILITY)
     # Pairing by code (wa_v2_views.py, WAPairStartView, and pairing_ws.py): a
     # watch with no iPhone offers it only when /version lists this.
     coordinator.register_capability(WATCH_PAIRING_CAPABILITY)
@@ -877,6 +889,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         card_preview_store=card_preview_store,
         watch_config_store=watch_config_store,
         pair_request_store=pair_request_store,
+        watch_voices_store=watch_voices_store,
     )
     entry.runtime_data = runtime_data
     hass.data[DOMAIN] = runtime_data
@@ -1200,8 +1213,10 @@ async def async_remove_config_entry_device(
         domain_data.complication_store.release_owner(
             watch_id, updated_by=f"device-removed:{watch_id}"
         )
-        # Its watch config goes with it, as on the panel's Forget.
+        # Its watch config goes with it, as on the panel's Forget, and so
+        # does the voice list it reported.
         domain_data.watch_config_store.forget_owner(watch_id)
+        domain_data.watch_voices_store.forget(watch_id)
 
     return True
 
@@ -1229,8 +1244,10 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     # is already unloaded, so this instance owns nothing, but keeping the one
     # removal path means the storage key and version cannot drift from it.
     await ComplicationStore(hass).async_remove()
-    # The watch config files go the same way, every owner's and the index.
+    # The watch config files go the same way, every owner's and the index,
+    # and so does the file of watch voice lists.
     await WatchConfigStore(hass).async_remove()
+    await WatchVoicesStore(hass).async_remove()
 
 
 async def _create_apns_client(hass: HomeAssistant) -> APNsClient | None:

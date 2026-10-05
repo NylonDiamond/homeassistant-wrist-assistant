@@ -744,6 +744,20 @@ def test_forgetting_a_device_deletes_its_watch_config(env) -> None:
     assert result["watch_config_removed"] is False
 
 
+def test_forgetting_a_device_drops_its_voice_list(env) -> None:
+    """The voices a watch reported describe that watch alone (step 4d batch
+    2). The real store's forget is tested in test_watch_voices.py; this pins
+    that the Forget reaches it, and only for the device forgotten."""
+    forgotten: list[str] = []
+    env.hass.data[DOMAIN].watch_voices_store = types.SimpleNamespace(
+        forget=lambda watch_id: forgotten.append(watch_id) or True
+    )
+    env.add_watch("watch-A", device_name="Apple Watch")
+    env.add_watch("watch-B", device_name="Other Watch")
+    env.call(env.ws.ws_forget_device, watch_id="watch-A", force=False)
+    assert forgotten == ["watch-A"]
+
+
 def test_moving_an_owner_carries_its_watch_config(env) -> None:
     """The reinstall recovery path: the pages follow the designs."""
     env.add_watch("watch-new", device_name="Apple Watch")

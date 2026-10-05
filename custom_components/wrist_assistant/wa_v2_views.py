@@ -147,6 +147,7 @@ from .watch_config_store import (
     WatchConfigUnavailableError,
     WatchConfigValidationError,
 )
+from .watch_voices_store import VOICES_HASH_RE, WatchVoicesValidationError
 from .webhook_relay import (
     WEBHOOK_ID_METADATA_KEY,
     async_provision_webhook,
@@ -588,6 +589,15 @@ class WADeltaView(HomeAssistantView):
         ):
             complications_token = raw_complications_token
 
+        # The watch's hash of its installed speech voices, sent by a watch
+        # that sees the watch_voices capability. A reply with a body then says
+        # whether the list stored here is stale (`voices_wanted`). Absent from
+        # older watches; anything but 64 lowercase hex digits reads as absent.
+        raw_voices_hash = payload.get("voices_hash")
+        voices_hash: str | None = None
+        if isinstance(raw_voices_hash, str) and VOICES_HASH_RE.fullmatch(raw_voices_hash):
+            voices_hash = raw_voices_hash
+
         # Push notification token registration piggybacks on long-poll.
         device_token = payload.get("device_token")
         notification_store = domain_data.notification_store
@@ -641,6 +651,7 @@ class WADeltaView(HomeAssistantView):
             templates=templates,
             custom_entity_ids=custom_entity_ids,
             complications_token=complications_token,
+            voices_hash=voices_hash,
         )
 
         if status == 204 or body_dict is None:
@@ -3259,7 +3270,9 @@ async def _op_complications_move_status(ctx: _OpContext) -> Response:
 #
 # Three parties: the iPhone mirror writes a record with the put op, the panel
 # writes one over the WebSocket (``watch_config_ws.py``), and the watch reads
-# its own with the get op. The watch never writes.
+# its own with the get op. The watch never writes a record; the one thing it
+# sends is its list of installed voices (watch_voices_put, below), which the
+# panel's voice picker reads.
 
 
 def _watch_config_refusal(ctx: _OpContext, err: WatchConfigStoreError) -> Response:
@@ -3406,10 +3419,45 @@ async def _op_watch_config_put(ctx: _OpContext) -> Response:
     return ctx.signed_json({"ok": True, "revision": record.revision})
 
 
+async def _op_watch_voices_put(ctx: _OpContext) -> Response:
+    """Store the signing watch's installed speech voices.
+
+    The watch sends it when a delta reply says ``voices_wanted: true``, and
+    only when it sees the ``watch_voices`` capability. The list is keyed on
+    the signing id, so a watch can only ever replace its own.
+
+    Body:  {"voices": [{"id": <str>, "name": <str>, "language": <str>,
+                        "quality": <int>}, ...]}
+    Reply: {"ok": true, "hash": <sha256 hex>, "count": <int>}
+    Refusal: signed 400 {"ok": false, "error": "invalid", "message"} for a
+             malformed list (the stored one is left alone); signed 503 when
+             the store is not there.
+
+    The server sorts the list by id and computes the hash itself
+    (``watch_voices_store.voices_hash``, which spells out the rule). The
+    reply hands it back, so a watch whose own hash differs can tell that its
+    encoding, not its list, is the difference.
+    """
+    store = getattr(ctx.domain_data, "watch_voices_store", None)
+    if store is None:
+        return ctx.signed_json(
+            {"ok": False, "error": "unavailable", "message": "integration not ready"},
+            status=503,
+        )
+    try:
+        entry = store.put(ctx.watch_id, ctx.payload.get("voices"))
+    except WatchVoicesValidationError as err:
+        return ctx.signed_json(
+            {"ok": False, "error": err.code, "message": err.message}, status=400
+        )
+    return ctx.signed_json({"ok": True, "hash": entry.hash, "count": len(entry.voices)})
+
+
 # Op dispatch table. Adding a new op = add a key here.
 _OP_HANDLERS: dict[str, Any] = {
     "watch_config_get": _op_watch_config_get,
     "watch_config_put": _op_watch_config_put,
+    "watch_voices_put": _op_watch_voices_put,
     "complications_sync": _op_complications_sync,
     "complications_restore": _op_complications_restore,
     "complications_create": _op_complications_create,

@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from .wa_pair_requests import PairRequestStore
     from .wa_stream_tokens import BatchSnapshotTokenStore, StreamTokenStore
     from .watch_config_store import WatchConfigStore
+    from .watch_voices_store import WatchVoicesStore
     from .widget_secret_store import WidgetSecretStore
 
 
@@ -67,6 +68,9 @@ class WristAssistantData:
     # Watches waiting for an admin to confirm their pairing code. Memory
     # only; written by /v2/pair/start, read and cleared by pairing_ws.py.
     pair_request_store: PairRequestStore
+    # Each watch's installed speech voices, as the watch last sent them over
+    # watch_voices_put. Read by the panel's Watch voice picker.
+    watch_voices_store: WatchVoicesStore
     apns_client: APNsClient | None = field(default=None)
     # Sends a phone owner the background push a watch owner gets as a long-poll
     # wake. Built after the relay client is resolved, so it is None for the
@@ -219,6 +223,21 @@ WATCH_CONFIG_STATUS_PAGES_CAPABILITY = "watch_config_status_pages"
 # WATCH_CONFIG_MENUS_CAPABILITY the field names `menus` too, and with the
 # voice, notification style and status pages capabilities those kinds.
 WATCH_CONFIG_DELTA_CAPABILITY = "watch_config_delta"
+# Each watch's installed speech voices (watch id → list, hash, time), see
+# watch_voices_store.py. One small file for every watch: a list is a few
+# hundred short entries at most, and it changes only when the watch's voices
+# do. The panel's Watch voice picker reads it; nothing else does.
+WATCH_VOICES_STORAGE_KEY = "wrist_assistant.watch_voices"
+WATCH_VOICES_STORAGE_VERSION = 1
+# The most voices one watch_voices_put may carry. A watch with every language
+# downloaded has a couple of hundred; this leaves room without letting one
+# signed request fill the file.
+WATCH_VOICES_MAX_ENTRIES = 500
+# What the integration advertises once /v2/delta reads `voices_hash` (the
+# watch's own hash of its voice list), answers `voices_wanted: true` when it
+# differs from the stored one, and serves the signed watch_voices_put op. The
+# watch sends neither the hash nor the list without it.
+WATCH_VOICES_CAPABILITY = "watch_voices"
 # What the integration advertises once it serves /v2/pair/start and the
 # panel's pair/lookup and pair/confirm (pairing_ws.py). A watch with no
 # iPhone offers to pair by code only when /version lists this.

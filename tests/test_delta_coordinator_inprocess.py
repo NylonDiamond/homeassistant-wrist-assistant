@@ -1521,3 +1521,103 @@ def test_a_phone_put_through_the_op_wakes_the_parked_poll(coordinator) -> None:
         assert body["watch_config"] == _revs(pages=1, behavior=0, menus=0)
 
     asyncio.run(run())
+
+
+# ── the watch's voice list on the poll ─────────────────────────────────────
+#
+# The real WatchVoicesStore, loaded like the watch config store above. A poll
+# carrying `voices_hash` gets `voices_wanted: true` on a reply with a body
+# while the hash is not the stored one; nothing else changes about the poll.
+
+
+def _watch_voices_store():
+    _stub("homeassistant.helpers.storage", Store=_NoDiskStore)
+    _load_into_test_pkg("const")
+    voices_module = _load_into_test_pkg("watch_voices_store")
+    store = voices_module.WatchVoicesStore(_StoreHass())
+    asyncio.run(store.async_load())
+    return store, voices_module
+
+
+_VOICES = [{"id": "com.apple.voice.compact.en-US.Samantha", "name": "Samantha",
+            "language": "en-US", "quality": 1}]
+
+
+def test_a_poll_with_a_hash_nothing_matches_is_asked_for_the_list(coordinator) -> None:
+    module, hass, coord = coordinator
+    store, voices_module = _watch_voices_store()
+    coord.attach_watch_voices_store(store)
+    ent = "wrist_assistant.wv1"
+    hass.states.set(ent, "off")
+    digest = voices_module.voices_hash(_VOICES)
+
+    async def run() -> None:
+        # Nothing stored yet.
+        status, body = await _poll(coord, entities=[ent], voices_hash=digest)
+        assert status == 200 and body["voices_wanted"] is True
+
+        # The watch sends its list; the next poll's hash matches.
+        store.put("w1", _VOICES)
+        status, body = await _poll(coord, entities=[ent], voices_hash=digest)
+        assert status == 200 and "voices_wanted" not in body
+
+        # A voice installed on the watch changes its hash.
+        status, body = await _poll(coord, entities=[ent], voices_hash="f" * 64)
+        assert body["voices_wanted"] is True
+
+        # Another watch's list is never this watch's answer.
+        status, body = await _poll(coord, watch_id="w2", entities=[ent], voices_hash=digest)
+        assert body["voices_wanted"] is True
+
+    asyncio.run(run())
+
+
+def test_a_poll_without_a_hash_is_never_asked(coordinator) -> None:
+    """An older watch sends no hash and never learns the field."""
+    module, hass, coord = coordinator
+    store, _voices_module = _watch_voices_store()
+    coord.attach_watch_voices_store(store)
+    ent = "wrist_assistant.wv2"
+    hass.states.set(ent, "off")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent])
+        assert status == 200 and "voices_wanted" not in body
+
+    asyncio.run(run())
+
+
+def test_with_no_store_attached_nothing_is_asked(coordinator) -> None:
+    module, hass, coord = coordinator
+    ent = "wrist_assistant.wv3"
+    hass.states.set(ent, "off")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent], voices_hash="a" * 64)
+        assert status == 200 and "voices_wanted" not in body
+
+    asyncio.run(run())
+
+
+def test_the_question_neither_wakes_nor_holds_a_poll(coordinator) -> None:
+    """A parked poll with a stale hash times out quietly with a bodiless 204,
+    like any other: the question rides the next reply that has a body."""
+    module, hass, coord = coordinator
+    store, _voices_module = _watch_voices_store()
+    coord.attach_watch_voices_store(store)
+    ent = "wrist_assistant.wv4"
+    hass.states.set(ent, "off")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent], voices_hash="a" * 64)
+        c0 = body["next_cursor"]
+        assert body["voices_wanted"] is True
+        status, body = await asyncio.wait_for(
+            _poll(coord, since=c0, entities=[ent], timeout=1, voices_hash="a" * 64), timeout=3
+        )
+        assert status == 204 and body is None
+        _change(hass, coord, ent, "on")
+        status, body = await _poll(coord, since=c0, entities=[ent], voices_hash="a" * 64)
+        assert status == 200 and body["voices_wanted"] is True
+
+    asyncio.run(run())

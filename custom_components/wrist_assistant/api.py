@@ -332,6 +332,10 @@ class DeltaCoordinator:
         # or after a bodiless 204) records the current revisions first, so a
         # save that wakes it has something to compare against.
         self._watch_config_sent: dict[str, dict[str, int]] = {}
+        # Each watch's stored voice list, asked about on every poll that
+        # carries `voices_hash` (see handle_poll). None until setup attaches
+        # it (attach_watch_voices_store).
+        self._watch_voices_store: Any | None = None
         self._unsub_state_changed = hass.bus.async_listen(
             EVENT_STATE_CHANGED, self._handle_state_changed
         )
@@ -483,6 +487,21 @@ class DeltaCoordinator:
         if change.kind not in DELTA_WATCH_CONFIG_KINDS:
             return
         self.wake_watch(change.owner_watch_id, renotify=False)
+
+    # ── the watch's voice list on the poll ────────────────────────────
+
+    @callback
+    def attach_watch_voices_store(self, store: Any) -> None:
+        """Wire the voice list store in, for the `voices_wanted` question."""
+        self._watch_voices_store = store
+
+    def _voices_wanted(self, watch_id: str, voices_hash: str | None) -> bool:
+        """True when the poll carried a hash and it is not the stored one
+        (or nothing is stored). False with no hash, from a watch that does
+        not report its voices, and with no store attached."""
+        if voices_hash is None or self._watch_voices_store is None:
+            return False
+        return bool(self._watch_voices_store.wants(watch_id, voices_hash))
 
     @callback
     def async_add_session_listener(self, cb: callback) -> callback:
@@ -683,6 +702,7 @@ class DeltaCoordinator:
         templates: dict[str, str] | None = None,
         custom_entity_ids: list[str] | None = None,
         complications_token: int | None = None,
+        voices_hash: str | None = None,
     ) -> tuple[int, dict[str, Any] | None]:
         """Handle a single long-poll request.
 
@@ -696,6 +716,14 @@ class DeltaCoordinator:
         revision of every kind in DELTA_WATCH_CONFIG_KINDS (0 for a kind with
         no record), so the watch pulls a kind through ``watch_config_get`` when
         its revision is above the one it applied.
+
+        ``voices_hash`` is the watch's hash of its installed speech voices
+        (see ``watch_voices_store.voices_hash``), None from a watch that does
+        not report them. When it is not the stored hash, a reply with a body
+        carries ``voices_wanted: true`` and the watch sends its list with
+        ``watch_voices_put``. The question never wakes or holds a poll: it
+        rides the next reply with a body, and a voice list changes only when
+        the user installs or removes a voice.
         """
         self._last_poll_at[watch_id] = self.hass.loop.time()
         store = self._complication_store
@@ -726,6 +754,8 @@ class DeltaCoordinator:
             if revisions is not None:
                 body["watch_config"] = revisions
                 self._watch_config_sent[watch_id] = revisions
+            if self._voices_wanted(watch_id, voices_hash):
+                body["voices_wanted"] = True
         return status, body
 
     async def _handle_poll_inner(
