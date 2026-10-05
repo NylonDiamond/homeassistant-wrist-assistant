@@ -18,7 +18,9 @@ Covered:
   them waking the owner's parked poll through the store listener, including
   a poll with nothing recorded yet (after a prune or a 204 probe), a phone's
   save through the real watch_config_put op, and the panel creating a paired
-  watch's first menus.
+  watch's first menus. From step 4d batch 2 the field names six kinds: voice,
+  notification style and status pages join the three, and the panel's first
+  record of each wakes the parked poll.
 """
 
 from __future__ import annotations
@@ -912,12 +914,32 @@ def _menus_doc(display_mode: str = "icons") -> dict:
     }
 
 
+def _revs(**given: int) -> dict:
+    """The ``watch_config`` field: every kind a watch applies, 0 unless given."""
+    revisions = {
+        "pages": 0,
+        "behavior": 0,
+        "menus": 0,
+        "voice": 0,
+        "notification_style": 0,
+        "status_pages": 0,
+    }
+    revisions.update(given)
+    return revisions
+
+
 def _device_put(store, kind: str, owner: str = "w1", *, base: int = 0, digest: str = _HASH_1):
     document = {
         "pages": _pages_doc(),
         "behavior": {"wrapPages": True},
         "catalog": {"macros": [{"id": "m1", "name": "Morning"}]},
         "menus": _menus_doc(),
+        "voice": {"schemaVersion": 1, "phrases": [{"id": "P1", "message": "Hi"}]},
+        "notification_style": {"schemaVersion": 1, "storedDeliveryMode": "direct"},
+        "status_pages": {
+            "schemaVersion": 1,
+            "statusPages": [{"id": "SP1", "name": "Climate", "rows": [{"id": "R1"}]}],
+        },
     }[kind]
     return store.put(
         owner, kind, document, document_hash=digest, base_revision=base, updated_by=owner
@@ -944,10 +966,43 @@ def test_the_reply_names_the_signer_s_pages_behavior_and_menus_revisions(coordin
     async def run() -> None:
         status, body = await _poll(coord, entities=[ent])
         assert status == 200
-        assert body["watch_config"] == {"pages": 2, "behavior": 1, "menus": 3}
+        assert body["watch_config"] == _revs(pages=2, behavior=1, menus=3)
 
         status, body = await _poll(coord, watch_id="w2", entities=[ent])
-        assert body["watch_config"] == {"pages": 1, "behavior": 2, "menus": 0}
+        assert body["watch_config"] == _revs(pages=1, behavior=2, menus=0)
+
+    asyncio.run(run())
+
+
+def test_the_reply_names_the_voice_notification_style_and_status_pages(coordinator) -> None:
+    module, hass, coord = coordinator
+    store, _const = _watch_config_store()
+    coord.attach_watch_config_store(store)
+    ent = "wrist_assistant.wc1b"
+    hass.states.set(ent, "off")
+    _device_put(store, "voice")
+    _device_put(store, "notification_style")
+    _device_put(store, "notification_style", base=1, digest=_HASH_2)
+    _device_put(store, "status_pages")
+    _device_put(store, "status_pages", base=1, digest=_HASH_2)
+    _device_put(store, "status_pages", base=2, digest=_HASH_1)
+    _device_put(store, "voice", owner="w2")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent])
+        assert status == 200
+        assert body["watch_config"] == _revs(voice=1, notification_style=2, status_pages=3)
+        assert list(body["watch_config"]) == [
+            "pages",
+            "behavior",
+            "menus",
+            "voice",
+            "notification_style",
+            "status_pages",
+        ]
+
+        status, body = await _poll(coord, watch_id="w2", entities=[ent])
+        assert body["watch_config"] == _revs(voice=1)
 
     asyncio.run(run())
 
@@ -962,12 +1017,12 @@ def test_an_owner_with_no_records_reads_zero_for_every_kind(coordinator) -> None
     async def run() -> None:
         status, body = await _poll(coord, entities=[ent])
         assert status == 200
-        assert body["watch_config"] == {"pages": 0, "behavior": 0, "menus": 0}
+        assert body["watch_config"] == _revs(pages=0, behavior=0, menus=0)
 
         # One kind saved, the others still 0.
         _device_put(store, "behavior")
         status, body = await _poll(coord, entities=[ent])
-        assert body["watch_config"] == {"pages": 0, "behavior": 1, "menus": 0}
+        assert body["watch_config"] == _revs(pages=0, behavior=1, menus=0)
 
     asyncio.run(run())
 
@@ -983,13 +1038,20 @@ def test_the_catalog_is_never_named(coordinator) -> None:
 
     async def run() -> None:
         status, body = await _poll(coord, entities=[ent])
-        assert body["watch_config"] == {"pages": 1, "behavior": 0, "menus": 0}
+        assert body["watch_config"] == _revs(pages=1, behavior=0, menus=0)
         assert "catalog" not in body["watch_config"]
 
     asyncio.run(run())
-    # The three kinds the reply names are the three the panel edits, which
-    # are the three a watch applies.
-    assert module.DELTA_WATCH_CONFIG_KINDS == ("pages", "behavior", "menus")
+    # The six kinds the reply names are the six the panel edits, which are
+    # the six a watch applies.
+    assert module.DELTA_WATCH_CONFIG_KINDS == (
+        "pages",
+        "behavior",
+        "menus",
+        "voice",
+        "notification_style",
+        "status_pages",
+    )
     assert set(module.DELTA_WATCH_CONFIG_KINDS) == set(const.WATCH_CONFIG_PANEL_KINDS)
 
 
@@ -1015,7 +1077,7 @@ def test_no_store_or_an_unreadable_owner_leaves_the_field_out(coordinator) -> No
 
 
 def test_a_save_wakes_the_owner_and_a_catalog_save_does_not(coordinator) -> None:
-    """The listener setup adds: every saver of pages, behavior or menus wakes
+    """The listener setup adds: every saver of a kind a watch applies wakes
     that owner without re-arming the complication token, and a catalog save
     wakes nobody."""
     module, hass, coord = coordinator
@@ -1028,7 +1090,10 @@ def test_a_save_wakes_the_owner_and_a_catalog_save_does_not(coordinator) -> None
     _device_put(store, "pages")
     _device_put(store, "behavior", owner="w2")
     _device_put(store, "menus", owner="w3")
-    assert woken == [("w1", False), ("w2", False), ("w3", False)]
+    _device_put(store, "voice", owner="w4")
+    _device_put(store, "notification_style", owner="w5")
+    _device_put(store, "status_pages", owner="w6")
+    assert woken == [(f"w{n}", False) for n in range(1, 7)]
 
     woken.clear()
     _device_put(store, "catalog")
@@ -1088,7 +1153,7 @@ def test_a_save_releases_the_parked_poll_with_the_new_revision(coordinator) -> N
     async def run() -> None:
         status, body = await _poll(coord, entities=[ent])
         c0 = body["next_cursor"]
-        assert body["watch_config"] == {"pages": 1, "behavior": 0, "menus": 0}
+        assert body["watch_config"] == _revs(pages=1, behavior=0, menus=0)
 
         held = asyncio.create_task(_poll(coord, since=c0, entities=[ent], timeout=10))
         await asyncio.sleep(0.05)
@@ -1100,7 +1165,7 @@ def test_a_save_releases_the_parked_poll_with_the_new_revision(coordinator) -> N
         assert hass.loop.time() - started < 1.0
         assert status == 200, body
         assert body["events"] == []
-        assert body["watch_config"] == {"pages": 2, "behavior": 0, "menus": 0}
+        assert body["watch_config"] == _revs(pages=2, behavior=0, menus=0)
         assert "w1" not in coord._waiters
 
         # Told once: the next poll parks and times out quietly.
@@ -1126,7 +1191,7 @@ def test_the_panel_s_first_menus_release_the_parked_poll(coordinator) -> None:
     async def run() -> None:
         status, body = await _poll(coord, entities=[ent])
         c0 = body["next_cursor"]
-        assert body["watch_config"] == {"pages": 0, "behavior": 0, "menus": 0}
+        assert body["watch_config"] == _revs(pages=0, behavior=0, menus=0)
 
         held = asyncio.create_task(_poll(coord, since=c0, entities=[ent], timeout=10))
         await asyncio.sleep(0.05)
@@ -1139,7 +1204,7 @@ def test_the_panel_s_first_menus_release_the_parked_poll(coordinator) -> None:
         assert hass.loop.time() - started < 1.0
         assert status == 200, body
         assert body["events"] == []
-        assert body["watch_config"] == {"pages": 0, "behavior": 0, "menus": 1}
+        assert body["watch_config"] == _revs(pages=0, behavior=0, menus=1)
 
         # A later panel save of the menus wakes it the same way.
         held = asyncio.create_task(_poll(coord, since=c0, entities=[ent], timeout=10))
@@ -1147,6 +1212,43 @@ def test_the_panel_s_first_menus_release_the_parked_poll(coordinator) -> None:
         store.panel_save("w1", "menus", _menus_doc("text"), base_revision=1)
         status, body = await asyncio.wait_for(held, timeout=2)
         assert status == 200 and body["watch_config"]["menus"] == 2
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    ("kind", "document"),
+    [
+        ("voice", {"schemaVersion": 1, "phrases": [], "defaultTTSEngine": ""}),
+        ("notification_style", {"schemaVersion": 1}),
+        ("status_pages", {"schemaVersion": 1, "statusPages": []}),
+    ],
+)
+def test_the_panel_s_first_batch_2_record_releases_the_parked_poll(
+    coordinator, kind, document
+) -> None:
+    """The panel's "Start with the defaults" for a phone-less watch wakes its
+    parked poll with revision 1 of that kind, as for the menus."""
+    module, hass, coord = coordinator
+    store, _const = _watch_config_store(paired=frozenset({"w1"}))
+    coord.attach_watch_config_store(store)
+    store.async_add_listener(coord.watch_config_changed)
+    ent = "wrist_assistant.wc15b"
+    hass.states.set(ent, "off")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent])
+        c0 = body["next_cursor"]
+        assert body["watch_config"] == _revs()
+
+        held = asyncio.create_task(_poll(coord, since=c0, entities=[ent], timeout=10))
+        await asyncio.sleep(0.05)
+        assert "w1" in coord._waiters
+        record = store.panel_save("w1", kind, document, base_revision=0)
+        assert (record.revision, record.updated_by) == (1, "panel")
+        status, body = await asyncio.wait_for(held, timeout=2)
+        assert status == 200, body
+        assert body["watch_config"] == _revs(**{kind: 1})
 
     asyncio.run(run())
 
@@ -1192,14 +1294,14 @@ def test_a_save_between_polls_is_answered_by_the_next_poll(coordinator) -> None:
             _poll(coord, since=c0, entities=[ent], timeout=10), timeout=1
         )
         assert status == 200 and body["events"] == []
-        assert body["watch_config"] == {"pages": 0, "behavior": 1, "menus": 0}
+        assert body["watch_config"] == _revs(pages=0, behavior=1, menus=0)
 
         # A probe from a watch that is behind gets the revision too.
         _device_put(store, "behavior", base=1, digest=_HASH_2)
         status, body = await asyncio.wait_for(
             _poll(coord, since=c0, entities=[ent], timeout=0), timeout=1
         )
-        assert status == 200 and body["watch_config"] == {"pages": 0, "behavior": 2, "menus": 0}
+        assert status == 200 and body["watch_config"] == _revs(pages=0, behavior=2, menus=0)
 
     asyncio.run(run())
 
@@ -1290,7 +1392,7 @@ def test_a_save_wakes_the_first_poll_after_a_prune(coordinator) -> None:
         held = asyncio.create_task(_poll(coord, since=c0, entities=[ent], timeout=10))
         await asyncio.sleep(0.05)
         assert "w1" in coord._waiters and not held.done()
-        assert coord._watch_config_sent["w1"] == {"pages": 1, "behavior": 0, "menus": 0}
+        assert coord._watch_config_sent["w1"] == _revs(pages=1, behavior=0, menus=0)
 
         started = hass.loop.time()
         store.panel_save("w1", "pages", _pages_doc("Renamed"), base_revision=1)
@@ -1298,7 +1400,7 @@ def test_a_save_wakes_the_first_poll_after_a_prune(coordinator) -> None:
         assert hass.loop.time() - started < 1.0
         assert status == 200, body
         assert body["events"] == []
-        assert body["watch_config"] == {"pages": 2, "behavior": 0, "menus": 0}
+        assert body["watch_config"] == _revs(pages=2, behavior=0, menus=0)
 
         # Told once: the next poll parks and times out quietly.
         status, body = await asyncio.wait_for(
@@ -1331,7 +1433,7 @@ def test_a_204_probe_records_what_a_later_save_is_compared_against(coordinator) 
             _poll(coord, since=c0, entities=[ent], timeout=0), timeout=1
         )
         assert status == 204 and body is None
-        assert coord._watch_config_sent["w1"] == {"pages": 0, "behavior": 1, "menus": 0}
+        assert coord._watch_config_sent["w1"] == _revs(pages=0, behavior=1, menus=0)
 
         # The save lands between the probe and the long poll: no poll is
         # parked, so its wake is a no-op and the long poll must catch it.
@@ -1340,14 +1442,14 @@ def test_a_204_probe_records_what_a_later_save_is_compared_against(coordinator) 
             _poll(coord, since=c0, entities=[ent], timeout=10), timeout=1
         )
         assert status == 200 and body["events"] == []
-        assert body["watch_config"] == {"pages": 0, "behavior": 2, "menus": 0}
+        assert body["watch_config"] == _revs(pages=0, behavior=2, menus=0)
 
         # And a save while the next one is parked wakes it the same way.
         held = asyncio.create_task(_poll(coord, since=c0, entities=[ent], timeout=10))
         await asyncio.sleep(0.05)
         _device_put(store, "pages")
         status, body = await asyncio.wait_for(held, timeout=2)
-        assert status == 200 and body["watch_config"] == {"pages": 1, "behavior": 2, "menus": 0}
+        assert status == 200 and body["watch_config"] == _revs(pages=1, behavior=2, menus=0)
 
     asyncio.run(run())
 
@@ -1402,7 +1504,7 @@ def test_a_phone_put_through_the_op_wakes_the_parked_poll(coordinator) -> None:
     async def run() -> None:
         status, body = await _poll(coord, entities=[ent])
         c0 = body["next_cursor"]
-        assert body["watch_config"] == {"pages": 0, "behavior": 0, "menus": 0}
+        assert body["watch_config"] == _revs(pages=0, behavior=0, menus=0)
 
         held = asyncio.create_task(_poll(coord, since=c0, entities=[ent], timeout=10))
         await asyncio.sleep(0.05)
@@ -1416,6 +1518,6 @@ def test_a_phone_put_through_the_op_wakes_the_parked_poll(coordinator) -> None:
         status, body = await asyncio.wait_for(held, timeout=2)
         assert status == 200, body
         assert body["events"] == []
-        assert body["watch_config"] == {"pages": 1, "behavior": 0, "menus": 0}
+        assert body["watch_config"] == _revs(pages=1, behavior=0, menus=0)
 
     asyncio.run(run())

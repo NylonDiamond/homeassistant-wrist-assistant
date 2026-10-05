@@ -6,12 +6,15 @@ Part of moving watch configuration out of the phone (see
 parties:
 
 * The iPhone mirror. With its switch on, the phone uploads its page config
-  (kind ``pages``), its watch behavior settings (kind ``behavior``) and its
+  (kind ``pages``), its watch behavior settings (kind ``behavior``), its
   menus (kind ``menus``: the Anywhere menu, the Entity quick menu and the
-  page switcher's style) here after each edit, and pulls a newer copy back
-  down when it has nothing unsent. It also publishes its library catalog
-  (kind ``catalog``), which only the phone writes.
-* The panel. It may read, save and restore pages, behavior and menus, and
+  page switcher's style), its voice settings (kind ``voice``: the voice
+  defaults and the phrase library), its notification style (kind
+  ``notification_style``) and its status pages (kind ``status_pages``) here
+  after each edit, and pulls a newer copy back down when it has nothing
+  unsent. It also publishes its library catalog (kind ``catalog``), which
+  only the phone writes.
+* The panel. It may read, save and restore every kind but the catalog, and
   read the catalog (see ``watch_config_ws.py``), and it may make a watch's
   first record of those kinds.
 * The watch's own pull. The watch reads its records over the signed get when
@@ -47,9 +50,9 @@ Each record carries:
 * ``document``: the JSON object exactly as parsed from the request, never
   rewritten. It is checked at the envelope (an object, a page config's
   ``pages`` is a list, under its kind's size cap) and, for a page config, a
-  catalog and the menus, at the shape the watch or the panel cannot survive
-  without (:func:`validate_document`). The server does not understand tiles,
-  slots or settings.
+  catalog, the menus, the voice settings and the status pages, at the shape
+  the watch or the panel cannot survive without (:func:`validate_document`).
+  The server does not understand tiles, slots, phrases, rows or settings.
 * ``history``: the last few documents a save replaced, each with the
   revision, hash, time and writer it had. The signed get never returns it; the
   panel lists it and restores from it (:meth:`WatchConfigStore.history`,
@@ -120,8 +123,15 @@ _SAVE_DEBOUNCE_SECONDS = 1
 # page config without its page list is not a page config, while the behavior
 # settings are a flat object whose every key is optional ("absent means the
 # default"), so an object is enough. The page list's own shape is checked by
-# _check_pages below.
-_KIND_LIST_KEYS: dict[str, str] = {"pages": "pages"}
+# _check_pages below. The same holds for the phrase library of the voice
+# settings (`phrases`, which the app's decoder requires) and the status pages
+# (`statusPages`, the list the document wraps); the notification style is a
+# flat object like the behavior settings.
+_KIND_LIST_KEYS: dict[str, str] = {
+    "pages": "pages",
+    "voice": "phrases",
+    "status_pages": "statusPages",
+}
 
 # A SHA-256 digest as lowercase hex. Lowercase only, and refused otherwise
 # rather than folded: the phone compares the hash it remembers with the one it
@@ -238,8 +248,11 @@ def validate_document(kind: str, document: Any, *, check_items: bool = False) ->
     shape the watch needs to survive (see :func:`_check_pages`): the page
     level always, the tile level only with ``check_items``, which a panel save
     and a restore pass and a device save does not. A catalog's entries are
-    checked for an id and a name (see :func:`_check_catalog`), and the menus'
-    sections and slot lists for their shape (see :func:`_check_menus`).
+    checked for an id and a name (see :func:`_check_catalog`), the menus'
+    sections and slot lists for their shape (see :func:`_check_menus`), the
+    voice settings' phrases and defaults (see :func:`_check_voice`) and the
+    status pages' pages and rows (see :func:`_check_status_pages`). The
+    notification style, like the behavior settings, is any object.
 
     The server guards the shape, not the content. No key's value is looked at
     beyond the ids: the app is the only thing that understands a tile or a
@@ -263,7 +276,132 @@ def validate_document(kind: str, document: Any, *, check_items: bool = False) ->
         _check_catalog(document)
     elif kind == "menus":
         _check_menus(document)
+    elif kind == "voice":
+        _check_voice(document)
+    elif kind == "status_pages":
+        _check_status_pages(document["statusPages"])
     return size
+
+
+# The phrase library's cap, `TTSConfiguration.maxPhrases` in the app.
+_VOICE_MAX_PHRASES = 8
+# The voice settings' keys besides the phrases that the guard checks when
+# present, each with the JSON type it must have. `schemaVersion` and the last
+# three are optionals in the app, so null is taken for them too; the defaults
+# are not, but a document without them is left to the app's own decode (the
+# contract asks for the shape only).
+_VOICE_STRING_KEYS = ("defaultTTSEngine",)
+_VOICE_OPTIONAL_STRING_KEYS = ("defaultAssistAgentId", "watchSpeechVoiceIdentifier")
+_VOICE_OPTIONAL_BOOL_KEYS = ("watchSpeakReplyInSilentMode",)
+
+
+def _check_voice(document: dict[str, Any]) -> None:
+    """The voice settings' shape guard, for every writer.
+
+    ``phrases`` (present and a list, see ``_KIND_LIST_KEYS``) holds at most
+    eight objects, each with a non-empty string ``id``, no two sharing one:
+    menus point at phrases by id, so a phrase with no id or a shared one
+    would send a slot to the wrong phrase. ``defaultSpeakers`` is a list of
+    strings when present, ``defaultTTSEngine`` a string, ``schemaVersion`` an
+    integer, and ``defaultAssistAgentId``, ``watchSpeechVoiceIdentifier`` and
+    ``watchSpeakReplyInSilentMode`` a string, a string and a bool (or null).
+    No phrase key besides ``id`` is looked at, and no other key at all, so a
+    newer app can add some.
+    """
+    phrases = document["phrases"]
+    if len(phrases) > _VOICE_MAX_PHRASES:
+        raise WatchConfigValidationError(
+            f"document.phrases holds {len(phrases)} phrases; "
+            f"the limit is {_VOICE_MAX_PHRASES}"
+        )
+    seen: dict[str, int] = {}
+    for index, phrase in enumerate(phrases):
+        where = f"document.phrases[{index}]"
+        if not isinstance(phrase, dict):
+            raise WatchConfigValidationError(f"{where} must be an object")
+        phrase_id = phrase.get("id")
+        if not isinstance(phrase_id, str) or not phrase_id:
+            raise WatchConfigValidationError(f"{where}.id must be a non-empty string")
+        folded = phrase_id.upper()
+        if folded in seen:
+            raise WatchConfigValidationError(
+                f'{where} has the phrase id "{phrase_id}" of '
+                f"document.phrases[{seen[folded]}]; phrase ids must be unique"
+            )
+        seen[folded] = index
+    if "defaultSpeakers" in document:
+        speakers = document["defaultSpeakers"]
+        if not isinstance(speakers, list) or not all(
+            isinstance(speaker, str) for speaker in speakers
+        ):
+            raise WatchConfigValidationError(
+                "document.defaultSpeakers must be a list of strings"
+            )
+    if "schemaVersion" in document:
+        version = document["schemaVersion"]
+        if version is not None and (isinstance(version, bool) or not isinstance(version, int)):
+            raise WatchConfigValidationError("document.schemaVersion must be an integer")
+    for key in _VOICE_STRING_KEYS:
+        if key in document and not isinstance(document[key], str):
+            raise WatchConfigValidationError(f"document.{key} must be a string")
+    for key in _VOICE_OPTIONAL_STRING_KEYS:
+        if document.get(key) is not None and not isinstance(document[key], str):
+            raise WatchConfigValidationError(f"document.{key} must be a string")
+    for key in _VOICE_OPTIONAL_BOOL_KEYS:
+        if document.get(key) is not None and not isinstance(document[key], bool):
+            raise WatchConfigValidationError(f"document.{key} must be a bool")
+
+
+def _check_status_pages(pages: list[Any]) -> None:
+    """The status pages' shape guard, for every writer.
+
+    Each page is an object with a non-empty string ``id``, no two pages
+    sharing one, and a string ``name``. Its ``rows`` is a list of objects,
+    each with a non-empty string ``id``, no two in the page sharing one. The
+    same id in two pages is not refused: each page is a list of its own.
+
+    The watch decodes the whole list or nothing, so a page or row with no id
+    (the app's decoder requires both) must not land whoever writes it. Tiles
+    and menu slots point at pages by id, so two pages sharing one would open
+    the wrong page. Ids are compared ignoring case, as for pages: the app
+    reads them as UUIDs. No other key is looked at, so a newer app can add
+    some.
+    """
+    seen: dict[str, int] = {}
+    for index, page in enumerate(pages):
+        where = f"document.statusPages[{index}]"
+        if not isinstance(page, dict):
+            raise WatchConfigValidationError(f"{where} must be an object")
+        page_id = page.get("id")
+        if not isinstance(page_id, str) or not page_id:
+            raise WatchConfigValidationError(f"{where}.id must be a non-empty string")
+        folded = page_id.upper()
+        if folded in seen:
+            raise WatchConfigValidationError(
+                f'{where} has the page id "{page_id}" of '
+                f"document.statusPages[{seen[folded]}]; page ids must be unique"
+            )
+        seen[folded] = index
+        if not isinstance(page.get("name"), str):
+            raise WatchConfigValidationError(f"{where}.name must be a string")
+        rows = page.get("rows")
+        if not isinstance(rows, list):
+            raise WatchConfigValidationError(f"{where}.rows must be a list")
+        seen_rows: dict[str, int] = {}
+        for row_index, row in enumerate(rows):
+            at = f"{where}.rows[{row_index}]"
+            if not isinstance(row, dict):
+                raise WatchConfigValidationError(f"{at} must be an object")
+            row_id = row.get("id")
+            if not isinstance(row_id, str) or not row_id:
+                raise WatchConfigValidationError(f"{at}.id must be a non-empty string")
+            folded_row = row_id.upper()
+            if folded_row in seen_rows:
+                raise WatchConfigValidationError(
+                    f'{at} has the row id "{row_id}" of rows[{seen_rows[folded_row]}]; '
+                    "row ids must be unique in a page"
+                )
+            seen_rows[folded_row] = row_index
 
 
 # The sections a menus document carries, every one required: the Anywhere
@@ -1107,8 +1245,8 @@ class WatchConfigStore:
 
         Stricter than a device save, on purpose:
 
-        * Only the kinds in ``WATCH_CONFIG_PANEL_KINDS`` (pages, behavior and
-          menus, never the catalog).
+        * Only the kinds in ``WATCH_CONFIG_PANEL_KINDS`` (every kind but the
+          catalog).
         * The tile level of the page shape guard as well as the page level
           (:func:`validate_document` with ``check_items``). The panel builds
           what it sends, so it can always fix a fault there.

@@ -34,9 +34,16 @@ MAX_EVENTS_BUFFER = 5000
 MAX_EVENTS_PER_RESPONSE = 250
 SESSION_TTL = timedelta(minutes=5)
 # The watch config kinds the delta reply names, as `watch_config: {kind: rev}`.
-# The three a watch applies (WATCH_CONFIG_PANEL_KINDS in const.py). Never the
+# The six a watch applies (WATCH_CONFIG_PANEL_KINDS in const.py). Never the
 # catalog, which only the phone and the panel read.
-DELTA_WATCH_CONFIG_KINDS = ("pages", "behavior", "menus")
+DELTA_WATCH_CONFIG_KINDS = (
+    "pages",
+    "behavior",
+    "menus",
+    "voice",
+    "notification_style",
+    "status_pages",
+)
 
 _LOGGER = logging.getLogger(__name__)
 _ATTR_DIFF_SENTINEL = object()
@@ -313,9 +320,10 @@ class DeltaCoordinator:
         # of spinning on immediate empty replies.
         self._token_notified: dict[str, int] = {}
         # Watch config rides the poll the same way: every reply with a body
-        # names the signer's pages, behavior and menus revisions, and a save wakes
-        # the parked poll (see watch_config_changed). None until setup
-        # attaches the store (attach_watch_config_store).
+        # names the signer's revision of every kind a watch applies
+        # (DELTA_WATCH_CONFIG_KINDS), and a save wakes the parked poll (see
+        # watch_config_changed). None until setup attaches the store
+        # (attach_watch_config_store).
         self._watch_config_store: Any | None = None
         # watch_id → the watch_config revisions its last reply with a body
         # carried. A poll whose revisions moved since then is answered at once
@@ -422,10 +430,10 @@ class DeltaCoordinator:
         self._watch_config_store = store
 
     def watch_config_revisions(self, watch_id: str) -> dict[str, int] | None:
-        """The signer's own pages, behavior and menus revisions, 0 for a kind it holds
-        no record of. None when no store is attached or this owner's file
-        could not be read: the reply then leaves the field out rather than
-        saying "no record", which would be wrong."""
+        """The signer's own revision of every kind in DELTA_WATCH_CONFIG_KINDS,
+        0 for a kind it holds no record of. None when no store is attached or
+        this owner's file could not be read: the reply then leaves the field
+        out rather than saying "no record", which would be wrong."""
         store = self._watch_config_store
         if store is None:
             return None
@@ -464,8 +472,8 @@ class DeltaCoordinator:
 
     @callback
     def watch_config_changed(self, change: Any) -> None:
-        """Store listener: a pages, behavior or menus save wakes that owner's parked
-        poll, which answers at once with the new revision.
+        """Store listener: a save of any kind in DELTA_WATCH_CONFIG_KINDS wakes
+        that owner's parked poll, which answers at once with the new revision.
 
         Any saver counts (a panel save, a restore, a device's own put, a
         forget or move). ``renotify`` stays False: it only re-arms the
@@ -685,9 +693,9 @@ class DeltaCoordinator:
         when the two differ.
 
         Every reply with a body also carries ``watch_config``: the signer's
-        pages, behavior and menus revisions (0 for a kind with no record), so the
-        watch pulls a kind through ``watch_config_get`` when its revision is
-        above the one it applied.
+        revision of every kind in DELTA_WATCH_CONFIG_KINDS (0 for a kind with
+        no record), so the watch pulls a kind through ``watch_config_get`` when
+        its revision is above the one it applied.
         """
         self._last_poll_at[watch_id] = self.hass.loop.time()
         store = self._complication_store

@@ -54,7 +54,10 @@ from .const import (
     WATCH_CONFIG_DELTA_CAPABILITY,
     WATCH_CONFIG_LIVE_CAPABILITY,
     WATCH_CONFIG_MENUS_CAPABILITY,
+    WATCH_CONFIG_NOTIFICATION_STYLE_CAPABILITY,
     WATCH_CONFIG_REJECT_REPORT_CAPABILITY,
+    WATCH_CONFIG_STATUS_PAGES_CAPABILITY,
+    WATCH_CONFIG_VOICE_CAPABILITY,
     WATCH_PAIRING_CAPABILITY,
     WIDGET_SECRET_STORAGE_KEY,
     WIDGET_SECRET_STORAGE_VERSION,
@@ -770,11 +773,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # token on every reply, the watch's ack on every request, and a panel
     # save wakes the parked poll so the watch pulls at once.
     coordinator.attach_complication_store(complication_store)
-    # Watch config rides it too: the signer's pages, behavior and menus
-    # revisions on every reply, and a save of any of them wakes that owner's
+    # Watch config rides it too: the signer's revision of every kind a watch
+    # applies on every reply, and a save of any of them wakes that owner's
     # parked poll so the watch pulls at once, with no phone in the path. The
     # store only knows it has listeners; the coordinator's listener picks the
-    # three kinds and leaves the complication token alone (renotify=False).
+    # six kinds and leaves the complication token alone (renotify=False).
     coordinator.attach_watch_config_store(watch_config_store)
     entry.async_on_unload(
         watch_config_store.async_add_listener(coordinator.watch_config_changed)
@@ -841,8 +844,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # watch pulls them only when it sees this, since an older integration
     # refuses the kind.
     coordinator.register_capability(WATCH_CONFIG_MENUS_CAPABILITY)
+    # The `voice`, `notification_style` and `status_pages` kinds (step 4d
+    # batch 2), each like `menus`: named on the delta reply and editable (and
+    # creatable for a paired watch) in the panel. The phone mirrors a kind and
+    # the watch pulls it only when it sees that kind's capability, since an
+    # older integration refuses the kind.
+    coordinator.register_capability(WATCH_CONFIG_VOICE_CAPABILITY)
+    coordinator.register_capability(WATCH_CONFIG_NOTIFICATION_STYLE_CAPABILITY)
+    coordinator.register_capability(WATCH_CONFIG_STATUS_PAGES_CAPABILITY)
     # `watch_config` on every delta reply and the wake on a save (attached
-    # above): the watch's trigger to pull its own pages, behavior and menus.
+    # above): the watch's trigger to pull its own pages, behavior, menus,
+    # voice, notification style and status pages.
     coordinator.register_capability(WATCH_CONFIG_DELTA_CAPABILITY)
     # Pairing by code (wa_v2_views.py, WAPairStartView, and pairing_ws.py): a
     # watch with no iPhone offers it only when /version lists this.

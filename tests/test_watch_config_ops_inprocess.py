@@ -20,6 +20,8 @@ the wire shapes the app is built against are asserted here exactly:
   the report instead of a delivery, with the same reply.
 * (step 3e) ``catalog`` rides the same two ops, with its own shape guard.
 * (step 4d) ``menus`` rides the same two ops, with its own shape guard.
+* (step 4d batch 2) so do ``voice``, ``notification_style`` and
+  ``status_pages``.
 
 The static half (both ops in the dispatch table, the capabilities advertised)
 sits at the bottom.
@@ -610,6 +612,65 @@ def test_menus_of_the_wrong_shape_are_a_signed_400(env) -> None:
     assert env.store.get(WATCH, "menus") is None
 
 
+# ── step 4d batch 2: voice, notification style, status pages ─────────────
+
+
+def _batch_2(kind: str, label: str = "Dinner") -> dict:
+    return {
+        "voice": {
+            "defaultSpeakers": ["media_player.made_up_kitchen"],
+            "defaultTTSEngine": "tts.made_up_engine",
+            "phrases": [{"id": "6F1C2D0E-0000-4000-8000-0000000000D1", "label": label}],
+            "schemaVersion": 1,
+        },
+        "notification_style": {"buttonFill": label, "schemaVersion": 1},
+        "status_pages": {
+            "schemaVersion": 1,
+            "statusPages": [
+                {
+                    "id": "00000000-0000-0000-0000-000000000001",
+                    "name": label,
+                    "rows": [{"id": "6F1C2D0E-0000-4000-8000-0000000000E1"}],
+                }
+            ],
+        },
+    }[kind]
+
+
+@pytest.mark.parametrize("kind", ["voice", "notification_style", "status_pages"])
+def test_each_batch_2_kind_rides_the_same_ops(env, kind) -> None:
+    reply = _put(env, _put_body(_batch_2(kind), kind=kind))
+    assert reply.status == 200
+    assert reply.body == {"ok": True, "revision": 1}
+    got = _get(env, {"kind": kind})
+    assert (got.body["kind"], got.body["revision"], got.body["hash"]) == (kind, 1, HASH_1)
+    assert got.body["document"] == _batch_2(kind)
+    assert "document" not in _get(env, {"kind": kind, "since_revision": 1}).body
+    assert env.store.get(WATCH, kind).delivered_revision == 1
+    again = _put(env, _put_body(_batch_2(kind, "Supper"), kind=kind, base=1, digest=HASH_2))
+    assert again.body == {"ok": True, "revision": 2}
+    # The watch reports a revision it could not decode, and keeps what it had.
+    _get(env, {"kind": kind, "unreadable_revision": 2})
+    assert env.store.get(WATCH, kind).rejected_revision == 2
+
+
+@pytest.mark.parametrize(
+    ("kind", "document", "message"),
+    [
+        ("voice", {"phrases": [{"id": f"P{i}"} for i in range(9)]},
+         "document.phrases holds 9 phrases; the limit is 8"),
+        ("notification_style", [], "document must be a JSON object"),
+        ("status_pages", {"statusPages": [{"id": "SP1", "name": "A", "rows": [{"id": ""}]}]},
+         "document.statusPages[0].rows[0].id must be a non-empty string"),
+    ],
+)
+def test_a_batch_2_kind_of_the_wrong_shape_is_a_signed_400(env, kind, document, message) -> None:
+    reply = _put(env, _put_body(document, kind=kind))
+    assert reply.status == 400
+    assert reply.body == {"ok": False, "error": "invalid", "message": message}
+    assert env.store.get(WATCH, kind) is None
+
+
 # ── static: dispatch and capability ──────────────────────────────────────
 
 
@@ -669,6 +730,23 @@ def test_the_menus_capability_is_advertised() -> None:
     const = (_PKG_DIR / "const.py").read_text()
     assert "register_capability(WATCH_CONFIG_MENUS_CAPABILITY)" in init
     assert 'WATCH_CONFIG_MENUS_CAPABILITY = "watch_config_menus"' in const
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("WATCH_CONFIG_VOICE_CAPABILITY", "watch_config_voice"),
+        ("WATCH_CONFIG_NOTIFICATION_STYLE_CAPABILITY", "watch_config_notification_style"),
+        ("WATCH_CONFIG_STATUS_PAGES_CAPABILITY", "watch_config_status_pages"),
+    ],
+)
+def test_each_batch_2_capability_is_advertised(name, value) -> None:
+    """The phone mirrors a batch 2 kind, and the watch pulls it, only when it
+    sees that kind's capability."""
+    init = (_PKG_DIR / "__init__.py").read_text()
+    const = (_PKG_DIR / "const.py").read_text()
+    assert f"register_capability({name})" in init
+    assert f'{name} = "{value}"' in const
 
 
 def test_setup_hands_the_store_its_pairing_check() -> None:

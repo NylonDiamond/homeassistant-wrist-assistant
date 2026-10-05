@@ -8,7 +8,9 @@ against the subscribe shapes, so results and events are asserted as whole
 dicts and errors as exact (code, message) pairs. The ``catalog`` kind (step
 3e) is read through the same commands and refused to the panel's save and
 restore. The ``menus`` kind (step 4d) is saved like the others, and a save
-on base 0 creates a paired watch's first copy. ``test_ws_command_registration.py``
+on base 0 creates a paired watch's first copy; so are ``voice``,
+``notification_style`` and ``status_pages`` (step 4d batch 2).
+``test_ws_command_registration.py``
 covers the registration and the admin gate statically.
 """
 
@@ -736,7 +738,11 @@ def test_history_of_the_catalog_lists_the_phone_s_uploads(env) -> None:
 def test_the_panel_may_neither_save_nor_restore_the_catalog(env) -> None:
     _phone_upload(env, "catalog", _catalog())
     _phone_upload(env, "catalog", _catalog("Gate"), base=1)
-    refusal = ("invalid", "the panel cannot save catalog; it may save behavior, menus, pages")
+    refusal = (
+        "invalid",
+        "the panel cannot save catalog; it may save behavior, menus, "
+        "notification_style, pages, status_pages, voice",
+    )
     connection = _save(env, _catalog("Panel"), 2, kind="catalog")
     assert connection.results == {}
     assert [(code, message) for _id, code, message in connection.errors] == [refusal]
@@ -840,3 +846,99 @@ def test_save_of_menus_with_a_duplicate_slot_id_is_invalid(env) -> None:
 def test_restore_still_needs_a_record_for_a_paired_watch(env) -> None:
     _paired_store(env)
     assert _restore_error(env, 1, 0, kind="menus")[0] == "no_record"
+
+
+# ── step 4d batch 2: voice, notification style, status pages ─────────────
+
+
+def _batch_2_doc(kind: str, label: str = "Dinner") -> dict:
+    """A first copy of each batch 2 kind, made-up entities only."""
+    return {
+        "voice": {
+            "schemaVersion": 1,
+            "phrases": [{"id": "P1", "message": "Dinner is ready", "label": label}],
+            "defaultTTSEngine": "tts.made_up_engine",
+            "defaultSpeakers": ["media_player.made_up_kitchen"],
+        },
+        "notification_style": {"schemaVersion": 1, "buttonFill": label},
+        "status_pages": {
+            "schemaVersion": 1,
+            "statusPages": [
+                {"id": "SP1", "name": label, "rows": [{"id": "R1", "entityId": "sensor.made_up"}]}
+            ],
+        },
+    }[kind]
+
+
+_BATCH_2_KINDS = ("voice", "notification_style", "status_pages")
+
+
+@pytest.mark.parametrize("kind", _BATCH_2_KINDS)
+def test_save_creates_the_first_batch_2_record_for_a_paired_watch(env, kind) -> None:
+    _paired_store(env)
+    subscriber = _subscribe(env)
+    document = _batch_2_doc(kind)
+    connection = _save(env, document, 0, kind=kind)
+    assert connection.errors == []
+    assert connection.results[1] == {"revision": 1}
+    result = _get(env, kind)
+    assert result == {
+        "kind": kind,
+        "revision": 1,
+        "hash": env.mod.canonical_hash(document),
+        "updated_at": result["updated_at"],
+        "updated_by": "panel",
+        "delivered_revision": 0,
+        "delivered_at": None,
+        "rejected_revision": 0,
+        "rejected_at": None,
+        "document": document,
+    }
+    assert subscriber.events() == [{"kind": kind, "revision": 1}]
+    edited = _batch_2_doc(kind, "Supper")
+    assert _save(env, edited, 1, kind=kind).results[1] == {"revision": 2}
+    assert _restore(env, 1, 2, kind).results[1] == {"revision": 3}
+    assert _get(env, kind)["document"] == document
+
+
+@pytest.mark.parametrize("kind", _BATCH_2_KINDS)
+def test_save_of_a_batch_2_kind_for_an_unpaired_watch_is_no_record(env, kind) -> None:
+    _paired_store(env)
+    code, message = _error(
+        env,
+        env.ws.ws_watch_config_save,
+        owner_watch_id="watch-never-paired",
+        kind=kind,
+        base_revision=0,
+        document=_batch_2_doc(kind),
+    )
+    assert (code, message) == (
+        "no_record",
+        f"there is no stored {kind} record and this watch is not paired; "
+        "pair it before starting its config here",
+    )
+    assert _get(env, kind, owner="watch-never-paired")["revision"] == 0
+
+
+@pytest.mark.parametrize(
+    ("kind", "document", "message"),
+    [
+        ("voice", {"phrases": [{"id": "P1"}, {"id": "p1"}]},
+         'document.phrases[1] has the phrase id "p1" of document.phrases[0]; '
+         "phrase ids must be unique"),
+        ("status_pages", {"statusPages": [{"id": "SP1", "rows": []}]},
+         "document.statusPages[0].name must be a string"),
+    ],
+)
+def test_save_of_a_malformed_batch_2_document_is_invalid(env, kind, document, message) -> None:
+    _paired_store(env)
+    code, got = _error(
+        env,
+        env.ws.ws_watch_config_save,
+        owner_watch_id=WATCH,
+        kind=kind,
+        base_revision=0,
+        document=document,
+    )
+    assert (code, got) == ("invalid", message)
+    assert _get(env, kind)["revision"] == 0

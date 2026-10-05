@@ -127,15 +127,32 @@ WATCH_CONFIG_STORAGE_VERSION = 1
 # library catalog (`WatchLibraryCatalog`: the phone's HTTP actions, macros and
 # status pages by id and name, which the panel's tile picker reads) and the
 # menus (the Anywhere menu, the Entity quick menu and the page switcher's
-# style, as `quickAction`, `entityRadial` and `pageSwitcher`). A later kind is
-# a new name here and a size cap below, with no change to the storage shape.
-WATCH_CONFIG_KINDS = frozenset({"pages", "behavior", "catalog", "menus"})
+# style, as `quickAction`, `entityRadial` and `pageSwitcher`). Step 4d batch 2
+# adds the voice settings (`TTSConfiguration`: the voice defaults and the
+# phrase library), the notification style (`NotificationStyleConfig`) and the
+# status pages (`{"schemaVersion": 1, "statusPages": [StatusPageConfig]}`).
+# A later kind is a new name here and a size cap below, with no change to the
+# storage shape.
+WATCH_CONFIG_KINDS = frozenset(
+    {
+        "pages",
+        "behavior",
+        "catalog",
+        "menus",
+        "voice",
+        "notification_style",
+        "status_pages",
+    }
+)
 # The kinds the panel may save, and restore from a record's history: pages and
-# behavior since the page editor moved into the panel (step 3), and menus
-# (step 4d). Never the catalog, which only the phone writes. The panel may
-# create the first record of one of these kinds, but only for a watch that is
-# paired (see WatchConfigStore.panel_save).
-WATCH_CONFIG_PANEL_KINDS = frozenset({"pages", "behavior", "menus"})
+# behavior since the page editor moved into the panel (step 3), menus (step 4d)
+# and voice, notification style and status pages (step 4d batch 2). Never the
+# catalog, which only the phone writes. The panel may create the first record
+# of one of these kinds, but only for a watch that is paired (see
+# WatchConfigStore.panel_save).
+WATCH_CONFIG_PANEL_KINDS = frozenset(
+    {"pages", "behavior", "menus", "voice", "notification_style", "status_pages"}
+)
 # `updated_by` on a record the panel saved, in place of a device's signing id.
 WATCH_CONFIG_PANEL_WRITER = "panel"
 # Compact UTF-8 JSON size a stored document may reach, per kind. Every kind in
@@ -143,14 +160,20 @@ WATCH_CONFIG_PANEL_WRITER = "panel"
 # large real page config has not been measured yet); the behavior settings are
 # a flat object of a few dozen keys, so a much smaller cap still leaves plenty.
 # A catalog of 200 entries is about 30 KB. The menus are a few dozen slots
-# plus per-entity overrides, the same order as the catalog. Home Assistant's
-# HTTP server accepts request bodies up to 16 MiB, so the cap, not the server,
-# is what refuses an oversized upload.
+# plus per-entity overrides, the same order as the catalog. The voice settings
+# hold at most eight phrases, the notification style is a flat object of a
+# couple of dozen keys, and the status pages are a few pages of rows, so the
+# same cap leaves each of them plenty. Home Assistant's HTTP server accepts
+# request bodies up to 16 MiB, so the cap, not the server, is what refuses an
+# oversized upload.
 WATCH_CONFIG_MAX_DOCUMENT_BYTES: dict[str, int] = {
     "pages": 2 * 1024 * 1024,
     "behavior": 256 * 1024,
     "catalog": 256 * 1024,
     "menus": 256 * 1024,
+    "voice": 256 * 1024,
+    "notification_style": 256 * 1024,
+    "status_pages": 256 * 1024,
 }
 # Documents a save replaced, kept per record, oldest dropped. Storage only.
 WATCH_CONFIG_HISTORY_LIMIT = 5
@@ -177,12 +200,24 @@ WATCH_CONFIG_CATALOG_CAPABILITY = "watch_config_catalog"
 # mirrors its menus and the watch pulls them only when it sees this: an older
 # integration would refuse the kind as invalid.
 WATCH_CONFIG_MENUS_CAPABILITY = "watch_config_menus"
+# What the integration advertises once it stores the `voice` kind (the voice
+# defaults and the phrase library), carries it on the delta reply and lets the
+# panel create its first record. The phone mirrors its voice settings and the
+# watch pulls them only when it sees this: an older integration would refuse
+# the kind as invalid.
+WATCH_CONFIG_VOICE_CAPABILITY = "watch_config_voice"
+# The same for the `notification_style` kind (the Long Look's look, the watch
+# app's sounds and the delivery route).
+WATCH_CONFIG_NOTIFICATION_STYLE_CAPABILITY = "watch_config_notification_style"
+# The same for the `status_pages` kind.
+WATCH_CONFIG_STATUS_PAGES_CAPABILITY = "watch_config_status_pages"
 # What the integration advertises once every /v2/delta reply with a body names
 # the signer's own `watch_config: {"pages": rev, "behavior": rev}` (0 for a
 # kind with no record) and a save of either kind wakes that owner's parked
 # poll. The watch uses it as the trigger to pull; the pull itself is the
 # signed watch_config_get, gated on WATCH_CONFIG_CAPABILITY. With
-# WATCH_CONFIG_MENUS_CAPABILITY the field names `menus` too.
+# WATCH_CONFIG_MENUS_CAPABILITY the field names `menus` too, and with the
+# voice, notification style and status pages capabilities those kinds.
 WATCH_CONFIG_DELTA_CAPABILITY = "watch_config_delta"
 # What the integration advertises once it serves /v2/pair/start and the
 # panel's pair/lookup and pair/confirm (pairing_ws.py). A watch with no

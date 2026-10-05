@@ -3254,7 +3254,8 @@ async def _op_complications_move_status(ctx: _OpContext) -> Response:
     )
 
 
-# ── watch config (a watch's pages, settings and menus, kept in Home Assistant)
+# ── watch config (a watch's pages, settings, menus, voice, notification style
+#    and status pages, kept in Home Assistant)
 #
 # Three parties: the iPhone mirror writes a record with the put op, the panel
 # writes one over the WebSocket (``watch_config_ws.py``), and the watch reads
@@ -3294,7 +3295,8 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
     watch itself pulling with that same signature (the record may have come
     from the iPhone mirror or from the panel).
 
-    Body:  {"kind": "pages" | "behavior" | "catalog" | "menus",
+    Body:  {"kind": "pages" | "behavior" | "catalog" | "menus" | "voice"
+                    | "notification_style" | "status_pages",
             "since_revision": <int>?, "unreadable_revision": <int>?}
     Reply: {"ok": true, "kind", "revision", "hash", "updated_at", "document"?}
 
@@ -3374,7 +3376,8 @@ async def _op_watch_config_put(ctx: _OpContext) -> Response:
     The iPhone mirror's write. The watch only reads (the get op above), and
     the panel writes over the WebSocket instead.
 
-    Body:  {"kind": "pages" | "behavior" | "catalog" | "menus",
+    Body:  {"kind": "pages" | "behavior" | "catalog" | "menus" | "voice"
+                    | "notification_style" | "status_pages",
             "base_revision": <int>, "hash": <sha256 hex>, "document": {...},
             "force": <bool>?}
     Reply: {"ok": true, "revision": <int>}

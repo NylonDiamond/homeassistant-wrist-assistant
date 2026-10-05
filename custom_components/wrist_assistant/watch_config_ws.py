@@ -161,8 +161,8 @@ def ws_watch_config_get(
 def ws_watch_config_save(
     hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Save one watch's page config, behavior settings or menus as edited in
-    the panel.
+    """Save one watch's page config, behavior settings, menus, voice
+    settings, notification style or status pages as edited in the panel.
 
     Result: {"revision": <new revision>}
 
@@ -174,8 +174,8 @@ def ws_watch_config_save(
     ``conflict`` when ``base_revision`` is not the stored revision (message
     ``stored revision is <N>, save was based on <M>``, a base of 0 over a
     stored record included), and with ``invalid`` for an unknown kind or a
-    malformed document, a page config or menus that fail the shape guard
-    included (the message names the page or slot list by where it sits).
+    malformed document, one that fails its kind's shape guard included (the
+    message names the page, slot list, phrase or row by where it sits).
     The hash is computed here and ``updated_by`` is ``panel``; the replaced
     document goes into the record's history like any save.
     """

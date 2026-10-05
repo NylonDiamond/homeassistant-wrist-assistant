@@ -19,7 +19,9 @@ panel saving pages, the page shape guard at both levels, the unreadable report
 written before any of it. From step 3e: the ``catalog`` kind, its cap and
 shape guard, and the panel being refused it. From step 4d: the ``menus``
 kind, its cap and shape guard, and the panel creating a first record for a
-paired watch (and being refused one for any other).
+paired watch (and being refused one for any other). From step 4d batch 2:
+the ``voice``, ``notification_style`` and ``status_pages`` kinds, their caps
+and shape guards, and the same panel save, restore and create.
 """
 
 from __future__ import annotations
@@ -55,10 +57,17 @@ MAX_BYTES = 2 * 1024 * 1024
 MAX_BEHAVIOR_BYTES = 256 * 1024
 MAX_CATALOG_BYTES = 256 * 1024
 MAX_MENUS_BYTES = 256 * 1024
+MAX_VOICE_BYTES = 256 * 1024
+MAX_NOTIFICATION_STYLE_BYTES = 256 * 1024
+MAX_STATUS_PAGES_BYTES = 256 * 1024
 HISTORY_LIMIT = 5
 # Kept equal to const.py by test_the_kinds_match_const below.
-KINDS = frozenset({"pages", "behavior", "catalog", "menus"})
-PANEL_KINDS = frozenset({"pages", "behavior", "menus"})
+KINDS = frozenset(
+    {"pages", "behavior", "catalog", "menus", "voice", "notification_style", "status_pages"}
+)
+PANEL_KINDS = frozenset(
+    {"pages", "behavior", "menus", "voice", "notification_style", "status_pages"}
+)
 
 OWNER = "watch-A"
 OTHER = "watch-B"
@@ -146,6 +155,9 @@ def _loaded_module():
                 "behavior": MAX_BEHAVIOR_BYTES,
                 "catalog": MAX_CATALOG_BYTES,
                 "menus": MAX_MENUS_BYTES,
+                "voice": MAX_VOICE_BYTES,
+                "notification_style": MAX_NOTIFICATION_STYLE_BYTES,
+                "status_pages": MAX_STATUS_PAGES_BYTES,
             },
             WATCH_CONFIG_HISTORY_LIMIT=HISTORY_LIMIT,
         )
@@ -643,6 +655,9 @@ def test_the_size_caps_match_const() -> None:
         "behavior": MAX_BEHAVIOR_BYTES,
         "catalog": MAX_CATALOG_BYTES,
         "menus": MAX_MENUS_BYTES,
+        "voice": MAX_VOICE_BYTES,
+        "notification_style": MAX_NOTIFICATION_STYLE_BYTES,
+        "status_pages": MAX_STATUS_PAGES_BYTES,
     }
 
 
@@ -1811,7 +1826,8 @@ def test_the_panel_may_neither_save_nor_restore_a_catalog(mod):
         store.panel_save(OWNER, "catalog", _catalog(), base_revision=2)
     assert exc.value.code == "invalid"
     assert exc.value.message == (
-        "the panel cannot save catalog; it may save behavior, menus, pages"
+        "the panel cannot save catalog; it may save behavior, menus, "
+        "notification_style, pages, status_pages, voice"
     )
     with pytest.raises(mod.WatchConfigValidationError, match="the panel cannot save catalog"):
         store.restore(OWNER, "catalog", 1, base_revision=2)
@@ -1995,7 +2011,14 @@ def test_a_panel_save_of_menus_is_shape_checked(mod):
 
 
 def _first_copy(kind: str) -> dict:
-    return {"pages": _doc("panel"), "behavior": _behavior(), "menus": _menus()}[kind]
+    return {
+        "pages": _doc("panel"),
+        "behavior": _behavior(),
+        "menus": _menus(),
+        "voice": _voice(),
+        "notification_style": _notification_style(),
+        "status_pages": _status_pages(),
+    }[kind]
 
 
 @pytest.mark.parametrize("kind", sorted(PANEL_KINDS))
@@ -2112,6 +2135,313 @@ def test_a_restore_never_creates_even_for_a_paired_watch(mod):
         with pytest.raises(mod.WatchConfigNoRecordError):
             store.restore(OWNER, "menus", 1, base_revision=base)
     assert store.get(OWNER, "menus") is None
+
+
+# ── step 4d batch 2: voice, notification style, status pages ─────────────
+
+_PHRASE_A = "6F1C2D0E-0000-4000-8000-0000000000D1"
+_PHRASE_B = "6F1C2D0E-0000-4000-8000-0000000000D2"
+_STATUS_PAGE_A = "00000000-0000-0000-0000-000000000001"
+_STATUS_PAGE_B = "00000000-0000-0000-0000-000000000002"
+_ROW_A = "6F1C2D0E-0000-4000-8000-0000000000E1"
+_ROW_B = "6F1C2D0E-0000-4000-8000-0000000000E2"
+
+_NEW_KINDS = ("voice", "notification_style", "status_pages")
+
+
+def _phrase(phrase_id: str, **extra: Any) -> dict:
+    phrase = {
+        "id": phrase_id,
+        "message": "Dinner is ready",
+        "label": "Dinner",
+        "icon": "fork.knife",
+        "color": "orange",
+        "displayMode": "icon",
+        "targetSpeakers": ["media_player.made_up_kitchen"],
+    }
+    phrase.update(extra)
+    return phrase
+
+
+def _voice(**extra: Any) -> dict:
+    """A stand-in for TTSConfiguration as the app stores it, made-up entities
+    only."""
+    doc = {
+        "schemaVersion": 1,
+        "phrases": [_phrase(_PHRASE_A), _phrase(_PHRASE_B, label="Bed")],
+        "defaultTTSEngine": "tts.made_up_engine",
+        "defaultSpeakers": ["media_player.made_up_kitchen"],
+        "defaultAssistAgentId": "conversation.made_up_agent",
+        "watchSpeakReplyInSilentMode": False,
+        "watchSpeechVoiceIdentifier": "com.apple.voice.compact.en-US.Samantha",
+    }
+    doc.update(extra)
+    return doc
+
+
+def _notification_style(**extra: Any) -> dict:
+    """A stand-in for NotificationStyleConfig: a flat object the store never
+    reads past the envelope."""
+    doc = {
+        "schemaVersion": 1,
+        "buttonFill": "tinted",
+        "storedDeliveryMode": "direct",
+        "tapSoundVolume": 0.4,
+    }
+    doc.update(extra)
+    return doc
+
+
+def _row(row_id: str, **extra: Any) -> dict:
+    row = {
+        "id": row_id,
+        "rowType": "entity",
+        "entityId": "sensor.made_up_temperature",
+        "displayName": "Temperature",
+        "domain": "sensor",
+        "iconName": "thermometer",
+    }
+    row.update(extra)
+    return row
+
+
+def _status_pages(**extra: Any) -> dict:
+    """The status pages document: the app's bare array of StatusPageConfig,
+    wrapped in an object."""
+    doc = {
+        "schemaVersion": 1,
+        "statusPages": [
+            {"id": _STATUS_PAGE_A, "name": "Climate", "isSystemDefault": True,
+             "rows": [_row(_ROW_A), _row(_ROW_B, rowType="sectionHeader")],
+             "rowStyle": "plain"},
+            {"id": _STATUS_PAGE_B, "name": "Doors", "rows": []},
+        ],
+    }
+    doc.update(extra)
+    return doc
+
+
+@pytest.mark.parametrize("kind", _NEW_KINDS)
+def test_a_device_may_save_and_read_each_batch_2_kind(mod, kind):
+    store = _new(mod)
+    heard = _listen(store)
+    doc = _first_copy(kind)
+    doc["futureKey"] = {"kept": True}
+    record = _put(store, kind=kind, doc=doc)
+    assert (record.revision, record.delivered_revision, record.hash) == (1, 1, HASH_1)
+    assert store.get(OWNER, kind).document == doc
+    record = _put(store, kind=kind, doc=_first_copy(kind), base=1, digest=HASH_2)
+    assert record.revision == 2
+    assert [e.revision for e in store.history(OWNER, kind)] == [1]
+    assert heard == [(OWNER, kind, 1), (OWNER, kind, 2)]
+    assert store.revisions(OWNER) == {kind: 2}
+
+
+@pytest.mark.parametrize(
+    ("kind", "cap"),
+    [
+        ("voice", MAX_VOICE_BYTES),
+        ("notification_style", MAX_NOTIFICATION_STYLE_BYTES),
+        ("status_pages", MAX_STATUS_PAGES_BYTES),
+    ],
+)
+def test_each_batch_2_kind_has_its_own_cap(mod, kind, cap):
+    store = _new(mod)
+    base = _first_copy(kind)
+    overhead = mod.document_size({**base, "b": ""})
+    assert _put(store, kind=kind, doc={**base, "b": "x" * (cap - overhead)}).revision == 1
+    with pytest.raises(mod.WatchConfigValidationError, match=f"limit for {kind}"):
+        _put(store, kind=kind, doc={**base, "b": "x" * (cap - overhead + 1)}, base=1)
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        {"phrases": []},
+        _voice(),
+        _voice(phrases=[_phrase(f"P{i}") for i in range(8)]),
+        # The optionals may be null, as a JSON writer may spell "not set".
+        _voice(defaultAssistAgentId=None, watchSpeakReplyInSilentMode=None,
+               watchSpeechVoiceIdentifier=None, schemaVersion=None),
+        _voice(defaultSpeakers=[]),
+        # A phrase's keys besides its id are never looked at.
+        _voice(phrases=[{"id": "a", "message": 7, "volume": "loud"}]),
+    ],
+)
+def test_voice_settings_of_any_shape_the_guard_allows_are_accepted(mod, document):
+    store = _new(mod)
+    assert _put(store, kind="voice", doc=document).document == document
+
+
+@pytest.mark.parametrize(
+    ("document", "message"),
+    [
+        ([], "document must be a JSON object"),
+        ({}, "document.phrases must be a list"),
+        (_voice(phrases=None), "document.phrases must be a list"),
+        (_voice(phrases={}), "document.phrases must be a list"),
+        (_voice(phrases=[_phrase(f"P{i}") for i in range(9)]),
+         "document.phrases holds 9 phrases; the limit is 8"),
+        (_voice(phrases=["Dinner"]), r"document.phrases\[0\] must be an object"),
+        (_voice(phrases=[_phrase("a"), {"message": "hi"}]),
+         r"document.phrases\[1\].id must be a non-empty string"),
+        (_voice(phrases=[_phrase("")]), r"document.phrases\[0\].id must be a non-empty string"),
+        (_voice(phrases=[_phrase(3)]), r"document.phrases\[0\].id must be a non-empty string"),
+        (_voice(phrases=[_phrase("ab"), _phrase("c"), _phrase("AB")]),
+         r'document.phrases\[2\] has the phrase id "AB" of document.phrases\[0\]; '
+         "phrase ids must be unique"),
+        (_voice(defaultSpeakers="media_player.made_up"),
+         "document.defaultSpeakers must be a list of strings"),
+        (_voice(defaultSpeakers=[None]), "document.defaultSpeakers must be a list of strings"),
+        (_voice(defaultSpeakers=None), "document.defaultSpeakers must be a list of strings"),
+        (_voice(defaultTTSEngine=None), "document.defaultTTSEngine must be a string"),
+        (_voice(defaultAssistAgentId=4), "document.defaultAssistAgentId must be a string"),
+        (_voice(watchSpeechVoiceIdentifier=[]),
+         "document.watchSpeechVoiceIdentifier must be a string"),
+        (_voice(watchSpeakReplyInSilentMode="yes"),
+         "document.watchSpeakReplyInSilentMode must be a bool"),
+        (_voice(schemaVersion="1"), "document.schemaVersion must be an integer"),
+        (_voice(schemaVersion=True), "document.schemaVersion must be an integer"),
+    ],
+)
+def test_voice_settings_of_the_wrong_shape_are_refused(mod, document, message):
+    store = _new(mod)
+    with pytest.raises(mod.WatchConfigValidationError, match=message):
+        _put(store, kind="voice", doc=document)
+    assert store.get(OWNER, "voice") is None
+    assert _FakeStore.writes == []
+
+
+@pytest.mark.parametrize("document", [{}, _notification_style(), {"anything": [1, None]}])
+def test_the_notification_style_is_any_json_object(mod, document):
+    store = _new(mod)
+    assert _put(store, kind="notification_style", doc=document).document == document
+
+
+@pytest.mark.parametrize("document", [[], "direct", 3])
+def test_a_notification_style_that_is_not_an_object_is_refused(mod, document):
+    store = _new(mod)
+    with pytest.raises(mod.WatchConfigValidationError, match="document must be a JSON object"):
+        _put(store, kind="notification_style", doc=document)
+    assert store.get(OWNER, "notification_style") is None
+
+
+def _pages_of(*pages: Any) -> dict:
+    return {"schemaVersion": 1, "statusPages": list(pages)}
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        {"statusPages": []},
+        _status_pages(),
+        # The same row id in two pages is two lists, not a clash.
+        _pages_of({"id": "a", "name": "A", "rows": [{"id": "r"}]},
+                  {"id": "b", "name": "", "rows": [{"id": "r"}]}),
+        # Keys besides the ids and the name are never looked at.
+        _pages_of({"id": "a", "name": "A", "rows": [{"id": "r", "rowType": 9}],
+                   "rowSpacing": "wide"}),
+    ],
+)
+def test_status_pages_of_any_shape_the_guard_allows_are_accepted(mod, document):
+    store = _new(mod)
+    assert _put(store, kind="status_pages", doc=document).document == document
+
+
+@pytest.mark.parametrize(
+    ("document", "message"),
+    [
+        ([], "document must be a JSON object"),
+        ({}, "document.statusPages must be a list"),
+        ({"statusPages": {}}, "document.statusPages must be a list"),
+        (_pages_of("Climate"), r"document.statusPages\[0\] must be an object"),
+        (_pages_of({"name": "A", "rows": []}),
+         r"document.statusPages\[0\].id must be a non-empty string"),
+        (_pages_of({"id": "", "name": "A", "rows": []}),
+         r"document.statusPages\[0\].id must be a non-empty string"),
+        (_pages_of({"id": "ab", "name": "A", "rows": []}, {"id": "AB", "name": "B", "rows": []}),
+         r'document.statusPages\[1\] has the page id "AB" of document.statusPages\[0\]; '
+         "page ids must be unique"),
+        (_pages_of({"id": "a", "rows": []}), r"document.statusPages\[0\].name must be a string"),
+        (_pages_of({"id": "a", "name": None, "rows": []}),
+         r"document.statusPages\[0\].name must be a string"),
+        (_pages_of({"id": "a", "name": "A"}), r"document.statusPages\[0\].rows must be a list"),
+        (_pages_of({"id": "a", "name": "A", "rows": {}}),
+         r"document.statusPages\[0\].rows must be a list"),
+        (_pages_of({"id": "a", "name": "A", "rows": ["sensor.x"]}),
+         r"document.statusPages\[0\].rows\[0\] must be an object"),
+        (_pages_of({"id": "a", "name": "A", "rows": [{"id": "r"}, {"entityId": "sensor.x"}]}),
+         r"document.statusPages\[0\].rows\[1\].id must be a non-empty string"),
+        (_pages_of({"id": "a", "name": "A", "rows": [{"id": "r"}, {"id": "R"}]}),
+         r'document.statusPages\[0\].rows\[1\] has the row id "R" of rows\[0\]; '
+         "row ids must be unique in a page"),
+    ],
+)
+def test_status_pages_of_the_wrong_shape_are_refused(mod, document, message):
+    store = _new(mod)
+    with pytest.raises(mod.WatchConfigValidationError, match=message):
+        _put(store, kind="status_pages", doc=document)
+    assert store.get(OWNER, "status_pages") is None
+    assert _FakeStore.writes == []
+
+
+@pytest.mark.parametrize("kind", _NEW_KINDS)
+def test_the_panel_may_save_and_restore_each_batch_2_kind(mod, kind):
+    store = _new(mod)
+    original = _first_copy(kind)
+    _put(store, kind=kind, doc=original)
+    edited = {**original, "schemaVersion": 2}
+    record = store.panel_save(OWNER, kind, edited, base_revision=1)
+    assert (record.revision, record.updated_by, record.document) == (2, "panel", edited)
+    assert record.hash == mod.canonical_hash(edited)
+    assert record.delivered_revision == 1
+    record = store.restore(OWNER, kind, 1, base_revision=2)
+    assert (record.revision, record.updated_by, record.document) == (3, "panel", original)
+
+
+@pytest.mark.parametrize(
+    ("kind", "bad", "message"),
+    [
+        ("voice", _voice(phrases=[_phrase("a"), _phrase("a")]), "phrase ids must be unique"),
+        ("notification_style", [], "document must be a JSON object"),
+        ("status_pages", _pages_of({"id": "a", "name": "A", "rows": [{}]}),
+         r"rows\[0\].id must be a non-empty string"),
+    ],
+)
+def test_a_panel_save_of_a_batch_2_kind_is_shape_checked(mod, kind, bad, message):
+    store = _new(mod)
+    _put(store, kind=kind, doc=_first_copy(kind))
+    with pytest.raises(mod.WatchConfigValidationError, match=message):
+        store.panel_save(OWNER, kind, bad, base_revision=1)
+    assert store.get(OWNER, kind).revision == 1
+
+
+@pytest.mark.parametrize("kind", _NEW_KINDS)
+def test_the_panel_never_creates_a_batch_2_record_for_a_watch_that_is_not_paired(mod, kind):
+    store = _new(mod, paired={OTHER})
+    heard = _listen(store)
+    with pytest.raises(mod.WatchConfigNoRecordError) as exc:
+        store.panel_save(OWNER, kind, _first_copy(kind), base_revision=0)
+    assert exc.value.message == (
+        f"there is no stored {kind} record and this watch is not paired; "
+        "pair it before starting its config here"
+    )
+    assert store.get(OWNER, kind) is None
+    assert heard == []
+    assert _FakeStore.writes == []
+
+
+def test_every_kind_is_forgotten_and_moved_with_its_owner(mod):
+    store = _new(mod, paired={OWNER})
+    for kind in sorted(PANEL_KINDS):
+        store.panel_save(OWNER, kind, _first_copy(kind), base_revision=0)
+    assert store.revisions(OWNER) == {kind: 1 for kind in PANEL_KINDS}
+    assert sorted(store.move_owner(OWNER, OTHER, updated_by="t")) == sorted(PANEL_KINDS)
+    assert store.get(OTHER, "status_pages").document == _status_pages()
+    heard = _listen(store)
+    assert store.forget_owner(OTHER) is True
+    assert sorted(heard) == sorted((OTHER, kind, 0) for kind in PANEL_KINDS)
+    assert store.revisions(OTHER) == {}
 
 
 # ── step 3: files written before it ──────────────────────────────────────
