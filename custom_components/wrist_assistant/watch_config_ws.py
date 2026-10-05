@@ -176,7 +176,8 @@ def ws_watch_config_summary(
     """Where every watch's panel-written records have got to, in one answer.
 
     Result: {"owners": {<owner_watch_id>: {<kind>: {"revision",
-             "delivered_revision", "rejected_revision"}}}}
+             "delivered_revision", "rejected_revision"}}},
+             "http_actions"?: {"revision", "delivered": {<owner id>: <n>}}}
 
     The panel's Home asks this to say which watches are still waiting, where
     it used to read every record of every watch, document and all. Only
@@ -184,6 +185,11 @@ def ws_watch_config_summary(
     writes are listed, a kind with no record is left out, and so is a watch
     whose stored file could not be read: the panel then says nothing about
     that watch rather than calling it fine. Reading changes nothing.
+
+    ``http_actions`` is the home's one HTTP action library (step 4d batch
+    4): its revision and the last revision each device pulled, so Home can
+    say which watch still waits for it. It is left out when the library's
+    file could not be read, and on an integration that has no library.
     """
     store = _store(hass)
     if store is None:
@@ -205,7 +211,14 @@ def ws_watch_config_summary(
         except WatchConfigStoreError:
             continue
         owners[owner_watch_id] = kinds
-    connection.send_result(msg["id"], {"owners": owners})
+    result: dict[str, Any] = {"owners": owners}
+    http_actions = getattr(hass.data.get(DOMAIN), "http_actions_store", None)
+    if http_actions is not None and http_actions.available:
+        result["http_actions"] = {
+            "revision": http_actions.revision,
+            "delivered": http_actions.delivered(),
+        }
+    connection.send_result(msg["id"], result)
 
 
 @websocket_api.require_admin

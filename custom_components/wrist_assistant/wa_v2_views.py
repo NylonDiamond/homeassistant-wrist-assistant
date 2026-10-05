@@ -130,6 +130,8 @@ from .const import (
     WA_STREAM_TOKEN_TTL_SECONDS,
     WristAssistantData,
 )
+from .http_actions_runner import HTTPActionRefusal
+from .http_actions_store import HTTPActionsStoreError, HTTPActionsUnavailableError
 from .logbook_events import (
     log_hmac_failure,
     log_push_token_registered,
@@ -3455,11 +3457,133 @@ async def _op_watch_voices_put(ctx: _OpContext) -> Response:
     return ctx.signed_json({"ok": True, "hash": entry.hash, "count": len(entry.voices)})
 
 
+# ── HTTP actions (step 4d batch 4) ────────────────────────────────────────
+#
+# The home keeps one HTTP action library (``http_actions_store.py``). A phone
+# hands its own over once, signed as its watch; a device pulls the public
+# list (ids, names and the questions to ask, never a URL, header, body or
+# global); and a run is sent by Home Assistant (``http_actions_runner.py``).
+# Any device with a valid pair may run any action of the home.
+
+
+def _http_actions_refusal(
+    ctx: _OpContext, code: str, message: str, status: int
+) -> Response:
+    return ctx.signed_json({"ok": False, "error": code, "message": message}, status=status)
+
+
+def _http_actions_store_refusal(ctx: _OpContext, err: HTTPActionsStoreError) -> Response:
+    status = 503 if isinstance(err, HTTPActionsUnavailableError) else 400
+    return _http_actions_refusal(ctx, err.code, err.message, status)
+
+
+async def _op_http_actions_hand_over(ctx: _OpContext) -> Response:
+    """A phone gives the home its HTTP action library, once per owner.
+
+    Body:  {"document": {HTTPActionConfig}}
+    Reply: {"ok": true, "revision": <int>, "added": <actions added>}
+    Refusal: signed 400 {"ok": false, "error": "invalid", "message"} for a
+             library that breaks the rules (nothing is merged and the owner
+             is not listed); signed 503 "unavailable".
+
+    The owner is the signing id: the phone signs as its watch. A pure merge
+    (``http_actions.merge_hand_over``): stored actions and globals are never
+    changed, a clashing global comes in under a new key. A second hand-over
+    from an owner already listed changes nothing and answers the stored
+    revision with ``added`` 0. An empty library still lists the owner.
+    """
+    store = getattr(ctx.domain_data, "http_actions_store", None)
+    if store is None:
+        return _http_actions_refusal(ctx, "unavailable", "integration not ready", 503)
+    try:
+        revision, added = store.hand_over(ctx.watch_id, ctx.payload.get("document"))
+    except HTTPActionsStoreError as err:
+        return _http_actions_store_refusal(ctx, err)
+    return ctx.signed_json({"ok": True, "revision": revision, "added": added})
+
+
+async def _op_http_actions_get(ctx: _OpContext) -> Response:
+    """The home's public HTTP action list, for a device's pickers and prompts.
+
+    Body:  {"since_revision": <int>?}
+    Reply: {"ok": true, "revision", "hash", "handed_over": <bool>,
+            "document"?}
+
+    ``document`` is the public list (``http_actions.public_list``) and
+    ``hash`` its canonical hash; both describe the list, never the stored
+    library, which no device is sent. ``document`` is left out when
+    ``since_revision`` is the stored revision, and at revision 0 (``hash``
+    then null). ``handed_over`` says whether the signer's phone has given
+    its library. A reply about a stored revision marks it delivered for the
+    signer, which the panel's Home reads.
+    """
+    store = getattr(ctx.domain_data, "http_actions_store", None)
+    if store is None:
+        return _http_actions_refusal(ctx, "unavailable", "integration not ready", 503)
+    since = ctx.payload.get("since_revision")
+    if since is not None and (isinstance(since, bool) or not isinstance(since, int) or since < 0):
+        return _http_actions_refusal(
+            ctx, "invalid", "since_revision must be a non-negative integer", 400
+        )
+    try:
+        revision, listed, digest = store.public()
+    except HTTPActionsStoreError as err:
+        return _http_actions_store_refusal(ctx, err)
+    reply: dict[str, Any] = {
+        "ok": True,
+        "revision": revision,
+        "hash": digest,
+        "handed_over": store.has_handed_over(ctx.watch_id),
+    }
+    if listed is not None and since != revision:
+        reply["document"] = listed
+    response = ctx.signed_json(reply)
+    # After the reply is built, as for watch_config_get.
+    store.mark_delivered(ctx.watch_id, revision)
+    return response
+
+
+async def _op_http_action_run(ctx: _OpContext) -> Response:
+    """Send one of the home's HTTP actions for the signing device.
+
+    Body:  {"id": <action id>, "values": {key: string}, "audio"?: base64}
+    Reply: {"ok": true, "status": int | null, "value": string | null,
+            "snippet": string, "error": string | null}
+    Refusal: signed {"ok": false, "error", "message"}: ``not_found`` 404 (no
+             such action), ``needs_setup`` 409 (no URL yet),
+             ``missing_audio`` 400 (a voice action with no clip),
+             ``invalid`` 400 (audio that is not base64, or too long),
+             ``busy`` 429 (four runs of this device still going),
+             ``unavailable`` 503.
+
+    Always 200 once the action was tried, whatever came back: ``status`` is
+    null when no answer came and ``error`` then says why in the words the
+    watch shows. ``value`` is the reply value with its unit and ``snippet``
+    the first line of the answer, as the watch reads them itself.
+    """
+    store = getattr(ctx.domain_data, "http_actions_store", None)
+    runner = getattr(ctx.domain_data, "http_action_runner", None)
+    if store is None or runner is None:
+        return _http_actions_refusal(ctx, "unavailable", "integration not ready", 503)
+    try:
+        document = store.document()
+    except HTTPActionsStoreError as err:
+        return _http_actions_store_refusal(ctx, err)
+    try:
+        reply = await runner.async_run(document, ctx.payload, device=ctx.watch_id)
+    except HTTPActionRefusal as err:
+        return _http_actions_refusal(ctx, err.code, err.message, err.status)
+    return ctx.signed_json(reply)
+
+
 # Op dispatch table. Adding a new op = add a key here.
 _OP_HANDLERS: dict[str, Any] = {
     "watch_config_get": _op_watch_config_get,
     "watch_config_put": _op_watch_config_put,
     "watch_voices_put": _op_watch_voices_put,
+    "http_actions_hand_over": _op_http_actions_hand_over,
+    "http_actions_get": _op_http_actions_get,
+    "http_action_run": _op_http_action_run,
     "complications_sync": _op_complications_sync,
     "complications_restore": _op_complications_restore,
     "complications_create": _op_complications_create,

@@ -15,10 +15,11 @@ templates, a watch's whole page config, or what a watch waiting to pair
 reported. The exceptions, at most one per module, are listed in
 ``_NOT_ADMIN``.
 
-Three modules hold commands: ``complication_ws.py`` (the editor),
-``watch_config_ws.py`` (the Watch settings view and the page editor) and
-``pairing_ws.py`` (confirming a watch's pairing code). Each is checked on its
-own, since each has its own registration function.
+Four modules hold commands: ``complication_ws.py`` (the editor),
+``watch_config_ws.py`` (the Watch settings view and the page editor),
+``pairing_ws.py`` (confirming a watch's pairing code) and
+``http_actions_ws.py`` (the home's HTTP action library). Each is checked on
+its own, since each has its own registration function.
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ _PKG = Path(__file__).resolve().parents[1] / "custom_components" / "wrist_assist
 _MODULE = _PKG / "complication_ws.py"
 _WATCH_CONFIG_MODULE = _PKG / "watch_config_ws.py"
 _PAIRING_MODULE = _PKG / "pairing_ws.py"
+_HTTP_ACTIONS_MODULE = _PKG / "http_actions_ws.py"
 
 # The Watch settings view's and the page editor's commands. Admin-only like
 # every other: history_entry hands out a whole past document, and restore
@@ -51,6 +53,15 @@ _WATCH_CONFIG_ADMIN_ONLY = {
 _PAIRING_ADMIN_ONLY = {
     "ws_pair_lookup",
     "ws_pair_confirm",
+}
+
+# The panel's HTTP actions screen (step 4d batch 4). A read hands out every
+# URL, header and global of the home, and a test sends a request from Home
+# Assistant to wherever the draft points. Admin only.
+_HTTP_ACTIONS_ADMIN_ONLY = {
+    "ws_http_actions_get",
+    "ws_http_actions_save",
+    "ws_http_actions_test",
 }
 
 # Every command this module defines. All of them are admin-only; the set is
@@ -93,10 +104,11 @@ _NOT_ADMIN = {
     _MODULE.name: {"ws_owner_subscribe"},
     _WATCH_CONFIG_MODULE.name: {"ws_watch_config_subscribe"},
     _PAIRING_MODULE.name: set(),
+    _HTTP_ACTIONS_MODULE.name: set(),
 }
 
 
-_MODULES = [_MODULE, _WATCH_CONFIG_MODULE, _PAIRING_MODULE]
+_MODULES = [_MODULE, _WATCH_CONFIG_MODULE, _PAIRING_MODULE, _HTTP_ACTIONS_MODULE]
 # Per module: the commands it must define, and which of them skip the gate.
 _EXPECTED = {
     _MODULE.name: (_ADMIN_ONLY | _NOT_ADMIN[_MODULE.name], _NOT_ADMIN[_MODULE.name]),
@@ -105,6 +117,10 @@ _EXPECTED = {
         _NOT_ADMIN[_WATCH_CONFIG_MODULE.name],
     ),
     _PAIRING_MODULE.name: (_PAIRING_ADMIN_ONLY, _NOT_ADMIN[_PAIRING_MODULE.name]),
+    _HTTP_ACTIONS_MODULE.name: (
+        _HTTP_ACTIONS_ADMIN_ONLY,
+        _NOT_ADMIN[_HTTP_ACTIONS_MODULE.name],
+    ),
 }
 
 
@@ -215,3 +231,17 @@ def test_the_watch_pairing_capability_is_advertised() -> None:
     const = (_PKG / "const.py").read_text()
     assert "register_capability(WATCH_PAIRING_CAPABILITY)" in init
     assert 'WATCH_PAIRING_CAPABILITY = "watch_pairing"' in const
+
+
+def test_the_http_actions_commands_are_registered_at_setup() -> None:
+    source = (_PKG / "__init__.py").read_text()
+    assert "async_register_http_actions_commands(hass)" in source
+
+
+def test_the_http_actions_capability_is_advertised() -> None:
+    """The phone hands its library over, and a watch runs actions through
+    Home Assistant, only when it sees this."""
+    init = (_PKG / "__init__.py").read_text()
+    const = (_PKG / "const.py").read_text()
+    assert "register_capability(HTTP_ACTIONS_CAPABILITY)" in init
+    assert 'HTTP_ACTIONS_CAPABILITY = "http_actions"' in const

@@ -994,3 +994,29 @@ def test_save_of_a_malformed_batch_2_document_is_invalid(env, kind, document, me
     )
     assert (code, got) == ("invalid", message)
     assert _get(env, kind)["revision"] == 0
+
+
+class _FakeLibrary:
+    """The bits of ``HTTPActionsStore`` the summary reads."""
+
+    def __init__(self, revision: int, delivered: dict[str, int], available: bool = True) -> None:
+        self.revision = revision
+        self._delivered = delivered
+        self.available = available
+
+    def delivered(self) -> dict[str, int]:
+        return dict(self._delivered)
+
+
+def test_the_summary_names_the_home_s_http_action_library(env) -> None:
+    """Step 4d batch 4: Home reads which watch still waits for the library
+    from the same answer. Left out with no library, and for a file that
+    could not be read."""
+    assert "http_actions" not in _ok(env, env.ws.ws_watch_config_summary)
+    domain = env.hass.data[DOMAIN]
+    domain.http_actions_store = _FakeLibrary(3, {"watch-A": 3, "watch-B": 1})
+    summary = _ok(env, env.ws.ws_watch_config_summary)
+    assert summary["http_actions"] == {"revision": 3, "delivered": {"watch-A": 3, "watch-B": 1}}
+    assert set(summary) == {"owners", "http_actions"}
+    domain.http_actions_store = _FakeLibrary(3, {}, available=False)
+    assert "http_actions" not in _ok(env, env.ws.ws_watch_config_summary)
