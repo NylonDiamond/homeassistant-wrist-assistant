@@ -17,7 +17,9 @@
 // with restore, the delivery check, and the size budget. The `catalog` and
 // `behavior` records are read beside it, read only, for the pickers' names;
 // the live line reads them again when they change and merges a `menus`
-// change into the open draft.
+// change into the open draft. The home's HTTP action library
+// (`watch-pages/http-library.ts`) is read when a watch opens and on a
+// reconnect; it has no live line.
 //
 // The `pages` record is read beside it too, into the page draft the page
 // editor keeps for the watch (`watch-pages/kept.ts`): a page's own settings
@@ -57,6 +59,7 @@ import {
   type WatchConfigHistoryEntry,
   type WatchConfigRecord,
   fetchOwners,
+  fetchHttpActions,
   fetchWatchConfig,
   fetchWatchConfigHistory,
   fetchWatchConfigHistoryEntry,
@@ -78,6 +81,7 @@ import {
   watchCatalogReadMeansNone,
   watchStatusPagesFromRecord,
 } from "../watch-pages/catalog.js";
+import { type WatchHttpLibrary, readWatchHttpLibrary, watchCatalogWithHttpLibrary, watchHttpLibraryReadMeansNone } from "../watch-pages/http-library.js";
 import {
   SavedAgoTicker,
   configFootStatus,
@@ -364,6 +368,11 @@ export class WaMenuEditor extends LitElement {
    * Show Status Page target lists before the iPhone's; undefined while Home
    * Assistant holds none or before the first read. */
   @state() private statusPages?: WatchCatalogStatusPage[];
+  /** The home's HTTP action library (`http-library.ts`), the same for every
+   * watch, read when a watch opens and on a reconnect (it has no live line);
+   * undefined before the first read and with an integration older than it. */
+  @state() private httpLibrary?: WatchHttpLibrary;
+  private httpLibrarySeq = 0;
   /** The pages record as last read: its revision (0 for none) and the
    * document. Undefined before the first read. The pages shown come from the
    * page draft when there is one (`pagesDocument`). */
@@ -536,6 +545,7 @@ export class WaMenuEditor extends LitElement {
     this.loadSeq++;
     this.catalogSeq++;
     this.statusPagesSeq++;
+    this.httpLibrarySeq++;
     this.pagesSeq++;
     this.behaviorSeq++;
     this.voiceSeq++;
@@ -635,6 +645,7 @@ export class WaMenuEditor extends LitElement {
     if (!this.isConnected || watchId === undefined) return;
     void this.load(watchId, true);
     void this.loadCatalog(watchId);
+    void this.loadHttpLibrary();
     void this.loadStatusPages(watchId);
     void this.loadPages(watchId);
     void this.loadBehavior(watchId);
@@ -709,6 +720,7 @@ export class WaMenuEditor extends LitElement {
     this.startSubscription(watchId);
     void this.load(watchId, quiet);
     void this.loadCatalog(watchId);
+    void this.loadHttpLibrary();
     void this.loadStatusPages(watchId);
     void this.loadPages(watchId);
     void this.loadBehavior(watchId);
@@ -749,6 +761,24 @@ export class WaMenuEditor extends LitElement {
     } catch (error) {
       if (seq !== this.catalogSeq || watchId !== this.watchId) return;
       if (watchCatalogReadMeansNone(error)) this.catalog = undefined;
+    }
+  }
+
+  /** The home's HTTP action library, for the Run HTTP Action target. An
+   * integration older than it does not know the command: none, and the
+   * target lists the iPhone's catalog alone. Any other failure keeps what
+   * is shown. Only the newest read lands. */
+  private async loadHttpLibrary(): Promise<void> {
+    const hass = this.hass;
+    if (!hass) return;
+    const seq = ++this.httpLibrarySeq;
+    try {
+      const record = await fetchHttpActions(hass);
+      if (seq !== this.httpLibrarySeq) return;
+      this.httpLibrary = readWatchHttpLibrary(record);
+    } catch (error) {
+      if (seq !== this.httpLibrarySeq) return;
+      if (watchHttpLibraryReadMeansNone(error)) this.httpLibrary = undefined;
     }
   }
 
@@ -1028,7 +1058,8 @@ export class WaMenuEditor extends LitElement {
       pages: this.pages,
       // The watch's own status pages first, else the iPhone's list.
       statusPages: this.statusPages ?? this.catalog?.statusPages ?? [],
-      httpActions: this.catalog?.httpActions ?? [],
+      // The home's library first, then the iPhone's own.
+      httpActions: watchCatalogWithHttpLibrary(this.catalog, this.httpLibrary)?.httpActions ?? [],
       // Unknown, not empty, while Home Assistant holds no voice settings: a
       // Speak Phrase slot's phrase may well be on the iPhone.
       phrases: this.voiceDocument === undefined ? undefined : voicePhraseTargets(this.voiceDocument),
@@ -1063,6 +1094,7 @@ export class WaMenuEditor extends LitElement {
       get document() { return draft.document; },
       get targets() { return self.targets(); },
       get catalogKnown() { return self.catalog !== undefined; },
+      get httpLibrary() { return self.httpLibrary === undefined ? undefined : self.httpLibrary.revision > 0 ? "held" as const : "empty" as const; },
       get statusPagesKnown() { return self.statusPages !== undefined; },
       get voice() { return self.voiceContext(); },
       get busy() { return self.saving; },

@@ -54,14 +54,19 @@ import {
 } from "../src/watch-menus/menu-view.js";
 import {
   ANYWHERE,
+  type MenuTargets,
   type MenusDocument,
+  NO_MENU_TARGETS,
+  setWatchMenuActionKey,
   setWatchMenuSlotColor,
   setWatchMenuSlotVisible,
   setWatchMenuStyle,
   watchMenuRingPoint,
   watchMenuSlots,
 } from "../src/watch-menus/model.js";
+import { readWatchCatalog } from "../src/watch-pages/catalog.js";
 import { WatchPagesDraft } from "../src/watch-pages/draft.js";
+import { readWatchHttpLibrary, watchCatalogWithHttpLibrary } from "../src/watch-pages/http-library.js";
 import { findWatchPage } from "../src/watch-pages/edit.js";
 import { WATCH_PAGES_PATH } from "../src/watch-pages/hook.js";
 import { takeWatchPagesRecord } from "../src/watch-pages/kept.js";
@@ -829,5 +834,131 @@ describe("the note after saving both", () => {
     expect(joinSaveNotes(undefined, { kind: "warn", text: "B." })).toEqual({ kind: "warn", text: "B." });
     expect(joinSaveNotes({ kind: "ok", text: "A." }, { kind: "err", text: "B." })).toEqual({ kind: "err", text: "A. B." });
     expect(joinSaveNotes({ kind: "ok", text: "Same." }, { kind: "ok", text: "Same." })).toEqual({ kind: "ok", text: "Same." });
+  });
+});
+
+// ── Run HTTP Action over the home's library ──────────────────────────────
+
+describe("the Run HTTP Action target", () => {
+  const CONFIGURED = JSON.parse(readFileSync(join(__dirname, "fixtures-menus", "02-configured.json"), "utf8")) as MenusDocument;
+  const CATALOG = readWatchCatalog(JSON.parse(readFileSync(join(__dirname, "fixtures-catalog", "catalog.json"), "utf8")), { revision: 3 });
+  /** The fixture's Anywhere slot that runs an HTTP action, and its target. */
+  const HTTP_SLOT = "3E4D1000-0000-4000-8000-000000000002";
+  const STORED = "3E4D1000-0000-4000-8000-000000000384";
+  const PORCH = "A1B2C3D4-0000-4000-8000-0000000000A1";
+  const BLANK = "A1B2C3D4-0000-4000-8000-0000000000A2";
+  const LIBRARY = readWatchHttpLibrary({
+    revision: 5,
+    document: { actions: [
+      { id: STORED.toLowerCase(), name: "Gate", url: "https://gate.local" },
+      { id: PORCH, name: "Porch Temp", url: "http://porch.local", responseConfig: { source: "bodyText" } },
+      { id: BLANK, name: "Unfinished", url: "" },
+    ] },
+  })!;
+
+  function inspector(targets: MenusViewHost["targets"], patch: Partial<MenusViewHost> = {}): string {
+    const h = { ...host(CONFIGURED), targets, ...patch } as MenusViewHost;
+    h.uiState.set("me:sel:anywhere", HTTP_SLOT);
+    return flat(renderMenuInspector(h));
+  }
+
+  /** The text of the HTTP action field: its select and the lines under it. */
+  function field(text: string): string {
+    const at = text.indexOf("<span>HTTP action</span>");
+    return at < 0 ? "" : text.slice(at, text.indexOf("</label>", text.indexOf("</select>", at)) + 300);
+  }
+
+  it("lists the library first, then the iPhone's own, each marked", () => {
+    const joined = watchCatalogWithHttpLibrary(CATALOG, LIBRARY)!;
+    const text = field(inspector({ ...NO_MENU_TARGETS, httpActions: joined.httpActions }, { catalogKnown: true, httpLibrary: "held" }));
+    const options = [...text.matchAll(/<option value=[^ ]+ \?selected=(?:true|false)>([^<]*)<\/option>/g)].map((m) => m[1]);
+    expect(options).toEqual([
+      "Gate",
+      "Porch Temp",
+      "Unfinished (needs setup)",
+      "Open Gate (on the iPhone)",
+      "Outdoor Temp (on the iPhone)",
+      "HTTP Action (on the iPhone)",
+      "Garage Door (needs setup on the iPhone)",
+    ]);
+    // The stored id is the library's Gate, in another case: picked, not missing.
+    expect(text).toMatch(/<option value=3e4d1000-0000-4000-8000-000000000384 \?selected=true>Gate<\/option>/);
+    expect(text).not.toContain("Not on the iPhone");
+  });
+
+  it("a library action that needs setup says so, with the way to the HTTP actions screen", () => {
+    const h = { ...host(CONFIGURED), targets: { ...NO_MENU_TARGETS, httpActions: LIBRARY.actions }, httpLibrary: "held" as const };
+    h.uiState.set("me:sel:anywhere", HTTP_SLOT);
+    const blank = setWatchMenuActionKey(CONFIGURED, ANYWHERE, HTTP_SLOT, "entityId", BLANK);
+    const view = renderMenuInspector({ ...h, document: blank });
+    expect(flat(view)).toContain(`<div class="hint warn ts-under">Needs setup. <button type="button" class="link"`);
+    const pushed: string[] = [];
+    vi.stubGlobal("window", { location: { pathname: "/wrist-assistant/menus/w1" }, dispatchEvent: () => true });
+    vi.stubGlobal("history", { state: null, pushState: (_s: unknown, _t: string, url: string) => { pushed.push(url); } });
+    try {
+      handler(view, "Open HTTP actions", "click")({});
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(pushed).toEqual(["/wrist-assistant/http-actions"]);
+  });
+
+  it("a stored action the library alone does not hold is not in the list; beside a catalog, not on the iPhone", () => {
+    const gone = setWatchMenuActionKey(CONFIGURED, ANYWHERE, HTTP_SLOT, "entityId", "C3A0E000-0000-4000-8000-0000000000FF");
+    const alone = watchCatalogWithHttpLibrary(undefined, LIBRARY)!;
+    const only = { ...host(gone), targets: { ...NO_MENU_TARGETS, httpActions: alone.httpActions }, catalogKnown: false, httpLibrary: "held" as const };
+    only.uiState.set("me:sel:anywhere", HTTP_SLOT);
+    const text = flat(renderMenuInspector(only));
+    expect(text).toContain(">Not in the list</option>");
+    // With the library held, the iPhone's line is not asked for.
+    expect(text).not.toContain("Open the iPhone app to list its HTTP actions here.");
+    const both = { ...only, catalogKnown: true };
+    expect(flat(renderMenuInspector(both))).toContain(">Not on the iPhone</option>");
+  });
+
+  it("an empty list points at the HTTP actions screen; an older integration keeps the iPhone's line", () => {
+    const empty = field(inspector(NO_MENU_TARGETS, { catalogKnown: true, httpLibrary: "empty" }));
+    expect(empty).toContain("No HTTP actions yet. Add one on the HTTP actions screen, or in the iPhone app.");
+    expect(empty).toContain("Open HTTP actions");
+    const old = field(inspector(NO_MENU_TARGETS, { catalogKnown: false }));
+    expect(old).toContain("Open the iPhone app to list its HTTP actions here.");
+    expect(old).not.toContain("Open HTTP actions");
+    // The catalog alone: the same list, no iPhone marks, only the phone's
+    // own warning as the page editor shows it.
+    const before = field(inspector({ ...NO_MENU_TARGETS, httpActions: CATALOG.httpActions }, { catalogKnown: true }));
+    expect(before).toContain(">Outdoor Temp</option>");
+    expect(before).toContain(">Garage Door (needs setup on the iPhone)</option>");
+    expect(before).not.toContain("(on the iPhone)");
+  });
+
+  it("is read when a watch opens, which a return to the editor does too, and on a reconnect", () => {
+    const source = readFileSync(join(__dirname, "..", "src", "watch-menus", "menu-editor.ts"), "utf8");
+    expect(source.match(/void this\.loadHttpLibrary\(\);/g)).toHaveLength(2);
+    expect(source).toMatch(/connectedCallback\(\): void \{[\s\S]*?this\.openWatch\(this\.watchId, true\)/);
+  });
+
+  it("the element lists the joined list, and reads the library with the integration's answer", async () => {
+    const { el } = editor();
+    el.catalog = CATALOG;
+    const targets = () => (el.targets as () => MenuTargets).call(el);
+    expect(targets().httpActions).toBe(CATALOG.httpActions);
+    expect((el.viewHost as () => MenusViewHost).call(el)!.httpLibrary).toBeUndefined();
+    let answer: () => Promise<unknown> = async () => ({ revision: 5, document: { actions: [{ id: PORCH, name: "Porch Temp", url: "x" }] } });
+    el.hass = { user: { is_admin: true }, states: {}, connection: { sendMessagePromise: (m: { type: string }) => (m.type === "wrist_assistant/http_actions/get" ? answer() : Promise.reject(new Error("no"))) } } as unknown as HassLike;
+    await (el.loadHttpLibrary as () => Promise<void>).call(el);
+    expect(targets().httpActions.map((a) => a.name)).toEqual(["Porch Temp", "Open Gate", "Outdoor Temp", "HTTP Action", "Garage Door"]);
+    expect((el.viewHost as () => MenusViewHost).call(el)!.httpLibrary).toBe("held");
+    // A dropped socket keeps what is shown; an integration older than the
+    // library has none.
+    answer = () => Promise.reject(new Error("socket closed"));
+    await (el.loadHttpLibrary as () => Promise<void>).call(el);
+    expect(targets().httpActions[0]!.name).toBe("Porch Temp");
+    answer = () => Promise.reject(Object.assign(new Error("Unknown command."), { code: "unknown_command" }));
+    await (el.loadHttpLibrary as () => Promise<void>).call(el);
+    expect(targets().httpActions).toBe(CATALOG.httpActions);
+    answer = async () => ({ revision: 0 });
+    await (el.loadHttpLibrary as () => Promise<void>).call(el);
+    expect(targets().httpActions).toBe(CATALOG.httpActions);
+    expect((el.viewHost as () => MenusViewHost).call(el)!.httpLibrary).toBe("empty");
   });
 });

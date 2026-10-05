@@ -34,6 +34,8 @@ import { renderWatchFrame } from "../watch-frame.js";
 import { type FoldId, anySectionOpen, sectionOpen, setSectionOpen, setSectionsOpen } from "../watch-pages/fold-memory.js";
 import type { JsonObject } from "../watch-pages/model.js";
 import { STAGE_ZOOM_STEPS } from "../watch-pages/stage.js";
+import { WATCH_NOT_IN_LIST_TEXT, WATCH_NOT_ON_IPHONE_TEXT, WATCH_NO_HTTP_ACTIONS_TEXT } from "../watch-pages/catalog.js";
+import { goToWatchHttpActions } from "../shell.js";
 import {
   SWITCHER_SECTION_TITLE,
   type SwitcherSettingsHost,
@@ -44,6 +46,7 @@ import {
 import {
   ANYWHERE,
   MENU_ACTIONS,
+  type MenuHTTPTarget,
   type MenuListRef,
   type MenuPayloadSpec,
   type MenuStyleField,
@@ -112,6 +115,11 @@ export interface MenusViewHost {
   /** Whether the iPhone has published its library (HTTP actions, status
    * pages) here. */
   readonly catalogKnown: boolean;
+  /** Whether Home Assistant keeps the home's HTTP action library: "held"
+   * when it holds one, and `targets.httpActions` lead with it; "empty" when
+   * it holds none yet. Absent with an integration older than the library,
+   * and in a test. */
+  readonly httpLibrary?: "held" | "empty";
   /** Whether the watch's own status pages record loaded. Absent counts as
    * no (a test). */
   readonly statusPagesKnown?: boolean;
@@ -1017,6 +1025,36 @@ function actionSelect(host: MenusViewHost, ref: MenuListRef, slot: JsonObject): 
     </select></label>`;
 }
 
+/** An HTTP action as the picker names it: its name, then "needs setup"
+ * (with "on the iPhone" for the phone's own) or "on the iPhone" for an
+ * iPhone action in a list that leads with the home's. */
+function httpTargetLabel(t: MenuHTTPTarget): string {
+  if (t.needsSetup === true) return `${t.name} (${t.source === "home" ? "needs setup" : "needs setup on the iPhone"})`;
+  return t.source === "iphone" ? `${t.name} (on the iPhone)` : t.name;
+}
+
+/** The way from an HTTP action slot to the HTTP actions screen. */
+function httpActionsLink(): TemplateResult {
+  return html`<button type="button" class="link" @click=${goToWatchHttpActions}>Open HTTP actions</button>`;
+}
+
+/** The lines under an HTTP action target: a home action that needs setup,
+ * an empty list the HTTP actions screen can add to, or, with no list from
+ * either side, where the iPhone's comes from. */
+function httpTargetHints(host: MenusViewHost, list: readonly MenuHTTPTarget[], stored: string): TemplateResult | typeof nothing {
+  const current = list.find((t) => sameId(t.id, stored));
+  if (current?.source === "home" && current.needsSetup === true) {
+    return html`<div class="hint warn ts-under">Needs setup. ${httpActionsLink()}</div>`;
+  }
+  if (host.httpLibrary !== undefined && list.length === 0) {
+    return html`<div class="hint ts-under">${WATCH_NO_HTTP_ACTIONS_TEXT} ${httpActionsLink()}</div>`;
+  }
+  if (!host.catalogKnown && host.httpLibrary !== "held") {
+    return html`<div class="hint ts-under">Open the iPhone app to list its HTTP actions here.</div>`;
+  }
+  return nothing;
+}
+
 function targetSelect(host: MenusViewHost, ref: MenuListRef, slot: JsonObject, raw: string, spec: MenuPayloadSpec): TemplateResult {
   const id = watchMenuSlotId(slot);
   const value = slotAction(slot)[spec.key];
@@ -1026,21 +1064,25 @@ function targetSelect(host: MenusViewHost, ref: MenuListRef, slot: JsonObject, r
   const known = stored === "" || list.some((t) => sameId(t.id, stored));
   const set = (v: string) => host.edit((d) => setWatchMenuActionKey(d, ref, id, spec.key, v === "" ? undefined : v));
   const fromWatch = spec.target === "statusPage" && host.statusPagesKnown === true;
+  // An HTTP action the home's library, the only list there is, does not hold
+  // is "Not in the list".
+  const httpOnlyHome = spec.target === "httpAction" && host.httpLibrary === "held" && !host.catalogKnown;
   const missing = spec.target === "page" ? "A page that is gone"
     : spec.target === "ttsPhrase" ? (host.targets.phrases === undefined ? "A phrase not listed here" : "A phrase that is gone")
-    : fromWatch ? "Not in this watch's status pages" : "Not on the iPhone";
+    : fromWatch ? "Not in this watch's status pages" : httpOnlyHome ? WATCH_NOT_IN_LIST_TEXT : WATCH_NOT_ON_IPHONE_TEXT;
+  const label = (t: MenuHTTPTarget) => (spec.target === "httpAction" ? httpTargetLabel(t) : t.name);
   return html`<label class="field"><span>${payloadLabel(raw, spec)}</span>
     <select .value=${live(list.find((t) => sameId(t.id, stored))?.id ?? stored)} @change=${(e: Event) => set((e.target as HTMLSelectElement).value)}>
       ${spec.required === true ? nothing : html`<option value="" ?selected=${stored === ""}>None</option>`}
       ${known ? nothing : html`<option value=${stored} selected>${missing}</option>`}
-      ${list.map((t) => html`<option value=${t.id} ?selected=${sameId(t.id, stored)}>${t.name}</option>`)}
+      ${list.map((t) => html`<option value=${t.id} ?selected=${sameId(t.id, stored)}>${label(t)}</option>`)}
     </select></label>
     ${spec.target === "ttsPhrase"
       ? (host.voice?.phrases === undefined ? html`<div class="hint ts-under">No voice settings from this watch yet. Add phrases in Voice.</div>` : nothing)
       : spec.target === "statusPage"
       ? (fromWatch || host.catalogKnown ? nothing : html`<div class="hint ts-under">No status pages from this watch yet. Add them in Status pages.</div>`)
-      : spec.target !== "page" && !host.catalogKnown
-      ? html`<div class="hint ts-under">Open the iPhone app to list its HTTP actions here.</div>`
+      : spec.target === "httpAction"
+      ? httpTargetHints(host, host.targets.httpActions, stored)
       : nothing}`;
 }
 

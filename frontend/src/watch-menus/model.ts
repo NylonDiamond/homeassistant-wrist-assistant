@@ -277,11 +277,21 @@ export function slotAction(slot: JsonObject): JsonObject {
   return isJsonObject(slot.action) ? slot.action : {};
 }
 
+/** An HTTP action a slot can run: the home's library first, then the
+ * iPhone's own (`watch-pages/http-library.ts`). `source` and `needsSetup`
+ * only add words to its name in the picker. */
+export interface MenuHTTPTarget {
+  id: string;
+  name: string;
+  source?: "home" | "iphone";
+  needsSetup?: boolean;
+}
+
 /** The pickable targets the panel knows, for an action that needs one. */
 export interface MenuTargets {
   pages: readonly { id: string; name: string }[];
   statusPages: readonly { id: string; name: string }[];
-  httpActions: readonly { id: string; name: string }[];
+  httpActions: readonly MenuHTTPTarget[];
   /** The phrases of the watch's voice settings, for Speak Phrase; absent or
    * empty while Home Assistant holds none. */
   phrases?: readonly { id: string; name: string }[];
@@ -306,8 +316,8 @@ function targetList(targets: MenuTargets, target: MenuPayloadSpec["target"]): re
 
 /** Why an action cannot be picked now, or undefined when it can: an action
  * that needs a target the panel has none of (a phrase before the voice
- * settings hold one; an HTTP action before the iPhone published its
- * library). */
+ * settings hold one; an HTTP action while neither Home Assistant's library
+ * nor the iPhone lists one). */
 export function watchMenuActionUnavailable(raw: string, targets: MenuTargets): string | undefined {
   const spec = ACTIONS_BY_RAW.get(raw);
   if (spec === undefined) return "Unknown action";
