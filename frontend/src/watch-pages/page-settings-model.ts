@@ -15,7 +15,8 @@
 // the palettes of `tile-styling.json` and the role colors of
 // `tile-defaults.json`; the gradient form is `watchGradientOf`.
 //
-// Plan: app repo docs/pages_in_home_assistant_step3.md, "3d build contract".
+// Plan: app repo docs/pages_in_home_assistant_step3.md, "3d build contract";
+// the background photo, docs/pages_in_home_assistant_step4.md, "4d batch 6".
 
 import pageKeys from "./page-keys.json";
 import { findWatchPage } from "./edit.js";
@@ -193,6 +194,14 @@ export function watchPageDecoration(page: WatchPage): WatchPageDecoration {
  * phone's clear only sets the pattern and the overlay to none, so their
  * color, size and the rest stay in its page and come back with them. */
 export interface WatchPageDecorationMemory {
+  /** The photo as a whole, as the phone remembers it. Absent from a memory
+   * kept before the panel could set a photo: read from the page then. */
+  image?: {
+    backgroundImageId: unknown;
+    backgroundImageOpacity: unknown;
+    backgroundImageBlur: unknown;
+    backgroundImageFit: unknown;
+  };
   color: { backgroundColor: unknown; backgroundBrightness: unknown };
   pattern: {
     backgroundPattern: unknown;
@@ -209,24 +218,27 @@ export interface WatchPageDecorationMemory {
   };
 }
 
-const MEMORY_KEYS: { readonly [K in keyof WatchPageDecorationMemory]: readonly (keyof WatchPageDecorationMemory[K])[] } = {
+const MEMORY_KEYS: { readonly [K in keyof WatchPageDecorationMemory]-?: readonly (keyof NonNullable<WatchPageDecorationMemory[K]>)[] } = {
+  image: ["backgroundImageId", "backgroundImageOpacity", "backgroundImageBlur", "backgroundImageFit"],
   color: ["backgroundColor", "backgroundBrightness"],
   pattern: ["backgroundPattern", "backgroundPatternColor", "backgroundPatternOpacity", "backgroundPatternScale"],
   animation: ["backgroundOverlay", "backgroundOverlayColor", "backgroundOverlaySpeed", "backgroundOverlayIntensity", "backgroundOverlaySize"],
 };
 
-function remember<K extends keyof WatchPageDecorationMemory>(page: WatchPage, which: K): WatchPageDecorationMemory[K] {
+function remember<K extends keyof WatchPageDecorationMemory>(page: WatchPage, which: K): NonNullable<WatchPageDecorationMemory[K]> {
   const out: Record<string, unknown> = {};
   for (const key of MEMORY_KEYS[which]) out[key as string] = page[key as string] === null ? undefined : watchPageValue(page, key as string);
   // `backgroundColor` has no default: an absent color stays absent.
   if (which === "color" && (page.backgroundColor === undefined || page.backgroundColor === null)) out.backgroundColor = undefined;
-  return out as WatchPageDecorationMemory[K];
+  // `backgroundImageId` has none either.
+  if (which === "image" && !hasImage(page)) out.backgroundImageId = undefined;
+  return out as NonNullable<WatchPageDecorationMemory[K]>;
 }
 
 /** The memory as the phone seeds it when the Page task opens: every
  * decoration's values as the page has them. */
 export function watchPageDecorationMemory(page: WatchPage): WatchPageDecorationMemory {
-  return { color: remember(page, "color"), pattern: remember(page, "pattern"), animation: remember(page, "animation") };
+  return { image: remember(page, "image"), color: remember(page, "color"), pattern: remember(page, "pattern"), animation: remember(page, "animation") };
 }
 
 /** The value a decoration's clear writes: the Page reset's. */
@@ -240,10 +252,12 @@ function clearValue(key: string): unknown {
  * background black at the reset brightness), then the chosen one's
  * remembered values put back, every key of it (a pattern's color and size,
  * an animation's color too). Only the Color decoration keeps a brightness;
- * leaving Image drops the image id, as on the phone. `from` is the segment
- * shown now (the page's own when not given), `memory` what the task
- * remembered (seeded from the page when not given). Refused for Image, which
- * only the phone sets; the view offers no segment on a page with an image.
+ * leaving Image drops the image id, as on the phone, and coming back puts
+ * the photo back whole (id, opacity, blur and fit). With no photo
+ * remembered, Image leaves the page with none until one is picked
+ * (`setWatchPageImage`). `from` is the segment shown now (the page's own
+ * when not given), `memory` what the task remembered (seeded from the page
+ * when not given).
  */
 export function selectWatchPageDecoration(
   document: WatchPagesDocument,
@@ -252,13 +266,14 @@ export function selectWatchPageDecoration(
   options: { from?: WatchPageDecoration; memory?: WatchPageDecorationMemory } = {},
 ): { document: WatchPagesDocument; memory: WatchPageDecorationMemory | undefined } {
   const page = findWatchPage(document, pageId);
-  if (page === undefined || to === "image" || !WATCH_PAGE_DECORATIONS.includes(to)) {
+  if (page === undefined || !WATCH_PAGE_DECORATIONS.includes(to)) {
     return { document, memory: options.memory };
   }
   const from = options.from ?? watchPageDecoration(page);
   if (from === to) return { document, memory: options.memory };
   const memory: WatchPageDecorationMemory = structuredClone(options.memory ?? watchPageDecorationMemory(page));
-  if (from === "color" || from === "pattern" || from === "animation") {
+  memory.image ??= remember(page, "image");
+  if (from !== "none") {
     (memory as unknown as Record<string, unknown>)[from] = remember(page, from);
   }
   const next = editPage(document, pageId, (p) => {
@@ -267,8 +282,8 @@ export function selectWatchPageDecoration(
       const value = clearValue(key);
       out = value === null || value === undefined ? withoutPageKey(out, key) : withPageKey(out, key, value);
     }
-    if (to === "color" || to === "pattern" || to === "animation") {
-      for (const [key, value] of Object.entries(memory[to])) {
+    if (to !== "none") {
+      for (const [key, value] of Object.entries(memory[to] ?? {})) {
         out = value === undefined || value === null ? withoutPageKey(out, key) : withPageKey(out, key, value);
       }
     }
@@ -326,6 +341,28 @@ export const setWatchPageOverlayIntensity = sliderPageSetter("backgroundOverlayI
 export const setWatchPageOverlaySize = sliderPageSetter("backgroundOverlaySize", "backgroundOverlaySize", overlayOn);
 /** The animation's color: `#RRGGBB`, a gradient or `#RAINBOW`. */
 export const setWatchPageOverlayColor = colorPageSetter("backgroundOverlayColor", "tile", overlayOn);
+
+// ── Image ────────────────────────────────────────────────────────────────
+
+/**
+ * The page's photo by its id (a built-in `preset_<name>` or a library
+ * photo's), as the phone's photo row sets it: only the id, the opacity, blur
+ * and fit staying as they are (written with their defaults when the page
+ * had no photo). Undefined removes the photo, as the phone's trash button
+ * does, and its other keys go with it. An empty or non-text id is refused.
+ */
+export function setWatchPageImage(document: WatchPagesDocument, pageId: string, imageId: string | undefined): WatchPagesDocument {
+  if (imageId === undefined) return setPageKey(document, pageId, "backgroundImageId", () => null);
+  if (typeof imageId !== "string" || imageId.trim() === "") return document;
+  return setPageKey(document, pageId, "backgroundImageId", () => imageId.trim());
+}
+
+/** The photo's opacity, 0 to 1 in hundredths. Needs a photo. */
+export const setWatchPageImageOpacity = sliderPageSetter("backgroundImageOpacity", "backgroundImageOpacity", hasImage);
+/** The photo's blur, 0 to 20 in hundredths. Needs a photo. */
+export const setWatchPageImageBlur = sliderPageSetter("backgroundImageBlur", "backgroundImageBlur", hasImage);
+/** Fill, Fit or Stretch. Needs a photo. */
+export const setWatchPageImageFit = enumPageSetter("backgroundImageFit", "backgroundImageFit", hasImage);
 
 // ── page title ───────────────────────────────────────────────────────────
 
@@ -391,6 +428,10 @@ export function setWatchPageHideFromSwitcher(document: WatchPagesDocument, pageI
 export const WATCH_PAGE_STYLING_SETTERS: Readonly<Record<string, (document: WatchPagesDocument, pageId: string, value: never) => WatchPagesDocument>> = {
   backgroundColor: setWatchPageBackgroundColor,
   backgroundBrightness: setWatchPageBrightness,
+  backgroundImageId: setWatchPageImage,
+  backgroundImageOpacity: setWatchPageImageOpacity,
+  backgroundImageBlur: setWatchPageImageBlur,
+  backgroundImageFit: setWatchPageImageFit,
   backgroundPattern: setWatchPagePattern,
   backgroundPatternOpacity: setWatchPagePatternOpacity,
   backgroundPatternScale: setWatchPagePatternScale,
@@ -420,8 +461,9 @@ const IMAGE_KEYS: ReadonlySet<string> = new Set(["backgroundImageId", "backgroun
  * as the phone does). Not the theme or the gradient switch. A key the page
  * does not have and that reads as the reset value already (an absent icon
  * is `house` to the watch) stays absent, so a page at its reset values is
- * left as it is. With `keepImage` the image keys stay: the panel's own Reset
- * never touches an image the phone set. */
+ * left as it is. The panel's Reset clears the photo too, as the phone's
+ * does; the photo store forgets it once no page names it. With `keepImage`
+ * the image keys stay. */
 export function resetWatchPage(document: WatchPagesDocument, pageId: string, options: { keepImage?: boolean } = {}): WatchPagesDocument {
   return editPage(document, pageId, (page) => {
     const keepImage = options.keepImage === true && hasImage(page);
@@ -439,7 +481,7 @@ export function resetWatchPage(document: WatchPagesDocument, pageId: string, opt
 /** Whether the panel's Reset Page would change the page: an absent icon
  * and `house` are one. */
 export function watchPageModified(document: WatchPagesDocument, pageId: string): boolean {
-  return resetWatchPage(document, pageId, { keepImage: true }) !== document;
+  return resetWatchPage(document, pageId) !== document;
 }
 
 // ── themes and the remap ─────────────────────────────────────────────────
@@ -732,6 +774,11 @@ export interface WatchPageSettings {
   gradient: boolean;
   decoration: WatchPageDecoration;
   hasImage: boolean;
+  /** The photo's id, its opacity (0 to 1), blur (0 to 20) and fit. */
+  imageId: string | undefined;
+  imageOpacity: number;
+  imageBlur: number;
+  imageFit: string;
   /** Absent means the theme's own background. */
   backgroundColor: string | undefined;
   brightness: number;
@@ -768,6 +815,10 @@ export function watchPageSettings(page: WatchPage): WatchPageSettings {
     gradient: page.useGradientColors === true,
     decoration: watchPageDecoration(page),
     hasImage: hasImage(page),
+    imageId: typeof page.backgroundImageId === "string" ? page.backgroundImageId : undefined,
+    imageOpacity: n("backgroundImageOpacity"),
+    imageBlur: n("backgroundImageBlur"),
+    imageFit: s("backgroundImageFit"),
     backgroundColor: typeof page.backgroundColor === "string" ? page.backgroundColor : undefined,
     brightness: n("backgroundBrightness"),
     pattern: s("backgroundPattern"),

@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 
 import { WatchPagesDraft } from "../src/watch-pages/draft.js";
 import { findWatchPage } from "../src/watch-pages/edit.js";
+import { checkWatchPagesValues } from "../src/watch-pages/merge.js";
 import type { WatchPage, WatchPagesDocument } from "../src/watch-pages/model.js";
 import {
   encodeWatchPageKeys,
@@ -18,6 +19,10 @@ import {
   setWatchPageBackgroundColorMode,
   setWatchPageBrightness,
   setWatchPageGradientColors,
+  setWatchPageImage,
+  setWatchPageImageBlur,
+  setWatchPageImageFit,
+  setWatchPageImageOpacity,
   setWatchPageOverlay,
   setWatchPagePattern,
   setWatchPagePatternOpacity,
@@ -151,12 +156,31 @@ describe("one decoration at a time", () => {
     expect(watchPageDecorationMemory(page({ backgroundColor: undefined }) as WatchPage).color.backgroundColor).toBeUndefined();
   });
 
-  it("drops an image when leaving it, as the phone does, and never picks one", () => {
+  it("drops an image when leaving it, as the phone does; Image with none remembered changes nothing", () => {
     const doc = docWith(page({ backgroundImageId: "preset_waves", backgroundImageOpacity: 1, backgroundImageBlur: 0, backgroundImageFit: "fill" }));
     const p = pageIn(selectWatchPageDecoration(doc, PAGE, "none").document);
     for (const key of ["backgroundImageId", "backgroundImageOpacity", "backgroundImageBlur", "backgroundImageFit"]) expect(p).not.toHaveProperty(key);
     const plain = docWith(page());
     expect(selectWatchPageDecoration(plain, PAGE, "image").document).toBe(plain);
+  });
+
+  it("puts the photo back whole after another decoration, as the phone's memory does", () => {
+    const photo = { backgroundImageId: "6F1C2D3E-4A5B-4C6D-8E7F-0123456789AB", backgroundImageOpacity: 0.4, backgroundImageBlur: 3.5, backgroundImageFit: "stretch" };
+    const doc = docWith(page(photo));
+    const away = selectWatchPageDecoration(doc, PAGE, "pattern");
+    expect(pageIn(away.document)).not.toHaveProperty("backgroundImageId");
+    expect(away.memory?.image).toEqual(photo);
+    const back = selectWatchPageDecoration(away.document, PAGE, "image", { from: "pattern", memory: away.memory });
+    expect(pageIn(back.document)).toEqual(pageIn(doc));
+    expect(isSorted(pageIn(back.document))).toBe(true);
+  });
+
+  it("reads a memory kept before photos were offered from the page", () => {
+    const doc = docWith(page({ backgroundColor: "#223344" }));
+    const old = { color: { backgroundColor: "#223344", backgroundBrightness: 0.6 }, pattern: watchPageDecorationMemory(pageIn(doc)).pattern, animation: watchPageDecorationMemory(pageIn(doc)).animation };
+    const r = selectWatchPageDecoration(doc, PAGE, "image", { memory: old });
+    expect(r.memory?.image?.backgroundImageId).toBeUndefined();
+    expect(pageIn(r.document).backgroundColor).toBe("#000000");
   });
 
   it("a pick that is the shown decoration changes nothing", () => {
@@ -237,10 +261,59 @@ describe("Reset Page", () => {
     expect(draft.canUndo).toBe(false);
   });
 
-  it("drops an image as the phone does, or keeps it for the panel's own Reset", () => {
+  it("clears the photo and its keys, as the phone does", () => {
     const doc = docWith(page({ backgroundImageId: "preset_sand", backgroundImageOpacity: 0.4, backgroundImageBlur: 2, backgroundImageFit: "fit" }));
-    expect(pageIn(resetWatchPage(doc, PAGE))).not.toHaveProperty("backgroundImageId");
+    expect(watchPageModified(doc, PAGE)).toBe(true);
+    const p = pageIn(resetWatchPage(doc, PAGE));
+    for (const key of ["backgroundImageId", "backgroundImageOpacity", "backgroundImageBlur", "backgroundImageFit"]) expect(p).not.toHaveProperty(key);
     expect(pageIn(resetWatchPage(doc, PAGE, { keepImage: true }))).toMatchObject({ backgroundImageId: "preset_sand", backgroundImageOpacity: 0.4 });
+  });
+});
+
+describe("the Image rows", () => {
+  it("a photo by id, its other keys written with their defaults at their sorted places", () => {
+    const doc = docWith(page());
+    const p = pageIn(setWatchPageImage(doc, PAGE, "preset_waves"));
+    expect(p).toMatchObject({ backgroundImageId: "preset_waves", backgroundImageOpacity: 1, backgroundImageBlur: 0, backgroundImageFit: "fill" });
+    expect(isSorted(p)).toBe(true);
+    expect(watchPageDecoration(p)).toBe("image");
+    expect(setWatchPageImage(doc, PAGE, "  ")).toBe(doc);
+  });
+
+  it("another photo keeps the opacity, blur and fit", () => {
+    const doc = docWith(page({ backgroundImageId: "preset_sand", backgroundImageOpacity: 0.3, backgroundImageBlur: 5, backgroundImageFit: "fit" }));
+    expect(pageIn(setWatchPageImage(doc, PAGE, "preset_fern"))).toMatchObject({ backgroundImageId: "preset_fern", backgroundImageOpacity: 0.3, backgroundImageBlur: 5, backgroundImageFit: "fit" });
+  });
+
+  it("Remove takes the photo and its keys off", () => {
+    const doc = docWith(page({ backgroundImageId: "preset_sand", backgroundImageOpacity: 0.3, backgroundImageBlur: 5, backgroundImageFit: "fit" }));
+    const p = pageIn(setWatchPageImage(doc, PAGE, undefined));
+    for (const key of ["backgroundImageId", "backgroundImageOpacity", "backgroundImageBlur", "backgroundImageFit"]) expect(p).not.toHaveProperty(key);
+  });
+
+  it("opacity, blur and fit need a photo and keep to the phone's ranges", () => {
+    const plain = docWith(page());
+    expect(setWatchPageImageOpacity(plain, PAGE, 0.5)).toBe(plain);
+    expect(setWatchPageImageBlur(plain, PAGE, 2)).toBe(plain);
+    expect(setWatchPageImageFit(plain, PAGE, "fit")).toBe(plain);
+    const doc = setWatchPageImage(plain, PAGE, "preset_waves");
+    expect(pageIn(setWatchPageImageOpacity(doc, PAGE, 0.456)).backgroundImageOpacity).toBe(0.46);
+    expect(setWatchPageImageOpacity(doc, PAGE, 1.2)).toBe(doc);
+    expect(pageIn(setWatchPageImageBlur(doc, PAGE, 12.345)).backgroundImageBlur).toBe(12.35);
+    expect(setWatchPageImageBlur(doc, PAGE, 21)).toBe(doc);
+    expect(pageIn(setWatchPageImageFit(doc, PAGE, "stretch")).backgroundImageFit).toBe("stretch");
+    expect(setWatchPageImageFit(doc, PAGE, "tile")).toBe(doc);
+  });
+
+  it("reads the photo's values, defaults when absent", () => {
+    const s = watchPageSettings(pageIn(setWatchPageImage(docWith(page()), PAGE, "preset_waves")));
+    expect(s).toMatchObject({ hasImage: true, imageId: "preset_waves", imageOpacity: 1, imageBlur: 0, imageFit: "fill", decoration: "image" });
+  });
+
+  it("the save's value check takes the image keys", () => {
+    const doc = setWatchPageImageBlur(setWatchPageImage(docWith(page()), PAGE, "6F1C2D3E-4A5B-4C6D-8E7F-0123456789AB"), PAGE, 4);
+    expect(checkWatchPagesValues(doc)).toEqual([]);
+    expect(checkWatchPagesValues(docWith(page({ backgroundImageId: "x", backgroundImageFit: "tile" })))).toHaveLength(1);
   });
 });
 
