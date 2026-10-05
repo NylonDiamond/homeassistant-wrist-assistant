@@ -299,6 +299,12 @@ describe("rows", () => {
     expect(setStatusRowKey(doc, pageId, second, "headerAlignment", "middle")).toBe(doc);
     expect(setStatusRowKey(doc, pageId, second, "isHidden", "yes")).toBe(doc);
     expect(setStatusRowKey(doc, pageId, second, "rowType", "groupCount")).toBe(doc);
+    // An entity row's Entity field moves it to another entity and domain;
+    // neither can be removed, as the app requires both.
+    const repointed = setStatusRowKey(setStatusRowKey(doc, pageId, second, "entityId", "lock.front_door"), pageId, second, "domain", "lock");
+    expect(findStatusRow(findStatusPage(repointed, pageId), second)).toMatchObject({ entityId: "lock.front_door", domain: "lock" });
+    expect(setStatusRowKey(doc, pageId, second, "entityId", undefined)).toBe(doc);
+    expect(setStatusRowKey(doc, pageId, second, "domain", undefined)).toBe(doc);
     const removed = removeStatusRow(doc, pageId, first);
     expect(statusPageRows(findStatusPage(removed, pageId)!).length).toBe(statusPageRows(page).length - 1);
     // The other pages are the same objects.

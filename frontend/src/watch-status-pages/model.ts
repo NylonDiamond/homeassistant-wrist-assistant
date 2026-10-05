@@ -457,6 +457,10 @@ export function moveStatusRow(document: StatusPagesDocument, pageId: string, row
 
 /** The row keys the inspector writes, each held to its type. */
 const ROW_KEYS: Readonly<Record<string, "string" | "bool" | "number" | "strings" | "enum">> = {
+  // An entity row's Entity field sets both; the table marks them required,
+  // so neither can be removed.
+  entityId: "string",
+  domain: "string",
   displayName: "string",
   iconName: "string",
   isHidden: "bool",

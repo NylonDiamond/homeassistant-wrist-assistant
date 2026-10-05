@@ -728,6 +728,8 @@ function renderRowCard(host: StatusPagesViewHost, page: JsonObject, row: JsonObj
         let next = setStatusRowKey(d, pageId, id, "entityId", entityId);
         const fresh = newStatusEntityRow(entityId, host.hass.states);
         next = setStatusRowKey(next, pageId, id, "domain", fresh.domain);
+        // An icon still at the old domain's default follows the new domain.
+        if (r.iconName === newStatusEntityRow(r.entityId).iconName) next = setStatusRowKey(next, pageId, id, "iconName", fresh.iconName);
         return next;
       });
     }, `sp:entity:${id}`, { clearable: false })}</div>`);
