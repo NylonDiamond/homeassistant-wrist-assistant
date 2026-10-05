@@ -175,6 +175,16 @@ describe("the list page's look", () => {
     expect(text).toContain(".pk-page > .pk-body { flex: none; overflow: visible;");
   });
 
+  it("wraps the device tabs on a phone, where the dialog's scroll sideways", () => {
+    const phone = text.slice(text.indexOf("@media (max-width: 640px)"));
+    const sel = ".pk-page .pk-tabs {";
+    expect(phone).toContain(sel);
+    const rule = phone.slice(phone.indexOf(sel), phone.indexOf("}", phone.indexOf(sel)));
+    expect(rule).toContain("flex-wrap: wrap");
+    expect(rule).toContain("overflow-x: visible");
+    expect(rule).toContain("mask-image: none");
+  });
+
   it("keys nothing on the dialog, so the dialog's frame never reaches the page", () => {
     expect(text).not.toContain("pk-dialog");
   });

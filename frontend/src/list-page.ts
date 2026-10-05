@@ -161,5 +161,12 @@ export const listPageStyles = css`
     .cl-page { padding: 14px 12px 32px; }
     .cl-head h1 { font-size: 22px; }
     .pk-page > .pk-head > .pk-search { margin-left: 0; }
+    /* The dialog's device tabs scroll sideways on a phone, to keep its fixed
+       height for the cards. The page scrolls down instead, so here they wrap
+       and nothing moves sideways. */
+    .pk-page .pk-tabs {
+      flex-wrap: wrap; overflow-x: visible;
+      -webkit-mask-image: none; mask-image: none;
+    }
   }
 `;
