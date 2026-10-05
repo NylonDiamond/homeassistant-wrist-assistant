@@ -256,6 +256,18 @@ WATCH_VOICES_MAX_ENTRIES = 500
 # differs from the stored one, and serves the signed watch_voices_put op. The
 # watch sends neither the hash nor the list without it.
 WATCH_VOICES_CAPABILITY = "watch_voices"
+# The home's HTTP action library (step 4d batch 4), see http_actions_store.py:
+# one record for the whole home, not one per watch. The document is the
+# phone's own HTTPActionConfig JSON, secrets included, which is why nothing
+# but the panel's admin commands ever reads it whole.
+HTTP_ACTIONS_STORAGE_KEY = "wrist_assistant.http_actions"
+HTTP_ACTIONS_STORAGE_VERSION = 1
+# What the integration advertises once it keeps that library, serves the
+# signed http_actions_hand_over, http_actions_get and http_action_run ops,
+# and names the library's revision as `http_actions` on every delta reply.
+# The phone hands its library over, and the watch runs actions through Home
+# Assistant, only when it sees this.
+HTTP_ACTIONS_CAPABILITY = "http_actions"
 # What the integration advertises once it serves /v2/pair/start and the
 # panel's pair/lookup and pair/confirm (pairing_ws.py). A watch with no
 # iPhone offers to pair by code only when /version lists this.
