@@ -16,6 +16,7 @@ import __future__
 import ast
 import asyncio
 import base64
+import json
 import sys
 import types
 from pathlib import Path
@@ -30,6 +31,7 @@ from test_http_actions_store import CONFLICT, loaded_package, new_store
 _PKG_DIR = Path(__file__).resolve().parents[1] / "custom_components" / "wrist_assistant"
 _VIEWS = _PKG_DIR / "wa_v2_views.py"
 _NAMES = (
+    "_async_bound_user_is_admin",
     "_http_actions_refusal",
     "_http_actions_store_refusal",
     "_op_http_actions_hand_over",
@@ -45,11 +47,42 @@ class _Response:
         self.body = body
 
 
+class _User:
+    def __init__(self, *, is_admin: bool, is_active: bool = True) -> None:
+        self.is_admin = is_admin
+        self.is_active = is_active
+
+
+class _Auth:
+    """``hass.auth`` with the users the tests name: ``admin`` (an active
+    admin), ``member`` (an active user outside the admin group) and
+    ``retired`` (an admin who is no longer active)."""
+
+    users = {
+        "admin": _User(is_admin=True),
+        "member": _User(is_admin=False),
+        "retired": _User(is_admin=True, is_active=False),
+    }
+
+    async def async_get_user(self, user_id: str) -> _User | None:
+        return self.users.get(user_id)
+
+
 class _Ctx:
-    def __init__(self, domain_data: Any, watch_id: str, payload: dict) -> None:
+    def __init__(
+        self,
+        domain_data: Any,
+        watch_id: str,
+        payload: dict,
+        user_id: str | None = "admin",
+        body: bytes | None = None,
+    ) -> None:
         self.domain_data = domain_data
         self.watch_id = watch_id
         self.payload = payload
+        self.user_id = user_id
+        self.hass = types.SimpleNamespace(auth=_Auth())
+        self.body = json.dumps(payload).encode() if body is None else body
 
     def signed_json(self, payload: dict, status: int = 200) -> _Response:
         return _Response(status, payload)
@@ -63,6 +96,14 @@ def _ops(store_mod: Any, runner_mod: Any) -> dict[str, Any]:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in _NAMES
     ]
     assert sorted(n.name for n in wanted) == sorted(_NAMES)
+    # The size limits the ops read, as module constants.
+    wanted[:0] = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id.startswith(("_HAND_OVER_", "_RUN_MAX_"))
+    ]
     code = compile(
         ast.Module(body=wanted, type_ignores=[]),
         str(_VIEWS),
@@ -114,8 +155,15 @@ def env():
         )
 
 
-def op(env, name: str, payload: dict, watch_id: str = "watch-A") -> _Response:
-    return asyncio.run(env.ops[name](_Ctx(env.domain, watch_id, payload)))
+def op(
+    env,
+    name: str,
+    payload: dict,
+    watch_id: str = "watch-A",
+    user_id: str | None = "admin",
+    body: bytes | None = None,
+) -> _Response:
+    return asyncio.run(env.ops[name](_Ctx(env.domain, watch_id, payload, user_id, body)))
 
 
 # ── hand-over ────────────────────────────────────────────────────────────
@@ -136,6 +184,43 @@ def test_an_empty_hand_over_answers_revision_0(env) -> None:
     assert env.store.has_handed_over("watch-A")
 
 
+@pytest.mark.parametrize("user_id", ["member", "retired", None, "deleted"])
+def test_only_an_admins_device_may_hand_over(env, user_id) -> None:
+    env.store.save(library(action()), base_revision=0)
+    before = env.store.get()
+    reply = op(
+        env,
+        "_op_http_actions_hand_over",
+        {"document": library(action(id=ID_B, url="https://mine.example/?t={{token}}"))},
+        user_id=user_id,
+    )
+    assert reply.status == 403
+    assert reply.body["ok"] is False and reply.body["error"] == "forbidden"
+    assert set(reply.body) == {"ok", "error", "message"}
+    assert env.store.get() == before
+    assert not env.store.has_handed_over("watch-A")
+    # The same device bound to an admin still hands over, once.
+    reply = op(env, "_op_http_actions_hand_over", {"document": library(action(id=ID_B))})
+    assert reply.body == {"ok": True, "revision": 2, "added": 1}
+    again = op(env, "_op_http_actions_hand_over", {"document": library(action(id=ID_B))})
+    assert again.body == {"ok": True, "revision": 2, "added": 0}
+    assert env.store.get()["handed_over"] == ["watch-A"]
+
+
+@pytest.mark.parametrize(
+    ("user_id", "can"), [("admin", True), ("member", False), ("retired", False), (None, False)]
+)
+def test_get_says_whether_the_device_may_hand_over(env, user_id, can) -> None:
+    assert op(env, "_op_http_actions_get", {}, user_id=user_id).body["can_hand_over"] is can
+
+
+def test_a_hand_over_over_256_kib_is_refused_before_it_is_read(env) -> None:
+    body = b"{" + b" " * (256 * 1024) + b'"document": {"actions": []}}'
+    reply = op(env, "_op_http_actions_hand_over", {"document": library()}, body=body)
+    assert reply.status == 400 and reply.body["error"] == "invalid"
+    assert not env.store.has_handed_over("watch-A")
+
+
 @pytest.mark.parametrize("payload", [{}, {"document": []}, {"document": library(action(method="HEAD"))}])
 def test_a_malformed_hand_over_is_a_signed_400(env, payload) -> None:
     reply = op(env, "_op_http_actions_hand_over", payload)
@@ -149,7 +234,9 @@ def test_a_malformed_hand_over_is_a_signed_400(env, payload) -> None:
 
 def test_get_at_revision_0(env) -> None:
     reply = op(env, "_op_http_actions_get", {})
-    assert reply.body == {"ok": True, "revision": 0, "hash": None, "handed_over": False}
+    assert reply.body == {
+        "ok": True, "revision": 0, "hash": None, "handed_over": False, "can_hand_over": True,
+    }
     assert env.store.delivered() == {}
 
 
@@ -165,6 +252,7 @@ def test_get_sends_the_public_list_and_marks_delivery(env) -> None:
         "revision": 1,
         "hash": digest,
         "handed_over": False,
+        "can_hand_over": True,
         "document": listed,
     }
     assert "secret" not in str(reply.body)

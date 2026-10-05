@@ -3477,24 +3477,59 @@ def _http_actions_store_refusal(ctx: _OpContext, err: HTTPActionsStoreError) -> 
     return _http_actions_refusal(ctx, err.code, err.message, status)
 
 
+# A hand-over is a JSON body around the library, which may be at most 256 KiB
+# (``http_actions.MAX_DOCUMENT_BYTES``). The raw body is held to the same
+# size before anything reads the library.
+_HAND_OVER_MAX_BODY_BYTES = 256 * 1024
+
+
+async def _async_bound_user_is_admin(ctx: _OpContext) -> bool:
+    """Whether the device's bound user is an active Home Assistant admin
+    (the owner, or a member of the admin group).
+
+    An unbound entry has no user to vouch for it and is not an admin. The
+    lookup is an in-memory dictionary read, not I/O.
+    """
+    if ctx.user_id is None:
+        return False
+    user = await ctx.hass.auth.async_get_user(ctx.user_id)
+    return user is not None and user.is_active and user.is_admin
+
+
 async def _op_http_actions_hand_over(ctx: _OpContext) -> Response:
     """A phone gives the home its HTTP action library, once per owner.
 
     Body:  {"document": {HTTPActionConfig}}
     Reply: {"ok": true, "revision": <int>, "added": <actions added>}
-    Refusal: signed 400 {"ok": false, "error": "invalid", "message"} for a
-             library that breaks the rules (nothing is merged and the owner
-             is not listed); signed 503 "unavailable".
+    Refusal: signed 403 {"ok": false, "error": "forbidden", "message"} when
+             the device's bound user is not an active admin; signed 400
+             "invalid" for a body over 256 KiB or a library that breaks the
+             rules. Neither merges anything or lists the owner. Signed 503
+             "unavailable".
 
-    The owner is the signing id: the phone signs as its watch. A pure merge
-    (``http_actions.merge_hand_over``): stored actions and globals are never
-    changed, a clashing global comes in under a new key. A second hand-over
-    from an owner already listed changes nothing and answers the stored
-    revision with ``added`` 0. An empty library still lists the owner.
+    Only an admin's device may hand over: the library's globals are sent
+    raw by Home Assistant from its own network, so whoever adds an action
+    decides where they go. The owner is the signing id: the phone signs as
+    its watch. A pure merge (``http_actions.merge_hand_over``): stored
+    actions and globals are never changed, a clashing global comes in under
+    a new key. A second hand-over from an owner already listed changes
+    nothing and answers the stored revision with ``added`` 0. An empty
+    library still lists the owner.
     """
     store = getattr(ctx.domain_data, "http_actions_store", None)
     if store is None:
         return _http_actions_refusal(ctx, "unavailable", "integration not ready", 503)
+    if not await _async_bound_user_is_admin(ctx):
+        return _http_actions_refusal(
+            ctx,
+            "forbidden",
+            "only a device paired by a Home Assistant administrator can hand over HTTP actions",
+            403,
+        )
+    if len(ctx.body) > _HAND_OVER_MAX_BODY_BYTES:
+        return _http_actions_refusal(
+            ctx, "invalid", f"the library is over {_HAND_OVER_MAX_BODY_BYTES} bytes", 400
+        )
     try:
         revision, added = store.hand_over(ctx.watch_id, ctx.payload.get("document"))
     except HTTPActionsStoreError as err:
@@ -3507,15 +3542,17 @@ async def _op_http_actions_get(ctx: _OpContext) -> Response:
 
     Body:  {"since_revision": <int>?}
     Reply: {"ok": true, "revision", "hash", "handed_over": <bool>,
-            "document"?}
+            "can_hand_over": <bool>, "document"?}
 
     ``document`` is the public list (``http_actions.public_list``) and
     ``hash`` its canonical hash; both describe the list, never the stored
     library, which no device is sent. ``document`` is left out when
     ``since_revision`` is the stored revision, and at revision 0 (``hash``
     then null). ``handed_over`` says whether the signer's phone has given
-    its library. A reply about a stored revision marks it delivered for the
-    signer, which the panel's Home reads.
+    its library, and ``can_hand_over`` whether it may (its bound user is an
+    active admin), so a phone that may not stops asking. A reply about a
+    stored revision marks it delivered for the signer, which the panel's
+    Home reads.
     """
     store = getattr(ctx.domain_data, "http_actions_store", None)
     if store is None:
@@ -3534,6 +3571,7 @@ async def _op_http_actions_get(ctx: _OpContext) -> Response:
         "revision": revision,
         "hash": digest,
         "handed_over": store.has_handed_over(ctx.watch_id),
+        "can_hand_over": await _async_bound_user_is_admin(ctx),
     }
     if listed is not None and since != revision:
         reply["document"] = listed
