@@ -99,7 +99,9 @@ describe("Home's Devices card", () => {
     expect(will).toContain(`if (changed.has("owners") && tabOfRoute(this.route) === "home") void this.loadWatchAppSync(false);`);
     const load = method("  private async loadWatchAppSync(again: boolean) {");
     expect(load).toContain("if (this.hass?.user?.is_admin !== true) return;");
-    expect(load).toContain("readWatchAppSync((kind) => fetchWatchConfig(hass, id, kind))");
+    expect(load).toContain("summaryWatchAppSyncs(await fetchWatchConfigSummary(hass), watches)");
+    expect(load).toContain("if (!summaryUnknown(err)) {");
+    expect(load.indexOf("fetchWatchConfigSummary")).toBeLessThan(load.indexOf("readWatchAppSync((kind) => fetchWatchConfig(hass, id, kind))"));
     expect(load).toContain("if (run !== this.watchAppSyncRun) return;");
     expect(load).toContain("if (!again && key === this.watchAppSyncFor) return;");
   });

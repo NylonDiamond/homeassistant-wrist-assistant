@@ -8,17 +8,18 @@
 // own pull, or the iPhone passing it on). The editors' sync pills and Watch
 // settings' "Collected" read the same two numbers (`deliveryState`).
 //
-// There is no summary command: the integration answers one record of one
-// kind per `watch_config/get`, document included. So a watch's state is one
-// read per kind, side by side, done when Home is entered rather than kept
-// live. A kind the integration refuses (one older than the kind) counts as no
-// record, the way the editors treat it.
+// `watch_config/summary` answers those numbers for every watch at once, with
+// no documents, so Home asks one question however many watches and pages a
+// home has (`summaryWatchAppSyncs`). It is asked when Home is entered rather
+// than kept live. An integration older than that command is read the old
+// way, one `watch_config/get` per kind per watch (`readWatchAppSync`), where
+// a kind the integration refuses counts as no record.
 //
 // The complication part of a device's verdict stays `deviceSync`
 // (send-state.ts), and the header pill (`homeSync`) stays about
 // complications only. Home's row takes the worse of the two.
 
-import type { WatchConfigPanelKind, WatchConfigRecord } from "./ha-api.js";
+import type { WatchConfigPanelKind, WatchConfigRecord, WatchConfigSummary } from "./ha-api.js";
 import type { DeviceSync } from "./send-state.js";
 import { deliveryState } from "./watch-settings.js";
 
@@ -67,7 +68,31 @@ export function watchAppSync(records: ReadonlyMap<string, Delivery | undefined>)
 }
 
 /**
+ * The verdict for each watch asked about, from the one summary answer. A
+ * watch the summary leaves out but which is still asked about has no stored
+ * records at all (never paired here, or nothing written yet): nothing
+ * waiting, nothing collected. The summary also leaves out a watch whose file
+ * could not be read, and that reads the same way: a rare fault the editors
+ * themselves report when opened.
+ */
+export function summaryWatchAppSyncs(summary: WatchConfigSummary, watchIds: readonly string[]): Map<string, WatchAppSync> {
+  const out = new Map<string, WatchAppSync>();
+  for (const id of watchIds) {
+    const kinds = summary.owners[id] ?? {};
+    out.set(id, watchAppSync(new Map(Object.entries(kinds))));
+  }
+  return out;
+}
+
+/** Whether a refused summary means the integration is older than the command,
+ * which is the one refusal the per-kind reads can stand in for. */
+export function summaryUnknown(err: unknown): boolean {
+  return typeof err === "object" && err !== null && (err as { code?: unknown }).code === "unknown_command";
+}
+
+/**
  * Read one watch's records, every kind side by side, and give their verdict.
+ * Only for an integration with no summary command.
  * A refused read counts as no record. Undefined when every read failed: the
  * panel cannot tell (not an administrator, the integration not ready, the
  * connection gone), so Home says nothing about the watch app rather than

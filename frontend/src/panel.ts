@@ -23,6 +23,7 @@ import {
   nudgeWatch,
   fetchWatchStatus,
   fetchWatchConfig,
+  fetchWatchConfigSummary,
   type SaveHistoryEntry,
   fetchSaveHistory,
   fetchSaveHistoryEntry,
@@ -139,7 +140,7 @@ import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
 import { type SendState, agoWords, describeHomeSync, describeSend, deviceSyncLabel, homeSync, sendState, sendWaitMs } from "./send-state.js";
 import { homeDeviceRows, homeDevices, homeStyles } from "./home.js";
-import { type WatchAppSync, readWatchAppSync, waitingForText, watchAppSyncKey } from "./watch-app-sync.js";
+import { type WatchAppSync, readWatchAppSync, summaryUnknown, summaryWatchAppSyncs, waitingForText, watchAppSyncKey } from "./watch-app-sync.js";
 import { type PickerForm, type TabMemory, browseAllTab, listPageEscape, listPageLead, listPageShown, listPageState, listPageStyles, listsReady, pickTab, pickerSurfaceClass, restoreTab } from "./list-page.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
 import {
@@ -423,7 +424,7 @@ import { dropWatchStatusPagesDrafts, isWatchStatusPagesRoute, renderWatchStatusP
 import { dropWatchControlCenterDrafts, isWatchControlCenterRoute, renderWatchControlCenterView, watchControlCenterDirty, watchControlCenterHookStyles } from "./watch-control-center/hook.js";
 import { dropWatchRoomsDrafts, isWatchRoomsRoute, renderWatchRoomsView, watchRoomsDirty, watchRoomsHookStyles } from "./watch-rooms/hook.js";
 import {
-  COMPLICATIONS_PATH, type PanelTab, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, editorKeysLive, isPlainClick, isSaveKey, landingPath, navigatePanel,
+  COMPLICATIONS_PATH, type PanelTab, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, editorKeysLive, isPlainClick, isSaveKey, landingPath, navigatePanel, reopensDesign,
   panelUrl, renderTabBar, shellStyles, swallowsSaveKey, tabOfRoute, tabPath, watchScreenOf, watchScreenPath,
 } from "./shell.js";
 import { adoptRouteWatch, loadWatchPick, resolveWatchPick, saveWatchPick, watchRouteOwner } from "./watch-pick.js";
@@ -6302,8 +6303,9 @@ export class WristAssistantPanel extends LitElement {
     // Home never flashes up first.
     if (!this.landed) {
       this.landed = true;
-      const to = landingPath(this.route, { restoring: this.restoreOpen !== undefined, shareLink: this.pendingLink !== undefined });
+      const to = landingPath(this.route, { shareLink: this.pendingLink !== undefined });
       if (to !== undefined) this.goTo(to, true);
+      else if (!reopensDesign(this.route)) this.restoreOpen = undefined;
     }
     // The list page coming into view or going, and the Browse dialog, which
     // only ever stands over an open design on the Complications tab: gone
@@ -10963,10 +10965,12 @@ export class WristAssistantPanel extends LitElement {
 
   /**
    * Read where each watch's watch app records have got to, for Home's
-   * Devices card. One read per kind per watch, side by side
-   * (`readWatchAppSync`): there is no summary command. Only an
-   * administrator can read the records, so anyone else's card stays on
-   * complications alone. Without `again`, nothing is read when the same
+   * Devices card. One summary answer covers every watch, numbers only. An
+   * integration older than that command is read the old way, one read per
+   * kind per watch. Any other failure leaves the card as it was: on
+   * complications alone the first time, on the last reading after that.
+   * Only an administrator can read the records, so anyone else's card stays
+   * on complications alone. Without `again`, nothing is read when the same
    * watches were read already.
    */
   private async loadWatchAppSync(again: boolean) {
@@ -10977,11 +10981,21 @@ export class WristAssistantPanel extends LitElement {
     this.watchAppSyncFor = key;
     const run = ++this.watchAppSyncRun;
     const hass = this.hass;
-    const read = await Promise.all(watches.map(async (id) =>
-      [id, await readWatchAppSync((kind) => fetchWatchConfig(hass, id, kind))] as const));
+    let next: Map<string, WatchAppSync>;
+    try {
+      next = summaryWatchAppSyncs(await fetchWatchConfigSummary(hass), watches);
+    } catch (err) {
+      if (!summaryUnknown(err)) {
+        // Not read: let the next visit to Home ask again.
+        if (run === this.watchAppSyncRun) this.watchAppSyncFor = undefined;
+        return;
+      }
+      const read = await Promise.all(watches.map(async (id) =>
+        [id, await readWatchAppSync((kind) => fetchWatchConfig(hass, id, kind))] as const));
+      next = new Map();
+      for (const [id, sync] of read) if (sync !== undefined) next.set(id, sync);
+    }
     if (run !== this.watchAppSyncRun) return;
-    const next = new Map<string, WatchAppSync>();
-    for (const [id, sync] of read) if (sync !== undefined) next.set(id, sync);
     this.watchAppSyncs = next;
   }
 
@@ -16049,7 +16063,7 @@ export class WristAssistantPanel extends LitElement {
     // Import belongs to the Complications tab. On first open the first draw
     // lands there (`willUpdate`); a link opened later moves there now.
     if (this.landed) {
-      const to = landingPath(this.route, { restoring: false, shareLink: true });
+      const to = landingPath(this.route, { shareLink: true });
       if (to !== undefined) this.goTo(to, true);
     }
     if (this.linkReady) void this.openPendingLink();

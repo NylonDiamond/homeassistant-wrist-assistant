@@ -500,6 +500,27 @@ export async function fetchWatchConfig(hass: HassLike, owner: string, kind: Watc
   return hass.connection.sendMessagePromise<WatchConfigRecord>({ type: `${WC}/get`, owner_watch_id: owner, kind });
 }
 
+/** Where one record has got to: the copy Home Assistant holds, the newest a
+ * device is known to hold, and the newest a device could not read. */
+export interface WatchConfigDelivery {
+  revision: number;
+  delivered_revision: number;
+  rejected_revision: number;
+}
+
+/** Every watch's panel-written records by kind, numbers only. A kind with no
+ * record is absent, and so is a watch whose stored file could not be read. */
+export interface WatchConfigSummary {
+  owners: Record<string, Record<string, WatchConfigDelivery>>;
+}
+
+/** Admin only. One answer for every watch, no documents: what Home asks in
+ * place of a read per kind per watch. An integration older than the command
+ * rejects with the code `unknown_command`. */
+export async function fetchWatchConfigSummary(hass: HassLike) {
+  return hass.connection.sendMessagePromise<WatchConfigSummary>({ type: `${WC}/summary` });
+}
+
 /** Save one watch's config of one kind, compare-and-swap on `baseRevision`.
  * Admin only. A record has three parties: the iPhone mirror writes it, the
  * panel writes it here, and the watch reads it with its own signed pull. A

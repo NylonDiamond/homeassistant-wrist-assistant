@@ -63,12 +63,13 @@ describe("the panel's shell wiring", () => {
     expect(keys.indexOf("swallowsSaveKey")).toBeLessThan(keys.indexOf("this.onKey(e)"));
   });
 
-  it("lands a reload or a share link on the Complications tab, replacing the address", () => {
+  it("lands a share link on the Complications tab, and opens on Home with nothing reopened otherwise", () => {
     const will = method("  protected override willUpdate(changed");
-    expect(will).toContain("landingPath(this.route, { restoring: this.restoreOpen !== undefined, shareLink: this.pendingLink !== undefined })");
+    expect(will).toContain("landingPath(this.route, { shareLink: this.pendingLink !== undefined })");
     expect(will).toContain("this.goTo(to, true)");
+    expect(will).toContain("else if (!reopensDesign(this.route)) this.restoreOpen = undefined;");
     const share = SOURCE.slice(SOURCE.indexOf("private takeShareLink = "), SOURCE.indexOf("private async openPendingLink"));
-    expect(share).toContain("landingPath(this.route, { restoring: false, shareLink: true })");
+    expect(share).toContain("landingPath(this.route, { shareLink: true })");
     expect(share).toContain("this.goTo(to, true)");
   });
 

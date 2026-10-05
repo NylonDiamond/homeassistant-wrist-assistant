@@ -185,16 +185,23 @@ export function swallowsSaveKey(route: PanelRoute | undefined, hasDraft: boolean
  * Where the panel should be on first open, when that is not where it is.
  *
  * A share link (`#…`) opens Import, which belongs to the Complications tab.
- * A reload that is about to reopen the complication that was open lands on
- * the Complications tab rather than Home, where the editor would be out of
- * sight; a reload on a watch screen stays there. Undefined: stay.
+ * Nothing else moves the panel: opening it with no path is always Home, even
+ * when a complication was open before (`reopensDesign`). Undefined: stay.
  */
-export function landingPath(route: PanelRoute | undefined, why: { restoring: boolean; shareLink: boolean }): string | undefined {
-  const tab = tabOfRoute(route);
-  if (tab === "complications") return undefined;
-  if (why.shareLink) return COMPLICATIONS_PATH;
-  if (why.restoring && tab === "home") return COMPLICATIONS_PATH;
-  return undefined;
+export function landingPath(route: PanelRoute | undefined, why: { shareLink: boolean }): string | undefined {
+  if (tabOfRoute(route) === "complications") return undefined;
+  return why.shareLink ? COMPLICATIONS_PATH : undefined;
+}
+
+/**
+ * Whether a reload reopens the complication that was open before it. Only on
+ * the Complications tab, where its editor shows. Opened anywhere else (the
+ * sidebar's link to Home, a watch screen) the panel starts with nothing
+ * open, so Home is what the panel opens on and the Complications tab then
+ * shows its list.
+ */
+export function reopensDesign(route: PanelRoute | undefined): boolean {
+  return tabOfRoute(route) === "complications";
 }
 
 export interface TabBarInput {

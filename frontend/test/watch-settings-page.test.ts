@@ -69,7 +69,7 @@ describe("the Settings page's address", () => {
 
   it("keeps the complication editor's keys still, and a reload there stays there", () => {
     expect(editorKeysLive(at("/settings"), true)).toBe(false);
-    expect(landingPath(at("/settings/w1"), { restoring: true, shareLink: false })).toBeUndefined();
+    expect(landingPath(at("/settings/w1"), { shareLink: false })).toBeUndefined();
   });
 
   it("is the row's last link, apart from the six, on the shared watch, marked on its page", () => {

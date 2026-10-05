@@ -12,6 +12,7 @@ import {
   isPlainClick,
   isSaveKey,
   landingPath,
+  reopensDesign,
   navigatePanel,
   panelPrefix,
   panelUrl,
@@ -238,28 +239,29 @@ describe("the save key while the editor's keys are still", () => {
 });
 
 describe("landingPath", () => {
-  const none = { restoring: false, shareLink: false };
+  const none = { shareLink: false };
 
-  it("stays where it is with nothing to reopen", () => {
+  it("stays where it is without a share link, so no path is always Home", () => {
     expect(landingPath(at(""), none)).toBeUndefined();
-    expect(landingPath(at("/pages"), none)).toBeUndefined();
+    expect(landingPath(undefined, none)).toBeUndefined();
+    expect(landingPath(at("/pages/w1"), none)).toBeUndefined();
     expect(landingPath(at(COMPLICATIONS_PATH), none)).toBeUndefined();
   });
 
-  it("lands a reload that reopens a complication on the Complications tab, not Home", () => {
-    expect(landingPath(at(""), { restoring: true, shareLink: false })).toBe(COMPLICATIONS_PATH);
-    expect(landingPath(undefined, { restoring: true, shareLink: false })).toBe(COMPLICATIONS_PATH);
-    expect(landingPath(at(COMPLICATIONS_PATH), { restoring: true, shareLink: false })).toBeUndefined();
-  });
-
-  it("keeps a reload on a watch screen there", () => {
-    expect(landingPath(at("/pages/w1"), { restoring: true, shareLink: false })).toBeUndefined();
-  });
-
   it("takes a share link to the Complications tab from anywhere", () => {
-    expect(landingPath(at(""), { restoring: false, shareLink: true })).toBe(COMPLICATIONS_PATH);
-    expect(landingPath(at("/menus"), { restoring: false, shareLink: true })).toBe(COMPLICATIONS_PATH);
-    expect(landingPath(at(COMPLICATIONS_PATH), { restoring: true, shareLink: true })).toBeUndefined();
+    expect(landingPath(at(""), { shareLink: true })).toBe(COMPLICATIONS_PATH);
+    expect(landingPath(at("/menus"), { shareLink: true })).toBe(COMPLICATIONS_PATH);
+    expect(landingPath(at(COMPLICATIONS_PATH), { shareLink: true })).toBeUndefined();
+  });
+});
+
+describe("reopensDesign", () => {
+  it("reopens the last complication only on a reload of the Complications tab", () => {
+    expect(reopensDesign(at(COMPLICATIONS_PATH))).toBe(true);
+    expect(reopensDesign(at(""))).toBe(false);
+    expect(reopensDesign(undefined)).toBe(false);
+    expect(reopensDesign(at("/pages/w1"))).toBe(false);
+    expect(reopensDesign(at("/settings"))).toBe(false);
   });
 });
 

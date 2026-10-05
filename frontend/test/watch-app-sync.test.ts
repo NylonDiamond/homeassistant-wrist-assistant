@@ -11,6 +11,8 @@ import {
   type WatchAppSync,
   deviceVerdict,
   readWatchAppSync,
+  summaryUnknown,
+  summaryWatchAppSyncs,
   waitingForText,
   watchAppSync,
   watchAppSyncKey,
@@ -58,6 +60,38 @@ describe("readWatchAppSync", () => {
 
   it("says nothing when every read failed", async () => {
     expect(await readWatchAppSync(async () => { throw new Error("unauthorized"); })).toBeUndefined();
+  });
+});
+
+describe("summaryWatchAppSyncs", () => {
+  const full = (revision: number, delivered: number) => ({ revision, delivered_revision: delivered, rejected_revision: 0 });
+
+  it("gives each watch asked about its verdict from the one answer", () => {
+    const syncs = summaryWatchAppSyncs({ owners: {
+      w1: { pages: full(5, 4), behavior: full(2, 2) },
+      w2: { menus: full(1, 1) },
+      gone: { pages: full(9, 1) },
+    } }, ["w1", "w2"]);
+    expect([...syncs.keys()]).toEqual(["w1", "w2"]);
+    expect(syncs.get("w1")).toEqual({ waiting: ["pages"], delivered: true });
+    expect(syncs.get("w2")).toEqual({ waiting: [], delivered: true });
+  });
+
+  it("reads a watch with no stored records as nothing waiting and nothing collected", () => {
+    expect(summaryWatchAppSyncs({ owners: {} }, ["w1"]).get("w1")).toEqual({ waiting: [], delivered: false });
+  });
+
+  it("agrees with the per-kind reads on the same numbers", async () => {
+    const kinds = { pages: full(3, 2), voice: full(1, 1), notification_style: full(4, 0) };
+    const read = await readWatchAppSync(async (kind) => (kinds as Record<string, ReturnType<typeof full>>)[kind] ?? full(0, 0));
+    expect(summaryWatchAppSyncs({ owners: { w: kinds } }, ["w"]).get("w")).toEqual(read);
+  });
+
+  it("only takes an unknown command as the sign of an older integration", () => {
+    expect(summaryUnknown({ code: "unknown_command", message: "Unknown command." })).toBe(true);
+    expect(summaryUnknown({ code: "unavailable" })).toBe(false);
+    expect(summaryUnknown(new Error("lost"))).toBe(false);
+    expect(summaryUnknown(undefined)).toBe(false);
   });
 });
 
