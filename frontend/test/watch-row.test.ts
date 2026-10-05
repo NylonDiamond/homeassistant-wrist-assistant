@@ -241,10 +241,12 @@ describe("the row's look", () => {
     expect(text).not.toContain("gradient");
   });
 
-  it("colors only the watch's chip and its picker's outline, in the Watch app's blue", () => {
+  it("colors only the watch's chip and its picker, in the Watch app's blue", () => {
     const hued = text.split("\n").filter((line) => line.includes("--wa-hue"));
-    expect(hued.length).toBe(2);
-    for (const line of hued) expect(line).toContain("var(--wa-hue-blue)");
+    for (const line of hued) {
+      expect(line.replaceAll("--wa-hue-blue", "")).not.toContain("--wa-hue");
+      expect(line.includes("wa-wr-open") || line.trim().startsWith("color: var(--wa-top)"), line).toBe(true);
+    }
     expect(hued.some((line) => line.includes("button.wa-wr-open {") && line.includes("border-color: var(--wa-hue-blue)"))).toBe(true);
     expect(rule("span.wa-wr-chip {")).toContain("var(--wa-hue-blue)");
     expect(rule("a.wa-wr-link, button.wa-wr-link {")).not.toContain("--wa-hue");

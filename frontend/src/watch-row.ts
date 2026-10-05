@@ -183,7 +183,7 @@ export const watchRowStyles = css`
   span.wa-wr-chip {
     display: inline-flex; align-items: center; justify-content: center; align-self: center; flex: none;
     width: 20px; height: 20px; border-radius: 5px;
-    color: var(--wa-hue-blue); background: color-mix(in srgb, var(--wa-hue-blue) 20%, transparent);
+    color: var(--wa-top); background: var(--wa-hue-blue);
   }
   .wa-wr-k { font-size: 12px; color: var(--wa-label); }
   .wa-wr-name { font-size: 14px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -194,10 +194,12 @@ export const watchRowStyles = css`
     border-radius: 6px; font: inherit; cursor: pointer; color: var(--wa-ink);
     background: var(--wa-field); border: 1px solid var(--wa-line-strong);
   }
-  button.wa-wr-open { align-items: baseline; padding: 0 10px 0 6px; line-height: 30px; border-color: var(--wa-hue-blue); }
-  button.wa-wr-open:hover, button.wa-wr-pair:hover { background: var(--wa-hover); }
+  button.wa-wr-open { align-items: baseline; padding: 0 10px 0 6px; line-height: 30px; border-color: var(--wa-hue-blue); background: color-mix(in srgb, var(--wa-hue-blue) 16%, var(--wa-field)); }
+  button.wa-wr-pair:hover { background: var(--wa-hover); }
+  button.wa-wr-open:hover { background: color-mix(in srgb, var(--wa-hue-blue) 26%, var(--wa-field)); }
+  button.wa-wr-open .wa-wr-k { color: var(--wa-hue-blue); }
   button.wa-wr-open:focus-visible, button.wa-wr-pair:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  button.wa-wr-open svg.ui-icon { width: 12px; height: 12px; align-self: center; color: var(--wa-ink); }
+  button.wa-wr-open svg.ui-icon { width: 12px; height: 12px; align-self: center; color: var(--wa-hue-blue); }
   span.wa-wr-chip svg.ui-icon { width: 13px; height: 13px; color: inherit; }
   button.wa-wr-pair { font-size: 13px; font-weight: 600; }
   button.wa-wr-pair svg.ui-icon { width: 14px; height: 14px; }
