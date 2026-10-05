@@ -27,8 +27,9 @@ import { COLLECTED_PILL_TEXT, WAITING_HELP_TEXT, WAITING_PILL_TEXT, deliveryStat
 export type ConfigHistoryState = "loading" | "ready" | "error" | "unsupported";
 
 /** What the editor keeps: its pages, its menus, the voice settings, its
- * status pages or its Control Center list. */
-export type ConfigNoun = "pages" | "menus" | "voice settings" | "status pages" | "Control Center list";
+ * status pages, its Control Center list, or the watch settings (Rooms,
+ * whose keys are part of the `behavior` record). */
+export type ConfigNoun = "pages" | "menus" | "voice settings" | "status pages" | "Control Center list" | "watch settings";
 
 /** The pronoun for a noun: "it" for the one list, "them" for the rest. */
 function them(noun: ConfigNoun): string {

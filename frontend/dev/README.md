@@ -97,6 +97,17 @@ ignored by git.
   switches, sensors and the rest, some of kinds the watch has no tile for),
   to try the Add tile list on a large home.
 
+## The Rooms editor
+
+`pages-harness.html?rooms` mounts `<wa-rooms-editor>` on the same store.
+Alex's behavior record has a room sensor (`sensor.alex_room`, now
+`living_room`), a page for the living room, a fallback page and one point
+control target. `config/area_registry/list` answers the home's areas (the
+living room with the alias Lounge), and `history/history_during_period`
+gives Alex's sensor a day of rooms. The Ultra has no behavior record, for the
+"no settings yet" state. The switches draw without their track colours here,
+since those come from the panel's own sheet.
+
 ## The panel harness
 
 `panel-harness.html` mounts the whole panel the same way, with a
