@@ -59,6 +59,7 @@ import {
   watchCatalogEntries,
   watchCatalogFromWatch,
   watchCatalogKnows,
+  watchCatalogOffersAdd,
   watchCatalogListedFor,
   watchCatalogSubtitle,
   watchCatalogWarning,
@@ -541,7 +542,7 @@ function renderBody(host: AddTileHost, view: AddTileView): TemplateResult {
     ${catalog === undefined
       ? html`<div class="at-muted at-lib-none">${WATCH_NO_CATALOG_TEXT}</div>`
       : html`<div class="at-kinds at-lib" role="group" aria-label=${catalog.noPhone === true ? (catalog.statusPagesFromWatch === true ? "From the watch" : "From Home Assistant") : "From the iPhone"}>
-          ${(Object.keys(LIBRARY_WORDS) as WatchLibraryKind[]).filter((kind) => watchCatalogKnows(catalog, kind)).map((kind) => listButton(kind, LIBRARY_WORDS[kind].button))}
+          ${(Object.keys(LIBRARY_WORDS) as WatchLibraryKind[]).filter((kind) => watchCatalogOffersAdd(catalog, kind)).map((kind) => listButton(kind, LIBRARY_WORDS[kind].button))}
         </div>
         ${catalog.noPhone === true ? html`<div class="at-muted at-lib-none">${watchNoPhoneLibraryText(catalog)}</div>` : nothing}`}
     ${openList}

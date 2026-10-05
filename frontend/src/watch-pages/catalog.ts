@@ -249,6 +249,14 @@ export function watchCatalogKnows(catalog: WatchCatalog | undefined, kind: Watch
   return kind === "statusPage" && catalog.statusPagesFromWatch === true;
 }
 
+/** Whether the add dialog offers a kind's list. Macros are frozen: no new
+ * ones are made, so their list shows only while the iPhone still lists one
+ * to point a tile at. */
+export function watchCatalogOffersAdd(catalog: WatchCatalog | undefined, kind: WatchLibraryKind): boolean {
+  if (!watchCatalogKnows(catalog, kind)) return false;
+  return kind !== "macro" || catalog!.macros.length > 0;
+}
+
 /** Whether the HTTP actions screen can add to the list: the integration
  * keeps the home's library, held or not yet. */
 export function watchHttpScreenOffered(catalog: WatchCatalog | undefined): boolean {
