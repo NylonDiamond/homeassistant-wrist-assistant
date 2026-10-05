@@ -748,9 +748,10 @@ function renderReplyTab(host: HttpActionsViewHost, action: HttpAction): Template
   const line = reply === undefined
     ? "Pick what to take from the reply to show on the watch, as a tile's value or in the banner after it runs."
     : field === "jsonPath"
-      ? "Press Send, then click a value in the answer. Or type the path: keys joined by dots, a number for an item of a list (data.0.temp)."
+      ? "Or type the path: keys joined by dots, a number for an item of a list (data.0.temp)."
       : field === "pattern" ? "The first group in brackets, else the whole match." : "Shown on the watch, as a tile's value or in the banner after it runs.";
-  return html`<p class="ha-line">${line}</p>
+  return html`${field === "jsonPath" ? html`<p class="ha-info">Press Send, then click a value in the response below to use it as the reply value.</p>` : nothing}
+    <p class="ha-line">${line}</p>
     <div class="ha-form">
       ${selectField("Read", source, REPLY_SOURCES, (v) => host.edit((d) => setHttpReplySource(d, id, v === "none" ? undefined : v)), { snapBack: true })}
       ${extra}
@@ -953,7 +954,7 @@ function renderBodyText(host: HttpActionsViewHost, action: HttpAction, reply: Ht
       <span class="ha-bmeta">${shown.isJson ? "JSON" : "Text"}${reply.body_size === undefined ? nothing : html` · ${sizeText(reply.body_size)}`}${reply.body === undefined
         ? html` · <span title="Update the integration to see the whole body.">first line only</span>` : nothing}${reply.body_cut === true ? " · cut at the size limit" : nothing}</span>
     </div>
-    ${pickable.size === 0 || shown.pieces === undefined ? nothing : html`<p class="ha-line ha-pickline">Click a value to use it as the reply value.</p>`}
+    ${pickable.size === 0 || shown.pieces === undefined ? nothing : html`<p class="ha-info ha-pickline">Click a value to use it as the reply value.</p>`}
     <pre class="ha-snippet mono ${wrap ? "" : "nowrap"}">${shown.pieces === undefined ? shown.text
       : shown.pieces.map((p) => {
         if (p.kind === "ws" || p.kind === "punct") return p.text;
@@ -1356,6 +1357,7 @@ export const httpActionsViewStyles = css`
   pre.ha-snippet .j-pick:focus-visible { outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--wa-accent) 60%, transparent); }
   pre.ha-snippet .j-pick.on { box-shadow: 0 0 0 1px var(--wa-green); background: color-mix(in srgb, var(--wa-green) 14%, transparent); }
   .ha-pickline { margin: 0 0 6px; }
+  .ha-info { margin: 0; font-size: 12.5px; color: var(--wa-amber); }
   .ha-reply-now { margin: 4px 0 0; font-size: 12.5px; color: var(--wa-muted); display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
   pre.ha-snippet .j-key { color: var(--wa-hue-blue); }
   pre.ha-snippet .j-str { color: var(--wa-hue-green); }
