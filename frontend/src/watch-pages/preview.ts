@@ -51,6 +51,7 @@ import {
   watchPageName,
 } from "./model.js";
 import { watchPageTheme, watchPageValue } from "./page-settings-model.js";
+import { watchPagePhoto, watchPagePhotoStyle } from "./page-photo.js";
 import { WATCH_TILE_DEFAULTS, watchKindColor, watchThemeRoleColors } from "./tile-new.js";
 import { watchStateDomains, watchStylingTheme } from "./tile-styling.js";
 import { type WatchCatalog, watchLibraryTileFallbackName } from "./catalog.js";
@@ -105,6 +106,10 @@ export interface WatchPagePreviewInput {
    * such as `showPageIndicator`), for what the page draws from them. Absent
    * keys take the watch's defaults. */
   behavior?: Readonly<Record<string, unknown>>;
+  /** A page photo's URL by its id once its bytes are in, else undefined
+   * (the page draws without it, as the watch does until it has the photo).
+   * Without one, no photo is drawn. */
+  photo?: (id: string) => string | undefined;
 }
 
 /** The watch's own page indicator, when the document has more than one
@@ -522,28 +527,67 @@ export function watchBrightnessVeil(b: number): string | undefined {
  * faint wash of its color.
  */
 export function watchScreenBackground(page: WatchPage, s = 1.5, screen?: { width: number; height: number }): string {
-  const layers: string[] = [];
+  const { over, under } = watchScreenBackgroundLayers(page, s, screen);
+  return [...over, ...under].join(", ");
+}
+
+/**
+ * The page's background as CSS layers, top first, in two parts: what the
+ * watch draws over the page photo (the animation, then the pattern) and
+ * what it draws under it (the brightness veil, then the base), as
+ * `TileGridPageView` stacks them.
+ */
+export function watchScreenBackgroundLayers(page: WatchPage, s = 1.5, screen?: { width: number; height: number }): { over: string[]; under: string[] } {
+  const over: string[] = [];
+  const under: string[] = [];
   // The animated overlay over the pattern, as `TileGridPageView` stacks them.
   const overlay = watchPageValue(page, "backgroundOverlay");
   if (typeof overlay === "string" && overlay !== "none") {
     const c = parseTileColor(watchPageValue(page, "backgroundOverlayColor"));
     const ink = tileInkColor(c, "#FFFFFF");
-    layers.push(`radial-gradient(ellipse at 50% 30%, ${rgba(ink, 0.22)}, transparent 70%)`);
+    over.push(`radial-gradient(ellipse at 50% 30%, ${rgba(ink, 0.22)}, transparent 70%)`);
   }
   const pattern = watchPageValue(page, "backgroundPattern");
   if (typeof pattern === "string" && pattern !== "none") {
     const ink = tileInkColor(parseTileColor(watchPageValue(page, "backgroundPatternColor")));
     const opacity = numberOr(watchPageValue(page, "backgroundPatternOpacity"), 0.5);
     const scale = numberOr(watchPageValue(page, "backgroundPatternScale"), 1);
-    layers.push(...watchPatternLayers(pattern, ink, opacity, scale * s, screen === undefined ? undefined : { width: screen.width * s, height: screen.height * s }));
+    over.push(...watchPatternLayers(pattern, ink, opacity, scale * s, screen === undefined ? undefined : { width: screen.width * s, height: screen.height * s }));
   }
   const veil = watchBrightnessVeil(numberOr(watchPageValue(page, "backgroundBrightness"), 0.6));
-  if (veil !== undefined) layers.push(`linear-gradient(${veil}, ${veil})`);
+  if (veil !== undefined) under.push(`linear-gradient(${veil}, ${veil})`);
   const color = parseTileColor(page.backgroundColor);
-  if (color?.kind === "gradient") layers.push(`linear-gradient(${watchDiagonal(screen?.width, screen?.height)}, ${color.from}, ${color.to})`);
-  else if (color?.kind === "solid") layers.push(`linear-gradient(${watchScreenColor(page)}, ${watchScreenColor(page)})`);
-  else layers.push(...watchThemeBackgroundLayers(watchPageTheme(page), s, screen));
-  return layers.join(", ");
+  if (color?.kind === "gradient") under.push(`linear-gradient(${watchDiagonal(screen?.width, screen?.height)}, ${color.from}, ${color.to})`);
+  else if (color?.kind === "solid") under.push(`linear-gradient(${watchScreenColor(page)}, ${watchScreenColor(page)})`);
+  else under.push(...watchThemeBackgroundLayers(watchPageTheme(page), s, screen));
+  return { over, under };
+}
+
+/**
+ * A page's screen background and its photo, for a picture of the page: with
+ * no photo (or its bytes not in yet) `background` is the whole background
+ * and `layers` nothing; with one, `background` is what lies under the photo,
+ * and `layers` the photo (`watchPagePhotoStyle`) then a layer of what lies
+ * over it, the pattern and the animation, each drawn before the page's
+ * tiles so they sit under them. `className` names both layers' boxes.
+ */
+export function watchScreenLayers(
+  page: WatchPage,
+  s: number,
+  screen: { width: number; height: number },
+  photoUrl: ((id: string) => string | undefined) | undefined,
+  className = "wp-photo",
+): { background: string; layers: TemplateResult | typeof nothing } {
+  const photo = watchPagePhoto(page);
+  const url = photo === undefined || photoUrl === undefined ? undefined : photoUrl(photo.id);
+  if (photo === undefined || url === undefined) return { background: watchScreenBackground(page, s, screen), layers: nothing };
+  const { over, under } = watchScreenBackgroundLayers(page, s, screen);
+  return {
+    background: under.join(", "),
+    layers: html`<span class=${className} style=${watchPagePhotoStyle(photo, url, s, screen)} aria-hidden="true"></span>${over.length === 0
+      ? nothing
+      : html`<span class=${`${className} ${className}-over`} style=${`inset:0;background:${over.join(", ")}`} aria-hidden="true"></span>`}`,
+  };
 }
 
 /** A theme's own page background (`TileGridPageView.fallbackPageBackground`),
@@ -3078,8 +3122,10 @@ export function renderWatchPagePreview(input: WatchPagePreviewInput): TemplateRe
   // in the all-on picture every tile is on, so none is hidden.
   const layout = watchPreviewLayout(watchReflowPage(page, input.stateMode === "all-on" ? undefined : input.states), screen);
   const scrolls = layout.height > screen.height + 0.5;
+  const back = watchScreenLayers(page, s, screen, input.photo);
   return renderWatchFrame(screen, s, html`<div class="wp-screen" role="group" aria-label=${`Preview of ${name}`}
-    style=${`width:${width}px;height:${layout.height * s}px;background:${watchScreenBackground(page, s, screen)}`}>
+    style=${`width:${width}px;height:${layout.height * s}px;background:${back.background}`}>
+    ${back.layers}
     ${renderWatchClock(screen, s, layout.topInset, input.icons)}
     ${renderWatchPageTitle(page, s, layout.topInset, input.icons, input.behavior)}
     ${layout.tiles.length === 0 ? html`<div class="wp-smart"><span>No tiles on this page.</span></div>` : nothing}
@@ -3108,11 +3154,13 @@ function renderSmartPreview(given: WatchPagePreviewInput): TemplateResult {
   const shown: WatchPage = { ...synthetic };
   delete shown.dynamicConfig;
   const layout = watchPreviewLayout(shown, screen);
+  const back = watchScreenLayers(page, s, screen, input.photo);
   if (config === undefined || layout.tiles.length === 0) {
     const tracking = config === undefined ? "" : smartTrackingWords(config);
     const check = input.icons?.render("checkmark.circle.fill", 28 * s, "#34C759");
     return renderWatchFrame(screen, s, html`<div class="wp-screen" role="img" aria-label=${`${name}: ${smartWord("allOff")}. ${tracking}`}
-      style=${`width:${width}px;height:${screen.height * s}px;background:${watchScreenBackground(page, s, screen)}`}>
+      style=${`width:${width}px;height:${screen.height * s}px;background:${back.background}`}>
+      ${back.layers}
       ${renderWatchClock(screen, s, layout.topInset, input.icons)}
       ${renderWatchPageTitle(shown, s, layout.topInset, input.icons, input.behavior)}
       <div class="wp-smart">
@@ -3143,7 +3191,8 @@ function renderSmartPreview(given: WatchPagePreviewInput): TemplateResult {
       @click=${(e: Event) => { e.stopPropagation(); pick(target); }}>${face}</button>`;
   };
   return renderWatchFrame(screen, s, html`<div class="wp-screen" role="group" aria-label=${`Preview of ${name}`}
-    style=${`width:${width}px;height:${layout.height * s}px;background:${watchScreenBackground(page, s, screen)}`}>
+    style=${`width:${width}px;height:${layout.height * s}px;background:${back.background}`}>
+    ${back.layers}
     ${renderWatchClock(screen, s, layout.topInset, input.icons)}
     ${renderWatchPageTitle(shown, s, layout.topInset, input.icons, input.behavior)}
     ${layout.tiles.map(tile)}
@@ -3185,6 +3234,9 @@ export const watchPagePreviewStyles = css`
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
+  /* The page photo and what the watch draws over it (watchScreenLayers),
+     under everything else on the screen. */
+  .wp-photo { position: absolute; display: block; pointer-events: none; }
   /* The system clock and the settings gear, each placed on its own. */
   .wp-clock { position: absolute; inset: 0 0 auto 0; height: 0; pointer-events: none; }
   .wp-time {

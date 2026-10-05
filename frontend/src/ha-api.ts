@@ -731,6 +731,59 @@ export async function fetchWatchVoices(hass: HassLike, watchId: string) {
   }>({ type: "wrist_assistant/watch_voices/get", watch_id: watchId });
 }
 
+const PAGE_IMAGES = "wrist_assistant/page_images";
+
+/** A built-in page photo, shipped in the integration. */
+export interface PageImagePreset {
+  id: string;
+  name: string;
+  width: number;
+  height: number;
+}
+
+/** A photo of the home's page photo library. `used_by` lists the owners
+ * whose saved pages name it. */
+export interface PageImageEntry {
+  id: string;
+  width: number;
+  height: number;
+  bytes: number;
+  added_at: string;
+  used_by: string[];
+}
+
+/** The built-in photos in the phone's order, then the library, newest
+ * first. Admin only. An integration older than the photo store rejects with
+ * the code `unknown_command`. */
+export async function listPageImages(hass: HassLike) {
+  return hass.connection.sendMessagePromise<{ presets: PageImagePreset[]; images: PageImageEntry[] }>({ type: `${PAGE_IMAGES}/list` });
+}
+
+/** One photo's JPEG as base64. Built-in ids work too. Refused `not_found`
+ * when the store has no such photo. Admin only. */
+export async function fetchPageImage(hass: HassLike, imageId: string) {
+  return hass.connection.sendMessagePromise<{ image_id: string; content_type: string; data: string }>({
+    type: `${PAGE_IMAGES}/get`,
+    image_id: imageId,
+  });
+}
+
+/** Store a JPEG (base64). The reply names the new photo, or the stored one
+ * with the same bytes. Refusals: `invalid`, `too_large`, `full`,
+ * `unavailable`. Admin only. */
+export async function uploadPageImage(hass: HassLike, data: string) {
+  return hass.connection.sendMessagePromise<{ image_id: string; width: number; height: number; bytes: number }>({
+    type: `${PAGE_IMAGES}/upload`,
+    data,
+  });
+}
+
+/** Delete a photo of the library. Refused `in_use` while a saved page names
+ * it, `invalid` for a built-in id. Admin only. */
+export async function deletePageImage(hass: HassLike, imageId: string) {
+  return hass.connection.sendMessagePromise<unknown>({ type: `${PAGE_IMAGES}/delete`, image_id: imageId });
+}
+
 /** Hand every live record of one watch to another watch. Admin only. */
 export async function moveOwner(hass: HassLike, source: string, target: string) {
   return hass.connection.sendMessagePromise<{
