@@ -79,8 +79,7 @@ describe("Home's Complications and widgets card", () => {
 
 describe("Home's Devices card", () => {
   it("puts each name in a box of its own, so a long one ends in an ellipsis", () => {
-    expect(home).toContain("this.renderDeviceRows(devices)");
-    expect(SOURCE.slice(SOURCE.indexOf("  private renderDeviceRows("))).toContain(`<span class="home-device-label">\${d.name}</span>`);
+    expect(home).toContain(`<span class="home-device-label">\${d.name}</span>`);
   });
 
   it("says in small print what the states cover: the watch app too, for an administrator who can read it", () => {
@@ -91,7 +90,7 @@ describe("Home's Devices card", () => {
 
   it("judges each watch on its watch app records too, for an administrator, and says what a waiting row waits for", () => {
     expect(home).toContain("homeDeviceRows(this.homeDevices(), admin ? this.watchAppSyncs : new Map())");
-    expect(SOURCE.slice(SOURCE.indexOf("  private renderDeviceRows("))).toContain(`<span class="home-device-why"> · \${waitingForText(d.waitingFor)}</span>`);
+    expect(home).toContain(`<span class="home-device-why"> · \${waitingForText(d.waitingFor)}</span>`);
   });
 
   it("reads the watch app records on the way into Home, and when the watches change", () => {

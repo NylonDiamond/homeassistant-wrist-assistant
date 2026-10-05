@@ -66,40 +66,6 @@ export function homeDeviceRows(devices: readonly IdHomeDevice[], watchApp: Reado
   return [...rows.filter((r) => r.kind === "watch"), ...rows.filter((r) => r.kind === "iphone")];
 }
 
-/** The hover card's width, and the gap it keeps from its pill and from the
- * window's edges. */
-export const DEVICES_POP_WIDTH = 340;
-const POP_GAP = 8;
-
-/** Where the devices hover card stands for a pill at `rect`: under it, its
- * edge on the pill's (the right one for a pill on the right), kept inside the
- * window; over it when the pill is
- * in the lower half (a foot line), so the card never runs off the bottom. */
-export function devicesPopPlace(
-  rect: Pick<DOMRect, "left" | "right" | "top" | "bottom">, width: number, height: number,
-): { left: number; top?: number; bottom?: number } {
-  const leftSide = (rect.left + rect.right) / 2 < width / 2;
-  const want = leftSide ? rect.left : rect.right - DEVICES_POP_WIDTH;
-  const left = Math.round(Math.max(POP_GAP, Math.min(want, width - DEVICES_POP_WIDTH - POP_GAP)));
-  const under = (rect.top + rect.bottom) / 2 < height / 2;
-  return under ? { left, top: Math.round(rect.bottom + POP_GAP) } : { left, bottom: Math.round(height - rect.top + POP_GAP) };
-}
-
-type Box = Pick<DOMRect, "left" | "right" | "top" | "bottom">;
-
-/** Whether a pointer at `point` keeps the hover card up: on the pill, on
- * the card, or in the gap between them (the strip that joins the two, as
- * wide as both), each with a few pixels of grace. */
-export function devicesPopKeeps(point: { x: number; y: number }, pill: Box, card: Box): boolean {
-  const inside = (b: Box, grace: number) => point.x >= b.left - grace && point.x <= b.right + grace && point.y >= b.top - grace && point.y <= b.bottom + grace;
-  if (inside(pill, 4) || inside(card, 4)) return true;
-  const between: Box = {
-    left: Math.min(pill.left, card.left), right: Math.max(pill.right, card.right),
-    top: Math.min(pill.bottom, card.bottom), bottom: Math.max(pill.top, card.top),
-  };
-  return between.top <= between.bottom && inside(between, 0);
-}
-
 /**
  * Home's look, added to the panel's sheet. Black ground, graphite cards,
  * neutral controls each with a one pixel outline. A section's hue shows in
@@ -158,16 +124,6 @@ export const homeStyles = css`
   a.home-btn:focus-visible, button.home-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   button.home-btn:disabled { opacity: .5; cursor: default; }
   .home-btn svg.ui-icon { width: 14px; height: 14px; }
-  .devices-pop {
-    position: fixed; z-index: 60; width: 340px; max-width: calc(100vw - 16px); box-sizing: border-box;
-    max-height: min(70vh, 520px); overflow: auto; scrollbar-width: thin;
-    display: flex; flex-direction: column; gap: 8px; padding: 12px 14px;
-    background: var(--wa-card); color: var(--wa-ink); font-size: 13px;
-    border: 1px solid var(--wa-line-strong); border-radius: var(--wa-r-md, 10px); box-shadow: var(--wa-shadow-pop);
-  }
-  .devices-pop-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-  .devices-pop .home-device { padding: 6px 0; }
-  .devices-pop .home-small, .devices-pop .home-empty { margin: 0; }
   .home-devices { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
   .home-device { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 8px 0; border-top: 1px solid var(--wa-line); }
   .home-device:first-child { border-top: 0; }

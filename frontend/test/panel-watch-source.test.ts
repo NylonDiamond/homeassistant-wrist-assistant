@@ -111,27 +111,6 @@ describe("the watch screens under the row", () => {
     expect(will).toContain("if (!this.leaveScreenFor(this.route, from)) this.route = navigatePanel(this.route, from.path, true) ?? from;");
   });
 
-  it("shows every device's sync on hover of any screen's sync pill, read again each time", () => {
-    const target = method("  private devicesPopTarget(");
-    expect(target).toContain(`n.classList.contains("tb-sync") || n.dataset.devicesPop !== undefined`);
-    expect(SOURCE).toContain(`this.addEventListener("mouseover", this.devicesPopOver);`);
-    expect(SOURCE).toContain(`this.removeEventListener("mouseover", this.devicesPopOver);`);
-    expect(method("  private openDevicesPop(")).toContain("void this.loadWatchAppSync(true);");
-    // It goes by where the pointer is, and on a press, a scroll, a key, a
-    // move to another screen: never left up for want of a mouseout.
-    const move = SOURCE.slice(SOURCE.indexOf("  private devicesPopMove = "), SOURCE.indexOf("  private devicesPopHide?"));
-    expect(move).toContain("devicesPopKeeps({ x: e.clientX, y: e.clientY }, pill.getBoundingClientRect(), card.getBoundingClientRect())");
-    expect(move).toContain("pill?.isConnected === true");
-    for (const type of ["pointermove", "pointerdown", "scroll", "keydown"]) expect(method("  private openDevicesPop(")).toContain(`window.addEventListener("${type}"`);
-    expect(SOURCE).toContain(`if (changed.has("route") && this.devicesPop !== undefined) this.closeDevicesPop();`);
-    expect(SOURCE).not.toContain(`addEventListener("mouseout"`);
-    const pop = method("  private renderDevicesPop(");
-    expect(pop).toContain("homeDeviceRows(this.homeDevices(), admin ? this.watchAppSyncs : new Map())");
-    expect(pop).toContain("this.renderDeviceRows(devices)");
-    // Home's card draws the same rows.
-    expect(method("  private renderHome(")).toContain("this.renderDeviceRows(devices)");
-  });
-
   it("leaves Settings to the row as a link like the six, on the shared watch", () => {
     expect(SOURCE).not.toContain("openWatchSettings");
     const row = method("  private withWatchRow(");

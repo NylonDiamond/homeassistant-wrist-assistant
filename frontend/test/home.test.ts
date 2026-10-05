@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { OwnerSummary } from "../src/ha-api.js";
-import { devicesPopKeeps, devicesPopPlace, homeDeviceRows, homeDevices, homeStyles } from "../src/home.js";
+import { homeDeviceRows, homeDevices, homeStyles } from "../src/home.js";
 import { homeSync } from "../src/send-state.js";
 import { shellStyles } from "../src/shell.js";
 
@@ -134,33 +134,5 @@ describe("the shell's and Home's look", () => {
     expect(label).toContain("text-overflow: ellipsis");
     expect(label).toContain("white-space: nowrap");
     expect(rule(".home-device-name {")).not.toContain("text-overflow");
-  });
-});
-
-describe("the devices hover card", () => {
-  it("stands under a pill in the top bar, its right edge on the pill's", () => {
-    expect(devicesPopPlace({ left: 1650, right: 1764, top: 76, bottom: 94 }, 2000, 1000)).toEqual({ left: 1424, top: 102 });
-  });
-
-  it("stands over a foot line, its left edge on the line's", () => {
-    expect(devicesPopPlace({ left: 180, right: 420, top: 920, bottom: 936 }, 2000, 1000)).toEqual({ left: 180, bottom: 88 });
-  });
-
-  it("stays inside a narrow window", () => {
-    expect(devicesPopPlace({ left: 300, right: 380, top: 40, bottom: 60 }, 390, 800).left).toBe(40);
-    expect(devicesPopPlace({ left: 2, right: 60, top: 40, bottom: 60 }, 390, 800).left).toBe(8);
-  });
-
-  it("stays up while the pointer is on the pill, on the card or between them, and nowhere else", () => {
-    const pill = { left: 1650, right: 1764, top: 76, bottom: 94 };
-    const card = { left: 1424, right: 1764, top: 102, bottom: 380 };
-    const keeps = (x: number, y: number) => devicesPopKeeps({ x, y }, pill, card);
-    expect([keeps(1700, 85), keeps(1500, 200), keeps(1700, 98), keeps(1500, 98)]).toEqual([true, true, true, true]);
-    expect([keeps(1300, 85), keeps(1700, 500), keeps(1200, 200), keeps(1700, 40)]).toEqual([false, false, false, false]);
-    // A card over a foot line: the gap is above the line.
-    const foot = { left: 180, right: 420, top: 920, bottom: 936 };
-    const over = { left: 180, right: 520, top: 630, bottom: 912 };
-    expect(devicesPopKeeps({ x: 300, y: 916 }, foot, over)).toBe(true);
-    expect(devicesPopKeeps({ x: 300, y: 600 }, foot, over)).toBe(false);
   });
 });

@@ -140,7 +140,7 @@ import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
 import { type SendState, agoWords, describeHomeSync, describeSend, deviceSyncLabel, homeSync, sendState, sendWaitMs } from "./send-state.js";
-import { type HomeDeviceRow, devicesPopKeeps, devicesPopPlace, homeDeviceRows, homeDevices, homeStyles } from "./home.js";
+import { homeDeviceRows, homeDevices, homeStyles } from "./home.js";
 import { type WatchAppSync, readWatchAppSync, summaryUnknown, summaryWatchAppSyncs, waitingForText, watchAppSyncKey } from "./watch-app-sync.js";
 import { type PickerForm, type TabMemory, browseAllTab, listPageEscape, listPageLead, listPageShown, listPageState, listPageStyles, listsReady, pickTab, pickerSurfaceClass, restoreTab } from "./list-page.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
@@ -5963,8 +5963,6 @@ export class WristAssistantPanel extends LitElement {
     window.addEventListener("focusin", this.sharedValueFocus);
     this.touchChanged();
     this.touchQuery?.addEventListener("change", this.touchChanged);
-    this.addEventListener("mouseover", this.devicesPopOver);
-    this.addEventListener("mousemove", this.devicesPopTrack);
     this.addEventListener(SCRUB_START, this.scrubStart);
     this.addEventListener(SCRUB_END, this.scrubEnd);
     window.addEventListener("hashchange", this.takeShareLink);
@@ -6214,9 +6212,6 @@ export class WristAssistantPanel extends LitElement {
     window.removeEventListener("pointercancel", this.pressEnd, { capture: true });
     window.removeEventListener("click", this.sharedValueOutside, { capture: true });
     window.removeEventListener("click", this.leaveGuard, { capture: true });
-    this.removeEventListener("mouseover", this.devicesPopOver);
-    this.removeEventListener("mousemove", this.devicesPopTrack);
-    this.closeDevicesPop();
     window.removeEventListener("focusin", this.sharedValueFocus);
     window.removeEventListener("pointerdown", this.addSheetOutside, { capture: true });
     window.removeEventListener("pointerdown", this.sideMenuOutside, { capture: true });
@@ -6385,7 +6380,6 @@ export class WristAssistantPanel extends LitElement {
     // Forward moves without a press, so the move itself shuts it and drops its
     // outside-press listener.
     if (changed.has("route")) this.toggleWatchRowMenu(false);
-    if (changed.has("route") && this.devicesPop !== undefined) this.closeDevicesPop();
     // The Settings page follows the row's shared watch on every draw, and
     // reads again on the way back to it. Not before the device list is in,
     // so a home with watches never shows the "no watch" card first. Any
@@ -10675,132 +10669,7 @@ export class WristAssistantPanel extends LitElement {
       onTab: (tab) => this.openTab(tab),
       watch: this.sharedWatch,
     });
-    return html`${bar}${this.renderTab()}${this.renderDevicesPop()}`;
-  }
-
-  // ── every device's sync, on hover of a sync pill ─────────────────────
-
-  /** Where the hover card stands, while it is up. */
-  @state() private devicesPop?: { left: number; top?: number; bottom?: number };
-  private devicesPopTimer?: number;
-  private devicesPopFor?: HTMLElement;
-
-  /** A sync pill of any screen (`.tb-sync`), or a line that asks for the
-   * card by `data-devices-pop`, under the pointer. The screens are elements
-   * of their own, so the pill is found on the event's path. */
-  private devicesPopTarget(e: Event): HTMLElement | undefined {
-    for (const n of e.composedPath()) {
-      if (n === this) break;
-      if (n instanceof HTMLElement && (n.classList.contains("tb-sync") || n.dataset.devicesPop !== undefined)) return n;
-    }
-    return undefined;
-  }
-
-  private devicesPopOver = (e: MouseEvent) => {
-    const target = this.devicesPopTarget(e);
-    if (target === undefined) return;
-    // The card says more than the pill's own hover text, which would only
-    // come up over it.
-    if (target.title !== "") {
-      target.setAttribute("aria-label", target.title);
-      target.removeAttribute("title");
-    }
-    if (this.devicesPop !== undefined && this.devicesPopFor === target) return;
-    window.clearTimeout(this.devicesPopTimer);
-    // Already up for another pill: move at once. Else wait a moment, and
-    // open only if the pointer is still on the pill, so one only passing
-    // over opens nothing.
-    const x = e.clientX;
-    const y = e.clientY;
-    this.devicesPopAt = { x, y };
-    this.devicesPopTimer = window.setTimeout(() => {
-      const r = target.getBoundingClientRect();
-      const at = this.devicesPopAt ?? { x, y };
-      if (!target.isConnected || at.x < r.left - 2 || at.x > r.right + 2 || at.y < r.top - 2 || at.y > r.bottom + 2) return;
-      this.openDevicesPop(target);
-    }, this.devicesPop !== undefined ? 0 : 180);
-  };
-
-  /** Where the pointer was last seen while a pill waits to open its card. */
-  private devicesPopAt?: { x: number; y: number };
-  private devicesPopTrack = (e: MouseEvent) => { this.devicesPopAt = { x: e.clientX, y: e.clientY }; };
-
-  /**
-   * While the card is up, every move of the pointer is asked one thing: is
-   * it still on the pill, on the card, or between the two. Anywhere else,
-   * the card goes. Asked of the pointer's place and not of `mouseout`,
-   * which never comes when the pill is redrawn or taken away under the
-   * pointer, and then the card stayed up for good.
-   */
-  private devicesPopMove = (e: PointerEvent | MouseEvent) => {
-    if (this.devicesPop === undefined) return;
-    const card = this.renderRoot.querySelector<HTMLElement>(".devices-pop");
-    const pill = this.devicesPopFor;
-    const keep = card !== null && pill?.isConnected === true
-      && devicesPopKeeps({ x: e.clientX, y: e.clientY }, pill.getBoundingClientRect(), card.getBoundingClientRect());
-    if (keep) {
-      window.clearTimeout(this.devicesPopHide);
-      this.devicesPopHide = undefined;
-    } else if (this.devicesPopHide === undefined) {
-      this.devicesPopHide = window.setTimeout(this.closeDevicesPop, 160);
-    }
-  };
-
-  private devicesPopHide?: number;
-
-  private closeDevicesPop = () => {
-    window.clearTimeout(this.devicesPopTimer);
-    window.clearTimeout(this.devicesPopHide);
-    this.devicesPopHide = undefined;
-    this.devicesPop = undefined;
-    this.devicesPopFor = undefined;
-    window.removeEventListener("pointermove", this.devicesPopMove, { capture: true });
-    window.removeEventListener("pointerdown", this.devicesPopPress, { capture: true });
-    window.removeEventListener("scroll", this.closeDevicesPop, { capture: true });
-    window.removeEventListener("keydown", this.closeDevicesPop, { capture: true });
-    window.removeEventListener("blur", this.closeDevicesPop);
-  };
-
-  /** A press anywhere but on the card closes it. */
-  private devicesPopPress = (e: PointerEvent) => {
-    if (!e.composedPath().some((n) => n instanceof HTMLElement && n.classList.contains("devices-pop"))) this.closeDevicesPop();
-  };
-
-  private openDevicesPop(target: HTMLElement) {
-    this.devicesPopFor = target;
-    this.devicesPop = devicesPopPlace(target.getBoundingClientRect(), window.innerWidth, window.innerHeight);
-    window.clearTimeout(this.devicesPopHide);
-    this.devicesPopHide = undefined;
-    window.addEventListener("pointermove", this.devicesPopMove, { capture: true });
-    window.addEventListener("pointerdown", this.devicesPopPress, { capture: true });
-    window.addEventListener("scroll", this.closeDevicesPop, { capture: true });
-    window.addEventListener("keydown", this.closeDevicesPop, { capture: true });
-    window.addEventListener("blur", this.closeDevicesPop);
-    void this.loadWatchAppSync(true);
-  }
-
-  private renderDevicesPop() {
-    const at = this.devicesPop;
-    if (at === undefined) return nothing;
-    const admin = this.hass.user?.is_admin === true;
-    const devices = homeDeviceRows(this.homeDevices(), admin ? this.watchAppSyncs : new Map());
-    const waiting = devices.filter((d) => d.sync === "waiting").length;
-    return html`<div class="devices-pop" role="tooltip"
-      style=${`left:${at.left}px;${at.top !== undefined ? `top:${at.top}px` : `bottom:${at.bottom}px`}`}>
-      <div class="devices-pop-head"><span class="home-title">Devices</span>
-        <span class="home-sub">${devices.length === 0 ? "" : waiting === 0 ? "Every device has your changes" : `${waiting} of ${devices.length} waiting`}</span></div>
-      ${devices.length === 0 ? html`<p class="home-empty">No watch or iPhone has connected yet.</p>` : this.renderDeviceRows(devices)}
-      ${devices.length === 0 ? nothing : html`<p class="home-small">A device collects its changes the next time its app is open.</p>`}
-    </div>`;
-  }
-
-  private renderDeviceRows(devices: readonly HomeDeviceRow[]) {
-    return html`<ul class="home-devices">${devices.map((d) => html`<li class="home-device ${d.sync}">
-      <i class="home-dot" aria-hidden="true"></i>
-      <span class="home-device-name">${uiIcon(d.kind === "iphone" ? "phone" : "watch")}<span class="home-device-label">${d.name}</span></span>
-      <span class="home-device-sync">${deviceSyncLabel(d.sync)}${d.waitingFor.length === 0 ? nothing
-        : html`<span class="home-device-why"> · ${waitingForText(d.waitingFor)}</span>`}</span>
-    </li>`)}</ul>`;
+    return html`${bar}${this.renderTab()}`;
   }
 
   /** A tab pressed in the bar. The tab already on screen stays as it is, so
@@ -18889,7 +18758,12 @@ export class WristAssistantPanel extends LitElement {
             <span class="home-sub">Watches and phones that get your changes</span>
             ${devices.length === 0
               ? html`<p class="home-empty">${this.linkReady ? "No watch or iPhone has connected to this Home Assistant yet." : "Loading…"}</p>`
-              : this.renderDeviceRows(devices)}
+              : html`<ul class="home-devices">${devices.map((d) => html`<li class="home-device ${d.sync}">
+                  <i class="home-dot" aria-hidden="true"></i>
+                  <span class="home-device-name">${uiIcon(d.kind === "iphone" ? "phone" : "watch")}<span class="home-device-label">${d.name}</span></span>
+                  <span class="home-device-sync">${deviceSyncLabel(d.sync)}${d.waitingFor.length === 0 ? nothing
+                    : html`<span class="home-device-why"> · ${waitingForText(d.waitingFor)}</span>`}</span>
+                </li>`)}</ul>`}
             ${devices.length === 0 ? nothing : html`<p class="home-small">${admin
               ? "Synced, Waiting and Nothing waiting cover complications and widgets, and on a watch also its pages, menus, settings and the rest of the watch app."
               : "Synced, Waiting and Nothing waiting cover complications and widgets."}</p>`}
