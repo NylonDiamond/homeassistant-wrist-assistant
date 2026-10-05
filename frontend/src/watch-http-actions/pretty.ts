@@ -1,6 +1,6 @@
 /** Formatting of a test answer's body for the response pane. Pure: no DOM. */
 
-export type JsonPieceKind = "key" | "str" | "num" | "lit" | "punct" | "ws";
+export type JsonPieceKind = "key" | "str" | "num" | "lit" | "punct" | "ws" | "var";
 export interface JsonPiece {
   kind: JsonPieceKind;
   text: string;
@@ -20,14 +20,19 @@ export function prettyJson(text: string, indent = 2): JsonPiece[] | undefined {
   } catch {
     return undefined;
   }
-  const tokens = trimmed.match(TOKEN) ?? [];
+  return layout(trimmed.match(TOKEN) ?? [], indent);
+}
+
+function layout(tokens: readonly string[], indent: number): JsonPiece[] {
   const out: JsonPiece[] = [];
   let depth = 0;
   const line = () => out.push({ kind: "ws", text: `\n${" ".repeat(depth * indent)}` });
   for (let i = 0; i < tokens.length; i += 1) {
     const t = tokens[i]!;
     const next = tokens[i + 1];
-    if (t === "{" || t === "[") {
+    if (t.startsWith("{{")) {
+      out.push({ kind: "var", text: t });
+    } else if (t === "{" || t === "[") {
       const close = t === "{" ? "}" : "]";
       if (next === close) {
         out.push({ kind: "punct", text: t + close });
@@ -54,6 +59,59 @@ export function prettyJson(text: string, indent = 2): JsonPiece[] | undefined {
       out.push({ kind: "num", text: t });
     }
   }
+  return out;
+}
+
+const VAR = /\{\{[A-Za-z0-9_]+\}\}/g;
+/** As TOKEN, and a {{key}} is one value, and a text still being typed (no
+ * closing quote yet) is one token to the end of its line. */
+const LOOSE = /\{\{[A-Za-z0-9_]+\}\}|"(?:[^"\\\n]|\\.)*"?|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|\btrue\b|\bfalse\b|\bnull\b|[{}[\],:]/g;
+
+/** A request body of JSON indented, or undefined when it is not JSON. A
+ * {{key}} may stand where a value goes (`{"n": {{count}}}`), which is not
+ * JSON until it is filled in; it is kept as typed. */
+export function formatJsonBody(text: string, indent = 2): string | undefined {
+  const trimmed = text.trim();
+  if (trimmed === "") return undefined;
+  const tokens: string[] = [];
+  let probe = "";
+  let at = 0;
+  for (const m of trimmed.matchAll(LOOSE)) {
+    if (trimmed.slice(at, m.index).trim() !== "") return undefined;
+    tokens.push(m[0]);
+    probe += m[0].startsWith("{{") ? "0" : m[0];
+    at = m.index + m[0].length;
+  }
+  if (trimmed.slice(at).trim() !== "") return undefined;
+  try {
+    JSON.parse(probe);
+  } catch {
+    return undefined;
+  }
+  return piecesText(layout(tokens, indent));
+}
+
+/** The text exactly as typed, cut into colored pieces: JSON tokens when
+ * `json`, and every {{key}} either way. Joined, the pieces are the text. */
+export function colorBody(text: string, json: boolean): JsonPiece[] {
+  const out: JsonPiece[] = [];
+  let at = 0;
+  const matches = [...text.matchAll(json ? LOOSE : VAR)];
+  matches.forEach((m, i) => {
+    if (m.index > at) out.push({ kind: "ws", text: text.slice(at, m.index) });
+    const t = m[0];
+    at = m.index + t.length;
+    let kind: JsonPieceKind;
+    if (t.startsWith("{{")) kind = "var";
+    else if (t.startsWith('"')) {
+      const next = matches[i + 1];
+      kind = next !== undefined && next[0] === ":" && text.slice(at, next.index).trim() === "" ? "key" : "str";
+    } else if (t === "true" || t === "false" || t === "null") kind = "lit";
+    else if (/^[{}[\],:]$/.test(t)) kind = "punct";
+    else kind = "num";
+    out.push({ kind, text: t });
+  });
+  if (at < text.length) out.push({ kind: "ws", text: text.slice(at) });
   return out;
 }
 

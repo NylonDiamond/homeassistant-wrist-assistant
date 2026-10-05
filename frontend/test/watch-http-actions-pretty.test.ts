@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { piecesText, prettyJson, sizeText } from "../src/watch-http-actions/pretty.js";
+import { colorBody, formatJsonBody, piecesText, prettyJson, sizeText } from "../src/watch-http-actions/pretty.js";
 
 describe("the formatted body", () => {
   it("indents JSON and keeps every value as the server wrote it", () => {
@@ -19,6 +19,25 @@ describe("the formatted body", () => {
     expect(prettyJson("<html></html>")).toBeUndefined();
     expect(prettyJson(`{"a":1`)).toBeUndefined();
     expect(prettyJson("")).toBeUndefined();
+  });
+
+  it("indents a body to send, a {{key}} kept where a value goes", () => {
+    expect(formatJsonBody(`{"n":{{count}},"t":"{{msg}} now","l":[1,2]}`)).toBe(`{\n  "n": {{count}},\n  "t": "{{msg}} now",\n  "l": [\n    1,\n    2\n  ]\n}`);
+    expect(formatJsonBody(`{"a":1`)).toBeUndefined();
+    expect(formatJsonBody(`a=1&b=2`)).toBeUndefined();
+    expect(formatJsonBody(`{"a": oops}`)).toBeUndefined();
+    expect(formatJsonBody("  ")).toBeUndefined();
+  });
+
+  it("colors a body as typed and loses no character of it", () => {
+    const typed = `{ "a" : "x", "n": {{n}},\n  "open": "not closed yet\n  "t": true, 4.5 junk }`;
+    const pieces = colorBody(typed, true);
+    expect(piecesText(pieces)).toBe(typed);
+    const kinds = pieces.filter((p) => p.kind !== "ws" && p.kind !== "punct").map((p) => `${p.kind}:${p.text}`);
+    expect(kinds).toEqual([`key:"a"`, `str:"x"`, `key:"n"`, "var:{{n}}", `key:"open"`, `str:"not closed yet`, `key:"t"`, "lit:true", "num:4.5"]);
+    const form = colorBody("a={{a}}&b=2", false);
+    expect(piecesText(form)).toBe("a={{a}}&b=2");
+    expect(form.filter((p) => p.kind === "var").map((p) => p.text)).toEqual(["{{a}}"]);
   });
 
   it("says a size in words", () => {

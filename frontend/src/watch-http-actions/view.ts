@@ -25,7 +25,7 @@ import type { HassLike, HttpActionTestReply } from "../ha-api.js";
 import type { IconProvider } from "../renderer.js";
 import type { SymbolBrowser } from "../symbols.js";
 import { uiIcon } from "../ui-icons.js";
-import { piecesText, prettyJson, sizeText } from "./pretty.js";
+import { colorBody, formatJsonBody, piecesText, prettyJson, sizeText } from "./pretty.js";
 import { type JsonObject } from "../watch-pages/model.js";
 import {
   HTTP_AUTH_KINDS,
@@ -127,6 +127,8 @@ const REPLY_TAB_KEY = "ha:rtab";
 const BODY_MODE_KEY = "ha:bmode";
 const BODY_WRAP_KEY = "ha:bwrap";
 const BODY_COPIED_KEY = "ha:bcopied";
+const SEND_WRAP_KEY = "ha:qwrap";
+const SEND_COPIED_KEY = "ha:qcopied";
 const SHOW_PREFIX = "ha:show:";
 const AUTH_PREFIX = "ha:auth:";
 const TEST_PREFIX = "ha:test:";
@@ -646,10 +648,49 @@ function renderBodyTab(host: HttpActionsViewHost, action: HttpAction): TemplateR
         </select></label>
       ${contentType === undefined ? nothing : html`<span class="ha-line">Sends Content-Type: ${contentType}, unless a header sets one.</span>`}
     </div>
-    ${type === "audio"
-      ? html`<p class="ha-line ha-audio">${HTTP_AUDIO_TEXT}</p>`
-      : html`<textarea class="mono ha-body-text" rows="8" spellcheck="false" aria-label="Body" .value=${action.body ?? ""} placeholder=${BODY_PLACEHOLDER[type]}
-          @input=${(e: Event) => editRequest(host, action.id, (d) => setHttpActionBody(d, action.id, (e.target as HTMLTextAreaElement).value), `a:${action.id}:body`)}></textarea>`}`;
+    ${type === "audio" ? html`<p class="ha-line ha-audio">${HTTP_AUDIO_TEXT}</p>` : renderSendBody(host, action, type)}`;
+}
+
+/** The body to send: a text box with its text colored behind it (JSON
+ * tokens for a JSON body, every {{key}} for any), and Format, Wrap, Copy. */
+function renderSendBody(host: HttpActionsViewHost, action: HttpAction, type: HttpBodyType): TemplateResult {
+  const text = action.body ?? "";
+  const json = type === "json";
+  const formatted = json ? formatJsonBody(text) : undefined;
+  const wrap = host.uiState.get(SEND_WRAP_KEY) !== false;
+  const copied = host.uiState.get(SEND_COPIED_KEY) === true;
+  const set = (key: string, value: unknown) => {
+    host.uiState.set(key, value);
+    host.requestUpdate();
+  };
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      set(SEND_COPIED_KEY, true);
+      setTimeout(() => set(SEND_COPIED_KEY, false), 1500);
+    } catch {
+      /* No clipboard here: the text can still be selected. */
+    }
+  };
+  const bad = json && text.trim() !== "" && formatted === undefined;
+  return html`<div class="ha-bbar ha-qbar" role="toolbar" aria-label="Body options">
+      ${json ? html`<button type="button" class="ha-bopt" title=${bad ? "The body is not JSON" : "Indent the JSON"}
+        ?disabled=${host.busy || formatted === undefined || formatted === text}
+        @click=${() => { if (formatted !== undefined) editRequest(host, action.id, (d) => setHttpActionBody(d, action.id, formatted)); }}>Format</button>` : nothing}
+      <button type="button" class="ha-bopt ${wrap ? "on" : ""}" aria-pressed=${wrap ? "true" : "false"} title="Wrap long lines" @click=${() => set(SEND_WRAP_KEY, !wrap)}>Wrap</button>
+      <button type="button" class="ha-bopt" title="Copy the body" ?disabled=${text === ""} @click=${() => void copy()}>${copied ? "Copied" : "Copy"}</button>
+      <span class="ha-bmeta">${bad ? html`<span class="ha-bad">Not JSON</span> · ` : nothing}${sizeText(new TextEncoder().encode(text).length)}</span>
+    </div>
+    <div class="ha-code ${wrap ? "" : "nowrap"}">
+      <pre class="mono" aria-hidden="true">${colorBody(text, json).map((p) => (p.kind === "ws" || p.kind === "punct" ? p.text : html`<span class=${`j-${p.kind}`}>${p.text}</span>`))}${"\n"}</pre>
+      <textarea class="mono ha-body-text" spellcheck="false" autocapitalize="off" autocomplete="off" wrap=${wrap ? "soft" : "off"} aria-label="Body" .value=${text} placeholder=${BODY_PLACEHOLDER[type]}
+        @scroll=${(e: Event) => {
+          const box = e.target as HTMLTextAreaElement;
+          const back = box.previousElementSibling as HTMLElement | null;
+          if (back !== null) { back.scrollTop = box.scrollTop; back.scrollLeft = box.scrollLeft; }
+        }}
+        @input=${(e: Event) => editRequest(host, action.id, (d) => setHttpActionBody(d, action.id, (e.target as HTMLTextAreaElement).value), `a:${action.id}:body`)}></textarea>
+    </div>`;
 }
 
 function variableEditor(host: HttpActionsViewHost, action: HttpAction, v: HttpVariable, unused: boolean): TemplateResult {
@@ -1205,7 +1246,24 @@ export const httpActionsViewStyles = css`
   .ha-body-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
   label.ha-inline { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--wa-label, var(--wa-muted)); }
   label.ha-inline select { min-width: 130px; }
-  textarea.ha-body-text { width: 100%; flex: 1 1 auto; min-height: 140px; resize: vertical; font-size: 12.5px; line-height: 1.5; padding: 8px 10px; }
+  .ha-qbar { position: static; margin: 0; padding: 0; background: none; }
+  .ha-bad { color: var(--wa-amber); font-weight: 600; }
+  .ha-code { position: relative; flex: 1 1 auto; min-height: 140px; border: 1px solid var(--wa-line-strong); border-radius: 8px; background: var(--wa-input); overflow: hidden; }
+  .ha-code:focus-within { border-color: color-mix(in srgb, var(--wa-accent) 60%, var(--wa-line-strong)); }
+  .ha-code pre, .ha-code textarea.ha-body-text {
+    position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; margin: 0; box-sizing: border-box; border: 0; border-radius: 0; outline: none; box-shadow: none;
+    padding: 8px 10px; font-size: 12.5px; line-height: 1.5; letter-spacing: 0; tab-size: 2;
+    white-space: pre-wrap; overflow-wrap: anywhere; word-break: normal; scrollbar-width: thin; scrollbar-gutter: stable;
+  }
+  .ha-code.nowrap pre, .ha-code.nowrap textarea.ha-body-text { white-space: pre; overflow-wrap: normal; }
+  .ha-code pre { overflow: hidden; color: var(--wa-ink); pointer-events: none; }
+  .ha-code textarea.ha-body-text { overflow: auto; resize: none; background: transparent; color: transparent; caret-color: var(--wa-ink); }
+  .ha-code textarea.ha-body-text::placeholder { color: var(--wa-muted); }
+  .ha-code .j-key { color: var(--wa-hue-blue); }
+  .ha-code .j-str { color: var(--wa-hue-green); }
+  .ha-code .j-num { color: var(--wa-hue-orange); }
+  .ha-code .j-lit { color: var(--wa-hue-pink); }
+  .ha-code .j-var, pre.ha-snippet .j-var { color: var(--wa-val); }
 
   .ha-from-globals { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; font-size: 12px; color: var(--wa-muted); }
   .ha-var { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; max-width: 760px; border: 1px solid var(--wa-line); border-radius: 8px; }
