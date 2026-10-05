@@ -800,7 +800,7 @@ export class WatchSettings implements ReactiveController {
     if (this.loadError !== undefined) {
       const id = this.ownerId;
       return html`<div class="xf-lead warn">${uiIcon("info")}<span>Could not read this watch's settings: ${this.loadError}</span></div>
-        ${id === undefined ? nothing : html`<button class="small ws-retry" @click=${() => void this.load(id)}>Try again</button>`}`;
+        ${id === undefined ? nothing : html`<button class="small ws-retry" @click=${() => void this.reread("behavior", id)}>Try again</button>`}`;
     }
     if (this.ownerId === undefined) {
       return html`<div class="xf-lead">${uiIcon("info")}<span><b>No watch has connected to this Home Assistant yet.</b> Pair one below, or open the Wrist Assistant app on your iPhone.</span></div>`;
