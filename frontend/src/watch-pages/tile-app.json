@@ -1623,8 +1623,8 @@
       }
     ],
     "where": "behavior",
-    "rule": "Both switches are keys of the behavior document, not tile keys: one value for every point control tile, outside the page's Save and undo. The panel shows them read only (absent reads Off) with \"Change on the iPhone\". Room mappings need the watch compass and stay on the phone.",
-    "readOnlyLine": "Change on the iPhone",
+    "rule": "Both switches are keys of the behavior document, not tile keys: one value for every point control tile, outside the page's Save and undo. The page editor shows them read only (absent reads Off) with \"Change in Rooms\": the panel's Rooms editor and the phone change them, with the rooms and their targets. Capturing a heading with the watch compass stays on the phone.",
+    "readOnlyLine": "Change in Rooms",
     "reset": "The Pointer task writes no tile key and has no reset."
   },
   "webhookInbox": {
