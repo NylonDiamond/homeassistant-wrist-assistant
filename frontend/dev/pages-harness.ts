@@ -22,6 +22,7 @@
 
 import "../src/watch-pages/page-editor.js";
 import "../src/watch-menus/menu-editor.js";
+import "../src/watch-control-center/control-center-editor.js";
 import type { HassEntityState, HassLike, OwnerSummary } from "../src/ha-api.js";
 // The phone's menus as the app's tests write them, for `?menus`.
 import menusConfigured from "../test/fixtures-menus/02-configured.json";
@@ -39,20 +40,21 @@ const pageFixtures = pageFixturesModule as Record<string, Json>;
 // ── the server's rules, as `const.py` sets them ──────────────────────────
 
 let DELAY_MS = 150;
-const KINDS = ["behavior", "catalog", "menus", "pages"];
+const KINDS = ["behavior", "catalog", "control_center", "menus", "pages"];
 // The catalog is the phone's: the panel reads it and never saves it.
-const PANEL_KINDS = ["behavior", "menus", "pages"];
+const PANEL_KINDS = ["behavior", "control_center", "menus", "pages"];
 const MAX_DOCUMENT_BYTES: Record<string, number> = {
   pages: 2 * 1024 * 1024,
   behavior: 256 * 1024,
   catalog: 256 * 1024,
   menus: 256 * 1024,
+  control_center: 256 * 1024,
 };
 const CATALOG_LIST_KEYS = ["httpActions", "macros", "statusPages"];
 const MENUS_SECTION_KEYS = ["quickAction", "entityRadial", "pageSwitcher"];
 const HISTORY_LIMIT = 5;
 const PANEL_WRITER = "panel";
-const KIND_LIST_KEYS: Record<string, string> = { pages: "pages" };
+const KIND_LIST_KEYS: Record<string, string> = { pages: "pages", control_center: "entities" };
 
 const WC = "wrist_assistant/watch_config";
 const CMD = {
@@ -632,6 +634,20 @@ function seedStore(): void {
   // defaults; the Ultra has none, for "Start with the defaults".
   store.put(ALEX_WATCH, "menus", clone(menusConfigured as Json), { base: 0, by: ALEX_WATCH, at: minutesAgo(90), notify: false });
   store.put(SAM_WATCH, "menus", clone(menusDefaults as Json), { base: 0, by: SAM_WATCH, at: minutesAgo(60 * 30), notify: false });
+
+  // The Control Center list (`?control-center`): Alex's iPhone sent one with
+  // a hidden entry, a tint and an entry in a domain the watch never shows;
+  // Sam and the Ultra have none, for "Start with an empty list".
+  store.put(ALEX_WATCH, "control_center", {
+    entities: [
+      { displayName: "Kitchen", domain: "light", entityId: "light.kitchen", iconName: "lightbulb", schemaVersion: 1 },
+      { customDisplayName: "Door", displayName: "Front Door", domain: "lock", entityId: "lock.front_door", iconName: "lock", schemaVersion: 1, tintColorHex: "#34D399" },
+      { displayName: "Garage", domain: "cover", entityId: "cover.garage_door", iconName: "blinds.horizontal.closed", isHidden: true, schemaVersion: 1 },
+      { displayName: "Movie night", domain: "script", entityId: "script.movie_night", iconName: "scroll", schemaVersion: 1 },
+      { displayName: "Outdoor", domain: "sensor", entityId: "sensor.outdoor_temperature", iconName: "circle", schemaVersion: 1 },
+    ],
+    schemaVersion: 1,
+  }, { base: 0, by: ALEX_WATCH, at: minutesAgo(45), notify: false });
 
   // The phone's library catalog (part 3e), the bytes the app's tests write,
   // on both watches with pages unless the No catalog switch is on.
@@ -1315,11 +1331,13 @@ window.setTimeout(() => {
 
 const frame = document.getElementById("frame") as HTMLElement;
 const strip = document.getElementById("strip") as HTMLElement;
-let editor: HTMLElementTagNameMap["wa-page-editor"] | HTMLElementTagNameMap["wa-menu-editor"] | undefined;
+let editor: HTMLElementTagNameMap["wa-page-editor"] | HTMLElementTagNameMap["wa-menu-editor"] | HTMLElementTagNameMap["wa-control-center-editor"] | undefined;
 
 /** `pages-harness.html?menus` mounts the menu editor in place of the page
  * editor, on the same store. */
 const menusMode = new URLSearchParams(location.search).has("menus");
+/** `pages-harness.html?control-center` mounts the Control Center editor. */
+const controlCenterMode = new URLSearchParams(location.search).has("control-center");
 
 interface Prefs { dark: boolean; narrow: boolean; width: string }
 const prefs: Prefs = { dark: false, narrow: false, width: "full" };
@@ -1340,6 +1358,17 @@ function savePrefs(): void {
 
 function mount(): void {
   frame.replaceChildren();
+  if (controlCenterMode) {
+    const cc = document.createElement("wa-control-center-editor");
+    cc.hass = makeHass();
+    cc.owners = OWNERS;
+    cc.ownerId = undefined;
+    cc.narrow = prefs.narrow;
+    cc.icons = noIcons ? undefined : icons;
+    frame.append(cc);
+    editor = cc;
+    return;
+  }
   if (menusMode) {
     const menus = document.createElement("wa-menu-editor");
     menus.hass = makeHass();
