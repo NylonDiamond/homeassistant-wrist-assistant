@@ -131,7 +131,7 @@ interface Inside {
   startStyle(): Promise<void>;
   edit(setting: CatalogSetting, value: unknown): void;
   editStyle(row: StyleRow, value: StyleValue): void;
-  renderFoot(): unknown;
+  renderBar(): unknown;
 }
 
 const setting = (key: string): CatalogSetting => {
@@ -171,7 +171,7 @@ describe("Watch settings with the notification style", () => {
     ws.show(ha.hass, owners, "w1");
     const inside = ws as unknown as Inside;
     await vi.waitFor(() => expect(inside.loading).toBe(false));
-    return { ws, inside, ha, text: () => flatten(ws.render(ha.hass, owners)), foot: () => flatten(inside.renderFoot()) };
+    return { ws, inside, ha, text: () => flatten(ws.render(ha.hass, owners)), foot: () => flatten(inside.renderBar()) };
   }
 
   const both = (style: Record<string, unknown> = fixture("02-configured.json")) => ({

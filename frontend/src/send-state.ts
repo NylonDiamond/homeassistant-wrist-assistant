@@ -341,7 +341,7 @@ export function deviceSync(d: HomeDevice): DeviceSync | undefined {
 export function deviceSyncLabel(s: DeviceSync): string {
   if (s === "synced") return "Synced";
   if (s === "waiting") return "Waiting";
-  return "Nothing to send";
+  return "Nothing waiting";
 }
 
 /** The pill's words and its hover text. */

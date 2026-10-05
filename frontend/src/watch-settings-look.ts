@@ -1,4 +1,4 @@
-// How the Watch settings dialog draws each setting: the icon beside its
+// How the Watch settings page draws each setting: the icon beside its
 // title, and for a choice drawn as tiles, each tile's icon or small picture,
 // its short name and its detail line.
 //

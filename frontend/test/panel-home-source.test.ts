@@ -41,11 +41,12 @@ describe("Home's Watch app card", () => {
     expect(watchCard.indexOf(guard)).toBeLessThan(watchCard.indexOf("home-pair-watch"));
   });
 
-  it("offers to pair a watch, through Watch settings, in a home with none", () => {
+  it("offers to pair a watch, through the Settings page, in a home with none", () => {
     expect(watchCard).toContain("const watches = settingsWatches(this.owners);");
     const none = between(watchCard, "${watches.length === 0\n        ? html`<div class=\"home-screens\">", ": html`");
-    expect(none).toContain(`class="home-screen home-pair-watch"`);
-    expect(none).toContain("this.watchSettings.show(this.hass, this.owners, undefined)");
+    expect(none).toContain(`<a class="home-screen home-pair-watch" href=\${href(WATCH_SETTINGS_SCREEN.path)}`);
+    expect(none).toContain("this.goTo(WATCH_SETTINGS_SCREEN.path);");
+    expect(none).not.toContain("watchSettings");
   });
 
   it("has a door to each of the six screens once there is a watch", () => {
@@ -80,8 +81,27 @@ describe("Home's Devices card", () => {
     expect(home).toContain(`<span class="home-device-label">\${d.name}</span>`);
   });
 
-  it("says in small print that the states are about complications and widgets", () => {
-    expect(home).toContain(`<p class="home-small">Synced, Waiting and Nothing to send are about complications and widgets only.</p>`);
+  it("says in small print what the states cover: the watch app too, for an administrator who can read it", () => {
+    expect(home).toContain(`"Synced, Waiting and Nothing waiting cover complications and widgets, and on a watch also its pages, menus, settings and the rest of the watch app."`);
+    expect(home).toContain(`: "Synced, Waiting and Nothing waiting cover complications and widgets."}</p>`);
+    expect(home).not.toContain("only.</p>");
+  });
+
+  it("judges each watch on its watch app records too, for an administrator, and says what a waiting row waits for", () => {
+    expect(home).toContain("homeDeviceRows(this.homeDevices(), admin ? this.watchAppSyncs : new Map())");
+    expect(home).toContain(`<span class="home-device-why"> · \${waitingForText(d.waitingFor)}</span>`);
+  });
+
+  it("reads the watch app records on the way into Home, and when the watches change", () => {
+    const will = method("  protected override willUpdate(changed");
+    const back = between(will, `if (changed.has("route") && tabOfRoute(this.route) === "home"`, "}");
+    expect(back).toContain("void this.loadWatchAppSync(true);");
+    expect(will).toContain(`if (changed.has("owners") && tabOfRoute(this.route) === "home") void this.loadWatchAppSync(false);`);
+    const load = method("  private async loadWatchAppSync(again: boolean) {");
+    expect(load).toContain("if (this.hass?.user?.is_admin !== true) return;");
+    expect(load).toContain("readWatchAppSync((kind) => fetchWatchConfig(hass, id, kind))");
+    expect(load).toContain("if (run !== this.watchAppSyncRun) return;");
+    expect(load).toContain("if (!again && key === this.watchAppSyncFor) return;");
   });
 });
 

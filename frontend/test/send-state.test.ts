@@ -341,7 +341,7 @@ describe("deviceSync", () => {
   it("names each verdict in a word", () => {
     expect(deviceSyncLabel("synced")).toBe("Synced");
     expect(deviceSyncLabel("waiting")).toBe("Waiting");
-    expect(deviceSyncLabel("idle")).toBe("Nothing to send");
+    expect(deviceSyncLabel("idle")).toBe("Nothing waiting");
   });
 
   it("agrees with the home pill on every device", () => {

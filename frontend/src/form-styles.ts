@@ -72,7 +72,7 @@ export const formButtonStyles = css`
        white on the light skin's deep green and black on the dark skin's
        bright one, which clears 4.5:1 in both. Unsaved but not savable yet
        (no slot, a refusal, mid-save) keeps the amber halo it had. The
-       Watch settings dialog's Save carries the same two classes and so the
+       Watch settings page's Save carries the same two classes and so the
        same green, through the unscoped rule. */
     header button.save, .wa-bar button.save { min-height: 28px; height: 28px; padding: 0 12px; }
     header button.save:not(.dirty), .wa-bar button.save:not(.dirty) { background: var(--wa-card); color: var(--wa-faint); border-color: var(--wa-line-strong); opacity: 1; }

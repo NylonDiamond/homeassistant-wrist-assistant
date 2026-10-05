@@ -337,7 +337,7 @@ export function watchRecordUnreadable(record: WatchConfigRecord | undefined, rea
 export const PAIR_FIRST_TEXT = "Pair this watch first. Watch settings has Pair a watch.";
 
 /** The same, said inside Watch settings, whose pairing card is below. */
-export const SETTINGS_PAIR_FIRST_TEXT = "Pair this watch first, under Pair a watch below.";
+export const SETTINGS_PAIR_FIRST_TEXT = "Pair this watch first, under Pair a watch on this page.";
 
 /** A start refused as `conflict`: a record came in meanwhile and is shown. */
 export const PAGES_START_CONFLICT_TEXT = "The iPhone sent pages meanwhile, so those are shown.";
@@ -423,7 +423,7 @@ export async function createWatchBehavior(
 // ── pairing a watch by its code ──────────────────────────────────────────
 //
 // A watch with no iPhone asks Home Assistant for a pairing and shows a six
-// character code; an administrator types it into the dialog's "Pair a watch"
+// character code; an administrator types it into the Settings page's "Pair a watch"
 // card. Plan: app repo docs/pages_in_home_assistant_step4.md, 4c.
 
 /** A pairing code's length. */

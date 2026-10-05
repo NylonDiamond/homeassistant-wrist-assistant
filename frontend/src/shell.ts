@@ -12,6 +12,8 @@
 //   /pages, /menus, /voice, /status-pages, /control-center, /rooms, each with
 //   an optional /<owner_watch_id>
 //                       the Watch app, as before
+//   /settings, with an optional /<owner_watch_id>
+//                       the Watch app's Settings page
 //
 // Every watch address is the one the iPhone app builds for "Open in Home
 // Assistant", unchanged; this file only reads them.
@@ -25,6 +27,7 @@ import { WATCH_CONTROL_CENTER_PATH, isWatchControlCenterRoute } from "./watch-co
 import { WATCH_MENUS_PATH, isWatchMenusRoute } from "./watch-menus/hook.js";
 import { type PanelRoute, WATCH_PAGES_PATH, isWatchPagesRoute } from "./watch-pages/hook.js";
 import { WATCH_ROOMS_PATH, isWatchRoomsRoute } from "./watch-rooms/hook.js";
+import { WATCH_SETTINGS_PATH, isWatchSettingsRoute } from "./watch-settings-page.js";
 import { WATCH_STATUS_PAGES_PATH, isWatchStatusPagesRoute } from "./watch-status-pages/hook.js";
 import { WATCH_VOICE_PATH, isWatchVoiceRoute } from "./watch-voice/hook.js";
 
@@ -41,9 +44,9 @@ export const TAB_LABEL: Record<PanelTab, string> = {
 };
 
 /** One of the watch app's screens, as Home lists them and the watch row
- * walks them. Settings is not here: it is a dialog, not an address. */
+ * walks them. */
 export interface WatchScreen {
-  id: "pages" | "menus" | "status-pages" | "control-center" | "rooms" | "voice";
+  id: "pages" | "menus" | "status-pages" | "control-center" | "rooms" | "voice" | "settings";
   label: string;
   /** One line under the name on Home. */
   blurb: string;
@@ -60,6 +63,14 @@ export const WATCH_SCREENS: readonly WatchScreen[] = [
   { id: "voice", label: "Voice", blurb: "How voice commands work", path: WATCH_VOICE_PATH },
 ];
 
+/** The Settings page: a screen of the Watch app with an address like the
+ * others, kept out of `WATCH_SCREENS` because Home lists it on its own (its
+ * Devices card, and the pairing card in a home with no watch) and the row
+ * draws it last, apart from the six. */
+export const WATCH_SETTINGS_SCREEN: WatchScreen = {
+  id: "settings", label: "Settings", blurb: "How the watch behaves", path: WATCH_SETTINGS_PATH,
+};
+
 /** A watch screen's address, on one watch when one is named. The owner is
  * encoded the way each screen's `watch*RouteOwner` decodes it. */
 export function watchScreenPath(screen: WatchScreen, owner?: string): string {
@@ -74,6 +85,7 @@ export function watchScreenOf(route: PanelRoute | undefined): WatchScreen | unde
   if (isWatchControlCenterRoute(route)) return WATCH_SCREENS[3];
   if (isWatchRoomsRoute(route)) return WATCH_SCREENS[4];
   if (isWatchVoiceRoute(route)) return WATCH_SCREENS[5];
+  if (isWatchSettingsRoute(route)) return WATCH_SETTINGS_SCREEN;
   return undefined;
 }
 
@@ -108,7 +120,7 @@ export function tabsFor(admin: boolean): PanelTab[] {
  * the first one in it and everything after. */
 const SUB_PATH = new RegExp(`(${[
   COMPLICATIONS_PATH, WATCH_PAGES_PATH, WATCH_MENUS_PATH, WATCH_VOICE_PATH,
-  WATCH_STATUS_PAGES_PATH, WATCH_CONTROL_CENTER_PATH, WATCH_ROOMS_PATH,
+  WATCH_STATUS_PAGES_PATH, WATCH_CONTROL_CENTER_PATH, WATCH_ROOMS_PATH, WATCH_SETTINGS_PATH,
 ].join("|")})(/.*)?$`);
 
 /** The panel's own address without any tab's sub-path. Without a route (a
@@ -163,7 +175,8 @@ export function isSaveKey(e: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey">)
 /** Whether ⌘S or Ctrl+S is held back from the browser while the editor's
  * keys are still: on Home and on the list with nothing open, where it would
  * otherwise open the browser's Save Page dialog. A watch screen saves on it
- * itself, so there the key is left alone. */
+ * itself, so there the key is left alone; the Settings page is the panel's
+ * own, and the panel saves it (`settingsPageSavesOnKey`). */
 export function swallowsSaveKey(route: PanelRoute | undefined, hasDraft: boolean): boolean {
   return !editorKeysLive(route, hasDraft) && tabOfRoute(route) !== "watch";
 }

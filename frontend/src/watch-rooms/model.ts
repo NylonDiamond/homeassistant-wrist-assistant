@@ -3,11 +3,11 @@
 // The room settings of a watch are keys of its `behavior` record, the app's
 // `WCBehaviorPreferences`: the room sensor, the page per room, how and when
 // pages switch, the fallback page, the point control targets per room (one
-// JSON string) and two point control switches. The Watch settings dialog
+// JSON string) and two point control switches. The Watch settings page
 // leaves them out; this editor writes them, the way the phone's Rooms screen
 // does (`rules.ts`, `room-rules.json`).
 //
-// The rules of the Watch settings dialog hold here too:
+// The rules of the Watch settings page hold here too:
 //
 // - An edit is a key write: a value, or the key removed (`undefined`). The
 //   saved document is the loaded one with only those keys changed, so a load
@@ -19,7 +19,7 @@
 //   the editor stops being dirty when a change is undone by hand.
 //
 // On a conflict the save reads the newer copy and lays the same key writes
-// over it, key by key, as the Watch settings dialog does for the
+// over it, key by key, as the Watch settings page does for the
 // notification style.
 //
 // Plan: app repo docs/pages_in_home_assistant_step4.md, "4d batch 5", 5b.
@@ -141,7 +141,7 @@ function stringRecord(value: unknown): Map<string, unknown> {
  *   newer copy. A rooms string that does not decode keeps the edit whole.
  * - A gesture write that only turned Room Jump off yields to the newer
  *   copy when that has moved the gesture off Room Jump itself (the Watch
- *   settings dialog picked another action).
+ *   settings page picked another action).
  */
 export function carryRoomEdits(before: BehaviorDocument, after: BehaviorDocument, edits: RoomEdits): Map<string, unknown> {
   const out = new Map(edits);
