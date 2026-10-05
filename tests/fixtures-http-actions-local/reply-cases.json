@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "name": "no reply setting",
+      "config": null,
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "b2s=",
+      "expect": {
+        "value": null,
+        "snippet": "ok"
+      }
+    },
+    {
+      "name": "status code with a unit",
+      "config": {
+        "source": "statusCode",
+        "unit": " ok"
+      },
+      "status": 201,
+      "headers": {},
+      "bodyBase64": "",
+      "expect": {
+        "value": "201 ok",
+        "snippet": ""
+      }
+    },
+    {
+      "name": "JSON path into an array",
+      "config": {
+        "source": "jsonField",
+        "jsonPath": "data.0.temp",
+        "unit": "°"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eyJkYXRhIjpbeyJ0ZW1wIjoyMS41fV19",
+      "expect": {
+        "value": "21.5°",
+        "snippet": "{\"data\":[{\"temp\":21.5}]}"
+      }
+    },
+    {
+      "name": "header without regard to case",
+      "config": {
+        "source": "header",
+        "headerName": "x-ratelimit-remaining"
+      },
+      "status": 200,
+      "headers": {
+        "X-RateLimit-Remaining": "42"
+      },
+      "bodyBase64": "",
+      "expect": {
+        "value": "42",
+        "snippet": ""
+      }
+    },
+    {
+      "name": "regex group one",
+      "config": {
+        "source": "regex",
+        "pattern": "temp=([0-9.]+)"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "PHA+CiB0ZW1wPTcyLjQKPC9wPg==",
+      "expect": {
+        "value": "72.4",
+        "snippet": "<p> temp=72.4 </p>"
+      }
+    },
+    {
+      "name": "body text of a binary body",
+      "config": {
+        "source": "bodyText"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "/9j/4EpGSUY=",
+      "expect": {
+        "value": null,
+        "snippet": ""
+      }
+    }
+  ]
+}

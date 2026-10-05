@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "name": "a global hides its variable and no secret travels",
+      "library": {
+        "schemaVersion": 1,
+        "actions": [
+          {
+            "id": "4F7A2C1E-9B3D-4E5F-8A6B-1C2D3E4F5A6B",
+            "name": "Notify",
+            "method": "POST",
+            "url": "{{haurl}}/x",
+            "headers": [
+              {
+                "id": "1E000000-0000-4000-8000-000000000001",
+                "name": "Authorization",
+                "value": "Bearer t"
+              }
+            ],
+            "bodyContentType": "none",
+            "variables": [
+              {
+                "id": "2A000000-0000-4000-8000-000000000005",
+                "key": "haurl",
+                "prompt": "",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false
+              },
+              {
+                "id": "2A000000-0000-4000-8000-000000000004",
+                "key": "room",
+                "prompt": "Room",
+                "kind": "text",
+                "presetValues": [
+                  "Kitchen"
+                ],
+                "presetsOnly": true
+              }
+            ],
+            "responseConfig": {
+              "source": "jsonField",
+              "jsonPath": "a"
+            },
+            "icon": "bell.fill",
+            "timeout": 5
+          },
+          {
+            "id": "6A0B1C2D-3E4F-4A5B-8C6D-7E8F9A0B1C2D",
+            "name": "",
+            "method": "POST",
+            "url": "",
+            "headers": [],
+            "bodyContentType": "audio",
+            "variables": []
+          }
+        ],
+        "globalVariables": [
+          {
+            "id": "7C000000-0000-4000-8000-000000000001",
+            "key": "haurl",
+            "value": "http://h"
+          }
+        ]
+      },
+      "expect": {
+        "schemaVersion": 1,
+        "actions": [
+          {
+            "id": "4F7A2C1E-9B3D-4E5F-8A6B-1C2D3E4F5A6B",
+            "name": "Notify",
+            "icon": "bell.fill",
+            "variables": [
+              {
+                "id": "2A000000-0000-4000-8000-000000000004",
+                "key": "room",
+                "prompt": "Room",
+                "kind": "text",
+                "presetValues": [
+                  "Kitchen"
+                ],
+                "presetsOnly": true
+              }
+            ],
+            "hasReply": true,
+            "timeout": 5
+          },
+          {
+            "id": "6A0B1C2D-3E4F-4A5B-8C6D-7E8F9A0B1C2D",
+            "name": "HTTP Action",
+            "variables": [],
+            "needsAudio": true,
+            "needsSetup": true
+          }
+        ]
+      }
+    }
+  ]
+}

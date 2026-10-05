@@ -1,0 +1,377 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "name": "globals then variables, JSON body",
+      "library": {
+        "schemaVersion": 1,
+        "actions": [
+          {
+            "id": "4F7A2C1E-9B3D-4E5F-8A6B-1C2D3E4F5A6B",
+            "name": "Notify",
+            "method": "POST",
+            "url": "{{haurl}}/api/webhook/{{hook}}",
+            "headers": [
+              {
+                "id": "1E000000-0000-4000-8000-000000000001",
+                "name": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "bodyContentType": "json",
+            "variables": [
+              {
+                "id": "2A000000-0000-4000-8000-000000000007",
+                "key": "message",
+                "prompt": "",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false
+              },
+              {
+                "id": "2A000000-0000-4000-8000-000000000005",
+                "key": "level",
+                "prompt": "",
+                "kind": "number",
+                "presetValues": [],
+                "presetsOnly": false
+              },
+              {
+                "id": "2A000000-0000-4000-8000-000000000004",
+                "key": "hook",
+                "prompt": "",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false
+              }
+            ],
+            "body": "{\"msg\":\"{{message}}\",\"level\":{{level}}}",
+            "timeout": 15
+          }
+        ],
+        "globalVariables": [
+          {
+            "id": "7C000000-0000-4000-8000-000000000001",
+            "key": "haurl",
+            "value": "http://192.168.1.10:8123"
+          },
+          {
+            "id": "8D000000-0000-4000-8000-000000000001",
+            "key": "token",
+            "value": "abc"
+          }
+        ]
+      },
+      "actionId": "4F7A2C1E-9B3D-4E5F-8A6B-1C2D3E4F5A6B",
+      "values": {
+        "message": "Dinner \"now\"",
+        "level": "3",
+        "hook": "a b"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "http://192.168.1.10:8123/api/webhook/a%20b",
+        "headers": [
+          [
+            "Authorization",
+            "Bearer abc"
+          ],
+          [
+            "Content-Type",
+            "application/json"
+          ]
+        ],
+        "bodyUTF8": "{\"msg\":\"Dinner \\\"now\\\"\",\"level\":3}",
+        "bodyBase64": null,
+        "timeout": 15
+      }
+    },
+    {
+      "name": "a number that is not one is quoted",
+      "library": {
+        "schemaVersion": 1,
+        "actions": [
+          {
+            "id": "4F7A2C1E-9B3D-4E5F-8A6B-1C2D3E4F5A6B",
+            "name": "Notify",
+            "method": "POST",
+            "url": "https://example.com/hook",
+            "headers": [],
+            "bodyContentType": "json",
+            "variables": [
+              {
+                "id": "2A000000-0000-4000-8000-000000000001",
+                "key": "n",
+                "prompt": "",
+                "kind": "number",
+                "presetValues": [],
+                "presetsOnly": false
+              }
+            ],
+            "body": "{\"n\":{{n}}}"
+          }
+        ],
+        "globalVariables": []
+      },
+      "actionId": "4F7A2C1E-9B3D-4E5F-8A6B-1C2D3E4F5A6B",
+      "values": {
+        "n": "1,5"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.com/hook",
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ]
+        ],
+        "bodyUTF8": "{\"n\":\"1,5\"}",
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "form body and the first quick value",
+      "library": {
+        "schemaVersion": 1,
+        "actions": [
+          {
+            "id": "4F7A2C1E-9B3D-4E5F-8A6B-1C2D3E4F5A6B",
+            "name": "Notify",
+            "method": "put",
+            "url": "https://example.com/hook",
+            "headers": [],
+            "bodyContentType": "form",
+            "variables": [
+              {
+                "id": "2A000000-0000-4000-8000-000000000001",
+                "key": "q",
+                "prompt": "",
+                "kind": "text",
+                "presetValues": [
+                  "living room",
+                  "kitchen"
+                ],
+                "presetsOnly": false
+              }
+            ],
+            "body": "q={{q}}"
+          }
+        ],
+        "globalVariables": []
+      },
+      "actionId": "4F7A2C1E-9B3D-4E5F-8A6B-1C2D3E4F5A6B",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "PUT",
+        "url": "https://example.com/hook",
+        "headers": [
+          [
+            "Content-Type",
+            "application/x-www-form-urlencoded"
+          ]
+        ],
+        "bodyUTF8": "q=living%20room",
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "a GET carries no body",
+      "library": {
+        "schemaVersion": 1,
+        "actions": [
+          {
+            "id": "4F7A2C1E-9B3D-4E5F-8A6B-1C2D3E4F5A6B",
+            "name": "Notify",
+            "method": "GET",
+            "url": "http://h/x?level=50%",
+            "headers": [],
+            "bodyContentType": "json",
+            "variables": [],
+            "body": "{}"
+          }
+        ],
+        "globalVariables": []
+      },
+      "actionId": "4F7A2C1E-9B3D-4E5F-8A6B-1C2D3E4F5A6B",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "GET",
+        "url": "http://h/x?level=50%25",
+        "headers": [],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "voice clip is the raw body",
+      "library": {
+        "schemaVersion": 1,
+        "actions": [
+          {
+            "id": "4F7A2C1E-9B3D-4E5F-8A6B-1C2D3E4F5A6B",
+            "name": "Notify",
+            "method": "POST",
+            "url": "https://example.com/hook",
+            "headers": [],
+            "bodyContentType": "audio",
+            "variables": []
+          }
+        ],
+        "globalVariables": []
+      },
+      "actionId": "4F7A2C1E-9B3D-4E5F-8A6B-1C2D3E4F5A6B",
+      "values": {},
+      "audioBase64": "AAFjbGlw/w==",
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.com/hook",
+        "headers": [
+          [
+            "Content-Type",
+            "audio/mp4"
+          ]
+        ],
+        "bodyUTF8": null,
+        "bodyBase64": "AAFjbGlw/w==",
+        "timeout": 10
+      }
+    },
+    {
+      "name": "header values lose line breaks",
+      "library": {
+        "schemaVersion": 1,
+        "actions": [
+          {
+            "id": "4F7A2C1E-9B3D-4E5F-8A6B-1C2D3E4F5A6B",
+            "name": "Notify",
+            "method": "POST",
+            "url": "https://example.com/hook",
+            "headers": [
+              {
+                "id": "1E000000-0000-4000-8000-000000000001",
+                "name": "X-Note",
+                "value": "{{v}}"
+              }
+            ],
+            "bodyContentType": "none",
+            "variables": [
+              {
+                "id": "2A000000-0000-4000-8000-000000000001",
+                "key": "v",
+                "prompt": "",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false
+              }
+            ]
+          }
+        ],
+        "globalVariables": []
+      },
+      "actionId": "4F7A2C1E-9B3D-4E5F-8A6B-1C2D3E4F5A6B",
+      "values": {
+        "v": "a\r\nb"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.com/hook",
+        "headers": [
+          [
+            "X-Note",
+            "ab"
+          ]
+        ],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "an unresolved global is not a URL",
+      "library": {
+        "schemaVersion": 1,
+        "actions": [
+          {
+            "id": "4F7A2C1E-9B3D-4E5F-8A6B-1C2D3E4F5A6B",
+            "name": "Notify",
+            "method": "POST",
+            "url": "{{haurl}}/x",
+            "headers": [],
+            "bodyContentType": "none",
+            "variables": []
+          }
+        ],
+        "globalVariables": []
+      },
+      "actionId": "4F7A2C1E-9B3D-4E5F-8A6B-1C2D3E4F5A6B",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": "invalidURL"
+      }
+    },
+    {
+      "name": "an empty URL",
+      "library": {
+        "schemaVersion": 1,
+        "actions": [
+          {
+            "id": "4F7A2C1E-9B3D-4E5F-8A6B-1C2D3E4F5A6B",
+            "name": "Notify",
+            "method": "POST",
+            "url": "  ",
+            "headers": [],
+            "bodyContentType": "none",
+            "variables": []
+          }
+        ],
+        "globalVariables": []
+      },
+      "actionId": "4F7A2C1E-9B3D-4E5F-8A6B-1C2D3E4F5A6B",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": "emptyURL"
+      }
+    },
+    {
+      "name": "ftp is refused",
+      "library": {
+        "schemaVersion": 1,
+        "actions": [
+          {
+            "id": "4F7A2C1E-9B3D-4E5F-8A6B-1C2D3E4F5A6B",
+            "name": "Notify",
+            "method": "POST",
+            "url": "ftp://example.com/f",
+            "headers": [],
+            "bodyContentType": "none",
+            "variables": []
+          }
+        ],
+        "globalVariables": []
+      },
+      "actionId": "4F7A2C1E-9B3D-4E5F-8A6B-1C2D3E4F5A6B",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": "invalidURL"
+      }
+    }
+  ]
+}
