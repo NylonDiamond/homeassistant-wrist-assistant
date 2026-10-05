@@ -29,6 +29,10 @@ import {
   setWatchPageColorMode,
   setWatchPageBrightness,
   setWatchPageGradientColors,
+  setWatchPageImage,
+  setWatchPageImageBlur,
+  setWatchPageImageFit,
+  setWatchPageImageOpacity,
   setWatchPageOverlay,
   setWatchPageOverlayColor,
   setWatchPageOverlayIntensity,
@@ -51,6 +55,8 @@ import {
   watchPageSwatchTheme,
   watchPageThemes,
 } from "./page-settings-model.js";
+import { pagePhotoIdsInUse, samePagePhotoId } from "./page-photo.js";
+import type { PagePhotoStore } from "./page-photo-store.js";
 import { commit, dropStaleTyping, linkButton, stylingEnumField, swatchRow, typed, typingField } from "./tile-settings.js";
 import {
   type WatchSectionBadge,
@@ -65,6 +71,7 @@ import { watchGradientOf, watchThemeDisplayName } from "./tile-new.js";
 import {
   watchPageRoleSwatches,
   watchPatternSwatches,
+  watchStylingChoices,
   watchStylingLabel,
   watchStylingReset,
   watchStylingSlider,
@@ -111,10 +118,6 @@ export const WATCH_PAGE_SECTION_BADGES: Readonly<Record<WatchPageStripSection, W
  * the complication editor. */
 export const WATCH_PAGE_CHIP_COLOR = SECTION_COLOR.complication;
 
-/** The background keys Reset Page writes or removes, the image's aside (the
- * phone sets those). */
-const IMAGE_KEY = /^backgroundImage/;
-
 /**
  * Whether a page section holds a value of the page's own, which its chip
  * marks with the changed dot: Page while the page is hidden on the watch;
@@ -128,7 +131,7 @@ const IMAGE_KEY = /^backgroundImage/;
 export function watchPageSectionChanged(page: WatchPage, section: WatchPageStripSection): boolean {
   const resetChanges = (prefix: string): boolean =>
     Object.entries(watchStylingReset("page")).some(([key, value]) => {
-      if (!key.startsWith(prefix) || IMAGE_KEY.test(key) || !Object.hasOwn(page, key)) return false;
+      if (!key.startsWith(prefix) || !Object.hasOwn(page, key)) return false;
       return value === null || JSON.stringify(page[key]) !== JSON.stringify(value);
     });
   switch (section) {
@@ -146,10 +149,10 @@ export function watchPageSectionChanged(page: WatchPage, section: WatchPageStrip
   }
 }
 
-/** The decorations a person can pick here, in the phone's order. Image is
- * set on the phone only. */
+/** The decorations a person can pick here, in the phone's order. */
 const DECORATION_CHOICES: readonly [WatchPageDecoration, string][] = [
   ["none", "None"],
+  ["image", "Image"],
   ["color", "Color"],
   ["pattern", "Pattern"],
   ["animation", "Animation"],
@@ -180,8 +183,8 @@ export function renderPageSettingBody(host: WatchPagesEditorHost, section: Watch
 export function renderPageReset(host: WatchPagesEditorHost): TemplateResult | typeof nothing {
   if (!watchPageModified(host.document, host.pageId)) return nothing;
   const sh = scoped(host);
-  return html`<span class="ps-reset">${linkButton("Reset page", "The background and title back as the iPhone app's reset puts them. The theme stays.", () =>
-    commit(sh, "reset", (d) => resetWatchPage(d, host.pageId, { keepImage: true })))}</span>`;
+  return html`<span class="ps-reset">${linkButton("Reset page", "The background and title back as the iPhone app's reset puts them, the photo removed. The theme stays.", () =>
+    commit(sh, "reset", (d) => resetWatchPage(d, host.pageId)))}</span>`;
 }
 
 /** What a section is set to now, in a word or two: its chip's value. */
@@ -191,7 +194,7 @@ export function pageSettingSummary(page: WatchPage, section: WatchPageSettingSec
     case "theme":
       return `${watchThemeDisplayName(s.theme)}${s.gradient ? ", gradient" : ""}`;
     case "background":
-      return DECORATION_CHOICES.find(([d]) => d === s.decoration)?.[1] ?? (s.decoration === "image" ? "Image" : "");
+      return DECORATION_CHOICES.find(([d]) => d === s.decoration)?.[1] ?? "";
     case "title":
       return s.titleStyle === "none" ? "Hidden" : watchStylingLabel("pageTitleDisplayStyle", s.titleStyle);
   }
@@ -363,28 +366,27 @@ function pageSlider(
   value: number,
   set: (document: WatchPagesDocument, pageId: string, value: number) => WatchPagesDocument,
   def: number,
-  percent = false,
+  percent: boolean | ((v: number) => string) = false,
 ): TemplateResult {
   const spec = watchStylingSlider(sliderName);
+  const format = percent === true ? (v: number) => `${Math.round(v * 100)}%` : percent === false ? undefined : percent;
   return typingField(sh, setting, sliderField(label, value, (v) => commit(sh, setting, (d) => set(d, sh.pageId, v), { typing: true }), {
     min: spec.min,
     max: spec.max,
     step: spec.step,
     def,
-    ...(percent ? { format: (v: number) => `${Math.round(v * 100)}%` } : {}),
+    ...(format === undefined ? {} : { format }),
   }), value);
 }
 
 function renderBackground(sh: TileSettingsHost): TemplateResult {
   const s = watchPageSettings(sh.page);
-  if (s.hasImage) {
-    return html`<p class="hint">Image, set on the phone. The picture goes to the watch from the iPhone app, so it is changed there.</p>`;
-  }
   const segment = shownDecoration(sh);
   const theme = watchStylingTheme(watchPageSwatchTheme(sh.page));
   return html`
     ${segField("Decoration", segment, DECORATION_CHOICES as [WatchPageDecoration, string][], (v) => pickDecoration(sh, v))}
     <div class="hint ts-under">One at a time, as on the iPhone. Each one keeps its settings while this page is open.</div>
+    ${segment === "image" ? renderImage(sh) : nothing}
     ${segment === "color" ? html`
       <div class="ts-after">
         <button type="button" class="pe-chip ${sameWatchColor(s.backgroundColor, "#000000") ? "on" : ""}"
@@ -423,6 +425,118 @@ function renderBackground(sh: TileSettingsHost): TemplateResult {
           rainbow: true,
           write: (d, v) => setWatchPageOverlayColor(d, sh.pageId, v),
         })}`}` : nothing}`;
+}
+
+// ── image ────────────────────────────────────────────────────────────────
+
+/** Keep the Image segment shown after an edit that changes what the page's
+ * own decoration reads (a photo picked or removed), as the phone's segment
+ * stays where it was. */
+function holdImageSegment(sh: TileSettingsHost): void {
+  sh.uiState.set(`${KEY}:segment:${sh.pageId.toUpperCase()}`, { segment: "image", derived: watchPageDecoration(sh.page) } satisfies ShownDecoration);
+  sh.requestUpdate();
+}
+
+function pickPhoto(sh: TileSettingsHost, id: string | undefined): void {
+  commit(sh, "image", (d) => setWatchPageImage(d, sh.pageId, id));
+  holdImageSegment(sh);
+}
+
+/** The id of the library photo whose delete is being asked about. */
+const deleteAskKey = (sh: TileSettingsHost) => `${KEY}:photo-delete:${sh.pageId.toUpperCase()}`;
+
+/** One photo to pick: its picture once the bytes are in, its name under
+ * it, and for a library photo no page uses, a delete button. */
+function photoButton(
+  sh: TileSettingsHost,
+  photos: PagePhotoStore,
+  id: string,
+  name: string,
+  title: string,
+  canDelete: boolean,
+): TemplateResult {
+  const on = samePagePhotoId(watchPageSettings(sh.page).imageId, id);
+  const url = photos.url(id);
+  const missing = photos.status(id) === "missing";
+  return html`<span class="ps-photo-cell">
+    <button type="button" role="radio" class="ps-photo ${on ? "on" : ""} ${url === undefined ? "empty" : ""}" aria-checked=${on ? "true" : "false"}
+      aria-label=${name} title=${title} style=${url === undefined ? "" : `background-image:url(${JSON.stringify(url)})`}
+      @click=${() => pickPhoto(sh, id)}>${missing ? html`<span class="ps-photo-gone">Missing</span>` : nothing}</button>
+    <span class="ps-photo-name">${name}</span>
+    ${canDelete ? html`<button type="button" class="ps-photo-del" title="Delete this photo from Home Assistant" aria-label=${`Delete ${name}`}
+      ?disabled=${photos.deleting} @click=${() => { sh.uiState.set(deleteAskKey(sh), id); sh.requestUpdate(); }}>×</button>` : nothing}
+  </span>`;
+}
+
+function addedWords(at: string): string {
+  const date = new Date(at);
+  return Number.isNaN(date.getTime()) ? "Your photo" : `Added ${date.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`;
+}
+
+async function uploadPhoto(sh: TileSettingsHost, photos: PagePhotoStore, input: HTMLInputElement): Promise<void> {
+  const file = input.files?.[0];
+  input.value = "";
+  if (file === undefined) return;
+  const id = await photos.upload(file);
+  if (id !== undefined) pickPhoto(sh, id);
+}
+
+/**
+ * The Image decoration: the built-in photos in the phone's order, then
+ * "Your photos" (the library, newest first, a delete button on each photo
+ * no page uses), then "Upload a photo". With a photo set: Opacity, Blur, Fit
+ * and Remove, with the phone's ranges and defaults; a photo the store does
+ * not have says so and can still be removed.
+ */
+function renderImage(sh: TileSettingsHost): TemplateResult {
+  const s = watchPageSettings(sh.page);
+  const photos = sh.photos;
+  photos?.ensureList();
+  const list = photos?.list;
+  const inUse = pagePhotoIdsInUse(sh.document.pages);
+  const asked = sh.uiState.get(deleteAskKey(sh)) as string | undefined;
+  const askedImage = asked === undefined ? undefined : list?.images.find((image) => samePagePhotoId(image.id, asked));
+  const missing = s.imageId !== undefined && photos?.status(s.imageId) === "missing";
+  const fits = watchStylingChoices("backgroundImageFit").map((c) => [c.value, c.label] as [string, string]);
+  const blurText = (v: number) => (Math.round(v * 10) / 10).toFixed(1);
+  return html`
+    ${photos === undefined || photos.listState === "none" ? html`<p class="hint warn">Photos need a newer version of the integration. A photo set on the iPhone still shows here.</p>` : nothing}
+    ${photos?.listState === "failed" ? html`<p class="hint warn">Home Assistant did not list its photos. ${linkButton("Try again", "Read the photo list again", () => void photos.refreshList())}</p>` : nothing}
+    ${photos?.listState === "loading" ? html`<p class="hint">Loading photos...</p>` : nothing}
+    ${photos !== undefined && list !== undefined ? html`
+      <div class="ts-sub-h"><span>Built-in</span></div>
+      <div class="ps-photos" role="radiogroup" aria-label="Built-in photos">
+        ${list.presets.map((p) => photoButton(sh, photos, p.id, p.name, p.name, false))}
+      </div>
+      <div class="ts-sub-h"><span>Your photos</span></div>
+      ${list.images.length === 0 ? html`<div class="hint ts-under">None yet.</div>` : html`
+        <div class="ps-photos" role="radiogroup" aria-label="Your photos">
+          ${list.images.map((image) => photoButton(sh, photos, image.id, "Photo", addedWords(image.added_at),
+            image.used_by.length === 0 && !inUse.has(image.id.toUpperCase())))}
+        </div>`}
+      ${askedImage !== undefined ? html`<div class="ps-ask" role="alert">
+        <span>Delete this photo from Home Assistant? This cannot be undone.</span>
+        <button type="button" class="small danger" ?disabled=${photos.deleting} @click=${async () => {
+          if (await photos.remove(askedImage.id)) sh.uiState.delete(deleteAskKey(sh));
+          sh.requestUpdate();
+        }}>Delete</button>
+        <button type="button" class="small" @click=${() => { sh.uiState.delete(deleteAskKey(sh)); sh.requestUpdate(); }}>Keep</button>
+      </div>` : nothing}
+      <div class="ts-after">
+        <label class="pe-chip ps-upload ${photos.uploading || sh.busy ? "off" : ""}" title="A JPEG, PNG or other picture this browser can open. It is made watch size first.">
+          <input type="file" accept="image/*" ?disabled=${photos.uploading || sh.busy}
+            @change=${(e: Event) => void uploadPhoto(sh, photos, e.target as HTMLInputElement)} />${photos.uploading ? "Uploading..." : "Upload a photo"}
+        </label>
+      </div>` : nothing}
+    ${photos?.error !== undefined ? html`<p class="hint warn">${photos.error}</p>` : nothing}
+    ${s.imageId === undefined ? (list !== undefined ? html`<div class="hint ts-under">No photo yet: pick one.</div>` : nothing) : html`
+      ${missing ? html`<p class="hint warn">Photo missing. Home Assistant does not have it, so the watch shows none. Pick another or remove it.</p>` : nothing}
+      ${pageSlider(sh, "imageOpacity", "Opacity", "backgroundImageOpacity", s.imageOpacity, setWatchPageImageOpacity, 1, true)}
+      ${pageSlider(sh, "imageBlur", "Blur", "backgroundImageBlur", s.imageBlur, setWatchPageImageBlur, 0, blurText)}
+      ${segField("Fit", s.imageFit, fits, (v) => commit(sh, "imageFit", (d) => setWatchPageImageFit(d, sh.pageId, v)))}
+      <div class="ts-after">
+        <button type="button" class="pe-chip" title="Take the photo off this page" @click=${() => pickPhoto(sh, undefined)}>Remove</button>
+      </div>`}`;
 }
 
 // ── page title ───────────────────────────────────────────────────────────
@@ -482,6 +596,35 @@ export const pageSettingsStyles = css`
   .ps-roles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px 6px; padding: 2px 0 8px; }
   .ps-role { display: flex; flex-direction: column; align-items: stretch; gap: 2px; font-size: 9.5px; color: var(--wa-muted); text-align: center; min-width: 0; }
   .ps-role-sw { height: 14px; border-radius: 4px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .15); }
+  /* The Image decoration's photos: a grid of small squares, each a radio. */
+  .ps-photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); gap: 8px 6px; padding: 4px 0 6px; }
+  .ps-photo-cell { position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; }
+  .ps-photo {
+    width: 48px; height: 48px; padding: 0; border: 0; border-radius: 8px; cursor: pointer;
+    background: #000 center / cover no-repeat; box-shadow: inset 0 0 0 1px rgba(128, 128, 128, .45);
+    display: grid; place-items: center;
+  }
+  .ps-photo.empty { background-color: color-mix(in srgb, var(--wa-ink) 8%, transparent); }
+  .ps-photo:hover:not(:disabled) { transform: scale(1.05); }
+  .ps-photo.on { box-shadow: 0 0 0 2px var(--wa-card), 0 0 0 4px var(--wa-accent); }
+  .ps-photo:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--wa-card), 0 0 0 4px var(--wa-accent), var(--wa-ring); }
+  .ps-photo-gone { font-size: 9px; color: var(--wa-muted); }
+  .ps-photo-name { max-width: 100%; font-size: 10px; color: var(--wa-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ps-photo-del {
+    position: absolute; top: -5px; right: calc(50% - 30px); width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%;
+    background: var(--wa-card); color: var(--wa-ink); font-size: 13px; line-height: 18px; cursor: pointer;
+    box-shadow: 0 0 0 1px var(--wa-line-strong); opacity: 0;
+  }
+  .ps-photo-cell:hover .ps-photo-del, .ps-photo-del:focus-visible { opacity: 1; }
+  .ps-photo-del:hover:not(:disabled) { color: var(--error-color, #e5484d); }
+  @media (hover: none) { .ps-photo-del { opacity: 1; } }
+  .ps-ask { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 0 8px; font-size: 12px; }
+  .ps-ask > span { flex: 1 1 100%; }
+  .ps-upload { position: relative; display: inline-flex; align-items: center; cursor: pointer; }
+  .ps-upload.off { opacity: .55; cursor: default; }
+  /* The file input is the label's own: hidden, the label opens it. */
+  .ps-upload > input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+  .ps-upload:focus-within { box-shadow: var(--wa-ring); }
   /* Reset page, at the end of the page strip's row of chips. */
   .ps-reset { display: inline-flex; align-items: center; min-height: 28px; padding: 0 4px; }
 `;

@@ -611,13 +611,51 @@ describe("the page strip", () => {
 
   it("ends with Reset page only while the page holds something a reset would change", () => {
     // The page as the phone's reset leaves it: nothing to reset.
-    const reset = resetWatchPage({ schemaVersion: 1, pages: [hallPage()] } as unknown as WatchPagesDocument, PAGE, { keepImage: true });
+    const reset = resetWatchPage({ schemaVersion: 1, pages: [hallPage()] } as unknown as WatchPagesDocument, PAGE);
     const untouched = (reset as unknown as { pages: WatchPage[] }).pages[0]!;
     expect(flat(strip(editor(untouched)))).not.toContain("Reset page");
     const text = flat(strip(editor(hallPage({ pageTitleDisplayStyle: "glass" }))));
     expect(text).toContain(`<span class="ps-reset">`);
     expect(text).toContain(">Reset page</button>");
     expect(text.indexOf("Reset page")).toBeGreaterThan(text.lastIndexOf(`<div class="pe-pstrip-item"`));
+    // A photo is something a reset changes.
+    expect(flat(strip(editor({ ...untouched, backgroundImageId: "preset_waves" } as WatchPage)))).toContain(">Reset page</button>");
+  });
+
+  it("offers Image: the built-in photos and the library from Home Assistant, and a photo's own rows", async () => {
+    const sent: string[] = [];
+    const connection = {
+      sendMessagePromise: async (message: Record<string, unknown>) => {
+        sent.push(String(message.type));
+        if (message.type === "wrist_assistant/page_images/list") {
+          return {
+            presets: [{ id: "preset_waves", name: "Waves", width: 208, height: 248 }],
+            images: [{ id: "6F1C2D3E-4A5B-4C6D-8E7F-0123456789AB", width: 400, height: 480, bytes: 9000, added_at: "2026-10-04T10:00:00Z", used_by: [] }],
+          };
+        }
+        throw { code: "not_found", message: "No such photo." };
+      },
+      subscribeMessage: async () => async () => {},
+    };
+    const el = editor(hallPage({ backgroundImageId: "preset_waves", backgroundImageOpacity: 0.5, backgroundImageBlur: 0, backgroundImageFit: "fit" }));
+    el.hass = { states: STATES, entities: {}, connection };
+    click(strip(el), "data-section=background");
+    let text = flat(strip(el));
+    expect(chips(text)[1]!.value).toBe("Image");
+    expect(text).not.toContain("set on the phone");
+    expect(text).toMatch(/aria-checked=true\s+class=on[^>]*>Image</);
+    expect(text).toContain("Opacity");
+    expect(text).toContain("Blur");
+    expect(text).toContain(">Remove</button>");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    text = flat(strip(el));
+    expect(sent).toContain("wrist_assistant/page_images/list");
+    expect(text).toContain(`aria-label="Built-in photos"`);
+    expect(text).toContain("aria-label=Waves");
+    expect(text).toContain("Your photos");
+    // A library photo no page names can be deleted; a built-in one cannot.
+    expect(text.match(/class="ps-photo-del"/g)?.length).toBe(1);
+    expect(text).toContain("Upload a photo");
   });
 });
 

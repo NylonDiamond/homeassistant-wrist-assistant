@@ -205,10 +205,11 @@ import {
   watchPagePreviewStyles,
   watchPreviewTileLabel,
   renderWatchPageTitle,
-  watchScreenBackground,
   watchScreenColor,
+  watchScreenLayers,
   watchTileSymbol,
 } from "./preview.js";
+import { PagePhotoStore } from "./page-photo-store.js";
 import { addWatchTile, watchAddRefusal, watchAddThemeOf, watchKindColor } from "./tile-new.js";
 import { renderWatchClock, watchPreviewLayout, watchTileCornerRadius } from "./preview.js";
 import { renderWatchFrame, watchFrameStyles } from "../watch-frame.js";
@@ -792,6 +793,11 @@ export class WaPageEditor extends LitElement {
   /** The symbol grids' state (open, searched, recent) for the modules'
    * symbol fields. Not the panel's: its changes must draw this element. */
   private readonly symbols = new SymbolBrowser(() => this.requestUpdate());
+  /** The home's page photos: the list, each photo's bytes, upload and
+   * delete (`page-photo-store.ts`). */
+  private readonly photos = new PagePhotoStore(() => this.hass, () => this.requestUpdate());
+  /** A photo's URL for the pictures, once its bytes are in. */
+  private readonly photoUrl = (id: string): string | undefined => this.photos.url(id);
   /** The modules' view state (`WatchPagesEditorHost.uiState`). */
   private readonly uiState = new Map<string, unknown>();
   /** A drag on a number field running now: one undo step. */
@@ -962,6 +968,8 @@ export class WaPageEditor extends LitElement {
     void this.loadHttpLibrary();
     void this.loadVoice(watchId);
     void this.loadStatusPages(watchId);
+    // A photo the phone handed over meanwhile, or a read that failed.
+    if (this.photos.listState !== "idle") void this.photos.refreshList();
     // Music Assistant or the cloud may have come or gone meanwhile, and a
     // template's entities moved without the preview hearing.
     this.loadHomeData();
@@ -1845,6 +1853,7 @@ export class WaPageEditor extends LitElement {
       requestUpdate: () => this.requestUpdate(),
       deviceSiblings: (entityId: string) => watchDeviceSiblings(this.hass?.entities, entityId),
       loadImageSize: (url: string) => this.loadImageSize(url),
+      photos: this.photos,
     };
     return extendHost(base, {
       document: () => draft.document,
@@ -1951,6 +1960,8 @@ export class WaPageEditor extends LitElement {
     }));
     if (watchId === this.watchId) this.note = watchPagesSaveNote(result);
     this.saveEnded(watchId);
+    // Which photos a page uses has moved: the delete buttons follow.
+    if (result.ok && this.photos.listState !== "idle") void this.photos.refreshList();
   }
 
   // ── pages ──────────────────────────────────────────────────────────────
@@ -3293,7 +3304,7 @@ export class WaPageEditor extends LitElement {
   private previewInput(page: WatchPage, pages: readonly WatchPage[], screen: { width: number; height: number }, scale: number): WatchPagePreviewInput {
     return {
       page, pages, screen, states: this.previewStates(), icons: this.icons, scale, catalog: this.pickerCatalog, templates: this.templateRenders,
-      behavior: this.behavior, stateMode: this.liveStates ? "live" : "all-on", testedIds: this.testedIds(),
+      behavior: this.behavior, stateMode: this.liveStates ? "live" : "all-on", testedIds: this.testedIds(), photo: this.photoUrl,
     };
   }
 
@@ -3333,7 +3344,9 @@ export class WaPageEditor extends LitElement {
     const input = this.previewInput(page, pages, screen, s);
     // Only what reaches into the strip: a long page costs no more than a short one.
     const shown = layout.tiles.filter((t) => (layout.topInset + t.y) * s < THUMB_H);
-    return html`<span class="thumb pe-thumb" style=${`background:${watchScreenBackground(page, s, screen)}`} aria-hidden="true">
+    const back = watchScreenLayers(page, s, screen, this.photoUrl);
+    return html`<span class="thumb pe-thumb" style=${`background:${back.background}`} aria-hidden="true">
+      ${back.layers}
       ${shown.map((t) => html`<span class="pe-thumb-tile"
         style=${`left:${t.x * s}px;top:${(layout.topInset + t.y) * s}px;width:${t.width * s}px;height:${t.height * s}px`}>${renderWatchTileFace(t.tile, { width: t.width, height: t.height }, input, layout.unit)}</span>`)}
     </span>`;
@@ -4037,10 +4050,12 @@ export class WaPageEditor extends LitElement {
       : selectedPlaced && !move
         ? cellRectPx(grid, drawnRect(watchTileRect(selectedPlaced.tile)))
         : undefined;
+    const back = watchScreenLayers(shown, s, screen, this.photoUrl);
     // The grid's cells show only while a tile is moved or resized.
     return renderWatchFrame(screen, s, html`<div class="wp-screen pe-screen ${this.saving ? "saving" : ""} ${move || resize ? "moving" : ""}" tabindex="-1" role="group" aria-label=${`Layout of ${watchPageName(page)}`}
-      style=${`width:${width}px;height:${height}px;background:${watchScreenBackground(shown, s, screen)}`}
+      style=${`width:${width}px;height:${height}px;background:${back.background}`}
       @click=${() => this.selectTile(undefined)}>
+      ${back.layers}
       ${renderWatchClock(screen, s, layout.topInset, input.icons)}
       ${renderWatchPageTitle(shown, s, layout.topInset, input.icons, input.behavior)}
       <svg class="pe-cells" width=${width} height=${gridHeight} viewBox=${`0 0 ${width} ${gridHeight}`}

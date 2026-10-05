@@ -19,6 +19,7 @@ import type { WatchTemplateRender } from "./app-model.js";
 import type { WatchCatalog, WatchCatalogVoice } from "./catalog.js";
 import type { WatchPagesApplyOptions } from "./draft.js";
 import type { WatchPage, WatchPageTile, WatchPagesDocument } from "./model.js";
+import type { PagePhotoStore } from "./page-photo-store.js";
 import type { WatchDeviceSiblings } from "./special-model.js";
 
 /** What both modules get. Built afresh for every draw; keep none of it across
@@ -98,6 +99,10 @@ export interface WatchPagesEditorHost {
    * for ratio detection; undefined when it does not load. The element
    * loads it as an image; a test or the harness stands one in. */
   loadImageSize(url: string): Promise<{ width: number; height: number } | undefined>;
+  /** The home's page photos (`page-photo-store.ts`): the built-in ones,
+   * the library, each photo's bytes, upload and delete. Absent from a host
+   * that has none (a test); the Image decoration then offers no photos. */
+  readonly photos?: PagePhotoStore;
   /** True while a save is out, a tile or a page is being dragged, or the page
    * is shown "As on the watch": `apply` refuses every edit then. Draw the
    * fields disabled. */
