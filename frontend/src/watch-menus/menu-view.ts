@@ -358,7 +358,10 @@ function targetText(host: Pick<MenusViewHost, "hass" | "targets">, slot: JsonObj
     if (p.target === "page") return host.targets.pages.find((t) => sameId(t.id, value))?.name ?? "A page not in the pages";
     if (p.target === "statusPage") return host.targets.statusPages.find((t) => sameId(t.id, value))?.name ?? "A status page";
     if (p.target === "httpAction") return host.targets.httpActions.find((t) => sameId(t.id, value))?.name ?? "An HTTP action";
-    if (p.target === "ttsPhrase") return (host.targets.phrases ?? []).find((t) => sameId(t.id, value))?.name ?? "A phrase that is gone";
+    if (p.target === "ttsPhrase") {
+      const phrases = host.targets.phrases;
+      return phrases?.find((t) => sameId(t.id, value))?.name ?? (phrases === undefined ? "A phrase" : "A phrase that is gone");
+    }
   }
   return undefined;
 }
@@ -1023,7 +1026,8 @@ function targetSelect(host: MenusViewHost, ref: MenuListRef, slot: JsonObject, r
   const known = stored === "" || list.some((t) => sameId(t.id, stored));
   const set = (v: string) => host.edit((d) => setWatchMenuActionKey(d, ref, id, spec.key, v === "" ? undefined : v));
   const fromWatch = spec.target === "statusPage" && host.statusPagesKnown === true;
-  const missing = spec.target === "page" ? "A page that is gone" : spec.target === "ttsPhrase" ? "A phrase that is gone"
+  const missing = spec.target === "page" ? "A page that is gone"
+    : spec.target === "ttsPhrase" ? (host.targets.phrases === undefined ? "A phrase not listed here" : "A phrase that is gone")
     : fromWatch ? "Not in this watch's status pages" : "Not on the iPhone";
   return html`<label class="field"><span>${payloadLabel(raw, spec)}</span>
     <select .value=${live(list.find((t) => sameId(t.id, stored))?.id ?? stored)} @change=${(e: Event) => set((e.target as HTMLSelectElement).value)}>

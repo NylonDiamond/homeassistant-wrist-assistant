@@ -1025,7 +1025,9 @@ export class WaMenuEditor extends LitElement {
       // The watch's own status pages first, else the iPhone's list.
       statusPages: this.statusPages ?? this.catalog?.statusPages ?? [],
       httpActions: this.catalog?.httpActions ?? [],
-      phrases: this.voiceDocument === undefined ? [] : voicePhraseTargets(this.voiceDocument),
+      // Unknown, not empty, while Home Assistant holds no voice settings: a
+      // Speak Phrase slot's phrase may well be on the iPhone.
+      phrases: this.voiceDocument === undefined ? undefined : voicePhraseTargets(this.voiceDocument),
     };
   }
 
