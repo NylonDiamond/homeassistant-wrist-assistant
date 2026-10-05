@@ -590,6 +590,9 @@ class BuiltRequest:
     own (``URLRequest.addValue`` joins them with a comma on the wire, which
     means the same to a server); the automatic Content-Type comes last.
     ``timeout`` is the action's own, not yet held to the sender's range.
+    ``auto_content_type`` is the automatic Content-Type when one was added
+    (it is then also the last header), the one header a redirect to
+    another origin keeps.
     """
 
     method: str
@@ -597,6 +600,7 @@ class BuiltRequest:
     headers: list[tuple[str, str]]
     body: bytes | None
     timeout: float | int
+    auto_content_type: str | None = None
 
 
 def _replace_token(key: str, replacement: str, text: str) -> str:
@@ -904,6 +908,7 @@ def build_action_request(
         sent.append([name, _substitute(raw_value, action, values, "header")])
 
     body_bytes: bytes | None = None
+    auto_content_type: str | None = None
     if verb in BODY_METHODS:
         if action.body_type == "audio":
             if audio:
@@ -915,6 +920,7 @@ def build_action_request(
         content_type = BODY_CONTENT_TYPES[action.body_type]
         if not user_content_type and content_type is not None:
             sent.append(["Content-Type", content_type])
+            auto_content_type = content_type
 
     return BuiltRequest(
         method=verb,
@@ -922,6 +928,7 @@ def build_action_request(
         headers=[(name, value) for name, value in sent],
         body=body_bytes,
         timeout=action.resolved_timeout,
+        auto_content_type=auto_content_type,
     )
 
 

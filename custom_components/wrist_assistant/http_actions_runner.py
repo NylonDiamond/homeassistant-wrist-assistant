@@ -13,15 +13,19 @@ The sending rules (contract rule 7):
   60 s. It covers the whole run, redirects and reading included.
 * At most 256 KB of an answer is read; the rest is left unread.
 * A self-signed server is accepted only when the action says so, and only
-  for the action's own host: a redirect to another host is checked as
-  usual, as the watch's session pins the opt-in to one host.
+  for the action's own origin (scheme, host and port): a redirect anywhere
+  else is checked as usual.
 * No client certificate is sent. The flag stays in the document, unread.
 * Redirects are followed by hand, at most 5 hops: a GET follows any
   redirect; a verb with a body follows only 307 and 308, which keep the
   verb and the body, and any other redirect is the answer, as on the watch.
-  A redirect that leaves the first host drops ``Authorization``, and one
-  from a host that is not this machine to one that is (loopback) is the
-  answer too, the rule Home Assistant's own sessions keep.
+  Origins are compared as scheme, host and port, a default port written or
+  not. Once a redirect leaves the first origin, no header the action
+  defined is sent again (they may carry its secrets); only the automatic
+  Content-Type rides along with a kept body. A redirect from https to
+  http is never followed and is the answer, and so is one from a host
+  that is not this machine to one that is (loopback), the rule Home
+  Assistant's own sessions keep.
 * Cookies are neither kept nor sent: the sessions here have no cookie jar,
   as each run on the watch has a session of its own.
 * At most 4 runs per device at a time; a fifth is refused ``busy``.
@@ -289,17 +293,23 @@ async def async_send(
         return Answer(error=FAILED)
 
 
+def _origin(url: URL) -> tuple[str, str, int | None]:
+    """Scheme, host and port, the port filled in when it is the default."""
+    return (url.scheme.lower(), (url.host or "").lower(), url.port)
+
+
 async def _send_hops(
     built: BuiltRequest, allows_untrusted: bool, session_for: SessionFor
 ) -> Answer:
     method = built.method
     url = URL(built.url, encoded=True)
-    first_host = url.host
+    first_origin = _origin(url)
     headers = list(built.headers)
     body = built.body
+    left_first_origin = False
     hops = 0
     while True:
-        verify = not (allows_untrusted and url.host == first_host)
+        verify = not (allows_untrusted and _origin(url) == first_origin)
         session = session_for(verify)
         async with session.request(
             method,
@@ -321,6 +331,7 @@ async def _send_hops(
                 if (
                     target is None
                     or target.scheme not in ("http", "https")
+                    or (url.scheme == "https" and target.scheme != "https")
                     or (_is_loopback(target.host) and not _is_loopback(url.host))
                 ):
                     target = None
@@ -336,8 +347,15 @@ async def _send_hops(
             headers = [
                 (n, v) for n, v in headers if n.lower() not in ("content-type", "content-length")
             ]
-        if target.host != url.host:
-            headers = [(n, v) for n, v in headers if n.lower() != "authorization"]
+        if not left_first_origin and _origin(target) != first_origin:
+            # Every header the action wrote may hold a secret meant for the
+            # first origin only.
+            left_first_origin = True
+            headers = (
+                [("Content-Type", built.auto_content_type)]
+                if body is not None and built.auto_content_type is not None
+                else []
+            )
         method, url = next_method, target
 
 

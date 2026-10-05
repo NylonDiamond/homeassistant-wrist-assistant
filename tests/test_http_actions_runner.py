@@ -5,8 +5,9 @@ so each test hands it a scripted session that answers by URL and records
 every request. Covered: a run's reply shape, the refusals (not found, needs
 setup, missing or malformed audio, busy), the timeout and its clamp, every
 row of the redirect rule (GET follows, a body verb follows only 307 and 308,
-at most 5 hops, a redirect off the first host drops Authorization and checks
-the certificate again, none to loopback), the 256 KB read cap, a plain regex in
+at most 5 hops, a redirect off the first origin drops every header the
+action wrote and checks the certificate again, none from https to http,
+none to loopback), the 256 KB read cap, a plain regex in
 the executor and any other in a child process with a hard limit, the URL
 sent as built, and the panel's Test.
 """
@@ -328,24 +329,94 @@ def test_at_most_five_hops(env) -> None:
     assert len(session.calls) == 6
 
 
-def test_leaving_the_host_drops_authorization_and_checks_the_certificate(env) -> None:
+def test_leaving_the_origin_drops_every_header_and_checks_the_certificate(env) -> None:
     runner, session, _ = make_runner(
         env,
         {
             "https://self.example/a": _redirect(302, "/b"),
             "https://self.example/b": _redirect(302, "https://other.example/c"),
-            "https://other.example/c": FakeResponse(200),
+            "https://other.example/c": _redirect(302, "https://self.example/d"),
+            "https://self.example/d": FakeResponse(200),
         },
     )
     doc = library(action(method="GET", url="https://self.example/a",
-                         headers=[header("Authorization", "Bearer x"), header("X-Keep", "1")],
+                         headers=[header("Authorization", "Bearer x"), header("X-Api-Key", "k")],
                          allowsUntrustedCertificate=True))
     run(env, runner, doc, {"id": ID_A})
     assert [(c["verify"], [h[0] for h in c["headers"]]) for c in session.calls] == [
-        (False, ["Authorization", "X-Keep"]),
-        (False, ["Authorization", "X-Keep"]),
-        (True, ["X-Keep"]),
+        (False, ["Authorization", "X-Api-Key"]),
+        (False, ["Authorization", "X-Api-Key"]),
+        (True, []),
+        # Back on the first origin, the headers stay dropped.
+        (False, []),
     ]
+
+
+def test_another_port_is_another_origin(env) -> None:
+    runner, session, _ = make_runner(
+        env,
+        {
+            "https://self.example/a": _redirect(302, "https://self.example:8443/b"),
+            "https://self.example:8443/b": FakeResponse(200),
+        },
+    )
+    doc = library(action(method="GET", url="https://self.example/a",
+                         headers=[header("X-Api-Key", "k")], allowsUntrustedCertificate=True))
+    run(env, runner, doc, {"id": ID_A})
+    assert [(c["verify"], c["headers"]) for c in session.calls] == [
+        (False, [("X-Api-Key", "k")]),
+        (True, []),
+    ]
+
+
+def test_a_default_port_written_out_is_the_same_origin(env) -> None:
+    runner, session, _ = make_runner(
+        env,
+        {
+            "https://self.example/a": _redirect(302, "https://SELF.example:443/b"),
+            "https://self.example/b": FakeResponse(200),
+        },
+    )
+    doc = library(action(method="GET", url="https://self.example/a",
+                         headers=[header("X-Api-Key", "k")], allowsUntrustedCertificate=True))
+    assert run(env, runner, doc, {"id": ID_A})["status"] == 200
+    assert [(c["verify"], c["headers"]) for c in session.calls] == [
+        (False, [("X-Api-Key", "k")]),
+        (False, [("X-Api-Key", "k")]),
+    ]
+
+
+@pytest.mark.parametrize("status", [301, 302, 307, 308])
+def test_https_to_http_is_never_followed(env, status) -> None:
+    runner, session, _ = make_runner(
+        env, {URL_A: _redirect(status, "http://example.com/hook"), "http://example.com/hook": FakeResponse(200)}
+    )
+    reply = run(env, runner, library(action(method="GET", headers=[header("X-Api-Key", "k")])), {"id": ID_A})
+    assert (reply["status"], reply["snippet"]) == (status, "moved")
+    assert len(session.calls) == 1
+
+
+def test_a_kept_body_crosses_origins_with_only_the_automatic_content_type(env) -> None:
+    runner, session, _ = make_runner(
+        env, {URL_A: _redirect(307, "https://other.example/new"), "https://other.example/new": FakeResponse(200)}
+    )
+    doc = library(action(method="POST", bodyContentType="json", body='{"a":1}',
+                         headers=[header("Authorization", "Bearer x")]))
+    assert run(env, runner, doc, {"id": ID_A})["status"] == 200
+    assert [(c["headers"], c["data"]) for c in session.calls] == [
+        ([("Authorization", "Bearer x"), ("Content-Type", "application/json")], b'{"a":1}'),
+        ([("Content-Type", "application/json")], b'{"a":1}'),
+    ]
+
+
+def test_a_user_content_type_does_not_cross_origins(env) -> None:
+    runner, session, _ = make_runner(
+        env, {URL_A: _redirect(308, "https://other.example/new"), "https://other.example/new": FakeResponse(200)}
+    )
+    doc = library(action(method="PUT", bodyContentType="text", body="hi",
+                         headers=[header("content-type", "text/x-secret; key=1")]))
+    run(env, runner, doc, {"id": ID_A})
+    assert session.calls[1]["headers"] == [] and session.calls[1]["data"] == b"hi"
 
 
 def test_a_redirect_to_loopback_from_elsewhere_is_the_answer(env) -> None:
