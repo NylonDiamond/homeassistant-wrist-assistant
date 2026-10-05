@@ -73,7 +73,7 @@ import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/edito
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
 import { stageFitZoom, stageZoomIn, stageZoomLabel, stageZoomOut } from "../watch-pages/stage.js";
 import { watchFrameStyles } from "../watch-frame.js";
-import { START_PHONE_FIRST_TEXT, deliveryState, initialWatch, settingsWatches, watchName } from "../watch-settings.js";
+import { START_PHONE_FIRST_TEXT, deliveryState, followWatch, settingsWatches, watchName } from "../watch-settings.js";
 import {
   type ControlCenterDraft,
   anyControlCenterDirty,
@@ -203,6 +203,11 @@ export class WaControlCenterEditor extends LitElement {
   @property({ attribute: false }) onBack?: () => void;
   /** The panel's own buttons for the bar's right end: Watch settings. */
   @property({ attribute: false }) barActions: TemplateResult | typeof nothing = nothing;
+  /** The panel's Watch app row owns the watch: it picks the watch (this
+   * element follows `ownerId` wherever it goes) and holds the ways to the
+   * other screens, so the bar leaves out its own watch picker and the way
+   * back to complications. Off, the bar is as it always was. */
+  @property({ attribute: false }) shellOwnsWatch = false;
 
   @state() private watchId?: string;
   @state() private record?: WatchConfigRecord;
@@ -312,11 +317,8 @@ export class WaControlCenterEditor extends LitElement {
           () => { this.ownList = []; },
         );
       }
-      const watches = this.watches;
-      if (this.watchId === undefined || !watches.some((w) => w.owner_watch_id === this.watchId)) {
-        const id = initialWatch(watches, this.ownerId);
-        if (id !== undefined && id !== this.watchId) this.openWatch(id);
-      }
+      const id = followWatch(this.watches, this.watchId, this.ownerId, this.shellOwnsWatch || changed.has("ownerId"));
+      if (id !== undefined) this.openWatch(id);
     }
     this.followSave();
     const ask = this.restoreAsk;
@@ -857,10 +859,10 @@ export class WaControlCenterEditor extends LitElement {
     return html`<div class="wa-bar ${this.stacked ? "stacked" : ""}" role="toolbar" aria-label="Watch Control Center list">
       ${this.haMenu ? html`<button class="icon tb-icon tb-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
         @click=${() => this.onHaMenu?.()}>${uiIcon("menu")}</button>` : nothing}
-      <button class="tb-btn tb-back" title="Back to complications"
-        @click=${() => (this.onBack ? this.onBack() : navigateWatchControlCenter(undefined, false))}>${uiIcon("left")}<span>Complications</span></button>
+      ${this.shellOwnsWatch ? nothing : html`<button class="tb-btn tb-back" title="Back to complications"
+        @click=${() => (this.onBack ? this.onBack() : navigateWatchControlCenter(undefined, false))}>${uiIcon("left")}<span>Complications</span></button>`}
       <span class="spacer"></span>
-      ${this.renderWatchPicker(watches)}
+      ${this.shellOwnsWatch ? nothing : this.renderWatchPicker(watches)}
       ${this.renderSyncPill(editing ? draft : undefined)}
       ${this.renderTopMenu(editing ? draft : undefined)}
       ${editing ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}

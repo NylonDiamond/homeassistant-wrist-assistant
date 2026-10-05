@@ -197,15 +197,26 @@ export class WatchSettings implements ReactiveController {
   /** Bumped by every open and close, so a pairing that answers after the
    * dialog was shut leaves the next visit's card alone. */
   private visit = 0;
+  /** Opened from the panel's Watch app row, which owns the watch: the dialog
+   * shows that one watch and draws no tabs of its own. */
+  private shellOwned = false;
 
   /** `icons` is the panel's symbol provider, asked on every draw: it loads
-   * its file on first use and wakes the panel when it can draw more. */
+   * its file on first use and wakes the panel when it can draw more.
+   * `onPaired` hears of a watch just paired here once the dialog has moved
+   * to it, so the panel can make it the watch the Watch app shows. */
   constructor(
     private readonly host: PanelHost,
     private readonly refreshOwners?: RefreshOwners,
     private readonly icons?: () => IconProvider | undefined,
+    private readonly onPaired?: (watchId: string) => void,
   ) {
     host.addController(this);
+  }
+
+  /** Whether the dialog is open. */
+  get shown(): boolean {
+    return this.open;
   }
 
   hostDisconnected(): void {
@@ -227,10 +238,12 @@ export class WatchSettings implements ReactiveController {
   // ── opening, loading, saving ───────────────────────────────────────────
 
   /** Open on the watch being edited when it is one, else the home's first.
-   * A home with no watch yet opens on the pairing card alone. */
-  show(hass: HassLike, owners: readonly OwnerSummary[], current: string | undefined): void {
+   * A home with no watch yet opens on the pairing card alone. With `shell`,
+   * the panel's Watch app row owns the watch: no tabs, only `current`. */
+  show(hass: HassLike, owners: readonly OwnerSummary[], current: string | undefined, options: { shell?: boolean } = {}): void {
     this.hass = hass;
     const id = initialWatch(settingsWatches(owners), current);
+    this.shellOwned = options.shell === true;
     this.open = true;
     this.confirm = undefined;
     this.note = undefined;
@@ -685,6 +698,7 @@ export class WatchSettings implements ReactiveController {
     this.guard("Discard and switch", () => {
       this.confirm = undefined;
       void this.load(id, true);
+      this.onPaired?.(id);
     });
   }
 
@@ -746,7 +760,7 @@ export class WatchSettings implements ReactiveController {
         <div class="xf-t"><h2>Watch settings</h2><span>${this.headLine(name)}</span></div>
         <button class="icon" title="Close" aria-label="Close" @click=${() => this.guard("Discard and close", () => this.close())}>${uiIcon("close")}</button>
       </div>
-      ${watches.length > 1 ? this.renderTabs(watches, owners) : nothing}
+      ${watches.length > 1 && !this.shellOwned ? this.renderTabs(watches, owners) : nothing}
       <div class="xfer-body ws-body">
         ${this.note ? html`<div class="banner ${this.note.kind} ws-note" role="alert"><span>${this.note.text}</span>
           <button class="link" @click=${() => { this.note = undefined; this.changed(); }}>Dismiss</button></div>` : nothing}

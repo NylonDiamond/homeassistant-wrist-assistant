@@ -9,6 +9,8 @@ import {
   agoWords,
   describeHomeSync,
   describeSend,
+  deviceSync,
+  deviceSyncLabel,
   homeSync,
   sendState,
   sendWaitMs,
@@ -306,5 +308,62 @@ describe("homeSync", () => {
       dev({ orphan: true, appliedToken: 1 }),
       dev({ appliedToken: undefined, count: 0 }),
     ])).toBeUndefined();
+  });
+});
+
+describe("deviceSync", () => {
+  const dev = (over: Partial<HomeDevice> = {}): HomeDevice =>
+    ({ name: "Watch", kind: "watch", token: 5, appliedToken: 5, count: 1, orphan: false, ...over });
+
+  it("is synced at or past the owner's token and waiting below it", () => {
+    expect(deviceSync(dev())).toBe("synced");
+    expect(deviceSync(dev({ appliedToken: 9 }))).toBe("synced");
+    expect(deviceSync(dev({ appliedToken: 4 }))).toBe("waiting");
+    expect(deviceSync(dev({ kind: "iphone", appliedToken: 0 }))).toBe("waiting");
+  });
+
+  it("waits for a never-acked device only when it owns designs", () => {
+    expect(deviceSync(dev({ appliedToken: null }))).toBe("waiting");
+    expect(deviceSync(dev({ appliedToken: undefined, count: 0 }))).toBe("idle");
+    expect(deviceSync(dev({ appliedToken: null, count: 0 }))).toBe("idle");
+  });
+
+  it("has no verdict for the Library or an orphan", () => {
+    expect(deviceSync(dev({ kind: "library", appliedToken: null }))).toBeUndefined();
+    expect(deviceSync(dev({ orphan: true, appliedToken: 1 }))).toBeUndefined();
+  });
+
+  it("reads null and absent kinds as a device", () => {
+    expect(deviceSync(dev({ kind: null, appliedToken: 2 }))).toBe("waiting");
+    expect(deviceSync(dev({ kind: undefined }))).toBe("synced");
+  });
+
+  it("names each verdict in a word", () => {
+    expect(deviceSyncLabel("synced")).toBe("Synced");
+    expect(deviceSyncLabel("waiting")).toBe("Waiting");
+    expect(deviceSyncLabel("idle")).toBe("Nothing to send");
+  });
+
+  it("agrees with the home pill on every device", () => {
+    const kinds = ["watch", "iphone", "library", null, undefined] as const;
+    const applied = [null, undefined, 0, 4, 5, 6] as const;
+    const devices: HomeDevice[] = [];
+    let n = 0;
+    for (const kind of kinds) for (const appliedToken of applied) for (const count of [0, 2]) for (const orphan of [false, true]) {
+      devices.push(dev({ name: `d${n++}`, kind, appliedToken, count, orphan }));
+    }
+    const s = homeSync(devices);
+    const waiting = devices.filter((d) => deviceSync(d) === "waiting").map((d) => d.name);
+    const synced = devices.filter((d) => deviceSync(d) === "synced").map((d) => d.name);
+    expect(waiting.length).toBeGreaterThan(0);
+    expect(s).toEqual({ kind: "waiting", waiting });
+    const calm = devices.filter((d) => deviceSync(d) !== "waiting");
+    expect(homeSync(calm)).toEqual({ kind: "synced", devices: synced });
+    // Each device alone gives the pill the same answer as its own verdict.
+    for (const d of devices) {
+      const one = homeSync([d]);
+      const v = deviceSync(d);
+      expect(one?.kind).toBe(v === "waiting" ? "waiting" : v === "synced" ? "synced" : undefined);
+    }
   });
 });

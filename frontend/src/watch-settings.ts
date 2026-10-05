@@ -547,6 +547,32 @@ export function initialWatch(watches: readonly OwnerSummary[], current: string |
 }
 
 /**
+ * The watch a watch screen should open next, or undefined to stay on the one
+ * it shows.
+ *
+ * With none shown, or one that has left the list, it opens the one the panel
+ * hands it (`ownerId`), else the first, as `initialWatch` decides. Once a
+ * listed watch is open it moves only when asked to follow the panel's choice
+ * (`follow`), and then only to a listed watch: a screen whose own picker the
+ * panel has taken over follows every change, and one with its own picker
+ * follows a new `ownerId` but keeps a watch the person picked in it. Kept
+ * drafts are per watch, so moving loses nothing.
+ */
+export function followWatch(
+  watches: readonly OwnerSummary[],
+  shown: string | undefined,
+  ownerId: string | undefined,
+  follow: boolean,
+): string | undefined {
+  if (shown === undefined || !watches.some((w) => w.owner_watch_id === shown)) {
+    const id = initialWatch(watches, ownerId);
+    return id !== shown ? id : undefined;
+  }
+  if (!follow || ownerId === undefined || ownerId === shown) return undefined;
+  return watches.some((w) => w.owner_watch_id === ownerId) ? ownerId : undefined;
+}
+
+/**
  * The visible rows of one section, cut into runs: a row on its own, or the
  * rows that show only because of the row just before them, which the view
  * draws in one box under their parent (the page indicator's five settings

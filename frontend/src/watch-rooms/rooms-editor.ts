@@ -59,7 +59,7 @@ import {
 import { watchKeysTypeText } from "../watch-pages/editor-host.js";
 import { asWatchPagesDocument } from "../watch-pages/model.js";
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
-import { deliveryState, initialWatch, settingsWatches, watchName } from "../watch-settings.js";
+import { deliveryState, followWatch, settingsWatches, watchName } from "../watch-settings.js";
 import { type RoomsDraft, anyRoomsDirty, dropAllRooms, forgetRoomsDraft, keptRoomsDraft, saveRoomsDraft, takeRoomsRecord } from "./draft.js";
 import { WATCH_ROOMS_HELP_URL, navigateWatchRooms, registerWatchRoomsDrafts } from "./hook.js";
 import {
@@ -160,6 +160,11 @@ export class WaRoomsEditor extends LitElement {
   @property({ attribute: false }) onBack?: () => void;
   /** The panel's own buttons for the bar's right end: Watch settings. */
   @property({ attribute: false }) barActions: TemplateResult | typeof nothing = nothing;
+  /** The panel's Watch app row owns the watch: it picks the watch (this
+   * element follows `ownerId` wherever it goes) and holds the ways to the
+   * other screens, so the bar leaves out its own watch picker and the way
+   * back to complications. Off, the bar is as it always was. */
+  @property({ attribute: false }) shellOwnsWatch = false;
 
   @state() private watchId?: string;
   @state() private record?: WatchConfigRecord;
@@ -252,11 +257,8 @@ export class WaRoomsEditor extends LitElement {
           () => { this.ownList = []; },
         );
       }
-      const watches = this.watches;
-      if (this.watchId === undefined || !watches.some((w) => w.owner_watch_id === this.watchId)) {
-        const id = initialWatch(watches, this.ownerId);
-        if (id !== undefined && id !== this.watchId) this.openWatch(id);
-      }
+      const id = followWatch(this.watches, this.watchId, this.ownerId, this.shellOwnsWatch || changed.has("ownerId"));
+      if (id !== undefined) this.openWatch(id);
       if (this.areasAsked !== this.hass.connection) void this.loadAreas();
       const sensor = this.currentSensor();
       if (sensor !== this.sensorHistoryFor) void this.loadSensorHistory(sensor);
@@ -716,11 +718,11 @@ export class WaRoomsEditor extends LitElement {
     return html`<div class="wa-bar ${this.stacked ? "stacked" : ""}" role="toolbar" aria-label="Watch rooms">
       ${this.haMenu ? html`<button class="icon tb-icon tb-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
         @click=${() => this.onHaMenu?.()}>${uiIcon("menu")}</button>` : nothing}
-      <button class="tb-btn tb-back" title="Back to complications"
-        @click=${() => (this.onBack ? this.onBack() : navigateWatchRooms(undefined, false))}>${uiIcon("left")}<span>Complications</span></button>
+      ${this.shellOwnsWatch ? nothing : html`<button class="tb-btn tb-back" title="Back to complications"
+        @click=${() => (this.onBack ? this.onBack() : navigateWatchRooms(undefined, false))}>${uiIcon("left")}<span>Complications</span></button>`}
       <span class="rm-title">Rooms</span>
       <span class="spacer"></span>
-      ${this.renderWatchPicker(watches)}
+      ${this.shellOwnsWatch ? nothing : this.renderWatchPicker(watches)}
       ${this.renderSyncPill(draft)}
       ${editing ? html`
         <button class="tb-btn icon rm-undo" ?disabled=${!draft.canUndo || this.saving} title=${`Undo (${MOD}Z)`} aria-label="Undo"

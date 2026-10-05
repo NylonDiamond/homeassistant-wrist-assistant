@@ -98,7 +98,7 @@ import {
   PAIR_FIRST_TEXT,
   START_PHONE_FIRST_TEXT,
   deliveryState,
-  initialWatch,
+  followWatch,
   settingsWatches,
   watchName,
   watchRecordUnreadable,
@@ -633,6 +633,11 @@ export class WaPageEditor extends LitElement {
   /** The panel's own buttons for the bar's right end: Watch settings, whose
    * dialog the panel draws. */
   @property({ attribute: false }) barActions: TemplateResult | typeof nothing = nothing;
+  /** The panel's Watch app row owns the watch: it picks the watch (this
+   * element follows `ownerId` wherever it goes) and holds the ways to the
+   * other screens, so the bar leaves out its own watch picker, the way back
+   * to complications and Menus. Off, the bar is as it always was. */
+  @property({ attribute: false }) shellOwnsWatch = false;
 
   @state() private watchId?: string;
   @state() private record?: WatchConfigRecord;
@@ -913,11 +918,8 @@ export class WaPageEditor extends LitElement {
           () => { this.ownList = []; },
         );
       }
-      const watches = this.watches;
-      if (this.watchId === undefined || !watches.some((w) => w.owner_watch_id === this.watchId)) {
-        const id = initialWatch(watches, this.ownerId);
-        if (id !== undefined && id !== this.watchId) this.openWatch(id);
-      }
+      const id = followWatch(this.watches, this.watchId, this.ownerId, this.shellOwnsWatch || changed.has("ownerId"));
+      if (id !== undefined) this.openWatch(id);
     }
     this.followSave();
     this.reconcileSelection();
@@ -2948,23 +2950,24 @@ export class WaPageEditor extends LitElement {
     const dirty = draft?.dirty ?? false;
     const admin = this.hass?.user?.is_admin === true;
     const watches = this.watches;
+    const shell = this.shellOwnsWatch;
     return html`<div class="wa-bar ${this.stacked ? "stacked" : ""}" role="toolbar" aria-label="Watch pages">
       ${this.haMenu ? html`<button class="icon tb-icon tb-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
         @click=${() => this.onHaMenu?.()}>${uiIcon("menu")}</button>` : nothing}
-      <button class="tb-btn tb-back" title="Back to complications"
-        @click=${() => (this.onBack ? this.onBack() : navigateWatchPages(undefined, false))}>${uiIcon("left")}<span>Complications</span></button>
+      ${shell ? nothing : html`<button class="tb-btn tb-back" title="Back to complications"
+        @click=${() => (this.onBack ? this.onBack() : navigateWatchPages(undefined, false))}>${uiIcon("left")}<span>Complications</span></button>`}
       <button class="tb-btn tb-new" ?disabled=${draft === undefined || this.saving}
         title=${this.saving ? SAVING_TEXT : "Add an empty page after the last one"}
         @click=${() => this.addPage()}>${uiIcon("plus")}<span>Add page</span></button>
       <span class="spacer"></span>
-      ${watches.length > 1 ? this.renderWatchPicker(watches) : nothing}
+      ${watches.length > 1 && !shell ? this.renderWatchPicker(watches) : nothing}
       ${this.renderSyncPill(draft)}
       ${this.renderTopMenu(draft)}
       ${draft ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
           title=${dirty ? `Save (${MOD}S)` : `Nothing to save (${MOD}S)`}
           @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
         <span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record)}</span>` : nothing}
-      ${admin ? html`<button class="tb-btn tb-menus" title="The watch's Anywhere menu, Entity quick menu and page switcher"
+      ${admin && !shell ? html`<button class="tb-btn tb-menus" title="The watch's Anywhere menu, Entity quick menu and page switcher"
         @click=${() => (this.onMenus ? this.onMenus() : navigateMenusFromPages(undefined))}>${uiIcon("radial")}<span>Menus</span></button>` : nothing}
       ${this.barActions}
       <button class="help" title="Help: pages in Home Assistant" aria-label="Help"

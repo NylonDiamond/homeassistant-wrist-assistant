@@ -29,6 +29,7 @@ import {
   deliveryState,
   dirtyKeys,
   errorCode,
+  followWatch,
   formValues,
   initialWatch,
   isShown,
@@ -330,6 +331,25 @@ describe("which devices the view offers", () => {
   it("opens on an unknown watch a link names as it would with none", () => {
     const watches = settingsWatches(owners);
     expect(initialWatch(watches, "gone")).toBe("w1");
+  });
+
+  it("opens the handed watch when nothing is shown or the shown one left, and stays when that is the one", () => {
+    const watches = settingsWatches(owners);
+    expect(followWatch(watches, undefined, "w2", false)).toBe("w2");
+    expect(followWatch(watches, undefined, undefined, false)).toBe("w1");
+    expect(followWatch(watches, "gone", "w2", false)).toBe("w2");
+    expect(followWatch(watches, "gone", "p1", true)).toBe("w1");
+    expect(followWatch([], undefined, "w1", true)).toBeUndefined();
+    expect(followWatch(watches, "w2", "w2", true)).toBeUndefined();
+  });
+
+  it("keeps a listed watch unless asked to follow, and then moves only to a listed watch", () => {
+    const watches = settingsWatches(owners);
+    expect(followWatch(watches, "w1", "w2", false)).toBeUndefined();
+    expect(followWatch(watches, "w1", "w2", true)).toBe("w2");
+    expect(followWatch(watches, "w1", "p1", true)).toBeUndefined();
+    expect(followWatch(watches, "w1", "gone", true)).toBeUndefined();
+    expect(followWatch(watches, "w1", undefined, true)).toBeUndefined();
   });
 });
 
