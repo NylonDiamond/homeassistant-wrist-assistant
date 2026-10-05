@@ -297,6 +297,9 @@ export interface RenderOptions {
   /** Ring the whole face in the selection color: the Background row is
    * selected (or under the pointer), and the background is the whole face. */
   highlightSlot?: boolean;
+  /** Box a corner's selected part in the selection color, the way a selected
+   * layer is boxed: its curved text, or its bezel on the edge. Corner only. */
+  cornerPart?: "text" | "bezel";
   /** Draw resize handles on the highlighted element (active family only). */
   handles?: boolean;
   /**
@@ -2933,6 +2936,65 @@ function cornerArc(s: number, id: string, radius: number, arc: { start: number; 
   return { id, d: arcPathD(dial, radius, arc.start, arc.end), length: radius * sweepRad };
 }
 
+/**
+ * The box round a band of a corner's dial, `r0` to `r1` out from its centre
+ * over `a0` to `a1` degrees: the editor's selection box for curved text or
+ * the bezel. Sampled along the sweep, since an arc bulges past its ends.
+ */
+function arcBandBox(dial: { cx: number; cy: number }, r0: number, r1: number, a0: number, a1: number, pad: number) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (let i = 0; i <= 16; i++) {
+    const a = a0 + ((a1 - a0) * i) / 16;
+    for (const r of [r0, r1]) {
+      const p = arcPointXY(dial, r, a);
+      x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y);
+      x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
+    }
+  }
+  return { x: x0 - pad, y: y0 - pad, w: x1 - x0 + 2 * pad, h: y1 - y0 + 2 * pad };
+}
+
+/** The part of an arc a centred line of `width` covers at radius `r`. */
+function centredSpan(arc: { start: number; end: number }, width: number, r: number) {
+  const mid = (arc.start + arc.end) / 2;
+  const half = ((width / r) * 180) / Math.PI / 2;
+  return { start: Math.max(arc.start, mid - half), end: Math.min(arc.end, mid + half) };
+}
+
+/**
+ * The selection box for a corner's curved text or bezel, in the preview's
+ * own units. Text is boxed round what is drawn, not the whole arc it may
+ * use; an edge that shows nothing gets a dashed box where a bezel would go.
+ */
+function cornerPartBox(layout: ResolvedLayout, part: "text" | "bezel", s: number): TemplateResult | typeof nothing {
+  const ctx = cornerContext(s, true);
+  const pad = 2 * s;
+  let box: { x: number; y: number; w: number; h: number } | undefined;
+  let dashed = false;
+  if (part === "text") {
+    const curved = layout.curvedText ?? "";
+    if (curved === "") return nothing;
+    const r = CURVED_BASELINE_R * s;
+    const f = CURVED_FONT * s;
+    const shown = bezelDisplayText(curved, cornerArc(s, "", r, CURVED_ARC).length, f * 0.88);
+    const span = centredSpan(CURVED_ARC, estimateTextWidth(shown, f * 0.88), r);
+    box = arcBandBox(ctx.dial, r - 0.15 * f, r + 0.85 * f, span.start, span.end, pad);
+  } else if (layout.bezelText && !layout.bezelGauge) {
+    const r = ctx.dial.r;
+    const f = BEZEL_FONT * s;
+    const shown = bezelDisplayText(layout.bezelText, cornerArc(s, "", r, ctx.labelArc).length, f);
+    const span = centredSpan(ctx.labelArc, estimateTextWidth(shown, f), r);
+    box = arcBandBox(ctx.dial, r - 0.15 * f, r + 0.85 * f, span.start, span.end, pad);
+  } else {
+    dashed = !layout.bezelGauge;
+    const r = GAUGE_R * s;
+    const half = (GAUGE_W / 2 + 2) * s;
+    box = arcBandBox(ctx.dial, r - half, r + half, GAUGE_ARC.start, GAUGE_ARC.end, pad);
+  }
+  return svg`<rect x=${box.x} y=${box.y} width=${box.w} height=${box.h} fill="none" stroke="#0A84FF" stroke-width="1.5"
+    stroke-dasharray=${dashed ? "4 3" : "none"} vector-effect="non-scaling-stroke" pointer-events="none" />`;
+}
+
 function cornerLabelArc(s: number, id: string) {
   // Baseline arc for the top-right corner. Measured: the label starts at
   // 12 o'clock (-90) and the truncation ellipsis lands at about -25, so the
@@ -3162,6 +3224,7 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
         ${tinted(bezel, surface === "phone" ? "phoneAccent" : "accent", tint)}
       </g>`}
       ${curvedMode ? (bare ? nothing : tinted(main, surface === "phone" ? "phoneAccent" : "accent", tint)) : main}
+      ${options.cornerPart === undefined || bare ? nothing : cornerPartBox(layout, options.cornerPart, s)}
       ${curvedMode ? nothing : spotlight(elements, design, options.spotlightIds, `${uid}-spot`, ctx.quad.width, ctx.quad.height,
         `translate(${slotX} ${slotY}) scale(${fit.scale * tileScale})`)}
       ${options.flash === undefined

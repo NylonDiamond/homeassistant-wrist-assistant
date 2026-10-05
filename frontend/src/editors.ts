@@ -9969,10 +9969,10 @@ function cornerUpd(host: EditorHost) {
 
 /**
  * The inspector for a corner's Curved text row. The watch bends one line of
- * text along the corner in place of the round layer area, so this is a layer
- * of its own in the list, and removing it brings the layers back.
+ * text along the corner in place of the round layer area; the toggle in the
+ * Layers list picks between the two.
  */
-export function cornerTextEditor(host: EditorHost, onRemove: () => void): TemplateResult {
+export function cornerTextEditor(host: EditorHost): TemplateResult {
   const layout = host.config.perFamily.corner;
   if (!layout?.curvedText) return html``;
   const upd = cornerUpd(host);
@@ -9980,8 +9980,7 @@ export function cornerTextEditor(host: EditorHost, onRemove: () => void): Templa
   return card(host, "cornerText", "Curved text", html`
     ${valueEditor(host, layout.curvedText, (val) => upd((l) => { l.curvedText = val; }, "curved"), { showResolved: true, label: "Text", key: "fam-corner-curved" })}
     ${colorField("Color", layout.curvedColorHex ?? "#FFFFFF", (v) => upd((l) => { if (v === undefined) delete l.curvedColorHex; else l.curvedColorHex = v; }, "curvedcolor"))}
-    <div class="hint keep">The watch bends this text along the corner, like the Weather corner. It draws no layers while curved text is on${layers > 0 ? `, so your ${layers === 1 ? "layer is" : `${layers} layers are`} skipped` : ""}.</div>
-    <button class="small" @click=${onRemove}>Remove curved text${layers > 0 ? " and draw the layers" : ""}</button>`,
+    <div class="hint keep">The watch bends this text along the corner, like the Weather corner. It shows curved text or layers, never both${layers > 0 ? `, so your ${layers === 1 ? "layer is" : `${layers} layers are`} skipped` : ""}. Pick <b>Layers</b> in the Layers list to draw layers instead.</div>`,
     { color: SECTION_COLOR.content, icon: "content", alwaysOpen: true });
 }
 
