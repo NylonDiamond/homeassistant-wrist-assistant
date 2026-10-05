@@ -1,5 +1,5 @@
 // The one watch the Watch app tab is about, shared by its six screens and
-// Watch settings, and remembered per browser.
+// its Settings page, and remembered per browser.
 //
 // It is never the complications device (`ownerId` in the panel): that one
 // may be a phone, and picking a complication must not move the watch app.
@@ -21,6 +21,7 @@ import { watchMenusRouteOwner } from "./watch-menus/hook.js";
 import { type PanelRoute, watchPagesRouteOwner } from "./watch-pages/hook.js";
 import { watchRoomsRouteOwner } from "./watch-rooms/hook.js";
 import { initialWatch } from "./watch-settings.js";
+import { watchSettingsRouteOwner } from "./watch-settings-page.js";
 import { watchStatusPagesRouteOwner } from "./watch-status-pages/hook.js";
 import { watchVoiceRouteOwner } from "./watch-voice/hook.js";
 
@@ -35,7 +36,8 @@ export function watchRouteOwner(route: PanelRoute | undefined): string | undefin
     ?? watchVoiceRouteOwner(route)
     ?? watchStatusPagesRouteOwner(route)
     ?? watchControlCenterRouteOwner(route)
-    ?? watchRoomsRouteOwner(route);
+    ?? watchRoomsRouteOwner(route)
+    ?? watchSettingsRouteOwner(route);
 }
 
 /** What the shared watch is worked out from. */

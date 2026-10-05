@@ -4,7 +4,7 @@
 // `NotificationStyleConfig`: how the Long Look draws a notification's
 // buttons, the watch app's sounds and their volume, the delivery route and
 // the Wrist Webhooks button size. Home Assistant keeps it as the kind
-// `notification_style`, beside `behavior`, and the Watch settings dialog edits
+// `notification_style`, beside `behavior`, and the Watch settings page edits
 // both behind one Save. Plan: app repo docs/pages_in_home_assistant_step4.md,
 // "4d batch 2 build contract", items 10 to 12.
 //

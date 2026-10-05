@@ -364,7 +364,7 @@ describe("a watch with nothing in Home Assistant yet", () => {
     expect(PAGES_START_BUTTON).toBe("Start with an empty page");
     expect(SETTINGS_START_BUTTON).toBe("Start with the defaults");
     expect(PAIR_FIRST_TEXT).toBe("Pair this watch first. Watch settings has Pair a watch.");
-    expect(SETTINGS_PAIR_FIRST_TEXT).toBe("Pair this watch first, under Pair a watch below.");
+    expect(SETTINGS_PAIR_FIRST_TEXT).toBe("Pair this watch first, under Pair a watch on this page.");
     expect(PAGES_START_CONFLICT_TEXT).toBe("The iPhone sent pages meanwhile, so those are shown.");
     expect(SETTINGS_START_CONFLICT_TEXT).toBe("The iPhone sent settings meanwhile, so those are shown.");
     const all = [PAGES_NO_RECORD_TEXT, SETTINGS_NO_RECORD_TEXT, PAIR_FIRST_TEXT, SETTINGS_PAIR_FIRST_TEXT, PAGES_START_CONFLICT_TEXT, SETTINGS_START_CONFLICT_TEXT];

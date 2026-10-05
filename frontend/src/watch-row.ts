@@ -2,7 +2,7 @@
 // shared watch at the left, then the six screens and Settings, the screen on
 // show marked. The panel draws it (`renderWatchRow`) and owns its state: the
 // shared watch (`watch-pick.ts`), whether the watch menu is open, and what a
-// pick, a screen or Settings does. What can be worked out without the panel
+// pick or a screen does. Settings is a screen with an address like the six. What can be worked out without the panel
 // lives here, where a test can reach it.
 //
 // The row is neutral, like the tabs: the screen on show is marked by weight
@@ -12,7 +12,7 @@
 import { css, html, nothing, type TemplateResult } from "lit";
 import type { OwnerSummary } from "./ha-api.js";
 import { type DeviceSync, deviceSync, deviceSyncLabel } from "./send-state.js";
-import { WATCH_SCREENS, type WatchScreen, isPlainClick, panelUrl, watchScreenOf, watchScreenPath } from "./shell.js";
+import { WATCH_SCREENS, WATCH_SETTINGS_SCREEN, type WatchScreen, isPlainClick, panelUrl, watchScreenOf, watchScreenPath } from "./shell.js";
 import { uiIcon } from "./ui-icons.js";
 import type { PanelRoute } from "./watch-pages/hook.js";
 import { settingsWatches, watchName } from "./watch-settings.js";
@@ -60,6 +60,13 @@ export function watchRowLinks(route: PanelRoute | undefined, watch: string | und
   return WATCH_SCREENS.map((screen) => ({ screen, path: watchScreenPath(screen, watch), on: screen.id === shown }));
 }
 
+/** The row's last link, Settings, on the shared watch. In a home with no
+ * watch it is also where the first one pairs. */
+export function watchRowSettingsLink(route: PanelRoute | undefined, watch: string | undefined): WatchRowLink {
+  const screen = WATCH_SETTINGS_SCREEN;
+  return { screen, path: watchScreenPath(screen, watch), on: watchScreenOf(route)?.id === screen.id };
+}
+
 /** What the watch slot at the row's left holds: nothing known yet, no watch
  * (the way to pair one), one watch (its name, no menu), or a menu. */
 export type WatchRowSlot = "loading" | "none" | "one" | "many";
@@ -82,38 +89,34 @@ export interface WatchRowInput {
   /** Whether the device list has been read, so "no watch" is the truth. */
   loaded: boolean;
   menuOpen: boolean;
-  /** Whether Watch settings is open, to mark its item. */
-  settingsOpen: boolean;
   /** Settings and pairing are an administrator's, as every command in them
    * is; anyone else who lands on a watch screen gets the row without them. */
   admin: boolean;
   onMenu: (open: boolean) => void;
   onPick: (watchId: string) => void;
-  /** A screen link pressed: its path inside the panel. */
+  /** A screen link pressed, Settings and Pair a watch included: its path
+   * inside the panel. */
   onGo: (path: string) => void;
-  /** Watch settings on the shared watch, which is also where a watch pairs. */
-  onSettings: () => void;
 }
 
 export function renderWatchRow(input: WatchRowInput): TemplateResult {
   const choices = watchRowChoices(input.owners, input.watch);
   const slot = watchRowSlot(input.loaded, choices.length);
   const href = (path: string) => panelUrl(input.route, path, globalThis.location?.pathname ?? "");
+  const link = (l: WatchRowLink, cls = "", title?: string) => html`<a class="wa-wr-link ${cls}${l.on ? "on" : ""}"
+    href=${href(l.path)} aria-current=${l.on ? "page" : "false"} title=${title ?? nothing}
+    @click=${(e: MouseEvent) => {
+      if (!isPlainClick(e)) return;
+      e.preventDefault();
+      if (!l.on) input.onGo(l.path);
+    }}>${l.screen.label}</a>`;
   return html`<nav class="wa-watchrow" aria-label="Watch app">
     ${renderWatchSlot(input, slot, choices)}
     ${slot === "none" && input.admin ? html`<span class="wa-wr-note">${WATCH_ROW_NONE_NOTE}</span>` : nothing}
     <span class="wa-wr-links">
-      ${slot === "none" ? nothing : watchRowLinks(input.route, input.watch).map((link) => html`<a class="wa-wr-link ${link.on ? "on" : ""}"
-        href=${href(link.path)} aria-current=${link.on ? "page" : "false"}
-        @click=${(e: MouseEvent) => {
-          if (!isPlainClick(e)) return;
-          e.preventDefault();
-          if (!link.on) input.onGo(link.path);
-        }}>${link.screen.label}</a>`)}
-      ${input.admin ? html`<button type="button" class="wa-wr-link wa-wr-settings ${input.settingsOpen ? "on" : ""}" aria-haspopup="dialog"
-        aria-expanded=${input.settingsOpen ? "true" : "false"}
-        title="How the watch behaves: gestures, pages, cameras and connection"
-        @click=${() => input.onSettings()}>Settings</button>` : nothing}
+      ${slot === "none" ? nothing : watchRowLinks(input.route, input.watch).map((l) => link(l))}
+      ${input.admin ? link(watchRowSettingsLink(input.route, input.watch), "wa-wr-settings ",
+        "How the watch behaves: gestures, pages, cameras and connection") : nothing}
     </span>
   </nav>`;
 }
@@ -124,8 +127,9 @@ function renderWatchSlot(input: WatchRowInput, slot: WatchRowSlot, choices: read
   }
   if (slot === "none") {
     if (!input.admin) return html`<span class="wa-wr-watch"><span class="wa-wr-k">Watch</span><span class="wa-wr-wait">None yet</span></span>`;
-    return html`<button type="button" class="wa-wr-pair" aria-haspopup="dialog" title="Opens Watch settings, where a watch pairs with a code"
-      @click=${() => input.onSettings()}>${uiIcon("watch")}<span>Pair a watch</span></button>`;
+    const settings = watchRowSettingsLink(input.route, undefined);
+    return html`<button type="button" class="wa-wr-pair" title="Opens Settings, where a watch pairs with a code"
+      @click=${() => { if (!settings.on) input.onGo(settings.path); }}>${uiIcon("watch")}<span>Pair a watch</span></button>`;
   }
   const current = choices.find((c) => c.on) ?? choices[0]!;
   if (slot === "one") {

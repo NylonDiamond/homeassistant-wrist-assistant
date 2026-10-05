@@ -41,11 +41,12 @@ describe("Home's Watch app card", () => {
     expect(watchCard.indexOf(guard)).toBeLessThan(watchCard.indexOf("home-pair-watch"));
   });
 
-  it("offers to pair a watch, through Watch settings, in a home with none", () => {
+  it("offers to pair a watch, through the Settings page, in a home with none", () => {
     expect(watchCard).toContain("const watches = settingsWatches(this.owners);");
     const none = between(watchCard, "${watches.length === 0\n        ? html`<div class=\"home-screens\">", ": html`");
-    expect(none).toContain(`class="home-screen home-pair-watch"`);
-    expect(none).toContain("this.watchSettings.show(this.hass, this.owners, undefined)");
+    expect(none).toContain(`<a class="home-screen home-pair-watch" href=\${href(WATCH_SETTINGS_SCREEN.path)}`);
+    expect(none).toContain("this.goTo(WATCH_SETTINGS_SCREEN.path);");
+    expect(none).not.toContain("watchSettings");
   });
 
   it("has a door to each of the six screens once there is a watch", () => {

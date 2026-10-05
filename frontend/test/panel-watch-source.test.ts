@@ -59,14 +59,18 @@ describe("the watch screens under the row", () => {
     expect(count(tab, "ownerId: watch,")).toBe(6);
     expect(count(tab, "shell: true,")).toBe(6);
     expect(count(tab, "actions: nothing,")).toBe(6);
+    expect(count(tab, "dialogs: nothing,")).toBe(6);
     expect(tab).not.toContain("watchSettings.renderButton");
+    expect(tab).not.toContain("watchSettings.render(");
     expect(tab).not.toMatch(/RouteOwner\(this\.route\) \?\? this\.ownerId/);
   });
 
-  it("opens Watch settings from the row on the shared watch, without its own tabs", () => {
-    expect(method("  private openWatchSettings()")).toContain("this.watchSettings.show(this.hass, this.owners, this.sharedWatch, { shell: true });");
+  it("leaves Settings to the row as a link like the six, on the shared watch", () => {
+    expect(SOURCE).not.toContain("openWatchSettings");
     const row = method("  private withWatchRow(");
-    expect(row).toContain("onSettings: () => this.openWatchSettings(),");
+    expect(row).not.toContain("onSettings");
+    expect(row).not.toContain("settingsOpen");
+    expect(row).toContain("onGo: (path) => { this.toggleWatchRowMenu(false); this.goTo(path); },");
     expect(row).toContain("onPick: (watchId) => this.pickWatch(watchId),");
     expect(row).toContain("watch: this.sharedWatch,");
     expect(row).toContain("admin: this.hass.user?.is_admin === true,");
@@ -92,10 +96,52 @@ describe("links into the Watch app carry the shared watch", () => {
     expect(method("  private openTab(")).toContain("this.goTo(tabPath(tab, this.sharedWatch));");
   });
 
-  it("on Home's cards and its Watch settings button", () => {
+  it("on Home's cards and its Watch settings button, which goes to the Settings page", () => {
     const home = method("  private renderHomeWatch() {");
     expect(home).toContain("const watch = this.sharedWatch;");
     expect(home).toContain("watchScreenPath(screen, watch)");
-    expect(method("  private renderHome() {")).toContain("this.watchSettings.show(this.hass, this.owners, this.sharedWatch)");
+    const front = method("  private renderHome() {");
+    expect(front).toContain("const settings = watchScreenPath(WATCH_SETTINGS_SCREEN, this.sharedWatch);");
+    expect(front).toContain(`<a class="home-btn home-watch-settings" href=\${panelUrl(this.route, settings, window.location.pathname)}`);
+    expect(front).toContain("this.goTo(settings);");
+    expect(front).not.toContain("watchSettings.");
+  });
+});
+
+describe("the Settings page", () => {
+  it("is a watch screen under the row, drawn by the panel", () => {
+    expect(method("  private renderTab() {")).toContain("if (isWatchSettingsRoute(this.route)) return this.withWatchRow(this.renderSettingsPage());");
+    const page = method("  private renderSettingsPage() {");
+    expect(page).toContain("if (this.hass.user?.is_admin !== true) {");
+    expect(page).toContain("if (!this.linkReady && this.owners.length === 0) {");
+    expect(page).toContain("return this.watchSettings.render(this.hass, this.owners, { narrow: this.narrow });");
+  });
+
+  it("follows the shared watch on every draw for an administrator, once the devices are in, and leaves on any other route", () => {
+    const will = method("  protected override willUpdate(changed");
+    expect(will).toContain("if (isWatchSettingsRoute(this.route) && this.hass?.user?.is_admin === true) {");
+    expect(will).toContain("if (this.linkReady || this.owners.length > 0) this.watchSettings.show(this.hass, this.owners, this.sharedWatch);");
+    expect(will).toContain("this.watchSettings.leave();");
+  });
+
+  it("is drawn nowhere else: no Watch settings dialog over Home, the list, the editor or a watch screen", () => {
+    expect(count(SOURCE, "this.watchSettings.render(")).toBe(1);
+    expect(SOURCE).not.toContain("this.watchSettings.show(this.hass, this.owners, undefined)");
+  });
+
+  it("saves on ⌘S or Ctrl+S, which the panel takes before its other keys", () => {
+    const keys = SOURCE.slice(SOURCE.indexOf("  private keyHandler = (e: KeyboardEvent) => {"));
+    const save = keys.indexOf("if (settingsPageSavesOnKey(this.route, e)) {");
+    expect(save).toBeGreaterThan(0);
+    expect(save).toBeLessThan(keys.indexOf("if (!editorKeysLive("));
+    expect(keys.slice(save, save + 200)).toContain("this.watchSettings.saveFromKey();");
+  });
+
+  it("counts its kept edits in both leave guards, and drops them on a yes", () => {
+    const unload = SOURCE.slice(SOURCE.indexOf("  private beforeUnload = "), SOURCE.indexOf("  private leaveGuard = "));
+    expect(unload).toContain("!anyWatchSettingsDirty()");
+    const guard = SOURCE.slice(SOURCE.indexOf("  private leaveGuard = "), SOURCE.indexOf("\n  };\n", SOURCE.indexOf("  private leaveGuard = ")));
+    expect(guard).toContain("!anyWatchSettingsDirty()");
+    expect(guard).toContain("this.watchSettings.dropKept();");
   });
 });

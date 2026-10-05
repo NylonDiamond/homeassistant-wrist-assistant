@@ -1,21 +1,30 @@
-// The Watch settings dialog: one watch's simple behavior settings, edited in
-// the panel and saved to the copy Home Assistant keeps for the watch.
+// The Watch app's Settings page: one watch's simple behavior settings, edited
+// in the panel and saved to the copy Home Assistant keeps for the watch. The
+// panel draws it as the page body on `/settings` (`watch-settings-page.ts`),
+// under the Watch app row, which owns the watch: the page shows the row's
+// watch and follows it, with no watch tabs of its own.
 //
 // It is a controller rather than an element of its own so it draws inside the
 // panel's shadow root and wears the panel's own rows: the inspector's tinted
 // cards, its switches, segmented choices, selects, color and entity fields, and
 // the header's sync pill for where a save has got to. Everything that decides
-// something lives in `watch-settings.ts`, which the tests read without a DOM.
+// something lives in `watch-settings.ts`, `watch-settings-page.ts` and
+// `watch-settings-draft.ts`, which the tests read without a DOM.
+//
+// Unsaved edits are kept per watch (`watch-settings-draft.ts`), the way every
+// other watch screen keeps its drafts, so following the row to another watch,
+// or leaving for another screen or tab, loses nothing and asks nothing. The
+// panel's leave guards count them.
 //
 // The path a change takes: the panel saves a new revision, and the watch pulls
 // it the next time it checks, or the iPhone app pulls it (launch, foreground,
 // reconnect) and passes it on the way it sends any settings change. A watch
 // with no record yet gets one from "Start with the defaults". There is no
-// live line, so while a save waits the dialog asks the store again now and
+// live line, so while a save waits the page asks the store again now and
 // then and turns the pill green once a device has it.
 //
 // The watch's notification style (kind `notification_style`) is a second
-// record shown in the same dialog, as the Notifications, Sounds and Wrist
+// record shown on the same page, as the Notifications, Sounds and Wrist
 // Webhooks cards after the behavior ones. It loads with `behavior`, and the
 // one Save sends whichever of the two changed, each over its own revision.
 // Its thinking is in `watch-notification-style/model.ts`.
@@ -34,8 +43,6 @@ import {
   saveWatchConfig,
 } from "./ha-api.js";
 import { SECTION_COLOR } from "./kinds.js";
-import { peopleOf } from "./people.js";
-import { personColorVar } from "./pickerRows.js";
 import type { IconProvider } from "./renderer.js";
 import { agoWords } from "./send-state.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
@@ -80,6 +87,8 @@ import {
   watchRecordUnreadable,
   withEdit,
 } from "./watch-settings.js";
+import { SETTINGS_MOVED_TEXT, dropWatchSettingsDrafts, keepSettingsDraft, keptSettingsDraft, restoreSettingsDraft } from "./watch-settings-draft.js";
+import { settingsCanSave, settingsPageStep } from "./watch-settings-page.js";
 import { type TileChoice, optionPreview, settingIcon, tileChoices, usesTiles } from "./watch-settings-look.js";
 import {
   type StyleRow,
@@ -110,8 +119,12 @@ import {
 } from "./watch-notification-style/model.js";
 import { notificationPreview, notificationPreviewStyles } from "./watch-notification-style/preview.js";
 
-/** How often an open dialog asks whether a device has collected a save. */
+/** How often the page asks whether a device has collected a save. */
 const DELIVERY_POLL_MS = 15_000;
+
+const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+/** Save's key, as its hover text names it. */
+const SAVE_KEY = IS_MAC ? "⌘S" : "Ctrl+S";
 
 /** Each card's mark and tint, from the inspector's own palette. */
 const SECTION_LOOK: Record<string, { icon: UiIconName; color: string }> = {
@@ -136,7 +149,7 @@ interface Note {
   kind: "note" | "warn" | "err";
 }
 
-/** A question the foot asks before edits are thrown away. */
+/** A question the bar asks before edits are thrown away. */
 interface Confirm {
   text: string;
   label: string;
@@ -146,7 +159,7 @@ interface Confirm {
 type PanelHost = ReactiveControllerHost & { renderRoot: ParentNode };
 
 /** Reads the device list again and answers it, so a watch that has just been
- * paired shows up as a tab. The panel's own full owners load. */
+ * paired is one the row can show. The panel's own full owners load. */
 type RefreshOwners = () => Promise<readonly OwnerSummary[]>;
 
 /** The "Pair a watch" card's state: the code being typed, then what looking
@@ -163,7 +176,8 @@ interface PairState {
 }
 
 export class WatchSettings implements ReactiveController {
-  private open = false;
+  /** The page is on screen. */
+  private active = false;
   private hass?: HassLike;
   private ownerId?: string;
   private record?: WatchConfigRecord;
@@ -194,17 +208,15 @@ export class WatchSettings implements ReactiveController {
   /** Bumped by every change of code and by closing, so a lookup that answers
    * for a code no longer in the field is dropped. */
   private pairSeq = 0;
-  /** Bumped by every open and close, so a pairing that answers after the
-   * dialog was shut leaves the next visit's card alone. */
+  /** Bumped by every arrival on the page and every departure, so a pairing
+   * that answers after the page was left leaves the next visit's card
+   * alone. */
   private visit = 0;
-  /** Opened from the panel's Watch app row, which owns the watch: the dialog
-   * shows that one watch and draws no tabs of its own. */
-  private shellOwned = false;
 
   /** `icons` is the panel's symbol provider, asked on every draw: it loads
    * its file on first use and wakes the panel when it can draw more.
-   * `onPaired` hears of a watch just paired here once the dialog has moved
-   * to it, so the panel can make it the watch the Watch app shows. */
+   * `onPaired` hears of a watch just paired here once the page has moved to
+   * it, so the panel can make it the watch the Watch app shows. */
   constructor(
     private readonly host: PanelHost,
     private readonly refreshOwners?: RefreshOwners,
@@ -214,54 +226,95 @@ export class WatchSettings implements ReactiveController {
     host.addController(this);
   }
 
-  /** Whether the dialog is open. */
+  /** Whether the page is on screen. */
   get shown(): boolean {
-    return this.open;
+    return this.active;
+  }
+
+  /** The watch on the page, undefined while there is none. */
+  get watchId(): string | undefined {
+    return this.ownerId;
+  }
+
+  /** The panel back in the page (Home Assistant moves it in and out): a
+   * save still waiting on the page is checked on again. */
+  hostConnected(): void {
+    if (this.active) this.pollIfWaiting();
   }
 
   hostDisconnected(): void {
     this.stopPolling();
   }
 
-  /** The dialog is only in the tree while open, and a native dialog needs
-   * showModal() for its backdrop, focus trap and Escape. */
-  hostUpdated(): void {
-    if (!this.open) return;
-    const dialog = this.host.renderRoot.querySelector<HTMLDialogElement>("dialog.ws-dialog");
-    if (dialog && !dialog.open) dialog.showModal();
-  }
-
+  /** Every change: the page is drawn again, and the watch's form is kept as
+   * it stands (`watch-settings-draft.ts`), so leaving it loses nothing. Not
+   * while a load is out: the form is between two watches then. */
   private changed(): void {
+    if (!this.loading && this.ownerId !== undefined) {
+      keepSettingsDraft(this.ownerId, {
+        behaviorRevision: this.record?.revision ?? 0,
+        behaviorDocument: this.record?.document,
+        edits: this.edits,
+        styleRevision: this.styleRecord?.revision ?? 0,
+        styleDocument: this.styleDocument,
+        styleEdits: this.styleEdits,
+      });
+    }
     this.host.requestUpdate();
   }
 
-  // ── opening, loading, saving ───────────────────────────────────────────
+  // ── following the row's watch, loading, saving ─────────────────────────
 
-  /** Open on the watch being edited when it is one, else the home's first.
-   * A home with no watch yet opens on the pairing card alone. With `shell`,
-   * the panel's Watch app row owns the watch: no tabs, only `current`. */
-  show(hass: HassLike, owners: readonly OwnerSummary[], current: string | undefined, options: { shell?: boolean } = {}): void {
+  /**
+   * The page on the watch the panel hands it: the Watch app's shared watch
+   * when it is one of the home's watches, else the first. Called on every
+   * draw of the page, so it follows the row's picker; it reads only on the
+   * way onto the page and when the watch changes (`settingsPageStep`). A
+   * home with no watch yet shows the pairing card alone.
+   */
+  show(hass: HassLike, owners: readonly OwnerSummary[], current: string | undefined): void {
     this.hass = hass;
     const id = initialWatch(settingsWatches(owners), current);
-    this.shellOwned = options.shell === true;
-    this.open = true;
-    this.confirm = undefined;
-    this.note = undefined;
-    this.visit++;
-    this.pairSeq++;
-    this.pair = { code: "" };
-    if (id === undefined) {
-      // Nothing to load: clear whatever an earlier visit left, a load cut off
-      // by closing included, so the card says no watch has connected.
+    const step = settingsPageStep(this.active, this.ownerId, id);
+    if (step === "stay") return;
+    if (!this.active) {
+      // A new visit: the pairing card and the bar start afresh.
+      this.active = true;
+      this.confirm = undefined;
+      this.note = undefined;
+      this.visit++;
+      this.pairSeq++;
+      this.pair = { code: "" };
+    }
+    if (step === "clear" || id === undefined) {
+      // Nothing to load: clear whatever was shown, a load still out
+      // included, so the card says no watch has connected.
       this.loadSeq++;
       this.ownerId = undefined;
       this.record = undefined;
+      this.edits = new Map();
       this.loadError = undefined;
       this.loading = false;
       this.clearStyle();
+      this.stopPolling();
+      this.changed();
+      return;
     }
+    void this.load(id);
+  }
+
+  /** The page has gone from the screen: another screen, tab or page. The
+   * form is kept (`changed` keeps it on every edit); only the checks for
+   * delivery stop, and the next visit reads both records again. */
+  leave(): void {
+    if (!this.active) return;
+    this.active = false;
+    this.stopPolling();
+    this.confirm = undefined;
+    this.visit++;
+    this.pairSeq++;
+    this.pair = { code: "" };
     this.changed();
-    if (id !== undefined) void this.load(id);
   }
 
   private async load(ownerId: string, keepNote = false): Promise<void> {
@@ -279,6 +332,11 @@ export class WatchSettings implements ReactiveController {
     this.changed();
     await Promise.all([this.readBehavior(hass, ownerId, seq), this.readStyle(hass, ownerId, seq)]);
     if (seq !== this.loadSeq) return;
+    // The edits kept for this watch go back on, over the copies just read.
+    const restored = restoreSettingsDraft(keptSettingsDraft(ownerId), this.record, this.styleRecord);
+    this.edits = restored.edits;
+    this.styleEdits = restored.styleEdits;
+    if (restored.moved && !keepNote) this.note = { kind: "warn", text: SETTINGS_MOVED_TEXT };
     this.loading = false;
     this.pollIfWaiting();
     this.changed();
@@ -368,7 +426,7 @@ export class WatchSettings implements ReactiveController {
         behavior ? this.saveBehavior(hass, ownerId) : undefined,
         style ? this.saveStyle(hass, ownerId) : undefined,
       ]);
-      if (ownerId !== this.ownerId || !this.open) return;
+      if (ownerId !== this.ownerId) return;
       this.note = joinNotes(notes);
       this.pollIfWaiting();
     } finally {
@@ -384,7 +442,7 @@ export class WatchSettings implements ReactiveController {
     const document = buildSaveDocument(record.document, edits);
     try {
       const reply = await saveWatchConfig(hass, ownerId, "behavior", record.revision, document);
-      if (ownerId !== this.ownerId || !this.open) return undefined;
+      if (ownerId !== this.ownerId) return undefined;
       // The store keeps the document as sent, so what was sent is the new
       // revision. Delivery stays where it was: no device has seen it yet.
       this.record = {
@@ -397,7 +455,7 @@ export class WatchSettings implements ReactiveController {
       if (this.edits === edits) this.edits = new Map();
       return undefined;
     } catch (err) {
-      if (ownerId !== this.ownerId || !this.open) return undefined;
+      if (ownerId !== this.ownerId) return undefined;
       const code = errorCode(err);
       if (code === "conflict") {
         const stored = conflictRevision(err);
@@ -426,7 +484,7 @@ export class WatchSettings implements ReactiveController {
       save: (base, doc) => saveWatchConfig(hass, ownerId, NOTIFICATION_STYLE_KIND, base, doc),
       fetch: () => fetchWatchConfig(hass, ownerId, NOTIFICATION_STYLE_KIND),
     }, { revision: record.revision, document }, edits);
-    if (ownerId !== this.ownerId || !this.open) return undefined;
+    if (ownerId !== this.ownerId) return undefined;
     if (result.ok) {
       const base = result.fresh ?? record;
       this.styleRecord = result.alreadySaved
@@ -468,7 +526,7 @@ export class WatchSettings implements ReactiveController {
     this.changed();
     const result = await createWatchBehavior((base, document) => saveWatchConfig(hass, ownerId, "behavior", base, document));
     this.starting = false;
-    if (ownerId !== this.ownerId || !this.open) {
+    if (ownerId !== this.ownerId) {
       this.changed();
       return;
     }
@@ -505,7 +563,7 @@ export class WatchSettings implements ReactiveController {
     this.changed();
     const result = await startNotificationStyle((base, document) => saveWatchConfig(hass, ownerId, NOTIFICATION_STYLE_KIND, base, document));
     this.styleStarting = false;
-    if (ownerId !== this.ownerId || !this.open) {
+    if (ownerId !== this.ownerId) {
       this.changed();
       return;
     }
@@ -535,7 +593,7 @@ export class WatchSettings implements ReactiveController {
    */
   private pollIfWaiting(): void {
     this.stopPolling();
-    if (!this.open) return;
+    if (!this.active) return;
     if (deliveryState(this.record) !== "waiting" && deliveryState(this.styleRecord) !== "waiting") return;
     this.pollTimer = window.setTimeout(() => void this.poll(), DELIVERY_POLL_MS);
   }
@@ -544,7 +602,7 @@ export class WatchSettings implements ReactiveController {
     this.pollTimer = undefined;
     const hass = this.hass;
     const ownerId = this.ownerId;
-    if (!hass || ownerId === undefined || !this.open) return;
+    if (!hass || ownerId === undefined || !this.active) return;
     await Promise.all([
       deliveryState(this.record) === "waiting" ? this.freshen(hass, ownerId, "behavior") : undefined,
       deliveryState(this.styleRecord) === "waiting" ? this.freshen(hass, ownerId, "style") : undefined,
@@ -561,7 +619,7 @@ export class WatchSettings implements ReactiveController {
     try {
       const fresh = await fetchWatchConfig(hass, ownerId, which === "behavior" ? "behavior" : NOTIFICATION_STYLE_KIND);
       const now = which === "behavior" ? this.record : this.styleRecord;
-      if (ownerId !== this.ownerId || now !== shown || !this.open) return;
+      if (ownerId !== this.ownerId || now !== shown || !this.active) return;
       const edits = which === "behavior" ? this.edits : this.styleEdits;
       let next: WatchConfigRecord | undefined;
       if (fresh.revision === shown.revision) {
@@ -584,36 +642,43 @@ export class WatchSettings implements ReactiveController {
     this.pollTimer = undefined;
   }
 
-  // ── closing and switching, which may cost edits ────────────────────────
+  // ── discarding ─────────────────────────────────────────────────────────
 
-  private get dirty(): boolean {
+  /** Whether the form holds unsaved changes to either record. */
+  get dirty(): boolean {
     return this.behaviorChanges > 0 || this.styleChanges > 0;
   }
 
-  /** Run `then` now, or once the foot has asked about the unsaved edits. */
-  private guard(label: string, then: () => void): void {
-    if (!this.dirty) { then(); return; }
-    this.confirm = { text: "Your changes to these settings are not saved.", label, run: then };
+  /** Save from the keyboard (⌘S or Ctrl+S on the page), as the button would:
+   * nothing when it could not run. */
+  saveFromKey(): void {
+    if (this.canSave) void this.save();
+  }
+
+  /** The person agreed to leave the panel with settings unsaved: every
+   * watch's kept edits go, the ones on screen included. */
+  dropKept(): void {
+    dropWatchSettingsDrafts();
+    this.discard();
+  }
+
+  /** The bar's Discard: it asks first, since the edits have no undo. */
+  private askDiscard(): void {
+    const changes = this.behaviorChanges + this.styleChanges;
+    if (changes === 0) return;
+    this.confirm = {
+      text: `Throw away ${changes} unsaved ${changes === 1 ? "change" : "changes"}?`,
+      label: "Discard",
+      run: () => this.discard(),
+    };
     this.changed();
   }
 
-  private close(): void {
-    this.host.renderRoot.querySelector<HTMLDialogElement>("dialog.ws-dialog")?.close();
-  }
-
-  /** The dialog has gone, by Close, Escape or Discard: forget the visit. */
-  private closed(): void {
-    this.open = false;
-    this.loadSeq++;
-    this.stopPolling();
-    this.record = undefined;
+  /** Back to the copies Home Assistant holds. */
+  private discard(): void {
     this.edits = new Map();
-    this.clearStyle();
+    this.styleEdits = new Map();
     this.confirm = undefined;
-    this.note = undefined;
-    this.visit++;
-    this.pairSeq++;
-    this.pair = { code: "" };
     this.changed();
   }
 
@@ -681,8 +746,9 @@ export class WatchSettings implements ReactiveController {
       this.changed();
     }
     if (paired === undefined || !this.refreshOwners) return;
-    // The new watch joins the device list and becomes the one shown, its tab
-    // selected, whether or not another watch was open.
+    // The new watch joins the device list and becomes the one shown, and the
+    // panel's shared watch, whether or not another watch was open. Edits on
+    // the watch shown before are kept for it, so nothing needs asking.
     let owners: readonly OwnerSummary[];
     try {
       owners = await this.refreshOwners();
@@ -695,19 +761,9 @@ export class WatchSettings implements ReactiveController {
       ? paired.watchId
       : this.ownerId === undefined ? initialWatch(watches, undefined) : undefined;
     if (id === undefined) return;
-    this.guard("Discard and switch", () => {
-      this.confirm = undefined;
-      void this.load(id, true);
-      this.onPaired?.(id);
-    });
-  }
-
-  private pickWatch(ownerId: string): void {
-    if (ownerId === this.ownerId) return;
-    this.guard("Discard and switch", () => {
-      this.confirm = undefined;
-      void this.load(ownerId);
-    });
+    this.confirm = undefined;
+    void this.load(id, true);
+    this.onPaired?.(id);
   }
 
   private edit(setting: CatalogSetting, value: SettingValue): void {
@@ -732,47 +788,38 @@ export class WatchSettings implements ReactiveController {
 
   // ── drawing ────────────────────────────────────────────────────────────
 
-  /** The top bar's way in. Administrators only, since every command is
-   * theirs. A home with no watch yet still gets it: pairing the first watch
-   * without an iPhone starts here. */
-  renderButton(hass: HassLike, owners: readonly OwnerSummary[], current: string | undefined): TemplateResult | typeof nothing {
-    if (!hass.user?.is_admin) return nothing;
-    return html`<button class="tb-btn tb-watch" aria-haspopup="dialog" aria-expanded=${this.open ? "true" : "false"}
-      title="How the watch behaves: gestures, pages, cameras and connection"
-      @click=${() => this.show(hass, owners, current)}>${uiIcon("watch")}<span>Watch settings</span></button>`;
-  }
-
-  render(hass: HassLike, owners: readonly OwnerSummary[]): TemplateResult | typeof nothing {
-    if (!this.open) return nothing;
+  /**
+   * The page: a bar that stays at the top while the cards scroll under it
+   * (the title and which watch and revision at the left, where the settings
+   * have got to and Save at the right), then the cards. On a wide page the
+   * behavior cards and the notification style's sit in two columns, the
+   * pairing card under the second; on a narrow one they are one column in
+   * that order. A home with no watch yet has the pairing card alone.
+   */
+  render(hass: HassLike, owners: readonly OwnerSummary[], options: { narrow?: boolean } = {}): TemplateResult {
     this.hass = hass;
     const watches = settingsWatches(owners);
     const owner = watches.find((w) => w.owner_watch_id === this.ownerId);
     const name = owner ? watchName(owner, watches) : "Watch";
-    return html`<dialog class="ws-dialog xf" aria-label="Watch settings"
-      @cancel=${(e: Event) => {
-        // Escape with unsaved edits asks first, the way Close does.
-        if (!this.dirty) return;
-        e.preventDefault();
-        this.guard("Discard and close", () => this.close());
-      }}
-      @close=${() => this.closed()}>
-      <div class="xf-head">
-        <div class="xf-t"><h2>Watch settings</h2><span>${this.headLine(name)}</span></div>
-        <button class="icon" title="Close" aria-label="Close" @click=${() => this.guard("Discard and close", () => this.close())}>${uiIcon("close")}</button>
-      </div>
-      ${watches.length > 1 && !this.shellOwned ? this.renderTabs(watches, owners) : nothing}
-      <div class="xfer-body ws-body">
+    const one = this.ownerId === undefined;
+    return html`<div class="ws-page">
+      <div class="ws-top">
+        ${this.renderBar(name, options.narrow === true)}
         ${this.note ? html`<div class="banner ${this.note.kind} ws-note" role="alert"><span>${this.note.text}</span>
           <button class="link" @click=${() => { this.note = undefined; this.changed(); }}>Dismiss</button></div>` : nothing}
-        ${this.renderBody(hass)}
-        ${this.renderPair()}
       </div>
-      ${this.renderFoot()}
-    </dialog>`;
+      <div class="ws-cols ${one ? "one" : ""}">
+        ${one
+          ? html`<div class="ws-body ws-col">${this.renderBehavior(hass)}${this.renderPair()}</div>`
+          : html`<div class="ws-body ws-col">${this.loading ? html`<div class="empty">Loading…</div>` : this.renderBehavior(hass)}</div>
+            <div class="ws-body ws-col">${this.loading ? nothing : this.renderStyle()}${this.renderPair()}</div>`}
+      </div>
+    </div>`;
   }
 
-  /** Under the title: which watch, and which revision of its settings. */
+  /** Beside the title: which watch, and which revision of its settings. */
   private headLine(name: string): string {
+    if (this.ownerId === undefined) return "No watch paired yet";
     const r = this.record;
     const s = this.styleRecord;
     const style = s !== undefined && s.revision > 0 ? ` · notification style revision ${s.revision}` : "";
@@ -781,32 +828,6 @@ export class WatchSettings implements ReactiveController {
     const at = r.updated_at ? Date.parse(r.updated_at) : NaN;
     const when = Number.isNaN(at) ? "" : ` ${agoWords(Math.max(0, (Date.now() - at) / 1000))}`;
     return `${name} · revision ${r.revision}, ${by}${when}${style}`;
-  }
-
-  /** One tab per watch, as the picker draws its device tabs: the watch
-   * glyph and the count in the person's color, the name in ink. */
-  private renderTabs(watches: readonly OwnerSummary[], owners: readonly OwnerSummary[]) {
-    const people = peopleOf(owners);
-    return html`<div class="pk-tabs ws-tabs" role="tablist" aria-label="Watches">
-      ${watches.map((w) => {
-        const index = people.findIndex((p) => p.owners.some((o) => o.owner_watch_id === w.owner_watch_id));
-        const color = personColorVar(index);
-        const on = w.owner_watch_id === this.ownerId;
-        return html`<button type="button" role="tab" class="pk-tab ${on ? "on" : ""}" aria-selected=${on ? "true" : "false"}
-          style=${color ? `--pk-person: ${color}` : nothing} ?disabled=${this.saving}
-          title=${people[index]?.label ? `${people[index]!.label}'s watch` : nothing}
-          @click=${() => this.pickWatch(w.owner_watch_id)}>
-          <span class="pk-tab-glyph" aria-hidden="true">${uiIcon("watch")}</span>
-          <span class="pk-tab-name">${watchName(w, watches)}</span>
-        </button>`;
-      })}
-    </div>`;
-  }
-
-  private renderBody(hass: HassLike) {
-    if (this.loading) return html`<div class="empty">Loading…</div>`;
-    if (this.ownerId === undefined) return this.renderBehavior(hass);
-    return html`${this.renderBehavior(hass)}${this.renderStyle()}`;
   }
 
   /** The behavior settings' cards, or what stands in for them. */
@@ -902,7 +923,7 @@ export class WatchSettings implements ReactiveController {
    * A choice of up to five as a row of tiles, the way the iPhone app draws
    * it: each an icon or a small picture, the choice's name and its detail. The
    * row stacks: the title and its help on top, the tiles under them at full
-   * width, all the same width, wrapping on a narrow dialog.
+   * width, all the same width, wrapping on a narrow column.
    */
   private renderTiles(setting: CatalogSetting, value: string, set: (v: SettingValue) => void) {
     const options = optionsFor(setting, value);
@@ -919,7 +940,7 @@ export class WatchSettings implements ReactiveController {
     set: (v: string) => void,
   ) {
     const n = row.tiles.length;
-    // Up to five side by side; on a narrow dialog five or more go three to a
+    // Up to five side by side; on a narrow column five or more go three to a
     // line. A sixth (a stored value the catalog does not list) halves the row.
     const cols = n <= 5 ? n : Math.ceil(n / 2);
     const narrow = n >= 5 ? 3 : n;
@@ -1143,15 +1164,29 @@ export class WatchSettings implements ReactiveController {
       ${warning === undefined ? nothing : html`<div class="hint warn">${warning}</div>`}`;
   }
 
-  /** Where the settings have got to on the left, Close and Save on the right;
-   * or, before edits are thrown away, the question and its two answers. */
-  private renderFoot() {
+  /** Whether Save can run (`settingsCanSave`). */
+  private get canSave(): boolean {
+    return settingsCanSave({
+      behaviorChanges: this.behaviorChanges,
+      styleChanges: this.styleChanges,
+      busy: this.saving || this.starting || this.styleStarting,
+      behaviorHeld: this.record?.document !== undefined,
+      styleHeld: this.styleDocument !== undefined,
+    });
+  }
+
+  /** The page's bar, the way the other watch screens draw theirs: the title
+   * and the head line at the left; at the right the unsaved count or where
+   * the settings have got to, Discard while there is something to throw
+   * away, and Save. Before edits are thrown away it asks there instead. */
+  renderBar(name = "Watch", stacked = false) {
     const confirm = this.confirm;
+    const head = html`<span class="ws-title">Watch settings</span><span class="ws-head-line">${this.headLine(name)}</span>
+      <span class="spacer"></span>`;
     if (confirm) {
-      return html`<div class="xfer-foot">
-        <span class="xf-sub">${confirm.text}</span>
-        <span class="spacer"></span>
-        <button class="small" @click=${() => { this.confirm = undefined; this.changed(); }}>Keep editing</button>
+      return html`<div class="wa-bar ws-bar ${stacked ? "stacked" : ""}" role="toolbar" aria-label="Watch settings">${head}
+        <span class="xf-sub ws-ask">${confirm.text}</span>
+        <button class="tb-btn" @click=${() => { this.confirm = undefined; this.changed(); }}>Keep editing</button>
         <button class="primary" @click=${() => { this.confirm = undefined; confirm.run(); }}>${confirm.label}</button>
       </div>`;
     }
@@ -1161,18 +1196,16 @@ export class WatchSettings implements ReactiveController {
     // A watch with no record is created by "Start with the defaults" in the
     // body; Save sends edits to a record that exists. Both records save under
     // the one button.
-    const canSave = changes > 0 && !this.saving && !this.starting && !this.styleStarting
-      && (behaviorChanges === 0 || this.record?.document !== undefined)
-      && (styleChanges === 0 || this.styleDocument !== undefined);
-    return html`<div class="xfer-foot">
+    const canSave = this.canSave;
+    return html`<div class="wa-bar ws-bar ${stacked ? "stacked" : ""}" role="toolbar" aria-label="Watch settings">${head}
       ${changes > 0
-        ? html`<span class="xf-sub">${changes} unsaved ${changes === 1 ? "change" : "changes"}</span>`
+        ? html`<span class="xf-sub ws-changes">${changes} unsaved ${changes === 1 ? "change" : "changes"}</span>`
         : this.renderDelivery()}
-      <span class="spacer"></span>
-      <button class="small" @click=${() => this.guard("Discard and close", () => this.close())}>Close</button>
-      <button class="primary save ${changes > 0 ? "dirty" : ""}" ?disabled=${!canSave}
-        title=${changes > 0 ? "Save these settings for the watch to pick up" : "Nothing to save"}
-        @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
+      ${changes > 0 ? html`<button class="tb-btn ws-discard" ?disabled=${this.saving}
+        title="Go back to the copies Home Assistant holds" @click=${() => this.askDiscard()}>Discard</button>` : nothing}
+      ${this.ownerId === undefined ? nothing : html`<button class="primary save ${changes > 0 ? "dirty" : ""}" ?disabled=${!canSave}
+        title=${changes > 0 ? `Save (${SAVE_KEY}). The watch picks these settings up the next time it checks.` : `Nothing to save (${SAVE_KEY})`}
+        @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>`}
     </div>`;
   }
 
@@ -1216,19 +1249,42 @@ function joinNotes(notes: readonly (Note | undefined)[]): Note | undefined {
   return { kind, text: said.map((n) => n.text).join(" ") };
 }
 
-/** The dialog's own rules, added to the panel's sheet. Everything else it
- * wears (cards, rows, tabs, pill, head and foot) is the panel's. */
+/** The page's own rules, added to the panel's sheet. Everything else it
+ * wears (bar, cards, rows, pill, Save) is the panel's. */
 export const watchSettingsStyles = css`
-  /* The top bar's button: the watch glyph and its words on one line. */
-  button.tb-btn.tb-watch { display: inline-flex; align-items: center; gap: 6px; padding: 0 11px 0 9px; }
-  button.tb-btn.tb-watch svg.ui-icon { width: 14px; height: 14px; }
-  /* A fixed height, like the picker's, so moving between watches does not
-     resize the dialog under the pointer. */
-  dialog.ws-dialog { width: min(660px, calc(100vw - 32px)); height: min(860px, calc(100dvh - 40px)); }
-  @media (max-width: 640px) {
-    dialog.ws-dialog { width: calc(100vw - 16px); height: calc(100dvh - 16px); }
+  /* The page scrolls under its bar, which stays at the top so Save is always
+     in reach. The page is a container, so the columns follow its width
+     rather than the window's. */
+  .ws-page {
+    flex: 1 1 auto; min-height: 0; overflow: auto; box-sizing: border-box;
+    background: var(--wa-bg); color: var(--wa-ink); container: wspage / inline-size;
   }
-  /* The cards sit closer than the dialog's usual blocks, and the title column
+  .ws-top { position: sticky; top: 0; z-index: 7; display: flex; flex-direction: column; background: var(--wa-bg); }
+  .ws-top > .wa-bar { margin-bottom: 0; }
+  .ws-bar .ws-title { font-size: 14px; font-weight: 600; letter-spacing: -.01em; padding: 0 4px; white-space: nowrap; }
+  .ws-bar .ws-head-line { flex: 0 1 auto; min-width: 0; font-size: 12px; color: var(--wa-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ws-bar .ws-changes, .ws-bar .ws-ask { flex: 0 1 auto; min-width: 0; }
+  .ws-bar .tb-sync { min-width: 0; flex: 0 1 auto; }
+  .ws-top > .ws-note { display: flex; align-items: center; gap: 10px; box-sizing: border-box; width: min(720px, calc(100% - 32px)); margin: 10px auto 0; }
+  .ws-top > .ws-note > span { flex: 1; min-width: 0; }
+  /* A centred column at most as wide as the dialog it replaced; two columns
+     once the page has room for two of them side by side. Each column is a
+     container of its own, so a row's narrow rules follow the column. */
+  .ws-cols {
+    box-sizing: border-box; width: min(720px, 100%); margin: 0 auto; padding: 16px 16px 48px;
+    display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px 20px; align-items: start;
+  }
+  @container wspage (min-width: 1100px) {
+    .ws-top > .ws-note { width: min(1320px, calc(100% - 32px)); }
+    .ws-cols:not(.one) { width: min(1320px, 100%); grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 640px) {
+    .ws-cols { padding: 12px 12px 32px; }
+  }
+  .ws-col { display: flex; flex-direction: column; min-width: 0; container: xfer / inline-size; }
+  .ws-col > * { flex: none; }
+  .ws-col > .empty { padding: 12px 2px; color: var(--wa-muted); }
+  /* The cards sit closer than the panel's usual blocks, and the title column
      is wider than the inspector's: these titles are whole phrases with an
      icon in front. The help column is set again beside it, because the
      panel's is worked out from the panel's own title width. */
@@ -1274,7 +1330,7 @@ export const watchSettingsStyles = css`
   .ws-body .sec[data-help] > .sec-b .ws-head > .hint { flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* The choices are one strip: a single outline with hairlines between the
      choices, the picked one a raised grey with the brighter line. Neutral, no
-     hue. Five at most to a line, three on a narrow dialog. */
+     hue. Five at most to a line, three on a narrow column. */
   .ws-tiles {
     display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); gap: 1px; margin: 6px 0 0 31px;
     border: 1px solid var(--wa-line-strong); border-radius: 8px; overflow: hidden; background: var(--wa-line-strong);
@@ -1309,14 +1365,9 @@ export const watchSettingsStyles = css`
     grid-column: 2; color: var(--wa-muted); text-align: left; overflow-wrap: break-word;
   }
   button.ws-tile.on .ws-tile-detail { color: var(--wa-label); }
-  .ws-body > .ws-note { display: flex; align-items: center; gap: 10px; }
-  .ws-body > .ws-note > span { flex: 1; min-width: 0; }
   .ws-body > button.ws-retry, .ws-body > button.ws-start { align-self: flex-start; }
   /* The indicator has no opacity, so the color row drops the percent box. */
   .ws-body .color-box .alpha { display: none; }
-  .ws-tabs { padding: 0 8px; }
-  .ws-tabs .pk-tab:disabled { cursor: default; opacity: .6; }
-  .xfer-foot .tb-sync { min-width: 0; flex: 0 1 auto; }
   /* The pairing card: the code box only as wide as a code, spaced out so the
      six characters read one by one, with Look up beside it. */
   .ws-pair-row { flex-wrap: nowrap; }

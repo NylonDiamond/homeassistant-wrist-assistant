@@ -71,12 +71,10 @@ function row(over: Partial<WatchRowInput> = {}) {
     watch: "w1",
     loaded: true,
     menuOpen: false,
-    settingsOpen: false,
     admin: true,
     onMenu: (open) => calls.push(`menu:${open}`),
     onPick: (id) => calls.push(`pick:${id}`),
     onGo: (path) => calls.push(`go:${path}`),
-    onSettings: () => calls.push("settings"),
     ...over,
   };
   const tpl = renderWatchRow(input);
@@ -129,7 +127,7 @@ describe("the row's screen links", () => {
 describe("the row as drawn", () => {
   it("puts the watch first, then the six screens and Settings, Menus marked as on show", () => {
     const { text } = row();
-    const order = [`class="wa-wr-picker"`, ">Pages</a>", ">Menus</a>", ">Status pages</a>", ">Control Center</a>", ">Rooms</a>", ">Voice</a>", ">Settings</button>"];
+    const order = [`class="wa-wr-picker"`, ">Pages</a>", ">Menus</a>", ">Status pages</a>", ">Control Center</a>", ">Rooms</a>", ">Voice</a>", ">Settings</a>"];
     const places = order.map((part) => text.indexOf(part));
     for (const [i, at] of places.entries()) expect(at, order[i]).toBeGreaterThan(-1);
     expect([...places].sort((a, b) => a - b)).toEqual(places);
@@ -153,14 +151,15 @@ describe("the row as drawn", () => {
     expect(menu).not.toContain("iPhone");
   });
 
-  it("sends a pick, a screen, Settings and the menu's toggle to the panel", () => {
+  it("sends a pick, a screen, Settings and the menu's toggle to the panel, Settings as a page on the shared watch", () => {
     const shut = row();
     const [toggle, pages, , statusPages, , , , settings] = handlers(shut.tpl, "@click");
     toggle!(click);
     pages!(click);
     statusPages!(click);
     settings!(click);
-    expect(shut.calls).toEqual(["menu:true", "go:/pages/w1", "go:/status-pages/w1", "settings"]);
+    expect(shut.calls).toEqual(["menu:true", "go:/pages/w1", "go:/status-pages/w1", "go:/settings/w1"]);
+    expect(shut.text).toContain("href=/wrist-assistant/settings/w1");
 
     const open = row({ menuOpen: true });
     const clicks = handlers(open.tpl, "@click");
@@ -193,12 +192,13 @@ describe("the row as drawn", () => {
     expect(text).toContain(`class="wa-wr-pair"`);
     expect(text).toContain(">Pair a watch</span>");
     expect(text).toContain(WATCH_ROW_NONE_NOTE);
-    expect(text).not.toContain(`<a class="wa-wr-link`);
-    expect(text).toContain(">Settings</button>");
+    expect(text).not.toContain(`<a class="wa-wr-link "`);
+    expect(text).not.toContain(">Pages</a>");
+    expect(text).toContain(">Settings</a>");
     const [pair, settings] = handlers(tpl, "@click");
     pair!(click);
     settings!(click);
-    expect(calls).toEqual(["settings", "settings"]);
+    expect(calls).toEqual(["go:/settings", "go:/settings"]);
   });
 
   it("says Loading while the devices are not in, never Pair a watch", () => {
@@ -211,15 +211,21 @@ describe("the row as drawn", () => {
   it("offers neither Settings nor pairing to anyone but an administrator", () => {
     const some = row({ admin: false }).text;
     expect(some).toContain(">Pages</a>");
-    expect(some).not.toContain("Settings</button>");
+    expect(some).not.toContain("Settings</a>");
     const none = row({ admin: false, owners: [OWNERS[1]!], watch: undefined }).text;
     expect(none).not.toContain("Pair a watch");
     expect(none).not.toContain(WATCH_ROW_NONE_NOTE);
     expect(none).toContain(">None yet</span>");
   });
 
-  it("marks Settings while Watch settings is open", () => {
-    expect(row({ settingsOpen: true }).text).toMatch(/class="wa-wr-link wa-wr-settings on" aria-haspopup="dialog"\s+aria-expanded=true/);
+  it("marks Settings on the Settings page, and leaves a press on it where it is", () => {
+    const on = row({ route: route("/settings/w1") });
+    expect(on.text).toMatch(/class="wa-wr-link wa-wr-settings on"\s+href=\/wrist-assistant\/settings\/w1 aria-current=page/);
+    expect(on.text.match(/ on"/g)).toHaveLength(1);
+    const links = handlers(on.tpl, "@click");
+    links.at(-1)!(click);
+    expect(on.calls).toEqual([]);
+    expect(row().text).toMatch(/class="wa-wr-link wa-wr-settings "\s+href=\/wrist-assistant\/settings\/w1 aria-current=false/);
   });
 });
 
