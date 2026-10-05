@@ -26,8 +26,14 @@ import { COLLECTED_PILL_TEXT, WAITING_HELP_TEXT, WAITING_PILL_TEXT, deliveryStat
 
 export type ConfigHistoryState = "loading" | "ready" | "error" | "unsupported";
 
-/** What the editor keeps: its pages, its menus, the voice settings or its status pages. */
-export type ConfigNoun = "pages" | "menus" | "voice settings" | "status pages";
+/** What the editor keeps: its pages, its menus, the voice settings, its
+ * status pages or its Control Center list. */
+export type ConfigNoun = "pages" | "menus" | "voice settings" | "status pages" | "Control Center list";
+
+/** The pronoun for a noun: "it" for the one list, "them" for the rest. */
+function them(noun: ConfigNoun): string {
+  return noun === "Control Center list" ? "it" : "them";
+}
 
 export const REJECTED_TEXT = "The watch or the iPhone could not read this save";
 
@@ -81,7 +87,7 @@ export function configFootStatus(i: {
   if (rejectedNow(record)) {
     return {
       tone: "err", revision, state: REJECTED_TEXT, size, near,
-      help: i.historyState === "unsupported" ? `Change the ${i.noun} and save them again.` : "Restore an earlier save from History.",
+      help: i.historyState === "unsupported" ? `Change the ${i.noun} and save ${them(i.noun)} again.` : "Restore an earlier save from History.",
     };
   }
   if (deliveryState(record) === "delivered") {
@@ -280,8 +286,8 @@ export function renderConfigRawDialog(i: ConfigRawInput): TemplateResult {
       <div class="cf-dialog-title">
         <h3 id="cf-raw-title">Raw configuration</h3>
         <span class="pe-muted">${i.dirty
-          ? `The ${i.noun} as they would be saved, with your unsaved edits, over revision ${i.revision}`
-          : `The ${i.noun} as Home Assistant holds them, revision ${i.revision}`}</span>
+          ? `The ${i.noun} as ${them(i.noun) === "it" ? "it" : "they"} would be saved, with your unsaved edits, over revision ${i.revision}`
+          : `The ${i.noun} as Home Assistant holds ${them(i.noun)}, revision ${i.revision}`}</span>
       </div>
       <button type="button" class="cf-close" title="Close" aria-label="Close" @click=${closeOwnDialog}>${uiIcon("close")}</button>
     </div>

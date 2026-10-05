@@ -410,7 +410,11 @@ export type WatchConfigKind = "pages" | "behavior" | "catalog" | "menus" | "voic
   // The watch's notification style, sounds and delivery route, edited in
   // Watch settings beside `behavior`. Refused as `invalid` by an integration
   // older than the kind.
-  | "notification_style";
+  | "notification_style"
+  // The watch's Control Center list, the entities its Toggle and Action
+  // controls offer. Refused as `invalid` by an integration older than the
+  // kind.
+  | "control_center";
 
 /** The kinds the panel may save and restore. */
 export type WatchConfigPanelKind = Exclude<WatchConfigKind, "catalog">;
