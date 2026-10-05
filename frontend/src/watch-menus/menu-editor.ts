@@ -157,6 +157,8 @@ import {
   watchMenusReadMeansUnsupported,
 } from "./model.js";
 import { watchMenusReplacedText, watchMenusSaveNote } from "./save-note.js";
+import type { MenuVoiceContext } from "./slot-voice.js";
+import { voiceDocumentOfRecord, voicePhraseTargets, watchVoiceFallbacks } from "../watch-voice/defaults.js";
 
 /** Whether this editor holds unsaved edits: to the menus, or to the pages
  * (a page's switcher settings are edited here, in the page draft the page
@@ -353,6 +355,11 @@ export class WaMenuEditor extends LitElement {
   /** The watch's behavior settings, read only. The Entity quick menu's
    * gestures live there; batch 1 shows none of them. */
   @state() private behavior?: Readonly<Record<string, unknown>>;
+  /** The watch's voice settings (the `voice` record), read only: its phrases
+   * for Speak Phrase and Pick from List, its defaults behind a slot's voice.
+   * Undefined while there is none, before the read, and after a failed one. */
+  @state() private voiceDocument?: Readonly<Record<string, unknown>>;
+  private voiceSeq = 0;
   @state() private loading = false;
   @state() private loadError?: string;
   @state() private history: WatchConfigHistoryEntry[] = [];
@@ -513,6 +520,7 @@ export class WaMenuEditor extends LitElement {
     this.catalogSeq++;
     this.pagesSeq++;
     this.behaviorSeq++;
+    this.voiceSeq++;
     this.historySeq++;
   }
 
@@ -612,6 +620,7 @@ export class WaMenuEditor extends LitElement {
     void this.loadCatalog(watchId);
     void this.loadPages(watchId);
     void this.loadBehavior(watchId);
+    void this.loadVoice(watchId);
   };
 
   private followSave(): void {
@@ -668,6 +677,8 @@ export class WaMenuEditor extends LitElement {
       this.pagesSeq++;
       this.behavior = undefined;
       this.behaviorSeq++;
+      this.voiceDocument = undefined;
+      this.voiceSeq++;
       this.history = [];
       if (this.historyState !== "unsupported") this.historyState = "loading";
       this.closeAsk();
@@ -680,6 +691,30 @@ export class WaMenuEditor extends LitElement {
     void this.loadCatalog(watchId);
     void this.loadPages(watchId);
     void this.loadBehavior(watchId);
+    void this.loadVoice(watchId);
+  }
+
+  private async loadVoice(watchId: string): Promise<void> {
+    const hass = this.hass;
+    if (!hass) return;
+    const seq = ++this.voiceSeq;
+    try {
+      const record = await fetchWatchConfig(hass, watchId, "voice");
+      if (seq !== this.voiceSeq || watchId !== this.watchId) return;
+      this.voiceDocument = voiceDocumentOfRecord(record);
+    } catch {
+      if (seq !== this.voiceSeq || watchId !== this.watchId) return;
+      this.voiceDocument = undefined;
+    }
+  }
+
+  /** The voice settings as the slot editors read them. */
+  private voiceContext(): MenuVoiceContext {
+    const document = this.voiceDocument;
+    return {
+      phrases: document === undefined ? undefined : voicePhraseTargets(document),
+      defaults: watchVoiceFallbacks(document, this.catalog),
+    };
   }
 
   private async loadCatalog(watchId: string): Promise<void> {
@@ -823,6 +858,8 @@ export class WaMenuEditor extends LitElement {
         void this.loadPages(watchId);
       } else if (event.kind === "behavior") {
         void this.loadBehavior(watchId);
+      } else if (event.kind === "voice") {
+        void this.loadVoice(watchId);
       } else if (event.kind === "menus") {
         if (event.revision !== (this.record?.revision ?? 0)) void this.load(watchId, true);
       }
@@ -951,6 +988,7 @@ export class WaMenuEditor extends LitElement {
       pages: this.pages,
       statusPages: this.catalog?.statusPages ?? [],
       httpActions: this.catalog?.httpActions ?? [],
+      phrases: this.voiceDocument === undefined ? [] : voicePhraseTargets(this.voiceDocument),
     };
   }
 
@@ -982,6 +1020,7 @@ export class WaMenuEditor extends LitElement {
       get document() { return draft.document; },
       get targets() { return self.targets(); },
       get catalogKnown() { return self.catalog !== undefined; },
+      get voice() { return self.voiceContext(); },
       get busy() { return self.saving; },
       edit: (change, coalesce) => this.draft === draft && this.edit(change, coalesce),
       endCoalesce: () => draft.endCoalesce(),

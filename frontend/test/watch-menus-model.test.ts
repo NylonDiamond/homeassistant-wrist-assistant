@@ -276,7 +276,7 @@ describe("an action change", () => {
     expect(newWatchMenuAction("navigateToPage", TARGETS)).toEqual({ pageId: "AAAAAAAA-0000-4000-8000-000000000001", type: "navigateToPage" });
     expect(newWatchMenuAction("runHTTPAction", TARGETS)).toEqual({ confirmOnRelease: true, entityId: "CCCCCCCC-0000-4000-8000-000000000001", type: "runHTTPAction" });
     expect(newWatchMenuAction("navigateToPage")).toBeUndefined();
-    expect(watchMenuActionUnavailable("speakPhrase", TARGETS)).toBe("Set on the iPhone");
+    expect(watchMenuActionUnavailable("speakPhrase", TARGETS)).toBe("No phrases");
     expect(watchMenuActionUnavailable("runHTTPAction", { ...TARGETS, httpActions: [] })).toBe("No HTTP actions");
     // A status page is not required: none is fine.
     expect(newWatchMenuAction("showStatusPage")).toEqual({ type: "showStatusPage" });

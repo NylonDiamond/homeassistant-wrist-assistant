@@ -282,6 +282,9 @@ export interface MenuTargets {
   pages: readonly { id: string; name: string }[];
   statusPages: readonly { id: string; name: string }[];
   httpActions: readonly { id: string; name: string }[];
+  /** The phrases of the watch's voice settings, for Speak Phrase; absent or
+   * empty while Home Assistant holds none. */
+  phrases?: readonly { id: string; name: string }[];
 }
 
 export const NO_MENU_TARGETS: MenuTargets = { pages: [], statusPages: [], httpActions: [] };
@@ -294,21 +297,24 @@ function targetList(targets: MenuTargets, target: MenuPayloadSpec["target"]): re
       return targets.statusPages;
     case "httpAction":
       return targets.httpActions;
+    case "ttsPhrase":
+      return targets.phrases ?? [];
     default:
       return [];
   }
 }
 
 /** Why an action cannot be picked now, or undefined when it can: an action
- * that needs a target the panel has none of (a phrase, which only the phone
- * lists; an HTTP action before the iPhone published its library). */
+ * that needs a target the panel has none of (a phrase before the voice
+ * settings hold one; an HTTP action before the iPhone published its
+ * library). */
 export function watchMenuActionUnavailable(raw: string, targets: MenuTargets): string | undefined {
   const spec = ACTIONS_BY_RAW.get(raw);
   if (spec === undefined) return "Unknown action";
   for (const p of spec.payload ?? []) {
     if (p.type !== "uuid" || p.required !== true || p.new !== undefined) continue;
     if (targetList(targets, p.target).length > 0 || p.target === undefined) continue;
-    if (p.target === "ttsPhrase") return "Set on the iPhone";
+    if (p.target === "ttsPhrase") return "No phrases";
     if (p.target === "httpAction") return "No HTTP actions";
     if (p.target === "page") return "No pages";
     return "No status pages";
@@ -535,6 +541,10 @@ export function withWatchMenuSlots(document: MenusDocument, ref: MenuListRef, sl
 
 /** The list with one slot changed. The document when the slot is missing or
  * the change keeps it as it was. */
+export function editWatchMenuSlot(document: MenusDocument, ref: MenuListRef, id: string, change: (slot: JsonObject) => JsonObject): MenusDocument {
+  return editSlot(document, ref, id, change);
+}
+
 function editSlot(document: MenusDocument, ref: MenuListRef, id: string, change: (slot: JsonObject) => JsonObject): MenusDocument {
   const list = rawList(document, ref);
   if (!Array.isArray(list)) return document;
