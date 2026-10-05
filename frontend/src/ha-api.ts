@@ -23,7 +23,7 @@ export interface HassLike {
       from: the entity carries an area itself, or inherits its device's. All
       three are optional so the panel still runs against a Home Assistant that
       does not put them on `hass`, and against the tests, which do not. */
-  entities?: Record<string, { area_id?: string | null; device_id?: string | null }>;
+  entities?: Record<string, { area_id?: string | null; device_id?: string | null; entity_category?: string | null; hidden?: boolean }>;
   devices?: Record<string, { area_id?: string | null; name?: string | null }>;
   areas?: Record<string, { name?: string | null }>;
   user?: { id?: string; is_admin?: boolean; name?: string };

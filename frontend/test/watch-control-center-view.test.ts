@@ -60,6 +60,8 @@ const HASS = {
     "switch.lounge_fan": { state: "off", attributes: { friendly_name: "Lounge Fan" } },
     "sensor.lounge_temp": { state: "20", attributes: {} },
     "script.lounge_movie": { state: "off", attributes: { friendly_name: "Movie Time" } },
+    "switch.lounge_identify": { state: "off", attributes: { friendly_name: "Lounge Identify" } },
+    "light.lounge_strip": { state: "off", attributes: { friendly_name: "Lounge Strip" } },
   },
   areas: { lounge: { name: "Lounge" }, attic: { name: "Attic" } },
   devices: { d1: { area_id: "lounge" } },
@@ -69,6 +71,8 @@ const HASS = {
     "sensor.lounge_temp": { area_id: "lounge" },
     "script.lounge_movie": { area_id: "lounge" },
     "light.kitchen": { area_id: "lounge" },
+    "switch.lounge_identify": { area_id: "lounge", entity_category: "config" },
+    "light.lounge_strip": { area_id: "lounge", hidden: true },
   },
   user: { is_admin: true },
 } as unknown as HassLike;
@@ -173,7 +177,7 @@ describe("the inspector", () => {
 });
 
 describe("add from an area", () => {
-  it("lists areas by name and the area's entities in the nine domains, by the device's area too", () => {
+  it("lists areas by name and the area's entities in the nine domains, by the device's area too, leaving out hidden, config and diagnostic ones", () => {
     expect(controlCenterAreas(HASS)).toEqual([{ id: "attic", name: "Attic" }, { id: "lounge", name: "Lounge" }]);
     expect(controlCenterAreaEntities(HASS, "lounge")).toEqual(["light.kitchen", "switch.lounge_fan", "light.lounge", "script.lounge_movie"]);
     expect(controlCenterAreaEntities(HASS, "attic")).toEqual([]);

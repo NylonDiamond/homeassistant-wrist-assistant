@@ -226,7 +226,9 @@ export function controlCenterAreas(hass: HassLike): { id: string; name: string }
 }
 
 /** The entities in an area the watch can show, by name: those whose own
- * area is it, or whose device's is, as Home Assistant resolves an area. */
+ * area is it, or whose device's is, as Home Assistant resolves an area.
+ * Hidden entities and config or diagnostic ones are left out, as Home
+ * Assistant's own area views leave them out. */
 export function controlCenterAreaEntities(hass: HassLike, areaId: string): string[] {
   const { entities, devices } = hass;
   if (entities === undefined) return [];
@@ -235,6 +237,7 @@ export function controlCenterAreaEntities(hass: HassLike, areaId: string): strin
   for (const id of Object.keys(hass.states)) {
     if (!domains.includes(entityDomain(id)) || !Object.hasOwn(entities, id)) continue;
     const reg = entities[id];
+    if (reg?.hidden || reg?.entity_category) continue;
     const area = reg?.area_id || (reg?.device_id ? devices?.[reg.device_id]?.area_id : undefined);
     if (area === areaId) out.push(id);
   }
