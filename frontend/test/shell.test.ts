@@ -99,6 +99,14 @@ describe("addresses", () => {
     expect(tabPath("watch")).toBe("/pages");
   });
 
+  it("opens the Watch app on Pages for the shared watch, encoded, and leaves the other tabs alone", () => {
+    expect(tabPath("watch", "w2")).toBe("/pages/w2");
+    expect(tabPath("watch", "a/b")).toBe("/pages/a%2Fb");
+    expect(tabPath("watch", undefined)).toBe("/pages");
+    expect(tabPath("home", "w2")).toBe(HOME_PATH);
+    expect(tabPath("complications", "w2")).toBe(COMPLICATIONS_PATH);
+  });
+
   it("offers the Watch app to administrators only", () => {
     expect(tabsFor(true)).toEqual(["home", "watch", "complications"]);
     expect(tabsFor(false)).toEqual(["home", "complications"]);
@@ -255,6 +263,14 @@ describe("renderTabBar", () => {
       expect(marks(text), path).toBe(1);
       expect(text).toMatch(new RegExp(`wa-tab on[^>]*>${label}</a>`));
     }
+  });
+
+  it("links the Watch app tab to Pages on the shared watch", () => {
+    const text = flat(renderTabBar({
+      route: at(""), admin: true, menu: false, onMenu: () => undefined, onTab: () => undefined, watch: "w2",
+    }));
+    expect(text).toMatch(/href=\/wrist-assistant\/pages\/w2 [^>]*>Watch app<\/a>/);
+    expect(bar("", true)).toMatch(/href=\/wrist-assistant\/pages [^>]*>Watch app<\/a>/);
   });
 
   it("offers Home Assistant's menu only when asked", () => {

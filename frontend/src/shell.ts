@@ -90,10 +90,11 @@ export function tabOfRoute(route: PanelRoute | undefined): PanelTab {
   return "home";
 }
 
-/** Where a click on a tab goes. The Watch app opens on Pages. */
-export function tabPath(tab: PanelTab): string {
+/** Where a click on a tab goes. The Watch app opens on Pages, on the shared
+ * watch when there is one (`watch-pick.ts`). */
+export function tabPath(tab: PanelTab, watch?: string): string {
   if (tab === "complications") return COMPLICATIONS_PATH;
-  if (tab === "watch") return WATCH_PAGES_PATH;
+  if (tab === "watch") return watchScreenPath(WATCH_SCREENS[0]!, watch);
   return HOME_PATH;
 }
 
@@ -178,13 +179,15 @@ export interface TabBarInput {
   menu: boolean;
   onMenu: () => void;
   onTab: (tab: PanelTab) => void;
+  /** The Watch app's shared watch, which its tab's link carries. */
+  watch?: string;
 }
 
 /** The tabs, above whatever the tab draws. Each is a real link, so a middle
  * click opens it in a new browser tab; a plain click moves in place. */
 export function renderTabBar(input: TabBarInput): TemplateResult {
   const current = tabOfRoute(input.route);
-  const href = (tab: PanelTab) => panelUrl(input.route, tabPath(tab), globalThis.location?.pathname ?? "");
+  const href = (tab: PanelTab) => panelUrl(input.route, tabPath(tab, input.watch), globalThis.location?.pathname ?? "");
   return html`<nav class="wa-tabs" aria-label="Wrist Assistant">
     ${input.menu ? html`<button class="wa-tabs-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
       @click=${input.onMenu}>${uiIcon("menu")}</button>` : nothing}
