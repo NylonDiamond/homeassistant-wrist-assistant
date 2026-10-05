@@ -1057,6 +1057,7 @@ export class WaMenuEditor extends LitElement {
       get document() { return draft.document; },
       get targets() { return self.targets(); },
       get catalogKnown() { return self.catalog !== undefined; },
+      get statusPagesKnown() { return self.statusPages !== undefined; },
       get voice() { return self.voiceContext(); },
       get busy() { return self.saving; },
       edit: (change, coalesce) => this.draft === draft && this.edit(change, coalesce),

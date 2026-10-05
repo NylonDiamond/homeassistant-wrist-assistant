@@ -112,6 +112,9 @@ export interface MenusViewHost {
   /** Whether the iPhone has published its library (HTTP actions, status
    * pages) here. */
   readonly catalogKnown: boolean;
+  /** Whether the watch's own status pages record loaded. Absent counts as
+   * no (a test). */
+  readonly statusPagesKnown?: boolean;
   /** The watch's voice settings as the slot editors read them: the phrases
    * and the defaults. Absent where nothing loaded them (a test). */
   readonly voice?: MenuVoiceContext | undefined;
@@ -1019,7 +1022,9 @@ function targetSelect(host: MenusViewHost, ref: MenuListRef, slot: JsonObject, r
     : spec.target === "ttsPhrase" ? (host.targets.phrases ?? []) : host.targets.httpActions;
   const known = stored === "" || list.some((t) => sameId(t.id, stored));
   const set = (v: string) => host.edit((d) => setWatchMenuActionKey(d, ref, id, spec.key, v === "" ? undefined : v));
-  const missing = spec.target === "page" ? "A page that is gone" : spec.target === "ttsPhrase" ? "A phrase that is gone" : "Not on the iPhone";
+  const fromWatch = spec.target === "statusPage" && host.statusPagesKnown === true;
+  const missing = spec.target === "page" ? "A page that is gone" : spec.target === "ttsPhrase" ? "A phrase that is gone"
+    : fromWatch ? "Not in this watch's status pages" : "Not on the iPhone";
   return html`<label class="field"><span>${payloadLabel(raw, spec)}</span>
     <select .value=${live(list.find((t) => sameId(t.id, stored))?.id ?? stored)} @change=${(e: Event) => set((e.target as HTMLSelectElement).value)}>
       ${spec.required === true ? nothing : html`<option value="" ?selected=${stored === ""}>None</option>`}
@@ -1028,8 +1033,10 @@ function targetSelect(host: MenusViewHost, ref: MenuListRef, slot: JsonObject, r
     </select></label>
     ${spec.target === "ttsPhrase"
       ? (host.voice?.phrases === undefined ? html`<div class="hint ts-under">No voice settings from this watch yet. Add phrases in Voice.</div>` : nothing)
+      : spec.target === "statusPage"
+      ? (fromWatch || host.catalogKnown ? nothing : html`<div class="hint ts-under">No status pages from this watch yet. Add them in Status pages.</div>`)
       : spec.target !== "page" && !host.catalogKnown
-      ? html`<div class="hint ts-under">Open the iPhone app to list its HTTP actions and status pages here.</div>`
+      ? html`<div class="hint ts-under">Open the iPhone app to list its HTTP actions here.</div>`
       : nothing}`;
 }
 
