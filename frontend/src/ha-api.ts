@@ -405,7 +405,7 @@ export async function restoreSaveHistory(
  * pages: the phone publishes it and the server refuses a panel save or
  * restore of it. `menus` (the Anywhere menu, the Entity quick menu and the
  * page switcher) is refused as `invalid` by an integration older than it. */
-export type WatchConfigKind = "pages" | "behavior" | "catalog" | "menus";
+export type WatchConfigKind = "pages" | "behavior" | "catalog" | "menus" | "voice";
 
 /** The kinds the panel may save and restore. */
 export type WatchConfigPanelKind = Exclude<WatchConfigKind, "catalog">;
@@ -588,6 +588,18 @@ export function subscribeWatchConfig(
     type: `${WC}/subscribe`,
     owner_watch_id: owner,
   });
+}
+
+/** The voices a watch reported it has installed (`watch_voices_put`), for
+ * the voice editor's Watch voice picker: each `{id, name, language,
+ * quality}`, and when they came (null when the watch never sent any). Not a
+ * watch config record: no revision, no history. Admin only. An integration
+ * older than it does not know the command. */
+export async function fetchWatchVoices(hass: HassLike, watchId: string) {
+  return hass.connection.sendMessagePromise<{
+    voices: { id: string; name: string; language: string; quality: number }[];
+    updated_at: string | null;
+  }>({ type: "wrist_assistant/watch_voices/get", watch_id: watchId });
 }
 
 /** Hand every live record of one watch to another watch. Admin only. */
