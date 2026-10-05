@@ -18175,15 +18175,14 @@ export class WristAssistantPanel extends LitElement {
    * of what Wrist Assistant puts on the devices, and where each device has
    * got to. Every door goes to a surface that already exists, on its own tab.
    *
-   * - Watch app: a card per screen, for an administrator in a home with a
-   *   watch, the same gate the screens themselves have. With no watch yet, one
-   *   card that opens Watch settings, where the first watch is paired.
-   * - Complications and widgets: how many there are (the count the list
-   *   gives), New, Browse all, Import and the online gallery.
-   * - Devices: each device, Synced or Waiting, by the rule the header pill
-   *   uses for the whole home. That rule reads the complication store only,
-   *   and the card says so.
-   * - The recent designs, which open on the Complications tab.
+   * Watch app has a card per screen, for an administrator in a home with a
+   * watch, the same gate the screens themselves have; with no watch yet, one
+   * card that opens Watch settings, where the first watch is paired.
+   * Complications and widgets has how many there are (the count the list
+   * gives), New, Browse all, Import and the online gallery. Devices has each
+   * device, Synced or Waiting, by the rule the header pill uses for the whole
+   * home; that rule reads the complication store only, and the card says so.
+   * Under them, the recent designs, which open on the Complications tab.
    */
   private renderHome() {
     const admin = this.hass.user?.is_admin === true;
