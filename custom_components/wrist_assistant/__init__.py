@@ -51,6 +51,7 @@ from .const import (
     WA_HMAC_NONCE_TTL_SECONDS,
     WATCH_CONFIG_CAPABILITY,
     WATCH_CONFIG_CATALOG_CAPABILITY,
+    WATCH_CONFIG_CONTROL_CENTER_CAPABILITY,
     WATCH_CONFIG_DELTA_CAPABILITY,
     WATCH_CONFIG_LIVE_CAPABILITY,
     WATCH_CONFIG_MENUS_CAPABILITY,
@@ -779,7 +780,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # applies on every reply, and a save of any of them wakes that owner's
     # parked poll so the watch pulls at once, with no phone in the path. The
     # store only knows it has listeners; the coordinator's listener picks the
-    # six kinds and leaves the complication token alone (renotify=False).
+    # seven kinds and leaves the complication token alone (renotify=False).
     coordinator.attach_watch_config_store(watch_config_store)
     entry.async_on_unload(
         watch_config_store.async_add_listener(coordinator.watch_config_changed)
@@ -860,9 +861,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     coordinator.register_capability(WATCH_CONFIG_VOICE_CAPABILITY)
     coordinator.register_capability(WATCH_CONFIG_NOTIFICATION_STYLE_CAPABILITY)
     coordinator.register_capability(WATCH_CONFIG_STATUS_PAGES_CAPABILITY)
+    # The `control_center` kind (step 4d batch 5), the watch's Control Center
+    # list, the same way.
+    coordinator.register_capability(WATCH_CONFIG_CONTROL_CENTER_CAPABILITY)
     # `watch_config` on every delta reply and the wake on a save (attached
     # above): the watch's trigger to pull its own pages, behavior, menus,
-    # voice, notification style and status pages.
+    # voice, notification style, status pages and Control Center list.
     coordinator.register_capability(WATCH_CONFIG_DELTA_CAPABILITY)
     # The watch's voice list (watch_voices_store.py): `voices_hash` read on
     # every poll, `voices_wanted` on the reply, and the watch_voices_put op.

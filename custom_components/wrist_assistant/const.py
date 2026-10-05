@@ -135,6 +135,9 @@ WATCH_CONFIG_STORAGE_VERSION = 1
 # adds the voice settings (`TTSConfiguration`: the voice defaults and the
 # phrase library), the notification style (`NotificationStyleConfig`) and the
 # status pages (`{"schemaVersion": 1, "statusPages": [StatusPageConfig]}`).
+# Step 4d batch 5 adds the Control Center list (`{"schemaVersion": 1,
+# "entities": [CuratedEntity]}`: the watch's Control Center controls, hidden
+# entries and other domains included).
 # A later kind is a new name here and a size cap below, with no change to the
 # storage shape.
 WATCH_CONFIG_KINDS = frozenset(
@@ -146,16 +149,26 @@ WATCH_CONFIG_KINDS = frozenset(
         "voice",
         "notification_style",
         "status_pages",
+        "control_center",
     }
 )
 # The kinds the panel may save, and restore from a record's history: pages and
 # behavior since the page editor moved into the panel (step 3), menus (step 4d)
-# and voice, notification style and status pages (step 4d batch 2). Never the
+# voice, notification style and status pages (step 4d batch 2) and the Control
+# Center list (step 4d batch 5). Never the
 # catalog, which only the phone writes. The panel may create the first record
 # of one of these kinds, but only for a watch that is paired (see
 # WatchConfigStore.panel_save).
 WATCH_CONFIG_PANEL_KINDS = frozenset(
-    {"pages", "behavior", "menus", "voice", "notification_style", "status_pages"}
+    {
+        "pages",
+        "behavior",
+        "menus",
+        "voice",
+        "notification_style",
+        "status_pages",
+        "control_center",
+    }
 )
 # `updated_by` on a record the panel saved, in place of a device's signing id.
 WATCH_CONFIG_PANEL_WRITER = "panel"
@@ -166,8 +179,9 @@ WATCH_CONFIG_PANEL_WRITER = "panel"
 # A catalog of 200 entries is about 30 KB. The menus are a few dozen slots
 # plus per-entity overrides, the same order as the catalog. The voice settings
 # hold at most eight phrases, the notification style is a flat object of a
-# couple of dozen keys, and the status pages are a few pages of rows, so the
-# same cap leaves each of them plenty. Home Assistant's HTTP server accepts
+# couple of dozen keys, the status pages are a few pages of rows and the
+# Control Center list a few dozen short entries, so the same cap leaves each
+# of them plenty. Home Assistant's HTTP server accepts
 # request bodies up to 16 MiB, so the cap, not the server, is what refuses an
 # oversized upload.
 WATCH_CONFIG_MAX_DOCUMENT_BYTES: dict[str, int] = {
@@ -178,6 +192,7 @@ WATCH_CONFIG_MAX_DOCUMENT_BYTES: dict[str, int] = {
     "voice": 256 * 1024,
     "notification_style": 256 * 1024,
     "status_pages": 256 * 1024,
+    "control_center": 256 * 1024,
 }
 # Documents a save replaced, kept per record, oldest dropped. Storage only.
 WATCH_CONFIG_HISTORY_LIMIT = 5
@@ -215,13 +230,16 @@ WATCH_CONFIG_VOICE_CAPABILITY = "watch_config_voice"
 WATCH_CONFIG_NOTIFICATION_STYLE_CAPABILITY = "watch_config_notification_style"
 # The same for the `status_pages` kind.
 WATCH_CONFIG_STATUS_PAGES_CAPABILITY = "watch_config_status_pages"
+# The same for the `control_center` kind (step 4d batch 5).
+WATCH_CONFIG_CONTROL_CENTER_CAPABILITY = "watch_config_control_center"
 # What the integration advertises once every /v2/delta reply with a body names
 # the signer's own `watch_config: {"pages": rev, "behavior": rev}` (0 for a
 # kind with no record) and a save of either kind wakes that owner's parked
 # poll. The watch uses it as the trigger to pull; the pull itself is the
 # signed watch_config_get, gated on WATCH_CONFIG_CAPABILITY. With
 # WATCH_CONFIG_MENUS_CAPABILITY the field names `menus` too, and with the
-# voice, notification style and status pages capabilities those kinds.
+# voice, notification style, status pages and Control Center capabilities
+# those kinds.
 WATCH_CONFIG_DELTA_CAPABILITY = "watch_config_delta"
 # Each watch's installed speech voices (watch id → list, hash, time), see
 # watch_voices_store.py. One small file for every watch: a list is a few

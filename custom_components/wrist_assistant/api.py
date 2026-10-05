@@ -34,7 +34,7 @@ MAX_EVENTS_BUFFER = 5000
 MAX_EVENTS_PER_RESPONSE = 250
 SESSION_TTL = timedelta(minutes=5)
 # The watch config kinds the delta reply names, as `watch_config: {kind: rev}`.
-# The six a watch applies (WATCH_CONFIG_PANEL_KINDS in const.py). Never the
+# The seven a watch applies (WATCH_CONFIG_PANEL_KINDS in const.py). Never the
 # catalog, which only the phone and the panel read.
 DELTA_WATCH_CONFIG_KINDS = (
     "pages",
@@ -43,6 +43,7 @@ DELTA_WATCH_CONFIG_KINDS = (
     "voice",
     "notification_style",
     "status_pages",
+    "control_center",
 )
 
 _LOGGER = logging.getLogger(__name__)

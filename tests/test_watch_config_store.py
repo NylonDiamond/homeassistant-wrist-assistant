@@ -21,7 +21,8 @@ shape guard, and the panel being refused it. From step 4d: the ``menus``
 kind, its cap and shape guard, and the panel creating a first record for a
 paired watch (and being refused one for any other). From step 4d batch 2:
 the ``voice``, ``notification_style`` and ``status_pages`` kinds, their caps
-and shape guards, and the same panel save, restore and create.
+and shape guards, and the same panel save, restore and create. From step 4d
+batch 5: the ``control_center`` kind, the same way.
 """
 
 from __future__ import annotations
@@ -60,13 +61,31 @@ MAX_MENUS_BYTES = 256 * 1024
 MAX_VOICE_BYTES = 256 * 1024
 MAX_NOTIFICATION_STYLE_BYTES = 256 * 1024
 MAX_STATUS_PAGES_BYTES = 256 * 1024
+MAX_CONTROL_CENTER_BYTES = 256 * 1024
 HISTORY_LIMIT = 5
 # Kept equal to const.py by test_the_kinds_match_const below.
 KINDS = frozenset(
-    {"pages", "behavior", "catalog", "menus", "voice", "notification_style", "status_pages"}
+    {
+        "pages",
+        "behavior",
+        "catalog",
+        "menus",
+        "voice",
+        "notification_style",
+        "status_pages",
+        "control_center",
+    }
 )
 PANEL_KINDS = frozenset(
-    {"pages", "behavior", "menus", "voice", "notification_style", "status_pages"}
+    {
+        "pages",
+        "behavior",
+        "menus",
+        "voice",
+        "notification_style",
+        "status_pages",
+        "control_center",
+    }
 )
 
 OWNER = "watch-A"
@@ -158,6 +177,7 @@ def _loaded_module():
                 "voice": MAX_VOICE_BYTES,
                 "notification_style": MAX_NOTIFICATION_STYLE_BYTES,
                 "status_pages": MAX_STATUS_PAGES_BYTES,
+                "control_center": MAX_CONTROL_CENTER_BYTES,
             },
             WATCH_CONFIG_HISTORY_LIMIT=HISTORY_LIMIT,
         )
@@ -658,6 +678,7 @@ def test_the_size_caps_match_const() -> None:
         "voice": MAX_VOICE_BYTES,
         "notification_style": MAX_NOTIFICATION_STYLE_BYTES,
         "status_pages": MAX_STATUS_PAGES_BYTES,
+        "control_center": MAX_CONTROL_CENTER_BYTES,
     }
 
 
@@ -1826,8 +1847,8 @@ def test_the_panel_may_neither_save_nor_restore_a_catalog(mod):
         store.panel_save(OWNER, "catalog", _catalog(), base_revision=2)
     assert exc.value.code == "invalid"
     assert exc.value.message == (
-        "the panel cannot save catalog; it may save behavior, menus, "
-        "notification_style, pages, status_pages, voice"
+        "the panel cannot save catalog; it may save behavior, control_center, "
+        "menus, notification_style, pages, status_pages, voice"
     )
     with pytest.raises(mod.WatchConfigValidationError, match="the panel cannot save catalog"):
         store.restore(OWNER, "catalog", 1, base_revision=2)
@@ -2018,6 +2039,7 @@ def _first_copy(kind: str) -> dict:
         "voice": _voice(),
         "notification_style": _notification_style(),
         "status_pages": _status_pages(),
+        "control_center": _control_center(),
     }[kind]
 
 
@@ -2442,6 +2464,146 @@ def test_every_kind_is_forgotten_and_moved_with_its_owner(mod):
     assert store.forget_owner(OTHER) is True
     assert sorted(heard) == sorted((OTHER, kind, 0) for kind in PANEL_KINDS)
     assert store.revisions(OTHER) == {}
+
+
+# ── step 4d batch 5: the Control Center list ─────────────────────────────
+
+
+def _cc_entry(entity_id: str, **extra: Any) -> dict:
+    domain = entity_id.split(".", 1)[0]
+    entry = {
+        "entityId": entity_id,
+        "displayName": entity_id.split(".", 1)[1].replace("_", " ").title(),
+        "iconName": "lightbulb.fill",
+        "domain": domain,
+    }
+    entry.update(extra)
+    return entry
+
+
+def _control_center(**extra: Any) -> dict:
+    """The Control Center document: the app's bare array of CuratedEntity,
+    wrapped in an object, made-up entities only. A hidden entry and one in a
+    domain the watch never shows are stored like the rest."""
+    doc = {
+        "schemaVersion": 1,
+        "entities": [
+            _cc_entry("light.made_up_kitchen", schemaVersion=1),
+            _cc_entry("scene.made_up_movie", iconName="sparkles", isHidden=True),
+            _cc_entry("sensor.made_up_temperature", iconName="circle.fill",
+                      customDisplayName="Temp", tintColorHex="#FF9500"),
+        ],
+    }
+    doc.update(extra)
+    return doc
+
+
+def _entities_of(*entities: Any) -> dict:
+    return {"schemaVersion": 1, "entities": list(entities)}
+
+
+def test_a_device_may_save_and_read_the_control_center_list(mod):
+    store = _new(mod)
+    heard = _listen(store)
+    doc = _control_center(futureKey={"kept": True})
+    record = _put(store, kind="control_center", doc=doc)
+    assert (record.revision, record.delivered_revision, record.hash) == (1, 1, HASH_1)
+    assert store.get(OWNER, "control_center").document == doc
+    record = _put(store, kind="control_center", doc=_control_center(), base=1, digest=HASH_2)
+    assert record.revision == 2
+    assert [e.revision for e in store.history(OWNER, "control_center")] == [1]
+    assert heard == [(OWNER, "control_center", 1), (OWNER, "control_center", 2)]
+
+
+def test_the_control_center_list_has_its_own_cap(mod):
+    store = _new(mod)
+    base = _control_center()
+    overhead = mod.document_size({**base, "b": ""})
+    cap = MAX_CONTROL_CENTER_BYTES
+    assert _put(store, kind="control_center", doc={**base, "b": "x" * (cap - overhead)}).revision == 1
+    with pytest.raises(mod.WatchConfigValidationError, match="limit for control_center"):
+        _put(store, kind="control_center", doc={**base, "b": "x" * (cap - overhead + 1)}, base=1)
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        {"entities": []},
+        _control_center(),
+        # Keys besides the four are never looked at, nor is the domain
+        # checked against the entity id or the ones the watch shows.
+        _entities_of(_cc_entry("light.a", isHidden="yes", tintColorHex=3),
+                     _cc_entry("climate.b", domain="not_a_domain")),
+        # Entity ids are compared as written.
+        _entities_of(_cc_entry("light.a"), _cc_entry("light.A")),
+        # Empty strings are strings.
+        _entities_of(_cc_entry("light.a", displayName="", iconName="", domain="")),
+    ],
+)
+def test_control_center_lists_of_any_shape_the_guard_allows_are_accepted(mod, document):
+    store = _new(mod)
+    assert _put(store, kind="control_center", doc=document).document == document
+
+
+@pytest.mark.parametrize(
+    ("document", "message"),
+    [
+        ([], "document must be a JSON object"),
+        ({}, "document.entities must be a list"),
+        ({"entities": {}}, "document.entities must be a list"),
+        ({"entities": None}, "document.entities must be a list"),
+        (_entities_of("light.a"), r"document.entities\[0\] must be an object"),
+        (_entities_of(_cc_entry("light.a"), {"displayName": "B", "iconName": "x", "domain": "light"}),
+         r"document.entities\[1\].entityId must be a non-empty string"),
+        (_entities_of(_cc_entry("light.a", entityId="")),
+         r"document.entities\[0\].entityId must be a non-empty string"),
+        (_entities_of(_cc_entry("light.a", entityId=7)),
+         r"document.entities\[0\].entityId must be a non-empty string"),
+        (_entities_of(_cc_entry("light.a"), _cc_entry("light.b"), _cc_entry("light.a")),
+         r'document.entities\[2\] has the entity id "light.a" of document.entities\[0\]; '
+         "entity ids must be unique"),
+        (_entities_of({"entityId": "light.a", "iconName": "x", "domain": "light"}),
+         r"document.entities\[0\].displayName must be a string"),
+        (_entities_of(_cc_entry("light.a", displayName=None)),
+         r"document.entities\[0\].displayName must be a string"),
+        (_entities_of(_cc_entry("light.a", iconName=["x"])),
+         r"document.entities\[0\].iconName must be a string"),
+        (_entities_of({"entityId": "light.a", "displayName": "A", "iconName": "x"}),
+         r"document.entities\[0\].domain must be a string"),
+    ],
+)
+def test_control_center_lists_of_the_wrong_shape_are_refused(mod, document, message):
+    store = _new(mod)
+    with pytest.raises(mod.WatchConfigValidationError, match=message):
+        _put(store, kind="control_center", doc=document)
+    assert store.get(OWNER, "control_center") is None
+    assert _FakeStore.writes == []
+
+
+def test_the_panel_may_save_restore_and_create_the_control_center_list(mod):
+    store = _new(mod, paired={OWNER})
+    original = _control_center()
+    record = store.panel_save(OWNER, "control_center", original, base_revision=0)
+    assert (record.revision, record.updated_by) == (1, "panel")
+    edited = _control_center(entities=list(reversed(original["entities"])))
+    record = store.panel_save(OWNER, "control_center", edited, base_revision=1)
+    assert (record.revision, record.document) == (2, edited)
+    record = store.restore(OWNER, "control_center", 1, base_revision=2)
+    assert (record.revision, record.updated_by, record.document) == (3, "panel", original)
+    with pytest.raises(mod.WatchConfigValidationError, match="entity ids must be unique"):
+        store.panel_save(
+            OWNER, "control_center",
+            _entities_of(_cc_entry("light.a"), _cc_entry("light.a")), base_revision=3,
+        )
+    assert store.get(OWNER, "control_center").revision == 3
+
+
+def test_the_panel_never_creates_a_control_center_list_for_a_watch_that_is_not_paired(mod):
+    store = _new(mod, paired={OTHER})
+    with pytest.raises(mod.WatchConfigNoRecordError):
+        store.panel_save(OWNER, "control_center", _control_center(), base_revision=0)
+    assert store.get(OWNER, "control_center") is None
+    assert _FakeStore.writes == []
 
 
 # ── step 3: files written before it ──────────────────────────────────────

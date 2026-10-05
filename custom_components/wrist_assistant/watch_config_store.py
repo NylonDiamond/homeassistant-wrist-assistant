@@ -10,8 +10,8 @@ parties:
   menus (kind ``menus``: the Anywhere menu, the Entity quick menu and the
   page switcher's style), its voice settings (kind ``voice``: the voice
   defaults and the phrase library), its notification style (kind
-  ``notification_style``) and its status pages (kind ``status_pages``) here
-  after each edit, and pulls a newer copy back down when it has nothing
+  ``notification_style``), its status pages (kind ``status_pages``) and its
+  Control Center list (kind ``control_center``) here after each edit, and pulls a newer copy back down when it has nothing
   unsent. It also publishes its library catalog (kind ``catalog``), which
   only the phone writes.
 * The panel. It may read, save and restore every kind but the catalog, and
@@ -125,12 +125,14 @@ _SAVE_DEBOUNCE_SECONDS = 1
 # default"), so an object is enough. The page list's own shape is checked by
 # _check_pages below. The same holds for the phrase library of the voice
 # settings (`phrases`, which the app's decoder requires) and the status pages
-# (`statusPages`, the list the document wraps); the notification style is a
-# flat object like the behavior settings.
+# (`statusPages`, the list the document wraps) and the Control Center list
+# (`entities`, likewise); the notification style is a flat object like the
+# behavior settings.
 _KIND_LIST_KEYS: dict[str, str] = {
     "pages": "pages",
     "voice": "phrases",
     "status_pages": "statusPages",
+    "control_center": "entities",
 }
 
 # A SHA-256 digest as lowercase hex. Lowercase only, and refused otherwise
@@ -251,7 +253,8 @@ def validate_document(kind: str, document: Any, *, check_items: bool = False) ->
     checked for an id and a name (see :func:`_check_catalog`), the menus'
     sections and slot lists for their shape (see :func:`_check_menus`), the
     voice settings' phrases and defaults (see :func:`_check_voice`) and the
-    status pages' pages and rows (see :func:`_check_status_pages`). The
+    status pages' pages and rows (see :func:`_check_status_pages`) and the
+    Control Center list's entries (see :func:`_check_control_center`). The
     notification style, like the behavior settings, is any object.
 
     The server guards the shape, not the content. No key's value is looked at
@@ -280,6 +283,8 @@ def validate_document(kind: str, document: Any, *, check_items: bool = False) ->
         _check_voice(document)
     elif kind == "status_pages":
         _check_status_pages(document["statusPages"])
+    elif kind == "control_center":
+        _check_control_center(document["entities"])
     return size
 
 
@@ -402,6 +407,45 @@ def _check_status_pages(pages: list[Any]) -> None:
                     "row ids must be unique in a page"
                 )
             seen_rows[folded_row] = row_index
+
+
+# The string keys every Control Center entry carries besides its `entityId`.
+# The app's decoder (`CuratedEntity`) requires all of them.
+_CONTROL_CENTER_STRING_KEYS = ("displayName", "iconName", "domain")
+
+
+def _check_control_center(entities: list[Any]) -> None:
+    """The Control Center list's shape guard, for every writer.
+
+    Each entry is an object with a non-empty string ``entityId``, no two
+    entries sharing one, and a string ``displayName``, ``iconName`` and
+    ``domain``. The watch decodes the whole list or nothing, so an entry
+    missing one of these (the app's decoder requires all four) must not land
+    whoever writes it, and a control that offers the same entity twice is
+    one the phone's editor cannot make. Entity ids are compared as written:
+    Home Assistant's are lowercase. No other key is looked at, so a newer app
+    can add some, and the domain is not checked against the ones the watch
+    shows: an entry in any other domain is stored and never drawn.
+    """
+    seen: dict[str, int] = {}
+    for index, entity in enumerate(entities):
+        where = f"document.entities[{index}]"
+        if not isinstance(entity, dict):
+            raise WatchConfigValidationError(f"{where} must be an object")
+        entity_id = entity.get("entityId")
+        if not isinstance(entity_id, str) or not entity_id:
+            raise WatchConfigValidationError(
+                f"{where}.entityId must be a non-empty string"
+            )
+        if entity_id in seen:
+            raise WatchConfigValidationError(
+                f'{where} has the entity id "{entity_id}" of '
+                f"document.entities[{seen[entity_id]}]; entity ids must be unique"
+            )
+        seen[entity_id] = index
+        for key in _CONTROL_CENTER_STRING_KEYS:
+            if not isinstance(entity.get(key), str):
+                raise WatchConfigValidationError(f"{where}.{key} must be a string")
 
 
 # The sections a menus document carries, every one required: the Anywhere
