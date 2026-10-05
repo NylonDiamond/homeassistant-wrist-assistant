@@ -286,6 +286,7 @@ const columnsRun = css`
       display: grid; grid-template-columns: minmax(0, 1fr) 22px minmax(0, 1fr);
       margin: 8px 10px 0; padding-top: 8px; border-top: 1px solid var(--wa-line); flex: 0 1 auto; min-height: 0;
     }
+    .cs-why { grid-column: 1 / -1; margin: 0 4px 8px; font-size: 11px; line-height: 1.45; color: var(--wa-muted); }
     .cs-col { display: flex; flex-direction: column; gap: 4px; min-width: 0; min-height: 0; }
     .cs-col.off > :not(.cs-head) { opacity: .45; }
     .cs-col > .layers { padding: 0; }

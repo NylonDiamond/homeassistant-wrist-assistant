@@ -149,21 +149,34 @@ describe("newConfig", () => {
     expect(back.perFamily.corner!.bezelGauge).toEqual(corner.bezelGauge);
   });
 
-  it("switches a corner between curved text and layers, keeping the bezel", () => {
+  it("switches a corner between curved text and layers, keeping the bezel and the other side", () => {
     const cfg = newConfig("X", 0, "corner");
     const corner = cfg.perFamily.corner!;
     expect(cornerMode(corner)).toBe("curved");
+    corner.curvedText = literal("Mine");
     corner.curvedColorHex = "#FF0000";
     setCornerMode(corner, "canvas");
     expect(cornerMode(corner)).toBe("canvas");
     expect(corner.curvedText).toBeUndefined();
     expect(corner.curvedColorHex).toBeUndefined();
+    expect(corner.parkedCurvedText).toEqual(literal("Mine"));
+    expect(corner.parkedCurvedColorHex).toBe("#FF0000");
     expect(corner.bezelGauge).toBeDefined();
-    setCornerMode(corner, "curved");
-    expect(corner.curvedText).toEqual(literal("Text"));
-    corner.curvedText = literal("Mine");
-    setCornerMode(corner, "curved");
-    expect(corner.curvedText).toEqual(literal("Mine"));
+
+    // The parked text survives a save, and comes back on the switch back.
+    const saved = parseConfig(encodeConfig(cfg))!.perFamily.corner!;
+    expect(saved.parkedCurvedText).toEqual(literal("Mine"));
+    setCornerMode(saved, "curved");
+    expect(saved.curvedText).toEqual(literal("Mine"));
+    expect(saved.curvedColorHex).toBe("#FF0000");
+    expect(saved.parkedCurvedText).toBeUndefined();
+    expect(saved.parkedCurvedColorHex).toBeUndefined();
+
+    // With nothing parked, curved starts from the default text.
+    const fresh = newConfig("Y", 0, "corner").perFamily.corner!;
+    delete fresh.curvedText;
+    setCornerMode(fresh, "curved");
+    expect(fresh.curvedText).toEqual(literal("Text"));
     expect(cornerMode(undefined)).toBe("canvas");
   });
 

@@ -3139,6 +3139,11 @@ export interface FamilyLayout {
    * element canvas: the system curves only plain text. */
   curvedText?: Value;
   curvedColorHex?: string;
+  /** The curved text and its color while the corner is switched to Layers,
+   * kept so switching back restores them. The watch carries them and never
+   * draws them: only `curvedText` makes a corner curve. */
+  parkedCurvedText?: Value;
+  parkedCurvedColorHex?: string;
   /** Corner bezel gauge; wins over bezelText when set. */
   bezelGauge?: BezelGauge;
   backgroundColorHex?: string;
@@ -5177,6 +5182,8 @@ function parseLayout(o: unknown): FamilyLayout {
   if (l.bezelCountdown === true) layout.bezelCountdown = true;
   if (isObject(l.curvedText)) layout.curvedText = parseValue(l.curvedText);
   if (typeof l.curvedColorHex === "string") layout.curvedColorHex = l.curvedColorHex;
+  if (isObject(l.parkedCurvedText)) layout.parkedCurvedText = parseValue(l.parkedCurvedText);
+  if (typeof l.parkedCurvedColorHex === "string") layout.parkedCurvedColorHex = l.parkedCurvedColorHex;
   if (isObject(l.bezelGauge)) {
     const g = l.bezelGauge;
     const gauge: BezelGauge = {
@@ -7119,6 +7126,8 @@ function encodeLayout(l: FamilyLayout): J {
   if (l.bezelCountdown === true) o.bezelCountdown = true;
   if (l.curvedText) o.curvedText = encodeValue(l.curvedText);
   if (l.curvedColorHex !== undefined) o.curvedColorHex = l.curvedColorHex;
+  if (l.parkedCurvedText) o.parkedCurvedText = encodeValue(l.parkedCurvedText);
+  if (l.parkedCurvedColorHex !== undefined) o.parkedCurvedColorHex = l.parkedCurvedColorHex;
   if (l.bezelGauge) {
     const g = l.bezelGauge;
     const go: J = {
@@ -7932,7 +7941,7 @@ const K = {
   test: ["id", "value", "comparison"],
   comparison: ["kind", "value", "upper", "pattern", "options"],
   styleChange: ["kind", "value", "number", "weight", "design", "width", "italic", "path"],
-  layout: ["placements", "bezelText", "bezelCountdown", "curvedText", "curvedColorHex", "bezelGauge", "backgroundColorHex", "backgroundFill", "cornerBodyShape", "borderColorHex", "borderWidth", "rules"],
+  layout: ["placements", "bezelText", "bezelCountdown", "curvedText", "curvedColorHex", "parkedCurvedText", "parkedCurvedColorHex", "bezelGauge", "backgroundColorHex", "backgroundFill", "cornerBodyShape", "borderColorHex", "borderWidth", "rules"],
   bezelGauge: ["value", "minValue", "maxValue", "colorHexes", "minLabel", "maxLabel"],
   placement: ["frame", "isHidden", "size"],
   // The three service keys belong to `callService` only; the entity four are its
@@ -8145,6 +8154,7 @@ export function auditUnknownKeys(raw: unknown): string[] {
     }
     value(l.bezelText, `${lp}.bezelText`);
     value(l.curvedText, `${lp}.curvedText`);
+    value(l.parkedCurvedText, `${lp}.parkedCurvedText`);
     if ("backgroundFill" in l) fill(l.backgroundFill, `${lp}.backgroundFill`);
     if (isObject(l.bezelGauge)) {
       const gp = `${lp}.bezelGauge`;
@@ -8216,13 +8226,22 @@ export function cornerMode(layout: FamilyLayout | undefined): CornerMode {
   return layout?.curvedText !== undefined ? "curved" : "canvas";
 }
 
-/** Switch a corner's main content. Curved starts from the default text and
- * keeps any text already there; canvas drops the curved text and its color.
- * The bezel and the layers are left as they are in both directions. */
+/** Switch a corner's main content without losing either side. Canvas parks
+ * the curved text and its color in keys the watch carries but never draws;
+ * curved brings them back, or starts from the default text. The bezel and the
+ * layers are left as they are in both directions. */
 export function setCornerMode(layout: FamilyLayout, mode: CornerMode): void {
   if (mode === "curved") {
-    if (layout.curvedText === undefined) layout.curvedText = defaultCurvedText();
-  } else {
+    if (layout.curvedText === undefined) {
+      layout.curvedText = layout.parkedCurvedText ?? defaultCurvedText();
+      if (layout.parkedCurvedColorHex !== undefined) layout.curvedColorHex = layout.parkedCurvedColorHex;
+    }
+    delete layout.parkedCurvedText;
+    delete layout.parkedCurvedColorHex;
+  } else if (layout.curvedText !== undefined) {
+    layout.parkedCurvedText = layout.curvedText;
+    if (layout.curvedColorHex !== undefined) layout.parkedCurvedColorHex = layout.curvedColorHex;
+    else delete layout.parkedCurvedColorHex;
     delete layout.curvedText;
     delete layout.curvedColorHex;
   }

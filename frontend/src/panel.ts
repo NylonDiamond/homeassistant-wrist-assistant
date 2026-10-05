@@ -8710,6 +8710,7 @@ export class WristAssistantPanel extends LitElement {
           @click=${(e: Event) => { if (curved) pick(false); else this.toggleAddSheet(e.currentTarget as HTMLElement); }}>
           <span class="cs-pic bulb">${bulb}</span><span>${curved ? "Anything, in a small circle" : "Add a layer"}</span></button>`;
     return html`<div class="corner-split" role="radiogroup" aria-label="Inside the corner: curved text or layers">
+      <div class="cs-why">Inside the corner, the watch draws curved text or layers, never both. Pick one. The other side keeps its settings for when you switch back.</div>
       <div class="cs-col ${curved ? "" : "off"}">
         ${head(true, "Curved text", "Big text the watch bends along the edge, like the Weather corner")}
         ${left}
@@ -8722,11 +8723,16 @@ export class WristAssistantPanel extends LitElement {
     </div>`;
   }
 
-  /** The corner's toggle set to Layers, so the watch draws its layers again. */
+  /** The corner's toggle set to Layers, so the watch draws its layers again.
+   * The curved text is parked, not deleted. The top layer on the page showing
+   * is selected, so the side just picked is the one in focus. */
   private removeCurvedText() {
     if (!this.canEdit) return;
     this.mutate((c) => { const l = c.perFamily.corner; if (l) setCornerMode(l, "canvas"); });
-    if (this.inspect.kind === "cornerText") this.inspect = { kind: "general" };
+    this.multi = new Set();
+    const top = [...(this.draft?.config.elements ?? [])].reverse()
+      .find((e) => e.payload.page === undefined || e.payload.page === this.page);
+    this.inspect = top ? { kind: "layer", id: top.payload.id } : { kind: "general" };
   }
 
   /** The four snapping settings as one value, for the Snap menu. */
