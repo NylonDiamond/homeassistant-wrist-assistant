@@ -10683,6 +10683,7 @@ export class WristAssistantPanel extends LitElement {
   /** Where the hover card stands, while it is up. */
   @state() private devicesPop?: { left: number; top?: number; bottom?: number };
   private devicesPopTimer?: number;
+  private devicesPopFor?: HTMLElement;
 
   /** A sync pill of any screen (`.tb-sync`), or a line that asks for the
    * card by `data-devices-pop`, under the pointer. The screens are elements
@@ -10709,12 +10710,15 @@ export class WristAssistantPanel extends LitElement {
       target.setAttribute("aria-label", target.title);
       target.removeAttribute("title");
     }
-    if (this.devicesPop !== undefined) return;
+    if (this.devicesPop !== undefined && this.devicesPopFor === target) return;
+    // Already up for another pill: move at once. Else wait a moment, so a
+    // pointer only passing over opens nothing.
     this.devicesPopTimer = window.setTimeout(() => {
       if (!target.isConnected) return;
+      this.devicesPopFor = target;
       this.devicesPop = devicesPopPlace(target.getBoundingClientRect(), window.innerWidth, window.innerHeight);
       void this.loadWatchAppSync(true);
-    }, 180);
+    }, this.devicesPop !== undefined ? 0 : 180);
   };
 
   private devicesPopOut = (e: MouseEvent) => {
