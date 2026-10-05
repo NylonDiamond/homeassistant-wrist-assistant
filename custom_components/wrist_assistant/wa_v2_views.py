@@ -130,7 +130,7 @@ from .const import (
     WA_STREAM_TOKEN_TTL_SECONDS,
     WristAssistantData,
 )
-from .http_actions_runner import HTTPActionRefusal
+from .http_actions_runner import HTTPActionRefusal, run_input_problem
 from .http_actions_store import HTTPActionsStoreError, HTTPActionsUnavailableError
 from .logbook_events import (
     log_hmac_failure,
@@ -3590,7 +3590,9 @@ async def _op_http_action_run(ctx: _OpContext) -> Response:
     Refusal: signed {"ok": false, "error", "message"}: ``not_found`` 404 (no
              such action), ``needs_setup`` 409 (no URL yet),
              ``missing_audio`` 400 (a voice action with no clip),
-             ``invalid`` 400 (audio that is not base64, or too long),
+             ``invalid`` 400 (a body over 1 MB, more than 64 values, a
+             key over 64 or a value over 4096 characters, audio that is
+             not base64 or over 512 KiB),
              ``busy`` 429 (four runs of this device still going),
              ``unavailable`` 503.
 
@@ -3599,6 +3601,9 @@ async def _op_http_action_run(ctx: _OpContext) -> Response:
     watch shows. ``value`` is the reply value with its unit and ``snippet``
     the first line of the answer, as the watch reads them itself.
     """
+    problem = run_input_problem(len(ctx.body), ctx.payload)
+    if problem is not None:
+        return _http_actions_refusal(ctx, "invalid", problem, 400)
     store = getattr(ctx.domain_data, "http_actions_store", None)
     runner = getattr(ctx.domain_data, "http_action_runner", None)
     if store is None or runner is None:

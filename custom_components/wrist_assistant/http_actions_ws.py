@@ -143,8 +143,9 @@ async def ws_http_actions_test(
     device's run would build the stored one, and sent under the same rules.
     ``status`` is null when no answer came, and ``error`` then says why.
     ``paths`` are the JSON leaves of the answer, for the reply picker.
-    Refused with ``invalid`` for a malformed draft and ``busy`` while four
-    tests are still running.
+    Refused with ``invalid`` for a malformed draft or for values over a
+    run's limits (more than 64, a key over 64 characters, a value over
+    4096), and ``busy`` while four tests are still running.
     """
     runner = _runner(hass)
     if runner is None:

@@ -115,6 +115,7 @@ def _ops(store_mod: Any, runner_mod: Any) -> dict[str, Any]:
         "Any": Any,
         "Response": _Response,
         "HTTPActionRefusal": runner_mod.HTTPActionRefusal,
+        "run_input_problem": runner_mod.run_input_problem,
         "HTTPActionsStoreError": store_mod.HTTPActionsStoreError,
         "HTTPActionsUnavailableError": store_mod.HTTPActionsUnavailableError,
     }
@@ -315,6 +316,32 @@ def test_run_refusals(env, doc, payload, code, status) -> None:
     assert reply.body["ok"] is False and reply.body["error"] == code
 
 
+@pytest.mark.parametrize(
+    ("payload", "body"),
+    [
+        ({"id": ID_A, "values": {f"k{i}": "v" for i in range(65)}}, None),
+        ({"id": ID_A, "values": {"k" * 65: "v"}}, None),
+        ({"id": ID_A, "values": {"k": "v" * 4097}}, None),
+        ({"id": ID_A, "audio": "A" * (4 * ((512 * 1024 + 2) // 3) + 4)}, None),
+        ({"id": ID_A}, b" " * (1024 * 1024 + 1)),
+    ],
+)
+def test_a_run_over_the_limits_is_refused_before_anything_else(env, payload, body) -> None:
+    # Refused even with no library, before the store is read.
+    env.domain.http_actions_store = None
+    reply = op(env, "_op_http_action_run", payload, body=body)
+    assert reply.status == 400 and reply.body["error"] == "invalid"
+    assert env.session.calls == []
+
+
+def test_a_run_at_the_limits_is_tried(env) -> None:
+    env.store.save(library(action()), base_revision=0)
+    env.session.script[URL_A] = FakeResponse(200)
+    values = {f"{'k' * 62}{i:02d}": "v" * 4096 for i in range(64)}
+    reply = op(env, "_op_http_action_run", {"id": ID_A, "values": values})
+    assert reply.status == 200 and reply.body["status"] == 200
+
+
 def test_a_voice_run_carries_its_clip(env) -> None:
     env.store.save(library(action(bodyContentType="audio")), base_revision=0)
     env.session.script[URL_A] = FakeResponse(204)
@@ -454,6 +481,16 @@ def test_ws_test_answers_the_whole_shape(env) -> None:
 def test_ws_test_refuses_a_malformed_draft(env) -> None:
     [(_, code, _m)] = ws_call(env, env.ws.ws_http_actions_test, action={"id": "x"}).errors
     assert code == "invalid"
+
+
+@pytest.mark.parametrize(
+    "values",
+    [{f"k{i}": "v" for i in range(65)}, {"k" * 65: "v"}, {"k": "v" * 4097}],
+)
+def test_ws_test_refuses_values_over_the_limits(env, values) -> None:
+    [(_, code, _m)] = ws_call(env, env.ws.ws_http_actions_test, action=action(), values=values).errors
+    assert code == "invalid"
+    assert env.session.calls == []
 
 
 # ── static ───────────────────────────────────────────────────────────────

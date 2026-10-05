@@ -88,6 +88,13 @@ MAX_REDIRECTS = 5
 # A watch records at most 30 s of 32 kbps AAC, about 120 KB. Four times that
 # leaves room without letting one signed request carry anything large.
 MAX_AUDIO_BYTES = 512 * 1024
+# The longest base64 text such a clip can be, checked before decoding.
+MAX_AUDIO_BASE64_CHARS = 4 * ((MAX_AUDIO_BYTES + 2) // 3)
+# What one run may carry, checked before anything else is done with it.
+MAX_RUN_BODY_BYTES = 1024 * 1024
+MAX_VALUES = 64
+MAX_VALUE_KEY_CHARS = 64
+MAX_VALUE_CHARS = 4096
 REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 # Seconds a pattern that is not plain may search for in its child process.
 REGEX_CHILD_TIMEOUT = 2.0
@@ -144,6 +151,39 @@ class Answer:
         self.headers = headers or {}
         self.body = body
         self.error = error
+
+
+def values_problem(values: Any) -> str | None:
+    """Why a run's values are too many or too long, or None. At most 64
+    values, each key at most 64 characters and each value at most 4096."""
+    if not isinstance(values, dict):
+        return None
+    if len(values) > MAX_VALUES:
+        return f"a run may carry at most {MAX_VALUES} values"
+    for key, value in values.items():
+        if isinstance(key, str) and len(key) > MAX_VALUE_KEY_CHARS:
+            return f"a value's key may be at most {MAX_VALUE_KEY_CHARS} characters"
+        if isinstance(value, str) and len(value) > MAX_VALUE_CHARS:
+            return f"a value may be at most {MAX_VALUE_CHARS} characters"
+    return None
+
+
+def run_input_problem(body_size: int, payload: Any) -> str | None:
+    """Why a device's run request is too large to look at, or None: a raw
+    body over 1 MB, values over :func:`values_problem`'s limits, or a clip
+    whose base64 text is longer than the largest clip allowed (measured
+    before it is decoded)."""
+    if body_size > MAX_RUN_BODY_BYTES:
+        return f"the request is over {MAX_RUN_BODY_BYTES} bytes"
+    if not isinstance(payload, dict):
+        return None
+    problem = values_problem(payload.get("values"))
+    if problem is not None:
+        return problem
+    audio = payload.get("audio")
+    if isinstance(audio, str) and len(audio) > MAX_AUDIO_BASE64_CHARS:
+        return f"the clip is over {MAX_AUDIO_BYTES} bytes"
+    return None
 
 
 def clamp_timeout(timeout: Any) -> float:
@@ -464,6 +504,9 @@ class HTTPActionRunner:
         """One run of a stored action for a device: the op's reply,
         ``{"ok": true, "status", "value", "snippet", "error"}``. Raises
         :class:`HTTPActionRefusal` when the run is not tried."""
+        problem = run_input_problem(0, payload)
+        if problem is not None:
+            raise HTTPActionRefusal("invalid", problem)
         action = find_action(document, payload.get("id"))
         if action is None:
             raise HTTPActionRefusal("not_found", "no action has that id")
@@ -496,8 +539,11 @@ class HTTPActionRunner:
         """The panel's Test: a draft action, not saved, with the globals and
         values given. Answers ``{"status", "value", "snippet", "error",
         "headers", "paths", "elapsed_ms"}``; ``paths`` are the JSON leaves of
-        the body for the reply picker. Refuses a malformed draft
-        ``invalid`` and a fifth run at once ``busy``."""
+        the body for the reply picker. Refuses a malformed draft, or values
+        over a run's limits, ``invalid`` and a fifth run at once ``busy``."""
+        problem = values_problem(values)
+        if problem is not None:
+            raise HTTPActionRefusal("invalid", problem)
         try:
             validate_action(action, "action")
             validate_globals(global_variables if global_variables is not None else [])
