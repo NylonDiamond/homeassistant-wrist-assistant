@@ -96,8 +96,17 @@ describe("remembering the address's watch", () => {
     expect(adoptRouteWatch("w1", "p1", WATCHES)).toBe("w1");
   });
 
-  it("takes the address's watch on trust while the list is not in", () => {
-    expect(adoptRouteWatch("w1", "w2", [])).toBe("w2");
+  it("keeps the pick while the list is not in, and takes the address's watch once the list has it", () => {
+    // A first load from a deep link: the devices are still loading.
+    expect(adoptRouteWatch("w1", "w2", [])).toBe("w1");
+    expect(adoptRouteWatch(undefined, "w2", [])).toBeUndefined();
+    // The list arrives: a watch of this home is taken, any other id is not.
+    expect(adoptRouteWatch("w1", "w2", WATCHES)).toBe("w2");
+    expect(adoptRouteWatch("w1", "elsewhere", WATCHES)).toBe("w1");
+  });
+
+  it("never remembers a watch in a home whose list has no watch", () => {
+    expect(adoptRouteWatch("w1", "w2", settingsWatches([owner({ owner_watch_id: "p1", device_kind: "iphone" })]))).toBe("w1");
   });
 });
 

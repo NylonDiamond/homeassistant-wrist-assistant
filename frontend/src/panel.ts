@@ -6300,7 +6300,8 @@ export class WristAssistantPanel extends LitElement {
     }
     // A watch the address names (a link from the iPhone app, a bookmark, a
     // screen link in the row) becomes the Watch app's remembered watch, once
-    // the device list does not say it is no watch of this home.
+    // the device list is in and lists it as a watch of this home. On a first
+    // load the list arrives later, and its arrival runs this again.
     if (changed.has("route") || changed.has("owners")) {
       const next = adoptRouteWatch(this.watchPick, watchRouteOwner(this.route), settingsWatches(this.owners));
       if (next !== undefined && next !== this.watchPick) this.rememberWatch(next);

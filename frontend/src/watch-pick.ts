@@ -12,7 +12,8 @@
 //   3. today's fallback: the complications device when it is a watch, else
 //      the first watch (`initialWatch`).
 // A watch the address names also becomes the remembered pick, so the next
-// visit without one opens on it.
+// visit without one opens on it, but only once the device list says it is a
+// watch of this home.
 
 import type { OwnerSummary } from "./ha-api.js";
 import { watchControlCenterRouteOwner } from "./watch-control-center/hook.js";
@@ -61,11 +62,15 @@ export function resolveWatchPick(watches: readonly OwnerSummary[], input: WatchP
   return initialWatch(watches, input.fallback);
 }
 
-/** The pick to remember once the address names a watch: that watch, unless
- * the device list is in and it is not one of the home's watches. */
+/** The pick to remember once the address names a watch: that watch, once
+ * the device list is in and lists it as one of the home's watches. Until the
+ * list is in the pick stays as it was, so a link to a watch of some other
+ * home never replaces a good one; the screen gets the address's watch in the
+ * meantime through `resolveWatchPick`, and the pick is taken when the list
+ * arrives. */
 export function adoptRouteWatch(saved: string | undefined, routeOwner: string | undefined, watches: readonly OwnerSummary[]): string | undefined {
   if (routeOwner === undefined || routeOwner === saved) return saved;
-  if (watches.length > 0 && !watches.some((w) => w.owner_watch_id === routeOwner)) return saved;
+  if (!watches.some((w) => w.owner_watch_id === routeOwner)) return saved;
   return routeOwner;
 }
 
