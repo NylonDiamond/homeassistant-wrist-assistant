@@ -405,5 +405,5 @@
     "00000000-0000-0000-0000-000000000004",
     "00000000-0000-0000-0000-000000000005"
   ],
-  "systemDefaultRule": "isSystemDefault changes nothing on the watch. A list with no system default page gets the five seeded again in front of it (seedDefaultsIfNeeded)."
+  "systemDefaultRule": "isSystemDefault changes nothing on the watch. A list with no system default page gets the five seeded again in front of it (seedDefaultsIfNeeded), except on a watch that pulled status_pages from Home Assistant: there a page deleted in the panel stays deleted."
 }
