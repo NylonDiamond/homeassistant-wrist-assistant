@@ -1224,11 +1224,6 @@
       "icon": "lock",
       "role": "entityLock"
     },
-    "macro": {
-      "icon": "link",
-      "hex": "#CCD8E6",
-      "fromMacroLibrary": true
-    },
     "media_player": {
       "icon": "play.circle",
       "role": "entityMediaPlayer",
@@ -2671,17 +2666,6 @@
     },
     "duplicatesAllowed": true
   },
-  "macroTile": {
-    "entityIdPrefix": "macro.",
-    "icon": "link",
-    "hex": "#CCD8E6",
-    "customLabel": "the macro's catalog name: its trimmed name, else \"Macro\"",
-    "extras": {},
-    "duplicatesAllowed": true,
-    "iconFromLibrary": true,
-    "colorFromLibrary": true,
-    "libraryStyle": "iconFromLibrary: the catalog entry's icon when it has one, else icon. colorFromLibrary: its colorHex as stored when it has one, else hex. Never the page theme, never the gradient form."
-  },
   "statusPageTile": {
     "entityIdPrefix": "status_page.",
     "icon": "list.bullet.rectangle.portrait",
@@ -2690,5 +2674,5 @@
     "extras": {},
     "duplicatesAllowed": true
   },
-  "libraryRetarget": "Retargeting an httpActionTile, macroTile or statusPageTile rewrites entityId to the prefix and the new entry's id. customLabel becomes the new entry's catalog name only while it equals one of the old entry's names now (oldTargetNames), or is empty or absent; with the old entry gone from the catalog only the empty or absent label follows. The old names are the entry's catalog name, and for an HTTP action on the phone also its URL fallback, which the add wrote as the label of an unnamed action before 3e, so a URL label is replaced too. The panel knows only the catalog name. Icon, color and every other key stay. Retargeting to the entry it already points at changes nothing."
+  "libraryRetarget": "Retargeting an httpActionTile or statusPageTile rewrites entityId to the prefix and the new entry's id. customLabel becomes the new entry's catalog name only while it equals one of the old entry's names now (oldTargetNames), or is empty or absent; with the old entry gone from the catalog only the empty or absent label follows. The old names are the entry's catalog name, and for an HTTP action on the phone also its URL fallback, which the add wrote as the label of an unnamed action before 3e, so a URL label is replaced too. The panel knows only the catalog name. Icon, color and every other key stay. Retargeting to the entry it already points at changes nothing."
 }

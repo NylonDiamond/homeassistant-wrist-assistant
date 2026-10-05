@@ -652,6 +652,7 @@ describe("refusals return the document as given", () => {
     expect(setWatchTileSingleTap(doc, PAGE, T, "bogus")).toBe(doc);
     // A library action only on its own kind, where it needs no pick.
     expect(setWatchTileSingleTap(doc, PAGE, T, "httpAction")).toBe(doc);
+    // runMacro, stored before macros were removed, is offered nowhere.
     expect(setWatchTileSingleTap(doc, PAGE, T, "runMacro")).toBe(doc);
     const http = edits(tileOf({ entityId: "http_action.C3A0E000-0000-4000-8000-000000000070" }));
     expect(http.read(setWatchTileSingleTap(http.doc, PAGE, http.id, "httpAction")).singleTapAction).toBe("httpAction");
@@ -995,9 +996,10 @@ describe("readers follow the table", () => {
     const http = watchSingleTapSettings(reader("http_action.C3A0E000-0000-4000-8000-000000000070", { singleTapAction: "httpAction" }));
     expect(http).toMatchObject({ storedNotOffered: false, resolved: "httpAction", absent: "httpAction" });
     expect(http.offered.map((c) => c.value)).toEqual(["httpAction", "none"]);
-    // The table's Run Macro, stored by an older phone, is never offered.
+    // runMacro, stored before macros were removed, is shown as removed and
+    // never offered.
     const slides = watchHoldSlideSettings(reader("light.desk_lamp", { holdSlideActions: ["right", "runMacro", "up", "teleport"] }));
-    expect(slides.directions[3]).toMatchObject({ stored: "runMacro", storedNotOffered: true, resolved: "none" });
+    expect(slides.directions[3]).toMatchObject({ stored: "runMacro", storedNotOffered: true, resolved: "none", storedLabel: "Macro (Removed)" });
     expect(slides.directions[0]).toMatchObject({ stored: "teleport", storedNotOffered: true, resolvedLabel: "Sync Needed" });
     expect(slides.anyStored).toBe(true);
   });

@@ -139,6 +139,8 @@ interface MenuKeysTable {
   labels: Record<string, Record<string, string>>;
   types: Record<string, { swift: string; keys: Record<string, MenuKeySpec> }>;
   domains: MenuDomain[];
+  // "macro" is kept for old documents: a stored macro tile's own menu still
+  // reads the HTTP actions list.
   domainAliases: Record<string, string>;
   style: { quickAction: MenuStyleField[]; pageSwitcher: MenuStyleField[] };
 }

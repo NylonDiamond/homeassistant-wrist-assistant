@@ -388,7 +388,7 @@ export function watchHoldSlideMenus(tile: WatchPageTile, catalog?: WatchCatalog)
     const defaultLabel = absent.directions[i]!.resolvedLabel;
     const options: WatchMenuOption[] = [{ value: WATCH_DEFAULT_CHOICE, label: `Default (${defaultLabel})` }];
     // A library action needs a catalog entry: Run HTTP Action is offered
-    // only with an action to run, and the table's other one never.
+    // only with an action to run.
     const offered = d.offered.filter((c) => !isWatchLibraryAction(c.value) || (c.value === "httpAction" && actions.length > 0));
     const none = offered.filter((c) => c.value === "none");
     let selected = d.stored ?? WATCH_DEFAULT_CHOICE;

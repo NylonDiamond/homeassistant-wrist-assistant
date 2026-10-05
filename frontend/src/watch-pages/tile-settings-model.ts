@@ -184,9 +184,8 @@ export function watchTapActionLabel(entry: WatchTileKindEntry, action: string): 
 }
 
 /** Whether an action needs a library entry when it is a hold and slide
- * value (`libraryActionsMeaning`): Run HTTP Action, and the table's Run
- * Macro, which is never offered. As the single tap of its own tile kind it
- * needs nothing: the target is the tile's `entityId`. */
+ * value (`libraryActionsMeaning`): Run HTTP Action. As the single tap of its
+ * own tile kind it needs nothing: the target is the tile's `entityId`. */
 export function isWatchLibraryAction(action: string): boolean {
   return LIBRARY_ACTIONS.has(action);
 }

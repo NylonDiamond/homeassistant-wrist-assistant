@@ -112,12 +112,12 @@
     },
     {
       "raw": "runMacro",
-      "label": "Run Macro"
+      "label": "Macro (Removed)"
     }
   ],
   "unknownActionLabel": "Sync Needed",
-  "libraryActions": ["httpAction", "runMacro"],
-  "libraryActionsMeaning": "As a hold and slide value, httpAction needs an entry of the catalog's httpActions: the direction's holdSlideHTTPActionTargets value is that entry's id. runMacro is never offered in hold and slide. As the single tap of its own tile kind (httpAction on http_action, runMacro on macro) neither needs anything: the target is the tile's entityId.",
+  "libraryActions": ["httpAction"],
+  "libraryActionsMeaning": "As a hold and slide value, httpAction needs an entry of the catalog's httpActions: the direction's holdSlideHTTPActionTargets value is that entry's id. As the single tap of its own tile kind (http_action) it needs nothing: the target is the tile's entityId. runMacro is no library action: it is in actions only so a value stored before macros were removed still reads, and no kind offers it.",
   "directions": ["up", "down", "left", "right"],
   "kinds": {
     "*": {
@@ -799,24 +799,6 @@
         "openControl": "Open Lock Controls",
         "lockEntity": "Lock",
         "unlockEntity": "Unlock",
-        "none": "None",
-        "triggerEntity": "Trigger Entity",
-        "httpAction": "Run HTTP Action"
-      }
-    },
-    "macro": {
-      "tapPicker": true,
-      "holdSlidePicker": true,
-      "tapActions": ["runMacro", "none"],
-      "defaultTap": "runMacro",
-      "absentTap": "runMacro",
-      "holdSlideActions": ["triggerEntity", "httpAction", "none"],
-      "holdSlideDefaults": {},
-      "defaultRequiresConfirmation": false,
-      "dimWhenOff": false,
-      "skipConditions": false,
-      "labels": {
-        "runMacro": "Run Macro",
         "none": "None",
         "triggerEntity": "Trigger Entity",
         "httpAction": "Run HTTP Action"

@@ -2147,7 +2147,7 @@
       "show_page": "show_page.<page id>, shows that page on top of the current one.",
       "status_page": "status_page.<status page id>, opens a status page kept on the phone.",
       "http_action": "http_action.<action id>, fires an HTTP action kept on the phone.",
-      "macro": "macro.<macro id>, runs a macro kept on the phone.",
+      "macro": "macro.<macro id>, a tile from before macros were removed (2026-10-05). It is kept as stored and runs nothing; nothing adds one.",
       "multicam": "multicam.<UUID>, cameras listed in cameraGroupIds.",
       "music_hub": "music_hub.<UUID>, speakers listed in musicHubSpeakerIds.",
       "point_control": "point_control.<UUID>.",

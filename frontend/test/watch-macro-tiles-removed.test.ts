@@ -3,7 +3,8 @@
 // its keys (`macroCloseMode`, `macroRunSilently`, `autoCloseMacroRun`). The
 // panel keeps such a tile as stored: it loads, it draws as a tile the panel
 // does not know, its settings say why and offer nothing, and a save sends it
-// back unchanged.
+// back unchanged. A `runMacro` value stored in a tap or a hold and slide
+// direction is kept too, read as removed and offered nowhere.
 
 import { nothing } from "lit";
 import { describe, expect, it } from "vitest";
@@ -27,7 +28,18 @@ import {
 } from "../src/watch-pages/model.js";
 import { renderWatchTileFace, watchPreviewTileLabel } from "../src/watch-pages/preview.js";
 import { resolveSmartPagesBeforeSave } from "../src/watch-pages/smart-model.js";
-import { scrubWatchOrphanTriggers, setWatchTileLabel } from "../src/watch-pages/tile-settings-model.js";
+import {
+  isWatchLibraryAction,
+  readWatchSlideMap,
+  scrubWatchOrphanTriggers,
+  setWatchTileHoldSlide,
+  setWatchTileLabel,
+  watchHoldSlideSettings,
+} from "../src/watch-pages/tile-settings-model.js";
+import tileActions from "../src/watch-pages/tile-actions.json";
+import tileDefaults from "../src/watch-pages/tile-defaults.json";
+import menuKeys from "../src/watch-menus/menu-keys.json";
+import { watchMenuDomain } from "../src/watch-menus/model.js";
 import { watchTileSettingsSections } from "../src/watch-pages/tile-settings-options.js";
 import { renderTileName, renderTileSettings } from "../src/watch-pages/tile-settings.js";
 
@@ -147,5 +159,56 @@ describe("a save of a page that holds a macro tile", () => {
     const back = structuredClone(sent!);
     (tileOf(back, LIGHT) as Record<string, unknown>).customLabel = tileOf(load(), LIGHT).customLabel;
     expect(JSON.stringify(back)).toBe(JSON.stringify(load()));
+  });
+});
+
+describe("a stored runMacro value", () => {
+  const HOLD_BYTES = readFileSync(join(__dirname, "fixtures-pages", "03-hold-and-slide.json"), "utf8");
+  const HOLD_PAGE = "5A17E000-0000-4000-8000-000000000005";
+  const PORCH = "5A17E000-0000-4000-8000-000000000194";
+  const holdDoc = () => JSON.parse(HOLD_BYTES) as WatchPagesDocument;
+  const porch = (document: WatchPagesDocument) =>
+    (findWatchPage(document, HOLD_PAGE)!.items as WatchPageTile[]).find((t) => t.id === PORCH)!;
+
+  it("is in the fixture on the right of an automation tile", () => {
+    expect(readWatchSlideMap(porch(holdDoc()).holdSlideActions)?.get("right")).toBe("runMacro");
+  });
+
+  it("reads as removed, and no table offers it or anything else for macros", () => {
+    const right = watchHoldSlideSettings(porch(holdDoc())).directions[3]!;
+    expect(right).toMatchObject({ direction: "right", stored: "runMacro", storedNotOffered: true, storedLabel: "Macro (Removed)" });
+    expect(right.offered.map((c) => c.value)).not.toContain("runMacro");
+    expect(isWatchLibraryAction("runMacro")).toBe(false);
+    expect(tileActions.libraryActions).toEqual(["httpAction"]);
+    expect(Object.keys(tileActions.kinds)).not.toContain("macro");
+    for (const [kind, entry] of Object.entries(tileActions.kinds)) {
+      expect(entry.tapActions, kind).not.toContain("runMacro");
+      expect(entry.holdSlideActions, kind).not.toContain("runMacro");
+    }
+    // The action stays in the list of every stored value, so it decodes.
+    expect(tileActions.actions.map((a) => a.raw)).toContain("runMacro");
+    expect(Object.keys(tileDefaults.domains)).not.toContain("macro");
+    expect(Object.keys(tileDefaults)).not.toContain("macroTile");
+  });
+
+  it("stays as stored when another direction of its tile is edited", () => {
+    const next = setWatchTileHoldSlide(holdDoc(), HOLD_PAGE, PORCH, "up", "toggle");
+    const map = readWatchSlideMap(porch(next).holdSlideActions)!;
+    expect(map.get("up")).toBe("toggle");
+    expect(map.get("right")).toBe("runMacro");
+  });
+
+  it("cannot be written again", () => {
+    const doc = holdDoc();
+    expect(setWatchTileHoldSlide(doc, HOLD_PAGE, PORCH, "left", "runMacro")).toBe(doc);
+  });
+});
+
+describe("a menu of a stored macro tile", () => {
+  // Kept for old documents: a macro tile's own menu, keyed by its entity id,
+  // still reads the HTTP actions list, as the watch does.
+  it("reads the HTTP actions list through the macro alias", () => {
+    expect(menuKeys.domainAliases).toMatchObject({ macro: "http_action" });
+    expect(watchMenuDomain("macro")?.slotKey).toBe("httpActionSlots");
   });
 });

@@ -792,8 +792,8 @@ export function watchLibraryEntityId(kind: WatchLibraryAddKind, id: unknown): st
 }
 
 /**
- * The icon and color a library tile of this kind gets (`libraryStyle`): the
- * table's fixed icon and color, never the page theme and never the gradient
+ * The icon and color a library tile of this kind gets: the table's fixed
+ * icon and color, never the page theme and never the gradient
  * form. The add writes these.
  */
 export function watchLibraryTileLook(kind: WatchLibraryAddKind): { icon: string; color: string } {
