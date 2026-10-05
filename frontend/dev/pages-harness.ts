@@ -22,6 +22,7 @@
 
 import "../src/watch-pages/page-editor.js";
 import "../src/watch-menus/menu-editor.js";
+import "../src/watch-rooms/rooms-editor.js";
 import type { HassEntityState, HassLike, OwnerSummary } from "../src/ha-api.js";
 // The phone's menus as the app's tests write them, for `?menus`.
 import menusConfigured from "../test/fixtures-menus/02-configured.json";
@@ -67,6 +68,9 @@ const CMD = {
   render: "wrist_assistant/complications/render_values",
   configEntries: "config_entries/get",
   cloudStatus: "cloud/status",
+  // Rooms (`?rooms`): the area registry and the room sensor's states.
+  areas: "config/area_registry/list",
+  historyPeriod: "history/history_during_period",
 } as const;
 
 /** What a refusal rejects with: the `error` part of Home Assistant's result
@@ -610,6 +614,8 @@ function seedStore(): void {
     roomQuickJumpSourceEntityId: "sensor.alex_room",
     roomQuickJumpFallbackPageId: home ?? "",
     roomQuickJumpMappings: { living_room: living ?? "" },
+    // One point control target, for the Rooms editor (`?rooms`).
+    pointControlRoomMappingsJSON: "{\"living room\":[{\"entityId\":\"media_player.living_room_tv\",\"centerHeading\":90,\"label\":\"TV\"}]}",
     // The Camera task's "Default (On/30s)" words come from these (part 3f).
     cameraRefreshOnOpen: true,
     cameraRefreshOnOpenDebounce: "30s",
@@ -1059,7 +1065,7 @@ let shownWatchId: string | undefined;
  * top. */
 const CONNECTION_LOST = { type: "result", success: false, error: { code: 3, message: "Connection lost" } };
 
-type FieldType = "str" | "int" | "dict";
+type FieldType = "str" | "int" | "dict" | "list" | "bool";
 
 /** Each command's voluptuous schema, `type` and `id` aside. Extra keys are
  * refused, as `BASE_COMMAND_MESSAGE_SCHEMA` refuses them. */
@@ -1074,6 +1080,11 @@ const SCHEMAS: Record<string, { fields: Record<string, FieldType>; admin: boolea
   [CMD.render]: { fields: { templates: "dict" }, admin: true },
   [CMD.configEntries]: { fields: { domain: "str" }, admin: true },
   [CMD.cloudStatus]: { fields: {}, admin: false },
+  [CMD.areas]: { fields: {}, admin: false },
+  [CMD.historyPeriod]: {
+    fields: { start_time: "str", entity_ids: "list", minimal_response: "bool", no_attributes: "bool", significant_changes_only: "bool" },
+    admin: false,
+  },
 };
 
 function checkMessage(message: Json): void {
@@ -1088,7 +1099,8 @@ function checkMessage(message: Json): void {
   for (const [key, want] of Object.entries(schema.fields)) {
     if (!(key in message)) fail("invalid_format", `Message incorrectly formatted: required key not provided @ data['${key}']`);
     const value = message[key];
-    const ok = want === "str" ? typeof value === "string" : want === "int" ? isInt(value) : isObject(value);
+    const ok = want === "str" ? typeof value === "string" : want === "int" ? isInt(value)
+      : want === "list" ? Array.isArray(value) : want === "bool" ? typeof value === "boolean" : isObject(value);
     if (!ok) fail("invalid_format", `Message incorrectly formatted: expected ${want} for dictionary value @ data['${key}']`);
   }
   if (schema.admin && !admin) fail("unauthorized", "Unauthorized");
@@ -1150,6 +1162,28 @@ function answer(message: Json): unknown {
         : [];
     case CMD.cloudStatus:
       return { logged_in: true, cloud: "connected", http_use_ssl: false };
+    case CMD.areas:
+      // The registry's areas, the living room with an alias.
+      return Object.values(registries.areas).map((a) => ({
+        area_id: a.area_id, name: a.name, aliases: a.area_id === "living_room" ? ["Lounge"] : [],
+      }));
+    case CMD.historyPeriod: {
+      // Alex's room sensor moved round the house today; nothing else has
+      // any history here. Compressed, as `minimal_response` answers.
+      const now = Date.now() / 1000;
+      const out: Json = {};
+      for (const id of message.entity_ids as string[]) {
+        if (id !== "sensor.alex_room") continue;
+        out[id] = [
+          { s: "Kitchen", lu: now - 6 * 3600 },
+          { s: "unavailable", lu: now - 5 * 3600 },
+          { s: "bedroom", lu: now - 4 * 3600 },
+          { s: "Office", lu: now - 2 * 3600 },
+          { s: "living_room", lu: now - 20 * 60 },
+        ];
+      }
+      return out;
+    }
     default:
       // A type with a schema but no answer here: a gap in the harness.
       return fail("unknown_command", "Unknown command.");
@@ -1308,18 +1342,20 @@ const noIcons = new URLSearchParams(location.search).has("noicons");
 const icons = new StandInIcons([...iconNamesIn(pageFixtures), ...SPECIAL_SYMBOLS]);
 window.setTimeout(() => {
   icons.arrive();
-  if (editor) editor.iconsTick++;
+  if (editor && "iconsTick" in editor) editor.iconsTick++;
 }, 600);
 
 // ── the page and the strip ───────────────────────────────────────────────
 
 const frame = document.getElementById("frame") as HTMLElement;
 const strip = document.getElementById("strip") as HTMLElement;
-let editor: HTMLElementTagNameMap["wa-page-editor"] | HTMLElementTagNameMap["wa-menu-editor"] | undefined;
+let editor: HTMLElementTagNameMap["wa-page-editor"] | HTMLElementTagNameMap["wa-menu-editor"] | HTMLElementTagNameMap["wa-rooms-editor"] | undefined;
 
 /** `pages-harness.html?menus` mounts the menu editor in place of the page
  * editor, on the same store. */
 const menusMode = new URLSearchParams(location.search).has("menus");
+/** `pages-harness.html?rooms` mounts the Rooms editor, on the same store. */
+const roomsMode = new URLSearchParams(location.search).has("rooms");
 
 interface Prefs { dark: boolean; narrow: boolean; width: string }
 const prefs: Prefs = { dark: false, narrow: false, width: "full" };
@@ -1349,6 +1385,16 @@ function mount(): void {
     menus.icons = noIcons ? undefined : icons;
     frame.append(menus);
     editor = menus;
+    return;
+  }
+  if (roomsMode) {
+    const rooms = document.createElement("wa-rooms-editor");
+    rooms.hass = makeHass();
+    rooms.owners = OWNERS;
+    rooms.ownerId = undefined;
+    rooms.narrow = prefs.narrow;
+    frame.append(rooms);
+    editor = rooms;
     return;
   }
   const el = document.createElement("wa-page-editor");
