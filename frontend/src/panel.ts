@@ -8672,15 +8672,18 @@ export class WristAssistantPanel extends LitElement {
         <span class="name"><b>Bezel</b><small>${bezel}</small></span>
       </div>
       <div class="corner-main">
-        <div class="cm-head"><b>Inside the corner</b><span>The watch shows one of these, never both.</span></div>
-        <div class="cm-seg" role="radiogroup" aria-label="Inside the corner">
-          <button type="button" role="radio" class=${curved ? "on" : ""} aria-checked=${curved ? "true" : "false"} ?disabled=${!edit}
-            title="Big text the watch bends along the corner, like the Weather corner"
-            @click=${() => { if (!curved) this.addCurvedText(); }}><b>Curved text</b><small>Big text along the edge</small></button>
-          <button type="button" role="radio" class=${curved ? "" : "on"} aria-checked=${curved ? "false" : "true"} ?disabled=${!edit}
-            title="A small round area you fill with layers, like every other shape"
-            @click=${() => { if (curved) this.removeCurvedText(); }}><b>Layers</b><small>Anything, in a small circle</small></button>
+        <div class="cm-row">
+          <span class="cm-label">Inside the corner</span>
+          <div class="seg wide" role="radiogroup" aria-label="Inside the corner">
+            <button type="button" role="radio" class=${curved ? "on" : ""} aria-checked=${curved ? "true" : "false"} ?disabled=${!edit}
+              title="Big text the watch bends along the edge, like the Weather corner"
+              @click=${() => { if (!curved) this.addCurvedText(); }}>Curved text</button>
+            <button type="button" role="radio" class=${curved ? "" : "on"} aria-checked=${curved ? "false" : "true"} ?disabled=${!edit}
+              title="A small circle you fill with layers, like every other shape"
+              @click=${() => { if (curved) this.removeCurvedText(); }}>Layers</button>
+          </div>
         </div>
+        <div class="cm-note">Pick one. The watch shows curved text or layers, never both.</div>
       </div>
       ${curved ? html`<div class="layer ${shown === "cornerText" ? "hl" : ""}" style=${`--k:${SECTION_COLOR.content}`} tabindex="0"
         title="Big text the watch bends along the corner, in place of the layers. Click to edit it."

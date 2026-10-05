@@ -279,23 +279,11 @@ const columnsRun = css`
     .corner-set { flex: none; display: flex; flex-direction: column; gap: 4px; padding: 4px 10px 0; }
     /* What fills the inside of a corner: Curved text or Layers, a two-part
        toggle under the Bezel row, since the watch shows one and never both. */
-    .corner-main { display: flex; flex-direction: column; gap: 6px; padding: 8px 2px 4px; }
-    .corner-main .cm-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; }
-    .corner-main .cm-head b { font-size: 12px; font-weight: 600; color: var(--wa-ink); }
-    .corner-main .cm-head span { font-size: 11px; color: var(--wa-muted); }
-    .corner-main .cm-seg { display: flex; gap: 4px; padding: 3px; border-radius: 10px; background: var(--wa-card); border: 1px solid var(--wa-line-strong); }
-    .corner-main .cm-seg button {
-      flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 6px 10px;
-      border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--wa-muted);
-      font: inherit; text-align: left; cursor: pointer;
-    }
-    .corner-main .cm-seg button b { font-size: 13px; font-weight: 600; }
-    .corner-main .cm-seg button small { font-size: 11px; font-weight: 400; }
-    .corner-main .cm-seg button:hover:not(:disabled):not(.on) { background: color-mix(in srgb, var(--wa-ink) 8%, transparent); color: var(--wa-ink); }
-    .corner-main .cm-seg button:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    .corner-main .cm-seg button:disabled { opacity: .5; cursor: default; }
-    .corner-main .cm-seg button.on { background: var(--wa-on-bg); border-color: var(--wa-on-bg); color: var(--wa-on-ink); cursor: default; }
-    .corner-main .cm-seg button.on small { opacity: .85; }
+    .corner-main { display: flex; flex-direction: column; gap: 3px; padding: 6px 4px 2px; }
+    .corner-main .cm-row { display: flex; align-items: center; gap: 10px; }
+    .corner-main .cm-label { flex: none; font-size: 12px; color: var(--wa-muted); }
+    .corner-main .seg.wide { flex: 1 1 auto; min-width: 0; }
+    .corner-main .cm-note { font-size: 11px; color: var(--wa-muted); }
     .corner-set .skip-note { font-size: 11px; color: var(--wa-muted); padding: 2px 4px 0; text-align: center; }
     .corner-set .layer .grip { cursor: default; }
     .corner-set .thumb svg { width: 100%; height: 100%; display: block; }
