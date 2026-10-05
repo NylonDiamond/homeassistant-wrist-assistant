@@ -9857,6 +9857,13 @@ export class WristAssistantPanel extends LitElement {
       else if (hitId === undefined) this.inspect = { kind: "general" };
       return;
     }
+    // A corner in curved text mode draws no layers: the whole face is its
+    // Corner content. A press anywhere on it does what a click on that row
+    // does, and opens the card that edits the text and the bezel.
+    if (family === "corner" && family === this.activeFamily && cornerMode(this.draft?.config.perFamily.corner) === "curved") {
+      this.openCornerContent();
+      return;
+    }
     if (!this.draft || !this.canEdit) return;
     // Lookups read what the canvas is actually drawing, which while a row is
     // being designed is the row rather than the document. Every write still
@@ -18714,7 +18721,7 @@ export class WristAssistantPanel extends LitElement {
         ? html`A drag moves the whole group <b>${g.name}</b>; pull a corner or side to resize this layer. Arrow keys nudge the group.`
         : html`Drag it, or pull a corner or side. Arrow keys nudge it.${this.snapGrid && this.snapLayers ? " It snaps to the grid and to the other layers. Hold Alt to drag freely." : this.snapGrid ? " It snaps to the grid. Hold Alt to drag freely." : this.snapLayers ? " It snaps to the other layers. Hold Alt to drag freely." : " Hold Alt while dragging to snap to the grid."}`;
     } else if (family === "corner" && cfg.perFamily.corner?.curvedText !== undefined) {
-      tail = `Big curved text draws in place of layers. Edit it in Corner content ${this.stackedLayout() ? "below" : "on the right"}.`;
+      tail = `Big curved text draws in place of layers. Click it to edit it in Corner content ${this.stackedLayout() ? "below" : "on the right"}.`;
     } else if (cfg.elements.length === 0) {
       // Nothing to click yet. With edit rights the first-run tiles under the
       // face say what to do instead, so the hint stays out of their way.
@@ -19459,6 +19466,8 @@ export class WristAssistantPanel extends LitElement {
       }
     } else if (this.tapFocus) {
       tail = html`<button @click=${() => this.leaveTapFocus()} title="Edit the whole background">Background</button><span class="sep">›</span>${here(SECTION_COLOR.tap, "Tap", "Tap")}`;
+    } else if (this.activeFamily === "corner" && this.pinnedPick === "corner") {
+      tail = here(SECTION_COLOR.content, "Shape", "Corner content");
     } else {
       tail = here(SECTION_COLOR.place, "Shape", "Background");
     }
