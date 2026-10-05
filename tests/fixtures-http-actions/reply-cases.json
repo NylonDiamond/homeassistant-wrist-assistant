@@ -1,0 +1,886 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "name": "status code",
+      "config": {
+        "source": "statusCode"
+      },
+      "status": 204,
+      "headers": {},
+      "bodyBase64": "",
+      "expect": {
+        "value": "204",
+        "snippet": ""
+      }
+    },
+    {
+      "name": "status code with a unit",
+      "config": {
+        "source": "statusCode",
+        "unit": " code"
+      },
+      "status": 503,
+      "headers": {},
+      "bodyBase64": "U2VydmljZSBkb3du",
+      "expect": {
+        "value": "503 code",
+        "snippet": "Service down"
+      }
+    },
+    {
+      "name": "body text",
+      "config": {
+        "source": "bodyText"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "ICBHYXJhZ2UKCiBpcyAgIG9wZW4gCQ==",
+      "expect": {
+        "value": "Garage is open",
+        "snippet": "Garage is open"
+      }
+    },
+    {
+      "name": "body text with a unit",
+      "config": {
+        "source": "bodyText",
+        "unit": "!"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "b2s=",
+      "expect": {
+        "value": "ok!",
+        "snippet": "ok"
+      }
+    },
+    {
+      "name": "body text of an empty body",
+      "config": {
+        "source": "bodyText"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "",
+      "expect": {
+        "value": null,
+        "snippet": ""
+      }
+    },
+    {
+      "name": "body text of a binary body",
+      "config": {
+        "source": "bodyText"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "iVBORw0KGgoAAA==",
+      "expect": {
+        "value": null,
+        "snippet": ""
+      }
+    },
+    {
+      "name": "json nested path",
+      "config": {
+        "jsonPath": "result.price",
+        "source": "jsonField",
+        "unit": "$"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eyJyZXN1bHQiOnsicHJpY2UiOjEyLjUsIm5hbWUiOiJEZW4ifSwiZGF0YSI6W3sidGVtcCI6MjF9LHsidGVtcCI6MjIuNzV9XSwib2siOnRydWUsIm5vbmUiOm51bGx9",
+      "expect": {
+        "value": "12.5$",
+        "snippet": "{\"result\":{\"price\":12.5,\"name\":\"Den\"},\"data\":[{\"temp\":21},{\"temp\":22.75}],\"ok\":true,\"none\":null}"
+      }
+    },
+    {
+      "name": "json array index path",
+      "config": {
+        "jsonPath": "data.1.temp",
+        "source": "jsonField",
+        "unit": "°"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eyJyZXN1bHQiOnsicHJpY2UiOjEyLjUsIm5hbWUiOiJEZW4ifSwiZGF0YSI6W3sidGVtcCI6MjF9LHsidGVtcCI6MjIuNzV9XSwib2siOnRydWUsIm5vbmUiOm51bGx9",
+      "expect": {
+        "value": "22.75°",
+        "snippet": "{\"result\":{\"price\":12.5,\"name\":\"Den\"},\"data\":[{\"temp\":21},{\"temp\":22.75}],\"ok\":true,\"none\":null}"
+      }
+    },
+    {
+      "name": "json array index out of range",
+      "config": {
+        "jsonPath": "data.2.temp",
+        "source": "jsonField"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eyJyZXN1bHQiOnsicHJpY2UiOjEyLjUsIm5hbWUiOiJEZW4ifSwiZGF0YSI6W3sidGVtcCI6MjF9LHsidGVtcCI6MjIuNzV9XSwib2siOnRydWUsIm5vbmUiOm51bGx9",
+      "expect": {
+        "value": null,
+        "snippet": "{\"result\":{\"price\":12.5,\"name\":\"Den\"},\"data\":[{\"temp\":21},{\"temp\":22.75}],\"ok\":true,\"none\":null}"
+      }
+    },
+    {
+      "name": "json negative index",
+      "config": {
+        "jsonPath": "data.-1.temp",
+        "source": "jsonField"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eyJyZXN1bHQiOnsicHJpY2UiOjEyLjUsIm5hbWUiOiJEZW4ifSwiZGF0YSI6W3sidGVtcCI6MjF9LHsidGVtcCI6MjIuNzV9XSwib2siOnRydWUsIm5vbmUiOm51bGx9",
+      "expect": {
+        "value": null,
+        "snippet": "{\"result\":{\"price\":12.5,\"name\":\"Den\"},\"data\":[{\"temp\":21},{\"temp\":22.75}],\"ok\":true,\"none\":null}"
+      }
+    },
+    {
+      "name": "json missing key",
+      "config": {
+        "jsonPath": "result.cost",
+        "source": "jsonField"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eyJyZXN1bHQiOnsicHJpY2UiOjEyLjUsIm5hbWUiOiJEZW4ifSwiZGF0YSI6W3sidGVtcCI6MjF9LHsidGVtcCI6MjIuNzV9XSwib2siOnRydWUsIm5vbmUiOm51bGx9",
+      "expect": {
+        "value": null,
+        "snippet": "{\"result\":{\"price\":12.5,\"name\":\"Den\"},\"data\":[{\"temp\":21},{\"temp\":22.75}],\"ok\":true,\"none\":null}"
+      }
+    },
+    {
+      "name": "json path through a leaf",
+      "config": {
+        "jsonPath": "result.name.first",
+        "source": "jsonField"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eyJyZXN1bHQiOnsicHJpY2UiOjEyLjUsIm5hbWUiOiJEZW4ifSwiZGF0YSI6W3sidGVtcCI6MjF9LHsidGVtcCI6MjIuNzV9XSwib2siOnRydWUsIm5vbmUiOm51bGx9",
+      "expect": {
+        "value": null,
+        "snippet": "{\"result\":{\"price\":12.5,\"name\":\"Den\"},\"data\":[{\"temp\":21},{\"temp\":22.75}],\"ok\":true,\"none\":null}"
+      }
+    },
+    {
+      "name": "json boolean",
+      "config": {
+        "jsonPath": "ok",
+        "source": "jsonField"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eyJyZXN1bHQiOnsicHJpY2UiOjEyLjUsIm5hbWUiOiJEZW4ifSwiZGF0YSI6W3sidGVtcCI6MjF9LHsidGVtcCI6MjIuNzV9XSwib2siOnRydWUsIm5vbmUiOm51bGx9",
+      "expect": {
+        "value": "true",
+        "snippet": "{\"result\":{\"price\":12.5,\"name\":\"Den\"},\"data\":[{\"temp\":21},{\"temp\":22.75}],\"ok\":true,\"none\":null}"
+      }
+    },
+    {
+      "name": "json null",
+      "config": {
+        "jsonPath": "none",
+        "source": "jsonField"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eyJyZXN1bHQiOnsicHJpY2UiOjEyLjUsIm5hbWUiOiJEZW4ifSwiZGF0YSI6W3sidGVtcCI6MjF9LHsidGVtcCI6MjIuNzV9XSwib2siOnRydWUsIm5vbmUiOm51bGx9",
+      "expect": {
+        "value": null,
+        "snippet": "{\"result\":{\"price\":12.5,\"name\":\"Den\"},\"data\":[{\"temp\":21},{\"temp\":22.75}],\"ok\":true,\"none\":null}"
+      }
+    },
+    {
+      "name": "json container",
+      "config": {
+        "jsonPath": "result",
+        "source": "jsonField"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eyJyZXN1bHQiOnsicHJpY2UiOjEyLjUsIm5hbWUiOiJEZW4ifSwiZGF0YSI6W3sidGVtcCI6MjF9LHsidGVtcCI6MjIuNzV9XSwib2siOnRydWUsIm5vbmUiOm51bGx9",
+      "expect": {
+        "value": null,
+        "snippet": "{\"result\":{\"price\":12.5,\"name\":\"Den\"},\"data\":[{\"temp\":21},{\"temp\":22.75}],\"ok\":true,\"none\":null}"
+      }
+    },
+    {
+      "name": "json empty path on an object",
+      "config": {
+        "jsonPath": "",
+        "source": "jsonField"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eyJyZXN1bHQiOnsicHJpY2UiOjEyLjUsIm5hbWUiOiJEZW4ifSwiZGF0YSI6W3sidGVtcCI6MjF9LHsidGVtcCI6MjIuNzV9XSwib2siOnRydWUsIm5vbmUiOm51bGx9",
+      "expect": {
+        "value": null,
+        "snippet": "{\"result\":{\"price\":12.5,\"name\":\"Den\"},\"data\":[{\"temp\":21},{\"temp\":22.75}],\"ok\":true,\"none\":null}"
+      }
+    },
+    {
+      "name": "json bare number body",
+      "config": {
+        "jsonPath": "",
+        "source": "jsonField"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "NDI=",
+      "expect": {
+        "value": "42",
+        "snippet": "42"
+      }
+    },
+    {
+      "name": "json bare string body",
+      "config": {
+        "jsonPath": "",
+        "source": "jsonField",
+        "unit": " W"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "Im9uIg==",
+      "expect": {
+        "value": "on W",
+        "snippet": "\"on\""
+      }
+    },
+    {
+      "name": "json path padded with spaces",
+      "config": {
+        "jsonPath": "  result.name \n",
+        "source": "jsonField"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eyJyZXN1bHQiOnsicHJpY2UiOjEyLjUsIm5hbWUiOiJEZW4ifSwiZGF0YSI6W3sidGVtcCI6MjF9LHsidGVtcCI6MjIuNzV9XSwib2siOnRydWUsIm5vbmUiOm51bGx9",
+      "expect": {
+        "value": "Den",
+        "snippet": "{\"result\":{\"price\":12.5,\"name\":\"Den\"},\"data\":[{\"temp\":21},{\"temp\":22.75}],\"ok\":true,\"none\":null}"
+      }
+    },
+    {
+      "name": "json path with a doubled dot",
+      "config": {
+        "jsonPath": "result..name",
+        "source": "jsonField"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eyJyZXN1bHQiOnsicHJpY2UiOjEyLjUsIm5hbWUiOiJEZW4ifSwiZGF0YSI6W3sidGVtcCI6MjF9LHsidGVtcCI6MjIuNzV9XSwib2siOnRydWUsIm5vbmUiOm51bGx9",
+      "expect": {
+        "value": "Den",
+        "snippet": "{\"result\":{\"price\":12.5,\"name\":\"Den\"},\"data\":[{\"temp\":21},{\"temp\":22.75}],\"ok\":true,\"none\":null}"
+      }
+    },
+    {
+      "name": "json path with a space inside a segment",
+      "config": {
+        "jsonPath": "data. 0.temp",
+        "source": "jsonField"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eyJyZXN1bHQiOnsicHJpY2UiOjEyLjUsIm5hbWUiOiJEZW4ifSwiZGF0YSI6W3sidGVtcCI6MjF9LHsidGVtcCI6MjIuNzV9XSwib2siOnRydWUsIm5vbmUiOm51bGx9",
+      "expect": {
+        "value": null,
+        "snippet": "{\"result\":{\"price\":12.5,\"name\":\"Den\"},\"data\":[{\"temp\":21},{\"temp\":22.75}],\"ok\":true,\"none\":null}"
+      }
+    },
+    {
+      "name": "json integer key on an object",
+      "config": {
+        "jsonPath": "map.0",
+        "source": "jsonField"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eyJtYXAiOnsiMCI6Inplcm8ifX0=",
+      "expect": {
+        "value": "zero",
+        "snippet": "{\"map\":{\"0\":\"zero\"}}"
+      }
+    },
+    {
+      "name": "json whole float",
+      "config": {
+        "jsonPath": "v",
+        "source": "jsonField"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eyJ2IjoxLjB9",
+      "expect": {
+        "value": "1",
+        "snippet": "{\"v\":1.0}"
+      }
+    },
+    {
+      "name": "json small float",
+      "config": {
+        "jsonPath": "v",
+        "source": "jsonField"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eyJ2IjowLjF9",
+      "expect": {
+        "value": "0.1",
+        "snippet": "{\"v\":0.1}"
+      }
+    },
+    {
+      "name": "json float of many digits",
+      "config": {
+        "jsonPath": "v",
+        "source": "jsonField"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eyJ2IjoxMDQyMzEuMTIzNDU2Nzg5fQ==",
+      "expect": {
+        "value": "104231.123456789",
+        "snippet": "{\"v\":104231.123456789}"
+      }
+    },
+    {
+      "name": "json negative whole number",
+      "config": {
+        "jsonPath": "v",
+        "source": "jsonField"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eyJ2IjotN30=",
+      "expect": {
+        "value": "-7",
+        "snippet": "{\"v\":-7}"
+      }
+    },
+    {
+      "name": "json number at the 1e15 edge",
+      "config": {
+        "jsonPath": "v",
+        "source": "jsonField"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eyJ2IjoxZTE1fQ==",
+      "expect": {
+        "value": "1000000000000000.0",
+        "snippet": "{\"v\":1e15}"
+      }
+    },
+    {
+      "name": "json number below the 1e15 edge",
+      "config": {
+        "jsonPath": "v",
+        "source": "jsonField"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eyJ2Ijo5OTk5OTk5OTk5OTk5OTl9",
+      "expect": {
+        "value": "999999999999999",
+        "snippet": "{\"v\":999999999999999}"
+      }
+    },
+    {
+      "name": "json whole number between 2^53 and 1e16",
+      "config": {
+        "jsonPath": "v",
+        "source": "jsonField"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eyJ2Ijo5MTAwMDAwMDAwMDAwMDAwfQ==",
+      "expect": {
+        "value": "9.1e+15",
+        "snippet": "{\"v\":9100000000000000}"
+      }
+    },
+    {
+      "name": "json integer past double precision",
+      "config": {
+        "jsonPath": "v",
+        "source": "jsonField"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eyJ2IjoxMjM0NTY3ODkwMTIzNDU2Nzh9",
+      "expect": {
+        "value": "1.2345678901234568e+17",
+        "snippet": "{\"v\":123456789012345678}"
+      }
+    },
+    {
+      "name": "json tiny number",
+      "config": {
+        "jsonPath": "v",
+        "source": "jsonField"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eyJ2IjowLjAwMDAxfQ==",
+      "expect": {
+        "value": "1e-05",
+        "snippet": "{\"v\":0.00001}"
+      }
+    },
+    {
+      "name": "json exponent number",
+      "config": {
+        "jsonPath": "v",
+        "source": "jsonField"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eyJ2IjoyLjVlLTd9",
+      "expect": {
+        "value": "2.5e-07",
+        "snippet": "{\"v\":2.5e-7}"
+      }
+    },
+    {
+      "name": "json string with escapes",
+      "config": {
+        "jsonPath": "v",
+        "source": "jsonField"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eyJ2IjoiYVxuYiBcdTAwZTkifQ==",
+      "expect": {
+        "value": "a\nb é",
+        "snippet": "{\"v\":\"a\\nb \\u00e9\"}"
+      }
+    },
+    {
+      "name": "json body that is not json",
+      "config": {
+        "jsonPath": "a",
+        "source": "jsonField"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "PGh0bWw+YTwvaHRtbD4=",
+      "expect": {
+        "value": null,
+        "snippet": "<html>a</html>"
+      }
+    },
+    {
+      "name": "header exact name",
+      "config": {
+        "headerName": "ETag",
+        "source": "header"
+      },
+      "status": 200,
+      "headers": {
+        "ETag": "\"abc\"",
+        "Server": "x"
+      },
+      "bodyBase64": "e30=",
+      "expect": {
+        "value": "\"abc\"",
+        "snippet": "{}"
+      }
+    },
+    {
+      "name": "header in another case",
+      "config": {
+        "headerName": " etag ",
+        "source": "header",
+        "unit": " tag"
+      },
+      "status": 200,
+      "headers": {
+        "ETag": "\"abc\""
+      },
+      "bodyBase64": "e30=",
+      "expect": {
+        "value": "\"abc\" tag",
+        "snippet": "{}"
+      }
+    },
+    {
+      "name": "header missing",
+      "config": {
+        "headerName": "X-Remaining",
+        "source": "header"
+      },
+      "status": 200,
+      "headers": {
+        "ETag": "\"abc\""
+      },
+      "bodyBase64": "e30=",
+      "expect": {
+        "value": null,
+        "snippet": "{}"
+      }
+    },
+    {
+      "name": "header present and empty",
+      "config": {
+        "headerName": "X-Empty",
+        "source": "header",
+        "unit": "!"
+      },
+      "status": 200,
+      "headers": {
+        "X-Empty": ""
+      },
+      "bodyBase64": "e30=",
+      "expect": {
+        "value": "!",
+        "snippet": "{}"
+      }
+    },
+    {
+      "name": "header with no name",
+      "config": {
+        "headerName": "  ",
+        "source": "header"
+      },
+      "status": 200,
+      "headers": {
+        "ETag": "\"abc\""
+      },
+      "bodyBase64": "e30=",
+      "expect": {
+        "value": null,
+        "snippet": "{}"
+      }
+    },
+    {
+      "name": "regex with a group",
+      "config": {
+        "pattern": "temp=([0-9.]+)",
+        "source": "regex",
+        "unit": "°"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "c3RhdHVzIG9rIHRlbXA9NzIuNCBodW1pZGl0eT00MA==",
+      "expect": {
+        "value": "72.4°",
+        "snippet": "status ok temp=72.4 humidity=40"
+      }
+    },
+    {
+      "name": "regex without a group",
+      "config": {
+        "pattern": "[0-9.]+°",
+        "source": "regex"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "SXQgaXMgNzIuNMKwIG5vdw==",
+      "expect": {
+        "value": "72.4°",
+        "snippet": "It is 72.4° now"
+      }
+    },
+    {
+      "name": "regex with no match",
+      "config": {
+        "pattern": "temp=([0-9]+)",
+        "source": "regex"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "bm90aGluZyBoZXJl",
+      "expect": {
+        "value": null,
+        "snippet": "nothing here"
+      }
+    },
+    {
+      "name": "regex group that does not take part",
+      "config": {
+        "pattern": "(x)?y",
+        "source": "regex"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eQ==",
+      "expect": {
+        "value": null,
+        "snippet": "y"
+      }
+    },
+    {
+      "name": "regex dot crosses lines",
+      "config": {
+        "pattern": "<title>(.*?)</title>",
+        "source": "regex"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "PHRpdGxlPlR3bwpsaW5lczwvdGl0bGU+",
+      "expect": {
+        "value": "Two\nlines",
+        "snippet": "<title>Two lines</title>"
+      }
+    },
+    {
+      "name": "regex invalid pattern",
+      "config": {
+        "pattern": "([a-",
+        "source": "regex"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "YW55dGhpbmc=",
+      "expect": {
+        "value": null,
+        "snippet": "anything"
+      }
+    },
+    {
+      "name": "regex pattern padded with spaces",
+      "config": {
+        "pattern": "  temp=(\\d+)  ",
+        "source": "regex"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "dGVtcD01",
+      "expect": {
+        "value": "5",
+        "snippet": "temp=5"
+      }
+    },
+    {
+      "name": "regex blank pattern",
+      "config": {
+        "pattern": "   ",
+        "source": "regex"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "dGVtcD01",
+      "expect": {
+        "value": null,
+        "snippet": "temp=5"
+      }
+    },
+    {
+      "name": "regex on an empty body",
+      "config": {
+        "pattern": ".*",
+        "source": "regex"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "",
+      "expect": {
+        "value": null,
+        "snippet": ""
+      }
+    },
+    {
+      "name": "regex on a body with bad bytes",
+      "config": {
+        "pattern": "temp=(\\d+)",
+        "source": "regex"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "aGVsbG//IHdvcmxkIHRlbXA9NQ==",
+      "expect": {
+        "value": "5",
+        "snippet": ""
+      }
+    },
+    {
+      "name": "regex is case sensitive",
+      "config": {
+        "pattern": "TEMP=(\\d+)",
+        "source": "regex"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "dGVtcD01",
+      "expect": {
+        "value": null,
+        "snippet": "temp=5"
+      }
+    },
+    {
+      "name": "unit with a leading space",
+      "config": {
+        "jsonPath": "w",
+        "source": "jsonField",
+        "unit": " W"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eyJ3IjozNTB9",
+      "expect": {
+        "value": "350 W",
+        "snippet": "{\"w\":350}"
+      }
+    },
+    {
+      "name": "empty unit",
+      "config": {
+        "jsonPath": "w",
+        "source": "jsonField",
+        "unit": ""
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eyJ3IjozNTB9",
+      "expect": {
+        "value": "350",
+        "snippet": "{\"w\":350}"
+      }
+    },
+    {
+      "name": "no reply config",
+      "config": null,
+      "status": 201,
+      "headers": {},
+      "bodyBase64": "eyJpZCI6MX0=",
+      "expect": {
+        "value": null,
+        "snippet": "{\"id\":1}"
+      }
+    },
+    {
+      "name": "long body snippet",
+      "config": null,
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "d29yZCB3b3JkIHdvcmQgd29yZCB3b3JkIHdvcmQgd29yZCB3b3JkIHdvcmQgd29yZCB3b3JkIHdvcmQgd29yZCB3b3JkIHdvcmQgd29yZCB3b3JkIHdvcmQgd29yZCB3b3JkIHdvcmQgd29yZCB3b3JkIHdvcmQgd29yZCB3b3JkIHdvcmQgd29yZCB3b3JkIHdvcmQgd29yZCB3b3JkIHdvcmQgd29yZCB3b3JkIHdvcmQgd29yZCB3b3JkIHdvcmQgd29yZCBlbmQ=",
+      "expect": {
+        "value": null,
+        "snippet": "word word word word word word word word word word word word word word word word word word word word word word word word…"
+      }
+    },
+    {
+      "name": "snippet exactly 120 characters",
+      "config": null,
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4",
+      "expect": {
+        "value": null,
+        "snippet": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      }
+    },
+    {
+      "name": "snippet trims before the ellipsis",
+      "config": null,
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHggdGFpbA==",
+      "expect": {
+        "value": null,
+        "snippet": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…"
+      }
+    },
+    {
+      "name": "snippet counts combined characters",
+      "config": null,
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "ZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyBZcyB",
+      "expect": {
+        "value": null,
+        "snippet": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé…"
+      }
+    },
+    {
+      "name": "snippet counts emoji sequences",
+      "config": null,
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn8J+RqOKAjfCfkanigI3wn5Gn",
+      "expect": {
+        "value": null,
+        "snippet": "👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧👨‍👩‍"
+      }
+    },
+    {
+      "name": "snippet collapses unicode whitespace",
+      "config": null,
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "YcKgwqBi4oCDY+KAqGQNCgll",
+      "expect": {
+        "value": null,
+        "snippet": "a b c d e"
+      }
+    },
+    {
+      "name": "snippet keeps the first 2048 bytes",
+      "config": {
+        "source": "bodyText"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "YWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggYWJjZGVmZ2ggdGVtcD05",
+      "expect": {
+        "value": "abcdefgh abcdefgh abcdefgh abcdefgh abcdefgh abcdefgh abcdefgh abcdefgh abcdefgh abcdefgh abcdefgh abcdefgh abcdefgh abc…",
+        "snippet": "abcdefgh abcdefgh abcdefgh abcdefgh abcdefgh abcdefgh abcdefgh abcdefgh abcdefgh abcdefgh abcdefgh abcdefgh abcdefgh abc…"
+      }
+    },
+    {
+      "name": "snippet cut inside a character",
+      "config": {
+        "source": "bodyText"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYcOpIGFuZCBtb3Jl",
+      "expect": {
+        "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…",
+        "snippet": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…"
+      }
+    },
+    {
+      "name": "snippet drops trailing bad bytes",
+      "config": {
+        "source": "bodyText"
+      },
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "aGVsbG8gdGhlcmX//g==",
+      "expect": {
+        "value": "hello there",
+        "snippet": "hello there"
+      }
+    },
+    {
+      "name": "snippet of bad bytes in the middle",
+      "config": null,
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "aGVsbG//IHdvcmxkIHRlbXA9NQ==",
+      "expect": {
+        "value": null,
+        "snippet": ""
+      }
+    },
+    {
+      "name": "snippet of a body holding a replacement character",
+      "config": null,
+      "status": 200,
+      "headers": {},
+      "bodyBase64": "Ye+/vWI=",
+      "expect": {
+        "value": null,
+        "snippet": ""
+      }
+    }
+  ]
+}

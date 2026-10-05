@@ -1,0 +1,2688 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "name": "static get",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "url": "https://example.invalid/status",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "GET",
+        "url": "https://example.invalid/status",
+        "headers": [],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "static post with a json body",
+      "library": {
+        "actions": [
+          {
+            "body": "{\"on\":true}",
+            "bodyContentType": "json",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/hook",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/hook",
+        "headers": [["Content-Type", "application/json"]],
+        "bodyUTF8": "{\"on\":true}",
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "url variable escapes reserved characters",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "url": "https://example.invalid/search?q={{q}}",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "q",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "q": "a b&c=d/e?f#g%h+i:j@k,l;m'n(o)p*q!r$s"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "GET",
+        "url": "https://example.invalid/search?q=a%20b%26c%3Dd%2Fe%3Ff%23g%25h%2Bi%3Aj%40k%2Cl%3Bm%27n%28o%29p%2Aq%21r%24s",
+        "headers": [],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "url variable keeps unreserved characters",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "url": "https://example.invalid/search?q={{q}}",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "q",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "q": "AZaz09-._~"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "GET",
+        "url": "https://example.invalid/search?q=AZaz09-._~",
+        "headers": [],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "url variable with non-ASCII letters and digits",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "url": "https://example.invalid/search?q={{q}}",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "q",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "q": "José Ünïcode ² ٣ 漢字"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "GET",
+        "url": "https://example.invalid/search?q=Jos%C3%A9%20%C3%9Cn%C3%AFcode%20%C2%B2%20%D9%A3%20%E6%BC%A2%E5%AD%97",
+        "headers": [],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "url variable with emoji and symbols",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "url": "https://example.invalid/search?q={{q}}",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "q",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "q": "🙂 € ° ✓"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "GET",
+        "url": "https://example.invalid/search?q=%F0%9F%99%82%20%E2%82%AC%20%C2%B0%20%E2%9C%93",
+        "headers": [],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "url variable with a percent sign",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "url": "https://example.invalid/set?level={{level}}",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "level",
+                "kind": "number",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "level": "50%"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "GET",
+        "url": "https://example.invalid/set?level=50%25",
+        "headers": [],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "url variable in the path",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "url": "https://example.invalid/rooms/{{room}}/on",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "room",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "room": "living room/2"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "GET",
+        "url": "https://example.invalid/rooms/living%20room%2F2/on",
+        "headers": [],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "header value strips CR and LF",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "name": "X-Note",
+                "value": "{{note}}"
+              }
+            ],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/hook",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000003",
+                "key": "note",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "note": "line1\r\nX-Injected: yes\nend\r"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/hook",
+        "headers": [["X-Note", "line1X-Injected: yesend"]],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "variable in a header name",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "name": "X-{{h}}",
+                "value": "v"
+              }
+            ],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/hook",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000003",
+                "key": "h",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "h": "Name\r\n"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/hook",
+        "headers": [["X-Name", "v"]],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "json text value is escaped",
+      "library": {
+        "actions": [
+          {
+            "body": "{\"msg\":\"{{msg}}\"}",
+            "bodyContentType": "json",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/hook",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "msg",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "msg": "He said \"hi\" \\ back\n\tthen\u0001\u001f done"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/hook",
+        "headers": [["Content-Type", "application/json"]],
+        "bodyUTF8": "{\"msg\":\"He said \\\"hi\\\" \\\\ back\\n\\tthen\\u0001\\u001f done\"}",
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "json text value keeps non-ASCII and line separators raw",
+      "library": {
+        "actions": [
+          {
+            "body": "{\"msg\":\"{{msg}}\"}",
+            "bodyContentType": "json",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/hook",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "msg",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "msg": "naïve 🙂    </script>"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/hook",
+        "headers": [["Content-Type", "application/json"]],
+        "bodyUTF8": "{\"msg\":\"naïve 🙂    </script>\"}",
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "json number valid",
+      "library": {
+        "actions": [
+          {
+            "body": "{\"level\":{{level}}}",
+            "bodyContentType": "json",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/hook",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "level",
+                "kind": "number",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "level": "-42.5e3"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/hook",
+        "headers": [["Content-Type", "application/json"]],
+        "bodyUTF8": "{\"level\":-42.5e3}",
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "json number with spaces is trimmed",
+      "library": {
+        "actions": [
+          {
+            "body": "{\"level\":{{level}}}",
+            "bodyContentType": "json",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/hook",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "level",
+                "kind": "number",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "level": " 7 "
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/hook",
+        "headers": [["Content-Type", "application/json"]],
+        "bodyUTF8": "{\"level\":7}",
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "json number invalid is quoted",
+      "library": {
+        "actions": [
+          {
+            "body": "{\"level\":{{level}}}",
+            "bodyContentType": "json",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/hook",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "level",
+                "kind": "number",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "level": "12abc"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/hook",
+        "headers": [["Content-Type", "application/json"]],
+        "bodyUTF8": "{\"level\":\"12abc\"}",
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "json number with a leading plus is quoted",
+      "library": {
+        "actions": [
+          {
+            "body": "{\"level\":{{level}}}",
+            "bodyContentType": "json",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/hook",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "level",
+                "kind": "number",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "level": "+5"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/hook",
+        "headers": [["Content-Type", "application/json"]],
+        "bodyUTF8": "{\"level\":\"+5\"}",
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "json number with a leading zero is quoted",
+      "library": {
+        "actions": [
+          {
+            "body": "{\"level\":{{level}}}",
+            "bodyContentType": "json",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/hook",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "level",
+                "kind": "number",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "level": "01"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/hook",
+        "headers": [["Content-Type", "application/json"]],
+        "bodyUTF8": "{\"level\":\"01\"}",
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "json number quoted keeps the untrimmed value escaped",
+      "library": {
+        "actions": [
+          {
+            "body": "{\"level\":{{level}}}",
+            "bodyContentType": "json",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/hook",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "level",
+                "kind": "number",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "level": " \"NaN\"\n"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/hook",
+        "headers": [["Content-Type", "application/json"]],
+        "bodyUTF8": "{\"level\":\" \\\"NaN\\\"\\n\"}",
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "form value is percent-encoded",
+      "library": {
+        "actions": [
+          {
+            "body": "a={{a}}&b=fixed value",
+            "bodyContentType": "form",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/form",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "a",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "a": "x y&z=1/2+3"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/form",
+        "headers": [["Content-Type", "application/x-www-form-urlencoded"]],
+        "bodyUTF8": "a=x%20y%26z%3D1%2F2%2B3&b=fixed value",
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "form value keeps non-ASCII letters raw",
+      "library": {
+        "actions": [
+          {
+            "body": "name={{name}}",
+            "bodyContentType": "form",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/form",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "name",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "name": "José 🙂"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/form",
+        "headers": [["Content-Type", "application/x-www-form-urlencoded"]],
+        "bodyUTF8": "name=Jos%C3%A9%20%F0%9F%99%82",
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "text body is raw",
+      "library": {
+        "actions": [
+          {
+            "body": "Hello {{name}}!",
+            "bodyContentType": "text",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/text",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "name",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "name": "<b>&\"</b>\r\nnext"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/text",
+        "headers": [["Content-Type", "text/plain"]],
+        "bodyUTF8": "Hello <b>&\"</b>\r\nnext!",
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "no body type sends the body raw without a content type",
+      "library": {
+        "actions": [
+          {
+            "body": "raw {{x}} body",
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/raw",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "x",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "x": "a&b \"c\""
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/raw",
+        "headers": [],
+        "bodyUTF8": "raw a&b \"c\" body",
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "delete with a form body",
+      "library": {
+        "actions": [
+          {
+            "body": "id={{id}}",
+            "bodyContentType": "form",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "DELETE",
+            "name": "Case",
+            "url": "https://example.invalid/items",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "id",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "id": "7 8"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "DELETE",
+        "url": "https://example.invalid/items",
+        "headers": [["Content-Type", "application/x-www-form-urlencoded"]],
+        "bodyUTF8": "id=7%208",
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "patch with a json body",
+      "library": {
+        "actions": [
+          {
+            "body": "{\"name\":\"{{name}}\"}",
+            "bodyContentType": "json",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "PATCH",
+            "name": "Case",
+            "url": "https://example.invalid/items/1",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "name",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "name": "Den"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "PATCH",
+        "url": "https://example.invalid/items/1",
+        "headers": [["Content-Type", "application/json"]],
+        "bodyUTF8": "{\"name\":\"Den\"}",
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "globals before variables",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "name": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "url": "{{base}}/api/{{path}}",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000003",
+                "key": "path",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [
+          {
+            "id": "00000000-0000-4000-8000-000000000004",
+            "key": "base",
+            "value": "http://192.168.1.10:8123"
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000005",
+            "key": "token",
+            "value": "abc def"
+          }
+        ],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "path": "a b"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "GET",
+        "url": "http://192.168.1.10:8123/api/a%20b",
+        "headers": [["Authorization", "Bearer abc def"]],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "a global shadows a variable of the same key",
+      "library": {
+        "actions": [
+          {
+            "body": "{\"t\":\"{{token}}\"}",
+            "bodyContentType": "json",
+            "headers": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "name": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/hook?t={{token}}",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000003",
+                "key": "token",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [
+          {
+            "id": "00000000-0000-4000-8000-000000000004",
+            "key": "token",
+            "value": "G\"SECRET G"
+          }
+        ],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "token": "from-value"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/hook?t=G%22SECRET%20G",
+        "headers": [["Authorization", "Bearer G\"SECRET G"], ["Content-Type", "application/json"]],
+        "bodyUTF8": "{\"t\":\"G\"SECRET G\"}",
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "a global value is raw in the url",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "url": "https://example.invalid/search?q={{q}}",
+            "variables": []
+          }
+        ],
+        "globalVariables": [
+          {
+            "id": "00000000-0000-4000-8000-000000000002",
+            "key": "q",
+            "value": "a b&c"
+          }
+        ],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "GET",
+        "url": "https://example.invalid/search?q=a%20b&c",
+        "headers": [],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "a global value carrying a variable token",
+      "library": {
+        "actions": [
+          {
+            "body": "{{greeting}}",
+            "bodyContentType": "text",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/text",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "name",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [
+          {
+            "id": "00000000-0000-4000-8000-000000000003",
+            "key": "greeting",
+            "value": "Hi {{name}}"
+          }
+        ],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "name": "Ann"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/text",
+        "headers": [["Content-Type", "text/plain"]],
+        "bodyUTF8": "Hi Ann",
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "a global with a blank key does nothing",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "url": "https://example.invalid/{{x}}",
+            "variables": []
+          }
+        ],
+        "globalVariables": [
+          {
+            "id": "00000000-0000-4000-8000-000000000002",
+            "key": "  ",
+            "value": "never"
+          }
+        ],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "GET",
+        "url": "https://example.invalid/%7B%7Bx%7D%7D",
+        "headers": [],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "an undefined token is left literal",
+      "library": {
+        "actions": [
+          {
+            "body": "{\"a\":\"{{missing}}\"}",
+            "bodyContentType": "json",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/{{missing}}/x",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "missing": "ignored"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/%7B%7Bmissing%7D%7D/x",
+        "headers": [["Content-Type", "application/json"]],
+        "bodyUTF8": "{\"a\":\"{{missing}}\"}",
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "whitespace inside the braces",
+      "library": {
+        "actions": [
+          {
+            "body": "{{ name }}|{{name   }}|{{\tname}}|{ {name} }",
+            "bodyContentType": "text",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/hook",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "name",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "name": "N"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/hook",
+        "headers": [["Content-Type", "text/plain"]],
+        "bodyUTF8": "N|N|N|{ {name} }",
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "a value carrying a later variable's token is replaced again",
+      "library": {
+        "actions": [
+          {
+            "body": "{{a}} {{b}}",
+            "bodyContentType": "text",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/text",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "a",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              },
+              {
+                "id": "00000000-0000-4000-8000-000000000003",
+                "key": "b",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "a": "{{b}}",
+        "b": "B"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/text",
+        "headers": [["Content-Type", "text/plain"]],
+        "bodyUTF8": "B B",
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "a value carrying an earlier variable's token stays",
+      "library": {
+        "actions": [
+          {
+            "body": "{{a}} {{b}}",
+            "bodyContentType": "text",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/text",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "a",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              },
+              {
+                "id": "00000000-0000-4000-8000-000000000003",
+                "key": "b",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "a": "A",
+        "b": "{{a}}"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/text",
+        "headers": [["Content-Type", "text/plain"]],
+        "bodyUTF8": "A {{a}}",
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "preset fallback",
+      "library": {
+        "actions": [
+          {
+            "body": "say {{msg}}",
+            "bodyContentType": "text",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/text",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "msg",
+                "kind": "text",
+                "presetValues": ["first", "second"],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/text",
+        "headers": [["Content-Type", "text/plain"]],
+        "bodyUTF8": "say first",
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "empty fallback",
+      "library": {
+        "actions": [
+          {
+            "body": "say {{msg}}.",
+            "bodyContentType": "text",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/text",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "msg",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/text",
+        "headers": [["Content-Type", "text/plain"]],
+        "bodyUTF8": "say .",
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "a blank first preset is the fallback",
+      "library": {
+        "actions": [
+          {
+            "body": "say {{msg}}.",
+            "bodyContentType": "text",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/text",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "msg",
+                "kind": "text",
+                "presetValues": ["", "b"],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/text",
+        "headers": [["Content-Type", "text/plain"]],
+        "bodyUTF8": "say .",
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "a given empty value wins over the preset",
+      "library": {
+        "actions": [
+          {
+            "body": "say {{msg}}.",
+            "bodyContentType": "text",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/text",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "msg",
+                "kind": "text",
+                "presetValues": ["first"],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "msg": ""
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/text",
+        "headers": [["Content-Type", "text/plain"]],
+        "bodyUTF8": "say .",
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "spaces in a typed url",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "url": "https://example.invalid/living room?q=a b",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "GET",
+        "url": "https://example.invalid/living%20room?q=a%20b",
+        "headers": [],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "a lone percent in a typed url",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "url": "https://example.invalid/set?level=50%&x=%zz",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "GET",
+        "url": "https://example.invalid/set?level=50%25&x=%25zz",
+        "headers": [],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "an encoded triplet is kept",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "url": "https://example.invalid/a%20b?x=%2F&y=%e2%82%ac",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "GET",
+        "url": "https://example.invalid/a%20b?x=%2F&y=%e2%82%ac",
+        "headers": [],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "non-ASCII path and query",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "url": "https://example.invalid/café?u=José&k=漢",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "GET",
+        "url": "https://example.invalid/caf%C3%A9?u=Jos%C3%A9&k=%E6%BC%A2",
+        "headers": [],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "non-ASCII host",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "url": "https://bücher.example/",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "GET",
+        "url": "https://xn--bcher-kva.example/",
+        "headers": [],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "characters a url may not hold",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "url": "https://example.invalid/p?a=\"<>`|^{}\\",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "GET",
+        "url": "https://example.invalid/p?a=%22%3C%3E%60%7C%5E%7B%7D%5C",
+        "headers": [],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "brackets and a plus in the query",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "url": "https://example.invalid/p?a[]=1&b=a+b",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "GET",
+        "url": "https://example.invalid/p?a%5B%5D=1&b=a+b",
+        "headers": [],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "a fragment with a space",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "url": "https://example.invalid/page#frag ment",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "GET",
+        "url": "https://example.invalid/page#frag%20ment",
+        "headers": [],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "an upper case scheme and host",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "url": "HTTPS://Example.Invalid:8443/Path",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "GET",
+        "url": "HTTPS://Example.Invalid:8443/Path",
+        "headers": [],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "a url padded with spaces",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "url": "  https://example.invalid/x \n",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "GET",
+        "url": "https://example.invalid/x",
+        "headers": [],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "a non-http scheme",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "url": "ftp://example.invalid/file",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": "invalidURL"
+      }
+    },
+    {
+      "name": "a url with no scheme",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "url": "example.invalid/path",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": "invalidURL"
+      }
+    },
+    {
+      "name": "an empty url",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "url": "",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": "emptyURL"
+      }
+    },
+    {
+      "name": "a blank url",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "url": "  \n ",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": "emptyURL"
+      }
+    },
+    {
+      "name": "a url empty after its variable",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "url": "{{u}}",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "u",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "u": ""
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": "emptyURL"
+      }
+    },
+    {
+      "name": "an undefined token in the url",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "url": "https://example.invalid/{{nope}}",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "GET",
+        "url": "https://example.invalid/%7B%7Bnope%7D%7D",
+        "headers": [],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "method casing",
+      "library": {
+        "actions": [
+          {
+            "body": "x",
+            "bodyContentType": "text",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": " post ",
+            "name": "Case",
+            "url": "https://example.invalid/hook",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/hook",
+        "headers": [["Content-Type", "text/plain"]],
+        "bodyUTF8": "x",
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "an unknown method keeps no body",
+      "library": {
+        "actions": [
+          {
+            "body": "x",
+            "bodyContentType": "text",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "propfind",
+            "name": "Case",
+            "url": "https://example.invalid/dav",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "PROPFIND",
+        "url": "https://example.invalid/dav",
+        "headers": [],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "a body on GET is ignored",
+      "library": {
+        "actions": [
+          {
+            "body": "{\"a\":1}",
+            "bodyContentType": "json",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "url": "https://example.invalid/hook",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "GET",
+        "url": "https://example.invalid/hook",
+        "headers": [],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "a user content type suppresses the automatic one",
+      "library": {
+        "actions": [
+          {
+            "body": "{\"a\":1}",
+            "bodyContentType": "json",
+            "headers": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "name": "content-type",
+                "value": "application/vnd.api+json"
+              }
+            ],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/hook",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/hook",
+        "headers": [["Content-Type", "application/vnd.api+json"]],
+        "bodyUTF8": "{\"a\":1}",
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "duplicate headers are all sent",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "name": "X-Tag",
+                "value": "a"
+              },
+              {
+                "id": "00000000-0000-4000-8000-000000000003",
+                "name": "Accept",
+                "value": "*/*"
+              },
+              {
+                "id": "00000000-0000-4000-8000-000000000004",
+                "name": "X-Tag",
+                "value": "b"
+              }
+            ],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/hook",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/hook",
+        "headers": [["X-Tag", "a"], ["Accept", "*/*"], ["X-Tag", "b"]],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "blank header names are skipped and names trimmed",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "name": "  ",
+                "value": "lost"
+              },
+              {
+                "id": "00000000-0000-4000-8000-000000000003",
+                "name": " X-Pad ",
+                "value": " spaced value "
+              },
+              {
+                "id": "00000000-0000-4000-8000-000000000004",
+                "name": "",
+                "value": "gone"
+              }
+            ],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/hook",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/hook",
+        "headers": [["X-Pad", " spaced value "]],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "an empty body with a body type",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "json",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/hook",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/hook",
+        "headers": [["Content-Type", "application/json"]],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "a blank body with a body type",
+      "library": {
+        "actions": [
+          {
+            "body": "  \n",
+            "bodyContentType": "text",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "PUT",
+            "name": "Case",
+            "url": "https://example.invalid/hook",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "PUT",
+        "url": "https://example.invalid/hook",
+        "headers": [["Content-Type", "text/plain"]],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "a body empty after its variable",
+      "library": {
+        "actions": [
+          {
+            "body": "{{x}}",
+            "bodyContentType": "text",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/hook",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "x",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {
+        "x": " "
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/hook",
+        "headers": [["Content-Type", "text/plain"]],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "audio with a clip",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "audio",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/upload",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": "AAAAGGZ0eXBNNEEg/wA=",
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/upload",
+        "headers": [["Content-Type", "audio/mp4"]],
+        "bodyUTF8": null,
+        "bodyBase64": "AAAAGGZ0eXBNNEEg/wA=",
+        "timeout": 10
+      }
+    },
+    {
+      "name": "audio without a clip",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "audio",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/upload",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/upload",
+        "headers": [["Content-Type", "audio/mp4"]],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "audio with an empty clip",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "audio",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Case",
+            "url": "https://example.invalid/upload",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": "",
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/upload",
+        "headers": [["Content-Type", "audio/mp4"]],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "audio on GET",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "audio",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "url": "https://example.invalid/upload",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": "AAAAGGZ0eXBNNEEg/wA=",
+      "expect": {
+        "error": null,
+        "method": "GET",
+        "url": "https://example.invalid/upload",
+        "headers": [],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "audio with a user content type",
+      "library": {
+        "actions": [
+          {
+            "body": "ignored",
+            "bodyContentType": "audio",
+            "headers": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "name": "Content-Type",
+                "value": "audio/aac"
+              }
+            ],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "PUT",
+            "name": "Case",
+            "url": "https://example.invalid/upload",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": "AAAAGGZ0eXBNNEEg/wA=",
+      "expect": {
+        "error": null,
+        "method": "PUT",
+        "url": "https://example.invalid/upload",
+        "headers": [["Content-Type", "audio/aac"]],
+        "bodyUTF8": null,
+        "bodyBase64": "AAAAGGZ0eXBNNEEg/wA=",
+        "timeout": 10
+      }
+    },
+    {
+      "name": "the default timeout",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "url": "https://example.invalid/t",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "GET",
+        "url": "https://example.invalid/t",
+        "headers": [],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    },
+    {
+      "name": "a short timeout",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "timeout": 2.5,
+            "url": "https://example.invalid/t",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "GET",
+        "url": "https://example.invalid/t",
+        "headers": [],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 2.5
+      }
+    },
+    {
+      "name": "a timeout under a second",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "timeout": 0.25,
+            "url": "https://example.invalid/t",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "GET",
+        "url": "https://example.invalid/t",
+        "headers": [],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 0.25
+      }
+    },
+    {
+      "name": "a long timeout",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "timeout": 120,
+            "url": "https://example.invalid/t",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000001",
+      "values": {},
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "GET",
+        "url": "https://example.invalid/t",
+        "headers": [],
+        "bodyUTF8": null,
+        "bodyBase64": null,
+        "timeout": 120
+      }
+    },
+    {
+      "name": "the second action of a library",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Case",
+            "url": "https://example.invalid/one",
+            "variables": []
+          },
+          {
+            "body": "{\"n\":{{n}}}",
+            "bodyContentType": "json",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000002",
+            "method": "POST",
+            "name": "Case",
+            "url": "{{base}}/two",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000003",
+                "key": "n",
+                "kind": "number",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [
+          {
+            "id": "00000000-0000-4000-8000-000000000004",
+            "key": "base",
+            "value": "https://example.invalid"
+          }
+        ],
+        "schemaVersion": 1
+      },
+      "actionId": "00000000-0000-4000-8000-000000000002",
+      "values": {
+        "n": "3"
+      },
+      "audioBase64": null,
+      "expect": {
+        "error": null,
+        "method": "POST",
+        "url": "https://example.invalid/two",
+        "headers": [["Content-Type", "application/json"]],
+        "bodyUTF8": "{\"n\":3}",
+        "bodyBase64": null,
+        "timeout": 10
+      }
+    }
+  ]
+}

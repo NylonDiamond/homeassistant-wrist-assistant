@@ -581,10 +581,10 @@ def public_list(document: Any) -> dict[str, Any]:
 class BuiltRequest:
     """``URLRequest`` as ``makeURLRequest`` leaves it.
 
-    ``headers`` is in sending order. Two headers of one name are one header
-    here, values joined with a comma, as ``URLRequest.addValue`` joins them;
-    the automatic Content-Type comes last. ``timeout`` is the action's own,
-    not yet held to the sender's range.
+    ``headers`` is in sending order, a repeated name kept as a pair of its
+    own (``URLRequest.addValue`` joins them with a comma on the wire, which
+    means the same to a server); the automatic Content-Type comes last.
+    ``timeout`` is the action's own, not yet held to the sender's range.
     """
 
     method: str
@@ -732,6 +732,24 @@ def _encode_component(text: str, allowed: frozenset[str]) -> str:
     return "".join(out)
 
 
+def _punycode_host(host: str) -> str:
+    """A host with letters outside ASCII in its ``xn--`` form, label by
+    label, as Foundation writes it. A label IDNA refuses is left for the
+    percent-encoding after."""
+    if host.isascii():
+        return host
+    labels: list[str] = []
+    for label in host.split("."):
+        if label.isascii():
+            labels.append(label)
+            continue
+        try:
+            labels.append(label.encode("idna").decode("ascii"))
+        except UnicodeError:
+            labels.append(label)
+    return ".".join(labels)
+
+
 def foundation_url(text: str) -> tuple[str, str | None] | None:
     """``URL(string:encodingInvalidCharacters: true)``: the URL string it
     keeps, and its scheme. None when Foundation would refuse the string.
@@ -787,7 +805,7 @@ def foundation_url(text: str) -> tuple[str, str | None] | None:
             host = hostport
             if ":" in hostport:
                 host, port = hostport.split(":", 1)
-            host = _encode_component(host, _HOST_ALLOWED)
+            host = _encode_component(_punycode_host(host), _HOST_ALLOWED)
         if port is not None and not all(c in "0123456789" for c in port):
             return None
         out += "//"
@@ -875,14 +893,10 @@ def build_action_request(
         if not name:
             continue
         if name.lower() == "content-type":
+            # URLRequest writes its own spelling of this one name.
+            name = "Content-Type"
             user_content_type = True
-        value = _substitute(raw_value, action, values, "header")
-        for pair in sent:
-            if pair[0].lower() == name.lower():
-                pair[1] = f"{pair[1]},{value}"
-                break
-        else:
-            sent.append([name, value])
+        sent.append([name, _substitute(raw_value, action, values, "header")])
 
     body_bytes: bytes | None = None
     if verb in BODY_METHODS:
@@ -946,13 +960,21 @@ def _parse_json(body: bytes) -> tuple[bool, Any]:
 
 
 def _swift_double(value: float) -> str:
-    """``String(Double)``: the shortest round trip, as Python writes it,
-    with ``inf`` spelled the Swift way."""
+    """``String(Double)``: the shortest round trip digits, as Python finds
+    them. Swift turns to the exponent form from 2^53 up where Python waits
+    for 1e16, so ``9100000000000000`` reads ``9.1e+15`` here too."""
     if value != value:
         return "nan"
     if value in (float("inf"), float("-inf")):
         return "inf" if value > 0 else "-inf"
-    return repr(value)
+    text = repr(value)
+    if abs(value) < 2**53 or "e" in text:
+        return text
+    sign = "-" if value < 0 else ""
+    whole, _, fraction = text.lstrip("-").partition(".")
+    digits = (whole + fraction).lstrip("0").rstrip("0") or "0"
+    mantissa = digits[0] + ("." + digits[1:] if len(digits) > 1 else "")
+    return f"{sign}{mantissa}e+{len(whole) - 1:02d}"
 
 
 def format_leaf(value: Any) -> str | None:

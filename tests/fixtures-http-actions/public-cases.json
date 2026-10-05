@@ -1,0 +1,528 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "name": "an empty library",
+      "library": {
+        "actions": [],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "expect": {
+        "actions": [],
+        "schemaVersion": 1
+      }
+    },
+    {
+      "name": "a plain action",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Open Gate",
+            "url": "https://example.invalid/hook",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "expect": {
+        "actions": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "Open Gate",
+            "variables": []
+          }
+        ],
+        "schemaVersion": 1
+      }
+    },
+    {
+      "name": "a variable shadowed by a global",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Notify",
+            "url": "{{base}}/x?t={{token}}&m={{msg}}",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "token",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              },
+              {
+                "id": "00000000-0000-4000-8000-000000000003",
+                "key": "msg",
+                "kind": "text",
+                "presetValues": ["Dinner", "Leaving"],
+                "presetsOnly": false,
+                "prompt": "Message"
+              }
+            ]
+          }
+        ],
+        "globalVariables": [
+          {
+            "id": "00000000-0000-4000-8000-000000000004",
+            "key": "base",
+            "value": "https://example.invalid"
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000005",
+            "key": "token",
+            "value": "secret"
+          }
+        ],
+        "schemaVersion": 1
+      },
+      "expect": {
+        "actions": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "Notify",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000003",
+                "key": "msg",
+                "kind": "text",
+                "presetValues": ["Dinner", "Leaving"],
+                "presetsOnly": false,
+                "prompt": "Message"
+              }
+            ]
+          }
+        ],
+        "schemaVersion": 1
+      }
+    },
+    {
+      "name": "a global with a blank key shadows nothing",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Notify",
+            "url": "https://example.invalid/x?m={{msg}}",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "msg",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [
+          {
+            "id": "00000000-0000-4000-8000-000000000003",
+            "key": " ",
+            "value": "x"
+          }
+        ],
+        "schemaVersion": 1
+      },
+      "expect": {
+        "actions": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "Notify",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "msg",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "schemaVersion": 1
+      }
+    },
+    {
+      "name": "variables in full",
+      "library": {
+        "actions": [
+          {
+            "body": "{\"b\":{{level}},\"r\":\"{{room}}\"}",
+            "bodyContentType": "json",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Dim",
+            "url": "https://example.invalid/x",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "level",
+                "kind": "number",
+                "presetValues": [" 10 ", "50", "50", ""],
+                "presetsOnly": true,
+                "prompt": "Brightness %"
+              },
+              {
+                "id": "00000000-0000-4000-8000-000000000003",
+                "key": "room",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "expect": {
+        "actions": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "Dim",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "level",
+                "kind": "number",
+                "presetValues": [" 10 ", "50", "50", ""],
+                "presetsOnly": true,
+                "prompt": "Brightness %"
+              },
+              {
+                "id": "00000000-0000-4000-8000-000000000003",
+                "key": "room",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "schemaVersion": 1
+      }
+    },
+    {
+      "name": "audio",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "audio",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Voice memo",
+            "url": "https://example.invalid/upload",
+            "variables": []
+          },
+          {
+            "bodyContentType": "audio",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000002",
+            "method": " put ",
+            "name": "Voice put",
+            "url": "https://example.invalid/upload",
+            "variables": []
+          },
+          {
+            "bodyContentType": "audio",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000003",
+            "method": "GET",
+            "name": "Audio on GET",
+            "url": "https://example.invalid/upload",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "expect": {
+        "actions": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "Voice memo",
+            "needsAudio": true,
+            "variables": []
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000002",
+            "name": "Voice put",
+            "needsAudio": true,
+            "variables": []
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000003",
+            "name": "Audio on GET",
+            "variables": []
+          }
+        ],
+        "schemaVersion": 1
+      }
+    },
+    {
+      "name": "a reply value",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Outdoor Temp",
+            "responseConfig": {
+              "jsonPath": "temp",
+              "source": "jsonField",
+              "unit": "°"
+            },
+            "url": "https://example.invalid/now",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "expect": {
+        "actions": [
+          {
+            "hasReply": true,
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "Outdoor Temp",
+            "variables": []
+          }
+        ],
+        "schemaVersion": 1
+      }
+    },
+    {
+      "name": "a blank url",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Garage Door",
+            "url": "  ",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "expect": {
+        "actions": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "Garage Door",
+            "needsSetup": true,
+            "variables": []
+          }
+        ],
+        "schemaVersion": 1
+      }
+    },
+    {
+      "name": "a blank name",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "  ",
+            "url": "https://hooks.example.invalid/run?token=abc123",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "expect": {
+        "actions": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "HTTP Action",
+            "variables": []
+          }
+        ],
+        "schemaVersion": 1
+      }
+    },
+    {
+      "name": "an icon and a colour",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "icon": "car.fill",
+            "iconColor": "#A0C8FF",
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "Gate",
+            "url": "https://example.invalid/x",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "expect": {
+        "actions": [
+          {
+            "icon": "car.fill",
+            "iconColor": "#A0C8FF",
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "Gate",
+            "variables": []
+          }
+        ],
+        "schemaVersion": 1
+      }
+    },
+    {
+      "name": "timeouts",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "GET",
+            "name": "Set",
+            "timeout": 2.5,
+            "url": "https://example.invalid/a",
+            "variables": []
+          },
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000002",
+            "method": "GET",
+            "name": "Unset",
+            "url": "https://example.invalid/b",
+            "variables": []
+          },
+          {
+            "bodyContentType": "none",
+            "headers": [],
+            "id": "00000000-0000-4000-8000-000000000003",
+            "method": "GET",
+            "name": "Long",
+            "timeout": 90,
+            "url": "https://example.invalid/c",
+            "variables": []
+          }
+        ],
+        "globalVariables": [],
+        "schemaVersion": 1
+      },
+      "expect": {
+        "actions": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "Set",
+            "timeout": 2.5,
+            "variables": []
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000002",
+            "name": "Unset",
+            "variables": []
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000003",
+            "name": "Long",
+            "timeout": 90,
+            "variables": []
+          }
+        ],
+        "schemaVersion": 1
+      }
+    },
+    {
+      "name": "everything at once",
+      "library": {
+        "actions": [
+          {
+            "bodyContentType": "audio",
+            "headers": [],
+            "icon": "mic.fill",
+            "iconColor": "#FF9F0A",
+            "id": "00000000-0000-4000-8000-000000000001",
+            "method": "POST",
+            "name": "",
+            "responseConfig": {
+              "source": "statusCode"
+            },
+            "url": "",
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "who",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "globalVariables": [
+          {
+            "id": "00000000-0000-4000-8000-000000000003",
+            "key": "base",
+            "value": "https://example.invalid"
+          }
+        ],
+        "schemaVersion": 1
+      },
+      "expect": {
+        "actions": [
+          {
+            "hasReply": true,
+            "icon": "mic.fill",
+            "iconColor": "#FF9F0A",
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "HTTP Action",
+            "needsAudio": true,
+            "needsSetup": true,
+            "variables": [
+              {
+                "id": "00000000-0000-4000-8000-000000000002",
+                "key": "who",
+                "kind": "text",
+                "presetValues": [],
+                "presetsOnly": false,
+                "prompt": ""
+              }
+            ]
+          }
+        ],
+        "schemaVersion": 1
+      }
+    }
+  ]
+}

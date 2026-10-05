@@ -244,22 +244,27 @@ def test_the_method_is_trimmed_and_upper_cased_and_the_timeout_defaults() -> Non
 # ── headers and the body ─────────────────────────────────────────────────
 
 
-def test_headers_keep_their_order_and_a_repeat_joins_the_first() -> None:
+def test_headers_keep_their_order_and_a_repeat_is_its_own_pair() -> None:
     act = action(
         headers=[header("X-A", "1"), header(" ", "skipped"), header("x-b", "2"), header("X-a", "3")],
         bodyContentType="json",
         body="{}",
     )
     assert build(act).headers == [
-        ("X-A", "1,3"),
+        ("X-A", "1"),
         ("x-b", "2"),
+        ("X-a", "3"),
         ("Content-Type", "application/json"),
     ]
 
 
 def test_a_user_content_type_suppresses_the_automatic_one() -> None:
     act = action(headers=[header("content-type", "text/csv")], bodyContentType="json", body="{}")
-    assert build(act).headers == [("content-type", "text/csv")]
+    assert build(act).headers == [("Content-Type", "text/csv")]
+
+
+def test_a_non_ascii_host_is_written_in_its_xn_form() -> None:
+    assert build(action(url="https://bücher.example/a b")).url == "https://xn--bcher-kva.example/a%20b"
 
 
 @pytest.mark.parametrize(
