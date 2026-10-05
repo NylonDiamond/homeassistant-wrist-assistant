@@ -38,6 +38,7 @@ _PAIRING_MODULE = _PKG / "pairing_ws.py"
 # writes one. The voice list read is the panel's too.
 _WATCH_CONFIG_ADMIN_ONLY = {
     "ws_watch_config_get",
+    "ws_watch_config_summary",
     "ws_watch_config_save",
     "ws_watch_config_history",
     "ws_watch_config_history_entry",

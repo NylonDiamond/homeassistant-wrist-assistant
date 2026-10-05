@@ -18,6 +18,7 @@ tells it only tokens. The documents still travel only over the signed get.
 Commands:
 
     wrist_assistant/watch_config/get            {owner_watch_id, kind}
+    wrist_assistant/watch_config/summary        {}
     wrist_assistant/watch_config/save           {owner_watch_id, kind,
                                                  base_revision, document}
     wrist_assistant/watch_config/history        {owner_watch_id, kind}
@@ -48,7 +49,7 @@ from homeassistant.components import websocket_api
 from homeassistant.components.websocket_api import ActiveConnection
 from homeassistant.core import HomeAssistant, callback
 
-from .const import DOMAIN
+from .const import DOMAIN, WATCH_CONFIG_PANEL_KINDS
 from .watch_config_store import (
     WatchConfigChange,
     WatchConfigStore,
@@ -61,6 +62,7 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 _CMD_GET = f"{DOMAIN}/watch_config/get"
+_CMD_SUMMARY = f"{DOMAIN}/watch_config/summary"
 _CMD_SAVE = f"{DOMAIN}/watch_config/save"
 _CMD_HISTORY = f"{DOMAIN}/watch_config/history"
 _CMD_HISTORY_ENTRY = f"{DOMAIN}/watch_config/history_entry"
@@ -86,6 +88,7 @@ def _voices_store(hass: HomeAssistant) -> WatchVoicesStore | None:
 @callback
 def async_register_watch_config_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_watch_config_get)
+    websocket_api.async_register_command(hass, ws_watch_config_summary)
     websocket_api.async_register_command(hass, ws_watch_config_save)
     websocket_api.async_register_command(hass, ws_watch_config_history)
     websocket_api.async_register_command(hass, ws_watch_config_history_entry)
@@ -162,6 +165,47 @@ def ws_watch_config_get(
             "document": record.document,
         },
     )
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command({vol.Required("type"): _CMD_SUMMARY})
+@callback
+def ws_watch_config_summary(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Where every watch's panel-written records have got to, in one answer.
+
+    Result: {"owners": {<owner_watch_id>: {<kind>: {"revision",
+             "delivered_revision", "rejected_revision"}}}}
+
+    The panel's Home asks this to say which watches are still waiting, where
+    it used to read every record of every watch, document and all. Only
+    numbers travel: no document, no hash, no names. Only the kinds the panel
+    writes are listed, a kind with no record is left out, and so is a watch
+    whose stored file could not be read: the panel then says nothing about
+    that watch rather than calling it fine. Reading changes nothing.
+    """
+    store = _store(hass)
+    if store is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+    owners: dict[str, dict[str, dict[str, int]]] = {}
+    for owner_watch_id in store.owners():
+        kinds: dict[str, dict[str, int]] = {}
+        try:
+            for kind in sorted(WATCH_CONFIG_PANEL_KINDS):
+                record = store.get(owner_watch_id, kind)
+                if record is None:
+                    continue
+                kinds[kind] = {
+                    "revision": record.revision,
+                    "delivered_revision": record.delivered_revision,
+                    "rejected_revision": record.rejected_revision,
+                }
+        except WatchConfigStoreError:
+            continue
+        owners[owner_watch_id] = kinds
+    connection.send_result(msg["id"], {"owners": owners})
 
 
 @websocket_api.require_admin

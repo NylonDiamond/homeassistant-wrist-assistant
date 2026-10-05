@@ -225,6 +225,40 @@ def test_get_never_moves_delivery(env) -> None:
     assert _FakeStore.writes == []
 
 
+def test_summary_is_empty_with_nothing_stored(env) -> None:
+    assert _ok(env, env.ws.ws_watch_config_summary) == {"owners": {}}
+
+
+def test_summary_gives_each_watch_its_numbers_and_no_document(env) -> None:
+    _phone_upload(env, "behavior", {"longPressDuration": "Long"})
+    _save(env, {"longPressDuration": "Short"}, 1)
+    assert _ok(env, env.ws.ws_watch_config_summary) == {
+        "owners": {
+            WATCH: {
+                "behavior": {
+                    "revision": 2,
+                    "delivered_revision": 1,
+                    "rejected_revision": 0,
+                }
+            }
+        }
+    }
+
+
+def test_summary_leaves_out_the_catalog_only_the_phone_writes(env) -> None:
+    _phone_upload(env, "behavior", {"longPressDuration": "Long"})
+    kinds = _ok(env, env.ws.ws_watch_config_summary)["owners"][WATCH]
+    assert "catalog" not in kinds
+    assert set(kinds) <= set(env.ws.WATCH_CONFIG_PANEL_KINDS)
+
+
+def test_summary_never_moves_delivery(env) -> None:
+    _phone_upload(env, "behavior", {"longPressDuration": "Long"})
+    _save(env, {"longPressDuration": "Short"}, 1)
+    _ok(env, env.ws.ws_watch_config_summary)
+    assert env.store.get(WATCH, "behavior").delivered_revision == 1
+
+
 def test_get_refuses_an_unknown_kind(env) -> None:
     code, message = _error(
         env, env.ws.ws_watch_config_get, owner_watch_id=WATCH, kind="quick_actions"
