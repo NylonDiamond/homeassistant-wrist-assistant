@@ -6,14 +6,16 @@ every request. Covered: a run's reply shape, the refusals (not found, needs
 setup, missing or malformed audio, busy), the timeout and its clamp, every
 row of the redirect rule (GET follows, a body verb follows only 307 and 308,
 at most 5 hops, a redirect off the first host drops Authorization and checks
-the certificate again, none to loopback), the 256 KB read cap, the regex in
-the executor, the URL sent as built, and the panel's Test.
+the certificate again, none to loopback), the 256 KB read cap, a plain regex in
+the executor and any other in a child process with a hard limit, the URL
+sent as built, and the panel's Test.
 """
 
 from __future__ import annotations
 
 import asyncio
 import base64
+import sys
 import types
 from typing import Any
 
@@ -381,6 +383,157 @@ def test_a_regex_runs_in_the_executor_and_nothing_else_does(env) -> None:
     run(env, runner, library(action(responseConfig={"source": "regex", "pattern": "t=(\\d)"})), {"id": ID_A})
     run(env, runner, library(action(responseConfig={"source": "jsonField", "jsonPath": "a"})), {"id": ID_A})
     assert hass.executor_calls == ["extract_reply"]
+
+
+class CountingSpawn:
+    """``asyncio.create_subprocess_exec`` that counts its calls and checks
+    that nothing from the pattern or the body is on the command line."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple] = []
+
+    async def __call__(self, *args, **kwargs):
+        self.calls.append(args)
+        return await asyncio.create_subprocess_exec(*args, **kwargs)
+
+
+def test_a_backtracking_pattern_is_stopped_and_the_loop_keeps_running(env) -> None:
+    spawn = CountingSpawn()
+    session = FakeSession({URL_A: FakeResponse(200, b"a" * 29 + b"!")})
+    runner = env.mod.HTTPActionRunner(FakeHass(), session_for=session.for_verify, spawn=spawn)
+    doc = library(action(responseConfig={"source": "regex", "pattern": "(a+)+$"}))
+    ticks = 0
+
+    async def ticker() -> None:
+        nonlocal ticks
+        while True:
+            await asyncio.sleep(0.01)
+            ticks += 1
+
+    async def scenario():
+        task = asyncio.create_task(ticker())
+        started = asyncio.get_running_loop().time()
+        reply = await runner.async_run(doc, {"id": ID_A}, device="w")
+        took = asyncio.get_running_loop().time() - started
+        task.cancel()
+        return reply, took
+
+    reply, took = asyncio.run(scenario())
+    assert reply["status"] == 200 and reply["value"] is None
+    assert took < 4
+    # The loop ticked through the whole search, about 100 times a second.
+    assert ticks > 50 * env.mod.REGEX_CHILD_TIMEOUT
+    assert len(spawn.calls) == 1
+    assert all("(a+)" not in str(arg) and "aaaa" not in str(arg) for arg in spawn.calls[0])
+    assert runner.running("w") == 0
+
+
+@pytest.mark.parametrize(
+    "pattern", ["t=(\\d)", '"temp":\\s*(\\d+)', "^(\\d+)", "Version: ([0-9.]+)", ""]
+)
+def test_a_plain_pattern_never_starts_a_process(env, pattern) -> None:
+    spawn = CountingSpawn()
+    session = FakeSession({URL_A: FakeResponse(200, b'Version: 1.2 t=4 "temp": 21')})
+    hass = FakeHass()
+    runner = env.mod.HTTPActionRunner(hass, session_for=session.for_verify, spawn=spawn)
+    doc = library(action(responseConfig={"source": "regex", "pattern": pattern}))
+    run(env, runner, doc, {"id": ID_A})
+    assert spawn.calls == []
+    assert hass.executor_calls == ["extract_reply"]
+
+
+# Patterns and bodies the two ways must read alike: named groups, a group
+# that takes no part, no group, lines, text outside ASCII, bad patterns,
+# and a body past the 256 KB a search reads.
+_REGEX_TABLE = [
+    ("(?<n>\\d+)°", "it is 21° out"),
+    ("(?P<n>\\d+)x", "7x"),
+    ("(a)|(b)", "b"),
+    ("(a)?b", "b"),
+    ("a.b", "a\nb"),
+    ("Grüße (\\w+)", "Grüße Welt"),
+    ("[", "x"),
+    ("(", "x"),
+    ("nothing", "here"),
+    ("  (\\d+)  ", "n=5"),
+    ("(x+)$", "x" * (300 * 1024)),
+    ("<title>(.*?)</title>", "<html><title>Home</title>"),
+    ('"state":\\s*"([^"]*)"', '{"state": "on"}'),
+    ("é(.)", "café!"),
+]
+
+
+def test_the_child_reads_patterns_as_this_process_does(env) -> None:
+    runner = env.mod.HTTPActionRunner(FakeHass(), session_for=FakeSession({}).for_verify)
+    ha = sys.modules[f"{env.mod.__package__}.http_actions"]
+
+    async def both():
+        return [
+            (
+                ha.regex_capture(body.encode(), pattern),
+                await runner.async_regex_in_child(body.encode(), pattern),
+            )
+            for pattern, body in _REGEX_TABLE
+        ]
+
+    results = asyncio.run(both())
+    for (pattern, _body), (here, there) in zip(_REGEX_TABLE, results, strict=True):
+        assert here == there, pattern
+    # The child really searched: most rows find something.
+    found = [there for _here, there in results if there is not None]
+    assert len(found) >= 9
+    assert results[0] == ("21", "21")
+    assert results[10][1] == "x" * (256 * 1024)
+
+
+class _StuckProcess:
+    def __init__(self) -> None:
+        self.returncode: int | None = None
+        self.killed = False
+
+    async def communicate(self, data: bytes) -> tuple[bytes, bytes]:
+        await asyncio.sleep(3600)
+        return b"", b""
+
+    def kill(self) -> None:
+        self.killed = True
+        self.returncode = -9
+
+    async def wait(self) -> int:
+        return self.returncode
+
+
+def test_a_child_that_never_answers_is_killed(env, monkeypatch) -> None:
+    stuck = _StuckProcess()
+
+    async def spawn(*args, **kwargs):
+        return stuck
+
+    monkeypatch.setattr(env.mod, "REGEX_CHILD_TIMEOUT", 0.05)
+    runner = env.mod.HTTPActionRunner(FakeHass(), session_for=FakeSession({}).for_verify, spawn=spawn)
+    assert asyncio.run(runner.async_regex_in_child(b"aaaa!", "(a+)+$")) is None
+    assert stuck.killed
+
+
+def test_a_child_that_cannot_start_reads_as_no_value(env) -> None:
+    async def spawn(*args, **kwargs):
+        raise OSError("no python")
+
+    runner = env.mod.HTTPActionRunner(FakeHass(), session_for=FakeSession({}).for_verify, spawn=spawn)
+    assert asyncio.run(runner.async_regex_in_child(b"aaaa!", "(a+)+$")) is None
+
+
+def test_the_run_timeout_covers_reading_the_value(env, monkeypatch) -> None:
+    async def slow_extract(config, answer):
+        await asyncio.sleep(3600)
+
+    runner, _, _ = make_runner(env, {URL_A: FakeResponse(200, b"x")})
+    monkeypatch.setattr(runner, "_extract", slow_extract)
+    monkeypatch.setattr(env.mod, "REGEX_CHILD_TIMEOUT", 0.05)
+    doc = library(action(timeout=0.01))
+    reply = run(env, runner, doc, {"id": ID_A}, device="w")
+    assert reply["status"] == 200 and reply["value"] is None
+    assert runner.running("w") == 0
 
 
 def test_a_header_reply_reads_joined_headers(env) -> None:

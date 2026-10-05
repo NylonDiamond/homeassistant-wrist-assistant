@@ -311,6 +311,43 @@ def test_an_action_is_found_without_regard_to_case() -> None:
 
 
 @pytest.mark.parametrize(
+    ("pattern", "plain"),
+    [
+        ('"temp":\\s*(\\d+)', True),
+        ("t=(\\d)", True),
+        ("^(\\d+)", True),
+        ("\\A.*", True),
+        ("(?<v>\\d{1,3})%", True),
+        ("Version: ([0-9.]+)", True),
+        ("value=([0-9]+) ?°", True),
+        ("x(?:ab){3}", True),
+        ("", True),
+        # Nested or repeated quantifiers, alternation, backreferences,
+        # lookarounds, flags: never plain.
+        ("(a+)+$", False),
+        ("x(a+){2}$", False),
+        ("(a|aa)+", False),
+        ("x(a|b)", False),
+        ("(\\d+)\\1", False),
+        ("(?=a)b", False),
+        ("(?i)abc", False),
+        # Runs that can overlap one another or another search start.
+        ("(.*?)x", False),
+        ("<title>(.*?)</title>", False),
+        ("(\\w+)@x", False),
+        ("a*a*x", False),
+        ("x[a-z]+y", False),
+        ("\\d+", False),
+        ("a{100}", False),
+        ("[", False),
+        ("x" * 201, False),
+    ],
+)
+def test_which_patterns_are_plain(pattern: str, plain: bool) -> None:
+    assert ha.regex_is_plain(pattern) is plain
+
+
+@pytest.mark.parametrize(
     ("config", "status", "headers", "body", "expected"),
     [
         (None, 200, {}, b"x", None),

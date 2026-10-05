@@ -25,7 +25,13 @@ The sending rules (contract rule 7):
 * Cookies are neither kept nor sent: the sessions here have no cookie jar,
   as each run on the watch has a session of its own.
 * At most 4 runs per device at a time; a fifth is refused ``busy``.
-* A regex reply runs in the executor, off the event loop.
+* A regex reply whose pattern is plain (``http_actions.regex_is_plain``,
+  a search linear in the body) runs in the executor, off the event loop.
+  Any other pattern runs in a child process killed after 2 s, since a
+  search that backtracks badly holds the GIL and would freeze Home
+  Assistant from a thread too; the value is then null.
+* The whole run, reading the reply value included, ends within the
+  action's timeout plus those 2 s, so a run always gives its slot back.
 * Nothing secret is logged: a run writes the action's name, the status and
   the time it took to the debug log.
 
@@ -37,8 +43,9 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import logging
+import sys
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
@@ -46,6 +53,8 @@ import aiohttp
 from yarl import URL
 
 from .http_actions import (
+    REGEX_CHILD_PATH,
+    REGEX_CHILD_SCRIPT,
     Action,
     BuiltRequest,
     HTTPActionsInvalid,
@@ -58,6 +67,9 @@ from .http_actions import (
     global_pairs,
     library_globals,
     read_reply_config,
+    regex_child_input,
+    regex_child_output,
+    regex_is_plain,
     snippet,
     validate_action,
     validate_globals,
@@ -77,6 +89,8 @@ MAX_REDIRECTS = 5
 # leaves room without letting one signed request carry anything large.
 MAX_AUDIO_BYTES = 512 * 1024
 REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+# Seconds a pattern that is not plain may search for in its child process.
+REGEX_CHILD_TIMEOUT = 2.0
 # The device-key the panel's Test card counts its runs under.
 PANEL_DEVICE = "panel"
 
@@ -90,6 +104,8 @@ TOO_MANY_REDIRECTS = "too many HTTP redirects"
 FAILED = "The request failed."
 
 SessionFor = Callable[[bool], Any]
+# ``asyncio.create_subprocess_exec``, which tests replace.
+Spawn = Callable[..., Awaitable[Any]]
 
 
 class HTTPActionRefusal(Exception):
@@ -288,9 +304,15 @@ async def _send_hops(
 class HTTPActionRunner:
     """Runs actions for devices and the panel, at most four per device."""
 
-    def __init__(self, hass: HomeAssistant, session_for: SessionFor | None = None) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        session_for: SessionFor | None = None,
+        spawn: Spawn | None = None,
+    ) -> None:
         self._hass = hass
         self._session_for = session_for
+        self._spawn = spawn or asyncio.create_subprocess_exec
         self._sessions: dict[bool, Any] = {}
         self._running: dict[str, int] = {}
 
@@ -338,10 +360,55 @@ class HTTPActionRunner:
             return extract_reply(config, None, {}, b"")
         reply = read_reply_config(config)
         if reply is not None and reply["source"] == "regex":
-            return await self._hass.async_add_executor_job(
-                extract_reply, config, answer.status, answer.headers, answer.body
+            pattern = reply.get("pattern")
+            if not answer.body or regex_is_plain(pattern):
+                return await self._hass.async_add_executor_job(
+                    extract_reply, config, answer.status, answer.headers, answer.body
+                )
+            captured = await self.async_regex_in_child(answer.body, pattern)
+            return extract_reply(
+                config,
+                answer.status,
+                answer.headers,
+                answer.body,
+                regex=lambda _body, _pattern: captured,
             )
         return extract_reply(config, answer.status, answer.headers, answer.body)
+
+    async def async_regex_in_child(self, body: bytes, pattern: str) -> str | None:
+        """``regex_capture`` in a child process of its own, killed after
+        ``REGEX_CHILD_TIMEOUT``. None when it finds nothing, runs out of
+        time or fails in any way. The pattern and the body go over stdin."""
+        try:
+            process = await self._spawn(
+                sys.executable,
+                "-I",
+                "-c",
+                REGEX_CHILD_SCRIPT,
+                REGEX_CHILD_PATH,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+        except (OSError, ValueError):
+            _LOGGER.debug("The reply pattern could not be run in a child process")
+            return None
+        try:
+            async with asyncio.timeout(REGEX_CHILD_TIMEOUT):
+                out, _ = await process.communicate(regex_child_input(body, pattern))
+        except TimeoutError:
+            _LOGGER.debug("A reply pattern ran past %s s and was stopped", REGEX_CHILD_TIMEOUT)
+            return None
+        finally:
+            if process.returncode is None:
+                try:
+                    process.kill()
+                except ProcessLookupError:
+                    pass
+                await process.wait()
+        if process.returncode != 0:
+            return None
+        return regex_child_output(out)
 
     async def _send(
         self,
@@ -351,17 +418,28 @@ class HTTPActionRunner:
         audio: bytes | None,
     ) -> tuple[Answer, str | None, int]:
         started = time.monotonic()
+        answer: Answer | None = None
+        value: str | None = None
         try:
-            built = build_action_request(action, globals_, values, audio)
-        except RequestError as err:
-            answer = Answer(error=err.message)
-        else:
-            answer = await async_send(
-                built,
-                allows_untrusted=action.allows_untrusted,
-                session_for=self._session,
-            )
-        value = await self._extract(action.raw.get("responseConfig"), answer)
+            # The send keeps its own timeout; this one also covers reading
+            # the value, so the run's slot is always given back.
+            async with asyncio.timeout(
+                clamp_timeout(action.resolved_timeout) + REGEX_CHILD_TIMEOUT
+            ):
+                try:
+                    built = build_action_request(action, globals_, values, audio)
+                except RequestError as err:
+                    answer = Answer(error=err.message)
+                else:
+                    answer = await async_send(
+                        built,
+                        allows_untrusted=action.allows_untrusted,
+                        session_for=self._session,
+                    )
+                value = await self._extract(action.raw.get("responseConfig"), answer)
+        except TimeoutError:
+            if answer is None:
+                answer = Answer(error=TIMED_OUT)
         elapsed = int((time.monotonic() - started) * 1000)
         _LOGGER.debug(
             "HTTP action %s answered %s in %d ms",

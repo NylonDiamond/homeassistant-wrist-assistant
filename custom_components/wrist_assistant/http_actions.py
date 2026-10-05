@@ -1068,15 +1068,363 @@ def regex_capture(body: bytes, pattern: Any) -> str | None:
     return match.group(1) if compiled.groups >= 1 else match.group(0)
 
 
+# ── which patterns may run in this process ───────────────────────────────
+#
+# Python's engine backtracks, and a search holds the GIL for as long as it
+# runs, so a pattern that backtracks badly freezes Home Assistant even on an
+# executor thread. ``regex_is_plain`` picks out the patterns whose search is
+# linear in the body; every other one runs in a child process that is killed
+# after a short limit (``http_actions_runner``). The test is deliberately
+# narrow: a pattern it cannot read with certainty is not plain.
+#
+# A pattern is plain when all of this holds:
+#
+# * at most ``_PLAIN_MAX_PATTERN`` characters, and no alternation,
+#   backreference, lookaround, conditional, inline flag or atomic group;
+# * no quantified group that holds a quantifier or another group;
+# * no two quantified atoms can match the same character (``\d+`` and ``\s*``
+#   may sit together, ``\w+`` and ``\d*`` may not), so a failed match never
+#   retries one run against another;
+# * when an atom may repeat without a small bound, the pattern starts with
+#   ``^`` or ``\A``, or with a literal that no quantified atom can match, so
+#   the runs of two search starts never overlap.
+
+_PLAIN_MAX_PATTERN = 200
+# A count above this is treated like ``*`` (its run is not small).
+_PLAIN_MAX_COUNT = 16
+# Every character, for ``.``, ``\D``, a negated class and the like.
+_ANY: frozenset[str] = frozenset({"<any>"})
+_QUANTIFIER_RE = re.compile(r"\{(\d*)(,?)(\d*)\}")
+_GROUP_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*>")
+
+
+class _NotPlain(Exception):
+    pass
+
+
+def _char_kinds(char: str) -> frozenset[str]:
+    """The coarse kinds a character belongs to, for the overlap test. Two
+    atoms may match the same character when their kinds meet. The kinds
+    follow what Python's ``\\d``, ``\\w`` and ``\\s`` match in a text
+    pattern: Unicode decimal digits, letters and digits, and white space."""
+    if char.isascii():
+        if char.isdigit():
+            return frozenset({"digit"})
+        if char.isalpha():
+            return frozenset({"alpha"})
+        if char.isspace():
+            return frozenset({"space"})
+        return frozenset({char})
+    if char.isdecimal():
+        return frozenset({"other digit"})
+    if char.isalnum():
+        return frozenset({"other alnum"})
+    if char.isspace():
+        return frozenset({"other space"})
+    return frozenset({char})
+
+
+_ESCAPE_KINDS: dict[str, frozenset[str]] = {
+    "d": frozenset({"digit", "other digit"}),
+    "w": frozenset({"digit", "alpha", "_", "other digit", "other alnum"}),
+    "s": frozenset({"space", "other space"}),
+    "D": _ANY,
+    "W": _ANY,
+    "S": _ANY,
+    "n": frozenset({"space"}),
+    "t": frozenset({"space"}),
+    "r": frozenset({"space"}),
+    "f": frozenset({"space"}),
+    "v": frozenset({"space"}),
+}
+
+
+def _kinds_meet(first: frozenset[str], second: frozenset[str]) -> bool:
+    return "<any>" in first or "<any>" in second or bool(first & second)
+
+
+def _escape_kinds(char: str) -> frozenset[str]:
+    """What an escaped character matches; a letter or digit escape outside
+    the known classes (a backreference, ``\\x``, ``\\p`` and so on) is not
+    plain."""
+    if char in _ESCAPE_KINDS:
+        return _ESCAPE_KINDS[char]
+    if char.isascii() and not char.isalnum():
+        return _char_kinds(char)
+    raise _NotPlain
+
+
+def _class_kinds(pattern: str, start: int) -> tuple[frozenset[str], int]:
+    """A bracket class starting at ``start`` (the ``[``): its kinds and the
+    index after its ``]``."""
+    index = start + 1
+    if index < len(pattern) and pattern[index] == "^":
+        negated = True
+        index += 1
+    else:
+        negated = False
+    kinds: set[str] = set()
+    first = True
+    while True:
+        if index >= len(pattern):
+            raise _NotPlain
+        char = pattern[index]
+        if char == "]" and not first:
+            index += 1
+            break
+        first = False
+        if char == "[":
+            raise _NotPlain
+        if char == "\\":
+            if index + 1 >= len(pattern):
+                raise _NotPlain
+            escaped = _escape_kinds(pattern[index + 1])
+            if "<any>" in escaped:
+                return _ANY, _skip_class(pattern, index + 2)
+            kinds |= escaped
+            low: str | None = None
+            index += 2
+        else:
+            low = char
+            index += 1
+        if (
+            low is not None
+            and index + 1 < len(pattern)
+            and pattern[index] == "-"
+            and pattern[index + 1] not in "]\\["
+        ):
+            high = pattern[index + 1]
+            if not (low.isascii() and high.isascii()) or ord(high) < ord(low):
+                raise _NotPlain
+            for code in range(ord(low), ord(high) + 1):
+                kinds |= _char_kinds(chr(code))
+            index += 2
+        elif low is not None:
+            kinds |= _char_kinds(low)
+    if negated:
+        return _ANY, index
+    return frozenset(kinds), index
+
+
+def _skip_class(pattern: str, index: int) -> int:
+    while index < len(pattern):
+        if pattern[index] == "\\":
+            index += 2
+            continue
+        if pattern[index] == "[":
+            raise _NotPlain
+        if pattern[index] == "]":
+            return index + 1
+        index += 1
+    raise _NotPlain
+
+
+def _quantifier(pattern: str, index: int) -> tuple[bool, bool, int]:
+    """The quantifier at ``index``, if any: (quantified, unbounded, index
+    after it and its lazy or possessive mark). An exact count is quantified
+    only when it is large."""
+    if index >= len(pattern):
+        return False, False, index
+    char = pattern[index]
+    if char in "*+":
+        quantified, unbounded, index = True, True, index + 1
+    elif char == "?":
+        quantified, unbounded, index = True, False, index + 1
+    elif char == "{":
+        found = _QUANTIFIER_RE.match(pattern, index)
+        if found is None or (found.group(1) == "" and found.group(3) == ""):
+            raise _NotPlain
+        low, comma, high = found.groups()
+        index = found.end()
+        if not comma:
+            if int(low) > _PLAIN_MAX_COUNT:
+                return True, True, index
+            return False, False, index
+        quantified = True
+        unbounded = high == "" or int(high) > _PLAIN_MAX_COUNT
+    else:
+        return False, False, index
+    if index < len(pattern) and pattern[index] in "?+":
+        index += 1
+    return quantified, unbounded, index
+
+
+def regex_is_plain(pattern: Any) -> bool:
+    """Whether a reply pattern may run in this process: its search is linear
+    in the body. See the rules above; anything else is not plain."""
+    if not isinstance(pattern, str):
+        return True
+    pattern = trim(pattern)
+    if not pattern:
+        return True
+    if len(pattern) > _PLAIN_MAX_PATTERN:
+        return False
+    try:
+        return _plain(pattern)
+    except (_NotPlain, ValueError, IndexError):
+        return False
+
+
+def _plain(pattern: str) -> bool:
+    # Per open group: [kinds of its atoms, holds a quantifier or a group].
+    groups: list[list[Any]] = []
+    quantified_atoms: list[tuple[frozenset[str], bool]] = []
+    start_kinds: frozenset[str] | None = None
+    anchored = False
+    index = 0
+    first_token = True
+    while index < len(pattern):
+        char = pattern[index]
+        if char == "|":
+            raise _NotPlain
+        if char == "(":
+            if pattern.startswith("(?:", index):
+                index += 3
+            elif pattern.startswith("(?P<", index) and _GROUP_NAME_RE.match(pattern, index + 4):
+                index = _GROUP_NAME_RE.match(pattern, index + 4).end()
+            elif pattern.startswith("(?<", index) and _GROUP_NAME_RE.match(pattern, index + 3):
+                index = _GROUP_NAME_RE.match(pattern, index + 3).end()
+            elif pattern.startswith("(?", index):
+                raise _NotPlain
+            else:
+                index += 1
+            if groups:
+                groups[-1][1] = True
+            groups.append([set(), False])
+            first_token = False
+            continue
+        if char == ")":
+            if not groups:
+                raise _NotPlain
+            kinds, busy = groups.pop()
+            if busy and index + 1 < len(pattern) and pattern[index + 1] in "*+?{":
+                # Any count on a group that holds a quantifier, even an
+                # exact one: (a+){2} backtracks like (a+)(a+).
+                raise _NotPlain
+            quantified, unbounded, index = _quantifier(pattern, index + 1)
+            group_kinds = frozenset().union(*kinds)
+            if quantified:
+                quantified_atoms.append((group_kinds, unbounded))
+                if groups:
+                    groups[-1][1] = True
+            if groups:
+                groups[-1][0].add(group_kinds)
+            continue
+        if char in "^$":
+            if char == "^" and first_token:
+                anchored = True
+            if index + 1 < len(pattern) and pattern[index + 1] in "*+?{":
+                raise _NotPlain
+            index += 1
+            first_token = False
+            continue
+        if char == "\\" and index + 1 < len(pattern) and pattern[index + 1] in "AZbB":
+            if pattern[index + 1] == "A" and first_token:
+                anchored = True
+            index += 2
+            first_token = False
+            continue
+        if char == "[":
+            kinds, index = _class_kinds(pattern, index)
+            literal = False
+        elif char == ".":
+            kinds, index, literal = _ANY, index + 1, False
+        elif char == "\\":
+            if index + 1 >= len(pattern):
+                raise _NotPlain
+            escaped = pattern[index + 1]
+            kinds = _escape_kinds(escaped)
+            literal = escaped.isascii() and not escaped.isalnum()
+            index += 2
+        elif char in "*+?{":
+            if char == "{" and _QUANTIFIER_RE.match(pattern, index) is None:
+                kinds, index, literal = _char_kinds(char), index + 1, True
+            else:
+                raise _NotPlain
+        else:
+            kinds, index, literal = _char_kinds(char), index + 1, True
+        quantified, unbounded, index = _quantifier(pattern, index)
+        if first_token and literal and not quantified:
+            start_kinds = kinds
+        first_token = False
+        if quantified:
+            quantified_atoms.append((kinds, unbounded))
+            if groups:
+                groups[-1][1] = True
+        if groups:
+            groups[-1][0].add(kinds)
+    if groups:
+        raise _NotPlain
+    for position, (kinds, _unbounded) in enumerate(quantified_atoms):
+        for other, _ in quantified_atoms[position + 1 :]:
+            if _kinds_meet(kinds, other):
+                return False
+    if any(unbounded for _, unbounded in quantified_atoms) and not anchored:
+        if start_kinds is None:
+            return False
+        if any(_kinds_meet(start_kinds, kinds) for kinds, _ in quantified_atoms):
+            return False
+    return True
+
+
+# The child process a pattern that is not plain runs in. It loads this file
+# by its path (it imports only the standard library) and runs
+# ``regex_child_main``, so the search follows exactly the rules above. The
+# pattern and the body arrive on stdin, never on the command line.
+REGEX_CHILD_SCRIPT = (
+    "import importlib.util, sys\n"
+    "spec = importlib.util.spec_from_file_location('wa_http_actions_child', sys.argv[1])\n"
+    "module = importlib.util.module_from_spec(spec)\n"
+    "sys.modules[spec.name] = module\n"
+    "spec.loader.exec_module(module)\n"
+    "module.regex_child_main()\n"
+)
+REGEX_CHILD_PATH = __file__
+
+
+def regex_child_input(body: bytes, pattern: str) -> bytes:
+    """What the child reads on stdin: JSON with the pattern and the body (at
+    most the 256 KB a search reads) in base64."""
+    return json.dumps(
+        {
+            "pattern": pattern,
+            "body": base64.b64encode(bytes(body[:REGEX_BODY_BYTE_CAP])).decode("ascii"),
+        }
+    ).encode("utf-8")
+
+
+def regex_child_output(raw: bytes) -> str | None:
+    """The value a child wrote, or None for anything else."""
+    try:
+        value = json.loads(raw.decode("utf-8"))["value"]
+    except (ValueError, KeyError, TypeError, UnicodeDecodeError):
+        return None
+    return value if isinstance(value, str) else None
+
+
+def regex_child_main() -> None:
+    """The child's whole work: read the request on stdin, search, write
+    ``{"value": string | null}`` on stdout."""
+    import sys
+
+    request = json.loads(sys.stdin.buffer.read().decode("utf-8"))
+    value = regex_capture(base64.b64decode(request["body"]), request["pattern"])
+    sys.stdout.write(json.dumps({"value": value}))
+    sys.stdout.flush()
+
+
 def extract_reply(
     config: Any,
     status: int | None,
     headers: dict[str, str] | None,
     body: bytes,
+    regex: Any = None,
 ) -> str | None:
     """``HTTPResponseExtractor.extract``: the reply value with its unit, or
     None when there is nothing to show. ``config`` is the action's raw
-    ``responseConfig``; one that Swift would not decode extracts nothing."""
+    ``responseConfig``; one that Swift would not decode extracts nothing.
+    ``regex(body, pattern)`` stands in for :func:`regex_capture` when given,
+    for a search run elsewhere."""
     config = read_reply_config(config)
     if config is None:
         return None
@@ -1091,7 +1439,7 @@ def extract_reply(
     elif source == "header":
         raw = header_value(config.get("headerName"), headers or {})
     else:
-        raw = regex_capture(body, config.get("pattern"))
+        raw = (regex or regex_capture)(body, config.get("pattern"))
     if raw is None:
         return None
     unit = config.get("unit")
