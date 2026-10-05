@@ -69,7 +69,9 @@ function record(revision: number, document?: Record<string, unknown>, kind = "pa
 }
 
 /** A connection that answers `get` with what it holds and `save` with
- * `onSave`, which by default stores the document as the next revision. */
+ * `onSave`, which by default stores the document as the next revision. A
+ * kind other than `kind` is refused as `invalid`, as an integration older
+ * than it does: Watch settings then leaves the notification style out. */
 function fakeHass(kind: string, held: WatchConfigRecord, onSave?: (msg: Record<string, unknown>) => Promise<{ revision: number }>) {
   const sent: Record<string, unknown>[] = [];
   let stored = held;
@@ -78,6 +80,7 @@ function fakeHass(kind: string, held: WatchConfigRecord, onSave?: (msg: Record<s
     states: {},
     connection: {
       async sendMessagePromise(msg: Record<string, unknown>): Promise<unknown> {
+        if (msg.kind !== undefined && msg.kind !== kind) throw refusal("invalid", `unknown kind ${String(msg.kind)}`);
         sent.push(msg);
         const type = String(msg.type);
         if (type.endsWith("/get")) return structuredClone(stored);
