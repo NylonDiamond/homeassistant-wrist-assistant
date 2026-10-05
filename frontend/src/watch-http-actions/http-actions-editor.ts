@@ -3,11 +3,11 @@
 // it. One library for the whole home: the screen is handed no watch and
 // follows none, and says so on its bar.
 //
-// It wears the complication editor's chrome (`editor-chrome.ts`) the way the
-// Control Center editor does: the bar, then three columns with drag gutters
-// (the actions and Globals, the picked action's request, and what it asks
-// for, its reply value and its Test card), and a line at the foot. The views
-// are `view.ts`.
+// It wears the complication editor's chrome (`editor-chrome.ts`) for its bar
+// and its foot, and between them is laid out like a desktop HTTP client: the
+// collection on the left (the actions and one Globals row) beside a drag
+// gutter, and one main pane with the picked action's request over its
+// response, or the Globals table. The views are `view.ts`.
 //
 // The host pattern of the Control Center editor
 // (`watch-control-center/control-center-editor.ts`): the library read with
@@ -29,7 +29,7 @@
 
 import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
-import { type ColumnWidths, beginColumnDrag, fitColumnWidths, loadColumnWidths, saveColumnWidths } from "../column-split.js";
+import { type ColumnWidths, beginColumnDrag, clampColumnWidth, loadColumnWidths, saveColumnWidths } from "../column-split.js";
 import { chromeTokens, columnStyles, inspectorStyles, leftCardStyles, rowListStyles, topBarStyles } from "../editor-chrome.js";
 import { formStyles } from "../form-styles.js";
 import { type HassLike, type HttpActionsRecord, type OwnerSummary, fetchHttpActions, fetchOwners, saveHttpActions, testHttpAction } from "../ha-api.js";
@@ -71,11 +71,10 @@ import { httpActionsKeptText, httpActionsSaveNote } from "./save-note.js";
 import {
   type HttpActionsViewHost,
   addHttpActionTo,
+  closeHttpLook,
   httpActionsViewStyles,
-  renderActionsCard,
-  renderGlobalsCard,
-  renderHttpMiddle,
-  renderHttpRight,
+  renderHttpList,
+  renderHttpMain,
 } from "./view.js";
 
 registerWatchHttpActionsDrafts({ dirty: httpActionsDirty, drop: dropHttpActionsDraft });
@@ -94,14 +93,22 @@ const DELIVERY_POLL_MS = 15_000;
 const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const MOD = IS_MAC ? "⌘" : "Ctrl+";
 
-/** The lists column and the right column, each widened by dragging the
- * gutter beside it. */
-const HA_COLUMNS = { min: 220, max: 720, middleMin: 340 } as const;
-const HA_COLUMNS_DEFAULT: ColumnWidths = { left: 280, right: 360 };
+/** The collection pane, widened by dragging the gutter beside it. The main
+ * pane takes the rest and never goes below `middleMin`. Only `left` is read;
+ * `right` is kept so a width saved before stays readable. */
+const HA_COLUMNS = { min: 200, max: 520, middleMin: 520 } as const;
+const HA_COLUMNS_DEFAULT: ColumnWidths = { left: 280, right: 0 };
 export const HA_COLUMNS_KEY = "wrist-assistant-panel.http-actions.columns.v1";
-const HA_GRID_CHROME = 2 * 8 + 4 * 2;
-/** At or below this content width the columns stack. */
-const HA_STACK_WIDTH = 900;
+const HA_GRID_CHROME = 8;
+/** At or below this content width the panes stack. */
+const HA_STACK_WIDTH = 760;
+
+/** The collection pane's width fitted beside a main pane of `middleMin`. */
+export function fitHttpListWidth(available: number, want: number): number {
+  const width = clampColumnWidth(want, HA_COLUMNS);
+  if (available <= 0) return width;
+  return Math.max(HA_COLUMNS.min, Math.min(width, available - HA_COLUMNS.middleMin));
+}
 
 type Note = WatchPagesNote;
 
@@ -173,7 +180,6 @@ export class WaHttpActionsEditor extends LitElement {
   @state() private topMenuOpen = false;
   @state() private columns: ColumnWidths = { ...HA_COLUMNS_DEFAULT };
   @state() private hostWidth = 0;
-  @state() private hostHeight = 0;
   private ownListAsked = false;
   private sizeObserver?: ResizeObserver;
   private observedTop?: HTMLElement;
@@ -268,7 +274,6 @@ export class WaHttpActionsEditor extends LitElement {
         }
         const box = entry.contentRect;
         if (Math.abs(box.width - this.hostWidth) >= 1) this.hostWidth = box.width;
-        if (Math.abs(box.height - this.hostHeight) >= 1) this.hostHeight = box.height;
       }
     });
     this.sizeObserver.observe(this);
@@ -508,6 +513,10 @@ export class WaHttpActionsEditor extends LitElement {
       this.topMenuOpen = false;
       return;
     }
+    if (e.key === "Escape" && closeHttpLook(this.lookHost())) {
+      e.preventDefault();
+      return;
+    }
     if (isTextField(path[0])) return;
     if (mod && !e.altKey && key === "z") {
       e.preventDefault();
@@ -522,10 +531,17 @@ export class WaHttpActionsEditor extends LitElement {
   };
 
   private onWindowPointerDown = (e: PointerEvent): void => {
-    if (!this.topMenuOpen) return;
-    const inside = e.composedPath().some((n) => n instanceof HTMLElement && n.classList.contains("pe-top-menu"));
-    if (!inside) this.topMenuOpen = false;
+    const path = e.composedPath();
+    const inside = (cls: string) => path.some((n) => n instanceof HTMLElement && n.classList.contains(cls));
+    if (this.topMenuOpen && !inside("pe-top-menu")) this.topMenuOpen = false;
+    // The icon and color popover closes on a press anywhere but in it or on
+    // the button that opens it, which toggles it itself.
+    if (!inside("ha-look")) closeHttpLook(this.lookHost());
   };
+
+  private lookHost(): Pick<HttpActionsViewHost, "uiState" | "requestUpdate"> {
+    return { uiState: this.uiState, requestUpdate: () => this.requestUpdate() };
+  }
 
   // ── drawing ────────────────────────────────────────────────────────────
 
@@ -590,68 +606,59 @@ export class WaHttpActionsEditor extends LitElement {
     </span>`;
   }
 
-  // ── the columns ────────────────────────────────────────────────────────
+  // ── the panes ──────────────────────────────────────────────────────────
 
-  private fittedColumns(): ColumnWidths {
-    if (this.hostWidth > 0 && this.hostWidth <= HA_STACK_WIDTH) return this.columns;
-    return fitColumnWidths(this.hostWidth - HA_GRID_CHROME, this.columns, HA_COLUMNS);
+  private listWidth(): number {
+    if (this.hostWidth > 0 && this.hostWidth <= HA_STACK_WIDTH) return this.columns.left;
+    return fitHttpListWidth(this.hostWidth - HA_GRID_CHROME, this.columns.left);
   }
 
-  private renderGutter(side: "left" | "right"): TemplateResult {
-    return html`<div class="gutter ${side}" role="separator" aria-orientation="vertical"
-      aria-label=${side === "left" ? "Resize the list column" : "Resize the right column"}
+  private renderGutter(): TemplateResult {
+    return html`<div class="gutter left" role="separator" aria-orientation="vertical" aria-label="Resize the list"
       title="Drag to resize. Double-click to reset."
       @pointerdown=${(e: PointerEvent) => {
-        const shown = this.fittedColumns();
         beginColumnDrag(e, {
-          side,
-          base: side === "left" ? shown.left : shown.right,
+          side: "left",
+          base: this.listWidth(),
           limits: HA_COLUMNS,
-          onWidth: (width) => { this.columns = { ...this.columns, [side]: width }; },
+          onWidth: (width) => { this.columns = { ...this.columns, left: width }; },
           onEnd: () => saveColumnWidths(HA_COLUMNS_KEY, this.columns),
         });
       }}
       @dblclick=${() => {
-        this.columns = { ...this.columns, [side]: HA_COLUMNS_DEFAULT[side] };
+        this.columns = { ...this.columns, left: HA_COLUMNS_DEFAULT.left };
         saveColumnWidths(HA_COLUMNS_KEY, this.columns);
       }}></div>`;
   }
 
   private renderBody(): TemplateResult {
-    if (this.unsupported) return html`<div class="pe-empty"><b>${HTTP_ACTIONS_UPDATE_TEXT}</b></div>`;
+    if (this.unsupported) return html`<div class="ha-calm"><div class="pe-empty"><b>${HTTP_ACTIONS_UPDATE_TEXT}</b></div></div>`;
     if (this.loadError !== undefined) {
-      return html`<div class="pe-empty">
+      return html`<div class="ha-calm"><div class="pe-empty">
         <span>Could not read the HTTP actions: ${this.loadError}</span>
         <button class="pe-btn" @click=${() => void this.load()}>Try again</button>
-      </div>`;
+      </div></div>`;
     }
     const record = this.record;
-    if (this.loading || record === undefined) return html`<div class="pe-empty">Loading…</div>`;
+    if (this.loading || record === undefined) return html`<div class="ha-calm"><div class="pe-empty">Loading…</div></div>`;
     const draft = this.draft;
     const host = this.viewHost();
     if (draft === undefined || host === undefined) {
-      return html`<div class="pe-empty ha-empty"><b>${HTTP_ACTIONS_EMPTY_TITLE}</b>
+      return html`<div class="ha-calm"><div class="pe-empty ha-empty"><b>${HTTP_ACTIONS_EMPTY_TITLE}</b>
         <span>An HTTP action is a web request a watch asks Home Assistant to send. ${HTTP_ACTIONS_SHARED_TEXT}</span>
         <span class="ha-start"><button class="pe-btn pe-primary" @click=${() => this.startLibrary()}>${uiIcon("plus")}<span>${HTTP_ACTIONS_ADD_BUTTON}</span></button></span>
         ${homeHasPhone(this.allOwners) ? html`<span class="pe-muted">${HTTP_ACTIONS_PHONE_TEXT}</span>` : nothing}
-      </div>`;
+      </div></div>`;
     }
-    const fit = this.fittedColumns();
-    const view = this.hostHeight > 0 ? `--pe-view-h:${this.hostHeight}px;` : "";
     const certs = httpActionList(draft.document).filter((a) => a.presentsClientCertificate === true).length;
     return html`${certs === 0 ? nothing : html`<p class="ha-cert-line">${certs === 1 ? "An action asks" : `${certs} actions ask`} for a client certificate. ${HTTP_ACTIONS_CLIENT_CERT_TEXT}</p>`}
-    <div class="layout pe-layout ${this.stacked ? "cols-1" : "cols-3"}" style=${`--wa-left:${fit.left}px;--wa-right:${fit.right}px;${view}`}>
+    <div class="layout pe-layout ha-two ${this.stacked ? "cols-1" : ""}" style=${`--wa-left:${this.listWidth()}px`}>
       <div class="column left">
-        ${renderActionsCard(host)}
-        ${renderGlobalsCard(host)}
+        ${renderHttpList(host)}
       </div>
-      ${this.renderGutter("left")}
-      <div class="column inspector card ha-middle">
-        ${renderHttpMiddle(host)}
-      </div>
-      ${this.renderGutter("right")}
-      <div class="column inspector card ha-right">
-        ${renderHttpRight(host)}
+      ${this.renderGutter()}
+      <div class="column card ha-main">
+        ${renderHttpMain(host)}
       </div>
     </div>
     ${this.renderFoot(record, draft)}`;
@@ -723,33 +730,46 @@ export class WaHttpActionsEditor extends LitElement {
     .pe-note.err { border-color: color-mix(in srgb, var(--wa-need) 45%, transparent); }
     .pe-link { border: 0; background: none; padding: 0; color: var(--wa-accent); font: inherit; font-size: 13px; cursor: pointer; }
     .pe-link:focus-visible { outline: none; box-shadow: var(--wa-ring); border-radius: 4px; }
+    /* A screen with nothing to edit yet: one calm card in the middle. */
+    .ha-calm { flex: 1 1 auto; min-height: 280px; display: flex; align-items: center; justify-content: center; padding: 24px 0; }
     .pe-empty {
-      display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: 560px;
-      padding: 20px; border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg, 16px); background: var(--wa-card);
+      display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; max-width: 520px;
+      padding: 28px 24px; border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg, 16px); background: var(--wa-card);
     }
-    .ha-start { display: flex; flex-wrap: wrap; gap: 8px; }
+    .pe-empty > b { font-size: 15px; }
+    .ha-start { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
     .ha-cert-line {
       flex: none; margin: 0 0 10px; padding: 8px 12px; font-size: 13px;
       border: 1px solid var(--wa-amber-line); border-radius: var(--wa-r-md, 12px);
     }
-    .layout.pe-layout { flex: none; min-height: auto; overflow: visible; align-items: start; padding: 0; margin-bottom: 14px; }
-    .pe-layout > .column.left, .pe-layout > .column.inspector {
-      --pe-under-top: max(0px, calc(var(--pe-top-h, 0px) - var(--cf-pad, 16px)));
-      position: sticky; top: var(--pe-under-top);
-      max-height: calc(var(--pe-view-h, calc(100dvh - 120px)) - 30px - var(--pe-under-top));
-      overflow-y: auto; overflow-x: hidden;
+    /* Two panes, as a desktop HTTP client lays itself out: the collection
+       on the left and the request over its response on the right, together
+       exactly as tall as the screen leaves them, each scrolling inside. */
+    .layout.pe-layout.ha-two {
+      grid-template-columns: var(--wa-left, 260px) 8px minmax(0, 1fr);
+      flex: 1 1 0; min-height: 460px; overflow: hidden; padding: 0; margin-bottom: 10px;
     }
-    .pe-layout > .column.left { display: flex; flex-direction: column; gap: 8px; scrollbar-gutter: auto; }
-    .pe-layout > .column.left > .card { flex: none; }
-    @container (max-width: 900px) {
-      .layout.pe-layout { grid-template-columns: minmax(0, 1fr); }
-      .pe-layout > .gutter { display: none; }
-      .pe-layout > .column { grid-column: auto; position: static; max-height: none; overflow: visible; }
+    .ha-two > .column { min-width: 0; }
+    .ha-two > .column.left { display: flex; flex-direction: column; min-height: 0; overflow: hidden; scrollbar-gutter: auto; }
+    .ha-two > .column.ha-main {
+      display: flex; flex-direction: column; min-height: 0; overflow: hidden; padding: 0; scrollbar-gutter: auto;
+      border-radius: var(--wa-lc-r, 10px);
     }
-    /* Stacked, the lists come first: pick an action, then edit it. */
-    .layout.pe-layout.cols-1 > .column.left { order: 1; }
-    .layout.pe-layout.cols-1 > .column.ha-middle { order: 2; }
-    .layout.pe-layout.cols-1 > .column.ha-right { order: 3; }
+    /* Stacked: the list first, then the main pane full width, and the page
+       scrolls as one. */
+    .layout.pe-layout.ha-two.cols-1 {
+      grid-template-columns: minmax(0, 1fr); flex: none; min-height: auto; overflow: visible; row-gap: 10px;
+    }
+    .ha-two.cols-1 > .gutter { display: none; }
+    .ha-two.cols-1 > .column { overflow: visible; }
+    .layout.ha-two.cols-1 > .column.left { order: 1; }
+    .layout.ha-two.cols-1 > .column.ha-main { order: 2; }
+    .ha-two.cols-1 .ha-list-card { max-height: none; }
+    .ha-two.cols-1 .ha-items { overflow: visible; }
+    .ha-two.cols-1 .ha-req, .ha-two.cols-1 .ha-resp { flex: none; }
+    .ha-two.cols-1 .ha-tabbody, .ha-two.cols-1 .ha-scroll { overflow: visible; }
+    .ha-two.cols-1 .ha-resp-body { overflow: visible; }
+    .ha-two.cols-1 pre.ha-snippet { max-height: 320px; overflow: auto; }
     .pe-btn {
       display: inline-flex; align-items: center; justify-content: center; gap: 6px;
       flex: none; min-height: 32px; padding: 0 12px; border: 1px solid var(--wa-line-strong); border-radius: var(--wa-r-sm, 8px);
