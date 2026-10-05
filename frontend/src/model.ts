@@ -3338,7 +3338,7 @@ export function tapActionInfo(type: TapAction["type"], onPhone = false): string 
     runScene: "Turns on a Home Assistant scene.",
     runScript: "Runs a Home Assistant script.",
     callService: "Calls any Home Assistant service, with your own data.",
-    runHTTPAction: "Runs an HTTP action you made in the Wrist Assistant app.",
+    runHTTPAction: "Runs an HTTP action kept in Home Assistant or the Wrist Assistant app.",
     addTodo: "Opens the watch app to add an item to a to-do list.",
     openApp: "Opens Wrist Assistant.",
     openPage: "Opens one page of your Wrist Assistant grid. You pick the page.",

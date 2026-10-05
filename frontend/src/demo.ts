@@ -231,7 +231,7 @@ export async function runTapAction(action: TapAction, hooks: DemoHooks): Promise
     case "addTodo":
       return { kind: "would", text: `The watch would ask for the text, then add it to ${action.displayName || action.entityId}.` };
     case "runHTTPAction":
-      return { kind: "would", text: `The watch would run the HTTP action ${action.displayName || action.entityId}. HTTP actions are kept in the app.` };
+      return { kind: "would", text: `The watch would run the HTTP action ${action.displayName || action.entityId}. HTTP actions are kept in Home Assistant or the app.` };
     case "toggleEntity":
       return await fire(hooks, domainOf(action.entityId), "toggle", { entity_id: action.entityId },
         `Toggled ${action.displayName || action.entityId}.`);
