@@ -13,7 +13,7 @@ Two kinds of photo:
   ``<id>.jpg``, in ``.storage/wrist_assistant_page_images`` beside it. So an
   upload writes one file and a few hundred bytes of index, never every photo.
 * Built-in photos, the 15 the phone offers. Their pixels ship with the
-  integration in ``page_images/`` (the phone's asset files, as they are) with
+  integration in ``page_image_presets/`` (the phone's asset files, as they are) with
   ``presets.json`` naming them in the phone's order. Read only: never in the
   index, never swept, never deleted.
 
@@ -70,7 +70,7 @@ _LOGGER = logging.getLogger(__name__)
 
 _SAVE_DEBOUNCE_SECONDS = 1
 _FOLDER = "wrist_assistant_page_images"
-_PRESETS_DIR = Path(__file__).parent / "page_images"
+_PRESETS_DIR = Path(__file__).parent / "page_image_presets"
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 # Base64 is four characters per three bytes; anything longer than a photo at
 # the cap could encode to is refused before it is decoded.

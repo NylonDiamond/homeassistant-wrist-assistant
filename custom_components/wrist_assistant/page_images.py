@@ -10,7 +10,7 @@ A page names its photo as ``backgroundImageId``. A custom photo's id is the
 UUID the phone or the panel made for it, which the phone writes in upper case;
 it is compared without case and kept in upper case here. A built-in photo's
 id is one of the ``preset_*`` ids the phone offers, whose pixels ship with
-the integration (``page_images/``).
+the integration (``page_image_presets/``).
 """
 
 from __future__ import annotations

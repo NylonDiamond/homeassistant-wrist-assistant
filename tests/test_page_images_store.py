@@ -303,7 +303,7 @@ def test_put_refuses_an_id_that_is_not_a_photo_id(env, image_id) -> None:
 def test_a_built_in_photo_reads_from_the_integrations_folder(env) -> None:
     image_id, data = asyncio.run(env.store.async_read("preset_waves"))
     assert image_id == "preset_waves"
-    assert data == (_PKG_DIR / "page_images" / "preset_waves.jpg").read_bytes()
+    assert data == (_PKG_DIR / "page_image_presets" / "preset_waves.jpg").read_bytes()
 
 
 @pytest.mark.parametrize(("raw", "code"), [(UUID_UPPER, "not_found"), ("preset_stars", "invalid"), (None, "invalid")])
@@ -549,7 +549,7 @@ def test_remove_deletes_the_index_and_the_folder_from_a_fresh_instance(env) -> N
     asyncio.run(store.async_remove())
     assert KEY in FakeStore.removed and KEY not in FakeStore.files
     assert not env.folder.exists()
-    assert (_PKG_DIR / "page_images" / "preset_waves.jpg").exists()
+    assert (_PKG_DIR / "page_image_presets" / "preset_waves.jpg").exists()
 
 
 # ── base64 ───────────────────────────────────────────────────────────────

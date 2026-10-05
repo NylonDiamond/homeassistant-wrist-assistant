@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 _PKG_DIR = Path(__file__).resolve().parents[1] / "custom_components" / "wrist_assistant"
-_PRESETS = _PKG_DIR / "page_images"
+_PRESETS = _PKG_DIR / "page_image_presets"
 
 
 def _load():

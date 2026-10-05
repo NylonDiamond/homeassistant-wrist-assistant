@@ -136,7 +136,7 @@ def test_get_answers_the_jpeg_bytes(env) -> None:
 def test_get_answers_a_built_in_photo(env) -> None:
     reply = op(env, "_op_page_image_get", {"image_id": "preset_snow_twilight"})
     assert reply.status == 200 and reply.content_type == "image/jpeg"
-    assert reply.body == (_PKG_DIR / "page_images" / "preset_snow_twilight.jpg").read_bytes()
+    assert reply.body == (_PKG_DIR / "page_image_presets" / "preset_snow_twilight.jpg").read_bytes()
 
 
 @pytest.mark.parametrize(
@@ -274,7 +274,7 @@ def test_ws_upload_list_get_delete(env) -> None:
 def test_ws_get_of_a_built_in_photo(env) -> None:
     got = ws_call(env, env.ws.ws_page_images_get, image_id="preset_dark_rock").results[1]
     assert got["image_id"] == "preset_dark_rock"
-    assert base64.b64decode(got["data"]) == (_PKG_DIR / "page_images" / "preset_dark_rock.jpg").read_bytes()
+    assert base64.b64decode(got["data"]) == (_PKG_DIR / "page_image_presets" / "preset_dark_rock.jpg").read_bytes()
 
 
 def test_ws_upload_of_the_same_bytes_answers_the_same_id(env) -> None:
