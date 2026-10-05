@@ -124,4 +124,15 @@ describe("the shell's and Home's look", () => {
     expect(title).toContain("text-transform: uppercase");
     expect(title).toContain("letter-spacing");
   });
+
+  it("cuts a long device name with an ellipsis on a box of its own, not on the flex row", () => {
+    const text = homeStyles.cssText;
+    const rule = (sel: string) => text.slice(text.indexOf(sel), text.indexOf("}", text.indexOf(sel)));
+    const label = rule(".home-device-label {");
+    expect(label).toContain("min-width: 0");
+    expect(label).toContain("overflow: hidden");
+    expect(label).toContain("text-overflow: ellipsis");
+    expect(label).toContain("white-space: nowrap");
+    expect(rule(".home-device-name {")).not.toContain("text-overflow");
+  });
 });

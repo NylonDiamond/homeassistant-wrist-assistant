@@ -123,7 +123,10 @@ export const homeStyles = css`
   .home-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--wa-muted); }
   .home-device.synced .home-dot { background: var(--wa-green); }
   .home-device.waiting .home-dot { background: var(--wa-amber); }
-  .home-device-name { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .home-device-name { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 6px; }
+  /* The name in its own box: an ellipsis only reaches a block, never the
+     bare text of a flex row. */
+  .home-device-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .home-device-name svg.ui-icon { width: 13px; height: 13px; flex: none; color: var(--wa-muted); }
   .home-device-sync { flex: none; font-size: 12.5px; color: var(--wa-muted); }
   .home-device.waiting .home-device-sync { color: var(--wa-amber); }

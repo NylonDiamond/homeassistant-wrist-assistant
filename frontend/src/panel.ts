@@ -18511,8 +18511,9 @@ export class WristAssistantPanel extends LitElement {
    * card that opens Watch settings, where the first watch is paired.
    * Complications and widgets has how many there are (the count the list
    * gives), New, Browse all, Import and the online gallery. Devices has each
-   * device, Synced or Waiting, by the rule the header pill uses for the whole
-   * home; that rule reads the complication store only, and the card says so.
+   * device, Synced or Waiting (or Nothing to send, for one that owns nothing
+   * and never synced), by the rule the header pill uses for the whole home;
+   * that rule reads the complication store only, and the card says so.
    * Under them, the recent designs, which open on the Complications tab.
    */
   private renderHome() {
@@ -18566,10 +18567,10 @@ export class WristAssistantPanel extends LitElement {
               ? html`<p class="home-empty">${this.linkReady ? "No watch or iPhone has connected to this Home Assistant yet." : "Loading…"}</p>`
               : html`<ul class="home-devices">${devices.map((d) => html`<li class="home-device ${d.sync}">
                   <i class="home-dot" aria-hidden="true"></i>
-                  <span class="home-device-name">${uiIcon(d.kind === "iphone" ? "phone" : "watch")}${d.name}</span>
+                  <span class="home-device-name">${uiIcon(d.kind === "iphone" ? "phone" : "watch")}<span class="home-device-label">${d.name}</span></span>
                   <span class="home-device-sync">${deviceSyncLabel(d.sync)}</span>
                 </li>`)}</ul>`}
-            ${devices.length === 0 ? nothing : html`<p class="home-small">Synced and Waiting are about complications and widgets.</p>`}
+            ${devices.length === 0 ? nothing : html`<p class="home-small">Synced, Waiting and Nothing to send are about complications and widgets only.</p>`}
             ${admin ? html`<div class="home-acts">
               <button class="home-btn home-watch-settings" aria-haspopup="dialog"
                 title="How the watch behaves: gestures, pages, cameras and connection"
