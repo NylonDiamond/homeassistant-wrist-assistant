@@ -323,20 +323,29 @@ class HTTPActionRunner:
         if session is None or session.closed:
             from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
+            # Made on a device's first run, not during setup, so Home
+            # Assistant would let go of it only when it stops; a reload
+            # would leave the old runner's sessions behind. This runner owns
+            # them instead and detaches them on unload.
             session = async_create_clientsession(
                 self._hass,
                 verify_ssl=verify_ssl,
+                auto_cleanup=False,
                 cookie_jar=aiohttp.DummyCookieJar(),
             )
             self._sessions[verify_ssl] = session
         return session
 
     async def async_shutdown(self) -> None:
-        """Close the sessions this runner made. Called on unload."""
+        """Let go of the sessions this runner made. Called on unload.
+
+        ``detach`` is how a session from ``async_create_clientsession`` is
+        given up: it shares Home Assistant's connector, which ``close``
+        would report as closing Home Assistant's own session."""
         sessions, self._sessions = list(self._sessions.values()), {}
         for session in sessions:
             if not session.closed:
-                await session.close()
+                session.detach()
 
     def running(self, device: str) -> int:
         return self._running.get(device, 0)

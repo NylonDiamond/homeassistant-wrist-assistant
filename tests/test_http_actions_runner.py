@@ -536,6 +536,56 @@ def test_the_run_timeout_covers_reading_the_value(env, monkeypatch) -> None:
     assert runner.running("w") == 0
 
 
+class _HassSession:
+    """A session from ``async_create_clientsession``: ``close`` is the call
+    Home Assistant warns about, ``detach`` the one it asks for."""
+
+    def __init__(self) -> None:
+        self.closed = False
+        self.detached = False
+
+    async def close(self) -> None:
+        raise AssertionError("closes the Home Assistant aiohttp session")
+
+    def detach(self) -> None:
+        self.detached = True
+        self.closed = True
+
+    def request(self, method, url, **kwargs):
+        return FakeResponse(200)
+
+
+def test_the_runner_owns_its_sessions_and_detaches_them_on_unload(env, monkeypatch) -> None:
+    made: list[tuple[dict, _HassSession]] = []
+
+    def create(hass, **kwargs):
+        session = _HassSession()
+        made.append((kwargs, session))
+        return session
+
+    monkeypatch.setitem(
+        sys.modules,
+        "homeassistant.helpers.aiohttp_client",
+        types.SimpleNamespace(async_create_clientsession=create),
+    )
+    runner = env.mod.HTTPActionRunner(FakeHass())
+    doc = library(action(), action(id=ID_B, allowsUntrustedCertificate=True))
+    run(env, runner, doc, {"id": ID_A})
+    run(env, runner, doc, {"id": ID_B})
+    run(env, runner, doc, {"id": ID_A})
+    assert [kwargs["verify_ssl"] for kwargs, _ in made] == [True, False]
+    assert all(kwargs["auto_cleanup"] is False for kwargs, _ in made)
+    # Unload, as a reload does: nothing is left attached.
+    asyncio.run(runner.async_shutdown())
+    assert all(session.detached for _, session in made)
+    # The runner of the next setup makes its own.
+    fresh = env.mod.HTTPActionRunner(FakeHass())
+    run(env, fresh, doc, {"id": ID_A})
+    assert len(made) == 3 and not made[2][1].detached
+    asyncio.run(fresh.async_shutdown())
+    assert made[2][1].detached
+
+
 def test_a_header_reply_reads_joined_headers(env) -> None:
     answer = FakeResponse(200, b"", [("X-N", "1"), ("x-n", "2"), ("ETag", "e")])
     runner, _, _ = make_runner(env, {URL_A: answer})
