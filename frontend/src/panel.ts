@@ -138,6 +138,7 @@ import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
 import { type SendState, agoWords, describeHomeSync, describeSend, deviceSyncLabel, homeSync, sendState, sendWaitMs } from "./send-state.js";
 import { homeDeviceRows, homeDevices, homeStyles } from "./home.js";
+import { type PickerForm, type TabMemory, browseAllTab, listPageEscape, listPageLead, listPageShown, listPageState, listPageStyles, listsReady, pickTab, pickerSurfaceClass, restoreTab } from "./list-page.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
 import {
   type EntityState,
@@ -1540,6 +1541,10 @@ export class WristAssistantPanel extends LitElement {
    * household that works on one watch opens this dialog on that watch every
    * time. */
   @state() private pickerDevice: string = ALL_DEVICES;
+  /** The device tab the list page comes back to, which is the one kept in
+   * this browser. It parts from `pickerDevice` only while Browse all has the
+   * dialog on All over the editor (`list-page.ts`, `TabMemory`). */
+  private listDevice: string = ALL_DEVICES;
   /** What the Shape menu is narrowed to: a shape, the control, or "all". Per
    * session, never saved: the tab is the choice worth remembering, and a
    * shape left on from last week is a dialog that opens half empty. */
@@ -2251,6 +2256,11 @@ export class WristAssistantPanel extends LitElement {
   private unsubscribe?: () => Promise<void>;
   private recordsLoadRun = 0;
   private otherListsRun = 0;
+  /** The edited device the last finished `loadOtherLists` was read for, and
+   * whether one has finished at all, so the list page can tell "no
+   * complications" from "the other devices have not answered yet". */
+  private otherListsOwner?: string;
+  private otherListsRead = false;
   /** Whether the start page has asked for the other devices' lists this visit. */
   private startListsAsked = false;
   private templateTimer?: number;
@@ -2808,24 +2818,24 @@ export class WristAssistantPanel extends LitElement {
        the columns are as many as fit rather than four, and every box round
        them gives back the room it was holding for the device pictures.
        Two classes deep, so the column counts above do not win it back. */
-    .pk-dialog.bare .pk-grid { grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 9px; }
+    .pk-surface.bare .pk-grid { grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 9px; }
     /* Each box holds one shape, and each shape's picture fills its card, so
        the card is sized to the shape: a round one small, since a circle wide
        enough for a rectangle's card is a dinner plate, and a wide one wide,
        so a rectangle's rows and an inline line are big enough to read. */
-    .pk-dialog.bare .pk-grid[data-shape="circular"] {
+    .pk-surface.bare .pk-grid[data-shape="circular"] {
       grid-template-columns: repeat(auto-fill, minmax(116px, 1fr));
     }
-    .pk-dialog.bare .pk-grid:is([data-shape="rectangular"], [data-shape="inline"], [data-shape="medium"]) {
+    .pk-surface.bare .pk-grid:is([data-shape="rectangular"], [data-shape="inline"], [data-shape="medium"]) {
       grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
     }
-    .pk-dialog.bare .pk-card { padding: 8px; border-radius: 10px; }
-    .pk-dialog.bare .pk-card-top { margin-bottom: 6px; min-height: 16px; gap: 6px; }
-    .pk-dialog.bare .pk-card-name { font-size: 12px; }
-    .pk-dialog.bare .pk-boxes { gap: 6px; }
-    .pk-dialog.bare .pk-box { padding: 6px 8px 8px; }
-    .pk-dialog.bare .pk-sec-body { padding: 8px; }
-    .pk-dialog.bare .pk-band-body { gap: 8px; }
+    .pk-surface.bare .pk-card { padding: 8px; border-radius: 10px; }
+    .pk-surface.bare .pk-card-top { margin-bottom: 6px; min-height: 16px; gap: 6px; }
+    .pk-surface.bare .pk-card-name { font-size: 12px; }
+    .pk-surface.bare .pk-boxes { gap: 6px; }
+    .pk-surface.bare .pk-box { padding: 6px 8px 8px; }
+    .pk-surface.bare .pk-sec-body { padding: 8px; }
+    .pk-surface.bare .pk-band-body { gap: 8px; }
     .pk-card {
       position: relative; z-index: 1; display: flex; flex-direction: column; min-width: 0;
       padding: 10px; border-radius: 8px; border: 1px solid var(--wa-line-strong); background: var(--wa-card);
@@ -5875,7 +5885,7 @@ export class WristAssistantPanel extends LitElement {
 
   `, formEntityStyles, css`
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .ent-box.needs { animation: none; } }
-  `, watchSettingsStyles, watchPagesHookStyles, watchMenusHookStyles, watchVoiceHookStyles, watchStatusPagesHookStyles, watchControlCenterHookStyles, watchRoomsHookStyles, shellStyles, homeStyles, watchRowStyles];
+  `, watchSettingsStyles, watchPagesHookStyles, watchMenusHookStyles, watchVoiceHookStyles, watchStatusPagesHookStyles, watchControlCenterHookStyles, watchRoomsHookStyles, shellStyles, homeStyles, watchRowStyles, listPageStyles];
 
   // ── lifecycle ─────────────────────────────────────────────────────────
 
@@ -6057,7 +6067,7 @@ export class WristAssistantPanel extends LitElement {
       // rather than to nothing. `pickerLook` was the Preview or Devices
       // choice, which went when a card became one picture (2026-09-20); an
       // older browser's copy of it is read past.
-      if (typeof saved.pickerDevice === "string") this.pickerDevice = saved.pickerDevice;
+      if (typeof saved.pickerDevice === "string") this.pickerDevice = this.listDevice = saved.pickerDevice;
       if (Array.isArray(saved.pickerShut)) this.pickerShut = saved.pickerShut.filter((k): k is string => typeof k === "string");
       if (typeof saved.pickerBare === "boolean") this.pickerBare = saved.pickerBare;
     } catch {
@@ -6068,7 +6078,7 @@ export class WristAssistantPanel extends LitElement {
   private saveListView() {
     try {
       window.localStorage.setItem(LIST_STORE_KEY, JSON.stringify({
-        thumbStep: this.thumbStep, detail: this.layerDetail, pickerDevice: this.pickerDevice,
+        thumbStep: this.thumbStep, detail: this.layerDetail, pickerDevice: this.listDevice,
         pickerShut: this.pickerShut, pickerBare: this.pickerBare,
       }));
     } catch {
@@ -6269,6 +6279,20 @@ export class WristAssistantPanel extends LitElement {
       const to = landingPath(this.route, { restoring: this.restoreOpen !== undefined, shareLink: this.pendingLink !== undefined });
       if (to !== undefined) this.goTo(to, true);
     }
+    // The list page coming into view or going, and the Browse dialog, which
+    // only ever stands over an open design on the Complications tab: gone
+    // from under it by another route, it is shut in state too, since the
+    // element it lived in is no longer drawn.
+    if (changed.has("route") || changed.has("draft") || changed.has("selectedId")) {
+      const route = changed.has("route") ? changed.get("route") as PanelRoute | undefined : this.route;
+      const draft = changed.has("draft") ? changed.get("draft") as Draft | undefined : this.draft;
+      const selected = changed.has("selectedId") ? changed.get("selectedId") as string | undefined : this.selectedId;
+      const was = listPageShown(route, draft !== undefined || selected !== undefined);
+      const now = listPageShown(this.route, this.designOpen);
+      if (now && !was) this.enterListPage();
+      else if (was && !now) this.leaveListPage();
+      if (this.pickerOpen && tabOfRoute(this.route) !== "complications") this.pickerClosed();
+    }
     // A watch the address names (a link from the iPhone app, a bookmark, a
     // screen link in the row) becomes the Watch app's remembered watch, once
     // the device list does not say it is no watch of this home.
@@ -6350,9 +6374,10 @@ export class WristAssistantPanel extends LitElement {
     this.watchStage();
     if (changed.has("listFace")) this.followFaceHover();
     this.placeFaceRing();
-    // The start page lists every device's complications, and the other
-    // devices' lists are only read when a surface asks for them. Asked once
-    // per visit to the page, the way the picker asks once per opening.
+    // Home and the list page count every device's complications, and the
+    // other devices' lists are only read when a surface asks for them. Asked
+    // once while nothing is open, the way the picker asks once per opening;
+    // entering the list page asks again (`enterListPage`) and says so here.
     if (this.draft) this.startListsAsked = false;
     else if (this.watchSupported && !this.startListsAsked && this.owners.length > 0) {
       this.startListsAsked = true;
@@ -6712,6 +6737,9 @@ export class WristAssistantPanel extends LitElement {
       this.loadError = `Could not load devices: ${errText(err)}`;
     }
     this.linkReady = true;
+    // Not reactive, and the list page and Home both wait on it: a home with
+    // no device would otherwise sit on Loading until something else redrew.
+    this.requestUpdate();
     void this.openPendingLink();
     // Cut the complications that draw several shapes into one document per
     // shape, on this first open. It reads every owner's records itself, does
@@ -7071,6 +7099,8 @@ export class WristAssistantPanel extends LitElement {
       }
     }
     if (this.ownerId !== ownerId || run !== this.otherListsRun) return;
+    this.otherListsOwner = ownerId;
+    this.otherListsRead = true;
     this.otherLists = next;
     this.refreshSeatClash();
   }
@@ -10792,11 +10822,17 @@ export class WristAssistantPanel extends LitElement {
     // Home Assistant's menu button is the tab bar's, above this one. The
     // watch screens and Watch settings are reached from Home and the Watch
     // app tab, so this bar holds only what is about complications.
+    // With nothing open the page under it is the list, with its own New and
+    // Import, so the bar keeps the sync pill, the ··· menu and the help. With
+    // a design open it leads with the way back to that list, then Browse,
+    // which opens the same list over the editor.
+    const open = this.designOpen;
     return html`<header class=${stacked ? "stacked" : nothing}>
-      ${this.renderPicker()}
-      ${this.hass.user?.is_admin || d ? html`<span class="tb-div" aria-hidden="true"></span>` : nothing}
-      ${this.renderNewButton()}
-      ${this.renderImportButton()}
+      ${open ? this.renderBackToList() : nothing}
+      ${open ? this.renderPicker() : nothing}
+      ${open && (this.hass.user?.is_admin || d) ? html`<span class="tb-div" aria-hidden="true"></span>` : nothing}
+      ${open ? this.renderNewButton() : nothing}
+      ${open ? this.renderImportButton() : nothing}
       ${d ? this.renderShareButton() : nothing}
       <span class="spacer"></span>
       ${this.renderSendPill()}
@@ -11642,11 +11678,22 @@ export class WristAssistantPanel extends LitElement {
    * and the reason for it would be off screen in a closed menu.
    */
   private pickPickerTab(key: string) {
-    this.pickerDevice = key;
+    // Picked by hand, in the dialog or on the page: remembered for the page.
+    this.setTabMemory(pickTab(this.tabMemory, key));
     this.saveListView();
     const filter = this.pickerFilter;
     if (filter === "all" || filter === "control") return;
     if (!this.tabFamilies(key).includes(filter)) this.pickerFilter = "all";
+  }
+
+  /** The tab shown and the tab the page comes back to, as one value. */
+  private get tabMemory(): TabMemory {
+    return { shown: this.pickerDevice, remembered: this.listDevice };
+  }
+
+  private setTabMemory(memory: TabMemory) {
+    this.pickerDevice = memory.shown;
+    this.listDevice = memory.remembered;
   }
 
   /** The tab the picker is on, checked against the tabs there are: a device
@@ -11720,7 +11767,9 @@ export class WristAssistantPanel extends LitElement {
     if (copy.item.kind !== "record") return;
     const record = copy.item.record;
     const target = copy.ownerId;
-    this.togglePicker(false);
+    // The dialog shuts first. From the list page, or a recent card on Home,
+    // there is no dialog to shut.
+    if (this.pickerOpen) this.togglePicker(false);
     if (target === this.ownerId) {
       this.selectRecord(this.records.find((r) => r.id === record.id) ?? record);
       return;
@@ -11736,7 +11785,7 @@ export class WristAssistantPanel extends LitElement {
   /** New from inside the picker. One button, whatever the chips are on: the
    * dialog is where the devices are picked. */
   private newFromPicker() {
-    this.togglePicker(false);
+    if (this.pickerOpen) this.togglePicker(false);
     this.openNewDialog();
   }
 
@@ -11745,6 +11794,10 @@ export class WristAssistantPanel extends LitElement {
    * carry is the field beside it now, where it can be typed over, and the
    * shape and the device are the pill after that, so the button is only the
    * way out to the list.
+   *
+   * Only drawn while a design is open (`renderTopBar`), and the dialog with
+   * it, so the dialog and the list page are never on screen together. With
+   * nothing open, the page is the list.
    */
   private renderPicker() {
     return html`<div class="picker">
@@ -11776,8 +11829,24 @@ export class WristAssistantPanel extends LitElement {
    * One card per complication, whatever the household holds: a complication is
    * one shape on one device, so two people's watches showing "Kitchen" are two
    * cards and each is edited on its own.
+   *
+   * The same surface is the Complications tab's list page while no design is
+   * open (`renderPickerSurface("page")`). Over an open design it is this
+   * dialog, which the editor's Browse button opens.
    */
   private renderPickerDialog() {
+    return this.renderPickerSurface("dialog");
+  }
+
+  /**
+   * The picker's surface in either of its forms: the modal dialog over the
+   * editor, or the list page. Head, device tabs, the picking bar, the grid
+   * and the foot are the same in both. The page has no title of its own (the
+   * page's heading is it) and no Close, and its foot leaves New and Import to
+   * the page's head; Escape there closes the Devices menu, then picking.
+   */
+  private renderPickerSurface(form: PickerForm) {
+    const page = form === "page";
     const d = this.draft;
     const devices = this.pickerDevices();
     const people = peopleOf(this.owners);
@@ -11817,12 +11886,8 @@ export class WristAssistantPanel extends LitElement {
         : filter !== "all"
           ? `Nothing here has a ${familyTitle(filter)} shape.`
           : nothingOnText(tabs.find((t) => t.key === tab)?.kind ?? "all");
-    return html`<dialog class="pk-dialog ${this.pickerBare ? "bare" : ""}" aria-label="Your complications"
-      @close=${() => this.pickerClosed()}
-      @cancel=${this.pickerCancel}
-      @click=${this.pickerBackdrop}>
-      <div class="pk-head">
-        <h2>Your complications <span class="pk-head-count">${all.length}</span></h2>
+    const inner = html`<div class="pk-head">
+        ${page ? nothing : html`<h2>Your complications <span class="pk-head-count">${all.length}</span></h2>`}
         ${this.ownerBusy ? nothing : this.renderPickerLook()}
         ${this.ownerBusy ? nothing : this.renderPickerSelect()}
         ${this.ownerBusy ? nothing : this.renderPickerShapes(searched, this.tabFamilies(tab))}
@@ -11832,7 +11897,7 @@ export class WristAssistantPanel extends LitElement {
             placeholder=${this.narrow ? "Search" : "Search by name or person"} aria-label="Search complications"
             @input=${(e: Event) => { this.pickerQuery = (e.target as HTMLInputElement).value; }} />
         </label>
-        <button class="icon" title="Close" aria-label="Close" @click=${() => this.closePicker()}>${uiIcon("close")}</button>
+        ${page ? nothing : html`<button class="icon" title="Close" aria-label="Close" @click=${() => this.closePicker()}>${uiIcon("close")}</button>`}
       </div>
       ${this.ownerBusy ? nothing : this.renderPickerTabs(tabs, tab, this.pickerPeople(people))}
       ${this.pickerSelecting ? this.renderPickerBar() : nothing}
@@ -11843,9 +11908,28 @@ export class WristAssistantPanel extends LitElement {
             ? this.renderPickerSections(rows, devices, query !== "" || filter !== "all", unsaved, emptyOf, this.pickerPeople(people))
             : this.renderPickerTabBody(rows, devices, tab, unsaved, emptyOf)}
       </div>
-      ${this.renderPickerFoot()}
-    </dialog>`;
+      ${this.renderPickerFoot(page)}`;
+    const cls = pickerSurfaceClass(form, this.pickerBare);
+    return page
+      ? html`<div class=${cls} role="region" aria-label="Your complications" @keydown=${this.pickerPageKey}>${inner}</div>`
+      : html`<dialog class=${cls} aria-label="Your complications"
+          @close=${() => this.pickerClosed()}
+          @cancel=${this.pickerCancel}
+          @click=${this.pickerBackdrop}>${inner}</dialog>`;
   }
+
+  /** Escape on the list page, which has no dialog to catch it: the Devices
+   * menu first, then picking several (`listPageEscape`). Anything else, and
+   * a key already taken by a field (Escape in the search, say), is left. */
+  private pickerPageKey = (e: KeyboardEvent) => {
+    if (e.key !== "Escape" || e.defaultPrevented) return;
+    const what = listPageEscape({ dupOpen: this.pickerDupFor !== undefined, selecting: this.pickerSelecting });
+    if (what === undefined) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (what === "dup") this.closePickerDup();
+    else this.setPickerSelecting(false);
+  };
 
   /**
    * The All tab: one block per device, in the tabs' own order.
@@ -12140,14 +12224,18 @@ export class WristAssistantPanel extends LitElement {
    * It carries what a write said, too. The panel's own banner for that sits in
    * the editor behind a modal backdrop, so a write started from a card would
    * have said so where nobody could read it until the dialog was shut.
+   *
+   * On the list page there is no backdrop: the banners over the page say what
+   * a write said, and the page's head has New and Import, so the foot keeps
+   * the hint and Back up all.
    */
-  private renderPickerFoot() {
+  private renderPickerFoot(page = false) {
     if (!this.hass.user?.is_admin) return nothing;
     // The seats being counted are the edited device's: that is where New puts
     // a complication, and its dialog is where another device is chosen.
     const full = this.freeSlot() < 0;
     const where = this.selectedOwner ? ownerLabel(this.selectedOwner) : "This device";
-    const said = this.saveError ?? this.copyStatus;
+    const said = page ? undefined : this.saveError ?? this.copyStatus;
     return html`<div class="pk-foot">
       ${said === undefined
         ? html`<span class="pk-foot-hint">${this.touch
@@ -12159,12 +12247,12 @@ export class WristAssistantPanel extends LitElement {
       <button type="button" class="new-btn pk-backup" ?disabled=${this.backingUp}
         title="Save every complication in this home to one file"
         @click=${() => void this.backupAll()}>${uiIcon("download")}<span>${this.backingUp ? "Backing up…" : "Back up all"}</span></button>
-      <button type="button" class="new-btn pk-import" ?disabled=${full || this.ownerBusy}
+      ${page ? nothing : html`<button type="button" class="new-btn pk-import" ?disabled=${full || this.ownerBusy}
         title=${full ? `${where} has no free slot. Delete a complication first.` : "Paste a complication somebody shared"}
         @click=${() => this.importFromPicker()}><span>Import</span></button>
       <button type="button" class="new-btn pk-new" ?disabled=${full || this.ownerBusy}
         title=${full ? `${where} has no free slot. Delete a complication first.` : "Make a new complication"}
-        @click=${() => this.newFromPicker()}>${uiIcon("plus")}<span>New complication</span></button>
+        @click=${() => this.newFromPicker()}>${uiIcon("plus")}<span>New complication</span></button>`}
     </div>`;
   }
 
@@ -13047,13 +13135,13 @@ export class WristAssistantPanel extends LitElement {
   /** "Duplicate as" from a card, which is the same dialog the editor's own
    * button opens, over whichever complication the card is about. The picker
    * shuts first: two modal dialogs stacked is two backdrops and one of them
-   * unreachable. */
+   * unreachable. On the list page there is no dialog to shut. */
   private duplicateAsFromCard(row: PickerRow) {
     const from = row.open;
     const cfg = this.rowConfig(row);
     if (!cfg || from.item.kind !== "record") return;
     this.closePickerDup();
-    this.closePicker();
+    if (this.pickerOpen) this.closePicker();
     this.openDuplicateAs(cfg, from.ownerId);
   }
 
@@ -13181,11 +13269,14 @@ export class WristAssistantPanel extends LitElement {
     if (!inside) this.toggleMenu(open, false);
   };
 
-  /** Both buttons named Browse all open the picker on every device and every
-   * shape. Opening it on a filter left from last time showed a part of the
-   * list under a button that promised all of it. */
+  /** Browse, and Home's Browse all over an open design, open the picker on
+   * every device and every shape. Opening it on a filter left from last time showed a part of the
+   * list under a button that promised all of it.
+   *
+   * All is shown, not remembered: the list page keeps the tab it was left on,
+   * and comes back to it once the dialog shuts (`list-page.ts`). */
   private browseAll() {
-    this.pickPickerTab(ALL_DEVICES);
+    this.setTabMemory(browseAllTab(this.tabMemory));
     this.pickerFilter = "all";
     this.openPicker();
   }
@@ -13233,10 +13324,128 @@ export class WristAssistantPanel extends LitElement {
    * running keeps going, since it copied its picks before the first write. */
   private pickerClosed() {
     this.pickerOpen = false;
+    this.pickerForget();
+    // Browse all had the dialog on All; the list page comes back on its own.
+    this.setTabMemory(restoreTab(this.tabMemory));
+  }
+
+  /** What either form of the surface lets go of when it goes out of sight:
+   * an unfolded note, a delete waiting on its confirm, the Devices menu with
+   * its outside-press listener, and picking several. */
+  private pickerForget() {
     this.pickerNote = undefined;
     this.pickerConfirmDelete = undefined;
     this.closePickerDup();
     if (this.pickerSelecting) this.setPickerSelecting(false);
+  }
+
+  // ── the list page ─────────────────────────────────────────────────────
+
+  /** Whether a design is open on the Complications tab: a draft, or a record
+   * picked that could not become one (a document that will not parse, or a
+   * device too old to draw it). Either way the editor's top bar is up, with
+   * its way back to the list. */
+  private get designOpen(): boolean {
+    return this.draft !== undefined || this.selectedId !== undefined;
+  }
+
+  /**
+   * The list page has come into view: the Complications tab with nothing
+   * open, reached from another tab, by closing a design, or on first open.
+   *
+   * It opens on the remembered device tab, and reads the other devices' lists
+   * again, the way opening the dialog does, since those are on no change
+   * subscription. A device switch underway reads them itself. One case keeps
+   * what was on screen: the design under an open Browse dialog went (deleted
+   * from its own card), and the list carries on as the page, on the same tab,
+   * with any picking still going.
+   */
+  private enterListPage() {
+    if (this.pickerOpen) this.pickerOpen = false;
+    else this.setTabMemory(restoreTab(this.tabMemory));
+    if (this.owners.length > 0) {
+      // Spoken for, so the start-page refresh in `updated` does not read the
+      // same lists a second time.
+      this.startListsAsked = true;
+      if (!this.ownerBusy) void this.loadOtherLists();
+    }
+  }
+
+  /** The list page has gone: a design opened, or another tab. It lets go of
+   * what the dialog lets go of when it shuts. */
+  private leaveListPage() {
+    this.pickerForget();
+  }
+
+  /**
+   * Back from the editor to the list: the design closes, after the same
+   * question a device switch asks when there is unsaved work. "Keep" leaves
+   * the editor as it was.
+   */
+  private async closeToList() {
+    await this.draftSave;
+    if (this.draft?.dirty && !this.confirmDiscard()) return;
+    this.selectNone();
+  }
+
+  /** The editor's way back to the list page, at the left of its top bar. */
+  private renderBackToList() {
+    return html`<button class="tb-btn tb-back tb-list" title="Close this complication and go back to the list"
+      @click=${() => void this.closeToList()}>${uiIcon("left")}<span>List</span></button>`;
+  }
+
+  /**
+   * The Complications tab with nothing open: every complication in the home,
+   * as a page.
+   *
+   * The title, how many there are, and New, Import and the online gallery at
+   * the top right; under them the Browse dialog's own surface, drawn in the
+   * page (`renderPickerSurface("page")`), on the device tab this browser
+   * last used. A home with nothing in it yet gets the old start page instead,
+   * which is a better first step than an empty grid: what this is, a shape
+   * to start from, and Import. Until every device's list has answered, an
+   * empty home says Loading rather than offering a first complication to a
+   * home whose complications are on a device not yet heard from.
+   */
+  private renderListPage() {
+    const rows = this.pickerRows();
+    const unsaved = this.draft?.baseRevision === null;
+    const state = listPageState({
+      rows: rows.length,
+      unsaved,
+      ready: listsReady({
+        // A list that failed to load is not an empty home: the error over the
+        // page says what went wrong, and no first complication is offered.
+        devicesLoaded: this.linkReady && this.loadError === undefined,
+        ownerBusy: this.ownerBusy,
+        ownerId: this.ownerId,
+        otherListsOwner: this.otherListsOwner,
+        otherListsRead: this.otherListsRead,
+      }),
+    });
+    if (state === "empty") return this.renderStartPage();
+    const admin = this.hass.user?.is_admin === true;
+    const total = rows.filter((row) => row.open.item.kind === "record").length;
+    const full = this.freeSlot() < 0;
+    return html`<div class="cl-page"><div class="cl-wrap">
+      <div class="cl-head">
+        <div class="cl-head-text">
+          <h1>Complications and widgets</h1>
+          <p class="cl-lead">${state === "loading" ? "Reading every device's list…" : listPageLead(total)}</p>
+        </div>
+        <div class="cl-acts">
+          <a class="cl-btn cl-gallery" href=${GALLERY_PAGE} target="_blank" rel="noopener"
+            title="Ready-made complications from other people">${uiIcon("globe")}<span>Gallery</span></a>
+          ${admin ? html`<button class="cl-btn cl-import" ?disabled=${full}
+            title=${full ? "Every device is full. Delete a complication first." : "Paste a complication somebody shared"}
+            @click=${() => this.openImportDialog()}>${uiIcon("paste")}<span>Import</span></button>` : nothing}
+          ${admin ? html`<button class="cl-btn cl-new" ?disabled=${full || this.ownerBusy}
+            title=${full ? "Every device is full. Delete a complication first." : "Make a new complication"}
+            @click=${() => this.openNewDialog()}>${uiIcon("plus")}<span>New complication</span></button>` : nothing}
+        </div>
+      </div>
+      ${state === "loading" ? html`<p class="cl-loading">Loading…</p>` : this.renderPickerSurface("page")}
+    </div></div>`;
   }
 
   /** A press on the backdrop shuts the dialog. A modal dialog's backdrop is
@@ -13249,7 +13458,7 @@ export class WristAssistantPanel extends LitElement {
   /** Import, from the picker's own foot. The picker shuts first: two modal
    * dialogs stacked is two backdrops and one of them unreachable. */
   private importFromPicker() {
-    this.closePicker();
+    if (this.pickerOpen) this.closePicker();
     this.openImportDialog();
   }
 
@@ -18401,22 +18610,23 @@ export class WristAssistantPanel extends LitElement {
   // ── start page ────────────────────────────────────────────────────────
 
   /**
-   * The stage while nothing is open.
+   * The Complications tab while the home has no complication at all: the
+   * list page's empty state (`renderListPage`). Anywhere there is something
+   * to list, the list page stands in its place.
    *
-   * It used to be one small card saying "Nothing open" in the middle of an
-   * empty work surface, which read as an error the panel had not bothered to
-   * word. This is the panel's front door instead: what it is for, the
-   * complications the home already has (the way back to yesterday's work),
-   * and a shape to start a new one from. Everything on it is a door to a
-   * surface that already exists; nothing here is a fourth way to edit.
+   * It used to be the stage whenever nothing was open, and before that one
+   * small card saying "Nothing open" in the middle of an empty work surface,
+   * which read as an error the panel had not bothered to word. For a home
+   * with nothing yet it is still the better first step: what this is for, a
+   * shape to start from, and the ways to bring one in. Everything on it is a
+   * door to a surface that already exists; nothing here is a fourth way to
+   * edit. The recent designs and Browse all it carried went with the
+   * complications they were about: recent designs are on Home now, and the
+   * list is the page itself.
    */
   private renderStartPage() {
     const admin = this.hass.user?.is_admin === true;
-    const recent = this.startRecent();
-    const rows = this.pickerRows();
-    const total = rows.filter((row) => row.open.item.kind === "record").length;
     const devices = this.owners.filter((o) => !isLibraryOwner(o) && !o.is_orphan).length;
-    const empty = total === 0;
     const full = this.freeSlot() < 0;
     const plural = (n: number, word: string) => `${word}${n === 1 ? "" : "s"}`;
     return html`<div class="start">
@@ -18424,19 +18634,15 @@ export class WristAssistantPanel extends LitElement {
         <section class="start-hero">
           <div class="start-hero-text">
             <div class="start-eyebrow">Wrist Assistant</div>
-            <h1 class="start-title">${empty ? "Make your first complication." : "Your home, on every screen."}</h1>
-            <p class="start-lead">${empty
-              ? "Draw what your home is doing onto a watch face or an iPhone screen: one shape, your entities, live."
-              : "Every complication and widget in this home, drawn from your entities and sent to the devices that show them."}</p>
+            <h1 class="start-title">Make your first complication.</h1>
+            <p class="start-lead">Draw what your home is doing onto a watch face or an iPhone screen: one shape, your entities, live.</p>
             <div class="start-facts">
-              ${empty ? nothing : html`<span class="start-fact"><b>${total}</b> ${plural(total, "complication")}</span>`}
               <span class="start-fact"><b>${devices}</b> ${plural(devices, "device")}</span>
             </div>
             <div class="start-acts">
               ${admin ? html`<button class="primary start-new" ?disabled=${full || this.ownerBusy}
                 title=${full ? "Every device is full. Delete a complication first." : "Make a new complication"}
                 @click=${() => this.openNewDialog()}>${uiIcon("plus")}<span>New complication</span></button>` : nothing}
-              <button class="ghost start-browse" @click=${() => this.browseAll()}>${uiIcon("compact")}<span>Browse all</span></button>
               ${admin ? html`<button class="ghost" ?disabled=${full} @click=${() => this.openImportDialog()}>${uiIcon("paste")}<span>Import</span></button>` : nothing}
             </div>
           </div>
@@ -18448,13 +18654,6 @@ export class WristAssistantPanel extends LitElement {
             <span class="start-tile t4">${deviceShapeArt("rectangular", "iphone", true)}</span>
           </div>
         </section>
-        ${recent.length === 0 ? nothing : html`<section class="start-sec">
-          <div class="start-sec-head">
-            <h2>Pick up where you left off</h2>
-            <button class="link start-more" @click=${() => this.browseAll()}>See all ${total}${uiIcon("arrow")}</button>
-          </div>
-          <div class="start-recent">${recent.map((hit) => this.renderStartCard(hit.row, hit.copy))}</div>
-        </section>`}
         ${admin ? this.renderStartShapes(full) : nothing}
         <section class="start-links">
           <a class="start-link" href=${GALLERY_PAGE} target="_blank" rel="noopener">
@@ -18608,7 +18807,7 @@ export class WristAssistantPanel extends LitElement {
   private renderCanvas() {
     if (this.parseError) return html`<div class="card error">This document cannot be read: ${this.parseError}</div>`;
     const cfg = this.canvasConfig();
-    if (!cfg) return this.renderStartPage();
+    if (!cfg) return this.renderListPage();
     const layouts = resolveAll(cfg, this.buildContext(), this.forced);
     this.syncCountdownTicker(layouts);
     const deviceCase = this.currentCase();
