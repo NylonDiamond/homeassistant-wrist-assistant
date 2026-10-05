@@ -183,10 +183,10 @@ export function watchTapActionLabel(entry: WatchTileKindEntry, action: string): 
   return entry.labels[action] ?? ACTION_LABELS.get(action) ?? TABLE.unknownActionLabel;
 }
 
-/** Whether an action needs a library entry (an HTTP action or a macro) when
- * it is a hold and slide value (`libraryActionsMeaning`). As the single tap
- * of its own tile kind it needs nothing: the target is the tile's
- * `entityId`. */
+/** Whether an action needs a library entry when it is a hold and slide
+ * value (`libraryActionsMeaning`): Run HTTP Action, and the table's Run
+ * Macro, which is never offered. As the single tap of its own tile kind it
+ * needs nothing: the target is the tile's `entityId`. */
 export function isWatchLibraryAction(action: string): boolean {
   return LIBRARY_ACTIONS.has(action);
 }
@@ -732,8 +732,8 @@ export interface WatchSingleTapSettings {
   resolved: string;
   resolvedLabel: string;
   /** The menu, in order, with this kind's words. A library action only on
-   * its own kind (Run HTTP Action on an HTTP action tile, Run Macro on a
-   * macro tile), where the target is the tile itself. */
+   * its own kind (Run HTTP Action on an HTTP action tile), where the target
+   * is the tile itself. */
   offered: WatchChoice[];
   /** A stored value the menu does not have (a library action or an unknown
    * string): shown, not offered. */
@@ -741,9 +741,9 @@ export interface WatchSingleTapSettings {
   storedLabel: string | undefined;
 }
 
-/** The single tap menu: the kind's whole list. Only the HTTP action and
- * macro kinds list a library action there, each its own, which needs no
- * pick: the tile's `entityId` is the target. */
+/** The single tap menu: the kind's whole list. Only the HTTP action kind
+ * lists a library action there, its own, which needs no pick: the tile's
+ * `entityId` is the target. */
 function offeredTap(entry: WatchTileKindEntry): string[] {
   return entry.tapActions.slice();
 }

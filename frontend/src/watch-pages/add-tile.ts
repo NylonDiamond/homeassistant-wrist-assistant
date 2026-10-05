@@ -1,7 +1,7 @@
 // The Add tile dialog's body: pick an entity or a kind (spacer, header, go to
 // page, peek page) and add it to the selected page with the phone's defaults
-// (part 3c), or one of the iPhone's HTTP actions, macros and status pages
-// from the catalog (part 3e), or one of the app's own tiles: Music Hub,
+// (part 3c), or one of the iPhone's HTTP actions and status pages from the
+// catalog (part 3e), or one of the app's own tiles: Music Hub,
 // Template, Assist, Speak Message and Point Control (3f batch 2). With no
 // catalog, one line says where the library lists come from; without Music
 // Assistant, Music Hub is off and one line says why.
@@ -49,7 +49,6 @@ import {
 import {
   type WatchCatalog,
   type WatchCatalogEntry,
-  type WatchCatalogMacro,
   type WatchLibraryKind,
   WATCH_LIBRARY_WORDS,
   WATCH_NO_CATALOG_TEXT,
@@ -59,7 +58,6 @@ import {
   watchCatalogEntries,
   watchCatalogFromWatch,
   watchCatalogKnows,
-  watchCatalogOffersAdd,
   watchCatalogListedFor,
   watchCatalogSubtitle,
   watchCatalogWarning,
@@ -250,31 +248,15 @@ function addLink(host: AddTileHost, view: AddTileView, kind: LinkKind, target: W
 /** What each library list asks, and what an add of it is called. */
 const LIBRARY_WORDS: Readonly<Record<WatchLibraryKind, { question: string; tile: string; button: string }>> = {
   httpAction: { question: "Which HTTP action should the tile run?", tile: "an HTTP action tile", button: "HTTP action" },
-  macro: { question: "Which macro should the tile run?", tile: "a macro tile", button: "Macro" },
   statusPage: { question: "Which status page should the tile open?", tile: "a status page tile", button: "Status page" },
 };
 
 /** Add a tile for one entry of the iPhone's library, as the phone's add
- * does: the entry's name as the label, a macro's own icon and color. All
- * three may repeat. */
+ * does: the entry's name as the label. Both kinds may repeat. */
 function addLibrary(host: AddTileHost, view: AddTileView, kind: WatchLibraryKind, entry: WatchCatalogEntry): void {
-  let add: WatchTileAdd;
-  if (kind === "httpAction") {
-    add = { kind, action: { id: entry.id, name: entry.name } };
-  } else if (kind === "macro") {
-    const macro = entry as WatchCatalogMacro;
-    add = {
-      kind,
-      macro: {
-        id: macro.id,
-        name: macro.name,
-        ...(macro.icon === undefined ? {} : { icon: macro.icon }),
-        ...(macro.colorHex === undefined ? {} : { colorHex: macro.colorHex }),
-      },
-    };
-  } else {
-    add = { kind, statusPage: { id: entry.id, name: entry.name } };
-  }
+  const add: WatchTileAdd = kind === "httpAction"
+    ? { kind, action: { id: entry.id, name: entry.name } }
+    : { kind, statusPage: { id: entry.id, name: entry.name } };
   if (commit(host, view, add, `Added ${LIBRARY_WORDS[kind].tile} for "${entry.name}".`)) view.links = undefined;
 }
 
@@ -402,6 +384,12 @@ function renderLibrary(host: AddTileHost, view: AddTileView, kind: WatchLibraryK
 export function renderAddTile(host: AddTileHost): TemplateResult | typeof nothing {
   const view = viewOf(host);
   return html`${visitWatch(host.uiState)}${renderBody(host, view)}`;
+}
+
+/** The line under the library buttons without an iPhone catalog, naming
+ * the list Home Assistant does not know; nothing when it knows both. */
+function noPhoneLine(text: string | undefined): TemplateResult | typeof nothing {
+  return text === undefined ? nothing : html`<div class="at-muted at-lib-none">${text}</div>`;
 }
 
 function renderBody(host: AddTileHost, view: AddTileView): TemplateResult {
@@ -542,9 +530,9 @@ function renderBody(host: AddTileHost, view: AddTileView): TemplateResult {
     ${catalog === undefined
       ? html`<div class="at-muted at-lib-none">${WATCH_NO_CATALOG_TEXT}</div>`
       : html`<div class="at-kinds at-lib" role="group" aria-label=${catalog.noPhone === true ? (catalog.statusPagesFromWatch === true ? "From the watch" : "From Home Assistant") : "From the iPhone"}>
-          ${(Object.keys(LIBRARY_WORDS) as WatchLibraryKind[]).filter((kind) => watchCatalogOffersAdd(catalog, kind)).map((kind) => listButton(kind, LIBRARY_WORDS[kind].button))}
+          ${(Object.keys(LIBRARY_WORDS) as WatchLibraryKind[]).filter((kind) => watchCatalogKnows(catalog, kind)).map((kind) => listButton(kind, LIBRARY_WORDS[kind].button))}
         </div>
-        ${catalog.noPhone === true ? html`<div class="at-muted at-lib-none">${watchNoPhoneLibraryText(catalog)}</div>` : nothing}`}
+        ${catalog.noPhone === true ? noPhoneLine(watchNoPhoneLibraryText(catalog)) : nothing}`}
     ${openList}
 
     <div class="at-ents">

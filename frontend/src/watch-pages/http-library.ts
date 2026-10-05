@@ -104,7 +104,7 @@ export function watchCatalogWithHttpLibrary(catalog: WatchCatalog | undefined, l
     .map((a): WatchCatalogHTTPAction => ({ ...a, source: "iphone" }));
   const httpActions = [...library.actions.map((a): WatchCatalogHTTPAction => (a.source === "home" ? a : { ...a, source: "home" })), ...phone];
   if (catalog !== undefined) return { ...catalog, httpActions, httpLibrary: "held" };
-  return { revision: 0, updatedAt: undefined, httpActions, macros: [], statusPages: [], voice: undefined, noPhone: true, httpLibrary: "held" };
+  return { revision: 0, updatedAt: undefined, httpActions, statusPages: [], voice: undefined, noPhone: true, httpLibrary: "held" };
 }
 
 /** The action id a stored reference names: the part after `http_action.`,

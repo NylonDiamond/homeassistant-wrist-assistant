@@ -55,7 +55,7 @@ export interface WatchPagesEditorHost {
   /** Every other page a person can pick, in watch order: the targets of a
    * Go to page or Peek page tile. System pages are left out. */
   readonly otherPages: readonly WatchPage[];
-  /** The iPhone's HTTP actions, macros and status pages (`catalog.ts`), as
+  /** The iPhone's HTTP actions and status pages (`catalog.ts`), as
    * the element read them last, with the watch's own status pages and the
    * home's HTTP actions joined in; undefined while there is none of them. Held by the element, never in the document: nothing here saves,
    * undoes or merges it. A getter like `document`. */

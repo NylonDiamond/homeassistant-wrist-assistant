@@ -52,6 +52,8 @@ const MAX_DOCUMENT_BYTES: Record<string, number> = {
   menus: 256 * 1024,
   control_center: 256 * 1024,
 };
+// As the integration checks them: an older phone still sends `macros`, which
+// the store keeps and the panel no longer reads.
 const CATALOG_LIST_KEYS = ["httpActions", "macros", "statusPages"];
 const MENUS_SECTION_KEYS = ["quickAction", "entityRadial", "pageSwitcher"];
 const HISTORY_LIMIT = 5;
@@ -709,6 +711,7 @@ function setCatalog(on: boolean): void {
 
 const ENTITY_KEYS = /^(entityId|entityIds|resolvedEntityIds|.*EntityId|.*EntityIds)$/;
 const ENTITY_ID = /^([a-z_][a-z0-9_]*)\.([a-z0-9_]+)$/;
+// `macro` is a removed kind a stored page may still hold: no entity either.
 const NOT_ENTITIES = new Set([
   "page", "show_page", "status_page", "http_action", "macro", "template", "spacer", "multicam",
   "point_control", "music_hub", "assist", "speak_message", "webhook_inbox", "divider",

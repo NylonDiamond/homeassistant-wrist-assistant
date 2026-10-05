@@ -1,9 +1,10 @@
 // The iPhone's library as the page editor reads it: the `catalog` watch
 // config kind, which the phone publishes and nobody else writes. It names
-// every HTTP action, macro and status page a tile can point at (id, name and
-// a few flags), never a URL, header or body. Since part 3f batch 2 it also
-// carries the phone's voice defaults (`voice`), which an assist or speak tile
-// falls back to.
+// every HTTP action and status page a tile can point at (id, name and a few
+// flags), never a URL, header or body. An older phone also lists its macros
+// (`macros`); macros were removed, so that list is not read. Since part 3f
+// batch 2 it also carries the phone's voice defaults (`voice`), which an
+// assist or speak tile falls back to.
 //
 // No DOM here. `<wa-page-editor>` reads the record beside the pages record,
 // keeps the reading on the element (never in the draft: it is never saved,
@@ -47,18 +48,6 @@ export interface WatchCatalogHTTPAction {
   source?: "home" | "iphone";
 }
 
-/** One macro. `icon` and `colorHex` are a new tile's icon and color. */
-export interface WatchCatalogMacro {
-  id: string;
-  name: string;
-  icon?: string;
-  colorHex?: string;
-  /** How many steps, when the phone said. */
-  steps?: number;
-  /** The phone's linter flags it, or it cannot run. */
-  needsAttention: boolean;
-}
-
 /** One status page of the primary home. */
 export interface WatchCatalogStatusPage {
   id: string;
@@ -67,10 +56,10 @@ export interface WatchCatalogStatusPage {
   rows?: number;
 }
 
-/** The three library kinds, as the Add task and a tile's target name them. */
-export type WatchLibraryKind = "httpAction" | "macro" | "statusPage";
+/** The two library kinds, as the Add task and a tile's target name them. */
+export type WatchLibraryKind = "httpAction" | "statusPage";
 
-export type WatchCatalogEntry = WatchCatalogHTTPAction | WatchCatalogMacro | WatchCatalogStatusPage;
+export type WatchCatalogEntry = WatchCatalogHTTPAction | WatchCatalogStatusPage;
 
 /** The phone's voice defaults (part 3f batch 2): what an assist or speak
  * tile with no voice of its own falls back to. Each field only when the
@@ -92,7 +81,6 @@ export interface WatchCatalog {
   /** When the phone published it (ISO), when the record says. */
   updatedAt: string | undefined;
   httpActions: readonly WatchCatalogHTTPAction[];
-  macros: readonly WatchCatalogMacro[];
   statusPages: readonly WatchCatalogStatusPage[];
   /** The phone's voice defaults. Undefined when the document has no `voice`
    * object: a phone older than the key, which cannot say. Never saved. */
@@ -114,12 +102,11 @@ export interface WatchCatalog {
 /** The tile kind (`entityId` prefix before the dot) of each library kind. */
 export const WATCH_LIBRARY_TILE_KINDS: Readonly<Record<WatchLibraryKind, string>> = {
   httpAction: "http_action",
-  macro: "macro",
   statusPage: "status_page",
 };
 
 /** The line shown in place of the library lists when there is no catalog. */
-export const WATCH_NO_CATALOG_TEXT = "Open the iPhone app to list its HTTP actions, macros and status pages here.";
+export const WATCH_NO_CATALOG_TEXT = "Open the iPhone app to list its HTTP actions and status pages here.";
 
 /** What a tile whose library entry the catalog does not list says. */
 export const WATCH_NOT_ON_IPHONE_TEXT = "Not on the iPhone";
@@ -186,12 +173,6 @@ export function readWatchCatalog(document: unknown, meta: { revision?: number; u
     withOptional(out, "icon", text(e.icon));
     return withOptional(out, "iconColor", text(e.iconColor));
   });
-  const macros = entries(doc.macros).map((e) => {
-    const out: WatchCatalogMacro = { id: e.id as string, name: e.name as string, needsAttention: e.needsAttention === true };
-    withOptional(out, "icon", text(e.icon));
-    withOptional(out, "colorHex", text(e.colorHex));
-    return withOptional(out, "steps", count(e.steps));
-  });
   const statusPages = entries(doc.statusPages).map((e) =>
     withOptional<WatchCatalogStatusPage>({ id: e.id as string, name: e.name as string }, "rows", count(e.rows)),
   );
@@ -199,7 +180,6 @@ export function readWatchCatalog(document: unknown, meta: { revision?: number; u
     revision: typeof meta.revision === "number" ? meta.revision : 0,
     updatedAt: typeof meta.updatedAt === "string" ? meta.updatedAt : undefined,
     httpActions,
-    macros,
     statusPages,
     voice: isJsonObject(doc.voice) ? readVoice(doc.voice) : undefined,
   };
@@ -236,25 +216,17 @@ export function watchStatusPagesFromRecord(record: { revision: number; document?
 export function watchCatalogWithStatusPages(catalog: WatchCatalog | undefined, statusPages: readonly WatchCatalogStatusPage[] | undefined): WatchCatalog | undefined {
   if (statusPages === undefined) return catalog;
   if (catalog !== undefined) return { ...catalog, statusPages, statusPagesFromWatch: true };
-  return { revision: 0, updatedAt: undefined, httpActions: [], macros: [], statusPages, voice: undefined, statusPagesFromWatch: true, noPhone: true };
+  return { revision: 0, updatedAt: undefined, httpActions: [], statusPages, voice: undefined, statusPagesFromWatch: true, noPhone: true };
 }
 
 /** Whether the catalog knows the entries of a kind: an iPhone catalog knows
- * all three; without one, the watch's status pages know only those, and
+ * both; without one, the watch's status pages know only those, and
  * the home's HTTP action library only those. */
 export function watchCatalogKnows(catalog: WatchCatalog | undefined, kind: WatchLibraryKind): boolean {
   if (catalog === undefined) return false;
   if (catalog.noPhone !== true) return true;
   if (kind === "httpAction") return catalog.httpLibrary === "held";
   return kind === "statusPage" && catalog.statusPagesFromWatch === true;
-}
-
-/** Whether the add dialog offers a kind's list. Macros are frozen: no new
- * ones are made, so their list shows only while the iPhone still lists one
- * to point a tile at. */
-export function watchCatalogOffersAdd(catalog: WatchCatalog | undefined, kind: WatchLibraryKind): boolean {
-  if (!watchCatalogKnows(catalog, kind)) return false;
-  return kind !== "macro" || catalog!.macros.length > 0;
 }
 
 /** Whether the HTTP actions screen can add to the list: the integration
@@ -271,19 +243,21 @@ export function watchCatalogFromWatch(catalog: WatchCatalog | undefined, kind: W
 /** What a tile whose status page the watch's own record does not list says. */
 export const WATCH_NOT_IN_STATUS_PAGES_TEXT = "Not in this watch's status pages";
 
-/** The line in place of the HTTP action and macro lists when the watch's
- * status pages are known and no iPhone catalog is. */
-export const WATCH_NO_PHONE_LIBRARY_TEXT = "Open the iPhone app to list its HTTP actions and macros here.";
+/** The line in place of the HTTP action list when the watch's status pages
+ * are known and no iPhone catalog is. */
+export const WATCH_NO_PHONE_LIBRARY_TEXT = "Open the iPhone app to list its HTTP actions here.";
 
-/** The same line when the home's HTTP actions are listed all the same. */
-export const WATCH_NO_PHONE_MACROS_TEXT = "Open the iPhone app to list its macros here.";
+/** The line in place of the status page list when the home's HTTP actions
+ * are known and no iPhone catalog is. */
+export const WATCH_NO_PHONE_STATUS_PAGES_TEXT = "Open the iPhone app to list its status pages here.";
 
-/** The line in place of the lists Home Assistant does not know without an
- * iPhone catalog: the macros, the HTTP actions unless the home's library
- * lists them, and the status pages unless the watch's own record does. */
-export function watchNoPhoneLibraryText(catalog: WatchCatalog | undefined): string {
+/** The line in place of the list Home Assistant does not know without an
+ * iPhone catalog: the HTTP actions unless the home's library lists them, the
+ * status pages unless the watch's own record does. Undefined when both are
+ * known. */
+export function watchNoPhoneLibraryText(catalog: WatchCatalog | undefined): string | undefined {
   if (catalog?.httpLibrary !== "held") return WATCH_NO_PHONE_LIBRARY_TEXT;
-  return catalog.statusPagesFromWatch === true ? WATCH_NO_PHONE_MACROS_TEXT : "Open the iPhone app to list its macros and status pages here.";
+  return catalog.statusPagesFromWatch === true ? undefined : WATCH_NO_PHONE_STATUS_PAGES_TEXT;
 }
 
 /** What a tile whose HTTP action Home Assistant's library, the only list
@@ -339,17 +313,15 @@ export function watchCatalogEventIsNews(event: { kind?: unknown; revision?: unkn
 
 /** The entries of one kind, in library order. */
 export function watchCatalogEntries(catalog: WatchCatalog, kind: "httpAction"): readonly WatchCatalogHTTPAction[];
-export function watchCatalogEntries(catalog: WatchCatalog, kind: "macro"): readonly WatchCatalogMacro[];
 export function watchCatalogEntries(catalog: WatchCatalog, kind: "statusPage"): readonly WatchCatalogStatusPage[];
 export function watchCatalogEntries(catalog: WatchCatalog, kind: WatchLibraryKind): readonly WatchCatalogEntry[];
 export function watchCatalogEntries(catalog: WatchCatalog, kind: WatchLibraryKind): readonly WatchCatalogEntry[] {
-  return kind === "httpAction" ? catalog.httpActions : kind === "macro" ? catalog.macros : catalog.statusPages;
+  return kind === "httpAction" ? catalog.httpActions : catalog.statusPages;
 }
 
 /** The first entry of a kind with this id, compared without regard to
  * case; undefined with no catalog or no such entry. */
 export function findWatchCatalogEntry(catalog: WatchCatalog | undefined, kind: "httpAction", id: unknown): WatchCatalogHTTPAction | undefined;
-export function findWatchCatalogEntry(catalog: WatchCatalog | undefined, kind: "macro", id: unknown): WatchCatalogMacro | undefined;
 export function findWatchCatalogEntry(catalog: WatchCatalog | undefined, kind: "statusPage", id: unknown): WatchCatalogStatusPage | undefined;
 export function findWatchCatalogEntry(catalog: WatchCatalog | undefined, kind: WatchLibraryKind, id: unknown): WatchCatalogEntry | undefined;
 export function findWatchCatalogEntry(catalog: WatchCatalog | undefined, kind: WatchLibraryKind, id: unknown): WatchCatalogEntry | undefined {
@@ -358,8 +330,8 @@ export function findWatchCatalogEntry(catalog: WatchCatalog | undefined, kind: W
 }
 
 /** The library entry a tile points at through its `entityId`
- * (`http_action.<ID>`, `macro.<ID>`, `status_page.<ID>`), the id as
- * stored; undefined for any other tile. */
+ * (`http_action.<ID>`, `status_page.<ID>`), the id as stored; undefined for
+ * any other tile, a removed macro tile among them. */
 export function watchLibraryTarget(entityId: string): { kind: WatchLibraryKind; id: string } | undefined {
   const tile = tileKind(entityId);
   const kind = (Object.keys(WATCH_LIBRARY_TILE_KINDS) as WatchLibraryKind[]).find((k) => WATCH_LIBRARY_TILE_KINDS[k] === tile);
@@ -369,15 +341,14 @@ export function watchLibraryTarget(entityId: string): { kind: WatchLibraryKind; 
 /** The watch's own fallbacks for a library tile with no label of its own. */
 const LIBRARY_LABEL_FALLBACKS: Readonly<Record<WatchLibraryKind, string>> = {
   httpAction: "Action",
-  macro: "Macro",
   statusPage: "Status Page",
 };
 
 /**
  * The name the watch shows on a library tile with no label of its own: on
- * an HTTP action tile always "Action", never the action's name; on a macro
- * or status page tile the catalog's name for its target, else "Macro" or
- * "Status Page". Undefined for any other tile.
+ * an HTTP action tile always "Action", never the action's name; on a status
+ * page tile the catalog's name for its target, else "Status Page".
+ * Undefined for any other tile.
  */
 export function watchLibraryTileFallbackName(entityId: string, catalog: WatchCatalog | undefined): string | undefined {
   const target = watchLibraryTarget(entityId);
@@ -388,13 +359,9 @@ export function watchLibraryTileFallbackName(entityId: string, catalog: WatchCat
 
 // ── words ────────────────────────────────────────────────────────────────
 
-/** The phone's subtitle for an entry: "4 steps" for a macro, "6 rows" for a
- * status page, undefined when it has none. */
+/** The phone's subtitle for an entry: "6 rows" for a status page,
+ * undefined when it has none. */
 export function watchCatalogSubtitle(kind: WatchLibraryKind, entry: WatchCatalogEntry): string | undefined {
-  if (kind === "macro") {
-    const steps = (entry as WatchCatalogMacro).steps;
-    return steps === undefined ? undefined : `${steps} step${steps === 1 ? "" : "s"}`;
-  }
   if (kind === "statusPage") {
     const rows = (entry as WatchCatalogStatusPage).rows;
     return rows === undefined ? undefined : `${rows} row${rows === 1 ? "" : "s"}`;
@@ -409,7 +376,6 @@ export function watchCatalogWarning(kind: WatchLibraryKind, entry: WatchCatalogE
   if (kind === "httpAction" && (entry as WatchCatalogHTTPAction).needsSetup) {
     return (entry as WatchCatalogHTTPAction).source === "home" ? "Needs setup" : "Needs setup on the iPhone";
   }
-  if (kind === "macro" && (entry as WatchCatalogMacro).needsAttention) return "Needs attention on the iPhone";
   return undefined;
 }
 
@@ -424,7 +390,6 @@ export function watchCatalogMark(kind: WatchLibraryKind, entry: WatchCatalogEntr
 /** What one library kind is called, singular and plural. */
 export const WATCH_LIBRARY_WORDS: Readonly<Record<WatchLibraryKind, { one: string; many: string }>> = {
   httpAction: { one: "HTTP action", many: "HTTP actions" },
-  macro: { one: "Macro", many: "macros" },
   statusPage: { one: "Status page", many: "status pages" },
 };
 

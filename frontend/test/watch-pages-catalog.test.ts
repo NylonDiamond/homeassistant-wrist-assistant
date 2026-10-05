@@ -69,12 +69,11 @@ describe("the phone's catalog bytes", () => {
     ]);
   });
 
-  it("read the macros with their style, steps and attention flag", () => {
-    expect(catalog.macros).toEqual([
-      { id: "8E1D5B7A-2C4F-4A9E-B3D6-7F0A1B2C3D4E", name: "Bedtime", icon: "moon.fill", colorHex: "#FF9F0A", steps: 4, needsAttention: false },
-      { id: "5C6D7E8F-9A0B-4C1D-8E2F-3A4B5C6D7E8F", name: "Leave Home", steps: 1, needsAttention: true },
-      { id: "1B2C3D4E-5F6A-4B7C-8D9E-0F1A2B3C4D5E", name: "Macro", steps: 0, needsAttention: true },
-    ]);
+  it("leave out the macros an older phone still lists: macros were removed", () => {
+    const older = readWatchCatalog({ ...DOCUMENT, macros: [{ id: "8E1D5B7A-2C4F-4A9E-B3D6-7F0A1B2C3D4E", name: "Bedtime", steps: 4 }] });
+    expect(Object.keys(older)).not.toContain("macros");
+    expect(Object.keys(catalog)).not.toContain("macros");
+    expect(older.httpActions).toEqual(catalog.httpActions);
   });
 
   it("read the status pages, a system page among them", () => {
@@ -92,26 +91,20 @@ describe("the phone's catalog bytes", () => {
 
   it("look entries up by id without regard to case", () => {
     expect(findWatchCatalogEntry(catalog, "httpAction", "4f7a2c1e-9b3d-4e5f-8a6b-1c2d3e4f5a6b")?.name).toBe("Open Gate");
-    expect(findWatchCatalogEntry(catalog, "macro", "8E1D5B7A-2C4F-4A9E-B3D6-7F0A1B2C3D4E")?.name).toBe("Bedtime");
     expect(findWatchCatalogEntry(catalog, "statusPage", "00000000-0000-0000-0000-000000000001")?.name).toBe("Lights");
     // Each kind in its own list.
-    expect(findWatchCatalogEntry(catalog, "macro", "4F7A2C1E-9B3D-4E5F-8A6B-1C2D3E4F5A6B")).toBeUndefined();
-    expect(findWatchCatalogEntry(undefined, "macro", "8E1D5B7A-2C4F-4A9E-B3D6-7F0A1B2C3D4E")).toBeUndefined();
+    expect(findWatchCatalogEntry(catalog, "statusPage", "4F7A2C1E-9B3D-4E5F-8A6B-1C2D3E4F5A6B")).toBeUndefined();
+    expect(findWatchCatalogEntry(undefined, "statusPage", "00000000-0000-0000-0000-000000000001")).toBeUndefined();
     expect(watchCatalogEntries(catalog, "statusPage")).toBe(catalog.statusPages);
   });
 
   it("have the phone's subtitles and warnings", () => {
-    const [bedtime, leave, empty] = catalog.macros;
-    expect(watchCatalogSubtitle("macro", bedtime!)).toBe("4 steps");
-    expect(watchCatalogSubtitle("macro", leave!)).toBe("1 step");
-    expect(watchCatalogSubtitle("macro", empty!)).toBe("0 steps");
     expect(watchCatalogSubtitle("statusPage", catalog.statusPages[1]!)).toBe("6 rows");
     expect(watchCatalogSubtitle("statusPage", catalog.statusPages[0]!)).toBe("1 row");
     expect(watchCatalogSubtitle("httpAction", catalog.httpActions[0]!)).toBeUndefined();
     expect(watchCatalogWarning("httpAction", catalog.httpActions[3]!)).toBe("Needs setup on the iPhone");
     expect(watchCatalogWarning("httpAction", catalog.httpActions[0]!)).toBeUndefined();
-    expect(watchCatalogWarning("macro", leave!)).toBe("Needs attention on the iPhone");
-    expect(watchCatalogWarning("macro", bedtime!)).toBeUndefined();
+    expect(watchCatalogWarning("statusPage", catalog.statusPages[1]!)).toBeUndefined();
   });
 });
 
@@ -119,7 +112,7 @@ describe("no catalog", () => {
   it("is a record at revision 0, or none", () => {
     expect(watchCatalogFromRecord(record({ revision: 0, document: undefined }))).toBeUndefined();
     expect(watchCatalogFromRecord(undefined)).toBeUndefined();
-    expect(WATCH_NO_CATALOG_TEXT).toBe("Open the iPhone app to list its HTTP actions, macros and status pages here.");
+    expect(WATCH_NO_CATALOG_TEXT).toBe("Open the iPhone app to list its HTTP actions and status pages here.");
     expect(watchCatalogListedText(undefined)).toBeUndefined();
   });
 });
@@ -142,12 +135,10 @@ describe("junk", () => {
         "C",
         ["D", "E"],
       ],
-      macros: { id: A, name: "Not a list" },
       statusPages: [{ id: S, name: "", rows: -1 }, { id: U, name: "T", rows: 2.5 }],
       voice: { anything: true },
     });
     expect(catalog.httpActions).toEqual([{ id: A, name: "Kept", hasReply: false, needsSetup: false }]);
-    expect(catalog.macros).toEqual([]);
     // An empty name is a name; a count that is no whole number is none.
     expect(catalog.statusPages).toEqual([{ id: S, name: "" }, { id: U, name: "T" }]);
   });
@@ -155,26 +146,24 @@ describe("junk", () => {
   it("skips an id that is no UUID, which no tile or slide could store", () => {
     const catalog = readWatchCatalog({
       httpActions: [{ id: "NOT-A-UUID", name: "Junk" }, { id: `${A}x`, name: "Long" }, { id: A, name: "Good" }],
-      macros: [{ id: "M", name: "M" }],
       statusPages: [{ id: "00000000-0000-0000-0000-000000000001", name: "Lights" }],
     });
     expect(catalog.httpActions.map((a) => a.name)).toEqual(["Good"]);
-    expect(catalog.macros).toEqual([]);
     expect(catalog.statusPages.map((p) => p.name)).toEqual(["Lights"]);
   });
 
   it("keeps the first of ids that differ only in case, in each list on its own", () => {
     const catalog = readWatchCatalog({
       httpActions: [{ id: A.toLowerCase(), name: "First" }, { id: A, name: "Second" }, { id: B, name: "Other" }],
-      macros: [{ id: A, name: "A macro may share an action's id" }],
+      statusPages: [{ id: A, name: "A status page may share an action's id" }],
     });
     expect(catalog.httpActions.map((a) => [a.id, a.name])).toEqual([[A.toLowerCase(), "First"], [B, "Other"]]);
-    expect(catalog.macros.map((m) => m.name)).toEqual(["A macro may share an action's id"]);
+    expect(catalog.statusPages.map((p) => p.name)).toEqual(["A status page may share an action's id"]);
   });
 
   it("reads a document that is no object as an empty catalog", () => {
     for (const bad of [null, undefined, [], "catalog", 4]) {
-      expect(readWatchCatalog(bad)).toEqual({ revision: 0, updatedAt: undefined, httpActions: [], macros: [], statusPages: [] });
+      expect(readWatchCatalog(bad)).toEqual({ revision: 0, updatedAt: undefined, httpActions: [], statusPages: [] });
     }
     expect(watchCatalogFromRecord(record({ document: undefined }))).toMatchObject({ revision: 4, httpActions: [] });
   });
@@ -216,7 +205,8 @@ describe("the live line", () => {
 describe("a tile's library target", () => {
   it("is read from the entity id prefix, the id as stored", () => {
     expect(watchLibraryTarget("http_action.4f7a2c1e-9b3d-4e5f-8a6b-1c2d3e4f5a6b")).toEqual({ kind: "httpAction", id: "4f7a2c1e-9b3d-4e5f-8a6b-1c2d3e4f5a6b" });
-    expect(watchLibraryTarget("macro.X")).toEqual({ kind: "macro", id: "X" });
+    // A macro tile is no library tile any more: macros were removed.
+    expect(watchLibraryTarget("macro.X")).toBeUndefined();
     expect(watchLibraryTarget("status_page.Y")).toEqual({ kind: "statusPage", id: "Y" });
     expect(watchLibraryTarget("page.Y")).toBeUndefined();
     expect(watchLibraryTarget("light.desk")).toBeUndefined();
@@ -225,14 +215,13 @@ describe("a tile's library target", () => {
   it("names a tile with no label as the watch does", () => {
     const catalog = readWatchCatalog(DOCUMENT);
     const action = catalog.httpActions[0]!;
-    const macro = catalog.macros[0]!;
     const page = catalog.statusPages[0]!;
     // An HTTP action tile is "Action", never the action's name.
     expect(watchLibraryTileFallbackName(`http_action.${action.id}`, catalog)).toBe("Action");
-    expect(watchLibraryTileFallbackName(`macro.${macro.id.toLowerCase()}`, catalog)).toBe(macro.name);
     expect(watchLibraryTileFallbackName(`status_page.${page.id}`, catalog)).toBe(page.name);
     // Not listed, or no catalog.
-    expect(watchLibraryTileFallbackName("macro.C3A0E000-0000-4000-8000-0000000000FF", catalog)).toBe("Macro");
+    expect(watchLibraryTileFallbackName("status_page.C3A0E000-0000-4000-8000-0000000000FF", catalog)).toBe("Status Page");
+    expect(watchLibraryTileFallbackName("macro.8E1D5B7A-2C4F-4A9E-B3D6-7F0A1B2C3D4E", catalog)).toBeUndefined();
     expect(watchLibraryTileFallbackName(`status_page.${page.id}`, undefined)).toBe("Status Page");
     expect(watchLibraryTileFallbackName(`http_action.${action.id}`, undefined)).toBe("Action");
     expect(watchLibraryTileFallbackName("light.desk", catalog)).toBeUndefined();

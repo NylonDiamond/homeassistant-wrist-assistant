@@ -14,7 +14,7 @@ import {
   WATCH_NOT_ON_IPHONE_TEXT,
   WATCH_NO_HTTP_ACTIONS_TEXT,
   WATCH_NO_PHONE_LIBRARY_TEXT,
-  WATCH_NO_PHONE_MACROS_TEXT,
+  WATCH_NO_PHONE_STATUS_PAGES_TEXT,
   findWatchCatalogEntry,
   readWatchCatalog,
   watchCatalogKnows,
@@ -151,7 +151,6 @@ describe("the join", () => {
     expect(joined.httpActions[3]).toEqual({ ...OUTDOOR, source: "iphone" });
     expect(joined.httpActions[5]).toEqual({ ...GARAGE, source: "iphone" });
     // Everything else is the catalog's, as it was.
-    expect(joined.macros).toBe(CATALOG.macros);
     expect(joined.statusPages).toBe(CATALOG.statusPages);
     expect(joined.voice).toBe(CATALOG.voice);
     expect(joined.revision).toBe(3);
@@ -172,17 +171,16 @@ describe("the join", () => {
     expect(alone.noPhone).toBe(true);
     expect(alone.httpLibrary).toBe("held");
     expect(alone.httpActions).toEqual(LIBRARY.actions);
-    expect(alone.macros).toEqual([]);
     expect(watchCatalogKnows(alone, "httpAction")).toBe(true);
-    expect(watchCatalogKnows(alone, "macro")).toBe(false);
     expect(watchCatalogKnows(alone, "statusPage")).toBe(false);
-    expect(watchNoPhoneLibraryText(alone)).toBe("Open the iPhone app to list its macros and status pages here.");
+    expect(watchNoPhoneLibraryText(alone)).toBe(WATCH_NO_PHONE_STATUS_PAGES_TEXT);
+    expect(WATCH_NO_PHONE_STATUS_PAGES_TEXT).toBe("Open the iPhone app to list its status pages here.");
     // With the watch's own status pages too.
     const both = watchCatalogWithHttpLibrary(watchCatalogWithStatusPages(undefined, [{ id: PORCH, name: "House" }]), LIBRARY)!;
     expect(watchCatalogKnows(both, "statusPage")).toBe(true);
-    expect(watchCatalogKnows(both, "macro")).toBe(false);
     expect(both.statusPagesFromWatch).toBe(true);
-    expect(watchNoPhoneLibraryText(both)).toBe(WATCH_NO_PHONE_MACROS_TEXT);
+    // Both lists are known: nothing to open the iPhone app for.
+    expect(watchNoPhoneLibraryText(both)).toBeUndefined();
   });
 
   it("catalog only, under a library that holds no action: the phone's, each marked as on the iPhone", () => {
@@ -246,18 +244,19 @@ describe("the words", () => {
     expect(watchLibraryMissingText(alone, "httpAction")).toBe(WATCH_NOT_IN_LIST_TEXT);
     expect(watchLibraryMissingText(joined, "httpAction")).toBe(WATCH_NOT_ON_IPHONE_TEXT);
     expect(watchLibraryMissingText(CATALOG, "httpAction")).toBe(WATCH_NOT_ON_IPHONE_TEXT);
-    expect(watchLibraryMissingText(joined, "macro")).toBe(WATCH_NOT_ON_IPHONE_TEXT);
+    expect(watchLibraryMissingText(joined, "statusPage")).toBe(WATCH_NOT_ON_IPHONE_TEXT);
   });
 
   it("no iPhone date under a list that leads with the library", () => {
     expect(watchCatalogListedFor(joined, "httpAction")).toBeUndefined();
-    expect(watchCatalogListedFor(joined, "macro", "en-US")).toMatch(/^Listed by the iPhone on /);
+    expect(watchCatalogListedFor(joined, "statusPage", "en-US")).toMatch(/^Listed by the iPhone on /);
     expect(watchCatalogListedFor(CATALOG, "httpAction", "en-US")).toMatch(/^Listed by the iPhone on /);
   });
 
   it("the empty line points at the HTTP actions screen first", () => {
     expect(WATCH_NO_HTTP_ACTIONS_TEXT).toBe("No HTTP actions yet. Add one on the HTTP actions screen, or in the iPhone app.");
     expect(watchNoPhoneLibraryText(watchCatalogWithStatusPages(undefined, []))).toBe(WATCH_NO_PHONE_LIBRARY_TEXT);
+    expect(WATCH_NO_PHONE_LIBRARY_TEXT).toBe("Open the iPhone app to list its HTTP actions here.");
   });
 });
 

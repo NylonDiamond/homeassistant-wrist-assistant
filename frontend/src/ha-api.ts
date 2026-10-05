@@ -401,8 +401,9 @@ export async function restoreSaveHistory(
 
 /** The kinds of watch config Home Assistant keeps a copy of. The panel reads
  * all of them and saves every one but `catalog` (`WatchConfigPanelKind`).
- * `catalog` is the iPhone's list of its HTTP actions, macros and status
- * pages: the phone publishes it and the server refuses a panel save or
+ * `catalog` is the iPhone's list of its HTTP actions and status pages
+ * (an older phone lists its macros too, which the panel does not read): the
+ * phone publishes it and the server refuses a panel save or
  * restore of it. `menus` (the Anywhere menu, the Entity quick menu and the
  * page switcher) and `status_pages` (the watch's own status pages) are
  * refused as `invalid` by an integration older than them. */

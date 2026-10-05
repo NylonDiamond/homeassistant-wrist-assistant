@@ -259,7 +259,6 @@ describe("the breadcrumb", () => {
     expect(watchTileKindColor("light")).not.toBe(watchTileKindColor("switch"));
     expect(watchTileKindColor("script")).toBe(watchTileKindColor("automation"));
     expect(watchTileKindColor("page")).toBe(watchTileKindColor("cover"));
-    expect(watchTileKindColor("macro")).toBe(watchTileKindColor("http_action"));
     expect(watchTileKindColor("vacuum")).toBe(watchTileKindColor("webhook_inbox"));
   });
 });
@@ -375,7 +374,7 @@ describe("the tile's cards", () => {
   });
 
   it("keep one badge table: Content for what the tile is about, Look, Extras, States, Tap and Position", () => {
-    const content: WatchTileSettingsSection[] = ["opens", "target", "request", "macro", "header", "special"];
+    const content: WatchTileSettingsSection[] = ["opens", "target", "request", "removed", "header", "special"];
     for (const s of content) expect(WATCH_TILE_SECTION_BADGES[s], s).toEqual({ color: SECTION_COLOR.content, icon: "content" });
     expect(WATCH_TILE_SECTION_BADGES.size).toEqual({ color: SECTION_COLOR.position, icon: "place" });
     expect(WATCH_TILE_SECTION_BADGES.icon).toEqual({ color: SECTION_COLOR.look, icon: "look" });

@@ -23,7 +23,7 @@
 // rest).
 //
 // Plan: app repo docs/pages_in_home_assistant_step3.md, "3c build contract",
-// for the HTTP action, macro and status page tiles "3e build contract", and
+// for the HTTP action and status page tiles "3e build contract", and
 // for the app tiles "3f batch 2 build contract".
 
 import pageKeys from "./page-keys.json";
@@ -67,7 +67,6 @@ interface DomainLook {
 interface DomainSpec extends DomainLook {
   tvRemote?: DomainLook;
   stateRules?: boolean;
-  fromMacroLibrary?: boolean;
 }
 
 interface SensorBand {
@@ -103,18 +102,15 @@ interface LinkSpec {
   role: string;
 }
 
-/** An HTTP action, macro or status page tile (`httpActionTile` and the
- * rest): a fixed icon and color, never the theme's, and keys of its own. */
+/** An HTTP action or status page tile (`httpActionTile`,
+ * `statusPageTile`): a fixed icon and color, never the theme's, and keys of
+ * its own. */
 interface LibraryTileSpec {
   entityIdPrefix: string;
   icon: string;
   hex: string;
   extras: Record<string, unknown>;
   duplicatesAllowed: boolean;
-  /** The catalog entry's own `icon` wins when it has one. */
-  iconFromLibrary?: boolean;
-  /** The catalog entry's own `colorHex` wins, as stored, when it has one. */
-  colorFromLibrary?: boolean;
 }
 
 interface TileDefaultsTable {
@@ -139,7 +135,6 @@ interface TileDefaultsTable {
   pageLink: LinkSpec;
   peekLink: LinkSpec;
   httpActionTile: LibraryTileSpec;
-  macroTile: LibraryTileSpec;
   statusPageTile: LibraryTileSpec;
 }
 
@@ -769,27 +764,24 @@ export function newWatchPeekLinkTile(
 
 // ── library tiles ────────────────────────────────────────────────────────
 
-/** The three library kinds, as an add names them. */
-export type WatchLibraryAddKind = "httpAction" | "macro" | "statusPage";
+/** The two library kinds, as an add names them. */
+export type WatchLibraryAddKind = "httpAction" | "statusPage";
 
 /** A library entry an add points a tile at, as the catalog lists it: its id
- * and name, and for a macro its own icon and color when it has them. */
+ * and name. */
 export interface WatchLibraryEntryAdd {
   id: string;
   name: string;
-  icon?: string;
-  colorHex?: string;
 }
 
 function librarySpec(kind: WatchLibraryAddKind): LibraryTileSpec {
-  return kind === "httpAction" ? TABLE.httpActionTile : kind === "macro" ? TABLE.macroTile : TABLE.statusPageTile;
+  return kind === "httpAction" ? TABLE.httpActionTile : TABLE.statusPageTile;
 }
 
 /** What a library tile is called when its entry gives no name. The catalog
  * always gives one; this only stands in for a hand-made entry. */
 const LIBRARY_FALLBACK_NAMES: Readonly<Record<WatchLibraryAddKind, string>> = {
   httpAction: "HTTP Action",
-  macro: "Macro",
   statusPage: "Status Page",
 };
 
@@ -802,23 +794,16 @@ export function watchLibraryEntityId(kind: WatchLibraryAddKind, id: unknown): st
 /**
  * The icon and color a library tile of this kind gets (`libraryStyle`): the
  * table's fixed icon and color, never the page theme and never the gradient
- * form; a macro takes its catalog entry's own `icon` and `colorHex` (as
- * stored) when the entry has them. The add writes these, and so does the
- * Icon task's Default on a macro tile.
+ * form. The add writes these.
  */
-export function watchLibraryTileLook(
-  kind: WatchLibraryAddKind,
-  entry?: { icon?: unknown; colorHex?: unknown },
-): { icon: string; color: string } {
+export function watchLibraryTileLook(kind: WatchLibraryAddKind): { icon: string; color: string } {
   const spec = librarySpec(kind);
-  const icon = spec.iconFromLibrary === true && typeof entry?.icon === "string" ? entry.icon : spec.icon;
-  const color = spec.colorFromLibrary === true && typeof entry?.colorHex === "string" ? entry.colorHex : spec.hex;
-  return { icon, color };
+  return { icon: spec.icon, color: spec.hex };
 }
 
 /**
- * A new HTTP action, macro or status page tile (`httpActionTile`,
- * `macroTile`, `statusPageTile`): the fresh keys, `entityId` the kind's
+ * A new HTTP action or status page tile (`httpActionTile`,
+ * `statusPageTile`): the fresh keys, `entityId` the kind's
  * prefix and the entry's id in upper case, the icon and color of
  * `watchLibraryTileLook`, the entry's name as `customLabel`, size 6 by 4,
  * and the kind's extra keys (`httpResponseDisplay: "toast"` for an HTTP
@@ -830,7 +815,7 @@ export function newWatchLibraryTile(
   options?: WatchEditOptions,
 ): WatchPageTile {
   const spec = librarySpec(kind);
-  const look = watchLibraryTileLook(kind, entry);
+  const look = watchLibraryTileLook(kind);
   return freshTile({
     id: newIdFrom(options),
     entityId: watchLibraryEntityId(kind, entry.id),
@@ -945,7 +930,6 @@ export type WatchTileAdd =
   | { kind: "pageLink"; page: WatchLinkTarget }
   | { kind: "peekLink"; page: WatchLinkTarget }
   | { kind: "httpAction"; action: WatchLibraryEntryAdd }
-  | { kind: "macro"; macro: WatchLibraryEntryAdd }
   | { kind: "statusPage"; statusPage: WatchLibraryEntryAdd }
   | { kind: "template" }
   | { kind: "musicHub"; players: readonly WatchMediaPlayer[] }
@@ -953,7 +937,7 @@ export type WatchTileAdd =
 
 /** The library entry of a library add. */
 function libraryEntryOf(add: Extract<WatchTileAdd, { kind: WatchLibraryAddKind }>): WatchLibraryEntryAdd {
-  return add.kind === "httpAction" ? add.action : add.kind === "macro" ? add.macro : add.statusPage;
+  return add.kind === "httpAction" ? add.action : add.statusPage;
 }
 
 /** The new tile for an add, colored for `page`. */
@@ -970,7 +954,6 @@ export function newWatchTile(add: WatchTileAdd, page: WatchPage | undefined, opt
     case "peekLink":
       return newWatchPeekLinkTile(add.page, page, options);
     case "httpAction":
-    case "macro":
     case "statusPage":
       return newWatchLibraryTile(add.kind, libraryEntryOf(add), options);
     case "template":
@@ -1004,7 +987,6 @@ const REPEATABLE_KINDS: ReadonlySet<string> = new Set([
   "assist",
   "speak_message",
   "http_action",
-  "macro",
   // The phone's status page add never checks for a repeat.
   "status_page",
   // A new id each, and the phone checks nothing (`duplicatesAllowed`).
@@ -1036,7 +1018,6 @@ export function watchAddEntityId(add: WatchTileAdd): string {
       return `${spec.entityIdPrefix}${typeof add.page.id === "string" ? add.page.id.toUpperCase() : ""}`;
     }
     case "httpAction":
-    case "macro":
     case "statusPage":
       return watchLibraryEntityId(add.kind, libraryEntryOf(add).id);
     case "template":
@@ -1051,8 +1032,8 @@ export function watchAddEntityId(add: WatchTileAdd): string {
  * why (`WatchAddRefusal`): the page must exist, be no system page and no
  * smart page, and, for an entity tile, hold no tile with the same `entityId`
  * (compared exactly, as on the phone). Spacers, headers, page links and the
- * app's assist, speak, template, music hub, point control, HTTP action,
- * macro and status page tiles may repeat. Undefined means it can.
+ * app's assist, speak, template, music hub, point control, HTTP action and
+ * status page tiles may repeat. Undefined means it can.
  */
 export function watchAddRefusal(document: WatchPagesDocument, pageId: string, entityId: string): WatchAddRefusal | undefined {
   const index = pageIndex(document, pageId);

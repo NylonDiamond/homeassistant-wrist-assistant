@@ -101,8 +101,6 @@ import {
   setWatchLibraryTileTarget,
   setWatchTileHTTPReply,
   setWatchTileHTTPToastSeconds,
-  setWatchTileMacroCloseMode,
-  setWatchTileMacroRunSilently,
 } from "../src/watch-pages/library-model.js";
 import {
   WATCH_SPECIAL_SETTERS,
@@ -351,10 +349,6 @@ function applyCase(document: WatchPagesDocument, c: SettingsCase): WatchPagesDoc
       return setWatchTileHTTPReply(document, PAGE, T, e.value);
     case "httpToastSeconds":
       return setWatchTileHTTPToastSeconds(document, PAGE, T, e.value);
-    case "macroCloseMode":
-      return setWatchTileMacroCloseMode(document, PAGE, T, e.value);
-    case "macroRunSilently":
-      return setWatchTileMacroRunSilently(document, PAGE, T, e.value);
     // Part 3f batch 1: the special tiles.
     default:
       return applySpecialCase(document, T, c.edit);
@@ -529,7 +523,7 @@ function applyPageCase(document: WatchPagesDocument, c: PageSettingsCase): Watch
 
 describe("settings case files written by the phone", () => {
   it("are all here", () => {
-    expect(files.length).toBeGreaterThanOrEqual(416);
+    expect(files.length).toBeGreaterThanOrEqual(408);
   });
 
   for (const file of files) {
@@ -663,9 +657,6 @@ describe("refusals return the document as given", () => {
     expect(http.read(setWatchTileSingleTap(http.doc, PAGE, http.id, "httpAction")).singleTapAction).toBe("httpAction");
     expect(setWatchTileSingleTap(http.doc, PAGE, http.id, "runMacro")).toBe(http.doc);
     expect(http.read(setWatchTileSingleTap(http.doc, PAGE, http.id, "none")).singleTapAction).toBe("none");
-    const macro = edits(tileOf({ entityId: "macro.C3A0E000-0000-4000-8000-000000000071" }));
-    expect(macro.read(setWatchTileSingleTap(macro.doc, PAGE, macro.id, "runMacro")).singleTapAction).toBe("runMacro");
-    expect(setWatchTileSingleTap(macro.doc, PAGE, macro.id, "httpAction")).toBe(macro.doc);
     const page = edits(tileOf({ entityId: "page.C3A0E000-0000-4000-8000-000000000050" }));
     expect(setWatchTileSingleTap(page.doc, PAGE, page.id, "toggle")).toBe(page.doc);
     expect(setWatchTileSingleTap(page.doc, PAGE, page.id, null)).toBe(page.doc);
@@ -1004,12 +995,11 @@ describe("readers follow the table", () => {
     const http = watchSingleTapSettings(reader("http_action.C3A0E000-0000-4000-8000-000000000070", { singleTapAction: "httpAction" }));
     expect(http).toMatchObject({ storedNotOffered: false, resolved: "httpAction", absent: "httpAction" });
     expect(http.offered.map((c) => c.value)).toEqual(["httpAction", "none"]);
-    const macroTap = watchSingleTapSettings(reader("macro.C3A0E000-0000-4000-8000-000000000071"));
-    expect(macroTap.offered.map((c) => c.value)).toEqual(["runMacro", "none"]);
-    const macro = watchHoldSlideSettings(reader("light.desk_lamp", { holdSlideActions: ["right", "runMacro", "up", "teleport"] }));
-    expect(macro.directions[3]).toMatchObject({ stored: "runMacro", storedNotOffered: true, resolved: "none" });
-    expect(macro.directions[0]).toMatchObject({ stored: "teleport", storedNotOffered: true, resolvedLabel: "Sync Needed" });
-    expect(macro.anyStored).toBe(true);
+    // The table's Run Macro, stored by an older phone, is never offered.
+    const slides = watchHoldSlideSettings(reader("light.desk_lamp", { holdSlideActions: ["right", "runMacro", "up", "teleport"] }));
+    expect(slides.directions[3]).toMatchObject({ stored: "runMacro", storedNotOffered: true, resolved: "none" });
+    expect(slides.directions[0]).toMatchObject({ stored: "teleport", storedNotOffered: true, resolvedLabel: "Sync Needed" });
+    expect(slides.anyStored).toBe(true);
   });
 
   it("a trigger direction without its target reads as Sync Needed", () => {

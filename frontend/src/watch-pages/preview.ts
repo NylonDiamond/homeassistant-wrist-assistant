@@ -89,7 +89,7 @@ export interface WatchPagePreviewInput {
   icons?: IconProvider;
   /** CSS pixels per point. */
   scale?: number;
-  /** The iPhone's library, which names a macro or status page tile with no
+  /** The iPhone's library, which names a status page tile with no
    * label of its own as the watch does. Its status pages are the watch's
    * own record's when there is one (`watchCatalogWithStatusPages`). */
   catalog?: WatchCatalog;
@@ -291,10 +291,9 @@ export function watchReflowPage(page: WatchPage, states: Readonly<Record<string,
   return { ...page, items: shown };
 }
 
-/** The name a tile draws: its own label, else for an HTTP action, macro or
- * status page tile the watch's fallback ("Action", the macro's or status
- * page's name in the catalog, else "Macro" or "Status Page"), else
- * `tileLabel`. */
+/** The name a tile draws: its own label, else for an HTTP action or status
+ * page tile the watch's fallback ("Action", the status page's name in the
+ * catalog, else "Status Page"), else `tileLabel`. */
 export function watchPreviewTileLabel(tile: WatchPageTile, input: Pick<WatchPagePreviewInput, "states" | "pages" | "catalog">): string {
   const custom = typeof tile.customLabel === "string" ? tile.customLabel.trim() : "";
   if (custom === "") {
@@ -456,7 +455,7 @@ export function watchSyncedTile(tile: WatchPageTile, page: WatchPage | undefined
  * color, a spoken message the media player's (`SimpleTileViews`). */
 const WATCH_VIEW_DEFAULTS: Readonly<Record<string, string>> = {
   input_number: "entitySensor", number: "entitySensor", input_select: "entityButton", select: "entityButton",
-  http_action: "accent", macro: "accent", assist: "accent", status_page: "info", webhook_inbox: "info", speak_message: "entityMediaPlayer",
+  http_action: "accent", assist: "accent", status_page: "info", webhook_inbox: "info", speak_message: "entityMediaPlayer",
 };
 
 /** A sensor family tile's default color (`SensorEntity.suggestedColor`):
@@ -897,7 +896,7 @@ export function watchTilePreviewActive(tile: WatchPageTile, states?: Readonly<Re
  * the state, so they always draw the lit glass. */
 const ALWAYS_LIT: ReadonlySet<string> = new Set([
   "lock", "cover", "valve", "climate", "button", "input_button", "scene", "script", "page", "show_page", "status_page",
-  "http_action", "macro", "template", "webhook_inbox", "assist", "speak_message",
+  "http_action", "template", "webhook_inbox", "assist", "speak_message",
 ]);
 
 /** The kinds the watch draws with `SimpleSensorTile`. */
@@ -953,7 +952,7 @@ export interface WatchIconTreatment {
 const FILL_WHEN_ON: ReadonlySet<string> = new Set(["light", "switch", "input_boolean", "fan", "automation"]);
 /** The kinds with the fixed soft shadow under the symbol. */
 const SOFT_GLOW: ReadonlySet<string> = new Set([
-  "assist", "speak_message", "http_action", "macro", "scene", "script", "page", "show_page", "status_page", "webhook_inbox", "music_hub",
+  "assist", "speak_message", "http_action", "scene", "script", "page", "show_page", "status_page", "webhook_inbox", "music_hub",
 ]);
 
 export function watchTileIconTreatment(tile: WatchPageTile, states?: Readonly<Record<string, HassEntityState>>): WatchIconTreatment {
@@ -3039,7 +3038,7 @@ const VIEW_SYMBOLS: Readonly<Record<string, string>> = {
   light: "lightbulb", switch: "switch.2", input_boolean: "togglepower", automation: "gearshape.2", fan: "fan", lock: "lock",
   button: "button.programmable", input_button: "button.programmable", input_number: "slider.horizontal.3", number: "slider.horizontal.3",
   input_select: "list.bullet", select: "list.bullet", scene: "play", script: "scroll", page: "rectangle.on.rectangle",
-  show_page: "rectangle.on.rectangle", status_page: "list.bullet.rectangle.portrait", macro: "link", assist: "waveform.and.mic",
+  show_page: "rectangle.on.rectangle", status_page: "list.bullet.rectangle.portrait", assist: "waveform.and.mic",
   speak_message: "message.and.waveform", http_action: "network",
 };
 

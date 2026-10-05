@@ -196,8 +196,8 @@ describe("the app tiles' names in the preview", () => {
     expect(draw({ id: "A", entityId: "assist.voice_hub" })).not.toContain("wp-state");
   });
 
-  it("draws a page link and a macro with their name alone, as the watch does", () => {
-    for (const entityId of ["page.X", "macro.X"]) {
+  it("draws a page link with its name alone, as the watch does", () => {
+    for (const entityId of ["page.X"]) {
       const drawn = draw({ id: "G", entityId });
       expect(drawn.match(/class="wp-label"/g), entityId).toHaveLength(1);
       expect(drawn, entityId).not.toContain("wp-state");

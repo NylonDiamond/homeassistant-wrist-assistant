@@ -2,10 +2,11 @@
 // pinned Name card (`sectionCard`, editor-chrome.ts, the complication
 // editor's look): place and size (rows the page editor hands in), icon and
 // color, text, action, a header's look and a
-// page link's target (part 3c); styling (3d); and for an HTTP action, macro
-// or status page tile its target, the Request task and the Macro task, with
-// Run HTTP Action in hold and slide, from the iPhone's catalog on the host
-// (3e, `library-model.ts`).
+// page link's target (part 3c); styling (3d); and for an HTTP action or
+// status page tile its target and the Request task, with Run HTTP Action in
+// hold and slide, from the iPhone's catalog on the host (3e,
+// `library-model.ts`). A macro tile, a kind that was removed, gets one line
+// that says so and nothing to edit.
 //
 // `<wa-page-editor>` calls `renderTileSettings` on every draw with the
 // selected tile, and puts `tileSettingsStyles` in its sheet after the shared
@@ -81,7 +82,7 @@ import { forgetSpecialStatus, renderSpecial, specialSummary, watchSpecialSection
 import { renderInboxLine } from "./app-settings.js";
 import { watchSpecialTask } from "./special-model.js";
 import { findWatchPage } from "./edit.js";
-import { type WatchPageTile, type WatchPagesDocument, tileEntityId, tileKind, watchPageId, watchPageName, watchPagesOf } from "./model.js";
+import { type WatchPageTile, type WatchPagesDocument, WATCH_REMOVED_TILE_TEXT, tileEntityId, tileKind, watchPageId, watchPageName, watchPagesOf } from "./model.js";
 import {
   type WatchLibraryKind,
   WATCH_LIBRARY_WORDS,
@@ -100,9 +101,7 @@ import {
 } from "./catalog.js";
 import {
   type WatchHTTPReply,
-  type WatchMacroCloseMode,
   WATCH_HTTP_VALUE_RANGES,
-  WATCH_MACRO_CLOSE_MODES,
   setWatchLibraryTileTarget,
   setWatchTileHTTPRefresh,
   setWatchTileHTTPRefreshOnPull,
@@ -114,10 +113,7 @@ import {
   setWatchTileHTTPValueLineLimit,
   setWatchTileHTTPValueLineSpacing,
   setWatchTileHTTPValueOffsetY,
-  setWatchTileMacroCloseMode,
-  setWatchTileMacroRunSilently,
   watchHTTPRequestSettings,
-  watchMacroSettings,
 } from "./library-model.js";
 import {
   type WatchChoice,
@@ -223,7 +219,6 @@ import {
   watchEntityAddFromHass,
   watchEntityDefaults,
   watchGradientOf,
-  watchLibraryTileLook,
   watchLinkTargetPages,
   watchThemeDisplayName,
   watchThemeSwatches,
@@ -473,21 +468,16 @@ export function linkButton(text: string, title: string, action: () => void): Tem
   return html`<button type="button" class="link ts-link" title=${title} @click=${action}>${text}</button>`;
 }
 
-/** The defaults of the tile's kind for this page: icon and color. A macro
- * tile's are its macro's own style from the catalog (`libraryStyle`), else
- * the table's. */
+/** The defaults of the tile's kind for this page: icon and color. */
 function kindDefaults(host: TileSettingsHost): { icon: string | undefined; color: string | undefined } {
   const entityId = tileEntityId(host.tile);
-  const library = watchLibraryTarget(entityId);
-  if (library?.kind === "macro") return watchLibraryTileLook("macro", findWatchCatalogEntry(host.catalog, "macro", library.id));
   const add = watchEntityAddFromHass(host.hass as unknown as WatchHassView, entityId);
   return watchEntityDefaults(add, host.page);
 }
 
 /**
- * The Icon task's Default: writes the kind's default icon and nothing else
- * (a macro tile: its macro's own icon from the catalog, else `link`). Each
- * Default writes only its own key, as on the phone. On a smart page rule's
+ * The Icon task's Default: writes the kind's default icon and nothing else.
+ * Each Default writes only its own key, as on the phone. On a smart page rule's
  * style (`host.domainStyle`) it removes the key instead.
  */
 export function watchTileDefaultIconEdit(host: TileSettingsHost): (d: WatchPagesDocument) => WatchPagesDocument {
@@ -501,9 +491,8 @@ export function watchTileDefaultIconEdit(host: TileSettingsHost): (d: WatchPages
 }
 
 /**
- * The color's Default: writes the kind's default color and nothing else (a
- * macro tile: its macro's own `colorHex` from the catalog, else
- * `#CCD8E6`). On a rule's style it removes the key instead.
+ * The color's Default: writes the kind's default color and nothing else. On
+ * a rule's style it removes the key instead.
  */
 export function watchTileDefaultColorEdit(host: TileSettingsHost): (d: WatchPagesDocument) => WatchPagesDocument {
   const color = host.domainStyle === true ? undefined : kindDefaults(host).color;
@@ -530,9 +519,16 @@ export function tileInspectorSections(host: TileSettingsHost): WatchTileSettings
   return ["size", ...watchTileSettingsSections(host.tile, host.hass.states)];
 }
 
-/** Whether the section is the webhook inbox's one line rather than a card. */
+/** Whether the section is one line rather than a card: the webhook inbox's,
+ * or a removed kind's. */
 function inboxLine(host: TileSettingsHost, section: WatchTileSettingsSection): boolean {
-  return section === "special" && watchSpecialTask(host.tile, host.hass.states)?.task === "inbox";
+  return section === "removed" || (section === "special" && watchSpecialTask(host.tile, host.hass.states)?.task === "inbox");
+}
+
+/** The one line a tile of a removed kind (a macro) gets in place of its
+ * tasks. The tile stays as stored; it can still be moved or deleted. */
+function renderRemovedLine(): TemplateResult {
+  return html`<p class="hint ts-removed">${WATCH_REMOVED_TILE_TEXT}</p>`;
 }
 
 /** The folds the inspector's Collapse all turns: each of the sections that is
@@ -553,7 +549,9 @@ export function renderTileSettings(host: TileSettingsHost, extras: TileSettingsE
 
 function renderSection(host: TileSettingsHost, section: WatchTileSettingsSection, extras: TileSettingsExtras): TemplateResult {
   // A webhook inbox has no task here (its topics live on the iPhone): one
-  // line stands where the task would be (part 3f batch 2).
+  // line stands where the task would be (part 3f batch 2). So does a removed
+  // kind's line.
+  if (section === "removed") return renderRemovedLine();
   if (inboxLine(host, section)) return renderInboxLine(host);
   const open = isOpen(host, section);
   const title = section === "special" ? watchSpecialSectionTitle(host) : WATCH_TILE_SETTINGS_SECTION_TITLES[section];
@@ -588,7 +586,6 @@ const SECTION_KEYS: Readonly<Partial<Record<WatchTileSettingsSection, readonly s
     "httpTileValueShowName", "httpTileValueFontSize", "httpTileValueLineLimit", "httpTileValueLineSpacing", "httpTileValueOffsetY",
     "httpTileValueColorHex",
   ],
-  macro: ["macroRunSilently", "macroCloseMode", "autoCloseMacroRun"],
   // The icon and the color are compared to the kind's defaults instead.
   icon: ["iconSizeOverride", "iconShadow", "dimWhenOff", "iconTapAnimation", "stateIcons", "stateColors"],
   // The label is the Name card's, not this one's.
@@ -619,7 +616,6 @@ const ABSENT_FONT_WEIGHT = watchTileTextSettings({} as WatchPageTile).fontWeight
 /** What each section's rows read, for `readsOtherThanDefault`. */
 const SECTION_READS: Readonly<Partial<Record<WatchTileSettingsSection, (tile: WatchPageTile) => unknown>>> = {
   request: (t) => watchHTTPRequestSettings(t),
-  macro: (t) => watchMacroSettings(t),
   icon: (t) => {
     const s = watchTileIconSettings(t);
     const map = (v: unknown) => (typeof v === "object" && v !== null && Object.keys(v).length > 0 ? v : undefined);
@@ -658,7 +654,6 @@ export function watchTileSectionChanged(host: TileSettingsHost, section: WatchTi
   const stored = read !== undefined && readsOtherThanDefault(tile, keys, read);
   switch (section) {
     case "request":
-    case "macro":
     case "text":
     case "action":
       return stored;
@@ -686,6 +681,7 @@ export function watchTileSectionChanged(host: TileSettingsHost, section: WatchTi
     case "target":
     case "special":
     case "size":
+    case "removed":
       return false;
   }
 }
@@ -750,11 +746,6 @@ function sectionSummary(host: TileSettingsHost, section: WatchTileSettingsSectio
       const reply = watchHTTPRequestSettings(tile).reply;
       return reply === "toast" ? "Reply as a banner" : reply === "tileValue" ? "Reply on the tile" : "";
     }
-    case "macro": {
-      const m = watchMacroSettings(tile);
-      const close = WATCH_MACRO_CLOSE_MODES.find((c) => c.value === m.closeMode)!.label;
-      return m.runSilently ? `Silent, closes: ${close}` : `Closes: ${close}`;
-    }
     case "special":
       return specialSummary(host);
     case "header": {
@@ -778,6 +769,7 @@ function sectionSummary(host: TileSettingsHost, section: WatchTileSettingsSectio
       return tap.picker ? `Tap: ${tap.resolvedLabel}` : "";
     }
     case "size":
+    case "removed":
       return "";
     case "state":
       return taskModified(host, "state") ? "Changed" : "";
@@ -802,8 +794,6 @@ function sectionBody(host: TileSettingsHost, section: WatchTileSettingsSection):
       return renderTarget(host);
     case "request":
       return renderRequest(host);
-    case "macro":
-      return renderMacro(host);
     case "header":
       return renderHeader(host);
     case "special":
@@ -821,6 +811,7 @@ function sectionBody(host: TileSettingsHost, section: WatchTileSettingsSection):
     case "background":
       return renderBackground(host);
     case "size":
+    case "removed":
       return html``;
   }
 }
@@ -853,11 +844,10 @@ function renderOpens(host: TileSettingsHost): TemplateResult {
       : "A tap shows that page over this one, hidden pages included. A label that is the page's name follows it."}</div>`;
 }
 
-// ── library tiles: target, request, macro ────────────────────────────────
+// ── library tiles: target, request ───────────────────────────────────────
 
 const TARGET_HINTS: Readonly<Record<WatchLibraryKind, string>> = {
   httpAction: "A tap runs this action. A label that is the action's name follows it.",
-  macro: "A tap runs this macro. A label that is the macro's name follows it.",
   statusPage: "A tap opens this status page. A label that is the page's name follows it.",
 };
 
@@ -867,7 +857,7 @@ function httpActionsLink(): TemplateResult {
 }
 
 /**
- * The Target of an HTTP action, macro or status page tile: the catalog's
+ * The Target of an HTTP action or status page tile: the catalog's
  * entries of its kind, the home's HTTP actions first (`http-library.ts`). A
  * target the list does not hold shows the tile's label and "Not on the
  * iPhone" ("Not in this watch's status pages" for a status page from the
@@ -885,7 +875,7 @@ function renderTarget(host: TileSettingsHost): TemplateResult {
   const catalog = host.catalog;
   if (catalog === undefined || !watchCatalogKnows(catalog, target.kind)) {
     // With no label of its own, the name the watch shows ("Action",
-    // "Macro", "Status Page").
+    // "Status Page").
     const label = watchTileTextSettings(host.tile).label;
     const shown = label !== undefined && label.trim() !== "" ? label : (watchLibraryTileFallbackName(tileEntityId(host.tile), undefined) ?? words.one);
     return html`<div class="ts-target-now">${shown}</div>
@@ -998,21 +988,6 @@ function renderTileValue(host: TileSettingsHost, r: ReturnType<typeof watchHTTPR
     ${typingField(host, "httpColor", html`<div class="ts-no-alpha">${colorField("Text color", color, setColor, true, undefined, { switchOn: r.color !== undefined })}</div>`)}
     <div class="hint ts-under">${r.color === undefined ? "Off: the watch's own text color." : "On: this color. Switch it off for the watch's own."}</div>
   </div>`;
-}
-
-/** The Macro task of a macro tile: Run silently and When it finishes. */
-function renderMacro(host: TileSettingsHost): TemplateResult {
-  const m = watchMacroSettings(host.tile);
-  const target = watchLibraryTarget(tileEntityId(host.tile));
-  const macro = target === undefined ? undefined : findWatchCatalogEntry(host.catalog, "macro", target.id);
-  const warning = macro === undefined ? undefined : watchCatalogWarning("macro", macro);
-  return html`
-    ${warning === undefined ? nothing : html`<div class="hint warn">${warning}.</div>`}
-    ${checkField("Run silently", m.runSilently, (on) => commit(host, "macroRunSilently", (d) => setWatchTileMacroRunSilently(d, host.pageId, host.tileId, on)))}
-    <div class="hint ts-under">No steps sheet, only haptics and a banner. A macro with a confirmation step still asks before it goes on.</div>
-    <div class="ts-stack">${segField<WatchMacroCloseMode>("When it finishes", m.closeMode, WATCH_MACRO_CLOSE_MODES.map((c) => [c.value, c.label] as [WatchMacroCloseMode, string]), (v) =>
-      commit(host, "macroCloseMode", (d) => setWatchTileMacroCloseMode(d, host.pageId, host.tileId, v)), { reselect: m.legacyClose })}</div>
-    <div class="hint">What the run sheet does once the macro ends: stay open, close after a clean run, or always close.</div>`;
 }
 
 // ── icon and color ───────────────────────────────────────────────────────
@@ -1808,6 +1783,8 @@ export const tileSettingsStyles = css`
   /* The section cards are the shared inspector's (\`.sec\`, editor-chrome.ts);
      this only stacks them. */
   .ts-root { display: flex; flex-direction: column; }
+  /* A removed kind's one line, where its tasks would be. */
+  .ts-removed { margin: 6px 0 2px; }
   /* The Name card's box takes the header's free width, its line sits under. */
   .name-sec .sec-h > .ts-typing { flex: 1 1 auto; min-width: 0; display: flex; }
   .name-sec .sec-h > .ts-typing > input { flex: 1 1 auto; width: 0; min-width: 0; }

@@ -152,7 +152,6 @@ export const VIRTUAL_TILE_KINDS: Readonly<Record<string, string>> = {
   show_page: "Peek page",
   status_page: "Status page",
   http_action: "HTTP action",
-  macro: "Macro",
   template: "Template",
   spacer: "Spacer",
   multicam: "Multi camera",
@@ -239,7 +238,7 @@ export function watchInboxFallbackLabel(entityId: string): string {
 const NO_KIND_LINE: ReadonlySet<string> = new Set(["assist", "speak_message", "point_control", "template"]);
 
 /** Whether the preview draws a virtual kind's name as a second line under
- * the tile's name, as the watch does for a page link, a macro and the like. */
+ * the tile's name, as the watch does for a page link and the like. */
 export function tileDrawsKindLine(kind: string): boolean {
   return !NO_KIND_LINE.has(kind);
 }
@@ -247,6 +246,23 @@ export function tileDrawsKindLine(kind: string): boolean {
 export function isVirtualTileKind(kind: string): boolean {
   return Object.hasOwn(VIRTUAL_TILE_KINDS, kind);
 }
+
+/** The app kinds that were removed, by name: a macro tile (`macro.<id>`),
+ * which ran a macro kept on the iPhone. A page may still hold one. The panel
+ * keeps it as stored, draws it as a tile it does not know (`tileClass`
+ * gives `unknown`) and offers nothing for it but a line that says why
+ * (`WATCH_REMOVED_TILE_TEXT`). */
+const REMOVED_TILE_KINDS: Readonly<Record<string, string>> = {
+  macro: "Macro",
+};
+
+/** Whether a tile kind (`tileKind`) is one that was removed. */
+export function isWatchRemovedTileKind(kind: string): boolean {
+  return Object.hasOwn(REMOVED_TILE_KINDS, kind);
+}
+
+/** What the settings of a removed kind's tile say, in place of its own. */
+export const WATCH_REMOVED_TILE_TEXT = "Macros were removed. Use a Home Assistant script instead.";
 
 /** "media_player" as "Media player": what a kind with no name of its own is
  * called. */
@@ -259,6 +275,7 @@ function humanize(word: string): string {
  * for a known Home Assistant domain, else the kind itself made readable. */
 export function tileKindLabel(kind: string): string {
   if (isVirtualTileKind(kind)) return VIRTUAL_TILE_KINDS[kind]!;
+  if (isWatchRemovedTileKind(kind)) return `${REMOVED_TILE_KINDS[kind]!} (removed)`;
   return DOMAIN_LABELS[kind] ?? (humanize(kind) || "Tile");
 }
 
@@ -334,7 +351,8 @@ export function watchHeaderDomainName(domain: string): string {
  * - `virtual`: one of the app's own kinds, drawn as a tile with its kind.
  * - `entity`: a Home Assistant entity, by a known domain or by being in
  *   `states`.
- * - `unknown`: neither, so a neutral tile that names the kind.
+ * - `unknown`: neither, so a neutral tile that names the kind. A removed
+ *   kind's tile (a macro) is always this one.
  */
 export type WatchTileClass = "divider" | "spacer" | "virtual" | "entity" | "unknown";
 
@@ -343,6 +361,7 @@ export function tileClass(entityId: string, states?: Readonly<Record<string, unk
   if (kind === "divider") return "divider";
   if (kind === "spacer") return "spacer";
   if (isVirtualTileKind(kind)) return "virtual";
+  if (isWatchRemovedTileKind(kind)) return "unknown";
   if (Object.hasOwn(DOMAIN_LABELS, kind) || (states !== undefined && Object.hasOwn(states, entityId))) return "entity";
   return "unknown";
 }
@@ -408,7 +427,6 @@ const DEFAULT_SYMBOLS: Readonly<Record<string, string>> = {
   show_page: "eye.fill",
   status_page: "list.bullet.rectangle",
   http_action: "network",
-  macro: "list.bullet",
   template: "chevron.left.forwardslash.chevron.right",
   multicam: "video.fill",
   point_control: "hand.point.up.left.fill",
@@ -458,7 +476,8 @@ export function tileLabel(
   }
   if (kind === "webhook_inbox") return watchInboxFallbackLabel(entityId);
   if (isVirtualTileKind(kind)) return WATCH_KIND_FALLBACK_LABELS[kind] ?? tileKindLabel(kind);
-  const name = states?.[entityId]?.attributes?.friendly_name;
+  if (isWatchRemovedTileKind(kind)) return REMOVED_TILE_KINDS[kind]!;
+  const name =states?.[entityId]?.attributes?.friendly_name;
   if (typeof name === "string" && name.trim() !== "") return name.trim();
   return entityId;
 }

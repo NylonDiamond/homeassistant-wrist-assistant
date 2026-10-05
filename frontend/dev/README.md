@@ -35,12 +35,14 @@ ignored by git.
     delete a page, add a page.
     Each is a device upload: a new revision signed by the watch, delivered at
     once, and a live event. "Add a page" on the Ultra uploads its first copy.
-  - Library: the phone's catalog of HTTP actions, macros and status pages
-    (part 3e). Alex's and Sam's watches start with the bytes the app's tests
-    write (`test/fixtures-catalog/catalog.json`): a styled macro, an unnamed
-    action, one that needs setup, one with a reply value, a system status
-    page. Sam's pages hold library tiles whose ids the catalog does not
-    list, for "Not on the iPhone". The Catalog switch removes the record
+  - Library: the phone's catalog of HTTP actions and status pages (part
+    3e). Alex's and Sam's watches start with the bytes the app's tests
+    write (`test/fixtures-catalog/catalog.json`): an unnamed action, one
+    that needs setup, one with a reply value, a system status page. Its
+    `macros` list, which an older phone still sends, is not read: macros
+    were removed, and a page's macro tile shows as removed. Sam's pages
+    hold library tiles whose ids the catalog does not list, for "Not on
+    the iPhone". The Catalog switch removes the record
     (a live event at revision 0, as with an app older than the kind) and
     publishes it again; "iPhone: add an HTTP action" publishes it with one
     more action, a new revision and a live event. The store refuses a panel

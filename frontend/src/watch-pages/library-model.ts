@@ -1,6 +1,6 @@
-// The settings of the three library tiles, without any drawing: the target
-// of an HTTP action, macro or status page tile, the Request task of an HTTP
-// action tile and the Macro task of a macro tile (part 3e).
+// The settings of the two library tiles, without any drawing: the target of
+// an HTTP action or status page tile and the Request task of an HTTP action
+// tile (part 3e).
 //
 // The setters follow `tile-settings-model.ts`: the raw document, a page id
 // and a tile id in, a new document out in which only the path is new, a new
@@ -25,7 +25,7 @@ import { REMOVE, editTile, isBool, normalizeWatchColor, setKey, withKey, withOpt
 // ── the target ───────────────────────────────────────────────────────────
 
 /**
- * Point an HTTP action, macro or status page tile at another entry of its
+ * Point an HTTP action or status page tile at another entry of its
  * library (`libraryRetarget`): `entityId` becomes the kind's prefix and the
  * new id in upper case. The label becomes the new entry's `name` only while
  * it is one of `oldTargetNames` (the old entry's names now; none when it is
@@ -76,7 +76,7 @@ const TILE_VALUE_KEYS = [
   "httpTileValueLineSpacing",
 ] as const;
 
-/** Every tile key the Request and Macro setters write or remove. */
+/** Every tile key the target and Request setters write or remove. */
 export const WATCH_LIBRARY_SETTING_KEYS: readonly string[] = [
   "entityId",
   "customLabel",
@@ -84,9 +84,6 @@ export const WATCH_LIBRARY_SETTING_KEYS: readonly string[] = [
   "httpResponseDisplay",
   "httpToastSeconds",
   ...TILE_VALUE_KEYS,
-  "macroCloseMode",
-  "autoCloseMacroRun",
-  "macroRunSilently",
 ];
 
 /** The reply banner's seconds a tile may store: 3, the standard, is no
@@ -108,10 +105,6 @@ export const WATCH_HTTP_VALUE_RANGES = {
 
 function isHTTPTile(tile: WatchPageTile): boolean {
   return watchLibraryTarget(tileEntityId(tile))?.kind === "httpAction";
-}
-
-function isMacroTile(tile: WatchPageTile): boolean {
-  return watchLibraryTarget(tileEntityId(tile))?.kind === "macro";
 }
 
 /** The stored reply mode as the phone resolves it: an unknown string is
@@ -287,57 +280,4 @@ export function setWatchTileHTTPValueOffsetY(document: WatchPagesDocument, pageI
  * here), or `null` (Reset) to remove the key. */
 export function setWatchTileHTTPValueColor(document: WatchPagesDocument, pageId: string, tileId: string, color: string | null): WatchPagesDocument {
   return setTileValueKey(document, pageId, tileId, "httpTileValueColorHex", color === null ? REMOVE : normalizeWatchColor(color, "solid"));
-}
-
-// ── the Macro task ───────────────────────────────────────────────────────
-
-/** When a macro's run sheet closes (`MacroCloseMode`), in the phone's
- * order, with its words. */
-export const WATCH_MACRO_CLOSE_MODES: readonly { value: "stayOpen" | "onSuccess" | "always"; label: string }[] = [
-  { value: "stayOpen", label: "Stay open" },
-  { value: "onSuccess", label: "On success" },
-  { value: "always", label: "Always" },
-];
-
-export type WatchMacroCloseMode = (typeof WATCH_MACRO_CLOSE_MODES)[number]["value"];
-
-/** What the Macro task shows for a macro tile. */
-export interface WatchMacroSettings {
-  runSilently: boolean;
-  /** As the watch resolves it: the stored mode, else the legacy
-   * `autoCloseMacroRun` (absent or true is On success, false Stay open). */
-  closeMode: WatchMacroCloseMode;
-  /** The tile stores the legacy `autoCloseMacroRun`: picking the mode shown
-   * writes it out as `macroCloseMode` and removes the legacy key. */
-  legacyClose: boolean;
-}
-
-export function watchMacroSettings(tile: WatchPageTile): WatchMacroSettings {
-  const stored = WATCH_MACRO_CLOSE_MODES.find((m) => m.value === tile.macroCloseMode)?.value;
-  return {
-    runSilently: tile.macroRunSilently === true,
-    closeMode: stored ?? (tile.autoCloseMacroRun === false ? "stayOpen" : "onSuccess"),
-    legacyClose: tile.autoCloseMacroRun !== undefined && tile.autoCloseMacroRun !== null,
-  };
-}
-
-/** When it finishes (`LibraryTileRules.setMacroCloseMode`): the mode written
- * and the legacy `autoCloseMacroRun` removed. Only on a macro tile. */
-export function setWatchTileMacroCloseMode(
-  document: WatchPagesDocument,
-  pageId: string,
-  tileId: string,
-  mode: WatchMacroCloseMode,
-): WatchPagesDocument {
-  if (!WATCH_MACRO_CLOSE_MODES.some((m) => m.value === mode)) return document;
-  return editTile(document, pageId, tileId, (tile) =>
-    isMacroTile(tile) ? withoutKey(withKey(tile, "macroCloseMode", mode), "autoCloseMacroRun") : tile,
-  );
-}
-
-/** Run silently: on writes `macroRunSilently: true`, off removes it. Only
- * on a macro tile. */
-export function setWatchTileMacroRunSilently(document: WatchPagesDocument, pageId: string, tileId: string, on: boolean): WatchPagesDocument {
-  if (!isBool(on)) return document;
-  return setKey(document, pageId, tileId, "macroRunSilently", (tile) => (isMacroTile(tile) ? (on ? true : REMOVE) : undefined));
 }

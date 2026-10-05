@@ -57,6 +57,7 @@ import {
   type WatchPageTile,
   type WatchPagesDocument,
   WATCH_KIND_FALLBACK_LABELS,
+  isWatchRemovedTileKind,
   tileEntityId,
   tileKind,
   tileLabel,
@@ -75,7 +76,8 @@ export type WatchTileSettingsSection =
   | "opens"
   | "target"
   | "request"
-  | "macro"
+  // A removed kind's tile (a macro): one line in place of every task.
+  | "removed"
   | "header"
   | "special"
   | "icon"
@@ -92,7 +94,7 @@ export const WATCH_TILE_SETTINGS_SECTION_TITLES: Readonly<Record<WatchTileSettin
   opens: "Opens",
   target: "Target",
   request: "Request",
-  macro: "Macro",
+  removed: "Removed",
   header: "Header",
   // Drawn under the task's own title (`watchSpecialTask`).
   special: "Special",
@@ -115,7 +117,7 @@ export interface WatchSectionBadge {
 /**
  * Each tile section's badge, in the complication editor's colors, so a card
  * that does the same job looks the same in both editors: what the tile is
- * about (its target, request, macro, header, special task) is Content, its
+ * about (its target, request, header, special task) is Content, its
  * look is Look, its words are Extras (teal), the per-state look is States,
  * the tap is Tap and the place on the page is Position.
  */
@@ -124,7 +126,7 @@ export const WATCH_TILE_SECTION_BADGES: Readonly<Record<WatchTileSettingsSection
   opens: { color: SECTION_COLOR.content, icon: "content" },
   target: { color: SECTION_COLOR.content, icon: "content" },
   request: { color: SECTION_COLOR.content, icon: "content" },
-  macro: { color: SECTION_COLOR.content, icon: "content" },
+  removed: { color: SECTION_COLOR.content, icon: "content" },
   header: { color: SECTION_COLOR.content, icon: "content" },
   special: { color: SECTION_COLOR.content, icon: "content" },
   icon: { color: SECTION_COLOR.look, icon: "look" },
@@ -157,7 +159,6 @@ const KIND_CHIP_COLORS: Readonly<Record<string, string>> = {
   lock: "#c9a227",
   page: "#5c6bc0",
   show_page: "#5c6bc0",
-  macro: "#90a4ae",
   http_action: "#90a4ae",
   webhook_inbox: "#90a4ae",
 };
@@ -171,7 +172,7 @@ export function watchTileKindColor(kind: string): string {
 }
 
 /** The tile sections that can hold a smart page rule's style (part 3f
- * batch 3), in the order they are drawn: no Opens, Target, Request, Macro,
+ * batch 3), in the order they are drawn: no Opens, Target, Request,
  * Header or special task, which a rule's `tileStyle` has no key of; State
  * only where the domain has it; Size before Background. */
 export function watchDomainStyleSections(stateTask: boolean): WatchTileSettingsSection[] {
@@ -182,8 +183,9 @@ export function watchDomainStyleSections(stateTask: boolean): WatchTileSettingsS
  * The sections a tile gets, in the order of the phone's tasks: Border and
  * Background only for a spacer (it has no icon or words); Header and Action
  * for a header, whose look is on the Header task; Opens first for a go to
- * page or peek tile; Target first for an HTTP action, macro or status page
- * tile, then Request (an HTTP action) or Macro (a macro); Icon and color,
+ * page or peek tile; Target first for an HTTP action or status page tile,
+ * then Request (an HTTP action); only the line that says why for a tile of
+ * a removed kind (a macro), which the panel keeps as stored; Icon and color,
  * State (for the domains the phone shows it for), Text, Border, Action and
  * Background for everything else. A smart page never gets here.
  *
@@ -199,13 +201,13 @@ export function watchTileSettingsSections(tile: WatchPageTile, states?: WatchSpe
   const kind = tileKind(tileEntityId(tile));
   if (kind === "spacer") return ["border", "background"];
   if (kind === "divider") return ["header", "action"];
+  if (isWatchRemovedTileKind(kind)) return ["removed"];
   const out: WatchTileSettingsSection[] = [];
   if (watchPageLinkTarget(tile) !== undefined) out.push("opens");
   const library = watchLibraryTarget(tileEntityId(tile));
   if (library !== undefined) {
     out.push("target");
     if (library.kind === "httpAction") out.push("request");
-    if (library.kind === "macro") out.push("macro");
   }
   if (watchSpecialTask(tile, states) !== undefined) out.push("special");
   out.push("icon");
@@ -386,7 +388,7 @@ export function watchHoldSlideMenus(tile: WatchPageTile, catalog?: WatchCatalog)
     const defaultLabel = absent.directions[i]!.resolvedLabel;
     const options: WatchMenuOption[] = [{ value: WATCH_DEFAULT_CHOICE, label: `Default (${defaultLabel})` }];
     // A library action needs a catalog entry: Run HTTP Action is offered
-    // only with an action to run, Run Macro never.
+    // only with an action to run, and the table's other one never.
     const offered = d.offered.filter((c) => !isWatchLibraryAction(c.value) || (c.value === "httpAction" && actions.length > 0));
     const none = offered.filter((c) => c.value === "none");
     let selected = d.stored ?? WATCH_DEFAULT_CHOICE;
@@ -561,7 +563,7 @@ export function watchLinkTargetMenu(
 
 // ── library targets ──────────────────────────────────────────────────────
 
-/** The Target menu of an HTTP action, macro or status page tile. */
+/** The Target menu of an HTTP action or status page tile. */
 export interface WatchLibraryTargetMenu extends WatchMenu {
   kind: WatchLibraryKind;
   /** The id the tile stores, as stored. */
@@ -597,8 +599,8 @@ export function watchLibraryTargetMenu(tile: WatchPageTile, catalog: WatchCatalo
   const base = { kind: target.kind, targetId: target.id, current, oldTargetName: current?.name ?? null };
   if (current !== undefined) return { ...base, options, selected: current.id };
   const selected = STORED + target.id;
-  // With no label of its own, what the watch shows: "Action", "Macro" or
-  // "Status Page" (the catalog has no name for it).
+  // With no label of its own, what the watch shows: "Action" or "Status
+  // Page" (the catalog has no name for it).
   const label = typeof tile.customLabel === "string" && tile.customLabel.trim() !== ""
     ? tile.customLabel
     : (watchLibraryTileFallbackName(tileEntityId(tile), catalog) ?? WATCH_LIBRARY_WORDS[target.kind].one);
@@ -678,7 +680,7 @@ export function watchHTTPReplyMenu(tile: WatchPageTile, action: WatchCatalogHTTP
 /** The name a tile shows with no label of its own: Home Assistant's name
  * for an entity, the target's name for a page link; for the library tiles
  * the watch's own fallbacks ("Action" on an HTTP action tile, the library
- * name of a macro or status page). The label field's placeholder. */
+ * name of a status page). The label field's placeholder. */
 export function watchTileFallbackName(
   tile: WatchPageTile,
   states?: Readonly<Record<string, HassEntityState>>,
@@ -697,7 +699,6 @@ export function watchLabelNote(tile: WatchPageTile): string {
   if (watchPageLinkTarget(tile) !== undefined) return "Leave it empty to show the name of the page it opens.";
   const library = watchLibraryTarget(tileEntityId(tile))?.kind;
   if (library === "httpAction") return "Leave it empty and the watch shows \"Action\".";
-  if (library === "macro") return "Leave it empty to show the macro's name.";
   if (library === "statusPage") return "Leave it empty to show the status page's name.";
   const kind = tileKind(tileEntityId(tile));
   if (kind === "webhook_inbox") return "Leave it empty to show the topic, or \"Inbox\" for every topic.";

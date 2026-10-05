@@ -145,7 +145,7 @@ describe("tile kinds", () => {
   });
 
   it("names every virtual kind, known domains plainly, and the rest readably", () => {
-    for (const kind of ["page", "show_page", "status_page", "http_action", "macro", "template", "spacer", "multicam",
+    for (const kind of ["page", "show_page", "status_page", "http_action", "template", "spacer", "multicam",
       "point_control", "music_hub", "assist", "speak_message", "webhook_inbox", "divider"]) {
       expect(tileClass(`${kind}.x`), kind).not.toBe("entity");
       expect(tileKindLabel(kind), kind).not.toMatch(/_/);
@@ -277,6 +277,7 @@ describe("labels and state", () => {
   it("names a page link after its page, and other virtual kinds by kind", () => {
     expect(tileLabel(tile("T3"), STATES, pages)).toBe("Küche ☕");
     expect(tileLabel(tile("T3"))).toBe("Go to page");
+    // A macro tile, a kind that was removed, by the kind's old name.
     expect(tileLabel({ entityId: "macro.1" })).toBe("Macro");
   });
 
@@ -295,7 +296,7 @@ describe("labels and state", () => {
 
   it("draws no kind line under assist, speak, point control and template tiles, and keeps it for the others", () => {
     for (const kind of ["assist", "speak_message", "point_control", "template"]) expect(tileDrawsKindLine(kind), kind).toBe(false);
-    for (const kind of ["page", "show_page", "status_page", "http_action", "macro", "multicam", "music_hub", "webhook_inbox"]) {
+    for (const kind of ["page", "show_page", "status_page", "http_action", "multicam", "music_hub", "webhook_inbox"]) {
       expect(tileDrawsKindLine(kind), kind).toBe(true);
     }
   });

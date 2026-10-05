@@ -55,7 +55,6 @@ describe("the fallback order", () => {
     expect(merged.statusPagesFromWatch).toBe(true);
     // The rest of the iPhone's catalog is as it was.
     expect(merged.httpActions).toBe(CATALOG.httpActions);
-    expect(merged.macros).toBe(CATALOG.macros);
     expect(watchCatalogKnows(merged, "httpAction")).toBe(true);
   });
 
@@ -69,7 +68,6 @@ describe("the fallback order", () => {
     expect(alone.noPhone).toBe(true);
     expect(watchCatalogKnows(alone, "statusPage")).toBe(true);
     expect(watchCatalogKnows(alone, "httpAction")).toBe(false);
-    expect(watchCatalogKnows(alone, "macro")).toBe(false);
     expect(watchCatalogKnows(undefined, "statusPage")).toBe(false);
   });
 });
@@ -91,8 +89,8 @@ describe("a status page tile", () => {
     expect(watchLibraryTargetMenu(tile("status_page.C3A0E000-0000-4000-8000-0000000000FF"), empty)!.note)
       .toBe(`${WATCH_NOT_IN_STATUS_PAGES_TEXT}, and this watch has no other status pages. The tile stays as it is.`);
     expect(watchLibraryMissingText(withRecord, "statusPage")).toBe("Not in this watch's status pages");
-    // HTTP actions and macros are still the iPhone's.
-    expect(watchLibraryMissingText(withRecord, "macro")).toBe(WATCH_NOT_ON_IPHONE_TEXT);
+    // HTTP actions are still the iPhone's.
+    expect(watchLibraryMissingText(withRecord, "httpAction")).toBe(WATCH_NOT_ON_IPHONE_TEXT);
     expect(watchLibraryMissingText(CATALOG, "statusPage")).toBe(WATCH_NOT_ON_IPHONE_TEXT);
   });
 
