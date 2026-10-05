@@ -272,8 +272,14 @@ const columnsRun = css`
        pieces take up no room at either end. At 2px against a 4px gap they
        left a 2px strip over the Background tray. */
     .layers { --wa-fade: var(--wa-card); --wa-fade-gap: 4px; }
-    /* A corner in curved text mode: the layers stay editable, but read as off. */
+    /* A corner with curved text on: the layers stay editable, but read as off. */
     .layers.skipped { opacity: .45; }
+    /* A corner's Bezel and Curved text rows, over its layers: the bezel is the
+       outermost part of the corner and the curved text sits in front. */
+    .corner-set { flex: none; display: flex; flex-direction: column; gap: 4px; padding: 4px 10px 0; }
+    .corner-set .skip-note { font-size: 11px; color: var(--wa-muted); padding: 2px 4px 0; text-align: center; }
+    .corner-set .layer .grip { cursor: default; }
+    .corner-set .thumb svg { width: 100%; height: 100%; display: block; }
     .column.canvas { --wa-fade: var(--wa-bg); --wa-fade-gap: 8px; }
     /* No scroll bar is ever drawn between the canvas and the inspector. The
        canvas column still scrolls (wheel, trackpad, keys) when a short window

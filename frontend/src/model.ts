@@ -8234,13 +8234,6 @@ export function cornerHasContent(layout: FamilyLayout | undefined): boolean {
   return layout !== undefined && (layout.curvedText !== undefined || layout.bezelText !== undefined || layout.bezelGauge !== undefined);
 }
 
-/** The Corner content row's one line: the main content, then the bezel. */
-export function cornerContentSummary(layout: FamilyLayout | undefined): string {
-  const main = cornerMode(layout) === "curved" ? "Curved text" : "Layers";
-  const bezel = layout?.bezelGauge ? "gauge arc" : layout?.bezelText ? "text label" : "no bezel";
-  return `${main} · ${bezel}`;
-}
-
 /** The bezel gauge a corner starts with, from New or from the Bezel switch. */
 export function defaultBezelGauge(): BezelGauge {
   return { value: literal("50"), minValue: 0, maxValue: 100, colorHexes: ["#34C759", "#FFCC00", "#FF3B30"] };

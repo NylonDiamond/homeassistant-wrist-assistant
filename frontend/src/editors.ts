@@ -573,7 +573,7 @@ export function pastedFrame(copied: CopiedPosition, to: FamilyKind, kind: CEleme
 }
 
 /** Every card id the inspector can show, for "Open all". */
-export const ALL_SECTIONS = ["content", "look", "numbers", "row", "level", "timestamp", "tappable", "states", "placement", "corner", "home", "placements", "shape", "symbol"] as const;
+export const ALL_SECTIONS = ["content", "look", "numbers", "row", "level", "timestamp", "tappable", "states", "placement", "home", "placements", "shape", "symbol"] as const;
 
 /** The cards Collapse all leaves open: none. Every card folds to its
  * one-line summary in the header. */
@@ -9802,10 +9802,6 @@ function familyCards(host: EditorHost, family: FamilyKind): TemplateResult {
       { color: SECTION_COLOR.home, icon: "shape", summary: bg,
         ...(layout.backgroundColorHex !== undefined || layout.backgroundFill !== undefined
           ? { reset: () => upd((l) => { delete l.backgroundColorHex; delete l.backgroundFill; }, "reset-home") } : {}) }) : nothing}
-    ${family === "corner" ? card(host, "corner", "Corner content", cornerEditor(host, layout, upd),
-      { color: SECTION_COLOR.content, icon: "content", summary: layout.curvedText ? "Curved text" : "Layers",
-        ...(layout.curvedText !== undefined || layout.bezelText !== undefined || layout.bezelGauge !== undefined
-          ? { reset: () => upd((l) => { delete l.curvedText; delete l.bezelText; delete l.bezelGauge; }, "reset-corner") } : {}) }) : nothing}
     ${card(host, "states", "Shape rules", statesEditor(host, layout.rules, "layout", (c) => c.perFamily[family]?.rules, `rules-${family}`),
       { color: SECTION_COLOR.states, icon: "states", summary: statesCardSummary(layout.rules),
         ...statesAddAction(host, layout.rules, "layout", (c) => c.perFamily[family]?.rules, `rules-${family}`),
@@ -9965,32 +9961,53 @@ function inlinePartsEditor(
 /** Corner-only controls: the curved text when that mode is on (the mode itself
  * is the switch over the preview) and the bezel (none / text label / gauge
  * arc), matching what the watch can draw. */
-function cornerEditor(
-  host: EditorHost,
-  layout: FamilyLayout,
-  upd: (mutate: (l: FamilyLayout) => void, k?: string) => void,
-): TemplateResult {
+/** Writes to the corner's own layout, keyed for undo like the shape cards. */
+function cornerUpd(host: EditorHost) {
+  return (mutate: (l: FamilyLayout) => void, k?: string) =>
+    host.update((c) => { const l = c.perFamily.corner; if (l) mutate(l); }, k ? `fam-corner-${k}` : undefined);
+}
+
+/**
+ * The inspector for a corner's Curved text row. The watch bends one line of
+ * text along the corner in place of the round layer area, so this is a layer
+ * of its own in the list, and removing it brings the layers back.
+ */
+export function cornerTextEditor(host: EditorHost, onRemove: () => void): TemplateResult {
+  const layout = host.config.perFamily.corner;
+  if (!layout?.curvedText) return html``;
+  const upd = cornerUpd(host);
+  const layers = host.config.elements.length;
+  return card(host, "cornerText", "Curved text", html`
+    ${valueEditor(host, layout.curvedText, (val) => upd((l) => { l.curvedText = val; }, "curved"), { showResolved: true, label: "Text", key: "fam-corner-curved" })}
+    ${colorField("Color", layout.curvedColorHex ?? "#FFFFFF", (v) => upd((l) => { if (v === undefined) delete l.curvedColorHex; else l.curvedColorHex = v; }, "curvedcolor"))}
+    <div class="hint keep">The watch bends this text along the corner, like the Weather corner. It draws no layers while curved text is on${layers > 0 ? `, so your ${layers === 1 ? "layer is" : `${layers} layers are`} skipped` : ""}.</div>
+    <button class="small" @click=${onRemove}>Remove curved text${layers > 0 ? " and draw the layers" : ""}</button>`,
+    { color: SECTION_COLOR.content, icon: "content", alwaysOpen: true });
+}
+
+/**
+ * The inspector for a corner's Bezel row: the label or gauge on the outer
+ * edge. The watch draws it over curved text and over layers alike.
+ */
+export function cornerBezelEditor(host: EditorHost): TemplateResult {
+  const layout = host.config.perFamily.corner;
+  if (!layout) return html``;
+  const upd = cornerUpd(host);
   const bezelKind: "none" | "text" | "gauge" = layout.bezelGauge ? "gauge" : layout.bezelText ? "text" : "none";
-  // Curved text or layers is picked by the switch over the preview; this card
-  // holds only what the picked mode needs.
-  return html`
-    ${layout.curvedText ? html`<div class="fgroup">
-      ${valueEditor(host, layout.curvedText, (val) => upd((l) => { l.curvedText = val; }, "curved"), { showResolved: true, label: "Curved text", key: "fam-corner-curved" })}
-      ${colorField("Curved text color", layout.curvedColorHex ?? "#FFFFFF", (v) => upd((l) => { if (v === undefined) delete l.curvedColorHex; else l.curvedColorHex = v; }, "curvedcolor"))}
-    </div>` : nothing}
-    <div class="fgroup">
-    ${segField("Bezel", bezelKind, [["none", "None"], ["text", "Text label"], ["gauge", "Gauge arc"]], (v) => upd((l) => {
+  return card(host, "bezel", "Bezel", html`
+    ${segField("Shows", bezelKind, [["none", "Nothing"], ["text", "Text label"], ["gauge", "Gauge arc"]], (v) => upd((l) => {
       if (v === "text") { delete l.bezelGauge; if (!l.bezelText) l.bezelText = literal("Label"); }
       else if (v === "gauge") { delete l.bezelText; if (!l.bezelGauge) l.bezelGauge = defaultBezelGauge(); }
-      else { delete l.bezelText; delete l.bezelGauge; }
-    }))}
+      else { delete l.bezelText; delete l.bezelGauge; delete l.bezelCountdown; }
+    }, "bezelkind"))}
     ${bezelKind === "text" && layout.bezelText ? html`
-      ${valueEditor(host, layout.bezelText, (val) => upd((l) => { l.bezelText = val; }, "bezel"), { showResolved: true, label: "Bezel label", key: "fam-corner-bezel" })}
+      ${valueEditor(host, layout.bezelText, (val) => upd((l) => { l.bezelText = val; }, "bezel"), { showResolved: true, label: "Label", key: "fam-corner-bezel" })}
       ${countdownFields(host, layout.bezelCountdown === true, layout.bezelText, (v) => upd((l) => {
         if (v) l.bezelCountdown = true; else delete l.bezelCountdown;
       }))}` : nothing}
     ${bezelKind === "gauge" && layout.bezelGauge ? bezelGaugeEditor(host, layout.bezelGauge, upd) : nothing}
-    </div>`;
+    <div class="hint keep">The outer edge of the corner. It shows over curved text and over layers.</div>`,
+    { color: SECTION_COLOR.content, icon: "content", alwaysOpen: true });
 }
 
 function bezelGaugeEditor(

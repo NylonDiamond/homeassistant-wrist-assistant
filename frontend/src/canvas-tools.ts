@@ -87,8 +87,7 @@ export const STAGE_HINT_HEIGHT = 45;
 /**
  * The height the stage keeps for things other than the face, in CSS px: the
  * floating toolbar over it, the hint under it, and, when they are there, the
- * row designer's banner, the corner's Curved text or Layers switch and the
- * first-run tiles. The face's Fit size is what is left.
+ * row designer's banner and the first-run tiles. The face's Fit size is what is left.
  *
  * The plain reserve is the stage's own box: 64px over the face (2px of top
  * padding, the 34px toolbar that rides over the face, the 16px it keeps for
@@ -97,9 +96,9 @@ export const STAGE_HINT_HEIGHT = 45;
  * at 44px with no gap, a line short, so a face bound by the stage's height
  * overran it by 13px and the stage drew a scroll bar beside the inspector.
  */
-export function stageReserve(opts: { rowStrip?: boolean; firstRun?: boolean; modeRow?: boolean } = {}): number {
+export function stageReserve(opts: { rowStrip?: boolean; firstRun?: boolean } = {}): number {
   return STAGE_PAD_TOP + STAGE_TOOLS_HEIGHT + STAGE_TOOLS_GAP + STAGE_GAP + STAGE_GAP + STAGE_HINT_HEIGHT + STAGE_PAD_BOTTOM
-    + (opts.rowStrip ? 60 : 0) + (opts.modeRow ? 64 : 0) + (opts.firstRun ? 230 : 0);
+    + (opts.rowStrip ? 60 : 0) + (opts.firstRun ? 230 : 0);
 }
 
 /** What one first-run tile does: add one blank layer, or open the Add sheet on

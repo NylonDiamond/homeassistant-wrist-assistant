@@ -92,7 +92,6 @@ describe("zoom", () => {
     const plain = stageReserve();
     expect(stageReserve({ rowStrip: true })).toBeGreaterThan(plain);
     expect(stageReserve({ firstRun: true })).toBeGreaterThan(plain);
-    expect(stageReserve({ modeRow: true })).toBeGreaterThan(plain);
   });
 
   // The face's Fit height is the stage less this reserve, so the reserve has

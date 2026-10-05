@@ -3114,10 +3114,14 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
       // tracks tighter at ~18.5 pt than at the 10.5 pt the widths were tuned
       // for, and without it the preview truncates one glyph earlier than the
       // watch ("TEXT…" where the wrist shows "TEXT 1…").
-      main = svg`<defs><path id=${arc.id} d=${arc.d} /></defs>
+      // The editor selects the curved text by a press on it, so it carries a
+      // band along its arc wide enough to land on between the glyphs.
+      const hit = cornerArc(s, `${uid}-curved-hit`, (CURVED_BASELINE_R + CURVED_FONT * 0.35) * s, CURVED_ARC);
+      main = svg`<g data-corner-part="text"><defs><path id=${arc.id} d=${arc.d} /></defs>
+        <path d=${hit.d} fill="none" stroke="transparent" stroke-width=${CURVED_FONT * 1.1 * s} pointer-events="stroke" />
         <text font-size=${CURVED_FONT * s} font-weight="600" fill=${curvedColor.color} fill-opacity=${curvedColor.opacity}
           font-family="-apple-system, 'SF Pro Rounded', 'SF Pro Text', Helvetica, Arial, sans-serif">
-          <textPath href="#${arc.id}" startOffset="50%" text-anchor="middle">${bezelDisplayText(curved, arc.length, CURVED_FONT * s * 0.88)}</textPath></text>`;
+          <textPath href="#${arc.id}" startOffset="50%" text-anchor="middle">${bezelDisplayText(curved, arc.length, CURVED_FONT * s * 0.88)}</textPath></text></g>`;
     } else {
       const tileBW = layout.borderWidth * fit.scale * tileScale;
       // The watch strokes the border as a circle ring (the shape the system
@@ -3152,7 +3156,11 @@ export function renderLayout(layout: ResolvedLayout, options: RenderOptions): Te
         width=${ctx.quad.width} height=${ctx.quad.height}>
       <defs><clipPath id=${uid}><circle cx=${tile / 2} cy=${tile / 2} r=${tile / 2} /></clipPath>${defsTint}</defs>
       ${bare ? nothing : svg`<path d=${shell} fill="#000000" />
-      ${tinted(bezel, surface === "phone" ? "phoneAccent" : "accent", tint)}`}
+      <g data-corner-part="bezel">
+        <path d=${cornerArc(s, `${uid}-bezel-hit`, GAUGE_R * s, GAUGE_ARC).d} fill="none" stroke="transparent"
+          stroke-width=${16 * s} pointer-events="stroke" />
+        ${tinted(bezel, surface === "phone" ? "phoneAccent" : "accent", tint)}
+      </g>`}
       ${curvedMode ? (bare ? nothing : tinted(main, surface === "phone" ? "phoneAccent" : "accent", tint)) : main}
       ${curvedMode ? nothing : spotlight(elements, design, options.spotlightIds, `${uid}-spot`, ctx.quad.width, ctx.quad.height,
         `translate(${slotX} ${slotY}) scale(${fit.scale * tileScale})`)}
