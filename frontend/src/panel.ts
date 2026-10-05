@@ -136,7 +136,8 @@ import {
 import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
-import { type SendState, agoWords, describeHomeSync, describeSend, homeSync, sendState, sendWaitMs } from "./send-state.js";
+import { type SendState, agoWords, describeHomeSync, describeSend, deviceSyncLabel, homeSync, sendState, sendWaitMs } from "./send-state.js";
+import { homeDeviceRows, homeDevices, homeStyles } from "./home.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
 import {
   type EntityState,
@@ -401,6 +402,7 @@ import {
 } from "./parts.js";
 import { domainIcon } from "./domain-icons.js";
 import { WatchSettings, watchSettingsStyles } from "./watch-settings-view.js";
+import { settingsWatches } from "./watch-settings.js";
 import {
   formButtonStyles,
   formEntityStyles,
@@ -411,12 +413,16 @@ import {
   formSegStyles,
   rangeFill,
 } from "./form-styles.js";
-import { type PanelRoute, dropWatchPagesDrafts, isWatchPagesRoute, navigateWatchPages, renderWatchPagesButton, renderWatchPagesView, watchPagesDirty, watchPagesHookStyles, watchPagesRouteOwner } from "./watch-pages/hook.js";
-import { dropWatchMenusDrafts, isWatchMenusRoute, navigateWatchMenus, renderWatchMenusButton, renderWatchMenusView, watchMenusDirty, watchMenusHookStyles, watchMenusRouteOwner } from "./watch-menus/hook.js";
-import { dropWatchVoiceDrafts, isWatchVoiceRoute, navigateWatchVoice, renderWatchVoiceButton, renderWatchVoiceView, watchVoiceDirty, watchVoiceHookStyles, watchVoiceRouteOwner } from "./watch-voice/hook.js";
-import { dropWatchStatusPagesDrafts, isWatchStatusPagesRoute, navigateWatchStatusPages, renderWatchStatusPagesButton, renderWatchStatusPagesView, watchStatusPagesDirty, watchStatusPagesHookStyles, watchStatusPagesRouteOwner } from "./watch-status-pages/hook.js";
-import { dropWatchControlCenterDrafts, isWatchControlCenterRoute, navigateWatchControlCenter, renderWatchControlCenterButton, renderWatchControlCenterView, watchControlCenterDirty, watchControlCenterHookStyles, watchControlCenterRouteOwner } from "./watch-control-center/hook.js";
-import { dropWatchRoomsDrafts, isWatchRoomsRoute, navigateWatchRooms, renderWatchRoomsButton, renderWatchRoomsView, watchRoomsDirty, watchRoomsHookStyles, watchRoomsRouteOwner } from "./watch-rooms/hook.js";
+import { type PanelRoute, dropWatchPagesDrafts, isWatchPagesRoute, renderWatchPagesView, watchPagesDirty, watchPagesHookStyles, watchPagesRouteOwner } from "./watch-pages/hook.js";
+import { dropWatchMenusDrafts, isWatchMenusRoute, renderWatchMenusView, watchMenusDirty, watchMenusHookStyles, watchMenusRouteOwner } from "./watch-menus/hook.js";
+import { dropWatchVoiceDrafts, isWatchVoiceRoute, renderWatchVoiceView, watchVoiceDirty, watchVoiceHookStyles, watchVoiceRouteOwner } from "./watch-voice/hook.js";
+import { dropWatchStatusPagesDrafts, isWatchStatusPagesRoute, renderWatchStatusPagesView, watchStatusPagesDirty, watchStatusPagesHookStyles, watchStatusPagesRouteOwner } from "./watch-status-pages/hook.js";
+import { dropWatchControlCenterDrafts, isWatchControlCenterRoute, renderWatchControlCenterView, watchControlCenterDirty, watchControlCenterHookStyles, watchControlCenterRouteOwner } from "./watch-control-center/hook.js";
+import { dropWatchRoomsDrafts, isWatchRoomsRoute, renderWatchRoomsView, watchRoomsDirty, watchRoomsHookStyles, watchRoomsRouteOwner } from "./watch-rooms/hook.js";
+import {
+  COMPLICATIONS_PATH, type PanelTab, WATCH_SCREENS, editorKeysLive, isPlainClick, landingPath, navigatePanel,
+  panelUrl, renderTabBar, shellStyles, tabOfRoute, tabPath, watchScreenPath,
+} from "./shell.js";
 import {
   FIRST_RUN_TILES, ZOOM_FIT, ZOOM_MAX, ZOOM_MIN, anySnap, pickGridStep, runFirstRunTile, slotWord, snapSwitchOn,
   stageReserve, toggleSnap, zoomIn, zoomLabel, zoomOut, type FirstRunTile, type SnapFlags, type SnapSwitch,
@@ -2092,6 +2098,8 @@ export class WristAssistantPanel extends LitElement {
   /** A share link the panel was opened with, held until the watch list has
    * loaded, since that is what says whether there is a slot to import into. */
   private pendingLink?: string;
+  /** Whether the first draw has settled which tab the panel opens on. */
+  private landed = false;
   private linkReady = false;
   /** Why a share link could not open the Import dialog. */
   @state() private linkNote?: string;
@@ -2248,9 +2256,9 @@ export class WristAssistantPanel extends LitElement {
   private lastPressHitId?: string;
   private keyHandler = (e: KeyboardEvent) => {
     if (e.key === "Alt") this.altHeld = true;
-    // Under the page or menu editor the draft is out of sight, so its keys
-    // stay still.
-    if (isWatchPagesRoute(this.route) || isWatchMenusRoute(this.route) || isWatchVoiceRoute(this.route) || isWatchStatusPagesRoute(this.route) || isWatchControlCenterRoute(this.route) || isWatchRoomsRoute(this.route)) return;
+    // On Home, on every watch screen and on the list with nothing open, the
+    // draft is out of sight (or there is none), so its keys stay still.
+    if (!editorKeysLive(this.route, this.draft !== undefined)) return;
     this.onKey(e);
   };
   /** A window that loses focus with Alt down never sees its keyup. */
@@ -5857,7 +5865,7 @@ export class WristAssistantPanel extends LitElement {
 
   `, formEntityStyles, css`
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .ent-box.needs { animation: none; } }
-  `, watchSettingsStyles, watchPagesHookStyles, watchMenusHookStyles, watchVoiceHookStyles, watchStatusPagesHookStyles, watchControlCenterHookStyles, watchRoomsHookStyles];
+  `, watchSettingsStyles, watchPagesHookStyles, watchMenusHookStyles, watchVoiceHookStyles, watchStatusPagesHookStyles, watchControlCenterHookStyles, watchRoomsHookStyles, shellStyles, homeStyles];
 
   // ── lifecycle ─────────────────────────────────────────────────────────
 
@@ -6239,6 +6247,22 @@ export class WristAssistantPanel extends LitElement {
   private lastInspectKey?: string;
 
   protected override willUpdate(changed: PropertyValues) {
+    // The first draw lands where the panel should open: a reload that is
+    // about to reopen a complication, or a share link, goes to the
+    // Complications tab in place of Home, rewriting the address rather than
+    // adding a step Back would have to undo. Done before the first draw so
+    // Home never flashes up first.
+    if (!this.landed) {
+      this.landed = true;
+      const to = landingPath(this.route, { restoring: this.restoreOpen !== undefined, shareLink: this.pendingLink !== undefined });
+      if (to !== undefined) this.goTo(to, true);
+    }
+    // Home counts every device's complications, so coming back to it reads
+    // the other devices' lists again, the way opening the list does.
+    if (changed.has("route") && tabOfRoute(this.route) === "home" && changed.get("route") !== undefined
+      && tabOfRoute(changed.get("route") as PanelRoute | undefined) !== "home" && this.owners.length > 0) {
+      void this.loadOtherLists();
+    }
     if (changed.has("faceHover")) {
       if (this.faceHover) {
         window.clearTimeout(this.listFaceTimer);
@@ -9501,13 +9525,13 @@ export class WristAssistantPanel extends LitElement {
     ];
     const status: [string, string][] = [
       ["Synced", "Green. Every watch and iPhone in this home has applied every change."],
-      ["Waiting: Watch, iPhone", "Amber. The devices named have not applied the latest changes yet. Open Wrist Assistant on each, switched to this home, and it pulls at once. Resend or Refresh now, in the top bar's ··· menu, tries to wake the open device."],
+      ["Waiting: Watch, iPhone", "Amber. The devices named have not applied the latest changes yet. Open Wrist Assistant on each, switched to this home, and it pulls at once. Resend or Refresh now, in the ··· menu beside it on the Complications tab, tries to wake the open device. Home lists every device on its own."],
     ];
     const sharing: [string, string][] = [
-      ["Share", "In the top bar. Turns the open complication into text anyone can import. Your entity ids and names become numbered slots, and you can label each one."],
+      ["Share", "In the bar over an open complication, on the Complications tab. Turns the open complication into text anyone can import. Your entity ids and names become numbered slots, and you can label each one."],
       ["Backup", "The other choice in Share: an exact copy, entity ids and names included. For your records, or another watch in this home."],
       ["Copy link", "A link to this panel with the text inside it. Opening it here fills in the Import dialog. On another home, paste the link into Import."],
-      ["Import", "In the top bar's ··· menu, beside Share. Paste text or a link, choose a file, or drop one on the dialog. Check the preview, choose your own entity for each slot, then Import. It opens as unsaved work and reaches the watch at the first Save."],
+      ["Import", "Beside New complication, on the Complications tab and on Home. Paste text or a link, choose a file, or drop one on the dialog. Check the preview, choose your own entity for each slot, then Import. It opens as unsaved work and reaches the watch at the first Save."],
       ["History", "In the complication's header, beside Duplicate. The last 20 saves of this complication, newest first, with a picture of the one you pick. Restore writes it back as a new revision, so the design you restored over becomes the newest entry and you can come straight back and undo it."],
       ["Parts", "A few layers kept under a name, for this home. Pick layers in the Layers list and press Save to parts; the Saved parts tab of + Add, in the Layers card, drops them into the complication you have open. A part is stored the way a share is, so it asks which of your entities each slot is on the way in."],
     ];
@@ -10463,16 +10487,54 @@ export class WristAssistantPanel extends LitElement {
 
   // ── render ────────────────────────────────────────────────────────────
 
+  /**
+   * The tabs across the top, then whatever the tab draws. The tab is read
+   * from the route (`shell.ts`), never kept apart from it, so a reload, a
+   * bookmark and the browser's Back button all land where the address says.
+   * The tab bar carries Home Assistant's menu button on a phone or with the
+   * sidebar hidden, so nothing under it needs its own.
+   */
   override render() {
+    const bar = renderTabBar({
+      route: this.route,
+      admin: this.hass.user?.is_admin === true,
+      menu: this.narrow || this.hass.dockedSidebar === "always_hidden",
+      onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
+      onTab: (tab) => this.openTab(tab),
+    });
+    return html`${bar}${this.renderTab()}`;
+  }
+
+  /** A tab pressed in the bar. The tab already on screen stays as it is, so
+   * pressing Watch app on Menus does not throw the person back to Pages. */
+  private openTab(tab: PanelTab) {
+    if (tab === tabOfRoute(this.route)) return;
+    this.goTo(tabPath(tab));
+  }
+
+  /**
+   * Move to a path inside the panel: a history entry and `location-changed`,
+   * the way the watch screens move, so Back returns. The route is taken at
+   * once rather than when Home Assistant hands it back, so whatever is asked
+   * of the new tab straight after (a dialog opened on it) finds the tab
+   * already drawn. Home Assistant then hands over the same route.
+   */
+  private goTo(path: string, replace = false) {
+    const next = navigatePanel(this.route, path, replace);
+    if (next) this.route = next;
+  }
+
+  private renderTab() {
+    if (tabOfRoute(this.route) === "home") return this.renderHome();
     // The page editor takes the panel's place. An open draft stays as it is
     // under it, and the leave guards still cover it.
     // A link to `/pages/<owner_watch_id>` opens it on that watch.
     if (isWatchPagesRoute(this.route)) {
       return renderWatchPagesView({
         hass: this.hass, owners: this.owners, ownerId: watchPagesRouteOwner(this.route) ?? this.ownerId, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
-        menu: this.narrow || this.hass.dockedSidebar === "always_hidden",
+        menu: false,
         onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
-        onBack: () => navigateWatchPages(this.route, false),
+        onBack: () => this.goTo(COMPLICATIONS_PATH),
         actions: this.watchSettings.renderButton(this.hass, this.owners, this.ownerId),
         dialogs: this.watchSettings.render(this.hass, this.owners),
         onLoaded: () => this.requestUpdate(),
@@ -10482,9 +10544,9 @@ export class WristAssistantPanel extends LitElement {
     if (isWatchMenusRoute(this.route)) {
       return renderWatchMenusView({
         hass: this.hass, owners: this.owners, ownerId: watchMenusRouteOwner(this.route) ?? this.ownerId, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
-        menu: this.narrow || this.hass.dockedSidebar === "always_hidden",
+        menu: false,
         onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
-        onBack: () => navigateWatchMenus(this.route, false),
+        onBack: () => this.goTo(COMPLICATIONS_PATH),
         actions: this.watchSettings.renderButton(this.hass, this.owners, this.ownerId),
         dialogs: this.watchSettings.render(this.hass, this.owners),
         onLoaded: () => this.requestUpdate(),
@@ -10494,9 +10556,9 @@ export class WristAssistantPanel extends LitElement {
     if (isWatchVoiceRoute(this.route)) {
       return renderWatchVoiceView({
         hass: this.hass, owners: this.owners, ownerId: watchVoiceRouteOwner(this.route) ?? this.ownerId, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
-        menu: this.narrow || this.hass.dockedSidebar === "always_hidden",
+        menu: false,
         onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
-        onBack: () => navigateWatchVoice(this.route, false),
+        onBack: () => this.goTo(COMPLICATIONS_PATH),
         actions: this.watchSettings.renderButton(this.hass, this.owners, this.ownerId),
         dialogs: this.watchSettings.render(this.hass, this.owners),
         onLoaded: () => this.requestUpdate(),
@@ -10507,9 +10569,9 @@ export class WristAssistantPanel extends LitElement {
     if (isWatchStatusPagesRoute(this.route)) {
       return renderWatchStatusPagesView({
         hass: this.hass, owners: this.owners, ownerId: watchStatusPagesRouteOwner(this.route) ?? this.ownerId, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
-        menu: this.narrow || this.hass.dockedSidebar === "always_hidden",
+        menu: false,
         onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
-        onBack: () => navigateWatchStatusPages(this.route, false),
+        onBack: () => this.goTo(COMPLICATIONS_PATH),
         actions: this.watchSettings.renderButton(this.hass, this.owners, this.ownerId),
         dialogs: this.watchSettings.render(this.hass, this.owners),
         onLoaded: () => this.requestUpdate(),
@@ -10520,9 +10582,9 @@ export class WristAssistantPanel extends LitElement {
     if (isWatchControlCenterRoute(this.route)) {
       return renderWatchControlCenterView({
         hass: this.hass, owners: this.owners, ownerId: watchControlCenterRouteOwner(this.route) ?? this.ownerId, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
-        menu: this.narrow || this.hass.dockedSidebar === "always_hidden",
+        menu: false,
         onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
-        onBack: () => navigateWatchControlCenter(this.route, false),
+        onBack: () => this.goTo(COMPLICATIONS_PATH),
         actions: this.watchSettings.renderButton(this.hass, this.owners, this.ownerId),
         dialogs: this.watchSettings.render(this.hass, this.owners),
         onLoaded: () => this.requestUpdate(),
@@ -10532,9 +10594,9 @@ export class WristAssistantPanel extends LitElement {
     if (isWatchRoomsRoute(this.route)) {
       return renderWatchRoomsView({
         hass: this.hass, owners: this.owners, ownerId: watchRoomsRouteOwner(this.route) ?? this.ownerId, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
-        menu: this.narrow || this.hass.dockedSidebar === "always_hidden",
+        menu: false,
         onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
-        onBack: () => navigateWatchRooms(this.route, false),
+        onBack: () => this.goTo(COMPLICATIONS_PATH),
         actions: this.watchSettings.renderButton(this.hass, this.owners, this.ownerId),
         dialogs: this.watchSettings.render(this.hass, this.owners),
         onLoaded: () => this.requestUpdate(),
@@ -10618,15 +10680,13 @@ export class WristAssistantPanel extends LitElement {
     const d = this.draft;
     const rec = this.records.find((r) => r.id === this.selectedId);
     const caption = d ? savedCaption(d.baseRevision === null, rec?.updatedAt, Date.now()) : undefined;
-    // A phone hides Home Assistant's sidebar, and a panel of its own has no
-    // way back to it unless it offers the menu button itself.
-    const menu = this.narrow || this.hass.dockedSidebar === "always_hidden";
     // Work that cannot be written says why on the button, the footer saying
     // the same, rather than a live Save that only answers with an error.
     const refusal = d && dirty ? saveRefusal(d.config, this.layerNamer()) : undefined;
+    // Home Assistant's menu button is the tab bar's, above this one. The
+    // watch screens and Watch settings are reached from Home and the Watch
+    // app tab, so this bar holds only what is about complications.
     return html`<header class=${stacked ? "stacked" : nothing}>
-      ${menu ? html`<button class="icon tb-icon tb-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
-        @click=${() => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true }))}>${uiIcon("menu")}</button>` : nothing}
       ${this.renderPicker()}
       ${this.hass.user?.is_admin || d ? html`<span class="tb-div" aria-hidden="true"></span>` : nothing}
       ${this.renderNewButton()}
@@ -10639,13 +10699,6 @@ export class WristAssistantPanel extends LitElement {
           ?disabled=${!this.canEdit || !dirty || this.saving || !this.slotChosen || refusal !== undefined}
           title=${refusal !== undefined ? refusal : dirty ? "Save (⌘S)" : "Nothing to save (⌘S)"}>${this.saving ? "Saving…" : "Save"}</button>
         <span class="tb-saved" title=${dirty && rec ? "Unsaved changes" : caption ?? ""}>${caption}</span>` : nothing}
-      ${renderWatchPagesButton(this.hass, this.owners, () => navigateWatchPages(this.route, true))}
-      ${renderWatchMenusButton(this.hass, this.owners, () => navigateWatchMenus(this.route, true))}
-      ${renderWatchVoiceButton(this.hass, this.owners, () => navigateWatchVoice(this.route, true))}
-      ${renderWatchStatusPagesButton(this.hass, this.owners, () => navigateWatchStatusPages(this.route, true))}
-      ${renderWatchControlCenterButton(this.hass, this.owners, () => navigateWatchControlCenter(this.route, true))}
-      ${renderWatchRoomsButton(this.hass, this.owners, () => navigateWatchRooms(this.route, true))}
-      ${this.watchSettings.renderButton(this.hass, this.owners, this.ownerId)}
       <button class="help" title="Help" aria-label="Help" @click=${() => { this.helpOpen = true; }}>?</button>
     </header>`;
   }
@@ -10704,20 +10757,18 @@ export class WristAssistantPanel extends LitElement {
    * waiting devices share one, which then take their paired phone too. Resend
    * and Refresh now, for the open device, live in the ··· menu beside it. */
   private renderSendPill() {
-    const bare = this.owners.map((o) => ownerShortLabel(o));
-    const s = homeSync(this.owners.map((o, i) => ({
-      name: bare.filter((n) => n === bare[i]).length > 1 ? ownerLabel(o) : bare[i]!,
-      kind: o.device_kind,
-      token: o.token,
-      appliedToken: o.applied_token,
-      count: o.complication_count,
-      orphan: o.is_orphan,
-    })));
+    const s = homeSync(this.homeDevices());
     if (!s) return nothing;
     const d = describeHomeSync(s);
     return html`<span class="tb-sync ${s.kind === "synced" ? "ok" : "warn"}" title=${d.title}>
       <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${d.label}</span>
     </span>`;
+  }
+
+  /** Every owner as the sync rule reads it, named the way the pill and
+   * Home's Devices card name them. */
+  private homeDevices() {
+    return homeDevices(this.owners, ownerShortLabel, ownerLabel);
   }
 
   /** Re-read every device's tokens for the pill, without the rest of what
@@ -15561,6 +15612,12 @@ export class WristAssistantPanel extends LitElement {
     if (payload === undefined) return;
     history.replaceState(history.state, "", `${window.location.pathname}${window.location.search}`);
     this.pendingLink = payload;
+    // Import belongs to the Complications tab. On first open the first draw
+    // lands there (`willUpdate`); a link opened later moves there now.
+    if (this.landed) {
+      const to = landingPath(this.route, { restoring: false, shareLink: true });
+      if (to !== undefined) this.goTo(to, true);
+    }
     if (this.linkReady) void this.openPendingLink();
   };
 
@@ -18111,6 +18168,129 @@ export class WristAssistantPanel extends LitElement {
     if (created) this.inspect = { kind: "layer", id: created };
   }
 
+  // ── Home ──────────────────────────────────────────────────────────────
+
+  /**
+   * Home, the panel's front page at its own address: a door to each part
+   * of what Wrist Assistant puts on the devices, and where each device has
+   * got to. Every door goes to a surface that already exists, on its own tab.
+   *
+   * - Watch app: a card per screen, for an administrator in a home with a
+   *   watch, the same gate the screens themselves have. With no watch yet, one
+   *   card that opens Watch settings, where the first watch is paired.
+   * - Complications and widgets: how many there are (the count the list
+   *   gives), New, Browse all, Import and the online gallery.
+   * - Devices: each device, Synced or Waiting, by the rule the header pill
+   *   uses for the whole home. That rule reads the complication store only,
+   *   and the card says so.
+   * - The recent designs, which open on the Complications tab.
+   */
+  private renderHome() {
+    const admin = this.hass.user?.is_admin === true;
+    const total = this.pickerRows().filter((row) => row.open.item.kind === "record").length;
+    const full = this.freeSlot() < 0;
+    const devices = homeDeviceRows(this.homeDevices());
+    const recent = this.startRecent();
+    const toComplications = () => this.goTo(COMPLICATIONS_PATH);
+    return html`${this.watchSettings.render(this.hass, this.owners)}
+      ${this.loadError ? html`<div class="card error">${this.loadError}</div>` : nothing}
+      <div class="home"><div class="home-wrap">
+        <div class="home-head">
+          <h1>Home</h1>
+          <p class="home-lead">Everything Wrist Assistant puts on your watches and iPhones. Pick an area.</p>
+        </div>
+        ${admin ? this.renderHomeWatch() : nothing}
+        <div class="home-pair">
+          <section class="home-card complications">
+            <div class="home-card-head">
+              <span class="home-chip" aria-hidden="true">${uiIcon("layers")}</span>
+              <h2 class="home-title">Complications and widgets</h2>
+            </div>
+            <span class="home-sub">Small views for watch faces, the Lock Screen and the Home Screen</span>
+            <div class="home-count"><b>${total}</b><span>${total === 1 ? "complication" : "complications"}</span></div>
+            <div class="home-acts">
+              ${admin ? html`<button class="home-btn home-new" ?disabled=${full || this.ownerBusy}
+                title=${full ? "Every device is full. Delete a complication first." : "Make a new complication"}
+                @click=${() => { toComplications(); this.openNewDialog(); }}>${uiIcon("plus")}<span>New complication</span></button>` : nothing}
+              <button class="home-btn home-browse" title="Every complication in this home"
+                @click=${() => {
+                  toComplications();
+                  // With nothing open the tab is the list itself; with a design
+                  // open it is the editor, so the list opens over it.
+                  if (this.draft) this.browseAll();
+                }}>Browse all</button>
+              ${admin ? html`<button class="home-btn home-import" ?disabled=${full}
+                title=${full ? "Every device is full. Delete a complication first." : "Paste a complication somebody shared"}
+                @click=${() => { toComplications(); this.openImportDialog(); }}>Import</button>` : nothing}
+              <a class="home-btn home-gallery" href=${GALLERY_PAGE} target="_blank" rel="noopener"
+                title="Ready-made complications from other people">Gallery</a>
+            </div>
+          </section>
+          <section class="home-card devices">
+            <div class="home-card-head">
+              <span class="home-chip" aria-hidden="true">${uiIcon("phone")}</span>
+              <h2 class="home-title">Devices</h2>
+            </div>
+            <span class="home-sub">Watches and phones that get your changes</span>
+            ${devices.length === 0
+              ? html`<p class="home-empty">${this.linkReady ? "No watch or iPhone has connected to this Home Assistant yet." : "Loading…"}</p>`
+              : html`<ul class="home-devices">${devices.map((d) => html`<li class="home-device ${d.sync}">
+                  <i class="home-dot" aria-hidden="true"></i>
+                  <span class="home-device-name">${uiIcon(d.kind === "iphone" ? "phone" : "watch")}${d.name}</span>
+                  <span class="home-device-sync">${deviceSyncLabel(d.sync)}</span>
+                </li>`)}</ul>`}
+            ${devices.length === 0 ? nothing : html`<p class="home-small">Synced and Waiting are about complications and widgets.</p>`}
+            ${admin ? html`<div class="home-acts">
+              <button class="home-btn home-watch-settings" aria-haspopup="dialog"
+                title="How the watch behaves: gestures, pages, cameras and connection"
+                @click=${() => this.watchSettings.show(this.hass, this.owners, this.ownerId)}>${uiIcon("watch")}<span>Watch settings</span></button>
+            </div>` : nothing}
+          </section>
+        </div>
+        ${recent.length === 0 ? nothing : html`<section class="start-sec home-recent">
+          <div class="home-card-head"><h2 class="home-title">Pick up where you left off</h2></div>
+          <div class="start-recent">${recent.map((hit) => this.renderStartCard(hit.row, hit.copy, () => {
+            toComplications();
+            void this.openFromPicker(hit.row, hit.copy);
+          }))}</div>
+        </section>`}
+      </div></div>`;
+  }
+
+  /** Home's Watch app card: a door to each screen, or, with no watch yet,
+   * the way to pair one. Nothing while the devices are still loading, so the
+   * pairing card never flashes up in a home that has a watch. */
+  private renderHomeWatch() {
+    if (!this.linkReady && this.owners.length === 0) return nothing;
+    const watches = settingsWatches(this.owners);
+    const href = (path: string) => panelUrl(this.route, path, window.location.pathname);
+    return html`<section class="home-card watch">
+      <div class="home-card-head">
+        <span class="home-chip" aria-hidden="true">${uiIcon("watch")}</span>
+        <h2 class="home-title">Watch app</h2>
+        <span class="home-sub">${watches.length === 0
+          ? "Pair a watch to set up its pages, menus and the rest."
+          : "Pages, menus and the rest of what the watch app shows."}</span>
+      </div>
+      ${watches.length === 0
+        ? html`<div class="home-screens">
+            <button class="home-screen home-pair-watch" aria-haspopup="dialog"
+              @click=${() => this.watchSettings.show(this.hass, this.owners, undefined)}>
+              <b>Pair a watch</b><span>Opens Watch settings, where a watch pairs with a code</span>
+            </button>
+          </div>`
+        : html`<div class="home-screens">${WATCH_SCREENS.map((screen) => {
+            const path = watchScreenPath(screen);
+            return html`<a class="home-screen" href=${href(path)}
+              @click=${(e: MouseEvent) => {
+                if (!isPlainClick(e)) return;
+                e.preventDefault();
+                this.goTo(path);
+              }}><b>${screen.label}</b><span>${screen.blurb}</span></a>`;
+          })}</div>`}
+    </section>`;
+  }
+
   // ── start page ────────────────────────────────────────────────────────
 
   /**
@@ -18211,7 +18391,7 @@ export class WristAssistantPanel extends LitElement {
 
   /** One recent card: the name, where it is, and its picture, the way the
    * picker draws it. The whole card opens the complication. */
-  private renderStartCard(row: PickerRow, copy: PickerCopy<PickerItem>) {
+  private renderStartCard(row: PickerRow, copy: PickerCopy<PickerItem>, open = () => void this.openFromPicker(row, copy)) {
     if (copy.item.kind !== "record") return nothing;
     const record = copy.item.record;
     const families = ALL_FAMILIES.filter((f) => familiesOf(record).includes(f));
@@ -18227,7 +18407,7 @@ export class WristAssistantPanel extends LitElement {
     if (preview && !pictured) this.queueCardPreview(copy.ownerId, record, preview.config);
     const where = owner ? ownerShortLabel(owner) : UNASSIGNED_LABEL;
     return html`<button type="button" class="start-card ${shelved ? "shelved" : ""}"
-      title=${`Open ${row.name}`} @click=${() => void this.openFromPicker(row, copy)}>
+      title=${`Open ${row.name}`} @click=${open}>
       <span class="start-card-pic">${this.cardArt(family, device,
         pictured ?? (live ? (device === "iphone" ? live.phone : live.watch) : {}), shelved)}</span>
       <span class="start-card-name">${row.name}</span>
