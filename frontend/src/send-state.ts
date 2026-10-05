@@ -311,16 +311,37 @@ export function homeSync(devices: readonly HomeDevice[]): HomeSync | undefined {
   const synced: string[] = [];
   const waiting: string[] = [];
   for (const d of devices) {
-    if (d.kind === "library" || d.orphan) continue;
-    const applied = d.appliedToken ?? undefined;
-    if (applied === undefined) {
-      if (d.count > 0) waiting.push(d.name);
-      continue;
-    }
-    (applied < d.token ? waiting : synced).push(d.name);
+    const s = deviceSync(d);
+    if (s === "waiting") waiting.push(d.name);
+    else if (s === "synced") synced.push(d.name);
   }
   if (waiting.length > 0) return { kind: "waiting", waiting };
   return synced.length > 0 ? { kind: "synced", devices: synced } : undefined;
+}
+
+/** One device's part of the home's verdict. `idle` is a device that has
+ * never acked and owns nothing, so it has nothing to receive and counts for
+ * neither side. */
+export type DeviceSync = "synced" | "waiting" | "idle";
+
+/**
+ * One device, by exactly the rule the header pill applies to the whole home
+ * (`homeSync` is built on it): behind is an applied token below the owner's,
+ * a device that never acked waits only when it owns designs. Undefined for
+ * the Library and an orphan, which are not devices to ask.
+ */
+export function deviceSync(d: HomeDevice): DeviceSync | undefined {
+  if (d.kind === "library" || d.orphan) return undefined;
+  const applied = d.appliedToken ?? undefined;
+  if (applied === undefined) return d.count > 0 ? "waiting" : "idle";
+  return applied < d.token ? "waiting" : "synced";
+}
+
+/** The word Home shows beside a device. */
+export function deviceSyncLabel(s: DeviceSync): string {
+  if (s === "synced") return "Synced";
+  if (s === "waiting") return "Waiting";
+  return "Nothing to send";
 }
 
 /** The pill's words and its hover text. */
