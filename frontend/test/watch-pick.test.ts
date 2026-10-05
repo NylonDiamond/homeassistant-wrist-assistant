@@ -50,6 +50,8 @@ describe("the watch an address names", () => {
 
   it("is none on a screen with no watch in its address, off the Watch app, or with no route", () => {
     expect(watchRouteOwner(route("/pages"))).toBeUndefined();
+    expect(watchRouteOwner(route("/http-actions"))).toBeUndefined();
+    expect(watchRouteOwner(route("/http-actions/w2"))).toBeUndefined();
     expect(watchRouteOwner(route(""))).toBeUndefined();
     expect(watchRouteOwner(route("/complications"))).toBeUndefined();
     expect(watchRouteOwner(undefined)).toBeUndefined();
@@ -103,6 +105,15 @@ describe("remembering the address's watch", () => {
     // The list arrives: a watch of this home is taken, any other id is not.
     expect(adoptRouteWatch("w1", "w2", WATCHES)).toBe("w2");
     expect(adoptRouteWatch("w1", "elsewhere", WATCHES)).toBe("w1");
+  });
+
+  it("leaves the pick as it was on a visit to HTTP actions and back, which name no watch", () => {
+    let saved: string | undefined = "w2";
+    for (const path of ["/http-actions", "/pages"]) {
+      saved = adoptRouteWatch(saved, watchRouteOwner(route(path)), WATCHES);
+      expect(saved, path).toBe("w2");
+      expect(resolveWatchPick(WATCHES, { route: watchRouteOwner(route(path)), saved, fallback: "w1" }), path).toBe("w2");
+    }
   });
 
   it("never remembers a watch in a home whose list has no watch", () => {

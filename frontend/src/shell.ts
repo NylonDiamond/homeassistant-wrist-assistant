@@ -12,6 +12,8 @@
 //   /pages, /menus, /voice, /status-pages, /control-center, /rooms, each with
 //   an optional /<owner_watch_id>
 //                       the Watch app, as before
+//   /http-actions       the home's HTTP actions, shared by every watch, so
+//                       the address never names one
 //   /settings, with an optional /<owner_watch_id>
 //                       the Watch app's Settings page
 //
@@ -24,6 +26,7 @@
 import { css, html, nothing, type TemplateResult } from "lit";
 import { uiIcon } from "./ui-icons.js";
 import { WATCH_CONTROL_CENTER_PATH, isWatchControlCenterRoute } from "./watch-control-center/hook.js";
+import { WATCH_HTTP_ACTIONS_PATH, isWatchHttpActionsRoute } from "./watch-http-actions/hook.js";
 import { WATCH_MENUS_PATH, isWatchMenusRoute } from "./watch-menus/hook.js";
 import { type PanelRoute, WATCH_PAGES_PATH, isWatchPagesRoute } from "./watch-pages/hook.js";
 import { WATCH_ROOMS_PATH, isWatchRoomsRoute } from "./watch-rooms/hook.js";
@@ -46,11 +49,14 @@ export const TAB_LABEL: Record<PanelTab, string> = {
 /** One of the watch app's screens, as Home lists them and the watch row
  * walks them. */
 export interface WatchScreen {
-  id: "pages" | "menus" | "status-pages" | "control-center" | "rooms" | "voice" | "settings";
+  id: "pages" | "menus" | "status-pages" | "control-center" | "rooms" | "voice" | "http-actions" | "settings";
   label: string;
   /** One line under the name on Home. */
   blurb: string;
   path: string;
+  /** Shared by every watch: the address never names one, and the screen
+   * follows none. */
+  shared?: true;
 }
 
 /** In the order Home and the watch row show them. */
@@ -61,20 +67,22 @@ export const WATCH_SCREENS: readonly WatchScreen[] = [
   { id: "control-center", label: "Control Center", blurb: "The list of controls", path: WATCH_CONTROL_CENTER_PATH },
   { id: "rooms", label: "Rooms", blurb: "Which rooms show, and in what order", path: WATCH_ROOMS_PATH },
   { id: "voice", label: "Voice", blurb: "How voice commands work", path: WATCH_VOICE_PATH },
+  { id: "http-actions", label: "HTTP actions", blurb: "Web requests Home Assistant sends for a watch", path: WATCH_HTTP_ACTIONS_PATH, shared: true },
 ];
 
 /** The Settings page: a screen of the Watch app with an address like the
  * others, kept out of `WATCH_SCREENS` because Home lists it on its own (its
  * Devices card, and the pairing card in a home with no watch) and the row
- * draws it last, apart from the six. */
+ * draws it last, apart from the seven. */
 export const WATCH_SETTINGS_SCREEN: WatchScreen = {
   id: "settings", label: "Settings", blurb: "How the watch behaves", path: WATCH_SETTINGS_PATH,
 };
 
 /** A watch screen's address, on one watch when one is named. The owner is
- * encoded the way each screen's `watch*RouteOwner` decodes it. */
+ * encoded the way each screen's `watch*RouteOwner` decodes it. A shared
+ * screen's address never names a watch. */
 export function watchScreenPath(screen: WatchScreen, owner?: string): string {
-  return owner ? `${screen.path}/${encodeURIComponent(owner)}` : screen.path;
+  return owner && screen.shared !== true ? `${screen.path}/${encodeURIComponent(owner)}` : screen.path;
 }
 
 /** The watch screen a route is on, or undefined off the Watch app. */
@@ -85,6 +93,7 @@ export function watchScreenOf(route: PanelRoute | undefined): WatchScreen | unde
   if (isWatchControlCenterRoute(route)) return WATCH_SCREENS[3];
   if (isWatchRoomsRoute(route)) return WATCH_SCREENS[4];
   if (isWatchVoiceRoute(route)) return WATCH_SCREENS[5];
+  if (isWatchHttpActionsRoute(route)) return WATCH_SCREENS[6];
   if (isWatchSettingsRoute(route)) return WATCH_SETTINGS_SCREEN;
   return undefined;
 }
@@ -120,7 +129,7 @@ export function tabsFor(admin: boolean): PanelTab[] {
  * the first one in it and everything after. */
 const SUB_PATH = new RegExp(`(${[
   COMPLICATIONS_PATH, WATCH_PAGES_PATH, WATCH_MENUS_PATH, WATCH_VOICE_PATH,
-  WATCH_STATUS_PAGES_PATH, WATCH_CONTROL_CENTER_PATH, WATCH_ROOMS_PATH, WATCH_SETTINGS_PATH,
+  WATCH_STATUS_PAGES_PATH, WATCH_CONTROL_CENTER_PATH, WATCH_ROOMS_PATH, WATCH_HTTP_ACTIONS_PATH, WATCH_SETTINGS_PATH,
 ].join("|")})(/.*)?$`);
 
 /** The panel's own address without any tab's sub-path. Without a route (a

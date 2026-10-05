@@ -25,8 +25,10 @@ import {
   watchScreenPath,
 } from "../src/shell.js";
 import { watchControlCenterRouteOwner } from "../src/watch-control-center/hook.js";
+import { WATCH_HTTP_ACTIONS_PATH } from "../src/watch-http-actions/hook.js";
 import { watchMenusRouteOwner } from "../src/watch-menus/hook.js";
 import { watchPagesRouteOwner } from "../src/watch-pages/hook.js";
+import { watchRouteOwner } from "../src/watch-pick.js";
 import { watchRoomsRouteOwner } from "../src/watch-rooms/hook.js";
 import { watchStatusPagesRouteOwner } from "../src/watch-status-pages/hook.js";
 import { watchVoiceRouteOwner } from "../src/watch-voice/hook.js";
@@ -59,7 +61,7 @@ describe("tabOfRoute", () => {
 
   it("is the Watch app on every watch address the iPhone app builds", () => {
     for (const path of ["/pages", "/pages/w1", "/menus", "/menus/w1", "/voice", "/voice/w1", "/status-pages", "/status-pages/w1",
-      "/control-center", "/control-center/w1", "/rooms", "/rooms/w1"]) {
+      "/control-center", "/control-center/w1", "/rooms", "/rooms/w1", "/http-actions"]) {
       expect(tabOfRoute(at(path)), path).toBe("watch");
     }
   });
@@ -71,8 +73,8 @@ describe("tabOfRoute", () => {
 });
 
 describe("watch screens", () => {
-  it("lists the six screens in Home's order", () => {
-    expect(WATCH_SCREENS.map((s) => s.label)).toEqual(["Pages", "Menus", "Status pages", "Control Center", "Rooms", "Voice"]);
+  it("lists the seven screens in Home's order", () => {
+    expect(WATCH_SCREENS.map((s) => s.label)).toEqual(["Pages", "Menus", "Status pages", "Control Center", "Rooms", "Voice", "HTTP actions"]);
   });
 
   it("finds the screen a route is on", () => {
@@ -87,11 +89,22 @@ describe("watch screens", () => {
   it("builds an address each screen's own reader gives the watch back from", () => {
     const readers = [watchPagesRouteOwner, watchMenusRouteOwner, watchStatusPagesRouteOwner,
       watchControlCenterRouteOwner, watchRoomsRouteOwner, watchVoiceRouteOwner];
-    WATCH_SCREENS.forEach((screen, i) => {
+    const own = WATCH_SCREENS.filter((screen) => screen.shared !== true);
+    expect(own).toHaveLength(readers.length);
+    own.forEach((screen, i) => {
       expect(watchScreenPath(screen)).toBe(screen.path);
       expect(readers[i]!(at(watchScreenPath(screen, "A1/B2 é")))).toBe("A1/B2 é");
       expect(readers[i]!(at(watchScreenPath(screen)))).toBeUndefined();
     });
+  });
+
+  it("never names a watch in the address of HTTP actions, which every watch shares", () => {
+    const shared = WATCH_SCREENS.filter((screen) => screen.shared === true);
+    expect(shared.map((screen) => screen.id)).toEqual(["http-actions"]);
+    expect(watchScreenPath(shared[0]!, "w1")).toBe(WATCH_HTTP_ACTIONS_PATH);
+    expect(watchRouteOwner(at(watchScreenPath(shared[0]!, "w1")))).toBeUndefined();
+    expect(watchRouteOwner(at("/http-actions/w1"))).toBeUndefined();
+    expect(tabOfRoute(at("/http-actions/w1"))).toBe("watch");
   });
 });
 
@@ -127,6 +140,7 @@ describe("addresses", () => {
     expect(panelPrefix(undefined, "/wrist-assistant/complications")).toBe("/wrist-assistant");
     expect(panelPrefix(undefined, "/wrist-assistant/pages/w1")).toBe("/wrist-assistant");
     expect(panelPrefix(undefined, "/wrist-assistant/control-center/w%201/x")).toBe("/wrist-assistant");
+    expect(panelPrefix(undefined, "/wrist-assistant/http-actions")).toBe("/wrist-assistant");
     expect(panelPrefix(undefined, "/wrist-assistant/pagesx")).toBe("/wrist-assistant/pagesx");
   });
 });

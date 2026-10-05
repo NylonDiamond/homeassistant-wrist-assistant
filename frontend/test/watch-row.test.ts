@@ -1,6 +1,7 @@
 // The Watch app tab's second row: the shared watch at the left (a menu of
-// watches, one plain name, or the way to pair the first), then the six
-// screens on that watch and Settings, the screen on show marked. Read from
+// watches, one plain name, or the way to pair the first), then the seven
+// screens (on that watch, but HTTP actions, which is shared by every watch)
+// and Settings, the screen on show marked. Read from
 // its helpers and by flattening the template it draws.
 
 import { describe, expect, it } from "vitest";
@@ -111,11 +112,18 @@ describe("the row's watches", () => {
 });
 
 describe("the row's screen links", () => {
-  it("walks the six screens in Home's order, each on the shared watch, the one on show marked", () => {
+  it("walks the seven screens in Home's order, each on the shared watch but HTTP actions, the one on show marked", () => {
     const links = watchRowLinks(route("/status-pages/w1"), "w2");
-    expect(links.map((l) => l.screen.label)).toEqual(["Pages", "Menus", "Status pages", "Control Center", "Rooms", "Voice"]);
-    expect(links.map((l) => l.path)).toEqual(["/pages/w2", "/menus/w2", "/status-pages/w2", "/control-center/w2", "/rooms/w2", "/voice/w2"]);
+    expect(links.map((l) => l.screen.label)).toEqual(["Pages", "Menus", "Status pages", "Control Center", "Rooms", "Voice", "HTTP actions"]);
+    expect(links.map((l) => l.path)).toEqual(["/pages/w2", "/menus/w2", "/status-pages/w2", "/control-center/w2", "/rooms/w2", "/voice/w2", "/http-actions"]);
     expect(links.filter((l) => l.on).map((l) => l.screen.id)).toEqual(["status-pages"]);
+  });
+
+  it("marks HTTP actions on its own address, and keeps the shared watch on every other link from there", () => {
+    const links = watchRowLinks(route("/http-actions"), "w2");
+    expect(links.filter((l) => l.on).map((l) => l.screen.id)).toEqual(["http-actions"]);
+    expect(links[0]!.path).toBe("/pages/w2");
+    expect(links.at(-1)!.path).toBe("/http-actions");
   });
 
   it("leaves the watch out of the address while there is none, and encodes it when there is", () => {
@@ -125,15 +133,16 @@ describe("the row's screen links", () => {
 });
 
 describe("the row as drawn", () => {
-  it("puts the watch first, then the six screens and Settings, Menus marked as on show", () => {
+  it("puts the watch first, then the seven screens and Settings, Menus marked as on show", () => {
     const { text } = row();
-    const order = [`class="wa-wr-picker"`, ">Pages</a>", ">Menus</a>", ">Status pages</a>", ">Control Center</a>", ">Rooms</a>", ">Voice</a>", ">Settings</a>"];
+    const order = [`class="wa-wr-picker"`, ">Pages</a>", ">Menus</a>", ">Status pages</a>", ">Control Center</a>", ">Rooms</a>", ">Voice</a>", ">HTTP actions</a>", ">Settings</a>"];
     const places = order.map((part) => text.indexOf(part));
     for (const [i, at] of places.entries()) expect(at, order[i]).toBeGreaterThan(-1);
     expect([...places].sort((a, b) => a - b)).toEqual(places);
     expect(text.match(/class="wa-wr-link on"/g)).toHaveLength(1);
     expect(text).toMatch(/class="wa-wr-link on"\s+href=\/wrist-assistant\/menus\/w1 aria-current=page/);
     expect(text).toContain("href=/wrist-assistant/voice/w1");
+    expect(text).toContain("href=/wrist-assistant/http-actions aria-current");
     expect(text).toContain(`<b class="wa-wr-name">Jesse's Watch</b>`);
     expect(text).not.toContain("wa-wr-menu");
   });
@@ -153,12 +162,13 @@ describe("the row as drawn", () => {
 
   it("sends a pick, a screen, Settings and the menu's toggle to the panel, Settings as a page on the shared watch", () => {
     const shut = row();
-    const [toggle, pages, , statusPages, , , , settings] = handlers(shut.tpl, "@click");
+    const [toggle, pages, , statusPages, , , , httpActions, settings] = handlers(shut.tpl, "@click");
     toggle!(click);
     pages!(click);
     statusPages!(click);
+    httpActions!(click);
     settings!(click);
-    expect(shut.calls).toEqual(["menu:true", "go:/pages/w1", "go:/status-pages/w1", "go:/settings/w1"]);
+    expect(shut.calls).toEqual(["menu:true", "go:/pages/w1", "go:/status-pages/w1", "go:/http-actions", "go:/settings/w1"]);
     expect(shut.text).toContain("href=/wrist-assistant/settings/w1");
 
     const open = row({ menuOpen: true });

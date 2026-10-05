@@ -52,7 +52,7 @@ describe("the panel's shared watch", () => {
 describe("the watch screens under the row", () => {
   const tab = method("  private renderTab() {");
 
-  it("puts each of the six under the row, handed the shared watch, in the shell's mode, with no Watch settings button of their own", () => {
+  it("puts each of the six that follow a watch under the row, handed the shared watch, in the shell's mode, with no Watch settings button of their own", () => {
     for (const view of ["renderWatchPagesView", "renderWatchMenusView", "renderWatchVoiceView", "renderWatchStatusPagesView", "renderWatchControlCenterView", "renderWatchRoomsView"]) {
       expect(tab, view).toContain(`return this.withWatchRow(${view}({`);
     }
@@ -63,6 +63,25 @@ describe("the watch screens under the row", () => {
     expect(tab).not.toContain("watchSettings.renderButton");
     expect(tab).not.toContain("watchSettings.render(");
     expect(tab).not.toMatch(/RouteOwner\(this\.route\) \?\? this\.ownerId/);
+  });
+
+  it("puts HTTP actions under the row too, handed no watch, as every watch shares it", () => {
+    const at = tab.indexOf("return this.withWatchRow(renderWatchHttpActionsView({");
+    expect(at).toBeGreaterThan(0);
+    expect(tab.slice(0, at)).toContain("if (isWatchHttpActionsRoute(this.route)) {");
+    const call = tab.slice(at, tab.indexOf("}));", at));
+    expect(call).toContain("hass: this.hass, owners: this.owners, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,");
+    expect(call).not.toContain("ownerId");
+    expect(call).not.toMatch(/\bwatch\b/);
+    expect(call).not.toContain("shell:");
+  });
+
+  it("counts HTTP action edits in both leave guards, and drops them on a yes", () => {
+    const unload = SOURCE.slice(SOURCE.indexOf("  private beforeUnload = "), SOURCE.indexOf("  private leaveGuard = "));
+    expect(unload).toContain("!watchHttpActionsDirty()");
+    const guard = SOURCE.slice(SOURCE.indexOf("  private leaveGuard = "), SOURCE.indexOf("\n  };\n", SOURCE.indexOf("  private leaveGuard = ")));
+    expect(guard).toContain("!watchHttpActionsDirty()");
+    expect(guard).toContain("dropWatchHttpActionsDrafts();");
   });
 
   it("leaves Settings to the row as a link like the six, on the shared watch", () => {

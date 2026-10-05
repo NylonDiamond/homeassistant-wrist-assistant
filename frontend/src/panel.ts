@@ -423,6 +423,7 @@ import { dropWatchVoiceDrafts, isWatchVoiceRoute, renderWatchVoiceView, watchVoi
 import { dropWatchStatusPagesDrafts, isWatchStatusPagesRoute, renderWatchStatusPagesView, watchStatusPagesDirty, watchStatusPagesHookStyles } from "./watch-status-pages/hook.js";
 import { dropWatchControlCenterDrafts, isWatchControlCenterRoute, renderWatchControlCenterView, watchControlCenterDirty, watchControlCenterHookStyles } from "./watch-control-center/hook.js";
 import { dropWatchRoomsDrafts, isWatchRoomsRoute, renderWatchRoomsView, watchRoomsDirty, watchRoomsHookStyles } from "./watch-rooms/hook.js";
+import { dropWatchHttpActionsDrafts, isWatchHttpActionsRoute, renderWatchHttpActionsView, watchHttpActionsDirty } from "./watch-http-actions/hook.js";
 import {
   COMPLICATIONS_PATH, type PanelTab, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, editorKeysLive, isPlainClick, isSaveKey, landingPath, navigatePanel, reopensDesign,
   panelUrl, renderTabBar, shellStyles, swallowsSaveKey, tabOfRoute, tabPath, watchScreenOf, watchScreenPath,
@@ -6232,7 +6233,7 @@ export class WristAssistantPanel extends LitElement {
    * It cannot offer a Save button; no page can add one to that dialog. The
    * `returnValue` is for Safari, which ignores `preventDefault` here. */
   private beforeUnload = (e: BeforeUnloadEvent) => {
-    if (!this.draft?.dirty && !watchPagesDirty() && !watchMenusDirty() && !watchVoiceDirty() && !watchStatusPagesDirty() && !watchControlCenterDirty() && !watchRoomsDirty() && !anyWatchSettingsDirty()) return;
+    if (!this.draft?.dirty && !watchPagesDirty() && !watchMenusDirty() && !watchVoiceDirty() && !watchStatusPagesDirty() && !watchControlCenterDirty() && !watchRoomsDirty() && !watchHttpActionsDirty() && !anyWatchSettingsDirty()) return;
     e.preventDefault();
     e.returnValue = "";
   };
@@ -6250,7 +6251,7 @@ export class WristAssistantPanel extends LitElement {
   private leaveGuard = (e: MouseEvent) => {
     // The watch screens' drafts count too, Watch settings' included: they
     // outlive their routes.
-    if (!this.draft?.dirty && !watchPagesDirty() && !watchMenusDirty() && !watchVoiceDirty() && !watchStatusPagesDirty() && !watchControlCenterDirty() && !watchRoomsDirty() && !anyWatchSettingsDirty()) return;
+    if (!this.draft?.dirty && !watchPagesDirty() && !watchMenusDirty() && !watchVoiceDirty() && !watchStatusPagesDirty() && !watchControlCenterDirty() && !watchRoomsDirty() && !watchHttpActionsDirty() && !anyWatchSettingsDirty()) return;
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     const path = e.composedPath();
     if (path.includes(this)) return;
@@ -6265,6 +6266,7 @@ export class WristAssistantPanel extends LitElement {
       dropWatchStatusPagesDrafts();
       dropWatchControlCenterDrafts();
       dropWatchRoomsDrafts();
+      dropWatchHttpActionsDrafts();
       this.watchSettings.dropKept();
       return;
     }
@@ -10792,6 +10794,14 @@ export class WristAssistantPanel extends LitElement {
         actions: nothing,
         shell: true,
         dialogs: nothing,
+        onLoaded: () => this.requestUpdate(),
+      }));
+    }
+    // HTTP actions, on `/http-actions`: the home's one library, shared by
+    // every watch, so it is handed no watch and follows none.
+    if (isWatchHttpActionsRoute(this.route)) {
+      return this.withWatchRow(renderWatchHttpActionsView({
+        hass: this.hass, owners: this.owners, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
         onLoaded: () => this.requestUpdate(),
       }));
     }
