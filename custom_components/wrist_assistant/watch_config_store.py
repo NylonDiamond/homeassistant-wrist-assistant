@@ -519,7 +519,9 @@ def _check_slot_list(slots: Any, where: str) -> None:
         seen[folded] = index
 
 
-# The library lists a catalog may carry, each optional.
+# The library lists a catalog may carry, each optional. Macros were removed,
+# but an older phone still sends its `macros` list, so it stays accepted (and
+# checked) here; the panel no longer reads it.
 _CATALOG_LIST_KEYS = ("httpActions", "macros", "statusPages")
 
 
@@ -529,7 +531,8 @@ def _check_catalog(document: dict[str, Any]) -> None:
     ``httpActions``, ``macros`` and ``statusPages`` are each absent or a list,
     and each entry an object with a non-empty string ``id`` and a string
     ``name``. What the panel's picker needs to list an entry and point a tile
-    at it. No other key is looked at, so a newer app can add some.
+    at it; ``macros`` is only an older phone's leftover, kept so its catalog
+    is still accepted. No other key is looked at, so a newer app can add some.
     """
     for list_key in _CATALOG_LIST_KEYS:
         if list_key not in document:

@@ -879,9 +879,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # device that fetched a revision it could not decode says so, and the
     # panel shows it instead of reading that save as delivered.
     coordinator.register_capability(WATCH_CONFIG_REJECT_REPORT_CAPABILITY)
-    # The `catalog` kind: the phone's library of HTTP actions, macros and
-    # status pages, published for the panel's tile picker. The phone sends it
-    # only when it sees this, since an older integration refuses the kind.
+    # The `catalog` kind: the phone's library of HTTP actions and status
+    # pages, published for the panel's tile picker (an older phone lists its
+    # macros too; macros were removed and the panel ignores that list). The
+    # phone sends it only when it sees this, since an older integration
+    # refuses the kind.
     coordinator.register_capability(WATCH_CONFIG_CATALOG_CAPABILITY)
     # The `menus` kind: the Anywhere menu, the Entity quick menu and the page
     # switcher's style, named on the delta reply and editable (and creatable
