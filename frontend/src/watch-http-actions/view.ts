@@ -163,7 +163,9 @@ export const HTTP_NO_URL_TEXT = "With no URL the watch shows the action as needi
 export const HTTP_TEST_LINE = "Press Send to try this action. Home Assistant sends it. Nothing is saved.";
 
 /** The one line over the values asked for. The whole rule is its title. */
-export const HTTP_PROMPTS_LINE = "Each {{key}} that is not a global is asked for on the watch when the action runs. Keys are letters, digits and underscores.";
+export const HTTP_PROMPTS_LINE = "For a value you choose on the watch each time, such as a brightness or a message. Type {{name}} in the URL, a header or the body, and the watch asks for it when you tap the action.";
+export const HTTP_PROMPTS_NONE = "This action asks for nothing. It runs as soon as you tap it.";
+export const HTTP_PROMPTS_GLOBALS = "filled in from Globals, so the watch does not ask";
 
 const BODY_TYPES: [HttpBodyType, string][] = [
   ["none", "None"],
@@ -721,8 +723,8 @@ function renderPromptsTab(host: HttpActionsViewHost, action: HttpAction): Templa
   const unused = httpUnusedVariables(action, globals);
   const missing = tokens.asked.filter((k) => !action.variables.some((v) => v.key === k));
   return html`<p class="ha-line" title=${HTTP_TOKEN_HELP}>${HTTP_PROMPTS_LINE}</p>
-    ${tokens.global.length === 0 ? nothing : html`<p class="ha-from-globals">${tokens.global.map((k) => html`<code>{{${k}}}</code>`)} <span>from Globals</span></p>`}
-    ${tokens.asked.length === 0 && unused.length === 0 ? html`<p class="ha-quiet">Nothing is asked for. The action runs at once.</p>` : nothing}
+    ${tokens.global.length === 0 ? nothing : html`<p class="ha-from-globals">${tokens.global.map((k) => html`<code>{{${k}}}</code>`)} <span>${HTTP_PROMPTS_GLOBALS}</span></p>`}
+    ${tokens.asked.length === 0 && unused.length === 0 ? html`<p class="ha-quiet">${HTTP_PROMPTS_NONE}</p>` : nothing}
     ${httpPromptVariables(action, globals).map((v) => variableEditor(host, action, v, false))}
     ${missing.map((k) => html`<div class="ha-var" data-key=${k}><div class="ha-var-head"><code>{{${k}}}</code><span class="ha-need-mark">not set up</span>
       <span class="ha-line">Sent as typed until it is set up.</span>
@@ -734,6 +736,7 @@ function renderReplyTab(host: HttpActionsViewHost, action: HttpAction): Template
   const id = action.id;
   const reply = action.reply;
   const source: HttpReplySource | "none" = reply?.source ?? "none";
+  const test = httpTestState(host, id);
   const field = reply === undefined ? undefined : HTTP_REPLY_FIELD[reply.source];
   const extra = field === "jsonPath"
     ? textField("JSON path", reply?.jsonPath ?? "", (v) => host.edit((d) => setHttpReplyField(d, id, "jsonPath", v), `r:${id}:path`), { mono: true, placeholder: "result.price" })
@@ -745,14 +748,17 @@ function renderReplyTab(host: HttpActionsViewHost, action: HttpAction): Template
   const line = reply === undefined
     ? "Pick what to take from the reply to show on the watch, as a tile's value or in the banner after it runs."
     : field === "jsonPath"
-      ? "Keys joined by dots, a number for an item of a list: data.0.temp. A send offers the paths it finds."
+      ? "Press Send, then click a value in the answer. Or type the path: keys joined by dots, a number for an item of a list (data.0.temp)."
       : field === "pattern" ? "The first group in brackets, else the whole match." : "Shown on the watch, as a tile's value or in the banner after it runs.";
   return html`<p class="ha-line">${line}</p>
     <div class="ha-form">
       ${selectField("Read", source, REPLY_SOURCES, (v) => host.edit((d) => setHttpReplySource(d, id, v === "none" ? undefined : v)), { snapBack: true })}
       ${extra}
       ${reply === undefined ? nothing : textField("Unit", reply.unit ?? "", (v) => host.edit((d) => setHttpReplyField(d, id, "unit", v), `r:${id}:unit`), { placeholder: "°, $, kWh" })}
-    </div>`;
+    </div>
+    ${reply === undefined ? nothing : html`<p class="ha-reply-now" role="status">${test.reply === undefined || test.running
+      ? html`<span class="ha-muted">Press Send to see the value the watch would show.</span>`
+      : html`On the watch, from the last answer: ${liveValue(action, test)}`}</p>`}`;
 }
 
 function renderSettingsTab(host: HttpActionsViewHost, action: HttpAction): TemplateResult {
@@ -782,7 +788,7 @@ function renderRequestTabs(host: HttpActionsViewHost, action: HttpAction): Templ
     { id: "headers", label: "Headers", extra: tabCount(action.headers.length) },
     { id: "auth", label: "Auth", extra: tabDot(auth.kind !== "none") },
     { id: "body", label: "Body", extra: tabDot(bodyIsSet(action)) },
-    { id: "prompts", label: "Prompts", extra: tabCount(asked) },
+    { id: "prompts", label: "Ask on watch", extra: tabCount(asked) },
     { id: "reply", label: "Reply value", extra: tabDot(action.reply !== undefined) },
     { id: "settings", label: "Settings" },
   ];
@@ -806,8 +812,30 @@ interface TestState {
   values: Record<string, string>;
   running: boolean;
   reply?: HttpActionTestReply;
+  /** The action's reply setting as it was sent, to tell when `reply.value`
+   * no longer answers for the setting on screen. */
+  sent?: string;
   error?: string;
   run: number;
+}
+
+/** What the reply value would be for the last answer, with the reply
+ * setting as it is now. The value Home Assistant read stands while the
+ * setting is the one that was sent. After a change, a JSON path is looked
+ * up among the answer's leaves (each with the value Home Assistant reads
+ * there); any other change needs a new send. */
+export function httpLiveValue(action: HttpAction, state: Pick<TestState, "reply" | "sent">): { value?: string; found: boolean; stale: boolean } {
+  const reply = state.reply;
+  if (reply === undefined || action.reply === undefined) return { found: false, stale: false };
+  if (state.sent === JSON.stringify(action.reply)) return reply.value === null ? { found: false, stale: false } : { value: reply.value, found: true, stale: false };
+  if (action.reply.source !== "jsonField" || reply.leaves === undefined) return { found: false, stale: true };
+  const path = (action.reply.jsonPath ?? "").trim();
+  const leaf = reply.leaves.find((l) => l.path === path);
+  if (leaf !== undefined) return { value: `${leaf.value}${action.reply.unit ?? ""}`, found: true, stale: false };
+  // A path to a list or an object, or one past the listed leaves: only a
+  // send can say.
+  const inside = path !== "" && reply.leaves.some((l) => l.path.startsWith(`${path}.`));
+  return { found: false, stale: inside || reply.leaves_cut === true || path === "" };
 }
 
 export function httpTestState(host: Pick<HttpActionsViewHost, "uiState">, actionId: string): TestState {
@@ -847,7 +875,7 @@ export async function runHttpTest(host: HttpActionsViewHost, actionId: string): 
   let next: TestState;
   try {
     const reply = await host.test(raw, globals, values);
-    next = { values: httpTestState(host, actionId).values, running: false, reply, run };
+    next = { values: httpTestState(host, actionId).values, running: false, reply, sent: JSON.stringify(action.reply), run };
   } catch (err) {
     next = { values: httpTestState(host, actionId).values, running: false, error: testErrorText(err), run };
   }
@@ -886,12 +914,21 @@ function statusTone(reply: HttpActionTestReply): "ok" | "warn" | "err" {
   return reply.status >= 200 && reply.status < 300 ? "ok" : "warn";
 }
 
-function renderBodyText(host: HttpActionsViewHost, reply: HttpActionTestReply): TemplateResult {
+/** "Value 21.5°": what the watch would show for the last answer. */
+function liveValue(action: HttpAction, state: Pick<TestState, "reply" | "sent">): TemplateResult {
+  const live = httpLiveValue(action, state);
+  return html`<span class="ha-val"><b>Value</b>${live.found ? html`<code>${live.value}</code>`
+    : html`<span class="ha-muted">${live.stale ? "Send to see it" : "Not found"}</span>`}</span>`;
+}
+
+function renderBodyText(host: HttpActionsViewHost, action: HttpAction, reply: HttpActionTestReply): TemplateResult {
   if (reply.body_binary === true) return html`<p class="ha-quiet">The body is not text (${sizeText(reply.body_size ?? 0)}).</p>`;
   const shown = httpBodyShown(host, reply);
   if (shown.raw === "") return html`<p class="ha-quiet">No body.</p>`;
   const mode = shown.isJson ? httpBodyMode(host) : "raw";
   const wrap = httpBodyWrap(host);
+  const pickable = new Set((reply.leaves ?? []).map((l) => l.path));
+  const picked = action.reply?.source === "jsonField" ? (action.reply.jsonPath ?? "").trim() : undefined;
   const copied = host.uiState.get(BODY_COPIED_KEY) === true;
   const set = (key: string, value: unknown) => {
     host.uiState.set(key, value);
@@ -916,8 +953,22 @@ function renderBodyText(host: HttpActionsViewHost, reply: HttpActionTestReply): 
       <span class="ha-bmeta">${shown.isJson ? "JSON" : "Text"}${reply.body_size === undefined ? nothing : html` · ${sizeText(reply.body_size)}`}${reply.body === undefined
         ? html` · <span title="Update the integration to see the whole body.">first line only</span>` : nothing}${reply.body_cut === true ? " · cut at the size limit" : nothing}</span>
     </div>
+    ${pickable.size === 0 || shown.pieces === undefined ? nothing : html`<p class="ha-line ha-pickline">Click a value to use it as the reply value.</p>`}
     <pre class="ha-snippet mono ${wrap ? "" : "nowrap"}">${shown.pieces === undefined ? shown.text
-      : shown.pieces.map((p) => (p.kind === "ws" || p.kind === "punct" ? p.text : html`<span class=${`j-${p.kind}`}>${p.text}</span>`))}</pre>`;
+      : shown.pieces.map((p) => {
+        if (p.kind === "ws" || p.kind === "punct") return p.text;
+        if (p.path === undefined || !pickable.has(p.path)) return html`<span class=${`j-${p.kind}`}>${p.text}</span>`;
+        const path = p.path;
+        const on = picked === path;
+        return html`<span class=${`j-${p.kind} j-pick ${on ? "on" : ""}`} role="button" tabindex="0" aria-pressed=${on ? "true" : "false"}
+          title=${on ? `The reply value: ${path}` : `Use ${path} as the reply value`}
+          @click=${() => { if (!host.busy) host.edit((d) => useHttpReplyPath(d, action.id, path)); }}
+          @keydown=${(e: KeyboardEvent) => {
+            if (e.key !== "Enter" && e.key !== " ") return;
+            e.preventDefault();
+            if (!host.busy) host.edit((d) => useHttpReplyPath(d, action.id, path));
+          }}>${p.text}</span>`;
+      })}</pre>`;
 }
 
 function renderReplyBody(host: HttpActionsViewHost, action: HttpAction, reply: HttpActionTestReply): TemplateResult {
@@ -930,7 +981,7 @@ function renderReplyBody(host: HttpActionsViewHost, action: HttpAction, reply: H
   ];
   let body: TemplateResult;
   if (tab === "body") {
-    body = renderBodyText(host, reply);
+    body = renderBodyText(host, action, reply);
   } else if (tab === "headers") {
     body = headers.length === 0 ? html`<p class="ha-quiet">No headers.</p>` : html`<div class="ha-rlist" role="list" aria-label="Reply headers">
       ${headers.map(([name, value]) => {
@@ -962,7 +1013,7 @@ function renderResponse(host: HttpActionsViewHost, action: HttpAction): Template
       ${reply === undefined ? nothing : html`
         <span class="ha-status ${tone}">${reply.status === null ? "No answer" : `HTTP ${reply.status}`}</span>
         <span class="ha-ms">${reply.elapsed_ms} ms</span>
-        ${action.reply === undefined ? nothing : html`<span class="ha-val"><b>Value</b>${reply.value === null ? html`<span class="ha-muted">Not found</span>` : html`<code>${reply.value}</code>`}</span>`}`}
+        ${action.reply === undefined ? nothing : liveValue(action, state)}`}
     </div>
     ${prompts.length === 0 ? nothing : html`<div class="ha-testvals" role="group" aria-label="Test values"><span class="ha-cap2">Test values</span>
       ${prompts.map((v) => testValueField(host, action, v, state))}</div>`}
@@ -1300,6 +1351,12 @@ export const httpActionsViewStyles = css`
   .ha-resp-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 10px 14px 12px; scrollbar-width: thin; }
   pre.ha-snippet { margin: 0; font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--wa-ink); }
   pre.ha-snippet.nowrap { white-space: pre; overflow-wrap: normal; }
+  pre.ha-snippet .j-pick { cursor: pointer; border-radius: 3px; }
+  pre.ha-snippet .j-pick:hover { background: var(--wa-hover); box-shadow: 0 0 0 1px var(--wa-line-strong); }
+  pre.ha-snippet .j-pick:focus-visible { outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--wa-accent) 60%, transparent); }
+  pre.ha-snippet .j-pick.on { box-shadow: 0 0 0 1px var(--wa-green); background: color-mix(in srgb, var(--wa-green) 14%, transparent); }
+  .ha-pickline { margin: 0 0 6px; }
+  .ha-reply-now { margin: 4px 0 0; font-size: 12.5px; color: var(--wa-muted); display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
   pre.ha-snippet .j-key { color: var(--wa-hue-blue); }
   pre.ha-snippet .j-str { color: var(--wa-hue-green); }
   pre.ha-snippet .j-num { color: var(--wa-hue-orange); }

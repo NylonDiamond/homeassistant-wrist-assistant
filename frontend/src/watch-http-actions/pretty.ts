@@ -4,6 +4,9 @@ export type JsonPieceKind = "key" | "str" | "num" | "lit" | "punct" | "ws" | "va
 export interface JsonPiece {
   kind: JsonPieceKind;
   text: string;
+  /** On a value that is not a list or an object: the JSON path to it, keys
+   * joined by dots and a number for an item of a list. */
+  path?: string;
 }
 
 const TOKEN = /"(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null|[{}[\],:]/g;
@@ -27,6 +30,11 @@ function layout(tokens: readonly string[], indent: number): JsonPiece[] {
   const out: JsonPiece[] = [];
   let depth = 0;
   const line = () => out.push({ kind: "ws", text: `\n${" ".repeat(depth * indent)}` });
+  // Where the walk is: one frame per open object (its key in hand) or list
+  // (the index of the item in hand).
+  const frames: { key?: string; index?: number }[] = [];
+  const path = () => frames.map((f) => f.key ?? String(f.index ?? 0)).join(".");
+  const leaf = (kind: JsonPieceKind, text: string) => out.push(frames.length === 0 ? { kind, text } : { kind, text, path: path() });
   for (let i = 0; i < tokens.length; i += 1) {
     const t = tokens[i]!;
     const next = tokens[i + 1];
@@ -39,24 +47,38 @@ function layout(tokens: readonly string[], indent: number): JsonPiece[] {
         i += 1;
       } else {
         out.push({ kind: "punct", text: t });
+        frames.push(t === "[" ? { index: 0 } : {});
         depth += 1;
         line();
       }
     } else if (t === "}" || t === "]") {
+      frames.pop();
       depth = Math.max(0, depth - 1);
       line();
       out.push({ kind: "punct", text: t });
     } else if (t === ",") {
+      const top = frames[frames.length - 1];
+      if (top?.index !== undefined) top.index += 1;
       out.push({ kind: "punct", text: t });
       line();
     } else if (t === ":") {
       out.push({ kind: "punct", text: ": " });
     } else if (t.startsWith('"')) {
-      out.push({ kind: next === ":" ? "key" : "str", text: t });
+      if (next === ":") {
+        const top = frames[frames.length - 1];
+        if (top !== undefined) {
+          try {
+            top.key = String(JSON.parse(t));
+          } catch {
+            top.key = t.slice(1, -1);
+          }
+        }
+        out.push({ kind: "key", text: t });
+      } else leaf("str", t);
     } else if (t === "true" || t === "false" || t === "null") {
-      out.push({ kind: "lit", text: t });
+      leaf("lit", t);
     } else {
-      out.push({ kind: "num", text: t });
+      leaf("num", t);
     }
   }
   return out;

@@ -64,6 +64,8 @@ SNIPPET_LIMIT = 120
 REGEX_BODY_BYTE_CAP = 256 * 1024
 # How many JSON leaves the test command lists (`discoverPaths` default).
 DISCOVER_LIMIT = 40
+# The leaves the panel's Test may list, every array item counted.
+LEAVES_LIMIT = 2000
 # The name a nameless action goes by (`HTTPAction.labelName`). Never the URL,
 # which can carry a token.
 FALLBACK_NAME = "HTTP Action"
@@ -1453,9 +1455,13 @@ def extract_reply(
     return raw + unit if unit else raw
 
 
-def discover_paths(body: bytes, limit: int = DISCOVER_LIMIT) -> list[dict[str, str]]:
+def discover_paths(
+    body: bytes, limit: int = DISCOVER_LIMIT, every_item: bool = False
+) -> list[dict[str, str]]:
     """``discoverPaths``: the JSON leaves of a body, keys sorted per level
-    and an array's first item only, as ``{"path", "value"}``."""
+    and an array's first item only, as ``{"path", "value"}``. With
+    ``every_item`` every item of an array is walked, for the panel's Test,
+    which lets a person pick any value of the answer."""
     ok, root = _parse_json(body)
     if not ok:
         return []
@@ -1468,8 +1474,8 @@ def discover_paths(body: bytes, limit: int = DISCOVER_LIMIT) -> list[dict[str, s
             for key in sorted(node):
                 walk(node[key], key if not path else f"{path}.{key}")
         elif isinstance(node, list):
-            if node:
-                walk(node[0], "0" if not path else f"{path}.0")
+            for index, item in enumerate(node if every_item else node[:1]):
+                walk(item, str(index) if not path else f"{path}.{index}")
         else:
             value = format_leaf(node)
             if value is not None:

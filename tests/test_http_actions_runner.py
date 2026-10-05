@@ -687,7 +687,24 @@ def test_the_test_command_answers_headers_paths_and_time(env) -> None:
         "body_size": 21,
         "body_binary": False,
         "body_cut": False,
+        "leaves": [{"path": "a", "value": "s"}, {"path": "b.c", "value": "2"}],
+        "leaves_cut": False,
     }
+
+
+def test_the_test_command_lists_every_leaf_with_the_value_its_path_reads(env) -> None:
+    body = b'{"rows":[{"t":1.50,"ok":true},{"t":22,"name":"x","deep":[[null,"z"]]}],"n":null,"e":[],"s":"v"}'
+    runner, _, _ = make_runner(env, {URL_A: FakeResponse(200, body)})
+    result = asyncio.run(runner.async_test(action(url=URL_A), [], {}))
+    leaves = {leaf["path"]: leaf["value"] for leaf in result["leaves"]}
+    assert set(leaves) >= {"rows.0.t", "rows.0.ok", "rows.1.t", "rows.1.name", "rows.1.deep.0.1", "s"}
+    assert not result["leaves_cut"]
+    # The first-item list the phone's picker shows is unchanged.
+    assert "rows.1.t" not in {p["path"] for p in result["paths"]}
+    # Each listed value is what a reply value with that path reads.
+    core = sys.modules[env.mod.__name__.rsplit(".", 1)[0] + ".http_actions"]
+    for path, value in leaves.items():
+        assert core.json_field_value(body, path) == value
 
 
 def test_the_test_command_keeps_the_body_as_sent_and_sends_no_text_of_a_binary_one(env) -> None:

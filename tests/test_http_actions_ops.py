@@ -473,6 +473,7 @@ def test_ws_test_answers_the_whole_shape(env) -> None:
     assert set(result) == {
         "status", "value", "snippet", "error", "headers", "paths", "elapsed_ms",
         "body", "body_size", "body_binary", "body_cut",
+        "leaves", "leaves_cut",
     }
     assert result["status"] == 200 and result["value"] == "e"
     assert result["headers"] == {"ETag": "e"}

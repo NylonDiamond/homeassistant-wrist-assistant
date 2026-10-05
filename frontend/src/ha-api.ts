@@ -696,6 +696,11 @@ export interface HttpActionTestReply {
   body_binary?: boolean;
   /** The read stopped at Home Assistant's size limit. */
   body_cut?: boolean;
+  /** Every JSON leaf of the body with the value a JSON path to it reads
+   * (`paths` lists only the first item of each list). */
+  leaves?: HttpActionTestPath[];
+  /** The list of leaves stopped at its limit. */
+  leaves_cut?: boolean;
 }
 
 /** Send one action from Home Assistant without saving it: the draft action,

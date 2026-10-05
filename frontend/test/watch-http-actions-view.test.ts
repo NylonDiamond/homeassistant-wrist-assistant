@@ -26,6 +26,7 @@ import {
   readHttpAction,
   readHttpGlobal,
   setHttpActionMethod,
+  setHttpReplyField,
 } from "../src/watch-http-actions/model.js";
 import {
   HTTP_AUDIO_TEXT,
@@ -54,6 +55,7 @@ import {
   setHttpReplyTab,
   setHttpTab,
   httpBodyMode,
+  httpLiveValue,
   httpBodyShown,
   httpBodyWrap,
 } from "../src/watch-http-actions/view.js";
@@ -307,7 +309,7 @@ describe("the request", () => {
     expect(main).toMatch(/<div class="ha-reqbar">\s*<div class="ha-reqbox">\s*<select class="ha-method/);
     expect(main).toMatch(/ha-url mono" \.value=\{\{haurl\}\}\/api\/lights/);
     for (const method of ["GET", "POST", "PUT", "PATCH", "DELETE"]) expect(main).toContain(`<option value=${method}`);
-    for (const tab of ["Headers", "Auth", "Body", "Prompts", "Reply value", "Settings"]) expect(main).toMatch(new RegExp(`role="tab"[^>]*>${tab}`));
+    for (const tab of ["Headers", "Auth", "Body", "Ask on watch", "Reply value", "Settings"]) expect(main).toMatch(new RegExp(`role="tab"[^>]*>${tab}`));
 
     expect(tabText(h, "headers")).toContain("X-Trace");
     expect(tabText(h, "auth")).toContain(">Bearer token</option>");
@@ -359,7 +361,7 @@ describe("the request", () => {
     selectHttp(h, { kind: "action", id: A });
     text = flat(renderHttpMain(h));
     expect(text).toMatch(/>Headers<span class="ha-tab-n">1</);
-    expect(text).toMatch(/>Prompts<span class="ha-tab-n">1</);
+    expect(text).toMatch(/>Ask on watch<span class="ha-tab-n">1</);
     expect(text).toMatch(/>Body<i class="ha-tab-dot"/);
     expect(text).toMatch(/>Reply value<i class="ha-tab-dot"/);
     expect(text).not.toMatch(/>Auth<i class="ha-tab-dot"/);
@@ -472,7 +474,7 @@ describe("the request", () => {
     expect(HTTP_TOKEN_HELP).toContain("filled in from Globals");
     expect(HTTP_TOKEN_HELP).toContain("asked for on the watch");
     expect(HTTP_TOKEN_HELP).toContain("letters, digits and underscores");
-    expect(text).toContain("<code>{{haurl}}</code><code>{{token}}</code> <span>from Globals</span>");
+    expect(text).toContain("<code>{{haurl}}</code><code>{{token}}</code> <span>filled in from Globals, so the watch does not ask</span>");
     expect(text).toContain("{{room}}");
     expect(text).toContain("Quick values");
     expect(text).toContain("Only these");
@@ -551,6 +553,34 @@ describe("the response", () => {
     const bin = host(DOC, { ...REPLY, body: "", body_size: 2048, body_binary: true });
     await runHttpTest(bin, A);
     expect(flat(renderHttpMain(bin))).toContain("The body is not text (2.0 KB).");
+  });
+
+  it("lets a value of the answer be clicked to read it, and shows the value at once", async () => {
+    const body = `{"state":"on","data":[{"temp":21},{"temp":22.5}],"gone":null}`;
+    const leaves = [{ path: "state", value: "on" }, { path: "data.0.temp", value: "21" }, { path: "data.1.temp", value: "22.5" }];
+    const h = host(DOC, { ...REPLY, value: null, body, body_size: body.length, leaves, leaves_cut: false });
+    await runHttpTest(h, A);
+    const drawn = flat(renderHttpMain(h));
+    expect(drawn).toContain("Click a value to use it as the reply value.");
+    expect(drawn).toMatch(/j-num j-pick[^>]*title="?Use data\.1\.temp as the reply value/);
+    // null has no value to read, so it is not offered.
+    expect(drawn).toMatch(/<span class="?j-lit"?>null</);
+    // The second item of a list is not among the first-item paths, and is picked all the same.
+    tagHandlers(renderHttpMain(h), "click", "Use data.1.temp as the reply value", ["<span"])[0]!({ preventDefault() {}, button: 0, target: null });
+    const action = () => readHttpAction(findHttpAction(h.document, A)!);
+    expect(action().reply).toMatchObject({ source: "jsonField", jsonPath: "data.1.temp" });
+    const state = () => h.uiState.get(`ha:test:${A}`) as Parameters<typeof httpLiveValue>[1];
+    expect(httpLiveValue(action(), state())).toEqual({ value: "22.5", found: true, stale: false });
+    expect(flat(renderHttpMain(h))).toMatch(/j-pick on/);
+    // A unit rides along; a path to nothing is not found; a path to a list needs a send.
+    h.edit((d) => setHttpReplyField(d, A, "unit", "°"));
+    expect(httpLiveValue(action(), state()).value).toBe("22.5°");
+    h.edit((d) => setHttpReplyField(d, A, "jsonPath", "nope"));
+    expect(httpLiveValue(action(), state())).toEqual({ found: false, stale: false });
+    h.edit((d) => setHttpReplyField(d, A, "jsonPath", "data"));
+    expect(httpLiveValue(action(), state())).toEqual({ found: false, stale: true });
+    setHttpTab(h, "reply");
+    expect(flat(renderHttpMain(h))).toContain("Send to see it");
   });
 
   it("writes a picked path into the reply value", async () => {

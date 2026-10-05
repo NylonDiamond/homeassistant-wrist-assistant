@@ -57,6 +57,7 @@ import aiohttp
 from yarl import URL
 
 from .http_actions import (
+    LEAVES_LIMIT,
     REGEX_CHILD_PATH,
     REGEX_CHILD_SCRIPT,
     Action,
@@ -557,7 +558,7 @@ class HTTPActionRunner:
         """The panel's Test: a draft action, not saved, with the globals and
         values given. Answers ``{"status", "value", "snippet", "error",
         "headers", "paths", "elapsed_ms", "body", "body_size",
-        "body_binary", "body_cut"}``; ``paths`` are the JSON leaves of the
+        "body_binary", "body_cut", "leaves", "leaves_cut"}``; ``paths`` are the JSON leaves of the
         body for the reply picker, and ``body`` is the whole text that was
         read, for the panel to format (empty when it is not text). Refuses a malformed draft, or values
         over a run's limits, ``invalid`` and a fifth run at once ``busy``."""
@@ -582,7 +583,16 @@ class HTTPActionRunner:
             "paths": discover_paths(answer.body),
             "elapsed_ms": elapsed,
             **_body_text(answer.body),
+            **_leaves(answer.body),
         }
+
+
+def _leaves(body: bytes | None) -> dict[str, Any]:
+    """Every JSON leaf of the answer with the value a JSON path to it reads,
+    so the panel can show a path's value as it is typed or picked without
+    sending again. ``leaves_cut`` says the list stopped at its limit."""
+    leaves = discover_paths(bytes(body or b""), LEAVES_LIMIT, every_item=True)
+    return {"leaves": leaves, "leaves_cut": len(leaves) >= LEAVES_LIMIT}
 
 
 def _body_text(body: bytes | None) -> dict[str, Any]:

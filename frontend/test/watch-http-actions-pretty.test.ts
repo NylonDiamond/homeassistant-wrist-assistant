@@ -14,6 +14,13 @@ describe("the formatted body", () => {
     expect(kinds(`{"k":"v","n":1,"t":false,"s":"a:b, {c}"}`)).toEqual([`key:"k"`, `str:"v"`, `key:"n"`, "num:1", `key:"t"`, "lit:false", `key:"s"`, `str:"a:b, {c}"`]);
   });
 
+  it("gives each plain value the path to it, a key with an escape read as text", () => {
+    const paths = prettyJson(`{"a":{"b\\u0041":[10,{"c":"x"},[true]],"e":{}},"z":null}`)!.filter((p) => p.path !== undefined).map((p) => `${p.path}=${p.text}`);
+    expect(paths).toEqual(["a.bA.0=10", `a.bA.1.c="x"`, "a.bA.2.0=true", "z=null"]);
+    expect(prettyJson(`"on"`)![0]!.path).toBeUndefined();
+    expect(prettyJson(`[1,2]`)!.filter((p) => p.path !== undefined).map((p) => p.path)).toEqual(["0", "1"]);
+  });
+
   it("formats a bare value and refuses what is not JSON", () => {
     expect(piecesText(prettyJson(` "on" `)!)).toBe(`"on"`);
     expect(prettyJson("<html></html>")).toBeUndefined();
