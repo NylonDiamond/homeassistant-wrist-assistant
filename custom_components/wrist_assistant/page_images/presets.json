@@ -1,0 +1,17 @@
+[
+  {"id": "preset_waves", "name": "Waves"},
+  {"id": "preset_sand", "name": "Sand"},
+  {"id": "preset_ocean", "name": "Ocean"},
+  {"id": "preset_aurora", "name": "Aurora"},
+  {"id": "preset_fern", "name": "Fern"},
+  {"id": "preset_cloudy_sea", "name": "Cloudy Sea"},
+  {"id": "preset_foggy_forest", "name": "Fog"},
+  {"id": "preset_ferns_dark", "name": "Ferns"},
+  {"id": "preset_mountain_lake", "name": "Lake"},
+  {"id": "preset_neon_swirl", "name": "Neon"},
+  {"id": "preset_snow_twilight", "name": "Twilight"},
+  {"id": "preset_forest_canopy", "name": "Canopy"},
+  {"id": "preset_sand_dunes", "name": "Dunes"},
+  {"id": "preset_dark_rock", "name": "Rock"},
+  {"id": "preset_neon_red_blue", "name": "Glow"}
+]
