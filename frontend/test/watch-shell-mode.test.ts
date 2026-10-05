@@ -1,14 +1,17 @@
-// The six watch screens when the panel's Watch app row owns the watch
-// (`shellOwnsWatch`): the bar leaves out the screen's own watch picker, the
-// way back to complications and the links to sibling screens, and the screen
-// follows the watch the panel hands it. Left off, every bar is as it was,
-// which the screens' own bar tests hold.
+// The six watch screens that follow a watch, when the panel's Watch app row
+// owns the watch (`shellOwnsWatch`): the bar leaves out the screen's own
+// watch picker, the way back to complications and the links to sibling
+// screens, and the screen follows the watch the panel hands it. Left off,
+// every bar is as it was, which the screens' own bar tests hold. The seventh,
+// HTTP actions, is shared by every watch: it never has a picker or a way
+// back, and follows no watch.
 
 import { html } from "lit";
 import { describe, expect, it } from "vitest";
 
 import type { HassLike, OwnerSummary } from "../src/ha-api.js";
 import "../src/watch-control-center/control-center-editor.js";
+import "../src/watch-http-actions/http-actions-editor.js";
 import "../src/watch-menus/menu-editor.js";
 import "../src/watch-pages/page-editor.js";
 import "../src/watch-rooms/rooms-editor.js";
@@ -115,4 +118,34 @@ describe("a watch screen following the panel's watch", () => {
       expect(opened).toEqual([owners[0]!.owner_watch_id]);
     });
   }
+});
+
+describe("the HTTP actions screen, shared by every watch", () => {
+  function shared() {
+    const Ctor = customElements.get("wa-http-actions-editor") as unknown as new () => Record<string, unknown>;
+    const el = new Ctor();
+    el.owners = [
+      { owner_watch_id: "shared-w1", device_name: "Jesse's Watch", device_kind: "watch", paired_iphone_name: null, is_orphan: false },
+      { owner_watch_id: "shared-w2", device_name: "Chen's Watch", device_kind: "watch", paired_iphone_name: null, is_orphan: false },
+    ] as unknown as OwnerSummary[];
+    const text = flat((el.render as () => unknown).call(el));
+    const at = text.indexOf(`<div class="wa-bar`);
+    return { el, bar: text.slice(at, text.indexOf(`class="help"`, at)) };
+  }
+
+  it("has no watch picker and no way back, and says it is shared", () => {
+    const { bar } = shared();
+    expect(bar).toContain(`class="wa-bar`);
+    expect(bar).toContain("Shared by every watch.");
+    expect(bar).not.toContain("tb-back");
+    expect(bar).not.toContain(">Complications</span>");
+    expect(bar).not.toMatch(/watch-picker/);
+  });
+
+  it("takes no watch from the panel", () => {
+    const { el } = shared();
+    expect("ownerId" in el).toBe(false);
+    expect("shellOwnsWatch" in el).toBe(false);
+    expect(typeof el.openWatch).toBe("undefined");
+  });
 });

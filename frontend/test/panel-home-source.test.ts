@@ -49,8 +49,9 @@ describe("Home's Watch app card", () => {
     expect(none).not.toContain("watchSettings");
   });
 
-  it("has a door to each of the six screens once there is a watch", () => {
+  it("has a door to each of the seven screens once there is a watch, HTTP actions with no watch in it", () => {
     expect(watchCard).toContain("WATCH_SCREENS.map((screen) => {");
+    expect(watchCard).toContain("const path = watchScreenPath(screen, watch);");
     expect(watchCard).toContain("this.goTo(path);");
   });
 });

@@ -1,0 +1,4 @@
+import{d as e}from"./chunk-FF445B2T.js";var a="/http-actions";function d(t){let o=t?.path??"";return o===a||o.startsWith(`${a}/`)}var p="https://docs.wrist-assistant.com/features/http-actions/",r;function h(t){r=t}function f(){return r?.dirty()??!1}function l(){r?.drop()}var i,n=!1;function s(){return i??=import("./http-actions-editor-LLQRUUDZ.js").then(()=>{},t=>{throw n=!0,t}),i}function u(t){let o=customElements.get("wa-http-actions-editor")!==void 0;return!o&&!n&&s().then(t.onLoaded,t.onLoaded),o?e`<wa-http-actions-editor .hass=${t.hass} .owners=${t.owners}
+        .icons=${t.icons} .iconsTick=${t.iconsTick} ?narrow=${t.narrow}></wa-http-actions-editor>`:e`<div class="wp-loading">
+        ${n?e`<span>The HTTP actions screen did not load. Reload the page to try again.</span>`:e`<span>Loading…</span>`}
+      </div>`}export{a,d as b,p as c,h as d,f as e,l as f,u as g};

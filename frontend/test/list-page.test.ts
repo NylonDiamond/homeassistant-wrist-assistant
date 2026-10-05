@@ -35,7 +35,7 @@ describe("listPageShown", () => {
   });
 
   it("is never on Home or a watch screen", () => {
-    for (const path of ["", "/", "/pages", "/menus/w1", "/voice", "/status-pages", "/control-center", "/rooms/w2", "/nowhere"]) {
+    for (const path of ["", "/", "/pages", "/menus/w1", "/voice", "/status-pages", "/control-center", "/rooms/w2", "/http-actions", "/nowhere"]) {
       expect(listPageShown(route(path), false), path).toBe(false);
     }
     expect(listPageShown(undefined, false)).toBe(false);

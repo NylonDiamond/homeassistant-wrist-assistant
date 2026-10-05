@@ -1,6 +1,7 @@
 // Whether a watch still has watch app records to pick up, for Home's Devices
 // card: its pages, menus, status pages, Control Center list, settings (Rooms
-// writes the same record), notification style and voice.
+// writes the same record), notification style and voice, and the home's HTTP
+// actions.
 //
 // Each of these is a watch config record, and each record carries its own
 // delivery state: `revision` is the copy Home Assistant holds, and
@@ -15,11 +16,17 @@
 // way, one `watch_config/get` per kind per watch (`readWatchAppSync`), where
 // a kind the integration refuses counts as no record.
 //
+// HTTP actions are one library for the whole home, not a watch config kind:
+// the summary carries its revision and, per device, the last revision that
+// device pulled (`http_actions`). A watch behind a revision above 0 waits
+// for it. An integration older than the library leaves the key out, and the
+// old per-kind reads never see it, so then it counts for neither side.
+//
 // The complication part of a device's verdict stays `deviceSync`
 // (send-state.ts), and the header pill (`homeSync`) stays about
 // complications only. Home's row takes the worse of the two.
 
-import type { WatchConfigPanelKind, WatchConfigRecord, WatchConfigSummary } from "./ha-api.js";
+import type { HttpActionsDelivery, WatchConfigPanelKind, WatchConfigRecord, WatchConfigSummary } from "./ha-api.js";
 import type { DeviceSync } from "./send-state.js";
 import { deliveryState } from "./watch-settings.js";
 
@@ -43,6 +50,13 @@ export const WATCH_APP_PARTS: readonly WatchAppPart[] = [
   { kind: "notification_style", label: "notification style" },
 ];
 
+/** How Home's note names the HTTP action library. */
+export const HTTP_ACTIONS_PART_LABEL = "HTTP actions";
+
+/** The part the library is named after, as the watch row lists HTTP actions
+ * after Voice. */
+const HTTP_ACTIONS_AFTER: WatchConfigPanelKind = "voice";
+
 /** Where one watch's watch app records have got to. */
 export interface WatchAppSync {
   /** The parts a device has not collected yet, by label, in part order. */
@@ -54,17 +68,31 @@ export interface WatchAppSync {
 
 type Delivery = Pick<WatchConfigRecord, "revision" | "delivered_revision">;
 
-/** The verdict over the records read, by kind. A kind with no record (or
- * none read) counts for neither side. */
-export function watchAppSync(records: ReadonlyMap<string, Delivery | undefined>): WatchAppSync {
+/** The verdict over the records read, by kind, and the HTTP action library
+ * when it is known (`httpActions`). A kind with no record (or none read),
+ * and a library at revision 0, count for neither side. */
+export function watchAppSync(records: ReadonlyMap<string, Delivery | undefined>, httpActions?: Delivery): WatchAppSync {
   const waiting: string[] = [];
   let delivered = false;
-  for (const part of WATCH_APP_PARTS) {
-    const state = deliveryState(records.get(part.kind));
-    if (state === "waiting") waiting.push(part.label);
+  const count = (record: Delivery | undefined, label: string) => {
+    const state = deliveryState(record);
+    if (state === "waiting") waiting.push(label);
     else if (state === "delivered") delivered = true;
+  };
+  for (const part of WATCH_APP_PARTS) {
+    count(records.get(part.kind), part.label);
+    if (part.kind === HTTP_ACTIONS_AFTER) count(httpActions, HTTP_ACTIONS_PART_LABEL);
   }
   return { waiting, delivered };
+}
+
+/** One device's place in the library: the revision Home Assistant holds and
+ * the last one that device pulled (0 when it never has). Undefined when the
+ * summary says nothing of the library. */
+export function httpActionsDeliveryFor(httpActions: HttpActionsDelivery | undefined, ownerId: string): Delivery | undefined {
+  if (typeof httpActions !== "object" || httpActions === null || typeof httpActions.revision !== "number") return undefined;
+  const got = httpActions.delivered?.[ownerId];
+  return { revision: httpActions.revision, delivered_revision: typeof got === "number" ? got : 0 };
 }
 
 /**
@@ -79,7 +107,7 @@ export function summaryWatchAppSyncs(summary: WatchConfigSummary, watchIds: read
   const out = new Map<string, WatchAppSync>();
   for (const id of watchIds) {
     const kinds = summary.owners[id] ?? {};
-    out.set(id, watchAppSync(new Map(Object.entries(kinds))));
+    out.set(id, watchAppSync(new Map(Object.entries(kinds)), httpActionsDeliveryFor(summary.http_actions, id)));
   }
   return out;
 }

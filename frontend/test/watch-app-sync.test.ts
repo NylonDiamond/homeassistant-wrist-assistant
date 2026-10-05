@@ -7,9 +7,11 @@ import { homeDeviceRows, homeDevices } from "../src/home.js";
 import type { OwnerSummary } from "../src/ha-api.js";
 import { deviceSyncLabel, homeSync } from "../src/send-state.js";
 import {
+  HTTP_ACTIONS_PART_LABEL,
   WATCH_APP_PARTS,
   type WatchAppSync,
   deviceVerdict,
+  httpActionsDeliveryFor,
   readWatchAppSync,
   summaryUnknown,
   summaryWatchAppSyncs,
@@ -85,6 +87,32 @@ describe("summaryWatchAppSyncs", () => {
     const kinds = { pages: full(3, 2), voice: full(1, 1), notification_style: full(4, 0) };
     const read = await readWatchAppSync(async (kind) => (kinds as Record<string, ReturnType<typeof full>>)[kind] ?? full(0, 0));
     expect(summaryWatchAppSyncs({ owners: { w: kinds } }, ["w"]).get("w")).toEqual(read);
+  });
+
+  it("waits for the HTTP actions on a watch behind the library's revision, after voice and before settings", () => {
+    const syncs = summaryWatchAppSyncs({
+      owners: { w1: { voice: full(2, 1), behavior: full(4, 3) }, w2: {} },
+      http_actions: { revision: 3, delivered: { w1: 2, w2: 3 } },
+    }, ["w1", "w2", "w3"]);
+    expect(syncs.get("w1")).toEqual({ waiting: ["voice", HTTP_ACTIONS_PART_LABEL, "settings"], delivered: false });
+    expect(syncs.get("w2")).toEqual({ waiting: [], delivered: true });
+    // A watch that never pulled the library waits for it.
+    expect(syncs.get("w3")).toEqual({ waiting: ["HTTP actions"], delivered: false });
+  });
+
+  it("counts the HTTP actions for neither side at revision 0, or from an integration that sends none", () => {
+    const empty = summaryWatchAppSyncs({ owners: { w1: { pages: full(1, 1) } }, http_actions: { revision: 0, delivered: {} } }, ["w1"]);
+    expect(empty.get("w1")).toEqual({ waiting: [], delivered: true });
+    const older = summaryWatchAppSyncs({ owners: { w1: {} } }, ["w1"]);
+    expect(older.get("w1")).toEqual({ waiting: [], delivered: false });
+    expect(httpActionsDeliveryFor(undefined, "w1")).toBeUndefined();
+    expect(httpActionsDeliveryFor({ revision: 4, delivered: {} }, "w1")).toEqual({ revision: 4, delivered_revision: 0 });
+  });
+
+  it("leaves the HTTP actions out of the per-kind reads an older integration gets", async () => {
+    const read = await readWatchAppSync(async () => full(1, 1));
+    expect(read?.waiting).toEqual([]);
+    expect(watchAppSync(new Map(), undefined)).toEqual({ waiting: [], delivered: false });
   });
 
   it("only takes an unknown command as the sign of an older integration", () => {

@@ -509,9 +509,13 @@ export interface WatchConfigDelivery {
 }
 
 /** Every watch's panel-written records by kind, numbers only. A kind with no
- * record is absent, and so is a watch whose stored file could not be read. */
+ * record is absent, and so is a watch whose stored file could not be read.
+ * `http_actions` is the home's one HTTP action library: its revision, and
+ * the last revision each device pulled. Absent from an integration older
+ * than the library. */
 export interface WatchConfigSummary {
   owners: Record<string, Record<string, WatchConfigDelivery>>;
+  http_actions?: HttpActionsDelivery;
 }
 
 /** Admin only. One answer for every watch, no documents: what Home asks in
@@ -617,6 +621,89 @@ export function subscribeWatchConfig(
   return hass.connection.subscribeMessage<WatchConfigChangeEvent>(callback, {
     type: `${WC}/subscribe`,
     owner_watch_id: owner,
+  });
+}
+
+const HA_ACTIONS = "wrist_assistant/http_actions";
+
+/** The home's HTTP action library as the phone writes it: `actions` and
+ * `globalVariables`, every key kept as it came. */
+export interface HttpActionsDocument {
+  schemaVersion?: number;
+  actions?: unknown[];
+  globalVariables?: unknown[];
+  [key: string]: unknown;
+}
+
+/** Where the library has got to: the revision Home Assistant holds (0 when
+ * none yet) and, by owner id, the last revision each device pulled. */
+export interface HttpActionsDelivery {
+  revision: number;
+  delivered: Record<string, number>;
+}
+
+/** The library as the get command answers. `document` is absent at
+ * revision 0. `handed_over` lists the owners whose phone gave its library
+ * once. `updated_by` is `panel` for a save here, else the owner that handed
+ * a library over. */
+export interface HttpActionsRecord extends HttpActionsDelivery {
+  hash: string | null;
+  updated_at: string | null;
+  updated_by: string | null;
+  handed_over: string[];
+  document?: HttpActionsDocument;
+}
+
+/** Admin only. An integration older than the library rejects with the code
+ * `unknown_command`. */
+export async function fetchHttpActions(hass: HassLike) {
+  return hass.connection.sendMessagePromise<HttpActionsRecord>({ type: `${HA_ACTIONS}/get` });
+}
+
+/** Save the library, compare-and-swap on `baseRevision` (0 creates it). A
+ * refusal rejects with a WebSocket error whose `code` is `conflict` (the
+ * message starts "stored revision is N"), `invalid` (the message says what)
+ * or `unavailable`. Admin only. */
+export async function saveHttpActions(hass: HassLike, baseRevision: number, document: HttpActionsDocument) {
+  return hass.connection.sendMessagePromise<{ revision: number }>({
+    type: `${HA_ACTIONS}/save`,
+    base_revision: baseRevision,
+    document,
+  });
+}
+
+/** One JSON path the test found in a reply body, with its value as text. */
+export interface HttpActionTestPath {
+  path: string;
+  value: string;
+}
+
+/** What a test run answers. `status` is null when no answer came, and then
+ * `error` says why. `headers` are the answer's, `paths` the JSON paths found
+ * in its body (empty for a body that is not JSON). */
+export interface HttpActionTestReply {
+  status: number | null;
+  value: string | null;
+  snippet: string;
+  error: string | null;
+  headers: Record<string, string>;
+  paths: HttpActionTestPath[];
+  elapsed_ms: number;
+}
+
+/** Send one action from Home Assistant without saving it: the draft action,
+ * the draft globals, and a value for each prompt by key. Admin only. */
+export async function testHttpAction(
+  hass: HassLike,
+  action: Record<string, unknown>,
+  globalVariables: unknown[],
+  values: Record<string, string>,
+) {
+  return hass.connection.sendMessagePromise<HttpActionTestReply>({
+    type: `${HA_ACTIONS}/test`,
+    action,
+    global_variables: globalVariables,
+    values,
   });
 }
 

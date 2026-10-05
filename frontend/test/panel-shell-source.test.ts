@@ -51,6 +51,15 @@ describe("the panel's shell wiring", () => {
     expect(SOURCE.match(/onBack: \(\) => this\.goTo\(COMPLICATIONS_PATH\)/g)).toHaveLength(6);
   });
 
+  it("hands HTTP actions neither a menu nor a way back: it only ever stands under the row", () => {
+    const tab = method("  private renderTab() {");
+    const at = tab.indexOf("renderWatchHttpActionsView({");
+    expect(at).toBeGreaterThan(0);
+    const call = tab.slice(at, tab.indexOf("}));", at));
+    expect(call).not.toContain("menu:");
+    expect(call).not.toContain("onBack");
+  });
+
   it("mutes the editor's keys wherever its draft is out of sight", () => {
     const keys = SOURCE.slice(SOURCE.indexOf("private keyHandler = "), SOURCE.indexOf("private blurHandler"));
     expect(keys).toContain("if (!editorKeysLive(this.route, this.draft !== undefined)) {");

@@ -1,5 +1,7 @@
-// The one watch the Watch app tab is about, shared by its six screens and
-// its Settings page, and remembered per browser.
+// The one watch the Watch app tab is about, shared by its screens and its
+// Settings page, and remembered per browser. HTTP actions, the home's own
+// library, names no watch in its address, so a visit there leaves the
+// remembered watch as it was.
 //
 // It is never the complications device (`ownerId` in the panel): that one
 // may be a phone, and picking a complication must not move the watch app.
