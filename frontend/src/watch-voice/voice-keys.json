@@ -1,0 +1,544 @@
+{
+  "version": 1,
+  "note": "Generated from the iPhone app's Swift code by WatchVoiceDocumentTests; do not edit. Regenerate voice-keys.json with TEST_RUNNER_WA_UPDATE_FIXTURES=1 ./scripts/test.sh WatchVoiceDocumentTests in the app repository.",
+  "maxPhrases": 8,
+  "enums": {
+    "TTSPhraseDisplayMode": ["icon", "text"],
+    "TTSPhraseSpeechVolumeMode": ["keepCurrent", "setForMessageThenRestore", "setAndKeep"]
+  },
+  "labels": {
+    "TTSPhraseDisplayMode": {
+      "icon": "Icon",
+      "text": "Text"
+    },
+    "TTSPhraseSpeechVolumeMode": {
+      "keepCurrent": "Keep Current",
+      "setForMessageThenRestore": "Set for Message + Restore",
+      "setAndKeep": "Set and Keep"
+    }
+  },
+  "types": {
+    "document": {
+      "swift": "TTSConfiguration",
+      "keys": {
+        "schemaVersion": {
+          "type": "int",
+          "optional": true,
+          "default": 1
+        },
+        "phrases": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "phrase"
+          },
+          "required": true,
+          "default": [],
+          "section": "Pick from List - TTS",
+          "label": "Manage Phrase Library"
+        },
+        "defaultTTSEngine": {
+          "type": "entity",
+          "domain": "tts",
+          "required": true,
+          "default": "",
+          "section": "Speech Engine",
+          "label": "Engine"
+        },
+        "defaultSpeakers": {
+          "type": "array",
+          "items": {
+            "type": "entity",
+            "domain": "media_player"
+          },
+          "required": true,
+          "default": [],
+          "section": "Speaker Output",
+          "label": "Speakers"
+        },
+        "defaultAssistAgentId": {
+          "type": "entity",
+          "domain": "conversation",
+          "optional": true,
+          "default": null,
+          "effective": {
+            "blank": "trimmed; empty means Home Assistant's own default agent"
+          },
+          "section": "Assistant",
+          "label": "Conversation Agent"
+        },
+        "watchSpeakReplyInSilentMode": {
+          "type": "bool",
+          "optional": true,
+          "default": null,
+          "effective": {
+            "absent": true
+          },
+          "section": "Apple Watch",
+          "label": "Speak Even in Silent Mode"
+        },
+        "watchSpeechVoiceIdentifier": {
+          "type": "string",
+          "optional": true,
+          "default": null,
+          "effective": {
+            "blank": "trimmed; empty means the system voice for the language"
+          },
+          "section": "Apple Watch",
+          "label": "Watch Voice"
+        }
+      }
+    },
+    "phrase": {
+      "swift": "TTSPhrase",
+      "keys": {
+        "id": {
+          "type": "uuid",
+          "required": true
+        },
+        "message": {
+          "type": "string",
+          "required": true,
+          "default": "",
+          "section": "Phrase",
+          "label": "Message"
+        },
+        "label": {
+          "type": "string",
+          "required": true,
+          "default": "",
+          "section": "Phrase",
+          "label": "Label"
+        },
+        "icon": {
+          "type": "symbol",
+          "required": true,
+          "default": "speaker.wave.2",
+          "section": "Phrase",
+          "label": "Icon"
+        },
+        "color": {
+          "type": "color",
+          "required": true,
+          "default": "#D88CC4",
+          "section": "Phrase",
+          "label": "Color"
+        },
+        "displayMode": {
+          "type": "enum",
+          "enum": "TTSPhraseDisplayMode",
+          "required": true,
+          "default": "icon",
+          "section": "Phrase",
+          "label": "Display Mode"
+        },
+        "targetSpeakers": {
+          "type": "array",
+          "items": {
+            "type": "entity",
+            "domain": "media_player"
+          },
+          "required": true,
+          "default": [],
+          "effective": {
+            "fallsBackTo": "defaultSpeakers",
+            "when": "empty"
+          },
+          "section": "Per-Phrase Overrides",
+          "label": "Speakers"
+        },
+        "ttsEngine": {
+          "type": "entity",
+          "domain": "tts",
+          "optional": true,
+          "default": null,
+          "effective": {
+            "fallsBackTo": "defaultTTSEngine",
+            "when": "absent"
+          },
+          "section": "Per-Phrase Overrides",
+          "label": "Voice Engine"
+        },
+        "language": {
+          "type": "string",
+          "optional": true,
+          "default": null,
+          "phone": false
+        },
+        "speechVolumeMode": {
+          "type": "enum",
+          "enum": "TTSPhraseSpeechVolumeMode",
+          "optional": true,
+          "default": null,
+          "effective": {
+            "absent": "keepCurrent"
+          },
+          "phone": false
+        },
+        "speechVolumePercent": {
+          "type": "int",
+          "optional": true,
+          "default": null,
+          "effective": {
+            "absent": 70,
+            "clamp": [0, 100]
+          },
+          "phone": false
+        }
+      }
+    }
+  },
+  "volume": {
+    "key": "speechVolumePercent",
+    "modeKey": "speechVolumeMode",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "default": 70,
+    "unit": "%",
+    "shownWhen": "speechVolumeMode is not keepCurrent",
+    "presets": [
+      {
+        "label": "Quiet",
+        "value": 25
+      },
+      {
+        "label": "Medium",
+        "value": 50
+      },
+      {
+        "label": "Loud",
+        "value": 75
+      }
+    ],
+    "note": "The phone draws this control for a slot's Assist and Speak Message volume (Target Volume); it has none for a phrase."
+  },
+  "newPhrase": {
+    "icon": "speaker.wave.2",
+    "color": "#D88CC4",
+    "displayMode": "icon",
+    "targetSpeakers": [],
+    "required": ["message", "label"]
+  },
+  "routing": {
+    "swift": "VoiceRoutingConfig",
+    "slotKey": "voiceConfig",
+    "slotTypes": ["QuickActionSlot", "EntityRadialSlot"],
+    "enums": {
+      "AssistReplyOutputMode": ["silent", "watchSpeaker", "defaultSpeakers", "configuredSpeakers", "chooseEachTime"],
+      "SpeechOutputTargetMode": ["watchSpeaker", "configuredSpeakers", "chooseEachTime"],
+      "BroadcastTargetMode": ["configuredSpeakers", "chooseEachTime"],
+      "AssistSpeechVolumeMode": ["keepCurrent", "setForMessageThenRestore", "setAndKeep"]
+    },
+    "labels": {
+      "AssistReplyOutputMode": {
+        "silent": "Silent Reply on Watch",
+        "watchSpeaker": "Speak Reply on Watch",
+        "defaultSpeakers": "Speak Reply on Speakers",
+        "configuredSpeakers": "Speak Reply on Speakers",
+        "chooseEachTime": "Choose on Watch"
+      },
+      "SpeechOutputTargetMode": {
+        "watchSpeaker": "Apple Watch",
+        "configuredSpeakers": "Choose Speakers",
+        "chooseEachTime": "Choose on Watch"
+      },
+      "BroadcastTargetMode": {
+        "configuredSpeakers": "Specific Speakers",
+        "chooseEachTime": "Choose on Watch"
+      },
+      "AssistSpeechVolumeMode": {
+        "keepCurrent": "Keep Current",
+        "setForMessageThenRestore": "Set for Message + Restore",
+        "setAndKeep": "Set and Keep"
+      }
+    },
+    "offered": {
+      "assistReplyOutputMode": ["silent", "watchSpeaker", "configuredSpeakers", "chooseEachTime"],
+      "speakMessageOutputMode": ["watchSpeaker", "configuredSpeakers", "chooseEachTime"],
+      "broadcastTargetMode": ["configuredSpeakers", "chooseEachTime"],
+      "speechVolumeMode": ["keepCurrent", "setForMessageThenRestore", "setAndKeep"]
+    },
+    "legacy": {
+      "assistReplyOutputMode.defaultSpeakers": "reads as configuredSpeakers; the phone no longer offers it"
+    },
+    "keys": {
+      "assistReplyOutputMode": {
+        "type": "enum",
+        "enum": "AssistReplyOutputMode",
+        "optional": true,
+        "default": "silent",
+        "label": "Reply Output"
+      },
+      "assistTargetSpeakerIds": {
+        "type": "array",
+        "items": {
+          "type": "entity",
+          "domain": "media_player"
+        },
+        "optional": true,
+        "default": [],
+        "fallsBackTo": "defaultSpeakers",
+        "fallsBackWhen": ["configuredSpeakers"],
+        "label": "Choose Speakers",
+        "shownWhen": "assistReplyOutputMode is configuredSpeakers"
+      },
+      "assistChooseListSpeakerIds": {
+        "type": "array",
+        "items": {
+          "type": "entity",
+          "domain": "media_player"
+        },
+        "optional": true,
+        "default": [],
+        "label": "Speakers Shown on Watch",
+        "shownWhen": "assistReplyOutputMode is chooseEachTime"
+      },
+      "assistTTSEngine": {
+        "type": "entity",
+        "domain": "tts",
+        "optional": true,
+        "default": "",
+        "fallsBackTo": "defaultTTSEngine",
+        "fallsBackWhen": ["configuredSpeakers"],
+        "label": "Engine",
+        "shownWhen": "assistReplyOutputMode is configuredSpeakers or chooseEachTime"
+      },
+      "assistAgentId": {
+        "type": "entity",
+        "domain": "conversation",
+        "optional": true,
+        "default": "",
+        "fallsBackTo": "defaultAssistAgentId",
+        "label": "Conversation Agent"
+      },
+      "assistSpeechVolumeMode": {
+        "type": "enum",
+        "enum": "AssistSpeechVolumeMode",
+        "optional": true,
+        "default": "keepCurrent",
+        "label": "Speech Volume",
+        "shownWhen": "assistReplyOutputMode is configuredSpeakers or chooseEachTime"
+      },
+      "assistSpeechVolumePercent": {
+        "type": "int",
+        "optional": true,
+        "default": 70,
+        "clamp": [0, 100],
+        "label": "Target Volume",
+        "shownWhen": "assistSpeechVolumeMode is not keepCurrent"
+      },
+      "assistImmediateListen": {
+        "type": "bool",
+        "optional": true,
+        "default": true,
+        "label": "Start Listening Immediately"
+      },
+      "assistAutoSendOnPause": {
+        "type": "bool",
+        "optional": true,
+        "default": true,
+        "phone": false
+      },
+      "speakMessageOutputMode": {
+        "type": "enum",
+        "enum": "SpeechOutputTargetMode",
+        "optional": true,
+        "default": "watchSpeaker",
+        "label": "Output"
+      },
+      "speakMessageTargetSpeakerIds": {
+        "type": "array",
+        "items": {
+          "type": "entity",
+          "domain": "media_player"
+        },
+        "optional": true,
+        "default": [],
+        "fallsBackTo": "defaultSpeakers",
+        "fallsBackWhen": ["configuredSpeakers"],
+        "label": "Choose Speakers",
+        "shownWhen": "speakMessageOutputMode is configuredSpeakers"
+      },
+      "speakMessageChooseListSpeakerIds": {
+        "type": "array",
+        "items": {
+          "type": "entity",
+          "domain": "media_player"
+        },
+        "optional": true,
+        "default": [],
+        "label": "Speakers Shown on Watch",
+        "shownWhen": "speakMessageOutputMode is chooseEachTime"
+      },
+      "speakMessageTTSEngine": {
+        "type": "entity",
+        "domain": "tts",
+        "optional": true,
+        "default": "",
+        "fallsBackTo": "defaultTTSEngine",
+        "fallsBackWhen": ["configuredSpeakers", "chooseEachTime"],
+        "label": "Engine",
+        "shownWhen": "speakMessageOutputMode is not watchSpeaker"
+      },
+      "speakMessageSpeechVolumeMode": {
+        "type": "enum",
+        "enum": "AssistSpeechVolumeMode",
+        "optional": true,
+        "default": "keepCurrent",
+        "label": "Speech Volume",
+        "shownWhen": "speakMessageOutputMode is not watchSpeaker"
+      },
+      "speakMessageSpeechVolumePercent": {
+        "type": "int",
+        "optional": true,
+        "default": 70,
+        "clamp": [0, 100],
+        "label": "Target Volume",
+        "shownWhen": "speakMessageSpeechVolumeMode is not keepCurrent"
+      },
+      "speakMessageImmediateListen": {
+        "type": "bool",
+        "optional": true,
+        "default": true,
+        "label": "Start Listening Immediately"
+      },
+      "broadcastTargetMode": {
+        "type": "enum",
+        "enum": "BroadcastTargetMode",
+        "optional": true,
+        "default": "configuredSpeakers",
+        "label": "Target"
+      },
+      "broadcastTargetSpeakerIds": {
+        "type": "array",
+        "items": {
+          "type": "entity",
+          "domain": "media_player"
+        },
+        "optional": true,
+        "default": [],
+        "whenBlank": "the media player the Entity quick menu is open on, else nothing plays",
+        "label": "Broadcast Speakers",
+        "shownWhen": "broadcastTargetMode is configuredSpeakers"
+      },
+      "broadcastChooseListSpeakerIds": {
+        "type": "array",
+        "items": {
+          "type": "entity",
+          "domain": "media_player"
+        },
+        "optional": true,
+        "default": [],
+        "label": "Speakers Shown on Watch",
+        "shownWhen": "broadcastTargetMode is chooseEachTime"
+      },
+      "broadcastImmediateListen": {
+        "type": "bool",
+        "optional": true,
+        "default": false,
+        "phone": false
+      }
+    },
+    "actions": [
+      {
+        "action": "assist",
+        "label": "Ask Assist",
+        "keys": [
+          "assistReplyOutputMode",
+          "assistAgentId",
+          "assistTargetSpeakerIds",
+          "assistChooseListSpeakerIds",
+          "assistTTSEngine",
+          "assistSpeechVolumeMode",
+          "assistSpeechVolumePercent",
+          "assistImmediateListen",
+          "assistAutoSendOnPause"
+        ]
+      },
+      {
+        "action": "speakMessage",
+        "label": "Speak Message - TTS",
+        "keys": [
+          "speakMessageOutputMode",
+          "speakMessageTargetSpeakerIds",
+          "speakMessageChooseListSpeakerIds",
+          "speakMessageTTSEngine",
+          "speakMessageSpeechVolumeMode",
+          "speakMessageSpeechVolumePercent",
+          "speakMessageImmediateListen"
+        ]
+      },
+      {
+        "action": "broadcast",
+        "label": "Broadcast Voice",
+        "keys": [
+          "broadcastTargetMode",
+          "broadcastTargetSpeakerIds",
+          "broadcastChooseListSpeakerIds",
+          "broadcastImmediateListen"
+        ]
+      },
+      {
+        "action": "ttsMenu",
+        "label": "Pick from List - TTS",
+        "keys": [],
+        "slotKeys": ["hiddenPhraseIds", "knownPhraseIds"],
+        "slotLabel": "Phrase List",
+        "phraseVisibility": {
+          "rule": "knownPhraseIds not empty: the phrases in knownPhraseIds and not in hiddenPhraseIds, in the phrase library's order; otherwise every phrase not in hiddenPhraseIds",
+          "newPhrases": "a phrase added to the library after the slot recorded knownPhraseIds stays hidden there until the slot is edited",
+          "cases": [
+            {
+              "phrases": ["Dinner", "Bedtime", "Leaving", "Quiet"],
+              "visible": ["Dinner", "Bedtime", "Leaving", "Quiet"]
+            },
+            {
+              "phrases": ["Dinner", "Bedtime", "Leaving", "Quiet"],
+              "hiddenPhraseIds": [],
+              "knownPhraseIds": [],
+              "visible": ["Dinner", "Bedtime", "Leaving", "Quiet"]
+            },
+            {
+              "phrases": ["Dinner", "Bedtime", "Leaving", "Quiet"],
+              "hiddenPhraseIds": ["Bedtime"],
+              "visible": ["Dinner", "Leaving", "Quiet"]
+            },
+            {
+              "phrases": ["Dinner", "Bedtime", "Leaving", "Quiet"],
+              "knownPhraseIds": ["Dinner", "Bedtime"],
+              "visible": ["Dinner", "Bedtime"]
+            },
+            {
+              "phrases": ["Dinner", "Bedtime", "Leaving", "Quiet"],
+              "hiddenPhraseIds": ["Bedtime"],
+              "knownPhraseIds": ["Dinner", "Bedtime", "Leaving"],
+              "visible": ["Dinner", "Leaving"]
+            },
+            {
+              "phrases": ["Dinner", "Bedtime", "Leaving", "Quiet"],
+              "hiddenPhraseIds": ["Quiet"],
+              "knownPhraseIds": ["Dinner"],
+              "visible": ["Dinner"]
+            }
+          ]
+        }
+      },
+      {
+        "action": "speakPhrase",
+        "label": "Speak Phrase",
+        "keys": [],
+        "payloadKeys": ["phraseId"],
+        "phraseKeys": [
+          "message",
+          "targetSpeakers",
+          "ttsEngine",
+          "language",
+          "speechVolumeMode",
+          "speechVolumePercent"
+        ],
+        "note": "Speak Phrase reads no routing key: the phrase's own speakers, engine, language and volume, with the voice document's defaults behind them."
+      }
+    ]
+  }
+}

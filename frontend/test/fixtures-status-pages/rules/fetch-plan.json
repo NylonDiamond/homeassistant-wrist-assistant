@@ -1,0 +1,175 @@
+{
+  "name": "What the watch asks states_batch for: entity ids (order does not matter, sorted here) and domains with their device classes (null is the whole domain)",
+  "function": "StatusPageConfig.fetchPlan",
+  "cases": [
+    {
+      "name": "entity rows fetch their entities; an empty entity id and a header fetch nothing",
+      "rows": [
+        {
+          "displayName": "",
+          "domain": "light",
+          "entityId": "light.kitchen",
+          "iconName": "",
+          "rowType": "entity"
+        },
+        {
+          "displayName": "",
+          "domain": "light",
+          "entityId": "",
+          "iconName": "",
+          "rowType": "entity"
+        },
+        {
+          "displayName": "",
+          "domain": "",
+          "entityId": "",
+          "iconName": "",
+          "rowType": "sectionHeader"
+        }
+      ],
+      "customEntityIds": ["light.kitchen"],
+      "fetchDomains": {}
+    },
+    {
+      "name": "a hidden row fetches nothing",
+      "rows": [
+        {
+          "displayName": "",
+          "domain": "lock",
+          "entityId": "lock.front_door",
+          "iconName": "",
+          "isHidden": true,
+          "rowType": "entity"
+        },
+        {
+          "displayName": "",
+          "domain": "lock",
+          "entityId": "lock.back_door",
+          "iconName": "",
+          "rowType": "entity"
+        }
+      ],
+      "customEntityIds": ["lock.back_door"],
+      "fetchDomains": {}
+    },
+    {
+      "name": "group counts and hand-picked lists fetch their entities",
+      "rows": [
+        {
+          "displayName": "",
+          "domain": "light",
+          "entityId": "",
+          "groupEntityIds": ["light.a", "light.b"],
+          "iconName": "",
+          "rowType": "groupCount"
+        },
+        {
+          "displayName": "",
+          "domain": "climate",
+          "dynamicMode": "specific",
+          "entityId": "",
+          "groupEntityIds": ["climate.up"],
+          "iconName": "",
+          "rowType": "dynamicList"
+        }
+      ],
+      "customEntityIds": ["climate.up", "light.a", "light.b"],
+      "fetchDomains": {}
+    },
+    {
+      "name": "a list of all matching fetches the domain with its device classes",
+      "rows": [
+        {
+          "deviceClassFilter": ["door", "window"],
+          "displayName": "",
+          "domain": "binary_sensor",
+          "dynamicMode": "all",
+          "entityId": "",
+          "iconName": "",
+          "rowType": "dynamicList"
+        }
+      ],
+      "customEntityIds": [],
+      "fetchDomains": {
+        "binary_sensor": ["door", "window"]
+      }
+    },
+    {
+      "name": "two lists on one domain fetch the union of their classes, sorted",
+      "rows": [
+        {
+          "deviceClassFilter": ["window", "door"],
+          "displayName": "",
+          "domain": "binary_sensor",
+          "dynamicMode": "all",
+          "entityId": "",
+          "iconName": "",
+          "rowType": "dynamicList"
+        },
+        {
+          "deviceClassFilter": ["motion", "door"],
+          "displayName": "",
+          "domain": "binary_sensor",
+          "dynamicMode": "all",
+          "entityId": "",
+          "iconName": "",
+          "rowType": "dynamicList"
+        }
+      ],
+      "customEntityIds": [],
+      "fetchDomains": {
+        "binary_sensor": ["door", "motion", "window"]
+      }
+    },
+    {
+      "name": "a list with no class filter fetches the whole domain, whatever the other lists ask",
+      "rows": [
+        {
+          "deviceClassFilter": ["battery"],
+          "displayName": "",
+          "domain": "sensor",
+          "dynamicMode": "all",
+          "entityId": "",
+          "iconName": "",
+          "rowType": "dynamicList"
+        },
+        {
+          "displayName": "",
+          "domain": "sensor",
+          "dynamicMode": "all",
+          "entityId": "",
+          "iconName": "",
+          "rowType": "dynamicList"
+        },
+        {
+          "deviceClassFilter": ["temperature"],
+          "displayName": "",
+          "domain": "sensor",
+          "dynamicMode": "all",
+          "entityId": "",
+          "iconName": "",
+          "rowType": "dynamicList"
+        }
+      ],
+      "customEntityIds": [],
+      "fetchDomains": {
+        "sensor": null
+      }
+    },
+    {
+      "name": "a dynamic list with no mode reads as hand-picked",
+      "rows": [
+        {
+          "displayName": "",
+          "domain": "light",
+          "entityId": "",
+          "groupEntityIds": ["light.c"],
+          "iconName": "",
+          "rowType": "dynamicList"
+        }
+      ],
+      "customEntityIds": ["light.c"],
+      "fetchDomains": {}
+    }
+  ]
+}

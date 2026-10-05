@@ -1,0 +1,158 @@
+{
+  "version": 1,
+  "note": "Generated from the iPhone app's Swift code by WatchStatusPagesDocumentTests; do not edit. Regenerate status-page-defaults.json with TEST_RUNNER_WA_UPDATE_FIXTURES=1 ./scripts/test.sh WatchStatusPagesDocumentTests in the app repository.",
+  "document": {
+    "schemaVersion": 1,
+    "statusPages": [
+      {
+        "backgroundMaterial": "regular",
+        "columnLayout": "singleColumn",
+        "fontDesign": "default",
+        "fontWeight": "regular",
+        "horizontalPadding": 2,
+        "iconPosition": "leading",
+        "id": "00000000-0000-0000-0000-000000000001",
+        "isSystemDefault": true,
+        "name": "Lights",
+        "roundNumericValues": true,
+        "rowSpacing": 2,
+        "rowStyle": "plain",
+        "rows": [
+          {
+            "displayName": "Lights",
+            "domain": "light",
+            "dynamicMode": "all",
+            "entityId": "",
+            "filterState": "on",
+            "iconName": "lightbulb.fill",
+            "id": "00000000-0000-0000-0001-000000000001",
+            "rowType": "dynamicList"
+          }
+        ],
+        "schemaVersion": 1,
+        "showDividers": false,
+        "textSize": "medium"
+      },
+      {
+        "backgroundMaterial": "regular",
+        "columnLayout": "singleColumn",
+        "fontDesign": "default",
+        "fontWeight": "regular",
+        "horizontalPadding": 2,
+        "iconPosition": "leading",
+        "id": "00000000-0000-0000-0000-000000000002",
+        "isSystemDefault": true,
+        "name": "Who's Home",
+        "roundNumericValues": true,
+        "rowSpacing": 2,
+        "rowStyle": "plain",
+        "rows": [
+          {
+            "displayName": "People",
+            "domain": "person",
+            "dynamicMode": "all",
+            "entityId": "",
+            "filterState": "home",
+            "iconName": "person.fill",
+            "id": "00000000-0000-0000-0001-000000000011",
+            "rowType": "dynamicList"
+          }
+        ],
+        "schemaVersion": 1,
+        "showDividers": false,
+        "textSize": "medium"
+      },
+      {
+        "backgroundMaterial": "regular",
+        "columnLayout": "singleColumn",
+        "fontDesign": "default",
+        "fontWeight": "regular",
+        "horizontalPadding": 2,
+        "iconPosition": "leading",
+        "id": "00000000-0000-0000-0000-000000000003",
+        "isSystemDefault": true,
+        "name": "Room Temps",
+        "roundNumericValues": true,
+        "rowSpacing": 2,
+        "rowStyle": "plain",
+        "rows": [
+          {
+            "deviceClassFilter": ["temperature"],
+            "displayName": "Temperatures",
+            "domain": "sensor",
+            "dynamicMode": "all",
+            "entityId": "",
+            "iconName": "thermometer",
+            "id": "00000000-0000-0000-0001-000000000021",
+            "rowType": "dynamicList",
+            "showAllStates": true
+          }
+        ],
+        "schemaVersion": 1,
+        "showDividers": false,
+        "textSize": "medium"
+      },
+      {
+        "backgroundMaterial": "regular",
+        "columnLayout": "singleColumn",
+        "fontDesign": "default",
+        "fontWeight": "regular",
+        "horizontalPadding": 2,
+        "iconPosition": "leading",
+        "id": "00000000-0000-0000-0000-000000000004",
+        "isSystemDefault": true,
+        "name": "Doors & Windows",
+        "roundNumericValues": true,
+        "rowSpacing": 2,
+        "rowStyle": "plain",
+        "rows": [
+          {
+            "deviceClassFilter": ["door", "window", "opening", "garage_door"],
+            "displayName": "Openings",
+            "domain": "binary_sensor",
+            "dynamicMode": "all",
+            "entityId": "",
+            "filterState": "on",
+            "iconName": "door.left.hand.open",
+            "id": "00000000-0000-0000-0001-000000000031",
+            "rowType": "dynamicList"
+          }
+        ],
+        "schemaVersion": 1,
+        "showDividers": false,
+        "textSize": "medium"
+      },
+      {
+        "backgroundMaterial": "regular",
+        "columnLayout": "singleColumn",
+        "fontDesign": "default",
+        "fontWeight": "regular",
+        "horizontalPadding": 2,
+        "iconPosition": "leading",
+        "id": "00000000-0000-0000-0000-000000000005",
+        "isSystemDefault": true,
+        "name": "Low Battery",
+        "roundNumericValues": true,
+        "rowSpacing": 2,
+        "rowStyle": "plain",
+        "rows": [
+          {
+            "deviceClassFilter": ["battery"],
+            "displayName": "Batteries",
+            "domain": "sensor",
+            "dynamicMode": "all",
+            "entityId": "",
+            "iconName": "battery.25percent",
+            "id": "00000000-0000-0000-0001-000000000041",
+            "maxNumericValue": 20,
+            "rowType": "dynamicList",
+            "showAllStates": true
+          }
+        ],
+        "schemaVersion": 1,
+        "showDividers": false,
+        "textSize": "medium"
+      }
+    ]
+  }
+}

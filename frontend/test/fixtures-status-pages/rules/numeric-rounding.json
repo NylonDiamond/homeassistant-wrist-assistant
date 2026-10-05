@@ -1,0 +1,111 @@
+{
+  "name": "A state with roundNumericValues on, through the watch's expression (Double(state), rounded, Int); the state as written when it does not parse",
+  "function": "StatusPageSnippetView.formattedNumericString (transcribed expression)",
+  "cases": [
+    {
+      "state": "20",
+      "value": "20",
+      "parses": true
+    },
+    {
+      "state": "20.4",
+      "value": "20",
+      "parses": true
+    },
+    {
+      "state": "20.5",
+      "value": "21",
+      "parses": true
+    },
+    {
+      "state": "-2.5",
+      "value": "-3",
+      "parses": true
+    },
+    {
+      "state": "-2.4",
+      "value": "-2",
+      "parses": true
+    },
+    {
+      "state": "99.99",
+      "value": "100",
+      "parses": true
+    },
+    {
+      "state": "0.5",
+      "value": "1",
+      "parses": true
+    },
+    {
+      "state": "1.5",
+      "value": "2",
+      "parses": true
+    },
+    {
+      "state": "2.5",
+      "value": "3",
+      "parses": true
+    },
+    {
+      "state": "100.00",
+      "value": "100",
+      "parses": true
+    },
+    {
+      "state": "1e2",
+      "value": "100",
+      "parses": true
+    },
+    {
+      "state": "+3",
+      "value": "3",
+      "parses": true
+    },
+    {
+      "state": ".5",
+      "value": "1",
+      "parses": true
+    },
+    {
+      "state": "5.",
+      "value": "5",
+      "parses": true
+    },
+    {
+      "state": "0x1A",
+      "value": "26",
+      "parses": true
+    },
+    {
+      "state": " 5",
+      "value": " 5",
+      "parses": false
+    },
+    {
+      "state": "5 ",
+      "value": "5 ",
+      "parses": false
+    },
+    {
+      "state": "abc",
+      "value": "abc",
+      "parses": false
+    },
+    {
+      "state": "",
+      "value": "",
+      "parses": false
+    },
+    {
+      "state": "on",
+      "value": "on",
+      "parses": false
+    },
+    {
+      "state": "12,5",
+      "value": "12,5",
+      "parses": false
+    }
+  ]
+}

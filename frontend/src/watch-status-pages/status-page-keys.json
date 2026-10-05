@@ -1,0 +1,409 @@
+{
+  "version": 1,
+  "note": "Generated from the iPhone app's Swift code by WatchStatusPagesDocumentTests; do not edit. Regenerate status-page-keys.json with TEST_RUNNER_WA_UPDATE_FIXTURES=1 ./scripts/test.sh WatchStatusPagesDocumentTests in the app repository.",
+  "document": {
+    "schemaVersion": 1,
+    "listKey": "statusPages"
+  },
+  "enums": {
+    "RowStyle": ["plain", "pillOutline", "pillFilled"],
+    "TextSize": ["small", "medium", "large"],
+    "FontWeight": ["regular", "medium", "semibold", "bold"],
+    "FontDesign": ["default", "rounded", "monospaced", "serif"],
+    "ColumnLayout": ["singleColumn", "twoColumn"],
+    "BackgroundMaterial": ["ultraThin", "thin", "regular", "thick", "ultraThick"],
+    "IconPosition": ["leading", "trailing", "hidden"],
+    "StatusRowType": ["entity", "groupCount", "sectionHeader", "dynamicList"],
+    "HeaderAlignment": ["leading", "center", "trailing"],
+    "DynamicMode": ["all", "specific"]
+  },
+  "labels": {
+    "RowStyle": {
+      "plain": "Plain",
+      "pillOutline": "Pill Outline",
+      "pillFilled": "Pill Filled"
+    },
+    "TextSize": {
+      "small": "Small",
+      "medium": "Medium",
+      "large": "Large"
+    },
+    "FontWeight": {
+      "regular": "Regular",
+      "medium": "Medium",
+      "semibold": "Semibold",
+      "bold": "Bold"
+    },
+    "FontDesign": {
+      "default": "Default",
+      "rounded": "Rounded",
+      "monospaced": "Mono",
+      "serif": "Serif"
+    },
+    "ColumnLayout": {
+      "singleColumn": "Single Column",
+      "twoColumn": "Two Column"
+    },
+    "BackgroundMaterial": {
+      "ultraThin": "Ultra Thin",
+      "thin": "Thin",
+      "regular": "Regular",
+      "thick": "Thick",
+      "ultraThick": "Ultra Thick"
+    },
+    "IconPosition": {
+      "leading": "Left",
+      "trailing": "Right",
+      "hidden": "Hidden"
+    },
+    "StatusRowType": {
+      "entity": "Entity",
+      "groupCount": "Group Count",
+      "sectionHeader": "Header",
+      "dynamicList": "Dynamic List"
+    },
+    "HeaderAlignment": {
+      "leading": "Left",
+      "center": "Center",
+      "trailing": "Right"
+    },
+    "DynamicMode": {
+      "all": "All matching",
+      "specific": "Hand-picked"
+    }
+  },
+  "types": {
+    "page": {
+      "swift": "StatusPageConfig",
+      "keys": {
+        "schemaVersion": {
+          "type": "int",
+          "optional": true,
+          "default": 1
+        },
+        "id": {
+          "type": "uuid",
+          "required": true
+        },
+        "name": {
+          "type": "string",
+          "required": true,
+          "default": "New Page 1"
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "ref": "row"
+          },
+          "required": true,
+          "default": []
+        },
+        "isSystemDefault": {
+          "type": "bool",
+          "default": false
+        },
+        "rowStyle": {
+          "type": "enum",
+          "enum": "RowStyle",
+          "default": "plain"
+        },
+        "textSize": {
+          "type": "enum",
+          "enum": "TextSize",
+          "default": "medium"
+        },
+        "fontWeight": {
+          "type": "enum",
+          "enum": "FontWeight",
+          "default": "regular"
+        },
+        "fontDesign": {
+          "type": "enum",
+          "enum": "FontDesign",
+          "default": "default"
+        },
+        "rowSpacing": {
+          "type": "number",
+          "default": 2
+        },
+        "backgroundMaterial": {
+          "type": "enum",
+          "enum": "BackgroundMaterial",
+          "default": "regular"
+        },
+        "columnLayout": {
+          "type": "enum",
+          "enum": "ColumnLayout",
+          "default": "singleColumn"
+        },
+        "showDividers": {
+          "type": "bool",
+          "default": false
+        },
+        "iconPosition": {
+          "type": "enum",
+          "enum": "IconPosition",
+          "default": "leading"
+        },
+        "horizontalPadding": {
+          "type": "number",
+          "default": 2
+        },
+        "roundNumericValues": {
+          "type": "bool",
+          "default": true
+        }
+      }
+    },
+    "row": {
+      "swift": "StatusRowConfig",
+      "keys": {
+        "id": {
+          "type": "uuid",
+          "required": true
+        },
+        "rowType": {
+          "type": "enum",
+          "enum": "StatusRowType",
+          "required": true,
+          "default": "entity"
+        },
+        "entityId": {
+          "type": "entity",
+          "required": true,
+          "default": ""
+        },
+        "displayName": {
+          "type": "string",
+          "required": true,
+          "default": ""
+        },
+        "domain": {
+          "type": "string",
+          "required": true,
+          "default": ""
+        },
+        "iconName": {
+          "type": "symbol",
+          "required": true,
+          "default": ""
+        },
+        "groupEntityIds": {
+          "type": "array",
+          "items": {
+            "type": "entity"
+          },
+          "optional": true,
+          "default": null
+        },
+        "dynamicMode": {
+          "type": "enum",
+          "enum": "DynamicMode",
+          "optional": true,
+          "default": null
+        },
+        "filterState": {
+          "type": "string",
+          "optional": true,
+          "default": null
+        },
+        "deviceClassFilter": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "optional": true,
+          "default": null
+        },
+        "showAllStates": {
+          "type": "bool",
+          "optional": true,
+          "default": null
+        },
+        "maxNumericValue": {
+          "type": "number",
+          "optional": true,
+          "default": null
+        },
+        "isHidden": {
+          "type": "bool",
+          "optional": true,
+          "default": null
+        },
+        "headerAlignment": {
+          "type": "enum",
+          "enum": "HeaderAlignment",
+          "optional": true,
+          "default": null
+        }
+      }
+    }
+  },
+  "style": [
+    {
+      "key": "rowStyle",
+      "label": "Row Style",
+      "kind": "segmented",
+      "default": "plain"
+    },
+    {
+      "key": "columnLayout",
+      "label": "Layout",
+      "kind": "segmented",
+      "default": "singleColumn"
+    },
+    {
+      "key": "textSize",
+      "label": "Text Size",
+      "kind": "segmented",
+      "default": "medium"
+    },
+    {
+      "key": "fontWeight",
+      "label": "Weight",
+      "kind": "segmented",
+      "default": "regular"
+    },
+    {
+      "key": "fontDesign",
+      "label": "Font",
+      "kind": "segmented",
+      "default": "default"
+    },
+    {
+      "key": "iconPosition",
+      "label": "Icon",
+      "kind": "segmented",
+      "default": "leading"
+    },
+    {
+      "key": "backgroundMaterial",
+      "label": "Background",
+      "kind": "segmented",
+      "default": "regular"
+    },
+    {
+      "key": "showDividers",
+      "label": "Dividers",
+      "kind": "switch",
+      "default": false
+    },
+    {
+      "key": "roundNumericValues",
+      "label": "Round Numbers",
+      "kind": "switch",
+      "default": true,
+      "help": "e.g. 100.00% → 100%"
+    },
+    {
+      "key": "rowSpacing",
+      "label": "Spacing",
+      "kind": "slider",
+      "default": 2,
+      "min": 0,
+      "max": 12,
+      "step": 1,
+      "unit": "pt"
+    },
+    {
+      "key": "horizontalPadding",
+      "label": "Padding",
+      "kind": "slider",
+      "default": 2,
+      "min": 0,
+      "max": 16,
+      "step": 2,
+      "unit": "pt"
+    }
+  ],
+  "rowControls": [
+    {
+      "key": "isHidden",
+      "label": "Visible / Hidden",
+      "rowTypes": ["entity", "groupCount", "sectionHeader", "dynamicList"]
+    },
+    {
+      "key": "displayName",
+      "label": "Label",
+      "rowTypes": ["entity", "groupCount", "sectionHeader", "dynamicList"]
+    },
+    {
+      "key": "headerAlignment",
+      "label": "Alignment",
+      "rowTypes": ["sectionHeader"]
+    },
+    {
+      "key": "iconName",
+      "label": "Icon",
+      "rowTypes": ["entity", "groupCount", "dynamicList"]
+    },
+    {
+      "key": "filterState",
+      "label": "Show State",
+      "rowTypes": ["groupCount", "dynamicList"],
+      "when": "domain is not sensor and stateOptions gives two or more choices; shows effectiveFilterState"
+    },
+    {
+      "key": "dynamicMode",
+      "label": "Entities",
+      "rowTypes": ["dynamicList"]
+    },
+    {
+      "key": "maxNumericValue",
+      "label": null,
+      "rowTypes": ["groupCount", "dynamicList"],
+      "when": "domain is sensor, and for a dynamic list only when dynamicMode is all; the label is maxValueLabels; empty clears it",
+      "placeholder": "No limit"
+    },
+    {
+      "key": "groupEntityIds",
+      "label": "Edit Entities",
+      "rowTypes": ["groupCount", "dynamicList"],
+      "when": "a group count, or a dynamic list whose dynamicMode is specific"
+    },
+    {
+      "key": "showAllStates",
+      "label": null,
+      "rowTypes": ["dynamicList"],
+      "when": "no control on the phone; the Dynamic List choice sets it (dynamicListTiles.showAllStates)"
+    },
+    {
+      "key": "deviceClassFilter",
+      "label": null,
+      "rowTypes": ["groupCount", "dynamicList"],
+      "when": "no control on the phone; the Dynamic List and Group Count choices set it"
+    }
+  ],
+  "newPage": {
+    "name": "New Page <n>",
+    "nameRule": "n is one more than the largest n among pages named New Page <n> (New Page alone counts as 1), else 1",
+    "rows": [],
+    "isSystemDefault": false
+  },
+  "newRows": {
+    "sectionHeader": {
+      "displayName": "Header",
+      "domain": "",
+      "entityId": "",
+      "iconName": "line.horizontal.3",
+      "rowType": "sectionHeader"
+    },
+    "entity": {
+      "rowType": "entity",
+      "displayName": "the entity's friendly name",
+      "domain": "the entity id's domain",
+      "iconName": "defaultIcons[domain]"
+    },
+    "groupCount": "a groupCountPresets entry, with the picked entities in groupEntityIds",
+    "dynamicList": "a dynamicListTiles entry with dynamicMode all; Hand-picked writes dynamicMode specific and groupEntityIds"
+  },
+  "systemDefaultIds": [
+    "00000000-0000-0000-0000-000000000001",
+    "00000000-0000-0000-0000-000000000002",
+    "00000000-0000-0000-0000-000000000003",
+    "00000000-0000-0000-0000-000000000004",
+    "00000000-0000-0000-0000-000000000005"
+  ],
+  "systemDefaultRule": "isSystemDefault changes nothing on the watch. A list with no system default page gets the five seeded again in front of it (seedDefaultsIfNeeded)."
+}

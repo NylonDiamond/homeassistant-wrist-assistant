@@ -1,0 +1,1336 @@
+{
+  "version": 1,
+  "note": "Generated from the iPhone app's Swift code by WatchStatusPagesDocumentTests; do not edit. Regenerate status-page-rules.json with TEST_RUNNER_WA_UPDATE_FIXTURES=1 ./scripts/test.sh WatchStatusPagesDocumentTests in the app repository.",
+  "defaultFilterState": {
+    "light": "on",
+    "switch": "on",
+    "fan": "on",
+    "cover": "open",
+    "lock": "unlocked",
+    "climate": "on",
+    "person": "home",
+    "binary_sensor": "on",
+    "sensor": "on",
+    "input_boolean": "on",
+    "valve": "open",
+    "alarm_control_panel": "on",
+    "media_player": "on",
+    "vacuum": "on",
+    "humidifier": "on",
+    "water_heater": "on",
+    "remote": "on",
+    "siren": "on",
+    "automation": "on",
+    "*": "on"
+  },
+  "activeLabel": {
+    "light": "on",
+    "switch": "on",
+    "fan": "on",
+    "cover": "open",
+    "lock": "unlocked",
+    "climate": "on",
+    "person": "home",
+    "binary_sensor": "on",
+    "sensor": "on",
+    "input_boolean": "on",
+    "valve": "open",
+    "alarm_control_panel": "on",
+    "media_player": "on",
+    "vacuum": "on",
+    "humidifier": "on",
+    "water_heater": "on",
+    "remote": "on",
+    "siren": "on",
+    "automation": "on",
+    "*": "on"
+  },
+  "stateOptions": {
+    "light": [
+      {
+        "value": "on",
+        "label": "On"
+      },
+      {
+        "value": "off",
+        "label": "Off"
+      }
+    ],
+    "switch": [
+      {
+        "value": "on",
+        "label": "On"
+      },
+      {
+        "value": "off",
+        "label": "Off"
+      }
+    ],
+    "fan": [
+      {
+        "value": "on",
+        "label": "On"
+      },
+      {
+        "value": "off",
+        "label": "Off"
+      }
+    ],
+    "cover": [
+      {
+        "value": "open",
+        "label": "Open"
+      },
+      {
+        "value": "closed",
+        "label": "Closed"
+      }
+    ],
+    "lock": [
+      {
+        "value": "locked",
+        "label": "Locked"
+      },
+      {
+        "value": "unlocked",
+        "label": "Unlocked"
+      }
+    ],
+    "climate": [
+      {
+        "value": "on",
+        "label": "On"
+      },
+      {
+        "value": "off",
+        "label": "Off"
+      }
+    ],
+    "person": [
+      {
+        "value": "home",
+        "label": "Home"
+      },
+      {
+        "value": "not_home",
+        "label": "Away"
+      }
+    ],
+    "binary_sensor": [
+      {
+        "value": "on",
+        "label": "On"
+      },
+      {
+        "value": "off",
+        "label": "Off"
+      }
+    ],
+    "sensor": [
+      {
+        "value": "on",
+        "label": "On"
+      },
+      {
+        "value": "off",
+        "label": "Off"
+      }
+    ],
+    "input_boolean": [
+      {
+        "value": "on",
+        "label": "On"
+      },
+      {
+        "value": "off",
+        "label": "Off"
+      }
+    ],
+    "valve": [
+      {
+        "value": "open",
+        "label": "Open"
+      },
+      {
+        "value": "closed",
+        "label": "Closed"
+      }
+    ],
+    "alarm_control_panel": [
+      {
+        "value": "on",
+        "label": "On"
+      },
+      {
+        "value": "off",
+        "label": "Off"
+      }
+    ],
+    "media_player": [
+      {
+        "value": "on",
+        "label": "On"
+      },
+      {
+        "value": "off",
+        "label": "Off"
+      }
+    ],
+    "vacuum": [
+      {
+        "value": "on",
+        "label": "On"
+      },
+      {
+        "value": "off",
+        "label": "Off"
+      }
+    ],
+    "humidifier": [
+      {
+        "value": "on",
+        "label": "On"
+      },
+      {
+        "value": "off",
+        "label": "Off"
+      }
+    ],
+    "water_heater": [
+      {
+        "value": "on",
+        "label": "On"
+      },
+      {
+        "value": "off",
+        "label": "Off"
+      }
+    ],
+    "remote": [
+      {
+        "value": "on",
+        "label": "On"
+      },
+      {
+        "value": "off",
+        "label": "Off"
+      }
+    ],
+    "siren": [
+      {
+        "value": "on",
+        "label": "On"
+      },
+      {
+        "value": "off",
+        "label": "Off"
+      }
+    ],
+    "automation": [
+      {
+        "value": "on",
+        "label": "On"
+      },
+      {
+        "value": "off",
+        "label": "Off"
+      }
+    ],
+    "*": [
+      {
+        "value": "on",
+        "label": "On"
+      },
+      {
+        "value": "off",
+        "label": "Off"
+      }
+    ]
+  },
+  "binarySensorClassStates": {
+    "when": "the row's domain is binary_sensor and deviceClassFilter holds exactly one class; otherwise stateOptions",
+    "classes": {
+      "battery": {
+        "on": "Low",
+        "off": "Normal"
+      },
+      "battery_charging": {
+        "on": "Charging",
+        "off": "Not Charging"
+      },
+      "carbon_monoxide": {
+        "on": "Detected",
+        "off": "Clear"
+      },
+      "cold": {
+        "on": "Cold",
+        "off": "Normal"
+      },
+      "connectivity": {
+        "on": "Connected",
+        "off": "Disconnected"
+      },
+      "door": {
+        "on": "Open",
+        "off": "Closed"
+      },
+      "garage_door": {
+        "on": "Open",
+        "off": "Closed"
+      },
+      "gas": {
+        "on": "Detected",
+        "off": "Clear"
+      },
+      "heat": {
+        "on": "Hot",
+        "off": "Normal"
+      },
+      "light": {
+        "on": "Light",
+        "off": "No Light"
+      },
+      "lock": {
+        "on": "Unlocked",
+        "off": "Locked"
+      },
+      "moisture": {
+        "on": "Wet",
+        "off": "Dry"
+      },
+      "motion": {
+        "on": "Motion",
+        "off": "Clear"
+      },
+      "moving": {
+        "on": "Moving",
+        "off": "Stopped"
+      },
+      "occupancy": {
+        "on": "Occupied",
+        "off": "Clear"
+      },
+      "opening": {
+        "on": "Open",
+        "off": "Closed"
+      },
+      "plug": {
+        "on": "Plugged In",
+        "off": "Unplugged"
+      },
+      "power": {
+        "on": "Powered",
+        "off": "No Power"
+      },
+      "presence": {
+        "on": "Home",
+        "off": "Away"
+      },
+      "problem": {
+        "on": "Problem",
+        "off": "OK"
+      },
+      "running": {
+        "on": "Running",
+        "off": "Idle"
+      },
+      "safety": {
+        "on": "Unsafe",
+        "off": "Safe"
+      },
+      "smoke": {
+        "on": "Detected",
+        "off": "Clear"
+      },
+      "sound": {
+        "on": "Sound",
+        "off": "Silent"
+      },
+      "tamper": {
+        "on": "Tampered",
+        "off": "OK"
+      },
+      "update": {
+        "on": "Update Available",
+        "off": "Up-to-date"
+      },
+      "vibration": {
+        "on": "Vibration",
+        "off": "Still"
+      },
+      "window": {
+        "on": "Open",
+        "off": "Closed"
+      }
+    }
+  },
+  "matchFilter": {
+    "token": "the row's filterState, else defaultFilterState for its domain",
+    "compare": "the state and the token both lowercased",
+    "rule": "for a domain listed here: a token in anyActiveTokens matches every state not in inactiveStates (or every state in activeStates); a token in tokenMeansState matches that one state; any other token, and every other domain, matches the state equal to the token",
+    "domains": {
+      "climate": {
+        "anyActiveTokens": ["on", "active"],
+        "inactiveStates": ["off", "unavailable", "unknown", "none", ""]
+      },
+      "water_heater": {
+        "anyActiveTokens": ["on", "active"],
+        "inactiveStates": ["off", "unavailable", "unknown", "none", ""]
+      },
+      "media_player": {
+        "anyActiveTokens": ["on", "active"],
+        "inactiveStates": ["off", "idle", "standby", "unavailable", "unknown", "none", ""]
+      },
+      "vacuum": {
+        "anyActiveTokens": ["on", "active", "cleaning"],
+        "activeStates": ["cleaning", "returning", "paused", "on"]
+      },
+      "alarm_control_panel": {
+        "anyActiveTokens": ["on", "active", "armed"],
+        "inactiveStates": ["disarmed", "off", "unavailable", "unknown", "none", ""]
+      },
+      "valve": {
+        "tokenMeansState": {
+          "open": "open",
+          "on": "open",
+          "closed": "closed",
+          "off": "closed"
+        }
+      }
+    }
+  },
+  "coverValue": {
+    "naStates": ["unavailable", "unknown", ""],
+    "na": "N/A",
+    "rule": "naStates: N/A; closed: Closed whatever the position; a position between 1 and 99: <position>%; else the state's word, or the state capitalized",
+    "words": {
+      "open": "Open",
+      "closed": "Closed",
+      "opening": "Opening",
+      "closing": "Closing"
+    }
+  },
+  "maxValueLabels": {
+    "by": "the first class in deviceClassFilter",
+    "labels": {
+      "battery": "Max value (%)",
+      "humidity": "Max value (%)",
+      "moisture": "Max value (%)",
+      "temperature": "Max value (°)",
+      "power": "Max value (W)",
+      "illuminance": "Max value (lx)",
+      "pressure": "Max value (hPa)",
+      "*": "Max value"
+    }
+  },
+  "defaultIcons": {
+    "light": "lightbulb.fill",
+    "switch": "switch.2",
+    "fan": "fan.fill",
+    "input_boolean": "togglepower",
+    "automation": "gearshape.2.fill",
+    "script": "scroll",
+    "scene": "sparkles",
+    "button": "button.programmable",
+    "camera": "video.fill",
+    "cover": "blinds.vertical.open",
+    "valve": "spigot.fill",
+    "lock": "lock.fill",
+    "climate": "thermometer.medium",
+    "media_player": "hifispeaker.fill",
+    "vacuum": "fan.floor.fill",
+    "humidifier": "humidity.fill",
+    "water_heater": "flame.fill",
+    "remote": "av.remote.fill",
+    "siren": "speaker.wave.3.fill",
+    "binary_sensor": "sensor.fill",
+    "alarm_control_panel": "shield.fill",
+    "person": "person.fill",
+    "sensor": "sensor",
+    "*": "circle"
+  },
+  "dynamicListTiles": [
+    {
+      "label": "Lights",
+      "icon": "lightbulb.fill",
+      "domain": "light",
+      "showAllStates": false,
+      "row": {
+        "displayName": "Lights",
+        "domain": "light",
+        "dynamicMode": "all",
+        "entityId": "",
+        "iconName": "lightbulb.fill",
+        "rowType": "dynamicList"
+      }
+    },
+    {
+      "label": "Switches",
+      "icon": "switch.2",
+      "domain": "switch",
+      "showAllStates": false,
+      "row": {
+        "displayName": "Switches",
+        "domain": "switch",
+        "dynamicMode": "all",
+        "entityId": "",
+        "iconName": "switch.2",
+        "rowType": "dynamicList"
+      }
+    },
+    {
+      "label": "Fans",
+      "icon": "fan.fill",
+      "domain": "fan",
+      "showAllStates": false,
+      "row": {
+        "displayName": "Fans",
+        "domain": "fan",
+        "dynamicMode": "all",
+        "entityId": "",
+        "iconName": "fan.fill",
+        "rowType": "dynamicList"
+      }
+    },
+    {
+      "label": "Covers",
+      "icon": "blinds.vertical.open",
+      "domain": "cover",
+      "showAllStates": false,
+      "row": {
+        "displayName": "Covers",
+        "domain": "cover",
+        "dynamicMode": "all",
+        "entityId": "",
+        "iconName": "blinds.vertical.open",
+        "rowType": "dynamicList"
+      }
+    },
+    {
+      "label": "Locks",
+      "icon": "lock.fill",
+      "domain": "lock",
+      "showAllStates": false,
+      "row": {
+        "displayName": "Locks",
+        "domain": "lock",
+        "dynamicMode": "all",
+        "entityId": "",
+        "iconName": "lock.fill",
+        "rowType": "dynamicList"
+      }
+    },
+    {
+      "label": "Climate",
+      "icon": "thermometer.medium",
+      "domain": "climate",
+      "showAllStates": false,
+      "row": {
+        "displayName": "Climate",
+        "domain": "climate",
+        "dynamicMode": "all",
+        "entityId": "",
+        "iconName": "thermometer.medium",
+        "rowType": "dynamicList"
+      }
+    },
+    {
+      "label": "Persons",
+      "icon": "person.fill",
+      "domain": "person",
+      "showAllStates": false,
+      "row": {
+        "displayName": "Persons",
+        "domain": "person",
+        "dynamicMode": "all",
+        "entityId": "",
+        "iconName": "person.fill",
+        "rowType": "dynamicList"
+      }
+    },
+    {
+      "label": "Doors",
+      "icon": "door.left.hand.open",
+      "domain": "binary_sensor",
+      "deviceClassFilter": ["door"],
+      "showAllStates": false,
+      "row": {
+        "deviceClassFilter": ["door"],
+        "displayName": "Doors",
+        "domain": "binary_sensor",
+        "dynamicMode": "all",
+        "entityId": "",
+        "iconName": "door.left.hand.open",
+        "rowType": "dynamicList"
+      }
+    },
+    {
+      "label": "Windows",
+      "icon": "window.horizontal",
+      "domain": "binary_sensor",
+      "deviceClassFilter": ["window"],
+      "showAllStates": false,
+      "row": {
+        "deviceClassFilter": ["window"],
+        "displayName": "Windows",
+        "domain": "binary_sensor",
+        "dynamicMode": "all",
+        "entityId": "",
+        "iconName": "window.horizontal",
+        "rowType": "dynamicList"
+      }
+    },
+    {
+      "label": "Openings",
+      "icon": "door.left.hand.open",
+      "domain": "binary_sensor",
+      "deviceClassFilter": ["door", "window", "opening", "garage_door"],
+      "showAllStates": false,
+      "row": {
+        "deviceClassFilter": ["door", "window", "opening", "garage_door"],
+        "displayName": "Openings",
+        "domain": "binary_sensor",
+        "dynamicMode": "all",
+        "entityId": "",
+        "iconName": "door.left.hand.open",
+        "rowType": "dynamicList"
+      }
+    },
+    {
+      "label": "Garage Doors",
+      "icon": "door.garage.closed",
+      "domain": "cover",
+      "deviceClassFilter": ["garage"],
+      "showAllStates": false,
+      "row": {
+        "deviceClassFilter": ["garage"],
+        "displayName": "Garage Doors",
+        "domain": "cover",
+        "dynamicMode": "all",
+        "entityId": "",
+        "iconName": "door.garage.closed",
+        "rowType": "dynamicList"
+      }
+    },
+    {
+      "label": "Motion",
+      "icon": "figure.walk.motion",
+      "domain": "binary_sensor",
+      "deviceClassFilter": ["motion"],
+      "showAllStates": false,
+      "row": {
+        "deviceClassFilter": ["motion"],
+        "displayName": "Motion",
+        "domain": "binary_sensor",
+        "dynamicMode": "all",
+        "entityId": "",
+        "iconName": "figure.walk.motion",
+        "rowType": "dynamicList"
+      }
+    },
+    {
+      "label": "Occupancy",
+      "icon": "person.fill",
+      "domain": "binary_sensor",
+      "deviceClassFilter": ["occupancy", "presence"],
+      "showAllStates": false,
+      "row": {
+        "deviceClassFilter": ["occupancy", "presence"],
+        "displayName": "Occupancy",
+        "domain": "binary_sensor",
+        "dynamicMode": "all",
+        "entityId": "",
+        "iconName": "person.fill",
+        "rowType": "dynamicList"
+      }
+    },
+    {
+      "label": "Smoke & Gas",
+      "icon": "smoke.fill",
+      "domain": "binary_sensor",
+      "deviceClassFilter": ["smoke", "gas", "carbon_monoxide"],
+      "showAllStates": false,
+      "row": {
+        "deviceClassFilter": ["smoke", "gas", "carbon_monoxide"],
+        "displayName": "Smoke & Gas",
+        "domain": "binary_sensor",
+        "dynamicMode": "all",
+        "entityId": "",
+        "iconName": "smoke.fill",
+        "rowType": "dynamicList"
+      }
+    },
+    {
+      "label": "Batteries",
+      "icon": "battery.25percent",
+      "domain": "sensor",
+      "deviceClassFilter": ["battery"],
+      "showAllStates": true,
+      "row": {
+        "deviceClassFilter": ["battery"],
+        "displayName": "Batteries",
+        "domain": "sensor",
+        "dynamicMode": "all",
+        "entityId": "",
+        "iconName": "battery.25percent",
+        "rowType": "dynamicList",
+        "showAllStates": true
+      }
+    },
+    {
+      "label": "Temperatures",
+      "icon": "thermometer.medium",
+      "domain": "sensor",
+      "deviceClassFilter": ["temperature"],
+      "showAllStates": true,
+      "row": {
+        "deviceClassFilter": ["temperature"],
+        "displayName": "Temperatures",
+        "domain": "sensor",
+        "dynamicMode": "all",
+        "entityId": "",
+        "iconName": "thermometer.medium",
+        "rowType": "dynamicList",
+        "showAllStates": true
+      }
+    },
+    {
+      "label": "Humidity",
+      "icon": "humidity.fill",
+      "domain": "sensor",
+      "deviceClassFilter": ["humidity"],
+      "showAllStates": true,
+      "row": {
+        "deviceClassFilter": ["humidity"],
+        "displayName": "Humidity",
+        "domain": "sensor",
+        "dynamicMode": "all",
+        "entityId": "",
+        "iconName": "humidity.fill",
+        "rowType": "dynamicList",
+        "showAllStates": true
+      }
+    },
+    {
+      "label": "Input Booleans",
+      "icon": "togglepower",
+      "domain": "input_boolean",
+      "showAllStates": false,
+      "row": {
+        "displayName": "Input Booleans",
+        "domain": "input_boolean",
+        "dynamicMode": "all",
+        "entityId": "",
+        "iconName": "togglepower",
+        "rowType": "dynamicList"
+      }
+    },
+    {
+      "label": "Valves",
+      "icon": "spigot.fill",
+      "domain": "valve",
+      "showAllStates": false,
+      "row": {
+        "displayName": "Valves",
+        "domain": "valve",
+        "dynamicMode": "all",
+        "entityId": "",
+        "iconName": "spigot.fill",
+        "rowType": "dynamicList"
+      }
+    },
+    {
+      "label": "Alarm Panels",
+      "icon": "shield.fill",
+      "domain": "alarm_control_panel",
+      "showAllStates": false,
+      "row": {
+        "displayName": "Alarm Panels",
+        "domain": "alarm_control_panel",
+        "dynamicMode": "all",
+        "entityId": "",
+        "iconName": "shield.fill",
+        "rowType": "dynamicList"
+      }
+    },
+    {
+      "label": "Media Players",
+      "icon": "hifispeaker.fill",
+      "domain": "media_player",
+      "showAllStates": false,
+      "row": {
+        "displayName": "Media Players",
+        "domain": "media_player",
+        "dynamicMode": "all",
+        "entityId": "",
+        "iconName": "hifispeaker.fill",
+        "rowType": "dynamicList"
+      }
+    },
+    {
+      "label": "Vacuums",
+      "icon": "fan.floor.fill",
+      "domain": "vacuum",
+      "showAllStates": false,
+      "row": {
+        "displayName": "Vacuums",
+        "domain": "vacuum",
+        "dynamicMode": "all",
+        "entityId": "",
+        "iconName": "fan.floor.fill",
+        "rowType": "dynamicList"
+      }
+    },
+    {
+      "label": "Humidifiers",
+      "icon": "humidity.fill",
+      "domain": "humidifier",
+      "showAllStates": false,
+      "row": {
+        "displayName": "Humidifiers",
+        "domain": "humidifier",
+        "dynamicMode": "all",
+        "entityId": "",
+        "iconName": "humidity.fill",
+        "rowType": "dynamicList"
+      }
+    },
+    {
+      "label": "Water Heaters",
+      "icon": "flame.fill",
+      "domain": "water_heater",
+      "showAllStates": false,
+      "row": {
+        "displayName": "Water Heaters",
+        "domain": "water_heater",
+        "dynamicMode": "all",
+        "entityId": "",
+        "iconName": "flame.fill",
+        "rowType": "dynamicList"
+      }
+    },
+    {
+      "label": "Remotes",
+      "icon": "av.remote.fill",
+      "domain": "remote",
+      "showAllStates": false,
+      "row": {
+        "displayName": "Remotes",
+        "domain": "remote",
+        "dynamicMode": "all",
+        "entityId": "",
+        "iconName": "av.remote.fill",
+        "rowType": "dynamicList"
+      }
+    },
+    {
+      "label": "Sirens",
+      "icon": "speaker.wave.3.fill",
+      "domain": "siren",
+      "showAllStates": false,
+      "row": {
+        "displayName": "Sirens",
+        "domain": "siren",
+        "dynamicMode": "all",
+        "entityId": "",
+        "iconName": "speaker.wave.3.fill",
+        "rowType": "dynamicList"
+      }
+    },
+    {
+      "label": "Automations",
+      "icon": "gearshape.2.fill",
+      "domain": "automation",
+      "showAllStates": false,
+      "row": {
+        "displayName": "Automations",
+        "domain": "automation",
+        "dynamicMode": "all",
+        "entityId": "",
+        "iconName": "gearshape.2.fill",
+        "rowType": "dynamicList"
+      }
+    }
+  ],
+  "groupCountPresets": [
+    {
+      "label": "Lights",
+      "icon": "lightbulb.fill",
+      "domain": "light",
+      "picker": "domain",
+      "row": {
+        "rowType": "groupCount",
+        "displayName": "Lights",
+        "domain": "light",
+        "iconName": "lightbulb.fill"
+      }
+    },
+    {
+      "label": "Switches",
+      "icon": "switch.2",
+      "domain": "switch",
+      "picker": "domain",
+      "row": {
+        "rowType": "groupCount",
+        "displayName": "Switches",
+        "domain": "switch",
+        "iconName": "switch.2"
+      }
+    },
+    {
+      "label": "Fans",
+      "icon": "fan.fill",
+      "domain": "fan",
+      "picker": "domain",
+      "row": {
+        "rowType": "groupCount",
+        "displayName": "Fans",
+        "domain": "fan",
+        "iconName": "fan.fill"
+      }
+    },
+    {
+      "label": "Input Booleans",
+      "icon": "togglepower",
+      "domain": "input_boolean",
+      "picker": "domain",
+      "row": {
+        "rowType": "groupCount",
+        "displayName": "Toggles",
+        "domain": "input_boolean",
+        "iconName": "togglepower"
+      }
+    },
+    {
+      "label": "Automations",
+      "icon": "gearshape.2.fill",
+      "domain": "automation",
+      "picker": "domain",
+      "row": {
+        "rowType": "groupCount",
+        "displayName": "Automations",
+        "domain": "automation",
+        "iconName": "gearshape.2.fill"
+      }
+    },
+    {
+      "label": "Covers",
+      "icon": "blinds.vertical.open",
+      "domain": "cover",
+      "picker": "domain",
+      "row": {
+        "rowType": "groupCount",
+        "displayName": "Covers",
+        "domain": "cover",
+        "iconName": "blinds.vertical.open"
+      }
+    },
+    {
+      "label": "Valves",
+      "icon": "spigot.fill",
+      "domain": "valve",
+      "picker": "domain",
+      "row": {
+        "rowType": "groupCount",
+        "displayName": "Valves",
+        "domain": "valve",
+        "iconName": "spigot.fill"
+      }
+    },
+    {
+      "label": "Locks",
+      "icon": "lock.fill",
+      "domain": "lock",
+      "picker": "domain",
+      "row": {
+        "rowType": "groupCount",
+        "displayName": "Locks",
+        "domain": "lock",
+        "iconName": "lock.fill"
+      }
+    },
+    {
+      "label": "Climate",
+      "icon": "thermometer.medium",
+      "domain": "climate",
+      "picker": "domain",
+      "row": {
+        "rowType": "groupCount",
+        "displayName": "Climate",
+        "domain": "climate",
+        "iconName": "thermometer.medium"
+      }
+    },
+    {
+      "label": "Media Players",
+      "icon": "hifispeaker.fill",
+      "domain": "media_player",
+      "picker": "domain",
+      "row": {
+        "rowType": "groupCount",
+        "displayName": "Media Players",
+        "domain": "media_player",
+        "iconName": "hifispeaker.fill"
+      }
+    },
+    {
+      "label": "Vacuums",
+      "icon": "fan.floor.fill",
+      "domain": "vacuum",
+      "picker": "domain",
+      "row": {
+        "rowType": "groupCount",
+        "displayName": "Vacuums",
+        "domain": "vacuum",
+        "iconName": "fan.floor.fill"
+      }
+    },
+    {
+      "label": "Humidifiers",
+      "icon": "humidity.fill",
+      "domain": "humidifier",
+      "picker": "domain",
+      "row": {
+        "rowType": "groupCount",
+        "displayName": "Humidifiers",
+        "domain": "humidifier",
+        "iconName": "humidity.fill"
+      }
+    },
+    {
+      "label": "Water Heaters",
+      "icon": "flame.fill",
+      "domain": "water_heater",
+      "picker": "domain",
+      "row": {
+        "rowType": "groupCount",
+        "displayName": "Water Heaters",
+        "domain": "water_heater",
+        "iconName": "flame.fill"
+      }
+    },
+    {
+      "label": "Remotes",
+      "icon": "av.remote.fill",
+      "domain": "remote",
+      "picker": "domain",
+      "row": {
+        "rowType": "groupCount",
+        "displayName": "Remotes",
+        "domain": "remote",
+        "iconName": "av.remote.fill"
+      }
+    },
+    {
+      "label": "Sirens",
+      "icon": "speaker.wave.3.fill",
+      "domain": "siren",
+      "picker": "domain",
+      "row": {
+        "rowType": "groupCount",
+        "displayName": "Sirens",
+        "domain": "siren",
+        "iconName": "speaker.wave.3.fill"
+      }
+    },
+    {
+      "label": "Binary Sensors",
+      "icon": "sensor.fill",
+      "domain": "binary_sensor",
+      "picker": "domain",
+      "row": {
+        "rowType": "groupCount",
+        "displayName": "Sensors",
+        "domain": "sensor",
+        "iconName": "sensor"
+      }
+    },
+    {
+      "label": "Alarm Panels",
+      "icon": "shield.fill",
+      "domain": "alarm_control_panel",
+      "picker": "domain",
+      "row": {
+        "rowType": "groupCount",
+        "displayName": "Alarm",
+        "domain": "alarm_control_panel",
+        "iconName": "shield.fill"
+      }
+    },
+    {
+      "label": "Persons",
+      "icon": "person.fill",
+      "domain": "person",
+      "picker": "domain",
+      "row": {
+        "rowType": "groupCount",
+        "displayName": "Persons",
+        "domain": "person",
+        "iconName": "person.fill"
+      }
+    },
+    {
+      "label": "Doors",
+      "icon": "door.left.hand.open",
+      "domain": "binary_sensor",
+      "picker": "deviceClass",
+      "deviceClassFilter": ["door"],
+      "row": {
+        "rowType": "groupCount",
+        "displayName": "Doors",
+        "domain": "binary_sensor",
+        "iconName": "door.left.hand.open"
+      }
+    },
+    {
+      "label": "Windows",
+      "icon": "window.horizontal",
+      "domain": "binary_sensor",
+      "picker": "deviceClass",
+      "deviceClassFilter": ["window"],
+      "row": {
+        "rowType": "groupCount",
+        "displayName": "Windows",
+        "domain": "binary_sensor",
+        "iconName": "window.horizontal"
+      }
+    },
+    {
+      "label": "Openings",
+      "icon": "rectangle.portrait.on.rectangle.portrait",
+      "domain": "binary_sensor",
+      "picker": "deviceClass",
+      "deviceClassFilter": ["door", "window", "opening", "garage_door"],
+      "row": {
+        "rowType": "groupCount",
+        "displayName": "Openings",
+        "domain": "binary_sensor",
+        "iconName": "rectangle.portrait.on.rectangle.portrait"
+      }
+    },
+    {
+      "label": "Garage Doors",
+      "icon": "door.garage.closed",
+      "domain": "cover",
+      "picker": "deviceClass",
+      "deviceClassFilter": ["garage"],
+      "row": {
+        "rowType": "groupCount",
+        "displayName": "Garage Doors",
+        "domain": "cover",
+        "iconName": "door.garage.closed"
+      }
+    },
+    {
+      "label": "Motion",
+      "icon": "figure.walk.motion",
+      "domain": "binary_sensor",
+      "picker": "deviceClass",
+      "deviceClassFilter": ["motion"],
+      "row": {
+        "rowType": "groupCount",
+        "displayName": "Motion",
+        "domain": "binary_sensor",
+        "iconName": "figure.walk.motion"
+      }
+    },
+    {
+      "label": "Occupancy",
+      "icon": "person.fill",
+      "domain": "binary_sensor",
+      "picker": "deviceClass",
+      "deviceClassFilter": ["occupancy", "presence"],
+      "row": {
+        "rowType": "groupCount",
+        "displayName": "Occupancy",
+        "domain": "binary_sensor",
+        "iconName": "person.fill"
+      }
+    },
+    {
+      "label": "Smoke & Gas",
+      "icon": "smoke.fill",
+      "domain": "binary_sensor",
+      "picker": "deviceClass",
+      "deviceClassFilter": ["smoke", "gas", "carbon_monoxide"],
+      "row": {
+        "rowType": "groupCount",
+        "displayName": "Smoke & Gas",
+        "domain": "binary_sensor",
+        "iconName": "smoke.fill"
+      }
+    },
+    {
+      "label": "Batteries",
+      "icon": "battery.25percent",
+      "domain": "sensor",
+      "picker": "deviceClass",
+      "deviceClassFilter": ["battery"],
+      "maxNumericValue": 20,
+      "row": {
+        "rowType": "groupCount",
+        "displayName": "Batteries",
+        "domain": "sensor",
+        "iconName": "battery.25percent"
+      }
+    },
+    {
+      "label": "Temperatures",
+      "icon": "thermometer.medium",
+      "domain": "sensor",
+      "picker": "deviceClass",
+      "deviceClassFilter": ["temperature"],
+      "row": {
+        "rowType": "groupCount",
+        "displayName": "Temperatures",
+        "domain": "sensor",
+        "iconName": "thermometer.medium"
+      }
+    },
+    {
+      "label": "Humidity",
+      "icon": "humidity.fill",
+      "domain": "sensor",
+      "picker": "deviceClass",
+      "deviceClassFilter": ["humidity"],
+      "row": {
+        "rowType": "groupCount",
+        "displayName": "Humidity",
+        "domain": "sensor",
+        "iconName": "humidity.fill"
+      }
+    }
+  ],
+  "fetchPlan": {
+    "rule": "visible rows only: an entity row adds entityId when not empty; a group count adds groupEntityIds; a dynamic list adds groupEntityIds unless dynamicMode is all, when it adds its domain with deviceClassFilter; one domain asked twice gets the sorted union of its classes, and a whole-domain ask wins"
+  },
+  "fill": {
+    "source": "StatusPageSnippetView.resolvedRows and groupCountValue (watch only; transcribed, not generated)",
+    "hiddenRows": "a row with isHidden true is skipped, a hidden header too",
+    "entity": "one row: displayName, iconName, the value of entityId's state (display)",
+    "sectionHeader": "displayName uppercased, aligned by headerAlignment (absent is leading); no value",
+    "groupCount": {
+      "count": "the groupEntityIds whose state matches the row (matchFilter); an entity with no state does not count",
+      "value": "<count> <filterState, else activeLabel for the domain>",
+      "numeric": "domain sensor with maxNumericValue: count the states that parse as a number at or below it; value <count> <filterState, else low>"
+    },
+    "dynamicList": {
+      "candidates": {
+        "all": "every fetched entity whose id starts with <domain>., sorted by entity id",
+        "specific": "groupEntityIds in their order"
+      },
+      "filters": [
+        "deviceClassFilter not empty: keep entities whose device_class attribute is in it (no device_class: dropped)",
+        "an entity with no state: dropped",
+        "showAllStates not true: keep states that match the row (matchFilter)",
+        "maxNumericValue set: keep states that parse as a number at or below it"
+      ],
+      "row": "each kept entity is an entity row: friendly_name, else the part of the id after the dot; the list's iconName and domain"
+    },
+    "twoColumn": "headers take the full width; other rows pair up in order; a row left alone before a header or at the end takes the left half",
+    "numberParse": "Swift Double(String): decimal or exponent with an optional sign, a leading or trailing point, hexadecimal (0x1A), inf and nan; no spaces"
+  },
+  "display": {
+    "source": "StatusPageSnippetView.formatValue (watch only; transcribed, not generated)",
+    "noState": "N/A",
+    "domains": {
+      "lock": {
+        "locked": "Locked",
+        "*": "Unlocked"
+      },
+      "alarm_control_panel": {
+        "disarmed": "Disarmed",
+        "armed_home": "Armed Home",
+        "armed_away": "Armed Away",
+        "armed_night": "Armed Night",
+        "armed_vacation": "Armed Vacation",
+        "armed_custom_bypass": "Custom Bypass",
+        "pending": "Pending",
+        "arming": "Arming",
+        "disarming": "Disarming",
+        "triggered": "Triggered!",
+        "*": "Disarmed"
+      },
+      "climate": {
+        "attribute": "current_temperature",
+        "value": "rounding.climate, then unit_of_measurement (else °) with no space",
+        "noAttribute": "the state, capitalized"
+      },
+      "light": {
+        "on": "On",
+        "*": "Off"
+      },
+      "switch": {
+        "on": "On",
+        "*": "Off"
+      },
+      "input_boolean": {
+        "on": "On",
+        "*": "Off"
+      },
+      "fan": {
+        "on": "On",
+        "*": "Off"
+      },
+      "cover": "coverValue with the current_position attribute",
+      "valve": "coverValue with the current_position attribute"
+    },
+    "default": {
+      "unit": "unit_of_measurement not empty: the value (rounding.default) then the unit, with a space unless the unit starts with ° or %; the words below are not used then",
+      "words": {
+        "on": "On",
+        "off": "Off",
+        "home": "Home",
+        "not_home": "Away",
+        "unavailable": "N/A",
+        "unknown": "N/A"
+      },
+      "wordsCompare": "the state lowercased",
+      "otherwise": "the value (rounding.default)"
+    }
+  },
+  "rounding": {
+    "source": "StatusPageSnippetView.formattedNumericString and the climate case (watch only; transcribed)",
+    "default": "roundNumericValues and the state parses as a number: the nearest whole number, halves away from zero (2.5 is 3, -2.5 is -3); otherwise the state as written",
+    "climate": "roundNumericValues: the nearest whole number, halves away from zero; off: a whole value without decimals, else one decimal",
+    "halfRule": "away from zero, unlike JavaScript's Math.round",
+    "trap": "a state of inf, nan or beyond the Int range traps the watch when rounding is on; the panel should show the state as written"
+  },
+  "colors": {
+    "source": "StatusPageSnippetView.defaultDomainColor (watch only; transcribed); SwiftUI color names",
+    "lock": {
+      "locked": "green",
+      "*": "orange"
+    },
+    "alarm_control_panel": {
+      "triggered": "red",
+      "disarmed": "orange",
+      "*": "green"
+    },
+    "climate": {
+      "*": "cyan"
+    },
+    "light": {
+      "on": "yellow",
+      "*": "gray"
+    },
+    "cover": {
+      "closed": "green",
+      "open": "orange",
+      "opening": "orange",
+      "closing": "orange",
+      "*": "secondary"
+    },
+    "*": {
+      "*": "secondary"
+    },
+    "groupCount": "the domain's color for the state on"
+  },
+  "cases": [
+    "rules/match-filter-state.json",
+    "rules/cover-value.json",
+    "rules/capitalized.json",
+    "rules/numeric-rounding.json",
+    "rules/fetch-plan.json"
+  ]
+}

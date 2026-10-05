@@ -1,0 +1,42 @@
+{
+  "name": "Foundation's capitalized, which coverValue uses for an unknown state and the climate value for a state without current_temperature",
+  "function": "String.capitalized",
+  "cases": [
+    {
+      "input": "open",
+      "value": "Open"
+    },
+    {
+      "input": "heat_cool",
+      "value": "Heat_Cool"
+    },
+    {
+      "input": "fan_only",
+      "value": "Fan_Only"
+    },
+    {
+      "input": "heat cool",
+      "value": "Heat Cool"
+    },
+    {
+      "input": "half-open",
+      "value": "Half-Open"
+    },
+    {
+      "input": "ÉTÉ",
+      "value": "Été"
+    },
+    {
+      "input": "2nd floor",
+      "value": "2Nd Floor"
+    },
+    {
+      "input": "already Mixed",
+      "value": "Already Mixed"
+    },
+    {
+      "input": "",
+      "value": ""
+    }
+  ]
+}

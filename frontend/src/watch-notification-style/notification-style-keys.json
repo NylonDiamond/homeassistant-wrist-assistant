@@ -1,0 +1,1108 @@
+{
+  "version": 1,
+  "note": "Generated from the iPhone app's Swift code by WatchNotificationStyleDocumentTests; do not edit. Regenerate notification-style-keys.json with TEST_RUNNER_WA_UPDATE_FIXTURES=1 ./scripts/test.sh WatchNotificationStyleDocumentTests in the app repository.",
+  "enums": {
+    "ButtonFill": ["tinted", "solid", "outlined", "glass"],
+    "AccentColor": [
+      "none",
+      "followTheme",
+      "blue",
+      "indigo",
+      "purple",
+      "pink",
+      "red",
+      "orange",
+      "yellow",
+      "green",
+      "teal",
+      "cyan",
+      "mint"
+    ],
+    "CornerStyle": ["rounded", "sharp", "square"],
+    "BackgroundStyle": ["black", "glass"],
+    "ButtonSize": ["small", "medium", "large", "extraLarge"],
+    "StateBadgePosition": ["inside", "below"],
+    "StateBadgeSize": ["small", "medium", "large"],
+    "TapAnimation": ["none", "pulse", "flash", "bounce"],
+    "DeliveryMode": ["fast", "reliable"]
+  },
+  "labels": {
+    "ButtonFill": {
+      "tinted": "Tinted",
+      "solid": "Solid",
+      "outlined": "Outlined",
+      "glass": "Glass"
+    },
+    "AccentColor": {
+      "none": "Default",
+      "followTheme": "Follow Theme",
+      "blue": "Blue",
+      "indigo": "Indigo",
+      "purple": "Purple",
+      "pink": "Pink",
+      "red": "Red",
+      "orange": "Orange",
+      "yellow": "Yellow",
+      "green": "Green",
+      "teal": "Teal",
+      "cyan": "Cyan",
+      "mint": "Mint"
+    },
+    "CornerStyle": {
+      "rounded": "Rounded",
+      "sharp": "Sharp",
+      "square": "Square"
+    },
+    "BackgroundStyle": {
+      "black": "Black",
+      "glass": "Glass"
+    },
+    "ButtonSize": {
+      "small": "Small",
+      "medium": "Medium",
+      "large": "Large",
+      "extraLarge": "Extra Large"
+    },
+    "StateBadgePosition": {
+      "inside": "Inside Button",
+      "below": "Below Button"
+    },
+    "StateBadgeSize": {
+      "small": "S",
+      "medium": "M",
+      "large": "L"
+    },
+    "TapAnimation": {
+      "none": "None",
+      "pulse": "Pulse",
+      "flash": "Flash",
+      "bounce": "Bounce"
+    },
+    "DeliveryMode": {
+      "fast": "Fast",
+      "reliable": "Reliable"
+    }
+  },
+  "sections": [
+    {
+      "id": "delivery",
+      "label": "Notifications",
+      "groups": [
+        {
+          "label": "Delivery",
+          "keys": ["storedDeliveryMode"]
+        }
+      ]
+    },
+    {
+      "id": "notifications",
+      "label": "Notification Style",
+      "groups": [
+        {
+          "label": "Style",
+          "keys": ["backgroundStyle", "buttonFill", "buttonSize", "cornerStyle"]
+        },
+        {
+          "label": "Color",
+          "keys": ["useEntityTintColor", "accentColor"]
+        },
+        {
+          "label": "Content",
+          "keys": [
+            "showButtonIcons",
+            "showStateBadge",
+            "stateBadgePosition",
+            "stateBadgeSize",
+            "stateBadgePill"
+          ]
+        },
+        {
+          "label": "Animation",
+          "keys": ["tapAnimation"]
+        },
+        {
+          "label": "Sound",
+          "keys": ["buttonPressSound"]
+        }
+      ]
+    },
+    {
+      "id": "sounds",
+      "label": "Sounds",
+      "groups": [
+        {
+          "label": "Volume",
+          "keys": ["soundVolume"]
+        },
+        {
+          "label": "Sounds",
+          "keys": [
+            "tileTapSound",
+            "menuOpenSound",
+            "slideToIconSound",
+            "arcSlideTickSound",
+            "successSound",
+            "cancelSound"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "wristWebhooks",
+      "label": "Wrist Webhooks",
+      "groups": [
+        {
+          "label": "Notification Appearance",
+          "keys": ["storedWebhookButtonSize"]
+        }
+      ]
+    }
+  ],
+  "keys": {
+    "schemaVersion": {
+      "type": "int",
+      "optional": true,
+      "default": 1
+    },
+    "buttonFill": {
+      "type": "enum",
+      "enum": "ButtonFill",
+      "required": true,
+      "default": "tinted",
+      "section": "notifications",
+      "group": "Style",
+      "label": "Button Style"
+    },
+    "accentColor": {
+      "type": "enum",
+      "enum": "AccentColor",
+      "required": true,
+      "default": "none",
+      "section": "notifications",
+      "group": "Color",
+      "label": "Color",
+      "shownWhen": "useEntityTintColor is false"
+    },
+    "useEntityTintColor": {
+      "type": "bool",
+      "required": true,
+      "default": true,
+      "section": "notifications",
+      "group": "Color",
+      "label": "Match Entity Color",
+      "help": "Tint each row with its domain icon color"
+    },
+    "cornerStyle": {
+      "type": "enum",
+      "enum": "CornerStyle",
+      "required": true,
+      "default": "sharp",
+      "section": "notifications",
+      "group": "Style",
+      "label": "Corner Style"
+    },
+    "backgroundStyle": {
+      "type": "enum",
+      "enum": "BackgroundStyle",
+      "required": true,
+      "default": "black",
+      "section": "notifications",
+      "group": "Style",
+      "label": "Background"
+    },
+    "buttonSize": {
+      "type": "enum",
+      "enum": "ButtonSize",
+      "required": true,
+      "strict": false,
+      "default": "medium",
+      "section": "notifications",
+      "group": "Style",
+      "label": "Button Size"
+    },
+    "showButtonIcons": {
+      "type": "bool",
+      "required": true,
+      "default": true,
+      "section": "notifications",
+      "group": "Content",
+      "label": "Show Icons",
+      "help": "Display icons on notification buttons"
+    },
+    "showStateBadge": {
+      "type": "bool",
+      "required": true,
+      "default": false,
+      "section": "notifications",
+      "group": "Content",
+      "label": "State Badge",
+      "help": "Show entity state on buttons"
+    },
+    "stateBadgePosition": {
+      "type": "enum",
+      "enum": "StateBadgePosition",
+      "required": true,
+      "default": "inside",
+      "section": "notifications",
+      "group": "Content",
+      "label": "Position",
+      "shownWhen": "showStateBadge is true"
+    },
+    "stateBadgeSize": {
+      "type": "enum",
+      "enum": "StateBadgeSize",
+      "required": true,
+      "default": "medium",
+      "section": "notifications",
+      "group": "Content",
+      "label": "Size",
+      "shownWhen": "showStateBadge is true"
+    },
+    "stateBadgePill": {
+      "type": "bool",
+      "required": true,
+      "default": true,
+      "section": "notifications",
+      "group": "Content",
+      "label": "Pill",
+      "shownWhen": "showStateBadge is true"
+    },
+    "tapAnimation": {
+      "type": "enum",
+      "enum": "TapAnimation",
+      "required": true,
+      "default": "bounce",
+      "section": "notifications",
+      "group": "Animation",
+      "label": "Tap Animation"
+    },
+    "buttonPressSound": {
+      "type": "sound",
+      "optional": true,
+      "default": "click_003",
+      "absentReadsAs": null,
+      "section": "notifications",
+      "group": "Sound",
+      "label": "Button Press Sound",
+      "help": "Plays alongside haptic feedback after a successful action tap.",
+      "sound": true
+    },
+    "tileTapSound": {
+      "type": "sound",
+      "optional": true,
+      "default": "click_003",
+      "absentReadsAs": null,
+      "section": "sounds",
+      "group": "Sounds",
+      "label": "Tile Tap",
+      "help": "Sound when tapping a tile on the grid.",
+      "sound": true
+    },
+    "menuOpenSound": {
+      "type": "sound",
+      "optional": true,
+      "default": "click_005",
+      "absentReadsAs": null,
+      "section": "sounds",
+      "group": "Sounds",
+      "label": "Menu Open",
+      "help": "Sound when quick menu or page switcher activates.",
+      "sound": true
+    },
+    "slideToIconSound": {
+      "type": "sound",
+      "optional": true,
+      "default": "click_003",
+      "absentReadsAs": null,
+      "section": "sounds",
+      "group": "Sounds",
+      "label": "Slide to Icon",
+      "help": "Sound when sliding over icons in quick menus, page switcher, and sub-menus.",
+      "sound": true
+    },
+    "arcSlideTickSound": {
+      "type": "sound",
+      "optional": true,
+      "default": "bong_001",
+      "absentReadsAs": null,
+      "section": "sounds",
+      "group": "Sounds",
+      "label": "Arc Slider Tick",
+      "help": "Tick sound every 5% while dragging brightness, temperature, and other arc sliders.",
+      "sound": true
+    },
+    "successSound": {
+      "type": "sound",
+      "optional": true,
+      "default": "drop_003",
+      "absentReadsAs": null,
+      "section": "sounds",
+      "group": "Sounds",
+      "label": "Success / Confirm",
+      "help": "Played after releasing an arc slider, selecting a page, or confirming an action.",
+      "sound": true
+    },
+    "cancelSound": {
+      "type": "sound",
+      "optional": true,
+      "default": "select_006",
+      "absentReadsAs": null,
+      "section": "sounds",
+      "group": "Sounds",
+      "label": "Cancel / Dismiss",
+      "help": "Played when cancelling via the red X zone or dismissing without a selection.",
+      "sound": true
+    },
+    "soundVolume": {
+      "type": "number",
+      "required": true,
+      "default": 0.05,
+      "section": "sounds",
+      "group": "Volume",
+      "label": "Volume"
+    },
+    "storedDeliveryMode": {
+      "type": "enum",
+      "enum": "DeliveryMode",
+      "optional": true,
+      "default": null,
+      "section": "delivery",
+      "group": "Delivery",
+      "label": "Mode",
+      "help": "Fast arrives in about a second but needs your iPhone nearby. Reliable works even without your iPhone, but when your iPhone is nearby an Apple quirk delays it up to 15 seconds."
+    },
+    "storedWebhookButtonSize": {
+      "type": "enum",
+      "enum": "ButtonSize",
+      "optional": true,
+      "strict": false,
+      "default": null,
+      "section": "wristWebhooks",
+      "group": "Notification Appearance",
+      "label": "Button Size",
+      "help": "How large the action buttons on webhook notifications appear, on both your watch and iPhone."
+    }
+  },
+  "volume": {
+    "key": "soundVolume",
+    "min": 0,
+    "max": 1,
+    "step": 0.05,
+    "default": 0.05,
+    "valueLabel": "the value times 100, whole, then %; Silent at or below silentBelow",
+    "silentBelow": 0.0001,
+    "presets": [
+      {
+        "label": "Silent",
+        "value": 0
+      },
+      {
+        "label": "Quiet",
+        "value": 0.05
+      },
+      {
+        "label": "Medium",
+        "value": 0.3
+      },
+      {
+        "label": "Loud",
+        "value": 0.8
+      }
+    ]
+  },
+  "sounds": {
+    "silentKey": "__silent__",
+    "silentLabel": "Silent",
+    "note": "A sound key holds a file name from categories, or silentKey for no sound. An absent key is not silent: it plays absentPlays. A soundVolume of 0 plays no sound at all.",
+    "keys": {
+      "buttonPressSound": {
+        "defaultLabel": "Click 3",
+        "silentOffered": false,
+        "absentPlays": "nothing"
+      },
+      "tileTapSound": {
+        "defaultLabel": "Click 3",
+        "silentOffered": true,
+        "absentPlays": "buttonPressSound, else nothing"
+      },
+      "menuOpenSound": {
+        "defaultLabel": "Click 5",
+        "silentOffered": true,
+        "absentPlays": "click_005"
+      },
+      "slideToIconSound": {
+        "defaultLabel": "Click 3",
+        "silentOffered": true,
+        "absentPlays": "click_003"
+      },
+      "arcSlideTickSound": {
+        "defaultLabel": "Bong",
+        "silentOffered": true,
+        "absentPlays": "buttonPressSound, else nothing"
+      },
+      "successSound": {
+        "defaultLabel": "Drop 3",
+        "silentOffered": true,
+        "absentPlays": "drop_003"
+      },
+      "cancelSound": {
+        "defaultLabel": "Select 6",
+        "silentOffered": true,
+        "absentPlays": "select_006"
+      }
+    },
+    "categories": [
+      {
+        "id": "short",
+        "label": "Short",
+        "sounds": [
+          {
+            "file": "click_001",
+            "label": "Click 1"
+          },
+          {
+            "file": "click_002",
+            "label": "Click 2"
+          },
+          {
+            "file": "click_003",
+            "label": "Click 3"
+          },
+          {
+            "file": "click_004",
+            "label": "Click 4"
+          },
+          {
+            "file": "click_005",
+            "label": "Click 5"
+          },
+          {
+            "file": "tick_001",
+            "label": "Tick 1"
+          },
+          {
+            "file": "tick_002",
+            "label": "Tick 2"
+          },
+          {
+            "file": "tick_004",
+            "label": "Tick 4"
+          },
+          {
+            "file": "toggle_001",
+            "label": "Tap Toggle 1"
+          },
+          {
+            "file": "toggle_002",
+            "label": "Tap Toggle 2"
+          },
+          {
+            "file": "toggle_003",
+            "label": "Tap Toggle 3"
+          },
+          {
+            "file": "toggle_004",
+            "label": "Tap Toggle 4"
+          },
+          {
+            "file": "switch_001",
+            "label": "Switch 1"
+          },
+          {
+            "file": "switch_002",
+            "label": "Switch 2"
+          },
+          {
+            "file": "switch_003",
+            "label": "Switch 3"
+          },
+          {
+            "file": "switch_004",
+            "label": "Switch 4"
+          },
+          {
+            "file": "switch_005",
+            "label": "Switch 5"
+          },
+          {
+            "file": "switch_006",
+            "label": "Switch 6"
+          },
+          {
+            "file": "switch_007",
+            "label": "Switch 7"
+          },
+          {
+            "file": "select_001",
+            "label": "Select 1"
+          },
+          {
+            "file": "select_002",
+            "label": "Select 2"
+          },
+          {
+            "file": "select_003",
+            "label": "Select 3"
+          },
+          {
+            "file": "select_004",
+            "label": "Select 4"
+          },
+          {
+            "file": "select_005",
+            "label": "Select 5"
+          },
+          {
+            "file": "select_006",
+            "label": "Select 6"
+          },
+          {
+            "file": "select_007",
+            "label": "Select 7"
+          },
+          {
+            "file": "select_008",
+            "label": "Select 8"
+          },
+          {
+            "file": "open_001",
+            "label": "Open 1"
+          },
+          {
+            "file": "open_002",
+            "label": "Open 2"
+          },
+          {
+            "file": "open_003",
+            "label": "Open 3"
+          },
+          {
+            "file": "open_004",
+            "label": "Open 4"
+          },
+          {
+            "file": "close_001",
+            "label": "Close 1"
+          },
+          {
+            "file": "close_002",
+            "label": "Close 2"
+          },
+          {
+            "file": "close_003",
+            "label": "Close 3"
+          },
+          {
+            "file": "close_004",
+            "label": "Close 4"
+          },
+          {
+            "file": "back_001",
+            "label": "Back 1"
+          },
+          {
+            "file": "back_002",
+            "label": "Back 2"
+          },
+          {
+            "file": "back_003",
+            "label": "Back 3"
+          },
+          {
+            "file": "back_004",
+            "label": "Back 4"
+          },
+          {
+            "file": "scroll_001",
+            "label": "Scroll 1"
+          },
+          {
+            "file": "scroll_002",
+            "label": "Scroll 2"
+          },
+          {
+            "file": "scroll_003",
+            "label": "Scroll 3"
+          },
+          {
+            "file": "scroll_004",
+            "label": "Scroll 4"
+          },
+          {
+            "file": "scroll_005",
+            "label": "Scroll 5"
+          },
+          {
+            "file": "maximize_001",
+            "label": "Maximize 1"
+          },
+          {
+            "file": "maximize_002",
+            "label": "Maximize 2"
+          },
+          {
+            "file": "maximize_003",
+            "label": "Maximize 3"
+          },
+          {
+            "file": "maximize_004",
+            "label": "Maximize 4"
+          },
+          {
+            "file": "maximize_005",
+            "label": "Maximize 5"
+          },
+          {
+            "file": "maximize_006",
+            "label": "Maximize 6"
+          },
+          {
+            "file": "maximize_007",
+            "label": "Maximize 7"
+          },
+          {
+            "file": "maximize_008",
+            "label": "Maximize 8"
+          },
+          {
+            "file": "maximize_009",
+            "label": "Maximize 9"
+          },
+          {
+            "file": "minimize_001",
+            "label": "Minimize 1"
+          },
+          {
+            "file": "minimize_002",
+            "label": "Minimize 2"
+          },
+          {
+            "file": "minimize_003",
+            "label": "Minimize 3"
+          },
+          {
+            "file": "minimize_004",
+            "label": "Minimize 4"
+          },
+          {
+            "file": "minimize_005",
+            "label": "Minimize 5"
+          },
+          {
+            "file": "minimize_006",
+            "label": "Minimize 6"
+          },
+          {
+            "file": "minimize_007",
+            "label": "Minimize 7"
+          },
+          {
+            "file": "minimize_008",
+            "label": "Minimize 8"
+          },
+          {
+            "file": "minimize_009",
+            "label": "Minimize 9"
+          },
+          {
+            "file": "confirmation_001",
+            "label": "Confirmation 1"
+          },
+          {
+            "file": "confirmation_002",
+            "label": "Confirmation 2"
+          },
+          {
+            "file": "confirmation_003",
+            "label": "Confirmation 3"
+          },
+          {
+            "file": "confirmation_004",
+            "label": "Confirmation 4"
+          },
+          {
+            "file": "error_001",
+            "label": "Error 1"
+          },
+          {
+            "file": "error_002",
+            "label": "Error 2"
+          },
+          {
+            "file": "error_003",
+            "label": "Error 3"
+          },
+          {
+            "file": "error_004",
+            "label": "Error 4"
+          },
+          {
+            "file": "error_005",
+            "label": "Error 5"
+          },
+          {
+            "file": "error_006",
+            "label": "Error 6"
+          },
+          {
+            "file": "error_007",
+            "label": "Error 7"
+          },
+          {
+            "file": "error_008",
+            "label": "Error 8"
+          },
+          {
+            "file": "question_001",
+            "label": "Question 1"
+          },
+          {
+            "file": "question_002",
+            "label": "Question 2"
+          },
+          {
+            "file": "question_003",
+            "label": "Question 3"
+          },
+          {
+            "file": "question_004",
+            "label": "Question 4"
+          },
+          {
+            "file": "drop_001",
+            "label": "Drop 1"
+          },
+          {
+            "file": "drop_002",
+            "label": "Drop 2"
+          },
+          {
+            "file": "drop_003",
+            "label": "Drop 3"
+          },
+          {
+            "file": "drop_004",
+            "label": "Drop 4"
+          },
+          {
+            "file": "pluck_001",
+            "label": "Pluck 1"
+          },
+          {
+            "file": "pluck_002",
+            "label": "Pluck 2"
+          },
+          {
+            "file": "bong_001",
+            "label": "Bong"
+          },
+          {
+            "file": "glass_001",
+            "label": "Glass 1"
+          },
+          {
+            "file": "glass_002",
+            "label": "Glass 2"
+          },
+          {
+            "file": "glass_003",
+            "label": "Glass 3"
+          },
+          {
+            "file": "glass_004",
+            "label": "Glass 4"
+          },
+          {
+            "file": "glass_005",
+            "label": "Glass 5"
+          },
+          {
+            "file": "glass_006",
+            "label": "Glass 6"
+          },
+          {
+            "file": "glitch_001",
+            "label": "Glitch 1"
+          },
+          {
+            "file": "glitch_002",
+            "label": "Glitch 2"
+          },
+          {
+            "file": "glitch_003",
+            "label": "Glitch 3"
+          },
+          {
+            "file": "glitch_004",
+            "label": "Glitch 4"
+          },
+          {
+            "file": "scratch_001",
+            "label": "Scratch 1"
+          },
+          {
+            "file": "scratch_002",
+            "label": "Scratch 2"
+          },
+          {
+            "file": "scratch_003",
+            "label": "Scratch 3"
+          },
+          {
+            "file": "scratch_004",
+            "label": "Scratch 4"
+          },
+          {
+            "file": "scratch_005",
+            "label": "Scratch 5"
+          }
+        ]
+      },
+      {
+        "id": "longer",
+        "label": "Longer",
+        "sounds": [
+          {
+            "file": "Access-Allowed",
+            "label": "Access Allowed"
+          },
+          {
+            "file": "Arabian-Harp",
+            "label": "Arabian Harp"
+          },
+          {
+            "file": "Bell",
+            "label": "Bell"
+          },
+          {
+            "file": "Clear-Announce",
+            "label": "Clear Announce"
+          },
+          {
+            "file": "Confirmation",
+            "label": "Confirmation"
+          },
+          {
+            "file": "Correct-Answer",
+            "label": "Correct Answer"
+          },
+          {
+            "file": "Correct-Answer-Reward",
+            "label": "Correct Answer Reward"
+          },
+          {
+            "file": "Doorbell-Single",
+            "label": "Doorbell Single"
+          },
+          {
+            "file": "Doorbell-Tone",
+            "label": "Doorbell Tone"
+          },
+          {
+            "file": "Elevator-Tone",
+            "label": "Elevator Tone"
+          },
+          {
+            "file": "Guitar-Alert",
+            "label": "Guitar Alert"
+          },
+          {
+            "file": "Happy-Bells",
+            "label": "Happy Bells"
+          },
+          {
+            "file": "Interface-Back",
+            "label": "Interface Back"
+          },
+          {
+            "file": "Interface-Remove",
+            "label": "Interface Remove"
+          },
+          {
+            "file": "Interface-Start",
+            "label": "Interface Start"
+          },
+          {
+            "file": "Long-Pop",
+            "label": "Long Pop"
+          },
+          {
+            "file": "Magic-Marimba",
+            "label": "Magic Marimba"
+          },
+          {
+            "file": "Magic-Ring",
+            "label": "Magic Ring"
+          },
+          {
+            "file": "Positive",
+            "label": "Positive"
+          },
+          {
+            "file": "Wrong-Answer",
+            "label": "Wrong Answer"
+          }
+        ]
+      }
+    ],
+    "bundled": [
+      "ATM-Keypress",
+      "Access-Allowed",
+      "Arabian-Harp",
+      "Bell",
+      "Bubble-Pop",
+      "Clear-Announce",
+      "Confirmation",
+      "Correct-Answer",
+      "Correct-Answer-Reward",
+      "Digital-Quick",
+      "Doorbell-Single",
+      "Doorbell-Tone",
+      "Dry-Pop",
+      "Elevator-Tone",
+      "Gaming-Lock",
+      "Guitar-Alert",
+      "Happy-Bells",
+      "Interface-Back",
+      "Interface-Remove",
+      "Interface-Start",
+      "Light-Button",
+      "Long-Pop",
+      "Magic-Marimba",
+      "Magic-Ring",
+      "Option-Select",
+      "Positive",
+      "Sci-Fi-Click",
+      "Tile-Reveal",
+      "Wrong-Answer",
+      "back_001",
+      "back_002",
+      "back_003",
+      "back_004",
+      "bong_001",
+      "click_001",
+      "click_002",
+      "click_003",
+      "click_004",
+      "click_005",
+      "close_001",
+      "close_002",
+      "close_003",
+      "close_004",
+      "confirmation_001",
+      "confirmation_002",
+      "confirmation_003",
+      "confirmation_004",
+      "drop_001",
+      "drop_002",
+      "drop_003",
+      "drop_004",
+      "error_001",
+      "error_002",
+      "error_003",
+      "error_004",
+      "error_005",
+      "error_006",
+      "error_007",
+      "error_008",
+      "glass_001",
+      "glass_002",
+      "glass_003",
+      "glass_004",
+      "glass_005",
+      "glass_006",
+      "glitch_001",
+      "glitch_002",
+      "glitch_003",
+      "glitch_004",
+      "maximize_001",
+      "maximize_002",
+      "maximize_003",
+      "maximize_004",
+      "maximize_005",
+      "maximize_006",
+      "maximize_007",
+      "maximize_008",
+      "maximize_009",
+      "minimize_001",
+      "minimize_002",
+      "minimize_003",
+      "minimize_004",
+      "minimize_005",
+      "minimize_006",
+      "minimize_007",
+      "minimize_008",
+      "minimize_009",
+      "open_001",
+      "open_002",
+      "open_003",
+      "open_004",
+      "pluck_001",
+      "pluck_002",
+      "question_001",
+      "question_002",
+      "question_003",
+      "question_004",
+      "scratch_001",
+      "scratch_002",
+      "scratch_003",
+      "scratch_004",
+      "scratch_005",
+      "scroll_001",
+      "scroll_002",
+      "scroll_003",
+      "scroll_004",
+      "scroll_005",
+      "select_001",
+      "select_002",
+      "select_003",
+      "select_004",
+      "select_005",
+      "select_006",
+      "select_007",
+      "select_008",
+      "switch_001",
+      "switch_002",
+      "switch_003",
+      "switch_004",
+      "switch_005",
+      "switch_006",
+      "switch_007",
+      "tick_001",
+      "tick_002",
+      "tick_004",
+      "toggle_001",
+      "toggle_002",
+      "toggle_003",
+      "toggle_004"
+    ],
+    "systemHaptics": [
+      "system.click",
+      "system.directionUp",
+      "system.directionDown",
+      "system.success",
+      "system.failure",
+      "system.notification",
+      "system.retry",
+      "system.start",
+      "system.stop"
+    ]
+  },
+  "delivery": {
+    "key": "storedDeliveryMode",
+    "absentReadsAs": "fast",
+    "wire": {
+      "fast": "mirror",
+      "reliable": "direct"
+    },
+    "details": {
+      "fast": "~1s · needs iPhone nearby",
+      "reliable": "Works without iPhone · up to 15s when it's nearby"
+    },
+    "note": "Home Assistant routes notifications on the wire value the watch reports on each delta poll (delivery_mode)."
+  },
+  "webhookButtonSize": {
+    "key": "storedWebhookButtonSize",
+    "absentReadsAs": "medium"
+  }
+}

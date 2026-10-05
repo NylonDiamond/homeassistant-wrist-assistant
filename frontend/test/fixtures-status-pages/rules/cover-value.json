@@ -1,0 +1,276 @@
+{
+  "name": "A cover or valve row's value from its state and current_position",
+  "function": "StatusRowConfig.coverValue",
+  "cases": [
+    {
+      "state": "open",
+      "position": null,
+      "value": "Open"
+    },
+    {
+      "state": "open",
+      "position": 0,
+      "value": "Open"
+    },
+    {
+      "state": "open",
+      "position": 1,
+      "value": "1%"
+    },
+    {
+      "state": "open",
+      "position": 52,
+      "value": "52%"
+    },
+    {
+      "state": "open",
+      "position": 99,
+      "value": "99%"
+    },
+    {
+      "state": "open",
+      "position": 100,
+      "value": "Open"
+    },
+    {
+      "state": "closed",
+      "position": null,
+      "value": "Closed"
+    },
+    {
+      "state": "closed",
+      "position": 0,
+      "value": "Closed"
+    },
+    {
+      "state": "closed",
+      "position": 1,
+      "value": "Closed"
+    },
+    {
+      "state": "closed",
+      "position": 52,
+      "value": "Closed"
+    },
+    {
+      "state": "closed",
+      "position": 99,
+      "value": "Closed"
+    },
+    {
+      "state": "closed",
+      "position": 100,
+      "value": "Closed"
+    },
+    {
+      "state": "opening",
+      "position": null,
+      "value": "Opening"
+    },
+    {
+      "state": "opening",
+      "position": 0,
+      "value": "Opening"
+    },
+    {
+      "state": "opening",
+      "position": 1,
+      "value": "1%"
+    },
+    {
+      "state": "opening",
+      "position": 52,
+      "value": "52%"
+    },
+    {
+      "state": "opening",
+      "position": 99,
+      "value": "99%"
+    },
+    {
+      "state": "opening",
+      "position": 100,
+      "value": "Opening"
+    },
+    {
+      "state": "closing",
+      "position": null,
+      "value": "Closing"
+    },
+    {
+      "state": "closing",
+      "position": 0,
+      "value": "Closing"
+    },
+    {
+      "state": "closing",
+      "position": 1,
+      "value": "1%"
+    },
+    {
+      "state": "closing",
+      "position": 52,
+      "value": "52%"
+    },
+    {
+      "state": "closing",
+      "position": 99,
+      "value": "99%"
+    },
+    {
+      "state": "closing",
+      "position": 100,
+      "value": "Closing"
+    },
+    {
+      "state": "stopped",
+      "position": null,
+      "value": "Stopped"
+    },
+    {
+      "state": "stopped",
+      "position": 0,
+      "value": "Stopped"
+    },
+    {
+      "state": "stopped",
+      "position": 1,
+      "value": "1%"
+    },
+    {
+      "state": "stopped",
+      "position": 52,
+      "value": "52%"
+    },
+    {
+      "state": "stopped",
+      "position": 99,
+      "value": "99%"
+    },
+    {
+      "state": "stopped",
+      "position": 100,
+      "value": "Stopped"
+    },
+    {
+      "state": "unavailable",
+      "position": null,
+      "value": "N/A"
+    },
+    {
+      "state": "unavailable",
+      "position": 0,
+      "value": "N/A"
+    },
+    {
+      "state": "unavailable",
+      "position": 1,
+      "value": "N/A"
+    },
+    {
+      "state": "unavailable",
+      "position": 52,
+      "value": "N/A"
+    },
+    {
+      "state": "unavailable",
+      "position": 99,
+      "value": "N/A"
+    },
+    {
+      "state": "unavailable",
+      "position": 100,
+      "value": "N/A"
+    },
+    {
+      "state": "unknown",
+      "position": null,
+      "value": "N/A"
+    },
+    {
+      "state": "unknown",
+      "position": 0,
+      "value": "N/A"
+    },
+    {
+      "state": "unknown",
+      "position": 1,
+      "value": "N/A"
+    },
+    {
+      "state": "unknown",
+      "position": 52,
+      "value": "N/A"
+    },
+    {
+      "state": "unknown",
+      "position": 99,
+      "value": "N/A"
+    },
+    {
+      "state": "unknown",
+      "position": 100,
+      "value": "N/A"
+    },
+    {
+      "state": "",
+      "position": null,
+      "value": "N/A"
+    },
+    {
+      "state": "",
+      "position": 0,
+      "value": "N/A"
+    },
+    {
+      "state": "",
+      "position": 1,
+      "value": "N/A"
+    },
+    {
+      "state": "",
+      "position": 52,
+      "value": "N/A"
+    },
+    {
+      "state": "",
+      "position": 99,
+      "value": "N/A"
+    },
+    {
+      "state": "",
+      "position": 100,
+      "value": "N/A"
+    },
+    {
+      "state": "half_open",
+      "position": null,
+      "value": "Half_Open"
+    },
+    {
+      "state": "half_open",
+      "position": 0,
+      "value": "Half_Open"
+    },
+    {
+      "state": "half_open",
+      "position": 1,
+      "value": "1%"
+    },
+    {
+      "state": "half_open",
+      "position": 52,
+      "value": "52%"
+    },
+    {
+      "state": "half_open",
+      "position": 99,
+      "value": "99%"
+    },
+    {
+      "state": "half_open",
+      "position": 100,
+      "value": "Half_Open"
+    }
+  ]
+}
