@@ -5,7 +5,8 @@
 //
 // A newer revision (the iPhone saved, or a save here came back) moves the
 // base under the edits. The edits are key writes, so they stay on top of it
-// as they are, and an edit the newer copy already holds stops counting.
+// (room by room for the two room records, see `carryRoomEdits`), and an
+// edit the newer copy already holds stops counting.
 
 import type { WatchConfigRecord } from "../ha-api.js";
 import {
@@ -14,6 +15,7 @@ import {
   type RoomsSaveIO,
   type RoomsSaveResult,
   applyRoomEdits,
+  carryRoomEdits,
   roomDirtyKeys,
   saveRooms,
   withRoomWrites,
@@ -112,9 +114,10 @@ export class RoomsDraft {
   /** A newer copy under the edits. Edits it already holds are dropped.
    * True when edits that still change something remain. */
   rebase(document: BehaviorDocument, revision: number): boolean {
+    const carried = carryRoomEdits(this.document, document, this.edits);
     this.document = document;
     this.revision = revision;
-    this.edits = withRoomWrites(document, new Map(), this.edits);
+    this.edits = withRoomWrites(document, new Map(), carried);
     this.undoStack = [];
     this.redoStack = [];
     this.coalesceKey = undefined;

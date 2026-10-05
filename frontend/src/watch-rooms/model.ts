@@ -111,6 +111,61 @@ export function roomDirtyKeys(document: BehaviorDocument | undefined, edits: Roo
   return [...edits.entries()].filter(([key, value]) => !writeIsNoOp(document, key, value)).map(([key]) => key);
 }
 
+/** One room record merged three ways: the newer copy, with each room the
+ * edit changed since `before` set or removed as the edit has it. */
+function mergeRooms<T>(before: ReadonlyMap<string, T>, mine: ReadonlyMap<string, T>, theirs: ReadonlyMap<string, T>): Map<string, T> {
+  const out = new Map(theirs);
+  for (const key of new Set([...before.keys(), ...mine.keys()])) {
+    const was = before.get(key);
+    const now = mine.get(key);
+    if (jsonEqual(was, now)) continue;
+    if (now === undefined) out.delete(key);
+    else out.set(key, now);
+  }
+  return out;
+}
+
+function stringRecord(value: unknown): Map<string, unknown> {
+  return new Map(isObject(value) ? Object.entries(value) : []);
+}
+
+/**
+ * The edits made over `before`, carried onto `after`, a newer copy of the
+ * same record (a conflict on save, or a save from elsewhere coming in under
+ * open edits). A key the newer copy left as it was keeps its edit. A key
+ * both sides changed keeps the edit too, as a merge by key does, with two
+ * exceptions that would otherwise throw away what was done elsewhere:
+ *
+ * - The page per room and the point control rooms are one value each, so
+ *   they merge room by room: rooms the edit did not touch come from the
+ *   newer copy. A rooms string that does not decode keeps the edit whole.
+ * - A gesture write that only turned Room Jump off yields to the newer
+ *   copy when that has moved the gesture off Room Jump itself (the Watch
+ *   settings dialog picked another action).
+ */
+export function carryRoomEdits(before: BehaviorDocument, after: BehaviorDocument, edits: RoomEdits): Map<string, unknown> {
+  const out = new Map(edits);
+  for (const [key, value] of edits) {
+    if (jsonEqual(before[key], after[key])) continue;
+    if (key === ROOM_KEYS.mappings) {
+      const merged = mergeRooms(stringRecord(before[key]), stringRecord(value), stringRecord(after[key]));
+      out.set(key, merged.size === 0 ? undefined : Object.fromEntries(merged));
+    } else if (key === ROOM_KEYS.zones) {
+      const was = decodeZones(before[key]);
+      const now = decodeZones(value);
+      const theirs = decodeZones(after[key]);
+      if (!was.ok || !now.ok || !theirs.ok) continue;
+      const merged = cleanZones([...mergeRooms(new Map(was.rooms), new Map(now.rooms), new Map(theirs.rooms))]);
+      if (merged === undefined) out.set(key, undefined);
+      else out.set(key, sameZones(merged, theirs.rooms) ? after[key] : encodeZones(merged));
+    } else if (key === ROOM_KEYS.topSectionDoubleTap || key === ROOM_KEYS.handGesture) {
+      const roomJump = key === ROOM_KEYS.topSectionDoubleTap ? DOUBLE_TAP_ROOM_JUMP : HAND_GESTURE_ROOM_JUMP;
+      if (before[key] === roomJump && value !== roomJump && after[key] !== roomJump) out.delete(key);
+    }
+  }
+  return out;
+}
+
 // ── reading ──────────────────────────────────────────────────────────────
 
 function stringAt(doc: BehaviorDocument, key: string): string | undefined {
@@ -507,8 +562,8 @@ export type RoomsSaveResult =
 
 /**
  * Save the edits over `record`. A conflict reads the newer copy and lays
- * the same key writes over it, then sends again; edits the newer copy
- * already holds leave nothing to save. Any other refusal ends it.
+ * the edits over it (`carryRoomEdits`), then sends again; edits the newer
+ * copy already holds leave nothing to save. Any other refusal ends it.
  */
 export async function saveRooms(io: RoomsSaveIO, record: { revision: number; document: BehaviorDocument }, edits: RoomEdits): Promise<RoomsSaveResult> {
   let base = record;
@@ -533,6 +588,7 @@ export async function saveRooms(io: RoomsSaveIO, record: { revision: number; doc
       if (!(fresh.revision > 0) || !isObject(fresh.document)) {
         return { ok: false, code: "no_record", message: "Home Assistant holds no settings for this watch.", fresh };
       }
+      edits = carryRoomEdits(base.document, fresh.document, edits);
       base = { revision: fresh.revision, document: fresh.document };
     }
   }

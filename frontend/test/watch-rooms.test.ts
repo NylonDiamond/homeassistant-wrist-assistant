@@ -406,6 +406,56 @@ describe("saving", () => {
     expect(roomsSaveNote(result)?.text).toContain("changed elsewhere");
   });
 
+  it("keeps a room page and a target added elsewhere when its own room edits go on top", async () => {
+    const doc = behavior();
+    // The iPhone added Office, with a page and a target, while the panel
+    // gave the kitchen the den's page and a second target.
+    const officeZones = "{\"kitchen\":[{\"centerHeading\":90,\"entityId\":\"light.kitchen\",\"label\":\"Pendant \\/ Bar\"}],\"office\":[{\"centerHeading\":10,\"entityId\":\"light.desk\"}]}";
+    const fresh = { ...doc, roomQuickJumpMappings: { kitchen: KITCHEN_PAGE, "Living-Room": DEN_PAGE, office: KITCHEN_PAGE }, pointControlRoomMappingsJSON: officeZones };
+    let edits = withRoomWrites(doc, new Map(), roomPageWrites(doc, "kitchen", DEN_PAGE));
+    const read = decodeZones(doc.pointControlRoomMappingsJSON);
+    const kitchenZones = [...(read.ok ? roomZones(read.rooms, "kitchen") : []), { entityId: "switch.kettle", centerHeading: 200 }];
+    edits = withRoomWrites(doc, edits, roomZonesWrites(applyRoomEdits(doc, edits), "kitchen", kitchenZones)!);
+    const sent: BehaviorDocument[] = [];
+    let first = true;
+    const result = await saveRooms({
+      save: async (base, d) => {
+        sent.push(d);
+        if (first) { first = false; throw { code: "conflict", message: "stored revision is 7" }; }
+        return { revision: base + 1 };
+      },
+      fetch: async () => record(7, fresh),
+    }, { revision: 4, document: doc }, edits);
+    expect(result).toMatchObject({ ok: true, merged: true });
+    expect(sent[1]!.roomQuickJumpMappings).toEqual({ kitchen: DEN_PAGE, "Living-Room": DEN_PAGE, office: KITCHEN_PAGE });
+    const zones = decodeZones(sent[1]!.pointControlRoomMappingsJSON);
+    expect(zones.ok && roomsObject(zones.rooms)).toEqual({
+      kitchen: [{ entityId: "light.kitchen", centerHeading: 90, label: "Pendant / Bar" }, { entityId: "switch.kettle", centerHeading: 200 }],
+      office: [{ entityId: "light.desk", centerHeading: 10 }],
+    });
+  });
+
+  it("does not turn off a gesture action set elsewhere when its own write only turned Room Jump off", async () => {
+    const doc = behavior({ topSectionDoubleTapAction: "Room Jump", handGestureAction: "Room Jump", roomAutoSwitchEnabled: false });
+    const edits = withRoomWrites(doc, new Map(), clearSensorWrites(doc));
+    // Watch settings gave both gestures other actions meanwhile.
+    const fresh = { ...doc, topSectionDoubleTapAction: "Activate Scene", handGestureAction: "Toggle Aimed Entity" };
+    const sent: BehaviorDocument[] = [];
+    let first = true;
+    const result = await saveRooms({
+      save: async (base, d) => {
+        sent.push(d);
+        if (first) { first = false; throw { code: "conflict", message: "stored revision is 7" }; }
+        return { revision: base + 1 };
+      },
+      fetch: async () => record(7, fresh),
+    }, { revision: 4, document: doc }, edits);
+    expect(result).toMatchObject({ ok: true, merged: true });
+    expect(sent[1]!.topSectionDoubleTapAction).toBe("Activate Scene");
+    expect(sent[1]!.handGestureAction).toBe("Toggle Aimed Entity");
+    expect(Object.hasOwn(sent[1]!, "roomQuickJumpSourceEntityId")).toBe(false);
+  });
+
   it("finds nothing left to save when the newer copy already has the edits", async () => {
     const doc = behavior();
     const edits = withRoomWrites(doc, new Map(), pointSwitchWrites("pointControlLiveTile", true));
@@ -442,6 +492,18 @@ describe("the draft", () => {
     // A newer copy that already says the same leaves nothing to save.
     expect(draft.rebase({ ...doc, roomQuickJumpFallbackPageId: "__stay__", pointControlTapToToggle: true }, 5)).toBe(false);
     expect(draft.dirty).toBe(false);
+  });
+
+  it("keeps a room page set elsewhere and a gesture action set elsewhere when a newer copy comes in under its edits", () => {
+    const doc = behavior({ topSectionDoubleTapAction: "Room Jump" });
+    const draft = new RoomsDraft(doc, 3);
+    draft.apply(roomPageWrites(draft.effective, "kitchen", DEN_PAGE));
+    draft.apply(clearSensorWrites(draft.effective));
+    const newer = { ...doc, roomQuickJumpMappings: { kitchen: KITCHEN_PAGE, "Living-Room": DEN_PAGE, office: KITCHEN_PAGE }, topSectionDoubleTapAction: "Activate Scene" };
+    expect(draft.rebase(newer, 4)).toBe(true);
+    expect(draft.effective.roomQuickJumpMappings).toEqual({ kitchen: DEN_PAGE, "Living-Room": DEN_PAGE, office: KITCHEN_PAGE });
+    expect(draft.effective.topSectionDoubleTapAction).toBe("Activate Scene");
+    expect(Object.hasOwn(draft.effective, "roomQuickJumpSourceEntityId")).toBe(false);
   });
 
   it("keeps its undo and redo steps when asked for them during a save", () => {
