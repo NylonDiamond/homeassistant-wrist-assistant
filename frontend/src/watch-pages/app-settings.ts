@@ -22,6 +22,7 @@ import type { TileSettingsHost } from "./editor-host.js";
 import { tileEntityId } from "./model.js";
 import { watchTemplateRichText, watchTemplateTileLook } from "./preview.js";
 import { commit, linkButton, menuField, typed, typingField } from "./tile-settings.js";
+import { WATCH_VOICE_DEFAULTS_UNKNOWN_TEXT } from "../watch-voice/defaults.js";
 import {
   type WatchAppChoice,
   type WatchSpeakerListKey,
@@ -74,9 +75,9 @@ const A = WATCH_APP;
 /** The kinds this module draws a task for. */
 const APP_KINDS: ReadonlySet<string> = new Set(["template", "music_hub", "assist", "speak_message", "point_control", "webhook_inbox"]);
 
-/** The line an older phone's catalog gets, which carries no voice
- * defaults. */
-export const WATCH_VOICE_DEFAULTS_UNKNOWN_TEXT = "Open the iPhone app to list its voice defaults here";
+/** The line shown while neither the watch's voice settings nor the iPhone's
+ * catalog says what the voice defaults are (`watch-voice/defaults.ts`). */
+export { WATCH_VOICE_DEFAULTS_UNKNOWN_TEXT };
 
 /** Whether a tile's task is one of the app kinds' (a template, music hub,
  * assist, speak message, point control or webhook inbox tile). */
@@ -257,10 +258,11 @@ function renderMusicHub(host: TileSettingsHost): TemplateResult {
 
 // ── Assist and Speak ─────────────────────────────────────────────────────
 
-/** The catalog's voice defaults, or undefined when the phone is older than
- * the key (or has published no catalog). */
+/** The voice defaults: the watch's voice settings when Home Assistant holds
+ * them, else the catalog's, or undefined when neither says (a phone older
+ * than the key, or no catalog, and no voice record). */
 function voiceOf(host: TileSettingsHost) {
-  return host.catalog?.voice;
+  return host.voice ?? host.catalog?.voice;
 }
 
 /** A checklist over the speakers (announce bit first), the stored ids the

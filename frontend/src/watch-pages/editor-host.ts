@@ -16,7 +16,7 @@ import type { HassLike } from "../ha-api.js";
 import type { IconProvider } from "../renderer.js";
 import type { SymbolBrowser } from "../symbols.js";
 import type { WatchTemplateRender } from "./app-model.js";
-import type { WatchCatalog } from "./catalog.js";
+import type { WatchCatalog, WatchCatalogVoice } from "./catalog.js";
 import type { WatchPagesApplyOptions } from "./draft.js";
 import type { WatchPage, WatchPageTile, WatchPagesDocument } from "./model.js";
 import type { WatchDeviceSiblings } from "./special-model.js";
@@ -59,6 +59,11 @@ export interface WatchPagesEditorHost {
    * none. Held by the element, never in the document: nothing here saves,
    * undoes or merges it. A getter like `document`. */
   readonly catalog: WatchCatalog | undefined;
+  /** The voice defaults an Assist or Speak tile falls back to: the watch's
+   * `voice` record when Home Assistant holds one, else `catalog.voice`, else
+   * undefined. A getter. Absent from a host that predates the voice record;
+   * the modules then read `catalog.voice`. */
+  readonly voice?: WatchCatalogVoice | undefined;
   /** The watch's own camera setting from its `behavior` document (refresh
    * on page open, and the debounce), with the phone's defaults while there
    * is none: the words of the Camera task's Default. A getter. */

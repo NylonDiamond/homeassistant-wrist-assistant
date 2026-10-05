@@ -115,7 +115,8 @@ import {
   renderConfigRawDialog,
   renderConfigSaved,
 } from "./config-foot.js";
-import { type WatchCatalog, watchCatalogEventIsNews, watchCatalogFromRecord, watchCatalogReadMeansNone } from "./catalog.js";
+import { type WatchCatalog, type WatchCatalogVoice, watchCatalogEventIsNews, watchCatalogFromRecord, watchCatalogReadMeansNone } from "./catalog.js";
+import { voiceDocumentOfRecord, watchVoiceFallbacks } from "../watch-voice/defaults.js";
 import { type WatchPagesApplyOptions, type WatchPagesDraft, createWatchPages, saveWatchPagesDraft } from "./draft.js";
 import { type AddTileHost, type TileSettingsHost, type WatchPagesEditorHost, NO_ICONS, ScrubRun, extendHost, memoIconNames, watchKeysTypeText } from "./editor-host.js";
 import {
@@ -638,6 +639,12 @@ export class WaPageEditor extends LitElement {
    * read only switches; undefined while there is none or the read failed. */
   @state() private behavior?: Readonly<Record<string, unknown>>;
   private behaviorSeq = 0;
+  /** The watch's voice settings document (the `voice` record) as last read,
+   * for the voice defaults behind an Assist or Speak tile; undefined while
+   * there is none, before the read is in, and after a read that failed. Read
+   * only here: the Voice editor writes it. */
+  @state() private voiceDocument?: Readonly<Record<string, unknown>>;
+  private voiceSeq = 0;
   /** What the element knows of the home beyond its states (part 3f batch
    * 2): asked the first time a watch is opened and again after a reconnect.
    * Each field undefined until in; a failed call keeps what was known. */
@@ -926,6 +933,7 @@ export class WaPageEditor extends LitElement {
     void this.load(watchId, true);
     // A catalog the phone published while the socket was down sent no event.
     void this.loadCatalog(watchId);
+    void this.loadVoice(watchId);
     // Music Assistant or the cloud may have come or gone meanwhile, and a
     // template's entities moved without the preview hearing.
     this.loadHomeData();
@@ -1308,6 +1316,8 @@ export class WaPageEditor extends LitElement {
       this.cameraRefresh = watchCameraRefreshDefaults(undefined);
       this.behavior = undefined;
       this.behaviorSeq++;
+      this.voiceDocument = undefined;
+      this.voiceSeq++;
       this.history = [];
       if (this.historyState !== "unsupported") this.historyState = "loading";
       const selection = keptWatchPagesSelection(watchId);
@@ -1335,6 +1345,7 @@ export class WaPageEditor extends LitElement {
     void this.load(watchId, quiet);
     void this.loadCatalog(watchId);
     void this.loadBehavior(watchId);
+    void this.loadVoice(watchId);
     if (!this.homeDataAsked && this.hass) {
       this.homeDataAsked = true;
       this.loadHomeData();
@@ -1437,6 +1448,31 @@ export class WaPageEditor extends LitElement {
       this.cameraRefresh = watchCameraRefreshDefaults(undefined);
       this.behavior = undefined;
     }
+  }
+
+  /** Read the watch's voice settings, whose defaults stand behind an Assist
+   * or Speak tile (`voiceDefaults`). A failed read (an integration older
+   * than the kind refuses it) is the same as none; only the newest read
+   * lands. */
+  private async loadVoice(watchId: string): Promise<void> {
+    const hass = this.hass;
+    if (!hass) return;
+    const seq = ++this.voiceSeq;
+    try {
+      const record = await fetchWatchConfig(hass, watchId, "voice");
+      if (seq !== this.voiceSeq || watchId !== this.watchId) return;
+      this.voiceDocument = voiceDocumentOfRecord(record);
+    } catch {
+      if (seq !== this.voiceSeq || watchId !== this.watchId) return;
+      this.voiceDocument = undefined;
+    }
+  }
+
+  /** The voice defaults behind an Assist or Speak tile: the watch's voice
+   * settings when Home Assistant holds them, else the iPhone's catalog's,
+   * else undefined (neither says). */
+  private get voiceDefaults(): WatchCatalogVoice | undefined {
+    return watchVoiceFallbacks(this.voiceDocument, this.catalog);
   }
 
   /** Read the iPhone's library beside the pages record. Never in the way of
@@ -1559,6 +1595,10 @@ export class WaPageEditor extends LitElement {
       }
       if (event.kind === "behavior") {
         void this.loadBehavior(watchId);
+        return;
+      }
+      if (event.kind === "voice") {
+        void this.loadVoice(watchId);
         return;
       }
       if (event.kind !== "pages") return;
@@ -1727,6 +1767,7 @@ export class WaPageEditor extends LitElement {
       // The element's, read live: a catalog that arrives while a picker is
       // open is the one its next pick reads.
       catalog: () => this.catalog,
+      voice: () => this.voiceDefaults,
       cameraRefreshDefaults: () => this.cameraRefresh,
       behavior: () => this.behavior,
       musicAssistant: () => this.homeData.musicAssistant,
@@ -1789,7 +1830,7 @@ export class WaPageEditor extends LitElement {
     const draft = this.draft;
     if (!hass || watchId === undefined || !draft || !draft.dirty || draft.saving || this.gesture || this.rowDrag) return;
     if (anyway) this.closeAsk();
-    else if (watchSaveSpeakerWarning(draft.document, this.catalog?.voice, draft.base) !== undefined) {
+    else if (watchSaveSpeakerWarning(draft.document, this.voiceDefaults, draft.base) !== undefined) {
       this.closeAsk();
       this.saveAsk = true;
       return;
@@ -4306,7 +4347,7 @@ export class WaPageEditor extends LitElement {
    * fixes every tile while it is open leaves nothing to ask: the dialog then
    * says so and still saves. */
   private renderSaveAsk(document: WatchPagesDocument, base: WatchPagesDocument): TemplateResult {
-    const warning = watchSaveSpeakerWarning(document, this.catalog?.voice, base);
+    const warning = watchSaveSpeakerWarning(document, this.voiceDefaults, base);
     const pages = watchPagesOf(document);
     const states = this.hass?.states;
     const speaker = (id: string) => {
