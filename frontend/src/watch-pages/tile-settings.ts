@@ -85,10 +85,13 @@ import {
   type WatchLibraryKind,
   WATCH_LIBRARY_WORDS,
   WATCH_NO_CATALOG_TEXT,
-  WATCH_NOT_ON_IPHONE_TEXT,
   findWatchCatalogEntry,
+  watchCatalogFromWatch,
+  watchCatalogKnows,
   watchCatalogListedText,
   watchCatalogWarning,
+  watchLibraryLister,
+  watchLibraryMissingText,
   watchLibraryTarget,
   watchLibraryTileFallbackName,
 } from "./catalog.js";
@@ -737,8 +740,8 @@ function sectionSummary(host: TileSettingsHost, section: WatchTileSettingsSectio
     }
     case "target": {
       const target = watchLibraryTarget(tileEntityId(tile));
-      if (target === undefined || host.catalog === undefined) return "";
-      return findWatchCatalogEntry(host.catalog, target.kind, target.id)?.name ?? WATCH_NOT_ON_IPHONE_TEXT;
+      if (target === undefined || !watchCatalogKnows(host.catalog, target.kind)) return "";
+      return findWatchCatalogEntry(host.catalog, target.kind, target.id)?.name ?? watchLibraryMissingText(host.catalog, target.kind);
     }
     case "request": {
       const reply = watchHTTPRequestSettings(tile).reply;
@@ -858,16 +861,17 @@ const TARGET_HINTS: Readonly<Record<WatchLibraryKind, string>> = {
 /**
  * The Target of an HTTP action, macro or status page tile: the catalog's
  * entries of its kind. A target the catalog does not list shows the tile's
- * label and "Not on the iPhone", and stays until another is picked. With no
- * catalog the tile shows its label and the line that says where the list
- * comes from; nothing can be picked.
+ * label and "Not on the iPhone" ("Not in this watch's status pages" for a
+ * status page from the watch's own record), and stays until another is
+ * picked. With no list of its kind the tile shows its label and the line
+ * that says where the list comes from; nothing can be picked.
  */
 function renderTarget(host: TileSettingsHost): TemplateResult {
   const target = watchLibraryTarget(tileEntityId(host.tile));
   if (target === undefined) return html``;
   const words = WATCH_LIBRARY_WORDS[target.kind];
   const catalog = host.catalog;
-  if (catalog === undefined) {
+  if (catalog === undefined || !watchCatalogKnows(catalog, target.kind)) {
     // With no label of its own, the name the watch shows ("Action",
     // "Macro", "Status Page").
     const label = watchTileTextSettings(host.tile).label;
@@ -889,11 +893,12 @@ function renderTarget(host: TileSettingsHost): TemplateResult {
       return setWatchLibraryTileTarget(d, host.pageId, host.tileId, target.kind, entry, old === undefined ? [] : [old]);
     });
   const warning = menu.current === undefined ? undefined : watchCatalogWarning(target.kind, menu.current);
-  const listed = watchCatalogListedText(catalog);
+  // The watch's own status pages are not listed by the iPhone.
+  const listed = watchCatalogFromWatch(catalog, target.kind) ? undefined : watchCatalogListedText(catalog);
   const onlyMissing = menu.options.every((o) => o.disabled === true);
   return html`
     ${menu.options.length === 0
-      ? html`<p class="hint">The iPhone lists no ${words.many} yet.</p>`
+      ? html`<p class="hint">${watchLibraryLister(catalog, target.kind) === "The iPhone" ? `The iPhone lists no ${words.many} yet.` : `This watch has no ${words.many} yet.`}</p>`
       : menuField(words.one, menu, pick)}
     ${warning === undefined ? nothing : html`<div class="hint warn ts-under">${warning}.</div>`}
     <div class="hint ts-under">${onlyMissing ? nothing : TARGET_HINTS[target.kind]}${listed === undefined ? nothing : html` ${listed}`}</div>`;

@@ -414,6 +414,7 @@ import {
 import { type PanelRoute, dropWatchPagesDrafts, isWatchPagesRoute, navigateWatchPages, renderWatchPagesButton, renderWatchPagesView, watchPagesDirty, watchPagesHookStyles, watchPagesRouteOwner } from "./watch-pages/hook.js";
 import { dropWatchMenusDrafts, isWatchMenusRoute, navigateWatchMenus, renderWatchMenusButton, renderWatchMenusView, watchMenusDirty, watchMenusHookStyles, watchMenusRouteOwner } from "./watch-menus/hook.js";
 import { dropWatchVoiceDrafts, isWatchVoiceRoute, navigateWatchVoice, renderWatchVoiceButton, renderWatchVoiceView, watchVoiceDirty, watchVoiceHookStyles, watchVoiceRouteOwner } from "./watch-voice/hook.js";
+import { dropWatchStatusPagesDrafts, isWatchStatusPagesRoute, navigateWatchStatusPages, renderWatchStatusPagesButton, renderWatchStatusPagesView, watchStatusPagesDirty, watchStatusPagesHookStyles, watchStatusPagesRouteOwner } from "./watch-status-pages/hook.js";
 import {
   FIRST_RUN_TILES, ZOOM_FIT, ZOOM_MAX, ZOOM_MIN, anySnap, pickGridStep, runFirstRunTile, slotWord, snapSwitchOn,
   stageReserve, toggleSnap, zoomIn, zoomLabel, zoomOut, type FirstRunTile, type SnapFlags, type SnapSwitch,
@@ -2247,7 +2248,7 @@ export class WristAssistantPanel extends LitElement {
     if (e.key === "Alt") this.altHeld = true;
     // Under the page or menu editor the draft is out of sight, so its keys
     // stay still.
-    if (isWatchPagesRoute(this.route) || isWatchMenusRoute(this.route) || isWatchVoiceRoute(this.route)) return;
+    if (isWatchPagesRoute(this.route) || isWatchMenusRoute(this.route) || isWatchVoiceRoute(this.route) || isWatchStatusPagesRoute(this.route)) return;
     this.onKey(e);
   };
   /** A window that loses focus with Alt down never sees its keyup. */
@@ -5854,7 +5855,7 @@ export class WristAssistantPanel extends LitElement {
 
   `, formEntityStyles, css`
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .ent-box.needs { animation: none; } }
-  `, watchSettingsStyles, watchPagesHookStyles, watchMenusHookStyles, watchVoiceHookStyles];
+  `, watchSettingsStyles, watchPagesHookStyles, watchMenusHookStyles, watchVoiceHookStyles, watchStatusPagesHookStyles];
 
   // ── lifecycle ─────────────────────────────────────────────────────────
 
@@ -6173,7 +6174,7 @@ export class WristAssistantPanel extends LitElement {
    * It cannot offer a Save button; no page can add one to that dialog. The
    * `returnValue` is for Safari, which ignores `preventDefault` here. */
   private beforeUnload = (e: BeforeUnloadEvent) => {
-    if (!this.draft?.dirty && !watchPagesDirty() && !watchMenusDirty() && !watchVoiceDirty()) return;
+    if (!this.draft?.dirty && !watchPagesDirty() && !watchMenusDirty() && !watchVoiceDirty() && !watchStatusPagesDirty()) return;
     e.preventDefault();
     e.returnValue = "";
   };
@@ -6191,7 +6192,7 @@ export class WristAssistantPanel extends LitElement {
   private leaveGuard = (e: MouseEvent) => {
     // The watch page and menu drafts count too: they outlive their editors'
     // routes.
-    if (!this.draft?.dirty && !watchPagesDirty() && !watchMenusDirty() && !watchVoiceDirty()) return;
+    if (!this.draft?.dirty && !watchPagesDirty() && !watchMenusDirty() && !watchVoiceDirty() && !watchStatusPagesDirty()) return;
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     const path = e.composedPath();
     if (path.includes(this)) return;
@@ -6203,6 +6204,7 @@ export class WristAssistantPanel extends LitElement {
       dropWatchPagesDrafts();
       dropWatchMenusDrafts();
       dropWatchVoiceDrafts();
+      dropWatchStatusPagesDrafts();
       return;
     }
     e.preventDefault();
@@ -10496,6 +10498,19 @@ export class WristAssistantPanel extends LitElement {
         onLoaded: () => this.requestUpdate(),
       });
     }
+    // The status page editor likewise, on `/status-pages` and
+    // `/status-pages/<owner_watch_id>`.
+    if (isWatchStatusPagesRoute(this.route)) {
+      return renderWatchStatusPagesView({
+        hass: this.hass, owners: this.owners, ownerId: watchStatusPagesRouteOwner(this.route) ?? this.ownerId, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
+        menu: this.narrow || this.hass.dockedSidebar === "always_hidden",
+        onMenu: () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })),
+        onBack: () => navigateWatchStatusPages(this.route, false),
+        actions: this.watchSettings.renderButton(this.hass, this.owners, this.ownerId),
+        dialogs: this.watchSettings.render(this.hass, this.owners),
+        onLoaded: () => this.requestUpdate(),
+      });
+    }
     const d = this.draft;
     // A complication that was never saved is work to save as it stands: its
     // baseline is the config it was made from, so nothing else says so.
@@ -10598,6 +10613,7 @@ export class WristAssistantPanel extends LitElement {
       ${renderWatchPagesButton(this.hass, this.owners, () => navigateWatchPages(this.route, true))}
       ${renderWatchMenusButton(this.hass, this.owners, () => navigateWatchMenus(this.route, true))}
       ${renderWatchVoiceButton(this.hass, this.owners, () => navigateWatchVoice(this.route, true))}
+      ${renderWatchStatusPagesButton(this.hass, this.owners, () => navigateWatchStatusPages(this.route, true))}
       ${this.watchSettings.renderButton(this.hass, this.owners, this.ownerId)}
       <button class="help" title="Help" aria-label="Help" @click=${() => { this.helpOpen = true; }}>?</button>
     </header>`;

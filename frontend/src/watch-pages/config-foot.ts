@@ -26,8 +26,8 @@ import { COLLECTED_PILL_TEXT, WAITING_HELP_TEXT, WAITING_PILL_TEXT, deliveryStat
 
 export type ConfigHistoryState = "loading" | "ready" | "error" | "unsupported";
 
-/** What the editor keeps: its pages, its menus, or the voice settings. */
-export type ConfigNoun = "pages" | "menus" | "voice settings";
+/** What the editor keeps: its pages, its menus, the voice settings or its status pages. */
+export type ConfigNoun = "pages" | "menus" | "voice settings" | "status pages";
 
 export const REJECTED_TEXT = "The watch or the iPhone could not read this save";
 

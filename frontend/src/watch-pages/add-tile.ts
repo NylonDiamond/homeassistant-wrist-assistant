@@ -52,10 +52,14 @@ import {
   type WatchLibraryKind,
   WATCH_LIBRARY_WORDS,
   WATCH_NO_CATALOG_TEXT,
+  WATCH_NO_PHONE_LIBRARY_TEXT,
   watchCatalogEntries,
+  watchCatalogFromWatch,
+  watchCatalogKnows,
   watchCatalogListedText,
   watchCatalogSubtitle,
   watchCatalogWarning,
+  watchLibraryLister,
 } from "./catalog.js";
 import type { AddTileHost } from "./editor-host.js";
 import {
@@ -349,12 +353,17 @@ function renderLinks(host: AddTileHost, view: AddTileView, kind: LinkKind): Temp
 function renderLibrary(host: AddTileHost, view: AddTileView, kind: WatchLibraryKind, catalog: WatchCatalog): TemplateResult {
   const entries = watchCatalogEntries(catalog, kind);
   const words = WATCH_LIBRARY_WORDS[kind];
-  const listed = watchCatalogListedText(catalog);
+  // The watch's own status pages are made in Status pages, not listed by
+  // the iPhone.
+  const fromWatch = watchCatalogFromWatch(catalog, kind);
+  const listed = fromWatch ? undefined : watchCatalogListedText(catalog);
   return html`<div class="at-links" id="at-links">
     <div class="at-sub">${LIBRARY_WORDS[kind].question}</div>
     ${entries.length === 0
-      ? html`<div class="at-muted">The iPhone lists no ${words.many} yet. Make one in the iPhone app and it shows here.</div>`
-      : html`<div class="at-pages" role="group" aria-label=${`The iPhone's ${words.many}`}>
+      ? html`<div class="at-muted">${fromWatch
+        ? `${watchLibraryLister(catalog, kind)} has no ${words.many} yet. Make one in Status pages and it shows here.`
+        : `The iPhone lists no ${words.many} yet. Make one in the iPhone app and it shows here.`}</div>`
+      : html`<div class="at-pages" role="group" aria-label=${fromWatch ? `This watch's ${words.many}` : `The iPhone's ${words.many}`}>
           ${entries.map((e) => {
             const sub = watchCatalogSubtitle(kind, e);
             const warning = watchCatalogWarning(kind, e);
@@ -423,7 +432,7 @@ function renderBody(host: AddTileHost, view: AddTileView): TemplateResult {
     @click=${() => toggleLinks(kind)}>${text}${uiIcon("chevron")}</button>`;
   let openList: TemplateResult | typeof nothing = nothing;
   if (view.links === "pageLink" || view.links === "peekLink") openList = renderLinks(host, view, view.links);
-  else if (view.links !== undefined && catalog !== undefined) openList = renderLibrary(host, view, view.links, catalog);
+  else if (view.links !== undefined && watchCatalogKnows(catalog, view.links)) openList = renderLibrary(host, view, view.links, catalog!);
   const searchChanged = (query: string, kind: string) => {
     view.query = query;
     view.kind = kind;
@@ -514,9 +523,10 @@ function renderBody(host: AddTileHost, view: AddTileView): TemplateResult {
     ${appBlocked === undefined ? nothing : html`<div class="at-muted" id="at-app-blocked">${appBlocked}</div>`}
     ${catalog === undefined
       ? html`<div class="at-muted at-lib-none">${WATCH_NO_CATALOG_TEXT}</div>`
-      : html`<div class="at-kinds at-lib" role="group" aria-label="From the iPhone">
-          ${(Object.keys(LIBRARY_WORDS) as WatchLibraryKind[]).map((kind) => listButton(kind, LIBRARY_WORDS[kind].button))}
-        </div>`}
+      : html`<div class="at-kinds at-lib" role="group" aria-label=${catalog.noPhone === true ? "From the watch" : "From the iPhone"}>
+          ${(Object.keys(LIBRARY_WORDS) as WatchLibraryKind[]).filter((kind) => watchCatalogKnows(catalog, kind)).map((kind) => listButton(kind, LIBRARY_WORDS[kind].button))}
+        </div>
+        ${catalog.noPhone === true ? html`<div class="at-muted at-lib-none">${WATCH_NO_PHONE_LIBRARY_TEXT}</div>` : nothing}`}
     ${openList}
 
     <div class="at-ents">
