@@ -161,6 +161,13 @@ export function navigatePanel(route: PanelRoute | undefined, path: string, repla
   return { prefix, path };
 }
 
+/** From inside an editor to the HTTP actions screen, the panel's own way. An
+ * editor's draft outlives its route, as on any move between screens, so
+ * nothing is lost and the leave guards still cover it. */
+export function goToWatchHttpActions(): void {
+  navigatePanel(undefined, WATCH_HTTP_ACTIONS_PATH);
+}
+
 /** A plain left click, which the panel turns into its own move. Anything
  * else (a middle click, ⌘ or Ctrl for a new tab, Shift for a window) is left
  * to the browser and the link's own address. */

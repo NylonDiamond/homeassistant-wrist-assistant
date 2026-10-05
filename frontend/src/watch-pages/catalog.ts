@@ -9,7 +9,9 @@
 // keeps the reading on the element (never in the draft: it is never saved,
 // undone or merged) and hands it to the modules on its host
 // (`WatchPagesEditorHost.catalog`). Undefined there means no catalog: an app
-// older than the kind, or a phone that has not published one yet.
+// older than the kind, or a phone that has not published one yet. The
+// pickers read it with the home's HTTP action library joined in
+// (`http-library.ts`): its actions first, the phone's own after them.
 //
 // The reader is forgiving: an element without a UUID string `id` and a string
 // `name` is skipped, and so is a second entry whose id differs only in case;
@@ -36,8 +38,13 @@ export interface WatchCatalogHTTPAction {
   iconColor?: string;
   /** The action has a Reply Value, so a tile can show it (Tile Value). */
   hasReply: boolean;
-  /** The action has no URL on this iPhone yet (restored from a backup). */
+  /** The action has no URL yet: on this iPhone (restored from a backup),
+   * or in Home Assistant's library. */
   needsSetup: boolean;
+  /** Where the action lives, once the home's library is joined in
+   * (`http-library.ts`): Home Assistant's library, or only this watch's
+   * iPhone. Absent on a catalog read on its own, which is all the iPhone's. */
+  source?: "home" | "iphone";
 }
 
 /** One macro. `icon` and `colorHex` are a new tile's icon and color. */
@@ -93,9 +100,15 @@ export interface WatchCatalog {
   /** `statusPages` are the watch's own status pages record (the
    * `status_pages` kind), not the phone's list (`watchCatalogWithStatusPages`). */
   statusPagesFromWatch?: true;
-  /** No iPhone catalog is behind this one: only the watch's status pages are
-   * known, and the HTTP actions and macros are not. */
+  /** No iPhone catalog is behind this one: only the watch's status pages
+   * (and the home's HTTP actions, when `httpLibrary` is "held") are known,
+   * and the rest are not. */
   noPhone?: true;
+  /** Home Assistant keeps the home's HTTP action library
+   * (`http-library.ts`): "held" when it holds one, and `httpActions` lead
+   * with its actions; "empty" when it holds none yet, and the list is the
+   * iPhone's alone. Absent with an integration older than the library. */
+  httpLibrary?: "held" | "empty";
 }
 
 /** The tile kind (`entityId` prefix before the dot) of each library kind. */
@@ -227,10 +240,19 @@ export function watchCatalogWithStatusPages(catalog: WatchCatalog | undefined, s
 }
 
 /** Whether the catalog knows the entries of a kind: an iPhone catalog knows
- * all three; the watch's status pages alone know only those. */
+ * all three; without one, the watch's status pages know only those, and
+ * the home's HTTP action library only those. */
 export function watchCatalogKnows(catalog: WatchCatalog | undefined, kind: WatchLibraryKind): boolean {
   if (catalog === undefined) return false;
-  return catalog.noPhone !== true || kind === "statusPage";
+  if (catalog.noPhone !== true) return true;
+  if (kind === "httpAction") return catalog.httpLibrary === "held";
+  return kind === "statusPage" && catalog.statusPagesFromWatch === true;
+}
+
+/** Whether the HTTP actions screen can add to the list: the integration
+ * keeps the home's library, held or not yet. */
+export function watchHttpScreenOffered(catalog: WatchCatalog | undefined): boolean {
+  return catalog?.httpLibrary !== undefined;
 }
 
 /** Whether the entries of a kind come from the watch's own record. */
@@ -245,12 +267,43 @@ export const WATCH_NOT_IN_STATUS_PAGES_TEXT = "Not in this watch's status pages"
  * status pages are known and no iPhone catalog is. */
 export const WATCH_NO_PHONE_LIBRARY_TEXT = "Open the iPhone app to list its HTTP actions and macros here.";
 
-/** What a tile whose library entry is not listed says: "Not on the iPhone",
- * or for a status page from the watch's own record "Not in this watch's
- * status pages". */
-export function watchLibraryMissingText(catalog: WatchCatalog | undefined, kind: WatchLibraryKind): string {
-  return watchCatalogFromWatch(catalog, kind) ? WATCH_NOT_IN_STATUS_PAGES_TEXT : WATCH_NOT_ON_IPHONE_TEXT;
+/** The same line when the home's HTTP actions are listed all the same. */
+export const WATCH_NO_PHONE_MACROS_TEXT = "Open the iPhone app to list its macros here.";
+
+/** The line in place of the lists Home Assistant does not know without an
+ * iPhone catalog: the macros, the HTTP actions unless the home's library
+ * lists them, and the status pages unless the watch's own record does. */
+export function watchNoPhoneLibraryText(catalog: WatchCatalog | undefined): string {
+  if (catalog?.httpLibrary !== "held") return WATCH_NO_PHONE_LIBRARY_TEXT;
+  return catalog.statusPagesFromWatch === true ? WATCH_NO_PHONE_MACROS_TEXT : "Open the iPhone app to list its macros and status pages here.";
 }
+
+/** What a tile whose HTTP action Home Assistant's library, the only list
+ * there is, does not hold says. */
+export const WATCH_NOT_IN_LIST_TEXT = "Not in the list";
+
+/** What an iPhone action says in a list that leads with the home's. */
+export const WATCH_ON_IPHONE_TEXT = "On the iPhone";
+
+/** Whether the home's library is the only list of HTTP actions: Home
+ * Assistant holds one and no iPhone catalog is behind it. */
+function httpLibraryOnly(catalog: WatchCatalog | undefined): boolean {
+  return catalog?.httpLibrary === "held" && catalog.noPhone === true;
+}
+
+/** What a tile whose library entry is not listed says: "Not on the iPhone";
+ * for a status page from the watch's own record "Not in this watch's
+ * status pages"; for an HTTP action when the home's library is the only
+ * list, "Not in the list". */
+export function watchLibraryMissingText(catalog: WatchCatalog | undefined, kind: WatchLibraryKind): string {
+  if (watchCatalogFromWatch(catalog, kind)) return WATCH_NOT_IN_STATUS_PAGES_TEXT;
+  if (kind === "httpAction" && httpLibraryOnly(catalog)) return WATCH_NOT_IN_LIST_TEXT;
+  return WATCH_NOT_ON_IPHONE_TEXT;
+}
+
+/** The line where a list of HTTP actions is empty and the HTTP actions
+ * screen can add one. */
+export const WATCH_NO_HTTP_ACTIONS_TEXT = "No HTTP actions yet. Add one on the HTTP actions screen, or in the iPhone app.";
 
 /** Who lists the entries of a kind, for "The iPhone lists no …": the
  * iPhone, or this watch for its own status pages. */
@@ -341,12 +394,23 @@ export function watchCatalogSubtitle(kind: WatchLibraryKind, entry: WatchCatalog
   return undefined;
 }
 
-/** What is wrong with an entry on the phone, in the phone's words, or
- * undefined. The panel still offers it, as the phone does. */
+/** What is wrong with an entry, in the phone's words, or undefined. The
+ * panel still offers it, as the phone does. An action of the home's library
+ * needs setup in Home Assistant, not on the iPhone. */
 export function watchCatalogWarning(kind: WatchLibraryKind, entry: WatchCatalogEntry): string | undefined {
-  if (kind === "httpAction" && (entry as WatchCatalogHTTPAction).needsSetup) return "Needs setup on the iPhone";
+  if (kind === "httpAction" && (entry as WatchCatalogHTTPAction).needsSetup) {
+    return (entry as WatchCatalogHTTPAction).source === "home" ? "Needs setup" : "Needs setup on the iPhone";
+  }
   if (kind === "macro" && (entry as WatchCatalogMacro).needsAttention) return "Needs attention on the iPhone";
   return undefined;
+}
+
+/** What a list says beside an entry's name: its warning, else "On the
+ * iPhone" for an iPhone action in a list that leads with the home's. */
+export function watchCatalogMark(kind: WatchLibraryKind, entry: WatchCatalogEntry): string | undefined {
+  const warning = watchCatalogWarning(kind, entry);
+  if (warning !== undefined) return warning;
+  return kind === "httpAction" && (entry as WatchCatalogHTTPAction).source === "iphone" ? WATCH_ON_IPHONE_TEXT : undefined;
 }
 
 /** What one library kind is called, singular and plural. */
@@ -355,6 +419,15 @@ export const WATCH_LIBRARY_WORDS: Readonly<Record<WatchLibraryKind, { one: strin
   macro: { one: "Macro", many: "macros" },
   statusPage: { one: "Status page", many: "status pages" },
 };
+
+/** The line under a library list of a kind: when the phone listed it.
+ * Undefined for the watch's own status pages, and for HTTP actions that
+ * lead with the home's library, which the phone did not list. */
+export function watchCatalogListedFor(catalog: WatchCatalog | undefined, kind: WatchLibraryKind, locale?: string): string | undefined {
+  if (watchCatalogFromWatch(catalog, kind)) return undefined;
+  if (kind === "httpAction" && catalog?.httpLibrary === "held") return undefined;
+  return watchCatalogListedText(catalog, locale);
+}
 
 /** The line under a library list: when the phone listed it. Undefined when
  * the record has no time or it does not read as one. */
