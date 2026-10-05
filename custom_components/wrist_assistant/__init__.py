@@ -44,6 +44,7 @@ from .complication_store import ComplicationStore
 from .complication_ws import async_register_websocket_commands
 from .const import (
     DOMAIN,
+    HTTP_ACTIONS_CAPABILITY,
     LIBRARY_OWNER_ID,
     NOTIFICATION_TOKEN_STORAGE_KEY,
     NOTIFICATION_TOKEN_STORAGE_VERSION,
@@ -68,6 +69,9 @@ from .const import (
 )
 from .notification_snapshot import NotificationSnapshotStore
 from .card_preview_store import CardPreviewStore
+from .http_actions_runner import HTTPActionRunner
+from .http_actions_store import HTTPActionsStore
+from .http_actions_ws import async_register_http_actions_commands
 from .parts_store import PartsStore
 from .snapshot_aspect_store import SnapshotAspectStore
 from .snapshot_crop_store import SnapshotCropStore
@@ -791,6 +795,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     watch_voices_store = WatchVoicesStore(hass)
     await watch_voices_store.async_load()
     coordinator.attach_watch_voices_store(watch_voices_store)
+    # The home's HTTP action library (step 4d batch 4): one record for every
+    # device, its revision on every delta reply, and a save or a hand-over
+    # wakes every parked poll so each watch pulls the new public list. An
+    # unreadable file is contained in the store and never fails setup. The
+    # runner sends an action for a device or for the panel's Test, and closes
+    # its sessions on unload.
+    http_actions_store = HTTPActionsStore(hass)
+    await http_actions_store.async_load()
+    coordinator.attach_http_actions_store(http_actions_store)
+    entry.async_on_unload(
+        http_actions_store.async_add_listener(coordinator.http_actions_changed)
+    )
+    http_action_runner = HTTPActionRunner(hass)
 
     # Register server capabilities
     # HA-owned custom complications: iOS checks this before offering the
@@ -875,6 +892,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # Pairing by code (wa_v2_views.py, WAPairStartView, and pairing_ws.py): a
     # watch with no iPhone offers it only when /version lists this.
     coordinator.register_capability(WATCH_PAIRING_CAPABILITY)
+    # The home's HTTP action library (http_actions_store.py): the signed
+    # http_actions_hand_over, http_actions_get and http_action_run ops and
+    # `http_actions` on every delta reply. The phone hands its library over,
+    # and a watch runs actions through Home Assistant, only when it sees this.
+    coordinator.register_capability(HTTP_ACTIONS_CAPABILITY)
 
     runtime_data = WristAssistantData(
         coordinator=coordinator,
@@ -894,6 +916,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         watch_config_store=watch_config_store,
         pair_request_store=pair_request_store,
         watch_voices_store=watch_voices_store,
+        http_actions_store=http_actions_store,
+        http_action_runner=http_action_runner,
     )
     entry.runtime_data = runtime_data
     hass.data[DOMAIN] = runtime_data
@@ -907,6 +931,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         async_register_watch_config_commands(hass)
         # The panel's pairing-code lookup and confirm (admin only).
         async_register_pairing_commands(hass)
+        # The panel's HTTP actions screen: the home's library and the Test
+        # card (admin only).
+        async_register_http_actions_commands(hass)
         # v2 transport: /v2/* HMAC for all watch traffic. A pair comes from
         # the iPhone's sign-in through WARegisterSecretView (bearer), or from
         # a code the watch gets from WAPairStartView (no auth, stores only a
@@ -1170,6 +1197,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: WristAssistantConfigEnt
             # this entry has already let go of.
             if data.complication_push is not None:
                 data.complication_push.shutdown()
+            await data.http_action_runner.async_shutdown()
     return unload_ok
 
 
@@ -1221,6 +1249,10 @@ async def async_remove_config_entry_device(
         # does the voice list it reported.
         domain_data.watch_config_store.forget_owner(watch_id)
         domain_data.watch_voices_store.forget(watch_id)
+        # The home's HTTP action library stays; only the device's hand-over
+        # and delivery marks go, so its phone may hand over again if it is
+        # paired anew.
+        domain_data.http_actions_store.forget(watch_id)
 
     return True
 
@@ -1252,6 +1284,9 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     # and so does the file of watch voice lists.
     await WatchConfigStore(hass).async_remove()
     await WatchVoicesStore(hass).async_remove()
+    # The home's HTTP action library too: it holds every URL, token and
+    # global the home's actions use.
+    await HTTPActionsStore(hass).async_remove()
 
 
 async def _create_apns_client(hass: HomeAssistant) -> APNsClient | None:

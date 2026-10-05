@@ -610,6 +610,10 @@ def ws_forget_device(
     voices_store = getattr(domain_data, "watch_voices_store", None)
     if voices_store is not None:
         voices_store.forget(watch_id)
+    # The home's HTTP action library stays; the device's marks on it go.
+    http_actions_store = getattr(domain_data, "http_actions_store", None)
+    if http_actions_store is not None:
+        http_actions_store.forget(watch_id)
 
     # Removing the store entry strips the device's entities on the next
     # listener pass, but the device registry record itself would linger as an

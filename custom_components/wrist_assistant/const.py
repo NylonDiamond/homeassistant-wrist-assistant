@@ -15,6 +15,8 @@ if TYPE_CHECKING:
     from .card_preview_store import CardPreviewStore
     from .complication_push import ComplicationPhonePush
     from .complication_store import ComplicationStore
+    from .http_actions_runner import HTTPActionRunner
+    from .http_actions_store import HTTPActionsStore
     from .notification_snapshot import NotificationSnapshotStore
     from .notifications import NotificationTokenStore
     from .parts_store import PartsStore
@@ -71,6 +73,11 @@ class WristAssistantData:
     # Each watch's installed speech voices, as the watch last sent them over
     # watch_voices_put. Read by the panel's Watch voice picker.
     watch_voices_store: WatchVoicesStore
+    # The home's HTTP action library, edited in the panel and handed over
+    # once by each phone, and the sender that runs one for a device. Both
+    # are home-wide: every paired device may run every action.
+    http_actions_store: HTTPActionsStore
+    http_action_runner: HTTPActionRunner
     apns_client: APNsClient | None = field(default=None)
     # Sends a phone owner the background push a watch owner gets as a long-poll
     # wake. Built after the relay client is resolved, so it is None for the

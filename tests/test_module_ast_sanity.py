@@ -222,6 +222,7 @@ def test_uninstall_removes_every_store_the_integration_writes() -> None:
         "NOTIFICATION_TOKEN_STORAGE_KEY",
         "ComplicationStore(hass).async_remove()",
         "WatchConfigStore(hass).async_remove()",
+        "HTTPActionsStore(hass).async_remove()",
     ):
         assert expected in body, f"async_remove_entry no longer removes {expected}"
 
@@ -232,3 +233,13 @@ def test_removing_a_device_in_ha_also_forgets_its_watch_config() -> None:
     registry entry, so it is checked statically here."""
     body = _function_source("__init__.py", "async_remove_config_entry_device")
     assert "watch_config_store.forget_owner(watch_id)" in body
+
+
+def test_both_device_removal_paths_drop_the_device_s_http_action_marks() -> None:
+    """The home's HTTP action library stays when a device goes, but its
+    hand-over and delivery marks must not: a phone paired again under the
+    same id would never hand over, and Home would count a gone watch."""
+    body = _function_source("__init__.py", "async_remove_config_entry_device")
+    assert "http_actions_store.forget(watch_id)" in body
+    forget = _function_source("complication_ws.py", "ws_forget_device")
+    assert "http_actions_store.forget(watch_id)" in forget
