@@ -13298,7 +13298,13 @@ export class WristAssistantPanel extends LitElement {
     void this.loadOtherLists();
     void this.updateComplete.then(() => {
       const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.pk-dialog");
-      if (!dialog) return;
+      // The dialog is drawn only over an open design. With none, the list is
+      // the page itself, and a flag left up would leave Browse looking open
+      // the next time a design is.
+      if (!dialog) {
+        this.pickerOpen = false;
+        return;
+      }
       if (!dialog.open) dialog.showModal();
       // Focus lands on the tab that is on, not in the search field: a
       // dialog that opens typing-ready reads as a search box, and this one
