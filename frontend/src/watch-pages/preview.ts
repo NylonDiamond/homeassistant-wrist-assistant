@@ -89,7 +89,8 @@ export interface WatchPagePreviewInput {
   /** CSS pixels per point. */
   scale?: number;
   /** The iPhone's library, which names a macro or status page tile with no
-   * label of its own as the watch does. */
+   * label of its own as the watch does. Its status pages are the watch's
+   * own record's when there is one (`watchCatalogWithStatusPages`). */
   catalog?: WatchCatalog;
   /** The template tiles' renders by tile id (`render_values`), each with the
    * text it was asked for, which a template tile draws as the watch does. A

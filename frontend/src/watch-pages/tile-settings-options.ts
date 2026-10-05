@@ -37,11 +37,12 @@ import {
   type WatchCatalogHTTPAction,
   type WatchLibraryKind,
   WATCH_LIBRARY_WORDS,
-  WATCH_NOT_ON_IPHONE_TEXT,
   findWatchCatalogEntry,
   watchCatalogEntries,
   watchCatalogSubtitle,
   watchCatalogWarning,
+  watchLibraryLister,
+  watchLibraryMissingText,
   watchLibraryTarget,
   watchLibraryTileFallbackName,
 } from "./catalog.js";
@@ -591,13 +592,17 @@ export function watchLibraryTargetMenu(tile: WatchPageTile, catalog: WatchCatalo
   const label = typeof tile.customLabel === "string" && tile.customLabel.trim() !== ""
     ? tile.customLabel
     : (watchLibraryTileFallbackName(tileEntityId(tile), catalog) ?? WATCH_LIBRARY_WORDS[target.kind].one);
+  // "Not on the iPhone", or for the watch's own status pages "Not in this
+  // watch's status pages".
+  const missing = watchLibraryMissingText(catalog, target.kind);
+  const lister = watchLibraryLister(catalog, target.kind);
   return {
     ...base,
-    options: [{ value: selected, label: `${label} (${WATCH_NOT_ON_IPHONE_TEXT})`, disabled: true }, ...options],
+    options: [{ value: selected, label: `${label} (${missing})`, disabled: true }, ...options],
     selected,
     note: entries.length === 0
-      ? `${WATCH_NOT_ON_IPHONE_TEXT}, and the iPhone lists no other ${WATCH_LIBRARY_WORDS[target.kind].many}. The tile stays as it is.`
-      : `${WATCH_NOT_ON_IPHONE_TEXT}. The tile stays as it is until another is picked.`,
+      ? `${missing}, and ${lister === "The iPhone" ? "the iPhone lists" : "this watch has"} no other ${WATCH_LIBRARY_WORDS[target.kind].many}. The tile stays as it is.`
+      : `${missing}. The tile stays as it is until another is picked.`,
   };
 }
 

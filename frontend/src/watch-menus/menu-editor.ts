@@ -70,7 +70,14 @@ import { type IconProvider, REFERENCE_CASE, caseForScreenSize } from "../rendere
 import { agoWords } from "../send-state.js";
 import { SymbolBrowser } from "../symbols.js";
 import { uiIcon } from "../ui-icons.js";
-import { type WatchCatalog, watchCatalogEventIsNews, watchCatalogFromRecord, watchCatalogReadMeansNone } from "../watch-pages/catalog.js";
+import {
+  type WatchCatalog,
+  type WatchCatalogStatusPage,
+  watchCatalogEventIsNews,
+  watchCatalogFromRecord,
+  watchCatalogReadMeansNone,
+  watchStatusPagesFromRecord,
+} from "../watch-pages/catalog.js";
 import {
   SavedAgoTicker,
   configFootStatus,
@@ -346,6 +353,10 @@ export class WaMenuEditor extends LitElement {
   /** The integration does not keep menus (too old for the kind). */
   @state() private unsupported = false;
   @state() private catalog?: WatchCatalog;
+  /** The watch's own status pages (the `status_pages` record), which the
+   * Show Status Page target lists before the iPhone's; undefined while Home
+   * Assistant holds none or before the first read. */
+  @state() private statusPages?: WatchCatalogStatusPage[];
   /** The pages record as last read: its revision (0 for none) and the
    * document. Undefined before the first read. The pages shown come from the
    * page draft when there is one (`pagesDocument`). */
@@ -408,6 +419,7 @@ export class WaMenuEditor extends LitElement {
   private shownDialog?: HTMLDialogElement;
   private loadSeq = 0;
   private catalogSeq = 0;
+  private statusPagesSeq = 0;
   private pagesSeq = 0;
   private behaviorSeq = 0;
   private historySeq = 0;
@@ -511,6 +523,7 @@ export class WaMenuEditor extends LitElement {
     this.stopPolling();
     this.loadSeq++;
     this.catalogSeq++;
+    this.statusPagesSeq++;
     this.pagesSeq++;
     this.behaviorSeq++;
     this.historySeq++;
@@ -610,6 +623,7 @@ export class WaMenuEditor extends LitElement {
     if (!this.isConnected || watchId === undefined) return;
     void this.load(watchId, true);
     void this.loadCatalog(watchId);
+    void this.loadStatusPages(watchId);
     void this.loadPages(watchId);
     void this.loadBehavior(watchId);
   };
@@ -661,6 +675,8 @@ export class WaMenuEditor extends LitElement {
       this.unsupported = false;
       this.catalog = undefined;
       this.catalogSeq++;
+      this.statusPages = undefined;
+      this.statusPagesSeq++;
       // The new watch's kept page draft, if any, shows until its record is
       // read (`pagesDraft`). Clearing `uiState` below lets go of the picked
       // page with the rest.
@@ -678,6 +694,7 @@ export class WaMenuEditor extends LitElement {
     this.startSubscription(watchId);
     void this.load(watchId, quiet);
     void this.loadCatalog(watchId);
+    void this.loadStatusPages(watchId);
     void this.loadPages(watchId);
     void this.loadBehavior(watchId);
   }
@@ -693,6 +710,23 @@ export class WaMenuEditor extends LitElement {
     } catch (error) {
       if (seq !== this.catalogSeq || watchId !== this.watchId) return;
       if (watchCatalogReadMeansNone(error)) this.catalog = undefined;
+    }
+  }
+
+  /** The watch's own status pages, for the Show Status Page target. An
+   * integration too old for the kind refuses it: none, and the iPhone's list
+   * stands. Any other failure keeps what is shown. */
+  private async loadStatusPages(watchId: string): Promise<void> {
+    const hass = this.hass;
+    if (!hass) return;
+    const seq = ++this.statusPagesSeq;
+    try {
+      const record = await fetchWatchConfig(hass, watchId, "status_pages");
+      if (seq !== this.statusPagesSeq || watchId !== this.watchId) return;
+      this.statusPages = watchStatusPagesFromRecord(record);
+    } catch (error) {
+      if (seq !== this.statusPagesSeq || watchId !== this.watchId) return;
+      if (watchCatalogReadMeansNone(error)) this.statusPages = undefined;
     }
   }
 
@@ -819,6 +853,8 @@ export class WaMenuEditor extends LitElement {
       if (seq !== this.subscribeSeq) return;
       if (event.kind === "catalog") {
         if (watchCatalogEventIsNews(event, this.catalog)) void this.loadCatalog(watchId);
+      } else if (event.kind === "status_pages") {
+        void this.loadStatusPages(watchId);
       } else if (event.kind === "pages") {
         void this.loadPages(watchId);
       } else if (event.kind === "behavior") {
@@ -949,7 +985,8 @@ export class WaMenuEditor extends LitElement {
   private targets(): MenuTargets {
     return {
       pages: this.pages,
-      statusPages: this.catalog?.statusPages ?? [],
+      // The watch's own status pages first, else the iPhone's list.
+      statusPages: this.statusPages ?? this.catalog?.statusPages ?? [],
       httpActions: this.catalog?.httpActions ?? [],
     };
   }

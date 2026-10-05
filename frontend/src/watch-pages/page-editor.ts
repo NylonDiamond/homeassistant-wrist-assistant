@@ -115,7 +115,14 @@ import {
   renderConfigRawDialog,
   renderConfigSaved,
 } from "./config-foot.js";
-import { type WatchCatalog, watchCatalogEventIsNews, watchCatalogFromRecord, watchCatalogReadMeansNone } from "./catalog.js";
+import {
+  type WatchCatalog,
+  watchCatalogEventIsNews,
+  watchCatalogFromRecord,
+  watchCatalogReadMeansNone,
+  watchCatalogWithStatusPages,
+  watchStatusPagesFromRecord,
+} from "./catalog.js";
 import { type WatchPagesApplyOptions, type WatchPagesDraft, createWatchPages, saveWatchPagesDraft } from "./draft.js";
 import { type AddTileHost, type TileSettingsHost, type WatchPagesEditorHost, NO_ICONS, ScrubRun, extendHost, memoIconNames, watchKeysTypeText } from "./editor-host.js";
 import {
@@ -631,6 +638,13 @@ export class WaPageEditor extends LitElement {
    * while there is none. Kept here and never in the draft: it is read only,
    * never saved, undone or merged. */
   @state() private catalog?: WatchCatalog;
+  /** The watch's own status pages record (the `status_pages` kind), read
+   * only, for the status page pickers; undefined before the first read and
+   * after one that failed. Its revision 0 means none: the pickers then read
+   * the iPhone's list. */
+  @state() private statusPagesRecord?: { revision: number; document: unknown };
+  private statusPagesSeq = 0;
+  private pickerCatalogMemo?: { catalog: WatchCatalog | undefined; record: unknown; out: WatchCatalog | undefined };
   /** The watch's camera refresh setting from its behavior document, for the
    * Camera task's Default words; the phone's defaults until it is read. */
   @state() private cameraRefresh: { on: boolean; debounce: string } = watchCameraRefreshDefaults(undefined);
@@ -877,6 +891,7 @@ export class WaPageEditor extends LitElement {
     this.stopTemplates();
     this.loadSeq++;
     this.catalogSeq++;
+    this.statusPagesSeq++;
     this.historySeq++;
   }
 
@@ -926,6 +941,7 @@ export class WaPageEditor extends LitElement {
     void this.load(watchId, true);
     // A catalog the phone published while the socket was down sent no event.
     void this.loadCatalog(watchId);
+    void this.loadStatusPages(watchId);
     // Music Assistant or the cloud may have come or gone meanwhile, and a
     // template's entities moved without the preview hearing.
     this.loadHomeData();
@@ -1305,6 +1321,8 @@ export class WaPageEditor extends LitElement {
       // The other watch's library is not this one's.
       this.catalog = undefined;
       this.catalogSeq++;
+      this.statusPagesRecord = undefined;
+      this.statusPagesSeq++;
       this.cameraRefresh = watchCameraRefreshDefaults(undefined);
       this.behavior = undefined;
       this.behaviorSeq++;
@@ -1334,6 +1352,7 @@ export class WaPageEditor extends LitElement {
     this.startSubscription(watchId);
     void this.load(watchId, quiet);
     void this.loadCatalog(watchId);
+    void this.loadStatusPages(watchId);
     void this.loadBehavior(watchId);
     if (!this.homeDataAsked && this.hass) {
       this.homeDataAsked = true;
@@ -1460,6 +1479,36 @@ export class WaPageEditor extends LitElement {
     }
   }
 
+  /** Read the watch's own status pages record beside the pages, for the
+   * status page pickers, which list it first and fall back to the iPhone's
+   * catalog. An integration too old for the kind refuses it: none. Any other
+   * failure keeps what is shown. */
+  private async loadStatusPages(watchId: string): Promise<void> {
+    const hass = this.hass;
+    if (!hass) return;
+    const seq = ++this.statusPagesSeq;
+    try {
+      const record = await fetchWatchConfig(hass, watchId, "status_pages");
+      if (seq !== this.statusPagesSeq || watchId !== this.watchId) return;
+      this.statusPagesRecord = { revision: record.revision, document: record.document };
+    } catch (error) {
+      if (seq !== this.statusPagesSeq || watchId !== this.watchId) return;
+      if (watchCatalogReadMeansNone(error)) this.statusPagesRecord = undefined;
+    }
+  }
+
+  /** The library the pickers and the preview read: the iPhone's catalog with
+   * the watch's own status pages in place of the phone's list when Home
+   * Assistant holds them. The same object while neither changed. */
+  private get pickerCatalog(): WatchCatalog | undefined {
+    const memo = this.pickerCatalogMemo;
+    const record = this.statusPagesRecord;
+    if (memo !== undefined && memo.catalog === this.catalog && memo.record === record) return memo.out;
+    const out = watchCatalogWithStatusPages(this.catalog, watchStatusPagesFromRecord(record));
+    this.pickerCatalogMemo = { catalog: this.catalog, record, out };
+    return out;
+  }
+
   /** Read the record. A quiet load keeps what is on screen until the answer
    * is in, which is how a change from elsewhere arrives. A quiet load during
    * a gesture or a save waits for it to end, so the document never moves
@@ -1559,6 +1608,10 @@ export class WaPageEditor extends LitElement {
       }
       if (event.kind === "behavior") {
         void this.loadBehavior(watchId);
+        return;
+      }
+      if (event.kind === "status_pages") {
+        void this.loadStatusPages(watchId);
         return;
       }
       if (event.kind !== "pages") return;
@@ -1726,7 +1779,7 @@ export class WaPageEditor extends LitElement {
       otherPages: () => listedWatchPages(draft.document).filter((p) => !sameWatchId(p.id, pageId)),
       // The element's, read live: a catalog that arrives while a picker is
       // open is the one its next pick reads.
-      catalog: () => this.catalog,
+      catalog: () => this.pickerCatalog,
       cameraRefreshDefaults: () => this.cameraRefresh,
       behavior: () => this.behavior,
       musicAssistant: () => this.homeData.musicAssistant,
@@ -3164,7 +3217,7 @@ export class WaPageEditor extends LitElement {
    * states, symbols and renders. */
   private previewInput(page: WatchPage, pages: readonly WatchPage[], screen: { width: number; height: number }, scale: number): WatchPagePreviewInput {
     return {
-      page, pages, screen, states: this.previewStates(), icons: this.icons, scale, catalog: this.catalog, templates: this.templateRenders,
+      page, pages, screen, states: this.previewStates(), icons: this.icons, scale, catalog: this.pickerCatalog, templates: this.templateRenders,
       behavior: this.behavior, stateMode: this.liveStates ? "live" : "all-on", testedIds: this.testedIds(),
     };
   }
@@ -3338,7 +3391,7 @@ export class WaPageEditor extends LitElement {
     const id = tileIdOf(tile);
     const entityId = tileEntityId(tile);
     const kindLabel = tileKindLabel(tileKind(entityId));
-    const label = watchPreviewTileLabel(tile, { states: this.previewStates(), pages, catalog: this.catalog }) || kindLabel;
+    const label = watchPreviewTileLabel(tile, { states: this.previewStates(), pages, catalog: this.pickerCatalog }) || kindLabel;
     const rect = watchTileRect(tile);
     // Lit while picked, alone or with others; `aria-current` is the primary's.
     const picked = this.isPicked(id);
@@ -3507,7 +3560,7 @@ export class WaPageEditor extends LitElement {
     const asOnWatch = headers && this.asOnWatch;
     const scale = this.stageScale;
     const input: WatchPagePreviewInput = {
-      page, pages, screen: watchCase.screen, states, icons: this.icons, scale, catalog: this.catalog, templates: this.templateRenders,
+      page, pages, screen: watchCase.screen, states, icons: this.icons, scale, catalog: this.pickerCatalog, templates: this.templateRenders,
       // The watch's own settings, for its page dots and its page title mode.
       behavior: this.behavior,
       // Live off: every tile lit, as the page looks in use, but for a state
@@ -3762,7 +3815,7 @@ export class WaPageEditor extends LitElement {
       const color = watchKindColor(entityId, watchAddThemeOf(page)) ?? SECTION_COLOR.content;
       const symbol = watchTileSymbol(tile, entity);
       const glyph = symbol === undefined ? undefined : this.memoIcons().render(symbol, 13, color);
-      const label = watchPreviewTileLabel(tile, { states, pages: this.draft === undefined ? [] : watchPagesOf(this.draft.document), catalog: this.catalog })
+      const label = watchPreviewTileLabel(tile, { states, pages: this.draft === undefined ? [] : watchPagesOf(this.draft.document), catalog: this.pickerCatalog })
         || tileKindLabel(tileKind(entityId));
       const unit = typeof real?.attributes?.unit_of_measurement === "string" ? ` ${real.attributes.unit_of_measurement}` : "";
       const icon = html`<span class="vp-icon">${glyph ?? uiIcon("states")}</span><b>${label}</b>`;
@@ -4054,7 +4107,7 @@ export class WaPageEditor extends LitElement {
     } else {
       const kind = tileKind(tileEntityId(tile));
       const kindLabel = tileKindLabel(kind);
-      const label = watchPreviewTileLabel(tile, { states: this.hass?.states, pages, catalog: this.catalog }) || kindLabel;
+      const label = watchPreviewTileLabel(tile, { states: this.hass?.states, pages, catalog: this.pickerCatalog }) || kindLabel;
       crumbs = html`<div class="crumbs"><button class="root" title="Edit the page" @click=${() => this.selectTile(undefined)}>${name}</button><span class="sep">›</span><span class="kchip" style=${`--k:${watchTileKindColor(kind)}`}>${kindLabel}</span><span class="nm" title=${label}>${label}</span></div>`;
     }
     // Every card drawn now that folds, for Collapse all: it folds them all
@@ -4096,7 +4149,7 @@ export class WaPageEditor extends LitElement {
       if (tile === undefined) return [];
       const entityId = tileEntityId(tile);
       const kindLabel = tileKindLabel(tileKind(entityId));
-      const label = watchPreviewTileLabel(tile, { states, pages, catalog: this.catalog }) || kindLabel;
+      const label = watchPreviewTileLabel(tile, { states, pages, catalog: this.pickerCatalog }) || kindLabel;
       const placed = layout.tiles.find((t) => t.tile === tile) ?? layout.tiles.find((t) => sameWatchId(tileIdOf(t.tile), id));
       const color = watchKindColor(entityId, watchAddThemeOf(page)) ?? SECTION_COLOR.content;
       return [html`<div class="layer pe-picked-row" style=${`--k:${color}`} role="listitem" data-picked-tile=${id}>

@@ -90,6 +90,12 @@ export interface WatchCatalog {
   /** The phone's voice defaults. Undefined when the document has no `voice`
    * object: a phone older than the key, which cannot say. Never saved. */
   voice: WatchCatalogVoice | undefined;
+  /** `statusPages` are the watch's own status pages record (the
+   * `status_pages` kind), not the phone's list (`watchCatalogWithStatusPages`). */
+  statusPagesFromWatch?: true;
+  /** No iPhone catalog is behind this one: only the watch's status pages are
+   * known, and the HTTP actions and macros are not. */
+  noPhone?: true;
 }
 
 /** The tile kind (`entityId` prefix before the dot) of each library kind. */
@@ -191,6 +197,65 @@ export function readWatchCatalog(document: unknown, meta: { revision?: number; u
 export function watchCatalogFromRecord(record: WatchConfigRecord | undefined): WatchCatalog | undefined {
   if (record === undefined || !(record.revision > 0)) return undefined;
   return readWatchCatalog(record.document, { revision: record.revision, updatedAt: record.updated_at });
+}
+
+/**
+ * The status pages of a `status_pages` record, as the pickers list them (id,
+ * name and how many rows), read as the catalog's list is. Undefined when
+ * Home Assistant holds no record (revision 0, or none read): the pickers then
+ * fall back to the phone's catalog.
+ */
+export function watchStatusPagesFromRecord(record: { revision: number; document?: unknown } | undefined): WatchCatalogStatusPage[] | undefined {
+  if (record === undefined || !(record.revision > 0)) return undefined;
+  const doc = isJsonObject(record.document) ? record.document : {};
+  return entries(doc.statusPages).map((e) => {
+    const out: WatchCatalogStatusPage = { id: e.id as string, name: e.name as string };
+    return Array.isArray(e.rows) ? withOptional(out, "rows", e.rows.length) : out;
+  });
+}
+
+/**
+ * The catalog the pickers read: the watch's own status pages first, when
+ * Home Assistant holds a record of them, else the phone's list. With no
+ * phone catalog the watch's pages still come through, on a catalog marked
+ * `noPhone` whose other lists are empty and unknown.
+ */
+export function watchCatalogWithStatusPages(catalog: WatchCatalog | undefined, statusPages: readonly WatchCatalogStatusPage[] | undefined): WatchCatalog | undefined {
+  if (statusPages === undefined) return catalog;
+  if (catalog !== undefined) return { ...catalog, statusPages, statusPagesFromWatch: true };
+  return { revision: 0, updatedAt: undefined, httpActions: [], macros: [], statusPages, voice: undefined, statusPagesFromWatch: true, noPhone: true };
+}
+
+/** Whether the catalog knows the entries of a kind: an iPhone catalog knows
+ * all three; the watch's status pages alone know only those. */
+export function watchCatalogKnows(catalog: WatchCatalog | undefined, kind: WatchLibraryKind): boolean {
+  if (catalog === undefined) return false;
+  return catalog.noPhone !== true || kind === "statusPage";
+}
+
+/** Whether the entries of a kind come from the watch's own record. */
+export function watchCatalogFromWatch(catalog: WatchCatalog | undefined, kind: WatchLibraryKind): boolean {
+  return kind === "statusPage" && catalog?.statusPagesFromWatch === true;
+}
+
+/** What a tile whose status page the watch's own record does not list says. */
+export const WATCH_NOT_IN_STATUS_PAGES_TEXT = "Not in this watch's status pages";
+
+/** The line in place of the HTTP action and macro lists when the watch's
+ * status pages are known and no iPhone catalog is. */
+export const WATCH_NO_PHONE_LIBRARY_TEXT = "Open the iPhone app to list its HTTP actions and macros here.";
+
+/** What a tile whose library entry is not listed says: "Not on the iPhone",
+ * or for a status page from the watch's own record "Not in this watch's
+ * status pages". */
+export function watchLibraryMissingText(catalog: WatchCatalog | undefined, kind: WatchLibraryKind): string {
+  return watchCatalogFromWatch(catalog, kind) ? WATCH_NOT_IN_STATUS_PAGES_TEXT : WATCH_NOT_ON_IPHONE_TEXT;
+}
+
+/** Who lists the entries of a kind, for "The iPhone lists no …": the
+ * iPhone, or this watch for its own status pages. */
+export function watchLibraryLister(catalog: WatchCatalog | undefined, kind: WatchLibraryKind): string {
+  return watchCatalogFromWatch(catalog, kind) ? "This watch" : "The iPhone";
 }
 
 /** Whether a failed read of the catalog means there is none: an integration
