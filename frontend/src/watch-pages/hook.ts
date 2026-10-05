@@ -148,6 +148,10 @@ export interface WatchPagesViewInput {
   menu: boolean;
   onMenu: () => void;
   onBack: () => void;
+  /** The panel's Watch app row owns the watch (`watch-row.ts`): the editor
+   * follows `ownerId` and leaves out its own watch picker, the way back and
+   * its links to the other screens. Left out, the editor is as it was. */
+  shell?: boolean;
   /** To the menu editor. Without it the editor goes there from the address
    * bar (`navigateMenusFromPages`). */
   onMenus?: () => void;
@@ -172,9 +176,9 @@ export function renderWatchPagesView(input: WatchPagesViewInput): TemplateResult
       ? html`<wa-page-editor .hass=${input.hass} .owners=${input.owners} .ownerId=${input.ownerId}
           .icons=${input.icons} .iconsTick=${input.iconsTick} ?narrow=${input.narrow}
           .haMenu=${input.menu} .onHaMenu=${input.onMenu} .onBack=${input.onBack} .onMenus=${input.onMenus}
-          .barActions=${input.actions}></wa-page-editor>`
+          .barActions=${input.actions} .shellOwnsWatch=${input.shell === true}></wa-page-editor>`
       : html`<div class="wp-loading">
-          <button class="tb-btn tb-back" title="Back to complications" @click=${input.onBack}>${uiIcon("left")}<span>Complications</span></button>
+          ${input.shell === true ? nothing : html`<button class="tb-btn tb-back" title="Back to complications" @click=${input.onBack}>${uiIcon("left")}<span>Complications</span></button>`}
           ${loadFailed ? html`<span>The page editor did not load. Reload the page to try again.</span>` : html`<span>Loading…</span>`}
         </div>`}`;
 }

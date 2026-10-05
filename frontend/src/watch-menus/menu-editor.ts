@@ -113,7 +113,7 @@ import { scrubWatchOrphanTriggers } from "../watch-pages/tile-settings-model.js"
 import {
   START_PHONE_FIRST_TEXT,
   deliveryState,
-  initialWatch,
+  followWatch,
   settingsWatches,
   watchName,
 } from "../watch-settings.js";
@@ -349,6 +349,11 @@ export class WaMenuEditor extends LitElement {
   /** The panel's own buttons for the bar's right end: Watch settings, whose
    * dialog the panel draws. */
   @property({ attribute: false }) barActions: TemplateResult | typeof nothing = nothing;
+  /** The panel's Watch app row owns the watch: it picks the watch (this
+   * element follows `ownerId` wherever it goes) and holds the ways to the
+   * other screens, so the bar leaves out its own watch picker, the way back
+   * to complications and Pages. Off, the bar is as it always was. */
+  @property({ attribute: false }) shellOwnsWatch = false;
 
   @state() private watchId?: string;
   @state() private record?: WatchConfigRecord;
@@ -547,11 +552,10 @@ export class WaMenuEditor extends LitElement {
           () => { this.ownList = []; },
         );
       }
-      const watches = this.watches;
-      if (this.watchId === undefined || !watches.some((w) => w.owner_watch_id === this.watchId)) {
-        const id = initialWatch(watches, this.ownerId);
-        if (id !== undefined && id !== this.watchId) this.openWatch(id);
-      }
+      // A move takes the watch's kept menu draft and its kept page draft
+      // together (`openWatch`), so both stay as they were on the watch left.
+      const id = followWatch(this.watches, this.watchId, this.ownerId, this.shellOwnsWatch || changed.has("ownerId"));
+      if (id !== undefined) this.openWatch(id);
     }
     this.followSave();
     const ask = this.restoreAsk;
@@ -1367,20 +1371,21 @@ export class WaMenuEditor extends LitElement {
     // The pages count too: a page's switcher settings are edited here.
     const dirty = editing && this.dirty;
     const admin = this.hass?.user?.is_admin === true;
+    const shell = this.shellOwnsWatch;
     return html`<div class="wa-bar ${this.stacked ? "stacked" : ""}" role="toolbar" aria-label="Watch menus">
       ${this.haMenu ? html`<button class="icon tb-icon tb-menu" title="Home Assistant menu" aria-label="Home Assistant menu"
         @click=${() => this.onHaMenu?.()}>${uiIcon("menu")}</button>` : nothing}
-      <button class="tb-btn tb-back" title="Back to complications"
-        @click=${() => (this.onBack ? this.onBack() : navigateWatchMenus(undefined, false))}>${uiIcon("left")}<span>Complications</span></button>
+      ${shell ? nothing : html`<button class="tb-btn tb-back" title="Back to complications"
+        @click=${() => (this.onBack ? this.onBack() : navigateWatchMenus(undefined, false))}>${uiIcon("left")}<span>Complications</span></button>`}
       <span class="spacer"></span>
-      ${this.renderWatchPicker(watches)}
+      ${shell ? nothing : this.renderWatchPicker(watches)}
       ${this.renderSyncPill(editing ? draft : undefined)}
       ${this.renderTopMenu(editing ? draft : undefined)}
       ${editing ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
           title=${dirty ? `Save (${MOD}S). A save reaches the watch the next time it checks, or through the iPhone.` : `Nothing to save (${MOD}S)`}
           @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
         <span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record)}</span>` : nothing}
-      ${admin ? html`<button class="tb-btn tb-pages" title="The watch's pages, as Home Assistant keeps them"
+      ${admin && !shell ? html`<button class="tb-btn tb-pages" title="The watch's pages, as Home Assistant keeps them"
         @click=${() => (this.onPages ? this.onPages() : navigatePagesFromMenus(undefined))}>${uiIcon("pages")}<span>Pages</span></button>` : nothing}
       ${this.barActions}
       <button class="help" title="Help: the quick menu editor" aria-label="Help"
