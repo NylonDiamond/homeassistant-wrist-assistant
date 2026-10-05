@@ -820,12 +820,12 @@ import{a as vs,b as ha,c as Cp,g as bs,h as Rp,i as Ep,j as Pp}from"./chunks/chu
       ${e==="none"?h:Dv(r.route,r.watch).map(n=>i(n))}
       ${r.admin?i(eg(r.route,r.watch),"wa-wr-settings ","How the watch behaves: gestures, pages, cameras and connection"):h}
     </span>
-  </nav>`}function Av(r,a,e){if(a==="loading")return c`<span class="wa-wr-watch"><span class="wa-wr-k">Watch</span><span class="wa-wr-wait">Loading…</span></span>`;if(a==="none"){if(!r.admin)return c`<span class="wa-wr-watch"><span class="wa-wr-k">Watch</span><span class="wa-wr-wait">None yet</span></span>`;let n=eg(r.route,void 0);return c`<button type="button" class="wa-wr-pair" title="Opens Settings, where a watch pairs with a code"
-      @click=${()=>{n.on||r.onGo(n.path)}}>${y("watch")}<span>Pair a watch</span></button>`}let t=e.find(n=>n.on)??e[0];if(a==="one")return c`<span class="wa-wr-watch"><span class="wa-wr-k">Watch</span><b class="wa-wr-name">${t.name}</b></span>`;let i=r.menuOpen;return c`<span class="wa-wr-picker" @keydown=${n=>{n.key==="Escape"&&i&&(n.stopPropagation(),r.onMenu(!1))}}>
+  </nav>`}function Av(r,a,e){if(a==="loading")return c`<span class="wa-wr-watch"><span class="wa-wr-chip" aria-hidden="true">${y("watch")}</span><span class="wa-wr-k">Watch</span><span class="wa-wr-wait">Loading…</span></span>`;if(a==="none"){if(!r.admin)return c`<span class="wa-wr-watch"><span class="wa-wr-chip" aria-hidden="true">${y("watch")}</span><span class="wa-wr-k">Watch</span><span class="wa-wr-wait">None yet</span></span>`;let n=eg(r.route,void 0);return c`<button type="button" class="wa-wr-pair" title="Opens Settings, where a watch pairs with a code"
+      @click=${()=>{n.on||r.onGo(n.path)}}>${y("watch")}<span>Pair a watch</span></button>`}let t=e.find(n=>n.on)??e[0];if(a==="one")return c`<span class="wa-wr-watch"><span class="wa-wr-chip" aria-hidden="true">${y("watch")}</span><span class="wa-wr-k">Watch</span><b class="wa-wr-name">${t.name}</b></span>`;let i=r.menuOpen;return c`<span class="wa-wr-picker" @keydown=${n=>{n.key==="Escape"&&i&&(n.stopPropagation(),r.onMenu(!1))}}>
     <button type="button" class="wa-wr-open" aria-haspopup="menu" aria-expanded=${i?"true":"false"}
       title="Pick the watch to set up" aria-label=${`Watch: ${t.name}. Pick another`}
       @click=${()=>r.onMenu(!i)}>
-      <span class="wa-wr-k">Watch</span><b class="wa-wr-name">${t.name}</b>${y("chevron")}
+      <span class="wa-wr-chip" aria-hidden="true">${y("watch")}</span><span class="wa-wr-k">Watch</span><b class="wa-wr-name">${t.name}</b>${y("chevron")}
     </button>
     ${i?c`<div class="wa-wr-menu" role="menu" aria-label="Watches">
       <div class="wa-wr-menu-h">You are editing</div>
@@ -845,20 +845,37 @@ import{a as vs,b as ha,c as Cp,g as bs,h as Rp,i as Ep,j as Pp}from"./chunks/chu
     background: var(--wa-top); color: var(--wa-ink); border-bottom: 1px solid var(--wa-line);
     position: relative; z-index: 20;
   }
-  .wa-wr-watch { display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; padding: 0 2px; }
-  .wa-wr-k { font-size: 12px; color: var(--wa-muted); }
-  .wa-wr-name { font-size: 13px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Which watch is being set up is the first thing to read on this row: it
+     carries the Watch app's color on its chip and its outline, a larger
+     name, and a rule between it and the screens. The screens stay neutral. */
+  .wa-wr-watch {
+    display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; height: 32px; box-sizing: border-box;
+    padding: 0 10px 0 6px; line-height: 30px; border-radius: 6px; border: 1px solid var(--wa-line-strong);
+  }
+  .wa-wr-watch, .wa-wr-picker { margin-right: 2px; }
+  .wa-wr-watch::after, .wa-wr-picker::after {
+    content: ""; position: absolute; right: -9px; top: 4px; bottom: 4px; width: 1px; background: var(--wa-line-strong);
+  }
+  .wa-wr-watch { position: relative; }
+  span.wa-wr-chip {
+    display: inline-flex; align-items: center; justify-content: center; align-self: center; flex: none;
+    width: 20px; height: 20px; border-radius: 5px;
+    color: var(--wa-hue-blue); background: color-mix(in srgb, var(--wa-hue-blue) 20%, transparent);
+  }
+  .wa-wr-k { font-size: 12px; color: var(--wa-label); }
+  .wa-wr-name { font-size: 14px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .wa-wr-wait { font-size: 13px; color: var(--wa-muted); }
   .wa-wr-picker { position: relative; display: inline-flex; min-width: 0; }
   button.wa-wr-open, button.wa-wr-pair {
-    display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; max-width: 100%;
+    display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; max-width: 100%;
     border-radius: 6px; font: inherit; cursor: pointer; color: var(--wa-ink);
     background: var(--wa-field); border: 1px solid var(--wa-line-strong);
   }
-  button.wa-wr-open { align-items: baseline; padding-top: 0; line-height: 28px; }
+  button.wa-wr-open { align-items: baseline; padding: 0 10px 0 6px; line-height: 30px; border-color: var(--wa-hue-blue); }
   button.wa-wr-open:hover, button.wa-wr-pair:hover { background: var(--wa-hover); }
   button.wa-wr-open:focus-visible, button.wa-wr-pair:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  button.wa-wr-open svg.ui-icon { width: 12px; height: 12px; align-self: center; color: var(--wa-muted); }
+  button.wa-wr-open svg.ui-icon { width: 12px; height: 12px; align-self: center; color: var(--wa-ink); }
+  span.wa-wr-chip svg.ui-icon { width: 13px; height: 13px; color: inherit; }
   button.wa-wr-pair { font-size: 13px; font-weight: 600; }
   button.wa-wr-pair svg.ui-icon { width: 14px; height: 14px; }
   .wa-wr-menu {
