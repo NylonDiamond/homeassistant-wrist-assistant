@@ -2513,7 +2513,7 @@
       "pageTitleTextColor": null,
       "pageTitleIcon": "house"
     },
-    "note": "Each task's reset writes exactly these keys, null removing the key, on every tile it applies to; Page on the page. A page key that the encoder writes only under a condition (writeWhen in page-keys.json) is then not written. Reset Page also deletes the phone's copy of the background image."
+    "note": "Each task's reset writes exactly these keys, null removing the key, on every tile it applies to; Page on the page. A page key that the encoder writes only under a condition (writeWhen in page-keys.json) is then not written. Reset Page clears the image keys like any other; the photo stays in Home Assistant's photo store until no page names it (the iPhone app also drops its own cached copy)."
   },
   "remap": {
     "rule": "remapKnownThemeHex(hex, to): a gradient token is remapped end by end, an end that is not known kept (normalized). #000000 and #FFFFFF stay. A hex in roleByHex maps to the target theme's roleHexes for that role. Else, for each theme in themeOrder, for each list in indexLists, a hex found in that theme's list maps to the target theme's list at the same index, when the two lists are the same length. Else the hex is not known (null) and the caller keeps it. Hexes are compared upper case with a leading #.",
