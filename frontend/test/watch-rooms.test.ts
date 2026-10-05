@@ -444,6 +444,23 @@ describe("the draft", () => {
     expect(draft.dirty).toBe(false);
   });
 
+  it("keeps its undo and redo steps when asked for them during a save", () => {
+    const draft = new RoomsDraft(behavior(), 3);
+    draft.apply(fallbackWrites("__stay__"));
+    draft.apply(pointSwitchWrites("pointControlTapToToggle", true));
+    draft.undo();
+    draft.saving = true;
+    expect(draft.undo()).toBe(false);
+    expect(draft.redo()).toBe(false);
+    draft.saving = false;
+    // A save that failed with no fresh copy leaves both steps where they were.
+    expect(draft.undo()).toBe(true);
+    expect(draft.dirty).toBe(false);
+    expect(draft.redo()).toBe(true);
+    expect(draft.redo()).toBe(true);
+    expect(draft.effective.pointControlTapToToggle).toBe(true);
+  });
+
   it("makes one undo step of a dial dragged round", () => {
     const doc = behavior();
     const draft = new RoomsDraft(doc, 3);

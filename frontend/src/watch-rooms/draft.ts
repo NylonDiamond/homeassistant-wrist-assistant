@@ -80,8 +80,9 @@ export class RoomsDraft {
   }
 
   undo(): boolean {
+    if (this.saving) return false;
     const prev = this.undoStack.pop();
-    if (prev === undefined || this.saving) return false;
+    if (prev === undefined) return false;
     this.redoStack.push(this.edits);
     this.edits = prev;
     this.coalesceKey = undefined;
@@ -89,8 +90,9 @@ export class RoomsDraft {
   }
 
   redo(): boolean {
+    if (this.saving) return false;
     const next = this.redoStack.pop();
-    if (next === undefined || this.saving) return false;
+    if (next === undefined) return false;
     this.undoStack.push(this.edits);
     this.edits = next;
     this.coalesceKey = undefined;
