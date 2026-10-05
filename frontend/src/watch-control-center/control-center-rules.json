@@ -1,0 +1,18 @@
+{
+  "toggleDomains": ["light", "switch", "fan", "input_boolean", "lock", "cover"],
+  "actionDomains": ["scene", "script", "automation"],
+  "defaultIcons": {
+    "light": "lightbulb",
+    "switch": "switch.2",
+    "fan": "fan",
+    "lock": "lock",
+    "cover": "blinds.horizontal.closed",
+    "scene": "play",
+    "script": "scroll",
+    "automation": "gearshape.2",
+    "input_boolean": "togglepower"
+  },
+  "fallbackIcon": "circle",
+  "requiredKeys": ["entityId", "displayName", "iconName", "domain"],
+  "optionalKeys": ["customIconName", "customDisplayName", "tintColorHex", "isHidden", "schemaVersion"]
+}
