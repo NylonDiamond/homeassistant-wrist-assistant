@@ -53,8 +53,14 @@ describe("the panel's shell wiring", () => {
 
   it("mutes the editor's keys wherever its draft is out of sight", () => {
     const keys = SOURCE.slice(SOURCE.indexOf("private keyHandler = "), SOURCE.indexOf("private blurHandler"));
-    expect(keys).toContain("if (!editorKeysLive(this.route, this.draft !== undefined)) return;");
+    expect(keys).toContain("if (!editorKeysLive(this.route, this.draft !== undefined)) {");
     expect(keys.indexOf("editorKeysLive")).toBeLessThan(keys.indexOf("this.onKey(e)"));
+  });
+
+  it("keeps ⌘S from opening the browser's Save Page dialog while the keys are muted", () => {
+    const keys = SOURCE.slice(SOURCE.indexOf("private keyHandler = "), SOURCE.indexOf("private blurHandler"));
+    expect(keys).toContain("if (isSaveKey(e) && swallowsSaveKey(this.route, this.draft !== undefined)) e.preventDefault();");
+    expect(keys.indexOf("swallowsSaveKey")).toBeLessThan(keys.indexOf("this.onKey(e)"));
   });
 
   it("lands a reload or a share link on the Complications tab, replacing the address", () => {

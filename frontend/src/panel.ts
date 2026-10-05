@@ -421,8 +421,8 @@ import { dropWatchStatusPagesDrafts, isWatchStatusPagesRoute, renderWatchStatusP
 import { dropWatchControlCenterDrafts, isWatchControlCenterRoute, renderWatchControlCenterView, watchControlCenterDirty, watchControlCenterHookStyles } from "./watch-control-center/hook.js";
 import { dropWatchRoomsDrafts, isWatchRoomsRoute, renderWatchRoomsView, watchRoomsDirty, watchRoomsHookStyles } from "./watch-rooms/hook.js";
 import {
-  COMPLICATIONS_PATH, type PanelTab, WATCH_SCREENS, editorKeysLive, isPlainClick, landingPath, navigatePanel,
-  panelUrl, renderTabBar, shellStyles, tabOfRoute, tabPath, watchScreenOf, watchScreenPath,
+  COMPLICATIONS_PATH, type PanelTab, WATCH_SCREENS, editorKeysLive, isPlainClick, isSaveKey, landingPath, navigatePanel,
+  panelUrl, renderTabBar, shellStyles, swallowsSaveKey, tabOfRoute, tabPath, watchScreenOf, watchScreenPath,
 } from "./shell.js";
 import { adoptRouteWatch, loadWatchPick, resolveWatchPick, saveWatchPick, watchRouteOwner } from "./watch-pick.js";
 import { renderWatchRow, watchRowStyles } from "./watch-row.js";
@@ -2277,8 +2277,13 @@ export class WristAssistantPanel extends LitElement {
   private keyHandler = (e: KeyboardEvent) => {
     if (e.key === "Alt") this.altHeld = true;
     // On Home, on every watch screen and on the list with nothing open, the
-    // draft is out of sight (or there is none), so its keys stay still.
-    if (!editorKeysLive(this.route, this.draft !== undefined)) return;
+    // draft is out of sight (or there is none), so its keys stay still. On
+    // Home and the list ⌘S still does nothing rather than open the browser's
+    // Save Page dialog; a watch screen handles its own.
+    if (!editorKeysLive(this.route, this.draft !== undefined)) {
+      if (isSaveKey(e) && swallowsSaveKey(this.route, this.draft !== undefined)) e.preventDefault();
+      return;
+    }
     this.onKey(e);
   };
   /** A window that loses focus with Alt down never sees its keyup. */

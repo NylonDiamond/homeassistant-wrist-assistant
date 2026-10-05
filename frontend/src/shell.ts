@@ -155,6 +155,19 @@ export function editorKeysLive(route: PanelRoute | undefined, hasDraft: boolean)
   return hasDraft && tabOfRoute(route) === "complications";
 }
 
+/** ⌘S or Ctrl+S, read the way the editor reads it. */
+export function isSaveKey(e: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey">): boolean {
+  return (e.metaKey || e.ctrlKey) && e.key === "s";
+}
+
+/** Whether ⌘S or Ctrl+S is held back from the browser while the editor's
+ * keys are still: on Home and on the list with nothing open, where it would
+ * otherwise open the browser's Save Page dialog. A watch screen saves on it
+ * itself, so there the key is left alone. */
+export function swallowsSaveKey(route: PanelRoute | undefined, hasDraft: boolean): boolean {
+  return !editorKeysLive(route, hasDraft) && tabOfRoute(route) !== "watch";
+}
+
 /**
  * Where the panel should be on first open, when that is not where it is.
  *

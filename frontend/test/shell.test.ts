@@ -10,11 +10,13 @@ import {
   editorKeysLive,
   isComplicationsRoute,
   isPlainClick,
+  isSaveKey,
   landingPath,
   navigatePanel,
   panelPrefix,
   panelUrl,
   renderTabBar,
+  swallowsSaveKey,
   tabOfRoute,
   tabPath,
   tabsFor,
@@ -206,6 +208,31 @@ describe("editorKeysLive", () => {
     for (const screen of WATCH_SCREENS) {
       expect(editorKeysLive(at(screen.path), true)).toBe(false);
       expect(editorKeysLive(at(`${screen.path}/w1`), true)).toBe(false);
+    }
+  });
+});
+
+describe("the save key while the editor's keys are still", () => {
+  it("reads ⌘S and Ctrl+S, not a bare S", () => {
+    const key = (over: Partial<Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey">>) => ({ key: "s", metaKey: false, ctrlKey: false, ...over });
+    expect(isSaveKey(key({ metaKey: true }))).toBe(true);
+    expect(isSaveKey(key({ ctrlKey: true }))).toBe(true);
+    expect(isSaveKey(key({}))).toBe(false);
+    expect(isSaveKey(key({ metaKey: true, key: "z" }))).toBe(false);
+  });
+
+  it("is held back from the browser on Home and on the list with nothing open, with or without a draft out of sight", () => {
+    expect(swallowsSaveKey(at(""), false)).toBe(true);
+    expect(swallowsSaveKey(at(""), true)).toBe(true);
+    expect(swallowsSaveKey(undefined, false)).toBe(true);
+    expect(swallowsSaveKey(at(COMPLICATIONS_PATH), false)).toBe(true);
+  });
+
+  it("is left to the editor while it is live, and to a watch screen, which saves on it itself", () => {
+    expect(swallowsSaveKey(at(COMPLICATIONS_PATH), true)).toBe(false);
+    for (const screen of WATCH_SCREENS) {
+      expect(swallowsSaveKey(at(screen.path), false)).toBe(false);
+      expect(swallowsSaveKey(at(`${screen.path}/w1`), true)).toBe(false);
     }
   });
 });
