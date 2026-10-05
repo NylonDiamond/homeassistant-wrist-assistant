@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { HassLike, OwnerSummary, WatchConfigRecord } from "../src/ha-api.js";
 import { REFERENCE_CASE } from "../src/renderer.js";
+import { type WatchCatalog, readWatchCatalog } from "../src/watch-pages/catalog.js";
 import { watchKeysTypeText } from "../src/watch-pages/editor-host.js";
 import { takeWatchPagesRecord } from "../src/watch-pages/kept.js";
 import type { WatchPagesDocument } from "../src/watch-pages/model.js";
@@ -993,5 +994,35 @@ describe("the zoom", () => {
     setZoom.call(el, undefined);
     expect(el.zoom).toBeUndefined();
     expect(body()).toContain(">150%</button>");
+  });
+});
+
+describe("the pickers' HTTP actions", () => {
+  const CATALOG = readWatchCatalog({ httpActions: [
+    { id: "4F7A2C1E-9B3D-4E5F-8A6B-1C2D3E4F5A6B", name: "Open Gate" },
+    { id: "6A0B3C2D-1E4F-4A5B-9C8D-7E6F5A4B3C2D", name: "Outdoor Temp", hasReply: true },
+  ] }, { revision: 2 });
+  const PORCH = "A1B2C3D4-0000-4000-8000-0000000000A1";
+
+  it("lead with the home's library once it is read, and fall back to the catalog alone", async () => {
+    const { el } = editor();
+    el.catalog = CATALOG;
+    const picker = () => el.pickerCatalog as WatchCatalog | undefined;
+    expect(picker()).toBe(CATALOG);
+    let answer: () => Promise<unknown> = async () => ({
+      revision: 3,
+      document: { actions: [{ id: PORCH, name: "Porch Temp", url: "x" }, { id: "4f7a2c1e-9b3d-4e5f-8a6b-1c2d3e4f5a6b", name: "Gate", url: "" }] },
+    });
+    el.hass = { user: { is_admin: true }, states: {}, connection: { sendMessagePromise: (m: { type: string }) => (m.type === "wrist_assistant/http_actions/get" ? answer() : Promise.reject(new Error("no"))) } } as unknown as HassLike;
+    await (el.loadHttpLibrary as () => Promise<void>).call(el);
+    expect(picker()!.httpActions.map((a) => [a.name, a.source, a.needsSetup])).toEqual([
+      ["Porch Temp", "home", false], ["Gate", "home", true], ["Outdoor Temp", "iphone", false],
+    ]);
+    // The same object while nothing changed.
+    expect(picker()).toBe(picker());
+    // An integration older than the library: the catalog alone again.
+    answer = () => Promise.reject(Object.assign(new Error("Unknown command."), { code: "unknown_command" }));
+    await (el.loadHttpLibrary as () => Promise<void>).call(el);
+    expect(picker()).toBe(CATALOG);
   });
 });

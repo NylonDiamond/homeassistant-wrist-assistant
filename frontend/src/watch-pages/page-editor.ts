@@ -48,6 +48,7 @@ import {
   fetchCloudStatus,
   fetchConfigEntries,
   fetchOwners,
+  fetchHttpActions,
   fetchWatchConfig,
   fetchWatchConfigHistory,
   fetchWatchConfigHistoryEntry,
@@ -124,6 +125,7 @@ import {
   watchCatalogWithStatusPages,
   watchStatusPagesFromRecord,
 } from "./catalog.js";
+import { type WatchHttpLibrary, readWatchHttpLibrary, watchCatalogWithHttpLibrary, watchHttpLibraryReadMeansNone } from "./http-library.js";
 import { voiceDocumentOfRecord, watchVoiceFallbacks } from "../watch-voice/defaults.js";
 import { type WatchPagesApplyOptions, type WatchPagesDraft, createWatchPages, saveWatchPagesDraft } from "./draft.js";
 import { type AddTileHost, type TileSettingsHost, type WatchPagesEditorHost, NO_ICONS, ScrubRun, extendHost, memoIconNames, watchKeysTypeText } from "./editor-host.js";
@@ -651,7 +653,12 @@ export class WaPageEditor extends LitElement {
    * the iPhone's list. */
   @state() private statusPagesRecord?: { revision: number; document: unknown };
   private statusPagesSeq = 0;
-  private pickerCatalogMemo?: { catalog: WatchCatalog | undefined; record: unknown; out: WatchCatalog | undefined };
+  /** The home's HTTP action library (`http-library.ts`), the same for every
+   * watch, read when a watch opens and on a reconnect (it has no live line);
+   * undefined before the first read and with an integration older than it. */
+  @state() private httpLibrary?: WatchHttpLibrary;
+  private httpLibrarySeq = 0;
+  private pickerCatalogMemo?: { catalog: WatchCatalog | undefined; record: unknown; library: WatchHttpLibrary | undefined; out: WatchCatalog | undefined };
   /** The watch's camera refresh setting from its behavior document, for the
    * Camera task's Default words; the phone's defaults until it is read. */
   @state() private cameraRefresh: { on: boolean; debounce: string } = watchCameraRefreshDefaults(undefined);
@@ -905,6 +912,7 @@ export class WaPageEditor extends LitElement {
     this.loadSeq++;
     this.catalogSeq++;
     this.statusPagesSeq++;
+    this.httpLibrarySeq++;
     this.historySeq++;
   }
 
@@ -951,6 +959,7 @@ export class WaPageEditor extends LitElement {
     void this.load(watchId, true);
     // A catalog the phone published while the socket was down sent no event.
     void this.loadCatalog(watchId);
+    void this.loadHttpLibrary();
     void this.loadVoice(watchId);
     void this.loadStatusPages(watchId);
     // Music Assistant or the cloud may have come or gone meanwhile, and a
@@ -1365,6 +1374,7 @@ export class WaPageEditor extends LitElement {
     this.startSubscription(watchId);
     void this.load(watchId, quiet);
     void this.loadCatalog(watchId);
+    void this.loadHttpLibrary();
     void this.loadStatusPages(watchId);
     void this.loadBehavior(watchId);
     void this.loadVoice(watchId);
@@ -1536,15 +1546,35 @@ export class WaPageEditor extends LitElement {
     }
   }
 
+  /** Read the home's HTTP action library, for the HTTP action pickers. An
+   * integration older than it does not know the command: none, and the
+   * pickers list the iPhone's catalog alone. Any other failure keeps what is
+   * shown. Only the newest read lands. */
+  private async loadHttpLibrary(): Promise<void> {
+    const hass = this.hass;
+    if (!hass) return;
+    const seq = ++this.httpLibrarySeq;
+    try {
+      const record = await fetchHttpActions(hass);
+      if (seq !== this.httpLibrarySeq) return;
+      this.httpLibrary = readWatchHttpLibrary(record);
+    } catch (error) {
+      if (seq !== this.httpLibrarySeq) return;
+      if (watchHttpLibraryReadMeansNone(error)) this.httpLibrary = undefined;
+    }
+  }
+
   /** The library the pickers and the preview read: the iPhone's catalog with
    * the watch's own status pages in place of the phone's list when Home
-   * Assistant holds them. The same object while neither changed. */
+   * Assistant holds them, and the home's HTTP actions ahead of the phone's
+   * (`http-library.ts`). The same object while none of them changed. */
   private get pickerCatalog(): WatchCatalog | undefined {
     const memo = this.pickerCatalogMemo;
     const record = this.statusPagesRecord;
-    if (memo !== undefined && memo.catalog === this.catalog && memo.record === record) return memo.out;
-    const out = watchCatalogWithStatusPages(this.catalog, watchStatusPagesFromRecord(record));
-    this.pickerCatalogMemo = { catalog: this.catalog, record, out };
+    const library = this.httpLibrary;
+    if (memo !== undefined && memo.catalog === this.catalog && memo.record === record && memo.library === library) return memo.out;
+    const out = watchCatalogWithHttpLibrary(watchCatalogWithStatusPages(this.catalog, watchStatusPagesFromRecord(record)), library);
+    this.pickerCatalogMemo = { catalog: this.catalog, record, library, out };
     return out;
   }
 

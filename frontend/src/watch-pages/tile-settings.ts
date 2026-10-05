@@ -34,6 +34,7 @@ import { live } from "lit/directives/live.js";
 import type { EntityRef } from "../model.js";
 import { checkField, colorField, entityField, numberField, segField, sliderField, symbolField, symbolNameSet, textField } from "../editors.js";
 import { sectionCard } from "../editor-chrome.js";
+import { goToWatchHttpActions } from "../shell.js";
 import { uiIcon } from "../ui-icons.js";
 import {
   type WatchTileStylingTask,
@@ -85,11 +86,13 @@ import {
   type WatchLibraryKind,
   WATCH_LIBRARY_WORDS,
   WATCH_NO_CATALOG_TEXT,
+  WATCH_NO_HTTP_ACTIONS_TEXT,
+  type WatchCatalogHTTPAction,
   findWatchCatalogEntry,
-  watchCatalogFromWatch,
   watchCatalogKnows,
-  watchCatalogListedText,
+  watchCatalogListedFor,
   watchCatalogWarning,
+  watchHttpScreenOffered,
   watchLibraryLister,
   watchLibraryMissingText,
   watchLibraryTarget,
@@ -858,13 +861,22 @@ const TARGET_HINTS: Readonly<Record<WatchLibraryKind, string>> = {
   statusPage: "A tap opens this status page. A label that is the page's name follows it.",
 };
 
+/** The way from an HTTP action tile to the HTTP actions screen. */
+function httpActionsLink(): TemplateResult {
+  return linkButton("Open HTTP actions", "Go to the HTTP actions screen", goToWatchHttpActions);
+}
+
 /**
  * The Target of an HTTP action, macro or status page tile: the catalog's
- * entries of its kind. A target the catalog does not list shows the tile's
- * label and "Not on the iPhone" ("Not in this watch's status pages" for a
- * status page from the watch's own record), and stays until another is
- * picked. With no list of its kind the tile shows its label and the line
- * that says where the list comes from; nothing can be picked.
+ * entries of its kind, the home's HTTP actions first (`http-library.ts`). A
+ * target the list does not hold shows the tile's label and "Not on the
+ * iPhone" ("Not in this watch's status pages" for a status page from the
+ * watch's own record, "Not in the list" when the home's library is the only
+ * list), and stays until another is picked. With no list of its kind the
+ * tile shows its label and the line that says where the list comes from;
+ * nothing can be picked. Where the HTTP actions screen could help (an empty
+ * list, an action it should set up or one it no longer holds) it is a click
+ * away.
  */
 function renderTarget(host: TileSettingsHost): TemplateResult {
   const target = watchLibraryTarget(tileEntityId(host.tile));
@@ -893,15 +905,21 @@ function renderTarget(host: TileSettingsHost): TemplateResult {
       return setWatchLibraryTileTarget(d, host.pageId, host.tileId, target.kind, entry, old === undefined ? [] : [old]);
     });
   const warning = menu.current === undefined ? undefined : watchCatalogWarning(target.kind, menu.current);
-  // The watch's own status pages are not listed by the iPhone.
-  const listed = watchCatalogFromWatch(catalog, target.kind) ? undefined : watchCatalogListedText(catalog);
+  // The watch's own status pages are not listed by the iPhone, nor is the
+  // home's HTTP action library.
+  const listed = watchCatalogListedFor(catalog, target.kind);
   const onlyMissing = menu.options.every((o) => o.disabled === true);
+  const http = target.kind === "httpAction" && watchHttpScreenOffered(catalog);
+  const current = menu.current as WatchCatalogHTTPAction | undefined;
+  const screenHelps = http && (current === undefined ? catalog.httpLibrary === "held" || onlyMissing : current.source === "home" && current.needsSetup);
   return html`
     ${menu.options.length === 0
-      ? html`<p class="hint">${watchLibraryLister(catalog, target.kind) === "The iPhone" ? `The iPhone lists no ${words.many} yet.` : `This watch has no ${words.many} yet.`}</p>`
+      ? html`<p class="hint">${http ? WATCH_NO_HTTP_ACTIONS_TEXT
+        : watchLibraryLister(catalog, target.kind) === "The iPhone" ? `The iPhone lists no ${words.many} yet.` : `This watch has no ${words.many} yet.`}</p>`
       : menuField(words.one, menu, pick)}
     ${warning === undefined ? nothing : html`<div class="hint warn ts-under">${warning}.</div>`}
-    <div class="hint ts-under">${onlyMissing ? nothing : TARGET_HINTS[target.kind]}${listed === undefined ? nothing : html` ${listed}`}</div>`;
+    <div class="hint ts-under">${onlyMissing ? nothing : TARGET_HINTS[target.kind]}${listed === undefined ? nothing : html` ${listed}`}</div>
+    ${screenHelps ? html`<div class="ts-under">${httpActionsLink()}</div>` : nothing}`;
 }
 
 const REPLY_HINTS: Readonly<Record<WatchHTTPReply | "off", string>> = {
@@ -920,7 +938,7 @@ function renderRequest(host: TileSettingsHost): TemplateResult {
   const pickReply = (v: string) =>
     commit(host, "httpReply", (d) => setWatchTileHTTPReply(d, host.pageId, host.tileId, v === WATCH_HTTP_REPLY_OFF ? null : (v as WatchHTTPReply)));
   return html`
-    ${menuField("Show reply", watchHTTPReplyMenu(tile, action), pickReply)}
+    ${menuField("Show reply", watchHTTPReplyMenu(tile, action, host.catalog), pickReply)}
     <div class="hint ts-under">${REPLY_HINTS[r.reply ?? "off"]}</div>
     ${r.reply === "toast"
       ? menuField("Banner for", watchHTTPBannerSecondsMenu(r.toastSeconds), (v) =>

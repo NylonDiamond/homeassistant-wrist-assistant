@@ -37,10 +37,13 @@ import {
   type WatchCatalogHTTPAction,
   type WatchLibraryKind,
   WATCH_LIBRARY_WORDS,
+  WATCH_NOT_IN_LIST_TEXT,
+  WATCH_NO_HTTP_ACTIONS_TEXT,
   findWatchCatalogEntry,
   watchCatalogEntries,
+  watchCatalogMark,
   watchCatalogSubtitle,
-  watchCatalogWarning,
+  watchHttpScreenOffered,
   watchLibraryLister,
   watchLibraryMissingText,
   watchLibraryTarget,
@@ -317,10 +320,11 @@ export function watchHTTPSlideChoice(value: string): string | undefined {
   return value.startsWith(HTTP_SLIDE) ? value.slice(HTTP_SLIDE.length) : undefined;
 }
 
-/** An HTTP action as a menu names it: its name, and the phone's warning. */
+/** An HTTP action as a menu names it: its name, and its warning or "on the
+ * iPhone" (`watchCatalogMark`). */
 function httpActionLabel(action: WatchCatalogHTTPAction): string {
-  const warning = watchCatalogWarning("httpAction", action);
-  return warning === undefined ? action.name : `${action.name} (${warning.charAt(0).toLowerCase()}${warning.slice(1)})`;
+  const mark = watchCatalogMark("httpAction", action);
+  return mark === undefined ? action.name : `${action.name} (${mark.charAt(0).toLowerCase()}${mark.slice(1)})`;
 }
 
 /** A number of seconds in words ("1 second", "6 seconds"), or the stored
@@ -394,11 +398,17 @@ export function watchHoldSlideMenus(tile: WatchPageTile, catalog?: WatchCatalog)
       if (entry !== undefined) {
         selected = HTTP_SLIDE + entry.id;
       } else {
+        // "not on the iPhone", or "not in the list" when the home's library
+        // is the only list.
+        const missing = watchLibraryMissingText(catalog, "httpAction");
+        const inList = missing === WATCH_NOT_IN_LIST_TEXT;
         selected = STORED + "httpAction";
-        options.push({ value: selected, label: `${runLabel} (${targetId === "" ? "no action picked" : "not on the iPhone"})`, disabled: true });
+        options.push({ value: selected, label: `${runLabel} (${targetId === "" ? "no action picked" : missing.charAt(0).toLowerCase() + missing.slice(1)})`, disabled: true });
         note = targetId === ""
           ? "No action is picked, so the watch shows Sync Needed. Pick one."
-          : "The iPhone no longer lists this action. Pick another, or the watch fails the slide.";
+          : inList
+            ? "This action is no longer in the list. Pick another, or the watch fails the slide."
+            : "The iPhone no longer lists this action. Pick another, or the watch fails the slide.";
       }
     } else if (d.stored !== undefined && !offered.some((c) => c.value === d.stored)) {
       selected = STORED + d.stored;
@@ -564,10 +574,10 @@ export interface WatchLibraryTargetMenu extends WatchMenu {
   oldTargetName: string | null;
 }
 
-/** An entry as a menu names it: its name, its subtitle and the phone's
- * warning. */
+/** An entry as a menu names it: its name, its subtitle and its warning or
+ * "On the iPhone" (`watchCatalogMark`). */
 function libraryEntryLabel(kind: WatchLibraryKind, entry: WatchCatalogEntry): string {
-  const extra = [watchCatalogSubtitle(kind, entry), watchCatalogWarning(kind, entry)].filter((t) => t !== undefined);
+  const extra = [watchCatalogSubtitle(kind, entry), watchCatalogMark(kind, entry)].filter((t) => t !== undefined);
   return extra.length === 0 ? entry.name : `${entry.name} (${extra.join(", ")})`;
 }
 
@@ -592,16 +602,21 @@ export function watchLibraryTargetMenu(tile: WatchPageTile, catalog: WatchCatalo
   const label = typeof tile.customLabel === "string" && tile.customLabel.trim() !== ""
     ? tile.customLabel
     : (watchLibraryTileFallbackName(tileEntityId(tile), catalog) ?? WATCH_LIBRARY_WORDS[target.kind].one);
-  // "Not on the iPhone", or for the watch's own status pages "Not in this
-  // watch's status pages".
+  // "Not on the iPhone", for the watch's own status pages "Not in this
+  // watch's status pages", and "Not in the list" when the home's HTTP action
+  // library is the only list.
+  // With nothing else to pick, the HTTP actions screen can add one.
   const missing = watchLibraryMissingText(catalog, target.kind);
   const lister = watchLibraryLister(catalog, target.kind);
+  const screen = target.kind === "httpAction" && watchHttpScreenOffered(catalog);
   return {
     ...base,
     options: [{ value: selected, label: `${label} (${missing})`, disabled: true }, ...options],
     selected,
     note: entries.length === 0
-      ? `${missing}, and ${lister === "The iPhone" ? "the iPhone lists" : "this watch has"} no other ${WATCH_LIBRARY_WORDS[target.kind].many}. The tile stays as it is.`
+      ? screen
+        ? `${missing}. ${WATCH_NO_HTTP_ACTIONS_TEXT}`
+        : `${missing}, and ${lister === "The iPhone" ? "the iPhone lists" : "this watch has"} no other ${WATCH_LIBRARY_WORDS[target.kind].many}. The tile stays as it is.`
       : `${missing}. The tile stays as it is until another is picked.`,
   };
 }
@@ -623,12 +638,14 @@ export const WATCH_HTTP_REPLY_OFF = "off";
 
 /**
  * The Show reply menu of an HTTP action tile: Off, Banner, Tile value. Tile
- * value is offered only when the catalog says the action has a Reply Value
+ * value is offered only when the list says the action has a Reply Value
  * (`hasReply`), as the phone enables it; while it is stored it stays
  * selectable. A stored string the watch does not know reads as Off, as on
- * the watch, and is named under the menu.
+ * the watch, and is named under the menu. The notes name where the action
+ * is kept: Home Assistant for one of the home's library (or one missing
+ * when that library is the only list), else the iPhone.
  */
-export function watchHTTPReplyMenu(tile: WatchPageTile, action: WatchCatalogHTTPAction | undefined): WatchMenu {
+export function watchHTTPReplyMenu(tile: WatchPageTile, action: WatchCatalogHTTPAction | undefined, catalog?: WatchCatalog): WatchMenu {
   const reply = tile.httpResponseDisplay === "toast" || tile.httpResponseDisplay === "tileValue" ? tile.httpResponseDisplay : undefined;
   const tileValue = action?.hasReply === true || reply === "tileValue";
   const options: WatchMenuOption[] = [
@@ -638,10 +655,21 @@ export function watchHTTPReplyMenu(tile: WatchPageTile, action: WatchCatalogHTTP
   ];
   const menu: WatchMenu = { options, selected: reply ?? WATCH_HTTP_REPLY_OFF };
   const unknown = typeof tile.httpResponseDisplay === "string" && reply === undefined ? tile.httpResponseDisplay : undefined;
+  const home = action === undefined ? watchLibraryMissingText(catalog, "httpAction") === WATCH_NOT_IN_LIST_TEXT : action.source === "home";
   if (unknown !== undefined) menu.note = `Stored as "${unknown}", which the watch reads as Off.`;
-  else if (!tileValue && action === undefined) menu.note = "The iPhone has not listed this action here, so Tile value cannot be offered. Open the iPhone app to list it.";
-  else if (!tileValue) menu.note = "Tile value needs a Reply Value on this action, set in the iPhone app.";
-  else if (reply === "tileValue" && action !== undefined && !action.hasReply) menu.note = "The iPhone does not list a Reply Value for this action, so the tile shows a dash.";
+  else if (!tileValue && action === undefined) {
+    menu.note = home
+      ? "This action is not in the list, so Tile value cannot be offered."
+      : "The iPhone has not listed this action here, so Tile value cannot be offered. Open the iPhone app to list it.";
+  } else if (!tileValue) {
+    menu.note = home
+      ? "Tile value needs a Reply Value on this action, set on the HTTP actions screen."
+      : "Tile value needs a Reply Value on this action, set in the iPhone app.";
+  } else if (reply === "tileValue" && action !== undefined && !action.hasReply) {
+    menu.note = home
+      ? "This action has no Reply Value, so the tile shows a dash."
+      : "The iPhone does not list a Reply Value for this action, so the tile shows a dash.";
+  }
   return menu;
 }
 

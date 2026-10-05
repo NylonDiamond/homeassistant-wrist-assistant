@@ -24,6 +24,7 @@
 import { css, html, nothing, svg, type TemplateResult } from "lit";
 import { AsyncDirective, directive } from "lit/async-directive.js";
 import { guard } from "lit/directives/guard.js";
+import { goToWatchHttpActions } from "../shell.js";
 import { uiIcon } from "../ui-icons.js";
 import {
   type WatchAddCandidate,
@@ -52,14 +53,18 @@ import {
   type WatchLibraryKind,
   WATCH_LIBRARY_WORDS,
   WATCH_NO_CATALOG_TEXT,
-  WATCH_NO_PHONE_LIBRARY_TEXT,
+  WATCH_NO_HTTP_ACTIONS_TEXT,
+  WATCH_ON_IPHONE_TEXT,
+  type WatchCatalogHTTPAction,
   watchCatalogEntries,
   watchCatalogFromWatch,
   watchCatalogKnows,
-  watchCatalogListedText,
+  watchCatalogListedFor,
   watchCatalogSubtitle,
   watchCatalogWarning,
+  watchHttpScreenOffered,
   watchLibraryLister,
+  watchNoPhoneLibraryText,
 } from "./catalog.js";
 import type { AddTileHost } from "./editor-host.js";
 import {
@@ -349,28 +354,40 @@ function renderLinks(host: AddTileHost, view: AddTileView, kind: LinkKind): Temp
 
 /** One library list from the catalog, in the phone's order, with the
  * phone's subtitles and warnings; an entry with a warning is offered too,
- * as on the phone. */
+ * as on the phone. HTTP actions lead with the home's library, and an
+ * iPhone action after them says so. Where the HTTP actions screen can add
+ * one, an empty list says so and leads there. */
 function renderLibrary(host: AddTileHost, view: AddTileView, kind: WatchLibraryKind, catalog: WatchCatalog): TemplateResult {
   const entries = watchCatalogEntries(catalog, kind);
   const words = WATCH_LIBRARY_WORDS[kind];
   // The watch's own status pages are made in Status pages, not listed by
   // the iPhone.
   const fromWatch = watchCatalogFromWatch(catalog, kind);
-  const listed = fromWatch ? undefined : watchCatalogListedText(catalog);
+  const listed = watchCatalogListedFor(catalog, kind);
+  const screen = kind === "httpAction" && watchHttpScreenOffered(catalog);
+  const label = fromWatch ? `This watch's ${words.many}` : kind === "httpAction" && catalog.httpLibrary === "held" ? "HTTP actions" : `The iPhone's ${words.many}`;
+  const goToScreen = () => {
+    host.close();
+    goToWatchHttpActions();
+  };
   return html`<div class="at-links" id="at-links">
     <div class="at-sub">${LIBRARY_WORDS[kind].question}</div>
     ${entries.length === 0
       ? html`<div class="at-muted">${fromWatch
         ? `${watchLibraryLister(catalog, kind)} has no ${words.many} yet. Make one in Status pages and it shows here.`
-        : `The iPhone lists no ${words.many} yet. Make one in the iPhone app and it shows here.`}</div>`
-      : html`<div class="at-pages" role="group" aria-label=${fromWatch ? `This watch's ${words.many}` : `The iPhone's ${words.many}`}>
+        : screen ? WATCH_NO_HTTP_ACTIONS_TEXT
+        : `The iPhone lists no ${words.many} yet. Make one in the iPhone app and it shows here.`}</div>
+        ${screen ? html`<div><button type="button" class="pe-btn" @click=${goToScreen}>Open HTTP actions</button></div>` : nothing}`
+      : html`<div class="at-pages" role="group" aria-label=${label}>
           ${entries.map((e) => {
             const sub = watchCatalogSubtitle(kind, e);
             const warning = watchCatalogWarning(kind, e);
+            const phone = kind === "httpAction" && warning === undefined && (e as WatchCatalogHTTPAction).source === "iphone";
             return html`<button type="button" class="at-page" ?disabled=${host.busy}
               @click=${() => addLibrary(host, view, kind, e)}>
               <span class="at-page-name">${e.name}</span>
               ${sub === undefined ? nothing : html`<span class="at-tag">${sub}</span>`}
+              ${phone ? html`<span class="at-tag">${WATCH_ON_IPHONE_TEXT}</span>` : nothing}
               ${warning === undefined ? nothing : html`<span class="at-tag warn">${warning}</span>`}
             </button>`;
           })}
@@ -523,10 +540,10 @@ function renderBody(host: AddTileHost, view: AddTileView): TemplateResult {
     ${appBlocked === undefined ? nothing : html`<div class="at-muted" id="at-app-blocked">${appBlocked}</div>`}
     ${catalog === undefined
       ? html`<div class="at-muted at-lib-none">${WATCH_NO_CATALOG_TEXT}</div>`
-      : html`<div class="at-kinds at-lib" role="group" aria-label=${catalog.noPhone === true ? "From the watch" : "From the iPhone"}>
+      : html`<div class="at-kinds at-lib" role="group" aria-label=${catalog.noPhone === true ? (catalog.statusPagesFromWatch === true ? "From the watch" : "From Home Assistant") : "From the iPhone"}>
           ${(Object.keys(LIBRARY_WORDS) as WatchLibraryKind[]).filter((kind) => watchCatalogKnows(catalog, kind)).map((kind) => listButton(kind, LIBRARY_WORDS[kind].button))}
         </div>
-        ${catalog.noPhone === true ? html`<div class="at-muted at-lib-none">${WATCH_NO_PHONE_LIBRARY_TEXT}</div>` : nothing}`}
+        ${catalog.noPhone === true ? html`<div class="at-muted at-lib-none">${watchNoPhoneLibraryText(catalog)}</div>` : nothing}`}
     ${openList}
 
     <div class="at-ents">
