@@ -44,7 +44,9 @@ describe("the phone's catalog bytes", () => {
   const catalog = watchCatalogFromRecord(record())!;
 
   it("are what the contract says the phone uploads: sorted keys, schema 1, no URL anywhere", () => {
-    expect(Object.keys(DOCUMENT)).toEqual(["httpActions", "macros", "schemaVersion", "statusPages", "voice"]);
+    // No `macros` since macros were removed; an older phone may still send
+    // one, and the integration still takes it.
+    expect(Object.keys(DOCUMENT)).toEqual(["httpActions", "schemaVersion", "statusPages", "voice"]);
     expect(DOCUMENT.schemaVersion).toBe(1);
     expect(BYTES).not.toMatch(/https?:|"url"|"headers"|"body"|"method"/i);
   });
