@@ -29,6 +29,7 @@ import type { HassEntityState, HassLike, OwnerSummary } from "../src/ha-api.js";
 import menusConfigured from "../test/fixtures-menus/02-configured.json";
 import menusDefaults from "../test/fixtures-menus/01-defaults.json";
 import { EXTRA_STATES, type HomeRegistries, StandInIcons, homeRegistries } from "./harness-home.js";
+import { MISSING_PHOTO_ID, PAGE_IMAGES, SEEDED_PHOTO_ID, answerPagePhotos, seedPagePhotos } from "./harness-photos.js";
 // @ts-expect-error A module the harness build makes from the page fixtures.
 import pageFixturesModule from "harness:page-fixtures";
 // The phone's library catalog as the app's tests write it.
@@ -600,7 +601,11 @@ function seedStore(): void {
   store.put(ALEX_WATCH, "pages", combine("05-pages", "03-hold-and-slide"), { base: 1, by: ALEX_WATCH, at: minutesAgo(60 * 26), notify: false });
   // The last one also has a page of the special tiles (part 3f).
   // And a second smart page, with two rules on one domain (part 3f batch 3).
-  const alex = store.put(ALEX_WATCH, "pages", withSmartPage(withSpecialPage(combine("05-pages", "03-hold-and-slide", "01-entity-tiles"))), {
+  // Page photos (part 4d batch 6): a built-in one on the first page, a
+  // library photo, dimmed and blurred, on the second.
+  seedPagePhotos();
+  const alexPages = withSmartPage(withSpecialPage(combine("05-pages", "03-hold-and-slide", "01-entity-tiles")));
+  const alex = store.put(ALEX_WATCH, "pages", withPhoto(withPhoto(alexPages, 0, "preset_aurora"), 1, SEEDED_PHOTO_ID, { backgroundImageBlur: 2, backgroundImageOpacity: 0.6 }), {
     base: 2, by: ALEX_WATCH, at: minutesAgo(40), notify: false,
   });
   // Alex's behavior settings, whose room quick jump points at two of the
@@ -626,7 +631,8 @@ function seedStore(): void {
   // Sam: one upload, then a panel save the iPhone has not collected yet.
   store.put(SAM_WATCH, "pages", combine("02-virtual-tiles", "04-tile-settings"), { base: 0, by: SAM_WATCH, at: minutesAgo(60 * 50), notify: false });
   const sam = store.record(SAM_WATCH, "pages")!;
-  const panelDocument = combine("02-virtual-tiles", "04-tile-settings", "06-new-page");
+  // Its first page names a photo the store does not have: "Photo missing".
+  const panelDocument = withPhoto(combine("02-virtual-tiles", "04-tile-settings", "06-new-page"), 0, MISSING_PHOTO_ID);
   try {
     validateDocument("pages", panelDocument, true);
     replace(sam, panelDocument, PANEL_WRITER, minutesAgo(8));
@@ -1009,6 +1015,18 @@ function withSmartPage(document: Json): Json {
   return { ...document, pages: [...pagesOf(document), smartOpeningsPage()] };
 }
 
+/** Page photos (part 4d batch 6): page `index` gets the photo, the rest of
+ * the keys sorted in, as the phone writes them. */
+function withPhoto(document: Json, index: number, id: string, extra: Json = {}): Json {
+  const pages = pagesOf(document).map((p, i) => {
+    if (i !== index) return p;
+    const page: Json = { ...p };
+    assignSorted(page, { backgroundImageBlur: 0, backgroundImageFit: "fill", backgroundImageId: id, backgroundImageOpacity: 1, ...extra });
+    return page;
+  });
+  return { ...document, pages };
+}
+
 /** A made-up state for every entity a fixture or a stored document names,
  * and the few more the entity picker should meet (`harness-home.ts`). */
 function buildStates(): Record<string, HassEntityState> {
@@ -1094,6 +1112,11 @@ const SCHEMAS: Record<string, { fields: Record<string, FieldType>; admin: boolea
   [CMD.restore]: { fields: { owner_watch_id: "str", kind: "str", revision: "int", base_revision: "int" }, admin: true },
   [CMD.subscribe]: { fields: { owner_watch_id: "str" }, admin: false },
   [CMD.render]: { fields: { templates: "dict" }, admin: true },
+  // Page photos (part 4d batch 6), `harness-photos.ts`.
+  [`${PAGE_IMAGES}/list`]: { fields: {}, admin: true },
+  [`${PAGE_IMAGES}/get`]: { fields: { image_id: "str" }, admin: true },
+  [`${PAGE_IMAGES}/upload`]: { fields: { data: "str" }, admin: true },
+  [`${PAGE_IMAGES}/delete`]: { fields: { image_id: "str" }, admin: true },
   [CMD.configEntries]: { fields: { domain: "str" }, admin: true },
   [CMD.cloudStatus]: { fields: {}, admin: false },
   [CMD.areas]: { fields: {}, admin: false },
@@ -1141,6 +1164,16 @@ function recordReply(kind: string, record: StoredRecord | undefined): Json {
     rejected_at: record.rejected_at,
     document: clone(record.document),
   };
+}
+
+/** The owners whose stored pages name a photo, hidden pages too. */
+function photoUsedBy(id: string): string[] {
+  const out: string[] = [];
+  for (const [owner, kinds] of store.records) {
+    const pages = pagesOf(kinds.get("pages")?.document);
+    if (pages.some((p) => typeof p.backgroundImageId === "string" && p.backgroundImageId.toUpperCase() === id.toUpperCase())) out.push(owner);
+  }
+  return out;
 }
 
 /** The server: one answer per command, by type. Throws a `WsError`. */
@@ -1200,9 +1233,12 @@ function answer(message: Json): unknown {
       }
       return out;
     }
-    default:
+    default: {
+      const photo = answerPagePhotos(message, photoUsedBy);
+      if (photo !== undefined) return photo;
       // A type with a schema but no answer here: a gap in the harness.
       return fail("unknown_command", "Unknown command.");
+    }
   }
 }
 

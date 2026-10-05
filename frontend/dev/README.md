@@ -88,6 +88,14 @@ ignored by git.
   `{{` the syntax error), and a music hub whose kitchen speaker plays with
   album art. `config_entries/get` lists a Music Assistant entry and
   `cloud/status` says logged in and connected.
+- Page photos (part 4d batch 6, `harness-photos.ts`): the
+  `page_images/list`, `get`, `upload` and `delete` commands with the store's
+  checks and refusal codes. The 15 built-in photos are drawn here as small
+  JPEGs (the phone's assets are not served), and the library starts with one
+  photo. Alex's first page shows the Aurora photo, his second the library
+  photo at 60% with some blur; Sam's first page names a photo the store does
+  not have, for "Photo missing". A photo is in use while any watch's stored
+  pages name it.
 - A stand-in symbol provider: a few dozen real SF Symbol names (the start of
   the picker's catalogue and every tile icon in the fixtures), each drawn as
   a plain mark. Its names arrive 600 ms after the page loads and the harness
