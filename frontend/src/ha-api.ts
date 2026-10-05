@@ -689,6 +689,13 @@ export interface HttpActionTestReply {
   headers: Record<string, string>;
   paths: HttpActionTestPath[];
   elapsed_ms: number;
+  /** The whole text that was read, as sent (empty when it is not text). An
+   * integration older than the response formats sends none of these four. */
+  body?: string;
+  body_size?: number;
+  body_binary?: boolean;
+  /** The read stopped at Home Assistant's size limit. */
+  body_cut?: boolean;
 }
 
 /** Send one action from Home Assistant without saving it: the draft action,

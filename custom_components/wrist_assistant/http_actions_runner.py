@@ -556,8 +556,10 @@ class HTTPActionRunner:
     ) -> dict[str, Any]:
         """The panel's Test: a draft action, not saved, with the globals and
         values given. Answers ``{"status", "value", "snippet", "error",
-        "headers", "paths", "elapsed_ms"}``; ``paths`` are the JSON leaves of
-        the body for the reply picker. Refuses a malformed draft, or values
+        "headers", "paths", "elapsed_ms", "body", "body_size",
+        "body_binary", "body_cut"}``; ``paths`` are the JSON leaves of the
+        body for the reply picker, and ``body`` is the whole text that was
+        read, for the panel to format (empty when it is not text). Refuses a malformed draft, or values
         over a run's limits, ``invalid`` and a fifth run at once ``busy``."""
         problem = values_problem(values)
         if problem is not None:
@@ -579,7 +581,27 @@ class HTTPActionRunner:
             "headers": dict(answer.headers),
             "paths": discover_paths(answer.body),
             "elapsed_ms": elapsed,
+            **_body_text(answer.body),
         }
+
+
+def _body_text(body: bytes | None) -> dict[str, Any]:
+    """The answer's body for the panel's Test: its text, its size in bytes,
+    whether it is not text (then no text is sent), and whether the read
+    stopped at the size limit."""
+    raw = bytes(body or b"")
+    cut = len(raw) >= MAX_REPLY_BYTES
+    text = raw.decode("utf-8", errors="replace")
+    if cut:
+        # The limit may have split the last character.
+        text = text.rstrip("\ufffd")
+    binary = "\x00" in text or "\ufffd" in text
+    return {
+        "body": "" if binary else text,
+        "body_size": len(raw),
+        "body_binary": binary,
+        "body_cut": cut,
+    }
 
 
 def _values(raw: Any) -> dict[str, str]:

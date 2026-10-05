@@ -683,7 +683,20 @@ def test_the_test_command_answers_headers_paths_and_time(env) -> None:
         "error": None,
         "headers": {"X-Rate": "9"},
         "paths": [{"path": "a", "value": "s"}, {"path": "b.c", "value": "2"}],
+        "body": '{"b":{"c":2},"a":"s"}',
+        "body_size": 21,
+        "body_binary": False,
+        "body_cut": False,
     }
+
+
+def test_the_test_command_keeps_the_body_as_sent_and_sends_no_text_of_a_binary_one(env) -> None:
+    text = b'{\n  "a": "caf\xc3\xa9"\n}\n'
+    runner, _, _ = make_runner(env, {URL_A: FakeResponse(200, text), "https://example.com/png": FakeResponse(200, b"\x89PNG\x00\xff")})
+    kept = asyncio.run(runner.async_test(action(url=URL_A), [], {}))
+    assert kept["body"] == text.decode() and kept["body_size"] == len(text) and not kept["body_binary"]
+    binary = asyncio.run(runner.async_test(action(url="https://example.com/png"), [], {}))
+    assert binary["body"] == "" and binary["body_binary"] and binary["body_size"] == 6
 
 
 def test_the_test_command_runs_a_draft_with_no_url(env) -> None:

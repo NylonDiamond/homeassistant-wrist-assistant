@@ -25,6 +25,7 @@ import type { HassLike, HttpActionTestReply } from "../ha-api.js";
 import type { IconProvider } from "../renderer.js";
 import type { SymbolBrowser } from "../symbols.js";
 import { uiIcon } from "../ui-icons.js";
+import { piecesText, prettyJson, sizeText } from "./pretty.js";
 import { type JsonObject } from "../watch-pages/model.js";
 import {
   HTTP_AUTH_KINDS,
@@ -123,6 +124,9 @@ type ViewState = Pick<HttpActionsViewHost, "uiState" | "document">;
 const SELECTED_KEY = "ha:sel";
 const TAB_KEY = "ha:tab";
 const REPLY_TAB_KEY = "ha:rtab";
+const BODY_MODE_KEY = "ha:bmode";
+const BODY_WRAP_KEY = "ha:bwrap";
+const BODY_COPIED_KEY = "ha:bcopied";
 const SHOW_PREFIX = "ha:show:";
 const AUTH_PREFIX = "ha:auth:";
 const TEST_PREFIX = "ha:test:";
@@ -270,6 +274,28 @@ export function httpReplyTab(host: Pick<HttpActionsViewHost, "uiState">): HttpRe
 export function setHttpReplyTab(host: Picker, tab: HttpReplyTab): void {
   host.uiState.set(REPLY_TAB_KEY, tab);
   host.requestUpdate();
+}
+
+export type HttpBodyMode = "pretty" | "raw";
+
+/** How the answer's body is drawn: formatted (the default) or as sent. */
+export function httpBodyMode(host: Pick<HttpActionsViewHost, "uiState">): HttpBodyMode {
+  return host.uiState.get(BODY_MODE_KEY) === "raw" ? "raw" : "pretty";
+}
+
+/** Whether long lines of the body wrap (the default) or scroll sideways. */
+export function httpBodyWrap(host: Pick<HttpActionsViewHost, "uiState">): boolean {
+  return host.uiState.get(BODY_WRAP_KEY) !== false;
+}
+
+/** The body of a test answer as the Body tab shows it: the text, its JSON
+ * pieces when it is JSON and Pretty is on, and what Copy copies. An older
+ * integration sends no body, so the short line the watch sees stands in. */
+export function httpBodyShown(host: Pick<HttpActionsViewHost, "uiState">, reply: HttpActionTestReply) {
+  const raw = reply.body ?? reply.snippet;
+  const pieces = prettyJson(raw);
+  const pretty = pieces !== undefined && httpBodyMode(host) === "pretty";
+  return { raw, isJson: pieces !== undefined, pieces: pretty ? pieces : undefined, text: pretty ? piecesText(pieces) : raw };
 }
 
 /** A strip of tabs: real buttons, the arrow keys move along it, and only the
@@ -819,6 +845,40 @@ function statusTone(reply: HttpActionTestReply): "ok" | "warn" | "err" {
   return reply.status >= 200 && reply.status < 300 ? "ok" : "warn";
 }
 
+function renderBodyText(host: HttpActionsViewHost, reply: HttpActionTestReply): TemplateResult {
+  if (reply.body_binary === true) return html`<p class="ha-quiet">The body is not text (${sizeText(reply.body_size ?? 0)}).</p>`;
+  const shown = httpBodyShown(host, reply);
+  if (shown.raw === "") return html`<p class="ha-quiet">No body.</p>`;
+  const mode = shown.isJson ? httpBodyMode(host) : "raw";
+  const wrap = httpBodyWrap(host);
+  const copied = host.uiState.get(BODY_COPIED_KEY) === true;
+  const set = (key: string, value: unknown) => {
+    host.uiState.set(key, value);
+    host.requestUpdate();
+  };
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(shown.text);
+      set(BODY_COPIED_KEY, true);
+      setTimeout(() => set(BODY_COPIED_KEY, false), 1500);
+    } catch {
+      /* No clipboard here: the text can still be selected. */
+    }
+  };
+  const seg = (id: HttpBodyMode, label: string) => html`<button type="button" class="ha-bopt ${mode === id ? "on" : ""}" aria-pressed=${mode === id ? "true" : "false"}
+    ?disabled=${!shown.isJson} title=${shown.isJson ? (id === "pretty" ? "Indented and colored" : "As the server sent it") : "The body is not JSON"}
+    @click=${() => set(BODY_MODE_KEY, id)}>${label}</button>`;
+  return html`<div class="ha-bbar" role="toolbar" aria-label="Body options">
+      <span class="ha-bseg">${seg("pretty", "Pretty")}${seg("raw", "Raw")}</span>
+      <button type="button" class="ha-bopt ${wrap ? "on" : ""}" aria-pressed=${wrap ? "true" : "false"} title="Wrap long lines" @click=${() => set(BODY_WRAP_KEY, !wrap)}>Wrap</button>
+      <button type="button" class="ha-bopt" title="Copy the body as shown" @click=${() => void copy()}>${copied ? "Copied" : "Copy"}</button>
+      <span class="ha-bmeta">${shown.isJson ? "JSON" : "Text"}${reply.body_size === undefined ? nothing : html` · ${sizeText(reply.body_size)}`}${reply.body === undefined
+        ? html` · <span title="Update the integration to see the whole body.">first line only</span>` : nothing}${reply.body_cut === true ? " · cut at the size limit" : nothing}</span>
+    </div>
+    <pre class="ha-snippet mono ${wrap ? "" : "nowrap"}">${shown.pieces === undefined ? shown.text
+      : shown.pieces.map((p) => (p.kind === "ws" || p.kind === "punct" ? p.text : html`<span class=${`j-${p.kind}`}>${p.text}</span>`))}</pre>`;
+}
+
 function renderReplyBody(host: HttpActionsViewHost, action: HttpAction, reply: HttpActionTestReply): TemplateResult {
   const tab = httpReplyTab(host);
   const headers = Object.entries(reply.headers ?? {});
@@ -829,7 +889,7 @@ function renderReplyBody(host: HttpActionsViewHost, action: HttpAction, reply: H
   ];
   let body: TemplateResult;
   if (tab === "body") {
-    body = reply.snippet === "" ? html`<p class="ha-quiet">No body.</p>` : html`<pre class="ha-snippet mono">${reply.snippet}</pre>`;
+    body = renderBodyText(host, reply);
   } else if (tab === "headers") {
     body = headers.length === 0 ? html`<p class="ha-quiet">No headers.</p>` : html`<div class="ha-rlist" role="list" aria-label="Reply headers">
       ${headers.map(([name, value]) => {
@@ -1181,6 +1241,22 @@ export const httpActionsViewStyles = css`
   .ha-resp-tabs { padding: 0 8px; }
   .ha-resp-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 10px 14px 12px; scrollbar-width: thin; }
   pre.ha-snippet { margin: 0; font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--wa-ink); }
+  pre.ha-snippet.nowrap { white-space: pre; overflow-wrap: normal; }
+  pre.ha-snippet .j-key { color: var(--wa-hue-blue); }
+  pre.ha-snippet .j-str { color: var(--wa-hue-green); }
+  pre.ha-snippet .j-num { color: var(--wa-hue-orange); }
+  pre.ha-snippet .j-lit { color: var(--wa-hue-pink); }
+  .ha-bbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 8px; position: sticky; top: -10px; padding: 4px 0; background: var(--wa-raised, var(--wa-card)); z-index: 1; }
+  .ha-bseg { display: inline-flex; }
+  .ha-bseg button.ha-bopt { border-radius: 0; margin-left: -1px; }
+  .ha-bseg button.ha-bopt:first-child { border-radius: 5px 0 0 5px; margin-left: 0; }
+  .ha-bseg button.ha-bopt:last-child { border-radius: 0 5px 5px 0; }
+  button.ha-bopt { font: inherit; font-size: 11.5px; height: 24px; padding: 0 9px; border-radius: 5px; border: 1px solid var(--wa-line); background: transparent; color: var(--wa-muted); cursor: pointer; }
+  button.ha-bopt:hover:not(:disabled) { color: var(--wa-ink); border-color: var(--wa-line-strong); }
+  button.ha-bopt.on { color: var(--wa-ink); border-color: var(--wa-line-strong); background: var(--wa-hover); font-weight: 600; position: relative; }
+  button.ha-bopt:disabled { opacity: 0.45; cursor: default; }
+  button.ha-bopt:focus-visible { outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--wa-accent) 60%, transparent); }
+  .ha-bmeta { margin-left: auto; font-size: 11.5px; color: var(--wa-muted); font-variant-numeric: tabular-nums; }
   .ha-rlist { display: flex; flex-direction: column; max-width: 1100px; }
   .ha-rrow {
     display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) 84px; align-items: center; gap: 12px;

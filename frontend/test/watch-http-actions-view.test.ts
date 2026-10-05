@@ -53,6 +53,9 @@ import {
   setHttpAuthOf,
   setHttpReplyTab,
   setHttpTab,
+  httpBodyMode,
+  httpBodyShown,
+  httpBodyWrap,
 } from "../src/watch-http-actions/view.js";
 
 const flat = (v: unknown): string => {
@@ -505,7 +508,7 @@ describe("the response", () => {
     expect(text).toContain("87 ms");
     expect(text).toContain("<code>on</code>");
     expect(httpReplyTab(h)).toBe("body");
-    expect(text).toContain(`<pre class="ha-snippet mono">{"state":"on","data":[{"temp":21}]}</pre>`);
+    expect(text).toContain(`<span class=j-key>"state"</span>: <span class=j-str>"on"</span>,`);
     expect(text).toMatch(/>Headers<span class="ha-tab-n">2</);
     expect(text).toMatch(/>Paths<span class="ha-tab-n">2</);
 
@@ -518,6 +521,36 @@ describe("the response", () => {
     setHttpReplyTab(h, "paths");
     text = flat(renderHttpMain(h));
     expect(text).toContain("<code>data.0.temp</code><span class=\"mono ha-rval\">21</span>");
+  });
+
+  it("formats a JSON body, shows it as sent on Raw, and falls back to the short line of an older integration", async () => {
+    const body = `{"state":"on","data":[{"temp":21}]}`;
+    const h = host(DOC, { ...REPLY, body, body_size: body.length, body_binary: false, body_cut: false });
+    await runHttpTest(h, A);
+    expect(httpBodyShown(h, { ...REPLY, body }).text).toBe(
+      `{\n  "state": "on",\n  "data": [\n    {\n      "temp": 21\n    }\n  ]\n}`,
+    );
+    const drawn = flat(renderHttpMain(h));
+    expect(drawn).toContain("Pretty");
+    expect(drawn).toContain("Raw");
+    expect(drawn).toContain("Wrap");
+    expect(drawn).toContain("Copy");
+    expect(drawn).toContain("JSON");
+    h.uiState.set("ha:bmode", "raw");
+    expect(httpBodyMode(h)).toBe("raw");
+    expect(httpBodyShown(h, { ...REPLY, body }).text).toBe(body);
+    h.uiState.set("ha:bwrap", false);
+    expect(httpBodyWrap(h)).toBe(false);
+    expect(flat(renderHttpMain(h))).toContain("nowrap");
+    // No body field: the watch's short line stands in, and says so.
+    const old = host(DOC, REPLY);
+    await runHttpTest(old, A);
+    expect(httpBodyShown(old, REPLY).raw).toBe(REPLY.snippet);
+    expect(flat(renderHttpMain(old))).toContain("first line only");
+    // Not text: no text, one plain line.
+    const bin = host(DOC, { ...REPLY, body: "", body_size: 2048, body_binary: true });
+    await runHttpTest(bin, A);
+    expect(flat(renderHttpMain(bin))).toContain("The body is not text (2.0 KB).");
   });
 
   it("writes a picked path into the reply value", async () => {
