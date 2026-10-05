@@ -82,11 +82,14 @@ describe("the layers", () => {
     const { over, under } = watchScreenBackgroundLayers(p, 1, SCREEN);
     expect(drawn.background).toBe(under.join(", "));
     const layers = drawn.layers as { values: unknown[] };
-    expect(layers.values[1]).toContain(`url("blob:photo")`);
+    // A box of one screen clips the photo to the screen's corners.
+    expect(layers.values[0]).toBe("wp-page-photo-clip");
+    expect(layers.values[1]).toBe(`height:${SCREEN.height}px`);
     // Its own class: .wp-photo is a person tile's round photo.
-    expect(layers.values[0]).toBe("wp-page-photo");
+    expect(layers.values[2]).toBe("wp-page-photo");
+    expect(layers.values[3]).toContain(`url("blob:photo")`);
     // The pattern in a layer of its own over the photo.
-    expect((layers.values[2] as { values: unknown[] }).values).toContain(`inset:0;background:${over.join(", ")}`);
+    expect((layers.values[4] as { values: unknown[] }).values).toContain(`inset:0;background:${over.join(", ")}`);
     // No photo: the whole background, nothing drawn over it.
     expect(watchScreenLayers(page(), 1, SCREEN, () => "blob:x").background).toBe(watchScreenBackground(page(), 1, SCREEN));
   });

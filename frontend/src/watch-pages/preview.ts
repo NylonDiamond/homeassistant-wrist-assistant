@@ -570,6 +570,11 @@ export function watchScreenBackgroundLayers(page: WatchPage, s = 1.5, screen?: {
  * and `layers` the photo (`watchPagePhotoStyle`) then a layer of what lies
  * over it, the pattern and the animation, each drawn before the page's
  * tiles so they sit under them. `className` names both layers' boxes.
+ *
+ * The photo sits in a box of one screen with the screen's corners, as the
+ * watch keeps it on the screen while a long page scrolls under it. The box
+ * clips it: the page editor's screen lets handles hang over its edge, so its
+ * own clip cannot be counted on, and a blur would spill past the corners.
  */
 export function watchScreenLayers(
   page: WatchPage,
@@ -584,7 +589,7 @@ export function watchScreenLayers(
   const { over, under } = watchScreenBackgroundLayers(page, s, screen);
   return {
     background: under.join(", "),
-    layers: html`<span class=${className} style=${watchPagePhotoStyle(photo, url, s, screen)} aria-hidden="true"></span>${over.length === 0
+    layers: html`<span class=${`${className}-clip`} style=${`height:${Math.round(screen.height * s * 100) / 100}px`} aria-hidden="true"><span class=${className} style=${watchPagePhotoStyle(photo, url, s, screen)}></span></span>${over.length === 0
       ? nothing
       : html`<span class=${`${className} ${className}-over`} style=${`inset:0;background:${over.join(", ")}`} aria-hidden="true"></span>`}`,
   };
@@ -3238,6 +3243,9 @@ export const watchPagePreviewStyles = css`
      under everything else on the screen. Not .wp-photo: that is a person
      tile's round photo, and its rule would round and unpin the page photo. */
   .wp-page-photo { position: absolute; display: block; pointer-events: none; }
+  /* One screen from the top with the screen's corners, clipping the photo. */
+  .wp-page-photo-clip { position: absolute; left: 0; top: 0; right: 0; display: block; overflow: hidden; border-radius: inherit; pointer-events: none; }
+  .wp-page-photo-over { border-radius: inherit; }
   /* The system clock and the settings gear, each placed on its own. */
   .wp-clock { position: absolute; inset: 0 0 auto 0; height: 0; pointer-events: none; }
   .wp-time {
