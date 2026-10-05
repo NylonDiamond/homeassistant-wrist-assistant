@@ -427,7 +427,7 @@ import { dropWatchRoomsDrafts, isWatchRoomsRoute, renderWatchRoomsView, watchRoo
 import { dropWatchHttpActionsDrafts, isWatchHttpActionsRoute, renderWatchHttpActionsView, watchHttpActionsDirty } from "./watch-http-actions/hook.js";
 import {
   COMPLICATIONS_PATH, type PanelTab, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, editorKeysLive, isPlainClick, isSaveKey, landingPath, navigatePanel, reopensDesign,
-  panelUrl, renderTabBar, shellStyles, swallowsSaveKey, tabOfRoute, tabPath, watchScreenOf, watchScreenPath,
+  panelUrl, renderTabBar, screenIdOf, shellStyles, swallowsSaveKey, tabOfRoute, tabPath, watchScreenOf, watchScreenPath,
 } from "./shell.js";
 import { adoptRouteWatch, loadWatchPick, resolveWatchPick, saveWatchPick, watchRouteOwner } from "./watch-pick.js";
 import { renderWatchRow, watchRowStyles } from "./watch-row.js";
@@ -6282,6 +6282,39 @@ export class WristAssistantPanel extends LitElement {
     e.stopImmediatePropagation();
   };
 
+  /** The unsaved work of the screen a route shows, and how to drop it. Home
+   * keeps none. A watch screen's drafts are every watch's: the watch picked
+   * in the row changes the address and not the screen. */
+  private screenDraft(route: PanelRoute | undefined): { dirty: boolean; drop: () => void } | undefined {
+    switch (screenIdOf(route)) {
+      case "pages": return { dirty: watchPagesDirty(), drop: dropWatchPagesDrafts };
+      case "menus": return { dirty: watchMenusDirty(), drop: dropWatchMenusDrafts };
+      case "status-pages": return { dirty: watchStatusPagesDirty(), drop: dropWatchStatusPagesDrafts };
+      case "control-center": return { dirty: watchControlCenterDirty(), drop: dropWatchControlCenterDrafts };
+      case "rooms": return { dirty: watchRoomsDirty(), drop: dropWatchRoomsDrafts };
+      case "voice": return { dirty: watchVoiceDirty(), drop: dropWatchVoiceDrafts };
+      case "http-actions": return { dirty: watchHttpActionsDirty(), drop: dropWatchHttpActionsDrafts };
+      case "settings": return { dirty: anyWatchSettingsDirty(), drop: () => this.watchSettings.dropKept() };
+      case "complications": return { dirty: this.draft?.dirty === true, drop: () => this.selectNone() };
+      default: return undefined;
+    }
+  }
+
+  /**
+   * Ask before a move inside the panel leaves a screen with unsaved work:
+   * another tab, or another screen of the Watch app. A yes drops that
+   * screen's edits and the move goes on; a no stays. A move within one
+   * screen (another watch, a page of the page editor) asks nothing.
+   */
+  private leaveScreenFor(to: PanelRoute | undefined, from: PanelRoute | undefined = this.route): boolean {
+    if (screenIdOf(from) === screenIdOf(to)) return true;
+    const kept = this.screenDraft(from);
+    if (kept === undefined || !kept.dirty) return true;
+    if (!this.confirmDiscard()) return false;
+    kept.drop();
+    return true;
+  }
+
   /** One-second re-render while any preview shows a live countdown, so the
    * remaining time ticks like it does on the watch. Cleared as soon as no
    * countdown is live (and on disconnect). */
@@ -6316,6 +6349,13 @@ export class WristAssistantPanel extends LitElement {
       const to = landingPath(this.route, { shareLink: this.pendingLink !== undefined });
       if (to !== undefined) this.goTo(to, true);
       else if (!reopensDesign(this.route)) this.restoreOpen = undefined;
+    }
+    // A move the panel did not make itself (the browser's Back, a link from
+    // inside an editor): `goTo` has already asked for its own. A no puts the
+    // address back where it was.
+    if (changed.has("route") && changed.get("route") !== undefined) {
+      const from = changed.get("route") as PanelRoute;
+      if (!this.leaveScreenFor(this.route, from)) this.route = navigatePanel(this.route, from.path, true) ?? from;
     }
     // The list page coming into view or going, and the Browse dialog, which
     // only ever stands over an open design on the Complications tab: gone
@@ -10725,6 +10765,7 @@ export class WristAssistantPanel extends LitElement {
   }
 
   private goTo(path: string, replace = false) {
+    if (!replace && !this.leaveScreenFor({ prefix: this.route?.prefix ?? "", path })) return;
     const next = navigatePanel(this.route, path, replace);
     if (next) this.route = next;
   }

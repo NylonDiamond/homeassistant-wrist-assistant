@@ -84,6 +84,33 @@ describe("the watch screens under the row", () => {
     expect(guard).toContain("dropWatchHttpActionsDrafts();");
   });
 
+  it("asks before a move inside the panel leaves a screen with unsaved work, and drops only that screen's edits on a yes", () => {
+    const go = method("  private goTo(path: string");
+    expect(go.indexOf("if (!replace && !this.leaveScreenFor(")).toBeGreaterThan(0);
+    expect(go.indexOf("leaveScreenFor(")).toBeLessThan(go.indexOf("navigatePanel("));
+    const leave = method("  private leaveScreenFor(");
+    expect(leave).toContain("if (screenIdOf(from) === screenIdOf(to)) return true;");
+    expect(leave).toContain("if (kept === undefined || !kept.dirty) return true;");
+    expect(leave).toContain("if (!this.confirmDiscard()) return false;");
+    expect(leave.indexOf("confirmDiscard")).toBeLessThan(leave.indexOf("kept.drop();"));
+    const kept = method("  private screenDraft(");
+    for (const line of [
+      `case "pages": return { dirty: watchPagesDirty(), drop: dropWatchPagesDrafts };`,
+      `case "menus": return { dirty: watchMenusDirty(), drop: dropWatchMenusDrafts };`,
+      `case "status-pages": return { dirty: watchStatusPagesDirty(), drop: dropWatchStatusPagesDrafts };`,
+      `case "control-center": return { dirty: watchControlCenterDirty(), drop: dropWatchControlCenterDrafts };`,
+      `case "rooms": return { dirty: watchRoomsDirty(), drop: dropWatchRoomsDrafts };`,
+      `case "voice": return { dirty: watchVoiceDirty(), drop: dropWatchVoiceDrafts };`,
+      `case "http-actions": return { dirty: watchHttpActionsDirty(), drop: dropWatchHttpActionsDrafts };`,
+      `case "settings": return { dirty: anyWatchSettingsDirty(), drop: () => this.watchSettings.dropKept() };`,
+      `case "complications": return { dirty: this.draft?.dirty === true, drop: () => this.selectNone() };`,
+    ]) expect(kept).toContain(line);
+    // The browser's Back and a link from inside an editor do not go through
+    // goTo: the route change asks, and a no puts the address back.
+    const will = method("  protected override willUpdate(");
+    expect(will).toContain("if (!this.leaveScreenFor(this.route, from)) this.route = navigatePanel(this.route, from.path, true) ?? from;");
+  });
+
   it("leaves Settings to the row as a link like the six, on the shared watch", () => {
     expect(SOURCE).not.toContain("openWatchSettings");
     const row = method("  private withWatchRow(");

@@ -111,6 +111,13 @@ export function tabOfRoute(route: PanelRoute | undefined): PanelTab {
   return "home";
 }
 
+/** The screen a route shows, as the leave question counts screens: one of
+ * the Watch app's eight, or the Home or Complications tab. The watch an
+ * address names, and anything after it, is not part of it. */
+export function screenIdOf(route: PanelRoute | undefined): WatchScreen["id"] | "home" | "complications" {
+  return watchScreenOf(route)?.id ?? (tabOfRoute(route) as "home" | "complications");
+}
+
 /** Where a click on a tab goes. The Watch app opens on Pages, on the shared
  * watch when there is one (`watch-pick.ts`). */
 export function tabPath(tab: PanelTab, watch?: string): string {

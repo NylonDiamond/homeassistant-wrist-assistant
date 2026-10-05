@@ -321,3 +321,14 @@ describe("renderTabBar", () => {
     expect(bar("", true, false)).not.toContain("wa-tabs-menu");
   });
 });
+
+describe("the screen a route shows, for the leave question", () => {
+  it("names each watch screen whatever watch or page follows, and the two other tabs", async () => {
+    const { screenIdOf } = await import("../src/shell.js");
+    const at = (path: string) => screenIdOf({ prefix: "/wrist-assistant", path });
+    expect(["", "/complications", "/complications/abc", "/pages", "/pages/W1", "/pages/W2/p3", "/menus/W1", "/status-pages", "/control-center/W1", "/rooms", "/voice/W1", "/http-actions", "/settings/W1"].map(at)).toEqual(
+      ["home", "complications", "complications", "pages", "pages", "pages", "menus", "status-pages", "control-center", "rooms", "voice", "http-actions", "settings"],
+    );
+    expect(screenIdOf(undefined)).toBe("home");
+  });
+});
