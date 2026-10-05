@@ -194,11 +194,24 @@ export function controlCenterFriendlyName(states: ControlCenterStates | undefine
   return typeof name === "string" && name.trim() !== "" ? name : entityId;
 }
 
-/** A new entry as the phone's add writes one: the entity's name, the
- * domain's icon, the domain, and nothing optional. Keys sorted. */
+/** The schema stamp the phone writes on every entry it stores and uploads
+ * (`CuratedEntity.currentSchemaVersion`). */
+export const CONTROL_CENTER_ENTRY_SCHEMA_VERSION = 1;
+
+/** A new entry as the phone stores one after its add: the entity's name,
+ * the domain's icon, the domain and the schema stamp, nothing else. Keys
+ * sorted. The stamp matters: both merges compare entries whole, so an entry
+ * without it differs from the phone's stamped copy of the same entry and
+ * reads as changed, which brings back an entry the other side deleted. */
 export function newControlCenterEntry(entityId: string, states?: ControlCenterStates): JsonObject {
   const domain = entityDomain(entityId);
-  return { displayName: controlCenterFriendlyName(states, entityId), domain, entityId, iconName: controlCenterDefaultIcon(domain) };
+  return {
+    displayName: controlCenterFriendlyName(states, entityId),
+    domain,
+    entityId,
+    iconName: controlCenterDefaultIcon(domain),
+    schemaVersion: CONTROL_CENTER_ENTRY_SCHEMA_VERSION,
+  };
 }
 
 export interface ControlCenterAdd {

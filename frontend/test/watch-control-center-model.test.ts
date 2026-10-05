@@ -107,10 +107,25 @@ describe("load and save", () => {
 });
 
 describe("adding", () => {
-  it("writes the entity's name, the domain's icon and the domain, keys sorted, nothing optional", () => {
+  it("writes the entity's name, the domain's icon, the domain and the entry's schema stamp, keys sorted", () => {
     const fresh = newControlCenterEntry("light.porch", STATES);
-    expect(JSON.stringify(fresh)).toBe(`{"displayName":"Porch","domain":"light","entityId":"light.porch","iconName":"lightbulb"}`);
-    expect(newControlCenterEntry("switch.kettle", STATES)).toEqual({ displayName: "switch.kettle", domain: "switch", entityId: "switch.kettle", iconName: "switch.2" });
+    expect(JSON.stringify(fresh)).toBe(`{"displayName":"Porch","domain":"light","entityId":"light.porch","iconName":"lightbulb","schemaVersion":1}`);
+    expect(newControlCenterEntry("switch.kettle", STATES)).toEqual({ displayName: "switch.kettle", domain: "switch", entityId: "switch.kettle", iconName: "switch.2", schemaVersion: 1 });
+  });
+
+  it("adds an entry the phone's stamped copy equals, so a deletion on a later merge is not undone", () => {
+    // The panel adds and saves; the phone pulls, stores it stamped and
+    // uploads that copy with another edit. A panel draft on the first save
+    // that deletes the new entry must still delete it.
+    const added = addControlCenterEntries(stored(), ["light.porch"], STATES).document;
+    const stamped = {
+      ...added,
+      entities: controlCenterEntries(added).map((e) => (e["entityId"] === "light.porch" && e["schemaVersion"] === undefined ? { ...e, schemaVersion: 1 } : e)),
+    };
+    const phone = setControlCenterName(stamped, "light.kitchen", "Cooking");
+    const local = removeControlCenterEntry(added, "light.porch");
+    const merged = mergeControlCenter(added, local, phone);
+    expect(ids(merged)).toEqual(["light.kitchen", "lock.front_door", "scene.movie", "sensor.outside"]);
   });
 
   it("adds at the end and refuses an entity on the list or named twice", () => {

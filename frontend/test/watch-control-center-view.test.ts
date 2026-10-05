@@ -168,7 +168,7 @@ describe("the inspector", () => {
     expect(addControlCenterEntities(h, ["light.lounge"])).toEqual([]);
     expect(flat(renderControlCenterInspector(h))).toContain("Lounge Lamp is on the list already.");
     const added = controlCenterEntries(h.document).at(-1);
-    expect(added).toEqual({ displayName: "Lounge Lamp", domain: "light", entityId: "light.lounge", iconName: "lightbulb" });
+    expect(added).toEqual({ displayName: "Lounge Lamp", domain: "light", entityId: "light.lounge", iconName: "lightbulb", schemaVersion: 1 });
   });
 });
 
