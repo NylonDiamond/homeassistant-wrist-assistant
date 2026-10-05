@@ -275,6 +275,16 @@ HTTP_ACTIONS_STORAGE_VERSION = 1
 # The phone hands its library over, and the watch runs actions through Home
 # Assistant, only when it sees this.
 HTTP_ACTIONS_CAPABILITY = "http_actions"
+# The home's page background photos (step 4d batch 6), see
+# page_images_store.py: an index of the custom photos here, and one JPEG per
+# photo in a folder of its own beside it. The built-in photos ship with the
+# integration and are never in the index.
+PAGE_IMAGES_STORAGE_KEY = "wrist_assistant.page_images"
+PAGE_IMAGES_STORAGE_VERSION = 1
+# What the integration advertises once it keeps those photos and serves the
+# signed page_image_get and page_image_put ops. The phone hands its photos
+# over, and a watch fetches the photos its pages name, only when it sees this.
+PAGE_IMAGES_CAPABILITY = "page_images"
 # What the integration advertises once it serves /v2/pair/start and the
 # panel's pair/lookup and pair/confirm (pairing_ws.py). A watch with no
 # iPhone offers to pair by code only when /version lists this.

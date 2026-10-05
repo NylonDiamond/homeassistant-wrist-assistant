@@ -1135,6 +1135,23 @@ class WatchConfigStore:
             if kind in WATCH_CONFIG_KINDS
         }
 
+    def documents(self, kind: Any) -> tuple[dict[str, dict[str, Any]], bool]:
+        """Every owner's current document of ``kind``, and whether that is
+        all of them.
+
+        The second value is False when the index or any owner's file could
+        not be read: what those hold is unknown, so a caller deciding that
+        nothing uses something (the page photo sweep) must not act on it.
+        The documents are the stored objects, not copies; read only.
+        """
+        kind = validate_kind(kind)
+        found = {
+            owner: by_kind[kind].document
+            for owner, by_kind in self._records.items()
+            if kind in by_kind
+        }
+        return found, not (self._load_failed or self._failed_owners)
+
     def history(self, owner_watch_id: str, kind: Any) -> list[WatchConfigHistoryEntry]:
         """The owner's history of that kind, newest first.
 
