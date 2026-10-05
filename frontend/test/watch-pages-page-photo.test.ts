@@ -83,6 +83,8 @@ describe("the layers", () => {
     expect(drawn.background).toBe(under.join(", "));
     const layers = drawn.layers as { values: unknown[] };
     expect(layers.values[1]).toContain(`url("blob:photo")`);
+    // Its own class: .wp-photo is a person tile's round photo.
+    expect(layers.values[0]).toBe("wp-page-photo");
     // The pattern in a layer of its own over the photo.
     expect((layers.values[2] as { values: unknown[] }).values).toContain(`inset:0;background:${over.join(", ")}`);
     // No photo: the whole background, nothing drawn over it.

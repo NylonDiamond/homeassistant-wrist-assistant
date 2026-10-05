@@ -576,7 +576,7 @@ export function watchScreenLayers(
   s: number,
   screen: { width: number; height: number },
   photoUrl: ((id: string) => string | undefined) | undefined,
-  className = "wp-photo",
+  className = "wp-page-photo",
 ): { background: string; layers: TemplateResult | typeof nothing } {
   const photo = watchPagePhoto(page);
   const url = photo === undefined || photoUrl === undefined ? undefined : photoUrl(photo.id);
@@ -3235,8 +3235,9 @@ export const watchPagePreviewStyles = css`
     -moz-osx-font-smoothing: grayscale;
   }
   /* The page photo and what the watch draws over it (watchScreenLayers),
-     under everything else on the screen. */
-  .wp-photo { position: absolute; display: block; pointer-events: none; }
+     under everything else on the screen. Not .wp-photo: that is a person
+     tile's round photo, and its rule would round and unpin the page photo. */
+  .wp-page-photo { position: absolute; display: block; pointer-events: none; }
   /* The system clock and the settings gear, each placed on its own. */
   .wp-clock { position: absolute; inset: 0 0 auto 0; height: 0; pointer-events: none; }
   .wp-time {
