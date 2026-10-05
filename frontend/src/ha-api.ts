@@ -405,7 +405,11 @@ export async function restoreSaveHistory(
  * pages: the phone publishes it and the server refuses a panel save or
  * restore of it. `menus` (the Anywhere menu, the Entity quick menu and the
  * page switcher) is refused as `invalid` by an integration older than it. */
-export type WatchConfigKind = "pages" | "behavior" | "catalog" | "menus";
+export type WatchConfigKind = "pages" | "behavior" | "catalog" | "menus"
+  // The watch's notification style, sounds and delivery route, edited in
+  // Watch settings beside `behavior`. Refused as `invalid` by an integration
+  // older than the kind.
+  | "notification_style";
 
 /** The kinds the panel may save and restore. */
 export type WatchConfigPanelKind = Exclude<WatchConfigKind, "catalog">;
