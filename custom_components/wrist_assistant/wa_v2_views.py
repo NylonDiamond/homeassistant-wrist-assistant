@@ -138,6 +138,12 @@ from .logbook_events import (
     log_secret_registered,
     log_secret_reprovisioned,
 )
+from .page_images_store import (
+    PageImagesError,
+    PageImagesTooLargeError,
+    PageImagesUnavailableError,
+    decode_data as decode_page_image,
+)
 from .wa_pair_requests import (
     PAIR_POLL_AFTER_SECONDS,
     PAIR_START_FIELDS,
@@ -3619,6 +3625,83 @@ async def _op_http_action_run(ctx: _OpContext) -> Response:
     return ctx.signed_json(reply)
 
 
+# ── page background photos (step 4d batch 6) ──────────────────────────────
+#
+# The home keeps one library of photos (``page_images_store.py``). A device
+# fetches the photo a page names by id, built-in ids included, and a phone
+# hands over the photos its pages named before Home Assistant held them. Any
+# device with a valid pair may do either: the library belongs to the home,
+# so there is no companion to resolve.
+
+# Each refusal's HTTP status. ``full`` is a 409 like the other "the stored
+# state says no" answers; ``too_large`` is the size refusal HTTP names.
+_PAGE_IMAGE_STATUS = {
+    "invalid": 400,
+    "too_large": 413,
+    "full": 409,
+    "not_found": 404,
+    "unavailable": 503,
+}
+# A put is a JSON body around a photo of at most 256 KiB as base64, which is
+# a third bigger. The raw body is held to a little over that before the
+# photo is decoded.
+_PAGE_IMAGE_PUT_MAX_BODY_BYTES = 360 * 1024
+
+
+def _page_image_refusal(ctx: _OpContext, err: PageImagesError) -> Response:
+    return ctx.signed_json(
+        {"ok": False, "error": err.code, "message": err.message},
+        status=_PAGE_IMAGE_STATUS.get(err.code, 400),
+    )
+
+
+async def _op_page_image_get(ctx: _OpContext) -> Response:
+    """One page photo's JPEG, for a device whose pages name it.
+
+    Body:  {"image_id": <UUID or built-in id>}
+    Reply: 200, the JPEG bytes, ``Content-Type: image/jpeg``, signed like
+           every other reply.
+    Refusal: signed {"ok": false, "error", "message"}: ``not_found`` 404,
+             ``invalid`` 400 (not a photo id), ``unavailable`` 503.
+    """
+    store = getattr(ctx.domain_data, "page_images_store", None)
+    if store is None:
+        return _page_image_refusal(ctx, PageImagesUnavailableError("integration not ready"))
+    try:
+        _image_id, data = await store.async_read(ctx.payload.get("image_id"))
+    except PageImagesError as err:
+        return _page_image_refusal(ctx, err)
+    return ctx.signed_bytes(data, content_type="image/jpeg")
+
+
+async def _op_page_image_put(ctx: _OpContext) -> Response:
+    """A phone hands over one photo its pages name, under the phone's own id.
+
+    Body:  {"image_id": <UUID>, "data": <base64 JPEG>}
+    Reply: {"ok": true, "status": "stored" | "exists"}
+    Refusal: signed {"ok": false, "error", "message"}: ``invalid`` 400 (not
+             a photo id, not base64, not a JPEG, a side under 16 or over
+             1024 px), ``too_large`` 413 (over 256 KiB), ``full`` 409 (500
+             photos), ``unavailable`` 503.
+
+    ``exists`` when the id is already stored or is a built-in id: the bytes
+    are not compared, the first write wins.
+    """
+    store = getattr(ctx.domain_data, "page_images_store", None)
+    if store is None:
+        return _page_image_refusal(ctx, PageImagesUnavailableError("integration not ready"))
+    if len(ctx.body) > _PAGE_IMAGE_PUT_MAX_BODY_BYTES:
+        return _page_image_refusal(
+            ctx, PageImagesTooLargeError("a photo is at most 256 KB")
+        )
+    try:
+        image_id = ctx.payload.get("image_id")
+        status = await store.async_put(image_id, decode_page_image(ctx.payload.get("data")))
+    except PageImagesError as err:
+        return _page_image_refusal(ctx, err)
+    return ctx.signed_json({"ok": True, "status": status})
+
+
 # Op dispatch table. Adding a new op = add a key here.
 _OP_HANDLERS: dict[str, Any] = {
     "watch_config_get": _op_watch_config_get,
@@ -3627,6 +3710,8 @@ _OP_HANDLERS: dict[str, Any] = {
     "http_actions_hand_over": _op_http_actions_hand_over,
     "http_actions_get": _op_http_actions_get,
     "http_action_run": _op_http_action_run,
+    "page_image_get": _op_page_image_get,
+    "page_image_put": _op_page_image_put,
     "complications_sync": _op_complications_sync,
     "complications_restore": _op_complications_restore,
     "complications_create": _op_complications_create,

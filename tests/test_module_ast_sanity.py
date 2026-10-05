@@ -223,6 +223,7 @@ def test_uninstall_removes_every_store_the_integration_writes() -> None:
         "ComplicationStore(hass).async_remove()",
         "WatchConfigStore(hass).async_remove()",
         "HTTPActionsStore(hass).async_remove()",
+        "PageImagesStore(hass).async_remove()",
     ):
         assert expected in body, f"async_remove_entry no longer removes {expected}"
 
@@ -232,6 +233,13 @@ def test_unload_stops_the_http_action_library_saving() -> None:
     back after an uninstall's `async_remove_entry` deleted it."""
     body = _function_source("__init__.py", "async_unload_entry")
     assert "await data.http_actions_store.async_shutdown()" in body
+
+
+def test_unload_stops_the_page_photo_index_saving() -> None:
+    """The same for the page photo index: a debounced save would write it
+    back after an uninstall removed it, naming files that are gone."""
+    body = _function_source("__init__.py", "async_unload_entry")
+    assert "await data.page_images_store.async_shutdown()" in body
 
 
 def test_removing_a_device_in_ha_also_forgets_its_watch_config() -> None:

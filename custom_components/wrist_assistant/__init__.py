@@ -48,6 +48,7 @@ from .const import (
     LIBRARY_OWNER_ID,
     NOTIFICATION_TOKEN_STORAGE_KEY,
     NOTIFICATION_TOKEN_STORAGE_VERSION,
+    PAGE_IMAGES_CAPABILITY,
     PLATFORMS,
     WA_HMAC_NONCE_TTL_SECONDS,
     WATCH_CONFIG_CAPABILITY,
@@ -72,6 +73,8 @@ from .card_preview_store import CardPreviewStore
 from .http_actions_runner import HTTPActionRunner
 from .http_actions_store import HTTPActionsStore
 from .http_actions_ws import async_register_http_actions_commands
+from .page_images_store import PageImagesStore
+from .page_images_ws import async_register_page_images_commands
 from .parts_store import PartsStore
 from .snapshot_aspect_store import SnapshotAspectStore
 from .snapshot_crop_store import SnapshotCropStore
@@ -808,6 +811,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         http_actions_store.async_add_listener(coordinator.http_actions_changed)
     )
     http_action_runner = HTTPActionRunner(hass)
+    # The home's page background photos (step 4d batch 6). A photo no page
+    # names is marked, and deleted seven days later, by a sweep that runs
+    # here once and then after every write of any watch's pages, whoever
+    # made it: every such write reaches the watch config store's listeners.
+    # Housekeeping only: a failed sweep must not fail setup.
+    page_images_store = PageImagesStore(
+        hass, pages=lambda: watch_config_store.documents("pages")
+    )
+    await page_images_store.async_load()
+    try:
+        await page_images_store.async_start()
+    except Exception:
+        _LOGGER.exception("Page photo sweep failed; continuing setup")
+    entry.async_on_unload(
+        watch_config_store.async_add_listener(page_images_store.pages_changed)
+    )
 
     # Register server capabilities
     # HA-owned custom complications: iOS checks this before offering the
@@ -897,6 +916,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # `http_actions` on every delta reply. The phone hands its library over,
     # and a watch runs actions through Home Assistant, only when it sees this.
     coordinator.register_capability(HTTP_ACTIONS_CAPABILITY)
+    # The home's page photos (page_images_store.py): the signed
+    # page_image_get and page_image_put ops. A watch fetches the photos its
+    # pages name, and a phone hands its own over, only when it sees this.
+    coordinator.register_capability(PAGE_IMAGES_CAPABILITY)
 
     runtime_data = WristAssistantData(
         coordinator=coordinator,
@@ -918,6 +941,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         watch_voices_store=watch_voices_store,
         http_actions_store=http_actions_store,
         http_action_runner=http_action_runner,
+        page_images_store=page_images_store,
     )
     entry.runtime_data = runtime_data
     hass.data[DOMAIN] = runtime_data
@@ -934,6 +958,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         # The panel's HTTP actions screen: the home's library and the Test
         # card (admin only).
         async_register_http_actions_commands(hass)
+        # The panel's page photos: list, fetch, upload, delete (admin only).
+        async_register_page_images_commands(hass)
         # v2 transport: /v2/* HMAC for all watch traffic. A pair comes from
         # the iPhone's sign-in through WARegisterSecretView (bearer), or from
         # a code the watch gets from WAPairStartView (no auth, stores only a
@@ -1201,6 +1227,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: WristAssistantConfigEnt
             # Its debounced save would otherwise fire on this old instance,
             # after an uninstall's async_remove_entry deleted the file.
             await data.http_actions_store.async_shutdown()
+            # The same for the page photo index.
+            await data.page_images_store.async_shutdown()
     return unload_ok
 
 
@@ -1290,6 +1318,9 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     # The home's HTTP action library too: it holds every URL, token and
     # global the home's actions use.
     await HTTPActionsStore(hass).async_remove()
+    # The page photos go with the pages that named them: the index and every
+    # file. The built-in photos ship with the integration and are not touched.
+    await PageImagesStore(hass).async_remove()
 
 
 async def _create_apns_client(hass: HomeAssistant) -> APNsClient | None:

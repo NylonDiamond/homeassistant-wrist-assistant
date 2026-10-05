@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from .http_actions_store import HTTPActionsStore
     from .notification_snapshot import NotificationSnapshotStore
     from .notifications import NotificationTokenStore
+    from .page_images_store import PageImagesStore
     from .parts_store import PartsStore
     from .snapshot_aspect_store import SnapshotAspectStore
     from .snapshot_crop_store import SnapshotCropStore
@@ -78,6 +79,9 @@ class WristAssistantData:
     # are home-wide: every paired device may run every action.
     http_actions_store: HTTPActionsStore
     http_action_runner: HTTPActionRunner
+    # The home's page background photos, uploaded in the panel or handed
+    # over by a phone, and fetched by id by any paired device.
+    page_images_store: PageImagesStore
     apns_client: APNsClient | None = field(default=None)
     # Sends a phone owner the background push a watch owner gets as a long-poll
     # wake. Built after the relay client is resolved, so it is None for the

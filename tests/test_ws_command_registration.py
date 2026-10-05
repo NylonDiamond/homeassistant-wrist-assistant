@@ -15,11 +15,12 @@ templates, a watch's whole page config, or what a watch waiting to pair
 reported. The exceptions, at most one per module, are listed in
 ``_NOT_ADMIN``.
 
-Four modules hold commands: ``complication_ws.py`` (the editor),
+Five modules hold commands: ``complication_ws.py`` (the editor),
 ``watch_config_ws.py`` (the Watch settings view and the page editor),
-``pairing_ws.py`` (confirming a watch's pairing code) and
-``http_actions_ws.py`` (the home's HTTP action library). Each is checked on
-its own, since each has its own registration function.
+``pairing_ws.py`` (confirming a watch's pairing code),
+``http_actions_ws.py`` (the home's HTTP action library) and
+``page_images_ws.py`` (the home's page photos). Each is checked on its own,
+since each has its own registration function.
 """
 
 from __future__ import annotations
@@ -34,6 +35,7 @@ _MODULE = _PKG / "complication_ws.py"
 _WATCH_CONFIG_MODULE = _PKG / "watch_config_ws.py"
 _PAIRING_MODULE = _PKG / "pairing_ws.py"
 _HTTP_ACTIONS_MODULE = _PKG / "http_actions_ws.py"
+_PAGE_IMAGES_MODULE = _PKG / "page_images_ws.py"
 
 # The Watch settings view's and the page editor's commands. Admin-only like
 # every other: history_entry hands out a whole past document, and restore
@@ -62,6 +64,16 @@ _HTTP_ACTIONS_ADMIN_ONLY = {
     "ws_http_actions_get",
     "ws_http_actions_save",
     "ws_http_actions_test",
+}
+
+# The panel's page photos (step 4d batch 6). A photo can show the inside of
+# the house, and an upload or a delete writes to Home Assistant's disk.
+# Admin only.
+_PAGE_IMAGES_ADMIN_ONLY = {
+    "ws_page_images_list",
+    "ws_page_images_get",
+    "ws_page_images_upload",
+    "ws_page_images_delete",
 }
 
 # Every command this module defines. All of them are admin-only; the set is
@@ -105,10 +117,17 @@ _NOT_ADMIN = {
     _WATCH_CONFIG_MODULE.name: {"ws_watch_config_subscribe"},
     _PAIRING_MODULE.name: set(),
     _HTTP_ACTIONS_MODULE.name: set(),
+    _PAGE_IMAGES_MODULE.name: set(),
 }
 
 
-_MODULES = [_MODULE, _WATCH_CONFIG_MODULE, _PAIRING_MODULE, _HTTP_ACTIONS_MODULE]
+_MODULES = [
+    _MODULE,
+    _WATCH_CONFIG_MODULE,
+    _PAIRING_MODULE,
+    _HTTP_ACTIONS_MODULE,
+    _PAGE_IMAGES_MODULE,
+]
 # Per module: the commands it must define, and which of them skip the gate.
 _EXPECTED = {
     _MODULE.name: (_ADMIN_ONLY | _NOT_ADMIN[_MODULE.name], _NOT_ADMIN[_MODULE.name]),
@@ -120,6 +139,10 @@ _EXPECTED = {
     _HTTP_ACTIONS_MODULE.name: (
         _HTTP_ACTIONS_ADMIN_ONLY,
         _NOT_ADMIN[_HTTP_ACTIONS_MODULE.name],
+    ),
+    _PAGE_IMAGES_MODULE.name: (
+        _PAGE_IMAGES_ADMIN_ONLY,
+        _NOT_ADMIN[_PAGE_IMAGES_MODULE.name],
     ),
 }
 
@@ -236,6 +259,20 @@ def test_the_watch_pairing_capability_is_advertised() -> None:
 def test_the_http_actions_commands_are_registered_at_setup() -> None:
     source = (_PKG / "__init__.py").read_text()
     assert "async_register_http_actions_commands(hass)" in source
+
+
+def test_the_page_images_commands_are_registered_at_setup() -> None:
+    source = (_PKG / "__init__.py").read_text()
+    assert "async_register_page_images_commands(hass)" in source
+
+
+def test_the_page_images_capability_is_advertised() -> None:
+    """A watch fetches the photos its pages name, and a phone hands its own
+    over, only when it sees this."""
+    init = (_PKG / "__init__.py").read_text()
+    const = (_PKG / "const.py").read_text()
+    assert "register_capability(PAGE_IMAGES_CAPABILITY)" in init
+    assert 'PAGE_IMAGES_CAPABILITY = "page_images"' in const
 
 
 def test_the_http_actions_capability_is_advertised() -> None:
