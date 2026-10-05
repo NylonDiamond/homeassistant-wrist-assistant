@@ -24,6 +24,7 @@ import {
   fetchWatchStatus,
   fetchWatchConfig,
   fetchWatchConfigSummary,
+  fetchHttpActions,
   type SaveHistoryEntry,
   fetchSaveHistory,
   fetchSaveHistoryEntry,
@@ -431,6 +432,7 @@ import {
 import { adoptRouteWatch, loadWatchPick, resolveWatchPick, saveWatchPick, watchRouteOwner } from "./watch-pick.js";
 import { renderWatchRow, watchRowStyles } from "./watch-row.js";
 import { isWatchSettingsRoute, settingsPageSavesOnKey } from "./watch-settings-page.js";
+import { type WatchHttpLibrary, readWatchHttpLibrary, watchHttpLibraryReadMeansNone } from "./watch-pages/http-library.js";
 import { anyWatchSettingsDirty } from "./watch-settings-draft.js";
 import {
   FIRST_RUN_TILES, ZOOM_FIT, ZOOM_MAX, ZOOM_MIN, anySnap, pickGridStep, runFirstRunTile, slotWord, snapSwitchOn,
@@ -1516,6 +1518,12 @@ export class WristAssistantPanel extends LitElement {
   /** Watch-app pages (id + name) from the watch's last sync report; feeds the
    * "Open a watch app page" tap-action picker. */
   @state() private pages: { id: string; name: string }[] = [];
+  /** The home's HTTP action library (`watch-pages/http-library.ts`), for the
+   * "Run an HTTP action" pick list. Read for an administrator with the
+   * complication list; undefined before that and with an integration older
+   * than the library. */
+  @state() private httpLibrary?: WatchHttpLibrary;
+  private httpLibraryRun = 0;
   @state() private templateResults = new Map<string, string>();
   @state() private historySeries = new Map<string, string>();
   /** Every-reading fetches' counts, by the same key, from the same fetch. */
@@ -6883,6 +6891,19 @@ export class WristAssistantPanel extends LitElement {
     }
   }
 
+  /** Read the home's HTTP action library. An integration older than it does
+   * not know the command: none, and the tap keeps its plain target field.
+   * Any other failure keeps what is held. Only the newest read lands. */
+  private async loadHttpLibrary() {
+    const run = ++this.httpLibraryRun;
+    try {
+      const record = await fetchHttpActions(this.hass);
+      if (run === this.httpLibraryRun) this.httpLibrary = readWatchHttpLibrary(record);
+    } catch (error) {
+      if (run === this.httpLibraryRun && watchHttpLibraryReadMeansNone(error)) this.httpLibrary = undefined;
+    }
+  }
+
   private async loadRecords() {
     if (!this.ownerId) return;
     const ownerId = this.ownerId;
@@ -6903,6 +6924,7 @@ export class WristAssistantPanel extends LitElement {
       this.occupied = reply.occupied
         ?? this.presets.map((p): OccupiedSlot => ({ slot: p.slot, name: p.name, kind: "preset", home: "" }));
       this.pages = reply.pages ?? [];
+      if (this.hass.user?.is_admin) void this.loadHttpLibrary();
       this.serverToken = reply.token;
       this.appliedToken = reply.applied_token ?? undefined;
       this.pendingChanges = typeof reply.pending_changes === "number" ? reply.pending_changes : undefined;
@@ -7536,6 +7558,7 @@ export class WristAssistantPanel extends LitElement {
       icons: this.icons,
       symbols: this.symbols,
       pages: this.pages,
+      httpActions: this.httpLibrary?.actions,
       documents: this.documentList(),
       watchAppVersion: this.selectedOwner?.app_version,
       deviceKind: deviceKindOf(this.selectedOwner),

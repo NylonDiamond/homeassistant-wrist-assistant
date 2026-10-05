@@ -406,6 +406,9 @@ import { familyNote, isHomeFamily } from "./layouts.js";
 import { isPlaceholderId } from "./transfer.js";
 import { type DeviceKind, deviceSupportsControls, watchVersionNote } from "./version.js";
 import { type UiIconName, uiIcon } from "./ui-icons.js";
+import { goToWatchHttpActions } from "./shell.js";
+import type { WatchCatalogHTTPAction } from "./watch-pages/catalog.js";
+import { HTTP_ACTION_REF_PREFIX, findHttpLibraryAction } from "./watch-pages/http-library.js";
 import {
   CHART_DRAW_EXTRAS, CHART_READINGS, type ChartDrawExtra, type ChartSample, type ExtraKey, type ExtraOwner,
   extraInfo, extraName, extraOwner, extraPreview,
@@ -456,6 +459,10 @@ export interface EditorHost {
    * `refreshMinutes` is that complication's timed refresh, 0 when it has none,
    * for the redraw budget hint under the tap. Absent reads as 0. */
   documents?: { id: string; name: string; layers: () => readonly CElement[]; refreshMinutes?: number }[];
+  /** The home's HTTP action library as Home Assistant keeps it
+   * (`watch-pages/http-library.ts`), for the "Run an HTTP action" pick
+   * list. Absent or empty, the tap keeps its plain target field. */
+  httpActions?: readonly WatchCatalogHTTPAction[];
   /** The Wrist Assistant version the edited watch last reported, for the
    * "Needs Wrist Assistant X.Y" notes under newer controls. Absent or null when
    * it has not reported, which shows no note. */
@@ -9098,7 +9105,9 @@ export function tapActionEditor(
       ? refreshLayersField(host, action, (next) => upd((p) => { p.action = next; }))
       : nothing}
     ${"entityId" in action ? html`
-      ${entityField(host, "Target", action, (ref) => upd((p) => { p.action = { type: action.type, ...ref }; }, "tap-entity"), `${key}-tap`)}
+      ${action.type === "runHTTPAction"
+        ? httpActionTargetField(host, action, (next) => upd((p) => { p.action = next; }, "tap-entity"), key)
+        : entityField(host, "Target", action, (ref) => upd((p) => { p.action = { type: action.type, ...ref }; }, "tap-entity"), `${key}-tap`)}
       ${itemPlaceholders(host, (text) => upd((p) => {
         const a = p.action;
         if ("entityId" in a) p.action = { type: a.type, entityId: text, displayName: "", domain: "" };
@@ -9114,6 +9123,44 @@ export function tapActionEditor(
       if (name) p.openPageName = name; else delete p.openPageName;
     }, "tap-page")) : nothing}
     ${showReply ? httpShowResultField(host) : nothing}`;
+}
+
+/**
+ * The target of a "Run an HTTP action" tap. With actions in the home's
+ * library it is a pick list of them; a pick stores `http_action.<ID>`, the
+ * action's name and the `http_action` domain, as the target field does. A
+ * stored reference is matched without regard to case or prefix and never
+ * rewritten on its own, so a design made earlier or shared through the
+ * gallery loads and saves the same bytes. A stored one the library does not
+ * hold reads "Not in the list" and keeps the plain target field under it;
+ * with no library, or an empty one, that field is all there is.
+ */
+function httpActionTargetField(
+  host: EditorHost,
+  action: EntityRef,
+  set: (next: TapAction) => void,
+  key: string,
+): TemplateResult {
+  const free = entityField(host, "Target", action, (ref) => set({ type: "runHTTPAction", ...ref }), `${key}-tap`);
+  const list = host.httpActions ?? [];
+  if (list.length === 0) return free;
+  const current = findHttpLibraryAction(list, action.entityId);
+  const stored = action.entityId.trim() !== "";
+  const pick = (id: string) => {
+    const picked = list.find((a) => a.id === id);
+    if (picked === undefined) return;
+    set({ type: "runHTTPAction", entityId: `${HTTP_ACTION_REF_PREFIX}${picked.id.toUpperCase()}`, displayName: picked.name, domain: "http_action" });
+  };
+  const value = current?.id ?? "";
+  return html`<label class="field"><span>HTTP action</span>
+      <select .value=${live(value)} @change=${onInput(pick)}>
+        ${current === undefined ? html`<option value="" disabled selected>${stored ? "Not in the list" : "Pick an action"}</option>` : nothing}
+        ${list.map((a) => html`<option value=${a.id} ?selected=${a.id === value}>${a.needsSetup ? `${a.name} (needs setup)` : a.name}</option>`)}
+      </select></label>
+    ${current?.needsSetup === true
+      ? html`<div class="hint warn keep">Needs setup. <button type="button" class="link" @click=${goToWatchHttpActions}>Open HTTP actions</button></div>`
+      : nothing}
+    ${stored && current === undefined ? free : nothing}`;
 }
 
 /** A finger covers about this many points, so a target with a shorter side
