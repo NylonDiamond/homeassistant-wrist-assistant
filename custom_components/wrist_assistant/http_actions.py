@@ -329,7 +329,7 @@ def read_reply_config(raw: Any) -> dict[str, Any] | None:
     return config
 
 
-def _global_pairs(raw: Any) -> list[tuple[str, str]]:
+def global_pairs(raw: Any) -> list[tuple[str, str]]:
     """The globals that substitute: (trimmed key, value), blank keys dropped."""
     pairs: list[tuple[str, str]] = []
     if not isinstance(raw, list):
@@ -365,7 +365,7 @@ def find_action(document: Any, action_id: Any) -> Action | None:
 def prompt_variables(action: Action, document: Any) -> list[Variable]:
     """``promptVariables(for:)``: the variables a person is asked for, which
     is every one whose key does not name a global."""
-    global_keys = {key for key, _ in _global_pairs(_globals_of(document))}
+    global_keys = {key for key, _ in library_globals(document)}
     if not global_keys:
         return list(action.variables)
     return [v for v in action.variables if trim(v.key) not in global_keys]
@@ -373,6 +373,11 @@ def prompt_variables(action: Action, document: Any) -> list[Variable]:
 
 def _globals_of(document: Any) -> Any:
     return document.get("globalVariables") if isinstance(document, dict) else None
+
+
+def library_globals(document: Any) -> list[tuple[str, str]]:
+    """The library's globals that substitute, as (trimmed key, value)."""
+    return global_pairs(_globals_of(document))
 
 
 # ── the hash ─────────────────────────────────────────────────────────────
@@ -851,7 +856,7 @@ def build_request(
     action = find_action(document, action_id)
     if action is None:
         raise HTTPActionsInvalid("no action has that id")
-    return build_action_request(action, _global_pairs(_globals_of(document)), values, audio)
+    return build_action_request(action, library_globals(document), values, audio)
 
 
 def build_action_request(
