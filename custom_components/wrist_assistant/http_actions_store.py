@@ -30,9 +30,11 @@ revision, which is how the parked delta polls are woken.
 Storage is one Home Assistant ``Store`` file. A file that cannot be read is
 logged and left alone: every read and write is then refused with
 ``unavailable`` until a restart reads it, so a damaged file is never saved
-over with an empty library. Uninstalling the integration removes the file;
-removing a device drops its two marks and leaves the library, which belongs
-to the home.
+over with an empty library. Unloading the entry writes a pending save at
+once and stops saving (``async_shutdown``), so a debounced save left on the
+old instance can never write the file back after an uninstall removed it.
+Uninstalling the integration removes the file; removing a device drops its
+two marks and leaves the library, which belongs to the home.
 """
 
 from __future__ import annotations
@@ -173,6 +175,9 @@ class HTTPActionsStore:
         )
         self._record = HTTPActionsRecord()
         self._load_failed = False
+        # A delayed save is waiting; and, after unload, no more saves.
+        self._save_pending = False
+        self._closed = False
         self._listeners: list[ChangeListener] = []
         # (revision, public list, its hash), made on first ask per revision.
         self._public: tuple[int, dict[str, Any], str] | None = None
@@ -196,9 +201,23 @@ class HTTPActionsStore:
         await self._store.async_remove()
 
     def _schedule_save(self) -> None:
+        if self._closed:
+            return
+        self._save_pending = True
         self._store.async_delay_save(
             self._record.as_storage_dict, _SAVE_DEBOUNCE_SECONDS
         )
+
+    async def async_shutdown(self) -> None:
+        """Called on unload: write a save still waiting out its debounce
+        now, which cancels the delayed one, and save nothing after. A
+        reload keeps every change; an uninstall that follows removes a file
+        no one writes again."""
+        self._closed = True
+        if not self._save_pending or self._load_failed:
+            return
+        self._save_pending = False
+        await self._store.async_save(self._record.as_storage_dict())
 
     def _check_available(self) -> None:
         if self._load_failed:

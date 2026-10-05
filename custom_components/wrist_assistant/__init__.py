@@ -1198,6 +1198,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: WristAssistantConfigEnt
             if data.complication_push is not None:
                 data.complication_push.shutdown()
             await data.http_action_runner.async_shutdown()
+            # Its debounced save would otherwise fire on this old instance,
+            # after an uninstall's async_remove_entry deleted the file.
+            await data.http_actions_store.async_shutdown()
     return unload_ok
 
 

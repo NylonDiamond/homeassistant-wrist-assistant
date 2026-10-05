@@ -36,12 +36,19 @@ CONFLICT = re.compile(r"^stored revision is (\d+)")
 
 
 class FakeStore:
-    """``homeassistant.helpers.storage.Store``, one payload per key."""
+    """``homeassistant.helpers.storage.Store``, one payload per key.
+
+    A delayed save writes at once, unless ``deferred`` is set: it then waits
+    in ``pending`` until :meth:`fire_pending` plays the timer, and is
+    cancelled by ``async_save`` and ``async_remove`` as Home Assistant's
+    are."""
 
     files: dict[str, Any] = {}
     writes: list[str] = []
     removed: list[str] = []
     unreadable: set[str] = set()
+    deferred = False
+    pending: dict[str, Any] = {}
 
     def __init__(self, _hass: object, _version: int, key: str, *_a: object, **_k: object) -> None:
         self.key = key
@@ -52,12 +59,28 @@ class FakeStore:
         return copy.deepcopy(FakeStore.files.get(self.key))
 
     def async_delay_save(self, serialize, *_a: object, **_k: object) -> None:
+        if FakeStore.deferred:
+            FakeStore.pending[self.key] = serialize
+            return
         FakeStore.files[self.key] = copy.deepcopy(serialize())
         FakeStore.writes.append(self.key)
 
+    async def async_save(self, data: Any) -> None:
+        FakeStore.pending.pop(self.key, None)
+        FakeStore.files[self.key] = copy.deepcopy(data)
+        FakeStore.writes.append(self.key)
+
     async def async_remove(self) -> None:
+        FakeStore.pending.pop(self.key, None)
         FakeStore.files.pop(self.key, None)
         FakeStore.removed.append(self.key)
+
+    @staticmethod
+    def fire_pending() -> None:
+        for key, serialize in list(FakeStore.pending.items()):
+            FakeStore.files[key] = copy.deepcopy(serialize())
+            FakeStore.writes.append(key)
+        FakeStore.pending.clear()
 
 
 def _stub(name: str, **attrs: object) -> None:
@@ -82,6 +105,7 @@ def loaded_package():
     saved = dict(sys.modules)
     FakeStore.files, FakeStore.writes, FakeStore.removed = {}, [], []
     FakeStore.unreadable = set()
+    FakeStore.deferred, FakeStore.pending = False, {}
     try:
         _stub("homeassistant")
         _stub("homeassistant.helpers")
@@ -398,3 +422,41 @@ def test_remove_deletes_the_file() -> None:
         assert KEY not in FakeStore.files
         assert FakeStore.removed == [KEY]
         assert store.revision == 0
+
+
+# ── unload ───────────────────────────────────────────────────────────────
+
+
+def test_unload_writes_a_waiting_save_and_an_uninstall_stays_removed(env) -> None:
+    FakeStore.deferred = True
+    env.store.save(library(action()), base_revision=0)
+    assert KEY in FakeStore.pending and KEY not in FakeStore.files
+    asyncio.run(env.store.async_shutdown())
+    # A reload keeps the change: it is on disk, and nothing waits.
+    assert FakeStore.files[KEY]["revision"] == 1
+    assert FakeStore.pending == {}
+    # A late write on the old instance schedules nothing.
+    env.store.mark_delivered("watch-A", 1)
+    env.store.forget("watch-A")
+    assert FakeStore.pending == {}
+    # The uninstall that follows removes the file, and no timer brings it back.
+    asyncio.run(env.mod.HTTPActionsStore(object()).async_remove())
+    FakeStore.fire_pending()
+    assert KEY not in FakeStore.files
+
+
+def test_unload_with_nothing_waiting_writes_nothing(env) -> None:
+    FakeStore.deferred = True
+    writes = len(FakeStore.writes)
+    asyncio.run(env.store.async_shutdown())
+    assert len(FakeStore.writes) == writes
+
+
+def test_unload_never_writes_over_an_unreadable_file() -> None:
+    with loaded_package() as loaded:
+        FakeStore.unreadable.add(KEY)
+        FakeStore.files[KEY] = {"damaged": True}
+        store = new_store(loaded.store_mod)
+        store._save_pending = True
+        asyncio.run(store.async_shutdown())
+        assert FakeStore.files[KEY] == {"damaged": True}
