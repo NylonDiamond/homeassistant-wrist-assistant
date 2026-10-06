@@ -307,14 +307,12 @@ describe("no record: Start with the defaults", () => {
     expect(await startWatchMenus(async () => { throw refusal("invalid", message); })).toEqual({ ok: false, code: "error", message });
   });
 
-  it("says so in plain words, with the iPhone path too", () => {
+  it("says so in plain words, with no iPhone switch", () => {
     expect(WATCH_MENUS_NO_RECORD_TITLE).toBe("No menus from this watch yet.");
     expect(WATCH_MENUS_START_BUTTON).toBe("Start with the defaults");
     expect(WATCH_MENUS_PAIR_FIRST_TEXT).toBe("Pair this watch first.");
     expect(WATCH_MENUS_UPDATE_TEXT).toBe("Update the integration to edit menus here.");
-    expect(WATCH_MENUS_NO_RECORD_TEXT).toBe(
-      "Start with the defaults here, or open the iPhone app and turn on Edit pages in Home Assistant under Settings, Pages in Home Assistant.",
-    );
+    expect(WATCH_MENUS_NO_RECORD_TEXT).toBe("Start with the defaults to begin.");
     expect(WATCH_MENUS_NO_RECORD_TEXT.startsWith(WATCH_MENUS_START_BUTTON)).toBe(true);
     for (const text of [WATCH_MENUS_NO_RECORD_TEXT, WATCH_MENUS_NO_RECORD_TITLE]) expect(text).not.toMatch(new RegExp(" - |\\u2013|\\u2014"));
   });

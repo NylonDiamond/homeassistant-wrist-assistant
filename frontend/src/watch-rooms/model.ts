@@ -27,6 +27,7 @@
 import type { WatchConfigRecord } from "../ha-api.js";
 import { type WatchPagesDocument, WATCH_SYNC_LIMIT_BYTES, isHiddenWatchPage, isSystemWatchPage, watchPageId, watchPageName, watchPagesOf } from "../watch-pages/model.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
+import { WAIT_FOR_IPHONE_TEXT } from "../watch-settings.js";
 import {
   type PointRooms,
   type PointZone,
@@ -602,8 +603,12 @@ export function roomsDocumentOf(record: WatchConfigRecord | undefined): Behavior
 // ── words ────────────────────────────────────────────────────────────────
 
 export const ROOMS_NO_RECORD_TITLE = "No watch settings from this watch yet.";
-export const ROOMS_NO_RECORD_TEXT =
-  "Rooms are part of the watch's settings. Start them under Watch settings, or open the iPhone app and turn on Edit pages in Home Assistant under Settings, Pages in Home Assistant.";
+/** The no-record line when no iPhone will send the watch's settings. Rooms
+ * have no Start of their own: they come with Watch settings' start. */
+export const ROOMS_NO_RECORD_TEXT = "Rooms are part of the watch's settings. Start them under Watch settings.";
+
+/** The same while the iPhone's move may still bring the settings. */
+export const ROOMS_WAIT_TEXT = `Rooms are part of the watch's settings. ${WAIT_FOR_IPHONE_TEXT}`;
 export const ROOMS_UNREADABLE_TEXT = "Home Assistant holds settings for this watch that this panel cannot read. Update the integration.";
 export const ZONES_UNREADABLE_TEXT = "The point control targets stored for this watch cannot be read, so they are shown as none and left as they are. Change them on the iPhone.";
 

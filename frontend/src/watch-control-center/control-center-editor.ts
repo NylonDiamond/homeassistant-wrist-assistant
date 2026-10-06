@@ -73,7 +73,7 @@ import { NO_ICONS, memoIconNames, watchKeysTypeText } from "../watch-pages/edito
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
 import { stageFitZoom, stageZoomIn, stageZoomLabel, stageZoomOut } from "../watch-pages/stage.js";
 import { watchFrameStyles } from "../watch-frame.js";
-import { START_PHONE_FIRST_TEXT, deliveryState, followWatch, settingsWatches, watchName } from "../watch-settings.js";
+import { START_FRESH_BUTTON, type NoRecordStart, deliveryState, followWatch, mayStart, noRecordStart, noRecordText, settingsWatches, watchName } from "../watch-settings.js";
 import {
   type ControlCenterDraft,
   anyControlCenterDirty,
@@ -885,6 +885,12 @@ export class WaControlCenterEditor extends LitElement {
     </span>`;
   }
 
+  /** Whether this watch's iPhone may still move this kind here, so a start
+   * waits behind a confirm (`noRecordStart`). */
+  private noRecordState(watches: readonly OwnerSummary[] = this.watches): NoRecordStart {
+    return noRecordStart(watches.find((w) => w.owner_watch_id === this.watchId));
+  }
+
   private canStart(): boolean {
     const record = this.record;
     return this.watchId !== undefined && record !== undefined && record.revision <= 0 && !this.unsupported;
@@ -903,7 +909,7 @@ export class WaControlCenterEditor extends LitElement {
           title="Go back to the copy Home Assistant holds. Undo brings the edits back."
           @click=${run(() => this.discard())}>Discard edits</button>` : nothing}
         ${start ? html`<button class="row" role="menuitem" ?disabled=${this.starting}
-          @click=${run(() => void this.start())}>${CONTROL_CENTER_START_EMPTY_BUTTON}</button>` : nothing}
+          @click=${run(() => { if (mayStart(this.noRecordState())) void this.start(); })}>${this.noRecordState() === "wait" ? START_FRESH_BUTTON : CONTROL_CENTER_START_EMPTY_BUTTON}</button>` : nothing}
       </div>` : nothing}
     </span>`;
   }
@@ -1043,11 +1049,15 @@ export class WaControlCenterEditor extends LitElement {
     if (record.revision <= 0 || draft === undefined || host === undefined) {
       const kept = this.watchId === undefined ? undefined : keptControlCenterDraft(this.watchId);
       const id = this.watchId;
-      return html`<div class="pe-empty"><b>${CONTROL_CENTER_NO_RECORD_TITLE}</b><span>${CONTROL_CENTER_NO_RECORD_TEXT}</span>
-        <span class="cc-start">
-          <button class="pe-btn pe-primary" ?disabled=${this.starting} @click=${() => void this.start()}>${this.starting ? "Starting…" : CONTROL_CENTER_START_EMPTY_BUTTON}</button>
-        </span>
-        <span class="pe-muted">${START_PHONE_FIRST_TEXT}</span>
+      // While the iPhone's move may still come it waits, and the start is a
+      // small link that asks first.
+      const state = this.noRecordState(watches);
+      return html`<div class="pe-empty"><b>${CONTROL_CENTER_NO_RECORD_TITLE}</b><span>${noRecordText(state, CONTROL_CENTER_NO_RECORD_TEXT)}</span>
+        ${state === "wait"
+          ? html`<button class="link start-fresh" ?disabled=${this.starting} @click=${() => { if (mayStart(state)) void this.start(); }}>${this.starting ? "Starting…" : START_FRESH_BUTTON}</button>`
+          : html`<span class="cc-start">
+              <button class="pe-btn pe-primary" ?disabled=${this.starting} @click=${() => void this.start()}>${this.starting ? "Starting…" : CONTROL_CENTER_START_EMPTY_BUTTON}</button>
+            </span>`}
         ${kept?.dirty && id !== undefined ? html`<span class="pe-warn">Your unsaved edits from before are kept. They come back, merged in, when the Control Center list is here again.</span>
           <button class="pe-btn" @click=${() => { forgetControlCenterDraft(id); this.requestUpdate(); }}>Discard the kept edits</button>` : nothing}
       </div>`;

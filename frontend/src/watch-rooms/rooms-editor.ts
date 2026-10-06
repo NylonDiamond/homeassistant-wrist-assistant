@@ -59,7 +59,7 @@ import {
 import { watchKeysTypeText } from "../watch-pages/editor-host.js";
 import { asWatchPagesDocument } from "../watch-pages/model.js";
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
-import { deliveryState, followWatch, settingsWatches, watchName } from "../watch-settings.js";
+import { deliveryState, followWatch, noRecordStart, settingsWatches, watchName } from "../watch-settings.js";
 import { type RoomsDraft, anyRoomsDirty, dropAllRooms, forgetRoomsDraft, keptRoomsDraft, saveRoomsDraft, takeRoomsRecord } from "./draft.js";
 import { WATCH_ROOMS_HELP_URL, navigateWatchRooms, registerWatchRoomsDrafts } from "./hook.js";
 import {
@@ -68,6 +68,7 @@ import {
   ROOMS_NO_RECORD_TEXT,
   ROOMS_NO_RECORD_TITLE,
   ROOMS_UNREADABLE_TEXT,
+  ROOMS_WAIT_TEXT,
   ROOM_HISTORY_HOURS,
   areasFromReply,
   historyFromReply,
@@ -813,7 +814,10 @@ export class WaRoomsEditor extends LitElement {
     const record = this.record;
     if (record === undefined) return html`<div class="pe-empty">Loading…</div>`;
     if (record.revision <= 0) {
-      return html`<div class="pe-empty"><b>${ROOMS_NO_RECORD_TITLE}</b><span>${ROOMS_NO_RECORD_TEXT}</span></div>`;
+      // Rooms have no start of their own; while the iPhone's move may still
+      // bring the settings, say so rather than point at Watch settings' start.
+      const waiting = noRecordStart(watches.find((w) => w.owner_watch_id === this.watchId)) === "wait";
+      return html`<div class="pe-empty"><b>${ROOMS_NO_RECORD_TITLE}</b><span>${waiting ? ROOMS_WAIT_TEXT : ROOMS_NO_RECORD_TEXT}</span></div>`;
     }
     const draft = this.draft;
     const host = this.viewHost();

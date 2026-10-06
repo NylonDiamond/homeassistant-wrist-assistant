@@ -348,8 +348,8 @@ export function controlCenterSummary(document: unknown): string {
 
 export const CONTROL_CENTER_NO_RECORD_TITLE = "No Control Center list from this watch yet.";
 
-export const CONTROL_CENTER_NO_RECORD_TEXT =
-  "Start with an empty list here, or open the iPhone app and turn on Edit pages in Home Assistant under Settings, Pages in Home Assistant.";
+/** The no-record line when no iPhone will send a Control Center list. */
+export const CONTROL_CENTER_NO_RECORD_TEXT = "Start with an empty list to begin.";
 
 export const CONTROL_CENTER_START_EMPTY_BUTTON = "Start with an empty list";
 

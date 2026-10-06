@@ -97,9 +97,13 @@ import {
   PAGES_START_CONFLICT_TEXT,
   PAGES_UNREADABLE_TEXT,
   PAIR_FIRST_TEXT,
-  START_PHONE_FIRST_TEXT,
+  START_FRESH_BUTTON,
+  type NoRecordStart,
   deliveryState,
   followWatch,
+  mayStart,
+  noRecordStart,
+  noRecordText,
   settingsWatches,
   watchName,
   watchRecordUnreadable,
@@ -3036,6 +3040,18 @@ export class WaPageEditor extends LitElement {
 
   /** The "Start with an empty page" flow applies: Home Assistant holds no
    * pages for this watch, and none it cannot read. */
+  /** Whether this watch's iPhone may still move its pages here, so the
+   * start waits behind a confirm (`noRecordStart`). */
+  private noRecordState(watches: readonly OwnerSummary[] = this.watches): NoRecordStart {
+    return noRecordStart(watches.find((w) => w.owner_watch_id === this.watchId));
+  }
+
+  /** A start from the button, the link or the ··· menu: while the iPhone's
+   * move may still come it asks first. */
+  private askStartEmptyPage(state: NoRecordStart = this.noRecordState()): void {
+    if (mayStart(state)) void this.startEmptyPage();
+  }
+
   private canStart(): boolean {
     const record = this.record;
     return this.watchId !== undefined && record !== undefined && record.revision <= 0 && !watchRecordUnreadable(record, asWatchPagesDocument);
@@ -3063,7 +3079,7 @@ export class WaPageEditor extends LitElement {
           title="Go back to the copy Home Assistant holds. Undo brings the edits back."
           @click=${run(() => this.discard())}>Discard edits</button>` : nothing}
         ${start ? html`<button class="row" role="menuitem" ?disabled=${this.starting}
-          @click=${run(() => void this.startEmptyPage())}>${PAGES_START_BUTTON}</button>` : nothing}
+          @click=${run(() => this.askStartEmptyPage())}>${this.noRecordState() === "wait" ? START_FRESH_BUTTON : PAGES_START_BUTTON}</button>` : nothing}
       </div>` : nothing}
     </span>`;
   }
@@ -3199,12 +3215,17 @@ export class WaPageEditor extends LitElement {
       const id = this.watchId;
       // A record that is there but unreadable (a newer schema) is not "no
       // pages yet": a start would only meet a conflict.
+      // While the iPhone's move may still come it waits, and the start is a
+      // small link that asks first.
+      const state = this.noRecordState(watches);
       const start = watchRecordUnreadable(record, asWatchPagesDocument)
         ? html`<span>${PAGES_UNREADABLE_TEXT}</span>`
-        : html`<b>No pages from this watch yet.</b><span>${PAGES_NO_RECORD_TEXT}</span>
-          <button class="pe-btn pe-primary" ?disabled=${this.starting || id === undefined}
-            @click=${() => void this.startEmptyPage()}>${this.starting ? "Starting…" : PAGES_START_BUTTON}</button>
-          <span class="pe-muted">${START_PHONE_FIRST_TEXT}</span>`;
+        : html`<b>No pages from this watch yet.</b><span>${noRecordText(state, PAGES_NO_RECORD_TEXT)}</span>
+          ${state === "wait"
+            ? html`<button class="link start-fresh" ?disabled=${this.starting || id === undefined}
+                @click=${() => this.askStartEmptyPage(state)}>${this.starting ? "Starting…" : START_FRESH_BUTTON}</button>`
+            : html`<button class="pe-btn pe-primary" ?disabled=${this.starting || id === undefined}
+                @click=${() => this.askStartEmptyPage(state)}>${this.starting ? "Starting…" : PAGES_START_BUTTON}</button>`}`;
       return html`<div class="pe-empty">${start}
         ${kept?.dirty && id !== undefined ? html`<span class="pe-warn">Your unsaved edits from before are kept. They come back, merged in, when Home Assistant holds pages for this watch again.</span>
           <button class="pe-btn" @click=${() => { forgetWatchPagesDraft(id); this.requestUpdate(); }}>Discard the kept edits</button>` : nothing}

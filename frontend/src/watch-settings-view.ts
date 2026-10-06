@@ -63,7 +63,7 @@ import {
   SETTINGS_START_CONFLICT_TEXT,
   SETTINGS_MAIN_HOUSE_TEXT,
   SETTINGS_UNREADABLE_TEXT,
-  START_PHONE_FIRST_TEXT,
+  START_FRESH_BUTTON,
   WAITING_HELP_TEXT,
   WAITING_PILL_TEXT,
   WATCH_SETTINGS_CATALOG,
@@ -75,6 +75,9 @@ import {
   errorCode,
   formValues,
   initialWatch,
+  mayStart,
+  noRecordStart,
+  noRecordText,
   normalizePairCode,
   optionsFor,
   pairCodeIsComplete,
@@ -212,6 +215,9 @@ export class WatchSettings implements ReactiveController {
   private styleStarting = false;
   private note?: Note;
   private confirm?: Confirm;
+  /** The watch row the page drew last, for its no-record state
+   * (`noRecordStart`). */
+  private shownOwner?: OwnerSummary;
   /** Sections whose help is hidden. Help starts shown: this is a form people
    * fill once, and its short titles ("Delay", "Debounce") need their line. */
   private helpOff: ReadonlySet<string> = new Set();
@@ -845,6 +851,7 @@ export class WatchSettings implements ReactiveController {
     this.hass = hass;
     const watches = settingsWatches(owners);
     const owner = watches.find((w) => w.owner_watch_id === this.ownerId);
+    this.shownOwner = owner;
     const name = owner ? watchName(owner, watches) : "Watch";
     // A watch whose settings live in another home: the note stands in for
     // both editors, and the pairing card stays.
@@ -898,11 +905,17 @@ export class WatchSettings implements ReactiveController {
       return html`<div class="xf-lead warn">${uiIcon("info")}<span>${SETTINGS_UNREADABLE_TEXT}</span></div>`;
     }
     if (record.revision <= 0 || record.document === undefined) {
-      return html`<div class="xf-lead">${uiIcon("info")}<span><b>No settings from this watch yet.</b> ${SETTINGS_NO_RECORD_TEXT}</span></div>
-        <button class="small primary ws-start" ?disabled=${this.starting || this.saving}
-          title="Save the app's default settings as this watch's first copy"
-          @click=${() => void this.start()}>${this.starting ? "Starting…" : SETTINGS_START_BUTTON}</button>
-        <div class="hint ws-start-hint">${START_PHONE_FIRST_TEXT}</div>`;
+      // While the iPhone's move may still come it waits, and the start is a
+      // small link that asks first.
+      const state = noRecordStart(this.shownOwner);
+      return html`<div class="xf-lead">${uiIcon("info")}<span><b>No settings from this watch yet.</b> ${noRecordText(state, SETTINGS_NO_RECORD_TEXT)}</span></div>
+        ${state === "wait"
+          ? html`<button class="link start-fresh ws-start" ?disabled=${this.starting || this.saving}
+              title="Save the app's default settings as this watch's first copy"
+              @click=${() => { if (mayStart(state)) void this.start(); }}>${this.starting ? "Starting…" : START_FRESH_BUTTON}</button>`
+          : html`<button class="small primary ws-start" ?disabled=${this.starting || this.saving}
+              title="Save the app's default settings as this watch's first copy"
+              @click=${() => void this.start()}>${this.starting ? "Starting…" : SETTINGS_START_BUTTON}</button>`}`;
     }
     const values = formValues(record.document, this.edits);
     return html`${WATCH_SETTINGS_CATALOG.sections.map((section) => this.renderSection(hass, section, values))}`;
@@ -1032,11 +1045,15 @@ export class WatchSettings implements ReactiveController {
     }
     const document = this.styleDocument;
     if (document === undefined) {
-      return this.renderStyleCard(html`<div class="xf-lead">${uiIcon("info")}<span><b>${STYLE_NO_RECORD_TITLE}</b> ${STYLE_NO_RECORD_TEXT}</span></div>
-        <button class="small primary ns-start" ?disabled=${this.styleStarting || this.saving}
-          title="Save the app's default notification style as this watch's first copy"
-          @click=${() => void this.startStyle()}>${this.styleStarting ? "Starting…" : STYLE_START_BUTTON}</button>
-        <div class="hint ws-start-hint">${START_PHONE_FIRST_TEXT}</div>`);
+      const state = noRecordStart(this.shownOwner);
+      return this.renderStyleCard(html`<div class="xf-lead">${uiIcon("info")}<span><b>${STYLE_NO_RECORD_TITLE}</b> ${noRecordText(state, STYLE_NO_RECORD_TEXT)}</span></div>
+        ${state === "wait"
+          ? html`<button class="link start-fresh ns-start" ?disabled=${this.styleStarting || this.saving}
+              title="Save the app's default notification style as this watch's first copy"
+              @click=${() => { if (mayStart(state)) void this.startStyle(); }}>${this.styleStarting ? "Starting…" : START_FRESH_BUTTON}</button>`
+          : html`<button class="small primary ns-start" ?disabled=${this.styleStarting || this.saving}
+              title="Save the app's default notification style as this watch's first copy"
+              @click=${() => void this.startStyle()}>${this.styleStarting ? "Starting…" : STYLE_START_BUTTON}</button>`}`);
     }
     const values = styleFormValues(document, this.styleEdits);
     return html`${NOTIFICATION_STYLE_SECTIONS.map((section) => this.renderStyleSection(section, values))}`;

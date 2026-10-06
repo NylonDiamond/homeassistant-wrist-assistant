@@ -360,13 +360,9 @@ describe("which devices the view offers", () => {
 });
 
 describe("a watch with nothing in Home Assistant yet", () => {
-  it("offers the button first, then the iPhone app's own switch by its current name and place", () => {
-    expect(PAGES_NO_RECORD_TEXT).toBe(
-      "Start with an empty page here, or open the iPhone app and turn on Edit pages in Home Assistant under Settings, Pages in Home Assistant.",
-    );
-    expect(SETTINGS_NO_RECORD_TEXT).toBe(
-      "Start with the defaults here, or open the iPhone app and turn on Edit pages in Home Assistant under Settings, Pages in Home Assistant.",
-    );
+  it("offers the button, and names no iPhone switch", () => {
+    expect(PAGES_NO_RECORD_TEXT).toBe("Start with an empty page to begin.");
+    expect(SETTINGS_NO_RECORD_TEXT).toBe("Start with the defaults to begin.");
     expect(PAGES_START_BUTTON).toBe("Start with an empty page");
     expect(SETTINGS_START_BUTTON).toBe("Start with the defaults");
     expect(PAIR_FIRST_TEXT).toBe("Pair this watch first. Watch settings has Pair a watch.");

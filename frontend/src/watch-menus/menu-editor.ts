@@ -115,9 +115,13 @@ import { stageFitZoom, stageZoomIn, stageZoomLabel, stageZoomOut } from "../watc
 import type { SwitcherSettingsHost } from "../watch-pages/switcher-settings.js";
 import { scrubWatchOrphanTriggers } from "../watch-pages/tile-settings-model.js";
 import {
-  START_PHONE_FIRST_TEXT,
+  START_FRESH_BUTTON,
+  type NoRecordStart,
   deliveryState,
   followWatch,
+  mayStart,
+  noRecordStart,
+  noRecordText,
   settingsWatches,
   watchName,
 } from "../watch-settings.js";
@@ -1440,6 +1444,12 @@ export class WaMenuEditor extends LitElement {
 
   /** The "Start with the defaults" flow applies: Home Assistant holds no
    * menus for this watch, and the integration keeps them. */
+  /** Whether this watch's iPhone may still move this kind here, so a start
+   * waits behind a confirm (`noRecordStart`). */
+  private noRecordState(watches: readonly OwnerSummary[] = this.watches): NoRecordStart {
+    return noRecordStart(watches.find((w) => w.owner_watch_id === this.watchId));
+  }
+
   private canStart(): boolean {
     const record = this.record;
     return this.watchId !== undefined && record !== undefined && record.revision <= 0 && !this.unsupported;
@@ -1460,7 +1470,7 @@ export class WaMenuEditor extends LitElement {
           title="Go back to the copy Home Assistant holds. Undo brings the edits back."
           @click=${run(() => this.discard())}>Discard edits</button>` : nothing}
         ${start ? html`<button class="row" role="menuitem" ?disabled=${this.starting}
-          @click=${run(() => void this.startWithDefaults())}>${WATCH_MENUS_START_BUTTON}</button>` : nothing}
+          @click=${run(() => { if (mayStart(this.noRecordState())) void this.startWithDefaults(); })}>${this.noRecordState() === "wait" ? START_FRESH_BUTTON : WATCH_MENUS_START_BUTTON}</button>` : nothing}
       </div>` : nothing}
     </span>`;
   }
@@ -1626,9 +1636,13 @@ export class WaMenuEditor extends LitElement {
     if (record.revision <= 0 || draft === undefined || host === undefined) {
       const kept = this.watchId === undefined ? undefined : keptWatchMenusDraft(this.watchId);
       const id = this.watchId;
-      return html`<div class="pe-empty"><b>${WATCH_MENUS_NO_RECORD_TITLE}</b><span>${WATCH_MENUS_NO_RECORD_TEXT}</span>
-        <button class="pe-btn pe-primary" ?disabled=${this.starting} @click=${() => void this.startWithDefaults()}>${this.starting ? "Starting…" : WATCH_MENUS_START_BUTTON}</button>
-        <span class="pe-muted">${START_PHONE_FIRST_TEXT}</span>
+      // While the iPhone's move may still come it waits, and the start is a
+      // small link that asks first.
+      const state = this.noRecordState(watches);
+      return html`<div class="pe-empty"><b>${WATCH_MENUS_NO_RECORD_TITLE}</b><span>${noRecordText(state, WATCH_MENUS_NO_RECORD_TEXT)}</span>
+        ${state === "wait"
+          ? html`<button class="link start-fresh" ?disabled=${this.starting} @click=${() => { if (mayStart(state)) void this.startWithDefaults(); }}>${this.starting ? "Starting…" : START_FRESH_BUTTON}</button>`
+          : html`<button class="pe-btn pe-primary" ?disabled=${this.starting} @click=${() => void this.startWithDefaults()}>${this.starting ? "Starting…" : WATCH_MENUS_START_BUTTON}</button>`}
         ${kept?.dirty && id !== undefined ? html`<span class="pe-warn">Your unsaved edits from before are kept. They come back, merged in, when menus are here again.</span>
           <button class="pe-btn" @click=${() => { forgetWatchMenusDraft(id); this.requestUpdate(); }}>Discard the kept edits</button>` : nothing}
       </div>`;

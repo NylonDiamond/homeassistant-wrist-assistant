@@ -623,8 +623,8 @@ export function statusPagesSummary(document: unknown): string {
 
 export const STATUS_PAGES_NO_RECORD_TITLE = "No status pages from this watch yet.";
 
-export const STATUS_PAGES_NO_RECORD_TEXT =
-  "Start with the defaults here, or open the iPhone app and turn on Edit pages in Home Assistant under Settings, Pages in Home Assistant.";
+/** The no-record line when no iPhone will send status pages. */
+export const STATUS_PAGES_NO_RECORD_TEXT = "Start with the defaults to begin.";
 
 export const STATUS_PAGES_START_BUTTON = "Start with the defaults";
 

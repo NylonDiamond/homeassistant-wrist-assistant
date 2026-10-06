@@ -990,7 +990,7 @@ export const HTTP_ACTIONS_EMPTY_TITLE = "No HTTP actions yet.";
 export const HTTP_ACTIONS_ADD_BUTTON = "Add an action";
 
 export const HTTP_ACTIONS_PHONE_TEXT =
-  "Turning on Edit pages in Home Assistant in the iPhone app brings the phone's actions here.";
+  "Update Wrist Assistant on your iPhone and open it once. Its HTTP actions move here by themselves.";
 
 export const HTTP_ACTIONS_UPDATE_TEXT = "Update the integration to edit HTTP actions here.";
 

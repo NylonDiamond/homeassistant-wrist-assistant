@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import base64
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal
@@ -476,6 +476,34 @@ class WidgetSecretStore:
                 listener()
             except Exception:  # noqa: BLE001
                 _LOGGER.exception("Widget secret store listener raised")
+
+
+def watch_has_iphone(entries: Mapping[str, WidgetSecretEntry], watch_id: str) -> bool:
+    """Whether an iPhone may still move this watch's setup into Home Assistant.
+
+    Backs the owner list's ``has_iphone``. The phone's one-time move uploads a
+    kind only while Home Assistant holds no record of it, so the panel waits
+    for it rather than starting a fresh record over it. True for a watch
+    entry that either names the iPhone that paired it (``owner_iphone_id``,
+    known here or not: that phone holds the watch's pair and runs the move),
+    or whose Home Assistant user has at least one iPhone entry of their own.
+    False for an iPhone entry, an unknown id, and a watch bound to no user
+    that names no iPhone. Pure over the entries, so it is tested without Home
+    Assistant.
+    """
+    entry = entries.get(watch_id)
+    if entry is None or entry.device_kind == DEVICE_KIND_IPHONE:
+        return False
+    if entry.owner_iphone_id:
+        return True
+    if entry.user_id is None:
+        return False
+    return any(
+        other_id != watch_id
+        and other.device_kind == DEVICE_KIND_IPHONE
+        and other.user_id == entry.user_id
+        for other_id, other in entries.items()
+    )
 
 
 def build_device_info(

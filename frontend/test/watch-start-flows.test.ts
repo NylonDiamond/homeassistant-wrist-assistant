@@ -26,7 +26,9 @@ import {
   SETTINGS_START_BUTTON,
   SETTINGS_START_CONFLICT_TEXT,
   SETTINGS_UNREADABLE_TEXT,
-  START_PHONE_FIRST_TEXT,
+  START_FRESH_BUTTON,
+  START_FRESH_CONFIRM_TEXT,
+  WAIT_FOR_IPHONE_TEXT,
   WATCH_SETTINGS_CATALOG,
   watchBehaviorDefaults,
   watchRecordUnreadable,
@@ -107,7 +109,8 @@ function fakeHass(kind: string, held: WatchConfigRecord, onSave?: (msg: Record<s
   };
 }
 
-const owner = (id: string): OwnerSummary => ({
+const owner = (id: string, extra: Partial<OwnerSummary> = {}): OwnerSummary => ({
+  ...extra,
   owner_watch_id: id,
   device_name: "Apple Watch",
   device_kind: "watch",
@@ -133,6 +136,7 @@ interface PageEditorInside {
   selectedPageId?: string;
   draft?: { document: Record<string, unknown>; revision: number };
   startEmptyPage(): Promise<void>;
+  askStartEmptyPage(state?: "wait" | "start"): void;
   renderBody(watches: readonly OwnerSummary[]): unknown;
 }
 
@@ -140,25 +144,85 @@ let pageWatch = 0;
 
 /** An unconnected page editor on a watch of its own (kept drafts are per
  * watch and live for the module), showing `held`. */
-function pageEditor(held: WatchConfigRecord, onSave?: (msg: Record<string, unknown>) => Promise<{ revision: number }>) {
+function pageEditor(
+  held: WatchConfigRecord,
+  onSave?: (msg: Record<string, unknown>) => Promise<{ revision: number }>,
+  extra: Partial<OwnerSummary> = {},
+) {
   const id = `start-pages-${++pageWatch}`;
   const ha = fakeHass("pages", held, onSave);
   const el = new WaPageEditor() as unknown as PageEditorInside;
   el.hass = ha.hass;
   el.watchId = id;
   el.record = held;
-  return { el, ha, id, body: () => flatten(el.renderBody([owner(id)])) };
+  return { el, ha, id, body: () => flatten(el.renderBody([owner(id, extra)])) };
 }
 
 describe("the page editor's Start", () => {
-  it("offers the button with the iPhone line under it while no record is held", () => {
-    const { body } = pageEditor(record(0));
+  it("offers the button while no record is held and no iPhone will send one", () => {
+    for (const extra of [{ has_iphone: false }, {}]) {
+      // `{}` is an integration older than the field: the same Start.
+      const { body } = pageEditor(record(0), undefined, extra);
+      const text = body();
+      expect(text).toContain(PAGES_NO_RECORD_TEXT);
+      expect(text).toContain(PAGES_START_BUTTON);
+      expect(text).toContain("pe-btn pe-primary");
+      expect(text).not.toContain(WAIT_FOR_IPHONE_TEXT);
+      expect(text).not.toContain(START_FRESH_BUTTON);
+      expect(text).not.toContain("Edit pages in Home Assistant");
+      expect(text).not.toContain(PAGES_UNREADABLE_TEXT);
+    }
+  });
+
+  it("waits for the iPhone's move, with a small link to start fresh, while the watch has an iPhone", () => {
+    const { body } = pageEditor(record(0), undefined, { has_iphone: true });
     const text = body();
-    expect(text).toContain(PAGES_NO_RECORD_TEXT);
-    expect(text).toContain(PAGES_START_BUTTON);
-    expect(text).toContain(START_PHONE_FIRST_TEXT);
-    expect(text.indexOf(START_PHONE_FIRST_TEXT)).toBeGreaterThan(text.indexOf(PAGES_START_BUTTON));
-    expect(text).not.toContain(PAGES_UNREADABLE_TEXT);
+    expect(text).toContain(WAIT_FOR_IPHONE_TEXT);
+    expect(text).toContain(START_FRESH_BUTTON);
+    expect(text).toContain("link start-fresh");
+    expect(text).not.toContain(PAGES_NO_RECORD_TEXT);
+    expect(text).not.toContain(PAGES_START_BUTTON);
+    expect(text.indexOf(START_FRESH_BUTTON)).toBeGreaterThan(text.indexOf(WAIT_FOR_IPHONE_TEXT));
+  });
+
+  describe("starting fresh while waiting", () => {
+    const realWindow = (globalThis as { window?: unknown }).window;
+    afterEach(() => {
+      (globalThis as { window?: unknown }).window = realWindow;
+    });
+
+    it("asks first, and a no saves nothing", async () => {
+      const confirm = vi.fn(() => false);
+      (globalThis as { window?: unknown }).window = { confirm };
+      const { el, ha } = pageEditor(record(0), undefined, { has_iphone: true });
+      el.askStartEmptyPage("wait");
+      await settle();
+      expect(confirm).toHaveBeenCalledWith(START_FRESH_CONFIRM_TEXT);
+      expect(ha.saves()).toHaveLength(0);
+    });
+
+    it("does what Start does after a yes", async () => {
+      const confirm = vi.fn(() => true);
+      (globalThis as { window?: unknown }).window = { confirm };
+      const { el, ha } = pageEditor(record(0), undefined, { has_iphone: true });
+      el.askStartEmptyPage("wait");
+      await settle();
+      await settle();
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(ha.saves()).toHaveLength(1);
+      expect(ha.saves()[0]).toMatchObject({ kind: "pages", base_revision: 0 });
+    });
+
+    it("never asks when no iPhone will send pages", async () => {
+      const confirm = vi.fn(() => false);
+      (globalThis as { window?: unknown }).window = { confirm };
+      const { el, ha } = pageEditor(record(0));
+      el.askStartEmptyPage("start");
+      await settle();
+      await settle();
+      expect(confirm).not.toHaveBeenCalled();
+      expect(ha.saves()).toHaveLength(1);
+    });
   });
 
   it("saves one empty page over revision 0, then selects it once the record is read back", async () => {
@@ -208,7 +272,7 @@ describe("the page editor's Start", () => {
     const text = body();
     expect(text).toContain(PAGES_UNREADABLE_TEXT);
     expect(text).not.toContain(PAGES_START_BUTTON);
-    expect(text).not.toContain(START_PHONE_FIRST_TEXT);
+    expect(text).not.toContain(START_FRESH_BUTTON);
     await el.startEmptyPage();
     expect(ha.saves()).toHaveLength(0);
   });
@@ -234,7 +298,11 @@ describe("Watch settings' Start", () => {
     (globalThis as { window?: unknown }).window = realWindow;
   });
 
-  async function dialog(held: WatchConfigRecord, onSave?: (msg: Record<string, unknown>) => Promise<{ revision: number }>) {
+  async function dialog(
+    held: WatchConfigRecord,
+    onSave?: (msg: Record<string, unknown>) => Promise<{ revision: number }>,
+    extra: Partial<OwnerSummary> = {},
+  ) {
     const ha = fakeHass("behavior", held, onSave);
     const host = {
       addController: () => undefined,
@@ -244,20 +312,34 @@ describe("Watch settings' Start", () => {
       renderRoot: { querySelector: () => null },
     };
     const ws = new WatchSettings(host as unknown as ConstructorParameters<typeof WatchSettings>[0]);
-    const owners = [owner("w1")];
+    const owners = [owner("w1", extra)];
     ws.show(ha.hass, owners, "w1");
     const inside = ws as unknown as SettingsInside;
     await vi.waitFor(() => expect(inside.loading).toBe(false));
     return { ws, inside, ha, text: () => flatten(ws.render(ha.hass, owners)) };
   }
 
-  it("offers the button with the iPhone line under it while no record is held", async () => {
-    const { text } = await dialog(record(0, undefined, "behavior"));
+  it("offers the button while no record is held and no iPhone will send one", async () => {
+    for (const extra of [{ has_iphone: false }, {}]) {
+      const { text } = await dialog(record(0, undefined, "behavior"), undefined, extra);
+      const shown = text();
+      expect(shown).toContain(SETTINGS_NO_RECORD_TEXT);
+      expect(shown).toContain(SETTINGS_START_BUTTON);
+      expect(shown).toContain("small primary ws-start");
+      expect(shown).not.toContain(WAIT_FOR_IPHONE_TEXT);
+      expect(shown).not.toContain(START_FRESH_BUTTON);
+      expect(shown).not.toContain("Edit pages in Home Assistant");
+    }
+  });
+
+  it("waits for the iPhone's move, with a small link to start fresh, while the watch has an iPhone", async () => {
+    const { text } = await dialog(record(0, undefined, "behavior"), undefined, { has_iphone: true });
     const shown = text();
-    expect(shown).toContain(SETTINGS_NO_RECORD_TEXT);
-    expect(shown).toContain(SETTINGS_START_BUTTON);
-    expect(shown).toContain(START_PHONE_FIRST_TEXT);
-    expect(shown.indexOf(START_PHONE_FIRST_TEXT)).toBeGreaterThan(shown.indexOf(SETTINGS_START_BUTTON));
+    expect(shown).toContain(WAIT_FOR_IPHONE_TEXT);
+    expect(shown).toContain(START_FRESH_BUTTON);
+    expect(shown).toContain("link start-fresh ws-start");
+    expect(shown).not.toContain(SETTINGS_NO_RECORD_TEXT);
+    expect(shown).not.toContain(SETTINGS_START_BUTTON);
   });
 
   it("saves the defaults over revision 0 and opens the settings on them", async () => {
@@ -302,7 +384,7 @@ describe("Watch settings' Start", () => {
     const shown = text();
     expect(shown).toContain(SETTINGS_UNREADABLE_TEXT);
     expect(shown).not.toContain(SETTINGS_START_BUTTON);
-    expect(shown).not.toContain(START_PHONE_FIRST_TEXT);
+    expect(shown).not.toContain(START_FRESH_BUTTON);
     await inside.start();
     expect(ha.saves()).toHaveLength(0);
   });

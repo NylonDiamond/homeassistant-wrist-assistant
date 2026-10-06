@@ -565,8 +565,8 @@ export function checkWatchVoice(document: unknown): string[] {
 
 export const WATCH_VOICE_NO_RECORD_TITLE = "No voice settings from this watch yet.";
 
-export const WATCH_VOICE_NO_RECORD_TEXT =
-  "Start with the defaults here, or open the iPhone app and turn on Edit pages in Home Assistant under Settings, Pages in Home Assistant.";
+/** The no-record line when no iPhone will send voice settings. */
+export const WATCH_VOICE_NO_RECORD_TEXT = "Start with the defaults to begin.";
 
 export const WATCH_VOICE_START_BUTTON = "Start with the defaults";
 

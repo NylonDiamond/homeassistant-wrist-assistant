@@ -144,7 +144,7 @@ from .card_preview_store import CardPreviewError, CardPreviewStore
 from .gallery_key_store import gallery_key_store
 from .parts_store import PartsStore, PartsStoreError
 from .watch_config_store import WatchConfigStoreError
-from .widget_secret_store import DEVICE_KIND_IPHONE, DEVICE_KIND_LIBRARY
+from .widget_secret_store import DEVICE_KIND_IPHONE, DEVICE_KIND_LIBRARY, watch_has_iphone
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -394,6 +394,10 @@ def ws_owners(
     which is what lets the panel group a household's devices by person without
     guessing from two names that may well match each other.
 
+    ``has_iphone`` says an iPhone may still move the watch's own setup here
+    (`watch_has_iphone`), so the panel's watch editors wait for that move
+    instead of offering to start a fresh record over it.
+
     One row is not a device: the Library (``LIBRARY_OWNER_ID``), always
     present and always last. It is the home's shelf for designs that are on no
     device yet, or have been taken off every device without being thrown away.
@@ -433,7 +437,8 @@ def ws_owners(
     # loop below must not reach it: it owns records and has no secret store
     # entry, which is exactly what that loop calls an orphan.
     seen: set[str] = {LIBRARY_OWNER_ID}
-    for device_id, entry in secret_store.all_entries.items():
+    entries = secret_store.all_entries
+    for device_id, entry in entries.items():
         seen.add(device_id)
         paired_id = entry.owner_iphone_id
         paired_name: str | None = None
@@ -467,6 +472,11 @@ def ws_owners(
                 # (`_note_main_house`). True for a phone and for every watch
                 # that never said otherwise.
                 "main_house": entry.main_house,
+                # Whether an iPhone may still move this watch's setup here
+                # (`watch_has_iphone`): the panel then waits for that move
+                # rather than offering to start a fresh record over it.
+                # False for a phone.
+                "has_iphone": watch_has_iphone(entries, device_id),
                 "is_orphan": False,
             }
         )

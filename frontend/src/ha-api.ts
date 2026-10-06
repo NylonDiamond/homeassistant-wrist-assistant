@@ -85,6 +85,14 @@ export interface OwnerSummary {
       than the field and from the Library and orphan rows; anything but
       `false` means this home is the main house. */
   main_house?: boolean | null;
+  /** True when an iPhone may still move this watch's own setup into Home
+      Assistant: the watch names the iPhone that paired it, or its Home
+      Assistant user has an iPhone here. The phone's one-time move sends a
+      kind only while Home Assistant holds none, so the watch editors wait
+      for it rather than offer a start over it (`noRecordStart`). False on a
+      phone, absent from the Library row and from integrations older than the
+      field. */
+  has_iphone?: boolean | null;
   /** No device is registered under this id any more, but it still owns
       records: a reinstall gave the watch a new id. Offer the Move action. */
   is_orphan: boolean;

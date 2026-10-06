@@ -555,8 +555,7 @@ export async function startNotificationStyle(save: (baseRevision: number, docume
 // ── words ────────────────────────────────────────────────────────────────
 
 export const STYLE_NO_RECORD_TITLE = "No notification style from this watch yet.";
-export const STYLE_NO_RECORD_TEXT =
-  "Start with the defaults here, or open the iPhone app and turn on Edit pages in Home Assistant under Settings, Pages in Home Assistant.";
+export const STYLE_NO_RECORD_TEXT = "Start with the defaults to begin.";
 export const STYLE_START_BUTTON = "Start with the defaults";
 export const STYLE_START_CONFLICT_TEXT = "The iPhone sent its notification style meanwhile, so that is shown.";
 export const STYLE_UNREADABLE_TEXT =

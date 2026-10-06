@@ -242,6 +242,11 @@ export const formResetDotStyles = css`
 /** A button drawn as a link (Browse symbols). */
 export const formLinkStyles = css`
     button.link { font: inherit; background: none; border: none; color: var(--wa-accent); cursor: pointer; padding: 0; }
+    /* A watch editor's "Start fresh instead" while the iPhone's move may
+       still come: small and quiet, under the waiting line. */
+    button.link.start-fresh { align-self: flex-start; font-size: 13px; color: var(--wa-muted); text-decoration: underline; text-underline-offset: 2px; }
+    button.link.start-fresh:hover:not(:disabled) { color: var(--wa-label, var(--wa-muted)); }
+    button.link.start-fresh:disabled { opacity: 0.5; cursor: default; }
 `;
 
 /** The label-left field row of `editors.ts` and what goes in it: the

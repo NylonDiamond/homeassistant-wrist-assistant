@@ -310,32 +310,66 @@ export function takesSettingsFromAnotherHome(owner: Pick<OwnerSummary, "main_hou
 //
 // Home Assistant holds nothing of a kind for the watch yet. The panel can
 // make the first record itself (a save over revision 0, which the
-// integration takes for a paired watch), or the iPhone app sends its own once
-// its switch is on. Plan: app repo docs/pages_in_home_assistant_step4.md,
-// "4e build contract".
+// integration takes for a paired watch), or the iPhone app moves its own
+// copy here once, the first time the updated app opens. That move sends a
+// kind only while Home Assistant holds none, so a start here first would
+// leave the iPhone's setup behind for good. While an iPhone may still send
+// it (`has_iphone` on the owner row) every watch editor waits instead, and
+// the start becomes a small link that asks first. Plans: app repo
+// docs/pages_in_home_assistant_step4.md, "4e build contract", and
+// docs/phone_watch_link_removal_2026-10.md, step 6, "Panel waits for the
+// move".
 
-/** Where the iPhone app's switch is, by its current name and place. */
-const IPHONE_SWITCH_TEXT = "open the iPhone app and turn on Edit pages in Home Assistant under Settings, Pages in Home Assistant.";
+/** What a watch editor offers when Home Assistant holds no record of its
+ * kind. `wait`: an iPhone may still move the watch's setup here, so the text
+ * says so and the start is a small link that asks first. `start`: the
+ * editor's own Start button, as before. */
+export type NoRecordStart = "wait" | "start";
+
+/** The no-record state for the watch being edited. Only an explicit `true`
+ * waits: a watch with no iPhone, and an integration older than the field,
+ * keep the Start button, so old data meets no new block. */
+export function noRecordStart(owner: Pick<OwnerSummary, "has_iphone"> | undefined): NoRecordStart {
+  return owner?.has_iphone === true ? "wait" : "start";
+}
+
+/** The no-record line while the iPhone's move may still come. */
+export const WAIT_FOR_IPHONE_TEXT =
+  "Waiting for your iPhone. Update Wrist Assistant on your iPhone and open it once. Your watch setup moves here by itself.";
+
+/** The small link that starts anyway while the move may still come. */
+export const START_FRESH_BUTTON = "Start fresh instead";
+
+/** What the link asks before it starts. */
+export const START_FRESH_CONFIRM_TEXT = "Your iPhone's setup will not move. Start fresh?";
+
+/** The no-record line for `state`: the wait text, or the editor's own. */
+export function noRecordText(state: NoRecordStart, startText: string): string {
+  return state === "wait" ? WAIT_FOR_IPHONE_TEXT : startText;
+}
+
+/** Whether a start may go ahead. While waiting it asks first, with the one
+ * modal the panel uses (`window.confirm`); tests pass their own `ask`. */
+export function mayStart(
+  state: NoRecordStart,
+  ask: (text: string) => boolean = (text) => window.confirm(text),
+): boolean {
+  return state === "start" || ask(START_FRESH_CONFIRM_TEXT);
+}
 
 /** What the page editor says when Home Assistant holds no pages from the
- * watch yet: the button, or the iPhone app's switch. */
-export const PAGES_NO_RECORD_TEXT = `Start with an empty page here, or ${IPHONE_SWITCH_TEXT}`;
+ * watch yet and no iPhone will send any. */
+export const PAGES_NO_RECORD_TEXT = "Start with an empty page to begin.";
 
 /** What Watch settings says when Home Assistant holds no settings from the
- * watch yet. */
-export const SETTINGS_NO_RECORD_TEXT = `Start with the defaults here, or ${IPHONE_SWITCH_TEXT}`;
+ * watch yet and no iPhone will send any. */
+export const SETTINGS_NO_RECORD_TEXT = "Start with the defaults to begin.";
 
 /** The page editor's button that makes the first pages record. */
 export const PAGES_START_BUTTON = "Start with an empty page";
 
 /** Watch settings' button that makes the first settings record. */
 export const SETTINGS_START_BUTTON = "Start with the defaults";
-
-/** The line under each Start button. A watch with an iPhone pulls only while
- * the iPhone's switch is on; with the switch off it keeps the iPhone's copy
- * and never sees what was started here. */
-export const START_PHONE_FIRST_TEXT =
-  "If this watch has an iPhone, turn on Edit pages in Home Assistant there first. Otherwise the watch keeps the iPhone's copy.";
 
 /** What the page editor says when Home Assistant holds a pages record this
  * panel cannot read, such as one from a newer schema. There is no Start: a

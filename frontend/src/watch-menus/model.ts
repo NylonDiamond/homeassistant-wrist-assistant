@@ -1092,11 +1092,9 @@ function capital(text: string): string {
 
 export const WATCH_MENUS_NO_RECORD_TITLE = "No menus from this watch yet.";
 
-/** The two ways a watch's first menus record comes about: the button here,
- * or the iPhone, which sends its menus while Edit pages in Home Assistant is
- * on. */
-export const WATCH_MENUS_NO_RECORD_TEXT =
-  "Start with the defaults here, or open the iPhone app and turn on Edit pages in Home Assistant under Settings, Pages in Home Assistant.";
+/** The no-record line when no iPhone will send menus. While one may, the
+ * editor says `WAIT_FOR_IPHONE_TEXT` instead (`noRecordText`). */
+export const WATCH_MENUS_NO_RECORD_TEXT = "Start with the defaults to begin.";
 
 export const WATCH_MENUS_START_BUTTON = "Start with the defaults";
 

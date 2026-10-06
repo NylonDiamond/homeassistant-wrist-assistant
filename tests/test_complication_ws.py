@@ -479,6 +479,9 @@ def test_a_watch_row_gains_the_device_kind_field_and_nothing_else(env) -> None:
         "applied_token": 1,
         # A watch that never said it takes its settings from another home.
         "main_house": True,
+        # It names the iPhone that paired it, so that phone may still move
+        # its setup here.
+        "has_iphone": True,
         "is_orphan": False,
     }
 
@@ -512,6 +515,7 @@ def test_a_phone_is_an_owner_in_its_own_right(env) -> None:
             "token": 2,
             "applied_token": 2,
             "main_house": True,
+            "has_iphone": False,
             "is_orphan": False,
         },
         _library_row(),
@@ -549,6 +553,28 @@ def test_every_row_carries_the_paired_phone_id_or_none(env) -> None:
         "watch-A": "phone-1",
         "watch-B": None,
         "phone-1": None,
+        LIBRARY: None,
+    }
+
+
+def test_has_iphone_follows_each_watchs_own_user(env) -> None:
+    """A watch has an iPhone when its Home Assistant user has one here, or
+    when it names the iPhone that paired it. Each watch is judged by its own
+    user: another person's phone does not count, a phone has none, and the
+    Library carries no field at all."""
+    env.add_watch("watch-jesse", device_name="Jesse's Watch", user_id="jesse")
+    env.add_watch("watch-chen", device_name="Chen's Watch", user_id="chen")
+    env.add_watch("watch-old", device_name="Old Watch", owner_iphone_id="phone-gone")
+    env.add_watch("watch-loose", device_name="Loose Watch")
+    env.add_phone("phone-jesse", device_name="Jesse's iPhone", user_id="jesse")
+
+    rows = {r["owner_watch_id"]: r for r in env.owners()}
+    assert {owner: row.get("has_iphone") for owner, row in rows.items()} == {
+        "watch-jesse": True,
+        "watch-chen": False,
+        "watch-old": True,
+        "watch-loose": False,
+        "phone-jesse": False,
         LIBRARY: None,
     }
 
