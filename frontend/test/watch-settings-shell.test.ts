@@ -120,9 +120,9 @@ describe("Watch settings as a page under the Watch app row", () => {
   const WATCHES = [owner("w1", "Jesse's Watch"), owner("w2", "Chen's Watch")];
   const wrap = setting("wrapPages");
 
-  async function page(current = "w2") {
+  async function page(current = "w2", list: readonly OwnerSummary[] = WATCHES) {
     const ha = fakeHass("w3");
-    let owners: OwnerSummary[] = [...WATCHES];
+    let owners: OwnerSummary[] = [...list];
     const paired: string[] = [];
     const host = {
       addController: () => undefined,
@@ -162,6 +162,24 @@ describe("Watch settings as a page under the Watch app row", () => {
     expect(shown).toContain(`<div class="ws-cols ">`);
     expect(inside.ownerId).toBe("w2");
     expect(ws.shown).toBe(true);
+  });
+
+  it("says the settings come from the main house on a home that is not it, and keeps the pairing card", async () => {
+    const elsewhere = [owner("w1", "Jesse's Watch"), { ...owner("w2", "Chen's Watch"), main_house: false }];
+    const { text, bar } = await page("w2", elsewhere);
+    const shown = text();
+    expect(shown).toContain("This watch takes its settings from your main house. Change them there.");
+    expect(shown).toContain(`<div class="ws-cols one">`);
+    // A bound attribute flattens without its quotes.
+    expect(shown).not.toContain("data-sec=ws-connection");
+    expect(shown).not.toContain(`data-sec="ws-notification-style"`);
+    expect(shown).toContain(`data-sec="ws-pair"`);
+    expect(bar()).toContain("Watch settings");
+
+    // The other watch, whose main house this is, gets the editors.
+    const main = await page("w1", elsewhere);
+    expect(main.text()).not.toContain("takes its settings from your main house");
+    expect(main.text()).toContain("data-sec=ws-connection");
   });
 
   it("reads nothing again while it stays on one watch", async () => {

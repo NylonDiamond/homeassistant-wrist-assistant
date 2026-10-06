@@ -79,6 +79,12 @@ export interface OwnerSummary {
   /** The store token this watch last said it applied, null when it never has.
       Absent from integrations older than the field. */
   applied_token?: number | null;
+  /** False while this watch takes its watch settings and notification style
+      from another home, its main house: a watch with several homes says so
+      on every config read it sends any other. Absent from integrations older
+      than the field and from the Library and orphan rows; anything but
+      `false` means this home is the main house. */
+  main_house?: boolean | null;
   /** No device is registered under this id any more, but it still owns
       records: a reinstall gave the watch a new id. Offer the Move action. */
   is_orphan: boolean;

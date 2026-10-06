@@ -57,6 +57,7 @@ import {
   SETTINGS_PAIR_FIRST_TEXT,
   SETTINGS_START_BUTTON,
   SETTINGS_START_CONFLICT_TEXT,
+  SETTINGS_MAIN_HOUSE_TEXT,
   SETTINGS_UNREADABLE_TEXT,
   START_PHONE_FIRST_TEXT,
   WAITING_HELP_TEXT,
@@ -83,6 +84,7 @@ import {
   sectionRuns,
   settingValue,
   settingsWatches,
+  takesSettingsFromAnotherHome,
   watchName,
   watchRecordUnreadable,
   withEdit,
@@ -801,15 +803,20 @@ export class WatchSettings implements ReactiveController {
     const watches = settingsWatches(owners);
     const owner = watches.find((w) => w.owner_watch_id === this.ownerId);
     const name = owner ? watchName(owner, watches) : "Watch";
-    const one = this.ownerId === undefined;
+    // A watch whose settings live in another home: the note stands in for
+    // both editors, and the pairing card stays.
+    const elsewhere = takesSettingsFromAnotherHome(owner);
+    const one = this.ownerId === undefined || elsewhere;
     return html`<div class="ws-page">
       <div class="ws-top">
-        ${this.renderBar(name, options.narrow === true)}
+        ${this.renderBar(name, options.narrow === true, elsewhere)}
         ${this.note ? html`<div class="banner ${this.note.kind} ws-note" role="alert"><span>${this.note.text}</span>
           <button class="link" @click=${() => { this.note = undefined; this.changed(); }}>Dismiss</button></div>` : nothing}
       </div>
       <div class="ws-cols ${one ? "one" : ""}">
-        ${one
+        ${elsewhere
+          ? html`<div class="ws-body ws-col"><div class="xf-lead ws-main-house">${uiIcon("info")}<span>${SETTINGS_MAIN_HOUSE_TEXT}</span></div>${this.renderPair()}</div>`
+          : one
           ? html`<div class="ws-body ws-col">${this.renderBehavior(hass)}${this.renderPair()}</div>`
           : html`<div class="ws-body ws-col">${this.loading ? html`<div class="empty">Loading…</div>` : this.renderBehavior(hass)}</div>
             <div class="ws-body ws-col">${this.loading ? nothing : this.renderStyle()}${this.renderPair()}</div>`}
@@ -1178,8 +1185,10 @@ export class WatchSettings implements ReactiveController {
   /** The page's bar, the way the other watch screens draw theirs: the title
    * and the head line at the left; at the right the unsaved count or where
    * the settings have got to, Discard while there is something to throw
-   * away, and Save. Before edits are thrown away it asks there instead. */
-  renderBar(name = "Watch", stacked = false) {
+   * away, and Save. Before edits are thrown away it asks there instead.
+   * `elsewhere`: the watch takes its settings from another home, so nothing
+   * here is on its way to it and no sync pill shows. */
+  renderBar(name = "Watch", stacked = false, elsewhere = false) {
     const confirm = this.confirm;
     const head = html`<span class="ws-title">Watch settings</span><span class="ws-head-line">${this.headLine(name)}</span>
       <span class="spacer"></span>`;
@@ -1200,7 +1209,7 @@ export class WatchSettings implements ReactiveController {
     return html`<div class="wa-bar ws-bar ${stacked ? "stacked" : ""}" role="toolbar" aria-label="Watch settings">${head}
       ${changes > 0
         ? html`<span class="xf-sub ws-changes">${changes} unsaved ${changes === 1 ? "change" : "changes"}</span>`
-        : this.renderDelivery()}
+        : elsewhere ? nothing : this.renderDelivery()}
       ${changes > 0 ? html`<button class="tb-btn ws-discard" ?disabled=${this.saving}
         title="Go back to the copies Home Assistant holds" @click=${() => this.askDiscard()}>Discard</button>` : nothing}
       ${this.ownerId === undefined ? nothing : html`<button class="primary save ${changes > 0 ? "dirty" : ""}" ?disabled=${!canSave}
