@@ -13,6 +13,12 @@ This exercises the read-only ``watch_secret_status`` op (no side effects on the
 live HA) as the representative case; all five ops route through the shared
 ``_resolve_companion_target`` guard, so the boolean answer here proves the gate.
 
+Since step 6 an ``ios`` token files under the phone that signed, whatever
+companion it names, and the companion is only checked so an older app gets
+the answer it always got. That, and the status and test push replies for
+both caller shapes, is covered in-process in ``test_push_ops_inprocess.py``,
+which needs no live instance and so runs before a deploy.
+
 NOTE: this must run against an instance whose integration includes the guard
 (deploy the branch first, e.g. via /ha-deploy). Against the pre-fix code
 ``test_non_owner_is_rejected`` will fail (the old path returned 200).

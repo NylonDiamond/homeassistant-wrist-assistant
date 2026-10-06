@@ -327,6 +327,13 @@ WATCH_LOGS_CAPABILITY = "watch_logs"
 # panel's pair/lookup and pair/confirm (pairing_ws.py). A watch with no
 # iPhone offers to pair by code only when /version lists this.
 WATCH_PAIRING_CAPABILITY = "watch_pairing"
+# What the integration advertises once an iPhone's push token lives under the
+# phone's own id and is paired with the watches of the same Home Assistant
+# user at send time (notifications.resolve_push_routes). The phone then
+# registers, reads its status and sends its test pushes with no
+# companion_watch_id, reads the notification style signed as itself, and
+# may drop its copy of the watch key.
+PUSH_PAIRED_BY_USER_CAPABILITY = "push_paired_by_user"
 # Highest CustomComplicationConfig schemaVersion this integration can edit.
 # Must track `CustomComplicationConfig.currentSchemaVersion` in the app repo.
 # A newer document is displayed read-only and never re-saved.

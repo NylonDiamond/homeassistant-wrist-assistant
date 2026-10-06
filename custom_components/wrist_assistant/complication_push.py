@@ -258,21 +258,19 @@ class ComplicationPhonePush:
     def _resolve_token(self, owner_id: str) -> tuple[str, TokenEntry] | None:
         """This phone's iOS token, and the id it is filed under.
 
-        The app registers the phone's token under its companion watch's id, so
-        that both of a pair's tokens sit on one entry and ``send_notification``
-        can route between them. A phone owner therefore usually has no entry
-        of its own, and the token has to be found by asking which watch names
-        this phone as its owner, the same walk ``binary_sensor.py`` makes for
-        the "push token registered" sensor.
+        Since step 6 the phone's token lives under the phone's own id (the
+        app registers it there, and setup moved the older ones there once).
+        Before that the app filed it under its companion watch's id, so a
+        token the move could not place may still sit on a watch that names
+        this phone as its owner; that leftover is the fallback, the same walk
+        ``binary_sensor.py`` makes for the "push token registered" sensor.
 
         The id comes back with the entry because ``send_push`` writes the
         refreshed ``relay_token`` back under the id it is given: passing the
         phone's own id for a token filed under a watch would orphan the
         binding and re-register on every push.
 
-        Order: the phone's own id first (a scoped secondary instance with no
-        watch credentials does file the token there), then the reverse scan,
-        first match wins.
+        Order: the phone's own id first, then the leftovers, first match wins.
         """
         own = self._notification_store.get_entry(owner_id, _IOS_PLATFORM)
         if own is not None:

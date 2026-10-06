@@ -140,6 +140,13 @@ from .logbook_events import (
     log_secret_registered,
     log_secret_reprovisioned,
 )
+from .notifications import (
+    DELIVERY_MODE_MIRROR,
+    PLATFORM_IOS,
+    is_iphone_entry,
+    phone_watch_ids,
+    resolve_push_routes,
+)
 from .page_images_store import (
     PageImagesError,
     PageImagesTooLargeError,
@@ -1651,18 +1658,22 @@ async def _op_notifications_register(ctx: _OpContext) -> Response:
         environment = "production"
     platform = platform if isinstance(platform, str) and platform else "watchos"
 
-    # By default the HMAC-validated identity is the storage key. The companion
-    # iPhone signs with its own identity but its token must live on the paired
-    # watch's entry (so send_notification, which targets a watch, can mirror via
-    # it). A companion redirect is only honored for an iOS token whose target
-    # watch the caller actually owns (owner_iphone_id == caller); otherwise any
-    # authenticated device on a shared HA instance could plant its token on
-    # another user's watch. See _resolve_companion_target.
+    # The HMAC-validated identity is the storage key, for every platform. Since
+    # step 6 an iPhone's token lives under the phone's own id, and routing
+    # pairs it with the watches of the same Home Assistant user
+    # (notifications.resolve_push_routes), so the phone never names a watch.
+    # An older app still sends companion_watch_id with an iOS token. It no
+    # longer moves the token, but it is still checked (a 403 for a watch the
+    # caller does not own, see _resolve_companion_target), so that app gets
+    # the answer it always got, and the reply speaks about that watch.
     target_watch_id = ctx.watch_id
-    if platform == "ios":
-        target_watch_id, denied = _resolve_companion_target(ctx)
+    companion: str | None = None
+    if platform == PLATFORM_IOS:
+        resolved, denied = _resolve_companion_target(ctx)
         if denied is not None:
             return denied
+        if resolved != ctx.watch_id:
+            companion = resolved
 
     token_result = store.register(
         target_watch_id,
@@ -1676,6 +1687,11 @@ async def _op_notifications_register(ctx: _OpContext) -> Response:
         log_push_token_registered(ctx.hass, watch_id=target_watch_id, is_new=False)
     if token_result in ("new", "updated"):
         _prebind_relay_token(ctx.hass, ctx.domain_data, target_watch_id, platform)
+    if platform == PLATFORM_IOS:
+        # The same phone's token filed under a watch (an older registration,
+        # or one the step 6 move could not place) would only be a second copy
+        # of this one, and a stale one after a reinstall.
+        store.drop_ios_copies(device_token, target_watch_id)
     # A changed device token stales the webhook's device mapping at the relay
     # (it would keep pushing to the pre-reinstall token). Re-bind in the
     # background; no-op when the watch has no provisioned webhook, and
@@ -1687,25 +1703,78 @@ async def _op_notifications_register(ctx: _OpContext) -> Response:
             async_sync_webhook_devices(ctx.domain_data, target_watch_id),
             name=f"wrist_assistant_webhook_device_sync_{target_watch_id}",
         )
-    # Echo the platforms now on the entry so the caller can self-confirm the
-    # token actually landed — the iPhone app uses this to verify the mirror
-    # (ios) path is wired before showing its Notifications row green.
-    return ctx.signed_json(
-        {"ok": True, "platforms": sorted(store.get_entries(target_watch_id))}
-    )
+    # Echo the platforms so the caller can self-confirm the token actually
+    # landed: the iPhone app checks the mirror (ios) path is wired before
+    # showing its Notifications row green. See _push_status_fields.
+    return ctx.signed_json({"ok": True, **_push_status_fields(ctx, store, companion)})
+
+
+def _caller_is_iphone(ctx: _OpContext) -> bool:
+    """Whether the signer is an iPhone entry in the widget secret store."""
+    secrets = ctx.domain_data.widget_secret_store
+    return secrets is not None and is_iphone_entry(secrets.get(ctx.watch_id))
+
+
+def _push_status_fields(
+    ctx: _OpContext, store: Any, companion: str | None
+) -> dict[str, Any]:
+    """The push fields of the notifications_register and _status replies.
+
+    * An iPhone that names no watch (step 6, ``push_paired_by_user``): its
+      own ``platforms``, ``watches`` (how many watches' Fast alerts reach
+      it: its user's watches, see `phone_watch_ids`) and ``fast_watches``
+      (how many of them use "mirror").
+    * An older app naming its companion watch: that watch's ``platforms``
+      plus "ios" when the caller holds an iOS token (it now lives under the
+      phone), and the watch's ``delivery_mode``, so the old rows stay green.
+    * Anything else (a watch): its own ``platforms`` and ``delivery_mode``.
+
+    Platform names only, never tokens.
+    """
+    own = set(store.get_entries(ctx.watch_id))
+    if companion is not None:
+        platforms = set(store.get_entries(companion))
+        if PLATFORM_IOS in own:
+            platforms.add(PLATFORM_IOS)
+        return {
+            "platforms": sorted(platforms),
+            "delivery_mode": store.get_watch_metadata(
+                companion, "delivery_mode", DELIVERY_MODE_MIRROR
+            ),
+        }
+    if _caller_is_iphone(ctx):
+        watch_ids = phone_watch_ids(
+            ctx.domain_data.widget_secret_store.all_entries, ctx.watch_id
+        )
+        modes = store.delivery_modes()
+        return {
+            "platforms": sorted(own),
+            "watches": len(watch_ids),
+            "fast_watches": sum(
+                1
+                for watch_id in watch_ids
+                if modes.get(watch_id, DELIVERY_MODE_MIRROR) == DELIVERY_MODE_MIRROR
+            ),
+        }
+    return {
+        "platforms": sorted(own),
+        "delivery_mode": store.get_watch_metadata(
+            ctx.watch_id, "delivery_mode", DELIVERY_MODE_MIRROR
+        ),
+    }
 
 
 async def _op_notifications_status(ctx: _OpContext) -> Response:
-    """Report which push platforms are registered for a watch.
+    """Report which push platforms are registered, for the caller's rows.
 
     Lets the iPhone app verify the mirror (``ios``) token actually landed in HA
-    before claiming notifications are fully set up — selecting "Fast" is moot if
-    HA has no iOS token to mirror through and would fall back to the slow
-    watch-direct path. Resolves the target watch the same way
-    ``notifications_register`` does: an iPhone caller signs with its own identity
-    but reads the paired watch's entry via ``companion_watch_id``. Returns only
-    platform *names* (never tokens), and all identities here are the user's own
-    devices, so this is strictly less sensitive than the existing register write.
+    before claiming notifications are fully set up. Since step 6 an iPhone
+    that names no watch reads its own platforms and how many of its user's
+    watches use Fast; an older app naming ``companion_watch_id`` reads that
+    watch, with "ios" added when the caller holds one. The companion is still
+    checked (a 403 for a watch the caller does not own). See
+    ``_push_status_fields`` for the reply. Returns only platform *names*
+    (never tokens), so this is strictly less sensitive than the register write.
     """
     store = ctx.domain_data.notification_store
     if store is None:
@@ -1716,17 +1785,8 @@ async def _op_notifications_status(ctx: _OpContext) -> Response:
     target_watch_id, denied = _resolve_companion_target(ctx)
     if denied is not None:
         return denied
-
-    entries = store.get_entries(target_watch_id)
-    return ctx.signed_json(
-        {
-            "ok": True,
-            "platforms": sorted(entries),
-            "delivery_mode": store.get_watch_metadata(
-                target_watch_id, "delivery_mode", "mirror"
-            ),
-        }
-    )
+    companion = target_watch_id if target_watch_id != ctx.watch_id else None
+    return ctx.signed_json({"ok": True, **_push_status_fields(ctx, store, companion)})
 
 
 async def _op_webhook_provision(ctx: _OpContext) -> Response:
@@ -1800,12 +1860,13 @@ async def _op_send_test_notification(ctx: _OpContext) -> Response:
     live notification would look like.
 
     Body: {"camera": "camera.x", "title"?, "message"?, "companion_watch_id"?}.
-    Targeting mirrors ``notifications_register``/``notifications_status``: an
-    iPhone caller signs with its own identity, but its mirror (``ios``) token
-    lives on the paired watch's entry, declared via ``companion_watch_id``.
-    Mirror delivery lands on the iPhone and watchOS mirrors it to the wrist when
-    the phone is locked. Returns {"ok": bool, ...}; ``ok:false`` with
-    ``reason:"no_push_token"`` when the device hasn't registered for push.
+    An iPhone caller that names no watch is routed as a real alert to its
+    user's watches, or to itself alone when its user has no watch here. An
+    older app's ``companion_watch_id`` (checked as for the other push ops)
+    targets that watch, and a watch caller targets itself. Mirror delivery
+    lands on the iPhone and watchOS mirrors it to the wrist when the phone is
+    locked. Returns {"ok": bool, ...}; ``ok:false`` with
+    ``reason:"no_push_token"`` when nothing the targets lead to holds a token.
     """
     store = ctx.domain_data.notification_store
     if store is None:
@@ -1828,7 +1889,17 @@ async def _op_send_test_notification(ctx: _OpContext) -> Response:
     if denied is not None:
         return denied
 
-    if not store.get_entries(target_watch_id):
+    # Step 6: an iPhone that names no watch is routed as a real alert to its
+    # user's watches (so it lands wherever a real one would), or to itself
+    # alone when its user has no watch here. An older app naming its
+    # companion, and a watch testing itself, target that one watch as before.
+    secrets = ctx.domain_data.widget_secret_store.all_entries
+    targets = [target_watch_id]
+    if target_watch_id == ctx.watch_id and _caller_is_iphone(ctx):
+        targets = phone_watch_ids(secrets, ctx.watch_id) or [ctx.watch_id]
+    if not resolve_push_routes(
+        secrets, store.all_entries, store.delivery_modes(), targets
+    ):
         return ctx.signed_json({"ok": False, "reason": "no_push_token"})
 
     title = ctx.payload.get("title")
@@ -1864,7 +1935,7 @@ async def _op_send_test_notification(ctx: _OpContext) -> Response:
             message=message,
             image_source=image_source,
             enriched_actions=enriched_actions,
-            target_watch_ids=[target_watch_id],
+            target_watch_ids=targets,
         )
     except HomeAssistantError as err:
         return ctx.signed_json({"ok": False, "reason": str(err)})
@@ -3334,13 +3405,50 @@ def _note_main_house(ctx: _OpContext, kind: str) -> None:
     ctx.domain_data.widget_secret_store.note_main_house(ctx.watch_id, main_house)
 
 
+def _phone_style_record(ctx: _OpContext, kind: Any) -> Any:
+    """The notification style an iPhone signing as itself reads, or None.
+
+    Step 6: the phone no longer signs as its watch to read the style it draws
+    alerts with. For kind ``notification_style`` from an iPhone entry bound to
+    a Home Assistant user, the record is the one saved last among the watches
+    whose Fast alerts reach this phone (its user's watches, see
+    `phone_watch_ids`); a tie on the save time goes to the higher revision,
+    then the higher id. None (the get answers as for any signer, from the
+    signer's own record) for any other kind, a watch, a phone bound to no
+    user, or when none of those watches holds a style record. A watch whose
+    stored config could not be read is skipped.
+    """
+    if kind != "notification_style" or not _caller_is_iphone(ctx):
+        return None
+    secrets = ctx.domain_data.widget_secret_store
+    caller = secrets.get(ctx.watch_id)
+    if getattr(caller, "user_id", None) is None:
+        return None
+    store = ctx.domain_data.watch_config_store
+    newest = None
+    newest_key: tuple = ()
+    for watch_id in phone_watch_ids(secrets.all_entries, ctx.watch_id):
+        try:
+            record = store.get(watch_id, kind)
+        except WatchConfigStoreError:
+            continue
+        if record is None:
+            continue
+        key = (record.updated_at or "", record.revision, watch_id)
+        if newest is None or key > newest_key:
+            newest, newest_key = record, key
+    return newest
+
+
 async def _op_watch_config_get(ctx: _OpContext) -> Response:
     """The caller's stored watch config of one kind.
 
     The owner is always the id that signed the request, so a device can only
     ever read its own record: the phone signing with the watch's pair, or the
     watch itself pulling with that same signature (the record may have come
-    from the iPhone mirror or from the panel).
+    from the iPhone mirror or from the panel). One exception (step 6): an
+    iPhone signing as itself for ``notification_style`` reads the newest
+    style among its user's watches, read only (`_phone_style_record`).
 
     Body:  {"kind": "pages" | "behavior" | "catalog" | "menus" | "voice"
                     | "notification_style" | "status_pages"
@@ -3394,6 +3502,21 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
         )
     kind = ctx.payload.get("kind")
     store = ctx.domain_data.watch_config_store
+    phone_record = _phone_style_record(ctx, kind)
+    if phone_record is not None:
+        # Step 6, the phone's read of its user's notification style. Read
+        # only: no delivery mark (the watch has not collected it), no report
+        # filed, and the phone's entry is no house of any watch.
+        reply = {
+            "ok": True,
+            "kind": kind,
+            "revision": phone_record.revision,
+            "hash": phone_record.hash,
+            "updated_at": phone_record.updated_at,
+        }
+        if raw_since != phone_record.revision:
+            reply["document"] = phone_record.document
+        return ctx.signed_json(reply)
     try:
         record = store.get(ctx.watch_id, kind)
     except WatchConfigStoreError as err:

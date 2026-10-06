@@ -10,7 +10,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN, WristAssistantConfigEntry
-from .notifications import NotificationTokenStore
+from .notifications import NotificationTokenStore, watch_phone_ids
 from .widget_secret_store import (
     DEVICE_KIND_IPHONE,
     DEVICE_KIND_WATCH,
@@ -46,8 +46,7 @@ async def async_setup_entry(
     # — well before the first /v2/delta poll — and a watch can call
     # `op=notifications_register` without ever polling. The watch's own
     # (watchos) token sits on the watch device; the iPhone's mirror (ios) token
-    # sits on the iPhone device (where it belongs), even though the token is
-    # stored under the companion watch's id for routing.
+    # sits on the iPhone device, where it is also stored since step 6.
     known_pushes: set[str] = set()
 
     @callback
@@ -184,6 +183,15 @@ class WatchPushTokenRegisteredSensor(BinarySensorEntity):
             "delivery_mode": self._notification_store.get_watch_metadata(
                 self._watch_id, "delivery_mode", "mirror"
             ),
+            # How many phones a Fast alert for this watch goes to: those of
+            # the watch's Home Assistant user holding an iOS token (step 6).
+            "phones": len(
+                watch_phone_ids(
+                    self._secret_store.all_entries,
+                    self._notification_store.all_entries,
+                    self._watch_id,
+                )
+            ),
         }
 
 
@@ -196,10 +204,11 @@ class IPhonePushTokenRegisteredSensor(BinarySensorEntity):
     ~15s watch-direct path, so a user who picked Fast but sees this off is not
     actually getting fast notifications.
 
-    The token is stored in the notification store under the *companion watch's*
-    id (so `send_notification`, which targets a watch, can route to it), not the
-    iPhone's. We bridge that here via `owner_iphone_id`: the sensor is on for
-    this iPhone iff any watch it paired holds an `ios` token."""
+    Since step 6 the token is stored under the iPhone's own id, and routing
+    pairs it with the watches of the same Home Assistant user. Before that it
+    was stored under the companion watch's id; a token the one-time move
+    could not place may still sit there, so a watch this iPhone paired that
+    holds an `ios` token turns this on too."""
 
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
@@ -248,8 +257,9 @@ class IPhonePushTokenRegisteredSensor(BinarySensorEntity):
 
     @property
     def is_on(self) -> bool:
-        # The ios token lives under the companion watch's entry. Report on if any
-        # watch this iPhone paired holds one.
+        # The phone's own entry first, then a leftover on a watch it paired.
+        if self._notification_store.get_entry(self._iphone_id, platform="ios") is not None:
+            return True
         for watch_id, secret_entry in self._secret_store.all_entries.items():
             if (
                 secret_entry.device_kind == DEVICE_KIND_WATCH

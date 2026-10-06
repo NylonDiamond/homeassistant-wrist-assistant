@@ -260,7 +260,9 @@ def diag(pkg, tmp_path):
     coordinator = types.SimpleNamespace(_sessions={}, _cursor=7, _generation=1, _events=[])
     data = types.SimpleNamespace(
         coordinator=coordinator,
-        notification_store=types.SimpleNamespace(all_tokens={}),
+        notification_store=types.SimpleNamespace(
+            all_tokens={}, all_entries={}, ios_tokens_moved=True
+        ),
         apns_client=None,
         watch_config_store=types.SimpleNamespace(diagnostics=dict),
         watch_logs_store=logs,

@@ -38,6 +38,7 @@ from typing import Any
 
 import pytest
 
+from test_notification_tokens import _loaded_notifications
 from test_watch_config_store import _FakeStore, _Hass, _loaded_module
 
 _PKG_DIR = Path(__file__).resolve().parents[1] / "custom_components" / "wrist_assistant"
@@ -46,6 +47,8 @@ _MODULE = _PKG_DIR / "wa_v2_views.py"
 _NAMES = (
     "_watch_config_refusal",
     "_note_main_house",
+    "_caller_is_iphone",
+    "_phone_style_record",
     "_op_watch_config_get",
     "_op_watch_config_put",
 )
@@ -63,15 +66,31 @@ class _Response:
 
 
 class _Secrets:
-    """The widget secret store's one call the get makes, recorded."""
+    """The widget secret store's calls the get makes, recorded.
+
+    ``entries`` holds the devices the step 6 phone style read looks at; it is
+    empty unless a test adds some, so every other get sees no iPhone signer.
+    """
 
     def __init__(self) -> None:
         self.main_house: dict[str, bool] = {}
+        self.entries: dict[str, Any] = {}
 
     def note_main_house(self, watch_id: str, main_house: bool) -> bool:
         changed = self.main_house.get(watch_id, True) != main_house
         self.main_house[watch_id] = main_house
         return changed
+
+    def get(self, watch_id: str) -> Any:
+        return self.entries.get(watch_id)
+
+    @property
+    def all_entries(self) -> dict[str, Any]:
+        return dict(self.entries)
+
+
+def _device(kind: str, user_id: str | None = None, owner: str | None = None) -> Any:
+    return types.SimpleNamespace(device_kind=kind, user_id=user_id, owner_iphone_id=owner)
 
 
 class _Ctx:
@@ -87,7 +106,10 @@ class _Ctx:
         return _Response(status=status, body=payload)
 
 
-def _handlers(store_mod: Any) -> dict[str, Any]:
+def _handlers(store_mod: Any, notif_mod: Any = None) -> dict[str, Any]:
+    if notif_mod is None:
+        with _loaded_notifications() as loaded:
+            return _handlers(store_mod, loaded)
     source = _MODULE.read_text()
     tree = ast.parse(source, filename=str(_MODULE))
     wanted = [
@@ -110,6 +132,8 @@ def _handlers(store_mod: Any) -> dict[str, Any]:
         "WatchConfigStoreError": store_mod.WatchConfigStoreError,
         "WatchConfigUnavailableError": store_mod.WatchConfigUnavailableError,
         "WatchConfigValidationError": store_mod.WatchConfigValidationError,
+        "is_iphone_entry": notif_mod.is_iphone_entry,
+        "phone_watch_ids": notif_mod.phone_watch_ids,
     }
     exec(code, namespace)  # noqa: S102
     return namespace
@@ -117,11 +141,14 @@ def _handlers(store_mod: Any) -> dict[str, Any]:
 
 @pytest.fixture
 def env():
-    with _loaded_module() as store_mod:
+    with _loaded_module() as store_mod, _loaded_notifications() as notif_mod:
         store = store_mod.WatchConfigStore(_Hass())
         asyncio.run(store.async_load())
         yield types.SimpleNamespace(
-            store=store, mod=store_mod, views=_handlers(store_mod), secrets=_Secrets()
+            store=store,
+            mod=store_mod,
+            views=_handlers(store_mod, notif_mod),
+            secrets=_Secrets(),
         )
 
 
@@ -788,6 +815,100 @@ def test_a_refused_get_marks_nothing(env) -> None:
     reply = _get(env, {"kind": "nonsense", "main_house": False})
     assert reply.status != 200
     assert env.secrets.main_house == {}
+
+
+# ── step 6: the phone's notification style read ──────────────────────────
+
+PHONE = "iphone-1"
+STYLE = "notification_style"
+
+
+def _style(env, watch_id: str, label: str, updated_at: str) -> None:
+    """A style saved for one watch at a given time, not yet delivered."""
+    assert _put(env, _put_body(_batch_2(STYLE, label), kind=STYLE), watch_id=watch_id).status == 200
+    record = env.store.get(watch_id, STYLE)
+    record.updated_at = updated_at
+    record.delivered_revision, record.delivered_at = 0, None
+
+
+@pytest.fixture
+def household(env):
+    env.secrets.entries.update(
+        {
+            PHONE: _device("iphone", "user-1"),
+            WATCH: _device("watch", "user-1"),
+            OTHER: _device("watch", "user-1"),
+            "watch-C": _device("watch", "user-2"),
+            "iphone-2": _device("iphone", "user-2"),
+        }
+    )
+    _style(env, WATCH, "Older", "2026-10-06T08:00:00Z")
+    _style(env, OTHER, "Newer", "2026-10-06T09:00:00Z")
+    _style(env, "watch-C", "Someone else", "2026-10-06T10:00:00Z")
+    return env
+
+
+def test_a_phone_reads_the_newest_style_of_its_user_s_watches(household) -> None:
+    reply = _get(household, {"kind": STYLE}, watch_id=PHONE)
+    assert reply.status == 200
+    assert reply.body["document"] == _batch_2(STYLE, "Newer")
+    assert (reply.body["revision"], reply.body["hash"]) == (1, HASH_1)
+    assert reply.body["updated_at"] == "2026-10-06T09:00:00Z"
+
+
+def test_the_phone_s_read_marks_nothing_delivered_and_no_house(household) -> None:
+    _get(household, {"kind": STYLE}, watch_id=PHONE)
+    _get(household, {"kind": STYLE, "since_revision": 1}, watch_id=PHONE)
+    for watch_id in (WATCH, OTHER, "watch-C"):
+        assert household.store.get(watch_id, STYLE).delivered_revision == 0
+    assert household.secrets.main_house == {}
+
+
+def test_the_phone_s_read_files_no_unreadable_report(household) -> None:
+    reply = _get(household, {"kind": STYLE, "unreadable_revision": 1}, watch_id=PHONE)
+    assert reply.status == 200
+    assert household.store.get(OTHER, STYLE).rejected_revision == 0
+
+
+def test_the_phone_s_read_leaves_out_the_document_when_up_to_date(household) -> None:
+    reply = _get(household, {"kind": STYLE, "since_revision": 1}, watch_id=PHONE)
+    assert "document" not in reply.body
+    assert reply.body["revision"] == 1
+
+
+def test_a_tie_on_the_save_time_goes_to_the_higher_revision(household) -> None:
+    _put(household, _put_body(_batch_2(STYLE, "Second"), kind=STYLE, base=1, digest=HASH_2))
+    household.store.get(WATCH, STYLE).updated_at = "2026-10-06T09:00:00Z"
+    reply = _get(household, {"kind": STYLE}, watch_id=PHONE)
+    assert reply.body["document"] == _batch_2(STYLE, "Second")
+
+
+def test_another_kind_from_a_phone_reads_the_phone_s_own_record(household) -> None:
+    reply = _get(household, {"kind": "behavior"}, watch_id=PHONE)
+    assert reply.body["revision"] == 0
+    assert "document" not in reply.body
+
+
+def test_a_phone_bound_to_no_user_reads_its_own_record(household) -> None:
+    household.secrets.entries[PHONE] = _device("iphone", None)
+    reply = _get(household, {"kind": STYLE}, watch_id=PHONE)
+    assert reply.body["revision"] == 0
+
+
+def test_a_phone_whose_watches_hold_no_style_reads_its_own_record(env) -> None:
+    env.secrets.entries.update(
+        {PHONE: _device("iphone", "user-1"), WATCH: _device("watch", "user-1")}
+    )
+    reply = _get(env, {"kind": STYLE}, watch_id=PHONE)
+    assert reply.body == {
+        "ok": True, "kind": STYLE, "revision": 0, "hash": None, "updated_at": None
+    }
+
+
+def test_a_watch_still_reads_its_own_style_and_marks_it_delivered(household) -> None:
+    reply = _get(household, {"kind": STYLE}, watch_id=WATCH)
+    assert reply.body["document"] == _batch_2(STYLE, "Older")
+    assert household.store.get(WATCH, STYLE).delivered_revision == 1
 
 
 # ── static: dispatch and capability ──────────────────────────────────────

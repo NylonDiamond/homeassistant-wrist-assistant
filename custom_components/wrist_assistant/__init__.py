@@ -50,6 +50,7 @@ from .const import (
     NOTIFICATION_TOKEN_STORAGE_KEY,
     NOTIFICATION_TOKEN_STORAGE_VERSION,
     PAGE_IMAGES_CAPABILITY,
+    PUSH_PAIRED_BY_USER_CAPABILITY,
     PLATFORMS,
     WA_HMAC_NONCE_TTL_SECONDS,
     WATCH_CONFIG_CAPABILITY,
@@ -86,7 +87,7 @@ from .watch_config_store import WatchConfigStore
 from .watch_config_ws import async_register_watch_config_commands
 from .watch_logs_store import WatchLogsStore
 from .watch_voices_store import WatchVoicesStore
-from .notifications import NotificationTokenStore, TokenEntry
+from .notifications import NotificationTokenStore, TokenEntry, resolve_push_routes
 from .v1_api_views import (
     MusicAssistantPlayersView,
     MusicAssistantQueueView,
@@ -184,37 +185,6 @@ def _strip_none(value):
     if isinstance(value, list):
         return [_strip_none(v) for v in value if v is not None]
     return value
-
-
-def _choose_token(
-    entries: dict[str, TokenEntry], delivery_mode: str = "mirror"
-) -> TokenEntry | None:
-    """Pick which token to push to for a watch, honoring the per-watch mode.
-
-    ``mirror`` (default): prefer the companion iPhone token — iOS mirrors the
-    alert to the wrist in ~1s with our full UI + haptic, avoiding the ~15s
-    watch-direct coordination tax when the phone is present. The cost is that
-    an away-from-phone watch gets nothing (no phone to mirror from).
-
-    ``direct``: prefer the watch's own token — reliable even when the phone is
-    absent (~1s), at the cost of the ~15s coordination delay whenever the phone
-    *is* present. The opt-in choice for users who are often away from their
-    phone. See the per-user "Delivery" setting in the app.
-
-    Either way we fall back to the other platform's token if the preferred one
-    isn't registered, so a watch-only or iPhone-only registration still works.
-    """
-    if delivery_mode == "direct":
-        return (
-            entries.get("watchos")
-            or entries.get("ios")
-            or next(iter(entries.values()), None)
-        )
-    return (
-        entries.get("ios")
-        or entries.get("watchos")
-        or next(iter(entries.values()), None)
-    )
 
 
 def _mint_snapshot_url(
@@ -356,8 +326,9 @@ async def _deliver_push(
 
     ``enriched_actions`` must already be enriched (callers that accept raw
     action dicts run them through ``_enrich_actions`` first). ``target_watch_ids``
-    selects which watches to push to; ``None`` broadcasts to every registered
-    watch. Returns ``{"sent", "failed", "failures"}``; raises HomeAssistantError
+    selects which watches (or iPhones) to push to; ``None`` broadcasts to every
+    watch. ``failures`` is keyed by the id each failed token is filed under.
+    Returns ``{"sent", "failed", "failures"}``; raises HomeAssistantError
     when the APNs client is unavailable, no target is registered, or every push
     fails — matching the prior service behavior.
     """
@@ -469,44 +440,39 @@ async def _deliver_push(
     # Strip any None values so a JSON null can't break the mirror path.
     extra_data = _strip_none(extra_data)
 
-    # Resolve targets to their full per-platform entry maps.
-    if target_watch_ids is not None:
-        targets: dict[str, dict] = {}
-        for watch_id in target_watch_ids:
-            entries = store.get_entries(watch_id)
-            if entries:
-                targets[watch_id] = entries
-        if not targets:
+    # Resolve the targets to the tokens to send to, routing per each watch's
+    # "delivery_mode" (resolve_push_routes in notifications.py). "mirror"
+    # (default): the phones of the watch's Home Assistant user (iOS mirrors to
+    # the wrist in ~1s; nothing when the phone is away). "direct": the watch's
+    # own token (reliable when away; ~15s when the phone is present). Each
+    # falls back to the other. One device token is sent once per alert.
+    routes = resolve_push_routes(
+        data.widget_secret_store.all_entries,
+        store.all_entries,
+        store.delivery_modes(),
+        target_watch_ids,
+    )
+    for route in routes:
+        _LOGGER.debug(
+            "deliver_push routing targets=%s -> id=%s platform=%s",
+            route.targets,
+            route.store_id,
+            route.entry.platform,
+        )
+    if not routes:
+        if target_watch_ids is not None:
             raise HomeAssistantError(
                 "No registered push token for the requested target"
             )
-    else:
-        targets = store.all_entries
-        if not targets:
-            raise HomeAssistantError(
-                "No watches have registered for push notifications"
-            )
+        raise HomeAssistantError(
+            "No watches have registered for push notifications"
+        )
 
-    # Send to each target, routing per the watch's "delivery_mode" setting.
-    # "mirror" (default): push to the companion iPhone token (iOS mirrors to the
-    # wrist in ~1s; nothing when the phone is away). "direct": push to the watch
-    # token (reliable when away; ~15s when the phone is present). Never both.
     sent = 0
     failure_map: dict[str, str] = {}
-    routed: list[tuple[str, TokenEntry]] = []
-    for watch_id, entries in targets.items():
-        delivery_mode = store.get_watch_metadata(watch_id, "delivery_mode", "mirror")
-        tok_entry = _choose_token(entries, delivery_mode)
-        _LOGGER.debug(
-            "deliver_push routing watch_id=%s platforms=%s mode=%s -> chosen=%s",
-            watch_id,
-            sorted(entries.keys()),
-            delivery_mode,
-            tok_entry.platform if tok_entry else None,
-        )
-        if tok_entry is None:
-            continue
-        routed.append((watch_id, tok_entry))
+    routed: list[tuple[str, TokenEntry]] = [
+        (route.store_id, route.entry) for route in routes
+    ]
 
     async def _send_one(watch_id: str, tok_entry: TokenEntry) -> tuple[bool, str | None, str]:
         # A mirrored (iOS) push with no sound delivers to the wrist silently AND
@@ -725,6 +691,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     await notification_store.async_load()
     widget_secret_store = WidgetSecretStore(hass)
     await widget_secret_store.async_load()
+    # Step 6, once per install: an iPhone's push token filed under its
+    # companion watch moves to the phone's own id, where it now lives and
+    # where routing pairs it with the watches of the same user.
+    try:
+        notification_store.migrate_ios_tokens_to_phones(widget_secret_store.all_entries)
+    except Exception:
+        _LOGGER.exception("Moving iPhone push tokens to their phones failed; continuing setup")
     stream_token_store = StreamTokenStore()
     batch_snapshot_token_store = BatchSnapshotTokenStore()
     # Watches waiting for an admin to confirm their pairing code. Memory only:
@@ -959,6 +932,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # The signed watch_logs_put op (watch_logs_store.py). The watch offers to
     # send its logs to Home Assistant only when it sees this.
     coordinator.register_capability(WATCH_LOGS_CAPABILITY)
+    # A phone's push token filed under the phone and paired with its user's
+    # watches (notifications.resolve_push_routes), the companion-free status
+    # and test push replies, and the phone signed notification style read.
+    # The phone stops naming a watch only when it sees this.
+    coordinator.register_capability(PUSH_PAIRED_BY_USER_CAPABILITY)
 
     runtime_data = WristAssistantData(
         coordinator=coordinator,
@@ -1209,7 +1187,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
                     break
             if target is None:
                 raise HomeAssistantError(
-                    f"Device '{target_raw}' is not a Wrist Assistant watch"
+                    f"Device '{target_raw}' is not a Wrist Assistant watch or iPhone"
                 )
 
         actions = call.data.get("actions")

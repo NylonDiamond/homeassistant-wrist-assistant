@@ -128,7 +128,9 @@ The blueprint is easier to set up in the UI and lets you choose a watch, title, 
 
 If you want to call the service directly, use `wrist_assistant.send_notification` to send a message to one or all paired watches using Apple notifications.
 
-`target` accepts a watch `device_id` (copy it from the device page under `Settings` -> `Devices & Services` -> `Wrist Assistant`). Omit `target` to broadcast to every paired watch.
+`target` accepts a watch `device_id` (copy it from the device page under `Settings` -> `Devices & Services` -> `Wrist Assistant`), or an iPhone's to send to that phone alone. Omit `target` to broadcast to every paired watch.
+
+A watch set to Fast gets its alerts through the iPhones of the same Home Assistant user, which mirror them to the wrist. A watch set to Reliable, or one whose user has no iPhone with the app, gets them directly. Each phone gets an alert once, however many of its user's watches it is for.
 
 If you see `No registered push token for watch ...`, the watch app has not re-registered for notifications yet. Open Wrist Assistant on the Apple Watch and let it fully sync once, then try the notification again.
 

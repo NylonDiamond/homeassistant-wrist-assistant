@@ -411,7 +411,8 @@ def test_an_unknown_owner_is_not_pushed(env) -> None:
 
 
 def test_the_token_under_the_paired_watch_is_found_and_used(env) -> None:
-    """The normal pairing: the phone files its token under its watch's id.
+    """A leftover: an older app filed the phone's token under its watch's id,
+    and the step 6 move could not place it.
 
     ``send_push`` writes the refreshed relay token back under the id it is
     given, so the push has to go out under the watch's id. Sending it under
@@ -440,7 +441,7 @@ def test_the_token_under_the_paired_watch_is_found_and_used(env) -> None:
 
 
 def test_the_phones_own_entry_wins_over_the_reverse_scan(env) -> None:
-    """A scoped secondary instance with no watch files the token itself."""
+    """Since step 6 the phone files the token under its own id."""
     env.add_phone("phone-1")
     env.add_watch("watch-A", owner_iphone_id="phone-1")
     env.tokens.register("watch-A", "ios", "watch-filed-tok")

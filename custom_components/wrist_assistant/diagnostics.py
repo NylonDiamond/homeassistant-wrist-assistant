@@ -119,10 +119,12 @@ async def async_get_config_entry_diagnostics(
 
     notification_store = data.notification_store
     notification_tokens = {}
+    all_token_entries = notification_store.all_entries
     for watch_id, token_entry in notification_store.all_tokens.items():
         notification_tokens[watch_id] = {
             "token_prefix": token_entry.device_token[:8] + "…",
             "platform": token_entry.platform,
+            "platforms": sorted(all_token_entries.get(watch_id, {})),
             "environment": token_entry.environment,
         }
 
@@ -141,6 +143,8 @@ async def async_get_config_entry_diagnostics(
         "notifications": {
             "token_count": len(notification_tokens),
             "tokens": notification_tokens,
+            # Whether the step 6 move of iPhone tokens to their phones ran.
+            "ios_tokens_moved": notification_store.ios_tokens_moved,
             "apns_configured": data.apns_client is not None,
         },
         # Revision, size, save time, delivery and the last revision a device
