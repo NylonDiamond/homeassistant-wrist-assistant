@@ -462,6 +462,11 @@ def ws_owners(
                 # its app predates custom complications, or it has not opened
                 # this home yet. Either way nothing sent here reaches it.
                 "applied_token": store.applied_token(device_id),
+                # False while the watch takes its watch settings and
+                # notification style from another home, its main house
+                # (`_note_main_house`). True for a phone and for every watch
+                # that never said otherwise.
+                "main_house": entry.main_house,
                 "is_orphan": False,
             }
         )

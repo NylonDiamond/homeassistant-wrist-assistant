@@ -477,6 +477,8 @@ def test_a_watch_row_gains_the_device_kind_field_and_nothing_else(env) -> None:
         "complication_count": 1,
         "token": 1,
         "applied_token": 1,
+        # A watch that never said it takes its settings from another home.
+        "main_house": True,
         "is_orphan": False,
     }
 
@@ -509,10 +511,24 @@ def test_a_phone_is_an_owner_in_its_own_right(env) -> None:
             "complication_count": 2,
             "token": 2,
             "applied_token": 2,
+            "main_house": True,
             "is_orphan": False,
         },
         _library_row(),
     ]
+
+
+def test_a_watch_that_takes_its_settings_elsewhere_says_so(env) -> None:
+    """``main_house`` follows the watch's entry, so the panel can say where
+    its settings come from. Only device rows carry it."""
+    env.add_watch("watch-A", device_name="Apple Watch")
+    env.add_watch("watch-B", device_name="Other Watch")
+    assert env.secrets.note_main_house("watch-A", False) is True
+
+    rows = {r["owner_watch_id"]: r for r in env.owners()}
+    assert rows["watch-A"]["main_house"] is False
+    assert rows["watch-B"]["main_house"] is True
+    assert "main_house" not in rows[LIBRARY]
 
 
 def test_every_row_carries_the_paired_phone_id_or_none(env) -> None:
