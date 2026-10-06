@@ -3308,6 +3308,28 @@ def _watch_config_refusal(ctx: _OpContext, err: WatchConfigStoreError) -> Respon
     )
 
 
+def _note_main_house(ctx: _OpContext, kind: str) -> None:
+    """Keep whether this home is the watch's main house, from one get.
+
+    A watch with several homes takes its watch settings and notification
+    style from one of them, its main house, and pulls neither from any
+    other. Every get it sends another home carries ``"main_house": false``,
+    which marks the watch's entry so the panel says where its settings come
+    from instead of offering them here. A get of ``behavior`` without that
+    field clears the mark: only the main house is ever asked for it, by the
+    watch or by the iPhone signing for it, and a watch with one home, or an
+    app from before the field, asks every home it has. Any other get, and any
+    value but ``false``, leaves the mark as it is. Never a reason to refuse.
+    """
+    if ctx.payload.get("main_house") is False:
+        main_house = False
+    elif kind == "behavior":
+        main_house = True
+    else:
+        return
+    ctx.domain_data.widget_secret_store.note_main_house(ctx.watch_id, main_house)
+
+
 async def _op_watch_config_get(ctx: _OpContext) -> Response:
     """The caller's stored watch config of one kind.
 
@@ -3319,8 +3341,12 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
     Body:  {"kind": "pages" | "behavior" | "catalog" | "menus" | "voice"
                     | "notification_style" | "status_pages"
                     | "control_center",
-            "since_revision": <int>?, "unreadable_revision": <int>?}
+            "since_revision": <int>?, "unreadable_revision": <int>?,
+            "main_house": false?}
     Reply: {"ok": true, "kind", "revision", "hash", "updated_at", "document"?}
+
+    ``main_house`` changes nothing in the reply; it is kept on the watch's
+    entry (`_note_main_house`).
 
     ``document`` is left out when ``since_revision`` equals the stored
     revision, so an up-to-date device downloads a few bytes rather than its
@@ -3368,6 +3394,7 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
         record = store.get(ctx.watch_id, kind)
     except WatchConfigStoreError as err:
         return _watch_config_refusal(ctx, err)
+    _note_main_house(ctx, kind)
     if record is None:
         return ctx.signed_json(
             {"ok": True, "kind": kind, "revision": 0, "hash": None, "updated_at": None}
