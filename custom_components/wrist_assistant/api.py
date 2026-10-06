@@ -345,6 +345,18 @@ class DeltaCoordinator:
         # watch_id → the library revision its last reply with a body carried,
         # kept like _watch_config_sent so a woken poll can tell news.
         self._http_actions_sent: dict[str, int] = {}
+        # The bound user's client certificate rides the poll the same way:
+        # every reply with a body names that user's revision as
+        # `client_certificate` once the user has a record, and a change wakes
+        # the parked polls of that user's devices (see
+        # client_certificate_changed). None until setup attaches the store and
+        # the question that names a device's user
+        # (attach_client_certificate_store).
+        self._client_certificate_store: Any | None = None
+        self._user_of: Callable[[str], str | None] | None = None
+        # watch_id → the certificate revision its last reply with a body
+        # carried, kept like _http_actions_sent.
+        self._client_certificate_sent: dict[str, int] = {}
         self._unsub_state_changed = hass.bus.async_listen(
             EVENT_STATE_CHANGED, self._handle_state_changed
         )
@@ -525,17 +537,27 @@ class DeltaCoordinator:
         return current is not None and current != sent
 
     def _config_behind(self, watch_id: str) -> bool:
-        """The watch's own config or the home's library moved since it was
-        last told: either earns an empty reply carrying the new numbers."""
-        return self._watch_config_behind(watch_id) or self._http_actions_behind(watch_id)
+        """The watch's own config, the home's library or its user's client
+        certificate moved since it was last told: any of them earns an empty
+        reply carrying the new numbers."""
+        return (
+            self._watch_config_behind(watch_id)
+            or self._http_actions_behind(watch_id)
+            or self._client_certificate_behind(watch_id)
+        )
 
     def _note_config_baseline(self, watch_id: str) -> None:
-        """_note_watch_config_baseline, and the same for the library."""
+        """_note_watch_config_baseline, and the same for the library and the
+        client certificate."""
         self._note_watch_config_baseline(watch_id)
         if watch_id not in self._http_actions_sent:
             current = self.http_actions_revision()
             if current is not None:
                 self._http_actions_sent[watch_id] = current
+        if watch_id not in self._client_certificate_sent:
+            current = self._client_certificate_baseline(watch_id)
+            if current is not None:
+                self._client_certificate_sent[watch_id] = current
 
     @callback
     def http_actions_changed(self, _revision: int) -> None:
@@ -545,6 +567,73 @@ class DeltaCoordinator:
         superseded."""
         for watch_id in list(self._waiters):
             self.wake_watch(watch_id, renotify=False)
+
+    # ── the bound user's client certificate on the poll ───────────────
+
+    @callback
+    def attach_client_certificate_store(
+        self, store: Any, user_of: Callable[[str], str | None]
+    ) -> None:
+        """Wire the client certificate store in for reading, with
+        ``user_of(watch_id)``, the Home Assistant user a device is bound to.
+        The wake on a change is wired by setup, which adds
+        client_certificate_changed as a store listener."""
+        self._client_certificate_store = store
+        self._user_of = user_of
+
+    def _bound_user(self, watch_id: str) -> str | None:
+        if self._user_of is None:
+            return None
+        try:
+            return self._user_of(watch_id)
+        except Exception:  # noqa: BLE001 (a failed lookup must not fail the poll)
+            _LOGGER.debug("No bound user for %s", watch_id, exc_info=True)
+            return None
+
+    def client_certificate_revision(self, watch_id: str) -> int | None:
+        """The revision of the certificate record of the user this device is
+        bound to. None with no store, no bound user, no record for that user
+        or an unreadable file: the reply then leaves the field out."""
+        store = self._client_certificate_store
+        if store is None:
+            return None
+        user_id = self._bound_user(watch_id)
+        if user_id is None:
+            return None
+        return store.revision(user_id)
+
+    def _client_certificate_baseline(self, watch_id: str) -> int | None:
+        """What to note for a watch before it parks: the revision, or 0
+        for a device whose user has no record yet, so that a phone's first
+        hand-over counts as news. None with no store, an unreadable file or
+        no bound user, which notes nothing."""
+        current = self.client_certificate_revision(watch_id)
+        if current is not None:
+            return current
+        store = self._client_certificate_store
+        if store is None or not store.available or self._bound_user(watch_id) is None:
+            return None
+        return 0
+
+    def _client_certificate_behind(self, watch_id: str) -> bool:
+        """True when the user's record moved since the last reply this
+        watch was handed with a body (or the baseline noted before it
+        parked). A watch with nothing noted is not behind: its next reply
+        with a body carries the field anyway."""
+        sent = self._client_certificate_sent.get(watch_id)
+        if sent is None:
+            return False
+        current = self.client_certificate_revision(watch_id)
+        return current is not None and current != sent
+
+    @callback
+    def client_certificate_changed(self, user_id: str) -> None:
+        """Store listener: a user's certificate changed, so every parked
+        poll of a device bound to that user answers at once with the new
+        revision. Other users' polls stay parked."""
+        for watch_id in list(self._waiters):
+            if self._bound_user(watch_id) == user_id:
+                self.wake_watch(watch_id, renotify=False)
 
     # ── the watch's voice list on the poll ────────────────────────────
 
@@ -782,6 +871,13 @@ class DeltaCoordinator:
         ``watch_voices_put``. The question never wakes or holds a poll: it
         rides the next reply with a body, and a voice list changes only when
         the user installs or removes a voice.
+
+        Once the Home Assistant user the device is bound to has a client
+        certificate record, every reply with a body also carries
+        ``client_certificate``: that record's revision. The watch fetches the
+        certificate with ``client_certificate_get`` when the number moves
+        past the one it saw, and a change wakes the parked polls of that
+        user's devices.
         """
         self._last_poll_at[watch_id] = self.hass.loop.time()
         store = self._complication_store
@@ -816,6 +912,10 @@ class DeltaCoordinator:
             if library_revision is not None:
                 body["http_actions"] = library_revision
                 self._http_actions_sent[watch_id] = library_revision
+            certificate_revision = self.client_certificate_revision(watch_id)
+            if certificate_revision is not None:
+                body["client_certificate"] = certificate_revision
+                self._client_certificate_sent[watch_id] = certificate_revision
             if self._voices_wanted(watch_id, voices_hash):
                 body["voices_wanted"] = True
         return status, body
@@ -1608,6 +1708,7 @@ class DeltaCoordinator:
             # body carries them again and records them afresh.
             self._watch_config_sent.pop(watch_id, None)
             self._http_actions_sent.pop(watch_id, None)
+            self._client_certificate_sent.pop(watch_id, None)
             # `handle_poll` stamps `_last_poll_at` before this runs, so a watch
             # polling again after a long idle arrives with a fresh stamp and a
             # session that is about to expire. Drop the stamp only when it is

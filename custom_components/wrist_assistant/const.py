@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from .batch_snapshot_settings_store import BatchSnapshotSettingsStore
     from .camera_stream import CameraStreamCoordinator
     from .card_preview_store import CardPreviewStore
+    from .client_certificate_store import ClientCertificateStore
     from .complication_push import ComplicationPhonePush
     from .complication_store import ComplicationStore
     from .http_actions_runner import HTTPActionRunner
@@ -27,6 +28,7 @@ if TYPE_CHECKING:
     from .wa_pair_requests import PairRequestStore
     from .wa_stream_tokens import BatchSnapshotTokenStore, StreamTokenStore
     from .watch_config_store import WatchConfigStore
+    from .watch_logs_store import WatchLogsStore
     from .watch_voices_store import WatchVoicesStore
     from .widget_secret_store import WidgetSecretStore
 
@@ -82,6 +84,11 @@ class WristAssistantData:
     # The home's page background photos, uploaded in the panel or handed
     # over by a phone, and fetched by id by any paired device.
     page_images_store: PageImagesStore
+    # Each Home Assistant user's client certificate, handed over sealed by a
+    # phone and fetched sealed by every watch of that user.
+    client_certificate_store: ClientCertificateStore
+    # Each device's latest log upload, read by its diagnostics download.
+    watch_logs_store: WatchLogsStore
     apns_client: APNsClient | None = field(default=None)
     # Sends a phone owner the background push a watch owner gets as a long-poll
     # wake. Built after the relay client is resolved, so it is None for the
@@ -290,6 +297,32 @@ PAGE_IMAGES_STORAGE_VERSION = 1
 # signed page_image_get and page_image_put ops. The phone hands its photos
 # over, and a watch fetches the photos its pages name, only when it sees this.
 PAGE_IMAGES_CAPABILITY = "page_images"
+# Each Home Assistant user's client certificate for an mTLS proxy (step 4 of
+# the phone watch link removal), see client_certificate_store.py: the .p12
+# bytes, its password, its fingerprint and a revision per user. A private
+# Store, since it holds a private key and the password that opens it.
+CLIENT_CERTIFICATE_STORAGE_KEY = "wrist_assistant.client_certificates"
+CLIENT_CERTIFICATE_STORAGE_VERSION = 1
+# The largest .p12 a phone may hand over. A client certificate with its key
+# and a short chain is two or three KiB; this leaves room for a long chain.
+CLIENT_CERTIFICATE_MAX_PKCS12_BYTES = 32 * 1024
+# What the integration advertises once it keeps those certificates, serves
+# the signed client_certificate_put, client_certificate_get and
+# client_certificate_delete ops, and names the bound user's revision as
+# `client_certificate` on the delta reply. The phone hands its certificate
+# over, and a watch fetches it, only when it sees this.
+CLIENT_CERTIFICATE_CAPABILITY = "client_certificate"
+# Each device's latest log upload (step 4), see watch_logs_store.py: an index
+# of who sent logs and when, and one JSON file per device in a folder of its
+# own beside it. Read only by the device's diagnostics download.
+WATCH_LOGS_STORAGE_KEY = "wrist_assistant.watch_logs"
+WATCH_LOGS_STORAGE_VERSION = 1
+# The largest watch_logs_put body. The watch trims its bundle to 1.5 MiB
+# before sending; this is the hard stop.
+WATCH_LOGS_MAX_BODY_BYTES = 2 * 1024 * 1024
+# What the integration advertises once it serves the signed watch_logs_put
+# op. The watch offers "Send logs to Home Assistant" only when it sees this.
+WATCH_LOGS_CAPABILITY = "watch_logs"
 # What the integration advertises once it serves /v2/pair/start and the
 # panel's pair/lookup and pair/confirm (pairing_ws.py). A watch with no
 # iPhone offers to pair by code only when /version lists this.

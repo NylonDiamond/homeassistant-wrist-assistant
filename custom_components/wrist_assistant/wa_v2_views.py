@@ -113,6 +113,7 @@ from .camera_stream import (
     run_batch_snapshot_stream,
     run_mjpeg_stream,
 )
+from .client_certificate_store import ClientCertificateError
 from .complication_store import (
     ComplicationConflictError,
     ComplicationStoreError,
@@ -128,6 +129,7 @@ from .const import (
     MIN_SUPPORTED_APP_PROTOCOL_VERSION,
     WA_PROTOCOL_VERSION,
     WA_STREAM_TOKEN_TTL_SECONDS,
+    WATCH_LOGS_MAX_BODY_BYTES,
     WristAssistantData,
 )
 from .http_actions_runner import HTTPActionRefusal, run_input_problem
@@ -144,6 +146,7 @@ from .page_images_store import (
     PageImagesUnavailableError,
     decode_data as decode_page_image,
 )
+from .sealed_box import SealedBoxError, open_box, seal
 from .wa_pair_requests import (
     PAIR_POLL_AFTER_SECONDS,
     PAIR_START_FIELDS,
@@ -155,6 +158,7 @@ from .watch_config_store import (
     WatchConfigUnavailableError,
     WatchConfigValidationError,
 )
+from .watch_logs_store import WatchLogsError
 from .watch_voices_store import VOICES_HASH_RE, WatchVoicesValidationError
 from .webhook_relay import (
     WEBHOOK_ID_METADATA_KEY,
@@ -3729,6 +3733,207 @@ async def _op_page_image_put(ctx: _OpContext) -> Response:
     return ctx.signed_json({"ok": True, "status": status})
 
 
+# ── the client certificate and the logs (link removal, step 4) ────────────
+#
+# Home Assistant keeps one client certificate per Home Assistant user
+# (``client_certificate_store.py``): a phone hands it over, every device of
+# that user fetches it, and both ways it travels in a sealed box
+# (``sealed_box.py``) keyed by the caller's own secret, since the home address
+# is often plain http. Open to any device bound to a user, admin or not: the
+# certificate is the user's own. A device with no bound user (paired before
+# user binding and not yet re-provisioned) is refused with a signed 403.
+
+_CLIENT_CERTIFICATE_STATUS = {
+    "invalid": 400,
+    "fingerprint_mismatch": 400,
+    "bad_pkcs12": 400,
+    "forbidden": 403,
+    "too_large": 413,
+    "unavailable": 503,
+}
+# A put is a JSON body around a sealed box around a .p12 of at most 32 KiB as
+# base64: base64 twice over, about 67 KiB at the cap with a long password.
+# The raw body is held to this before anything is decoded.
+_CLIENT_CERTIFICATE_PUT_MAX_BODY_BYTES = 96 * 1024
+
+
+def _client_certificate_refusal(ctx: _OpContext, code: str, message: str) -> Response:
+    return ctx.signed_json(
+        {"ok": False, "error": code, "message": message},
+        status=_CLIENT_CERTIFICATE_STATUS.get(code, 400),
+    )
+
+
+def _client_certificate_gate(ctx: _OpContext) -> tuple[Any, Response | None]:
+    """The store, or the refusal: ``unavailable`` 503 with no store or an
+    unreadable file, ``forbidden`` 403 for a device bound to no user."""
+    store = getattr(ctx.domain_data, "client_certificate_store", None)
+    if store is None or not store.available:
+        return None, _client_certificate_refusal(ctx, "unavailable", "integration not ready")
+    if not ctx.user_id:
+        return None, _client_certificate_refusal(
+            ctx,
+            "forbidden",
+            "this device is not bound to a Home Assistant user; sign in again to bind it",
+        )
+    return store, None
+
+
+async def _op_client_certificate_put(ctx: _OpContext) -> Response:
+    """A phone hands over its client certificate for its bound user.
+
+    Body:  {"sealed": <envelope>}, the envelope sealed with the signer's
+           secret under the op name ``client_certificate_put`` around
+           {"pkcs12": <base64>, "passphrase": <string>, "fingerprint": <hex>}
+    Reply: {"ok": true, "revision": <int>, "changed": <bool>,
+            "fingerprint": <hex>}
+    Refusal: signed {"ok": false, "error", "message"}: ``invalid`` 400 (a
+             sealed box that is malformed or does not open, a plaintext of
+             the wrong shape), ``fingerprint_mismatch`` 400 (not the SHA-256
+             of the bytes), ``bad_pkcs12`` 400 (does not open with the
+             password, or holds no key and certificate), ``too_large`` 413
+             (a .p12 over 32 KiB), ``forbidden`` 403 (no bound user),
+             ``unavailable`` 503. A refusal leaves the stored one alone.
+
+    The same fingerprint again changes nothing: ``changed`` false and the
+    stored revision. A new one adds one to the revision and wakes the polls
+    of every device of the user.
+    """
+    store, refused = _client_certificate_gate(ctx)
+    if refused is not None:
+        return refused
+    if len(ctx.body) > _CLIENT_CERTIFICATE_PUT_MAX_BODY_BYTES:
+        return _client_certificate_refusal(ctx, "too_large", "a .p12 is at most 32 KiB")
+    try:
+        plaintext = open_box(
+            ctx.secret_bytes,
+            ctx.watch_id,
+            "client_certificate_put",
+            ctx.payload.get("sealed"),
+            max_box_chars=_CLIENT_CERTIFICATE_PUT_MAX_BODY_BYTES,
+        )
+    except SealedBoxError as err:
+        return _client_certificate_refusal(ctx, "invalid", err.message)
+    try:
+        inner = orjson.loads(plaintext)
+    except orjson.JSONDecodeError:
+        return _client_certificate_refusal(
+            ctx, "invalid", "the sealed box does not hold a JSON object"
+        )
+    try:
+        record, changed = await store.async_put(ctx.user_id, inner)
+    except ClientCertificateError as err:
+        return _client_certificate_refusal(ctx, err.code, err.message)
+    return ctx.signed_json(
+        {
+            "ok": True,
+            "revision": record.revision,
+            "changed": changed,
+            "fingerprint": record.certificate.fingerprint,
+        }
+    )
+
+
+async def _op_client_certificate_delete(ctx: _OpContext) -> Response:
+    """A phone removed its certificate: clear its bound user's.
+
+    Body:  {}
+    Reply: {"ok": true, "revision": <int>, "changed": <bool>}
+    Refusal: as for the put: ``forbidden`` 403, ``unavailable`` 503.
+
+    The record stays with no certificate and a new revision, so every
+    device of the user sees the change on its next poll. With nothing held
+    nothing changes (``revision`` 0 when the user never had a record).
+    """
+    store, refused = _client_certificate_gate(ctx)
+    if refused is not None:
+        return refused
+    try:
+        revision, changed = store.delete(ctx.user_id)
+    except ClientCertificateError as err:
+        return _client_certificate_refusal(ctx, err.code, err.message)
+    return ctx.signed_json({"ok": True, "revision": revision, "changed": changed})
+
+
+async def _op_client_certificate_get(ctx: _OpContext) -> Response:
+    """The bound user's certificate, sealed for the caller.
+
+    Body:  {}
+    Reply: {"ok": true, "revision": <int>, "present": false}, or
+           {"ok": true, "revision": <int>, "present": true,
+            "fingerprint": <hex>, "sealed": <envelope>}, the envelope sealed
+           with the caller's own secret under the op name
+           ``client_certificate_get`` around {"pkcs12": <base64>,
+           "passphrase": <string>, "fingerprint": <hex>}. ``revision`` is 0
+           when the user never had a record.
+    Refusal: as for the put: ``forbidden`` 403, ``unavailable`` 503.
+    """
+    store, refused = _client_certificate_gate(ctx)
+    if refused is not None:
+        return refused
+    try:
+        record = store.get(ctx.user_id)
+    except ClientCertificateError as err:
+        return _client_certificate_refusal(ctx, err.code, err.message)
+    if record is None or record.certificate is None:
+        return ctx.signed_json(
+            {"ok": True, "revision": record.revision if record else 0, "present": False}
+        )
+    sealed = seal(
+        ctx.secret_bytes,
+        ctx.watch_id,
+        "client_certificate_get",
+        orjson.dumps(record.certificate.as_wire_dict()),
+    )
+    return ctx.signed_json(
+        {
+            "ok": True,
+            "revision": record.revision,
+            "present": True,
+            "fingerprint": record.certificate.fingerprint,
+            "sealed": sealed,
+        }
+    )
+
+
+async def _op_watch_logs_put(ctx: _OpContext) -> Response:
+    """A device sends its support bundle for its diagnostics download.
+
+    Body:  {"bundle": <object>}, at most 2 MiB in all
+    Reply: {"ok": true, "received_at": <ISO 8601 UTC>, "bytes": <int>}
+    Refusal: signed {"ok": false, "error", "message"}: ``too_large`` 413
+             (a body over 2 MiB), ``invalid`` 400 (no bundle object),
+             ``unavailable`` 503.
+
+    Stored under the signing id, replacing that device's last upload. Any
+    paired device may send its own; nothing in the body names another.
+    """
+    store = getattr(ctx.domain_data, "watch_logs_store", None)
+    if store is None:
+        return ctx.signed_json(
+            {"ok": False, "error": "unavailable", "message": "integration not ready"},
+            status=503,
+        )
+    if len(ctx.body) > WATCH_LOGS_MAX_BODY_BYTES:
+        return ctx.signed_json(
+            {
+                "ok": False,
+                "error": "too_large",
+                "message": f"logs are at most {WATCH_LOGS_MAX_BODY_BYTES // (1024 * 1024)} MiB",
+            },
+            status=413,
+        )
+    try:
+        entry = await store.async_put(ctx.watch_id, ctx.payload.get("bundle"))
+    except WatchLogsError as err:
+        return ctx.signed_json(
+            {"ok": False, "error": err.code, "message": err.message}, status=400
+        )
+    return ctx.signed_json(
+        {"ok": True, "received_at": entry.received_at, "bytes": entry.bytes}
+    )
+
+
 # Op dispatch table. Adding a new op = add a key here.
 _OP_HANDLERS: dict[str, Any] = {
     "watch_config_get": _op_watch_config_get,
@@ -3739,6 +3944,10 @@ _OP_HANDLERS: dict[str, Any] = {
     "http_action_run": _op_http_action_run,
     "page_image_get": _op_page_image_get,
     "page_image_put": _op_page_image_put,
+    "client_certificate_put": _op_client_certificate_put,
+    "client_certificate_get": _op_client_certificate_get,
+    "client_certificate_delete": _op_client_certificate_delete,
+    "watch_logs_put": _op_watch_logs_put,
     "complications_sync": _op_complications_sync,
     "complications_restore": _op_complications_restore,
     "complications_create": _op_complications_create,

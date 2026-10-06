@@ -1,3 +1,6 @@
 pytest>=8.0
 requests>=2.31
 websockets>=13.0
+# The client certificate tests make a real .p12 and check the sealed box.
+# Home Assistant itself ships it, so the integration needs no requirement.
+cryptography>=42.0

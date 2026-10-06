@@ -43,6 +43,7 @@ from .complication_push import ComplicationPhonePush
 from .complication_store import ComplicationStore
 from .complication_ws import async_register_websocket_commands
 from .const import (
+    CLIENT_CERTIFICATE_CAPABILITY,
     DOMAIN,
     HTTP_ACTIONS_CAPABILITY,
     LIBRARY_OWNER_ID,
@@ -61,6 +62,7 @@ from .const import (
     WATCH_CONFIG_REJECT_REPORT_CAPABILITY,
     WATCH_CONFIG_STATUS_PAGES_CAPABILITY,
     WATCH_CONFIG_VOICE_CAPABILITY,
+    WATCH_LOGS_CAPABILITY,
     WATCH_PAIRING_CAPABILITY,
     WATCH_VOICES_CAPABILITY,
     WIDGET_SECRET_STORAGE_KEY,
@@ -70,6 +72,7 @@ from .const import (
 )
 from .notification_snapshot import NotificationSnapshotStore
 from .card_preview_store import CardPreviewStore
+from .client_certificate_store import ClientCertificateStore
 from .http_actions_runner import HTTPActionRunner
 from .http_actions_store import HTTPActionsStore
 from .http_actions_ws import async_register_http_actions_commands
@@ -81,6 +84,7 @@ from .snapshot_crop_store import SnapshotCropStore
 from .snapshot_stream_store import SnapshotStreamStore
 from .watch_config_store import WatchConfigStore
 from .watch_config_ws import async_register_watch_config_commands
+from .watch_logs_store import WatchLogsStore
 from .watch_voices_store import WatchVoicesStore
 from .notifications import NotificationTokenStore, TokenEntry
 from .v1_api_views import (
@@ -827,6 +831,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     entry.async_on_unload(
         watch_config_store.async_add_listener(page_images_store.pages_changed)
     )
+    # Each Home Assistant user's client certificate (link removal, step 4): a
+    # phone hands it over sealed, every device of that user fetches it sealed,
+    # and the user's revision rides the poll. A change wakes the parked polls
+    # of that user's devices. An unreadable file is left alone and refused.
+    client_certificate_store = ClientCertificateStore(hass)
+    await client_certificate_store.async_load()
+
+    def _bound_user(watch_id: str) -> str | None:
+        secret_entry = widget_secret_store.get(watch_id)
+        return secret_entry.user_id if secret_entry is not None else None
+
+    coordinator.attach_client_certificate_store(client_certificate_store, _bound_user)
+    entry.async_on_unload(
+        client_certificate_store.async_add_listener(coordinator.client_certificate_changed)
+    )
+    # Each device's latest log upload, for its diagnostics download. The start
+    # of day drops index entries whose file is gone and stray files.
+    # Housekeeping only: a failure must not fail setup.
+    watch_logs_store = WatchLogsStore(hass)
+    await watch_logs_store.async_load()
+    try:
+        await watch_logs_store.async_start()
+    except Exception:
+        _LOGGER.exception("Watch log sweep failed; continuing setup")
 
     # Register server capabilities
     # HA-owned custom complications: iOS checks this before offering the
@@ -922,6 +950,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # page_image_get and page_image_put ops. A watch fetches the photos its
     # pages name, and a phone hands its own over, only when it sees this.
     coordinator.register_capability(PAGE_IMAGES_CAPABILITY)
+    # Each user's client certificate (client_certificate_store.py): the
+    # signed client_certificate_put, client_certificate_get and
+    # client_certificate_delete ops and `client_certificate` on the delta
+    # reply. The phone hands its certificate over, and a watch fetches it,
+    # only when it sees this.
+    coordinator.register_capability(CLIENT_CERTIFICATE_CAPABILITY)
+    # The signed watch_logs_put op (watch_logs_store.py). The watch offers to
+    # send its logs to Home Assistant only when it sees this.
+    coordinator.register_capability(WATCH_LOGS_CAPABILITY)
 
     runtime_data = WristAssistantData(
         coordinator=coordinator,
@@ -944,6 +981,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         http_actions_store=http_actions_store,
         http_action_runner=http_action_runner,
         page_images_store=page_images_store,
+        client_certificate_store=client_certificate_store,
+        watch_logs_store=watch_logs_store,
     )
     entry.runtime_data = runtime_data
     hass.data[DOMAIN] = runtime_data
@@ -1282,6 +1321,9 @@ async def async_remove_config_entry_device(
         # does the voice list it reported.
         domain_data.watch_config_store.forget_owner(watch_id)
         domain_data.watch_voices_store.forget(watch_id)
+        # And the logs it sent. Its user's client certificate stays: it is the
+        # user's, and their other devices still use it.
+        domain_data.watch_logs_store.forget(watch_id)
         # The home's HTTP action library stays; only the device's hand-over
         # and delivery marks go, so its phone may hand over again if it is
         # paired anew.
@@ -1323,6 +1365,10 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     # The page photos go with the pages that named them: the index and every
     # file. The built-in photos ship with the integration and are not touched.
     await PageImagesStore(hass).async_remove()
+    # Every user's client certificate, private key and password, and every
+    # device's log upload: the index and the folder.
+    await ClientCertificateStore(hass).async_remove()
+    await WatchLogsStore(hass).async_remove()
 
 
 async def _create_apns_client(hass: HomeAssistant) -> APNsClient | None:

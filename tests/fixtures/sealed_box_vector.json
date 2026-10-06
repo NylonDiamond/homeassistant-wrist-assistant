@@ -1,0 +1,15 @@
+{
+  "description": "One sealed box worked through by sealed_box.py. HKDF-SHA256 over the raw secret bytes, salt 'wrist-assistant-sealed-v1', info = signer_id as UTF-8, 32 byte key; AES-256-GCM with the op as UTF-8 associated data; box = ciphertext followed by the 16 byte tag.",
+  "secret_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+  "signer_id": "0123456789abcdef0123456789abcdef",
+  "op": "client_certificate_get",
+  "salt": "wrist-assistant-sealed-v1",
+  "key_hex": "7159c5bad3318e81888ca12e5155ec3bcce78938f5883fa0a91ca7ae0d26d0d4",
+  "nonce_b64": "oKGio6Slpqeoqaqr",
+  "plaintext_utf8": "{\"pkcs12\":\"bm90IGEgcmVhbCBwMTIsIG9ubHkgYnl0ZXMgZm9yIHRoZSB2ZWN0b3I=\",\"passphrase\":\"correct horse\",\"fingerprint\":\"bf33af9fd8f2cafb2c518a5b389837cef0bc1e0f5723f188d319bd861d184f42\"}",
+  "envelope": {
+    "v": 1,
+    "nonce": "oKGio6Slpqeoqaqr",
+    "box": "OVbZURtY1syJ10WSB5DDbEq838UrdsUcR+ruZqYfDNAN+7rgP7ebKe/ATOWGgYjI2kD598cWZfCY3ZoHA2H10puHrIi6fZQFj9Tk+Zqyj6T8sJijKbUkoZ/8F+uubOml2rfYpb7X05QAEJGQoaOxUQJmyq+ylcIgKxpELyIZLwWEBBvUqwm0zNUfs3QdHu8LulwMzYCTwjRHWriMKjMTFZrS6/4pKjZLuFQdC8x0n/nOyPeGHY4i2P0bct1PqBRpsKjB"
+  }
+}

@@ -75,7 +75,11 @@ There are two ways to pair a watch:
 
 A watch with more than one home takes its watch settings and notification style from one of them, its main house (the first home it was set up with). On any other home, `Watch settings` says so instead of offering them.
 
-Some things still come from the iPhone app: HTTP actions, status pages, voice, notification style, rooms and point control, Control Center lists, page background pictures, a second home and the mTLS certificate. Pro can be bought on the watch (`Settings`, `Wrist Assistant Pro`) or on the iPhone.
+Some things still come from the iPhone app: HTTP actions, status pages, voice, notification style, rooms and point control, Control Center lists, page background pictures and a second home. Pro can be bought on the watch (`Settings`, `Wrist Assistant Pro`) or on the iPhone.
+
+If your Home Assistant sits behind a proxy that asks for a client certificate (mTLS), import it once in the iPhone app. The phone hands it to Home Assistant, which keeps it for your Home Assistant user, and each of your watches gets it from there, including a watch paired with a code. A watch fetches it over a path the proxy does not guard, so pair it on your home address the first time. The certificate and its password are stored privately and never appear in a diagnostics download.
+
+A watch can send its logs to Home Assistant from `Connection Health` on the watch. To read them, open the watch's device page (`Settings` -> `Devices & Services` -> `Wrist Assistant`) and choose `Download diagnostics`. Tokens, passwords and the certificate are removed from the download.
 
 ## Beta versions
 
