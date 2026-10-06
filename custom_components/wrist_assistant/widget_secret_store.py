@@ -112,6 +112,16 @@ class WidgetSecretEntry:
     user (the pre-binding behaviour) until the iPhone's next automatic
     re-provision fills it in; see `register()`."""
 
+    main_house: bool = True
+    """Whether this Home Assistant is the house the watch takes its watch
+    settings and notification style from. A watch with several homes takes
+    them from one, its main house, and says ``"main_house": false`` on every
+    ``watch_config_get`` it sends any other; a get of ``behavior`` without
+    that says this is the main house again (`note_main_house`). True for
+    every watch that never said otherwise: one home, an older app, or an
+    iPhone entry. Kept on disk only while False. Not secret material, so a
+    `register()` keeps it."""
+
     secret_bytes: bytes | None = field(init=False, repr=False, default=None)
     """Decoded HMAC key bytes, cached on construction to avoid base64-decoding
     on every signed request and every signed response. None if `secret_b64`
@@ -174,6 +184,7 @@ class WidgetSecretStore:
                     device_name=entry.get("device_name"),
                     screen_size=entry.get("screen_size"),
                     user_id=entry.get("user_id"),
+                    main_house=entry.get("main_house") is not False,
                 )
         _LOGGER.debug("Loaded %d widget secrets from storage", len(self._secrets))
 
@@ -195,6 +206,9 @@ class WidgetSecretStore:
                     "device_name": entry.device_name,
                     "screen_size": entry.screen_size,
                     "user_id": entry.user_id,
+                    # Only while False, so the file of a watch that never
+                    # said otherwise is the one it always was.
+                    **({} if entry.main_house else {"main_house": False}),
                 }
                 for watch_id, entry in self._secrets.items()
             }
@@ -272,6 +286,7 @@ class WidgetSecretStore:
             device_name=device_name,
             screen_size=screen_size,
             user_id=user_id,
+            main_house=existing.main_house if existing is not None else True,
         )
         _LOGGER.info(
             "Registered widget secret for watch_id=%s algo=%s app_version=%s owner_iphone_id=%s user=%s",
@@ -342,6 +357,26 @@ class WidgetSecretStore:
                 owner_iphone_id,
             )
             self._notify_listeners()
+        return True
+
+    def note_main_house(self, watch_id: str, main_house: bool) -> bool:
+        """Record whether this Home Assistant is `watch_id`'s main house.
+
+        Backs the ``main_house`` field of ``watch_config_get``. Returns
+        whether it changed. A watch with no entry, the race with removal the
+        other ops share, changes nothing. No listeners are told: the device
+        entities do not show it, and the panel reads it with the owners.
+        """
+        entry = self._secrets.get(watch_id)
+        if entry is None or entry.main_house == main_house:
+            return False
+        entry.main_house = main_house
+        self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
+        _LOGGER.info(
+            "watch_id=%s takes its settings from %s",
+            watch_id,
+            "this home" if main_house else "another home",
+        )
         return True
 
     def bind_owned_watches(self, owner_iphone_id: str, user_id: str) -> list[str]:

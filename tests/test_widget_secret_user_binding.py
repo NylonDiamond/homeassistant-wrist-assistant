@@ -342,6 +342,42 @@ def test_the_user_survives_a_save_and_load(env) -> None:
     assert reloaded.get("watch-old").user_id is None
 
 
+# ── the main house ───────────────────────────────────────────────────────
+
+
+def test_main_house_is_on_disk_only_while_false(env) -> None:
+    """A watch that never said otherwise keeps the file it always had."""
+    env.store.register("watch-1", SECRET_A, "test")
+    env.store.register("watch-2", SECRET_B, "test")
+    assert env.store.get("watch-1").main_house is True
+    assert "main_house" not in env.store._store.saved["secrets"]["watch-1"]
+
+    assert env.store.note_main_house("watch-1", False) is True
+    assert env.store.note_main_house("watch-1", False) is False
+    saved = env.store._store.saved
+    assert saved["secrets"]["watch-1"]["main_house"] is False
+    assert "main_house" not in saved["secrets"]["watch-2"]
+
+    reloaded = env.store_mod.WidgetSecretStore(object())
+    reloaded._store.saved = saved
+    asyncio.run(reloaded.async_load())
+    assert reloaded.get("watch-1").main_house is False
+    assert reloaded.get("watch-2").main_house is True
+
+    assert env.store.note_main_house("watch-1", True) is True
+    assert "main_house" not in env.store._store.saved["secrets"]["watch-1"]
+    assert env.store.note_main_house("nope", False) is False
+
+
+def test_a_new_pair_keeps_the_main_house_mark(env) -> None:
+    """Pairing again rekeys the entry; where the settings come from is not
+    secret material, and the next get says it again anyway."""
+    env.store.register("watch-1", SECRET_A, "test")
+    env.store.note_main_house("watch-1", False)
+    assert env.store.register("watch-1", SECRET_B, "test") == "rekey"
+    assert env.store.get("watch-1").main_house is False
+
+
 # ── the live snapshot cap ────────────────────────────────────────────────
 
 

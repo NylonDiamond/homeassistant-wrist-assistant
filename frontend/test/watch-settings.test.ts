@@ -15,6 +15,7 @@ import {
   PAGES_START_BUTTON,
   PAGES_START_CONFLICT_TEXT,
   PAIR_FIRST_TEXT,
+  SETTINGS_MAIN_HOUSE_TEXT,
   SETTINGS_NO_RECORD_TEXT,
   SETTINGS_PAIR_FIRST_TEXT,
   SETTINGS_START_BUTTON,
@@ -52,6 +53,7 @@ import {
   sectionRuns,
   settingValue,
   settingsWatches,
+  takesSettingsFromAnotherHome,
   watchBehaviorDefaults,
   withEdit,
 } from "../src/watch-settings.js";
@@ -544,5 +546,21 @@ describe("pairing a watch by its code", () => {
     expect(pairRemoteWarning(undefined)).toBeUndefined();
     expect(pairRemoteWarning("")).toBeUndefined();
     expect(PAIR_REMOTE_WARNING_TEXT).toBe("The request came from outside your network. Only pair a watch you expect.");
+  });
+});
+
+describe("the main house", () => {
+  it("takes the settings from another home only on an explicit false", () => {
+    expect(takesSettingsFromAnotherHome({ main_house: false })).toBe(true);
+    expect(takesSettingsFromAnotherHome({ main_house: true })).toBe(false);
+    expect(takesSettingsFromAnotherHome({ main_house: null })).toBe(false);
+    // An integration from before the field, and a watch with one home.
+    expect(takesSettingsFromAnotherHome({})).toBe(false);
+    expect(takesSettingsFromAnotherHome(undefined)).toBe(false);
+  });
+
+  it("says where to change them, in plain words", () => {
+    expect(SETTINGS_MAIN_HOUSE_TEXT).toBe("This watch takes its settings from your main house. Change them there.");
+    expect(SETTINGS_MAIN_HOUSE_TEXT).not.toMatch(/ \x2d |\u2013|\u2014/);
   });
 });

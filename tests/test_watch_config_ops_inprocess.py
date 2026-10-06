@@ -45,6 +45,7 @@ _MODULE = _PKG_DIR / "wa_v2_views.py"
 
 _NAMES = (
     "_watch_config_refusal",
+    "_note_main_house",
     "_op_watch_config_get",
     "_op_watch_config_put",
 )
@@ -61,11 +62,26 @@ class _Response:
         self.body = body
 
 
+class _Secrets:
+    """The widget secret store's one call the get makes, recorded."""
+
+    def __init__(self) -> None:
+        self.main_house: dict[str, bool] = {}
+
+    def note_main_house(self, watch_id: str, main_house: bool) -> bool:
+        changed = self.main_house.get(watch_id, True) != main_house
+        self.main_house[watch_id] = main_house
+        return changed
+
+
 class _Ctx:
-    def __init__(self, store: Any, watch_id: str, payload: dict) -> None:
+    def __init__(self, store: Any, watch_id: str, payload: dict, secrets: Any = None) -> None:
         self.watch_id = watch_id
         self.payload = payload
-        self.domain_data = types.SimpleNamespace(watch_config_store=store)
+        self.domain_data = types.SimpleNamespace(
+            watch_config_store=store,
+            widget_secret_store=secrets if secrets is not None else _Secrets(),
+        )
 
     def signed_json(self, payload: dict, status: int = 200) -> _Response:
         return _Response(status=status, body=payload)
@@ -104,11 +120,15 @@ def env():
     with _loaded_module() as store_mod:
         store = store_mod.WatchConfigStore(_Hass())
         asyncio.run(store.async_load())
-        yield types.SimpleNamespace(store=store, mod=store_mod, views=_handlers(store_mod))
+        yield types.SimpleNamespace(
+            store=store, mod=store_mod, views=_handlers(store_mod), secrets=_Secrets()
+        )
 
 
 def _get(env, payload: dict, watch_id: str = WATCH) -> _Response:
-    return asyncio.run(env.views["_op_watch_config_get"](_Ctx(env.store, watch_id, payload)))
+    return asyncio.run(
+        env.views["_op_watch_config_get"](_Ctx(env.store, watch_id, payload, env.secrets))
+    )
 
 
 def _put(env, payload: dict, watch_id: str = WATCH) -> _Response:
@@ -727,6 +747,47 @@ def test_a_control_center_list_of_the_wrong_shape_is_a_signed_400(env) -> None:
         "document.entities[0]; entity ids must be unique",
     }
     assert env.store.get(WATCH, "control_center") is None
+
+
+# ── step 5: the main house ───────────────────────────────────────────────
+
+
+def test_a_get_saying_main_house_false_marks_the_watch(env) -> None:
+    """The reply is the one any get has; only the watch's entry learns."""
+    plain = _get(env, {"kind": "pages", "since_revision": 0})
+    marked = _get(env, {"kind": "pages", "since_revision": 0, "main_house": False})
+    assert marked.status == 200
+    assert marked.body == plain.body
+    assert env.secrets.main_house == {WATCH: False}
+
+
+def test_a_behavior_get_without_the_field_is_the_main_house_again(env) -> None:
+    _get(env, {"kind": "menus", "main_house": False})
+    # Any other kind without the field says nothing: the iPhone's mirror
+    # reads a second home's per-home kinds signed as the watch.
+    _get(env, {"kind": "pages"})
+    assert env.secrets.main_house == {WATCH: False}
+    _get(env, {"kind": "behavior"})
+    assert env.secrets.main_house == {WATCH: True}
+
+
+def test_an_old_watch_with_one_home_is_always_the_main_house(env) -> None:
+    for kind in ("pages", "behavior", "menus", "notification_style"):
+        _get(env, {"kind": kind, "since_revision": 0})
+    assert env.secrets.main_house == {WATCH: True}
+
+
+def test_an_odd_main_house_value_is_ignored_not_refused(env) -> None:
+    for value in (True, "false", 0, None):
+        reply = _get(env, {"kind": "pages", "main_house": value})
+        assert reply.status == 200
+    assert env.secrets.main_house == {}
+
+
+def test_a_refused_get_marks_nothing(env) -> None:
+    reply = _get(env, {"kind": "nonsense", "main_house": False})
+    assert reply.status != 200
+    assert env.secrets.main_house == {}
 
 
 # ── static: dispatch and capability ──────────────────────────────────────

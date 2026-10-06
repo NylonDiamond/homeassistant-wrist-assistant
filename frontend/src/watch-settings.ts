@@ -287,6 +287,25 @@ export function watchName(watch: OwnerSummary, watches: readonly OwnerSummary[])
   return shared && watch.paired_iphone_name ? `${name} (${watch.paired_iphone_name})` : name;
 }
 
+// ── the main house ───────────────────────────────────────────────────────
+//
+// A watch with several homes takes its watch settings and notification style
+// from one, its main house, and the integration marks the watch on any other
+// (`main_house: false` on the owner row). There the page says where to change
+// them instead of offering an editor the watch would never read. Plan: app
+// repo docs/pages_in_home_assistant_step5_settings_owner.md.
+
+/** What Watch settings shows, in place of both editors, on a home that is not
+ * the watch's main house. */
+export const SETTINGS_MAIN_HOUSE_TEXT = "This watch takes its settings from your main house. Change them there.";
+
+/** Whether `owner` takes its watch settings and notification style from
+ * another home. Only an explicit `false` does: an older integration, and a
+ * watch with one home, send nothing. */
+export function takesSettingsFromAnotherHome(owner: Pick<OwnerSummary, "main_house"> | undefined): boolean {
+  return owner?.main_house === false;
+}
+
 // ── no record yet ────────────────────────────────────────────────────────
 //
 // Home Assistant holds nothing of a kind for the watch yet. The panel can

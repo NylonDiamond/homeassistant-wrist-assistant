@@ -73,6 +73,8 @@ There are two ways to pair a watch:
 1. **With the iPhone app.** Its onboarding pairs the watch for you.
 2. **With a code, without an iPhone.** On the watch, choose `Pair with Home Assistant`. It shows a six character code. In the panel, open `Watch settings`, type the code under `Pair a watch`, check that the watch named is yours, and press `Pair`. Codes last 10 minutes.
 
+A watch with more than one home takes its watch settings and notification style from one of them, its main house (the first home it was set up with). On any other home, `Watch settings` says so instead of offering them.
+
 Some things still come from the iPhone app: HTTP actions, status pages, voice, notification style, rooms and point control, Control Center lists, page background pictures, a second home and the mTLS certificate. Pro can be bought on the watch (`Settings`, `Wrist Assistant Pro`) or on the iPhone.
 
 ## Beta versions
