@@ -4,19 +4,25 @@ A watch with no iPhone posts its id and a fresh secret to the unauthenticated
 ``/v2/pair/start`` (``WAPairStartView``) and shows the code it gets back. An
 admin types the code into the panel's Watch settings, which looks it up and
 then confirms it here. The confirm is what writes the pair into the widget
-secret store, bound to the admin who confirmed it, the same way
-``register_secret`` binds a pair to the user behind its bearer. Both commands
-are admin only.
+secret store, bound to a Home Assistant user the same way ``register_secret``
+binds a pair to the user behind its bearer. Both commands are admin only.
+
+The bound user is whose watch it is: the watch runs with that user's rights,
+and Fast alerts for it go to that user's iPhones. The panel asks "Whose watch
+is this?" and sends the answer as ``user_id``; with none (an older panel) the
+confirming admin is bound, as before.
 
 Commands:
 
     wrist_assistant/pair/lookup   {code}
-    wrist_assistant/pair/confirm  {code}
+    wrist_assistant/pair/confirm  {code, user_id?}
 
 Codes are compared upper-cased with spaces and hyphens dropped. Refusals are WebSocket errors:
 ``unavailable`` (the integration is not ready), ``unknown_code`` (no such
 code, or it expired, or it was already confirmed), ``paired_by_other_user``,
-and the field checks' own codes (``invalid_watch_id``, ``invalid_field``,
+``unauthorized`` (a non-admin naming another user), ``invalid_user`` (no
+such user, a deactivated one, or one Home Assistant made for itself), and the
+field checks' own codes (``invalid_watch_id``, ``invalid_field``,
 ``invalid_secret``, ``invalid_algo``) with ``register_secret``'s texts.
 """
 
@@ -77,7 +83,8 @@ def ws_pair_lookup(
 
     Result: {"found": true, "watch_id", "device_name", "screen_size",
              "app_version", "app_build", "expires_in", "remote",
-             "age_seconds", "already_paired", "paired_by_other_user"}
+             "age_seconds", "already_paired", "paired_by_other_user",
+             "bound_user_id"}
          or {"found": false}
 
     ``expires_in`` is whole seconds left. ``remote`` is the address the
@@ -86,7 +93,10 @@ def ws_pair_lookup(
     code from a stranger's. ``already_paired`` means the watch
     id holds a secret already (a confirm replaces it), and
     ``paired_by_other_user`` that the secret is bound to another user.
-    Looking up changes nothing.
+    ``bound_user_id`` is the user the watch is bound to now (null when it is
+    new or unbound), so the panel can offer that user first when a known
+    watch pairs again. Its presence also tells the panel that the confirm
+    takes ``user_id``. Looking up changes nothing.
     """
     stores = _stores(hass)
     if stores is None:
@@ -119,8 +129,30 @@ def ws_pair_lookup(
                 and existing.user_id is not None
                 and existing.user_id != user_id
             ),
+            "bound_user_id": existing.user_id if existing is not None else None,
         },
     )
+
+
+async def _pick_user(
+    hass: HomeAssistant, caller: Any, requested: str | None
+) -> tuple[str | None, tuple[str, str] | None]:
+    """The user to bind, or the refusal as (code, message).
+
+    No ``user_id``, or the caller's own: the caller. Another user: only an
+    admin may name one (the command is admin only already; this keeps the
+    rule next to the binding), and the user must exist, be active and not be
+    one Home Assistant made for itself (Supervisor, the content user).
+    """
+    caller_id = caller.id if caller is not None else None
+    if requested is None or requested == caller_id:
+        return caller_id, None
+    if caller is None or not caller.is_admin:
+        return None, ("unauthorized", "Only an administrator can pair a watch for another user.")
+    user = await hass.auth.async_get_user(requested)
+    if user is None or not user.is_active or getattr(user, "system_generated", False):
+        return None, ("invalid_user", "Pick an active Home Assistant user for this watch.")
+    return user.id, None
 
 
 @websocket_api.require_admin
@@ -128,16 +160,19 @@ def ws_pair_lookup(
     {
         vol.Required("type"): _CMD_CONFIRM,
         vol.Required("code"): str,
+        vol.Optional("user_id"): str,
     }
 )
-@callback
-def ws_pair_confirm(
+@websocket_api.async_response
+async def ws_pair_confirm(
     hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Pair the watch behind a code, bound to the confirming admin.
+    """Pair the watch behind a code, bound to the user it belongs to.
 
-    Result: {"ok": true, "watch_id", "device_name", "result"}
+    Result: {"ok": true, "watch_id", "device_name", "result", "user_id"}
 
+    ``user_id`` in the message is whose watch it is (see ``_pick_user``);
+    without it the confirming admin. The reply names the user bound.
     ``result`` is ``new``, ``rekey`` or ``idempotent``, as the store reports
     it. Runs ``register_secret``'s path: the same field checks, the same
     store write (label ``watch-code-pair``, no owner iPhone), the same
@@ -149,6 +184,13 @@ def ws_pair_confirm(
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
     pair_store, secret_store = stores
+    user = getattr(connection, "user", None)
+    # The only await, ahead of every read of the stores, so the rest runs
+    # in one go as the synchronous command did.
+    user_id, refusal = await _pick_user(hass, user, msg.get("user_id"))
+    if refusal is not None:
+        connection.send_error(msg["id"], *refusal)
+        return
     pending = pair_store.get(msg["code"])
     if pending is None:
         connection.send_error(
@@ -173,8 +215,6 @@ def ws_pair_confirm(
         connection.send_error(msg["id"], error.code, error.message)
         return
 
-    user = getattr(connection, "user", None)
-    user_id = user.id if user is not None else None
     is_admin = bool(user is not None and user.is_admin)
     watch_id = fields.watch_id
 
@@ -237,7 +277,13 @@ def ws_pair_confirm(
             device_registry.async_update_device(device.id, name=fields.device_name)
 
     pair_store.remove(pending.code)
-    _LOGGER.info("Paired watch_id=%s by code (%s), user=%s", watch_id, result, user_id)
+    _LOGGER.info(
+        "Paired watch_id=%s by code (%s), user=%s, confirmed by %s",
+        watch_id,
+        result,
+        user_id,
+        user.id if user is not None else None,
+    )
     connection.send_result(
         msg["id"],
         {
@@ -245,5 +291,6 @@ def ws_pair_confirm(
             "watch_id": watch_id,
             "device_name": fields.device_name,
             "result": result,
+            "user_id": user_id,
         },
     )

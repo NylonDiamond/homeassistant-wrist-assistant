@@ -471,6 +471,10 @@ export interface PairLookupFound {
   remote?: string | null;
   /** How long ago the watch asked, in seconds. */
   age_seconds?: number;
+  /** The Home Assistant user the watch is bound to now, null when it is new
+      or unbound. Missing from an integration whose confirm takes no
+      `user_id`, which is how the panel knows not to offer the choice. */
+  bound_user_id?: string | null;
 }
 
 export type PairLookup = PairLookupFound | { found: false };
@@ -484,6 +488,23 @@ export interface PairConfirmReply {
   watch_id: string;
   device_name?: string | null;
   result: PairResult;
+  /** The user the watch was bound to. Missing from an older integration. */
+  user_id?: string | null;
+}
+
+/** One Home Assistant user, as `config/auth/list` reports it. Only the fields
+ * the pairing card reads. */
+export interface HaUser {
+  id: string;
+  name?: string | null;
+  username?: string | null;
+  is_active?: boolean;
+  system_generated?: boolean;
+}
+
+/** Every Home Assistant user. Home Assistant's own command, admin only. */
+export async function listHaUsers(hass: HassLike) {
+  return hass.connection.sendMessagePromise<HaUser[]>({ type: "config/auth/list" });
 }
 
 /** Find the pairing request a watch shows `code` for. Admin only. An
@@ -492,12 +513,19 @@ export async function lookupPairCode(hass: HassLike, code: string) {
   return hass.connection.sendMessagePromise<PairLookup>({ type: `${PAIR}/lookup`, code });
 }
 
-/** Pair the watch that shows `code`, as the signed in administrator. A
- * refusal rejects with a WebSocket error whose `code` is `unknown_code`
- * (unknown or expired), `unavailable` (the integration is not ready),
+/** Pair the watch that shows `code`, for the Home Assistant user `userId`,
+ * or for the signed in administrator when it is undefined (the only form an
+ * integration from before the choice accepts). A refusal rejects with a
+ * WebSocket error whose `code` is `unknown_code` (unknown or expired),
+ * `unavailable` (the integration is not ready), `invalid_user` (no such
+ * user, a deactivated one, or one Home Assistant made for itself),
  * `invalid_secret` or another of the secret checks. */
-export async function confirmPairCode(hass: HassLike, code: string) {
-  return hass.connection.sendMessagePromise<PairConfirmReply>({ type: `${PAIR}/confirm`, code });
+export async function confirmPairCode(hass: HassLike, code: string, userId?: string) {
+  return hass.connection.sendMessagePromise<PairConfirmReply>({
+    type: `${PAIR}/confirm`,
+    code,
+    ...(userId === undefined ? {} : { user_id: userId }),
+  });
 }
 
 const WC = "wrist_assistant/watch_config";

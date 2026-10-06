@@ -56,11 +56,11 @@ const setting = (key: string): CatalogSetting => {
  * notification style is refused as an older integration does, so its cards
  * stay out), a save over the revision held, a code lookup with the new watch,
  * and a confirm with it paired. */
-function fakeHass(newWatch: string) {
+function fakeHass(newWatch: string, opts: { pickUser?: boolean; boundUser?: string } = {}) {
   const sent: Record<string, unknown>[] = [];
   const store = new Map<string, WatchConfigRecord>();
   const hass = {
-    user: { is_admin: true },
+    user: { id: "root", is_admin: true, name: "Jesse" },
     states: {},
     connection: {
       async sendMessagePromise(msg: Record<string, unknown>): Promise<unknown> {
@@ -79,7 +79,16 @@ function fakeHass(newWatch: string) {
           return { revision: next.revision };
         }
         if (type.endsWith("/lookup")) {
-          return { found: true, watch_id: newWatch, device_name: "New Watch", expires_in: 300, already_paired: false, paired_by_other_user: false };
+          // Only an integration whose confirm takes a user sends `bound_user_id`.
+          const bound = opts.pickUser ? { bound_user_id: opts.boundUser ?? null } : {};
+          return { found: true, watch_id: newWatch, device_name: "New Watch", expires_in: 300, already_paired: false, paired_by_other_user: false, ...bound };
+        }
+        if (type === "config/auth/list") {
+          return [
+            { id: "sup", name: "Supervisor", is_active: true, system_generated: true },
+            { id: "chen", name: "Chen", is_active: true, system_generated: false },
+            { id: "root", name: "Jesse", is_active: true, system_generated: false },
+          ];
         }
         if (type.endsWith("/confirm")) return { ok: true, watch_id: newWatch, device_name: "New Watch", result: "new" };
         throw Object.assign(new Error("unknown"), { code: "unknown_command" });
@@ -98,7 +107,9 @@ interface Inside {
   edits: ReadonlyMap<string, unknown>;
   note?: { kind: string; text: string };
   confirm?: { label: string; run: () => void };
-  pair: { code: string; found?: Record<string, unknown> };
+  pair: { code: string; found?: Record<string, unknown>; users?: readonly { id: string; label: string }[]; userId?: string; done?: string };
+  setPairCode(raw: string): string;
+  pickPairUser(userId: string): void;
   edit(setting: CatalogSetting, value: unknown): void;
   askDiscard(): void;
   lookUpPair(): Promise<void>;
@@ -120,8 +131,8 @@ describe("Watch settings as a page under the Watch app row", () => {
   const WATCHES = [owner("w1", "Jesse's Watch"), owner("w2", "Chen's Watch")];
   const wrap = setting("wrapPages");
 
-  async function page(current = "w2", list: readonly OwnerSummary[] = WATCHES) {
-    const ha = fakeHass("w3");
+  async function page(current = "w2", list: readonly OwnerSummary[] = WATCHES, hassOpts: Parameters<typeof fakeHass>[1] = {}) {
+    const ha = fakeHass("w3", hassOpts);
     let owners: OwnerSummary[] = [...list];
     const paired: string[] = [];
     const host = {
@@ -267,6 +278,58 @@ describe("Watch settings as a page under the Watch app row", () => {
     expect(opened.inside.ownerId).toBe("w3");
     expect(opened.ha.sent.some((m) => String(m.type).endsWith("/confirm"))).toBe(true);
     expect(keptSettingsDraft("w2")?.edits.get("wrapPages")).toBe(!wrap.default);
+  });
+
+  describe("whose watch it is", () => {
+    const confirms = (sent: Record<string, unknown>[]) => sent.filter((m) => String(m.type).endsWith("/confirm"));
+
+    async function lookedUp(hassOpts: Parameters<typeof fakeHass>[1]) {
+      const opened = await page("w2", WATCHES, hassOpts);
+      opened.inside.setPairCode("ABCDEF");
+      await opened.inside.lookUpPair();
+      return opened;
+    }
+
+    it("asks, the administrator first and chosen, and pairs for the person picked", async () => {
+      const { inside, ha, text } = await lookedUp({ pickUser: true });
+      const shown = text();
+      expect(shown).toContain("Whose watch is this?");
+      expect(shown).toContain("Jesse (you)");
+      expect(shown).toContain(">Chen</option>");
+      expect(shown).not.toContain("Supervisor");
+      expect(shown).toContain("their iPhone gets its Fast alerts");
+      expect(shown.indexOf("Jesse (you)")).toBeLessThan(shown.indexOf(">Chen<"));
+      expect(inside.pair.userId).toBe("root");
+
+      inside.pickPairUser("chen");
+      await inside.confirmPair();
+      const confirm = confirms(ha.sent)[0]!;
+      expect(confirm.user_id).toBe("chen");
+      expect(inside.pair.done).toBe("Paired New Watch for Chen.");
+    });
+
+    it("sends no user when the administrator keeps themself", async () => {
+      const { inside, ha } = await lookedUp({ pickUser: true });
+      await inside.confirmPair();
+      const confirm = confirms(ha.sent)[0]!;
+      expect("user_id" in confirm).toBe(false);
+      expect(inside.pair.done).toBe("Paired New Watch.");
+    });
+
+    it("starts on the person a known watch already belongs to", async () => {
+      const { inside, ha } = await lookedUp({ pickUser: true, boundUser: "chen" });
+      expect(inside.pair.userId).toBe("chen");
+      await inside.confirmPair();
+      expect(confirms(ha.sent)[0]!.user_id).toBe("chen");
+    });
+
+    it("leaves the question out for an integration whose confirm takes no user", async () => {
+      const { inside, ha, text } = await lookedUp({});
+      expect(text()).not.toContain("Whose watch is this?");
+      expect(ha.sent.some((m) => m.type === "config/auth/list")).toBe(false);
+      await inside.confirmPair();
+      expect("user_id" in confirms(ha.sent)[0]!).toBe(false);
+    });
   });
 
   it("pairs the first watch of a home with none, which then becomes the panel's watch", async () => {

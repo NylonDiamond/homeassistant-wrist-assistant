@@ -48,6 +48,10 @@ import {
   pairLookupWarnings,
   pairRemoteWarning,
   pairRequestLine,
+  PAIR_USER_TITLE,
+  pairDefaultUser,
+  pairUserChoices,
+  pairUserToSend,
   pairedText,
   savedByWords,
   sectionRuns,
@@ -502,6 +506,47 @@ describe("pairing a watch by its code", () => {
     expect(pairedText("Apple Watch Series 11")).toBe("Paired Apple Watch Series 11.");
     expect(pairedText(null)).toBe("Paired Apple Watch.");
     expect(pairedText(" ")).toBe("Paired Apple Watch.");
+    expect(pairedText("Chen's Watch", "Chen")).toBe("Paired Chen's Watch for Chen.");
+    expect(pairedText(null, " ")).toBe("Paired Apple Watch.");
+  });
+
+  const USERS = [
+    { id: "sup", name: "Supervisor", is_active: true, system_generated: true },
+    { id: "pat", name: "Pat", is_active: true, system_generated: false },
+    { id: "root", name: "Jesse", is_active: true, system_generated: false },
+    { id: "old", name: "Old Account", is_active: false, system_generated: false },
+    { id: "chen", name: "Chen", is_active: true, system_generated: false },
+    { id: "nameless", name: " ", username: "guest", is_active: true },
+  ];
+
+  it("offers active people only, the administrator first, then the rest by name", () => {
+    expect(pairUserChoices(USERS, "root")).toEqual([
+      { id: "root", label: "Jesse (you)" },
+      { id: "chen", label: "Chen" },
+      { id: "nameless", label: "guest" },
+      { id: "pat", label: "Pat" },
+    ]);
+    // An administrator missing from the list is no reason to offer nobody.
+    expect(pairUserChoices(USERS, "gone").map((c) => c.id)).toEqual(["chen", "nameless", "root", "pat"]);
+    expect(PAIR_USER_TITLE).toBe("Whose watch is this?");
+  });
+
+  it("starts on the user a known watch is bound to, else the administrator", () => {
+    const choices = pairUserChoices(USERS, "root");
+    expect(pairDefaultUser(choices, "root", null)).toBe("root");
+    expect(pairDefaultUser(choices, "root", undefined)).toBe("root");
+    expect(pairDefaultUser(choices, "root", "chen")).toBe("chen");
+    // Bound to someone no longer offered (deactivated): the administrator.
+    expect(pairDefaultUser(choices, "root", "old")).toBe("root");
+    expect(pairDefaultUser(pairUserChoices(USERS, "gone"), "gone", null)).toBe("chen");
+    expect(pairDefaultUser([], "root", null)).toBeUndefined();
+  });
+
+  it("sends a user only when it is not the administrator at the card", () => {
+    expect(pairUserToSend("chen", "root")).toBe("chen");
+    expect(pairUserToSend("root", "root")).toBeUndefined();
+    expect(pairUserToSend(undefined, "root")).toBeUndefined();
+    expect(pairUserToSend("chen", undefined)).toBe("chen");
   });
 
   it("asks for a newer integration when the command is unknown, else gives the message", () => {

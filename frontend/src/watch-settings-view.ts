@@ -39,6 +39,7 @@ import {
   type WatchConfigRecord,
   confirmPairCode,
   fetchWatchConfig,
+  listHaUsers,
   lookupPairCode,
   saveWatchConfig,
 } from "./ha-api.js";
@@ -53,6 +54,9 @@ import {
   COLLECTED_PILL_TEXT,
   PAIR_CODE_LENGTH,
   PAIR_NOT_FOUND_TEXT,
+  PAIR_USER_HINT,
+  PAIR_USER_TITLE,
+  type PairUserChoice,
   SETTINGS_NO_RECORD_TEXT,
   SETTINGS_PAIR_FIRST_TEXT,
   SETTINGS_START_BUTTON,
@@ -79,6 +83,9 @@ import {
   pairLookupWarnings,
   pairRemoteWarning,
   pairRequestLine,
+  pairDefaultUser,
+  pairUserChoices,
+  pairUserToSend,
   pairedText,
   savedByWords,
   sectionRuns,
@@ -170,6 +177,12 @@ interface PairState {
   code: string;
   /** The watch waiting on `code`, once looked up. */
   found?: PairLookupFound & { code: string };
+  /** Who the watch can be paired for, read with the lookup. Undefined when
+   * the integration's confirm takes no user, or the list could not be read:
+   * the watch is then paired for the administrator at the card. */
+  users?: readonly PairUserChoice[];
+  /** The user picked in "Whose watch is this?". */
+  userId?: string;
   notFound?: boolean;
   busy?: "lookup" | "confirm";
   error?: string;
@@ -708,7 +721,19 @@ export class WatchSettings implements ReactiveController {
     try {
       const reply = await lookupPairCode(hass, code);
       if (seq !== this.pairSeq) return;
-      this.pair = reply.found ? { code, found: { ...reply, code } } : { code, notFound: true };
+      if (!reply.found) {
+        this.pair = { code, notFound: true };
+        return;
+      }
+      const users = "bound_user_id" in reply ? await this.pairUsers(hass) : undefined;
+      if (seq !== this.pairSeq) return;
+      const adminId = hass.user?.id;
+      this.pair = {
+        code,
+        found: { ...reply, code },
+        users,
+        userId: users === undefined ? undefined : pairDefaultUser(users, adminId, reply.bound_user_id),
+      };
     } catch (err) {
       if (seq !== this.pairSeq) return;
       this.pair = { code, error: pairErrorText(err, "lookup") };
@@ -719,20 +744,38 @@ export class WatchSettings implements ReactiveController {
     }
   }
 
+  /** Who a watch can be paired for. A list that cannot be read leaves the
+   * menu out, and the watch is paired for the administrator as before. */
+  private async pairUsers(hass: HassLike): Promise<readonly PairUserChoice[] | undefined> {
+    try {
+      return pairUserChoices(await listHaUsers(hass), hass.user?.id);
+    } catch {
+      return undefined;
+    }
+  }
+
+  private pickPairUser(userId: string): void {
+    this.pair = { ...this.pair, userId, error: undefined };
+    this.changed();
+  }
+
   private async confirmPair(): Promise<void> {
     const hass = this.hass;
     const found = this.pair.found;
     if (!hass || this.pair.busy || found === undefined) return;
     const visit = this.visit;
+    const { users, userId } = this.pair;
     this.pair = { ...this.pair, busy: "confirm", error: undefined };
     this.changed();
     let paired: { watchId: string } | undefined;
     try {
-      const reply = await confirmPairCode(hass, found.code);
+      const sent = pairUserToSend(userId, hass.user?.id);
+      const reply = await confirmPairCode(hass, found.code, sent);
       paired = { watchId: reply.watch_id };
       if (visit === this.visit) {
         this.pairSeq++;
-        this.pair = { code: "", done: pairedText(reply.device_name ?? found.device_name) };
+        const whom = sent === undefined ? undefined : users?.find((u) => u.id === sent)?.label;
+        this.pair = { code: "", done: pairedText(reply.device_name ?? found.device_name, whom) };
       }
     } catch (err) {
       if (visit === this.visit) {
@@ -741,7 +784,7 @@ export class WatchSettings implements ReactiveController {
         // the Pair button, or was confirmed somewhere else meanwhile.
         this.pair = errorCode(err) === "unknown_code"
           ? { code: found.code, notFound: true }
-          : { code: found.code, found, error: pairErrorText(err, "confirm") };
+          : { code: found.code, found, users, userId, error: pairErrorText(err, "confirm") };
       }
     } finally {
       if (visit === this.visit) this.pair = { ...this.pair, busy: undefined };
@@ -1152,6 +1195,7 @@ export class WatchSettings implements ReactiveController {
           </div>
           ${this.renderPairRequest(found)}
           ${pairLookupWarnings(found).map((line) => html`<div class="hint warn">${line}</div>`)}
+          ${this.renderPairUser(p)}
           <button class="small primary ws-pair-go" ?disabled=${p.busy !== undefined}
             title="Give this watch its key, so it can read from Home Assistant without an iPhone"
             @click=${() => void this.confirmPair()}>${p.busy === "confirm" ? "Pairing…" : "Pair"}</button>`}
@@ -1160,6 +1204,21 @@ export class WatchSettings implements ReactiveController {
         ${p.error ? html`<div class="hint err" role="alert">${p.error}</div>` : nothing}
       </div>
     </section>`;
+  }
+
+  /** "Whose watch is this?": the Home Assistant users, the administrator at
+   * the card first. Left out with one person to choose from, or when the
+   * integration's confirm takes no user. */
+  private renderPairUser(p: PairState) {
+    const users = p.users;
+    if (users === undefined || users.length < 2) return nothing;
+    const picked = p.userId ?? users[0]?.id ?? "";
+    return html`<label class="field ws-pair-user"><span>${PAIR_USER_TITLE}</span>
+        <select .value=${live(picked)} ?disabled=${p.busy !== undefined}
+          @change=${(e: Event) => this.pickPairUser((e.target as HTMLSelectElement).value)}>
+          ${users.map((u) => html`<option value=${u.id} ?selected=${u.id === picked}>${u.label}</option>`)}
+        </select></label>
+      <div class="hint keep">${PAIR_USER_HINT}</div>`;
   }
 
   /** Under the watch line: when and from where it asked, and a warning when

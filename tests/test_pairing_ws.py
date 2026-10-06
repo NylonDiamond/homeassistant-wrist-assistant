@@ -29,6 +29,13 @@ WATCH = "watch-code-1"
 ROOT = _User("root", is_admin=True)
 
 
+def _gone(user_id: str, *, is_active: bool = True, system_generated: bool = False) -> _User:
+    user = _User(user_id)
+    user.is_active = is_active
+    user.system_generated = system_generated
+    return user
+
+
 class _Marker:
     def __init__(self, *args: object, **kwargs: object) -> None:
         self.args = args
@@ -84,6 +91,7 @@ def env():
             async_register_command=lambda hass, func: None,
             require_admin=lambda func: func,
             websocket_command=lambda schema: (lambda func: func),
+            async_response=lambda func: func,
         )
         _stub("homeassistant.helpers.device_registry", async_get=lambda _hass: registry)
         _stub("voluptuous", Required=_Marker, Optional=_Marker)
@@ -101,7 +109,22 @@ def env():
         asyncio.run(secret_store.async_load())
         clock = _Clock()
         pair_store = pair_mod.PairRequestStore(clock=clock)
+        users = {
+            user.id: user
+            for user in (
+                ROOT,
+                _User("chen"),
+                _User("pat", is_admin=True),
+                _gone("retired", is_active=False),
+                _gone("supervisor", system_generated=True),
+            )
+        }
+
+        async def async_get_user(user_id: str) -> _User | None:
+            return users.get(user_id)
+
         hass = types.SimpleNamespace(
+            auth=types.SimpleNamespace(async_get_user=async_get_user),
             data={
                 DOMAIN: types.SimpleNamespace(
                     widget_secret_store=secret_store, pair_request_store=pair_store
@@ -138,7 +161,9 @@ def _pending(env, secret: str = SECRET_A, remote: str | None = None, **extra: An
 
 def _call(env, command, user: _User = ROOT, **msg) -> _Connection:
     connection = _Connection(user)
-    command(env.hass, connection, {"id": 1, **msg})
+    outcome = command(env.hass, connection, {"id": 1, **msg})
+    if asyncio.iscoroutine(outcome):
+        asyncio.run(outcome)
     return connection
 
 
@@ -175,6 +200,7 @@ def test_lookup_finds_a_code_as_typed(env) -> None:
         "age_seconds": 30,
         "already_paired": False,
         "paired_by_other_user": False,
+        "bound_user_id": None,
     }
     # Looking up changes nothing.
     assert env.pair_store.get(pending.code) is pending
@@ -205,6 +231,7 @@ def test_lookup_warns_about_a_watch_paired_by_someone_else(env) -> None:
     result = _ok(env, env.ws.ws_pair_lookup, code=pending.code)
     assert result["already_paired"] is True
     assert result["paired_by_other_user"] is True
+    assert result["bound_user_id"] == "bob"
 
 
 def test_lookup_of_a_watch_this_user_paired_is_only_already_paired(env) -> None:
@@ -221,7 +248,13 @@ def test_lookup_of_a_watch_this_user_paired_is_only_already_paired(env) -> None:
 def test_confirm_pairs_a_new_watch_bound_to_the_admin(env) -> None:
     pending = _pending(env)
     result = _ok(env, env.ws.ws_pair_confirm, code=pending.code.lower())
-    assert result == {"ok": True, "watch_id": WATCH, "device_name": "Test Watch", "result": "new"}
+    assert result == {
+        "ok": True,
+        "watch_id": WATCH,
+        "device_name": "Test Watch",
+        "result": "new",
+        "user_id": "root",
+    }
 
     entry = env.secret_store.get(WATCH)
     assert entry.secret_b64 == SECRET_A
@@ -326,6 +359,81 @@ def test_a_non_admin_cannot_take_another_user_s_watch(env) -> None:
     assert code == "paired_by_other_user"
     assert env.secret_store.get(WATCH).secret_b64 == SECRET_B
     assert env.pair_store.get(pending.code) is pending
+
+
+# ── whose watch it is ────────────────────────────────────────────────────
+
+
+def test_confirm_binds_the_user_the_admin_picked(env) -> None:
+    pending = _pending(env)
+    result = _ok(env, env.ws.ws_pair_confirm, code=pending.code, user_id="chen")
+    assert result["user_id"] == "chen"
+    entry = env.secret_store.get(WATCH)
+    assert entry.user_id == "chen"
+    assert entry.owner_iphone_id is None
+    assert len(env.pair_store) == 0
+
+
+def test_confirm_may_pick_another_admin(env) -> None:
+    _ok(env, env.ws.ws_pair_confirm, code=_pending(env).code, user_id="pat")
+    assert env.secret_store.get(WATCH).user_id == "pat"
+
+
+def test_confirm_without_a_user_binds_the_confirming_admin(env) -> None:
+    """An older panel sends no user_id; it keeps working as before."""
+    result = _ok(env, env.ws.ws_pair_confirm, code=_pending(env).code)
+    assert result["user_id"] == "root"
+    assert env.secret_store.get(WATCH).user_id == "root"
+
+
+def test_naming_oneself_is_the_same_as_naming_no_one(env) -> None:
+    _ok(env, env.ws.ws_pair_confirm, code=_pending(env).code, user_id="root")
+    assert env.secret_store.get(WATCH).user_id == "root"
+
+
+@pytest.mark.parametrize("user_id", ["nobody", "retired", "supervisor", ""])
+def test_confirm_refuses_a_missing_inactive_or_system_user(env, user_id: str) -> None:
+    pending = _pending(env)
+    code, message = _error(env, env.ws.ws_pair_confirm, code=pending.code, user_id=user_id)
+    assert code == "invalid_user"
+    assert "active Home Assistant user" in message
+    # Nothing written, and the code still works for a corrected pick.
+    assert env.secret_store.all_watch_ids == []
+    assert env.logbook == []
+    assert env.pair_store.get(pending.code) is pending
+    _ok(env, env.ws.ws_pair_confirm, code=pending.code, user_id="chen")
+    assert env.secret_store.get(WATCH).user_id == "chen"
+
+
+def test_a_non_admin_cannot_pick_another_user(env) -> None:
+    """Unreachable behind require_admin; pinned with the gate stubbed open."""
+    pending = _pending(env)
+    connection = _call(
+        env, env.ws.ws_pair_confirm, user=_User("chen"), code=pending.code, user_id="root"
+    )
+    [(_id, code, _message)] = connection.errors
+    assert code == "unauthorized"
+    assert env.secret_store.all_watch_ids == []
+    assert env.pair_store.get(pending.code) is pending
+
+
+def test_a_pick_that_moves_a_watch_is_logged_with_both_users(env, caplog) -> None:
+    env.secret_store.register(WATCH, SECRET_B, "watch-self-provision", user_id="root")
+    with caplog.at_level(logging.WARNING, logger=env.ws.__name__):
+        _ok(env, env.ws.ws_pair_confirm, code=_pending(env).code, user_id="chen")
+    [warning] = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert "from user root to user chen" in warning.getMessage()
+    assert env.secret_store.get(WATCH).user_id == "chen"
+
+
+def test_re_pairing_for_the_user_it_is_bound_to_warns_nothing(env, caplog) -> None:
+    env.secret_store.register(WATCH, SECRET_B, "watch-self-provision", user_id="chen")
+    lookup = _ok(env, env.ws.ws_pair_lookup, code=_pending(env).code)
+    assert lookup["bound_user_id"] == "chen"
+    with caplog.at_level(logging.WARNING, logger=env.ws.__name__):
+        _ok(env, env.ws.ws_pair_confirm, code=_pending(env).code, user_id="chen")
+    assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
+    assert env.secret_store.get(WATCH).user_id == "chen"
 
 
 # ── not loaded ───────────────────────────────────────────────────────────

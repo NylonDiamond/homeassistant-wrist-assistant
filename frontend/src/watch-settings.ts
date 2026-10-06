@@ -546,9 +546,67 @@ export function pairRemoteWarning(remote: string | null | undefined): string | u
   return PAIR_REMOTE_WARNING_TEXT;
 }
 
-/** What the card says once a watch is paired. */
-export function pairedText(deviceName: string | null | undefined): string {
-  return `Paired ${present(deviceName) ?? "Apple Watch"}.`;
+/** What the card says once a watch is paired, naming the person when it was
+ * paired for someone other than the administrator at the card. */
+export function pairedText(deviceName: string | null | undefined, forWhom?: string): string {
+  const whom = present(forWhom);
+  return `Paired ${present(deviceName) ?? "Apple Watch"}${whom === undefined ? "" : ` for ${whom}`}.`;
+}
+
+/** The title of the card's user menu. */
+export const PAIR_USER_TITLE = "Whose watch is this?";
+
+/** The line under the user menu: what the answer decides. */
+export const PAIR_USER_HINT = "The watch runs with this person's rights, and their iPhone gets its Fast alerts.";
+
+/** The user fields the menu reads, as `config/auth/list` reports them. */
+export interface PairUserFacts {
+  id: string;
+  name?: string | null;
+  username?: string | null;
+  is_active?: boolean;
+  system_generated?: boolean;
+}
+
+/** One entry in the "Whose watch is this?" menu. */
+export interface PairUserChoice {
+  id: string;
+  label: string;
+}
+
+/** The people a watch can be paired for: active users Home Assistant did not
+ * make for itself (the server refuses the others), the administrator at the
+ * card first as "Name (you)", then the rest by name. */
+export function pairUserChoices(users: readonly PairUserFacts[], adminId: string | undefined): PairUserChoice[] {
+  const people = users.filter((u) => u.is_active !== false && u.system_generated !== true);
+  const label = (u: PairUserFacts) => present(u.name) ?? present(u.username) ?? u.id;
+  const you = people.filter((u) => u.id === adminId).map((u) => ({ id: u.id, label: `${label(u)} (you)` }));
+  const rest = people
+    .filter((u) => u.id !== adminId)
+    .map((u) => ({ id: u.id, label: label(u) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  return [...you, ...rest];
+}
+
+/** Who the menu starts on: the user a known watch is bound to, so pairing it
+ * again does not quietly hand it to the administrator, else the
+ * administrator, else the first choice. */
+export function pairDefaultUser(
+  choices: readonly PairUserChoice[],
+  adminId: string | undefined,
+  boundUserId: string | null | undefined,
+): string | undefined {
+  const has = (id: string | null | undefined) => id != null && choices.some((c) => c.id === id);
+  if (has(boundUserId)) return boundUserId ?? undefined;
+  if (has(adminId)) return adminId;
+  return choices[0]?.id;
+}
+
+/** The `user_id` the confirm sends: none for the administrator at the card,
+ * which is the server's default and the only form an older integration
+ * takes. */
+export function pairUserToSend(picked: string | undefined, adminId: string | undefined): string | undefined {
+  return picked === undefined || picked === adminId ? undefined : picked;
 }
 
 /** The card's line for a refusal. An integration from before pairing does
