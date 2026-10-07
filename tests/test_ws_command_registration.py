@@ -15,12 +15,13 @@ templates, a watch's whole page config, or what a watch waiting to pair
 reported. The exceptions, at most one per module, are listed in
 ``_NOT_ADMIN``.
 
-Five modules hold commands: ``complication_ws.py`` (the editor),
+Six modules hold commands: ``complication_ws.py`` (the editor),
 ``watch_config_ws.py`` (the Watch settings view and the page editor),
 ``pairing_ws.py`` (confirming a watch's pairing code),
-``http_actions_ws.py`` (the home's HTTP action library) and
-``page_images_ws.py`` (the home's page photos). Each is checked on its own,
-since each has its own registration function.
+``http_actions_ws.py`` (the home's HTTP action library),
+``page_images_ws.py`` (the home's page photos) and
+``camera_framing_ws.py`` (the cameras' notification framing). Each is
+checked on its own, since each has its own registration function.
 """
 
 from __future__ import annotations
@@ -36,6 +37,7 @@ _WATCH_CONFIG_MODULE = _PKG / "watch_config_ws.py"
 _PAIRING_MODULE = _PKG / "pairing_ws.py"
 _HTTP_ACTIONS_MODULE = _PKG / "http_actions_ws.py"
 _PAGE_IMAGES_MODULE = _PKG / "page_images_ws.py"
+_CAMERA_FRAMING_MODULE = _PKG / "camera_framing_ws.py"
 
 # The Watch settings view's and the page editor's commands. Admin-only like
 # every other: history_entry hands out a whole past document, and restore
@@ -74,6 +76,14 @@ _PAGE_IMAGES_ADMIN_ONLY = {
     "ws_page_images_get",
     "ws_page_images_upload",
     "ws_page_images_delete",
+}
+
+# The panel's camera framing screen. A save changes what every alert of a
+# camera shows, and a test sends a real alert. Admin only.
+_CAMERA_FRAMING_ADMIN_ONLY = {
+    "ws_cameras_list",
+    "ws_cameras_save",
+    "ws_cameras_test",
 }
 
 # Every command this module defines. All of them are admin-only; the set is
@@ -118,6 +128,7 @@ _NOT_ADMIN = {
     _PAIRING_MODULE.name: set(),
     _HTTP_ACTIONS_MODULE.name: set(),
     _PAGE_IMAGES_MODULE.name: set(),
+    _CAMERA_FRAMING_MODULE.name: set(),
 }
 
 
@@ -127,6 +138,7 @@ _MODULES = [
     _PAIRING_MODULE,
     _HTTP_ACTIONS_MODULE,
     _PAGE_IMAGES_MODULE,
+    _CAMERA_FRAMING_MODULE,
 ]
 # Per module: the commands it must define, and which of them skip the gate.
 _EXPECTED = {
@@ -143,6 +155,10 @@ _EXPECTED = {
     _PAGE_IMAGES_MODULE.name: (
         _PAGE_IMAGES_ADMIN_ONLY,
         _NOT_ADMIN[_PAGE_IMAGES_MODULE.name],
+    ),
+    _CAMERA_FRAMING_MODULE.name: (
+        _CAMERA_FRAMING_ADMIN_ONLY,
+        _NOT_ADMIN[_CAMERA_FRAMING_MODULE.name],
     ),
 }
 
@@ -264,6 +280,11 @@ def test_the_http_actions_commands_are_registered_at_setup() -> None:
 def test_the_page_images_commands_are_registered_at_setup() -> None:
     source = (_PKG / "__init__.py").read_text()
     assert "async_register_page_images_commands(hass)" in source
+
+
+def test_the_camera_framing_commands_are_registered_at_setup() -> None:
+    source = (_PKG / "__init__.py").read_text()
+    assert "async_register_camera_framing_commands(hass)" in source
 
 
 def test_the_page_images_capability_is_advertised() -> None:

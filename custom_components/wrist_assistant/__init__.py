@@ -33,6 +33,7 @@ from .api import DeltaCoordinator
 from .apns_client import APNsClient
 from .batch_snapshot_settings_store import BatchSnapshotSettingsStore
 from .camera_devices import resolve_stream_sibling
+from .camera_framing_ws import async_register_camera_framing_commands
 from .camera_stream import (
     CameraStreamCoordinator,
     capture_notification_snapshot,
@@ -983,6 +984,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         async_register_http_actions_commands(hass)
         # The panel's page photos: list, fetch, upload, delete (admin only).
         async_register_page_images_commands(hass)
+        # The panel's camera framing: list, save, send a test (admin only).
+        async_register_camera_framing_commands(hass)
         # v2 transport: /v2/* HMAC for all watch traffic. A pair comes from
         # the iPhone's sign-in through WARegisterSecretView (bearer), or from
         # a code the watch gets from WAPairStartView (no auth, stores only a

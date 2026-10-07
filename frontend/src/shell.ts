@@ -14,6 +14,8 @@
 //                       the Watch app, as before
 //   /http-actions       the home's HTTP actions, shared by every watch, so
 //                       the address never names one
+//   /cameras            how each camera is framed in alerts, the camera's
+//                       own and shared likewise
 //   /settings, with an optional /<owner_watch_id>
 //                       the Watch app's Settings page
 //
@@ -25,6 +27,7 @@
 
 import { css, html, nothing, type TemplateResult } from "lit";
 import { uiIcon } from "./ui-icons.js";
+import { WATCH_CAMERAS_PATH, isWatchCamerasRoute } from "./watch-cameras/hook.js";
 import { WATCH_CONTROL_CENTER_PATH, isWatchControlCenterRoute } from "./watch-control-center/hook.js";
 import { WATCH_HTTP_ACTIONS_PATH, isWatchHttpActionsRoute } from "./watch-http-actions/hook.js";
 import { WATCH_MENUS_PATH, isWatchMenusRoute } from "./watch-menus/hook.js";
@@ -49,7 +52,7 @@ export const TAB_LABEL: Record<PanelTab, string> = {
 /** One of the watch app's screens, as Home lists them and the watch row
  * walks them. */
 export interface WatchScreen {
-  id: "pages" | "menus" | "status-pages" | "control-center" | "rooms" | "voice" | "http-actions" | "settings";
+  id: "pages" | "menus" | "status-pages" | "control-center" | "rooms" | "voice" | "http-actions" | "cameras" | "settings";
   label: string;
   /** One line under the name on Home. */
   blurb: string;
@@ -68,12 +71,13 @@ export const WATCH_SCREENS: readonly WatchScreen[] = [
   { id: "rooms", label: "Rooms", blurb: "Switch pages by room, and point control", path: WATCH_ROOMS_PATH },
   { id: "voice", label: "Voice", blurb: "How voice commands work", path: WATCH_VOICE_PATH },
   { id: "http-actions", label: "HTTP actions", blurb: "Web requests Home Assistant sends for a watch", path: WATCH_HTTP_ACTIONS_PATH, shared: true },
+  { id: "cameras", label: "Cameras", blurb: "How each camera is framed in alerts", path: WATCH_CAMERAS_PATH, shared: true },
 ];
 
 /** The Settings page: a screen of the Watch app with an address like the
  * others, kept out of `WATCH_SCREENS` because Home lists it on its own (its
  * Devices card, and the pairing card in a home with no watch) and the row
- * draws it last, apart from the seven. */
+ * draws it last, apart from the eight. */
 export const WATCH_SETTINGS_SCREEN: WatchScreen = {
   id: "settings", label: "Settings", blurb: "How the watch behaves", path: WATCH_SETTINGS_PATH,
 };
@@ -94,6 +98,7 @@ export function watchScreenOf(route: PanelRoute | undefined): WatchScreen | unde
   if (isWatchRoomsRoute(route)) return WATCH_SCREENS[4];
   if (isWatchVoiceRoute(route)) return WATCH_SCREENS[5];
   if (isWatchHttpActionsRoute(route)) return WATCH_SCREENS[6];
+  if (isWatchCamerasRoute(route)) return WATCH_SCREENS[7];
   if (isWatchSettingsRoute(route)) return WATCH_SETTINGS_SCREEN;
   return undefined;
 }
@@ -112,7 +117,7 @@ export function tabOfRoute(route: PanelRoute | undefined): PanelTab {
 }
 
 /** The screen a route shows, as the leave question counts screens: one of
- * the Watch app's eight, or the Home or Complications tab. The watch an
+ * the Watch app's nine, or the Home or Complications tab. The watch an
  * address names, and anything after it, is not part of it. */
 export function screenIdOf(route: PanelRoute | undefined): WatchScreen["id"] | "home" | "complications" {
   return watchScreenOf(route)?.id ?? (tabOfRoute(route) as "home" | "complications");
@@ -136,7 +141,7 @@ export function tabsFor(admin: boolean): PanelTab[] {
  * the first one in it and everything after. */
 const SUB_PATH = new RegExp(`(${[
   COMPLICATIONS_PATH, WATCH_PAGES_PATH, WATCH_MENUS_PATH, WATCH_VOICE_PATH,
-  WATCH_STATUS_PAGES_PATH, WATCH_CONTROL_CENTER_PATH, WATCH_ROOMS_PATH, WATCH_HTTP_ACTIONS_PATH, WATCH_SETTINGS_PATH,
+  WATCH_STATUS_PAGES_PATH, WATCH_CONTROL_CENTER_PATH, WATCH_ROOMS_PATH, WATCH_HTTP_ACTIONS_PATH, WATCH_CAMERAS_PATH, WATCH_SETTINGS_PATH,
 ].join("|")})(/.*)?$`);
 
 /** The panel's own address without any tab's sub-path. Without a route (a

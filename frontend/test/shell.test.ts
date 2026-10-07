@@ -25,6 +25,7 @@ import {
   watchScreenPath,
 } from "../src/shell.js";
 import { watchControlCenterRouteOwner } from "../src/watch-control-center/hook.js";
+import { WATCH_CAMERAS_PATH } from "../src/watch-cameras/hook.js";
 import { WATCH_HTTP_ACTIONS_PATH } from "../src/watch-http-actions/hook.js";
 import { watchMenusRouteOwner } from "../src/watch-menus/hook.js";
 import { watchPagesRouteOwner } from "../src/watch-pages/hook.js";
@@ -61,7 +62,7 @@ describe("tabOfRoute", () => {
 
   it("is the Watch app on every watch address the iPhone app builds", () => {
     for (const path of ["/pages", "/pages/w1", "/menus", "/menus/w1", "/voice", "/voice/w1", "/status-pages", "/status-pages/w1",
-      "/control-center", "/control-center/w1", "/rooms", "/rooms/w1", "/http-actions"]) {
+      "/control-center", "/control-center/w1", "/rooms", "/rooms/w1", "/http-actions", "/cameras"]) {
       expect(tabOfRoute(at(path)), path).toBe("watch");
     }
   });
@@ -73,8 +74,8 @@ describe("tabOfRoute", () => {
 });
 
 describe("watch screens", () => {
-  it("lists the seven screens in Home's order", () => {
-    expect(WATCH_SCREENS.map((s) => s.label)).toEqual(["Pages", "Menus", "Status pages", "Control Center", "Rooms", "Voice", "HTTP actions"]);
+  it("lists the eight screens in Home's order", () => {
+    expect(WATCH_SCREENS.map((s) => s.label)).toEqual(["Pages", "Menus", "Status pages", "Control Center", "Rooms", "Voice", "HTTP actions", "Cameras"]);
   });
 
   it("finds the screen a route is on", () => {
@@ -98,13 +99,23 @@ describe("watch screens", () => {
     });
   });
 
-  it("never names a watch in the address of HTTP actions, which every watch shares", () => {
+  it("never names a watch in the address of HTTP actions or Cameras, which every watch shares", () => {
     const shared = WATCH_SCREENS.filter((screen) => screen.shared === true);
-    expect(shared.map((screen) => screen.id)).toEqual(["http-actions"]);
+    expect(shared.map((screen) => screen.id)).toEqual(["http-actions", "cameras"]);
     expect(watchScreenPath(shared[0]!, "w1")).toBe(WATCH_HTTP_ACTIONS_PATH);
-    expect(watchRouteOwner(at(watchScreenPath(shared[0]!, "w1")))).toBeUndefined();
+    expect(watchScreenPath(shared[1]!, "w1")).toBe(WATCH_CAMERAS_PATH);
+    for (const screen of shared) expect(watchRouteOwner(at(watchScreenPath(screen, "w1")))).toBeUndefined();
     expect(watchRouteOwner(at("/http-actions/w1"))).toBeUndefined();
+    expect(watchRouteOwner(at("/cameras/w1"))).toBeUndefined();
     expect(tabOfRoute(at("/http-actions/w1"))).toBe("watch");
+    expect(tabOfRoute(at("/cameras/camera.door"))).toBe("watch");
+  });
+
+  it("lists Cameras last, as a shared screen with its own blurb", () => {
+    expect(WATCH_SCREENS.at(-1)).toEqual({
+      id: "cameras", label: "Cameras", blurb: "How each camera is framed in alerts", path: WATCH_CAMERAS_PATH, shared: true,
+    });
+    expect(watchScreenOf(at("/cameras"))).toBe(WATCH_SCREENS[7]);
   });
 });
 
@@ -141,6 +152,7 @@ describe("addresses", () => {
     expect(panelPrefix(undefined, "/wrist-assistant/pages/w1")).toBe("/wrist-assistant");
     expect(panelPrefix(undefined, "/wrist-assistant/control-center/w%201/x")).toBe("/wrist-assistant");
     expect(panelPrefix(undefined, "/wrist-assistant/http-actions")).toBe("/wrist-assistant");
+    expect(panelPrefix(undefined, "/wrist-assistant/cameras")).toBe("/wrist-assistant");
     expect(panelPrefix(undefined, "/wrist-assistant/pagesx")).toBe("/wrist-assistant/pagesx");
   });
 });
@@ -326,8 +338,8 @@ describe("the screen a route shows, for the leave question", () => {
   it("names each watch screen whatever watch or page follows, and the two other tabs", async () => {
     const { screenIdOf } = await import("../src/shell.js");
     const at = (path: string) => screenIdOf({ prefix: "/wrist-assistant", path });
-    expect(["", "/complications", "/complications/abc", "/pages", "/pages/W1", "/pages/W2/p3", "/menus/W1", "/status-pages", "/control-center/W1", "/rooms", "/voice/W1", "/http-actions", "/settings/W1"].map(at)).toEqual(
-      ["home", "complications", "complications", "pages", "pages", "pages", "menus", "status-pages", "control-center", "rooms", "voice", "http-actions", "settings"],
+    expect(["", "/complications", "/complications/abc", "/pages", "/pages/W1", "/pages/W2/p3", "/menus/W1", "/status-pages", "/control-center/W1", "/rooms", "/voice/W1", "/http-actions", "/cameras", "/settings/W1"].map(at)).toEqual(
+      ["home", "complications", "complications", "pages", "pages", "pages", "menus", "status-pages", "control-center", "rooms", "voice", "http-actions", "cameras", "settings"],
     );
     expect(screenIdOf(undefined)).toBe("home");
   });

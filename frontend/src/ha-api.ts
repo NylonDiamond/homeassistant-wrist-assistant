@@ -766,6 +766,72 @@ export async function testHttpAction(
   });
 }
 
+const CAMERAS = "wrist_assistant/cameras";
+
+/** A camera's crop for alert pictures, as fractions of the full frame. */
+export interface CameraViewport {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** One camera as the list command answers: the device's representative
+ * entity, every entity of that device (a crop is written to all of them),
+ * its crop (null for the full frame), whether the watch opens its live view
+ * zoomed to the crop, and which stream a tap on the alert's picture opens:
+ * the override set here, or else the one Home Assistant detects. */
+export interface CameraFraming {
+  entity_id: string;
+  name: string;
+  all_entity_ids: string[];
+  viewport: CameraViewport | null;
+  open_zoomed: boolean;
+  stream: { override: string | null; auto: string | null };
+  stream_choices: string[];
+}
+
+/** Every camera in the home with its framing. Admin only. An integration
+ * older than the command rejects with the code `unknown_command`. */
+export async function fetchCameras(hass: HassLike) {
+  return hass.connection.sendMessagePromise<{ cameras: CameraFraming[] }>({ type: `${CAMERAS}/list` });
+}
+
+/** What a save sends: the entities to write, the crop (null or the full
+ * frame clears it), and, when given, the zoomed live view and the stream
+ * override (null clears it; left out, it stays as it is). */
+export interface CameraFramingSave {
+  entity_ids: string[];
+  viewport: CameraViewport | null;
+  open_zoomed?: boolean;
+  stream_entity?: string | null;
+}
+
+/** Save one camera's framing. Rejects with a WebSocket error whose code is
+ * `invalid`, `unavailable` or `failed`. Admin only. */
+export async function saveCameraFraming(hass: HassLike, save: CameraFramingSave) {
+  return hass.connection.sendMessagePromise<{ ok: true; count: number }>({ type: `${CAMERAS}/save`, ...save });
+}
+
+/** What a test alert answers: how many devices it went to, and when none,
+ * why (`no_devices`, `no_push_token`, or the server's own words). */
+export interface CameraTestReply {
+  ok: boolean;
+  sent: number;
+  reason?: string;
+}
+
+/** Send a real alert with this camera's picture to the signed in person's
+ * devices. Admin only. */
+export async function sendCameraTest(hass: HassLike, camera: string, title?: string, message?: string) {
+  return hass.connection.sendMessagePromise<CameraTestReply>({
+    type: `${CAMERAS}/test`,
+    camera,
+    ...(title === undefined ? {} : { title }),
+    ...(message === undefined ? {} : { message }),
+  });
+}
+
 /** The voices a watch reported it has installed (`watch_voices_put`), for
  * the voice editor's Watch voice picker: each `{id, name, language,
  * quality}`, and when they came (null when the watch never sent any). Not a

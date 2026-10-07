@@ -92,6 +92,7 @@ export const homeStyles = css`
   .home-card.watch { --c: var(--wa-hue-blue); }
   .home-card.complications { --c: var(--wa-hue-pink); }
   .home-card.devices { --c: var(--wa-hue-grey); }
+  .home-card.icons { --c: var(--wa-hue-orange); }
   .home-card-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; min-width: 0; }
   .home-chip {
     width: 20px; height: 20px; border-radius: 6px; flex: none; display: grid; place-items: center;
@@ -141,6 +142,32 @@ export const homeStyles = css`
   .home-device.waiting .home-device-why { color: var(--wa-muted); font-weight: 400; }
   .home-small { margin: 0; font-size: 11.5px; color: var(--wa-muted); }
   .home-empty { margin: 0; font-size: 13px; color: var(--wa-muted); }
+  /* Icon names (icon-finder.ts). The grid and its tiles are the symbol
+     field's own (.sym-grid, .sym), given more room on a full width card. */
+  .home-card.icons input.icon-search { width: 100%; box-sizing: border-box; }
+  .icon-cats { display: flex; flex-wrap: wrap; gap: 6px; }
+  button.icon-cat {
+    display: inline-flex; align-items: center; gap: 6px; box-sizing: border-box; height: 26px; padding: 0 10px;
+    border-radius: 13px; font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap;
+    color: var(--wa-ink); background: var(--wa-field); border: 1px solid var(--wa-line-strong);
+  }
+  button.icon-cat:hover { background: var(--wa-hover); }
+  button.icon-cat:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  button.icon-cat.on {
+    font-weight: 600; background: var(--wa-seg-on); box-shadow: var(--wa-seg-shadow);
+    border-color: color-mix(in srgb, var(--wa-ink) 34%, var(--wa-card));
+  }
+  .icon-cat-n { color: var(--wa-muted); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .icon-row-label { margin-bottom: -8px; font-size: 11.5px; color: var(--wa-muted); }
+  .home-card.icons .sym-grid { max-height: 360px; }
+  .home-card.icons .sym-grid:not(.one-row) { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
+  .home-card.icons .sym-grid.one-row button.sym { flex-basis: 84px; }
+  .home-card.icons button.sym { padding: 8px 4px; }
+  .home-card.icons .sym-name { font-size: 10px; max-height: 24px; }
+  .icon-copied { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-size: 12.5px; color: var(--wa-ink); }
+  .icon-copied svg.ui-icon { width: 13px; height: 13px; flex: none; color: var(--wa-green); }
+  .icon-copied.failed { color: var(--wa-amber); }
+  .icon-copied code { font-size: 12px; user-select: all; }
   @media (max-width: 900px) {
     .home-pair { grid-template-columns: minmax(0, 1fr); }
     .home-screens { grid-template-columns: repeat(2, minmax(0, 1fr)); }

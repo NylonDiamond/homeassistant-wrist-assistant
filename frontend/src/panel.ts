@@ -141,6 +141,7 @@ import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
 import { type SendState, agoWords, describeHomeSync, describeSend, deviceSyncLabel, homeSync, sendState, sendWaitMs } from "./send-state.js";
 import { homeDeviceRows, homeDevices, homeStyles } from "./home.js";
+import { IconFinderState, renderIconFinder } from "./icon-finder.js";
 import { type WatchAppSync, readWatchAppSync, summaryUnknown, summaryWatchAppSyncs, waitingForText, watchAppSyncKey } from "./watch-app-sync.js";
 import { type PickerForm, type TabMemory, browseAllTab, listPageEscape, listPageLead, listPageShown, listPageState, listPageStyles, listsReady, pickTab, pickerSurfaceClass, restoreTab } from "./list-page.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
@@ -425,6 +426,7 @@ import { dropWatchStatusPagesDrafts, isWatchStatusPagesRoute, renderWatchStatusP
 import { dropWatchControlCenterDrafts, isWatchControlCenterRoute, renderWatchControlCenterView, watchControlCenterDirty, watchControlCenterHookStyles } from "./watch-control-center/hook.js";
 import { dropWatchRoomsDrafts, isWatchRoomsRoute, renderWatchRoomsView, watchRoomsDirty, watchRoomsHookStyles } from "./watch-rooms/hook.js";
 import { dropWatchHttpActionsDrafts, isWatchHttpActionsRoute, renderWatchHttpActionsView, watchHttpActionsDirty } from "./watch-http-actions/hook.js";
+import { dropWatchCamerasDrafts, isWatchCamerasRoute, renderWatchCamerasView, watchCamerasDirty } from "./watch-cameras/hook.js";
 import {
   COMPLICATIONS_PATH, type PanelTab, WATCH_SCREENS, WATCH_SETTINGS_SCREEN, editorKeysLive, isPlainClick, isSaveKey, landingPath, navigatePanel, reopensDesign,
   panelUrl, renderTabBar, screenIdOf, shellStyles, swallowsSaveKey, tabOfRoute, tabPath, watchScreenOf, watchScreenPath,
@@ -2261,6 +2263,8 @@ export class WristAssistantPanel extends LitElement {
   private historySignature = "";
   /** `listItemsRequests().signature` as of the last scheduled refresh. */
   private listSignature = "";
+  /** Home's Icon names card: what is typed, chosen and copied there. */
+  private readonly iconFinder = new IconFinderState();
   private icons: IconProvider = makeIconProvider(() => {
     this.iconsTick++;
     this.requestUpdate();
@@ -6241,7 +6245,7 @@ export class WristAssistantPanel extends LitElement {
    * It cannot offer a Save button; no page can add one to that dialog. The
    * `returnValue` is for Safari, which ignores `preventDefault` here. */
   private beforeUnload = (e: BeforeUnloadEvent) => {
-    if (!this.draft?.dirty && !watchPagesDirty() && !watchMenusDirty() && !watchVoiceDirty() && !watchStatusPagesDirty() && !watchControlCenterDirty() && !watchRoomsDirty() && !watchHttpActionsDirty() && !anyWatchSettingsDirty()) return;
+    if (!this.draft?.dirty && !watchPagesDirty() && !watchMenusDirty() && !watchVoiceDirty() && !watchStatusPagesDirty() && !watchControlCenterDirty() && !watchRoomsDirty() && !watchHttpActionsDirty() && !watchCamerasDirty() && !anyWatchSettingsDirty()) return;
     e.preventDefault();
     e.returnValue = "";
   };
@@ -6259,7 +6263,7 @@ export class WristAssistantPanel extends LitElement {
   private leaveGuard = (e: MouseEvent) => {
     // The watch screens' drafts count too, Watch settings' included: they
     // outlive their routes.
-    if (!this.draft?.dirty && !watchPagesDirty() && !watchMenusDirty() && !watchVoiceDirty() && !watchStatusPagesDirty() && !watchControlCenterDirty() && !watchRoomsDirty() && !watchHttpActionsDirty() && !anyWatchSettingsDirty()) return;
+    if (!this.draft?.dirty && !watchPagesDirty() && !watchMenusDirty() && !watchVoiceDirty() && !watchStatusPagesDirty() && !watchControlCenterDirty() && !watchRoomsDirty() && !watchHttpActionsDirty() && !watchCamerasDirty() && !anyWatchSettingsDirty()) return;
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     const path = e.composedPath();
     if (path.includes(this)) return;
@@ -6275,6 +6279,7 @@ export class WristAssistantPanel extends LitElement {
       dropWatchControlCenterDrafts();
       dropWatchRoomsDrafts();
       dropWatchHttpActionsDrafts();
+      dropWatchCamerasDrafts();
       this.watchSettings.dropKept();
       return;
     }
@@ -6294,6 +6299,7 @@ export class WristAssistantPanel extends LitElement {
       case "rooms": return { dirty: watchRoomsDirty(), drop: dropWatchRoomsDrafts };
       case "voice": return { dirty: watchVoiceDirty(), drop: dropWatchVoiceDrafts };
       case "http-actions": return { dirty: watchHttpActionsDirty(), drop: dropWatchHttpActionsDrafts };
+      case "cameras": return { dirty: watchCamerasDirty(), drop: dropWatchCamerasDrafts };
       case "settings": return { dirty: anyWatchSettingsDirty(), drop: () => this.watchSettings.dropKept() };
       case "complications": return { dirty: this.draft?.dirty === true, drop: () => this.selectNone() };
       default: return undefined;
@@ -10866,6 +10872,14 @@ export class WristAssistantPanel extends LitElement {
     if (isWatchHttpActionsRoute(this.route)) {
       return this.withWatchRow(renderWatchHttpActionsView({
         hass: this.hass, owners: this.owners, narrow: this.narrow, icons: this.icons, iconsTick: this.iconsTick,
+        onLoaded: () => this.requestUpdate(),
+      }));
+    }
+    // Cameras, on `/cameras`: how each camera is framed in alerts, which is
+    // the camera's own in Home Assistant, so it too is handed no watch.
+    if (isWatchCamerasRoute(this.route)) {
+      return this.withWatchRow(renderWatchCamerasView({
+        hass: this.hass, narrow: this.narrow,
         onLoaded: () => this.requestUpdate(),
       }));
     }
@@ -18778,6 +18792,7 @@ export class WristAssistantPanel extends LitElement {
             </div>` : nothing}
           </section>
         </div>
+        ${renderIconFinder({ icons: this.icons, finder: this.iconFinder, requestUpdate: () => this.requestUpdate() })}
         ${recent.length === 0 ? nothing : html`<section class="start-sec home-recent">
           <div class="home-card-head"><h2 class="home-title">Pick up where you left off</h2></div>
           <div class="start-recent">${recent.map((hit) => this.renderStartCard(hit.row, hit.copy, () => {

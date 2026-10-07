@@ -1,10 +1,10 @@
 // The Watch app tab's second row, under the tabs on every watch screen: the
-// shared watch at the left, then the seven screens and Settings, the screen
+// shared watch at the left, then the eight screens and Settings, the screen
 // on show marked. The panel draws it (`renderWatchRow`) and owns its state:
 // the shared watch (`watch-pick.ts`), whether the watch menu is open, and what
 // a pick or a screen does. Settings is a screen with an address like the
-// others. HTTP actions is shared by every watch, so its link never names one
-// and a pick on it changes nothing it shows. What can be worked out without
+// others. HTTP actions and Cameras are shared by every watch, so their links
+// never name one and a pick on them changes nothing they show. What can be worked out without
 // the panel lives here, where a test can reach it.
 //
 // The row is neutral, like the tabs: the screen on show is marked by weight

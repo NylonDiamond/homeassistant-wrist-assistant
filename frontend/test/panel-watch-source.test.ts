@@ -76,12 +76,28 @@ describe("the watch screens under the row", () => {
     expect(call).not.toContain("shell:");
   });
 
-  it("counts HTTP action edits in both leave guards, and drops them on a yes", () => {
+  it("puts Cameras under the row too, handed no watch and no owners, as the framing is the camera's", () => {
+    const at = tab.indexOf("return this.withWatchRow(renderWatchCamerasView({");
+    expect(at).toBeGreaterThan(0);
+    expect(tab.slice(0, at)).toContain("if (isWatchCamerasRoute(this.route)) {");
+    const call = tab.slice(at, tab.indexOf("}));", at));
+    expect(call).toContain("hass: this.hass, narrow: this.narrow,");
+    expect(call).not.toContain("ownerId");
+    expect(call).not.toMatch(/\bwatch\b/);
+    expect(call).not.toContain("shell:");
+    expect(call).not.toContain("menu:");
+    expect(call).not.toContain("onBack");
+  });
+
+  it("counts HTTP action and camera edits in both leave guards, and drops them on a yes", () => {
     const unload = SOURCE.slice(SOURCE.indexOf("  private beforeUnload = "), SOURCE.indexOf("  private leaveGuard = "));
     expect(unload).toContain("!watchHttpActionsDirty()");
+    expect(unload).toContain("!watchCamerasDirty()");
     const guard = SOURCE.slice(SOURCE.indexOf("  private leaveGuard = "), SOURCE.indexOf("\n  };\n", SOURCE.indexOf("  private leaveGuard = ")));
     expect(guard).toContain("!watchHttpActionsDirty()");
     expect(guard).toContain("dropWatchHttpActionsDrafts();");
+    expect(guard).toContain("!watchCamerasDirty()");
+    expect(guard).toContain("dropWatchCamerasDrafts();");
   });
 
   it("asks before a move inside the panel leaves a screen with unsaved work, and drops only that screen's edits on a yes", () => {
@@ -102,6 +118,7 @@ describe("the watch screens under the row", () => {
       `case "rooms": return { dirty: watchRoomsDirty(), drop: dropWatchRoomsDrafts };`,
       `case "voice": return { dirty: watchVoiceDirty(), drop: dropWatchVoiceDrafts };`,
       `case "http-actions": return { dirty: watchHttpActionsDirty(), drop: dropWatchHttpActionsDrafts };`,
+      `case "cameras": return { dirty: watchCamerasDirty(), drop: dropWatchCamerasDrafts };`,
       `case "settings": return { dirty: anyWatchSettingsDirty(), drop: () => this.watchSettings.dropKept() };`,
       `case "complications": return { dirty: this.draft?.dirty === true, drop: () => this.selectNone() };`,
     ]) expect(kept).toContain(line);
