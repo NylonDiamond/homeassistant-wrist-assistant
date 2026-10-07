@@ -12,7 +12,7 @@
 // (`watch-status-pages/status-pages-editor.ts`): watch chips from the owners
 // list, the record read with `watch_config/get` and kept as raw JSON in a
 // draft (`draft.ts`) with undo and redo, a save through `watch_config/save`
-// that merges by entity when the iPhone saved too, the earlier saves with
+// that merges by entity when another save landed too, the earlier saves with
 // restore, the delivery check, and the size budget.
 //
 // A paired watch with no Control Center record yet can start from an empty
@@ -491,7 +491,7 @@ export class WaControlCenterEditor extends LitElement {
     }
     const taken = takeControlCenterRecord(watchId, document, record.revision);
     if (taken.kept.length > 0) this.note = { kind: "warn", text: controlCenterKeptText(taken.kept) };
-    else if (taken.mergedIntoEdits) this.note = { kind: "warn", text: "The Control Center list changed on the iPhone. Your edits are kept." };
+    else if (taken.mergedIntoEdits) this.note = { kind: "warn", text: "The Control Center list changed somewhere else. Your edits are kept." };
     this.requestUpdate();
   }
 
@@ -716,10 +716,10 @@ export class WaControlCenterEditor extends LitElement {
     if (result.ok) {
       this.note = { kind: "ok", text: "Started with an empty list. Add entities, then save; the watch picks them up the next time it checks." };
     } else if (result.code === "no_record") {
-      this.note = { kind: "warn", text: `${CONTROL_CENTER_PAIR_FIRST_TEXT} Watch settings has Pair a watch.` };
+      this.note = { kind: "warn", text: `${CONTROL_CENTER_PAIR_FIRST_TEXT} Go to Watch app, Settings, Pair a watch.` };
       return;
     } else if (result.code === "conflict") {
-      this.note = { kind: "warn", text: "The iPhone sent its Control Center list meanwhile, so that is shown." };
+      this.note = { kind: "warn", text: "A Control Center list arrived meanwhile, so that is shown." };
     } else if (result.code === "unsupported") {
       this.unsupported = true;
       return;
@@ -866,7 +866,7 @@ export class WaControlCenterEditor extends LitElement {
       ${this.renderSyncPill(editing ? draft : undefined)}
       ${this.renderTopMenu(editing ? draft : undefined)}
       ${editing ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
-          title=${dirty ? `Save (${MOD}S). A save reaches the watch the next time it checks, or through the iPhone.` : `Nothing to save (${MOD}S)`}
+          title=${dirty ? `Save (${MOD}S). A save reaches the watch the next time it checks.` : `Nothing to save (${MOD}S)`}
           @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
         <span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record)}</span>` : nothing}
       ${this.barActions}

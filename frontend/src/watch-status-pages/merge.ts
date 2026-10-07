@@ -3,9 +3,10 @@
 // The grain is the page, matched by `id`. A page one side changed since the
 // base (its keys, its rows, or removed) takes that side's version; a page
 // both sides changed, each to something else, takes the server's whole: the
-// incoming copy wins, and the save note names the page. The iPhone runs the
-// same grain with itself as the winning side (`WatchConfigMirror`, merge by
-// page id, the phone's page whole), so the two agree on the phone's version.
+// incoming copy wins, and the save note names the page. The iPhone used to
+// run the same grain with itself as the winning side (`WatchConfigMirror`,
+// merge by page id, the phone's page whole), so the two agreed on the
+// phone's version.
 //
 // Every top-level key but `statusPages` merges by key, the draft's value
 // where the draft changed it. The order of the pages is the draft's when the

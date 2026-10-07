@@ -259,7 +259,7 @@ describe("words", () => {
       onPage: "Kitchen is already on this page.",
       smartPage: "This page fills itself with tiles, so none can be added by hand.",
       systemPage: "This page belongs to the app, so no tiles can be added to it.",
-      noPage: "This page is gone. It may have been deleted on the iPhone.",
+      noPage: "This page is gone. It may have been deleted somewhere else.",
       badItems: "The tiles on this page could not be read, so adding one would lose them.",
     };
     for (const [code, text] of Object.entries(all)) {

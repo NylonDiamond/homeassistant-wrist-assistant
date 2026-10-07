@@ -173,7 +173,7 @@ export const MENU_LINES: Readonly<Record<MenusSection, string>> = {
 };
 
 /** What the editor edits, and when a save arrives: the Menus card's line. */
-export const MENUS_CARD_LINE = "The Anywhere menu, the Entity quick menu and the page switcher. A save reaches the watch the next time it checks, or through the iPhone.";
+export const MENUS_CARD_LINE = "The Anywhere menu, the Entity quick menu and the page switcher. A save reaches the watch the next time it checks.";
 
 /** The hint under the watch while a menu with slots is shown. */
 export const MENU_STAGE_HINT = "Tap a slot on the watch or in the list to edit it.";

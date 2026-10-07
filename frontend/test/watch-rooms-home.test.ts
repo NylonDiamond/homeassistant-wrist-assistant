@@ -387,7 +387,7 @@ describe("the rooms editor on a home that is not the main house", () => {
     expect(text).toContain(HOME_ROOMS_START_BUTTON);
     expect(text).toContain("pe-btn pe-primary");
     expect(text).not.toContain(ROOMS_NO_RECORD_TEXT);
-    expect(text).not.toContain("Start them under Watch settings");
+    expect(text).not.toContain("Start them under Watch app, Settings");
     expect(text).not.toContain(START_FRESH_BUTTON);
 
     await el.start();

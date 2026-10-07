@@ -63,4 +63,4 @@ export function voicePhraseTargets(voiceDocument: JsonObject | undefined): Voice
 
 /** The line the editors show where a default would be named, while neither
  * the voice record nor the catalog says what the defaults are. */
-export const WATCH_VOICE_DEFAULTS_UNKNOWN_TEXT = "Set the voice defaults in Voice, or open the iPhone app to list its own here";
+export const WATCH_VOICE_DEFAULTS_UNKNOWN_TEXT = "Set the voice defaults in Voice";

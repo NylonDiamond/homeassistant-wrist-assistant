@@ -5,7 +5,7 @@
 // own size, where the stored copy has got to, and the earlier saves with a way
 // to put one back. Part 3b edits them: pages are added, renamed, hidden,
 // moved and deleted, and tiles are moved, swapped, resized and deleted on the
-// page, with undo, redo and a save that merges when the iPhone saved too. A
+// page, with undo, redo and a save that merges when another save landed too. A
 // watch with no pages record yet gets one from "Start with an empty page"
 // (4e).
 //
@@ -1022,7 +1022,7 @@ export class WaPageEditor extends LitElement {
     }
     if (this.addTileOpen) {
       // The page the dialog adds to went away, or turned into a smart page,
-      // in a merge from the iPhone.
+      // in a merge from another save.
       const page = this.currentPage();
       if (page === undefined || isSmartWatchPage(page)) this.closeAsk();
     }
@@ -2892,7 +2892,7 @@ export class WaPageEditor extends LitElement {
       const reply = await restoreWatchConfig(hass, watchId, "pages", ask.entry.revision, ask.baseRevision);
       note = {
         kind: "ok",
-        text: `Revision ${ask.entry.revision} is back. The watch picks it up the next time it checks, or the iPhone passes it on.`,
+        text: `Revision ${ask.entry.revision} is back. The watch picks it up the next time it checks.`,
       };
       if (watchId === this.watchId) {
         this.restartDraft = { watchId, revision: reply.revision };
@@ -4416,7 +4416,7 @@ export class WaPageEditor extends LitElement {
       <h3 id="pe-ask-title">Restore revision ${ask.entry.revision}?</h3>
       <p>${savedBy(ask.entry.updated_by)}${when ? ` ${when}` : ""}, ${kb(ask.entry.size)}.</p>
       ${ask.summary ? html`<p class="pe-muted">${ask.summary}</p>` : nothing}
-      <p>It is saved again as a new revision${record ? `, after revision ${record.revision}` : ""}. The copy shown now stays in the earlier saves. The watch picks it up the next time it checks, or the iPhone passes it on.</p>
+      <p>It is saved again as a new revision${record ? `, after revision ${record.revision}` : ""}. The copy shown now stays in the earlier saves. The watch picks it up the next time it checks.</p>
       <div class="pe-ask-foot">
         <button class="pe-btn" ?disabled=${this.restoring} @click=${() => this.closeAsk()}>Cancel</button>
         <button class="pe-btn pe-primary" ?disabled=${this.restoring} @click=${() => void this.restore()}>${this.restoring ? "Restoring…" : "Restore"}</button>
@@ -4488,7 +4488,7 @@ export class WaPageEditor extends LitElement {
             return html`<li><b>${watchPageName(t.page)}</b>: ${tileKindLabel(tileKind(tileEntityId(t.tile)))}${label !== "" ? ` "${label}"` : ""}</li>`;
           })}</ul>
           ${warning.fallback.length > 0
-            ? html`<p class="pe-muted">Until then Choose Speakers tiles use the iPhone's default speakers: ${warning.fallback.map(speaker).join(", ")}.</p>`
+            ? html`<p class="pe-muted">Until then Choose Speakers tiles use the default speakers: ${warning.fallback.map(speaker).join(", ")}.</p>`
             : nothing}
           ${warning.chooseOnWatch !== undefined ? html`<p class="pe-muted">${warning.chooseOnWatch}</p>` : nothing}`}
       <div class="pe-ask-foot">

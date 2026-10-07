@@ -6,8 +6,8 @@
 // phrase by its id, so a phrase one side added and another the other side
 // changed must both survive. A key or a phrase the local side changed since
 // the base keeps the local value; everything else takes the server's. The
-// iPhone runs the same rule (`WatchConfigMirror`, `.mergeByKey` with the
-// phrases by id) with itself as the local side; in the panel the local side
+// iPhone used to run the same rule (`WatchConfigMirror`, `.mergeByKey` with
+// the phrases by id) with itself as the local side; in the panel the local side
 // is the draft.
 //
 // Phrases, in detail:

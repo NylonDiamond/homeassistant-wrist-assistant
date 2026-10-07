@@ -353,7 +353,7 @@ function renderTargets(host: RoomsViewHost, room: RoomListEntry): TemplateResult
       const writes = roomZonesWrites(host.document, room.key, [...zones, { entityId: id, centerHeading: 0, label: friendlyNameFromId(id) }]);
       if (writes !== undefined) host.write(writes);
     }, addKey, { domain: POINT_CONTROL_DOMAINS, clearable: false })}</div>
-    <div class="hint">Heading is degrees clockwise from north. Drag the dial or type it; capturing it with the watch compass is on the iPhone.</div>
+    <div class="hint">Heading is degrees clockwise from north. Drag the dial or type it. To read it, stand where you point from, face the target and open Heading on the watch (in Connection Health, or on the point control of a room with no targets). Type the number it shows.</div>
   </div>`;
 }
 

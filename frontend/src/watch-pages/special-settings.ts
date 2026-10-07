@@ -254,7 +254,7 @@ export function renderSpecial(host: TileSettingsHost): TemplateResult {
  * Person; the others have none). */
 function resetRow(host: TileSettingsHost, task: WatchSpecialTask, title: string): TemplateResult | typeof nothing {
   if (!watchSpecialTaskModified(host.tile, task)) return nothing;
-  return html`<div class="ts-after ts-reset">${linkButton(`Reset ${title}`, `Put every ${title.toLowerCase()} setting back as the iPhone app's reset does`, () =>
+  return html`<div class="ts-after ts-reset">${linkButton(`Reset ${title}`, `Put every ${title.toLowerCase()} setting back to its default`, () =>
     commit(host, `reset:${task}`, (d) => resetWatchSpecialTask(d, ...at(host), task)))}</div>`;
 }
 

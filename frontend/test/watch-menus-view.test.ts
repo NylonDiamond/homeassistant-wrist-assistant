@@ -918,7 +918,7 @@ describe("the Run HTTP Action target", () => {
 
   it("an empty list points at the HTTP actions screen; an older integration keeps the iPhone's line", () => {
     const empty = field(inspector(NO_MENU_TARGETS, { catalogKnown: true, httpLibrary: "empty" }));
-    expect(empty).toContain("No HTTP actions yet. Add one on the HTTP actions screen, or in the iPhone app.");
+    expect(empty).toContain("No HTTP actions yet. Add one on the HTTP actions screen.");
     expect(empty).toContain("Open HTTP actions");
     const old = field(inspector(NO_MENU_TARGETS, { catalogKnown: false }));
     expect(old).toContain("Open the iPhone app to list its HTTP actions here.");

@@ -108,7 +108,7 @@ export const VOICE_SECTION_LINES: Readonly<Record<VoiceSection, string>> = {
   watch: "How the watch itself speaks a reply.",
 };
 
-export const VOICE_CARD_LINE = "The voice defaults, the phrase library and the watch's own speech. A save reaches the watch the next time it checks, or through the iPhone.";
+export const VOICE_CARD_LINE = "The voice defaults, the phrase library and the watch's own speech. A save reaches the watch the next time it checks.";
 
 export const VOICE_STAGE_HINT = "Pick from List shows these phrases on the watch. Tap one to edit it.";
 
@@ -531,7 +531,7 @@ function renderPhraseInspector(host: VoiceViewHost, phrase: JsonObject): Templat
       (v) => set("icon", v, true), `vo:icon:${id}`, undefined, "Icon", false)}</div>
     <div class="vo-no-alpha">${colorField("Color", isPlainVoiceColor(color) ? color : undefined,
       (v) => { if (v !== undefined) set("color", v, true); }, false, VOICE_KEYS.newPhrase.color)}</div>
-    ${special === undefined ? nothing : html`<div class="hint">${special}, set on the iPhone. Picking a color here replaces it.</div>`}
+    ${special === undefined ? nothing : html`<div class="hint">${special}, which the panel does not offer. Picking a color here replaces it.</div>`}
   </fieldset>`;
   const speakers = Array.isArray(phrase.targetSpeakers) ? phrase.targetSpeakers.filter((s): s is string => typeof s === "string") : [];
   const defaults = watchVoiceDefaultsOf(host.document);

@@ -1,9 +1,9 @@
 // The three-way merge of the watch's Control Center list.
 //
 // The grain is the document's top-level keys, each one value, except
-// `entities`, which is matched by `entityId`. The iPhone runs the same rule
-// (`WatchConfigMirror`, merge whole by id) with itself as the local side; in
-// the panel the local side is the draft. So each side keeps its own copy of
+// `entities`, which is matched by `entityId`. The iPhone used to run the same
+// rule (`WatchConfigMirror`, merge whole by id) with itself as the local side;
+// in the panel the local side is the draft. So each side keeps its own copy of
 // an entry both changed.
 //
 // Entries, in detail:

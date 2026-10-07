@@ -37,7 +37,7 @@ function them(noun: ConfigNoun): string {
   return noun === "Control Center list" ? "it" : "them";
 }
 
-export const REJECTED_TEXT = "The watch or the iPhone could not read this save";
+export const REJECTED_TEXT = "The watch could not read this save";
 
 function kb(bytes: number): string {
   return bytes < 1000 ? `${bytes} bytes` : `${Number((bytes / 1000).toFixed(1))} KB`;

@@ -285,7 +285,7 @@ export function watchLibraryMissingText(catalog: WatchCatalog | undefined, kind:
 
 /** The line where a list of HTTP actions is empty and the HTTP actions
  * screen can add one. */
-export const WATCH_NO_HTTP_ACTIONS_TEXT = "No HTTP actions yet. Add one on the HTTP actions screen, or in the iPhone app.";
+export const WATCH_NO_HTTP_ACTIONS_TEXT = "No HTTP actions yet. Add one on the HTTP actions screen.";
 
 /** Who lists the entries of a kind, for "The iPhone lists no …": the
  * iPhone, or this watch for its own status pages. */

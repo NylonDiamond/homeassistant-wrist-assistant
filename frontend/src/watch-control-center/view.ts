@@ -113,7 +113,7 @@ export function saveControlCenterZoom(scale: number | undefined, storage: Column
 // ── words ────────────────────────────────────────────────────────────────
 
 export const CONTROL_CENTER_CARD_LINE =
-  "The entities the watch's Toggle and Action controls offer. Add a control from the watch's Control Center, then pick one of these. A save reaches the watch the next time it checks, or through the iPhone.";
+  "The entities the watch's Toggle and Action controls offer. Add a control from the watch's Control Center, then pick one of these. A save reaches the watch the next time it checks.";
 
 export const CONTROL_CENTER_STAGE_HINT =
   "Drawn from Home Assistant's states now. Each button is a control you can add to the watch's Control Center. Hidden entries and other domains are left out. Tap a button to edit it.";
@@ -486,7 +486,7 @@ function renderEntryCards(host: ControlCenterViewHost, raw: JsonObject): Templat
     <div class="cc-stack">${symbolField({ icons: host.icons, symbols: host.symbols }, controlCenterIcon(entry),
       (v) => host.edit((d) => setControlCenterIcon(d, id, v === entry.iconName ? "" : v), `entry:${id}:icon`), `cc:icon:${id}`, undefined, "Icon", false)}</div>
     ${colorField("Color", tint, (v) => host.edit((d) => setControlCenterTint(d, id, v), `entry:${id}:tint`), true, null)}
-    <div class="cc-swatches" role="group" aria-label="The iPhone's colors">
+    <div class="cc-swatches" role="group" aria-label="Suggested colors">
       ${CONTROL_CENTER_SWATCHES.map((hex) => {
         const on = tint !== undefined && tint.toUpperCase() === hex;
         return html`<button type="button" class="cc-swatch ${on ? "on" : ""}" style=${`--sw:${hex}`} title=${hex} aria-label=${`Color ${hex}`}

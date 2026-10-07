@@ -3,7 +3,7 @@
 // watch, held by the module, so leaving the Rooms route and coming back finds
 // them, and the panel's leave guards can ask whether any are unsaved.
 //
-// A newer revision (the iPhone saved, or a save here came back) moves the
+// A newer revision (another save, or a save here came back) moves the
 // base under the edits. The edits are key writes, so they stay on top of it
 // (room by room for the two room records, see `carryRoomEdits`), and an
 // edit the newer copy already holds stops counting.

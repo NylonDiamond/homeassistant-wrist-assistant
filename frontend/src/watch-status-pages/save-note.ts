@@ -11,15 +11,15 @@ function named(clash: StatusPageClash): string {
 }
 
 /**
- * The words for pages the iPhone changed while the panel changed them too,
- * whose iPhone version stayed: `The iPhone also changed "House". The
- * iPhone's version was kept.` Empty for none.
+ * The words for pages another save changed while the panel changed them too,
+ * whose other version stayed: `Another save also changed "House". That
+ * save's version was kept.` Empty for none.
  */
 export function statusPagesKeptText(pages: readonly StatusPageClash[]): string {
   if (pages.length === 0) return "";
   const names = pages.map(named);
   const list = names.length === 1 ? names[0]! : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]!}`;
-  return `The iPhone also changed ${list}. ${names.length === 1 ? "The iPhone's version was kept." : "The iPhone's versions were kept."}`;
+  return `Another save also changed ${list}. ${names.length === 1 ? "That save's version was kept." : "That save's versions were kept."}`;
 }
 
 /** The note after a save, or none: a plain save that went through says
@@ -29,17 +29,17 @@ export function statusPagesSaveNote(result: StatusPagesSaveResult): WatchPagesNo
     const kept = result.kept ?? [];
     if (result.alreadySaved === true) {
       const tail = kept.length > 0 ? ` ${statusPagesKeptText(kept)}` : "";
-      return { kind: kept.length > 0 ? "warn" : "ok", text: `Nothing left to save. The iPhone saved the same changes, as revision ${result.revision}.${tail}` };
+      return { kind: kept.length > 0 ? "warn" : "ok", text: `Nothing left to save. The same changes were saved somewhere else, as revision ${result.revision}.${tail}` };
     }
     if (kept.length > 0) return { kind: "warn", text: `Saved. ${statusPagesKeptText(kept)}` };
-    return result.merged ? { kind: "ok", text: "Saved. Changes from the iPhone were merged in." } : undefined;
+    return result.merged ? { kind: "ok", text: "Saved. Changes made somewhere else were merged in." } : undefined;
   }
   const message = (result.message ?? "").trim();
   switch (result.code) {
     case "conflict":
-      return { kind: "warn", text: "Not saved. The status pages kept changing on the iPhone while saving. Your edits are kept, so try Save again in a moment." };
+      return { kind: "warn", text: "Not saved. The status pages kept changing somewhere else while saving. Your edits are kept, so try Save again in a moment." };
     case "no_record":
-      return { kind: "warn", text: "Not saved. Home Assistant no longer holds status pages for this watch. Start with the defaults again, or let the iPhone send its status pages." };
+      return { kind: "warn", text: "Not saved. Home Assistant no longer holds status pages for this watch. Start with the defaults again." };
     case "invalid": {
       const problems = result.problems ?? [];
       if (problems.length > 0) return { kind: "err", text: `Not saved. Something in the status pages is not right: ${problems.join(" ")}` };

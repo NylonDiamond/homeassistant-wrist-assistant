@@ -39,21 +39,21 @@ export function watchCommandError(err: unknown): { code?: string; message: strin
 export function watchPagesSaveNote(result: WatchPagesSaveResult): WatchPagesNote | undefined {
   if (result.ok) {
     if (result.alreadySaved === true) {
-      return { kind: "ok", text: `Nothing left to save. The iPhone saved the same changes, as revision ${result.revision}.` };
+      return { kind: "ok", text: `Nothing left to save. The same changes were saved somewhere else, as revision ${result.revision}.` };
     }
-    return result.merged ? { kind: "ok", text: "Saved. Changes from the iPhone were merged in." } : undefined;
+    return result.merged ? { kind: "ok", text: "Saved. Changes made somewhere else were merged in." } : undefined;
   }
   const message = (result.message ?? "").trim();
   switch (result.code) {
     case "conflict":
       return {
         kind: "warn",
-        text: "Not saved. The pages kept changing on the iPhone while saving. Your edits are kept, so try Save again in a moment.",
+        text: "Not saved. The pages kept changing somewhere else while saving. Your edits are kept, so try Save again in a moment.",
       };
     case "no_record":
       return {
         kind: "warn",
-        text: "Not saved. Home Assistant no longer holds pages for this watch. Start with an empty page again, or let the iPhone send its pages.",
+        text: "Not saved. Home Assistant no longer holds pages for this watch. Start with an empty page again.",
       };
     case "invalid": {
       const problems = result.problems ?? [];

@@ -4,7 +4,7 @@
 // The same shape as the page draft (`watch-pages/draft.ts`): the document
 // Home Assistant holds (`base`) at its revision, the document as edited now,
 // and the undo and redo steps between. When Home Assistant moves on under an
-// open draft (an iPhone save, or a save that met a conflict) every step is
+// open draft (another save, or a save that met a conflict) every step is
 // merged onto the newer document by `mergeWatchMenus`, so no edit is lost and
 // an undo never takes the other side's change back.
 //
@@ -228,7 +228,7 @@ export interface WatchMenusSaveResult {
   revision: number;
   merged: boolean;
   alreadySaved?: boolean;
-  /** The sections the iPhone also changed while this save ran, which the
+  /** The sections another save also changed while this one ran, which the
    * draft's version replaced (the merge's grain is the section). Only when
    * there is one. */
   replaced?: WatchMenusSection[];

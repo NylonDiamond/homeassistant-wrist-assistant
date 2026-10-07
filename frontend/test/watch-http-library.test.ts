@@ -254,7 +254,7 @@ describe("the words", () => {
   });
 
   it("the empty line points at the HTTP actions screen first", () => {
-    expect(WATCH_NO_HTTP_ACTIONS_TEXT).toBe("No HTTP actions yet. Add one on the HTTP actions screen, or in the iPhone app.");
+    expect(WATCH_NO_HTTP_ACTIONS_TEXT).toBe("No HTTP actions yet. Add one on the HTTP actions screen.");
     expect(watchNoPhoneLibraryText(watchCatalogWithStatusPages(undefined, []))).toBe(WATCH_NO_PHONE_LIBRARY_TEXT);
     expect(WATCH_NO_PHONE_LIBRARY_TEXT).toBe("Open the iPhone app to list its HTTP actions here.");
   });
@@ -322,7 +322,7 @@ describe("the page editor's menus over the joined list", () => {
     const home = watchHTTPReplyMenu(httpTile(OPEN_GATE!.id), gate, joined);
     expect(home.options[2]!.disabled).toBe(true);
     expect(home.note).toBe("Tile value needs a Reply Value on this action, set on the HTTP actions screen.");
-    expect(watchHTTPReplyMenu(httpTile(UNNAMED!.id), unnamed, joined).note).toBe("Tile value needs a Reply Value on this action, set in the iPhone app.");
+    expect(watchHTTPReplyMenu(httpTile(UNNAMED!.id), unnamed, joined).note).toBe("Tile value needs a Reply Value, and the iPhone's list shows none for this action.");
     const dash = watchHTTPReplyMenu(httpTile(OPEN_GATE!.id, { httpResponseDisplay: "tileValue" }), gate, joined);
     expect(dash.note).toBe("This action has no Reply Value, so the tile shows a dash.");
     expect(watchHTTPReplyMenu(httpTile(PORCH), undefined, watchCatalogWithHttpLibrary(undefined, { revision: 2, actions: [] })).note)

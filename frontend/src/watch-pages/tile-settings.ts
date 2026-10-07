@@ -21,7 +21,7 @@
 // so the picture follows the typing; each field's edits share one coalesce
 // key, so a run of typing is one undo step. What is typed is also kept in
 // `uiState` while the field has focus: Home Assistant hands the element a new
-// `hass` several times a second, and a merge from the iPhone can change the
+// `hass` several times a second, and a merge from another save can change the
 // stored value under a field, and neither may take away what is being typed.
 //
 // Every edit reads the document, the page and the tile from the host at the
@@ -152,6 +152,7 @@ import {
   setWatchTileIconSize,
   setWatchTileLabel,
   setWatchTileLabelColor,
+  setWatchTilePeekSkipAnimation,
   setWatchTileRainbow,
   setWatchTileShowLabel,
   setWatchTileSingleTap,
@@ -160,6 +161,7 @@ import {
   setWatchTileTextShadow,
   watchHeaderSettings,
   watchPageLinkTarget,
+  watchPeekSkipAnimation,
   watchSingleTapSettings,
   watchStorageIconName,
   watchTileActionSettings,
@@ -841,7 +843,18 @@ function renderOpens(host: TileSettingsHost): TemplateResult {
       : menuField(link.kind === "page" ? "Goes to" : "Peeks at", menu, pick)}
     <div class="hint ts-under">${link.kind === "page"
       ? "A tap goes to that page. A label that is the page's name follows it."
-      : "A tap shows that page over this one, hidden pages included. A label that is the page's name follows it."}</div>`;
+      : "A tap shows that page over this one, hidden pages included. A label that is the page's name follows it."}</div>
+    ${renderPeekAnimation(host)}`;
+}
+
+/** Skip open and close animation, on a Peek page tile only. */
+function renderPeekAnimation(host: TileSettingsHost): TemplateResult | typeof nothing {
+  const skip = watchPeekSkipAnimation(host.tile);
+  if (skip === undefined) return nothing;
+  return html`
+    ${checkField("Skip open and close animation", skip, (on) =>
+      commit(host, "peekDisableAnimation", (d) => setWatchTilePeekSkipAnimation(d, host.pageId, host.tileId, on)))}
+    <div class="hint ts-under">The page snaps in and out with no slide.</div>`;
 }
 
 // ── library tiles: target, request ───────────────────────────────────────
@@ -905,7 +918,7 @@ function renderTarget(host: TileSettingsHost): TemplateResult {
   return html`
     ${menu.options.length === 0
       ? html`<p class="hint">${http ? WATCH_NO_HTTP_ACTIONS_TEXT
-        : watchLibraryLister(catalog, target.kind) === "The iPhone" ? `The iPhone lists no ${words.many} yet.` : `This watch has no ${words.many} yet.`}</p>`
+        : watchLibraryLister(catalog, target.kind) === "The iPhone" ? `The iPhone's list has no ${words.many}.` : `This watch has no ${words.many} yet.`}</p>`
       : menuField(words.one, menu, pick)}
     ${warning === undefined ? nothing : html`<div class="hint warn ts-under">${warning}.</div>`}
     <div class="hint ts-under">${onlyMissing ? nothing : TARGET_HINTS[target.kind]}${listed === undefined ? nothing : html` ${listed}`}</div>
@@ -1236,7 +1249,7 @@ function renderAction(host: TileSettingsHost): TemplateResult {
     ${a.skipConditions.shown
       ? html`<div class="ts-stack">${segField<WatchSkipChoice>("Skip conditions", watchSkipChoice(a.skipConditions.value), WATCH_SKIP_CHOICES as [WatchSkipChoice, string][], (v) =>
           commit(host, "skipConditions", (d) => setWatchTileSkipConditions(d, host.pageId, host.tileId, watchSkipValue(v))))}</div>
-          <div class="hint">Whether running the automation from the watch skips its conditions. Default follows the iPhone app.</div>`
+          <div class="hint">Whether running the automation from the watch skips its conditions. Default follows "Skip conditions by default" in the watch's Settings.</div>`
       : nothing}`;
 }
 
@@ -1260,7 +1273,7 @@ function renderHoldSlide(host: TileSettingsHost, slides: NonNullable<ReturnType<
     </div>
     ${slides.readable
       ? nothing
-      : html`<div class="hint warn">This tile's hold and slide settings could not be read here. They are kept as they are; change them in the iPhone app.</div>`}
+      : html`<div class="hint warn">This tile's hold and slide settings could not be read here. They are kept as they are.</div>`}
     <fieldset class="ts-plain" ?disabled=${!slides.readable}>
       ${slides.rows.map((row) => html`
         ${menuField(row.title, row, (v) => setDirection(row.direction, v))}
@@ -1450,7 +1463,7 @@ function resetRow(host: TileSettingsHost, task: WatchTileStylingTask, words: str
   if (!taskModified(host, task)) return nothing;
   const domain = host.domainStyle === true;
   return html`<div class="ts-after ts-reset">${linkButton(`Reset ${words}`,
-    domain ? `Remove every ${words.toLowerCase()} setting from the rule, so the watch draws its own` : `Put every ${words.toLowerCase()} setting back as the iPhone app's reset does`, () =>
+    domain ? `Remove every ${words.toLowerCase()} setting from the rule, so the watch draws its own` : `Put every ${words.toLowerCase()} setting back to its default`, () =>
     commit(host, `reset:${task}`, (d) => (domain ? clearWatchTileTask : resetWatchTileTask)(d, host.pageId, host.tileId, task)))}</div>`;
 }
 

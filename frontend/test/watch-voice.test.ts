@@ -388,8 +388,8 @@ describe("the merge", () => {
   });
 
   it("names what the iPhone also changed", () => {
-    expect(watchVoiceReplacedText(["phrases"])).toBe("The iPhone also changed the phrases. Your version replaced it.");
-    expect(watchVoiceReplacedText(["defaultSpeakers", "phrases"])).toBe("The iPhone also changed the speakers and the phrases. Your versions replaced them.");
+    expect(watchVoiceReplacedText(["phrases"])).toBe("Another save also changed the phrases. Your version replaced it.");
+    expect(watchVoiceReplacedText(["defaultSpeakers", "phrases"])).toBe("Another save also changed the speakers and the phrases. Your versions replaced them.");
   });
 });
 

@@ -12,15 +12,15 @@ function named(clash: ControlCenterClash): string {
 }
 
 /**
- * The words for entries the iPhone changed while the panel changed them too,
- * whose copy from here stayed: `The iPhone also changed "Kitchen". Your
+ * The words for entries another save changed while the panel changed them too,
+ * whose copy from here stayed: `Another save also changed "Kitchen". Your
  * version was kept.` Empty for none.
  */
 export function controlCenterKeptText(entries: readonly ControlCenterClash[]): string {
   if (entries.length === 0) return "";
   const names = entries.map(named);
   const list = names.length === 1 ? names[0]! : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]!}`;
-  return `The iPhone also changed ${list}. ${names.length === 1 ? "Your version was kept." : "Your versions were kept."}`;
+  return `Another save also changed ${list}. ${names.length === 1 ? "Your version was kept." : "Your versions were kept."}`;
 }
 
 /** The note after a save, or none: a plain save that went through says
@@ -30,17 +30,17 @@ export function controlCenterSaveNote(result: ControlCenterSaveResult): WatchPag
     const kept = result.kept ?? [];
     if (result.alreadySaved === true) {
       const tail = kept.length > 0 ? ` ${controlCenterKeptText(kept)}` : "";
-      return { kind: kept.length > 0 ? "warn" : "ok", text: `Nothing left to save. The iPhone saved the same changes, as revision ${result.revision}.${tail}` };
+      return { kind: kept.length > 0 ? "warn" : "ok", text: `Nothing left to save. The same changes were saved somewhere else, as revision ${result.revision}.${tail}` };
     }
     if (kept.length > 0) return { kind: "warn", text: `Saved. ${controlCenterKeptText(kept)}` };
-    return result.merged ? { kind: "ok", text: "Saved. Changes from the iPhone were merged in." } : undefined;
+    return result.merged ? { kind: "ok", text: "Saved. Changes made somewhere else were merged in." } : undefined;
   }
   const message = (result.message ?? "").trim();
   switch (result.code) {
     case "conflict":
-      return { kind: "warn", text: "Not saved. The Control Center list kept changing on the iPhone while saving. Your edits are kept, so try Save again in a moment." };
+      return { kind: "warn", text: "Not saved. The Control Center list kept changing somewhere else while saving. Your edits are kept, so try Save again in a moment." };
     case "no_record":
-      return { kind: "warn", text: "Not saved. Home Assistant no longer holds a Control Center list for this watch. Start with an empty list again, or let the iPhone send its list." };
+      return { kind: "warn", text: "Not saved. Home Assistant no longer holds a Control Center list for this watch. Start with an empty list again." };
     case "invalid": {
       const problems = result.problems ?? [];
       if (problems.length > 0) return { kind: "err", text: `Not saved. Something in the Control Center list is not right: ${problems.join(" ")}` };

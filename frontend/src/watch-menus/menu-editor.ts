@@ -13,8 +13,8 @@
 // The host pattern of the page editor (`watch-pages/page-editor.ts`): watch
 // chips from the owners list, the record read with `watch_config/get` and kept
 // as raw JSON in a draft (`draft.ts`) with undo and redo, a save through
-// `watch_config/save` that merges when the iPhone saved too, the earlier saves
-// with restore, the delivery check, and the size budget. The `catalog` and
+// `watch_config/save` that merges when another save landed too, the earlier
+// saves with restore, the delivery check, and the size budget. The `catalog` and
 // `behavior` records are read beside it, read only, for the pickers' names;
 // the live line reads them again when they change and merges a `menus`
 // change into the open draft. The home's HTTP action library
@@ -895,7 +895,7 @@ export class WaMenuEditor extends LitElement {
     }
     const taken = takeWatchMenusRecord(watchId, document, record.revision);
     if (taken.replaced.length > 0) this.note = { kind: "warn", text: watchMenusReplacedText(taken.replaced) };
-    else if (taken.mergedIntoEdits) this.note = { kind: "warn", text: "The menus changed on the iPhone. Your edits are kept." };
+    else if (taken.mergedIntoEdits) this.note = { kind: "warn", text: "The menus changed somewhere else. Your edits are kept." };
     this.requestUpdate();
   }
 
@@ -1251,10 +1251,10 @@ export class WaMenuEditor extends LitElement {
     if (result.ok) {
       this.note = { kind: "ok", text: "Started with the defaults. The watch picks them up the next time it checks." };
     } else if (result.code === "no_record") {
-      this.note = { kind: "warn", text: `${WATCH_MENUS_PAIR_FIRST_TEXT} Watch settings has Pair a watch.` };
+      this.note = { kind: "warn", text: `${WATCH_MENUS_PAIR_FIRST_TEXT} Go to Watch app, Settings, Pair a watch.` };
       return;
     } else if (result.code === "conflict") {
-      this.note = { kind: "warn", text: "The iPhone sent menus meanwhile, so those are shown." };
+      this.note = { kind: "warn", text: "Menus arrived meanwhile, so those are shown." };
     } else if (result.code === "unsupported") {
       this.unsupported = true;
       return;
@@ -1418,7 +1418,7 @@ export class WaMenuEditor extends LitElement {
       ${this.renderSyncPill(editing ? draft : undefined)}
       ${this.renderTopMenu(editing ? draft : undefined)}
       ${editing ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
-          title=${dirty ? `Save (${MOD}S). A save reaches the watch the next time it checks, or through the iPhone.` : `Nothing to save (${MOD}S)`}
+          title=${dirty ? `Save (${MOD}S). A save reaches the watch the next time it checks.` : `Nothing to save (${MOD}S)`}
           @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
         <span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record)}</span>` : nothing}
       ${admin && !shell ? html`<button class="tb-btn tb-pages" title="The watch's pages, as Home Assistant keeps them"

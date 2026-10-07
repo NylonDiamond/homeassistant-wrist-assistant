@@ -1,8 +1,9 @@
 // The three-way merge of the watch's page config, and the JSON equality it
 // judges changes by.
 //
-// The iPhone app edits the same document and merges it the same way when both
-// sides changed (`WatchConfigMirrorRule.mergePages` in the app's `Shared/`).
+// The iPhone app used to edit the same document and merge it the same way
+// (`WatchConfigMirrorRule.mergePages` in the app's `Shared/`, now only a
+// reader of the case files).
 // The panel runs this copy when its save meets a conflict, or when a change
 // from elsewhere lands while a draft is open. "Local" here is the panel's
 // draft, as it is the phone there. The case files in
@@ -773,7 +774,7 @@ const EVERY_REQUIRED_KEY_TYPES: ReadonlySet<string> = new Set(["dynamicPage"]);
 /** What to do about a smart page rule the panel cannot show (no domain as
  * text, or no object at all), which the Rules card skips and so cannot
  * delete. */
-const SKIPPED_RULE_HINT = "Turn Smart page off and on, or delete the rule on the iPhone.";
+const SKIPPED_RULE_HINT = "Turn Smart page off and on.";
 
 /** Whether a problem with `key` of a `typeName` object (an element of it
  * when `element`) is one with a rule the Rules card skips. */

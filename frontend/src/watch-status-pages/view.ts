@@ -134,7 +134,7 @@ export function saveStatusPagesZoom(scale: number | undefined, storage: ColumnSt
 
 // ── words ────────────────────────────────────────────────────────────────
 
-export const STATUS_PAGES_CARD_LINE = "Pages the watch opens from a tile, a menu slot or Siri. A save reaches the watch the next time it checks, or through the iPhone.";
+export const STATUS_PAGES_CARD_LINE = "Pages the watch opens from a tile, a menu slot or Siri. A save reaches the watch the next time it checks.";
 
 export const STATUS_PAGES_STAGE_HINT = "Drawn from Home Assistant's states now, as the watch draws the page. Tap a row to edit it.";
 

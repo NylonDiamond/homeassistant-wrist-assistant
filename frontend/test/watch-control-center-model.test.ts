@@ -296,7 +296,7 @@ describe("the draft", () => {
     expect(result).toMatchObject({ ok: true, revision: 7, merged: true });
     expect(draft.dirty).toBe(false);
     expect(entry(draft.document, "scene.movie").isHidden).toBe(true);
-    expect(controlCenterSaveNote(result)?.text).toBe("Saved. Changes from the iPhone were merged in.");
+    expect(controlCenterSaveNote(result)?.text).toBe("Saved. Changes made somewhere else were merged in.");
   });
 
   it("does not send a list Home Assistant would refuse", async () => {
@@ -310,8 +310,8 @@ describe("the draft", () => {
   });
 
   it("names a clash in the save note", () => {
-    expect(controlCenterKeptText([{ entityId: "light.kitchen", name: "Kitchen" }])).toBe(`The iPhone also changed "Kitchen". Your version was kept.`);
-    expect(controlCenterKeptText([{ entityId: "a.b", name: "" }, { entityId: "c.d", name: "D" }])).toBe(`The iPhone also changed "a.b" and "D". Your versions were kept.`);
+    expect(controlCenterKeptText([{ entityId: "light.kitchen", name: "Kitchen" }])).toBe(`Another save also changed "Kitchen". Your version was kept.`);
+    expect(controlCenterKeptText([{ entityId: "a.b", name: "" }, { entityId: "c.d", name: "D" }])).toBe(`Another save also changed "a.b" and "D". Your versions were kept.`);
   });
 });
 

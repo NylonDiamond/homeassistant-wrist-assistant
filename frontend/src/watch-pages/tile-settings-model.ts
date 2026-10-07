@@ -1468,6 +1468,28 @@ export function setWatchPageLinkTarget(
   });
 }
 
+/** Skip open and close animation on a Peek page tile
+ * (`peekDisableAnimation`): the watch snaps the peeked page in and out
+ * instead of sliding it (`resolvedPeekSkipAnimation`, absent reads as off).
+ * Undefined for every other kind, which shows no switch. */
+export function watchPeekSkipAnimation(tile: WatchPageTile): boolean | undefined {
+  return watchPageLinkTarget(tile)?.kind === "show_page" ? tile.peekDisableAnimation === true : undefined;
+}
+
+/** Skip open and close animation: on writes `peekDisableAnimation: true`,
+ * off removes the key, as the phone's old toggle did. Refused for a tile
+ * that is not a Peek page tile. */
+export function setWatchTilePeekSkipAnimation(
+  document: WatchPagesDocument,
+  pageId: string,
+  tileId: string,
+  on: boolean,
+): WatchPagesDocument {
+  if (!isBool(on)) return document;
+  return setKey(document, pageId, tileId, "peekDisableAnimation", (tile) =>
+    watchPageLinkTarget(tile)?.kind !== "show_page" ? undefined : on ? true : REMOVE);
+}
+
 /** A page's name as the phone reads it: a missing (or unreadable) name is
  * `"Page"` (`GridPage.init(from:)`), and that is what a link to it stores. */
 export function watchStoredPageName(page: { name?: unknown } | undefined): string {

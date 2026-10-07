@@ -366,8 +366,8 @@ function errorMessage(error: unknown): string {
  * The draft may change while a call is out: what is recorded as saved is the
  * document that was sent, so edits made meanwhile stay dirty.
  *
- * After a merge the draft may be the very copy Home Assistant holds (the
- * iPhone saved the same edits): then nothing more is sent, and the save is ok
+ * After a merge the draft may be the very copy Home Assistant holds (another
+ * save had the same edits): then nothing more is sent, and the save is ok
  * at the server's revision with `alreadySaved`. A draft runs one save at a
  * time; a call while one is out sends nothing and ends `busy`.
  */

@@ -18813,7 +18813,7 @@ export class WristAssistantPanel extends LitElement {
                 e.preventDefault();
                 this.goTo(WATCH_SETTINGS_SCREEN.path);
               }}>
-              <b>Pair a watch</b><span>Opens Watch settings, where a watch pairs with a code</span>
+              <b>Pair a watch</b><span>Opens the Watch app's Settings, where a watch pairs with a code</span>
             </a>
           </div>`
         : html`<div class="home-screens">${WATCH_SCREENS.map((screen) => {

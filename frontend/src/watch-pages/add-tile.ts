@@ -359,7 +359,7 @@ function renderLibrary(host: AddTileHost, view: AddTileView, kind: WatchLibraryK
       ? html`<div class="at-muted">${fromWatch
         ? `${watchLibraryLister(catalog, kind)} has no ${words.many} yet. Make one in Status pages and it shows here.`
         : screen ? WATCH_NO_HTTP_ACTIONS_TEXT
-        : `The iPhone lists no ${words.many} yet. Make one in the iPhone app and it shows here.`}</div>
+        : `The iPhone's list has no ${words.many}.`}</div>
         ${screen ? html`<div><button type="button" class="pe-btn" @click=${goToScreen}>Open HTTP actions</button></div>` : nothing}`
       : html`<div class="at-pages" role="group" aria-label=${label}>
           ${entries.map((e) => {

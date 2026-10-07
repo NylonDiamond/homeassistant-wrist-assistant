@@ -557,6 +557,6 @@ export async function startNotificationStyle(save: (baseRevision: number, docume
 export const STYLE_NO_RECORD_TITLE = "No notification style from this watch yet.";
 export const STYLE_NO_RECORD_TEXT = "Start with the defaults to begin.";
 export const STYLE_START_BUTTON = "Start with the defaults";
-export const STYLE_START_CONFLICT_TEXT = "The iPhone sent its notification style meanwhile, so that is shown.";
+export const STYLE_START_CONFLICT_TEXT = "A notification style arrived meanwhile, so that is shown.";
 export const STYLE_UNREADABLE_TEXT =
   "Home Assistant holds a notification style for this watch that this panel cannot read. Update the integration.";

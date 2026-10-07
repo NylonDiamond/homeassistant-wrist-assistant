@@ -16,7 +16,7 @@
 // Plan: app repo docs/pages_in_home_assistant_step3.md ("3d build contract").
 
 import { css, html, nothing, type TemplateResult } from "lit";
-import { colorField, segField, sliderField, symbolField, symbolNameSet } from "../editors.js";
+import { checkField, colorField, segField, sliderField, symbolField, symbolNameSet } from "../editors.js";
 import { SECTION_COLOR } from "../kinds.js";
 import { type TileSettingsHost, type WatchPagesEditorHost, extendHost } from "./editor-host.js";
 import { type WatchPage, type WatchPageTile, type WatchPagesDocument, isHiddenWatchPage } from "./model.js";
@@ -28,6 +28,7 @@ import {
   setWatchPageBackgroundColor,
   setWatchPageColorMode,
   setWatchPageBrightness,
+  setWatchPageFullScreen,
   setWatchPageGradientColors,
   setWatchPageImage,
   setWatchPageImageBlur,
@@ -183,7 +184,7 @@ export function renderPageSettingBody(host: WatchPagesEditorHost, section: Watch
 export function renderPageReset(host: WatchPagesEditorHost): TemplateResult | typeof nothing {
   if (!watchPageModified(host.document, host.pageId)) return nothing;
   const sh = scoped(host);
-  return html`<span class="ps-reset">${linkButton("Reset page", "The background and title back as the iPhone app's reset puts them, the photo removed. The theme stays.", () =>
+  return html`<span class="ps-reset">${linkButton("Reset page", "The background and title back to their defaults, the photo removed. The theme stays.", () =>
     commit(sh, "reset", (d) => resetWatchPage(d, host.pageId)))}</span>`;
 }
 
@@ -244,7 +245,7 @@ function renderTheme(sh: TileSettingsHost): TemplateResult {
     </div>
     ${segField("Colors", s.gradient ? "gradient" : "solid", [["solid", "Solid"], ["gradient", "Gradient"]] as ["solid" | "gradient", string][], (v) =>
       commit(sh, "gradient", (d) => setWatchPageGradientColors(d, sh.pageId, v === "gradient")))}
-    <div class="hint ts-under">A theme change recolors the tiles in theme colors, as the iPhone app does. Gradient rewrites every tile's color.</div>`;
+    <div class="hint ts-under">A theme change recolors the tiles in theme colors. Gradient rewrites every tile's color.</div>`;
 }
 
 // ── background ───────────────────────────────────────────────────────────
@@ -385,7 +386,7 @@ function renderBackground(sh: TileSettingsHost): TemplateResult {
   const theme = watchStylingTheme(watchPageSwatchTheme(sh.page));
   return html`
     ${segField("Decoration", segment, DECORATION_CHOICES as [WatchPageDecoration, string][], (v) => pickDecoration(sh, v))}
-    <div class="hint ts-under">One at a time, as on the iPhone. Each one keeps its settings while this page is open.</div>
+    <div class="hint ts-under">One at a time. Each one keeps its settings while this page is open.</div>
     ${segment === "image" ? renderImage(sh) : nothing}
     ${segment === "color" ? html`
       <div class="ts-after">
@@ -500,7 +501,7 @@ function renderImage(sh: TileSettingsHost): TemplateResult {
   const fits = watchStylingChoices("backgroundImageFit").map((c) => [c.value, c.label] as [string, string]);
   const blurText = (v: number) => (Math.round(v * 10) / 10).toFixed(1);
   return html`
-    ${photos === undefined || photos.listState === "none" ? html`<p class="hint warn">Photos need a newer version of the integration. A photo set on the iPhone still shows here.</p>` : nothing}
+    ${photos === undefined || photos.listState === "none" ? html`<p class="hint warn">Photos need a newer version of the integration. A photo set before still shows here.</p>` : nothing}
     ${photos?.listState === "failed" ? html`<p class="hint warn">Home Assistant did not list its photos. ${linkButton("Try again", "Read the photo list again", () => void photos.refreshList())}</p>` : nothing}
     ${photos?.listState === "loading" ? html`<p class="hint">Loading photos...</p>` : nothing}
     ${photos !== undefined && list !== undefined ? html`
@@ -573,7 +574,9 @@ function renderTitle(sh: TileSettingsHost): TemplateResult {
         modeKey: "pageTitleTextColor",
       })}
       ${s.titleColor === undefined ? html`<div class="hint ts-under">None set: the theme's title color.</div>` : nothing}
-      ${s.fullScreen ? html`<div class="hint warn">Full screen is on (set on the iPhone): the watch hides the title.</div>` : nothing}`}`;
+      ${s.fullScreen ? html`<div class="hint warn">Full screen is on: the watch hides the title.</div>` : nothing}`}
+    ${checkField("Full screen", s.fullScreen, (on) => commit(sh, "fullScreen", (d) => setWatchPageFullScreen(d, sh.pageId, on)), false)}
+    <div class="hint ts-under">The tiles run up behind the clock, with no title.</div>`;
 }
 
 /** This module's rules, after the tile settings' in the page editor's

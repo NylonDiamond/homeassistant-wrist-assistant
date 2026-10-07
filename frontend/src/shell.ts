@@ -65,7 +65,7 @@ export const WATCH_SCREENS: readonly WatchScreen[] = [
   { id: "menus", label: "Menus", blurb: "Quick menus and their items", path: WATCH_MENUS_PATH },
   { id: "status-pages", label: "Status pages", blurb: "Read-only views of your home", path: WATCH_STATUS_PAGES_PATH },
   { id: "control-center", label: "Control Center", blurb: "The list of controls", path: WATCH_CONTROL_CENTER_PATH },
-  { id: "rooms", label: "Rooms", blurb: "Which rooms show, and in what order", path: WATCH_ROOMS_PATH },
+  { id: "rooms", label: "Rooms", blurb: "Switch pages by room, and point control", path: WATCH_ROOMS_PATH },
   { id: "voice", label: "Voice", blurb: "How voice commands work", path: WATCH_VOICE_PATH },
   { id: "http-actions", label: "HTTP actions", blurb: "Web requests Home Assistant sends for a watch", path: WATCH_HTTP_ACTIONS_PATH, shared: true },
 ];

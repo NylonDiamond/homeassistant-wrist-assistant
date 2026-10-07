@@ -298,7 +298,7 @@ export function watchAddRefusalText(refusal: WatchAddRefusal, name?: string): st
     case "systemPage":
       return "This page belongs to the app, so no tiles can be added to it.";
     case "noPage":
-      return "This page is gone. It may have been deleted on the iPhone.";
+      return "This page is gone. It may have been deleted somewhere else.";
     case "badItems":
       return "The tiles on this page could not be read, so adding one would lose them.";
   }

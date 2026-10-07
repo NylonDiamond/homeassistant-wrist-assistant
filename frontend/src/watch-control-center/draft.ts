@@ -4,11 +4,11 @@
 // The status pages draft's shape (`watch-status-pages/draft.ts`): the
 // document Home Assistant holds (`base`) at its revision, the document as
 // edited now, and the undo and redo steps between. When Home Assistant moves
-// on under an open draft (an iPhone save, or a save that met a conflict)
+// on under an open draft (another save, or a save that met a conflict)
 // every step is merged onto the newer document by `mergeControlCenter`, so
 // no edit to an entry the other side left alone is lost and an undo never
 // takes the other side's change back. An entry both sides changed keeps the
-// draft's copy, as the iPhone keeps its own.
+// draft's copy.
 //
 // The drafts live here, one per watch, not in the element: the element is
 // made anew each time the route opens, and a draft outlives that.
@@ -218,7 +218,7 @@ export interface ControlCenterSaveResult {
   revision: number;
   merged: boolean;
   alreadySaved?: boolean;
-  /** The entries the iPhone also changed while this save ran, whose copy
+  /** The entries another save also changed while this one ran, whose copy
    * from here stayed. Only when there is one. */
   kept?: ControlCenterClash[];
   code?: string;

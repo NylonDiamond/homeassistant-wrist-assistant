@@ -833,7 +833,7 @@ describe("checkWatchPagesValues", () => {
     expect(checkWatchPagesValues(withTile({}, config([rule])))).toEqual([]);
     // A rule without a domain, or with one that is not text, or no rule at
     // all: the Rules card skips it, so the message says how to remove it.
-    const hint = "Turn Smart page off and on, or delete the rule on the iPhone.";
+    const hint = "Turn Smart page off and on.";
     expect(checkWatchPagesValues(withTile({}, config([rule, { ...rule, domain: undefined }])))).toEqual([`${where} 2: domain is missing. ${hint}`]);
     expect(checkWatchPagesValues(withTile({}, config([{ ...rule, domain: 3 }])))).toEqual([`${where} 1: domain is not text. ${hint}`]);
     expect(checkWatchPagesValues(withTile({}, config([rule, "light"])))).toEqual([`${where} 2 is not an object. ${hint}`]);

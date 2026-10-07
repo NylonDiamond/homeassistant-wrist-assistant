@@ -139,7 +139,7 @@ describe("the no-record words", () => {
     ]) {
       expect(text).toBe(`${button} to begin.`);
     }
-    expect(ROOMS_NO_RECORD_TEXT).toBe("Rooms are part of the watch's settings. Start them under Watch settings.");
+    expect(ROOMS_NO_RECORD_TEXT).toBe("Rooms are part of the watch's settings. Start them under Watch app, Settings.");
     expect(ROOMS_WAIT_TEXT).toBe(`Rooms are part of the watch's settings. ${WAIT_FOR_IPHONE_TEXT}`);
     expect(HTTP_ACTIONS_PHONE_TEXT).toBe("Update Wrist Assistant on your iPhone and open it once. Its HTTP actions move here by themselves.");
   });

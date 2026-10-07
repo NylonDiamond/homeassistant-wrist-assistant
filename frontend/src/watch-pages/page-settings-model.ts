@@ -424,6 +424,13 @@ export function setWatchPageHideFromSwitcher(document: WatchPagesDocument, pageI
   return setPageKey(document, pageId, "hideFromSwitcher", () => hide);
 }
 
+/** Whether the page's tiles run up behind the clock, with no title. Off
+ * removes the key, which the watch reads as off. */
+export function setWatchPageFullScreen(document: WatchPagesDocument, pageId: string, on: boolean): WatchPagesDocument {
+  if (typeof on !== "boolean") return document;
+  return setPageKey(document, pageId, "fullScreen", () => (on ? true : null));
+}
+
 /** The setter of each Page row, by the key it writes. */
 export const WATCH_PAGE_STYLING_SETTERS: Readonly<Record<string, (document: WatchPagesDocument, pageId: string, value: never) => WatchPagesDocument>> = {
   backgroundColor: setWatchPageBackgroundColor,

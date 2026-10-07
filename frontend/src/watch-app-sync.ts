@@ -6,7 +6,7 @@
 // Each of these is a watch config record, and each record carries its own
 // delivery state: `revision` is the copy Home Assistant holds, and
 // `delivered_revision` the newest one a device is known to hold (the watch's
-// own pull, or the iPhone passing it on). The editors' sync pills and Watch
+// own pull). The editors' sync pills and Watch
 // settings' "Collected" read the same two numbers (`deliveryState`).
 //
 // `watch_config/summary` answers those numbers for every watch at once, with

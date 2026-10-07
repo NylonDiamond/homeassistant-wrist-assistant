@@ -159,7 +159,7 @@ describe("a save", () => {
     expect(bases).toEqual([2, 3]);
     expect((last!.pageSwitcher as JsonObject).selectedScale).toBe(1.4);
     expect((last!.quickAction as JsonObject).showIconBubble).toBe(true);
-    expect(watchMenusSaveNote(result)?.text).toBe("Saved. Changes from the iPhone were merged in.");
+    expect(watchMenusSaveNote(result)?.text).toBe("Saved. Changes made somewhere else were merged in.");
   });
 
   it("says nothing after a plain save: the toolbar's Saved just now does", () => {
@@ -180,10 +180,10 @@ describe("a save", () => {
     expect(result).toMatchObject({ ok: true, revision: 4, merged: true, replaced: ["quickAction", "pageSwitcher"] });
     expect(watchMenusSaveNote(result)).toEqual({
       kind: "warn",
-      text: "Saved. The iPhone also changed the Anywhere menu and the page switcher. Your versions replaced them.",
+      text: "Saved. Another save also changed the Anywhere menu and the page switcher. Your versions replaced them.",
     });
-    expect(watchMenusReplacedText(["quickAction"])).toBe("The iPhone also changed the Anywhere menu. Your version replaced it.");
-    expect(watchMenusReplacedText(["entityRadial"])).toBe("The iPhone also changed the Entity quick menu. Your version replaced it.");
+    expect(watchMenusReplacedText(["quickAction"])).toBe("Another save also changed the Anywhere menu. Your version replaced it.");
+    expect(watchMenusReplacedText(["entityRadial"])).toBe("Another save also changed the Entity quick menu. Your version replaced it.");
     expect(watchMenusReplacedText([])).toBe("");
   });
 

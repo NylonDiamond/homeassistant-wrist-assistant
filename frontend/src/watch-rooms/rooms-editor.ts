@@ -15,7 +15,7 @@
 // too, for the page names, and never writes them.
 //
 // Rooms never makes a `behavior` record: a watch without one is told where
-// one comes from (Watch settings, or the iPhone).
+// one comes from (Watch settings, or the iPhone's one-time move).
 //
 // On a home that is not the watch's main house (`main_house: false` on its
 // owner row) the rooms are a `rooms` record of their own instead, and every
@@ -835,7 +835,7 @@ export class WaRoomsEditor extends LitElement {
           @click=${() => this.redo()}>${uiIcon("redo")}</button>` : nothing}
       ${this.renderTopMenu(draft)}
       ${editing ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
-          title=${dirty ? `Save (${MOD}S). A save reaches the watch the next time it checks, or through the iPhone.` : `Nothing to save (${MOD}S)`}
+          title=${dirty ? `Save (${MOD}S). A save reaches the watch the next time it checks.` : `Nothing to save (${MOD}S)`}
           @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
         <span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record)}</span>` : nothing}
       ${this.barActions}

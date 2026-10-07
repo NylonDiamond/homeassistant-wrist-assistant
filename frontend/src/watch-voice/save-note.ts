@@ -19,15 +19,15 @@ export function watchVoiceKeyName(key: string): string {
 }
 
 /**
- * The words for settings the iPhone changed while the panel's version of the
- * same setting won the merge: "The iPhone also changed the phrases. Your
+ * The words for settings another save changed while the panel's version of the
+ * same setting won the merge: "Another save also changed the phrases. Your
  * version replaced it." Empty for none.
  */
 export function watchVoiceReplacedText(keys: readonly string[]): string {
   if (keys.length === 0) return "";
   const names = [...new Set(keys.map(watchVoiceKeyName))];
   const list = names.length === 1 ? names[0]! : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]!}`;
-  return `The iPhone also changed ${list}. ${names.length === 1 ? "Your version replaced it." : "Your versions replaced them."}`;
+  return `Another save also changed ${list}. ${names.length === 1 ? "Your version replaced it." : "Your versions replaced them."}`;
 }
 
 /** The note after a save, or none: a plain save that went through says
@@ -35,18 +35,18 @@ export function watchVoiceReplacedText(keys: readonly string[]): string {
 export function watchVoiceSaveNote(result: WatchVoiceSaveResult): WatchPagesNote | undefined {
   if (result.ok) {
     if (result.alreadySaved === true) {
-      return { kind: "ok", text: `Nothing left to save. The iPhone saved the same changes, as revision ${result.revision}.` };
+      return { kind: "ok", text: `Nothing left to save. The same changes were saved somewhere else, as revision ${result.revision}.` };
     }
     const replaced = result.replaced ?? [];
     if (replaced.length > 0) return { kind: "warn", text: `Saved. ${watchVoiceReplacedText(replaced)}` };
-    return result.merged ? { kind: "ok", text: "Saved. Changes from the iPhone were merged in." } : undefined;
+    return result.merged ? { kind: "ok", text: "Saved. Changes made somewhere else were merged in." } : undefined;
   }
   const message = (result.message ?? "").trim();
   switch (result.code) {
     case "conflict":
-      return { kind: "warn", text: "Not saved. The voice settings kept changing on the iPhone while saving. Your edits are kept, so try Save again in a moment." };
+      return { kind: "warn", text: "Not saved. The voice settings kept changing somewhere else while saving. Your edits are kept, so try Save again in a moment." };
     case "no_record":
-      return { kind: "warn", text: "Not saved. Home Assistant no longer holds voice settings for this watch. Start with the defaults again, or let the iPhone send its own." };
+      return { kind: "warn", text: "Not saved. Home Assistant no longer holds voice settings for this watch. Start with the defaults again." };
     case "invalid": {
       const problems = result.problems ?? [];
       if (problems.length > 0) return { kind: "err", text: `Not saved. ${problems.join(" ")}` };

@@ -244,7 +244,7 @@ export const WATCH_DEFAULT_CHOICE = "";
 const STORED = "stored:";
 
 /** What a stored action the panel does not offer says under its menu. */
-export const WATCH_NOT_OFFERED_NOTE = "Set in the iPhone app. Picking another action here replaces it.";
+export const WATCH_NOT_OFFERED_NOTE = "Not one the panel offers. Picking another action here replaces it.";
 
 /** Whether a menu value is the shown, not offered, stored entry. */
 export function isWatchStoredChoice(value: string): boolean {
@@ -499,7 +499,7 @@ export function watchChoiceMenu(choices: readonly WatchChoice[], value: string, 
   return {
     options: [{ value: stored, label: value === "" ? "(empty)" : (storedLabel?.(value) ?? value), disabled: true }, ...options],
     selected: stored,
-    note: "Not one the iPhone app offers. Picking another replaces it.",
+    note: "Not one the panel offers. Picking another replaces it.",
   };
 }
 
@@ -662,11 +662,11 @@ export function watchHTTPReplyMenu(tile: WatchPageTile, action: WatchCatalogHTTP
   else if (!tileValue && action === undefined) {
     menu.note = home
       ? "This action is not in the list, so Tile value cannot be offered."
-      : "The iPhone has not listed this action here, so Tile value cannot be offered. Open the iPhone app to list it.";
+      : "The iPhone has not listed this action here, so Tile value cannot be offered.";
   } else if (!tileValue) {
     menu.note = home
       ? "Tile value needs a Reply Value on this action, set on the HTTP actions screen."
-      : "Tile value needs a Reply Value on this action, set in the iPhone app.";
+      : "Tile value needs a Reply Value, and the iPhone's list shows none for this action.";
   } else if (reply === "tileValue" && action !== undefined && !action.hasReply) {
     menu.note = home
       ? "This action has no Reply Value, so the tile shows a dash."

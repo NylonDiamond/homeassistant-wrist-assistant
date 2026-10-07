@@ -463,7 +463,7 @@ describe("the draft and its save", () => {
     expect(result).toMatchObject({ ok: true, revision: 6, merged: true, kept: [{ id: "A", name: "theirs" }] });
     expect(sent).toEqual([[5, doc(page("A", "theirs"), page("B", "renamed"))]]);
     expect(draft.dirty).toBe(false);
-    expect(statusPagesSaveNote(result)).toEqual({ kind: "warn", text: 'Saved. The iPhone also changed "theirs". The iPhone\'s version was kept.' });
+    expect(statusPagesSaveNote(result)).toEqual({ kind: "warn", text: 'Saved. Another save also changed "theirs". That save\'s version was kept.' });
   });
 
   it("does not send what Home Assistant would refuse, and one save runs at a time", async () => {
@@ -486,15 +486,15 @@ describe("the draft and its save", () => {
 describe("the save notes", () => {
   it("say nothing for a plain save, and name what happened otherwise", () => {
     expect(statusPagesSaveNote({ ok: true, revision: 2, merged: false })).toBeUndefined();
-    expect(statusPagesSaveNote({ ok: true, revision: 2, merged: true })!.text).toBe("Saved. Changes from the iPhone were merged in.");
-    expect(statusPagesSaveNote({ ok: true, revision: 7, merged: true, alreadySaved: true })!.text).toBe("Nothing left to save. The iPhone saved the same changes, as revision 7.");
+    expect(statusPagesSaveNote({ ok: true, revision: 2, merged: true })!.text).toBe("Saved. Changes made somewhere else were merged in.");
+    expect(statusPagesSaveNote({ ok: true, revision: 7, merged: true, alreadySaved: true })!.text).toBe("Nothing left to save. The same changes were saved somewhere else, as revision 7.");
     expect(statusPagesSaveNote({ ok: false, revision: 2, merged: false, code: "no_record" })!.kind).toBe("warn");
     expect(statusPagesSaveNote({ ok: false, revision: 2, merged: false, code: "boom", message: "it broke" })).toEqual({ kind: "err", text: "Not saved: it broke" });
   });
 
   it("name several kept pages in one line", () => {
     expect(statusPagesKeptText([{ id: "A", name: "House" }, { id: "B", name: "" }, { id: "C", name: "Lights" }]))
-      .toBe('The iPhone also changed "House", a status page and "Lights". The iPhone\'s versions were kept.');
+      .toBe('Another save also changed "House", a status page and "Lights". That save\'s versions were kept.');
     expect(statusPagesKeptText([])).toBe("");
   });
 

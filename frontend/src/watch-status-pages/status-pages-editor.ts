@@ -10,7 +10,7 @@
 // The host pattern of the menu editor (`watch-menus/menu-editor.ts`): watch
 // chips from the owners list, the record read with `watch_config/get` and kept
 // as raw JSON in a draft (`draft.ts`) with undo and redo, a save through
-// `watch_config/save` that merges by page when the iPhone saved too, the
+// `watch_config/save` that merges by page when another save landed too, the
 // earlier saves with restore, the delivery check, and the size budget.
 //
 // A watch with no status pages record yet can start from the app's five
@@ -494,7 +494,7 @@ export class WaStatusPagesEditor extends LitElement {
     }
     const taken = takeStatusPagesRecord(watchId, document, record.revision);
     if (taken.kept.length > 0) this.note = { kind: "warn", text: statusPagesKeptText(taken.kept) };
-    else if (taken.mergedIntoEdits) this.note = { kind: "warn", text: "The status pages changed on the iPhone. Your edits are kept." };
+    else if (taken.mergedIntoEdits) this.note = { kind: "warn", text: "The status pages changed somewhere else. Your edits are kept." };
     this.requestUpdate();
   }
 
@@ -720,10 +720,10 @@ export class WaStatusPagesEditor extends LitElement {
     if (result.ok) {
       this.note = { kind: "ok", text: `${empty ? "Started with an empty list" : "Started with the defaults"}. The watch picks them up the next time it checks.` };
     } else if (result.code === "no_record") {
-      this.note = { kind: "warn", text: `${STATUS_PAGES_PAIR_FIRST_TEXT} Watch settings has Pair a watch.` };
+      this.note = { kind: "warn", text: `${STATUS_PAGES_PAIR_FIRST_TEXT} Go to Watch app, Settings, Pair a watch.` };
       return;
     } else if (result.code === "conflict") {
-      this.note = { kind: "warn", text: "The iPhone sent status pages meanwhile, so those are shown." };
+      this.note = { kind: "warn", text: "Status pages arrived meanwhile, so those are shown." };
     } else if (result.code === "unsupported") {
       this.unsupported = true;
       return;
@@ -870,7 +870,7 @@ export class WaStatusPagesEditor extends LitElement {
       ${this.renderSyncPill(editing ? draft : undefined)}
       ${this.renderTopMenu(editing ? draft : undefined)}
       ${editing ? html`<button class="primary save ${dirty ? "dirty" : ""}" ?disabled=${!dirty || this.saving}
-          title=${dirty ? `Save (${MOD}S). A save reaches the watch the next time it checks, or through the iPhone.` : `Nothing to save (${MOD}S)`}
+          title=${dirty ? `Save (${MOD}S). A save reaches the watch the next time it checks.` : `Nothing to save (${MOD}S)`}
           @click=${() => void this.save()}>${this.saving ? "Saving…" : "Save"}</button>
         <span class="tb-saved" title=${dirty ? "Unsaved changes" : ""}>${renderConfigSaved(this.record)}</span>` : nothing}
       ${this.barActions}
