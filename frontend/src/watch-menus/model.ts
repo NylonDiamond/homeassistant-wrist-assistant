@@ -748,6 +748,30 @@ export function setWatchMenuSlotVisible(document: MenusDocument, ref: MenuListRe
   return editSlot(document, ref, id, (s) => withMenuKey(s, "isVisible", visible));
 }
 
+/** Whether a slot shows Skip Conditions: an Entity quick menu slot that
+ * triggers an automation, as the phone showed it. The Anywhere menu never
+ * offers that action. */
+export function watchMenuSlotHasSkipConditions(ref: MenuListRef, slot: JsonObject): boolean {
+  return ref.list !== "anywhere" && slotActionType(slot) === "automationTrigger";
+}
+
+/** The slot's Skip Conditions: `true` (Skip), `false` (Don't Skip), `null`
+ * (Default, the key absent or not a boolean). */
+export function watchMenuSlotSkipConditions(slot: JsonObject): boolean | null {
+  return typeof slot.automationSkipConditionOverride === "boolean" ? slot.automationSkipConditionOverride : null;
+}
+
+/** Skip Conditions on an automation trigger slot: `true` or `false` writes
+ * `automationSkipConditionOverride`, `null` (Default) removes it. Refused
+ * for a slot that does not show the row. */
+export function setWatchMenuSlotSkipConditions(document: MenusDocument, ref: MenuListRef, id: string, value: boolean | null): MenusDocument {
+  if (value !== null && typeof value !== "boolean") return document;
+  return editSlot(document, ref, id, (s) => {
+    if (!watchMenuSlotHasSkipConditions(ref, s)) return s;
+    return value === null ? withoutMenuKey(s, "automationSkipConditionOverride") : withMenuKey(s, "automationSkipConditionOverride", value);
+  });
+}
+
 export function setWatchMenuSlotIcon(document: MenusDocument, ref: MenuListRef, id: string, icon: string): MenusDocument {
   const name = typeof icon === "string" ? icon.trim() : "";
   if (name === "") return document;

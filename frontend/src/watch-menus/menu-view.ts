@@ -35,6 +35,7 @@ import { type FoldId, anySectionOpen, sectionOpen, setSectionOpen, setSectionsOp
 import type { JsonObject } from "../watch-pages/model.js";
 import { STAGE_ZOOM_STEPS } from "../watch-pages/stage.js";
 import { WATCH_NOT_IN_LIST_TEXT, WATCH_NOT_ON_IPHONE_TEXT, WATCH_NO_HTTP_ACTIONS_TEXT } from "../watch-pages/catalog.js";
+import { type WatchSkipChoice, WATCH_SKIP_CHOICES, watchSkipChoice, watchSkipValue } from "../watch-pages/tile-settings-options.js";
 import { goToWatchHttpActions } from "../shell.js";
 import {
   SWITCHER_SECTION_TITLE,
@@ -66,6 +67,7 @@ import {
   setWatchMenuSlotColor,
   setWatchMenuSlotEntityTypes,
   setWatchMenuSlotIcon,
+  setWatchMenuSlotSkipConditions,
   setWatchMenuSlotVisible,
   setWatchMenuStyle,
   slotAction,
@@ -91,7 +93,9 @@ import {
   watchMenuRingPoint,
   watchMenuShowForTypes,
   watchMenuSlotEntityTypes,
+  watchMenuSlotHasSkipConditions,
   watchMenuSlotId,
+  watchMenuSlotSkipConditions,
   watchMenuSlots,
   watchMenuStyleFields,
   watchMenuStyleShown,
@@ -1137,6 +1141,16 @@ function payloadField(host: MenusViewHost, ref: MenuListRef, slot: JsonObject, r
   }
 }
 
+/** Skip Conditions on an automation trigger slot of the Entity quick menu:
+ * Default removes the key, Skip and Don't skip write `true` and `false`. */
+function renderSkipConditions(host: MenusViewHost, ref: MenuListRef, slot: JsonObject): TemplateResult | typeof nothing {
+  if (!watchMenuSlotHasSkipConditions(ref, slot)) return nothing;
+  const id = watchMenuSlotId(slot);
+  return html`<div class="ts-stack">${segField<WatchSkipChoice>("Skip conditions", watchSkipChoice(watchMenuSlotSkipConditions(slot)),
+      WATCH_SKIP_CHOICES as [WatchSkipChoice, string][], (v) => host.edit((d) => setWatchMenuSlotSkipConditions(d, ref, id, watchSkipValue(v))))}</div>
+    <div class="hint ts-under">Whether running the automation from this menu skips its conditions. Default follows the tile, then "Skip conditions by default" in the watch's Settings.</div>`;
+}
+
 /**
  * The Anywhere slot's "show for" filter. Only the types the watch reports
  * under the finger are offered. A stored type it never reports is kept,
@@ -1169,10 +1183,12 @@ function renderShowFor(host: MenusViewHost, slot: JsonObject): TemplateResult {
   </details>`;
 }
 
-/** Whether the Slot card holds a value away from a new slot's: hidden, or
- * shown only for some types. The place and the action are always a choice. */
+/** Whether the Slot card holds a value away from a new slot's: hidden,
+ * shown only for some types, or its own Skip conditions. The place and the
+ * action are always a choice. */
 export function menuSlotChanged(slot: JsonObject, ref: MenuListRef): boolean {
-  return slot.isVisible === false || (ref.list === "anywhere" && watchMenuSlotEntityTypes(slot) !== undefined);
+  return slot.isVisible === false || (ref.list === "anywhere" && watchMenuSlotEntityTypes(slot) !== undefined)
+    || (watchMenuSlotHasSkipConditions(ref, slot) && watchMenuSlotSkipConditions(slot) !== null);
 }
 
 /** Whether the Look card is away from the action's own icon and color. */
@@ -1221,6 +1237,7 @@ function renderSlotInspector(host: MenusViewHost, ref: MenuListRef, slot: JsonOb
     ${spec?.description ? html`<div class="hint ts-under">${spec.description}</div>` : nothing}
     ${watchMenuActionNeedsInstances(raw) ? html`<div class="hint ts-under keep">Only for a watch with more than one Home Assistant.</div>` : nothing}
     ${(spec?.payload ?? []).map((p) => payloadField(host, ref, slot, raw, p))}
+    ${renderSkipConditions(host, ref, slot)}
     ${ref.list === "anywhere" ? renderShowFor(host, slot) : nothing}
   </fieldset>`;
   const lookBody = html`<fieldset class="me-body" ?disabled=${host.busy} aria-label="Look">
