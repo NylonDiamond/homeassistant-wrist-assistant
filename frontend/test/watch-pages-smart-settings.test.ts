@@ -16,7 +16,7 @@ import type { IconProvider } from "../src/renderer.js";
 import { SymbolBrowser } from "../src/symbols.js";
 import { type WatchPagesApplyOptions, WatchPagesDraft } from "../src/watch-pages/draft.js";
 import { checkWatchPagesValues } from "../src/watch-pages/merge.js";
-import type { WatchPagesEditorHost } from "../src/watch-pages/editor-host.js";
+import { type TileSettingsHost, type WatchPagesEditorHost, extendHost } from "../src/watch-pages/editor-host.js";
 import type { JsonObject, WatchPage, WatchPageTile, WatchPagesDocument } from "../src/watch-pages/model.js";
 import { tileLabel } from "../src/watch-pages/model.js";
 import { renderWatchPagePreview } from "../src/watch-pages/preview.js";
@@ -761,5 +761,58 @@ describe("the stage of a smart page", () => {
     const text = flatten(renderWatchPagePreview({ page, pages: [page], screen, states: STATES }));
     expect(text).toContain('<span class="wp-divider-label">Lights</span>');
     expect(text).toMatch(/wp-divider label" style=[^>]*--ink:#FFFFFF/);
+  });
+});
+
+// ── Animate while on ─────────────────────────────────────────────────────
+
+describe("Animate while on in the Icon section", () => {
+  /** The tile settings' host for the plain page's only tile. */
+  function tileHost(entityId: string, extra: JsonObject = {}) {
+    const page: WatchPage = { id: PAGE, name: "Home", themeOverride: "neonLagoon", items: [{ id: "T0", entityId, gridCol: 0, gridRow: 0, colSpan: 4, rowSpan: 3, ...extra }] };
+    const s = setup(page);
+    const th = extendHost(s.host, {
+      tileId: () => "T0",
+      tile: () => (s.page().items as WatchPageTile[])[0]!,
+    }) as TileSettingsHost;
+    th.uiState.set("tile-settings:open:icon", true);
+    return { s, th, tile: () => (s.page().items as JsonObject[])[0]!, view: () => renderTileSettings(th, { sections: ["icon"] }) };
+  }
+  const switchOn = (root: unknown) => /Animate while on[\s\S]*?<input type="checkbox" \.checked=(true|false)/.exec(flatten(root))?.[1];
+
+  it("shows only for a kind the watch animates, at the watch's default", () => {
+    expect(switchOn(tileHost("fan.den").view())).toBe("true");
+    expect(switchOn(tileHost("light.den").view())).toBe("false");
+    for (const entityId of ["switch.den", "sensor.den", "automation.den"]) {
+      expect(flatten(tileHost(entityId).view()), entityId).not.toContain("Animate while on");
+    }
+  });
+
+  it("the switch writes true or false, and Use the default removes the key, each one undo step", () => {
+    const t = tileHost("light.den", { zzFuture: 1 });
+    check(t.view(), "Animate while on", true);
+    expect(t.tile().activeIconAnimationEnabled).toBe(true);
+    expect(t.tile().zzFuture).toBe(1);
+    expect(flatten(t.view())).toContain("Use the default");
+    check(t.view(), "Animate while on", false);
+    expect(t.tile().activeIconAnimationEnabled).toBe(false);
+    click(t.view(), "Use the default");
+    expect(Object.hasOwn(t.tile(), "activeIconAnimationEnabled")).toBe(false);
+    expect(flatten(t.view())).not.toContain("Use the default");
+    t.s.draft.undo();
+    expect(t.tile().activeIconAnimationEnabled).toBe(false);
+  });
+
+  it("a rule's style shows it for its domain at the watch's default and writes tileStyle", () => {
+    const s = setup(smartPage([ruleOf(R1, "fan", { tileStyle: { color: "#FFCC00" } }), ruleOf(R2, "binary_sensor", { tileStyle: {} })]));
+    const fan = smartStyleHost(s.host, R1);
+    fan.uiState.set("tile-settings:open:icon", true);
+    const view = () => renderTileSettings(fan, { sections: ["icon"] });
+    expect(switchOn(view())).toBe("true");
+    check(view(), "Animate while on", false);
+    expect(s.rule(R1).tileStyle).toEqual({ color: "#FFCC00", activeIconAnimationEnabled: false });
+    click(view(), "Use the default");
+    expect(s.rule(R1).tileStyle).toEqual({ color: "#FFCC00" });
+    expect(flatten(renderTileSettings(smartStyleHost(s.host, R2), { sections: ["icon"] }))).not.toContain("Animate while on");
   });
 });

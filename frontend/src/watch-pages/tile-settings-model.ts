@@ -60,6 +60,10 @@ export interface WatchTileKindEntry {
   defaultRequiresConfirmation: boolean;
   /** The Dim When Off row shows. */
   dimWhenOff: boolean;
+  /** The watch animates the icon while on (`activeIconAnimationEnabled`). */
+  activeIconAnimation: boolean;
+  /** What an absent `activeIconAnimationEnabled` resolves to. */
+  activeIconAnimationDefault: boolean;
   /** The Skip Conditions row shows. */
   skipConditions: boolean;
   /** Action raw value to the words the phone shows for this kind. */
@@ -145,6 +149,7 @@ export const WATCH_TILE_SETTING_KEYS: readonly string[] = [
   "iconSizeOverride",
   "iconShadow",
   "dimWhenOff",
+  "activeIconAnimationEnabled",
   "iconTapAnimation",
   "customLabel",
   "showLabel",
@@ -541,6 +546,23 @@ export function setWatchTileDimWhenOff(
   );
 }
 
+/** Animate While On: `true` or `false`, written even when it equals the
+ * kind's default, as the phone's toggle wrote it; `null` (Use the default,
+ * the phone's reset) removes the key. Refused for a kind the watch does not
+ * animate. */
+export function setWatchTileActiveIconAnimation(
+  document: WatchPagesDocument,
+  pageId: string,
+  tileId: string,
+  value: boolean | null,
+): WatchPagesDocument {
+  if (value !== null && !isBool(value)) return document;
+  return setKey(document, pageId, tileId, "activeIconAnimationEnabled", (tile) => {
+    if (!watchTileKindEntry(tile).activeIconAnimation) return undefined;
+    return value === null ? REMOVE : value;
+  });
+}
+
 /** Icon Animation When Tapped: one of `WATCH_ICON_TAP_ANIMATIONS`. */
 export function setWatchTileTapAnimation(
   document: WatchPagesDocument,
@@ -564,6 +586,9 @@ export interface WatchTileIconSettings {
   iconShadow: boolean;
   /** `applies`: the row shows for this kind. */
   dimWhenOff: { applies: boolean; value: boolean };
+  /** Animate While On: `shown` for a kind the watch animates; `value` is
+   * what applies, the stored value else the kind's default. */
+  activeAnimation: { shown: boolean; stored: boolean | undefined; default: boolean; value: boolean };
   /** What the watch plays: a stored value it does not know reads as
    * `bounce`, as the watch decodes it. */
   tapAnimation: string;
@@ -577,6 +602,8 @@ const UNKNOWN_TAP_ANIMATION = "bounce";
 
 /** The Icon task's values for a tile, absent keys read as the watch reads them. */
 export function watchTileIconSettings(tile: WatchPageTile): WatchTileIconSettings {
+  const entry = watchTileKindEntry(tile);
+  const animationStored = isBool(tile.activeIconAnimationEnabled) ? tile.activeIconAnimationEnabled : undefined;
   return {
     icon: typeof tile.icon === "string" ? tile.icon : undefined,
     color: typeof tile.color === "string" ? tile.color : undefined,
@@ -584,7 +611,15 @@ export function watchTileIconSettings(tile: WatchPageTile): WatchTileIconSetting
     iconSize: typeof tile.iconSizeOverride === "number" ? tile.iconSizeOverride : undefined,
     iconSizeMax: watchTileMaxIconSize(tile),
     iconShadow: tile.iconShadow === true,
-    dimWhenOff: { applies: watchTileKindEntry(tile).dimWhenOff, value: tile.dimWhenOff !== false },
+    dimWhenOff: { applies: entry.dimWhenOff, value: tile.dimWhenOff !== false },
+    // `resolvedActiveIconAnimationEnabled`: off for a kind that does not
+    // animate, whatever is stored.
+    activeAnimation: {
+      shown: entry.activeIconAnimation,
+      stored: animationStored,
+      default: entry.activeIconAnimationDefault,
+      value: entry.activeIconAnimation && (animationStored ?? entry.activeIconAnimationDefault),
+    },
     tapAnimation:
       typeof tile.iconTapAnimation !== "string"
         ? TABLE.newIconTapAnimation

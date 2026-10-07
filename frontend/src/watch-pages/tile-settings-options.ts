@@ -25,10 +25,12 @@ import {
   watchSingleTapSettings,
   watchStoredPageName,
   watchTileActionSettings,
+  watchTileIconSettings,
   watchTileIconSizeTop,
   watchTileIconSizeValue,
   watchTapActionLabel,
   watchTileKindEntry,
+  watchTileKindName,
   watchTriggerModes,
 } from "./tile-settings-model.js";
 import {
@@ -461,6 +463,27 @@ export function watchHoldSlideMenus(tile: WatchPageTile, catalog?: WatchCatalog)
     };
   });
   return { rows, anyStored: now.anyStored, readable: now.parses };
+}
+
+/** What the icon does while on, by kind, as the phone's Icon task said it. */
+const ACTIVE_ANIMATION_WORDS: Readonly<Record<string, string>> = {
+  fan: "Spins the icon while the fan runs.",
+  light: "Pulses the icon while the light is on.",
+  climate: "Pulses the icon while heating or cooling.",
+  media_player: "Pulses the icon while media plays.",
+  timer: "Pulses the icon while the timer runs.",
+  vacuum: "Spins the icon while the vacuum cleans.",
+};
+
+/** The line under Animate while on: what the icon does, and the kind's
+ * default, so a person knows what the switch overrides. */
+export function watchActiveAnimationNote(tile: WatchPageTile): string {
+  const a = watchTileIconSettings(tile).activeAnimation;
+  const what = ACTIVE_ANIMATION_WORDS[watchTileKindName(tileEntityId(tile))] ?? "Animates the icon while on.";
+  const which = a.default ? "on" : "off";
+  return a.stored === undefined
+    ? `${what} The default for this kind of tile: ${which}.`
+    : `${what} Set on this tile. The default for this kind of tile is ${which}.`;
 }
 
 /** The line under Ask before running: the kind's default, so a person knows

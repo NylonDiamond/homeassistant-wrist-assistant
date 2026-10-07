@@ -132,6 +132,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle",
@@ -153,6 +155,8 @@
       },
       "defaultRequiresConfirmation": true,
       "dimWhenOff": true,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle Alarm",
@@ -174,6 +178,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "startListening": "Run Assist",
@@ -194,6 +200,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle",
@@ -215,6 +223,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": true,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": true,
       "labels": {
         "toggle": "Toggle Automation",
@@ -237,6 +247,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "openControl": "Open Details",
@@ -257,6 +269,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Press Button",
@@ -278,6 +292,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "openControl": "Open Controls",
@@ -298,6 +314,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "openControl": "Open Camera Settings",
@@ -320,6 +338,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": true,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle Climate",
@@ -341,6 +361,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle",
@@ -370,6 +392,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Increment Counter",
@@ -402,6 +426,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle Cover",
@@ -426,6 +452,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle",
@@ -447,6 +475,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle",
@@ -468,6 +498,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "openControl": "Open Controls",
@@ -486,6 +518,8 @@
       "holdSlideDefaults": {},
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "openControl": "Open Controls",
@@ -506,6 +540,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "openControl": "Open Controls",
@@ -526,6 +562,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": true,
+      "activeIconAnimation": true,
+      "activeIconAnimationDefault": true,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle Fan",
@@ -545,6 +583,8 @@
       "holdSlideDefaults": {},
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "httpAction": "Run HTTP Action",
@@ -564,6 +604,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle Humidifier",
@@ -585,6 +627,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "openControl": "Open Controls",
@@ -605,6 +649,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": true,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle Boolean",
@@ -626,6 +672,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Press Button",
@@ -647,6 +695,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle",
@@ -668,6 +718,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle",
@@ -689,6 +741,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle",
@@ -710,6 +764,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Set Value",
@@ -740,6 +796,8 @@
       },
       "defaultRequiresConfirmation": true,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle Mower",
@@ -764,6 +822,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": true,
+      "activeIconAnimation": true,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle Light",
@@ -793,6 +853,8 @@
       },
       "defaultRequiresConfirmation": true,
       "dimWhenOff": true,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle Lock",
@@ -816,6 +878,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": true,
+      "activeIconAnimation": true,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle Playback",
@@ -839,6 +903,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "openControl": "Open Camera Settings",
@@ -861,6 +927,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": true,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle",
@@ -882,6 +950,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle",
@@ -901,6 +971,8 @@
       "holdSlideDefaults": {},
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Go to Page",
@@ -922,6 +994,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": true,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "openControl": "Open Controls",
@@ -942,6 +1016,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": true,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle",
@@ -963,6 +1039,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": true,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle Remote",
@@ -984,6 +1062,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Activate Scene",
@@ -1005,6 +1085,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Run Script",
@@ -1026,6 +1108,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle",
@@ -1047,6 +1131,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "openControl": "Open Details",
@@ -1065,6 +1151,8 @@
       "holdSlideDefaults": {},
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle",
@@ -1086,6 +1174,8 @@
       },
       "defaultRequiresConfirmation": true,
       "dimWhenOff": true,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle Siren",
@@ -1105,6 +1195,8 @@
       "holdSlideDefaults": {},
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "openControl": "Open Controls",
@@ -1125,6 +1217,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "speakMessage": "Speak Message",
@@ -1143,6 +1237,8 @@
       "holdSlideDefaults": {},
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle",
@@ -1164,6 +1260,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle",
@@ -1185,6 +1283,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": true,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle Switch",
@@ -1206,6 +1306,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "openControl": "Open Controls",
@@ -1227,6 +1329,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Set Value",
@@ -1248,6 +1352,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle",
@@ -1278,6 +1384,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": true,
+      "activeIconAnimation": true,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle Timer",
@@ -1302,6 +1410,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Complete Item",
@@ -1323,6 +1433,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle",
@@ -1344,6 +1456,8 @@
       },
       "defaultRequiresConfirmation": true,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Install Update",
@@ -1374,6 +1488,8 @@
       },
       "defaultRequiresConfirmation": true,
       "dimWhenOff": true,
+      "activeIconAnimation": true,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle Vacuum",
@@ -1407,6 +1523,8 @@
       },
       "defaultRequiresConfirmation": true,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle Valve",
@@ -1431,6 +1549,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle",
@@ -1452,6 +1572,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle Heater",
@@ -1473,6 +1595,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "openControl": "Open Weather",
@@ -1491,6 +1615,8 @@
       "holdSlideDefaults": {},
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "openControl": "Open Controls",
@@ -1512,6 +1638,8 @@
       },
       "defaultRequiresConfirmation": false,
       "dimWhenOff": false,
+      "activeIconAnimation": false,
+      "activeIconAnimationDefault": false,
       "skipConditions": false,
       "labels": {
         "toggle": "Toggle",

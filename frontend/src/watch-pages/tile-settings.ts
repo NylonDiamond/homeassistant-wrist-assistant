@@ -133,6 +133,7 @@ import {
   setWatchHeaderStyle,
   setWatchHeaderTextSize,
   setWatchPageLinkTarget,
+  setWatchTileActiveIconAnimation,
   setWatchTileAskBeforeRunning,
   setWatchTileColor,
   setWatchTileDimWhenOff,
@@ -184,6 +185,7 @@ import {
   WATCH_TILE_SETTINGS_SECTION_TITLES,
   isWatchStoredChoice,
   sameWatchColor,
+  watchActiveAnimationNote,
   watchAskBeforeRunningNote,
   watchChoiceMenu,
   watchColorEnds,
@@ -589,7 +591,7 @@ const SECTION_KEYS: Readonly<Partial<Record<WatchTileSettingsSection, readonly s
     "httpTileValueColorHex",
   ],
   // The icon and the color are compared to the kind's defaults instead.
-  icon: ["iconSizeOverride", "iconShadow", "dimWhenOff", "iconTapAnimation", "stateIcons", "stateColors"],
+  icon: ["iconSizeOverride", "iconShadow", "dimWhenOff", "activeIconAnimationEnabled", "iconTapAnimation", "stateIcons", "stateColors"],
   // The label is the Name card's, not this one's.
   text: ["showLabel", "labelFontSizeOverride", "labelFontWeight", "labelFontDesign", "labelShadow", "labelColorHex"],
   action: [
@@ -621,7 +623,7 @@ const SECTION_READS: Readonly<Partial<Record<WatchTileSettingsSection, (tile: Wa
   icon: (t) => {
     const s = watchTileIconSettings(t);
     const map = (v: unknown) => (typeof v === "object" && v !== null && Object.keys(v).length > 0 ? v : undefined);
-    return [s.iconSize, s.iconShadow, s.dimWhenOff.value, s.tapAnimation, map(t.stateIcons), map(t.stateColors)];
+    return [s.iconSize, s.iconShadow, s.dimWhenOff.value, s.activeAnimation.value, s.tapAnimation, map(t.stateIcons), map(t.stateColors)];
   },
   text: (t) => {
     const { label: _label, ...rest } = watchTileTextSettings(t);
@@ -1115,11 +1117,22 @@ function renderIcon(host: TileSettingsHost): TemplateResult {
       ? html`${checkField("Dim when off", s.dimWhenOff.value, (on) => commit(host, "dimWhenOff", (d) => setWatchTileDimWhenOff(d, host.pageId, host.tileId, on)))}
           <div class="hint ts-under">The tile dims while it is off.</div>`
       : nothing}
+    ${s.activeAnimation.shown ? renderActiveAnimation(host, s.activeAnimation.stored) : nothing}
     ${menuField("Tap animation", animation, (v) =>
       commit(host, "tapAnimation", (d) => setWatchTileTapAnimation(d, host.pageId, host.tileId, v)))}
     <div class="hint ts-under">How the icon moves when the tile is tapped.${unknownAnimation === undefined
       ? nothing
       : html` Stored as "${unknownAnimation}", which the watch plays as Bounce; it stays until another is picked.`}</div>`;
+}
+
+/** Animate while on, for a kind the watch animates: the switch writes
+ * `true` or `false`, Use the default removes the key. */
+function renderActiveAnimation(host: TileSettingsHost, stored: boolean | undefined): TemplateResult {
+  const set = (value: boolean | null) =>
+    commit(host, "activeAnimation", (d) => setWatchTileActiveIconAnimation(d, host.pageId, host.tileId, value));
+  return html`${checkField("Animate while on", watchTileIconSettings(host.tile).activeAnimation.value, (on) => set(on))}
+    <div class="hint ts-under">${watchActiveAnimationNote(host.tile)}
+      ${stored === undefined ? nothing : linkButton("Use the default", "Remove this tile's own setting", () => set(null))}</div>`;
 }
 
 function renderTileColor(host: TileSettingsHost, defaultColor: string | undefined): TemplateResult {
