@@ -8,9 +8,10 @@
 // both behind one Save. Plan: app repo docs/pages_in_home_assistant_step4.md,
 // "4d batch 2 build contract", items 10 to 12.
 //
-// Everything here is read from `notification-style-keys.json`, which the
-// app's test builds from the Swift types: the keys, their enums and the
-// phone's labels for them, the sound list, the volume range. Nothing names a
+// Everything here is read from `notification-style-keys.json`, the panel's
+// own table, edited by hand: the keys, their enums and their labels, the
+// sound list, the volume range. The app's `WatchNotificationStyleDocumentTests`
+// checks the parts the watch decides against the Swift types. Nothing names a
 // value the table does not, because the watch's decoder fails the whole
 // document on an enum value it does not know.
 //

@@ -14,7 +14,7 @@
 // and a tile id in, only the objects on the path changed, exactly what the
 // phone writes (a new key at its sorted place, a removed key deleted), and
 // the document they were given back for a refusal. Every list, word and
-// limit comes from `tile-app.json`, written from the app's Swift code; the
+// limit comes from `tile-app.json`, the panel's own table; the
 // settings case files in `test/fixtures-pages/settings` pin each setter.
 // Fetched values come in as plain values.
 //

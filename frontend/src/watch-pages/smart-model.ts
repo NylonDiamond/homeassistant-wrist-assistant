@@ -24,7 +24,7 @@
 // `headerGlow` only above 0).
 //
 // The lists and words (the domains, the Add Domain presets, the header
-// styles) come from `tile-smart.json`, written from the app's Swift code; the
+// styles) come from `tile-smart.json`, the panel's own table; the
 // eight page keys and their defaults, and the style keys a rule may hold,
 // from `page-keys.json`. Home Assistant's states come in as plain values.
 //

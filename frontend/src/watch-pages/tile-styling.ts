@@ -1,8 +1,8 @@
 // The styling table: every list, word, range, swatch list and reset key set
 // of the phone's State, Border, Background and Page tasks and its page
-// theme picker, as `tile-styling.json` has them. The app writes that file
-// from its Swift code (`WatchPagesTablesTests`), and a test there fails when
-// it drifts; nothing in it is written here by hand.
+// theme picker, as `tile-styling.json` has them. That file is the panel's
+// own table, edited by hand; `WatchPagesTablesTests` in the app checks the
+// parts the watch decides (enums, state words) against the watch's code.
 //
 // Plan: app repo docs/pages_in_home_assistant_step3.md, "3d build contract".
 

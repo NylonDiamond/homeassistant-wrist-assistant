@@ -11,11 +11,13 @@
 // sorted-key encoder writes it. A setter refuses by returning the document it
 // was given, and so does an edit that changes nothing.
 //
-// The three tables are built from the app's Swift code by the app repo's
-// `WatchMenusTablesTests`: `menu-actions.json` (every action, its payload and
-// where each menu offers it), `menu-keys.json` (every key the panel may write,
-// with its enum values) and `menu-defaults.json` (the document "Start with the
-// defaults" saves). The panel never writes a key or an enum value they do not
+// The three tables are the panel's own and are edited by hand:
+// `menu-actions.json` (every action, its payload and where each menu offers
+// it), `menu-keys.json` (every key the panel may write, with its enum values)
+// and `menu-defaults.json` (the document "Start with the defaults" saves). The
+// app repo's `WatchMenusTablesTests` and `WatchMenusKeysTests` check the parts
+// the watch decides (enum values, keys, payloads, default ids) against the
+// watch's code. The panel never writes a key or an enum value they do not
 // name.
 //
 // Plan: app repo docs/pages_in_home_assistant_step4.md ("4d batch 1 build

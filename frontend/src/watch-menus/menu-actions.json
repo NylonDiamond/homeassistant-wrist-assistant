@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "Generated from the iPhone app's Swift code by WatchMenusTablesTests; do not edit. Regenerate menu-actions.json with TEST_RUNNER_WA_UPDATE_FIXTURES=1 ./scripts/test.sh WatchMenusTablesTests in the app repository.",
+  "note": "The panel's own table: edit it here. WatchMenusTablesTests in the app repository checks the parts the watch decides against the watch's code.",
   "categories": [
     {
       "id": "entityControl",
@@ -598,7 +598,7 @@
       "icon": "network",
       "color": "#7CC4E8",
       "requiresPremium": true,
-      "description": "Switch between local and cloud server. Resets to the phone-configured default when the watch app relaunches."
+      "description": "Switch between local and cloud server. Resets to the default set in Home Assistant when the watch app relaunches."
     },
     {
       "raw": "switchInstance",

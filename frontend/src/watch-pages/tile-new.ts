@@ -9,8 +9,8 @@
 // phone's to the byte.
 //
 // Every icon, color, theme and domain rule comes from `tile-defaults.json`,
-// which the app writes from its Swift code (`WatchPagesTablesTests`); none is
-// written out here. The case files in `test/fixtures-pages/add` pin whole
+// the panel's own table (`WatchPagesTablesTests` in the app checks the theme
+// palettes against the watch's); none is written out here. The case files in `test/fixtures-pages/add` pin whole
 // tiles, and the test runs every one.
 //
 // Adding follows the rules of `edit.ts`: the tile goes to the first free
@@ -18,9 +18,7 @@
 // the page and its `items` are new objects. Ids are written in upper case.
 //
 // The app tiles (template, music hub, point control, and the extra key of a
-// speak message tile) come from `tile-app.json`, which the app writes from
-// its Swift code too (`AppTileRules`, `TileAddDefaults.templateTile` and the
-// rest).
+// speak message tile) come from `tile-app.json`, the panel's own table too.
 //
 // Plan: app repo docs/pages_in_home_assistant_step3.md, "3c build contract",
 // for the HTTP action and status page tiles "3e build contract", and

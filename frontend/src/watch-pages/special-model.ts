@@ -13,7 +13,7 @@
 // repaired as a delete repairs them.
 //
 // Every list, word, limit and rule's data comes from `tile-special.json`,
-// written from the app's Swift code (`SpecialTileRules.swift`); the settings
+// the panel's own table; the settings
 // case files in `test/fixtures-pages/settings` pin what each setter writes.
 // Anything fetched (a snapshot's size, the device's entities, the players'
 // features) comes in as a plain value.

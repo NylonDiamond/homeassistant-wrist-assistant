@@ -10,12 +10,13 @@
 // the phone's sorted-key encoder writes it. A setter refuses by returning the
 // document it was given, and so does an edit that changes nothing.
 //
-// The tables are built from the app's Swift code by the app repo's
-// `WatchStatusPagesDocumentTests`: `status-page-keys.json` (every key with its
-// type and default, the enums and their words, the style controls, what a new
-// page and a new row hold), `status-page-rules.json` (the fill rules and the
-// add lists, read in `rules.ts`) and `status-page-defaults.json` (the
-// document "Start with the defaults" saves).
+// The tables are the panel's own and are edited by hand:
+// `status-page-keys.json` (every key with its type and default, the enums and
+// their words, the style controls, what a new page and a new row hold),
+// `status-page-rules.json` (the fill rules and the add lists, read in
+// `rules.ts`) and `status-page-defaults.json` (the document "Start with the
+// defaults" saves). The app repo's `WatchStatusPagesDocumentTests` checks the
+// parts the watch decides against the watch's code.
 //
 // Plan: app repo docs/pages_in_home_assistant_step4.md ("4d batch 2 build
 // contract", items 16 to 19).
