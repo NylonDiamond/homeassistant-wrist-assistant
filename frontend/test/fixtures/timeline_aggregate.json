@@ -66,14 +66,14 @@
           "value": {
             "kind": {
               "kind": "entityState",
-              "entityId": "person.jesse",
-              "displayName": "Jesse",
+              "entityId": "person.alex",
+              "displayName": "Alex",
               "domain": "person"
             }
           },
           "aggregate": {
             "entities": [
-              "person.jesse",
+              "person.alex",
               "person.sam"
             ],
             "combine": "all"
@@ -187,7 +187,7 @@
         "state": "on",
         "domain": "binary_sensor"
       },
-      "person.jesse": {
+      "person.alex": {
         "state": "home",
         "domain": "person"
       },
@@ -199,19 +199,19 @@
     "templateResults": {},
     "historySeries": {
       "binary_sensor.front_door|360|120|states|any:binary_sensor.front_door,binary_sensor.back_door,binary_sensor.side_gate": "0:off 3600:on 7200:off 14400:unavailable 18000:off",
-      "person.jesse|180|120|states|all:person.jesse,person.sam": "0:off 2700:on 8100:off"
+      "person.alex|180|120|states|all:person.alex,person.sam": "0:off 2700:on 8100:off"
     }
   },
   "expectedCompiled": {
     "entities": [
       "binary_sensor.front_door",
-      "person.jesse",
+      "person.alex",
       "binary_sensor.d0"
     ],
     "expressionKeys": [],
     "historyKeys": [
       "binary_sensor.front_door|360|120|states|any:binary_sensor.front_door,binary_sensor.back_door,binary_sensor.side_gate",
-      "person.jesse|180|120|states|all:person.jesse,person.sam"
+      "person.alex|180|120|states|all:person.alex,person.sam"
     ]
   },
   "expected": {

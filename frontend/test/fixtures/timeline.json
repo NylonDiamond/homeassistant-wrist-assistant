@@ -54,8 +54,8 @@
           "value": {
             "kind": {
               "kind": "entityState",
-              "entityId": "device_tracker.jesse",
-              "displayName": "Jesse",
+              "entityId": "device_tracker.alex",
+              "displayName": "Alex",
               "domain": "device_tracker"
             }
           },
@@ -149,7 +149,7 @@
         "state": "on",
         "domain": "binary_sensor"
       },
-      "device_tracker.jesse": {
+      "device_tracker.alex": {
         "state": "not_home",
         "domain": "device_tracker"
       },
@@ -161,19 +161,19 @@
     "templateResults": {},
     "historySeries": {
       "binary_sensor.front_door|60|120|states": "0:off 600:on 900:off 1200:unavailable 1800:unknown 2400:off 3000:on",
-      "device_tracker.jesse|180|120|states": "5400:home 9000:not_home"
+      "device_tracker.alex|180|120|states": "5400:home 9000:not_home"
     }
   },
   "expectedCompiled": {
     "entities": [
       "binary_sensor.front_door",
-      "device_tracker.jesse",
+      "device_tracker.alex",
       "sensor.washer"
     ],
     "expressionKeys": [],
     "historyKeys": [
       "binary_sensor.front_door|60|120|states",
-      "device_tracker.jesse|180|120|states",
+      "device_tracker.alex|180|120|states",
       "sensor.washer|60|120|states"
     ]
   },

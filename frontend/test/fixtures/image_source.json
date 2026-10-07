@@ -33,8 +33,8 @@
         "payload": {
           "id": "EEEEEEEE-0000-4000-8000-000000000092",
           "entity": {
-            "entityId": "person.jesse",
-            "displayName": "Jesse",
+            "entityId": "person.alex",
+            "displayName": "Alex",
             "domain": "person"
           },
           "source": "entityPicture",
@@ -85,7 +85,7 @@
         "state": "idle",
         "domain": "camera"
       },
-      "person.jesse": {
+      "person.alex": {
         "state": "home",
         "domain": "person"
       }
@@ -95,7 +95,7 @@
   "expectedCompiled": {
     "entities": [
       "camera.front_door",
-      "person.jesse"
+      "person.alex"
     ],
     "expressionKeys": []
   },
@@ -113,7 +113,7 @@
         {
           "id": "EEEEEEEE-0000-4000-8000-000000000092",
           "kind": "image",
-          "entityId": "person.jesse",
+          "entityId": "person.alex",
           "source": "entityPicture",
           "showTimestamp": false,
           "isHidden": false
