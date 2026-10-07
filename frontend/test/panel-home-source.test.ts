@@ -117,10 +117,17 @@ describe("Home's device sheet", () => {
     expect(home).toContain("${this.deviceSheet !== undefined ? this.renderDeviceSheet(this.deviceSheet, devices, admin) : nothing}");
   });
 
-  it("shows a few of the device's designs and a tile for the rest, which opens its tab", () => {
-    expect(sheet).toContain("const { shown, more } = deviceSheetCards(designs);");
-    expect(sheet).toContain("this.pickPickerTab(ownerId);");
-    expect(sheet).toContain("<b>+${more}</b><span>more</span>");
+  it("shows no design cards, only a count on each tab", () => {
+    expect(sheet).not.toContain("renderStartCard(");
+    expect(sheet).toContain("badge(t.filter === \"control\" ? controls.length : designs.length)");
+    expect(sheet).toContain("badge(t.count === undefined ? undefined : counts[t.count])");
+  });
+
+  it("reads a watch's counts when its sheet opens, dropping a late reply", () => {
+    expect(method("  private openDeviceSheet(ownerId: string) {")).toContain("void this.loadDeviceCounts(ownerId);");
+    const load = method("  private async loadDeviceCounts(ownerId: string) {");
+    expect(load).toContain("watchConfigCount(kind, record.document)");
+    expect(load).toContain("if (this.deviceSheet !== ownerId) return;");
   });
 
   it("offers Forget to administrators only, behind a second step", () => {

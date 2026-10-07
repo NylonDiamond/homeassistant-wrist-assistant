@@ -141,7 +141,7 @@ import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
 import { type SendState, agoWords, describeHomeSync, describeSend, deviceSyncLabel, homeSync, sendState, sendWaitMs } from "./send-state.js";
-import { type DeviceSheetTab, type HomeDeviceRow, deviceFacts, deviceSheetCards, deviceSheetTabs, homeDeviceRows, homeDevices, homeStyles } from "./home.js";
+import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, deviceFacts, deviceSheetTabs, homeDeviceRows, homeDevices, homeStyles, watchConfigCount } from "./home.js";
 import { type WatchAppSync, readWatchAppSync, summaryUnknown, summaryWatchAppSyncs, waitingForText, watchAppSyncKey } from "./watch-app-sync.js";
 import { type PickerForm, type TabMemory, browseAllTab, listPageEscape, listPageLead, listPageShown, listPageState, listPageStyles, listsReady, pickTab, pickerSurfaceClass, restoreTab } from "./list-page.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
@@ -1460,6 +1460,10 @@ export class WristAssistantPanel extends LitElement {
   @state() private deviceForgetBusy = false;
   /** Why the last Forget failed, shown in the sheet. */
   @state() private deviceForgetError?: string;
+  /** The sheet's watch's pages, status pages and Control Center controls, as
+   * many as its stored records hold. A kind that could not be read is absent
+   * and its tab wears no count. */
+  @state() private deviceCounts?: { owner: string; counts: Partial<Record<DeviceCountKind, number>> };
 
   /** The Watch app's shared watch as last picked, remembered per browser
    * (`watch-pick.ts`). Never the complications device: `sharedWatch` works
@@ -18853,6 +18857,28 @@ export class WristAssistantPanel extends LitElement {
     this.deviceForgetAsk = false;
     this.deviceForgetError = undefined;
     this.deviceSheet = ownerId;
+    void this.loadDeviceCounts(ownerId);
+  }
+
+  /** Read the counts the sheet's watch tabs wear, from the stored records.
+   * Only a watch has them, and only an administrator may read them. A reply
+   * that lands after the sheet moved on is dropped. */
+  private async loadDeviceCounts(ownerId: string) {
+    this.deviceCounts = undefined;
+    if (this.hass.user?.is_admin !== true || deviceKindOf(this.ownerOf(ownerId)) !== "watch") return;
+    const kinds: DeviceCountKind[] = ["pages", "status_pages", "control_center"];
+    const read = await Promise.all(kinds.map(async (kind) => {
+      try {
+        const record = await fetchWatchConfig(this.hass, ownerId, kind);
+        return [kind, watchConfigCount(kind, record.document)] as const;
+      } catch {
+        return undefined;
+      }
+    }));
+    if (this.deviceSheet !== ownerId) return;
+    const counts: Partial<Record<DeviceCountKind, number>> = {};
+    for (const hit of read) if (hit) counts[hit[0]] = hit[1];
+    this.deviceCounts = { owner: ownerId, counts };
   }
 
   private closeDeviceSheet() {
@@ -18863,14 +18889,12 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * One device, opened from a row of Home's Devices card: its state, what it
-   * is, a few of its designs, and the way to the rest. A watch has a door to
-   * its Watch settings. An administrator can forget it, after a second step
-   * in the same sheet that says what goes with it.
-   *
-   * The designs are the picker's cards, the copy on this device drawn. Four
-   * at most; past that three and a tile with how many more, which opens the
-   * Complications tab on this device's tab.
+   * One device, opened from a row of Home's Devices card: what it is, its
+   * state, and a tab for each of its pages, each opening that page on this
+   * device. A tab wears how many its page holds: the device's complications
+   * (or its Control Center ones), and on a watch its pages, status pages and
+   * Control Center controls. An administrator can make a new complication on
+   * it, or forget it after a second step that says what goes with it.
    */
   private renderDeviceSheet(ownerId: string, devices: readonly HomeDeviceRow[], admin: boolean) {
     const row = devices.find((d) => d.id === ownerId);
@@ -18879,7 +18903,10 @@ export class WristAssistantPanel extends LitElement {
     const close = () => this.closeDeviceSheet();
     const owner = this.ownerOf(ownerId);
     const designs = rowsOnDevice(this.pickerRows(), ownerId).filter((r) => r.copies.some((c) => c.ownerId === ownerId && c.item.kind === "record"));
-    const { shown, more } = deviceSheetCards(designs);
+    const controls = designs.filter((r) => r.copies.some((c) => c.ownerId === ownerId && c.item.kind === "record" && hasControlOf(c.item.record)));
+    const counts = this.deviceCounts?.owner === ownerId ? this.deviceCounts.counts : {};
+    const badge = (n: number | undefined) => n === undefined ? nothing
+      : html`<span class="dev-tab-n ${n === 0 ? "none" : ""}" aria-label=${`${n}`}>${n}</span>`;
     const toComplications = () => { close(); this.goTo(COMPLICATIONS_PATH); };
     const openList = (filter: "all" | "control" = "all") => {
       this.pickerFilter = filter;
@@ -18891,7 +18918,7 @@ export class WristAssistantPanel extends LitElement {
     const href = (path: string) => panelUrl(this.route, path, window.location.pathname);
     const tab = (t: DeviceSheetTab) => {
       if (t.kind === "list") {
-        return html`<button type="button" class="dev-tab" title=${`${t.label} on ${row.name}`} @click=${() => openList(t.filter)}>${t.label}</button>`;
+        return html`<button type="button" class="dev-tab" title=${`${t.label} on ${row.name}`} @click=${() => openList(t.filter)}>${t.label}${badge(t.filter === "control" ? controls.length : designs.length)}</button>`;
       }
       const path = watchScreenPath(t.screen, ownerId);
       return html`<a class="dev-tab" href=${href(path)} title=${`${t.label} on ${row.name}`}
@@ -18901,7 +18928,7 @@ export class WristAssistantPanel extends LitElement {
           close();
           this.pickWatch(ownerId);
           this.goTo(path);
-        }}>${t.label}</a>`;
+        }}>${t.label}${badge(t.count === undefined ? undefined : counts[t.count])}</a>`;
     };
     const title = this.deviceForgetAsk ? `Forget “${row.name}”?` : row.name;
     const facts = deviceFacts(owner, row.kind).join(" · ");
@@ -18926,19 +18953,6 @@ export class WristAssistantPanel extends LitElement {
         <div class="dev-state ${row.sync}"><i class="home-dot" aria-hidden="true"></i>
           <span><b>${deviceSyncLabel(row.sync)}</b>${row.waitingFor.length === 0 ? nothing
             : html`<span class="home-device-why"> · ${waitingForText(row.waitingFor)}</span>`}</span></div>
-        ${!admin && designs.length === 0 ? nothing : html`<div class="xf-stack">
-          <div class="xf-label">Complications<span class="xf-count">${designs.length}</span></div>
-          ${designs.length === 0
-            ? html`<p class="dev-none">No complication is on this device yet.</p>`
-            : html`<div class="dev-cards">
-              ${shown.map((r) => {
-                const copy = r.copies.find((c) => c.ownerId === ownerId && c.item.kind === "record") ?? r.open;
-                return this.renderStartCard(r, copy, () => { toComplications(); void this.openFromPicker(r, copy); });
-              })}
-              ${more === 0 ? nothing : html`<button type="button" class="dev-more" title=${`Every complication on ${row.name}`}
-                @click=${() => openList()}><b>+${more}</b><span>more</span></button>`}
-            </div>`}
-        </div>`}
         <div class="dev-acts">
           ${admin ? html`<button class="home-btn" ?disabled=${this.freeSlot() < 0 || this.ownerBusy}
             title=${this.freeSlot() < 0 ? "Every device is full. Delete a complication first." : `Make a new complication on ${row.name}`}

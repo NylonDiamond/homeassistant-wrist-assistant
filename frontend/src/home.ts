@@ -67,19 +67,37 @@ export function homeDeviceRows(devices: readonly IdHomeDevice[], watchApp: Reado
   return [...rows.filter((r) => r.kind === "watch"), ...rows.filter((r) => r.kind === "iphone")];
 }
 
-/** The device sheet's row of designs: all of them when they fit in `max`
- * tiles, else one fewer, so the last tile can say how many more there are. */
-export function deviceSheetCards<T>(rows: readonly T[], max = 4): { shown: T[]; more: number } {
-  if (rows.length <= max) return { shown: [...rows], more: 0 };
-  const shown = rows.slice(0, Math.max(0, max - 1));
-  return { shown, more: rows.length - shown.length };
+/** The watch config kinds whose items the device sheet counts on a tab. */
+export type DeviceCountKind = "pages" | "status_pages" | "control_center";
+
+/** How many items one stored watch config holds, as its editor lists them:
+ * the pages (the system ones are the watch's own and never listed), the
+ * status pages, or the Control Center controls. Read straight off the
+ * document rather than through each editor's model, which would pull the
+ * editors into the panel's first bundle. Nothing stored counts as none. */
+export function watchConfigCount(kind: DeviceCountKind, document: unknown): number {
+  if (!isObject(document)) return 0;
+  const list = document[kind === "pages" ? "pages" : kind === "status_pages" ? "statusPages" : "entities"];
+  if (!Array.isArray(list)) return 0;
+  return list.filter((item) => isObject(item) && !(kind === "pages" && item.isSystemPage === true)).length;
 }
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** The count each watch screen's tab wears, by screen. */
+const SCREEN_COUNTS: Partial<Record<WatchScreen["id"], DeviceCountKind>> = {
+  "pages": "pages",
+  "status-pages": "status_pages",
+  "control-center": "control_center",
+};
 
 /** One tab across the top of the device sheet: the device's complications
  * (all of them, or only its Control Center ones), or one watch screen. */
 export type DeviceSheetTab =
   | { kind: "list"; label: string; filter: "all" | "control" }
-  | { kind: "screen"; label: string; screen: WatchScreen };
+  | { kind: "screen"; label: string; screen: WatchScreen; count?: DeviceCountKind };
 
 /**
  * The device sheet's tabs, each opening its page on this device. A watch has
@@ -99,7 +117,8 @@ export function deviceSheetTabs(kind: "watch" | "iphone", admin: boolean): Devic
   const tabs: DeviceSheetTab[] = [{ kind: "list", label: "Complications", filter: "all" }];
   if (!admin) return tabs;
   for (const screen of [...WATCH_SCREENS.filter((s) => s.shared !== true), WATCH_SETTINGS_SCREEN]) {
-    tabs.push({ kind: "screen", label: screen.label, screen });
+    const count = SCREEN_COUNTS[screen.id];
+    tabs.push(count === undefined ? { kind: "screen", label: screen.label, screen } : { kind: "screen", label: screen.label, screen, count });
   }
   return tabs;
 }
@@ -205,46 +224,35 @@ export const homeStyles = css`
   dialog.dev-dialog { width: min(560px, calc(100vw - 32px)); }
   /* The sheet's tabs: a door to each of the device's pages, wrapping onto a
      second line on a narrow screen. Outlined like every Home control. */
-  .dev-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+  .dev-tabs { display: flex; flex-wrap: wrap; gap: 10px 8px; padding: 7px 7px 0 0; }
   a.dev-tab, button.dev-tab {
-    display: inline-flex; align-items: center; box-sizing: border-box; height: 28px; padding: 0 10px;
+    position: relative; display: inline-flex; align-items: center; box-sizing: border-box; height: 28px; padding: 0 10px;
     border-radius: 6px; font: inherit; font-size: 12.5px; font-weight: 550; cursor: pointer; white-space: nowrap; text-decoration: none;
     color: var(--wa-ink); background: var(--wa-field); border: 1px solid var(--wa-line-strong);
   }
   a.dev-tab:hover, button.dev-tab:hover { background: var(--wa-hover); }
   a.dev-tab:focus-visible, button.dev-tab:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  /* How many the page holds on this device, as a badge on the tab's top
+     right corner. None is drawn quieter, so a full tab stands out. */
+  .dev-tab-n {
+    position: absolute; top: -7px; right: -7px; min-width: 16px; height: 16px; box-sizing: border-box; padding: 0 4px;
+    border-radius: 999px; display: grid; place-items: center;
+    font-size: 10.5px; font-weight: 650; line-height: 1; font-variant-numeric: tabular-nums;
+    background: var(--wa-ink); color: var(--wa-bg);
+  }
+  .dev-tab-n.none { background: var(--wa-line-strong); color: var(--wa-muted); }
   .dev-state { display: flex; align-items: center; gap: 8px; font-size: 13px; }
   .dev-state.synced .home-dot { background: var(--wa-green); }
   .dev-state.waiting .home-dot { background: var(--wa-amber); }
   .dev-state.waiting b { color: var(--wa-amber); }
   .dev-state b { font-weight: 600; }
   .dev-state .home-device-why { color: var(--wa-muted); }
-  .dev-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
-  .dev-cards button.start-card { padding: 8px; border-radius: 12px; }
-  .dev-cards .start-card-pic { margin-bottom: 6px; }
-  .dev-cards .start-card-name { font-size: 12.5px; }
-  /* Every card here is on this device, so only its shape is said. */
-  .dev-cards .start-card-where { display: none; }
-  .dev-cards .start-card-shape { margin-left: 0; }
-  button.dev-more {
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 0;
-    border-radius: 12px; font: inherit; cursor: pointer; color: var(--wa-ink);
-    background: transparent; border: 1px dashed var(--wa-line-strong);
-  }
-  button.dev-more:hover { background: var(--wa-hover); }
-  button.dev-more:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  button.dev-more b { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
-  button.dev-more span { font-size: 12px; color: var(--wa-muted); }
-  .dev-none { margin: 0; font-size: 13px; color: var(--wa-muted); }
   .dev-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .dev-acts .dev-forget { margin-left: auto; }
   .dev-acts button { height: 32px; padding: 0 14px; }
   .dev-acts button.danger { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
   .dev-acts button.danger svg.ui-icon { width: 14px; height: 14px; }
   .dev-err { margin: 0; font-size: 12.5px; color: var(--error-color); }
-  @container xfer (max-width: 420px) {
-    .dev-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  }
   .home-small { margin: 0; font-size: 11.5px; color: var(--wa-muted); }
   .home-empty { margin: 0; font-size: 13px; color: var(--wa-muted); }
   @media (max-width: 900px) {

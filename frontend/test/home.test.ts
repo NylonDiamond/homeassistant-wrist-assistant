@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { OwnerSummary } from "../src/ha-api.js";
-import { deviceFacts, deviceSheetCards, deviceSheetTabs, homeDeviceRows, homeDevices, homeStyles } from "../src/home.js";
+import { deviceFacts, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles } from "../src/home.js";
 import { homeSync } from "../src/send-state.js";
 import { shellStyles } from "../src/shell.js";
 
@@ -79,15 +79,20 @@ describe("homeDeviceRows", () => {
   });
 });
 
-describe("deviceSheetCards", () => {
-  it("shows every design when they fit", () => {
-    expect(deviceSheetCards([1, 2, 3, 4])).toEqual({ shown: [1, 2, 3, 4], more: 0 });
-    expect(deviceSheetCards([])).toEqual({ shown: [], more: 0 });
+describe("watchConfigCount", () => {
+  it("counts the listed pages, never the watch's own system pages", () => {
+    expect(watchConfigCount("pages", { pages: [{ id: "a" }, { id: "b", isSystemPage: true }, { id: "c", isHidden: true }, "junk"] })).toBe(2);
   });
 
-  it("keeps the last tile for how many more there are", () => {
-    expect(deviceSheetCards([1, 2, 3, 4, 5])).toEqual({ shown: [1, 2, 3], more: 2 });
-    expect(deviceSheetCards(Array.from({ length: 30 }, (_, i) => i)).more).toBe(27);
+  it("counts status pages and Control Center controls", () => {
+    expect(watchConfigCount("status_pages", { statusPages: [{}, {}, {}] })).toBe(3);
+    expect(watchConfigCount("control_center", { entities: [{ entityId: "light.a" }] })).toBe(1);
+  });
+
+  it("counts nothing stored as none", () => {
+    expect(watchConfigCount("pages", null)).toBe(0);
+    expect(watchConfigCount("status_pages", {})).toBe(0);
+    expect(watchConfigCount("control_center", { entities: "x" })).toBe(0);
   });
 });
 
@@ -103,6 +108,11 @@ describe("deviceSheetTabs", () => {
       { kind: "list", label: "Widgets", filter: "all" },
       { kind: "list", label: "Control Center", filter: "control" },
     ]);
+  });
+
+  it("puts a count on Pages, Status pages and Control Center", () => {
+    const counted = deviceSheetTabs("watch", true).flatMap((t) => t.kind === "screen" && t.count ? [`${t.label}:${t.count}`] : []);
+    expect(counted).toEqual(["Pages:pages", "Status pages:status_pages", "Control Center:control_center"]);
   });
 
   it("keeps the watch screens for administrators", () => {
