@@ -395,6 +395,10 @@ class _Env:
     def add_phone(self, device_id: str, **extra) -> None:
         self._register(device_id, self.secrets_mod.LABEL_IPHONE_SELF_PROVISION, **extra)
 
+    def add_code_watch(self, device_id: str, **extra) -> None:
+        """A watch paired by a code an admin confirmed in the panel."""
+        self._register(device_id, self.secrets_mod.LABEL_WATCH_CODE_PAIR, **extra)
+
     def rename_in_ha(self, device_id: str, name: str) -> None:
         """What a user renaming the device in HA's UI leaves behind."""
         self.hass.devices.by_identifier[(DOMAIN, f"watch_{device_id}")] = _Device(
@@ -557,23 +561,30 @@ def test_every_row_carries_the_paired_phone_id_or_none(env) -> None:
     }
 
 
-def test_has_iphone_follows_each_watchs_own_user(env) -> None:
-    """A watch has an iPhone when its Home Assistant user has one here, or
-    when it names the iPhone that paired it. Each watch is judged by its own
-    user: another person's phone does not count, a phone has none, and the
-    Library carries no field at all."""
-    env.add_watch("watch-jesse", device_name="Jesse's Watch", user_id="jesse")
-    env.add_watch("watch-chen", device_name="Chen's Watch", user_id="chen")
-    env.add_watch("watch-old", device_name="Old Watch", owner_iphone_id="phone-gone")
-    env.add_watch("watch-loose", device_name="Loose Watch")
+def test_has_iphone_only_for_a_watch_the_old_phone_link_set_up(env) -> None:
+    """A watch waits for the iPhone's move only when it names the iPhone that
+    paired it: only that phone holds the watch's key to sign the move with.
+    A watch paired by code never waits, even with its user's iPhone here and
+    even if it still names its old phone. Another iPhone of the same user
+    does not count, a phone has none, and the Library carries no field."""
+    env.add_watch(
+        "watch-old", device_name="Old Watch", owner_iphone_id="phone-jesse", user_id="jesse"
+    )
+    env.add_watch("watch-gone-phone", device_name="Lost Watch", owner_iphone_id="phone-gone")
+    env.add_code_watch("watch-new", device_name="New Watch", user_id="jesse")
+    env.add_code_watch(
+        "watch-again", device_name="Paired Again", owner_iphone_id="phone-jesse", user_id="jesse"
+    )
+    env.add_watch("watch-unnamed", device_name="Unnamed Watch", user_id="jesse")
     env.add_phone("phone-jesse", device_name="Jesse's iPhone", user_id="jesse")
 
     rows = {r["owner_watch_id"]: r for r in env.owners()}
     assert {owner: row.get("has_iphone") for owner, row in rows.items()} == {
-        "watch-jesse": True,
-        "watch-chen": False,
         "watch-old": True,
-        "watch-loose": False,
+        "watch-gone-phone": True,
+        "watch-new": False,
+        "watch-again": False,
+        "watch-unnamed": False,
         "phone-jesse": False,
         LIBRARY: None,
     }
