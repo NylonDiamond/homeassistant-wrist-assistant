@@ -61,6 +61,7 @@ from .const import (
     WATCH_CONFIG_MENUS_CAPABILITY,
     WATCH_CONFIG_NOTIFICATION_STYLE_CAPABILITY,
     WATCH_CONFIG_REJECT_REPORT_CAPABILITY,
+    WATCH_CONFIG_ROOMS_CAPABILITY,
     WATCH_CONFIG_STATUS_PAGES_CAPABILITY,
     WATCH_CONFIG_VOICE_CAPABILITY,
     WATCH_LOGS_CAPABILITY,
@@ -903,9 +904,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # The `control_center` kind (step 4d batch 5), the watch's Control Center
     # list, the same way.
     coordinator.register_capability(WATCH_CONFIG_CONTROL_CENTER_CAPABILITY)
+    # The `rooms` kind (step 8), the rooms of a home that is not the watch's
+    # main house, the same way.
+    coordinator.register_capability(WATCH_CONFIG_ROOMS_CAPABILITY)
     # `watch_config` on every delta reply and the wake on a save (attached
     # above): the watch's trigger to pull its own pages, behavior, menus,
-    # voice, notification style, status pages and Control Center list.
+    # voice, notification style, status pages, Control Center list and rooms.
     coordinator.register_capability(WATCH_CONFIG_DELTA_CAPABILITY)
     # The watch's voice list (watch_voices_store.py): `voices_hash` read on
     # every poll, `voices_wanted` on the reply, and the watch_voices_put op.

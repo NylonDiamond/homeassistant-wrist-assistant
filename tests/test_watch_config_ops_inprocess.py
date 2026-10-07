@@ -776,6 +776,50 @@ def test_a_control_center_list_of_the_wrong_shape_is_a_signed_400(env) -> None:
     assert env.store.get(WATCH, "control_center") is None
 
 
+# ── step 8: a second home's rooms ────────────────────────────────────────
+
+
+def _rooms(source: str = "sensor.made_up_room") -> dict:
+    return {
+        "schemaVersion": 1,
+        "roomQuickJumpSourceEntityId": source,
+        "roomQuickJumpMappings": {"kitchen": "P1"},
+        "roomAutoSwitchEnabled": True,
+    }
+
+
+def test_the_rooms_ride_the_same_ops(env) -> None:
+    reply = _put(env, _put_body(_rooms(), kind="rooms"))
+    assert reply.status == 200
+    assert reply.body == {"ok": True, "revision": 1}
+    got = _get(env, {"kind": "rooms", "main_house": False})
+    assert (got.body["kind"], got.body["revision"], got.body["hash"]) == ("rooms", 1, HASH_1)
+    assert got.body["document"] == _rooms()
+    assert "document" not in _get(env, {"kind": "rooms", "since_revision": 1}).body
+    again = _put(env, _put_body(_rooms("sensor.other"), kind="rooms", base=1, digest=HASH_2))
+    assert again.body == {"ok": True, "revision": 2}
+    _get(env, {"kind": "rooms", "unreadable_revision": 2})
+    assert env.store.get(WATCH, "rooms").rejected_revision == 2
+
+
+def test_rooms_over_their_cap_are_a_signed_400(env) -> None:
+    document = {**_rooms(), "pointControlRoomMappingsJSON": "x" * (64 * 1024)}
+    reply = _put(env, _put_body(document, kind="rooms"))
+    assert reply.status == 400
+    assert reply.body["error"] == "invalid"
+    assert "the limit for rooms is 65536" in reply.body["message"]
+    assert env.store.get(WATCH, "rooms") is None
+
+
+def test_a_rooms_get_never_makes_the_watch_the_main_house(env) -> None:
+    """Only a second home is asked for its rooms; a get without the field
+    leaves the mark as it is, as for every kind but behavior."""
+    _get(env, {"kind": "rooms", "main_house": False})
+    assert env.secrets.main_house == {WATCH: False}
+    _get(env, {"kind": "rooms"})
+    assert env.secrets.main_house == {WATCH: False}
+
+
 # ── step 5: the main house ───────────────────────────────────────────────
 
 
@@ -979,6 +1023,7 @@ def test_the_menus_capability_is_advertised() -> None:
         ("WATCH_CONFIG_NOTIFICATION_STYLE_CAPABILITY", "watch_config_notification_style"),
         ("WATCH_CONFIG_STATUS_PAGES_CAPABILITY", "watch_config_status_pages"),
         ("WATCH_CONFIG_CONTROL_CENTER_CAPABILITY", "watch_config_control_center"),
+        ("WATCH_CONFIG_ROOMS_CAPABILITY", "watch_config_rooms"),
     ],
 )
 def test_each_batch_2_capability_is_advertised(name, value) -> None:

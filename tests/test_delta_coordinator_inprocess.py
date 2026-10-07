@@ -20,7 +20,8 @@ Covered:
   save through the real watch_config_put op, and the panel creating a paired
   watch's first menus. From step 4d batch 2 the field names six kinds: voice,
   notification style and status pages join the three, and the panel's first
-  record of each wakes the parked poll.
+  record of each wakes the parked poll. Control Center (step 4d batch 5) and
+  a second home's rooms (step 8) make eight.
 """
 
 from __future__ import annotations
@@ -924,6 +925,7 @@ def _revs(**given: int) -> dict:
         "notification_style": 0,
         "status_pages": 0,
         "control_center": 0,
+        "rooms": 0,
     }
     revisions.update(given)
     return revisions
@@ -952,6 +954,7 @@ def _device_put(store, kind: str, owner: str = "w1", *, base: int = 0, digest: s
                 }
             ],
         },
+        "rooms": {"schemaVersion": 1, "roomQuickJumpMappings": {"kitchen": "P1"}},
     }[kind]
     return store.put(
         owner, kind, document, document_hash=digest, base_revision=base, updated_by=owner
@@ -1012,6 +1015,7 @@ def test_the_reply_names_the_voice_notification_style_and_status_pages(coordinat
             "notification_style",
             "status_pages",
             "control_center",
+            "rooms",
         ]
 
         status, body = await _poll(coord, watch_id="w2", entities=[ent])
@@ -1037,6 +1041,27 @@ def test_the_reply_names_the_control_center_list(coordinator) -> None:
 
         status, body = await _poll(coord, watch_id="w2", entities=[ent])
         assert body["watch_config"] == _revs(control_center=1)
+
+    asyncio.run(run())
+
+
+def test_the_reply_names_a_second_home_s_rooms(coordinator) -> None:
+    module, hass, coord = coordinator
+    store, _const = _watch_config_store()
+    coord.attach_watch_config_store(store)
+    ent = "wrist_assistant.wc1r"
+    hass.states.set(ent, "off")
+    _device_put(store, "rooms")
+    _device_put(store, "rooms", base=1, digest=_HASH_2)
+    _device_put(store, "rooms", owner="w2")
+
+    async def run() -> None:
+        status, body = await _poll(coord, entities=[ent])
+        assert status == 200
+        assert body["watch_config"] == _revs(rooms=2)
+
+        status, body = await _poll(coord, watch_id="w2", entities=[ent])
+        assert body["watch_config"] == _revs(rooms=1)
 
     asyncio.run(run())
 
@@ -1076,8 +1101,8 @@ def test_the_catalog_is_never_named(coordinator) -> None:
         assert "catalog" not in body["watch_config"]
 
     asyncio.run(run())
-    # The seven kinds the reply names are the seven the panel edits, which
-    # are the seven a watch applies.
+    # The eight kinds the reply names are the eight the panel edits, which
+    # are the eight a watch applies.
     assert module.DELTA_WATCH_CONFIG_KINDS == (
         "pages",
         "behavior",
@@ -1086,6 +1111,7 @@ def test_the_catalog_is_never_named(coordinator) -> None:
         "notification_style",
         "status_pages",
         "control_center",
+        "rooms",
     )
     assert set(module.DELTA_WATCH_CONFIG_KINDS) == set(const.WATCH_CONFIG_PANEL_KINDS)
 
@@ -1259,6 +1285,7 @@ def test_the_panel_s_first_menus_release_the_parked_poll(coordinator) -> None:
         ("notification_style", {"schemaVersion": 1}),
         ("status_pages", {"schemaVersion": 1, "statusPages": []}),
         ("control_center", {"schemaVersion": 1, "entities": []}),
+        ("rooms", {"schemaVersion": 1}),
     ],
 )
 def test_the_panel_s_first_batch_2_record_releases_the_parked_poll(

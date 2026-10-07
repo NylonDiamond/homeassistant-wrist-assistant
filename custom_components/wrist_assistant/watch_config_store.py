@@ -12,7 +12,8 @@ parties:
   defaults and the phrase library), its notification style (kind
   ``notification_style``), its status pages (kind ``status_pages``) and its
   Control Center list (kind ``control_center``) here after each edit, and pulls a newer copy back down when it has nothing
-  unsent. It also publishes its library catalog (kind ``catalog``), which
+  unsent. For a home that is not the watch's main house it uploads that
+  home's rooms (kind ``rooms``) once, in place of the behavior settings. It also publishes its library catalog (kind ``catalog``), which
   only the phone writes.
 * The panel. It may read, save and restore every kind but the catalog, and
   read the catalog (see ``watch_config_ws.py``), and it may make a watch's
@@ -255,7 +256,8 @@ def validate_document(kind: str, document: Any, *, check_items: bool = False) ->
     voice settings' phrases and defaults (see :func:`_check_voice`) and the
     status pages' pages and rows (see :func:`_check_status_pages`) and the
     Control Center list's entries (see :func:`_check_control_center`). The
-    notification style, like the behavior settings, is any object.
+    notification style and the rooms, like the behavior settings, are any
+    object.
 
     The server guards the shape, not the content. No key's value is looked at
     beyond the ids: the app is the only thing that understands a tile or a

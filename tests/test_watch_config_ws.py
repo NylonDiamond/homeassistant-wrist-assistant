@@ -10,7 +10,7 @@ dicts and errors as exact (code, message) pairs. The ``catalog`` kind (step
 restore. The ``menus`` kind (step 4d) is saved like the others, and a save
 on base 0 creates a paired watch's first copy; so are ``voice``,
 ``notification_style`` and ``status_pages`` (step 4d batch 2) and
-``control_center`` (step 4d batch 5).
+``control_center`` (step 4d batch 5) and a second home's ``rooms`` (step 8).
 ``test_ws_command_registration.py``
 covers the registration and the admin gate statically.
 """
@@ -776,7 +776,7 @@ def test_the_panel_may_neither_save_nor_restore_the_catalog(env) -> None:
     refusal = (
         "invalid",
         "the panel cannot save catalog; it may save behavior, control_center, "
-        "menus, notification_style, pages, status_pages, voice",
+        "menus, notification_style, pages, rooms, status_pages, voice",
     )
     connection = _save(env, _catalog("Panel"), 2, kind="catalog")
     assert connection.results == {}
@@ -914,12 +914,17 @@ def _batch_2_doc(kind: str, label: str = "Dinner") -> dict:
                 }
             ],
         },
+        "rooms": {
+            "schemaVersion": 1,
+            "roomQuickJumpSourceEntityId": "sensor.made_up_room",
+            "roomQuickJumpMappings": {"kitchen": label},
+        },
     }[kind]
 
 
-# With the batch 5 Control Center list, which the panel creates and saves the
-# same way.
-_BATCH_2_KINDS = ("voice", "notification_style", "status_pages", "control_center")
+# With the batch 5 Control Center list and the step 8 rooms, which the panel
+# creates and saves the same way.
+_BATCH_2_KINDS = ("voice", "notification_style", "status_pages", "control_center", "rooms")
 
 
 @pytest.mark.parametrize("kind", _BATCH_2_KINDS)

@@ -3452,7 +3452,7 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
 
     Body:  {"kind": "pages" | "behavior" | "catalog" | "menus" | "voice"
                     | "notification_style" | "status_pages"
-                    | "control_center",
+                    | "control_center" | "rooms",
             "since_revision": <int>?, "unreadable_revision": <int>?,
             "main_house": false?}
     Reply: {"ok": true, "kind", "revision", "hash", "updated_at", "document"?}
@@ -3554,7 +3554,7 @@ async def _op_watch_config_put(ctx: _OpContext) -> Response:
 
     Body:  {"kind": "pages" | "behavior" | "catalog" | "menus" | "voice"
                     | "notification_style" | "status_pages"
-                    | "control_center",
+                    | "control_center" | "rooms",
             "base_revision": <int>, "hash": <sha256 hex>, "document": {...},
             "force": <bool>?}
     Reply: {"ok": true, "revision": <int>}

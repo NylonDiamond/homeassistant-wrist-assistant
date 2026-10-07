@@ -22,7 +22,9 @@ kind, its cap and shape guard, and the panel creating a first record for a
 paired watch (and being refused one for any other). From step 4d batch 2:
 the ``voice``, ``notification_style`` and ``status_pages`` kinds, their caps
 and shape guards, and the same panel save, restore and create. From step 4d
-batch 5: the ``control_center`` kind, the same way.
+batch 5: the ``control_center`` kind, the same way. From step 8: the
+``rooms`` kind, any object under its own 64 KiB cap, and the panel's save,
+restore and create.
 """
 
 from __future__ import annotations
@@ -62,6 +64,7 @@ MAX_VOICE_BYTES = 256 * 1024
 MAX_NOTIFICATION_STYLE_BYTES = 256 * 1024
 MAX_STATUS_PAGES_BYTES = 256 * 1024
 MAX_CONTROL_CENTER_BYTES = 256 * 1024
+MAX_ROOMS_BYTES = 64 * 1024
 HISTORY_LIMIT = 5
 # Kept equal to const.py by test_the_kinds_match_const below.
 KINDS = frozenset(
@@ -74,6 +77,7 @@ KINDS = frozenset(
         "notification_style",
         "status_pages",
         "control_center",
+        "rooms",
     }
 )
 PANEL_KINDS = frozenset(
@@ -85,6 +89,7 @@ PANEL_KINDS = frozenset(
         "notification_style",
         "status_pages",
         "control_center",
+        "rooms",
     }
 )
 
@@ -178,6 +183,7 @@ def _loaded_module():
                 "notification_style": MAX_NOTIFICATION_STYLE_BYTES,
                 "status_pages": MAX_STATUS_PAGES_BYTES,
                 "control_center": MAX_CONTROL_CENTER_BYTES,
+                "rooms": MAX_ROOMS_BYTES,
             },
             WATCH_CONFIG_HISTORY_LIMIT=HISTORY_LIMIT,
         )
@@ -679,6 +685,7 @@ def test_the_size_caps_match_const() -> None:
         "notification_style": MAX_NOTIFICATION_STYLE_BYTES,
         "status_pages": MAX_STATUS_PAGES_BYTES,
         "control_center": MAX_CONTROL_CENTER_BYTES,
+        "rooms": MAX_ROOMS_BYTES,
     }
 
 
@@ -1848,7 +1855,7 @@ def test_the_panel_may_neither_save_nor_restore_a_catalog(mod):
     assert exc.value.code == "invalid"
     assert exc.value.message == (
         "the panel cannot save catalog; it may save behavior, control_center, "
-        "menus, notification_style, pages, status_pages, voice"
+        "menus, notification_style, pages, rooms, status_pages, voice"
     )
     with pytest.raises(mod.WatchConfigValidationError, match="the panel cannot save catalog"):
         store.restore(OWNER, "catalog", 1, base_revision=2)
@@ -2040,6 +2047,7 @@ def _first_copy(kind: str) -> dict:
         "notification_style": _notification_style(),
         "status_pages": _status_pages(),
         "control_center": _control_center(),
+        "rooms": _rooms(),
     }[kind]
 
 
@@ -2603,6 +2611,93 @@ def test_the_panel_never_creates_a_control_center_list_for_a_watch_that_is_not_p
     with pytest.raises(mod.WatchConfigNoRecordError):
         store.panel_save(OWNER, "control_center", _control_center(), base_revision=0)
     assert store.get(OWNER, "control_center") is None
+    assert _FakeStore.writes == []
+
+
+# ── step 8: the rooms of a home that is not the main house ───────────────
+
+
+def _rooms(**extra: Any) -> dict:
+    """The rooms document: `schemaVersion` plus the six room keys under their
+    `behavior` names, made-up entities only. Every key is optional."""
+    doc = {
+        "schemaVersion": 1,
+        "roomQuickJumpEnabled": True,
+        "roomQuickJumpSourceEntityId": "sensor.made_up_room",
+        "roomQuickJumpFallbackPageId": "P1",
+        "roomQuickJumpMappings": {"kitchen": "P2", "office": "P3"},
+        "roomAutoSwitchEnabled": False,
+        "pointControlRoomMappingsJSON": '[{"room":"kitchen","zone":"A"}]',
+    }
+    doc.update(extra)
+    return doc
+
+
+def test_a_device_may_save_and_read_the_rooms(mod):
+    store = _new(mod)
+    heard = _listen(store)
+    doc = _rooms(futureKey={"kept": True})
+    record = _put(store, kind="rooms", doc=doc)
+    assert (record.revision, record.delivered_revision, record.hash) == (1, 1, HASH_1)
+    assert store.get(OWNER, "rooms").document == doc
+    record = _put(store, kind="rooms", doc=_rooms(), base=1, digest=HASH_2)
+    assert record.revision == 2
+    assert [e.revision for e in store.history(OWNER, "rooms")] == [1]
+    assert heard == [(OWNER, "rooms", 1), (OWNER, "rooms", 2)]
+    assert store.revisions(OWNER) == {"rooms": 2}
+
+
+def test_the_rooms_have_their_own_64_kib_cap(mod):
+    assert MAX_ROOMS_BYTES == 64 * 1024
+    store = _new(mod)
+    base = _rooms()
+    overhead = mod.document_size({**base, "b": ""})
+    cap = MAX_ROOMS_BYTES
+    assert _put(store, kind="rooms", doc={**base, "b": "x" * (cap - overhead)}).revision == 1
+    with pytest.raises(mod.WatchConfigValidationError, match="limit for rooms is 65536"):
+        _put(store, kind="rooms", doc={**base, "b": "x" * (cap - overhead + 1)}, base=1)
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        {},
+        {"schemaVersion": 1},
+        _rooms(),
+        # No validator, as for behavior: values are never looked at.
+        _rooms(roomQuickJumpMappings=[], roomAutoSwitchEnabled="yes"),
+    ],
+)
+def test_rooms_of_any_object_shape_are_accepted(mod, document):
+    store = _new(mod)
+    assert _put(store, kind="rooms", doc=document).document == document
+
+
+@pytest.mark.parametrize("document", [[], "rooms", 1, True])
+def test_rooms_that_are_not_an_object_are_refused(mod, document):
+    store = _new(mod)
+    with pytest.raises(mod.WatchConfigValidationError, match="document must be a JSON object"):
+        _put(store, kind="rooms", doc=document)
+    assert store.get(OWNER, "rooms") is None
+
+
+def test_the_panel_may_save_restore_and_create_the_rooms(mod):
+    store = _new(mod, paired={OWNER})
+    original = _rooms()
+    record = store.panel_save(OWNER, "rooms", original, base_revision=0)
+    assert (record.revision, record.updated_by) == (1, "panel")
+    edited = _rooms(roomAutoSwitchEnabled=True)
+    record = store.panel_save(OWNER, "rooms", edited, base_revision=1)
+    assert (record.revision, record.document) == (2, edited)
+    record = store.restore(OWNER, "rooms", 1, base_revision=2)
+    assert (record.revision, record.updated_by, record.document) == (3, "panel", original)
+
+
+def test_the_panel_never_creates_rooms_for_a_watch_that_is_not_paired(mod):
+    store = _new(mod, paired={OTHER})
+    with pytest.raises(mod.WatchConfigNoRecordError):
+        store.panel_save(OWNER, "rooms", _rooms(), base_revision=0)
+    assert store.get(OWNER, "rooms") is None
     assert _FakeStore.writes == []
 
 
