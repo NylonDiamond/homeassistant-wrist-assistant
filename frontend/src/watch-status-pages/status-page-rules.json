@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "Generated from the iPhone app's Swift code by WatchStatusPagesDocumentTests; do not edit. Regenerate status-page-rules.json with TEST_RUNNER_WA_UPDATE_FIXTURES=1 ./scripts/test.sh WatchStatusPagesDocumentTests in the app repository.",
+  "note": "The panel's own table: edit it here. WatchStatusPagesDocumentTests in the app repository checks the parts the watch decides against the watch's code.",
   "defaultFilterState": {
     "light": "on",
     "switch": "on",
