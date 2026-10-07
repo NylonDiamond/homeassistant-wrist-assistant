@@ -34,12 +34,8 @@ import { checkField, colorField, entityField, entityRefFor, percentSliderField, 
 import {
   type HassLike,
   type OwnerSummary,
-  type PairLookupFound,
   type WatchConfigRecord,
-  confirmPairCode,
   fetchWatchConfig,
-  listHaUsers,
-  lookupPairCode,
   saveWatchConfig,
 } from "./ha-api.js";
 import { SECTION_COLOR } from "./kinds.js";
@@ -52,11 +48,6 @@ import {
   type MotionActions,
   type SettingValue,
   COLLECTED_PILL_TEXT,
-  PAIR_CODE_LENGTH,
-  PAIR_NOT_FOUND_TEXT,
-  PAIR_USER_HINT,
-  PAIR_USER_TITLE,
-  type PairUserChoice,
   SETTINGS_NO_RECORD_TEXT,
   SETTINGS_PAIR_FIRST_TEXT,
   SETTINGS_START_BUTTON,
@@ -80,18 +71,7 @@ import {
   motionAction,
   noRecordStart,
   noRecordText,
-  normalizePairCode,
   optionsFor,
-  pairCodeIsComplete,
-  pairErrorText,
-  pairLookupLine,
-  pairLookupWarnings,
-  pairRemoteWarning,
-  pairRequestLine,
-  pairDefaultUser,
-  pairUserChoices,
-  pairUserToSend,
-  pairedText,
   readMotionActions,
   savedByWords,
   sectionRuns,
@@ -136,6 +116,7 @@ import {
 } from "./watch-notification-style/model.js";
 import { notificationPreview, notificationPreviewStyles } from "./watch-notification-style/preview.js";
 import { ClientCertCard, clientCertStyles } from "./watch-client-cert-view.js";
+import { PairWatchCard, pairCardStyles } from "./watch-pair-view.js";
 
 /** How often the page asks whether a device has collected a save. */
 const DELIVERY_POLL_MS = 15_000;
@@ -160,9 +141,6 @@ const STYLE_LOOK: Record<StyleSection["id"], { icon: UiIconName; color: string }
   wristWebhooks: { icon: "link", color: SECTION_COLOR.states },
 };
 
-/** The pairing card's mark and tint. */
-const PAIR_LOOK: { icon: UiIconName; color: string } = { icon: "link", color: SECTION_COLOR.complication };
-
 interface Note {
   text: string;
   kind: "note" | "warn" | "err";
@@ -180,25 +158,6 @@ type PanelHost = ReactiveControllerHost & { renderRoot: ParentNode };
 /** Reads the device list again and answers it, so a watch that has just been
  * paired is one the row can show. The panel's own full owners load. */
 type RefreshOwners = () => Promise<readonly OwnerSummary[]>;
-
-/** The "Pair a watch" card's state: the code being typed, then what looking
- * it up found, then the pairing. */
-interface PairState {
-  code: string;
-  /** The watch waiting on `code`, once looked up. */
-  found?: PairLookupFound & { code: string };
-  /** Who the watch can be paired for, read with the lookup. Undefined when
-   * the integration's confirm takes no user, or the list could not be read:
-   * the watch is then paired for the administrator at the card. */
-  users?: readonly PairUserChoice[];
-  /** The user picked in "Whose watch is this?". */
-  userId?: string;
-  notFound?: boolean;
-  busy?: "lookup" | "confirm";
-  error?: string;
-  /** "Paired <name>." after a confirm. */
-  done?: string;
-}
 
 export class WatchSettings implements ReactiveController {
   /** The page is on screen. */
@@ -232,14 +191,9 @@ export class WatchSettings implements ReactiveController {
    * picked, or after a newer load, is dropped. */
   private loadSeq = 0;
   private pollTimer?: number;
-  private pair: PairState = { code: "" };
-  /** Bumped by every change of code and by closing, so a lookup that answers
-   * for a code no longer in the field is dropped. */
-  private pairSeq = 0;
-  /** Bumped by every arrival on the page and every departure, so a pairing
-   * that answers after the page was left leaves the next visit's card
-   * alone. */
-  private visit = 0;
+  /** The "Pair a watch" card, after the other cards. It starts afresh on
+   * each visit, and a watch paired on it becomes the one shown. */
+  private readonly pairCard = new PairWatchCard(() => this.changed(), (id, stale) => this.showPaired(id, stale));
   /** The signed in user's client certificate, the card under the pairing
    * card. It reads its status once each time the page is opened. */
   private readonly cert = new ClientCertCard(() => this.host.requestUpdate());
@@ -313,9 +267,7 @@ export class WatchSettings implements ReactiveController {
       this.active = true;
       this.confirm = undefined;
       this.note = undefined;
-      this.visit++;
-      this.pairSeq++;
-      this.pair = { code: "" };
+      this.pairCard.open(hass);
       this.cert.open(hass);
     }
     if (step === "clear" || id === undefined) {
@@ -343,9 +295,7 @@ export class WatchSettings implements ReactiveController {
     this.active = false;
     this.stopPolling();
     this.confirm = undefined;
-    this.visit++;
-    this.pairSeq++;
-    this.pair = { code: "" };
+    this.pairCard.close();
     this.cert.close();
     this.changed();
   }
@@ -715,113 +665,22 @@ export class WatchSettings implements ReactiveController {
     this.changed();
   }
 
-  // ── pairing a watch by its code ────────────────────────────────────────
-
-  /** A new code in the field: whatever was found for the old one goes. */
-  private setPairCode(raw: string): string {
-    const code = normalizePairCode(raw).slice(0, PAIR_CODE_LENGTH);
-    if (code !== this.pair.code) {
-      this.pairSeq++;
-      this.pair = { code, busy: this.pair.busy };
-    }
-    this.changed();
-    return code;
-  }
-
-  private async lookUpPair(): Promise<void> {
-    const hass = this.hass;
-    const code = this.pair.code;
-    if (!hass || this.pair.busy || !pairCodeIsComplete(code)) return;
-    const visit = this.visit;
-    const seq = ++this.pairSeq;
-    this.pair = { code, busy: "lookup" };
-    this.changed();
-    try {
-      const reply = await lookupPairCode(hass, code);
-      if (seq !== this.pairSeq) return;
-      if (!reply.found) {
-        this.pair = { code, notFound: true };
-        return;
-      }
-      const users = "bound_user_id" in reply ? await this.pairUsers(hass) : undefined;
-      if (seq !== this.pairSeq) return;
-      const adminId = hass.user?.id;
-      this.pair = {
-        code,
-        found: { ...reply, code },
-        users,
-        userId: users === undefined ? undefined : pairDefaultUser(users, adminId, reply.bound_user_id),
-      };
-    } catch (err) {
-      if (seq !== this.pairSeq) return;
-      this.pair = { code, error: pairErrorText(err, "lookup") };
-    } finally {
-      // Typing on while it ran keeps the new code but frees the buttons.
-      if (visit === this.visit) this.pair = { ...this.pair, busy: undefined };
-      this.changed();
-    }
-  }
-
-  /** Who a watch can be paired for. A list that cannot be read leaves the
-   * menu out, and the watch is paired for the administrator as before. */
-  private async pairUsers(hass: HassLike): Promise<readonly PairUserChoice[] | undefined> {
-    try {
-      return pairUserChoices(await listHaUsers(hass), hass.user?.id);
-    } catch {
-      return undefined;
-    }
-  }
-
-  private pickPairUser(userId: string): void {
-    this.pair = { ...this.pair, userId, error: undefined };
-    this.changed();
-  }
-
-  private async confirmPair(): Promise<void> {
-    const hass = this.hass;
-    const found = this.pair.found;
-    if (!hass || this.pair.busy || found === undefined) return;
-    const visit = this.visit;
-    const { users, userId } = this.pair;
-    this.pair = { ...this.pair, busy: "confirm", error: undefined };
-    this.changed();
-    let paired: { watchId: string } | undefined;
-    try {
-      const sent = pairUserToSend(userId, hass.user?.id);
-      const reply = await confirmPairCode(hass, found.code, sent);
-      paired = { watchId: reply.watch_id };
-      if (visit === this.visit) {
-        this.pairSeq++;
-        const whom = sent === undefined ? undefined : users?.find((u) => u.id === sent)?.label;
-        this.pair = { code: "", done: pairedText(reply.device_name ?? found.device_name, whom) };
-      }
-    } catch (err) {
-      if (visit === this.visit) {
-        this.pairSeq++;
-        // An unknown code here is one that ran out between the lookup and
-        // the Pair button, or was confirmed somewhere else meanwhile.
-        this.pair = errorCode(err) === "unknown_code"
-          ? { code: found.code, notFound: true }
-          : { code: found.code, found, users, userId, error: pairErrorText(err, "confirm") };
-      }
-    } finally {
-      if (visit === this.visit) this.pair = { ...this.pair, busy: undefined };
-      this.changed();
-    }
-    if (paired === undefined || !this.refreshOwners) return;
-    // The new watch joins the device list and becomes the one shown, and the
-    // panel's shared watch, whether or not another watch was open. Edits on
-    // the watch shown before are kept for it, so nothing needs asking.
+  /** A watch just paired on the card joins the device list and becomes the
+   * one shown, and the panel's shared watch, whether or not another watch
+   * was open. Edits on the watch shown before are kept for it, so nothing
+   * needs asking. Nothing moves once the page has been left. */
+  private async showPaired(watchId: string, stale: () => boolean): Promise<void> {
+    if (!this.refreshOwners) return;
     let owners: readonly OwnerSummary[];
     try {
       owners = await this.refreshOwners();
     } catch {
       return;
     }
-    if (visit !== this.visit) return;
+    if (stale()) return;
     const watches = settingsWatches(owners);
-    const id = watches.some((w) => w.owner_watch_id === paired.watchId)
-      ? paired.watchId
+    const id = watches.some((w) => w.owner_watch_id === watchId)
+      ? watchId
       : this.ownerId === undefined ? initialWatch(watches, undefined) : undefined;
     if (id === undefined) return;
     this.confirm = undefined;
@@ -878,11 +737,11 @@ export class WatchSettings implements ReactiveController {
       </div>
       <div class="ws-cols ${one ? "one" : ""}">
         ${elsewhere
-          ? html`<div class="ws-body ws-col"><div class="xf-lead ws-main-house">${uiIcon("info")}<span>${SETTINGS_MAIN_HOUSE_TEXT}</span></div>${this.renderPair()}${this.cert.render(hass)}</div>`
+          ? html`<div class="ws-body ws-col"><div class="xf-lead ws-main-house">${uiIcon("info")}<span>${SETTINGS_MAIN_HOUSE_TEXT}</span></div>${this.pairCard.render()}${this.cert.render(hass)}</div>`
           : one
-          ? html`<div class="ws-body ws-col">${this.renderBehavior(hass)}${this.renderPair()}${this.cert.render(hass)}</div>`
+          ? html`<div class="ws-body ws-col">${this.renderBehavior(hass)}${this.pairCard.render()}${this.cert.render(hass)}</div>`
           : html`<div class="ws-body ws-col">${this.loading ? html`<div class="empty">Loading…</div>` : this.renderBehavior(hass)}</div>
-            <div class="ws-body ws-col">${this.loading ? nothing : this.renderStyle()}${this.renderPair()}${this.cert.render(hass)}</div>`}
+            <div class="ws-body ws-col">${this.loading ? nothing : this.renderStyle()}${this.pairCard.render()}${this.cert.render(hass)}</div>`}
       </div>
     </div>`;
   }
@@ -1231,91 +1090,6 @@ export class WatchSettings implements ReactiveController {
       </select></label>`;
   }
 
-  /** The last card: pairing a watch that has no iPhone, by the code it shows.
-   * Look up first, so the administrator sees which watch it is (its name, app
-   * version and build) before it gets a key. */
-  private renderPair() {
-    const p = this.pair;
-    const complete = pairCodeIsComplete(p.code);
-    const found = p.found !== undefined && p.found.code === p.code ? p.found : undefined;
-    return html`<section class="sec ws-pair" data-sec="ws-pair" data-open="true" data-help="on" style=${`--c:${PAIR_LOOK.color}`}>
-      <div class="sec-h pinned">
-        <span class="swatch">${uiIcon(PAIR_LOOK.icon)}</span>
-        <span class="tt"><h4>Pair a watch</h4></span>
-      </div>
-      <div class="sec-b">
-        <div class="hint keep">On the watch, choose Pair with Home Assistant and type the code it shows.</div>
-        <div class="field">
-          <span>Code</span>
-          <div class="row-acts ws-pair-row">
-            <input type="text" class="mono ws-pair-code" aria-label="Pairing code" maxlength=${PAIR_CODE_LENGTH}
-              autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false"
-              .value=${p.code}
-              @input=${(e: Event) => {
-                const input = e.target as HTMLInputElement;
-                // Write the clean code back at once: lit leaves the field
-                // alone when the clean code is the one it already holds.
-                input.value = this.setPairCode(input.value);
-              }}
-              @paste=${(e: ClipboardEvent) => {
-                // A pasted "ABC-DEF" is longer than the field allows, so it
-                // is cleaned before the length cut rather than after.
-                const text = e.clipboardData?.getData("text");
-                if (text === undefined) return;
-                e.preventDefault();
-                (e.target as HTMLInputElement).value = this.setPairCode(text);
-              }}
-              @keydown=${(e: KeyboardEvent) => {
-                if (e.key !== "Enter" || e.isComposing) return;
-                e.preventDefault();
-                void this.lookUpPair();
-              }} />
-            <button class="small" ?disabled=${!complete || p.busy !== undefined}
-              title=${complete ? "Find the watch showing this code" : `Type the ${PAIR_CODE_LENGTH} character code first`}
-              @click=${() => void this.lookUpPair()}>${p.busy === "lookup" ? "Looking up…" : "Look up"}</button>
-          </div>
-        </div>
-        ${found === undefined ? nothing : html`<div class="field readout">
-            <span>Watch</span>
-            <div class="readout-v ws-pair-watch">${pairLookupLine(found)}</div>
-          </div>
-          ${this.renderPairRequest(found)}
-          ${pairLookupWarnings(found).map((line) => html`<div class="hint warn">${line}</div>`)}
-          ${this.renderPairUser(p)}
-          <button class="small primary ws-pair-go" ?disabled=${p.busy !== undefined}
-            title="Give this watch its key, so it can read from Home Assistant without an iPhone"
-            @click=${() => void this.confirmPair()}>${p.busy === "confirm" ? "Pairing…" : "Pair"}</button>`}
-        ${p.notFound ? html`<div class="hint warn" role="status">${PAIR_NOT_FOUND_TEXT}</div>` : nothing}
-        ${p.done ? html`<div class="hint keep ws-pair-done" role="status">${p.done}</div>` : nothing}
-        ${p.error ? html`<div class="hint err" role="alert">${p.error}</div>` : nothing}
-      </div>
-    </section>`;
-  }
-
-  /** "Whose watch is this?": the Home Assistant users, the administrator at
-   * the card first. Left out with one person to choose from, or when the
-   * integration's confirm takes no user. */
-  private renderPairUser(p: PairState) {
-    const users = p.users;
-    if (users === undefined || users.length < 2) return nothing;
-    const picked = p.userId ?? users[0]?.id ?? "";
-    return html`<label class="field ws-pair-user"><span>${PAIR_USER_TITLE}</span>
-        <select .value=${live(picked)} ?disabled=${p.busy !== undefined}
-          @change=${(e: Event) => this.pickPairUser((e.target as HTMLSelectElement).value)}>
-          ${users.map((u) => html`<option value=${u.id} ?selected=${u.id === picked}>${u.label}</option>`)}
-        </select></label>
-      <div class="hint keep">${PAIR_USER_HINT}</div>`;
-  }
-
-  /** Under the watch line: when and from where it asked, and a warning when
-   * that address is outside the home network. */
-  private renderPairRequest(found: PairLookupFound) {
-    const line = pairRequestLine(found);
-    const warning = pairRemoteWarning(found.remote);
-    return html`${line === undefined ? nothing : html`<div class="hint keep ws-pair-request">${line}</div>`}
-      ${warning === undefined ? nothing : html`<div class="hint warn">${warning}</div>`}`;
-  }
-
   /** Whether Save can run (`settingsCanSave`). */
   private get canSave(): boolean {
     return settingsCanSave({
@@ -1522,12 +1296,6 @@ export const watchSettingsStyles = css`
   .ws-body > button.ws-retry, .ws-body > button.ws-start { align-self: flex-start; }
   /* The indicator has no opacity, so the color row drops the percent box. */
   .ws-body .color-box .alpha { display: none; }
-  /* The pairing card: the code box only as wide as a code, spaced out so the
-     six characters read one by one, with Look up beside it. */
-  .ws-pair-row { flex-wrap: nowrap; }
-  .ws-body .ws-pair .field input.ws-pair-code { flex: 0 1 112px; width: 112px; letter-spacing: .14em; text-transform: uppercase; }
-  .ws-pair-row > button.small { flex: none; }
-  .ws-pair .readout-v.ws-pair-watch { color: var(--wa-ink); }
   /* The notification style's cards: the phone's groups as small headings
      between the rows, the volume presets under the slider. */
   .ws-body .sec-b > .ws-group {
@@ -1539,4 +1307,5 @@ export const watchSettingsStyles = css`
   .ws-body > .sec .ns-start, .ws-body > .sec .ns-retry { align-self: flex-start; }
   ${notificationPreviewStyles}
   ${clientCertStyles}
+  ${pairCardStyles}
 `;

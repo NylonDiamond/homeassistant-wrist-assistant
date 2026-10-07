@@ -41,11 +41,11 @@ describe("Home's Watch app card", () => {
     expect(watchCard.indexOf(guard)).toBeLessThan(watchCard.indexOf("home-pair-watch"));
   });
 
-  it("offers to pair a watch, through the Settings page, in a home with none", () => {
+  it("offers to pair a watch, in Home's own dialog, in a home with none", () => {
     expect(watchCard).toContain("const watches = settingsWatches(this.owners);");
     const none = between(watchCard, "${watches.length === 0\n        ? html`<div class=\"home-screens\">", ": html`");
-    expect(none).toContain(`<a class="home-screen home-pair-watch" href=\${href(WATCH_SETTINGS_SCREEN.path)}`);
-    expect(none).toContain("this.goTo(WATCH_SETTINGS_SCREEN.path);");
+    expect(none).toContain(`<button class="home-screen home-pair-watch" @click=\${() => this.openPairDialog()}>`);
+    expect(none).not.toContain("goTo(");
     expect(none).not.toContain("watchSettings");
   });
 
@@ -124,5 +124,31 @@ describe("coming back to Home", () => {
     const back = between(will, `if (changed.has("route") && tabOfRoute(this.route) === "home"`, "}");
     expect(back).toContain(`tabOfRoute(changed.get("route") as PanelRoute | undefined) !== "home"`);
     expect(back).toContain("void this.loadOtherLists();");
+  });
+});
+
+describe("Home's Pair a watch dialog", () => {
+  it("opens from the Devices card's title row, for administrators only", () => {
+    const head = between(home, `<h2 class="home-title">Devices</h2>`, "</div>");
+    expect(head).toContain("${admin ? html`<button class=\"home-btn home-pair-open\"");
+    expect(head).toContain("@click=${() => this.openPairDialog()}");
+    expect(home).toContain("${admin && this.pairOpen ? this.renderPairDialog() : nothing}");
+  });
+
+  it("draws the Settings page's own pairing card, starting afresh on each opening", () => {
+    expect(SOURCE).toContain(`import { PairWatchCard } from "./watch-pair-view.js";`);
+    expect(method("  private openPairDialog() {")).toContain("this.homePair.open(this.hass);");
+    expect(method("  private closePairDialog() {")).toContain("this.homePair.close();");
+    const dialog = method("  private renderPairDialog() {");
+    expect(dialog).toContain(`<dialog class="pair-dialog"`);
+    expect(dialog).toContain("@close=${() => this.closePairDialog()}");
+    expect(dialog).toContain("this.homePair.render({");
+  });
+
+  it("adds a watch paired there to the device list and makes it the shared watch", () => {
+    const at = SOURCE.indexOf("private homePair = new PairWatchCard(");
+    const made = SOURCE.slice(at, SOURCE.indexOf("});", at));
+    expect(made).toContain("await this.loadOwners();");
+    expect(made).toContain("this.pickWatch(watchId);");
   });
 });

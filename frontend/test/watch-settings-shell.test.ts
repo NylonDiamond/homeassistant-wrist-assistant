@@ -107,11 +107,16 @@ interface Inside {
   edits: ReadonlyMap<string, unknown>;
   note?: { kind: string; text: string };
   confirm?: { label: string; run: () => void };
+  pairCard: PairInside;
+  edit(setting: CatalogSetting, value: unknown): void;
+  askDiscard(): void;
+}
+
+/** The Settings page's "Pair a watch" card (`watch-pair-view.ts`). */
+interface PairInside {
   pair: { code: string; found?: Record<string, unknown>; users?: readonly { id: string; label: string }[]; userId?: string; done?: string };
   setPairCode(raw: string): string;
   pickPairUser(userId: string): void;
-  edit(setting: CatalogSetting, value: unknown): void;
-  askDiscard(): void;
   lookUpPair(): Promise<void>;
   confirmPair(): Promise<void>;
 }
@@ -270,8 +275,8 @@ describe("Watch settings as a page under the Watch app row", () => {
     const opened = await page();
     opened.addWatch(owner("w3", "New Watch"));
     opened.inside.edit(wrap, !wrap.default);
-    opened.inside.pair = { code: "ABCDEF", found: { found: true, watch_id: "w3", device_name: "New Watch", code: "ABCDEF" } };
-    await opened.inside.confirmPair();
+    opened.inside.pairCard.pair = { code: "ABCDEF", found: { found: true, watch_id: "w3", device_name: "New Watch", code: "ABCDEF" } };
+    await opened.inside.pairCard.confirmPair();
     await settle();
     expect(opened.inside.confirm).toBeUndefined();
     expect(opened.paired).toEqual(["w3"]);
@@ -285,8 +290,8 @@ describe("Watch settings as a page under the Watch app row", () => {
 
     async function lookedUp(hassOpts: Parameters<typeof fakeHass>[1]) {
       const opened = await page("w2", WATCHES, hassOpts);
-      opened.inside.setPairCode("ABCDEF");
-      await opened.inside.lookUpPair();
+      opened.inside.pairCard.setPairCode("ABCDEF");
+      await opened.inside.pairCard.lookUpPair();
       return opened;
     }
 
@@ -299,27 +304,27 @@ describe("Watch settings as a page under the Watch app row", () => {
       expect(shown).not.toContain("Supervisor");
       expect(shown).toContain("their iPhone gets its Fast alerts");
       expect(shown.indexOf("Jesse (you)")).toBeLessThan(shown.indexOf(">Chen<"));
-      expect(inside.pair.userId).toBe("root");
+      expect(inside.pairCard.pair.userId).toBe("root");
 
-      inside.pickPairUser("chen");
-      await inside.confirmPair();
+      inside.pairCard.pickPairUser("chen");
+      await inside.pairCard.confirmPair();
       const confirm = confirms(ha.sent)[0]!;
       expect(confirm.user_id).toBe("chen");
-      expect(inside.pair.done).toBe("Paired New Watch for Chen.");
+      expect(inside.pairCard.pair.done).toBe("Paired New Watch for Chen.");
     });
 
     it("sends no user when the administrator keeps themself", async () => {
       const { inside, ha } = await lookedUp({ pickUser: true });
-      await inside.confirmPair();
+      await inside.pairCard.confirmPair();
       const confirm = confirms(ha.sent)[0]!;
       expect("user_id" in confirm).toBe(false);
-      expect(inside.pair.done).toBe("Paired New Watch.");
+      expect(inside.pairCard.pair.done).toBe("Paired New Watch.");
     });
 
     it("starts on the person a known watch already belongs to", async () => {
       const { inside, ha } = await lookedUp({ pickUser: true, boundUser: "chen" });
-      expect(inside.pair.userId).toBe("chen");
-      await inside.confirmPair();
+      expect(inside.pairCard.pair.userId).toBe("chen");
+      await inside.pairCard.confirmPair();
       expect(confirms(ha.sent)[0]!.user_id).toBe("chen");
     });
 
@@ -327,7 +332,7 @@ describe("Watch settings as a page under the Watch app row", () => {
       const { inside, ha, text } = await lookedUp({});
       expect(text()).not.toContain("Whose watch is this?");
       expect(ha.sent.some((m) => m.type === "config/auth/list")).toBe(false);
-      await inside.confirmPair();
+      await inside.pairCard.confirmPair();
       expect("user_id" in confirms(ha.sent)[0]!).toBe(false);
     });
   });
@@ -352,8 +357,8 @@ describe("Watch settings as a page under the Watch app row", () => {
     // No Save while there is no watch to save for.
     expect(first).not.toContain(`class="primary save`);
     owners = [owner("w9", "First Watch")];
-    inside.pair = { code: "ABCDEF", found: { found: true, watch_id: "w9", device_name: "First Watch", code: "ABCDEF" } };
-    await inside.confirmPair();
+    inside.pairCard.pair = { code: "ABCDEF", found: { found: true, watch_id: "w9", device_name: "First Watch", code: "ABCDEF" } };
+    await inside.pairCard.confirmPair();
     await settle();
     expect(paired).toEqual(["w9"]);
     expect(inside.ownerId).toBe("w9");

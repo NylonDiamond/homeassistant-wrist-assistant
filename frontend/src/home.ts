@@ -93,6 +93,8 @@ export const homeStyles = css`
   .home-card.complications { --c: var(--wa-hue-pink); }
   .home-card.devices { --c: var(--wa-hue-grey); }
   .home-card-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; min-width: 0; }
+  /* Devices' Pair a watch, at the right end of its title row. */
+  .home-card-head button.home-pair-open { margin-left: auto; height: 26px; padding: 0 10px; font-size: 12.5px; }
   .home-chip {
     width: 20px; height: 20px; border-radius: 6px; flex: none; display: grid; place-items: center;
     background: var(--c); color: var(--wa-chip-ink);

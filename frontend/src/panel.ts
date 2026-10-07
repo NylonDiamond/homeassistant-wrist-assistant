@@ -407,6 +407,7 @@ import {
 } from "./parts.js";
 import { domainIcon } from "./domain-icons.js";
 import { WatchSettings, watchSettingsStyles } from "./watch-settings-view.js";
+import { PairWatchCard } from "./watch-pair-view.js";
 import { settingsWatches } from "./watch-settings.js";
 import {
   formButtonStyles,
@@ -1440,6 +1441,15 @@ export class WristAssistantPanel extends LitElement {
     await this.loadOwners();
     return this.owners;
   }, () => this.icons, (watchId) => this.pickWatch(watchId));
+
+  /** Home's "Pair a watch" dialog is open. */
+  @state() private pairOpen = false;
+  /** The card in that dialog, the same card the Settings page draws. A watch
+   * paired on it joins the device list and becomes the shared watch. */
+  private homePair = new PairWatchCard(() => this.requestUpdate(), async (watchId) => {
+    await this.loadOwners();
+    this.pickWatch(watchId);
+  });
 
   /** The Watch app's shared watch as last picked, remembered per browser
    * (`watch-pick.ts`). Never the complications device: `sharedWatch` works
@@ -5118,6 +5128,16 @@ export class WristAssistantPanel extends LitElement {
       box-shadow: 0 12px 40px rgba(0,0,0,.4);
     }
     dialog.help-dialog::backdrop { background: rgba(0,0,0,.45); }
+    /* Home's "Pair a watch": the Settings page's card alone, as wide as a
+       card on that page. */
+    dialog.pair-dialog {
+      width: min(460px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 8px 14px;
+      border: 1px solid var(--wa-line); border-radius: 12px;
+      background: var(--wa-card); color: var(--wa-ink);
+      box-shadow: 0 12px 40px rgba(0,0,0,.4);
+    }
+    dialog.pair-dialog::backdrop { background: rgba(0,0,0,.45); }
+    dialog.pair-dialog .ws-pair .sec-h button.pick { flex: none; margin-left: auto; }
     .help-head { display: flex; align-items: center; gap: 12px; padding: 14px 18px 4px; }
     .help-head a { font-size: 13px; color: var(--wa-accent); }
     .help-tabs { display: flex; gap: 4px; padding: 0 18px; border-bottom: 1px solid var(--wa-line); }
@@ -6522,6 +6542,13 @@ export class WristAssistantPanel extends LitElement {
     if (changed.has("demoing") && this.demoing) {
       const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.demo-dialog");
       if (dialog && !dialog.open) dialog.showModal();
+    }
+    if (changed.has("pairOpen") && this.pairOpen) {
+      const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.pair-dialog");
+      if (dialog && !dialog.open) {
+        dialog.showModal();
+        dialog.querySelector<HTMLInputElement>("input.ws-pair-code")?.focus();
+      }
     }
     if (changed.has("helpOpen") && this.helpOpen) {
       const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.help-dialog");
@@ -18710,7 +18737,8 @@ export class WristAssistantPanel extends LitElement {
    *
    * Watch app has a card per screen, for an administrator in a home with a
    * watch, the same gate the screens themselves have; with no watch yet, one
-   * card that goes to the Settings page, where the first watch is paired.
+   * card that opens the "Pair a watch" dialog. The Devices card's own Pair a
+   * watch opens the same dialog, for an administrator.
    * Complications and widgets has how many there are (the count the list
    * gives), New, Browse all, Import and the online gallery. Devices has each
    * device, Synced or Waiting (or Nothing waiting, for one that has nothing
@@ -18765,6 +18793,8 @@ export class WristAssistantPanel extends LitElement {
             <div class="home-card-head">
               <span class="home-chip" aria-hidden="true">${uiIcon("phone")}</span>
               <h2 class="home-title">Devices</h2>
+              ${admin ? html`<button class="home-btn home-pair-open" title="Pair a watch that shows a code"
+                @click=${() => this.openPairDialog()}>${uiIcon("plus")}<span>Pair a watch</span></button>` : nothing}
             </div>
             <span class="home-sub">Watches and phones that get your changes</span>
             ${devices.length === 0
@@ -18796,7 +18826,33 @@ export class WristAssistantPanel extends LitElement {
             void this.openFromPicker(hit.row, hit.copy);
           }))}</div>
         </section>`}
-      </div></div>`;
+      </div></div>
+      ${admin && this.pairOpen ? this.renderPairDialog() : nothing}`;
+  }
+
+  /** Home's "Pair a watch" dialog, opened from the Devices card, or from the
+   * Watch app card in a home with no watch yet. */
+  private openPairDialog() {
+    this.homePair.open(this.hass);
+    this.pairOpen = true;
+  }
+
+  private closePairDialog() {
+    if (!this.pairOpen) return;
+    this.homePair.close();
+    this.pairOpen = false;
+  }
+
+  /** The dialog: the Settings page's own pairing card, with Close on its
+   * title row. A native dialog brings the backdrop and Escape with it. It
+   * stays open after a watch pairs, so its "Paired" line can be read; the
+   * new watch is already in the Devices card behind it. */
+  private renderPairDialog() {
+    return html`<dialog class="pair-dialog" aria-label="Pair a watch" @close=${() => this.closePairDialog()}>
+      <div class="ws-body">${this.homePair.render({
+        headEnd: html`<button class="pick" title="Close (Escape)" @click=${() => this.closePairDialog()}>Close</button>`,
+      })}</div>
+    </dialog>`;
   }
 
   /** Home's Watch app card: a door to each screen on the shared watch, or,
@@ -18818,14 +18874,9 @@ export class WristAssistantPanel extends LitElement {
       </div>
       ${watches.length === 0
         ? html`<div class="home-screens">
-            <a class="home-screen home-pair-watch" href=${href(WATCH_SETTINGS_SCREEN.path)}
-              @click=${(e: MouseEvent) => {
-                if (!isPlainClick(e)) return;
-                e.preventDefault();
-                this.goTo(WATCH_SETTINGS_SCREEN.path);
-              }}>
-              <b>Pair a watch</b><span>Opens the Watch app's Settings, where a watch pairs with a code</span>
-            </a>
+            <button class="home-screen home-pair-watch" @click=${() => this.openPairDialog()}>
+              <b>Pair a watch</b><span>Type the code the watch shows</span>
+            </button>
           </div>`
         : html`<div class="home-screens">${WATCH_SCREENS.map((screen) => {
             const path = watchScreenPath(screen, watch);
