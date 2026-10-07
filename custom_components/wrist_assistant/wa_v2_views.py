@@ -3737,6 +3737,13 @@ async def _op_client_certificate_put(ctx: _OpContext) -> Response:
     The same fingerprint again changes nothing: ``changed`` false and the
     stored revision. A new one adds one to the revision and wakes the polls
     of every device of the user.
+
+    A migration path only, now that the panel imports the certificate
+    (``client_certificate_ws.py``): once the panel has written the user's
+    record, this changes nothing and answers ``changed`` false with the
+    record's revision and fingerprint (null after a removal in the panel),
+    the reply the phone already takes as settled, so it stops trying. The
+    store logs that once.
     """
     store, refused = _client_certificate_gate(ctx)
     if refused is not None:
@@ -3768,7 +3775,9 @@ async def _op_client_certificate_put(ctx: _OpContext) -> Response:
             "ok": True,
             "revision": record.revision,
             "changed": changed,
-            "fingerprint": record.certificate.fingerprint,
+            "fingerprint": (
+                record.certificate.fingerprint if record.certificate is not None else None
+            ),
         }
     )
 
@@ -3782,7 +3791,9 @@ async def _op_client_certificate_delete(ctx: _OpContext) -> Response:
 
     The record stays with no certificate and a new revision, so every
     device of the user sees the change on its next poll. With nothing held
-    nothing changes (``revision`` 0 when the user never had a record).
+    nothing changes (``revision`` 0 when the user never had a record). Nor
+    does it change a record the panel wrote: ``changed`` false with its
+    revision, as for the put.
     """
     store, refused = _client_certificate_gate(ctx)
     if refused is not None:

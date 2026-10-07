@@ -135,6 +135,7 @@ import {
   withStyleEdit,
 } from "./watch-notification-style/model.js";
 import { notificationPreview, notificationPreviewStyles } from "./watch-notification-style/preview.js";
+import { ClientCertCard, clientCertStyles } from "./watch-client-cert-view.js";
 
 /** How often the page asks whether a device has collected a save. */
 const DELIVERY_POLL_MS = 15_000;
@@ -239,6 +240,9 @@ export class WatchSettings implements ReactiveController {
    * that answers after the page was left leaves the next visit's card
    * alone. */
   private visit = 0;
+  /** The signed in user's client certificate, the card under the pairing
+   * card. It reads its status once each time the page is opened. */
+  private readonly cert = new ClientCertCard(() => this.host.requestUpdate());
 
   /** `icons` is the panel's symbol provider, asked on every draw: it loads
    * its file on first use and wakes the panel when it can draw more.
@@ -312,6 +316,7 @@ export class WatchSettings implements ReactiveController {
       this.visit++;
       this.pairSeq++;
       this.pair = { code: "" };
+      this.cert.open(hass);
     }
     if (step === "clear" || id === undefined) {
       // Nothing to load: clear whatever was shown, a load still out
@@ -341,6 +346,7 @@ export class WatchSettings implements ReactiveController {
     this.visit++;
     this.pairSeq++;
     this.pair = { code: "" };
+    this.cert.close();
     this.changed();
   }
 
@@ -850,8 +856,9 @@ export class WatchSettings implements ReactiveController {
    * (the title and which watch and revision at the left, where the settings
    * have got to and Save at the right), then the cards. On a wide page the
    * behavior cards and the notification style's sit in two columns, the
-   * pairing card under the second; on a narrow one they are one column in
-   * that order. A home with no watch yet has the pairing card alone.
+   * pairing and client certificate cards under the second; on a narrow one
+   * they are one column in that order. A home with no watch yet has those
+   * two cards alone.
    */
   render(hass: HassLike, owners: readonly OwnerSummary[], options: { narrow?: boolean } = {}): TemplateResult {
     this.hass = hass;
@@ -871,11 +878,11 @@ export class WatchSettings implements ReactiveController {
       </div>
       <div class="ws-cols ${one ? "one" : ""}">
         ${elsewhere
-          ? html`<div class="ws-body ws-col"><div class="xf-lead ws-main-house">${uiIcon("info")}<span>${SETTINGS_MAIN_HOUSE_TEXT}</span></div>${this.renderPair()}</div>`
+          ? html`<div class="ws-body ws-col"><div class="xf-lead ws-main-house">${uiIcon("info")}<span>${SETTINGS_MAIN_HOUSE_TEXT}</span></div>${this.renderPair()}${this.cert.render(hass)}</div>`
           : one
-          ? html`<div class="ws-body ws-col">${this.renderBehavior(hass)}${this.renderPair()}</div>`
+          ? html`<div class="ws-body ws-col">${this.renderBehavior(hass)}${this.renderPair()}${this.cert.render(hass)}</div>`
           : html`<div class="ws-body ws-col">${this.loading ? html`<div class="empty">Loading…</div>` : this.renderBehavior(hass)}</div>
-            <div class="ws-body ws-col">${this.loading ? nothing : this.renderStyle()}${this.renderPair()}</div>`}
+            <div class="ws-body ws-col">${this.loading ? nothing : this.renderStyle()}${this.renderPair()}${this.cert.render(hass)}</div>`}
       </div>
     </div>`;
   }
@@ -1531,4 +1538,5 @@ export const watchSettingsStyles = css`
   .ws-row > .ns-presets { margin: 6px 0 0; }
   .ws-body > .sec .ns-start, .ws-body > .sec .ns-retry { align-self: flex-start; }
   ${notificationPreviewStyles}
+  ${clientCertStyles}
 `;

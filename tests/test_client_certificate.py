@@ -285,6 +285,7 @@ def test_a_put_stores_the_certificate_at_revision_one(pkg, tmp_path) -> None:
         "revision": 1,
         "updated_at": record.updated_at,
         "certificate": body,
+        "source": "iphone",
     }
 
 

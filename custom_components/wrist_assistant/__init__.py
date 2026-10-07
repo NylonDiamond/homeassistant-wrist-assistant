@@ -76,6 +76,7 @@ from .const import (
 from .notification_snapshot import NotificationSnapshotStore
 from .card_preview_store import CardPreviewStore
 from .client_certificate_store import ClientCertificateStore
+from .client_certificate_ws import async_register_client_certificate_commands
 from .http_actions_runner import HTTPActionRunner
 from .http_actions_store import HTTPActionsStore
 from .http_actions_ws import async_register_http_actions_commands
@@ -915,7 +916,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # signed client_certificate_put, client_certificate_get and
     # client_certificate_delete ops and `client_certificate` on the delta
     # reply. The phone hands its certificate over, and a watch fetches it,
-    # only when it sees this.
+    # only when it sees this. The panel imports it over the WebSocket
+    # (client_certificate_ws.py), and a phone's put no longer replaces it.
     coordinator.register_capability(CLIENT_CERTIFICATE_CAPABILITY)
     # The signed watch_logs_put op (watch_logs_store.py). The watch offers to
     # send its logs to Home Assistant only when it sees this.
@@ -969,6 +971,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         async_register_page_images_commands(hass)
         # The panel's camera framing: list, save, send a test (admin only).
         async_register_camera_framing_commands(hass)
+        # The panel's client certificate import: status, put, delete, each
+        # for the signed-in user's own certificate (any signed-in user).
+        async_register_client_certificate_commands(hass)
         # v2 transport: /v2/* HMAC for all watch traffic. A pair comes from
         # the iPhone's sign-in through WARegisterSecretView (bearer), or from
         # a code the watch gets from WAPairStartView (no auth, stores only a

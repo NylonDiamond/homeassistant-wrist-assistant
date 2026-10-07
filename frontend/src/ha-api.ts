@@ -541,6 +541,40 @@ export async function confirmPairCode(hass: HassLike, code: string, userId?: str
   });
 }
 
+const CLIENT_CERT = "wrist_assistant/client_certificate";
+
+/** The signed in user's client certificate (mTLS), as every
+ * `client_certificate/*` command answers. One per Home Assistant user; that
+ * user's watches and iPhone read it. Only a fingerprint ever comes back, never
+ * the certificate itself. */
+export interface ClientCertificateStatus {
+  present: boolean;
+  fingerprint: string | null;
+  updated_at: string | null;
+  revision: number;
+  /** Who stored the record, or removed it. Null when the user never had one. */
+  source: "panel" | "iphone" | null;
+}
+
+/** The signed in user's certificate, or that there is none. An integration
+ * from before the panel kept certificates rejects with `unknown_command`. */
+export async function fetchClientCertificate(hass: HassLike) {
+  return hass.connection.sendMessagePromise<ClientCertificateStatus>({ type: `${CLIENT_CERT}/status` });
+}
+
+/** Store a `.p12` (base64) and its passphrase, which may be empty, as the
+ * signed in user's certificate, over any held. Refusals: `invalid_pkcs12`
+ * (not a .p12 file), `bad_passphrase`, `too_large` (over 32 KiB), and the
+ * generic ones. */
+export async function putClientCertificate(hass: HassLike, pkcs12: string, passphrase: string) {
+  return hass.connection.sendMessagePromise<ClientCertificateStatus>({ type: `${CLIENT_CERT}/put`, pkcs12, passphrase });
+}
+
+/** Remove the signed in user's certificate. */
+export async function deleteClientCertificate(hass: HassLike) {
+  return hass.connection.sendMessagePromise<ClientCertificateStatus>({ type: `${CLIENT_CERT}/delete` });
+}
+
 const WC = "wrist_assistant/watch_config";
 
 /** Admin only. */

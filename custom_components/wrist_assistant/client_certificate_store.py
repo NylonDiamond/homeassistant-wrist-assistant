@@ -29,6 +29,17 @@ delete keeps the record with no certificate in it, so a watch polling for
 the number sees the change and removes its copy. A put of the certificate
 already held (same fingerprint) changes nothing.
 
+Each record also says which path wrote it last (``source``): ``"panel"``
+for the integration panel's own import (``client_certificate_ws.py``, over
+the signed-in user's WebSocket), ``"iphone"`` for the phone's signed op. A
+record saved before the field existed reads as ``"iphone"``. The panel is
+now where a certificate is imported, and the phone's put is a migration path
+only: once the panel has written a user's record (a certificate, or the
+removal of one), a put or a delete from a phone changes nothing and is
+answered as if it had been stored, so the phone stops trying. A put of the
+same certificate from the panel over a phone's record takes it over without
+a new revision, since the watches already hold it.
+
 The file is a private ``Store`` (owner read and write only), since it holds
 a private key and the password that opens it. A file that cannot be read is
 logged and left alone: every read and write is refused with ``unavailable``
@@ -44,7 +55,7 @@ import hashlib
 import logging
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -66,6 +77,11 @@ FINGERPRINT_RE = re.compile(r"[0-9a-f]{64}")
 MAX_PKCS12_BASE64_CHARS = (CLIENT_CERTIFICATE_MAX_PKCS12_BYTES + 2) // 3 * 4
 # A password longer than this is not one a person typed.
 MAX_PASSPHRASE_CHARS = 1024
+
+# Which path wrote a record last.
+SOURCE_PANEL = "panel"
+SOURCE_IPHONE = "iphone"
+_SOURCES = frozenset({SOURCE_PANEL, SOURCE_IPHONE})
 
 
 class ClientCertificateError(Exception):
@@ -92,9 +108,19 @@ class ClientCertificateFingerprintError(ClientCertificateError):
 
 class ClientCertificateUnreadableError(ClientCertificateError):
     """The .p12 does not open with the password, or holds no key and
-    certificate."""
+    certificate.
+
+    ``code`` stays ``bad_pkcs12`` for the signed ops. ``reason`` tells the
+    cases apart for the panel: ``not_pkcs12`` (the bytes are not a PKCS#12
+    file at all), ``bad_passphrase`` (they are, and the password does not
+    open them) or ``no_key`` (it opens but lacks the key or the
+    certificate)."""
 
     code = "bad_pkcs12"
+
+    def __init__(self, message: str, reason: str) -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 class ClientCertificateUnavailableError(ClientCertificateError):
@@ -130,11 +156,13 @@ class ClientCertificate:
 
 @dataclass(frozen=True)
 class ClientCertificateRecord:
-    """One user's record: the certificate, or None after a removal."""
+    """One user's record: the certificate, or None after a removal, and
+    which path wrote it last (``SOURCE_PANEL`` or ``SOURCE_IPHONE``)."""
 
     revision: int
     updated_at: str
     certificate: ClientCertificate | None
+    source: str = SOURCE_IPHONE
 
     @property
     def present(self) -> bool:
@@ -147,6 +175,7 @@ class ClientCertificateRecord:
             "certificate": (
                 self.certificate.as_wire_dict() if self.certificate is not None else None
             ),
+            "source": self.source,
         }
 
     @classmethod
@@ -162,24 +191,26 @@ class ClientCertificateRecord:
             or not isinstance(updated_at, str)
         ):
             return None
+        # A record saved before the field existed came from a phone.
+        source = raw.get("source")
+        if source not in _SOURCES:
+            source = SOURCE_IPHONE
         stored = raw.get("certificate")
         if stored is None:
-            return cls(revision=revision, updated_at=updated_at, certificate=None)
+            return cls(
+                revision=revision, updated_at=updated_at, certificate=None, source=source
+            )
         try:
             certificate = parse_certificate(stored, check_fingerprint=True)
         except ClientCertificateError:
             return None
-        return cls(revision=revision, updated_at=updated_at, certificate=certificate)
+        return cls(
+            revision=revision, updated_at=updated_at, certificate=certificate, source=source
+        )
 
 
-def parse_certificate(raw: Any, *, check_fingerprint: bool = True) -> ClientCertificate:
-    """The certificate in ``{"pkcs12": <base64>, "passphrase": <string>,
-    "fingerprint": <hex>}``, checked for shape, size and fingerprint. It does
-    not try the password; :func:`check_opens` does that, off the event loop.
-    """
-    if not isinstance(raw, dict):
-        raise ClientCertificateInvalidError("the certificate must be an object")
-    encoded = raw.get("pkcs12")
+def _decode_pkcs12(encoded: Any) -> bytes:
+    """The .p12 bytes of its base64 text, held to the size cap."""
     if not isinstance(encoded, str) or not encoded:
         raise ClientCertificateInvalidError("pkcs12 must be the .p12 file as base64 text")
     if len(encoded) > MAX_PKCS12_BASE64_CHARS:
@@ -196,9 +227,37 @@ def parse_certificate(raw: Any, *, check_fingerprint: bool = True) -> ClientCert
         raise ClientCertificateTooLargeError(
             f"a .p12 is at most {CLIENT_CERTIFICATE_MAX_PKCS12_BYTES // 1024} KiB"
         )
-    passphrase = raw.get("passphrase")
+    return pkcs12
+
+
+def _check_passphrase(passphrase: Any) -> str:
     if not isinstance(passphrase, str) or len(passphrase) > MAX_PASSPHRASE_CHARS:
         raise ClientCertificateInvalidError("passphrase must be a string")
+    return passphrase
+
+
+def certificate_from_upload(encoded: Any, passphrase: Any) -> ClientCertificate:
+    """The certificate the panel uploads: the .p12 as base64 and its
+    password, checked for shape and size like :func:`parse_certificate`,
+    with the fingerprint worked out here rather than taken from the caller.
+    It does not try the password; :func:`check_opens` does that."""
+    pkcs12 = _decode_pkcs12(encoded)
+    return ClientCertificate(
+        pkcs12=pkcs12,
+        passphrase=_check_passphrase(passphrase),
+        fingerprint=fingerprint(pkcs12),
+    )
+
+
+def parse_certificate(raw: Any, *, check_fingerprint: bool = True) -> ClientCertificate:
+    """The certificate in ``{"pkcs12": <base64>, "passphrase": <string>,
+    "fingerprint": <hex>}``, checked for shape, size and fingerprint. It does
+    not try the password; :func:`check_opens` does that, off the event loop.
+    """
+    if not isinstance(raw, dict):
+        raise ClientCertificateInvalidError("the certificate must be an object")
+    pkcs12 = _decode_pkcs12(raw.get("pkcs12"))
+    passphrase = _check_passphrase(raw.get("passphrase"))
     claimed = raw.get("fingerprint")
     if not isinstance(claimed, str) or not FINGERPRINT_RE.fullmatch(claimed):
         raise ClientCertificateInvalidError(
@@ -209,6 +268,40 @@ def parse_certificate(raw: Any, *, check_fingerprint: bool = True) -> ClientCert
             "the fingerprint is not the SHA-256 of the .p12 bytes"
         )
     return ClientCertificate(pkcs12=pkcs12, passphrase=passphrase, fingerprint=claimed)
+
+
+def _der_length(data: bytes, offset: int) -> tuple[int | None, int] | None:
+    """The DER length at ``offset`` and where its content starts, with None
+    for BER's indefinite length; None when the bytes end first."""
+    if offset >= len(data):
+        return None
+    first = data[offset]
+    if first < 0x80:
+        return first, offset + 1
+    if first == 0x80:
+        return None, offset + 1
+    count = first & 0x7F
+    if count > 4 or offset + 1 + count > len(data):
+        return None
+    return int.from_bytes(data[offset + 1 : offset + 1 + count], "big"), offset + 1 + count
+
+
+def looks_like_pkcs12(data: bytes) -> bool:
+    """Whether the bytes open as a PKCS#12 ``PFX``: a SEQUENCE spanning the
+    whole file whose first element is the INTEGER 3 (RFC 7292). Only tells a
+    wrong password from a file that is not a .p12 at all, since
+    ``cryptography`` raises the same ``ValueError`` for both."""
+    if len(data) < 5 or data[0] != 0x30:
+        return False
+    parsed = _der_length(data, 1)
+    if parsed is None:
+        return False
+    length, start = parsed
+    # A definite length must cover the file; BER's indefinite one is left
+    # to the parser.
+    if length is not None and start + length != len(data):
+        return False
+    return data[start : start + 3] == b"\x02\x01\x03"
 
 
 def check_opens(certificate: ClientCertificate) -> None:
@@ -230,11 +323,17 @@ def check_opens(certificate: ClientCertificate) -> None:
         except (ValueError, TypeError):
             continue
     if loaded is None:
-        raise ClientCertificateUnreadableError("the .p12 does not open with this password")
+        if not looks_like_pkcs12(certificate.pkcs12):
+            raise ClientCertificateUnreadableError(
+                "the file does not open: it is not a PKCS#12 (.p12) file", "not_pkcs12"
+            )
+        raise ClientCertificateUnreadableError(
+            "the .p12 does not open with this password", "bad_passphrase"
+        )
     key, cert, _chain = loaded
     if key is None or cert is None:
         raise ClientCertificateUnreadableError(
-            "the .p12 must hold a private key and its certificate"
+            "the .p12 must hold a private key and its certificate", "no_key"
         )
 
 
@@ -253,6 +352,9 @@ class ClientCertificateStore:
         self._users: dict[str, ClientCertificateRecord] = {}
         self._load_failed = False
         self._listeners: list[Callable[[str], None]] = []
+        # Users whose phone was already told once that the panel's record
+        # stays (see _kept_for_panel).
+        self._kept_logged: set[str] = set()
 
     # ── persistence ────────────────────────────────────────────────────
 
@@ -364,48 +466,109 @@ class ClientCertificateStore:
 
     # ── writes ─────────────────────────────────────────────────────────
 
+    def _kept_for_panel(self, user_id: str, source: str, action: str) -> ClientCertificateRecord | None:
+        """The panel's record when a phone's write must leave it alone.
+        Logged once per user until the panel's record changes."""
+        if source != SOURCE_IPHONE:
+            return None
+        current = self._users.get(user_id)
+        if current is None or current.source != SOURCE_PANEL:
+            return None
+        if user_id not in self._kept_logged:
+            self._kept_logged.add(user_id)
+            _LOGGER.info(
+                "Kept the client certificate imported in the panel for user %s; "
+                "a phone's %s changes nothing now (revision %d)",
+                user_id,
+                action,
+                current.revision,
+            )
+        return current
+
     async def async_put(
-        self, user_id: str, raw: Any
+        self, user_id: str, raw: Any, *, source: str = SOURCE_IPHONE
     ) -> tuple[ClientCertificateRecord, bool]:
-        """Check and store a user's certificate. Returns the record and
-        whether it changed. The .p12 is opened with its password in the
-        executor before anything is stored; a refusal leaves the record as
-        it was."""
+        """Check and store a user's certificate as the signed op sends it.
+        Returns the record and whether it changed. See
+        :meth:`async_put_certificate`."""
         self._check_available()
         if not isinstance(user_id, str) or not user_id:
             raise ClientCertificateInvalidError("a user is required")
-        certificate = parse_certificate(raw)
+        kept = self._kept_for_panel(user_id, source, "put")
+        if kept is not None:
+            return kept, False
+        return await self.async_put_certificate(
+            user_id, parse_certificate(raw), source=source
+        )
+
+    async def async_put_certificate(
+        self, user_id: str, certificate: ClientCertificate, *, source: str
+    ) -> tuple[ClientCertificateRecord, bool]:
+        """Store a user's certificate. Returns the record and whether it
+        changed. The .p12 is opened with its password in the executor before
+        anything is stored; a refusal leaves the record as it was.
+
+        A phone's put over a record the panel wrote changes nothing and
+        returns that record (see the module docstring). The same certificate
+        again changes nothing, except that the panel takes over a phone's
+        record of it: the source moves, the revision does not."""
+        self._check_available()
+        if not isinstance(user_id, str) or not user_id:
+            raise ClientCertificateInvalidError("a user is required")
+        if source not in _SOURCES:
+            raise ClientCertificateInvalidError("unknown source")
         await self._hass.async_add_executor_job(check_opens, certificate)
+        # Checked after the wait too: the panel may have written meanwhile.
+        kept = self._kept_for_panel(user_id, source, "put")
+        if kept is not None:
+            return kept, False
         current = self._users.get(user_id)
         if (
             current is not None
             and current.certificate is not None
             and current.certificate.fingerprint == certificate.fingerprint
         ):
-            return current, False
+            if current.source == source:
+                return current, False
+            record = replace(current, source=source)
+            self._users[user_id] = record
+            self._kept_logged.discard(user_id)
+            self._schedule_save()
+            return record, False
         record = ClientCertificateRecord(
             revision=(current.revision if current is not None else 0) + 1,
             updated_at=_now_iso(),
             certificate=certificate,
+            source=source,
         )
         self._users[user_id] = record
+        self._kept_logged.discard(user_id)
         self._schedule_save()
         self._notify(user_id)
         return record, True
 
-    def delete(self, user_id: str) -> tuple[int, bool]:
+    def delete(self, user_id: str, *, source: str = SOURCE_IPHONE) -> tuple[int, bool]:
         """Clear a user's certificate, keeping the record with a new revision.
-        Returns the revision (0 with no record) and whether it changed."""
+        Returns the revision (0 with no record) and whether it changed. A
+        phone's delete of a record the panel wrote changes nothing."""
         self._check_available()
+        if source not in _SOURCES:
+            raise ClientCertificateInvalidError("unknown source")
         current = self._users.get(user_id) if user_id else None
         if current is None:
             return 0, False
+        if self._kept_for_panel(user_id, source, "delete") is not None:
+            return current.revision, False
         if current.certificate is None:
             return current.revision, False
         record = ClientCertificateRecord(
-            revision=current.revision + 1, updated_at=_now_iso(), certificate=None
+            revision=current.revision + 1,
+            updated_at=_now_iso(),
+            certificate=None,
+            source=source,
         )
         self._users[user_id] = record
+        self._kept_logged.discard(user_id)
         self._schedule_save()
         self._notify(user_id)
         return record.revision, True

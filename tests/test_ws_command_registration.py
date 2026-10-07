@@ -12,15 +12,17 @@ non-admin user, which no test hitting a real box would notice.
 Every command is admin-only, reads included: the panel is admin-only, and the
 reads hand out the slot pool of every watch in the house along with rendered
 templates, a watch's whole page config, or what a watch waiting to pair
-reported. The exceptions, at most one per module, are listed in
-``_NOT_ADMIN``.
+reported. The exceptions are listed in ``_NOT_ADMIN``: one live line each in
+two modules, and ``client_certificate_ws.py``, whose commands only ever touch
+the caller's own certificate.
 
-Six modules hold commands: ``complication_ws.py`` (the editor),
+Seven modules hold commands: ``complication_ws.py`` (the editor),
 ``watch_config_ws.py`` (the Watch settings view and the page editor),
 ``pairing_ws.py`` (confirming a watch's pairing code),
 ``http_actions_ws.py`` (the home's HTTP action library),
-``page_images_ws.py`` (the home's page photos) and
-``camera_framing_ws.py`` (the cameras' notification framing). Each is
+``page_images_ws.py`` (the home's page photos),
+``camera_framing_ws.py`` (the cameras' notification framing) and
+``client_certificate_ws.py`` (the user's own client certificate). Each is
 checked on its own, since each has its own registration function.
 """
 
@@ -38,6 +40,7 @@ _PAIRING_MODULE = _PKG / "pairing_ws.py"
 _HTTP_ACTIONS_MODULE = _PKG / "http_actions_ws.py"
 _PAGE_IMAGES_MODULE = _PKG / "page_images_ws.py"
 _CAMERA_FRAMING_MODULE = _PKG / "camera_framing_ws.py"
+_CLIENT_CERTIFICATE_MODULE = _PKG / "client_certificate_ws.py"
 
 # The Watch settings view's and the page editor's commands. Admin-only like
 # every other: history_entry hands out a whole past document, and restore
@@ -122,6 +125,9 @@ _ADMIN_ONLY = {
 # * ``ws_watch_config_subscribe`` hands out nothing but revision numbers, the
 #   same kind of thing. The documents themselves still travel only over the
 #   signed ``watch_config_get``.
+# * The client certificate commands read and write only the certificate of
+#   the user on the connection, the same per-user record the signed ops keep,
+#   and any signed-in user manages their own.
 _NOT_ADMIN = {
     _MODULE.name: {"ws_owner_subscribe"},
     _WATCH_CONFIG_MODULE.name: {"ws_watch_config_subscribe"},
@@ -129,6 +135,11 @@ _NOT_ADMIN = {
     _HTTP_ACTIONS_MODULE.name: set(),
     _PAGE_IMAGES_MODULE.name: set(),
     _CAMERA_FRAMING_MODULE.name: set(),
+    _CLIENT_CERTIFICATE_MODULE.name: {
+        "ws_client_certificate_status",
+        "ws_client_certificate_put",
+        "ws_client_certificate_delete",
+    },
 }
 
 
@@ -139,6 +150,7 @@ _MODULES = [
     _HTTP_ACTIONS_MODULE,
     _PAGE_IMAGES_MODULE,
     _CAMERA_FRAMING_MODULE,
+    _CLIENT_CERTIFICATE_MODULE,
 ]
 # Per module: the commands it must define, and which of them skip the gate.
 _EXPECTED = {
@@ -159,6 +171,10 @@ _EXPECTED = {
     _CAMERA_FRAMING_MODULE.name: (
         _CAMERA_FRAMING_ADMIN_ONLY,
         _NOT_ADMIN[_CAMERA_FRAMING_MODULE.name],
+    ),
+    _CLIENT_CERTIFICATE_MODULE.name: (
+        _NOT_ADMIN[_CLIENT_CERTIFICATE_MODULE.name],
+        _NOT_ADMIN[_CLIENT_CERTIFICATE_MODULE.name],
     ),
 }
 
@@ -285,6 +301,11 @@ def test_the_page_images_commands_are_registered_at_setup() -> None:
 def test_the_camera_framing_commands_are_registered_at_setup() -> None:
     source = (_PKG / "__init__.py").read_text()
     assert "async_register_camera_framing_commands(hass)" in source
+
+
+def test_the_client_certificate_commands_are_registered_at_setup() -> None:
+    source = (_PKG / "__init__.py").read_text()
+    assert "async_register_client_certificate_commands(hass)" in source
 
 
 def test_the_page_images_capability_is_advertised() -> None:
