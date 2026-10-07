@@ -7,7 +7,7 @@
 // what the phone writes (a new key at its sorted place, a removed key
 // deleted), and refuse by returning the document they were given. Every
 // list, word, range and reset key set comes from `tile-styling.json`
-// (`tile-styling.ts`), written from the app's Swift code.
+// (`tile-styling.ts`), the panel's own table.
 //
 // Plan: app repo docs/pages_in_home_assistant_step3.md, "3d build contract".
 

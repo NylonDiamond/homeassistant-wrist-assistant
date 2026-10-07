@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "Generated from the iPhone app's Swift code by RoomRulesTableTests; do not edit. Regenerate room-rules.json with TEST_RUNNER_WA_UPDATE_FIXTURES=1 ./scripts/test.sh RoomRulesTableTests in the app repository.",
+  "note": "The panel's own table: edit it here. RoomRulesTableTests in the app repository checks the parts the watch decides against the watch's code.",
   "keys": {
     "sensor": "roomQuickJumpSourceEntityId",
     "fallback": "roomQuickJumpFallbackPageId",

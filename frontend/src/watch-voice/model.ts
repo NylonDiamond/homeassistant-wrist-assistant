@@ -12,10 +12,11 @@
 // setter refuses by returning the document it was given, and so does an edit
 // that changes nothing, a value set to what the watch already reads included.
 //
-// The table `voice-keys.json` is built from the app's Swift code by the app
-// repo's `WatchVoiceDocumentTests`: every key with its type, default and
-// labels, the phrase cap, the volume range, a new phrase's values, and the
-// per slot routing the menu editor shows (`routing.ts`).
+// The table `voice-keys.json` is the panel's own and is edited by hand: every
+// key with its type, default and labels, the phrase cap, the volume range, a
+// new phrase's values, and the per slot routing the menu editor shows
+// (`routing.ts`). The app repo's `WatchVoiceDocumentTests` checks the parts
+// the watch decides against the watch's code.
 //
 // Plan: app repo docs/pages_in_home_assistant_step4.md ("4d batch 2 build
 // contract", items 3 to 5).

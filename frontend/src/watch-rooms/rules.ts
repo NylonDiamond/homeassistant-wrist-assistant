@@ -1,8 +1,9 @@
 // The room rules the Rooms editor shares with the app, read from
-// `room-rules.json`, which the app's `RoomRulesTableTests` writes from its
-// Swift code (`RoomConfig`, the phone's Rooms screen and its point control
-// editor). The functions here are ports of those, checked case by case
-// against the table's cases in `test/watch-rooms.test.ts`.
+// `room-rules.json`. The table is the panel's own and is edited by hand; the
+// app's `RoomRulesTableTests` checks the parts the watch decides against its
+// Swift code (`RoomConfig`). The functions here are ports of those rules,
+// checked case by case against the table's cases in
+// `test/watch-rooms.test.ts`.
 //
 // Plan: app repo docs/pages_in_home_assistant_step4.md, "4d batch 5", 5b.
 

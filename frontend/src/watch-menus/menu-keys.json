@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "Generated from the iPhone app's Swift code by WatchMenusTablesTests; do not edit. Regenerate menu-keys.json with TEST_RUNNER_WA_UPDATE_FIXTURES=1 ./scripts/test.sh WatchMenusTablesTests in the app repository.",
+  "note": "The panel's own table: edit it here. WatchMenusTablesTests in the app repository checks the parts the watch decides against the watch's code.",
   "enums": {
     "SlotPosition": [
       "topLeft",

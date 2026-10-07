@@ -17,8 +17,7 @@
 // document too, so a caller can tell by reference.
 //
 // What each kind of tile offers, every action, label and default, comes from
-// `tile-actions.json`, written from the app's Swift code. Nothing of it is
-// written here by hand.
+// `tile-actions.json`, the panel's own table. Nothing of it is written here.
 //
 // Plan: app repo docs/pages_in_home_assistant_step3.md, "3c build contract".
 
