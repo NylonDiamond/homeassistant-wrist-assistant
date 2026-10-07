@@ -86,8 +86,9 @@ export interface OwnerSummary {
       `false` means this home is the main house. */
   main_house?: boolean | null;
   /** True when an iPhone may still move this watch's own setup into Home
-      Assistant: the watch names the iPhone that paired it, or its Home
-      Assistant user has an iPhone here. The phone's one-time move sends a
+      Assistant: the old phone link set the watch up, so it names the iPhone
+      that paired it, and its key did not come from a pairing code. Another
+      iPhone of the watch's user does not count. The phone's one-time move sends a
       kind only while Home Assistant holds none, so the watch editors wait
       for it rather than offer a start over it (`noRecordStart`). False on a
       phone, absent from the Library row and from integrations older than the

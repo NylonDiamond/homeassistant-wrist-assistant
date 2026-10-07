@@ -483,27 +483,33 @@ def watch_has_iphone(entries: Mapping[str, WidgetSecretEntry], watch_id: str) ->
 
     Backs the owner list's ``has_iphone``. The phone's one-time move uploads a
     kind only while Home Assistant holds no record of it, so the panel waits
-    for it rather than starting a fresh record over it. True for a watch
-    entry that either names the iPhone that paired it (``owner_iphone_id``,
-    known here or not: that phone holds the watch's pair and runs the move),
-    or whose Home Assistant user has at least one iPhone entry of their own.
-    False for an iPhone entry, an unknown id, and a watch bound to no user
-    that names no iPhone. Pure over the entries, so it is tested without Home
-    Assistant.
+    for it rather than starting a fresh record over it.
+
+    The move signs as the watch, with the copy of the watch's key the phone
+    kept from the old phone link. Only a watch the old link set up has such a
+    copy, and every one of those names the iPhone that paired it
+    (``owner_iphone_id``): the watch refused to register without it, the
+    phone's relay sent its own id, and the watch's metadata refresh keeps
+    reporting it. So that is the one thing that counts, whether or not that
+    phone has an entry here.
+
+    Never for a watch whose key came from a code an admin confirmed
+    (``LABEL_WATCH_CODE_PAIR``): the watch made that key alone and no phone
+    holds it, so no move signed as this watch can land. That covers a new
+    watch paired by code, and an old one paired again by code, whose
+    metadata refresh may still report its old phone. Another iPhone of the
+    same Home Assistant user does not count either: a household whose admin
+    pairs every watch by code would otherwise wait on every one of them.
+
+    False for an iPhone entry and an unknown id. Pure over the entries, so it
+    is tested without Home Assistant.
     """
     entry = entries.get(watch_id)
     if entry is None or entry.device_kind == DEVICE_KIND_IPHONE:
         return False
-    if entry.owner_iphone_id:
-        return True
-    if entry.user_id is None:
+    if entry.label == LABEL_WATCH_CODE_PAIR:
         return False
-    return any(
-        other_id != watch_id
-        and other.device_kind == DEVICE_KIND_IPHONE
-        and other.user_id == entry.user_id
-        for other_id, other in entries.items()
-    )
+    return bool(entry.owner_iphone_id)
 
 
 def build_device_info(
