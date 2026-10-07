@@ -252,6 +252,11 @@ export const homeStyles = css`
   .dev-acts button { height: 32px; padding: 0 14px; }
   .dev-acts button.danger { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
   .dev-acts button.danger svg.ui-icon { width: 14px; height: 14px; }
+  .dev-rename { display: flex; align-items: center; gap: 8px; }
+  .dev-rename input { flex: 1; min-width: 0; height: 32px; box-sizing: border-box; }
+  .dev-rename button { height: 32px; }
+  .dev-small { margin: 0; font-size: 11.5px; color: var(--wa-muted); }
+  .xf-head button.dev-rename-open { height: 28px; padding: 0 10px; font-size: 12.5px; }
   .dev-err { margin: 0; font-size: 12.5px; color: var(--error-color); }
   .home-small { margin: 0; font-size: 11.5px; color: var(--wa-muted); }
   .home-empty { margin: 0; font-size: 13px; color: var(--wa-muted); }

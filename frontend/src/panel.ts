@@ -26,6 +26,7 @@ import {
   fetchWatchConfigSummary,
   fetchHttpActions,
   forgetDevice,
+  renameDevice,
   type SaveHistoryEntry,
   fetchSaveHistory,
   fetchSaveHistoryEntry,
@@ -1463,6 +1464,10 @@ export class WristAssistantPanel extends LitElement {
   /** The sheet's watch's pages, status pages and Control Center controls, as
    * many as its stored records hold. A kind that could not be read is absent
    * and its tab wears no count. */
+  /** The sheet's name field is open, with what has been typed in it. */
+  @state() private deviceRename?: string;
+  @state() private deviceRenameBusy = false;
+  @state() private deviceRenameError?: string;
   @state() private deviceCounts?: { owner: string; counts: Partial<Record<DeviceCountKind, number>> };
 
   /** The Watch app's shared watch as last picked, remembered per browser
@@ -18856,6 +18861,8 @@ export class WristAssistantPanel extends LitElement {
   private openDeviceSheet(ownerId: string) {
     this.deviceForgetAsk = false;
     this.deviceForgetError = undefined;
+    this.deviceRename = undefined;
+    this.deviceRenameError = undefined;
     this.deviceSheet = ownerId;
     void this.loadDeviceCounts(ownerId);
   }
@@ -18882,8 +18889,10 @@ export class WristAssistantPanel extends LitElement {
   }
 
   private closeDeviceSheet() {
-    if (this.deviceForgetBusy) return;
+    if (this.deviceForgetBusy || this.deviceRenameBusy) return;
     this.deviceSheet = undefined;
+    this.deviceRename = undefined;
+    this.deviceRenameError = undefined;
     this.deviceForgetAsk = false;
     this.deviceForgetError = undefined;
   }
@@ -18893,8 +18902,9 @@ export class WristAssistantPanel extends LitElement {
    * state, and a tab for each of its pages, each opening that page on this
    * device. A tab wears how many its page holds: the device's complications
    * (or its Control Center ones), and on a watch its pages, status pages and
-   * Control Center controls. An administrator can make a new complication on
-   * it, or forget it after a second step that says what goes with it.
+   * Control Center controls. An administrator can rename it (Home Assistant's
+   * own device name), or forget it after a second step that says what goes
+   * with it.
    */
   private renderDeviceSheet(ownerId: string, devices: readonly HomeDeviceRow[], admin: boolean) {
     const row = devices.find((d) => d.id === ownerId);
@@ -18948,28 +18958,70 @@ export class WristAssistantPanel extends LitElement {
               @click=${() => void this.forgetDeviceNow(ownerId)}>${this.deviceForgetBusy ? "Forgetting…" : "Forget device"}</button>
           </div>
         </div>`;
+    const renaming = this.deviceRename !== undefined;
+    const stopRename = () => { this.deviceRename = undefined; this.deviceRenameError = undefined; };
+    const renameForm = html`<form class="dev-rename" @submit=${(e: Event) => { e.preventDefault(); void this.renameDeviceNow(ownerId); }}>
+        <input type="text" class="dev-rename-in" aria-label="Device name" .value=${this.deviceRename ?? ""}
+          placeholder=${owner?.device_name ?? row.name} ?disabled=${this.deviceRenameBusy}
+          @input=${(e: Event) => { this.deviceRename = (e.target as HTMLInputElement).value; }}
+          @keydown=${(e: KeyboardEvent) => {
+            // Escape leaves the field, not the sheet.
+            if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); stopRename(); }
+          }} />
+        <button type="submit" class="home-btn" ?disabled=${this.deviceRenameBusy}>${this.deviceRenameBusy ? "Saving…" : "Save"}</button>
+        <button type="button" class="ghost" ?disabled=${this.deviceRenameBusy} @click=${stopRename}>Cancel</button>
+      </form>
+      <p class="dev-small">Leave it empty to use the name the device reports.</p>
+      ${this.deviceRenameError ? html`<p class="dev-err">${this.deviceRenameError}</p>` : nothing}`;
     const overview = html`<div class="xfer-body">
+        ${renaming ? html`<div class="xf-stack">${renameForm}</div>` : nothing}
         <nav class="dev-tabs" aria-label=${`Pages for ${row.name}`}>${deviceSheetTabs(row.kind, admin).map(tab)}</nav>
         <div class="dev-state ${row.sync}"><i class="home-dot" aria-hidden="true"></i>
           <span><b>${deviceSyncLabel(row.sync)}</b>${row.waitingFor.length === 0 ? nothing
             : html`<span class="home-device-why"> · ${waitingForText(row.waitingFor)}</span>`}</span></div>
         <div class="dev-acts">
-          ${admin ? html`<button class="home-btn" ?disabled=${this.freeSlot() < 0 || this.ownerBusy}
-            title=${this.freeSlot() < 0 ? "Every device is full. Delete a complication first." : `Make a new complication on ${row.name}`}
-            @click=${() => {
-              toComplications();
-              this.openNewDialog();
-              this.pickKind(row.kind);
-              this.newOwners = new Set([ownerId]);
-            }}>${uiIcon("plus")}<span>${row.kind === "iphone" ? "New widget" : "New complication"}</span></button>` : nothing}
           ${admin ? html`<button class="danger dev-forget" @click=${() => { this.deviceForgetAsk = true; }}>${uiIcon("delete")}<span>Forget device</span></button>` : nothing}
         </div>
       </div>`;
     return html`<dialog class="xf dev-dialog" aria-label=${title} @close=${close}
-      @cancel=${(e: Event) => { if (this.deviceForgetBusy) e.preventDefault(); }}>
-      ${this.dialogHead(title, facts, close)}
+      @cancel=${(e: Event) => { if (this.deviceForgetBusy || this.deviceRenameBusy) e.preventDefault(); }}>
+      ${this.dialogHead(title, facts, close, admin && !this.deviceForgetAsk && !renaming
+        ? html`<button class="home-btn dev-rename-open" title="Change the name Home Assistant shows for it"
+            @click=${() => this.startDeviceRename(ownerId)}>Rename</button>`
+        : nothing)}
       ${this.deviceForgetAsk ? ask : overview}
     </dialog>`;
+  }
+
+  /** Open the sheet's name field on the name Home Assistant shows now, and
+   * put the cursor in it. */
+  private startDeviceRename(ownerId: string) {
+    this.deviceRename = this.ownerOf(ownerId)?.device_name ?? "";
+    this.deviceRenameError = undefined;
+    void this.updateComplete.then(() => {
+      const input = this.renderRoot.querySelector<HTMLInputElement>("dialog.dev-dialog input.dev-rename-in");
+      input?.focus();
+      input?.select();
+    });
+  }
+
+  /** Save the typed name as the device's name in Home Assistant, then read
+   * the devices again so every list shows it. An empty field drops the
+   * rename. */
+  private async renameDeviceNow(ownerId: string) {
+    const name = (this.deviceRename ?? "").trim();
+    this.deviceRenameBusy = true;
+    this.deviceRenameError = undefined;
+    try {
+      await renameDevice(this.hass, ownerId, name === "" ? null : name);
+    } catch (err) {
+      this.deviceRenameError = `Could not rename it: ${errText(err)}`;
+      this.deviceRenameBusy = false;
+      return;
+    }
+    await this.loadOwners();
+    this.deviceRenameBusy = false;
+    this.deviceRename = undefined;
   }
 
   /**

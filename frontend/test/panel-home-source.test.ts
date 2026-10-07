@@ -144,10 +144,21 @@ describe("Home's device sheet", () => {
     expect(sheet).toContain("this.pickerFilter = filter;");
   });
 
-  it("makes a new complication with this device already ticked", () => {
-    expect(sheet).toContain("this.pickKind(row.kind);");
-    expect(sheet).toContain("this.newOwners = new Set([ownerId]);");
-    expect(sheet.indexOf("this.pickKind(row.kind);")).toBeLessThan(sheet.indexOf("this.newOwners = new Set([ownerId]);"));
+  it("has no New complication button", () => {
+    expect(sheet).not.toContain("openNewDialog");
+  });
+
+  it("renames the device in Home Assistant's own registry, from a button on the head, for administrators", () => {
+    expect(sheet).toContain("admin && !this.deviceForgetAsk && !renaming");
+    expect(sheet).toContain("@click=${() => this.startDeviceRename(ownerId)}>Rename</button>");
+    expect(sheet).toContain("void this.renameDeviceNow(ownerId);");
+    const save = method("  private async renameDeviceNow(ownerId: string) {");
+    expect(save).toContain("await renameDevice(this.hass, ownerId, name === \"\" ? null : name);");
+    expect(save).toContain("await this.loadOwners();");
+  });
+
+  it("lets Escape leave the name field without shutting the sheet", () => {
+    expect(sheet).toContain(`if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); stopRename(); }`);
   });
 
   it("reads the devices and lists again after a Forget, and picks another device when it was the open one", () => {

@@ -322,6 +322,18 @@ export async function fetchWatchStatus(hass: HassLike, owner: string) {
   }>({ type: `${D}/watch_status`, owner_watch_id: owner });
 }
 
+/** Give one device the name Home Assistant shows for it, the same rename as
+ * on its page in Settings, Devices. Null drops the rename, so the name the
+ * device reports shows again. Admin only, as the registry commands are. */
+export async function renameDevice(hass: HassLike, watchId: string, name: string | null) {
+  const devices = await hass.connection.sendMessagePromise<{ id: string; identifiers: [string, string][] }[]>({
+    type: "config/device_registry/list",
+  });
+  const device = devices.find((d) => d.identifiers.some(([domain, id]) => domain === "wrist_assistant" && id === `watch_${watchId}`));
+  if (device === undefined) throw new Error("Home Assistant has no device entry for it");
+  await hass.connection.sendMessagePromise({ type: "config/device_registry/update", device_id: device.id, name_by_user: name });
+}
+
 /** Remove one device from this home: its pairing, its push token and its
  * watch setup go, and its designs move to the Library. Always forced: the
  * panel asks first, and every device in use still holds a token or a design,
