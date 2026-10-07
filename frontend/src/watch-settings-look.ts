@@ -44,8 +44,10 @@ export interface SettingLook {
   icon: string;
   /** Draw each choice as this kind of picture instead of its icon. */
   preview?: PreviewKind;
-  /** One entry per catalog choice of an enum setting. */
+  /** One entry per catalog choice of an enum or domains setting. */
   options?: Readonly<Record<string, OptionLook>>;
+  /** One entry per gesture of the wrist twists' row, the icon of its row. */
+  gestures?: Readonly<Record<string, OptionLook>>;
 }
 
 /** The most choices drawn as tiles. A longer list stays a dropdown. */
@@ -61,6 +63,8 @@ function same(icon: string, values: readonly string[], details: Readonly<Record<
 const ACTION_ICONS: Readonly<Record<string, string>> = {
   "Disabled": "xmark.circle",
   "Toggle Aimed Entity (Point Control)": "safari.fill",
+  "Point Control": "safari.fill",
+  "Switch Instance": "rectangle.2.swap", // the watch's own Switch Instance quick action
   "Room Jump": "location.fill",
   "Activate Scene": "theatermasks",
   "Run Script": "scroll.fill",
@@ -141,11 +145,21 @@ export const WATCH_SETTING_LOOK: Readonly<Record<string, SettingLook>> = {
     icon: "hand.tap", // panel's own
     options: actions([
       "Disabled", "Toggle Aimed Entity (Point Control)", "Room Jump", "Activate Scene", "Run Script",
-      "Refresh", "Next Page", "Previous Page", "Toggle First Tile",
+      "Refresh", "Next Page", "Previous Page", "Toggle First Tile", "Switch Instance",
     ]),
   },
   topSectionDoubleTapSceneTargetId: { icon: "theatermasks" },
   topSectionDoubleTapScriptTargetId: { icon: "scroll.fill" },
+  handGestureAction: {
+    icon: "hand.pinch.fill", // panel's own
+    options: actions([
+      "Disabled", "Point Control", "Activate Scene", "Run Script", "Next Page", "Previous Page",
+      "Room Jump", "Toggle First Tile", "Refresh", "Switch Instance",
+    ]),
+  },
+  handGestureSceneTargetId: { icon: "theatermasks" },
+  handGestureScriptTargetId: { icon: "scroll.fill" },
+  pointControlShowHUD: { icon: "safari.fill" }, // panel's own
   sliderCrownSensitivity: {
     icon: "digitalcrown.horizontal.arrow.counterclockwise",
     options: {
@@ -158,6 +172,28 @@ export const WATCH_SETTING_LOOK: Readonly<Record<string, SettingLook>> = {
   showControlEntityName: { icon: "textformat" },
   automationTriggerSkipConditions: { icon: "bolt.badge.automatic.fill" },
   showPendingAnimation: { icon: "hourglass.circle.fill" },
+  // The phone's Per Domain screen drew each domain's entity icon; these are
+  // the panel's own, one per domain.
+  pendingAnimationDisabledDomains: {
+    icon: "checklist", // panel's own
+    options: {
+      "light": { icon: "lightbulb.fill" },
+      "switch": { icon: "switch.2" },
+      "lock": { icon: "lock.fill" },
+      "cover": { icon: "blinds.vertical.closed" },
+      "valve": { icon: "spigot.fill" },
+      "climate": { icon: "thermometer.medium" },
+      "fan": { icon: "fan.fill" },
+      "media_player": { icon: "play.rectangle.fill" },
+      "vacuum": { icon: "circle.circle.fill" },
+      "timer": { icon: "timer" },
+      "input_boolean": { icon: "togglepower" },
+      "input_number": { icon: "number" },
+      "input_select": { icon: "list.bullet" },
+      "automation": { icon: "gearshape.2.fill" },
+      "alarm_control_panel": { icon: "lock.shield.fill" },
+    },
+  },
 
   // ── navigation ──
   pageTransitionStyle: {
@@ -168,6 +204,14 @@ export const WATCH_SETTING_LOOK: Readonly<Record<string, SettingLook>> = {
       "Slide": { icon: "arrow.left.arrow.right" },
       "Fade": { icon: "circle.lefthalf.filled" },
       "None": { icon: "hare.fill" },
+    },
+  },
+  pageTitleMode: {
+    icon: "textformat", // panel's own; the app's PageTitleMode icons
+    options: {
+      "Off": { icon: "eye.slash" },
+      "On": { icon: "textformat" },
+      "Auto": { icon: "hourglass" }, // the app's clock.arrow.2.circlepath is not in the panel's symbols
     },
   },
   showPageIndicator: { icon: "circle.grid.2x1.fill" },
@@ -220,6 +264,25 @@ export const WATCH_SETTING_LOOK: Readonly<Record<string, SettingLook>> = {
   cameraShowLoadingDots: { icon: "ellipsis" },
   cameraSwipeSensitivity: { icon: "hand.draw.fill", options: SWIPE_ICONS },
   cameraSwipeWrap: { icon: "arrow.trianglehead.2.counterclockwise.rotate.90" },
+
+  // ── wrist motions ── the phone's Motion Gestures screen
+  motionGestureSensitivity: {
+    icon: "figure.walk.motion",
+    options: {
+      "Off": { icon: "xmark.circle" },
+      "Low": { icon: "tortoise.fill", detail: "Level 4" },
+      "Medium": { icon: "dial.low.fill", detail: "Level 6" },
+      "High": { icon: "hare.fill", detail: "Level 8" },
+    },
+  },
+  motionGestureSensitivityLevel: { icon: "dial.low.fill" },
+  motionGestureActionsJSON: {
+    icon: "figure.walk.motion",
+    gestures: {
+      "Twist Clockwise": { icon: "arrow.clockwise" },
+      "Twist Counter-Clockwise": { icon: "arrow.counterclockwise" },
+    },
+  },
 };
 
 /** Whether an enum setting draws its choices as tiles: up to `MAX_TILES` of
@@ -269,6 +332,28 @@ export function tileChoices(setting: CatalogSetting, options: readonly SettingOp
       on: o.value === value,
     };
   });
+}
+
+/**
+ * The tiles of a domains setting, in the catalog's order, each lit while its
+ * domain is not in `skipped`. A skipped domain the catalog does not list is
+ * one more tile, unlit, named as it is stored and marked with the row's icon.
+ */
+export function domainTiles(setting: CatalogSetting, skipped: readonly string[]): TileChoice[] {
+  const look = WATCH_SETTING_LOOK[setting.key];
+  const options = setting.options ?? [];
+  const extra = skipped.filter((d) => !options.some((o) => o.value === d)).map((d) => ({ value: d, label: d }));
+  return [...options, ...extra].map((o) => ({
+    value: o.value,
+    name: o.label,
+    icon: look?.options?.[o.value]?.icon ?? look?.icon ?? "questionmark.circle",
+    on: !skipped.includes(o.value),
+  }));
+}
+
+/** The SF Symbol beside one gesture of the wrist twists' row. */
+export function gestureIcon(setting: CatalogSetting, gesture: string): string {
+  return WATCH_SETTING_LOOK[setting.key]?.gestures?.[gesture]?.icon ?? settingIcon(setting);
 }
 
 // ── the small pictures ───────────────────────────────────────────────────

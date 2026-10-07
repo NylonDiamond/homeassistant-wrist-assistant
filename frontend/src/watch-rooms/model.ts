@@ -311,7 +311,9 @@ export function switchingWritesFor(doc: BehaviorDocument, on: boolean): Map<stri
     p.topSectionDoubleTapAction = DOUBLE_TAP_ROOM_JUMP;
     p.roomQuickJumpEnabled = false;
     p.roomAutoSwitchEnabled = false;
-    p.handGestureAction = HAND_GESTURE_REFRESH;
+    // The double pinch is Watch settings' row: only a Room Jump of Rooms'
+    // own is taken back, any other action is kept.
+    if (p.handGestureAction === HAND_GESTURE_ROOM_JUMP) p.handGestureAction = HAND_GESTURE_REFRESH;
   } else {
     p.roomQuickJumpEnabled = false;
     p.roomAutoSwitchEnabled = false;
@@ -329,14 +331,14 @@ export function triggerWrites(doc: BehaviorDocument, trigger: RoomTrigger): Map<
     case "Automatic":
       p.roomAutoSwitchEnabled = true;
       p.roomQuickJumpEnabled = false;
-      p.handGestureAction = HAND_GESTURE_REFRESH;
+      if (p.handGestureAction === HAND_GESTURE_ROOM_JUMP) p.handGestureAction = HAND_GESTURE_REFRESH;
       if (p.topSectionDoubleTapAction === DOUBLE_TAP_ROOM_JUMP) p.topSectionDoubleTapAction = DOUBLE_TAP_DISABLED;
       break;
     case "Double-Tap Top":
       p.roomAutoSwitchEnabled = false;
       p.roomQuickJumpEnabled = false;
       p.topSectionDoubleTapAction = DOUBLE_TAP_ROOM_JUMP;
-      p.handGestureAction = HAND_GESTURE_REFRESH;
+      if (p.handGestureAction === HAND_GESTURE_ROOM_JUMP) p.handGestureAction = HAND_GESTURE_REFRESH;
       break;
     case "Double Pinch":
       p.roomAutoSwitchEnabled = false;
@@ -616,12 +618,12 @@ export function roomsDocumentOf(record: WatchConfigRecord | undefined): Behavior
 export const ROOMS_NO_RECORD_TITLE = "No watch settings from this watch yet.";
 /** The no-record line when no iPhone will send the watch's settings. Rooms
  * have no Start of their own: they come with Watch settings' start. */
-export const ROOMS_NO_RECORD_TEXT = "Rooms are part of the watch's settings. Start them under Watch settings.";
+export const ROOMS_NO_RECORD_TEXT = "Rooms are part of the watch's settings. Start them under Watch app, Settings.";
 
 /** The same while the iPhone's move may still bring the settings. */
 export const ROOMS_WAIT_TEXT = `Rooms are part of the watch's settings. ${WAIT_FOR_IPHONE_TEXT}`;
 export const ROOMS_UNREADABLE_TEXT = "Home Assistant holds settings for this watch that this panel cannot read. Update the integration.";
-export const ZONES_UNREADABLE_TEXT = "The point control targets stored for this watch cannot be read, so they are shown as none and left as they are. Change them on the iPhone.";
+export const ZONES_UNREADABLE_TEXT = "The point control targets stored for this watch cannot be read, so they are shown as none and left as they are. Update the integration to change them here.";
 
 export const FALLBACK_LABELS = {
   stay: "Stay on current page",
@@ -754,7 +756,7 @@ export const HOME_ROOMS_NO_RECORD_TITLE = "No rooms for this home yet.";
 /** The no-record line when no iPhone will send this home's rooms. */
 export const HOME_ROOMS_NO_RECORD_TEXT = "Start with no rooms to begin.";
 export const HOME_ROOMS_START_BUTTON = "Start with no rooms";
-export const HOME_ROOMS_START_CONFLICT_TEXT = "The iPhone sent this home's rooms meanwhile, so those are shown.";
+export const HOME_ROOMS_START_CONFLICT_TEXT = "Rooms for this home arrived meanwhile, so those are shown.";
 export const HOME_ROOMS_STARTED_TEXT = "Started with no rooms. Pick a room sensor and give rooms a page, then save.";
 export const HOME_ROOMS_UPDATE_TEXT = "Update the integration to edit this home's rooms here.";
 export const HOME_ROOMS_UNREADABLE_TEXT = "Home Assistant holds rooms for this home that this panel cannot read. Update the integration.";

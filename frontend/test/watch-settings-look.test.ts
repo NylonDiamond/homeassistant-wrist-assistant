@@ -89,7 +89,13 @@ describe("the look map", () => {
   it("has an entry for every choice of every enum setting, and none for a choice the catalog does not have", () => {
     for (const setting of settings) {
       const look = WATCH_SETTING_LOOK[setting.key]!;
-      if (setting.type !== "enum") {
+      if (setting.type === "motionGestures") {
+        expect(look.options, setting.key).toBeUndefined();
+        expect(Object.keys(look.gestures ?? {}).sort(), setting.key).toEqual((setting.gestures ?? []).map((g) => g.value).sort());
+        continue;
+      }
+      expect(look.gestures, setting.key).toBeUndefined();
+      if (setting.type !== "enum" && setting.type !== "domains") {
         expect(look.options, setting.key).toBeUndefined();
         continue;
       }
@@ -100,7 +106,9 @@ describe("the look map", () => {
   it("names only symbols the panel ships", () => {
     const file = join(__dirname, "..", "..", "custom_components", "wrist_assistant", "frontend", "symbol-icons.json.gz");
     const shipped = new Set(Object.keys(JSON.parse(gunzipSync(readFileSync(file)).toString("utf8")) as Record<string, unknown>));
-    const named = Object.values(WATCH_SETTING_LOOK).flatMap((l) => [l.icon, ...Object.values(l.options ?? {}).map((o) => o.icon)]);
+    const named = Object.values(WATCH_SETTING_LOOK).flatMap((l) => [
+      l.icon, ...Object.values(l.options ?? {}).map((o) => o.icon), ...Object.values(l.gestures ?? {}).map((o) => o.icon),
+    ]);
     const missing = [...new Set(named)].filter((n) => !shipped.has(n));
     expect(missing).toEqual([]);
   });
@@ -231,10 +239,14 @@ describe("the dialog", () => {
     const { tree, text } = dialog({ ...watchBehaviorDefaults(), cameraRefreshOnOpen: true, showPageIndicator: true });
     const shown = text();
     const tiled = settings.filter(usesTiles).map((s) => s.key);
-    const rows = templates(tree(), "ws-tile-row").map((t) => t.values.find((v) => typeof v === "string" && tiled.includes(v)));
+    // The bounce domains' strip is a tile row too, of switches rather than choices.
+    const rows = templates(tree(), "ws-tile-row")
+      .filter((t) => !t.values.includes("pendingAnimationDisabledDomains"))
+      .map((t) => t.values.find((v) => typeof v === "string" && tiled.includes(v)));
     expect(rows.sort()).toEqual([...tiled].sort());
-    // Two menus are left: the double-tap and pull down actions.
-    expect(shown.match(/<select\b/g)).toHaveLength(2);
+    // Three menus are left: the double-tap, double pinch and pull down
+    // actions. The twists' menus are hidden while twists are off.
+    expect(shown.match(/<select\b/g)).toHaveLength(3);
     expect(shown).not.toContain('class="seg wide"');
     const longPress = tilesOf(tree(), "longPressDuration").map(flatten);
     expect(longPress).toHaveLength(5);
@@ -300,6 +312,45 @@ describe("the dialog", () => {
     expect(inside.edits.size).toBe(0);
   });
 
+  it("draws the bounce domains as tiles that each turn on and off, lit while they bounce", () => {
+    const { inside, tree } = dialog({ ...watchBehaviorDefaults(), pendingAnimationDisabledDomains: ["fan", "scene"] });
+    const row = templates(tree(), "ws-tile-row").find((t) => t.values.includes("pendingAnimationDisabledDomains"))!;
+    const tiles = templates(row, `class="ws-tile `);
+    // The catalog's fifteen, and a stored domain it does not list, unlit.
+    expect(tiles).toHaveLength(16);
+    const tile = (name: string) => tiles.find((t) => flatten(t).includes(`>${name}</span>`))!;
+    expect(flatten(tile("Lights"))).toContain("aria-pressed=true");
+    expect(flatten(tile("Fans"))).toContain("aria-pressed=false");
+    expect(flatten(tile("scene"))).toContain("aria-pressed=false");
+    bound(tile("Lights"), "@click")();
+    expect(inside.edits.get("pendingAnimationDisabledDomains")).toEqual(["fan", "light", "scene"]);
+    const again = templates(templates(tree(), "ws-tile-row").find((t) => t.values.includes("pendingAnimationDisabledDomains"))!, `class="ws-tile `);
+    bound(again.find((t) => flatten(t).includes(">Lights</span>"))!, "@click")();
+    expect(inside.edits.size).toBe(0);
+    // Off with Pending animation.
+    expect(dialog({ ...watchBehaviorDefaults(), showPendingAnimation: false }).text()).not.toContain("data-key=pendingAnimationDisabledDomains");
+  });
+
+  it("draws the wrist twists only while they are on: the fine tune, then a menu per twist and its scene", () => {
+    expect(dialog().text()).not.toContain("data-key=motionGestureActionsJSON");
+    const shown = dialog({
+      ...watchBehaviorDefaults(),
+      motionGestureSensitivity: "Medium",
+      motionGestureSensitivityLevel: 6,
+      motionGestureActionsJSON: '{"Twist Clockwise":"Activate Scene"}',
+      motionGestureSceneTargetsJSON: '{"Twist Clockwise":"scene.evening"}',
+    }).text();
+    const parent = shown.indexOf("data-key=motionGestureSensitivity>");
+    const open = shown.indexOf('<div class="fgroup">', parent);
+    expect(parent).toBeGreaterThan(0);
+    expect(open).toBeGreaterThan(parent);
+    for (const key of ["motionGestureSensitivityLevel", "motionGestureActionsJSON:Twist Clockwise", "motionGestureActionsJSON:Twist Clockwise:scene", "motionGestureActionsJSON:Twist Counter-Clockwise"]) {
+      expect(shown.indexOf(`data-key=${key}`), key).toBeGreaterThan(open);
+    }
+    expect(shown).not.toContain("data-key=motionGestureActionsJSON:Twist Counter-Clockwise:scene");
+    expect(shown).toContain('type="range" min=1 max=10 step=0.5');
+  });
+
   it("hides the tiles' help with the rest of the card's help, keeping it in the tile row", () => {
     const { inside, text } = dialog();
     inside.helpOff = new Set(["interaction"]);
@@ -341,7 +392,9 @@ describe("the tiles' look", () => {
 it("leaves the shared catalog's shape alone", () => {
   for (const section of WATCH_SETTINGS_CATALOG.sections) {
     for (const s of section.settings) {
-      expect(Object.keys(s).every((k) => ["key", "type", "label", "help", "default", "options", "domain", "showIf"].includes(k)), s.key).toBe(true);
+      expect(Object.keys(s).every((k) => [
+        "key", "type", "label", "help", "default", "initial", "options", "domain", "min", "max", "step", "gestures", "sceneKey", "scriptKey", "showIf",
+      ].includes(k)), s.key).toBe(true);
     }
   }
 });

@@ -88,7 +88,7 @@
           "key": "topSectionDoubleTapAction",
           "type": "enum",
           "label": "Double-tap top section",
-          "help": "Double-tap the page title or top area.",
+          "help": "Double-tap the page title or top area. Switch house works only on a watch with two or more homes.",
           "default": "Disabled",
           "options": [
             {"value": "Disabled", "label": "Disabled"},
@@ -99,7 +99,8 @@
             {"value": "Refresh", "label": "Refresh"},
             {"value": "Next Page", "label": "Next page"},
             {"value": "Previous Page", "label": "Previous page"},
-            {"value": "Toggle First Tile", "label": "Toggle first tile"}
+            {"value": "Toggle First Tile", "label": "Toggle first tile"},
+            {"value": "Switch Instance", "label": "Switch house"}
           ]
         },
         {
@@ -119,6 +120,50 @@
           "help": "The script a double-tap runs.",
           "default": "",
           "showIf": {"key": "topSectionDoubleTapAction", "equals": "Run Script"}
+        },
+        {
+          "key": "handGestureAction",
+          "type": "enum",
+          "label": "Double pinch",
+          "help": "Tap thumb and finger together twice. Room jump here is the Double pinch trigger in Rooms. Switch house works only on a watch with two or more homes.",
+          "default": "Refresh",
+          "options": [
+            {"value": "Disabled", "label": "Disabled"},
+            {"value": "Point Control", "label": "Toggle aimed entity (Point Control)"},
+            {"value": "Activate Scene", "label": "Activate scene"},
+            {"value": "Run Script", "label": "Run script"},
+            {"value": "Next Page", "label": "Next page"},
+            {"value": "Previous Page", "label": "Previous page"},
+            {"value": "Room Jump", "label": "Room jump"},
+            {"value": "Toggle First Tile", "label": "Toggle first tile"},
+            {"value": "Refresh", "label": "Refresh"},
+            {"value": "Switch Instance", "label": "Switch house"}
+          ]
+        },
+        {
+          "key": "handGestureSceneTargetId",
+          "type": "entity",
+          "domain": "scene",
+          "label": "Scene",
+          "help": "The scene a double pinch activates. With none, it activates the scene you aim at.",
+          "default": "",
+          "showIf": {"key": "handGestureAction", "equals": "Activate Scene"}
+        },
+        {
+          "key": "handGestureScriptTargetId",
+          "type": "entity",
+          "domain": "script",
+          "label": "Script",
+          "help": "The script a double pinch runs. With none, it runs the script you aim at.",
+          "default": "",
+          "showIf": {"key": "handGestureAction", "equals": "Run Script"}
+        },
+        {
+          "key": "pointControlShowHUD",
+          "type": "bool",
+          "label": "Point control overlay",
+          "help": "Show the entity you aim at while point control runs. Point targets are set up in Rooms.",
+          "default": false
         },
         {
           "key": "sliderCrownSensitivity",
@@ -159,6 +204,32 @@
           "label": "Pending animation",
           "help": "Bounce icon until confirmed.",
           "default": true
+        },
+        {
+          "key": "pendingAnimationDisabledDomains",
+          "type": "domains",
+          "label": "Bounce for",
+          "help": "Lit types bounce while they wait.",
+          "default": [],
+          "initial": ["automation", "fan", "input_boolean", "input_number", "input_select", "light", "media_player", "switch", "timer"],
+          "options": [
+            {"value": "light", "label": "Lights"},
+            {"value": "switch", "label": "Switches"},
+            {"value": "lock", "label": "Locks"},
+            {"value": "cover", "label": "Covers"},
+            {"value": "valve", "label": "Valves"},
+            {"value": "climate", "label": "Climate"},
+            {"value": "fan", "label": "Fans"},
+            {"value": "media_player", "label": "Media players"},
+            {"value": "vacuum", "label": "Vacuums"},
+            {"value": "timer", "label": "Timers"},
+            {"value": "input_boolean", "label": "Toggle helpers"},
+            {"value": "input_number", "label": "Number helpers"},
+            {"value": "input_select", "label": "Dropdown helpers"},
+            {"value": "automation", "label": "Automations"},
+            {"value": "alarm_control_panel", "label": "Alarm panels"}
+          ],
+          "showIf": {"key": "showPendingAnimation", "equals": true}
         }
       ]
     },
@@ -177,6 +248,18 @@
             {"value": "Slide", "label": "Slide"},
             {"value": "Fade", "label": "Fade"},
             {"value": "None", "label": "None"}
+          ]
+        },
+        {
+          "key": "pageTitleMode",
+          "type": "enum",
+          "label": "Page title",
+          "help": "The page's name at the top. Auto shows it for two seconds when the page opens, then fades it.",
+          "default": "On",
+          "options": [
+            {"value": "Off", "label": "Off"},
+            {"value": "On", "label": "On"},
+            {"value": "Auto", "label": "Auto"}
           ]
         },
         {
@@ -363,7 +446,7 @@
           "key": "cameraRefreshOnOpen",
           "type": "bool",
           "label": "Refresh on page open",
-          "help": "Default for camera tiles when a page becomes visible. Override it per camera in the iPhone app's page editor.",
+          "help": "Default for camera tiles when a page becomes visible. A camera tile can change it under Refresh on open in Pages.",
           "default": true
         },
         {
@@ -420,6 +503,60 @@
           "label": "Loop cameras",
           "help": "Wrap around after last camera.",
           "default": false
+        }
+      ]
+    },
+    {
+      "id": "motion",
+      "title": "Wrist motions",
+      "settings": [
+        {
+          "key": "motionGestureSensitivity",
+          "type": "enum",
+          "label": "Wrist twists",
+          "help": "Twist your wrist quickly to run an action. Higher catches gentler twists.",
+          "default": "Off",
+          "options": [
+            {"value": "Off", "label": "Off"},
+            {"value": "Low", "label": "Low"},
+            {"value": "Medium", "label": "Medium"},
+            {"value": "High", "label": "High"}
+          ]
+        },
+        {
+          "key": "motionGestureSensitivityLevel",
+          "type": "number",
+          "label": "Fine tune",
+          "help": "From 1, a firm twist, to 10, a gentle one. Low, Medium and High set 4, 6 and 8.",
+          "default": 4,
+          "min": 1,
+          "max": 10,
+          "step": 0.5,
+          "showIf": {"key": "motionGestureSensitivity", "notEquals": "Off"}
+        },
+        {
+          "key": "motionGestureActionsJSON",
+          "type": "motionGestures",
+          "label": "Twist actions",
+          "help": "A scene or script with no target uses the one you aim at with point control.",
+          "default": "",
+          "gestures": [
+            {"value": "Twist Clockwise", "label": "Twist clockwise"},
+            {"value": "Twist Counter-Clockwise", "label": "Twist counterclockwise"}
+          ],
+          "options": [
+            {"value": "Disabled", "label": "Disabled"},
+            {"value": "Toggle Aimed Entity", "label": "Toggle aimed entity (Point Control)"},
+            {"value": "Run Script", "label": "Run script"},
+            {"value": "Activate Scene", "label": "Activate scene"},
+            {"value": "Refresh", "label": "Refresh"},
+            {"value": "Next Page", "label": "Next page"},
+            {"value": "Previous Page", "label": "Previous page"},
+            {"value": "Toggle First Tile", "label": "Toggle first tile"}
+          ],
+          "sceneKey": "motionGestureSceneTargetsJSON",
+          "scriptKey": "motionGestureScriptTargetsJSON",
+          "showIf": {"key": "motionGestureSensitivity", "notEquals": "Off"}
         }
       ]
     }

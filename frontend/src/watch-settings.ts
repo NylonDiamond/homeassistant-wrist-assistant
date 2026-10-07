@@ -1,13 +1,14 @@
 // The Watch settings view's thinking, without its drawing.
 //
 // A watch's behavior settings are one JSON document, the app's
-// `WCBehaviorPreferences`. Home Assistant keeps it: the iPhone app sends its
-// copy, or the panel makes the first one (`watchBehaviorDefaults`), and the
-// watch reads it from there. The panel edits a few of its keys: the simple
-// ones the catalog lists. The
+// `WCBehaviorPreferences`. Home Assistant keeps it: the iPhone app moves its
+// copy here once, or the panel makes the first one (`watchBehaviorDefaults`),
+// and the watch reads it from there. The panel is the only editor: this page
+// edits the keys the catalog lists, and Rooms edits the room keys. The
 // catalog (`watch-settings-catalog.json`) is shared with the app, whose test
-// checks every key and option in it against the Swift types, so this file
-// never names a setting itself. It only knows the four kinds of row.
+// checks every key and option in it against the Swift types. This file knows
+// the kinds of row; the few keys it names are the watch's own rules beside a
+// row (`FALLBACKS`, `formLinks`, `linkedWrites`).
 //
 // Three rules hold for every write, and they are the reason this is its own
 // module with its own tests rather than a few lines in the view:
@@ -15,8 +16,8 @@
 // - An absent key means the watch's default. The form shows the default for
 //   it, and leaves the key absent unless someone changes it.
 // - A key the panel does not show is written back exactly as it was read.
-//   The document has room detection, motion gestures and debug flags in it
-//   that only the phone edits.
+//   The document has room detection and debug flags in it that this page
+//   never touches.
 // - Nothing is ever written as null.
 //
 // Plan: app repo docs/pages_in_home_assistant_step2.md.
@@ -26,26 +27,55 @@ import type { OwnerSummary, WatchConfigRecord } from "./ha-api.js";
 import { deviceKindOf } from "./version.js";
 import { watchCommandError } from "./watch-pages/save-note.js";
 
-export type SettingValue = string | boolean;
+/**
+ * The wrist twists' row as the form holds it: the three maps behind the
+ * document's three JSON strings, gesture to action, gesture to scene and
+ * gesture to script, each read the way the watch reads it.
+ */
+export interface MotionActions {
+  actions: Readonly<Record<string, string>>;
+  scenes: Readonly<Record<string, string>>;
+  scripts: Readonly<Record<string, string>>;
+}
+
+export type SettingValue = string | boolean | number | readonly string[] | MotionActions;
 
 export interface SettingOption {
   value: string;
   label: string;
 }
 
-/** One row of the form. `bool` is a switch, `enum` a choice of `options`,
- * `color` a `#RRGGBB` string and `entity` an entity id of `domain`. */
+/**
+ * One row of the form. `bool` is a switch, `enum` a choice of `options`,
+ * `color` a `#RRGGBB` string, `entity` an entity id of `domain` and `number`
+ * a number from `min` to `max`. `domains` is a list of Home Assistant
+ * domains, each of `options`, stored sorted. `motionGestures` is the wrist
+ * twists' row: an action of `options` for each of `gestures`, kept as a JSON
+ * string under `key`, with the scene and script targets as JSON strings
+ * under `sceneKey` and `scriptKey`.
+ */
 export interface CatalogSetting {
   key: string;
-  type: "bool" | "enum" | "color" | "entity";
+  type: "bool" | "enum" | "color" | "entity" | "number" | "domains" | "motionGestures";
   label: string;
   help?: string;
-  /** What the watch does when the key is absent. */
+  /** What the watch does when the key is absent. "" for an `entity` or
+   * `motionGestures` row means nothing stored. */
   default: SettingValue;
+  /** What a new watch's first document holds, where that is not what an
+   * absent key means (`watchBehaviorDefaults`). */
+  initial?: SettingValue;
   options?: SettingOption[];
   domain?: string;
-  /** Hide the row unless another key, after defaults, holds this value. */
-  showIf?: { key: string; equals: SettingValue };
+  min?: number;
+  max?: number;
+  step?: number;
+  gestures?: SettingOption[];
+  sceneKey?: string;
+  scriptKey?: string;
+  /** Hide the row unless another key, after defaults, holds this value, or
+   * holds anything but `notEquals`. */
+  showIf?: { key: string; equals?: SettingValue; notEquals?: SettingValue };
 }
 
 export interface CatalogSection {
@@ -59,7 +89,7 @@ export interface WatchSettingsCatalog {
   sections: CatalogSection[];
 }
 
-export const WATCH_SETTINGS_CATALOG = catalogJson as WatchSettingsCatalog;
+export const WATCH_SETTINGS_CATALOG = catalogJson as unknown as WatchSettingsCatalog;
 
 /** A behavior document as stored: a plain JSON object. */
 export type BehaviorDocument = Record<string, unknown>;
@@ -96,12 +126,136 @@ export function settingValue(setting: CatalogSetting, document: BehaviorDocument
       return typeof raw === "boolean" ? raw : setting.default;
     case "color":
       return typeof raw === "string" && normalizeColor(raw) !== undefined ? normalizeColor(raw)! : setting.default;
-    case "enum":
-    case "entity":
+    case "number":
+      return typeof raw === "number" && Number.isFinite(raw) ? raw : setting.default;
+    case "domains":
+      return Array.isArray(raw) && raw.every((d) => typeof d === "string") ? domainList(raw) : domainList(setting.default);
+    case "motionGestures":
+      return readMotionActions(setting, document);
+    case "enum": {
+      // A key the watch reads from older keys when it holds nothing the
+      // watch knows shows what the watch falls back to.
+      const fallback = FALLBACKS[setting.key];
+      if (fallback !== undefined) {
+        const known = typeof raw === "string" && (setting.options ?? []).some((o) => o.value === raw.trim());
+        return known ? (raw as string).trim() : fallback(document ?? {});
+      }
       // An enum value the catalog does not list is still the watch's value,
       // so it is shown as it is rather than as the default (see `optionsFor`).
       return typeof raw === "string" ? raw.trim() : setting.default;
+    }
+    case "entity":
+      return typeof raw === "string" ? raw.trim() : setting.default;
   }
+}
+
+/**
+ * The watch's own fallbacks, for a key it reads from older keys when the key
+ * itself is absent or holds no value the watch knows.
+ *
+ * - `pageTitleMode`: `WCBehaviorPreferences.resolvedPageTitleMode`, read the
+ *   same way in `EntityStateViewModel`. The older `showPageTitle` false is
+ *   Off, the older `pageTitleStyle` "Auto" is Auto, anything else is On.
+ * - `topSectionDoubleTapAction`: `ConnectionManager.topSectionDoubleTapAction`.
+ *   The older room quick jump switch, on, is Room jump; else Disabled.
+ */
+const FALLBACKS: Readonly<Record<string, (doc: BehaviorDocument) => string>> = {
+  pageTitleMode: (doc) => (doc.showPageTitle === false ? "Off" : doc.pageTitleStyle === "Auto" ? "Auto" : "On"),
+  topSectionDoubleTapAction: (doc) => (doc.roomQuickJumpEnabled === true ? "Room Jump" : "Disabled"),
+};
+
+/** A list of domains as the phone stores it: each once, sorted. */
+export function domainList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((d): d is string => typeof d === "string"))].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+}
+
+/** Whether two form values say the same. Lists and the twists' maps are
+ * compared by what they hold. */
+export function sameValue(a: SettingValue | undefined, b: SettingValue | undefined): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object") return false;
+  return canonical(a) === canonical(b);
+}
+
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  if (typeof value === "object" && value !== null) {
+    const entries = Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${canonical((value as Record<string, unknown>)[k])}`);
+    return `{${entries.join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+// ── the wrist twists ─────────────────────────────────────────────────────
+//
+// Three JSON strings in the document, each an object of gesture to string:
+// `motionGestureActionsJSON` (the action, a `MotionGestureActionType`),
+// and the scene and script targets. The watch reads each with
+// `JSONSerialization` as `[String: String]` and takes anything else as
+// empty (`EntityStateViewModel.applyBehaviorPreferencesFromiOS`); the phone's
+// editor (`MotionGestureSettingsView`, deleted) wrote them with
+// `JSONSerialization`, which writes no spaces and escapes `/`.
+
+/** The phone's old name for toggling the aimed entity, which it read as the
+ * new one. The watch runs both the same. */
+const LEGACY_AIMED_ACTION = "Point Control Toggle";
+const AIMED_ACTION = "Toggle Aimed Entity";
+
+/** One of the twists' strings as the watch reads it: an object whose values
+ * are all strings, else empty. */
+export function decodeMotionMap(raw: unknown): Record<string, string> {
+  if (typeof raw !== "string" || raw === "") return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return {};
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
+  const entries = Object.entries(parsed as Record<string, unknown>);
+  if (!entries.every(([, v]) => typeof v === "string")) return {};
+  return Object.fromEntries(entries) as Record<string, string>;
+}
+
+/** A map as the phone wrote it: keys sorted, no spaces, `/` as `\/`. */
+export function encodeMotionMap(map: Readonly<Record<string, string>>): string {
+  const sorted: Record<string, string> = {};
+  for (const key of Object.keys(map).sort()) sorted[key] = map[key]!;
+  return JSON.stringify(sorted).replace(/\//g, "\\/");
+}
+
+/** The twists' row read from a document. An action stored under the phone's
+ * old name reads as the new one, as the phone's editor read it. */
+export function readMotionActions(setting: CatalogSetting, document: BehaviorDocument | undefined): MotionActions {
+  const actions = decodeMotionMap(document?.[setting.key]);
+  for (const [gesture, action] of Object.entries(actions)) if (action === LEGACY_AIMED_ACTION) actions[gesture] = AIMED_ACTION;
+  return {
+    actions,
+    scenes: setting.sceneKey === undefined ? {} : decodeMotionMap(document?.[setting.sceneKey]),
+    scripts: setting.scriptKey === undefined ? {} : decodeMotionMap(document?.[setting.scriptKey]),
+  };
+}
+
+/** One gesture's action, Disabled when none is stored. */
+export function motionAction(value: MotionActions, gesture: string): string {
+  return value.actions[gesture] ?? "Disabled";
+}
+
+/** The row with one gesture's action picked. Its targets are kept, as the
+ * phone kept them. */
+export function withMotionAction(value: MotionActions, gesture: string, action: string): MotionActions {
+  return { ...value, actions: { ...value.actions, [gesture]: action } };
+}
+
+/** The row with one gesture's scene or script picked; an empty one removes
+ * the gesture's target, as the phone did. */
+export function withMotionTarget(value: MotionActions, kind: "scenes" | "scripts", gesture: string, entityId: string): MotionActions {
+  const id = entityId.trim();
+  const targets = { ...value[kind] };
+  if (id === "") delete targets[gesture];
+  else targets[gesture] = id;
+  return { ...value, [kind]: targets };
 }
 
 /** Every catalog setting's value with the edits laid over the document. */
@@ -120,26 +274,75 @@ export function formValues(
 /** Whether a row is drawn, given the form's values after defaults. A row
  * whose `showIf` names a key the form has no value for stays hidden. */
 export function isShown(setting: CatalogSetting, values: ReadonlyMap<string, SettingValue>): boolean {
-  if (setting.showIf === undefined) return true;
-  return values.get(setting.showIf.key) === setting.showIf.equals;
+  const showIf = setting.showIf;
+  if (showIf === undefined) return true;
+  if (!values.has(showIf.key)) return false;
+  const value = values.get(showIf.key);
+  if (showIf.notEquals !== undefined) return !sameValue(value, showIf.notEquals);
+  return sameValue(value, showIf.equals);
+}
+
+/** A value as it is kept: a color as `#RRGGBB`, a list of domains sorted. */
+function cleanValue(setting: CatalogSetting, value: SettingValue): SettingValue {
+  if (setting.type === "color" && typeof value === "string") return normalizeColor(value) ?? value;
+  if (setting.type === "domains") return domainList(value);
+  return value;
+}
+
+function putEdit(next: Map<string, SettingValue>, document: BehaviorDocument | undefined, setting: CatalogSetting, value: SettingValue): void {
+  const clean = cleanValue(setting, value);
+  if (sameValue(clean, settingValue(setting, document))) next.delete(setting.key);
+  else next.set(setting.key, clean);
 }
 
 /**
- * The edits after one row changes. A row set back to what the document
- * already says is no edit at all, so the form stops being dirty when every
- * change has been undone by hand.
+ * The edits after one row changes, with the rows the phone moved beside it
+ * (`formLinks`). A row set back to what the document already says is no
+ * edit at all, so the form stops being dirty when every change has been
+ * undone by hand.
  */
 export function withEdit(
   edits: SettingEdits,
   document: BehaviorDocument | undefined,
   setting: CatalogSetting,
   value: SettingValue,
+  catalog: WatchSettingsCatalog = WATCH_SETTINGS_CATALOG,
 ): Map<string, SettingValue> {
   const next = new Map(edits);
-  const clean = setting.type === "color" && typeof value === "string" ? (normalizeColor(value) ?? value) : value;
-  if (clean === settingValue(setting, document)) next.delete(setting.key);
-  else next.set(setting.key, clean);
+  putEdit(next, document, setting, value);
+  const byKey = new Map(catalogSettings(catalog).map((s) => [s.key, s]));
+  for (const [key, linked] of formLinks(setting.key, value, formValues(document, next, catalog))) {
+    const other = byKey.get(key);
+    if (other !== undefined) putEdit(next, document, other, linked);
+  }
   return next;
+}
+
+/** The phone's twist strengths as fine tune levels, and back: Low, Medium
+ * and High set 4, 6 and 8, and a level takes the strength nearest it
+ * (`tierPresets` and `closestTier` in the phone's deleted
+ * `MotionGestureSettingsView`). The watch tells twists apart by the level
+ * alone; the strength only turns them on or off. */
+export const TWIST_LEVELS: Readonly<Record<string, number>> = { Low: 4, Medium: 6, High: 8 };
+
+export function twistStrength(level: number): string {
+  return level < 5 ? "Low" : level < 7 ? "Medium" : "High";
+}
+
+/**
+ * Rows the phone moved beside one row, inside the form so the page shows
+ * them at once: picking a twist strength sets the fine tune to its level,
+ * and moving the fine tune picks the strength nearest it while twists are
+ * on. Off leaves the fine tune alone.
+ */
+function formLinks(key: string, value: SettingValue, values: ReadonlyMap<string, SettingValue>): [string, SettingValue][] {
+  if (key === "motionGestureSensitivity" && typeof value === "string" && TWIST_LEVELS[value] !== undefined) {
+    return [["motionGestureSensitivityLevel", TWIST_LEVELS[value]!]];
+  }
+  if (key === "motionGestureSensitivityLevel" && typeof value === "number" && values.get("motionGestureSensitivity") !== "Off") {
+    return [["motionGestureSensitivity", twistStrength(value)]];
+  }
+  return [];
 }
 
 /** The keys whose edited value differs from the loaded one. Empty means
@@ -153,7 +356,7 @@ export function dirtyKeys(
   return [...edits.entries()]
     .filter(([key, value]) => {
       const setting = byKey.get(key);
-      return setting !== undefined && settingValue(setting, document) !== value;
+      return setting !== undefined && !sameValue(settingValue(setting, document), value);
     })
     .map(([key]) => key);
 }
@@ -162,15 +365,40 @@ export function dirtyKeys(
  * Writes the phone makes beside a setting, which the panel has to make too or
  * the watch reads the result differently.
  *
- * Picking any top-section double-tap other than Room jump turns the older
- * room quick jump switch off on the phone. The watch still treats that switch
- * as Room jump for a double-tap set to Disabled, so leaving it on would make
- * Disabled jump to a room. Only a switch that is on is touched: the panel
- * changes as little of the document as it can.
+ * - Picking any top-section double-tap other than Room jump turns the older
+ *   room quick jump switch off on the phone. The watch still treats that
+ *   switch as Room jump for a double-tap with no action of its own, so
+ *   leaving it on would make Disabled jump to a room. Only a switch that is
+ *   on is touched: the panel changes as little of the document as it can.
+ *   Switch house counts as any other action.
+ * - The page title is `pageTitleMode`, and the older `showPageTitle` and
+ *   `pageTitleStyle` are what the watch reads when it is absent. Picking a
+ *   mode writes them as the app's own `setPageTitleMode` does (Off: no
+ *   title; On: a title, and an Auto style becomes Pill; Auto: a title in the
+ *   Auto style), so the old keys never say something else.
  */
 function linkedWrites(key: string, value: SettingValue, doc: Record<string, unknown>): void {
   if (key === "topSectionDoubleTapAction" && value !== "Room Jump" && doc.roomQuickJumpEnabled === true) {
     doc.roomQuickJumpEnabled = false;
+  }
+  if (key === "pageTitleMode" && (value === "Off" || value === "On" || value === "Auto")) {
+    doc.showPageTitle = value !== "Off";
+    if (value === "Auto") doc.pageTitleStyle = "Auto";
+    else if (value === "On" && doc.pageTitleStyle === "Auto") doc.pageTitleStyle = "Pill";
+  }
+}
+
+/** The twists' strings a save writes: only a map that changed, and an empty
+ * one as no key, as the watch's own encoder stores none. */
+function writeMotion(setting: CatalogSetting, document: BehaviorDocument, value: SettingValue, out: Record<string, unknown>): void {
+  if (typeof value !== "object" || Array.isArray(value)) return;
+  const motion = value as MotionActions;
+  const before = readMotionActions(setting, document);
+  const parts: [string | undefined, keyof MotionActions][] = [[setting.key, "actions"], [setting.sceneKey, "scenes"], [setting.scriptKey, "scripts"]];
+  for (const [key, part] of parts) {
+    if (key === undefined || canonical(before[part]) === canonical(motion[part])) continue;
+    if (Object.keys(motion[part]).length === 0) delete out[key];
+    else out[key] = encodeMotionMap(motion[part]);
   }
 }
 
@@ -179,8 +407,10 @@ function linkedWrites(key: string, value: SettingValue, doc: Record<string, unkn
  * was read, with only the edited keys changed.
  *
  * An entity left empty removes its key, which is how the phone stores "no
- * target". Every other edit is written as its value, a default included: a
- * key set back to its default may be written explicitly.
+ * target", and so does a list of domains left empty, as the phone's encoder
+ * did. The twists' row writes only the strings that changed
+ * (`writeMotion`). Every other edit is written as its value, a default
+ * included: a key set back to its default may be written explicitly.
  */
 export function buildSaveDocument(
   document: BehaviorDocument,
@@ -197,6 +427,12 @@ export function buildSaveDocument(
     } else if (setting.type === "color" && typeof value === "string") {
       const color = normalizeColor(value);
       if (color !== undefined) out[key] = color;
+    } else if (setting.type === "domains") {
+      const list = domainList(value);
+      if (list.length === 0) delete out[key];
+      else out[key] = list;
+    } else if (setting.type === "motionGestures") {
+      writeMotion(setting, document, value, out);
     } else {
       out[key] = typeof value === "string" ? value.trim() : value;
     }
@@ -217,15 +453,15 @@ export function optionsFor(setting: CatalogSetting, value: SettingValue): Settin
 /** Where a saved document has got to. `none`: the watch has no record. */
 export type DeliveryState = "none" | "waiting" | "delivered";
 
-/** A device has a revision once a signed read has carried it there (the
- * watch's own check, or the iPhone's), or the iPhone wrote it, which the
+/** A device has a revision once the watch's own signed read has carried it
+ * there, or the watch's iPhone wrote it in its one-time move, which the
  * store records as `delivered_revision`. */
 export function deliveryState(record: Pick<WatchConfigRecord, "revision" | "delivered_revision"> | undefined): DeliveryState {
   if (record === undefined || record.revision <= 0) return "none";
   return record.delivered_revision >= record.revision ? "delivered" : "waiting";
 }
 
-/** Whether the phone said it could not decode the revision the store holds
+/** Whether a device said it could not decode the revision the store holds
  * now. An older rejection is history: a later save replaced what it was
  * about. False on an integration that does not send the field. */
 export function rejectedNow(record: Pick<WatchConfigRecord, "revision" | "rejected_revision"> | undefined): boolean {
@@ -243,7 +479,7 @@ export function savedByWords(updatedBy: string | null | undefined): string {
 /** The pill and its help line while a save waits for a device. */
 export const WAITING_PILL_TEXT = "Waiting to be collected";
 export const COLLECTED_PILL_TEXT = "Collected";
-export const WAITING_HELP_TEXT = "The watch picks it up the next time it checks, or the iPhone passes it on.";
+export const WAITING_HELP_TEXT = "The watch picks it up the next time it checks.";
 
 /** The code of a WebSocket error, such as `conflict` or `no_record`. */
 export function errorCode(err: unknown): string | undefined {
@@ -386,57 +622,50 @@ export function watchRecordUnreadable(record: WatchConfigRecord | undefined, rea
 }
 
 /** A start refused as `no_record`: the integration makes a first record only
- * for a watch it has a key for. */
-export const PAIR_FIRST_TEXT = "Pair this watch first. Watch settings has Pair a watch.";
+ * for a watch it has a key for. The path is the one the panel shows: the
+ * Watch app tab, its Settings page, the Pair a watch card. */
+export const PAIR_FIRST_TEXT = "Pair this watch first. Go to Watch app, Settings, Pair a watch.";
 
 /** The same, said inside Watch settings, whose pairing card is below. */
 export const SETTINGS_PAIR_FIRST_TEXT = "Pair this watch first, under Pair a watch on this page.";
 
-/** A start refused as `conflict`: a record came in meanwhile and is shown. */
-export const PAGES_START_CONFLICT_TEXT = "The iPhone sent pages meanwhile, so those are shown.";
-export const SETTINGS_START_CONFLICT_TEXT = "The iPhone sent settings meanwhile, so those are shown.";
+/** A start refused as `conflict`: a record came in meanwhile (the iPhone's
+ * one-time move, or another panel) and is shown. */
+export const PAGES_START_CONFLICT_TEXT = "Pages for this watch arrived meanwhile, so those are shown.";
+export const SETTINGS_START_CONFLICT_TEXT = "Settings for this watch arrived meanwhile, so those are shown.";
 
 /** `WCBehaviorPreferences.currentSchemaVersion` in the app. */
 export const BEHAVIOR_SCHEMA_VERSION = 1;
 
 /**
  * Keys the app's decoder needs that the catalog does not show, each at the
- * app's own default (`WCBehaviorPreferences.init`). The first four are not
- * optional in Swift, so a document without them does not decode at all. The
- * list of domains that skip the pending bounce is what a fresh install of
- * the iPhone app writes; left out, the watch would bounce for every domain.
+ * app's own default (`WCBehaviorPreferences.init`). They are not optional in
+ * Swift, so a document without them does not decode at all. The watch reads
+ * none of the four any more (the crown no longer turns pages, and the grid
+ * takes neither the double-tap speed nor the haptic strength), so they have
+ * no row.
  */
 const BEHAVIOR_APP_DEFAULTS: Readonly<Record<string, unknown>> = {
   crownSensitivity: "Normal",
   crownSwitchesPages: false,
   doubleTapSpeed: "Fast",
   hapticIntensity: "Medium",
-  pendingAnimationDisabledDomains: [
-    "automation",
-    "fan",
-    "input_boolean",
-    "input_number",
-    "input_select",
-    "light",
-    "media_player",
-    "switch",
-    "timer",
-  ],
 };
 
 /**
  * The first behavior document of a watch, which "Start with the defaults"
- * saves: `schemaVersion`, every catalog setting at its default, and the keys
- * the app's decoder needs beside them (`BEHAVIOR_APP_DEFAULTS`). An entity
- * whose default is no target is left out, as the phone stores "no target".
- * Keys in sorted order, as the phone's encoder writes them. A new object on
- * every call.
+ * saves: `schemaVersion`, every catalog setting at its `initial` value or
+ * else its default, and the keys the app's decoder needs beside them
+ * (`BEHAVIOR_APP_DEFAULTS`). A row whose default is nothing stored (an
+ * entity with no target, no twist actions) is left out, as the phone stores
+ * none. Keys in sorted order, as the phone's encoder writes them. A new
+ * object on every call.
  */
 export function watchBehaviorDefaults(catalog: WatchSettingsCatalog = WATCH_SETTINGS_CATALOG): BehaviorDocument {
   const fields: Record<string, unknown> = { schemaVersion: BEHAVIOR_SCHEMA_VERSION };
   for (const setting of catalogSettings(catalog)) {
-    if (setting.type === "entity" && setting.default === "") continue;
-    fields[setting.key] = setting.default;
+    if ((setting.type === "entity" || setting.type === "motionGestures") && setting.default === "") continue;
+    fields[setting.key] = structuredClone(setting.initial ?? setting.default);
   }
   for (const [key, value] of Object.entries(BEHAVIOR_APP_DEFAULTS)) {
     if (!Object.hasOwn(fields, key)) fields[key] = structuredClone(value);

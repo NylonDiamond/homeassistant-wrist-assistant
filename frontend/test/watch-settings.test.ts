@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { OwnerSummary } from "../src/ha-api.js";
+import { applyRoomEdits, roomSwitchTrigger, switchingWritesFor, triggerWrites, withRoomWrites } from "../src/watch-rooms/model.js";
 import {
   type CatalogSetting,
   BEHAVIOR_SCHEMA_VERSION,
@@ -25,8 +26,18 @@ import {
   WATCH_SETTINGS_CATALOG,
   buildSaveDocument,
   catalogSettings,
+  TWIST_LEVELS,
   conflictRevision,
   createWatchBehavior,
+  decodeMotionMap,
+  domainList,
+  encodeMotionMap,
+  motionAction,
+  readMotionActions,
+  sameValue,
+  twistStrength,
+  withMotionAction,
+  withMotionTarget,
   deliveryState,
   dirtyKeys,
   errorCode,
@@ -71,9 +82,9 @@ const setting = (key: string): CatalogSetting => {
 };
 
 describe("the catalog", () => {
-  it("is version 1 with the phone's four pages, in the phone's order", () => {
+  it("is version 1 with the phone's four pages in the phone's order, then its Motion Gestures page", () => {
     expect(WATCH_SETTINGS_CATALOG.version).toBe(1);
-    expect(WATCH_SETTINGS_CATALOG.sections.map((s) => s.id)).toEqual(["connection", "interaction", "navigation", "camera"]);
+    expect(WATCH_SETTINGS_CATALOG.sections.map((s) => s.id)).toEqual(["connection", "interaction", "navigation", "camera", "motion"]);
     for (const section of WATCH_SETTINGS_CATALOG.sections) {
       expect(section.title).not.toBe("");
       expect(section.settings.length).toBeGreaterThan(0);
@@ -87,16 +98,41 @@ describe("the catalog", () => {
 
   it("gives every row a known type, a label and a default of the right kind", () => {
     for (const s of settings) {
-      expect(["bool", "enum", "color", "entity"], s.key).toContain(s.type);
+      expect(["bool", "enum", "color", "entity", "number", "domains", "motionGestures"], s.key).toContain(s.type);
       expect(s.label.trim(), s.key).not.toBe("");
       if (s.type === "bool") expect(typeof s.default, s.key).toBe("boolean");
+      else if (s.type === "number") expect(typeof s.default, s.key).toBe("number");
+      else if (s.type === "domains") expect(Array.isArray(s.default), s.key).toBe(true);
       else expect(typeof s.default, s.key).toBe("string");
       if (s.type === "color") expect(s.default, s.key).toMatch(/^#[0-9A-F]{6}$/);
       if (s.type === "entity") {
         expect(["scene", "script"], s.key).toContain(s.domain);
         expect(s.default, s.key).toBe("");
       }
-      if (s.type !== "enum") expect(s.options, s.key).toBeUndefined();
+      if (s.type === "number") {
+        expect(s.min! < s.max! && s.step! > 0, s.key).toBe(true);
+        expect(s.default as number, s.key).toBeGreaterThanOrEqual(s.min!);
+        expect(s.default as number, s.key).toBeLessThanOrEqual(s.max!);
+      }
+      if (s.type === "motionGestures") {
+        expect(s.default, s.key).toBe("");
+        expect(s.gestures!.length, s.key).toBeGreaterThan(0);
+        expect(s.sceneKey, s.key).toBeDefined();
+        expect(s.scriptKey, s.key).toBeDefined();
+      }
+      if (s.type !== "enum" && s.type !== "domains" && s.type !== "motionGestures") expect(s.options, s.key).toBeUndefined();
+      if (s.initial !== undefined) expect(s.type, s.key).toBe("domains");
+    }
+  });
+
+  it("lists every domain once, the stored list and a new watch's list among them and sorted", () => {
+    for (const s of settings.filter((x) => x.type === "domains")) {
+      const values = (s.options ?? []).map((o) => o.value);
+      expect(new Set(values).size, s.key).toBe(values.length);
+      for (const list of [s.default, s.initial ?? []] as string[][]) {
+        expect(list, s.key).toEqual([...list].sort());
+        for (const d of list) expect(values, `${s.key} ${d}`).toContain(d);
+      }
     }
   });
 
@@ -115,8 +151,10 @@ describe("the catalog", () => {
       const target = byKey.get(s.showIf!.key);
       expect(target, s.key).toBeDefined();
       expect(target!.key, s.key).not.toBe(s.key);
-      if (target!.type === "bool") expect(typeof s.showIf!.equals, s.key).toBe("boolean");
-      if (target!.type === "enum") expect(target!.options!.map((o) => o.value), s.key).toContain(s.showIf!.equals);
+      const wanted = s.showIf!.equals ?? s.showIf!.notEquals;
+      expect((s.showIf!.equals === undefined) !== (s.showIf!.notEquals === undefined), s.key).toBe(true);
+      if (target!.type === "bool") expect(typeof wanted, s.key).toBe("boolean");
+      if (target!.type === "enum") expect(target!.options!.map((o) => o.value), s.key).toContain(wanted);
     }
   });
 
@@ -130,19 +168,33 @@ describe("the catalog", () => {
     }
   });
 
-  // The plan keeps these on the phone. A catalog that grew one of them would
-  // let the panel write a key it has no business in.
-  it("leaves out what stays on the phone", () => {
+  // Rooms owns the room keys and the point control targets, and the debug
+  // flags have no editor. A catalog that grew one of them would let this page
+  // write a key it has no business in.
+  it("leaves out what Rooms edits and the debug flags", () => {
     const keys = settings.map((s) => s.key);
     for (const key of keys) {
-      expect(key, key).not.toMatch(/^(roomQuickJump|roomAutoSwitch|pointControl|motionGesture|handGesture)/);
-      expect(key, key).not.toMatch(/Debug|JSON$|^showHTTP|^cameraDebugFlash$|^showCameraFPSOverlay$|^showServerModeBadge$|^showDebugTargets$/);
+      expect(key, key).not.toMatch(/^(roomQuickJump|roomAutoSwitch)|^pointControl(RoomMappingsJSON|TapToToggle|LiveTile)$/);
+      expect(key, key).not.toMatch(/Debug|^showHTTP|^cameraDebugFlash$|^showCameraFPSOverlay$|^showServerModeBadge$|^showDebugTargets$/);
     }
-    expect(keys).not.toContain("pendingAnimationDisabledDomains");
+    // The twists' targets are written by the twists' row, not rows of their own.
+    expect(keys).not.toContain("motionGestureSceneTargetsJSON");
+    expect(keys).not.toContain("motionGestureScriptTargetsJSON");
+  });
+
+  // Keys the watch stores but never reads get no row: the crown no longer
+  // turns pages, the grid takes neither the double-tap speed nor the haptic
+  // strength, and nothing reads the camera downscaling or preview refresh.
+  it("gives no row to a key the watch never reads", () => {
+    const keys = settings.map((s) => s.key);
+    for (const key of ["crownSwitchesPages", "crownSensitivity", "doubleTapSpeed", "hapticIntensity",
+      "cameraImageDownscaling", "cameraPreviewAutoRefresh", "cameraPreviewRefreshInterval", "showPageTitle", "pageTitleStyle"]) {
+      expect(keys, key).not.toContain(key);
+    }
   });
 
   it("says nothing with a spaced hyphen or a dash in its words", () => {
-    const words = settings.flatMap((s) => [s.label, s.help ?? "", ...(s.options ?? []).map((o) => o.label)]);
+    const words = settings.flatMap((s) => [s.label, s.help ?? "", ...(s.options ?? []).map((o) => o.label), ...(s.gestures ?? []).map((g) => g.label)]);
     for (const w of words) {
       expect(w, w).not.toMatch(/ \x2d |–|—/);
     }
@@ -365,10 +417,10 @@ describe("a watch with nothing in Home Assistant yet", () => {
     expect(SETTINGS_NO_RECORD_TEXT).toBe("Start with the defaults to begin.");
     expect(PAGES_START_BUTTON).toBe("Start with an empty page");
     expect(SETTINGS_START_BUTTON).toBe("Start with the defaults");
-    expect(PAIR_FIRST_TEXT).toBe("Pair this watch first. Watch settings has Pair a watch.");
+    expect(PAIR_FIRST_TEXT).toBe("Pair this watch first. Go to Watch app, Settings, Pair a watch.");
     expect(SETTINGS_PAIR_FIRST_TEXT).toBe("Pair this watch first, under Pair a watch on this page.");
-    expect(PAGES_START_CONFLICT_TEXT).toBe("The iPhone sent pages meanwhile, so those are shown.");
-    expect(SETTINGS_START_CONFLICT_TEXT).toBe("The iPhone sent settings meanwhile, so those are shown.");
+    expect(PAGES_START_CONFLICT_TEXT).toBe("Pages for this watch arrived meanwhile, so those are shown.");
+    expect(SETTINGS_START_CONFLICT_TEXT).toBe("Settings for this watch arrived meanwhile, so those are shown.");
     const all = [PAGES_NO_RECORD_TEXT, SETTINGS_NO_RECORD_TEXT, PAIR_FIRST_TEXT, SETTINGS_PAIR_FIRST_TEXT, PAGES_START_CONFLICT_TEXT, SETTINGS_START_CONFLICT_TEXT];
     for (const text of all) {
       expect(text).not.toMatch(/Developer|Save pages to Home Assistant/);
@@ -382,28 +434,36 @@ describe("a watch with nothing in Home Assistant yet", () => {
     expect(savedByWords(null)).toBe("from the watch");
     expect(WAITING_PILL_TEXT).toBe("Waiting to be collected");
     expect(COLLECTED_PILL_TEXT).toBe("Collected");
-    expect(WAITING_HELP_TEXT).toBe("The watch picks it up the next time it checks, or the iPhone passes it on.");
+    expect(WAITING_HELP_TEXT).toBe("The watch picks it up the next time it checks.");
+    // The iPhone passes nothing to the watch any more.
+    expect(WAITING_HELP_TEXT).not.toMatch(/iPhone/);
   });
 });
 
 describe("Start with the defaults", () => {
   const refusal = (code: string, message = code) => Object.assign(new Error(message), { code });
 
-  it("builds every catalog setting at its default, schema 1, keys sorted", () => {
+  it("builds every catalog setting at its first value or default, schema 1, keys sorted", () => {
     const doc = watchBehaviorDefaults();
     expect(doc.schemaVersion).toBe(BEHAVIOR_SCHEMA_VERSION);
     expect(BEHAVIOR_SCHEMA_VERSION).toBe(1);
     for (const setting of catalogSettings()) {
-      if (setting.type === "entity" && setting.default === "") expect(Object.hasOwn(doc, setting.key), setting.key).toBe(false);
-      else expect(doc[setting.key], setting.key).toEqual(setting.default);
+      if ((setting.type === "entity" || setting.type === "motionGestures") && setting.default === "") {
+        expect(Object.hasOwn(doc, setting.key), setting.key).toBe(false);
+      } else {
+        expect(doc[setting.key], setting.key).toEqual(setting.initial ?? setting.default);
+      }
     }
     const keys = Object.keys(doc);
     expect(keys).toEqual([...keys].sort());
     expect(Object.values(doc)).not.toContain(null);
     // Every value reads back as itself: nothing in the form differs from the
-    // defaults, so the new record opens with no edits.
+    // first document, so the new record opens with no edits.
     const values = formValues(doc);
-    for (const setting of catalogSettings()) expect(values.get(setting.key), setting.key).toBe(setting.default);
+    for (const setting of catalogSettings()) {
+      expect(values.get(setting.key), setting.key).toEqual(settingValue(setting, { [setting.key]: setting.initial ?? setting.default }));
+    }
+    expect(values.get("motionGestureActionsJSON")).toEqual({ actions: {}, scenes: {}, scripts: {} });
   });
 
   it("carries the keys the app cannot decode without, at the app's own defaults", () => {
@@ -603,5 +663,286 @@ describe("the main house", () => {
   it("says where to change them, in plain words", () => {
     expect(SETTINGS_MAIN_HOUSE_TEXT).toBe("This watch takes its settings from your main house. Change them there.");
     expect(SETTINGS_MAIN_HOUSE_TEXT).not.toMatch(/ \x2d |\u2013|\u2014/);
+  });
+});
+
+// ── the rows that read or write more than their own key ──────────────────
+
+describe("the page title", () => {
+  const mode = setting("pageTitleMode");
+
+  it("reads pageTitleMode first, then the older keys as the watch does", () => {
+    expect(settingValue(mode, { pageTitleMode: "Auto" })).toBe("Auto");
+    expect(settingValue(mode, { pageTitleMode: "Off", showPageTitle: true })).toBe("Off");
+    expect(settingValue(mode, {})).toBe("On");
+    expect(settingValue(mode, { showPageTitle: false })).toBe("Off");
+    expect(settingValue(mode, { showPageTitle: false, pageTitleStyle: "Auto" })).toBe("Off");
+    expect(settingValue(mode, { showPageTitle: true, pageTitleStyle: "Auto" })).toBe("Auto");
+    expect(settingValue(mode, { pageTitleStyle: "Pill" })).toBe("On");
+    // A mode the watch does not know falls back like an absent one.
+    expect(settingValue(mode, { pageTitleMode: "Fade", showPageTitle: false })).toBe("Off");
+  });
+
+  it("is no change when the old keys already say what is picked", () => {
+    expect(withEdit(new Map(), { showPageTitle: false }, mode, "Off").size).toBe(0);
+    expect(withEdit(new Map(), { pageTitleStyle: "Auto" }, mode, "Auto").size).toBe(0);
+  });
+
+  it("writes the old keys as the app's setPageTitleMode does, so they never disagree", () => {
+    const old = { showPageTitle: false, pageTitleStyle: "Auto" };
+    expect(buildSaveDocument(old, new Map([["pageTitleMode", "On"]])))
+      .toEqual({ pageTitleMode: "On", showPageTitle: true, pageTitleStyle: "Pill" });
+    expect(buildSaveDocument({ pageTitleStyle: "Minimal" }, new Map([["pageTitleMode", "On"]])))
+      .toEqual({ pageTitleMode: "On", showPageTitle: true, pageTitleStyle: "Minimal" });
+    expect(buildSaveDocument({ showPageTitle: true, pageTitleStyle: "Pill" }, new Map([["pageTitleMode", "Auto"]])))
+      .toEqual({ pageTitleMode: "Auto", showPageTitle: true, pageTitleStyle: "Auto" });
+    expect(buildSaveDocument({ showPageTitle: true, pageTitleStyle: "Pill" }, new Map([["pageTitleMode", "Off"]])))
+      .toEqual({ pageTitleMode: "Off", showPageTitle: false, pageTitleStyle: "Pill" });
+    // Untouched, the old keys go back as they came.
+    expect(buildSaveDocument(old, new Map([["wrapPages", true]]))).toEqual({ ...old, wrapPages: true });
+  });
+});
+
+describe("the top double-tap and the old room quick jump", () => {
+  const top = setting("topSectionDoubleTapAction");
+
+  it("shows Room jump for a document with only the old switch on, as the watch reads it", () => {
+    expect(settingValue(top, { roomQuickJumpEnabled: true })).toBe("Room Jump");
+    expect(settingValue(top, { roomQuickJumpEnabled: false })).toBe("Disabled");
+    expect(settingValue(top, { topSectionDoubleTapAction: "Refresh", roomQuickJumpEnabled: true })).toBe("Refresh");
+  });
+
+  it("turns the old switch off when Disabled or Switch house is picked over it", () => {
+    const doc = { roomQuickJumpEnabled: true };
+    const edits = withEdit(new Map(), doc, top, "Disabled");
+    expect([...edits]).toEqual([["topSectionDoubleTapAction", "Disabled"]]);
+    expect(buildSaveDocument(doc, edits)).toEqual({ topSectionDoubleTapAction: "Disabled", roomQuickJumpEnabled: false });
+    expect(buildSaveDocument(doc, new Map([["topSectionDoubleTapAction", "Switch Instance"]])))
+      .toEqual({ topSectionDoubleTapAction: "Switch Instance", roomQuickJumpEnabled: false });
+  });
+});
+
+describe("Switch house", () => {
+  it("is offered on both gestures under the watch's value, and says it needs two homes", () => {
+    for (const key of ["topSectionDoubleTapAction", "handGestureAction"]) {
+      const s = setting(key);
+      expect(s.options!.find((o) => o.value === "Switch Instance")?.label, key).toBe("Switch house");
+      expect(s.help, key).toContain("two or more homes");
+    }
+  });
+});
+
+describe("the double pinch, shared with Rooms", () => {
+  const hand = setting("handGestureAction");
+
+  it("reads Refresh for an absent key, as the watch and Rooms do", () => {
+    expect(settingValue(hand, {})).toBe("Refresh");
+    expect(watchBehaviorDefaults().handGestureAction).toBe("Refresh");
+  });
+
+  it("shows a Room jump picked in Rooms, and Rooms shows one picked here", () => {
+    const doc: Record<string, unknown> = { handGestureAction: "Refresh" };
+    const fromRooms = applyRoomEdits(doc, withRoomWrites(doc, new Map(), triggerWrites(doc, "Double Pinch")));
+    expect(settingValue(hand, fromRooms)).toBe("Room Jump");
+    const fromHere = buildSaveDocument(doc, withEdit(new Map(), doc, hand, "Room Jump"));
+    expect(roomSwitchTrigger(fromHere)).toBe("Double Pinch");
+  });
+
+  it("keeps an action picked here when Rooms changes its room switching", () => {
+    const doc = buildSaveDocument({}, withEdit(new Map(), {}, hand, "Next Page"));
+    for (const writes of [switchingWritesFor(doc, true), switchingWritesFor(doc, false), triggerWrites(doc, "Automatic"), triggerWrites(doc, "Double-Tap Top")]) {
+      const out = applyRoomEdits(doc, withRoomWrites(doc, new Map(), writes));
+      expect(out.handGestureAction).toBe("Next Page");
+    }
+    // Rooms only takes back a Room jump of its own.
+    const jump = { handGestureAction: "Room Jump" };
+    const off = applyRoomEdits(jump, withRoomWrites(jump, new Map(), triggerWrites(jump, "Automatic")));
+    expect(off.handGestureAction).toBe("Refresh");
+  });
+
+  it("removes a target left empty and shows its row only for its action", () => {
+    expect(buildSaveDocument({ handGestureSceneTargetId: "scene.a" }, new Map([["handGestureSceneTargetId", ""]]))).toEqual({});
+    expect(isShown(setting("handGestureSceneTargetId"), formValues({ handGestureAction: "Activate Scene" }))).toBe(true);
+    expect(isShown(setting("handGestureScriptTargetId"), formValues({ handGestureAction: "Activate Scene" }))).toBe(false);
+  });
+});
+
+describe("the domains that skip the bounce", () => {
+  const domains = setting("pendingAnimationDisabledDomains");
+
+  it("reads a stored list sorted and once each, and an absent one as none skipped", () => {
+    expect(settingValue(domains, { pendingAnimationDisabledDomains: ["light", "fan", "light"] })).toEqual(["fan", "light"]);
+    expect(settingValue(domains, {})).toEqual([]);
+    expect(settingValue(domains, { pendingAnimationDisabledDomains: "light" })).toEqual([]);
+    expect(domainList(["b", "a", 3, "a"])).toEqual(["a", "b"]);
+  });
+
+  it("starts a new watch with the app's fresh install list", () => {
+    expect(domains.initial).toEqual(["automation", "fan", "input_boolean", "input_number", "input_select", "light", "media_player", "switch", "timer"]);
+  });
+
+  it("is shown under Pending animation only while it is on", () => {
+    expect(isShown(domains, formValues({}))).toBe(true);
+    expect(isShown(domains, formValues({ showPendingAnimation: false }))).toBe(false);
+    const interaction = WATCH_SETTINGS_CATALOG.sections.find((s) => s.id === "interaction")!;
+    const run = sectionRuns(interaction, formValues({})).find((r) => r.setting.key === "showPendingAnimation")!;
+    expect(run.dependents.map((s) => s.key)).toEqual(["pendingAnimationDisabledDomains"]);
+  });
+
+  it("keeps the list sorted, counts the same list in another order as no change, and saves it sorted", () => {
+    const doc = { pendingAnimationDisabledDomains: ["fan", "light"] };
+    expect(withEdit(new Map(), doc, domains, ["light", "fan"]).size).toBe(0);
+    const edits = withEdit(new Map(), doc, domains, ["light", "fan", "lock"]);
+    expect(edits.get("pendingAnimationDisabledDomains")).toEqual(["fan", "light", "lock"]);
+    expect(dirtyKeys(doc, edits)).toEqual(["pendingAnimationDisabledDomains"]);
+    expect(buildSaveDocument(doc, edits)).toEqual({ pendingAnimationDisabledDomains: ["fan", "light", "lock"] });
+  });
+
+  it("removes the key when every type bounces, as the phone's encoder did", () => {
+    const doc = { pendingAnimationDisabledDomains: ["fan"], wrapPages: true };
+    expect(buildSaveDocument(doc, withEdit(new Map(), doc, domains, []))).toEqual({ wrapPages: true });
+  });
+});
+
+describe("the wrist twists", () => {
+  const strength = setting("motionGestureSensitivity");
+  const level = setting("motionGestureSensitivityLevel");
+  const twists = setting("motionGestureActionsJSON");
+  const CW = "Twist Clockwise";
+  const CCW = "Twist Counter-Clockwise";
+
+  it("names the watch's two gestures and the phone's eight actions", () => {
+    expect(twists.gestures!.map((g) => g.value)).toEqual([CW, CCW]);
+    expect(twists.options!.map((o) => o.value)).toEqual([
+      "Disabled", "Toggle Aimed Entity", "Run Script", "Activate Scene", "Refresh", "Next Page", "Previous Page", "Toggle First Tile",
+    ]);
+    expect([twists.sceneKey, twists.scriptKey]).toEqual(["motionGestureSceneTargetsJSON", "motionGestureScriptTargetsJSON"]);
+  });
+
+  it("decodes a string as the watch does: an object of strings, else nothing", () => {
+    expect(decodeMotionMap('{"Twist Clockwise":"Next Page"}')).toEqual({ [CW]: "Next Page" });
+    expect(decodeMotionMap('{"Twist Clockwise":"scene.a\\/b"}')).toEqual({ [CW]: "scene.a/b" });
+    expect(decodeMotionMap('{"Twist Clockwise":1}')).toEqual({});
+    expect(decodeMotionMap('["Next Page"]')).toEqual({});
+    expect(decodeMotionMap("null")).toEqual({});
+    expect(decodeMotionMap("not json")).toEqual({});
+    expect(decodeMotionMap("")).toEqual({});
+    expect(decodeMotionMap(undefined)).toEqual({});
+    expect(decodeMotionMap({ [CW]: "Refresh" })).toEqual({});
+  });
+
+  it("encodes as the phone's JSONSerialization did: no spaces, keys sorted, / escaped", () => {
+    expect(encodeMotionMap({ [CW]: "Next Page", [CCW]: "Refresh" })).toBe('{"Twist Clockwise":"Next Page","Twist Counter-Clockwise":"Refresh"}');
+    expect(encodeMotionMap({ [CW]: "scene.a/b" })).toBe('{"Twist Clockwise":"scene.a\\/b"}');
+    expect(decodeMotionMap(encodeMotionMap({ [CW]: "scene.a/b" }))).toEqual({ [CW]: "scene.a/b" });
+  });
+
+  it("reads the three strings, the phone's old aimed action under its new name", () => {
+    const doc = {
+      motionGestureActionsJSON: '{"Twist Clockwise":"Point Control Toggle","Twist Counter-Clockwise":"Activate Scene"}',
+      motionGestureSceneTargetsJSON: '{"Twist Counter-Clockwise":"scene.evening"}',
+      motionGestureScriptTargetsJSON: "{}",
+    };
+    const value = readMotionActions(twists, doc);
+    expect(value).toEqual({
+      actions: { [CW]: "Toggle Aimed Entity", [CCW]: "Activate Scene" },
+      scenes: { [CCW]: "scene.evening" },
+      scripts: {},
+    });
+    expect(settingValue(twists, doc)).toEqual(value);
+    expect(motionAction(readMotionActions(twists, {}), CW)).toBe("Disabled");
+  });
+
+  it("is hidden, with the fine tune, while twists are off", () => {
+    expect(settingValue(strength, {})).toBe("Off");
+    expect(settingValue(level, {})).toBe(4);
+    for (const s of [level, twists]) {
+      expect(isShown(s, formValues({})), s.key).toBe(false);
+      expect(isShown(s, formValues({ motionGestureSensitivity: "Low" })), s.key).toBe(true);
+    }
+    const motion = WATCH_SETTINGS_CATALOG.sections.find((s) => s.id === "motion")!;
+    const runs = sectionRuns(motion, formValues({ motionGestureSensitivity: "High" }));
+    expect(runs.map((r) => [r.setting.key, r.dependents.map((d) => d.key)])).toEqual([
+      ["motionGestureSensitivity", ["motionGestureSensitivityLevel", "motionGestureActionsJSON"]],
+    ]);
+  });
+
+  it("sets the fine tune when a strength is picked, and the strength when the fine tune moves", () => {
+    expect(TWIST_LEVELS).toEqual({ Low: 4, Medium: 6, High: 8 });
+    expect([1, 4.5, 5, 6.5, 7, 10].map(twistStrength)).toEqual(["Low", "Low", "Medium", "Medium", "High", "High"]);
+    const doc = { motionGestureSensitivity: "Off", motionGestureSensitivityLevel: 4 };
+    const high = withEdit(new Map(), doc, strength, "High");
+    expect([...high]).toEqual([["motionGestureSensitivity", "High"], ["motionGestureSensitivityLevel", 8]]);
+    // Low's level is already stored: only the strength changes.
+    expect([...withEdit(new Map(), doc, strength, "Low")]).toEqual([["motionGestureSensitivity", "Low"]]);
+    const fine = withEdit(high, doc, level, 5.5);
+    expect(fine.get("motionGestureSensitivity")).toBe("Medium");
+    expect(fine.get("motionGestureSensitivityLevel")).toBe(5.5);
+    // Off leaves the fine tune where it was.
+    const on = { motionGestureSensitivity: "High", motionGestureSensitivityLevel: 8 };
+    expect([...withEdit(new Map(), on, strength, "Off")]).toEqual([["motionGestureSensitivity", "Off"]]);
+    expect(buildSaveDocument(doc, fine)).toEqual({ motionGestureSensitivity: "Medium", motionGestureSensitivityLevel: 5.5 });
+  });
+
+  it("picks an action and a target per gesture, an empty target removing it", () => {
+    let value = readMotionActions(twists, {});
+    value = withMotionAction(value, CW, "Activate Scene");
+    value = withMotionTarget(value, "scenes", CW, " scene.evening ");
+    expect(value).toEqual({ actions: { [CW]: "Activate Scene" }, scenes: { [CW]: "scene.evening" }, scripts: {} });
+    // Another action keeps the target, as the phone did.
+    value = withMotionAction(value, CW, "Refresh");
+    expect(value.scenes).toEqual({ [CW]: "scene.evening" });
+    expect(withMotionTarget(value, "scenes", CW, "").scenes).toEqual({});
+  });
+
+  it("writes only the strings that changed, an emptied one as no key, and leaves the rest as read", () => {
+    const doc = {
+      motionGestureActionsJSON: '{"Twist Clockwise": "Next Page"}',
+      motionGestureSceneTargetsJSON: '{"Twist Clockwise":"scene.a"}',
+      motionGestureScriptTargetsJSON: "{ }",
+      motionGestureSensitivity: "Medium",
+    };
+    const read = readMotionActions(twists, doc);
+    expect(withEdit(new Map(), doc, twists, read).size).toBe(0);
+    // A new action: only the actions string is written.
+    const acted = withEdit(new Map(), doc, twists, withMotionAction(read, CCW, "Run Script"));
+    expect(buildSaveDocument(doc, acted)).toEqual({
+      ...doc,
+      motionGestureActionsJSON: '{"Twist Clockwise":"Next Page","Twist Counter-Clockwise":"Run Script"}',
+    });
+    // The last scene removed: the scenes key goes, the others stay as read.
+    const cleared = withEdit(new Map(), doc, twists, withMotionTarget(read, "scenes", CW, ""));
+    const out = buildSaveDocument(doc, cleared);
+    expect(out).not.toHaveProperty("motionGestureSceneTargetsJSON");
+    expect(out.motionGestureActionsJSON).toBe(doc.motionGestureActionsJSON);
+    expect(out.motionGestureScriptTargetsJSON).toBe("{ }");
+    expect(Object.values(out)).not.toContain(null);
+  });
+
+  it("compares the row by what it holds", () => {
+    expect(sameValue({ actions: { a: "1", b: "2" }, scenes: {}, scripts: {} }, { actions: { b: "2", a: "1" }, scenes: {}, scripts: {} })).toBe(true);
+    expect(sameValue({ actions: { a: "1" }, scenes: {}, scripts: {} }, { actions: {}, scenes: {}, scripts: {} })).toBe(false);
+    expect(sameValue(["a"], ["a"])).toBe(true);
+    expect(sameValue(4, 4)).toBe(true);
+    expect(sameValue("4", 4)).toBe(false);
+  });
+
+  it("starts a new watch with twists off at the app's level and no actions", () => {
+    const doc = watchBehaviorDefaults();
+    expect(doc.motionGestureSensitivity).toBe("Off");
+    expect(doc.motionGestureSensitivityLevel).toBe(4);
+    for (const key of ["motionGestureActionsJSON", "motionGestureSceneTargetsJSON", "motionGestureScriptTargetsJSON"]) {
+      expect(Object.hasOwn(doc, key), key).toBe(false);
+    }
+  });
+});
+
+describe("the point control overlay", () => {
+  it("is a switch here, off when absent, and not one Rooms draws", () => {
+    const hud = setting("pointControlShowHUD");
+    expect(hud.type).toBe("bool");
+    expect(settingValue(hud, {})).toBe(false);
+    expect(buildSaveDocument({ pointControlTapToToggle: true }, new Map([["pointControlShowHUD", true]])))
+      .toEqual({ pointControlTapToToggle: true, pointControlShowHUD: true });
   });
 });

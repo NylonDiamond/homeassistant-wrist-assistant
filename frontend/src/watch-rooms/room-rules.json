@@ -288,8 +288,7 @@
         "after": {
           "roomQuickJumpEnabled": false,
           "roomAutoSwitchEnabled": false,
-          "topSectionDoubleTapAction": "Room Jump",
-          "handGestureAction": "Refresh"
+          "topSectionDoubleTapAction": "Room Jump"
         }
       },
       {
@@ -302,8 +301,7 @@
         "after": {
           "roomQuickJumpEnabled": false,
           "roomAutoSwitchEnabled": false,
-          "topSectionDoubleTapAction": "Room Jump",
-          "handGestureAction": "Refresh"
+          "topSectionDoubleTapAction": "Room Jump"
         }
       },
       {
@@ -333,7 +331,7 @@
           "roomQuickJumpEnabled": false,
           "roomAutoSwitchEnabled": false,
           "topSectionDoubleTapAction": "Room Jump",
-          "handGestureAction": "Refresh"
+          "handGestureAction": "Next Page"
         }
       },
       {
@@ -347,8 +345,7 @@
         "after": {
           "roomQuickJumpEnabled": false,
           "roomAutoSwitchEnabled": false,
-          "topSectionDoubleTapAction": "Room Jump",
-          "handGestureAction": "Refresh"
+          "topSectionDoubleTapAction": "Room Jump"
         }
       },
       {
@@ -462,8 +459,7 @@
         "before": {},
         "after": {
           "roomQuickJumpEnabled": false,
-          "roomAutoSwitchEnabled": true,
-          "handGestureAction": "Refresh"
+          "roomAutoSwitchEnabled": true
         }
       },
       {
@@ -476,8 +472,7 @@
         "after": {
           "roomQuickJumpEnabled": false,
           "roomAutoSwitchEnabled": true,
-          "topSectionDoubleTapAction": "Disabled",
-          "handGestureAction": "Refresh"
+          "topSectionDoubleTapAction": "Disabled"
         }
       },
       {
@@ -506,7 +501,7 @@
           "roomQuickJumpEnabled": false,
           "roomAutoSwitchEnabled": true,
           "topSectionDoubleTapAction": "Activate Scene",
-          "handGestureAction": "Refresh"
+          "handGestureAction": "Next Page"
         }
       },
       {
@@ -520,8 +515,7 @@
         "after": {
           "roomQuickJumpEnabled": false,
           "roomAutoSwitchEnabled": true,
-          "topSectionDoubleTapAction": "Disabled",
-          "handGestureAction": "Refresh"
+          "topSectionDoubleTapAction": "Disabled"
         }
       },
       {
@@ -551,8 +545,7 @@
         "after": {
           "roomQuickJumpEnabled": false,
           "roomAutoSwitchEnabled": false,
-          "topSectionDoubleTapAction": "Room Jump",
-          "handGestureAction": "Refresh"
+          "topSectionDoubleTapAction": "Room Jump"
         }
       },
       {
@@ -565,8 +558,7 @@
         "after": {
           "roomQuickJumpEnabled": false,
           "roomAutoSwitchEnabled": false,
-          "topSectionDoubleTapAction": "Room Jump",
-          "handGestureAction": "Refresh"
+          "topSectionDoubleTapAction": "Room Jump"
         }
       },
       {
@@ -596,7 +588,7 @@
           "roomQuickJumpEnabled": false,
           "roomAutoSwitchEnabled": false,
           "topSectionDoubleTapAction": "Room Jump",
-          "handGestureAction": "Refresh"
+          "handGestureAction": "Next Page"
         }
       },
       {
@@ -610,8 +602,7 @@
         "after": {
           "roomQuickJumpEnabled": false,
           "roomAutoSwitchEnabled": false,
-          "topSectionDoubleTapAction": "Room Jump",
-          "handGestureAction": "Refresh"
+          "topSectionDoubleTapAction": "Room Jump"
         }
       },
       {
@@ -911,9 +902,9 @@
     "heading": {
       "min": 0,
       "max": 359,
-      "rule": "Degrees clockwise from north. The phone captures headings from the watch compass, snapped to 5; the panel takes a typed or dialled whole degree."
+      "rule": "Degrees clockwise from north. The watch shows its compass heading, snapped to 5, for the user to type in; the panel takes a typed or dialled whole degree."
     },
-    "newTarget": "A target added on the phone starts at heading 0 with the entity's friendly name from its id as the label.",
+    "newTarget": "A target added in the panel starts at heading 0 with the entity's friendly name from its id as the label.",
     "switches": [
       {
         "key": "pointControlTapToToggle",

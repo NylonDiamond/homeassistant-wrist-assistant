@@ -17,11 +17,10 @@
 // panel's leave guards count them.
 //
 // The path a change takes: the panel saves a new revision, and the watch pulls
-// it the next time it checks, or the iPhone app pulls it (launch, foreground,
-// reconnect) and passes it on the way it sends any settings change. A watch
-// with no record yet gets one from "Start with the defaults". There is no
-// live line, so while a save waits the page asks the store again now and
-// then and turns the pill green once a device has it.
+// it the next time it checks. A watch with no record yet gets one from "Start
+// with the defaults", or from its iPhone's one-time move. There is no live
+// line, so while a save waits the page asks the store again now and then and
+// turns the pill green once the watch has it.
 //
 // The watch's notification style (kind `notification_style`) is a second
 // record shown on the same page, as the Notifications, Sounds and Wrist
@@ -31,7 +30,7 @@
 
 import { css, html, nothing, type ReactiveController, type ReactiveControllerHost, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
-import { checkField, colorField, entityField, entityRefFor, percentSliderField, selectField, settingTitle } from "./editors.js";
+import { checkField, colorField, entityField, entityRefFor, percentSliderField, selectField, settingTitle, sliderField } from "./editors.js";
 import {
   type HassLike,
   type OwnerSummary,
@@ -50,6 +49,7 @@ import { type UiIconName, uiIcon } from "./ui-icons.js";
 import {
   type CatalogSection,
   type CatalogSetting,
+  type MotionActions,
   type SettingValue,
   COLLECTED_PILL_TEXT,
   PAIR_CODE_LENGTH,
@@ -72,10 +72,12 @@ import {
   createWatchBehavior,
   deliveryState,
   dirtyKeys,
+  domainList,
   errorCode,
   formValues,
   initialWatch,
   mayStart,
+  motionAction,
   noRecordStart,
   noRecordText,
   normalizePairCode,
@@ -90,6 +92,7 @@ import {
   pairUserChoices,
   pairUserToSend,
   pairedText,
+  readMotionActions,
   savedByWords,
   sectionRuns,
   settingValue,
@@ -98,10 +101,12 @@ import {
   watchName,
   watchRecordUnreadable,
   withEdit,
+  withMotionAction,
+  withMotionTarget,
 } from "./watch-settings.js";
 import { SETTINGS_MOVED_TEXT, dropWatchSettingsDrafts, keepSettingsDraft, keptSettingsDraft, restoreSettingsDraft } from "./watch-settings-draft.js";
 import { settingsCanSave, settingsPageStep } from "./watch-settings-page.js";
-import { type TileChoice, optionPreview, settingIcon, tileChoices, usesTiles } from "./watch-settings-look.js";
+import { type TileChoice, domainTiles, gestureIcon, optionPreview, settingIcon, tileChoices, usesTiles } from "./watch-settings-look.js";
 import {
   type StyleRow,
   type StyleSection,
@@ -144,6 +149,7 @@ const SECTION_LOOK: Record<string, { icon: UiIconName; color: string }> = {
   interaction: { icon: "tap", color: SECTION_COLOR.tap },
   navigation: { icon: "pages", color: SECTION_COLOR.numbers },
   camera: { icon: "image", color: SECTION_COLOR.look },
+  motion: { icon: "watch", color: SECTION_COLOR.home },
 };
 
 /** The notification style's cards, after the behavior ones. */
@@ -488,7 +494,7 @@ export class WatchSettings implements ReactiveController {
       }
       if (code === "no_record") {
         await this.reread("behavior", ownerId);
-        return { kind: "warn", text: "Your changes were not saved. Home Assistant no longer holds settings for this watch. Start with the defaults again, or let the iPhone send its settings." };
+        return { kind: "warn", text: "Your changes were not saved. Home Assistant no longer holds settings for this watch. Start with the defaults again." };
       }
       return { kind: "err", text: `Could not save: ${errText(err)}` };
     }
@@ -524,7 +530,7 @@ export class WatchSettings implements ReactiveController {
     if (result.code === "no_record") {
       if (result.fresh === undefined) await this.reread("style", ownerId);
       else this.styleEdits = new Map();
-      return { kind: "warn", text: "The notification style was not saved. Home Assistant no longer holds one for this watch. Start with the defaults again, or let the iPhone send its own." };
+      return { kind: "warn", text: "The notification style was not saved. Home Assistant no longer holds one for this watch. Start with the defaults again." };
     }
     return { kind: "err", text: `Could not save the notification style: ${result.message}` };
   }
@@ -895,7 +901,7 @@ export class WatchSettings implements ReactiveController {
         ${id === undefined ? nothing : html`<button class="small ws-retry" @click=${() => void this.reread("behavior", id)}>Try again</button>`}`;
     }
     if (this.ownerId === undefined) {
-      return html`<div class="xf-lead">${uiIcon("info")}<span><b>No watch has connected to this Home Assistant yet.</b> Pair one below, or open the Wrist Assistant app on your iPhone.</span></div>`;
+      return html`<div class="xf-lead">${uiIcon("info")}<span><b>No watch has connected to this Home Assistant yet.</b> Pair one below.</span></div>`;
     }
     const record = this.record;
     if (record === undefined) return nothing;
@@ -964,6 +970,16 @@ export class WatchSettings implements ReactiveController {
     const row = (field: TemplateResult) => html`<div class="ws-row" data-key=${setting.key}>
       ${this.glyph("ws-ic", settingIcon(setting), 14)}${field}${helpLine}</div>`;
     switch (setting.type) {
+      case "number": {
+        const def = typeof setting.default === "number" ? setting.default : 0;
+        return row(sliderField(setting.label, typeof value === "number" ? value : def, (v) => set(v), {
+          min: setting.min ?? 0, max: setting.max ?? 10, step: setting.step ?? 1, def, format: (v) => v.toFixed(1),
+        }));
+      }
+      case "domains":
+        return this.renderDomains(setting, domainList(value), set);
+      case "motionGestures":
+        return this.renderTwists(hass, setting, typeof value === "object" && !Array.isArray(value) ? value as MotionActions : readMotionActions(setting, undefined), set);
       case "bool":
         return row(checkField(setting.label, value === true, set, setting.default === true));
       case "color":
@@ -1024,6 +1040,52 @@ export class WatchSettings implements ReactiveController {
       <span class="ws-tile-name">${tile.name}</span>
       ${tile.detail === undefined ? nothing : html`<span class="ws-tile-detail">${tile.detail}</span>`}
     </button>`;
+  }
+
+  /**
+   * The domains that skip the busy bounce, as a strip of tiles that each
+   * turn on and off: a lit tile bounces, a dark one is in the stored list. A
+   * stored domain the catalog does not list is one more tile, dark, so it can
+   * be lit again.
+   */
+  private renderDomains(setting: CatalogSetting, skipped: readonly string[], set: (v: SettingValue) => void) {
+    const tiles = domainTiles(setting, skipped);
+    return html`<div class="ws-tile-row" data-key=${setting.key}>
+      <div class="ws-head">${this.glyph("ws-ic", settingIcon(setting), 14)}<span>${setting.label}</span>${setting.help ? html`<div class="hint">${setting.help}</div>` : nothing}</div>
+      <div class="ws-tiles" role="group" aria-label=${setting.label} data-n=${tiles.length} style="--cols:3;--cols-narrow:2">
+        ${tiles.map((t) => html`<button type="button" class="ws-tile ${t.on ? "on" : ""}" aria-pressed=${t.on ? "true" : "false"}
+          title=${t.on ? `${t.name}: bounce while waiting` : `${t.name}: no bounce`}
+          @click=${() => set(t.on ? [...skipped, t.value] : skipped.filter((d) => d !== t.value))}>
+          ${this.glyph("ws-tile-glyph", t.icon, 16)}<span class="ws-tile-name">${t.name}</span>
+        </button>`)}
+      </div>
+    </div>`;
+  }
+
+  /** The wrist twists' row: for each gesture its action as a menu, then the
+   * scene or script it runs when the action needs one. */
+  private renderTwists(hass: HassLike, setting: CatalogSetting, value: MotionActions, set: (v: SettingValue) => void) {
+    return html`${(setting.gestures ?? []).map((g) => {
+      const action = motionAction(value, g.value);
+      const options = optionsFor(setting, action).map((o): [string, string] => [o.value, o.label]);
+      const kind = action === "Activate Scene" ? "scenes" : action === "Run Script" ? "scripts" : undefined;
+      return html`<div class="ws-row" data-key=${`${setting.key}:${g.value}`}>
+          ${this.glyph("ws-ic", gestureIcon(setting, g.value), 14)}${selectField(g.label, action, options, (v) => set(withMotionAction(value, g.value, v)), { def: "Disabled" })}
+        </div>
+        ${kind === undefined ? nothing : this.renderTwistTarget(hass, setting, value, g.value, kind, set)}`;
+    })}`;
+  }
+
+  private renderTwistTarget(hass: HassLike, setting: CatalogSetting, value: MotionActions, gesture: string, kind: "scenes" | "scripts", set: (v: SettingValue) => void) {
+    const domain = kind === "scenes" ? "scene" : "script";
+    const id = value[kind][gesture] ?? "";
+    const ref = id === "" ? { entityId: "", displayName: "", domain: "" } : entityRefFor(hass, id);
+    return html`<div class="ws-row" data-key=${`${setting.key}:${gesture}:${domain}`}>
+      ${this.glyph("ws-ic", kind === "scenes" ? "theatermasks" : "scroll.fill", 14)}
+      ${entityField({ hass }, kind === "scenes" ? "Scene" : "Script", ref, (next) => set(withMotionTarget(value, kind, gesture, next.entityId)),
+        `ws:${this.ownerId ?? ""}:${setting.key}:${gesture}:${domain}`, { domain })}
+      ${setting.help ? html`<div class="hint">${setting.help}</div>` : nothing}
+    </div>`;
   }
 
   // ── the notification style's cards ─────────────────────────────────────
