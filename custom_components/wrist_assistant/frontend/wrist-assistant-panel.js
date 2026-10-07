@@ -84,7 +84,7 @@ import{a as Or}from"./chunks/chunk-P7FG3CI7.js";import{a as Ni,b as Sd,c as Td,d
   dialog.dev-dialog { width: min(560px, calc(100vw - 32px)); }
   /* The sheet's tabs: a door to each of the device's pages, wrapping onto a
      second line on a narrow screen. Outlined like every Home control. */
-  .dev-tabs { display: flex; flex-wrap: wrap; gap: 10px 8px; padding: 7px 7px 0 0; }
+  .dev-tabs { display: flex; flex-wrap: wrap; gap: 12px 14px; padding: 7px 7px 0 0; }
   a.dev-tab, button.dev-tab {
     position: relative; display: inline-flex; align-items: center; box-sizing: border-box; height: 28px; padding: 0 10px;
     border-radius: 6px; font: inherit; font-size: 12.5px; font-weight: 550; cursor: pointer; white-space: nowrap; text-decoration: none;
