@@ -6232,10 +6232,7 @@ import{a as Wr}from"./chunks/chunk-P7FG3CI7.js";import{a as Fi,b as Sd,c as Td,d
         </section>`}
       </div></div>
       ${e&&this.pairOpen?this.renderPairDialog():h}
-      ${this.deviceSheet!==void 0?this.renderDeviceSheet(this.deviceSheet,n,e):h}`}openDeviceSheet(e){this.deviceForgetAsk=!1,this.deviceForgetError=void 0,this.deviceSheet=e}closeDeviceSheet(){this.deviceForgetBusy||(this.deviceSheet=void 0,this.deviceForgetAsk=!1,this.deviceForgetError=void 0)}renderDeviceSheet(e,t,i){let n=t.find(x=>x.id===e);if(!n)return h;let s=()=>this.closeDeviceSheet(),o=this.ownerOf(e),l=Br(this.pickerRows(),e).filter(x=>x.copies.some($=>$.ownerId===e&&$.item.kind==="record")),{shown:c,more:p}=Yh(l),u=()=>{s(),this.goTo(ft)},g=()=>{this.pickPickerTab(e),u(),this.draft&&this.openPicker()},f=Ct(Zi,e),m=this.deviceForgetAsk?`Forget \u201C${n.name}\u201D?`:n.name,k=Xh(o,n.kind).join(" \xB7 ");if(this.deviceForgetAsk){let x=l.length;return d`<dialog class="xf dev-dialog" aria-label=${m} @close=${s}
-        @cancel=${$=>{this.deviceForgetBusy&&$.preventDefault()}}>
-        ${this.dialogHead(m,k,s)}
-        <div class="xfer-body">
+      ${this.deviceSheet!==void 0?this.renderDeviceSheet(this.deviceSheet,n,e):h}`}openDeviceSheet(e){this.deviceForgetAsk=!1,this.deviceForgetError=void 0,this.deviceSheet=e}closeDeviceSheet(){this.deviceForgetBusy||(this.deviceSheet=void 0,this.deviceForgetAsk=!1,this.deviceForgetError=void 0)}renderDeviceSheet(e,t,i){let n=t.find(E=>E.id===e);if(!n)return h;let s=()=>this.closeDeviceSheet(),o=this.ownerOf(e),l=Br(this.pickerRows(),e).filter(E=>E.copies.some(C=>C.ownerId===e&&C.item.kind==="record")),{shown:c,more:p}=Yh(l),u=()=>{s(),this.goTo(ft)},g=()=>{this.pickPickerTab(e),u(),this.draft&&this.openPicker()},f=Ct(Zi,e),m=this.deviceForgetAsk?`Forget \u201C${n.name}\u201D?`:n.name,k=Xh(o,n.kind).join(" \xB7 "),x=l.length,$=d`<div class="xfer-body">
           <div class="xf-lead warn">${y("info")}<span>This removes <b>${n.name}</b> from this Home Assistant.
             ${x===0?h:d`Its ${x===1?"complication moves":`${x} complications move`} to ${U}, so the ${x===1?"design is":"designs are"} kept.`}
             ${n.kind==="watch"?"Its pages, menus and watch settings are deleted.":h}</span></div>
@@ -6247,26 +6244,26 @@ import{a as Wr}from"./chunks/chunk-P7FG3CI7.js";import{a as Fi,b as Sd,c as Td,d
             <button class="danger" ?disabled=${this.deviceForgetBusy}
               @click=${()=>{this.forgetDeviceNow(e)}}>${this.deviceForgetBusy?"Forgetting\u2026":"Forget device"}</button>
           </div>
-        </div>
-      </dialog>`}return d`<dialog class="xf dev-dialog" aria-label=${m} @close=${s}>
-      ${this.dialogHead(m,k,s)}
-      <div class="xfer-body">
+        </div>`,S=d`<div class="xfer-body">
         <div class="dev-state ${n.sync}"><i class="home-dot" aria-hidden="true"></i>
           <span><b>${ii(n.sync)}</b>${n.waitingFor.length===0?h:d`<span class="home-device-why"> · ${Bs(n.waitingFor)}</span>`}</span></div>
         ${!i&&l.length===0?h:d`<div class="xf-stack">
           <div class="xf-label">Complications<span class="xf-count">${l.length}</span></div>
           ${l.length===0?d`<p class="dev-none">No complication is on this device yet.</p>`:d`<div class="dev-cards">
-              ${c.map(x=>{let $=x.copies.find(S=>S.ownerId===e&&S.item.kind==="record")??x.open;return this.renderStartCard(x,$,()=>{u(),this.openFromPicker(x,$)})})}
+              ${c.map(E=>{let C=E.copies.find(P=>P.ownerId===e&&P.item.kind==="record")??E.open;return this.renderStartCard(E,C,()=>{u(),this.openFromPicker(E,C)})})}
               ${p===0?h:d`<button type="button" class="dev-more" title=${`Every complication on ${n.name}`}
                 @click=${g}><b>+${p}</b><span>more</span></button>`}
             </div>`}
         </div>`}
         <div class="dev-acts">
           ${i&&n.kind==="watch"?d`<a class="home-btn" href=${li(this.route,f,window.location.pathname)}
-            @click=${x=>{di(x)&&(x.preventDefault(),s(),this.pickWatch(e),this.goTo(f))}}>${y("watch")}<span>Watch settings</span></a>`:h}
+            @click=${E=>{di(E)&&(E.preventDefault(),s(),this.pickWatch(e),this.goTo(f))}}>${y("watch")}<span>Watch settings</span></a>`:h}
           ${i?d`<button class="ghost danger dev-forget" @click=${()=>{this.deviceForgetAsk=!0}}>Forget device…</button>`:h}
         </div>
-      </div>
+      </div>`;return d`<dialog class="xf dev-dialog" aria-label=${m} @close=${s}
+      @cancel=${E=>{this.deviceForgetBusy&&E.preventDefault()}}>
+      ${this.dialogHead(m,k,s)}
+      ${this.deviceForgetAsk?$:S}
     </dialog>`}async forgetDeviceNow(e){if(!(this.ownerId===e&&this.draft?.dirty&&!this.confirmDiscard())){this.deviceForgetBusy=!0,this.deviceForgetError=void 0;try{await od(this.hass,e)}catch(t){this.deviceForgetError=`Could not forget it: ${W(t)}`,this.deviceForgetBusy=!1;return}this.deviceForgetBusy=!1,this.closeDeviceSheet(),this.ownerId===e?(this.clearDraft(),this.ownerId=void 0,this.records=[],await this.loadOwners()):(await this.loadOwners(),await this.loadOtherLists(),await this.loadRecords())}}openPairDialog(){this.homePair.open(this.hass),this.pairOpen=!0}closePairDialog(){this.pairOpen&&(this.homePair.close(),this.pairOpen=!1)}renderPairDialog(){return d`<dialog class="pair-dialog" aria-label="Pair a watch" @close=${()=>this.closePairDialog()}>
       <div class="ws-body">${this.homePair.render({headEnd:d`<button class="pick" title="Close (Escape)" @click=${()=>this.closePairDialog()}>Close</button>`})}</div>
     </dialog>`}renderHomeWatch(){if(!this.linkReady&&this.owners.length===0)return h;let e=je(this.owners),t=this.sharedWatch,i=n=>li(this.route,n,window.location.pathname);return d`<section class="home-card watch">

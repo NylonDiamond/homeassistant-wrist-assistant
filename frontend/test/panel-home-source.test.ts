@@ -126,7 +126,8 @@ describe("Home's device sheet", () => {
   it("offers Forget to administrators only, behind a second step", () => {
     expect(sheet).toContain("${admin ? html`<button class=\"ghost danger dev-forget\" @click=${() => { this.deviceForgetAsk = true; }}>Forget device…</button>` : nothing}");
     expect(sheet).toContain("@click=${() => void this.forgetDeviceNow(ownerId)}");
-    expect(sheet.indexOf("if (this.deviceForgetAsk) {")).toBeLessThan(sheet.indexOf("forgetDeviceNow(ownerId)"));
+    expect(sheet).toContain("${this.deviceForgetAsk ? ask : overview}");
+    expect(sheet.match(/<dialog /g)).toHaveLength(1);
   });
 
   it("reads the devices and lists again after a Forget, and picks another device when it was the open one", () => {

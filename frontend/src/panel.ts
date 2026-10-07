@@ -18890,12 +18890,10 @@ export class WristAssistantPanel extends LitElement {
     const settings = watchScreenPath(WATCH_SETTINGS_SCREEN, ownerId);
     const title = this.deviceForgetAsk ? `Forget “${row.name}”?` : row.name;
     const facts = deviceFacts(owner, row.kind).join(" · ");
-    if (this.deviceForgetAsk) {
-      const n = designs.length;
-      return html`<dialog class="xf dev-dialog" aria-label=${title} @close=${close}
-        @cancel=${(e: Event) => { if (this.deviceForgetBusy) e.preventDefault(); }}>
-        ${this.dialogHead(title, facts, close)}
-        <div class="xfer-body">
+    // One dialog for both steps, so the confirm step keeps the open modal:
+    // a second template would swap in a new, closed dialog element.
+    const n = designs.length;
+    const ask = html`<div class="xfer-body">
           <div class="xf-lead warn">${uiIcon("info")}<span>This removes <b>${row.name}</b> from this Home Assistant.
             ${n === 0 ? nothing : html`Its ${n === 1 ? "complication moves" : `${n} complications move`} to ${UNASSIGNED_LABEL}, so the ${n === 1 ? "design is" : "designs are"} kept.`}
             ${row.kind === "watch" ? "Its pages, menus and watch settings are deleted." : nothing}</span></div>
@@ -18907,12 +18905,8 @@ export class WristAssistantPanel extends LitElement {
             <button class="danger" ?disabled=${this.deviceForgetBusy}
               @click=${() => void this.forgetDeviceNow(ownerId)}>${this.deviceForgetBusy ? "Forgetting…" : "Forget device"}</button>
           </div>
-        </div>
-      </dialog>`;
-    }
-    return html`<dialog class="xf dev-dialog" aria-label=${title} @close=${close}>
-      ${this.dialogHead(title, facts, close)}
-      <div class="xfer-body">
+        </div>`;
+    const overview = html`<div class="xfer-body">
         <div class="dev-state ${row.sync}"><i class="home-dot" aria-hidden="true"></i>
           <span><b>${deviceSyncLabel(row.sync)}</b>${row.waitingFor.length === 0 ? nothing
             : html`<span class="home-device-why"> · ${waitingForText(row.waitingFor)}</span>`}</span></div>
@@ -18940,7 +18934,11 @@ export class WristAssistantPanel extends LitElement {
             }}>${uiIcon("watch")}<span>Watch settings</span></a>` : nothing}
           ${admin ? html`<button class="ghost danger dev-forget" @click=${() => { this.deviceForgetAsk = true; }}>Forget device…</button>` : nothing}
         </div>
-      </div>
+      </div>`;
+    return html`<dialog class="xf dev-dialog" aria-label=${title} @close=${close}
+      @cancel=${(e: Event) => { if (this.deviceForgetBusy) e.preventDefault(); }}>
+      ${this.dialogHead(title, facts, close)}
+      ${this.deviceForgetAsk ? ask : overview}
     </dialog>`;
   }
 
