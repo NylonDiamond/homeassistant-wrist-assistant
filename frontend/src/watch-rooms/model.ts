@@ -22,12 +22,20 @@
 // over it, key by key, as the Watch settings page does for the
 // notification style.
 //
-// Plan: app repo docs/pages_in_home_assistant_step4.md, "4d batch 5", 5b.
+// A home that is not the watch's main house (`main_house: false` on the
+// owner row) keeps its rooms in a `rooms` record of their own instead: the
+// six room keys under their `behavior` names and a `schemaVersion`. The four
+// keys that stay with the main house's settings (Double-Tap Top, Double
+// Pinch and the two point control switches) are neither shown nor written
+// there, and the editor can start that record itself.
+//
+// Plans: app repo docs/pages_in_home_assistant_step4.md, "4d batch 5", 5b,
+// and docs/phone_watch_link_removal_2026-10.md, "Step 8 build contract".
 
-import type { WatchConfigRecord } from "../ha-api.js";
+import type { OwnerSummary, WatchConfigRecord } from "../ha-api.js";
 import { type WatchPagesDocument, WATCH_SYNC_LIMIT_BYTES, isHiddenWatchPage, isSystemWatchPage, watchPageId, watchPageName, watchPagesOf } from "../watch-pages/model.js";
 import { watchCommandError } from "../watch-pages/save-note.js";
-import { WAIT_FOR_IPHONE_TEXT } from "../watch-settings.js";
+import { WAIT_FOR_IPHONE_TEXT, takesSettingsFromAnotherHome } from "../watch-settings.js";
 import {
   type PointRooms,
   type PointZone,
@@ -543,8 +551,11 @@ export const ROOM_HISTORY_HOURS = 24;
 
 // ── the size ─────────────────────────────────────────────────────────────
 
-export function roomsBudget(document: BehaviorDocument): { size: number; limit: number } {
-  return { size: new TextEncoder().encode(JSON.stringify(document)).length, limit: WATCH_SYNC_LIMIT_BYTES };
+/** What Home Assistant takes for a `rooms` record (64 KiB), its own cap. */
+export const HOME_ROOMS_LIMIT_BYTES = 64 * 1024;
+
+export function roomsBudget(document: BehaviorDocument, kind: RoomsKind = "behavior"): { size: number; limit: number } {
+  return { size: new TextEncoder().encode(JSON.stringify(document)).length, limit: kind === "rooms" ? HOME_ROOMS_LIMIT_BYTES : WATCH_SYNC_LIMIT_BYTES };
 }
 
 // ── saving ───────────────────────────────────────────────────────────────
@@ -619,21 +630,22 @@ export const FALLBACK_LABELS = {
 
 /** The note after a save, or none: a plain save that went through says
  * nothing, since the toolbar's "Saved just now" already does. */
-export function roomsSaveNote(result: RoomsSaveResult): { kind: "ok" | "warn" | "err"; text: string } | undefined {
+export function roomsSaveNote(result: RoomsSaveResult, kind: RoomsKind = "behavior"): { kind: "ok" | "warn" | "err"; text: string } | undefined {
+  const home = kind === "rooms";
   if (result.ok) {
-    if (result.alreadySaved) return { kind: "ok", text: `Nothing left to save. The settings already had these changes, as revision ${result.revision}.` };
-    return result.merged ? { kind: "ok", text: "Saved. Settings changed elsewhere meanwhile were kept." } : undefined;
+    if (result.alreadySaved) return { kind: "ok", text: `Nothing left to save. The ${home ? "rooms" : "settings"} already had these changes, as revision ${result.revision}.` };
+    return result.merged ? { kind: "ok", text: home ? "Saved. Room changes made elsewhere meanwhile were kept." : "Saved. Settings changed elsewhere meanwhile were kept." } : undefined;
   }
   const message = result.message.trim();
   switch (result.code) {
     case "conflict":
-      return { kind: "warn", text: "Not saved. The watch's settings kept changing elsewhere while saving. Your edits are kept, so try Save again in a moment." };
+      return { kind: "warn", text: `Not saved. ${home ? "This home's rooms" : "The watch's settings"} kept changing elsewhere while saving. Your edits are kept, so try Save again in a moment.` };
     case "no_record":
-      return { kind: "warn", text: "Not saved. Home Assistant no longer holds settings for this watch." };
+      return { kind: "warn", text: home ? "Not saved. Home Assistant no longer holds rooms for this home." : "Not saved. Home Assistant no longer holds settings for this watch." };
     case "busy":
       return { kind: "warn", text: "Already saving. Wait a moment for that save to finish." };
     case "unavailable":
-      return { kind: "warn", text: "Not saved. Home Assistant could not store the settings just now. Your edits are kept, so try again in a moment." };
+      return { kind: "warn", text: `Not saved. Home Assistant could not store the ${home ? "rooms" : "settings"} just now. Your edits are kept, so try again in a moment.` };
     default:
       return { kind: "err", text: `Not saved${message === "" ? "." : `: ${message}`}` };
   }
@@ -645,3 +657,105 @@ export function fallbackChoice(stored: string): "stay" | "first" | "page" {
   if (stored === STAY_ON_CURRENT_PAGE) return "stay";
   return "page";
 }
+
+// ── a home that is not the main house ────────────────────────────────────
+
+/** The record a watch's rooms live in here: its `behavior` settings on the
+ * main house, a `rooms` record of their own on any other home. */
+export type RoomsKind = "behavior" | "rooms";
+
+/** The kind for the watch being edited. Only an explicit `main_house: false`
+ * moves the rooms out of `behavior`: an older integration, and a watch with
+ * one home, keep them where they always were. */
+export function roomsKindFor(owner: Pick<OwnerSummary, "main_house"> | undefined): RoomsKind {
+  return takesSettingsFromAnotherHome(owner) ? "rooms" : "behavior";
+}
+
+/** `schemaVersion` of a `rooms` record. */
+export const HOME_ROOMS_SCHEMA_VERSION = 1;
+
+/** The six keys a `rooms` record holds, under their `behavior` names. */
+export const HOME_ROOM_KEYS: readonly string[] = [
+  ROOM_KEYS.legacyQuickJump,
+  ROOM_KEYS.sensor,
+  ROOM_KEYS.fallback,
+  ROOM_KEYS.mappings,
+  ROOM_KEYS.autoSwitch,
+  ROOM_KEYS.zones,
+];
+
+/** The four room keys that stay with the main house's settings. A `rooms`
+ * record never shows or writes them. */
+export const MAIN_HOUSE_ROOM_KEYS: readonly string[] = [
+  ROOM_KEYS.topSectionDoubleTap,
+  ROOM_KEYS.handGesture,
+  ROOM_KEYS.tapToToggle,
+  ROOM_KEYS.liveTile,
+];
+
+/** Key writes for a `rooms` record: the same writes with the four main house
+ * keys left out. */
+export function homeRoomWrites(writes: RoomEdits): Map<string, unknown> {
+  return new Map([...writes].filter(([key]) => !MAIN_HOUSE_ROOM_KEYS.includes(key)));
+}
+
+/** Whether this home switches pages by itself (`roomAutoSwitchEnabled`). */
+export function homeAutoSwitch(doc: BehaviorDocument): boolean {
+  return boolAt(doc, ROOM_KEYS.autoSwitch) ?? false;
+}
+
+/** "Switch automatically" on a home that is not the main house. On is the
+ * phone's Automatic, which also turns the old quick jump off; off turns only
+ * the automatic switch off. The gestures are the main house's. */
+export function homeAutoSwitchWrites(doc: BehaviorDocument, on: boolean): Map<string, unknown> {
+  return homeRoomWrites(on ? triggerWrites(doc, "Automatic") : new Map([[ROOM_KEYS.autoSwitch, false]]));
+}
+
+/** The first `rooms` record a Start makes: no rooms yet. */
+export function homeRoomsStart(): BehaviorDocument {
+  return { schemaVersion: HOME_ROOMS_SCHEMA_VERSION };
+}
+
+/** How a start of a `rooms` record ended. */
+export type HomeRoomsStartResult =
+  | { ok: true; revision: number }
+  | { ok: false; code: "no_record" | "conflict" | "unsupported" | "error"; message: string };
+
+/**
+ * Make this home's first `rooms` record: a save over revision 0, which Home
+ * Assistant takes only while it holds none for a paired watch. `no_record`
+ * back means the watch is not paired, `conflict` that a record came
+ * meanwhile (the caller reads it), `unsupported` an integration older than
+ * the kind. Any other refusal is an error with Home Assistant's words.
+ */
+export async function startHomeRooms(save: (baseRevision: number, document: BehaviorDocument) => Promise<{ revision: number }>): Promise<HomeRoomsStartResult> {
+  try {
+    const { revision } = await save(0, homeRoomsStart());
+    return { ok: true, revision };
+  } catch (error) {
+    const { code, message } = watchCommandError(error);
+    if (code === "no_record" || code === "conflict") return { ok: false, code, message };
+    if (code === "unknown_command" || code === "invalid") return { ok: false, code: "unsupported", message };
+    return { ok: false, code: "error", message };
+  }
+}
+
+/** Whether a failed read of `rooms` means this integration does not keep the
+ * kind: one older than it refuses it as `invalid`, one older than the store
+ * does not know the command. */
+export function homeRoomsReadMeansUnsupported(error: unknown): boolean {
+  const code = watchCommandError(error).code;
+  return code === "invalid" || code === "unknown_command";
+}
+
+/** The one line that stands for the four main house keys. */
+export const HOME_ROOMS_MAIN_HOUSE_TEXT = "Double-Tap Top, Double Pinch and the point control switches come from your main house.";
+export const HOME_ROOMS_NO_RECORD_TITLE = "No rooms for this home yet.";
+/** The no-record line when no iPhone will send this home's rooms. */
+export const HOME_ROOMS_NO_RECORD_TEXT = "Start with no rooms to begin.";
+export const HOME_ROOMS_START_BUTTON = "Start with no rooms";
+export const HOME_ROOMS_START_CONFLICT_TEXT = "The iPhone sent this home's rooms meanwhile, so those are shown.";
+export const HOME_ROOMS_STARTED_TEXT = "Started with no rooms. Pick a room sensor and give rooms a page, then save.";
+export const HOME_ROOMS_UPDATE_TEXT = "Update the integration to edit this home's rooms here.";
+export const HOME_ROOMS_UNREADABLE_TEXT = "Home Assistant holds rooms for this home that this panel cannot read. Update the integration.";
+export const HOME_AUTO_SWITCH_LABEL = "Switch automatically";

@@ -28,8 +28,9 @@ export type ConfigHistoryState = "loading" | "ready" | "error" | "unsupported";
 
 /** What the editor keeps: its pages, its menus, the voice settings, its
  * status pages, its Control Center list, or the watch settings (Rooms,
- * whose keys are part of the `behavior` record). */
-export type ConfigNoun = "pages" | "menus" | "voice settings" | "status pages" | "Control Center list" | "watch settings";
+ * whose keys are part of the `behavior` record), or the rooms of a home that
+ * is not the watch's main house (their own `rooms` record). */
+export type ConfigNoun = "pages" | "menus" | "voice settings" | "status pages" | "Control Center list" | "watch settings" | "rooms";
 
 /** The pronoun for a noun: "it" for the one list, "them" for the rest. */
 function them(noun: ConfigNoun): string {

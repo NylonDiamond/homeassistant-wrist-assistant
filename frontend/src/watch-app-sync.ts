@@ -1,7 +1,7 @@
 // Whether a watch still has watch app records to pick up, for Home's Devices
 // card: its pages, menus, status pages, Control Center list, settings (Rooms
-// writes the same record), notification style and voice, and the home's HTTP
-// actions.
+// writes the same record on the main house), a second home's own rooms,
+// notification style and voice, and the home's HTTP actions.
 //
 // Each of these is a watch config record, and each record carries its own
 // delivery state: `revision` is the copy Home Assistant holds, and
@@ -47,6 +47,8 @@ export const WATCH_APP_PARTS: readonly WatchAppPart[] = [
   { kind: "control_center", label: "Control Center" },
   { kind: "voice", label: "voice" },
   { kind: "behavior", label: "settings" },
+  // Only a home that is not the watch's main house keeps this record.
+  { kind: "rooms", label: "rooms" },
   { kind: "notification_style", label: "notification style" },
 ];
 

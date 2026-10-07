@@ -7,6 +7,11 @@
 // by room (with When and the fallback page) and Point control. Your rooms
 // takes the rest: one row per room, its page, and, opened, its point control
 // targets with a heading dial each.
+//
+// On a home that is not the watch's main house (`home`), the gestures and the
+// point control switches are the main house's: one line says so in place of
+// them, Point control is left out, and Switch pages by room offers only the
+// automatic switch and the fallback page, which are this home's own.
 
 import { css, html, nothing, svg, type TemplateResult } from "lit";
 import { sectionCard } from "../editor-chrome.js";
@@ -22,10 +27,14 @@ import {
   type RoomPageChoice,
   type RoomsView,
   FALLBACK_LABELS,
+  HOME_AUTO_SWITCH_LABEL,
+  HOME_ROOMS_MAIN_HOUSE_TEXT,
   ZONES_UNREADABLE_TEXT,
   fallbackChoice,
   fallbackWrites,
   findPageChoice,
+  homeAutoSwitch,
+  homeAutoSwitchWrites,
   pointSwitchWrites,
   roomPage,
   roomPageWrites,
@@ -66,6 +75,9 @@ export interface RoomsViewHost {
   endCoalesce(): void;
   addRoom(name: string): void;
   requestUpdate(): void;
+  /** A home that is not the watch's main house: its own `rooms` record,
+   * without the four main house keys. Absent or false is the main house. */
+  home?: boolean;
 }
 
 const LOOK: Record<string, { color: string; icon: UiIconName }> = {
@@ -170,6 +182,26 @@ function renderSwitchingCard(host: RoomsViewHost): TemplateResult {
         (v) => { if (!host.busy) host.write(fallbackWrites(v)); }, { snapBack: true })}
       <div class="hint">When the room cannot be told, or has no page.</div>` : nothing}`,
   { summary: view.switching ? view.trigger : "Off", dot: anyDirty(host, keys) });
+}
+
+/** Switch pages by room on a home that is not the main house: the automatic
+ * switch and the fallback page, which this home keeps. The gestures that
+ * also switch are the main house's. */
+function renderHomeSwitchingCard(host: RoomsViewHost): TemplateResult {
+  const { view } = host;
+  const auto = homeAutoSwitch(host.document);
+  const help = ROOM_RULES.switching.triggers.find((t) => t.value === "Automatic")?.help ?? "";
+  const fallback = fallbackChoice(view.fallback);
+  const fallbackValue = fallback === "first" ? "" : fallback === "stay" ? STAY_ON_CURRENT_PAGE : pageValue(host.pages, view.fallback);
+  const keys = [ROOM_KEYS.autoSwitch, ROOM_KEYS.legacyQuickJump, ROOM_KEYS.fallback];
+  return card(host, "switching", "Switch pages by room", () => html`
+    ${checkField(HOME_AUTO_SWITCH_LABEL, auto, (on) => { if (!host.busy) host.write(homeAutoSwitchWrites(host.document, on)); })}
+    <div class="hint">${help}</div>
+    ${selectField("Fallback page", fallbackValue,
+      pageOptions(host.pages, fallbackValue, [[STAY_ON_CURRENT_PAGE, FALLBACK_LABELS.stay], ["", FALLBACK_LABELS.first]]),
+      (v) => { if (!host.busy) host.write(fallbackWrites(v)); }, { snapBack: true })}
+    <div class="hint">When the room cannot be told, or has no page.</div>`,
+  { summary: auto ? "Automatic" : "Not automatic", dot: anyDirty(host, keys) });
 }
 
 // ── Point control ────────────────────────────────────────────────────────
@@ -388,6 +420,16 @@ function renderRoomsCard(host: RoomsViewHost): TemplateResult {
 
 /** The whole body: the settings column and the rooms. */
 export function renderRoomsBody(host: RoomsViewHost): TemplateResult {
+  if (host.home === true) {
+    return html`<div class="rm-layout">
+    <div class="rm-col rm-settings">
+      <p class="hint rm-main-house">${HOME_ROOMS_MAIN_HOUSE_TEXT}</p>
+      ${renderSensorCard(host)}
+      ${renderHomeSwitchingCard(host)}
+    </div>
+    <div class="rm-col rm-rooms-col">${renderRoomsCard(host)}</div>
+  </div>`;
+  }
   return html`<div class="rm-layout">
     <div class="rm-col rm-settings">
       ${renderSensorCard(host)}
@@ -403,6 +445,8 @@ export const roomsViewStyles = css`
   @container (max-width: 820px) { .rm-layout { grid-template-columns: minmax(0, 1fr); } }
   .rm-col { min-width: 0; display: flex; flex-direction: column; }
   .rm-col > .sec:first-child { margin-top: 0; }
+  .rm-main-house { margin: 0 0 10px; }
+  .rm-main-house + .sec { margin-top: 0; }
   .rm-stack .field { grid-template-columns: minmax(0, 1fr); gap: 4px; padding: 2px 0; }
   .rm-stack .field.entity-field > :not(:first-child) { grid-column: 1; }
   .rm-reading { display: flex; align-items: flex-start; gap: 8px; margin: 6px 0 4px; font-size: 12.5px; line-height: 1.45; }

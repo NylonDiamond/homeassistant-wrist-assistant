@@ -41,9 +41,15 @@ describe("watchAppSync", () => {
     expect(watchAppSync(new Map([["behavior", rec(7, 6)]])).waiting).toEqual(["settings"]);
   });
 
+  it("calls a second home's own rooms record rooms, after settings", () => {
+    const kinds = WATCH_APP_PARTS.map((p) => p.kind);
+    expect(kinds.indexOf("rooms")).toBe(kinds.indexOf("behavior") + 1);
+    expect(watchAppSync(new Map([["rooms", rec(3, 2)], ["behavior", rec(1, 1)]]))).toEqual({ waiting: ["rooms"], delivered: true });
+  });
+
   it("asks every kind the panel writes, never the phone's catalog", () => {
     expect(WATCH_APP_PARTS.map((p) => p.kind).sort()).toEqual(
-      ["behavior", "control_center", "menus", "notification_style", "pages", "status_pages", "voice"],
+      ["behavior", "control_center", "menus", "notification_style", "pages", "rooms", "status_pages", "voice"],
     );
   });
 });

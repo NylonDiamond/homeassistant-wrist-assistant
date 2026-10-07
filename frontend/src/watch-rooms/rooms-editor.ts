@@ -17,6 +17,15 @@
 // Rooms never makes a `behavior` record: a watch without one is told where
 // one comes from (Watch settings, or the iPhone).
 //
+// On a home that is not the watch's main house (`main_house: false` on its
+// owner row) the rooms are a `rooms` record of their own instead, and every
+// read, save, restore and the subscription use that kind. The four keys that
+// stay with the main house are hidden behind one line (`view.ts`) and never
+// written, and a watch with no `rooms` record can start one here: a save
+// over revision 0, or, while an iPhone may still move this home's rooms
+// here, a small link that asks first. The main house is drawn and saved as
+// before.
+//
 // The room list also reads Home Assistant's area registry and the room
 // sensor's states of the last 24 hours, over the same socket.
 //
@@ -59,12 +68,20 @@ import {
 import { watchKeysTypeText } from "../watch-pages/editor-host.js";
 import { asWatchPagesDocument } from "../watch-pages/model.js";
 import { type WatchPagesNote, watchCommandError } from "../watch-pages/save-note.js";
-import { deliveryState, followWatch, noRecordStart, settingsWatches, watchName } from "../watch-settings.js";
+import { PAIR_FIRST_TEXT, START_FRESH_BUTTON, deliveryState, followWatch, mayStart, noRecordStart, noRecordText, settingsWatches, watchName } from "../watch-settings.js";
 import { type RoomsDraft, anyRoomsDirty, dropAllRooms, forgetRoomsDraft, keptRoomsDraft, saveRoomsDraft, takeRoomsRecord } from "./draft.js";
 import { WATCH_ROOMS_HELP_URL, navigateWatchRooms, registerWatchRoomsDrafts } from "./hook.js";
 import {
   type AreaEntry,
+  type RoomsKind,
   type SensorHistoryEntry,
+  HOME_ROOMS_NO_RECORD_TEXT,
+  HOME_ROOMS_NO_RECORD_TITLE,
+  HOME_ROOMS_START_BUTTON,
+  HOME_ROOMS_START_CONFLICT_TEXT,
+  HOME_ROOMS_STARTED_TEXT,
+  HOME_ROOMS_UNREADABLE_TEXT,
+  HOME_ROOMS_UPDATE_TEXT,
   ROOMS_NO_RECORD_TEXT,
   ROOMS_NO_RECORD_TITLE,
   ROOMS_UNREADABLE_TEXT,
@@ -72,13 +89,17 @@ import {
   ROOM_HISTORY_HOURS,
   areasFromReply,
   historyFromReply,
+  homeRoomWrites,
+  homeRoomsReadMeansUnsupported,
   mergeRoomList,
   readRooms,
   roomDirtyKeys,
   roomPageChoices,
   roomsBudget,
   roomsDocumentOf,
+  roomsKindFor,
   roomsSaveNote,
+  startHomeRooms,
 } from "./model.js";
 import { type RoomsViewHost, renderRoomsBody, roomsViewStyles } from "./view.js";
 
@@ -95,6 +116,14 @@ if (typeof window !== "undefined") {
 /** How often the view asks whether a device has collected a save. */
 const DELIVERY_POLL_MS = 15_000;
 const NOUN = "watch settings" as const;
+/** The noun on a home that is not the main house. */
+const HOME_NOUN = "rooms" as const;
+
+/** The kept draft of a watch's `rooms` record, apart from its `behavior` one
+ * should the watch's main house move while the editor is open. */
+function homeDraftKey(watchId: string): string {
+  return `${watchId}\u0000rooms`;
+}
 
 const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const MOD = IS_MAC ? "⌘" : "Ctrl+";
@@ -188,6 +217,12 @@ export class WaRoomsEditor extends LitElement {
   @state() private areasRead = false;
   @state() private sensorHistory: SensorHistoryEntry[] = [];
   @state() private sensorHistoryFor?: string;
+  /** Starting a home's first `rooms` record. */
+  @state() private starting = false;
+  /** This integration does not keep the `rooms` kind. */
+  @state() private unsupported = false;
+  /** The kind the shown record was read as. */
+  private shownKind?: RoomsKind;
   private readonly shownFootDialogs = new WeakSet<HTMLDialogElement>();
   private ownListAsked = false;
   private areasAsked?: HassLike["connection"];
@@ -208,13 +243,32 @@ export class WaRoomsEditor extends LitElement {
     return settingsWatches(this.owners.length > 0 ? this.owners : (this.ownList ?? []));
   }
 
+  /** The record the shown watch's rooms live in on this home: `behavior` on
+   * its main house, `rooms` on any other (`roomsKindFor`). */
+  private get kind(): RoomsKind {
+    return this.kindOf(this.watchId);
+  }
+
+  private kindOf(watchId: string | undefined, watches: readonly OwnerSummary[] = this.watches): RoomsKind {
+    return roomsKindFor(watchId === undefined ? undefined : watches.find((w) => w.owner_watch_id === watchId));
+  }
+
+  /** Where the shown watch's draft is kept: its id on the main house, as it
+   * always was. */
+  private get draftKey(): string | undefined {
+    const watchId = this.watchId;
+    if (watchId === undefined) return undefined;
+    return this.kind === "rooms" ? homeDraftKey(watchId) : watchId;
+  }
+
   /** The shown watch's draft, made from the record when none is kept (the
    * panel's leave guard may have dropped it). */
   private get draft(): RoomsDraft | undefined {
     const record = this.record;
     const document = roomsDocumentOf(record);
-    if (this.watchId === undefined || record === undefined || document === undefined) return undefined;
-    return keptRoomsDraft(this.watchId) ?? takeRoomsRecord(this.watchId, document, record.revision).draft;
+    const key = this.draftKey;
+    if (key === undefined || record === undefined || document === undefined) return undefined;
+    return keptRoomsDraft(key) ?? takeRoomsRecord(key, document, record.revision).draft;
   }
 
   private get saving(): boolean {
@@ -260,6 +314,8 @@ export class WaRoomsEditor extends LitElement {
       }
       const id = followWatch(this.watches, this.watchId, this.ownerId, this.shellOwnsWatch || changed.has("ownerId"));
       if (id !== undefined) this.openWatch(id);
+      // The shown watch's main house moved: read its rooms from the other kind.
+      else if (this.watchId !== undefined && this.shownKind !== undefined && this.kind !== this.shownKind) this.openWatch(this.watchId);
       if (this.areasAsked !== this.hass.connection) void this.loadAreas();
       const sensor = this.currentSensor();
       if (sensor !== this.sensorHistoryFor) void this.loadSensorHistory(sensor);
@@ -314,7 +370,8 @@ export class WaRoomsEditor extends LitElement {
   // ── loading ────────────────────────────────────────────────────────────
 
   private openWatch(watchId: string, quiet = false): void {
-    if (watchId !== this.watchId) {
+    const kind = this.kindOf(watchId);
+    if (watchId !== this.watchId || kind !== this.shownKind) {
       this.reloadPending = false;
       this.watchId = watchId;
       this.note = undefined;
@@ -323,8 +380,10 @@ export class WaRoomsEditor extends LitElement {
       if (this.historyState !== "unsupported") this.historyState = "loading";
       this.closeAsk();
       this.uiState.clear();
+      this.unsupported = false;
       quiet = false;
     }
+    this.shownKind = kind;
     this.startSubscription(watchId);
     void this.load(watchId, quiet);
     void this.loadPages(watchId);
@@ -344,31 +403,39 @@ export class WaRoomsEditor extends LitElement {
       this.loading = true;
       this.loadError = undefined;
     }
+    const kind = this.kind;
     try {
-      const record = await fetchWatchConfig(hass, watchId, "behavior");
+      const record = await fetchWatchConfig(hass, watchId, kind);
       if (seq !== this.loadSeq) return;
       if (quiet && this.saving) {
         this.reloadPending = true;
         return;
       }
+      this.unsupported = false;
       this.show(record);
       this.loadError = undefined;
     } catch (err) {
       if (seq !== this.loadSeq) return;
-      if (!quiet) this.loadError = errText(err);
+      if (kind === "rooms" && homeRoomsReadMeansUnsupported(err)) {
+        this.unsupported = true;
+        this.loadError = undefined;
+      } else if (!quiet) this.loadError = errText(err);
     }
     this.loading = false;
+    if (this.unsupported) return;
     this.pollIfWaiting();
     void this.loadHistory(watchId);
   }
 
   private show(record: WatchConfigRecord): void {
-    const watchId = this.watchId;
+    const key = this.draftKey;
     this.record = record;
     const document = roomsDocumentOf(record);
-    if (watchId === undefined || document === undefined) return;
-    const taken = takeRoomsRecord(watchId, document, record.revision);
-    if (taken.mergedIntoEdits) this.note = { kind: "warn", text: "The watch's settings changed elsewhere. Your edits are kept on top." };
+    if (key === undefined || document === undefined) return;
+    const taken = takeRoomsRecord(key, document, record.revision);
+    if (taken.mergedIntoEdits) {
+      this.note = { kind: "warn", text: `${this.kind === "rooms" ? "This home's rooms" : "The watch's settings"} changed elsewhere. Your edits are kept on top.` };
+    }
     this.requestUpdate();
   }
 
@@ -388,7 +455,7 @@ export class WaRoomsEditor extends LitElement {
     if (!hass || this.historyState === "unsupported") return;
     const seq = ++this.historySeq;
     try {
-      const reply = await fetchWatchConfigHistory(hass, watchId, "behavior");
+      const reply = await fetchWatchConfigHistory(hass, watchId, this.kind);
       if (seq !== this.historySeq || watchId !== this.watchId) return;
       this.history = Array.isArray(reply?.entries) ? reply.entries : [];
       this.historyState = "ready";
@@ -437,7 +504,8 @@ export class WaRoomsEditor extends LitElement {
     }
   }
 
-  /** Hear every save of this watch's config: a new `behavior` revision is
+  /** Hear every save of this watch's config: a new revision of the rooms'
+   * kind (`behavior`, or `rooms` on a home that is not the main house) is
    * read and laid under the edits, a new `pages` one read for the names. */
   private startSubscription(watchId: string): void {
     const hass = this.hass;
@@ -446,7 +514,7 @@ export class WaRoomsEditor extends LitElement {
     const seq = ++this.subscribeSeq;
     subscribeWatchConfig(hass, watchId, (event) => {
       if (seq !== this.subscribeSeq) return;
-      if (event.kind === "behavior" && event.revision !== (this.record?.revision ?? 0)) void this.load(watchId, true);
+      if (event.kind === this.kind && event.revision !== (this.record?.revision ?? 0)) void this.load(watchId, true);
       if (event.kind === "pages" && event.revision !== (this.pagesRecord?.revision ?? 0)) void this.loadPages(watchId);
     }).then(
       (unsubscribe) => {
@@ -481,7 +549,7 @@ export class WaRoomsEditor extends LitElement {
       return;
     }
     try {
-      const fresh = await fetchWatchConfig(hass, watchId, "behavior");
+      const fresh = await fetchWatchConfig(hass, watchId, this.kind);
       if (watchId !== this.watchId || this.record !== shown) return;
       if (fresh.revision === shown.revision) {
         this.record = {
@@ -524,6 +592,7 @@ export class WaRoomsEditor extends LitElement {
     const document = draft.effective;
     const view = readRooms(document);
     const added = addedRooms.get(watchId) ?? [];
+    const home = this.kind === "rooms";
     const rooms = mergeRoomList({
       areas: this.areas,
       mappingKeys: Object.keys(view.mappings),
@@ -543,7 +612,8 @@ export class WaRoomsEditor extends LitElement {
       uiState: this.uiState,
       write: (writes, coalesce) => {
         if (this.draft !== draft) return;
-        draft.apply(writes, coalesce);
+        // A home that is not the main house never writes the main house's keys.
+        draft.apply(home ? homeRoomWrites(writes) : writes, coalesce);
         this.requestUpdate();
       },
       endCoalesce: () => draft.endCoalesce(),
@@ -553,6 +623,7 @@ export class WaRoomsEditor extends LitElement {
         this.requestUpdate();
       },
       requestUpdate: () => this.requestUpdate(),
+      ...(home ? { home: true } : {}),
     };
   }
 
@@ -580,11 +651,12 @@ export class WaRoomsEditor extends LitElement {
     if (!hass || watchId === undefined || !draft || !record || draft.saving || !draft.dirty) return;
     this.note = undefined;
     draft.endCoalesce();
+    const kind = this.kind;
     const running = saveRoomsDraft(draft, {
-      save: (base, document) => saveWatchConfig(hass, watchId, "behavior", base, document).catch((err: unknown) => {
+      save: (base, document) => saveWatchConfig(hass, watchId, kind, base, document).catch((err: unknown) => {
         throw flatError(err);
       }),
-      fetch: () => fetchWatchConfig(hass, watchId, "behavior").catch((err: unknown) => {
+      fetch: () => fetchWatchConfig(hass, watchId, kind).catch((err: unknown) => {
         throw flatError(err);
       }),
     });
@@ -599,7 +671,7 @@ export class WaRoomsEditor extends LitElement {
     } else if (result.fresh !== undefined) {
       this.record = result.fresh;
     }
-    this.note = roomsSaveNote(result);
+    this.note = roomsSaveNote(result, kind);
     if (this.reloadPending) {
       this.reloadPending = false;
       void this.load(watchId, true);
@@ -608,6 +680,35 @@ export class WaRoomsEditor extends LitElement {
       void this.loadHistory(watchId);
     }
     this.requestUpdate();
+  }
+
+  /** "Start with no rooms", on a home that is not the main house: make the
+   * watch's first `rooms` record. The main house has no start here: its
+   * rooms come with Watch settings' start. */
+  private async start(): Promise<void> {
+    const hass = this.hass;
+    const watchId = this.watchId;
+    if (!hass || watchId === undefined || this.starting || this.kind !== "rooms") return;
+    this.starting = true;
+    this.note = undefined;
+    const result = await startHomeRooms((base, document) => saveWatchConfig(hass, watchId, "rooms", base, document));
+    this.starting = false;
+    if (watchId !== this.watchId) return;
+    if (result.ok) {
+      this.note = { kind: "ok", text: HOME_ROOMS_STARTED_TEXT };
+    } else if (result.code === "no_record") {
+      this.note = { kind: "warn", text: PAIR_FIRST_TEXT };
+      return;
+    } else if (result.code === "conflict") {
+      this.note = { kind: "warn", text: HOME_ROOMS_START_CONFLICT_TEXT };
+    } else if (result.code === "unsupported") {
+      this.unsupported = true;
+      return;
+    } else {
+      this.note = { kind: "err", text: `Could not start: ${result.message}` };
+      return;
+    }
+    void this.load(watchId, true);
   }
 
   // ── restore ────────────────────────────────────────────────────────────
@@ -629,15 +730,17 @@ export class WaRoomsEditor extends LitElement {
     const ask = this.restoreAsk;
     if (!hass || watchId === undefined || ask === undefined || this.restoring) return;
     this.restoring = true;
+    const home = this.kind === "rooms";
+    const key = this.draftKey ?? watchId;
     let note: Note;
     try {
-      await restoreWatchConfig(hass, watchId, "behavior", ask.entry.revision, ask.baseRevision);
+      await restoreWatchConfig(hass, watchId, this.kind, ask.entry.revision, ask.baseRevision);
       note = { kind: "ok", text: `Revision ${ask.entry.revision} is back.` };
-      if (!(keptRoomsDraft(watchId)?.dirty ?? false)) forgetRoomsDraft(watchId);
+      if (!(keptRoomsDraft(key)?.dirty ?? false)) forgetRoomsDraft(key);
     } catch (err) {
       const code = errCode(err);
-      if (code === "conflict") note = { kind: "warn", text: "Not restored. The watch's settings changed somewhere else, so the newest copy is shown." };
-      else if (code === "no_record") note = { kind: "warn", text: "Not restored. Home Assistant no longer holds settings for this watch." };
+      if (code === "conflict") note = { kind: "warn", text: `Not restored. ${home ? "This home's rooms" : "The watch's settings"} changed somewhere else, so the newest copy is shown.` };
+      else if (code === "no_record") note = { kind: "warn", text: home ? "Not restored. Home Assistant no longer holds rooms for this home." : "Not restored. Home Assistant no longer holds settings for this watch." };
       else if (code === "not_found") note = { kind: "warn", text: "Not restored. That save is no longer kept." };
       else if (code === "unknown_command") {
         this.historyState = "unsupported";
@@ -741,11 +844,15 @@ export class WaRoomsEditor extends LitElement {
     </div>`;
   }
 
+  private get noun(): typeof NOUN | typeof HOME_NOUN {
+    return this.kind === "rooms" ? HOME_NOUN : NOUN;
+  }
+
   private renderSyncPill(draft: RoomsDraft | undefined): TemplateResult | typeof nothing {
     const record = this.record;
     if (record === undefined || draft === undefined) return nothing;
-    const budget = roomsBudget(draft.effective);
-    const status = configFootStatus({ record, size: budget.size, limit: budget.limit, noun: NOUN, historyState: this.historyState });
+    const budget = roomsBudget(draft.effective, this.kind);
+    const status = configFootStatus({ record, size: budget.size, limit: budget.limit, noun: this.noun, historyState: this.historyState });
     return html`<span class="tb-sync ${status.tone === "ok" ? "ok" : "warn"}" title=${`${status.state}. ${status.help}`}>
       <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${status.state}</span>
     </span>`;
@@ -803,16 +910,19 @@ export class WaRoomsEditor extends LitElement {
       const waiting = this.owners.length === 0 && this.ownList === undefined;
       return html`<div class="pe-empty">${waiting ? "Loading…" : "No watch has connected to this Home Assistant yet."}</div>`;
     }
+    const home = this.kindOf(this.watchId, watches) === "rooms";
+    if (home && this.unsupported) return html`<div class="pe-empty"><b>${HOME_ROOMS_UPDATE_TEXT}</b></div>`;
     if (this.loading) return html`<div class="pe-empty">Loading…</div>`;
     if (this.loadError !== undefined) {
       const id = this.watchId;
       return html`<div class="pe-empty">
-        <span>Could not read this watch's settings: ${this.loadError}</span>
+        <span>Could not read this ${home ? "home's rooms" : "watch's settings"}: ${this.loadError}</span>
         ${id === undefined ? nothing : html`<button class="pe-btn" @click=${() => void this.load(id)}>Try again</button>`}
       </div>`;
     }
     const record = this.record;
     if (record === undefined) return html`<div class="pe-empty">Loading…</div>`;
+    if (home) return this.renderHomeBody(record, watches);
     if (record.revision <= 0) {
       // Rooms have no start of their own; while the iPhone's move may still
       // bring the settings, say so rather than point at Watch settings' start.
@@ -825,10 +935,30 @@ export class WaRoomsEditor extends LitElement {
     return html`${renderRoomsBody(host)}${this.renderFoot(record, draft)}`;
   }
 
+  /** The body on a home that is not the main house: its own `rooms` record,
+   * with a Start of its own when there is none. While an iPhone may still
+   * move this home's rooms here it waits, and the start is a small link that
+   * asks first. */
+  private renderHomeBody(record: WatchConfigRecord, watches: readonly OwnerSummary[]): TemplateResult {
+    if (record.revision <= 0) {
+      const state = noRecordStart(watches.find((w) => w.owner_watch_id === this.watchId));
+      return html`<div class="pe-empty"><b>${HOME_ROOMS_NO_RECORD_TITLE}</b><span>${noRecordText(state, HOME_ROOMS_NO_RECORD_TEXT)}</span>
+        ${state === "wait"
+          ? html`<button class="link start-fresh" ?disabled=${this.starting} @click=${() => { if (mayStart(state)) void this.start(); }}>${this.starting ? "Starting…" : START_FRESH_BUTTON}</button>`
+          : html`<button class="pe-btn pe-primary" ?disabled=${this.starting} @click=${() => void this.start()}>${this.starting ? "Starting…" : HOME_ROOMS_START_BUTTON}</button>`}
+      </div>`;
+    }
+    const draft = this.draft;
+    const host = this.viewHost();
+    if (draft === undefined || host === undefined) return html`<div class="pe-empty"><b>${HOME_ROOMS_UNREADABLE_TEXT}</b></div>`;
+    return html`${renderRoomsBody(host)}${this.renderFoot(record, draft)}`;
+  }
+
   private renderFoot(record: WatchConfigRecord, draft: RoomsDraft): TemplateResult {
     const document = draft.effective;
-    const budget = roomsBudget(document);
-    const status = configFootStatus({ record, size: budget.size, limit: budget.limit, noun: NOUN, historyState: this.historyState });
+    const budget = roomsBudget(document, this.kind);
+    const noun = this.noun;
+    const status = configFootStatus({ record, size: budget.size, limit: budget.limit, noun, historyState: this.historyState });
     const watchId = this.watchId;
     return html`${renderConfigFoot({
       status,
@@ -839,7 +969,7 @@ export class WaRoomsEditor extends LitElement {
       onRaw: () => { this.rawCopied = false; this.rawOpen = true; },
     })}
     ${this.historyOpen ? renderConfigHistoryDialog({
-      noun: NOUN,
+      noun,
       record,
       entries: this.history,
       historyState: this.historyState,
@@ -854,7 +984,7 @@ export class WaRoomsEditor extends LitElement {
       onClosed: () => { this.historyOpen = false; },
     }) : nothing}
     ${this.rawOpen ? renderConfigRawDialog({
-      noun: NOUN,
+      noun,
       document,
       revision: record.revision,
       dirty: draft.dirty,
@@ -872,7 +1002,7 @@ export class WaRoomsEditor extends LitElement {
       @close=${() => { this.restoreAsk = undefined; }}>
       <h3 id="rm-ask-title">Restore revision ${ask.entry.revision}?</h3>
       <p>${ask.entry.updated_by === "panel" ? "Saved here" : "From the watch"}${when ? ` ${when}` : ""}, ${kb(ask.entry.size)}.</p>
-      <p>Every watch setting comes back as it was in that save, not only the rooms. It is saved again as a new revision${record ? `, after revision ${record.revision}` : ""}, and the copy shown now stays in the earlier saves.</p>
+      <p>${this.kind === "rooms" ? "This home's rooms come back as they were in that save." : "Every watch setting comes back as it was in that save, not only the rooms."} It is saved again as a new revision${record ? `, after revision ${record.revision}` : ""}, and the copy shown now stays in the earlier saves.</p>
       <div class="pe-ask-foot">
         <button class="pe-btn" ?disabled=${this.restoring} @click=${() => this.closeAsk()}>Cancel</button>
         <button class="pe-btn pe-primary" ?disabled=${this.restoring} @click=${() => void this.restore()}>${this.restoring ? "Restoring…" : "Restore"}</button>

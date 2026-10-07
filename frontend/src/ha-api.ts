@@ -429,7 +429,11 @@ export type WatchConfigKind = "pages" | "behavior" | "catalog" | "menus" | "voic
   // The watch's Control Center list, the entities its Toggle and Action
   // controls offer. Refused as `invalid` by an integration older than the
   // kind.
-  | "control_center";
+  | "control_center"
+  // The rooms of a home that is not the watch's main house, which keeps no
+  // `behavior` of its own there. Refused as `invalid` by an integration older
+  // than the kind.
+  | "rooms";
 
 /** The kinds the panel may save and restore. */
 export type WatchConfigPanelKind = Exclude<WatchConfigKind, "catalog">;
