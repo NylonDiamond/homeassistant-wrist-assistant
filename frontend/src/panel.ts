@@ -141,7 +141,6 @@ import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
 import { type SendState, agoWords, describeHomeSync, describeSend, deviceSyncLabel, homeSync, sendState, sendWaitMs } from "./send-state.js";
 import { homeDeviceRows, homeDevices, homeStyles } from "./home.js";
-import { IconFinderState, renderIconFinder } from "./icon-finder.js";
 import { type WatchAppSync, readWatchAppSync, summaryUnknown, summaryWatchAppSyncs, waitingForText, watchAppSyncKey } from "./watch-app-sync.js";
 import { type PickerForm, type TabMemory, browseAllTab, listPageEscape, listPageLead, listPageShown, listPageState, listPageStyles, listsReady, pickTab, pickerSurfaceClass, restoreTab } from "./list-page.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
@@ -2263,8 +2262,6 @@ export class WristAssistantPanel extends LitElement {
   private historySignature = "";
   /** `listItemsRequests().signature` as of the last scheduled refresh. */
   private listSignature = "";
-  /** Home's Icon names card: what is typed, chosen and copied there. */
-  private readonly iconFinder = new IconFinderState();
   private icons: IconProvider = makeIconProvider(() => {
     this.iconsTick++;
     this.requestUpdate();
@@ -18792,7 +18789,6 @@ export class WristAssistantPanel extends LitElement {
             </div>` : nothing}
           </section>
         </div>
-        ${renderIconFinder({ icons: this.icons, finder: this.iconFinder, requestUpdate: () => this.requestUpdate() })}
         ${recent.length === 0 ? nothing : html`<section class="start-sec home-recent">
           <div class="home-card-head"><h2 class="home-title">Pick up where you left off</h2></div>
           <div class="start-recent">${recent.map((hit) => this.renderStartCard(hit.row, hit.copy, () => {
