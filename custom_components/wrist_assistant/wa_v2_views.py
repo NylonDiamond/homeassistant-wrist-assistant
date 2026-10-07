@@ -9,9 +9,12 @@ are HMAC-signed back so a wrong host can't feed the watch forged data.
 
 Endpoints registered here:
 
-* `POST /api/wrist_assistant/v2/register_secret` (bearer) and
-  `POST /api/wrist_assistant/v2/pair/start` (no auth): the two ways a pair
-  starts. Both check the fields with `validate_pair_fields`.
+* `POST /api/wrist_assistant/v2/register_secret` (bearer),
+  `POST /api/wrist_assistant/v2/pair/start` (no auth) and
+  `POST /api/wrist_assistant/v2/pair/redeem` (no auth): the ways a pair
+  starts. All check the fields with `validate_pair_fields`. A sealed code
+  pairing fetches its secret from `POST /api/wrist_assistant/v2/pair/status`
+  (no auth) once an admin confirms it.
 
 * `POST /api/wrist_assistant/v2/action` — small JSON ops dispatched by
   `X-WA-Op`. Vocabulary covers services, single-entity reads, batch reads,
@@ -151,11 +154,19 @@ from .page_images_store import (
     PageImagesUnavailableError,
     decode_data as decode_page_image,
 )
-from .sealed_box import SealedBoxError, open_box, seal
+from .pairing_ws import store_paired_device
+from .sealed_box import PAIRED_SECRET_BYTES, SealedBoxError, open_box, open_offer_secret, seal
 from .wa_pair_requests import (
+    OFFER_STATE_EXPIRED,
+    OFFER_STATE_OPEN,
     PAIR_POLL_AFTER_SECONDS,
     PAIR_START_FIELDS,
+    REGISTER_ID_MAX_LEN,
+    REGISTER_TEXT_MAX_LEN,
+    normalize_offer_id,
+    remote_is_public,
     validate_pair_fields,
+    validate_pair_start,
 )
 from .watch_config_store import (
     WatchConfigConflictError,
@@ -176,6 +187,7 @@ from .widget_hmac import (
     sign_response,
     validate_wa_request,
 )
+from .widget_secret_store import LABEL_IPHONE_SELF_PROVISION
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -2344,6 +2356,68 @@ async def _op_update_metadata(ctx: _OpContext) -> Response:
     )
 
 
+# The largest `sealed.box` a re-key takes: 32 secret bytes and the 16 byte
+# tag are 64 base64 characters; this leaves room and nothing more.
+_REKEY_MAX_BOX_CHARS = 128
+
+
+async def _op_rekey(ctx: _OpContext) -> Response:
+    """Swap the caller's secret for a new one it made itself.
+
+    Body: ``{"sealed": <sealed_box.py envelope>}``, sealed with the caller's
+    current secret (``derive_key`` over the old secret and the caller's id),
+    associated data ``rekey``, plaintext the 32 raw bytes of the new secret.
+    The new secret never crosses the network in the clear, and only the
+    holder of the old one can make the box, which the signature on the
+    request already proved besides.
+
+    One store write swaps the secret and keeps everything else, the bound
+    user included (``WidgetSecretStore.replace_secret``), so a re-key never
+    changes whose device it is. The reply, ``{"ok": true}``, is signed with
+    the NEW secret: a device that verifies it knows Home Assistant holds the
+    new key before it drops the old one. This is what the phone's
+    ``rotate()`` uses in place of ``register_secret`` with a token.
+
+    Refusals are signed with the old secret, which still stands: 400
+    ``bad_box`` (no envelope, a malformed one, one that does not open, or a
+    plaintext that is not 32 bytes) and 410 when the entry went in a race
+    with removal.
+    """
+    try:
+        new_secret = open_box(
+            ctx.secret_bytes,
+            ctx.watch_id,
+            "rekey",
+            ctx.payload.get("sealed"),
+            max_box_chars=_REKEY_MAX_BOX_CHARS,
+        )
+    except SealedBoxError as err:
+        return ctx.signed_json(
+            {"ok": False, "error": "bad_box", "message": err.message}, status=400
+        )
+    if len(new_secret) != PAIRED_SECRET_BYTES:
+        return ctx.signed_json(
+            {
+                "ok": False,
+                "error": "bad_box",
+                "message": f"the new secret must be {PAIRED_SECRET_BYTES} bytes",
+            },
+            status=400,
+        )
+    store = ctx.domain_data.widget_secret_store
+    if not store.replace_secret(ctx.watch_id, base64.b64encode(new_secret).decode("ascii")):
+        return ctx.signed_json({"ok": False, "error": "not registered"}, status=410)
+    entry = store.get(ctx.watch_id)
+    log_secret_reprovisioned(
+        ctx.hass,
+        watch_id=ctx.watch_id,
+        label=entry.label if entry is not None else None,
+        app_version=entry.app_version if entry is not None else None,
+    )
+    ctx.secret_bytes = new_secret
+    return ctx.signed_json({"ok": True})
+
+
 # ── /v2/stream/{token} view ──────────────────────────────────────────────
 
 
@@ -2707,21 +2781,49 @@ class WARegisterSecretView(HomeAssistantView):
 # ── /v2/pair/start view ──────────────────────────────────────────────────
 
 
+def _came_through_cloud(hass: HomeAssistant) -> bool:
+    """Whether the request being answered came in through Home Assistant
+    Cloud's remote access.
+
+    Such a request reaches Home Assistant through the cloud tunnel, and its
+    address can look like the machine itself, so the address alone would
+    call it local. Home Assistant's own local-only users are checked the same
+    way. Looked up lazily and guarded: an install without the cloud
+    integration, or a Home Assistant without the helper, answers False.
+    """
+    try:
+        from homeassistant.helpers.network import is_cloud_connection
+
+        return bool(is_cloud_connection(hass))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 class WAPairStartView(HomeAssistantView):
-    """Unauthenticated endpoint where a watch with no iPhone asks to pair.
+    """Unauthenticated endpoint where a device asks to pair by code.
 
-    The watch sends its id and a fresh secret with the same fields
-    `register_secret` takes, checked by the same rules with the same error
-    texts. The reply is a six-character code for an admin to type into the
-    panel. This view only stores the request: it writes nothing to the
-    secret store, touches no device and logs nothing to the Logbook, so the
-    pair signs nothing until an admin confirms it (`pairing_ws.py`). The
-    watch learns of the confirm by polling `verify_identity` with the new
-    pair, which answers 401 until then.
+    The device sends its id with the same fields `register_secret` takes,
+    checked by the same rules with the same error texts
+    (`wa_pair_requests.validate_pair_start`). Two forms:
 
-    Requests last ten minutes, one per watch (a new start replaces the old
+    * sealed, current builds: `public_key_b64` (a 32 byte X25519 public key)
+      and no `secret_b64`, and `kind` (`watch`, the default, or `iphone`).
+      The confirm makes the secret and the device fetches it, sealed to its
+      key, from `/v2/pair/status`. Nothing secret crosses the network.
+    * old, watches on older builds: `secret_b64`, the device's own secret.
+      The device learns of the confirm by polling `verify_identity` with
+      it, which answers 401 until then.
+
+    The reply is a six-character code for an admin to type into the panel.
+    This view only stores the request: it writes nothing to the secret
+    store, touches no device and logs nothing to the Logbook, so nothing
+    signs until an admin confirms it (`pairing_ws.py`).
+
+    Requests last ten minutes, one per device (a new start replaces the old
     one), at most four per address and 64 in all wait at once; past either
-    it answers 429. The address is kept for the panel's lookup.
+    it answers 429. The address is kept for the panel's lookup, with
+    whether it is outside the home network (or came through Home Assistant
+    Cloud), in which case the confirm needs the admin's `allow_remote`.
     """
 
     url = "/api/wrist_assistant/v2/pair/start"
@@ -2744,19 +2846,29 @@ class WAPairStartView(HomeAssistantView):
         if not isinstance(payload, dict):
             return self.json_message("Expected JSON object body", status_code=400)
 
-        # A watch pairing by code has no iPhone to name and no label of its
+        # A device pairing by code has no iPhone to name and no label of its
         # own, so only the fields it may set are read.
-        fields, error = validate_pair_fields(
+        start, error = validate_pair_start(
             {key: payload[key] for key in PAIR_START_FIELDS if key in payload}
         )
         if error is not None:
             return self.json_message(error.message, status_code=error.status)
 
-        pending = pair_store.start(fields, remote=request.remote)
+        pending = pair_store.start(
+            start.fields,
+            remote=request.remote,
+            remote_public=remote_is_public(request.remote) or _came_through_cloud(self._hass),
+            kind=start.kind,
+            public_key=start.public_key,
+        )
         if pending is None:
             return self.json({"ok": False, "error": "too_many_pending"}, status_code=429)
         _LOGGER.debug(
-            "Pairing code issued for watch_id=%s from %s", fields.watch_id, pending.remote
+            "Pairing code issued for %s watch_id=%s from %s (%s)",
+            pending.kind,
+            pending.watch_id,
+            pending.remote,
+            "sealed" if pending.sealed else "secret sent",
         )
         return self.json(
             {
@@ -2765,6 +2877,206 @@ class WAPairStartView(HomeAssistantView):
                 "expires_in": pair_store.expires_in(pending),
                 "poll_after": PAIR_POLL_AFTER_SECONDS,
             }
+        )
+
+
+# ── /v2/pair/status view ─────────────────────────────────────────────────
+
+
+class WAPairStatusView(HomeAssistantView):
+    """Unauthenticated endpoint where a sealed code pairing fetches its secret.
+
+    Body `{"watch_id"}`. Answers 200 with one of:
+
+    * `{"state": "pending"}`: the code still waits for an admin.
+    * `{"state": "confirmed", "server_public_key_b64", "nonce", "box"}`: the
+      secret, sealed to the device's X25519 public key
+      (`sealed_box.seal_pair_secret`). Kept for ten minutes after the
+      confirm, and handed out as often as it is asked for in that time.
+    * `{"state": "expired"}`: no code and no box, whatever the reason.
+
+    Anyone may ask: only the holder of the device's private key can open
+    the box. The device then checks the secret with a signed
+    `verify_identity`, as an old-form watch does. A start for the same id
+    drops the box, since the device started over with a new key pair.
+    """
+
+    url = "/api/wrist_assistant/v2/pair/status"
+    name = "api:wrist_assistant_v2_pair_status"
+    requires_auth = False
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass = hass
+
+    async def post(self, request: Request) -> Response:
+        domain_data = self._hass.data.get(DOMAIN)
+        pair_store = getattr(domain_data, "pair_request_store", None)
+        if pair_store is None:
+            return self.json_message("Integration not loaded", status_code=503)
+        try:
+            payload = await request.json()
+        except (ValueError, UnicodeDecodeError):
+            return self.json_message("Invalid JSON body", status_code=400)
+        if not isinstance(payload, dict):
+            return self.json_message("Expected JSON object body", status_code=400)
+        watch_id = payload.get("watch_id")
+        if not isinstance(watch_id, str) or not watch_id:
+            return self.json_message("watch_id required", status_code=400)
+        if len(watch_id) > REGISTER_ID_MAX_LEN:
+            return self.json_message("watch_id too long", status_code=400)
+        state, sealed = pair_store.status(watch_id)
+        return self.json({"state": state, **(sealed or {})})
+
+
+# ── /v2/pair/redeem view ─────────────────────────────────────────────────
+
+
+# The largest `sealed.box` a redeem takes: 32 secret bytes and the 16 byte
+# tag are 64 base64 characters.
+_REDEEM_MAX_BOX_CHARS = 128
+
+
+class WAPairRedeemView(HomeAssistantView):
+    """Unauthenticated endpoint where an iPhone redeems a QR offer.
+
+    Body `{offer_id, device_id, device_name?, model?, app_version?,
+    app_build?, sealed}`. `offer_id` is `sha256(token)` in hex. `sealed` is a
+    `sealed_box.py` envelope keyed from the QR code's token and the
+    `device_id` (`sealed_box.open_offer_secret`), holding the 32 raw bytes
+    of the secret the phone made. The token itself never crosses the
+    network, so someone watching plain `http://` sees neither it nor the
+    secret, and nobody without the QR code can make a box that opens.
+
+    In order: the fields are checked (400, the shared field codes); the
+    offer is found (404 `unknown_offer`, also for one already spent or
+    cancelled) and must not have run out (410 `expired`); the box must open
+    (400 `bad_box`); a `device_id` bound to another user is refused unless
+    the admin chose Replace on the offer (409 `bound_to_other_user`). Then
+    the secret is stored with the iPhone label, bound to the offer's user,
+    by the same write a code confirm makes (`pairing_ws.store_paired_device`),
+    and the offer is spent. A refused redeem leaves the offer open.
+    Refusals are `{"ok": false, "error", "message"}`.
+
+    The reply is `{"instance_id", "server_time"}`, signed with the new secret
+    exactly as a signed op's reply is (`widget_hmac.sign_response`) with the
+    op `pair_redeem` and the `device_id` as the signer: headers `X-WA-Ts` and
+    `X-WA-Sig` over `v2|pair_redeem|<device_id>|<ts>|response` and the body
+    bytes. The phone checks that signature and that `instance_id` is the QR
+    code's `i` before it saves the secret. `server_time` lets it name a
+    wrong clock before its first signed request fails.
+
+    `model` is checked for length and not stored: the entry has no field
+    for it yet.
+    """
+
+    url = "/api/wrist_assistant/v2/pair/redeem"
+    name = "api:wrist_assistant_v2_pair_redeem"
+    requires_auth = False
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass = hass
+
+    def _refuse(self, status: int, code: str, message: str) -> Response:
+        return self.json({"ok": False, "error": code, "message": message}, status_code=status)
+
+    async def post(self, request: Request) -> Response:
+        domain_data = self._hass.data.get(DOMAIN)
+        offer_store = getattr(domain_data, "pair_offer_store", None)
+        secret_store = getattr(domain_data, "widget_secret_store", None)
+        if offer_store is None or secret_store is None:
+            return self._refuse(503, "unavailable", "Integration not loaded")
+
+        try:
+            payload = await request.json()
+        except (ValueError, UnicodeDecodeError):
+            return self._refuse(400, "invalid_request", "Invalid JSON body")
+        if not isinstance(payload, dict):
+            return self._refuse(400, "invalid_request", "Expected JSON object body")
+
+        offer_id = normalize_offer_id(payload.get("offer_id"))
+        if offer_id is None:
+            return self._refuse(400, "invalid_request", "offer_id must be 64 hex characters")
+        device_id = payload.get("device_id")
+        claimed = {
+            "watch_id": device_id,
+            "label": LABEL_IPHONE_SELF_PROVISION,
+            "device_name": payload.get("device_name"),
+            "app_version": payload.get("app_version"),
+            "app_build": payload.get("app_build"),
+        }
+        _fields, error = validate_pair_fields(claimed, secret_optional=True)
+        if error is not None:
+            return self._refuse(error.status, error.code, error.message)
+        model = payload.get("model")
+        if model is not None and (not isinstance(model, str) or len(model) > REGISTER_TEXT_MAX_LEN):
+            return self._refuse(400, "invalid_field", "model too long")
+
+        # The only await, ahead of every read of the stores, so the offer is
+        # looked up, checked and spent in one go.
+        try:
+            instance_uuid = await ha_instance_id.async_get(self._hass)
+        except Exception:  # noqa: BLE001
+            instance_uuid = None
+        if not instance_uuid:
+            return self._refuse(503, "unavailable", "Home Assistant has no instance id yet")
+
+        now = offer_store.now()
+        state, offer = offer_store.state_of(offer_id, now=now)
+        if offer is None or state not in (OFFER_STATE_OPEN, OFFER_STATE_EXPIRED):
+            return self._refuse(404, "unknown_offer", "No such QR code. Show a new one.")
+        if state == OFFER_STATE_EXPIRED:
+            return self._refuse(410, "expired", "This QR code ran out. Show a new one.")
+        try:
+            secret = open_offer_secret(
+                offer.token, device_id, payload.get("sealed"), max_box_chars=_REDEEM_MAX_BOX_CHARS
+            )
+        except SealedBoxError:
+            return self._refuse(400, "bad_box", "The sealed key does not open with this QR code.")
+        if len(secret) != PAIRED_SECRET_BYTES:
+            return self._refuse(
+                400, "bad_box", f"The sealed key must be {PAIRED_SECRET_BYTES} bytes."
+            )
+
+        existing = secret_store.get(device_id)
+        if (
+            existing is not None
+            and existing.user_id is not None
+            and existing.user_id != offer.user_id
+            and not offer.replace
+        ):
+            _LOGGER.warning(
+                "Refused QR redeem for watch_id=%s: bound to another user", device_id
+            )
+            return self._refuse(
+                409,
+                "bound_to_other_user",
+                "This iPhone is paired for another person. Ask an admin to show a "
+                "QR code with Replace ticked.",
+            )
+
+        secret_b64 = base64.b64encode(secret).decode("ascii")
+        fields, error = validate_pair_fields({**claimed, "secret_b64": secret_b64})
+        if error is not None:
+            return self._refuse(error.status, error.code, error.message)
+        result = store_paired_device(self._hass, secret_store, fields, user_id=offer.user_id)
+        offer_store.redeem(offer, device_id=device_id, device_name=fields.device_name, now=now)
+        _LOGGER.info(
+            "Paired iphone watch_id=%s by QR offer %s… (%s), user=%s, offered by %s",
+            device_id,
+            offer_id[:8],
+            result,
+            offer.user_id,
+            offer.admin_id,
+        )
+
+        ts = int(time.time())
+        body = orjson.dumps({"instance_id": instance_uuid, "server_time": ts})
+        sig = sign_response(secret, "pair_redeem", device_id, ts, body, version=WA_PROTOCOL_VERSION)
+        return Response(
+            body=body,
+            status=200,
+            content_type="application/json",
+            headers={"X-WA-Ts": str(ts), "X-WA-Sig": sig},
         )
 
 
@@ -3939,4 +4251,5 @@ _OP_HANDLERS: dict[str, Any] = {
     "stream_close": _op_stream_close,
     "verify_identity": _op_verify_identity,
     "update_metadata": _op_update_metadata,
+    "rekey": _op_rekey,
 }

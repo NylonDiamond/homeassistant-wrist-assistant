@@ -51,8 +51,10 @@ from .const import (
     NOTIFICATION_TOKEN_STORAGE_KEY,
     NOTIFICATION_TOKEN_STORAGE_VERSION,
     PAGE_IMAGES_CAPABILITY,
+    PHONE_PAIRING_CAPABILITY,
     PUSH_PAIRED_BY_USER_CAPABILITY,
     PLATFORMS,
+    SEALED_CODE_PAIRING_CAPABILITY,
     WA_HMAC_NONCE_TTL_SECONDS,
     WATCH_CONFIG_CAPABILITY,
     WATCH_CONFIG_CATALOG_CAPABILITY,
@@ -93,7 +95,7 @@ from .watch_voices_store import WatchVoicesStore
 from .notifications import NotificationTokenStore, TokenEntry, resolve_push_routes
 from .audio_upload import CLEANUP_INTERVAL_SECONDS, async_cleanup_clips
 from .pairing_ws import async_register_pairing_commands
-from .wa_pair_requests import PairRequestStore
+from .wa_pair_requests import PairOfferStore, PairRequestStore
 from .wa_stream_tokens import BatchSnapshotTokenStore, StreamTokenStore
 from .wa_v2_views import (
     WAActionView,
@@ -101,7 +103,9 @@ from .wa_v2_views import (
     WADeltaView,
     WANotificationSnapshotLiveView,
     WANotificationSnapshotView,
+    WAPairRedeemView,
     WAPairStartView,
+    WAPairStatusView,
     WARegisterSecretView,
     WAStreamView,
     WAVersionView,
@@ -689,6 +693,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # Watches waiting for an admin to confirm their pairing code. Memory only:
     # a restart drops them and the watch asks for a new code.
     pair_request_store = PairRequestStore()
+    # The panel's QR offers for an iPhone. Memory only, like the codes: a
+    # restart drops them and the panel shows a new one.
+    pair_offer_store = PairOfferStore()
     notification_snapshot_store = NotificationSnapshotStore()
     snapshot_crop_store = SnapshotCropStore(hass)
     await snapshot_crop_store.async_load()
@@ -903,6 +910,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     # Pairing by code (wa_v2_views.py, WAPairStartView, and pairing_ws.py): a
     # watch with no iPhone offers it only when /version lists this.
     coordinator.register_capability(WATCH_PAIRING_CAPABILITY)
+    # Sealed code pairing (wa_pair_requests.validate_pair_start, the confirm
+    # in pairing_ws.py, WAPairStatusView): a device sends an X25519 public
+    # key in place of its secret only when /version lists this.
+    coordinator.register_capability(SEALED_CODE_PAIRING_CAPABILITY)
+    # iPhone pairing with no Home Assistant token: the panel's QR offer,
+    # WAPairRedeemView, an iPhone by code, and the signed rekey op.
+    coordinator.register_capability(PHONE_PAIRING_CAPABILITY)
     # The home's HTTP action library (http_actions_store.py): the signed
     # http_actions_hand_over, http_actions_get and http_action_run ops and
     # `http_actions` on every delta reply. The phone hands its library over,
@@ -945,6 +959,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         card_preview_store=card_preview_store,
         watch_config_store=watch_config_store,
         pair_request_store=pair_request_store,
+        pair_offer_store=pair_offer_store,
         watch_voices_store=watch_voices_store,
         http_actions_store=http_actions_store,
         http_action_runner=http_action_runner,
@@ -983,6 +998,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         hass.data[f"{DOMAIN}_nonce_cache"] = nonce_cache
         hass.http.register_view(WARegisterSecretView(hass))
         hass.http.register_view(WAPairStartView(hass))
+        # A sealed code pairing fetches its secret here once confirmed, and
+        # an iPhone redeems a QR offer here. Both unauthenticated: the box
+        # opens only for the device, and the redeem only with the QR token.
+        hass.http.register_view(WAPairStatusView(hass))
+        hass.http.register_view(WAPairRedeemView(hass))
         hass.http.register_view(WAVersionView(hass))
         hass.http.register_view(WAActionView(hass, nonce_cache))
         hass.http.register_view(WADeltaView(hass, nonce_cache))
@@ -1041,6 +1061,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         stream_token_store.shutdown()
         batch_snapshot_token_store.shutdown()
         pair_request_store.shutdown()
+        pair_offer_store.shutdown()
         complication_push.shutdown()
 
     entry.async_on_unload(
@@ -1214,6 +1235,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: WristAssistantConfigEnt
             data.stream_token_store.shutdown()
             data.batch_snapshot_token_store.shutdown()
             data.pair_request_store.shutdown()
+            data.pair_offer_store.shutdown()
             # A reload builds a fresh one. Without this the old instance's
             # parked timers still fire, against a relay client and a store
             # this entry has already let go of.

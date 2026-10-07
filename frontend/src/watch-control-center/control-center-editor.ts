@@ -716,7 +716,7 @@ export class WaControlCenterEditor extends LitElement {
     if (result.ok) {
       this.note = { kind: "ok", text: "Started with an empty list. Add entities, then save; the watch picks them up the next time it checks." };
     } else if (result.code === "no_record") {
-      this.note = { kind: "warn", text: `${CONTROL_CENTER_PAIR_FIRST_TEXT} Go to Watch app, Settings, Pair a watch.` };
+      this.note = { kind: "warn", text: `${CONTROL_CENTER_PAIR_FIRST_TEXT} Go to Watch app, Settings, Pair a device.` };
       return;
     } else if (result.code === "conflict") {
       this.note = { kind: "warn", text: "A Control Center list arrived meanwhile, so that is shown." };

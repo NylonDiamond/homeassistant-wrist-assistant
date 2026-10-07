@@ -1444,13 +1444,14 @@ export class WristAssistantPanel extends LitElement {
     return this.owners;
   }, () => this.icons, (watchId) => this.pickWatch(watchId));
 
-  /** Home's "Pair a watch" dialog is open. */
+  /** Home's "Pair a device" dialog is open. */
   @state() private pairOpen = false;
-  /** The card in that dialog, the same card the Settings page draws. A watch
-   * paired on it joins the device list and becomes the shared watch. */
-  private homePair = new PairWatchCard(() => this.requestUpdate(), async (watchId) => {
+  /** The card in that dialog, the same card the Settings page draws. A
+   * device paired on it joins the device list, and a watch becomes the
+   * shared watch. */
+  private homePair = new PairWatchCard(() => this.requestUpdate(), async (watchId, _stale, kind) => {
     await this.loadOwners();
-    this.pickWatch(watchId);
+    if (watchId !== undefined && kind === "watch") this.pickWatch(watchId);
   });
 
   /** The device Home's sheet is open on, by owner id. */
@@ -5147,7 +5148,7 @@ export class WristAssistantPanel extends LitElement {
       box-shadow: 0 12px 40px rgba(0,0,0,.4);
     }
     dialog.help-dialog::backdrop { background: rgba(0,0,0,.45); }
-    /* Home's "Pair a watch": the Settings page's card alone, as wide as a
+    /* Home's "Pair a device": the Settings page's card alone, as wide as a
        card on that page. */
     dialog.pair-dialog {
       width: min(460px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 8px 14px;
@@ -6238,6 +6239,9 @@ export class WristAssistantPanel extends LitElement {
 
   override disconnectedCallback() {
     super.disconnectedCallback();
+    // A QR code still open in Home's pairing dialog stops working with the
+    // page that showed it.
+    this.closePairDialog();
     this.sizeObserver.disconnect();
     this.fades.disconnect();
     this.stageObserver?.disconnect();
@@ -18760,8 +18764,9 @@ export class WristAssistantPanel extends LitElement {
    *
    * Watch app has a card per screen, for an administrator in a home with a
    * watch, the same gate the screens themselves have; with no watch yet, one
-   * card that opens the "Pair a watch" dialog. The Devices card's own Pair a
-   * watch opens the same dialog, for an administrator.
+   * card that opens the "Pair a device" dialog. The Devices card's own Pair a
+   * device opens the same dialog, for an administrator, and each device row
+   * has a quiet Remove that opens the row's sheet on its Forget step.
    * Complications and widgets has how many there are (the count the list
    * gives), New, Browse all, Import and the online gallery. Devices has each
    * device, Synced or Waiting (or Nothing waiting, for one that has nothing
@@ -18816,8 +18821,8 @@ export class WristAssistantPanel extends LitElement {
             <div class="home-card-head">
               <span class="home-chip" aria-hidden="true">${uiIcon("phone")}</span>
               <h2 class="home-title">Devices</h2>
-              ${admin ? html`<button class="home-btn home-pair-open" title="Pair a watch that shows a code"
-                @click=${() => this.openPairDialog()}>${uiIcon("plus")}<span>Pair a watch</span></button>` : nothing}
+              ${admin ? html`<button class="home-btn home-pair-open" title="Pair a watch or iPhone, by a code or a QR code"
+                @click=${() => this.openPairDialog()}>${uiIcon("plus")}<span>Pair a device</span></button>` : nothing}
             </div>
             <span class="home-sub">Watches and phones that get your changes</span>
             ${devices.length === 0
@@ -18830,6 +18835,8 @@ export class WristAssistantPanel extends LitElement {
                       : html`<span class="home-device-why"> · ${waitingForText(d.waitingFor)}</span>`}</span>
                     <span class="home-device-go" aria-hidden="true">${uiIcon("chevron")}</span>
                   </button>
+                  ${admin ? html`<button type="button" class="home-device-remove" title=${`Remove ${d.name} from this Home Assistant`}
+                    @click=${() => this.openDeviceSheet(d.id, true)}>Remove</button>` : nothing}
                 </li>`)}</ul>`}
             ${devices.length === 0 ? nothing : html`<p class="home-small">${admin
               ? "Synced, Waiting and Nothing waiting cover complications and widgets, and on a watch also its pages, menus, settings and the rest of the watch app."
@@ -18857,9 +18864,10 @@ export class WristAssistantPanel extends LitElement {
       ${this.deviceSheet !== undefined ? this.renderDeviceSheet(this.deviceSheet, devices, admin) : nothing}`;
   }
 
-  /** Open Home's sheet on one device, starting on its overview. */
-  private openDeviceSheet(ownerId: string) {
-    this.deviceForgetAsk = false;
+  /** Open Home's sheet on one device, starting on its overview, or on its
+   * Forget step for a row's Remove. */
+  private openDeviceSheet(ownerId: string, forget = false) {
+    this.deviceForgetAsk = forget;
     this.deviceForgetError = undefined;
     this.deviceRename = undefined;
     this.deviceRenameError = undefined;
@@ -18940,7 +18948,7 @@ export class WristAssistantPanel extends LitElement {
           this.goTo(path);
         }}>${t.label}${badge(t.count === undefined ? undefined : counts[t.count])}</a>`;
     };
-    const title = this.deviceForgetAsk ? `Forget “${row.name}”?` : row.name;
+    const title = this.deviceForgetAsk ? `Remove “${row.name}”?` : row.name;
     const facts = deviceFacts(owner, row.kind).join(" · ");
     // One dialog for both steps, so the confirm step keeps the open modal:
     // a second template would swap in a new, closed dialog element.
@@ -18955,7 +18963,7 @@ export class WristAssistantPanel extends LitElement {
             <button class="ghost dev-forget" ?disabled=${this.deviceForgetBusy}
               @click=${() => { this.deviceForgetAsk = false; this.deviceForgetError = undefined; }}>Back</button>
             <button class="danger" ?disabled=${this.deviceForgetBusy}
-              @click=${() => void this.forgetDeviceNow(ownerId)}>${this.deviceForgetBusy ? "Forgetting…" : "Forget device"}</button>
+              @click=${() => void this.forgetDeviceNow(ownerId)}>${this.deviceForgetBusy ? "Removing…" : "Remove device"}</button>
           </div>
         </div>`;
     const renaming = this.deviceRename !== undefined;
@@ -18980,7 +18988,7 @@ export class WristAssistantPanel extends LitElement {
           <span><b>${deviceSyncLabel(row.sync)}</b>${row.waitingFor.length === 0 ? nothing
             : html`<span class="home-device-why"> · ${waitingForText(row.waitingFor)}</span>`}</span></div>
         <div class="dev-acts">
-          ${admin ? html`<button class="danger dev-forget" @click=${() => { this.deviceForgetAsk = true; }}>${uiIcon("delete")}<span>Forget device</span></button>` : nothing}
+          ${admin ? html`<button class="danger dev-forget" @click=${() => { this.deviceForgetAsk = true; }}>${uiIcon("delete")}<span>Remove device</span></button>` : nothing}
         </div>
       </div>`;
     return html`<dialog class="xf dev-dialog" aria-label=${title} @close=${close}
@@ -19055,7 +19063,7 @@ export class WristAssistantPanel extends LitElement {
     }
   }
 
-  /** Home's "Pair a watch" dialog, opened from the Devices card, or from the
+  /** Home's "Pair a device" dialog, opened from the Devices card, or from the
    * Watch app card in a home with no watch yet. */
   private openPairDialog() {
     this.homePair.open(this.hass);
@@ -19070,10 +19078,11 @@ export class WristAssistantPanel extends LitElement {
 
   /** The dialog: the Settings page's own pairing card, with Close on its
    * title row. A native dialog brings the backdrop and Escape with it. It
-   * stays open after a watch pairs, so its "Paired" line can be read; the
-   * new watch is already in the Devices card behind it. */
+   * stays open after a device pairs, so its "Paired" line can be read; the
+   * new device is already in the Devices card behind it. Closing it
+   * withdraws a QR code still open. */
   private renderPairDialog() {
-    return html`<dialog class="pair-dialog" aria-label="Pair a watch" @close=${() => this.closePairDialog()}>
+    return html`<dialog class="pair-dialog" aria-label="Pair a device" @close=${() => this.closePairDialog()}>
       <div class="ws-body">${this.homePair.render({
         headEnd: html`<button class="pick" title="Close (Escape)" @click=${() => this.closePairDialog()}>Close</button>`,
       })}</div>

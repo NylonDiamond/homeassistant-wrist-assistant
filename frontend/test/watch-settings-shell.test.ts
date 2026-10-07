@@ -54,9 +54,17 @@ const setting = (key: string): CatalogSetting => {
 
 /** Answers a settings read with the watch's behavior record (the
  * notification style is refused as an older integration does, so its cards
- * stay out), a save over the revision held, a code lookup with the new watch,
- * and a confirm with it paired. */
-function fakeHass(newWatch: string, opts: { pickUser?: boolean; boundUser?: string } = {}) {
+ * stay out), a save over the revision held, a code lookup with the new watch
+ * (`lookup` adds to what it finds), and a confirm with it paired, refused
+ * when it lacks a key `confirmWants` names. A QR offer answers with a link,
+ * and its state is whatever `offerState` holds. */
+function fakeHass(newWatch: string, opts: {
+  pickUser?: boolean;
+  boundUser?: string;
+  lookup?: Record<string, unknown>;
+  confirmWants?: "replace" | "allow_remote";
+  offerState?: { state: string; device_name?: string; user_id?: string };
+} = {}) {
   const sent: Record<string, unknown>[] = [];
   const store = new Map<string, WatchConfigRecord>();
   const hass = {
@@ -81,16 +89,27 @@ function fakeHass(newWatch: string, opts: { pickUser?: boolean; boundUser?: stri
         if (type.endsWith("/lookup")) {
           // Only an integration whose confirm takes a user sends `bound_user_id`.
           const bound = opts.pickUser ? { bound_user_id: opts.boundUser ?? null } : {};
-          return { found: true, watch_id: newWatch, device_name: "New Watch", expires_in: 300, already_paired: false, paired_by_other_user: false, ...bound };
+          return { found: true, watch_id: newWatch, device_name: "New Watch", expires_in: 300, already_paired: false, paired_by_other_user: false, ...bound, ...opts.lookup };
         }
         if (type === "config/auth/list") {
           return [
-            { id: "sup", name: "Supervisor", is_active: true, system_generated: true },
-            { id: "chen", name: "Chen", is_active: true, system_generated: false },
-            { id: "root", name: "Jesse", is_active: true, system_generated: false },
+            { id: "sup", name: "Supervisor", is_active: true, system_generated: true, group_ids: ["system-admin"] },
+            { id: "chen", name: "Chen", is_active: true, system_generated: false, group_ids: ["system-users"] },
+            { id: "root", name: "Jesse", is_active: true, system_generated: false, is_owner: true, group_ids: ["system-admin"] },
           ];
         }
-        if (type.endsWith("/confirm")) return { ok: true, watch_id: newWatch, device_name: "New Watch", result: "new" };
+        if (type.endsWith("/confirm")) {
+          const wants = opts.confirmWants;
+          if (wants !== undefined && msg[wants] !== true) {
+            throw Object.assign(new Error(`${wants} required`), { code: wants === "replace" ? "needs_replace" : "needs_allow_remote" });
+          }
+          return { ok: true, watch_id: newWatch, device_name: "New Watch", result: "new" };
+        }
+        if (type.endsWith("/pair/offer")) {
+          return { offer_id: "off1", url: "wristassistant://pair#v=1&i=abc&t=TOKEN&u=http%3A%2F%2F192.168.1.4%3A8123", expires_in: 300 };
+        }
+        if (type.endsWith("/pair/offer_status")) return opts.offerState ?? { state: "open" };
+        if (type.endsWith("/pair/offer_cancel")) return null;
         throw Object.assign(new Error("unknown"), { code: "unknown_command" });
       },
       async subscribeMessage() {
@@ -112,13 +131,24 @@ interface Inside {
   askDiscard(): void;
 }
 
-/** The Settings page's "Pair a watch" card (`watch-pair-view.ts`). */
+/** The Settings page's "Pair a device" card (`watch-pair-view.ts`). */
 interface PairInside {
-  pair: { code: string; found?: Record<string, unknown>; users?: readonly { id: string; label: string }[]; userId?: string; done?: string };
+  pair: {
+    code: string; found?: Record<string, unknown>; users?: readonly { id: string; label: string }[]; userId?: string; done?: string;
+    error?: string; asked?: { replace?: boolean; remote?: boolean };
+  };
+  offer: { usersRead: boolean; users?: readonly { id: string; label: string }[]; userId?: string; open?: { id: string; url: string }; expired?: boolean; done?: string; error?: string };
+  setMode(mode: "code" | "qr"): void;
   setPairCode(raw: string): string;
   pickPairUser(userId: string): void;
+  tickPair(box: "replace" | "remote", on: boolean): void;
   lookUpPair(): Promise<void>;
   confirmPair(): Promise<void>;
+  pickOfferUser(userId: string): void;
+  setOfferReplace(on: boolean): void;
+  showOffer(): Promise<void>;
+  pollOffer(): Promise<void>;
+  polling: boolean;
 }
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -139,6 +169,7 @@ describe("Watch settings as a page under the Watch app row", () => {
   async function page(current = "w2", list: readonly OwnerSummary[] = WATCHES, hassOpts: Parameters<typeof fakeHass>[1] = {}) {
     const ha = fakeHass("w3", hassOpts);
     let owners: OwnerSummary[] = [...list];
+    let refreshes = 0;
     const paired: string[] = [];
     const host = {
       addController: () => undefined,
@@ -149,7 +180,7 @@ describe("Watch settings as a page under the Watch app row", () => {
     };
     const ws = new WatchSettings(
       host as unknown as ConstructorParameters<typeof WatchSettings>[0],
-      async () => owners,
+      async () => { refreshes++; return owners; },
       undefined,
       (id) => { paired.push(id); },
     );
@@ -161,6 +192,7 @@ describe("Watch settings as a page under the Watch app row", () => {
     await show(current);
     return {
       ws, inside, ha, paired, show,
+      refreshes: () => refreshes,
       text: () => flatten(ws.render(ha.hass, owners)),
       bar: () => flatten(ws.renderBar()),
       addWatch(o: OwnerSummary) { owners = [...owners, o]; },
@@ -295,30 +327,42 @@ describe("Watch settings as a page under the Watch app row", () => {
       return opened;
     }
 
-    it("asks, the administrator first and chosen, and pairs for the person picked", async () => {
+    it("asks, with nobody picked and Pair held until someone is, and pairs for the person picked", async () => {
       const { inside, ha, text } = await lookedUp({ pickUser: true });
       const shown = text();
+      expect(shown).toContain("Pair a device");
       expect(shown).toContain("Whose watch is this?");
-      expect(shown).toContain("Jesse (you)");
-      expect(shown).toContain(">Chen</option>");
+      expect(shown).toContain("Choose a person");
+      expect(shown).toContain(">Jesse (you) · Admin</option>");
+      expect(shown).toContain(">Chen · User</option>");
       expect(shown).not.toContain("Supervisor");
       expect(shown).toContain("their iPhone gets its Fast alerts");
-      expect(shown.indexOf("Jesse (you)")).toBeLessThan(shown.indexOf(">Chen<"));
-      expect(inside.pairCard.pair.userId).toBe("root");
+      expect(shown.indexOf("Jesse (you)")).toBeLessThan(shown.indexOf(">Chen · User<"));
+      expect(inside.pairCard.pair.userId).toBeUndefined();
+      expect(shown).toContain(`ws-pair-go" ?disabled=true`);
+
+      // Pair does nothing while nobody is picked.
+      await inside.pairCard.confirmPair();
+      expect(confirms(ha.sent)).toHaveLength(0);
 
       inside.pairCard.pickPairUser("chen");
+      expect(text()).toContain(`ws-pair-go" ?disabled=false`);
+      expect(text()).not.toContain("Choose a person");
       await inside.pairCard.confirmPair();
       const confirm = confirms(ha.sent)[0]!;
       expect(confirm.user_id).toBe("chen");
       expect(inside.pairCard.pair.done).toBe("Paired New Watch for Chen.");
     });
 
-    it("sends no user when the administrator keeps themself", async () => {
+    it("sends no user when the administrator picks themself", async () => {
       const { inside, ha } = await lookedUp({ pickUser: true });
+      inside.pairCard.pickPairUser("root");
       await inside.pairCard.confirmPair();
       const confirm = confirms(ha.sent)[0]!;
       expect("user_id" in confirm).toBe(false);
-      expect(inside.pairCard.pair.done).toBe("Paired New Watch.");
+      expect("replace" in confirm).toBe(false);
+      expect("allow_remote" in confirm).toBe(false);
+      expect(inside.pairCard.pair.done).toBe("Paired New Watch for Jesse.");
     });
 
     it("starts on the person a known watch already belongs to", async () => {
@@ -334,6 +378,201 @@ describe("Watch settings as a page under the Watch app row", () => {
       expect(ha.sent.some((m) => m.type === "config/auth/list")).toBe(false);
       await inside.pairCard.confirmPair();
       expect("user_id" in confirms(ha.sent)[0]!).toBe(false);
+    });
+
+    it("holds Pair for a paired watch until Replace is ticked, then sends replace", async () => {
+      const { inside, ha, text } = await lookedUp({ lookup: { already_paired: true } });
+      expect(text()).toContain("This watch is already paired.");
+      expect(text()).toContain("Replace its pairing");
+      expect(text()).not.toContain("I expect this watch");
+      expect(text()).toContain(`ws-pair-go" ?disabled=true`);
+      await inside.pairCard.confirmPair();
+      expect(confirms(ha.sent)).toHaveLength(0);
+      inside.pairCard.tickPair("replace", true);
+      await inside.pairCard.confirmPair();
+      expect(confirms(ha.sent)[0]!.replace).toBe(true);
+      expect("allow_remote" in confirms(ha.sent)[0]!).toBe(false);
+    });
+
+    it("holds Pair for a request from outside until I expect this watch is ticked, then sends allow_remote", async () => {
+      const { inside, ha, text } = await lookedUp({ lookup: { remote: "203.0.113.7", age_seconds: 4 } });
+      expect(text()).toContain("The request came from outside your network.");
+      expect(text()).toContain("I expect this watch");
+      expect(text()).not.toContain("Replace its pairing");
+      inside.pairCard.tickPair("remote", true);
+      await inside.pairCard.confirmPair();
+      expect(confirms(ha.sent)[0]!.allow_remote).toBe(true);
+      expect("replace" in confirms(ha.sent)[0]!).toBe(false);
+    });
+
+    it("shows the box the server asks for when the lookup did not call for it", async () => {
+      const { inside, ha, text } = await lookedUp({ confirmWants: "allow_remote" });
+      expect(text()).not.toContain("I expect this watch");
+      await inside.pairCard.confirmPair();
+      expect(inside.pairCard.pair.error).toBe("The request came from outside your network. Tick I expect this watch to pair it.");
+      expect(inside.pairCard.pair.asked?.remote).toBe(true);
+      expect(text()).toContain("I expect this watch");
+      expect(text()).toContain(`ws-pair-go" ?disabled=true`);
+      inside.pairCard.tickPair("remote", true);
+      await inside.pairCard.confirmPair();
+      expect(confirms(ha.sent)).toHaveLength(2);
+      expect(inside.pairCard.pair.done).toBe("Paired New Watch.");
+    });
+
+    it("names an iPhone that shows a code as an iPhone", async () => {
+      const { inside, ha, text, paired } = await lookedUp({ pickUser: true, boundUser: "chen", lookup: { kind: "iphone", device_name: null } });
+      const shown = text();
+      expect(shown).toContain("<span>iPhone</span>");
+      expect(shown).toContain(">iPhone</div>");
+      expect(shown).toContain("Whose iPhone is this?");
+      expect(shown).toContain("The iPhone runs with this person's rights.");
+      await inside.pairCard.confirmPair();
+      expect(confirms(ha.sent)[0]!.user_id).toBe("chen");
+      expect(inside.pairCard.pair.done).toBe("Paired New Watch for Chen.");
+      // An iPhone is not a watch the page could move to.
+      await settle();
+      expect(paired).toEqual([]);
+    });
+  });
+
+  describe("showing a QR code", () => {
+    const offers = (sent: Record<string, unknown>[]) => sent.filter((m) => String(m.type).endsWith("/pair/offer"));
+    const cancels = (sent: Record<string, unknown>[]) => sent.filter((m) => String(m.type).endsWith("/pair/offer_cancel"));
+    const polls = (sent: Record<string, unknown>[]) => sent.filter((m) => String(m.type).endsWith("/pair/offer_status"));
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    async function qrMode(hassOpts: Parameters<typeof fakeHass>[1] = {}) {
+      const opened = await page("w2", WATCHES, hassOpts);
+      opened.inside.pairCard.setMode("qr");
+      await vi.waitFor(() => expect(opened.inside.pairCard.offer.usersRead).toBe(true));
+      return opened;
+    }
+
+    it("asks whose iPhone it is, each with its account type, and holds Show QR code until someone is picked", async () => {
+      const { inside, ha, text, ws } = await qrMode();
+      const shown = text();
+      expect(shown).toContain("Show a QR code");
+      expect(shown).toContain("Scan QR code");
+      expect(shown).toContain("Whose iPhone is this?");
+      expect(shown).toContain("Choose a person");
+      expect(shown).toContain(">Jesse (you) · Admin</option>");
+      expect(shown).toContain(">Chen · User</option>");
+      expect(shown).toContain(`ws-qr-show" ?disabled=true`);
+      await inside.pairCard.showOffer();
+      expect(offers(ha.sent)).toHaveLength(0);
+      inside.pairCard.pickOfferUser("chen");
+      expect(text()).toContain(`ws-qr-show" ?disabled=false`);
+      ws.leave();
+    });
+
+    it("shows the code, its link and a countdown, asks every two seconds, and says who was paired", async () => {
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+      const opened = await qrMode();
+      const { inside, ha, text } = opened;
+      inside.pairCard.pickOfferUser("chen");
+      inside.pairCard.setOfferReplace(true);
+      await inside.pairCard.showOffer();
+      const offer = offers(ha.sent)[0]!;
+      expect(offer.user_id).toBe("chen");
+      expect(offer.replace).toBe(true);
+      expect("kind" in offer).toBe(false);
+      const shown = text();
+      expect(shown).toContain(`aria-label="QR code for pairing an iPhone"`);
+      expect(shown).toMatch(/<path d=M4 4h7v1h-7z/);
+      expect(shown).toContain(`href=wristassistant://pair#v=1&i=abc&t=TOKEN`);
+      expect(shown).toContain("Open in Wrist Assistant");
+      expect(shown).toContain("Runs out in 5:00");
+      // While it is open, the person and the box stay as they were.
+      expect(shown).not.toContain("ws-qr-show");
+
+      vi.advanceTimersByTime(1000);
+      expect(text()).toContain("Runs out in 4:59");
+      expect(polls(ha.sent)).toHaveLength(0);
+      vi.advanceTimersByTime(1000);
+      expect(polls(ha.sent)).toHaveLength(1);
+      expect(polls(ha.sent)[0]!.offer_id).toBe("off1");
+      await vi.waitFor(() => expect(inside.pairCard.polling).toBe(false));
+      expect(inside.pairCard.offer.open).toBeDefined();
+
+      opened.addWatch({ ...owner("p1", "Chen's iPhone"), device_kind: "iphone" } as OwnerSummary);
+      const reads = opened.refreshes();
+      // The phone scans it: the next question finds it redeemed.
+      const hass = ha.hass as unknown as { connection: { sendMessagePromise(msg: Record<string, unknown>): Promise<unknown> } };
+      const real = hass.connection.sendMessagePromise.bind(hass.connection);
+      hass.connection.sendMessagePromise = async (msg) => String(msg.type).endsWith("/offer_status")
+        ? (ha.sent.push(msg), { state: "redeemed", device_name: "Chen's iPhone", user_id: "chen" })
+        : real(msg);
+      vi.advanceTimersByTime(2000);
+      await vi.waitFor(() => expect(inside.pairCard.offer.done).toBe("Paired Chen's iPhone for Chen."));
+      expect(inside.pairCard.offer.open).toBeUndefined();
+      expect(text()).toContain("Paired Chen's iPhone for Chen.");
+      // The device list is read again, as after a code.
+      await vi.waitFor(() => expect(opened.refreshes()).toBe(reads + 1));
+      // Ticking has stopped: no more questions, and nothing to cancel.
+      const asked = polls(ha.sent).length;
+      vi.advanceTimersByTime(10_000);
+      expect(polls(ha.sent)).toHaveLength(asked);
+      opened.ws.leave();
+      expect(cancels(ha.sent)).toHaveLength(0);
+      // The panel is not moved to an iPhone.
+      expect(opened.paired).toEqual([]);
+    });
+
+    it("says the code ran out, and offers a new one", async () => {
+      const { inside, text, ws } = await qrMode({ offerState: { state: "expired" } });
+      inside.pairCard.pickOfferUser("root");
+      await inside.pairCard.showOffer();
+      await inside.pairCard.pollOffer();
+      expect(inside.pairCard.offer.open).toBeUndefined();
+      expect(inside.pairCard.offer.expired).toBe(true);
+      expect(text()).toContain("This code ran out. Show a new one.");
+      expect(text()).toContain(`ws-qr-show" ?disabled=false`);
+      ws.leave();
+    });
+
+    it("sends no user for the administrator at the card", async () => {
+      const { inside, ha, ws } = await qrMode();
+      inside.pairCard.pickOfferUser("root");
+      await inside.pairCard.showOffer();
+      const offer = offers(ha.sent)[0]!;
+      expect("user_id" in offer).toBe(false);
+      expect("replace" in offer).toBe(false);
+      ws.leave();
+    });
+
+    it("withdraws an open code when the mode changes, and when the page is left", async () => {
+      const { inside, ha, ws } = await qrMode();
+      inside.pairCard.pickOfferUser("chen");
+      await inside.pairCard.showOffer();
+      inside.pairCard.setMode("code");
+      expect(cancels(ha.sent)).toEqual([{ type: "wrist_assistant/pair/offer_cancel", offer_id: "off1" }]);
+      expect(inside.pairCard.offer.open).toBeUndefined();
+
+      inside.pairCard.setMode("qr");
+      // The people are read once a visit; nobody is picked again.
+      expect(inside.pairCard.offer.usersRead).toBe(true);
+      expect(inside.pairCard.offer.userId).toBeUndefined();
+      inside.pairCard.pickOfferUser("chen");
+      await inside.pairCard.showOffer();
+      ws.leave();
+      expect(cancels(ha.sent)).toHaveLength(2);
+    });
+
+    it("asks for a newer integration when it knows no QR codes", async () => {
+      const { inside, ha, ws } = await qrMode();
+      const hass = ha.hass as unknown as { connection: { sendMessagePromise(msg: Record<string, unknown>): Promise<unknown> } };
+      const real = hass.connection.sendMessagePromise.bind(hass.connection);
+      hass.connection.sendMessagePromise = async (msg) => String(msg.type).endsWith("/pair/offer")
+        ? Promise.reject(Object.assign(new Error("Unknown command."), { code: "unknown_command" }))
+        : real(msg);
+      inside.pairCard.pickOfferUser("chen");
+      await inside.pairCard.showOffer();
+      expect(inside.pairCard.offer.error).toBe("Update the Wrist Assistant integration to pair an iPhone with a QR code.");
+      expect(inside.pairCard.offer.open).toBeUndefined();
+      ws.leave();
     });
   });
 

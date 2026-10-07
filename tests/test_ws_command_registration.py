@@ -18,7 +18,7 @@ the caller's own certificate.
 
 Seven modules hold commands: ``complication_ws.py`` (the editor),
 ``watch_config_ws.py`` (the Watch settings view and the page editor),
-``pairing_ws.py`` (confirming a watch's pairing code),
+``pairing_ws.py`` (confirming a pairing code, and the QR offers),
 ``http_actions_ws.py`` (the home's HTTP action library),
 ``page_images_ws.py`` (the home's page photos),
 ``camera_framing_ws.py`` (the cameras' notification framing) and
@@ -56,10 +56,15 @@ _WATCH_CONFIG_ADMIN_ONLY = {
 }
 
 # Confirming a pairing code writes a device secret bound to the confirming
-# user, and a lookup hands out what a waiting watch reported. Admin only.
+# user, and a lookup hands out what a waiting watch reported. A QR offer is a
+# one-use way in for an iPhone, and its status names the phone and person.
+# Admin only.
 _PAIRING_ADMIN_ONLY = {
     "ws_pair_lookup",
     "ws_pair_confirm",
+    "ws_pair_offer",
+    "ws_pair_offer_status",
+    "ws_pair_offer_cancel",
 }
 
 # The panel's HTTP actions screen (step 4d batch 4). A read hands out every
@@ -278,6 +283,27 @@ def test_the_pairing_commands_and_view_are_registered_at_setup() -> None:
     source = (_PKG / "__init__.py").read_text()
     assert "async_register_pairing_commands(hass)" in source
     assert "register_view(WAPairStartView(hass))" in source
+
+
+def test_the_sealed_pairing_and_redeem_views_are_registered_at_setup() -> None:
+    """A sealed code pairing is useless without the status view, and a QR
+    offer without the redeem view."""
+    source = (_PKG / "__init__.py").read_text()
+    assert "register_view(WAPairStatusView(hass))" in source
+    assert "register_view(WAPairRedeemView(hass))" in source
+    assert "pair_offer_store=pair_offer_store," in source
+    assert "pair_offer_store.shutdown()" in source
+
+
+def test_the_sealed_and_phone_pairing_capabilities_are_advertised() -> None:
+    """A device sends its public key, and the app pairs an iPhone with no
+    token, only when /version lists these."""
+    init = (_PKG / "__init__.py").read_text()
+    const = (_PKG / "const.py").read_text()
+    assert "register_capability(SEALED_CODE_PAIRING_CAPABILITY)" in init
+    assert "register_capability(PHONE_PAIRING_CAPABILITY)" in init
+    assert 'SEALED_CODE_PAIRING_CAPABILITY = "sealed_code_pairing"' in const
+    assert 'PHONE_PAIRING_CAPABILITY = "phone_pairing"' in const
 
 
 def test_the_watch_pairing_capability_is_advertised() -> None:

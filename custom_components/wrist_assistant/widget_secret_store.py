@@ -5,8 +5,9 @@ widget extension (through the App Group) keep it locally; HA keeps a copy
 here so it can validate HMACs on signed requests.
 
 A pair comes from the iPhone's sign-in through `register_secret`
-(`WARegisterSecretView`), or from a code the watch shows and an admin confirms
-in the panel (`pairing_ws.py`). Either way the entry is bound to a Home
+(`WARegisterSecretView`), from a code a watch or an iPhone shows and an admin
+confirms in the panel (`pairing_ws.py`), or from a QR code the panel shows and
+an iPhone redeems (`WAPairRedeemView`). Either way the entry is bound to a Home
 Assistant user, and the secret, never a bearer, is what authorizes the
 watch's requests.
 """
@@ -16,7 +17,7 @@ from __future__ import annotations
 import base64
 import logging
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Literal
 
@@ -149,10 +150,15 @@ class WidgetSecretStore:
 
     def __init__(self, hass: HomeAssistant) -> None:
         self._secrets: dict[str, WidgetSecretEntry] = {}
+        # Private: the file holds every device's key, and each key signs as
+        # its device with that device's user's rights. Home Assistant then
+        # writes it readable by its own account only, as it does for the
+        # client certificates (client_certificate_store.py).
         self._store: Store = Store(
             hass,
             WIDGET_SECRET_STORAGE_VERSION,
             WIDGET_SECRET_STORAGE_KEY,
+            private=True,
         )
         # Listeners notified after register/remove so sensor.py can spawn / tear
         # down iPhone-device entities without a HA restart. Mirrors the pattern
@@ -357,6 +363,25 @@ class WidgetSecretStore:
                 owner_iphone_id,
             )
             self._notify_listeners()
+        return True
+
+    def replace_secret(self, watch_id: str, secret_b64: str) -> bool:
+        """Swap a device's secret for a new one, keeping everything else.
+
+        Backs the signed ``rekey`` op: the device sends its new secret sealed
+        with its old one, and this is the one write that makes the new one
+        the only one. The label, user, owner and metadata stay as they are,
+        so a re-key is never a way to change whose device it is. Returns
+        False when the device has no entry (a race with removal).
+        """
+        entry = self._secrets.get(watch_id)
+        if entry is None:
+            return False
+        self._secrets[watch_id] = replace(
+            entry, secret_b64=secret_b64, last_provision=dt_util.utcnow()
+        )
+        self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
+        _LOGGER.info("Re-keyed widget secret for watch_id=%s", watch_id)
         return True
 
     def note_main_house(self, watch_id: str, main_house: bool) -> bool:

@@ -159,7 +159,7 @@ export const homeStyles = css`
   .home-card.complications { --c: var(--wa-hue-pink); }
   .home-card.devices { --c: var(--wa-hue-grey); }
   .home-card-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; min-width: 0; }
-  /* Devices' Pair a watch, at the right end of its title row. */
+  /* Devices' Pair a device, at the right end of its title row. */
   .home-card-head button.home-pair-open { margin-left: auto; height: 26px; padding: 0 10px; font-size: 12.5px; }
   .home-chip {
     width: 20px; height: 20px; border-radius: 6px; flex: none; display: grid; place-items: center;
@@ -193,17 +193,26 @@ export const homeStyles = css`
   button.home-btn:disabled { opacity: .5; cursor: default; }
   .home-btn svg.ui-icon { width: 14px; height: 14px; }
   .home-devices { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
-  .home-device { min-width: 0; border-top: 1px solid var(--wa-line); }
+  .home-device { display: flex; align-items: center; min-width: 0; border-top: 1px solid var(--wa-line); }
   .home-device:first-child { border-top: 0; }
   /* The whole row opens the device's sheet. It reaches 6px past the card's
      text on both sides, so the hover fill has room and the text stays put. */
   button.home-device-open {
-    display: flex; align-items: center; gap: 10px; width: calc(100% + 12px); min-width: 0; box-sizing: border-box;
+    display: flex; align-items: center; gap: 10px; flex: 1 1 auto; width: auto; min-width: 0; box-sizing: border-box;
     margin: 0 -6px; padding: 8px 6px; border: 0; border-radius: 6px; font: inherit; text-align: left; cursor: pointer;
     color: inherit; background: transparent;
   }
+  button.home-device-open:not(:last-child) { margin-right: 0; }
   button.home-device-open:hover { background: var(--wa-hover); }
   button.home-device-open:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  /* An administrator's Remove, quiet at the row's end: it opens the sheet on
+     its Forget step, which asks before anything goes. */
+  button.home-device-remove {
+    flex: none; height: 24px; margin: 0 -6px 0 2px; padding: 0 8px; border: 0; border-radius: 6px;
+    font: inherit; font-size: 12px; color: var(--wa-muted); background: transparent; cursor: pointer;
+  }
+  button.home-device-remove:hover { color: var(--wa-ink); background: var(--wa-hover); }
+  button.home-device-remove:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   /* A right-pointing chevron: the down one, turned. */
   .home-device-go { display: inline-flex; flex: none; color: var(--wa-muted); transform: rotate(-90deg); }
   .home-device-go svg.ui-icon { width: 13px; height: 13px; }

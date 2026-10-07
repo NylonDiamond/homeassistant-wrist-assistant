@@ -124,14 +124,24 @@ describe("Home's device sheet", () => {
   });
 
   it("reads a watch's counts when its sheet opens, dropping a late reply", () => {
-    expect(method("  private openDeviceSheet(ownerId: string) {")).toContain("void this.loadDeviceCounts(ownerId);");
+    expect(method("  private openDeviceSheet(ownerId: string, forget = false) {")).toContain("void this.loadDeviceCounts(ownerId);");
     const load = method("  private async loadDeviceCounts(ownerId: string) {");
     expect(load).toContain("watchConfigCount(kind, record.document)");
     expect(load).toContain("if (this.deviceSheet !== ownerId) return;");
   });
 
+  it("gives each row a quiet Remove, for administrators only, that opens the sheet on its Forget step", () => {
+    const row = between(home, `<li class="home-device \${d.sync}">`, "</li>");
+    expect(row).toContain("${admin ? html`<button type=\"button\" class=\"home-device-remove\"");
+    expect(row).toContain("@click=${() => this.openDeviceSheet(d.id, true)}>Remove</button>` : nothing}");
+    // Never the browser's own confirm: the sheet asks.
+    expect(row).not.toContain("confirm(");
+    const open = method("  private openDeviceSheet(ownerId: string, forget = false) {");
+    expect(open).toContain("this.deviceForgetAsk = forget;");
+  });
+
   it("offers Forget to administrators only, behind a second step", () => {
-    expect(sheet).toContain("${admin ? html`<button class=\"danger dev-forget\" @click=${() => { this.deviceForgetAsk = true; }}>${uiIcon(\"delete\")}<span>Forget device</span></button>` : nothing}");
+    expect(sheet).toContain("${admin ? html`<button class=\"danger dev-forget\" @click=${() => { this.deviceForgetAsk = true; }}>${uiIcon(\"delete\")}<span>Remove device</span></button>` : nothing}");
     expect(sheet).toContain("@click=${() => void this.forgetDeviceNow(ownerId)}");
     expect(sheet).toContain("${this.deviceForgetAsk ? ask : overview}");
     expect(sheet.match(/<dialog /g)).toHaveLength(1);
@@ -188,12 +198,17 @@ describe("coming back to Home", () => {
   });
 });
 
-describe("Home's Pair a watch dialog", () => {
+describe("Home's Pair a device dialog", () => {
   it("opens from the Devices card's title row, for administrators only", () => {
     const head = between(home, `<h2 class="home-title">Devices</h2>`, "</div>");
     expect(head).toContain("${admin ? html`<button class=\"home-btn home-pair-open\"");
-    expect(head).toContain("@click=${() => this.openPairDialog()}");
+    expect(head).toContain("@click=${() => this.openPairDialog()}>${uiIcon(\"plus\")}<span>Pair a device</span></button>");
     expect(home).toContain("${admin && this.pairOpen ? this.renderPairDialog() : nothing}");
+  });
+
+  it("closes, withdrawing an open QR code, when the panel leaves the page", () => {
+    expect(method("  override disconnectedCallback() {")).toContain("this.closePairDialog();");
+    expect(method("  private renderPairDialog() {")).toContain(`aria-label="Pair a device"`);
   });
 
   it("draws the Settings page's own pairing card, starting afresh on each opening", () => {
@@ -206,10 +221,10 @@ describe("Home's Pair a watch dialog", () => {
     expect(dialog).toContain("this.homePair.render({");
   });
 
-  it("adds a watch paired there to the device list and makes it the shared watch", () => {
+  it("adds a device paired there to the device list, and makes a watch the shared watch", () => {
     const at = SOURCE.indexOf("private homePair = new PairWatchCard(");
     const made = SOURCE.slice(at, SOURCE.indexOf("});", at));
     expect(made).toContain("await this.loadOwners();");
-    expect(made).toContain("this.pickWatch(watchId);");
+    expect(made).toContain(`if (watchId !== undefined && kind === "watch") this.pickWatch(watchId);`);
   });
 });

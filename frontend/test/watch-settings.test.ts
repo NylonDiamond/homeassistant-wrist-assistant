@@ -60,9 +60,29 @@ import {
   pairRemoteWarning,
   pairRequestLine,
   PAIR_USER_TITLE,
+  PAIR_CARD_TITLE,
+  PAIR_CODE_HINT,
+  PAIR_MODES,
+  PAIR_OPEN_APP_TEXT,
+  PAIR_QR_EXPIRED_TEXT,
+  PAIR_QR_HINT,
+  PAIR_QR_REPLACE_LABEL,
+  PAIR_REPLACE_LABEL,
+  PAIR_SHOW_QR_TEXT,
+  PAIR_USER_PLACEHOLDER,
+  pairCanConfirm,
+  pairChecksNeeded,
+  pairCountdownText,
   pairDefaultUser,
+  pairDeviceKind,
+  pairExpectLabel,
+  pairPersonPicked,
   pairUserChoices,
+  pairUserHint,
+  pairUserIsAdmin,
+  pairUserTitle,
   pairUserToSend,
+  pairedFor,
   pairedText,
   savedByWords,
   sectionRuns,
@@ -417,8 +437,8 @@ describe("a watch with nothing in Home Assistant yet", () => {
     expect(SETTINGS_NO_RECORD_TEXT).toBe("Start with the defaults to begin.");
     expect(PAGES_START_BUTTON).toBe("Start with an empty page");
     expect(SETTINGS_START_BUTTON).toBe("Start with the defaults");
-    expect(PAIR_FIRST_TEXT).toBe("Pair this watch first. Go to Watch app, Settings, Pair a watch.");
-    expect(SETTINGS_PAIR_FIRST_TEXT).toBe("Pair this watch first, under Pair a watch on this page.");
+    expect(PAIR_FIRST_TEXT).toBe("Pair this watch first. Go to Watch app, Settings, Pair a device.");
+    expect(SETTINGS_PAIR_FIRST_TEXT).toBe("Pair this watch first, under Pair a device on this page.");
     expect(PAGES_START_CONFLICT_TEXT).toBe("Pages for this watch arrived meanwhile, so those are shown.");
     expect(SETTINGS_START_CONFLICT_TEXT).toBe("Settings for this watch arrived meanwhile, so those are shown.");
     const all = [PAGES_NO_RECORD_TEXT, SETTINGS_NO_RECORD_TEXT, PAIR_FIRST_TEXT, SETTINGS_PAIR_FIRST_TEXT, PAGES_START_CONFLICT_TEXT, SETTINGS_START_CONFLICT_TEXT];
@@ -564,38 +584,131 @@ describe("pairing a watch by its code", () => {
     expect(pairedText(" ")).toBe("Paired Apple Watch.");
     expect(pairedText("Chen's Watch", "Chen")).toBe("Paired Chen's Watch for Chen.");
     expect(pairedText(null, " ")).toBe("Paired Apple Watch.");
+    expect(pairedText(null, "Chen", "iphone")).toBe("Paired iPhone for Chen.");
+    expect(pairedText("Chen's iPhone", "Chen", "iphone")).toBe("Paired Chen's iPhone for Chen.");
   });
 
   const USERS = [
-    { id: "sup", name: "Supervisor", is_active: true, system_generated: true },
-    { id: "pat", name: "Pat", is_active: true, system_generated: false },
-    { id: "root", name: "Jesse", is_active: true, system_generated: false },
+    { id: "sup", name: "Supervisor", is_active: true, system_generated: true, group_ids: ["system-admin"] },
+    { id: "pat", name: "Pat", is_active: true, system_generated: false, group_ids: ["system-users"] },
+    { id: "root", name: "Jesse", is_active: true, system_generated: false, is_owner: true, group_ids: ["system-users"] },
     { id: "old", name: "Old Account", is_active: false, system_generated: false },
-    { id: "chen", name: "Chen", is_active: true, system_generated: false },
+    { id: "chen", name: "Chen", is_active: true, system_generated: false, group_ids: ["system-admin"] },
     { id: "nameless", name: " ", username: "guest", is_active: true },
   ];
 
-  it("offers active people only, the administrator first, then the rest by name", () => {
+  it("offers active people only, the administrator first, then the rest by name, each with its account type", () => {
     expect(pairUserChoices(USERS, "root")).toEqual([
-      { id: "root", label: "Jesse (you)" },
-      { id: "chen", label: "Chen" },
-      { id: "nameless", label: "guest" },
-      { id: "pat", label: "Pat" },
+      { id: "root", label: "Jesse (you) · Admin", name: "Jesse", admin: true },
+      { id: "chen", label: "Chen · Admin", name: "Chen", admin: true },
+      { id: "nameless", label: "guest · User", name: "guest", admin: false },
+      { id: "pat", label: "Pat · User", name: "Pat", admin: false },
     ]);
     // An administrator missing from the list is no reason to offer nobody.
     expect(pairUserChoices(USERS, "gone").map((c) => c.id)).toEqual(["chen", "nameless", "root", "pat"]);
     expect(PAIR_USER_TITLE).toBe("Whose watch is this?");
+    expect(pairUserTitle("iphone")).toBe("Whose iPhone is this?");
+    expect(pairUserHint("iphone")).toBe("The iPhone runs with this person's rights.");
+    expect(PAIR_USER_PLACEHOLDER).toBe("Choose a person");
   });
 
-  it("starts on the user a known watch is bound to, else the administrator", () => {
+  it("counts the owner and the administrators group as Admin, everyone else as User", () => {
+    expect(pairUserIsAdmin({ id: "a", is_owner: true })).toBe(true);
+    expect(pairUserIsAdmin({ id: "a", group_ids: ["system-admin"] })).toBe(true);
+    expect(pairUserIsAdmin({ id: "a", group_ids: ["system-users", "system-admin"] })).toBe(true);
+    expect(pairUserIsAdmin({ id: "a", group_ids: ["system-users"] })).toBe(false);
+    expect(pairUserIsAdmin({ id: "a", group_ids: null })).toBe(false);
+    expect(pairUserIsAdmin({ id: "a" })).toBe(false);
+  });
+
+  it("picks nobody among several people, except the owner of a known device", () => {
     const choices = pairUserChoices(USERS, "root");
-    expect(pairDefaultUser(choices, "root", null)).toBe("root");
-    expect(pairDefaultUser(choices, "root", undefined)).toBe("root");
-    expect(pairDefaultUser(choices, "root", "chen")).toBe("chen");
-    // Bound to someone no longer offered (deactivated): the administrator.
-    expect(pairDefaultUser(choices, "root", "old")).toBe("root");
-    expect(pairDefaultUser(pairUserChoices(USERS, "gone"), "gone", null)).toBe("chen");
-    expect(pairDefaultUser([], "root", null)).toBeUndefined();
+    expect(pairDefaultUser(choices, null)).toBeUndefined();
+    expect(pairDefaultUser(choices, undefined)).toBeUndefined();
+    expect(pairDefaultUser(choices, "chen")).toBe("chen");
+    // Bound to someone no longer offered (deactivated): nobody.
+    expect(pairDefaultUser(choices, "old")).toBeUndefined();
+    // One person: nothing to choose.
+    expect(pairDefaultUser(pairUserChoices([USERS[2]!], "root"), null)).toBe("root");
+    expect(pairDefaultUser([], null)).toBeUndefined();
+  });
+
+  it("holds Pair until a person is picked and every box shown is ticked", () => {
+    const choices = pairUserChoices(USERS, "root");
+    const none = { replace: false, remote: false };
+    expect(pairPersonPicked(choices, undefined)).toBe(false);
+    expect(pairPersonPicked(choices, "old")).toBe(false);
+    expect(pairPersonPicked(choices, "pat")).toBe(true);
+    // No menu (an older integration, or one person): nothing to pick.
+    expect(pairPersonPicked(undefined, undefined)).toBe(true);
+    expect(pairPersonPicked(choices.slice(0, 1), undefined)).toBe(true);
+
+    expect(pairCanConfirm(none, none, choices, undefined)).toBe(false);
+    expect(pairCanConfirm(none, none, choices, "pat")).toBe(true);
+    expect(pairCanConfirm({ replace: true, remote: false }, none, choices, "pat")).toBe(false);
+    expect(pairCanConfirm({ replace: true, remote: false }, { replace: true, remote: false }, choices, "pat")).toBe(true);
+    expect(pairCanConfirm({ replace: true, remote: true }, { replace: true, remote: false }, choices, "pat")).toBe(false);
+    expect(pairCanConfirm({ replace: false, remote: true }, { replace: false, remote: true }, undefined, undefined)).toBe(true);
+  });
+
+  it("asks for Replace on a paired device and for I expect this on an outside request", () => {
+    expect(pairChecksNeeded({})).toEqual({ replace: false, remote: false });
+    expect(pairChecksNeeded({ already_paired: true })).toEqual({ replace: true, remote: false });
+    expect(pairChecksNeeded({ paired_by_other_user: true })).toEqual({ replace: true, remote: false });
+    expect(pairChecksNeeded({ remote: "203.0.113.7" })).toEqual({ replace: false, remote: true });
+    // The server's own reading wins where the panel cannot see it: a request
+    // through Home Assistant Cloud has a home-looking address.
+    expect(pairChecksNeeded({ remote: "127.0.0.1", needs_allow_remote: true })).toEqual({ replace: false, remote: true });
+    expect(pairChecksNeeded({ needs_replace: true })).toEqual({ replace: true, remote: false });
+    expect(pairChecksNeeded({ remote: "192.168.1.4" })).toEqual({ replace: false, remote: false });
+    // A box the server asked for stays, whatever the lookup said.
+    expect(pairChecksNeeded({ remote: "192.168.1.4" }, { remote: true })).toEqual({ replace: false, remote: true });
+    expect(pairChecksNeeded({}, { replace: true })).toEqual({ replace: true, remote: false });
+    expect(PAIR_REPLACE_LABEL).toBe("Replace its pairing");
+    expect(pairExpectLabel("watch")).toBe("I expect this watch");
+    expect(pairExpectLabel("iphone")).toBe("I expect this iPhone");
+  });
+
+  it("names the person picked, only where there was a menu", () => {
+    const choices = pairUserChoices(USERS, "root");
+    expect(pairedFor(choices, "root")).toBe("Jesse");
+    expect(pairedFor(choices, "chen")).toBe("Chen");
+    expect(pairedFor(choices, undefined)).toBeUndefined();
+    expect(pairedFor(choices, "nobody")).toBeUndefined();
+    expect(pairedFor(undefined, "chen")).toBeUndefined();
+    expect(pairedFor(choices.slice(0, 1), "root")).toBeUndefined();
+  });
+
+  it("reads the device kind, a watch when the integration names none", () => {
+    expect(pairDeviceKind({ kind: "iphone" })).toBe("iphone");
+    expect(pairDeviceKind({ kind: "watch" })).toBe("watch");
+    expect(pairDeviceKind({})).toBe("watch");
+    expect(pairDeviceKind({ kind: "toaster" })).toBe("watch");
+    expect(pairLookupLine({ kind: "iphone", device_name: null, app_version: "3.2" })).toBe("iPhone, app 3.2");
+    expect(pairLookupWarnings({ kind: "iphone", already_paired: true, paired_by_other_user: true }))
+      .toEqual(["This iPhone is already paired. Pairing again gives it a new key.", "This iPhone was paired by another user."]);
+    expect(pairRemoteWarning("203.0.113.7", "iphone")).toBe("The request came from outside your network. Only pair an iPhone you expect.");
+  });
+
+  it("names the card and its two modes in plain words", () => {
+    expect(PAIR_CARD_TITLE).toBe("Pair a device");
+    expect(PAIR_MODES).toEqual([["code", "Type a code"], ["qr", "Show a QR code"]]);
+    expect(PAIR_SHOW_QR_TEXT).toBe("Show QR code");
+    expect(PAIR_OPEN_APP_TEXT).toBe("Open in Wrist Assistant");
+    expect(PAIR_QR_EXPIRED_TEXT).toBe("This code ran out. Show a new one.");
+    const words = [PAIR_CARD_TITLE, PAIR_CODE_HINT, PAIR_QR_HINT, PAIR_QR_REPLACE_LABEL, PAIR_REPLACE_LABEL, PAIR_SHOW_QR_TEXT,
+      PAIR_OPEN_APP_TEXT, PAIR_QR_EXPIRED_TEXT, PAIR_USER_PLACEHOLDER, pairUserHint("watch"), pairUserHint("iphone"),
+      ...PAIR_MODES.map(([, label]) => label),
+      pairErrorText({ code: "needs_replace" }, "confirm", "iphone"), pairErrorText({ code: "needs_allow_remote" }, "confirm")];
+    for (const w of words) expect(w).not.toMatch(/ \x2d |\u2013|\u2014/);
+  });
+
+  it("counts down in minutes and seconds", () => {
+    expect(pairCountdownText(300)).toBe("Runs out in 5:00");
+    expect(pairCountdownText(299.2)).toBe("Runs out in 5:00");
+    expect(pairCountdownText(65)).toBe("Runs out in 1:05");
+    expect(pairCountdownText(9)).toBe("Runs out in 0:09");
+    expect(pairCountdownText(-4)).toBe("Runs out in 0:00");
   });
 
   it("sends a user only when it is not the administrator at the card", () => {
@@ -612,6 +725,19 @@ describe("pairing a watch by its code", () => {
       .toBe("Could not look up that code: Integration not ready");
     expect(pairErrorText({ code: "invalid_secret", message: "secret must be 32 bytes" }, "confirm"))
       .toBe("Could not pair: secret must be 32 bytes");
+    expect(pairErrorText({ code: "unknown_command", message: "Unknown command." }, "offer"))
+      .toBe("Update the Wrist Assistant integration to pair an iPhone with a QR code.");
+    expect(pairErrorText({ code: "unavailable", message: "Integration not ready" }, "offer"))
+      .toBe("Could not show a QR code: Integration not ready");
+  });
+
+  it("says which box to tick when the server refuses a confirm for one", () => {
+    expect(pairErrorText({ code: "needs_replace", message: "replace required" }, "confirm"))
+      .toBe("This watch is already paired. Tick Replace its pairing to pair it again.");
+    expect(pairErrorText({ code: "needs_replace", message: "replace required" }, "confirm", "iphone"))
+      .toBe("This iPhone is already paired. Tick Replace its pairing to pair it again.");
+    expect(pairErrorText({ code: "needs_allow_remote", message: "allow_remote required" }, "confirm"))
+      .toBe("The request came from outside your network. Tick I expect this watch to pair it.");
   });
 
   it("says when and from where the watch asked", () => {

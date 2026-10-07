@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from .snapshot_aspect_store import SnapshotAspectStore
     from .snapshot_crop_store import SnapshotCropStore
     from .snapshot_stream_store import SnapshotStreamStore
-    from .wa_pair_requests import PairRequestStore
+    from .wa_pair_requests import PairOfferStore, PairRequestStore
     from .wa_stream_tokens import BatchSnapshotTokenStore, StreamTokenStore
     from .watch_config_store import WatchConfigStore
     from .watch_logs_store import WatchLogsStore
@@ -70,9 +70,14 @@ class WristAssistantData:
     # Watch config documents (the phone's page config in step 1), one record
     # per watch per kind. Read and written over the signed watch_config ops.
     watch_config_store: WatchConfigStore
-    # Watches waiting for an admin to confirm their pairing code. Memory
-    # only; written by /v2/pair/start, read and cleared by pairing_ws.py.
+    # Devices waiting for an admin to confirm their pairing code, and the
+    # sealed secrets of confirmed ones waiting to be fetched. Memory only;
+    # written by /v2/pair/start, confirmed by pairing_ws.py, read by
+    # /v2/pair/status.
     pair_request_store: PairRequestStore
+    # The panel's open QR offers for an iPhone. Memory only; made by
+    # pairing_ws.py, spent by /v2/pair/redeem.
+    pair_offer_store: PairOfferStore
     # Each watch's installed speech voices, as the watch last sent them over
     # watch_voices_put. Read by the panel's Watch voice picker.
     watch_voices_store: WatchVoicesStore
@@ -343,6 +348,16 @@ WATCH_LOGS_CAPABILITY = "watch_logs"
 # panel's pair/lookup and pair/confirm (pairing_ws.py). A watch with no
 # iPhone offers to pair by code only when /version lists this.
 WATCH_PAIRING_CAPABILITY = "watch_pairing"
+# What the integration advertises once /v2/pair/start takes an X25519
+# `public_key_b64` and a `kind`, the confirm makes the secret and seals it to
+# that key, and /v2/pair/status hands the sealed copy out. A device sends its
+# public key rather than its secret only when /version lists this.
+SEALED_CODE_PAIRING_CAPABILITY = "sealed_code_pairing"
+# What the integration advertises once an iPhone can pair with no Home
+# Assistant token: the panel's QR offer (pair/offer, offer_status,
+# offer_cancel) and /v2/pair/redeem, a code confirm that stores an iPhone,
+# and the signed `rekey` op. The app requires it.
+PHONE_PAIRING_CAPABILITY = "phone_pairing"
 # What the integration advertises once an iPhone's push token lives under the
 # phone's own id and is paired with the watches of the same Home Assistant
 # user at send time (notifications.resolve_push_routes). The phone then

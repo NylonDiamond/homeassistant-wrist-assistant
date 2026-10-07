@@ -1,0 +1,24 @@
+{
+  "description": "One QR offer worked through by sealed_box.py and wa_pair_requests.py. The QR code's t is the 32 token bytes as base64url with no padding; offer_id is sha256(token bytes) as lower-case hex. The phone makes secret_b64, derives key = HKDF-SHA256(ikm = the raw token bytes, salt = 'wrist-assistant-offer-v1', info = device_id as UTF-8, 32 bytes) and seals the 32 raw secret bytes with AES-256-GCM, associated data 'pair_redeem', into envelope (the sealed_box.py envelope: box is the ciphertext followed by the 16 byte tag, standard base64 with padding), sent as sealed to /v2/pair/redeem. The server's reply body is signed with the new secret like a signed op's reply: HMAC-SHA256 hex over canonical_utf8, which is 'v2|pair_redeem|<device_id>|<X-WA-Ts>|response', a newline, then the body bytes exactly as received; X-WA-Ts and X-WA-Sig are headers. The phone checks the signature and that instance_id equals the QR code's i.",
+  "url": "wristassistant://pair#v=1&i=8a2e4b0c1d9f4e7a9b3c5d6e7f801234&t=wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t8&u=http%3A%2F%2F192.168.1.20%3A8123&e=https%3A%2F%2Fhome.example.com&c=https%3A%2F%2Fabcdefghijklmnop.ui.nabu.casa&n=Jesse%27s%20Home",
+  "token_b64url": "wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t8",
+  "token_hex": "c0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedf",
+  "offer_id": "ec071e0a0136c837c051cee6a7713edbaea6936712d1a3ca37e84fee3226e61d",
+  "device_id": "iphone:0F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0",
+  "salt": "wrist-assistant-offer-v1",
+  "aad": "pair_redeem",
+  "key_hex": "6259c6b722d786e4479dba9f05f3b2c07685f7540a144f93cabf0e6fffd9a636",
+  "secret_b64": "YGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn8=",
+  "nonce_b64": "sLGys7S1tre4ubq7",
+  "envelope": {
+    "v": 1,
+    "nonce": "sLGys7S1tre4ubq7",
+    "box": "rtBj6sRmwfP/3HK9WMm1PZkYm0YMSLchhns5YFbiaZOGbCA5H7TM1Pvd7d5Skebt"
+  },
+  "reply": {
+    "x_wa_ts": "1791331200",
+    "body_utf8": "{\"instance_id\":\"8a2e4b0c1d9f4e7a9b3c5d6e7f801234\",\"server_time\":1791331200}",
+    "canonical_utf8": "v2|pair_redeem|iphone:0F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0|1791331200|response\n{\"instance_id\":\"8a2e4b0c1d9f4e7a9b3c5d6e7f801234\",\"server_time\":1791331200}",
+    "x_wa_sig": "46df2c12919631791ee448228a6506f9088f4af5a1c509bc7fc50934e1b34762"
+  }
+}

@@ -47,8 +47,9 @@ SECRET_B = base64.b64encode(b"b" * 32).decode()
 
 
 class _FakeStore:
-    def __init__(self, *_args: object, **_kwargs: object) -> None:
+    def __init__(self, *_args: object, **kwargs: object) -> None:
         self.saved: dict | None = None
+        self.kwargs = kwargs
 
     async def async_load(self) -> dict | None:
         return self.saved
@@ -398,3 +399,9 @@ def test_live_recaptures_spend_down_and_then_stop() -> None:
         assert store.consume_live("nope", now=1_002.0) is False
     finally:
         sys.modules.pop(spec.name, None)
+
+
+def test_the_secret_file_is_a_private_store(env) -> None:
+    """Every device's key is in it, so Home Assistant writes it readable by
+    its own account only, like the client certificates."""
+    assert env.store._store.kwargs.get("private") is True

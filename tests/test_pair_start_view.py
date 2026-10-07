@@ -14,7 +14,12 @@ The device registry and the Logbook helpers raise if touched. Pinned:
   holds four requests, 503 while not loaded; the address is stored;
 * ``WAActionView``'s refused-signature path writes no Logbook row for a
   known watch while it has a code pending (it is polling with its new pair),
-  checked against the real ``log_hmac_failure``.
+  checked against the real ``log_hmac_failure``;
+* the sealed form: a public key and a kind in place of the secret, its
+  refusals, whether the request is remote (by address, or through Home
+  Assistant Cloud whatever its address);
+* ``/v2/pair/status``: pending, confirmed with the box, expired, and its
+  refusals.
 """
 
 from __future__ import annotations
@@ -29,6 +34,7 @@ from typing import Any
 
 import pytest
 
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from test_pair_requests import loaded_pair_module
 from test_widget_secret_user_binding import (
     _PKG,
@@ -100,9 +106,11 @@ def _view_classes(pair_mod, log_hmac_failure) -> dict[str, type]:
     tree = ast.parse(path.read_text(), filename=str(path))
     names = {
         "WAPairStartView",
+        "WAPairStatusView",
         "WARegisterSecretView",
         "WAActionView",
         "_log_signed_request_rejected",
+        "_came_through_cloud",
     }
     wanted = [
         node
@@ -124,7 +132,11 @@ def _view_classes(pair_mod, log_hmac_failure) -> dict[str, type]:
         "DOMAIN": DOMAIN,
         "WA_PROTOCOL_VERSION": 2,
         "_LOGGER": logging.getLogger("test_pair_start_view"),
+        "HomeAssistant": object,
         "validate_pair_fields": pair_mod.validate_pair_fields,
+        "validate_pair_start": pair_mod.validate_pair_start,
+        "remote_is_public": pair_mod.remote_is_public,
+        "REGISTER_ID_MAX_LEN": pair_mod.REGISTER_ID_MAX_LEN,
         "PAIR_START_FIELDS": pair_mod.PAIR_START_FIELDS,
         "PAIR_POLL_AFTER_SECONDS": pair_mod.PAIR_POLL_AFTER_SECONDS,
         "log_secret_registered": _untouchable("the Logbook"),
@@ -163,6 +175,7 @@ def env():
             clock=clock,
             logbook_rows=logbook_rows,
             start=classes["WAPairStartView"](hass),
+            status=classes["WAPairStatusView"](hass),
             register=classes["WARegisterSecretView"](hass),
             action=classes["WAActionView"](hass, None),
         )
@@ -344,3 +357,113 @@ def test_no_logbook_row_while_the_watch_has_a_code_pending(env) -> None:
     env.clock.now += 600
     _refused_action(env, "watch-code-1")
     assert len(env.logbook_rows) == 2
+
+
+# ── the sealed form ──────────────────────────────────────────────────────
+
+
+def _public_b64() -> str:
+    return base64.b64encode(X25519PrivateKey.generate().public_key().public_bytes_raw()).decode()
+
+
+def _sealed_body(**overrides: Any) -> dict:
+    return _body(secret_b64=None, public_key_b64=_public_b64(), **overrides)
+
+
+@pytest.mark.parametrize("kind", [None, "watch", "iphone"])
+def test_a_sealed_start_stores_its_key_and_kind_and_no_secret(env, kind) -> None:
+    body = _sealed_body(kind=kind)
+    reply = _start(env, body)
+    assert reply.status == 200, reply.body
+    assert set(reply.body) == {"ok", "code", "expires_in", "poll_after"}
+    pending = env.pair_store.get(reply.body["code"])
+    assert pending.kind == (kind or "watch")
+    assert pending.public_key == base64.b64decode(body["public_key_b64"])
+    assert pending.fields.secret_b64 is None
+    _assert_nothing_written(env)
+
+
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        (_body(kind="iphone"), "public_key_b64 required for an iPhone"),
+        (_body(public_key_b64="AAAA"), "send public_key_b64 or secret_b64, not both"),
+        (_body(secret_b64=None, public_key_b64="AAAA"), "public_key_b64 must be a 32-byte X25519 public key"),
+        (_body(kind="tablet"), "kind must be watch or iphone"),
+    ],
+)
+def test_sealed_start_refusals(env, body, message) -> None:
+    reply = _start(env, body)
+    assert (reply.status, reply.body) == (400, {"message": message})
+    assert len(env.pair_store) == 0
+    _assert_nothing_written(env)
+
+
+@pytest.mark.parametrize(
+    ("remote", "public"),
+    [("192.0.2.10", True), ("192.168.1.4", False), ("172.16.43.50", False), (None, False)],
+)
+def test_a_start_records_whether_it_came_from_outside(env, remote, public) -> None:
+    reply = _start(env, _sealed_body(), remote=remote)
+    assert env.pair_store.get(reply.body["code"]).remote_public is public
+
+
+def test_a_start_through_the_cloud_is_remote_whatever_its_address(env) -> None:
+    _stub("homeassistant.helpers")
+    _stub("homeassistant.helpers.network", is_cloud_connection=lambda _hass: True)
+    reply = _start(env, _sealed_body(), remote="127.0.0.1")
+    assert env.pair_store.get(reply.body["code"]).remote_public is True
+
+
+def test_a_broken_cloud_check_counts_as_not_cloud(env) -> None:
+    def broken(_hass):
+        raise RuntimeError("no cloud here")
+
+    _stub("homeassistant.helpers")
+    _stub("homeassistant.helpers.network", is_cloud_connection=broken)
+    reply = _start(env, _sealed_body(), remote="127.0.0.1")
+    assert env.pair_store.get(reply.body["code"]).remote_public is False
+
+
+# ── /v2/pair/status ──────────────────────────────────────────────────────
+
+
+def _status(env, body: Any) -> _Response:
+    return asyncio.run(env.status.post(_Request(body, None)))
+
+
+def test_status_follows_a_sealed_pairing(env) -> None:
+    assert _status(env, {"watch_id": "watch-code-1"}).body == {"state": "expired"}
+    code = _start(env, _sealed_body()).body["code"]
+    reply = _status(env, {"watch_id": "watch-code-1"})
+    assert (reply.status, reply.body) == (200, {"state": "pending"})
+
+    box = {"server_public_key_b64": "S", "nonce": "N", "box": "B"}
+    env.pair_store.confirm_sealed(env.pair_store.get(code), box)
+    reply = _status(env, {"watch_id": "watch-code-1"})
+    assert (reply.status, reply.body) == (200, {"state": "confirmed", **box})
+    # Another id learns nothing about it.
+    assert _status(env, {"watch_id": "watch-other"}).body == {"state": "expired"}
+
+    env.clock.now += 600
+    assert _status(env, {"watch_id": "watch-code-1"}).body == {"state": "expired"}
+
+
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        ({}, "watch_id required"),
+        ({"watch_id": ""}, "watch_id required"),
+        ({"watch_id": 7}, "watch_id required"),
+        ({"watch_id": "w" * 129}, "watch_id too long"),
+        (["watch-code-1"], "Expected JSON object body"),
+    ],
+)
+def test_status_refusals(env, body, message) -> None:
+    reply = _status(env, body)
+    assert (reply.status, reply.body) == (400, {"message": message})
+
+
+def test_status_answers_503_while_not_loaded(env) -> None:
+    env.hass.data.clear()
+    assert _status(env, {"watch_id": "w"}).status == 503

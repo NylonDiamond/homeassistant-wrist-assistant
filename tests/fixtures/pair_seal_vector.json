@@ -1,0 +1,20 @@
+{
+  "description": "One sealed code pairing worked through by sealed_box.py. The device sends device_public_key_b64 in pair/start. On confirm the server makes secret_b64 and a one-time X25519 key pair (server_private_key_b64, fixed here, random in use), takes shared = X25519(server_private, device_public), derives key = HKDF-SHA256(ikm = shared, salt = 'wrist-assistant-pair-v1', info = watch_id as UTF-8, 32 bytes), and seals the 32 raw secret bytes with AES-256-GCM, associated data 'pair_secret'. /v2/pair/status answers reply with state 'confirmed'; box is the ciphertext followed by the 16 byte tag. All base64 is standard with padding. The device opens it with X25519(device_private, server_public), which gives the same shared secret.",
+  "device_private_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+  "device_public_key_b64": "j0DFrbaPJWJK5bIU6nZ6bslNgp09e14a0bpvPiE4KF8=",
+  "server_private_key_b64": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8=",
+  "server_public_key_b64": "NYBy1jZYgNGu6jKa35EhODhR7SGijjt16WXQ0s0WYlQ=",
+  "watch_id": "0123456789abcdef0123456789abcdef",
+  "salt": "wrist-assistant-pair-v1",
+  "aad": "pair_secret",
+  "shared_secret_hex": "9663aa1da97e848a914a436d04163dfbb89178f107f1b5b77ed3854203382854",
+  "key_hex": "d844e4079faa5ae2ecd613c66e573bfb6dbf392c3926f15fc8b353efe751111d",
+  "secret_b64": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8=",
+  "nonce_b64": "oKGio6Slpqeoqaqr",
+  "reply": {
+    "state": "confirmed",
+    "server_public_key_b64": "NYBy1jZYgNGu6jKa35EhODhR7SGijjt16WXQ0s0WYlQ=",
+    "nonce": "oKGio6Slpqeoqaqr",
+    "box": "caYUOYcfQLsKG4tj6t3oJ9DNQApPWMZO/q+Zw1QCrwG7bcnTWHKp2YlSRmEUPqrz"
+  }
+}

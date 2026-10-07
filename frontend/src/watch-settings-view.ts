@@ -46,6 +46,7 @@ import {
   type CatalogSection,
   type CatalogSetting,
   type MotionActions,
+  type PairDeviceKind,
   type SettingValue,
   COLLECTED_PILL_TEXT,
   SETTINGS_NO_RECORD_TEXT,
@@ -191,9 +192,9 @@ export class WatchSettings implements ReactiveController {
    * picked, or after a newer load, is dropped. */
   private loadSeq = 0;
   private pollTimer?: number;
-  /** The "Pair a watch" card, after the other cards. It starts afresh on
+  /** The "Pair a device" card, after the other cards. It starts afresh on
    * each visit, and a watch paired on it becomes the one shown. */
-  private readonly pairCard = new PairWatchCard(() => this.changed(), (id, stale) => this.showPaired(id, stale));
+  private readonly pairCard = new PairWatchCard(() => this.changed(), (id, stale, kind) => this.showPaired(id, stale, kind));
   /** The signed in user's client certificate, the card under the pairing
    * card. It reads its status once each time the page is opened. */
   private readonly cert = new ClientCertCard(() => this.host.requestUpdate());
@@ -229,6 +230,7 @@ export class WatchSettings implements ReactiveController {
 
   hostDisconnected(): void {
     this.stopPolling();
+    this.pairCard.stopOffer();
   }
 
   /** Every change: the page is drawn again, and the watch's form is kept as
@@ -668,8 +670,9 @@ export class WatchSettings implements ReactiveController {
   /** A watch just paired on the card joins the device list and becomes the
    * one shown, and the panel's shared watch, whether or not another watch
    * was open. Edits on the watch shown before are kept for it, so nothing
-   * needs asking. Nothing moves once the page has been left. */
-  private async showPaired(watchId: string, stale: () => boolean): Promise<void> {
+   * needs asking. Nothing moves once the page has been left. An iPhone
+   * joins the device list and nothing moves. */
+  private async showPaired(watchId: string | undefined, stale: () => boolean, kind: PairDeviceKind): Promise<void> {
     if (!this.refreshOwners) return;
     let owners: readonly OwnerSummary[];
     try {
@@ -677,7 +680,7 @@ export class WatchSettings implements ReactiveController {
     } catch {
       return;
     }
-    if (stale()) return;
+    if (stale() || watchId === undefined || kind !== "watch") return;
     const watches = settingsWatches(owners);
     const id = watches.some((w) => w.owner_watch_id === watchId)
       ? watchId

@@ -1251,7 +1251,7 @@ export class WaMenuEditor extends LitElement {
     if (result.ok) {
       this.note = { kind: "ok", text: "Started with the defaults. The watch picks them up the next time it checks." };
     } else if (result.code === "no_record") {
-      this.note = { kind: "warn", text: `${WATCH_MENUS_PAIR_FIRST_TEXT} Go to Watch app, Settings, Pair a watch.` };
+      this.note = { kind: "warn", text: `${WATCH_MENUS_PAIR_FIRST_TEXT} Go to Watch app, Settings, Pair a device.` };
       return;
     } else if (result.code === "conflict") {
       this.note = { kind: "warn", text: "Menus arrived meanwhile, so those are shown." };

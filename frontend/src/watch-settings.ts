@@ -623,11 +623,11 @@ export function watchRecordUnreadable(record: WatchConfigRecord | undefined, rea
 
 /** A start refused as `no_record`: the integration makes a first record only
  * for a watch it has a key for. The path is the one the panel shows: the
- * Watch app tab, its Settings page, the Pair a watch card. */
-export const PAIR_FIRST_TEXT = "Pair this watch first. Go to Watch app, Settings, Pair a watch.";
+ * Watch app tab, its Settings page, the Pair a device card. */
+export const PAIR_FIRST_TEXT = "Pair this watch first. Go to Watch app, Settings, Pair a device.";
 
 /** The same, said inside Watch settings, whose pairing card is below. */
-export const SETTINGS_PAIR_FIRST_TEXT = "Pair this watch first, under Pair a watch on this page.";
+export const SETTINGS_PAIR_FIRST_TEXT = "Pair this watch first, under Pair a device on this page.";
 
 /** A start refused as `conflict`: a record came in meanwhile (the iPhone's
  * one-time move, or another panel) and is shown. */
@@ -702,23 +702,66 @@ export async function createWatchBehavior(
   }
 }
 
-// ── pairing a watch by its code ──────────────────────────────────────────
+// ── pairing a device ─────────────────────────────────────────────────────
 //
-// A watch with no iPhone asks Home Assistant for a pairing and shows a six
-// character code; an administrator types it into the Settings page's "Pair a watch"
-// card. Plan: app repo docs/pages_in_home_assistant_step4.md, 4c.
+// A watch, or an iPhone, asks Home Assistant for a pairing and shows a six
+// character code; an administrator types it into the "Pair a device" card.
+// Or, for an iPhone, the card shows a QR code the phone scans. Plans: app
+// repo docs/pages_in_home_assistant_step4.md, 4c, and
+// docs/iphone_pairing_without_sign_in_2026-10.md, step 1.
 
 /** A pairing code's length. */
 export const PAIR_CODE_LENGTH = 6;
 
-/** What the card says when no watch is waiting on the code typed. */
+/** The card's title, in both places it is drawn. */
+export const PAIR_CARD_TITLE = "Pair a device";
+
+/** The card's two ways to pair, as its segmented control names them. */
+export type PairMode = "code" | "qr";
+export const PAIR_MODES: readonly [PairMode, string][] = [["code", "Type a code"], ["qr", "Show a QR code"]];
+
+/** The line under the title in each mode. */
+export const PAIR_CODE_HINT = "On the watch or iPhone, choose Pair with Home Assistant and type the code it shows.";
+export const PAIR_QR_HINT = "On the iPhone, choose Pair with Home Assistant, then Scan QR code.";
+
+/** What kind of device asked for a pairing. */
+export type PairDeviceKind = "watch" | "iphone";
+
+/** The kind a lookup names. An integration from before iPhones paired by
+ * code sends none, and only a watch could ask then. */
+export function pairDeviceKind(lookup: { kind?: string | null }): PairDeviceKind {
+  return lookup.kind === "iphone" ? "iphone" : "watch";
+}
+
+/** The kind in a sentence: "watch" or "iPhone". */
+function deviceWord(kind: PairDeviceKind): string {
+  return kind === "iphone" ? "iPhone" : "watch";
+}
+
+/** The kind as a name, for a device that reports none. */
+function deviceName(kind: PairDeviceKind): string {
+  return kind === "iphone" ? "iPhone" : "Apple Watch";
+}
+
+/** The title of the found device's row: "Watch" or "iPhone". */
+export function pairDeviceTitle(kind: PairDeviceKind): string {
+  return kind === "iphone" ? "iPhone" : "Watch";
+}
+
+/** What the card says when no device is waiting on the code typed. */
 export const PAIR_NOT_FOUND_TEXT = "No pairing with that code. Codes last 10 minutes.";
 
-/** The warning under a watch that already has a key here. */
-export const PAIR_ALREADY_PAIRED_TEXT = "This watch is already paired. Pairing again gives it a new key.";
+/** The warning under a device that already has a key here. */
+export function pairAlreadyPairedText(kind: PairDeviceKind): string {
+  return `This ${deviceWord(kind)} is already paired. Pairing again gives it a new key.`;
+}
+export const PAIR_ALREADY_PAIRED_TEXT = pairAlreadyPairedText("watch");
 
-/** The warning under a watch whose key another user made. */
-export const PAIR_OTHER_USER_TEXT = "This watch was paired by another user.";
+/** The warning under a device whose key another user made. */
+export function pairOtherUserText(kind: PairDeviceKind): string {
+  return `This ${deviceWord(kind)} was paired by another user.`;
+}
+export const PAIR_OTHER_USER_TEXT = pairOtherUserText("watch");
 
 /** A code as the server compares it: trimmed, upper-case, without the spaces
  * and hyphens people type to group it, and nothing that is not a letter or
@@ -734,11 +777,14 @@ export function pairCodeIsComplete(code: string): boolean {
 
 /** The fields of a found pairing that the card describes. */
 export interface PairLookupFacts {
+  kind?: string | null;
   device_name?: string | null;
   app_version?: string | null;
   app_build?: string | null;
   already_paired?: boolean;
   paired_by_other_user?: boolean;
+  needs_replace?: boolean;
+  needs_allow_remote?: boolean;
 }
 
 function present(value: string | null | undefined): string | undefined {
@@ -746,11 +792,12 @@ function present(value: string | null | undefined): string | undefined {
   return text ? text : undefined;
 }
 
-/** The watch a code belongs to, as "Apple Watch Series 11, app 3.0.1 (2)".
- * A watch with no name is "Apple Watch"; with no app version the app part is
- * left out, and with no build only the version is given. */
+/** The device a code belongs to, as "Apple Watch Series 11, app 3.0.1 (2)".
+ * A watch with no name is "Apple Watch", an iPhone "iPhone"; with no app
+ * version the app part is left out, and with no build only the version is
+ * given. */
 export function pairLookupLine(lookup: PairLookupFacts): string {
-  const name = present(lookup.device_name) ?? "Apple Watch";
+  const name = present(lookup.device_name) ?? deviceName(pairDeviceKind(lookup));
   const version = present(lookup.app_version);
   if (version === undefined) return name;
   const build = present(lookup.app_build);
@@ -759,14 +806,18 @@ export function pairLookupLine(lookup: PairLookupFacts): string {
 
 /** The warnings to read before pairing, in the order the card shows them. */
 export function pairLookupWarnings(lookup: PairLookupFacts): string[] {
+  const kind = pairDeviceKind(lookup);
   const out: string[] = [];
-  if (lookup.already_paired === true) out.push(PAIR_ALREADY_PAIRED_TEXT);
-  if (lookup.paired_by_other_user === true) out.push(PAIR_OTHER_USER_TEXT);
+  if (lookup.already_paired === true) out.push(pairAlreadyPairedText(kind));
+  if (lookup.paired_by_other_user === true) out.push(pairOtherUserText(kind));
   return out;
 }
 
 /** The warning under a request from an address outside the home network. */
-export const PAIR_REMOTE_WARNING_TEXT = "The request came from outside your network. Only pair a watch you expect.";
+function pairRemoteWarningText(kind: PairDeviceKind): string {
+  return `The request came from outside your network. Only pair ${kind === "iphone" ? "an iPhone" : "a watch"} you expect.`;
+}
+export const PAIR_REMOTE_WARNING_TEXT = pairRemoteWarningText("watch");
 
 /** When and from where the watch asked: "Requested 12 s ago from
  * 172.16.43.50", or "Requested 2 min ago" past 90 seconds and without an
@@ -803,24 +854,84 @@ export function isPrivateAddress(address: string): boolean {
 
 /** The warning for a request from outside the home network. An unknown
  * address gets none: there is nothing to say about it. */
-export function pairRemoteWarning(remote: string | null | undefined): string | undefined {
+export function pairRemoteWarning(remote: string | null | undefined, kind: PairDeviceKind = "watch"): string | undefined {
   const address = present(remote);
   if (address === undefined || isPrivateAddress(address)) return undefined;
-  return PAIR_REMOTE_WARNING_TEXT;
+  return pairRemoteWarningText(kind);
 }
 
-/** What the card says once a watch is paired, naming the person when it was
- * paired for someone other than the administrator at the card. */
-export function pairedText(deviceName: string | null | undefined, forWhom?: string): string {
+/** The boxes to tick before Pair. */
+export interface PairChecks {
+  /** "Replace its pairing": the device has a key here already, or one
+   * another user made. Sent as `replace: true`. */
+  replace: boolean;
+  /** "I expect this watch": the request came from outside the home
+   * network. Sent as `allow_remote: true`. */
+  remote: boolean;
+}
+
+/** The boxes a found device calls for. `asked` adds a box the server asked
+ * for (`needs_replace`, `needs_allow_remote`) that the lookup did not
+ * foresee, an address the panel took for a home one, say. */
+export function pairChecksNeeded(
+  lookup: PairLookupFacts & { remote?: string | null },
+  asked: Partial<PairChecks> = {},
+): PairChecks {
+  return {
+    replace: lookup.needs_replace === true || lookup.already_paired === true || lookup.paired_by_other_user === true || asked.replace === true,
+    remote: lookup.needs_allow_remote === true || pairRemoteWarning(lookup.remote) !== undefined || asked.remote === true,
+  };
+}
+
+/** The label of the Replace box. */
+export const PAIR_REPLACE_LABEL = "Replace its pairing";
+
+/** The label of the box that owns up to a request from outside. */
+export function pairExpectLabel(kind: PairDeviceKind): string {
+  return `I expect this ${deviceWord(kind)}`;
+}
+
+/** Whether a person is picked, where the card asks for one: with more than
+ * one to choose from, nobody is picked at first. No menu (one person, or an
+ * integration whose confirm takes no user) asks nothing. */
+export function pairPersonPicked(users: readonly PairUserChoice[] | undefined, userId: string | undefined): boolean {
+  if (users === undefined || users.length < 2) return true;
+  return userId !== undefined && users.some((u) => u.id === userId);
+}
+
+/** Whether Pair can be pressed: a person picked, and every box shown ticked. */
+export function pairCanConfirm(
+  needed: PairChecks,
+  ticked: PairChecks,
+  users: readonly PairUserChoice[] | undefined,
+  userId: string | undefined,
+): boolean {
+  return pairPersonPicked(users, userId) && (!needed.replace || ticked.replace) && (!needed.remote || ticked.remote);
+}
+
+/** What the card says once a device is paired, naming the person when one
+ * was picked from the menu. */
+export function pairedText(deviceNameText: string | null | undefined, forWhom?: string, kind: PairDeviceKind = "watch"): string {
   const whom = present(forWhom);
-  return `Paired ${present(deviceName) ?? "Apple Watch"}${whom === undefined ? "" : ` for ${whom}`}.`;
+  return `Paired ${present(deviceNameText) ?? deviceName(kind)}${whom === undefined ? "" : ` for ${whom}`}.`;
 }
 
 /** The title of the card's user menu. */
-export const PAIR_USER_TITLE = "Whose watch is this?";
+export function pairUserTitle(kind: PairDeviceKind): string {
+  return `Whose ${deviceWord(kind)} is this?`;
+}
+export const PAIR_USER_TITLE = pairUserTitle("watch");
 
 /** The line under the user menu: what the answer decides. */
-export const PAIR_USER_HINT = "The watch runs with this person's rights, and their iPhone gets its Fast alerts.";
+export function pairUserHint(kind: PairDeviceKind): string {
+  return kind === "iphone"
+    ? "The iPhone runs with this person's rights."
+    : "The watch runs with this person's rights, and their iPhone gets its Fast alerts.";
+}
+export const PAIR_USER_HINT = pairUserHint("watch");
+
+/** The menu's first entry while nobody is picked. */
+export const PAIR_USER_PLACEHOLDER = "Choose a person";
 
 /** The user fields the menu reads, as `config/auth/list` reports them. */
 export interface PairUserFacts {
@@ -829,40 +940,54 @@ export interface PairUserFacts {
   username?: string | null;
   is_active?: boolean;
   system_generated?: boolean;
+  is_owner?: boolean;
+  group_ids?: readonly string[] | null;
 }
 
-/** One entry in the "Whose watch is this?" menu. */
+/** One entry in the "Whose watch is this?" menu. `label` is the menu's
+ * line, "Jesse (you) · Admin"; `name` is the person alone, for "Paired
+ * <device> for <name>." */
 export interface PairUserChoice {
   id: string;
   label: string;
+  name: string;
+  admin: boolean;
 }
 
-/** The people a watch can be paired for: active users Home Assistant did not
- * make for itself (the server refuses the others), the administrator at the
- * card first as "Name (you)", then the rest by name. */
+/** Whether Home Assistant counts a user an administrator: its owner, or a
+ * member of the administrators group. */
+export function pairUserIsAdmin(user: PairUserFacts): boolean {
+  return user.is_owner === true || (user.group_ids ?? []).includes("system-admin");
+}
+
+/** The people a device can be paired for: active users Home Assistant did
+ * not make for itself (the server refuses the others), the administrator at
+ * the card first as "Name (you)", then the rest by name. Each line ends with
+ * the account type, Admin or User. */
 export function pairUserChoices(users: readonly PairUserFacts[], adminId: string | undefined): PairUserChoice[] {
   const people = users.filter((u) => u.is_active !== false && u.system_generated !== true);
-  const label = (u: PairUserFacts) => present(u.name) ?? present(u.username) ?? u.id;
-  const you = people.filter((u) => u.id === adminId).map((u) => ({ id: u.id, label: `${label(u)} (you)` }));
+  const choice = (u: PairUserFacts): PairUserChoice => {
+    const name = present(u.name) ?? present(u.username) ?? u.id;
+    const admin = pairUserIsAdmin(u);
+    return { id: u.id, label: `${name}${u.id === adminId ? " (you)" : ""} · ${admin ? "Admin" : "User"}`, name, admin };
+  };
+  const you = people.filter((u) => u.id === adminId).map(choice);
   const rest = people
     .filter((u) => u.id !== adminId)
-    .map((u) => ({ id: u.id, label: label(u) }))
-    .sort((a, b) => a.label.localeCompare(b.label));
+    .map(choice)
+    .sort((a, b) => a.name.localeCompare(b.name));
   return [...you, ...rest];
 }
 
-/** Who the menu starts on: the user a known watch is bound to, so pairing it
- * again does not quietly hand it to the administrator, else the
- * administrator, else the first choice. */
+/** Who the menu starts on: the user a known device is bound to, so pairing
+ * it again does not quietly hand it to someone else, else the only person
+ * there is. With more than one, nobody: the administrator picks. */
 export function pairDefaultUser(
   choices: readonly PairUserChoice[],
-  adminId: string | undefined,
   boundUserId: string | null | undefined,
 ): string | undefined {
-  const has = (id: string | null | undefined) => id != null && choices.some((c) => c.id === id);
-  if (has(boundUserId)) return boundUserId ?? undefined;
-  if (has(adminId)) return adminId;
-  return choices[0]?.id;
+  if (boundUserId != null && choices.some((c) => c.id === boundUserId)) return boundUserId;
+  return choices.length === 1 ? choices[0]?.id : undefined;
 }
 
 /** The `user_id` the confirm sends: none for the administrator at the card,
@@ -872,12 +997,50 @@ export function pairUserToSend(picked: string | undefined, adminId: string | und
   return picked === undefined || picked === adminId ? undefined : picked;
 }
 
+/** Who "Paired <device> for <name>." names: the person picked in the menu,
+ * when there was a menu to pick from. */
+export function pairedFor(users: readonly PairUserChoice[] | undefined, userId: string | null | undefined): string | undefined {
+  if (users === undefined || users.length < 2 || userId == null) return undefined;
+  return users.find((u) => u.id === userId)?.name;
+}
+
 /** The card's line for a refusal. An integration from before pairing does
- * not know the command at all, which HA reports as `unknown_command`. */
-export function pairErrorText(err: unknown, step: "lookup" | "confirm"): string {
-  if (errorCode(err) === "unknown_command") return "Update the Wrist Assistant integration to pair a watch with a code.";
+ * not know the command at all, which HA reports as `unknown_command`. A
+ * confirm the server wants a box ticked for says which. */
+export function pairErrorText(err: unknown, step: "lookup" | "confirm" | "offer", kind: PairDeviceKind = "watch"): string {
+  const code = errorCode(err);
+  if (code === "unknown_command") {
+    return step === "offer"
+      ? "Update the Wrist Assistant integration to pair an iPhone with a QR code."
+      : "Update the Wrist Assistant integration to pair a watch with a code.";
+  }
+  if (code === "needs_replace") return `This ${deviceWord(kind)} is already paired. Tick ${PAIR_REPLACE_LABEL} to pair it again.`;
+  if (code === "needs_allow_remote") return `The request came from outside your network. Tick ${pairExpectLabel(kind)} to pair it.`;
   const message = String((err as { message?: string } | null | undefined)?.message ?? err);
+  if (step === "offer") return `Could not show a QR code: ${message}`;
   return step === "lookup" ? `Could not look up that code: ${message}` : `Could not pair: ${message}`;
+}
+
+// ── pairing an iPhone by a QR code ───────────────────────────────────────
+
+/** How often an open QR code's state is asked, in milliseconds. */
+export const PAIR_OFFER_POLL_MS = 2000;
+
+/** The QR mode's button, and the box that lets a QR code take over an iPhone
+ * paired for someone else (`replace` on the offer). */
+export const PAIR_SHOW_QR_TEXT = "Show QR code";
+export const PAIR_QR_REPLACE_LABEL = "Replace an iPhone paired for someone else";
+
+/** The link beside the QR code, for the panel open on the iPhone itself. */
+export const PAIR_OPEN_APP_TEXT = "Open in Wrist Assistant";
+
+/** What the card says once an open QR code has run out. */
+export const PAIR_QR_EXPIRED_TEXT = "This code ran out. Show a new one.";
+
+/** The countdown under an open QR code: "Runs out in 4:59". */
+export function pairCountdownText(secondsLeft: number): string {
+  const s = Math.max(0, Math.ceil(secondsLeft));
+  return `Runs out in ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
 /** The watch the view opens on: the one being edited when it is a watch,

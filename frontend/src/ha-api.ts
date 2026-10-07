@@ -495,6 +495,9 @@ const PAIR = "wrist_assistant/pair";
 export interface PairLookupFound {
   found: true;
   watch_id: string;
+  /** What asked: a watch, or an iPhone showing a code. Missing from an
+      integration before iPhones paired by code, when only a watch could. */
+  kind?: "watch" | "iphone";
   device_name?: string | null;
   screen_size?: string | null;
   app_version?: string | null;
@@ -513,6 +516,11 @@ export interface PairLookupFound {
       or unbound. Missing from an integration whose confirm takes no
       `user_id`, which is how the panel knows not to offer the choice. */
   bound_user_id?: string | null;
+  /** The confirm will want `replace: true` / `allow_remote: true`. The
+      server's own reading, which also knows a request through Home
+      Assistant Cloud is remote. Missing from an older integration. */
+  needs_replace?: boolean;
+  needs_allow_remote?: boolean;
 }
 
 export type PairLookup = PairLookupFound | { found: false };
@@ -538,6 +546,10 @@ export interface HaUser {
   username?: string | null;
   is_active?: boolean;
   system_generated?: boolean;
+  /** The owner is an administrator whatever their groups. */
+  is_owner?: boolean;
+  /** `system-admin` makes an administrator, `system-users` a user. */
+  group_ids?: string[];
 }
 
 /** Every Home Assistant user. Home Assistant's own command, admin only. */
@@ -551,19 +563,69 @@ export async function lookupPairCode(hass: HassLike, code: string) {
   return hass.connection.sendMessagePromise<PairLookup>({ type: `${PAIR}/lookup`, code });
 }
 
-/** Pair the watch that shows `code`, for the Home Assistant user `userId`,
+/** Pair the device that shows `code`, for the Home Assistant user `userId`,
  * or for the signed in administrator when it is undefined (the only form an
- * integration from before the choice accepts). A refusal rejects with a
- * WebSocket error whose `code` is `unknown_code` (unknown or expired),
- * `unavailable` (the integration is not ready), `invalid_user` (no such
- * user, a deactivated one, or one Home Assistant made for itself),
- * `invalid_secret` or another of the secret checks. */
-export async function confirmPairCode(hass: HassLike, code: string, userId?: string) {
+ * integration from before the choice accepts). `replace` and `allowRemote`
+ * are the card's ticked boxes, sent only when ticked so an older integration
+ * never sees a key it does not know. A refusal rejects with a WebSocket error
+ * whose `code` is `unknown_code` (unknown or expired), `unavailable` (the
+ * integration is not ready), `invalid_user` (no such user, a deactivated
+ * one, or one Home Assistant made for itself), `needs_replace` (the device
+ * is paired already, or by another user, and Replace was not ticked),
+ * `needs_allow_remote` (the request came from a public address and the box
+ * owning up to it was not ticked), `invalid_secret` or another of the secret
+ * checks. */
+export async function confirmPairCode(
+  hass: HassLike,
+  code: string,
+  userId?: string,
+  opts: { replace?: boolean; allowRemote?: boolean } = {},
+) {
   return hass.connection.sendMessagePromise<PairConfirmReply>({
     type: `${PAIR}/confirm`,
     code,
     ...(userId === undefined ? {} : { user_id: userId }),
+    ...(opts.replace === true ? { replace: true } : {}),
+    ...(opts.allowRemote === true ? { allow_remote: true } : {}),
   });
+}
+
+/** A QR code offer, as `pair/offer` makes it. `url` is what the QR code
+ * holds, `wristassistant://pair#...`, and `expires_in` is in seconds. */
+export interface PairOffer {
+  offer_id: string;
+  url: string;
+  expires_in: number;
+}
+
+/** Where an offer has got to. A redeemed one names the iPhone and the user it
+ * was paired for. */
+export interface PairOfferStatus {
+  state: "open" | "redeemed" | "expired";
+  device_name?: string | null;
+  user_id?: string | null;
+}
+
+/** Make a QR code an iPhone can pair with, for `userId` (the signed in
+ * administrator when undefined). `replace` lets it take over an iPhone
+ * paired for another user. Admin only. An integration from before QR
+ * pairing rejects with `unknown_command`. */
+export async function offerPairQr(hass: HassLike, userId?: string, replace = false) {
+  return hass.connection.sendMessagePromise<PairOffer>({
+    type: `${PAIR}/offer`,
+    ...(userId === undefined ? {} : { user_id: userId }),
+    ...(replace ? { replace: true } : {}),
+  });
+}
+
+/** Ask whether an iPhone has used the offer yet. */
+export async function pairOfferStatus(hass: HassLike, offerId: string) {
+  return hass.connection.sendMessagePromise<PairOfferStatus>({ type: `${PAIR}/offer_status`, offer_id: offerId });
+}
+
+/** Withdraw an offer nobody used, so its QR code stops working at once. */
+export async function cancelPairOffer(hass: HassLike, offerId: string) {
+  return hass.connection.sendMessagePromise<unknown>({ type: `${PAIR}/offer_cancel`, offer_id: offerId });
 }
 
 const CLIENT_CERT = "wrist_assistant/client_certificate";
