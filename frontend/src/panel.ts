@@ -25,6 +25,7 @@ import {
   fetchWatchConfig,
   fetchWatchConfigSummary,
   fetchHttpActions,
+  forgetDevice,
   type SaveHistoryEntry,
   fetchSaveHistory,
   fetchSaveHistoryEntry,
@@ -140,7 +141,7 @@ import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
 import { type SendState, agoWords, describeHomeSync, describeSend, deviceSyncLabel, homeSync, sendState, sendWaitMs } from "./send-state.js";
-import { homeDeviceRows, homeDevices, homeStyles } from "./home.js";
+import { type HomeDeviceRow, deviceFacts, deviceSheetCards, homeDeviceRows, homeDevices, homeStyles } from "./home.js";
 import { type WatchAppSync, readWatchAppSync, summaryUnknown, summaryWatchAppSyncs, waitingForText, watchAppSyncKey } from "./watch-app-sync.js";
 import { type PickerForm, type TabMemory, browseAllTab, listPageEscape, listPageLead, listPageShown, listPageState, listPageStyles, listsReady, pickTab, pickerSurfaceClass, restoreTab } from "./list-page.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
@@ -1450,6 +1451,15 @@ export class WristAssistantPanel extends LitElement {
     await this.loadOwners();
     this.pickWatch(watchId);
   });
+
+  /** The device Home's sheet is open on, by owner id. */
+  @state() private deviceSheet?: string;
+  /** The sheet is asking whether to forget its device. */
+  @state() private deviceForgetAsk = false;
+  /** Forget is on its way to the server. */
+  @state() private deviceForgetBusy = false;
+  /** Why the last Forget failed, shown in the sheet. */
+  @state() private deviceForgetError?: string;
 
   /** The Watch app's shared watch as last picked, remembered per browser
    * (`watch-pick.ts`). Never the complications device: `sharedWatch` works
@@ -6549,6 +6559,10 @@ export class WristAssistantPanel extends LitElement {
         dialog.showModal();
         dialog.querySelector<HTMLInputElement>("input.ws-pair-code")?.focus();
       }
+    }
+    if (changed.has("deviceSheet") && this.deviceSheet !== undefined) {
+      const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.dev-dialog");
+      if (dialog && !dialog.open) dialog.showModal();
     }
     if (changed.has("helpOpen") && this.helpOpen) {
       const dialog = this.renderRoot.querySelector<HTMLDialogElement>("dialog.help-dialog");
@@ -18800,10 +18814,13 @@ export class WristAssistantPanel extends LitElement {
             ${devices.length === 0
               ? html`<p class="home-empty">${this.linkReady ? "No watch or iPhone has connected to this Home Assistant yet." : "Loading…"}</p>`
               : html`<ul class="home-devices">${devices.map((d) => html`<li class="home-device ${d.sync}">
-                  <i class="home-dot" aria-hidden="true"></i>
-                  <span class="home-device-name">${uiIcon(d.kind === "iphone" ? "phone" : "watch")}<span class="home-device-label">${d.name}</span></span>
-                  <span class="home-device-sync">${deviceSyncLabel(d.sync)}${d.waitingFor.length === 0 ? nothing
-                    : html`<span class="home-device-why"> · ${waitingForText(d.waitingFor)}</span>`}</span>
+                  <button type="button" class="home-device-open" title=${`Open ${d.name}`} @click=${() => this.openDeviceSheet(d.id)}>
+                    <i class="home-dot" aria-hidden="true"></i>
+                    <span class="home-device-name">${uiIcon(d.kind === "iphone" ? "phone" : "watch")}<span class="home-device-label">${d.name}</span></span>
+                    <span class="home-device-sync">${deviceSyncLabel(d.sync)}${d.waitingFor.length === 0 ? nothing
+                      : html`<span class="home-device-why"> · ${waitingForText(d.waitingFor)}</span>`}</span>
+                    <span class="home-device-go" aria-hidden="true">${uiIcon("chevron")}</span>
+                  </button>
                 </li>`)}</ul>`}
             ${devices.length === 0 ? nothing : html`<p class="home-small">${admin
               ? "Synced, Waiting and Nothing waiting cover complications and widgets, and on a watch also its pages, menus, settings and the rest of the watch app."
@@ -18827,7 +18844,135 @@ export class WristAssistantPanel extends LitElement {
           }))}</div>
         </section>`}
       </div></div>
-      ${admin && this.pairOpen ? this.renderPairDialog() : nothing}`;
+      ${admin && this.pairOpen ? this.renderPairDialog() : nothing}
+      ${this.deviceSheet !== undefined ? this.renderDeviceSheet(this.deviceSheet, devices, admin) : nothing}`;
+  }
+
+  /** Open Home's sheet on one device, starting on its overview. */
+  private openDeviceSheet(ownerId: string) {
+    this.deviceForgetAsk = false;
+    this.deviceForgetError = undefined;
+    this.deviceSheet = ownerId;
+  }
+
+  private closeDeviceSheet() {
+    if (this.deviceForgetBusy) return;
+    this.deviceSheet = undefined;
+    this.deviceForgetAsk = false;
+    this.deviceForgetError = undefined;
+  }
+
+  /**
+   * One device, opened from a row of Home's Devices card: its state, what it
+   * is, a few of its designs, and the way to the rest. A watch has a door to
+   * its Watch settings. An administrator can forget it, after a second step
+   * in the same sheet that says what goes with it.
+   *
+   * The designs are the picker's cards, the copy on this device drawn. Four
+   * at most; past that three and a tile with how many more, which opens the
+   * Complications tab on this device's tab.
+   */
+  private renderDeviceSheet(ownerId: string, devices: readonly HomeDeviceRow[], admin: boolean) {
+    const row = devices.find((d) => d.id === ownerId);
+    // The device left the home (forgotten here or elsewhere): nothing to show.
+    if (!row) return nothing;
+    const close = () => this.closeDeviceSheet();
+    const owner = this.ownerOf(ownerId);
+    const designs = rowsOnDevice(this.pickerRows(), ownerId).filter((r) => r.copies.some((c) => c.ownerId === ownerId && c.item.kind === "record"));
+    const { shown, more } = deviceSheetCards(designs);
+    const toComplications = () => { close(); this.goTo(COMPLICATIONS_PATH); };
+    const openList = () => {
+      this.pickPickerTab(ownerId);
+      toComplications();
+      // With a design open the tab is the editor, so the list opens over it.
+      if (this.draft) this.openPicker();
+    };
+    const settings = watchScreenPath(WATCH_SETTINGS_SCREEN, ownerId);
+    const title = this.deviceForgetAsk ? `Forget “${row.name}”?` : row.name;
+    const facts = deviceFacts(owner, row.kind).join(" · ");
+    if (this.deviceForgetAsk) {
+      const n = designs.length;
+      return html`<dialog class="xf dev-dialog" aria-label=${title} @close=${close}
+        @cancel=${(e: Event) => { if (this.deviceForgetBusy) e.preventDefault(); }}>
+        ${this.dialogHead(title, facts, close)}
+        <div class="xfer-body">
+          <div class="xf-lead warn">${uiIcon("info")}<span>This removes <b>${row.name}</b> from this Home Assistant.
+            ${n === 0 ? nothing : html`Its ${n === 1 ? "complication moves" : `${n} complications move`} to ${UNASSIGNED_LABEL}, so the ${n === 1 ? "design is" : "designs are"} kept.`}
+            ${row.kind === "watch" ? "Its pages, menus and watch settings are deleted." : nothing}</span></div>
+          <div class="xf-lead">${uiIcon("info")}<span>Use this for a device you no longer use. If the app is still on it, the device can connect again later, but it starts empty. This cannot be undone.</span></div>
+          ${this.deviceForgetError ? html`<p class="dev-err">${this.deviceForgetError}</p>` : nothing}
+          <div class="dev-acts">
+            <button class="ghost dev-forget" ?disabled=${this.deviceForgetBusy}
+              @click=${() => { this.deviceForgetAsk = false; this.deviceForgetError = undefined; }}>Back</button>
+            <button class="danger" ?disabled=${this.deviceForgetBusy}
+              @click=${() => void this.forgetDeviceNow(ownerId)}>${this.deviceForgetBusy ? "Forgetting…" : "Forget device"}</button>
+          </div>
+        </div>
+      </dialog>`;
+    }
+    return html`<dialog class="xf dev-dialog" aria-label=${title} @close=${close}>
+      ${this.dialogHead(title, facts, close)}
+      <div class="xfer-body">
+        <div class="dev-state ${row.sync}"><i class="home-dot" aria-hidden="true"></i>
+          <span><b>${deviceSyncLabel(row.sync)}</b>${row.waitingFor.length === 0 ? nothing
+            : html`<span class="home-device-why"> · ${waitingForText(row.waitingFor)}</span>`}</span></div>
+        ${!admin && designs.length === 0 ? nothing : html`<div class="xf-stack">
+          <div class="xf-label">Complications<span class="xf-count">${designs.length}</span></div>
+          ${designs.length === 0
+            ? html`<p class="dev-none">No complication is on this device yet.</p>`
+            : html`<div class="dev-cards">
+              ${shown.map((r) => {
+                const copy = r.copies.find((c) => c.ownerId === ownerId && c.item.kind === "record") ?? r.open;
+                return this.renderStartCard(r, copy, () => { toComplications(); void this.openFromPicker(r, copy); });
+              })}
+              ${more === 0 ? nothing : html`<button type="button" class="dev-more" title=${`Every complication on ${row.name}`}
+                @click=${openList}><b>+${more}</b><span>more</span></button>`}
+            </div>`}
+        </div>`}
+        <div class="dev-acts">
+          ${admin && row.kind === "watch" ? html`<a class="home-btn" href=${panelUrl(this.route, settings, window.location.pathname)}
+            @click=${(e: MouseEvent) => {
+              if (!isPlainClick(e)) return;
+              e.preventDefault();
+              close();
+              this.pickWatch(ownerId);
+              this.goTo(settings);
+            }}>${uiIcon("watch")}<span>Watch settings</span></a>` : nothing}
+          ${admin ? html`<button class="ghost danger dev-forget" @click=${() => { this.deviceForgetAsk = true; }}>Forget device…</button>` : nothing}
+        </div>
+      </div>
+    </dialog>`;
+  }
+
+  /**
+   * Forget the sheet's device on the server, then read the devices and lists
+   * again: its designs are in Unassigned now. When it was the complications
+   * device, another one is picked, the way a first open picks one. The draft
+   * open on it is asked about first, since it is about to lose its device.
+   */
+  private async forgetDeviceNow(ownerId: string) {
+    if (this.ownerId === ownerId && this.draft?.dirty && !this.confirmDiscard()) return;
+    this.deviceForgetBusy = true;
+    this.deviceForgetError = undefined;
+    try {
+      await forgetDevice(this.hass, ownerId);
+    } catch (err) {
+      this.deviceForgetError = `Could not forget it: ${errText(err)}`;
+      this.deviceForgetBusy = false;
+      return;
+    }
+    this.deviceForgetBusy = false;
+    this.closeDeviceSheet();
+    if (this.ownerId === ownerId) {
+      this.clearDraft();
+      this.ownerId = undefined;
+      this.records = [];
+      await this.loadOwners();
+    } else {
+      await this.loadOwners();
+      await this.loadOtherLists();
+      await this.loadRecords();
+    }
   }
 
   /** Home's "Pair a watch" dialog, opened from the Devices card, or from the

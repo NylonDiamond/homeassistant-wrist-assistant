@@ -322,6 +322,19 @@ export async function fetchWatchStatus(hass: HassLike, owner: string) {
   }>({ type: `${D}/watch_status`, owner_watch_id: owner });
 }
 
+/** Remove one device from this home: its pairing, its push token and its
+ * watch setup go, and its designs move to the Library. Always forced: the
+ * panel asks first, and every device in use still holds a token or a design,
+ * which is what the server's own check refuses without force. */
+export async function forgetDevice(hass: HassLike, watchId: string) {
+  return hass.connection.sendMessagePromise<{
+    ok: boolean;
+    watch_id: string;
+    device_removed: boolean;
+    complications_moved_to_library: number;
+  }>({ type: "wrist_assistant/devices/forget", watch_id: watchId, force: true });
+}
+
 export async function saveRecord(
   hass: HassLike,
   owner: string,

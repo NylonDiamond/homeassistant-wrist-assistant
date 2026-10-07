@@ -108,6 +108,35 @@ describe("Home's Devices card", () => {
   });
 });
 
+describe("Home's device sheet", () => {
+  const sheet = method("  private renderDeviceSheet(");
+  const forget = method("  private async forgetDeviceNow(ownerId: string) {");
+
+  it("opens from a whole device row, for everyone", () => {
+    expect(home).toContain(`<button type="button" class="home-device-open" title=\${\`Open \${d.name}\`} @click=\${() => this.openDeviceSheet(d.id)}>`);
+    expect(home).toContain("${this.deviceSheet !== undefined ? this.renderDeviceSheet(this.deviceSheet, devices, admin) : nothing}");
+  });
+
+  it("shows a few of the device's designs and a tile for the rest, which opens its tab", () => {
+    expect(sheet).toContain("const { shown, more } = deviceSheetCards(designs);");
+    expect(sheet).toContain("this.pickPickerTab(ownerId);");
+    expect(sheet).toContain("<b>+${more}</b><span>more</span>");
+  });
+
+  it("offers Forget to administrators only, behind a second step", () => {
+    expect(sheet).toContain("${admin ? html`<button class=\"ghost danger dev-forget\" @click=${() => { this.deviceForgetAsk = true; }}>Forget device…</button>` : nothing}");
+    expect(sheet).toContain("@click=${() => void this.forgetDeviceNow(ownerId)}");
+    expect(sheet.indexOf("if (this.deviceForgetAsk) {")).toBeLessThan(sheet.indexOf("forgetDeviceNow(ownerId)"));
+  });
+
+  it("reads the devices and lists again after a Forget, and picks another device when it was the open one", () => {
+    expect(forget).toContain("await forgetDevice(this.hass, ownerId);");
+    expect(forget).toContain("if (this.ownerId === ownerId && this.draft?.dirty && !this.confirmDiscard()) return;");
+    expect(forget).toContain("this.ownerId = undefined;");
+    expect(forget).toContain("await this.loadOtherLists();");
+  });
+});
+
 describe("Home's recent designs", () => {
   it("open on the Complications tab, moving there before the design opens", () => {
     const recent = between(home, `<section class="start-sec home-recent">`, "</section>");

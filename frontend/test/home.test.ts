@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { OwnerSummary } from "../src/ha-api.js";
-import { homeDeviceRows, homeDevices, homeStyles } from "../src/home.js";
+import { deviceFacts, deviceSheetCards, homeDeviceRows, homeDevices, homeStyles } from "../src/home.js";
 import { homeSync } from "../src/send-state.js";
 import { shellStyles } from "../src/shell.js";
 
@@ -76,6 +76,32 @@ describe("homeDeviceRows", () => {
     const list = rows(owners);
     expect(list.map((r) => [r.id, r.sync])).toEqual([["ok", "synced"], ["behind", "waiting"], ["new", "waiting"], ["empty", "idle"]]);
     expect(homeSync(homeDevices(owners, short, long))).toEqual({ kind: "waiting", waiting: ["Behind", "New"] });
+  });
+});
+
+describe("deviceSheetCards", () => {
+  it("shows every design when they fit", () => {
+    expect(deviceSheetCards([1, 2, 3, 4])).toEqual({ shown: [1, 2, 3, 4], more: 0 });
+    expect(deviceSheetCards([])).toEqual({ shown: [], more: 0 });
+  });
+
+  it("keeps the last tile for how many more there are", () => {
+    expect(deviceSheetCards([1, 2, 3, 4, 5])).toEqual({ shown: [1, 2, 3], more: 2 });
+    expect(deviceSheetCards(Array.from({ length: 30 }, (_, i) => i)).more).toBe(27);
+  });
+});
+
+describe("deviceFacts", () => {
+  it("says what the device is, its app, and a watch's iPhone", () => {
+    expect(deviceFacts(owner({ app_version: "3.1", app_build: "4", paired_iphone_name: "Ann's iPhone" }), "watch"))
+      .toEqual(["Apple Watch", "App 3.1 (4)", "Paired with Ann's iPhone"]);
+    expect(deviceFacts(owner({ device_kind: "iphone", app_version: "3.1", paired_iphone_name: null }), "iphone"))
+      .toEqual(["iPhone", "App 3.1"]);
+  });
+
+  it("leaves out what the device never reported", () => {
+    expect(deviceFacts(owner({ app_version: null }), "watch")).toEqual(["Apple Watch"]);
+    expect(deviceFacts(undefined, "iphone")).toEqual(["iPhone"]);
   });
 });
 

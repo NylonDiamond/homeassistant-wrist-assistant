@@ -66,6 +66,23 @@ export function homeDeviceRows(devices: readonly IdHomeDevice[], watchApp: Reado
   return [...rows.filter((r) => r.kind === "watch"), ...rows.filter((r) => r.kind === "iphone")];
 }
 
+/** The device sheet's row of designs: all of them when they fit in `max`
+ * tiles, else one fewer, so the last tile can say how many more there are. */
+export function deviceSheetCards<T>(rows: readonly T[], max = 4): { shown: T[]; more: number } {
+  if (rows.length <= max) return { shown: [...rows], more: 0 };
+  const shown = rows.slice(0, Math.max(0, max - 1));
+  return { shown, more: rows.length - shown.length };
+}
+
+/** The line under the device sheet's title: what it is, its app version, and
+ * on a watch the iPhone it is paired with. Only what the device reported. */
+export function deviceFacts(owner: OwnerSummary | undefined, kind: "watch" | "iphone"): string[] {
+  const facts: string[] = [kind === "iphone" ? "iPhone" : "Apple Watch"];
+  if (owner?.app_version) facts.push(`App ${owner.app_version}${owner.app_build ? ` (${owner.app_build})` : ""}`);
+  if (kind === "watch" && owner?.paired_iphone_name) facts.push(`Paired with ${owner.paired_iphone_name}`);
+  return facts;
+}
+
 /**
  * Home's look, added to the panel's sheet. Black ground, graphite cards,
  * neutral controls each with a one pixel outline. A section's hue shows in
@@ -127,8 +144,20 @@ export const homeStyles = css`
   button.home-btn:disabled { opacity: .5; cursor: default; }
   .home-btn svg.ui-icon { width: 14px; height: 14px; }
   .home-devices { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
-  .home-device { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 8px 0; border-top: 1px solid var(--wa-line); }
+  .home-device { min-width: 0; border-top: 1px solid var(--wa-line); }
   .home-device:first-child { border-top: 0; }
+  /* The whole row opens the device's sheet. It reaches 6px past the card's
+     text on both sides, so the hover fill has room and the text stays put. */
+  button.home-device-open {
+    display: flex; align-items: center; gap: 10px; width: calc(100% + 12px); min-width: 0; box-sizing: border-box;
+    margin: 0 -6px; padding: 8px 6px; border: 0; border-radius: 6px; font: inherit; text-align: left; cursor: pointer;
+    color: inherit; background: transparent;
+  }
+  button.home-device-open:hover { background: var(--wa-hover); }
+  button.home-device-open:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  /* A right-pointing chevron: the down one, turned. */
+  .home-device-go { display: inline-flex; flex: none; color: var(--wa-muted); transform: rotate(-90deg); }
+  .home-device-go svg.ui-icon { width: 13px; height: 13px; }
   .home-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--wa-muted); }
   .home-device.synced .home-dot { background: var(--wa-green); }
   .home-device.waiting .home-dot { background: var(--wa-amber); }
@@ -141,6 +170,39 @@ export const homeStyles = css`
   .home-device.waiting .home-device-sync { color: var(--wa-amber); }
   /* What a waiting device waits for, after the word, in the quiet ink. */
   .home-device.waiting .home-device-why { color: var(--wa-muted); font-weight: 400; }
+  /* The device sheet: one device's state, a few of its designs, and Forget.
+     The dialog's frame is the transfer dialogs' (dialog.xf). */
+  dialog.dev-dialog { width: min(560px, calc(100vw - 32px)); }
+  .dev-state { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .dev-state.synced .home-dot { background: var(--wa-green); }
+  .dev-state.waiting .home-dot { background: var(--wa-amber); }
+  .dev-state.waiting b { color: var(--wa-amber); }
+  .dev-state b { font-weight: 600; }
+  .dev-state .home-device-why { color: var(--wa-muted); }
+  .dev-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+  .dev-cards button.start-card { padding: 8px; border-radius: 12px; }
+  .dev-cards .start-card-pic { margin-bottom: 6px; }
+  .dev-cards .start-card-name { font-size: 12.5px; }
+  /* Every card here is on this device, so only its shape is said. */
+  .dev-cards .start-card-where { display: none; }
+  .dev-cards .start-card-shape { margin-left: 0; }
+  button.dev-more {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 0;
+    border-radius: 12px; font: inherit; cursor: pointer; color: var(--wa-ink);
+    background: transparent; border: 1px dashed var(--wa-line-strong);
+  }
+  button.dev-more:hover { background: var(--wa-hover); }
+  button.dev-more:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  button.dev-more b { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  button.dev-more span { font-size: 12px; color: var(--wa-muted); }
+  .dev-none { margin: 0; font-size: 13px; color: var(--wa-muted); }
+  .dev-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .dev-acts .dev-forget { margin-left: auto; }
+  .dev-acts button { height: 32px; padding: 0 14px; }
+  .dev-err { margin: 0; font-size: 12.5px; color: var(--error-color); }
+  @container xfer (max-width: 420px) {
+    .dev-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
   .home-small { margin: 0; font-size: 11.5px; color: var(--wa-muted); }
   .home-empty { margin: 0; font-size: 13px; color: var(--wa-muted); }
   @media (max-width: 900px) {
