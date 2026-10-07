@@ -141,7 +141,7 @@ import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
 import { type SendState, agoWords, describeHomeSync, describeSend, deviceSyncLabel, homeSync, sendState, sendWaitMs } from "./send-state.js";
-import { type HomeDeviceRow, deviceFacts, deviceSheetCards, homeDeviceRows, homeDevices, homeStyles } from "./home.js";
+import { type DeviceSheetTab, type HomeDeviceRow, deviceFacts, deviceSheetCards, deviceSheetTabs, homeDeviceRows, homeDevices, homeStyles } from "./home.js";
 import { type WatchAppSync, readWatchAppSync, summaryUnknown, summaryWatchAppSyncs, waitingForText, watchAppSyncKey } from "./watch-app-sync.js";
 import { type PickerForm, type TabMemory, browseAllTab, listPageEscape, listPageLead, listPageShown, listPageState, listPageStyles, listsReady, pickTab, pickerSurfaceClass, restoreTab } from "./list-page.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
@@ -18881,13 +18881,28 @@ export class WristAssistantPanel extends LitElement {
     const designs = rowsOnDevice(this.pickerRows(), ownerId).filter((r) => r.copies.some((c) => c.ownerId === ownerId && c.item.kind === "record"));
     const { shown, more } = deviceSheetCards(designs);
     const toComplications = () => { close(); this.goTo(COMPLICATIONS_PATH); };
-    const openList = () => {
+    const openList = (filter: "all" | "control" = "all") => {
+      this.pickerFilter = filter;
       this.pickPickerTab(ownerId);
       toComplications();
       // With a design open the tab is the editor, so the list opens over it.
       if (this.draft) this.openPicker();
     };
-    const settings = watchScreenPath(WATCH_SETTINGS_SCREEN, ownerId);
+    const href = (path: string) => panelUrl(this.route, path, window.location.pathname);
+    const tab = (t: DeviceSheetTab) => {
+      if (t.kind === "list") {
+        return html`<button type="button" class="dev-tab" title=${`${t.label} on ${row.name}`} @click=${() => openList(t.filter)}>${t.label}</button>`;
+      }
+      const path = watchScreenPath(t.screen, ownerId);
+      return html`<a class="dev-tab" href=${href(path)} title=${`${t.label} on ${row.name}`}
+        @click=${(e: MouseEvent) => {
+          if (!isPlainClick(e)) return;
+          e.preventDefault();
+          close();
+          this.pickWatch(ownerId);
+          this.goTo(path);
+        }}>${t.label}</a>`;
+    };
     const title = this.deviceForgetAsk ? `Forget “${row.name}”?` : row.name;
     const facts = deviceFacts(owner, row.kind).join(" · ");
     // One dialog for both steps, so the confirm step keeps the open modal:
@@ -18907,6 +18922,7 @@ export class WristAssistantPanel extends LitElement {
           </div>
         </div>`;
     const overview = html`<div class="xfer-body">
+        <nav class="dev-tabs" aria-label=${`Pages for ${row.name}`}>${deviceSheetTabs(row.kind, admin).map(tab)}</nav>
         <div class="dev-state ${row.sync}"><i class="home-dot" aria-hidden="true"></i>
           <span><b>${deviceSyncLabel(row.sync)}</b>${row.waitingFor.length === 0 ? nothing
             : html`<span class="home-device-why"> · ${waitingForText(row.waitingFor)}</span>`}</span></div>
@@ -18920,19 +18936,19 @@ export class WristAssistantPanel extends LitElement {
                 return this.renderStartCard(r, copy, () => { toComplications(); void this.openFromPicker(r, copy); });
               })}
               ${more === 0 ? nothing : html`<button type="button" class="dev-more" title=${`Every complication on ${row.name}`}
-                @click=${openList}><b>+${more}</b><span>more</span></button>`}
+                @click=${() => openList()}><b>+${more}</b><span>more</span></button>`}
             </div>`}
         </div>`}
         <div class="dev-acts">
-          ${admin && row.kind === "watch" ? html`<a class="home-btn" href=${panelUrl(this.route, settings, window.location.pathname)}
-            @click=${(e: MouseEvent) => {
-              if (!isPlainClick(e)) return;
-              e.preventDefault();
-              close();
-              this.pickWatch(ownerId);
-              this.goTo(settings);
-            }}>${uiIcon("watch")}<span>Watch settings</span></a>` : nothing}
-          ${admin ? html`<button class="ghost danger dev-forget" @click=${() => { this.deviceForgetAsk = true; }}>Forget device…</button>` : nothing}
+          ${admin ? html`<button class="home-btn" ?disabled=${this.freeSlot() < 0 || this.ownerBusy}
+            title=${this.freeSlot() < 0 ? "Every device is full. Delete a complication first." : `Make a new complication on ${row.name}`}
+            @click=${() => {
+              toComplications();
+              this.openNewDialog();
+              this.pickKind(row.kind);
+              this.newOwners = new Set([ownerId]);
+            }}>${uiIcon("plus")}<span>${row.kind === "iphone" ? "New widget" : "New complication"}</span></button>` : nothing}
+          ${admin ? html`<button class="danger dev-forget" @click=${() => { this.deviceForgetAsk = true; }}>${uiIcon("delete")}<span>Forget device</span></button>` : nothing}
         </div>
       </div>`;
     return html`<dialog class="xf dev-dialog" aria-label=${title} @close=${close}

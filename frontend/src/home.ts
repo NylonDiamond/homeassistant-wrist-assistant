@@ -6,6 +6,7 @@ import { css } from "lit";
 import { litOutline } from "./editor-chrome.js";
 import type { OwnerSummary } from "./ha-api.js";
 import { type DeviceSync, type HomeDevice, deviceSync } from "./send-state.js";
+import { type WatchScreen, WATCH_SCREENS, WATCH_SETTINGS_SCREEN } from "./shell.js";
 import { type DeviceKind, deviceKindOf } from "./version.js";
 import { type WatchAppSync, deviceVerdict } from "./watch-app-sync.js";
 
@@ -72,6 +73,35 @@ export function deviceSheetCards<T>(rows: readonly T[], max = 4): { shown: T[]; 
   if (rows.length <= max) return { shown: [...rows], more: 0 };
   const shown = rows.slice(0, Math.max(0, max - 1));
   return { shown, more: rows.length - shown.length };
+}
+
+/** One tab across the top of the device sheet: the device's complications
+ * (all of them, or only its Control Center ones), or one watch screen. */
+export type DeviceSheetTab =
+  | { kind: "list"; label: string; filter: "all" | "control" }
+  | { kind: "screen"; label: string; screen: WatchScreen };
+
+/**
+ * The device sheet's tabs, each opening its page on this device. A watch has
+ * its complications, then every watch screen that belongs to one watch, then
+ * Settings; HTTP actions and Cameras are the home's, not a watch's, so they
+ * stay on Home's Watch app card. An iPhone has its widgets and its Control
+ * Center controls, which is all the panel holds for a phone. The watch
+ * screens are an administrator's, as on Home.
+ */
+export function deviceSheetTabs(kind: "watch" | "iphone", admin: boolean): DeviceSheetTab[] {
+  if (kind === "iphone") {
+    return [
+      { kind: "list", label: "Widgets", filter: "all" },
+      { kind: "list", label: "Control Center", filter: "control" },
+    ];
+  }
+  const tabs: DeviceSheetTab[] = [{ kind: "list", label: "Complications", filter: "all" }];
+  if (!admin) return tabs;
+  for (const screen of [...WATCH_SCREENS.filter((s) => s.shared !== true), WATCH_SETTINGS_SCREEN]) {
+    tabs.push({ kind: "screen", label: screen.label, screen });
+  }
+  return tabs;
 }
 
 /** The line under the device sheet's title: what it is, its app version, and
@@ -173,6 +203,16 @@ export const homeStyles = css`
   /* The device sheet: one device's state, a few of its designs, and Forget.
      The dialog's frame is the transfer dialogs' (dialog.xf). */
   dialog.dev-dialog { width: min(560px, calc(100vw - 32px)); }
+  /* The sheet's tabs: a door to each of the device's pages, wrapping onto a
+     second line on a narrow screen. Outlined like every Home control. */
+  .dev-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+  a.dev-tab, button.dev-tab {
+    display: inline-flex; align-items: center; box-sizing: border-box; height: 28px; padding: 0 10px;
+    border-radius: 6px; font: inherit; font-size: 12.5px; font-weight: 550; cursor: pointer; white-space: nowrap; text-decoration: none;
+    color: var(--wa-ink); background: var(--wa-field); border: 1px solid var(--wa-line-strong);
+  }
+  a.dev-tab:hover, button.dev-tab:hover { background: var(--wa-hover); }
+  a.dev-tab:focus-visible, button.dev-tab:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .dev-state { display: flex; align-items: center; gap: 8px; font-size: 13px; }
   .dev-state.synced .home-dot { background: var(--wa-green); }
   .dev-state.waiting .home-dot { background: var(--wa-amber); }
@@ -199,6 +239,8 @@ export const homeStyles = css`
   .dev-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .dev-acts .dev-forget { margin-left: auto; }
   .dev-acts button { height: 32px; padding: 0 14px; }
+  .dev-acts button.danger { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+  .dev-acts button.danger svg.ui-icon { width: 14px; height: 14px; }
   .dev-err { margin: 0; font-size: 12.5px; color: var(--error-color); }
   @container xfer (max-width: 420px) {
     .dev-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }

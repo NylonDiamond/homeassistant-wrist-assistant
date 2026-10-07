@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { OwnerSummary } from "../src/ha-api.js";
-import { deviceFacts, deviceSheetCards, homeDeviceRows, homeDevices, homeStyles } from "../src/home.js";
+import { deviceFacts, deviceSheetCards, deviceSheetTabs, homeDeviceRows, homeDevices, homeStyles } from "../src/home.js";
 import { homeSync } from "../src/send-state.js";
 import { shellStyles } from "../src/shell.js";
 
@@ -88,6 +88,25 @@ describe("deviceSheetCards", () => {
   it("keeps the last tile for how many more there are", () => {
     expect(deviceSheetCards([1, 2, 3, 4, 5])).toEqual({ shown: [1, 2, 3], more: 2 });
     expect(deviceSheetCards(Array.from({ length: 30 }, (_, i) => i)).more).toBe(27);
+  });
+});
+
+describe("deviceSheetTabs", () => {
+  const labels = (kind: "watch" | "iphone", admin: boolean) => deviceSheetTabs(kind, admin).map((t) => t.label);
+
+  it("gives a watch its complications, its own screens and Settings, never the home's shared screens", () => {
+    expect(labels("watch", true)).toEqual(["Complications", "Pages", "Menus", "Status pages", "Control Center", "Rooms", "Voice", "Settings"]);
+  });
+
+  it("gives an iPhone its widgets and its Control Center controls", () => {
+    expect(deviceSheetTabs("iphone", true)).toEqual([
+      { kind: "list", label: "Widgets", filter: "all" },
+      { kind: "list", label: "Control Center", filter: "control" },
+    ]);
+  });
+
+  it("keeps the watch screens for administrators", () => {
+    expect(labels("watch", false)).toEqual(["Complications"]);
   });
 });
 

@@ -124,10 +124,23 @@ describe("Home's device sheet", () => {
   });
 
   it("offers Forget to administrators only, behind a second step", () => {
-    expect(sheet).toContain("${admin ? html`<button class=\"ghost danger dev-forget\" @click=${() => { this.deviceForgetAsk = true; }}>Forget device…</button>` : nothing}");
+    expect(sheet).toContain("${admin ? html`<button class=\"danger dev-forget\" @click=${() => { this.deviceForgetAsk = true; }}>${uiIcon(\"delete\")}<span>Forget device</span></button>` : nothing}");
     expect(sheet).toContain("@click=${() => void this.forgetDeviceNow(ownerId)}");
     expect(sheet).toContain("${this.deviceForgetAsk ? ask : overview}");
     expect(sheet.match(/<dialog /g)).toHaveLength(1);
+  });
+
+  it("has a tab for each of the device's pages, each opening it on this device", () => {
+    expect(sheet).toContain("${deviceSheetTabs(row.kind, admin).map(tab)}");
+    expect(sheet).toContain("const path = watchScreenPath(t.screen, ownerId);");
+    expect(sheet).toContain("this.pickWatch(ownerId);");
+    expect(sheet).toContain("this.pickerFilter = filter;");
+  });
+
+  it("makes a new complication with this device already ticked", () => {
+    expect(sheet).toContain("this.pickKind(row.kind);");
+    expect(sheet).toContain("this.newOwners = new Set([ownerId]);");
+    expect(sheet.indexOf("this.pickKind(row.kind);")).toBeLessThan(sheet.indexOf("this.newOwners = new Set([ownerId]);"));
   });
 
   it("reads the devices and lists again after a Forget, and picks another device when it was the open one", () => {
