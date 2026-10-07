@@ -8,7 +8,7 @@
 // `panel/defaults.json` is what "Start with the defaults" in Watch settings
 // saves for a watch with no record yet, built here by
 // `watchBehaviorDefaults()` and written with sorted keys, two space indent
-// and a closing newline. The app decodes it as `WCBehaviorPreferences`. This
+// and a closing newline. The app decodes it as `BehaviorPreferences`. This
 // is the one fixture the panel builds, so a change starts here: rebuild it
 // with `WA_UPDATE_FIXTURES=1 npx vitest run test/watch-behavior-fixtures.test.ts`,
 // bring it into the canonical copy with that script's `--pull`, and check the

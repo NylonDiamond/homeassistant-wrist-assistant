@@ -145,7 +145,7 @@ CARD_PREVIEW_STORAGE_VERSION = 1
 WATCH_CONFIG_STORAGE_KEY = "wrist_assistant.watch_config"
 WATCH_CONFIG_STORAGE_VERSION = 1
 # The kinds a client may read and write: the page config (`GridConfiguration`
-# in the app), the watch behavior settings (`WCBehaviorPreferences`), the
+# in the app), the watch behavior settings (`BehaviorPreferences`), the
 # library catalog (`WatchLibraryCatalog`: the phone's HTTP actions and status
 # pages by id and name, which the panel's tile picker reads; an older phone
 # adds its macros, which were removed and are kept unread) and the

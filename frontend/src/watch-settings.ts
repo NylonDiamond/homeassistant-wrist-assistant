@@ -1,7 +1,7 @@
 // The Watch settings view's thinking, without its drawing.
 //
 // A watch's behavior settings are one JSON document, the app's
-// `WCBehaviorPreferences`. Home Assistant keeps it: the iPhone app moves its
+// `BehaviorPreferences`. Home Assistant keeps it: the iPhone app moves its
 // copy here once, or the panel makes the first one (`watchBehaviorDefaults`),
 // and the watch reads it from there. The panel is the only editor: this page
 // edits the keys the catalog lists, and Rooms edits the room keys. The
@@ -153,7 +153,7 @@ export function settingValue(setting: CatalogSetting, document: BehaviorDocument
  * The watch's own fallbacks, for a key it reads from older keys when the key
  * itself is absent or holds no value the watch knows.
  *
- * - `pageTitleMode`: `WCBehaviorPreferences.resolvedPageTitleMode`, read the
+ * - `pageTitleMode`: `BehaviorPreferences.resolvedPageTitleMode`, read the
  *   same way in `EntityStateViewModel`. The older `showPageTitle` false is
  *   Off, the older `pageTitleStyle` "Auto" is Auto, anything else is On.
  * - `topSectionDoubleTapAction`: `ConnectionManager.topSectionDoubleTapAction`.
@@ -634,12 +634,12 @@ export const SETTINGS_PAIR_FIRST_TEXT = "Pair this watch first, under Pair a wat
 export const PAGES_START_CONFLICT_TEXT = "Pages for this watch arrived meanwhile, so those are shown.";
 export const SETTINGS_START_CONFLICT_TEXT = "Settings for this watch arrived meanwhile, so those are shown.";
 
-/** `WCBehaviorPreferences.currentSchemaVersion` in the app. */
+/** `BehaviorPreferences.currentSchemaVersion` in the app. */
 export const BEHAVIOR_SCHEMA_VERSION = 1;
 
 /**
  * Keys the app's decoder needs that the catalog does not show, each at the
- * app's own default (`WCBehaviorPreferences.init`). They are not optional in
+ * app's own default (`BehaviorPreferences.init`). They are not optional in
  * Swift, so a document without them does not decode at all. The watch reads
  * none of the four any more (the crown no longer turns pages, and the grid
  * takes neither the double-tap speed nor the haptic strength), so they have

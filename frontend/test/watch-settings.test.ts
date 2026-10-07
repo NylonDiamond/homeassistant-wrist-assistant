@@ -468,7 +468,7 @@ describe("Start with the defaults", () => {
 
   it("carries the keys the app cannot decode without, at the app's own defaults", () => {
     const doc = watchBehaviorDefaults();
-    // The fields of `WCBehaviorPreferences` that are not optional in Swift.
+    // The fields of `BehaviorPreferences` that are not optional in Swift.
     const required: Record<string, unknown> = {
       longPressDuration: "Short",
       doubleTapSpeed: "Fast",

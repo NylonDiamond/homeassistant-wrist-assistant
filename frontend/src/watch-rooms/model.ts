@@ -1,7 +1,7 @@
 // The Rooms editor's thinking, without its drawing.
 //
 // The room settings of a watch are keys of its `behavior` record, the app's
-// `WCBehaviorPreferences`: the room sensor, the page per room, how and when
+// `BehaviorPreferences`: the room sensor, the page per room, how and when
 // pages switch, the fallback page, the point control targets per room (one
 // JSON string) and two point control switches. The Watch settings page
 // leaves them out; this editor writes them, the way the phone's Rooms screen

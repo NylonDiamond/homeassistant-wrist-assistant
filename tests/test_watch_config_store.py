@@ -655,7 +655,7 @@ def test_remove_deletes_every_owner_file_and_the_index(mod):
 
 
 def _behavior(**keys: Any) -> dict:
-    """A stand-in for WCBehaviorPreferences: flat, every key optional."""
+    """A stand-in for BehaviorPreferences: flat, every key optional."""
     doc = {"longPressDuration": "Normal", "wrapPages": False}
     doc.update(keys)
     return doc
