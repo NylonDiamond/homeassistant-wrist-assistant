@@ -1939,7 +1939,44 @@ function tileUnderlay(tile: WatchPageTile, input: WatchPagePreviewInput, active:
     const ink = flatInk(tile.animationColor, tileInk);
     layers.push(`radial-gradient(ellipse at 70% 30%, ${rgba(ink, 0.35)}, transparent 70%)`);
   }
+  layers.push(...groupUnderlayLayers(tile, input.page, size, s));
   return layers.length === 0 ? nothing : html`<span class="wp-under" style=${`background:${layers.join(", ")}`}></span>`;
+}
+
+/** The page's group a tile is in (`groupId`), or undefined. */
+function tileGroupOf(tile: WatchPageTile, page: WatchPage): Record<string, unknown> | undefined {
+  const id = typeof tile.groupId === "string" ? tile.groupId.toUpperCase() : "";
+  if (id === "" || !Array.isArray(page.groups)) return undefined;
+  const found = page.groups.find((g) => typeof g === "object" && g !== null && typeof (g as { id?: unknown }).id === "string"
+    && ((g as { id: string }).id).toUpperCase() === id);
+  return found as Record<string, unknown> | undefined;
+}
+
+/**
+ * A tile group's look on one of its tiles, under the tile's own layers: its
+ * background pattern as `GroupBackgroundPatternView` draws it on each tile
+ * (in `backgroundPatternColor` at `backgroundPatternOpacity ?? 0.5`, or in
+ * gray at `?? 1`), and for its animated overlay the same still hint a
+ * tile's effect gets, unless the tile has an overlay of its own, which wins
+ * on the watch. Nothing moves here.
+ */
+function groupUnderlayLayers(tile: WatchPageTile, page: WatchPage, size: { width: number; height: number }, s: number): string[] {
+  const group = tileGroupOf(tile, page);
+  if (group === undefined) return [];
+  const layers: string[] = [];
+  const overlay = typeof group.overlayStyle === "string" ? group.overlayStyle : "none";
+  const own = typeof tile.overlayStyle === "string" ? tile.overlayStyle : "none";
+  if (overlay !== "none" && own === "none") {
+    layers.push(`radial-gradient(ellipse at 30% 70%, ${rgba(flatInk(group.overlayColor, "#FFFFFF"), 0.3)}, transparent 70%)`);
+  }
+  const pattern = typeof group.backgroundPattern === "string" ? group.backgroundPattern : "none";
+  if (pattern !== "none") {
+    const color = parseTileColor(group.backgroundPatternColor);
+    const ink = color === undefined ? "#737373" : tileInkColor(color);
+    const opacity = storedNumber(group.backgroundPatternOpacity) ?? (color === undefined ? 1 : 0.5);
+    layers.push(...watchPatternLayers(pattern, ink, opacity, (storedNumber(group.backgroundPatternScale) ?? 1) * s, { width: size.width * s, height: size.height * s }));
+  }
+  return layers;
 }
 
 /** A Fill state bar as a background layer: from the bottom, as tall as the

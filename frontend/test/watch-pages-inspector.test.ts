@@ -445,7 +445,9 @@ describe("the inspector with several tiles picked", () => {
     const head = text.slice(text.indexOf(`<div class="insp-head">`), text.indexOf(`<div class="insp-body">`));
     expect(head).toMatch(/<button class="root" title="Edit the page"[^>]*>Hall<\/button><span class="sep">›<\/span><span class="kchip"[^>]*>2 tiles<\/span>/);
     expect(head).not.toContain("Collapse all");
-    expect(cards(text)).toHaveLength(1);
+    // The picked tiles' card, then the Group card (group-settings.ts).
+    expect(cards(text)).toHaveLength(2);
+    expect(cards(text)[1]).toContain("<h4>Group<");
     const picked = card(text, "2 tiles picked");
     // Each picked tile, in reading order, with its face, name and kind.
     const rows = [...picked.matchAll(/data-picked-tile=([^\s>]+)/g)].map((m) => m[1]);
@@ -477,6 +479,66 @@ describe("the inspector with several tiles picked", () => {
     const at = t.strings.findIndex((s, i) => s.trimEnd().endsWith("@click=") && t.strings.slice(0, i + 1).join("").includes("pe-picked-del"));
     (t.values[at] as () => void)();
     expect(again.currentPage()!.items).toEqual([]);
+  });
+
+  it("makes a group of touching tiles, shows its look, and ungroups it", () => {
+    const el = pickedHall();
+    let text = flat(inspector(el));
+    let group = card(text, "Group");
+    expect(group).toContain("A group draws one background pattern and one animated overlay across its tiles.");
+    expect(group).toMatch(/class="pe-btn pe-group-make" \?disabled=false/);
+    click(inspector(el), "pe-group-make");
+    const page = el.currentPage()!;
+    const groups = page.groups as Record<string, unknown>[];
+    expect(groups).toHaveLength(1);
+    const id = groups[0]!.id as string;
+    expect(id).toBe(id.toUpperCase());
+    expect((page.items as WatchPageTile[]).map((t) => t.groupId)).toEqual([id, id]);
+    // The pick stays, and the card now edits the group.
+    text = flat(inspector(el));
+    group = card(text, "Group");
+    expect(group).toContain("2 tiles");
+    expect(group).toContain("Background pattern");
+    expect(group).toContain("Animated overlay");
+    expect(group).not.toContain("pe-group-make");
+    click(inspector(el), "pe-group-ungroup");
+    expect(el.currentPage()!.groups).toEqual([]);
+    expect((el.currentPage()!.items as WatchPageTile[]).some((t) => "groupId" in t)).toBe(false);
+  });
+
+  it("refuses Make group while the picked tiles do not touch", () => {
+    vi.stubGlobal("window", { addEventListener() {}, removeEventListener() {} });
+    const el = editor(hallPage({ items: [DIMMER_TILE, { ...SPACER_TILE, gridRow: 6 }] }), DIMMER);
+    el.onKeyDown({ key: "a", defaultPrevented: false, metaKey: true, ctrlKey: false, altKey: false, shiftKey: false,
+      composedPath: () => [el], preventDefault() {} });
+    const group = card(flat(inspector(el)), "Group");
+    expect(group).toMatch(/class="pe-btn pe-group-make" \?disabled=true title=Tiles must touch to make a group\./);
+    expect(group).toContain(`<p class="hint">Tiles must touch to make a group.</p>`);
+  });
+
+  it("says under a grouped tile's name that it is in a group, with Edit group and Leave group", () => {
+    const G = "C3A0E000-0000-4000-8000-0000000000D1";
+    const look = { backgroundPattern: "dots", backgroundPatternColor: "#FF0000", id: G, overlayColor: "#00FF00", overlayIntensity: 1.5, overlaySize: 1, overlaySpeed: 2, overlayStyle: "snow" };
+    const grouped = () => hallPage({ items: [{ ...DIMMER_TILE, groupId: G }, { ...SPACER_TILE, groupId: G }], groups: [look] });
+    const el = editor(grouped(), DIMMER);
+    const text = flat(inspector(el));
+    expect(text).toContain("In a group of 2 tiles");
+    vi.stubGlobal("window", { addEventListener() {}, removeEventListener() {} });
+    click(inspector(el), "pe-group-edit");
+    expect([...(el.multi as ReadonlySet<string>)]).toEqual([DIMMER, SPACER]);
+    expect(el.selectedTileId).toBe(DIMMER);
+    // Leave group with two in it: the other tile takes the group's look and
+    // the group goes, as the phone's Remove did.
+    const other = editor(grouped(), DIMMER);
+    click(inspector(other), "pe-group-leave");
+    const page = other.currentPage()!;
+    expect(page.groups).toEqual([]);
+    const [dimmer, spacer] = page.items as WatchPageTile[];
+    expect("groupId" in dimmer!).toBe(false);
+    expect("groupId" in spacer!).toBe(false);
+    expect(dimmer!.backgroundPattern).toBeUndefined();
+    expect(spacer).toMatchObject({ backgroundPattern: "dots", patternOpacity: 0.5, patternColor: "#FF0000", overlayStyle: "snow", overlayColor: "#00FF00", overlaySpeed: 2, overlayIntensity: 1.5, overlaySize: 1 });
+    expect("patternScale" in spacer!).toBe(false);
   });
 });
 

@@ -226,6 +226,7 @@ import {
   tileSettingsFoldIds,
   tileSettingsStyles,
 } from "./tile-settings.js";
+import { type WatchGroupActions, renderPickedGroupCard, renderTileGroupLine } from "./group-settings.js";
 import {
   WATCH_PAGE_CHIP_COLOR,
   WATCH_PAGE_CHIP_LABELS,
@@ -4286,8 +4287,23 @@ export class WaPageEditor extends LitElement {
         </div>
         <p class="hint">${IS_MAC ? "⌘" : "Ctrl"}-click a tile to add it or take it out, Shift-click to pick a run. Drag one to move them all together. Click one on its own to edit it alone.</p>
       </div>
-    </section>`;
+    </section>
+    ${this.renderPickedGroup(page, ids)}`;
   }
+
+  /** The Group card under the picked tiles (`group-settings.ts`), on the
+   * primary picked tile's host. */
+  private renderPickedGroup(page: WatchPage, ids: readonly string[]): TemplateResult | typeof nothing {
+    if (this.editingOff(page)) return nothing;
+    const primary = this.selectedTileId === undefined ? undefined : this.tileOn(page, this.selectedTileId);
+    const host = primary === undefined ? undefined : this.tileSettingsHost(page, primary);
+    return host === undefined ? nothing : renderPickedGroupCard(host, ids, this.groupActions);
+  }
+
+  /** What the group rows ask of the editor: a new pick. */
+  private groupActions: WatchGroupActions = {
+    pick: (ids) => this.setPick(ids, this.selectedTileId),
+  };
 
   /**
    * The selected tile's cards: its pinned Name, its place and size as the
@@ -4343,6 +4359,7 @@ export class WaPageEditor extends LitElement {
     const host = this.tileSettingsHost(page, tile);
     return html`
       ${host === undefined ? nothing : renderTileName(host)}
+      ${host === undefined || off ? nothing : renderTileGroupLine(host, this.groupActions)}
       ${host === undefined ? nothing : renderTileSettings(host, { sections: tileInspectorSections(host), size })}
       <div class="ts-acts"><button class="pe-btn pe-danger" ?disabled=${off} title="Delete or Backspace" @click=${() => this.deleteTile()}>
         ${uiIcon("delete")}<span>Delete tile</span></button></div>`;
@@ -4862,6 +4879,12 @@ export class WaPageEditor extends LitElement {
     .pe-picked-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
     .pe-picked-list > .layer { cursor: default; }
     .pe-picked-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+    /* A tile group: its card under the picked tiles, and the line under a
+       grouped tile's name (group-settings.ts). */
+    .pe-group .ts-body { border: 0; margin: 0 0 8px; padding: 0; min-width: 0; }
+    .pe-group-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0 0 8px; padding: 6px 10px; border-radius: 8px; background: var(--wa-panel); font-size: 12px; color: var(--wa-muted); }
+    .pe-group-words { display: inline-flex; align-items: center; gap: 6px; margin-right: auto; }
+    .pe-group-words .ui-icon { width: 14px; height: 14px; }
     /* The tile whose Tiles row is pointed at: a solid tint and a thin ring,
        the complication editor's hover on a layer, so it never reads as the
        selection's ring when the pointer rests on the selected tile's row. */

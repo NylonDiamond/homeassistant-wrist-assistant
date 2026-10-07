@@ -479,7 +479,8 @@ function closeWork(work: Work): WatchPage {
         const { groupId: _dropped, ...rest } = next;
         next = rest;
       } else {
-        next.groupId = t.groupId;
+        // A new key at the phone's sorted place (`withSortedField`).
+        next = withSortedField(next, "groupId", t.groupId);
       }
     }
     items.push(next);
@@ -832,6 +833,205 @@ export function repairWatchTileGroups(
 export function watchGroupRegions(page: WatchPage, groupId: string): string[][] {
   const key = idKey(groupId);
   return key === undefined ? [] : groupComponents(openWork(page), key);
+}
+
+// ── making and leaving groups ────────────────────────────────────────────
+
+/** The object with `key` set: in its place when it has it, else where the
+ * phone's sorted encoding puts it when its keys are sorted, else at the end
+ * (`withField` of `tile-settings-model.ts`, kept here so this module does
+ * not import that one, which imports this). */
+function withSortedField<T extends JsonObject>(object: T, key: string, value: unknown): T {
+  const keys = Object.keys(object);
+  const sorted = keys.every((k, i) => i === 0 || keys[i - 1]! < k);
+  if (Object.hasOwn(object, key) || !sorted) return { ...object, [key]: value };
+  const out: JsonObject = {};
+  let placed = false;
+  for (const k of keys) {
+    if (!placed && key < k) {
+      out[key] = value;
+      placed = true;
+    }
+    out[k] = object[k];
+  }
+  if (!placed) out[key] = value;
+  return out as T;
+}
+
+/** A group as the phone's `TileGroup()` encodes it: every required key at
+ * its default, keys sorted, no optional key. */
+export function newWatchTileGroup(id: string): JsonObject {
+  return {
+    backgroundPattern: "none",
+    id: id.toUpperCase(),
+    overlayColor: "#FFFFFF",
+    overlayIntensity: 1,
+    overlaySize: 1,
+    overlaySpeed: 1,
+    overlayStyle: "none",
+  };
+}
+
+/**
+ * Whether these tiles are one 4-connected region, the phone's
+ * `areSelectedTilesAdjacent`: two or more tiles, and every cell any of them
+ * covers is reached from the first one's top left cell by steps up, down,
+ * left and right through cells they cover. An id the page lacks is skipped,
+ * as the phone skips it. Cut into blocks at every tile edge, as
+ * `groupComponents` is, so a tall tile costs nothing.
+ */
+export function watchTilesAdjacent(page: WatchPage, tileIds: readonly string[]): boolean {
+  const keys = new Set(tileIds.map(idKey).filter((k): k is string => k !== undefined));
+  if (keys.size < 2) return false;
+  const rects = openWork(page).tiles.filter((t) => keys.has(t.key));
+  if (rects.length < 2) return false;
+  const rows = cuts(rects.flatMap((t) => [t.row, t.row + t.rowSpan]));
+  const cols = cuts(rects.flatMap((t) => [t.col, t.col + t.colSpan]));
+  const rowAt = new Map(rows.map((r, i) => [r, i]));
+  const colAt = new Map(cols.map((c, i) => [c, i]));
+  const width = cols.length - 1;
+  const covered: boolean[] = new Array((rows.length - 1) * width).fill(false);
+  for (const t of rects) {
+    const r1 = rowAt.get(t.row + t.rowSpan)!;
+    const c1 = colAt.get(t.col + t.colSpan)!;
+    for (let r = rowAt.get(t.row)!; r < r1; r++) {
+      for (let c = colAt.get(t.col)!; c < c1; c++) covered[r * width + c] = true;
+    }
+  }
+  const total = covered.filter(Boolean).length;
+  const first = rects[0]!;
+  const visited = new Set<number>();
+  const queue: number[] = [rowAt.get(first.row)! * width + colAt.get(first.col)!];
+  for (let head = 0; head < queue.length; head++) {
+    const block = queue[head]!;
+    if (visited.has(block) || !covered[block]) continue;
+    visited.add(block);
+    const r = Math.floor(block / width);
+    const c = block % width;
+    if (r > 0) queue.push(block - width);
+    if (r + 2 < rows.length) queue.push(block + width);
+    if (c > 0) queue.push(block - 1);
+    if (c + 1 < width) queue.push(block + 1);
+  }
+  return visited.size === total;
+}
+
+/** The group a page has under this id, or undefined. */
+function groupEntry(work: Work, groupKey: string): JsonObject | undefined {
+  const found = work.groups?.find((g) => isJsonObject(g) && idKey(g.id) === groupKey);
+  return isJsonObject(found) ? found : undefined;
+}
+
+/**
+ * Make a group of these tiles, the phone's `onCreateUnifiedGroup`: only
+ * when they are adjacent (`watchTilesAdjacent`), a new `TileGroup()` with a
+ * new upper case id appended to `groups`, and each tile's `groupId` set to
+ * it. A tile that was in another group leaves it, and that group is then
+ * repaired (`repairWatchTileGroups`), so one left with a single tile is
+ * dissolved. Refused (the document comes back, with no id) when the tiles
+ * are not adjacent; when every one of them is already in the same group,
+ * nothing changes and that group's id comes back.
+ */
+export function makeWatchTileGroup(
+  document: WatchPagesDocument,
+  pageId: string,
+  tileIds: readonly string[],
+  options?: WatchEditOptions,
+): { document: WatchPagesDocument; groupId: string | undefined } {
+  const refused = { document, groupId: undefined };
+  const slot = tileSlot(document, pageId);
+  if (slot === undefined || !watchTilesAdjacent(slot.page, tileIds)) return refused;
+  const work = openWork(slot.page);
+  const keys = new Set(tileIds.map(idKey).filter((k): k is string => k !== undefined));
+  const members = work.tiles.filter((t) => keys.has(t.key));
+  const shared = members[0]?.groupId;
+  if (shared !== undefined && members.every((t) => t.groupId === shared) && groupEntry(work, shared) !== undefined) {
+    return { document, groupId: shared };
+  }
+  const id = newIdFrom(options);
+  const before = groupKeysOf(members);
+  work.groups = [...(work.groups ?? []), newWatchTileGroup(id)];
+  work.groupsChanged = true;
+  for (const t of members) setGroupId(t, id);
+  repairGroups(work, [...before, id], options);
+  let page = closeWork(work);
+  // A page that had no `groups` gets it at its sorted place, not at the end.
+  if (!Object.hasOwn(slot.page, "groups")) {
+    const { groups, ...rest } = page;
+    page = withSortedField(rest as WatchPage, "groups", groups);
+  }
+  return { document: withPage(document, slot, page), groupId: id };
+}
+
+/** Ungroup: every tile leaves the group and the group is removed from
+ * `groups` (the phone's `dissolveGroup`). The tiles keep their own look. */
+export function ungroupWatchTileGroup(document: WatchPagesDocument, pageId: string, groupId: string): WatchPagesDocument {
+  const slot = tileSlot(document, pageId);
+  const key = idKey(groupId);
+  if (slot === undefined || key === undefined) return document;
+  const work = openWork(slot.page);
+  dissolveGroup(work, key);
+  return withPage(document, slot, closeWork(work));
+}
+
+/** The look a tile takes from its group when the group is dissolved under
+ * it by Leave group, the phone's `onRemoveTileFromGroup`: pattern, opacity,
+ * color, size, and the overlay's five keys. An absent optional group key
+ * removes the tile's. The phone copied an absent opacity as 1; here it is
+ * what the watch drew for the group (0.5 under a pattern color, else 1), so
+ * the tile looks as the group did. */
+function tileWithGroupLook(tile: WatchPageTile, group: JsonObject): WatchPageTile {
+  const num = (v: unknown, d: number): number => (typeof v === "number" && Number.isFinite(v) ? v : d);
+  const str = (v: unknown, d: string): string => (typeof v === "string" ? v : d);
+  let next: WatchPageTile = { ...tile };
+  const set = (key: string, value: unknown): void => {
+    if (value === undefined) delete next[key];
+    else next = withSortedField(next, key, value);
+  };
+  set("backgroundPattern", str(group.backgroundPattern, "none"));
+  set("patternOpacity", num(group.backgroundPatternOpacity, typeof group.backgroundPatternColor === "string" ? 0.5 : 1));
+  set("patternColor", typeof group.backgroundPatternColor === "string" ? group.backgroundPatternColor : undefined);
+  set("patternScale", typeof group.backgroundPatternScale === "number" ? group.backgroundPatternScale : undefined);
+  set("overlayStyle", str(group.overlayStyle, "none"));
+  set("overlayColor", str(group.overlayColor, "#FFFFFF"));
+  set("overlaySpeed", num(group.overlaySpeed, 1));
+  set("overlayIntensity", num(group.overlayIntensity, 1));
+  set("overlaySize", num(group.overlaySize, 1));
+  return next;
+}
+
+/**
+ * One tile leaves its group, the phone's "Remove" on the shared overlay
+ * banner (`onRemoveTileFromGroup`): its `groupId` is removed. When one tile
+ * or none is left, the one left takes the group's look on itself and the
+ * group is dissolved; otherwise the group is repaired, so a group the tile
+ * held together splits as a move would split it.
+ */
+export function leaveWatchTileGroup(
+  document: WatchPagesDocument,
+  pageId: string,
+  tileId: string,
+  options?: WatchEditOptions,
+): WatchPagesDocument {
+  const slot = tileSlot(document, pageId);
+  const key = idKey(tileId);
+  if (slot === undefined || key === undefined) return document;
+  const work = openWork(slot.page);
+  const leaving = work.tiles.filter((t) => t.key === key && t.groupId !== undefined);
+  if (leaving.length === 0) return document;
+  const groupKeys = groupKeysOf(leaving);
+  for (const t of leaving) setGroupId(t, undefined);
+  for (const groupKey of groupKeys) {
+    const remaining = work.tiles.filter((t) => t.groupId === groupKey);
+    if (remaining.length <= 1) {
+      const group = groupEntry(work, groupKey);
+      if (group !== undefined) for (const t of remaining) t.tile = tileWithGroupLook(t.tile, group);
+      dissolveGroup(work, groupKey);
+    } else {
+      repairGroup(work, groupKey, options);
+    }
+  }
+  return withPage(document, slot, closeWork(work));
 }
 
 // ── tile queries ─────────────────────────────────────────────────────────
