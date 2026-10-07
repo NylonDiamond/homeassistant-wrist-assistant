@@ -1,10 +1,8 @@
 """Smart camera streaming with server-side crop, resize, and quality control.
 
 Exports the `CameraStreamCoordinator`, frame/snapshot processing helpers,
-and `run_mjpeg_stream` for the v2 endpoints in `wa_v2_views.py`. The legacy
-bearer-authed view classes (CameraStreamView/CameraViewportView/
-CameraBatchView/CameraSnapshotView) were removed when the watch transport
-went pure-v2.
+and `run_mjpeg_stream` for the v2 endpoints in `wa_v2_views.py`, the only
+camera transport.
 """
 
 from __future__ import annotations
@@ -318,46 +316,6 @@ def _parse_bounded_float(
     return _clamp(parsed, lo, hi)
 
 
-def _parse_optional_bounded_float(
-    value: object,
-    *,
-    field: str,
-    lo: float,
-    hi: float,
-) -> float | None:
-    """Parse an optional numeric field and clamp it into range."""
-    if value is None:
-        return None
-    return _parse_bounded_float(value, field=field, default=lo, lo=lo, hi=hi)
-
-
-def _parse_bounded_int(
-    value: object,
-    *,
-    field: str,
-    default: int,
-    lo: int,
-    hi: int,
-) -> int:
-    """Parse an integer-ish field and clamp it into range."""
-    return int(
-        _parse_bounded_float(value, field=field, default=float(default), lo=lo, hi=hi)
-    )
-
-
-def _parse_optional_bounded_int(
-    value: object,
-    *,
-    field: str,
-    lo: int,
-    hi: int,
-) -> int | None:
-    """Parse an optional integer-ish field and clamp it into range."""
-    if value is None:
-        return None
-    return int(_parse_bounded_float(value, field=field, default=float(lo), lo=lo, hi=hi))
-
-
 def _parse_viewport(
     source: object,
     *,
@@ -389,7 +347,7 @@ async def run_mjpeg_stream(
 
     The session for `(watch_id, entity_id)` must already exist on the
     coordinator — callers create it before invoking this so they can
-    validate inputs (query params for legacy, token claim for v2) before
+    validate inputs (the stream token's claim) before
     we start writing response headers.
 
     The loop reads its mutable params (viewport / width / quality / fps /

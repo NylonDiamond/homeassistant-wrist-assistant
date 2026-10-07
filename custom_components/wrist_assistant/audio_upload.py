@@ -1,8 +1,7 @@
 """The watch's broadcast/intercom audio upload: naming, storage, cleanup.
 
-The upload op lives at `_op_audio_upload` in `wa_v2_views.py` (and, until v1
-is retired, at the bearer-authed `AudioUploadView`). Both save the clip under
-`/config/www/wrist_assistant/`, which Home Assistant serves at
+The upload op lives at `_op_audio_upload` in `wa_v2_views.py`. It saves the
+clip under `/config/www/wrist_assistant/`, which Home Assistant serves at
 `/local/wrist_assistant/` without authentication, because a media player has
 to be able to fetch the clip with a plain GET.
 

@@ -5,9 +5,8 @@ Run from the repo root:
     HA_URL=http://homeassistant.local:8123 HA_TOKEN=<long-lived> pytest -v tests/
 
 Set HA_URL to the base URL of your dev Home Assistant instance and HA_TOKEN
-to a long-lived access token. The suite hits the integration's HTTP surface
-directly — both the v2 endpoints and the legacy v1 endpoints kept alive for
-v1 watch app builds.
+to a long-lived access token. The suite hits the integration's v2 HTTP
+surface and its WebSocket commands directly.
 
 Anything that needs a signed identity must register it through the
 ``register_secret`` fixture rather than posting to /v2/register_secret by
@@ -18,14 +17,20 @@ of the session, so a run leaves the box's secret store exactly as it found it.
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import json
 import os
 import secrets
+import time
 import warnings
 from collections.abc import Callable, Iterator
+from typing import Any
 
 import pytest
 import requests
+
+WA_PROTOCOL_VERSION = 2
 
 
 @pytest.fixture(scope="session")
@@ -39,7 +44,7 @@ def base_url() -> str:
 
 @pytest.fixture(scope="session")
 def token() -> str:
-    """Long-lived access token used for bearer auth on v1 endpoints."""
+    """Long-lived access token for HA's own REST and WebSocket APIs."""
     t = os.environ.get("HA_TOKEN")
     if not t:
         pytest.skip("HA_TOKEN env var not set", allow_module_level=False)
@@ -48,7 +53,7 @@ def token() -> str:
 
 @pytest.fixture(scope="session")
 def session(token: str) -> requests.Session:
-    """Pre-authenticated requests session for v1 endpoints."""
+    """Bearer-authenticated requests session (e.g. /v2/register_secret)."""
     s = requests.Session()
     s.headers.update({"Authorization": f"Bearer {token}"})
     return s
@@ -156,6 +161,51 @@ def register_secret(
         return secret_bytes
 
     return _register
+
+
+@pytest.fixture
+def delta_poll(
+    base_url: str, register_secret: Callable[..., bytes]
+) -> Callable[..., requests.Response]:
+    """Signed /v2/delta long-polls under one fresh identity per test.
+
+    Returns ``poll(payload, *, timeout)``. The body's ``watch_id`` is left out
+    because the signed header is the source of truth. The id is wrapped in
+    double underscores, which ``DeltaCoordinator.real_sessions`` filters out,
+    so the polls never add a "Watch" device to HA; the coordinator still
+    tracks the session normally. ``register_secret`` forgets the identity
+    when the session ends.
+    """
+    watch_id = f"__pytest_delta_{secrets.token_hex(6)}__"
+    secret = register_secret(watch_id, label="pytest delta poll")
+
+    def _poll(payload: dict[str, Any], *, timeout: float) -> requests.Response:
+        body = json.dumps(payload).encode()
+        ts = int(time.time())
+        nonce = secrets.token_hex(16)
+        # The canonical string's op is always "delta" on this endpoint.
+        canonical = (
+            f"v{WA_PROTOCOL_VERSION}|delta|{watch_id}|{ts}|{nonce}".encode()
+            + b"\n"
+            + body
+        )
+        sig = hmac.new(secret, canonical, hashlib.sha256).hexdigest()
+        return requests.post(
+            f"{base_url}/api/wrist_assistant/v2/delta",
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "X-WA-Version": str(WA_PROTOCOL_VERSION),
+                "X-WA-Op": "delta",
+                "X-WA-Watch": watch_id,
+                "X-WA-Ts": str(ts),
+                "X-WA-Nonce": nonce,
+                "X-WA-Sig": sig,
+            },
+            timeout=timeout,
+        )
+
+    return _poll
 
 
 @pytest.fixture(scope="session", autouse=True)

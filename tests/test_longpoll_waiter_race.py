@@ -20,10 +20,9 @@ Sequence here:
   B must return within a couple of seconds carrying that event. Pre-fix B
   only returns at its 30 s timeout, empty.
 
-Uses the v1 bearer-authed endpoint like test_delta_regression.py, since it
-needs no HMAC provisioning. Same caveat as that file: most reliable when no
-other watch session is live, though this particular race is per-watch_id so
-another watch does not mask it.
+Polls the signed /v2/delta long-poll through the ``delta_poll`` fixture in
+conftest.py. This race is per-watch_id, so another live watch does not mask
+it.
 """
 
 from __future__ import annotations
@@ -31,10 +30,9 @@ from __future__ import annotations
 import threading
 import time
 import uuid
+from collections.abc import Callable
 
 import requests
-
-_TEST_WATCH_ID = "__pytest_wa_waiter_race__"
 
 
 def _set_state(base_url: str, token: str, entity_id: str, state: str) -> None:
@@ -56,15 +54,13 @@ def _delete_state(base_url: str, token: str, entity_id: str) -> None:
 
 
 def test_superseded_poll_does_not_blind_successor(
-    base_url: str, token: str, session: requests.Session
+    base_url: str, token: str, delta_poll: Callable[..., requests.Response]
 ) -> None:
     test_entity = f"wrist_assistant.test_pytest_{uuid.uuid4().hex[:8]}"
     _set_state(base_url, token, test_entity, "off")
     try:
-        r1 = session.post(
-            f"{base_url}/api/watch/updates",
-            json={
-                "watch_id": _TEST_WATCH_ID,
+        r1 = delta_poll(
+            {
                 "config_hash": "x",
                 "timeout": 1,
                 "entities": [test_entity],
@@ -78,16 +74,13 @@ def test_superseded_poll_does_not_blind_successor(
         def _poll(server_timeout: int, out: dict) -> None:
             started = time.monotonic()
             try:
-                r = requests.post(
-                    f"{base_url}/api/watch/updates",
-                    json={
-                        "watch_id": _TEST_WATCH_ID,
+                r = delta_poll(
+                    {
                         "config_hash": "x",
                         "timeout": server_timeout,
                         "entities": [test_entity],
                         "since": cursor,
                     },
-                    headers={"Authorization": f"Bearer {token}"},
                     timeout=server_timeout + 10,
                 )
                 out["status"] = r.status_code

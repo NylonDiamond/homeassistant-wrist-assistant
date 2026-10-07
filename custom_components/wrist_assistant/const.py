@@ -449,9 +449,11 @@ WA_ACCEPTED_PROTOCOL_VERSIONS = frozenset({2})
 # so the iOS app can decide whether to show its "update Wrist Assistant"
 # banner — set this above the proto version of any client we want to retire.
 #
-# Today this matches WA_PROTOCOL_VERSION because v1 endpoints were removed
-# wholesale in v2; bump it past 2 in a future release window when v3+ wire
-# changes make older apps unable to talk to us at all.
+# Today this matches WA_PROTOCOL_VERSION. The 13 bearer-authed v1 views
+# (`/api/watch/*`, plus summary, states_batch, camera, audio, notifications
+# and mass under `/api/wrist_assistant/`) were removed in 3.x, so a v1 app
+# build can no longer connect at all. Bump this past 2 only when v3+ wire
+# changes make v2 apps unable to talk to us.
 MIN_SUPPORTED_APP_PROTOCOL_VERSION = 2
 
 # Optional override copy for the "update Wrist Assistant" banner the iOS app

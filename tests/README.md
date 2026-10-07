@@ -1,6 +1,6 @@
 # Tests
 
-HTTP integration tests that hit a live Home Assistant instance. They verify the integration's v1 and v2 endpoints behave correctly end-to-end — they do not mock HA.
+HTTP integration tests that hit a live Home Assistant instance. They verify the integration's v2 endpoints and WebSocket commands behave correctly end to end; they do not mock HA.
 
 ## Setup
 
@@ -49,15 +49,16 @@ restart would make the watch miss changes silently rather than fail loudly.
 
 ### Watch IDs — avoid polluting the device registry
 
-When a test calls `/api/watch/updates` (or `/v2/delta`), the coordinator creates a `WatchSession` keyed by `watch_id`. The `sensor`/`binary_sensor`/`text` platforms iterate `coordinator.real_sessions` and create a device entry per unknown watch — so a naïve `watch_id="pytest-foo"` leaves a permanent "Watch pytest-foo" device in HA after the test ends.
+When a test calls `/v2/delta`, the coordinator creates a `WatchSession` keyed by `watch_id`. The `sensor`/`binary_sensor`/`text` platforms iterate `coordinator.real_sessions` and create a device entry per unknown watch, so a naïve `watch_id="pytest-foo"` leaves a permanent "Watch pytest-foo" device in HA after the test ends.
 
-`real_sessions` filters out watch IDs wrapped in double underscores (`api.py:872-879`). **Always use a `__pytest_*__` watch_id in tests** so no device is registered:
+`real_sessions` (`DeltaCoordinator` in `api.py`) filters out watch IDs wrapped in double underscores. **Always long-poll through the `delta_poll` fixture**, which signs with a fresh `__pytest_delta_*__` identity so no device is registered:
 
 ```python
-"watch_id": "__pytest_my_test__"
+def test_something(delta_poll):
+    r = delta_poll({"config_hash": "x", "timeout": 1, "entities": []}, timeout=15)
 ```
 
-The session is still tracked normally inside the coordinator — only the visible device side-effect is suppressed.
+The session is still tracked normally inside the coordinator; only the visible device side effect is suppressed.
 
 ### Signed identities: register through the fixture
 

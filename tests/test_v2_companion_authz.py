@@ -1,17 +1,17 @@
 """Cross-tenant authorization smoke test for /v2 ``companion_watch_id`` ops.
 
-A v2 op that accepts ``companion_watch_id`` (watch_secret_status,
-notifications_status, webhook_provision, notifications_register,
-send_test_notification) must only act on a companion watch the *authenticated
+A v2 op that accepts ``companion_watch_id`` (notifications_status,
+webhook_provision, notifications_register, send_test_notification) must only
+act on a companion watch the *authenticated
 caller owns* — i.e. the watch entry's recorded ``owner_iphone_id`` equals the
 caller. Otherwise any device authenticated to a shared HA instance (multi-user,
 or a household with several paired watches — the family-plan case) could name
 another user's watch and read or mutate its entry. Previously the companion was
 trusted straight from the request body with no ownership check.
 
-This exercises the read-only ``watch_secret_status`` op (no side effects on the
-live HA) as the representative case; all five ops route through the shared
-``_resolve_companion_target`` guard, so the boolean answer here proves the gate.
+This exercises the read-only ``notifications_status`` op (no side effects on
+the live HA) as the representative case; all four ops route through the shared
+``_resolve_companion_target`` guard, so the status code here proves the gate.
 
 Since step 6 an ``ios`` token files under the phone that signed, whatever
 companion it names, and the companion is only checked so an older app gets
@@ -69,10 +69,10 @@ def _register_key(
     )
 
 
-def _watch_secret_status(
+def _notifications_status(
     base_url: str, watch_id: str, secret: bytes, companion: str
 ) -> requests.Response:
-    op = "watch_secret_status"
+    op = "notifications_status"
     body = ('{"companion_watch_id": "%s"}' % companion).encode("utf-8")
     ts = int(time.time())
     nonce = secrets.token_hex(16)
@@ -103,9 +103,9 @@ def test_owner_can_query_companion(
     owner_secret = _register_key(register_secret, owner_id)
     _register_key(register_secret, watch_id, owner_iphone_id=owner_id)
 
-    r = _watch_secret_status(base_url, owner_id, owner_secret, watch_id)
+    r = _notifications_status(base_url, owner_id, owner_secret, watch_id)
     assert r.status_code == 200, r.text
-    assert r.json()["registered"] is True
+    assert r.json()["ok"] is True
 
 
 def test_non_owner_is_rejected(
@@ -124,7 +124,7 @@ def test_non_owner_is_rejected(
     _register_key(register_secret, watch_id, owner_iphone_id=owner_id)
     attacker_secret = _register_key(register_secret, attacker_id)
 
-    r = _watch_secret_status(base_url, attacker_id, attacker_secret, watch_id)
+    r = _notifications_status(base_url, attacker_id, attacker_secret, watch_id)
     assert r.status_code == 403, r.text
 
 
@@ -138,5 +138,5 @@ def test_ownerless_watch_allowed_for_backcompat(
     _register_key(register_secret, watch_id)  # no owner_iphone_id
     caller_secret = _register_key(register_secret, caller_id)
 
-    r = _watch_secret_status(base_url, caller_id, caller_secret, watch_id)
+    r = _notifications_status(base_url, caller_id, caller_secret, watch_id)
     assert r.status_code == 200, r.text

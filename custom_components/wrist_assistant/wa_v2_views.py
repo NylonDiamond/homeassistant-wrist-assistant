@@ -26,9 +26,7 @@ Endpoints registered here:
   complication; the readers behind it live in `bundle_ops`.
 
 * `POST /api/wrist_assistant/v2/delta` — long-poll wrapper around the existing
-  delta coordinator. Same payload, same gzip path, same response body as the
-  legacy `/api/watch/updates`; the only difference is HMAC auth + a signed
-  response body (post-gzip).
+  delta coordinator, with HMAC auth and a signed response body (post-gzip).
 
 * `GET  /api/wrist_assistant/v2/stream/{token}` — multipart MJPEG stream. The
   token is a single-use opaque handshake artifact minted by `op=stream_open`;
@@ -83,7 +81,7 @@ from .bundle_ops import (
     async_template_result,
     normalize_bundle_request,
 )
-from .camera_devices import build_camera_device_groups, resolve_stream_sibling
+from .camera_devices import build_camera_device_groups
 from .camera_stream import (
     DEFAULT_FPS,
     DEFAULT_QUALITY,
@@ -465,8 +463,7 @@ class WAActionView(HomeAssistantView):
 class WADeltaView(HomeAssistantView):
     """HMAC-authenticated long-poll wrapper for delta updates.
 
-    Mirrors the legacy `/api/watch/updates` payload and response. Holds the
-    connection up to MAX_TIMEOUT_SECONDS while waiting for state changes.
+    Holds the connection up to MAX_TIMEOUT_SECONDS while waiting for state changes.
     Response body is gzipped when the client advertises it; HMAC signs the
     bytes shipped on the wire (post-gzip), so an attacker can't substitute
     a different uncompressed body that decompresses identically.
@@ -1130,161 +1127,6 @@ async def _op_snapshot(ctx: _OpContext) -> Response:
     )
 
 
-def _camera_ids_from_payload(payload: dict[str, Any]) -> list[str]:
-    """Collect camera entity_ids from `entity_ids` (list) or `entity_id` (single).
-
-    The iOS picker frames one physical camera but stores the crop against *all*
-    of that device's camera entities (Clear/Fluent/Snapshots variants share a
-    lens, and the notification may use a different variant than the one shown in
-    the picker), so set/status accept a list.
-    """
-    raw = payload.get("entity_ids")
-    if isinstance(raw, list):
-        ids = [e for e in raw if isinstance(e, str) and e.startswith("camera.")]
-    else:
-        single = payload.get("entity_id")
-        ids = [single] if isinstance(single, str) and single.startswith("camera.") else []
-    # De-dupe while preserving order.
-    return list(dict.fromkeys(ids))
-
-
-async def _op_set_snapshot_crop(ctx: _OpContext) -> Response:
-    """Save the user's notification framing for a camera's entities.
-
-    Body: {"entity_ids": ["camera.x", ...] | "entity_id": "camera.x",
-           "viewport": {x, y, w|width, h|height},
-           "open_zoomed": true | false (optional)}.
-    A full-frame viewport clears any saved crop (reset to full frame). The crop
-    is written to every supplied entity_id so any variant the notification uses
-    gets the same framing.
-
-    `open_zoomed` (optional) sets whether the watch opens this camera's in-app
-    live view pre-zoomed to the saved crop. Omitted by older app builds, so it
-    leaves the existing flag untouched; the store ignores a True flag when the
-    viewport is full-frame (nothing to zoom into).
-    """
-    entity_ids = _camera_ids_from_payload(ctx.payload)
-    if not entity_ids:
-        return Response(status=400, text="entity_id(s) required and must be cameras")
-
-    viewport = _parse_stream_viewport(ctx.payload.get("viewport"))
-    raw_open_zoomed = ctx.payload.get("open_zoomed")
-    open_zoomed = bool(raw_open_zoomed) if isinstance(raw_open_zoomed, bool) else None
-    store = ctx.domain_data.snapshot_crop_store
-    aspect_store = ctx.domain_data.snapshot_aspect_store
-    for entity_id in entity_ids:
-        store.set(entity_id, viewport)
-        # Only touch the open-zoomed flag when the client explicitly sent one
-        # (older apps don't). set() ran first, so the crop exists for the
-        # store's "True only with a crop" guard.
-        if open_zoomed is not None:
-            store.set_open_zoomed(entity_id, open_zoomed)
-        # Re-framing changes the snapshot's aspect — drop the stored value so the
-        # next push recomputes it instead of reserving the old footprint.
-        aspect_store.delete(entity_id)
-    return ctx.signed_json({"ok": True, "count": len(entity_ids)})
-
-
-async def _op_get_snapshot_crop(ctx: _OpContext) -> Response:
-    """Return the saved framing for a camera, or null when full-frame.
-
-    Body: {"entity_id": "camera.x"}.
-    Response: {"viewport": {x, y, w, h} | null, "open_zoomed": bool}.
-    """
-    entity_id = ctx.payload.get("entity_id")
-    if not isinstance(entity_id, str) or not entity_id.startswith("camera."):
-        return Response(status=400, text="entity_id required and must be a camera")
-
-    store = ctx.domain_data.snapshot_crop_store
-    crop = store.get(entity_id)
-    viewport = (
-        {"x": crop.x, "y": crop.y, "w": crop.w, "h": crop.h}
-        if crop is not None
-        else None
-    )
-    return ctx.signed_json(
-        {"viewport": viewport, "open_zoomed": store.get_open_zoomed(entity_id)}
-    )
-
-
-async def _op_snapshot_crops_status(ctx: _OpContext) -> Response:
-    """Report which of the supplied cameras have a saved framing.
-
-    Body: {"entity_ids": ["camera.x", ...]}.
-    Response: {"framed": ["camera.x", ...]} — the subset with a non-full-frame
-    crop. Lets the iOS list show a marker without one request per camera.
-    """
-    raw = ctx.payload.get("entity_ids")
-    ids = [e for e in raw if isinstance(e, str)] if isinstance(raw, list) else []
-    store = ctx.domain_data.snapshot_crop_store
-    framed = [eid for eid in ids if store.get(eid) is not None]
-    return ctx.signed_json({"framed": framed})
-
-
-async def _op_get_snapshot_concurrency(ctx: _OpContext) -> Response:
-    """Return the installation's batch-snapshot parallel-grab concurrency.
-
-    Response: {"concurrency": int} where 0 = unlimited. Lets the iOS Camera
-    Settings show the current throttle.
-    """
-    store = ctx.domain_data.batch_snapshot_settings_store
-    return ctx.signed_json({"concurrency": store.concurrency})
-
-
-async def _op_set_snapshot_concurrency(ctx: _OpContext) -> Response:
-    """Set how many cameras the batch-snapshot stream grabs in parallel.
-
-    Body: {"concurrency": int} where 0 = unlimited (clamped to a sane ceiling).
-    Installation-wide — a property of the camera source/NVR — so it applies to
-    every paired device's batch streams, not just this one. Returns the stored
-    (clamped) value so the client reflects exactly what took effect.
-    """
-    store = ctx.domain_data.batch_snapshot_settings_store
-    value = store.set_concurrency(ctx.payload.get("concurrency"))
-    return ctx.signed_json({"ok": True, "concurrency": value})
-
-
-async def _op_set_stream_entity(ctx: _OpContext) -> Response:
-    """Save (or clear) the live-stream override for a camera's entities.
-
-    Body: {"entity_ids": ["camera.x", ...] | "entity_id": "camera.x",
-           "stream_entity": "camera.y" | null}.
-    A null/empty `stream_entity` clears the override (revert to auto-resolution).
-    Written to every supplied entity_id so whichever variant a notification uses
-    resolves to the same chosen stream.
-    """
-    entity_ids = _camera_ids_from_payload(ctx.payload)
-    if not entity_ids:
-        return Response(status=400, text="entity_id(s) required and must be cameras")
-
-    raw = ctx.payload.get("stream_entity")
-    stream_entity = raw if isinstance(raw, str) and raw.startswith("camera.") else None
-    store = ctx.domain_data.snapshot_stream_store
-    for entity_id in entity_ids:
-        if stream_entity:
-            store.set(entity_id, stream_entity)
-        else:
-            store.delete(entity_id)
-    return ctx.signed_json({"ok": True, "count": len(entity_ids)})
-
-
-async def _op_get_stream_entity(ctx: _OpContext) -> Response:
-    """Return the live-stream entity a camera opens to, plus the auto-detected one.
-
-    Body: {"entity_id": "camera.x"}.
-    Response: {"override": "camera.y"|null, "auto": "camera.z"|null} — `override`
-    is the user's saved choice (null = using auto); `auto` is what the device
-    grouping resolves, so the iOS picker can label "Auto (detected)".
-    """
-    entity_id = ctx.payload.get("entity_id")
-    if not isinstance(entity_id, str) or not entity_id.startswith("camera."):
-        return Response(status=400, text="entity_id required and must be a camera")
-
-    override = ctx.domain_data.snapshot_stream_store.get(entity_id)
-    auto = resolve_stream_sibling(ctx.hass, entity_id)
-    return ctx.signed_json({"override": override, "auto": auto})
-
-
 async def _op_template(ctx: _OpContext) -> Response:
     """Render a Jinja template. Body: {template, variables?}.
 
@@ -1825,39 +1667,14 @@ async def _op_webhook_provision(ctx: _OpContext) -> Response:
     return ctx.signed_json(result)
 
 
-async def _op_watch_secret_status(ctx: _OpContext) -> Response:
-    """Report whether a watch's HMAC key is registered in this instance's HACS.
-
-    Fills the iPhone app's "Watch Integration Key" row when it's re-skinned to
-    view a *secondary* instance. The watch's per-instance HMAC secret lives only
-    on the watch and here in HACS — the iPhone never stores a secondary's watch
-    secret (relay provisioning mirrors it to the iPhone only for the primary),
-    so the iPhone can't answer locally and asks us instead.
-
-    Targeting mirrors ``notifications_status``: an iPhone caller signs with its
-    own per-instance identity and names the paired watch via ``companion_watch_id``.
-    Returns only a boolean — never the secret — and the queried watch is the
-    user's own device, so this is strictly less sensitive than the register write.
-    """
-    store = ctx.domain_data.widget_secret_store
-
-    target_watch_id, denied = _resolve_companion_target(ctx)
-    if denied is not None:
-        return denied
-
-    registered = store.get(target_watch_id) is not None
-    return ctx.signed_json({"ok": True, "registered": registered})
-
-
 async def _op_send_test_notification(ctx: _OpContext) -> Response:
     """Send a *real* camera notification back to the requesting device.
 
-    Powers the "Send Test" button in the iOS snapshot-framing editor: the app
-    saves the crop (via ``set_snapshot_crop``) and then calls this, which fires
-    an actual push through the same pipeline a doorbell event would use — real
-    snapshot capture (applying the just-saved crop), real token-authed
-    ``snapshot_url``, real relay delivery — so what arrives is exactly what a
-    live notification would look like.
+    Powers the iPhone app's test notification. It fires an actual push through
+    the same pipeline a doorbell event would use (real snapshot capture with
+    the camera's saved crop, real token-authed ``snapshot_url``, real relay
+    delivery), so what arrives is exactly what a live notification would look
+    like.
 
     Body: {"camera": "camera.x", "title"?, "message"?, "companion_watch_id"?}.
     An iPhone caller that names no watch is routed as a real alert to its
@@ -1874,8 +1691,8 @@ async def _op_send_test_notification(ctx: _OpContext) -> Response:
             {"ok": False, "error": "notifications unavailable"}, status=503
         )
 
-    # Camera is OPTIONAL. When present, the test push includes a real snapshot
-    # (the iOS snapshot-framing editor's "Send Test"). When absent, it's a
+    # Camera is OPTIONAL. When present, the test push includes a real snapshot,
+    # framed with the camera's saved crop. When absent, it's a
     # plain test push — used by the app's advanced setup check to verify the
     # end-to-end notification pipeline without needing a camera entity.
     camera = ctx.payload.get("camera")
@@ -2343,10 +2160,9 @@ async def _op_snapshots_open(ctx: _OpContext) -> Response:
 async def _op_stream_update(ctx: _OpContext) -> Response:
     """Change params on an active stream session.
 
-    Replaces the legacy bearer-authed `/api/wrist_assistant/camera/viewport`.
-    Same coordinator, same `(watch_id, entity_id)` keying — the watch_id is
-    taken from the HMAC headers, not the body, so a confused client can't
-    update another watch's session.
+    Sessions are keyed by `(watch_id, entity_id)` on the stream coordinator.
+    The watch_id is taken from the HMAC headers, not the body, so a confused
+    client can't update another watch's session.
     """
     coordinator = ctx.domain_data.camera_stream_coordinator
 
@@ -2625,8 +2441,8 @@ class WABatchSnapshotView(HomeAssistantView):
             request,
             entry.cameras,
             entry.quality,
-            # Read the throttle at stream time (not mint time) so a concurrency
-            # change from the iOS Camera Settings takes effect on the next batch.
+            # Read the throttle at stream time (not mint time), so a stored
+            # value always applies to the next batch.
             concurrency=domain_data.batch_snapshot_settings_store.concurrency,
         )
 
@@ -4086,13 +3902,6 @@ _OP_HANDLERS: dict[str, Any] = {
     "states_batch": _op_states_batch,
     "info": _op_info,
     "snapshot": _op_snapshot,
-    "set_snapshot_crop": _op_set_snapshot_crop,
-    "get_snapshot_crop": _op_get_snapshot_crop,
-    "snapshot_crops_status": _op_snapshot_crops_status,
-    "get_snapshot_concurrency": _op_get_snapshot_concurrency,
-    "set_snapshot_concurrency": _op_set_snapshot_concurrency,
-    "set_stream_entity": _op_set_stream_entity,
-    "get_stream_entity": _op_get_stream_entity,
     "template": _op_template,
     "services_list": _op_services_list,
     "config_entries_list": _op_config_entries_list,
@@ -4104,7 +3913,6 @@ _OP_HANDLERS: dict[str, Any] = {
     "notifications_register": _op_notifications_register,
     "notifications_status": _op_notifications_status,
     "webhook_provision": _op_webhook_provision,
-    "watch_secret_status": _op_watch_secret_status,
     "send_test_notification": _op_send_test_notification,
     "audio_upload": _op_audio_upload,
     "camera_batch": _op_camera_batch,

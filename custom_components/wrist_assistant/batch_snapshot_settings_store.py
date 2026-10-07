@@ -7,12 +7,12 @@ over one batch stream (see ``run_batch_snapshot_stream``).
 This is a property of the *camera source* (a shared NVR), not of any one paired
 device, so it lives server-side and is read per stream — the throttle then
 applies no matter which watch or phone opened the stream. Most setups want
-``0`` (unlimited, fastest); a user whose NVR drops frames or returns 503s under
-a snapshot stampede lowers it from the iOS Camera Settings.
+``0`` (unlimited, fastest). A user whose NVR dropped frames or returned 503s
+under a snapshot stampede could lower it from the iPhone's old Camera Settings.
 
-Persisted to disk so the choice survives restarts. Any provisioned signer (the
-iPhone identity already used for ``notifications_register``) may write it — the
-HMAC check authenticates the request; there's nothing device-specific to scope.
+Read only now: the phone's ``set_snapshot_concurrency`` op is gone and nothing
+else writes it, so a value saved earlier keeps applying and every other
+install stays at the default.
 """
 
 from __future__ import annotations
@@ -32,8 +32,6 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-_SAVE_DEBOUNCE_SECONDS = 1
 
 
 def clamp_concurrency(value: object) -> int:
@@ -75,12 +73,3 @@ class BatchSnapshotSettingsStore:
     def concurrency(self) -> int:
         """Parallel-grab concurrency (0 = unlimited)."""
         return self._concurrency
-
-    def set_concurrency(self, value: object) -> int:
-        """Validate, store, and persist a new concurrency. Returns the value set."""
-        self._concurrency = clamp_concurrency(value)
-        self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
-        return self._concurrency
-
-    def _serialize(self) -> dict:
-        return {"concurrency": self._concurrency}

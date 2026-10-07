@@ -90,24 +90,7 @@ from .watch_config_ws import async_register_watch_config_commands
 from .watch_logs_store import WatchLogsStore
 from .watch_voices_store import WatchVoicesStore
 from .notifications import NotificationTokenStore, TokenEntry, resolve_push_routes
-from .v1_api_views import (
-    MusicAssistantPlayersView,
-    MusicAssistantQueueView,
-    RemoteCommandView,
-    WatchStatesBatchView,
-    WatchSummaryView,
-    WatchUpdatesView,
-)
 from .audio_upload import CLEANUP_INTERVAL_SECONDS, async_cleanup_clips
-from .v1_audio_upload_views import AudioUploadView
-from .v1_camera_devices_views import CameraDevicesView
-from .v1_camera_stream_views import (
-    CameraBatchView,
-    CameraSnapshotView,
-    CameraStreamView,
-    CameraViewportView,
-)
-from .v1_notifications_views import NotificationRegisterView
 from .pairing_ws import async_register_pairing_commands
 from .wa_pair_requests import PairRequestStore
 from .wa_stream_tokens import BatchSnapshotTokenStore, StreamTokenStore
@@ -1013,24 +996,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
         # GET. See WANotificationSnapshotView / notification_snapshot.py.
         hass.http.register_view(WANotificationSnapshotView(hass))
         hass.http.register_view(WANotificationSnapshotLiveView(hass))
-
-        # Legacy v1 transport: bearer-authed endpoints for app builds prior to
-        # the v2 cutover. Kept alive so HACS can ship without breaking users
-        # whose iOS/watch app hasn't updated yet. Delete this block (and the
-        # five v1_*.py files) in the release that retires v1.
-        hass.http.register_view(WatchUpdatesView(hass))
-        hass.http.register_view(WatchSummaryView(hass))
-        hass.http.register_view(WatchStatesBatchView(hass))
-        hass.http.register_view(CameraStreamView(hass))
-        hass.http.register_view(CameraViewportView(hass))
-        hass.http.register_view(CameraBatchView(hass))
-        hass.http.register_view(CameraSnapshotView(hass))
-        hass.http.register_view(CameraDevicesView(hass))
-        hass.http.register_view(NotificationRegisterView(hass))
-        hass.http.register_view(AudioUploadView(hass))
-        hass.http.register_view(MusicAssistantPlayersView(hass))
-        hass.http.register_view(MusicAssistantQueueView(hass))
-        hass.http.register_view(RemoteCommandView(hass))
 
         hass.data[f"{DOMAIN}_views_registered"] = True
 

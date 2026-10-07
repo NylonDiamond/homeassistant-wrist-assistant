@@ -11,27 +11,18 @@
    templated string, because the code did `str(info.result)` instead of
    calling `info.result()`.
 
-Both bugs route through coordinator.handle_poll, which is shared by v1 and
-v2 endpoints. We exercise the v1 bearer-authed endpoint here because it
-doesn't require HMAC provisioning.
+Both bugs route through coordinator.handle_poll, behind the signed
+/v2/delta long-poll. The polls go through the ``delta_poll`` fixture in
+conftest.py, which signs with an ephemeral identity.
 """
 
 from __future__ import annotations
 
 import time
 import uuid
+from collections.abc import Callable
 
 import requests
-
-
-# Watch IDs wrapped in double underscores are filtered out of
-# coordinator.real_sessions (api.py:872-879), which is the loop the
-# sensor/binary_sensor/text platforms iterate to create per-watch device
-# entries. Using a `__pytest__` prefix means our test sessions never
-# register a device in HA's device registry — no cleanup needed even
-# across many runs. The DeltaCoordinator itself still tracks the
-# session normally; only the visible device side-effect is suppressed.
-_TEST_WATCH_ID = "__pytest_wa_regression__"
 
 
 # ---------------------------------------------------------------------------
@@ -39,7 +30,7 @@ _TEST_WATCH_ID = "__pytest_wa_regression__"
 # ---------------------------------------------------------------------------
 
 def test_template_subscription_renders_to_value_not_bound_method(
-    base_url: str, session: requests.Session
+    delta_poll: Callable[..., requests.Response],
 ) -> None:
     """The first poll (since=null) goes through the snapshot path, which calls
     _snapshot_templates → _render_template_tracked. Pre-fix the rendered
@@ -47,10 +38,8 @@ def test_template_subscription_renders_to_value_not_bound_method(
     """
     tile_id = f"pytest_template_{uuid.uuid4().hex[:8]}"
 
-    r = session.post(
-        f"{base_url}/api/watch/updates",
-        json={
-            "watch_id": _TEST_WATCH_ID,
+    r = delta_poll(
+        {
             "config_hash": "x",
             "timeout": 1,
             "entities": [],
@@ -100,7 +89,7 @@ def _delete_state(base_url: str, token: str, entity_id: str) -> None:
 
 
 def test_state_change_during_client_disconnect_is_buffered(
-    base_url: str, token: str, session: requests.Session
+    base_url: str, token: str, delta_poll: Callable[..., requests.Response]
 ) -> None:
     """Simulate the foreground→background→foreground cycle:
        1. Subscribe to a unique test entity, capture cursor.
@@ -126,10 +115,8 @@ def test_state_change_during_client_disconnect_is_buffered(
     try:
         # 1. Subscribe + get a cursor. since=null routes to the snapshot path
         #    which returns next_cursor=current _cursor.
-        r1 = session.post(
-            f"{base_url}/api/watch/updates",
-            json={
-                "watch_id": _TEST_WATCH_ID,
+        r1 = delta_poll(
+            {
                 "config_hash": "x",
                 "timeout": 1,
                 "entities": [test_entity],
@@ -145,10 +132,8 @@ def test_state_change_during_client_disconnect_is_buffered(
         #    the server is still awaiting events → CancelledError on the
         #    handler → pre-fix would pop the session here.
         try:
-            session.post(
-                f"{base_url}/api/watch/updates",
-                json={
-                    "watch_id": _TEST_WATCH_ID,
+            delta_poll(
+                {
                     "config_hash": "x",
                     "timeout": 30,
                     "entities": [test_entity],
@@ -168,10 +153,8 @@ def test_state_change_during_client_disconnect_is_buffered(
 
         # 4. Reconnect with the original cursor. force_delta=true makes the
         #    response return immediately without waiting for further events.
-        r3 = session.post(
-            f"{base_url}/api/watch/updates",
-            json={
-                "watch_id": _TEST_WATCH_ID,
+        r3 = delta_poll(
+            {
                 "config_hash": "x",
                 "timeout": 5,
                 "entities": [test_entity],

@@ -238,13 +238,12 @@ class ConnectedWatchesSensor(_WristAssistantSensorBase):
 
 
 class WatchCountSensor(_WristAssistantSensorBase):
-    """Total paired watches (v1 + v2), connected or not.
+    """Total paired watches, connected or not.
 
-    Counted via the HA device registry rather than the widget secret store:
-    v1 watches use bearer auth and are never paired, so they have no entry
-    in widget_secret_store. The device registry, on the other hand,
-    sees every watch the moment it polls (regardless of protocol), so it's
-    the only source that covers both transports uniformly."""
+    Counted via the HA device registry rather than the widget secret store.
+    This dates from the bearer-authed v1 transport, whose watches were never
+    paired and so had no secret store entry; the registry saw every watch the
+    moment it polled. v1 is gone, and the registry count still holds."""
 
     _attr_name = "Watch count"
     _attr_icon = "mdi:watch-variant"
@@ -966,11 +965,7 @@ class WatchLastProvisionSensor(_SecretStoreSensorBase):
     so the iOS app shows the "missing integration key" banner. While that's
     happening, every other sensor on this device still reads normally — only
     `last_provision` ages while the user keeps using the watch. A timestamp far
-    in the past on a watch that's otherwise active is the visible smoking gun.
-
-    v1-only watches never reach this code path: v1 uses bearer auth and is
-    never paired, so they have no entry in widget_secret_store and the spawn
-    loop skips them entirely."""
+    in the past on a watch that's otherwise active is the visible smoking gun."""
 
     _attr_name = "Last provision"
     _attr_device_class = SensorDeviceClass.TIMESTAMP
