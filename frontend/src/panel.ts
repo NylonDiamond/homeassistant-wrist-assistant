@@ -5147,16 +5147,6 @@ export class WristAssistantPanel extends LitElement {
       box-shadow: 0 12px 40px rgba(0,0,0,.4);
     }
     dialog.help-dialog::backdrop { background: rgba(0,0,0,.45); }
-    /* Home's "Pair a device": the Settings page's card alone, as wide as a
-       card on that page. */
-    dialog.pair-dialog {
-      width: min(460px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 8px 14px;
-      border: 1px solid var(--wa-line); border-radius: 12px;
-      background: var(--wa-card); color: var(--wa-ink);
-      box-shadow: 0 12px 40px rgba(0,0,0,.4);
-    }
-    dialog.pair-dialog::backdrop { background: rgba(0,0,0,.45); }
-    dialog.pair-dialog .ws-pair .sec-h button.pick { flex: none; margin-left: auto; }
     .help-head { display: flex; align-items: center; gap: 12px; padding: 14px 18px 4px; }
     .help-head a { font-size: 13px; color: var(--wa-accent); }
     .help-tabs { display: flex; gap: 4px; padding: 0 18px; border-bottom: 1px solid var(--wa-line); }
@@ -19031,13 +19021,14 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /**
-   * One device, opened from a row of Home's Devices card: what it is, its
-   * state, and a tab for each of its pages, each opening that page on this
-   * device. A tab wears how many its page holds: the device's complications
-   * (or its Control Center ones), and on a watch its pages, status pages and
-   * Control Center controls. An administrator can rename it (Home Assistant's
-   * own device name), or forget it after a second step that says what goes
-   * with it.
+   * One device, opened from a card on Home: the device drawn on its stage in
+   * its person's color, whose it is, what it is, its sync state, and a tile
+   * for each of its pages, each opening that page on this device. A tile
+   * wears how many its page holds: the device's complications (or its
+   * Control Center ones), and on a watch its pages, status pages and Control
+   * Center controls. An administrator can rename it (Home Assistant's own
+   * device name), or forget it after a second step that says what goes with
+   * it.
    */
   private renderDeviceSheet(ownerId: string, devices: readonly HomeDeviceRow[], admin: boolean) {
     const row = devices.find((d) => d.id === ownerId);
@@ -19050,6 +19041,7 @@ export class WristAssistantPanel extends LitElement {
     const counts = this.deviceCounts?.owner === ownerId ? this.deviceCounts.counts : {};
     const badge = (n: number | undefined) => n === undefined ? nothing
       : html`<span class="dev-tab-n ${n === 0 ? "none" : ""}" aria-label=${`${n}`}>${n}</span>`;
+    const more = html`<span class="dev-tab-go" aria-hidden="true">${uiIcon("right")}</span>`;
     const toComplications = () => { close(); this.goTo(COMPLICATIONS_PATH); };
     const openList = (filter: "all" | "control" = "all") => {
       this.pickerFilter = filter;
@@ -19061,7 +19053,7 @@ export class WristAssistantPanel extends LitElement {
     const href = (path: string) => panelUrl(this.route, path, window.location.pathname);
     const tab = (t: DeviceSheetTab) => {
       if (t.kind === "list") {
-        return html`<button type="button" class="dev-tab" title=${`${t.label} on ${row.name}`} @click=${() => openList(t.filter)}>${t.label}${badge(t.filter === "control" ? controls.length : designs.length)}</button>`;
+        return html`<button type="button" class="dev-tab" title=${`${t.label} on ${row.name}`} @click=${() => openList(t.filter)}><span class="dev-tab-l">${t.label}</span>${badge(t.filter === "control" ? controls.length : designs.length)}${more}</button>`;
       }
       const path = watchScreenPath(t.screen, ownerId);
       return html`<a class="dev-tab" href=${href(path)} title=${`${t.label} on ${row.name}`}
@@ -19071,10 +19063,20 @@ export class WristAssistantPanel extends LitElement {
           close();
           this.pickWatch(ownerId);
           this.goTo(path);
-        }}>${t.label}${badge(t.count === undefined ? undefined : counts[t.count])}</a>`;
+        }}><span class="dev-tab-l">${t.label}</span>${badge(t.count === undefined ? undefined : counts[t.count])}${more}</a>`;
     };
     const title = this.deviceForgetAsk ? `Remove “${row.name}”?` : row.name;
     const facts = deviceFacts(owner, row.kind).join(" · ");
+    // The person's color and name, the way the device's card on Home wears
+    // them, so the sheet reads as that card opened up.
+    const group = homeGroups(this.people(), devices).find((g) => g.rows.some((r) => r.id === ownerId));
+    const color = (group === undefined ? undefined : personColorVar(group.index)) ?? "var(--wa-hue-grey)";
+    const whose = group?.person?.label ?? "Other devices";
+    const elapsed = this.ownersReadAt > 0 ? (Date.now() - this.ownersReadAt) / 1000 : 0;
+    const seen = seenWords(owner, elapsed);
+    const held = owner?.complication_count ?? 0;
+    const syncSub = row.sync === "waiting" ? `Waiting for ${waitingForText(row.waitingFor)}`
+      : row.sync === "synced" ? "Has every change" : "Has never synced anything";
     // One dialog for both steps, so the confirm step keeps the open modal:
     // a second template would swap in a new, closed dialog element.
     const n = designs.length;
@@ -19109,20 +19111,34 @@ export class WristAssistantPanel extends LitElement {
     const overview = html`<div class="xfer-body">
         ${this.devicePaired === ownerId ? html`<div class="dev-paired" role="status">${uiIcon("check")}<span><b>Paired successfully.</b> ${row.name} is now on this Home Assistant.</span></div>` : nothing}
         ${renaming ? html`<div class="xf-stack">${renameForm}</div>` : nothing}
+        <div class="dev-state ${row.sync}">
+          <span class="dev-state-chip" aria-hidden="true">${uiIcon(row.sync === "waiting" ? "clock" : "check")}</span>
+          <span class="dev-state-t"><b>${deviceSyncLabel(row.sync)}</b><span>${syncSub}${pendingWords(owner) === undefined ? "" : ` · ${pendingWords(owner)}`}</span></span>
+          ${seen === undefined ? nothing : html`<span class="dev-state-seen">${seen}</span>`}
+        </div>
+        <h3 class="dev-title">Open on this ${row.kind === "watch" ? "watch" : "iPhone"}</h3>
         <nav class="dev-tabs" aria-label=${`Pages for ${row.name}`}>${deviceSheetTabs(row.kind, admin).map(tab)}</nav>
-        <div class="dev-state ${row.sync}"><i class="home-dot" aria-hidden="true"></i>
-          <span><b>${deviceSyncLabel(row.sync)}</b>${row.waitingFor.length === 0 ? nothing
-            : html`<span class="home-device-why"> · ${waitingForText(row.waitingFor)}</span>`}</span></div>
         <div class="dev-acts">
           ${admin ? html`<button class="danger dev-forget" @click=${() => { this.deviceForgetAsk = true; }}>${uiIcon("delete")}<span>Remove device</span></button>` : nothing}
         </div>
       </div>`;
-    return html`<dialog class="xf dev-dialog" aria-label=${title} @close=${close}
+    return html`<dialog class="xf dev-dialog ${row.sync}" aria-label=${title} style=${`--c:${color}`} @close=${close}
       @cancel=${(e: Event) => { if (this.deviceForgetBusy || this.deviceRenameBusy) e.preventDefault(); }}>
-      ${this.dialogHead(title, facts, close, admin && !this.deviceForgetAsk && !renaming
-        ? html`<button class="home-btn dev-rename-open" title="Change the name Home Assistant shows for it"
-            @click=${() => this.startDeviceRename(ownerId)}>Rename</button>`
-        : nothing)}
+      <div class="dev-hero">
+        <span class="dev-stage" aria-hidden="true">${row.kind === "watch" ? homeWatchArt(`sheet-${row.id}`, held, row.sync) : homePhoneArt(`sheet-${row.id}`, held, row.sync)}</span>
+        <div class="dev-hero-t">
+          <span class="dev-whose"><i aria-hidden="true"></i>${whose}</span>
+          <h2>${title}</h2>
+          <span class="dev-facts">${facts}</span>
+        </div>
+        <div class="dev-hero-acts">
+          ${admin && !this.deviceForgetAsk && !renaming
+            ? html`<button class="home-btn dev-rename-open" title="Change the name Home Assistant shows for it"
+                @click=${() => this.startDeviceRename(ownerId)}>Rename</button>`
+            : nothing}
+          <button class="icon dev-close" title="Close" aria-label="Close" @click=${close}>${uiIcon("close")}</button>
+        </div>
+      </div>
       ${this.deviceForgetAsk ? ask : overview}
     </dialog>`;
   }
@@ -19192,7 +19208,7 @@ export class WristAssistantPanel extends LitElement {
   /** Home's "Pair a device" dialog, opened from the Devices card, or from the
    * Watch app card in a home with no watch yet. */
   private openPairDialog() {
-    this.homePair.open(this.hass);
+    this.homePair.open(this.hass, { mode: "qr", showQr: true });
     this.pairOpen = true;
   }
 
@@ -19202,16 +19218,20 @@ export class WristAssistantPanel extends LitElement {
     this.pairOpen = false;
   }
 
-  /** The dialog: the Settings page's own pairing card, with Close on its
-   * title row. A native dialog brings the backdrop and Escape with it. It
-   * stays open after a device pairs, so its "Paired" line can be read; the
-   * new device is already in the Devices card behind it. Closing it
-   * withdraws a QR code still open. */
+  /** The dialog: the Settings page's own pairing card, under a head of its
+   * own, opening on the QR code with a code already showing. A native
+   * dialog brings the backdrop and Escape with it. It stays open after a
+   * device pairs by code until the new device's sheet takes its place.
+   * Closing it withdraws a QR code still open. */
   private renderPairDialog() {
-    return html`<dialog class="pair-dialog" aria-label="Pair a device" @close=${() => this.closePairDialog()}>
-      <div class="ws-body">${this.homePair.render({
-        headEnd: html`<button class="pick" title="Close (Escape)" @click=${() => this.closePairDialog()}>Close</button>`,
-      })}</div>
+    const close = () => this.closePairDialog();
+    return html`<dialog class="xf pair-dialog" aria-label="Pair a device" @close=${close}>
+      <div class="pair-head">
+        <span class="pair-chip" aria-hidden="true">${uiIcon("link")}</span>
+        <div class="pair-head-t"><h2>Pair a device</h2><span>A watch or an iPhone, to this Home Assistant</span></div>
+        <button class="icon" title="Close (Escape)" aria-label="Close" @click=${close}>${uiIcon("close")}</button>
+      </div>
+      <div class="xfer-body">${this.homePair.render({ bare: true })}</div>
     </dialog>`;
   }
 

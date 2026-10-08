@@ -233,12 +233,13 @@ describe("Home's Pair a device dialog", () => {
 
   it("draws the Settings page's own pairing card, starting afresh on each opening", () => {
     expect(SOURCE).toContain(`import { PairWatchCard } from "./watch-pair-view.js";`);
-    expect(method("  private openPairDialog() {")).toContain("this.homePair.open(this.hass);");
+    expect(method("  private openPairDialog() {")).toContain(`this.homePair.open(this.hass, { mode: "qr", showQr: true });`);
     expect(method("  private closePairDialog() {")).toContain("this.homePair.close();");
     const dialog = method("  private renderPairDialog() {");
-    expect(dialog).toContain(`<dialog class="pair-dialog"`);
-    expect(dialog).toContain("@close=${() => this.closePairDialog()}");
-    expect(dialog).toContain("this.homePair.render({");
+    expect(dialog).toContain(`<dialog class="xf pair-dialog"`);
+    expect(dialog).toContain("const close = () => this.closePairDialog();");
+    expect(dialog).toContain(`aria-label="Pair a device" @close=\${close}>`);
+    expect(dialog).toContain("this.homePair.render({ bare: true })");
   });
 
   it("adds a device paired there to the device list, and makes a watch the shared watch", () => {

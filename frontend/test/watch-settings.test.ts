@@ -692,7 +692,7 @@ describe("pairing a watch by its code", () => {
 
   it("names the card and its two modes in plain words", () => {
     expect(PAIR_CARD_TITLE).toBe("Pair a device");
-    expect(PAIR_MODES).toEqual([["code", "Type a code"], ["qr", "Show a QR code"]]);
+    expect(PAIR_MODES).toEqual([["qr", "Show a QR code"], ["code", "Type a code"]]);
     expect(PAIR_SHOW_QR_TEXT).toBe("Show QR code");
     expect(PAIR_OPEN_APP_TEXT).toBe("Open in Wrist Assistant");
     expect(PAIR_QR_EXPIRED_TEXT).toBe("This code ran out. Show a new one.");

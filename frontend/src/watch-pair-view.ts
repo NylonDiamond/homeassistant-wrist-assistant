@@ -3,15 +3,16 @@
 // Devices card opens. Each place holds its own card and says what happens
 // once a device is paired (`onPaired`).
 //
-// It pairs two ways, picked in a small segmented control:
+// It pairs two ways, picked in a small segmented control, the QR code first:
 //
-// - Type a code: a watch, or an iPhone, shows a six character code. Look up
-//   comes first, so the administrator sees which device it is (its name, app
-//   version and build, when and from where it asked) before it gets a key.
 // - Show a QR code: for an iPhone. The integration makes a one-time offer,
 //   the card draws it as a QR code with a countdown and asks every two
 //   seconds whether a phone has used it. An offer still open when the card
-//   is left, or the mode changes, is withdrawn.
+//   is left, or the mode or the person changes, is withdrawn. Home's dialog
+//   opens on it with a code already showing (`open`'s `showQr`).
+// - Type a code: a watch, or an iPhone, shows a six character code. Look up
+//   comes first, so the administrator sees which device it is (its name, app
+//   version and build, when and from where it asked) before it gets a key.
 //
 // Its words and rules are in `watch-settings.ts`, which the tests read
 // without a DOM. Plan: app repo docs/iphone_pairing_without_sign_in_2026-10.md.
@@ -33,15 +34,15 @@ import { type QrPicture, qrPicture } from "./qr-code.js";
 import { uiIcon } from "./ui-icons.js";
 import {
   PAIR_CARD_TITLE,
-  PAIR_CODE_HINT,
   PAIR_CODE_LENGTH,
+  PAIR_CODE_STEPS,
   PAIR_MODES,
   PAIR_NOT_FOUND_TEXT,
   PAIR_OFFER_POLL_MS,
   PAIR_OPEN_APP_TEXT,
   PAIR_QR_EXPIRED_TEXT,
-  PAIR_QR_HINT,
   PAIR_QR_REPLACE_LABEL,
+  PAIR_QR_STEPS,
   PAIR_REPLACE_LABEL,
   PAIR_SHOW_QR_TEXT,
   PAIR_USER_PLACEHOLDER,
@@ -114,8 +115,10 @@ export interface OfferState {
   /** "Replace an iPhone paired for someone else", sent as `replace`. */
   replace: boolean;
   busy?: "offer";
-  /** The QR code on screen, until it is used, runs out or is withdrawn. */
-  open?: { id: string; url: string; picture: QrPicture; expiresAt: number };
+  /** The QR code on screen, until it is used, runs out or is withdrawn.
+   * `lasts` is how long it was made to last, in milliseconds, for the bar
+   * under it. */
+  open?: { id: string; url: string; picture: QrPicture; expiresAt: number; lasts?: number };
   expired?: boolean;
   error?: string;
   /** "Paired <device> for <person>." once a phone used it. */
@@ -154,6 +157,10 @@ export class PairWatchCard {
   private ticks = 0;
   /** An offer state question is out. */
   private polling = false;
+  /** Opened to show a QR code at once (Home's dialog): the QR mode makes its
+   * code without waiting for Show QR code, and starts on the administrator
+   * at the card rather than on nobody. */
+  private autoQr = false;
 
   /** `update` asks the place to draw again. */
   constructor(
@@ -161,16 +168,20 @@ export class PairWatchCard {
     private readonly onPaired?: OnPaired,
   ) {}
 
-  /** The card has come on screen: it starts afresh, on Type a code. */
-  open(hass: HassLike): void {
+  /** The card has come on screen: it starts afresh, on Type a code unless
+   * told otherwise. With `showQr` it starts on the QR mode and makes a code
+   * as soon as it knows who it is for. */
+  open(hass: HassLike, start: { mode?: PairMode; showQr?: boolean } = {}): void {
     this.withdrawOffer();
     this.hass = hass;
     this.visit++;
     this.pairSeq++;
     this.offerSeq++;
-    this.mode = "code";
+    this.mode = start.mode ?? "code";
+    this.autoQr = start.showQr === true;
     this.pair = { code: "" };
     this.offer = { usersRead: false, replace: false };
+    if (this.mode === "qr") void this.readOfferUsers();
   }
 
   /** The card has gone from the screen. An open QR code is withdrawn. */
@@ -180,6 +191,7 @@ export class PairWatchCard {
     this.pairSeq++;
     this.offerSeq++;
     this.mode = "code";
+    this.autoQr = false;
     this.pair = { code: "" };
     this.offer = { usersRead: false, replace: false };
   }
@@ -205,10 +217,19 @@ export class PairWatchCard {
     // Leaving the QR mode takes its code with it; coming back starts over.
     this.offerSeq++;
     this.withdrawOffer();
-    this.offer = { usersRead: this.offer.usersRead, users: this.offer.users, replace: false,
-      userId: this.offer.users === undefined ? undefined : pairDefaultUser(this.offer.users, null) };
+    this.offer = { usersRead: this.offer.usersRead, users: this.offer.users, replace: false, userId: this.startUser(this.offer.users) };
     if (mode === "qr" && !this.offer.usersRead) void this.readOfferUsers();
     this.update();
+    if (mode === "qr" && this.offer.usersRead && this.autoQr) void this.showOffer();
+  }
+
+  /** Who the QR mode starts on: the menu's own default, else, when the card
+   * shows its code at once, the administrator at the card. */
+  private startUser(users: readonly PairUserChoice[] | undefined): string | undefined {
+    if (users === undefined) return undefined;
+    const picked = pairDefaultUser(users, null);
+    if (picked !== undefined || !this.autoQr) return picked;
+    return users.find((u) => u.id === this.hass?.user?.id)?.id;
   }
 
   // ── Type a code ────────────────────────────────────────────────────────
@@ -337,18 +358,33 @@ export class PairWatchCard {
     const visit = this.visit;
     const users = await this.pairUsers(hass);
     if (visit !== this.visit) return;
-    this.offer = { ...this.offer, usersRead: true, users, userId: this.offer.userId ?? (users === undefined ? undefined : pairDefaultUser(users, null)) };
+    this.offer = { ...this.offer, usersRead: true, users, userId: this.offer.userId ?? this.startUser(users) };
     this.update();
+    if (this.autoQr && this.mode === "qr") void this.showOffer();
   }
 
+  /** A new person, or a new Replace, makes a new code when one is showing
+   * (or the card shows one by itself): the old one was for the old choice. */
   private pickOfferUser(userId: string): void {
     this.offer = { ...this.offer, userId, error: undefined };
     this.update();
+    this.remakeOffer();
   }
 
   private setOfferReplace(on: boolean): void {
     this.offer = { ...this.offer, replace: on };
     this.update();
+    this.remakeOffer();
+  }
+
+  /** Make the code again for the choices now on the card. One being made
+   * is dropped: it withdraws itself when it answers. */
+  private remakeOffer(): void {
+    if (this.offer.open === undefined && this.offer.busy === undefined && !this.autoQr) return;
+    this.offerSeq++;
+    this.withdrawOffer();
+    this.offer = { ...this.offer, busy: undefined, open: undefined, expired: false };
+    void this.showOffer();
   }
 
   /** Make an offer and draw it. One already open is withdrawn first. */
@@ -371,7 +407,7 @@ export class PairWatchCard {
         void cancelPairOffer(hass, reply.offer_id).catch(() => undefined);
         return;
       }
-      this.offer = { ...this.offer, open: { id: reply.offer_id, url, picture, expiresAt: Date.now() + reply.expires_in * 1000 } };
+      this.offer = { ...this.offer, open: { id: reply.offer_id, url, picture, expiresAt: Date.now() + reply.expires_in * 1000, lasts: reply.expires_in * 1000 } };
       this.startTicking();
     } catch (err) {
       if (offerId !== undefined) void cancelPairOffer(hass, offerId).catch(() => undefined);
@@ -447,35 +483,39 @@ export class PairWatchCard {
 
   // ── drawing ────────────────────────────────────────────────────────────
 
-  /** The card. `headEnd` goes at the right of its title row, for the
-   * dialog's Close. */
-  render(options: { headEnd?: TemplateResult } = {}): TemplateResult {
+  /** The card. `headEnd` goes at the right of its title row. `bare` draws
+   * the body alone, for a dialog that has its own head. */
+  render(options: { headEnd?: TemplateResult; bare?: boolean } = {}): TemplateResult {
     const busy = this.busy;
+    const body = html`<div class="seg wide ws-pair-modes" role="radiogroup" aria-label="How to pair">
+          ${PAIR_MODES.map(([mode, label]) => html`<button type="button" role="radio" aria-checked=${mode === this.mode ? "true" : "false"}
+            class=${mode === this.mode ? "on" : ""} ?disabled=${busy && mode !== this.mode}
+            @click=${() => this.setMode(mode)}>${uiIcon(mode === "qr" ? "qr" : "keyboard")}<span>${label}</span></button>`)}
+        </div>
+        ${this.mode === "code" ? this.renderCode() : this.renderQr()}`;
+    if (options.bare) return html`<div class="ws-pair bare" style=${`--c:${PAIR_LOOK.color}`}>${body}</div>`;
     return html`<section class="sec ws-pair" data-sec="ws-pair" data-open="true" data-help="on" style=${`--c:${PAIR_LOOK.color}`}>
       <div class="sec-h pinned">
         <span class="swatch">${uiIcon(PAIR_LOOK.icon)}</span>
         <span class="tt"><h4>${PAIR_CARD_TITLE}</h4></span>
         ${options.headEnd ?? nothing}
       </div>
-      <div class="sec-b">
-        <div class="seg wide ws-pair-modes" role="radiogroup" aria-label="How to pair">
-          ${PAIR_MODES.map(([mode, label]) => html`<button type="button" role="radio" aria-checked=${mode === this.mode ? "true" : "false"}
-            class=${mode === this.mode ? "on" : ""} ?disabled=${busy && mode !== this.mode}
-            @click=${() => this.setMode(mode)}>${label}</button>`)}
-        </div>
-        ${this.mode === "code" ? this.renderCode() : this.renderQr()}
-      </div>
+      <div class="sec-b">${body}</div>
     </section>`;
+  }
+
+  /** The steps on the device, numbered. */
+  private steps(lines: readonly string[]) {
+    return html`<ol class="ws-pair-steps">${lines.map((line, i) => html`<li><b aria-hidden="true">${i + 1}</b><span>${line}</span></li>`)}</ol>`;
   }
 
   private renderCode() {
     const p = this.pair;
     const complete = pairCodeIsComplete(p.code);
     const found = p.found !== undefined && p.found.code === p.code ? p.found : undefined;
-    return html`<div class="hint keep">${PAIR_CODE_HINT}</div>
-      <div class="field">
-        <span>Code</span>
-        <div class="row-acts ws-pair-row">
+    return html`${this.steps(PAIR_CODE_STEPS)}
+      <div class="ws-pair-entry">
+        <div class="ws-pair-row">
           <input type="text" class="mono ws-pair-code" aria-label="Pairing code" maxlength=${PAIR_CODE_LENGTH}
             autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false"
             .value=${p.code}
@@ -538,6 +578,12 @@ export class PairWatchCard {
         @click=${() => void this.confirmPair()}>${p.busy === "confirm" ? "Pairing…" : "Pair"}</button>`;
   }
 
+  /**
+   * The QR mode: the code on a white tile in a dark well, a bar under it
+   * that runs down with its time, and beside it the steps on the iPhone,
+   * whose iPhone it is, and Replace. Before a code shows, the well holds
+   * Show QR code (or "Making…" while one is made).
+   */
   private renderQr() {
     const o = this.offer;
     const open = o.open;
@@ -546,22 +592,32 @@ export class PairWatchCard {
     const why = !o.usersRead ? "Reading the people in Home Assistant…"
       : !picked ? "Choose a person first"
       : "Make a QR code the iPhone can scan to pair";
-    return html`<div class="hint keep">${PAIR_QR_HINT}</div>
-      ${this.renderUserMenu(o.users, o.userId, "iphone", busy || open !== undefined, (id) => this.pickOfferUser(id))}
-      <label class="field check ws-qr-replace"><span>${PAIR_QR_REPLACE_LABEL}</span>
-        <input type="checkbox" .checked=${live(o.replace)} ?disabled=${busy || open !== undefined}
-          @change=${(e: Event) => this.setOfferReplace((e.target as HTMLInputElement).checked)} /></label>
-      ${open === undefined
-        ? html`<button class="small primary ws-qr-show" ?disabled=${busy || !o.usersRead || !picked} title=${why}
-            @click=${() => void this.showOffer()}>${busy ? "Making…" : PAIR_SHOW_QR_TEXT}</button>`
-        : html`<div class="ws-qr">
-              <svg viewBox=${`0 0 ${open.picture.size} ${open.picture.size}`} role="img" aria-label="QR code for pairing an iPhone"
-                shape-rendering="crispEdges"><rect width=${open.picture.size} height=${open.picture.size} fill="#fff"></rect><path d=${open.picture.path} fill="#000"></path></svg>
-            </div>
-            <div class="ws-qr-foot">
-              <span class="hint keep ws-qr-count" role="timer">${pairCountdownText((open.expiresAt - Date.now()) / 1000)}</span>
-              <a class="ws-qr-open" href=${open.url} title="For this page open on the iPhone itself">${PAIR_OPEN_APP_TEXT}</a>
-            </div>`}
+    const left = open === undefined ? 0 : Math.max(0, open.expiresAt - Date.now());
+    const share = open?.lasts ? Math.min(1, left / open.lasts) : 1;
+    return html`<div class="ws-qr-wrap">
+        <div class="ws-qr-well ${open === undefined ? "empty" : ""}">
+          ${open === undefined
+            ? html`<span class="ws-qr-ghost" aria-hidden="true">${uiIcon("qr")}</span>
+                <span class="ws-qr-msg">${o.expired ? "This code ran out." : !o.usersRead ? "Getting ready…" : !picked ? "Choose whose iPhone it is." : busy ? "Making a code…" : "No code showing."}</span>
+                <button class="small primary ws-qr-show" ?disabled=${busy || !o.usersRead || !picked} title=${why}
+                  @click=${() => void this.showOffer()}>${busy ? "Making…" : PAIR_SHOW_QR_TEXT}</button>`
+            : html`<div class="ws-qr">
+                  <svg viewBox=${`0 0 ${open.picture.size} ${open.picture.size}`} role="img" aria-label="QR code for pairing an iPhone"
+                    shape-rendering="crispEdges"><rect width=${open.picture.size} height=${open.picture.size} fill="#fff"></rect><path d=${open.picture.path} fill="#000"></path></svg>
+                </div>
+                <span class="ws-qr-time" aria-hidden="true"><i style=${`width:${(share * 100).toFixed(1)}%`}></i></span>
+                <span class="hint keep ws-qr-count" role="timer">${pairCountdownText(left / 1000)}</span>`}
+        </div>
+        <div class="ws-qr-side">
+          ${this.steps(PAIR_QR_STEPS)}
+          ${this.renderUserMenu(o.users, o.userId, "iphone", false, (id) => this.pickOfferUser(id))}
+          <label class="field check ws-qr-replace"><span>${PAIR_QR_REPLACE_LABEL}</span>
+            <input type="checkbox" .checked=${live(o.replace)} ?disabled=${!o.usersRead}
+              @change=${(e: Event) => this.setOfferReplace((e.target as HTMLInputElement).checked)} /></label>
+          ${open === undefined ? nothing
+            : html`<a class="ws-qr-open" href=${open.url} title="For this page open on the iPhone itself">${PAIR_OPEN_APP_TEXT}${uiIcon("right")}</a>`}
+        </div>
+      </div>
       ${o.expired ? html`<div class="hint warn" role="status">${PAIR_QR_EXPIRED_TEXT}</div>` : nothing}
       ${o.done ? html`<div class="hint keep ws-pair-done" role="status">${o.done}</div>` : nothing}
       ${o.error ? html`<div class="hint err" role="alert">${o.error}</div>` : nothing}`;
@@ -600,20 +656,57 @@ export class PairWatchCard {
   }
 }
 
-/** The card's own rules, wherever it is drawn: the code box only as wide as
- * a code, spaced out so the six characters read one by one, with Look up
- * beside it. The QR code sits on white with its quiet zone, dark on light in
- * either theme, which is what a phone camera reads best. */
+/** The card's own rules, wherever it is drawn. The modes each with a
+ * glyph, the steps on the device numbered in small outlined rounds. The code
+ * box large and centered, spaced out so the six characters read one by one,
+ * with Look up beside it. The QR code sits on white with its quiet zone,
+ * dark on light in either theme, which is what a phone camera reads best,
+ * in a sunken well with a bar under it that runs down with its time; the
+ * steps and the choices go beside it, or under it when the card is narrow. */
 export const pairCardStyles = css`
-  .ws-pair .ws-pair-modes { margin: 2px 0 6px; }
-  .ws-pair-row { flex-wrap: nowrap; }
-  .sec.ws-pair .field input.ws-pair-code { flex: 0 1 112px; width: 112px; letter-spacing: .14em; text-transform: uppercase; }
-  .ws-pair-row > button.small { flex: none; }
+  .ws-pair .ws-pair-modes { margin: 2px 0 14px; height: 34px; padding: 3px; border-radius: 10px; }
+  .ws-pair .ws-pair-modes button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 12.5px; font-weight: 500; border-radius: 7px; }
+  .ws-pair .ws-pair-modes button svg.ui-icon { width: 14px; height: 14px; flex: none; }
+  .ws-pair-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+  .ws-pair-steps li { display: flex; align-items: flex-start; gap: 10px; font-size: 12.5px; line-height: 1.4; color: var(--wa-ink); }
+  .ws-pair-steps b {
+    flex: none; width: 20px; height: 20px; box-sizing: border-box; border-radius: 50%; display: grid; place-items: center;
+    border: 1px solid var(--wa-line-strong); font-size: 10.5px; font-weight: 500; color: var(--wa-muted); font-variant-numeric: tabular-nums;
+  }
+  .ws-pair-steps span { min-width: 0; padding-top: 1px; overflow-wrap: anywhere; }
+  .ws-pair-entry { display: flex; justify-content: center; margin: 16px 0 8px; }
+  .ws-pair-row { display: flex; align-items: stretch; gap: 8px; flex-wrap: nowrap; min-width: 0; }
+  .ws-pair input.ws-pair-code {
+    width: 200px; max-width: 100%; height: 44px; box-sizing: border-box; padding: 0 12px; border-radius: 10px;
+    font-size: 22px; letter-spacing: .3em; text-align: center; text-transform: uppercase;
+  }
+  .ws-pair-row > button.small { flex: none; height: 44px; padding: 0 16px; border-radius: 10px; }
   .ws-pair .readout-v.ws-pair-watch { color: var(--wa-ink); }
-  .ws-pair .ws-qr { width: min(224px, 100%); margin: 8px auto 4px; border-radius: 8px; overflow: hidden; background: #fff; }
-  .ws-pair .ws-qr svg { display: block; width: 100%; height: auto; }
-  .ws-pair .ws-qr-foot { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-  .ws-pair .ws-qr-count { font-variant-numeric: tabular-nums; }
-  .ws-pair a.ws-qr-open { font-size: 12.5px; color: var(--wa-accent); }
+  .ws-qr-wrap { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px 20px; margin: 2px 0 4px; }
+  .ws-qr-well {
+    flex: 0 0 232px; max-width: 100%; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 10px;
+    padding: 14px; border-radius: 14px; border: 1px solid var(--wa-line-strong);
+    background: color-mix(in srgb, var(--wa-bg) 55%, var(--wa-card));
+  }
+  .ws-qr-well.empty { min-height: 262px; justify-content: center; text-align: center; }
+  .ws-qr-ghost { display: grid; color: var(--wa-line-strong); }
+  .ws-qr-ghost svg.ui-icon { width: 56px; height: 56px; }
+  .ws-qr-msg { font-size: 12px; color: var(--wa-muted); }
+  .ws-pair .ws-qr {
+    width: 100%; aspect-ratio: 1; border-radius: 10px; overflow: hidden; background: #fff;
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--wa-ink) 12%, transparent);
+  }
+  .ws-pair .ws-qr svg { display: block; width: 100%; height: 100%; }
+  .ws-qr-time { align-self: stretch; height: 3px; border-radius: 2px; overflow: hidden; background: var(--wa-line-strong); }
+  .ws-qr-time i { display: block; height: 100%; border-radius: inherit; background: var(--wa-green); transition: width .9s linear; }
+  .ws-pair .hint.ws-qr-count { margin: -4px 0 0; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+  .ws-qr-side { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+  .ws-qr-side > .field.ws-pair-user { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
+  .ws-qr-side > .field.ws-pair-user > span { font-size: 12px; color: var(--wa-muted); }
+  .ws-qr-side > .hint { margin: -8px 0 0; }
+  .ws-qr-side > .field.check { display: flex; flex-direction: row-reverse; justify-content: flex-end; align-items: center; gap: 8px; font-size: 12.5px; }
+  .ws-pair a.ws-qr-open { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; font-size: 12.5px; color: var(--wa-accent); text-decoration: none; }
+  .ws-pair a.ws-qr-open:hover { text-decoration: underline; }
+  .ws-pair a.ws-qr-open svg.ui-icon { width: 13px; height: 13px; }
   .ws-pair .hint.ws-pair-done { color: var(--wa-green); font-weight: 600; }
 `;

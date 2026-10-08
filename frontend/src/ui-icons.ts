@@ -13,7 +13,7 @@ export type UiIconName =
   | "up" | "down" | "show" | "hide" | "duplicate" | "delete" | "close" | "reset"
   | "text" | "icon" | "gauge" | "chart" | "timeline" | "list" | "shape" | "image" | "tap" | "chartTimes" | "chartDots" | "chartGrid" | "imageTime"
   | "grip" | "chevron" | "content" | "look" | "clock" | "states" | "place" | "layers" | "pages" | "radial" | "plus"
-  | "lock" | "unlock" | "folder" | "ungroup" | "watch" | "phone"
+  | "lock" | "unlock" | "folder" | "ungroup" | "watch" | "phone" | "qr" | "keyboard"
   | "compact" | "expanded" | "foldAll" | "unfoldAll" | "grid" | "search" | "undo" | "redo" | "expand" | "left" | "right"
   | "braces" | "link" | "info" | "globe" | "download" | "check" | "arrow" | "paste" | "guides"
   | "checklist" | "home" | "more" | "thumbSmall" | "thumbMedium" | "thumbLarge" | "menu" | "note"
@@ -122,6 +122,12 @@ function shape(name: UiIconName) {
     // slot, drawn at the same weight so the two rows read as one set.
     case "phone":
       return svg`<rect x="6" y="2.5" width="12" height="19" rx="3" /><path d="M10.5 5.5H13.5" />`;
+    // Pair a device's two ways: a QR code's three corner marks and a few
+    // cells, and a keyboard for typing the code.
+    case "qr":
+      return svg`<rect x="4" y="4" width="6" height="6" rx="1" /><rect x="14" y="4" width="6" height="6" rx="1" /><rect x="4" y="14" width="6" height="6" rx="1" /><path d="M14 14H16.5V16.5M20 14V14.01M14 20H14.01M17.5 20H20V17.5" />`;
+    case "keyboard":
+      return svg`<rect x="2.5" y="6" width="19" height="12" rx="2.5" /><path d="M6.5 10H6.51M10 10H10.01M14 10H14.01M17.5 10H17.51M8 14.5H16" />`;
     // The Layers list's row-detail switch: tight lines against taller cards.
     // The Layers list's fold switch: arrows that close on a line, and arrows
     // that leave it.

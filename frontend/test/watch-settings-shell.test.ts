@@ -10,6 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { HassLike, OwnerSummary, WatchConfigRecord } from "../src/ha-api.js";
+import { PairWatchCard } from "../src/watch-pair-view.js";
 import { WatchSettings } from "../src/watch-settings-view.js";
 import { type CatalogSetting, catalogSettings, watchBehaviorDefaults } from "../src/watch-settings.js";
 import { SETTINGS_MOVED_TEXT, anyWatchSettingsDirty, dropWatchSettingsDrafts, keptSettingsDraft } from "../src/watch-settings-draft.js";
@@ -605,5 +606,52 @@ describe("Watch settings as a page under the Watch app row", () => {
     const reads = ha.sent.length;
     ws.show(ha.hass, owners, "w9");
     expect(ha.sent).toHaveLength(reads);
+  });
+});
+
+describe("Home's Pair a device dialog card", () => {
+  const offers = (sent: Record<string, unknown>[]) => sent.filter((m) => String(m.type).endsWith("/pair/offer"));
+  const cancels = (sent: Record<string, unknown>[]) => sent.filter((m) => String(m.type).endsWith("/pair/offer_cancel"));
+  type Card = PairInside & {
+    open(hass: HassLike, start?: { mode?: "code" | "qr"; showQr?: boolean }): void;
+    close(): void;
+    render(options?: { bare?: boolean }): unknown;
+  };
+
+  it("opens on the QR code, already showing one for the administrator at the card", async () => {
+    const ha = fakeHass("w9");
+    const card = new PairWatchCard(() => undefined) as unknown as Card;
+    card.open(ha.hass, { mode: "qr", showQr: true });
+    await vi.waitFor(() => expect(card.offer.open).toBeDefined());
+    expect(offers(ha.sent)).toHaveLength(1);
+    expect("user_id" in offers(ha.sent)[0]!).toBe(false);
+    expect(card.offer.userId).toBe("root");
+    const shown = flatten(card.render({ bare: true }));
+    expect(shown).toContain(`aria-label="QR code for pairing an iPhone"`);
+    expect(shown).not.toContain("sec-h");
+    expect(shown.indexOf("Show a QR code")).toBeLessThan(shown.indexOf("Type a code"));
+    card.close();
+    expect(cancels(ha.sent)).toHaveLength(1);
+  });
+
+  it("makes a new code when another person is picked, withdrawing the old one", async () => {
+    const ha = fakeHass("w9");
+    const card = new PairWatchCard(() => undefined) as unknown as Card;
+    card.open(ha.hass, { mode: "qr", showQr: true });
+    await vi.waitFor(() => expect(card.offer.open).toBeDefined());
+    card.pickOfferUser("chen");
+    await vi.waitFor(() => expect(offers(ha.sent)).toHaveLength(2));
+    expect(offers(ha.sent)[1]!.user_id).toBe("chen");
+    expect(cancels(ha.sent)).toEqual([{ type: "wrist_assistant/pair/offer_cancel", offer_id: "off1" }]);
+    card.close();
+  });
+
+  it("still opens on Type a code, with no code made, where nothing asks for one", () => {
+    const ha = fakeHass("w9");
+    const card = new PairWatchCard(() => undefined) as unknown as Card;
+    card.open(ha.hass);
+    expect(card.offer.usersRead).toBe(false);
+    expect(offers(ha.sent)).toHaveLength(0);
+    expect(flatten(card.render())).toContain("ws-pair-code");
   });
 });

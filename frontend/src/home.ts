@@ -429,34 +429,94 @@ export const homeStyles = css`
   button.home-device-add b { font-size: 14px; font-weight: 600; color: var(--wa-ink); }
   button.home-device-add span { font-size: 12.5px; }
   button.home-device-add svg.ui-icon { width: 20px; height: 20px; }
-  /* The device sheet: one device's state, a few of its designs, and Forget.
-     The dialog's frame is the transfer dialogs' (dialog.xf). */
-  dialog.dev-dialog { width: min(560px, calc(100vw - 32px)); }
-  /* The sheet's tabs: a door to each of the device's pages, wrapping onto a
-     second line on a narrow screen. Outlined like every Home control. */
-  .dev-tabs { display: flex; flex-wrap: wrap; gap: 12px 14px; padding: 7px 7px 0 0; }
+  /* The device sheet: the device's card opened up. The device on its stage
+     in its person's color (--c, set on the dialog), whose it is, its sync
+     state in a well, and a tile per page. The frame is the transfer
+     dialogs' (dialog.xf), given Home's sheen; the dialog sits outside .home,
+     so it carries the sheen's tokens itself. */
+  dialog.dev-dialog {
+    --home-card: linear-gradient(180deg, color-mix(in srgb, var(--wa-ink) 4%, var(--wa-card)), var(--wa-card));
+    --home-lift: inset 0 1px 0 color-mix(in srgb, var(--wa-ink) 7%, transparent);
+    width: min(600px, calc(100vw - 32px)); border-radius: 16px; border-color: var(--wa-line-strong);
+    background: var(--home-card); box-shadow: var(--home-lift), var(--wa-shadow-pop);
+  }
+  /* Pair a device: the same frame and sheen, a head with the link glyph in
+     an outlined chip. */
+  dialog.pair-dialog {
+    --home-card: linear-gradient(180deg, color-mix(in srgb, var(--wa-ink) 4%, var(--wa-card)), var(--wa-card));
+    --home-lift: inset 0 1px 0 color-mix(in srgb, var(--wa-ink) 7%, transparent);
+    width: min(580px, calc(100vw - 32px)); border-radius: 16px; border-color: var(--wa-line-strong);
+    background: var(--home-card); box-shadow: var(--home-lift), var(--wa-shadow-pop);
+  }
+  .pair-head { display: flex; align-items: center; gap: 12px; padding: 14px 12px 14px 16px; border-bottom: 1px solid var(--wa-line); flex: none; }
+  .pair-chip {
+    width: 32px; height: 32px; flex: none; box-sizing: border-box; border-radius: 9px; display: grid; place-items: center;
+    border: 1px solid var(--wa-green); color: var(--wa-green);
+  }
+  .pair-chip svg.ui-icon { width: 16px; height: 16px; }
+  .pair-head-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .pair-head h2 { margin: 0; font-size: 12px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; }
+  .pair-head-t > span { font-size: 12px; color: var(--wa-muted); overflow-wrap: anywhere; }
+  .pair-head > button.icon { width: 30px; height: 30px; flex: none; }
+  .pair-head > button.icon svg.ui-icon { width: 16px; height: 16px; }
+  .dev-hero { display: flex; align-items: center; gap: 16px; padding: 16px 12px 16px 16px; border-bottom: 1px solid var(--wa-line); flex: none; }
+  .dev-stage {
+    flex: none; width: 96px; height: 112px; box-sizing: border-box; border-radius: 12px; display: grid; place-items: center;
+    border: 1px solid var(--wa-line);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--wa-ink) 8%, var(--wa-bg)) 0%, var(--wa-bg) 85%);
+  }
+  .dev-stage svg.ha-art { width: auto; height: 92px; }
+  dialog.dev-dialog.waiting .dev-stage { border-color: color-mix(in srgb, var(--wa-amber) 45%, var(--wa-line)); }
+  .dev-hero-t { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .dev-whose {
+    display: flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere;
+    font-size: 10.5px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--wa-muted);
+  }
+  .dev-whose i { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--c); }
+  .dev-hero h2 { margin: 0; font-size: 20px; font-weight: 500; letter-spacing: -.01em; line-height: 1.25; overflow-wrap: anywhere; }
+  .dev-facts { font-size: 12px; line-height: 1.4; color: var(--wa-muted); overflow-wrap: anywhere; }
+  .dev-hero-acts { flex: none; align-self: flex-start; display: flex; align-items: center; gap: 6px; }
+  .dev-hero-acts button.icon { width: 30px; height: 30px; }
+  .dev-hero-acts button.icon svg.ui-icon { width: 16px; height: 16px; }
+  .dev-hero button.dev-rename-open { height: 28px; padding: 0 11px; font-size: 12px; }
+  /* The sync state in a sunken well: a chip in the state's color, its word
+     and what it means, and when the device was last heard from. */
+  .dev-state {
+    --s: var(--wa-muted);
+    display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px;
+    border: 1px solid var(--wa-line); background: color-mix(in srgb, var(--wa-bg) 45%, var(--wa-card));
+  }
+  .dev-state.synced { --s: var(--wa-green); }
+  .dev-state.waiting { --s: var(--wa-amber); border-color: color-mix(in srgb, var(--wa-amber) 45%, var(--wa-line)); }
+  .dev-state-chip {
+    width: 28px; height: 28px; flex: none; box-sizing: border-box; border-radius: 8px; display: grid; place-items: center;
+    border: 1px solid var(--s); color: var(--s);
+  }
+  .dev-state-chip svg.ui-icon { width: 14px; height: 14px; }
+  .dev-state-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .dev-state-t b { font-size: 13.5px; font-weight: 500; color: var(--s); }
+  .dev-state-t span { font-size: 12px; color: var(--wa-muted); overflow-wrap: anywhere; }
+  .dev-state-seen { flex: none; font-size: 11.5px; color: var(--wa-muted); }
+  .dev-title { margin: 2px 0 -8px; font-size: 11px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--wa-muted); }
+  /* A tile per page, each opening it on this device: its name, how many it
+     holds, and an arrow. Outlined like every Home control; the person's
+     color lights the outline under the pointer. */
+  .dev-tabs { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(164px, 100%), 1fr)); gap: 8px; }
   a.dev-tab, button.dev-tab {
-    position: relative; display: inline-flex; align-items: center; box-sizing: border-box; height: 28px; padding: 0 10px;
-    border-radius: 6px; font: inherit; font-size: 12.5px; font-weight: 550; cursor: pointer; white-space: nowrap; text-decoration: none;
-    color: var(--wa-ink); background: var(--wa-field); border: 1px solid var(--wa-line-strong);
+    display: flex; align-items: center; gap: 8px; box-sizing: border-box; min-height: 44px; padding: 6px 8px 6px 14px;
+    border-radius: 10px; font: inherit; font-size: 13px; font-weight: 500; text-align: left; cursor: pointer; text-decoration: none;
+    color: var(--wa-ink); background: var(--home-card); border: 1px solid var(--wa-line-strong); box-shadow: var(--home-lift);
   }
-  a.dev-tab:hover, button.dev-tab:hover { background: var(--wa-hover); }
+  a.dev-tab:hover, button.dev-tab:hover { border-color: var(--c); background: var(--wa-hover); }
   a.dev-tab:focus-visible, button.dev-tab:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  /* How many the page holds on this device, as a badge on the tab's top
-     right corner. None is drawn quieter, so a full tab stands out. */
-  .dev-tab-n {
-    position: absolute; top: -7px; right: -7px; min-width: 16px; height: 16px; box-sizing: border-box; padding: 0 4px;
-    border-radius: 999px; display: grid; place-items: center;
-    font-size: 10.5px; font-weight: 650; line-height: 1; font-variant-numeric: tabular-nums;
-    background: var(--wa-ink); color: var(--wa-bg);
-  }
-  .dev-tab-n.none { background: var(--wa-line-strong); color: var(--wa-muted); }
-  .dev-state { display: flex; align-items: center; gap: 8px; font-size: 13px; }
-  .dev-state.synced .home-dot { background: var(--wa-green); }
-  .dev-state.waiting .home-dot { background: var(--wa-amber); }
-  .dev-state.waiting b { color: var(--wa-amber); }
-  .dev-state b { font-weight: 600; }
-  .dev-state .home-device-why { color: var(--wa-muted); }
+  .dev-tab-l { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  /* How many the page holds on this device. None is drawn quieter, so a
+     full tile stands out. */
+  .dev-tab-n { flex: none; font-size: 18px; font-weight: 300; line-height: 1; font-variant-numeric: tabular-nums; color: var(--wa-ink); }
+  .dev-tab-n.none { color: var(--wa-muted); }
+  .dev-tab-go { flex: none; display: grid; color: var(--wa-muted); }
+  .dev-tab-go svg.ui-icon { width: 14px; height: 14px; }
+  a.dev-tab:hover .dev-tab-go, button.dev-tab:hover .dev-tab-go { color: var(--c); }
   .dev-paired {
     display: flex; align-items: flex-start; gap: 8px; padding: 9px 11px;
     border: 1px solid var(--wa-green); border-radius: 10px;
@@ -464,16 +524,23 @@ export const homeStyles = css`
   }
   .dev-paired svg { flex: none; width: 16px; height: 16px; margin-top: 1px; color: var(--wa-green); }
   .dev-paired b { font-weight: 600; color: var(--wa-green); }
-  .dev-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  /* The foot: Remove device on its own, under a hairline, outlined in red
+     rather than filled, since it is the one thing here that cannot be
+     undone. Its confirm step fills it. */
+  .dev-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 14px; border-top: 1px solid var(--wa-line); }
   .dev-acts .dev-forget { margin-left: auto; }
-  .dev-acts button { height: 32px; padding: 0 14px; }
-  .dev-acts button.danger { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+  .dev-acts button { height: 32px; padding: 0 14px; border-radius: 8px; }
+  .dev-acts button.danger { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
+  .dev-acts button.danger.dev-forget {
+    color: var(--error-color); background: transparent;
+    border: 1px solid color-mix(in srgb, var(--error-color) 50%, var(--wa-line));
+  }
+  .dev-acts button.danger.dev-forget:hover { background: color-mix(in srgb, var(--error-color) 10%, transparent); }
   .dev-acts button.danger svg.ui-icon { width: 14px; height: 14px; }
   .dev-rename { display: flex; align-items: center; gap: 8px; }
   .dev-rename input { flex: 1; min-width: 0; height: 32px; box-sizing: border-box; }
   .dev-rename button { height: 32px; }
   .dev-small { margin: 0; font-size: 11.5px; color: var(--wa-muted); }
-  .xf-head button.dev-rename-open { height: 28px; padding: 0 10px; font-size: 12.5px; }
   .dev-err { margin: 0; font-size: 12.5px; color: var(--error-color); }
   .home-small { margin: 0; font-size: 11.5px; color: var(--wa-muted); }
   .home-empty { margin: 0; font-size: 13px; color: var(--wa-muted); }
@@ -483,5 +550,10 @@ export const homeStyles = css`
     /* The person goes on one line above their devices. */
     .home-person-head { flex-basis: 100%; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
     .home-person-name { margin: 0; }
+    /* The sheet's stage shrinks, so the name keeps its room beside it. */
+    .dev-hero { gap: 12px; padding: 12px 8px 12px 12px; }
+    .dev-stage { width: 68px; height: 84px; }
+    .dev-stage svg.ha-art { height: 66px; }
+    .dev-hero h2 { font-size: 17px; }
   }
 `;
