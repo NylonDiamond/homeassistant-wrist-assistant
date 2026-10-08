@@ -783,7 +783,43 @@ def test_a_non_admin_cannot_offer_for_another_user(env) -> None:
     assert code == "unauthorized"
 
 
+def _no_url(*_args, **_kwargs) -> str:
+    raise RuntimeError("no URL available")
+
+
+def test_the_worked_out_home_address_fills_in_when_none_is_set(env) -> None:
+    calls: list[dict] = []
+
+    def get_url(_hass, **kwargs) -> str:
+        calls.append(kwargs)
+        return "http://192.168.1.44:8123/"
+
+    _stub("homeassistant.helpers.network", get_url=get_url)
+    env.hass.config.internal_url = None
+    fields = _fragment(_ok(env, env.ws.ws_pair_offer)["url"])
+    assert fields["u"] == "http://192.168.1.44:8123"
+    assert calls == [
+        {
+            "allow_internal": True,
+            "allow_external": False,
+            "allow_cloud": False,
+            "allow_ip": True,
+            "prefer_external": False,
+        }
+    ]
+
+
+def test_a_set_home_address_wins_over_the_worked_out_one(env) -> None:
+    def get_url(_hass, **_kwargs) -> str:
+        raise AssertionError("not asked when the home address is set")
+
+    _stub("homeassistant.helpers.network", get_url=get_url)
+    fields = _fragment(_ok(env, env.ws.ws_pair_offer)["url"])
+    assert fields["u"] == "http://192.168.1.20:8123"
+
+
 def test_empty_addresses_are_left_out_of_the_link(env) -> None:
+    _stub("homeassistant.helpers.network", get_url=_no_url)
     env.hass.config.internal_url = None
     env.hass.config.external_url = "  "
     env.hass.config.location_name = ""

@@ -450,17 +450,36 @@ def _clean_url(value: Any) -> str | None:
 def home_urls(hass: HomeAssistant) -> tuple[str | None, str | None, str | None]:
     """The home, away and Home Assistant Cloud addresses for a QR offer.
 
-    The first two are the ones set under Settings, Network. The third is
-    the Nabu Casa remote address, only while the cloud integration is loaded
-    and signed in with remote access on (``async_remote_ui_url`` refuses
-    otherwise). Each lookup is guarded on its own, so a missing or broken
-    one only leaves its field out of the link.
+    The first two are the ones set under Settings, Network. Many homes leave
+    the home address on Automatic, so when it is not set the home address is
+    the one Home Assistant works out for itself (its own network address and
+    port); without it a fresh phone would have nowhere to redeem. The third
+    is the Nabu Casa remote address, only while the cloud integration is
+    loaded and signed in with remote access on (``async_remote_ui_url``
+    refuses otherwise). Each lookup is guarded on its own, so a missing or
+    broken one only leaves its field out of the link.
     """
     config = getattr(hass, "config", None)
     try:
         internal = _clean_url(getattr(config, "internal_url", None))
     except Exception:  # noqa: BLE001
         internal = None
+    if internal is None:
+        try:
+            from homeassistant.helpers.network import get_url
+
+            internal = _clean_url(
+                get_url(
+                    hass,
+                    allow_internal=True,
+                    allow_external=False,
+                    allow_cloud=False,
+                    allow_ip=True,
+                    prefer_external=False,
+                )
+            )
+        except Exception:  # noqa: BLE001
+            internal = None
     try:
         external = _clean_url(getattr(config, "external_url", None))
     except Exception:  # noqa: BLE001
