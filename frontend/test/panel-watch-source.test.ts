@@ -159,15 +159,12 @@ describe("links into the Watch app carry the shared watch", () => {
     expect(method("  private openTab(")).toContain("this.goTo(tabPath(tab, this.sharedWatch));");
   });
 
-  it("on Home's cards and its Watch settings button, which goes to the Settings page", () => {
-    const home = method("  private renderHomeWatch() {");
-    expect(home).toContain("const watch = this.sharedWatch;");
-    expect(home).toContain("watchScreenPath(screen, watch)");
-    const front = method("  private renderHome() {");
-    expect(front).toContain("const settings = watchScreenPath(WATCH_SETTINGS_SCREEN, this.sharedWatch);");
-    expect(front).toContain(`<a class="home-btn home-watch-settings" href=\${panelUrl(this.route, settings, window.location.pathname)}`);
-    expect(front).toContain("this.goTo(settings);");
-    expect(front).not.toContain("watchSettings.");
+  it("on Home's device cards, which open a screen on that card's own watch", () => {
+    const door = method("  private renderHomeDoor(");
+    expect(door).toContain("const path = watchScreenPath(t.screen, d.id);");
+    expect(door).toContain(`<a class="home-door" href=\${panelUrl(this.route, path, window.location.pathname)}`);
+    expect(door).toContain("this.pickWatch(d.id);");
+    expect(method("  private renderHome() {")).not.toContain("watchSettings.");
   });
 });
 
@@ -177,7 +174,7 @@ describe("the Settings page", () => {
     const page = method("  private renderSettingsPage() {");
     expect(page).toContain("if (this.hass.user?.is_admin !== true) {");
     expect(page).toContain("if (!this.linkReady && this.owners.length === 0) {");
-    expect(page).toContain("return this.watchSettings.render(this.hass, this.owners, { narrow: this.narrow });");
+    expect(page).toContain("return this.watchSettings.render(this.hass, this.owners, { narrow: this.narrow, width: this.panelWidth });");
   });
 
   it("follows the shared watch on every draw for an administrator, once the devices are in, and leaves on any other route", () => {

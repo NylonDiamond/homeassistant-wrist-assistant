@@ -123,6 +123,16 @@ export function deviceSheetTabs(kind: "watch" | "iphone", admin: boolean): Devic
   return tabs;
 }
 
+/** The few doors at the foot of a device's card on Home: the sheet's own
+ * tabs, cut to the ones a household opens most. A watch has its
+ * complications, its pages and its settings (the last two an
+ * administrator's); an iPhone has its widgets. The sheet has the rest. */
+export function deviceCardDoors(kind: "watch" | "iphone", admin: boolean): DeviceSheetTab[] {
+  return deviceSheetTabs(kind, admin).filter((t) => t.kind === "list"
+    ? t.filter === "all"
+    : t.screen.id === "pages" || t.screen.id === WATCH_SETTINGS_SCREEN.id);
+}
+
 /** The line under the device sheet's title: what it is, its app version, and
  * on a watch the iPhone it is paired with. Only what the device reported. */
 export function deviceFacts(owner: OwnerSummary | undefined, kind: "watch" | "iphone"): string[] {
@@ -145,44 +155,12 @@ export const homeStyles = css`
     padding: clamp(20px, 4vh, 40px) clamp(16px, 4vw, 40px) 48px;
     background: var(--wa-bg); color: var(--wa-ink);
   }
-  .home-wrap { width: min(1080px, 100%); margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
-  .home-head { display: flex; flex-direction: column; gap: 6px; padding: 0 2px; }
+  .home-wrap { width: min(1200px, 100%); margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+  .home-head { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px 16px; padding: 0 2px; }
+  .home-head-text { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
   .home-head h1 { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -.02em; }
   .home-lead { margin: 0; font-size: 14px; color: var(--wa-muted); }
-  .home-card {
-    --lo-fill: var(--wa-card); --lo-mid: var(--wa-card-mid);
-    display: flex; flex-direction: column; gap: 14px; min-width: 0; box-sizing: border-box;
-    padding: 16px; border-radius: var(--wa-lc-r, 12px);
-    ${litOutline}
-  }
-  .home-card.watch { --c: var(--wa-hue-blue); }
-  .home-card.complications { --c: var(--wa-hue-pink); }
-  .home-card.devices { --c: var(--wa-hue-grey); }
-  .home-card-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; min-width: 0; }
-  /* Devices' Pair a device, at the right end of its title row. */
-  .home-card-head button.home-pair-open { margin-left: auto; height: 26px; padding: 0 10px; font-size: 12.5px; }
-  .home-chip {
-    width: 20px; height: 20px; border-radius: 6px; flex: none; display: grid; place-items: center;
-    background: var(--c); color: var(--wa-chip-ink);
-  }
-  .home-chip svg.ui-icon { width: 12px; height: 12px; stroke-width: 2.4; }
   .home-title { margin: 0; font-size: 12px; font-weight: 500; letter-spacing: .09em; text-transform: uppercase; color: var(--wa-ink); }
-  .home-sub { font-size: 12.5px; color: var(--wa-muted); }
-  .home-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start; }
-  .home-screens { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-  a.home-screen, button.home-screen {
-    display: flex; flex-direction: column; gap: 4px; min-width: 0; box-sizing: border-box; text-align: left;
-    padding: 12px 14px; border-radius: 8px; font: inherit; cursor: pointer; text-decoration: none;
-    color: var(--wa-ink); background: var(--wa-field); border: 1px solid var(--wa-line-strong);
-  }
-  a.home-screen:hover, button.home-screen:hover { background: var(--wa-hover); }
-  a.home-screen:focus-visible, button.home-screen:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .home-screen b { font-size: 14px; font-weight: 600; }
-  .home-screen span { font-size: 12.5px; color: var(--wa-muted); }
-  .home-count { display: flex; align-items: baseline; gap: 8px; }
-  .home-count b { font-size: 28px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
-  .home-count span { color: var(--wa-muted); }
-  .home-acts { display: flex; flex-wrap: wrap; gap: 8px; }
   a.home-btn, button.home-btn {
     display: inline-flex; align-items: center; gap: 6px; box-sizing: border-box; height: 30px; padding: 0 12px;
     border-radius: 6px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; text-decoration: none;
@@ -192,42 +170,71 @@ export const homeStyles = css`
   a.home-btn:focus-visible, button.home-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   button.home-btn:disabled { opacity: .5; cursor: default; }
   .home-btn svg.ui-icon { width: 14px; height: 14px; }
-  .home-devices { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
-  .home-device { display: flex; align-items: center; min-width: 0; border-top: 1px solid var(--wa-line); }
-  .home-device:first-child { border-top: 0; }
-  /* The whole row opens the device's sheet. It reaches 6px past the card's
-     text on both sides, so the hover fill has room and the text stays put. */
+  /* The devices, one card each, as many to a row as fit. A card's outline is
+     lit in its state's color: green for synced, amber for waiting, grey for
+     nothing waiting. */
+  .home-devices {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 14px;
+    margin: 0; padding: 0; list-style: none;
+  }
+  .home-device {
+    --lo-fill: var(--wa-card); --lo-mid: var(--wa-card-mid); --c: var(--wa-hue-grey);
+    position: relative; display: flex; flex-direction: column; gap: 14px; min-width: 0; box-sizing: border-box;
+    padding: 16px; border-radius: var(--wa-lc-r, 12px);
+    ${litOutline}
+  }
+  .home-device.synced { --c: var(--wa-green); }
+  .home-device.waiting { --c: var(--wa-amber); }
+  .home-device:hover { --lo-fill: var(--wa-hover); }
+  /* The whole card opens the device's sheet: the name's button reaches over
+     the card, and the doors at the foot sit above it. */
   button.home-device-open {
-    display: flex; align-items: center; gap: 10px; flex: 1 1 auto; width: auto; min-width: 0; box-sizing: border-box;
-    margin: 0 -6px; padding: 8px 6px; border: 0; border-radius: 6px; font: inherit; text-align: left; cursor: pointer;
-    color: inherit; background: transparent;
+    all: unset; cursor: pointer; min-width: 0;
   }
-  button.home-device-open:not(:last-child) { margin-right: 0; }
-  button.home-device-open:hover { background: var(--wa-hover); }
-  button.home-device-open:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  /* An administrator's Remove, quiet at the row's end: it opens the sheet on
-     its Forget step, which asks before anything goes. */
-  button.home-device-remove {
-    flex: none; height: 24px; margin: 0 -6px 0 2px; padding: 0 8px; border: 0; border-radius: 6px;
-    font: inherit; font-size: 12px; color: var(--wa-muted); background: transparent; cursor: pointer;
-  }
-  button.home-device-remove:hover { color: var(--wa-ink); background: var(--wa-hover); }
-  button.home-device-remove:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  /* A right-pointing chevron: the down one, turned. */
-  .home-device-go { display: inline-flex; flex: none; color: var(--wa-muted); transform: rotate(-90deg); }
-  .home-device-go svg.ui-icon { width: 13px; height: 13px; }
-  .home-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--wa-muted); }
-  .home-device.synced .home-dot { background: var(--wa-green); }
-  .home-device.waiting .home-dot { background: var(--wa-amber); }
-  .home-device-name { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 6px; }
+  button.home-device-open::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+  .home-device:has(button.home-device-open:focus-visible) { box-shadow: var(--wa-ring); }
+  .home-device-top { display: flex; align-items: center; gap: 14px; min-width: 0; }
+  /* The device itself, drawn with one shape lit in the card's color. */
+  .home-device-art { flex: none; display: grid; place-items: center; width: 52px; height: 64px; color: var(--c); }
+  .home-device-art .shape-art { width: 46px; height: 60px; display: block; }
+  .home-device-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .home-device-name { min-width: 0; display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 600; }
   /* The name in its own box: an ellipsis only reaches a block, never the
      bare text of a flex row. */
   .home-device-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .home-device-name svg.ui-icon { width: 13px; height: 13px; flex: none; color: var(--wa-muted); }
-  .home-device-sync { flex: 0 1 auto; min-width: 0; max-width: 60%; font-size: 12.5px; color: var(--wa-muted); text-align: right; overflow-wrap: anywhere; }
-  .home-device.waiting .home-device-sync { color: var(--wa-amber); }
+  .home-device-facts { font-size: 12px; color: var(--wa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .home-device-sync { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--wa-muted); overflow-wrap: anywhere; }
+  .home-device.synced .home-device-sync b { color: var(--wa-green); }
+  .home-device.waiting .home-device-sync b { color: var(--wa-amber); }
+  .home-device-sync b { font-weight: 600; }
+  .home-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--wa-muted); }
+  .home-device.synced .home-dot { background: var(--wa-green); }
+  .home-device.waiting .home-dot { background: var(--wa-amber); }
   /* What a waiting device waits for, after the word, in the quiet ink. */
-  .home-device.waiting .home-device-why { color: var(--wa-muted); font-weight: 400; }
+  .home-device-why { color: var(--wa-muted); font-weight: 400; }
+  /* A right-pointing chevron: the down one, turned. */
+  .home-device-go { display: inline-flex; flex: none; align-self: flex-start; color: var(--wa-muted); transform: rotate(-90deg); }
+  .home-device-go svg.ui-icon { width: 13px; height: 13px; }
+  .home-device-doors { position: relative; z-index: 1; display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; }
+  a.home-door, button.home-door {
+    display: inline-flex; align-items: center; gap: 6px; box-sizing: border-box; height: 26px; padding: 0 10px;
+    border-radius: 6px; font: inherit; font-size: 12px; font-weight: 550; cursor: pointer; white-space: nowrap; text-decoration: none;
+    color: var(--wa-ink); background: var(--wa-field); border: 1px solid var(--wa-line-strong);
+  }
+  a.home-door:hover, button.home-door:hover { background: var(--wa-card); }
+  a.home-door:focus-visible, button.home-door:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  .home-door-n { font-variant-numeric: tabular-nums; color: var(--wa-muted); }
+  /* Pair a device, the grid's last card: a dashed outline, nothing lit. */
+  button.home-device-add {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 150px;
+    box-sizing: border-box; padding: 16px; border-radius: var(--wa-lc-r, 12px); font: inherit; cursor: pointer;
+    color: var(--wa-muted); background: transparent; border: 1.5px dashed var(--wa-line-strong);
+  }
+  button.home-device-add:hover { color: var(--wa-ink); border-color: var(--wa-muted); background: var(--wa-hover); }
+  button.home-device-add:focus-visible { outline: none; box-shadow: var(--wa-ring); }
+  button.home-device-add b { font-size: 14px; font-weight: 600; color: var(--wa-ink); }
+  button.home-device-add span { font-size: 12.5px; }
+  button.home-device-add svg.ui-icon { width: 20px; height: 20px; }
   /* The device sheet: one device's state, a few of its designs, and Forget.
      The dialog's frame is the transfer dialogs' (dialog.xf). */
   dialog.dev-dialog { width: min(560px, calc(100vw - 32px)); }
@@ -276,13 +283,8 @@ export const homeStyles = css`
   .dev-err { margin: 0; font-size: 12.5px; color: var(--error-color); }
   .home-small { margin: 0; font-size: 11.5px; color: var(--wa-muted); }
   .home-empty { margin: 0; font-size: 13px; color: var(--wa-muted); }
-  @media (max-width: 900px) {
-    .home-pair { grid-template-columns: minmax(0, 1fr); }
-    .home-screens { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  }
   @media (max-width: 640px) {
     .home { padding: 14px 12px 32px; }
     .home-head h1 { font-size: 22px; }
-    .home-screens { grid-template-columns: minmax(0, 1fr); }
   }
 `;

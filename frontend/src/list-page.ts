@@ -153,14 +153,19 @@ export const listPageStyles = css`
   .pk-page > .pk-body { flex: none; overflow: visible; min-height: 160px; }
   .pk-page > :first-child { border-top-left-radius: calc(var(--wa-r-lg) - 1px); border-top-right-radius: calc(var(--wa-r-lg) - 1px); }
   .pk-page > :last-child { border-bottom-left-radius: calc(var(--wa-r-lg) - 1px); border-bottom-right-radius: calc(var(--wa-r-lg) - 1px); }
-  .pk-page > .pk-head > .pk-search { margin-left: auto; }
+  .pk-page .pk-head > .pk-search { margin-left: auto; }
+  /* The head, the device tabs and the picking bar, pinned to the top of the
+     page while the cards scroll under them. Not on a phone, where the tabs
+     wrap to several rows and would leave too little room for the cards. */
+  .pk-page > .pk-pin { position: sticky; top: 0; z-index: 3; background: var(--wa-card); }
   /* The editor's way back to the list leads its bar on one row or two: the
      stacked bar sends every other button to the second row. */
   header.stacked > button.tb-btn.tb-list, .wa-bar.stacked > button.tb-btn.tb-list { order: 0; }
   @media (max-width: 640px) {
     .cl-page { padding: 14px 12px 32px; }
     .cl-head h1 { font-size: 22px; }
-    .pk-page > .pk-head > .pk-search { margin-left: 0; }
+    .pk-page .pk-head > .pk-search { margin-left: 0; }
+    .pk-page > .pk-pin { position: static; }
     /* The dialog's device tabs scroll sideways on a phone, to keep its fixed
        height for the cards. The page scrolls down instead, so here they wrap
        and nothing moves sideways. */

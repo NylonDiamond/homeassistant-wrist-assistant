@@ -185,6 +185,12 @@ describe("the list page's look", () => {
     expect(rule).toContain("mask-image: none");
   });
 
+  it("pins the head, the device tabs and the picking bar while the page scrolls, but not on a phone", () => {
+    expect(text).toContain(".pk-page > .pk-pin { position: sticky; top: 0; z-index: 3; background: var(--wa-card); }");
+    const phone = text.slice(text.indexOf("@media (max-width: 640px)"));
+    expect(phone).toContain(".pk-page > .pk-pin { position: static; }");
+  });
+
   it("keys nothing on the dialog, so the dialog's frame never reaches the page", () => {
     expect(text).not.toContain("pk-dialog");
   });

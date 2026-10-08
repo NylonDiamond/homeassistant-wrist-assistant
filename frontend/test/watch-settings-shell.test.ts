@@ -202,12 +202,12 @@ describe("Watch settings as a page under the Watch app row", () => {
   it("draws a page with its bar and no watch tabs, on the watch it is handed", async () => {
     const { ws, inside, text } = await page("w2");
     const shown = text();
-    expect(shown).toContain(`<div class="ws-page">`);
+    expect(shown).toContain(`<div class="ws-page" style=`);
     expect(shown).toContain(`role="toolbar" aria-label="Watch settings"`);
     expect(shown).not.toContain("ws-tabs");
     expect(shown).not.toContain("<dialog");
     expect(shown).toContain("Chen's Watch · revision 1");
-    expect(shown).toContain(`<div class="ws-cols ">`);
+    expect(shown).toContain(`<div class="ws-cols " style=`);
     expect(inside.ownerId).toBe("w2");
     expect(ws.shown).toBe(true);
   });
@@ -217,7 +217,7 @@ describe("Watch settings as a page under the Watch app row", () => {
     const { text, bar } = await page("w2", elsewhere);
     const shown = text();
     expect(shown).toContain("This watch takes its settings from your main house. Change them there.");
-    expect(shown).toContain(`<div class="ws-cols one">`);
+    expect(shown).toContain(`<div class="ws-cols one" style=`);
     // A bound attribute flattens without its quotes.
     expect(shown).not.toContain("data-sec=ws-connection");
     expect(shown).not.toContain(`data-sec="ws-notification-style"`);
@@ -590,7 +590,7 @@ describe("Watch settings as a page under the Watch app row", () => {
     expect(inside.ownerId).toBeUndefined();
     const first = flatten(ws.render(ha.hass, owners));
     expect(first).toContain("No watch has connected to this Home Assistant yet.");
-    expect(first).toContain(`<div class="ws-cols one">`);
+    expect(first).toContain(`<div class="ws-cols one" style=`);
     expect(first).toContain(`data-sec="ws-pair"`);
     expect(first).toContain("No watch paired yet");
     // No Save while there is no watch to save for.

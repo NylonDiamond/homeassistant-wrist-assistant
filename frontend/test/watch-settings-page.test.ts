@@ -21,7 +21,10 @@ import {
 } from "../src/watch-settings-draft.js";
 import {
   WATCH_SETTINGS_PATH,
+  dealColumns,
   isWatchSettingsRoute,
+  settingsColumnCount,
+  settingsPageWidth,
   settingsCanSave,
   settingsPageSavesOnKey,
   settingsPageStep,
@@ -200,11 +203,11 @@ describe("the page's look", () => {
     expect(rule(".ws-top")).toContain("background: var(--wa-bg)");
   });
 
-  it("is a centred column, two once the page is wide, and never wider than the page", () => {
+  it("is centred, as many columns as the render dealt, and never wider than the page", () => {
     const cols = rule(".ws-cols");
-    expect(cols).toContain("width: min(720px, 100%); margin: 0 auto");
-    expect(cols).toContain("grid-template-columns: minmax(0, 1fr)");
-    expect(sheet).toMatch(/@container wspage \(min-width: 1100px\) \{[^@]*\.ws-cols:not\(\.one\) \{ width: min\(1320px, 100%\); grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}/);
+    expect(cols).toContain("width: min(var(--ws-w, 720px), 100%); margin: 0 auto");
+    expect(cols).toContain("grid-template-columns: repeat(var(--ws-n, 1), minmax(0, 1fr))");
+    expect(rule(".ws-cols.one")).toContain("width: min(720px, 100%)");
     expect(rule(".ws-col")).toContain("min-width: 0; container: xfer / inline-size");
   });
 
@@ -219,5 +222,30 @@ describe("the page's look", () => {
     expect(sheet).not.toContain("dialog");
     expect(sheet).not.toContain("ws-tabs");
     expect(sheet).not.toContain("xfer-foot");
+  });
+});
+
+describe("the page's columns", () => {
+  it("fits one column per 460px or so, up to four, and one before the page is measured", () => {
+    expect(settingsColumnCount(0)).toBe(1);
+    expect(settingsColumnCount(Number.NaN)).toBe(1);
+    expect(settingsColumnCount(400)).toBe(1);
+    expect(settingsColumnCount(1000)).toBe(2);
+    expect(settingsColumnCount(1500)).toBe(3);
+    expect(settingsColumnCount(2000)).toBe(4);
+    expect(settingsColumnCount(4000)).toBe(4);
+  });
+
+  it("caps the block at the columns' widest, and one column at the dialog's width", () => {
+    expect(settingsPageWidth(1)).toBe(720);
+    expect(settingsPageWidth(2)).toBe(2 * 620 + 20 + 32);
+    expect(settingsPageWidth(4)).toBe(4 * 620 + 3 * 20 + 32);
+  });
+
+  it("deals each card to the shortest column so far, the leftmost on a tie, keeping their order", () => {
+    expect(dealColumns([10, 2, 3, 4], 2)).toEqual([[0], [1, 2, 3]]);
+    expect(dealColumns([5, 5, 5, 1], 3)).toEqual([[0, 3], [1], [2]]);
+    expect(dealColumns([1, 1], 4)).toEqual([[0], [1], [], []]);
+    expect(dealColumns([1, 2, 3], 1)).toEqual([[0, 1, 2]]);
   });
 });

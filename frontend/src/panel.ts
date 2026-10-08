@@ -142,7 +142,7 @@ import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
 import { type SendState, agoWords, describeHomeSync, describeSend, deviceSyncLabel, homeSync, sendState, sendWaitMs } from "./send-state.js";
-import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, deviceFacts, deviceSheetTabs, homeDeviceRows, homeDevices, homeStyles, watchConfigCount } from "./home.js";
+import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, deviceCardDoors, deviceFacts, deviceSheetTabs, homeDeviceRows, homeDevices, homeStyles, watchConfigCount } from "./home.js";
 import { type WatchAppSync, readWatchAppSync, summaryUnknown, summaryWatchAppSyncs, waitingForText, watchAppSyncKey } from "./watch-app-sync.js";
 import { type PickerForm, type TabMemory, browseAllTab, listPageEscape, listPageLead, listPageShown, listPageState, listPageStyles, listsReady, pickTab, pickerSurfaceClass, restoreTab } from "./list-page.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
@@ -4371,25 +4371,6 @@ export class WristAssistantPanel extends LitElement {
     .start-sec-head h2 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -.01em; color: var(--wa-ink); }
     .start-more { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; color: var(--wa-accent); }
     .start-more svg { width: 13px; height: 13px; }
-    /* Recent: the picker's cards, six across at most, each one a button. */
-    /* Six across at the page's full width, so the six cards are one row. */
-    .start-recent { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 12px; }
-    button.start-card {
-      display: flex; flex-direction: column; align-items: stretch; gap: 0; min-width: 0; text-align: left;
-      padding: 10px; border-radius: 16px; font: inherit; cursor: pointer;
-      border: 1px solid var(--wa-line); background: var(--wa-card); color: var(--wa-ink);
-      transition: transform .18s ease-out, border-color .18s ease-out, box-shadow .18s ease-out;
-    }
-    button.start-card:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--wa-accent) 55%, var(--wa-line)); box-shadow: 0 18px 40px -20px rgba(0,0,0,.6); }
-    button.start-card:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-    button.start-card.shelved { border-style: dashed; border-color: var(--wa-line-strong); }
-    .start-card-pic { display: block; min-width: 0; margin-bottom: 10px; }
-    .start-card-pic .pk-card-crop { border-radius: 10px; }
-    .start-card-name { display: block; font-size: 13.5px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 2px; }
-    .start-card-sub { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 3px; padding: 0 2px; font-size: 11.5px; color: var(--wa-muted); }
-    .start-card-where { display: inline-flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .start-card-where svg { width: 12px; height: 12px; flex: none; }
-    .start-card-shape { flex: none; margin-left: auto; padding: 1px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 600; background: color-mix(in srgb, var(--wa-ink) 7%, transparent); }
     /* Create a new one: a box per device kind, side by side while the page
        is wide enough and stacked when it is not. The iPhone box is wider,
        since it holds two screens' worth of shapes. */
@@ -4458,7 +4439,6 @@ export class WristAssistantPanel extends LitElement {
       .start-hero { padding: 24px 20px 26px; border-radius: 18px; }
       .start-show { display: none; }
       .start-title { font-size: 28px; }
-      .start-recent { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
       button.start-shape { width: calc(50% - 5px); }
     }
     /* Three rows: the document itself on top (name, devices, actions), then
@@ -10828,7 +10808,7 @@ export class WristAssistantPanel extends LitElement {
     if (!this.linkReady && this.owners.length === 0) {
       return html`<div class="ws-page"><div class="ws-cols one"><p class="home-empty">Loading…</p></div></div>`;
     }
-    return this.watchSettings.render(this.hass, this.owners, { narrow: this.narrow });
+    return this.watchSettings.render(this.hass, this.owners, { narrow: this.narrow, width: this.panelWidth });
   }
 
   private goTo(path: string, replace = false) {
@@ -12127,7 +12107,7 @@ export class WristAssistantPanel extends LitElement {
         : filter !== "all"
           ? `Nothing here has a ${familyTitle(filter)} shape.`
           : nothingOnText(tabs.find((t) => t.key === tab)?.kind ?? "all");
-    const inner = html`<div class="pk-head">
+    const top = html`<div class="pk-head">
         ${page ? nothing : html`<h2>Your complications <span class="pk-head-count">${all.length}</span></h2>`}
         ${this.ownerBusy ? nothing : this.renderPickerLook()}
         ${this.ownerBusy ? nothing : this.renderPickerSelect()}
@@ -12141,7 +12121,10 @@ export class WristAssistantPanel extends LitElement {
         ${page ? nothing : html`<button class="icon" title="Close" aria-label="Close" @click=${() => this.closePicker()}>${uiIcon("close")}</button>`}
       </div>
       ${this.ownerBusy ? nothing : this.renderPickerTabs(tabs, tab, this.pickerPeople(people))}
-      ${this.pickerSelecting ? this.renderPickerBar() : nothing}
+      ${this.pickerSelecting ? this.renderPickerBar() : nothing}`;
+    // On the page the head, the device tabs and the picking bar stay at the
+    // top while the cards scroll under them; the dialog has its own scroll.
+    const inner = html`${page ? html`<div class="pk-pin">${top}</div>` : top}
       <div class="pk-body" id="pk-tabpanel" role="tabpanel" aria-labelledby=${`pk-tab-${tab}`}>
         ${this.ownerBusy
           ? html`<div class="empty">Loading…</div>`
@@ -18777,110 +18760,94 @@ export class WristAssistantPanel extends LitElement {
   // ── Home ──────────────────────────────────────────────────────────────
 
   /**
-   * Home, the panel's front page at its own address: a door to each part
-   * of what Wrist Assistant puts on the devices, and where each device has
-   * got to. Every door goes to a surface that already exists, on its own tab.
+   * Home, the panel's front page at its own address: the devices, one card
+   * each, and where each has got to. The tabs above already lead to the
+   * watch app's screens and to the complications, so Home does not repeat
+   * them; it answers "what is in this home, and is each one up to date".
    *
-   * Watch app has a card per screen, for an administrator in a home with a
-   * watch, the same gate the screens themselves have; with no watch yet, one
-   * card that opens the "Pair a device" dialog. The Devices card's own Pair a
-   * device opens the same dialog, for an administrator, and each device row
-   * has a quiet Remove that opens the row's sheet on its Forget step.
-   * Complications and widgets has how many there are (the count the list
-   * gives), New, Browse all, Import and the online gallery. Devices has each
-   * device, Synced or Waiting (or Nothing waiting, for one that has nothing
-   * to pick up and never synced). A phone's word is the header pill's rule
-   * for its complications; a watch's is the worse of that and its watch app
-   * records (`deviceVerdict`), which only an administrator can read. A
-   * waiting row says what for, and the small print says what is counted.
-   * Under them, the recent designs, which open on the Complications tab.
+   * A card has the device drawn with one shape lit in its state's color, its
+   * name, what it is, and Synced or Waiting (or Nothing waiting, for one that
+   * has nothing to pick up and never synced). A phone's word is the header
+   * pill's rule for its complications; a watch's is the worse of that and its
+   * watch app records (`deviceVerdict`), which only an administrator can
+   * read. A waiting card says what for, and the small print says what is
+   * counted. The whole card opens the device's sheet; a few doors at its foot
+   * open its most used pages directly (`deviceCardDoors`). An administrator
+   * has a last card that opens the "Pair a device" dialog. Nothing but
+   * "Loading…" while the devices are still loading, so the pairing card
+   * never flashes up in a home that has devices.
    */
   private renderHome() {
     const admin = this.hass.user?.is_admin === true;
-    const total = this.pickerRows().filter((row) => row.open.item.kind === "record").length;
-    const full = this.freeSlot() < 0;
     const devices = homeDeviceRows(this.homeDevices(), admin ? this.watchAppSyncs : new Map());
-    const recent = this.startRecent();
-    const toComplications = () => this.goTo(COMPLICATIONS_PATH);
-    const settings = watchScreenPath(WATCH_SETTINGS_SCREEN, this.sharedWatch);
+    const loading = !this.linkReady && this.owners.length === 0;
+    const add = admin ? html`<li><button type="button" class="home-device-add" title="Pair a watch or iPhone, by a code or a QR code"
+        @click=${() => this.openPairDialog()}>${uiIcon("plus")}<b>Pair a device</b><span>A watch or an iPhone, by a code or a QR code</span></button></li>` : nothing;
     return html`${this.loadError ? html`<div class="card error">${this.loadError}</div>` : nothing}
       <div class="home"><div class="home-wrap">
         <div class="home-head">
-          <h1>Home</h1>
-          <p class="home-lead">Everything Wrist Assistant puts on your watches and iPhones. Pick an area.</p>
+          <div class="home-head-text">
+            <h1>Home</h1>
+            <p class="home-lead">Your watches and iPhones, and whether each one has your latest changes.</p>
+          </div>
         </div>
-        ${admin ? this.renderHomeWatch() : nothing}
-        <div class="home-pair">
-          <section class="home-card complications">
-            <div class="home-card-head">
-              <span class="home-chip" aria-hidden="true">${uiIcon("layers")}</span>
-              <h2 class="home-title">Complications and widgets</h2>
-            </div>
-            <span class="home-sub">Small views for watch faces, the Lock Screen and the Home Screen</span>
-            <div class="home-count"><b>${total}</b><span>${total === 1 ? "complication" : "complications"}</span></div>
-            <div class="home-acts">
-              ${admin ? html`<button class="home-btn home-new" ?disabled=${full || this.ownerBusy}
-                title=${full ? "Every device is full. Delete a complication first." : "Make a new complication"}
-                @click=${() => { toComplications(); this.openNewDialog(); }}>${uiIcon("plus")}<span>New complication</span></button>` : nothing}
-              <button class="home-btn home-browse" title="Every complication in this home"
-                @click=${() => {
-                  toComplications();
-                  // With nothing open the tab is the list itself; with a design
-                  // open it is the editor, so the list opens over it.
-                  if (this.draft) this.browseAll();
-                }}>Browse all</button>
-              ${admin ? html`<button class="home-btn home-import" ?disabled=${full}
-                title=${full ? "Every device is full. Delete a complication first." : "Paste a complication somebody shared"}
-                @click=${() => { toComplications(); this.openImportDialog(); }}>Import</button>` : nothing}
-              <a class="home-btn home-gallery" href=${GALLERY_PAGE} target="_blank" rel="noopener"
-                title="Ready-made complications from other people">Gallery</a>
-            </div>
-          </section>
-          <section class="home-card devices">
-            <div class="home-card-head">
-              <span class="home-chip" aria-hidden="true">${uiIcon("phone")}</span>
-              <h2 class="home-title">Devices</h2>
-              ${admin ? html`<button class="home-btn home-pair-open" title="Pair a watch or iPhone, by a code or a QR code"
-                @click=${() => this.openPairDialog()}>${uiIcon("plus")}<span>Pair a device</span></button>` : nothing}
-            </div>
-            <span class="home-sub">Watches and phones that get your changes</span>
-            ${devices.length === 0
-              ? html`<p class="home-empty">${this.linkReady ? "No watch or iPhone has connected to this Home Assistant yet." : "Loading…"}</p>`
-              : html`<ul class="home-devices">${devices.map((d) => html`<li class="home-device ${d.sync}">
-                  <button type="button" class="home-device-open" title=${`Open ${d.name}`} @click=${() => this.openDeviceSheet(d.id)}>
-                    <i class="home-dot" aria-hidden="true"></i>
-                    <span class="home-device-name">${uiIcon(d.kind === "iphone" ? "phone" : "watch")}<span class="home-device-label">${d.name}</span></span>
-                    <span class="home-device-sync">${deviceSyncLabel(d.sync)}${d.waitingFor.length === 0 ? nothing
-                      : html`<span class="home-device-why"> · ${waitingForText(d.waitingFor)}</span>`}</span>
-                    <span class="home-device-go" aria-hidden="true">${uiIcon("chevron")}</span>
-                  </button>
-                  ${admin ? html`<button type="button" class="home-device-remove" title=${`Remove ${d.name} from this Home Assistant`}
-                    @click=${() => this.openDeviceSheet(d.id, true)}>Remove</button>` : nothing}
-                </li>`)}</ul>`}
-            ${devices.length === 0 ? nothing : html`<p class="home-small">${admin
-              ? "Synced, Waiting and Nothing waiting cover complications and widgets, and on a watch also its pages, menus, settings and the rest of the watch app."
-              : "Synced, Waiting and Nothing waiting cover complications and widgets."}</p>`}
-            ${admin ? html`<div class="home-acts">
-              <a class="home-btn home-watch-settings" href=${panelUrl(this.route, settings, window.location.pathname)}
-                title="How the watch behaves: gestures, pages, cameras and connection"
-                @click=${(e: MouseEvent) => {
-                  if (!isPlainClick(e)) return;
-                  e.preventDefault();
-                  this.goTo(settings);
-                }}>${uiIcon("watch")}<span>Watch settings</span></a>
-            </div>` : nothing}
-          </section>
-        </div>
-        ${recent.length === 0 ? nothing : html`<section class="start-sec home-recent">
-          <div class="home-card-head"><h2 class="home-title">Pick up where you left off</h2></div>
-          <div class="start-recent">${recent.map((hit) => this.renderStartCard(hit.row, hit.copy, () => {
-            toComplications();
-            void this.openFromPicker(hit.row, hit.copy);
-          }))}</div>
-        </section>`}
+        ${loading
+          ? html`<p class="home-empty">Loading…</p>`
+          : devices.length === 0 && !admin
+            ? html`<p class="home-empty">No watch or iPhone has connected to this Home Assistant yet.</p>`
+            : html`<ul class="home-devices">${devices.map((d) => this.renderHomeDevice(d, admin))}${add}</ul>`}
+        ${devices.length === 0 ? nothing : html`<p class="home-small">${admin
+          ? "Synced, Waiting and Nothing waiting cover complications and widgets, and on a watch also its pages, menus, settings and the rest of the watch app."
+          : "Synced, Waiting and Nothing waiting cover complications and widgets."}</p>`}
       </div></div>
       ${admin && this.pairOpen ? this.renderPairDialog() : nothing}
       ${this.deviceSheet !== undefined ? this.renderDeviceSheet(this.deviceSheet, devices, admin) : nothing}`;
+  }
+
+  /** One device's card on Home. The name's button reaches over the whole
+   * card and opens the sheet; the doors at the foot sit above it. */
+  private renderHomeDevice(d: HomeDeviceRow, admin: boolean) {
+    const owner = this.ownerOf(d.id);
+    const count = owner?.complication_count ?? 0;
+    return html`<li class="home-device ${d.sync}">
+      <div class="home-device-top">
+        <span class="home-device-art" aria-hidden="true">${deviceShapeArt("rectangular", d.kind, d.sync !== "idle")}</span>
+        <div class="home-device-text">
+          <button type="button" class="home-device-open" title=${`Open ${d.name}`} @click=${() => this.openDeviceSheet(d.id)}>
+            <span class="home-device-name"><span class="home-device-label">${d.name}</span></span>
+          </button>
+          <span class="home-device-facts">${deviceFacts(owner, d.kind).join(" · ")}</span>
+          <span class="home-device-sync"><i class="home-dot" aria-hidden="true"></i><span><b>${deviceSyncLabel(d.sync)}</b>${d.waitingFor.length === 0 ? nothing
+            : html`<span class="home-device-why"> · ${waitingForText(d.waitingFor)}</span>`}</span></span>
+        </div>
+        <span class="home-device-go" aria-hidden="true">${uiIcon("chevron")}</span>
+      </div>
+      <div class="home-device-doors">${deviceCardDoors(d.kind, admin).map((t) => this.renderHomeDoor(t, d, count))}</div>
+    </li>`;
+  }
+
+  /** One door at the foot of a device's card: the device's complications on
+   * the Complications tab, or one watch screen on this watch. The way the
+   * sheet's tabs go, without a sheet to close. */
+  private renderHomeDoor(t: DeviceSheetTab, d: HomeDeviceRow, count: number) {
+    if (t.kind === "list") {
+      return html`<button type="button" class="home-door" title=${`${t.label} on ${d.name}`}
+        @click=${() => {
+          this.pickerFilter = t.filter;
+          this.pickPickerTab(d.id);
+          this.goTo(COMPLICATIONS_PATH);
+          // With a design open the tab is the editor, so the list opens over it.
+          if (this.draft) this.openPicker();
+        }}>${t.label}<span class="home-door-n">${count}</span></button>`;
+    }
+    const path = watchScreenPath(t.screen, d.id);
+    return html`<a class="home-door" href=${panelUrl(this.route, path, window.location.pathname)} title=${`${t.label} on ${d.name}`}
+      @click=${(e: MouseEvent) => {
+        if (!isPlainClick(e)) return;
+        e.preventDefault();
+        this.pickWatch(d.id);
+        this.goTo(path);
+      }}>${t.label}</a>`;
   }
 
   /** Open Home's sheet on one device, starting on its overview, or on its
@@ -19111,41 +19078,6 @@ export class WristAssistantPanel extends LitElement {
     </dialog>`;
   }
 
-  /** Home's Watch app card: a door to each screen on the shared watch, or,
-   * with no watch yet, the way to pair one. Nothing while the devices are
-   * still loading, so the pairing card never flashes up in a home that has a
-   * watch. */
-  private renderHomeWatch() {
-    if (!this.linkReady && this.owners.length === 0) return nothing;
-    const watches = settingsWatches(this.owners);
-    const watch = this.sharedWatch;
-    const href = (path: string) => panelUrl(this.route, path, window.location.pathname);
-    return html`<section class="home-card watch">
-      <div class="home-card-head">
-        <span class="home-chip" aria-hidden="true">${uiIcon("watch")}</span>
-        <h2 class="home-title">Watch app</h2>
-        <span class="home-sub">${watches.length === 0
-          ? "Pair a watch to set up its pages, menus and the rest."
-          : "Pages, menus and the rest of what the watch app shows."}</span>
-      </div>
-      ${watches.length === 0
-        ? html`<div class="home-screens">
-            <button class="home-screen home-pair-watch" @click=${() => this.openPairDialog()}>
-              <b>Pair a watch</b><span>Type the code the watch shows</span>
-            </button>
-          </div>`
-        : html`<div class="home-screens">${WATCH_SCREENS.map((screen) => {
-            const path = watchScreenPath(screen, watch);
-            return html`<a class="home-screen" href=${href(path)}
-              @click=${(e: MouseEvent) => {
-                if (!isPlainClick(e)) return;
-                e.preventDefault();
-                this.goTo(path);
-              }}><b>${screen.label}</b><span>${screen.blurb}</span></a>`;
-          })}</div>`}
-    </section>`;
-  }
-
   // ── start page ────────────────────────────────────────────────────────
 
   /**
@@ -19213,54 +19145,6 @@ export class WristAssistantPanel extends LitElement {
         </section>
       </div>
     </div>`;
-  }
-
-  /**
-   * The home's complications, newest saved first, six at most.
-   *
-   * One card per design rather than per device copy: the row's own copy is
-   * drawn, which is the edited device's when it has one. Locked seats (an
-   * iPhone preset, another home's custom) cannot be opened, so they are not
-   * offered here.
-   */
-  private startRecent(): { row: PickerRow; copy: PickerCopy<PickerItem>; at: string }[] {
-    const hits: { row: PickerRow; copy: PickerCopy<PickerItem>; at: string }[] = [];
-    for (const row of this.pickerRows()) {
-      const copy = row.open;
-      if (copy.item.kind !== "record") continue;
-      hits.push({ row, copy, at: copy.item.record.updatedAt });
-    }
-    hits.sort((a, b) => b.at.localeCompare(a.at));
-    return hits.slice(0, 6);
-  }
-
-  /** One recent card: the name, where it is, and its picture, the way the
-   * picker draws it. The whole card opens the complication. */
-  private renderStartCard(row: PickerRow, copy: PickerCopy<PickerItem>, open = () => void this.openFromPicker(row, copy)) {
-    if (copy.item.kind !== "record") return nothing;
-    const record = copy.item.record;
-    const families = ALL_FAMILIES.filter((f) => familiesOf(record).includes(f));
-    const family = families[0];
-    const control = hasControlOf(record);
-    const owner = this.ownerOf(copy.ownerId);
-    const kind = deviceKindOf(owner);
-    const device = this.cardDevice(kind, family);
-    const shelved = isShelvedRow(row);
-    const pictured = this.cardFromPreview(copy.ownerId, record, family, device);
-    const preview = pictured ? undefined : this.recordPreview(record);
-    const live = preview ? this.cardLive(preview.config, preview.entities) : undefined;
-    if (preview && !pictured) this.queueCardPreview(copy.ownerId, record, preview.config);
-    const where = owner ? ownerShortLabel(owner) : UNASSIGNED_LABEL;
-    return html`<button type="button" class="start-card ${shelved ? "shelved" : ""}"
-      title=${`Open ${row.name}`} @click=${open}>
-      <span class="start-card-pic">${this.cardArt(family, device,
-        pictured ?? (live ? (device === "iphone" ? live.phone : live.watch) : {}), shelved)}</span>
-      <span class="start-card-name">${row.name}</span>
-      <span class="start-card-sub">
-        <span class="start-card-where">${uiIcon(kind === "iphone" ? "phone" : kind === "library" ? "layers" : "watch")}${where}</span>
-        <span class="start-card-shape">${cardShapeTitle(family, control)}</span>
-      </span>
-    </button>`;
   }
 
   /**

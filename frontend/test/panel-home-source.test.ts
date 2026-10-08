@@ -27,59 +27,31 @@ function between(text: string, from: string, to: string): string {
 }
 
 const home = method("  private renderHome() {");
-const watchCard = method("  private renderHomeWatch() {");
+const card = method("  private renderHomeDevice(");
+const door = method("  private renderHomeDoor(");
 
-describe("Home's Watch app card", () => {
-  it("is for administrators only", () => {
-    expect(home).toContain("const admin = this.hass.user?.is_admin === true;");
-    expect(home).toContain("${admin ? this.renderHomeWatch() : nothing}");
+describe("Home's page", () => {
+  it("is the devices alone: no Watch app card, no complications card, no recent designs", () => {
+    expect(SOURCE).not.toContain("renderHomeWatch");
+    expect(home).not.toContain("home-recent");
+    expect(home).not.toContain("renderStartCard(");
+    expect(home).not.toContain("home-screens");
+    expect(SOURCE).not.toContain("private startRecent(");
   });
 
-  it("draws nothing while the devices load, so the pairing card never flashes up", () => {
-    const guard = "if (!this.linkReady && this.owners.length === 0) return nothing;";
-    expect(watchCard).toContain(guard);
-    expect(watchCard.indexOf(guard)).toBeLessThan(watchCard.indexOf("home-pair-watch"));
-  });
-
-  it("offers to pair a watch, in Home's own dialog, in a home with none", () => {
-    expect(watchCard).toContain("const watches = settingsWatches(this.owners);");
-    const none = between(watchCard, "${watches.length === 0\n        ? html`<div class=\"home-screens\">", ": html`");
-    expect(none).toContain(`<button class="home-screen home-pair-watch" @click=\${() => this.openPairDialog()}>`);
-    expect(none).not.toContain("goTo(");
-    expect(none).not.toContain("watchSettings");
-  });
-
-  it("has a door to each of the eight screens once there is a watch, HTTP actions and Cameras with no watch in them", () => {
-    expect(watchCard).toContain("WATCH_SCREENS.map((screen) => {");
-    expect(watchCard).toContain("const path = watchScreenPath(screen, watch);");
-    expect(watchCard).toContain("this.goTo(path);");
+  it("says Loading… while the devices load, so the pairing card never flashes up", () => {
+    expect(home).toContain("const loading = !this.linkReady && this.owners.length === 0;");
+    expect(home.indexOf("${loading")).toBeLessThan(home.indexOf("${add}"));
   });
 });
 
-describe("Home's Complications and widgets card", () => {
-  it("offers New and Import to administrators only, and Browse all and the gallery to everyone", () => {
-    expect(home).toContain("${admin ? html`<button class=\"home-btn home-new\"");
-    expect(home).toContain("${admin ? html`<button class=\"home-btn home-import\"");
-    expect(home).toMatch(/\n {14}<button class="home-btn home-browse"/);
-    expect(home).toMatch(/\n {14}<a class="home-btn home-gallery" href=\$\{GALLERY_PAGE\}/);
-  });
-
-  it("goes to the Complications tab for Browse all, and opens the dialog only over an open design", () => {
-    const browse = between(home, `class="home-btn home-browse"`, "}}>Browse all</button>");
-    expect(browse).toContain("toComplications();");
-    expect(browse).toContain("if (this.draft) this.browseAll();");
-    expect(browse.indexOf("toComplications();")).toBeLessThan(browse.indexOf("this.browseAll()"));
-  });
-
-  it("goes to the Complications tab before New and Import open their dialogs", () => {
-    expect(home).toContain("@click=${() => { toComplications(); this.openNewDialog(); }}");
-    expect(home).toContain("@click=${() => { toComplications(); this.openImportDialog(); }}");
-  });
-});
-
-describe("Home's Devices card", () => {
+describe("Home's device cards", () => {
   it("puts each name in a box of its own, so a long one ends in an ellipsis", () => {
-    expect(home).toContain(`<span class="home-device-label">\${d.name}</span>`);
+    expect(card).toContain(`<span class="home-device-label">\${d.name}</span>`);
+  });
+
+  it("draws the device with one shape lit, dim when it has nothing waiting and never synced", () => {
+    expect(card).toContain(`deviceShapeArt("rectangular", d.kind, d.sync !== "idle")`);
   });
 
   it("says in small print what the states cover: the watch app too, for an administrator who can read it", () => {
@@ -88,9 +60,18 @@ describe("Home's Devices card", () => {
     expect(home).not.toContain("only.</p>");
   });
 
-  it("judges each watch on its watch app records too, for an administrator, and says what a waiting row waits for", () => {
+  it("judges each watch on its watch app records too, for an administrator, and says what a waiting card waits for", () => {
     expect(home).toContain("homeDeviceRows(this.homeDevices(), admin ? this.watchAppSyncs : new Map())");
-    expect(home).toContain(`<span class="home-device-why"> · \${waitingForText(d.waitingFor)}</span>`);
+    expect(card).toContain(`<span class="home-device-why"> · \${waitingForText(d.waitingFor)}</span>`);
+  });
+
+  it("has a few doors at its foot, each opening that page on this device", () => {
+    expect(card).toContain("deviceCardDoors(d.kind, admin).map((t) => this.renderHomeDoor(t, d, count))");
+    expect(door).toContain("this.pickPickerTab(d.id);");
+    expect(door).toContain("this.pickerFilter = t.filter;");
+    expect(door).toContain("if (this.draft) this.openPicker();");
+    expect(door).toContain("const path = watchScreenPath(t.screen, d.id);");
+    expect(door.indexOf("this.pickWatch(d.id);")).toBeLessThan(door.indexOf("this.goTo(path);"));
   });
 
   it("reads the watch app records on the way into Home, and when the watches change", () => {
@@ -112,8 +93,8 @@ describe("Home's device sheet", () => {
   const sheet = method("  private renderDeviceSheet(");
   const forget = method("  private async forgetDeviceNow(ownerId: string) {");
 
-  it("opens from a whole device row, for everyone", () => {
-    expect(home).toContain(`<button type="button" class="home-device-open" title=\${\`Open \${d.name}\`} @click=\${() => this.openDeviceSheet(d.id)}>`);
+  it("opens from a whole device card, for everyone", () => {
+    expect(card).toContain(`<button type="button" class="home-device-open" title=\${\`Open \${d.name}\`} @click=\${() => this.openDeviceSheet(d.id)}>`);
     expect(home).toContain("${this.deviceSheet !== undefined ? this.renderDeviceSheet(this.deviceSheet, devices, admin) : nothing}");
   });
 
@@ -130,14 +111,10 @@ describe("Home's device sheet", () => {
     expect(load).toContain("if (this.deviceSheet !== ownerId) return;");
   });
 
-  it("gives each row a quiet Remove, for administrators only, that opens the sheet on its Forget step", () => {
-    const row = between(home, `<li class="home-device \${d.sync}">`, "</li>");
-    expect(row).toContain("${admin ? html`<button type=\"button\" class=\"home-device-remove\"");
-    expect(row).toContain("@click=${() => this.openDeviceSheet(d.id, true)}>Remove</button>` : nothing}");
-    // Never the browser's own confirm: the sheet asks.
-    expect(row).not.toContain("confirm(");
+  it("still opens on its Forget step when asked, never with the browser's own confirm", () => {
     const open = method("  private openDeviceSheet(ownerId: string, forget = false) {");
     expect(open).toContain("this.deviceForgetAsk = forget;");
+    expect(home).not.toContain("confirm(");
   });
 
   it("offers Forget to administrators only, behind a second step", () => {
@@ -179,16 +156,6 @@ describe("Home's device sheet", () => {
   });
 });
 
-describe("Home's recent designs", () => {
-  it("open on the Complications tab, moving there before the design opens", () => {
-    const recent = between(home, `<section class="start-sec home-recent">`, "</section>");
-    expect(recent).toContain("toComplications();");
-    expect(recent).toContain("void this.openFromPicker(hit.row, hit.copy);");
-    expect(recent.indexOf("toComplications();")).toBeLessThan(recent.indexOf("this.openFromPicker("));
-    expect(home).toContain("const toComplications = () => this.goTo(COMPLICATIONS_PATH);");
-  });
-});
-
 describe("coming back to Home", () => {
   it("reads the other devices' lists again, so its count is current", () => {
     const will = method("  protected override willUpdate(changed");
@@ -199,10 +166,10 @@ describe("coming back to Home", () => {
 });
 
 describe("Home's Pair a device dialog", () => {
-  it("opens from the Devices card's title row, for administrators only", () => {
-    const head = between(home, `<h2 class="home-title">Devices</h2>`, "</div>");
-    expect(head).toContain("${admin ? html`<button class=\"home-btn home-pair-open\"");
-    expect(head).toContain("@click=${() => this.openPairDialog()}>${uiIcon(\"plus\")}<span>Pair a device</span></button>");
+  it("opens from the last card of the devices, for administrators only", () => {
+    expect(home).toContain("const add = admin ? html`<li><button type=\"button\" class=\"home-device-add\"");
+    expect(home).toContain("@click=${() => this.openPairDialog()}>${uiIcon(\"plus\")}<b>Pair a device</b>");
+    expect(home).toContain("${devices.map((d) => this.renderHomeDevice(d, admin))}${add}</ul>");
     expect(home).toContain("${admin && this.pairOpen ? this.renderPairDialog() : nothing}");
   });
 

@@ -86,7 +86,7 @@ import {
   withMotionTarget,
 } from "./watch-settings.js";
 import { SETTINGS_MOVED_TEXT, dropWatchSettingsDrafts, keepSettingsDraft, keptSettingsDraft, restoreSettingsDraft } from "./watch-settings-draft.js";
-import { settingsCanSave, settingsPageStep } from "./watch-settings-page.js";
+import { dealColumns, settingsCanSave, settingsColumnCount, settingsPageStep, settingsPageWidth } from "./watch-settings-page.js";
 import { type TileChoice, domainTiles, gestureIcon, optionPreview, settingIcon, tileChoices, usesTiles } from "./watch-settings-look.js";
 import {
   type StyleRow,
@@ -716,13 +716,14 @@ export class WatchSettings implements ReactiveController {
   /**
    * The page: a bar that stays at the top while the cards scroll under it
    * (the title and which watch and revision at the left, where the settings
-   * have got to and Save at the right), then the cards. On a wide page the
-   * behavior cards and the notification style's sit in two columns, the
-   * pairing and client certificate cards under the second; on a narrow one
-   * they are one column in that order. A home with no watch yet has those
-   * two cards alone.
+   * have got to and Save at the right), then the cards. The cards are dealt
+   * into as many columns as the page's `width` has room for, up to four
+   * (`settingsColumnCount`), each to the shortest column so far
+   * (`dealColumns`): the behavior cards, then the notification style's, then
+   * pairing and the client certificate. A narrow page is one column in that
+   * order. A home with no watch yet has the last two cards alone.
    */
-  render(hass: HassLike, owners: readonly OwnerSummary[], options: { narrow?: boolean } = {}): TemplateResult {
+  render(hass: HassLike, owners: readonly OwnerSummary[], options: { narrow?: boolean; width?: number } = {}): TemplateResult {
     this.hass = hass;
     const watches = settingsWatches(owners);
     const owner = watches.find((w) => w.owner_watch_id === this.ownerId);
@@ -732,21 +733,36 @@ export class WatchSettings implements ReactiveController {
     // both editors, and the pairing card stays.
     const elsewhere = takesSettingsFromAnotherHome(owner);
     const one = this.ownerId === undefined || elsewhere;
-    return html`<div class="ws-page">
+    const count = one ? 1 : settingsColumnCount(options.width ?? 0);
+    return html`<div class="ws-page" style=${`--ws-w:${settingsPageWidth(count)}px`}>
       <div class="ws-top">
         ${this.renderBar(name, options.narrow === true, elsewhere)}
         ${this.note ? html`<div class="banner ${this.note.kind} ws-note" role="alert"><span>${this.note.text}</span>
           <button class="link" @click=${() => { this.note = undefined; this.changed(); }}>Dismiss</button></div>` : nothing}
       </div>
-      <div class="ws-cols ${one ? "one" : ""}">
+      <div class="ws-cols ${one ? "one" : ""}" style=${`--ws-n:${count}`}>
         ${elsewhere
           ? html`<div class="ws-body ws-col"><div class="xf-lead ws-main-house">${uiIcon("info")}<span>${SETTINGS_MAIN_HOUSE_TEXT}</span></div>${this.pairCard.render()}${this.cert.render(hass)}</div>`
           : one
-          ? html`<div class="ws-body ws-col">${this.renderBehavior(hass)}${this.pairCard.render()}${this.cert.render(hass)}</div>`
-          : html`<div class="ws-body ws-col">${this.loading ? html`<div class="empty">Loading…</div>` : this.renderBehavior(hass)}</div>
-            <div class="ws-body ws-col">${this.loading ? nothing : this.renderStyle()}${this.pairCard.render()}${this.cert.render(hass)}</div>`}
+          ? html`<div class="ws-body ws-col">${this.behaviorCards(hass).map((c) => c.card)}${this.pairCard.render()}${this.cert.render(hass)}</div>`
+          : this.renderColumns(hass, count)}
       </div>
     </div>`;
+  }
+
+  /** Every card on a watch's page, each with a guess at its height, dealt
+   * into `count` columns. The guesses count every setting a card can show,
+   * not only the ones showing now, so turning a setting on never sends a
+   * card to another column. */
+  private renderColumns(hass: HassLike, count: number) {
+    const cards: SettingsCard[] = [
+      ...(this.loading ? [{ weight: 1, card: html`<div class="empty">Loading…</div>` }] : this.behaviorCards(hass)),
+      ...(this.loading ? [] : this.styleCards()),
+      { weight: 4, card: this.pairCard.render() },
+      { weight: 3.5, card: this.cert.render(hass) },
+    ];
+    return dealColumns(cards.map((c) => c.weight), count)
+      .map((column) => html`<div class="ws-body ws-col">${column.map((i) => cards[i]!.card)}</div>`);
   }
 
   /** Beside the title: which watch, and which revision of its settings. */
@@ -762,38 +778,42 @@ export class WatchSettings implements ReactiveController {
     return `${name} · revision ${r.revision}, ${by}${when}${style}`;
   }
 
-  /** The behavior settings' cards, or what stands in for them. */
-  private renderBehavior(hass: HassLike) {
+  /** The behavior settings' cards, or the one that stands in for them. */
+  private behaviorCards(hass: HassLike): SettingsCard[] {
+    const stand = (card: unknown): SettingsCard[] => [{ weight: 2.5, card }];
     if (this.loadError !== undefined) {
       const id = this.ownerId;
-      return html`<div class="xf-lead warn">${uiIcon("info")}<span>Could not read this watch's settings: ${this.loadError}</span></div>
-        ${id === undefined ? nothing : html`<button class="small ws-retry" @click=${() => void this.reread("behavior", id)}>Try again</button>`}`;
+      return stand(html`<div class="xf-lead warn">${uiIcon("info")}<span>Could not read this watch's settings: ${this.loadError}</span></div>
+        ${id === undefined ? nothing : html`<button class="small ws-retry" @click=${() => void this.reread("behavior", id)}>Try again</button>`}`);
     }
     if (this.ownerId === undefined) {
-      return html`<div class="xf-lead">${uiIcon("info")}<span><b>No watch has connected to this Home Assistant yet.</b> Pair one below.</span></div>`;
+      return stand(html`<div class="xf-lead">${uiIcon("info")}<span><b>No watch has connected to this Home Assistant yet.</b> Pair one below.</span></div>`);
     }
     const record = this.record;
-    if (record === undefined) return nothing;
+    if (record === undefined) return [];
     // A record that is there but unreadable is not "no settings yet": a
     // start would only meet a conflict.
     if (watchRecordUnreadable(record, (document) => document)) {
-      return html`<div class="xf-lead warn">${uiIcon("info")}<span>${SETTINGS_UNREADABLE_TEXT}</span></div>`;
+      return stand(html`<div class="xf-lead warn">${uiIcon("info")}<span>${SETTINGS_UNREADABLE_TEXT}</span></div>`);
     }
     if (record.revision <= 0 || record.document === undefined) {
       // While the iPhone's move may still come it waits, and the start is a
       // small link that asks first.
       const state = noRecordStart(this.shownOwner);
-      return html`<div class="xf-lead">${uiIcon("info")}<span><b>No settings from this watch yet.</b> ${noRecordText(state, SETTINGS_NO_RECORD_TEXT)}</span></div>
+      return stand(html`<div class="xf-lead">${uiIcon("info")}<span><b>No settings from this watch yet.</b> ${noRecordText(state, SETTINGS_NO_RECORD_TEXT)}</span></div>
         ${state === "wait"
           ? html`<button class="link start-fresh ws-start" ?disabled=${this.starting || this.saving}
               title="Save the app's default settings as this watch's first copy"
               @click=${() => { if (mayStart(state)) void this.start(); }}>${this.starting ? "Starting…" : START_FRESH_BUTTON}</button>`
           : html`<button class="small primary ws-start" ?disabled=${this.starting || this.saving}
               title="Save the app's default settings as this watch's first copy"
-              @click=${() => void this.start()}>${this.starting ? "Starting…" : SETTINGS_START_BUTTON}</button>`}`;
+              @click=${() => void this.start()}>${this.starting ? "Starting…" : SETTINGS_START_BUTTON}</button>`}`);
     }
     const values = formValues(record.document, this.edits);
-    return html`${WATCH_SETTINGS_CATALOG.sections.map((section) => this.renderSection(hass, section, values))}`;
+    return WATCH_SETTINGS_CATALOG.sections.map((section) => ({
+      weight: 1.5 + section.settings.reduce((sum, setting) => sum + settingWeight(setting), 0),
+      card: this.renderSection(hass, section, values),
+    }));
   }
 
   /** One catalog section as an inspector card that is always open: the
@@ -960,34 +980,40 @@ export class WatchSettings implements ReactiveController {
   // ── the notification style's cards ─────────────────────────────────────
 
   /** The Notifications, Sounds and Wrist Webhooks cards; one card in their
-   * place while there is no record yet; nothing at all on an integration
-   * that does not keep the kind. */
-  private renderStyle() {
-    if (this.styleUnsupported) return nothing;
+   * place while there is no record yet; none at all on an integration that
+   * does not keep the kind. */
+  private styleCards(): SettingsCard[] {
+    if (this.styleUnsupported) return [];
+    const stand = (card: unknown): SettingsCard[] => [{ weight: 3, card }];
     const id = this.ownerId;
     if (this.styleError !== undefined) {
-      return this.renderStyleCard(html`<div class="xf-lead warn">${uiIcon("info")}<span>Could not read this watch's notification style: ${this.styleError}</span></div>
-        ${id === undefined ? nothing : html`<button class="small ns-retry" @click=${() => void this.reread("style", id)}>Try again</button>`}`);
+      return stand(this.renderStyleCard(html`<div class="xf-lead warn">${uiIcon("info")}<span>Could not read this watch's notification style: ${this.styleError}</span></div>
+        ${id === undefined ? nothing : html`<button class="small ns-retry" @click=${() => void this.reread("style", id)}>Try again</button>`}`));
     }
     const record = this.styleRecord;
-    if (record === undefined) return nothing;
+    if (record === undefined) return [];
     if (watchRecordUnreadable(record, readStyleDocument)) {
-      return this.renderStyleCard(html`<div class="xf-lead warn">${uiIcon("info")}<span>${STYLE_UNREADABLE_TEXT}</span></div>`);
+      return stand(this.renderStyleCard(html`<div class="xf-lead warn">${uiIcon("info")}<span>${STYLE_UNREADABLE_TEXT}</span></div>`));
     }
     const document = this.styleDocument;
     if (document === undefined) {
       const state = noRecordStart(this.shownOwner);
-      return this.renderStyleCard(html`<div class="xf-lead">${uiIcon("info")}<span><b>${STYLE_NO_RECORD_TITLE}</b> ${noRecordText(state, STYLE_NO_RECORD_TEXT)}</span></div>
+      return stand(this.renderStyleCard(html`<div class="xf-lead">${uiIcon("info")}<span><b>${STYLE_NO_RECORD_TITLE}</b> ${noRecordText(state, STYLE_NO_RECORD_TEXT)}</span></div>
         ${state === "wait"
           ? html`<button class="link start-fresh ns-start" ?disabled=${this.styleStarting || this.saving}
               title="Save the app's default notification style as this watch's first copy"
               @click=${() => { if (mayStart(state)) void this.startStyle(); }}>${this.styleStarting ? "Starting…" : START_FRESH_BUTTON}</button>`
           : html`<button class="small primary ns-start" ?disabled=${this.styleStarting || this.saving}
               title="Save the app's default notification style as this watch's first copy"
-              @click=${() => void this.startStyle()}>${this.styleStarting ? "Starting…" : STYLE_START_BUTTON}</button>`}`);
+              @click=${() => void this.startStyle()}>${this.styleStarting ? "Starting…" : STYLE_START_BUTTON}</button>`}`));
     }
     const values = styleFormValues(document, this.styleEdits);
-    return html`${NOTIFICATION_STYLE_SECTIONS.map((section) => this.renderStyleSection(section, values))}`;
+    return NOTIFICATION_STYLE_SECTIONS.map((section) => ({
+      // The notification's picture stands at the head of its card.
+      weight: 1.5 + (section.id === "notifications" ? 3.5 : 0)
+        + section.groups.reduce((sum, group) => sum + 0.5 + group.rows.reduce((n, row) => n + styleRowWeight(row), 0), 0),
+      card: this.renderStyleSection(section, values),
+    }));
   }
 
   /** The one card that stands in for the three. */
@@ -1180,6 +1206,28 @@ function joinNotes(notes: readonly (Note | undefined)[]): Note | undefined {
   return { kind, text: said.map((n) => n.text).join(" ") };
 }
 
+/** One card of the page and a guess at its height, in rows of about 30px. */
+interface SettingsCard {
+  weight: number;
+  card: unknown;
+}
+
+/** About how many rows a behavior setting takes: tiles go under their title,
+ * the domain grid and the motion gestures take several, a help line adds a
+ * little. */
+function settingWeight(setting: CatalogSetting): number {
+  if (setting.type === "domains") return 4.5;
+  if (setting.type === "motionGestures") return 5;
+  if (usesTiles(setting)) return 2.4;
+  return setting.help ? 1.3 : 1;
+}
+
+/** The same guess for a notification style row. */
+function styleRowWeight(row: StyleRow): number {
+  if (styleUsesTiles(row)) return 2.2;
+  return row.help ? 1.3 : 1;
+}
+
 /** The page's own rules, added to the panel's sheet. Everything else it
  * wears (bar, cards, rows, pill, Save) is the panel's. */
 export const watchSettingsStyles = css`
@@ -1196,19 +1244,17 @@ export const watchSettingsStyles = css`
   .ws-bar .ws-head-line { flex: 0 1 auto; min-width: 0; font-size: 12px; color: var(--wa-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ws-bar .ws-changes, .ws-bar .ws-ask { flex: 0 1 auto; min-width: 0; }
   .ws-bar .tb-sync { min-width: 0; flex: 0 1 auto; }
-  .ws-top > .ws-note { display: flex; align-items: center; gap: 10px; box-sizing: border-box; width: min(720px, calc(100% - 32px)); margin: 10px auto 0; }
+  .ws-top > .ws-note { display: flex; align-items: center; gap: 10px; box-sizing: border-box; width: min(calc(var(--ws-w, 720px) - 32px), calc(100% - 32px)); margin: 10px auto 0; }
   .ws-top > .ws-note > span { flex: 1; min-width: 0; }
-  /* A centred column at most as wide as the dialog it replaced; two columns
-     once the page has room for two of them side by side. Each column is a
-     container of its own, so a row's narrow rules follow the column. */
+  /* Centred, as many columns as the render dealt the cards into (--ws-n),
+     and no wider than those columns at their widest (--ws-w). One column is
+     as wide as the dialog it replaced. Each column is a container of its
+     own, so a row's narrow rules follow the column. */
   .ws-cols {
-    box-sizing: border-box; width: min(720px, 100%); margin: 0 auto; padding: 16px 16px 48px;
-    display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px 20px; align-items: start;
+    box-sizing: border-box; width: min(var(--ws-w, 720px), 100%); margin: 0 auto; padding: 16px 16px 48px;
+    display: grid; grid-template-columns: repeat(var(--ws-n, 1), minmax(0, 1fr)); gap: 8px 20px; align-items: start;
   }
-  @container wspage (min-width: 1100px) {
-    .ws-top > .ws-note { width: min(1320px, calc(100% - 32px)); }
-    .ws-cols:not(.one) { width: min(1320px, 100%); grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  }
+  .ws-cols.one { width: min(720px, 100%); }
   @media (max-width: 640px) {
     .ws-cols { padding: 12px 12px 32px; }
   }

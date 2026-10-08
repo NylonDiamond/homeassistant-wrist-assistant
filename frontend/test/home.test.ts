@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { OwnerSummary } from "../src/ha-api.js";
-import { deviceFacts, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles } from "../src/home.js";
+import { deviceCardDoors, deviceFacts, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles } from "../src/home.js";
 import { homeSync } from "../src/send-state.js";
 import { shellStyles } from "../src/shell.js";
 
@@ -120,6 +120,19 @@ describe("deviceSheetTabs", () => {
   });
 });
 
+describe("deviceCardDoors", () => {
+  const labels = (kind: "watch" | "iphone", admin: boolean) => deviceCardDoors(kind, admin).map((t) => t.label);
+
+  it("gives a watch its complications, pages and settings, and an iPhone its widgets", () => {
+    expect(labels("watch", true)).toEqual(["Complications", "Pages", "Settings"]);
+    expect(labels("iphone", true)).toEqual(["Widgets"]);
+  });
+
+  it("keeps the watch screens for administrators", () => {
+    expect(labels("watch", false)).toEqual(["Complications"]);
+  });
+});
+
 describe("deviceFacts", () => {
   it("says what the device is, its app, and a watch's iPhone", () => {
     expect(deviceFacts(owner({ app_version: "3.1", app_build: "4", paired_iphone_name: "Ann's iPhone" }), "watch"))
@@ -155,7 +168,7 @@ describe("the shell's and Home's look", () => {
 
   it("draws every Home control with a one pixel outline", () => {
     const text = homeStyles.cssText;
-    for (const sel of ["a.home-btn, button.home-btn {", "a.home-screen, button.home-screen {"]) {
+    for (const sel of ["a.home-btn, button.home-btn {", "a.home-door, button.home-door {"]) {
       const rule = text.slice(text.indexOf(sel), text.indexOf("}", text.indexOf(sel)));
       expect(rule, sel).toContain("border: 1px solid var(--wa-line-strong)");
     }
