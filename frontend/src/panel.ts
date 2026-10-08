@@ -142,7 +142,7 @@ import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
 import { type SendState, agoWords, describeHomeSync, describeSend, deviceSyncLabel, homeSync, sendState, sendWaitMs } from "./send-state.js";
-import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, deviceCardTiles, deviceFacts, deviceSheetTabs, homeDeviceRows, homeGroups, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount } from "./home.js";
+import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, deviceCardTiles, deviceFacts, deviceSheetTabs, homeDeviceRows, homeGroups, pendingWords, seenWords, summaryCounts, tileWord, homeDevices, homeStyles, watchConfigCount } from "./home.js";
 import { type WatchAppSync, readWatchAppSync, summaryUnknown, summaryWatchAppSyncs, waitingForText, watchAppSyncKey } from "./watch-app-sync.js";
 import { type PickerForm, type TabMemory, browseAllTab, listPageEscape, listPageLead, listPageShown, listPageState, listPageStyles, listsReady, pickTab, pickerSurfaceClass, restoreTab } from "./list-page.js";
 import { compile, parseValueDocument, type Compiled } from "./compiler.js";
@@ -18911,7 +18911,7 @@ export class WristAssistantPanel extends LitElement {
    * on this watch. The way the sheet's tabs go, without a sheet to close. */
   private renderHomeTile(t: DeviceSheetTab, d: HomeDeviceRow, owner: OwnerSummary | undefined) {
     const n = this.homeTileCount(t, d, owner);
-    const body = html`<b class=${n === 0 ? "none" : ""}>${n ?? "–"}</b><span>${t.label}</span>`;
+    const body = html`<b class=${n === 0 ? "none" : ""}>${n ?? "–"}</b><span>${tileWord(t.label)}</span>`;
     if (t.kind === "list") {
       return html`<button type="button" class="home-tile" title=${`${t.label} on ${d.name}`}
         @click=${() => {

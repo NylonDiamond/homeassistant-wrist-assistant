@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { OwnerSummary } from "../src/ha-api.js";
-import { deviceCardTiles, deviceFacts, homeGroups, pendingWords, seenWords, summaryCounts, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles } from "../src/home.js";
+import { deviceCardTiles, deviceFacts, homeGroups, pendingWords, seenWords, summaryCounts, tileWord, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles } from "../src/home.js";
 import { homeSync } from "../src/send-state.js";
 import { shellStyles } from "../src/shell.js";
 
@@ -130,6 +130,10 @@ describe("deviceCardTiles", () => {
 
   it("keeps the watch screens for administrators", () => {
     expect(labels("watch", false)).toEqual(["Complications"]);
+  });
+
+  it("cuts a two word page name to one under the number", () => {
+    expect(labels("watch", true).map(tileWord)).toEqual(["Complications", "Pages", "Status", "Controls"]);
   });
 });
 

@@ -133,6 +133,12 @@ export function deviceCardTiles(kind: "watch" | "iphone", admin: boolean): Devic
   return deviceSheetTabs(kind, admin).filter((t) => t.kind === "list" || t.count !== undefined);
 }
 
+/** A tile's word under its number: the page's name, cut to one short word
+ * where it has two, so four tiles fit across a card. */
+export function tileWord(label: string): string {
+  return label === "Status pages" ? "Status" : label === "Control Center" ? "Controls" : label;
+}
+
 /** Each watch's item counts, read off the watch config summary's `items`.
  * A kind with no record counts none; a watch the summary leaves out, or an
  * integration older than the field, gives nothing, so the card shows no
@@ -286,14 +292,14 @@ export const homeStyles = css`
   }
   a.home-tile, button.home-tile {
     display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; box-sizing: border-box;
-    padding: 7px 9px; border-radius: 8px; font: inherit; text-align: left; cursor: pointer; text-decoration: none;
+    padding: 7px 8px; border-radius: 8px; font: inherit; text-align: left; cursor: pointer; text-decoration: none;
     color: var(--wa-ink); background: var(--wa-field); border: 1px solid var(--wa-line-strong);
   }
   a.home-tile:hover, button.home-tile:hover { background: var(--wa-card); border-color: var(--wa-muted); }
   a.home-tile:focus-visible, button.home-tile:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .home-tile b { font-size: 18px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1.2; }
   .home-tile b.none { color: var(--wa-muted); }
-  .home-tile span { max-width: 100%; font-size: 11px; color: var(--wa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .home-tile span { max-width: 100%; font-size: 10.5px; color: var(--wa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* The foot: when it was last heard from and what it will pick up, and a
      watch's Settings at the right. */
   .home-device-foot { position: relative; z-index: 1; display: flex; align-items: center; gap: 8px; min-height: 26px; margin-top: auto; }
