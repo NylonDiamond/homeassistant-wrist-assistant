@@ -1044,6 +1044,10 @@ export const PAIR_OFFER_POLL_MS = 2000;
  * paired for someone else (`replace` on the offer). */
 export const PAIR_SHOW_QR_TEXT = "Show QR code";
 export const PAIR_QR_REPLACE_LABEL = "Replace an iPhone paired for someone else";
+/** What Replace is for, under it. It is rarely needed, so the QR mode keeps
+ * it folded under More options until asked for. */
+export const PAIR_QR_REPLACE_HINT = "Only for an iPhone already paired here for another person, such as a phone handed on. Without it, that iPhone is refused.";
+export const PAIR_MORE_TEXT = "More options";
 
 /** The link beside the QR code, for the panel open on the iPhone itself,
  * which cannot scan its own screen. Shown only there (`pairOnIPhone`). */

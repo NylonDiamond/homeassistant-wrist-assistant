@@ -42,6 +42,8 @@ import {
   PAIR_OFFER_POLL_MS,
   PAIR_OPEN_APP_TEXT,
   PAIR_QR_EXPIRED_TEXT,
+  PAIR_MORE_TEXT,
+  PAIR_QR_REPLACE_HINT,
   PAIR_QR_REPLACE_LABEL,
   PAIR_QR_STEPS,
   PAIR_REPLACE_LABEL,
@@ -166,6 +168,8 @@ export class PairWatchCard {
   /** The code box takes the cursor on its next drawing: the mode was just
    * switched to Type a code. */
   private focusCode = false;
+  /** More options is open in the QR mode, showing Replace. */
+  private qrMore = false;
 
   /** `update` asks the place to draw again. */
   constructor(
@@ -184,6 +188,7 @@ export class PairWatchCard {
     this.offerSeq++;
     this.mode = start.mode ?? "code";
     this.autoQr = start.showQr === true;
+    this.qrMore = false;
     this.pair = { code: "" };
     this.offer = { usersRead: false, replace: false };
     if (this.mode === "qr") void this.readOfferUsers();
@@ -197,6 +202,7 @@ export class PairWatchCard {
     this.offerSeq++;
     this.mode = "code";
     this.autoQr = false;
+    this.qrMore = false;
     this.pair = { code: "" };
     this.offer = { usersRead: false, replace: false };
   }
@@ -623,9 +629,13 @@ export class PairWatchCard {
         <div class="ws-qr-side">
           ${this.steps(PAIR_QR_STEPS)}
           ${this.renderUserMenu(o.users, o.userId, "iphone", false, (id) => this.pickOfferUser(id))}
-          <label class="field check ws-qr-replace"><span>${PAIR_QR_REPLACE_LABEL}</span>
-            <input type="checkbox" .checked=${live(o.replace)} ?disabled=${!o.usersRead}
-              @change=${(e: Event) => this.setOfferReplace((e.target as HTMLInputElement).checked)} /></label>
+          ${this.qrMore || o.replace
+            ? html`<label class="field check ws-qr-replace"><span>${PAIR_QR_REPLACE_LABEL}</span>
+                  <input type="checkbox" .checked=${live(o.replace)} ?disabled=${!o.usersRead}
+                    @change=${(e: Event) => this.setOfferReplace((e.target as HTMLInputElement).checked)} /></label>
+                <div class="hint keep ws-qr-replace-hint">${PAIR_QR_REPLACE_HINT}</div>`
+            : html`<button type="button" class="link ws-qr-more" aria-expanded="false"
+                @click=${() => { this.qrMore = true; this.update(); }}>${PAIR_MORE_TEXT}${uiIcon("chevron")}</button>`}
           ${open === undefined || !pairOnIPhone(globalThis.navigator?.userAgent) ? nothing
             : html`<a class="ws-qr-open" href=${open.url} title="For this page open on the iPhone itself">${PAIR_OPEN_APP_TEXT}${uiIcon("right")}</a>`}
         </div>
@@ -717,6 +727,13 @@ export const pairCardStyles = css`
   .ws-qr-side > .field.ws-pair-user > span { font-size: 12px; color: var(--wa-muted); }
   .ws-qr-side > .hint { margin: -8px 0 0; }
   .ws-qr-side > .field.check { display: flex; flex-direction: row-reverse; justify-content: flex-end; align-items: center; gap: 8px; font-size: 12.5px; }
+  .ws-qr-side > .hint.ws-qr-replace-hint { margin: -10px 0 0 34px; font-size: 11.5px; }
+  .ws-pair button.ws-qr-more {
+    display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; padding: 0; border: 0; background: none;
+    font: inherit; font-size: 12px; color: var(--wa-muted); cursor: pointer;
+  }
+  .ws-pair button.ws-qr-more:hover { color: var(--wa-ink); }
+  .ws-pair button.ws-qr-more svg.ui-icon { width: 12px; height: 12px; }
   .ws-pair a.ws-qr-open { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; font-size: 12.5px; color: var(--wa-accent); text-decoration: none; }
   .ws-pair a.ws-qr-open:hover { text-decoration: underline; }
   .ws-pair a.ws-qr-open svg.ui-icon { width: 13px; height: 13px; }

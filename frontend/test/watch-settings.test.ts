@@ -67,7 +67,9 @@ import {
   PAIR_OPEN_APP_TEXT,
   PAIR_QR_EXPIRED_TEXT,
   PAIR_QR_HINT,
+  PAIR_QR_REPLACE_HINT,
   PAIR_QR_REPLACE_LABEL,
+  PAIR_MORE_TEXT,
   PAIR_REPLACE_LABEL,
   PAIR_SHOW_QR_TEXT,
   PAIR_USER_PLACEHOLDER,
@@ -704,7 +706,7 @@ describe("pairing a watch by its code", () => {
     expect(PAIR_SHOW_QR_TEXT).toBe("Show QR code");
     expect(PAIR_OPEN_APP_TEXT).toBe("Pair this iPhone instead");
     expect(PAIR_QR_EXPIRED_TEXT).toBe("This code ran out. Show a new one.");
-    const words = [PAIR_CARD_TITLE, PAIR_CODE_HINT, PAIR_QR_HINT, PAIR_QR_REPLACE_LABEL, PAIR_REPLACE_LABEL, PAIR_SHOW_QR_TEXT,
+    const words = [PAIR_CARD_TITLE, PAIR_CODE_HINT, PAIR_QR_HINT, PAIR_QR_REPLACE_LABEL, PAIR_QR_REPLACE_HINT, PAIR_MORE_TEXT, PAIR_REPLACE_LABEL, PAIR_SHOW_QR_TEXT,
       PAIR_OPEN_APP_TEXT, PAIR_QR_EXPIRED_TEXT, PAIR_USER_PLACEHOLDER, pairUserHint("watch"), pairUserHint("iphone"),
       ...PAIR_MODES.map(([, label]) => label),
       pairErrorText({ code: "needs_replace" }, "confirm", "iphone"), pairErrorText({ code: "needs_allow_remote" }, "confirm")];

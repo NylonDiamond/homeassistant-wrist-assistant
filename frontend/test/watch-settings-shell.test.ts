@@ -653,6 +653,26 @@ describe("Home's Pair a device dialog card", () => {
     card.close();
   });
 
+  it("keeps Replace folded under More options until asked for, or until it is on", async () => {
+    const ha = fakeHass("w9");
+    const card = new PairWatchCard(() => undefined) as unknown as Card & { qrMore: boolean };
+    card.open(ha.hass, { mode: "qr", showQr: true });
+    await vi.waitFor(() => expect(card.offer.open).toBeDefined());
+    let shown = flatten(card.render({ bare: true }));
+    expect(shown).toContain("More options");
+    expect(shown).not.toContain("Replace an iPhone paired for someone else");
+    card.qrMore = true;
+    shown = flatten(card.render({ bare: true }));
+    expect(shown).toContain("Replace an iPhone paired for someone else");
+    expect(shown).toContain("such as a phone handed on");
+    expect(shown).not.toContain("More options");
+    // A new opening folds it again.
+    card.close();
+    card.open(ha.hass, { mode: "qr", showQr: true });
+    expect(card.qrMore).toBe(false);
+    card.close();
+  });
+
   it("puts the cursor in the code box when Type a code is picked", async () => {
     const ha = fakeHass("w9");
     const card = new PairWatchCard(() => undefined) as unknown as Card & { focusCode: boolean };
