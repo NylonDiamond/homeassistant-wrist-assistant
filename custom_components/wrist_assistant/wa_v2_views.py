@@ -3462,14 +3462,27 @@ async def _op_complications_restore(ctx: _OpContext) -> Response:
     stale watch can never overwrite the panel's data. Not an editing path.
 
     Body: {"documents": [<CustomComplicationConfig JSON>, ...]}
+    Reply: {"ok", "token", "records",
+            "skipped": [{"id", "message", "library"}, ...]}
+
+    ``skipped`` lists the documents left out of this watch because an earlier
+    one already holds their slot for the same shape; the rest are restored.
+    Each left-out design is kept in the Library (``library`` is ``"kept"``),
+    or was there already (``"existing"``), so it can be put back from the
+    panel (see ``ComplicationStore.restore``). Watch builds that predate the
+    field read only ``ok`` and ignore it.
     """
     documents = ctx.payload.get("documents")
     if not isinstance(documents, list):
         return Response(status=400, text="documents must be a list")
     store = ctx.domain_data.complication_store
+    skipped: list[dict[str, str]] = []
     try:
         records = store.restore(
-            ctx.watch_id, documents, updated_by=f"watch-restore:{ctx.watch_id}"
+            ctx.watch_id,
+            documents,
+            updated_by=f"watch-restore:{ctx.watch_id}",
+            skipped=skipped,
         )
     except ComplicationConflictError as err:
         return ctx.signed_json(
@@ -3479,11 +3492,22 @@ async def _op_complications_restore(ctx: _OpContext) -> Response:
         return ctx.signed_json(
             {"ok": False, "error": err.code, "message": err.message}, status=400
         )
+    if skipped:
+        # The watch drops what HA did not take on its next pull, so this log
+        # line says where a left-out design went.
+        _LOGGER.warning(
+            "Restore for %s left out %d complication(s) whose slot was taken, "
+            "keeping them in the Library: %s",
+            ctx.watch_id,
+            len(skipped),
+            "; ".join(f'{s["id"]}: {s["message"]}' for s in skipped),
+        )
     return ctx.signed_json(
         {
             "ok": True,
             "token": store.owner_token(ctx.watch_id),
             "records": [r.as_dict() for r in records],
+            "skipped": skipped,
         }
     )
 

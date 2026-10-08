@@ -1315,6 +1315,118 @@ def test_restore_over_tombstones_bumps_revision(mod):
     assert rec.deleted is False
 
 
+def test_restore_keeps_the_second_document_of_one_shape_in_one_slot_in_the_library(mod):
+    """A restore gets the seat check a save makes, but skips rather than refuses.
+
+    Before the fix a restore batch holding two circular documents at slot 3
+    committed both, and the devices could only ever place one of them.
+    Refusing the whole batch would instead leave a wiped store with nothing
+    restored. So the later document of the pair is left out of the watch,
+    kept in the Library so it is not lost, and reported with the message a
+    save gives; the rest of the batch goes in.
+    """
+    store = _new(mod)
+    first = _doc(schemaVersion=6, slotIndex=3, name="Garage", supportedFamilies=["circular"])
+    second = _doc(schemaVersion=6, slotIndex=3, name="Lights", supportedFamilies=["circular"])
+    other = _doc(schemaVersion=6, slotIndex=4, name="Door", supportedFamilies=["circular"])
+    skipped: list[dict] = []
+    records = store.restore(
+        OWNER, [first, second, other], updated_by="watch-restore", skipped=skipped
+    )
+    assert [r.id for r in records] == [first["id"], other["id"]]
+    assert {r.id for r in store.list(OWNER)} == {first["id"], other["id"]}
+    assert [(s["id"], s["library"]) for s in skipped] == [(second["id"], "kept")]
+
+    [shelved] = store.list(mod.LIBRARY_OWNER_ID)
+    assert shelved.id == second["id"]
+    assert shelved.revision == 1
+    assert shelved.document["name"] == "Lights"
+    assert shelved.document["slotIndex"] == 3
+    assert store.owner_token(mod.LIBRARY_OWNER_ID) == shelved.token
+
+    # The message is the one a save gives for the same clash, plus where the
+    # design went.
+    with pytest.raises(mod.ComplicationValidationError) as saved:
+        store.save(OWNER, second, base_revision=None, updated_by="t")
+    assert skipped[0]["message"] == saved.value.message + "; kept in the Library instead"
+    assert "slot 3" in skipped[0]["message"]
+    assert '"Garage"' in skipped[0]["message"]
+
+
+def test_restore_keeps_an_existing_library_copy_of_a_skipped_document(mod):
+    """A Library record with the skipped id stays exactly as it was."""
+    store = _new(mod)
+    first = _doc(schemaVersion=6, slotIndex=3, name="Garage", supportedFamilies=["circular"])
+    second = _doc(schemaVersion=6, slotIndex=3, name="Lights", supportedFamilies=["circular"])
+    shelf = store.save(
+        mod.LIBRARY_OWNER_ID,
+        dict(second, name="Lights on the shelf", slotIndex=7),
+        base_revision=None,
+        updated_by="t",
+    )
+    token_before = store.token
+    skipped: list[dict] = []
+    store.restore(OWNER, [first, second], updated_by="watch-restore", skipped=skipped)
+
+    assert [(s["id"], s["library"]) for s in skipped] == [(second["id"], "existing")]
+    assert skipped[0]["message"].endswith(
+        "; the Library already holds this design, so that copy was kept"
+    )
+    [kept] = store.list(mod.LIBRARY_OWNER_ID)
+    assert (kept.revision, kept.document["name"]) == (shelf.revision, "Lights on the shelf")
+    # Only the one restored record was committed.
+    assert store.token == token_before + 1
+
+
+def test_restore_bumps_a_skipped_document_to_a_free_library_slot(mod):
+    """The Library's own seat rules hold: a held slot moves the design along."""
+    store = _new(mod)
+    store.save(
+        mod.LIBRARY_OWNER_ID,
+        _doc(schemaVersion=6, slotIndex=3, name="Shelf", supportedFamilies=["circular"]),
+        base_revision=None,
+        updated_by="t",
+    )
+    first = _doc(schemaVersion=6, slotIndex=3, name="Garage", supportedFamilies=["circular"])
+    second = _doc(schemaVersion=6, slotIndex=3, name="Lights", supportedFamilies=["circular"])
+    store.restore(OWNER, [first, second], updated_by="watch-restore")
+    library = {r.document["name"]: r.document["slotIndex"] for r in store.list(mod.LIBRARY_OWNER_ID)}
+    assert library["Shelf"] == 3
+    assert library["Lights"] != 3
+
+
+def test_restore_reports_nothing_skipped_when_a_bad_document_refuses_the_batch(mod):
+    """A structural error still refuses everything: no skips, nothing in the Library."""
+    store = _new(mod)
+    first = _doc(schemaVersion=6, slotIndex=3, supportedFamilies=["circular"])
+    second = _doc(schemaVersion=6, slotIndex=3, supportedFamilies=["circular"])
+    skipped: list[dict] = []
+    with pytest.raises(mod.ComplicationValidationError):
+        store.restore(
+            OWNER,
+            [first, second, _doc(slotIndex=MAX_SLOTS)],
+            updated_by="watch-restore",
+            skipped=skipped,
+        )
+    assert store.is_empty(OWNER)
+    assert store.is_empty(mod.LIBRARY_OWNER_ID)
+    assert skipped == []
+
+
+def test_restore_lets_two_shapes_share_one_slot(mod):
+    """Only one shape per slot is a clash; a circular and a rectangular may share."""
+    store = _new(mod)
+    round_one = _doc(schemaVersion=6, slotIndex=3, supportedFamilies=["circular"])
+    wide_one = _doc(schemaVersion=6, slotIndex=3, supportedFamilies=["rectangular"])
+    skipped: list[dict] = []
+    records = store.restore(
+        OWNER, [round_one, wide_one], updated_by="watch-restore", skipped=skipped
+    )
+    assert len(records) == 2
+    assert len(store.list(OWNER)) == 2
+    assert skipped == []
+
+
 # ── move_owner (the reinstall recovery path) ───────────────────────────────
 
 

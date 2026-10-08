@@ -714,6 +714,68 @@ def test_a_renamed_global_never_takes_an_added_action_variable_name() -> None:
     )
 
 
+def test_a_renamed_global_leaves_the_same_action_variable_alone() -> None:
+    """The audit's exact case: one added action uses both the clashing global
+    and its own prompted variable, whose key is the global's first free name.
+
+    The rename must step over the variable, or the prompt vanishes and the
+    person's code is replaced by the phone's secret.
+    """
+    stored = library(globals_=[{"id": "S1", "key": "token", "value": "SECRET_A"}])
+    stored["actions"] = []
+    incoming = library(
+        action(
+            id=ID_B,
+            url="https://b.example/send?t={{token}}&c={{token_2}}",
+            variables=[variable("token_2")],
+        ),
+        globals_=[{"id": "P1", "key": "token", "value": "SECRET_B"}],
+    )
+    ha.validate_document(incoming)
+    merged, added, _changed = ha.merge_hand_over(stored, incoming)
+    assert added == 1
+    ha.validate_document(merged)
+    assert [(g["key"], g["value"]) for g in merged["globalVariables"]] == [
+        ("token", "SECRET_A"),
+        ("token_3", "SECRET_B"),
+    ]
+    listed = {a["id"]: a for a in ha.public_list(merged)["actions"]}
+    assert [v["key"] for v in listed[ID_B]["variables"]] == ["token_2"]
+    assert ha.build_request(merged, ID_B, {"token_2": "1234"}).url == (
+        "https://b.example/send?t=SECRET_B&c=1234"
+    )
+
+
+def test_a_renamed_global_never_takes_a_token_an_action_leaves_as_typed() -> None:
+    """A ``{{key}}`` that no variable or global defines is sent as typed.
+
+    A renamed global must not pick that key, or the token would start sending
+    the global's secret, in an added action and in a stored one alike.
+    """
+    stored = library(
+        action(url="https://a.example/{{token}}?x={{token_3}}"),
+        globals_=[{"id": "S1", "key": "token", "value": "SECRET_A"}],
+    )
+    incoming = library(
+        action(id=ID_B, url="https://b.example/{{token}}?y={{token_2}}"),
+        globals_=[{"id": "P1", "key": "token", "value": "SECRET_B"}],
+    )
+    ha.validate_document(incoming)
+    merged, _added, _changed = ha.merge_hand_over(stored, incoming)
+    ha.validate_document(merged)
+    assert [(g["key"], g["value"]) for g in merged["globalVariables"]] == [
+        ("token", "SECRET_A"),
+        ("token_4", "SECRET_B"),
+    ]
+    # The untouched token goes out as typed (percent-encoded in the URL).
+    assert ha.build_request(merged, ID_B, {}).url == (
+        "https://b.example/SECRET_B?y=%7B%7Btoken_2%7D%7D"
+    )
+    assert ha.build_request(merged, ID_A, {}).url == (
+        "https://a.example/SECRET_A?x=%7B%7Btoken_3%7D%7D"
+    )
+
+
 def test_a_variable_the_phone_global_filled_follows_that_global_rename() -> None:
     stored = library(
         action(url="https://a.example/{{token}}", variables=[variable("token")]),

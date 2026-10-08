@@ -13,6 +13,8 @@ Covered:
   so a device that pairs again under the same id can move its presets in.
 * ``complications_move_status`` reports the mark without clearing it.
 * ``complications_create`` from a still-forgotten owner succeeds.
+* ``complications_restore`` restores what it can and lists the documents
+  left out over a seat clash under ``skipped``.
 * The version view answers 503 while the config entry is reloading.
 * ``register_secret`` refuses the Library's owner id.
 * A signed request whose bound user is local only is refused the way Home
@@ -58,6 +60,7 @@ _NAMES = (
     "_op_complications_sync",
     "_op_complications_move_status",
     "_op_complications_create",
+    "_op_complications_restore",
     "WAVersionView",
     "WARegisterSecretView",
 )
@@ -130,6 +133,7 @@ def _handlers(store_mod: Any) -> dict[str, Any]:
     namespace: dict[str, Any] = {
         "Any": Any,
         "uuid": uuid,
+        "_LOGGER": logging.getLogger("wa_v2_views_test"),
         "validate_pair_fields": validate_pair_fields,
         "Response": _Response,
         "HomeAssistantView": _View,
@@ -214,6 +218,36 @@ def test_create_from_a_forgotten_owner_succeeds_and_clears_the_mark(env) -> None
     assert [r["status"] for r in reply.body["results"]] == ["created"]
     assert env.store.is_forgotten(OWNER) is False
     assert _run(env, "_op_complications_move_status").body["owner_forgotten"] is False
+
+
+# ── restore ──────────────────────────────────────────────────────────────
+
+
+def test_restore_reports_a_document_left_out_over_a_seat_clash(env) -> None:
+    """The reply stays ``ok`` and lists the left-out document under ``skipped``,
+    which says the design was kept in the Library.
+
+    Older watch builds read only ``ok`` from this reply, so the extra field
+    costs them nothing.
+    """
+    first = _doc(schemaVersion=6, slotIndex=3, name="Garage", supportedFamilies=["circular"])
+    second = _doc(schemaVersion=6, slotIndex=3, name="Lights", supportedFamilies=["circular"])
+
+    reply = _run(env, "_op_complications_restore", {"documents": [first, second]})
+    assert reply.status == 200
+    assert reply.body["ok"] is True
+    assert [r["id"] for r in reply.body["records"]] == [first["id"]]
+    [left_out] = reply.body["skipped"]
+    assert (left_out["id"], left_out["library"]) == (second["id"], "kept")
+    assert "slot 3" in left_out["message"]
+    assert left_out["message"].endswith("kept in the Library instead")
+    assert [r.id for r in env.store.list("library")] == [second["id"]]
+
+
+def test_a_clean_restore_reports_an_empty_skipped_list(env) -> None:
+    reply = _run(env, "_op_complications_restore", {"documents": [_doc()]})
+    assert reply.status == 200
+    assert reply.body["skipped"] == []
 
 
 # ── version view during a reload ─────────────────────────────────────────
