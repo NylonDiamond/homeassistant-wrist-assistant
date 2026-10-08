@@ -1853,6 +1853,14 @@ class ComplicationStore:
         Recovery only. Refuses when the owner already has live records so a
         stale watch can never overwrite what the panel holds. Every document is
         validated before any is written, so a bad batch stores nothing.
+
+        The batch also gets the seat check ``save`` makes: two documents of
+        one shape in one slot refuse the whole batch with the error a save
+        would give. The devices collapse such a pair to one picker row, and a
+        restore is the one write that could otherwise bring the clash in
+        without the check. The device keeps its own copies on a refusal, so
+        nothing is lost; the restore simply does not happen until the clash is
+        fixed on the device.
         """
         if not self.is_empty(owner_watch_id):
             raise ComplicationConflictError(
@@ -1866,12 +1874,32 @@ class ComplicationStore:
             )
         validated: list[dict[str, Any]] = []
         seen: set[str] = set()
+        # The seats already held: the owner's live records (none, since the
+        # owner is empty, but the check should not lean on that) and then each
+        # document of the batch as it is accepted, so the second of a clashing
+        # pair is the one refused.
+        seated: dict[str, ComplicationRecord] = {
+            record_id: record
+            for record_id, record in self._records.get(owner_watch_id, {}).items()
+            if not record.deleted
+        }
         for document in documents:
             document = validate_document(document)
             record_id = _validate_uuid(document["id"], "document.id")
             if record_id in seen:
                 raise ComplicationValidationError(f"duplicate id {record_id}")
             seen.add(record_id)
+            self._refuse_held_seat(seated, record_id, document, None)
+            seated[record_id] = ComplicationRecord(
+                id=record_id,
+                owner_watch_id=owner_watch_id,
+                revision=0,
+                token=0,
+                updated_at="",
+                updated_by=updated_by,
+                deleted=False,
+                document=document,
+            )
             validated.append(document)
 
         committed: list[ComplicationRecord] = []

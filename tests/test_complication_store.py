@@ -1315,6 +1315,39 @@ def test_restore_over_tombstones_bumps_revision(mod):
     assert rec.deleted is False
 
 
+def test_restore_refuses_two_documents_of_one_shape_in_one_slot(mod):
+    """A restore gets the seat check a save makes, with the same error.
+
+    Before the fix a restore batch holding two circular documents at slot 3
+    committed both, and the devices could only ever place one of them.
+    """
+    store = _new(mod)
+    first = _doc(schemaVersion=6, slotIndex=3, name="Garage", supportedFamilies=["circular"])
+    second = _doc(schemaVersion=6, slotIndex=3, name="Lights", supportedFamilies=["circular"])
+    with pytest.raises(mod.ComplicationValidationError) as restored:
+        store.restore(OWNER, [first, second], updated_by="watch-restore")
+    assert store.is_empty(OWNER)
+    assert store.token == 0
+
+    # The message is the one a save gives for the same clash.
+    store.save(OWNER, first, base_revision=None, updated_by="t")
+    with pytest.raises(mod.ComplicationValidationError) as saved:
+        store.save(OWNER, second, base_revision=None, updated_by="t")
+    assert restored.value.message == saved.value.message
+    assert "slot 3" in restored.value.message
+    assert '"Garage"' in restored.value.message
+
+
+def test_restore_lets_two_shapes_share_one_slot(mod):
+    """Only one shape per slot is a clash; a circular and a rectangular may share."""
+    store = _new(mod)
+    round_one = _doc(schemaVersion=6, slotIndex=3, supportedFamilies=["circular"])
+    wide_one = _doc(schemaVersion=6, slotIndex=3, supportedFamilies=["rectangular"])
+    records = store.restore(OWNER, [round_one, wide_one], updated_by="watch-restore")
+    assert len(records) == 2
+    assert len(store.list(OWNER)) == 2
+
+
 # ── move_owner (the reinstall recovery path) ───────────────────────────────
 
 

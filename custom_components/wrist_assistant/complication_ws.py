@@ -1239,10 +1239,14 @@ def ws_move_owner(
     back onto a watch, because Restore cannot help once the reinstall has
     wiped the watch's own copies.
 
-    The target does not have to be a registered watch. The panel only offers
-    registered ones, but refusing an unregistered id here would make the
-    command useless in exactly the situation it exists for: a watch that has
-    not re-provisioned yet.
+    The target must be a registered device. ``owners`` and setup both run the
+    orphan sweep, which moves the designs of any owner the secret store does
+    not know into the Library and tombstones them there. A move to a watch
+    that has not paired yet would therefore be undone on the panel's next
+    list, and the watch would pair to find only tombstones. The panel only
+    offers registered devices, and a watch that has not paired yet can be
+    given its designs once it has. The Library is no target either: it has no
+    entry, and this command is about putting designs back on a device.
     """
     store = _store(hass)
     if store is None:
@@ -1251,6 +1255,13 @@ def ws_move_owner(
     user = connection.user
     updated_by = f"ha-panel:{user.name or user.id}" if user else "ha-panel"
     target = msg["target_owner_watch_id"]
+    if hass.data[DOMAIN].widget_secret_store.get(target) is None:
+        connection.send_error(
+            msg["id"],
+            "not_found",
+            f"{target} is not a registered device; pair it first, then move",
+        )
+        return
     try:
         records = store.move_owner(
             msg["source_owner_watch_id"], target, updated_by=updated_by

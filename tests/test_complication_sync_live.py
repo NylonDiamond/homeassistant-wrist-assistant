@@ -44,7 +44,8 @@ from websockets.sync.client import connect
 
 OWNER = "wa-test-owner"
 # The Move action needs two owners at once. Both are throwaway ids that no
-# device signs with, which is exactly the orphan case Move exists for.
+# device signs with. That is the orphan case for the source, but a target
+# must be a paired device, so a live move to MOVE_TARGET is now refused.
 MOVE_SOURCE = "wa-test-move-source"
 MOVE_TARGET = "wa-test-move-target"
 
@@ -448,7 +449,32 @@ def test_the_stale_panel_loses_and_can_recover(base_url, token, panel, fresh):
 
 # ── moving an orphaned watch's records ─────────────────────────────────────
 
+# A move needs a paired target, and these tests run under throwaway ids that
+# no device signs with. Pairing a fake device on a live box is more than a
+# test should do, so the two tests that need a real target are skipped; the
+# unit tests in test_complication_store.py and test_complication_ws.py cover
+# the move itself.
+_NEEDS_A_PAIRED_TARGET = pytest.mark.skip(
+    reason="a move target must be a paired device; covered by the unit tests"
+)
 
+
+def test_a_move_to_a_target_that_has_not_paired_is_refused(
+    panel: Panel, move_pair, request: pytest.FixtureRequest
+):
+    """The orphan sweep would undo such a move, so it never starts."""
+    source, target = move_pair
+    cid = str(uuid.uuid5(_NS, request.node.name)).upper()
+    seed(panel, source, cid, "stays where it is")
+
+    reply = panel.move(source, target)
+    assert reply.get("success") is False, reply
+    assert reply["error"]["code"] == "not_found"
+    assert [r["id"] for r in panel.listing(owner=source)["records"]] == [cid]
+    assert panel.listing(owner=target)["records"] == []
+
+
+@_NEEDS_A_PAIRED_TARGET
 def test_a_move_rekeys_the_records_and_tombstones_the_old_owner(
     panel: Panel, move_pair, request: pytest.FixtureRequest
 ):
@@ -479,6 +505,7 @@ def test_a_move_rekeys_the_records_and_tombstones_the_old_owner(
     assert not any(o["owner_watch_id"] == source for o in panel.owners())
 
 
+@_NEEDS_A_PAIRED_TARGET
 def test_a_move_onto_a_slot_the_target_already_uses_is_refused(
     panel: Panel, move_pair, request: pytest.FixtureRequest
 ):

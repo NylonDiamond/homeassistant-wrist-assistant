@@ -1560,6 +1560,28 @@ def _rewrite_tokens(raw: dict[str, Any], renames: dict[str, str]) -> dict[str, A
     return action
 
 
+_ANY_TOKEN = re.compile(r"\{\{\s*([^{}]*?)\s*\}\}")
+
+
+def _token_keys(raw: Any) -> set[str]:
+    """Every key an action names as ``{{key}}`` in its URL, headers or body,
+    whether or not a variable or global defines it."""
+    if not isinstance(raw, dict):
+        return set()
+    texts: list[Any] = [raw.get("url"), raw.get("body")]
+    headers = raw.get("headers")
+    if isinstance(headers, list):
+        for h in headers:
+            if isinstance(h, dict):
+                texts.extend((h.get("name"), h.get("value")))
+    found: set[str] = set()
+    for text in texts:
+        if isinstance(text, str):
+            found.update(trim(m) for m in _ANY_TOKEN.findall(text))
+    found.discard("")
+    return found
+
+
 def merge_hand_over(
     stored: dict[str, Any] | None, incoming: dict[str, Any]
 ) -> tuple[dict[str, Any], int, bool]:
@@ -1580,7 +1602,10 @@ def merge_hand_over(
       types, which is a change to a stored action.
     * A new name never uses the key of a variable of an incoming action
       either, so a renamed global cannot take over a variable the person is
-      asked for. A variable of an added action that the phone's own global of
+      asked for. Nor any ``{{key}}`` a stored or added action names without
+      defining it: such a token is sent as typed, and a renamed global under
+      its key would start filling it with the global's value. A variable of
+      an added action that the phone's own global of
       the same key filled is renamed along with that global, so it is still
       filled by it.
     * A variable of an added action that the person is asked for (no
@@ -1632,7 +1657,16 @@ def merge_hand_over(
         trim(variable.key) for raw in to_add for variable in Action.read(raw).variables
     }
     incoming_variable_keys.discard("")
-    taken = set(stored_globals) | stored_variable_keys | incoming_global_keys | incoming_variable_keys
+    named_tokens = {
+        key for raw in [*merged["actions"], *to_add] for key in _token_keys(raw)
+    }
+    taken = (
+        set(stored_globals)
+        | stored_variable_keys
+        | incoming_global_keys
+        | incoming_variable_keys
+        | named_tokens
+    )
 
     def free_name(key: str) -> str:
         suffix = 2

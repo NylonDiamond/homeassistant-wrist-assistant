@@ -934,6 +934,7 @@ def test_moving_an_owner_carries_its_watch_config(env) -> None:
 
 def test_a_refused_move_leaves_the_watch_config_where_it_was(env) -> None:
     """Nothing live to move refuses the whole command, pages included."""
+    env.add_watch("watch-new", device_name="Apple Watch")
     _save_pages(env, "watch-old", "old pages")
     connection = _Connection()
     env.ws.ws_move_owner(
@@ -945,6 +946,56 @@ def test_a_refused_move_leaves_the_watch_config_where_it_was(env) -> None:
     watch_config = env.hass.data[DOMAIN].watch_config_store
     assert watch_config.get("watch-old", "pages").revision == 1
     assert watch_config.get("watch-new", "pages") is None
+
+
+def test_a_move_to_a_watch_that_has_not_paired_is_refused(env) -> None:
+    """The orphan sweep would undo it.
+
+    Before the fix the move committed the designs under the unpaired id, the
+    panel's next owners call found that id unknown to the secret store and
+    released the designs to the Library, tombstoning them under the target.
+    The watch would then pair and pull only tombstones. Now the move is
+    refused and the designs stay where they were.
+    """
+    env.add_watch("watch-other", device_name="Other Watch")
+    document = env.save_document("watch-old")
+    _save_pages(env, "watch-old", "old pages")
+
+    connection = _Connection()
+    env.ws.ws_move_owner(
+        env.hass,
+        connection,
+        {"id": 1, "source_owner_watch_id": "watch-old", "target_owner_watch_id": "watch-unpaired"},
+    )
+    assert [code for _id, code, _msg in connection.errors] == ["not_found"]
+    assert [r.id for r in env.store.list("watch-old")] == [document["id"]]
+    assert "watch-unpaired" not in env.store.owners()
+    watch_config = env.hass.data[DOMAIN].watch_config_store
+    assert watch_config.get("watch-old", "pages").revision == 1
+    assert watch_config.get("watch-unpaired", "pages") is None
+
+    # The Library is not a device either.
+    connection = _Connection()
+    env.ws.ws_move_owner(
+        env.hass,
+        connection,
+        {"id": 2, "source_owner_watch_id": "watch-old", "target_owner_watch_id": LIBRARY},
+    )
+    assert [code for _id, code, _msg in connection.errors] == ["not_found"]
+
+
+def test_a_move_to_a_paired_watch_survives_the_next_owners_listing(env) -> None:
+    """The designs land on the target and the orphan sweep leaves them there."""
+    env.add_watch("watch-new", device_name="Apple Watch")
+    document = env.save_document("watch-old")
+
+    env.call(
+        env.ws.ws_move_owner,
+        source_owner_watch_id="watch-old",
+        target_owner_watch_id="watch-new",
+    )
+    env.owners()
+    assert [r.id for r in env.store.list("watch-new")] == [document["id"]]
 
 
 # ── watch_status ─────────────────────────────────────────────────────────
