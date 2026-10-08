@@ -861,6 +861,55 @@ def test_a_refused_get_marks_nothing(env) -> None:
     assert env.secrets.main_house == {}
 
 
+# ── the iPhone's observer read ───────────────────────────────────────────
+
+
+def test_an_observer_get_answers_the_same_and_leaves_no_trace(env) -> None:
+    """The iPhone reads signed with its watch's key: same reply, but the
+    panel must not see the save as collected by the watch, and the watch's
+    main house must not move."""
+    record = _panel_saved(env)
+    assert record.delivered_revision == 1
+    plain = _get(env, {"kind": "pages", "since_revision": 1})
+    record.delivered_revision, record.delivered_at = 1, None
+
+    seen = _get(env, {"kind": "pages", "since_revision": 1, "observer": True})
+    assert seen.status == 200
+    assert seen.body == plain.body
+    assert seen.body["document"] == _doc("panel")
+    assert (record.delivered_revision, record.delivered_at) == (1, None)
+
+    # Already up to date: still no delivery.
+    _get(env, {"kind": "pages", "since_revision": 2, "observer": True})
+    assert record.delivered_revision == 1
+
+
+def test_an_observer_get_files_no_report(env) -> None:
+    record = _panel_saved(env)
+    _get(env, {"kind": "pages", "since_revision": 1, "unreadable_revision": 2,
+               "observer": True})
+    assert (record.rejected_revision, record.rejected_at) == (0, None)
+    assert record.delivered_revision == 1
+
+
+def test_an_observer_get_never_touches_the_main_house(env) -> None:
+    _get(env, {"kind": "behavior", "observer": True})
+    _get(env, {"kind": "pages", "main_house": False, "observer": True})
+    assert env.secrets.main_house == {}
+    _get(env, {"kind": "menus", "main_house": False})
+    _get(env, {"kind": "behavior", "observer": True})
+    assert env.secrets.main_house == {WATCH: False}
+
+
+def test_only_observer_true_counts(env) -> None:
+    record = _panel_saved(env)
+    record.delivered_revision, record.delivered_at = 1, None
+    for value in ("true", 1, None, False):
+        record.delivered_revision = 1
+        _get(env, {"kind": "pages", "since_revision": 1, "observer": value})
+        assert record.delivered_revision == 2
+
+
 # ── step 6: the phone's notification style read ──────────────────────────
 
 PHONE = "iphone-1"

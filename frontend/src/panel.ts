@@ -163,7 +163,7 @@ import {
 } from "./resolver.js";
 import { CANVAS, CASES, FACE_TINTS, PHONE_CASES, REFERENCE_CASE, REFERENCE_PHONE, caseForScreenSize, cornerContext, cornerTileSide, familyTitle, fitBox, handleResize, iconDrawnSide, phoneCaseForScreenSize, renderLayerThumb, renderLayout, slotFor, timestampChipRect, timestampLabel, type DrawableFamily, type IconProvider, type PreviewCase } from "./renderer.js";
 import { actionAt, demoTapLabel, groundTapReach, runTapAction, tapRefetches, type DemoOutcome } from "./demo.js";
-import { ALL_FAMILIES, biggestFirst, blankInline, canRemoveControl, comingSoonFamilies, controlNoteLines, familiesFor, familyAllowsKind, familyNote, firstDrawable, importableFamilies, isDrawable, isHomeFamily, keepFamilies, opensInControlView, supportedFamilies } from "./layouts.js";
+import { ALL_FAMILIES, biggestFirst, blankInline, canRemoveControl, comingSoonFamilies, controlNoteLines, deviceKindOfShapes, familiesFor, familyAllowsKind, familyNote, firstDrawable, importableFamilies, isDrawable, isHomeFamily, keepFamilies, moveKindMatches, opensInControlView, supportedFamilies } from "./layouts.js";
 import {
   type DeviceOwner,
   type DevicePlace,
@@ -17199,8 +17199,15 @@ export class WristAssistantPanel extends LitElement {
     const owner = this.selectedOwner;
     if (!owner?.is_orphan) return undefined;
     // Registered devices only. Move is about putting these records back where
-    // a watch can reach them, and the Library reaches nothing.
-    const targets = this.owners.filter((o) => !o.is_orphan && !isLibraryOwner(o));
+    // a watch can reach them, and the Library reaches nothing. And only the
+    // same kind of device: a watch's designs on a phone (or a phone's on a
+    // watch) land on shapes it cannot draw. An orphan carries no kind, so its
+    // designs' shapes say; when they cannot tell, every device stays offered.
+    const sourceKind = owner.device_kind ?? deviceKindOfShapes(this.records.flatMap((r) => {
+      const shapes = r.deleted ? undefined : r.document?.supportedFamilies;
+      return Array.isArray(shapes) ? (shapes.filter((f) => typeof f === "string") as FamilyKind[]) : [];
+    }));
+    const targets = this.owners.filter((o) => !o.is_orphan && !isLibraryOwner(o) && moveKindMatches(sourceKind, o.device_kind));
     return html`<div class="banner warn">
       <b>This watch is no longer registered.</b> Reinstalling the watch app gives the watch a new id, and these
       ${owner.complication_count} complication${owner.complication_count === 1 ? "" : "s"} stayed behind under the old one.

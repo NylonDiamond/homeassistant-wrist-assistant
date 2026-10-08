@@ -22,6 +22,8 @@ import {
   removeFamily,
   blankInline,
   supportedFamilies,
+  deviceKindOfShapes,
+  moveKindMatches,
 } from "../src/layouts.js";
 import { MIN_IPHONE_VERSION_FOR_HOME_SCREEN } from "../src/version.js";
 
@@ -488,5 +490,32 @@ describe("familyNote", () => {
     for (const family of ALL_FAMILIES.filter((f) => f !== "xlarge")) {
       expect(familyNote(family)).toBeUndefined();
     }
+  });
+});
+
+describe("Move targets by device kind", () => {
+  it("reads a phone from a Home Screen tile and a watch from a corner", () => {
+    expect(deviceKindOfShapes(["rectangular", "small"])).toBe("iphone");
+    expect(deviceKindOfShapes(["corner", "circular"])).toBe("watch");
+  });
+
+  it("cannot tell from shapes both draw, from both, or from none", () => {
+    expect(deviceKindOfShapes(["rectangular", "circular", "inline"])).toBeUndefined();
+    expect(deviceKindOfShapes(["corner", "medium"])).toBeUndefined();
+    expect(deviceKindOfShapes([])).toBeUndefined();
+  });
+
+  it("offers watch to watch and iPhone to iPhone only", () => {
+    expect(moveKindMatches("watch", "watch")).toBe(true);
+    expect(moveKindMatches("iphone", "iphone")).toBe(true);
+    expect(moveKindMatches("watch", "iphone")).toBe(false);
+    expect(moveKindMatches("iphone", "watch")).toBe(false);
+  });
+
+  it("keeps offering a target when either kind is unknown", () => {
+    expect(moveKindMatches(undefined, "iphone")).toBe(true);
+    expect(moveKindMatches(null, "watch")).toBe(true);
+    expect(moveKindMatches("watch", undefined)).toBe(true);
+    expect(moveKindMatches("iphone", null)).toBe(true);
   });
 });

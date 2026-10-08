@@ -24,6 +24,15 @@ from typing import Any
 
 import pytest
 
+# Everything ``sealed_box`` imports, imported here so `cryptography` stays
+# in sys.modules: the fixture drops every module loaded during a test, and a
+# second import of it after that fails its own type and exception checks
+# (``sealed_box`` is loaded per test).
+import cryptography.exceptions  # noqa: F401
+import cryptography.hazmat.primitives.asymmetric.x25519  # noqa: F401
+import cryptography.hazmat.primitives.ciphers.aead  # noqa: F401
+import cryptography.hazmat.primitives.hashes  # noqa: F401
+import cryptography.hazmat.primitives.kdf.hkdf  # noqa: F401
 from test_http_actions import ID_A, ID_B, action, library, variable
 from test_http_actions_runner import FakeHass, FakeResponse, FakeSession
 from test_http_actions_store import CONFLICT, loaded_package, new_store
@@ -39,6 +48,13 @@ _NAMES = (
     "_op_http_action_run",
 )
 URL_A = "https://example.com/hook"
+# The test device's own secret, which a sealed hand-over is sealed with.
+SECRET = b"s" * 32
+_FAKE_ORJSON = types.SimpleNamespace(
+    loads=json.loads,
+    dumps=lambda obj: json.dumps(obj, separators=(",", ":")).encode(),
+    JSONDecodeError=json.JSONDecodeError,
+)
 
 
 class _Response:
@@ -83,12 +99,13 @@ class _Ctx:
         self.user_id = user_id
         self.hass = types.SimpleNamespace(auth=_Auth())
         self.body = json.dumps(payload).encode() if body is None else body
+        self.secret_bytes = SECRET
 
     def signed_json(self, payload: dict, status: int = 200) -> _Response:
         return _Response(status, payload)
 
 
-def _ops(store_mod: Any, runner_mod: Any) -> dict[str, Any]:
+def _ops(store_mod: Any, runner_mod: Any, sealed_mod: Any) -> dict[str, Any]:
     tree = ast.parse(_VIEWS.read_text(), filename=str(_VIEWS))
     wanted = [
         node
@@ -118,6 +135,9 @@ def _ops(store_mod: Any, runner_mod: Any) -> dict[str, Any]:
         "run_input_problem": runner_mod.run_input_problem,
         "HTTPActionsStoreError": store_mod.HTTPActionsStoreError,
         "HTTPActionsUnavailableError": store_mod.HTTPActionsUnavailableError,
+        "open_box": sealed_mod.open_box,
+        "SealedBoxError": sealed_mod.SealedBoxError,
+        "orjson": _FAKE_ORJSON,
     }
     exec(code, namespace)  # noqa: S102
     return namespace
@@ -131,6 +151,7 @@ def _marker(*args: object, **kwargs: object) -> object:
 def env():
     with loaded_package() as pkg:
         runner_mod = pkg.load("http_actions_runner")
+        sealed_mod = pkg.load("sealed_box")
         sys.modules["homeassistant.components"] = types.ModuleType("homeassistant.components")
         sys.modules["homeassistant.components.websocket_api"] = types.SimpleNamespace(
             ActiveConnection=type("ActiveConnection", (), {}),
@@ -146,7 +167,8 @@ def env():
         runner = runner_mod.HTTPActionRunner(FakeHass(), session_for=session.for_verify)
         domain = types.SimpleNamespace(http_actions_store=store, http_action_runner=runner)
         yield types.SimpleNamespace(
-            ops=_ops(pkg.store_mod, runner_mod),
+            ops=_ops(pkg.store_mod, runner_mod, sealed_mod),
+            sealed=sealed_mod,
             ws=ws,
             store=store,
             runner=runner,
@@ -218,6 +240,94 @@ def test_get_says_whether_the_device_may_hand_over(env, user_id, can) -> None:
 def test_a_hand_over_over_256_kib_is_refused_before_it_is_read(env) -> None:
     body = b"{" + b" " * (256 * 1024) + b'"document": {"actions": []}}'
     reply = op(env, "_op_http_actions_hand_over", {"document": library()}, body=body)
+    assert reply.status == 400 and reply.body["error"] == "invalid"
+    assert not env.store.has_handed_over("watch-A")
+
+
+def _sealed(env, inner: Any, *, secret: bytes = SECRET, signer: str = "watch-A",
+            op_name: str = "http_actions_hand_over") -> dict:
+    plaintext = inner if isinstance(inner, bytes) else json.dumps(inner).encode()
+    return {"sealed": env.sealed.seal(secret, signer, op_name, plaintext)}
+
+
+def test_a_sealed_hand_over_merges_like_a_plain_one(env) -> None:
+    doc = library(action(), action(id=ID_B))
+    reply = op(env, "_op_http_actions_hand_over", _sealed(env, {"document": doc}))
+    assert (reply.status, reply.body) == (200, {"ok": True, "revision": 1, "added": 2})
+    assert env.store.get()["handed_over"] == ["watch-A"]
+
+
+def _padded(doc: dict, size: int) -> bytes:
+    """``{"document": doc}`` padded with JSON whitespace to exactly ``size``
+    bytes, which leaves the library itself as it was."""
+    raw = json.dumps({"document": doc}).encode()
+    return raw[:-1] + b" " * (size - len(raw)) + b"}"
+
+
+def test_a_sealed_library_near_the_limit_is_taken_though_its_body_is_larger(env) -> None:
+    """256 KiB is the library's limit, sealed or not: the base64 and the
+    envelope make the sealed body about a third larger, and that is fine."""
+    payload = _sealed(env, _padded(library(action()), 256 * 1024))
+    body = json.dumps(payload).encode()
+    assert len(body) > 256 * 1024 * 4 // 3
+    reply = op(env, "_op_http_actions_hand_over", payload, body=body)
+    assert (reply.status, reply.body) == (200, {"ok": True, "revision": 1, "added": 1})
+
+
+def test_a_sealed_library_over_the_limit_is_refused_once_opened(env) -> None:
+    payload = _sealed(env, _padded(library(action()), 256 * 1024 + 1))
+    reply = op(env, "_op_http_actions_hand_over", payload)
+    assert reply.status == 400
+    assert reply.body == {
+        "ok": False, "error": "invalid", "message": f"the library is over {256 * 1024} bytes"
+    }
+    assert not env.store.has_handed_over("watch-A")
+
+
+def test_a_sealed_body_past_its_own_limit_is_refused_before_it_is_opened(env) -> None:
+    payload = _sealed(env, {"document": library(action())})
+    body = b"{" + b" " * (400 * 1024) + json.dumps(payload).encode()[1:]
+    reply = op(env, "_op_http_actions_hand_over", payload, body=body)
+    assert reply.status == 400 and reply.body["error"] == "invalid"
+    assert not env.store.has_handed_over("watch-A")
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"secret": b"x" * 32},
+        {"signer": "watch-B"},
+        {"op_name": "client_certificate_put"},
+    ],
+)
+def test_a_sealed_hand_over_that_does_not_open_is_a_signed_400(env, kwargs) -> None:
+    payload = _sealed(env, {"document": library(action())}, **kwargs)
+    reply = op(env, "_op_http_actions_hand_over", payload)
+    assert reply.status == 400
+    assert reply.body["ok"] is False and reply.body["error"] == "invalid"
+    assert set(reply.body) == {"ok", "error", "message"}
+    assert not env.store.has_handed_over("watch-A")
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"sealed": None},
+        {"sealed": "nope"},
+        {"sealed": {"v": 1}},
+        # A sealed key wins over a plain document beside it.
+        {"sealed": None, "document": library()},
+    ],
+)
+def test_a_malformed_sealed_hand_over_is_a_signed_400(env, payload) -> None:
+    reply = op(env, "_op_http_actions_hand_over", payload)
+    assert reply.status == 400 and reply.body["error"] == "invalid"
+    assert not env.store.has_handed_over("watch-A")
+
+
+@pytest.mark.parametrize("inner", [b"not json", b"[1, 2]", {"document": []}, {}])
+def test_a_sealed_plaintext_of_the_wrong_shape_is_a_signed_400(env, inner) -> None:
+    reply = op(env, "_op_http_actions_hand_over", _sealed(env, inner))
     assert reply.status == 400 and reply.body["error"] == "invalid"
     assert not env.store.has_handed_over("watch-A")
 

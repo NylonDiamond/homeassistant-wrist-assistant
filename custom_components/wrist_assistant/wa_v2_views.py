@@ -2814,8 +2814,11 @@ class WAPairStartView(HomeAssistantView):
       The device learns of the confirm by polling `verify_identity` with
       it, which answers 401 until then.
 
-    The reply is a six-character code for an admin to type into the panel.
-    This view only stores the request: it writes nothing to the secret
+    The reply is a six-character code for an admin to type into the panel,
+    with `server_time` (Unix seconds, on every reply, the 429 too) so a
+    device whose secret then fails `verify_identity` can tell a clock off by
+    more than the signing window from a refusal. This view only stores the
+    request: it writes nothing to the secret
     store, touches no device and logs nothing to the Logbook, so nothing
     signs until an admin confirms it (`pairing_ws.py`).
 
@@ -2862,7 +2865,14 @@ class WAPairStartView(HomeAssistantView):
             public_key=start.public_key,
         )
         if pending is None:
-            return self.json({"ok": False, "error": "too_many_pending"}, status_code=429)
+            return self.json(
+                {
+                    "ok": False,
+                    "error": "too_many_pending",
+                    "server_time": int(time.time()),
+                },
+                status_code=429,
+            )
         _LOGGER.debug(
             "Pairing code issued for %s watch_id=%s from %s (%s)",
             pending.kind,
@@ -2876,6 +2886,7 @@ class WAPairStartView(HomeAssistantView):
                 "code": pending.code,
                 "expires_in": pair_store.expires_in(pending),
                 "poll_after": PAIR_POLL_AFTER_SECONDS,
+                "server_time": int(time.time()),
             }
         )
 
@@ -2894,6 +2905,11 @@ class WAPairStatusView(HomeAssistantView):
       (`sealed_box.seal_pair_secret`). Kept for ten minutes after the
       confirm, and handed out as often as it is asked for in that time.
     * `{"state": "expired"}`: no code and no box, whatever the reason.
+
+    Every state also carries `server_time` (Unix seconds), as the start
+    reply does: the key is stored at the confirm, before the device has
+    proved it, so a device whose clock is off by more than the signing
+    window would otherwise read its failing `verify_identity` as a refusal.
 
     Anyone may ask: only the holder of the device's private key can open
     the box. The device then checks the secret with a signed
@@ -2925,7 +2941,9 @@ class WAPairStatusView(HomeAssistantView):
         if len(watch_id) > REGISTER_ID_MAX_LEN:
             return self.json_message("watch_id too long", status_code=400)
         state, sealed = pair_store.status(watch_id)
-        return self.json({"state": state, **(sealed or {})})
+        return self.json(
+            {"state": state, **(sealed or {}), "server_time": int(time.time())}
+        )
 
 
 # ── /v2/pair/redeem view ─────────────────────────────────────────────────
@@ -3582,11 +3600,18 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
                     | "notification_style" | "status_pages"
                     | "control_center" | "rooms",
             "since_revision": <int>?, "unreadable_revision": <int>?,
-            "main_house": false?}
+            "main_house": false?, "observer": true?}
     Reply: {"ok": true, "kind", "revision", "hash", "updated_at", "document"?}
 
     ``main_house`` changes nothing in the reply; it is kept on the watch's
     entry (`_note_main_house`).
+
+    ``observer: true`` is the iPhone reading, whichever key signs it: it may
+    sign with its watch's pair, and that read is not the watch collecting
+    anything. The reply is the same, but the get leaves no trace: no
+    delivery mark, no ``unreadable_revision`` report filed, and no main house
+    note (not even for ``main_house: false``). Only ``true`` counts; any
+    other value is ignored.
 
     ``document`` is left out when ``since_revision`` equals the stored
     revision, so an up-to-date device downloads a few bytes rather than its
@@ -3594,9 +3619,9 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
     ``revision: 0`` with ``hash`` and ``updated_at`` null and no document. The
     save history is never sent.
 
-    Every reply about a stored record marks that revision delivered, whether
-    it carried the document or said "you already have it": either way the
-    device now holds it. That is what the panel reads to tell a panel save
+    Every reply about a stored record, but an observer's, marks that revision
+    delivered, whether it carried the document or said "you already have
+    it": either way the device now holds it. That is what the panel reads to tell a panel save
     that is still waiting from one the watch or the phone has collected.
 
     The one exception is ``unreadable_revision``: "I fetched this revision of
@@ -3649,7 +3674,9 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
         record = store.get(ctx.watch_id, kind)
     except WatchConfigStoreError as err:
         return _watch_config_refusal(ctx, err)
-    _note_main_house(ctx, kind)
+    observer = ctx.payload.get("observer") is True
+    if not observer:
+        _note_main_house(ctx, kind)
     if record is None:
         return ctx.signed_json(
             {"ok": True, "kind": kind, "revision": 0, "hash": None, "updated_at": None}
@@ -3667,6 +3694,9 @@ async def _op_watch_config_get(ctx: _OpContext) -> Response:
     # After the reply is built, so a reply that failed to serialize never
     # counts as a delivery (or files a report). A report about the stored
     # revision takes the place of the delivery; a stale one leaves it as usual.
+    # An observer's read does neither.
+    if observer:
+        return response
     if unreadable is None or not store.report_unreadable(
         ctx.watch_id, kind, unreadable
     ):
@@ -3769,6 +3799,13 @@ def _http_actions_store_refusal(ctx: _OpContext, err: HTTPActionsStoreError) -> 
 # (``http_actions.MAX_DOCUMENT_BYTES``). The raw body is held to the same
 # size before anything reads the library.
 _HAND_OVER_MAX_BODY_BYTES = 256 * 1024
+# A sealed hand-over holds that same JSON as its plaintext, so the 256 KiB
+# applies to the opened bytes. The box is the plaintext plus the 16 byte
+# AES-GCM tag in base64 (4/3 the size), and the raw body adds the envelope
+# around it, so neither may be held to the plain limit: a library near
+# 256 KiB would be refused for being sealed.
+_HAND_OVER_MAX_SEALED_BOX_CHARS = 4 * -(-(_HAND_OVER_MAX_BODY_BYTES + 16) // 3)
+_HAND_OVER_MAX_SEALED_BODY_BYTES = _HAND_OVER_MAX_SEALED_BOX_CHARS + 1024
 
 
 async def _async_bound_user_is_admin(ctx: _OpContext) -> bool:
@@ -3787,13 +3824,22 @@ async def _async_bound_user_is_admin(ctx: _OpContext) -> bool:
 async def _op_http_actions_hand_over(ctx: _OpContext) -> Response:
     """A phone gives the home its HTTP action library, once per owner.
 
-    Body:  {"document": {HTTPActionConfig}}
+    Body:  {"sealed": <envelope>}, the envelope sealed with the signer's
+           secret under the op name ``http_actions_hand_over`` around
+           {"document": {HTTPActionConfig}}; or, from apps before the seal,
+           {"document": {HTTPActionConfig}} in the clear. A body with a
+           ``sealed`` key is always read sealed.
     Reply: {"ok": true, "revision": <int>, "added": <actions added>}
     Refusal: signed 403 {"ok": false, "error": "forbidden", "message"} when
              the device's bound user is not an active admin; signed 400
-             "invalid" for a body over 256 KiB or a library that breaks the
-             rules. Neither merges anything or lists the owner. Signed 503
-             "unavailable".
+             "invalid" for a plain body or a sealed plaintext over 256 KiB
+             (a sealed body may be larger by its base64 and envelope), a
+             sealed box that is malformed or does not open, a plaintext that
+             is not a JSON object, or a library that breaks the rules. None merges
+             anything or lists the owner. Signed 503 "unavailable".
+
+    The seal keeps the library's globals (tokens, passwords in headers)
+    out of anything that logs or caches the request body on the way.
 
     Only an admin's device may hand over: the library's globals are sent
     raw by Home Assistant from its own network, so whoever adds an action
@@ -3814,12 +3860,38 @@ async def _op_http_actions_hand_over(ctx: _OpContext) -> Response:
             "only a device paired by a Home Assistant administrator can hand over HTTP actions",
             403,
         )
-    if len(ctx.body) > _HAND_OVER_MAX_BODY_BYTES:
-        return _http_actions_refusal(
-            ctx, "invalid", f"the library is over {_HAND_OVER_MAX_BODY_BYTES} bytes", 400
-        )
+    too_large = f"the library is over {_HAND_OVER_MAX_BODY_BYTES} bytes"
+    sealed = "sealed" in ctx.payload
+    body_limit = _HAND_OVER_MAX_SEALED_BODY_BYTES if sealed else _HAND_OVER_MAX_BODY_BYTES
+    if len(ctx.body) > body_limit:
+        return _http_actions_refusal(ctx, "invalid", too_large, 400)
+    if sealed:
+        try:
+            plaintext = open_box(
+                ctx.secret_bytes,
+                ctx.watch_id,
+                "http_actions_hand_over",
+                ctx.payload.get("sealed"),
+                max_box_chars=_HAND_OVER_MAX_SEALED_BOX_CHARS,
+            )
+        except SealedBoxError as err:
+            return _http_actions_refusal(ctx, "invalid", err.message, 400)
+        # The same 256 KiB a plain body has, on the JSON the box held.
+        if len(plaintext) > _HAND_OVER_MAX_BODY_BYTES:
+            return _http_actions_refusal(ctx, "invalid", too_large, 400)
+        try:
+            inner = orjson.loads(plaintext)
+        except orjson.JSONDecodeError:
+            inner = None
+        if not isinstance(inner, dict):
+            return _http_actions_refusal(
+                ctx, "invalid", "the sealed box does not hold a JSON object", 400
+            )
+        document = inner.get("document")
+    else:
+        document = ctx.payload.get("document")
     try:
-        revision, added = store.hand_over(ctx.watch_id, ctx.payload.get("document"))
+        revision, added = store.hand_over(ctx.watch_id, document)
     except HTTPActionsStoreError as err:
         return _http_actions_store_refusal(ctx, err)
     return ctx.signed_json({"ok": True, "revision": revision, "added": added})

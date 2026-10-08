@@ -120,6 +120,35 @@ export function isHomeFamily(family: FamilyKind): family is HomeFamily {
   return (HOME_FAMILIES as FamilyKind[]).includes(family);
 }
 
+/** The device a set of designs was made for, read from their shapes: a Home
+ * Screen tile is an iPhone's alone, a corner a watch's alone. Undefined when
+ * the shapes are ones both draw, when they say both, or when there are none:
+ * then they could go to either. An orphan owner has no kind of its own (the
+ * entry that said is the one that went), so this is how Move tells a lost
+ * watch's designs from a lost phone's. */
+export function deviceKindOfShapes(families: Iterable<FamilyKind>): "watch" | "iphone" | undefined {
+  let phone = false;
+  let watch = false;
+  for (const family of families) {
+    if (isHomeFamily(family)) phone = true;
+    else if (family === "corner") watch = true;
+  }
+  if (phone === watch) return undefined;
+  return phone ? "iphone" : "watch";
+}
+
+/** Whether Move may offer `target` for records of a `source` kind: watch to
+ * watch, iPhone to iPhone. A kind unknown on either side (an orphan whose
+ * shapes say nothing, an integration from before `device_kind`) keeps the
+ * target offered, as Move always did. */
+export function moveKindMatches(
+  source: string | null | undefined,
+  target: string | null | undefined,
+): boolean {
+  if (!source || !target) return true;
+  return source === target;
+}
+
 /** The shapes a watch face and an iPhone Lock Screen both draw, which are the
  * ones drawn as two device outlines rather than one. */
 export const SHARED_FAMILIES: readonly FamilyKind[] = ["rectangular", "circular", "inline"];

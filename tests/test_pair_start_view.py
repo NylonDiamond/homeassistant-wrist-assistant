@@ -52,6 +52,9 @@ DOMAIN = "wrist_assistant"
 SECRET = base64.b64encode(b"p" * 32).decode()
 OLD_SECRET = base64.b64encode(b"o" * 32).decode()
 REMOTE = "192.0.2.10"
+# What the views' clock says; every reply's `server_time` is it, whole.
+SERVER_NOW = 1_790_000_000.75
+SERVER_TIME = 1_790_000_000
 
 
 class _HMACError(Exception):
@@ -145,6 +148,8 @@ def _view_classes(pair_mod, log_hmac_failure) -> dict[str, type]:
         "WAHMACError": _HMACError,
         "validate_wa_request": _refuse_signature,
         "log_hmac_failure": log_hmac_failure,
+        # A fixed clock, so the replies' `server_time` is known.
+        "time": types.SimpleNamespace(time=lambda: SERVER_NOW),
     }
     exec(code, namespace)  # noqa: S102
     return {name: namespace[name] for name in names}
@@ -209,8 +214,11 @@ def _assert_nothing_written(env) -> None:
 def test_a_start_returns_a_code_and_stores_only_the_request(env) -> None:
     reply = _start(env, _body())
     assert reply.status == 200, reply.body
-    assert set(reply.body) == {"ok", "code", "expires_in", "poll_after"}
+    assert set(reply.body) == {"ok", "code", "expires_in", "poll_after", "server_time"}
     assert reply.body["ok"] is True
+    # Whole Unix seconds, so a device can tell a skewed clock from a refusal.
+    assert reply.body["server_time"] == SERVER_TIME
+    assert type(reply.body["server_time"]) is int
     assert reply.body["expires_in"] == 600
     assert reply.body["poll_after"] == 3
     code = reply.body["code"]
@@ -295,7 +303,9 @@ def test_a_full_store_answers_429(env) -> None:
         assert reply.status == 200
     reply = _start(env, _body(watch_id="one-too-many"), remote="10.1.0.1")
     assert reply.status == 429
-    assert reply.body == {"ok": False, "error": "too_many_pending"}
+    assert reply.body == {
+        "ok": False, "error": "too_many_pending", "server_time": SERVER_TIME
+    }
     _assert_nothing_written(env)
 
 
@@ -304,7 +314,9 @@ def test_one_address_past_four_requests_answers_429(env) -> None:
         assert _start(env, _body(watch_id=f"watch-{index}")).status == 200
     reply = _start(env, _body(watch_id="fifth"))
     assert reply.status == 429
-    assert reply.body == {"ok": False, "error": "too_many_pending"}
+    assert reply.body == {
+        "ok": False, "error": "too_many_pending", "server_time": SERVER_TIME
+    }
     assert len(env.pair_store) == 4
 
     # The same watch asking again from that address still gets a code.
@@ -375,7 +387,7 @@ def test_a_sealed_start_stores_its_key_and_kind_and_no_secret(env, kind) -> None
     body = _sealed_body(kind=kind)
     reply = _start(env, body)
     assert reply.status == 200, reply.body
-    assert set(reply.body) == {"ok", "code", "expires_in", "poll_after"}
+    assert set(reply.body) == {"ok", "code", "expires_in", "poll_after", "server_time"}
     pending = env.pair_store.get(reply.body["code"])
     assert pending.kind == (kind or "watch")
     assert pending.public_key == base64.b64decode(body["public_key_b64"])
@@ -433,20 +445,23 @@ def _status(env, body: Any) -> _Response:
 
 
 def test_status_follows_a_sealed_pairing(env) -> None:
-    assert _status(env, {"watch_id": "watch-code-1"}).body == {"state": "expired"}
+    """Every state carries `server_time`, so a device whose clock is off can
+    say so rather than calling the pairing refused."""
+    now = {"server_time": SERVER_TIME}
+    assert _status(env, {"watch_id": "watch-code-1"}).body == {"state": "expired", **now}
     code = _start(env, _sealed_body()).body["code"]
     reply = _status(env, {"watch_id": "watch-code-1"})
-    assert (reply.status, reply.body) == (200, {"state": "pending"})
+    assert (reply.status, reply.body) == (200, {"state": "pending", **now})
 
     box = {"server_public_key_b64": "S", "nonce": "N", "box": "B"}
     env.pair_store.confirm_sealed(env.pair_store.get(code), box)
     reply = _status(env, {"watch_id": "watch-code-1"})
-    assert (reply.status, reply.body) == (200, {"state": "confirmed", **box})
+    assert (reply.status, reply.body) == (200, {"state": "confirmed", **box, **now})
     # Another id learns nothing about it.
-    assert _status(env, {"watch_id": "watch-other"}).body == {"state": "expired"}
+    assert _status(env, {"watch_id": "watch-other"}).body == {"state": "expired", **now}
 
     env.clock.now += 600
-    assert _status(env, {"watch_id": "watch-code-1"}).body == {"state": "expired"}
+    assert _status(env, {"watch_id": "watch-code-1"}).body == {"state": "expired", **now}
 
 
 @pytest.mark.parametrize(
