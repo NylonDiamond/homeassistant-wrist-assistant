@@ -773,7 +773,7 @@ function renderSettingsTab(host: HttpActionsViewHost, action: HttpAction): Templ
       ${switchRow("Accept a self-signed certificate", action.allowsUntrustedCertificate, (v) => host.edit((d) => setHttpActionUntrusted(d, id, v)))}
       <p class="ha-line">${HTTP_SELF_SIGNED_TEXT}</p>
     </div>
-    ${action.presentsClientCertificate ? html`<p class="ha-warn ha-cert">This action asks for a client certificate. ${HTTP_ACTIONS_CLIENT_CERT_TEXT}</p>` : nothing}`;
+    ${action.presentsClientCertificate ? html`<p class="ha-cert">This action asks for a client certificate. ${HTTP_ACTIONS_CLIENT_CERT_TEXT}</p>` : nothing}`;
 }
 
 function bodyIsSet(action: HttpAction): boolean {

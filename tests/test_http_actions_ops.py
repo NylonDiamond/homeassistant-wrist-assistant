@@ -34,7 +34,7 @@ import cryptography.hazmat.primitives.ciphers.aead  # noqa: F401
 import cryptography.hazmat.primitives.hashes  # noqa: F401
 import cryptography.hazmat.primitives.kdf.hkdf  # noqa: F401
 from test_http_actions import ID_A, ID_B, action, library, variable
-from test_http_actions_runner import FakeHass, FakeResponse, FakeSession
+from test_http_actions_runner import CERT_PASSWORD, FakeHass, FakeResponse, FakeSession, make_p12
 from test_http_actions_store import CONFLICT, loaded_package, new_store
 
 _PKG_DIR = Path(__file__).resolve().parents[1] / "custom_components" / "wrist_assistant"
@@ -162,6 +162,7 @@ def env():
         )
         sys.modules["voluptuous"] = types.SimpleNamespace(Required=_marker, Optional=_marker)
         ws = pkg.load("http_actions_ws")
+        certs = pkg.load("client_certificate_store")
         store = new_store(pkg.store_mod)
         session = FakeSession({})
         runner = runner_mod.HTTPActionRunner(FakeHass(), session_for=session.for_verify)
@@ -170,6 +171,7 @@ def env():
             ops=_ops(pkg.store_mod, runner_mod, sealed_mod),
             sealed=sealed_mod,
             ws=ws,
+            certs=certs,
             store=store,
             runner=runner,
             session=session,
@@ -517,7 +519,8 @@ def test_an_unreadable_library_is_a_signed_503(env) -> None:
 
 
 class _Connection:
-    def __init__(self) -> None:
+    def __init__(self, user_id: str = "admin") -> None:
+        self.user = types.SimpleNamespace(id=user_id)
         self.results: dict[int, Any] = {}
         self.errors: list[tuple[int, str, str]] = []
 
@@ -528,8 +531,8 @@ class _Connection:
         self.errors.append((msg_id, code, message))
 
 
-def ws_call(env, command, **msg) -> _Connection:
-    connection = _Connection()
+def ws_call(env, command, user_id: str = "admin", **msg) -> _Connection:
+    connection = _Connection(user_id)
     result = command(env.hass, connection, {"id": 1, **msg})
     if asyncio.iscoroutine(result):
         asyncio.run(result)
@@ -620,6 +623,59 @@ def test_ws_test_refuses_values_over_the_limits(env, values) -> None:
     assert env.session.calls == []
 
 
+# ── the client certificate ───────────────────────────────────────────────
+
+
+def _hold_certificate(env, user_id: str = "admin"):
+    """The real certificate store, attached to the runner, holding one for
+    ``user_id``."""
+    store = env.certs.ClientCertificateStore(FakeHass())
+    cert = env.certs.certificate_from_upload(base64.b64encode(make_p12()).decode(), CERT_PASSWORD)
+    asyncio.run(store.async_put_certificate(user_id, cert, source="panel"))
+    env.runner.attach_client_certificate_store(store)
+    return cert
+
+
+def test_run_presents_the_bound_users_certificate(env) -> None:
+    cert = _hold_certificate(env)
+    env.store.save(library(action(presentsClientCertificate=True)), base_revision=0)
+    env.session.script[URL_A] = FakeResponse(200, b"ok")
+    reply = op(env, "_op_http_action_run", {"id": ID_A})
+    assert reply.status == 200 and reply.body["status"] == 200
+    assert env.session.calls[-1]["certificate"].fingerprint == cert.fingerprint
+
+
+@pytest.mark.parametrize(("user_id", "words"), [(None, "not bound"), ("member", "holds none")])
+def test_run_refuses_a_certificate_action_with_none_in_words_the_watch_shows(env, user_id, words) -> None:
+    _hold_certificate(env)
+    env.store.save(library(action(presentsClientCertificate=True)), base_revision=0)
+    reply = op(env, "_op_http_action_run", {"id": ID_A}, user_id=user_id)
+    assert reply.status == 409
+    assert reply.body["ok"] is False and reply.body["error"] == "client_certificate_missing"
+    # The watch shows the message of a code it does not know.
+    assert words in reply.body["message"] and "client certificate" in reply.body["message"]
+    assert env.session.calls == []
+
+
+def test_ws_test_presents_the_signed_in_users_own_certificate(env) -> None:
+    cert = _hold_certificate(env, "member")
+    env.session.script[URL_A] = FakeResponse(200)
+    connection = ws_call(env, env.ws.ws_http_actions_test, user_id="member",
+                         action=action(presentsClientCertificate=True))
+    assert connection.results[1]["status"] == 200
+    assert env.session.calls[-1]["certificate"].fingerprint == cert.fingerprint
+
+
+def test_ws_test_refuses_for_a_user_with_no_certificate(env) -> None:
+    _hold_certificate(env, "member")
+    connection = ws_call(env, env.ws.ws_http_actions_test, user_id="admin",
+                         action=action(presentsClientCertificate=True))
+    [(_, code, message)] = connection.errors
+    assert code == "client_certificate_missing"
+    assert message.startswith("This action presents a client certificate")
+    assert env.session.calls == []
+
+
 # ── static ───────────────────────────────────────────────────────────────
 
 
@@ -653,5 +709,6 @@ def test_setup_builds_the_store_and_runner_and_wakes_the_polls() -> None:
         "http_actions_store=http_actions_store,",
         "http_action_runner=http_action_runner,",
         "await data.http_action_runner.async_shutdown()",
+        "http_action_runner.attach_client_certificate_store(client_certificate_store)",
     ):
         assert expected in init, expected

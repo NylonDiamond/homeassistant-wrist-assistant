@@ -15,7 +15,20 @@ The sending rules (contract rule 7):
 * A self-signed server is accepted only when the action says so, and only
   for the action's own origin (scheme, host and port): a redirect anywhere
   else is checked as usual.
-* No client certificate is sent. The flag stays in the document, unread.
+* An action with ``presentsClientCertificate`` presents the client
+  certificate Home Assistant keeps for the Home Assistant user behind the
+  run (``client_certificate_store.py``): the user a device is bound to, or
+  the signed-in user for the panel's Test. With no bound user, or no
+  certificate for that user, the run is refused
+  ``client_certificate_missing``; a stored ``.p12`` that does not load is
+  refused ``client_certificate_unreadable``. As on the watch, the
+  certificate is offered only to the action's own origin, never after a
+  redirect leaves it. The ``.p12`` is opened in the executor and its key and
+  chain go to Python's ``ssl`` through files in a private temporary folder
+  (the key encrypted with a one-time password), removed as soon as the
+  context has read them. One session per certificate fingerprint and
+  certificate check is kept, and a user's sessions are dropped when that
+  user's record changes.
 * Redirects are followed by hand, at most 5 hops: a GET follows any
   redirect; a verb with a body follows only 307 and 308, which keep the
   verb and the body, and any other redirect is the answer, as on the watch.
@@ -39,7 +52,9 @@ The sending rules (contract rule 7):
 * Nothing secret is logged: a run writes the action's name, the status and
   the time it took to the debug log.
 
-The network is behind ``session_for(verify_ssl)``, which tests replace.
+The network is behind ``session_for(verify_ssl, certificate)``, which tests
+replace. ``certificate`` is the ``ClientCertificate`` a hop presents, or
+None; a replaced network gets it as it is and no context is built.
 """
 
 from __future__ import annotations
@@ -47,7 +62,12 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import logging
+import os
+import secrets
+import shutil
+import ssl
 import sys
+import tempfile
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import contextmanager
@@ -83,6 +103,8 @@ from .http_actions import (
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
+    from .client_certificate_store import ClientCertificate, ClientCertificateStore
+
 _LOGGER = logging.getLogger(__name__)
 
 MAX_RUNS_PER_DEVICE = 4
@@ -115,7 +137,23 @@ BAD_CERTIFICATE = "The certificate for this server is invalid."
 TOO_MANY_REDIRECTS = "too many HTTP redirects"
 FAILED = "The request failed."
 
-SessionFor = Callable[[bool], Any]
+# Why an action that presents a client certificate was not sent. The watch
+# and the panel show the message of a code they do not know as it is.
+NO_BOUND_USER = (
+    "This action presents a client certificate, and this device is not bound "
+    "to a Home Assistant user. Pair it again to run this action."
+)
+NO_CLIENT_CERTIFICATE = (
+    "This action presents a client certificate, and Home Assistant holds none "
+    "for this user. Import one in the panel's Client certificate card."
+)
+UNREADABLE_CLIENT_CERTIFICATE = (
+    "This action presents a client certificate, and the one Home Assistant "
+    "holds for this user does not load. Import it again in the panel's Client "
+    "certificate card."
+)
+
+SessionFor = Callable[[bool, Any], Any]
 # ``asyncio.create_subprocess_exec``, which tests replace.
 Spawn = Callable[..., Awaitable[Any]]
 
@@ -123,11 +161,14 @@ Spawn = Callable[..., Awaitable[Any]]
 class HTTPActionRefusal(Exception):
     """A run that was not tried. ``code`` is what the op answers:
     ``not_found``, ``needs_setup``, ``missing_audio``, ``busy``,
-    ``invalid`` or ``unavailable``; ``status`` its HTTP status."""
+    ``invalid``, ``unavailable``, ``client_certificate_missing`` or
+    ``client_certificate_unreadable``; ``status`` its HTTP status."""
 
     _STATUS = {
         "not_found": 404,
         "needs_setup": 409,
+        "client_certificate_missing": 409,
+        "client_certificate_unreadable": 409,
         "missing_audio": 400,
         "invalid": 400,
         "busy": 429,
@@ -273,17 +314,119 @@ def _error_words(err: BaseException) -> str:
     return FAILED
 
 
+class ClientCertificateUnusable(Exception):
+    """A stored ``.p12`` that does not open, or holds no key or no
+    certificate."""
+
+
+def _open_pkcs12(pkcs12_bytes: bytes, passphrase: str) -> tuple[Any, Any, list[Any]]:
+    """The key, the certificate and the rest of the chain of a ``.p12``.
+    An empty password is tried as none and as the empty one, as
+    ``client_certificate_store.check_opens`` does."""
+    from cryptography.exceptions import UnsupportedAlgorithm
+    from cryptography.hazmat.primitives.serialization import pkcs12
+
+    passwords: tuple[bytes | None, ...] = (
+        (passphrase.encode("utf-8"),) if passphrase else (None, b"")
+    )
+    for password in passwords:
+        try:
+            key, cert, chain = pkcs12.load_key_and_certificates(pkcs12_bytes, password)
+        except (ValueError, TypeError, UnsupportedAlgorithm):
+            continue
+        if key is None or cert is None:
+            break
+        return key, cert, list(chain or [])
+    raise ClientCertificateUnusable("the .p12 does not open or holds no key")
+
+
+def _write_private(path: str, data: bytes) -> None:
+    # O_EXCL: the folder is new and ours, so a file already there is not.
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "wb") as file:
+        file.write(data)
+
+
+def _base_context(verify_ssl: bool) -> ssl.SSLContext:
+    """A fresh client context that checks the server the way Home
+    Assistant's own sessions do (certifi's roots), or not at all. Fresh,
+    never Home Assistant's shared one, since a certificate is loaded into
+    it."""
+    if not verify_ssl:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        return context
+    try:
+        import certifi
+
+        cafile: str | None = certifi.where()
+    except ImportError:
+        cafile = None
+    return ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=cafile)
+
+
+def client_ssl_context(certificate: ClientCertificate, verify_ssl: bool) -> ssl.SSLContext:
+    """A client context that presents the certificate, checking the server
+    or not as ``verify_ssl`` says. Blocking: run it in the executor.
+
+    ``load_cert_chain`` reads only files, so the chain and the key are
+    written to a folder of their own (0700, each file 0600) and the folder
+    is removed as soon as the context has read them; the context keeps
+    what it needs in memory. The key is written encrypted with a password
+    made for this one load, so it never sits on disk in the clear. Raises
+    :class:`ClientCertificateUnusable`, ``ssl.SSLError`` or ``OSError``."""
+    from cryptography.hazmat.primitives import serialization
+
+    key, cert, chain = _open_pkcs12(certificate.pkcs12, certificate.passphrase)
+    one_time = secrets.token_hex(32).encode("ascii")
+    key_pem = key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.BestAvailableEncryption(one_time),
+    )
+    chain_pem = b"".join(
+        item.public_bytes(serialization.Encoding.PEM) for item in (cert, *chain)
+    )
+    context = _base_context(verify_ssl)
+    folder = tempfile.mkdtemp(prefix="wa-client-cert-")
+    try:
+        os.chmod(folder, 0o700)
+        chain_path = os.path.join(folder, "chain.pem")
+        key_path = os.path.join(folder, "key.pem")
+        _write_private(chain_path, chain_pem)
+        _write_private(key_path, key_pem)
+        context.load_cert_chain(chain_path, key_path, password=one_time)
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+    return context
+
+
+class _CertificateSession:
+    """A session that presents one certificate: the users whose record it
+    was made for, how many runs hold it, and whether a change of one of
+    those records retired it (it is closed once no run holds it)."""
+
+    def __init__(self, session: Any, user_id: str) -> None:
+        self.session = session
+        self.users = {user_id}
+        self.holds = 0
+        self.retired = False
+
+
 async def async_send(
     built: BuiltRequest,
     *,
     allows_untrusted: bool,
     session_for: SessionFor,
+    certificate: ClientCertificate | None = None,
 ) -> Answer:
     """Send a built request under the rules in the module docstring. Never
-    raises for a network fault: the answer then carries the error."""
+    raises for a network fault: the answer then carries the error.
+    ``certificate`` is presented to the first origin only."""
     try:
         async with asyncio.timeout(clamp_timeout(built.timeout)):
-            return await _send_hops(built, allows_untrusted, session_for)
+            return await _send_hops(built, allows_untrusted, session_for, certificate)
     except (TimeoutError, asyncio.TimeoutError) as err:
         return Answer(error=_error_words(err))
     except aiohttp.ClientError as err:
@@ -300,7 +443,10 @@ def _origin(url: URL) -> tuple[str, str, int | None]:
 
 
 async def _send_hops(
-    built: BuiltRequest, allows_untrusted: bool, session_for: SessionFor
+    built: BuiltRequest,
+    allows_untrusted: bool,
+    session_for: SessionFor,
+    certificate: ClientCertificate | None,
 ) -> Answer:
     method = built.method
     url = URL(built.url, encoded=True)
@@ -310,8 +456,11 @@ async def _send_hops(
     left_first_origin = False
     hops = 0
     while True:
-        verify = not (allows_untrusted and _origin(url) == first_origin)
-        session = session_for(verify)
+        home = _origin(url) == first_origin
+        verify = not (allows_untrusted and home)
+        # The watch offered its certificate to the action's own host only;
+        # another origin a redirect leads to never sees it.
+        session = session_for(verify, certificate if home else None)
         async with session.request(
             method,
             url,
@@ -374,10 +523,101 @@ class HTTPActionRunner:
         self._spawn = spawn or asyncio.create_subprocess_exec
         self._sessions: dict[bool, Any] = {}
         self._running: dict[str, int] = {}
+        self._certificates: ClientCertificateStore | None = None
+        # Keyed on the .p12's fingerprint and the server check, not on the
+        # user: the same bytes open the same way for anyone, so a session
+        # is never wrong for a fingerprint, and dropping one on a change is
+        # only about letting go of a key no longer held.
+        self._certificate_sessions: dict[tuple[str, bool], _CertificateSession] = {}
+
+    def attach_client_certificate_store(
+        self, store: ClientCertificateStore
+    ) -> Callable[[], None]:
+        """Read client certificates from ``store`` and drop a user's sessions
+        when that user's record changes. Returns the unsubscribe."""
+        self._certificates = store
+        return store.async_add_listener(self.client_certificate_changed)
+
+    def client_certificate_changed(self, user_id: str) -> None:
+        """A user's record changed: the sessions made for it are let go.
+        A run still holding one finishes on it, and it closes after."""
+        for key, entry in list(self._certificate_sessions.items()):
+            if user_id in entry.users:
+                del self._certificate_sessions[key]
+                entry.retired = True
+                if entry.holds == 0 and not entry.session.closed:
+                    self._hass.async_create_task(entry.session.close())
+
+    def _certificate_for(self, action: Action, user_id: str | None) -> ClientCertificate | None:
+        """The certificate the action presents, or None when it presents
+        none. Refuses when it should and Home Assistant holds none."""
+        if not action.presents_client_certificate:
+            return None
+        if not user_id:
+            raise HTTPActionRefusal("client_certificate_missing", NO_BOUND_USER)
+        store = self._certificates
+        if store is None or not store.available:
+            raise HTTPActionRefusal(
+                "unavailable", "the stored client certificates could not be read"
+            )
+        record = store.get(user_id)
+        if record is None or record.certificate is None:
+            raise HTTPActionRefusal("client_certificate_missing", NO_CLIENT_CERTIFICATE)
+        return record.certificate
+
+    async def _async_hold_certificate_session(
+        self, certificate: ClientCertificate, user_id: str, verify_ssl: bool
+    ) -> _CertificateSession:
+        key = (certificate.fingerprint, verify_ssl)
+        entry = self._certificate_sessions.get(key)
+        if entry is None or entry.session.closed:
+            try:
+                context = await self._hass.async_add_executor_job(
+                    client_ssl_context, certificate, verify_ssl
+                )
+            except (ClientCertificateUnusable, OSError, ValueError, TypeError) as err:
+                # The kind of fault only: the message may quote the file.
+                _LOGGER.warning(
+                    "The client certificate of user %s does not load (%s)",
+                    user_id,
+                    type(err).__name__,
+                )
+                raise HTTPActionRefusal(
+                    "client_certificate_unreadable", UNREADABLE_CLIENT_CERTIFICATE
+                ) from err
+            # Another run may have made one while this context was built.
+            entry = self._certificate_sessions.get(key)
+            if entry is None or entry.session.closed:
+                entry = _CertificateSession(self._new_certificate_session(context), user_id)
+                self._certificate_sessions[key] = entry
+        entry.users.add(user_id)
+        entry.holds += 1
+        return entry
+
+    async def _async_release(self, entry: _CertificateSession) -> None:
+        entry.holds -= 1
+        if entry.retired and entry.holds == 0 and not entry.session.closed:
+            await entry.session.close()
+
+    def _new_certificate_session(self, context: ssl.SSLContext) -> Any:
+        """A session of its own with a connector that presents the
+        certificate. Not ``async_create_clientsession``: that one always
+        uses Home Assistant's shared connector, which presents nothing.
+        Same cookie rule, and Home Assistant's User-Agent when it has one,
+        so an action reads the same to its server either way."""
+        try:
+            from homeassistant.helpers import aiohttp_client
+
+            user_agent = getattr(aiohttp_client, "SERVER_SOFTWARE", None)
+        except ImportError:
+            user_agent = None
+        return aiohttp.ClientSession(
+            connector=aiohttp.TCPConnector(ssl=context),
+            cookie_jar=aiohttp.DummyCookieJar(),
+            headers={"User-Agent": user_agent} if isinstance(user_agent, str) else None,
+        )
 
     def _session(self, verify_ssl: bool) -> Any:
-        if self._session_for is not None:
-            return self._session_for(verify_ssl)
         session = self._sessions.get(verify_ssl)
         if session is None or session.closed:
             from homeassistant.helpers.aiohttp_client import async_create_clientsession
@@ -400,11 +640,18 @@ class HTTPActionRunner:
 
         ``detach`` is how a session from ``async_create_clientsession`` is
         given up: it shares Home Assistant's connector, which ``close``
-        would report as closing Home Assistant's own session."""
+        would report as closing Home Assistant's own session. A session that
+        presents a certificate has a connector of its own and is closed."""
         sessions, self._sessions = list(self._sessions.values()), {}
         for session in sessions:
             if not session.closed:
                 session.detach()
+        entries = list(self._certificate_sessions.values())
+        self._certificate_sessions = {}
+        for entry in entries:
+            entry.retired = True
+            if not entry.session.closed:
+                await entry.session.close()
 
     def running(self, device: str) -> int:
         return self._running.get(device, 0)
@@ -484,10 +731,28 @@ class HTTPActionRunner:
         globals_: list[tuple[str, str]],
         values: dict[str, str],
         audio: bytes | None,
+        certificate: ClientCertificate | None = None,
+        user_id: str | None = None,
     ) -> tuple[Answer, str | None, int]:
         started = time.monotonic()
         answer: Answer | None = None
         value: str | None = None
+        held: _CertificateSession | None = None
+        if certificate is not None and user_id and self._session_for is None:
+            # Outside the run's timeout: an executor job cannot be stopped,
+            # and a refusal here is a run not tried. A certificate goes to
+            # the first origin only, where the check is the action's own.
+            held = await self._async_hold_certificate_session(
+                certificate, user_id, not action.allows_untrusted
+            )
+
+        def session_for(verify_ssl: bool, presented: ClientCertificate | None) -> Any:
+            if self._session_for is not None:
+                return self._session_for(verify_ssl, presented)
+            if presented is not None and held is not None:
+                return held.session
+            return self._session(verify_ssl)
+
         try:
             # The send keeps its own timeout; this one also covers reading
             # the value, so the run's slot is always given back.
@@ -502,12 +767,16 @@ class HTTPActionRunner:
                     answer = await async_send(
                         built,
                         allows_untrusted=action.allows_untrusted,
-                        session_for=self._session,
+                        session_for=session_for,
+                        certificate=certificate,
                     )
                 value = await self._extract(action.raw.get("responseConfig"), answer)
         except TimeoutError:
             if answer is None:
                 answer = Answer(error=TIMED_OUT)
+        finally:
+            if held is not None:
+                await self._async_release(held)
         elapsed = int((time.monotonic() - started) * 1000)
         _LOGGER.debug(
             "HTTP action %s answered %s in %d ms",
@@ -518,11 +787,18 @@ class HTTPActionRunner:
         return answer, value, elapsed
 
     async def async_run(
-        self, document: Any, payload: dict[str, Any], *, device: str
+        self,
+        document: Any,
+        payload: dict[str, Any],
+        *,
+        device: str,
+        user_id: str | None = None,
     ) -> dict[str, Any]:
         """One run of a stored action for a device: the op's reply,
         ``{"ok": true, "status", "value", "snippet", "error"}``. Raises
-        :class:`HTTPActionRefusal` when the run is not tried."""
+        :class:`HTTPActionRefusal` when the run is not tried. ``user_id`` is
+        the Home Assistant user the device is bound to, whose client
+        certificate an action that presents one sends."""
         problem = run_input_problem(0, payload)
         if problem is not None:
             raise HTTPActionRefusal("invalid", problem)
@@ -540,9 +816,10 @@ class HTTPActionRunner:
             raise HTTPActionRefusal("invalid", f"the clip is over {MAX_AUDIO_BYTES} bytes")
         if action.needs_audio and not audio:
             raise HTTPActionRefusal("missing_audio", "this action sends a recording")
+        certificate = self._certificate_for(action, user_id)
         with self._slot(device):
             answer, value, _elapsed = await self._send(
-                action, library_globals(document), values, audio
+                action, library_globals(document), values, audio, certificate, user_id
             )
         return {
             "ok": True,
@@ -553,7 +830,12 @@ class HTTPActionRunner:
         }
 
     async def async_test(
-        self, action: Any, global_variables: Any, values: Any
+        self,
+        action: Any,
+        global_variables: Any,
+        values: Any,
+        *,
+        user_id: str | None = None,
     ) -> dict[str, Any]:
         """The panel's Test: a draft action, not saved, with the globals and
         values given. Answers ``{"status", "value", "snippet", "error",
@@ -561,7 +843,10 @@ class HTTPActionRunner:
         "body_binary", "body_cut", "leaves", "leaves_cut"}``; ``paths`` are the JSON leaves of the
         body for the reply picker, and ``body`` is the whole text that was
         read, for the panel to format (empty when it is not text). Refuses a malformed draft, or values
-        over a run's limits, ``invalid`` and a fifth run at once ``busy``."""
+        over a run's limits, ``invalid`` and a fifth run at once ``busy``.
+        A draft that presents a client certificate sends the signed-in
+        user's own (``user_id``), and is refused as a device's run is when
+        that user has none."""
         problem = values_problem(values)
         if problem is not None:
             raise HTTPActionRefusal("invalid", problem)
@@ -570,9 +855,11 @@ class HTTPActionRunner:
             validate_globals(global_variables if global_variables is not None else [])
         except HTTPActionsInvalid as err:
             raise HTTPActionRefusal("invalid", err.message) from err
+        draft = Action.read(action)
+        certificate = self._certificate_for(draft, user_id)
         with self._slot(PANEL_DEVICE):
             answer, value, elapsed = await self._send(
-                Action.read(action), global_pairs(global_variables), _values(values), None
+                draft, global_pairs(global_variables), _values(values), None, certificate, user_id
             )
         return {
             "status": answer.status,

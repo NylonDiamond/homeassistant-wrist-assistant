@@ -4190,7 +4190,11 @@ async def _op_http_action_run(ctx: _OpContext) -> Response:
              key over 64 or a value over 4096 characters, audio that is
              not base64 or over 512 KiB),
              ``busy`` 429 (four runs of this device still going),
-             ``unavailable`` 503.
+             ``client_certificate_missing`` 409 (the action presents a
+             client certificate and the device has no bound user, or
+             that user has none), ``client_certificate_unreadable`` 409
+             (the stored one does not load), ``unavailable`` 503. The
+             watch shows the message of a code it does not know.
 
     Always 200 once the action was tried, whatever came back: ``status`` is
     null when no answer came and ``error`` then says why in the words the
@@ -4209,7 +4213,9 @@ async def _op_http_action_run(ctx: _OpContext) -> Response:
     except HTTPActionsStoreError as err:
         return _http_actions_store_refusal(ctx, err)
     try:
-        reply = await runner.async_run(document, ctx.payload, device=ctx.watch_id)
+        reply = await runner.async_run(
+            document, ctx.payload, device=ctx.watch_id, user_id=ctx.user_id
+        )
     except HTTPActionRefusal as err:
         return _http_actions_refusal(ctx, err.code, err.message, err.status)
     return ctx.signed_json(reply)

@@ -994,7 +994,8 @@ export const HTTP_ACTIONS_PHONE_TEXT =
 
 export const HTTP_ACTIONS_UPDATE_TEXT = "Update the integration to edit HTTP actions here.";
 
-export const HTTP_ACTIONS_CLIENT_CERT_TEXT = "Home Assistant does not send a client certificate.";
+export const HTTP_ACTIONS_CLIENT_CERT_TEXT =
+  "Home Assistant sends the client certificate of the user whose device runs it, from the Client certificate card. A user with none cannot run it.";
 
 export const HTTP_TOKEN_HELP =
   "Type {{key}} in the URL, a header or the body. A key that names a global is filled in from Globals. Any other key is asked for on the watch when the action runs. Keys are letters, digits and underscores.";

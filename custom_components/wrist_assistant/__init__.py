@@ -845,6 +845,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     entry.async_on_unload(
         client_certificate_store.async_add_listener(coordinator.client_certificate_changed)
     )
+    # An HTTP action that presents a client certificate sends its user's
+    # from here, and a change of that user's record drops the runner's
+    # session for the old one.
+    entry.async_on_unload(
+        http_action_runner.attach_client_certificate_store(client_certificate_store)
+    )
     # Each device's latest log upload, for its diagnostics download. The start
     # of day drops index entries whose file is gone and stray files.
     # Housekeeping only: a failure must not fail setup.
