@@ -991,16 +991,79 @@ class _LiveConnection(_Connection):
         self.events.append(message)
 
 
-def _owner_subscribe(env, owner: str) -> _LiveConnection:
+def _signed_in(user_id: str, *, is_admin: bool = False) -> Any:
+    """The Home Assistant user on a WebSocket connection."""
+    return types.SimpleNamespace(id=user_id, is_admin=is_admin)
+
+
+ALICE = _signed_in("alice")
+BOB = _signed_in("bob")
+ROOT = _signed_in("root", is_admin=True)
+
+
+def _try_owner_subscribe(env, owner: str, user: Any) -> _LiveConnection:
     connection = _LiveConnection()
+    connection.user = user
     env.ws.ws_owner_subscribe(env.hass, connection, {"id": 7, "owner_id": owner})
+    return connection
+
+
+def _owner_subscribe(env, owner: str, user: Any = ALICE) -> _LiveConnection:
+    connection = _try_owner_subscribe(env, owner, user)
     assert connection.errors == [], connection.errors
     return connection
 
 
+def _refused(connection: _LiveConnection) -> bool:
+    return (
+        connection.results == {}
+        and connection.subscriptions == {}
+        and [code for _id, code, _message in connection.errors] == ["unauthorized"]
+    )
+
+
+def test_owner_subscribe_refuses_another_user_s_device(env) -> None:
+    """A signed-in non-admin cannot follow someone else's watch or phone."""
+    env.add_phone("phone-1", user_id="alice")
+    env.add_watch("watch-A", user_id="alice")
+    assert _refused(_try_owner_subscribe(env, "phone-1", BOB))
+    connection = _try_owner_subscribe(env, "watch-A", BOB)
+    assert _refused(connection)
+    env.save_document("watch-A")
+    assert connection.events == []
+
+
+def test_owner_subscribe_refuses_an_unbound_or_unknown_owner_to_a_non_admin(env) -> None:
+    env.add_watch("watch-legacy")
+    assert _refused(_try_owner_subscribe(env, "watch-legacy", ALICE))
+    assert _refused(_try_owner_subscribe(env, "no-such-device", ALICE))
+    assert _refused(_try_owner_subscribe(env, LIBRARY, ALICE))
+
+
+def test_owner_subscribe_refuses_a_connection_with_no_user(env) -> None:
+    env.add_phone("phone-1", user_id="alice")
+    assert _refused(_try_owner_subscribe(env, "phone-1", None))
+
+
+def test_owner_subscribe_lets_a_user_follow_their_own_watch(env) -> None:
+    env.add_watch("watch-A", user_id="alice")
+    connection = _owner_subscribe(env, "watch-A", ALICE)
+    env.save_document("watch-A")
+    assert connection.events == [
+        {"id": 7, "event": {"token": env.store.owner_token("watch-A")}}
+    ]
+
+
+def test_owner_subscribe_lets_an_admin_follow_any_owner(env) -> None:
+    env.add_phone("phone-1", user_id="alice")
+    env.add_watch("watch-legacy")
+    _owner_subscribe(env, "phone-1", ROOT)
+    _owner_subscribe(env, "watch-legacy", ROOT)
+
+
 def test_owner_subscribe_replies_with_the_owner_token(env) -> None:
     """A commit made while the phone's socket was down is caught right here."""
-    env.add_phone("phone-1")
+    env.add_phone("phone-1", user_id="alice")
     env.save_document("phone-1")
     connection = _owner_subscribe(env, "phone-1")
     assert connection.results[7] == {"token": env.store.owner_token("phone-1")}
@@ -1008,7 +1071,7 @@ def test_owner_subscribe_replies_with_the_owner_token(env) -> None:
 
 def test_owner_subscribe_sends_only_a_token_for_its_own_commits(env) -> None:
     """No record, no other owner, no ack: a number and nothing else."""
-    env.add_phone("phone-1")
+    env.add_phone("phone-1", user_id="alice")
     env.add_watch("watch-A")
     connection = _owner_subscribe(env, "phone-1")
 
@@ -1026,7 +1089,7 @@ def test_owner_subscribe_sends_only_a_token_for_its_own_commits(env) -> None:
 
 def test_owner_subscribe_sends_token_zero_on_forget(env) -> None:
     """A phone forgotten while open pulls at once and blanks its widgets."""
-    env.add_phone("phone-1")
+    env.add_phone("phone-1", user_id="alice")
     env.save_document("phone-1")
     connection = _owner_subscribe(env, "phone-1")
     env.store.forget_owner("phone-1")
@@ -1034,7 +1097,7 @@ def test_owner_subscribe_sends_token_zero_on_forget(env) -> None:
 
 
 def test_owner_subscribe_stops_when_the_socket_unsubscribes(env) -> None:
-    env.add_phone("phone-1")
+    env.add_phone("phone-1", user_id="alice")
     connection = _owner_subscribe(env, "phone-1")
     connection.subscriptions.pop(7)()
     env.save_document("phone-1")

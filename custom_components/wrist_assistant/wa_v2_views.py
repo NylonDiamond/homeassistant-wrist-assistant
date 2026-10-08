@@ -1493,18 +1493,19 @@ def _resolve_companion_target(
     HA instance (multi-user, or a household with several paired watches) could
     name *another* user's watch and read or mutate its entry.
 
-    Ownership is checked two ways, and both must pass:
+    A caller may act on another entry only when both are bound to the same
+    Home Assistant user. That binding is what the server itself knows; the
+    phone and the watch are separate devices with no link between them, so
+    sharing a user is the only thing that makes a watch the caller's.
 
-    * the watch entry's recorded ``owner_iphone_id`` (set at pairing via
-      register_secret / update_metadata) must equal the caller;
-    * the watch entry's bound Home Assistant user must equal the caller's.
-      ``owner_iphone_id`` is a value the registering client asserts about
-      itself, so on its own it protects nothing against a client that
-      registers a matching id; the user binding is what the server knows.
-
-    Entries with no recorded owner or user — paired before either was
-    tracked — are allowed through for backward compatibility; a properly
-    paired watch is always protected.
+    * An unbound caller (a legacy entry) may only target itself. It has no
+      user to compare, and a code-paired watch records no owning phone, so
+      letting it through would hand it any user's watch.
+    * An unbound or unknown companion is refused for the same reason.
+    * When the watch also records an ``owner_iphone_id`` (an older pairing),
+      that must name the caller too. It is a value the registering client
+      asserts about itself, so it only narrows the user check, never
+      replaces it.
 
     Returns ``(target_watch_id, None)`` on success, or ``(None, response)`` with
     a 403 when the caller names a companion it does not own.
@@ -1518,11 +1519,12 @@ def _resolve_companion_target(
     entry = store.get(companion) if store is not None else None
     owner = entry.owner_iphone_id if entry is not None else None
     bound_user = entry.user_id if entry is not None else None
-    if (owner is not None and owner != ctx.watch_id) or (
-        bound_user is not None
-        and ctx.user_id is not None
-        and bound_user != ctx.user_id
-    ):
+    same_user = (
+        ctx.user_id is not None
+        and bound_user is not None
+        and bound_user == ctx.user_id
+    )
+    if not same_user or (owner is not None and owner != ctx.watch_id):
         _LOGGER.warning(
             "Rejected cross-watch op=%s: caller %s is not owner of companion %s",
             ctx.op,
@@ -2354,13 +2356,25 @@ async def _op_update_metadata(ctx: _OpContext) -> Response:
                 return stripped
         return None
 
-    device_name = _clean("device_name")
+    fields = {
+        key: _clean(key)
+        for key in ("app_version", "app_build", "device_name", "screen_size")
+    }
+    # The same cap, and the same refusal, as a pairing's fields get in
+    # `validate_pair_fields`. These land in the secret store file, which is
+    # rewritten on every save, and the name in the device registry, so a
+    # signed refresh must not be a way around the limit pairing enforces.
+    for key, value in fields.items():
+        if value is not None and len(value) > REGISTER_TEXT_MAX_LEN:
+            return Response(status=400, text=f"{key} too long")
+
+    device_name = fields["device_name"]
     ok = ctx.domain_data.widget_secret_store.update_metadata(
         ctx.watch_id,
-        app_version=_clean("app_version"),
-        app_build=_clean("app_build"),
+        app_version=fields["app_version"],
+        app_build=fields["app_build"],
         device_name=device_name,
-        screen_size=_clean("screen_size"),
+        screen_size=fields["screen_size"],
     )
     if not ok:
         # Entry vanished between HMAC validation and dispatch (concurrent

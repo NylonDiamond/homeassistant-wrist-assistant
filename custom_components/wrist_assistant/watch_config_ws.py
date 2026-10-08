@@ -14,6 +14,9 @@ WebSocket so that a panel save reaches it while it is open rather than on its
 next foreground. The phone's user need not be an administrator, and all it is
 ever told is revision numbers, the same way ``complications/owner_subscribe``
 tells it only tokens. The documents still travel only over the signed get.
+A non-administrator may name only a watch paired to them, one whose
+secret-store entry is bound to their user; anything else is refused
+``unauthorized``.
 
 Commands:
 
@@ -33,7 +36,8 @@ Commands:
 voice picker. It is not a watch config record and has no revision.
 
 Every refusal is a WebSocket error with the store's code: ``invalid``,
-``unavailable``, ``no_record``, ``conflict`` or ``not_found``. A conflict's
+``unavailable``, ``no_record``, ``conflict`` or ``not_found``, plus
+``unauthorized`` from ``subscribe`` (not the store's). A conflict's
 message always begins ``stored revision is <N>``, which is how the panel
 learns the revision to reload at; an error carries no data besides its code
 and message.
@@ -98,6 +102,34 @@ def _store(hass: HomeAssistant) -> WatchConfigStore | None:
     if domain_data is None:
         return None
     return getattr(domain_data, "watch_config_store", None)
+
+
+def _may_follow_owner(
+    hass: HomeAssistant, connection: ActiveConnection, owner: str
+) -> bool:
+    """Whether the signed-in user may hear about `owner`'s saves.
+
+    The same rule as ``may_follow_owner`` in ``complication_ws.py``, kept
+    here so this module needs nothing from that one. An administrator may
+    follow any watch. Anyone else may follow only a device whose
+    secret-store entry is bound to their user; a device bound to no user or
+    to someone else, and an id with no entry, are refused.
+    """
+    user = getattr(connection, "user", None)
+    if user is None:
+        return False
+    if getattr(user, "is_admin", False):
+        return True
+    user_id = getattr(user, "id", None)
+    domain_data = hass.data.get(DOMAIN)
+    secrets = getattr(domain_data, "widget_secret_store", None)
+    entry = secrets.get(owner) if secrets is not None else None
+    return (
+        user_id is not None
+        and entry is not None
+        and entry.user_id is not None
+        and entry.user_id == user_id
+    )
 
 
 def _voices_store(hass: HomeAssistant) -> WatchVoicesStore | None:
@@ -464,6 +496,11 @@ def ws_watch_config_subscribe(
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
     owner = msg["owner_watch_id"]
+    if not _may_follow_owner(hass, connection, owner):
+        connection.send_error(
+            msg["id"], "unauthorized", "not a device paired to this user"
+        )
+        return
     try:
         revisions = store.revisions(owner)
     except WatchConfigStoreError as err:

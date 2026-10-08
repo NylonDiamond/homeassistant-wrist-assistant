@@ -2,12 +2,12 @@
 
 A v2 op that accepts ``companion_watch_id`` (notifications_status,
 webhook_provision, notifications_register, send_test_notification) must only
-act on a companion watch the *authenticated
-caller owns* — i.e. the watch entry's recorded ``owner_iphone_id`` equals the
-caller. Otherwise any device authenticated to a shared HA instance (multi-user,
-or a household with several paired watches — the family-plan case) could name
-another user's watch and read or mutate its entry. Previously the companion was
-trusted straight from the request body with no ownership check.
+act on a companion watch bound to the same Home Assistant user as the
+authenticated caller, and, when the watch records an ``owner_iphone_id``, one
+that names the caller. Otherwise any device authenticated to a shared HA
+instance (multi-user, or a household with several paired watches) could name
+another user's watch and read or mutate its entry. An unbound caller may only
+name itself; the in-process cases for that are in ``test_push_ops_inprocess.py``.
 
 This exercises the read-only ``notifications_status`` op (no side effects on
 the live HA) as the representative case; all four ops route through the shared
@@ -131,7 +131,10 @@ def test_non_owner_is_rejected(
 def test_ownerless_watch_allowed_for_backcompat(
     base_url: str, register_secret: Callable[..., bytes]
 ) -> None:
-    """A watch with no recorded owner stays queryable (pre-owner-tracking compat)."""
+    """A watch with no recorded owner stays queryable by its own user.
+
+    Both entries are registered with the same bearer, so both are bound to
+    the same user, which is what lets the call through."""
     suffix = secrets.token_hex(8)
     watch_id = f"watch-noowner-{suffix}"
     caller_id = f"iphone:caller-{suffix}"
