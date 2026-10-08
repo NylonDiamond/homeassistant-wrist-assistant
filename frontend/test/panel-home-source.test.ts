@@ -98,7 +98,8 @@ describe("Home's status row", () => {
     expect(status).toContain("const last = lastSeenDevice(devices, (id) => this.ownerOf(id), elapsed);");
   });
 
-  it("lists every waiting device under Needs attention, lit amber, each opening its sheet", () => {
+  it("lists every waiting device under Waiting to sync, lit amber, each opening its sheet", () => {
+    expect(status).toContain(`<h2 class="home-title">Waiting to sync</h2>`);
     expect(status).toContain(`const waiting = devices.filter((d) => d.sync === "waiting");`);
     expect(status).toContain(`<section class="home-attn \${waiting.length > 0 ? "on" : ""}">`);
     expect(status).toContain("@click=${() => this.openDeviceSheet(d.id)}>Open</button>");

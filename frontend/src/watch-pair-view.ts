@@ -19,6 +19,7 @@
 
 import { css, html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
+import { ref } from "lit/directives/ref.js";
 import {
   type HassLike,
   type PairLookupFound,
@@ -60,6 +61,7 @@ import {
   pairDeviceKind,
   pairDeviceTitle,
   pairErrorText,
+  pairOnIPhone,
   pairExpectLabel,
   pairLookupLine,
   pairLookupWarnings,
@@ -132,7 +134,7 @@ export interface OfferState {
  * a later visit alone. */
 export type OnPaired = (deviceId: string | undefined, stale: () => boolean, kind: PairDeviceKind) => void | Promise<void>;
 
-/** Only a link into the app goes on the Open in Wrist Assistant link. */
+/** Only a link into the app goes on the Pair this iPhone instead link. */
 function appLink(url: string): string | undefined {
   return url.startsWith("wristassistant://") ? url : undefined;
 }
@@ -161,6 +163,9 @@ export class PairWatchCard {
    * code without waiting for Show QR code, and starts on the administrator
    * at the card rather than on nobody. */
   private autoQr = false;
+  /** The code box takes the cursor on its next drawing: the mode was just
+   * switched to Type a code. */
+  private focusCode = false;
 
   /** `update` asks the place to draw again. */
   constructor(
@@ -219,6 +224,7 @@ export class PairWatchCard {
     this.withdrawOffer();
     this.offer = { usersRead: this.offer.usersRead, users: this.offer.users, replace: false, userId: this.startUser(this.offer.users) };
     if (mode === "qr" && !this.offer.usersRead) void this.readOfferUsers();
+    this.focusCode = mode === "code";
     this.update();
     if (mode === "qr" && this.offer.usersRead && this.autoQr) void this.showOffer();
   }
@@ -517,6 +523,12 @@ export class PairWatchCard {
       <div class="ws-pair-entry">
         <div class="ws-pair-row">
           <input type="text" class="mono ws-pair-code" aria-label="Pairing code" maxlength=${PAIR_CODE_LENGTH}
+            ${ref((el) => {
+              if (el === undefined || !this.focusCode) return;
+              this.focusCode = false;
+              // The box is drawn before it is on the page: focus it after.
+              setTimeout(() => (el as HTMLInputElement).focus(), 0);
+            })}
             autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false"
             .value=${p.code}
             @input=${(e: Event) => {
@@ -614,7 +626,7 @@ export class PairWatchCard {
           <label class="field check ws-qr-replace"><span>${PAIR_QR_REPLACE_LABEL}</span>
             <input type="checkbox" .checked=${live(o.replace)} ?disabled=${!o.usersRead}
               @change=${(e: Event) => this.setOfferReplace((e.target as HTMLInputElement).checked)} /></label>
-          ${open === undefined ? nothing
+          ${open === undefined || !pairOnIPhone(globalThis.navigator?.userAgent) ? nothing
             : html`<a class="ws-qr-open" href=${open.url} title="For this page open on the iPhone itself">${PAIR_OPEN_APP_TEXT}${uiIcon("right")}</a>`}
         </div>
       </div>

@@ -1045,8 +1045,16 @@ export const PAIR_OFFER_POLL_MS = 2000;
 export const PAIR_SHOW_QR_TEXT = "Show QR code";
 export const PAIR_QR_REPLACE_LABEL = "Replace an iPhone paired for someone else";
 
-/** The link beside the QR code, for the panel open on the iPhone itself. */
-export const PAIR_OPEN_APP_TEXT = "Open in Wrist Assistant";
+/** The link beside the QR code, for the panel open on the iPhone itself,
+ * which cannot scan its own screen. Shown only there (`pairOnIPhone`). */
+export const PAIR_OPEN_APP_TEXT = "Pair this iPhone instead";
+
+/** The panel is open on an iPhone, in Safari or the Home Assistant app:
+ * the one place the QR code cannot be scanned, so the card offers the link
+ * that opens Wrist Assistant on it. */
+export function pairOnIPhone(userAgent: string | undefined): boolean {
+  return userAgent !== undefined && /\biPhone\b/.test(userAgent);
+}
 
 /** What the card says once an open QR code has run out. */
 export const PAIR_QR_EXPIRED_TEXT = "This code ran out. Show a new one.";

@@ -18785,7 +18785,7 @@ export class WristAssistantPanel extends LitElement {
    * and is each one up to date".
    *
    * At the top, the totals (devices, Synced, Waiting, the device heard from
-   * last) beside Needs attention, a line per waiting device with what it
+   * last) beside Waiting to sync, a line per waiting device with what it
    * waits for and a door to its sheet (`renderHomeStatus`). An administrator
    * has New complication and Pair a device in the head.
    *
@@ -18848,7 +18848,7 @@ export class WristAssistantPanel extends LitElement {
   }
 
   /** Home's status row: the totals, with every device as a share of one bar,
-   * and Needs attention, a line per waiting device in its person's color,
+   * and Waiting to sync, a line per waiting device in its person's color,
    * saying what it waits for, with a door to its sheet. */
   private renderHomeStatus(devices: readonly HomeDeviceRow[], groups: readonly { index: number; rows: HomeDeviceRow[] }[], elapsed: number) {
     const totals = homeTotals(devices);
@@ -18872,7 +18872,7 @@ export class WristAssistantPanel extends LitElement {
       <section class="home-attn ${waiting.length > 0 ? "on" : ""}">
         <div class="home-attn-head">
           <span class="home-chip" aria-hidden="true">${uiIcon(waiting.length > 0 ? "clock" : "check")}</span>
-          <h2 class="home-title">Needs attention</h2>
+          <h2 class="home-title">Waiting to sync</h2>
           <span class="home-attn-n">${waiting.length}</span>
         </div>
         ${waiting.length === 0

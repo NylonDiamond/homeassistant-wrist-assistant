@@ -483,8 +483,15 @@ describe("Watch settings as a page under the Watch app row", () => {
       const shown = text();
       expect(shown).toContain(`aria-label="QR code for pairing an iPhone"`);
       expect(shown).toMatch(/<path d=M4 4h7v1h-7z/);
-      expect(shown).toContain(`href=wristassistant://pair#v=1&i=abc&t=TOKEN`);
-      expect(shown).toContain("Open in Wrist Assistant");
+      // The link into the app is only for the panel open on an iPhone.
+      expect(shown).not.toContain("Pair this iPhone instead");
+      vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X)" });
+      try {
+        expect(text()).toContain(`href=wristassistant://pair#v=1&i=abc&t=TOKEN`);
+        expect(text()).toContain("Pair this iPhone instead");
+      } finally {
+        vi.unstubAllGlobals();
+      }
       expect(shown).toContain("Runs out in 5:00");
       // While it is open, the person and the box stay as they were.
       expect(shown).not.toContain("ws-qr-show");
@@ -643,6 +650,17 @@ describe("Home's Pair a device dialog card", () => {
     await vi.waitFor(() => expect(offers(ha.sent)).toHaveLength(2));
     expect(offers(ha.sent)[1]!.user_id).toBe("chen");
     expect(cancels(ha.sent)).toEqual([{ type: "wrist_assistant/pair/offer_cancel", offer_id: "off1" }]);
+    card.close();
+  });
+
+  it("puts the cursor in the code box when Type a code is picked", async () => {
+    const ha = fakeHass("w9");
+    const card = new PairWatchCard(() => undefined) as unknown as Card & { focusCode: boolean };
+    card.open(ha.hass, { mode: "qr", showQr: true });
+    await vi.waitFor(() => expect(card.offer.open).toBeDefined());
+    expect(card.focusCode).toBe(false);
+    card.setMode("code");
+    expect(card.focusCode).toBe(true);
     card.close();
   });
 

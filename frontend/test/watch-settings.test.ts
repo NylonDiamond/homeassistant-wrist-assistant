@@ -63,6 +63,7 @@ import {
   PAIR_CARD_TITLE,
   PAIR_CODE_HINT,
   PAIR_MODES,
+  pairOnIPhone,
   PAIR_OPEN_APP_TEXT,
   PAIR_QR_EXPIRED_TEXT,
   PAIR_QR_HINT,
@@ -690,11 +691,18 @@ describe("pairing a watch by its code", () => {
     expect(pairRemoteWarning("203.0.113.7", "iphone")).toBe("The request came from outside your network. Only pair an iPhone you expect.");
   });
 
+  it("offers the link into the app only on an iPhone, which cannot scan its own screen", () => {
+    expect(pairOnIPhone("Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) Home Assistant/2026.9")).toBe(true);
+    expect(pairOnIPhone("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/140.0")).toBe(false);
+    expect(pairOnIPhone("Mozilla/5.0 (iPad; CPU OS 26_0 like Mac OS X)")).toBe(false);
+    expect(pairOnIPhone(undefined)).toBe(false);
+  });
+
   it("names the card and its two modes in plain words", () => {
     expect(PAIR_CARD_TITLE).toBe("Pair a device");
     expect(PAIR_MODES).toEqual([["qr", "Show a QR code"], ["code", "Type a code"]]);
     expect(PAIR_SHOW_QR_TEXT).toBe("Show QR code");
-    expect(PAIR_OPEN_APP_TEXT).toBe("Open in Wrist Assistant");
+    expect(PAIR_OPEN_APP_TEXT).toBe("Pair this iPhone instead");
     expect(PAIR_QR_EXPIRED_TEXT).toBe("This code ran out. Show a new one.");
     const words = [PAIR_CARD_TITLE, PAIR_CODE_HINT, PAIR_QR_HINT, PAIR_QR_REPLACE_LABEL, PAIR_REPLACE_LABEL, PAIR_SHOW_QR_TEXT,
       PAIR_OPEN_APP_TEXT, PAIR_QR_EXPIRED_TEXT, PAIR_USER_PLACEHOLDER, pairUserHint("watch"), pairUserHint("iphone"),

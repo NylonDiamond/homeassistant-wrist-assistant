@@ -308,7 +308,7 @@ export const homeStyles = css`
   .home-bar i { height: 3px; border-radius: 2px; background: var(--wa-line-strong); }
   .home-bar i.synced { background: var(--wa-green); }
   .home-bar i.waiting { background: var(--wa-amber); }
-  /* Needs attention: the waiting devices, one line each. Lit amber while any
+  /* Waiting to sync: the waiting devices, one line each. Lit amber while any
      waits; a quiet card with a green check when none does. */
   .home-attn {
     --c: var(--wa-green);
