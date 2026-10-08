@@ -225,6 +225,21 @@ describe("Home's Pair a device dialog", () => {
     const at = SOURCE.indexOf("private homePair = new PairWatchCard(");
     const made = SOURCE.slice(at, SOURCE.indexOf("});", at));
     expect(made).toContain("await this.loadOwners();");
-    expect(made).toContain(`if (watchId !== undefined && kind === "watch") this.pickWatch(watchId);`);
+    expect(made).toContain(`if (kind === "watch") this.pickWatch(watchId);`);
+  });
+
+  it("swaps the dialog for the new device's sheet, saying Paired in green", () => {
+    const at = SOURCE.indexOf("private homePair = new PairWatchCard(");
+    const made = SOURCE.slice(at, SOURCE.indexOf("});", at));
+    expect(made).toContain("if (stale() || !this.pairOpen || this.ownerOf(watchId) === undefined) return;");
+    const order = ["this.closePairDialog();", "this.openDeviceSheet(watchId);", "this.devicePaired = watchId;"]
+      .map((line) => made.indexOf(line));
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    // Any other opening, and every closing, drops the line.
+    expect(method("  private openDeviceSheet(ownerId: string, forget = false) {")).toContain("this.devicePaired = undefined;");
+    expect(method("  private closeDeviceSheet() {")).toContain("this.devicePaired = undefined;");
+    expect(method("  private renderDeviceSheet(ownerId: string, devices: readonly HomeDeviceRow[], admin: boolean) {"))
+      .toContain(`\${this.devicePaired === ownerId ? html\`<div class="dev-paired" role="status">`);
   });
 });

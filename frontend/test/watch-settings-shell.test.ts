@@ -503,7 +503,7 @@ describe("Watch settings as a page under the Watch app row", () => {
       const hass = ha.hass as unknown as { connection: { sendMessagePromise(msg: Record<string, unknown>): Promise<unknown> } };
       const real = hass.connection.sendMessagePromise.bind(hass.connection);
       hass.connection.sendMessagePromise = async (msg) => String(msg.type).endsWith("/offer_status")
-        ? (ha.sent.push(msg), { state: "redeemed", device_name: "Chen's iPhone", user_id: "chen" })
+        ? (ha.sent.push(msg), { state: "redeemed", device_name: "Chen's iPhone", user_id: "chen", device_id: "p1" })
         : real(msg);
       vi.advanceTimersByTime(2000);
       await vi.waitFor(() => expect(inside.pairCard.offer.done).toBe("Paired Chen's iPhone for Chen."));

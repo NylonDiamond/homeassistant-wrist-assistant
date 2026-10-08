@@ -1449,13 +1449,23 @@ export class WristAssistantPanel extends LitElement {
   /** The card in that dialog, the same card the Settings page draws. A
    * device paired on it joins the device list, and a watch becomes the
    * shared watch. */
-  private homePair = new PairWatchCard(() => this.requestUpdate(), async (watchId, _stale, kind) => {
+  private homePair = new PairWatchCard(() => this.requestUpdate(), async (watchId, stale, kind) => {
     await this.loadOwners();
-    if (watchId !== undefined && kind === "watch") this.pickWatch(watchId);
+    if (watchId === undefined) return;
+    if (kind === "watch") this.pickWatch(watchId);
+    // The new device's own sheet takes the dialog's place, with a green
+    // "Paired" line, so it is plain the pairing worked and where it went.
+    if (stale() || !this.pairOpen || this.ownerOf(watchId) === undefined) return;
+    this.closePairDialog();
+    this.openDeviceSheet(watchId);
+    this.devicePaired = watchId;
   });
 
   /** The device Home's sheet is open on, by owner id. */
   @state() private deviceSheet?: string;
+  /** The sheet was opened by a pairing just done, on this owner: it shows
+   * "Paired" in green until it closes. */
+  @state() private devicePaired?: string;
   /** The sheet is asking whether to forget its device. */
   @state() private deviceForgetAsk = false;
   /** Forget is on its way to the server. */
@@ -18867,6 +18877,7 @@ export class WristAssistantPanel extends LitElement {
   /** Open Home's sheet on one device, starting on its overview, or on its
    * Forget step for a row's Remove. */
   private openDeviceSheet(ownerId: string, forget = false) {
+    this.devicePaired = undefined;
     this.deviceForgetAsk = forget;
     this.deviceForgetError = undefined;
     this.deviceRename = undefined;
@@ -18899,6 +18910,7 @@ export class WristAssistantPanel extends LitElement {
   private closeDeviceSheet() {
     if (this.deviceForgetBusy || this.deviceRenameBusy) return;
     this.deviceSheet = undefined;
+    this.devicePaired = undefined;
     this.deviceRename = undefined;
     this.deviceRenameError = undefined;
     this.deviceForgetAsk = false;
@@ -18982,6 +18994,7 @@ export class WristAssistantPanel extends LitElement {
       <p class="dev-small">Leave it empty to use the name the device reports.</p>
       ${this.deviceRenameError ? html`<p class="dev-err">${this.deviceRenameError}</p>` : nothing}`;
     const overview = html`<div class="xfer-body">
+        ${this.devicePaired === ownerId ? html`<div class="dev-paired" role="status">${uiIcon("check")}<span><b>Paired successfully.</b> ${row.name} is now on this Home Assistant.</span></div>` : nothing}
         ${renaming ? html`<div class="xf-stack">${renameForm}</div>` : nothing}
         <nav class="dev-tabs" aria-label=${`Pages for ${row.name}`}>${deviceSheetTabs(row.kind, admin).map(tab)}</nav>
         <div class="dev-state ${row.sync}"><i class="home-dot" aria-hidden="true"></i>

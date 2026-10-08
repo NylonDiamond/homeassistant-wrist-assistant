@@ -455,8 +455,9 @@ def home_urls(hass: HomeAssistant) -> tuple[str | None, str | None, str | None]:
     the one Home Assistant works out for itself (its own network address and
     port); without it a fresh phone would have nowhere to redeem. The third
     is the Nabu Casa remote address, only while the cloud integration is
-    loaded and signed in with remote access on (``async_remote_ui_url``
-    refuses otherwise). Each lookup is guarded on its own, so a missing or
+    loaded with an active subscription and remote access on
+    (``async_remote_ui_url`` refuses otherwise). A plan that ran out keeps
+    its address, which then no longer answers, so it is left out. Each lookup is guarded on its own, so a missing or
     broken one only leaves its field out of the link.
     """
     config = getattr(hass, "config", None)
@@ -489,7 +490,7 @@ def home_urls(hass: HomeAssistant) -> tuple[str | None, str | None, str | None]:
         if "cloud" in getattr(config, "components", ()):
             from homeassistant.components import cloud
 
-            if cloud.async_is_logged_in(hass):
+            if cloud.async_active_subscription(hass):
                 cloud_url = _clean_url(cloud.async_remote_ui_url(hass))
     except Exception:  # noqa: BLE001
         cloud_url = None
@@ -591,12 +592,13 @@ def ws_pair_offer_status(
     """What became of a QR offer. The panel polls it every two seconds.
 
     Result: {"state": "open"} or {"state": "expired"}
-         or {"state": "redeemed", "device_name", "user_id"}
+         or {"state": "redeemed", "device_name", "user_id", "device_id"}
 
     An offer that is unknown, cancelled, or lost to a restart reads as
     ``expired``, which is what the panel should say about it anyway: "This
     code ran out. Show a new one." ``device_name`` is what the phone reported
-    (null when it sent none) and ``user_id`` the user it was bound to.
+    (null when it sent none), ``user_id`` the user it was bound to, and
+    ``device_id`` the phone's id, which the panel opens its device sheet on.
     """
     offer_store = _offer_store(hass)
     if offer_store is None:
@@ -607,6 +609,7 @@ def ws_pair_offer_status(
     if state == OFFER_STATE_REDEEMED and offer is not None:
         result["device_name"] = offer.device_name
         result["user_id"] = offer.user_id
+        result["device_id"] = offer.device_id
     connection.send_result(msg["id"], result)
 
 

@@ -827,7 +827,7 @@ def test_empty_addresses_are_left_out_of_the_link(env) -> None:
     assert list(fields) == ["v", "i", "t"]
 
 
-def test_the_cloud_address_is_in_the_link_when_signed_in(env) -> None:
+def test_the_cloud_address_is_in_the_link_with_an_active_subscription(env) -> None:
     calls: list[str] = []
 
     def remote_ui_url(_hass) -> str:
@@ -836,7 +836,7 @@ def test_the_cloud_address_is_in_the_link_when_signed_in(env) -> None:
 
     _stub(
         "homeassistant.components.cloud",
-        async_is_logged_in=lambda _hass: True,
+        async_active_subscription=lambda _hass: True,
         async_remote_ui_url=remote_ui_url,
     )
     env.hass.config.components = {"http", "cloud"}
@@ -853,11 +853,25 @@ def test_no_cloud_address_when_cloud_cannot_give_one(env, case) -> None:
 
     _stub(
         "homeassistant.components.cloud",
-        async_is_logged_in=lambda _hass: case != "signed out",
+        async_active_subscription=lambda _hass: case != "signed out",
         async_remote_ui_url=refuse,
     )
     if case != "not loaded":
         env.hass.config.components = {"http", "cloud"}
+    fields = _fragment(_ok(env, env.ws.ws_pair_offer)["url"])
+    assert "c" not in fields
+
+
+def test_no_cloud_address_once_the_subscription_ran_out(env) -> None:
+    # Signed in with remote access on, but the plan ended: the address still
+    # exists and no longer answers, so the link leaves it out.
+    _stub(
+        "homeassistant.components.cloud",
+        async_active_subscription=lambda _hass: False,
+        async_is_logged_in=lambda _hass: True,
+        async_remote_ui_url=lambda _hass: "https://abcdef.ui.nabu.casa",
+    )
+    env.hass.config.components = {"http", "cloud"}
     fields = _fragment(_ok(env, env.ws.ws_pair_offer)["url"])
     assert "c" not in fields
 
@@ -898,6 +912,7 @@ def test_offer_status_follows_the_offer(env) -> None:
         "state": "redeemed",
         "device_name": "Chen's iPhone",
         "user_id": "chen",
+        "device_id": PHONE,
     }
     # A redeemed offer keeps no token.
     assert offer.token == b""

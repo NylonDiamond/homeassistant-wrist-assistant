@@ -604,6 +604,9 @@ export interface PairOfferStatus {
   state: "open" | "redeemed" | "expired";
   device_name?: string | null;
   user_id?: string | null;
+  /** The paired iPhone's id, which is its owner id. Absent from
+      integrations older than the field. */
+  device_id?: string | null;
 }
 
 /** Make a QR code an iPhone can pair with, for `userId` (the signed in

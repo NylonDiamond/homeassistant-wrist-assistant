@@ -123,8 +123,8 @@ export interface OfferState {
 }
 
 /** Hears of a device just paired. `deviceId` is the paired device's id, or
- * undefined for an iPhone paired by QR code (the offer's state does not name
- * it). `stale` answers true once the card has been closed or opened again
+ * undefined for an iPhone paired by QR code on an integration whose offer
+ * state does not name it yet. `stale` answers true once the card has been closed or opened again
  * since the pairing started, so whatever the place does afterwards can leave
  * a later visit alone. */
 export type OnPaired = (deviceId: string | undefined, stale: () => boolean, kind: PairDeviceKind) => void | Promise<void>;
@@ -399,7 +399,7 @@ export class PairWatchCard {
         const whom = pairedFor(this.offer.users, status.user_id ?? this.offer.userId);
         this.offer = { ...this.offer, open: undefined, done: pairedText(status.device_name, whom, "iphone") };
         this.update();
-        await this.onPaired?.(undefined, () => visit !== this.visit, "iphone");
+        await this.onPaired?.(status.device_id ?? undefined, () => visit !== this.visit, "iphone");
         return;
       }
       if (status.state === "expired") this.expireOffer();
@@ -615,4 +615,5 @@ export const pairCardStyles = css`
   .ws-pair .ws-qr-foot { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
   .ws-pair .ws-qr-count { font-variant-numeric: tabular-nums; }
   .ws-pair a.ws-qr-open { font-size: 12.5px; color: var(--wa-accent); }
+  .ws-pair .hint.ws-pair-done { color: var(--wa-green); font-weight: 600; }
 `;

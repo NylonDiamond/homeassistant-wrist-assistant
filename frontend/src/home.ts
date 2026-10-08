@@ -256,6 +256,13 @@ export const homeStyles = css`
   .dev-state.waiting b { color: var(--wa-amber); }
   .dev-state b { font-weight: 600; }
   .dev-state .home-device-why { color: var(--wa-muted); }
+  .dev-paired {
+    display: flex; align-items: flex-start; gap: 8px; padding: 9px 11px;
+    border: 1px solid var(--wa-green); border-radius: 10px;
+    font-size: 13px; line-height: 1.4; color: var(--wa-ink);
+  }
+  .dev-paired svg { flex: none; width: 16px; height: 16px; margin-top: 1px; color: var(--wa-green); }
+  .dev-paired b { font-weight: 600; color: var(--wa-green); }
   .dev-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .dev-acts .dev-forget { margin-left: auto; }
   .dev-acts button { height: 32px; padding: 0 14px; }
