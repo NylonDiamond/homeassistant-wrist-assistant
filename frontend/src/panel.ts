@@ -17208,13 +17208,15 @@ export class WristAssistantPanel extends LitElement {
       return Array.isArray(shapes) ? (shapes.filter((f) => typeof f === "string") as FamilyKind[]) : [];
     }));
     const targets = this.owners.filter((o) => !o.is_orphan && !isLibraryOwner(o) && moveKindMatches(sourceKind, o.device_kind));
+    const deviceWord = sourceKind === "iphone" ? "iPhone" : sourceKind === "watch" ? "watch" : "device";
+    const appWord = sourceKind === "iphone" ? "the app" : sourceKind === "watch" ? "the watch app" : "the app";
     return html`<div class="banner warn">
-      <b>This watch is no longer registered.</b> Reinstalling the watch app gives the watch a new id, and these
+      <b>This ${deviceWord} is no longer registered.</b> Reinstalling ${appWord} gives the ${deviceWord} a new id, and these
       ${owner.complication_count} complication${owner.complication_count === 1 ? "" : "s"} stayed behind under the old one.
       ${!this.hass.user?.is_admin
         ? html`<div class="hint">Only a Home Assistant administrator can move them.</div>`
         : targets.length === 0
-          ? html`<div class="hint">No registered watch to move them to. Open Wrist Assistant on the watch first.</div>`
+          ? html`<div class="hint">No registered ${deviceWord} to move them to. Open Wrist Assistant on the ${deviceWord} first.</div>`
           : html`<div class="acts">
               <select @change=${(e: Event) => { this.moveTarget = (e.target as HTMLSelectElement).value || undefined; }}>
                 <option value="" ?selected=${!this.moveTarget}>Move all to…</option>

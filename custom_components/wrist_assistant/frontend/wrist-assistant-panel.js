@@ -5888,13 +5888,13 @@ import{a as zr}from"./chunks/chunk-P7FG3CI7.js";import{a as Ni,b as zd,c as Hd,d
           <button class="small" @click=${()=>{this.save(!0)}}>Save my draft as a new complication</button>
         </div></div>`);return this.saveError&&e.push(d`<div class="banner err"><b>Could not save.</b> ${this.saveError}</div>`),this.copyStatus&&e.push(d`<div class="banner note link-note"><span>${this.copyStatus}</span>
         ${this.copyOpen?d`<button class="link" @click=${()=>{this.openMadeCopy()}}>Open it</button>`:h}
-        <button class="link" @click=${()=>{this.copyStatus=void 0,this.copyOpen=void 0}}>Dismiss</button></div>`),e}renderOrphanBanner(){let e=this.selectedOwner;if(!e?.is_orphan)return;let t=e.device_kind??kp(this.records.flatMap(n=>{let s=n.deleted?void 0:n.document?.supportedFamilies;return Array.isArray(s)?s.filter(o=>typeof o=="string"):[]})),i=this.owners.filter(n=>!n.is_orphan&&!j(n)&&$p(t,n.device_kind));return d`<div class="banner warn">
-      <b>This watch is no longer registered.</b> Reinstalling the watch app gives the watch a new id, and these
+        <button class="link" @click=${()=>{this.copyStatus=void 0,this.copyOpen=void 0}}>Dismiss</button></div>`),e}renderOrphanBanner(){let e=this.selectedOwner;if(!e?.is_orphan)return;let t=e.device_kind??kp(this.records.flatMap(o=>{let l=o.deleted?void 0:o.document?.supportedFamilies;return Array.isArray(l)?l.filter(c=>typeof c=="string"):[]})),i=this.owners.filter(o=>!o.is_orphan&&!j(o)&&$p(t,o.device_kind)),n=t==="iphone"?"iPhone":t==="watch"?"watch":"device";return d`<div class="banner warn">
+      <b>This ${n} is no longer registered.</b> Reinstalling ${t==="iphone"?"the app":t==="watch"?"the watch app":"the app"} gives the ${n} a new id, and these
       ${e.complication_count} complication${e.complication_count===1?"":"s"} stayed behind under the old one.
-      ${this.hass.user?.is_admin?i.length===0?d`<div class="hint">No registered watch to move them to. Open Wrist Assistant on the watch first.</div>`:d`<div class="acts">
-              <select @change=${n=>{this.moveTarget=n.target.value||void 0}}>
+      ${this.hass.user?.is_admin?i.length===0?d`<div class="hint">No registered ${n} to move them to. Open Wrist Assistant on the ${n} first.</div>`:d`<div class="acts">
+              <select @change=${o=>{this.moveTarget=o.target.value||void 0}}>
                 <option value="" ?selected=${!this.moveTarget}>Move all to…</option>
-                ${i.map(n=>d`<option value=${n.owner_watch_id} ?selected=${n.owner_watch_id===this.moveTarget}>${ur(n)}</option>`)}
+                ${i.map(o=>d`<option value=${o.owner_watch_id} ?selected=${o.owner_watch_id===this.moveTarget}>${ur(o)}</option>`)}
               </select>
               <button class="small" ?disabled=${!this.moveTarget||this.moving} @click=${()=>{this.moveAll()}}>${this.moving?"Moving\u2026":"Move"}</button>
             </div>`:d`<div class="hint">Only a Home Assistant administrator can move them.</div>`}
