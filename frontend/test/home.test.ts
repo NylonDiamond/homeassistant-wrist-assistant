@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { OwnerSummary } from "../src/ha-api.js";
-import { deviceCardTiles, deviceFacts, homeGroups, pendingWords, seenWords, summaryCounts, tileWord, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles } from "../src/home.js";
+import { deviceCardTiles, deviceFacts, homeGroups, homeTotals, lastSeenDevice, pendingWords, seenWords, summaryCounts, tileWord, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles } from "../src/home.js";
 import { homeSync } from "../src/send-state.js";
 import { shellStyles } from "../src/shell.js";
 
@@ -169,6 +169,38 @@ describe("seenWords and pendingWords", () => {
     expect(pendingWords({ pending_changes: 3 })).toBe("3 changes to pick up");
     expect(pendingWords({ pending_changes: 0 })).toBeUndefined();
     expect(pendingWords({ pending_changes: null })).toBeUndefined();
+  });
+});
+
+describe("homeTotals", () => {
+  it("counts every device and each sync word", () => {
+    expect(homeTotals([{ sync: "synced" }, { sync: "waiting" }, { sync: "synced" }, { sync: "idle" }]))
+      .toEqual({ all: 4, synced: 2, waiting: 1, idle: 1 });
+    expect(homeTotals([])).toEqual({ all: 0, synced: 0, waiting: 0, idle: 0 });
+  });
+});
+
+describe("lastSeenDevice", () => {
+  const rows = [{ id: "a", name: "Watch" }, { id: "b", name: "Phone" }, { id: "c", name: "Quiet" }];
+
+  it("names the device seen most recently, aged by the time since the list was read", () => {
+    const seen: Record<string, { polling: boolean; last_seen_seconds: number | null }> = {
+      a: { polling: false, last_seen_seconds: 7200 },
+      b: { polling: false, last_seen_seconds: 1800 },
+      c: { polling: false, last_seen_seconds: null },
+    };
+    expect(lastSeenDevice(rows, (id) => seen[id], 420)).toEqual({ name: "Phone", n: "37", unit: "min ago" });
+  });
+
+  it("puts a polling watch first, as Now", () => {
+    const seen = { a: { polling: true, last_seen_seconds: 90 }, b: { polling: false, last_seen_seconds: 5 } };
+    expect(lastSeenDevice(rows, (id) => seen[id as "a" | "b"], 600)).toEqual({ name: "Watch", n: "Now", unit: "" });
+  });
+
+  it("says hours and days, and nothing when no device has been heard from", () => {
+    expect(lastSeenDevice(rows.slice(0, 1), () => ({ polling: false, last_seen_seconds: 3 * 3600 }), 0)).toEqual({ name: "Watch", n: "3", unit: "h ago" });
+    expect(lastSeenDevice(rows.slice(0, 1), () => ({ polling: false, last_seen_seconds: 86400 }), 0)).toEqual({ name: "Watch", n: "1", unit: "day ago" });
+    expect(lastSeenDevice(rows, () => undefined, 0)).toBeUndefined();
   });
 });
 

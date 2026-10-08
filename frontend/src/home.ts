@@ -176,6 +176,40 @@ export function pendingWords(owner: Pick<OwnerSummary, "pending_changes"> | unde
   return `${n} ${n === 1 ? "change" : "changes"} to pick up`;
 }
 
+/** Home's totals: how many devices, and how many are synced, waiting, or
+ * have nothing waiting and never synced. */
+export function homeTotals(rows: readonly Pick<HomeDeviceRow, "sync">[]): { all: number; synced: number; waiting: number; idle: number } {
+  const count = (s: DeviceSync) => rows.filter((r) => r.sync === s).length;
+  return { all: rows.length, synced: count("synced"), waiting: count("waiting"), idle: count("idle") };
+}
+
+/** The device heard from last, for the totals' Last seen: a watch holding a
+ * long-poll is "Now", else the shortest time since it was seen, aged by the
+ * time since the list was read (`elapsed`, seconds), as a number and its
+ * unit. Nothing when no device has been heard from since the server started. */
+export function lastSeenDevice(
+  rows: readonly Pick<HomeDeviceRow, "id" | "name">[],
+  ownerOf: (id: string) => Pick<OwnerSummary, "polling" | "last_seen_seconds"> | undefined,
+  elapsed: number,
+): { name: string; n: string; unit: string } | undefined {
+  let best: { name: string; seconds: number } | undefined;
+  for (const r of rows) {
+    const owner = ownerOf(r.id);
+    const seconds = owner?.polling === true ? 0 : owner?.last_seen_seconds;
+    if (typeof seconds !== "number") continue;
+    if (best === undefined || seconds < best.seconds) best = { name: r.name, seconds };
+  }
+  if (best === undefined) return undefined;
+  const seconds = best.seconds === 0 ? 0 : best.seconds + Math.max(0, elapsed);
+  if (seconds < 60) return { name: best.name, n: "Now", unit: "" };
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return { name: best.name, n: `${minutes}`, unit: "min ago" };
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return { name: best.name, n: `${hours}`, unit: "h ago" };
+  const days = Math.floor(hours / 24);
+  return { name: best.name, n: `${days}`, unit: days === 1 ? "day ago" : "days ago" };
+}
+
 /** Home's devices by person, in the people's own order: each person with
  * their rows, in the rows' order (watches, then phones). A row no person
  * holds, which only an inconsistent list could give, ends up in a group of
@@ -216,112 +250,170 @@ export const homeStyles = css`
     padding: clamp(20px, 4vh, 40px) clamp(16px, 4vw, 40px) 48px;
     background: var(--wa-bg); color: var(--wa-ink);
   }
-  .home-wrap { width: min(1200px, 100%); margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+  .home-wrap { width: min(1240px, 100%); margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+  /* The sheen every Home card shares: a fill a shade lighter at the top, and
+     a hairline of light along the top edge, so a card reads as a surface
+     the light falls on rather than a flat box. */
+  .home {
+    --home-card: linear-gradient(180deg, color-mix(in srgb, var(--wa-ink) 4%, var(--wa-card)), var(--wa-card));
+    --home-lift: inset 0 1px 0 color-mix(in srgb, var(--wa-ink) 7%, transparent);
+  }
   .home-head { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px 16px; padding: 0 2px; }
   .home-head-text { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-  .home-head h1 { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -.02em; }
+  .home-head h1 { margin: 0; font-size: 30px; font-weight: 500; letter-spacing: -.02em; }
   .home-lead { margin: 0; font-size: 14px; color: var(--wa-muted); }
-  .home-title { margin: 0; font-size: 12px; font-weight: 500; letter-spacing: .09em; text-transform: uppercase; color: var(--wa-ink); }
+  .home-head-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+  .home-title { margin: 0; font-size: 11px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--wa-ink); }
   a.home-btn, button.home-btn {
-    display: inline-flex; align-items: center; gap: 6px; box-sizing: border-box; height: 30px; padding: 0 12px;
-    border-radius: 6px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; text-decoration: none;
-    color: var(--wa-ink); background: var(--wa-card); border: 1px solid var(--wa-line-strong);
+    display: inline-flex; align-items: center; gap: 6px; box-sizing: border-box; height: 32px; padding: 0 13px;
+    border-radius: 7px; font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; white-space: nowrap; text-decoration: none;
+    color: var(--wa-ink); background: var(--home-card, var(--wa-card)); border: 1px solid var(--wa-line-strong);
+    box-shadow: var(--home-lift, none);
   }
   a.home-btn:hover, button.home-btn:hover:not(:disabled) { background: var(--wa-hover); }
   a.home-btn:focus-visible, button.home-btn:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   button.home-btn:disabled { opacity: .5; cursor: default; }
   .home-btn svg.ui-icon { width: 14px; height: 14px; }
-  /* One person's devices: their picture or initial ringed in their color
-     (--c, the color their devices wear on the Complications tab), their
-     name, and the cards, which take the same color. */
-  .home-person { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-  .home-person-head { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 0 2px; }
+  /* Adding something, a device or a complication, is outlined green, the way
+     every Add is across the panel. */
+  .home-btn.add { border-color: color-mix(in srgb, var(--wa-hue-green) 70%, var(--wa-card)); }
+  .home-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--wa-muted); }
+  .home-dot.synced { background: var(--wa-green); }
+  .home-dot.waiting { background: var(--wa-amber); }
+  /* The status row: the totals beside the devices that still wait, wrapping
+     onto two rows when the page is narrow. */
+  .home-status { display: flex; flex-wrap: wrap; gap: 12px; align-items: stretch; }
+  .home-totals {
+    flex: 3 1 520px; min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    border-radius: 12px; border: 1px solid var(--wa-line); background: var(--home-card); box-shadow: var(--home-lift); overflow: hidden;
+  }
+  .home-total { min-width: 0; padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; border-right: 1px solid var(--wa-line); }
+  .home-total:last-child { border-right: 0; }
+  .home-total-label {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 10.5px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--wa-muted);
+  }
+  .home-total-n { font-size: 34px; font-weight: 300; letter-spacing: -.02em; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .home-total-n small { margin-left: 5px; font-size: 13px; font-weight: 400; letter-spacing: 0; color: var(--wa-muted); }
+  .home-total-sub { font-size: 11.5px; color: var(--wa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Every device as a share of one thin bar: synced, waiting, never synced. */
+  .home-bar { display: flex; gap: 3px; }
+  .home-bar i { height: 3px; border-radius: 2px; background: var(--wa-line-strong); }
+  .home-bar i.synced { background: var(--wa-green); }
+  .home-bar i.waiting { background: var(--wa-amber); }
+  /* Needs attention: the waiting devices, one line each. Lit amber while any
+     waits; a quiet card with a green check when none does. */
+  .home-attn {
+    --c: var(--wa-green);
+    flex: 2 1 360px; min-width: 0; box-sizing: border-box; display: flex; flex-direction: column; padding: 14px 16px;
+    border-radius: 12px; border: 1px solid var(--wa-line); background: var(--home-card); box-shadow: var(--home-lift);
+  }
+  .home-attn.on {
+    --c: var(--wa-amber); --lo-fill: var(--wa-card); --lo-mid: var(--wa-card-mid);
+    ${litOutline}
+    border-width: 1px;
+  }
+  .home-attn-head { display: flex; align-items: center; gap: 8px; padding-bottom: 8px; }
+  .home-attn-n { font-size: 12px; color: var(--wa-muted); font-variant-numeric: tabular-nums; }
+  .home-chip {
+    width: 20px; height: 20px; flex: none; box-sizing: border-box; border-radius: 6px; display: grid; place-items: center;
+    border: 1px solid var(--c); color: var(--c);
+  }
+  .home-chip svg.ui-icon { width: 12px; height: 12px; }
+  .home-attn-row { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 9px 0; border-top: 1px solid var(--wa-line); }
+  .home-attn-who { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--c); }
+  .home-attn-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .home-attn-text b, .home-attn-text span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .home-attn-text b { font-size: 13px; font-weight: 500; }
+  .home-attn-text span { font-size: 11.5px; color: var(--wa-muted); }
+  .home-attn-ok { margin: 0; padding: 10px 0 2px; border-top: 1px solid var(--wa-line); font-size: 12.5px; color: var(--wa-muted); }
+  /* One person's devices: the person on the left, their picture or initial
+     ringed in their color (--c, the color their devices wear on the
+     Complications tab), and their devices beside them. */
+  .home-person { display: flex; flex-wrap: wrap; gap: 20px; min-width: 0; padding-top: 22px; border-top: 1px solid var(--wa-line); }
+  .home-person-head { flex: 0 0 160px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
   .home-avatar {
-    width: 30px; height: 30px; flex: none; box-sizing: border-box; border-radius: 50%; overflow: hidden;
-    display: grid; place-items: center; border: 2px solid var(--c); background: var(--wa-field);
-    font-size: 13px; font-weight: 650; color: var(--wa-ink);
+    width: 36px; height: 36px; flex: none; box-sizing: border-box; border-radius: 50%; overflow: hidden;
+    display: grid; place-items: center; border: 1.5px solid var(--c); background: var(--wa-field);
+    font-size: 14px; font-weight: 600; color: var(--c);
   }
   .home-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .home-person-name { margin: 0; min-width: 0; font-size: 16px; font-weight: 600; letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .home-person-n { flex: none; font-size: 12.5px; color: var(--wa-muted); }
+  .home-person-name { margin: 4px 0 0; min-width: 0; font-size: 16px; font-weight: 500; letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .home-person-n { font-size: 11.5px; color: var(--wa-muted); }
+  .home-person-sum { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--wa-label); }
   /* The devices, one card each, as many to a row as fit. */
   .home-devices {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: 14px;
+    flex: 999 1 560px; min-width: 0; align-content: start;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(min(196px, 100%), 1fr)); gap: 10px;
     margin: 0; padding: 0; list-style: none;
   }
   .home-device {
-    --lo-fill: var(--wa-card); --lo-mid: var(--wa-card-mid);
-    position: relative; display: flex; flex-direction: column; gap: 14px; min-width: 0; box-sizing: border-box;
-    padding: 16px; border-radius: var(--wa-lc-r, 12px);
-    ${litOutline}
+    position: relative; display: flex; flex-direction: column; gap: 10px; min-width: 0; box-sizing: border-box;
+    padding: 8px; border-radius: 12px; background: var(--home-card); border: 1px solid var(--wa-line); box-shadow: var(--home-lift);
   }
-  .home-device:hover { --lo-fill: var(--wa-hover); }
+  .home-device:hover { border-color: var(--wa-line-strong); }
+  /* A waiting device is lit amber from its top left corner. */
+  .home-device.waiting {
+    background:
+      linear-gradient(var(--wa-card), var(--wa-card)) padding-box,
+      linear-gradient(140deg, var(--wa-amber) 0%, color-mix(in srgb, var(--wa-amber) 33%, transparent) 30%,
+        var(--wa-card-mid) 62%, color-mix(in srgb, var(--wa-amber) 25%, transparent) 100%) border-box;
+    border-color: transparent;
+  }
+  /* The device, standing in a soft light from above. */
+  .home-stage {
+    height: 148px; border-radius: 8px; display: grid; place-items: center;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--wa-ink) 8%, var(--wa-bg)) 0%, var(--wa-bg) 80%);
+  }
+  .ha-art { display: block; }
+  .ha-lit { stroke: var(--c); }
+  .ha-lit-fill { fill: var(--c); }
+  .ha-edge-wait { stroke: var(--wa-amber); stroke-opacity: .7; }
   /* The whole card opens the device's sheet: the name's button reaches over
-     the card, and the doors at the foot sit above it. */
-  button.home-device-open {
-    all: unset; cursor: pointer; min-width: 0;
-  }
+     the card, and the count doors sit above it. */
+  button.home-device-open { all: unset; cursor: pointer; flex: 1; min-width: 0; }
   button.home-device-open::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
   .home-device:has(button.home-device-open:focus-visible) { box-shadow: var(--wa-ring); }
-  .home-device-top { display: flex; align-items: center; gap: 14px; min-width: 0; }
-  /* The device itself, drawn with one shape lit in the card's color. */
-  .home-device-art { flex: none; display: grid; place-items: center; width: 52px; height: 64px; color: var(--c); }
-  .home-device-art .shape-art { width: 46px; height: 60px; display: block; }
-  .home-device-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-  .home-device-name { min-width: 0; display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 600; }
+  .home-device-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 0 4px; }
+  .home-device-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .home-device-name { min-width: 0; display: flex; align-items: center; font-size: 13px; font-weight: 500; }
   /* The name in its own box: an ellipsis only reaches a block, never the
      bare text of a flex row. */
   .home-device-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .home-device-facts { font-size: 12px; color: var(--wa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .home-device-sync { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--wa-muted); overflow-wrap: anywhere; }
+  .home-device-sync { flex: none; display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--wa-muted); }
+  .home-device-sync b { font-weight: 500; }
   .home-device.synced .home-device-sync b { color: var(--wa-green); }
   .home-device.waiting .home-device-sync b { color: var(--wa-amber); }
-  .home-device-sync b { font-weight: 600; }
-  .home-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--wa-muted); }
   .home-device.synced .home-dot { background: var(--wa-green); }
   .home-device.waiting .home-dot { background: var(--wa-amber); }
-  /* What a waiting device waits for, after the word, in the quiet ink. */
-  .home-device-why { color: var(--wa-muted); font-weight: 400; }
-  /* A right-pointing chevron: the down one, turned. */
-  .home-device-go { display: inline-flex; flex: none; align-self: flex-start; color: var(--wa-muted); transform: rotate(-90deg); }
-  .home-device-go svg.ui-icon { width: 13px; height: 13px; }
-  /* A tile per page that counts something, each a door to that page: the
-     number large, its name small under it. */
-  .home-tiles { position: relative; z-index: 1; display: flex; gap: 6px; }
-  .home-tiles > * { flex: 1 1 0; }
-  /* The first tile's word is the longest: "Complications". */
-  .home-tiles > :first-child { flex-grow: 1.45; }
+  .home-device-facts { font-size: 11px; color: var(--wa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* What a waiting device waits for and what its next pull brings. */
+  .home-device-why { font-size: 11px; color: var(--wa-label); overflow-wrap: anywhere; }
+  /* A small door per page that counts something, each opening that page on
+     this device: its number, then its name. */
+  .home-tiles { position: relative; z-index: 1; display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 4px 2px; border-top: 1px solid var(--wa-line); margin-top: auto; }
   a.home-tile, button.home-tile {
-    display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; box-sizing: border-box;
-    padding: 7px 8px; border-radius: 8px; font: inherit; text-align: left; cursor: pointer; text-decoration: none;
-    color: var(--wa-ink); background: var(--wa-field); border: 1px solid var(--wa-line-strong);
+    display: inline-flex; align-items: center; gap: 4px; box-sizing: border-box; height: 22px; padding: 0 7px;
+    border-radius: 6px; font: inherit; font-size: 11px; cursor: pointer; text-decoration: none; white-space: nowrap;
+    color: var(--wa-muted); background: transparent; border: 1px solid var(--wa-line-strong);
   }
-  a.home-tile:hover, button.home-tile:hover { background: var(--wa-card); border-color: var(--wa-muted); }
+  a.home-tile:hover, button.home-tile:hover { color: var(--wa-ink); background: var(--wa-hover); }
   a.home-tile:focus-visible, button.home-tile:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  .home-tile b { font-size: 18px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1.2; }
-  .home-tile b.none { color: var(--wa-muted); }
-  .home-tile span { max-width: 100%; font-size: 10.5px; color: var(--wa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  /* The foot: when it was last heard from and what it will pick up, and a
-     watch's Settings at the right. */
-  .home-device-foot { position: relative; z-index: 1; display: flex; align-items: center; gap: 8px; min-height: 26px; margin-top: auto; }
-  /* Only the door takes a press; the words let it through to the card. */
-  .home-device-foot { pointer-events: none; }
-  .home-device-foot > a { pointer-events: auto; }
-  .home-device-seen { flex: 1; min-width: 0; font-size: 12px; color: var(--wa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .home-device-seen.on { color: var(--wa-green); }
+  .home-tile b { font-weight: 600; color: var(--wa-ink); font-variant-numeric: tabular-nums; }
+  .home-tile b.none { font-weight: 500; color: var(--wa-muted); }
   a.home-door, button.home-door {
     display: inline-flex; align-items: center; gap: 6px; box-sizing: border-box; height: 26px; padding: 0 10px;
-    border-radius: 6px; font: inherit; font-size: 12px; font-weight: 550; cursor: pointer; white-space: nowrap; text-decoration: none;
+    border-radius: 6px; font: inherit; font-size: 11.5px; font-weight: 500; cursor: pointer; white-space: nowrap; text-decoration: none;
     color: var(--wa-ink); background: var(--wa-field); border: 1px solid var(--wa-line-strong);
   }
-  a.home-door:hover, button.home-door:hover { background: var(--wa-card); }
+  a.home-door:hover, button.home-door:hover { background: var(--wa-hover); }
   a.home-door:focus-visible, button.home-door:focus-visible { outline: none; box-shadow: var(--wa-ring); }
-  /* Pair a device, the grid's last card: a dashed outline, nothing lit, as
-     tall as the cards beside it. */
+  /* Pair a device, the only card in a home with no devices yet: a dashed
+     outline, nothing lit. */
   .home-devices > li:has(> button.home-device-add) { display: flex; }
   button.home-device-add {
     flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 120px;
-    box-sizing: border-box; padding: 16px; border-radius: var(--wa-lc-r, 12px); font: inherit; cursor: pointer;
+    box-sizing: border-box; padding: 16px; border-radius: 12px; font: inherit; cursor: pointer;
     color: var(--wa-muted); background: transparent; border: 1.5px dashed var(--wa-line-strong);
   }
   button.home-device-add:hover { color: var(--wa-ink); border-color: var(--wa-muted); background: var(--wa-hover); }
@@ -380,5 +472,8 @@ export const homeStyles = css`
   @media (max-width: 640px) {
     .home { padding: 14px 12px 32px; }
     .home-head h1 { font-size: 22px; }
+    /* The person goes on one line above their devices. */
+    .home-person-head { flex-basis: 100%; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+    .home-person-name { margin: 0; }
   }
 `;

@@ -51,8 +51,9 @@ describe("Home's device cards", () => {
     expect(card).toContain(`<span class="home-device-label">\${d.name}</span>`);
   });
 
-  it("draws the device with one shape lit, dim when it has nothing waiting and never synced", () => {
-    expect(card).toContain(`deviceShapeArt("rectangular", d.kind, d.sync !== "idle")`);
+  it("draws the device on its stage, a slot lit per thing it holds", () => {
+    expect(card).toContain(`d.kind === "watch" ? homeWatchArt(d.id, held, d.sync) : homePhoneArt(d.id, held, d.sync)`);
+    expect(card).toContain("const held = owner?.complication_count ?? 0;");
   });
 
   it("says in small print what the states cover: the watch app too, for an administrator who can read it", () => {
@@ -63,7 +64,8 @@ describe("Home's device cards", () => {
 
   it("judges each watch on its watch app records too, for an administrator, and says what a waiting card waits for", () => {
     expect(home).toContain("homeDeviceRows(this.homeDevices(), admin ? this.watchAppSyncs : new Map())");
-    expect(card).toContain(`<span class="home-device-why"> · \${waitingForText(d.waitingFor)}</span>`);
+    expect(card).toContain("`For ${waitingForText(d.waitingFor)}`");
+    expect(card).toContain(`<span class="home-device-why">\${why}</span>`);
   });
 
   it("has a count tile per page, each opening that page on this device", () => {
@@ -77,10 +79,36 @@ describe("Home's device cards", () => {
     expect(count).toContain("this.watchCounts.get(d.id)?.[t.count]");
   });
 
-  it("says when it was last heard from and what it will pick up, with a watch's Settings for an administrator", () => {
+  it("says when it was last heard from and what it will pick up, and leaves Settings to the sheet", () => {
     expect(card).toContain("const seen = seenWords(owner, elapsed);");
     expect(card).toContain("const pending = pendingWords(owner);");
-    expect(card).toContain(`const settings = d.kind === "watch" && admin ? watchScreenPath(WATCH_SETTINGS_SCREEN, d.id) : undefined;`);
+    expect(card).not.toContain("WATCH_SETTINGS_SCREEN");
+  });
+});
+
+describe("Home's status row", () => {
+  const status = method("  private renderHomeStatus(");
+
+  it("sits above the people, only once there are devices", () => {
+    expect(home).toContain("${devices.length === 0 ? nothing : this.renderHomeStatus(devices, groups, elapsed)}${groups.map(");
+  });
+
+  it("counts the devices and names the one heard from last", () => {
+    expect(status).toContain("const totals = homeTotals(devices);");
+    expect(status).toContain("const last = lastSeenDevice(devices, (id) => this.ownerOf(id), elapsed);");
+  });
+
+  it("lists every waiting device under Needs attention, lit amber, each opening its sheet", () => {
+    expect(status).toContain(`const waiting = devices.filter((d) => d.sync === "waiting");`);
+    expect(status).toContain(`<section class="home-attn \${waiting.length > 0 ? "on" : ""}">`);
+    expect(status).toContain("@click=${() => this.openDeviceSheet(d.id)}>Open</button>");
+    expect(status).toContain("Every device has your latest changes.");
+  });
+
+  it("puts New complication and Pair a device in the head, for administrators only", () => {
+    expect(home).toContain("const acts = admin ? html`");
+    expect(home).toContain("this.goTo(COMPLICATIONS_PATH); this.openNewDialog();");
+    expect(home).toContain("?disabled=${full || this.ownerBusy}");
   });
 
   it("groups the cards by person, in that person's color, with their picture where Home Assistant has one", () => {
@@ -190,9 +218,10 @@ describe("coming back to Home", () => {
 });
 
 describe("Home's Pair a device dialog", () => {
-  it("opens from the last card of the devices, for administrators only", () => {
-    expect(home).toContain("const add = admin ? html`<ul class=\"home-devices\"><li><button type=\"button\" class=\"home-device-add\"");
+  it("opens from the head's button, or from the only card in a home with no devices, for administrators only", () => {
+    expect(home).toContain("const add = admin && devices.length === 0 ? html`<ul class=\"home-devices\"><li><button type=\"button\" class=\"home-device-add\"");
     expect(home).toContain("@click=${() => this.openPairDialog()}>${uiIcon(\"plus\")}<b>Pair a device</b>");
+    expect(home).toContain("@click=${() => this.openPairDialog()}>${uiIcon(\"plus\")}<span>Pair a device</span>");
     expect(home).toContain("${groups.map((g) => this.renderHomeGroup(g, admin, elapsed))}${add}");
     expect(home).toContain("${admin && this.pairOpen ? this.renderPairDialog() : nothing}");
   });
