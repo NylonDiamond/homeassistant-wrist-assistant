@@ -355,7 +355,8 @@ def test_setup_builds_the_store_hooks_the_sweep_and_advertises() -> None:
         "page_images_store=page_images_store,",
         "register_capability(PAGE_IMAGES_CAPABILITY)",
         "async_register_page_images_commands(hass)",
-        "await data.page_images_store.async_shutdown()",
+        # Listed among the stores unload writes out and stops.
+        '"page_images_store",',
         "await PageImagesStore(hass).async_remove()",
     ):
         assert expected in init, expected

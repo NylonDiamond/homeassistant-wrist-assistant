@@ -858,6 +858,10 @@ class ComplicationStore:
     """Persistent, owner-scoped collection of complication records."""
 
     def __init__(self, hass: HomeAssistant) -> None:
+        # A debounced save is waiting (see async_shutdown), and whether the
+        # entry has unloaded, after which this instance saves nothing.
+        self._save_pending = False
+        self._closed = False
         # owner_watch_id → record id → record
         self._records: dict[str, dict[str, ComplicationRecord]] = {}
         # owner_watch_id → [{"slot": int, "name": str}] sorted by slot: the
@@ -1048,6 +1052,17 @@ class ComplicationStore:
             ],
         }
 
+    async def async_shutdown(self) -> None:
+        """Called on unload: write a save still waiting out its debounce now,
+        which cancels the delayed one, and save nothing after. A reload then
+        reads every change, and an uninstall that follows removes a file no
+        one writes again."""
+        self._closed = True
+        if not self._save_pending:
+            return
+        self._save_pending = False
+        await self._store.async_save(self._serialize())
+
     def _schedule_save(self) -> None:
         if self._load_failed:
             # The file on disk could not be read; this empty (or partly
@@ -1058,6 +1073,9 @@ class ComplicationStore:
                 COMPLICATION_STORAGE_KEY,
             )
             return
+        if self._closed:
+            return
+        self._save_pending = True
         self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
 
     @callback

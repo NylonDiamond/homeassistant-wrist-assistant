@@ -30,6 +30,10 @@ class SnapshotStreamStore:
     """Persistent map of camera entity_id → chosen live-stream entity_id."""
 
     def __init__(self, hass: HomeAssistant) -> None:
+        # A debounced save is waiting (see async_shutdown), and whether the
+        # entry has unloaded, after which this instance saves nothing.
+        self._save_pending = False
+        self._closed = False
         self._streams: dict[str, str] = {}
         self._store: Store = Store(
             hass,
@@ -50,6 +54,23 @@ class SnapshotStreamStore:
                 self._streams[entity_id] = target
         _LOGGER.debug("Loaded %d snapshot stream overrides", len(self._streams))
 
+    def _schedule_save(self) -> None:
+        if self._closed:
+            return
+        self._save_pending = True
+        self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
+
+    async def async_shutdown(self) -> None:
+        """Called on unload: write a save still waiting out its debounce now,
+        which cancels the delayed one, and save nothing after. A reload then
+        reads every change, and an uninstall that follows removes a file no
+        one writes again."""
+        self._closed = True
+        if not self._save_pending:
+            return
+        self._save_pending = False
+        await self._store.async_save(self._serialize())
+
     def _serialize(self) -> dict:
         return {"streams": dict(self._streams)}
 
@@ -62,9 +83,9 @@ class SnapshotStreamStore:
         if not stream_entity_id.startswith("camera."):
             return
         self._streams[entity_id] = stream_entity_id
-        self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
+        self._schedule_save()
 
     def delete(self, entity_id: str) -> None:
         """Clear an override (revert to auto-resolution)."""
         if self._streams.pop(entity_id, None) is not None:
-            self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
+            self._schedule_save()

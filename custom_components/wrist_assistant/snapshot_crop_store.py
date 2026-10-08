@@ -54,6 +54,10 @@ class SnapshotCropStore:
     """
 
     def __init__(self, hass: HomeAssistant) -> None:
+        # A debounced save is waiting (see async_shutdown), and whether the
+        # entry has unloaded, after which this instance saves nothing.
+        self._save_pending = False
+        self._closed = False
         self._crops: dict[str, ViewportState] = {}
         self._open_zoomed: dict[str, bool] = {}
         self._store: Store = Store(
@@ -96,6 +100,23 @@ class SnapshotCropStore:
             len(self._open_zoomed),
         )
 
+    def _schedule_save(self) -> None:
+        if self._closed:
+            return
+        self._save_pending = True
+        self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
+
+    async def async_shutdown(self) -> None:
+        """Called on unload: write a save still waiting out its debounce now,
+        which cancels the delayed one, and save nothing after. A reload then
+        reads every change, and an uninstall that follows removes a file no
+        one writes again."""
+        self._closed = True
+        if not self._save_pending:
+            return
+        self._save_pending = False
+        await self._store.async_save(self._serialize())
+
     def _serialize(self) -> dict:
         return {
             "crops": {
@@ -123,7 +144,7 @@ class SnapshotCropStore:
         else:
             if self._open_zoomed.pop(entity_id, None) is None:
                 return
-        self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
+        self._schedule_save()
 
     def matches_saved(self, entity_id: str, viewport: ViewportState) -> bool:
         """Whether ``viewport`` equals this camera's saved framing (no-crop = the
@@ -143,11 +164,11 @@ class SnapshotCropStore:
             w=_clamp01(viewport.w, minimum=0.01),
             h=_clamp01(viewport.h, minimum=0.01),
         )
-        self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
+        self._schedule_save()
 
     def delete(self, entity_id: str) -> None:
         removed_crop = self._crops.pop(entity_id, None) is not None
         # A full-frame camera has nothing to open zoomed into — clear the flag too.
         removed_flag = self._open_zoomed.pop(entity_id, None) is not None
         if removed_crop or removed_flag:
-            self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
+            self._schedule_save()

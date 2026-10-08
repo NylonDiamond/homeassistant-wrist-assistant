@@ -185,6 +185,10 @@ class WatchVoicesStore:
     """Every watch's voice list, keyed on the watch id that signed it."""
 
     def __init__(self, hass: HomeAssistant) -> None:
+        # A debounced save is waiting (see async_shutdown), and whether the
+        # entry has unloaded, after which this instance saves nothing.
+        self._save_pending = False
+        self._closed = False
         self._store: Store = Store(
             hass, WATCH_VOICES_STORAGE_VERSION, WATCH_VOICES_STORAGE_KEY
         )
@@ -211,7 +215,21 @@ class WatchVoicesStore:
             }
         }
 
+    async def async_shutdown(self) -> None:
+        """Called on unload: write a save still waiting out its debounce now,
+        which cancels the delayed one, and save nothing after. A reload then
+        reads every change, and an uninstall that follows removes a file no
+        one writes again."""
+        self._closed = True
+        if not self._save_pending:
+            return
+        self._save_pending = False
+        await self._store.async_save(self._serialize())
+
     def _schedule_save(self) -> None:
+        if self._closed:
+            return
+        self._save_pending = True
         self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
 
     async def async_remove(self) -> None:

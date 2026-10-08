@@ -139,6 +139,10 @@ class CardPreviewStore:
     """The index in ``.storage`` and the PNG files beside it."""
 
     def __init__(self, hass: HomeAssistant) -> None:
+        # A debounced save is waiting (see async_shutdown), and whether the
+        # entry has unloaded, after which this instance saves nothing.
+        self._save_pending = False
+        self._closed = False
         self._hass = hass
         self._store: Store = Store(
             hass, CARD_PREVIEW_STORAGE_VERSION, CARD_PREVIEW_STORAGE_KEY
@@ -174,7 +178,21 @@ class CardPreviewStore:
     def _serialize(self) -> dict[str, Any]:
         return {"previews": self._index}
 
+    async def async_shutdown(self) -> None:
+        """Called on unload: write a save still waiting out its debounce now,
+        which cancels the delayed one, and save nothing after. A reload then
+        reads every change, and an uninstall that follows removes a file no
+        one writes again."""
+        self._closed = True
+        if not self._save_pending:
+            return
+        self._save_pending = False
+        await self._store.async_save(self._serialize())
+
     def _save(self) -> None:
+        if self._closed:
+            return
+        self._save_pending = True
         self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
 
     def previews_for(self, owner_watch_id: str, records: list[Any]) -> dict[str, Any]:

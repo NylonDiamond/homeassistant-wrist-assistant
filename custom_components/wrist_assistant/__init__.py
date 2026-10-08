@@ -82,6 +82,7 @@ from .client_certificate_ws import async_register_client_certificate_commands
 from .http_actions_runner import HTTPActionRunner
 from .http_actions_store import HTTPActionsStore
 from .http_actions_ws import async_register_http_actions_commands
+from .listener_relay import COMPLICATIONS, WATCH_CONFIG, listener_relay
 from .page_images_store import PageImagesStore
 from .page_images_ws import async_register_page_images_commands
 from .parts_store import PartsStore
@@ -653,8 +654,14 @@ async def _clear_stale_statistic_units_once(
             )
 
             for statistic_id in statistic_ids:
+                # A count has no unit class either. Naming it is required:
+                # since HA 2026.10 a unit change without a unit class is
+                # reported as deprecated, and from 2026.11 it raises.
                 async_update_statistics_metadata(
-                    hass, statistic_id, new_unit_of_measurement=None
+                    hass,
+                    statistic_id,
+                    new_unit_class=None,
+                    new_unit_of_measurement=None,
                 )
                 # Clear any repair already raised for this sensor. The issue is
                 # owned by the `sensor` recorder platform (not our DOMAIN), keyed
@@ -995,6 +1002,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: WristAssistantConfigEntr
     )
     entry.runtime_data = runtime_data
     hass.data[DOMAIN] = runtime_data
+    # Live panel and phone subscriptions stay open across a reload; point
+    # them at this entry's stores (see listener_relay.py).
+    listener_relay(hass, COMPLICATIONS).follow(complication_store)
+    listener_relay(hass, WATCH_CONFIG).follow(watch_config_store)
 
     if not hass.data.get(f"{DOMAIN}_views_registered"):
         # Panel-facing complication editor API (admin-only mutations).
@@ -1268,12 +1279,53 @@ async def async_unload_entry(hass: HomeAssistant, entry: WristAssistantConfigEnt
             if data.complication_push is not None:
                 data.complication_push.shutdown()
             await data.http_action_runner.async_shutdown()
-            # Its debounced save would otherwise fire on this old instance,
-            # after an uninstall's async_remove_entry deleted the file.
-            await data.http_actions_store.async_shutdown()
-            # The same for the page photo index.
-            await data.page_images_store.async_shutdown()
+            await _async_shutdown_stores(data)
+            # Let go of the old stores. The live subscriptions stay open and
+            # follow the stores of the next setup.
+            listener_relay(hass, COMPLICATIONS).release()
+            listener_relay(hass, WATCH_CONFIG).release()
     return unload_ok
+
+
+# Every store in the runtime data that saves through a debounce, by attribute.
+_DEBOUNCED_STORES = (
+    "widget_secret_store",
+    "notification_store",
+    "complication_store",
+    "watch_config_store",
+    "watch_voices_store",
+    "http_actions_store",
+    "page_images_store",
+    "client_certificate_store",
+    "watch_logs_store",
+    "parts_store",
+    "card_preview_store",
+    "snapshot_crop_store",
+    "snapshot_stream_store",
+    "snapshot_aspect_store",
+)
+
+
+async def _async_shutdown_stores(data: WristAssistantData) -> None:
+    """Write every store's waiting debounced save now and stop it saving.
+
+    A debounced save left on an unloaded instance fires after the entry is
+    gone: after an uninstall's async_remove_entry deleted its file, writing
+    pairings, push tokens or a private key back to disk, or after a reload's
+    new instance already read the file, which then loses that change or
+    reuses a revision number for different content. Each store's
+    async_shutdown writes the save at once, which cancels the timer, and
+    refuses any later one. One store failing to write must not keep the
+    others from it.
+    """
+    for name in _DEBOUNCED_STORES:
+        store = getattr(data, name, None)
+        if store is None:
+            continue
+        try:
+            await store.async_shutdown()
+        except Exception:  # noqa: BLE001 (the rest must still be written)
+            _LOGGER.exception("Could not write the pending save of %s on unload", name)
 
 
 async def async_remove_config_entry_device(
@@ -1381,7 +1433,15 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     The complication store is a third file and goes the same way: a re-added
     integration would otherwise come back holding every complication the user
     thought they had removed with it, under watch ids that no longer pair.
+
+    Home Assistant unloads a loaded entry before it calls this, and the
+    unload stops every store saving. But a failed unload still leads here,
+    with the old stores alive and their debounced saves waiting; those are
+    stopped first, or a timer would write a file back after it is deleted.
     """
+    data: WristAssistantData | None = hass.data.pop(DOMAIN, None)
+    if data is not None:
+        await _async_shutdown_stores(data)
     for key, version in (
         (WIDGET_SECRET_STORAGE_KEY, WIDGET_SECRET_STORAGE_VERSION),
         (NOTIFICATION_TOKEN_STORAGE_KEY, NOTIFICATION_TOKEN_STORAGE_VERSION),

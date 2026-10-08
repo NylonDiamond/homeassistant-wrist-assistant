@@ -54,6 +54,7 @@ from homeassistant.components.websocket_api import ActiveConnection
 from homeassistant.core import HomeAssistant, callback
 
 from .const import DOMAIN, WATCH_CONFIG_PANEL_KINDS
+from .listener_relay import WATCH_CONFIG, listener_relay
 from .watch_config_store import (
     WatchConfigChange,
     WatchConfigStore,
@@ -518,7 +519,11 @@ def ws_watch_config_subscribe(
             )
         )
 
-    connection.subscriptions[msg["id"]] = store.async_add_listener(_on_change)
+    # Through the relay, not the store: a config entry reload replaces the
+    # store but keeps this subscription open (see listener_relay.py).
+    relay = listener_relay(hass, WATCH_CONFIG)
+    relay.follow(store)
+    connection.subscriptions[msg["id"]] = relay.add_listener(_on_change)
     connection.send_result(msg["id"], {"revisions": revisions})
 
 

@@ -961,6 +961,11 @@ class WatchConfigStore:
         self._index: Store = Store(
             hass, WATCH_CONFIG_STORAGE_VERSION, WATCH_CONFIG_STORAGE_KEY
         )
+        # Debounced saves still waiting (see async_shutdown), and whether the
+        # entry has unloaded, after which this instance saves nothing.
+        self._index_save_pending = False
+        self._pending_owners: set[str] = set()
+        self._closed = False
 
     # ── persistence ────────────────────────────────────────────────────
 
@@ -1069,14 +1074,36 @@ class WatchConfigStore:
         }
 
     def _schedule_index_save(self) -> None:
-        if self._load_failed:
+        if self._load_failed or self._closed:
             return
+        self._index_save_pending = True
         self._index.async_delay_save(self._serialize_index, _SAVE_DEBOUNCE_SECONDS)
 
     def _schedule_owner_save(self, owner_watch_id: str) -> None:
+        if self._closed:
+            return
+        self._pending_owners.add(owner_watch_id)
         self._file(owner_watch_id).async_delay_save(
             lambda: self._serialize_owner(owner_watch_id), _SAVE_DEBOUNCE_SECONDS
         )
+
+    async def async_shutdown(self) -> None:
+        """Called on unload: write every save still waiting out its debounce
+        now, which cancels the delayed ones, and save nothing after.
+
+        Without it a reload's new instance reads revision N while this one
+        writes N+1 a moment later, and the next save there reuses N+1 for
+        different content, which a watch that applied the first N+1 never
+        pulls. And an uninstall that follows removes files no one writes
+        again."""
+        self._closed = True
+        owners = sorted(self._pending_owners)
+        self._pending_owners.clear()
+        for owner in owners:
+            await self._file(owner).async_save(self._serialize_owner(owner))
+        if self._index_save_pending:
+            self._index_save_pending = False
+            await self._index.async_save(self._serialize_index())
 
     def _remove_owner_file(self, owner_watch_id: str) -> None:
         """Delete one owner's file, from a synchronous caller.
@@ -1084,6 +1111,7 @@ class WatchConfigStore:
         ``Store.async_remove`` cancels the pending debounced write before it
         unlinks, so a save scheduled just before the forget never lands.
         """
+        self._pending_owners.discard(owner_watch_id)
         self._hass.async_create_task(
             self._file(owner_watch_id).async_remove(),
             name=f"wrist_assistant_watch_config_remove_{owner_watch_id}",
