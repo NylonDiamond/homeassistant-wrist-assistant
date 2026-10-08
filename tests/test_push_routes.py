@@ -200,6 +200,44 @@ def test_routes_name_the_targets_that_led_to_them(mod) -> None:
     assert [(r.store_id, r.targets) for r in routes] == [("p1", ["w2", "w1"])]
 
 
+# ── a silent background push (audit L19) ─────────────────────────────────
+#
+# iOS mirrors an alert to the wrist but never a content-available push, so a
+# background push can only reach a watch through the watch's own token.
+
+
+def _background(mod, secrets, tokens, modes=None, targets=None) -> list[tuple[str, str]]:
+    routes = mod.resolve_push_routes(
+        secrets, _tokens(mod, tokens), modes or {}, targets, push_type="background"
+    )
+    return [(route.store_id, route.entry.device_token) for route in routes]
+
+
+def test_a_background_push_to_a_mirror_watch_goes_to_the_watch_not_the_phone(mod) -> None:
+    assert _background(mod, ONE, ONE_TOKENS) == [("w1", "W1")]
+    assert _background(mod, ONE, ONE_TOKENS, {"w1": "mirror"}, ["w1"]) == [("w1", "W1")]
+    assert _background(mod, ONE, ONE_TOKENS, {"w1": "direct"}, ["w1"]) == [("w1", "W1")]
+
+
+def test_a_background_push_to_a_watch_without_its_own_token_goes_nowhere(mod) -> None:
+    """Falling back to the phone would wake the phone and never the watch."""
+    phone_only = {"p1": {"ios": "P1"}}
+    assert _background(mod, ONE, phone_only) == []
+    assert _background(mod, ONE, phone_only, {"w1": "direct"}, ["w1"]) == []
+    # A leftover phone token filed under the watch is a phone token too.
+    assert _background(mod, ONE, {"w1": {"ios": "OLD"}}) == []
+
+
+def test_a_background_push_never_goes_to_a_named_iphone(mod) -> None:
+    assert _background(mod, ONE, ONE_TOKENS, targets=["p1"]) == []
+
+
+def test_a_background_push_to_every_watch_sends_each_its_own_token(mod) -> None:
+    secrets = {**ONE, "w2": _watch("u1", owner="p1"), "w3": _watch("u1", owner="p1")}
+    tokens = {**ONE_TOKENS, "w2": {"watchos": "W2"}}
+    assert _background(mod, secrets, tokens) == [("w1", "W1"), ("w2", "W2")]
+
+
 # ── the helpers the replies and sensors read ─────────────────────────────
 
 

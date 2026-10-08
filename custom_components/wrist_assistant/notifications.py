@@ -26,6 +26,17 @@ DELIVERY_MODE_DIRECT = "direct"
 # `widget_secret_store.DEVICE_KIND_IPHONE`, repeated so this module stays free
 # of that one's Home Assistant imports and the routing below stays pure.
 _DEVICE_KIND_IPHONE = "iphone"
+PUSH_TYPE_BACKGROUND = "background"
+
+# Relay refusals that mean the device token itself is finished: APNs says the
+# app is gone or the token is not one of ours, or the relay binding points at
+# a token the device has since replaced. A token refused this way is removed.
+DEAD_TOKEN_REASONS = frozenset({
+    "BadDeviceToken",
+    "Unregistered",
+    "DeviceTokenNotForTopic",
+    "device_token_mismatch",
+})
 
 
 def _normalize_environment(environment: object) -> str:
@@ -296,6 +307,53 @@ class NotificationTokenStore:
             self._store.async_delay_save(self._serialize, 5)
             self._notify_listeners()
 
+    def holds(self, watch_id: str, platform: str, device_token: str) -> bool:
+        """Whether (watch_id, platform) still holds exactly this device token.
+
+        A send carries the token it was routed to across a relay round trip.
+        If the device registered a new token meanwhile, anything the send
+        writes back about the old token (a relay binding, an environment, a
+        removal) would land on the new one, so every such write asks first.
+        """
+        entry = self.get_entry(watch_id, platform)
+        return entry is not None and entry.device_token == device_token
+
+    def register_if_current(
+        self,
+        watch_id: str,
+        device_token: str,
+        platform: str,
+        environment: str = "production",
+        relay_token: str | None = None,
+    ) -> bool:
+        """`register`, but only while the entry still holds ``device_token``.
+
+        Returns False, and writes nothing, when the entry is gone or now holds
+        a different token: the device has moved on and the old token must not
+        be written back over the new one.
+        """
+        if not self.holds(watch_id, platform, device_token):
+            return False
+        self.register(
+            watch_id,
+            device_token,
+            platform=platform,
+            environment=environment,
+            relay_token=relay_token,
+        )
+        return True
+
+    def remove_if_current(self, watch_id: str, platform: str, device_token: str) -> bool:
+        """Remove one platform's token, but only while it is still ``device_token``.
+
+        A dead-token verdict is about the token that was sent, so a fresh token
+        the device registered during the send is kept. Returns whether it went.
+        """
+        if not self.holds(watch_id, platform, device_token):
+            return False
+        self.remove(watch_id, platform=platform)
+        return True
+
     def delivery_modes(self) -> dict[str, str]:
         """Every watch's stored ``delivery_mode``; a watch not listed is "mirror"."""
         return {
@@ -400,6 +458,43 @@ class NotificationTokenStore:
                 listener()
             except Exception:  # noqa: BLE001
                 _LOGGER.exception("Notification token store listener raised")
+
+
+def is_dead_token_reason(reason: str | None) -> bool:
+    """Whether a relay refusal means the token itself is finished."""
+    return reason in DEAD_TOKEN_REASONS
+
+
+def purge_dead_token(
+    store: NotificationTokenStore,
+    store_id: str,
+    entry: TokenEntry,
+    reason: str | None,
+) -> bool:
+    """Remove a token the relay refused for good, if it is still the stored one.
+
+    Shared by every sender (alerts in ``_deliver_push``, the complication
+    push) so a dead token goes the same way whichever push found it. ``entry``
+    is the token that was sent; when the device registered a new one during
+    the send, the new one stays. Returns whether a token was removed.
+    """
+    if not is_dead_token_reason(reason):
+        return False
+    if not store.remove_if_current(store_id, entry.platform, entry.device_token):
+        _LOGGER.debug(
+            "Kept the %s token for %s: the refused token (reason=%s) was already replaced",
+            entry.platform,
+            store_id,
+            reason,
+        )
+        return False
+    _LOGGER.warning(
+        "Removing dead %s token for watch_id=%s (reason=%s)",
+        entry.platform,
+        store_id,
+        reason,
+    )
+    return True
 
 
 # ── pairing a phone's token with a watch, by Home Assistant user ──────────
@@ -514,6 +609,7 @@ def resolve_push_routes(
     tokens: Mapping[str, Mapping[str, TokenEntry]],
     modes: Mapping[str, str],
     target_ids: Iterable[str] | None = None,
+    push_type: str = "alert",
 ) -> list[PushRoute]:
     """Which tokens one alert goes to.
 
@@ -533,9 +629,16 @@ def resolve_push_routes(
     phone is reached only through a watch of its user or by being named, so
     someone who installed the app for its widgets alone gets no alerts.
 
+    A ``push_type`` of "background" (a silent content-available push) goes
+    only to each target watch's own ``watchos`` token, whatever its delivery
+    mode, and a watch without one gets nothing. iOS shows a mirrored copy of
+    an alert on the wrist but never passes a silent push on, so a phone token
+    would only wake the phone, which has nothing to do with it.
+
     Each device token is sent once per alert, whichever targets led to it.
     The order is stable: targets sorted, then each target's tokens in order.
     """
+    background = push_type == PUSH_TYPE_BACKGROUND
     if target_ids is None:
         ids = {wid for wid, secret in secrets.items() if not is_iphone_entry(secret)}
         ids.update(wid for wid in tokens if not is_iphone_entry(secrets.get(wid)))
@@ -560,7 +663,11 @@ def resolve_push_routes(
     for target in ordered:
         own = tokens.get(target, {})
         if is_iphone_entry(secrets.get(target)):
-            add(target, target, own.get(PLATFORM_IOS) or next(iter(own.values()), None))
+            if not background:
+                add(target, target, own.get(PLATFORM_IOS) or next(iter(own.values()), None))
+            continue
+        if background:
+            add(target, target, own.get(PLATFORM_WATCHOS))
             continue
         phones = [
             (phone_id, tokens[phone_id][PLATFORM_IOS])

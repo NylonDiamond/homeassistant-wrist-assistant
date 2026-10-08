@@ -180,7 +180,9 @@ send_notification:
       name: Push type
       description: >-
         APNs push type. "alert" (default) for visible notifications,
-        "background" for silent background updates.
+        "background" for silent background updates. A background push goes
+        only to a watch's own push token, never through the iPhone, and
+        carries no sound.
       selector:
         select:
           options:

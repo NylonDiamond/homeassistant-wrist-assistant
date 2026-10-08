@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from .notifications import purge_dead_token
 from .widget_secret_store import DEVICE_KIND_IPHONE, DEVICE_KIND_WATCH
 
 if TYPE_CHECKING:
@@ -239,8 +240,13 @@ class ComplicationPhonePush:
             _LOGGER.debug(
                 "Complication push sent to %s (token %s, %s)", owner_id, token, reason
             )
-        else:
-            _LOGGER.warning("Complication push to %s was refused: %s", owner_id, why)
+            return
+        _LOGGER.warning("Complication push to %s was refused: %s", owner_id, why)
+        # A token the relay refuses for good (the app was deleted, the token
+        # is not ours) goes the way an alert's dead token goes. Leaving it
+        # would keep push_available True, so the panel would go on saying it
+        # is sending to a phone that can no longer be reached.
+        purge_dead_token(self._notification_store, filed_under, entry, why)
 
     # ── finding the phone ──────────────────────────────────────────────
 

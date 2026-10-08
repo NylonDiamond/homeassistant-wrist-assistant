@@ -414,6 +414,148 @@ def test_a_refusal_keeps_the_answer_older_apps_know(env) -> None:
     assert (reply.status, reply.text) == (403, "not authorized for companion watch")
 
 
+# ── _deliver_push, pulled out of __init__.py ─────────────────────────────
+#
+# The real function, run against the real token store and routing, with a
+# relay client that records each send. Covers audit L18 (what a send writes
+# back once the device has a new token) and L19 (where a silent background
+# push goes, and that it never carries a sound).
+
+
+class _RelayClient:
+    """Records every send; ``answer`` decides the reply, ``during`` runs mid-send."""
+
+    def __init__(self, answer=(True, None, "production"), during=None) -> None:
+        self.answer = answer
+        self.during = during
+        self.sends: list[dict] = []
+
+    async def send_push(self, **kwargs):
+        self.sends.append(kwargs)
+        if self.during is not None:
+            self.during()
+        return self.answer
+
+
+def _deliver_push_fn(notif: Any):
+    source = _PKG_DIR / "__init__.py"
+    tree = ast.parse(source.read_text(), filename=str(source))
+    wanted = [
+        node
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name in ("_deliver_push", "_strip_none")
+    ]
+    assert len(wanted) == 2
+    code = compile(
+        ast.Module(body=wanted, type_ignores=[]),
+        str(source),
+        "exec",
+        flags=__future__.annotations.compiler_flag,
+        dont_inherit=True,
+    )
+
+    async def _no_uuid(_hass):
+        return None
+
+    namespace: dict[str, Any] = {
+        "asyncio": asyncio,
+        "_LOGGER": logging.getLogger("test_deliver_push"),
+        "HomeAssistantError": _HomeAssistantError,
+        "_get_ha_instance_uuid": _no_uuid,
+        "resolve_push_routes": notif.resolve_push_routes,
+        "purge_dead_token": notif.purge_dead_token,
+    }
+    exec(code, namespace)  # noqa: S102
+    return namespace["_deliver_push"]
+
+
+def _deliver(env, client: _RelayClient, **kwargs: Any) -> dict:
+    data = types.SimpleNamespace(
+        apns_client=client,
+        notification_store=env.tokens,
+        widget_secret_store=env.secrets,
+    )
+    deliver = _deliver_push_fn(env.notif)
+    return asyncio.run(
+        deliver(env.hass, data, title=kwargs.pop("title", "t"), message="m", **kwargs)
+    )
+
+
+def test_a_background_push_for_a_mirror_watch_goes_to_its_own_token_without_a_sound(
+    env,
+) -> None:
+    env.tokens.register("p1", "P1", platform="ios")
+    env.tokens.register("w1", "W1", platform="watchos")
+    client = _RelayClient()
+
+    result = _deliver(
+        env, client, push_type="background", sound="Bell.caf", target_watch_ids=["w1"]
+    )
+
+    assert result["sent"] == 1
+    assert [(s["watch_id"], s["device_token"]) for s in client.sends] == [("w1", "W1")]
+    assert client.sends[0]["sound"] is None
+    assert client.sends[0]["push_type"] == "background"
+
+
+def test_a_background_push_with_only_a_phone_token_is_not_sent_to_the_phone(env) -> None:
+    """Before, this went to the phone and still reported one sent."""
+    env.tokens.register("p1", "P1", platform="ios")
+    client = _RelayClient()
+
+    with pytest.raises(_HomeAssistantError):
+        _deliver(env, client, push_type="background", target_watch_ids=["w1"])
+    assert client.sends == []
+
+
+def test_an_alert_through_the_phone_still_gets_the_default_sound(env) -> None:
+    env.tokens.register("p1", "P1", platform="ios")
+    env.tokens.register("w1", "W1", platform="watchos")
+    client = _RelayClient()
+
+    _deliver(env, client, target_watch_ids=["w1"])
+
+    assert [(s["watch_id"], s["sound"]) for s in client.sends] == [("p1", "default")]
+
+
+def test_a_dead_token_is_removed_after_an_alert(env) -> None:
+    env.tokens.register("p1", "P1", platform="ios")
+    env.tokens.register("w1", "W1", platform="watchos")
+    client = _RelayClient(answer=(False, "Unregistered", "production"))
+
+    with pytest.raises(_HomeAssistantError):
+        _deliver(env, client, target_watch_ids=["w1"])
+    assert env.tokens.get_entry("p1", "ios") is None
+
+
+def test_a_token_registered_during_the_send_survives_a_dead_verdict(env) -> None:
+    """The phone was reinstalled while the alert was at the relay. The
+    verdict is about the old token; the new one is the phone's only way to
+    get Fast alerts and must stay."""
+    env.tokens.register("p1", "P1", platform="ios")
+    client = _RelayClient(
+        answer=(False, "Unregistered", "production"),
+        during=lambda: env.tokens.register("p1", "P2", platform="ios"),
+    )
+
+    with pytest.raises(_HomeAssistantError):
+        _deliver(env, client, target_watch_ids=["w1"])
+    assert env.tokens.get_entry("p1", "ios").device_token == "P2"
+
+
+def test_an_environment_flip_is_not_written_over_a_new_token(env) -> None:
+    env.tokens.register("p1", "P1", platform="ios")
+    client = _RelayClient(
+        answer=(True, None, "development"),
+        during=lambda: env.tokens.register("p1", "P2", platform="ios"),
+    )
+
+    _deliver(env, client, target_watch_ids=["w1"])
+    entry = env.tokens.get_entry("p1", "ios")
+    assert (entry.device_token, entry.environment) == ("P2", "production")
+
+
 # ── the binary sensors' readers ──────────────────────────────────────────
 
 

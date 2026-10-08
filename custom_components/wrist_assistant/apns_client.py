@@ -7,7 +7,7 @@ import logging
 
 from aiohttp import ClientConnectorError, ClientError, ClientSession, ClientTimeout
 
-from .notifications import NotificationTokenStore, TokenEntry
+from .notifications import NotificationTokenStore, TokenEntry, is_dead_token_reason
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -19,13 +19,10 @@ _RELAY_TIMEOUT = ClientTimeout(total=10, connect=5)
 # connect timeout). Those provably never reached the relay, so retrying cannot
 # deliver a push twice. A read-phase timeout is NOT retried for that reason.
 _CONNECT_RETRY_DELAY = 1.0
-
-_DEAD_TOKEN_REASONS = frozenset({
-    "BadDeviceToken",
-    "Unregistered",
-    "DeviceTokenNotForTopic",
-    "device_token_mismatch",
-})
+# What send_push answers when the device registered a new token while a send
+# to its old one was in flight. Not a dead-token reason: the stored token is
+# the new one and stays.
+TOKEN_REPLACED_REASON = "token_replaced"
 
 
 class APNsClient:
@@ -66,6 +63,11 @@ class APNsClient:
         entry = self._notification_store.get_entry(watch_id, platform)
         if entry is None:
             return (False, "missing_token_registration", environment)
+        if entry.device_token != device_token:
+            # The route was chosen for a token the device has since replaced.
+            # The stored relay binding belongs to the new token, and binding
+            # the old one would write it back over the new one.
+            return (False, TOKEN_REPLACED_REASON, environment)
 
         relay_token = entry.relay_token
         if not relay_token:
@@ -76,7 +78,7 @@ class APNsClient:
                 existing=entry,
             )
             if relay_token is None:
-                return (False, "relay_registration_failed", environment)
+                return (False, self._registration_failure(watch_id, entry), environment)
 
         payload = {
             "relay_token": relay_token,
@@ -98,7 +100,7 @@ class APNsClient:
                 result.get("used_environment"), default=environment
             )
             if used_environment != environment:
-                self._notification_store.register(
+                self._notification_store.register_if_current(
                     watch_id,
                     device_token,
                     platform=entry.platform,
@@ -113,9 +115,14 @@ class APNsClient:
         # binding) and device_token_mismatch (the binding points at a
         # since-replaced device_token, e.g. after an app reinstall). Either is
         # recoverable — re-register to rebind, then retry the send once before
-        # giving up. device_token_mismatch stays in _DEAD_TOKEN_REASONS as the
+        # giving up. device_token_mismatch stays a dead-token reason as the
         # fallback purge if this retry still can't rebind it.
         if reason in ("invalid_relay_token", "device_token_mismatch"):
+            # The device may have registered a new token while this send was
+            # at the relay (that is what a mismatch usually means). Binding
+            # the token in hand would then write it back over the new one.
+            if not self._notification_store.holds(watch_id, entry.platform, device_token):
+                return (False, TOKEN_REPLACED_REASON, environment)
             relay_token = await self._register_device(
                 watch_id=watch_id,
                 device_token=device_token,
@@ -123,7 +130,7 @@ class APNsClient:
                 existing=entry,
             )
             if relay_token is None:
-                return (False, "relay_registration_failed", environment)
+                return (False, self._registration_failure(watch_id, entry), environment)
 
             payload["relay_token"] = relay_token
             result = await self._post_json("/v1/push/send", payload)
@@ -134,7 +141,7 @@ class APNsClient:
                     result.get("used_environment"), default=environment
                 )
                 if used_environment != environment:
-                    self._notification_store.register(
+                    self._notification_store.register_if_current(
                         watch_id,
                         device_token,
                         platform=entry.platform,
@@ -202,14 +209,23 @@ class APNsClient:
         used_environment = _normalize_environment_value(
             result.get("environment"), default=environment
         )
-        self._notification_store.register(
+        # Written only while the entry still holds this token: a device that
+        # registered a new one during the round trip keeps it.
+        if not self._notification_store.register_if_current(
             watch_id,
             device_token,
             platform=existing.platform,
             environment=used_environment,
             relay_token=relay_token,
-        )
+        ):
+            return None
         return relay_token
+
+    def _registration_failure(self, watch_id: str, entry: TokenEntry) -> str:
+        """Why a rebind produced no relay token: the token moved on, or the relay."""
+        if self._notification_store.holds(watch_id, entry.platform, entry.device_token):
+            return "relay_registration_failed"
+        return TOKEN_REPLACED_REASON
 
     async def _post_json(self, path: str, payload: dict) -> dict | None:
         url = f"{self._relay_base_url}{path}"
@@ -237,7 +253,7 @@ class APNsClient:
     @staticmethod
     def is_dead_token(reason: str | None) -> bool:
         """Return True if the relay reason indicates a permanently invalid token."""
-        return reason in _DEAD_TOKEN_REASONS
+        return is_dead_token_reason(reason)
 
 
 def _normalize_environment_value(value: object, *, default: str) -> str:
