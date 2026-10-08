@@ -162,7 +162,7 @@ describe("the top bar", () => {
     expect([...places].sort((a, b) => a - b)).toEqual(places);
     expect(bar).toContain(">Complications</span>");
     expect(bar).toContain(">Add page</span>");
-    expect(bar).toContain(">Collected</span>");
+    expect(bar).toContain(">Synced</span>");
     expect(bar).toContain(">Saved 2 min ago</span>");
     expect(bar).toContain(">Menus</span>");
     // Undo and Redo moved to the canvas head; the old toolbar is gone.

@@ -109,9 +109,10 @@ export function listPageEscape(state: { dupOpen: boolean; selecting: boolean }):
 }
 
 /** The line under the page's title: how many there are, and the one fact
- * about them a newcomer gets wrong. */
+ * about them a newcomer gets wrong. The title says Complications, as the tab
+ * does, so this line is where an iPhone's widgets are counted in. */
 export function listPageLead(total: number): string {
-  const count = `${total} ${total === 1 ? "complication" : "complications"}.`;
+  const count = `${total} ${total === 1 ? "complication or widget" : "complications and widgets"}.`;
   return `${count} One design can be on more than one device.`;
 }
 

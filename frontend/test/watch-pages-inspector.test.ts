@@ -543,9 +543,9 @@ describe("the inspector with several tiles picked", () => {
 });
 
 describe("the page strip", () => {
-  it("reads Page settings: Hidden, the three chips Theme, Background and Title, then Smart Page, a hairline between each", () => {
+  it("reads Page: Hidden, the three chips Theme, Background and Title, then Smart Page, a hairline between each", () => {
     const text = flat(strip(editor(hallPage())));
-    expect(text).toMatch(/^<div class="pe-pstrip" role="toolbar" aria-label="Page settings">\s*<span class="pe-pstrip-label">Page settings:<\/span>/);
+    expect(text).toMatch(/^<div class="pe-pstrip" role="toolbar" aria-label="Page settings">\s*<span class="pe-pstrip-label">Page<\/span>/);
     expect(chips(text).map(({ label, value }) => [label, value])).toEqual([
       ["Theme", watchThemeDisplayName("neonLagoon")],
       ["Background", "None"],

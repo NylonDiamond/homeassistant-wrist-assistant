@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { OwnerSummary } from "../src/ha-api.js";
-import { countWord, deviceCardTiles, deviceFacts, homeGroups, homeTotals, lastSeenDevice, pendingWords, seenWords, summaryCounts, tileWord, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles } from "../src/home.js";
+import { countWord, deviceCardTiles, deviceFacts, homeGroups, homeTotals, lastSeenDevice, pendingWords, seenWords, summaryCounts, tileWord, deviceSheetTabs, watchConfigCount, homeDeviceRows, homeDevices, homeStyles, neverConnected } from "../src/home.js";
 import { homeSync } from "../src/send-state.js";
 import { shellStyles } from "../src/shell.js";
 
@@ -291,5 +291,17 @@ describe("the shell's and Home's look", () => {
     const rule = (sel: string) => text.slice(text.indexOf(sel), text.indexOf("}", text.indexOf(sel)));
     expect(rule(".home-device-label {")).toContain("overflow-wrap: anywhere");
     expect(rule(".home-device-facts {")).toContain("overflow-wrap: anywhere");
+  });
+});
+
+describe("neverConnected", () => {
+  it("is true only for a device with no app version, no applied change and no sighting", () => {
+    expect(neverConnected({ app_version: null, applied_token: null, last_seen_seconds: null })).toBe(true);
+    expect(neverConnected({ app_version: null, applied_token: undefined })).toBe(true);
+    expect(neverConnected({ app_version: "3.0.1", applied_token: null, last_seen_seconds: null })).toBe(false);
+    expect(neverConnected({ app_version: null, applied_token: 0, last_seen_seconds: null })).toBe(false);
+    expect(neverConnected({ app_version: null, applied_token: null, last_seen_seconds: 30 })).toBe(false);
+    expect(neverConnected({ app_version: null, applied_token: null, polling: true })).toBe(false);
+    expect(neverConnected(undefined)).toBe(false);
   });
 });

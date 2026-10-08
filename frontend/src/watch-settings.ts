@@ -478,7 +478,7 @@ export function savedByWords(updatedBy: string | null | undefined): string {
 
 /** The pill and its help line while a save waits for a device. */
 export const WAITING_PILL_TEXT = "Waiting to be collected";
-export const COLLECTED_PILL_TEXT = "Collected";
+export const COLLECTED_PILL_TEXT = "Synced";
 export const WAITING_HELP_TEXT = "The watch picks it up the next time it checks.";
 
 /** The code of a WebSocket error, such as `conflict` or `no_record`. */

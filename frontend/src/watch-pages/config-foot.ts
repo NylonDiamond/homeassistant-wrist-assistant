@@ -93,7 +93,7 @@ export function configFootStatus(i: {
     };
   }
   if (deliveryState(record) === "delivered") {
-    return { tone: "ok", revision, state: COLLECTED_PILL_TEXT, help: `Revision ${record.revision} has been collected.`, size, near };
+    return { tone: "ok", revision, state: COLLECTED_PILL_TEXT, help: `The watch has revision ${record.revision}.`, size, near };
   }
   return { tone: "warn", revision, state: WAITING_PILL_TEXT, help: WAITING_HELP_TEXT, size, near };
 }

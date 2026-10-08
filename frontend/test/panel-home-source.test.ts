@@ -57,7 +57,7 @@ describe("Home's device cards", () => {
   });
 
   it("says in small print what the states cover: the watch app too", () => {
-    expect(home).toContain(`<p class="home-small">Synced, Waiting and Nothing waiting cover complications and widgets, and on a watch also its pages, menus, settings and the rest of the watch app.</p>`);
+    expect(home).toContain(`<p class="home-small">\${HOME_SYNC_NOTE}</p>`);
     expect(home).not.toContain("only.</p>");
   });
 

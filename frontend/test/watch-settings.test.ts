@@ -457,7 +457,7 @@ describe("a watch with nothing in Home Assistant yet", () => {
     expect(savedByWords("W1")).toBe("from the watch");
     expect(savedByWords(null)).toBe("from the watch");
     expect(WAITING_PILL_TEXT).toBe("Waiting to be collected");
-    expect(COLLECTED_PILL_TEXT).toBe("Collected");
+    expect(COLLECTED_PILL_TEXT).toBe("Synced");
     expect(WAITING_HELP_TEXT).toBe("The watch picks it up the next time it checks.");
     // The iPhone passes nothing to the watch any more.
     expect(WAITING_HELP_TEXT).not.toMatch(/iPhone/);

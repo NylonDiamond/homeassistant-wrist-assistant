@@ -3001,9 +3001,9 @@ export class WaPageEditor extends LitElement {
         @click=${() => this.onHaMenu?.()}>${uiIcon("menu")}</button>` : nothing}
       ${shell ? nothing : html`<button class="tb-btn tb-back" title="Back to complications"
         @click=${() => (this.onBack ? this.onBack() : navigateWatchPages(undefined, false))}>${uiIcon("left")}<span>Complications</span></button>`}
-      <button class="tb-btn tb-new" ?disabled=${draft === undefined || this.saving}
+      ${shell ? nothing : html`<button class="tb-btn tb-new" ?disabled=${draft === undefined || this.saving}
         title=${this.saving ? SAVING_TEXT : "Add an empty page after the last one"}
-        @click=${() => this.addPage()}>${uiIcon("plus")}<span>Add page</span></button>
+        @click=${() => this.addPage()}>${uiIcon("plus")}<span>Add page</span></button>`}
       <span class="spacer"></span>
       ${watches.length > 1 && !shell ? this.renderWatchPicker(watches) : nothing}
       ${this.renderSyncPill(draft)}
@@ -3799,7 +3799,7 @@ export class WaPageEditor extends LitElement {
       body: () => (host === undefined ? nothing : renderSmartPageBody(host)),
     });
     const sections: Exclude<WatchPageStripSection, "page">[] = ["theme", "background", "title"];
-    // The strip reads "Page settings:" then its options, a hairline between
+    // The strip reads "Page" then its options, a hairline between
     // each: Hidden first, the chips, then the Smart Page switch (a mode
     // change, so last) and on a smart page its chip.
     // The two switches explain themselves the moment the pointer is on
@@ -3830,7 +3830,7 @@ export class WaPageEditor extends LitElement {
     if (smartChip !== nothing) items.push(smartChip as TemplateResult);
     const sep = html`<span class="pe-pstrip-sep" aria-hidden="true"></span>`;
     return html`<div class="pe-pstrip" role="toolbar" aria-label="Page settings">
-      <span class="pe-pstrip-label">Page settings:</span>
+      <span class="pe-pstrip-label">Page</span>
       ${items.map((item, i) => (i === 0 ? item : html`${sep}${item}`))}
       ${host === undefined ? nothing : renderPageReset(host)}
     </div>`;
@@ -4718,7 +4718,7 @@ export class WaPageEditor extends LitElement {
       padding: 8px 12px; border-bottom: 1px solid var(--wa-line); background: var(--wa-card);
     }
     .pe-pstrip-item { position: relative; min-width: 0; }
-    /* "Page settings:" leads the strip; a hairline stands between each option. */
+    /* "Page" leads the strip (short, so the switches fit on one line); a hairline stands between each option. */
     .pe-pstrip-label { flex: none; font-size: 11.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--wa-muted); margin-right: 4px; }
     .pe-pstrip-sep { flex: none; width: 1px; height: 18px; margin: 0 2px; background: var(--wa-line); }
     .pe-pstrip-tog { display: inline-flex; align-items: center; min-width: 0; padding: 0 4px; }

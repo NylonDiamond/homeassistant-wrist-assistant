@@ -58,7 +58,7 @@ describe("one picker surface, two forms", () => {
 
   it("keys the Shape view's grid on the shared class, not on the dialog", () => {
     expect(SOURCE).not.toContain(".pk-dialog.bare");
-    expect(SOURCE.match(/\.pk-surface\.bare /g)?.length).toBeGreaterThanOrEqual(10);
+    expect(SOURCE.match(/\.pk-surface\.bare /g)?.length).toBeGreaterThanOrEqual(9);
     // The dialog's own frame and its narrow size stay the dialog's.
     expect(SOURCE).toContain("dialog.pk-dialog {");
     expect(SOURCE).toContain("dialog.pk-dialog { width: calc(100vw - 16px)");

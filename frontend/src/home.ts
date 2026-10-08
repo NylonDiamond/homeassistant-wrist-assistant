@@ -174,6 +174,22 @@ export function seenWords(owner: Pick<OwnerSummary, "polling" | "last_seen_secon
   return `Seen ${agoWords(seconds + Math.max(0, elapsed))}`;
 }
 
+/** Home's small print under the devices: what Synced and Waiting are about.
+ * The totals already say what each word means, so this only says what it
+ * covers, which on a watch is more than its complications. */
+export const HOME_SYNC_NOTE = "On a watch, Synced and Waiting cover its complications and the whole watch app: pages, menus and settings.";
+
+/** A device the server holds but that never talked to it: no app version,
+ * and no change it ever said it had. A pairing left half done, or a test
+ * record. Its card says so rather than leaving its facts line blank. */
+export function neverConnected(owner: Pick<OwnerSummary, "app_version" | "applied_token" | "polling" | "last_seen_seconds"> | undefined): boolean {
+  if (owner === undefined || owner.polling === true) return false;
+  return !owner.app_version && (owner.applied_token === null || owner.applied_token === undefined)
+    && typeof owner.last_seen_seconds !== "number";
+}
+
+export const NEVER_CONNECTED_TEXT = "Never connected";
+
 /** What a device's next pull brings, when it brings anything. */
 export function pendingWords(owner: Pick<OwnerSummary, "pending_changes"> | undefined): string | undefined {
   const n = owner?.pending_changes;

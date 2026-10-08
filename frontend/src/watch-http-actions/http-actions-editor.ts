@@ -600,7 +600,7 @@ export class WaHttpActionsEditor extends LitElement {
     if (record === undefined || record.revision <= 0 || this.unsupported) return nothing;
     const { collected, waiting } = httpActionsDelivery(record, this.watches);
     if (collected.length === 0 && waiting.length === 0) return nothing;
-    const title = [waiting.length > 0 ? `Waiting: ${waiting.join(", ")}.` : "", collected.length > 0 ? `Collected: ${collected.join(", ")}.` : ""].filter((s) => s !== "").join(" ");
+    const title = [waiting.length > 0 ? `Waiting: ${waiting.join(", ")}.` : "", collected.length > 0 ? `Synced: ${collected.join(", ")}.` : ""].filter((s) => s !== "").join(" ");
     return html`<span class="tb-sync ${waiting.length === 0 ? "ok" : "warn"}" title=${title}>
       <i class="tb-dot" aria-hidden="true"></i><span class="tb-sync-l">${waiting.length === 0 ? COLLECTED_PILL_TEXT : WAITING_PILL_TEXT}</span>
     </span>`;

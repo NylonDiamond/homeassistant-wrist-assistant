@@ -135,9 +135,9 @@ describe("listPageEscape", () => {
 
 describe("listPageLead", () => {
   it("counts, and says a design can be on more than one device", () => {
-    expect(listPageLead(0)).toBe("0 complications. One design can be on more than one device.");
-    expect(listPageLead(1)).toBe("1 complication. One design can be on more than one device.");
-    expect(listPageLead(46)).toBe("46 complications. One design can be on more than one device.");
+    expect(listPageLead(0)).toBe("0 complications and widgets. One design can be on more than one device.");
+    expect(listPageLead(1)).toBe("1 complication or widget. One design can be on more than one device.");
+    expect(listPageLead(46)).toBe("46 complications and widgets. One design can be on more than one device.");
   });
 
   it("uses no dash to break a sentence", () => {

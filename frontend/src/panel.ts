@@ -142,7 +142,7 @@ import { TourPlayer } from "./tour-player.js";
 import { keyed } from "lit/directives/keyed.js";
 import { SHARED_TEST_PREFIX, type TriedValue, sharedTestKey, testControlFor, testableSharedValues, testedNamedValues, testingWords } from "./test-controls.js";
 import { type SendState, agoWords, describeHomeSync, describeSend, deviceSyncLabel, homeSync, sendState, sendWaitMs } from "./send-state.js";
-import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, countWord, deviceCardTiles, deviceFacts, deviceSheetTabs, homeDeviceRows, homeGroups, homeTotals, lastSeenDevice, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount } from "./home.js";
+import { type DeviceCountKind, type DeviceSheetTab, type HomeDeviceRow, countWord, deviceCardTiles, deviceFacts, deviceSheetTabs, homeDeviceRows, homeGroups, homeTotals, lastSeenDevice, pendingWords, seenWords, summaryCounts, homeDevices, homeStyles, watchConfigCount, HOME_SYNC_NOTE, NEVER_CONNECTED_TEXT, neverConnected } from "./home.js";
 import { homePhoneArt, homeWatchArt } from "./home-art.js";
 import { type WatchAppSync, readWatchAppSync, summaryUnknown, summaryWatchAppSyncs, waitingForText, watchAppSyncKey } from "./watch-app-sync.js";
 import { type PickerForm, type TabMemory, browseAllTab, listPageEscape, listPageLead, listPageShown, listPageState, listPageStyles, listsReady, pickTab, pickerSurfaceClass, restoreTab } from "./list-page.js";
@@ -668,6 +668,9 @@ function hasControlOf(record: ComplicationRecord): boolean {
  * the card is under. A design with no shape at all is a Control Center
  * control and says so.
  */
+/** The box of presets the iPhone app made before 2.8, until they move here. */
+const STILL_IN_APP_TITLE = "Waiting to move";
+
 function cardShapeTitle(family: FamilyKind | undefined, control: boolean): string {
   if (family !== undefined) return familyTitle(family);
   return control ? "Control Center" : "No shape yet";
@@ -697,7 +700,7 @@ const SHELF_SHAPE_ORDER: readonly string[] = [...WATCH_SHAPE_ORDER, "small", "me
 
 function shapeGroupOrder(kind: DeviceKind): readonly string[] {
   const shapes = kind === "iphone" ? PHONE_SHAPE_ORDER : kind === "library" ? SHELF_SHAPE_ORDER : WATCH_SHAPE_ORDER;
-  return [...shapes, "control", "none"];
+  return [...shapes, "control", "app", "none"];
 }
 
 /**
@@ -710,7 +713,7 @@ function shapeGroupOrder(kind: DeviceKind): readonly string[] {
  * like any other and a box is what the colour is for.
  */
 function shapeColorVar(key: string): string | undefined {
-  return key === "none" ? undefined : `--pk-shape: var(--wa-shape-${key})`;
+  return key === "none" || key === "app" ? undefined : `--pk-shape: var(--wa-shape-${key})`;
 }
 
 function shapeGroupRank(order: readonly string[], key: string): number {
@@ -2851,17 +2854,16 @@ export class WristAssistantPanel extends LitElement {
        saved the line but read as a spine bolted to the side of the grid. The
        caption is set small and spaced instead, so it reads as a label on the
        box rather than as one more thing competing with the cards' own names. */
-    .pk-boxes { display: flex; flex-direction: column; gap: 8px; }
+    .pk-boxes { display: flex; flex-direction: column; gap: 16px; }
     /* Washed with its own shape's hue, over the same ground every box sits
        on, so the tint is the only thing telling two boxes apart and every
        rectangular box in the dialog is the same colour. A shape with no hue
        of its own, which is a document with no shape at all, falls back to the
        plain ground rather than borrowing somebody else's. */
-    .pk-box {
-      display: flex; flex-direction: column; min-width: 0; padding: 8px 10px 10px;
-      border: 1px solid var(--wa-line-strong); border-radius: 8px;
-      background: var(--wa-bg);
-    }
+    /* No frame of its own: the device's box is already a frame, and a frame
+       per shape inside it made three boxes deep. The label over the cards
+       and the gap between shapes are enough to tell them apart. */
+    .pk-box { display: flex; flex-direction: column; min-width: 0; }
     .pk-box-top { display: flex; align-items: center; gap: 7px; min-width: 0; margin: 0 0 8px 2px; }
     /* The label takes the hue at full strength: the wash alone is too faint to
        learn a shape's colour from, and the two together teach it in one look. */
@@ -2917,8 +2919,7 @@ export class WristAssistantPanel extends LitElement {
     .pk-surface.bare .pk-card { padding: 8px; border-radius: 10px; }
     .pk-surface.bare .pk-card-top { margin-bottom: 6px; min-height: 16px; gap: 6px; }
     .pk-surface.bare .pk-card-name { font-size: 12px; }
-    .pk-surface.bare .pk-boxes { gap: 6px; }
-    .pk-surface.bare .pk-box { padding: 6px 8px 8px; }
+    .pk-surface.bare .pk-boxes { gap: 12px; }
     .pk-surface.bare .pk-sec-body { padding: 8px; }
     .pk-surface.bare .pk-band-body { gap: 8px; }
     .pk-card {
@@ -3239,7 +3240,6 @@ export class WristAssistantPanel extends LitElement {
       .pk-body { padding: 10px; }
       .pk-sec-top { padding: 6px 10px; }
       .pk-sec-body { padding: 6px; }
-      .pk-box { padding: 6px 6px 8px; }
       .pk-grid { gap: 8px; }
       .pk-card { padding: 8px; border-radius: 10px; }
       .pk-card-top { margin-bottom: 6px; }
@@ -11378,8 +11378,10 @@ export class WristAssistantPanel extends LitElement {
             }
             : {
               kind: "locked",
-              badge: "iPhone",
-              title: "Built on the iPhone before Wrist Assistant 2.8. It keeps working, and moves here on its own the next time the iPhone app opens. If it cannot move, the Widgets tab in the iPhone app says why.",
+              badge: "iPhone app",
+              title: deviceKindOf(this.ownerOf(ownerId)) === "iphone"
+                ? "Made in the iPhone app before Wrist Assistant 2.8. It keeps working, and moves here on its own the next time the iPhone app opens. If it cannot move, the Widgets tab in the iPhone app says why."
+                : "Made in the iPhone app before Wrist Assistant 2.8. It keeps working on this watch, and moves here on its own the next time the paired iPhone's app opens.",
               families: [],
             },
         });
@@ -12239,10 +12241,10 @@ export class WristAssistantPanel extends LitElement {
     return html`<div class="pk-seg" role="group" aria-label="How a card draws its complication">
       <button type="button" class="pk-seg-btn ${bare ? "" : "on"}" aria-pressed=${bare ? "false" : "true"}
         title="Draw each complication on the device it sits on"
-        @click=${() => this.setPickerBare(false)}>${uiIcon("watch")}<span>Device</span></button>
+        @click=${() => this.setPickerBare(false)}>${uiIcon("watch")}<span>On device</span></button>
       <button type="button" class="pk-seg-btn ${bare ? "on" : ""}" aria-pressed=${bare ? "true" : "false"}
         title="Draw the complication on its own, with no device round it"
-        @click=${() => this.setPickerBare(true)}>${uiIcon("shape")}<span>Shape</span></button>
+        @click=${() => this.setPickerBare(true)}>${uiIcon("shape")}<span>Shape only</span></button>
     </div>`;
   }
 
@@ -12408,6 +12410,10 @@ export class WristAssistantPanel extends LitElement {
     const copy = row.copies.find((c) => c.ownerId === at) ?? row.open;
     const families = familiesOfItem(copy.item);
     const family = ALL_FAMILIES.find((f) => families.includes(f));
+    // A preset the iPhone app made before 2.8 says no shape to the panel. It
+    // is not a design half made, so it gets a box of its own rather than
+    // "No shape yet".
+    if (family === undefined && copy.item.kind === "locked") return { key: "app", label: STILL_IN_APP_TITLE };
     const control = copy.item.kind === "record" && hasControlOf(copy.item.record);
     return { key: family ?? (control ? "control" : "none"), label: cardShapeTitle(family, control) };
   }
@@ -13654,12 +13660,14 @@ export class WristAssistantPanel extends LitElement {
       }),
     });
     if (state === "empty") return this.renderStartPage();
-    const total = rows.filter((row) => row.open.item.kind === "record").length;
+    // Every card the page draws, the locked ones too, so the line and the All
+    // tab and the Shape menu give the same number.
+    const total = rows.length;
     const full = this.freeSlot() < 0;
     return html`<div class="cl-page"><div class="cl-wrap">
       <div class="cl-head">
         <div class="cl-head-text">
-          <h1>Complications and widgets</h1>
+          <h1>Complications</h1>
           <p class="cl-lead">${state === "loading" ? "Reading every device's list…" : listPageLead(total)}</p>
         </div>
         <div class="cl-acts">
@@ -18803,14 +18811,14 @@ export class WristAssistantPanel extends LitElement {
         <div class="home-head">
           <div class="home-head-text">
             <h1>Home</h1>
-            <p class="home-lead">Every watch and iPhone, whose each one is, and whether it has your latest changes.</p>
+            <p class="home-lead">Every watch and iPhone, who it belongs to, and whether it has your latest changes.</p>
           </div>
           ${devices.length === 0 ? nothing : acts}
         </div>
         ${loading
           ? html`<p class="home-empty">Loading…</p>`
           : html`${devices.length === 0 ? nothing : this.renderHomeStatus(devices, groups, elapsed)}${groups.map((g) => this.renderHomeGroup(g, elapsed))}${add}`}
-        ${devices.length === 0 ? nothing : html`<p class="home-small">Synced, Waiting and Nothing waiting cover complications and widgets, and on a watch also its pages, menus, settings and the rest of the watch app.</p>`}
+        ${devices.length === 0 ? nothing : html`<p class="home-small">${HOME_SYNC_NOTE}</p>`}
       </div></div>
       ${this.pairOpen ? this.renderPairDialog() : nothing}
       ${this.deviceSheet !== undefined ? this.renderDeviceSheet(this.deviceSheet, devices) : nothing}`;
@@ -18873,6 +18881,9 @@ export class WristAssistantPanel extends LitElement {
           : html`<span>${name.trim().charAt(0).toLocaleUpperCase()}</span>`}</span>
         <h2 class="home-person-name">${name}</h2>
         <span class="home-person-n">${n} ${n === 1 ? "device" : "devices"}</span>
+        ${g.person !== undefined && g.person.userId === undefined
+          ? html`<span class="home-person-n" title="No Home Assistant user is linked to these devices. The name is read from a device's name.">Not linked to a user</span>`
+          : nothing}
         <span class="home-person-sum"><i class="home-dot ${waiting > 0 ? "waiting" : synced === n ? "synced" : ""}" aria-hidden="true"></i>${sum}</span>
       </div>
       <ul class="home-devices">${g.rows.map((d) => this.renderHomeDevice(d, elapsed))}</ul>
@@ -18888,7 +18899,8 @@ export class WristAssistantPanel extends LitElement {
     // What it is and its app on one line, then the paired phone and when it
     // was seen, a line each, so nothing has to be cut.
     const facts = deviceFacts(owner, d.kind);
-    const lines = [facts.slice(0, 2).join(" · "), ...facts.slice(2), ...(seen === undefined ? [] : [seen])];
+    const heard = seen ?? (neverConnected(owner) ? NEVER_CONNECTED_TEXT : undefined);
+    const lines = [facts.slice(0, 2).join(" · "), ...facts.slice(2), ...(heard === undefined ? [] : [heard])];
     const why = [d.waitingFor.length === 0 ? undefined : `For ${waitingForText(d.waitingFor)}`, pending]
       .filter((w): w is string => w !== undefined).join(" · ");
     const held = owner?.complication_count ?? 0;

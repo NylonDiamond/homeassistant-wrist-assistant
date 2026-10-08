@@ -334,7 +334,7 @@ describe("the top bar", () => {
     const places = order.map((part) => bar.indexOf(part));
     expect([...places].sort((a, b) => a - b)).toEqual(places);
     expect(bar).toContain(">Complications</span>");
-    expect(bar).toContain(">Collected</span>");
+    expect(bar).toContain(">Synced</span>");
     expect(bar).toContain(">Saved 2 min ago</span>");
     expect(bar).toContain(">Pages</span>");
     expect(bar).toContain(`aria-label="Watch menus"`);
