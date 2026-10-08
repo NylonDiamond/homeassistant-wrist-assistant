@@ -102,7 +102,10 @@ def _loaded_modules():
             f"{_PKG}.const",
             WIDGET_SECRET_STORAGE_KEY="wrist_assistant.widget_secrets",
             WIDGET_SECRET_STORAGE_VERSION=1,
+            NOTIFICATION_TOKEN_STORAGE_KEY="wrist_assistant_notification_tokens",
+            NOTIFICATION_TOKEN_STORAGE_VERSION=1,
         )
+        _load("notifications")
         secrets_mod = _load("widget_secret_store")
         yield _load("complication_push"), secrets_mod
     finally:
@@ -187,7 +190,7 @@ class _TokenEntry:
 
 
 class _NotificationStore:
-    """Only the one read ``complication_push`` makes: (id, platform)."""
+    """The read ``complication_push`` makes, (id, platform), and the dead-token removal."""
 
     def __init__(self) -> None:
         self.entries: dict[tuple[str, str], _TokenEntry] = {}
@@ -199,6 +202,13 @@ class _NotificationStore:
 
     def get_entry(self, device_id: str, platform: str | None = None):
         return self.entries.get((device_id, platform))
+
+    def remove_if_current(self, device_id: str, platform: str, device_token: str) -> bool:
+        entry = self.entries.get((device_id, platform))
+        if entry is None or entry.device_token != device_token:
+            return False
+        del self.entries[(device_id, platform)]
+        return True
 
 
 class _ComplicationStore:
@@ -214,13 +224,14 @@ class _ComplicationStore:
 class _APNsClient:
     """Records every send and answers however the test told it to."""
 
-    def __init__(self, ok: bool = True) -> None:
+    def __init__(self, ok: bool = True, reason: str = "BadDeviceToken") -> None:
         self.ok = ok
+        self.reason = reason
         self.sends: list[dict] = []
 
     async def send_push(self, **kwargs):
         self.sends.append(kwargs)
-        return (self.ok, None if self.ok else "BadDeviceToken", "production")
+        return (self.ok, None if self.ok else self.reason, "production")
 
 
 @dataclass
@@ -456,13 +467,76 @@ def test_the_phones_own_entry_wins_over_the_reverse_scan(env) -> None:
 
 
 def test_a_refused_push_does_not_raise_and_still_holds_the_floor() -> None:
-    for env in _build(_APNsClient(ok=False)):
+    for env in _build(_APNsClient(ok=False, reason="ServiceUnavailable")):
         env.add_phone("phone-1")
         env.tokens.register("phone-1", "ios", "ios-tok")
         env.save("phone-1")
         env.loop.advance(DEBOUNCE)
         assert len(env.sends) == 1
         assert env.push.seconds_since_push("phone-1") == 0
+        # A passing outage is not a verdict on the token, so it stays.
+        assert env.push.push_available("phone-1") is True
+
+
+@pytest.mark.parametrize("reason", ["Unregistered", "BadDeviceToken"])
+def test_a_token_the_relay_refuses_for_good_is_removed(reason: str) -> None:
+    """The app was deleted from the phone. The token has to go, or the panel
+    keeps saying it is sending to a phone it can no longer reach, and every
+    save spends a relay call that is refused."""
+    for env in _build(_APNsClient(ok=False, reason=reason)):
+        env.add_phone("phone-1")
+        env.tokens.register("phone-1", "ios", "ios-tok")
+        assert env.push.push_available("phone-1") is True
+
+        env.save("phone-1")
+        env.loop.advance(DEBOUNCE)
+        assert len(env.sends) == 1
+        assert env.tokens.get_entry("phone-1", "ios") is None
+        assert env.push.push_available("phone-1") is False
+
+        # The next save sends nothing at all.
+        env.save("phone-1")
+        env.loop.advance(FLOOR * 2)
+        assert len(env.sends) == 1
+
+
+def test_a_dead_leftover_under_the_watch_is_removed_where_it_is_filed() -> None:
+    for env in _build(_APNsClient(ok=False, reason="Unregistered")):
+        env.add_phone("phone-1")
+        env.add_watch("watch-A", owner_iphone_id="phone-1")
+        env.tokens.register("watch-A", "ios", "ios-tok")
+        env.tokens.register("watch-A", "watchos", "watch-tok")
+
+        env.push.push_now("phone-1", "refresh")
+        assert env.tokens.get_entry("watch-A", "ios") is None
+        # The watch's own token is a different device and stays.
+        assert env.tokens.get_entry("watch-A", "watchos") is not None
+        assert env.push.push_available("phone-1") is False
+
+
+def test_a_refused_token_replaced_during_the_send_keeps_the_new_one() -> None:
+    """The phone was reinstalled while the push was at the relay: the refusal
+    is about the old token, and the new one must survive it."""
+
+    class _ReinstallDuringSend(_APNsClient):
+        def __init__(self, tokens: _NotificationStore) -> None:
+            super().__init__(ok=False, reason="Unregistered")
+            self.tokens = tokens
+
+        async def send_push(self, **kwargs):
+            self.tokens.register("phone-1", "ios", "new-tok")
+            return await super().send_push(**kwargs)
+
+    for env in _build():
+        client = _ReinstallDuringSend(env.tokens)
+        env.push._apns_client = client
+        env.add_phone("phone-1")
+        env.tokens.register("phone-1", "ios", "old-tok")
+
+        env.push.push_now("phone-1", "refresh")
+        assert client.sends[0]["device_token"] == "old-tok"
+        assert env.tokens.get_entry("phone-1", "ios").device_token == "new-tok"
+        assert env.push.push_available("phone-1") is True
 
 
 def test_teardown_cancels_a_parked_timer_and_nothing_is_sent_after_it(phone) -> None:

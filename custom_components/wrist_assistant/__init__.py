@@ -92,7 +92,12 @@ from .watch_config_store import WatchConfigStore
 from .watch_config_ws import async_register_watch_config_commands
 from .watch_logs_store import WatchLogsStore
 from .watch_voices_store import WatchVoicesStore
-from .notifications import NotificationTokenStore, TokenEntry, resolve_push_routes
+from .notifications import (
+    NotificationTokenStore,
+    TokenEntry,
+    purge_dead_token,
+    resolve_push_routes,
+)
 from .audio_upload import CLEANUP_INTERVAL_SECONDS, async_cleanup_clips
 from .pairing_ws import async_register_pairing_commands
 from .wa_pair_requests import PairOfferStore, PairRequestStore
@@ -435,12 +440,15 @@ async def _deliver_push(
     # (default): the phones of the watch's Home Assistant user (iOS mirrors to
     # the wrist in ~1s; nothing when the phone is away). "direct": the watch's
     # own token (reliable when away; ~15s when the phone is present). Each
-    # falls back to the other. One device token is sent once per alert.
+    # falls back to the other. One device token is sent once per alert. A
+    # silent background push goes only to a watch's own token: iOS does not
+    # mirror a content-available push to the wrist.
     routes = resolve_push_routes(
         data.widget_secret_store.all_entries,
         store.all_entries,
         store.delivery_modes(),
         target_watch_ids,
+        push_type=push_type,
     )
     for route in routes:
         _LOGGER.debug(
@@ -450,6 +458,10 @@ async def _deliver_push(
             route.entry.platform,
         )
     if not routes:
+        if push_type == "background":
+            raise HomeAssistantError(
+                "No watch has its own push token for a background push"
+            )
         if target_watch_ids is not None:
             raise HomeAssistantError(
                 "No registered push token for the requested target"
@@ -468,8 +480,12 @@ async def _deliver_push(
         # A mirrored (iOS) push with no sound delivers to the wrist silently AND
         # without a haptic — the user never perceives it. Force at least the
         # default alert sound when the chosen token is the companion iPhone.
+        # A silent background push never carries a sound: the relay would put
+        # it beside content-available.
         target_sound = sound
-        if tok_entry.platform == "ios" and not target_sound:
+        if push_type == "background":
+            target_sound = None
+        elif tok_entry.platform == "ios" and not target_sound:
             target_sound = "default"
         return await client.send_push(
             watch_id=watch_id,
@@ -511,21 +527,16 @@ async def _deliver_push(
                 used_env,
             )
             if used_env != tok_entry.environment:
-                store.register(
+                # Only while the entry still holds the token that was sent; a
+                # token registered during the send is not overwritten.
+                store.register_if_current(
                     watch_id,
                     tok_entry.device_token,
                     platform=tok_entry.platform,
                     environment=used_env,
                 )
         else:
-            if APNsClient.is_dead_token(reason):
-                _LOGGER.warning(
-                    "Removing dead %s token for watch_id=%s (reason=%s)",
-                    tok_entry.platform,
-                    watch_id,
-                    reason,
-                )
-                store.remove(watch_id, platform=tok_entry.platform)
+            purge_dead_token(store, watch_id, tok_entry, reason)
             failure_map[watch_id] = reason or "unknown"
 
     if failure_map and sent == 0:

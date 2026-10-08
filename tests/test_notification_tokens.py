@@ -338,3 +338,197 @@ def test_delivery_modes_lists_only_the_watches_that_said() -> None:
         store.set_watch_metadata("w1", "delivery_mode", "direct")
         store.set_watch_metadata("w2", "webhook_id", "abc")
         assert store.delivery_modes() == {"w1": "direct"}
+
+
+# ── a send that outlives its token (audit L18) ───────────────────────────
+#
+# A send carries the token its route was resolved to across a relay round
+# trip. When the device registers a new token meanwhile, nothing the send
+# writes back about the old token may land on the new one: not a relay
+# binding, not an environment, and not a dead-token removal.
+
+
+class _Response:
+    def __init__(self, body: dict) -> None:
+        self._body = body
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_exc: object) -> None:
+        return None
+
+    async def json(self) -> dict:
+        return self._body
+
+
+class _Session:
+    """A relay that answers from a script, one reply per path in order.
+
+    ``during`` runs a callback while a given path is "at the relay", which is
+    how a test makes the device register a new token mid-send.
+    """
+
+    def __init__(self, replies: dict[str, list[dict]], during: dict | None = None) -> None:
+        self.replies = {path: list(bodies) for path, bodies in replies.items()}
+        self.during = dict(during or {})
+        self.posts: list[tuple[str, dict]] = []
+
+    def post(self, url: str, json: dict, timeout: object = None) -> _Response:
+        path = url.removeprefix("https://relay.test")
+        self.posts.append((path, dict(json)))
+        callback = self.during.pop(path, None)
+        if callback is not None:
+            callback()
+        return _Response(self.replies[path].pop(0))
+
+
+def _load_apns_client(mod):
+    """Load the real apns_client next to the already loaded notifications."""
+    spec = importlib.util.spec_from_file_location(
+        f"{_PKG}.apns_client", _NOTIFICATIONS_PATH.with_name("apns_client.py")
+    )
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _client(mod, store, session):
+    apns = _load_apns_client(mod)
+    return apns, apns.APNsClient(
+        relay_base_url="https://relay.test",
+        notification_store=store,
+        http_session=session,
+    )
+
+
+def _send(client, device_token: str):
+    return asyncio.run(
+        client.send_push(
+            watch_id="p1", device_token=device_token, title="t", platform="ios"
+        )
+    )
+
+
+def test_a_send_for_a_token_already_replaced_posts_nothing() -> None:
+    """The phone was reinstalled after the alert chose its old token."""
+    with _loaded_notifications() as mod:
+        store = _new_store(mod)
+        store.register("p1", "T2", platform="ios", relay_token="R2")
+        session = _Session({})
+        apns, client = _client(mod, store, session)
+
+        ok, reason, _env = _send(client, "T1")
+
+        assert (ok, reason) == (False, apns.TOKEN_REPLACED_REASON)
+        assert session.posts == []
+        entry = store.get_entry("p1", "ios")
+        assert (entry.device_token, entry.relay_token) == ("T2", "R2")
+        assert apns.APNsClient.is_dead_token(reason) is False
+
+
+def test_a_mismatch_after_a_new_token_arrived_mid_send_does_not_rebind_the_old_one() -> None:
+    """The sequence from the audit: the old token must not be registered back
+    over the new one, and the mismatch must not remove the new one either."""
+    with _loaded_notifications() as mod:
+        store = _new_store(mod)
+        store.register("p1", "T1", platform="ios", relay_token="R1")
+        session = _Session(
+            {"/v1/push/send": [{"ok": False, "error": "device_token_mismatch"}]},
+            during={
+                "/v1/push/send": lambda: store.register(
+                    "p1", "T2", platform="ios", relay_token="R2"
+                )
+            },
+        )
+        apns, client = _client(mod, store, session)
+        old_entry = mod.TokenEntry(device_token="T1", platform="ios", environment="production")
+
+        ok, reason, _env = _send(client, "T1")
+
+        assert (ok, reason) == (False, apns.TOKEN_REPLACED_REASON)
+        assert [path for path, _ in session.posts] == ["/v1/push/send"]
+        entry = store.get_entry("p1", "ios")
+        assert (entry.device_token, entry.relay_token) == ("T2", "R2")
+
+        # Even a dead verdict about the old token leaves the new one in place.
+        assert mod.purge_dead_token(store, "p1", old_entry, "Unregistered") is False
+        assert store.get_entry("p1", "ios").device_token == "T2"
+
+
+def test_a_new_token_arriving_during_the_rebind_is_kept() -> None:
+    with _loaded_notifications() as mod:
+        store = _new_store(mod)
+        store.register("p1", "T1", platform="ios", relay_token="R1")
+        session = _Session(
+            {
+                "/v1/push/send": [{"ok": False, "error": "invalid_relay_token"}],
+                "/v1/register": [{"relay_token": "R1b", "environment": "production"}],
+            },
+            during={
+                "/v1/register": lambda: store.register("p1", "T2", platform="ios")
+            },
+        )
+        apns, client = _client(mod, store, session)
+
+        ok, reason, _env = _send(client, "T1")
+
+        assert (ok, reason) == (False, apns.TOKEN_REPLACED_REASON)
+        assert store.get_entry("p1", "ios").device_token == "T2"
+        assert store.get_entry("p1", "ios").relay_token is None
+
+
+def test_a_stale_binding_on_an_unchanged_token_still_rebinds_and_retries() -> None:
+    with _loaded_notifications() as mod:
+        store = _new_store(mod)
+        store.register("p1", "T1", platform="ios", relay_token="R1")
+        session = _Session(
+            {
+                "/v1/push/send": [
+                    {"ok": False, "error": "invalid_relay_token"},
+                    {"ok": True, "used_environment": "production"},
+                ],
+                "/v1/register": [{"relay_token": "R1b", "environment": "production"}],
+            }
+        )
+        _apns, client = _client(mod, store, session)
+
+        assert _send(client, "T1")[:2] == (True, None)
+        assert [path for path, _ in session.posts] == [
+            "/v1/push/send",
+            "/v1/register",
+            "/v1/push/send",
+        ]
+        assert store.get_entry("p1", "ios").relay_token == "R1b"
+
+
+def test_a_dead_token_still_stored_is_removed_and_its_neighbour_kept() -> None:
+    with _loaded_notifications() as mod:
+        store = _new_store(mod)
+        store.register("w1", "W1", platform="watchos")
+        store.register("w1", "P1", platform="ios")
+        sent = mod.TokenEntry(device_token="P1", platform="ios", environment="production")
+
+        assert mod.purge_dead_token(store, "w1", sent, "ServiceUnavailable") is False
+        assert store.get_entry("w1", "ios") is not None
+
+        assert mod.purge_dead_token(store, "w1", sent, "Unregistered") is True
+        assert store.get_entry("w1", "ios") is None
+        assert store.get_entry("w1", "watchos").device_token == "W1"
+
+
+def test_an_environment_write_back_skips_a_replaced_token() -> None:
+    with _loaded_notifications() as mod:
+        store = _new_store(mod)
+        store.register("p1", "T2", platform="ios", relay_token="R2")
+
+        assert store.register_if_current("p1", "T1", "ios", environment="development") is False
+        entry = store.get_entry("p1", "ios")
+        assert (entry.device_token, entry.environment, entry.relay_token) == (
+            "T2",
+            "production",
+            "R2",
+        )
+        assert store.register_if_current("p1", "T2", "ios", environment="development") is True
+        assert store.get_entry("p1", "ios").environment == "development"
