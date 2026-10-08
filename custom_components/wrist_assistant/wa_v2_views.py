@@ -512,6 +512,28 @@ class WAActionView(HomeAssistantView):
 # ── /v2/delta view ───────────────────────────────────────────────────────
 
 
+def _held_revision(raw: Any) -> int | None:
+    """A revision a device reports holding: a whole number from 0 up, or
+    None for anything else (a bool included)."""
+    if isinstance(raw, int) and not isinstance(raw, bool) and raw >= 0:
+        return raw
+    return None
+
+
+def _held_revisions(raw: Any) -> dict[str, int] | None:
+    """The ``watch_config`` revisions a device reports holding, kind by
+    kind. A kind whose revision is not one is left out; anything but an
+    object reads as absent."""
+    if not isinstance(raw, dict):
+        return None
+    held = {
+        kind: revision
+        for kind, value in raw.items()
+        if isinstance(kind, str) and (revision := _held_revision(value)) is not None
+    }
+    return held or None
+
+
 class WADeltaView(HomeAssistantView):
     """HMAC-authenticated long-poll wrapper for delta updates.
 
@@ -534,6 +556,7 @@ class WADeltaView(HomeAssistantView):
             DEFAULT_TIMEOUT_SECONDS,
             MAX_TIMEOUT_SECONDS,
             MIN_TIMEOUT_SECONDS,
+            HeldConfig,
         )
 
         domain_data: WristAssistantData | None = self._hass.data.get(DOMAIN)
@@ -667,6 +690,18 @@ class WADeltaView(HomeAssistantView):
         if isinstance(raw_voices_hash, str) and VOICES_HASH_RE.fullmatch(raw_voices_hash):
             voices_hash = raw_voices_hash
 
+        # The config numbers the device holds, under the keys a reply carries
+        # them: `watch_config` ({kind: revision}), `http_actions` and
+        # `client_certificate`. The coordinator compares them with the
+        # current ones so a hint whose reply was lost still reaches the
+        # device (see HeldConfig). Absent from older apps; junk reads as
+        # absent, and a junk kind is left out.
+        held = HeldConfig(
+            watch_config=_held_revisions(payload.get("watch_config")),
+            http_actions=_held_revision(payload.get("http_actions")),
+            client_certificate=_held_revision(payload.get("client_certificate")),
+        )
+
         # Push notification token registration piggybacks on long-poll.
         device_token = payload.get("device_token")
         notification_store = domain_data.notification_store
@@ -721,6 +756,7 @@ class WADeltaView(HomeAssistantView):
             custom_entity_ids=custom_entity_ids,
             complications_token=complications_token,
             voices_hash=voices_hash,
+            held=held,
         )
 
         if status == 204 or body_dict is None:

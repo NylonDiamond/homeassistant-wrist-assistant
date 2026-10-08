@@ -43,20 +43,27 @@ a new revision, since the watches already hold it.
 The file is a private ``Store`` (owner read and write only), since it holds
 a private key and the password that opens it. A file that cannot be read is
 logged and left alone: every read and write is refused with ``unavailable``
-until a restart reads it, so it is never saved over with an empty one.
-Uninstalling the integration removes it.
+until a restart reads it, so it is never saved over with an empty one. A
+file Home Assistant cannot decode is renamed by its ``Store`` and read as
+nothing; that start is refused the same way, and the first start after it
+counts new revisions from a saved floor above any a watch has seen (see
+``ClientCertificateStore.async_load``). Uninstalling the integration removes
+it.
 """
 
 from __future__ import annotations
 
 import base64
 import binascii
+import glob
 import hashlib
 import logging
 import re
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from homeassistant.core import HomeAssistant, callback
@@ -180,7 +187,15 @@ class ClientCertificateRecord:
 
     @classmethod
     def from_dict(cls, raw: Any) -> ClientCertificateRecord | None:
-        """A stored record, or None when it is not one (it is then dropped)."""
+        """A stored record, or None when it is not one (it is then dropped).
+
+        A record whose revision and date read but whose certificate no
+        longer does (a later build with a lower size cap, say) is kept with
+        no certificate at its stored revision. Dropping it would start the
+        user's next put at revision 1, below the number every watch already
+        saw, and no watch would fetch it. Keeping the revision means the
+        next put goes one above it. The revision does not move here: the
+        watches keep the copy they hold until the user imports again."""
         if not isinstance(raw, dict):
             return None
         revision, updated_at = raw.get("revision"), raw.get("updated_at")
@@ -202,8 +217,14 @@ class ClientCertificateRecord:
             )
         try:
             certificate = parse_certificate(stored, check_fingerprint=True)
-        except ClientCertificateError:
-            return None
+        except ClientCertificateError as err:
+            _LOGGER.warning(
+                "A stored client certificate can no longer be read (%s); its "
+                "record is kept at revision %d with no certificate",
+                err,
+                revision,
+            )
+            certificate = None
         return cls(
             revision=revision, updated_at=updated_at, certificate=certificate, source=source
         )
@@ -337,6 +358,25 @@ def check_opens(certificate: ClientCertificate) -> None:
         )
 
 
+def _file_state(path: str) -> tuple[bool, bool]:
+    """Whether the store's file is there, and whether a copy Home Assistant
+    set aside as corrupt (``<file>.corrupt.<time>``) sits beside it. Run in
+    the executor."""
+    file = Path(path)
+    if not file.parent.is_dir():
+        return False, False
+    set_aside = any(file.parent.glob(glob.escape(file.name) + ".corrupt.*"))
+    return file.is_file(), set_aside
+
+
+def _fresh_revision_floor() -> int:
+    """A floor above any revision a watch can have seen before a corrupt
+    file was set aside: the minutes since 1970. A revision goes up by one
+    per import or removal, so a count that started at 1 never gets near it,
+    and it stays well inside the 32-bit integer a watch reads it into."""
+    return int(time.time() // 60)
+
+
 class ClientCertificateStore:
     """Every user's client certificate record, keyed on the Home Assistant
     user id."""
@@ -351,6 +391,9 @@ class ClientCertificateStore:
         )
         self._users: dict[str, ClientCertificateRecord] = {}
         self._load_failed = False
+        # Where a user with no record starts counting: 0, or a floor set
+        # after Home Assistant set a corrupt file aside (see async_load).
+        self._revision_floor = 0
         self._listeners: list[Callable[[str], None]] = []
         # Users whose phone was already told once that the panel's record
         # stays (see _kept_for_panel).
@@ -359,6 +402,8 @@ class ClientCertificateStore:
     # ── persistence ────────────────────────────────────────────────────
 
     async def async_load(self) -> None:
+        path = self._hass.config.path(".storage", CLIENT_CERTIFICATE_STORAGE_KEY)
+        existed_before, _ = await self._async_file_state(path)
         try:
             data = await self._store.async_load()
         except Exception:  # A damaged file: see the module docstring.
@@ -368,6 +413,38 @@ class ClientCertificateStore:
             )
             self._load_failed = True
             return
+        existed, set_aside = await self._async_file_state(path)
+        if data is None and existed_before and not existed:
+            # Home Assistant's Store answers None, rather than raising, for a
+            # file it cannot decode: it renames the file to
+            # ``<file>.corrupt.<time>`` and raises a repair. The file was
+            # there before the load and is gone after it. Starting empty here
+            # would hand out revision 1 to a user whose watches saw a higher
+            # one, so this is refused like any unreadable file, which leaves
+            # the user time to restore a backup.
+            _LOGGER.error(
+                "The client certificate file could not be decoded and was set "
+                "aside by Home Assistant; certificates are refused until a "
+                "restart"
+            )
+            self._load_failed = True
+            return
+        if isinstance(data, dict):
+            floor = data.get("revision_floor")
+            if isinstance(floor, int) and not isinstance(floor, bool) and floor > 0:
+                self._revision_floor = floor
+        elif data is None and set_aside:
+            # The first start after the refusal above: the old records are
+            # gone and their revisions with them. Every new record starts
+            # above a floor no earlier revision can have reached, and the
+            # floor is saved at once so it outlives the set-aside copy.
+            self._revision_floor = _fresh_revision_floor()
+            _LOGGER.warning(
+                "The client certificate file was set aside as corrupt; new "
+                "records start above revision %d so every watch fetches them",
+                self._revision_floor,
+            )
+            self._schedule_save()
         users = data.get("users") if isinstance(data, dict) else None
         for user_id, raw in (users.items() if isinstance(users, dict) else ()):
             record = ClientCertificateRecord.from_dict(raw)
@@ -376,13 +453,24 @@ class ClientCertificateStore:
             else:
                 _LOGGER.warning("Dropped an unreadable client certificate record")
 
+    async def _async_file_state(self, path: str) -> tuple[bool, bool]:
+        """``_file_state`` in the executor; a folder that cannot be listed
+        reads as no file and nothing set aside."""
+        try:
+            return await self._hass.async_add_executor_job(_file_state, path)
+        except OSError:
+            return False, False
+
     def _serialize(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "users": {
                 user_id: record.as_storage_dict()
                 for user_id, record in sorted(self._users.items())
             }
         }
+        if self._revision_floor:
+            data["revision_floor"] = self._revision_floor
+        return data
 
     def _schedule_save(self) -> None:
         if self._load_failed:
@@ -536,7 +624,7 @@ class ClientCertificateStore:
             self._schedule_save()
             return record, False
         record = ClientCertificateRecord(
-            revision=(current.revision if current is not None else 0) + 1,
+            revision=(current.revision if current is not None else self._revision_floor) + 1,
             updated_at=_now_iso(),
             certificate=certificate,
             source=source,
