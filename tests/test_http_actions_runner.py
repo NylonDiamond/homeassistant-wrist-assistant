@@ -9,18 +9,34 @@ at most 5 hops, a redirect off the first origin drops every header the
 action wrote and checks the certificate again, none from https to http,
 none to loopback), the 256 KB read cap, a plain regex in
 the executor and any other in a child process with a hard limit, the URL
-sent as built, and the panel's Test.
+sent as built, the panel's Test, and an action that presents the user's
+client certificate (the refusals, the certificate reaching the seam on the
+first origin only, a real context that presents it in a TLS handshake, the
+private files it is loaded through, and the session cache). Every ``.p12``
+is made here with ``cryptography``.
 """
 
 from __future__ import annotations
 
 import asyncio
 import base64
+import os
+import ssl
+import stat
 import sys
 import types
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
+# Imported here, before the package fixture notes sys.modules: a module it
+# sees arrive is dropped after the test, and a second import of
+# cryptography's classes would not match the first.
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.serialization import pkcs12
+from cryptography.x509.oid import NameOID
 from multidict import CIMultiDict
 
 from test_http_actions import ID_A, ID_B, action, header, library, variable
@@ -62,8 +78,9 @@ class FakeSession:
         self.calls: list[dict[str, Any]] = []
         self.closed = False
 
-    def for_verify(self, verify: bool) -> FakeSession:
+    def for_verify(self, verify: bool, certificate: Any = None) -> FakeSession:
         self.verify = verify
+        self.certificate = certificate
         return self
 
     def request(self, method, url, *, headers, data, allow_redirects, skip_auto_headers):
@@ -71,7 +88,7 @@ class FakeSession:
         assert url.is_absolute()
         self.calls.append(
             {"method": method, "url": str(url), "headers": list(headers), "data": data,
-             "verify": self.verify}
+             "verify": self.verify, "certificate": self.certificate}
         )
         answer = self.script.get(str(url), FakeResponse(404))
         if isinstance(answer, list):
@@ -97,17 +114,24 @@ class _Awaiting:
 class FakeHass:
     def __init__(self) -> None:
         self.executor_calls: list[Any] = []
+        self.tasks: list[asyncio.Task] = []
 
     async def async_add_executor_job(self, fn, *args):
         self.executor_calls.append(fn.__name__)
         return await asyncio.get_running_loop().run_in_executor(None, fn, *args)
+
+    def async_create_task(self, coro):
+        task = asyncio.get_running_loop().create_task(coro)
+        self.tasks.append(task)
+        return task
 
 
 @pytest.fixture
 def env():
     with loaded_package() as loaded:
         runner_mod = loaded.load("http_actions_runner")
-        yield types.SimpleNamespace(mod=runner_mod)
+        certs_mod = loaded.load("client_certificate_store")
+        yield types.SimpleNamespace(mod=runner_mod, certs=certs_mod)
 
 
 def make_runner(env, script: dict[str, Any]):
@@ -731,3 +755,411 @@ def test_the_test_command_refuses_a_malformed_draft(env, draft, globals_) -> Non
     with pytest.raises(env.mod.HTTPActionRefusal) as caught:
         asyncio.run(runner.async_test(draft, globals_, {}))
     assert caught.value.code == "invalid"
+
+
+# ── the client certificate ───────────────────────────────────────────────
+
+USER = "user-jesse"
+OTHER = "user-guest"
+CERT_PASSWORD = "p12 pässword"
+
+
+def _self_signed(common_name: str):
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, common_name)])
+    now = datetime.now(UTC)
+    builder = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(days=1))
+        .not_valid_after(now + timedelta(days=30))
+    )
+    if common_name == "localhost":
+        builder = builder.add_extension(
+            x509.SubjectAlternativeName([x509.DNSName("localhost")]), critical=False
+        )
+    return key, builder.sign(key, hashes.SHA256())
+
+
+def make_p12(common_name: str = "wa-client", password: str = CERT_PASSWORD) -> bytes:
+    """A throwaway self-signed EC certificate and its key as a .p12."""
+    key, cert = _self_signed(common_name)
+    encryption = (
+        serialization.BestAvailableEncryption(password.encode())
+        if password
+        else serialization.NoEncryption()
+    )
+    return pkcs12.serialize_key_and_certificates(b"wa", key, cert, None, encryption)
+
+
+def certificate(env, common_name: str = "wa-client", password: str = CERT_PASSWORD):
+    return env.certs.certificate_from_upload(
+        base64.b64encode(make_p12(common_name, password)).decode(), password
+    )
+
+
+def cert_store(env, hass, **held):
+    """The real store over the fake ``Store``, holding ``{user: certificate}``."""
+    store = env.certs.ClientCertificateStore(hass)
+
+    async def put():
+        for user, cert in held.items():
+            await store.async_put_certificate(user, cert, source="panel")
+
+    asyncio.run(put())
+    return store
+
+
+def cert_runner(env, script: dict[str, Any], **held):
+    runner, session, hass = make_runner(env, script)
+    store = cert_store(env, hass, **held)
+    unsubscribe = runner.attach_client_certificate_store(store)
+    return types.SimpleNamespace(
+        runner=runner, session=session, hass=hass, store=store, unsubscribe=unsubscribe
+    )
+
+
+@pytest.mark.parametrize(
+    ("user_id", "held", "words"),
+    [
+        (None, {"user-jesse": True}, "not bound to a Home Assistant user"),
+        (USER, {}, "Home Assistant holds none for this user"),
+        (USER, {"user-guest": True}, "Home Assistant holds none for this user"),
+    ],
+)
+def test_a_run_that_presents_a_certificate_is_refused_without_one(env, user_id, held, words) -> None:
+    setup = cert_runner(env, {URL_A: FakeResponse(200)}, **{u: certificate(env) for u in held})
+    doc = library(action(presentsClientCertificate=True))
+    with pytest.raises(env.mod.HTTPActionRefusal) as caught:
+        asyncio.run(setup.runner.async_run(doc, {"id": ID_A}, device="w", user_id=user_id))
+    refusal = caught.value
+    assert (refusal.code, refusal.status) == ("client_certificate_missing", 409)
+    assert words in refusal.message
+    assert setup.session.calls == []
+    assert setup.runner.running("w") == 0
+
+
+def test_a_removed_certificate_is_refused_too(env) -> None:
+    setup = cert_runner(env, {URL_A: FakeResponse(200)}, **{USER: certificate(env)})
+    setup.store.delete(USER, source="panel")
+    doc = library(action(presentsClientCertificate=True))
+    with pytest.raises(env.mod.HTTPActionRefusal) as caught:
+        asyncio.run(setup.runner.async_run(doc, {"id": ID_A}, device="w", user_id=USER))
+    assert caught.value.code == "client_certificate_missing"
+    assert caught.value.message == env.mod.NO_CLIENT_CERTIFICATE
+
+
+def test_an_unreadable_store_is_unavailable(env) -> None:
+    setup = cert_runner(env, {URL_A: FakeResponse(200)})
+    setup.store._load_failed = True
+    doc = library(action(presentsClientCertificate=True))
+    with pytest.raises(env.mod.HTTPActionRefusal) as caught:
+        asyncio.run(setup.runner.async_run(doc, {"id": ID_A}, device="w", user_id=USER))
+    assert (caught.value.code, caught.value.status) == ("unavailable", 503)
+
+
+def test_no_store_attached_is_unavailable_for_a_certificate_action_only(env) -> None:
+    runner, session, _ = make_runner(env, {URL_A: FakeResponse(200)})
+    with pytest.raises(env.mod.HTTPActionRefusal) as caught:
+        asyncio.run(runner.async_run(library(action(presentsClientCertificate=True)),
+                                     {"id": ID_A}, device="w", user_id=USER))
+    assert caught.value.code == "unavailable"
+    assert run(env, runner, library(action()), {"id": ID_A})["status"] == 200
+
+
+def test_the_certificate_reaches_the_first_origin_only(env) -> None:
+    mine = certificate(env)
+    setup = cert_runner(
+        env,
+        {
+            "https://home.example/a": _redirect(307, "/b"),
+            "https://home.example/b": _redirect(307, "https://other.example/c"),
+            "https://other.example/c": _redirect(307, "https://home.example/d"),
+            "https://home.example/d": FakeResponse(200, b"ok"),
+        },
+        **{USER: mine, OTHER: certificate(env, "guest")},
+    )
+    doc = library(action(url="https://home.example/a", presentsClientCertificate=True,
+                         allowsUntrustedCertificate=True))
+    reply = asyncio.run(setup.runner.async_run(doc, {"id": ID_A}, device="w", user_id=USER))
+    assert reply["status"] == 200
+    presented = [c["certificate"] for c in setup.session.calls]
+    assert [p.fingerprint if p else None for p in presented] == [
+        mine.fingerprint, mine.fingerprint, None, mine.fingerprint,
+    ]
+    assert [c["verify"] for c in setup.session.calls] == [False, False, True, False]
+    # The seam gets the certificate as stored; nothing is built for it.
+    assert presented[0].pkcs12 == mine.pkcs12 and presented[0].passphrase == CERT_PASSWORD
+    assert "client_ssl_context" not in setup.hass.executor_calls
+
+
+def test_an_action_without_the_flag_presents_nothing(env) -> None:
+    setup = cert_runner(env, {URL_A: FakeResponse(200)}, **{USER: certificate(env)})
+    asyncio.run(setup.runner.async_run(library(action()), {"id": ID_A}, device="w", user_id=USER))
+    assert setup.session.calls[0]["certificate"] is None
+
+
+def test_the_panel_test_presents_the_signed_in_users_own(env) -> None:
+    mine, theirs = certificate(env), certificate(env, "guest")
+    setup = cert_runner(env, {URL_A: FakeResponse(200)}, **{USER: mine, OTHER: theirs})
+    draft = action(presentsClientCertificate=True)
+    result = asyncio.run(setup.runner.async_test(draft, [], {}, user_id=OTHER))
+    assert result["status"] == 200
+    assert setup.session.calls[0]["certificate"].fingerprint == theirs.fingerprint
+    with pytest.raises(env.mod.HTTPActionRefusal) as caught:
+        asyncio.run(setup.runner.async_test(draft, [], {}, user_id="user-nobody"))
+    assert caught.value.code == "client_certificate_missing"
+    assert caught.value.message == env.mod.NO_CLIENT_CERTIFICATE
+    with pytest.raises(env.mod.HTTPActionRefusal) as caught:
+        asyncio.run(setup.runner.async_test(draft, [], {}))
+    assert caught.value.code == "client_certificate_missing"
+    assert len(setup.session.calls) == 1
+    assert setup.runner.running(env.mod.PANEL_DEVICE) == 0
+
+
+# A real context: loaded through private files, and presented in a handshake.
+
+
+def test_the_context_is_loaded_from_private_files_that_are_gone_after(env, monkeypatch, tmp_path) -> None:
+    made: list[str] = []
+    seen: dict[str, Any] = {}
+    real_mkdtemp = env.mod.tempfile.mkdtemp
+    real_load = ssl.SSLContext.load_cert_chain
+
+    def mkdtemp(*args, **kwargs):
+        made.append(real_mkdtemp(*args, dir=str(tmp_path), **kwargs))
+        return made[-1]
+
+    def load_cert_chain(self, certfile, keyfile=None, password=None):
+        seen["folder"] = stat.S_IMODE(os.stat(os.path.dirname(certfile)).st_mode)
+        seen["files"] = [stat.S_IMODE(os.stat(p).st_mode) for p in (certfile, keyfile)]
+        with open(keyfile, "rb") as file:
+            seen["key"] = file.read()
+        return real_load(self, certfile, keyfile, password)
+
+    monkeypatch.setattr(env.mod.tempfile, "mkdtemp", mkdtemp)
+    monkeypatch.setattr(ssl.SSLContext, "load_cert_chain", load_cert_chain)
+    checked = env.mod.client_ssl_context(certificate(env), True)
+    unchecked = env.mod.client_ssl_context(certificate(env, password=""), False)
+    assert (checked.verify_mode, checked.check_hostname) == (ssl.CERT_REQUIRED, True)
+    assert (unchecked.verify_mode, unchecked.check_hostname) == (ssl.CERT_NONE, False)
+    assert seen["folder"] == 0o700 and seen["files"] == [0o600, 0o600]
+    # The key never sits on disk in the clear.
+    assert seen["key"].startswith(b"-----BEGIN ENCRYPTED PRIVATE KEY-----")
+    assert len(made) == 2 and not any(os.path.exists(path) for path in made)
+
+
+@pytest.mark.parametrize(
+    "p12",
+    [b"not a p12", "wrong password", "no key"],
+)
+def test_a_p12_that_does_not_load_raises_and_leaves_no_files(env, monkeypatch, tmp_path, p12) -> None:
+    if p12 == "wrong password":
+        raw, password = make_p12(), "not it"
+    elif p12 == "no key":
+        _key, cert = _self_signed("bare")
+        raw = pkcs12.serialize_key_and_certificates(b"x", None, cert, None, serialization.NoEncryption())
+        password = ""
+    else:
+        raw, password = p12, ""
+    cert = env.certs.ClientCertificate(pkcs12=raw, passphrase=password, fingerprint="0" * 64)
+    monkeypatch.setattr(env.mod.tempfile, "tempdir", str(tmp_path))
+    with pytest.raises(env.mod.ClientCertificateUnusable):
+        env.mod.client_ssl_context(cert, True)
+    assert os.listdir(tmp_path) == []
+
+
+def _handshake(client_ctx, server_ctx) -> dict:
+    """A TLS handshake over memory, no socket: the server's view of the
+    client's certificate."""
+    c_in, c_out, s_in, s_out = ssl.MemoryBIO(), ssl.MemoryBIO(), ssl.MemoryBIO(), ssl.MemoryBIO()
+    client = client_ctx.wrap_bio(c_in, c_out, server_hostname="localhost")
+    server = server_ctx.wrap_bio(s_in, s_out, server_side=True)
+    done = {"client": False, "server": False}
+    for _ in range(20):
+        for name, end in (("client", client), ("server", server)):
+            if not done[name]:
+                try:
+                    end.do_handshake()
+                    done[name] = True
+                except ssl.SSLWantReadError:
+                    pass
+        s_in.write(c_out.read())
+        c_in.write(s_out.read())
+        if all(done.values()):
+            break
+    assert all(done.values())
+    return server.getpeercert()
+
+
+def test_the_context_presents_the_certificate_in_a_handshake(env, tmp_path) -> None:
+    server_key, server_cert = _self_signed("localhost")
+    (tmp_path / "server.pem").write_bytes(
+        server_cert.public_bytes(serialization.Encoding.PEM)
+        + server_key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                                   serialization.NoEncryption())
+    )
+    mine = certificate(env, "wa-presented")
+    client_pem = pkcs12_cert_pem(mine)
+    (tmp_path / "clients.pem").write_bytes(client_pem)
+    server_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    server_ctx.load_cert_chain(str(tmp_path / "server.pem"))
+    server_ctx.verify_mode = ssl.CERT_REQUIRED
+    server_ctx.load_verify_locations(str(tmp_path / "clients.pem"))
+    # The server's certificate is self-signed: as an action that accepts
+    # an untrusted server would see it.
+    client_ctx = env.mod.client_ssl_context(mine, False)
+    peer = _handshake(client_ctx, server_ctx)
+    assert ((("commonName", "wa-presented"),),) == tuple(peer["subject"])
+
+
+def pkcs12_cert_pem(cert) -> bytes:
+    _key, leaf, _chain = pkcs12.load_key_and_certificates(cert.pkcs12, cert.passphrase.encode())
+    return leaf.public_bytes(serialization.Encoding.PEM)
+
+
+# The session cache, with the network replaced below the seam.
+
+
+class ClosingSession(FakeSession):
+    def __init__(self, script: dict[str, Any], context: Any) -> None:
+        super().__init__(script)
+        self.context = context
+        self.verify = None
+        self.certificate = None
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+def cached_runner(env, monkeypatch, script: dict[str, Any], **held):
+    hass = FakeHass()
+    runner = env.mod.HTTPActionRunner(hass)
+    store = cert_store(env, hass, **held)
+    runner.attach_client_certificate_store(store)
+    made: list[ClosingSession] = []
+
+    def new_session(context):
+        made.append(ClosingSession(script, context))
+        return made[-1]
+
+    monkeypatch.setattr(runner, "_new_certificate_session", new_session)
+    return types.SimpleNamespace(runner=runner, hass=hass, store=store, made=made)
+
+
+def test_one_session_per_certificate_until_the_users_record_changes(env, monkeypatch) -> None:
+    first, second = certificate(env), certificate(env, "renewed")
+    setup = cached_runner(env, monkeypatch, {URL_A: FakeResponse(200)}, **{USER: first})
+    doc = library(action(presentsClientCertificate=True))
+
+    async def scenario():
+        runner = setup.runner
+        for _ in range(3):
+            assert (await runner.async_run(doc, {"id": ID_A}, device="w", user_id=USER))["status"] == 200
+        assert len(setup.made) == 1
+        assert isinstance(setup.made[0].context, ssl.SSLContext)
+        assert setup.made[0].context.verify_mode == ssl.CERT_REQUIRED
+        # An import of a new certificate drops the old session.
+        await setup.store.async_put_certificate(USER, second, source="panel")
+        await asyncio.gather(*setup.hass.tasks)
+        assert setup.made[0].closed
+        await runner.async_run(doc, {"id": ID_A}, device="w", user_id=USER)
+        assert len(setup.made) == 2 and not setup.made[1].closed
+        # A removal drops it too, and the next run is refused.
+        setup.store.delete(USER, source="panel")
+        await asyncio.gather(*setup.hass.tasks)
+        assert setup.made[1].closed
+        with pytest.raises(env.mod.HTTPActionRefusal):
+            await runner.async_run(doc, {"id": ID_A}, device="w", user_id=USER)
+        assert len(setup.made) == 2
+
+    asyncio.run(scenario())
+    assert setup.hass.executor_calls.count("client_ssl_context") == 2
+
+
+def test_another_users_change_keeps_the_session(env, monkeypatch) -> None:
+    setup = cached_runner(env, monkeypatch, {URL_A: FakeResponse(200)},
+                          **{USER: certificate(env), OTHER: certificate(env, "guest")})
+    doc = library(action(presentsClientCertificate=True))
+
+    async def scenario():
+        await setup.runner.async_run(doc, {"id": ID_A}, device="w", user_id=USER)
+        setup.store.delete(OTHER, source="panel")
+        await asyncio.gather(*setup.hass.tasks)
+        assert not setup.made[0].closed
+        await setup.runner.async_run(doc, {"id": ID_A}, device="w", user_id=USER)
+        assert len(setup.made) == 1
+
+    asyncio.run(scenario())
+
+
+def test_an_untrusted_server_gets_a_session_of_its_own(env, monkeypatch) -> None:
+    setup = cached_runner(env, monkeypatch, {URL_A: FakeResponse(200)}, **{USER: certificate(env)})
+    doc = library(action(presentsClientCertificate=True),
+                  action(id=ID_B, presentsClientCertificate=True, allowsUntrustedCertificate=True))
+
+    async def scenario():
+        await setup.runner.async_run(doc, {"id": ID_A}, device="w", user_id=USER)
+        await setup.runner.async_run(doc, {"id": ID_B}, device="w", user_id=USER)
+
+    asyncio.run(scenario())
+    assert [s.context.verify_mode for s in setup.made] == [ssl.CERT_REQUIRED, ssl.CERT_NONE]
+
+
+def test_a_run_in_flight_keeps_its_session_until_it_ends(env, monkeypatch) -> None:
+    gate = asyncio.Event()
+
+    async def slow():
+        await gate.wait()
+        return FakeResponse(200, b"late")
+
+    setup = cached_runner(env, monkeypatch, {URL_A: slow}, **{USER: certificate(env)})
+    doc = library(action(presentsClientCertificate=True))
+
+    async def scenario():
+        nonlocal gate
+        gate = asyncio.Event()
+        task = asyncio.create_task(setup.runner.async_run(doc, {"id": ID_A}, device="w", user_id=USER))
+        await asyncio.sleep(0.05)
+        setup.store.delete(USER, source="panel")
+        await asyncio.sleep(0)
+        assert not setup.made[0].closed
+        gate.set()
+        reply = await task
+        assert reply["snippet"] == "late"
+        assert setup.made[0].closed
+
+    asyncio.run(scenario())
+
+
+def test_shutdown_closes_the_certificate_sessions(env, monkeypatch) -> None:
+    setup = cached_runner(env, monkeypatch, {URL_A: FakeResponse(200)}, **{USER: certificate(env)})
+    doc = library(action(presentsClientCertificate=True))
+
+    async def scenario():
+        await setup.runner.async_run(doc, {"id": ID_A}, device="w", user_id=USER)
+        await setup.runner.async_shutdown()
+
+    asyncio.run(scenario())
+    assert setup.made[0].closed
+
+
+def test_a_stored_p12_that_does_not_load_is_refused_unreadable(env, monkeypatch) -> None:
+    setup = cached_runner(env, monkeypatch, {URL_A: FakeResponse(200)}, **{USER: certificate(env)})
+    record = setup.store.get(USER)
+    broken = env.certs.ClientCertificate(
+        pkcs12=b"garbage", passphrase="", fingerprint=record.certificate.fingerprint
+    )
+    setup.store._users[USER] = env.certs.ClientCertificateRecord(
+        revision=record.revision, updated_at=record.updated_at, certificate=broken, source="panel"
+    )
+    with pytest.raises(env.mod.HTTPActionRefusal) as caught:
+        asyncio.run(setup.runner.async_run(library(action(presentsClientCertificate=True)),
+                                           {"id": ID_A}, device="w", user_id=USER))
+    assert (caught.value.code, caught.value.status) == ("client_certificate_unreadable", 409)
+    assert caught.value.message == env.mod.UNREADABLE_CLIENT_CERTIFICATE
+    assert setup.made == []
+    assert setup.runner.running("w") == 0

@@ -17,7 +17,9 @@ Commands:
 
 Every refusal is a WebSocket error with a stable code: ``invalid``,
 ``conflict`` (the message always begins ``stored revision is <N>``),
-``unavailable`` or ``busy``.
+``unavailable``, ``busy``, or for a test of an action that presents a
+client certificate ``client_certificate_missing`` or
+``client_certificate_unreadable``.
 """
 
 from __future__ import annotations
@@ -146,15 +148,22 @@ async def ws_http_actions_test(
     ``paths`` are the JSON leaves of the answer, for the reply picker.
     Refused with ``invalid`` for a malformed draft or for values over a
     run's limits (more than 64, a key over 64 characters, a value over
-    4096), and ``busy`` while four tests are still running.
+    4096), and ``busy`` while four tests are still running. A draft that
+    presents a client certificate sends the signed-in user's own, and is
+    refused ``client_certificate_missing`` when that user has none (or
+    ``client_certificate_unreadable``); the panel shows the message.
     """
     runner = _runner(hass)
     if runner is None:
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
+    user = getattr(connection, "user", None)
     try:
         result = await runner.async_test(
-            msg["action"], msg.get("global_variables", []), msg.get("values", {})
+            msg["action"],
+            msg.get("global_variables", []),
+            msg.get("values", {}),
+            user_id=user.id if user is not None else None,
         )
     except HTTPActionRefusal as err:
         connection.send_error(msg["id"], err.code, err.message)

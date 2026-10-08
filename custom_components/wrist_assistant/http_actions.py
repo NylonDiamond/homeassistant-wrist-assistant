@@ -255,6 +255,11 @@ class Action:
     icon: str | None = None
     icon_color: str | None = None
     raw: dict[str, Any] = field(default_factory=dict)
+    # ``presentsClientCertificate``: the run presents the client certificate
+    # Home Assistant keeps for the user behind it, to the action's own
+    # origin only (``http_actions_runner.py``). It used to mean the
+    # watch's own copy, back when the watch sent the request itself.
+    presents_client_certificate: bool = False
 
     @classmethod
     def read(cls, raw: Any) -> Action:
@@ -291,6 +296,7 @@ class Action:
             icon=icon if isinstance(icon, str) else None,
             icon_color=icon_color if isinstance(icon_color, str) else None,
             raw=raw,
+            presents_client_certificate=raw.get("presentsClientCertificate") is True,
         )
 
     @property
