@@ -350,6 +350,27 @@ def test_a_member_forgets_only_their_own_device(env) -> None:
     assert env.base.secrets.get("watch-alice") is None
 
 
+def test_a_member_renames_only_their_own_device(env) -> None:
+    # A paired device with no registry entry yet (the listener has not run)
+    # has nothing to rename, and says so rather than failing.
+    assert _run(env, env.ws.ws_rename_device, ALICE, watch_id="watch-alice", name="X").errors[0][1] == "not_found"
+    for device in ("watch-alice", "watch-bob"):
+        env.hass.devices.by_identifier[(DOMAIN, f"watch_{device}")] = cws._Device(name="Apple Watch")
+    assert _refused(_run(env, env.ws.ws_rename_device, ALICE, watch_id="watch-bob", name="Mine"))
+    assert env.hass.devices.by_identifier[(DOMAIN, "watch_watch-bob")].name_by_user is None
+    reply = _ok(_run(env, env.ws.ws_rename_device, ALICE, watch_id="watch-alice", name="  Left wrist  "))
+    assert reply == {"ok": True, "watch_id": "watch-alice", "name": "Left wrist"}
+    assert env.hass.devices.by_identifier[(DOMAIN, "watch_watch-alice")].name_by_user == "Left wrist"
+    # A blank name drops the rename, so the reported name shows again.
+    _ok(_run(env, env.ws.ws_rename_device, ALICE, watch_id="watch-alice", name="   "))
+    assert env.hass.devices.by_identifier[(DOMAIN, "watch_watch-alice")].name_by_user is None
+    # An administrator renames anyone's.
+    _ok(_run(env, env.ws.ws_rename_device, ROOT, watch_id="watch-bob", name="Bob"))
+    assert env.hass.devices.by_identifier[(DOMAIN, "watch_watch-bob")].name_by_user == "Bob"
+    # The Library is no device, so it has nothing to rename.
+    assert _run(env, env.ws.ws_rename_device, ALICE, watch_id=LIBRARY, name="Shelf").errors[0][1] == "not_found"
+
+
 def test_subscribe_to_another_person_s_device_is_refused(env) -> None:
     connection = _run(env, env.ws.ws_subscribe, ALICE, owner_watch_id="watch-bob")
     assert _refused(connection)

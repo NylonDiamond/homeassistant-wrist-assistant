@@ -184,6 +184,9 @@ _CMD_LIST_ITEMS = f"{DOMAIN}/complications/list_items"
 _CMD_NUDGE = f"{DOMAIN}/complications/nudge"
 _CMD_WATCH_STATUS = f"{DOMAIN}/complications/watch_status"
 _CMD_FORGET = f"{DOMAIN}/devices/forget"
+_CMD_RENAME = f"{DOMAIN}/devices/rename"
+# As long as a name gets before the device sheet and the sidebar cut it off.
+_RENAME_MAX_CHARS = 100
 _CMD_GALLERY_KEY = f"{DOMAIN}/gallery_key"
 _CMD_PARTS_LIST = f"{DOMAIN}/complications/parts_list"
 _CMD_PARTS_SAVE = f"{DOMAIN}/complications/parts_save"
@@ -294,6 +297,7 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_nudge)
     websocket_api.async_register_command(hass, ws_watch_status)
     websocket_api.async_register_command(hass, ws_forget_device)
+    websocket_api.async_register_command(hass, ws_rename_device)
     websocket_api.async_register_command(hass, ws_gallery_key)
     websocket_api.async_register_command(hass, ws_parts_list)
     websocket_api.async_register_command(hass, ws_parts_save)
@@ -742,6 +746,70 @@ def ws_forget_device(
             "watch_config_removed": watch_config_removed,
         },
     )
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): _CMD_RENAME,
+        vol.Required("watch_id"): str,
+        vol.Required("name"): vol.Any(str, None),
+    }
+)
+@callback
+def ws_rename_device(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Give one device the name Home Assistant shows for it.
+
+    The same rename as on the device's page in Settings, Devices: it sets
+    the registry's ``name_by_user``, so every list in Home Assistant and the
+    ``owners`` reply show it. ``null`` (or a blank name) drops the rename,
+    and the name the device reports shows again.
+
+    This exists because Home Assistant core keeps
+    ``config/device_registry/update`` to administrators, and a household
+    member should still be able to name their own watch. So the panel calls
+    this instead, and the owner check is what stands in for the admin one: a
+    non-administrator may rename only a device paired to them.
+
+    Result: {"ok": true, "watch_id", "name"} with ``name`` as stored (null
+    when the rename was dropped).
+    """
+    domain_data = hass.data.get(DOMAIN)
+    if domain_data is None:
+        connection.send_error(msg["id"], "unavailable", "integration not ready")
+        return
+
+    watch_id = msg["watch_id"]
+    if not require_owner(hass, connection, msg, watch_id):
+        return
+    if domain_data.widget_secret_store.get(watch_id) is None:
+        connection.send_error(
+            msg["id"], "not_found", f"no registered device with id {watch_id}"
+        )
+        return
+
+    name = msg["name"]
+    if name is not None:
+        name = name.strip() or None
+    if name is not None and len(name) > _RENAME_MAX_CHARS:
+        connection.send_error(
+            msg["id"], "invalid_name", f"a name is at most {_RENAME_MAX_CHARS} characters"
+        )
+        return
+
+    device_registry = dr.async_get(hass)
+    device = device_registry.async_get_device(
+        identifiers={(DOMAIN, f"watch_{watch_id}")}
+    )
+    if device is None:
+        connection.send_error(
+            msg["id"], "not_found", "Home Assistant has no device entry for it"
+        )
+        return
+    device_registry.async_update_device(device.id, name_by_user=name)
+    _LOGGER.info("Renamed device watch_id=%s name=%r", watch_id, name)
+    connection.send_result(msg["id"], {"ok": True, "watch_id": watch_id, "name": name})
 
 
 @websocket_api.websocket_command(

@@ -77,6 +77,7 @@ _ADMIN = {
 _OWNER = {
     _MODULE.name: {
         "ws_forget_device": "require_owner",
+        "ws_rename_device": "require_owner",
         "ws_list": "require_owner",
         "ws_get": "require_owner",
         "ws_save": "require_owner",

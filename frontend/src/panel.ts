@@ -18996,15 +18996,14 @@ export class WristAssistantPanel extends LitElement {
    * wears how many its page holds: the device's complications (or its
    * Control Center ones), and on a watch its pages, status pages and Control
    * Center controls. Anyone can forget it, after a second step that says
-   * what goes with it. Only an administrator can rename it: the name is Home
-   * Assistant's own device name, and Home Assistant keeps
-   * `config/device_registry/update` to administrators.
+   * what goes with it, and anyone can rename it: the name is Home Assistant's
+   * own device name, set through the integration's own command since Home
+   * Assistant keeps its registry update to administrators.
    */
   private renderDeviceSheet(ownerId: string, devices: readonly HomeDeviceRow[]) {
     const row = devices.find((d) => d.id === ownerId);
     // The device left the home (forgotten here or elsewhere): nothing to show.
     if (!row) return nothing;
-    const mayRename = this.hass.user?.is_admin === true;
     const close = () => this.closeDeviceSheet();
     const owner = this.ownerOf(ownerId);
     const designs = rowsOnDevice(this.pickerRows(), ownerId).filter((r) => r.copies.some((c) => c.ownerId === ownerId && c.item.kind === "record"));
@@ -19103,7 +19102,7 @@ export class WristAssistantPanel extends LitElement {
           <span class="dev-facts">${facts}</span>
         </div>
         <div class="dev-hero-acts">
-          ${mayRename && !this.deviceForgetAsk && !renaming
+          ${!this.deviceForgetAsk && !renaming
             ? html`<button class="home-btn dev-rename-open" title="Change the name Home Assistant shows for it"
                 @click=${() => this.startDeviceRename(ownerId)}>Rename</button>`
             : nothing}

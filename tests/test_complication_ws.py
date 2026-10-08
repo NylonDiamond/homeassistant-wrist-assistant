@@ -256,11 +256,20 @@ def _loaded_modules():
 class _Device:
     name: str | None = None
     name_by_user: str | None = None
+    id: str = field(default_factory=lambda: uuid.uuid4().hex)
 
 
 class _DeviceRegistry:
     def __init__(self) -> None:
         self.by_identifier: dict[tuple[str, str], _Device] = {}
+
+    def async_update_device(self, device_id: str, **changes):
+        for device in self.by_identifier.values():
+            if device.id == device_id:
+                for key, value in changes.items():
+                    setattr(device, key, value)
+                return device
+        raise KeyError(device_id)
 
     def async_get_device(self, identifiers=None, **_kwargs):
         for identifier in identifiers or ():

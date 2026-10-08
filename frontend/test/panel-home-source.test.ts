@@ -189,9 +189,10 @@ describe("Home's device sheet", () => {
     expect(sheet).not.toContain("openNewDialog");
   });
 
-  it("renames the device in Home Assistant's own registry, from a button on the head, for administrators, as Home Assistant's registry update is", () => {
-    expect(sheet).toContain("const mayRename = this.hass.user?.is_admin === true;");
-    expect(sheet).toContain("mayRename && !this.deviceForgetAsk && !renaming");
+  it("renames the device through the integration, from a button on the head, for everyone", () => {
+    expect(sheet).not.toContain("mayRename");
+    expect(sheet).not.toContain("is_admin");
+    expect(sheet).toContain("${!this.deviceForgetAsk && !renaming");
     expect(sheet).toContain("@click=${() => this.startDeviceRename(ownerId)}>Rename</button>");
     expect(sheet).toContain("void this.renameDeviceNow(ownerId);");
     const save = method("  private async renameDeviceNow(ownerId: string) {");

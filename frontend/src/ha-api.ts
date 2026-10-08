@@ -338,16 +338,14 @@ export async function fetchWatchStatus(hass: HassLike, owner: string) {
 
 /** Give one device the name Home Assistant shows for it, the same rename as
  * on its page in Settings, Devices. Null drops the rename, so the name the
- * device reports shows again. Admin only: Home Assistant core keeps
- * `config/device_registry/update` to administrators, so the panel offers
- * Rename to administrators alone. */
+ * device reports shows again. Goes through the integration rather than
+ * `config/device_registry/update`, which Home Assistant core keeps to
+ * administrators: the integration's own command lets anyone rename a device
+ * paired to them, and an administrator any device. */
 export async function renameDevice(hass: HassLike, watchId: string, name: string | null) {
-  const devices = await hass.connection.sendMessagePromise<{ id: string; identifiers: [string, string][] }[]>({
-    type: "config/device_registry/list",
+  await hass.connection.sendMessagePromise<{ ok: true; watch_id: string; name: string | null }>({
+    type: "wrist_assistant/devices/rename", watch_id: watchId, name,
   });
-  const device = devices.find((d) => d.identifiers.some(([domain, id]) => domain === "wrist_assistant" && id === `watch_${watchId}`));
-  if (device === undefined) throw new Error("Home Assistant has no device entry for it");
-  await hass.connection.sendMessagePromise({ type: "config/device_registry/update", device_id: device.id, name_by_user: name });
 }
 
 /** Remove one device from this home: its pairing, its push token and its
@@ -1104,7 +1102,7 @@ export interface HassConfigEntry {
  * Asked by `domain` alone: adding `type_filter` hides entries Home
  * Assistant files under another type (measured on 2026.9: Music Assistant's
  * one entry came back only without it). Open to every user in Home
- * Assistant core, unlike the registry update (`renameDevice`). */
+ * Assistant core. */
 export async function fetchConfigEntries(hass: HassLike, domain: string): Promise<HassConfigEntry[]> {
   return hass.connection.sendMessagePromise<HassConfigEntry[]>({ type: "config_entries/get", domain });
 }
