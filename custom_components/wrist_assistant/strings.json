@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Wrist Assistant",
-        "description": "This turns on Wrist Assistant in Home Assistant. Next, open Wrist Assistant on your watch and choose Pair with Home Assistant. Type the code it shows in the Wrist Assistant panel: Watch app, Settings, Pair a watch."
+        "description": "This turns on Wrist Assistant in Home Assistant. Next, open Wrist Assistant on your watch and choose Pair with Home Assistant. Type the code it shows in the Wrist Assistant panel: Watch app, Settings, Pair a device."
       }
     },
     "abort": {
