@@ -369,10 +369,13 @@ def _update_metadata(env, watch_id: str, payload: dict) -> _Response:
         dont_inherit=True,
     )
     registry = types.SimpleNamespace(async_get_device=lambda **_: None)
+    with loaded_pair_module() as pair_mod:
+        text_max = pair_mod.REGISTER_TEXT_MAX_LEN
     namespace: dict[str, Any] = {
         "Response": _Response,
         "_OpContext": object,
         "DOMAIN": "wrist_assistant",
+        "REGISTER_TEXT_MAX_LEN": text_max,
         "dr": types.SimpleNamespace(async_get=lambda _hass: registry),
     }
     exec(code, namespace)  # noqa: S102
@@ -416,6 +419,47 @@ def test_the_store_s_metadata_update_takes_no_owner() -> None:
     with _loaded_store() as store_mod:
         params = inspect.signature(store_mod.WidgetSecretStore.update_metadata).parameters
     assert "owner_iphone_id" not in params
+
+
+@pytest.mark.parametrize("field", ["app_version", "app_build", "device_name", "screen_size"])
+def test_the_metadata_refresh_refuses_a_field_longer_than_pairing_allows(env, field) -> None:
+    """Pairing caps these fields; the signed refresh must not get round it."""
+    env.store.register(
+        "watch-a",
+        SECRET_B,
+        "watch-self-provision",
+        app_version="1.0",
+        app_build="1",
+        device_name="Watch",
+        screen_size="208x248",
+        user_id="alice",
+    )
+    before = env.store.get("watch-a")
+    kept = getattr(before, field)
+
+    reply = _update_metadata(env, "watch-a", {field: "x" * 257})
+    assert reply.status == 400
+    assert reply.text == f"{field} too long"
+    assert getattr(env.store.get("watch-a"), field) == kept
+
+    # Exactly at the cap is still taken, the same edge pairing allows.
+    reply = _update_metadata(env, "watch-a", {field: "y" * 256})
+    assert reply.status == 200, reply.body
+    assert getattr(env.store.get("watch-a"), field) == "y" * 256
+
+
+def test_the_store_keeps_the_old_value_when_handed_an_over_long_one(env) -> None:
+    """The store's own cap, for any caller that skips the op's check."""
+    env.store.register("watch-a", SECRET_B, "watch-self-provision", device_name="Watch")
+    assert env.store.update_metadata("watch-a", device_name="n" * 257, app_version="2.0")
+    entry = env.store.get("watch-a")
+    assert entry.device_name == "Watch"
+    assert entry.app_version == "2.0"
+
+
+def test_the_store_cap_matches_the_pairing_cap(env) -> None:
+    with loaded_pair_module() as pair_mod:
+        assert env.store_mod.METADATA_TEXT_MAX_LEN == pair_mod.REGISTER_TEXT_MAX_LEN
 
 
 # ── persistence ──────────────────────────────────────────────────────────

@@ -130,6 +130,9 @@ _ADMIN_ONLY = {
 # * ``ws_watch_config_subscribe`` hands out nothing but revision numbers, the
 #   same kind of thing. The documents themselves still travel only over the
 #   signed ``watch_config_get``.
+#   Both still check whose device the owner is: a non-admin may follow only
+#   a device bound to their own user (pinned below, and run in
+#   test_complication_ws.py and test_watch_config_ws.py).
 # * The client certificate commands read and write the certificate of the
 #   user on the connection, the same per-user record the signed ops keep,
 #   and any signed-in user manages their own. Naming another user is the one
@@ -262,6 +265,27 @@ def test_admin_only_commands_exist(module: Path) -> None:
     defined = {node.name for node in _command_functions(_tree(module))}
     expected, _not_admin = _EXPECTED[module.name]
     assert defined == expected, sorted(defined ^ expected)
+
+
+@pytest.mark.parametrize(
+    ("module", "command", "check"),
+    [
+        (_MODULE, "ws_owner_subscribe", "may_follow_owner"),
+        (_WATCH_CONFIG_MODULE, "ws_watch_config_subscribe", "_may_follow_owner"),
+    ],
+)
+def test_each_live_line_checks_whose_device_the_owner_is(
+    module: Path, command: str, check: str
+) -> None:
+    """Open to non-admins, so each must ask whether the owner is the
+    caller's own device before it subscribes."""
+    [node] = [n for n in _command_functions(_tree(module)) if n.name == command]
+    called = {
+        call.func.id
+        for call in ast.walk(node)
+        if isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
+    }
+    assert check in called
 
 
 def test_the_watch_config_commands_are_registered_at_setup() -> None:

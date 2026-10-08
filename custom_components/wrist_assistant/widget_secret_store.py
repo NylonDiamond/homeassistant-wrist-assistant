@@ -46,6 +46,12 @@ DEVICE_KIND_WATCH = "watch"
 # label the one row it synthesizes, and so the panel has a name for it.
 DEVICE_KIND_LIBRARY = "library"
 
+# The longest app_version, app_build, device_name or screen_size
+# `update_metadata` stores. The same number as `REGISTER_TEXT_MAX_LEN` in
+# wa_pair_requests.py, the cap pairing enforces; kept here as well so this
+# module needs nothing from that one, and a test holds the two equal.
+METADATA_TEXT_MAX_LEN = 256
+
 
 @dataclass
 class WidgetSecretEntry:
@@ -339,6 +345,25 @@ class WidgetSecretStore:
         entry = self._secrets.get(watch_id)
         if entry is None:
             return False
+
+        # A second line behind the op's own check: a value over the cap
+        # pairing enforces is refused here too, and the stored one kept, so
+        # no caller can grow the file or the registry name past it.
+        def _within_cap(name: str, value: str | None) -> str | None:
+            if value is not None and len(value) > METADATA_TEXT_MAX_LEN:
+                _LOGGER.warning(
+                    "Ignored an over-long %s for watch_id=%s (%d characters)",
+                    name,
+                    watch_id,
+                    len(value),
+                )
+                return None
+            return value
+
+        app_version = _within_cap("app_version", app_version)
+        app_build = _within_cap("app_build", app_build)
+        device_name = _within_cap("device_name", device_name)
+        screen_size = _within_cap("screen_size", screen_size)
 
         changed = False
         if app_version is not None and entry.app_version != app_version:

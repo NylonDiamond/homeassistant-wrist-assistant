@@ -51,7 +51,21 @@ class _Marker:
         self.args = args
 
 
+def _signed_in(user_id: str, *, is_admin: bool = False) -> Any:
+    """The Home Assistant user on a WebSocket connection."""
+    return types.SimpleNamespace(id=user_id, is_admin=is_admin)
+
+
+ROOT = _signed_in("root", is_admin=True)
+ALICE = _signed_in("alice")
+BOB = _signed_in("bob")
+
+
 class _Connection:
+    # An administrator unless a test says otherwise: the panel's commands
+    # are admin-only, and the live line's own rule has its own tests.
+    user: Any = ROOT
+
     def __init__(self) -> None:
         self.results: dict[int, Any] = {}
         self.errors: list[tuple[int, str, str]] = []
@@ -760,6 +774,60 @@ def test_subscribe_to_an_unreadable_file_is_unavailable_and_not_subscribed(env) 
         "the stored watch config could not be read; restart Home Assistant",
     )
     assert connection.subscriptions == {}
+
+
+class _Secrets:
+    """The secret store's one read here: whose user a device is bound to."""
+
+    def __init__(self, users: dict[str, str | None]) -> None:
+        self.users = users
+
+    def get(self, device_id: str) -> Any:
+        if device_id not in self.users:
+            return None
+        return types.SimpleNamespace(user_id=self.users[device_id])
+
+
+def _subscribe_as(env, user: Any, owner: str = WATCH) -> _Connection:
+    env.hass.data[DOMAIN].widget_secret_store = _Secrets(
+        {WATCH: "alice", "watch-legacy": None}
+    )
+    connection = _Connection()
+    connection.user = user
+    env.ws.ws_watch_config_subscribe(env.hass, connection, {"id": 1, "owner_watch_id": owner})
+    return connection
+
+
+def test_subscribe_lets_a_non_admin_follow_their_own_watch(env) -> None:
+    connection = _subscribe_as(env, ALICE)
+    assert connection.errors == []
+    _phone_upload(env, "behavior", {})
+    assert connection.events() == [{"kind": "behavior", "revision": 1}]
+
+
+@pytest.mark.parametrize(
+    ("user", "owner"),
+    [
+        (BOB, WATCH),
+        (ALICE, "watch-legacy"),
+        (ALICE, "no-such-watch"),
+        (None, WATCH),
+    ],
+    ids=["another-user", "unbound-watch", "unknown-watch", "no-user"],
+)
+def test_subscribe_refuses_a_watch_not_paired_to_the_caller(env, user, owner) -> None:
+    connection = _subscribe_as(env, user, owner)
+    assert connection.results == {}
+    assert connection.subscriptions == {}
+    [(_id, code, _message)] = connection.errors
+    assert code == "unauthorized"
+    _phone_upload(env, "behavior", {})
+    assert connection.events() == []
+
+
+def test_subscribe_lets_an_admin_follow_any_watch(env) -> None:
+    assert _subscribe_as(env, ROOT, "watch-legacy").errors == []
+    assert _subscribe_as(env, ROOT, "no-such-watch").errors == []
 
 
 # ── step 3e: the catalog (the phone writes it, the panel reads it) ───────

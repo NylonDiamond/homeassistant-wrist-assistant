@@ -12,6 +12,8 @@ One exception: ``owner_subscribe``, which the iPhone app sends over its own
 WebSocket. The phone's user need not be an administrator, and all it is ever
 told is a number: the token of a commit for the owner it named. The designs
 themselves still travel only over the signed ``complications_sync`` pull.
+A non-administrator may name only a device paired to them (see
+``may_follow_owner``); anything else is refused ``unauthorized``.
 
 Commands:
 
@@ -181,6 +183,36 @@ def _store(hass: HomeAssistant) -> ComplicationStore | None:
     if domain_data is None:
         return None
     return domain_data.complication_store
+
+
+def may_follow_owner(
+    hass: HomeAssistant, connection: ActiveConnection, owner: str
+) -> bool:
+    """Whether the signed-in user may hear about `owner`'s commits.
+
+    The live lines (``owner_subscribe`` here, ``watch_config/subscribe``)
+    are open to every signed-in user, because the phone's user need not be
+    an administrator. An administrator may follow any owner, as the panel
+    can see them all anyway. Anyone else may follow only a device paired
+    to them: one whose secret-store entry is bound to their user. A device
+    bound to no user (paired before binding) or to someone else, an owner
+    with no entry, and the Library are refused.
+    """
+    user = getattr(connection, "user", None)
+    if user is None:
+        return False
+    if getattr(user, "is_admin", False):
+        return True
+    user_id = getattr(user, "id", None)
+    domain_data = hass.data.get(DOMAIN)
+    secrets = getattr(domain_data, "widget_secret_store", None)
+    entry = secrets.get(owner) if secrets is not None else None
+    return (
+        user_id is not None
+        and entry is not None
+        and entry.user_id is not None
+        and entry.user_id == user_id
+    )
 
 
 def _previews(hass: HomeAssistant) -> CardPreviewStore | None:
@@ -1054,6 +1086,11 @@ def ws_owner_subscribe(
         connection.send_error(msg["id"], "unavailable", "integration not ready")
         return
     owner = msg["owner_id"]
+    if not may_follow_owner(hass, connection, owner):
+        connection.send_error(
+            msg["id"], "unauthorized", "not a device paired to this user"
+        )
+        return
 
     @callback
     def _on_change(change: ComplicationChange) -> None:
