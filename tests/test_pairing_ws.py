@@ -8,7 +8,9 @@ The device registry and the Logbook helpers are recorders.
 gate statically.
 
 Covered: the lookup and confirm of a code (old form and sealed, a watch and
-an iPhone), the Replace and "I expect this watch" ticks, whose device it is,
+an iPhone), a sealed pairing stored only when its box is fetched (and nothing
+left behind by a box nobody fetched), the Replace and "I expect this watch"
+ticks, whose device it is,
 and the QR offer commands (the link, the person, the cap, the status, the
 cancel, the cloud address, and that the token is never logged).
 """
@@ -125,6 +127,9 @@ def pairing_env():
         spec = importlib.util.spec_from_file_location(f"{_PKG}.pairing_ws", _SRC / "pairing_ws.py")
         ws = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(ws)
+        # A sealed confirm answers at once rather than waiting for a fetch
+        # no test makes; the one test of the wait sets its own.
+        ws._DELIVERY_WAIT_SECONDS = 0
 
         secret_store = store_mod.WidgetSecretStore(object())
         asyncio.run(secret_store.async_load())
@@ -527,32 +532,127 @@ def _sealed_pending(
     return pending, private
 
 
+def _fetch(env, watch_id: str = WATCH) -> tuple[str, dict | None]:
+    """What ``/v2/pair/status`` does for a device polling for its box."""
+    return asyncio.run(
+        env.ws.async_pair_status(env.hass, env.pair_store, env.secret_store, watch_id)
+    )
+
+
 def test_a_sealed_confirm_makes_the_secret_and_seals_it_to_the_device(env) -> None:
     pending, private = _sealed_pending(env)
-    assert env.pair_store.status(WATCH) == ("pending", None)
+    assert _fetch(env) == ("pending", None)
 
     result = _ok(env, env.ws.ws_pair_confirm, code=pending.code)
-    assert result["result"] == "new"
+    # No device fetched within the confirm's wait.
+    assert result["result"] == "waiting"
+    assert env.secret_store.get(WATCH) is None
+
+    state, reply = _fetch(env)
+    assert state == "confirmed"
+    assert set(reply) == {"server_public_key_b64", "nonce", "box"}
     entry = env.secret_store.get(WATCH)
     secret = base64.b64decode(entry.secret_b64)
     assert len(secret) == 32
     assert entry.label == "watch-code-pair"
     assert entry.user_id == "root"
     assert entry.device_kind == "watch"
-
-    state, reply = env.pair_store.status(WATCH)
-    assert state == "confirmed"
-    assert set(reply) == {"server_public_key_b64", "nonce", "box"}
     assert env.sealed.open_pair_secret(private, WATCH, reply) == secret
     # The request itself is gone: the code cannot be confirmed twice.
     assert _ok(env, env.ws.ws_pair_lookup, code=pending.code) == {"found": False}
     assert _error(env, env.ws.ws_pair_confirm, code=pending.code)[0] == "unknown_code"
 
 
+def test_a_sealed_pairing_is_stored_only_when_its_box_is_fetched(env) -> None:
+    """The box lives in memory; the key it carries reaches the secret store,
+    and the file, only as the box is handed out, and only once."""
+    pending, private = _sealed_pending(env)
+    _ok(env, env.ws.ws_pair_confirm, code=pending.code)
+    assert env.secret_store.all_watch_ids == []
+    assert env.secret_store._store.saved is None
+    assert env.logbook == []
+
+    _state, reply = _fetch(env)
+    secret = env.sealed.open_pair_secret(private, WATCH, reply)
+    # Written at once, not on a debounce, before the box went out.
+    [written] = env.secret_store._store.saved_now
+    assert base64.b64decode(written["secrets"][WATCH]["secret_b64"]) == secret
+    assert env.logbook == [
+        ("registered", {"watch_id": WATCH, "label": "watch-code-pair", "app_version": "3.2.0"})
+    ]
+
+    # A second fetch (a retry, or anyone who knows the id) hands out the
+    # same box and stores nothing more.
+    assert _fetch(env) == ("confirmed", reply)
+    assert len(env.secret_store._store.saved_now) == 1
+    assert len(env.logbook) == 1
+
+
+@pytest.mark.parametrize("lost", ["the box ran out", "Home Assistant restarted"])
+def test_a_box_nobody_fetched_leaves_no_paired_entry(env, lost) -> None:
+    """A new watch whose box was lost asks for a new code, and that code
+    needs no Replace: nothing was ever stored for it."""
+    pending, _private = _sealed_pending(env)
+    _ok(env, env.ws.ws_pair_confirm, code=pending.code)
+    if lost == "the box ran out":
+        env.clock.now += env.pair_mod.PAIR_SEALED_COPY_TTL_SECONDS
+    else:
+        env.pair_store.shutdown()
+
+    assert _fetch(env) == ("expired", None)
+    assert env.secret_store.get(WATCH) is None
+    again, _private = _sealed_pending(env)
+    lookup = _ok(env, env.ws.ws_pair_lookup, code=again.code)
+    assert (lookup["already_paired"], lookup["needs_replace"]) == (False, False)
+    _ok(env, env.ws.ws_pair_confirm, code=again.code)
+    assert _fetch(env)[0] == "confirmed"
+    assert env.secret_store.get(WATCH) is not None
+
+
+def test_a_re_pair_whose_box_is_lost_keeps_the_old_key(env) -> None:
+    """Replace on a watch that already works swaps its key only once the
+    watch holds the new one; a lost box leaves the old key working."""
+    env.secret_store.register(WATCH, SECRET_B, "watch-code-pair", user_id="root")
+    pending, _private = _sealed_pending(env)
+    _ok(env, env.ws.ws_pair_confirm, code=pending.code, replace=True)
+    assert env.secret_store.get(WATCH).secret_b64 == SECRET_B
+
+    env.clock.now += env.pair_mod.PAIR_SEALED_COPY_TTL_SECONDS
+    assert _fetch(env) == ("expired", None)
+    assert env.secret_store.get(WATCH).secret_b64 == SECRET_B
+
+
+def test_the_confirm_answers_once_the_device_fetched_its_box(env) -> None:
+    """The confirm waits a little for the fetch, so the panel hears the
+    usual result and finds the device paired when it looks."""
+    env.ws._DELIVERY_WAIT_SECONDS = 5.0
+    env.ws._DELIVERY_POLL_SECONDS = 0.01
+    pending, _private = _sealed_pending(env)
+
+    async def run() -> _Connection:
+        connection = _Connection(ROOT)
+        confirm = asyncio.ensure_future(
+            env.ws.ws_pair_confirm(env.hass, connection, {"id": 1, "code": pending.code})
+        )
+        await asyncio.sleep(0.05)
+        assert not confirm.done()
+        state, _box = await env.ws.async_pair_status(
+            env.hass, env.pair_store, env.secret_store, WATCH
+        )
+        assert state == "confirmed"
+        await confirm
+        return connection
+
+    connection = asyncio.run(run())
+    assert connection.errors == []
+    assert connection.results[1]["result"] == "new"
+    assert env.secret_store.get(WATCH) is not None
+
+
 def test_the_box_opens_only_with_the_device_s_own_key(env) -> None:
     pending, _private = _sealed_pending(env)
     _ok(env, env.ws.ws_pair_confirm, code=pending.code)
-    _state, reply = env.pair_store.status(WATCH)
+    _state, reply = _fetch(env)
     stranger, _ = _key_pair()
     with pytest.raises(env.sealed.SealedBoxError):
         env.sealed.open_pair_secret(stranger, WATCH, reply)
@@ -561,7 +661,7 @@ def test_the_box_opens_only_with_the_device_s_own_key(env) -> None:
 def test_each_sealed_confirm_makes_a_fresh_secret_and_server_key(env) -> None:
     first, private_one = _sealed_pending(env)
     _ok(env, env.ws.ws_pair_confirm, code=first.code)
-    _state, reply_one = env.pair_store.status(WATCH)
+    _state, reply_one = _fetch(env)
     secret_one = env.sealed.open_pair_secret(private_one, WATCH, reply_one)
 
     # While the first box waits, nobody may start again for the id: an
@@ -575,7 +675,9 @@ def test_each_sealed_confirm_makes_a_fresh_secret_and_server_key(env) -> None:
     second, private_two = _sealed_pending(env)
     assert env.pair_store.status(WATCH) == ("pending", None)
     _ok(env, env.ws.ws_pair_confirm, code=second.code, replace=True)
-    _state, reply_two = env.pair_store.status(WATCH)
+    # The first key stands until the device fetches the second box.
+    assert env.secret_store.get(WATCH).secret_b64 == base64.b64encode(secret_one).decode()
+    _state, reply_two = _fetch(env)
     secret_two = env.sealed.open_pair_secret(private_two, WATCH, reply_two)
 
     assert secret_one != secret_two
@@ -587,12 +689,12 @@ def test_the_box_waits_ten_minutes_then_goes(env) -> None:
     pending, _private = _sealed_pending(env)
     _ok(env, env.ws.ws_pair_confirm, code=pending.code)
     env.clock.now += 599
-    assert env.pair_store.status(WATCH)[0] == "confirmed"
+    assert _fetch(env)[0] == "confirmed"
     # Asking again hands out the same box.
-    assert env.pair_store.status(WATCH) == env.pair_store.status(WATCH)
+    assert _fetch(env) == _fetch(env)
     env.clock.now += 1
-    assert env.pair_store.status(WATCH) == ("expired", None)
-    # The paired secret stays; only the copy went.
+    assert _fetch(env) == ("expired", None)
+    # The fetched pairing stays; only the copy went.
     assert env.secret_store.get(WATCH) is not None
 
 
@@ -609,12 +711,12 @@ def test_an_iphone_by_code_is_stored_as_an_iphone(env) -> None:
     assert lookup["kind"] == "iphone"
     result = _ok(env, env.ws.ws_pair_confirm, code=pending.code, user_id="chen")
     assert result["kind"] == "iphone"
+    _state, reply = _fetch(env, PHONE)
     entry = env.secret_store.get(PHONE)
     assert entry.label == "iphone-self-provision"
     assert entry.device_kind == "iphone"
     assert entry.user_id == "chen"
     assert entry.owner_iphone_id is None
-    _state, reply = env.pair_store.status(PHONE)
     assert base64.b64encode(env.sealed.open_pair_secret(private, PHONE, reply)).decode() == (
         entry.secret_b64
     )

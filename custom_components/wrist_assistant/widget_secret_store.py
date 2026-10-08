@@ -393,7 +393,7 @@ class WidgetSecretStore:
             self._notify_listeners()
         return True
 
-    def replace_secret(self, watch_id: str, secret_b64: str) -> bool:
+    async def async_replace_secret(self, watch_id: str, secret_b64: str) -> bool:
         """Swap a device's secret for a new one, keeping everything else.
 
         Backs the signed ``rekey`` op: the device sends its new secret sealed
@@ -401,6 +401,13 @@ class WidgetSecretStore:
         the only one. The label, user, owner and metadata stay as they are,
         so a re-key is never a way to change whose device it is. Returns
         False when the device has no entry (a race with removal).
+
+        The file is written before this returns, not after the usual
+        debounce. The op signs its reply with the new secret, and the phone
+        takes that reply as proof Home Assistant holds the new key and drops
+        the old one. A crash inside a debounce window would bring Home
+        Assistant back on the old key with the phone holding only the new
+        one, and only pairing again would fix that.
         """
         entry = self._secrets.get(watch_id)
         if entry is None:
@@ -408,9 +415,25 @@ class WidgetSecretStore:
         self._secrets[watch_id] = replace(
             entry, secret_b64=secret_b64, last_provision=dt_util.utcnow()
         )
-        self._store.async_delay_save(self._serialize, _SAVE_DEBOUNCE_SECONDS)
+        await self.async_save_now()
         _LOGGER.info("Re-keyed widget secret for watch_id=%s", watch_id)
         return True
+
+    async def async_save_now(self) -> None:
+        """Write the file at once, cancelling any debounced save.
+
+        For a write a device will rely on as soon as it hears back (a re-key,
+        a sealed pairing's key handed to its device), where losing it to a
+        crash would leave the device with a key Home Assistant forgot.
+        """
+        await self._store.async_save(self._serialize())
+
+    def is_paired_watch(self, watch_id: str) -> bool:
+        """Whether ``watch_id`` is a paired watch, not an iPhone and not
+        unknown. The watch config store asks this before the panel may make a
+        watch's first record."""
+        entry = self._secrets.get(watch_id)
+        return entry is not None and entry.device_kind == DEVICE_KIND_WATCH
 
     def note_main_house(self, watch_id: str, main_house: bool) -> bool:
         """Record whether this Home Assistant is `watch_id`'s main house.

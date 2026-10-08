@@ -540,8 +540,8 @@ def test_status_hands_out_a_copy(mod) -> None:
 
 
 def test_a_new_start_cannot_throw_away_a_waiting_box(mod) -> None:
-    """Anyone who saw a watch id could post a start for it, and the confirm
-    has already stored the box's key, so the box must outlive the attempt."""
+    """Anyone who saw a watch id could post a start for it, and the box
+    carries the pairing the admin confirmed, so it must outlive the attempt."""
     clock = _Clock()
     store = mod.PairRequestStore(clock=clock, code_factory=_codes("AAAAAA", "BBBBBB"))
     store.confirm_sealed(store.start(_fields(mod)), _BOX)
@@ -617,6 +617,46 @@ def test_shutdown_drops_waiting_boxes(mod) -> None:
     store.confirm_sealed(store.start(_fields(mod)), _BOX)
     store.shutdown()
     assert store.status("watch-1") == ("expired", None)
+
+
+# ── the pairing parked with a box ────────────────────────────────────────
+
+
+def test_a_parked_pairing_is_taken_by_the_first_fetch_only(mod) -> None:
+    """The confirm parks what to store with the box; the first fetch takes
+    it, and no later fetch can store it a second time."""
+    store = mod.PairRequestStore(clock=_Clock(), code_factory=_codes("AAAAAA"))
+    fields = _fields(mod)
+    parked = store.confirm_sealed(store.start(fields), _BOX, fields=fields, user_id="root")
+    assert (parked.fields, parked.user_id, parked.taken, parked.result) == (
+        fields, "root", False, None
+    )
+
+    assert store.take_parked("watch-1") is parked
+    assert parked.taken is True
+    assert store.take_parked("watch-1") is None
+    # The box is still handed out after it was taken.
+    assert store.status("watch-1") == ("confirmed", _BOX)
+
+
+def test_a_box_that_ran_out_or_went_with_a_restart_parks_nothing(mod) -> None:
+    clock = _Clock()
+    store = mod.PairRequestStore(clock=clock, code_factory=_codes("AAAAAA", "BBBBBB"))
+    fields = _fields(mod)
+    store.confirm_sealed(store.start(fields), _BOX, fields=fields, user_id="root")
+    clock.now += mod.PAIR_SEALED_COPY_TTL_SECONDS
+    assert store.take_parked("watch-1") is None
+
+    store.confirm_sealed(store.start(fields), _BOX, fields=fields, user_id="root")
+    store.shutdown()
+    assert store.take_parked("watch-1") is None
+
+
+def test_a_box_confirmed_with_nothing_to_store_parks_nothing(mod) -> None:
+    store = mod.PairRequestStore(clock=_Clock(), code_factory=_codes("AAAAAA"))
+    assert store.confirm_sealed(store.start(_fields(mod)), _BOX) is None
+    assert store.take_parked("watch-1") is None
+    assert store.take_parked("watch-2") is None
 
 
 # ── where a request came from: home or not ───────────────────────────────

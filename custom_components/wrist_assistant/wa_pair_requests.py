@@ -3,9 +3,9 @@
 A watch can pair without the iPhone. It posts its id and a fresh secret to
 the unauthenticated ``/v2/pair/start`` and gets back a short code. An admin
 types that code into the panel, which looks the request up and confirms it
-over the WebSocket (``pairing_ws.py``). Only the confirm writes the secret
-into the widget secret store, bound to the admin who confirmed it. Until
-then the pair signs nothing.
+over the WebSocket (``pairing_ws.py``). Only a confirmed pairing reaches the
+widget secret store, bound to the user the admin picked. Until then the pair
+signs nothing.
 
 ``PairRequestStore`` holds the requests in memory, modelled on
 ``StreamTokenStore``: one TTL for every entry, so insertion order is expiry
@@ -34,6 +34,14 @@ device's private key can open it. Nobody can throw it away either: while it
 waits, a new start for the same id is refused (``ConfirmedPairWaiting``,
 409 from the view). The old, clear form is still accepted from
 a watch, so watches on older builds keep pairing.
+
+The sealed confirm writes nothing to the secret store. It parks the pairing
+with the box (``ParkedPairing``), and the first fetch of the box stores it.
+The box lives only in memory, so a key stored at the confirm could be lost
+with it (a restart, or a device that never fetched in time) and leave a
+"paired" entry whose key nobody holds, which the next code for that device
+would then have to Replace. The old form still stores at the confirm: its
+device made the secret and holds it already.
 
 ``kind`` says what is pairing: ``"watch"`` (the default, and the only kind
 an older build ever meant) or ``"iphone"``. A confirmed iPhone is stored with
@@ -442,6 +450,25 @@ class PendingPair:
 
 
 @dataclass
+class ParkedPairing:
+    """What a sealed confirm will write to the secret store, once its device
+    fetches the box.
+
+    The confirm decides everything (the fields with the new secret, the user
+    to bind) but writes nothing: a key stored before its box is fetched is a
+    key nobody may ever hold. ``/v2/pair/status`` writes it the first time
+    it hands the box out (``pairing_ws.async_pair_status``).
+    """
+
+    fields: PairFields
+    user_id: str | None
+    taken: bool = False
+    """Set by the first fetch, so only one fetch ever writes it."""
+    result: str | None = None
+    """The secret store's ``new``, ``rekey`` or ``idempotent`` once written."""
+
+
+@dataclass
 class SealedCopy:
     """A confirmed sealed pairing's box, waiting for its device to fetch it."""
 
@@ -450,6 +477,9 @@ class SealedCopy:
     """``{"server_public_key_b64", "nonce", "box"}`` from
     ``sealed_box.seal_pair_secret``."""
     expires_at: float
+    parked: ParkedPairing | None = None
+    """The pairing to store on the first fetch. None for a copy made with
+    nothing to store."""
 
 
 class ConfirmedPairWaiting(Exception):
@@ -525,9 +555,8 @@ class PairRequestStore:
         was. ``/v2/pair/start`` needs no sign-in and a watch id is not
         secret (it rides in the clear in every status poll), so anyone on
         the network could otherwise post a start for it and throw the box
-        away before the device fetched it. The confirm has already written
-        the box's key into the secret store, so that would leave a key no
-        device holds and a pairing that can only fail.
+        away before the device fetched it, and with it the pairing the admin
+        just confirmed.
 
         Refusing is safe for the apps. The watch and the iPhone both make a
         fresh key pair for every start and keep it only for that one flow,
@@ -579,19 +608,57 @@ class PairRequestStore:
         return pending
 
     def confirm_sealed(
-        self, pending: PendingPair, reply: dict[str, str], *, now: float | None = None
-    ) -> None:
+        self,
+        pending: PendingPair,
+        reply: dict[str, str],
+        *,
+        fields: PairFields | None = None,
+        user_id: str | None = None,
+        now: float | None = None,
+    ) -> ParkedPairing | None:
         """Replace a confirmed sealed request with its box, kept for
-        ``/v2/pair/status`` for ten minutes from now."""
+        ``/v2/pair/status`` for ten minutes from now.
+
+        ``fields`` (with the secret the box carries) and ``user_id`` are the
+        pairing to store when the device first fetches the box; it is
+        returned so the confirm can tell when that happened. If the box runs
+        out, or Home Assistant restarts, before anyone fetches it, nothing
+        was ever stored: the device asks for a new code, which needs no
+        Replace for a device that was new, and a device that was paired
+        before keeps the key it has.
+        """
         current = self._clock() if now is None else now
         self._evict_expired(current)
         self._entries.pop(pending.code, None)
         self._sealed.pop(pending.watch_id, None)
+        parked = ParkedPairing(fields=fields, user_id=user_id) if fields is not None else None
         self._sealed[pending.watch_id] = SealedCopy(
-            watch_id=pending.watch_id, reply=dict(reply), expires_at=current + self._sealed_ttl
+            watch_id=pending.watch_id,
+            reply=dict(reply),
+            expires_at=current + self._sealed_ttl,
+            parked=parked,
         )
         while len(self._sealed) > self._MAX_ENTRIES:
             self._sealed.popitem(last=False)
+        return parked
+
+    def take_parked(self, watch_id: str, *, now: float | None = None) -> ParkedPairing | None:
+        """The pairing a fetch of ``watch_id``'s box must store now, or None.
+
+        None when there is no unexpired box, the box has nothing to store, or
+        an earlier fetch took it already. The first call marks it taken, so
+        two fetches never store it twice.
+        """
+        current = self._clock() if now is None else now
+        self._evict_expired(current)
+        copy = self._sealed.get(watch_id)
+        if copy is None or copy.expires_at <= current:
+            return None
+        parked = copy.parked
+        if parked is None or parked.taken:
+            return None
+        parked.taken = True
+        return parked
 
     def status(
         self, watch_id: str, *, now: float | None = None

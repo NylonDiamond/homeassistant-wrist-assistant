@@ -974,6 +974,25 @@ def test_a_panel_save_of_pages_for_an_unpaired_watch_needs_a_device_copy_first(m
     assert store.panel_save(OWNER, "pages", _doc("panel"), base_revision=1).revision == 2
 
 
+def test_the_panel_cannot_start_a_watch_config_under_an_iphone(mod):
+    """With the check setup hands in (the real secret store's
+    ``is_paired_watch``), a paired iPhone is not a paired watch: a first
+    panel save under its id is refused, and one under a watch is made."""
+    from test_widget_secret_user_binding import SECRET_A, SECRET_B, _loaded_store
+
+    with _loaded_store() as secret_mod:
+        secrets = secret_mod.WidgetSecretStore(object())
+        secrets.register("iphone-1", SECRET_A, "iphone-self-provision", user_id="alice")
+        secrets.register(OWNER, SECRET_B, "watch-code-pair", user_id="alice")
+        store = mod.WatchConfigStore(_Hass(), is_paired=secrets.is_paired_watch)
+        asyncio.run(store.async_load())
+
+        with pytest.raises(mod.WatchConfigNoRecordError):
+            store.panel_save("iphone-1", "pages", _doc(), base_revision=0)
+        assert store.get("iphone-1", "pages") is None
+        assert store.panel_save(OWNER, "pages", _doc(), base_revision=0).revision == 1
+
+
 @pytest.mark.parametrize(
     ("kind", "document", "base"),
     [
