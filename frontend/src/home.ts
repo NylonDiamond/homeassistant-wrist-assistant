@@ -224,9 +224,11 @@ export const homeStyles = css`
   a.home-door:hover, button.home-door:hover { background: var(--wa-card); }
   a.home-door:focus-visible, button.home-door:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .home-door-n { font-variant-numeric: tabular-nums; color: var(--wa-muted); }
-  /* Pair a device, the grid's last card: a dashed outline, nothing lit. */
+  /* Pair a device, the grid's last card: a dashed outline, nothing lit, as
+     tall as the cards beside it. */
+  .home-devices > li:has(> button.home-device-add) { display: flex; }
   button.home-device-add {
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 150px;
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 120px;
     box-sizing: border-box; padding: 16px; border-radius: var(--wa-lc-r, 12px); font: inherit; cursor: pointer;
     color: var(--wa-muted); background: transparent; border: 1.5px dashed var(--wa-line-strong);
   }

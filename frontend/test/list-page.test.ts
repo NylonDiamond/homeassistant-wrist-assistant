@@ -186,7 +186,7 @@ describe("the list page's look", () => {
   });
 
   it("pins the head, the device tabs and the picking bar while the page scrolls, but not on a phone", () => {
-    expect(text).toContain(".pk-page > .pk-pin { position: sticky; top: 0; z-index: 3; background: var(--wa-card); }");
+    expect(text).toContain(".pk-page > .pk-pin { position: sticky; top: calc(-1 * var(--cl-top, 0px)); z-index: 3; background: var(--wa-card); }");
     const phone = text.slice(text.indexOf("@media (max-width: 640px)"));
     expect(phone).toContain(".pk-page > .pk-pin { position: static; }");
   });

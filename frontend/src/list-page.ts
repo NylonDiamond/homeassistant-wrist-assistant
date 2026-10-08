@@ -125,8 +125,9 @@ export function listPageLead(total: number): string {
  */
 export const listPageStyles = css`
   .cl-page {
+    --cl-top: clamp(20px, 4vh, 40px);
     flex: 1 1 auto; min-height: 0; overflow: auto; box-sizing: border-box;
-    padding: clamp(20px, 4vh, 40px) clamp(16px, 4vw, 40px) 48px;
+    padding: var(--cl-top) clamp(16px, 4vw, 40px) 48px;
     background: var(--wa-bg); color: var(--wa-ink);
   }
   .cl-wrap { width: min(1400px, 100%); margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
@@ -156,8 +157,10 @@ export const listPageStyles = css`
   .pk-page .pk-head > .pk-search { margin-left: auto; }
   /* The head, the device tabs and the picking bar, pinned to the top of the
      page while the cards scroll under them. Not on a phone, where the tabs
-     wrap to several rows and would leave too little room for the cards. */
-  .pk-page > .pk-pin { position: sticky; top: 0; z-index: 3; background: var(--wa-card); }
+     wrap to several rows and would leave too little room for the cards.
+     A sticky box stops at the scroller's padding, so it reaches back over
+     the page's top padding to sit on the very top edge. */
+  .pk-page > .pk-pin { position: sticky; top: calc(-1 * var(--cl-top, 0px)); z-index: 3; background: var(--wa-card); }
   /* The editor's way back to the list leads its bar on one row or two: the
      stacked bar sends every other button to the second row. */
   header.stacked > button.tb-btn.tb-list, .wa-bar.stacked > button.tb-btn.tb-list { order: 0; }

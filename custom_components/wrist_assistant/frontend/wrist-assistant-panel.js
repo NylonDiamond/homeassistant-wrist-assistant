@@ -74,9 +74,11 @@ import{a as Nr}from"./chunks/chunk-P7FG3CI7.js";import{a as Oi,b as _d,c as Gd,d
   a.home-door:hover, button.home-door:hover { background: var(--wa-card); }
   a.home-door:focus-visible, button.home-door:focus-visible { outline: none; box-shadow: var(--wa-ring); }
   .home-door-n { font-variant-numeric: tabular-nums; color: var(--wa-muted); }
-  /* Pair a device, the grid's last card: a dashed outline, nothing lit. */
+  /* Pair a device, the grid's last card: a dashed outline, nothing lit, as
+     tall as the cards beside it. */
+  .home-devices > li:has(> button.home-device-add) { display: flex; }
   button.home-device-add {
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 150px;
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 120px;
     box-sizing: border-box; padding: 16px; border-radius: var(--wa-lc-r, 12px); font: inherit; cursor: pointer;
     color: var(--wa-muted); background: transparent; border: 1.5px dashed var(--wa-line-strong);
   }
@@ -139,8 +141,9 @@ import{a as Nr}from"./chunks/chunk-P7FG3CI7.js";import{a as Oi,b as _d,c as Gd,d
   }
 `;function Lu(r,a){return[r==="dialog"?"pk-dialog":"pk-page","pk-surface",...a?["bare"]:[]].join(" ")}function eo(r,a){return!a&&rt(r)==="complications"}function Du(r){return r.rows>0||r.unsaved?"list":r.ready?"empty":"loading"}function Ou(r){return!r.devicesLoaded||r.ownerBusy?!1:r.ownerId===void 0?!0:r.otherListsRead&&r.otherListsOwner===r.ownerId}function Mu(r,a){return{shown:a,remembered:a}}function Fu(r){return{shown:Qe,remembered:r.remembered}}function to(r){return{shown:r.remembered,remembered:r.remembered}}function Au(r){if(r.dupOpen)return"dup";if(r.selecting)return"select"}function Nu(r){return`${`${r} ${r===1?"complication":"complications"}.`} One design can be on more than one device.`}var zu=z`
   .cl-page {
+    --cl-top: clamp(20px, 4vh, 40px);
     flex: 1 1 auto; min-height: 0; overflow: auto; box-sizing: border-box;
-    padding: clamp(20px, 4vh, 40px) clamp(16px, 4vw, 40px) 48px;
+    padding: var(--cl-top) clamp(16px, 4vw, 40px) 48px;
     background: var(--wa-bg); color: var(--wa-ink);
   }
   .cl-wrap { width: min(1400px, 100%); margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
@@ -170,8 +173,10 @@ import{a as Nr}from"./chunks/chunk-P7FG3CI7.js";import{a as Oi,b as _d,c as Gd,d
   .pk-page .pk-head > .pk-search { margin-left: auto; }
   /* The head, the device tabs and the picking bar, pinned to the top of the
      page while the cards scroll under them. Not on a phone, where the tabs
-     wrap to several rows and would leave too little room for the cards. */
-  .pk-page > .pk-pin { position: sticky; top: 0; z-index: 3; background: var(--wa-card); }
+     wrap to several rows and would leave too little room for the cards.
+     A sticky box stops at the scroller's padding, so it reaches back over
+     the page's top padding to sit on the very top edge. */
+  .pk-page > .pk-pin { position: sticky; top: calc(-1 * var(--cl-top, 0px)); z-index: 3; background: var(--wa-card); }
   /* The editor's way back to the list leads its bar on one row or two: the
      stacked bar sends every other button to the second row. */
   header.stacked > button.tb-btn.tb-list, .wa-bar.stacked > button.tb-btn.tb-list { order: 0; }
