@@ -36,10 +36,27 @@ _SECRET_KEY_RE = re.compile(
     re.IGNORECASE,
 )
 _NUMERIC_SECRET_KEY_RE = re.compile(r"pass|secret|pkcs12|p12", re.IGNORECASE)
-# Inside free text (log lines, URLs, embedded JSON), in this order:
-# an Authorization header's value, a bearer token, a `key=value` or
-# `"key": "value"` pair under a secret key, and the token in a webhook path.
+# Inside free text (log lines, URLs, embedded JSON), in this order: the
+# user and password in a URL, an Authorization header's value, a bearer
+# token, a `key=value` or `"key": "value"` pair under a secret key, and the
+# token in a webhook path.
 _TEXT_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        # `scheme://user:pass@host` (or just `user@`) becomes
+        # `scheme://**REDACTED**@host`: a camera's RTSP address or a proxy URL
+        # carries its password right there. The scheme and the host stay, so
+        # the line still says where it went. Also matched when the slashes are
+        # JSON-escaped (`http:\/\/`), as Foundation writes them. The userinfo
+        # runs only up to the first `/`, `?`, `#`, backslash, quote or space,
+        # so an `@` in a path or a query string is left alone; inside that
+        # stretch the last `@` ends it, so a password with a bare `@` in it
+        # is covered whole. First, so the `key: value` rule below cannot
+        # read `api_key:pass@host` as a pair and swallow the host.
+        re.compile(
+            r"\b([A-Za-z][A-Za-z0-9+.-]*:(?://|\\/\\/))[^/\\\s?#\"'<>]+@"
+        ),
+        r"\1" + REDACTED + "@",
+    ),
     (
         re.compile(
             r"(authorization[\"']?\s*[:=]\s*[\"']?)(?:(?:bearer|basic)\s+)?[^\s\"',;&]+",

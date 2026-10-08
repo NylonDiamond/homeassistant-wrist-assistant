@@ -98,6 +98,15 @@ def _loaded_logbook_events(rows: list) -> Any:
     return _load("logbook_events")
 
 
+class _HeaderView(_View):
+    """The shared view stub, keeping the headers a reply was given."""
+
+    def json(self, result: Any, status_code: int = 200, headers: Any = None) -> _Response:
+        reply = super().json(result, status_code=status_code)
+        reply.headers = dict(headers or {})
+        return reply
+
+
 def _untouchable(name: str):
     def _fail(*_args: Any, **_kwargs: Any) -> Any:
         raise AssertionError(f"pair/start touched {name}")
@@ -132,13 +141,14 @@ def _view_classes(pair_mod, log_hmac_failure) -> dict[str, type]:
     namespace: dict[str, Any] = {
         "Any": Any,
         "Response": _Response,
-        "HomeAssistantView": _View,
+        "HomeAssistantView": _HeaderView,
         "DOMAIN": DOMAIN,
         "WA_PROTOCOL_VERSION": 2,
         "_LOGGER": logging.getLogger("test_pair_start_view"),
         "HomeAssistant": object,
         "validate_pair_fields": pair_mod.validate_pair_fields,
         "validate_pair_start": pair_mod.validate_pair_start,
+        "ConfirmedPairWaiting": pair_mod.ConfirmedPairWaiting,
         "remote_is_public": pair_mod.remote_is_public,
         "REGISTER_ID_MAX_LEN": pair_mod.REGISTER_ID_MAX_LEN,
         "PAIR_START_FIELDS": pair_mod.PAIR_START_FIELDS,
@@ -485,6 +495,41 @@ def test_status_follows_a_sealed_pairing(env) -> None:
 
     env.clock.now += 600
     assert _status(env, {"watch_id": "watch-code-1"}).body == {"state": "expired", **now}
+
+
+def test_a_start_for_a_confirmed_id_answers_409_and_keeps_the_box(env) -> None:
+    """Someone on the network who saw the id in a status poll posts a start
+    for it after the admin confirmed. The box, whose key the confirm already
+    stored, must still be there for the device."""
+    code = _start(env, _sealed_body()).body["code"]
+    box = {"server_public_key_b64": "S", "nonce": "N", "box": "B"}
+    env.pair_store.confirm_sealed(env.pair_store.get(code), box)
+    env.clock.now += 30
+
+    for body in (_sealed_body(), _body()):
+        reply = _start(env, body, remote="192.168.1.99")
+        assert reply.status == 409
+        assert reply.body == {
+            "ok": False,
+            "error": "confirmed_pairing_waiting",
+            "message": (
+                "This device was just confirmed and its pairing is waiting "
+                "to be fetched. Try again when it runs out."
+            ),
+            "retry_after": 570,
+            "server_time": SERVER_TIME,
+        }
+        assert reply.headers == {"Retry-After": "570"}
+
+    assert len(env.pair_store) == 0
+    assert _status(env, {"watch_id": "watch-code-1"}).body == {
+        "state": "confirmed", **box, "server_time": SERVER_TIME
+    }
+    _assert_nothing_written(env)
+
+    # Once the box has run out, the device can ask for a new code.
+    env.clock.now += 570
+    assert _start(env, _sealed_body()).status == 200
 
 
 @pytest.mark.parametrize(

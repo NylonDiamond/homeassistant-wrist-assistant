@@ -172,6 +172,7 @@ from .wa_pair_requests import (
     PAIR_START_FIELDS,
     REGISTER_ID_MAX_LEN,
     REGISTER_TEXT_MAX_LEN,
+    ConfirmedPairWaiting,
     normalize_offer_id,
     remote_is_public,
     validate_pair_fields,
@@ -2881,7 +2882,11 @@ class WAPairStartView(HomeAssistantView):
 
     Requests last ten minutes, one per device (a new start replaces the old
     one), at most four per address and 64 in all wait at once; past either
-    it answers 429. The address is kept for the panel's lookup, with
+    it answers 429. While a confirmed sealed box waits for the id it answers
+    409 `confirmed_pairing_waiting` with `retry_after` (seconds, also in a
+    `Retry-After` header) and leaves the box alone, since this endpoint needs
+    no sign-in and anyone who saw the id could otherwise throw the box away
+    (`PairRequestStore.start`). The address is kept for the panel's lookup, with
     whether it is outside the home network (or came through Home Assistant
     Cloud), in which case the confirm needs the admin's `allow_remote`.
     """
@@ -2914,13 +2919,38 @@ class WAPairStartView(HomeAssistantView):
         if error is not None:
             return self.json_message(error.message, status_code=error.status)
 
-        pending = pair_store.start(
-            start.fields,
-            remote=request.remote,
-            remote_public=remote_is_public(request.remote) or _came_through_cloud(self._hass),
-            kind=start.kind,
-            public_key=start.public_key,
-        )
+        try:
+            pending = pair_store.start(
+                start.fields,
+                remote=request.remote,
+                remote_public=remote_is_public(request.remote) or _came_through_cloud(self._hass),
+                kind=start.kind,
+                public_key=start.public_key,
+            )
+        except ConfirmedPairWaiting as waiting:
+            # The id's confirmed box stays where it is; see
+            # `PairRequestStore.start` for why a start may not replace it.
+            _LOGGER.debug(
+                "Pairing start for watch_id=%s from %s refused: a confirmed "
+                "pairing waits for %d s",
+                waiting.watch_id,
+                request.remote,
+                waiting.expires_in,
+            )
+            return self.json(
+                {
+                    "ok": False,
+                    "error": "confirmed_pairing_waiting",
+                    "message": (
+                        "This device was just confirmed and its pairing is waiting "
+                        "to be fetched. Try again when it runs out."
+                    ),
+                    "retry_after": waiting.expires_in,
+                    "server_time": int(time.time()),
+                },
+                status_code=409,
+                headers={"Retry-After": str(waiting.expires_in)},
+            )
         if pending is None:
             return self.json(
                 {
@@ -2971,7 +3001,8 @@ class WAPairStatusView(HomeAssistantView):
     Anyone may ask: only the holder of the device's private key can open
     the box. The device then checks the secret with a signed
     `verify_identity`, as an old-form watch does. A start for the same id
-    drops the box, since the device started over with a new key pair.
+    is refused while the box waits, so nobody can throw it away before the
+    device fetches it.
     """
 
     url = "/api/wrist_assistant/v2/pair/status"

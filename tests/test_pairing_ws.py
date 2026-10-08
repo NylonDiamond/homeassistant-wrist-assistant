@@ -564,8 +564,15 @@ def test_each_sealed_confirm_makes_a_fresh_secret_and_server_key(env) -> None:
     _state, reply_one = env.pair_store.status(WATCH)
     secret_one = env.sealed.open_pair_secret(private_one, WATCH, reply_one)
 
+    # While the first box waits, nobody may start again for the id: an
+    # unauthenticated start must not be able to throw the box away.
+    with pytest.raises(env.pair_mod.ConfirmedPairWaiting):
+        _sealed_pending(env)
+    assert env.pair_store.status(WATCH) == ("confirmed", reply_one)
+
+    # Once it has run out, the device may start over with a new key pair.
+    env.clock.now += env.pair_mod.PAIR_SEALED_COPY_TTL_SECONDS
     second, private_two = _sealed_pending(env)
-    # The new start dropped the first box: the device started over.
     assert env.pair_store.status(WATCH) == ("pending", None)
     _ok(env, env.ws.ws_pair_confirm, code=second.code, replace=True)
     _state, reply_two = env.pair_store.status(WATCH)

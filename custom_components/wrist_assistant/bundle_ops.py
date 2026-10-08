@@ -457,6 +457,17 @@ async def async_template_result(
     with `template_text`, so the editor preview reads the string the watch
     reads.
 
+    Any paired device may render, whether or not its bound user is an
+    admin, and that is deliberate. It gives the device nothing its user
+    lacks: Home Assistant's own `render_template` WebSocket command, which
+    the frontend's Markdown cards use, is open to every signed-in user, and
+    the mobile_app `render_template` webhook is open to every registered
+    phone. Only the REST `POST /api/template` asks for an admin. And the
+    apps need it for ordinary users: a custom complication's values arrive
+    through the bundle's `template` (and through this op when it is
+    tapped), template tiles and the Music Assistant favourites use this op,
+    and the delta's template subscriptions render the same way.
+
     Reply: `{"ok": true, "result": <native>}`.
     """
     from homeassistant.helpers.template import Template, TemplateError
