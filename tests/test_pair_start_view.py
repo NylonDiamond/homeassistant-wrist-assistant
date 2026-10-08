@@ -14,7 +14,8 @@ The device registry and the Logbook helpers raise if touched. Pinned:
   holds four requests, 503 while not loaded; the address is stored;
 * ``WAActionView``'s refused-signature path writes no Logbook row for a
   known watch while it has a code pending (it is polling with its new pair),
-  checked against the real ``log_hmac_failure``;
+  checked against the real ``log_hmac_failure``, which also writes none for a
+  known watch's ``replayed_nonce`` (its own copy on its other URL);
 * the sealed form: a public key and a kind in place of the secret, its
   refusals, whether the request is remote (by address, or through Home
   Assistant Cloud whatever its address);
@@ -350,6 +351,28 @@ def test_a_known_watch_s_refused_signature_is_logged(env) -> None:
     assert reply.status == 401
     assert len(env.logbook_rows) == 1
     assert "bad_signature" in env.logbook_rows[0][1]
+
+
+def test_a_known_watch_s_replayed_nonce_writes_no_logbook_row(env) -> None:
+    """The watch's own second copy of a request (sent on its other URL with
+    the same signature while the first was slow) is refused as a replay. That
+    is the dedupe working, so it stays out of the Logbook; other refusals from
+    the same watch are still logged. ``env`` holds the Home Assistant stubs
+    the module imports."""
+    rows: list = []
+    logbook_mod = _loaded_logbook_events(rows)
+    hass = types.SimpleNamespace()
+
+    logbook_mod.log_hmac_failure(
+        hass, watch_id="watch-code-1", reason="replayed_nonce", is_known_watch=True
+    )
+    assert rows == []
+
+    logbook_mod.log_hmac_failure(
+        hass, watch_id="watch-code-1", reason="bad_signature", is_known_watch=True
+    )
+    assert len(rows) == 1
+    assert "bad_signature" in rows[0][1]
 
 
 def test_no_logbook_row_while_the_watch_has_a_code_pending(env) -> None:

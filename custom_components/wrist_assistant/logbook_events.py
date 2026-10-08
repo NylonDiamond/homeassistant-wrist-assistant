@@ -177,7 +177,14 @@ def log_hmac_failure(
     # Reasons that aren't worth surfacing to the user — they describe
     # malformed/probing requests that don't correspond to a real device
     # malfunction. `_LOGGER.debug` in the view already captures these.
-    if reason in {"missing_headers", "invalid_version", "unsupported_version"}:
+    #
+    # `replayed_nonce` from a known watch is the watch's own second copy: when
+    # a home has two URLs, a request that is slow to answer on one may also go
+    # out on the other with the same signature, and the copy that lands second
+    # is refused here by design. That is the dedupe working, not a fault, and
+    # a held HTTP action on an auto-refresh tile would write a row for every
+    # refresh. A real replay is refused all the same; it just is not logged.
+    if reason in {"missing_headers", "invalid_version", "unsupported_version", "replayed_nonce"}:
         return
     name = _device_name(hass, watch_id, kind="watch")
     logbook.async_log_entry(
