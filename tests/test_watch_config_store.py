@@ -1509,6 +1509,91 @@ def test_a_kept_target_keeps_its_own_report(mod):
     assert store.get(OTHER, "pages").rejected_revision == 0
 
 
+def _pages_at_revision_five(store):
+    _put(store)
+    for base in range(1, 5):
+        _panel_pages(store, _doc(f"panel {base}"), base=base)
+    record = store.get(OWNER, "pages")
+    assert record.revision == 5
+    return record
+
+
+def test_a_confirmed_delivery_clears_the_report_it_answers(mod):
+    """The watch could not read revision 5, then read it later (an app update,
+    say) and asked from it. The panel must stop saying it could not."""
+    store = _new(mod)
+    record = _pages_at_revision_five(store)
+    assert store.report_unreadable(OWNER, "pages", 5) is True
+    assert store.diagnostics()[OWNER]["pages"]["rejected_revision"] == 5
+
+    _FakeStore.writes.clear()
+    assert store.mark_delivered(OWNER, "pages", 5, confirmed=True) is True
+    assert (record.rejected_revision, record.rejected_at) == (0, None)
+    assert record.delivered_revision == 5
+    assert _FakeStore.writes == [mod._owner_key(OWNER)]
+    stored = _FakeStore.files[mod._owner_key(OWNER)]["records"]["pages"]
+    assert (stored["rejected_revision"], stored["rejected_at"]) == (0, None)
+    entry = store.diagnostics()[OWNER]["pages"]
+    assert (entry["revision"], entry["rejected_revision"], entry["rejected_at"]) == (5, 0, None)
+    # It stays cleared through a restart.
+    assert _new(mod).get(OWNER, "pages").rejected_revision == 0
+
+
+def test_a_delivery_that_only_carried_the_document_leaves_the_report(mod):
+    """A get that sent the document out counts as a delivery before the watch
+    has tried to read it, so it says nothing about whether it could."""
+    store = _new(mod)
+    record = _pages_at_revision_five(store)
+    store.report_unreadable(OWNER, "pages", 5)
+    at = record.rejected_at
+    # The delivery itself moves; the report does not.
+    assert store.mark_delivered(OWNER, "pages", 5) is True
+    assert record.delivered_revision == 5
+    assert (record.rejected_revision, record.rejected_at) == (5, at)
+    # A repeat moves nothing and writes nothing.
+    _FakeStore.writes.clear()
+    assert store.mark_delivered(OWNER, "pages", 5) is False
+    assert (record.rejected_revision, record.rejected_at) == (5, at)
+    assert _FakeStore.writes == []
+
+
+def test_a_confirmed_later_revision_clears_an_older_report(mod):
+    store = _new(mod)
+    _put(store)
+    store.report_unreadable(OWNER, "pages", 1)
+    _panel_pages(store, _doc("fixed"))
+    record = store.get(OWNER, "pages")
+    assert store.mark_delivered(OWNER, "pages", 2, confirmed=True) is True
+    assert (record.rejected_revision, record.rejected_at) == (0, None)
+
+
+def test_a_confirmed_delivery_with_nothing_to_clear_writes_nothing(mod):
+    store = _new(mod)
+    _pages_at_revision_five(store)
+    store.mark_delivered(OWNER, "pages", 5)
+    _FakeStore.writes.clear()
+    assert store.mark_delivered(OWNER, "pages", 5, confirmed=True) is False
+    assert _FakeStore.writes == []
+
+
+def test_a_report_older_than_the_delivered_revision_does_not_flag(mod):
+    store = _new(mod)
+    record = _pages_at_revision_five(store)
+    store.mark_delivered(OWNER, "pages", 5, confirmed=True)
+    assert store.report_unreadable(OWNER, "pages", 4) is False
+    assert (record.rejected_revision, record.rejected_at) == (0, None)
+
+
+def test_a_phone_put_does_not_clear_the_watch_s_report(mod):
+    """A put is the iPhone mirror writing; it says nothing about whether the
+    watch could read the revision it reported."""
+    store = _new(mod)
+    _put(store)
+    store.report_unreadable(OWNER, "pages", 1)
+    _put(store, doc=_doc("phone again"), base=1, digest=HASH_2)
+    assert store.get(OWNER, "pages").rejected_revision == 1
+
+
 @pytest.mark.parametrize(
     ("raw_revision", "raw_at", "expected"),
     [

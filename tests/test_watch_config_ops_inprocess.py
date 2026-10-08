@@ -17,7 +17,8 @@ the wire shapes the app is built against are asserted here exactly:
   record marks that revision delivered, with or without the document.
 * (step 3) a put is refused for a page fault but never for a tile fault, and
   a get carrying ``unreadable_revision`` equal to the stored revision files
-  the report instead of a delivery, with the same reply.
+  the report instead of a delivery, with the same reply. A later get whose
+  ``since_revision`` is that revision, with no report, clears it.
 * (step 3e) ``catalog`` rides the same two ops, with its own shape guard.
 * (step 4d) ``menus`` rides the same two ops, with its own shape guard.
 * (step 4d batch 2) so do ``voice``, ``notification_style`` and
@@ -505,9 +506,46 @@ def test_a_report_about_the_stored_revision_is_kept_and_is_not_a_delivery(env) -
     assert reply.body == plain.body
     assert (record.rejected_revision, record.delivered_revision) == (2, 1)
     assert record.rejected_at
-    # And a later plain check with the document in hand does deliver it.
-    _get(env, {"kind": "pages", "since_revision": 2})
+    # A later plain fetch that carries the document delivers it but proves
+    # nothing about reading it, so the report stands.
+    _get(env, {"kind": "pages", "since_revision": 1})
     assert record.delivered_revision == 2
+    assert record.rejected_revision == 2
+
+
+def test_asking_from_the_reported_revision_clears_the_report(env) -> None:
+    """The watch could not read revision 2, read it later (after an app
+    update, say) and now asks from it with no report. That is the watch
+    saying it holds revision 2, so the panel must stop saying it could not
+    read that save."""
+    record = _panel_saved(env)
+    _get(env, {"kind": "pages", "since_revision": 1})
+    _get(env, {"kind": "pages", "since_revision": 1, "unreadable_revision": 2})
+    assert record.rejected_revision == 2
+
+    reply = _get(env, {"kind": "pages", "since_revision": 2})
+    assert reply.status == 200
+    assert "document" not in reply.body
+    assert (record.rejected_revision, record.rejected_at) == (0, None)
+    assert record.delivered_revision == 2
+
+
+def test_the_immediate_report_asking_from_the_revision_is_still_a_report(env) -> None:
+    """The watch's own report right after a failure names the revision it
+    could not read as its since_revision too. The report wins: it must not
+    read as the watch holding that revision."""
+    record = _panel_saved(env)
+    _get(env, {"kind": "pages", "since_revision": 1})
+    _get(env, {"kind": "pages", "since_revision": 2, "unreadable_revision": 2})
+    assert record.rejected_revision == 2
+    _get(env, {"kind": "pages", "since_revision": 2, "unreadable_revision": 2})
+    assert record.rejected_revision == 2
+
+
+def test_an_observer_asking_from_the_revision_leaves_the_report(env) -> None:
+    record = _panel_saved(env)
+    _get(env, {"kind": "pages", "since_revision": 1, "unreadable_revision": 2})
+    _get(env, {"kind": "pages", "since_revision": 2, "observer": True})
     assert record.rejected_revision == 2
 
 

@@ -1037,9 +1037,41 @@ class DeltaCoordinator:
         self._fire_poll_callbacks(watch_id)
 
         if not session.entities_synced:
+            # The device is asked for its entity list. Its next poll carries
+            # the list with whatever cursor this reply hands back, and the
+            # device keeps any cursor at or above its own. Handing back the
+            # current cursor to a device that sent an older one made it skip
+            # every change in between: those already in the buffer, and those
+            # dropped while it had no session (after a prune, force_resync, or
+            # its session being dropped while its loop kept running), with no
+            # 410 to tell it so.
+            #
+            # So a device that sent a cursor is judged on it first. A stale or
+            # unreadable cursor gets the same 410 any poll would, and the
+            # device answers that with a full snapshot. A good one is echoed
+            # back, so the next poll resumes from where the device really is.
+            # A brand-new device (no cursor) has nothing to skip and keeps the
+            # current cursor, as before.
+            reply_cursor = self._cursor
+            if since is not None and since != "":
+                since_cursor, invalid_since = self._parse_since(
+                    since=since, default_cursor=self._cursor
+                )
+                if invalid_since or self._is_stale_cursor(since_cursor):
+                    return 410, self._response_payload(
+                        events=[],
+                        next_cursor=self._cursor,
+                        need_entities=True,
+                        resync_required=True,
+                        battery_threshold=battery_threshold,
+                        summary_entities=summary_entities,
+                        include_summary=include_summary,
+                        custom_entity_ids=custom_entity_ids,
+                    )
+                reply_cursor = since_cursor
             return 200, self._response_payload(
                 events=[],
-                next_cursor=self._cursor,
+                next_cursor=reply_cursor,
                 need_entities=True,
                 resync_required=False,
                 battery_threshold=battery_threshold,

@@ -143,7 +143,8 @@ def ws_watch_config_get(
     button (a save over base 0) or the iPhone mirror's first upload ends.
     ``rejected_revision`` equal to ``revision`` means a device fetched this
     save and could not decode it, which outranks delivery; any lower value is
-    an old report a later save has replaced. Reading changes nothing,
+    an old report a later save has replaced, and 0 also follows the device
+    confirming it has since read the save. Reading changes nothing,
     delivery included: the panel is not the device.
     """
     store = _store(hass)
